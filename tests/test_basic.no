@@ -1,0 +1,56 @@
+// test_basic.no — 核心編譯驗證
+
+i64-max(a i64, b i64, r i64) {
+    d = a - b
+    if d > 0 {
+        r = a
+    } else {
+        r = b
+    }
+}
+
+i64-min(a i64, b i64, r i64) {
+    d = a - b
+    if d > 0 {
+        r = b
+    } else {
+        r = a
+    }
+}
+
+abs-i64(a i64, r i64) {
+    if a < 0 {
+        r = 0 - a
+    } else {
+        r = a
+    }
+}
+
+gcd(a i64, b i64, r i64) {
+    if a < 0 { a = 0 - a }
+    if b < 0 { b = 0 - b }
+    for b != 0 {
+        t = b
+        b = a % b
+        a = t
+    }
+    r = a
+}
+
+caller() {
+    r = 0
+
+    i64-max(10, 20, r)
+    println-i64(r)
+
+    i64-min(10, 20, r)
+    println-i64(r)
+
+    abs-i64(-42, r)
+    println-i64(r)
+
+    gcd(12, 18, r)
+    println-i64(r)
+}
+
+caller()

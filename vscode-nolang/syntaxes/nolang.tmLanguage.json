@@ -1,0 +1,81 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nolang",
+  "scopeName": "source.nolang",
+  "fileTypes": [
+    "no"
+  ],
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.nolang",
+      "match": "//.*$"
+    },
+    {
+      "name": "keyword.control.nolang",
+      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|use|as|chan|go)\\b"
+    },
+    {
+      "name": "constant.language.nolang",
+      "match": "\\b(true|false|nil)\\b"
+    },
+    {
+      "name": "support.type.nolang",
+      "match": "(?<=\\s)\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|str|byte|char|ptr|err|bigint)\\b"
+    },
+    {
+      "name": "string.quoted.single.nolang",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.nolang",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.float.nolang",
+      "match": "(?<![\\w])\\d+\\.\\d+(?![\\w])"
+    },
+    {
+      "name": "constant.numeric.integer.nolang",
+      "match": "(?<![\\w])\\d+(?![\\w])"
+    },
+    {
+      "name": "keyword.operator.range.nolang",
+      "match": "\\.\\."
+    },
+    {
+      "name": "punctuation.operator.nolang",
+      "match": "[-+*/%=<>!?&|]+"
+    },
+    {
+      "name": "punctuation.separator.nolang",
+      "match": "[,:;]"
+    },
+    {
+      "name": "punctuation.section.braces.nolang",
+      "match": "[{}]"
+    },
+    {
+      "name": "punctuation.section.brackets.nolang",
+      "match": "[\\[\\]]"
+    },
+    {
+      "name": "punctuation.section.parens.nolang",
+      "match": "[()]"
+    },
+    {
+      "name": "entity.name.function.nolang",
+      "match": "\\b[a-z][a-z0-9_]*(?=\\((?!\\s*[^()\\s]+\\.\\.[^()\\s]+))"
+    },
+    {
+      "name": "constant.other.nolang",
+      "match": "\\b[A-Z][A-Z0-9_]*\\b"
+    },
+    {
+      "name": "variable.other.nolang",
+      "match": "\\b[a-z-][a-z0-9-]*\\b"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+// Example module in src directory
+// This is a sample module demonstrating the project structure
+// 函数通过修改入参来传递结果
+
+calculate-sum(a int, b int, result i64) {
+    result = a + b
+    return
+}

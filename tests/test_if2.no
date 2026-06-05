@@ -1,0 +1,5 @@
+if sum > 10 {
+    max = sum
+} else {
+    max = 10
+}

@@ -1,0 +1,4 @@
+// test standalone slice
+println('test')
+x = [1, 2, 3]
+println('ok')

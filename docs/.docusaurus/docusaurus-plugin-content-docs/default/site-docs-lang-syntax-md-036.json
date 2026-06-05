@@ -1,0 +1,27 @@
+{
+  "id": "lang/syntax",
+  "title": "语言参考",
+  "description": "注释",
+  "source": "@site/docs/lang/syntax.md",
+  "sourceDirName": "lang",
+  "slug": "/lang/syntax",
+  "permalink": "/nolang/docs/lang/syntax",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/lang/syntax.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "sidebar_position": 2
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Nolang 简介",
+    "permalink": "/nolang/docs/intro"
+  },
+  "next": {
+    "title": "标准库",
+    "permalink": "/nolang/docs/std/overview"
+  }
+}

@@ -1,0 +1,496 @@
+// sha1 — SHA-1 安全哈希算法（160-bit）
+//
+// 處理一個 512-bit（16 字）區塊。
+// 多區塊訊息需由呼叫者自行填充和累加。
+//
+// 用法：
+//   h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+//   sha1(block, 16, h0, h1, h2, h3, h4)
+
+// sha1: 處理一個 512-bit 區塊
+// s: 16 個 32-bit 字 (big-endian)
+// n: 固定 16
+// h0..h4: 輸入/輸出 160-bit 哈希狀態
+sha1(s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64) {
+    MASK = 4294967295
+
+    // 初始狀態
+    a = h0; b = h1; c = h2; d = h3; e = h4
+
+    // ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
+    // f = (b & c) | (~b & d)
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[0])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[1])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[2])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[3])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[4])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[5])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[6])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[7])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[8])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[9])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[10]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[11]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[12]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[13]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[14]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[15]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
+
+    // w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
+    w = s[13] ^ s[8] ^ s[2] ^ s[0]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
+    w = s[14] ^ s[9] ^ s[3] ^ s[1]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
+    w = s[15] ^ s[10] ^ s[4] ^ s[2]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w19 = rotl(w16 ^ w11 ^ w5 ^ w3, 1) — w16 即是上一輪的 w
+    // 用 w 變數記錄各輪 w 值供後續使用：w16_17_18_19 = w
+    // w19 的計算使用剛算出的 w (即 w16)、s[11]、s[5]、s[3]
+    w = w ^ s[11] ^ s[5] ^ s[3]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // 第 16-19 輪的 w 值記錄下來供後續擴展使用
+    w16 = s[13] ^ s[8] ^ s[2] ^ s[0]; w16 = ((w16 << 1) | (w16 >> 31)) & MASK
+    w17 = s[14] ^ s[9] ^ s[3] ^ s[1]; w17 = ((w17 << 1) | (w17 >> 31)) & MASK
+    w18 = s[15] ^ s[10] ^ s[4] ^ s[2]; w18 = ((w18 << 1) | (w18 >> 31)) & MASK
+    w19 = w16 ^ s[11] ^ s[5] ^ s[3]; w19 = ((w19 << 1) | (w19 >> 31)) & MASK
+
+    // ---- 第 20-39 輪 (K = 0x6ED9EBA1 = 1859775393) ----
+    // f = b ^ c ^ d
+
+    // w20 = rotl(w17 ^ w12 ^ w6 ^ w4, 1)
+    w = w17 ^ s[12] ^ s[6] ^ s[4]; w = ((w << 1) | (w >> 31)) & MASK; w20 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w21 = rotl(w18 ^ w13 ^ w7 ^ w5, 1)
+    w = w18 ^ s[13] ^ s[7] ^ s[5]; w = ((w << 1) | (w >> 31)) & MASK; w21 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w22 = rotl(w19 ^ w14 ^ w8 ^ w6, 1)
+    w = w19 ^ s[14] ^ s[8] ^ s[6]; w = ((w << 1) | (w >> 31)) & MASK; w22 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w23 = rotl(w20 ^ w15 ^ w9 ^ w7, 1)
+    w = w20 ^ s[15] ^ s[9] ^ s[7]; w = ((w << 1) | (w >> 31)) & MASK; w23 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w24 = rotl(w21 ^ w16 ^ w10 ^ w8, 1)
+    w = w21 ^ w16 ^ s[10] ^ s[8]; w = ((w << 1) | (w >> 31)) & MASK; w24 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w25 = rotl(w22 ^ w17 ^ w11 ^ w9, 1)
+    w = w22 ^ w17 ^ s[11] ^ s[9]; w = ((w << 1) | (w >> 31)) & MASK; w25 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w26 = rotl(w23 ^ w18 ^ w12 ^ w10, 1)
+    w = w23 ^ w18 ^ s[12] ^ s[10]; w = ((w << 1) | (w >> 31)) & MASK; w26 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w27 = rotl(w24 ^ w19 ^ w13 ^ w11, 1)
+    w = w24 ^ w19 ^ s[13] ^ s[11]; w = ((w << 1) | (w >> 31)) & MASK; w27 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w28 = rotl(w25 ^ w20 ^ w14 ^ w12, 1)
+    w = w25 ^ w20 ^ s[14] ^ s[12]; w = ((w << 1) | (w >> 31)) & MASK; w28 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w29 = rotl(w26 ^ w21 ^ w15 ^ w13, 1)
+    w = w26 ^ w21 ^ s[15] ^ s[13]; w = ((w << 1) | (w >> 31)) & MASK; w29 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w30 = rotl(w27 ^ w22 ^ w16 ^ w14, 1)
+    w = w27 ^ w22 ^ w16 ^ s[14]; w = ((w << 1) | (w >> 31)) & MASK; w30 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w31 = rotl(w28 ^ w23 ^ w17 ^ w15, 1)
+    w = w28 ^ w23 ^ w17 ^ s[15]; w = ((w << 1) | (w >> 31)) & MASK; w31 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w32 = rotl(w29 ^ w24 ^ w18 ^ w16, 1)
+    w = w29 ^ w24 ^ w18 ^ w16; w = ((w << 1) | (w >> 31)) & MASK; w32 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w33 = rotl(w30 ^ w25 ^ w19 ^ w17, 1)
+    w = w30 ^ w25 ^ w19 ^ w17; w = ((w << 1) | (w >> 31)) & MASK; w33 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w34 = rotl(w31 ^ w26 ^ w20 ^ w18, 1)
+    w = w31 ^ w26 ^ w20 ^ w18; w = ((w << 1) | (w >> 31)) & MASK; w34 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w35 = rotl(w32 ^ w27 ^ w21 ^ w19, 1)
+    w = w32 ^ w27 ^ w21 ^ w19; w = ((w << 1) | (w >> 31)) & MASK; w35 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w36 = rotl(w33 ^ w28 ^ w22 ^ w20, 1)
+    w = w33 ^ w28 ^ w22 ^ w20; w = ((w << 1) | (w >> 31)) & MASK; w36 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w37 = rotl(w34 ^ w29 ^ w23 ^ w21, 1)
+    w = w34 ^ w29 ^ w23 ^ w21; w = ((w << 1) | (w >> 31)) & MASK; w37 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w38 = rotl(w35 ^ w30 ^ w24 ^ w22, 1)
+    w = w35 ^ w30 ^ w24 ^ w22; w = ((w << 1) | (w >> 31)) & MASK; w38 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w39 = rotl(w36 ^ w31 ^ w25 ^ w23, 1)
+    w = w36 ^ w31 ^ w25 ^ w23; w = ((w << 1) | (w >> 31)) & MASK; w39 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1859775393 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // ---- 第 40-59 輪 (K = 0x8F1BBCDC = 2400959708) ----
+    // f = (b & c) | (b & d) | (c & d)
+
+    // w40 = rotl(w37 ^ w32 ^ w26 ^ w24, 1)
+    w = w37 ^ w32 ^ w26 ^ w24; w = ((w << 1) | (w >> 31)) & MASK; w40 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w41 = rotl(w38 ^ w33 ^ w27 ^ w25, 1)
+    w = w38 ^ w33 ^ w27 ^ w25; w = ((w << 1) | (w >> 31)) & MASK; w41 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w42 = rotl(w39 ^ w34 ^ w28 ^ w26, 1)
+    w = w39 ^ w34 ^ w28 ^ w26; w = ((w << 1) | (w >> 31)) & MASK; w42 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w43 = rotl(w40 ^ w35 ^ w29 ^ w27, 1)
+    w = w40 ^ w35 ^ w29 ^ w27; w = ((w << 1) | (w >> 31)) & MASK; w43 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w44 = rotl(w41 ^ w36 ^ w30 ^ w28, 1)
+    w = w41 ^ w36 ^ w30 ^ w28; w = ((w << 1) | (w >> 31)) & MASK; w44 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w45 = rotl(w42 ^ w37 ^ w31 ^ w29, 1)
+    w = w42 ^ w37 ^ w31 ^ w29; w = ((w << 1) | (w >> 31)) & MASK; w45 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w46 = rotl(w43 ^ w38 ^ w32 ^ w30, 1)
+    w = w43 ^ w38 ^ w32 ^ w30; w = ((w << 1) | (w >> 31)) & MASK; w46 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w47 = rotl(w44 ^ w39 ^ w33 ^ w31, 1)
+    w = w44 ^ w39 ^ w33 ^ w31; w = ((w << 1) | (w >> 31)) & MASK; w47 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w48 = rotl(w45 ^ w40 ^ w34 ^ w32, 1)
+    w = w45 ^ w40 ^ w34 ^ w32; w = ((w << 1) | (w >> 31)) & MASK; w48 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w49 = rotl(w46 ^ w41 ^ w35 ^ w33, 1)
+    w = w46 ^ w41 ^ w35 ^ w33; w = ((w << 1) | (w >> 31)) & MASK; w49 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w50 = rotl(w47 ^ w42 ^ w36 ^ w34, 1)
+    w = w47 ^ w42 ^ w36 ^ w34; w = ((w << 1) | (w >> 31)) & MASK; w50 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w51 = rotl(w48 ^ w43 ^ w37 ^ w35, 1)
+    w = w48 ^ w43 ^ w37 ^ w35; w = ((w << 1) | (w >> 31)) & MASK; w51 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w52 = rotl(w49 ^ w44 ^ w38 ^ w36, 1)
+    w = w49 ^ w44 ^ w38 ^ w36; w = ((w << 1) | (w >> 31)) & MASK; w52 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w53 = rotl(w50 ^ w45 ^ w39 ^ w37, 1)
+    w = w50 ^ w45 ^ w39 ^ w37; w = ((w << 1) | (w >> 31)) & MASK; w53 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w54 = rotl(w51 ^ w46 ^ w40 ^ w38, 1)
+    w = w51 ^ w46 ^ w40 ^ w38; w = ((w << 1) | (w >> 31)) & MASK; w54 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w55 = rotl(w52 ^ w47 ^ w41 ^ w39, 1)
+    w = w52 ^ w47 ^ w41 ^ w39; w = ((w << 1) | (w >> 31)) & MASK; w55 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w56 = rotl(w53 ^ w48 ^ w42 ^ w40, 1)
+    w = w53 ^ w48 ^ w42 ^ w40; w = ((w << 1) | (w >> 31)) & MASK; w56 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w57 = rotl(w54 ^ w49 ^ w43 ^ w41, 1)
+    w = w54 ^ w49 ^ w43 ^ w41; w = ((w << 1) | (w >> 31)) & MASK; w57 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w58 = rotl(w55 ^ w50 ^ w44 ^ w42, 1)
+    w = w55 ^ w50 ^ w44 ^ w42; w = ((w << 1) | (w >> 31)) & MASK; w58 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w59 = rotl(w56 ^ w51 ^ w45 ^ w43, 1)
+    w = w56 ^ w51 ^ w45 ^ w43; w = ((w << 1) | (w >> 31)) & MASK; w59 = w
+    f = (b & c) | (b & d) | (c & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 2400959708 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // ---- 第 60-79 輪 (K = 0xCA62C1D6 = 3395469782) ----
+    // f = b ^ c ^ d
+
+    // w60 = rotl(w57 ^ w52 ^ w46 ^ w44, 1)
+    w = w57 ^ w52 ^ w46 ^ w44; w = ((w << 1) | (w >> 31)) & MASK; w60 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w61 = rotl(w58 ^ w53 ^ w47 ^ w45, 1)
+    w = w58 ^ w53 ^ w47 ^ w45; w = ((w << 1) | (w >> 31)) & MASK; w61 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w62 = rotl(w59 ^ w54 ^ w48 ^ w46, 1)
+    w = w59 ^ w54 ^ w48 ^ w46; w = ((w << 1) | (w >> 31)) & MASK; w62 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w63 = rotl(w60 ^ w55 ^ w49 ^ w47, 1)
+    w = w60 ^ w55 ^ w49 ^ w47; w = ((w << 1) | (w >> 31)) & MASK; w63 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w64 = rotl(w61 ^ w56 ^ w50 ^ w48, 1)
+    w = w61 ^ w56 ^ w50 ^ w48; w = ((w << 1) | (w >> 31)) & MASK; w64 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w65 = rotl(w62 ^ w57 ^ w51 ^ w49, 1)
+    w = w62 ^ w57 ^ w51 ^ w49; w = ((w << 1) | (w >> 31)) & MASK; w65 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w66 = rotl(w63 ^ w58 ^ w52 ^ w50, 1)
+    w = w63 ^ w58 ^ w52 ^ w50; w = ((w << 1) | (w >> 31)) & MASK; w66 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w67 = rotl(w64 ^ w59 ^ w53 ^ w51, 1)
+    w = w64 ^ w59 ^ w53 ^ w51; w = ((w << 1) | (w >> 31)) & MASK; w67 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w68 = rotl(w65 ^ w60 ^ w54 ^ w52, 1)
+    w = w65 ^ w60 ^ w54 ^ w52; w = ((w << 1) | (w >> 31)) & MASK; w68 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w69 = rotl(w66 ^ w61 ^ w55 ^ w53, 1)
+    w = w66 ^ w61 ^ w55 ^ w53; w = ((w << 1) | (w >> 31)) & MASK; w69 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w70 = rotl(w67 ^ w62 ^ w56 ^ w54, 1)
+    w = w67 ^ w62 ^ w56 ^ w54; w = ((w << 1) | (w >> 31)) & MASK; w70 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w71 = rotl(w68 ^ w63 ^ w57 ^ w55, 1)
+    w = w68 ^ w63 ^ w57 ^ w55; w = ((w << 1) | (w >> 31)) & MASK; w71 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w72 = rotl(w69 ^ w64 ^ w58 ^ w56, 1)
+    w = w69 ^ w64 ^ w58 ^ w56; w = ((w << 1) | (w >> 31)) & MASK; w72 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w73 = rotl(w70 ^ w65 ^ w59 ^ w57, 1)
+    w = w70 ^ w65 ^ w59 ^ w57; w = ((w << 1) | (w >> 31)) & MASK; w73 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w74 = rotl(w71 ^ w66 ^ w60 ^ w58, 1)
+    w = w71 ^ w66 ^ w60 ^ w58; w = ((w << 1) | (w >> 31)) & MASK; w74 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w75 = rotl(w72 ^ w67 ^ w61 ^ w59, 1)
+    w = w72 ^ w67 ^ w61 ^ w59; w = ((w << 1) | (w >> 31)) & MASK; w75 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w76 = rotl(w73 ^ w68 ^ w62 ^ w60, 1)
+    w = w73 ^ w68 ^ w62 ^ w60; w = ((w << 1) | (w >> 31)) & MASK; w76 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w77 = rotl(w74 ^ w69 ^ w63 ^ w61, 1)
+    w = w74 ^ w69 ^ w63 ^ w61; w = ((w << 1) | (w >> 31)) & MASK; w77 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w78 = rotl(w75 ^ w70 ^ w64 ^ w62, 1)
+    w = w75 ^ w70 ^ w64 ^ w62; w = ((w << 1) | (w >> 31)) & MASK; w78 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w79 = rotl(w76 ^ w71 ^ w65 ^ w63, 1)
+    w = w76 ^ w71 ^ w65 ^ w63; w = ((w << 1) | (w >> 31)) & MASK; w79 = w
+    f = b ^ c ^ d
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 3395469782 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // 累加回初始哈希值
+    h0 = (h0 + a) & MASK
+    h1 = (h1 + b) & MASK
+    h2 = (h2 + c) & MASK
+    h3 = (h3 + d) & MASK
+    h4 = (h4 + e) & MASK
+}

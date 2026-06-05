@@ -1,0 +1,84 @@
+{
+  "/nolang/__docusaurus/debug-51a": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/__docusaurus/debug/config-72e": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/__docusaurus/debug/content-23b": {
+    "__comp": "__comp---theme-debug-contentba-8-ce7",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    },
+    "__props": "__props---nolang-docusaurus-debug-content-988-b8e"
+  },
+  "/nolang/__docusaurus/debug/globalData-365": {
+    "__comp": "__comp---theme-debug-global-dataede-0fa",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/__docusaurus/debug/metadata-bf5": {
+    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/__docusaurus/debug/registry-b65": {
+    "__comp": "__comp---theme-debug-registry-679-501",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/__docusaurus/debug/routes-10a": {
+    "__comp": "__comp---theme-debug-routes-946-699",
+    "__context": {
+      "plugin": "plugin---nolang-docusaurus-debugb-38-18a"
+    }
+  },
+  "/nolang/markdown-page-4a8": {
+    "__comp": "__comp---theme-mdx-page-1-f-3-b90",
+    "__context": {
+      "plugin": "plugin---nolang-markdown-pagea-74-b52"
+    },
+    "content": "content---nolang-markdown-page-4-c-6-870"
+  },
+  "/nolang/docs-9c7": {
+    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
+    "__context": {
+      "plugin": "plugin---nolang-docsaba-496"
+    }
+  },
+  "/nolang/docs-e10": {
+    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
+    "__props": "__props---nolang-docsdd-5-4e6"
+  },
+  "/nolang/docs-bd1": {
+    "__comp": "__comp---theme-doc-roota-94-67a"
+  },
+  "/nolang/docs/intro-81f": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---nolang-docs-intro-0-e-3-06c"
+  },
+  "/nolang/docs/lang/syntax-909": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---nolang-docs-lang-syntax-036-00e"
+  },
+  "/nolang/docs/std/overview-cfa": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---nolang-docs-std-overview-193-17e"
+  },
+  "/nolang/-052": {
+    "__comp": "__comp---site-src-pages-index-tsx-1-df-d3e",
+    "__context": {
+      "plugin": "plugin---nolang-markdown-pagea-74-b52"
+    },
+    "config": "config---nolang-5-e-9-816"
+  }
+}

@@ -1,0 +1,22 @@
+// fmt - 格式化输入输出标准库
+//
+// printf(fmt str, args ...any)  → @printf(i8*, ...)
+// print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg)
+// println(args ...any)        → 同上 + 換行
+// println-empty()             → @printf("\n")
+
+printf(fmt str) {
+    // LLVM: call i32 @printf(i8* %fmt, ...args)
+}
+
+print() {
+    // LLVM: 依參數型別逐個打印
+}
+
+println() {
+    // LLVM: 依參數型別逐個打印，最後換行
+}
+
+println-empty() {
+    // LLVM: @printf("\n")
+}

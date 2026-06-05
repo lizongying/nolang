@@ -1,0 +1,19 @@
+// Fibonacci — 無 I/O 純計算
+fib(n i64, o i64) {
+    a = 0
+    b = 1
+    i = 2
+    for i <= n {
+        c = a + b
+        a = b
+        b = c
+        i = i + 1
+    }
+    o = b
+}
+
+for iter = 0; iter < 10000000; iter++ {
+    result = 0
+    fib(40, result)
+    println-i64(result)
+}

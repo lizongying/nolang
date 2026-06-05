@@ -1,0 +1,23 @@
+{
+  "id": "std/overview",
+  "title": "标准库",
+  "description": "fmt — 格式化输出",
+  "source": "@site/docs/std/overview.md",
+  "sourceDirName": "std",
+  "slug": "/std/overview",
+  "permalink": "/nolang/docs/std/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/std/overview.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "sidebar_position": 3
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "语言参考",
+    "permalink": "/nolang/docs/lang/syntax"
+  }
+}

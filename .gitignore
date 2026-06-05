@@ -1,0 +1,16 @@
+Thumbs.db
+.DS_Store
+.idea
+.vscode
+.README.md
+tmp
+.reasonix
+**/node_modules/
+dist
+
+
+target
+bin
+
+
+src/build/nolang-build

@@ -1,0 +1,17 @@
+// Main entry point for the Nolang application
+// This file contains the main logic of your application
+
+// Import standard library
+use fmt
+
+// Main program starts here
+message = 'Hello, Nolang!'
+fmt.Println(message)
+
+// Example function
+greet(name string) {
+    fmt.Println('Hello, ' + name + '!')
+}
+
+// Call the function
+greet('World')

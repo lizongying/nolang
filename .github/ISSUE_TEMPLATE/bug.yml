@@ -1,0 +1,51 @@
+name: Bugs
+description: Report a bug or problem
+title: "bug: issue title"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve! 🙏
+        Please answer these questions and provide as much information as possible about your problem.
+
+  - type: input
+    id: nolang-version
+    attributes:
+      label: Nolang version
+      description: What version of Nolang are you using?
+      placeholder: ex. v1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your operating system, platform, etc.
+      placeholder: ex. Windows 11 / macOS 14 / Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-did-you-do
+    attributes:
+      label: What did you do?
+      description: Provide steps to reproduce the bug. A minimal code example is best.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: What did you see happen?
+      description: Actual output, errors, or behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What did you expect to see?
+      description: What should be the correct result?
+    validations:
+      required: true

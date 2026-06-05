@@ -1,0 +1,26 @@
+// md5-bench — Nolang MD5 基準測試
+//
+// 測量 1,000,000 次 MD5（"abc" 變體）
+// 每次迭代修改輸入以阻止優化器消除循環。
+//
+// 與 Go/Rust 一致的結構。無 main 函數，頂層程式碼即入口。
+//
+// 編譯：
+//   nolang-build test/bench/md5/nolang/md5-bench.no -o /tmp/md5-bench
+//   /tmp/md5-bench
+
+use std/hash/md5
+
+// 64 字節 padded block（字串佔位）
+block = '(64 words)'
+block[0] = 0x61  // 'a'
+block[1] = 0x62  // 'b'
+block[2] = 0x63  // 'c'
+block[3] = 0x80  // padding
+block[14] =  24   // bit length
+
+for i in [0..1000000) {
+    block = 
+    res = [16]byte
+    md5(block, res)
+}

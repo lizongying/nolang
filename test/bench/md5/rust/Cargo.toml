@@ -1,0 +1,7 @@
+[package]
+name = "md5-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+md-5 = "0.10"

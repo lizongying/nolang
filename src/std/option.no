@@ -1,0 +1,14 @@
+// option — 選項型別（標籤列舉/union）
+//
+// 底層為 tagged enum：option { val t, nil bool, err str }
+// tag: 0=val, 1=nil, 2=err
+//
+// 用法：
+//   x ?t                       // 宣告 option<t>
+//   x = val(42)                // 設為有值
+//   x = nil                    // 設為空
+//   x = err('msg')             // 設為錯誤
+//   x { val| f(it); nil|; err| g(it) }  // match
+//   !x                         // 強制解包（panic if nil/err）
+
+option { val t, nil bool, err str }

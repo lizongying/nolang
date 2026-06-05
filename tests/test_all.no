@@ -1,0 +1,60 @@
+// Nolang 综合测试
+
+// 变量声明（隐式类型推断）
+x = 1          // int64
+y = 1.0        // float64
+name = 'hello' // string
+flag = true    // bool
+
+// 显式类型标注
+a i8 = 2     // int8 类型
+
+// 中连接符变量名
+foo-bar = 42
+hello-world = 'Hello World'
+
+// 函数定义
+add(a int, b int) {
+    result = a + b
+    println('result:', result)
+}
+
+add(a int, b int) (c int, d int) {
+    result = a + b
+    println('result:', result)
+}
+
+// 匿名函数赋值
+//f = (x int, out int64) {
+//    out = int64(x * 2)
+//    println('doubled:', out)
+//}
+
+// 条件循环
+sum = 0
+i = 0
+for i < 5 {
+    sum = sum + i
+    i = i + 1
+}
+println('sum:', sum)
+
+// 数组和切片
+arr [3] = [1, 2, 3]
+slice = [4, 5, 6]
+println('array:', arr)
+println('slice:', slice)
+
+// 三元表达式
+max = sum > 10 ? sum : 10
+println('max:', max)
+
+// 调用函数
+add(10, 20)
+f(5, 0)
+f(a, b)
+
+for i=0; i < 5; i++ {
+    sum = sum + i
+    i = i + 1
+}

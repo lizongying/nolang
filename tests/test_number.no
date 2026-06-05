@@ -1,0 +1,12 @@
+// test_number.no — 數字操作測試
+
+demo-number() {
+    r = 0
+    max(10, 20, r)
+    println-i64(r)
+
+    min(10, 20, r)
+    println-i64(r)
+}
+
+demo-number()

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">
+  <rect x="2" y="2" width="196" height="146" rx="8" fill="#fff" stroke="#333" stroke-width="2"/>
+  <text x="100" y="50" font-family="Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#222">无 GC</text>
+  <text x="100" y="85" font-family="Arial,sans-serif" font-size="14" text-anchor="middle" fill="#555">自动安全内存管理</text>
+</svg>

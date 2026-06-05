@@ -1,0 +1,36 @@
+# .vscodeignore
+
+# 排除開發檔案（但保留 node_modules）
+.git/
+.vscode/
+.github/
+.vscode-test/
+
+# 排除原始碼（只保留編譯後的）
+**/*.ts
+!**/*.d.ts
+client/src/
+server/src/
+
+# 排除 TypeScript 配置
+tsconfig.json
+client/tsconfig.json
+
+# 排除測試檔案
+**/*.test.ts
+**/*.spec.ts
+
+# 排除 node_modules 中的開發依賴
+node_modules/.bin/
+node_modules/@types/
+node_modules/.package-lock.json
+
+# ⚠️ 關鍵：保留 vscode-languageclient
+!node_modules/vscode-languageclient/
+!node_modules/vscode-jsonrpc/
+!node_modules/vscode-languageserver-protocol/
+!node_modules/vscode-languageserver-types/
+
+# 排除其他不需要的
+*.vsix
+.DS_Store

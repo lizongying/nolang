@@ -1,0 +1,18 @@
+// vec/sort — 切片排序
+//
+// 對 i64 切片進行原地排序。
+// 使用插入排序（穩定、無堆分配、適合小數據量）。
+// 實現在 LLVM/Go generator 中（Nolang 尚無陣列索引語法）。
+//
+// 用法：
+//   data = [3, 1, 4, 1, 5]
+//   sort-asc(data, 5)
+//   // data == [1, 1, 3, 4, 5]
+
+// sort-asc: 升序排序 data[0..n)
+sort-asc(data []i64, n i64) {
+}
+
+// sort-desc: 降序排序 data[0..n)
+sort-desc(data []i64, n i64) {
+}

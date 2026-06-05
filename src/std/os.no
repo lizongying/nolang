@@ -1,0 +1,61 @@
+// os - 操作系统接口标准库
+//
+// 内部系统函数（引用传递）：
+//   -get-env(key str, val str, ok bool)
+//   -set-env(k str, v str, ok bool)
+//   -get-wd(dir str, ok bool)
+//   -ch-dir(d str, ok bool)
+//   -mkdir(p str, mode i64, ok bool)
+//   -remove(p str, ok bool)
+//   -rename(o str, n str, ok bool)
+//   -is-file(p str, exists bool)
+//   -exit(c i64)
+//   -get-pid(pid i64)
+//   -host-name(name str, ok bool)
+//   -now(ts i64)
+//   -sleep(s i64, ok bool)
+//   -open-read(path str, fd i64, ok bool)
+//   -open-write(path str, fd i64, ok bool)
+//   -read(fd i64, buf str, n i64, read i64, ok bool)
+//   -write(fd i64, data str, n i64, written i64, ok bool)
+//   -close(fd i64, ok bool)
+//
+// 用户接口（语法糖）：
+//   val = get-env("HOME")  →  -get-env("HOME", val, _)
+//   ok  = remove("/tmp/x") →  -remove("/tmp/x", ok)
+//   pid = get-pid()        →  -get-pid(pid)
+//   fd  = open-read("f")   →  -open-read("f", fd, _)
+//   n   = read(fd, buf, N) →  -read(fd, buf, N, n, _)
+//   ok  = close(fd)        →  -close(fd, ok)
+
+// 环境变量
+get-env(key str) str  { /* LLVM: call i8* @getenv */ }
+set-env(k str, v str) { /* LLVM: call i32 @setenv */ }
+
+// 目录与路径
+get-wd() str  { /* LLVM: call i8* @getcwd → @.os_buf */ }
+ch-dir(d str) { /* LLVM: call i32 @chdir */ }
+mkdir(p str, mode i64) i64 { /* LLVM: call i32 @mkdir → zext */ }
+
+// 文件操作
+remove(p str) i64  { /* LLVM: call i32 @unlink → zext */ }
+rename(o str, n str) i64 { /* LLVM: call i32 @rename → zext */ }
+is-file(p str) i64 { /* LLVM: call i32 @stat → icmp eq → zext */ }
+
+// 文件读写
+open-read(path str) i64  { /* LLVM: call i32 @open(O_RDONLY) → zext */ }
+open-write(path str) i64 { /* LLVM: call i32 @open(O_WRONLY|O_CREAT|O_TRUNC, 0644) → zext */ }
+read(fd i64, buf str, n i64) i64  { /* LLVM: call i64 @read(fd, buf, n) */ }
+write(fd i64, data str, n i64) i64 { /* LLVM: call i64 @write(fd, data, n) */ }
+close(fd i64) i64 { /* LLVM: call i32 @close(fd) → zext */ }
+
+// 进程
+exit(c i64)     { /* LLVM: call void @exit(i32) */ }
+get-pid() i64   { /* LLVM: call i32 @getpid → zext */ }
+
+// 系统信息
+host-name() str { /* LLVM: call i32 @gethostname → @.os_buf */ }
+
+// 时间
+now() i64    { /* LLVM: call i64 @time(i8* null) */ }
+sleep(s i64) i64 { /* LLVM: call i32 @sleep(i32) → zext */ }

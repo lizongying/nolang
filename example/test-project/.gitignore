@@ -1,0 +1,15 @@
+# Nolang project
+dist/
+*.go
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

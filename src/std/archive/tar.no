@@ -1,0 +1,201 @@
+// tar — TAR 歸檔解析
+//
+// 讀取 POSIX ustar 格式的 TAR 歸檔，支援列出條目和提取檔案。
+// 不依賴外部庫，僅操作 []byte。
+//
+// 用法：
+//   tar-info(data)(count)
+//   for i in [0..count) {
+//     tar-name(data, i)(name)
+//     tar-size(data, i)(sz)
+//     tar-type(data, i)(typ)
+//     tar-read(data, i)(content)
+//   }
+
+// ─── 內部輔助 ─────────────────────────────────
+
+// tar-block: 計算第 idx 個條目的區塊偏移（header 起始）
+tar-block(idx i64)(off i64) {
+    off = idx * 512
+}
+
+// tar-next: 跳過第 idx 個條目的 header + data，回傳下個條目偏移
+tar-next(data []byte, idx i64)(next i64) {
+    hdr = idx * 512
+    // 讀取 size 欄位（偏移 124，8 位元組八進制）
+    sz = 0
+    i = 0
+    for i < 12 {
+        c = data[hdr + 124 + i] & 255
+        if c >= 48 && c <= 57 {
+            sz = sz * 8 + (c - 48)
+        }
+        i = i + 1
+    }
+    // data 區塊數 = (sz + 511) / 512
+    blocks = (sz + 511) / 512
+    if blocks < 0 {
+        blocks = 0
+    }
+    next = hdr + 512 + blocks * 512
+}
+
+// ─── 查詢 ─────────────────────────────────────
+
+// tar-count: 計算 TAR 中的有效條目數
+tar-count(data []byte)(count i64) {
+    count = 0
+    off = 0
+    n = len(data)
+    for off + 512 <= n {
+        // 檢查是否為結束標記（全零區塊）
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 {
+            return
+        }
+        count = count + 1
+        tar-next(data, off)(off)
+    }
+}
+
+// tar-name: 讀取第 idx 個條目的檔名
+tar-name(data []byte, idx i64)(name str) {
+    hdr = idx * 512
+    // 最多 100 字元，遇到 \0 結束
+    i = 0
+    for i < 100 {
+        c = data[hdr + i] & 255
+        if c == 0 {
+            break
+        }
+        name[i] = c
+        i = i + 1
+    }
+}
+
+// tar-size: 讀取第 idx 個條目的檔案大小（八進制）
+tar-size(data []byte, idx i64)(sz i64) {
+    hdr = idx * 512
+    sz = 0
+    i = 0
+    for i < 12 {
+        c = data[hdr + 124 + i] & 255
+        if c >= 48 && c <= 57 {
+            sz = sz * 8 + (c - 48)
+        }
+        i = i + 1
+    }
+}
+
+// tar-type: 讀取第 idx 個條目的類型
+// 返回 "file"、"dir" 或 "unknown"
+tar-type(data []byte, idx i64)(typ str) {
+    hdr = idx * 512
+    c = data[hdr + 156] & 255
+    typ = 'unknown'
+    if c == 48 || c == 0 {
+        typ = 'file'
+    }
+    if c == 53 {
+        typ = 'dir'
+    }
+}
+
+// tar-is-dir: 是否為目錄
+tar-is-dir(data []byte, idx i64)(yes i64) {
+    tar-type(data, idx)(t)
+    if t == 'dir' {
+        yes = 1
+    } else {
+        yes = 0
+    }
+}
+
+// ─── 提取 ─────────────────────────────────────
+
+// tar-read: 提取第 idx 個條目的內容
+tar-read(data []byte, idx i64)(out []byte) {
+    tar-size(data, idx)(sz)
+    hdr = idx * 512
+    if sz > 0 {
+        i = 0
+        for i < sz {
+            out[i] = data[hdr + 512 + i]
+            i = i + 1
+        }
+    }
+}
+
+// ─── 迭代器 ───────────────────────────────────
+
+// tar-for-each: 遍歷所有條目
+// 每次回呼傳入 (idx, name, sz, typ, data)
+// 返回 0 繼續，非 0 停止
+tar-for-each(data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    for off + 512 <= n {
+        // 檢查結束
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 { return }
+
+        // 讀取名稱
+        name = ''
+        i = 0
+        for i < 100 {
+            c = data[off + i] & 255
+            if c == 0 { break }
+            name[i] = c
+            i = i + 1
+        }
+
+        // 大小
+        sz = 0
+        i = 0
+        for i < 12 {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + (c - 48)
+            }
+            i = i + 1
+        }
+
+        // 類型
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 { typ = 'file' }
+        elif c == 53 { typ = 'dir' }
+        else { typ = 'unknown' }
+
+        // 資料
+        if sz > 0 {
+            i = 0
+            for i < sz {
+                data-out[i] = data[off + 512 + i]
+                i = i + 1
+            }
+        }
+
+        // 前進到下個條目
+        blocks = (sz + 511) / 512
+        if blocks < 0 { blocks = 0 }
+        off = off + 512 + blocks * 512
+        idx = idx + 1
+    }
+}

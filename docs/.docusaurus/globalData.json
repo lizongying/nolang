@@ -1,0 +1,43 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/nolang/docs",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/nolang/docs",
+          "mainDocId": "intro",
+          "docs": [
+            {
+              "id": "intro",
+              "path": "/nolang/docs/intro",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "lang/syntax",
+              "path": "/nolang/docs/lang/syntax",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "std/overview",
+              "path": "/nolang/docs/std/overview",
+              "sidebar": "tutorialSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "tutorialSidebar": {
+              "link": {
+                "path": "/nolang/docs/intro",
+                "label": "intro"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

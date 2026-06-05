@@ -1,0 +1,14 @@
+{
+  // Nolang Project Configuration
+  "name": "test-project",
+  "version": "1.0.0",
+  "description": "A new Nolang project",
+  "dependencies": {
+    "fmt": "*"
+  },
+  "main": "main.no",
+  "compiler": {
+    "target": "go",
+    "output": "./dist"
+  }
+}

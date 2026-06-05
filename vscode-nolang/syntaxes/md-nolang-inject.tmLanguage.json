@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "inject.nolang.md",
+  "injectionSelector": "L:text.html.markdown - markup.raw.inline",
+  "patterns": [
+    {
+      "begin": "(^|\\G)(\\s*)(```|~~~)\\s*nolang\\s*$",
+      "end": "^\\s*(\\3)\\s*$",
+      "name": "meta.embedded.block.nolang",
+      "contentName": "source.nolang",
+      "patterns": [
+        {
+          "include": "source.nolang"
+        }
+      ]
+    }
+  ]
+}

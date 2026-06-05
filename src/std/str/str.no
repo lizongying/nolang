@@ -1,0 +1,162 @@
+// 这是一个union类型 str｜str-smail
+// len最高位如果是1，则是str-smail，不用tag分辨
+// str-smail仅分配到栈上，128 字节
+// *byte替换原来的ptr表示，更清晰
+str-smail {
+    len byte
+    data [127]byte
+}
+
+str {
+    len i64
+    data *byte
+}
+
+str.len() (n i64) {
+    n = self.len
+}
+
+str-eq(a str, b str, n i64) {
+    eq = 1
+    i = 0
+    for i < n {
+        ai = a[i] & 255
+        bi = b[i] & 255
+        
+        
+        i = i + 1
+    }
+}
+
+str-at(s str, i i64) {
+    c = s[i] & 255
+}
+
+str-copy(src str, dst str, n i64) {
+    i = 0
+    for i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+str-fill(s str, n i64, val i64) {
+    i = 0
+    for i < n {
+        s[i] = val & 255
+        i = i + 1
+    }
+}
+
+str-index(s str, sn i64, target str, tn i64) {
+    pos = -1
+    
+    
+    limit = sn - tn
+    i = 0
+    for i <= limit {
+        matched matched = 1
+        j j = 0
+        for j < tn {
+            sj sj = s[i + j] & 255
+            tj tj = target[j] & 255
+            
+            j j = j + 1
+        }
+        
+        i i = i + 1
+    }
+}
+str-contains(s str, sn i64, target str, tn i64) {
+    str-index(s, sn, target, tn)(pos)
+    
+}
+str-starts-with(s str, sn i64, target str, tn i64) {
+    yes yes = 1
+    
+    i i = 0
+    for i < tn {
+        si si = s[i] & 255
+        ti ti = target[i] & 255
+        
+        i i = i + 1
+    }
+}
+
+str-ends-with(s str, sn i64, target str, tn i64) {
+    yes = 1
+    
+    off off = sn - tn
+    i = 0
+    for i < tn {
+        si = s[off + i] & 255
+        ti = target[i] & 255
+        
+        i = i + 1
+    }
+}
+
+str-trim(s str, n i64) {
+    start = 0
+    for start < n {
+        
+        start start = start + 1
+    }
+    end = n - 1
+    for end >= start {
+        
+        end = end - 1
+    }
+    out-n out-n = end - start + 1
+    
+    i = 0
+    for i < out-n {
+        out[i] = s[start + i]
+        i = i + 1
+    }
+}
+
+str-repeat(s str, sn i64, times i64, out str, out-n i64) {
+    out-n = sn * times
+    i = 0
+    for i < times {
+        j = 0
+        for j < sn {
+            out[i * sn + j] = s[j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+str-to-upper(s str, n i64) {
+    i = 0
+    for i < n {
+        c = s[i] & 255
+        
+        i = i + 1
+    }
+}
+
+str-to-lower(s str, n i64) {
+    i = 0
+    for i < n {
+        c = s[i] & 255
+        
+        i = i + 1
+    }
+}
+
+str-to-bytes(s str, n i64) {
+    for i {
+        out[i] = s[i] & 255
+    }
+}
+
+str-from-bytes(src []byte, n i64) {
+    i = 0
+    for i < n {
+        out[i] = src[i] & 255
+        i = i + 1
+    }
+}

@@ -1,0 +1,93 @@
+// vec — 切片操作
+//
+// 泛型參數 n(大小) t(型別) 自動推斷。
+
+// vec-len: 回傳切片長度
+vec-len(v []t)(n i64) {
+    n = len(v)
+}
+
+// vec-push: 在末尾追加元素（需確保容量足夠）
+vec-push(v []t, val t)(new-n i64) {
+    n = len(v)
+    v[n] = val
+    new-n = n + 1
+}
+
+// vec-pop: 從末尾彈出元素
+vec-pop(v []t)(val t, new-n i64) {
+    n = len(v)
+    if n > 0 {
+        new-n = n - 1
+        val = v[new-n]
+    } else {
+        new-n = 0
+    }
+}
+
+// vec-contains: 是否包含值 val
+vec-contains(v []t, n i64, val t)(found i64) {
+    found = 0
+    i = 0
+    for i < n {
+        d = v[i] - val
+        if d == 0 {
+            found = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// vec-reverse: 反轉前 n 個元素
+vec-reverse(v []t, n i64) {
+    i = 0
+    j = n - 1
+    for i < j {
+        tmp = v[i]
+        v[i] = v[j]
+        v[j] = tmp
+        i = i + 1
+        j = j - 1
+    }
+}
+
+// vec-clone: 將 src 前 n 個元素複製到 dst
+vec-clone(src []t, n i64, dst []t) {
+    i = 0
+    for i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+// vec-fill: 前 n 個元素填充為 val
+vec-fill(v []t, n i64, val t) {
+    i = 0
+    for i < n {
+        v[i] = val
+        i = i + 1
+    }
+}
+
+// vec-to-arr: 將 []t 切片複製到 [n]t 陣列
+vec-to-arr(v []t)(out ?[n]t) {
+    if len(v) != n {
+        out = nil
+        return
+    }
+    for i in [0..n) {
+        !out[i] = v[i]
+    }
+}
+
+// []t.to-arr: 切片方法，轉為 [n]t 陣列
+[]t.to-arr()(out ?[n]t) {
+    if self.len() != n {
+        out = nil
+        return
+    }
+    for i in [0..n) {
+        !out[i] = self[i]
+    }
+}

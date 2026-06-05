@@ -1,0 +1,35 @@
+// Nolang 综合测试
+
+// 变量声明（隐式类型推断）
+x = 1          // i64
+y = 1.0        // f64
+name = 'hello' // str
+flag = true    // bool
+
+// 显式类型标注
+a i8 = 2     // i8 类型
+
+// 特殊类型标注
+i8 = 3     // i8 类型
+
+i8
+
+// 中连接符变量名
+foo-bar = 42
+foo-bar = 41
+foo-bar = 40
+hello-world = 'Hello World'
+
+// 函数定义
+add(a i64, b i64) {
+    result = a + b
+    println('result:', result)
+}
+
+
+add2(a i64, b i64)(c i64, d i64) {
+    result = a + b
+    println('result:', result)
+}
+
+

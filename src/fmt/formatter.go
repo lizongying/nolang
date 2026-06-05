@@ -1,0 +1,651 @@
+package fmt
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
+)
+
+type Formatter struct{}
+
+func NewFormatter() *Formatter {
+	return &Formatter{}
+}
+
+type formatter struct {
+	buf    strings.Builder
+	indent int
+}
+
+func (f *formatter) writeIndent() {
+	f.buf.WriteString(strings.Repeat("    ", f.indent))
+}
+
+func (f *formatter) write(s string) {
+	f.buf.WriteString(s)
+}
+
+func (f *formatter) writef(format string, args ...interface{}) {
+	f.buf.WriteString(fmt.Sprintf(format, args...))
+}
+
+func (f *formatter) newline() {
+	f.buf.WriteString("\n")
+	f.writeIndent()
+}
+
+func (f *formatter) formatProgram(p *parser.Program) {
+	for i, stmt := range p.Statements {
+		if i > 0 {
+			f.newline()
+		}
+		f.formatStatement(stmt)
+	}
+}
+
+func (f *formatter) formatStatement(stmt parser.Statement) {
+	switch s := stmt.(type) {
+	case *parser.UseStatement:
+		f.formatUseStatement(s)
+	case *parser.LetStatement:
+		f.formatLetStatement(s)
+	case *parser.ReturnStatement:
+		f.formatReturnStatement(s)
+	case *parser.ExpressionStatement:
+		f.formatExpression(s.Expression)
+	case *parser.FunctionDefinition:
+		f.formatFunctionDefinition(s)
+	case *parser.ForStatement:
+		f.formatForStatement(s)
+	case *parser.BreakStatement:
+		f.formatBreakStatement(s)
+	case *parser.ContinueStatement:
+		f.formatContinueStatement(s)
+	case *parser.BlockStatement:
+		f.formatBlockStatement(s)
+	case *parser.EnumDefinition:
+		f.formatEnumDefinition(s)
+	case *parser.TaggedEnumDefinition:
+		f.formatTaggedEnumDefinition(s)
+	case *parser.InterfaceDefinition:
+		f.formatInterfaceDefinition(s)
+	case *parser.StructDefinition:
+		f.formatStructDefinition(s)
+	}
+}
+
+func (f *formatter) formatExpression(expr parser.Expression) {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		f.write(e.Value)
+	case *parser.IntegerLiteral:
+		f.write(e.Token.Literal)
+	case *parser.ByteLiteral:
+		f.write(e.Token.Literal)
+	case *parser.FloatLiteral:
+		f.write(e.Token.Literal)
+	case *parser.StringLiteral:
+		f.write("'")
+		f.write(e.Value)
+		f.write("'")
+	case *parser.CharLiteral:
+		f.write("'")
+		f.write(e.Value)
+		f.write("'")
+	case *parser.BooleanLiteral:
+		if e.Value {
+			f.write("true")
+		} else {
+			f.write("false")
+		}
+	case *parser.NilLiteral:
+		f.write("nil")
+	case *parser.PrefixExpression:
+		f.formatPrefixExpression(e)
+	case *parser.InfixExpression:
+		f.formatInfixExpression(e)
+	case *parser.CallExpression:
+		f.formatCallExpression(e)
+	case *parser.DotExpression:
+		f.formatDotExpression(e)
+	case *parser.IfExpression:
+		f.formatIfExpression(e)
+	case *parser.FunctionLiteral:
+		f.formatFunctionLiteral(e)
+	case *parser.IndexExpression:
+		f.formatIndexExpression(e)
+	case *parser.SliceExpression:
+		f.formatSliceExpression(e)
+	case *parser.RangeExpression:
+		f.formatRangeExpression(e)
+	case *parser.ArrayLiteral:
+		f.formatArrayLiteral(e)
+	case *parser.SliceLiteral:
+		f.formatSliceLiteral(e)
+	case *parser.StructLiteral:
+		f.formatStructLiteral(e)
+	case *parser.AssignExpression:
+		f.formatAssignExpression(e)
+	case *parser.ConditionalExpression:
+		f.formatConditionalExpression(e)
+	case *parser.NullableType:
+		f.write("?")
+		f.formatExpression(e.Type)
+	case *parser.PointerType:
+		f.write("ptr ")
+		f.formatExpression(e.Type)
+	}
+}
+
+func (f *formatter) formatUseStatement(s *parser.UseStatement) {
+	f.write("use ")
+	f.write(s.Path)
+	if s.Function != "" {
+		f.write(".")
+		f.write(s.Function)
+	}
+	if s.Alias != "" {
+		f.write(" ")
+		f.write(s.Alias)
+	}
+}
+
+func (f *formatter) formatLetStatement(s *parser.LetStatement) {
+	f.formatExpression(s.Name)
+	if s.Type != nil && s.Type.Value != "" && !isInferredType(s) {
+		if s.IsSlice {
+			f.write(" []")
+			f.write(s.ElemType)
+		} else if s.ArraySize > 0 {
+			f.writef(" [%d]", s.ArraySize)
+			f.write(s.ElemType)
+		} else if s.IsOption {
+			f.write(" ?")
+			f.write(s.Type.Value)
+		} else {
+			f.write(" ")
+			f.write(s.Type.Value)
+		}
+	}
+	if s.Value != nil {
+		f.write(" = ")
+		f.formatExpression(s.Value)
+	}
+}
+
+// isInferredType checks if the type was inferred by the parser (not written in source).
+// The parser sets Type.Token to the same position as Name.Token for inferred types.
+func isInferredType(s *parser.LetStatement) bool {
+	if s.Type == nil || s.Name == nil {
+		return false
+	}
+	return s.Type.Token.Line == s.Name.Token.Line &&
+		s.Type.Token.Column == s.Name.Token.Column
+}
+
+func (f *formatter) formatReturnStatement(s *parser.ReturnStatement) {
+	f.write("return")
+	if s.ReturnValue != nil {
+		f.write(" ")
+		f.formatExpression(s.ReturnValue)
+	}
+}
+
+func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
+	f.write(s.Name)
+	if len(s.GenericParams) > 0 {
+		f.write("<")
+		for i, gp := range s.GenericParams {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.write(gp)
+		}
+		f.write(">")
+	}
+	f.write("(")
+	// Skip implicit self parameter for method definitions
+	params := s.Parameters
+	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
+		params = params[1:]
+	}
+	f.formatParameters(params)
+	f.write(")")
+	if len(s.Results) > 0 {
+		f.write(" (")
+		f.formatParameters(s.Results)
+		f.write(")")
+	}
+	f.write(" {")
+	f.indent++
+	for _, stmt := range s.Body.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+// isMethodDef reports whether a function definition is a method (name contains '.').
+func isMethodDef(s *parser.FunctionDefinition) bool {
+	return strings.Contains(s.Name, ".")
+}
+
+func (f *formatter) formatParameters(params []*parser.Parameter) {
+	for i, p := range params {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.write(p.Name)
+		if p.Type != "" {
+			f.write(" ")
+			f.write(p.Type)
+		}
+	}
+}
+
+func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
+	f.write("{")
+	f.indent++
+	for _, stmt := range s.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatPrefixExpression(e *parser.PrefixExpression) {
+	f.write(e.Operator)
+	if e.Operator == "!" {
+		f.write(" ")
+	}
+	f.formatExpression(e.Right)
+}
+
+func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
+	f.formatExpression(e.Left)
+	f.write(" ")
+	f.write(e.Operator)
+	f.write(" ")
+	f.formatExpression(e.Right)
+}
+
+func (f *formatter) formatCallExpression(e *parser.CallExpression) {
+	f.formatExpression(e.Function)
+	if len(e.GenericArgs) > 0 {
+		f.write("<")
+		for i, ga := range e.GenericArgs {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.formatExpression(ga)
+		}
+		f.write(">")
+	}
+	f.write("(")
+	for i, arg := range e.Arguments {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.formatExpression(arg)
+	}
+	f.write(")")
+}
+
+func (f *formatter) formatDotExpression(e *parser.DotExpression) {
+	f.formatExpression(e.Receiver)
+	f.write(".")
+	f.write(e.Property)
+}
+
+func (f *formatter) formatIfExpression(e *parser.IfExpression) {
+	f.write("if ")
+	f.formatExpression(e.Condition)
+	f.write(" {")
+	f.indent++
+	for _, stmt := range e.Consequence.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+
+	if e.Alternative != nil {
+		// Check if alternative contains a single if expression (elif desugaring)
+		if isElifBlock(e.Alternative) {
+			ifExpr := e.Alternative.Statements[0].(*parser.ExpressionStatement).Expression.(*parser.IfExpression)
+			f.write(" elif ")
+			f.formatExpression(ifExpr.Condition)
+			f.write(" {")
+			f.indent++
+			for _, stmt := range ifExpr.Consequence.Statements {
+				f.newline()
+				f.formatStatement(stmt)
+			}
+			f.indent--
+			f.newline()
+			f.write("}")
+			// Handle nested alternative
+			if ifExpr.Alternative != nil {
+				f.formatElifChain(ifExpr.Alternative)
+			}
+		} else {
+			f.write(" else {")
+			f.indent++
+			for _, stmt := range e.Alternative.Statements {
+				f.newline()
+				f.formatStatement(stmt)
+			}
+			f.indent--
+			f.newline()
+			f.write("}")
+		}
+	}
+}
+
+func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
+	if isElifBlock(alt) {
+		ifExpr := alt.Statements[0].(*parser.ExpressionStatement).Expression.(*parser.IfExpression)
+		f.write(" elif ")
+		f.formatExpression(ifExpr.Condition)
+		f.write(" {")
+		f.indent++
+		for _, stmt := range ifExpr.Consequence.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.indent--
+		f.newline()
+		f.write("}")
+		if ifExpr.Alternative != nil {
+			f.formatElifChain(ifExpr.Alternative)
+		}
+	} else {
+		f.write(" else {")
+		f.indent++
+		for _, stmt := range alt.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.indent--
+		f.newline()
+		f.write("}")
+	}
+}
+
+func isElifBlock(bs *parser.BlockStatement) bool {
+	if len(bs.Statements) != 1 {
+		return false
+	}
+	es, ok := bs.Statements[0].(*parser.ExpressionStatement)
+	if !ok {
+		return false
+	}
+	_, ok = es.Expression.(*parser.IfExpression)
+	return ok
+}
+
+func (f *formatter) formatForStatement(s *parser.ForStatement) {
+	if s.Label != "" {
+		f.write(s.Label)
+		f.write(" ")
+	}
+	f.write("for")
+
+	if s.Variable != "" && s.Range != nil {
+		// range for: for i in [a..b]
+		f.write(" ")
+		f.write(s.Variable)
+		f.write(" in ")
+		if s.RangeStr != "" {
+			f.write("'")
+			f.write(s.RangeStr)
+			f.write("'")
+		} else {
+			f.formatRangeBrackets(s.Range)
+		}
+	} else if s.Init != nil {
+		// C-style for: for init; cond; update { }
+		f.write(" ")
+		f.formatStatement(s.Init)
+		f.write("; ")
+		f.formatExpression(s.Condition)
+		f.write("; ")
+		f.formatStatement(s.Update)
+	} else if s.Condition != nil {
+		// while-style: for cond { }
+		f.write(" ")
+		f.formatExpression(s.Condition)
+	}
+	// else: infinite loop: for { }
+
+	f.write(" {")
+	f.indent++
+	for _, stmt := range s.Body.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {
+	if re.LeftInc {
+		f.write("[")
+	} else {
+		f.write("(")
+	}
+	f.formatExpression(re.Start)
+	f.write("..")
+	f.formatExpression(re.End)
+	if re.RightInc {
+		f.write("]")
+	} else {
+		f.write(")")
+	}
+}
+
+func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
+	f.write("break")
+	if s.Label != "" {
+		f.write(" ")
+		f.write(s.Label)
+	}
+}
+
+func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
+	f.write("continue")
+	if s.Label != "" {
+		f.write(" ")
+		f.write(s.Label)
+	}
+}
+
+func (f *formatter) formatAssignExpression(e *parser.AssignExpression) {
+	f.formatExpression(e.Left)
+	f.write(" = ")
+	f.formatExpression(e.Value)
+}
+
+func (f *formatter) formatConditionalExpression(e *parser.ConditionalExpression) {
+	f.formatExpression(e.Condition)
+	f.write(" ? ")
+	f.formatExpression(e.Consequence)
+	f.write(" : ")
+	f.formatExpression(e.Alternative)
+}
+
+func (f *formatter) formatIndexExpression(e *parser.IndexExpression) {
+	f.formatExpression(e.Left)
+	f.write("[")
+	f.formatExpression(e.Index)
+	f.write("]")
+}
+
+func (f *formatter) formatSliceExpression(e *parser.SliceExpression) {
+	f.formatExpression(e.Left)
+	if e.Range != nil {
+		f.formatRangeBrackets(e.Range)
+	} else {
+		f.write("[..]")
+	}
+}
+
+func (f *formatter) formatRangeExpression(e *parser.RangeExpression) {
+	f.formatRangeBrackets(e)
+}
+
+func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
+	f.write("[")
+	if e.Size != nil {
+		f.formatExpression(e.Size)
+	}
+	f.write("]{")
+	for i, el := range e.Elements {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.formatExpression(el)
+	}
+	f.write("}")
+}
+
+func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
+	f.write("[]{")
+	for i, el := range e.Elements {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.formatExpression(el)
+	}
+	f.write("}")
+}
+
+func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
+	f.write(e.Type)
+	f.write("{")
+	for i, field := range e.Fields {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.write(field.Name)
+		if field.Value != nil {
+			f.write(": ")
+			f.formatExpression(field.Value)
+		}
+	}
+	f.write("}")
+}
+
+func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
+	f.write(s.Name)
+	if len(s.Implements) > 0 {
+		f.write(" : ")
+		f.write(strings.Join(s.Implements, ", "))
+	}
+	f.write(" {")
+	f.indent++
+	for _, field := range s.Fields {
+		f.newline()
+		f.write(field.Name)
+		f.write(" ")
+		if field.IsSlice {
+			f.write("[]")
+			f.write(field.Type)
+		} else if field.ArraySize > 0 {
+			f.writef("[%d]", field.ArraySize)
+			f.write(field.Type)
+		} else {
+			f.write(field.Type)
+		}
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatEnumDefinition(s *parser.EnumDefinition) {
+	f.write(s.Name)
+	f.write(" {")
+	for i, v := range s.Values {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.write(v.Name)
+	}
+	f.write("}")
+}
+
+func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
+	f.write(s.Name)
+	f.write(" {")
+	f.indent++
+	for _, v := range s.Variants {
+		f.newline()
+		f.write(v.Name)
+		f.write(" ")
+		f.write(v.Type)
+		f.write(",")
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
+	f.write(s.Name)
+	f.write(" {")
+	f.indent++
+	for _, m := range s.Methods {
+		f.newline()
+		f.write(m.Name)
+		f.write("()")
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
+	f.write("(")
+	f.formatParameters(e.Parameters)
+	f.write(")")
+	f.write(" {")
+	f.indent++
+	for _, stmt := range e.Body.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func Format(code string) string {
+	if strings.TrimSpace(code) == "" {
+		return ""
+	}
+
+	l := lexer.New(code)
+	p := parser.New(l)
+	program := p.ParseProgram()
+
+	if program == nil || len(program.Statements) == 0 {
+		return ""
+	}
+
+	f := &formatter{}
+	f.formatProgram(program)
+	return f.buf.String()
+}
+
+func (f *Formatter) Format(code string) string {
+	return Format(code)
+}

@@ -1,0 +1,17 @@
+// struct test
+user {
+    name str
+    age i64
+}
+
+u = user {
+    name: 'abc'
+    age: 20
+}
+
+println('struct:')
+u.name = 'def'
+u.age = 25
+
+// Can't print struct fields directly yet
+println('struct test ok')

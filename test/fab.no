@@ -1,0 +1,15 @@
+// fib 模組 — 提供 fib 函數
+
+fib() {
+    n = 10
+    a = 0
+    b = 1
+    i = 2
+    for i <= n {
+        c = a + b
+        a = b
+        b = c
+        i = i + 1
+    }
+    println-i64(b)
+}
