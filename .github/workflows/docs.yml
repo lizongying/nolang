@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+  pull_request:
+    paths:
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
