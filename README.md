@@ -80,8 +80,8 @@ hello-world = 'Hello World'
 - arr // 数组类型
 - vec // 切片类型
 
-- ptr // 標準庫專用
-- any // 標準庫專用
+- * //  指針（ptr） 標準庫專用
+- any // 任意類型 標準庫專用
 
 高級類型
 
@@ -193,10 +193,6 @@ for i < 10 {
     i = i + 1
 }
 println('Sum:', sum)
-
-// 使用数组
-numbers = 5[1, 2, 3, 4, 5]
-println(numbers)
 
 
 // ✅ match 语句：分支体是代码块
@@ -370,6 +366,12 @@ outer for i in [0..10) {
 **数组arr（固定大小）：**
 
 ```nolang
+
+
+// 使用数组
+numbers = [1, 2, 3, 4, 5]
+println(numbers)
+
 a [3] = [1, 2, 3]       // 长度为 3 的数组 i64
 a [3]u16 = [1, 2, 3] //指定类型的数组
 ```
@@ -466,9 +468,9 @@ enum-name {
 
 // 這是一個普通的struct，多個字段沒有逗號
 struct-name {
-    a
-    b
-    c
+    a t
+    b u
+    c v
 }
 
 // 在普通方法中，a,b,c   實際是定義的a=0，b=1, c=2... 這是和其他語言不一致的地方。
@@ -559,19 +561,15 @@ arr_to_vec(arr [n]t) (out []t) {
 o ?i64           // 宣告
 
 o = nil          // 設為空 
-o = val(42)      // 設為有值
+o = 42           // 設為有值
 o = err('msg')   // 設為錯誤 
-
-// 等價
-o = val(42) 
-!?o = 42
 ```
 
-### 類型轉換
+### 類型強制轉換
 
 ```nolang
 
-// 返回字符串？
+// 返回類型名稱字符串
 a = typeof(x)
 
 ?y = x as i64
