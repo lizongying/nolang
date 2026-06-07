@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	nbuild "github.com/lizongying/nolang/build"
 	nfmt "github.com/lizongying/nolang/fmt"
 )
 
@@ -40,19 +40,19 @@ func main() {
 		initProject()
 	case "new":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang-cli new <project-name>")
+			fmt.Println("Usage: nolang new <project-name>")
 			return
 		}
 		newProject(os.Args[2])
 	case "add":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang-cli add <package-name>")
+			fmt.Println("Usage: nolang add <package-name>")
 			return
 		}
 		addDependency(os.Args[2])
 	case "remove":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang-cli remove <package-name>")
+			fmt.Println("Usage: nolang remove <package-name>")
 			return
 		}
 		removeDependency(os.Args[2])
@@ -72,18 +72,18 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("Nolang CLI - Scaffolding Tool")
+	fmt.Println("Nolang - Nolang Programming Language")
 	fmt.Println("")
 	fmt.Println("Usage:")
-	fmt.Println("  nolang-cli init            Initialize a new Nolang project in current directory")
-	fmt.Println("  nolang-cli new <name>      Create a new Nolang project")
-	fmt.Println("  nolang-cli add <pkg>       Add a dependency")
-	fmt.Println("  nolang-cli remove <pkg>    Remove a dependency")
-	fmt.Println("  nolang-cli update          Update dependencies")
-	fmt.Println("  nolang-cli list            List dependencies")
-	fmt.Println("  nolang-cli install         Install dependencies")
-	fmt.Println("  nolang-cli fmt [flags] <file|dir>  Format source files")
-	fmt.Println("  nolang-cli build [flags] <file|dir>  Build a Nolang project")
+	fmt.Println("  nolang init             Initialize a new Nolang project in current directory")
+	fmt.Println("  nolang new <name>       Create a new Nolang project")
+	fmt.Println("  nolang fmt [flags] <file|dir>  Format source files")
+	fmt.Println("  nolang build [flags] <file|dir>  Build a Nolang project")
+	fmt.Println("  nolang add <pkg>        Add a dependency")
+	fmt.Println("  nolang remove <pkg>     Remove a dependency")
+	fmt.Println("  nolang update           Update dependencies")
+	fmt.Println("  nolang list             List dependencies")
+	fmt.Println("  nolang install          Install dependencies")
 	fmt.Println("")
 }
 
@@ -260,19 +260,9 @@ greet(name str) {
 }
 
 func addDependency(name string) {
-	data, err := os.ReadFile("nolang.jsonc")
+	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Println("Error: nolang.jsonc not found. Run 'nolang-cli init' first.")
-		return
-	}
-
-	// Remove comments and parse as JSON
-	cleaned := removeComments(string(data))
-
-	var config ProjectConfig
-	err = json.Unmarshal([]byte(cleaned), &config)
-	if err != nil {
-		fmt.Printf("Error parsing config: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
@@ -281,16 +271,14 @@ func addDependency(name string) {
 	}
 
 	config.Dependencies[name] = "*"
-
-	createConfigFile(config)
-
+	createConfigFile(*config)
 	fmt.Printf("Added dependency: %s\n", name)
 }
 
-func loadConfig() (*ProjectConfig, error) {
+func loadProjectConfig() (*ProjectConfig, error) {
 	data, err := os.ReadFile("nolang.jsonc")
 	if err != nil {
-		return nil, fmt.Errorf("nolang.jsonc not found. Run 'nolang-cli init' first")
+		return nil, fmt.Errorf("nolang.jsonc not found. Run 'nolang init' first")
 	}
 	cleaned := removeComments(string(data))
 	var config ProjectConfig
@@ -299,7 +287,7 @@ func loadConfig() (*ProjectConfig, error) {
 }
 
 func removeDependency(name string) {
-	config, err := loadConfig()
+	config, err := loadProjectConfig()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -318,7 +306,7 @@ func removeDependency(name string) {
 }
 
 func updateDependencies() {
-	config, err := loadConfig()
+	config, err := loadProjectConfig()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -337,7 +325,7 @@ func updateDependencies() {
 }
 
 func listDependencies() {
-	config, err := loadConfig()
+	config, err := loadProjectConfig()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -415,7 +403,7 @@ func fmtCommand(args []string) {
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	dirMode := fs.Bool("d", false, "process directory mode")
 	fs.Usage = func() {
-		fmt.Println("Usage: nolang-cli fmt [flags] <file|directory>")
+		fmt.Println("Usage: nolang fmt [flags] <file|directory>")
 		fmt.Println("\nFlags:")
 		fs.PrintDefaults()
 	}
@@ -488,30 +476,38 @@ func fmtProcessDirectory(dirname string, writeInPlace bool) error {
 }
 
 func buildCommand(args []string) {
-	exePath, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot determine executable path: %v\n", err)
+	fs := flag.NewFlagSet("build", flag.ExitOnError)
+	outputFile := fs.String("o", "", "Output file path")
+	targetStr := fs.String("target", "llvm", "Target: llvm, no")
+	cc := fs.String("cc", "clang", "C compiler for llvm target: clang, zig")
+	testMode := fs.Bool("test", false, "Build test module (test.no)")
+	exportMode := fs.Bool("export", false, "Build library module (lib.no)")
+	verbose := fs.Bool("v", false, "Verbose mode")
+	fs.Usage = func() {
+		fmt.Println("Usage: nolang build [flags] <file|directory>")
+		fmt.Println("\nFlags:")
+		fs.PrintDefaults()
+	}
+	_ = fs.Parse(args)
+
+	if len(fs.Args()) != 1 {
+		fmt.Println("Error: Missing input file")
+		fs.Usage()
 		os.Exit(1)
 	}
-	binDir := filepath.Dir(exePath)
-	buildBin := filepath.Join(binDir, "nolang-build")
 
-	if _, err := os.Stat(buildBin); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: nolang-build not found at %s\n", buildBin)
-		fmt.Fprintf(os.Stderr, "Run 'make nolang-build' to build it first.\n")
-		os.Exit(1)
+	inputPath := fs.Args()[0]
+	opts := nbuild.BuildOptions{
+		Target:     *targetStr,
+		CC:         *cc,
+		TestMode:   *testMode,
+		ExportMode: *exportMode,
+		Verbose:    *verbose,
+		Output:     *outputFile,
 	}
 
-	cmd := exec.Command(buildBin, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		fmt.Fprintf(os.Stderr, "Error running nolang-build: %v\n", err)
+	if err := nbuild.BuildFile(inputPath, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

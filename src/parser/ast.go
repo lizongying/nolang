@@ -59,10 +59,10 @@ type LetStatement struct {
 	Name      *Identifier
 	Type      *Identifier
 	Value     Expression
-	ArraySize int64 // [N] 陣列大小，0 = 非陣列
-	IsSlice   bool  // [] 切片標記
+	ArraySize int64  // [N] 陣列大小，0 = 非陣列
+	IsSlice   bool   // [] 切片標記
 	ElemType  string // 元素型別（陣列/切片用）
-	IsOption  bool  // ?type 標記
+	IsOption  bool   // ?type 標記
 }
 
 func (ls *LetStatement) statementNode()       {}
@@ -132,11 +132,11 @@ func (p *Parameter) Print() {
 type FunctionDefinition struct {
 	Token         lexer.Token
 	Name          string
-	GenericParams []string       // 泛型參數：<N, M, ...>
+	GenericParams []string // 泛型參數：<N, M, ...>
 	Parameters    []*Parameter
 	Results       []*Parameter
 	Body          *BlockStatement
-	IsVariadic    bool           // 是否有 ...any 可變參數
+	IsVariadic    bool // 是否有 ...any 可變參數
 }
 
 func (fd *FunctionDefinition) statementNode()       {}
@@ -162,7 +162,7 @@ func (fl *FunctionLiteral) Print() {
 type CallExpression struct {
 	Token       lexer.Token
 	Function    Expression
-	GenericArgs []Expression    // 泛型引數：<type, ...>
+	GenericArgs []Expression // 泛型引數：<type, ...>
 	Arguments   []Expression
 }
 
@@ -323,11 +323,11 @@ func (ie *IfExpression) Print() {
 
 // for i in [a..b], (a..b], [a..b), (a..b)
 type RangeExpression struct {
-	Token    lexer.Token   // [ or (
-	Start    Expression    // a
-	End      Expression    // b
-	LeftInc  bool          // [ = true, ( = false
-	RightInc bool          // ] = true, ) = false
+	Token    lexer.Token // [ or (
+	Start    Expression  // a
+	End      Expression  // b
+	LeftInc  bool        // [ = true, ( = false
+	RightInc bool        // ] = true, ) = false
 }
 
 func (re *RangeExpression) expressionNode()      {}
@@ -367,9 +367,9 @@ func (ie *IndexExpression) Print() {
 
 // u.name = value 欄位賦值
 type AssignExpression struct {
-	Token    lexer.Token
-	Left     Expression // DotExpression
-	Value    Expression
+	Token lexer.Token
+	Left  Expression // DotExpression
+	Value Expression
 }
 
 func (ae *AssignExpression) expressionNode()      {}
@@ -393,15 +393,17 @@ func (ce *ConditionalExpression) Print() {
 }
 
 type ForStatement struct {
-	Token     lexer.Token
-	Label     string          // 循環名稱（空 = 未命名）
-	Init      Statement
-	Condition Expression
-	Update    Statement
-	Body      *BlockStatement
-	Variable  string          // range for 的變數名
-	Range     *RangeExpression // [a..b], (a..b) 等
-	RangeStr  string          // 字串遍歷: for i in 'hello'
+	Token         lexer.Token
+	Label         string // 循環名稱（空 = 未命名）
+	Init          Statement
+	Condition     Expression
+	Update        Statement
+	Body          *BlockStatement
+	Variable      string           // range for 的變數名
+	Range         *RangeExpression // [a..b], (a..b) 等
+	RangeStr      string           // 字串遍歷: for i in 'hello'
+	RangeIdent    string           // 陣列/切片遍歷: for i in a
+	RangeSliceLit *SliceLiteral    // 匿名切片遍歷: for i in [1, 2, 3]
 }
 
 func (fs *ForStatement) statementNode()       {}
@@ -458,9 +460,9 @@ func (sl *SliceLiteral) Print() {
 type StructField struct {
 	Token     lexer.Token
 	Name      string
-	Type      string   // 元素型別（對陣列/切片為元素型別）
-	ArraySize int64    // >0 = 定長陣列 [N]type
-	IsSlice   bool     // true = 切片 []type
+	Type      string // 元素型別（對陣列/切片為元素型別）
+	ArraySize int64  // >0 = 定長陣列 [N]type
+	IsSlice   bool   // true = 切片 []type
 	Value     Expression
 }
 

@@ -27,6 +27,23 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		}
 		return "0"
 	case *parser.Identifier:
+		// Option type variable: extract data from data field (field 1)
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[e.Value]; ok && t == "%option" {
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%%s.data.gep.%d", e.Value, g.tmpIdx)
+				g.tmpIdx++
+				dataPtr := fmt.Sprintf("%%%s.data.ptr.%d", e.Value, g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%%s.data.val.%d", e.Value, g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, e.Value))
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to i64*\n", g.indent(), dataPtr, dataGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataPtr))
+				}
+				return dataLoad
+			}
+		}
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%%s.val.%d", e.Value, g.tmpIdx)
 		if sb != nil {
@@ -46,9 +63,9 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		escaped := g.escapeLLVMString(e.Value)
 		strLen := len(e.Value)
 		g.fmtGlobals = append(g.fmtGlobals,
-			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"", idx, strLen+1, escaped))
+			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", idx, strLen, escaped))
 		dataPtr := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0)",
-			strLen+1, strLen+1, idx)
+			strLen, strLen, idx)
 
 		if sb != nil {
 			if strLen <= 127 {
@@ -115,6 +132,15 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), reg, result))
 			}
+			// If call returns i32 (printf, etc.), zext to i64 for consistency
+			if strings.Contains(result, "call i32") {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), zextReg, reg))
+				}
+				return zextReg
+			}
 			return reg
 		}
 		return result
@@ -150,6 +176,10 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	g.tmpIdx++
 	labelId := g.tmpIdx
 
+	// Save and reset nestedIfEndId so we can detect if a nested if is generated
+	savedNestedIfEndId := g.nestedIfEndId
+	g.nestedIfEndId = 0
+
 	// 若條件是 InfixExpression（比較運算），直接取 i1
 	cond := ""
 	if infix, ok := expr.Condition.(*parser.InfixExpression); ok {
@@ -178,37 +208,43 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// then
 	sb.WriteString(fmt.Sprintf("if.then.%d:\n", labelId))
 	g.indentLevel++
-	g.tmpIdx++
-	thenReg := fmt.Sprintf("%%if.val.%d", g.tmpIdx)
+	thenVal := "0"
 	if expr.Consequence != nil && len(expr.Consequence.Statements) > 0 {
+		for i := 0; i < len(expr.Consequence.Statements)-1; i++ {
+			g.generateStatement(sb, expr.Consequence.Statements[i])
+		}
 		last := expr.Consequence.Statements[len(expr.Consequence.Statements)-1]
 		if es, ok := last.(*parser.ExpressionStatement); ok {
-			sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), thenReg, g.generateExpression(es.Expression)))
+			thenVal = g.generateExprWithSB(sb, es.Expression)
 		} else {
 			g.generateStatement(sb, last)
-			sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), thenReg))
 		}
-	} else {
-		sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), thenReg))
 	}
 	sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	g.indentLevel--
 
-	// else
+	// else — detect nested if by saving/resetting nestedIfEndId
 	sb.WriteString(fmt.Sprintf("if.else.%d:\n", labelId))
 	g.indentLevel++
-	g.tmpIdx++
-	elseReg := fmt.Sprintf("%%if.val.%d", g.tmpIdx)
+	elseVal := "0"
+	elsePredecessor := fmt.Sprintf("%%if.else.%d", labelId) // default
+	nestedIfBeforeElse := g.nestedIfEndId
+	g.nestedIfEndId = 0
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
+		for i := 0; i < len(expr.Alternative.Statements)-1; i++ {
+			g.generateStatement(sb, expr.Alternative.Statements[i])
+		}
 		last := expr.Alternative.Statements[len(expr.Alternative.Statements)-1]
 		if es, ok := last.(*parser.ExpressionStatement); ok {
-			sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), elseReg, g.generateExpression(es.Expression)))
+			elseVal = g.generateExprWithSB(sb, es.Expression)
 		} else {
 			g.generateStatement(sb, last)
-			sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), elseReg))
 		}
-	} else {
-		sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), elseReg))
+	}
+	// If a nested if was generated inside the else block, use its end block as the phi predecessor
+	// instead of the else block (which no longer directly branches to if.end.{labelId})
+	if g.nestedIfEndId > 0 && g.nestedIfEndId != nestedIfBeforeElse {
+		elsePredecessor = fmt.Sprintf("%%if.end.%d", g.nestedIfEndId)
 	}
 	sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	g.indentLevel--
@@ -217,8 +253,13 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	sb.WriteString(fmt.Sprintf("if.end.%d:\n", labelId))
 	g.tmpIdx++
 	phiReg := fmt.Sprintf("%%if.phi.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = phi i64 [%s, %%if.then.%d], [%s, %%if.else.%d]\n",
-		g.indent(), phiReg, thenReg, labelId, elseReg, labelId))
+	sb.WriteString(fmt.Sprintf("%s%s = phi i64 [%s, %%if.then.%d], [%s, %s]\n",
+		g.indent(), phiReg, thenVal, labelId, elseVal, elsePredecessor))
+
+	// Set for outer caller
+	g.nestedIfEndId = labelId
+	// Restore outer saved value (our caller will use our labelId, then restore)
+	_ = savedNestedIfEndId
 	return phiReg
 }
 
@@ -390,7 +431,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			if fieldIdx >= 0 && sb != nil {
 				structTy := "%" + structName
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-					g.indent(), reg, structTy, structTy, structName, fieldIdx))
+					g.indent(), reg, structTy, structTy, varName, fieldIdx))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), val, reg))
 			}
 		}
@@ -410,12 +451,93 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		var llvmElemType string
 		var arrayLLVMType string
 		if t, ok := g.varTypes[varName]; ok {
+			if t == "%arr" {
+				// %arr type: load data pointer, bitcast, GEP, store
+				llvmElemType = "i64"
+				if et, ok := g.arrayElemTypes[varName]; ok {
+					llvmElemType = et
+				}
+
+				// Load data pointer from arr struct
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%arr.set.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%arr.set.data.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
+						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+						g.indent(), dataLoad, dataGEP))
+				}
+
+				// Bitcast to element type pointer
+				g.tmpIdx++
+				dataTyped := fmt.Sprintf("%%arr.set.typed.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+						g.indent(), dataTyped, dataLoad, llvmElemType))
+				}
+
+				// GEP to element index and store
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%arr.set.elem.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), llvmElemType, val, llvmElemType, elemGEP))
+				}
+				return "0"
+			}
+
+			if t == "%vec" {
+				// %vec type: load data pointer (field 2), bitcast, GEP, store
+				llvmElemType = "i64"
+
+				// Load data pointer from vec struct (field 2)
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%vec.set.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%vec.set.data.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
+						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+						g.indent(), dataLoad, dataGEP))
+				}
+
+				// Bitcast to element type pointer
+				g.tmpIdx++
+				dataTyped := fmt.Sprintf("%%vec.set.typed.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+						g.indent(), dataTyped, dataLoad, llvmElemType))
+				}
+
+				// GEP to element index and store
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%vec.set.elem.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), llvmElemType, val, llvmElemType, elemGEP))
+				}
+				return "0"
+			}
+
 			if strings.HasPrefix(t, "[") {
 				closeB := strings.IndexByte(t, ']')
 				if closeB > 0 {
-					elemType := t[closeB+1:]
-					llvmElemType = g.mapToLLVMType(elemType)
-					arrayLLVMType = g.mapToLLVMType(t)
+					// t is LLVM type like "[4 x i64]", parse element directly
+					inner := t[1:closeB]
+					xIdx := strings.LastIndex(inner, " x ")
+					if xIdx >= 0 {
+						llvmElemType = inner[xIdx+3:]
+					} else {
+						llvmElemType = "i64"
+					}
+					arrayLLVMType = t
 				}
 			}
 		}
@@ -490,13 +612,106 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	var llvmElemType string
 	var arrayLLVMType string
 	if t, ok := g.varTypes[varName]; ok {
-		// t = "[8]byte"
+		if t == "%arr" {
+			// %arr type: load data pointer, bitcast, GEP, load
+			llvmElemType = "i64"
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				llvmElemType = et
+			}
+
+			// Load data pointer from arr struct
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%arr.idx.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%arr.idx.data.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
+					g.indent(), dataGEP, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+			}
+
+			// Bitcast to element type pointer
+			g.tmpIdx++
+			dataTyped := fmt.Sprintf("%%arr.idx.typed.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+					g.indent(), dataTyped, dataLoad, llvmElemType))
+			}
+
+			// GEP to element
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%arr.idx.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			}
+
+			// Load element
+			g.tmpIdx++
+			elemLoad := fmt.Sprintf("%%arr.idx.val.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
+			}
+			return elemLoad
+		}
+
+		if t == "%vec" {
+			// %vec type: load data pointer (field 2), bitcast, GEP, load
+			llvmElemType = "i64"
+
+			// Load data pointer from vec struct (field 2)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vec.idx.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%vec.idx.data.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
+					g.indent(), dataGEP, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+			}
+
+			// Bitcast to element type pointer
+			g.tmpIdx++
+			dataTyped := fmt.Sprintf("%%vec.idx.typed.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+					g.indent(), dataTyped, dataLoad, llvmElemType))
+			}
+
+			// GEP to element
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%vec.idx.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			}
+
+			// Load element
+			g.tmpIdx++
+			elemLoad := fmt.Sprintf("%%vec.idx.val.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
+			}
+			return elemLoad
+		}
+
+		// t is LLVM type like "[4 x i64]" (g.varTypes stores LLVM types)
 		if strings.HasPrefix(t, "[") {
 			closeB := strings.IndexByte(t, ']')
 			if closeB > 0 {
-				elemType := t[closeB+1:]
-				llvmElemType = g.mapToLLVMType(elemType)
-				arrayLLVMType = g.mapToLLVMType(t)
+				// Parse LLVM array format: [4 x i64] → element is "i64"
+				inner := t[1:closeB] // "4 x i64"
+				xIdx := strings.LastIndex(inner, " x ")
+				if xIdx >= 0 {
+					llvmElemType = inner[xIdx+3:] // "i64"
+				} else {
+					llvmElemType = "i64"
+				}
+				arrayLLVMType = t
 			}
 		}
 	}
@@ -531,6 +746,40 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 }
 
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {
+	// Option tag comparison: x == err or x == nil for %option typed variables
+	if expr.Operator == "==" {
+		if leftIdent, ok := expr.Left.(*parser.Identifier); ok {
+			// Check if right side is Identifier (err) or NilLiteral (nil)
+			var tag int64 = -1
+			if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+				if rightIdent.Value == "err" {
+					tag = 2
+				} else if rightIdent.Value == "nil" {
+					tag = 1
+				}
+			} else if _, ok := expr.Right.(*parser.NilLiteral); ok {
+				// nil is parsed as NilLiteral, not Identifier
+				tag = 1
+			}
+			if tag >= 0 {
+				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
+					g.tmpIdx++
+					tagGEP := fmt.Sprintf("%%opt.cmp.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					tagLoad := fmt.Sprintf("%%opt.cmp.load.%d", g.tmpIdx)
+					g.tmpIdx++
+					cmpReg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, %d\n", g.indent(), cmpReg, tagLoad, tag))
+					}
+					return cmpReg
+				}
+			}
+		}
+	}
+
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
 	g.tmpIdx++
@@ -559,19 +808,9 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 }
 
 func (g *Generator) generateArrayLiteral(sb *strings.Builder, arr *parser.ArrayLiteral) string {
-	elemType := "i64"
-	var sb2 strings.Builder
-	sb2.WriteString("[")
-	for i, elem := range arr.Elements {
-		if i > 0 {
-			sb2.WriteString(", ")
-		}
-		ev := g.generateExprWithSB(sb, elem)
-		ev = g.stripLLVMType(ev)
-		sb2.WriteString(fmt.Sprintf("%s %s", elemType, ev))
-	}
-	sb2.WriteString("]")
-	return fmt.Sprintf("[%d x %s] %s", len(arr.Elements), elemType, sb2.String())
+	// Array literals for fixed-size arrays are handled directly in generateLet.
+	// This function is kept for potential standalone use (e.g. in expressions).
+	return "0"
 }
 
 func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.SliceExpression) string {
@@ -849,6 +1088,34 @@ func (g *Generator) extractDataFromExpr(sb *strings.Builder, expr parser.Express
 		return g.extractStrSmailDataPtr(sb, ptr)
 	}
 	return g.extractStrDataPtr(sb, ptr)
+}
+
+// strLenFromExpr generates LLVM IR to extract the string length from a string expression.
+// Returns the register name holding the i64 length.
+func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) string {
+	switch a := expr.(type) {
+	case *parser.StringLiteral:
+		// Compile-time constant length
+		return fmt.Sprintf("%d", len(a.Value))
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[a.Value]; ok {
+				if t == "%str" {
+					return g.extractStrLen(sb, "%"+a.Value)
+				}
+				if t == "%str-smail" {
+					return g.extractStrSmailLen(sb, "%"+a.Value)
+				}
+			}
+		}
+		return "0"
+	case *parser.InfixExpression:
+		if a.Operator == "-" && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+			ptr := g.generateStrConcat(sb, a.Left, a.Right)
+			return g.extractStrLen(sb, ptr)
+		}
+	}
+	return "0"
 }
 
 // generateStrConcat generates LLVM IR for string concatenation using `-` operator.

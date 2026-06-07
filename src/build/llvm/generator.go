@@ -39,6 +39,8 @@ type Generator struct {
 	structTypes    map[string][]structField // struct name → fields
 	structTypeLLVM string                   // 當前正在生成的 struct LLVM type name
 	loopExits      []loopExit               // 活躍循環退出目標棧
+	nestedIfEndId  int                      // labelId of the most recently generated if expression's end block
+	arrayElemTypes map[string]string        // variable name → element LLVM type for %arr variables
 }
 
 func NewGenerator() *Generator {
@@ -79,6 +81,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)
 	g.structTypes = make(map[string][]structField)
+	g.arrayElemTypes = make(map[string]string)
 
 	var sb strings.Builder
 
@@ -100,6 +103,19 @@ func (g *Generator) Generate(program *parser.Program) string {
 		}
 	}
 
+	// Pre-register built-in arr type (used for all fixed-size arrays)
+	g.structTypes["arr"] = []structField{
+		{name: "len", typ: "i64"},
+		{name: "data", typ: "i8*"},
+	}
+
+	// Pre-register built-in vec type (used for all slices)
+	g.structTypes["vec"] = []structField{
+		{name: "len", typ: "i64"},
+		{name: "cap", typ: "i64"},
+		{name: "data", typ: "i8*"},
+	}
+
 	// 收集結構體定義並生成 LLVM struct type
 	for _, stmt := range program.Statements {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -112,8 +128,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	sb.WriteString("%str-smail = type { i8, [127 x i8] }\n")
 	sb.WriteString("%str = type { i64, i8* }\n")
 	sb.WriteString("%option = type { i64, [16 x i8] }\n")
+	sb.WriteString("%arr = type { i64, i8* }\n")
+	sb.WriteString("%vec = type { i64, i64, i8* }\n")
 	for name, fields := range g.structTypes {
-		if name == "str" || name == "str-smail" {
+		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
 			continue // built-in, already emitted
 		}
 		sb.WriteString(fmt.Sprintf("%%%s = type { ", name))

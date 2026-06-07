@@ -1,4 +1,4 @@
-package main
+package build
 
 import (
 	"fmt"
@@ -221,10 +221,11 @@ type Transpiler struct {
 	pkg           *Package // 當前套件（用於路徑解析）
 }
 
-func NewTranspiler() *Transpiler {
+func NewTranspiler(pkg *Package) *Transpiler {
 	return &Transpiler{
 		llvmGenerator: llvm.NewGenerator(),
 		noGenerator:   no.NewGenerator(),
+		pkg:           pkg,
 	}
 }
 
@@ -337,6 +338,23 @@ func (t *Transpiler) CompileTarget(source string, target Target) (string, error)
 				varTypes[ls.Name.Value] = ls.Type.Value
 			}
 		}
+		// Also collect variable types from function bodies
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			collectVarTypesFromBody(fd.Body, varTypes)
+		}
+	}
+
+	// 編譯期陣列邊界檢查
+	arraySizes := buildArraySizeMap(program)
+	sliceSizes := buildSliceSizeMap(program)
+	stringSizes := buildStringSizeMap(program)
+	if err := validateArrayBounds(program, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+		return "", err
+	}
+
+	// 編譯期重複變數檢查
+	if err := validateDuplicates(program); err != nil {
+		return "", err
 	}
 
 	// 名稱修飾 pass：處理方法重載
@@ -367,7 +385,19 @@ func (t *Transpiler) CompileTarget(source string, target Target) (string, error)
 	}
 
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
-	monomorphizeGenerics(merged)
+	monomorphizeGenerics(merged, varTypes)
+
+	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
+	filtered := make([]parser.Statement, 0, len(merged.Statements))
+	for _, stmt := range merged.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.GenericParams) > 0 {
+				continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
+			}
+		}
+		filtered = append(filtered, stmt)
+	}
+	merged.Statements = filtered
 
 	// 非函數定義的陳述句（頂層呼叫）放到最後
 	for _, stmt := range program.Statements {
@@ -391,14 +421,15 @@ func (t *Transpiler) CompileTarget(source string, target Target) (string, error)
 }
 
 // monomorphizeGenerics 對泛型函數進行單態化
-// 掃描所有 CallExpression.GenericArgs 或可推斷的呼叫，
-// 找到對應的泛型 FunctionDefinition，為每個具體化組合產生具體版本
-func monomorphizeGenerics(program *parser.Program) {
+func monomorphizeGenerics(program *parser.Program, varTypes map[string]string) {
 	// 收集所有泛型函數定義
 	genericFns := make(map[string]*parser.FunctionDefinition)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			if len(fd.GenericParams) > 0 {
+				genericFns[fd.Name] = fd
+			} else if isGenericMethod(fd.Name) {
+				// Method definitions like [n]t.fill have implicit generic params
 				genericFns[fd.Name] = fd
 			}
 		}
@@ -408,34 +439,218 @@ func monomorphizeGenerics(program *parser.Program) {
 		return
 	}
 
-	// 掃描所有陳述句尋找泛型呼叫
+	// 遞迴掃描所有陳述句尋找泛型呼叫（包括函數體內）
 	var newStmts []parser.Statement
 	for _, stmt := range program.Statements {
-		// 尋找 CallExpression
-		if es, ok := stmt.(*parser.ExpressionStatement); ok {
-			if ce, ok := es.Expression.(*parser.CallExpression); ok {
-				if fnName, ok := ce.Function.(*parser.Identifier); ok {
-					if fd, exists := genericFns[fnName.Value]; exists {
-						// 嘗試從引數型別推斷泛型參數
-						genericArgs := ce.GenericArgs
-						if len(genericArgs) == 0 {
-							genericArgs = inferGenericArgs(fd, ce, program)
+		scanStmtForGenericCalls(stmt, genericFns, varTypes, program, &newStmts)
+	}
+
+	program.Statements = append(program.Statements, newStmts...)
+}
+
+// isGenericMethod checks if a function name like "[n]t.method" has generic type params
+func isGenericMethod(name string) bool {
+	if len(name) > 3 && name[0] == '[' {
+		closeB := strings.IndexByte(name, ']')
+		if closeB > 0 && closeB+1 < len(name) {
+			sizeParam := name[1:closeB]
+			elemParam := name[closeB+1:]
+			// Check for "." separator
+			dotIdx := strings.IndexByte(elemParam, '.')
+			if dotIdx > 0 {
+				elem := elemParam[:dotIdx]
+				return (isLowerLetter(sizeParam) || sizeParam == "") && isLowerLetter(elem)
+			}
+		}
+	}
+	if strings.HasPrefix(name, "[].") {
+		return false // [].method - no generics
+	}
+	if len(name) > 2 && name[0] == '[' && name[1] == ']' {
+		dotIdx := strings.IndexByte(name, '.')
+		if dotIdx > 2 {
+			elem := name[2:dotIdx]
+			return isLowerLetter(elem)
+		}
+	}
+	return false
+}
+
+// scanStmtForGenericCalls recursively scans statements for generic calls
+func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parser.FunctionDefinition,
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if ce, ok := s.Expression.(*parser.CallExpression); ok {
+			processCallExpression(ce, genericFns, varTypes, program, newStmts)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+			}
+		}
+	case *parser.ForStatement:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+		}
+	}
+}
+
+// processCallExpression handles a single CallExpression for generic resolution
+func processCallExpression(ce *parser.CallExpression, genericFns map[string]*parser.FunctionDefinition,
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+
+	// Regular function call: fn(args)
+	if fnName, ok := ce.Function.(*parser.Identifier); ok {
+		if fd, exists := genericFns[fnName.Value]; exists {
+			genericArgs := ce.GenericArgs
+			if len(genericArgs) == 0 {
+				genericArgs = inferGenericArgs(fd, ce, program)
+			}
+			if len(genericArgs) > 0 {
+				concrete := cloneAndSubstitute(fd, genericArgs)
+				*newStmts = append(*newStmts, concrete)
+				fnName.Value = concrete.Name
+				ce.GenericArgs = nil
+			}
+		}
+	}
+
+	// Method call: receiver.method(args)
+	if dot, ok := ce.Function.(*parser.DotExpression); ok {
+		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts)
+	}
+
+	// Recurse into arguments
+	for _, arg := range ce.Arguments {
+		if innerCe, ok := arg.(*parser.CallExpression); ok {
+			processCallExpression(innerCe, genericFns, varTypes, program, newStmts)
+		}
+	}
+}
+
+// resolveMethodCall resolves a DotExpression-based method call.
+// Returns true if the call was resolved and rewritten.
+func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
+	genericFns map[string]*parser.FunctionDefinition, varTypes map[string]string,
+	newStmts *[]parser.Statement) bool {
+
+	// Get receiver variable name and type
+	recvIdent, ok := dot.Receiver.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	recvType, ok := varTypes[recvIdent.Value]
+	if !ok {
+		return false
+	}
+
+	methodName := dot.Property
+
+	// Search for matching generic method
+	for name, fd := range genericFns {
+		dotIdx := strings.LastIndex(name, ".")
+		if dotIdx < 0 {
+			continue
+		}
+		typePrefix := name[:dotIdx]
+		methodSuffix := name[dotIdx+1:]
+		if methodSuffix != methodName {
+			continue
+		}
+
+		// Try to match typePrefix (e.g., "[n]t") against recvType (e.g., "[4]i64")
+		genericArgs := matchTypePattern(typePrefix, recvType, fd)
+		if len(genericArgs) == 0 {
+			continue
+		}
+
+		// Create concrete version
+		concrete := cloneAndSubstitute(fd, genericArgs)
+		*newStmts = append(*newStmts, concrete)
+
+		// Rewrite call: replace DotExpression with Identifier, prepend receiver
+		ce.Function = &parser.Identifier{
+			Token: lexer.Token{Type: lexer.IDENT, Literal: concrete.Name},
+			Value: concrete.Name,
+		}
+		// Prepend receiver as first argument
+		receiverArg := &parser.Identifier{
+			Token: recvIdent.Token,
+			Value: recvIdent.Value,
+		}
+		ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
+		return true
+	}
+
+	// Try non-generic method: type.method already exists
+	// Rewrite to direct call with receiver prepended
+	concreteName := recvType + "." + methodName
+	ce.Function = &parser.Identifier{
+		Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+		Value: concreteName,
+	}
+	receiverArg := &parser.Identifier{
+		Token: recvIdent.Token,
+		Value: recvIdent.Value,
+	}
+	ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
+	return true
+}
+
+// matchTypePattern matches a type pattern like "[n]t" against a concrete type like "[4]i64".
+// Returns generic args (e.g., n=4, t=i64) or nil if no match.
+func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) []parser.Expression {
+	// Match [n]t against [4]i64
+	if len(pattern) > 3 && pattern[0] == '[' {
+		closeBracket := strings.IndexByte(pattern, ']')
+		if closeBracket > 0 && closeBracket+1 < len(pattern) {
+			sizeParam := pattern[1:closeBracket]
+			elemParam := pattern[closeBracket+1:]
+
+			if len(concrete) > 2 && concrete[0] == '[' {
+				argClose := strings.IndexByte(concrete, ']')
+				if argClose > 0 {
+					argSize := concrete[1:argClose]
+					argElem := concrete[argClose+1:]
+
+					var args []parser.Expression
+					if isLowerLetter(sizeParam) {
+						if val, err := strconv.ParseInt(argSize, 10, 64); err == nil {
+							args = append(args, &parser.IntegerLiteral{Value: val})
 						}
-						if len(genericArgs) > 0 {
-							// 建立具體化版本
-							concrete := cloneAndSubstitute(fd, genericArgs)
-							newStmts = append(newStmts, concrete)
-							// 更新呼叫名稱
-							fnName.Value = concrete.Name
-							ce.GenericArgs = nil
-						}
+					}
+					if isLowerLetter(elemParam) {
+						args = append(args, &parser.StringLiteral{Value: argElem})
+					}
+					if len(args) > 0 {
+						return args
 					}
 				}
 			}
 		}
 	}
 
-	program.Statements = append(program.Statements, newStmts...)
+	// Match []t against []i64 (slice pattern)
+	if strings.HasPrefix(pattern, "[]") {
+		elemParam := pattern[2:]
+		if strings.HasPrefix(concrete, "[]") {
+			argElem := concrete[2:]
+			if isLowerLetter(elemParam) {
+				return []parser.Expression{&parser.StringLiteral{Value: argElem}}
+			}
+		}
+	}
+
+	return nil
 }
 
 // inferGenericArgs 從函數呼叫的引數型別推斷泛型參數
@@ -465,15 +680,15 @@ func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression
 		if len(param.Type) > 3 && param.Type[0] == '[' {
 			closeBracket := strings.IndexByte(param.Type, ']')
 			if closeBracket > 0 && closeBracket+1 < len(param.Type) {
-				sizeParam := param.Type[1:closeBracket]    // n
-				elemParam := param.Type[closeBracket+1:]   // t
+				sizeParam := param.Type[1:closeBracket]  // n
+				elemParam := param.Type[closeBracket+1:] // t
 
 				// 從引數型別中提取具體值
 				if len(argType) > 2 && argType[0] == '[' {
 					argClose := strings.IndexByte(argType, ']')
 					if argClose > 0 {
-						argSize := argType[1:argClose]       // 8
-						argElem := argType[argClose+1:]      // byte
+						argSize := argType[1:argClose]  // 8
+						argElem := argType[argClose+1:] // byte
 
 						if isLowerLetter(sizeParam) {
 							if val, err := strconv.ParseInt(argSize, 10, 64); err == nil {
@@ -524,24 +739,82 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 		return fd
 	}
 
-	// 建立名稱修飾：arr_to_vec → arr_to_vec.8.byte
-	mangledName := fd.Name
-	for _, arg := range genericArgs {
-		if lit, ok := arg.(*parser.IntegerLiteral); ok {
-			mangledName += fmt.Sprintf(".%d", lit.Value)
-		} else if lit, ok := arg.(*parser.StringLiteral); ok {
-			mangledName += "." + lit.Value
+	// 複製並替換參數類型中的泛型標記
+	subst := make(map[string]string) // 泛型參數名 → 具體值字串
+
+	// For explicit generic params (positional matching)
+	// Skip for implicit generic methods like [n]t.method - use name-based matching below
+	isImplicitGenericMethod := len(fd.Name) > 3 && fd.Name[0] == '['
+	if !isImplicitGenericMethod {
+		for i, gp := range fd.GenericParams {
+			if i < len(genericArgs) {
+				if lit, ok := genericArgs[i].(*parser.IntegerLiteral); ok {
+					subst[gp] = fmt.Sprintf("%d", lit.Value)
+				} else if lit, ok := genericArgs[i].(*parser.StringLiteral); ok {
+					subst[gp] = lit.Value
+				}
+			}
 		}
 	}
 
-	// 複製並替換參數類型中的泛型標記
-	subst := make(map[string]string) // 泛型參數名 → 具體值字串
-	for i, gp := range fd.GenericParams {
-		if i < len(genericArgs) {
-			if lit, ok := genericArgs[i].(*parser.IntegerLiteral); ok {
-				subst[gp] = fmt.Sprintf("%d", lit.Value)
-			} else if lit, ok := genericArgs[i].(*parser.StringLiteral); ok {
-				subst[gp] = lit.Value
+	// For implicit generic methods like [n]t.method:
+	// Extract size/elem param names from the method name and match by type (not position)
+	var sizeVal string
+	var elemVal string
+	for _, arg := range genericArgs {
+		if lit, ok := arg.(*parser.IntegerLiteral); ok {
+			sizeVal = fmt.Sprintf("%d", lit.Value)
+		} else if lit, ok := arg.(*parser.StringLiteral); ok {
+			elemVal = lit.Value
+		}
+	}
+
+	if isImplicitGenericMethod {
+		closeB := strings.IndexByte(fd.Name, ']')
+		if closeB > 0 && closeB+1 < len(fd.Name) {
+			sizeParam := fd.Name[1:closeB]
+			elemPart := fd.Name[closeB+1:]
+			dotIdx := strings.IndexByte(elemPart, '.')
+			var elemParam string
+			if dotIdx > 0 {
+				elemParam = elemPart[:dotIdx]
+			}
+			// Add to subst if not already set by positional matching
+			if isLowerLetter(sizeParam) && sizeVal != "" {
+				if _, exists := subst[sizeParam]; !exists {
+					subst[sizeParam] = sizeVal
+				}
+			}
+			if isLowerLetter(elemParam) && elemVal != "" {
+				if _, exists := subst[elemParam]; !exists {
+					subst[elemParam] = elemVal
+				}
+			}
+		}
+	}
+
+	// Build mangled name
+	mangledName := fd.Name
+	if isImplicitGenericMethod {
+		// Replace generic type prefix with LLVM-safe name: [n]t.fill → _4xi64.fill
+		closeB := strings.IndexByte(mangledName, ']')
+		dotIdx := strings.IndexByte(mangledName, '.')
+		if closeB > 0 && dotIdx > closeB {
+			sizeParam := mangledName[1:closeB]
+			elemParam := mangledName[closeB+1 : dotIdx]
+			_ = sizeParam // used implicitly via isLowerLetter check below
+			_ = elemParam
+			if isLowerLetter(string(mangledName[1])) && isLowerLetter(string(mangledName[closeB+1])) {
+				mangledName = "_" + sizeVal + "x" + elemVal + mangledName[dotIdx:]
+			}
+		}
+	} else {
+		// Regular generic function: append args to name
+		for _, arg := range genericArgs {
+			if lit, ok := arg.(*parser.IntegerLiteral); ok {
+				mangledName += fmt.Sprintf(".%d", lit.Value)
+			} else if lit, ok := arg.(*parser.StringLiteral); ok {
+				mangledName += "." + lit.Value
 			}
 		}
 	}
@@ -717,6 +990,28 @@ func substituteType(typeStr string, subst map[string]string) string {
 	return result
 }
 
+// collectVarTypesFromBody recursively collects variable types from a function body
+func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]string) {
+	if body == nil {
+		return
+	}
+	for _, stmt := range body.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Type != nil {
+				varTypes[ls.Name.Value] = ls.Type.Value
+			}
+		}
+		if bs, ok := stmt.(*parser.BlockStatement); ok {
+			collectVarTypesFromBody(bs, varTypes)
+		}
+		if fs, ok := stmt.(*parser.ForStatement); ok {
+			if fs.Body != nil {
+				collectVarTypesFromBody(fs.Body, varTypes)
+			}
+		}
+	}
+}
+
 // makeIdent 建立 Identifier AST 節點
 func makeIdent(name string) *parser.Identifier {
 	return &parser.Identifier{
@@ -872,4 +1167,391 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 		return t
 	}
 	return ""
+}
+
+// buildArraySizeMap 構建變數名 → 陣列大小的映射
+// 從所有 LetStatement 中收集 ArraySize
+func buildArraySizeMap(program *parser.Program) map[string]int64 {
+	sizes := make(map[string]int64)
+	for _, stmt := range program.Statements {
+		collectArraySizesFromStmt(stmt, sizes)
+	}
+	return sizes
+}
+
+func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.ArraySize > 0 {
+			sizes[s.Name.Value] = s.ArraySize
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectArraySizesFromStmt(ss, sizes)
+			}
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectArraySizesFromStmt(s.Init, sizes)
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectArraySizesFromStmt(ss, sizes)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			collectArraySizesFromStmt(ss, sizes)
+		}
+	}
+}
+
+// buildSliceSizeMap collects names of slice variables and their initial element count
+func buildSliceSizeMap(program *parser.Program) map[string]int64 {
+	slices := make(map[string]int64)
+	for _, stmt := range program.Statements {
+		collectSliceSizeMapFromStmt(stmt, slices)
+	}
+	return slices
+}
+
+func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64) {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.IsSlice {
+			if sl, ok := s.Value.(*parser.SliceLiteral); ok {
+				slices[s.Name.Value] = int64(len(sl.Elements))
+			} else {
+				slices[s.Name.Value] = 0 // unknown size
+			}
+		} else if sl, ok := s.Value.(*parser.SliceLiteral); ok {
+			// Also detect slice from SliceLiteral value (inferred type, no [] annotation)
+			slices[s.Name.Value] = int64(len(sl.Elements))
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectSliceSizeMapFromStmt(ss, slices)
+			}
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectSliceSizeMapFromStmt(s.Init, slices)
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectSliceSizeMapFromStmt(ss, slices)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			collectSliceSizeMapFromStmt(ss, slices)
+		}
+	}
+}
+
+// buildStringSizeMap collects names of string variables and their literal length
+func buildStringSizeMap(program *parser.Program) map[string]int64 {
+	strSizes := make(map[string]int64)
+	for _, stmt := range program.Statements {
+		collectStringSizeMapFromStmt(stmt, strSizes)
+	}
+	return strSizes
+}
+
+func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int64) {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Type != nil && (s.Type.Value == "str" || s.Type.Value == "str-smail") {
+			if sl, ok := s.Value.(*parser.StringLiteral); ok {
+				strSizes[s.Name.Value] = int64(len(sl.Value))
+			} else {
+				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			}
+		} else if sl, ok := s.Value.(*parser.StringLiteral); ok {
+			// Also detect string from StringLiteral value (inferred type)
+			strSizes[s.Name.Value] = int64(len(sl.Value))
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectStringSizeMapFromStmt(ss, strSizes)
+			}
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectStringSizeMapFromStmt(s.Init, strSizes)
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectStringSizeMapFromStmt(ss, strSizes)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			collectStringSizeMapFromStmt(ss, strSizes)
+		}
+	}
+}
+
+// validateArrayBounds 編譯期陣列邊界檢查
+// 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
+// isStringExpr checks if an expression is a string type
+func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
+	switch e := expr.(type) {
+	case *parser.StringLiteral:
+		return true
+	case *parser.Identifier:
+		_, exists := stringSizes[e.Value]
+		return exists
+	}
+	return false
+}
+
+// validateDuplicates checks for duplicate variable declarations
+func validateDuplicates(program *parser.Program) error {
+	seen := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if err := validateStmtDuplicates(stmt, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		// Only type-annotated declarations count as "definitions" (e.g., a i8)
+		// The parser sets s.Type to the variable name for untyped assignments (a = 2),
+		// so we check if Type.Value differs from Name.Value to detect real type annotations
+		if s.Type == nil || s.Type.Value == s.Name.Value {
+			return nil
+		}
+		if seen[s.Name.Value] {
+			return fmt.Errorf("duplicate variable '%s'", s.Name.Value)
+		}
+		seen[s.Name.Value] = true
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			bodySeen := make(map[string]bool)
+			for _, bStmt := range s.Body.Statements {
+				if err := validateStmtDuplicates(bStmt, bodySeen); err != nil {
+					return err
+				}
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bStmt := range s.Statements {
+			if err := validateStmtDuplicates(bStmt, seen); err != nil {
+				return err
+			}
+		}
+	case *parser.ForStatement:
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				if err := validateStmtDuplicates(bStmt, seen); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateArrayBounds 編譯期陣列邊界檢查
+// 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
+func validateArrayBounds(program *parser.Program, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
+	for _, stmt := range program.Statements {
+		if err := validateStmtArrayBounds(stmt, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		return validateExprArrayBounds(s.Expression, arraySizes, sliceSizes, stringSizes, varTypes)
+	case *parser.LetStatement:
+		if s.Value != nil {
+			// Check type mismatch for string variables
+			if _, exists := stringSizes[s.Name.Value]; exists {
+				if !isStringExpr(s.Value, stringSizes) {
+					return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
+				}
+			}
+			return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					return err
+				}
+			}
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			if err := validateStmtArrayBounds(s.Init, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					return err
+				}
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			return validateExprArrayBounds(s.ReturnValue, arraySizes, sliceSizes, stringSizes, varTypes)
+		}
+	}
+	return nil
+}
+
+func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
+	switch e := expr.(type) {
+	case *parser.IndexExpression:
+		// 檢查索引是否為常數且超出陣列長度
+		if ident, ok := e.Left.(*parser.Identifier); ok {
+			if size, exists := arraySizes[ident.Value]; exists && size > 0 {
+				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
+					if lit.Value >= size {
+						return fmt.Errorf("index %d out of bounds for array '%s' of size %d", lit.Value, ident.Value, size)
+					}
+				}
+			}
+			// Also check slice bounds
+			if size, exists := sliceSizes[ident.Value]; exists && size > 0 {
+				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
+					if lit.Value >= size {
+						return fmt.Errorf("index %d out of bounds for slice '%s' of length %d", lit.Value, ident.Value, size)
+					}
+				}
+			}
+			// Also check string index bounds
+			if size, exists := stringSizes[ident.Value]; exists && size > 0 {
+				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
+					if lit.Value >= size {
+						return fmt.Errorf("index %d out of bounds for string '%s' of length %d", lit.Value, ident.Value, size)
+					}
+				}
+			}
+		}
+		// 遞迴檢查 Left 和 Index（Index 自身也可能有巢狀索引）
+		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			return err
+		}
+		return validateExprArrayBounds(e.Index, arraySizes, sliceSizes, stringSizes, varTypes)
+	case *parser.AssignExpression:
+		// array.len = val / slice.len = val / string.len = val → 不允許修改唯獨的 len 欄位
+		if dot, ok := e.Left.(*parser.DotExpression); ok {
+			if dot.Property == "len" {
+				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+					if _, exists := arraySizes[ident.Value]; exists {
+						return fmt.Errorf("cannot modify read-only field 'len' of array '%s'", ident.Value)
+					}
+					if _, exists := sliceSizes[ident.Value]; exists {
+						return fmt.Errorf("cannot modify read-only field 'len' of slice '%s'", ident.Value)
+					}
+					if _, exists := stringSizes[ident.Value]; exists {
+						return fmt.Errorf("cannot modify read-only field 'len' of string '%s'", ident.Value)
+					}
+				}
+			}
+		}
+		// a = val type mismatch check
+		if ident, ok := e.Left.(*parser.Identifier); ok {
+			if _, exists := stringSizes[ident.Value]; exists {
+				if !isStringExpr(e.Value, stringSizes) {
+					return fmt.Errorf("cannot assign non-string value to string variable '%s'", ident.Value)
+				}
+			}
+		}
+		// a[i] = val → 檢查 Left 中的 IndexExpression
+		// （slice 的索引檢查已在 IndexExpression case 中處理）
+		return validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes)
+	case *parser.InfixExpression:
+		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			return err
+		}
+		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes)
+	case *parser.PrefixExpression:
+		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes)
+	case *parser.CallExpression:
+		// array.len() / slice.len() / string.len() → 沒有 len() 方法
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if dot.Property == "len" {
+				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+					if _, exists := arraySizes[ident.Value]; exists {
+						return fmt.Errorf("array '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+					}
+					if _, exists := sliceSizes[ident.Value]; exists {
+						return fmt.Errorf("slice '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+					}
+					if _, exists := stringSizes[ident.Value]; exists {
+						return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+					}
+					// For any other typed variable, also reject .len() method
+					if typeName, exists := varTypes[ident.Value]; exists {
+						return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
+					}
+				}
+			}
+		}
+		if e.Function != nil {
+			if err := validateExprArrayBounds(e.Function, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+		for _, arg := range e.Arguments {
+			if err := validateExprArrayBounds(arg, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			if err := validateExprArrayBounds(e.Condition, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				return err
+			}
+		}
+		if e.Consequence != nil {
+			for _, ss := range e.Consequence.Statements {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					return err
+				}
+			}
+		}
+		if e.Alternative != nil {
+			for _, ss := range e.Alternative.Statements {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

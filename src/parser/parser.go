@@ -239,6 +239,19 @@ func (p *Parser) peekError(t lexer.TokenType) {
 	p.errors = append(p.errors, msg)
 }
 
+// isTypeName checks if the given literal is a known type name.
+// Used to support concise declarations like `i64` on its own line.
+func isTypeName(literal string) bool {
+	switch literal {
+	case "i8", "i16", "i32", "i64",
+		"u8", "u16", "u32", "u64",
+		"f32", "f64",
+		"byte", "bool", "str", "str-smail":
+		return true
+	}
+	return false
+}
+
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
@@ -411,6 +424,20 @@ func (p *Parser) parseStatement() Statement {
 			}
 			p.restoreState(state)
 		}
+
+		// Type-only declaration with same name: i64, i8, etc. on its own line or followed by ;
+		if p.peekToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.SEMICOLON {
+			if isTypeName(p.currentToken.Literal) {
+				stmt := p.parseLetStatement()
+				if stmt != nil {
+					if !p.ctx.contains(CTX_MATCH_ARM) {
+						p.skipToStatementEnd()
+					}
+					return stmt
+				}
+			}
+		}
+
 		return p.parseExpressionStatement()
 
 	case lexer.RETURN:
@@ -738,6 +765,10 @@ func (p *Parser) parseLetStatement() Statement {
 		// 陣列/切片註記後 current 已是 =，common push 會推進到值
 	} else if p.currentToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.NEWLINE {
 		// 只有型別宣告，無賦值，直接返回
+		if p.currentToken.Type == lexer.IDENT {
+			// type token 仍在 current（來自 parseLetStatement 的行 732 分支），需前進
+			p.nextToken()
+		}
 		return stmt
 	} else if p.peekToken.Type != lexer.ASSIGN {
 		msg := fmt.Sprintf("line %d, column %d: expected assignment operator, got %s instead",
@@ -1611,23 +1642,16 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		return nil
 	}
 
-	// Semantic check: expression context requires inline arms, statement context requires block arms
+	// Semantic check: expression context requires inline arms
 	hasBlock := false
-	hasInline := false
 	for _, a := range arms {
 		if a.isBlockBody {
 			hasBlock = true
-		} else {
-			hasInline = true
+			break
 		}
 	}
 	if p.ctx.contains(CTX_EXPR) && hasBlock {
 		msg := fmt.Sprintf("line %d, column %d: match in expression context cannot have block-style arms", tok.Line, tok.Column)
-		p.saveError(msg)
-		return nil
-	}
-	if !p.ctx.contains(CTX_EXPR) && hasInline && !hasBlock {
-		msg := fmt.Sprintf("line %d, column %d: match in statement context cannot have expression-style arms", tok.Line, tok.Column)
 		p.saveError(msg)
 		return nil
 	}
@@ -1722,23 +1746,16 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		return nil
 	}
 
-	// Semantic check: expression context requires inline arms, statement context requires block arms
+	// Semantic check: expression context requires inline arms
 	hasBlock := false
-	hasInline := false
 	for _, a := range arms {
 		if a.isBlockBody {
 			hasBlock = true
-		} else {
-			hasInline = true
+			break
 		}
 	}
 	if p.ctx.contains(CTX_EXPR) && hasBlock {
 		msg := fmt.Sprintf("line %d, column %d: match in expression context cannot have block-style arms", tok.Line, tok.Column)
-		p.saveError(msg)
-		return nil
-	}
-	if !p.ctx.contains(CTX_EXPR) && hasInline && !hasBlock {
-		msg := fmt.Sprintf("line %d, column %d: match in statement context cannot have expression-style arms", tok.Line, tok.Column)
 		p.saveError(msg)
 		return nil
 	}
@@ -1792,6 +1809,8 @@ func (p *Parser) isArmStart() bool {
 		return true
 	case lexer.IDENT:
 		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.OR
+	case lexer.NIL:
+		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.OR
 	}
 	return false
 }
@@ -1814,6 +1833,15 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	var ifExpr *IfExpression
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
+
+		// Inject it = matched for all arms
+		itAssign := &LetStatement{
+			Token: tok,
+			Name:  &Identifier{Token: tok, Value: "it"},
+			Value: matched,
+		}
+		arm.body.Statements = append([]Statement{itAssign}, arm.body.Statements...)
+
 		if arm.isWildcard {
 			// Wildcard/default: just the body
 			if ifExpr == nil {
@@ -2293,9 +2321,90 @@ func (p *Parser) parseForStatement() Statement {
 				}
 
 				if p.currentToken.Type == lexer.LBRACKET {
-					leftInc = true
+					// Peek ahead: [a..b] = range, [1, 2, 3] = slice literal
+					state := p.saveState()
+					p.nextToken() // skip [
+					p.parseExpression(LOWEST)
+
+					if p.currentToken.Type == lexer.ELLIPSIS {
+						// Range: [a..b] — restore state, use existing range logic
+						p.restoreState(state)
+						leftInc = true
+						tok := p.currentToken
+						p.nextToken() // skip [
+
+						start := p.parseExpression(LOWEST)
+
+						// 拒絕浮點數區間邊界
+						if _, ok := start.(*FloatLiteral); ok {
+							msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+								p.currentToken.Line, p.currentToken.Column)
+							p.saveError(msg)
+							return nil
+						}
+
+						if p.currentToken.Type != lexer.ELLIPSIS {
+							msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
+								p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+							p.saveError(msg)
+							return nil
+						}
+						p.nextToken() // skip ..
+
+						end := p.parseExpression(LOWEST)
+
+						// 拒絕浮點數區間邊界
+						if _, ok := end.(*FloatLiteral); ok {
+							msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+								p.currentToken.Line, p.currentToken.Column)
+							p.saveError(msg)
+							return nil
+						}
+
+						rightInc := false
+						if p.currentToken.Type == lexer.RBRACKET {
+							rightInc = true
+						} else if p.currentToken.Type == lexer.RPAREN {
+							rightInc = false
+						} else {
+							msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
+								p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+							p.saveError(msg)
+							return nil
+						}
+						p.nextToken() // skip ] or )
+
+						stmt.Range = &RangeExpression{
+							Token:    tok,
+							Start:    start,
+							End:      end,
+							LeftInc:  leftInc,
+							RightInc: rightInc,
+						}
+						goto parseBody
+					} else if p.currentToken.Type == lexer.COMMA || p.currentToken.Type == lexer.RBRACKET {
+						// 匿名切片: [1, 2, 3]
+						p.restoreState(state)
+						sliceExpr := p.parseSliceLiteral()
+						if sliceLit, ok := sliceExpr.(*SliceLiteral); ok {
+							stmt.RangeSliceLit = sliceLit
+							goto parseBody
+						}
+						return nil
+					} else {
+						p.restoreState(state)
+						msg := fmt.Sprintf("line %d, column %d: expected '..' for range or ','/'}' for slice, got %s instead",
+							p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+						p.saveError(msg)
+						return nil
+					}
 				} else if p.currentToken.Type == lexer.LPAREN {
 					leftInc = false
+				} else if p.currentToken.Type == lexer.IDENT {
+					// 陣列/切片遍歷: for i in a
+					stmt.RangeIdent = p.currentToken.Literal
+					p.nextToken() // skip identifier
+					goto parseBody
 				} else {
 					msg := fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())

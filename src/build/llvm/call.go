@@ -60,6 +60,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return ""
 	}
 
+	// val() and err() are handled at the assignment level
+	if fnName == "val" || fnName == "err" {
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s; %s() is only valid in assignment context\n", g.indent(), fnName))
+		}
+		return "0"
+	}
+
 	// Default: call @funcName(args) — 引用傳遞模式
 	// 每個參數傳遞指標（不 eval，避免輸出參數產生多餘 load）
 	retType := "void"
@@ -82,8 +90,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 陣列型別用正確的指標型別
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
-					llvmType := g.mapToLLVMType(t)
-					typedArgs[i] = llvmType + "* %" + a.Value
+					// t is already LLVM type (e.g. "[4 x i64]"), don't call mapToLLVMType again
+					typedArgs[i] = t + "* %" + a.Value
 					break
 				}
 			}

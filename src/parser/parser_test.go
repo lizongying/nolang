@@ -667,6 +667,16 @@ func TestMatch(t *testing.T) {
 			wantArms: 3,
 		},
 		{
+			name: "match_stmt_inline",
+			input: `x {
+    1| println(111)
+    2| println(222)
+    | println(333)
+}`,
+			wantErr:  false,
+			wantArms: 3,
+		},
+		{
 			name: "match_expr_block_error",
 			input: `result = x {
     1|

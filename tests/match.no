@@ -1,0 +1,21 @@
+// cd src && go run ./cmd/cli/. build ../tests/match.no
+// ../dist/match
+
+// ✅ match 语句：分支是代码块
+
+x = 3
+x {
+    1|
+        println(11)
+    2|
+        println(22)
+    |
+        println(33)
+}
+
+x = 4
+x {
+    1| println(111)
+    2| println(222)
+    | println(333)
+}

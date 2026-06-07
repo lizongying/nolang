@@ -1,0 +1,22 @@
+// cd src && go run ./cmd/cli/. build ../tests/i.no
+// a = 1
+
+a i16
+
+// a = 2
+
+// compilation error: duplicate variable 'a'
+// a i16
+
+i64
+
+i8
+
+// compilation error: i16 'a' has no method 'len', use 'a.len' instead
+//println(a.len())
+
+println(a.len)
+
+// compilation error: cannot modify read-only field 'len' of string 'a'
+// a.len = 2
+

@@ -3,6 +3,15 @@
 // 提供固定大小陣列的通用操作。
 // 泛型參數用單字母 a-z 自動推斷。
 
+arr {
+    len i64 read-only
+
+    // 只存固定大小
+    // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+    // >8 字节存指针指針
+    data *any sealed
+}
+
 // arr-create: 創建長度 n 的陣列，全部填充 val
 arr-create(n i64, val t)(out [n]t) {
     i = 0
@@ -12,21 +21,21 @@ arr-create(n i64, val t)(out [n]t) {
     }
 }
 
-// arr-clone: 將 src 的前 n 個元素複製到 dst
-arr-clone(src [n]t, dst [n]t) {
+// [n]t.clone: 將陣列複製到 dst
+[n]t.clone(dst [n]t) {
     i = 0
     for i < n {
-        dst[i] = src[i]
+        dst[i] = self[i]
         i = i + 1
     }
 }
 
-// arr-eq: 比較兩個陣列是否相等
-arr-eq(a [n]t, b [n]t)(eq i64) {
+// [n]t.eq: 比較兩個陣列是否相等
+[n]t.eq(b [n]t)(eq i64) {
     eq = 1
     i = 0
     for i < n {
-        d = a[i] - b[i]
+        d = self[i] - b[i]
         if d != 0 {
             eq = 0
             return
@@ -35,34 +44,34 @@ arr-eq(a [n]t, b [n]t)(eq i64) {
     }
 }
 
-// arr-fill: 全部填充為 val
-arr-fill(out [n]t, val t) {
+// [n]t.fill: 全部填充為 val
+[n]t.fill(val t) {
     i = 0
     for i < n {
-        out[i] = val
+        self[i] = val
         i = i + 1
     }
 }
 
-// arr-reverse: 反轉陣列
-arr-reverse(data [n]t) {
+// [n]t.reverse: 反轉陣列
+[n]t.reverse() {
     i = 0
     j = n - 1
     for i < j {
-        tmp = data[i]
-        data[i] = data[j]
-        data[j] = tmp
+        tmp = self[i]
+        self[i] = self[j]
+        self[j] = tmp
         i = i + 1
         j = j - 1
     }
 }
 
-// arr-contains: 是否包含值 val
-arr-contains(data [n]t, val t)(found i64) {
+// [n]t.contains: 是否包含值 val
+[n]t.contains(val t)(found i64) {
     found = 0
     i = 0
     for i < n {
-        d = data[i] - val
+        d = self[i] - val
         if d == 0 {
             found = 1
             return
@@ -71,52 +80,45 @@ arr-contains(data [n]t, val t)(found i64) {
     }
 }
 
-// arr-to-vec: 將 [n]t 陣列複製到 []t 切片
-arr-to-vec(arr [n]t)(out []t) {
-    for i in [0..n) {
-        out[i] = arr[i]
-    }
-}
-
-// arr-max: 陣列中的最大值
-arr-max(data [n]t)(max t) {
-    max = data[0]
-    i = 1
-    for i < n {
-        d = data[i] - max
-        if d > 0 {
-            max = data[i]
-        }
-        i = i + 1
-    }
-}
-
-// arr-min: 陣列中的最小值
-arr-min(data [n]t)(min t) {
-    min = data[0]
-    i = 1
-    for i < n {
-        d = data[i] - min
-        if d < 0 {
-            min = data[i]
-        }
-        i = i + 1
-    }
-}
-
-// arr-sum: 陣列元素總和
-arr-sum(data [n]t)(sum t) {
-    sum = 0
-    i = 0
-    for i < n {
-        sum = sum + data[i]
-        i = i + 1
-    }
-}
-
 // [n]t.to-vec: 陣列方法，轉為 []t 切片
 [n]t.to-vec()(out []t) {
     for i in [0..n) {
         out[i] = self[i]
+    }
+}
+
+// [n]t.max: 陣列中的最大值
+[n]t.max()(max t) {
+    max = self[0]
+    i = 1
+    for i < n {
+        d = self[i] - max
+        if d > 0 {
+            max = self[i]
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.min: 陣列中的最小值
+[n]t.min()(min t) {
+    min = self[0]
+    i = 1
+    for i < n {
+        d = self[i] - min
+        if d < 0 {
+            min = self[i]
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.sum: 陣列元素總和
+[n]t.sum()(sum t) {
+    sum = 0
+    i = 0
+    for i < n {
+        sum = sum + self[i]
+        i = i + 1
     }
 }

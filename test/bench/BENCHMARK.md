@@ -1,4 +1,6 @@
-# Nolang 效能對比測試
+# Nolang VS Rust
+
+lizongying/nolang
 
 ## 測試環境
 

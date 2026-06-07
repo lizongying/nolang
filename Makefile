@@ -1,41 +1,35 @@
 # Nolang 建置工具
 #
 # 目標：
-#   bin/nolang-cli    — CLI 命令列工具
+#   bin/nolang         — Nolang 命令列工具（CLI + 編譯器）
+#   vscode-nolang/server/nolang-lsp — LSP Server
 #
 # 用法：
 #   make              — 建置所有目標
-#   make nolang-cli   — 僅建置 CLI
-#   make clean        — 清除建置產出
-#   make help         — 顯示說明
+#   make nolang        — 僅建置主工具
+#   make clean         — 清除建置產出
+#   make help          — 顯示說明
 
 GO      ?= go
 BINDIR  ?= bin
 SRCMOD   = src/go.mod
-CLI_BIN  = $(BINDIR)/nolang-cli
+BIN      = $(BINDIR)/nolang
 
 .PHONY: all clean help nolang-lsp $(BINDIR)
 
-all: $(CLI_BIN)
+all: $(BIN)
 
 # ── 目錄 ─────────────────────────────────
 
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
-# ── CLI ───────────────────────────────────
+# ── 主工具 ────────────────────────────────
 
-$(CLI_BIN): src/cmd/cli/main.go $(SRCMOD) | $(BINDIR)
-	cd src && $(GO) build -o ../$(CLI_BIN) ./cmd/cli
+$(BIN): src/cmd/cli/main.go $(SRCMOD) | $(BINDIR)
+	cd src && $(GO) build -o ../$(BIN) ./cmd/cli
 
-# ── nolang-build ──────────────────────────
-
-BUILD_BIN  = $(BINDIR)/nolang-build
-
-$(BUILD_BIN): src/build/main.go $(SRCMOD) | $(BINDIR)
-	cd src && $(GO) build -o ../$(BUILD_BIN) ./build
-
-all: $(BUILD_BIN)
+all: $(BIN)
 
 # ── LSP Server ────────────────────────────
 
@@ -61,8 +55,7 @@ clean:
 help:
 	@echo "Nolang 建置目標："
 	@echo "  make            建置所有目標"
-	@echo "  make nolang-cli     建置 bin/nolang-cli"
-	@echo "  make nolang-build   建置 bin/nolang-build"
+	@echo "  make nolang         建置 bin/nolang"
 	@echo "  make nolang-lsp     建置 vscode-nolang/server/nolang-lsp"
 	@echo "  make clean         清除建置產出"
 	@echo ""

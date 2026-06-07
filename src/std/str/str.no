@@ -2,15 +2,16 @@
 // len最高位如果是1，则是str-smail，不用tag分辨
 // str-smail仅分配到栈上，128 字节
 // *byte替换原来的ptr表示，更清晰
-str-smail {
-    len byte
-    data [127]byte
-}
 
-str {
-    len i64
-    data *byte
-}
+// str-smail {
+//     len byte read-only
+//     data [127]byte sealed
+// }
+//
+// str {
+//     len i64 read-only
+//     data *byte sealed
+// }
 
 str.len() (n i64) {
     n = self.len

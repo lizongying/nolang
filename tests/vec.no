@@ -1,0 +1,17 @@
+// cd src && go run ./cmd/cli/. build ../tests/vec.no
+a = [1]
+
+// compilation error: array 'a' has no method 'len', use 'a.len' instead
+// println(a.len())
+
+// println(a.len)
+
+// compilation error: cannot modify read-only field 'len' of array 'a'
+// a.len = 2
+
+// a[0] = 2
+
+// compilation error: index 1 out of bounds for array 'a' of size 1
+// a[10] = 3
+
+// a.full(8)

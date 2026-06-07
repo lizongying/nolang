@@ -1,49 +1,46 @@
-// test_std_lib.no — 標準庫功能展示
-//
-// 展示 src/std/ 中各模組的基本用法。
+// test_std_lib.no — 方法調用測試
 
-// ═══════════════════════════════════════════
-// number — 數字操作
-// ═══════════════════════════════════════════
-
-demo-number() {
-    max(10, 20, r)
-    println-i64(r)
-
-    min(10, 20, r)
-    println-i64(r)
-
-    abs-i64(-42, r)
-    println-i64(r)
-
-    gcd(12, 18, r)
-    println-i64(r)
-
-    even(7, yes)
-    println-i64(yes)
-
-    odd(7, yes)
-    println-i64(yes)
+// [n]t.fill: 全部填充為 val
+[n]t.fill(val t) {
+    i = 0
+    for i < n {
+        self[i] = val
+        i = i + 1
+    }
 }
 
-demo-number()
+// [n]t.reverse: 反轉陣列
+[n]t.reverse() {
+    i = 0
+    j = n - 1
+    for i < j {
+        tmp = self[i]
+        self[i] = self[j]
+        self[j] = tmp
+        i = i + 1
+        j = j - 1
+    }
+}
 
-// ═══════════════════════════════════════════
-// arr — 陣列操作
-// ═══════════════════════════════════════════
-
-demo-arr() {
-    // arr-fill
+test-fill() {
     data [4] = [1, 2, 3, 4]
-    arr-fill(data, 4, 42)
-    println-i64(data[0])
-    println-i64(data[3])
+    data.fill(42)
+    v0 = data[0]
+    v3 = data[3]
+    println-i64(v0)
+    println-i64(v3)
 }
 
-demo-arr()
+test-reverse() {
+    data [4] = [1, 2, 3, 4]
+    data.reverse()
+    v0 = data[0]
+    v3 = data[3]
+    println-i64(v0)
+    println-i64(v3)
+}
 
-// ═══════════════════════════════════════════
-// demo done
-// ═══════════════════════════════════════════
-
+test-fill()
+println-i64(-1)
+test-reverse()
 println-i64(0)

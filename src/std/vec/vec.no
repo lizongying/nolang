@@ -2,35 +2,55 @@
 //
 // 泛型參數 n(大小) t(型別) 自動推斷。
 
+
+// new_cap = old_cap
+
+// if old_cap == 0:
+//     new_cap = 4   # 初始
+// elif old_cap < 1024:
+//     new_cap = old_cap * 2   # 小容量：翻倍
+// else:
+//     new_cap = old_cap * 5 / 4  # 大容量：1.25 倍
+
+vec {
+    len i64 read-only
+    cap i64 read-only
+
+    // 只存固定大小
+    // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+    // >8 字节存指针指針
+    data *any sealed
+}
+
 // vec-len: 回傳切片長度
 vec-len(v []t)(n i64) {
     n = len(v)
 }
 
-// vec-push: 在末尾追加元素（需確保容量足夠）
-vec-push(v []t, val t)(new-n i64) {
-    n = len(v)
-    v[n] = val
+// []t.push: 在末尾追加元素（需確保容量足夠）
+[]t.push(val t)(new-n i64) {
+    n = len(self)
+    self[n] = val
     new-n = n + 1
 }
 
-// vec-pop: 從末尾彈出元素
-vec-pop(v []t)(val t, new-n i64) {
-    n = len(v)
+// []t.pop: 從末尾彈出元素
+[]t.pop()(val t, new-n i64) {
+    n = len(self)
     if n > 0 {
         new-n = n - 1
-        val = v[new-n]
+        val = self[new-n]
     } else {
         new-n = 0
     }
 }
 
-// vec-contains: 是否包含值 val
-vec-contains(v []t, n i64, val t)(found i64) {
+// []t.contains: 是否包含值 val
+[]t.contains(n i64, val t)(found i64) {
     found = 0
     i = 0
     for i < n {
-        d = v[i] - val
+        d = self[i] - val
         if d == 0 {
             found = 1
             return
@@ -39,33 +59,33 @@ vec-contains(v []t, n i64, val t)(found i64) {
     }
 }
 
-// vec-reverse: 反轉前 n 個元素
-vec-reverse(v []t, n i64) {
+// []t.reverse: 反轉前 n 個元素
+[]t.reverse(n i64) {
     i = 0
     j = n - 1
     for i < j {
-        tmp = v[i]
-        v[i] = v[j]
-        v[j] = tmp
+        tmp = self[i]
+        self[i] = self[j]
+        self[j] = tmp
         i = i + 1
         j = j - 1
     }
 }
 
-// vec-clone: 將 src 前 n 個元素複製到 dst
-vec-clone(src []t, n i64, dst []t) {
+// []t.clone-to: 將前 n 個元素複製到 dst
+[]t.clone-to(n i64, dst []t) {
     i = 0
     for i < n {
-        dst[i] = src[i]
+        dst[i] = self[i]
         i = i + 1
     }
 }
 
-// vec-fill: 前 n 個元素填充為 val
-vec-fill(v []t, n i64, val t) {
+// []t.fill: 前 n 個元素填充為 val
+[]t.fill(n i64, val t) {
     i = 0
     for i < n {
-        v[i] = val
+        self[i] = val
         i = i + 1
     }
 }

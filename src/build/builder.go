@@ -1,7 +1,6 @@
-package main
+package build
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,59 +8,35 @@ import (
 	"strings"
 )
 
-// cd src/build && go run . -target llvm -cc clang -o ../../dist/test_1 ../../tests/test_1.no
-func main() {
-	// os.Args = append(os.Args, "../../tests/test_let.no")
-	outputFile := flag.String("o", "/Users/lizongying/IdeaProjects/no/dist/test_let.no", "Output file path")
-	targetStr := flag.String("target", "llvm", "Target: llvm, no")
-	cc := flag.String("cc", "clang", "C compiler for llvm target: clang, zig")
-	testMode := flag.Bool("test", false, "Build test module (test.no)")
-	exportMode := flag.Bool("export", false, "Build library module (lib.no)")
-	verbose := flag.Bool("v", false, "Verbose mode")
-	help := flag.Bool("h", false, "Show help")
-	flag.Parse()
+// BuildOptions holds all options for a build operation.
+type BuildOptions struct {
+	Target     string // "llvm" or "no"
+	CC         string // C compiler: "clang" or "zig"
+	TestMode   bool   // Build test.no instead of main.no
+	ExportMode bool   // Build lib.no instead of main.no
+	Verbose    bool
+	Output     string // optional output path ("" = auto)
+}
 
-	if *help {
-		flag.Usage()
-		return
-	}
-
-	if len(flag.Args()) != 1 {
-		fmt.Println("Error: Missing input file")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	target := TargetLLVM
-	switch *targetStr {
-	case "llvm":
-		target = TargetLLVM
-	case "no":
-		target = TargetNo
-	default:
-		fmt.Printf("Error: Unknown target %q (use: llvm, no)\n", *targetStr)
-		os.Exit(1)
-	}
-
-	inputFile := flag.Args()[0]
-
+// BuildFile compiles a .no source file and produces the output binary/file.
+func BuildFile(inputPath string, opts BuildOptions) error {
 	// 若指定的是目錄，先找目錄內的 nolang.jsonc
-	info, err := os.Stat(inputFile)
+	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
 	var pkgDir string
 	if isDir {
-		pkgDir = inputFile
+		pkgDir = inputPath
 	} else {
-		pkgDir = filepath.Dir(inputFile)
+		pkgDir = filepath.Dir(inputPath)
 	}
 
 	pkg, _ := LoadPackage(pkgDir)
 	if pkg != nil && isDir {
 		var mainFile string
-		if *testMode {
+		if opts.TestMode {
 			mainFile = "test.no"
-		} else if *exportMode {
+		} else if opts.ExportMode {
 			mainFile = "lib.no"
 		} else {
 			mainFile = pkg.Main
@@ -69,62 +44,67 @@ func main() {
 				mainFile = "main.no"
 			}
 		}
-		inputFile = pkg.ResolvePath(mainFile)
+		inputPath = pkg.ResolvePath(mainFile)
 	}
 
-	source, err := os.ReadFile(inputFile)
+	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		fmt.Printf("Error reading input file: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("reading input file: %w", err)
 	}
 
-	compiler := NewTranspiler()
-	compiler.pkg = pkg
+	target := TargetLLVM
+	switch opts.Target {
+	case "llvm":
+		target = TargetLLVM
+	case "no":
+		target = TargetNo
+	default:
+		return fmt.Errorf("unknown target %q (use: llvm, no)", opts.Target)
+	}
 
+	compiler := NewTranspiler(pkg)
 	code, err := compiler.CompileTarget(string(source), target)
 	if err != nil {
-		fmt.Printf("Compilation error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("compilation error: %w", err)
 	}
 
-	fileName := strings.TrimSuffix(filepath.Base(inputFile), ".no")
+	fileName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
 
 	var outPath string
-	if *outputFile != "" {
-		outPath = *outputFile
+	if opts.Output != "" {
+		outPath = opts.Output
 	} else {
-		// 套件模式：dist 放在套件根目錄
 		rootDir := "."
 		if pkg != nil {
 			rootDir = pkg.RootDir
 		}
 		distDir := filepath.Join(rootDir, "dist")
-		err = os.MkdirAll(distDir, 0755)
-		if err != nil {
-			fmt.Printf("Error creating dist directory: %v\n", err)
-			os.Exit(1)
+		if err = os.MkdirAll(distDir, 0755); err != nil {
+			return fmt.Errorf("creating dist directory: %w", err)
 		}
 		outPath = filepath.Join(distDir, fileName)
 	}
 
 	switch target {
 	case TargetLLVM:
-		err = buildLLVM(code, fileName, outPath, *cc, *verbose)
+		err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Verbose)
 	case TargetNo:
-		err = buildNo(code, fileName, outPath, *verbose)
+		err = BuildNo(code, fileName, outPath, opts.Verbose)
 	}
 
 	if err != nil {
-		fmt.Printf("Build error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("build error: %w", err)
 	}
 
-	if *verbose {
+	if opts.Verbose {
 		fmt.Printf("Build successful: %s\n", outPath)
 	}
+
+	return nil
 }
 
-func buildLLVM(code string, fileName string, outPath string, cc string, verbose bool) error {
+// BuildLLVM writes LLVM IR and compiles it to an executable via opt + llc + cc.
+func BuildLLVM(code string, fileName string, outPath string, cc string, verbose bool) error {
 	tempDir, err := os.MkdirTemp("", "nolang")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
@@ -154,36 +134,30 @@ func buildLLVM(code string, fileName string, outPath string, cc string, verbose 
 		fmt.Printf("Running: opt -O2 %s -o %s\n", llPath, optPath)
 	}
 	if err := optCmd.Run(); err != nil {
-		// opt 不可用時 fallback 到原始 IR
 		if verbose {
 			fmt.Printf("opt not available, using unoptimized IR: %v\n", err)
 		}
 		optPath = llPath
 	}
-	// 保留最佳化後的 IR
-	optFinal := optPath
-	if optFinal != llPath { // 只有在 opt 成功時才為分離檔案
+	if optPath != llPath {
 		raw, _ := os.ReadFile(optPath)
 		os.WriteFile(outPath+"_opt.ll", raw, 0644)
 	}
 	llPath = optPath
 
-	// Step 2: llc → .s (assembly)
+	// llc → .s (assembly)
 	sPath := filepath.Join(tempDir, fileName+".s")
 	llcCmd := exec.Command("llc", llPath, "-o", sPath)
 	llcCmd.Stdout = os.Stdout
 	llcCmd.Stderr = os.Stderr
-
 	if verbose {
 		fmt.Printf("Running: llc %s -o %s\n", llPath, sPath)
 	}
-
-	err = llcCmd.Run()
-	if err != nil {
+	if err = llcCmd.Run(); err != nil {
 		return fmt.Errorf("LLVM assembly failed: %w", err)
 	}
 
-	// Step 2: cc → executable (assemble + link), e.g. clang, zig cc
+	// cc → executable (assemble + link)
 	var clangCmd *exec.Cmd
 	if cc == "zig" {
 		clangCmd = exec.Command("zig", "cc", sPath, "-o", outPath)
@@ -192,7 +166,6 @@ func buildLLVM(code string, fileName string, outPath string, cc string, verbose 
 	}
 	clangCmd.Stdout = os.Stdout
 	clangCmd.Stderr = os.Stderr
-
 	if verbose {
 		cmdStr := cc
 		if cc == "zig" {
@@ -200,16 +173,15 @@ func buildLLVM(code string, fileName string, outPath string, cc string, verbose 
 		}
 		fmt.Printf("Running: %s %s -o %s\n", cmdStr, sPath, outPath)
 	}
-
-	err = clangCmd.Run()
-	if err != nil {
+	if err = clangCmd.Run(); err != nil {
 		return fmt.Errorf("linking failed: %w", err)
 	}
 
 	return nil
 }
 
-func buildNo(code string, fileName string, outPath string, verbose bool) error {
+// BuildNo writes the compiled code as a .no file.
+func BuildNo(code string, fileName string, outPath string, verbose bool) error {
 	if verbose {
 		fmt.Printf("Generated nolang code saved to %s\n", outPath)
 	}

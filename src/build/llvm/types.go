@@ -12,18 +12,18 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		elemType := nolangType[1:]
 		return g.mapToLLVMType(elemType) + "*"
 	}
-	// [N]type → [N x llvmType]
+	// [N]type → %arr (built-in struct: arr { len i64, data *any })
 	if strings.HasPrefix(nolangType, "[") {
 		closeBracket := strings.IndexByte(nolangType, ']')
 		if closeBracket > 0 {
 			sizeStr := nolangType[1:closeBracket]
-			elemType := nolangType[closeBracket+1:]
-			llvmElem := g.mapToLLVMType(elemType)
 			if sizeStr == "" {
 				// []type → 切片（用 i8* 表示）
+				elemType := nolangType[closeBracket+1:]
+				llvmElem := g.mapToLLVMType(elemType)
 				return llvmElem + "*"
 			}
-			return "[" + sizeStr + " x " + llvmElem + "]"
+			return "%arr"
 		}
 	}
 

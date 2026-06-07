@@ -30,6 +30,10 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		return 8
 	case "%str":
 		return 16
+	case "%arr":
+		return 16
+	case "%vec":
+		return 24
 	case "%option":
 		return 24
 	case "%str-smail":
@@ -49,6 +53,7 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	g.funcVars = nil
+	g.varTypes = make(map[string]string) // reset varTypes for each function
 	if g.paramNames == nil {
 		g.paramNames = make(map[string]bool)
 	}
@@ -196,16 +201,24 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	}
 	// 陣列/切片
 	if stmt.ArraySize > 0 {
-		elemType := "i64"
-		if stmt.ElemType != "" {
-			elemType = g.mapToLLVMType(stmt.ElemType)
-		}
-		return fmt.Sprintf("[%d x %s]", stmt.ArraySize, elemType)
+		return "%arr"
 	}
 	if stmt.IsSlice {
-		return "{ i64*, i64 }"
+		return "%vec"
+	}
+	// Type-only declaration: a i8 (no initializer)
+	if stmt.Value == nil && stmt.Type != nil {
+		return g.mapToLLVMType(stmt.Type.Value)
 	}
 	switch v := stmt.Value.(type) {
+	case *parser.Identifier:
+		// Look up the type of the source variable
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[v.Value]; ok {
+				return t
+			}
+		}
+		return "i64"
 	case *parser.StringLiteral:
 		if len(v.Value) <= 127 {
 			return "%str-smail"
@@ -216,6 +229,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			return "%str"
 		}
 		return "i64"
+	case *parser.SliceLiteral:
+		return "%vec"
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
@@ -267,9 +282,12 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *parser.LetStatement:
-			t := g.varLLVMType(s)
-			vars[s.Name.Value] = t
-			g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
+			// Don't overwrite existing type — first declaration wins (e.g., a i8; a = 2)
+			if _, exists := vars[s.Name.Value]; !exists {
+				t := g.varLLVMType(s)
+				vars[s.Name.Value] = t
+				g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
+			}
 		case *parser.FunctionDefinition:
 			if s.Body != nil {
 				for _, bodyStmt := range s.Body.Statements {
@@ -286,7 +304,15 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[string]string) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		vars[s.Name.Value] = g.varLLVMType(s)
+		// Don't overwrite existing type (e.g. %option declared with ?type)
+		if _, exists := vars[s.Name.Value]; !exists {
+			vt := g.varLLVMType(s)
+			vars[s.Name.Value] = vt
+			// Update g.varTypes immediately so subsequent lookups work
+			if g.varTypes != nil {
+				g.varTypes[s.Name.Value] = vt
+			}
+		}
 	case *parser.ForStatement:
 		if s.Init != nil {
 			g.collectVarDeclsFromStmt(s.Init, vars)
@@ -337,11 +363,8 @@ func (g *Generator) collectStructType(sd *parser.StructDefinition) {
 			}
 			llvmType = fmt.Sprintf("[%d x %s]", f.ArraySize, elemType)
 		} else if f.IsSlice {
-			elemType := "i64"
-			if f.Type != "" {
-				elemType = g.mapToLLVMType(f.Type)
-			}
-			llvmType = fmt.Sprintf("{ %s*, i64 }", elemType)
+			// 切片用 %vec 型別
+			llvmType = "%vec"
 		} else if f.Type != "" {
 			llvmType = g.mapToLLVMType(f.Type)
 		}
@@ -395,7 +418,7 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 
 func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForStatement) {
 	// range for: for i in [a..b] — push/pop handled in generateRangeFor
-	if stmt.Range != nil {
+	if stmt.Range != nil || stmt.RangeStr != "" || stmt.RangeIdent != "" || stmt.RangeSliceLit != nil {
 		g.generateRangeFor(sb, stmt)
 		return
 	}
@@ -475,7 +498,7 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	g.stringIdx++
 	escaped := g.escapeLLVMString(str)
 	g.fmtGlobals = append(g.fmtGlobals,
-		fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"", idx, len(str)+1, escaped))
+		fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", idx, len(str), escaped))
 
 	g.tmpIdx++
 	idxReg := fmt.Sprintf("%%stridx.%d", g.tmpIdx)
@@ -535,10 +558,193 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	sb.WriteString(fmt.Sprintf("str.end.%d:\n", lbl))
 }
 
+func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStatement) {
+	varName := stmt.Variable
+	var structPtr string // "%arr* %%identName" or "%vec* %vec.tmp.N"
+	var structType string
+	var isVec bool
+	var elemType string
+
+	// Determine the source: named variable or inline slice literal
+	if stmt.RangeIdent != "" {
+		// Named variable: for i in a
+		identName := stmt.RangeIdent
+		structType = g.varTypes[identName]
+		isVec = structType == "%vec"
+		if structType == "" {
+			structType = "%arr"
+		}
+		structPtr = fmt.Sprintf("%%%s", identName)
+
+		// Get element type
+		elemType = "i64"
+		if et, ok := g.arrayElemTypes[identName]; ok {
+			elemType = et
+		}
+	} else if stmt.RangeSliceLit != nil {
+		// Inline slice literal: for i in [1, 2, 3]
+		structType = "%vec"
+		isVec = true
+		elemType = "i64"
+
+		g.tmpIdx++
+		tid := g.tmpIdx
+		tmpVec := fmt.Sprintf("%%vec.tmp.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpVec))
+
+		n := int64(len(stmt.RangeSliceLit.Elements))
+
+		// alloca temp array
+		arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+		tmpArr := fmt.Sprintf("%%slice.tmp.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+
+		// store elements via GEP
+		for i, elem := range stmt.RangeSliceLit.Elements {
+			ev := g.generateExprWithSB(sb, elem)
+			ev = g.stripLLVMType(ev)
+			g.tmpIdx++
+			gepReg := fmt.Sprintf("%%slice.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), gepReg, arrType, arrType, tmpArr, i))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
+		}
+
+		// bitcast to i8*
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%slice.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
+
+		// store len (field 0)
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, tmpVec))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+
+		// store cap (field 1)
+		g.tmpIdx++
+		capGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
+			g.indent(), capGEP, tmpVec))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
+
+		// store data (field 2)
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+			g.indent(), dataGEP, tmpVec))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), ptrReg, dataGEP))
+
+		structPtr = tmpVec
+	}
+
+	g.tmpIdx++
+	lbl := g.tmpIdx
+	g.loopExits = append(g.loopExits, loopExit{
+		name: stmt.Label,
+		cond: fmt.Sprintf("arr.cond.%d", lbl),
+		exit: fmt.Sprintf("arr.end.%d", lbl),
+	})
+	defer func() {
+		g.loopExits = g.loopExits[:len(g.loopExits)-1]
+	}()
+
+	// Load len (field 0 for both %arr and %vec)
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	lenLoad := fmt.Sprintf("%%arr.len.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), lenGEP, structType, structType, structPtr))
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
+
+	// Initialize i = 0
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
+
+	// br → cond
+	sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+
+	// cond block: i < len
+	sb.WriteString(fmt.Sprintf("arr.cond.%d:\n", lbl))
+	g.indentLevel++
+	g.tmpIdx++
+	iLoad := fmt.Sprintf("%%arr.i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%arr.cmp.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, iLoad, lenLoad))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%arr.body.%d, label %%arr.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+	g.indentLevel--
+
+	// body block
+	sb.WriteString(fmt.Sprintf("arr.body.%d:\n", lbl))
+	g.indentLevel++
+
+	// Load element from data[i]
+	// Data field index: %arr → field 1, %vec → field 2
+	dataField := uint32(1)
+	if isVec {
+		dataField = 2
+	}
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	dataLoad := fmt.Sprintf("%%arr.data.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, structType, structType, structPtr, dataField))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+
+	// Bitcast data to element type pointer
+	g.tmpIdx++
+	castReg := fmt.Sprintf("%%arr.cast.%d", g.tmpIdx)
+	ptrType := elemType + "*"
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s\n", g.indent(), castReg, dataLoad, ptrType))
+
+	// GEP into element array by index
+	g.tmpIdx++
+	elemGEP := fmt.Sprintf("%%arr.elem.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s %s, i64 %s\n",
+		g.indent(), elemGEP, elemType, ptrType, castReg, iLoad))
+
+	// Load element value
+	g.tmpIdx++
+	elemLoad := fmt.Sprintf("%%arr.elem.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), elemLoad, elemType, ptrType, elemGEP))
+
+	// Store element into loop variable
+	g.varTypes[varName] = elemType
+	ptr2 := elemType + "*"
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %%%s\n", g.indent(), elemType, elemLoad, ptr2, varName))
+
+	if stmt.Body != nil {
+		for _, s := range stmt.Body.Statements {
+			g.generateStatement(sb, s)
+		}
+	}
+
+	// Update: i++
+	g.tmpIdx++
+	iNext := fmt.Sprintf("%%arr.next.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
+	sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+	g.indentLevel--
+
+	// end block
+	sb.WriteString(fmt.Sprintf("arr.end.%d:\n", lbl))
+}
+
 func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatement) {
 	// 字串遍歷: for i in 'hello'
 	if stmt.RangeStr != "" {
 		g.generateStringRange(sb, stmt)
+		return
+	}
+
+	// 陣列/切片遍歷: for i in a
+	if stmt.RangeIdent != "" || stmt.RangeSliceLit != nil {
+		g.generateArrayRange(sb, stmt)
 		return
 	}
 
@@ -637,14 +843,16 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
 
-	// 切片儲存（在 generateExprWithSB 之前，避免重複生成元素）
-	if stmt.IsSlice {
-		if slice, ok := stmt.Value.(*parser.SliceLiteral); ok {
+	// 切片儲存：使用 %vec 結構體
+	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
+	if stmt.IsSlice || isSliceLit {
+		if isSliceLit {
+			slice := stmt.Value.(*parser.SliceLiteral)
 			elemType := "i64"
 			if stmt.ElemType != "" {
 				elemType = g.mapToLLVMType(stmt.ElemType)
 			}
-			n := len(slice.Elements)
+			n := int64(len(slice.Elements))
 			g.tmpIdx++
 			tid := g.tmpIdx
 			tmpArr := fmt.Sprintf("%%slice.tmp.%d", tid)
@@ -664,25 +872,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
 			}
 
-			// bitcast array pointer to i64* (matches { i64*, i64 } struct)
+			// bitcast array pointer to i8* (matches %vec.data field type)
 			g.tmpIdx++
 			ptrReg := fmt.Sprintf("%%slice.ptr.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i64*\n", g.indent(), ptrReg, arrType, tmpArr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
 
-			// build { i64*, i64 } struct via insertvalue
+			// store len (field 0)
 			g.tmpIdx++
-			initReg := fmt.Sprintf("%%slice.init.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue { i64*, i64 } undef, i64* %s, 0\n",
-				g.indent(), initReg, ptrReg))
+			lenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
+				g.indent(), lenGEP, name))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
 
+			// store cap (field 1)
 			g.tmpIdx++
-			initReg2 := fmt.Sprintf("%%slice.init2.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue { i64*, i64 } %s, i64 %d, 1\n",
-				g.indent(), initReg2, initReg, int64(n)))
+			capGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 1\n",
+				g.indent(), capGEP, name))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
-			// store to the alloca'd variable
-			sb.WriteString(fmt.Sprintf("%sstore { i64*, i64 } %s, { i64*, i64 }* %%%s\n",
-				g.indent(), initReg2, name))
+			// store data (field 2)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
+				g.indent(), dataGEP, name))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), ptrReg, dataGEP))
 			return
 		}
 
@@ -693,7 +907,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// Option type assignment: handle nil, val(), err(), and implicit values
 	llvmTypeCheck := g.varLLVMType(stmt)
+	// Also check if variable already has %option type (reassignment)
+	if llvmTypeCheck != "%option" && g.varTypes != nil {
+		if t, ok := g.varTypes[stmt.Name.Value]; ok && t == "%option" {
+			llvmTypeCheck = "%option"
+		}
+	}
 	if llvmTypeCheck == "%option" {
+		// Ensure variable is allocated (needed for `it = x` injected in match arm bodies)
+		if g.varTypes != nil {
+			if _, exists := g.varTypes[name]; !exists {
+				g.varTypes[name] = "%option"
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%option\n", g.indent(), name))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %%%s)\n", g.indent(), name))
+			}
+		}
 		g.generateOptionAssign(sb, stmt)
 		return
 	}
@@ -724,11 +952,70 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		return
 	}
 
-	// 陣列儲存: [3 x i64] [i64 1, i64 2, i64 3]
 	if stmt.ArraySize > 0 {
-		// 預期 val 為 "[i64 1, i64 2, i64 3]"
-		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), llvmType, val, llvmType, name))
+		elemType := "i64"
+		if stmt.ElemType != "" {
+			elemType = stmt.ElemType
+		}
+		llvmElemType := g.mapToLLVMType(elemType)
+		elemSize := g.llvmTypeSize(llvmElemType)
+
+		// Register element type for later index resolution
+		g.arrayElemTypes[name] = llvmElemType
+
+		// Store len field
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 0\n",
+			g.indent(), lenGEP, name))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), stmt.ArraySize, lenGEP))
+
+		// Allocate data buffer: ArraySize * elemSize
+		totalSize := stmt.ArraySize * elemSize
+		g.tmpIdx++
+		dataReg := fmt.Sprintf("%%arr.data.malloc.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataReg, totalSize))
+
+		// Store data pointer in struct
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
+			g.indent(), dataGEP, name))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataReg, dataGEP))
+
+		// Store elements from array literal (if any)
+		if arrLit, ok := stmt.Value.(*parser.ArrayLiteral); ok && len(arrLit.Elements) > 0 {
+			g.tmpIdx++
+			dataCast := fmt.Sprintf("%%arr.data.cast.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataCast, dataReg, llvmElemType))
+
+			for i, elem := range arrLit.Elements {
+				ev := g.generateExprWithSB(sb, elem)
+				ev = g.stripLLVMType(ev)
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%arr.elem.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %d\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataCast, i))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+					g.indent(), llvmElemType, ev, llvmElemType, elemGEP))
+			}
+		}
 		return
+	}
+
+	// Coerce value to declared type if variable was already typed (e.g., a i8; a = 2)
+	if existingType, ok := g.varTypes[name]; ok && existingType != llvmType {
+		if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
+			if strings.HasPrefix(val, "%") {
+				// Register value — insert trunc instruction
+				g.tmpIdx++
+				truncReg := fmt.Sprintf("%%trunc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, llvmType, val, existingType))
+				val = truncReg
+			}
+			llvmType = existingType
+		}
 	}
 
 	switch llvmType {
@@ -749,8 +1036,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	case "double":
 		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %%%s\n", g.indent(), val, name))
 	default:
-		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), val, name))
+		ptrType := llvmType + "*"
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %%%s\n", g.indent(), llvmType, val, ptrType, name))
 	}
+}
+
+func (g *Generator) isIntegerLLVMType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "i1":
+		return true
+	}
+	return false
 }
 
 func (g *Generator) stripLLVMType(val string) string {
@@ -891,6 +1187,15 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		storeTag(0)
 		val := g.generateExprWithSB(sb, v)
 		copyI64ToData(val)
+
+	case *parser.Identifier:
+		// Copy %option struct from source variable
+		if t, ok := g.varTypes[v.Value]; ok && t == "%option" {
+			g.tmpIdx++
+			copyReg := fmt.Sprintf("%%opt.copy.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%option, %%option* %%%s\n", g.indent(), copyReg, v.Value))
+			sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), copyReg, name))
+		}
 
 	default:
 		// Implicit value: x = 'test' or x = 42 → tag=0, copy value

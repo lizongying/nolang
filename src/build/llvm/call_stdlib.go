@@ -55,20 +55,36 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 	}
 
 	if fnName == "printf" && hasArgs {
-		// Format string arg: extract i8* data from %str
-		fmtData := strDataPtr(expr.Arguments[0])
-		args := ""
-		if fmtData != "" {
-			args = "i8* " + fmtData
+		// Format string arg: need null-terminated string for printf
+		var fmtArg string
+		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
+			// Literal format string: create null-terminated global
+			fg := g.getFormatGlobal(strLit.Value)
+			fmtArg = fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+				len(strLit.Value)+1, len(strLit.Value)+1, fg)
 		} else {
-			a := evalArgs()
-			args = strArg(a[0])
+			// Variable format string: create null-terminated copy at runtime
+			fmtData := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+			if fmtData != "" {
+				fmtArg = "i8* " + fmtData
+			} else {
+				a := evalArgs()
+				fmtArg = strArg(a[0])
+			}
 		}
+		args := fmtArg
+
 		// Remaining args
 		for i := 1; i < len(expr.Arguments); i++ {
 			data := strDataPtr(expr.Arguments[i])
 			if data != "" {
-				args += ", i8* " + data
+				// String arg: need null-terminated copy for %%s
+				nullStr := g.makeNullTerminatedStr(sb, expr.Arguments[i])
+				if nullStr != "" {
+					args += ", i8* " + nullStr
+				} else {
+					args += ", i8* " + data
+				}
 			} else {
 				a := evalArgs()
 				args += ", " + typedArg(a[i])
@@ -114,13 +130,19 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			// Check if this arg is a string type
 			dataPtr := strDataPtr(arg)
 			if dataPtr != "" {
-				fmtSpec := "%s"
+				// String: use %.*s with length (no null terminator needed)
+				strLen := g.strLenFromExpr(sb, arg)
+				g.tmpIdx++
+				lenI32 := fmt.Sprintf("%%strpr.len.i32.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), lenI32, strLen))
+
+				fmtSpec := "%.*s"
 				if newline && i == len(expr.Arguments)-1 {
 					fmtSpec += "\n"
 				}
 				fg := g.getFormatGlobal(fmtSpec)
-				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), i8* %s)",
-					len(fmtSpec)+1, len(fmtSpec)+1, fg, dataPtr))
+				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), i32 %s, i8* %s)",
+					len(fmtSpec)+1, len(fmtSpec)+1, fg, lenI32, dataPtr))
 			} else {
 				v := g.generateExprWithSB(sb, arg)
 				fmtSpec := ""
@@ -604,4 +626,58 @@ func (g *Generator) callFileIO(sb *strings.Builder, fnName string, hasArgs bool,
 	}
 
 	return ""
+}
+
+// makeNullTerminatedStr generates LLVM IR to create a null-terminated copy of a string expression.
+// Returns the i8* register pointing to the null-terminated buffer.
+func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expression) string {
+	// Get data pointer
+	var dataPtr string
+	strLen := g.strLenFromExpr(sb, expr)
+
+	switch a := expr.(type) {
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[a.Value]; ok {
+				if t == "%str" {
+					dataPtr = g.extractStrDataPtr(sb, "%"+a.Value)
+				} else if t == "%str-smail" {
+					dataPtr = g.extractStrSmailDataPtr(sb, "%"+a.Value)
+				}
+			}
+		}
+	case *parser.StringLiteral:
+		ptr := g.generateExprWithSB(sb, a)
+		if len(a.Value) <= 127 {
+			dataPtr = g.extractStrSmailDataPtr(sb, ptr)
+		} else {
+			dataPtr = g.extractStrDataPtr(sb, ptr)
+		}
+	case *parser.InfixExpression:
+		if a.Operator == "-" && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+			ptr := g.generateStrConcat(sb, a.Left, a.Right)
+			dataPtr = g.extractStrDataPtr(sb, ptr)
+		}
+	}
+
+	if dataPtr == "" {
+		return dataPtr
+	}
+
+	g.tmpIdx++
+	sizeReg := fmt.Sprintf("%%strnull.size.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), sizeReg, strLen))
+
+	g.tmpIdx++
+	buf := fmt.Sprintf("%%strnull.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
+
+	g.tmpIdx++
+	nullEnd := fmt.Sprintf("%%strnull.end.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))
+	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullEnd))
+
+	sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), buf, dataPtr, strLen))
+
+	return buf
 }
