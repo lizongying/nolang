@@ -5,7 +5,7 @@
 //
 // 用法：
 //   tar-info(data)(count)
-//   for i in [0..count) {
+//   for i <- [0..count) {
 //     tar-name(data, i)(name)
 //     tar-size(data, i)(sz)
 //     tar-type(data, i)(typ)

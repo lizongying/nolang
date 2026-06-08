@@ -1,4 +1,4 @@
 // main.no — 入口文件
-use fab.fib
+# fab.fib
 
 fib()

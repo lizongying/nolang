@@ -10,12 +10,9 @@ import (
 
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
-	Target     string // "llvm" or "no"
-	CC         string // C compiler: "clang" or "zig"
-	TestMode   bool   // Build test.no instead of main.no
-	ExportMode bool   // Build lib.no instead of main.no
-	Verbose    bool
-	Output     string // optional output path ("" = auto)
+	CC      string // C compiler: "clang" or "zig"
+	Verbose bool
+	Output  string // optional output path ("" = auto)
 }
 
 // BuildFile compiles a .no source file and produces the output binary/file.
@@ -33,16 +30,9 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 
 	pkg, _ := LoadPackage(pkgDir)
 	if pkg != nil && isDir {
-		var mainFile string
-		if opts.TestMode {
-			mainFile = "test.no"
-		} else if opts.ExportMode {
-			mainFile = "lib.no"
-		} else {
-			mainFile = pkg.Main
-			if mainFile == "" {
-				mainFile = "main.no"
-			}
+		mainFile := pkg.Main
+		if mainFile == "" {
+			mainFile = "main.no"
 		}
 		inputPath = pkg.ResolvePath(mainFile)
 	}
@@ -52,18 +42,8 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		return fmt.Errorf("reading input file: %w", err)
 	}
 
-	target := TargetLLVM
-	switch opts.Target {
-	case "llvm":
-		target = TargetLLVM
-	case "no":
-		target = TargetNo
-	default:
-		return fmt.Errorf("unknown target %q (use: llvm, no)", opts.Target)
-	}
-
 	compiler := NewTranspiler(pkg)
-	code, err := compiler.CompileTarget(string(source), target)
+	code, err := compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)
 	}
@@ -85,13 +65,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		outPath = filepath.Join(distDir, fileName)
 	}
 
-	switch target {
-	case TargetLLVM:
-		err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Verbose)
-	case TargetNo:
-		err = BuildNo(code, fileName, outPath, opts.Verbose)
-	}
-
+	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Verbose)
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
@@ -178,12 +152,4 @@ func BuildLLVM(code string, fileName string, outPath string, cc string, verbose 
 	}
 
 	return nil
-}
-
-// BuildNo writes the compiled code as a .no file.
-func BuildNo(code string, fileName string, outPath string, verbose bool) error {
-	if verbose {
-		fmt.Printf("Generated nolang code saved to %s\n", outPath)
-	}
-	return os.WriteFile(outPath+".no", []byte(code), 0644)
 }

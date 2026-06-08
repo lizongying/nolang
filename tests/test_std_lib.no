@@ -4,7 +4,7 @@
 [n]t.fill(val t) {
     i = 0
     for i < n {
-        self[i] = val
+        .[i] = val
         i = i + 1
     }
 }
@@ -14,9 +14,9 @@
     i = 0
     j = n - 1
     for i < j {
-        tmp = self[i]
-        self[i] = self[j]
-        self[j] = tmp
+        tmp = .[i]
+        .[i] = .[j]
+        .[j] = tmp
         i = i + 1
         j = j - 1
     }

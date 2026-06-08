@@ -494,12 +494,12 @@ func TestHandleTextDocumentFormatting_MethodDefinition(t *testing.T) {
 
 	input := strings.TrimSpace(`
 str.len() (n    i64)      {
-    n = self.len
+    n = .len
 }
 	`)
 	expected := strings.TrimSpace(`
 str.len() (n i64) {
-    n = self.len
+    n = .len
 }
 	`)
 

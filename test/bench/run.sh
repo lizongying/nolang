@@ -35,7 +35,7 @@ echo "  done: $(ls -lh "$BENCH/fib_go" | awk '{print $5}')"
 
 echo ""
 echo "=== 連結狀態（macOS 上均含 libSystem.B.dylib）==="
-for f in fib_c_zig fib_nolang_zig fib_rust fib_go; do
+for f <- fib_c_zig fib_nolang_zig fib_rust fib_go; do
     if [ -f "$BENCH/$f" ]; then
         echo -n "  $f: "
         otool -L "$BENCH/$f" 2>&1 | grep libSystem | head -1 | awk '{print $1}'
@@ -48,7 +48,7 @@ echo "fib(40) × 10,000,000 次"
 echo ""
 
 RESULTS=""
-for entry in "C zig cc fib_c_zig" "Nolang zig cc fib_nolang_zig" "Rust fib_rust" "Go fib_go"; do
+for entry <- "C zig cc fib_c_zig" "Nolang zig cc fib_nolang_zig" "Rust fib_rust" "Go fib_go"; do
     read -r lang desc bin <<< "$entry"
     BINPATH="$BENCH/$bin"
     
@@ -115,7 +115,7 @@ echo "=== 純計算無 I/O 對比 ==="
 echo "（fib(40/41) × 10,000,000 次，無輸出）"
 echo ""
 
-for entry in "C zig cc fib_c_noprint" "Rust rustc fib_rust_noprint" "Go go fib_go_noprint"; do
+for entry <- "C zig cc fib_c_noprint" "Rust rustc fib_rust_noprint" "Go go fib_go_noprint"; do
     read -r lang desc bin <<< "$entry"
     BINPATH="$BENCH/$bin"
     if [ ! -f "$BINPATH" ]; then continue; fi

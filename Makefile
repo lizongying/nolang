@@ -15,7 +15,7 @@ BINDIR  ?= bin
 SRCMOD   = src/go.mod
 BIN      = $(BINDIR)/nolang
 
-.PHONY: all clean help nolang-lsp $(BINDIR)
+.PHONY: all clean help nolang-lsp fmt-lsp $(BINDIR)
 
 all: $(BIN)
 
@@ -48,6 +48,9 @@ nolang-lsp: FORCE
 FORCE:
 
 # ── 其他 ───────────────────────────────────
+
+fmt-lsp: $(BIN)
+	$(BIN) fmt -w -d tests/lsp
 
 clean:
 	rm -rf $(BINDIR)

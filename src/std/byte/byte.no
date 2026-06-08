@@ -81,7 +81,7 @@ vec-to-arr-byte(in []byte)(out [8]byte) {
 }
 
 arr_to_vec<N>(arr [N]byte) (out []byte) {
-    for i in [0..N) {
+    for i <- [0..N) {
         out[i] = arr[i]
     }
 }

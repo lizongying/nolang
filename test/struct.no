@@ -9,9 +9,9 @@ u = user {
     age: 20
 }
 
-println('struct:')
+print('struct:')
 u.name = 'def'
 u.age = 25
 
 // Can't print struct fields directly yet
-println('struct test ok')
+print('struct test ok')

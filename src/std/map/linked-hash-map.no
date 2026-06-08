@@ -23,77 +23,77 @@ linked-hash-map {
 
 // init: 初始化哈希表
 linked-hash-map.init() {
-    self.cap = 64
-    self.head = -1
-    self.tail = -1
-    self.size = 0
+    .cap = 64
+    .head = -1
+    .tail = -1
+    .size = 0
     i = 0
     for i < 64 {
-        self.occ[i] = 0
-        self.nxt[i] = -1
-        self.prv[i] = -1
+        .occ[i] = 0
+        .nxt[i] = -1
+        .prv[i] = -1
         i = i + 1
     }
 }
 
 // hash: 計算索引
 linked-hash-map.hash(key i64, idx i64) {
-    idx = key & (self.cap - 1)
+    idx = key & (.cap - 1)
 }
 
 // put: 插入或更新 key→value
 linked-hash-map.put(key i64, val i64, is-new i64) {
     idx = 0
-    self.hash(key, idx)
+    .hash(key, idx)
 
-    for self.occ[idx] == 1 {
-        if self.keys[idx] == key {
-            self.vals[idx] = val
+    for .occ[idx] == 1 {
+        if .keys[idx] == key {
+            .vals[idx] = val
             is-new = 0
             return
         }
         idx = idx + 1
-        if idx >= self.cap {
+        if idx >= .cap {
             idx = 0
         }
     }
 
-    self.keys[idx] = key
-    self.vals[idx] = val
-    self.occ[idx] = 1
-    self.nxt[idx] = -1
-    self.prv[idx] = self.tail
+    .keys[idx] = key
+    .vals[idx] = val
+    .occ[idx] = 1
+    .nxt[idx] = -1
+    .prv[idx] = .tail
 
-    if self.head == -1 {
-        self.head = idx
-        self.tail = idx
+    if .head == -1 {
+        .head = idx
+        .tail = idx
     } else {
-        self.nxt[self.tail] = idx
-        self.tail = idx
+        .nxt[.tail] = idx
+        .tail = idx
     }
 
-    self.size = self.size + 1
+    .size = .size + 1
     is-new = 1
 }
 
 // get: 查找 key
 linked-hash-map.get(key i64, found i64, result i64) {
     found = 0
-    if self.size == 0 {
+    if .size == 0 {
         return
     }
 
     idx = 0
-    self.hash(key, idx)
+    .hash(key, idx)
 
-    for self.occ[idx] == 1 {
-        if self.keys[idx] == key {
-            result = self.vals[idx]
+    for .occ[idx] == 1 {
+        if .keys[idx] == key {
+            result = .vals[idx]
             found = 1
             return
         }
         idx = idx + 1
-        if idx >= self.cap {
+        if idx >= .cap {
             idx = 0
         }
     }
@@ -102,40 +102,40 @@ linked-hash-map.get(key i64, found i64, result i64) {
 // contains: 檢查 key 是否存在
 linked-hash-map.contains(key i64, found i64) {
     result = 0
-    self.get(key, found, result)
+    .get(key, found, result)
 }
 
 // remove: 刪除 key
 linked-hash-map.remove(key i64, removed i64) {
     removed = 0
     idx = 0
-    self.hash(key, idx)
+    .hash(key, idx)
 
-    for self.occ[idx] == 1 {
-        if self.keys[idx] == key {
-            self.occ[idx] = 0
-            self.size = self.size - 1
+    for .occ[idx] == 1 {
+        if .keys[idx] == key {
+            .occ[idx] = 0
+            .size = .size - 1
 
-            prev = self.prv[idx]
-            next = self.nxt[idx]
+            prev = .prv[idx]
+            next = .nxt[idx]
 
             if prev == -1 {
-                self.head = next
+                .head = next
             } else {
-                self.nxt[prev] = next
+                .nxt[prev] = next
             }
 
             if next == -1 {
-                self.tail = prev
+                .tail = prev
             } else {
-                self.prv[next] = prev
+                .prv[next] = prev
             }
 
             removed = 1
             return
         }
         idx = idx + 1
-        if idx >= self.cap {
+        if idx >= .cap {
             idx = 0
         }
     }
@@ -144,23 +144,23 @@ linked-hash-map.remove(key i64, removed i64) {
 // clear: 清空
 linked-hash-map.clear() {
     i = 0
-    for i < self.cap {
-        self.occ[i] = 0
+    for i < .cap {
+        .occ[i] = 0
         i = i + 1
     }
-    self.head = -1
-    self.tail = -1
-    self.size = 0
+    .head = -1
+    .tail = -1
+    .size = 0
 }
 
 // len: 返回元素數量
 linked-hash-map.len(, n i64) {
-    n = self.size
+    n = .size
 }
 
 // is-empty: 是否為空
 linked-hash-map.is-empty(, empty i64) {
-    if self.size == 0 {
+    if .size == 0 {
         empty = 1
     } else {
         empty = 0
@@ -169,12 +169,12 @@ linked-hash-map.is-empty(, empty i64) {
 
 // for-each: 按插入順序遍歷所有 (key, value)
 linked-hash-map.for-each(, k i64, v i64) {
-    idx = self.head
+    idx = .head
     for idx != -1 {
-        if self.occ[idx] == 1 {
-            k = self.keys[idx]
-            v = self.vals[idx]
+        if .occ[idx] == 1 {
+            k = .keys[idx]
+            v = .vals[idx]
         }
-        idx = self.nxt[idx]
+        idx = .nxt[idx]
     }
 }

@@ -4,9 +4,9 @@
 a [1] = [1]
 
 // compilation error: array 'a' has no method 'len', use 'a.len' instead
-// println(a.len())
+// print(a.len())
 
-println(a.len)
+print(a.len)
 
 // compilation error: cannot modify read-only field 'len' of array 'a'
 // a.len = 2

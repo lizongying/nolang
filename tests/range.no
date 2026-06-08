@@ -1,19 +1,19 @@
 // cd src && go run ./cmd/cli/. build ../tests/range.no
 // ../dist/range
 
-for i in [1, 2, 3] {
-    println(i)
+for i <- [1, 2, 3] {
+    print(i)
 }
 
-for i in [1..3) {
-    println(i)
+for i <- [1..3) {
+    print(i)
 }
 
-for i in (1..3) {
-    println(i)
+for i <- (1..3) {
+    print(i)
 }
 
-for i in (1..3] {
-    println(i)
+for i <- (1..3] {
+    print(i)
 }
 

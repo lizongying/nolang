@@ -126,27 +126,16 @@ add(1, 2, sum)                 // sum == 3
 ## 流程控制
 
 ```nolang
-// if/elif/else
-if x > 5 {
-    a = 1
-} elif x < 0 {
-    b = 2
-} else {
-    c = 0
-}
-
-// 作為表達式
-max = if x > y { x } else { y }
 
 // for 循環
 for i < 10 {
-    println(i)
+    print(i)
     i = i + 1
 }
 
 // range for
 for i in [0..10) {
-    println(i)
+    print(i)
 }
 
 // 命名循環 + break/continue
@@ -214,6 +203,24 @@ x {
     |
         do-right-thing(it)
 }
+
+// 三元表达式 condition ? true-value : false-value
+c = flag ? 1 : 2
+max = sum > 10 ? sum : 10
+
+// 建議使用match語法或三元表達式替代if/else
+
+// if/elif/else
+if x > 5 {
+    a = 1
+} elif x < 0 {
+    b = 2
+} else {
+    c = 0
+}
+
+// 作為表達式
+max = if x > y { x } else { y }
 ```
 
 ## 數組與切片
@@ -248,7 +255,7 @@ u.name = 'Bob'
 
 ```nolang
 user.greet() {
-    println('Hello, ' + self.name)
+    print('Hello, ' + .name)
 }
 ```
 
@@ -273,7 +280,7 @@ json.to-json() {
 
 // 重寫 + 調用父實現
 user.to-json() {
-    super.to-json()
+    ..to-json()
 }
 ```
 
@@ -316,7 +323,7 @@ file enter, leave {
 }
 
 file.enter() { 
-    open(self.path)
+    open(.path)
 }
 
 file.leave() { 
@@ -342,7 +349,7 @@ read-file() {
 
 // 使用數組
 numbers = [1, 2, 3, 4, 5]
-println(numbers)
+print(numbers)
 
 a [3] = [1, 2, 3]   
 a [3]u16 = [1, 2, 3] 

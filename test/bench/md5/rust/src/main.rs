@@ -12,7 +12,7 @@ fn main() {
     let mut input = b"abc".to_vec();
     let mut result = [0u8; 16];
 
-    for i in 0..1_000_000 {
+    for i <- 0..1_000_000 {
         input[2] = i as u8;
         let mut hasher = Md5::new();
         hasher.update(&input);

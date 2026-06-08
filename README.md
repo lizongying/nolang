@@ -14,6 +14,8 @@ Nolang 是一種無 GC、內存安全、語法極簡的系統級編程語言。
 - **模块系统** - 每个文件即一个独立模块
 - **命名空间** - 文件夹自动對應命名空间
 
+[docs](https://lizongying.github.io/nolang/)
+
 ## 语法特性
 
 ### 標識符
@@ -25,6 +27,10 @@ Nolang 是一種無 GC、內存安全、語法極簡的系統級編程語言。
 x
 my-variable
 user-name
+
+// 中连接符变量名
+foo-bar = 42
+hello-world = 'Hello World'
 ```
 
 ### 變量聲明
@@ -48,10 +54,6 @@ b = x00 // byte類型
 
 // 特殊类型标注
 i8 = 3     // i8 如果变量名是类型名，则可以省略类型标注
-
-// 中连接符变量名
-foo-bar = 42
-hello-world = 'Hello World'
 ```
 
 ### 数据类型
@@ -87,30 +89,6 @@ hello-world = 'Hello World'
 
 - bigint
 - err
-
-### 關鍵字
-
-以下關鍵字具有特殊意義：
-
-```nolnag
-return  // 返回語句，终止函数
-if      // 條件判斷
-elif
-else    // 條件分支
-true    // 布爾真值
-false   // 布爾假值
-nil    // 空值
-for
-in
-break
-continue
-defer // 暫時留著，不打算用
-use
-as
-self
-super
-it
-```
 
 ### 基本表達式
 
@@ -161,7 +139,7 @@ add3(a ..i64) {
 // 函数定义，无需关键字
 add(a i64, b i64) {
     result = a + b
-    println('result:', result)
+    print('result:', result)
 }
 
 // 匿名函数，函数定义的另一种方式
@@ -169,7 +147,7 @@ add = (a i64, b i64) {
 }
 
 
-(a i64) { println(a) }(10)
+(a i64) { print(a) }(10)
 
 // 函数调用
 add(a, b)
@@ -192,38 +170,7 @@ for i < 10 {
     sum = sum + i
     i = i + 1
 }
-println('Sum:', sum)
-
-
-// ✅ match 语句：分支体是代码块
-x {
-    1|
-        a = 1
-        b = 2
-        // 多行，不返回值
-    2|
-        do-something()
-    |
-        c = 0
-}
-
-// ✅ match 表达式：分支体是单一表达式
-result = x {
-    1| 1       // 单一值
-    2| 2 + 1     //簡單表達式
-    | a + b
-}
-
-// ❌ 编译错误：表达式分支里不能有代码块
-result = x {
-    1|
-        a = 1      // 错误！表达式不能有语句
-}
-
-// ❌ 编译错误：语句形式不能返回值
-x {
-    1| 1           // 错误！
-}
+print('Sum:', sum)
 
 // 特殊match，没有需要判断的值
 {
@@ -247,7 +194,7 @@ x {
 }
 
 // arr/vec切割 返回vec
-// 支持範圍 和for in 的表示一致
+// 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
 
 nums[..] //  [0 1 2 3 4]
@@ -266,32 +213,6 @@ s[1..s.len) // 'bc'
 
 ### 控制流
 
-### if 表達式
-
-Nolang 的 `if` 表達式用於條件判斷：
-
-```nolang
-
-if x > 5 {
-    do-something()
-} elif {
-
-} else {
-    b = 1
-}
-
-// 条件语句
-if sum > 10 {
-    max = sum
-} else {
-    max = 10
-}
-
-// 三元表达式 condition ? trueValue : falseValue
-c = flag ? 1 : 2
-max = sum > 10 ? sum : 10
-```
-
 ### for循環
 
 ```nolang
@@ -308,51 +229,51 @@ for i < 5 {
 }
 
 // 經典三段式
-for i=0; i < 5;i++ {
+for i=0; i < 5; i++ {
 }
 
 // 区间语法
 // 未來會支持map, arr, vec 
-for i in [a..b] {     // 闭区间：a ≤ i ≤ b
+for i <- [a..b] {     // 闭区间：a ≤ i ≤ b
     // a, a + 1, ..., b
 }
 
-for i in (a..b] {     // 左开右闭：a < i ≤ b
+for i <- (a..b] {     // 左开右闭：a < i ≤ b
     // a + 1, a + 2, ..., b
 }
 
-for i in [a..b) {     // 左闭右开：a ≤ i < b
+for i <- [a..b) {     // 左闭右开：a ≤ i < b
     // a, a + 1, ..., b - 1
 }
 
-for i in (a..b) {     // 开区间：a < i < b
+for i <- (a..b) {     // 开区间：a < i < b
     // a + 1, a + 2, ..., b - 1
 }
 
-for i in [5..0] {   // 递减
+for i <- [5..0] {   // 递减
 }
 
-for i in [5..5] {   // 只執行5
+for i <- [5..5] {   // 只執行5
 }
 
-for i in (5..5) {   // 無
+for i <- (5..5) {   // 無
 }
 
-for i in 'abc' {   // 遍历字符串中的每个字符
+for i <- 'abc' {   // 遍历字符串中的每个字符
 }
 
 // ❌ 明确拒绝
-for i in [1.5..5.5] {  // 编译错误：区间边界必须是整数
+for i <- [1.5..5.5] {  // 编译错误：区间边界必须是整数
     // 步长无法确定
 }
 
 // ⚠️ 不支持嵌套
-for i in [0..[1..5][0]] {  // ❌ 语法错误
+for i <- [0..[1..5][0]] {  // ❌ 语法错误
 }
 
 // 命名循环
-outer for i in [0..10) {
-    inter for j in [0..10) {
+outer for i <- [0..10) {
+    inter for j <- [0..10) {
         break outer  // 直接跳出外层循环
     }
 }
@@ -370,7 +291,7 @@ outer for i in [0..10) {
 
 // 使用数组
 numbers = [1, 2, 3, 4, 5]
-println(numbers)
+print(numbers)
 
 a [3] = [1, 2, 3]       // 长度为 3 的数组 i64
 a [3]u16 = [1, 2, 3] //指定类型的数组
@@ -401,7 +322,7 @@ u = user {
 
 u.name = 'def'
 u.age = 25
-println(u.name)
+print(u.name)
 ```
 
 ### 方法
@@ -413,7 +334,7 @@ user {
 }
 
 user.foo(a i64) {
-    println(self.name)  // self 自动可用
+    print(.name)
 }
 ```
 
@@ -437,7 +358,7 @@ user json {
 }
 
 user.to-json() {
-    super.to-json()
+    ..to-json()
 }
 ```
 
@@ -528,27 +449,12 @@ map[str]
 
 ```
 
-```nolang
-
-//字符串拼接
-'Hello' - ' ' - 'World'
-
-//有變量
-'Hello' - space - 'World'
-
-
- // arr、vec交集、並集
-arr1 + arr2
-arr1 - arr2
-
-```
-
 ### 泛形
 
 ```nolang
 // 只允许单字母 a-z
 arr_to_vec(arr [n]t) (out []t) {
-    for i in [0..n) {
+    for i <- [0..n) {
         out[i] = arr[i]
     }
 }
@@ -579,26 +485,60 @@ a = typeof(x)
 
 ```nolang
 // 這裡是示例，實際上標準庫可能不需要明確引入
-use std/math.add
+# std/math.add
 
 // 遠程模塊（非std/開頭）
-use github.com/utils/math.add
+# github.com/utils/math.add
 
 // 本地模塊，必須/開頭
-use /utils/math.add
+# /utils/math.add
 
 // 別名
-use std/math.add a
+# std/math.add a
 ```
 
-### 入口函数
+## CLI 命令
 
-无需显式 `main()` 函数，文件最外层代码自动成为入口
+```bash
+# 構建（默認尋找 main.no）
+nolang build                  # 構建當前目錄
+nolang build main.no          # 構建指定文件
+nolang build -o output main.no  # 指定輸出路徑
+nolang build -cc zig main.no    # 使用 Zig 編譯器
 
-```nolang
-x = 10
-println(x)
+# 運行（構建 + 執行）
+nolang run                    # 構建並執行 main.no（必須有 main.no）
+nolang run main.no
+nolang run -cc zig main.no
+
+# 測試（構建 + 執行）
+nolang test                   # 執行目錄下所有 .no 文件的 main()，排除 main.no / lib.no
+nolang test my-test.no        # 執行單個測試文件
+nolang test -cc zig my-test.no
+
+# 其他
+nolang fmt                    # 格式化
+nolang install                # 安裝 binary 到 /usr/local/bin
+nolang pub --token <token> [--registry <url>]  # 發布套件
 ```
+
+### 入口規則
+
+- **main.no** — 程序入口，不可包含測試斷言
+- **lib.no** — 庫入口，不可包含測試斷言
+- **其他 .no 文件** — 可包含測試斷言，測試與方法在同一文件
+
+```bash
+nolang run .        # 執行 main.no
+nolang test .       # 執行其他 .no 文件的 main()
+```
+
+## 测试说明
+
+- `nolang test` 会遍历目录下所有 .no 文件（跳过 main.no / lib.no）
+- 每个测试文件独立构建并运行自己的 main() 函数
+- 测试文件和功能代码写在同一个 .no 文件中
+- 若任一测试失败，返回非零退出码
 
 ### 模块系统
 
@@ -609,59 +549,6 @@ println(x)
 ```shell
 utils/
 └── helper.no    // 模块名为 utils-helper
-```
-
-### 運算符
-
-```shell
-=       // 賦值
-==      // 等於比較
-!=      // 不等於比較
-+       // 加法
--       // 減法
-*       // 乘法
-/       // 除法
-<       // 小於
->       // 大於
-<=      // 小於等於
->=      // 大於等於
-&&      // 邏輯與
-||      // 邏輯或
-!       // 邏輯非
-?=      // 可空類型標記
-(       // 左括號
-)       // 右括號
-{       // 左花括號
-}       // 右花括號
-,       // 逗號
-```
-
-#### 算術運算符
-
-```shell
-+   // 加法
--   // 減法
-*   // 乘法
-/   // 除法
-```
-
-#### 比較運算符
-
-```shell
-==  // 等於
-!=  // 不等於
-<   // 小於
->   // 大於
-<=  // 小於等於
->=  // 大於等於
-```
-
-#### 邏輯運算符
-
-```shell
-&&  // 邏輯與
-||  // 邏輯或
-!   // 邏輯非
 ```
 
 ## 项目结构
@@ -743,19 +630,25 @@ diff go-output.txt nolang-output.txt
 
 ### 程序結構
 
-- 檢查函數所有變量，儘量一次分配
-- 函數內的變量在函數退出時自動銷毀
-- 默認執行 main (main.no) 模塊
-- 默認測試 test (test.no) 模塊
-- 默認導出 lib (lib.no) 模塊
+- main.no — 入口，執行 main()
+- lib.no — 庫入口，導出函數
+- 其他 .no 文件 — 可作為測試文件，包含自己的 main()
 
-### nolang-cli
+## CLI 命令概覽
 
-- init
-- add
-- remove
-- update
-- list
+| 命令 | 說明 |
+|------|------|
+| `nolang init` | 初始化專案 |
+| `nolang new <name>` | 建立新專案 |
+| `nolang fmt` | 格式化程式碼 |
+| `nolang build` | 構建（輸出 executable） |
+| `nolang run` | 構建並執行 main.no |
+| `nolang test` | 執行測試 |
+| `nolang add` / `remove` / `update` / `list` | 依賴管理 |
+| `nolang install` | 安裝 binary 到系統 |
+| `nolang pub --token <token> [--registry <url>]` | 發布套件至 registry |
+| `nolang sync` | 同步依賴 |
+
 
 ## cli使用
 

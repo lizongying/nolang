@@ -79,7 +79,11 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 func (f *formatter) formatExpression(expr parser.Expression) {
 	switch e := expr.(type) {
 	case *parser.Identifier:
-		f.write(e.Value)
+		if e.Value == "self" || e.Value == "it" {
+			f.write(".")
+		} else {
+			f.write(e.Value)
+		}
 	case *parser.IntegerLiteral:
 		f.write(e.Token.Literal)
 	case *parser.ByteLiteral:
@@ -140,7 +144,7 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 }
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
-	f.write("use ")
+	f.write("# ")
 	f.write(s.Path)
 	if s.Function != "" {
 		f.write(".")
@@ -298,6 +302,20 @@ func (f *formatter) formatCallExpression(e *parser.CallExpression) {
 }
 
 func (f *formatter) formatDotExpression(e *parser.DotExpression) {
+	if ident, ok := e.Receiver.(*parser.Identifier); ok {
+		switch ident.Value {
+		case "self", "it":
+			// .property (the dot serves as both self-reference and member access)
+			f.write(".")
+			f.write(e.Property)
+			return
+		case "super":
+			// ..property (double dot for super)
+			f.write("..")
+			f.write(e.Property)
+			return
+		}
+	}
 	f.formatExpression(e.Receiver)
 	f.write(".")
 	f.write(e.Property)
@@ -398,15 +416,19 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	}
 	f.write("for")
 
-	if s.Variable != "" && s.Range != nil {
-		// range for: for i in [a..b]
+	if s.Variable != "" && (s.Range != nil || s.RangeStr != "" || s.RangeIdent != "" || s.RangeSliceLit != nil) {
+		// range for: for i <- [a..b]
 		f.write(" ")
 		f.write(s.Variable)
-		f.write(" in ")
+		f.write(" <- ")
 		if s.RangeStr != "" {
 			f.write("'")
 			f.write(s.RangeStr)
 			f.write("'")
+		} else if s.RangeIdent != "" {
+			f.write(s.RangeIdent)
+		} else if s.RangeSliceLit != nil {
+			f.formatSliceLiteral(s.RangeSliceLit)
 		} else {
 			f.formatRangeBrackets(s.Range)
 		}
@@ -518,14 +540,14 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 }
 
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
-	f.write("[]{")
+	f.write("[")
 	for i, el := range e.Elements {
 		if i > 0 {
 			f.write(", ")
 		}
 		f.formatExpression(el)
 	}
-	f.write("}")
+	f.write("]")
 }
 
 func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {

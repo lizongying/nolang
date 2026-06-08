@@ -64,7 +64,7 @@ pi = 3.14
 // 函数定义
 add(a i64, b i64) {
     result = a + b
-    println(result)
+    print(result)
 }
 
 // 函数调用
@@ -72,13 +72,13 @@ add(5, 3)
 
 // 条件语句
 if x > 5 {
-    println('x is greater than 5')
+    print('x is greater than 5')
 }
 
 // 循环
 count = 0
 for count < 10 {
-    println(count)
+    print(count)
     count = count + 1
 }
 
@@ -95,7 +95,7 @@ u = user {
 }
 
 // 属性访问
-println(u.name)
+print(u.name)
 ```
 
 ### 快捷键

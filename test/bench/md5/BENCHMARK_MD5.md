@@ -5,7 +5,7 @@
 ## 測試結構（三者一致）
 
 ```
-for i in 0..1_000_000:
+for i <- 0..1_000_000:
     input[2] = byte(i)          # 修改輸入阻止優化
     result = md5(input)         # 計算 MD5
 print(result[0])                # 輸出防止死代碼消除

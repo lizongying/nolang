@@ -1,23 +1,23 @@
 // test_str_concat.no — String concatenation with - operator
 
 // Test 1: String literal assignment and print
-println('Hello World')
+print('Hello World')
 
 // Test 2: String variable assignment and print
 s = 'Nolang'
-println(s)
+print(s)
 
 // Test 3: String concatenation with literals
 greeting = 'Hello' - ' ' - 'World'
-println(greeting)
+print(greeting)
 
 // Test 4: String concatenation with variables
 a = 'foo'
 b = 'bar'
 c = a - b
-println(c)
+print(c)
 
 // Test 5: Mixed concatenation
 x = 'Hello'
 y = x - ' ' - 'Nolang'
-println(y)
+print(y)

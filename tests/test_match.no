@@ -32,7 +32,7 @@ result = x {
 
 // 判讀返回值可能有錯的情況
 x {
-    err| log(it)
+    err| log(.)
     nil| log('nil')
     |
         do-right-thing()

@@ -16,18 +16,18 @@ hello-world = 'Hello World'
 // 函数定义
 add(a int, b int) {
     result = a + b
-    println('result:', result)
+    print('result:', result)
 }
 
 add(a int, b int) (c int, d int) {
     result = a + b
-    println('result:', result)
+    print('result:', result)
 }
 
 // 匿名函数赋值
 //f = (x int, out int64) {
 //    out = int64(x * 2)
-//    println('doubled:', out)
+//    print('doubled:', out)
 //}
 
 // 条件循环
@@ -37,17 +37,17 @@ for i < 5 {
     sum = sum + i
     i = i + 1
 }
-println('sum:', sum)
+print('sum:', sum)
 
 // 数组和切片
 arr [3] = [1, 2, 3]
 slice = [4, 5, 6]
-println('array:', arr)
-println('slice:', slice)
+print('array:', arr)
+print('slice:', slice)
 
 // 三元表达式
 max = sum > 10 ? sum : 10
-println('max:', max)
+print('max:', max)
 
 // 调用函数
 add(10, 20)

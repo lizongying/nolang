@@ -9,7 +9,7 @@ sidebar_position: 3
 ```nolang
 printf(fmt str, ...)     // 格式化输出
 print(...)               // 打印
-println(...)             // 打印并换行
+print(...)             // 打印并换行
 println-empty()          // 打印空行
 ```
 

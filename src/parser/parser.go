@@ -1108,20 +1108,37 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.NIL:
 		leftExp = p.parseNilLiteral()
 
-	case lexer.SUPER:
-		expr := &Identifier{Token: p.currentToken, Value: "super"}
-		p.nextToken()
-		leftExp = expr
+	case lexer.ELLIPSIS:
+		// ..identifier represents super.identifier
+		if p.peekToken.Type == lexer.IDENT {
+			superTok := p.currentToken
+			p.nextToken() // skip .. → now at IDENT
+			leftExp = &DotExpression{
+				Token:    p.currentToken,
+				Receiver: &Identifier{Token: superTok, Value: "super"},
+				Property: p.currentToken.Literal,
+			}
+			p.nextToken()
+		} else {
+			p.nextToken()
+			return nil
+		}
 
-	case lexer.SELF:
-		expr := &Identifier{Token: p.currentToken, Value: "self"}
-		p.nextToken()
-		leftExp = expr
-
-	case lexer.IT:
-		expr := &Identifier{Token: p.currentToken, Value: "it"}
-		p.nextToken()
-		leftExp = expr
+	case lexer.DOT:
+		// . represents self (method receiver or match target)
+		tok := p.currentToken
+		p.nextToken() // consume DOT → now at token after .
+		leftExp = &Identifier{Token: tok, Value: "self"}
+		// If followed by IDENT, it's .property (member access on self)
+		if p.currentToken.Type == lexer.IDENT {
+			leftExp = &DotExpression{
+				Token:    p.currentToken,
+				Receiver: leftExp,
+				Property: p.currentToken.Literal,
+			}
+			p.nextToken()
+		}
+		// For .[i], .(args) etc, postfix loop handles the rest
 
 	case lexer.AS:
 		expr := &Identifier{Token: p.currentToken, Value: "as"}
@@ -1834,10 +1851,10 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
 
-		// Inject it = matched for all arms
+		// Inject self = matched for all arms
 		itAssign := &LetStatement{
 			Token: tok,
-			Name:  &Identifier{Token: tok, Value: "it"},
+			Name:  &Identifier{Token: tok, Value: "self"},
 			Value: matched,
 		}
 		arm.body.Statements = append([]Statement{itAssign}, arm.body.Statements...)
@@ -2299,8 +2316,8 @@ func (p *Parser) parseForStatement() Statement {
 	init := p.parseStatement()
 	p.ctx.pop()
 
-	// 檢查 range for: for i in [a..b] / (a..b] / [a..b) / (a..b)
-	if p.currentToken.Type == lexer.IN {
+	// 檢查 range for: for i <- [a..b] / (a..b] / [a..b) / (a..b) 或 for i in ...
+	if p.currentToken.Type == lexer.IN || p.currentToken.Type == lexer.ARROW {
 		if es, ok := init.(*ExpressionStatement); ok {
 			if ident, ok := es.Expression.(*Identifier); ok {
 				stmt.Variable = ident.Value

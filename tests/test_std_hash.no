@@ -4,17 +4,17 @@
 // 執行：nolang run tests/test_std_hash.no > tests/nolang-output.txt
 // 比對：diff tests/compare/go-output.txt tests/nolang-output.txt
 
-use std/hash/crc-32
-use std/hash/fnv-1a-32
-use std/hash/md5
-use std/hash/sha256
-use std/hash/sha512
-use std/hash/aes-128-enc
-use std/hash/aes-128-dec
-use std/hash/des-enc
-use std/hash/des-dec
-use std/hash/rand
-use std/hash/rand-str
+# std/hash/crc-32
+# std/hash/fnv-1a-32
+# std/hash/md5
+# std/hash/sha256
+# std/hash/sha512
+# std/hash/aes-128-enc
+# std/hash/aes-128-dec
+# std/hash/des-enc
+# std/hash/des-dec
+# std/hash/rand
+# std/hash/rand-str
 
 // ═══════════════════════════════════════════
 // CRC32
@@ -24,20 +24,20 @@ use std/hash/rand-str
 crc-32('', 0)(h)
 fmt.print('crc32("")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // crc32("hello")=3610a686
 crc-32('hello', 5)(h)
 fmt.print('crc32("hello")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // crc32("fox")=414fa339
 s = 'The quick brown fox jumps over the lazy dog'
 crc-32(s, 43)(h)
 fmt.print('crc32("fox")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // FNV-1a-32
@@ -47,19 +47,19 @@ fmt.println('')
 fnv-1a-32('', 0)(h)
 fmt.print('fnv1a32("")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // fnv1a32("hello")=4f9f2cab
 fnv-1a-32('hello', 5)(h)
 fmt.print('fnv1a32("hello")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // fnv1a32("fox")=048fff90
 fnv-1a-32(s, 43)(h)
 fmt.print('fnv1a32("fox")=')
 fmt.print-hex32(h)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-256（zero block 壓縮測試）
@@ -80,7 +80,7 @@ sha256(block256, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-zero-block=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-256（空字串填充區塊）
@@ -101,7 +101,7 @@ sha256(block256empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-empty=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-256（"abc" 填充區塊）
@@ -123,7 +123,7 @@ sha256(block256abc, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-abc=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-512（zero block 壓縮測試）
@@ -146,7 +146,7 @@ sha512(block512, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-zero-block=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-512（空字串填充區塊）
@@ -169,7 +169,7 @@ sha512(block512empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-empty=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // SHA-512（"abc" 填充區塊）
@@ -193,7 +193,7 @@ sha512(block512abc, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-abc=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // AES-128（NIST test vector）
@@ -211,7 +211,7 @@ for i < 16 {
     fmt.print-hex8(aes-out[i] & 255)
     i = i + 1
 }
-fmt.println('')
+fmt.print('')
 
 aes-dec = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 aes-128-dec(aes-out, 16, aes-key)(aes-dec)
@@ -222,7 +222,7 @@ for i < 16 {
     fmt.print-hex8(aes-dec[i] & 255)
     i = i + 1
 }
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // DES
@@ -240,7 +240,7 @@ for i < 8 {
     fmt.print-hex8(des-out[i] & 255)
     i = i + 1
 }
-fmt.println('')
+fmt.print('')
 
 des-dec = '\x00\x00\x00\x00\x00\x00\x00\x00'
 des-dec(des-out, 8, des-key)(des-dec)
@@ -251,7 +251,7 @@ for i < 8 {
     fmt.print-hex8(des-dec[i] & 255)
     i = i + 1
 }
-fmt.println('')
+fmt.print('')
 
 // ═══════════════════════════════════════════
 // 輔助函數

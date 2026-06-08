@@ -15,7 +15,7 @@ fn fib(n: i64, o: &mut i64) {
 }
 
 fn main() {
-    for _ in 0..10000000 {
+    for _ <- 0..10000000 {
         let mut result: i64 = 0;
         fib(40, &mut result);
         println!("{}", result);

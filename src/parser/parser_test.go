@@ -669,9 +669,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_stmt_inline",
 			input: `x {
-    1| println(111)
-    2| println(222)
-    | println(333)
+    1| print(111)
+    2| print(222)
+    | print(333)
 }`,
 			wantErr:  false,
 			wantArms: 3,
@@ -1145,7 +1145,7 @@ bs = [x11, x22, x33]`,
 			name: "struct_field_access",
 			input: `u.name = 'def'
 u.age = 25
-println(u.name)`,
+print(u.name)`,
 			check: func(t *testing.T, stmts []Statement) {
 				if len(stmts) < 3 {
 					t.Fatalf("expected at least 3 statements, got %d", len(stmts))
@@ -1181,7 +1181,7 @@ u = user {
 }
 u.name = 'def'
 u.age = 25
-println(u.name)`,
+print(u.name)`,
 			check: nil,
 		},
 	}
@@ -1253,7 +1253,7 @@ func TestInterface(t *testing.T) {
 		{
 			name: "method_with_super",
 			input: `user.to-json() {
-    super.to-json()
+    ..to-json()
 }`,
 			wantErr: false,
 		},
@@ -1367,7 +1367,7 @@ func TestFunctionSyntax(t *testing.T) {
 			name: "func_with_println",
 			input: `add(a i64, b i64) {
     result = a + b
-    println('result:', result)
+    print('result:', result)
 }`,
 			check: func(t *testing.T, stmts []Statement) {
 				fd, ok := stmts[0].(*FunctionDefinition)
@@ -1406,7 +1406,7 @@ func TestFunctionSyntax(t *testing.T) {
 		// README 172: IIFE (immediately invoked function expression)
 		{
 			name:  "iife",
-			input: "(a i64) { println(a) }(10)",
+			input: "(a i64) { print(a) }(10)",
 			check: func(t *testing.T, stmts []Statement) {
 				exprStmt, ok := stmts[0].(*ExpressionStatement)
 				if !ok {
@@ -1490,7 +1490,7 @@ for i < 10 {
     sum = sum + i
     i = i + 1
 }
-println('Sum:', sum)`,
+print('Sum:', sum)`,
 			check: func(t *testing.T, stmts []Statement) {
 				if len(stmts) < 3 {
 					t.Fatalf("expected at least 3 statements, got %d", len(stmts))
@@ -1515,7 +1515,7 @@ println('Sum:', sum)`,
 		{
 			name: "array_literal_with_size",
 			input: `numbers = 5[1, 2, 3, 4, 5]
-println(numbers)`,
+print(numbers)`,
 			check: func(t *testing.T, stmts []Statement) {
 				letStmt, ok := stmts[0].(*LetStatement)
 				if !ok {
@@ -1542,11 +1542,11 @@ add3(a ..i64) {
 }
 add(a i64, b i64) {
     result = a + b
-    println('result:', result)
+    print('result:', result)
 }
 add = (a i64, b i64) {
 }
-(a i64) { println(a) }(10)
+(a i64) { print(a) }(10)
 add(a, b)
 result = add(5, 3)
 res = 0
@@ -1556,9 +1556,9 @@ for i < 10 {
     sum = sum + i
     i = i + 1
 }
-println('Sum:', sum)
+print('Sum:', sum)
 numbers = 5[1, 2, 3, 4, 5]
-println(numbers)`,
+print(numbers)`,
 			check: nil,
 		},
 	}

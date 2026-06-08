@@ -170,6 +170,10 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok.Type = LESS_EQUALS
 			tok.Literal = "<="
+		} else if l.peekChar() == '-' {
+			l.readChar()
+			tok.Type = ARROW
+			tok.Literal = "<-"
 		} else {
 			tok.Type = LESS
 			tok.Literal = "<"
@@ -310,6 +314,9 @@ func (l *Lexer) NextToken() Token {
 	case '@':
 		tok.Type = AT
 		tok.Literal = string(l.ch)
+	case '#':
+		tok.Type = USE
+		tok.Literal = "#"
 	case '?':
 		tok.Type = QUESTION
 		tok.Literal = string(l.ch)

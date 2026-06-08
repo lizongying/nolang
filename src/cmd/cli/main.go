@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -23,11 +24,20 @@ type ProjectConfig struct {
 }
 
 type CompilerConfig struct {
-	Target string `json:"target"`
-	Output string `json:"output"`
+	Version string `json:"version"`
 }
 
 func main() {
+	// 全局 flags
+	for i, arg := range os.Args[1:] {
+		if arg == "-v" {
+			verbose = true
+			// 從 os.Args 移除 -v
+			os.Args = append(os.Args[:i+1], os.Args[i+2:]...)
+			break
+		}
+	}
+
 	if len(os.Args) < 2 {
 		printUsage()
 		return
@@ -57,35 +67,87 @@ func main() {
 		}
 		removeDependency(os.Args[2])
 	case "update":
-		updateDependencies()
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: nolang update <pkg>")
+			return
+		}
+		updateDependency(os.Args[2])
+	case "update-all":
+		updateAllDependencies()
 	case "list":
 		listDependencies()
 	case "install":
-		installDependencies()
+		installCommand()
+	case "pub":
+		pubCommand(os.Args[2:])
+	case "sync":
+		syncDependencies()
 	case "fmt":
 		fmtCommand(os.Args[2:])
 	case "build":
 		buildCommand(os.Args[2:])
+	case "run":
+		runCommand(os.Args[2:])
+	case "test":
+		testCommand(os.Args[2:])
 	default:
 		printUsage()
 	}
 }
 
 func printUsage() {
-	fmt.Println("Nolang - Nolang Programming Language")
+	fmt.Println("Nolang - A Programming Language")
 	fmt.Println("")
 	fmt.Println("Usage:")
-	fmt.Println("  nolang init             Initialize a new Nolang project in current directory")
+	fmt.Println("Global flags:")
+	fmt.Println("  -v    Verbose mode (apply to all commands)")
+	fmt.Println("")
 	fmt.Println("  nolang new <name>       Create a new Nolang project")
+	fmt.Println("  nolang init             Initialize a new Nolang project in current directory")
+	fmt.Println("")
 	fmt.Println("  nolang fmt [flags] <file|dir>  Format source files")
-	fmt.Println("  nolang build [flags] <file|dir>  Build a Nolang project")
+	fmt.Println("    Flags:")
+	fmt.Println("      -w    write result to source file (in-place)")
+	fmt.Println("      -d    process directory mode (recursive)")
+	fmt.Println("    Examples:")
+	fmt.Println("      nolang fmt main.no              format and print to stdout")
+	fmt.Println("      nolang fmt -w main.no           format file in-place")
+	fmt.Println("      nolang fmt -w -d src/           format all .no files in src/ recursively")
+	fmt.Println("      echo 'x=1' | nolang fmt         format from stdin")
+	fmt.Println("")
+	fmt.Println("  nolang build [flags] [<file|dir>]  Build a Nolang project (default: current dir)")
+	fmt.Println("    Flags:")
+	fmt.Println("      -o <file>     Output file path")
+	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
+	fmt.Println("    Examples:")
+	fmt.Println("      nolang build main.no")
+	fmt.Println("      nolang build -o output main.no      specify output path")
+	fmt.Println("      nolang build -cc zig main.no        use zig as C compiler")
+	fmt.Println("")
+	fmt.Println("  nolang run [<file|dir>]          Build and run")
+	fmt.Println("    If directory, requires main.no (entry point).")
+	fmt.Println("    Examples:")
+	fmt.Println("      nolang run                     build and run main.no in current dir")
+	fmt.Println("      nolang run main.no             build and run main.no")
+	fmt.Println("      nolang run -cc zig main.no     build and run with Zig compiler")
+	fmt.Println("")
+	fmt.Println("  nolang test [<file|dir>]         Run tests")
+	fmt.Println("    If directory, runs main() from all .no files except main.no and lib.no.")
+	fmt.Println("")
 	fmt.Println("  nolang add <pkg>        Add a dependency")
 	fmt.Println("  nolang remove <pkg>     Remove a dependency")
-	fmt.Println("  nolang update           Update dependencies")
-	fmt.Println("  nolang list             List dependencies")
-	fmt.Println("  nolang install          Install dependencies")
+	fmt.Println("  nolang update <pkg>     Update a specific dependency")
+	fmt.Println("  nolang update-all        Update all dependencies")
+	fmt.Println("  nolang list              List dependencies")
+	fmt.Println("  nolang install           Install nolang binary to system")
+	fmt.Println("  nolang sync              Sync/download dependencies")
+	fmt.Println("  nolang pub               Publish package")
+	fmt.Println("")
 	fmt.Println("")
 }
+
+// verbose 為全局 -v 旗標
+var verbose = false
 
 func initProject() {
 	dir, err := os.Getwd()
@@ -105,8 +167,7 @@ func initProject() {
 		},
 		Main: "main.no",
 		Compiler: CompilerConfig{
-			Target: "llvm",
-			Output: "./dist",
+			Version: "0.1.0",
 		},
 	}
 
@@ -136,16 +197,13 @@ func newProject(name string) {
 	}
 
 	config := ProjectConfig{
-		Name:        name,
-		Version:     "1.0.0",
-		Description: "A new Nolang project",
-		Dependencies: map[string]string{
-			"fmt": "*",
-		},
-		Main: "main.no",
+		Name:         name,
+		Version:      "0.1.0",
+		Description:  "A new Nolang project",
+		Dependencies: map[string]string{},
+		Main:         "main.no",
 		Compiler: CompilerConfig{
-			Target: "llvm",
-			Output: "./dist",
+			Version: "0.1.0",
 		},
 	}
 
@@ -164,26 +222,31 @@ func newProject(name string) {
 }
 
 func createConfigFile(config ProjectConfig) {
+
 	content := fmt.Sprintf(`{
   "name": "%s",
   "version": "%s",
   "description": "%s",
+  "keywords": [],
   "author": "",
+  "email": "",
+  "organization": "",
+  "repository": "",
+  "homepage": "",
   "license": "MIT",
+  "workspace": "",
   "dependencies": %s,
-  "main": "%s",
   "compiler": {
-    "target": "%s",
-    "output": "%s"
-  }
+    "version": "%s",
+  },
+  "output": "./dist",
+  "ignore": [],
 }`,
 		config.Name,
 		config.Version,
 		config.Description,
 		formatDependencies(config.Dependencies),
-		config.Main,
-		config.Compiler.Target,
-		config.Compiler.Output,
+		config.Compiler.Version,
 	)
 
 	err := os.WriteFile("nolang.jsonc", []byte(content), 0644)
@@ -208,7 +271,7 @@ func formatDependencies(deps map[string]string) string {
 
 func createMainFile() {
 	content := `// Main entry point
-println('Hello, Nolang!')
+print('Hello, Nolang!')
 `
 	err := os.WriteFile("main.no", []byte(content), 0644)
 	if err != nil {
@@ -250,7 +313,7 @@ func createSrcDirectory() {
 use std/fmt.println
 
 greet(name str) {
-    println('Hello, ' + name)
+    print('Hello, ' + name)
 }
 `
 	err = os.WriteFile("src/utils.no", []byte(content), 0644)
@@ -305,7 +368,22 @@ func removeDependency(name string) {
 	fmt.Printf("Removed dependency: %s\n", name)
 }
 
-func updateDependencies() {
+func updateDependency(pkg string) {
+	config, err := loadProjectConfig()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	if _, ok := config.Dependencies[pkg]; !ok {
+		fmt.Printf("Dependency %s not found.\n", pkg)
+		return
+	}
+	config.Dependencies[pkg] = "*"
+	createConfigFile(*config)
+	fmt.Printf("Updated %s\n", pkg)
+}
+
+func updateAllDependencies() {
 	config, err := loadProjectConfig()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -392,10 +470,30 @@ func removeComments(jsonc string) string {
 	return result.String()
 }
 
-func installDependencies() {
-	fmt.Println("Installing dependencies...")
-	fmt.Println("Note: Dependency installation is not yet implemented.")
+func syncDependencies() {
+	fmt.Println("Syncing dependencies...")
+	fmt.Println("Note: Dependency sync is not yet implemented.")
 	fmt.Println("Standard library is included by default.")
+}
+
+func installCommand() {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
+	dst := "/usr/local/bin/nolang"
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading binary: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(dst, data, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Printf("Try: sudo %s install\n", os.Args[0])
+		return
+	}
+	fmt.Printf("Installed to %s\n", dst)
 }
 
 func fmtCommand(args []string) {
@@ -404,8 +502,18 @@ func fmtCommand(args []string) {
 	dirMode := fs.Bool("d", false, "process directory mode")
 	fs.Usage = func() {
 		fmt.Println("Usage: nolang fmt [flags] <file|directory>")
-		fmt.Println("\nFlags:")
+		fmt.Println("")
+		fmt.Println("Format Nolang source files.")
+		fmt.Println("When no file is given, reads from stdin.")
+		fmt.Println("")
+		fmt.Println("Flags:")
 		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  nolang fmt main.no")
+		fmt.Println("  nolang fmt -w main.no")
+		fmt.Println("  nolang fmt -w -d src/")
+		fmt.Println("  echo 'x=1' | nolang fmt")
 	}
 	_ = fs.Parse(args)
 
@@ -478,36 +586,186 @@ func fmtProcessDirectory(dirname string, writeInPlace bool) error {
 func buildCommand(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
-	targetStr := fs.String("target", "llvm", "Target: llvm, no")
-	cc := fs.String("cc", "clang", "C compiler for llvm target: clang, zig")
-	testMode := fs.Bool("test", false, "Build test module (test.no)")
-	exportMode := fs.Bool("export", false, "Build library module (lib.no)")
-	verbose := fs.Bool("v", false, "Verbose mode")
+	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	fs.Usage = func() {
 		fmt.Println("Usage: nolang build [flags] <file|directory>")
-		fmt.Println("\nFlags:")
+		fmt.Println("")
+		fmt.Println("Build Nolang source files to an executable.")
+		fmt.Println("")
+		fmt.Println("Flags:")
 		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  nolang build                  build current directory")
+		fmt.Println("  nolang build main.no")
+		fmt.Println("  nolang build -o output main.no")
+		fmt.Println("  nolang build -cc zig main.no")
 	}
 	_ = fs.Parse(args)
 
-	if len(fs.Args()) != 1 {
-		fmt.Println("Error: Missing input file")
-		fs.Usage()
-		os.Exit(1)
+	var inputPath string
+	if len(fs.Args()) == 0 {
+		inputPath = "."
+	} else {
+		inputPath = fs.Args()[0]
 	}
-
-	inputPath := fs.Args()[0]
 	opts := nbuild.BuildOptions{
-		Target:     *targetStr,
-		CC:         *cc,
-		TestMode:   *testMode,
-		ExportMode: *exportMode,
-		Verbose:    *verbose,
-		Output:     *outputFile,
+		CC:      *cc,
+		Verbose: verbose,
+		Output:  *outputFile,
 	}
 
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runCommand(args []string) {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
+	_ = fs.Parse(args)
+
+	inputPath := "."
+	if len(fs.Args()) > 0 {
+		inputPath = fs.Args()[0]
+	}
+
+	// 如果是文件夾，驗證 main.no 存在
+	info, err := os.Stat(inputPath)
+	if err == nil && info.IsDir() {
+		mainPath := filepath.Join(inputPath, "main.no")
+		if _, err := os.Stat(mainPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: main.no not found in %s\n", inputPath)
+			os.Exit(1)
+		}
+	}
+
+	tmpDir, err := os.MkdirTemp("", "nolang-run")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tmpDir)
+	outPath := filepath.Join(tmpDir, "out")
+	opts := nbuild.BuildOptions{
+		CC:      *cc,
+		Output:  outPath,
+		Verbose: verbose,
+	}
+	if err := nbuild.BuildFile(inputPath, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	cmd := exec.Command(outPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func testCommand(args []string) {
+	fs := flag.NewFlagSet("test", flag.ExitOnError)
+	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
+	_ = fs.Parse(args)
+
+	inputPath := "."
+	if len(fs.Args()) > 0 {
+		inputPath = fs.Args()[0]
+	}
+
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var testFiles []string
+	if info.IsDir() {
+		// 文件夾：掃描所有 .no 文件，排除 main.no 和 lib.no
+		entries, err := os.ReadDir(inputPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".no") {
+				continue
+			}
+			if name == "main.no" || name == "lib.no" {
+				continue
+			}
+			testFiles = append(testFiles, filepath.Join(inputPath, name))
+		}
+		if len(testFiles) == 0 {
+			fmt.Println("No test files found (no .no files other than main.no/lib.no).")
+			return
+		}
+	} else {
+		// 單一文件：直接執行
+		testFiles = append(testFiles, inputPath)
+	}
+
+	hadFailure := false
+	for _, tf := range testFiles {
+		if verbose {
+			fmt.Printf("Testing: %s\n", tf)
+		}
+		tmpDir, err := os.MkdirTemp("", "nolang-test")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		outPath := filepath.Join(tmpDir, "out")
+		opts := nbuild.BuildOptions{
+			CC:      *cc,
+			Output:  outPath,
+			Verbose: false,
+		}
+
+		if err := nbuild.BuildFile(tf, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, err)
+			hadFailure = true
+			os.RemoveAll(tmpDir)
+			continue
+		}
+
+		cmd := exec.Command(outPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, err)
+			hadFailure = true
+			os.RemoveAll(tmpDir)
+			continue
+		}
+		os.RemoveAll(tmpDir)
+	}
+
+	if hadFailure {
+		os.Exit(1)
+	}
+}
+
+func pubCommand(args []string) {
+	fs := flag.NewFlagSet("pub", flag.ExitOnError)
+	token := fs.String("token", "", "Registry authentication token")
+	registry := fs.String("registry", "", "Package registry URL")
+	_ = fs.Parse(args)
+
+	if *token == "" {
+		fmt.Println("Error: --token is required for publishing")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	fmt.Println("nolang pub: publishing is not yet implemented.")
+	fmt.Printf("  token: %s\n", *token)
+	fmt.Printf("  registry: %s\n", *registry)
 }

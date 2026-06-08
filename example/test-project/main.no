@@ -2,7 +2,7 @@
 // This file contains the main logic of your application
 
 // Import standard library
-use fmt
+# fmt
 
 // Main program starts here
 message = 'Hello, Nolang!'

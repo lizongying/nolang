@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/build/llvm"
-	"github.com/lizongying/nolang/build/no"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -217,14 +216,12 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 
 type Transpiler struct {
 	llvmGenerator *llvm.Generator
-	noGenerator   *no.Generator
 	pkg           *Package // 當前套件（用於路徑解析）
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
 	return &Transpiler{
 		llvmGenerator: llvm.NewGenerator(),
-		noGenerator:   no.NewGenerator(),
 		pkg:           pkg,
 	}
 }
@@ -234,7 +231,6 @@ type Target int
 const (
 	TargetUnknown Target = iota
 	TargetLLVM
-	TargetNo
 )
 
 func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
@@ -297,7 +293,7 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	return t.CompileTarget(source, TargetLLVM)
 }
 
-func (t *Transpiler) CompileTarget(source string, target Target) (string, error) {
+func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	l := lexer.New(source)
 	p := parser.New(l)
 	program := p.ParseProgram()
@@ -410,14 +406,7 @@ func (t *Transpiler) CompileTarget(source string, target Target) (string, error)
 		merged.Statements = append(merged.Statements, stmt)
 	}
 
-	switch target {
-	case TargetLLVM:
-		return t.llvmGenerator.Generate(merged), nil
-	case TargetNo:
-		return t.noGenerator.Generate(merged), nil
-	default:
-		return "", fmt.Errorf("unknown target: %v", target)
-	}
+	return t.llvmGenerator.Generate(merged), nil
 }
 
 // monomorphizeGenerics 對泛型函數進行單態化

@@ -14,7 +14,7 @@
 // }
 
 str.len() (n i64) {
-    n = self.len
+    n = .len
 }
 
 str-eq(a str, b str, n i64) {

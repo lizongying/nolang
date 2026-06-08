@@ -132,12 +132,12 @@ func TestFormatBasic(t *testing.T) {
 			name: "method_definition",
 			input: strings.TrimSpace(`
 str.len() (n    i64)      {
-    n = self.len
+    n = .len
 }
 			`),
 			expected: strings.TrimSpace(`
 str.len() (n i64) {
-    n = self.len
+    n = .len
 }
 			`),
 		},
@@ -201,8 +201,8 @@ func TestFormatFunction(t *testing.T) {
 		},
 		{
 			name:     "method with result parameter",
-			input:    "str.len() (n i64) {n = self.len}",
-			expected: "str.len() (n i64) {\n    n = self.len\n}",
+			input:    "str.len() (n i64) {n = .len}",
+			expected: "str.len() (n i64) {\n    n = .len\n}",
 		},
 	}
 

@@ -29,17 +29,17 @@ vec-len(v []t)(n i64) {
 
 // []t.push: 在末尾追加元素（需確保容量足夠）
 []t.push(val t)(new-n i64) {
-    n = len(self)
-    self[n] = val
+    n = len(.)
+    .[n] = val
     new-n = n + 1
 }
 
 // []t.pop: 從末尾彈出元素
 []t.pop()(val t, new-n i64) {
-    n = len(self)
+    n = len(.)
     if n > 0 {
         new-n = n - 1
-        val = self[new-n]
+        val = .[new-n]
     } else {
         new-n = 0
     }
@@ -50,7 +50,7 @@ vec-len(v []t)(n i64) {
     found = 0
     i = 0
     for i < n {
-        d = self[i] - val
+        d = .[i] - val
         if d == 0 {
             found = 1
             return
@@ -64,9 +64,9 @@ vec-len(v []t)(n i64) {
     i = 0
     j = n - 1
     for i < j {
-        tmp = self[i]
-        self[i] = self[j]
-        self[j] = tmp
+        tmp = .[i]
+        .[i] = .[j]
+        .[j] = tmp
         i = i + 1
         j = j - 1
     }
@@ -76,7 +76,7 @@ vec-len(v []t)(n i64) {
 []t.clone-to(n i64, dst []t) {
     i = 0
     for i < n {
-        dst[i] = self[i]
+        dst[i] = .[i]
         i = i + 1
     }
 }
@@ -85,7 +85,7 @@ vec-len(v []t)(n i64) {
 []t.fill(n i64, val t) {
     i = 0
     for i < n {
-        self[i] = val
+        .[i] = val
         i = i + 1
     }
 }
@@ -96,18 +96,18 @@ vec-to-arr(v []t)(out ?[n]t) {
         out = nil
         return
     }
-    for i in [0..n) {
+    for i <- [0..n) {
         !out[i] = v[i]
     }
 }
 
 // []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr()(out ?[n]t) {
-    if self.len() != n {
+    if .len() != n {
         out = nil
         return
     }
-    for i in [0..n) {
-        !out[i] = self[i]
+    for i <- [0..n) {
+        !out[i] = .[i]
     }
 }

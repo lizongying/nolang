@@ -1,25 +1,18 @@
 {
   // Nolang 项目配置文件
-  "name": "my-project",
-  "version": "1.0.0",
+  "name": "nolang",
+  "version": "0.1.0",
   "description": "A Nolang project",
-  
+  "workspace": "./src",
   // 依赖声明
   "dependencies": {
     // 标准库（版本号可省略或使用 "*"）
     "fmt": "*",
     "math": "*",
     "strconv": "*",
-    
     // 第三方库（指定版本）
     "github.com/user/utils": "1.0.0"
   },
-  
-  // 开发依赖
-  "dev-dependencies": {
-    "github.com/nolang/testing": "0.1.0"
-  },
-  
   // 编译配置
   "compiler": {
     "target": "go",

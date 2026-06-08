@@ -25,7 +25,7 @@ arr-create(n i64, val t)(out [n]t) {
 [n]t.clone(dst [n]t) {
     i = 0
     for i < n {
-        dst[i] = self[i]
+        dst[i] = .[i]
         i = i + 1
     }
 }
@@ -35,7 +35,7 @@ arr-create(n i64, val t)(out [n]t) {
     eq = 1
     i = 0
     for i < n {
-        d = self[i] - b[i]
+        d = .[i] - b[i]
         if d != 0 {
             eq = 0
             return
@@ -48,7 +48,7 @@ arr-create(n i64, val t)(out [n]t) {
 [n]t.fill(val t) {
     i = 0
     for i < n {
-        self[i] = val
+        .[i] = val
         i = i + 1
     }
 }
@@ -58,9 +58,9 @@ arr-create(n i64, val t)(out [n]t) {
     i = 0
     j = n - 1
     for i < j {
-        tmp = self[i]
-        self[i] = self[j]
-        self[j] = tmp
+        tmp = .[i]
+        .[i] = .[j]
+        .[j] = tmp
         i = i + 1
         j = j - 1
     }
@@ -71,7 +71,7 @@ arr-create(n i64, val t)(out [n]t) {
     found = 0
     i = 0
     for i < n {
-        d = self[i] - val
+        d = .[i] - val
         if d == 0 {
             found = 1
             return
@@ -82,19 +82,19 @@ arr-create(n i64, val t)(out [n]t) {
 
 // [n]t.to-vec: 陣列方法，轉為 []t 切片
 [n]t.to-vec()(out []t) {
-    for i in [0..n) {
-        out[i] = self[i]
+    for i <- [0..n) {
+        out[i] = .[i]
     }
 }
 
 // [n]t.max: 陣列中的最大值
 [n]t.max()(max t) {
-    max = self[0]
+    max = .[0]
     i = 1
     for i < n {
-        d = self[i] - max
+        d = .[i] - max
         if d > 0 {
-            max = self[i]
+            max = .[i]
         }
         i = i + 1
     }
@@ -102,12 +102,12 @@ arr-create(n i64, val t)(out [n]t) {
 
 // [n]t.min: 陣列中的最小值
 [n]t.min()(min t) {
-    min = self[0]
+    min = .[0]
     i = 1
     for i < n {
-        d = self[i] - min
+        d = .[i] - min
         if d < 0 {
-            min = self[i]
+            min = .[i]
         }
         i = i + 1
     }
@@ -118,7 +118,7 @@ arr-create(n i64, val t)(out [n]t) {
     sum = 0
     i = 0
     for i < n {
-        sum = sum + self[i]
+        sum = sum + .[i]
         i = i + 1
     }
 }

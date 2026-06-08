@@ -25,7 +25,7 @@ test-option-4() {
     x = err('error msg')
     x {
         err|
-            println-i64(it)
+            println-i64(.)
         nil|
             println-i64(0)
         |

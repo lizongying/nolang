@@ -16,7 +16,7 @@ fn fib(n: i64, o: &mut i64) {
 
 fn main() {
     let mut result: i64 = 0;
-    for i in 0..10000000 {
+    for i <- 0..10000000 {
         let n = if i < 5000000 { 40 } else { 41 };
         fib(n, &mut result);
         std::hint::black_box(result);
