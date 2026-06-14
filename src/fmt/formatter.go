@@ -772,46 +772,113 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write("}")
 }
 
+// lineComment 記錄原始碼中的行尾註釋資訊
+type lineComment struct {
+	comment  string // 註釋內容（不含 //）
+	codeLine string // 去除註釋後的原始程式碼
+}
+
 func Format(code string) string {
 	if strings.TrimSpace(code) == "" {
 		return ""
 	}
 
-	// 若原始碼包含註釋，跳過格式化以保留註釋
-	if hasComment(code) {
-		return code
-	}
+	// 從原始碼中移除所有 // 註釋
+	cleanCode, comments := stripAllComments(code)
 
-	l := lexer.New(code)
+	l := lexer.New(cleanCode)
 	p := parser.New(l)
 	program := p.ParseProgram()
 
 	if program == nil || len(program.Statements) == 0 {
-		return ""
+		return cleanCode
 	}
 
 	f := &formatter{
-		sourceLines: strings.Split(code, "\n"),
+		sourceLines: strings.Split(cleanCode, "\n"),
 	}
 	f.formatProgram(program)
-	return f.buf.String()
+	formattedCode := f.buf.String()
+
+	// 將行尾註釋匹配到格式化輸出：對每個註釋，在其原始原始碼行(cleanCode)中
+	// 找到第一個有意義的識別字（函數名/變數名），再到格式化輸出中找到
+	// 以該識別字開頭的格式化行，將註釋附加到該行。
+	if len(comments) > 0 {
+		formattedLines := strings.Split(formattedCode, "\n")
+		for _, comment := range comments {
+			// 從原始程式碼行中提取首個標識符
+			ident := extractFirstIdentifier(comment.codeLine)
+			if ident == "" {
+				continue
+			}
+			// 尋找格式化行中以該標識符開頭的行（精確比對首個 token）
+			for j, fl := range formattedLines {
+				flIdent := extractFirstIdentifier(fl)
+				if flIdent == ident && !strings.Contains(formattedLines[j], "//"+comment.comment) {
+					formattedLines[j] = fl + "  // " + comment.comment
+					break
+				}
+			}
+		}
+		formattedCode = strings.Join(formattedLines, "\n")
+	}
+
+	return formattedCode
 }
 
-// hasComment 檢查原始碼是否包含註釋（包含行內註釋）
-func hasComment(code string) bool {
-	inStr := false
-	runes := []rune(code)
-	for i := 0; i < len(runes); i++ {
-		ch := runes[i]
-		if ch == '\'' && (i == 0 || runes[i-1] != '\\') {
-			inStr = !inStr
-			continue
-		}
-		if !inStr && ch == '/' && i+1 < len(runes) && runes[i+1] == '/' {
-			return true
+// extractFirstIdentifier 從一行程式碼中提取首個有效的 Nolang 標識符
+func extractFirstIdentifier(line string) string {
+	// 跳過開頭的空白
+	line = strings.TrimLeft(line, " \t")
+	if line == "" {
+		return ""
+	}
+	// 逐字元提取：字母/數字/底線/連接號
+	var buf strings.Builder
+	for _, ch := range line {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' {
+			buf.WriteRune(ch)
+		} else {
+			break
 		}
 	}
-	return false
+	return buf.String()
+}
+
+// stripAllComments 從原始碼中移除所有 // 註釋。
+// 返回：移除註釋後的程式碼、行尾註釋列表
+func stripAllComments(code string) (string, []lineComment) {
+	lines := strings.Split(code, "\n")
+	var comments []lineComment
+	inStr := false
+
+	for lineIdx, line := range lines {
+		for i := 0; i < len(line); i++ {
+			ch := line[i]
+			if ch == '\'' && (i == 0 || line[i-1] != '\\') {
+				inStr = !inStr
+			}
+			if !inStr && ch == '/' && i+1 < len(line) && line[i+1] == '/' {
+				// 提取註釋內容
+				comment := strings.TrimSpace(line[i+2:])
+				beforeComment := strings.TrimRight(line[:i], " \t")
+
+				// 保存行尾註釋（非純註釋行才有意義）
+				trimmed := strings.TrimLeft(line, " \t")
+				if !strings.HasPrefix(trimmed, "//") && comment != "" {
+					comments = append(comments, lineComment{
+						comment:  comment,
+						codeLine: beforeComment,
+					})
+				}
+				// 行內原地修改
+				lines[lineIdx] = beforeComment
+				break
+			}
+		}
+	}
+
+	return strings.Join(lines, "\n"), comments
 }
 
 func (f *Formatter) Format(code string) string {
