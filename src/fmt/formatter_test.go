@@ -208,6 +208,23 @@ max = (a t, b t) (r t) {
 }
 			`),
 		},
+
+		{
+			name: "func3",
+			input: strings.TrimSpace(`
+get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+}
+set-env = (k str, v str) {  // LLVM: call i32 @setenv
+}
+			`),
+			expected: strings.TrimSpace(`
+get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+}
+
+set-env = (k str, v str) {  // LLVM: call i32 @setenv
+}
+			`),
+		},
 	}
 
 	for _, tt := range tests {

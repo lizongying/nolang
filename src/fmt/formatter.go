@@ -18,6 +18,7 @@ type formatter struct {
 	buf          strings.Builder
 	indent       int
 	sourceLines  []string
+	lineTypes    []lineType
 	stmtLineCnt  []int // per-statement formatted line count
 	stmtOrigLine []int // per-statement original 1-based line number
 }
@@ -54,7 +55,10 @@ func (f *formatter) formatProgram(p *parser.Program) {
 
 		if i > 0 {
 			// 保留原始碼中的空行（最多合併為一行）
-			if f.hasBlankLineBetween(p.Statements[i-1], stmt) {
+			// 函數定義之間始終插入空行
+			_, prevIsFunc := p.Statements[i-1].(*parser.FunctionDefinition)
+			_, currIsFunc := stmt.(*parser.FunctionDefinition)
+			if f.hasBlankLineBetween(p.Statements[i-1], stmt) || (prevIsFunc && currIsFunc) {
 				f.newline()
 			}
 			f.newline()
@@ -68,16 +72,25 @@ func (f *formatter) formatProgram(p *parser.Program) {
 }
 
 // hasBlankLineBetween 檢查原始碼中兩個陳述句之間是否有空行
+// 只考慮程式碼行之間的空白行，註釋行/空白行之間的空白行不計（section header 與函數之間的空白）
 func (f *formatter) hasBlankLineBetween(prev, curr parser.Statement) bool {
 	prevLine := stmtTokenLine(prev)
 	currLine := stmtTokenLine(curr)
 	if prevLine == 0 || currLine == 0 || currLine <= prevLine {
 		return false
 	}
-	// 檢查 prevLine 到 currLine 之間是否有空白行
+	// 檢查 prevLine 到 currLine 之間是否有程式碼行之間的空白行
 	for line := prevLine; line < currLine; line++ {
-		if line-1 < len(f.sourceLines) && strings.TrimSpace(f.sourceLines[line-1]) == "" {
-			return true
+		idx := line - 1
+		if idx >= len(f.sourceLines) {
+			continue
+		}
+		if strings.TrimSpace(f.sourceLines[idx]) == "" {
+			// 空白行只有在前一行是程式碼行時才視為 statement 之間的空行
+			// 註釋行或 section header 前的空白不計
+			if idx > 0 && idx-1 < len(f.lineTypes) && f.lineTypes[idx-1] == lineCode {
+				return true
+			}
 		}
 	}
 	return false
@@ -824,6 +837,7 @@ func Format(code string) string {
 	cleanLines := strings.Split(cleanCode, "\n")
 	f := &formatter{
 		sourceLines: cleanLines,
+		lineTypes:   lineTypes,
 	}
 	f.formatProgram(program)
 	formattedCode := f.buf.String()
@@ -865,7 +879,14 @@ func Format(code string) string {
 		// 程式碼行：只有當此行是 statement 的起始行時才輸出格式化內容
 		if stmtStartLines[origLineIdx] && stmtIdx < len(f.stmtLineCnt) {
 			cnt := f.stmtLineCnt[stmtIdx]
-			for j := 0; j < cnt && formLineIdx+j < len(formattedLines); j++ {
+			// 當前一輸出為保留註釋行時，跳過格式化輸出的首行空白（避免註釋與函數之間產生空行）
+			startJ := 0
+			if cnt > 0 && len(result) > 0 && strings.HasPrefix(strings.TrimLeft(result[len(result)-1], " \t"), "//") {
+				if strings.TrimSpace(formattedLines[formLineIdx]) == "" {
+					startJ = 1
+				}
+			}
+			for j := startJ; j < cnt && formLineIdx+j < len(formattedLines); j++ {
 				result = append(result, formattedLines[formLineIdx+j])
 			}
 			formLineIdx += cnt
