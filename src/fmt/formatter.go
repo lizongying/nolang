@@ -15,8 +15,9 @@ func NewFormatter() *Formatter {
 }
 
 type formatter struct {
-	buf    strings.Builder
-	indent int
+	buf         strings.Builder
+	indent      int
+	sourceLines []string
 }
 
 func (f *formatter) writeIndent() {
@@ -39,10 +40,63 @@ func (f *formatter) newline() {
 func (f *formatter) formatProgram(p *parser.Program) {
 	for i, stmt := range p.Statements {
 		if i > 0 {
+			// 保留原始碼中的空行（最多合併為一行）
+			if f.hasBlankLineBetween(p.Statements[i-1], stmt) {
+				f.newline()
+			}
 			f.newline()
 		}
 		f.formatStatement(stmt)
 	}
+}
+
+// hasBlankLineBetween 檢查原始碼中兩個陳述句之間是否有空行
+func (f *formatter) hasBlankLineBetween(prev, curr parser.Statement) bool {
+	prevLine := stmtTokenLine(prev)
+	currLine := stmtTokenLine(curr)
+	if prevLine == 0 || currLine == 0 || currLine <= prevLine {
+		return false
+	}
+	// 檢查 prevLine 到 currLine 之間是否有空白行
+	for line := prevLine; line < currLine; line++ {
+		if line-1 < len(f.sourceLines) && strings.TrimSpace(f.sourceLines[line-1]) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// stmtTokenLine 取得陳述句的起始行號（1-based）
+func stmtTokenLine(stmt parser.Statement) int {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		return s.Token.Line
+	case *parser.UseStatement:
+		return s.Token.Line
+	case *parser.ReturnStatement:
+		return s.Token.Line
+	case *parser.ExpressionStatement:
+		return s.Token.Line
+	case *parser.FunctionDefinition:
+		return s.Token.Line
+	case *parser.ForStatement:
+		return s.Token.Line
+	case *parser.BreakStatement:
+		return s.Token.Line
+	case *parser.ContinueStatement:
+		return s.Token.Line
+	case *parser.BlockStatement:
+		return s.Token.Line
+	case *parser.EnumDefinition:
+		return s.Token.Line
+	case *parser.TaggedEnumDefinition:
+		return s.Token.Line
+	case *parser.InterfaceDefinition:
+		return s.Token.Line
+	case *parser.StructDefinition:
+		return s.Token.Line
+	}
+	return 0
 }
 
 func (f *formatter) formatStatement(stmt parser.Statement) {
@@ -158,14 +212,18 @@ func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 
 func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	f.formatExpression(s.Name)
-	if s.Type != nil && s.Type.Value != "" && !isInferredType(s) {
-		if s.IsSlice {
-			f.write(" []")
+	if s.ArraySize > 0 {
+		f.writef(" [%d]", s.ArraySize)
+		if s.ElemType != "" {
 			f.write(s.ElemType)
-		} else if s.ArraySize > 0 {
-			f.writef(" [%d]", s.ArraySize)
+		}
+	} else if s.IsSlice {
+		f.write(" []")
+		if s.ElemType != "" {
 			f.write(s.ElemType)
-		} else if s.IsOption {
+		}
+	} else if s.Type != nil && s.Type.Value != "" && !isInferredType(s) {
+		if s.IsOption {
 			f.write(" ?")
 			f.write(s.Type.Value)
 		} else {
@@ -175,8 +233,37 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	}
 	if s.Value != nil {
 		f.write(" = ")
-		f.formatExpression(s.Value)
+		// 當 ArraySize > 0 且值為 ArrayLiteral（由 [1, 2, 3] 轉換而來）
+		// 以切片風格輸出 [1, 2, 3]，避免重複 size
+		if s.ArraySize > 0 {
+			if arr, ok := s.Value.(*parser.ArrayLiteral); ok && isSliceConverted(arr) {
+				f.write("[")
+				for i, el := range arr.Elements {
+					if i > 0 {
+						f.write(", ")
+					}
+					f.formatExpression(el)
+				}
+				f.write("]")
+			} else {
+				f.formatExpression(s.Value)
+			}
+		} else {
+			f.formatExpression(s.Value)
+		}
 	}
+}
+
+// isSliceConverted checks if ArrayLiteral was converted from SliceLiteral
+// (Size.Token.Literal == "[" indicates the original LBRACKET token)
+func isSliceConverted(arr *parser.ArrayLiteral) bool {
+	if arr.Size == nil {
+		return false
+	}
+	if intLit, ok := arr.Size.(*parser.IntegerLiteral); ok {
+		return intLit.Token.Literal == "["
+	}
+	return false
 }
 
 // isInferredType checks if the type was inferred by the parser (not written in source).
@@ -209,7 +296,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		}
 		f.write(">")
 	}
-	f.write("(")
+	f.write("= (")
 	// Skip implicit self parameter for method definitions
 	params := s.Parameters
 	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
@@ -414,9 +501,30 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.write(s.Label)
 		f.write(" ")
 	}
+
+	// ! { } 無限循環
+	if s.Token.Type == lexer.NOT {
+		f.write("!")
+		f.write(" {")
+		f.indent++
+		for _, stmt := range s.Body.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
 	f.write("for")
 
-	if s.Variable != "" && (s.Range != nil || s.RangeStr != "" || s.RangeIdent != "" || s.RangeSliceLit != nil) {
+	// N * { } 次數循環
+	if s.CountExpr != nil {
+		f.write(" ")
+		f.formatExpression(s.CountExpr)
+		f.write(" *")
+	} else if s.Variable != "" && (s.Range != nil || s.RangeStr != "" || s.RangeIdent != "" || s.RangeSliceLit != nil) {
 		// range for: for i <- [a..b]
 		f.write(" ")
 		f.write(s.Variable)
@@ -655,6 +763,11 @@ func Format(code string) string {
 		return ""
 	}
 
+	// 若原始碼包含註釋，跳過格式化以保留註釋
+	if hasComment(code) {
+		return code
+	}
+
 	l := lexer.New(code)
 	p := parser.New(l)
 	program := p.ParseProgram()
@@ -663,9 +776,28 @@ func Format(code string) string {
 		return ""
 	}
 
-	f := &formatter{}
+	f := &formatter{
+		sourceLines: strings.Split(code, "\n"),
+	}
 	f.formatProgram(program)
 	return f.buf.String()
+}
+
+// hasComment 檢查原始碼是否包含註釋（包含行內註釋）
+func hasComment(code string) bool {
+	inStr := false
+	runes := []rune(code)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		if ch == '\'' && (i == 0 || runes[i-1] != '\\') {
+			inStr = !inStr
+			continue
+		}
+		if !inStr && ch == '/' && i+1 < len(runes) && runes[i+1] == '/' {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *Formatter) Format(code string) string {

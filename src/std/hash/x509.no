@@ -23,14 +23,14 @@
 // der-tag: 讀取 DER 標籤位元組
 // data: DER 編碼資料, pos: 位置
 // tag: 輸出標籤值
-der-tag(data str, pos i64, tag i64) {
+der-tag: (data str, pos i64, tag i64) {
     tag = data[pos] & 255
 }
 
 // der-len: 解碼 DER 長度
 // data: DER 編碼資料, pos: 位置（指向長度位元組）
 // len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
-der-len(data str, pos i64, len i64, adv i64) {
+der-len: (data str, pos i64, len i64, adv i64) {
     b = data[pos] & 255
     if b & 128 == 0 {
         // 短格式：長度 = b (0-127)
@@ -53,7 +53,7 @@ der-len(data str, pos i64, len i64, adv i64) {
 // data: DER 編碼資料, n: 資料總長度
 // pos: 目前位置（指向標籤位元組）
 // next: 輸出下一個元素的位置
-der-skip(data str, n i64, pos i64, next i64) {
+der-skip: (data str, n i64, pos i64, next i64) {
     // 跳過標籤（1 位元組）
     p = pos + 1
     // 讀取長度
@@ -69,7 +69,7 @@ der-skip(data str, n i64, pos i64, next i64) {
 // data: DER 編碼憑證, n: 總長度
 // start: 輸出 TBS 起始位置（含 SEQUENCE 標籤）
 // end: 輸出 TBS 結束位置（不含，即下個元素的起始）
-x509-tbs-range(data str, n i64, start i64, end i64) {
+x509-tbs-range: (data str, n i64, start i64, end i64) {
     // 驗證外層 SEQUENCE
     tag = data[0] & 255
     if tag != 48 {
@@ -91,7 +91,7 @@ x509-tbs-range(data str, n i64, start i64, end i64) {
 // x509-serial: 提取憑證序號（若可放入 i64）
 // data: DER 編碼憑證, n: 總長度
 // serial: 輸出序號（0 表示無法提取）
-x509-serial(data str, n i64, serial i64) {
+x509-serial: (data str, n i64, serial i64) {
     // 找到 TBSCertificate
     x509-tbs-range(data, n, tbs-start, tbs-end)
     if tbs-start == 0 {
@@ -136,7 +136,7 @@ x509-serial(data str, n i64, serial i64) {
 // x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
 // data: DER 編碼憑證, n: 總長度
 // e: 輸出指數值（0 表示非 RSA 或解析失敗）
-x509-rsa-e(data str, n i64, e i64) {
+x509-rsa-e: (data str, n i64, e i64) {
     // 找到 TBSCertificate
     x509-tbs-range(data, n, tbs-start, tbs-end)
     if tbs-start == 0 {
@@ -238,7 +238,7 @@ x509-rsa-e(data str, n i64, e i64) {
 // h0..h7: 輸入必須為 SHA-256 初始值，輸出為 256-bit 指紋
 //
 // 本函數處理完整的 SHA-256 填充和位元組→字轉換。
-x509-fingerprint(data str, n i64)
+x509-fingerprint: (data str, n i64)
                  (h0 i64, h1 i64, h2 i64, h3 i64,
                   h4 i64, h5 i64, h6 i64, h7 i64) {
     // 找到 TBSCertificate 範圍
@@ -435,7 +435,7 @@ x509-fingerprint(data str, n i64)
 // sha256-compress: SHA-256 單區塊壓縮
 // w0..w15: 16 個 32-bit 大端字（512-bit 區塊）
 // h0..h7: 輸入/輸出 256-bit 哈希狀態
-sha256-compress(w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i64,
+sha256-compress: (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i64,
                 w8 i64, w9 i64, w10 i64, w11 i64, w12 i64, w13 i64, w14 i64, w15 i64)
                 (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
     MASK = 4294967295

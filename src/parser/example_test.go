@@ -9,7 +9,7 @@ import (
 
 func TestFunctionDefinitionExample(t *testing.T) {
 	input := `
-foo(a int, b string) {
+foo: (a int, b string) {
 	x = 10
 }
 

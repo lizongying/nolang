@@ -353,6 +353,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", err
 	}
 
+	// 型別檢查
+	if typeErrs := ValidateTypes(program); len(typeErrs) > 0 {
+		var msgs []string
+		for _, e := range typeErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
+	}
+
 	// 名稱修飾 pass：處理方法重載
 	mangleOverloads(program, varTypes)
 
@@ -881,6 +890,9 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		// 也替換 for i < n 條件中的 n
 		if s.Condition != nil {
 			newFor.Condition = substituteExpr(s.Condition, subst)
+		}
+		if s.CountExpr != nil {
+			newFor.CountExpr = substituteExpr(s.CountExpr, subst)
 		}
 		return newFor
 	case *parser.BlockStatement:
@@ -1543,4 +1555,221 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		}
 	}
 	return nil
+}
+
+// ── 型別檢查 ──────────────────────────────────────────────
+
+// ValidateResult 型別檢查結果
+type ValidateResult struct {
+	Line    int
+	Column  int
+	Message string
+}
+
+// ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
+func ValidateTypes(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	// 1. 收集所有函式名稱
+	funcNames := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			funcNames[fd.Name] = true
+		}
+	}
+
+	// 2. 檢查重複函式簽名（允許重載，但簽名不能重複）
+	sigSeen := make(map[string]int) // signature → first seen line
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			var paramTypes []string
+			for _, p := range fd.Parameters {
+				paramTypes = append(paramTypes, p.Type)
+			}
+			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
+			if firstLine, exists := sigSeen[sig]; exists {
+				results = append(results, ValidateResult{
+					Line:    fd.Token.Line,
+					Column:  fd.Token.Column,
+					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstLine),
+				})
+			} else {
+				sigSeen[sig] = fd.Token.Line
+			}
+		}
+	}
+
+	// 3. 遍歷頂層語句做型別檢查
+	for _, stmt := range program.Statements {
+		errs := validateStmtTypes(stmt, funcNames, make(map[string]string))
+		results = append(results, errs...)
+	}
+
+	return results
+}
+
+// validateStmtTypes 檢查單個語句的型別問題
+func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varTypes map[string]string) []ValidateResult {
+	var results []ValidateResult
+
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		// 進入函式體，用新的作用域
+		localTypes := make(map[string]string)
+		// 參數加入作用域
+		for _, p := range s.Parameters {
+			if p.Type != "" {
+				localTypes[p.Name] = p.Type
+			}
+		}
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				errs := validateStmtTypes(bStmt, funcNames, localTypes)
+				results = append(results, errs...)
+			}
+		}
+
+	case *parser.LetStatement:
+		// 檢查是否對函式名稱賦值
+		if funcNames[s.Name.Value] {
+			results = append(results, ValidateResult{
+				Line:    s.Token.Line,
+				Column:  s.Token.Column,
+				Message: fmt.Sprintf("cannot reassign function name '%s'", s.Name.Value),
+			})
+		}
+
+		// 檢查 nil 賦值到非可空變數
+		if _, isNil := s.Value.(*parser.NilLiteral); isNil {
+			// 有顯式型別註記
+			if s.Type != nil && s.Type.Value != "" && s.Type.Value != s.Name.Value {
+				if !s.IsOption {
+					results = append(results, ValidateResult{
+						Line:    s.Token.Line,
+						Column:  s.Token.Column,
+						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
+					})
+				}
+				// 記錄型別
+				varTypes[s.Name.Value] = s.Type.Value
+				break
+			}
+			// 無顯式型別，檢查是否已有型別
+			if existingType, exists := varTypes[s.Name.Value]; exists {
+				if existingType != "" && !strings.HasPrefix(existingType, "?") {
+					results = append(results, ValidateResult{
+						Line:    s.Token.Line,
+						Column:  s.Token.Column,
+						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
+					})
+				}
+				break
+			}
+			// 新變數從 nil 推斷不出型別
+			results = append(results, ValidateResult{
+				Line:    s.Token.Line,
+				Column:  s.Token.Column,
+				Message: fmt.Sprintf("cannot infer type from nil for variable '%s'", s.Name.Value),
+			})
+			break
+		}
+
+		// 記錄型別
+		if s.Type != nil && s.Type.Value != "" && s.Type.Value != s.Name.Value {
+			// 顯式型別註記
+			varTypes[s.Name.Value] = s.Type.Value
+		} else if s.Value != nil {
+			// 型別推斷
+			inferredType := inferExprType(s.Value, varTypes)
+			if inferredType != "" {
+				if existingType, exists := varTypes[s.Name.Value]; exists {
+					// 變數已有型別，檢查是否相容
+					if inferredType != existingType {
+						results = append(results, ValidateResult{
+							Line:    s.Token.Line,
+							Column:  s.Token.Column,
+							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value),
+						})
+					}
+				} else {
+					// 首次賦值，記錄推斷型別
+					varTypes[s.Name.Value] = inferredType
+				}
+			}
+		}
+
+	case *parser.ExpressionStatement:
+		// 處理 if 表示式
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				for _, bStmt := range ifExpr.Consequence.Statements {
+					errs := validateStmtTypes(bStmt, funcNames, varTypes)
+					results = append(results, errs...)
+				}
+			}
+			if ifExpr.Alternative != nil {
+				for _, bStmt := range ifExpr.Alternative.Statements {
+					errs := validateStmtTypes(bStmt, funcNames, varTypes)
+					results = append(results, errs...)
+				}
+			}
+			break
+		}
+		if assign, ok := s.Expression.(*parser.AssignExpression); ok {
+			if ident, ok := assign.Left.(*parser.Identifier); ok {
+				// 檢查是否對函式名稱賦值
+				if funcNames[ident.Value] {
+					results = append(results, ValidateResult{
+						Line:    ident.Token.Line,
+						Column:  ident.Token.Column,
+						Message: fmt.Sprintf("cannot reassign function name '%s'", ident.Value),
+					})
+				}
+				// 檢查 nil 賦值到非可空變數
+				isNilAssign := false
+				if _, isNil := assign.Value.(*parser.NilLiteral); isNil {
+					isNilAssign = true
+					if existingType, exists := varTypes[ident.Value]; exists {
+						if !strings.HasPrefix(existingType, "?") {
+							results = append(results, ValidateResult{
+								Line:    ident.Token.Line,
+								Column:  ident.Token.Column,
+								Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", ident.Value),
+							})
+						}
+					}
+				}
+				// 型別不匹配檢查
+				if !isNilAssign {
+					if existingType, exists := varTypes[ident.Value]; exists {
+						valType := inferExprType(assign.Value, varTypes)
+						if valType != "" && valType != existingType {
+							results = append(results, ValidateResult{
+								Line:    ident.Token.Line,
+								Column:  ident.Token.Column,
+								Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value),
+							})
+						}
+					}
+				}
+			}
+		}
+
+	case *parser.ForStatement:
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				errs := validateStmtTypes(bStmt, funcNames, varTypes)
+				results = append(results, errs...)
+			}
+		}
+
+	case *parser.BlockStatement:
+		for _, bStmt := range s.Statements {
+			errs := validateStmtTypes(bStmt, funcNames, varTypes)
+			results = append(results, errs...)
+		}
+
+	}
+
+	return results
 }

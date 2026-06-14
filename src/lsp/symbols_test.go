@@ -66,7 +66,7 @@ func TestGetSymbolsVariable(t *testing.T) {
 }
 
 func TestGetSymbolsFunction(t *testing.T) {
-	text := `add(a i64, b i64) {
+	text := `add: (a i64, b i64) {
     result = a + b
 }`
 	doc := createTestDocument(text)
@@ -87,7 +87,7 @@ func TestGetSymbolsFunction(t *testing.T) {
 }
 
 func TestGetSymbolsFunctionParameters(t *testing.T) {
-	text := `add(a i64, b i64) {
+	text := `add: (a i64, b i64) {
     result = a + b
 }`
 	doc := createTestDocument(text)
@@ -111,7 +111,7 @@ func TestGetSymbolsFunctionParameters(t *testing.T) {
 }
 
 func TestGetSymbolsFunctionLocalVariables(t *testing.T) {
-	text := `add(a i64, b i64) {
+	text := `add: (a i64, b i64) {
     temp = a
     a = b
     b = temp
@@ -133,10 +133,10 @@ func TestGetSymbolsFunctionLocalVariables(t *testing.T) {
 func TestGetSymbolsMultiple(t *testing.T) {
 	text := `x = 10
 y = 20
-add(a i64, b i64) {
+add: (a i64, b i64) {
     result = a + b
 }
-mult(a i64, b i64) {
+mult: (a i64, b i64) {
     result = a * b
 }`
 	doc := createTestDocument(text)
@@ -223,7 +223,7 @@ func TestSymbolConstants(t *testing.T) {
 }
 
 func TestGetSymbolsNestedFunction(t *testing.T) {
-	text := `outer(a i64) {
+	text := `outer: (a i64) {
     result = a
 }`
 	doc := createTestDocument(text)
@@ -272,7 +272,7 @@ func TestSymbolProviderCreateVariableSymbol(t *testing.T) {
 }
 
 func TestSymbolProviderCreateFunctionSymbol(t *testing.T) {
-	text := `add(a i64, b i64) {
+	text := `add: (a i64, b i64) {
     result = a
 }`
 	doc := createTestDocument(text)
@@ -298,7 +298,7 @@ func TestSymbolProviderCreateFunctionSymbol(t *testing.T) {
 }
 
 func TestSymbolProviderCreateAnonymousFunctionSymbol(t *testing.T) {
-	text := `add(a i64) {
+	text := `add: (a i64) {
     result = a
 }`
 	doc := createTestDocument(text)
@@ -320,7 +320,7 @@ func TestSymbolProviderCreateAnonymousFunctionSymbol(t *testing.T) {
 }
 
 func TestSymbolProviderCollectLocalVariables(t *testing.T) {
-	text := `add(a i64, b i64) {
+	text := `add: (a i64, b i64) {
     temp = a
 }`
 	doc := createTestDocument(text)

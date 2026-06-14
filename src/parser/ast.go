@@ -404,6 +404,7 @@ type ForStatement struct {
 	RangeStr      string           // 字串遍歷: for i in 'hello'
 	RangeIdent    string           // 陣列/切片遍歷: for i in a
 	RangeSliceLit *SliceLiteral    // 匿名切片遍歷: for i in [1, 2, 3]
+	CountExpr     Expression       // ! { } 或 N * { } 語法
 }
 
 func (fs *ForStatement) statementNode()       {}

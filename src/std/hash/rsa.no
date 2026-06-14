@@ -15,7 +15,7 @@
 
 // bn-cmp: 比較兩個大數 a 和 b
 // 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
-bn-cmp(a []i64, an i64, b []i64, bn i64, cmp i64) {
+bn-cmp: (a []i64, an i64, b []i64, bn i64, cmp i64) {
     if an > bn {
         cmp = 1
         return
@@ -43,7 +43,7 @@ bn-cmp(a []i64, an i64, b []i64, bn i64, cmp i64) {
 
 // bn-add: c = a + b
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
-bn-add(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-add: (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
     carry = 0
     i = 0
     for i < an || i < bn || carry != 0 {
@@ -60,7 +60,7 @@ bn-add(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 // ─── 大數減法 ─────────────────────────────────────
 
 // bn-sub: c = a - b（需 a ≥ b）
-bn-sub(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-sub: (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
     borrow = 0
     i = 0
     for i < an {
@@ -86,7 +86,7 @@ bn-sub(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 
 // bn-mul: c = a × b
 // 呼叫者需確保 c 的容量 ≥ an + bn
-bn-mul(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-mul: (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
     // 初始化為 0
     i = 0
     for i < an + bn {
@@ -121,7 +121,7 @@ bn-mul(a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 // ─── 大數左移 1 位元 ─────────────────────────────
 
 // bn-shl1: a = a << 1（原地左移 1 位元）
-bn-shl1(a []i64, an i64, new-an i64) {
+bn-shl1: (a []i64, an i64, new-an i64) {
     carry = 0
     i = 0
     for i < an {
@@ -141,7 +141,7 @@ bn-shl1(a []i64, an i64, new-an i64) {
 // ─── 大數右移 1 位元 ─────────────────────────────
 
 // bn-shr1: a = a >> 1（原地右移 1 位元）
-bn-shr1(a []i64, an i64, new-an i64) {
+bn-shr1: (a []i64, an i64, new-an i64) {
     carry = 0
     i = an - 1
     for i >= 0 {
@@ -164,7 +164,7 @@ bn-shr1(a []i64, an i64, new-an i64) {
 // b: 除數, bn: 長度
 // q: 商數（輸出）, qn: 商長度
 // r: 餘數（輸出）, rn: 餘長度
-bn-div-mod(a []i64, an i64, b []i64, bn i64)
+bn-div-mod: (a []i64, an i64, b []i64, bn i64)
            (q []i64, qn i64, r []i64, rn i64) {
     // 處理 b = 0
     if bn == 1 && b[0] == 0 {
@@ -247,7 +247,7 @@ bn-div-mod(a []i64, an i64, b []i64, bn i64)
 // 所有引數為 []i64 切片
 // base 陣列長度: bn, exp 長度: en, modulus 長度: mn
 // result 陣列長度須 ≥ mn
-rsa-modpow(base []i64, bn i64,
+rsa-modpow: (base []i64, bn i64,
            exp []i64, en i64,
            modulus []i64, mn i64)
            (result []i64, rn i64) {
@@ -313,7 +313,7 @@ rsa-modpow(base []i64, bn i64,
 // pub-exp: 公鑰指數 e（[]i64）, pubn: 長度
 // mod: 模數 n（[]i64）, modn: 長度
 // out: 輸出密文（[]i64）, outn: 長度（須 ≥ modn）
-rsa-encrypt(msg []i64, msgn i64,
+rsa-encrypt: (msg []i64, msgn i64,
             pub-exp []i64, pubn i64,
             mod []i64, modn i64)
             (out []i64, outn i64) {
@@ -325,7 +325,7 @@ rsa-encrypt(msg []i64, msgn i64,
 // priv-exp: 私鑰指數 d（[]i64）, privn: 長度
 // mod: 模數 n（[]i64）, modn: 長度
 // out: 輸出明文（[]i64）, outn: 長度（須 ≥ modn）
-rsa-decrypt(ct []i64, ctn i64,
+rsa-decrypt: (ct []i64, ctn i64,
             priv-exp []i64, privn i64,
             mod []i64, modn i64)
             (out []i64, outn i64) {

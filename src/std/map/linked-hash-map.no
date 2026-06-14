@@ -22,7 +22,7 @@ linked-hash-map {
 }
 
 // init: 初始化哈希表
-linked-hash-map.init() {
+linked-hash-map.init = () {
     .cap = 64
     .head = -1
     .tail = -1
@@ -37,12 +37,12 @@ linked-hash-map.init() {
 }
 
 // hash: 計算索引
-linked-hash-map.hash(key i64, idx i64) {
+linked-hash-map.hash = (key i64, idx i64) {
     idx = key & (.cap - 1)
 }
 
 // put: 插入或更新 key→value
-linked-hash-map.put(key i64, val i64, is-new i64) {
+linked-hash-map.put = (key i64, val i64, is-new i64) {
     idx = 0
     .hash(key, idx)
 
@@ -77,7 +77,7 @@ linked-hash-map.put(key i64, val i64, is-new i64) {
 }
 
 // get: 查找 key
-linked-hash-map.get(key i64, found i64, result i64) {
+linked-hash-map.get = (key i64, found i64, result i64) {
     found = 0
     if .size == 0 {
         return
@@ -100,13 +100,13 @@ linked-hash-map.get(key i64, found i64, result i64) {
 }
 
 // contains: 檢查 key 是否存在
-linked-hash-map.contains(key i64, found i64) {
+linked-hash-map.contains = (key i64, found i64) {
     result = 0
     .get(key, found, result)
 }
 
 // remove: 刪除 key
-linked-hash-map.remove(key i64, removed i64) {
+linked-hash-map.remove = (key i64, removed i64) {
     removed = 0
     idx = 0
     .hash(key, idx)
@@ -142,7 +142,7 @@ linked-hash-map.remove(key i64, removed i64) {
 }
 
 // clear: 清空
-linked-hash-map.clear() {
+linked-hash-map.clear = () {
     i = 0
     for i < .cap {
         .occ[i] = 0
@@ -154,12 +154,12 @@ linked-hash-map.clear() {
 }
 
 // len: 返回元素數量
-linked-hash-map.len(, n i64) {
+linked-hash-map.len = (n i64) {
     n = .size
 }
 
 // is-empty: 是否為空
-linked-hash-map.is-empty(, empty i64) {
+linked-hash-map.is-empty = (empty i64) {
     if .size == 0 {
         empty = 1
     } else {
@@ -168,7 +168,7 @@ linked-hash-map.is-empty(, empty i64) {
 }
 
 // for-each: 按插入順序遍歷所有 (key, value)
-linked-hash-map.for-each(, k i64, v i64) {
+linked-hash-map.for-each = (k i64, v i64) {
     idx = .head
     for idx != -1 {
         if .occ[idx] == 1 {

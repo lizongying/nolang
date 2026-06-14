@@ -12,31 +12,31 @@
 // else:
 //     new_cap = old_cap * 5 / 4  # 大容量：1.25 倍
 
-vec {
-    len i64 read-only
-    cap i64 read-only
+// vec {
+//     len i64 read-only
+//     cap i64 read-only
 
-    // 只存固定大小
-    // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
-    // >8 字节存指针指針
-    data *any sealed
-}
+//     // 只存固定大小
+//     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+//     // >8 字节存指针指針
+//     data *any sealed
+// }
 
-// vec-len: 回傳切片長度
-vec-len(v []t)(n i64) {
-    n = len(v)
+// []t.len: 回傳切片長度
+[]t.len = (n i64) {
+    n = .len
 }
 
 // []t.push: 在末尾追加元素（需確保容量足夠）
-[]t.push(val t)(new-n i64) {
-    n = len(.)
+[]t.push = (val t)(new-n i64) {
+    n = .len
     .[n] = val
     new-n = n + 1
 }
 
 // []t.pop: 從末尾彈出元素
-[]t.pop()(val t, new-n i64) {
-    n = len(.)
+[]t.pop = ()(val t, new-n i64) {
+    n = .len
     if n > 0 {
         new-n = n - 1
         val = .[new-n]
@@ -46,21 +46,21 @@ vec-len(v []t)(n i64) {
 }
 
 // []t.contains: 是否包含值 val
-[]t.contains(n i64, val t)(found i64) {
+[]t.contains = (n i64, val t)(found i64) {
     found = 0
     i = 0
     for i < n {
         d = .[i] - val
         if d == 0 {
             found = 1
-            return
+            ...
         }
         i = i + 1
     }
 }
 
 // []t.reverse: 反轉前 n 個元素
-[]t.reverse(n i64) {
+[]t.reverse = (n i64) {
     i = 0
     j = n - 1
     for i < j {
@@ -73,7 +73,7 @@ vec-len(v []t)(n i64) {
 }
 
 // []t.clone-to: 將前 n 個元素複製到 dst
-[]t.clone-to(n i64, dst []t) {
+[]t.clone-to = (n i64, dst []t) {
     i = 0
     for i < n {
         dst[i] = .[i]
@@ -82,7 +82,7 @@ vec-len(v []t)(n i64) {
 }
 
 // []t.fill: 前 n 個元素填充為 val
-[]t.fill(n i64, val t) {
+[]t.fill = (n i64, val t) {
     i = 0
     for i < n {
         .[i] = val
@@ -90,22 +90,11 @@ vec-len(v []t)(n i64) {
     }
 }
 
-// vec-to-arr: 將 []t 切片複製到 [n]t 陣列
-vec-to-arr(v []t)(out ?[n]t) {
-    if len(v) != n {
-        out = nil
-        return
-    }
-    for i <- [0..n) {
-        !out[i] = v[i]
-    }
-}
-
 // []t.to-arr: 切片方法，轉為 [n]t 陣列
-[]t.to-arr()(out ?[n]t) {
+[]t.to-arr = () (out ?[n]t) {
     if .len() != n {
         out = nil
-        return
+        ...
     }
     for i <- [0..n) {
         !out[i] = .[i]

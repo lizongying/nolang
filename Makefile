@@ -15,7 +15,7 @@ BINDIR  ?= bin
 SRCMOD   = src/go.mod
 BIN      = $(BINDIR)/nolang
 
-.PHONY: all clean help nolang-lsp fmt-lsp $(BINDIR)
+.PHONY: all clean help lsp fmt-lsp $(BINDIR)
 
 all: $(BIN)
 
@@ -37,13 +37,17 @@ LSP_BIN   = vscode-nolang/server/nolang-lsp
 
 $(LSP_BIN): src/cmd/lsp/main.go $(SRCMOD)
 	mkdir -p vscode-nolang/server
-	cd src && $(GO) build -o ../../vscode-nolang/server/nolang-lsp ./cmd/lsp
+	cd src && $(GO) build -o ../vscode-nolang/server/nolang-lsp ./cmd/lsp
 
 all: $(LSP_BIN)
 
-nolang-lsp: FORCE
+lsp: FORCE
 	mkdir -p vscode-nolang/server
-	cd src && $(GO) build -o ../../vscode-nolang/server/nolang-lsp ./cmd/lsp
+	cd src && $(GO) build -o ../vscode-nolang/server/nolang-lsp ./cmd/lsp
+
+package:
+	make lsp
+	cd vscode-nolang && bun run package
 
 FORCE:
 
@@ -59,7 +63,7 @@ help:
 	@echo "Nolang 建置目標："
 	@echo "  make            建置所有目標"
 	@echo "  make nolang         建置 bin/nolang"
-	@echo "  make nolang-lsp     建置 vscode-nolang/server/nolang-lsp"
+	@echo "  make lsp            建置 vscode-nolang/server/nolang-lsp"
 	@echo "  make clean         清除建置產出"
 	@echo ""
 	@echo "環境變數："

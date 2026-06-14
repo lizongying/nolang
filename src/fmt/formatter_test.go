@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// cd ./src/fmt && go test -v . -run TestFormatBasic/method_definition
+// cd ./src/fmt && go test -v . -run TestFormatBasic/space_one
 func TestFormatBasic(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -25,8 +25,8 @@ func TestFormatBasic(t *testing.T) {
 		},
 		{
 			name:     "function definition",
-			input:    "add(a int,b int){a+b}",
-			expected: "add(a int, b int) {\n    a + b\n}",
+			input:    "add: (a int,b int){a+b}",
+			expected: "add: (a int, b int) {\n    a + b\n}",
 		},
 		{
 			name:     "operator spacing",
@@ -85,8 +85,8 @@ func TestFormatBasic(t *testing.T) {
 		},
 		{
 			name:     "return statement",
-			input:    "foo(a int){return}",
-			expected: "foo(a int) {\n    return\n}",
+			input:    "foo: (a int){return}",
+			expected: "foo: (a int) {\n    return\n}",
 		},
 		{
 			name:     "boolean literals",
@@ -131,13 +131,52 @@ func TestFormatBasic(t *testing.T) {
 		{
 			name: "method_definition",
 			input: strings.TrimSpace(`
-str.len() (n    i64)      {
+str.len: () (n    i64)      {
     n = .len
 }
 			`),
 			expected: strings.TrimSpace(`
-str.len() (n i64) {
+str.len: () (n i64) {
     n = .len
+}
+			`),
+		},
+
+		{
+			name: "space_many",
+			input: strings.TrimSpace(`
+a   [3]=   [1,   2, 3]
+
+
+
+
+for i <- a {
+    print(i)
+}
+			`),
+			expected: strings.TrimSpace(`
+a [3] = [1, 2, 3]
+
+for i <- a {
+    print(i)
+}
+			`),
+		},
+
+		{
+			name: "space_one",
+			input: strings.TrimSpace(`
+a   [3]=   [1,   2, 3]
+
+for i <- a {
+    print(i)
+}
+			`),
+			expected: strings.TrimSpace(`
+a [3] = [1, 2, 3]
+
+for i <- a {
+    print(i)
 }
 			`),
 		},
@@ -146,8 +185,8 @@ str.len() (n i64) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Format(tt.input)
-			fmt.Println("tt.input", tt.input)
-			fmt.Println("result", result)
+			fmt.Printf("tt.input:\n%s\n", tt.input)
+			fmt.Printf("\nresult:\n%s\n", result)
 			if result != tt.expected {
 				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
@@ -163,8 +202,8 @@ func TestFormatIndentation(t *testing.T) {
 	}{
 		{
 			name:     "nested blocks",
-			input:    "outer(){inner(){x=1}}",
-			expected: "outer() {\n    inner() {\n        x = 1\n    }\n}",
+			input:    "outer: (){inner: (){x=1}}",
+			expected: "outer: () {\n    inner: () {\n        x = 1\n    }\n}",
 		},
 		{
 			name:     "deep nesting",
@@ -191,18 +230,18 @@ func TestFormatFunction(t *testing.T) {
 	}{
 		{
 			name:     "function with no args",
-			input:    "hello(){return}",
-			expected: "hello() {\n    return\n}",
+			input:    "hello: (){return}",
+			expected: "hello: () {\n    return\n}",
 		},
 		{
 			name:     "function with multiple args",
-			input:    "add(a int,b int,c int){a+b+c}",
-			expected: "add(a int, b int, c int) {\n    a + b + c\n}",
+			input:    "add: (a int,b int,c int){a+b+c}",
+			expected: "add: (a int, b int, c int) {\n    a + b + c\n}",
 		},
 		{
 			name:     "method with result parameter",
-			input:    "str.len() (n i64) {n = .len}",
-			expected: "str.len() (n i64) {\n    n = .len\n}",
+			input:    "str.len: () (n i64) {n = .len}",
+			expected: "str.len: () (n i64) {\n    n = .len\n}",
 		},
 	}
 

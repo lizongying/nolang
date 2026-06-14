@@ -93,7 +93,21 @@ func (p *Parser) classifyBlock() blockType {
 		if tok3.Type == lexer.NEWLINE || tok3.Type == lexer.RBRACE {
 			return blockStruct
 		}
-		return blockTaggedEnum
+		if tok3.Type == lexer.COMMA {
+			return blockTaggedEnum
+		}
+		// 3+ tokens before newline — could be struct with modifier or tagged enum
+		// Scan forward to find comma (tagged enum) or newline (struct)
+		for i := skip + 3; i < skip+15; i++ {
+			t := p.lexer.LookAhead(i)
+			if t.Type == lexer.COMMA {
+				return blockTaggedEnum
+			}
+			if t.Type == lexer.NEWLINE || t.Type == lexer.RBRACE || t.Type == lexer.EOF {
+				return blockStruct
+			}
+		}
+		return blockUnknown
 	default:
 		return blockUnknown
 	}
@@ -175,7 +189,21 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		if tok3.Type == lexer.NEWLINE || tok3.Type == lexer.RBRACE {
 			return blockStruct
 		}
-		return blockTaggedEnum
+		if tok3.Type == lexer.COMMA {
+			return blockTaggedEnum
+		}
+		// 3+ tokens before newline — could be struct with modifier or tagged enum
+		// Scan forward to find comma (tagged enum) or newline (struct)
+		for i := base + 3; i < base+15; i++ {
+			t := p.lexer.LookAhead(i)
+			if t.Type == lexer.COMMA {
+				return blockTaggedEnum
+			}
+			if t.Type == lexer.NEWLINE || t.Type == lexer.RBRACE || t.Type == lexer.EOF {
+				return blockStruct
+			}
+		}
+		return blockUnknown
 	default:
 		return blockUnknown
 	}
@@ -318,6 +346,10 @@ func (p *Parser) parseStatement() Statement {
 				return stmt
 			}
 		} else if p.peekToken.Type == lexer.ASSIGN {
+			// 先檢查是否為函數定義：name = (params) { ... }
+			if p.isFunctionDefinition() {
+				return p.parseFunctionDefinition()
+			}
 			stmt := p.parseLetStatement()
 			if stmt != nil {
 				if !p.ctx.contains(CTX_MATCH_ARM) {
@@ -391,7 +423,7 @@ func (p *Parser) parseStatement() Statement {
 		if p.peekToken.Type == lexer.FOR {
 			return p.parseForStatement()
 		}
-		if p.peekToken.Type == lexer.LPAREN && p.isFunctionDefinition() {
+		if (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.LESS) && p.isFunctionDefinition() {
 			return p.parseFunctionDefinition()
 		}
 		if p.peekToken.Type == lexer.LBRACE {
@@ -408,14 +440,14 @@ func (p *Parser) parseStatement() Statement {
 			}
 		}
 
-		// 方法定義：user.foo(a int) \{ ... \}
+		// 方法定義：user.foo: (a int) \{ ... \}
 		if p.peekToken.Type == lexer.DOT {
 			state := p.saveState()
 			structToken := p.currentToken
 			p.nextToken() // skip IDENT (struct name)
 			if p.currentToken.Type == lexer.DOT {
 				p.nextToken() // skip DOT
-				if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.LPAREN {
+				if p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.LESS) {
 					if p.isFunctionDefinition() {
 						p.restoreState(state)
 						return p.parseMethodDefinition(structToken)
@@ -438,6 +470,11 @@ func (p *Parser) parseStatement() Statement {
 			}
 		}
 
+		// 範圍遍歷：i <- (a..b] { 或 i <- [a..b] {
+		if p.peekToken.Type == lexer.ARROW && !p.ctx.contains(CTX_FOR_COND) {
+			return p.parseForStatement()
+		}
+
 		return p.parseExpressionStatement()
 
 	case lexer.RETURN:
@@ -456,12 +493,41 @@ func (p *Parser) parseStatement() Statement {
 
 	case lexer.RBRACE:
 		return nil
+
+	case lexer.NOT:
+		// 無限循環 ! { }
+		if p.peekToken.Type == lexer.LBRACE {
+			return p.parseBangLoop()
+		}
+		return p.parseExpressionStatement()
+
+	case lexer.INT:
+		// 次數循環 N * { }
+		if p.peekToken.Type == lexer.MUL {
+			state := p.saveState()
+			p.nextToken() // skip INT
+			p.nextToken() // skip MUL
+			if p.currentToken.Type == lexer.LBRACE {
+				p.restoreState(state)
+				return p.parseCountedLoop()
+			}
+			p.restoreState(state)
+		}
+		return p.parseExpressionStatement()
+
+	case lexer.LBRACKET:
+		// [n]t.method-name(…) { — 陣列型別方法定義
+		if p.isArrayTypeMethodDefinition() {
+			return p.parseArrayTypeMethodDefinition()
+		}
+		return p.parseExpressionStatement()
+
 	default:
 		return p.parseExpressionStatement()
 	}
 }
 
-// parseMethodDefinition 解析方法定義：user.foo(a int) { ... }
+// parseMethodDefinition 解析方法定義：user.foo: (a int) { ... }
 // 脫糖為 FunctionDefinition，名稱為 "user.foo"，並插入 self 為首個參數
 func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	// 前進到方法名
@@ -497,8 +563,361 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	return funcDef
 }
 
+// isArrayTypeMethodDefinition 檢測是否為陣列/切片型別方法定義：[n]t.method(…) 或 []t.method(…) {
+func (p *Parser) isArrayTypeMethodDefinition() bool {
+	state := p.saveState()
+	defer p.restoreState(state)
+
+	p.nextToken() // skip [
+	if p.currentToken.Type == lexer.RBRACKET {
+		// []t.method — 切片型別
+		p.nextToken() // skip ]
+		if p.currentToken.Type != lexer.IDENT {
+			return false
+		}
+	} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.INT {
+		// [n]t.method — 陣列型別
+		p.nextToken() // skip size
+		if p.currentToken.Type != lexer.RBRACKET {
+			return false
+		}
+		p.nextToken() // skip ]
+		if p.currentToken.Type != lexer.IDENT {
+			return false
+		}
+	} else {
+		return false
+	}
+	p.nextToken() // skip element type
+	if p.currentToken.Type != lexer.DOT {
+		return false
+	}
+	p.nextToken() // skip .
+	if p.currentToken.Type != lexer.IDENT {
+		return false
+	}
+	p.nextToken() // skip method name
+
+	// (params)
+	if p.currentToken.Type != lexer.LPAREN {
+		return false
+	}
+	p.nextToken() // skip (
+	for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+		p.nextToken()
+	}
+	if p.currentToken.Type != lexer.RPAREN {
+		return false
+	}
+	p.nextToken() // skip )
+
+	// 可選 NEWLINE
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+	// 可選回傳型別：…) i64 {
+	if p.currentToken.Type == lexer.IDENT {
+		p.nextToken()
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+	}
+	// 可選結果參數：…)(r i64) {
+	if p.currentToken.Type == lexer.LPAREN {
+		p.nextToken()
+		for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RPAREN {
+			p.nextToken()
+		}
+	}
+
+	return p.currentToken.Type == lexer.LBRACE
+}
+
+// parseArrayTypeMethodDefinition 解析陣列/切片型別方法定義：[n]t.method(…) 或 []t.method(…) {
+func (p *Parser) parseArrayTypeMethodDefinition() Statement {
+	def := &FunctionDefinition{
+		Token:         p.currentToken,
+		GenericParams: []string{},
+		Parameters:    []*Parameter{},
+		Results:       []*Parameter{},
+	}
+
+	// 建立型別字串 [n]t 或 []t
+	p.nextToken() // skip [
+	var arrayType string
+	var elemToken lexer.Token
+	if p.currentToken.Type == lexer.RBRACKET {
+		// []t — 切片型別
+		arrayType = "[]"
+		p.nextToken() // skip ]
+		elemToken = p.currentToken
+		arrayType += elemToken.Literal
+		p.nextToken() // skip element type
+	} else {
+		// [n]t — 陣列型別
+		sizeToken := p.currentToken
+		arrayType = "[" + sizeToken.Literal + "]"
+		p.nextToken() // skip size
+		if p.currentToken.Type != lexer.RBRACKET {
+			msg := fmt.Sprintf("line %d, column %d: expected ']' in array type, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+		p.nextToken() // skip ]
+		elemToken = p.currentToken
+		arrayType += elemToken.Literal
+		p.nextToken() // skip element type
+	}
+
+	if p.currentToken.Type != lexer.DOT {
+		msg := fmt.Sprintf("line %d, column %d: expected '.' after type, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip .
+
+	// 方法名
+	if p.currentToken.Type != lexer.IDENT {
+		msg := fmt.Sprintf("line %d, column %d: expected method name, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	methodName := p.currentToken.Literal
+	def.Name = arrayType + "." + methodName
+	p.nextToken() // skip method name
+
+	// 解析參數列表（無 = 要求）
+	if p.currentToken.Type != lexer.LPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected '('",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip (
+
+	if p.currentToken.Type != lexer.RPAREN {
+		for {
+			if p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+				continue
+			}
+			if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+				msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+
+			paramName := p.currentToken.Literal
+			paramToken := p.currentToken
+			p.nextToken()
+
+			paramType := ""
+			isOption := false
+			if p.currentToken.Type == lexer.QUESTION {
+				isOption = true
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.LBRACKET {
+				p.nextToken()
+				if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
+					paramType = "[" + p.currentToken.Literal + "]"
+					p.nextToken()
+				} else {
+					paramType = "[]"
+				}
+				if p.currentToken.Type == lexer.RBRACKET {
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.IDENT {
+					paramType = paramType + p.currentToken.Literal
+					p.nextToken()
+				}
+			} else if p.currentToken.Type == lexer.IDENT {
+				paramType = p.currentToken.Literal
+				p.nextToken()
+			} else if !isOption {
+				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+
+			if isOption {
+				paramType = "?" + paramType
+			}
+
+			def.Parameters = append(def.Parameters, &Parameter{
+				Token: paramToken,
+				Name:  paramName,
+				Type:  paramType,
+			})
+
+			if p.currentToken.Type == lexer.RPAREN {
+				break
+			}
+			if p.currentToken.Type != lexer.COMMA {
+				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken()
+		}
+	}
+
+	if p.currentToken.Type != lexer.RPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected ')'",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip )
+
+	// 跳過 NEWLINE
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// 可選回傳型別：…) i64 {
+	if p.currentToken.Type == lexer.IDENT {
+		result := &Parameter{
+			Token: p.currentToken,
+			Name:  "",
+			Type:  p.currentToken.Literal,
+		}
+		def.Results = append(def.Results, result)
+		p.nextToken()
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+	}
+
+	// 可選結果參數：…)(r i64) {
+	if p.currentToken.Type == lexer.LPAREN {
+		p.nextToken()
+		if p.currentToken.Type != lexer.RPAREN {
+			for {
+				if p.currentToken.Type == lexer.NEWLINE {
+					p.nextToken()
+					continue
+				}
+				if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+					msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return nil
+				}
+
+				paramName := p.currentToken.Literal
+				paramToken := p.currentToken
+				p.nextToken()
+
+				paramType := ""
+				isOption := false
+				if p.currentToken.Type == lexer.QUESTION {
+					isOption = true
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.LBRACKET {
+					p.nextToken()
+					if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
+						paramType = "[" + p.currentToken.Literal + "]"
+						p.nextToken()
+					} else {
+						paramType = "[]"
+					}
+					if p.currentToken.Type == lexer.RBRACKET {
+						p.nextToken()
+					}
+					if p.currentToken.Type == lexer.IDENT {
+						paramType = paramType + p.currentToken.Literal
+						p.nextToken()
+					}
+				} else if p.currentToken.Type == lexer.IDENT {
+					paramType = p.currentToken.Literal
+					p.nextToken()
+				} else if !isOption {
+					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return nil
+				}
+				if isOption {
+					paramType = "?" + paramType
+				}
+
+				def.Results = append(def.Results, &Parameter{
+					Token: paramToken,
+					Name:  paramName,
+					Type:  paramType,
+				})
+
+				if p.currentToken.Type == lexer.RPAREN {
+					break
+				}
+				if p.currentToken.Type != lexer.COMMA {
+					msg := fmt.Sprintf("line %d, column %d: expected comma or ')'",
+						p.currentToken.Line, p.currentToken.Column)
+					p.saveError(msg)
+					return nil
+				}
+				p.nextToken()
+			}
+		}
+
+		if p.currentToken.Type != lexer.RPAREN {
+			msg := fmt.Sprintf("line %d, column %d: expected ')'",
+				p.currentToken.Line, p.currentToken.Column)
+			p.saveError(msg)
+			return nil
+		}
+		p.nextToken()
+	}
+
+	// 推斷隱式泛型參數
+	for _, param := range def.Parameters {
+		detectImplicitGeneric(param.Type, def)
+	}
+	for _, param := range def.Results {
+		detectImplicitGeneric(param.Type, def)
+	}
+
+	// 解析主體
+	if p.currentToken.Type != lexer.LBRACE {
+		msg := fmt.Sprintf("line %d, column %d: expected '{'",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return nil
+	}
+	def.Body = p.parseBlockStatement()
+
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
+	}
+
+	// 插入 self 參數
+	selfParam := &Parameter{
+		Token: elemToken,
+		Name:  "self",
+		Type:  arrayType,
+	}
+	def.Parameters = append([]*Parameter{selfParam}, def.Parameters...)
+
+	return def
+}
+
 func (p *Parser) isFunctionDefinition() bool {
-	if p.currentToken.Type != lexer.IDENT || p.peekToken.Type != lexer.LPAREN {
+	if p.currentToken.Type != lexer.IDENT {
+		return false
+	}
+	if p.peekToken.Type != lexer.ASSIGN && p.peekToken.Type != lexer.LESS {
 		return false
 	}
 
@@ -506,7 +925,31 @@ func (p *Parser) isFunctionDefinition() bool {
 
 	// 跳过 IDENT 令牌
 	p.nextToken()
-	// 跳过 LPAREN 令牌
+
+	// 跳過選擇性泛型參數：foo<N>: (...)
+	if p.currentToken.Type == lexer.LESS {
+		for p.currentToken.Type != lexer.GREATER && p.currentToken.Type != lexer.EOF {
+			p.nextToken()
+		}
+		if p.currentToken.Type != lexer.GREATER {
+			p.restoreState(state)
+			return false
+		}
+		p.nextToken()
+	}
+
+	// 跳過 ASSIGN 令牌
+	if p.currentToken.Type != lexer.ASSIGN {
+		p.restoreState(state)
+		return false
+	}
+	p.nextToken()
+
+	// 跳過 LPAREN 令牌
+	if p.currentToken.Type != lexer.LPAREN {
+		p.restoreState(state)
+		return false
+	}
 	p.nextToken()
 
 	isFunctionDef := false
@@ -536,7 +979,10 @@ func (p *Parser) isFunctionDefinition() bool {
 
 	// 有参数: 跳过 (id, id, ...) 直到 RPAREN
 	for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
-		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.COMMA &&
+		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN &&
+			p.currentToken.Type != lexer.INT &&
+			p.currentToken.Type != lexer.QUESTION &&
+			p.currentToken.Type != lexer.COMMA &&
 			p.currentToken.Type != lexer.LBRACKET && p.currentToken.Type != lexer.RBRACKET &&
 			p.currentToken.Type != lexer.ELLIPSIS {
 			p.restoreState(state)
@@ -548,8 +994,16 @@ func (p *Parser) isFunctionDefinition() bool {
 	// 检查后面是否是 LBRACE（允許中間有回傳型別或結果參數）
 	if p.currentToken.Type == lexer.RPAREN {
 		p.nextToken()
+		// 跳過 NEWLINE（多行定義）
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
 		// 跳過選擇性回傳型別：fib(n i64) i64 {
 		if p.currentToken.Type == lexer.IDENT {
+			p.nextToken()
+		}
+		// 跳過 NEWLINE（多行定義）
+		for p.currentToken.Type == lexer.NEWLINE {
 			p.nextToken()
 		}
 		// 跳過結果參數：fib(n i64)(r i64) {
@@ -1034,7 +1488,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	var leftExp Expression
 
 	switch p.currentToken.Type {
-	case lexer.IDENT:
+	case lexer.IDENT, lexer.IN:
 		leftExp = p.parseIdentifier()
 		// 處理後綴 ++ / --
 		isIncDec := false
@@ -1125,20 +1579,21 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 
 	case lexer.DOT:
-		// . represents self (method receiver or match target)
+		// . alone = self, .property = self.property
 		tok := p.currentToken
 		p.nextToken() // consume DOT → now at token after .
-		leftExp = &Identifier{Token: tok, Value: "self"}
-		// If followed by IDENT, it's .property (member access on self)
 		if p.currentToken.Type == lexer.IDENT {
+			// .property → DotExpression(self.property)
 			leftExp = &DotExpression{
 				Token:    p.currentToken,
-				Receiver: leftExp,
+				Receiver: &Identifier{Token: tok, Value: "self"},
 				Property: p.currentToken.Literal,
 			}
 			p.nextToken()
+		} else {
+			// . alone → self
+			leftExp = &Identifier{Token: tok, Value: "self"}
 		}
-		// For .[i], .(args) etc, postfix loop handles the rest
 
 	case lexer.AS:
 		expr := &Identifier{Token: p.currentToken, Value: "as"}
@@ -1148,8 +1603,29 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.PTR:
 		leftExp = p.parsePointerType()
 
-	case lexer.SUB, lexer.NOT:
+	case lexer.QUESTION:
+		// ? = nil
+		leftExp = &NilLiteral{Token: p.currentToken}
+		p.nextToken()
+
+	case lexer.SUB:
 		leftExp = p.parsePrefixExpression()
+
+	case lexer.NOT:
+		// !! = true, ! = false (standalone), !expr = prefix NOT
+		if p.peekToken.Type == lexer.NOT {
+			// !! → true
+			leftExp = &BooleanLiteral{Token: p.currentToken, Value: true}
+			p.nextToken() // consume second !
+		} else {
+			switch p.peekToken.Type {
+			case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF, lexer.RPAREN, lexer.RBRACE, lexer.RBRACKET:
+				leftExp = &BooleanLiteral{Token: p.currentToken, Value: false}
+				p.nextToken()
+			default:
+				leftExp = p.parsePrefixExpression()
+			}
+		}
 
 	case lexer.LPAREN:
 		// Detect anonymous function: (a i64, b i64) { ... }
@@ -1575,9 +2051,22 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.OR {
 			ma.isWildcard = true
+		} else if p.currentToken.Type == lexer.DOT && p.peekToken.Type == lexer.OR {
+			// .| → val branch (specific, not catch-all)
+			ma.isWildcard = true
+			ma.isDotVal = true
+			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.OR &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil") {
 			ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.OR {
+			// !| → err branch
+			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.QUESTION && p.peekToken.Type == lexer.OR {
+			// ?| → nil branch
+			ma.condition = &Identifier{Token: p.currentToken, Value: "nil"}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.INT ||
 			p.currentToken.Type == lexer.FLOAT || p.currentToken.Type == lexer.STRING ||
@@ -1659,21 +2148,42 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		return nil
 	}
 
-	// Semantic check: expression context requires inline arms
-	hasBlock := false
+	// Check option match branch completeness
+	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
 	for _, a := range arms {
-		if a.isBlockBody {
-			hasBlock = true
-			break
+		if a.isWildcard {
+			if a.isDotVal {
+				hasValArm = true
+			} else {
+				hasElseArm = true
+			}
+		} else {
+			switch c := a.condition.(type) {
+			case *Identifier:
+				if c.Value == "err" {
+					hasErrArm = true
+				} else if c.Value == "nil" {
+					hasNilArm = true
+				}
+			case *NilLiteral:
+				hasNilArm = true
+			}
 		}
 	}
-	if p.ctx.contains(CTX_EXPR) && hasBlock {
-		msg := fmt.Sprintf("line %d, column %d: match in expression context cannot have block-style arms", tok.Line, tok.Column)
-		p.saveError(msg)
-		return nil
+	if (hasErrArm || hasNilArm) && !hasElseArm {
+		if !hasErrArm || !hasNilArm || !hasValArm {
+			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
+				tok.Line, tok.Column))
+			return nil
+		}
 	}
 
 	// Build if/elif/else chain
+	if p.ctx.contains(CTX_EXPR) {
+		if !p.validateMatchArmReturns(tok, arms) {
+			return nil
+		}
+	}
 	return p.buildMatchDesugar(tok, matched, arms)
 }
 
@@ -1763,18 +2273,40 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		return nil
 	}
 
-	// Semantic check: expression context requires inline arms
-	hasBlock := false
+	// Check option match branch completeness
+	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
 	for _, a := range arms {
-		if a.isBlockBody {
-			hasBlock = true
-			break
+		if a.isWildcard {
+			if a.isDotVal {
+				hasValArm = true
+			} else {
+				hasElseArm = true
+			}
+		} else {
+			switch c := a.condition.(type) {
+			case *Identifier:
+				if c.Value == "err" {
+					hasErrArm = true
+				} else if c.Value == "nil" {
+					hasNilArm = true
+				}
+			case *NilLiteral:
+				hasNilArm = true
+			}
 		}
 	}
-	if p.ctx.contains(CTX_EXPR) && hasBlock {
-		msg := fmt.Sprintf("line %d, column %d: match in expression context cannot have block-style arms", tok.Line, tok.Column)
-		p.saveError(msg)
-		return nil
+	if (hasErrArm || hasNilArm) && !hasElseArm {
+		if !hasErrArm || !hasNilArm || !hasValArm {
+			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
+				tok.Line, tok.Column))
+			return nil
+		}
+	}
+
+	if p.ctx.contains(CTX_EXPR) {
+		if !p.validateMatchArmReturns(tok, arms) {
+			return nil
+		}
 	}
 
 	return p.buildBareMatchDesugar(tok, arms)
@@ -1828,6 +2360,12 @@ func (p *Parser) isArmStart() bool {
 		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.OR
 	case lexer.NIL:
 		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.OR
+	case lexer.NOT:
+		return p.peekToken.Type == lexer.OR
+	case lexer.QUESTION:
+		return p.peekToken.Type == lexer.OR
+	case lexer.DOT:
+		return p.peekToken.Type == lexer.OR
 	}
 	return false
 }
@@ -1836,8 +2374,172 @@ func (p *Parser) isArmStart() bool {
 type matchArm struct {
 	condition   Expression
 	isWildcard  bool
+	isDotVal    bool // .| → specific val branch (not catch-all)
 	body        *BlockStatement
 	isBlockBody bool // true = block form (newline after |), false = inline expression form
+}
+
+// returnKind — match arm body 的最後一個表達式回傳值分類
+type returnKind int
+
+const (
+	returnNever    returnKind = iota // 不會回傳值（最後一行不是表達式，如迴圈）
+	returnNil                        // nil 字面量
+	returnErr                        // err() 呼叫
+	returnConcrete                   // 具體值（i64, str, bool 等）
+)
+
+// returnTypeInfo — 回傳值分類資訊
+type returnTypeInfo struct {
+	kind     returnKind
+	typeName string // 僅 returnConcrete 有效
+}
+
+// classifyExprReturnKind 分類表達式的回傳值
+func (p *Parser) classifyExprReturnKind(expr Expression) returnTypeInfo {
+	switch e := expr.(type) {
+	case *NilLiteral:
+		return returnTypeInfo{kind: returnNil}
+	case *Identifier:
+		if e.Value == "err" {
+			return returnTypeInfo{kind: returnErr}
+		}
+		return returnTypeInfo{kind: returnConcrete, typeName: "unknown"}
+	case *IntegerLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
+	case *FloatLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "f64"}
+	case *StringLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "str"}
+	case *BooleanLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "bool"}
+	case *ByteLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "byte"}
+	case *CharLiteral:
+		return returnTypeInfo{kind: returnConcrete, typeName: "char"}
+	case *CallExpression:
+		if ident, ok := e.Function.(*Identifier); ok && ident.Value == "err" {
+			return returnTypeInfo{kind: returnErr}
+		}
+		return returnTypeInfo{kind: returnConcrete, typeName: "unknown"}
+	case *InfixExpression:
+		return p.classifyInfixReturn(e)
+	case *IfExpression:
+		return p.classifyIfExprReturn(e)
+	default:
+		return returnTypeInfo{kind: returnConcrete, typeName: "unknown"}
+	}
+}
+
+// classifyInfixReturn 分類中綴表達式的回傳值
+func (p *Parser) classifyInfixReturn(expr *InfixExpression) returnTypeInfo {
+	switch expr.Operator {
+	case "+", "-", "*", "/", "%":
+		leftInfo := p.classifyExprReturnKind(expr.Left)
+		rightInfo := p.classifyExprReturnKind(expr.Right)
+		if leftInfo.kind == returnConcrete && rightInfo.kind == returnConcrete &&
+			leftInfo.typeName != "unknown" && rightInfo.typeName != "unknown" {
+			if leftInfo.typeName == rightInfo.typeName {
+				return leftInfo
+			}
+			return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
+		}
+		return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
+	case "==", "!=", "<", ">", "<=", ">=":
+		return returnTypeInfo{kind: returnConcrete, typeName: "bool"}
+	case "&&", "||":
+		return returnTypeInfo{kind: returnConcrete, typeName: "bool"}
+	default:
+		return returnTypeInfo{kind: returnConcrete, typeName: "unknown"}
+	}
+}
+
+// classifyIfExprReturn 分類條件表達式的回傳值
+func (p *Parser) classifyIfExprReturn(expr *IfExpression) returnTypeInfo {
+	var consInfo, altInfo returnTypeInfo
+	if expr.Consequence != nil && len(expr.Consequence.Statements) > 0 {
+		last := expr.Consequence.Statements[len(expr.Consequence.Statements)-1]
+		if es, ok := last.(*ExpressionStatement); ok {
+			consInfo = p.classifyExprReturnKind(es.Expression)
+		} else {
+			consInfo = returnTypeInfo{kind: returnNever}
+		}
+	} else {
+		consInfo = returnTypeInfo{kind: returnNever}
+	}
+	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
+		last := expr.Alternative.Statements[len(expr.Alternative.Statements)-1]
+		if es, ok := last.(*ExpressionStatement); ok {
+			altInfo = p.classifyExprReturnKind(es.Expression)
+		} else {
+			altInfo = returnTypeInfo{kind: returnNever}
+		}
+	} else {
+		altInfo = returnTypeInfo{kind: returnNever}
+	}
+	if consInfo.kind == returnNever || altInfo.kind == returnNever {
+		return returnTypeInfo{kind: returnNever}
+	}
+	if consInfo.kind == returnNil && altInfo.kind == returnNil {
+		return returnTypeInfo{kind: returnNil}
+	}
+	if consInfo.kind == returnErr && altInfo.kind == returnErr {
+		return returnTypeInfo{kind: returnErr}
+	}
+	if consInfo.kind == returnConcrete && altInfo.kind == returnConcrete {
+		if consInfo.typeName == altInfo.typeName {
+			return consInfo
+		}
+		if consInfo.typeName == "unknown" || altInfo.typeName == "unknown" {
+			return returnTypeInfo{kind: returnConcrete, typeName: consInfo.typeName}
+		}
+		return returnTypeInfo{kind: returnConcrete, typeName: "unknown"}
+	}
+	return returnTypeInfo{kind: returnConcrete, typeName: "option"}
+}
+
+// validateMatchArmReturns 驗證賦值語境下 match arm 的回傳值一致性
+func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []matchArm) bool {
+	if len(arms) == 0 {
+		return true
+	}
+
+	var firstConcreteType string
+
+	for _, arm := range arms {
+		if len(arm.body.Statements) == 0 {
+			msg := fmt.Sprintf("line %d, column %d: match arm has no body, cannot determine return value", tok.Line, tok.Column)
+			p.saveError(msg)
+			return false
+		}
+		last := arm.body.Statements[len(arm.body.Statements)-1]
+		es, ok := last.(*ExpressionStatement)
+		if !ok {
+			msg := fmt.Sprintf("line %d, column %d: match arm in expression context must end with an expression", tok.Line, tok.Column)
+			p.saveError(msg)
+			return false
+		}
+
+		info := p.classifyExprReturnKind(es.Expression)
+		switch info.kind {
+		case returnNever:
+			msg := fmt.Sprintf("line %d, column %d: match arm never returns a value", tok.Line, tok.Column)
+			p.saveError(msg)
+			return false
+		case returnConcrete:
+			if info.typeName != "unknown" {
+				if firstConcreteType == "" {
+					firstConcreteType = info.typeName
+				} else if firstConcreteType != info.typeName {
+					msg := fmt.Sprintf("line %d, column %d: match arm has inconsistent return types: %s vs %s", tok.Line, tok.Column, firstConcreteType, info.typeName)
+					p.saveError(msg)
+					return false
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 // buildMatchDesugar 建立 if/elif/else 鏈
@@ -1936,6 +2638,7 @@ func (p *Parser) parseMatchExpression() Expression {
 	type matchArm struct {
 		condition  Expression // if-condition (form 2) or pattern (form 1)
 		isWildcard bool
+		isDotVal   bool // .| → specific val branch (not catch-all)
 		body       *BlockStatement
 	}
 	var arms []matchArm
@@ -1959,10 +2662,23 @@ func (p *Parser) parseMatchExpression() Expression {
 		} else if p.currentToken.Type == lexer.OR {
 			// 裸 | → 預設分支（option match 的 val 分支）
 			ma.isWildcard = true
+		} else if p.currentToken.Type == lexer.DOT && p.peekToken.Type == lexer.OR {
+			// .| → val branch (specific, not catch-all)
+			ma.isWildcard = true
+			ma.isDotVal = true
+			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.OR &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil") {
 			// err| nil| → option pattern（不經 parseExpression，避免 | 被當作 OR 運算子）
 			ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.OR {
+			// !| → err branch
+			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.QUESTION && p.peekToken.Type == lexer.OR {
+			// ?| → nil branch
+			ma.condition = &Identifier{Token: p.currentToken, Value: "nil"}
 			p.nextToken()
 		} else {
 			p.ctx.push(CTX_MATCH_ARM)
@@ -2071,6 +2787,36 @@ func (p *Parser) parseMatchExpression() Expression {
 		msg := fmt.Sprintf("line %d, column %d: empty match expression", tok.Line, tok.Column)
 		p.saveError(msg)
 		return nil
+	}
+
+	// Check option match branch completeness
+	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
+	for _, a := range arms {
+		if a.isWildcard {
+			if a.isDotVal {
+				hasValArm = true
+			} else {
+				hasElseArm = true
+			}
+		} else {
+			switch c := a.condition.(type) {
+			case *Identifier:
+				if c.Value == "err" {
+					hasErrArm = true
+				} else if c.Value == "nil" {
+					hasNilArm = true
+				}
+			case *NilLiteral:
+				hasNilArm = true
+			}
+		}
+	}
+	if (hasErrArm || hasNilArm) && !hasElseArm {
+		if !hasErrArm || !hasNilArm || !hasValArm {
+			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
+				tok.Line, tok.Column))
+			return nil
+		}
 	}
 
 	// Build if/elif/else chain from collected arms
@@ -2287,6 +3033,17 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseForStatement() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
 
+	// Bare range-for: i <- (a..b] { } — 不使用 for 關鍵字
+	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
+		stmt.Variable = p.currentToken.Literal
+		p.nextToken() // skip IDENT (variable)
+		p.nextToken() // skip ARROW (<-)
+		p.parseForRange(stmt)
+		stmt.Body = p.parseBlockStatement()
+		p.nextToken() // skip body's }
+		return stmt
+	}
+
 	// 检查命名循环：label for ...
 	// 此时 currentToken 可能是 label（IDENT）或 for（FOR）
 	// 如果是 IDENT + 下一个是 FOR，则作为 label 处理
@@ -2322,163 +3079,7 @@ func (p *Parser) parseForStatement() Statement {
 			if ident, ok := es.Expression.(*Identifier); ok {
 				stmt.Variable = ident.Value
 				p.nextToken() // skip IN
-
-				// 解析 range: [a..b], (a..b], [a..b), (a..b)
-				leftInc := false
-				// 字串遍歷: for i in 'abc'
-				if p.currentToken.Type == lexer.STRING {
-					stmt.RangeStr = p.currentToken.Literal
-					p.nextToken() // skip string
-					stmt.Range = &RangeExpression{
-						Token:    p.currentToken,
-						LeftInc:  true,
-						RightInc: false,
-					}
-					goto parseBody
-				}
-
-				if p.currentToken.Type == lexer.LBRACKET {
-					// Peek ahead: [a..b] = range, [1, 2, 3] = slice literal
-					state := p.saveState()
-					p.nextToken() // skip [
-					p.parseExpression(LOWEST)
-
-					if p.currentToken.Type == lexer.ELLIPSIS {
-						// Range: [a..b] — restore state, use existing range logic
-						p.restoreState(state)
-						leftInc = true
-						tok := p.currentToken
-						p.nextToken() // skip [
-
-						start := p.parseExpression(LOWEST)
-
-						// 拒絕浮點數區間邊界
-						if _, ok := start.(*FloatLiteral); ok {
-							msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-								p.currentToken.Line, p.currentToken.Column)
-							p.saveError(msg)
-							return nil
-						}
-
-						if p.currentToken.Type != lexer.ELLIPSIS {
-							msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
-								p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-							p.saveError(msg)
-							return nil
-						}
-						p.nextToken() // skip ..
-
-						end := p.parseExpression(LOWEST)
-
-						// 拒絕浮點數區間邊界
-						if _, ok := end.(*FloatLiteral); ok {
-							msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-								p.currentToken.Line, p.currentToken.Column)
-							p.saveError(msg)
-							return nil
-						}
-
-						rightInc := false
-						if p.currentToken.Type == lexer.RBRACKET {
-							rightInc = true
-						} else if p.currentToken.Type == lexer.RPAREN {
-							rightInc = false
-						} else {
-							msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
-								p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-							p.saveError(msg)
-							return nil
-						}
-						p.nextToken() // skip ] or )
-
-						stmt.Range = &RangeExpression{
-							Token:    tok,
-							Start:    start,
-							End:      end,
-							LeftInc:  leftInc,
-							RightInc: rightInc,
-						}
-						goto parseBody
-					} else if p.currentToken.Type == lexer.COMMA || p.currentToken.Type == lexer.RBRACKET {
-						// 匿名切片: [1, 2, 3]
-						p.restoreState(state)
-						sliceExpr := p.parseSliceLiteral()
-						if sliceLit, ok := sliceExpr.(*SliceLiteral); ok {
-							stmt.RangeSliceLit = sliceLit
-							goto parseBody
-						}
-						return nil
-					} else {
-						p.restoreState(state)
-						msg := fmt.Sprintf("line %d, column %d: expected '..' for range or ','/'}' for slice, got %s instead",
-							p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-						p.saveError(msg)
-						return nil
-					}
-				} else if p.currentToken.Type == lexer.LPAREN {
-					leftInc = false
-				} else if p.currentToken.Type == lexer.IDENT {
-					// 陣列/切片遍歷: for i in a
-					stmt.RangeIdent = p.currentToken.Literal
-					p.nextToken() // skip identifier
-					goto parseBody
-				} else {
-					msg := fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
-						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
-					return nil
-				}
-				tok := p.currentToken
-				p.nextToken() // skip [ or (
-
-				start := p.parseExpression(LOWEST)
-
-				// 拒絕浮點數區間邊界
-				if _, ok := start.(*FloatLiteral); ok {
-					msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-						p.currentToken.Line, p.currentToken.Column)
-					p.saveError(msg)
-					return nil
-				}
-
-				if p.currentToken.Type != lexer.ELLIPSIS {
-					msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
-						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
-					return nil
-				}
-				p.nextToken() // skip ..
-
-				end := p.parseExpression(LOWEST)
-
-				// 拒絕浮點數區間邊界
-				if _, ok := end.(*FloatLiteral); ok {
-					msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-						p.currentToken.Line, p.currentToken.Column)
-					p.saveError(msg)
-					return nil
-				}
-
-				rightInc := false
-				if p.currentToken.Type == lexer.RBRACKET {
-					rightInc = true
-				} else if p.currentToken.Type == lexer.RPAREN {
-					rightInc = false
-				} else {
-					msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
-						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
-					return nil
-				}
-				p.nextToken() // skip ] or )
-
-				stmt.Range = &RangeExpression{
-					Token:    tok,
-					Start:    start,
-					End:      end,
-					LeftInc:  leftInc,
-					RightInc: rightInc,
-				}
+				p.parseForRange(stmt)
 				goto parseBody
 			}
 		}
@@ -2517,6 +3118,200 @@ parseBody:
 		return nil
 	}
 
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	return stmt
+}
+
+// parseForRange 解析 <- 或 in 後的 range 表達式
+func (p *Parser) parseForRange(stmt *ForStatement) {
+	// 解析 range: [a..b], (a..b], [a..b), (a..b)
+	leftInc := false
+	// 字串遍歷: for i in 'abc'
+	if p.currentToken.Type == lexer.STRING {
+		stmt.RangeStr = p.currentToken.Literal
+		p.nextToken() // skip string
+		stmt.Range = &RangeExpression{
+			Token:    p.currentToken,
+			LeftInc:  true,
+			RightInc: false,
+		}
+		return
+	}
+
+	if p.currentToken.Type == lexer.LBRACKET {
+		// Peek ahead: [a..b] = range, [1, 2, 3] = slice literal
+		state := p.saveState()
+		p.nextToken() // skip [
+		p.parseExpression(LOWEST)
+
+		if p.currentToken.Type == lexer.ELLIPSIS {
+			// Range: [a..b] — restore state, use existing range logic
+			p.restoreState(state)
+			leftInc = true
+			tok := p.currentToken
+			p.nextToken() // skip [
+
+			start := p.parseExpression(LOWEST)
+
+			// 拒絕浮點數區間邊界
+			if _, ok := start.(*FloatLiteral); ok {
+				msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+					p.currentToken.Line, p.currentToken.Column)
+				p.saveError(msg)
+				return
+			}
+
+			if p.currentToken.Type != lexer.ELLIPSIS {
+				msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return
+			}
+			p.nextToken() // skip ..
+
+			end := p.parseExpression(LOWEST)
+
+			// 拒絕浮點數區間邊界
+			if _, ok := end.(*FloatLiteral); ok {
+				msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+					p.currentToken.Line, p.currentToken.Column)
+				p.saveError(msg)
+				return
+			}
+
+			rightInc := false
+			if p.currentToken.Type == lexer.RBRACKET {
+				rightInc = true
+			} else if p.currentToken.Type == lexer.RPAREN {
+				rightInc = false
+			} else {
+				msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return
+			}
+			p.nextToken() // skip ] or )
+
+			stmt.Range = &RangeExpression{
+				Token:    tok,
+				Start:    start,
+				End:      end,
+				LeftInc:  leftInc,
+				RightInc: rightInc,
+			}
+			return
+		} else if p.currentToken.Type == lexer.COMMA || p.currentToken.Type == lexer.RBRACKET {
+			// 匿名切片: [1, 2, 3]
+			p.restoreState(state)
+			sliceExpr := p.parseSliceLiteral()
+			if sliceLit, ok := sliceExpr.(*SliceLiteral); ok {
+				stmt.RangeSliceLit = sliceLit
+				return
+			}
+			return
+		} else {
+			p.restoreState(state)
+			msg := fmt.Sprintf("line %d, column %d: expected '..' for range or ','/'}' for slice, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return
+		}
+	} else if p.currentToken.Type == lexer.LPAREN {
+		leftInc = false
+	} else if p.currentToken.Type == lexer.IDENT {
+		// 陣列/切片遍歷: for i in a
+		stmt.RangeIdent = p.currentToken.Literal
+		p.nextToken() // skip identifier
+		return
+	} else {
+		msg := fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return
+	}
+	tok := p.currentToken
+	p.nextToken() // skip [ or (
+
+	start := p.parseExpression(LOWEST)
+
+	// 拒絕浮點數區間邊界
+	if _, ok := start.(*FloatLiteral); ok {
+		msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return
+	}
+
+	if p.currentToken.Type != lexer.ELLIPSIS {
+		msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return
+	}
+	p.nextToken() // skip ..
+
+	end := p.parseExpression(LOWEST)
+
+	// 拒絕浮點數區間邊界
+	if _, ok := end.(*FloatLiteral); ok {
+		msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return
+	}
+
+	rightInc := false
+	if p.currentToken.Type == lexer.RBRACKET {
+		rightInc = true
+	} else if p.currentToken.Type == lexer.RPAREN {
+		rightInc = false
+	} else {
+		msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return
+	}
+	p.nextToken() // skip ] or )
+
+	stmt.Range = &RangeExpression{
+		Token:    tok,
+		Start:    start,
+		End:      end,
+		LeftInc:  leftInc,
+		RightInc: rightInc,
+	}
+}
+
+// parseBangLoop 解析 ! { } 無限循環
+func (p *Parser) parseBangLoop() Statement {
+	stmt := &ForStatement{Token: p.currentToken}
+	// ! 後直接接 {
+	p.nextToken() // skip !
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	return stmt
+}
+
+// parseCountedLoop 解析 N * { } 次數循環
+func (p *Parser) parseCountedLoop() Statement {
+	stmt := &ForStatement{Token: p.currentToken}
+	// currentToken = INT (N)
+	intToken := p.currentToken
+	p.nextToken() // skip INT
+	p.nextToken() // skip MUL
+	// 計數表達式
+	value, err := strconv.ParseInt(intToken.Literal, 10, 64)
+	if err != nil {
+		msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
+			intToken.Line, intToken.Column, intToken.Literal)
+		p.saveError(msg)
+		return nil
+	}
+	stmt.CountExpr = &IntegerLiteral{
+		Token: intToken,
+		Value: value,
+	}
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
 	return stmt
@@ -3070,7 +3865,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 
 	p.nextToken()
 
-	// 泛型參數：arr_to_vec<N>(...) 或 arr_to_vec<N, M>(...)
+	// 泛型參數：arr_to_vec<N>: (...) 或 arr_to_vec<N, M>: (...)
 	if p.currentToken.Type == lexer.LESS {
 		p.nextToken()
 		for {
@@ -3096,14 +3891,23 @@ func (p *Parser) parseFunctionDefinition() Statement {
 		}
 	}
 
-	if p.currentToken.Type != lexer.LPAREN {
+	// 新語法要求 = 作爲函數定義標記
+	if p.currentToken.Type != lexer.ASSIGN {
+		msg := fmt.Sprintf("line %d, column %d: expected '=' after function name, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken()
+
+	if p.currentToken.Type == lexer.LPAREN {
+		p.nextToken()
+	} else {
 		msg := fmt.Sprintf("line %d, column %d: expected left parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
 		return nil
 	}
-
-	p.nextToken()
 
 	if p.currentToken.Type != lexer.RPAREN {
 		for {
@@ -3215,6 +4019,11 @@ func (p *Parser) parseFunctionDefinition() Statement {
 
 	p.nextToken()
 
+	// 跳過 NEWLINE（多行定義：回傳型別在下一行）
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
 	if p.currentToken.Type == lexer.LPAREN {
 		p.nextToken()
 		if p.currentToken.Type != lexer.RPAREN {
@@ -3236,6 +4045,11 @@ func (p *Parser) parseFunctionDefinition() Statement {
 
 				// 支援 []type 切片或 [N]type 陣列作為結果類型
 				paramType := ""
+				isOption := false
+				if p.currentToken.Type == lexer.QUESTION {
+					isOption = true
+					p.nextToken()
+				}
 				if p.currentToken.Type == lexer.LBRACKET {
 					p.nextToken()
 					if p.currentToken.Type == lexer.INT {
@@ -3257,11 +4071,14 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				} else if p.currentToken.Type == lexer.IDENT {
 					paramType = p.currentToken.Literal
 					p.nextToken()
-				} else {
+				} else if !isOption {
 					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					p.saveError(msg)
 					return nil
+				}
+				if isOption {
+					paramType = "?" + paramType
 				}
 
 				param := &Parameter{

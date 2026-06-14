@@ -426,6 +426,60 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	// Push loop exit target
 	g.tmpIdx++
 	labelId := g.tmpIdx
+
+	// 次數循環：N * { }
+	if stmt.CountExpr != nil {
+		counterVar := fmt.Sprintf("__lc_%d", labelId)
+		// init: %__lc_N = alloca i64, store 0
+		sb.WriteString(fmt.Sprintf("%s%%%s = alloca i64\n", g.indent(), counterVar))
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), counterVar))
+
+		g.loopExits = append(g.loopExits, loopExit{
+			name: stmt.Label,
+			cond: fmt.Sprintf("for.cond.%d", labelId),
+			exit: fmt.Sprintf("for.end.%d", labelId),
+		})
+		defer func() {
+			g.loopExits = g.loopExits[:len(g.loopExits)-1]
+		}()
+
+		// br → cond
+		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+
+		// cond block
+		sb.WriteString(fmt.Sprintf("for.cond.%d:\n", labelId))
+		g.indentLevel++
+		counterLoad := fmt.Sprintf("%%%s.val", counterVar)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), counterLoad, counterVar))
+		cmpVal := g.generateExprWithSB(sb, stmt.CountExpr)
+		cmpResult := fmt.Sprintf("%%%s.cmp", counterVar)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpResult, counterLoad, cmpVal))
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
+			g.indent(), cmpResult, labelId, labelId))
+		g.indentLevel--
+
+		// body block
+		sb.WriteString(fmt.Sprintf("for.body.%d:\n", labelId))
+		g.indentLevel++
+		if stmt.Body != nil {
+			for _, s := range stmt.Body.Statements {
+				g.generateStatement(sb, s)
+			}
+		}
+		// update: %val = load i64, %cnt; %inc = add i64 %val, 1; store i64 %inc, %cnt
+		updateLoad := fmt.Sprintf("%%%s.val2", counterVar)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), updateLoad, counterVar))
+		updateInc := fmt.Sprintf("%%%s.inc", counterVar)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), updateInc, updateLoad))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), updateInc, counterVar))
+		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+		g.indentLevel--
+
+		// end block
+		sb.WriteString(fmt.Sprintf("for.end.%d:\n", labelId))
+		return
+	}
+
 	g.loopExits = append(g.loopExits, loopExit{
 		name: stmt.Label,
 		cond: fmt.Sprintf("for.cond.%d", labelId),

@@ -493,12 +493,12 @@ func TestHandleTextDocumentFormatting_MethodDefinition(t *testing.T) {
 	s := NewServer()
 
 	input := strings.TrimSpace(`
-str.len() (n    i64)      {
+str.len: () (n    i64)      {
     n = .len
 }
 	`)
 	expected := strings.TrimSpace(`
-str.len() (n i64) {
+str.len: () (n i64) {
     n = .len
 }
 	`)

@@ -13,7 +13,7 @@ arr {
 }
 
 // arr-create: 創建長度 n 的陣列，全部填充 val
-arr-create(n i64, val t)(out [n]t) {
+arr-create = (n i64, val t)(out [n]t) {
     i = 0
     for i < n {
         out[i] = val

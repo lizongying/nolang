@@ -16,7 +16,7 @@ func TestParser(t *testing.T) {
 	z = 3.14
 
 	// 函数定义
-	add(a i64, b i64) {
+	add= (a i64, b i64) {
 		result = a + b
 		return
 	}
@@ -293,7 +293,7 @@ func TestFunctionDefinitionInt(t *testing.T) {
 
 func TestFunctionDefinition2(t *testing.T) {
 	input := `
-	foo(a int, b string) {
+	foo= (a int, b string) {
 		x = 10
 	}
 	`
@@ -356,7 +356,7 @@ func TestFunctionDefinition2(t *testing.T) {
 
 func TestFunctionDefinitionVsCall(t *testing.T) {
 	input := `
-	foo(a int, b string) {
+	foo= (a int, b string) {
 		x = 10
 	}
 	
@@ -677,13 +677,13 @@ func TestMatch(t *testing.T) {
 			wantArms: 3,
 		},
 		{
-			name: "match_expr_block_error",
+			name: "match_expr_block_body",
 			input: `result = x {
     1|
-        a = 1
+        true
 }`,
-			wantErr:  true,
-			wantArms: 0,
+			wantErr:  false,
+			wantArms: 1,
 		},
 	}
 
@@ -1317,7 +1317,7 @@ func TestFunctionSyntax(t *testing.T) {
 		// README 143-149: function with return (no return value)
 		{
 			name: "func_with_return_no_value",
-			input: `add(a i64, b i64) {
+			input: `add= (a i64, b i64) {
     result = a + b
     return
     result2 = a + b
@@ -1345,7 +1345,7 @@ func TestFunctionSyntax(t *testing.T) {
 		// README 157-159: variadic parameters
 		{
 			name:  "variadic_param",
-			input: "add3(a ..i64) {\n}",
+			input: "add3= (a ..i64) {\n}",
 			check: func(t *testing.T, stmts []Statement) {
 				fd, ok := stmts[0].(*FunctionDefinition)
 				if !ok {
@@ -1365,7 +1365,7 @@ func TestFunctionSyntax(t *testing.T) {
 		// README 161-165: function with println
 		{
 			name: "func_with_println",
-			input: `add(a i64, b i64) {
+			input: `add= (a i64, b i64) {
     result = a + b
     print('result:', result)
 }`,
@@ -1387,19 +1387,15 @@ func TestFunctionSyntax(t *testing.T) {
 			name:  "anonymous_func",
 			input: "add = (a i64, b i64) {\n}",
 			check: func(t *testing.T, stmts []Statement) {
-				letStmt, ok := stmts[0].(*LetStatement)
+				fd, ok := stmts[0].(*FunctionDefinition)
 				if !ok {
-					t.Fatalf("expected LetStatement, got %T", stmts[0])
+					t.Fatalf("expected FunctionDefinition, got %T", stmts[0])
 				}
-				if letStmt.Name.Value != "add" {
-					t.Errorf("expected name 'add', got %q", letStmt.Name.Value)
+				if fd.Name != "add" {
+					t.Errorf("expected name 'add', got %q", fd.Name)
 				}
-				fn, ok := letStmt.Value.(*FunctionLiteral)
-				if !ok {
-					t.Fatalf("expected FunctionLiteral, got %T", letStmt.Value)
-				}
-				if len(fn.Parameters) != 2 {
-					t.Errorf("expected 2 params, got %d", len(fn.Parameters))
+				if len(fd.Parameters) != 2 {
+					t.Errorf("expected 2 params, got %d", len(fd.Parameters))
 				}
 			},
 		},
@@ -1533,14 +1529,14 @@ print(numbers)`,
 		// README 142-199: full program
 		{
 			name: "readme_full_functions",
-			input: `add(a i64, b i64) {
+			input: `add= (a i64, b i64) {
     result = a + b
     return
     result2 = a + b
 }
-add3(a ..i64) {
+add3= (a ..i64) {
 }
-add(a i64, b i64) {
+add= (a i64, b i64) {
     result = a + b
     print('result:', result)
 }

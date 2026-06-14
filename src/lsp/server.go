@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	nbuild "github.com/lizongying/nolang/build"
 	nolangfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
@@ -110,22 +111,39 @@ func (s *Server) handleTextDocumentDidOpen(params DidOpenTextDocumentParams) (in
 		return nil, err
 	}
 
-	_, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
+	ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
 	if err != nil {
 		log.Printf("Error parsing document: %v", err)
 	}
 
-	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors)
+	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
 
 	return nil, nil
 }
 
-func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string) {
+func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, ast *parser.Program) {
 	var diagnostics []Diagnostic
 
 	for _, errMsg := range parseErrors {
 		diagnostic := s.parseErrorToDiagnostic(errMsg)
 		diagnostics = append(diagnostics, diagnostic)
+	}
+
+	// 型別檢查
+	if ast != nil {
+		typeErrs := nbuild.ValidateTypes(ast)
+		for _, e := range typeErrs {
+			diagnostic := Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
+					End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
+				},
+				Severity: DiagnosticSeverityError,
+				Source:   "nolang-type-checker",
+				Message:  e.Message,
+			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
 	}
 
 	if err := s.publishDiagnostics(uri, diagnostics); err != nil {
@@ -154,12 +172,12 @@ func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams)
 		return nil, err
 	}
 
-	_, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
+	ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
 	if err != nil {
 		log.Printf("Error parsing document: %v", err)
 	}
 
-	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors)
+	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
 
 	return nil, nil
 }
@@ -177,7 +195,7 @@ func (s *Server) handleTextDocumentDidClose(params DidCloseTextDocumentParams) (
 		return nil, err
 	}
 
-	s.publishDocumentDiagnostics(params.TextDocument.URI, nil)
+	s.publishDocumentDiagnostics(params.TextDocument.URI, nil, nil)
 
 	return nil, nil
 }
@@ -462,6 +480,38 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	}, nil
 }
 
+func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilParams) (interface{}, error) {
+	log.Printf("TextDocumentWillSaveWaitUntil: %+v", params)
+
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+
+	content := doc.Text
+	formatted := formatNolangCode(content)
+	if formatted == content {
+		return []TextEdit{}, nil
+	}
+
+	lines := strings.Split(content, "\n")
+	lastLine := len(lines) - 1
+	lastChar := 0
+	if lastLine >= 0 {
+		lastChar = len(lines[lastLine])
+	}
+
+	return []TextEdit{
+		{
+			Range: Range{
+				Start: Position{Line: 0, Character: 0},
+				End:   Position{Line: uint32(lastLine), Character: uint32(lastChar)},
+			},
+			NewText: formatted,
+		},
+	}, nil
+}
+
 func (s *Server) Handle(method string, params json.RawMessage) (interface{}, error) {
 	switch method {
 	case "initialize":
@@ -568,6 +618,15 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentFormatting(p)
+
+	case "textDocument/willSaveWaitUntil":
+		var wp WillSaveWaitUntilParams
+		if params != nil {
+			if err := json.Unmarshal(params, &wp); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentWillSaveWaitUntil(wp)
 
 	case "workspace/symbol":
 		var p WorkspaceSymbolParams
