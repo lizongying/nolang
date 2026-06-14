@@ -15,9 +15,11 @@ func NewFormatter() *Formatter {
 }
 
 type formatter struct {
-	buf         strings.Builder
-	indent      int
-	sourceLines []string
+	buf          strings.Builder
+	indent       int
+	sourceLines  []string
+	stmtLineCnt  []int // per-statement formatted line count
+	stmtOrigLine []int // per-statement original 1-based line number
 }
 
 func (f *formatter) writeIndent() {
@@ -38,7 +40,18 @@ func (f *formatter) newline() {
 }
 
 func (f *formatter) formatProgram(p *parser.Program) {
+	f.stmtLineCnt = nil
+	f.stmtOrigLine = nil
+	lineCount := func() int {
+		s := f.buf.String()
+		if len(s) == 0 {
+			return 0
+		}
+		return strings.Count(s, "\n") + 1
+	}
 	for i, stmt := range p.Statements {
+		before := lineCount()
+
 		if i > 0 {
 			// 保留原始碼中的空行（最多合併為一行）
 			if f.hasBlankLineBetween(p.Statements[i-1], stmt) {
@@ -47,6 +60,10 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			f.newline()
 		}
 		f.formatStatement(stmt)
+
+		after := lineCount()
+		f.stmtLineCnt = append(f.stmtLineCnt, after-before)
+		f.stmtOrigLine = append(f.stmtOrigLine, stmtTokenLine(stmt))
 	}
 }
 
@@ -772,6 +789,16 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write("}")
 }
 
+// lineType 表示原始行類型
+// linePreserved: 純註釋行或空白行（保留原樣）
+// lineCode: 程式碼行（需要格式化）
+type lineType int
+
+const (
+	linePreserved lineType = iota
+	lineCode
+)
+
 // lineComment 記錄原始碼中的行尾註釋資訊
 type lineComment struct {
 	comment  string // 註釋內容（不含 //）
@@ -783,8 +810,8 @@ func Format(code string) string {
 		return ""
 	}
 
-	// 從原始碼中移除所有 // 註釋
-	cleanCode, comments := stripAllComments(code)
+	// 從原始碼中移除 // 註釋，純註釋行保留原樣
+	cleanCode, comments, lineTypes := stripAndClassify(code)
 
 	l := lexer.New(cleanCode)
 	p := parser.New(l)
@@ -794,36 +821,76 @@ func Format(code string) string {
 		return cleanCode
 	}
 
+	cleanLines := strings.Split(cleanCode, "\n")
 	f := &formatter{
-		sourceLines: strings.Split(cleanCode, "\n"),
+		sourceLines: cleanLines,
 	}
 	f.formatProgram(program)
 	formattedCode := f.buf.String()
+	formattedLines := strings.Split(formattedCode, "\n")
 
-	// 將行尾註釋匹配到格式化輸出：對每個註釋，在其原始原始碼行(cleanCode)中
-	// 找到第一個有意義的識別字（函數名/變數名），再到格式化輸出中找到
-	// 以該識別字開頭的格式化行，將註釋附加到該行。
+	// 使用 statement 行數追蹤重建：遍歷原始 cleanLines，
+	// 保留行（純註釋/空白）原樣輸出，程式碼行替換為下一段格式化行的內容。
+	// 同一 statement 可能跨越多行原始碼（例如多行函數定義），
+	// 後續連續的程式碼行（如 }）屬同一 statement，不產生額外格式化輸出。
+	stmtStartLines := make(map[int]bool)
+	for _, l := range f.stmtOrigLine {
+		if l > 0 {
+			stmtStartLines[l-1] = true
+		}
+	}
+
+	stmtIdx := 0
+	formLineIdx := 0
+	var result []string
+	for origLineIdx, lt := range lineTypes {
+		if lt == linePreserved {
+			line := cleanLines[origLineIdx]
+			isComment := strings.HasPrefix(strings.TrimLeft(line, " \t"), "//")
+			if isComment {
+				result = append(result, line)
+			} else {
+				// 空白行：前後都是註釋行時才保留
+				prevIsComment := origLineIdx == 0 || strings.HasPrefix(strings.TrimLeft(cleanLines[origLineIdx-1], " \t"), "//")
+				nextIsComment := origLineIdx == len(cleanLines)-1 ||
+					(origLineIdx+1 < len(lineTypes) && lineTypes[origLineIdx+1] == linePreserved &&
+						strings.HasPrefix(strings.TrimLeft(cleanLines[origLineIdx+1], " \t"), "//"))
+				if prevIsComment && nextIsComment {
+					result = append(result, line)
+				}
+			}
+			continue
+		}
+
+		// 程式碼行：只有當此行是 statement 的起始行時才輸出格式化內容
+		if stmtStartLines[origLineIdx] && stmtIdx < len(f.stmtLineCnt) {
+			cnt := f.stmtLineCnt[stmtIdx]
+			for j := 0; j < cnt && formLineIdx+j < len(formattedLines); j++ {
+				result = append(result, formattedLines[formLineIdx+j])
+			}
+			formLineIdx += cnt
+			stmtIdx++
+		}
+		// 非起始行的程式碼行（如 }）隸屬於上一個 statement，不輸出
+	}
+
+	// 將行尾註釋匹配到格式化輸出
 	if len(comments) > 0 {
-		formattedLines := strings.Split(formattedCode, "\n")
 		for _, comment := range comments {
-			// 從原始程式碼行中提取首個標識符
 			ident := extractFirstIdentifier(comment.codeLine)
 			if ident == "" {
 				continue
 			}
-			// 尋找格式化行中以該標識符開頭的行（精確比對首個 token）
-			for j, fl := range formattedLines {
-				flIdent := extractFirstIdentifier(fl)
-				if flIdent == ident && !strings.Contains(formattedLines[j], "//"+comment.comment) {
-					formattedLines[j] = fl + "  // " + comment.comment
+			for j, line := range result {
+				if extractFirstIdentifier(line) == ident && !strings.Contains(result[j], "//"+comment.comment) {
+					result[j] = line + "  // " + comment.comment
 					break
 				}
 			}
 		}
-		formattedCode = strings.Join(formattedLines, "\n")
 	}
 
-	return formattedCode
+	return strings.Join(result, "\n")
 }
 
 // extractFirstIdentifier 從一行程式碼中提取首個有效的 Nolang 標識符
@@ -845,40 +912,48 @@ func extractFirstIdentifier(line string) string {
 	return buf.String()
 }
 
-// stripAllComments 從原始碼中移除所有 // 註釋。
-// 返回：移除註釋後的程式碼、行尾註釋列表
-func stripAllComments(code string) (string, []lineComment) {
+// stripAndClassify 從原始碼中移除行尾註釋，保留純註釋行和空白行。
+// 返回：移除行尾註釋後的程式碼，行尾註釋列表，每行的類型
+func stripAndClassify(code string) (string, []lineComment, []lineType) {
 	lines := strings.Split(code, "\n")
 	var comments []lineComment
+	types := make([]lineType, len(lines))
 	inStr := false
 
 	for lineIdx, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+
+		// 純註釋行或空白行 → 保留原樣
+		if strings.HasPrefix(trimmed, "//") || strings.TrimSpace(line) == "" {
+			types[lineIdx] = linePreserved
+			continue
+		}
+
+		types[lineIdx] = lineCode
+
+		// 程式碼行 → 檢查是否有行尾註釋
 		for i := 0; i < len(line); i++ {
 			ch := line[i]
 			if ch == '\'' && (i == 0 || line[i-1] != '\\') {
 				inStr = !inStr
 			}
 			if !inStr && ch == '/' && i+1 < len(line) && line[i+1] == '/' {
-				// 提取註釋內容
 				comment := strings.TrimSpace(line[i+2:])
 				beforeComment := strings.TrimRight(line[:i], " \t")
 
-				// 保存行尾註釋（非純註釋行才有意義）
-				trimmed := strings.TrimLeft(line, " \t")
-				if !strings.HasPrefix(trimmed, "//") && comment != "" {
+				if comment != "" {
 					comments = append(comments, lineComment{
 						comment:  comment,
 						codeLine: beforeComment,
 					})
 				}
-				// 行內原地修改
 				lines[lineIdx] = beforeComment
 				break
 			}
 		}
 	}
 
-	return strings.Join(lines, "\n"), comments
+	return strings.Join(lines, "\n"), comments, types
 }
 
 func (f *Formatter) Format(code string) string {
