@@ -232,6 +232,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.SliceLiteral:
 		return "%vec"
 	case *parser.SliceExpression:
+		// Check source type: slicing %str/%str-smail produces %str, otherwise %vec
+		if ident, ok := v.Left.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok && (t == "%str" || t == "%str-smail") {
+					return "%str"
+				}
+			}
+		}
 		return "%vec"
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
@@ -901,7 +909,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// 切片儲存：使用 %vec 結構體
 	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
-	if stmt.IsSlice || isSliceLit {
+	_, isSliceExpr := stmt.Value.(*parser.SliceExpression)
+	if (stmt.IsSlice || isSliceLit) && !isSliceExpr {
 		if isSliceLit {
 			slice := stmt.Value.(*parser.SliceLiteral)
 			elemType := "i64"

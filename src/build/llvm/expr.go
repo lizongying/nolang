@@ -817,58 +817,105 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	r := expr.Range
 	leftVal := g.generateExprWithSB(sb, expr.Left)
 
-	// Determine if the left expression is a vec by resolving its name
+	// Determine if the left expression is a vec, arr, or str by resolving its name
 	varName := ""
 	if ident, ok := expr.Left.(*parser.Identifier); ok {
 		varName = ident.Value
 	}
 
 	isVec := false
+	isArr := false
+	isStr := false
+	isStrMail := false
 	if varName != "" && g.varTypes != nil {
-		if t, ok := g.varTypes[varName]; ok && t == "%vec" {
-			isVec = true
+		if t, ok := g.varTypes[varName]; ok {
+			isVec = t == "%vec"
+			isArr = t == "%arr"
+			isStr = t == "%str"
+			isStrMail = t == "%str-smail"
 		}
 	}
 
-	if !isVec {
-		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec): %s\n", g.indent(), leftVal))
+	if !isVec && !isArr && !isStr && !isStrMail {
+		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec/arr/str): %s\n", g.indent(), leftVal))
 		return "0"
 	}
 
 	g.tmpIdx++
 	tid := g.tmpIdx
-	resultVec := fmt.Sprintf("%%vec.slice.%d", tid)
+	resultType := "%vec"
+	if isStr || isStrMail {
+		resultType = "%str"
+	}
+	resultReg := fmt.Sprintf("%%slic.%d", tid)
 
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), resultVec))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), resultReg, resultType))
 	}
 
-	// Load source vec fields
-	g.tmpIdx++
-	srcLenGEP := fmt.Sprintf("%%vec.srclen.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	srcLen := fmt.Sprintf("%%vec.srclen.%d", g.tmpIdx)
-	g.tmpIdx++
-	srcCapGEP := fmt.Sprintf("%%vec.srccap.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	srcCap := fmt.Sprintf("%%vec.srccap.%d", g.tmpIdx)
-	g.tmpIdx++
-	srcDataGEP := fmt.Sprintf("%%vec.srcdata.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	srcData := fmt.Sprintf("%%vec.srcdata.%d", g.tmpIdx)
-	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
-			g.indent(), srcLenGEP, varName))
-		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
-			g.indent(), srcLen, srcLenGEP))
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 1\n",
-			g.indent(), srcCapGEP, varName))
-		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
-			g.indent(), srcCap, srcCapGEP))
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
-			g.indent(), srcDataGEP, varName))
-		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
-			g.indent(), srcData, srcDataGEP))
+	// Variables for source fields
+	var srcLen, srcData, srcCap string
+
+	if isStrMail {
+		strPtr := fmt.Sprintf("%%%s", varName)
+		srcLen = g.extractStrSmailLen(sb, strPtr)
+		srcData = g.extractStrSmailDataPtr(sb, strPtr)
+		srcCap = srcLen
+	} else {
+		// Determine struct type name for source GEPs
+		structType := "%arr"
+		if isVec {
+			structType = "%vec"
+		} else if isStr {
+			structType = "%str"
+		}
+
+		// Data field index: %arr → field 1, %vec → field 2, %str → field 1
+		dataField := uint32(1)
+		if isVec {
+			dataField = 2
+		}
+
+		// Load source len (field 0 for both %arr and %vec)
+		g.tmpIdx++
+		srcLenGEP := fmt.Sprintf("%%slice.srclen.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		srcLen = fmt.Sprintf("%%slice.srclen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 0\n",
+				g.indent(), srcLenGEP, structType, structType, varName))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+				g.indent(), srcLen, srcLenGEP))
+		}
+
+		// Load source data pointer
+		g.tmpIdx++
+		srcDataGEP := fmt.Sprintf("%%slice.srcdata.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		srcData = fmt.Sprintf("%%slice.srcdata.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+				g.indent(), srcDataGEP, structType, structType, varName, dataField))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+				g.indent(), srcData, srcDataGEP))
+		}
+
+		// Source capacity: for %vec load from field 1, for %arr/%str use len
+		g.tmpIdx++
+		srcCap = fmt.Sprintf("%%slice.srccap.%d", g.tmpIdx)
+		if isVec {
+			g.tmpIdx++
+			srcCapGEP := fmt.Sprintf("%%slice.srccap.gep.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 1\n",
+					g.indent(), srcCapGEP, structType, structType, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+					g.indent(), srcCap, srcCapGEP))
+			}
+		} else {
+			// %arr/%str has no cap field; use len as cap
+			srcCap = srcLen
+		}
 	}
 
 	// Compute start: 0 if no start, else compile(start) + (1 if ( exclusive)
@@ -945,9 +992,11 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Compute new data pointer: GEP on i8* with byte offset
-	// byte offset = start * elem_size (default 8 for i64)
+	// byte offset = start * elem_size (default 8 for i64, 1 for str/str-smail)
 	elemSize := int64(8)
-	if elemType, ok := g.arrayElemTypes[varName]; ok {
+	if isStr || isStrMail {
+		elemSize = 1
+	} else if elemType, ok := g.arrayElemTypes[varName]; ok {
 		switch elemType {
 		case "i8", "i16", "i32", "i64":
 			if s := g.llvmTypeSize(elemType); s > 0 {
@@ -980,35 +1029,42 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 
 	// Store new len (field 0)
 	g.tmpIdx++
-	dstLenGEP := fmt.Sprintf("%%vec.dstlen.gep.%d", g.tmpIdx)
+	dstLenGEP := fmt.Sprintf("%%slic.dstlen.gep.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
-			g.indent(), dstLenGEP, resultVec))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+			g.indent(), dstLenGEP, resultType, resultType, resultReg))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
 			g.indent(), newLenReg, dstLenGEP))
 	}
 
-	// Store new cap (field 1)
-	g.tmpIdx++
-	dstCapGEP := fmt.Sprintf("%%vec.dstcap.gep.%d", g.tmpIdx)
-	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
-			g.indent(), dstCapGEP, resultVec))
-		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
-			g.indent(), newCapReg, dstCapGEP))
+	if resultType == "%vec" {
+		// Store new cap (field 1) — only %vec has cap
+		g.tmpIdx++
+		dstCapGEP := fmt.Sprintf("%%slic.dstcap.gep.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+				g.indent(), dstCapGEP, resultType, resultType, resultReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
+				g.indent(), newCapReg, dstCapGEP))
+		}
 	}
 
-	// Store new data (field 2)
+	// Store new data
+	// %vec: field 2, %str: field 1
+	dstDataField := uint32(2)
+	if isStr || isStrMail {
+		dstDataField = 1
+	}
 	g.tmpIdx++
-	dstDataGEP := fmt.Sprintf("%%vec.dstdata.gep.%d", g.tmpIdx)
+	dstDataGEP := fmt.Sprintf("%%slic.dstdata.gep.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-			g.indent(), dstDataGEP, resultVec))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+			g.indent(), dstDataGEP, resultType, resultType, resultReg, dstDataField))
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n",
 			g.indent(), newDataReg, dstDataGEP))
 	}
 
-	return resultVec
+	return resultReg
 }
 
 func (g *Generator) rangeBoundStr(expr parser.Expression) string {

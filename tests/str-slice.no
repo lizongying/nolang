@@ -1,0 +1,35 @@
+// str-slice test
+// cd src && go run ./cmd/cli/. build ../tests/str-slice.no
+// ../dist/str-slice
+
+// Short string (%str-smail type)
+s = 'HelloWorld'
+print(s.len)
+
+// full slice: s[..]
+a = s[..]
+print(a.len)
+
+// from index: s[5..]
+b = s[5..]
+print(b.len)
+
+// to index inclusive: s[..5]
+c = s[..5]
+print(c.len)
+
+// range: s[1..4]
+d = s[1..4]
+print(d.len)
+
+// range exclusive end: s[1..4)
+e = s[1..4)
+print(e.len)
+
+// range exclusive start: s(1..4]
+f = s(1..4]
+print(f.len)
+
+// range exclusive both: s(1..4)
+g = s(1..4)
+print(g.len)
