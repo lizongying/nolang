@@ -814,13 +814,201 @@ func (g *Generator) generateArrayLiteral(sb *strings.Builder, arr *parser.ArrayL
 }
 
 func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.SliceExpression) string {
-	// TODO: implement LLVM slice expression
-	// For now, generate a comment and return a placeholder
 	r := expr.Range
 	leftVal := g.generateExprWithSB(sb, expr.Left)
-	sb.WriteString(fmt.Sprintf("%s; slice expression: %s[%s..%s]\n", g.indent(), leftVal,
-		g.rangeBoundStr(r.Start), g.rangeBoundStr(r.End)))
-	return "0"
+
+	// Determine if the left expression is a vec by resolving its name
+	varName := ""
+	if ident, ok := expr.Left.(*parser.Identifier); ok {
+		varName = ident.Value
+	}
+
+	isVec := false
+	if varName != "" && g.varTypes != nil {
+		if t, ok := g.varTypes[varName]; ok && t == "%vec" {
+			isVec = true
+		}
+	}
+
+	if !isVec {
+		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec): %s\n", g.indent(), leftVal))
+		return "0"
+	}
+
+	g.tmpIdx++
+	tid := g.tmpIdx
+	resultVec := fmt.Sprintf("%%vec.slice.%d", tid)
+
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), resultVec))
+	}
+
+	// Load source vec fields
+	g.tmpIdx++
+	srcLenGEP := fmt.Sprintf("%%vec.srclen.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	srcLen := fmt.Sprintf("%%vec.srclen.%d", g.tmpIdx)
+	g.tmpIdx++
+	srcCapGEP := fmt.Sprintf("%%vec.srccap.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	srcCap := fmt.Sprintf("%%vec.srccap.%d", g.tmpIdx)
+	g.tmpIdx++
+	srcDataGEP := fmt.Sprintf("%%vec.srcdata.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	srcData := fmt.Sprintf("%%vec.srcdata.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
+			g.indent(), srcLenGEP, varName))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+			g.indent(), srcLen, srcLenGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 1\n",
+			g.indent(), srcCapGEP, varName))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+			g.indent(), srcCap, srcCapGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
+			g.indent(), srcDataGEP, varName))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+			g.indent(), srcData, srcDataGEP))
+	}
+
+	// Compute start: 0 if no start, else compile(start) + (1 if ( exclusive)
+	startReg := "0"
+	if r != nil && r.Start != nil {
+		startVal := g.generateExprWithSB(sb, r.Start)
+		if !r.LeftInc {
+			// ( exclusive: start = start + 1
+			g.tmpIdx++
+			startPlus := fmt.Sprintf("%%vec.start.plus.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
+					g.indent(), startPlus, startVal))
+			}
+			startReg = startPlus
+		} else {
+			startReg = startVal
+		}
+	}
+
+	// Compute new len
+	var newLenReg string
+	if r == nil || (r.Start == nil && r.End == nil) {
+		// [..] full slice: new_len = src_len
+		newLenReg = srcLen
+	} else if r.Start == nil && r.End != nil {
+		// [..end]: new_len = end + (1 if ] else 0)
+		endVal := g.generateExprWithSB(sb, r.End)
+		if r.RightInc {
+			g.tmpIdx++
+			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
+					g.indent(), newLenReg, endVal))
+			}
+		} else {
+			newLenReg = endVal
+		}
+	} else if r.Start != nil && r.End == nil {
+		// [start..]: new_len = src_len - start
+		g.tmpIdx++
+		newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+				g.indent(), newLenReg, srcLen, startReg))
+		}
+	} else {
+		// [start..end]: new_len = end - start + (1 if ] else 0)
+		endVal := g.generateExprWithSB(sb, r.End)
+		g.tmpIdx++
+		subReg := fmt.Sprintf("%%vec.sublen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+				g.indent(), subReg, endVal, startReg))
+		}
+		if r.RightInc {
+			g.tmpIdx++
+			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
+					g.indent(), newLenReg, subReg))
+			}
+		} else {
+			newLenReg = subReg
+		}
+	}
+
+	// Compute new cap: src_cap - start
+	g.tmpIdx++
+	newCapReg := fmt.Sprintf("%%vec.newcap.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+			g.indent(), newCapReg, srcCap, startReg))
+	}
+
+	// Compute new data pointer: GEP on i8* with byte offset
+	// byte offset = start * elem_size (default 8 for i64)
+	elemSize := int64(8)
+	if elemType, ok := g.arrayElemTypes[varName]; ok {
+		switch elemType {
+		case "i8", "i16", "i32", "i64":
+			if s := g.llvmTypeSize(elemType); s > 0 {
+				elemSize = s
+			}
+		}
+	}
+	g.tmpIdx++
+	offsetReg := fmt.Sprintf("%%vec.offset.%d", g.tmpIdx)
+	if sb != nil {
+		if startReg == "0" {
+			offsetReg = "0"
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n",
+				g.indent(), offsetReg, startReg, elemSize))
+		}
+	}
+
+	g.tmpIdx++
+	newDataReg := fmt.Sprintf("%%vec.newdata.%d", g.tmpIdx)
+	if sb != nil {
+		if offsetReg == "0" {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n",
+				g.indent(), newDataReg, srcData))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
+				g.indent(), newDataReg, srcData, offsetReg))
+		}
+	}
+
+	// Store new len (field 0)
+	g.tmpIdx++
+	dstLenGEP := fmt.Sprintf("%%vec.dstlen.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+			g.indent(), dstLenGEP, resultVec))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
+			g.indent(), newLenReg, dstLenGEP))
+	}
+
+	// Store new cap (field 1)
+	g.tmpIdx++
+	dstCapGEP := fmt.Sprintf("%%vec.dstcap.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
+			g.indent(), dstCapGEP, resultVec))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
+			g.indent(), newCapReg, dstCapGEP))
+	}
+
+	// Store new data (field 2)
+	g.tmpIdx++
+	dstDataGEP := fmt.Sprintf("%%vec.dstdata.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+			g.indent(), dstDataGEP, resultVec))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n",
+			g.indent(), newDataReg, dstDataGEP))
+	}
+
+	return resultVec
 }
 
 func (g *Generator) rangeBoundStr(expr parser.Expression) string {

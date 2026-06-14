@@ -231,6 +231,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	case *parser.SliceLiteral:
 		return "%vec"
+	case *parser.SliceExpression:
+		return "%vec"
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
@@ -1085,6 +1087,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		copyReg := fmt.Sprintf("%%strsm.copy.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = load %%str-smail, %%str-smail* %s\n", g.indent(), copyReg, val))
 		sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %%%s\n", g.indent(), copyReg, name))
+	case "%vec":
+		// Copy %vec struct: load from source, store to dest
+		g.tmpIdx++
+		copyReg := fmt.Sprintf("%%vec.copy.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
+		sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %%%s\n", g.indent(), copyReg, name))
 	case "i8*":
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %%%s\n", g.indent(), val, name))
 	case "double":

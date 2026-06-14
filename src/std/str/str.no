@@ -17,7 +17,7 @@ str.len() (n i64) {
     n = .len
 }
 
-str-eq(a str, b str, n i64) {
+str-eq = (a str, b str, n i64) {
     eq = 1
     i = 0
     for i < n {
@@ -29,11 +29,11 @@ str-eq(a str, b str, n i64) {
     }
 }
 
-str-at(s str, i i64) {
+str-at = (s str, i i64) {
     c = s[i] & 255
 }
 
-str-copy(src str, dst str, n i64) {
+str-copy = (src str, dst str, n i64) {
     i = 0
     for i < n {
         dst[i] = src[i]
@@ -41,7 +41,7 @@ str-copy(src str, dst str, n i64) {
     }
 }
 
-str-fill(s str, n i64, val i64) {
+str-fill = (s str, n i64, val i64) {
     i = 0
     for i < n {
         s[i] = val & 255
@@ -49,7 +49,7 @@ str-fill(s str, n i64, val i64) {
     }
 }
 
-str-index(s str, sn i64, target str, tn i64) {
+str-index = (s str, sn i64, target str, tn i64) {
     pos = -1
     
     
@@ -68,11 +68,11 @@ str-index(s str, sn i64, target str, tn i64) {
         i i = i + 1
     }
 }
-str-contains(s str, sn i64, target str, tn i64) {
+str-contains = (s str, sn i64, target str, tn i64) {
     str-index(s, sn, target, tn)(pos)
     
 }
-str-starts-with(s str, sn i64, target str, tn i64) {
+str-starts-with = (s str, sn i64, target str, tn i64) {
     yes yes = 1
     
     i i = 0
@@ -84,7 +84,7 @@ str-starts-with(s str, sn i64, target str, tn i64) {
     }
 }
 
-str-ends-with(s str, sn i64, target str, tn i64) {
+str-ends-with = (s str, sn i64, target str, tn i64) {
     yes = 1
     
     off off = sn - tn
@@ -97,7 +97,7 @@ str-ends-with(s str, sn i64, target str, tn i64) {
     }
 }
 
-str-trim(s str, n i64) {
+str-trim = (s str, n i64) {
     start = 0
     for start < n {
         
@@ -117,7 +117,7 @@ str-trim(s str, n i64) {
     }
 }
 
-str-repeat(s str, sn i64, times i64, out str, out-n i64) {
+str-repeat = (s str, sn i64, times i64, out str, out-n i64) {
     out-n = sn * times
     i = 0
     for i < times {
@@ -130,7 +130,7 @@ str-repeat(s str, sn i64, times i64, out str, out-n i64) {
     }
 }
 
-str-to-upper(s str, n i64) {
+str-to-upper = (s str, n i64) {
     i = 0
     for i < n {
         c = s[i] & 255
@@ -139,7 +139,7 @@ str-to-upper(s str, n i64) {
     }
 }
 
-str-to-lower(s str, n i64) {
+str-to-lower = (s str, n i64) {
     i = 0
     for i < n {
         c = s[i] & 255
@@ -148,13 +148,13 @@ str-to-lower(s str, n i64) {
     }
 }
 
-str-to-bytes(s str, n i64) {
+str-to-bytes = (s str, n i64) {
     for i {
         out[i] = s[i] & 255
     }
 }
 
-str-from-bytes(src []byte, n i64) {
+str-from-bytes = (src []byte, n i64) {
     i = 0
     for i < n {
         out[i] = src[i] & 255

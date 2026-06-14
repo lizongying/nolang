@@ -14,3 +14,4 @@ bin
 
 
 src/build/nolang-build
+vscode-nolang/server/nolang-lsp

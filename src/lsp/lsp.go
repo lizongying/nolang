@@ -422,6 +422,10 @@ type DidSaveTextDocumentParams struct {
 	Text         *string                `json:"text,omitempty"`
 }
 
+type WillSaveWaitUntilParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
 type DidChangeConfigurationParams struct {
 	Settings interface{} `json:"settings"`
 }

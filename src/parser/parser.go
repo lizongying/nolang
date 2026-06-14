@@ -1363,6 +1363,11 @@ func (p *Parser) parseLetStatement() Statement {
 				stmt.ElemType = "i64"
 			}
 
+		case *SliceExpression:
+			// 切片表達式結果的型別推斷
+			stmt.IsSlice = true
+			stmt.ElemType = "i64"
+
 		case *ArrayLiteral:
 		case *StructLiteral:
 
@@ -4236,6 +4241,10 @@ func (p *Parser) parseArgument() Expression {
 		// 如果后面有 LPAREN，解析函数调用（如 sqrt(9.0) 作為參數）
 		if p.currentToken.Type == lexer.LPAREN {
 			leftExp = p.parseCallExpression(leftExp)
+		}
+		// 如果后面有 LBRACKET，解析索引或切片表达式
+		if p.currentToken.Type == lexer.LBRACKET {
+			leftExp = p.parseSliceExpression(leftExp)
 		}
 		return leftExp
 	case lexer.LPAREN:

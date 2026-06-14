@@ -67,22 +67,12 @@ vec-push(data []i64, n i64, val i64, new-n i64) {
     new-n = n + 1
 }
 
-// vec-pop: 從切片末尾彈出元素
-vec-pop(data []i64, n i64, val i64, new-n i64) {
+// vec.pop: 從切片末尾彈出元素
+[]t.pop = (data []i64, n i64, val i64, new-n i64) {
     if n > 0 {
         new-n = n - 1
         val = data[new-n]
     } else {
         new-n = 0
-    }
-}
-
-// vec-slice: 返回 data[start..end) 的切片（共用底層陣列）
-// 注意：返回的切片和原始 data 共用記憶體
-vec-slice(data []i64, start i64, end i64, out []i64) {
-    i = start
-    for i < end {
-        out[i - start] = data[i]
-        i = i + 1
     }
 }
