@@ -1,0 +1,124 @@
+// arr — 陣列操作
+//
+// 提供固定大小陣列的通用操作。
+// 泛型參數用單字母 a-z 自動推斷。
+
+arr {
+    len i64 read-only
+
+    // 只存固定大小
+    // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+    // >8 字节存指针指針
+    data *any sealed
+}
+
+// arr-create: 創建長度 n 的陣列，全部填充 val
+arr-create = (n i64, val t)(out [n]t) {
+    i = 0
+    for i < n {
+        out[i] = val
+        i = i + 1
+    }
+}
+
+// [n]t.clone: 將陣列複製到 dst
+[n]t.clone = () (dst [n]t) {
+    i = 0
+    for i < n {
+        dst[i] = .[i]
+        i = i + 1
+    }
+}
+
+// [n]t.eq: 比較兩個陣列是否相等
+[n]t.eq = (b [n]t) (yes bool) {
+    yes = true
+    i = 0
+    for i < n {
+        d = .[i] - b[i]
+        if d != 0 {
+            yes = false
+            return
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.fill: 全部填充為 val
+[n]t.fill = (val t) {
+    i = 0
+    for i < n {
+        .[i] = val
+        i = i + 1
+    }
+}
+
+// [n]t.reverse: 反轉陣列
+[n]t.reverse = () {
+    i = 0
+    j = n - 1
+    for i < j {
+        tmp = .[i]
+        .[i] = .[j]
+        .[j] = tmp
+        i = i + 1
+        j = j - 1
+    }
+}
+
+// [n]t.contains: 是否包含值 val
+[n]t.contains = (val t) (found i64) {
+    found = 0
+    i = 0
+    for i < n {
+        d = .[i] - val
+        if d == 0 {
+            found = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.to-vec: 陣列方法，轉為 []t 切片
+[n]t.to-vec = () (out []t) {
+    for i <- [0..n) {
+        out[i] = .[i]
+    }
+}
+
+// [n]t.max: 陣列中的最大值
+[n]t.max = () (max t) {
+    max = .[0]
+    i = 1
+    for i < n {
+        d = .[i] - max
+        if d > 0 {
+            max = .[i]
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.min: 陣列中的最小值
+[n]t.min = () (min t) {
+    min = .[0]
+    i = 1
+    for i < n {
+        d = .[i] - min
+        if d < 0 {
+            min = .[i]
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.sum: 陣列元素總和
+[n]t.sum = () (sum t) {
+    sum = 0
+    i = 0
+    for i < n {
+        sum = sum + .[i]
+        i = i + 1
+    }
+}

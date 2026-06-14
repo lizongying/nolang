@@ -180,6 +180,34 @@ for i <- a {
 }
 			`),
 		},
+
+		{
+			name: "func1",
+			input: strings.TrimSpace(`
+max=(a t,b t)(r t){
+    r = a > b ? a : b
+}
+			`),
+			expected: strings.TrimSpace(`
+max = (a t, b t) (r t) {
+    r = a > b ? a : b
+}
+			`),
+		},
+
+		{
+			name: "func2",
+			input: strings.TrimSpace(`
+max     =     (a t,       b t)       (r t)    {
+    r = a > b ? a : b
+}
+			`),
+			expected: strings.TrimSpace(`
+max = (a t, b t) (r t) {
+    r = a > b ? a : b
+}
+			`),
+		},
 	}
 
 	for _, tt := range tests {

@@ -598,6 +598,11 @@ func (p *Parser) isArrayTypeMethodDefinition() bool {
 	}
 	p.nextToken() // skip method name
 
+	// 可選 =
+	if p.currentToken.Type == lexer.ASSIGN {
+		p.nextToken() // skip =
+	}
+
 	// (params)
 	if p.currentToken.Type != lexer.LPAREN {
 		return false
@@ -692,7 +697,12 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	def.Name = arrayType + "." + methodName
 	p.nextToken() // skip method name
 
-	// 解析參數列表（無 = 要求）
+	// 新語法需要 = 作為函數定義標記
+	if p.currentToken.Type == lexer.ASSIGN {
+		p.nextToken() // skip =
+	}
+
+	// 解析參數列表
 	if p.currentToken.Type != lexer.LPAREN {
 		msg := fmt.Sprintf("line %d, column %d: expected '('",
 			p.currentToken.Line, p.currentToken.Column)

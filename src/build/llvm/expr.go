@@ -152,6 +152,8 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateStructLiteral(sb, e)
 	case *parser.IfExpression:
 		return g.generateIfExpression(sb, e)
+	case *parser.ConditionalExpression:
+		return g.generateConditionalExpression(sb, e)
 	case *parser.ArrayLiteral:
 		return g.generateArrayLiteral(sb, e)
 	case *parser.SliceLiteral:
@@ -261,6 +263,96 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// Restore outer saved value (our caller will use our labelId, then restore)
 	_ = savedNestedIfEndId
 	return phiReg
+}
+
+// generateConditionalExpression 產生三元運算子的 LLVM IR
+// 支持 condition ? consequence : alternative
+func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *parser.ConditionalExpression) string {
+	g.tmpIdx++
+	labelId := g.tmpIdx
+
+	// 判斷結果型別
+	phiType := g.conditionalResultType(expr)
+
+	// 生成條件（若為比較運算，直接取 i1）
+	cond := ""
+	if infix, ok := expr.Condition.(*parser.InfixExpression); ok {
+		isCmp := infix.Operator == "==" || infix.Operator == "!=" ||
+			infix.Operator == "<" || infix.Operator == ">" ||
+			infix.Operator == "<=" || infix.Operator == ">="
+		if isCmp {
+			cond = g.generateInfixI1(sb, infix)
+		} else {
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%cond.trunc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
+			cond = reg
+		}
+	} else {
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%cond.trunc.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
+		cond = reg
+	}
+
+	// branch
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%cond.then.%d, label %%cond.else.%d\n",
+		g.indent(), cond, labelId, labelId))
+
+	// then (consequence)
+	sb.WriteString(fmt.Sprintf("cond.then.%d:\n", labelId))
+	g.indentLevel++
+	thenVal := g.generateExprWithSB(sb, expr.Consequence)
+	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
+	g.indentLevel--
+
+	// else (alternative)
+	sb.WriteString(fmt.Sprintf("cond.else.%d:\n", labelId))
+	g.indentLevel++
+	elseVal := g.generateExprWithSB(sb, expr.Alternative)
+	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
+	g.indentLevel--
+
+	// end: phi
+	sb.WriteString(fmt.Sprintf("cond.end.%d:\n", labelId))
+	g.tmpIdx++
+	phiReg := fmt.Sprintf("%%cond.phi.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%cond.then.%d], [%s, %%cond.else.%d]\n",
+		g.indent(), phiReg, phiType, thenVal, labelId, elseVal, labelId))
+
+	return phiReg
+}
+
+// conditionalResultType 推導三元運算式的結果型別
+func (g *Generator) conditionalResultType(expr *parser.ConditionalExpression) string {
+	if isFloatExpr(expr.Consequence) || isFloatExpr(expr.Alternative) {
+		return "f64"
+	}
+	// 檢查是否為泛型（由變數名判斷）
+	if ident, ok := expr.Consequence.(*parser.Identifier); ok {
+		if t, ok := g.varTypes[ident.Value]; ok {
+			return t
+		}
+	}
+	if ident, ok := expr.Alternative.(*parser.Identifier); ok {
+		if t, ok := g.varTypes[ident.Value]; ok {
+			return t
+		}
+	}
+	return "i64"
+}
+
+// isFloatExpr 判斷表達式是否為 f64 類型
+func isFloatExpr(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.FloatLiteral:
+		return true
+	case *parser.InfixExpression:
+		return isFloatExpr(v.Left) || isFloatExpr(v.Right)
+	case *parser.PrefixExpression:
+		return isFloatExpr(v.Right)
+	}
+	return false
 }
 
 // generateInfixI1 回傳 i1 比較結果（無 zext），用於 for/if 條件

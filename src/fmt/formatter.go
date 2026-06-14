@@ -286,9 +286,11 @@ func (f *formatter) formatReturnStatement(s *parser.ReturnStatement) {
 
 func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	f.write(s.Name)
-	if len(s.GenericParams) > 0 {
+	// 只顯示明確泛型參數（大寫），跳過隱式推斷的單字母小寫泛型
+	explicitGenericParams := filterExplicitGenericParams(s.GenericParams)
+	if len(explicitGenericParams) > 0 {
 		f.write("<")
-		for i, gp := range s.GenericParams {
+		for i, gp := range explicitGenericParams {
 			if i > 0 {
 				f.write(", ")
 			}
@@ -296,7 +298,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		}
 		f.write(">")
 	}
-	f.write("= (")
+	f.write(" = (")
 	// Skip implicit self parameter for method definitions
 	params := s.Parameters
 	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
@@ -323,6 +325,18 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 // isMethodDef reports whether a function definition is a method (name contains '.').
 func isMethodDef(s *parser.FunctionDefinition) bool {
 	return strings.Contains(s.Name, ".")
+}
+
+// filterExplicitGenericParams 過濾隱式推斷的泛型參數，只保留明確聲明的泛型參數
+// 隱式泛型為單字母小寫 a-z，由 detectImplicitGeneric 推斷
+func filterExplicitGenericParams(params []string) []string {
+	var result []string
+	for _, p := range params {
+		if len(p) != 1 || p[0] < 'a' || p[0] > 'z' {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 func (f *formatter) formatParameters(params []*parser.Parameter) {
