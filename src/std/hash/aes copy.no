@@ -1,43 +1,21 @@
-// sha512 — SHA-512 安全哈希算法（512-bit）
-//
-// 處理一個 1024-bit（16 個 64-bit 字）區塊。
-// 多區塊訊息需由呼叫者自行填充和累加。
-//
-// 用法：
-//   h0 = 7640891576956012808;  h1 = -4942790177534073029
-//   h2 = 4354685564936845355;  h3 = -6534734903238641935
-//   h4 = 5840696475078001361;  h5 = -7276294671716946913
-//   h6 = 2270897969802886507;  h7 = 6620516959819538809
-//   sha512(block, 16, h0, h1, h2, h3, h4, h5, h6, h7)
 
-// sha512: 處理一個 1024-bit 區塊
-// s: 16 個 64-bit 字 (big-endian)
-// n: 固定 16
-// h0..h7: 輸入/輸出 512-bit 哈希狀態
-sha512 = (s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
-    // 64-bit 全 1 遮罩（用於位元 NOT）
-    MASK64 = -1
+// x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
+// data: DER 編碼憑證, n: 總長度
+// e: 輸出指數值（0 表示非 RSA 或解析失敗）
+x509-rsa-e = (data str, n i64, e i64) {
 
-    // 初始狀態
-    a = h0; b = h1; c = h2; d = h3; e = h4; f = h5; g = h6; h = h7
-
-    // 第 0 輪 (K0 = 0x428A2F98D728AE22)
-
-    // 第 1 輪 (K1 = 0x7137449123EF65CD)
-    S1 = ((e >> 14) | (e << 50)); S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
-    Ch = (e & f) ^ ((MASK64 ^ e) & g)
-    S0 = ((a >> 28) | (a << 36)); S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = h + S1 + Ch + 4794697086780616226 + s[0]
-    T2 = S0 + Maj
-    h = g; g = f; f = e; e = d + T1
-    d = c; c = b; b = a; a = T1 + T2
-    S1 = ((e >> 14) | (e << 50)); S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
-    Ch = (e & f) ^ ((MASK64 ^ e) & g)
-    S0 = ((a >> 28) | (a << 36)); S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = h + S1 + Ch + 8158064640168781261 + s[1]
-    T2 = S0 + Maj
-    h = g; g = f; f = e; e = d + T1
-    d = c; c = b; b = a; a = T1 + T2
+    // spki-start = 跳過 SPKI 的標籤+長度，指向內容
+    // SPKI 內容：
+    //   SEQUENCE (AlgorithmIdentifier)
+    //   BIT STRING (subjectPublicKey)
+    // 跳過 AlgorithmIdentifier SEQUENCE
+    der-skip(data, n, p, p)
+    // 跳過 INTEGER（序號）
+    der-skip(data, n, p, p)
+    // 跳過 SEQUENCE（簽章演算法）
+    der-skip(data, n, p, p)
+    // 跳過 SEQUENCE（發行者）
+    der-skip(data, n, p, p)
+    // 跳過 SEQUENCE（有效期）
+    der-skip(data, n, p, p)
 }

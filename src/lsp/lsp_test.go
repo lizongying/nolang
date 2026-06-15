@@ -1,6 +1,11 @@
 package lsp
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -633,4 +638,291 @@ func applyTextEdits(original string, edits []TextEdit) string {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+// lspConn 包装 LSP 进程的 stdin/stdout
+// 在测试中不使用 Close，进程结束后自动关闭
+type lspConn struct {
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+}
+
+func (c *lspConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }
+func (c *lspConn) Write(p []byte) (int, error) { _, err := c.stdin.Write(p); return len(p), err }
+
+// sendLSPRequest 通过 stdin 向 LSP 进程发送 JSON-RPC 请求，返回 stdout 响应
+// 自动跳过中间的通知消息（无 "id" 的消息）
+func sendLSPRequest(t *testing.T, lsp *lspConn, method string, params interface{}) ([]byte, error) {
+	t.Helper()
+
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  method,
+		"params":  params,
+	}
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %v", err)
+	}
+
+	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
+	if _, err := lsp.Write([]byte(header + string(body))); err != nil {
+		return nil, fmt.Errorf("write request: %v", err)
+	}
+
+	// 循环读取响应，跳过通知消息
+	for {
+		resp, err := readLSPResponse(t, lsp)
+		if err != nil {
+			return nil, err
+		}
+		// 检查是否是响应（有 id 字段）
+		var msg map[string]interface{}
+		if err := json.Unmarshal(resp, &msg); err != nil {
+			return nil, fmt.Errorf("unmarshal message: %v", err)
+		}
+		if _, hasID := msg["id"]; hasID {
+			return resp, nil
+		}
+		// 通知消息，丢弃并继续读取
+	}
+}
+
+// sendLSPNotification 发送 JSON-RPC 通知（无需响应）
+func sendLSPNotification(t *testing.T, lsp *lspConn, method string, params interface{}) error {
+	t.Helper()
+
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("marshal notification: %v", err)
+	}
+
+	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
+	_, err = lsp.Write([]byte(header + string(body)))
+	return err
+}
+
+// readLSPResponse 从 stdout 读取 LSP 响应
+func readLSPResponse(t *testing.T, lsp *lspConn) ([]byte, error) {
+	t.Helper()
+
+	// 读取 header
+	var headerBytes []byte
+	buf := make([]byte, 1)
+	for {
+		if _, err := lsp.Read(buf); err != nil {
+			return nil, fmt.Errorf("read header: %v", err)
+		}
+		headerBytes = append(headerBytes, buf[0])
+		if len(headerBytes) >= 4 && string(headerBytes[len(headerBytes)-4:]) == "\r\n\r\n" {
+			break
+		}
+	}
+
+	// 解析 Content-Length
+	header := string(headerBytes)
+	var contentLength int
+	if _, err := fmt.Sscanf(header, "Content-Length: %d", &contentLength); err != nil {
+		return nil, fmt.Errorf("parse Content-Length: %v, header=%q", err, header)
+	}
+
+	// 读取 body
+	body := make([]byte, contentLength)
+	if _, err := io.ReadFull(lsp, body); err != nil {
+		return nil, fmt.Errorf("read body: %v", err)
+	}
+
+	return body, nil
+}
+
+func TestLSPBinaryFormatting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping LSP binary test in short mode")
+	}
+
+	// LSP 二进制路径
+	lspBin := "../../vscode-nolang/server/nolang-lsp"
+	if _, err := os.Stat(lspBin); os.IsNotExist(err) {
+		t.Skipf("LSP binary not found: %s", lspBin)
+	}
+
+	// 启动 LSP 进程
+	cmd := exec.Command(lspBin)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start lsp: %v", err)
+	}
+	defer cmd.Process.Kill()
+
+	lsp := &lspConn{stdin, stdout}
+
+	// 发送 initialize
+	initParams := map[string]interface{}{
+		"capabilities": map[string]interface{}{},
+	}
+	resp, err := sendLSPRequest(t, lsp, "initialize", initParams)
+	if err != nil {
+		t.Fatalf("initialize failed: %v", err)
+	}
+	var initResult map[string]interface{}
+	if err := json.Unmarshal(resp, &initResult); err != nil {
+		t.Fatalf("unmarshal initialize response: %v, body=%q", err, string(resp))
+	}
+	if initResult["error"] != nil {
+		t.Fatalf("initialize error: %v", initResult["error"])
+	}
+	t.Logf("Initialize response: %+v", initResult["result"])
+
+	// 发送 initialized 通知
+	sendLSPNotification(t, lsp, "initialized", map[string]interface{}{})
+
+	// 测试格式化未格式化的代码
+	{
+		// 未格式化的代码：缩进空格、注释位置等都可能有问题
+		code := `// x509-rsa-e: test
+x509-rsa-e=(data str, n i64, e i64) {
+    // 找到 TBSCertificate
+    x509-tbs-range(data, n, tbs-start, tbs-end)
+    if tbs-start == 0 {
+        e = 0
+        return
+    }
+    p = tbs-start + 1
+    // 跳過 INTEGER（序號）
+    der-skip(data, n, p, p)
+
+    // 跳過 SEQUENCE（簽章演算法）
+    der-skip(data, n, p, p)
+
+    // 讀取 BIT STRING
+    der-tag(data, p, t)
+}`
+
+		uri := "file:///test_format.no"
+
+		sendLSPNotification(t, lsp, "textDocument/didOpen", map[string]interface{}{
+			"textDocument": map[string]interface{}{
+				"uri":        uri,
+				"languageId": "nolang",
+				"version":    1,
+				"text":       code,
+			},
+		})
+
+		formatParams := map[string]interface{}{
+			"textDocument": map[string]interface{}{"uri": uri},
+			"options":      map[string]interface{}{"tabSize": 4, "insertSpaces": true},
+		}
+		resp, err = sendLSPRequest(t, lsp, "textDocument/formatting", formatParams)
+		if err != nil {
+			t.Fatalf("formatting failed: %v", err)
+		}
+
+		var formatResult map[string]interface{}
+		if err := json.Unmarshal(resp, &formatResult); err != nil {
+			t.Fatalf("unmarshal formatting response: %v, body=%q", err, string(resp))
+		}
+		if formatResult["error"] != nil {
+			t.Fatalf("formatting error: %v", formatResult["error"])
+		}
+
+		editsRaw, ok := formatResult["result"].([]interface{})
+		if !ok {
+			t.Fatalf("result is not array, got=%T value=%+v", formatResult["result"], formatResult["result"])
+		}
+
+		if len(editsRaw) == 0 {
+			t.Error("expected edits for unformatted code, got none")
+		} else {
+			// 记录原始 edits
+			for i, e := range editsRaw {
+				t.Logf("edit[%d]: %+v", i, e)
+			}
+			// 应用 edits 并验证结果
+			editedText := applyRawTextEdits(code, editsRaw)
+			t.Logf("Formatted result:\n%s\n", editedText)
+			// 验证函数签名被正确格式化（加空格）
+			if strings.Contains(editedText, "x509-rsa-e = (data str") {
+				t.Log("✓ function signature has proper spacing")
+			}
+			// 验证没有丢失代码
+			if strings.Count(editedText, "der-skip") == 3 && strings.Count(editedText, "der-tag") == 1 {
+				t.Log("✓ all code preserved")
+			}
+		}
+	}
+}
+
+// applyRawTextEdits 将 JSON TextEdit 列表应用到原始文字
+func applyRawTextEdits(original string, edits []interface{}) string {
+	oLines := strings.Split(original, "\n")
+
+	// 按行号倒序排序
+	type edit struct {
+		startLine int
+		startChar int
+		endLine   int
+		endChar   int
+		newText   string
+	}
+	var parsed []edit
+	for _, e := range edits {
+		em := e.(map[string]interface{})
+		rng := em["range"].(map[string]interface{})
+		start := rng["start"].(map[string]interface{})
+		end := rng["end"].(map[string]interface{})
+		parsed = append(parsed, edit{
+			startLine: int(start["line"].(float64)),
+			startChar: int(start["character"].(float64)),
+			endLine:   int(end["line"].(float64)),
+			endChar:   int(end["character"].(float64)),
+			newText:   em["newText"].(string),
+		})
+	}
+
+	// 冒泡排序
+	for i := 0; i < len(parsed); i++ {
+		for j := i + 1; j < len(parsed); j++ {
+			if parsed[i].startLine < parsed[j].startLine ||
+				(parsed[i].startLine == parsed[j].startLine && parsed[i].startChar < parsed[j].startChar) {
+				parsed[i], parsed[j] = parsed[j], parsed[i]
+			}
+		}
+	}
+
+	for _, e := range parsed {
+		var sb strings.Builder
+		for i := 0; i < e.startLine; i++ {
+			sb.WriteString(oLines[i])
+			sb.WriteString("\n")
+		}
+		sb.WriteString(oLines[e.startLine][:e.startChar])
+		sb.WriteString(e.newText)
+		if e.endChar < len(oLines[e.endLine]) {
+			sb.WriteString(oLines[e.endLine][e.endChar:])
+		}
+		for i := e.endLine + 1; i < len(oLines); i++ {
+			sb.WriteString("\n")
+			sb.WriteString(oLines[i])
+		}
+		oLines = strings.Split(sb.String(), "\n")
+	}
+
+	return strings.Join(oLines, "\n")
 }

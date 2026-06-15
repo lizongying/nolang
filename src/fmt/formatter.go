@@ -21,6 +21,11 @@ type formatter struct {
 	lineTypes    []lineType
 	stmtLineCnt  []int // per-statement formatted line count
 	stmtOrigLine []int // per-statement original 1-based line number
+	// body statement tracking for position-based comment matching
+	bodyStmtLineCnt  []int    // per-body-stmt formatted line count
+	bodyStmtOrigLine []int    // per-body-stmt original line number
+	bodyStmtSource   []string // per-body-stmt original source text (trimmed)
+	bodyStmtIdx      int      // current body statement index
 }
 
 func (f *formatter) writeIndent() {
@@ -159,6 +164,15 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	case *parser.StructDefinition:
 		f.formatStructDefinition(s)
 	}
+}
+
+// getStmtSource 获取语句对应的原始代码行内容（用于检测相同代码行）
+func (f *formatter) getStmtSource(stmt parser.Statement) string {
+	line := stmtTokenLine(stmt)
+	if line > 0 && line-1 < len(f.sourceLines) {
+		return strings.TrimSpace(f.sourceLines[line-1])
+	}
+	return ""
 }
 
 func (f *formatter) formatExpression(expr parser.Expression) {
@@ -358,6 +372,10 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		statements = append(statements, stmt)
 	}
 
+	f.bodyStmtLineCnt = nil
+	f.bodyStmtOrigLine = nil
+	f.bodyStmtSource = nil
+
 	for i, stmt := range statements {
 		if i > 0 {
 			prevLine := stmtTokenLine(statements[i-1])
@@ -365,12 +383,37 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 			if prevLine > 0 && prevLine == currLine {
 				f.write("; ")
 			} else {
+				// 检测相同代码行之间自动插入空行
+				// 仅在两个语句之间没有保留行（注释/空白）时才插入
+				if i > 0 && prevLine != currLine {
+					prevSrc := f.getStmtSource(statements[i-1])
+					currSrc := f.getStmtSource(stmt)
+					if prevSrc != "" && prevSrc == currSrc {
+						// 检查两个语句之间是否有保留行
+						hasPreserved := false
+						for l := prevLine + 1; l < currLine && l-1 < len(f.lineTypes); l++ {
+							if f.lineTypes[l-1] == linePreserved {
+								hasPreserved = true
+								break
+							}
+						}
+						if !hasPreserved {
+							f.newline() // extra blank line
+						}
+					}
+				}
 				f.newline()
 			}
 		} else {
 			f.newline()
 		}
+		before := f.buf.Len()
 		f.formatStatement(stmt)
+		after := f.buf.Len()
+		lineCnt := strings.Count(f.buf.String()[before:after], "\n") + 1
+		f.bodyStmtLineCnt = append(f.bodyStmtLineCnt, lineCnt)
+		f.bodyStmtOrigLine = append(f.bodyStmtOrigLine, stmtTokenLine(stmt))
+		f.bodyStmtSource = append(f.bodyStmtSource, f.getStmtSource(stmt))
 	}
 
 	f.indent--
@@ -1062,10 +1105,76 @@ func Format(code string) string {
 						continue
 					}
 
-					// 当下一条代码行是 } 时，插入到语句末尾（最后一个 } 之前）
-					// 避免 } 在格式化输出中出现多次导致错误定位
+					// 计算此代码行在 entry 之前同一缩进层级出现的次数
+					// 空白行使用下一行的缩进
+					entryIndent := len(entry.content) - len(strings.TrimLeft(entry.content, " \t"))
+					if entryIndent == 0 && strings.TrimSpace(entry.content) == "" {
+						// 空白行：使用注释行（下一行）的缩进
+						for next := entry.lineIdx + 1; next < len(cleanLines); next++ {
+							if lineTypes[next] == linePreserved && strings.HasPrefix(strings.TrimLeft(cleanLines[next], " \t"), "//") {
+								entryIndent = len(cleanLines[next]) - len(strings.TrimLeft(cleanLines[next], " \t"))
+								break
+							}
+							if lineTypes[next] == lineCode {
+								break
+							}
+						}
+					}
+					occurrenceIdx := 0
+					for j := 0; j < entry.lineIdx; j++ {
+						if lineTypes[j] == lineCode {
+							trimmed := strings.TrimSpace(cleanLines[j])
+							if trimmed == nextCodeLine {
+								codeIndent := len(cleanLines[j]) - len(strings.TrimLeft(cleanLines[j], " \t"))
+								if codeIndent == entryIndent {
+									occurrenceIdx++
+								}
+							}
+						}
+					}
+
 					insertPos := -1
 					prevIsCloseBrace := false
+
+					// 搜索函数：跳过 occurrenceIdx 次匹配
+					searchFunc := func(exactOnly bool) int {
+						localSkip := occurrenceIdx
+						if prevIsCloseBrace {
+							for k := len(stmtLines) - 1; k >= 0; k-- {
+								trimmed := strings.TrimSpace(stmtLines[k])
+								match := (trimmed == nextCodeLine)
+								if !match && !exactOnly {
+									match = matchFormattedLine(trimmed, nextCodeLine)
+								}
+								if match {
+									if localSkip > 0 {
+										localSkip--
+										continue
+									}
+									return k
+								}
+							}
+						} else {
+							for k, sl := range stmtLines {
+								trimmed := strings.TrimSpace(sl)
+								match := (trimmed == nextCodeLine)
+								if !match && !exactOnly {
+									match = matchFormattedLine(trimmed, nextCodeLine)
+								}
+								if match {
+									if localSkip > 0 {
+										localSkip--
+										continue
+									}
+									return k
+								}
+							}
+						}
+						return -1
+					}
+
+					// 当下一条代码行是 } 时，插入到语句末尾（最后一个 } 之前）
+					// 避免 } 在格式化输出中出现多次导致错误定位
 					if nextCodeLine == "}" {
 						for k := len(stmtLines) - 1; k >= 0; k-- {
 							if strings.TrimSpace(stmtLines[k]) == "}" {
@@ -1086,44 +1195,9 @@ func Format(code string) string {
 							break
 						}
 					}
-					// 第一遍：精确匹配
-					if prevIsCloseBrace {
-						// } 之后：从右向左匹配最后一个
-						for k := len(stmtLines) - 1; k >= 0; k-- {
-							trimmed := strings.TrimSpace(stmtLines[k])
-							if trimmed == nextCodeLine {
-								insertPos = k
-								break
-							}
-						}
-						// 第二遍：模糊匹配
-						if insertPos < 0 {
-							for k := len(stmtLines) - 1; k >= 0; k-- {
-								trimmed := strings.TrimSpace(stmtLines[k])
-								if matchFormattedLine(trimmed, nextCodeLine) {
-									insertPos = k
-									break
-								}
-							}
-						}
-					} else {
-						// 其他：从左向右匹配第一个
-						for k, sl := range stmtLines {
-							trimmed := strings.TrimSpace(sl)
-							if trimmed == nextCodeLine {
-								insertPos = k
-								break
-							}
-						}
-						if insertPos < 0 {
-							for k, sl := range stmtLines {
-								trimmed := strings.TrimSpace(sl)
-								if matchFormattedLine(trimmed, nextCodeLine) {
-									insertPos = k
-									break
-								}
-							}
-						}
+					insertPos = searchFunc(true)
+					if insertPos < 0 {
+						insertPos = searchFunc(false)
 					}
 
 				doInsert:
