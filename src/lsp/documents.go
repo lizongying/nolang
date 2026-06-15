@@ -174,10 +174,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	p := parser.New(l)
 	ast := p.ParseProgram()
 
-	doc.AST = ast
-	doc.Dirty = false
+	// 僅在解析成功時緩存 AST，避免部分 AST 影響後續請求
+	errs := p.Errors()
+	if len(errs) == 0 {
+		doc.AST = ast
+	}
+	doc.Dirty = len(errs) > 0
 
-	return ast, p.Errors(), nil
+	return ast, errs, nil
 }
 
 func (m *DocumentManager) IsDirty(uri string) bool {

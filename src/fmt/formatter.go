@@ -565,7 +565,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	f.write("for")
+	f.write(s.Token.Literal)
 
 	// N * { } 次數循環
 	if s.CountExpr != nil {
@@ -833,6 +833,11 @@ func Format(code string) string {
 	l := lexer.New(cleanCode)
 	p := parser.New(l)
 	program := p.ParseProgram()
+
+	// 如果解析失敗，返回原始碼，不修改
+	if len(p.Errors()) > 0 {
+		return code
+	}
 
 	if program == nil || len(program.Statements) == 0 {
 		return cleanCode

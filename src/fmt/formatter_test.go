@@ -524,6 +524,76 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
 
 			`),
 		},
+
+		{
+			name: "comment1",
+			input: strings.TrimSpace(`
+// rsa — RSA 加解密（多精度整數模冪）
+//
+// 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
+//   result = base^exp mod modulus
+//
+// 不包含金鑰生成；呼叫者需自行提供 n、e、d。
+// 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
+//
+// 用法：
+//   // base, exp, mod 為 []i64 切片
+//   // result 為輸出切片（長度 ≥ mod 的長度）
+//   rsa-modpow(base, base-n, exp, exp-n, mod, mod-n, result, result-n)
+
+// ─── 大數比較 ─────────────────────────────────────
+
+// bn-cmp: 比較兩個大數 a 和 b
+// 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
+bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
+    if an > bn {
+        if a[i] > b[i] {
+            cmp = 1
+            return
+        }
+        if a[i] < b[i] {
+            cmp = -1
+            return
+        }
+        i = i - 1
+    }
+    cmp = 0
+}
+			`),
+			expected: strings.TrimSpace(`
+// rsa — RSA 加解密（多精度整數模冪）
+//
+// 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
+//   result = base^exp mod modulus
+//
+// 不包含金鑰生成；呼叫者需自行提供 n、e、d。
+// 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
+//
+// 用法：
+//   // base, exp, mod 為 []i64 切片
+//   // result 為輸出切片（長度 ≥ mod 的長度）
+//   rsa-modpow(base, base-n, exp, exp-n, mod, mod-n, result, result-n)
+
+// ─── 大數比較 ─────────────────────────────────────
+
+// bn-cmp: 比較兩個大數 a 和 b
+// 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
+bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
+    if an > bn {
+        if a[i] > b[i] {
+            cmp = 1
+            return
+        }
+        if a[i] < b[i] {
+            cmp = -1
+            return
+        }
+        i = i - 1
+    }
+    cmp = 0
+}
+			`),
+		},
 	}
 
 	for _, tt := range tests {

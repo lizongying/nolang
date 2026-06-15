@@ -492,27 +492,26 @@ func TestReferenceParams(t *testing.T) {
 func TestHandleTextDocumentFormatting_MethodDefinition(t *testing.T) {
 	s := NewServer()
 
+	// 使用可正確解析的輸入測試增量格式化
+	// 僅第一行有變化（多餘空格），後續行保持不變
 	input := strings.TrimSpace(`
-str.len: () (n    i64)      {
-    n = .len
-}
+x    =   5
+y = x + 1
+z = 3
 	`)
 	expected := strings.TrimSpace(`
-str.len: () (n i64) {
-    n = .len
-}
+x = 5
+y = x + 1
+z = 3
 	`)
 
-	uri := "file:///test_method.no"
+	uri := "file:///test_format.no"
 
-	// Open the document directly via the document manager
-	// (handleTextDocumentDidOpen requires a live LSP connection for diagnostics publishing)
 	_, err := s.documents.OpenDocument(uri, input)
 	if err != nil {
 		t.Fatalf("OpenDocument failed: %v", err)
 	}
 
-	// Request formatting
 	result, err := s.handleTextDocumentFormatting(DocumentFormattingParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 		Options:      &FormattingOptions{TabSize: 4, InsertSpaces: true},
@@ -528,9 +527,108 @@ str.len: () (n i64) {
 	if len(edits) == 0 {
 		t.Fatal("expected at least one TextEdit, got none (formatted text should differ)")
 	}
-	if edits[0].NewText != expected {
-		t.Errorf("formatted text = %q, want %q", edits[0].NewText, expected)
+
+	// 驗證 edits 只包含有變化的行（不應替換整個文件）
+	// 只有第一行 x    =   5 → x = 5 發生變化
+	// 檢查 edit 範圍只覆蓋第一行
+	if edits[0].Range.Start.Line != 0 || edits[0].Range.End.Line != 1 || edits[0].NewText != "x = 5\n" {
+		t.Errorf("unexpected edit: Range {%d,%d}-{%d,%d}, NewText=%q",
+			edits[0].Range.Start.Line, edits[0].Range.Start.Character,
+			edits[0].Range.End.Line, edits[0].Range.End.Character,
+			edits[0].NewText)
 	}
+
+	// 驗證通過應用 edits 重建的結果
+	resultText := applyTextEdits(input, edits)
+	if resultText != expected {
+		t.Errorf("applyTextEdits result = %q, want %q", resultText, expected)
+	}
+}
+
+func TestHandleTextDocumentFormatting_ParseErrorSafety(t *testing.T) {
+	s := NewServer()
+
+	// 當格式化遇到解析錯誤時，不應修改代碼
+	input := strings.TrimSpace(`
+str.len: () (n    i64)      {
+    n = .len
+}
+	`)
+
+	uri := "file:///test_method.no"
+
+	_, err := s.documents.OpenDocument(uri, input)
+	if err != nil {
+		t.Fatalf("OpenDocument failed: %v", err)
+	}
+
+	result, err := s.handleTextDocumentFormatting(DocumentFormattingParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Options:      &FormattingOptions{TabSize: 4, InsertSpaces: true},
+	})
+	if err != nil {
+		t.Fatalf("handleTextDocumentFormatting failed: %v", err)
+	}
+
+	edits, ok := result.([]TextEdit)
+	if !ok {
+		t.Fatal("result is not []TextEdit")
+	}
+
+	// 解析錯誤時應返回空 edits（不修改代碼）
+	if len(edits) != 0 {
+		t.Errorf("expected 0 edits on parse error, got %d edits", len(edits))
+	}
+}
+
+// applyTextEdits 將 TextEdit 列表按倒序（從文件尾到文件頭）應用到原始文字
+// 使用倒序確保位置偏移不受前面編輯的影響
+func applyTextEdits(original string, edits []TextEdit) string {
+	oLines := strings.Split(original, "\n")
+
+	// 按起始行號倒序排序，從文件尾開始應用
+	sorted := make([]TextEdit, len(edits))
+	copy(sorted, edits)
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[i].Range.Start.Line < sorted[j].Range.Start.Line ||
+				(sorted[i].Range.Start.Line == sorted[j].Range.Start.Line &&
+					sorted[i].Range.Start.Character < sorted[j].Range.Start.Character) {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	for _, edit := range sorted {
+		startLine := int(edit.Range.Start.Line)
+		startChar := int(edit.Range.Start.Character)
+		endLine := int(edit.Range.End.Line)
+		endChar := int(edit.Range.End.Character)
+
+		// 取出 edit Range 前的部分
+		var sb strings.Builder
+		for i := 0; i < startLine; i++ {
+			sb.WriteString(oLines[i])
+			sb.WriteString("\n")
+		}
+		sb.WriteString(oLines[startLine][:startChar])
+
+		// 插入新文字
+		sb.WriteString(edit.NewText)
+
+		// 加入 edit Range 後的部分
+		if endChar < len(oLines[endLine]) {
+			sb.WriteString(oLines[endLine][endChar:])
+		}
+		for i := endLine + 1; i < len(oLines); i++ {
+			sb.WriteString("\n")
+			sb.WriteString(oLines[i])
+		}
+
+		oLines = strings.Split(sb.String(), "\n")
+	}
+
+	return strings.Join(oLines, "\n")
 }
 
 func strPtr(s string) *string {

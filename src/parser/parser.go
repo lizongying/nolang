@@ -1534,15 +1534,21 @@ func (p *Parser) parseExpression(precedence int) Expression {
 				if result != nil {
 					leftExp = result
 				} else {
+					state := p.saveState()
 					me := p.parseMatchExprFrom(leftExp)
 					if me != nil {
 						leftExp = me
+					} else {
+						p.restoreState(state)
 					}
 				}
 			} else {
+				state := p.saveState()
 				me := p.parseMatchExprFrom(leftExp)
 				if me != nil {
 					leftExp = me
+				} else {
+					p.restoreState(state)
 				}
 			}
 		}

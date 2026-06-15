@@ -190,6 +190,7 @@ var keywords = map[string]TokenType{
 
 	"return":   RETURN,
 	"for":      FOR,
+	"while":    FOR,
 	"in":       IN,
 	"break":    BREAK,
 	"continue": CONTINUE,

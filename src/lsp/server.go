@@ -442,6 +442,88 @@ func formatNolangCode(content string) string {
 	return nolangfmt.Format(content)
 }
 
+// computeTextEdits 計算將原始文字轉換為格式化文字的差異編輯
+// 採用逐行比對的方式，只產生有變化的 TextEdit，而非全文件取代
+func computeTextEdits(original, formatted string) []TextEdit {
+	if original == formatted {
+		return nil
+	}
+
+	oLines := strings.Split(original, "\n")
+	fLines := strings.Split(formatted, "\n")
+
+	var edits []TextEdit
+
+	oIdx, fIdx := 0, 0
+	for oIdx < len(oLines) || fIdx < len(fLines) {
+		// 跳過相同的行
+		if oIdx < len(oLines) && fIdx < len(fLines) && oLines[oIdx] == fLines[fIdx] {
+			oIdx++
+			fIdx++
+			continue
+		}
+
+		// 記錄變更起點
+		startO, startF := oIdx, fIdx
+
+		// 向後尋找同步點（相同偏移處）
+		syncO, syncF := -1, -1
+		for offset := 1; offset <= 50; offset++ {
+			offO := oIdx + offset
+			offF := fIdx + offset
+			if offO < len(oLines) && offF < len(fLines) && oLines[offO] == fLines[offF] {
+				syncO, syncF = offO, offF
+				break
+			}
+		}
+
+		if syncO != -1 {
+			oIdx, fIdx = syncO, syncF
+		} else {
+			oIdx, fIdx = len(oLines), len(fLines)
+		}
+
+		// 建立取代文字的內容（格式化版本中新增/修改的行）
+		var sb strings.Builder
+		for k := startF; k < fIdx; k++ {
+			if k > startF {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(fLines[k])
+		}
+
+		// 計算原始文件中的結束位置
+		var endPos Position
+		if oIdx < len(oLines) {
+			// 結束在同步行的開頭（不包含同步行本身）
+			// 此範圍涵蓋了原始行結尾的換行符，需要在新文字中加入換行符
+			endPos = Position{Line: uint32(oIdx), Character: 0}
+			// 如果新文字以行結尾（取代完整行），補上換行符
+			if sb.Len() > 0 && sb.String()[sb.Len()-1] != '\n' {
+				sb.WriteString("\n")
+			}
+		} else {
+			// 剩餘原始行全部被刪除
+			endO := len(oLines) - 1
+			endChar := 0
+			if endO >= 0 {
+				endChar = len(oLines[endO])
+			}
+			endPos = Position{Line: uint32(endO), Character: uint32(endChar)}
+		}
+
+		edits = append(edits, TextEdit{
+			Range: Range{
+				Start: Position{Line: uint32(startO), Character: 0},
+				End:   endPos,
+			},
+			NewText: sb.String(),
+		})
+	}
+
+	return edits
+}
+
 func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (interface{}, error) {
 	log.Printf("TextDocumentFormatting: %+v", params)
 
@@ -456,28 +538,13 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	// 實現格式化邏輯
 	formatted := formatNolangCode(content)
 
-	// 如果內容沒變化，返回空陣列
-	if formatted == content {
+	// 使用 diff 計算增量編輯
+	edits := computeTextEdits(content, formatted)
+	if edits == nil {
 		return []TextEdit{}, nil
 	}
 
-	// 計算整個文檔的範圍
-	lines := strings.Split(content, "\n")
-	lastLine := len(lines) - 1
-	lastChar := 0
-	if lastLine >= 0 {
-		lastChar = len(lines[lastLine])
-	}
-
-	return []TextEdit{
-		{
-			Range: Range{
-				Start: Position{Line: 0, Character: 0},
-				End:   Position{Line: uint32(lastLine), Character: uint32(lastChar)},
-			},
-			NewText: formatted,
-		},
-	}, nil
+	return edits, nil
 }
 
 func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilParams) (interface{}, error) {
@@ -490,26 +557,13 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 
 	content := doc.Text
 	formatted := formatNolangCode(content)
-	if formatted == content {
+
+	edits := computeTextEdits(content, formatted)
+	if edits == nil {
 		return []TextEdit{}, nil
 	}
 
-	lines := strings.Split(content, "\n")
-	lastLine := len(lines) - 1
-	lastChar := 0
-	if lastLine >= 0 {
-		lastChar = len(lines[lastLine])
-	}
-
-	return []TextEdit{
-		{
-			Range: Range{
-				Start: Position{Line: 0, Character: 0},
-				End:   Position{Line: uint32(lastLine), Character: uint32(lastChar)},
-			},
-			NewText: formatted,
-		},
-	}, nil
+	return edits, nil
 }
 
 func (s *Server) Handle(method string, params json.RawMessage) (interface{}, error) {
