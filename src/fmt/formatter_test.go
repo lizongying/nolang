@@ -225,6 +225,305 @@ set-env = (k str, v str) {  // LLVM: call i32 @setenv
 }
 			`),
 		},
+
+		{
+			name: "func4",
+			input: strings.TrimSpace(`
+get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+}
+// 註釋
+// 註釋
+set-env = (k str, v str) {  // LLVM: call i32 @setenv
+}
+			`),
+			expected: strings.TrimSpace(`
+get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+}
+
+// 註釋
+// 註釋
+set-env = (k str, v str) {  // LLVM: call i32 @setenv
+}
+			`),
+		},
+
+		{
+			name: "func5",
+			input: strings.TrimSpace(`
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    for off + 512 <= n {
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 {
+            return
+        }
+        name = ''
+        i = 0
+        for i < 100 {
+            c = data[off + i] & 255
+            if c == 0 {
+                break
+            }
+            name[i] = c
+            i = i + 1
+        }
+        sz = 0
+        i = 0
+        for i < 12 {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + c - 48
+            }
+            i = i + 1
+        }
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 {
+            typ = 'file'
+        } elif c == 53 {
+            typ = 'dir'
+        } else {
+            typ = 'unknown'
+        }
+    }
+    if sz > 0 {
+        i = 0
+        for i < sz {
+            data-out[i] = data[off + 512 + i]
+            i = i + 1
+        }
+    }
+    blocks = sz + 511 / 512
+    if blocks < 0 {
+        blocks = 0
+    }
+    off = off + 512 + blocks * 512
+    idx = idx + 1
+}
+			`),
+			expected: strings.TrimSpace(`
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    for off + 512 <= n {
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 {
+            return
+        }
+        name = ''
+        i = 0
+        for i < 100 {
+            c = data[off + i] & 255
+            if c == 0 {
+                break
+            }
+            name[i] = c
+            i = i + 1
+        }
+        sz = 0
+        i = 0
+        for i < 12 {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + c - 48
+            }
+            i = i + 1
+        }
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 {
+            typ = 'file'
+        } elif c == 53 {
+            typ = 'dir'
+        } else {
+            typ = 'unknown'
+        }
+    }
+    if sz > 0 {
+        i = 0
+        for i < sz {
+            data-out[i] = data[off + 512 + i]
+            i = i + 1
+        }
+    }
+    blocks = sz + 511 / 512
+    if blocks < 0 {
+        blocks = 0
+    }
+    off = off + 512 + blocks * 512
+    idx = idx + 1
+}
+			`),
+		},
+
+		{
+			name: "func6",
+			input: strings.TrimSpace(`
+
+// ─── 迭代器 ───────────────────────────────────
+
+// tar-for-each: 遍歷所有條目
+// 每次回呼傳入 (idx, name, sz, typ, data)
+// 返回 0 繼續，非 0 停止
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    for off + 512 <= n {
+        // 檢查結束
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 { return }
+
+        // 讀取名稱
+        name = ''
+        i = 0
+        for i < 100 {
+            c = data[off + i] & 255
+            if c == 0 { break }
+            name[i] = c
+            i = i + 1
+        }
+
+        // 大小
+        sz = 0
+        i = 0
+        for i < 12 {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + (c - 48)
+            }
+            i = i + 1
+        }
+
+        // 類型
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 { typ = 'file' }
+        elif c == 53 { typ = 'dir' }
+        else { typ = 'unknown' }
+
+        // 資料
+        if sz > 0 {
+            i = 0
+            for i < sz {
+                data-out[i] = data[off + 512 + i]
+                i = i + 1
+            }
+        }
+
+        // 前進到下個條目
+        blocks = (sz + 511) / 512
+        if blocks < 0 { blocks = 0 }
+        off = off + 512 + blocks * 512
+        idx = idx + 1
+    }
+}
+
+			`),
+			expected: strings.TrimSpace(`
+
+// ─── 迭代器 ───────────────────────────────────
+
+// tar-for-each: 遍歷所有條目
+// 每次回呼傳入 (idx, name, sz, typ, data)
+// 返回 0 繼續，非 0 停止
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    for off + 512 <= n {
+        // 檢查結束
+        empty = 1
+        i = 0
+        for i < 512 {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        }
+        if empty == 1 {
+            return
+        }
+
+        // 讀取名稱
+        name = ''
+        i = 0
+        for i < 100 {
+            c = data[off + i] & 255
+            if c == 0 {
+                break
+            }
+            name[i] = c
+            i = i + 1
+        }
+
+        // 大小
+        sz = 0
+        i = 0
+        for i < 12 {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + (c - 48)
+            }
+            i = i + 1
+        }
+
+        // 類型
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 {
+            typ = 'file'
+        } elif c == 53 {
+            typ = 'dir'
+        } else {
+            typ = 'unknown'
+        }
+
+        // 資料
+        if sz > 0 {
+            i = 0
+            for i < sz {
+                data-out[i] = data[off + 512 + i]
+                i = i + 1
+            }
+        }
+
+        // 前進到下個條目
+        blocks = (sz + 511) / 512
+        if blocks < 0 {
+            blocks = 0
+        }
+        off = off + 512 + blocks * 512
+        idx = idx + 1
+    }
+}
+
+			`),
+		},
 	}
 
 	for _, tt := range tests {

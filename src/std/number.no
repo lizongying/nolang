@@ -4,17 +4,17 @@
 
 // max: 回傳較大值（泛型 t：i64 或 f64）
 // 使用減法判斷大小以繞過 parser identifier 比較限制
-max = (a t, b t)(r t) {
+max = (a t, b t) (r t) {
     r = a > b ? a : b
 }
 
 // min: 回傳較小值
-min = (a t, b t)(r t)  {
+min = (a t, b t) (r t) {
     r = a > b ? b : a
 }
 
 // clamp: 限制在 [lo, hi] 範圍內
-clamp = (v t, lo t, hi t)(r t) {
+clamp = (v t, lo t, hi t) (r t) {
     dv = v - lo
     if dv < 0 {
         r = lo
@@ -29,38 +29,46 @@ clamp = (v t, lo t, hi t)(r t) {
 }
 
 // abs: 絕對值（整數）
-abs-i64 = (a i64)(r i64) {
+abs-i64 = (a i64) (r i64) {
     r = a < 0 ? 0 - a : a
 }
 
 // abs-f64: 絕對值（浮點）
-abs-f64 = (a f64)(r f64) {
+abs-f64 = (a f64) (r f64) {
     r = a < 0.0 ? 0.0 - a : a
 }
 
 // sign: 符號（-1, 0, 1）
-sign-i64 = (a i64)(r i64) {
-    if a > 0 { r = 1 }
-    elif a < 0 { r = -1 }
-    else { r = 0 }
+sign-i64 = (a i64) (r i64) {
+    if a > 0 {
+        r = 1
+    } elif a < 0 {
+        r = -1
+    } else {
+        r = 0
+    }
 }
 
 // even: 是否為偶數
-even = (a i64)(yes i64) {
+even = (a i64) (yes i64) {
     r = a % 2
     yes = r == 0 ? 1 : 0
 }
 
 // odd: 是否為奇數
-odd = (a i64)(yes i64) {
+odd = (a i64) (yes i64) {
     r = a % 2
     yes = r != 0 ? 1 : 0
 }
 
 // gcd: 最大公因數（輾轉相除法）
-gcd = (a i64, b i64)(r i64) {
-    if a < 0 { a = 0 - a }
-    if b < 0 { b = 0 - b }
+gcd = (a i64, b i64) (r i64) {
+    if a < 0 {
+        a = 0 - a
+    }
+    if b < 0 {
+        b = 0 - b
+    }
     for b != 0 {
         t = b
         b = a % b
@@ -70,7 +78,7 @@ gcd = (a i64, b i64)(r i64) {
 }
 
 // lcm: 最小公倍數
-lcm = (a i64, b i64)(r i64) {
+lcm = (a i64, b i64) (r i64) {
     if a == 0 || b == 0 {
         r = 0
         return
@@ -80,7 +88,7 @@ lcm = (a i64, b i64)(r i64) {
 }
 
 // pow-i64: 整數冪 a^n（n ≥ 0）
-pow-i64 = (a i64, n i64)(r i64) {
+pow-i64 = (a i64, n i64) (r i64) {
     r = 1
     for n > 0 {
         r = r * a
@@ -89,17 +97,17 @@ pow-i64 = (a i64, n i64)(r i64) {
 }
 
 // i64-to-f64: 整數轉浮點
-i64-to-f64 = (a i64)(r f64) {
+i64-to-f64 = (a i64) (r f64) {
     r = a
 }
 
 // f64-to-i64: 浮點轉整數（截斷）
-f64-to-i64 = (a f64)(r i64) {
+f64-to-i64 = (a f64) (r i64) {
     r = a
 }
 
 // i64-to-str: 整數轉字串
-i64-to-str = (a i64)(out str) {
+i64-to-str = (a i64) (out str) {
     // 處理 0
     if a == 0 {
         out[0] = 48
@@ -112,7 +120,7 @@ i64-to-str = (a i64)(out str) {
         a = 0 - a
     }
     // 由低位到高位寫入暫存
-    buf = '(20)'
+    buf = '(20)'  // '-'
     i = 0
     for a > 0 {
         d = a % 10
@@ -122,7 +130,7 @@ i64-to-str = (a i64)(out str) {
     }
     // 負號
     if neg == 1 {
-        buf[i] = 45  // '-'
+        buf[i] = 45
         i = i + 1
     }
     // 反轉到 out

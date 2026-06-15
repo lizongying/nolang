@@ -8,7 +8,7 @@
 //   vec-create(10, 42, data)
 
 // vec-create: 創建長度 n 的切片，全部填充 val
-vec-create(n i64, val i64, out []i64) {
+vec-create = (n i64, val i64, out []i64) {
     i = 0
     for i < n {
         out[i] = val
@@ -17,7 +17,7 @@ vec-create(n i64, val i64, out []i64) {
 }
 
 // vec-clone: 將 src 的前 n 個元素複製到 dst
-vec-clone(src []i64, n i64, dst []i64) {
+vec-clone = (src []i64, n i64, dst []i64) {
     i = 0
     for i < n {
         dst[i] = src[i]
@@ -27,7 +27,7 @@ vec-clone(src []i64, n i64, dst []i64) {
 
 // vec-eq: 比較兩個切片的前 n 個元素是否相等
 // 返回 1=相等, 0=不相等
-vec-eq(a []i64, b []i64, n i64, eq i64) {
+vec-eq = (a []i64, b []i64, n i64, eq i64) {
     eq = 1
     i = 0
     for i < n {
@@ -40,7 +40,7 @@ vec-eq(a []i64, b []i64, n i64, eq i64) {
 }
 
 // vec-fill: 將切片前 n 個元素填充為 val
-vec-fill(out []i64, n i64, val i64) {
+vec-fill = (out []i64, n i64, val i64) {
     i = 0
     for i < n {
         out[i] = val
@@ -49,7 +49,7 @@ vec-fill(out []i64, n i64, val i64) {
 }
 
 // vec-reverse: 反轉切片前 n 個元素
-vec-reverse(data []i64, n i64) {
+vec-reverse = (data []i64, n i64) {
     i = 0
     j = n - 1
     for i < j {
@@ -62,7 +62,7 @@ vec-reverse(data []i64, n i64) {
 }
 
 // vec-push: 在切片末尾追加元素（需確保容量足夠）
-vec-push(data []i64, n i64, val i64, new-n i64) {
+vec-push = (data []i64, n i64, val i64, new-n i64) {
     data[n] = val
     new-n = n + 1
 }

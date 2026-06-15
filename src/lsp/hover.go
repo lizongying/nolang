@@ -175,6 +175,9 @@ func (hp *HoverProvider) collectSymbolsFromExpression(expr parser.Expression, sc
 	case *parser.PrefixExpression:
 		hp.collectSymbolsFromExpression(e.Right, scope, beforeLine)
 
+	case *parser.GroupedExpression:
+		hp.collectSymbolsFromExpression(e.Expression, scope, beforeLine)
+
 	case *parser.IfExpression:
 		hp.collectSymbolsFromExpression(e.Condition, scope, beforeLine)
 		if e.Consequence != nil {
@@ -225,6 +228,8 @@ func (hp *HoverProvider) getExpressionType(expr parser.Expression) string {
 		return fmt.Sprintf(" %s ", e.Operator)
 	case *parser.PrefixExpression:
 		return e.Operator
+	case *parser.GroupedExpression:
+		return hp.getExpressionType(e.Expression)
 	case *parser.IfExpression:
 		return "if"
 	default:

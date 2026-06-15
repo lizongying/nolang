@@ -140,6 +140,9 @@ func (sp *SymbolProvider) collectFromExpression(expr parser.Expression, containe
 	case *parser.PrefixExpression:
 		sp.collectFromExpression(e.Right, containerName, symbols)
 
+	case *parser.GroupedExpression:
+		sp.collectFromExpression(e.Expression, containerName, symbols)
+
 	case *parser.IfExpression:
 		if e.Consequence != nil {
 			for _, innerStmt := range e.Consequence.Statements {

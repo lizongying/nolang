@@ -12,7 +12,7 @@
 // ─── 位元組輔助 ─────────────────────────────
 
 // u32le: 讀取 4 位元組小端序無號整數
-u32le(data str, off i64, v i64) {
+u32le = (data str, off i64, v i64) {
     off1 = off + 1
     off2 = off + 2
     off3 = off + 3
@@ -24,7 +24,7 @@ u32le(data str, off i64, v i64) {
 }
 
 // u16le: 讀取 2 位元組小端序無號整數
-u16le(data str, off i64, v i64) {
+u16le = (data str, off i64, v i64) {
     off1 = off + 1
     b0 = data[off] & 255
     b1 = data[off1] & 255
@@ -34,7 +34,7 @@ u16le(data str, off i64, v i64) {
 // ─── EOCD 定位 ──────────────────────────────
 
 // zip-find-eocd: 從結尾搜尋 EOCD 簽名
-zip-find-eocd(data str, n i64, off i64) {
+zip-find-eocd = (data str, n i64, off i64) {
     off = -1
     i = n - 22
     for i >= 0 {
@@ -50,10 +50,11 @@ zip-find-eocd(data str, n i64, off i64) {
 // ─── 中央目錄讀取 ──────────────────────────
 
 // zip-cd-info: 讀取中央目錄偏移和條目數
-zip-cd-info(data str, n i64, cd-off i64, total i64) {
+zip-cd-info = (data str, n i64, cd-off i64, total i64) {
     zip-find-eocd(data, n, eocd)
     if eocd < 0 {
-        cd-off = 0; total = 0
+        cd-off = 0
+        total = 0
         return
     }
     off8 = eocd + 8
@@ -67,7 +68,7 @@ zip-cd-info(data str, n i64, cd-off i64, total i64) {
 // ─── 中央目錄條目偏移 ──────────────────────
 
 // zip-entry-off: 第 idx 個 central directory 條目的偏移
-zip-entry-off(data str, n i64, idx i64, off i64) {
+zip-entry-off = (data str, n i64, idx i64, off i64) {
     zip-cd-info(data, n, cd-off, total)
     off = cd-off
     j = 0
@@ -87,12 +88,12 @@ zip-entry-off(data str, n i64, idx i64, off i64) {
 // ─── 查詢 ─────────────────────────────────────
 
 // zip-entries: 傳回 ZIP 中的條目數
-zip-entries(data str, n i64, count i64) {
+zip-entries = (data str, n i64, count i64) {
     zip-cd-info(data, n, cd-off, count)
 }
 
 // zip-name: 第 idx 個條目的檔名
-zip-name(data str, n i64, idx i64, name str) {
+zip-name = (data str, n i64, idx i64, name str) {
     zip-entry-off(data, n, idx, off)
     off28 = off + 28
     u16le(data, off28, name-len)
@@ -106,21 +107,21 @@ zip-name(data str, n i64, idx i64, name str) {
 }
 
 // zip-size: 原始大小
-zip-size(data str, n i64, idx i64, sz i64) {
+zip-size = (data str, n i64, idx i64, sz i64) {
     zip-entry-off(data, n, idx, off)
     off24 = off + 24
     u32le(data, off24, sz)
 }
 
 // zip-compressed-size: 壓縮後大小
-zip-compressed-size(data str, n i64, idx i64, csz i64) {
+zip-compressed-size = (data str, n i64, idx i64, csz i64) {
     zip-entry-off(data, n, idx, off)
     off20 = off + 20
     u32le(data, off20, csz)
 }
 
 // zip-method: 壓縮方式（0=stored, 8=deflate）
-zip-method(data str, n i64, idx i64, method i64) {
+zip-method = (data str, n i64, idx i64, method i64) {
     zip-entry-off(data, n, idx, off)
     off10 = off + 10
     u16le(data, off10, method)
@@ -129,7 +130,7 @@ zip-method(data str, n i64, idx i64, method i64) {
 // ─── 提取 ─────────────────────────────────────
 
 // zip-extract: 提取第 idx 個條目的內容（僅 stored）
-zip-extract(data str, n i64, idx i64, out []byte) {
+zip-extract = (data str, n i64, idx i64, out []byte) {
     zip-entry-off(data, n, idx, off)
     off24 = off + 24
     off10 = off + 10
@@ -145,7 +146,6 @@ zip-extract(data str, n i64, idx i64, out []byte) {
     u16le(data, off26, name-len2)
     u16le(data, off28, extra-len2)
     data-off = off30 + name-len2 + extra-len2
-
     if method == 0 && sz > 0 {
         i = 0
         for i < sz {

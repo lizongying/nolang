@@ -206,6 +206,18 @@ func (pt *PointerType) Print() {
 	fmt.Printf("PointerType{%s, %s}\n", pt.Token.Literal, pt.Type)
 }
 
+// GroupedExpression represents a parenthesized expression: (expr)
+type GroupedExpression struct {
+	Token      lexer.Token
+	Expression Expression
+}
+
+func (ge *GroupedExpression) expressionNode()      {}
+func (ge *GroupedExpression) TokenLiteral() string { return ge.Token.Literal }
+func (ge *GroupedExpression) Print() {
+	fmt.Printf("GroupedExpression{(%s)}\n", ge.Expression)
+}
+
 type IntegerLiteral struct {
 	Token lexer.Token
 	Value int64

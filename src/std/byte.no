@@ -13,7 +13,7 @@
 //   vec-byte-to-arr(in)(out)    // []byte → [8]byte
 
 // to-bytes-be: 將 int64 轉為大端序 8 位元組
-to-bytes-be = (v i64)(out [8]byte) {
+to-bytes-be = (v i64) (out [8]byte) {
     out[0] = (v >> 56) & 255
     out[1] = (v >> 48) & 255
     out[2] = (v >> 40) & 255
@@ -25,7 +25,7 @@ to-bytes-be = (v i64)(out [8]byte) {
 }
 
 // to-bytes-le: 將 int64 轉為小端序 8 位元組
-to-bytes-le = (v i64)(out [8]byte) {
+to-bytes-le = (v i64) (out [8]byte) {
     out[0] = v & 255
     out[1] = (v >> 8) & 255
     out[2] = (v >> 16) & 255
@@ -37,7 +37,7 @@ to-bytes-le = (v i64)(out [8]byte) {
 }
 
 // bytes-to-i64-be: 將大端序位元組陣列轉為 int64（1~8 位元組）
-bytes-to-i64-be = (in []byte)(v i64) {
+bytes-to-i64-be = (in []byte) (v i64) {
     v = 0
     n = len(in)
     i = 0
@@ -48,7 +48,7 @@ bytes-to-i64-be = (in []byte)(v i64) {
 }
 
 // bytes-to-i64-le: 將小端序位元組陣列轉為 int64（1~8 位元組）
-bytes-to-i64-le = (in []byte)(v i64) {
+bytes-to-i64-le = (in []byte) (v i64) {
     v = 0
     n = len(in)
     i = 0
@@ -59,7 +59,7 @@ bytes-to-i64-le = (in []byte)(v i64) {
 }
 
 // 將 [N]byte 陣列複製到 []byte 切片
-arr-to-vec-byte = (arr [8]byte)(out []byte) {
+arr-to-vec-byte = (arr [8]byte) (out []byte) {
     i = 0
     for i < 8 {
         out[i] = arr[i]
@@ -68,7 +68,7 @@ arr-to-vec-byte = (arr [8]byte)(out []byte) {
 }
 
 // 將 []byte 切片複製到 [8]byte 陣列（至多 8 位元組）
-vec-to-arr-byte = (in []byte)(out [8]byte) {
+vec-to-arr-byte = (in []byte) (out [8]byte) {
     n = len(in)
     if n > 8 {
         n = 8

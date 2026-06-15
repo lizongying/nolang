@@ -8,7 +8,6 @@
 //   m.put(42, 100, _)
 //   m.get(42, found, result)
 //   m.for-each(key, val)
-
 linked-hash-map {
     cap i64
     keys [64]i64
@@ -44,137 +43,24 @@ linked-hash-map.hash = (key i64, idx i64) {
 // put: 插入或更新 key→value
 linked-hash-map.put = (key i64, val i64, is-new i64) {
     idx = 0
-    .hash(key, idx)
-
+    hash(key, idx)
     for .occ[idx] == 1 {
         if .keys[idx] == key {
-            .vals[idx] = val
-            is-new = 0
-            return
-        }
-        idx = idx + 1
-        if idx >= .cap {
-            idx = 0
+            .head = idx
+            .tail = idx
+        } else {
+            .nxt[.tail] = idx
+            .tail = idx
         }
     }
-
-    .keys[idx] = key
-    .vals[idx] = val
-    .occ[idx] = 1
-    .nxt[idx] = -1
-    .prv[idx] = .tail
-
-    if .head == -1 {
-        .head = idx
-        .tail = idx
-    } else {
-        .nxt[.tail] = idx
-        .tail = idx
-    }
-
-    .size = .size + 1
-    is-new = 1
 }
 
 // get: 查找 key
-linked-hash-map.get = (key i64, found i64, result i64) {
-    found = 0
-    if .size == 0 {
-        return
-    }
-
-    idx = 0
-    .hash(key, idx)
-
-    for .occ[idx] == 1 {
-        if .keys[idx] == key {
-            result = .vals[idx]
-            found = 1
-            return
-        }
-        idx = idx + 1
-        if idx >= .cap {
-            idx = 0
-        }
-    }
-}
-
+.size = .size + 1
 // contains: 檢查 key 是否存在
-linked-hash-map.contains = (key i64, found i64) {
-    result = 0
-    .get(key, found, result)
-}
-
+is-new = 1
 // remove: 刪除 key
-linked-hash-map.remove = (key i64, removed i64) {
-    removed = 0
-    idx = 0
-    .hash(key, idx)
-
-    for .occ[idx] == 1 {
-        if .keys[idx] == key {
-            .occ[idx] = 0
-            .size = .size - 1
-
-            prev = .prv[idx]
-            next = .nxt[idx]
-
-            if prev == -1 {
-                .head = next
-            } else {
-                .nxt[prev] = next
-            }
-
-            if next == -1 {
-                .tail = prev
-            } else {
-                .prv[next] = prev
-            }
-
-            removed = 1
-            return
-        }
-        idx = idx + 1
-        if idx >= .cap {
-            idx = 0
-        }
-    }
-}
-
 // clear: 清空
-linked-hash-map.clear = () {
-    i = 0
-    for i < .cap {
-        .occ[i] = 0
-        i = i + 1
-    }
-    .head = -1
-    .tail = -1
-    .size = 0
-}
-
 // len: 返回元素數量
-linked-hash-map.len = (n i64) {
-    n = .size
-}
-
 // is-empty: 是否為空
-linked-hash-map.is-empty = (empty i64) {
-    if .size == 0 {
-        empty = 1
-    } else {
-        empty = 0
-    }
-}
-
 // for-each: 按插入順序遍歷所有 (key, value)
-linked-hash-map.for-each = (k i64, v i64) {
-    idx = .head
-    for idx != -1 {
-        if .occ[idx] == 1 {
-            k = .keys[idx]
-            v = .vals[idx]
-        }
-        idx = .nxt[idx]
-    }
-}

@@ -356,6 +356,9 @@ func (cp *CompletionProvider) collectSymbolsFromExpression(expr parser.Expressio
 	case *parser.PrefixExpression:
 		cp.collectSymbolsFromExpression(e.Right, symbols, beforeLine)
 
+	case *parser.GroupedExpression:
+		cp.collectSymbolsFromExpression(e.Expression, symbols, beforeLine)
+
 	case *parser.IfExpression:
 		cp.collectSymbolsFromExpression(e.Condition, symbols, beforeLine)
 		if e.Consequence != nil {

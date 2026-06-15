@@ -45,7 +45,7 @@ lsp: FORCE
 	mkdir -p vscode-nolang/server
 	cd src && $(GO) build -o ../vscode-nolang/server/nolang-lsp ./cmd/lsp
 
-package:
+package: FORCE
 	make lsp
 	cd vscode-nolang && bun run package
 

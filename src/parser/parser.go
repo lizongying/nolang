@@ -994,7 +994,8 @@ func (p *Parser) isFunctionDefinition() bool {
 			p.currentToken.Type != lexer.QUESTION &&
 			p.currentToken.Type != lexer.COMMA &&
 			p.currentToken.Type != lexer.LBRACKET && p.currentToken.Type != lexer.RBRACKET &&
-			p.currentToken.Type != lexer.ELLIPSIS {
+			p.currentToken.Type != lexer.ELLIPSIS &&
+			p.currentToken.Type != lexer.NEWLINE {
 			p.restoreState(state)
 			return false
 		}
@@ -2026,6 +2027,7 @@ func (p *Parser) parseConditionalExpression(condition Expression) Expression {
 }
 
 func (p *Parser) parseGroupedExpression() Expression {
+	tok := p.currentToken
 	p.nextToken()
 	expr := p.parseExpression(LOWEST)
 
@@ -2037,7 +2039,10 @@ func (p *Parser) parseGroupedExpression() Expression {
 	}
 
 	p.nextToken() // 跳过右括号
-	return expr
+	return &GroupedExpression{
+		Token:      tok,
+		Expression: expr,
+	}
 }
 
 // parseMatchExpression parses `match <expr> { arm* }` and desugars to if/elif/else chain.
@@ -2961,7 +2966,8 @@ func (p *Parser) parseIfExpression() Expression {
 // into a BlockStatement containing a nested IfExpression.
 // This lets all generators handle elif without any changes.
 func (p *Parser) parseElifBlock() *BlockStatement {
-	p.nextToken() // skip ELIF → current = token after ELIF
+	p.nextToken() // skip token before ELIF (e.g., } or NEWLINE)
+	p.nextToken() // skip ELIF → current = first token of condition
 
 	// Parse condition
 	condition := p.parseExpression(LOWEST)
@@ -3005,6 +3011,11 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 
 	} else if p.peekToken.Type == lexer.ELIF {
 		alternative = p.parseElifBlock()
+	}
+
+	// Consume the } that closes the last body in the elif/else chain
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
 	}
 
 	// Build nested if: if <cond> { ... } [else { ... }]
@@ -4229,34 +4240,12 @@ func (p *Parser) parseArgument() Expression {
 	case lexer.NIL:
 		return p.parseNilLiteral()
 	case lexer.IDENT:
-		// 先解析标识符
-		leftExp := p.parseIdentifier()
-		// 如果后面有 DOT，解析点表达式（如 fmt.Println）
-		for p.currentToken.Type == lexer.DOT {
-			p.nextToken() // 跳过 DOT
-			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected identifier after dot, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
-				return nil
-			}
-			dotExpr := &DotExpression{
-				Token:    p.currentToken,
-				Receiver: leftExp,
-				Property: p.currentToken.Literal,
-			}
-			p.nextToken() // 跳过标识符
-			leftExp = dotExpr
-		}
-		// 如果后面有 LPAREN，解析函数调用（如 sqrt(9.0) 作為參數）
-		if p.currentToken.Type == lexer.LPAREN {
-			leftExp = p.parseCallExpression(leftExp)
-		}
-		// 如果后面有 LBRACKET，解析索引或切片表达式
-		if p.currentToken.Type == lexer.LBRACKET {
-			leftExp = p.parseSliceExpression(leftExp)
-		}
-		return leftExp
+		// 使用 parseExpression 处理标识符及后续可能的点操作、函数调用、切片和中缀运算符
+		return p.parseExpression(LOWEST)
+	case lexer.NEWLINE:
+		// 跳过换行，支持多行函数调用参数
+		p.nextToken()
+		return p.parseArgument()
 	case lexer.LPAREN:
 		return p.parseGroupedExpression()
 	default:

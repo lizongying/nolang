@@ -262,6 +262,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		return "i64"
+	case *parser.GroupedExpression:
+		return g.varLLVMType(&parser.LetStatement{Value: v.Expression})
 	default:
 		return "i64"
 	}

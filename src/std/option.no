@@ -10,5 +10,8 @@
 //   x = err('msg')             // 設為錯誤
 //   x { val| f(.); nil|; err| g(.) }  // match
 //   !x                         // 強制解包（panic if nil/err）
-
-option { val t, nil bool, err str }
+option {
+    val t,
+    nil bool,
+    err str,
+}

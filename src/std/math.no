@@ -1,46 +1,94 @@
 // math - 数学函数标准库
-
 Pi = 3.141592653589793
-E  = 2.718281828459045
+E = 2.718281828459045
 
 // 基础
-abs = (x f64) (res f64) { } // LLVM: @llvm.fabs.f64
-max = (a f64, b f64) (res f64) { } // LLVM: @llvm.maxnum.f64
-min = (a f64, b f64) (res f64) { } // LLVM: @llvm.minnum.f64
+abs = (x f64) (res f64) {  // LLVM: @llvm.fabs.f64
+}
+
+max = (a f64, b f64) (res f64) {  // LLVM: @llvm.maxnum.f64
+}
+
+min = (a f64, b f64) (res f64) {  // LLVM: @llvm.minnum.f64
+}
 
 // 幂与根
-sqrt = (x f64) (res f64) { } // LLVM: @llvm.sqrt.f64
-cbrt = (x f64) (res f64) { } // LLVM: @llvm.pow.f64(x, 1/3)
-pow = (x f64, y f64) (res f64) { } // LLVM: @llvm.pow.f64
-hypot = (x f64, y f64) (res f64) { } // sqrt(x*x + y*y)
+sqrt = (x f64) (res f64) {  // LLVM: @llvm.sqrt.f64
+}
+
+cbrt = (x f64) (res f64) {  // LLVM: @llvm.pow.f64(x, 1/3)
+}
+
+pow = (x f64, y f64) (res f64) {  // LLVM: @llvm.pow.f64
+}
+
+hypot = (x f64, y f64) (res f64) {  // sqrt(x*x + y*y)
+}
 
 // 三角函数（弧度）
-sin = (x f64) (res f64) { } // LLVM: @llvm.sin.f64
-cos = (x f64) (res f64) { } // LLVM: @llvm.cos.f64
-tan = (x f64) (res f64) { } // LLVM: sin/cos + fdiv
-asin = (x f64) (res f64) { } // LLVM: @llvm.asin.f64
-acos = (x f64) (res f64) { } // LLVM: @llvm.acos.f64
-atan = (x f64) (res f64) { } // LLVM: @llvm.atan.f64
-atan2 = (y f64, x f64) (res f64) { } // LLVM: @llvm.atan2.f64
+sin = (x f64) (res f64) {  // LLVM: @llvm.sin.f64
+}
+
+cos = (x f64) (res f64) {  // LLVM: @llvm.cos.f64
+}
+
+tan = (x f64) (res f64) {  // LLVM: sin/cos + fdiv
+}
+
+asin = (x f64) (res f64) {  // LLVM: @llvm.asin.f64
+}
+
+acos = (x f64) (res f64) {  // LLVM: @llvm.acos.f64
+}
+
+atan = (x f64) (res f64) {  // LLVM: @llvm.atan.f64
+}
+
+atan2 = (y f64, x f64) (res f64) {  // LLVM: @llvm.atan2.f64
+}
 
 // 双曲函数
-sinh = (x f64) (res f64) { } // LLVM: @llvm.sinh.f64
-cosh = (x f64) (res f64) { } // LLVM: @llvm.cosh.f64
-tanh = (x f64) (res f64) { } // LLVM: @llvm.tanh.f64
+sinh = (x f64) (res f64) {  // LLVM: @llvm.sinh.f64
+}
+
+cosh = (x f64) (res f64) {  // LLVM: @llvm.cosh.f64
+}
+
+tanh = (x f64) (res f64) {  // LLVM: @llvm.tanh.f64
+}
 
 // 取整
-ceil = (x f64) (res f64) { } // LLVM: @llvm.ceil.f64
-floor = (x f64) (res f64) { } // LLVM: @llvm.floor.f64
-round = (x f64) (res f64) { } // LLVM: @llvm.round.f64
-trunc = (x f64) (res f64) { } // LLVM: @llvm.trunc.f64
+ceil = (x f64) (res f64) {  // LLVM: @llvm.ceil.f64
+}
+
+floor = (x f64) (res f64) {  // LLVM: @llvm.floor.f64
+}
+
+round = (x f64) (res f64) {  // LLVM: @llvm.round.f64
+}
+
+trunc = (x f64) (res f64) {  // LLVM: @llvm.trunc.f64
+}
 
 // 指数对数
-exp = (x f64) (res f64) { } // LLVM: @llvm.exp.f64
-log = (x f64) (res f64) { } // LLVM: @llvm.log.f64
-log10 = (x f64) (res f64) { } // LLVM: @llvm.log10.f64
-log2 = (x f64) (res f64) { } // LLVM: @llvm.log2.f64
+exp = (x f64) (res f64) {  // LLVM: @llvm.exp.f64
+}
+
+log = (x f64) (res f64) {  // LLVM: @llvm.log.f64
+}
+
+log10 = (x f64) (res f64) {  // LLVM: @llvm.log10.f64
+}
+
+log2 = (x f64) (res f64) {  // LLVM: @llvm.log2.f64
+}
 
 // 杂项
-fmod = (x f64, y f64) (res f64) { } // LLVM: @fmod (libm)
-degrees = (r f64) (res f64) { } // r * 180 / Pi
-radians = (d f64) (res f64) { } // d * Pi / 180
+fmod = (x f64, y f64) (res f64) {  // LLVM: @fmod (libm)
+}
+
+degrees = (r f64) (res f64) {  // r * 180 / Pi
+}
+
+radians = (d f64) (res f64) {  // d * Pi / 180
+}

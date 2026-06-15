@@ -8,7 +8,7 @@
 
 // fnv-1a-32: 32-bit FNV-1a 哈希
 // s: 輸入字串, n: 字串長度, h: 輸出哈希值
-fnv-1a-32(s str, n i64, h i64) {
+fnv-1a-32 = (s str, n i64, h i64) {
     h = 2166136261
     i = 0
     for i < n {

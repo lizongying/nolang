@@ -34,6 +34,7 @@ get-env = (key str) (val str) {  // LLVM: call i8* @getenv
 
 set-env = (k str, v str) {  // LLVM: call i32 @setenv
 }
+
 // 目录与路径
 get-wd = () (dir str) {  // LLVM: call i8* @getcwd → @.os_buf
 }
@@ -43,6 +44,7 @@ ch-dir = (d str) {  // LLVM: call i32 @chdir
 
 mkdir = (p str, mode i64) (ok i64) {  // LLVM: call i32 @mkdir → zext
 }
+
 // 文件操作
 remove = (p str) (ok i64) {  // LLVM: call i32 @unlink → zext
 }
@@ -52,6 +54,7 @@ rename = (o str, n str) (ok i64) {  // LLVM: call i32 @rename → zext
 
 is-file = (p str) (exists i64) {  // LLVM: call i32 @stat → icmp eq → zext
 }
+
 // 文件读写
 open-read = (path str) (fd i64) {  // LLVM: call i32 @open(O_RDONLY) → zext
 }
@@ -67,15 +70,18 @@ write = (fd i64, data str, n i64) (written i64) {  // LLVM: call i64 @write(fd, 
 
 close = (fd i64) (ok i64) {  // LLVM: call i32 @close(fd) → zext
 }
+
 // 进程
 exit = (c i64) {  // LLVM: call void @exit(i32)
 }
 
 get-pid = () (pid i64) {  // LLVM: call i32 @getpid → zext
 }
+
 // 系统信息
 host-name = () (name str) {  // LLVM: call i32 @gethostname → @.os_buf
 }
+
 // 时间
 now = () (ts i64) {  // LLVM: call i64 @time(i8* null)
 }

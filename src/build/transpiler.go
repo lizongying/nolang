@@ -132,6 +132,8 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		return "i64"
 	case *parser.DotExpression:
 		return "i64"
+	case *parser.GroupedExpression:
+		return inferExprType(e.Expression, varTypes)
 	default:
 		return "i64"
 	}
@@ -195,6 +197,8 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 				updateCallNamesInStmt(s, overloads, mangled, varTypes)
 			}
 		}
+	case *parser.GroupedExpression:
+		updateCallNames(e.Expression, overloads, mangled, varTypes)
 	}
 }
 
@@ -727,6 +731,8 @@ func inferArgType(expr parser.Expression, program *parser.Program) string {
 		return "str"
 	case *parser.BooleanLiteral:
 		return "bool"
+	case *parser.GroupedExpression:
+		return inferArgType(e.Expression, program)
 	}
 	return ""
 }
@@ -947,6 +953,11 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 			Token: e.Token,
 			Left:  substituteExpr(e.Left, subst),
 			Index: substituteExpr(e.Index, subst),
+		}
+	case *parser.GroupedExpression:
+		return &parser.GroupedExpression{
+			Token:      e.Token,
+			Expression: substituteExpr(e.Expression, subst),
 		}
 	default:
 		return e
@@ -1306,6 +1317,8 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	case *parser.Identifier:
 		_, exists := stringSizes[e.Value]
 		return exists
+	case *parser.GroupedExpression:
+		return isStringExpr(e.Expression, stringSizes)
 	}
 	return false
 }

@@ -224,6 +224,10 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 	case *parser.PointerType:
 		f.write("ptr ")
 		f.formatExpression(e.Type)
+	case *parser.GroupedExpression:
+		f.write("(")
+		f.formatExpression(e.Expression)
+		f.write(")")
 	}
 }
 
@@ -854,6 +858,230 @@ func Format(code string) string {
 		}
 	}
 
+	// 预处理：将缩进的纯注释行插入到所属语句的格式化输出中
+	// 对于函数体内的注释（在 } 之前），插入到格式化输出的 } 之前
+	// 对于 } 之后的注释，在合并循环中缩进会被归零处理
+	stmtFormattedStart := make([]int, len(f.stmtLineCnt))
+	pos := 0
+	for i, cnt := range f.stmtLineCnt {
+		stmtFormattedStart[i] = pos
+		pos += cnt
+	}
+
+	// 建立行索引→语句索引的映射
+	lineToStmt := make([]int, len(lineTypes))
+	currentStmt := -1
+	for i, lt := range lineTypes {
+		if lt == lineCode && stmtStartLines[i] {
+			currentStmt++
+		}
+		lineToStmt[i] = currentStmt
+	}
+
+	// 收集所有代码行位置
+	codeLinePositions := make([]int, 0, len(lineTypes))
+	for i, lt := range lineTypes {
+		if lt == lineCode {
+			codeLinePositions = append(codeLinePositions, i)
+		}
+	}
+
+	type commentEntry struct {
+		lineIdx int
+		content string
+	}
+
+	// 记录已被预插入的注释行，合并循环中跳过它们
+	handledComments := make(map[int]bool)
+
+	// 将缩进注释按语句分组（仅在 } 之前的内部注释）
+	commentsByStmt := make(map[int][]commentEntry)
+	codePosIdx := 0
+	for i, lt := range lineTypes {
+		if lt != linePreserved {
+			continue
+		}
+		line := cleanLines[i]
+		trimmed := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmed, "//") {
+			// 缩进的空白行，夹在缩进注释之间时也收集到预插入中
+			if strings.TrimSpace(line) == "" {
+				// 检查相邻行是否为缩进的注释（缩进 > 0 表示在函数体内部）
+				nextIsIndentedComment := i+1 < len(cleanLines) &&
+					strings.HasPrefix(strings.TrimLeft(cleanLines[i+1], " \t"), "//") &&
+					len(cleanLines[i+1])-len(strings.TrimLeft(cleanLines[i+1], " \t")) > 0
+				prevIsIndentedComment := i > 0 &&
+					strings.HasPrefix(strings.TrimLeft(cleanLines[i-1], " \t"), "//") &&
+					len(cleanLines[i-1])-len(strings.TrimLeft(cleanLines[i-1], " \t")) > 0
+				if nextIsIndentedComment || prevIsIndentedComment {
+					stmt := lineToStmt[i]
+					if stmt >= 0 {
+						commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
+						handledComments[i] = true
+					}
+				}
+			}
+			continue
+		}
+		indent := len(line) - len(trimmed)
+		if indent == 0 {
+			continue
+		}
+
+		// 查找前一行代码
+		var prevCodeLine string
+		for prev := i - 1; prev >= 0; prev-- {
+			if lineTypes[prev] == lineCode {
+				prevCodeLine = cleanLines[prev]
+				break
+			}
+		}
+
+		// 处理 } 之后的注释：函数级 }（缩进 0）由合并循环处理，嵌套 }（缩进 > 0）预插入并调整缩进
+		if strings.TrimSpace(prevCodeLine) == "}" {
+			prevIndent := len(prevCodeLine) - len(strings.TrimLeft(prevCodeLine, " \t"))
+			if prevIndent == 0 {
+				// 函数级 }：跳过，由合并循环归零缩进
+				continue
+			}
+			// 嵌套 }：缩进调整到 } 的同级，然后预插入
+			trimmed := strings.TrimLeft(cleanLines[i], " \t")
+			adjustedLine := strings.Repeat(" ", prevIndent) + trimmed
+			stmt := lineToStmt[i]
+			if stmt >= 0 {
+				commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: adjustedLine})
+				handledComments[i] = true
+			}
+			continue
+		}
+
+		// 推进到当前行之后的代码行
+		for codePosIdx < len(codeLinePositions) && codeLinePositions[codePosIdx] <= i {
+			codePosIdx++
+		}
+
+		// 判断是否在语句体内部：下一代码行不是语句起始行，或没有更多代码行（尾部）
+		isInsideBody := false
+		if codePosIdx < len(codeLinePositions) {
+			nextCodeLine := codeLinePositions[codePosIdx]
+			if !stmtStartLines[nextCodeLine] {
+				isInsideBody = true
+			}
+		} else {
+			isInsideBody = true
+		}
+
+		if isInsideBody {
+			stmt := lineToStmt[i]
+			if stmt >= 0 {
+				commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
+				handledComments[i] = true
+			}
+		}
+	}
+
+	// 将注释插入到格式化行中：通过内容匹配找到每条注释的插入位置
+	// 对于函数体内部的注释（非 } 之后的），找到下一条代码行在格式化输出中的位置，插入在其之前
+	if len(commentsByStmt) > 0 {
+		newFormattedLines := make([]string, 0, len(formattedLines))
+		newStmtLineCnt := make([]int, len(f.stmtLineCnt))
+		copy(newStmtLineCnt, f.stmtLineCnt)
+
+		for stmtIdx := 0; stmtIdx < len(f.stmtLineCnt); stmtIdx++ {
+			start := stmtFormattedStart[stmtIdx]
+			end := start + f.stmtLineCnt[stmtIdx]
+			stmtLines := formattedLines[start:end]
+
+			if entries, ok := commentsByStmt[stmtIdx]; ok && len(entries) > 0 {
+				offset := 0
+				for _, entry := range entries {
+					// 先按 lineIdx 排序，确保按原始顺序处理
+					_ = entry.lineIdx
+
+					// 找到注释之后的下一条代码行
+					nextCodeLine := ""
+					for j := entry.lineIdx + 1; j < len(cleanLines); j++ {
+						if lineTypes[j] == lineCode {
+							nextCodeLine = strings.TrimSpace(cleanLines[j])
+							break
+						}
+					}
+
+					if nextCodeLine == "" {
+						// 没有后续代码行，追加到末尾
+						stmtLines = append(stmtLines, entry.content)
+						offset++
+						continue
+					}
+
+					// 当下一条代码行是 } 时，插入到语句末尾（最后一个 } 之前）
+					// 避免 } 在格式化输出中出现多次导致错误定位
+					insertPos := -1
+					if nextCodeLine == "}" {
+						for k := len(stmtLines) - 1; k >= 0; k-- {
+							if strings.TrimSpace(stmtLines[k]) == "}" {
+								insertPos = k
+								break
+							}
+						}
+						goto doInsert
+					}
+
+					// 在 stmtLines 中找到匹配 nextCodeLine 的位置
+					// 优先精确匹配（避免变量名相同但内容不同的误匹配），再回退到模糊匹配
+					// 第一遍：精确匹配
+					for k, sl := range stmtLines {
+						trimmed := strings.TrimSpace(sl)
+						if trimmed == nextCodeLine {
+							insertPos = k
+							break
+						}
+					}
+					// 第二遍：模糊匹配（仅当精确匹配失败时）
+					if insertPos < 0 {
+						for k, sl := range stmtLines {
+							trimmed := strings.TrimSpace(sl)
+							if matchFormattedLine(trimmed, nextCodeLine) {
+								insertPos = k
+								break
+							}
+						}
+					}
+
+				doInsert:
+					if insertPos >= 0 {
+						// 在找到的位置之前插入
+						// 注意：stmtLines 每次插入後都會更新，insertPos 已反映之前的偏移
+						if insertPos < 0 {
+							insertPos = 0
+						}
+						before := make([]string, insertPos)
+						copy(before, stmtLines[:insertPos])
+						after := stmtLines[insertPos:]
+						combined := make([]string, 0, len(stmtLines)+1)
+						combined = append(combined, before...)
+						combined = append(combined, entry.content)
+						combined = append(combined, after...)
+						stmtLines = combined
+						offset++
+					} else {
+						// 找不到匹配，追加到末尾
+						stmtLines = append(stmtLines, entry.content)
+						offset++
+					}
+				}
+
+				newFormattedLines = append(newFormattedLines, stmtLines...)
+				newStmtLineCnt[stmtIdx] += offset
+			} else {
+				newFormattedLines = append(newFormattedLines, stmtLines...)
+			}
+		}
+
+		formattedLines = newFormattedLines
+		f.stmtLineCnt = newStmtLineCnt
+	}
+
 	stmtIdx := 0
 	formLineIdx := 0
 	var result []string
@@ -862,9 +1090,53 @@ func Format(code string) string {
 			line := cleanLines[origLineIdx]
 			isComment := strings.HasPrefix(strings.TrimLeft(line, " \t"), "//")
 			if isComment {
+				// 当前一行不是注释时，检查下一个语句输出是否以空行开头
+				// 若是，在注释前插入该空行（让空行在 } 与注释之间，而非注释与函数之间）
+				if len(result) > 0 {
+					prevTrim := strings.TrimSpace(result[len(result)-1])
+					prevIsCode := prevTrim != "" && !strings.HasPrefix(prevTrim, "//")
+					if prevIsCode && formLineIdx < len(formattedLines) {
+						// 向后查找下一个语句起始行
+						for next := origLineIdx + 1; next < len(lineTypes); next++ {
+							if lineTypes[next] == linePreserved {
+								continue
+							}
+							if lineTypes[next] == lineCode {
+								if stmtStartLines[next] && strings.TrimSpace(formattedLines[formLineIdx]) == "" {
+									result = append(result, "")
+									formLineIdx++
+									if stmtIdx < len(f.stmtLineCnt) {
+										f.stmtLineCnt[stmtIdx]--
+									}
+								}
+							}
+							break
+						}
+					}
+				}
+				// 跳过已被预插入的注释（已进入 formattedLines）
+				if handledComments[origLineIdx] {
+					continue
+				}
+				// 处理 } 之后的缩进注释：调整缩进匹配 } 的层级
+				var prevCodeLine string
+				for prev := origLineIdx - 1; prev >= 0; prev-- {
+					if lineTypes[prev] == lineCode {
+						prevCodeLine = cleanLines[prev]
+						break
+					}
+				}
+				if strings.TrimSpace(prevCodeLine) == "}" {
+					// 前一代码行为 }：注释在 } 之后，缩进调整到 } 的同级
+					prevIndent := len(prevCodeLine) - len(strings.TrimLeft(prevCodeLine, " \t"))
+					line = strings.Repeat(" ", prevIndent) + strings.TrimLeft(line, " \t")
+				} else if formLineIdx >= len(formattedLines) {
+					// 没有更多格式化输出（文件末尾的注释），完全归零缩进
+					line = strings.TrimLeft(line, " \t")
+				}
 				result = append(result, line)
 			} else {
-				// 空白行：前後都是註釋行時才保留
+				// 空白行：前后都是注释行时才保留
 				prevIsComment := origLineIdx == 0 || strings.HasPrefix(strings.TrimLeft(cleanLines[origLineIdx-1], " \t"), "//")
 				nextIsComment := origLineIdx == len(cleanLines)-1 ||
 					(origLineIdx+1 < len(lineTypes) && lineTypes[origLineIdx+1] == linePreserved &&
@@ -876,23 +1148,16 @@ func Format(code string) string {
 			continue
 		}
 
-		// 程式碼行：只有當此行是 statement 的起始行時才輸出格式化內容
+		// 代码行：只有当此行为语句起始行时才输出格式化内容
 		if stmtStartLines[origLineIdx] && stmtIdx < len(f.stmtLineCnt) {
 			cnt := f.stmtLineCnt[stmtIdx]
-			// 當前一輸出為保留註釋行時，跳過格式化輸出的首行空白（避免註釋與函數之間產生空行）
-			startJ := 0
-			if cnt > 0 && len(result) > 0 && strings.HasPrefix(strings.TrimLeft(result[len(result)-1], " \t"), "//") {
-				if strings.TrimSpace(formattedLines[formLineIdx]) == "" {
-					startJ = 1
-				}
-			}
-			for j := startJ; j < cnt && formLineIdx+j < len(formattedLines); j++ {
+			for j := 0; j < cnt && formLineIdx+j < len(formattedLines); j++ {
 				result = append(result, formattedLines[formLineIdx+j])
 			}
 			formLineIdx += cnt
 			stmtIdx++
 		}
-		// 非起始行的程式碼行（如 }）隸屬於上一個 statement，不輸出
+		// 非起始行的代码行（如 }）隶属于上一个 statement，不输出
 	}
 
 	// 將行尾註釋匹配到格式化輸出
@@ -931,6 +1196,37 @@ func extractFirstIdentifier(line string) string {
 		}
 	}
 	return buf.String()
+}
+
+// matchFormattedLine 检查格式化行是否匹配原始代码行的内容。
+// 使用逐步宽松的匹配策略：精确 → 前缀 → 变量名匹配。
+func matchFormattedLine(trimmedFormatted, codeLine string) bool {
+	if trimmedFormatted == "" || codeLine == "" {
+		return false
+	}
+	// 1. 精确匹配
+	if trimmedFormatted == codeLine {
+		return true
+	}
+	// 2. 前缀匹配（因格式化可能增减括号或展开行内块）
+	if strings.HasPrefix(codeLine, trimmedFormatted) || strings.HasPrefix(trimmedFormatted, codeLine) {
+		return true
+	}
+	// 3. 匹配到第一个 '='（处理赋值语句）
+	if eqIdx := strings.Index(codeLine, "="); eqIdx > 0 {
+		prefix := strings.TrimSpace(codeLine[:eqIdx])
+		if prefix != "" && strings.HasPrefix(strings.TrimSpace(trimmedFormatted), prefix) {
+			return true
+		}
+	}
+	// 4. 匹配到第一个 '{'（处理行内块展开）
+	if braceIdx := strings.Index(codeLine, "{"); braceIdx > 0 {
+		prefix := strings.TrimSpace(codeLine[:braceIdx])
+		if prefix != "" && strings.HasPrefix(strings.TrimSpace(trimmedFormatted), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // stripAndClassify 從原始碼中移除行尾註釋，保留純註釋行和空白行。

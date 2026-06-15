@@ -50,6 +50,13 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				ptr := g.generateStrConcat(sb, a.Left, a.Right)
 				return g.extractStrDataPtr(sb, ptr)
 			}
+		case *parser.GroupedExpression:
+			// Unwrap GroupedExpression and check if inner expression is a string
+			if g.isStringExpr(a.Expression) {
+				ptr := g.getStrPtr(sb, a.Expression)
+				return g.extractStrDataPtr(sb, ptr)
+			}
+			return ""
 		}
 		return ""
 	}

@@ -2,7 +2,6 @@
 //
 // printf(fmt str, args ...any)  → @printf(i8*, ...)
 // print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg) + 換行
-
 printf = (fmt str) {
     // LLVM: call i32 @printf(i8* %fmt, ...args)
 }

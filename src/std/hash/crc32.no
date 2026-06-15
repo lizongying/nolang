@@ -8,7 +8,7 @@
 
 // crc-32: 計算 CRC32 校驗和
 // s: 輸入字串, n: 字串長度, crc: 輸出校驗和
-crc-32(s str, n i64, crc i64) {
+crc-32 = (s str, n i64, crc i64) {
     crc = 4294967295
     i = 0
     for i < n {
@@ -16,13 +16,13 @@ crc-32(s str, n i64, crc i64) {
         j = 0
         for j < 8 {
             if crc & 1 == 1 {
-                crc = (crc >> 1) ^ 3988292384
+                crc = crc >> 1 ^ 3988292384
             } else {
                 crc = crc >> 1
             }
-            j = j + 1
         }
-        i = i + 1
     }
-    crc = crc ^ 4294967295
+    j = j + 1
 }
+i = i + 1
+crc = crc ^ 4294967295

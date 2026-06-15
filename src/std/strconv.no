@@ -4,41 +4,85 @@
 //   str ↔ i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/bool/char/byte
 
 // 字符串 → 整数（全部通过 atoi/strtol 实现）
-str-to-i8 = (s str) (n i64) { } // atoi → trunc to i8 → zext
-str-to-i16 = (s str) (n i64) { } // atoi → trunc to i16 → zext
-str-to-i32 = (s str) (n i64) { } // atoi → trunc to i32 → zext
-str-to-i64 = (s str) (n i64) { } // call i64 @atoi
+str-to-i8 = (s str) (n i64) {  // atoi → trunc to i8 → zext
+}
 
-str-to-u8 = (s str) (n i64) { } // strtoul → trunc to u8 → zext
-str-to-u16 = (s str) (n i64) { } // strtoul → trunc to u16 → zext
-str-to-u32 = (s str) (n i64) { } // strtoul → trunc to u32 → zext
-str-to-u64 = (s str) (n i64) { } // strtoul → zext
+str-to-i16 = (s str) (n i64) {  // atoi → trunc to i16 → zext
+}
+
+str-to-i32 = (s str) (n i64) {  // atoi → trunc to i32 → zext
+}
+
+str-to-i64 = (s str) (n i64) {  // call i64 @atoi
+}
+
+str-to-u8 = (s str) (n i64) {  // strtoul → trunc to u8 → zext
+}
+
+str-to-u16 = (s str) (n i64) {  // strtoul → trunc to u16 → zext
+}
+
+str-to-u32 = (s str) (n i64) {  // strtoul → trunc to u32 → zext
+}
+
+str-to-u64 = (s str) (n i64) {  // strtoul → zext
+}
 
 // 字符串 → 浮点
-str-to-f32 = (s str) (val f64) { } // call double @strtod → fptrunc to float
-str-to-f64 = (s str) (val f64) { } // call double @strtod
+str-to-f32 = (s str) (val f64) {  // call double @strtod → fptrunc to float
+}
+
+str-to-f64 = (s str) (val f64) {  // call double @strtod
+}
 
 // 字符串 → 其他
-str-to-bool = (s str) (ok i64) { } // strcmp(s,"true") → icmp eq → zext
-str-to-byte = (s str) (val i64) { } // atoi → trunc to i8 → zext (同 str-to-i8)
-str-to-char = (s str) (val i64) { } // 取首字節 ascii 值
+str-to-bool = (s str) (ok i64) {  // strcmp(s,"true") → icmp eq → zext
+}
+
+str-to-byte = (s str) (val i64) {  // atoi → trunc to i8 → zext (同 str-to-i8)
+}
+
+str-to-char = (s str) (val i64) {  // 取首字節 ascii 值
+}
 
 // 整数 → 字符串
-i8-to-str = (v i64) (s str) { } // sprintf(buf, "%hhd", v)
-i16-to-str = (v i64) (s str) { } // sprintf(buf, "%hd", v)
-i32-to-str = (v i64) (s str) { } // sprintf(buf, "%d", v)
-i64-to-str = (v i64) (s str) { } // sprintf(buf, "%lld", v)
+i8-to-str = (v i64) (s str) {  // sprintf(buf, "%hhd", v)
+}
 
-u8-to-str = (v i64) (s str) { } // sprintf(buf, "%hhu", v)
-u16-to-str = (v i64) (s str) { } // sprintf(buf, "%hu", v)
-u32-to-str = (v i64) (s str) { } // sprintf(buf, "%u", v)
-u64-to-str = (v i64) (s str) { } // sprintf(buf, "%llu", v)
+i16-to-str = (v i64) (s str) {  // sprintf(buf, "%hd", v)
+}
+
+i32-to-str = (v i64) (s str) {  // sprintf(buf, "%d", v)
+}
+
+i64-to-str = (v i64) (s str) {  // sprintf(buf, "%lld", v)
+}
+
+u8-to-str = (v i64) (s str) {  // sprintf(buf, "%hhu", v)
+}
+
+u16-to-str = (v i64) (s str) {  // sprintf(buf, "%hu", v)
+}
+
+u32-to-str = (v i64) (s str) {  // sprintf(buf, "%u", v)
+}
+
+u64-to-str = (v i64) (s str) {  // sprintf(buf, "%llu", v)
+}
 
 // 浮点 → 字符串
-f32-to-str = (v f64) (s str) { } // sprintf(buf, "%g", (double)v)
-f64-to-str = (v f64) (s str) { } // sprintf(buf, "%g", v)
+f32-to-str = (v f64) (s str) {  // sprintf(buf, "%g", (double)v)
+}
+
+f64-to-str = (v f64) (s str) {  // sprintf(buf, "%g", v)
+}
 
 // 其他 → 字符串
-bool-to-str = (v i64) (s str) { } // select i1 v, "true", "false"
-byte-to-str = (v i64) (s str) { } // sprintf(buf, "%hhu", v)
-char-to-str = (v i64) (s str) { } // sprintf(buf, "%c", v)
+bool-to-str = (v i64) (s str) {  // select i1 v, "true", "false"
+}
+
+byte-to-str = (v i64) (s str) {  // sprintf(buf, "%hhu", v)
+}
+
+char-to-str = (v i64) (s str) {  // sprintf(buf, "%c", v)
+}

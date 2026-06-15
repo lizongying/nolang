@@ -15,12 +15,12 @@
 // ─── 內部輔助 ─────────────────────────────────
 
 // tar-block: 計算第 idx 個條目的區塊偏移（header 起始）
-tar-block(idx i64)(off i64) {
+tar-block = (idx i64) (off i64) {
     off = idx * 512
 }
 
 // tar-next: 跳過第 idx 個條目的 header + data，回傳下個條目偏移
-tar-next(data []byte, idx i64)(next i64) {
+tar-next = (data []byte, idx i64) (next i64) {
     hdr = idx * 512
     // 讀取 size 欄位（偏移 124，8 位元組八進制）
     sz = 0
@@ -43,7 +43,7 @@ tar-next(data []byte, idx i64)(next i64) {
 // ─── 查詢 ─────────────────────────────────────
 
 // tar-count: 計算 TAR 中的有效條目數
-tar-count(data []byte)(count i64) {
+tar-count = (data []byte) (count i64) {
     count = 0
     off = 0
     n = len(data)
@@ -67,7 +67,7 @@ tar-count(data []byte)(count i64) {
 }
 
 // tar-name: 讀取第 idx 個條目的檔名
-tar-name(data []byte, idx i64)(name str) {
+tar-name = (data []byte, idx i64) (name str) {
     hdr = idx * 512
     // 最多 100 字元，遇到 \0 結束
     i = 0
@@ -82,7 +82,7 @@ tar-name(data []byte, idx i64)(name str) {
 }
 
 // tar-size: 讀取第 idx 個條目的檔案大小（八進制）
-tar-size(data []byte, idx i64)(sz i64) {
+tar-size = (data []byte, idx i64) (sz i64) {
     hdr = idx * 512
     sz = 0
     i = 0
@@ -97,7 +97,7 @@ tar-size(data []byte, idx i64)(sz i64) {
 
 // tar-type: 讀取第 idx 個條目的類型
 // 返回 "file"、"dir" 或 "unknown"
-tar-type(data []byte, idx i64)(typ str) {
+tar-type = (data []byte, idx i64) (typ str) {
     hdr = idx * 512
     c = data[hdr + 156] & 255
     typ = 'unknown'
@@ -110,7 +110,7 @@ tar-type(data []byte, idx i64)(typ str) {
 }
 
 // tar-is-dir: 是否為目錄
-tar-is-dir(data []byte, idx i64)(yes i64) {
+tar-is-dir = (data []byte, idx i64) (yes i64) {
     tar-type(data, idx)(t)
     if t == 'dir' {
         yes = 1
@@ -122,7 +122,7 @@ tar-is-dir(data []byte, idx i64)(yes i64) {
 // ─── 提取 ─────────────────────────────────────
 
 // tar-read: 提取第 idx 個條目的內容
-tar-read(data []byte, idx i64)(out []byte) {
+tar-read = (data []byte, idx i64) (out []byte) {
     tar-size(data, idx)(sz)
     hdr = idx * 512
     if sz > 0 {
@@ -139,7 +139,7 @@ tar-read(data []byte, idx i64)(out []byte) {
 // tar-for-each: 遍歷所有條目
 // 每次回呼傳入 (idx, name, sz, typ, data)
 // 返回 0 繼續，非 0 停止
-tar-for-each(data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
     idx = 0
     n = len(data)
     off = 0
@@ -154,14 +154,18 @@ tar-for-each(data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
             }
             i = i + 1
         }
-        if empty == 1 { return }
+        if empty == 1 {
+            return
+        }
 
         // 讀取名稱
         name = ''
         i = 0
         for i < 100 {
             c = data[off + i] & 255
-            if c == 0 { break }
+            if c == 0 {
+                break
+            }
             name[i] = c
             i = i + 1
         }
@@ -179,9 +183,13 @@ tar-for-each(data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
 
         // 類型
         c = data[off + 156] & 255
-        if c == 48 || c == 0 { typ = 'file' }
-        elif c == 53 { typ = 'dir' }
-        else { typ = 'unknown' }
+        if c == 48 || c == 0 {
+            typ = 'file'
+        } elif c == 53 {
+            typ = 'dir'
+        } else {
+            typ = 'unknown'
+        }
 
         // 資料
         if sz > 0 {
@@ -194,7 +202,9 @@ tar-for-each(data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
 
         // 前進到下個條目
         blocks = (sz + 511) / 512
-        if blocks < 0 { blocks = 0 }
+        if blocks < 0 {
+            blocks = 0
+        }
         off = off + 512 + blocks * 512
         idx = idx + 1
     }

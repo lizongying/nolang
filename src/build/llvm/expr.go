@@ -169,6 +169,8 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateIndexExpression(sb, e)
 	case *parser.InfixExpression:
 		return g.generateInfix(sb, e)
+	case *parser.GroupedExpression:
+		return g.generateExprWithSB(sb, e.Expression)
 	default:
 		return "0"
 	}
@@ -351,6 +353,8 @@ func isFloatExpr(e parser.Expression) bool {
 		return isFloatExpr(v.Left) || isFloatExpr(v.Right)
 	case *parser.PrefixExpression:
 		return isFloatExpr(v.Right)
+	case *parser.GroupedExpression:
+		return isFloatExpr(v.Expression)
 	}
 	return false
 }

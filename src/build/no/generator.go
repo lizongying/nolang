@@ -207,6 +207,8 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 		return g.generateNullableType(e)
 	case *parser.PointerType:
 		return "ptr(" + g.generateExpression(e.Type) + ")"
+	case *parser.GroupedExpression:
+		return g.generateExpression(e.Expression)
 	default:
 		return ""
 	}
