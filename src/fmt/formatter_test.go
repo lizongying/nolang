@@ -526,6 +526,80 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
 		},
 
 		{
+			name: "func7",
+			input: strings.TrimSpace(`
+// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
+// ek: 輸出輪金鑰字串（176 位元組）
+aes-key-expand = (key str, ek str) {
+    // 複製原始金鑰（前 16 位元組）
+    i = 0
+    for i < 16 {
+        ek[i] = key[i]
+        i = i + 1
+    }
+
+    // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
+    i = 4
+    for i < 44 {
+        // 讀取前一個字
+        off = (i - 1) * 4
+        w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+        if i % 4 == 0 {
+            rot-word(w, rw)
+            sub-word(rw, sw)
+            rcon-val(i / 4, rc)
+            w = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
+            w = (w ^ sw ^ (rc << 24)) & 4294967295
+        } else {
+            w-prev4 = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
+            w = (w-prev4 ^ w) & 4294967295
+        }
+    }
+    ek[i * 4] = (w >> 24) & 255
+    ek[i * 4 + 1] = (w >> 16) & 255
+    ek[i * 4 + 2] = (w >> 8) & 255
+    ek[i * 4 + 3] = w & 255
+    i = i + 1
+}
+			`),
+			expected: strings.TrimSpace(`
+// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
+// ek: 輸出輪金鑰字串（176 位元組）
+aes-key-expand = (key str, ek str) {
+    // 複製原始金鑰（前 16 位元組）
+    i = 0
+    for i < 16 {
+        ek[i] = key[i]
+        i = i + 1
+    }
+
+    // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
+    i = 4
+    for i < 44 {
+        // 讀取前一個字
+        off = (i - 1) * 4
+        w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+        if i % 4 == 0 {
+            rot-word(w, rw)
+            sub-word(rw, sw)
+            rcon-val(i / 4, rc)
+            w = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
+            w = (w ^ sw ^ (rc << 24)) & 4294967295
+        } else {
+            w-prev4 = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
+            w = (w-prev4 ^ w) & 4294967295
+        }
+    }
+    ek[i * 4] = (w >> 24) & 255
+    ek[i * 4 + 1] = (w >> 16) & 255
+    ek[i * 4 + 2] = (w >> 8) & 255
+    ek[i * 4 + 3] = w & 255
+    i = i + 1
+}
+			`),
+		},
+
+		{
 			name: "comment1",
 			input: strings.TrimSpace(`
 // rsa — RSA 加解密（多精度整數模冪）
@@ -592,6 +666,219 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
     }
     cmp = 0
 }
+			`),
+		},
+
+		{
+			name: "comment2",
+			input: strings.TrimSpace(`
+
+// aes-128-dec: 解密一個 16-byte 區塊
+// in: 輸入密文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出明文（16 位元組）
+aes-128-dec= (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 10）
+    add-round-key(out, ek + 160)
+
+    // 第 9-1 輪
+    round = 9
+    for round > 0 {
+        inv-shift-rows(out)
+        inv-sub-bytes(out, 16)
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)
+        inv-mix-columns(out)
+        round = round - 1
+    }
+
+    // 第 0 輪
+    inv-shift-rows(out)
+    inv-sub-bytes(out, 16)
+    add-round-key(out, ek)
+}
+			`),
+			expected: strings.TrimSpace(`
+
+// aes-128-dec: 解密一個 16-byte 區塊
+// in: 輸入密文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出明文（16 位元組）
+aes-128-dec = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 10）
+    add-round-key(out, ek + 160)
+
+    // 第 9-1 輪
+    round = 9
+    for round > 0 {
+        inv-shift-rows(out)
+        inv-sub-bytes(out, 16)
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)
+        inv-mix-columns(out)
+        round = round - 1
+    }
+
+    // 第 0 輪
+    inv-shift-rows(out)
+    inv-sub-bytes(out, 16)
+    add-round-key(out, ek)
+}
+			`),
+		},
+
+		{
+			name: "comment3",
+			input: strings.TrimSpace(`
+
+// ─── 單區塊加密/解密 ──────────────────────────────
+
+// aes-128-enc: 加密一個 16-byte 區塊
+// in: 輸入明文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出密文（16 位元組）
+aes-128-enc= (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 0）
+    // 輪金鑰 0：ek[0..15]
+    add-round-key(out, ek)
+
+    // 第 1-9 輪
+    round = 1
+    for round < 10 {
+        sub-bytes(out, 16)
+        shift-rows(out)
+        mix-columns(out)
+        // 輪金鑰 round：ek[round*16..round*16+15]
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
+        round = round + 1
+    }
+
+    // 第 10 輪（無 MixColumns）
+    sub-bytes(out, 16)
+    shift-rows(out)
+    add-round-key(out, ek + 160)
+}
+			`),
+			expected: strings.TrimSpace(`
+
+
+// ─── 單區塊加密/解密 ──────────────────────────────
+
+// aes-128-enc: 加密一個 16-byte 區塊
+// in: 輸入明文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出密文（16 位元組）
+aes-128-enc = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 0）
+    // 輪金鑰 0：ek[0..15]
+    add-round-key(out, ek)
+
+    // 第 1-9 輪
+    round = 1
+    for round < 10 {
+        sub-bytes(out, 16)
+        shift-rows(out)
+        mix-columns(out)
+        // 輪金鑰 round：ek[round*16..round*16+15]
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
+        round = round + 1
+    }
+
+    // 第 10 輪（無 MixColumns）
+    sub-bytes(out, 16)
+    shift-rows(out)
+    add-round-key(out, ek + 160)
+}
+			`),
+		},
+
+		{
+			name: "str1",
+			input: strings.TrimSpace(`
+INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
+           '\x7c\xe3\x39\x82\x9b\x2f\xff\x87\x34\x8e\x43\x44\xc4\xde\xe9\xcb' +
+           '\x54\x7b\x94\x32\xa6\xc2\x23\x3d\xee\x4c\x95\x0b\x42\xfa\xc3\x4e' +
+           '\x08\x2e\xa1\x66\x28\xd9\x24\xb2\x76\x5b\xa2\x49\x6d\x8b\xd1\x25' +
+           '\x72\xf8\xf6\x64\x86\x68\x98\x16\xd4\xa4\x5c\xcc\x5d\x65\xb6\x92' +
+           '\x6c\x70\x48\x50\xfd\xed\xb9\xda\x5e\x15\x46\x57\xa7\x8d\x9d\x84' +
+           '\x90\xd8\xab\x00\x8c\xbc\xd3\x0a\xf7\xe4\x58\x05\xb8\xb3\x45\x06' +
+           '\xd0\x2c\x1e\x8f\xca\x3f\x0f\x02\xc1\xaf\xbd\x03\x01\x13\x8a\x6b' +
+           '\x3a\x91\x11\x41\x4f\x67\xdc\xea\x97\xf2\xcf\xce\xf0\xb4\xe6\x73' +
+           '\x96\xac\x74\x22\xe7\xad\x35\x85\xe2\xf9\x37\xe8\x1c\x75\xdf\x6e' +
+           '\x47\xf1\x1a\x71\x1d\x29\xc5\x89\x6f\xb7\x62\x0e\xaa\x18\xbe\x1b' +
+           '\xfc\x56\x3e\x4b\xc6\xd2\x79\x20\x9a\xdb\xc0\xfe\x78\xcd\x5a\xf4' +
+           '\x1f\xdd\xa8\x33\x88\x07\xc7\x31\xb1\x12\x10\x59\x27\x80\xec\x5f' +
+           '\x60\x51\x7f\xa9\x19\xb5\x4a\x0d\x2d\xe5\x7a\x9f\x93\xc9\x9c\xef' +
+           '\xa0\xe0\x3b\x4d\xae\x2a\xf5\xb0\xc8\xeb\xbb\x3c\x83\x53\x99\x61' +
+           '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'
+			`),
+			expected: strings.TrimSpace(`
+INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
+           '\x7c\xe3\x39\x82\x9b\x2f\xff\x87\x34\x8e\x43\x44\xc4\xde\xe9\xcb' +
+           '\x54\x7b\x94\x32\xa6\xc2\x23\x3d\xee\x4c\x95\x0b\x42\xfa\xc3\x4e' +
+           '\x08\x2e\xa1\x66\x28\xd9\x24\xb2\x76\x5b\xa2\x49\x6d\x8b\xd1\x25' +
+           '\x72\xf8\xf6\x64\x86\x68\x98\x16\xd4\xa4\x5c\xcc\x5d\x65\xb6\x92' +
+           '\x6c\x70\x48\x50\xfd\xed\xb9\xda\x5e\x15\x46\x57\xa7\x8d\x9d\x84' +
+           '\x90\xd8\xab\x00\x8c\xbc\xd3\x0a\xf7\xe4\x58\x05\xb8\xb3\x45\x06' +
+           '\xd0\x2c\x1e\x8f\xca\x3f\x0f\x02\xc1\xaf\xbd\x03\x01\x13\x8a\x6b' +
+           '\x3a\x91\x11\x41\x4f\x67\xdc\xea\x97\xf2\xcf\xce\xf0\xb4\xe6\x73' +
+           '\x96\xac\x74\x22\xe7\xad\x35\x85\xe2\xf9\x37\xe8\x1c\x75\xdf\x6e' +
+           '\x47\xf1\x1a\x71\x1d\x29\xc5\x89\x6f\xb7\x62\x0e\xaa\x18\xbe\x1b' +
+           '\xfc\x56\x3e\x4b\xc6\xd2\x79\x20\x9a\xdb\xc0\xfe\x78\xcd\x5a\xf4' +
+           '\x1f\xdd\xa8\x33\x88\x07\xc7\x31\xb1\x12\x10\x59\x27\x80\xec\x5f' +
+           '\x60\x51\x7f\xa9\x19\xb5\x4a\x0d\x2d\xe5\x7a\x9f\x93\xc9\x9c\xef' +
+           '\xa0\xe0\x3b\x4d\xae\x2a\xf5\xb0\xc8\xeb\xbb\x3c\x83\x53\x99\x61' +
+           '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'
 			`),
 		},
 	}

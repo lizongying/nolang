@@ -995,7 +995,8 @@ func Format(code string) string {
 		for stmtIdx := 0; stmtIdx < len(f.stmtLineCnt); stmtIdx++ {
 			start := stmtFormattedStart[stmtIdx]
 			end := start + f.stmtLineCnt[stmtIdx]
-			stmtLines := formattedLines[start:end]
+			stmtLines := make([]string, end-start)
+			copy(stmtLines, formattedLines[start:end])
 
 			if entries, ok := commentsByStmt[stmtIdx]; ok && len(entries) > 0 {
 				offset := 0
@@ -1022,6 +1023,7 @@ func Format(code string) string {
 					// 当下一条代码行是 } 时，插入到语句末尾（最后一个 } 之前）
 					// 避免 } 在格式化输出中出现多次导致错误定位
 					insertPos := -1
+					prevIsCloseBrace := false
 					if nextCodeLine == "}" {
 						for k := len(stmtLines) - 1; k >= 0; k-- {
 							if strings.TrimSpace(stmtLines[k]) == "}" {
@@ -1033,22 +1035,51 @@ func Format(code string) string {
 					}
 
 					// 在 stmtLines 中找到匹配 nextCodeLine 的位置
-					// 优先精确匹配（避免变量名相同但内容不同的误匹配），再回退到模糊匹配
-					// 第一遍：精确匹配
-					for k, sl := range stmtLines {
-						trimmed := strings.TrimSpace(sl)
-						if trimmed == nextCodeLine {
-							insertPos = k
+					// 如果上一代码行是 }，从右向左匹配最后一个（避免 for 循环体内的重复行）
+					for prev := entry.lineIdx - 1; prev >= 0; prev-- {
+						if lineTypes[prev] == lineCode {
+							if strings.TrimSpace(cleanLines[prev]) == "}" {
+								prevIsCloseBrace = true
+							}
 							break
 						}
 					}
-					// 第二遍：模糊匹配（仅当精确匹配失败时）
-					if insertPos < 0 {
-						for k, sl := range stmtLines {
-							trimmed := strings.TrimSpace(sl)
-							if matchFormattedLine(trimmed, nextCodeLine) {
+					// 第一遍：精确匹配
+					if prevIsCloseBrace {
+						// } 之后：从右向左匹配最后一个
+						for k := len(stmtLines) - 1; k >= 0; k-- {
+							trimmed := strings.TrimSpace(stmtLines[k])
+							if trimmed == nextCodeLine {
 								insertPos = k
 								break
+							}
+						}
+						// 第二遍：模糊匹配
+						if insertPos < 0 {
+							for k := len(stmtLines) - 1; k >= 0; k-- {
+								trimmed := strings.TrimSpace(stmtLines[k])
+								if matchFormattedLine(trimmed, nextCodeLine) {
+									insertPos = k
+									break
+								}
+							}
+						}
+					} else {
+						// 其他：从左向右匹配第一个
+						for k, sl := range stmtLines {
+							trimmed := strings.TrimSpace(sl)
+							if trimmed == nextCodeLine {
+								insertPos = k
+								break
+							}
+						}
+						if insertPos < 0 {
+							for k, sl := range stmtLines {
+								trimmed := strings.TrimSpace(sl)
+								if matchFormattedLine(trimmed, nextCodeLine) {
+									insertPos = k
+									break
+								}
 							}
 						}
 					}
@@ -1089,6 +1120,7 @@ func Format(code string) string {
 
 	stmtIdx := 0
 	formLineIdx := 0
+	continuationRemaining := 0
 	var result []string
 	for origLineIdx, lt := range lineTypes {
 		if lt == linePreserved {
@@ -1156,13 +1188,27 @@ func Format(code string) string {
 		// 代码行：只有当此行为语句起始行时才输出格式化内容
 		if stmtStartLines[origLineIdx] && stmtIdx < len(f.stmtLineCnt) {
 			cnt := f.stmtLineCnt[stmtIdx]
+			sourceCodeLines := 1
+			for next := origLineIdx + 1; next < len(lineTypes); next++ {
+				if lineTypes[next] == linePreserved {
+					continue
+				}
+				if lineTypes[next] == lineCode && stmtStartLines[next] {
+					break
+				}
+				sourceCodeLines++
+			}
+
 			for j := 0; j < cnt && formLineIdx+j < len(formattedLines); j++ {
 				result = append(result, formattedLines[formLineIdx+j])
 			}
 			formLineIdx += cnt
 			stmtIdx++
+			continuationRemaining = sourceCodeLines - cnt
+		} else if continuationRemaining > 0 {
+			result = append(result, cleanLines[origLineIdx])
+			continuationRemaining--
 		}
-		// 非起始行的代码行（如 }）隶属于上一个 statement，不输出
 	}
 
 	// 將行尾註釋匹配到格式化輸出
@@ -1172,11 +1218,33 @@ func Format(code string) string {
 			if ident == "" {
 				continue
 			}
+			codeLine := comment.codeLine
+			// 先嘗試精確匹配（移除全部空白後比對）
+			noSpace := func(s string) string {
+				var b strings.Builder
+				for i := 0; i < len(s); i++ {
+					if s[i] != ' ' && s[i] != '\t' {
+						b.WriteByte(s[i])
+					}
+				}
+				return b.String()
+			}
+			codeNoSpace := noSpace(codeLine)
+			bestJ := -1
 			for j, line := range result {
 				if extractFirstIdentifier(line) == ident && !strings.Contains(result[j], "//"+comment.comment) {
-					result[j] = line + "  // " + comment.comment
-					break
+					if strings.Contains(noSpace(line), codeNoSpace) || strings.Contains(codeNoSpace, noSpace(line)) {
+						result[j] = line + "  // " + comment.comment
+						bestJ = -1
+						break
+					}
+					if bestJ < 0 {
+						bestJ = j
+					}
 				}
+			}
+			if bestJ >= 0 {
+				result[bestJ] = result[bestJ] + "  // " + comment.comment
 			}
 		}
 	}
@@ -1230,6 +1298,25 @@ func matchFormattedLine(trimmedFormatted, codeLine string) bool {
 		if prefix != "" && strings.HasPrefix(strings.TrimSpace(trimmedFormatted), prefix) {
 			return true
 		}
+	}
+	// 5. 移除全部空格後比較（處理格式化增減空格的情況）
+	noSpace := func(s string) string {
+		var b strings.Builder
+		b.Grow(len(s))
+		for i := 0; i < len(s); i++ {
+			if s[i] != ' ' && s[i] != '\t' {
+				b.WriteByte(s[i])
+			}
+		}
+		return b.String()
+	}
+	codeNoSpace := noSpace(codeLine)
+	formattedNoSpace := noSpace(trimmedFormatted)
+	if codeNoSpace == formattedNoSpace {
+		return true
+	}
+	if strings.HasPrefix(formattedNoSpace, codeNoSpace) || strings.HasPrefix(codeNoSpace, formattedNoSpace) {
+		return true
 	}
 	return false
 }
