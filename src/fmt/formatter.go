@@ -50,6 +50,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 		}
 		return strings.Count(s, "\n") + 1
 	}
+
 	for i, stmt := range p.Statements {
 		before := lineCount()
 
@@ -347,10 +348,31 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	}
 	f.write(" {")
 	f.indent++
+
+	// 過濾掉 ; 分隔符產生的空表達式語句
+	statements := make([]parser.Statement, 0, len(s.Body.Statements))
 	for _, stmt := range s.Body.Statements {
-		f.newline()
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
+
+	for i, stmt := range statements {
+		if i > 0 {
+			prevLine := stmtTokenLine(statements[i-1])
+			currLine := stmtTokenLine(stmt)
+			if prevLine > 0 && prevLine == currLine {
+				f.write("; ")
+			} else {
+				f.newline()
+			}
+		} else {
+			f.newline()
+		}
 		f.formatStatement(stmt)
 	}
+
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -389,8 +411,28 @@ func (f *formatter) formatParameters(params []*parser.Parameter) {
 func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	f.write("{")
 	f.indent++
+
+	// 過濾掉 ; 分隔符產生的空表達式語句
+	statements := make([]parser.Statement, 0, len(s.Statements))
 	for _, stmt := range s.Statements {
-		f.newline()
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
+
+	for i, stmt := range statements {
+		if i > 0 {
+			prevLine := stmtTokenLine(statements[i-1])
+			currLine := stmtTokenLine(stmt)
+			if prevLine > 0 && prevLine == currLine {
+				f.write("; ")
+			} else {
+				f.newline()
+			}
+		} else {
+			f.newline()
+		}
 		f.formatStatement(stmt)
 	}
 	f.indent--
@@ -1249,7 +1291,7 @@ func Format(code string) string {
 		}
 	}
 
-	return strings.Join(result, "\n")
+	return strings.TrimRight(strings.Join(result, "\n"), "\n")
 }
 
 // extractFirstIdentifier 從一行程式碼中提取首個有效的 Nolang 標識符

@@ -843,6 +843,125 @@ aes-128-enc = (in str, n i64, key str, out str) {
 		},
 
 		{
+			name: "comment4",
+			input: strings.TrimSpace(`
+// sha1 — SHA-1 安全哈希算法（160-bit）
+//
+// 處理一個 512-bit（16 字）區塊。
+// 多區塊訊息需由呼叫者自行填充和累加。
+//
+// 用法：
+//   h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+//   sha1(block, 16, h0, h1, h2, h3, h4)
+
+// sha1: 處理一個 512-bit 區塊
+// s: 16 個 32-bit 字 (big-endian)
+// n: 固定 16
+// h0..h4: 輸入/輸出 160-bit 哈希狀態
+sha1 = (s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64) {
+    MASK = 4294967295
+
+    // 初始狀態
+    a = h0; b = h1; c = h2; d = h3; e = h4
+
+    // ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
+    // f = (b & c) | (~b & d)
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[0])  & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+
+
+    // 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
+
+    // w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
+    w = s[13] ^ s[8] ^ s[2] ^ s[0]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
+    w = s[14] ^ s[9] ^ s[3] ^ s[1]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
+    w = s[15] ^ s[10] ^ s[4] ^ s[2]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+
+
+    // 累加回初始哈希值
+    h0 = (h0 + a) & MASK
+    h1 = (h1 + b) & MASK
+    h2 = (h2 + c) & MASK
+    h3 = (h3 + d) & MASK
+    h4 = (h4 + e) & MASK
+}
+
+			`),
+			expected: strings.TrimSpace(`
+// sha1 — SHA-1 安全哈希算法（160-bit）
+//
+// 處理一個 512-bit（16 字）區塊。
+// 多區塊訊息需由呼叫者自行填充和累加。
+//
+// 用法：
+//   h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+//   sha1(block, 16, h0, h1, h2, h3, h4)
+
+// sha1: 處理一個 512-bit 區塊
+// s: 16 個 32-bit 字 (big-endian)
+// n: 固定 16
+// h0..h4: 輸入/輸出 160-bit 哈希狀態
+sha1 = (s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64) {
+    MASK = 4294967295
+
+    // 初始狀態
+    a = h0; b = h1; c = h2; d = h3; e = h4
+
+    // ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
+    // f = (b & c) | (~b & d)
+
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[0]) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
+
+    // w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
+    w = s[13] ^ s[8] ^ s[2] ^ s[0]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
+    w = s[14] ^ s[9] ^ s[3] ^ s[1]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
+    w = s[15] ^ s[10] ^ s[4] ^ s[2]; w = ((w << 1) | (w >> 31)) & MASK
+    f = (b & c) | ((MASK ^ b) & d)
+    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+
+    // 累加回初始哈希值
+    h0 = (h0 + a) & MASK
+    h1 = (h1 + b) & MASK
+    h2 = (h2 + c) & MASK
+    h3 = (h3 + d) & MASK
+    h4 = (h4 + e) & MASK
+}
+`),
+		},
+
+		{
 			name: "str1",
 			input: strings.TrimSpace(`
 INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +

@@ -1433,8 +1433,9 @@ func (p *Parser) parseBreakStatement() Statement {
 }
 
 func (p *Parser) parseExpressionStatement() Statement {
+	tok := p.currentToken
 	stmt := &ExpressionStatement{
-		Token:      p.currentToken,
+		Token:      tok,
 		Expression: p.parseExpression(LOWEST),
 	}
 
