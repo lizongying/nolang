@@ -4259,7 +4259,7 @@ func (p *Parser) parseArgument() Expression {
 		p.nextToken()
 		return p.parseArgument()
 	case lexer.LPAREN:
-		return p.parseGroupedExpression()
+		return p.parseExpression(LOWEST)
 	default:
 		// 如果是其他类型，尝试使用 LOWEST 优先级解析
 		return p.parseExpression(LOWEST)
