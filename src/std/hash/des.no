@@ -101,7 +101,7 @@ SHIFT_TBL = '\x01\x01\x02\x02\x02\x02\x02\x02\x01\x02\x02\x02\x02\x02\x02\x01'
 // permute: 根據排列表提取位元
 // input: 輸入值, tbl: 排列表字串, n: 輸出位元數
 // r: 輸出排列後的值
-permute(input i64, tbl str, n i64, r i64) {
+permute=(input i64, tbl str, n i64, r i64) {
     r = 0
     i = 0
     for i < n {
@@ -115,7 +115,7 @@ permute(input i64, tbl str, n i64, r i64) {
 // sbox-lookup: 查詢 S-box
 // input: 6 位元值 (0-63), box: S-box 字串 (64 位元組)
 // r: 輸出 4 位元值 (0-15)
-sbox-lookup(input i64, box str, r i64) {
+sbox-lookup=(input i64, box str, r i64) {
     r = box[input & 63] & 15
 }
 
@@ -124,7 +124,7 @@ sbox-lookup(input i64, box str, r i64) {
 // f: DES 輪函數
 // r: 32-bit 右半部, k: 48-bit 子金鑰
 // out: 32-bit 輸出
-f(r i64, k i64, out i64) {
+f = (r i64, k i64, out i64) {
     // 擴展 R 到 48 位元
     permute(r, E_TBL, 48, er)
     // XOR 子金鑰
@@ -150,7 +150,7 @@ f(r i64, k i64, out i64) {
 // des-key-schedule: 產生 16 個 48-bit 子金鑰
 // key: 8-byte 金鑰 (含奇偶校驗位)
 // ks: 輸出子金鑰字串（16×6 = 96 位元組，每個子金鑰 6 位元組 big-endian）
-des-key-schedule(key str, ks str) {
+des-key-schedule = (key str, ks str) {
     // 將 8-byte 金鑰轉為 64-bit 值
     k64 = 0
     i = 0
@@ -205,7 +205,7 @@ des-key-schedule(key str, ks str) {
 // des-block: DES 單區塊處理（通用）
 // in: 8-byte 輸入, out: 8-byte 輸出
 // ks: 96-byte 子金鑰, encrypt: 1=加密 0=解密
-des-block(in str, n i64, ks str, encrypt i64, out str) {
+des-block= (in str, n i64, ks str, encrypt i64, out str) {
     // 將輸入轉為 64-bit
     block = 0
     i = 0
@@ -255,14 +255,14 @@ des-block(in str, n i64, ks str, encrypt i64, out str) {
 }
 
 // des-enc: 加密一個 8-byte 區塊
-des-enc(in str, n i64, key str, out str) {
+des-enc = (in str, n i64, key str, out str) {
     ks = '(96 bytes)'
     des-key-schedule(key, ks)
     des-block(in, n, out, ks, 1)
 }
 
 // des-dec: 解密一個 8-byte 區塊
-des-dec(in str, n i64, key str, out str) {
+des-dec = (in str, n i64, key str, out str) {
     ks = '(96 bytes)'
     des-key-schedule(key, ks)
     des-block(in, n, out, ks, 0)

@@ -1621,6 +1621,75 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// isValidVarName 檢查名稱是否只包含小寫字母（a-z）、中連接符（-）和數字，且不能以數字開頭
+func isValidVarName(name string) bool {
+	if name == "" {
+		return true
+	}
+	for i, ch := range name {
+		if i == 0 {
+			// 不能以數字開頭
+			if ch >= '0' && ch <= '9' {
+				return false
+			}
+		}
+		if ch != '-' && (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateNaming 檢查所有變數/函數名稱是否符合命名規範（只用小寫和中劃線）
+func ValidateNaming(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		results = append(results, checkNaming(stmt)...)
+	}
+	return results
+}
+
+func checkNaming(stmt parser.Statement) []ValidateResult {
+	var results []ValidateResult
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		if !isValidVarName(s.Name) {
+			results = append(results, ValidateResult{
+				Line:    s.Token.Line,
+				Column:  s.Token.Column,
+				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name),
+			})
+		}
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				results = append(results, checkNaming(bStmt)...)
+			}
+		}
+	case *parser.LetStatement:
+		if s.Name != nil && !isValidVarName(s.Name.Value) {
+			results = append(results, ValidateResult{
+				Line:    s.Name.Token.Line,
+				Column:  s.Name.Token.Column,
+				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name.Value),
+			})
+		}
+	case *parser.BlockStatement:
+		for _, bStmt := range s.Statements {
+			results = append(results, checkNaming(bStmt)...)
+		}
+	case *parser.ExpressionStatement:
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				results = append(results, checkNaming(ifExpr.Consequence)...)
+			}
+			if ifExpr.Alternative != nil {
+				results = append(results, checkNaming(ifExpr.Alternative)...)
+			}
+		}
+	}
+	return results
+}
+
 // validateStmtTypes 檢查單個語句的型別問題
 func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varTypes map[string]string) []ValidateResult {
 	var results []ValidateResult

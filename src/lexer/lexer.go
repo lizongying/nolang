@@ -388,7 +388,7 @@ func (l *Lexer) PeekToken() (tok Token) {
 }
 
 func isLetter(ch byte) bool {
-	return unicode.IsLetter(rune(ch)) || ch == '-'
+	return unicode.IsLetter(rune(ch)) || ch == '-' || ch == '_'
 }
 
 func isHex(ch byte) bool {

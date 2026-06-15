@@ -2965,6 +2965,12 @@ func (p *Parser) parseIfExpression() Expression {
 		expr.Alternative = p.parseElifBlock()
 	}
 
+	// Consume the } that closes the last body, so that the outer
+	// parseBlockStatement/skipToStatementEnd doesn't see a premature RBRACE.
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
+	}
+
 	return expr
 }
 

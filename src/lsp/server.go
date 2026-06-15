@@ -144,6 +144,21 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 			diagnostics = append(diagnostics, diagnostic)
 		}
+
+		// 命名規範警告
+		namingWarnings := nbuild.ValidateNaming(ast)
+		for _, w := range namingWarnings {
+			diagnostic := Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
+					End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
+				},
+				Severity: DiagnosticSeverityWarning,
+				Source:   "nolang-lint",
+				Message:  w.Message,
+			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
 	}
 
 	if err := s.publishDiagnostics(uri, diagnostics); err != nil {

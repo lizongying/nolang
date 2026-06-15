@@ -1,33 +1,23 @@
-// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
-// ek: 輸出輪金鑰字串（176 位元組）
-aes-key-expand = (key str, ek str) {
-    // 複製原始金鑰（前 16 位元組）
-    i = 0
-    for i < 16 {
-        ek[i] = key[i]
-        i = i + 1
-    }
-
-    // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
-    i = 4
-    for i < 44 {
-        // 讀取前一個字
-        off = (i - 1) * 4
-        w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
-        if i % 4 == 0 {
-            rot-word(w, rw)
-            sub-word(rw, sw)
-            rcon-val(i / 4, rc)
-            w = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
-            w = (w ^ sw ^ (rc << 24)) & 4294967295
-        } else {
-            w-prev4 = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
-            w = (w-prev4 ^ w) & 4294967295
-        }
-    }
+// f: DES 輪函數
+// r: 32-bit 右半部, k: 48-bit 子金鑰
+// out: 32-bit 輸出
+f = (r i64, k i64, out i64) {
+    // 擴展 R 到 48 位元
+    permute(r, E_TBL, 48, er)
+    // XOR 子金鑰
+    x = er ^ k
+    // S-box 替代（6→4 位元 × 8）
+    sbox-lookup((x >> 42) & 63, SBOX1, s0)
+    sbox-lookup((x >> 36) & 63, SBOX2, s1)
+    sbox-lookup((x >> 30) & 63, SBOX3, s2)
+    sbox-lookup((x >> 24) & 63, SBOX4, s3)
+    sbox-lookup((x >> 18) & 63, SBOX5, s4)
+    sbox-lookup((x >> 12) & 63, SBOX6, s5)
+    sbox-lookup((x >> 6) & 63, SBOX7, s6)
+    sbox-lookup(x & 63, SBOX8, s7)
+    // 組合 32 位元
+    sb = (s0 << 28) | (s1 << 24) | (s2 << 20) | (s3 << 16) |
+         (s4 << 12) | (s5 << 8) | (s6 << 4) | s7
+    // P 排列
+    permute(sb, P_TBL, 32, out)
 }
-
-ek[i * 4] = (w >> 24) & 255
-ek[i * 4 + 1] = (w >> 16) & 255
-ek[i * 4 + 2] = (w >> 8) & 255
-ek[i * 4 + 3] = w & 255
