@@ -30,7 +30,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		for _, fd := range fns {
 			parts := []string{name}
 			for _, p := range fd.Parameters {
-				parts = append(parts, p.Type)
+				parts = append(parts, p.Type.String())
 			}
 			mangledName := strings.Join(parts, "_")
 			fd.Name = mangledName // 直接修改 AST
@@ -81,7 +81,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 func callSignature(name string, params []*parser.Parameter) string {
 	parts := []string{name}
 	for _, p := range params {
-		parts = append(parts, p.Type)
+		parts = append(parts, p.Type.String())
 	}
 	return strings.Join(parts, "_")
 }
@@ -155,7 +155,7 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 					if t == "" {
 						// 無法推斷類型，使用第一個重載
 						if i < len(fns[0].Parameters) {
-							t = fns[0].Parameters[i].Type
+							t = fns[0].Parameters[i].Type.String()
 						} else {
 							t = "i64"
 						}
@@ -318,7 +318,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			// ..any 僅標準庫可用
 			if fd.IsVariadic {
 				for _, p := range fd.Parameters {
-					if p.Type == "[]any" {
+					if p.Type.String() == "[]any" {
 						return "", fmt.Errorf("..any is only allowed in standard library, not in user code (function: %s)", fd.Name)
 					}
 				}
@@ -335,7 +335,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
-				varTypes[ls.Name.Value] = ls.Type.Value
+				varTypes[ls.Name.Value] = ls.Type.String()
 			}
 		}
 		// Also collect variable types from function bodies
@@ -670,20 +670,21 @@ func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression
 		}
 		arg := call.Arguments[pi]
 		argType := inferArgType(arg, program)
+		paramType := param.Type.String()
 
 		// 匹配泛型型別：t 與具體型別 i64
-		if len(param.Type) == 1 && param.Type[0] >= 'a' && param.Type[0] <= 'z' {
-			if isLowerLetter(param.Type) && argType != "" {
+		if len(paramType) == 1 && paramType[0] >= 'a' && paramType[0] <= 'z' {
+			if isLowerLetter(paramType) && argType != "" {
 				args = append(args, &parser.StringLiteral{Value: argType})
 			}
 		}
 
 		// 匹配參數型別 [n]t 與引數型別 [8]byte
-		if len(param.Type) > 3 && param.Type[0] == '[' {
-			closeBracket := strings.IndexByte(param.Type, ']')
-			if closeBracket > 0 && closeBracket+1 < len(param.Type) {
-				sizeParam := param.Type[1:closeBracket]  // n
-				elemParam := param.Type[closeBracket+1:] // t
+		if len(paramType) > 3 && paramType[0] == '[' {
+			closeBracket := strings.IndexByte(paramType, ']')
+			if closeBracket > 0 && closeBracket+1 < len(paramType) {
+				sizeParam := paramType[1:closeBracket]  // n
+				elemParam := paramType[closeBracket+1:] // t
 
 				// 從引數型別中提取具體值
 				if len(argType) > 2 && argType[0] == '[' {
@@ -719,7 +720,7 @@ func inferArgType(expr parser.Expression, program *parser.Program) string {
 		for _, stmt := range program.Statements {
 			if ls, ok := stmt.(*parser.LetStatement); ok {
 				if ls.Name != nil && ls.Name.Value == e.Value && ls.Type != nil {
-					return ls.Type.Value
+					return ls.Type.String()
 				}
 			}
 		}
@@ -753,9 +754,9 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 		for i, gp := range fd.GenericParams {
 			if i < len(genericArgs) {
 				if lit, ok := genericArgs[i].(*parser.IntegerLiteral); ok {
-					subst[gp] = fmt.Sprintf("%d", lit.Value)
+					subst[gp.Value] = fmt.Sprintf("%d", lit.Value)
 				} else if lit, ok := genericArgs[i].(*parser.StringLiteral); ok {
-					subst[gp] = lit.Value
+					subst[gp.Value] = lit.Value
 				}
 			}
 		}
@@ -847,12 +848,14 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 	newBody := substituteBody(fd.Body, subst)
 
 	return &parser.FunctionDefinition{
-		Token:         fd.Token,
-		Name:          mangledName,
-		GenericParams: nil, // 具體化後無泛型參數
-		Parameters:    newParams,
-		Results:       newResults,
-		Body:          newBody,
+		Token: fd.Token,
+		Name:  mangledName,
+		FuncSignature: parser.FuncSignature{
+			GenericParams: nil, // 具體化後無泛型參數
+			Parameters:    newParams,
+			Results:       newResults,
+		},
+		Body: newBody,
 	}
 }
 
@@ -887,12 +890,25 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{
-			Token:    s.Token,
-			Variable: s.Variable,
-			Range:    substituteRange(s.Range, subst),
-			Body:     substituteBody(s.Body, subst),
-			Label:    s.Label,
+			Token: s.Token,
+			Body:  substituteBody(s.Body, subst),
+			Label: s.Label,
 		}
+		if s.IterRange != nil {
+			newFor.IterRange = &parser.IterationExpr{
+				Variable:  s.IterRange.Variable,
+				Range:     substituteRange(s.IterRange.Range, subst),
+				RangeStr:  s.IterRange.RangeStr,
+				RangeExpr: s.IterRange.RangeExpr,
+			}
+			// Also copy RangeExpr (identifier/slice) - it may contain generic types too
+			if ident, ok := s.IterRange.RangeExpr.(*parser.Identifier); ok {
+				if val, ok2 := subst[ident.Value]; ok2 {
+					newFor.IterRange.RangeExpr = &parser.Identifier{Token: ident.Token, Value: val}
+				}
+			}
+		}
+
 		// 也替換 for i < n 條件中的 n
 		if s.Condition != nil {
 			newFor.Condition = substituteExpr(s.Condition, subst)
@@ -977,29 +993,41 @@ func substituteRange(r *parser.RangeExpression, subst map[string]string) *parser
 	}
 }
 
-// substituteType 替換類型字串中的泛型參數
-// 例如 "[n]t" + n=8,t=byte → "[8]byte"
-func substituteType(typeStr string, subst map[string]string) string {
-	if len(subst) == 0 {
-		return typeStr
+// substituteType 替換類型中的泛型參數
+// 遞迴處理所有 Type 節點
+func substituteType(t parser.Type, subst map[string]string) parser.Type {
+	if len(subst) == 0 || t == nil {
+		return t
 	}
-	result := typeStr
-	for k, v := range subst {
-		// 替換 [N] → [v]（陣列大小）
-		old := "[" + k + "]"
-		new := "[" + v + "]"
-		result = strings.ReplaceAll(result, old, new)
-		// 替換元素型別：型別字串結尾的單字母
-		// 例如 "[]t" → "[]byte" 或 "[8]t" → "[8]byte"
-		if strings.HasSuffix(result, k) {
-			idx := len(result) - len(k)
-			// 確保 k 是獨立的（前面是 ] 或前面沒有字元）
-			if idx == 0 || result[idx-1] == ']' {
-				result = result[:idx] + v
+	switch typ := t.(type) {
+	case *parser.NamedType:
+		if val, ok := subst[typ.Value]; ok {
+			return &parser.NamedType{Token: typ.Token, Value: val}
+		}
+		return typ
+	case *parser.ArrayType:
+		newSize := typ.Size
+		if ident, ok := typ.Size.(*parser.Identifier); ok {
+			if val, ok := subst[ident.Value]; ok {
+				if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+					newSize = &parser.IntegerLiteral{Token: ident.Token, Value: intVal}
+				}
 			}
 		}
+		newElem := substituteType(typ.Elem, subst)
+		return &parser.ArrayType{Token: typ.Token, Size: newSize, Elem: newElem}
+	case *parser.SliceType:
+		newElem := substituteType(typ.Elem, subst)
+		return &parser.SliceType{Token: typ.Token, Elem: newElem}
+	case *parser.NullableType:
+		newInner := substituteType(typ.Type, subst)
+		return &parser.NullableType{Token: typ.Token, Type: newInner}
+	case *parser.PointerType:
+		newInner := substituteType(typ.Type, subst)
+		return &parser.PointerType{Token: typ.Token, Type: newInner}
+	default:
+		return t
 	}
-	return result
 }
 
 // collectVarTypesFromBody recursively collects variable types from a function body
@@ -1010,7 +1038,7 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 	for _, stmt := range body.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
-				varTypes[ls.Name.Value] = ls.Type.Value
+				varTypes[ls.Name.Value] = ls.Type.String()
 			}
 		}
 		if bs, ok := stmt.(*parser.BlockStatement); ok {
@@ -1107,7 +1135,7 @@ func injectEnterLeave(program *parser.Program) {
 			case *parser.LetStatement:
 				typeName := ""
 				if s.Type != nil {
-					typeName = s.Type.Value
+					typeName = s.Type.String()
 				}
 				if lifecycleTypes[typeName] {
 					varName := s.Name.Value
@@ -1170,7 +1198,7 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 	for _, stmt := range block.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name.Value == varName {
 			if ls.Type != nil {
-				return ls.Type.Value
+				return ls.Type.String()
 			}
 		}
 	}
@@ -1194,8 +1222,10 @@ func buildArraySizeMap(program *parser.Program) map[string]int64 {
 func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.ArraySize > 0 {
-			sizes[s.Name.Value] = s.ArraySize
+		if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil {
+			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+				sizes[s.Name.Value] = intLit.Value
+			}
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
@@ -1231,7 +1261,7 @@ func buildSliceSizeMap(program *parser.Program) map[string]int64 {
 func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.IsSlice {
+		if _, ok := s.Type.(*parser.SliceType); ok {
 			if sl, ok := s.Value.(*parser.SliceLiteral); ok {
 				slices[s.Name.Value] = int64(len(sl.Elements))
 			} else {
@@ -1275,7 +1305,7 @@ func buildStringSizeMap(program *parser.Program) map[string]int64 {
 func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.Type != nil && (s.Type.Value == "str" || s.Type.Value == "str-smail") {
+		if s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-smail") {
 			if sl, ok := s.Value.(*parser.StringLiteral); ok {
 				strSizes[s.Name.Value] = int64(len(sl.Value))
 			} else {
@@ -1340,7 +1370,7 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 		// Only type-annotated declarations count as "definitions" (e.g., a i8)
 		// The parser sets s.Type to the variable name for untyped assignments (a = 2),
 		// so we check if Type.Value differs from Name.Value to detect real type annotations
-		if s.Type == nil || s.Type.Value == s.Name.Value {
+		if s.Type == nil || s.Type.String() == s.Name.Value {
 			return nil
 		}
 		if seen[s.Name.Value] {
@@ -1597,7 +1627,7 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			var paramTypes []string
 			for _, p := range fd.Parameters {
-				paramTypes = append(paramTypes, p.Type)
+				paramTypes = append(paramTypes, p.Type.String())
 			}
 			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
 			if firstLine, exists := sigSeen[sig]; exists {
@@ -1653,7 +1683,12 @@ func checkNaming(stmt parser.Statement) []ValidateResult {
 	var results []ValidateResult
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		if !isValidVarName(s.Name) {
+		// For methods like "[]t.sort-desc", only validate the method name part (after the last '.')
+		nameToCheck := s.Name
+		if lastDot := strings.LastIndex(s.Name, "."); lastDot >= 0 {
+			nameToCheck = s.Name[lastDot+1:]
+		}
+		if !isValidVarName(nameToCheck) {
 			results = append(results, ValidateResult{
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
@@ -1700,8 +1735,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 		localTypes := make(map[string]string)
 		// 參數加入作用域
 		for _, p := range s.Parameters {
-			if p.Type != "" {
-				localTypes[p.Name] = p.Type
+			if p.Type != nil {
+				localTypes[p.Name] = p.Type.String()
 			}
 		}
 		if s.Body != nil {
@@ -1724,8 +1759,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 		// 檢查 nil 賦值到非可空變數
 		if _, isNil := s.Value.(*parser.NilLiteral); isNil {
 			// 有顯式型別註記
-			if s.Type != nil && s.Type.Value != "" && s.Type.Value != s.Name.Value {
-				if !s.IsOption {
+			if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
+				_, isOption := s.Type.(*parser.NullableType)
+				if !isOption {
 					results = append(results, ValidateResult{
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
@@ -1733,7 +1769,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 					})
 				}
 				// 記錄型別
-				varTypes[s.Name.Value] = s.Type.Value
+				varTypes[s.Name.Value] = s.Type.String()
 				break
 			}
 			// 無顯式型別，檢查是否已有型別
@@ -1757,9 +1793,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 		}
 
 		// 記錄型別
-		if s.Type != nil && s.Type.Value != "" && s.Type.Value != s.Name.Value {
+		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
 			// 顯式型別註記
-			varTypes[s.Name.Value] = s.Type.Value
+			varTypes[s.Name.Value] = s.Type.String()
 		} else if s.Value != nil {
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes)

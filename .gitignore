@@ -5,6 +5,7 @@ Thumbs.db
 .README.md
 tmp
 .reasonix
+.deveco
 **/node_modules/
 dist
 

@@ -16,7 +16,7 @@ type Parser struct {
 	currentToken lexer.Token
 	peekToken    lexer.Token
 	prevToken    lexer.Token
-	ctx          contextStack // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	ctx          contextStack  // replaces inForCond, inMatchCond, inMatchArm, inExprContext
 	comments     []lexer.Token // collected comment tokens
 }
 
@@ -215,7 +215,8 @@ type parserState struct {
 	peekToken    lexer.Token
 	prevToken    lexer.Token
 	lexerState   lexer.LexerState
-	ctx          contextStack // snapshot of context stack
+	ctx          contextStack  // snapshot of context stack
+	comments     []lexer.Token // snapshot of collected comments
 }
 
 func New(lexer *lexer.Lexer) *Parser {
@@ -232,12 +233,15 @@ func New(lexer *lexer.Lexer) *Parser {
 }
 
 func (p *Parser) saveState() parserState {
+	commentsCopy := make([]lexer.Token, len(p.comments))
+	copy(commentsCopy, p.comments)
 	return parserState{
 		currentToken: p.currentToken,
 		peekToken:    p.peekToken,
 		prevToken:    p.prevToken,
 		lexerState:   p.lexer.SaveState(),
 		ctx:          p.ctx.copy(),
+		comments:     commentsCopy,
 	}
 }
 
@@ -247,11 +251,22 @@ func (p *Parser) restoreState(state parserState) {
 	p.prevToken = state.prevToken
 	p.lexer.RestoreState(state.lexerState)
 	p.ctx = state.ctx
+	p.comments = state.comments
 }
 
 func (p *Parser) nextToken() {
 	p.prevToken = p.currentToken
+
+	// Collect any comments at peek position before they become currentToken
+	for p.peekToken.Type == lexer.COMMENT {
+		p.comments = append(p.comments, p.peekToken)
+		p.peekToken = p.lexer.NextToken()
+	}
+
+	// Advance: non-comment peek becomes current
 	p.currentToken = p.peekToken
+
+	// Read new peek, collecting any comments
 	for {
 		p.peekToken = p.lexer.NextToken()
 		if p.peekToken.Type != lexer.COMMENT {
@@ -268,13 +283,173 @@ func (p *Parser) collectDocComments() *CommentGroup {
 	}
 	group := &CommentGroup{}
 	for _, c := range p.comments {
-		group.List = append(group.List, &Comment{
-			Token: c,
-			Text:  c.Literal,
-		})
+		comment := &Comment{
+			Pos:  posFromToken(c),
+			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+			Kind: NormalComment,
+			Text: c.Literal,
+		}
+		group.List = append(group.List, comment)
+	}
+	if len(group.List) > 0 {
+		group.Start = group.List[0].Pos
+		group.End = group.List[len(group.List)-1].End
 	}
 	p.comments = nil
 	return group
+}
+
+// setComment sets the Comment field on any Statement that supports it
+func setComment(stmt Statement, comment *CommentGroup) {
+	if comment == nil || stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *LetStatement:
+		s.Comment = comment
+	case *ReturnStatement:
+		s.Comment = comment
+	case *ExpressionStatement:
+		s.Comment = comment
+	case *FunctionDefinition:
+		s.Comment = comment
+	case *ForStatement:
+		s.Comment = comment
+	case *BreakStatement:
+		s.Comment = comment
+	case *ContinueStatement:
+		s.Comment = comment
+	case *UseStatement:
+		s.Comment = comment
+	case *EnumDefinition:
+		s.Comment = comment
+	case *TaggedEnumDefinition:
+		s.Comment = comment
+	case *InterfaceDefinition:
+		s.Comment = comment
+	case *StructDefinition:
+		s.Comment = comment
+	}
+}
+
+// attachInlineComment checks if the first collected comment is on the same line
+// as the statement's last token. If so, it's an inline comment — move it to stmt.Comment.
+func (p *Parser) attachInlineComment(stmt Statement) {
+	if len(p.comments) == 0 {
+		return
+	}
+	stmtLastLine := stmtTokenEndLine(stmt)
+	if stmtLastLine > 0 && p.comments[0].Line == stmtLastLine {
+		c := p.comments[0]
+		comment := &Comment{
+			Pos:  posFromToken(c),
+			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+			Kind: NormalComment,
+			Text: c.Literal,
+		}
+		group := &CommentGroup{
+			List:  []*Comment{comment},
+			Start: comment.Pos,
+			End:   comment.End,
+		}
+		setComment(stmt, group)
+		p.comments = p.comments[1:]
+	}
+}
+
+// stmtTokenEndLine returns the line number of the last token in a statement.
+func stmtTokenEndLine(stmt Statement) int {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		return s.Name.Token.Line
+	case *UseStatement:
+		return s.Token.Line
+	case *ReturnStatement:
+		if s.ReturnValue != nil {
+			// We approximate: return value line
+			return s.Token.Line
+		}
+		return s.Token.Line
+	case *ExpressionStatement:
+		return stmtExprEndLine(s.Expression)
+	case *FunctionDefinition:
+		// Use the function's body closing brace
+		return s.Body.Token.Line
+	case *ForStatement:
+		// Use the for body's closing brace
+		return s.Body.Token.Line
+	case *BreakStatement:
+		return s.Token.Line
+	case *ContinueStatement:
+		return s.Token.Line
+	case *BlockStatement:
+		return s.Token.Line
+	case *EnumDefinition:
+		return s.Token.Line
+	case *TaggedEnumDefinition:
+		return s.Token.Line
+	case *InterfaceDefinition:
+		return s.Token.Line
+	case *StructDefinition:
+		return s.Token.Line
+	}
+	return 0
+}
+
+// stmtExprEndLine returns the end line of an expression.
+func stmtExprEndLine(expr Expression) int {
+	switch e := expr.(type) {
+	case *Identifier:
+		return e.Token.Line
+	case *IntegerLiteral:
+		return e.Token.Line
+	case *FloatLiteral:
+		return e.Token.Line
+	case *BooleanLiteral:
+		return e.Token.Line
+	case *ByteLiteral:
+		return e.Token.Line
+	case *StringLiteral:
+		return e.Token.Line
+	case *CharLiteral:
+		return e.Token.Line
+	case *NilLiteral:
+		return e.Token.Line
+	case *PrefixExpression:
+		return stmtExprEndLine(e.Right)
+	case *InfixExpression:
+		return stmtExprEndLine(e.Right)
+	case *CallExpression:
+		return e.Token.Line
+	case *DotExpression:
+		return stmtExprEndLine(e.Receiver)
+	case *IfExpression:
+		if e.Alternative != nil && e.Alternative.Token.Line > 0 {
+			return e.Alternative.Token.Line
+		}
+		return e.Consequence.Token.Line
+	case *FunctionLiteral:
+		return e.Body.Token.Line
+	case *IndexExpression:
+		return e.Token.Line
+	case *SliceExpression:
+		return e.Token.Line
+	case *RangeExpression:
+		return e.Token.Line
+	case *ArrayLiteral:
+		return e.Token.Line
+	case *SliceLiteral:
+		return e.Token.Line
+	case *StructLiteral:
+		return e.Token.Line
+	case *AssignExpression:
+		return e.Token.Line
+	case *ConditionalExpression:
+		return e.Token.Line
+	case *GroupedExpression:
+		return e.Token.Line
+	}
+	return 0
 }
 
 // setDoc sets the Doc field on any Statement that supports it
@@ -343,13 +518,27 @@ func (p *Parser) ParseProgram() *Program {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			setDoc(stmt, doc)
+			p.attachInlineComment(stmt)
 			program.Statements = append(program.Statements, stmt)
 		}
 
 		if stmt == nil {
+			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
+			if doc != nil {
+				for _, c := range doc.List {
+					p.comments = append(p.comments, lexer.Token{
+						Type:    lexer.COMMENT,
+						Literal: c.Text,
+						Line:    c.Pos.Line,
+						Column:  c.Pos.Column,
+					})
+				}
+			}
 			p.nextToken()
 		}
 	}
+
+	program.TrailingComments = p.collectDocComments()
 
 	return program
 }
@@ -511,6 +700,11 @@ func (p *Parser) parseStatement() Statement {
 						return p.parseMethodDefinition(structToken)
 					}
 				}
+				// 方法定義冒號語法：user.foo: (a int) { ... }
+				if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.COLON {
+					p.restoreState(state)
+					return p.parseColonMethodDefinition(structToken)
+				}
 			}
 			p.restoreState(state)
 		}
@@ -526,6 +720,21 @@ func (p *Parser) parseStatement() Statement {
 					return stmt
 				}
 			}
+		}
+
+		// 冒號語法函數定義：foo: (a int) { ... }
+		if p.peekToken.Type == lexer.COLON {
+			state := p.saveState()
+			p.nextToken() // skip IDENT → COLON
+			if p.peekToken.Type == lexer.LPAREN {
+				p.restoreState(state) // back to IDENT
+				stmt := p.parseColonFunctionDefinition()
+				if !p.ctx.contains(CTX_MATCH_ARM) {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
+			p.restoreState(state)
 		}
 
 		// 範圍遍歷：i <- (a..b] { 或 i <- [a..b] {
@@ -614,7 +823,7 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	selfParam := &Parameter{
 		Token: structToken,
 		Name:  "self",
-		Type:  structToken.Literal,
+		Type:  buildType(structToken.Literal, structToken),
 	}
 	funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
 
@@ -702,10 +911,12 @@ func (p *Parser) isArrayTypeMethodDefinition() bool {
 // parseArrayTypeMethodDefinition 解析陣列/切片型別方法定義：[n]t.method(…) 或 []t.method(…) {
 func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	def := &FunctionDefinition{
-		Token:         p.currentToken,
-		GenericParams: []string{},
-		Parameters:    []*Parameter{},
-		Results:       []*Parameter{},
+		Token: p.currentToken,
+		FuncSignature: FuncSignature{
+			GenericParams: []*Identifier{},
+			Parameters:    []*Parameter{},
+			Results:       []*Parameter{},
+		},
 	}
 
 	// 建立型別字串 [n]t 或 []t
@@ -824,7 +1035,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 			def.Parameters = append(def.Parameters, &Parameter{
 				Token: paramToken,
 				Name:  paramName,
-				Type:  paramType,
+				Type:  buildType(paramType, paramToken),
 			})
 
 			if p.currentToken.Type == lexer.RPAREN {
@@ -858,7 +1069,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		result := &Parameter{
 			Token: p.currentToken,
 			Name:  "",
-			Type:  p.currentToken.Literal,
+			Type:  buildType(p.currentToken.Literal, p.currentToken),
 		}
 		def.Results = append(def.Results, result)
 		p.nextToken()
@@ -924,7 +1135,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				def.Results = append(def.Results, &Parameter{
 					Token: paramToken,
 					Name:  paramName,
-					Type:  paramType,
+					Type:  buildType(paramType, paramToken),
 				})
 
 				if p.currentToken.Type == lexer.RPAREN {
@@ -966,6 +1177,13 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	}
 	def.Body = p.parseBlockStatement()
 
+	// Move inline comment on the same line as { from trailing to inline
+	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&
+		def.Body.TrailingComments.List[0].Pos.Line == def.Body.Token.Line {
+		setComment(def, def.Body.TrailingComments)
+		def.Body.TrailingComments = nil
+	}
+
 	if p.currentToken.Type == lexer.RBRACE {
 		p.nextToken()
 	}
@@ -974,7 +1192,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	selfParam := &Parameter{
 		Token: elemToken,
 		Name:  "self",
-		Type:  arrayType,
+		Type:  buildType(arrayType, elemToken),
 	}
 	def.Parameters = append([]*Parameter{selfParam}, def.Parameters...)
 
@@ -1197,36 +1415,50 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// 陣列/切片型別: a [3] / a [3]u16 / v []u8
+	var letIsOption bool
 	if p.peekToken.Type == lexer.LBRACKET {
+		bracketToken := p.peekToken
 		p.nextToken() // skip [ → current = LBRACKET
 		p.nextToken() // consume [ → current = first content token
 		hasSize := false
+		var sizeExpr Expression
 		if p.currentToken.Type == lexer.INT {
-			// [N] 陣列
 			val, err := strconv.ParseInt(p.currentToken.Literal, 10, 64)
 			if err == nil {
-				stmt.ArraySize = val
+				sizeExpr = &IntegerLiteral{Token: p.currentToken, Value: val, Raw: p.currentToken.Literal}
 				hasSize = true
 			}
 			p.nextToken() // skip INT → current = ]
+		} else if p.currentToken.Type == lexer.IDENT {
+			sizeExpr = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			hasSize = true
+			p.nextToken()
 		}
 		// ] 關閉（無 INT 時 current 已是 ]）
-		// ] 關閉
 		if p.currentToken.Type == lexer.RBRACKET {
-			if !hasSize {
-				stmt.IsSlice = true // [] 切片（無大小）
-			}
 			p.nextToken()
 			// 可選元素型別: [3]u16 或 []u8
 			if p.currentToken.Type == lexer.IDENT {
-				stmt.ElemType = p.currentToken.Literal
+				elemType := p.currentToken.Literal
+				elem := &NamedType{Token: p.currentToken, Value: elemType}
+				if hasSize {
+					stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
+				} else {
+					stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
+				}
 				p.nextToken()
+			} else {
+				if hasSize {
+					stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+				} else {
+					stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+				}
 			}
 		}
 	}
 
-	if slices.Contains([]string{"byte", "bool", "char", "str", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}, stmt.Name.Value) {
-		stmt.Type = &Identifier{
+	if stmt.Type == nil && slices.Contains([]string{"byte", "bool", "char", "str", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}, stmt.Name.Value) {
+		stmt.Type = &NamedType{
 			Token: nameToken,
 			Value: nameToken.Literal,
 		}
@@ -1234,25 +1466,12 @@ func (p *Parser) parseLetStatement() Statement {
 
 	// 检查是否是可空类型
 	if p.currentToken.Type == lexer.QUESTION {
-		stmt.IsOption = true
+		letIsOption = true
 		p.nextToken() // 跳过 ?
 	} else if p.peekToken.Type == lexer.QUESTION {
 		p.nextToken() // 跳过 ?
 		if p.peekToken.Type == lexer.IDENT {
-			stmt.IsOption = true
-		}
-	}
-
-	// 陣列/切片型別：設定 stmt.Type（如 [16]byte）
-	if stmt.ArraySize > 0 || stmt.IsSlice {
-		elem := stmt.ElemType
-		if elem == "" {
-			elem = "i64"
-		}
-		if stmt.IsSlice {
-			stmt.Type = &Identifier{Token: nameToken, Value: "[]" + elem}
-		} else {
-			stmt.Type = &Identifier{Token: nameToken, Value: fmt.Sprintf("[%d]%s", stmt.ArraySize, elem)}
+			letIsOption = true
 		}
 	}
 
@@ -1263,23 +1482,12 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 	if typeToken.Type == lexer.IDENT && stmt.Type == nil {
 		typeName := typeToken.Literal
-		if stmt.IsOption {
+		if letIsOption {
 			typeName = "?" + typeName
 		}
-		if stmt.Type != nil {
-			msg := fmt.Sprintf("line %d, column %d: expected type, got %s instead",
-				typeToken.Line, typeToken.Column, stmt.Type.Value)
-			p.saveError(msg)
-			return nil
-		}
-		stmt.Type = &Identifier{
-			Token: typeToken,
-			Value: typeName,
-		}
+		stmt.Type = buildType(typeName, typeToken)
 		if typeToken == p.peekToken {
 			p.nextToken()
-		} else {
-			// type 在 current，已無需再 nextToken
 		}
 	}
 
@@ -1310,9 +1518,10 @@ func (p *Parser) parseLetStatement() Statement {
 
 	if stmt.Value == nil {
 		if stmt.Type != nil {
+			typeStr := typeString(stmt.Type)
 
 			// 使用默认值
-			switch stmt.Type.Value {
+			switch typeStr {
 			case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte":
 				stmt.Value = &Identifier{
 					Token: nameToken,
@@ -1356,22 +1565,27 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// char 类型：将裸字符 Identifier 转换为 CharLiteral
-	if stmt.Type != nil && stmt.Type.Value == "char" {
-		if ident, ok := stmt.Value.(*Identifier); ok && len([]rune(ident.Value)) == 1 {
-			stmt.Value = &CharLiteral{
-				Token: ident.Token,
-				Value: ident.Value,
+	if stmt.Type != nil {
+		typeStr := typeString(stmt.Type)
+		if typeStr == "char" {
+			if ident, ok := stmt.Value.(*Identifier); ok && len([]rune(ident.Value)) == 1 {
+				stmt.Value = &CharLiteral{
+					Token: ident.Token,
+					Value: ident.Value,
+				}
 			}
 		}
 	}
 
 	// 数组上下文：将 [1, 2, 3]（SliceLiteral）转为 ArrayLiteral
-	if stmt.ArraySize > 0 {
-		if slice, ok := stmt.Value.(*SliceLiteral); ok {
-			stmt.Value = &ArrayLiteral{
-				Token:    slice.Token,
-				Size:     &IntegerLiteral{Token: slice.Token, Value: stmt.ArraySize},
-				Elements: slice.Elements,
+	if at, ok := stmt.Type.(*ArrayType); ok {
+		if intLit, ok := at.Size.(*IntegerLiteral); ok && intLit.Value > 0 {
+			if slice, ok := stmt.Value.(*SliceLiteral); ok {
+				stmt.Value = &ArrayLiteral{
+					Token:    slice.Token,
+					Size:     &IntegerLiteral{Token: slice.Token, Value: intLit.Value, Raw: intLit.Raw},
+					Elements: slice.Elements,
+				}
 			}
 		}
 	}
@@ -1379,31 +1593,31 @@ func (p *Parser) parseLetStatement() Statement {
 	if stmt.Type == nil {
 		switch v := stmt.Value.(type) {
 		case *IntegerLiteral:
-			stmt.Type = &Identifier{
+			stmt.Type = &NamedType{
 				Token: nameToken,
 				Value: ValueTypeInt64.String(),
 			}
 
 		case *FloatLiteral:
-			stmt.Type = &Identifier{
+			stmt.Type = &NamedType{
 				Token: nameToken,
 				Value: ValueTypeFloat64.String(),
 			}
 
 		case *StringLiteral:
-			stmt.Type = &Identifier{
+			stmt.Type = &NamedType{
 				Token: nameToken,
 				Value: ValueTypeString.String(),
 			}
 
 		case *BooleanLiteral:
-			stmt.Type = &Identifier{
+			stmt.Type = &NamedType{
 				Token: nameToken,
 				Value: ValueTypeBool.String(),
 			}
 
 		case *CharLiteral:
-			stmt.Type = &Identifier{
+			stmt.Type = &NamedType{
 				Token: nameToken,
 				Value: ValueTypeChar.String(),
 			}
@@ -1414,28 +1628,32 @@ func (p *Parser) parseLetStatement() Statement {
 
 		case *SliceLiteral:
 			// 从元素推断切片类型
-			stmt.IsSlice = true
+			elemValue := "i64"
 			if len(v.Elements) > 0 {
 				switch v.Elements[0].(type) {
 				case *IntegerLiteral:
-					stmt.ElemType = "i64"
+					elemValue = "i64"
 				case *FloatLiteral:
-					stmt.ElemType = "f64"
+					elemValue = "f64"
 				case *StringLiteral:
-					stmt.ElemType = "str"
+					elemValue = "str"
 				case *BooleanLiteral:
-					stmt.ElemType = "bool"
+					elemValue = "bool"
 				default:
-					stmt.ElemType = "i64"
+					elemValue = "i64"
 				}
-			} else {
-				stmt.ElemType = "i64"
+			}
+			stmt.Type = &SliceType{
+				Token: nameToken,
+				Elem:  &NamedType{Token: nameToken, Value: elemValue},
 			}
 
 		case *SliceExpression:
 			// 切片表達式結果的型別推斷
-			stmt.IsSlice = true
-			stmt.ElemType = "i64"
+			stmt.Type = &SliceType{
+				Token: nameToken,
+				Elem:  &NamedType{Token: nameToken, Value: "i64"},
+			}
 
 		case *ArrayLiteral:
 		case *StructLiteral:
@@ -2055,6 +2273,11 @@ func (p *Parser) parseInfixExpression(left Expression) Expression {
 	}
 	precedence := p.currentPrecedence()
 	p.nextToken()
+	// Skip newlines before the right operand (multi-line expressions like 'str' +
+	// 'continuation')
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
 	expr.Right = p.parseExpression(precedence)
 
 	// 处理三元表达式（最低优先级）
@@ -3119,11 +3342,25 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			setDoc(stmt, doc)
+			p.attachInlineComment(stmt)
 			block.Statements = append(block.Statements, stmt)
 		} else {
+			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
+			if doc != nil {
+				for _, c := range doc.List {
+					p.comments = append(p.comments, lexer.Token{
+						Type:    lexer.COMMENT,
+						Literal: c.Text,
+						Line:    c.Pos.Line,
+						Column:  c.Pos.Column,
+					})
+				}
+			}
 			p.nextToken()
 		}
 	}
+
+	block.TrailingComments = p.collectDocComments()
 
 	return block
 }
@@ -3133,10 +3370,11 @@ func (p *Parser) parseForStatement() Statement {
 
 	// Bare range-for: i <- (a..b] { } — 不使用 for 關鍵字
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
-		stmt.Variable = p.currentToken.Literal
+		ir := &IterationExpr{Variable: p.currentToken.Literal, Token: p.peekToken}
 		p.nextToken() // skip IDENT (variable)
 		p.nextToken() // skip ARROW (<-)
-		p.parseForRange(stmt)
+		p.parseForRange(ir)
+		stmt.IterRange = ir
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
 		return stmt
@@ -3175,9 +3413,10 @@ func (p *Parser) parseForStatement() Statement {
 	if p.currentToken.Type == lexer.IN || p.currentToken.Type == lexer.ARROW {
 		if es, ok := init.(*ExpressionStatement); ok {
 			if ident, ok := es.Expression.(*Identifier); ok {
-				stmt.Variable = ident.Value
-				p.nextToken() // skip IN
-				p.parseForRange(stmt)
+				ir := &IterationExpr{Variable: ident.Value, Token: p.currentToken}
+				p.nextToken() // skip IN/ARROW
+				p.parseForRange(ir)
+				stmt.IterRange = ir
 				goto parseBody
 			}
 		}
@@ -3222,14 +3461,14 @@ parseBody:
 }
 
 // parseForRange 解析 <- 或 in 後的 range 表達式
-func (p *Parser) parseForRange(stmt *ForStatement) {
+func (p *Parser) parseForRange(ir *IterationExpr) {
 	// 解析 range: [a..b], (a..b], [a..b), (a..b)
 	leftInc := false
 	// 字串遍歷: for i in 'abc'
 	if p.currentToken.Type == lexer.STRING {
-		stmt.RangeStr = p.currentToken.Literal
+		ir.RangeStr = p.currentToken.Literal
 		p.nextToken() // skip string
-		stmt.Range = &RangeExpression{
+		ir.Range = &RangeExpression{
 			Token:    p.currentToken,
 			LeftInc:  true,
 			RightInc: false,
@@ -3291,7 +3530,7 @@ func (p *Parser) parseForRange(stmt *ForStatement) {
 			}
 			p.nextToken() // skip ] or )
 
-			stmt.Range = &RangeExpression{
+			ir.Range = &RangeExpression{
 				Token:    tok,
 				Start:    start,
 				End:      end,
@@ -3304,7 +3543,7 @@ func (p *Parser) parseForRange(stmt *ForStatement) {
 			p.restoreState(state)
 			sliceExpr := p.parseSliceLiteral()
 			if sliceLit, ok := sliceExpr.(*SliceLiteral); ok {
-				stmt.RangeSliceLit = sliceLit
+				ir.RangeExpr = sliceLit
 				return
 			}
 			return
@@ -3319,7 +3558,7 @@ func (p *Parser) parseForRange(stmt *ForStatement) {
 		leftInc = false
 	} else if p.currentToken.Type == lexer.IDENT {
 		// 陣列/切片遍歷: for i in a
-		stmt.RangeIdent = p.currentToken.Literal
+		ir.RangeExpr = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 		p.nextToken() // skip identifier
 		return
 	} else {
@@ -3372,7 +3611,7 @@ func (p *Parser) parseForRange(stmt *ForStatement) {
 	}
 	p.nextToken() // skip ] or )
 
-	stmt.Range = &RangeExpression{
+	ir.Range = &RangeExpression{
 		Token:    tok,
 		Start:    start,
 		End:      end,
@@ -3656,28 +3895,32 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 		p.nextToken() // skip variant name
 
 		// 解析型別
+		var variantTypeStr string
 		if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.NIL {
-			variant.Type = p.currentToken.Literal
+			variantTypeStr = p.currentToken.Literal
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.LBRACKET {
 			// []type 或 [N]type
 			p.nextToken()
 			if p.currentToken.Type == lexer.INT {
-				variant.Type = "[" + p.currentToken.Literal + "]"
+				variantTypeStr = "[" + p.currentToken.Literal + "]"
 				p.nextToken()
 			} else if p.currentToken.Type == lexer.IDENT {
-				variant.Type = "[" + p.currentToken.Literal + "]"
+				variantTypeStr = "[" + p.currentToken.Literal + "]"
 				p.nextToken()
 			} else {
-				variant.Type = "[]"
+				variantTypeStr = "[]"
 			}
 			if p.currentToken.Type == lexer.RBRACKET {
 				p.nextToken()
 			}
 			if p.currentToken.Type == lexer.IDENT {
-				variant.Type = variant.Type + p.currentToken.Literal
+				variantTypeStr = variantTypeStr + p.currentToken.Literal
 				p.nextToken()
 			}
+		}
+		if variantTypeStr != "" {
+			variant.Type = buildType(variantTypeStr, variant.Token)
 		}
 
 		ted.Variants = append(ted.Variants, variant)
@@ -3751,19 +3994,19 @@ func (p *Parser) parseStructDefinition() Statement {
 				p.nextToken() // skip ]
 			}
 			if p.currentToken.Type == lexer.IDENT {
-				field.Type = p.currentToken.Literal
+				field.Type = buildType(p.currentToken.Literal, p.currentToken)
 				p.nextToken() // skip element type
 			}
 		} else if p.currentToken.Type == lexer.MUL {
 			// Pointer type syntax: *byte, *i64, etc.
 			p.nextToken() // skip *
 			if p.currentToken.Type == lexer.IDENT {
-				field.Type = "*" + p.currentToken.Literal
+				field.Type = buildType("*"+p.currentToken.Literal, p.currentToken)
 				p.nextToken() // skip type name
 			}
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR {
 			// 普通类型定义 (including ptr keyword)
-			field.Type = p.currentToken.Literal
+			field.Type = buildType(p.currentToken.Literal, p.currentToken)
 			p.nextToken() // 跳过 type
 		} else if p.currentToken.Type == lexer.COLON {
 			// colon syntax: "field : type" or "field : value" (struct literal)
@@ -3772,13 +4015,13 @@ func (p *Parser) parseStructDefinition() Statement {
 				// Pointer type: field : *byte
 				p.nextToken() // skip *
 				if p.currentToken.Type == lexer.IDENT {
-					field.Type = "*" + p.currentToken.Literal
+					field.Type = buildType("*"+p.currentToken.Literal, p.currentToken)
 					p.nextToken()
 				}
 			} else if (p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR) &&
 				(p.peekToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.RBRACE || p.peekToken.Type == lexer.COMMA || p.peekToken.Type == lexer.EOF) {
 				// Simple type name after colon → treat as type annotation
-				field.Type = p.currentToken.Literal
+				field.Type = buildType(p.currentToken.Literal, p.currentToken)
 				p.nextToken()
 			} else {
 				// Complex expression after colon → treat as value assignment
@@ -3889,7 +4132,7 @@ func (p *Parser) isFunctionLiteral() bool {
 }
 
 func (p *Parser) parseFunctionLiteral() Expression {
-	lit := &FunctionLiteral{Token: p.currentToken, Parameters: []*Parameter{}}
+	lit := &FunctionLiteral{Token: p.currentToken, FuncSignature: FuncSignature{Parameters: []*Parameter{}}}
 
 	// currentToken is LPAREN (already positioned by caller)
 	p.nextToken() // skip (
@@ -3906,14 +4149,14 @@ func (p *Parser) parseFunctionLiteral() Expression {
 			param := &Parameter{
 				Token: p.currentToken,
 				Name:  p.currentToken.Literal,
-				Type:  "",
+				Type:  nil,
 			}
 
 			p.nextToken()
 
 			// Optional type annotation: (a i64, b str)
 			if p.currentToken.Type == lexer.IDENT {
-				param.Type = p.currentToken.Literal
+				param.Type = buildType(p.currentToken.Literal, p.currentToken)
 				p.nextToken()
 			}
 
@@ -3954,11 +4197,13 @@ func (p *Parser) parseFunctionLiteral() Expression {
 
 func (p *Parser) parseFunctionDefinition() Statement {
 	def := &FunctionDefinition{
-		Token:         p.currentToken,
-		Name:          p.currentToken.Literal,
-		GenericParams: []string{},
-		Parameters:    []*Parameter{},
-		Results:       []*Parameter{},
+		Token: p.currentToken,
+		Name:  p.currentToken.Literal,
+		FuncSignature: FuncSignature{
+			GenericParams: []*Identifier{},
+			Parameters:    []*Parameter{},
+			Results:       []*Parameter{},
+		},
 	}
 
 	p.nextToken()
@@ -3973,7 +4218,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				p.saveError(msg)
 				return nil
 			}
-			def.GenericParams = append(def.GenericParams, p.currentToken.Literal)
+			def.GenericParams = append(def.GenericParams, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
 			p.nextToken()
 			if p.currentToken.Type == lexer.GREATER {
 				p.nextToken()
@@ -3998,13 +4243,21 @@ func (p *Parser) parseFunctionDefinition() Statement {
 	}
 	p.nextToken()
 
+	p.parseFunctionBody(def)
+
+	return def
+}
+
+// parseFunctionBody parses the parameter list, result parameters, and body block.
+// It assumes currentToken is the token after the '=' or ':' that introduces the body.
+func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	if p.currentToken.Type == lexer.LPAREN {
 		p.nextToken()
 	} else {
 		msg := fmt.Sprintf("line %d, column %d: expected left parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
-		return nil
+		return
 	}
 
 	if p.currentToken.Type != lexer.RPAREN {
@@ -4017,7 +4270,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				p.saveError(msg)
-				return nil
+				return
 			}
 
 			paramName := p.currentToken.Literal
@@ -4034,7 +4287,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 					param := &Parameter{
 						Token: paramToken,
 						Name:  paramName,
-						Type:  paramType,
+						Type:  buildType(paramType, paramToken),
 					}
 					def.Parameters = append(def.Parameters, param)
 					def.IsVariadic = true
@@ -4078,7 +4331,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				p.saveError(msg)
-				return nil
+				return
 			}
 
 			// 加上 ? 前綴
@@ -4089,7 +4342,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 			param := &Parameter{
 				Token: paramToken,
 				Name:  paramName,
-				Type:  paramType,
+				Type:  buildType(paramType, paramToken),
 			}
 			def.Parameters = append(def.Parameters, param)
 
@@ -4101,7 +4354,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				p.saveError(msg)
-				return nil
+				return
 			}
 
 			p.nextToken()
@@ -4112,7 +4365,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
-		return nil
+		return
 	}
 
 	p.nextToken()
@@ -4134,7 +4387,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 					msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					p.saveError(msg)
-					return nil
+					return
 				}
 
 				paramName := p.currentToken.Literal
@@ -4173,7 +4426,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					p.saveError(msg)
-					return nil
+					return
 				}
 				if isOption {
 					paramType = "?" + paramType
@@ -4182,7 +4435,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				param := &Parameter{
 					Token: paramToken,
 					Name:  paramName,
-					Type:  paramType,
+					Type:  buildType(paramType, paramToken),
 				}
 				def.Results = append(def.Results, param)
 
@@ -4194,7 +4447,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 					msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					p.saveError(msg)
-					return nil
+					return
 				}
 
 				p.nextToken()
@@ -4205,7 +4458,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 			msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.saveError(msg)
-			return nil
+			return
 		}
 
 		p.nextToken()
@@ -4217,7 +4470,7 @@ func (p *Parser) parseFunctionDefinition() Statement {
 		result := &Parameter{
 			Token: p.currentToken,
 			Name:  "",
-			Type:  p.currentToken.Literal,
+			Type:  buildType(p.currentToken.Literal, p.currentToken),
 		}
 		def.Results = append(def.Results, result)
 		p.nextToken()
@@ -4235,14 +4488,93 @@ func (p *Parser) parseFunctionDefinition() Statement {
 		msg := fmt.Sprintf("line %d, column %d: expected left brace, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
-		return nil
+		return
 	}
 
 	def.Body = p.parseBlockStatement()
 
+	// Move inline comment on the same line as { from trailing to inline
+	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&
+		def.Body.TrailingComments.List[0].Pos.Line == def.Body.Token.Line {
+		setComment(def, def.Body.TrailingComments)
+		def.Body.TrailingComments = nil
+	}
+
 	if p.currentToken.Type == lexer.RBRACE {
 		p.nextToken()
 	}
+}
+
+// parseColonFunctionDefinition parses a colon-syntax function definition:
+// foo: (a int) { ... }
+func (p *Parser) parseColonFunctionDefinition() Statement {
+	def := &FunctionDefinition{
+		Token: p.currentToken,
+		Name:  p.currentToken.Literal,
+		FuncSignature: FuncSignature{
+			GenericParams: []*Identifier{},
+			Parameters:    []*Parameter{},
+			Results:       []*Parameter{},
+		},
+		ColonSyntax: true,
+	}
+
+	p.nextToken() // skip IDENT → COLON
+	if p.currentToken.Type != lexer.COLON {
+		msg := fmt.Sprintf("line %d, column %d: expected ':', got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip COLON
+
+	// Skip newlines
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	p.parseFunctionBody(def)
+
+	return def
+}
+
+// parseColonMethodDefinition parses a method definition with colon syntax:
+// user.foo: (a int) { ... }
+func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
+	p.nextToken() // skip struct name → DOT
+	p.nextToken() // skip DOT → method name (IDENT)
+	methodName := p.currentToken.Literal
+	fullName := structToken.Literal + "." + methodName
+
+	p.nextToken() // skip method name → COLON
+	if p.currentToken.Type != lexer.COLON {
+		msg := fmt.Sprintf("line %d, column %d: expected ':', got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip COLON
+
+	def := &FunctionDefinition{
+		Token: structToken,
+		Name:  fullName,
+		FuncSignature: FuncSignature{
+			GenericParams: []*Identifier{},
+			Parameters:    []*Parameter{},
+			Results:       []*Parameter{},
+		},
+		ColonSyntax: true,
+	}
+
+	p.parseFunctionBody(def)
+
+	// Insert self parameter
+	selfParam := &Parameter{
+		Token: structToken,
+		Name:  "self",
+		Type:  buildType(structToken.Literal, structToken),
+	}
+	def.Parameters = append([]*Parameter{selfParam}, def.Parameters...)
 
 	return def
 }
@@ -4326,13 +4658,28 @@ func (p *Parser) parseArgument() Expression {
 	}
 }
 
+// exprToType 將 Expression 轉換為 Type，用於 NullableType/PointerType 的內部型別
+func exprToType(expr Expression) Type {
+	if t, ok := expr.(Type); ok {
+		return t
+	}
+	if ident, ok := expr.(*Identifier); ok {
+		return &NamedType{Token: ident.Token, Value: ident.Value}
+	}
+	return &NamedType{
+		Token: lexer.Token{Line: expr.Pos().Line, Column: expr.Pos().Column},
+		Value: fmt.Sprintf("%v", expr),
+	}
+}
+
 func (p *Parser) parsePointerType() Expression {
 	pt := &PointerType{Token: p.currentToken}
 	p.nextToken() // skip ptr
 	// ptr(type)
 	if p.currentToken.Type == lexer.LPAREN {
 		p.nextToken() // skip (
-		pt.Type = p.parseExpression(LOWEST)
+		typeExpr := p.parseExpression(LOWEST)
+		pt.Type = exprToType(typeExpr)
 		if p.currentToken.Type == lexer.RPAREN {
 			p.nextToken()
 		}
@@ -4343,7 +4690,7 @@ func (p *Parser) parsePointerType() Expression {
 func (p *Parser) parseNullableType(expression Expression) Expression {
 	nullable := &NullableType{
 		Token: p.peekToken,
-		Type:  expression,
+		Type:  exprToType(expression),
 	}
 
 	p.nextToken() // 跳过 QUESTION 令牌
@@ -4361,52 +4708,106 @@ func (p *Parser) expectPeek(t lexer.TokenType) bool {
 	return false
 }
 
+// buildType 將型別字串轉換為 Type 節點
+func buildType(typeStr string, tok lexer.Token) Type {
+	if typeStr == "" {
+		return nil
+	}
+	// 處理 ? 前綴（option 型別）
+	if typeStr[0] == '?' {
+		inner := buildType(typeStr[1:], tok)
+		if inner == nil {
+			return nil
+		}
+		return &NullableType{Token: tok, Type: inner}
+	}
+	// 處理 ptr 前綴（指標型別）
+	if strings.HasPrefix(typeStr, "ptr ") {
+		inner := buildType(typeStr[4:], tok)
+		if inner == nil {
+			return nil
+		}
+		return &PointerType{Token: tok, Type: inner}
+	}
+	// 處理 * 前綴（指標型別，簡寫）
+	if typeStr[0] == '*' {
+		inner := buildType(typeStr[1:], tok)
+		if inner == nil {
+			return nil
+		}
+		return &PointerType{Token: tok, Type: inner}
+	}
+	// 處理 [] 前綴（切片型別）
+	if strings.HasPrefix(typeStr, "[]") {
+		elem := buildType(typeStr[2:], tok)
+		if elem == nil {
+			elem = &NamedType{Token: tok, Value: "i64"}
+		}
+		return &SliceType{Token: tok, Elem: elem}
+	}
+	// 處理 [n] 或 [ident] 前綴（陣列型別）
+	if len(typeStr) > 2 && typeStr[0] == '[' {
+		end := strings.IndexByte(typeStr, ']')
+		if end > 0 {
+			sizeStr := typeStr[1:end]
+			var sizeExpr Expression
+			if sizeStr != "" {
+				if val, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+					sizeExpr = &IntegerLiteral{Token: tok, Value: val, Raw: sizeStr}
+				} else {
+					sizeExpr = &Identifier{Token: tok, Value: sizeStr}
+				}
+			}
+			elemStr := typeStr[end+1:]
+			elem := buildType(elemStr, tok)
+			if elem == nil {
+				elem = &NamedType{Token: tok, Value: elemStr}
+			}
+			return &ArrayType{Token: tok, Size: sizeExpr, Elem: elem}
+		}
+	}
+	// 簡單名稱型別
+	return &NamedType{Token: tok, Value: typeStr}
+}
+
 // addImplicitGeneric 將單字母 a-z 加入泛型參數列表（防重複）
 func addImplicitGeneric(name string, def *FunctionDefinition) {
 	if len(name) != 1 || name[0] < 'a' || name[0] > 'z' {
 		return
 	}
 	for _, gp := range def.GenericParams {
-		if gp == name {
+		if gp.Value == name {
 			return
 		}
 	}
-	def.GenericParams = append(def.GenericParams, name)
+	def.GenericParams = append(def.GenericParams, &Identifier{Value: name})
 }
 
-// detectImplicitGeneric 從型別字串中推斷隱式泛型參數（單字母 a-z）
-// 例如 [n]t → 推斷 n(大小) 和 t(型別)；?[n]t → 同上；單獨 t → 推斷 t(型別)
-func detectImplicitGeneric(typeStr string, def *FunctionDefinition) {
-	// 單字母 a-z 視為泛型型別參數（非陣列）
-	if len(typeStr) == 1 && typeStr[0] >= 'a' && typeStr[0] <= 'z' {
-		addImplicitGeneric(typeStr, def)
+// detectImplicitGeneric 從型別節點中推斷隱式泛型參數（單字母 a-z）
+func detectImplicitGeneric(t Type, def *FunctionDefinition) {
+	if t == nil {
 		return
 	}
-	// 跳過 ? 前綴（option 型別）
-	start := 0
-	if len(typeStr) > 0 && typeStr[0] == '?' {
-		start = 1
-	}
-	if len(typeStr) < start+3 || typeStr[start] != '[' {
-		return
-	}
-	// 取出括號內的內容（陣列大小）
-	end := start + 1
-	for end < len(typeStr) && typeStr[end] != ']' {
-		end++
-	}
-	if end >= len(typeStr) {
-		return
-	}
-	sizeName := typeStr[start+1 : end]
-	addImplicitGeneric(sizeName, def)
-
-	// 取出括號後的元素型別
-	if end+1 < len(typeStr) {
-		elemType := typeStr[end+1:]
+	switch typ := t.(type) {
+	case *NamedType:
 		// 單字母 a-z 視為泛型型別參數
-		if len(elemType) == 1 && elemType[0] >= 'a' && elemType[0] <= 'z' {
-			addImplicitGeneric(elemType, def)
+		if len(typ.Value) == 1 && typ.Value[0] >= 'a' && typ.Value[0] <= 'z' {
+			addImplicitGeneric(typ.Value, def)
 		}
+	case *NullableType:
+		detectImplicitGeneric(typ.Type, def)
+	case *ArrayType:
+		// 陣列大小中的單字母 a-z 視為泛型大小參數
+		if ident, ok := typ.Size.(*Identifier); ok {
+			if len(ident.Value) == 1 && ident.Value[0] >= 'a' && ident.Value[0] <= 'z' {
+				addImplicitGeneric(ident.Value, def)
+			}
+		}
+		// 檢查元素型別
+		detectImplicitGeneric(typ.Elem, def)
+	case *SliceType:
+		detectImplicitGeneric(typ.Elem, def)
+	case *PointerType:
+		detectImplicitGeneric(typ.Type, def)
 	}
 }

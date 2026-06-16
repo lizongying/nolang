@@ -16,18 +16,9 @@ vec-create = (n i64, val i64, out []i64) {
     }
 }
 
-// vec-clone: 將 src 的前 n 個元素複製到 dst
-vec-clone = (src []i64, n i64, dst []i64) {
-    i = 0
-    for i < n {
-        dst[i] = src[i]
-        i = i + 1
-    }
-}
-
 // vec-eq: 比較兩個切片的前 n 個元素是否相等
 // 返回 1=相等, 0=不相等
-vec-eq = (a []i64, b []i64, n i64, eq i64) {
+[]t.eq = (a []t) (eq bool) {
     eq = 1
     i = 0
     for i < n {
@@ -39,40 +30,121 @@ vec-eq = (a []i64, b []i64, n i64, eq i64) {
     }
 }
 
-// vec-fill: 將切片前 n 個元素填充為 val
-vec-fill = (out []i64, n i64, val i64) {
+// vec/sort — 切片排序
+//
+// 對 i64 切片進行原地排序。
+// 使用插入排序（穩定、無堆分配、適合小數據量）。
+// 實現在 LLVM/Go generator 中（Nolang 尚無陣列索引語法）。
+//
+// 用法：
+//   data = [3, 1, 4, 1, 5]
+//   sort-asc(data, 5)
+//   // data == [1, 1, 3, 4, 5]
+
+// sort-asc: 升序排序 data[0..n)
+[]t.sort-asc = () {
+}
+
+// sort-desc: 降序排序 data[0..n)
+[]t.sort-desc = () {
+}
+
+// vec — 切片操作
+//
+// 泛型參數 n(大小) t(型別) 自動推斷。
+
+// new_cap = old_cap
+
+// if old_cap == 0:
+//     new_cap = 4   # 初始
+// elif old_cap < 1024:
+//     new_cap = old_cap * 2   # 小容量：翻倍
+// else:
+//     new_cap = old_cap * 5 / 4  # 大容量：1.25 倍
+
+// vec {
+//     len i64 read-only
+//     cap i64 read-only
+
+//     // 只存固定大小
+//     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+//     // >8 字节存指针指針
+//     data *any sealed
+// }
+
+// []t.len: 回傳切片長度
+[]t.len = (n i64) {
+    n = .len
+}
+
+// []t.push: 在末尾追加元素（需確保容量足夠）
+[]t.push = (val t) {
+    n = .len
+    n; val
+    new-n = n + 1
+}
+
+// []t.pop: 從末尾彈出元素
+[]t.pop = () (val t, new-n i64) {
+    n = .len
+    if n > 0 {
+        new-n = n - 1
+        val = .[new-n]
+    } else {
+        new-n = 0
+    }
+}
+
+// []t.contains: 是否包含值 val
+[]t.contains = (n i64, val t) (found i64) {
+    found = 0
     i = 0
     for i < n {
-        out[i] = val
+        d = .[i] - val
+        if d == 0 {
+            found = 1
+        }
         i = i + 1
     }
 }
 
-// vec-reverse: 反轉切片前 n 個元素
-vec-reverse = (data []i64, n i64) {
+// []t.reverse: 反轉前 n 個元素
+[]t.reverse = (n i64) {
     i = 0
     j = n - 1
     for i < j {
-        tmp = data[i]
-        data[i] = data[j]
-        data[j] = tmp
+        tmp = .[i]
+        i; .[j]
+        .[j] = tmp
         i = i + 1
         j = j - 1
     }
 }
 
-// vec-push: 在切片末尾追加元素（需確保容量足夠）
-vec-push = (data []i64, n i64, val i64, new-n i64) {
-    data[n] = val
-    new-n = n + 1
+// []t.clone: 複製到 dst
+[]t.clone = (dst []t) {
+    i = 0
+    for i < .len {
+        dst[i] = .[i]
+        i = i + 1
+    }
 }
 
-// vec.pop: 從切片末尾彈出元素
-[]t.pop = (data []i64, n i64, val i64, new-n i64) {
-    if n > 0 {
-        new-n = n - 1
-        val = data[new-n]
-    } else {
-        new-n = 0
+// []t.fill: 前 n 個元素填充為 val
+[]t.fill = (n i64, val t) {
+    i = 0
+    for i < n {
+        .[i] = val
+        i = i + 1
+    }
+}
+
+// []t.to-arr: 切片方法，轉為 [n]t 陣列
+[]t.to-arr = () (out ?[?]t) {
+    if .len() != n {
+        out = nil
+    }
+    for i <- [0..n) {
+        ! out[i] = .[i]
     }
 }

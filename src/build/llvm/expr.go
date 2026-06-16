@@ -162,7 +162,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateSliceExpression(sb, e)
 	case *parser.PointerType:
 		if e.Type != nil {
-			return g.generateExprWithSB(sb, e.Type) + "*"
+			return g.mapToLLVMType(e.Type.String()) + "*"
 		}
 		return "i64*"
 	case *parser.IndexExpression:

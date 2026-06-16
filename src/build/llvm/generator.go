@@ -97,7 +97,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			retType := "void"
 			if len(fd.Results) > 0 {
-				retType = g.mapToLLVMType(fd.Results[0].Type)
+				retType = g.mapToLLVMType(fd.Results[0].Type.String())
 			}
 			g.funcRetTypes[fd.Name] = retType
 		}

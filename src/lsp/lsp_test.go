@@ -554,8 +554,9 @@ func TestHandleTextDocumentFormatting_ParseErrorSafety(t *testing.T) {
 	s := NewServer()
 
 	// 當格式化遇到解析錯誤時，不應修改代碼
+	// Use input with actual parse error (missing closing paren in result params)
 	input := strings.TrimSpace(`
-str.len: () (n    i64)      {
+str.len = () (n    i64      {
     n = .len
 }
 	`)

@@ -15,17 +15,9 @@ func NewFormatter() *Formatter {
 }
 
 type formatter struct {
-	buf          strings.Builder
-	indent       int
-	sourceLines  []string
-	lineTypes    []lineType
-	stmtLineCnt  []int // per-statement formatted line count
-	stmtOrigLine []int // per-statement original 1-based line number
-	// body statement tracking for position-based comment matching
-	bodyStmtLineCnt  []int    // per-body-stmt formatted line count
-	bodyStmtOrigLine []int    // per-body-stmt original line number
-	bodyStmtSource   []string // per-body-stmt original source text (trimmed)
-	bodyStmtIdx      int      // current body statement index
+	buf         strings.Builder
+	indent      int
+	sourceLines []string // original source lines (for blank line detection)
 }
 
 func (f *formatter) writeIndent() {
@@ -45,61 +37,196 @@ func (f *formatter) newline() {
 	f.writeIndent()
 }
 
-func (f *formatter) formatProgram(p *parser.Program) {
-	f.stmtLineCnt = nil
-	f.stmtOrigLine = nil
-	lineCount := func() int {
-		s := f.buf.String()
-		if len(s) == 0 {
-			return 0
+// docStartLine returns the first line of the Doc comment before a statement, or 0.
+func docStartLine(stmt parser.Statement) int {
+	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
+		doc := d.GetDoc()
+		if doc != nil && len(doc.List) > 0 {
+			return doc.List[0].Pos.Line
 		}
-		return strings.Count(s, "\n") + 1
 	}
+	return 0
+}
 
-	for i, stmt := range p.Statements {
-		before := lineCount()
+// stmtFirstLine returns the first source line of a statement (including Doc comments).
+func stmtFirstLine(stmt parser.Statement) int {
+	if l := docStartLine(stmt); l > 0 {
+		return l
+	}
+	return stmtTokenLine(stmt)
+}
 
+// stmtTokenEndLine returns the line of the last token in a statement (1-based).
+func stmtTokenEndLine(stmt parser.Statement) int {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		return s.Token.Line
+	case *parser.UseStatement:
+		return s.Token.Line
+	case *parser.ReturnStatement:
+		return s.Token.Line
+	case *parser.ExpressionStatement:
+		return stmtExprEndLine(s.Expression)
+	case *parser.FunctionDefinition:
+		return s.Body.Token.Line
+	case *parser.ForStatement:
+		return s.Body.Token.Line
+	case *parser.BreakStatement:
+		return s.Token.Line
+	case *parser.ContinueStatement:
+		return s.Token.Line
+	case *parser.BlockStatement:
+		return s.Token.Line
+	case *parser.EnumDefinition:
+		return s.Token.Line
+	case *parser.TaggedEnumDefinition:
+		return s.Token.Line
+	case *parser.InterfaceDefinition:
+		return s.Token.Line
+	case *parser.StructDefinition:
+		return s.Token.Line
+	}
+	return 0
+}
+
+// stmtExprEndLine returns the end line of an expression.
+func stmtExprEndLine(expr parser.Expression) int {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		return e.Token.Line
+	case *parser.IntegerLiteral:
+		return e.Token.Line
+	case *parser.FloatLiteral:
+		return e.Token.Line
+	case *parser.BooleanLiteral:
+		return e.Token.Line
+	case *parser.ByteLiteral:
+		return e.Token.Line
+	case *parser.StringLiteral:
+		return e.Token.Line
+	case *parser.CharLiteral:
+		return e.Token.Line
+	case *parser.NilLiteral:
+		return e.Token.Line
+	case *parser.PrefixExpression:
+		return stmtExprEndLine(e.Right)
+	case *parser.InfixExpression:
+		return stmtExprEndLine(e.Right)
+	case *parser.CallExpression:
+		return e.Token.Line
+	case *parser.DotExpression:
+		return stmtExprEndLine(e.Receiver)
+	case *parser.IfExpression:
+		if e.Alternative != nil && e.Alternative.Token.Line > 0 {
+			return e.Alternative.Token.Line
+		}
+		return e.Consequence.Token.Line
+	case *parser.FunctionLiteral:
+		return e.Body.Token.Line
+	case *parser.IndexExpression:
+		return e.Token.Line
+	case *parser.SliceExpression:
+		return e.Token.Line
+	case *parser.RangeExpression:
+		return e.Token.Line
+	case *parser.ArrayLiteral:
+		return e.Token.Line
+	case *parser.SliceLiteral:
+		return e.Token.Line
+	case *parser.StructLiteral:
+		return e.Token.Line
+	case *parser.AssignExpression:
+		return e.Token.Line
+	case *parser.ConditionalExpression:
+		return e.Token.Line
+	case *parser.GroupedExpression:
+		return e.Token.Line
+	}
+	return 0
+}
+
+// formatDocComments outputs comment lines that serve as Doc for a statement.
+func (f *formatter) formatDocComments(doc *parser.CommentGroup) {
+	if doc == nil {
+		return
+	}
+	for i, c := range doc.List {
 		if i > 0 {
-			// 保留原始碼中的空行（最多合併為一行）
+			prevLine := doc.List[i-1].Pos.Line
+			if c.Pos.Line > prevLine+1 {
+				// Blank line between comment groups: output blank line then indent
+				f.write("\n")
+				f.newline()
+			} else {
+				f.newline()
+			}
+		}
+		f.write("//")
+		f.write(c.Text)
+	}
+}
+
+// formatInlineComment outputs a comment that appears on the same line as code.
+func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
+	if comment == nil || len(comment.List) == 0 {
+		return
+	}
+	c := comment.List[0]
+	f.write("  // ")
+	f.write(strings.TrimSpace(c.Text))
+}
+
+// formatTrailingComments outputs comments that appear before a closing brace.
+func (f *formatter) formatTrailingComments(tc *parser.CommentGroup) {
+	if tc == nil {
+		return
+	}
+	for _, c := range tc.List {
+		f.newline()
+		f.write("//")
+		f.write(c.Text)
+	}
+}
+
+// hasBlankLineBetween checks if there is a blank line between two source positions.
+func (f *formatter) hasBlankLineBetween(prevEndLine, currStartLine int) bool {
+	if prevEndLine <= 0 || currStartLine <= 0 || currStartLine <= prevEndLine+1 {
+		return false
+	}
+	for lineNum := prevEndLine + 1; lineNum < currStartLine; lineNum++ {
+		idx := lineNum - 1
+		if idx < len(f.sourceLines) && strings.TrimSpace(f.sourceLines[idx]) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *formatter) formatProgram(p *parser.Program) {
+	for i, stmt := range p.Statements {
+		if i > 0 {
+			prevEndLine := stmtTokenEndLine(p.Statements[i-1])
+			currStartLine := stmtFirstLine(stmt)
 			// 函數定義之間始終插入空行
 			_, prevIsFunc := p.Statements[i-1].(*parser.FunctionDefinition)
 			_, currIsFunc := stmt.(*parser.FunctionDefinition)
-			if f.hasBlankLineBetween(p.Statements[i-1], stmt) || (prevIsFunc && currIsFunc) {
+			if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) {
 				f.newline()
 			}
 			f.newline()
 		}
 		f.formatStatement(stmt)
-
-		after := lineCount()
-		f.stmtLineCnt = append(f.stmtLineCnt, after-before)
-		f.stmtOrigLine = append(f.stmtOrigLine, stmtTokenLine(stmt))
 	}
-}
 
-// hasBlankLineBetween 檢查原始碼中兩個陳述句之間是否有空行
-// 只考慮程式碼行之間的空白行，註釋行/空白行之間的空白行不計（section header 與函數之間的空白）
-func (f *formatter) hasBlankLineBetween(prev, curr parser.Statement) bool {
-	prevLine := stmtTokenLine(prev)
-	currLine := stmtTokenLine(curr)
-	if prevLine == 0 || currLine == 0 || currLine <= prevLine {
-		return false
-	}
-	// 檢查 prevLine 到 currLine 之間是否有程式碼行之間的空白行
-	for line := prevLine; line < currLine; line++ {
-		idx := line - 1
-		if idx >= len(f.sourceLines) {
-			continue
-		}
-		if strings.TrimSpace(f.sourceLines[idx]) == "" {
-			// 空白行只有在前一行是程式碼行時才視為 statement 之間的空行
-			// 註釋行或 section header 前的空白不計
-			if idx > 0 && idx-1 < len(f.lineTypes) && f.lineTypes[idx-1] == lineCode {
-				return true
-			}
+	// 輸出尾隨註釋
+	if p.TrailingComments != nil {
+		f.newline()
+		for _, c := range p.TrailingComments.List {
+			f.write("//")
+			f.write(c.Text)
+			f.newline()
 		}
 	}
-	return false
 }
 
 // stmtTokenLine 取得陳述句的起始行號（1-based）
@@ -136,6 +263,23 @@ func stmtTokenLine(stmt parser.Statement) int {
 }
 
 func (f *formatter) formatStatement(stmt parser.Statement) {
+	// Use CommentedNode interface to get Doc comments
+	var doc *parser.CommentGroup
+	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
+		doc = d.GetDoc()
+	}
+	// 輸出語句前的註釋（Doc），保留註釋與語句之間的空行
+	f.formatDocComments(doc)
+	if doc != nil && len(doc.List) > 0 {
+		lastDocLine := doc.List[len(doc.List)-1].Pos.Line
+		stmtLine := stmtTokenLine(stmt)
+		if lastDocLine > 0 && stmtLine > lastDocLine+1 {
+			// Preserve blank line between last Doc comment and statement
+			f.write("\n") // bare blank line (no indent)
+		}
+		f.newline() // indent for statement
+	}
+
 	switch s := stmt.(type) {
 	case *parser.UseStatement:
 		f.formatUseStatement(s)
@@ -164,15 +308,16 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	case *parser.StructDefinition:
 		f.formatStructDefinition(s)
 	}
-}
 
-// getStmtSource 获取语句对应的原始代码行内容（用于检测相同代码行）
-func (f *formatter) getStmtSource(stmt parser.Statement) string {
-	line := stmtTokenLine(stmt)
-	if line > 0 && line-1 < len(f.sourceLines) {
-		return strings.TrimSpace(f.sourceLines[line-1])
+	// For FunctionDefinition and ForStatement, inline comment is handled inside the specific formatter.
+	// For other statement types, output inline comment here.
+	if _, isFunc := stmt.(*parser.FunctionDefinition); !isFunc {
+		var comment *parser.CommentGroup
+		if c, ok := stmt.(interface{ GetComment() *parser.CommentGroup }); ok {
+			comment = c.GetComment()
+		}
+		f.formatInlineComment(comment)
 	}
-	return ""
 }
 
 func (f *formatter) formatExpression(expr parser.Expression) {
@@ -235,10 +380,10 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.formatConditionalExpression(e)
 	case *parser.NullableType:
 		f.write("?")
-		f.formatExpression(e.Type)
+		f.write(e.Type.String())
 	case *parser.PointerType:
 		f.write("ptr ")
-		f.formatExpression(e.Type)
+		f.write(e.Type.String())
 	case *parser.GroupedExpression:
 		f.write("(")
 		f.formatExpression(e.Expression)
@@ -261,39 +406,45 @@ func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 
 func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	f.formatExpression(s.Name)
-	if s.ArraySize > 0 {
-		f.writef(" [%d]", s.ArraySize)
-		if s.ElemType != "" {
-			f.write(s.ElemType)
+	// Render array/slice type: a [3]u16, v []u8
+	if at, ok := s.Type.(*parser.ArrayType); ok {
+		f.write(" [")
+		if at.Size != nil {
+			f.formatExpression(at.Size)
 		}
-	} else if s.IsSlice {
+		f.write("]")
+		// Only output element type if explicitly written (not inferred default i64)
+		if at.Elem != nil && !typeTokenInferred(at.Token, at.Elem) {
+			f.write(at.Elem.String())
+		}
+	} else if st, ok := s.Type.(*parser.SliceType); ok {
 		f.write(" []")
-		if s.ElemType != "" {
-			f.write(s.ElemType)
+		// Only output element type if explicitly written (not inferred default i64)
+		if st.Elem != nil && !typeTokenInferred(st.Token, st.Elem) {
+			f.write(st.Elem.String())
 		}
-	} else if s.Type != nil && s.Type.Value != "" && !isInferredType(s) {
-		if s.IsOption {
-			f.write(" ?")
-			f.write(s.Type.Value)
-		} else {
-			f.write(" ")
-			f.write(s.Type.Value)
-		}
+	} else if nt, ok := s.Type.(*parser.NamedType); ok && nt.Value != "" && !isInferredType(s) {
+		f.write(" ")
+		f.write(nt.Value)
 	}
 	if s.Value != nil {
 		f.write(" = ")
 		// 當 ArraySize > 0 且值為 ArrayLiteral（由 [1, 2, 3] 轉換而來）
 		// 以切片風格輸出 [1, 2, 3]，避免重複 size
-		if s.ArraySize > 0 {
-			if arr, ok := s.Value.(*parser.ArrayLiteral); ok && isSliceConverted(arr) {
-				f.write("[")
-				for i, el := range arr.Elements {
-					if i > 0 {
-						f.write(", ")
+		if at, ok := s.Type.(*parser.ArrayType); ok {
+			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok && intLit.Value > 0 {
+				if arr, ok := s.Value.(*parser.ArrayLiteral); ok && isSliceConverted(arr) {
+					f.write("[")
+					for i, el := range arr.Elements {
+						if i > 0 {
+							f.write(", ")
+						}
+						f.formatExpression(el)
 					}
-					f.formatExpression(el)
+					f.write("]")
+				} else {
+					f.formatExpression(s.Value)
 				}
-				f.write("]")
 			} else {
 				f.formatExpression(s.Value)
 			}
@@ -315,14 +466,25 @@ func isSliceConverted(arr *parser.ArrayLiteral) bool {
 	return false
 }
 
+// typeTokenInferred checks if a child type's token has the same position as the parent's token,
+// indicating the child was inferred/defaulted by the parser.
+func typeTokenInferred(parentToken lexer.Token, childType parser.Type) bool {
+	pos := childType.Pos()
+	return pos.Line == parentToken.Line && pos.Column == parentToken.Column
+}
+
 // isInferredType checks if the type was inferred by the parser (not written in source).
 // The parser sets Type.Token to the same position as Name.Token for inferred types.
 func isInferredType(s *parser.LetStatement) bool {
 	if s.Type == nil || s.Name == nil {
 		return false
 	}
-	return s.Type.Token.Line == s.Name.Token.Line &&
-		s.Type.Token.Column == s.Name.Token.Column
+	nt, ok := s.Type.(*parser.NamedType)
+	if !ok {
+		return false
+	}
+	return nt.Token.Line == s.Name.Token.Line &&
+		nt.Token.Column == s.Name.Token.Column
 }
 
 func (f *formatter) formatReturnStatement(s *parser.ReturnStatement) {
@@ -347,7 +509,11 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		}
 		f.write(">")
 	}
-	f.write(" = (")
+	if s.ColonSyntax {
+		f.write(": (")
+	} else {
+		f.write(" = (")
+	}
 	// Skip implicit self parameter for method definitions
 	params := s.Parameters
 	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
@@ -361,6 +527,11 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.write(")")
 	}
 	f.write(" {")
+	// Output inline comment on the same line as the opening brace
+	if s.Comment != nil && len(s.Comment.List) > 0 {
+		c := s.Comment.List[0]
+		f.writef("  // %s", strings.TrimSpace(c.Text))
+	}
 	f.indent++
 
 	// 過濾掉 ; 分隔符產生的空表達式語句
@@ -372,49 +543,35 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		statements = append(statements, stmt)
 	}
 
-	f.bodyStmtLineCnt = nil
-	f.bodyStmtOrigLine = nil
-	f.bodyStmtSource = nil
-
 	for i, stmt := range statements {
 		if i > 0 {
-			prevLine := stmtTokenLine(statements[i-1])
-			currLine := stmtTokenLine(stmt)
-			if prevLine > 0 && prevLine == currLine {
+			prevTokenLine := stmtTokenLine(statements[i-1])
+			currTokenLine := stmtTokenLine(stmt)
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// Same line: use semicolon separator
 				f.write("; ")
 			} else {
-				// 检测相同代码行之间自动插入空行
-				// 仅在两个语句之间没有保留行（注释/空白）时才插入
-				if i > 0 && prevLine != currLine {
-					prevSrc := f.getStmtSource(statements[i-1])
-					currSrc := f.getStmtSource(stmt)
-					if prevSrc != "" && prevSrc == currSrc {
-						// 检查两个语句之间是否有保留行
-						hasPreserved := false
-						for l := prevLine + 1; l < currLine && l-1 < len(f.lineTypes); l++ {
-							if f.lineTypes[l-1] == linePreserved {
-								hasPreserved = true
-								break
-							}
-						}
-						if !hasPreserved {
-							f.newline() // extra blank line
-						}
-					}
+				prevEndLine := stmtTokenEndLine(statements[i-1])
+				currStartLine := stmtFirstLine(stmt)
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+					f.write("\n") // blank line (no indent)
 				}
 				f.newline()
 			}
 		} else {
+			// Check for blank line between '{' and first statement
+			openBraceLine := s.Body.Token.Line
+			firstDocStartLine := stmtFirstLine(stmt)
+			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+				f.write("\n") // blank line (no indent)
+			}
 			f.newline()
 		}
-		before := f.buf.Len()
 		f.formatStatement(stmt)
-		after := f.buf.Len()
-		lineCnt := strings.Count(f.buf.String()[before:after], "\n") + 1
-		f.bodyStmtLineCnt = append(f.bodyStmtLineCnt, lineCnt)
-		f.bodyStmtOrigLine = append(f.bodyStmtOrigLine, stmtTokenLine(stmt))
-		f.bodyStmtSource = append(f.bodyStmtSource, f.getStmtSource(stmt))
 	}
+
+	// 輸出函數體內的尾隨註釋
+	f.formatTrailingComments(s.Body.TrailingComments)
 
 	f.indent--
 	f.newline()
@@ -428,11 +585,11 @@ func isMethodDef(s *parser.FunctionDefinition) bool {
 
 // filterExplicitGenericParams 過濾隱式推斷的泛型參數，只保留明確聲明的泛型參數
 // 隱式泛型為單字母小寫 a-z，由 detectImplicitGeneric 推斷
-func filterExplicitGenericParams(params []string) []string {
+func filterExplicitGenericParams(params []*parser.Identifier) []string {
 	var result []string
 	for _, p := range params {
-		if len(p) != 1 || p[0] < 'a' || p[0] > 'z' {
-			result = append(result, p)
+		if len(p.Value) != 1 || p.Value[0] < 'a' || p.Value[0] > 'z' {
+			result = append(result, p.Value)
 		}
 	}
 	return result
@@ -444,9 +601,9 @@ func (f *formatter) formatParameters(params []*parser.Parameter) {
 			f.write(", ")
 		}
 		f.write(p.Name)
-		if p.Type != "" {
+		if p.Type != nil {
 			f.write(" ")
-			f.write(p.Type)
+			f.write(p.Type.String())
 		}
 	}
 }
@@ -466,18 +623,34 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 
 	for i, stmt := range statements {
 		if i > 0 {
-			prevLine := stmtTokenLine(statements[i-1])
-			currLine := stmtTokenLine(stmt)
-			if prevLine > 0 && prevLine == currLine {
+			prevTokenLine := stmtTokenLine(statements[i-1])
+			currTokenLine := stmtTokenLine(stmt)
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// Same line: use semicolon separator
 				f.write("; ")
 			} else {
+				prevEndLine := stmtTokenEndLine(statements[i-1])
+				currStartLine := stmtFirstLine(stmt)
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+					f.write("\n") // blank line (no indent)
+				}
 				f.newline()
 			}
 		} else {
+			// Check for blank line between '{' and first statement
+			openBraceLine := s.Token.Line
+			firstDocStartLine := stmtFirstLine(stmt)
+			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+				f.write("\n") // blank line (no indent)
+			}
 			f.newline()
 		}
 		f.formatStatement(stmt)
 	}
+
+	// 輸出尾隨註釋
+	f.formatTrailingComments(s.TrailingComments)
+
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -493,10 +666,23 @@ func (f *formatter) formatPrefixExpression(e *parser.PrefixExpression) {
 
 func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 	f.formatExpression(e.Left)
-	f.write(" ")
-	f.write(e.Operator)
-	f.write(" ")
-	f.formatExpression(e.Right)
+
+	// Detect multi-line expressions (right operand starts on a different line)
+	rightLine := stmtExprEndLine(e.Right)
+	leftLine := stmtExprEndLine(e.Left)
+	multiLine := rightLine > leftLine
+
+	if multiLine {
+		f.write(" ")
+		f.write(e.Operator)
+		f.write("\n")
+		f.formatExpression(e.Right)
+	} else {
+		f.write(" ")
+		f.write(e.Operator)
+		f.write(" ")
+		f.formatExpression(e.Right)
+	}
 }
 
 func (f *formatter) formatCallExpression(e *parser.CallExpression) {
@@ -550,6 +736,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		f.newline()
 		f.formatStatement(stmt)
 	}
+	f.formatTrailingComments(e.Consequence.TrailingComments)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -566,6 +753,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 				f.newline()
 				f.formatStatement(stmt)
 			}
+			f.formatTrailingComments(ifExpr.Consequence.TrailingComments)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -580,6 +768,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 				f.newline()
 				f.formatStatement(stmt)
 			}
+			f.formatTrailingComments(e.Alternative.TrailingComments)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -598,6 +787,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 			f.newline()
 			f.formatStatement(stmt)
 		}
+		f.formatTrailingComments(ifExpr.Consequence.TrailingComments)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -611,6 +801,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 			f.newline()
 			f.formatStatement(stmt)
 		}
+		f.formatTrailingComments(alt.TrailingComments)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -644,6 +835,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			f.newline()
 			f.formatStatement(stmt)
 		}
+		f.formatTrailingComments(s.Body.TrailingComments)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -657,21 +849,21 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.write(" ")
 		f.formatExpression(s.CountExpr)
 		f.write(" *")
-	} else if s.Variable != "" && (s.Range != nil || s.RangeStr != "" || s.RangeIdent != "" || s.RangeSliceLit != nil) {
+	} else if s.IterRange != nil && s.IterRange.Variable != "" {
 		// range for: for i <- [a..b]
 		f.write(" ")
-		f.write(s.Variable)
+		f.write(s.IterRange.Variable)
 		f.write(" <- ")
-		if s.RangeStr != "" {
+		if s.IterRange.RangeStr != "" {
 			f.write("'")
-			f.write(s.RangeStr)
+			f.write(s.IterRange.RangeStr)
 			f.write("'")
-		} else if s.RangeIdent != "" {
-			f.write(s.RangeIdent)
-		} else if s.RangeSliceLit != nil {
-			f.formatSliceLiteral(s.RangeSliceLit)
+		} else if ident, ok := s.IterRange.RangeExpr.(*parser.Identifier); ok {
+			f.write(ident.Value)
+		} else if sliceLit, ok := s.IterRange.RangeExpr.(*parser.SliceLiteral); ok {
+			f.formatSliceLiteral(sliceLit)
 		} else {
-			f.formatRangeBrackets(s.Range)
+			f.formatRangeBrackets(s.IterRange.Range)
 		}
 	} else if s.Init != nil {
 		// C-style for: for init; cond; update { }
@@ -690,10 +882,41 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 
 	f.write(" {")
 	f.indent++
+	// 過濾掉 ; 分隔符產生的空表達式語句
+	statements := make([]parser.Statement, 0, len(s.Body.Statements))
 	for _, stmt := range s.Body.Statements {
-		f.newline()
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
+	for i, stmt := range statements {
+		if i > 0 {
+			prevTokenLine := stmtTokenLine(statements[i-1])
+			currTokenLine := stmtTokenLine(stmt)
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// Same line: use semicolon separator
+				f.write("; ")
+			} else {
+				prevEndLine := stmtTokenEndLine(statements[i-1])
+				currStartLine := stmtFirstLine(stmt)
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+					f.write("\n") // blank line (no indent)
+				}
+				f.newline()
+			}
+		} else {
+			// Check for blank line between '{' and first statement
+			openBraceLine := s.Body.Token.Line
+			firstDocStartLine := stmtFirstLine(stmt)
+			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+				f.write("\n") // blank line (no indent)
+			}
+			f.newline()
+		}
 		f.formatStatement(stmt)
 	}
+	f.formatTrailingComments(s.Body.TrailingComments)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -821,12 +1044,12 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 		f.write(" ")
 		if field.IsSlice {
 			f.write("[]")
-			f.write(field.Type)
+			f.write(field.Type.String())
 		} else if field.ArraySize > 0 {
 			f.writef("[%d]", field.ArraySize)
-			f.write(field.Type)
+			f.write(field.Type.String())
 		} else {
-			f.write(field.Type)
+			f.write(field.Type.String())
 		}
 	}
 	f.indent--
@@ -854,7 +1077,7 @@ func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
 		f.newline()
 		f.write(v.Name)
 		f.write(" ")
-		f.write(v.Type)
+		f.write(v.Type.String())
 		f.write(",")
 	}
 	f.indent--
@@ -886,25 +1109,10 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 		f.newline()
 		f.formatStatement(stmt)
 	}
+	f.formatTrailingComments(e.Body.TrailingComments)
 	f.indent--
 	f.newline()
 	f.write("}")
-}
-
-// lineType 表示原始行類型
-// linePreserved: 純註釋行或空白行（保留原樣）
-// lineCode: 程式碼行（需要格式化）
-type lineType int
-
-const (
-	linePreserved lineType = iota
-	lineCode
-)
-
-// lineComment 記錄原始碼中的行尾註釋資訊
-type lineComment struct {
-	comment  string // 註釋內容（不含 //）
-	codeLine string // 去除註釋後的原始程式碼
 }
 
 func Format(code string) string {
@@ -912,10 +1120,7 @@ func Format(code string) string {
 		return ""
 	}
 
-	// 從原始碼中移除 // 註釋，純註釋行保留原樣
-	cleanCode, comments, lineTypes := stripAndClassify(code)
-
-	l := lexer.New(cleanCode)
+	l := lexer.New(code)
 	p := parser.New(l)
 	program := p.ParseProgram()
 
@@ -925,538 +1130,16 @@ func Format(code string) string {
 	}
 
 	if program == nil || len(program.Statements) == 0 {
-		return cleanCode
+		return code
 	}
 
-	cleanLines := strings.Split(cleanCode, "\n")
+	sourceLines := strings.Split(code, "\n")
 	f := &formatter{
-		sourceLines: cleanLines,
-		lineTypes:   lineTypes,
+		sourceLines: sourceLines,
 	}
 	f.formatProgram(program)
-	formattedCode := f.buf.String()
-	formattedLines := strings.Split(formattedCode, "\n")
 
-	// 使用 statement 行數追蹤重建：遍歷原始 cleanLines，
-	// 保留行（純註釋/空白）原樣輸出，程式碼行替換為下一段格式化行的內容。
-	// 同一 statement 可能跨越多行原始碼（例如多行函數定義），
-	// 後續連續的程式碼行（如 }）屬同一 statement，不產生額外格式化輸出。
-	stmtStartLines := make(map[int]bool)
-	for _, l := range f.stmtOrigLine {
-		if l > 0 {
-			stmtStartLines[l-1] = true
-		}
-	}
-
-	// 预处理：将缩进的纯注释行插入到所属语句的格式化输出中
-	// 对于函数体内的注释（在 } 之前），插入到格式化输出的 } 之前
-	// 对于 } 之后的注释，在合并循环中缩进会被归零处理
-	stmtFormattedStart := make([]int, len(f.stmtLineCnt))
-	pos := 0
-	for i, cnt := range f.stmtLineCnt {
-		stmtFormattedStart[i] = pos
-		pos += cnt
-	}
-
-	// 建立行索引→语句索引的映射
-	lineToStmt := make([]int, len(lineTypes))
-	currentStmt := -1
-	for i, lt := range lineTypes {
-		if lt == lineCode && stmtStartLines[i] {
-			currentStmt++
-		}
-		lineToStmt[i] = currentStmt
-	}
-
-	type commentEntry struct {
-		lineIdx int
-		content string
-	}
-
-	// 记录已被预插入的注释行，合并循环中跳过它们
-	handledComments := make(map[int]bool)
-
-	// 将缩进注释按语句分组（仅在 } 之前的内部注释）
-	commentsByStmt := make(map[int][]commentEntry)
-	for i, lt := range lineTypes {
-		if lt != linePreserved {
-			continue
-		}
-		line := cleanLines[i]
-		trimmed := strings.TrimLeft(line, " \t")
-		if !strings.HasPrefix(trimmed, "//") {
-			// 缩进的空白行，夹在缩进注释之间时也收集到预插入中
-			if strings.TrimSpace(line) == "" {
-				// 检查相邻行是否为缩进的注释（缩进 > 0 表示在函数体内部）
-				nextIsIndentedComment := i+1 < len(cleanLines) &&
-					strings.HasPrefix(strings.TrimLeft(cleanLines[i+1], " \t"), "//") &&
-					len(cleanLines[i+1])-len(strings.TrimLeft(cleanLines[i+1], " \t")) > 0
-				prevIsIndentedComment := i > 0 &&
-					strings.HasPrefix(strings.TrimLeft(cleanLines[i-1], " \t"), "//") &&
-					len(cleanLines[i-1])-len(strings.TrimLeft(cleanLines[i-1], " \t")) > 0
-				if nextIsIndentedComment || prevIsIndentedComment {
-					stmt := lineToStmt[i]
-					if stmt >= 0 {
-						commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
-						handledComments[i] = true
-					}
-				}
-			}
-			continue
-		}
-		indent := len(line) - len(trimmed)
-		if indent == 0 {
-			continue
-		}
-
-		// 查找前一行代码
-		var prevCodeLine string
-		for prev := i - 1; prev >= 0; prev-- {
-			if lineTypes[prev] == lineCode {
-				prevCodeLine = cleanLines[prev]
-				break
-			}
-		}
-
-		// 处理 } 之后的注释：函数级 }（缩进 0）由合并循环处理，嵌套 }（缩进 > 0）预插入并调整缩进
-		if strings.TrimSpace(prevCodeLine) == "}" {
-			prevIndent := len(prevCodeLine) - len(strings.TrimLeft(prevCodeLine, " \t"))
-			if prevIndent == 0 {
-				// 函数级 }：跳过，由合并循环归零缩进
-				continue
-			}
-			// 嵌套 }：缩进调整到 } 的同级，然后预插入
-			trimmed := strings.TrimLeft(cleanLines[i], " \t")
-			adjustedLine := strings.Repeat(" ", prevIndent) + trimmed
-			stmt := lineToStmt[i]
-			if stmt >= 0 {
-				commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: adjustedLine})
-				handledComments[i] = true
-			}
-			continue
-		}
-
-		// 缩进的注释，前一行代码不是 }：始终视为语句体内的注释，预插入到格式化输出中
-		stmt := lineToStmt[i]
-		if stmt >= 0 {
-			commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
-			handledComments[i] = true
-		}
-	}
-
-	// 将注释插入到格式化行中：通过内容匹配找到每条注释的插入位置
-	// 对于函数体内部的注释（非 } 之后的），找到下一条代码行在格式化输出中的位置，插入在其之前
-	if len(commentsByStmt) > 0 {
-		newFormattedLines := make([]string, 0, len(formattedLines))
-		newStmtLineCnt := make([]int, len(f.stmtLineCnt))
-		copy(newStmtLineCnt, f.stmtLineCnt)
-
-		for stmtIdx := 0; stmtIdx < len(f.stmtLineCnt); stmtIdx++ {
-			start := stmtFormattedStart[stmtIdx]
-			end := start + f.stmtLineCnt[stmtIdx]
-			stmtLines := make([]string, end-start)
-			copy(stmtLines, formattedLines[start:end])
-
-			if entries, ok := commentsByStmt[stmtIdx]; ok && len(entries) > 0 {
-				offset := 0
-				for _, entry := range entries {
-					// 先按 lineIdx 排序，确保按原始顺序处理
-					_ = entry.lineIdx
-
-					// 找到注释之后的下一条代码行
-					nextCodeLine := ""
-					for j := entry.lineIdx + 1; j < len(cleanLines); j++ {
-						if lineTypes[j] == lineCode {
-							nextCodeLine = strings.TrimSpace(cleanLines[j])
-							break
-						}
-					}
-
-					if nextCodeLine == "" {
-						// 没有后续代码行，追加到末尾
-						stmtLines = append(stmtLines, entry.content)
-						offset++
-						continue
-					}
-
-					// 计算此代码行在 entry 之前同一缩进层级出现的次数
-					// 空白行使用下一行的缩进
-					entryIndent := len(entry.content) - len(strings.TrimLeft(entry.content, " \t"))
-					if entryIndent == 0 && strings.TrimSpace(entry.content) == "" {
-						// 空白行：使用注释行（下一行）的缩进
-						for next := entry.lineIdx + 1; next < len(cleanLines); next++ {
-							if lineTypes[next] == linePreserved && strings.HasPrefix(strings.TrimLeft(cleanLines[next], " \t"), "//") {
-								entryIndent = len(cleanLines[next]) - len(strings.TrimLeft(cleanLines[next], " \t"))
-								break
-							}
-							if lineTypes[next] == lineCode {
-								break
-							}
-						}
-					}
-					occurrenceIdx := 0
-					for j := 0; j < entry.lineIdx; j++ {
-						if lineTypes[j] == lineCode {
-							// 只在同一语句范围内计数，避免跨语句同名行的干扰
-							if lineToStmt[j] != stmtIdx {
-								continue
-							}
-							trimmed := strings.TrimSpace(cleanLines[j])
-							if trimmed == nextCodeLine {
-								codeIndent := len(cleanLines[j]) - len(strings.TrimLeft(cleanLines[j], " \t"))
-								if codeIndent == entryIndent {
-									occurrenceIdx++
-								}
-							}
-						}
-					}
-
-					insertPos := -1
-					prevIsCloseBrace := false
-
-					// 搜索函数：跳过 occurrenceIdx 次匹配
-					searchFunc := func(exactOnly bool) int {
-						localSkip := occurrenceIdx
-						if prevIsCloseBrace {
-							for k := len(stmtLines) - 1; k >= 0; k-- {
-								trimmed := strings.TrimSpace(stmtLines[k])
-								match := (trimmed == nextCodeLine)
-								if !match && !exactOnly {
-									match = matchFormattedLine(trimmed, nextCodeLine)
-								}
-								if match {
-									if localSkip > 0 {
-										localSkip--
-										continue
-									}
-									return k
-								}
-							}
-						} else {
-							for k, sl := range stmtLines {
-								trimmed := strings.TrimSpace(sl)
-								match := (trimmed == nextCodeLine)
-								if !match && !exactOnly {
-									match = matchFormattedLine(trimmed, nextCodeLine)
-								}
-								if match {
-									if localSkip > 0 {
-										localSkip--
-										continue
-									}
-									return k
-								}
-							}
-						}
-						return -1
-					}
-
-					// 当下一条代码行是 } 时，插入到语句末尾（最后一个 } 之前）
-					// 避免 } 在格式化输出中出现多次导致错误定位
-					if nextCodeLine == "}" {
-						for k := len(stmtLines) - 1; k >= 0; k-- {
-							if strings.TrimSpace(stmtLines[k]) == "}" {
-								insertPos = k
-								break
-							}
-						}
-						goto doInsert
-					}
-
-					// 在 stmtLines 中找到匹配 nextCodeLine 的位置
-					// 如果上一代码行是 }，从右向左匹配最后一个（避免 for 循环体内的重复行）
-					for prev := entry.lineIdx - 1; prev >= 0; prev-- {
-						if lineTypes[prev] == lineCode {
-							if strings.TrimSpace(cleanLines[prev]) == "}" {
-								prevIsCloseBrace = true
-							}
-							break
-						}
-					}
-					insertPos = searchFunc(true)
-					if insertPos < 0 {
-						insertPos = searchFunc(false)
-					}
-
-				doInsert:
-					if insertPos >= 0 {
-						// 在找到的位置之前插入
-						// 注意：stmtLines 每次插入後都會更新，insertPos 已反映之前的偏移
-						if insertPos < 0 {
-							insertPos = 0
-						}
-						before := make([]string, insertPos)
-						copy(before, stmtLines[:insertPos])
-						after := stmtLines[insertPos:]
-						combined := make([]string, 0, len(stmtLines)+1)
-						combined = append(combined, before...)
-						combined = append(combined, entry.content)
-						combined = append(combined, after...)
-						stmtLines = combined
-						offset++
-					} else {
-						// 找不到匹配，追加到末尾
-						stmtLines = append(stmtLines, entry.content)
-						offset++
-					}
-				}
-
-				newFormattedLines = append(newFormattedLines, stmtLines...)
-				newStmtLineCnt[stmtIdx] += offset
-			} else {
-				newFormattedLines = append(newFormattedLines, stmtLines...)
-			}
-		}
-
-		formattedLines = newFormattedLines
-		f.stmtLineCnt = newStmtLineCnt
-	}
-
-	stmtIdx := 0
-	formLineIdx := 0
-	continuationRemaining := 0
-	var result []string
-	for origLineIdx, lt := range lineTypes {
-		if lt == linePreserved {
-			line := cleanLines[origLineIdx]
-			isComment := strings.HasPrefix(strings.TrimLeft(line, " \t"), "//")
-			if isComment {
-				// 当前一行不是注释时，检查下一个语句输出是否以空行开头
-				// 若是，在注释前插入该空行（让空行在 } 与注释之间，而非注释与函数之间）
-				if len(result) > 0 {
-					prevTrim := strings.TrimSpace(result[len(result)-1])
-					prevIsCode := prevTrim != "" && !strings.HasPrefix(prevTrim, "//")
-					if prevIsCode && formLineIdx < len(formattedLines) {
-						// 向后查找下一个语句起始行
-						for next := origLineIdx + 1; next < len(lineTypes); next++ {
-							if lineTypes[next] == linePreserved {
-								continue
-							}
-							if lineTypes[next] == lineCode {
-								if stmtStartLines[next] && strings.TrimSpace(formattedLines[formLineIdx]) == "" {
-									result = append(result, "")
-									formLineIdx++
-									if stmtIdx < len(f.stmtLineCnt) {
-										f.stmtLineCnt[stmtIdx]--
-									}
-								}
-							}
-							break
-						}
-					}
-				}
-				// 跳过已被预插入的注释（已进入 formattedLines）
-				if handledComments[origLineIdx] {
-					continue
-				}
-				// 处理 } 之后的缩进注释：调整缩进匹配 } 的层级
-				var prevCodeLine string
-				for prev := origLineIdx - 1; prev >= 0; prev-- {
-					if lineTypes[prev] == lineCode {
-						prevCodeLine = cleanLines[prev]
-						break
-					}
-				}
-				if strings.TrimSpace(prevCodeLine) == "}" {
-					// 前一代码行为 }：注释在 } 之后，缩进调整到 } 的同级
-					prevIndent := len(prevCodeLine) - len(strings.TrimLeft(prevCodeLine, " \t"))
-					line = strings.Repeat(" ", prevIndent) + strings.TrimLeft(line, " \t")
-				} else if formLineIdx >= len(formattedLines) {
-					// 没有更多格式化输出（文件末尾的注释），完全归零缩进
-					line = strings.TrimLeft(line, " \t")
-				}
-				result = append(result, line)
-			} else {
-				// 空白行：前后都是注释行时才保留
-				prevIsComment := origLineIdx == 0 || strings.HasPrefix(strings.TrimLeft(cleanLines[origLineIdx-1], " \t"), "//")
-				nextIsComment := origLineIdx == len(cleanLines)-1 ||
-					(origLineIdx+1 < len(lineTypes) && lineTypes[origLineIdx+1] == linePreserved &&
-						strings.HasPrefix(strings.TrimLeft(cleanLines[origLineIdx+1], " \t"), "//"))
-				if prevIsComment && nextIsComment {
-					result = append(result, line)
-				}
-			}
-			continue
-		}
-
-		// 代码行：只有当此行为语句起始行时才输出格式化内容
-		if stmtStartLines[origLineIdx] && stmtIdx < len(f.stmtLineCnt) {
-			cnt := f.stmtLineCnt[stmtIdx]
-			sourceCodeLines := 1
-			for next := origLineIdx + 1; next < len(lineTypes); next++ {
-				if lineTypes[next] == linePreserved {
-					continue
-				}
-				if lineTypes[next] == lineCode && stmtStartLines[next] {
-					break
-				}
-				sourceCodeLines++
-			}
-
-			for j := 0; j < cnt && formLineIdx+j < len(formattedLines); j++ {
-				result = append(result, formattedLines[formLineIdx+j])
-			}
-			formLineIdx += cnt
-			stmtIdx++
-			continuationRemaining = sourceCodeLines - cnt
-		} else if continuationRemaining > 0 {
-			result = append(result, cleanLines[origLineIdx])
-			continuationRemaining--
-		}
-	}
-
-	// 將行尾註釋匹配到格式化輸出
-	if len(comments) > 0 {
-		for _, comment := range comments {
-			ident := extractFirstIdentifier(comment.codeLine)
-			if ident == "" {
-				continue
-			}
-			codeLine := comment.codeLine
-			// 先嘗試精確匹配（移除全部空白後比對）
-			noSpace := func(s string) string {
-				var b strings.Builder
-				for i := 0; i < len(s); i++ {
-					if s[i] != ' ' && s[i] != '\t' {
-						b.WriteByte(s[i])
-					}
-				}
-				return b.String()
-			}
-			codeNoSpace := noSpace(codeLine)
-			bestJ := -1
-			for j, line := range result {
-				if extractFirstIdentifier(line) == ident && !strings.Contains(result[j], "//"+comment.comment) {
-					if strings.Contains(noSpace(line), codeNoSpace) || strings.Contains(codeNoSpace, noSpace(line)) {
-						result[j] = line + "  // " + comment.comment
-						bestJ = -1
-						break
-					}
-					if bestJ < 0 {
-						bestJ = j
-					}
-				}
-			}
-			if bestJ >= 0 {
-				result[bestJ] = result[bestJ] + "  // " + comment.comment
-			}
-		}
-	}
-
-	return strings.TrimRight(strings.Join(result, "\n"), "\n")
-}
-
-// extractFirstIdentifier 從一行程式碼中提取首個有效的 Nolang 標識符
-func extractFirstIdentifier(line string) string {
-	// 跳過開頭的空白
-	line = strings.TrimLeft(line, " \t")
-	if line == "" {
-		return ""
-	}
-	// 逐字元提取：字母/數字/底線/連接號
-	var buf strings.Builder
-	for _, ch := range line {
-		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' {
-			buf.WriteRune(ch)
-		} else {
-			break
-		}
-	}
-	return buf.String()
-}
-
-// matchFormattedLine 检查格式化行是否匹配原始代码行的内容。
-// 使用逐步宽松的匹配策略：精确 → 前缀 → 变量名匹配。
-func matchFormattedLine(trimmedFormatted, codeLine string) bool {
-	if trimmedFormatted == "" || codeLine == "" {
-		return false
-	}
-	// 1. 精确匹配
-	if trimmedFormatted == codeLine {
-		return true
-	}
-	// 2. 前缀匹配（因格式化可能增减括号或展开行内块）
-	if strings.HasPrefix(codeLine, trimmedFormatted) || strings.HasPrefix(trimmedFormatted, codeLine) {
-		return true
-	}
-	// 3. 匹配到第一个 '='（处理赋值语句）
-	if eqIdx := strings.Index(codeLine, "="); eqIdx > 0 {
-		prefix := strings.TrimSpace(codeLine[:eqIdx])
-		if prefix != "" && strings.HasPrefix(strings.TrimSpace(trimmedFormatted), prefix) {
-			return true
-		}
-	}
-	// 4. 匹配到第一个 '{'（处理行内块展开）
-	if braceIdx := strings.Index(codeLine, "{"); braceIdx > 0 {
-		prefix := strings.TrimSpace(codeLine[:braceIdx])
-		if prefix != "" && strings.HasPrefix(strings.TrimSpace(trimmedFormatted), prefix) {
-			return true
-		}
-	}
-	// 5. 移除全部空格後比較（處理格式化增減空格的情況）
-	noSpace := func(s string) string {
-		var b strings.Builder
-		b.Grow(len(s))
-		for i := 0; i < len(s); i++ {
-			if s[i] != ' ' && s[i] != '\t' {
-				b.WriteByte(s[i])
-			}
-		}
-		return b.String()
-	}
-	codeNoSpace := noSpace(codeLine)
-	formattedNoSpace := noSpace(trimmedFormatted)
-	if codeNoSpace == formattedNoSpace {
-		return true
-	}
-	if strings.HasPrefix(formattedNoSpace, codeNoSpace) || strings.HasPrefix(codeNoSpace, formattedNoSpace) {
-		return true
-	}
-	return false
-}
-
-// stripAndClassify 從原始碼中移除行尾註釋，保留純註釋行和空白行。
-// 返回：移除行尾註釋後的程式碼，行尾註釋列表，每行的類型
-func stripAndClassify(code string) (string, []lineComment, []lineType) {
-	lines := strings.Split(code, "\n")
-	var comments []lineComment
-	types := make([]lineType, len(lines))
-	inStr := false
-
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimLeft(line, " \t")
-
-		// 純註釋行或空白行 → 保留原樣
-		if strings.HasPrefix(trimmed, "//") || strings.TrimSpace(line) == "" {
-			types[lineIdx] = linePreserved
-			continue
-		}
-
-		types[lineIdx] = lineCode
-
-		// 程式碼行 → 檢查是否有行尾註釋
-		for i := 0; i < len(line); i++ {
-			ch := line[i]
-			if ch == '\'' && (i == 0 || line[i-1] != '\\') {
-				inStr = !inStr
-			}
-			if !inStr && ch == '/' && i+1 < len(line) && line[i+1] == '/' {
-				comment := strings.TrimSpace(line[i+2:])
-				beforeComment := strings.TrimRight(line[:i], " \t")
-
-				if comment != "" {
-					comments = append(comments, lineComment{
-						comment:  comment,
-						codeLine: beforeComment,
-					})
-				}
-				lines[lineIdx] = beforeComment
-				break
-			}
-		}
-	}
-
-	return strings.Join(lines, "\n"), comments, types
+	return strings.TrimRight(f.buf.String(), "\n")
 }
 
 func (f *Formatter) Format(code string) string {

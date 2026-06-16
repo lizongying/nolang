@@ -118,7 +118,7 @@ func (g *Generator) generateLetStatement(stmt *parser.LetStatement) string {
 	if stmt.Type != nil {
 		sb.WriteString(name)
 		sb.WriteString(" ")
-		sb.WriteString(g.generateExpression(stmt.Type))
+		sb.WriteString(stmt.Type.String())
 		sb.WriteString(" = ")
 	} else {
 		sb.WriteString(name)
@@ -206,7 +206,7 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	case *parser.NullableType:
 		return g.generateNullableType(e)
 	case *parser.PointerType:
-		return "ptr(" + g.generateExpression(e.Type) + ")"
+		return "ptr(" + e.Type.String() + ")"
 	case *parser.GroupedExpression:
 		return g.generateExpression(e.Expression)
 	default:
@@ -287,9 +287,9 @@ func (g *Generator) generateFunctionLiteral(expr *parser.FunctionLiteral) string
 			sb.WriteString(", ")
 		}
 		sb.WriteString(param.Name)
-		if param.Type != "" {
+		if param.Type != nil {
 			sb.WriteString(" ")
-			sb.WriteString(param.Type)
+			sb.WriteString(param.Type.String())
 		}
 	}
 
@@ -309,9 +309,9 @@ func (g *Generator) generateFunctionDefinition(fd *parser.FunctionDefinition) st
 			sb.WriteString(", ")
 		}
 		sb.WriteString(param.Name)
-		if param.Type != "" {
+		if param.Type != nil {
 			sb.WriteString(" ")
-			sb.WriteString(param.Type)
+			sb.WriteString(param.Type.String())
 		}
 	}
 
@@ -339,7 +339,7 @@ func (g *Generator) generateCallExpression(expr *parser.CallExpression) string {
 }
 
 func (g *Generator) generateNullableType(expr *parser.NullableType) string {
-	return fmt.Sprintf("?%s", g.generateExpression(expr.Type))
+	return fmt.Sprintf("?%s", expr.Type.String())
 }
 
 func (g *Generator) generateForStatement(stmt *parser.ForStatement) string {
@@ -440,16 +440,16 @@ func (g *Generator) generateStructDefinition(sd *parser.StructDefinition) string
 		sb.WriteString(" ")
 		if field.ArraySize > 0 {
 			sb.WriteString(fmt.Sprintf("[%d]", field.ArraySize))
-			if field.Type != "" {
-				sb.WriteString(field.Type)
+			if field.Type != nil {
+				sb.WriteString(field.Type.String())
 			}
 		} else if field.IsSlice {
 			sb.WriteString("[]")
-			if field.Type != "" {
-				sb.WriteString(field.Type)
+			if field.Type != nil {
+				sb.WriteString(field.Type.String())
 			}
-		} else if field.Type != "" {
-			sb.WriteString(field.Type)
+		} else if field.Type != nil {
+			sb.WriteString(field.Type.String())
 		} else {
 			sb.WriteString("i64")
 		}

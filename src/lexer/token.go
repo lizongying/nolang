@@ -205,6 +205,12 @@ var keywords = map[string]TokenType{
 	"go":   GO,
 }
 
+// Position represents a source position (line:col, 1-based).
+type Position struct {
+	Line   int
+	Column int
+}
+
 type Token struct {
 	Type    TokenType
 	Literal string

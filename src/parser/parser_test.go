@@ -105,7 +105,7 @@ func TestParser(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected LetStatement, got %T", program.Statements[5])
 	}
-	if typeStmt.Type == nil || typeStmt.Type.Value != "?str" {
+	if typeStmt.Type == nil || typeStmt.Type.String() != "?str" {
 		t.Errorf("expected type ?str, got %v", typeStmt.Type)
 	}
 	if typeStmt.Name.Value != "nullableValue" {
@@ -215,8 +215,8 @@ hello-world = 'Hello World'`, wantName: "", wantType: ""},
 				if letStmt.Type == nil {
 					t.Fatalf("expected type %q, got nil", tt.wantType)
 				}
-				if letStmt.Type.Value != tt.wantType {
-					t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.Value)
+				if letStmt.Type.String() != tt.wantType {
+					t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
 				}
 				if letStmt.Value == nil {
 					t.Errorf("expected value, got nil")
@@ -236,7 +236,7 @@ func TestFunctionDefinitionUint8(t *testing.T) {
 	p := New(lex)
 	program := p.ParseProgram()
 	// Json(program)
-	program.Print()
+	_ = program
 }
 
 // go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestFunctionDefinitionStr$
@@ -249,7 +249,7 @@ func TestFunctionDefinitionStr(t *testing.T) {
 	p := New(lex)
 	program := p.ParseProgram()
 	// Json(program)
-	program.Print()
+	_ = program
 }
 
 // go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestFunctionDefinitionBool$
@@ -262,7 +262,7 @@ func TestFunctionDefinitionBool(t *testing.T) {
 	p := New(lex)
 	program := p.ParseProgram()
 	// Json(program)
-	program.Print()
+	_ = program
 }
 
 // go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestFunctionDefinitionFloat$
@@ -275,7 +275,7 @@ func TestFunctionDefinitionFloat(t *testing.T) {
 	p := New(lex)
 	program := p.ParseProgram()
 	// Json(program)
-	program.Print()
+	_ = program
 }
 
 // go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestFunctionDefinitionInt$
@@ -288,7 +288,7 @@ func TestFunctionDefinitionInt(t *testing.T) {
 	p := New(lex)
 	program := p.ParseProgram()
 	// Json(program)
-	program.Print()
+	_ = program
 }
 
 func TestFunctionDefinition2(t *testing.T) {
@@ -334,14 +334,14 @@ func TestFunctionDefinition2(t *testing.T) {
 	if funcDef.Parameters[0].Name != "a" {
 		t.Errorf("expected first parameter name 'a', got '%s'", funcDef.Parameters[0].Name)
 	}
-	if funcDef.Parameters[0].Type != "int" {
+	if funcDef.Parameters[0].Type.String() != "int" {
 		t.Errorf("expected first parameter type 'int', got '%s'", funcDef.Parameters[0].Type)
 	}
 
 	if funcDef.Parameters[1].Name != "b" {
 		t.Errorf("expected second parameter name 'b', got '%s'", funcDef.Parameters[1].Name)
 	}
-	if funcDef.Parameters[1].Type != "string" {
+	if funcDef.Parameters[1].Type.String() != "string" {
 		t.Errorf("expected second parameter type 'string', got '%s'", funcDef.Parameters[1].Type)
 	}
 
@@ -464,8 +464,8 @@ func TestCharByte(t *testing.T) {
 			if letStmt.Type == nil {
 				t.Fatalf("expected type annotation, got nil")
 			}
-			if letStmt.Type.Value != tt.wantType {
-				t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.Value)
+			if letStmt.Type.String() != tt.wantType {
+				t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
 			}
 
 			if tt.wantChar {
@@ -999,8 +999,14 @@ func TestArraySliceStruct(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected LetStatement, got %T", stmts[0])
 				}
-				if let.ArraySize != 3 {
-					t.Errorf("expected ArraySize=3, got %d", let.ArraySize)
+				at, ok := let.Type.(*ArrayType)
+				if !ok {
+					t.Fatalf("expected ArrayType, got %T", let.Type)
+				}
+				if intLit, ok := at.Size.(*IntegerLiteral); ok {
+					if intLit.Value != 3 {
+						t.Errorf("expected size 3, got %d", intLit.Value)
+					}
 				}
 				arr, ok := let.Value.(*ArrayLiteral)
 				if !ok {
@@ -1020,11 +1026,17 @@ func TestArraySliceStruct(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected LetStatement, got %T", stmts[0])
 				}
-				if let.ArraySize != 3 {
-					t.Errorf("expected ArraySize=3, got %d", let.ArraySize)
+				at, ok := let.Type.(*ArrayType)
+				if !ok {
+					t.Fatalf("expected ArrayType, got %T", let.Type)
 				}
-				if let.ElemType != "u16" {
-					t.Errorf("expected ElemType='u16', got %q", let.ElemType)
+				if intLit, ok := at.Size.(*IntegerLiteral); ok {
+					if intLit.Value != 3 {
+						t.Errorf("expected size 3, got %d", intLit.Value)
+					}
+				}
+				if at.Elem.String() != "u16" {
+					t.Errorf("expected elem type 'u16', got %q", at.Elem.String())
 				}
 			},
 		},
@@ -1055,11 +1067,12 @@ func TestArraySliceStruct(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected LetStatement, got %T", stmts[0])
 				}
-				if !let.IsSlice {
-					t.Errorf("expected IsSlice=true")
+				st, ok := let.Type.(*SliceType)
+				if !ok {
+					t.Fatalf("expected SliceType, got %T", let.Type)
 				}
-				if let.ElemType != "u8" {
-					t.Errorf("expected ElemType='u8', got %q", let.ElemType)
+				if st.Elem.String() != "u8" {
+					t.Errorf("expected elem type 'u8', got %q", st.Elem.String())
 				}
 			},
 		},
@@ -1108,11 +1121,11 @@ bs = [x11, x22, x33]`,
 				if len(sd.Fields) != 2 {
 					t.Fatalf("expected 2 fields, got %d", len(sd.Fields))
 				}
-				if sd.Fields[0].Name != "name" || sd.Fields[0].Type != "str" {
-					t.Errorf("field 0: expected name:str, got %s:%s", sd.Fields[0].Name, sd.Fields[0].Type)
+				if sd.Fields[0].Name != "name" || sd.Fields[0].Type.String() != "str" {
+					t.Errorf("field 0: expected name:str, got %s:%s", sd.Fields[0].Name, sd.Fields[0].Type.String())
 				}
-				if sd.Fields[1].Name != "age" || sd.Fields[1].Type != "i64" {
-					t.Errorf("field 1: expected age:i64, got %s:%s", sd.Fields[1].Name, sd.Fields[1].Type)
+				if sd.Fields[1].Name != "age" || sd.Fields[1].Type.String() != "i64" {
+					t.Errorf("field 1: expected age:i64, got %s:%s", sd.Fields[1].Name, sd.Fields[1].Type.String())
 				}
 			},
 		},
@@ -1357,8 +1370,8 @@ func TestFunctionSyntax(t *testing.T) {
 				if len(fd.Parameters) != 1 {
 					t.Fatalf("expected 1 param, got %d", len(fd.Parameters))
 				}
-				if fd.Parameters[0].Type != "[]i64" {
-					t.Errorf("expected param type '[]i64', got %q", fd.Parameters[0].Type)
+				if fd.Parameters[0].Type.String() != "[]i64" {
+					t.Errorf("expected param type '[]i64', got %q", fd.Parameters[0].Type.String())
 				}
 			},
 		},
