@@ -107,6 +107,36 @@ func (sp *SymbolProvider) collectFromStatement(stmt parser.Statement, containerN
 			sp.collectFromExpression(s.Expression, containerName, symbols)
 		}
 
+	case *parser.InterfaceDefinition:
+		symbol := DocumentSymbol{
+			Name:           s.Name,
+			Kind:           SymbolKindInterface,
+			SelectionRange: sp.rangeFromToken(s.Token),
+			Range:          sp.rangeFromToken(s.Token),
+			Children:       []DocumentSymbol{},
+		}
+		for _, method := range s.Methods {
+			methodSymbol := DocumentSymbol{
+				Name:           method.Name,
+				Kind:           SymbolKindMethod,
+				SelectionRange: sp.rangeFromToken(method.Token),
+				Range:          sp.rangeFromToken(method.Token),
+				Children:       []DocumentSymbol{},
+			}
+			for _, param := range method.Parameters {
+				paramSymbol := DocumentSymbol{
+					Name:           param.Name,
+					Kind:           SymbolKindParameter,
+					SelectionRange: sp.rangeFromToken(param.Token),
+					Range:          sp.rangeFromToken(param.Token),
+					Children:       []DocumentSymbol{},
+				}
+				methodSymbol.Children = append(methodSymbol.Children, paramSymbol)
+			}
+			symbol.Children = append(symbol.Children, methodSymbol)
+		}
+		*symbols = append(*symbols, symbol)
+
 	case *parser.BlockStatement:
 		for _, innerStmt := range s.Statements {
 			sp.collectFromStatement(innerStmt, containerName, symbols)

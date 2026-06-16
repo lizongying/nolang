@@ -1,0 +1,148 @@
+// encoding/base64 — Base64 編解碼（RFC 4648）
+//
+// 提供標準與 URL 安全兩種字母表的編解碼。
+
+// ═══════════════════════════════════════════════
+// 字母表
+// ═══════════════════════════════════════════════
+
+// BASE64-STD: 標準 Base64 字母表
+BASE64-STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+// BASE64-URL: URL 安全 Base64 字母表
+BASE64-URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+// PAD: 填充字元 '='
+PAD = 61
+
+// ═══════════════════════════════════════════════
+// 編碼
+// ═══════════════════════════════════════════════
+
+// encode: 使用指定字母表進行 Base64 編碼
+encode = (data []byte, n i64, table str, out str) (out-n i64) {
+    out-n = (n + 2) / 3 * 4
+    i = 0
+    j = 0
+    for i + 3 <= n {
+        b0 = data[i] & 255
+        b1 = data[i + 1] & 255
+        b2 = data[i + 2] & 255
+        out[j] = table[b0 >> 2]
+        out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
+        out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]
+        out[j + 3] = table[b2 & 63]
+        i = i + 3
+        j = j + 4
+    }
+    // 處理剩餘 1 或 2 位元組
+    rem = n - i
+    if rem == 1 {
+        b0 = data[i] & 255
+        out[j] = table[b0 >> 2]
+        out[j + 1] = table[(b0 & 3) << 4]
+        out[j + 2] = PAD
+        out[j + 3] = PAD
+    }
+    if rem == 2 {
+        b0 = data[i] & 255
+        b1 = data[i + 1] & 255
+        out[j] = table[b0 >> 2]
+        out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
+        out[j + 2] = table[(b1 & 15) << 2]
+        out[j + 3] = PAD
+    }
+}
+
+// encode-std: 使用標準字母表編碼
+encode-std = (data []byte, n i64, out str) (out-n i64) {
+    encode(data, n, BASE64-STD, out)(out-n)
+}
+
+// encode-url: 使用 URL 安全字母表編碼
+encode-url = (data []byte, n i64, out str) (out-n i64) {
+    encode(data, n, BASE64-URL, out)(out-n)
+}
+
+// ═══════════════════════════════════════════════
+// 解碼
+// ═══════════════════════════════════════════════
+
+// decode: 使用指定字母表進行 Base64 解碼
+decode = (s str, n i64, table str, out []byte) (out-n i64, ok i64) {
+    ok = 1
+    out-n = 0
+    // 計算填充數
+    pad-count = 0
+    if n > 0 {
+        last = s[n - 1] & 255
+        if last == 61 {
+            pad-count = 1
+        }
+    }
+    if n > 1 {
+        last2 = s[n - 2] & 255
+        if last2 == 61 {
+            pad-count = 2
+        }
+    }
+    i = 0
+    j = 0
+    for i + 4 <= n {
+        v0 = b64-val(s[i], table)
+        v1 = b64-val(s[i + 1], table)
+        v2 = b64-val(s[i + 2], table)
+        v3 = b64-val(s[i + 3], table)
+        if v0 < 0 || v1 < 0 {
+            ok = 0
+            out-n = 0
+            return
+        }
+        out[j] = (v0 << 2) | (v1 >> 4)
+        if s[i + 2] & 255 != 61 {
+            if v2 < 0 {
+                ok = 0
+                out-n = 0
+                return
+            }
+            out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
+        }
+        if s[i + 3] & 255 != 61 {
+            if v3 < 0 {
+                ok = 0
+                out-n = 0
+                return
+            }
+            out[j + 2] = ((v2 & 3) << 6) | v3
+        }
+        j = j + 3
+        i = i + 4
+    }
+    out-n = j - pad-count
+    if out-n < 0 {
+        out-n = 0
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 輔助
+// ═══════════════════════════════════════════════
+
+// b64-val: 單個 Base64 字元轉數值
+// 填充字元回傳 0，無效字元回傳 -1
+b64-val = (c i64, table str) (v i64) {
+    v = -1
+    if c == 61 {
+        v = 0
+        return
+    }
+    i = 0
+    for i < 64 {
+        tc = table[i] & 255
+        if tc == c {
+            v = i
+            return
+        }
+        i = i + 1
+    }
+}

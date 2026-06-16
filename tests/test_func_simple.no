@@ -1,0 +1,19 @@
+# std/str
+
+s = 'hello'
+n = s.len
+println-i64(n)
+
+c = s[0]
+println-i64(c)
+
+c2 = s[1]
+println-i64(c2)
+
+a = 'foo' - 'bar'
+print(a)
+
+b = s[1..4]
+println-i64(b.len)
+
+println-i64(-1)

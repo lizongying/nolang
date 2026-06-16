@@ -1,0 +1,497 @@
+// test_str.no — str 标准库完整测试
+//
+// 构建: cd src && go run ./cmd/cli/. build ../tests/test_str.no
+// 运行: ../dist/test_str
+
+// ═══════════════════════════════════════════════
+// 测试 str.len
+// ═══════════════════════════════════════════════
+test-str-len() {
+    s = 'hello'
+    n = s.len
+    println-i64(n)     // expect: 5
+
+    empty = ''
+    m = empty.len
+    println-i64(m)     // expect: 0
+}
+test-str-len()
+println-i64(0)
+
+// ═══════════════════════════════════════════════
+// 测试 str-at
+// ═══════════════════════════════════════════════
+test-str-at() {
+    s = 'abc'
+    c0 = str-at(s, 0)
+    println-i64(c0)    // expect: 97 (a)
+    c1 = str-at(s, 1)
+    println-i64(c1)    // expect: 98 (b)
+    c2 = str-at(s, 2)
+    println-i64(c2)    // expect: 99 (c)
+}
+test-str-at()
+println-i64(1)
+
+// ═══════════════════════════════════════════════
+// 测试 str-eq
+// ═══════════════════════════════════════════════
+test-str-eq() {
+    a = 'hello'
+    b = 'hello'
+    eq1 = str-eq(a, b, 5)
+    println-i64(eq1)   // expect: 1
+
+    c = 'world'
+    eq2 = str-eq(a, c, 5)
+    println-i64(eq2)   // expect: 0
+
+    eq3 = str-eq(a, b, 3)
+    println-i64(eq3)   // expect: 1
+
+    d = 'hell'
+    eq4 = str-eq(a, d, 5)
+    println-i64(eq4)   // expect: 0
+}
+test-str-eq()
+println-i64(2)
+
+// ═══════════════════════════════════════════════
+// 测试 str-copy
+// ═══════════════════════════════════════════════
+test-str-copy() {
+    src = 'abcdef'
+    dst = '------'
+    str-copy(src, dst, 3)
+    c0 = dst[0] & 255
+    c1 = dst[1] & 255
+    c2 = dst[2] & 255
+    println-i64(c0)    // expect: 97 (a)
+    println-i64(c1)    // expect: 98 (b)
+    println-i64(c2)    // expect: 99 (c)
+}
+test-str-copy()
+println-i64(3)
+
+// ═══════════════════════════════════════════════
+// 测试 str-fill
+// ═══════════════════════════════════════════════
+test-str-fill() {
+    s = 'abcdef'
+    str-fill(s, 3, 120)
+    c0 = s[0] & 255
+    c3 = s[3] & 255
+    println-i64(c0)    // expect: 120 (x)
+    println-i64(c3)    // expect: 100 (d, unchanged)
+}
+test-str-fill()
+println-i64(4)
+
+// ═══════════════════════════════════════════════
+// 测试 str-index
+// ═══════════════════════════════════════════════
+test-str-index() {
+    s = 'hello world'
+    pos1 = str-index(s, 11, 'world', 5)
+    println-i64(pos1)  // expect: 6
+
+    pos2 = str-index(s, 11, 'xyz', 3)
+    println-i64(pos2)  // expect: -1
+
+    pos3 = str-index(s, 11, 'hello', 5)
+    println-i64(pos3)  // expect: 0
+
+    pos4 = str-index(s, 11, '', 0)
+    println-i64(pos4)  // expect: 0
+}
+test-str-index()
+println-i64(5)
+
+// ═══════════════════════════════════════════════
+// 测试 str-contains
+// ═══════════════════════════════════════════════
+test-str-contains() {
+    s = 'hello world'
+    c1 = str-contains(s, 11, 'world', 5)
+    println-i64(c1)    // expect: 1
+
+    c2 = str-contains(s, 11, 'xyz', 3)
+    println-i64(c2)    // expect: 0
+
+    c3 = str-contains(s, 11, 'lo wo', 5)
+    println-i64(c3)    // expect: 1
+}
+test-str-contains()
+println-i64(6)
+
+// ═══════════════════════════════════════════════
+// 测试 str-starts-with
+// ═══════════════════════════════════════════════
+test-str-starts-with() {
+    s = 'hello world'
+    sw1 = str-starts-with(s, 11, 'hello', 5)
+    println-i64(sw1)   // expect: 1
+
+    sw2 = str-starts-with(s, 11, 'world', 5)
+    println-i64(sw2)   // expect: 0
+
+    sw3 = str-starts-with(s, 11, 'hell', 4)
+    println-i64(sw3)   // expect: 1
+
+    sw4 = str-starts-with(s, 11, 'hello world', 11)
+    println-i64(sw4)   // expect: 1
+
+    sw5 = str-starts-with(s, 11, 'hello world!', 12)
+    println-i64(sw5)   // expect: 0
+}
+test-str-starts-with()
+println-i64(7)
+
+// ═══════════════════════════════════════════════
+// 测试 str-ends-with
+// ═══════════════════════════════════════════════
+test-str-ends-with() {
+    s = 'hello world'
+    ew1 = str-ends-with(s, 11, 'world', 5)
+    println-i64(ew1)   // expect: 1
+
+    ew2 = str-ends-with(s, 11, 'hello', 5)
+    println-i64(ew2)   // expect: 0
+
+    ew3 = str-ends-with(s, 11, 'orld', 4)
+    println-i64(ew3)   // expect: 1
+
+    ew4 = str-ends-with(s, 11, 'hello world', 11)
+    println-i64(ew4)   // expect: 1
+
+    ew5 = str-ends-with(s, 11, '!hello world', 12)
+    println-i64(ew5)   // expect: 0
+}
+test-str-ends-with()
+println-i64(8)
+
+// ═══════════════════════════════════════════════
+// 测试 str-trim
+// ═══════════════════════════════════════════════
+test-str-trim() {
+    s1 = '  hello  '
+    str-trim(s1, 9)(t1, n1)
+    println-i64(n1)    // expect: 5
+
+    s2 = 'hello'
+    str-trim(s2, 5)(t2, n2)
+    println-i64(n2)    // expect: 5
+
+    s3 = '   '
+    str-trim(s3, 3)(t3, n3)
+    println-i64(n3)    // expect: 0
+
+    s4 = '\thello\n'
+    str-trim(s4, 7)(t4, n4)
+    println-i64(n4)    // expect: 5
+}
+test-str-trim()
+println-i64(9)
+
+// ═══════════════════════════════════════════════
+// 测试 str-to-upper / str-to-lower
+// ═══════════════════════════════════════════════
+test-str-case() {
+    s1 = 'hello'
+    str-to-upper(s1, 5)(u1, un1)
+    c0 = str-at(u1, 0)
+    c4 = str-at(u1, 4)
+    println-i64(c0)    // expect: 72 (H)
+    println-i64(c4)    // expect: 79 (O)
+
+    s2 = 'WORLD'
+    str-to-lower(s2, 5)(l1, ln1)
+    c5 = str-at(l1, 0)
+    c9 = str-at(l1, 4)
+    println-i64(c5)    // expect: 119 (w)
+    println-i64(c9)    // expect: 100 (d)
+
+    s3 = 'Hello123'
+    str-to-upper(s3, 8)(u2, un2)
+    println-i64(un2)   // expect: 8
+    c10 = str-at(u2, 5)
+    println-i64(c10)   // expect: 49 (1, unchanged)
+}
+test-str-case()
+println-i64(10)
+
+// ═══════════════════════════════════════════════
+// 测试 str-repeat
+// ═══════════════════════════════════════════════
+test-str-repeat() {
+    s = 'ab'
+    str-repeat(s, 2, 3)(r1, rn1)
+    println-i64(rn1)   // expect: 6
+
+    c0 = str-at(r1, 0)
+    c1 = str-at(r1, 1)
+    c2 = str-at(r1, 2)
+    c3 = str-at(r1, 3)
+    c4 = str-at(r1, 4)
+    c5 = str-at(r1, 5)
+    println-i64(c0)   // expect: 97 (a)
+    println-i64(c1)   // expect: 98 (b)
+    println-i64(c2)   // expect: 97 (a)
+    println-i64(c3)   // expect: 98 (b)
+    println-i64(c4)   // expect: 97 (a)
+    println-i64(c5)   // expect: 98 (b)
+}
+test-str-repeat()
+println-i64(11)
+
+// ═══════════════════════════════════════════════
+// 测试 str-slice
+// ═══════════════════════════════════════════════
+test-str-slice() {
+    s = 'hello world'
+    str-slice(s, 11, 0, 5)(sl1, sln1)
+    println-i64(sln1)      // expect: 5
+
+    str-slice(s, 11, 6, 11)(sl2, sln2)
+    println-i64(sln2)      // expect: 5
+
+    str-slice(s, 11, 3, 8)(sl3, sln3)
+    println-i64(sln3)      // expect: 5
+
+    str-slice(s, 11, 0, 11)(sl4, sln4)
+    println-i64(sln4)      // expect: 11
+
+    str-slice(s, 11, 5, 5)(sl5, sln5)
+    println-i64(sln5)      // expect: 0
+
+    str-slice(s, 11, 10, 11)(sl6, sln6)
+    println-i64(sln6)      // expect: 1
+}
+test-str-slice()
+println-i64(12)
+
+// ═══════════════════════════════════════════════
+// 测试 str-to-i64
+// ═══════════════════════════════════════════════
+test-str-to-i64() {
+    v1 = str-to-i64('123', 3)
+    println-i64(v1)   // expect: 123
+
+    v2 = str-to-i64('0', 1)
+    println-i64(v2)   // expect: 0
+
+    v3 = str-to-i64('-42', 3)
+    println-i64(v3)   // expect: -42
+
+    v4 = str-to-i64('999', 3)
+    println-i64(v4)   // expect: 999
+}
+test-str-to-i64()
+println-i64(13)
+
+// ═══════════════════════════════════════════════
+// 测试 i64-to-str
+// ═══════════════════════════════════════════════
+test-i64-to-str() {
+    i64-to-str(123)(s1, n1)
+    println-i64(n1)       // expect: 3
+
+    i64-to-str(0)(s2, n2)
+    println-i64(n2)       // expect: 1
+
+    i64-to-str(-42)(s3, n3)
+    println-i64(n3)       // expect: 3
+
+    i64-to-str(9999)(s4, n4)
+    println-i64(n4)       // expect: 4
+}
+test-i64-to-str()
+println-i64(14)
+
+// ═══════════════════════════════════════════════
+// 测试 str-to-bytes / str-from-bytes
+// ═══════════════════════════════════════════════
+test-str-bytes() {
+    s = 'abc'
+    str-to-bytes(s, 3)(out, outn)
+    println-i64(outn)    // expect: 3
+
+    b0 = out[0]
+    b1 = out[1]
+    b2 = out[2]
+    println-i64(b0)   // expect: 97 (a)
+    println-i64(b1)   // expect: 98 (b)
+    println-i64(b2)   // expect: 99 (c)
+}
+test-str-bytes()
+println-i64(15)
+
+// ═══════════════════════════════════════════════
+// 测试 str-reverse
+// ═══════════════════════════════════════════════
+test-str-reverse() {
+    s1 = 'abc'
+    str-reverse(s1, 3)(r1, rn1)
+    println-i64(rn1)        // expect: 3
+    c0 = str-at(r1, 0)
+    c1 = str-at(r1, 1)
+    c2 = str-at(r1, 2)
+    println-i64(c0)   // expect: 99 (c)
+    println-i64(c1)   // expect: 98 (b)
+    println-i64(c2)   // expect: 97 (a)
+
+    s2 = 'a'
+    str-reverse(s2, 1)(r2, rn2)
+    println-i64(rn2)        // expect: 1
+    c3 = str-at(r2, 0)
+    println-i64(c3)   // expect: 97 (a)
+
+    s3 = 'abcd'
+    str-reverse(s3, 4)(r3, rn3)
+    c4 = str-at(r3, 0)
+    c5 = str-at(r3, 3)
+    println-i64(c4)   // expect: 100 (d)
+    println-i64(c5)   // expect: 97 (a)
+}
+test-str-reverse()
+println-i64(16)
+
+// ═══════════════════════════════════════════════
+// 测试 str-compare
+// ═══════════════════════════════════════════════
+test-str-compare() {
+    r1 = str-compare('abc', 3, 'abc', 3)
+    println-i64(r1)  // expect: 0
+
+    r2 = str-compare('abc', 3, 'abd', 3)
+    println-i64(r2)  // expect: -1
+
+    r3 = str-compare('abd', 3, 'abc', 3)
+    println-i64(r3)  // expect: 1
+
+    r4 = str-compare('ab', 2, 'abc', 3)
+    println-i64(r4)  // expect: -1
+
+    r5 = str-compare('abc', 3, 'ab', 2)
+    println-i64(r5)  // expect: 1
+
+    r6 = str-compare('a', 1, 'b', 1)
+    println-i64(r6)  // expect: -1
+}
+test-str-compare()
+println-i64(17)
+
+// ═══════════════════════════════════════════════
+// 测试 str-count
+// ═══════════════════════════════════════════════
+test-str-count() {
+    cnt1 = str-count('hello', 5, 108)
+    println-i64(cnt1)  // expect: 2 (l appears twice)
+
+    cnt2 = str-count('hello', 5, 104)
+    println-i64(cnt2)  // expect: 1 (h appears once)
+
+    cnt3 = str-count('hello', 5, 120)
+    println-i64(cnt3)  // expect: 0 (x not found)
+
+    cnt4 = str-count('aaa', 3, 97)
+    println-i64(cnt4)  // expect: 3
+
+    cnt5 = str-count('', 0, 97)
+    println-i64(cnt5)  // expect: 0
+}
+test-str-count()
+println-i64(18)
+
+// ═══════════════════════════════════════════════
+// 测试 str-replace-byte
+// ═══════════════════════════════════════════════
+test-str-replace-byte() {
+    s = 'hello'
+    str-replace-byte(s, 5, 101, 120)(r1, rn1)
+    println-i64(rn1)    // expect: 5
+    c0 = str-at(r1, 0)
+    c1 = str-at(r1, 1)
+    c2 = str-at(r1, 2)
+    c3 = str-at(r1, 3)
+    c4 = str-at(r1, 4)
+    println-i64(c0)  // expect: 104 (h)
+    println-i64(c1)  // expect: 120 (x, replaced)
+    println-i64(c2)  // expect: 108 (l)
+    println-i64(c3)  // expect: 108 (l)
+    println-i64(c4)  // expect: 111 (o)
+}
+test-str-replace-byte()
+println-i64(19)
+
+// ═══════════════════════════════════════════════
+// 测试 str-trim-char
+// ═══════════════════════════════════════════════
+test-str-trim-char() {
+    s1 = '///hello///'
+    str-trim-char(s1, 10, 47)(tc1, tcn1)
+    println-i64(tcn1)   // expect: 5
+
+    s2 = 'hello'
+    str-trim-char(s2, 5, 47)(tc2, tcn2)
+    println-i64(tcn2)   // expect: 5
+
+    s3 = '//////'
+    str-trim-char(s3, 6, 47)(tc3, tcn3)
+    println-i64(tcn3)   // expect: 0
+
+    s4 = '-hello-'
+    str-trim-char(s4, 7, 45)(tc4, tcn4)
+    println-i64(tcn4)   // expect: 5
+}
+test-str-trim-char()
+println-i64(20)
+
+// ═══════════════════════════════════════════════
+// 测试 str-empty
+// ═══════════════════════════════════════════════
+test-str-empty() {
+    e1 = str-empty('', 0)
+    println-i64(e1)    // expect: 1
+
+    e2 = str-empty('a', 1)
+    println-i64(e2)    // expect: 0
+
+    e3 = str-empty('hello', 5)
+    println-i64(e3)    // expect: 0
+}
+test-str-empty()
+println-i64(21)
+
+// ═══════════════════════════════════════════════
+// 综合测试：字符串拼接后操作
+// ═══════════════════════════════════════════════
+test-integration() {
+    s = 'Hello' - ' ' - 'World'
+    n = s.len
+    println-i64(n)    // expect: 11
+
+    contains = str-contains(s, n, 'World', 5)
+    println-i64(contains)   // expect: 1
+
+    starts = str-starts-with(s, n, 'Hello', 5)
+    println-i64(starts)     // expect: 1
+
+    ends = str-ends-with(s, n, 'World', 5)
+    println-i64(ends)       // expect: 1
+
+    idx = str-index(s, n, 'lo Wo', 5)
+    println-i64(idx)        // expect: 3
+
+    str-to-upper(s, n)(upper, uppern)
+    c0 = str-at(upper, 0)
+    println-i64(c0)         // expect: 72 (H)
+
+    str-to-lower(s, n)(lower, lowern)
+    c11 = str-at(lower, 0)
+    println-i64(c11)        // expect: 104 (h)
+}
+test-integration()
+println-i64(22)
+
+println-i64(-1)

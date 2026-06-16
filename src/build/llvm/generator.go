@@ -41,6 +41,8 @@ type Generator struct {
 	loopExits      []loopExit               // 活躍循環退出目標棧
 	nestedIfEndId  int                      // labelId of the most recently generated if expression's end block
 	arrayElemTypes map[string]string        // variable name → element LLVM type for %arr variables
+	curFuncRetType string                   // 當前函數回傳型別（void/i64/...）
+	curFuncRetName string                   // 當前函數輸出參數名稱（為空表示 void）
 }
 
 func NewGenerator() *Generator {

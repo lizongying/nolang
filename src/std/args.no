@@ -1,0 +1,153 @@
+// args — 命令行參數解析
+//
+// 依賴 os.args() / os.arg() 提供底層存取。
+// 提供標記偵測、選項讀取、位置參數等高階介面。
+
+// ═══════════════════════════════════════════════
+// 基礎
+// ═══════════════════════════════════════════════
+
+// count: 參數數量（含程式名）
+count = () (n i64) {
+    // LLVM: call os.args
+}
+
+// get: 獲取第 i 個參數
+get = (i i64) (val str) {
+    // LLVM: call os.arg(i)
+}
+
+// program: 程式名（第 0 個參數）
+program = () (name str) {
+    // LLVM: call os.arg(0)
+}
+
+// ═══════════════════════════════════════════════
+// 標記偵測
+// ═══════════════════════════════════════════════
+
+// has-flag: 判斷標記是否存在（如 --verbose, -v）
+has-flag = (flag str, flagn i64) (yes i64) {
+    yes = 0
+    n = count()
+    i = 1
+    for i < n {
+        get(i)(arg)
+        // 精確比對 arg 與 flag
+        matched = 1
+        if flagn == 0 {
+            matched = 0
+        }
+        j = 0
+        for j < flagn {
+            ac = arg[j] & 255
+            fc = flag[j] & 255
+            if ac != fc {
+                matched = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched == 1 {
+            yes = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 選項讀取
+// ═══════════════════════════════════════════════
+
+// get-option: 獲取選項值（如 --output=xxx 或 --output xxx）
+get-option = (key str, keyn i64, val str) (ok i64) {
+    ok = 0
+    n = count()
+    i = 1
+    for i < n {
+        get(i)(arg)
+        // 檢查 arg 是否以 key + '=' 開頭
+        matched-prefix = 1
+        j = 0
+        for j < keyn {
+            ac = arg[j] & 255
+            kc = key[j] & 255
+            if ac != kc {
+                matched-prefix = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched-prefix == 1 {
+            // 檢查 key 後是 '='
+            eq = arg[keyn] & 255
+            if eq == 61 {
+                // 複製 '=' 後的內容到 val
+                k = keyn + 1
+                vn = 0
+                for true {
+                    c = arg[k] & 255
+                    if c == 0 {
+                        break
+                    }
+                    val[vn] = c
+                    vn = vn + 1
+                    k = k + 1
+                }
+                ok = 1
+                return
+            }
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 位置參數
+// ═══════════════════════════════════════════════
+
+// get-positional: 獲取第 i 個位置參數（跳過標記）
+get-positional = (idx i64) (val str, ok i64) {
+    ok = 0
+    n = count()
+    pos = 0
+    j = 1
+    for j < n {
+        get(j)(arg)
+        // 跳過以 '-' 開頭的參數
+        c0 = arg[0] & 255
+        if c0 == 45 {
+            j = j + 1
+            // 如果是 --key value 形式，也跳過下一個
+            c1 = arg[1] & 255
+            if c1 != 45 {
+                // -k value: 跳過值（如果不是另一個標記）
+                if j < n {
+                    get(j)(next)
+                    nc = next[0] & 255
+                    if nc != 45 {
+                        j = j + 1
+                    }
+                }
+            }
+            continue
+        }
+        if pos == idx {
+            // 複製 arg 到 val
+            k = 0
+            for true {
+                c = arg[k] & 255
+                if c == 0 {
+                    break
+                }
+                val[k] = c
+                k = k + 1
+            }
+            ok = 1
+            return
+        }
+        pos = pos + 1
+        j = j + 1
+    }
+}

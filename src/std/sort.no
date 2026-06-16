@@ -1,0 +1,10 @@
+sort {
+    ast(n ..t)
+    desc(n ..t)
+}
+
+sort.ast = (n ..t) {
+}
+
+sort.desc = (n ..t) {
+}

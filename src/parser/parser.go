@@ -3843,10 +3843,108 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			p.saveError(msg)
 			return nil
 		}
-		// Skip to RPAREN (we don't store parameter types for now in interface signatures)
+		p.nextToken() // skip (
+
+		// Parse method parameters: (n ..t), (n i64), (n), etc.
 		for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+			for p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.COMMA {
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.RPAREN {
+				break
+			}
+
+			if p.currentToken.Type != lexer.IDENT {
+				msg := fmt.Sprintf("line %d, column %d: expected parameter name in interface method, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+
+			paramName := p.currentToken.Literal
+			paramToken := p.currentToken
 			p.nextToken()
+
+			// Variadic parameter: n ..t
+			if p.currentToken.Type == lexer.ELLIPSIS {
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					typeStr := "[]" + p.currentToken.Literal
+					method.Parameters = append(method.Parameters, &Parameter{
+						Token: paramToken,
+						Name:  paramName,
+						Type:  buildType(typeStr, paramToken),
+					})
+					method.IsVariadic = true
+					p.nextToken()
+					// Variadic must be the last parameter
+					for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+						p.nextToken()
+					}
+					break
+				}
+			}
+
+			// Regular type annotation: n i64, n ?t, n []t, n [N]t
+			if p.currentToken.Type == lexer.IDENT {
+				method.Parameters = append(method.Parameters, &Parameter{
+					Token: paramToken,
+					Name:  paramName,
+					Type:  buildType(p.currentToken.Literal, p.currentToken),
+				})
+				p.nextToken()
+			} else if p.currentToken.Type == lexer.QUESTION {
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					typeStr := "?" + p.currentToken.Literal
+					method.Parameters = append(method.Parameters, &Parameter{
+						Token: paramToken,
+						Name:  paramName,
+						Type:  buildType(typeStr, paramToken),
+					})
+					p.nextToken()
+				}
+			} else if p.currentToken.Type == lexer.LBRACKET {
+				p.nextToken() // skip [
+				if p.currentToken.Type == lexer.RBRACKET {
+					// []t
+					p.nextToken()
+					if p.currentToken.Type == lexer.IDENT {
+						typeStr := "[]" + p.currentToken.Literal
+						method.Parameters = append(method.Parameters, &Parameter{
+							Token: paramToken,
+							Name:  paramName,
+							Type:  buildType(typeStr, paramToken),
+						})
+						p.nextToken()
+					}
+				} else {
+					// [N]t
+					sizeLit := p.currentToken.Literal
+					p.nextToken()
+					if p.currentToken.Type == lexer.RBRACKET {
+						p.nextToken()
+						if p.currentToken.Type == lexer.IDENT {
+							typeStr := "[" + sizeLit + "]" + p.currentToken.Literal
+							method.Parameters = append(method.Parameters, &Parameter{
+								Token: paramToken,
+								Name:  paramName,
+								Type:  buildType(typeStr, paramToken),
+							})
+							p.nextToken()
+						}
+					}
+				}
+			} else {
+				// No type annotation, just parameter name
+				method.Parameters = append(method.Parameters, &Parameter{
+					Token: paramToken,
+					Name:  paramName,
+					Type:  nil,
+				})
+			}
 		}
+
 		if p.currentToken.Type == lexer.RPAREN {
 			p.nextToken() // skip )
 		}

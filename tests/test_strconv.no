@@ -1,0 +1,190 @@
+// test_strconv.no — 字符串类型转换完整测试
+//
+// 测试覆盖:
+//   str → int (正/负/零)
+//   str → uint
+//   str → float (通过 f→str 往返验证)
+//   str → bool
+//   str → byte
+//   int → str
+//   uint → str
+//   float → str
+//   bool → str
+//   byte → str
+//   往返转换 (str ↔ int, str ↔ float)
+
+// ===== str → i64 =====
+test-str-to-i64() {
+    n = str-to-i64('12345')
+    println-i64(n)               // 期望: 12345
+
+    n = str-to-i64('-42')
+    println-i64(n)               // 期望: -42
+
+    n = str-to-i64('0')
+    println-i64(n)               // 期望: 0
+}
+
+// ===== str → i32 =====
+test-str-to-i32() {
+    n = str-to-i32('32767')
+    println-i64(n)               // 期望: 32767
+
+    n = str-to-i32('-32768')
+    println-i64(n)               // 期望: -32768
+}
+
+// ===== str → i16 =====
+test-str-to-i16() {
+    n = str-to-i16('100')
+    println-i64(n)               // 期望: 100
+
+    n = str-to-i16('-1')
+    println-i64(n)               // 期望: -1
+}
+
+// ===== str → i8 =====
+test-str-to-i8() {
+    n = str-to-i8('127')
+    println-i64(n)               // 期望: 127
+
+    n = str-to-i8('-128')
+    println-i64(n)               // 期望: -128
+}
+
+// ===== str → u64 =====
+test-str-to-u64() {
+    n = str-to-u64('99999')
+    println-i64(n)               // 期望: 99999
+}
+
+// ===== str → f64 =====
+test-str-to-f64() {
+    f = str-to-f64('3.14')
+    s = f64-to-str(f)
+    print(s)                     // 期望: 3.14
+
+    f = str-to-f64('-2.5')
+    s = f64-to-str(f)
+    print(s)                     // 期望: -2.5
+
+    f = str-to-f64('0.0')
+    s = f64-to-str(f)
+    print(s)                     // 期望: 0
+}
+
+// ===== str → bool =====
+test-str-to-bool() {
+    b = str-to-bool('true')
+    if b {
+        println-i64(1)           // 期望: 1
+    } else {
+        println-i64(0)
+    }
+
+    b = str-to-bool('false')
+    if b {
+        println-i64(1)
+    } else {
+        println-i64(0)           // 期望: 0
+    }
+}
+
+// ===== str → byte =====
+test-str-to-byte() {
+    b = str-to-byte('65')
+    println-i64(b)               // 期望: 65 (ASCII 'A')
+}
+
+// ===== i64 → str =====
+test-i64-to-str() {
+    s = i64-to-str(42)
+    print(s)                     // 期望: 42
+
+    s = i64-to-str(-100)
+    print(s)                     // 期望: -100
+
+    s = i64-to-str(0)
+    print(s)                     // 期望: 0
+}
+
+// ===== i32 → str =====
+test-i32-to-str() {
+    s = i32-to-str(999)
+    print(s)                     // 期望: 999
+}
+
+// ===== u64 → str =====
+test-u64-to-str() {
+    s = u64-to-str(12345)
+    print(s)                     // 期望: 12345
+}
+
+// ===== f64 → str =====
+test-f64-to-str() {
+    s = f64-to-str(3.14)
+    print(s)                     // 期望: 3.14
+
+    s = f64-to-str(0.0)
+    print(s)                     // 期望: 0
+}
+
+// ===== bool → str =====
+test-bool-to-str() {
+    s = bool-to-str(true)
+    print(s)                     // 期望: true
+
+    s = bool-to-str(false)
+    print(s)                     // 期望: false
+}
+
+// ===== byte → str =====
+test-byte-to-str() {
+    s = byte-to-str(65)
+    print(s)                     // 期望: 65
+
+    s = byte-to-str(0)
+    print(s)                     // 期望: 0
+}
+
+// ===== 往返: i64 → str → i64 =====
+test-roundtrip-i64() {
+    s = i64-to-str(12345)
+    n = str-to-i64(s)
+    println-i64(n)               // 期望: 12345
+}
+
+// ===== 往返: f64 → str → f64 =====
+test-roundtrip-f64() {
+    f = str-to-f64('3.14')
+    s = f64-to-str(f)
+    print(s)                     // 期望: 3.14
+}
+
+// ===== 边界: i64 极值 =====
+test-edge-i64() {
+    s = i64-to-str(9223372036854775807)
+    print(s)                     // 期望: 9223372036854775807
+
+    s = i64-to-str(-9223372036854775808)
+    print(s)                     // 期望: -9223372036854775808
+}
+
+// ===== 运行测试 =====
+test-str-to-i64()
+test-str-to-i32()
+test-str-to-i16()
+test-str-to-i8()
+test-str-to-u64()
+test-str-to-f64()
+test-str-to-bool()
+test-str-to-byte()
+test-i64-to-str()
+test-i32-to-str()
+test-u64-to-str()
+test-f64-to-str()
+test-bool-to-str()
+test-byte-to-str()
+test-roundtrip-i64()
+test-roundtrip-f64()
+test-edge-i64()

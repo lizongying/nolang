@@ -1,0 +1,265 @@
+// json — JSON 序列化/反序列化基礎
+//
+// 基於字串操作的簡易 JSON 值讀寫。
+// 無反射機制，使用者需手動映射結構體。
+
+// ═══════════════════════════════════════════════
+// JSON 值類型常量
+// ═══════════════════════════════════════════════
+
+KIND-NULL = 0
+KIND-BOOL = 1
+KIND-NUM = 2
+KIND-STR = 3
+KIND-ARR = 4
+KIND-OBJ = 5
+
+// ═══════════════════════════════════════════════
+// JSON 值結構
+// ═══════════════════════════════════════════════
+
+// json-value: JSON 值型別
+json-value {
+    kind i64
+    str-val str
+    num-val f64
+    bool-val i64
+}
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// json-null: JSON null 值
+json-null = json-value{kind: 0}
+
+// json-true: JSON true 值
+json-true = json-value{kind: 1, bool-val: 1}
+
+// json-false: JSON false 值
+json-false = json-value{kind: 1, bool-val: 0}
+
+// ═══════════════════════════════════════════════
+// 解析
+// ═══════════════════════════════════════════════
+
+// parse: 從字串位置 pos 解析 JSON 值
+// 回傳解析結果、下一位置、是否成功
+parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
+    ok = 0
+    // 跳過空白
+    p = pos
+    for p < sn {
+        c = s[p] & 255
+        if c != 32 && c != 9 && c != 10 && c != 13 {
+            break
+        }
+        p = p + 1
+    }
+    if p >= sn {
+        return
+    }
+    c = s[p] & 255
+    // null
+    if c == 110 {
+        val.kind = KIND-NULL
+        next-pos = p + 4
+        ok = 1
+        return
+    }
+    // true
+    if c == 116 {
+        val.kind = KIND-BOOL
+        val.bool-val = 1
+        next-pos = p + 4
+        ok = 1
+        return
+    }
+    // false
+    if c == 102 {
+        val.kind = KIND-BOOL
+        val.bool-val = 0
+        next-pos = p + 5
+        ok = 1
+        return
+    }
+    // string: opening quote
+    if c == 34 {
+        parse-str(s, sn, p)(val, next-pos, ok)
+        return
+    }
+    // number: minus sign
+    if c == 45 {
+        parse-num(s, sn, p)(val, next-pos, ok)
+        return
+    }
+    // number: digit
+    if c >= 48 && c <= 57 {
+        parse-num(s, sn, p)(val, next-pos, ok)
+        return
+    }
+    // array: opening bracket
+    if c == 91 {
+        val.kind = KIND-ARR
+        next-pos = p + 1
+        ok = 1
+        return
+    }
+    // object: opening brace
+    if c == 123 {
+        val.kind = KIND-OBJ
+        next-pos = p + 1
+        ok = 1
+        return
+    }
+}
+
+// parse-str: 解析 JSON 字串（從開引號開始）
+parse-str = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
+    val.kind = KIND-STR
+    ok = 0
+    i = pos + 1
+    j = 0
+    for i < sn {
+        c = s[i] & 255
+        if c == 34 {
+            next-pos = i + 1
+            ok = 1
+            return
+        }
+        // 跳過轉義字元
+        if c == 92 {
+            i = i + 1
+        }
+        val.str-val[j] = c
+        j = j + 1
+        i = i + 1
+    }
+}
+
+// parse-num: 解析 JSON 數字
+parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
+    val.kind = KIND-NUM
+    ok = 1
+    i = pos
+    // 負號
+    if s[i] & 255 == 45 {
+        i = i + 1
+    }
+    // 整數部分
+    for i < sn {
+        c = s[i] & 255
+        if c < 48 || c > 57 {
+            break
+        }
+        val.num-val = val.num-val * 10.0 + (c - 48)
+        i = i + 1
+    }
+    // 小數部分
+    if i < sn {
+        c = s[i] & 255
+        if c == 46 {
+            i = i + 1
+            frac = 0.1
+            for i < sn {
+                c = s[i] & 255
+                if c < 48 || c > 57 {
+                    break
+                }
+                val.num-val = val.num-val + frac * (c - 48)
+                frac = frac * 0.1
+                i = i + 1
+            }
+        }
+    }
+    // 處理負數
+    if s[pos] & 255 == 45 {
+        val.num-val = 0.0 - val.num-val
+    }
+    next-pos = i
+}
+
+// ═══════════════════════════════════════════════
+// 序列化
+// ═══════════════════════════════════════════════
+
+// stringify: 將 JSON 值序列化為字串
+stringify = (val json-value, out str) (out-n i64) {
+    out-n = 0
+    if val.kind == KIND-NULL {
+        out[0] = 110
+        out[1] = 117
+        out[2] = 108
+        out[3] = 108
+        out-n = 4
+        return
+    }
+    if val.kind == KIND-BOOL {
+        if val.bool-val == 1 {
+            out[0] = 116
+            out[1] = 114
+            out[2] = 117
+            out[3] = 101
+            out-n = 4
+        } else {
+            out[0] = 102
+            out[1] = 97
+            out[2] = 108
+            out[3] = 115
+            out[4] = 101
+            out-n = 5
+        }
+        return
+    }
+    if val.kind == KIND-NUM {
+        // 簡易 f64 轉字串
+        // LLVM: call @snprintf(out, 64, "%g", val.num-val)
+        return
+    }
+    if val.kind == KIND-STR {
+        out[0] = 34
+        out-n = 1
+        // 複製字串值
+        i = 0
+        for true {
+            c = val.str-val[i] & 255
+            if c == 0 {
+                break
+            }
+            out[out-n] = c
+            out-n = out-n + 1
+            i = i + 1
+        }
+        out[out-n] = 34
+        out-n = out-n + 1
+        return
+    }
+    if val.kind == KIND-ARR {
+        out[0] = 91
+        out[1] = 93
+        out-n = 2
+        return
+    }
+    if val.kind == KIND-OBJ {
+        out[0] = 123
+        out[1] = 125
+        out-n = 2
+        return
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 物件存取
+// ═══════════════════════════════════════════════
+
+// get-key: 從 JSON 物件取得指定鍵的值
+get-key = (obj json-value, key str, keyn i64) (val json-value, ok i64) {
+    ok = 0
+    // 需要遍歷物件鍵值對
+    // 目前為 stub，待 LLVM 支援動態結構
+}
+
+// set-key: 在 JSON 物件設定鍵值
+set-key = (obj json-value, key str, keyn i64, val json-value) {
+    // 目前為 stub，待 LLVM 支援動態結構
+}

@@ -67,6 +67,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		returnType = g.mapToLLVMType(fd.Results[0].Type.String())
 	}
 
+	g.curFuncRetType = returnType
+	g.curFuncRetName = ""
+	if len(fd.Results) > 0 && fd.Results[0].Name != "" {
+		g.curFuncRetName = fd.Results[0].Name
+	}
+
 	sb.WriteString(fmt.Sprintf("define %s @%s(", returnType, fd.Name))
 
 	for i, param := range fd.Parameters {
@@ -133,6 +139,15 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	if returnType == "void" {
 		g.emitLifetimeEnd(sb)
 		sb.WriteString(g.indent() + "ret void\n")
+	} else if len(fd.Results) > 0 && fd.Results[0].Name != "" {
+		// 有輸出參數但無顯式 return：載入輸出參數並返回
+		g.emitLifetimeEnd(sb)
+		resultName := fd.Results[0].Name
+		resultLLVMType := g.mapToLLVMType(fd.Results[0].Type.String())
+		g.tmpIdx++
+		resultLoad := fmt.Sprintf("%%ret.val.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n", g.indent(), resultLoad, resultLLVMType, resultLLVMType, resultName))
+		sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), resultLLVMType, resultLoad))
 	}
 	g.indentLevel--
 	g.indentLevel--
@@ -421,7 +436,18 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		g.emitLifetimeEnd(sb)
 		if s.ReturnValue != nil {
 			val := g.generateExprWithSB(sb, s.ReturnValue)
-			sb.WriteString(fmt.Sprintf("%sret i64 %s\n", g.indent(), val))
+			retType := g.curFuncRetType
+			if retType == "" {
+				retType = "i64"
+			}
+			sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), retType, val))
+		} else if g.curFuncRetType != "void" && g.curFuncRetName != "" {
+			// 有輸出參數的裸 return：載入輸出參數並返回
+			g.tmpIdx++
+			resultLoad := fmt.Sprintf("%%ret.val.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n",
+				g.indent(), resultLoad, g.curFuncRetType, g.curFuncRetType, g.curFuncRetName))
+			sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), g.curFuncRetType, resultLoad))
 		} else {
 			sb.WriteString(g.indent() + "ret void\n")
 		}

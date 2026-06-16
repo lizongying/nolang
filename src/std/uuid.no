@@ -1,0 +1,347 @@
+// uuid — 通用唯一識別碼（RFC 4122）
+//
+// 提供 UUID v4（隨機）生成、解析、格式化與驗證。
+// UUID 為 128-bit（16 位元組）識別碼。
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// VERSION-4: UUID 版本 4（隨機）
+VERSION-4 = 4
+
+// VARIANT-RFC4122: RFC 4122 變體
+VARIANT-RFC4122 = 2
+
+// HEX: 小寫十六進制字元表
+HEX = '0123456789abcdef'
+
+// ═══════════════════════════════════════════════
+// 結構定義
+// ═══════════════════════════════════════════════
+
+// uuid: 128-bit 通用唯一識別碼
+uuid {
+    bytes [16]byte
+}
+
+// ═══════════════════════════════════════════════
+// 生成
+// ═══════════════════════════════════════════════
+
+// new-v4: 生成隨機 UUID v4
+// state: xorshift32 狀態（輸入/輸出，初始為非零種子）
+new-v4 = (state i64, out uuid) {
+    // 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
+    i = 0
+    for i < 16 {
+        rand(state, r)
+        out.bytes[i] = r & 255
+        if i + 1 < 16 {
+            out.bytes[i + 1] = (r >> 8) & 255
+        }
+        if i + 2 < 16 {
+            out.bytes[i + 2] = (r >> 16) & 255
+        }
+        if i + 3 < 16 {
+            out.bytes[i + 3] = (r >> 24) & 255
+        }
+        i = i + 4
+    }
+    // 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
+    out.bytes[6] = (out.bytes[6] & 15) | 64
+    // 設定變體位：byte[8] 的高 2 位 = 10 (RFC 4122)
+    out.bytes[8] = (out.bytes[8] & 63) | 128
+}
+
+// ═══════════════════════════════════════════════
+// 格式化
+// ═══════════════════════════════════════════════
+
+// to-str: 將 UUID 格式化為標準字串
+// 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
+to-str = (u uuid, out str) (out-n i64) {
+    out-n = 36
+    // 8-4-4-4-12 格式
+    // byte 0-3 → position 0-7
+    hex-byte(u.bytes[0], 0, out)
+    hex-byte(u.bytes[1], 2, out)
+    hex-byte(u.bytes[2], 4, out)
+    hex-byte(u.bytes[3], 6, out)
+    // 連字號
+    out[8] = 45
+    // byte 4-5 → position 9-12
+    hex-byte(u.bytes[4], 9, out)
+    hex-byte(u.bytes[5], 11, out)
+    // 連字號
+    out[13] = 45
+    // byte 6-7 → position 14-17
+    hex-byte(u.bytes[6], 14, out)
+    hex-byte(u.bytes[7], 16, out)
+    // 連字號
+    out[18] = 45
+    // byte 8-9 → position 19-22
+    hex-byte(u.bytes[8], 19, out)
+    hex-byte(u.bytes[9], 21, out)
+    // 連字號
+    out[23] = 45
+    // byte 10-15 → position 24-35
+    hex-byte(u.bytes[10], 24, out)
+    hex-byte(u.bytes[11], 26, out)
+    hex-byte(u.bytes[12], 28, out)
+    hex-byte(u.bytes[13], 30, out)
+    hex-byte(u.bytes[14], 32, out)
+    hex-byte(u.bytes[15], 34, out)
+}
+
+// hex-byte: 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
+hex-byte = (b byte, pos i64, out str) {
+    out[pos] = HEX[(b >> 4) & 15]
+    out[pos + 1] = HEX[b & 15]
+}
+
+// to-str-upper: 將 UUID 格式化為大寫字串
+to-str-upper = (u uuid, out str) (out-n i64) {
+    HEX-U = '0123456789ABCDEF'
+    out-n = 36
+    hex-byte-upper(u.bytes[0], 0, out, HEX-U)
+    hex-byte-upper(u.bytes[1], 2, out, HEX-U)
+    hex-byte-upper(u.bytes[2], 4, out, HEX-U)
+    hex-byte-upper(u.bytes[3], 6, out, HEX-U)
+    out[8] = 45
+    hex-byte-upper(u.bytes[4], 9, out, HEX-U)
+    hex-byte-upper(u.bytes[5], 11, out, HEX-U)
+    out[13] = 45
+    hex-byte-upper(u.bytes[6], 14, out, HEX-U)
+    hex-byte-upper(u.bytes[7], 16, out, HEX-U)
+    out[18] = 45
+    hex-byte-upper(u.bytes[8], 19, out, HEX-U)
+    hex-byte-upper(u.bytes[9], 21, out, HEX-U)
+    out[23] = 45
+    hex-byte-upper(u.bytes[10], 24, out, HEX-U)
+    hex-byte-upper(u.bytes[11], 26, out, HEX-U)
+    hex-byte-upper(u.bytes[12], 28, out, HEX-U)
+    hex-byte-upper(u.bytes[13], 30, out, HEX-U)
+    hex-byte-upper(u.bytes[14], 32, out, HEX-U)
+    hex-byte-upper(u.bytes[15], 34, out, HEX-U)
+}
+
+// hex-byte-upper: 大寫 hex 位元組寫入
+hex-byte-upper = (b byte, pos i64, out str, table str) {
+    out[pos] = table[(b >> 4) & 15]
+    out[pos + 1] = table[b & 15]
+}
+
+// ═══════════════════════════════════════════════
+// 解析
+// ═══════════════════════════════════════════════
+
+// from-str: 從字串解析 UUID
+// 支援帶連字號（36 字元）和不帶連字號（32 字元）格式
+from-str = (s str, sn i64, out uuid) (ok i64) {
+    ok = 0
+    pos = 0
+    // 跳過空白
+    for pos < sn {
+        c = s[pos] & 255
+        if c != 32 && c != 9 && c != 10 && c != 13 {
+            break
+        }
+        pos = pos + 1
+    }
+    // 判斷格式（帶連字號 vs 不帶）
+    if sn == 36 {
+        parse-with-dashes(s, pos, out)(ok)
+    } elif sn == 32 {
+        parse-no-dashes(s, pos, out)(ok)
+    }
+}
+
+// parse-with-dashes: 解析帶連字號的 UUID
+parse-with-dashes = (s str, pos i64, out uuid) (ok i64) {
+    ok = 1
+    parse-hex-byte(s, pos)(v0)
+    parse-hex-byte(s, pos + 2)(v1)
+    parse-hex-byte(s, pos + 4)(v2)
+    parse-hex-byte(s, pos + 6)(v3)
+    out.bytes[0] = v0
+    out.bytes[1] = v1
+    out.bytes[2] = v2
+    out.bytes[3] = v3
+    // 跳過連字號
+    if s[pos + 8] & 255 != 45 {
+        ok = 0
+        return
+    }
+    parse-hex-byte(s, pos + 9)(v4)
+    parse-hex-byte(s, pos + 11)(v5)
+    out.bytes[4] = v4
+    out.bytes[5] = v5
+    if s[pos + 13] & 255 != 45 {
+        ok = 0
+        return
+    }
+    parse-hex-byte(s, pos + 14)(v6)
+    parse-hex-byte(s, pos + 16)(v7)
+    out.bytes[6] = v6
+    out.bytes[7] = v7
+    if s[pos + 18] & 255 != 45 {
+        ok = 0
+        return
+    }
+    parse-hex-byte(s, pos + 19)(v8)
+    parse-hex-byte(s, pos + 21)(v9)
+    out.bytes[8] = v8
+    out.bytes[9] = v9
+    if s[pos + 23] & 255 != 45 {
+        ok = 0
+        return
+    }
+    parse-hex-byte(s, pos + 24)(v10)
+    parse-hex-byte(s, pos + 26)(v11)
+    parse-hex-byte(s, pos + 28)(v12)
+    parse-hex-byte(s, pos + 30)(v13)
+    parse-hex-byte(s, pos + 32)(v14)
+    parse-hex-byte(s, pos + 34)(v15)
+    out.bytes[10] = v10
+    out.bytes[11] = v11
+    out.bytes[12] = v12
+    out.bytes[13] = v13
+    out.bytes[14] = v14
+    out.bytes[15] = v15
+}
+
+// parse-no-dashes: 解析不帶連字號的 UUID
+parse-no-dashes = (s str, pos i64, out uuid) (ok i64) {
+    ok = 1
+    i = 0
+    for i < 16 {
+        parse-hex-byte(s, pos + i * 2)(v)
+        if v < 0 {
+            ok = 0
+            return
+        }
+        out.bytes[i] = v
+        i = i + 1
+    }
+}
+
+// parse-hex-byte: 從字串解析兩個 hex 字元為一個位元組
+parse-hex-byte = (s str, pos i64) (v i64) {
+    c0 = s[pos] & 255
+    c1 = s[pos + 1] & 255
+    h0 = hex-val(c0)
+    h1 = hex-val(c1)
+    if h0 < 0 || h1 < 0 {
+        v = -1
+        return
+    }
+    v = (h0 << 4) | h1
+}
+
+// ═══════════════════════════════════════════════
+// 驗證
+// ═══════════════════════════════════════════════
+
+// validate: 驗證 UUID 格式是否合法
+validate = (u uuid) (ok i64) {
+    ok = 1
+    // 檢查版本位（byte[6] 的 4-7 位應為 4）
+    ver = (u.bytes[6] >> 4) & 15
+    if ver != 4 {
+        // 不強制版本，只檢查變體
+    }
+    // 檢查變體位（byte[8] 的 6-7 位應為 10）
+    variant = (u.bytes[8] >> 6) & 3
+    if variant != 2 {
+        ok = 0
+    }
+}
+
+// version: 取得 UUID 版本
+version = (u uuid) (v i64) {
+    v = (u.bytes[6] >> 4) & 15
+}
+
+// variant: 取得 UUID 變體
+variant = (u uuid) (v i64) {
+    v = (u.bytes[8] >> 6) & 3
+}
+
+// is-nil: 判斷是否為空 UUID（全零）
+is-nil = (u uuid) (yes i64) {
+    yes = 1
+    i = 0
+    for i < 16 {
+        if u.bytes[i] != 0 {
+            yes = 0
+            return
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 比較
+// ═══════════════════════════════════════════════
+
+// eq: 判斷兩個 UUID 是否相等
+eq = (a uuid, b uuid) (yes i64) {
+    yes = 1
+    i = 0
+    for i < 16 {
+        if a.bytes[i] != b.bytes[i] {
+            yes = 0
+            return
+        }
+        i = i + 1
+    }
+}
+
+// cmp: 比較兩個 UUID（字典序）
+cmp = (a uuid, b uuid) (r i64) {
+    r = 0
+    i = 0
+    for i < 16 {
+        ab = a.bytes[i] & 255
+        bb = b.bytes[i] & 255
+        if ab < bb {
+            r = -1
+            return
+        }
+        if ab > bb {
+            r = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 輔助
+// ═══════════════════════════════════════════════
+
+// hex-val: 單個 hex 字元轉數值
+hex-val = (c i64) (v i64) {
+    v = -1
+    if c >= 48 && c <= 57 {
+        v = c - 48
+        return
+    }
+    if c >= 65 && c <= 70 {
+        v = c - 65 + 10
+        return
+    }
+    if c >= 97 && c <= 102 {
+        v = c - 97 + 10
+    }
+}
+
+// nil-uuid: 建立空 UUID（全零）
+nil-uuid = (out uuid) {
+    i = 0
+    for i < 16 {
+        out.bytes[i] = 0
+        i = i + 1
+    }
+}

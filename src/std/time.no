@@ -1,0 +1,62 @@
+// time — 時間操作
+//
+// 提供 Unix 時間戳、格式化、睡眠、時長計算。
+// 依賴 os.now() 與 C 庫函數。
+
+// ═══════════════════════════════════════════════
+// 時間戳
+// ═══════════════════════════════════════════════
+
+// now-s: 當前 Unix 時間戳（秒）
+now-s = () (ts i64) {
+    // LLVM: call i64 @time(i8* null)
+}
+
+// now-ms: 當前 Unix 時間戳（毫秒）
+now-ms = () (ts i64) {
+    // LLVM: gettimeofday → sec*1000 + usec/1000
+}
+
+// now-us: 當前 Unix 時間戳（微秒）
+now-us = () (ts i64) {
+    // LLVM: gettimeofday → sec*1000000 + usec
+}
+
+// ═══════════════════════════════════════════════
+// 格式化
+// ═══════════════════════════════════════════════
+
+// format-time: 將時間戳格式化為字串
+// fmt: 格式模板（類似 strftime）
+//   'Y-m-d H:M:S' → '2024-01-15 10:30:45'
+format-time = (ts i64, fmt str, fmtn i64, out str) (out-n i64) {
+    // LLVM: call @localtime + @strftime
+}
+
+// ═══════════════════════════════════════════════
+// 睡眠
+// ═══════════════════════════════════════════════
+
+// sleep-ms: 睡眠指定毫秒數
+sleep-ms = (ms i64) {
+    // LLVM: call @usleep(ms * 1000)
+}
+
+// sleep-us: 睡眠指定微秒數
+sleep-us = (us i64) {
+    // LLVM: call @usleep(us)
+}
+
+// ═══════════════════════════════════════════════
+// 時長計算
+// ═══════════════════════════════════════════════
+
+// duration-between: 計算兩個時間戳的差（秒）
+duration-between = (start i64, end i64) (diff i64) {
+    diff = end - start
+}
+
+// duration-ms-between: 計算兩個時間戳的差（毫秒）
+duration-ms-between = (start i64, end i64) (diff i64) {
+    diff = end - start
+}

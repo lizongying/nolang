@@ -1,15 +1,12 @@
-// aes — AES-128 加密/解密（ECB 模式）
+// aes-128-dec — AES-128 解密（ECB 模式）
 //
-// 使用 AES-128（10 輪）對 16-byte 區塊進行加解密。
+// 使用 AES-128（10 輪）對 16-byte 區塊進行解密。
 // ECB 模式，每個區塊獨立處理。
 //
 // 用法：
 //   key  = '(16 bytes key)'
 //   out  = '(16 bytes buffer)'
-//   aes-128-enc(plain, 16, key, out)   // 加密
-//   aes-128-dec(cipher, 16, key, out)  // 解密
-//
-// 多區塊時，呼叫者自行處理模式（CBC/CTR/GCM 等）。
+//   aes-128-dec(cipher, 16, key, out)
 
 // ─── S-box（前 16 行 × 16 列 = 256 位元組）───
 SBOX = '\x63\x7c\x77\x7b\xf2\x6b\x6f\xc5\x30\x01\x67\x2b\xfe\xd7\xab\x76' + 
@@ -50,7 +47,6 @@ INV_SBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 // ─── GF(2^8) 輔助函數 ──────────────────────────────
 
 // gf-mul2: 在 GF(2^8) 中乘以 x（即多項式 x）
-// 使用 AES 不可約多項式 x^8 + x^4 + x^3 + x + 1 (0x11B)
 gf-mul2 = (x i64, r i64) {
     r = x << 1
     if r & 256 != 0 {
@@ -61,16 +57,6 @@ gf-mul2 = (x i64, r i64) {
 
 // ─── AES 輪函數 ─────────────────────────────────────
 
-// sub-bytes: 使用 S-box 取代狀態中每個位元組
-sub-bytes = (state str, n i64) {
-    i = 0
-    for i < n {
-        b = state[i] & 255
-        state[i] = SBOX[b]
-        i = i + 1
-    }
-}
-
 // inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state str, n i64) {
     i = 0
@@ -79,31 +65,6 @@ inv-sub-bytes = (state str, n i64) {
         state[i] = INV_SBOX[b]
         i = i + 1
     }
-}
-
-// shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
-shift-rows = (state str) {
-    // AES 狀態是 column-major：[col0][col1][col2][col3]
-    // Row 0: state[0], state[4], state[8], state[12]  → 不位移
-    // Row 1: state[1], state[5], state[9], state[13]  → 左旋 1
-    t = state[1]
-    state[1] = state[5]
-    state[5] = state[9]
-    state[9] = state[13]
-    state[13] = t
-    // Row 2: state[2], state[6], state[10], state[14] → 左旋 2
-    t0 = state[2]
-    t1 = state[6]
-    state[2] = state[10]
-    state[6] = state[14]
-    state[10] = t0
-    state[14] = t1
-    // Row 3: state[3], state[7], state[11], state[15] → 左旋 3 (=右旋 1)
-    t = state[15]
-    state[15] = state[11]
-    state[11] = state[7]
-    state[7] = state[3]
-    state[3] = t
 }
 
 // inv-shift-rows: 逆向列位移（右旋轉）
@@ -128,55 +89,7 @@ inv-shift-rows = (state str) {
     state[15] = t
 }
 
-// mix-col: 混合單一欄（4 位元組）
-// d0 = 2*b0 + 3*b1 + b2 + b3
-// d1 = b0 + 2*b1 + 3*b2 + b3
-// d2 = b0 + b1 + 2*b2 + 3*b3
-// d3 = 3*b0 + b1 + b2 + 2*b3
-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
-    gf-mul2(b0, a0)
-    gf-mul2(b1, a1)
-    gf-mul2(b2, a2)
-    gf-mul2(b3, a3)
-    // 2*b0 + 3*b1 + b2 + b3 = 2*b0 + 2*b1 + b1 + b2 + b3 = a0 ^ (a1 ^ b1) ^ b2 ^ b3
-    d0 = a0 ^ a1 ^ b1 ^ b2 ^ b3
-    // b0 + 2*b1 + 3*b2 + b3 = b0 + 2*b1 + 2*b2 + b2 + b3 = b0 ^ a1 ^ (a2 ^ b2) ^ b3
-    d1 = b0 ^ a1 ^ a2 ^ b2 ^ b3
-    // b0 + b1 + 2*b2 + 3*b3 = b0 + b1 + 2*b2 + 2*b3 + b3 = b0 ^ b1 ^ a2 ^ (a3 ^ b3)
-    d2 = b0 ^ b1 ^ a2 ^ a3 ^ b3
-    // 3*b0 + b1 + b2 + 2*b3 = 2*b0 + b0 + b1 + b2 + 2*b3 = (a0 ^ b0) ^ b1 ^ b2 ^ a3
-    d3 = a0 ^ b0 ^ b1 ^ b2 ^ a3
-}
-
-// mix-columns: 混合狀態中所有欄
-mix-columns = (state str) {
-    // Column 0: state[0..3]
-    mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255, d0, d1, d2, d3)
-    state[0] = d0
-    state[1] = d1
-    state[2] = d2
-    state[3] = d3
-    // Column 1: state[4..7]
-    mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255, d0, d1, d2, d3)
-    state[4] = d0
-    state[5] = d1
-    state[6] = d2
-    state[7] = d3
-    // Column 2: state[8..11]
-    mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255, d0, d1, d2, d3)
-    state[8] = d0
-    state[9] = d1
-    state[10] = d2
-    state[11] = d3
-    // Column 3: state[12..15]
-    mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255, d0, d1, d2, d3)
-    state[12] = d0
-    state[13] = d1
-    state[14] = d2
-    state[15] = d3
-}
-
-// inv-mix-columns: 逆向混合欄（使用 9,11,13,14）
+// inv-mix-col: 逆向混合欄（使用 9,11,13,14）
 inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
     // 14*b0 + 11*b1 + 13*b2 + 9*b3
     // 9*b0 + 14*b1 + 11*b2 + 13*b3
@@ -194,10 +107,6 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
     gf-mul2(b3, m23)
     gf-mul2(m23, m43)
     gf-mul2(m43, m83)
-    // 14 = 8^4^2
-    // 11 = 8^2^1
-    // 13 = 8^4^1
-    // 9 = 8^1
     d0 = (m80 ^ m40 ^ m20) ^ (m81 ^ m21 ^ b1) ^ (m82 ^ m42 ^ b2) ^ (m83 ^ b3)
     d1 = (m80 ^ b0) ^ (m81 ^ m41 ^ m21) ^ (m82 ^ m22 ^ b2) ^ (m83 ^ m43 ^ b3)
     d2 = (m80 ^ m40 ^ b0) ^ (m81 ^ b1) ^ (m82 ^ m42 ^ m22) ^ (m83 ^ m23 ^ b3)
@@ -278,7 +187,6 @@ sub-word = (w i64, r i64) {
 }
 
 // aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
-// ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
     i = 0
     for i < 16 {
@@ -286,10 +194,8 @@ aes-key-expand = (key str, ek str) {
         i = i + 1
     }
 
-    // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
     for i < 44 {
-        // 讀取前一個字 w[i-1]
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
         if i % 4 == 0 {
@@ -310,51 +216,9 @@ aes-key-expand = (key str, ek str) {
     }
 }
 
-// ─── 單區塊加密/解密 ──────────────────────────────
-
-// aes-128-enc: 加密一個 16-byte 區塊
-// in: 輸入明文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出密文（16 位元組）
-aes-128-enc = (in str, n i64, key str, out str) {
-    // 展開金鑰
-    ek = '(16+160 bytes)'
-    aes-key-expand(key, ek)
-    i = 0
-    for i < 16 {
-        out[i] = in[i]
-        i = i + 1
-    }
-
-    // 初始 AddRoundKey（輪 0）
-    // 輪金鑰 0：ek[0..15]
-    add-round-key(out, ek)
-
-    // 第 1-9 輪
-    round = 1
-    for round < 10 {
-        sub-bytes(out, 16)
-        shift-rows(out)
-        mix-columns(out)
-        // 輪金鑰 round：ek[round*16..round*16+15]
-        rk-off = round * 16
-        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
-        round = round + 1
-    }
-
-    // 第 10 輪（無 MixColumns）
-    sub-bytes(out, 16)
-    shift-rows(out)
-    add-round-key(out, ek + 160)
-}
+// ─── 單區塊解密 ──────────────────────────────
 
 // aes-128-dec: 解密一個 16-byte 區塊
-// in: 輸入密文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出明文（16 位元組）
-
 aes-128-dec = (in str, n i64, key str, out str) {
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)

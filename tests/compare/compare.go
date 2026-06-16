@@ -91,6 +91,27 @@ func main() {
 		h512abc[0], h512abc[1], h512abc[2], h512abc[3],
 		h512abc[4], h512abc[5], h512abc[6], h512abc[7])
 
+	// ===== SHA-1 壓縮函數（zero block）=====
+	iv1 := []uint32{
+		0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0,
+	}
+	w1 := make([]uint32, 16)
+	h1 := sha1Compress(iv1, w1)
+	fmt.Printf("sha1-zero-block=%08x%08x%08x%08x%08x\n",
+		h1[0], h1[1], h1[2], h1[3], h1[4])
+
+	// ===== SHA-1 壓縮函數（空字串填充區塊）=====
+	w1empty := []uint32{0x80000000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	h1empty := sha1Compress(iv1, w1empty)
+	fmt.Printf("sha1-empty=%08x%08x%08x%08x%08x\n",
+		h1empty[0], h1empty[1], h1empty[2], h1empty[3], h1empty[4])
+
+	// ===== SHA-1 壓縮函數（"abc" 填充區塊）=====
+	w1abc := []uint32{0x61626380, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x18}
+	h1abc := sha1Compress(iv1, w1abc)
+	fmt.Printf("sha1-abc=%08x%08x%08x%08x%08x\n",
+		h1abc[0], h1abc[1], h1abc[2], h1abc[3], h1abc[4])
+
 	// ===== AES-128 =====
 	aesKey := []byte{0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c}
 	aesPt := []byte{0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a}
@@ -234,4 +255,37 @@ func sha512Compress(iv []uint64, w []uint64) []uint64 {
 		h, g, f, e, d, c, b, a = g, f, e, d+T1, c, b, a, T1+T2
 	}
 	return []uint64{iv[0] + a, iv[1] + b, iv[2] + c, iv[3] + d, iv[4] + e, iv[5] + f, iv[6] + g, iv[7] + h}
+}
+
+func sha1Compress(iv []uint32, w []uint32) []uint32 {
+	a, b, c, d, e := iv[0], iv[1], iv[2], iv[3], iv[4]
+	for t := 16; t < 80; t++ {
+		wt := w[t-3] ^ w[t-8] ^ w[t-14] ^ w[t-16]
+		wt = (wt << 1) | (wt >> 31)
+		w = append(w, wt)
+	}
+	for t := 0; t < 80; t++ {
+		var f, k uint32
+		switch {
+		case t < 20:
+			f = (b & c) | (^b & d)
+			k = 0x5A827999
+		case t < 40:
+			f = b ^ c ^ d
+			k = 0x6ED9EBA1
+		case t < 60:
+			f = (b & c) | (b & d) | (c & d)
+			k = 0x8F1BBCDC
+		default:
+			f = b ^ c ^ d
+			k = 0xCA62C1D6
+		}
+		temp := ((a << 5) | (a >> 27)) + f + e + k + w[t]
+		e = d
+		d = c
+		c = (b << 30) | (b >> 2)
+		b = a
+		a = temp
+	}
+	return []uint32{iv[0] + a, iv[1] + b, iv[2] + c, iv[3] + d, iv[4] + e}
 }

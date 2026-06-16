@@ -2,10 +2,14 @@
 //
 // printf(fmt str, args ...any)  → @printf(i8*, ...)
 // print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg) + 換行
-printf = (fmt str) {
-    // LLVM: call i32 @printf(i8* %fmt, ...args)
-}
+// printf: formatted print
+// build-in (ForwardFunc: printf)
+// printf = (fmt str) {
+//     // LLVM: call i32 @printf(i8* %fmt, ...args)
+// }
 
-print = () {
-    // LLVM: 依參數型別逐個打印，最後換行
-}
+// print: print with newline
+// build-in (ForwardFunc: println)
+// print = () {
+//     // LLVM: 依參數型別逐個打印，最後換行
+// }

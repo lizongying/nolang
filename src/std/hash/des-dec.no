@@ -1,13 +1,12 @@
-// des — DES 加密/解密（ECB 模式）
+// des-dec — DES 解密（ECB 模式）
 //
-// 使用 DES 對 8-byte 區塊進行加解密。
+// 使用 DES 對 8-byte 區塊進行解密。
 // 56-bit 金鑰儲存在 8 bytes 中（第 8 位元為奇偶校驗位，被忽略）。
 //
 // 用法：
 //   key  = '(8 bytes key)'
 //   out  = '(8 bytes buffer)'
-//   des-enc(plain, 8, key, out)   // 加密
-//   des-dec(cipher, 8, key, out)  // 解密
+//   des-dec(cipher, 8, key, out)
 
 // ─── 排列表 ─────────────────────────────────────
 // 所有排列表為 1-indexed 位元位置字串
@@ -200,12 +199,12 @@ des-key-schedule = (key str, ks str) {
     }
 }
 
-// ─── 單區塊加密/解密 ──────────────────────────────
+// ─── 單區塊解密 ──────────────────────────────
 
-// des-block: DES 單區塊處理（通用）
+// des-block: DES 單區塊處理（解密，逆序子金鑰）
 // in: 8-byte 輸入, out: 8-byte 輸出
-// ks: 96-byte 子金鑰, encrypt: 1=加密 0=解密
-des-block= (in str, n i64, ks str, encrypt i64, out str) {
+// ks: 96-byte 子金鑰
+des-block= (in str, n i64, ks str, out str) {
     // 將輸入轉為 64-bit
     block = 0
     i = 0
@@ -220,14 +219,10 @@ des-block= (in str, n i64, ks str, encrypt i64, out str) {
     l = (ip >> 32) & 4294967295
     r = ip & 4294967295
 
-    // 16 輪
+    // 16 輪（逆序子金鑰）
     round = 0
     for round < 16 {
-        if encrypt == 1 {
-            sk-off = round * 6
-        } else {
-            sk-off = (15 - round) * 6
-        }
+        sk-off = (15 - round) * 6
         sk = 0
         sk = (ks[sk-off] << 40) | (ks[sk-off+1] << 32) |
              (ks[sk-off+2] << 24) | (ks[sk-off+3] << 16) |
@@ -254,16 +249,9 @@ des-block= (in str, n i64, ks str, encrypt i64, out str) {
     }
 }
 
-// des-enc: 加密一個 8-byte 區塊
-des-enc = (in str, n i64, key str, out str) {
-    ks = '(96 bytes)'
-    des-key-schedule(key, ks)
-    des-block(in, n, ks, 1, out)
-}
-
 // des-dec: 解密一個 8-byte 區塊
 des-dec = (in str, n i64, key str, out str) {
     ks = '(96 bytes)'
     des-key-schedule(key, ks)
-    des-block(in, n, ks, 0, out)
+    des-block(in, n, ks, out)
 }

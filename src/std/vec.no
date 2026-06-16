@@ -6,6 +6,28 @@
 //   use std/vec.vec-create
 //   data [16]i64 = [0:16]
 //   vec-create(10, 42, data)
+//
+// vec-slice
+//
+// []t[..]
+// []t[..)
+// []t(..]
+// []t(..)
+//
+// []t[n0..]
+// []t[n0..)
+// []t(n0..]
+// []t(n0..)
+//
+// []t[..n1]
+// []t[..n1)
+// []t(..n1]
+// []t(..n1)
+//
+// []t[n0..n1]
+// []t[n0..n1)
+// []t(n0..n1]
+// []t(n0..n1)
 
 // vec-create: 創建長度 n 的切片，全部填充 val
 vec-create = (n i64, val i64, out []i64) {
@@ -42,12 +64,14 @@ vec-create = (n i64, val i64, out []i64) {
 //   // data == [1, 1, 3, 4, 5]
 
 // sort-asc: 升序排序 data[0..n)
-[]t.sort-asc = () {
-}
+// build-in (ForwardFunc: vec_sort_asc)
+// []t.sort-asc = () {
+// }
 
 // sort-desc: 降序排序 data[0..n)
-[]t.sort-desc = () {
-}
+// build-in (ForwardFunc: vec_sort_desc)
+// []t.sort-desc = () {
+// }
 
 // vec — 切片操作
 //

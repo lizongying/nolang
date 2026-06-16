@@ -1,0 +1,8 @@
+// test_str_minimal.no
+test-str-len() {
+    s = 'hello'
+    n = s.len
+    println-i64(n)
+}
+test-str-len()
+println-i64(0)

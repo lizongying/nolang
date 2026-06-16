@@ -1725,6 +1725,220 @@ func checkNaming(stmt parser.Statement) []ValidateResult {
 	return results
 }
 
+// ValidateUnusedVars detects top-level variables that are defined but never used.
+func ValidateUnusedVars(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	// Collect top-level LetStatement names
+	topLevelVars := make(map[string]struct{ line, column int })
+	var varOrder []string
+
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Name != nil && ls.Name.Value != "_" {
+				topLevelVars[ls.Name.Value] = struct{ line, column int }{
+					line:   ls.Name.Token.Line,
+					column: ls.Name.Token.Column,
+				}
+				varOrder = append(varOrder, ls.Name.Value)
+			}
+		}
+	}
+
+	if len(topLevelVars) == 0 {
+		return nil
+	}
+
+	// Walk entire AST to find references
+	usedVars := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		markReferencesInStatement(stmt, topLevelVars, usedVars)
+	}
+
+	// Report unused top-level variables
+	for _, name := range varOrder {
+		if !usedVars[name] {
+			def := topLevelVars[name]
+			results = append(results, ValidateResult{
+				Line:    def.line,
+				Column:  def.column,
+				Message: fmt.Sprintf("'%s' is defined but never used", name),
+			})
+		}
+	}
+
+	return results
+}
+
+// markReferencesInStatement walks a statement tree, finding Identifier references to top-level vars.
+func markReferencesInStatement(stmt parser.Statement, varSet map[string]struct{ line, column int }, usedVars map[string]bool) {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		// Don't count the variable name itself as a usage
+		if s.Value != nil {
+			markReferencesInExpr(s.Value, varSet, usedVars)
+		}
+
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			markReferencesInExpr(s.Expression, varSet, usedVars)
+		}
+
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, inner := range s.Body.Statements {
+				markReferencesInStatement(inner, varSet, usedVars)
+			}
+		}
+
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			markReferencesInExpr(s.ReturnValue, varSet, usedVars)
+		}
+
+	case *parser.BlockStatement:
+		for _, inner := range s.Statements {
+			markReferencesInStatement(inner, varSet, usedVars)
+		}
+
+	case *parser.ForStatement:
+		if s.Init != nil {
+			markReferencesInStatement(s.Init, varSet, usedVars)
+		}
+		if s.Condition != nil {
+			markReferencesInExpr(s.Condition, varSet, usedVars)
+		}
+		if s.Update != nil {
+			markReferencesInStatement(s.Update, varSet, usedVars)
+		}
+		if s.Body != nil {
+			for _, inner := range s.Body.Statements {
+				markReferencesInStatement(inner, varSet, usedVars)
+			}
+		}
+	}
+}
+
+// markReferencesInExpr walks an expression tree, marking Identifiers found in varSet as used.
+func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line, column int }, usedVars map[string]bool) {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		if _, exists := varSet[e.Value]; exists {
+			usedVars[e.Value] = true
+		}
+
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			markReferencesInExpr(e.Left, varSet, usedVars)
+		}
+		if e.Right != nil {
+			markReferencesInExpr(e.Right, varSet, usedVars)
+		}
+
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			markReferencesInExpr(e.Right, varSet, usedVars)
+		}
+
+	case *parser.CallExpression:
+		if e.Function != nil {
+			markReferencesInExpr(e.Function, varSet, usedVars)
+		}
+		for _, arg := range e.Arguments {
+			markReferencesInExpr(arg, varSet, usedVars)
+		}
+
+	case *parser.DotExpression:
+		if e.Receiver != nil {
+			markReferencesInExpr(e.Receiver, varSet, usedVars)
+		}
+
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			markReferencesInExpr(e.Expression, varSet, usedVars)
+		}
+
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			markReferencesInExpr(e.Condition, varSet, usedVars)
+		}
+		if e.Consequence != nil {
+			for _, inner := range e.Consequence.Statements {
+				markReferencesInStatement(inner, varSet, usedVars)
+			}
+		}
+		if e.Alternative != nil {
+			for _, inner := range e.Alternative.Statements {
+				markReferencesInStatement(inner, varSet, usedVars)
+			}
+		}
+
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			markReferencesInExpr(elem, varSet, usedVars)
+		}
+
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			markReferencesInExpr(elem, varSet, usedVars)
+		}
+
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			markReferencesInExpr(e.Left, varSet, usedVars)
+		}
+		if e.Index != nil {
+			markReferencesInExpr(e.Index, varSet, usedVars)
+		}
+
+	case *parser.AssignExpression:
+		if e.Left != nil {
+			markReferencesInExpr(e.Left, varSet, usedVars)
+		}
+		if e.Value != nil {
+			markReferencesInExpr(e.Value, varSet, usedVars)
+		}
+
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			for _, inner := range e.Body.Statements {
+				markReferencesInStatement(inner, varSet, usedVars)
+			}
+		}
+
+	case *parser.SliceExpression:
+		if e.Left != nil {
+			markReferencesInExpr(e.Left, varSet, usedVars)
+		}
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				markReferencesInExpr(e.Range.Start, varSet, usedVars)
+			}
+			if e.Range.End != nil {
+				markReferencesInExpr(e.Range.End, varSet, usedVars)
+			}
+		}
+
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			markReferencesInExpr(e.Condition, varSet, usedVars)
+		}
+		if e.Consequence != nil {
+			markReferencesInExpr(e.Consequence, varSet, usedVars)
+		}
+		if e.Alternative != nil {
+			markReferencesInExpr(e.Alternative, varSet, usedVars)
+		}
+
+	case *parser.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				markReferencesInExpr(f.Value, varSet, usedVars)
+			}
+		}
+	}
+}
+
 // validateStmtTypes 檢查單個語句的型別問題
 func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varTypes map[string]string) []ValidateResult {
 	var results []ValidateResult

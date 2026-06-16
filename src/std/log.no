@@ -1,0 +1,77 @@
+// log — 分級日誌
+//
+// 提供前綴式分級日誌輸出。
+
+// ═══════════════════════════════════════════════
+// 日誌級別常量
+// ═══════════════════════════════════════════════
+
+LEVEL-DEBUG = 0
+LEVEL-INFO = 1
+LEVEL-WARN = 2
+LEVEL-ERROR = 3
+LEVEL-FATAL = 4
+
+// ═══════════════════════════════════════════════
+// 全域日誌級別
+// ═══════════════════════════════════════════════
+
+// level: 當前日誌級別（預設 INFO）
+level = 1
+
+// ═══════════════════════════════════════════════
+// 級別設定
+// ═══════════════════════════════════════════════
+
+// set-level: 設定日誌級別
+set-level = (l i64) {
+    level = l
+}
+
+// ═══════════════════════════════════════════════
+// 日誌輸出
+// ═══════════════════════════════════════════════
+
+// debug: 輸出 DEBUG 級別日誌
+debug = (msg str, msgn i64) {
+    if level <= 0 {
+        // 輸出前綴 [DEBUG] + msg
+        prefix = '[DEBUG] '
+        // LLVM: call @printf
+    }
+}
+
+// info: 輸出 INFO 級別日誌
+info = (msg str, msgn i64) {
+    if level <= 1 {
+        // 輸出前綴 [INFO] + msg
+        prefix = '[INFO] '
+        // LLVM: call @printf
+    }
+}
+
+// warn: 輸出 WARN 級別日誌
+warn = (msg str, msgn i64) {
+    if level <= 2 {
+        // 輸出前綴 [WARN] + msg
+        prefix = '[WARN] '
+        // LLVM: call @printf
+    }
+}
+
+// error: 輸出 ERROR 級別日誌
+error = (msg str, msgn i64) {
+    if level <= 3 {
+        // 輸出前綴 [ERROR] + msg
+        prefix = '[ERROR] '
+        // LLVM: call @printf
+    }
+}
+
+// fatal: 輸出 FATAL 級別日誌並退出
+fatal = (msg str, msgn i64, code i64) {
+    // 無條件輸出
+    prefix = '[FATAL] '
+    // LLVM: call @printf
+    // LLVM: call @exit(code)
+}

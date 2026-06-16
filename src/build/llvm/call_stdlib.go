@@ -61,7 +61,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		return ""
 	}
 
-	if fnName == "printf" && hasArgs {
+	if (fnName == "printf" || fnName == "fmt.printf") && hasArgs {
 		// Format string arg: need null-terminated string for printf
 		var fmtArg string
 		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
@@ -173,10 +173,10 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		return sb2.String()
 	}
 
-	if fnName == "print" {
+	if fnName == "print" || fnName == "fmt.print" {
 		return printVariadic(false)
 	}
-	if fnName == "println" {
+	if fnName == "println" || fnName == "fmt.println" {
 		if !hasArgs {
 			fg := g.getFormatGlobal("\n")
 			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))",
@@ -191,7 +191,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 	}
 
 	printInt := func(fmtSpec, fn string) string {
-		if fn == fnName && hasArgs {
+		if fn == fnName {
 			fg := g.getFormatGlobal(fmtSpec)
 			a := evalArgs()
 			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), %s)",
@@ -202,19 +202,66 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 	if r := printInt("%lld", "print-i64"); r != "" {
 		return r
 	}
+	if r := printInt("%lld", "fmt.print-i64"); r != "" {
+		return r
+	}
 	if r := printInt("%lld\n", "println-i64"); r != "" {
+		return r
+	}
+	if r := printInt("%lld\n", "fmt.println-i64"); r != "" {
 		return r
 	}
 	if r := printInt("%d", "print-byte"); r != "" {
 		return r
 	}
+	if r := printInt("%d", "fmt.print-byte"); r != "" {
+		return r
+	}
 	if r := printInt("%d\n", "println-byte"); r != "" {
+		return r
+	}
+	if r := printInt("%d\n", "fmt.println-byte"); r != "" {
 		return r
 	}
 	if r := printInt("%c", "print-char"); r != "" {
 		return r
 	}
+	if r := printInt("%c", "fmt.print-char"); r != "" {
+		return r
+	}
 	if r := printInt("%c\n", "println-char"); r != "" {
+		return r
+	}
+	if r := printInt("%c\n", "fmt.println-char"); r != "" {
+		return r
+	}
+
+	// hex print variants
+	printHex := func(fmtSpec, fn string) string {
+		if fn == fnName && hasArgs {
+			fg := g.getFormatGlobal(fmtSpec)
+			a := evalArgs()
+			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), %s)",
+				len(fmtSpec)+1, len(fmtSpec)+1, fg, typedArg(a[0]))
+		}
+		return ""
+	}
+	if r := printHex("%08llx", "print-hex32"); r != "" {
+		return r
+	}
+	if r := printHex("%08llx", "fmt.print-hex32"); r != "" {
+		return r
+	}
+	if r := printHex("%016llx", "print-hex64"); r != "" {
+		return r
+	}
+	if r := printHex("%016llx", "fmt.print-hex64"); r != "" {
+		return r
+	}
+	if r := printHex("%02llx", "print-hex8"); r != "" {
+		return r
+	}
+	if r := printHex("%02llx", "fmt.print-hex8"); r != "" {
 		return r
 	}
 
@@ -630,6 +677,47 @@ func (g *Generator) callFileIO(sb *strings.Builder, fnName string, hasArgs bool,
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), clExt, clReg))
 		}
 		return clExt
+	}
+
+	return ""
+}
+
+// callBuiltin — 內建函數（len, etc.）
+func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
+	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
+
+	if fnName == "len" && hasArgs {
+		// len(s): 獲取陣列/切片/字串的長度
+		// 參數是 i64* 指標（指向 vec/arr/str 結構體的第一個欄位）
+		a := evalArgs()
+		arg := a[0]
+		// arg 是 i64* 類型的指標，實際上指向 struct 的第一個欄位（len）
+		// 直接 load i64 即可
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+		if sb != nil {
+			// 將 i64* bitcast 為 i64* 再 load（確保型別正確）
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, arg))
+		}
+		return lenReg
+	}
+
+	if fnName == "cap" && hasArgs {
+		// cap(s): 獲取切片的容量（vec 的第二個欄位）
+		a := evalArgs()
+		arg := a[0]
+		g.tmpIdx++
+		capGEP := fmt.Sprintf("%%builtin.cap.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		capReg := fmt.Sprintf("%%builtin.cap.%d", g.tmpIdx)
+		if sb != nil {
+			// getelementptr to field 1 (cap) of vec struct
+			// arg is i64* pointing to the start of the struct
+			// We need to get to the second i64 field
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i64, i64* %s, i64 1\n", g.indent(), capGEP, arg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capReg, capGEP))
+		}
+		return capReg
 	}
 
 	return ""

@@ -141,3 +141,47 @@ i64-to-str = (a i64) (out str) {
         j = j + 1
     }
 }
+
+// div-mod: 商與餘數
+div-mod = (a i64, b i64) (q i64, r i64) {
+    q = a / b
+    r = a % b
+}
+
+// between: 判斷值是否在 [lo, hi] 範圍內
+between = (v t, lo t, hi t) (yes i64) {
+    yes = 0
+    d-lo = v - lo
+    d-hi = v - hi
+    if d-lo >= 0 && d-hi <= 0 {
+        yes = 1
+    }
+}
+
+// swap: 交換兩個值
+swap = (a t, b t) {
+    tmp = a
+    a = b
+    b = tmp
+}
+
+// sign-f64: 浮點符號（-1.0, 0.0, 1.0）
+sign-f64 = (a f64) (r f64) {
+    if a > 0.0 {
+        r = 1.0
+    } elif a < 0.0 {
+        r = -1.0
+    } else {
+        r = 0.0
+    }
+}
+// is-nan: 判斷是否為 NaN
+// build-in (LLVMIntrinsic: llvm.isnan.f64)
+// is-nan = (a f64) (yes i64) {
+//     // LLVM: call i1 @llvm.isnan.f64(a) → zext
+// }
+// is-inf: 判斷是否為無窮大
+// build-in (LLVMIntrinsic: llvm.isinf.f64)
+// is-inf = (a f64) (yes i64) {
+//     // LLVM: call i1 @llvm.isinf.f64(a) → zext
+// }

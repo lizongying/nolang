@@ -73,6 +73,25 @@ func posFromToken(t lexer.Token) lexer.Position {
 	return lexer.Position{Line: t.Line, Column: t.Column}
 }
 
+// Convenience Type variables for use in builtin definitions.
+var (
+	TypeByte = &NamedType{Value: "byte"}
+	TypeBool = &NamedType{Value: "bool"}
+	TypeChar = &NamedType{Value: "char"}
+	TypeStr  = &NamedType{Value: "str"}
+	TypeI8   = &NamedType{Value: "i8"}
+	TypeI16  = &NamedType{Value: "i16"}
+	TypeI32  = &NamedType{Value: "i32"}
+	TypeI64  = &NamedType{Value: "i64"}
+	TypeU8   = &NamedType{Value: "u8"}
+	TypeU16  = &NamedType{Value: "u16"}
+	TypeU32  = &NamedType{Value: "u32"}
+	TypeU64  = &NamedType{Value: "u64"}
+	TypeF32  = &NamedType{Value: "f32"}
+	TypeF64  = &NamedType{Value: "f64"}
+	TypeInt  = TypeI64
+)
+
 func typeString(n Node) string {
 	switch n := n.(type) {
 	case *Identifier:
@@ -626,8 +645,10 @@ func (ted *TaggedEnumDefinition) Pos() lexer.Position    { return posFromToken(t
 func (ted *TaggedEnumDefinition) EndPos() lexer.Position { return posFromToken(ted.Token) }
 
 type InterfaceMethod struct {
-	Token lexer.Token
-	Name  string
+	Token      lexer.Token
+	Name       string
+	Parameters []*Parameter // method parameter names and types
+	IsVariadic bool         // method has variadic parameter (..t)
 }
 
 type InterfaceDefinition struct {

@@ -117,7 +117,16 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				g.tmpIdx++
 				reg := fmt.Sprintf("%%neg.tmp.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = fneg double %s\n", g.indent(), reg, right))
+					// 判斷是否為浮點數：檢查右側是否為浮點常數或 double 型別
+					isFloat := false
+					if strings.Contains(right, ".") {
+						isFloat = true
+					}
+					if isFloat {
+						sb.WriteString(fmt.Sprintf("%s%s = fneg double %s\n", g.indent(), reg, right))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = sub i64 0, %s\n", g.indent(), reg, right))
+					}
 				}
 				return reg
 			}
@@ -648,8 +657,15 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i64 0, i64 %s\n",
 				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
+			storeVal := val
+			if llvmElemType == "i8" && strings.HasPrefix(val, "%") {
+				g.tmpIdx++
+				truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), truncReg, val))
+				storeVal = truncReg
+			}
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-				g.indent(), llvmElemType, val, llvmElemType, gepReg))
+				g.indent(), llvmElemType, storeVal, llvmElemType, gepReg))
 		}
 		return "0"
 	}
@@ -674,13 +690,17 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			charGEP := fmt.Sprintf("%%stridx.gep.%d", g.tmpIdx)
 			g.tmpIdx++
 			charLoad := fmt.Sprintf("%%stridx.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			charZext := fmt.Sprintf("%%stridx.zext.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 					g.indent(), charGEP, dataPtr, idx))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
 					g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+					g.indent(), charZext, charLoad))
 			}
-			return charLoad
+			return charZext
 		}
 		// str-smail indexing: GEP into field 1 ([127 x i8]) directly
 		if t, ok := g.varTypes[varName]; ok && t == "%str-smail" {
@@ -690,6 +710,8 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			charGEP := fmt.Sprintf("%%strsm.idx.elem.%d", g.tmpIdx)
 			g.tmpIdx++
 			charLoad := fmt.Sprintf("%%strsm.idx.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			charZext := fmt.Sprintf("%%strsm.idx.zext.%d", g.tmpIdx)
 			if sb != nil {
 				// GEP to field 1 (the [127 x i8] array)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %%%s, i32 0, i32 1\n",
@@ -699,8 +721,10 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 					g.indent(), charGEP, dataGEP, idx))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
 					g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+					g.indent(), charZext, charLoad))
 			}
-			return charLoad
+			return charZext
 		}
 	}
 

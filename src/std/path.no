@@ -1,0 +1,264 @@
+// path — 路徑操作
+//
+// 純字串操作，不涉及檔案系統存取。
+
+// 路徑分隔符
+SEP = 47  // '/' ASCII
+
+// 當前目錄
+DOT = 46  // '.' ASCII
+
+// ═══════════════════════════════════════════════
+// 路徑拼接
+// ═══════════════════════════════════════════════
+
+// join: 拼接兩個路徑元素
+// 處理尾綴/首綴 '/' 的各種組合
+join = (a str, an i64, b str, bn i64, out str) (out-n i64) {
+    out-n = 0
+    // 複製 a
+    i = 0
+    for i < an {
+        out[i] = a[i]
+        out-n = out-n + 1
+        i = i + 1
+    }
+    // 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
+    need-sep = 1
+    if out-n > 0 {
+        last-a = a[an - 1] & 255
+        if last-a == 47 {
+            need-sep = 0
+        }
+    }
+    if bn > 0 {
+        first-b = b[0] & 255
+        if first-b == 47 {
+            need-sep = 0
+        }
+    }
+    if out-n == 0 {
+        need-sep = 0
+    }
+    if need-sep == 1 {
+        out[out-n] = 47
+        out-n = out-n + 1
+    }
+    // 如果 b 以 '/' 開頭，跳過
+    start-b = 0
+    if bn > 0 {
+        first-b = b[0] & 255
+        if first-b == 47 {
+            start-b = 1
+        }
+    }
+    // 複製 b
+    j = start-b
+    for j < bn {
+        out[out-n] = b[j]
+        out-n = out-n + 1
+        j = j + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 路徑分解
+// ═══════════════════════════════════════════════
+
+// base: 路徑最後一個元素（檔名）
+base = (p str, n i64, out str) (out-n i64) {
+    // 找最右邊的 '/'
+    last-sep = -1
+    i = 0
+    for i < n {
+        c = p[i] & 255
+        if c == 47 {
+            last-sep = i
+        }
+        i = i + 1
+    }
+    start = last-sep + 1
+    out-n = n - start
+    i = 0
+    for i < out-n {
+        out[i] = p[start + i]
+        i = i + 1
+    }
+}
+
+// dir: 路徑的目錄部分
+dir = (p str, n i64, out str) (out-n i64) {
+    // 找最右邊的 '/'
+    last-sep = -1
+    i = 0
+    for i < n {
+        c = p[i] & 255
+        if c == 47 {
+            last-sep = i
+        }
+        i = i + 1
+    }
+    if last-sep < 0 {
+        // 無 '/'，輸出 '.'
+        out[0] = 46
+        out-n = 1
+        return
+    }
+    out-n = last-sep
+    if out-n == 0 {
+        // 根目錄 '/'
+        out[0] = 47
+        out-n = 1
+        return
+    }
+    i = 0
+    for i < out-n {
+        out[i] = p[i]
+        i = i + 1
+    }
+}
+
+// ext: 檔案副檔名（含點）
+ext = (p str, n i64, out str) (out-n i64) {
+    out-n = 0
+    // 找最右邊的 '/' 之後的 '.'
+    last-sep = -1
+    last-dot = -1
+    i = 0
+    for i < n {
+        c = p[i] & 255
+        if c == 47 {
+            last-sep = i
+        }
+        if c == 46 {
+            last-dot = i
+        }
+        i = i + 1
+    }
+    // '.' 必須在 '/' 之後
+    if last-dot <= last-sep {
+        return
+    }
+    // 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
+    if last-dot == n - 1 {
+        return
+    }
+    start = last-dot
+    out-n = n - start
+    i = 0
+    for i < out-n {
+        out[i] = p[start + i]
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 路徑判斷
+// ═══════════════════════════════════════════════
+
+// is-abs: 判斷路徑是否為絕對路徑
+is-abs = (p str, n i64) (yes i64) {
+    yes = 0
+    if n > 0 {
+        c = p[0] & 255
+        if c == 47 {
+            yes = 1
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 路徑清理
+// ═══════════════════════════════════════════════
+
+// clean: 清理路徑（移除 . 和 .. 與重複分隔符）
+clean = (p str, n i64, out str) (out-n i64) {
+    out-n = 0
+    i = 0
+    dot-count = 0
+    for i < n {
+        c = p[i] & 255
+        if c == 47 {
+            // 處理上一段
+            if dot-count == 1 {
+                // 忽略 './'
+            } elif dot-count == 2 {
+                // 回退 '..'
+                // 找 out 中前一個 '/'
+                j = out-n - 1
+                for j >= 0 {
+                    if out[j] == 47 {
+                        break
+                    }
+                    j = j - 1
+                }
+                if j < 0 {
+                    out-n = 0
+                } else {
+                    out-n = j
+                }
+            } else {
+                // 保留分隔符（跳過重複）
+                if out-n > 0 {
+                    prev = out[out-n - 1] & 255
+                    if prev != 47 {
+                        out[out-n] = 47
+                        out-n = out-n + 1
+                    }
+                } else {
+                    out[out-n] = 47
+                    out-n = out-n + 1
+                }
+            }
+            dot-count = 0
+        } elif c == 46 {
+            dot-count = dot-count + 1
+        } else {
+            // 寫入之前積累的 '.' 字元
+            j = 0
+            for j < dot-count {
+                out[out-n] = 46
+                out-n = out-n + 1
+                j = j + 1
+            }
+            dot-count = 0
+            out[out-n] = c
+            out-n = out-n + 1
+        }
+        i = i + 1
+    }
+    // 處理末尾段
+    if dot-count == 1 {
+        // 忽略末尾 '.'
+    } elif dot-count == 2 {
+        j = out-n - 1
+        for j >= 0 {
+            if out[j] == 47 {
+                break
+            }
+            j = j - 1
+        }
+        if j < 0 {
+            out-n = 0
+        } else {
+            out-n = j
+        }
+    }
+    // 移除末尾 '/'
+    if out-n > 1 {
+        prev = out[out-n - 1] & 255
+        if prev == 47 {
+            out-n = out-n - 1
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 路徑分割
+// ═══════════════════════════════════════════════
+
+// split: 將路徑分割為目錄和檔名
+split = (p str, n i64, d str, f str) (dn i64, fn i64) {
+    dir(p, n, d)(dn)
+    base(p, n, f)(fn)
+}

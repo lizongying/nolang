@@ -159,6 +159,22 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 			diagnostics = append(diagnostics, diagnostic)
 		}
+
+		// 未使用變量檢查
+		unusedVars := nbuild.ValidateUnusedVars(ast)
+		for _, u := range unusedVars {
+			diagnostic := Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+				},
+				Severity: DiagnosticSeverityHint,
+				Source:   "nolang-lint",
+				Tags:     []int{DiagnosticTagUnnecessary},
+				Message:  u.Message,
+			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
 	}
 
 	if err := s.publishDiagnostics(uri, diagnostics); err != nil {
@@ -717,7 +733,7 @@ func RunServer(ctx context.Context, server *Server) error {
 	handler := func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		method := req.Method()
 		params := req.Params()
-		log.Printf("Received request: %s %+v ###aaaa##", method, params)
+		log.Printf("Received request: %s %+v ###bbb###", method, params)
 
 		result, err := server.Handle(method, json.RawMessage(params))
 		return reply(ctx, result, err)

@@ -1,0 +1,182 @@
+// unicode — UTF-8 編解碼與 Unicode 支援
+//
+// Nolang char 型別為 i32（rune），本模組提供 UTF-8 編解碼
+// 及基本 Unicode 分類判斷。
+
+// ═══════════════════════════════════════════════
+// UTF-8 解碼
+// ═══════════════════════════════════════════════
+
+// decode-rune: 從字串位置 pos 解碼一個 UTF-8 rune
+// 回傳 rune 值與下一位置
+decode-rune = (s str, pos i64) (r i64, next-pos i64) {
+    b0 = s[pos] & 255
+    // 單位元組 0xxxxxxx
+    if b0 < 128 {
+        r = b0
+        next-pos = pos + 1
+        return
+    }
+    // 雙位元組 110xxxxx
+    if b0 >= 192 && b0 < 224 {
+        b1 = s[pos + 1] & 255
+        r = ((b0 & 31) << 6) | (b1 & 63)
+        next-pos = pos + 2
+        return
+    }
+    // 三位元組 1110xxxx
+    if b0 >= 224 && b0 < 240 {
+        b1 = s[pos + 1] & 255
+        b2 = s[pos + 2] & 255
+        r = ((b0 & 15) << 12) | ((b1 & 63) << 6) | (b2 & 63)
+        next-pos = pos + 3
+        return
+    }
+    // 四位元組 11110xxx
+    if b0 >= 240 && b0 < 248 {
+        b1 = s[pos + 1] & 255
+        b2 = s[pos + 2] & 255
+        b3 = s[pos + 3] & 255
+        r = ((b0 & 7) << 18) | ((b1 & 63) << 12) | ((b2 & 63) << 6) | (b3 & 63)
+        next-pos = pos + 4
+        return
+    }
+    // 無效位元組
+    r = 65533
+    next-pos = pos + 1
+}
+
+// ═══════════════════════════════════════════════
+// UTF-8 編碼
+// ═══════════════════════════════════════════════
+
+// encode-rune: 將 rune 編碼為 UTF-8 寫入 out
+// 回傳寫入位元組數
+encode-rune = (r i64, out str) (n i64) {
+    // 單位元組 0x00-0x7F
+    if r < 128 {
+        out[0] = r
+        n = 1
+        return
+    }
+    // 雙位元組 0x80-0x7FF
+    if r < 2048 {
+        out[0] = 192 | (r >> 6)
+        out[1] = 128 | (r & 63)
+        n = 2
+        return
+    }
+    // 三位元組 0x800-0xFFFF
+    if r < 65536 {
+        out[0] = 224 | (r >> 12)
+        out[1] = 128 | ((r >> 6) & 63)
+        out[2] = 128 | (r & 63)
+        n = 3
+        return
+    }
+    // 四位元組 0x10000-0x10FFFF
+    out[0] = 240 | (r >> 18)
+    out[1] = 128 | ((r >> 12) & 63)
+    out[2] = 128 | ((r >> 6) & 63)
+    out[3] = 128 | (r & 63)
+    n = 4
+}
+
+// ═══════════════════════════════════════════════
+// 統計
+// ═══════════════════════════════════════════════
+
+// rune-count: 計算字串中的 rune 數量
+rune-count = (s str, sn i64) (count i64) {
+    count = 0
+    pos = 0
+    for pos < sn {
+        decode-rune(s, pos)(_, next)
+        count = count + 1
+        pos = next
+    }
+}
+
+// ═══════════════════════════════════════════════
+// Unicode 分類
+// ═══════════════════════════════════════════════
+
+// is-letter: 判斷 rune 是否為字母（A-Z a-z 基本範圍）
+is-letter = (r i64) (yes i64) {
+    yes = 0
+    if r >= 65 && r <= 90 {
+        yes = 1
+        return
+    }
+    if r >= 97 && r <= 122 {
+        yes = 1
+    }
+}
+
+// is-digit: 判斷 rune 是否為數字（0-9）
+is-digit = (r i64) (yes i64) {
+    yes = 0
+    if r >= 48 && r <= 57 {
+        yes = 1
+    }
+}
+
+// is-space: 判斷 rune 是否為空白字元
+is-space = (r i64) (yes i64) {
+    yes = 0
+    if r == 32 || r == 9 || r == 10 || r == 13 {
+        yes = 1
+    }
+}
+
+// is-alnum: 判斷 rune 是否為字母或數字
+is-alnum = (r i64) (yes i64) {
+    yes = 0
+    if r >= 65 && r <= 90 {
+        yes = 1
+        return
+    }
+    if r >= 97 && r <= 122 {
+        yes = 1
+        return
+    }
+    if r >= 48 && r <= 57 {
+        yes = 1
+    }
+}
+
+// is-upper: 判斷 rune 是否為大寫字母
+is-upper = (r i64) (yes i64) {
+    yes = 0
+    if r >= 65 && r <= 90 {
+        yes = 1
+    }
+}
+
+// is-lower: 判斷 rune 是否為小寫字母
+is-lower = (r i64) (yes i64) {
+    yes = 0
+    if r >= 97 && r <= 122 {
+        yes = 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 大小寫轉換
+// ═══════════════════════════════════════════════
+
+// to-upper-rune: 將 rune 轉為大寫
+to-upper-rune = (r i64) (out i64) {
+    out = r
+    if r >= 97 && r <= 122 {
+        out = r - 32
+    }
+}
+
+// to-lower-rune: 將 rune 轉為小寫
+to-lower-rune = (r i64) (out i64) {
+    out = r
+    if r >= 65 && r <= 90 {
+        out = r + 32
+    }
+}

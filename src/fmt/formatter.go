@@ -519,11 +519,11 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
 		params = params[1:]
 	}
-	f.formatParameters(params)
+	f.formatParameters(params, s.IsVariadic)
 	f.write(")")
 	if len(s.Results) > 0 {
 		f.write(" (")
-		f.formatParameters(s.Results)
+		f.formatParameters(s.Results, false)
 		f.write(")")
 	}
 	f.write(" {")
@@ -595,7 +595,7 @@ func filterExplicitGenericParams(params []*parser.Identifier) []string {
 	return result
 }
 
-func (f *formatter) formatParameters(params []*parser.Parameter) {
+func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool) {
 	for i, p := range params {
 		if i > 0 {
 			f.write(", ")
@@ -603,7 +603,16 @@ func (f *formatter) formatParameters(params []*parser.Parameter) {
 		f.write(p.Name)
 		if p.Type != nil {
 			f.write(" ")
-			f.write(p.Type.String())
+			if isVariadic && i == len(params)-1 {
+				f.write("..")
+				if st, ok := p.Type.(*parser.SliceType); ok {
+					f.write(st.Elem.String())
+				} else {
+					f.write(p.Type.String())
+				}
+			} else {
+				f.write(p.Type.String())
+			}
 		}
 	}
 }
@@ -1092,7 +1101,9 @@ func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
 	for _, m := range s.Methods {
 		f.newline()
 		f.write(m.Name)
-		f.write("()")
+		f.write("(")
+		f.formatParameters(m.Parameters, m.IsVariadic)
+		f.write(")")
 	}
 	f.indent--
 	f.newline()
@@ -1101,7 +1112,7 @@ func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
 
 func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write("(")
-	f.formatParameters(e.Parameters)
+	f.formatParameters(e.Parameters, e.IsVariadic)
 	f.write(")")
 	f.write(" {")
 	f.indent++

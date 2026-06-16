@@ -1,0 +1,7 @@
+opt: /var/folders/66/rv9s0g5n7bd908c8g7lvf98r0000gn/T/nolang878999077/test_std_hash.ll:297:3: error: instructions returning void cannot have a name
+                %call.tmp.63 = call void @len(i64* %data)
+                ^
+llc: error: llc: /var/folders/66/rv9s0g5n7bd908c8g7lvf98r0000gn/T/nolang878999077/test_std_hash.ll:297:3: error: instructions returning void cannot have a name
+                %call.tmp.63 = call void @len(i64* %data)
+                ^
+Error: build error: LLVM assembly failed: exit status 1

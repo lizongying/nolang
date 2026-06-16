@@ -12,15 +12,6 @@ arr {
     data *any sealed
 }
 
-// arr-create: 創建長度 n 的陣列，全部填充 val
-arr-create = (n i64, val t)(out [n]t) {
-    i = 0
-    for i < n {
-        out[i] = val
-        i = i + 1
-    }
-}
-
 // [n]t.clone: 將陣列複製到 dst
 [n]t.clone = () (dst [n]t) {
     i = 0
@@ -119,6 +110,68 @@ arr-create = (n i64, val t)(out [n]t) {
     i = 0
     for i < n {
         sum = sum + .[i]
+        i = i + 1
+    }
+}
+
+// [n]t.index-of: 找到值返回索引，否則 -1
+[n]t.index-of = (val t) (idx i64) {
+    idx = -1
+    i = 0
+    for i < n {
+        d = .[i] - val
+        if d == 0 {
+            idx = i
+            return
+        }
+        i = i + 1
+    }
+}
+
+// [n]t.last: 最後一個元素
+[n]t.last = () (val t) {
+    val = .[n - 1]
+}
+
+// [n]t.first: 第一個元素
+[n]t.first = () (val t) {
+    val = .[0]
+}
+
+// [n]t.sort-asc: 升序原地排序（插入排序）
+[n]t.sort-asc = () {
+    i = 1
+    for i < n {
+        key = .[i]
+        j = i - 1
+        for j >= 0 {
+            d = .[j] - key
+            if d <= 0 {
+                break
+            }
+            .[j + 1] = .[j]
+            j = j - 1
+        }
+        .[j + 1] = key
+        i = i + 1
+    }
+}
+
+// [n]t.sort-desc: 降序原地排序（插入排序）
+[n]t.sort-desc = () {
+    i = 1
+    for i < n {
+        key = .[i]
+        j = i - 1
+        for j >= 0 {
+            d = .[j] - key
+            if d >= 0 {
+                break
+            }
+            .[j + 1] = .[j]
+            j = j - 1
+        }
+        .[j + 1] = key
         i = i + 1
     }
 }

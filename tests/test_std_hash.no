@@ -7,6 +7,7 @@
 # std/hash/crc-32
 # std/hash/fnv-1a-32
 # std/hash/md5
+# std/hash/sha1
 # std/hash/sha256
 # std/hash/sha512
 # std/hash/aes-128-enc
@@ -24,20 +25,20 @@
 crc-32('', 0)(h)
 fmt.print('crc32("")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
 
 // crc32("hello")=3610a686
 crc-32('hello', 5)(h)
 fmt.print('crc32("hello")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
 
 // crc32("fox")=414fa339
 s = 'The quick brown fox jumps over the lazy dog'
 crc-32(s, 43)(h)
 fmt.print('crc32("fox")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // FNV-1a-32
@@ -47,25 +48,187 @@ fmt.print('')
 fnv-1a-32('', 0)(h)
 fmt.print('fnv1a32("")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
 
 // fnv1a32("hello")=4f9f2cab
 fnv-1a-32('hello', 5)(h)
 fmt.print('fnv1a32("hello")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
 
 // fnv1a32("fox")=048fff90
 fnv-1a-32(s, 43)(h)
 fmt.print('fnv1a32("fox")=')
 fmt.print-hex32(h)
-fmt.print('')
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// MD5
+// ═══════════════════════════════════════════
+
+md5-out = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+
+// md5("")=d41d8cd98f00b204e9800998ecf8427e
+md5('')(md5-out)
+fmt.print('md5("")=')
+i = 0
+for i < 16 {
+    fmt.print-hex8(md5-out[i] & 255)
+    i = i + 1
+}
+fmt.println('')
+
+// md5("hello")=5d41402abc4b2a76b9719d911017c592
+md5('hello')(md5-out)
+fmt.print('md5("hello")=')
+i = 0
+for i < 16 {
+    fmt.print-hex8(md5-out[i] & 255)
+    i = i + 1
+}
+fmt.println('')
+
+// md5("fox")=9e107d9d372bb6826bd81d3542a419d6
+md5(s)(md5-out)
+fmt.print('md5("fox")=')
+i = 0
+for i < 16 {
+    fmt.print-hex8(md5-out[i] & 255)
+    i = i + 1
+}
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（zero block 壓縮測試）
+// ═══════════════════════════════════════════
+
+make-str-16(block1)
+i = 0
+for i < 16 {
+    block1[i] = 0
+    i = i + 1
+}
+
+// sha1-zero-block=67452301efcdab8998badcfe10325476c3d2e1f0
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1-zero-block=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（空字串填充區塊）
+// ═══════════════════════════════════════════
+
+make-str-16(block1empty)
+block1empty[0] = 2147483648  // 0x80000000
+i = 1
+for i < 16 {
+    block1empty[i] = 0
+    i = i + 1
+}
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1empty, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1-empty=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（"abc" 填充區塊）
+// ═══════════════════════════════════════════
+
+make-str-16(block1abc)
+block1abc[0] = 1633837952  // 0x61626380
+i = 1
+for i < 15 {
+    block1abc[i] = 0
+    i = i + 1
+}
+block1abc[15] = 24  // 0x18
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1abc, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1-abc=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（完整哈希：""）
+// ═══════════════════════════════════════════
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1empty, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1("")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（完整哈希："hello"）
+// ═══════════════════════════════════════════
+
+make-str-16(block1hello)
+block1hello[0] = 1751477356  // 0x68656C6C "hell"
+block1hello[1] = 1870659584  // 0x6F800000 "o" + 0x80
+i = 2
+for i < 15 {
+    block1hello[i] = 0
+    i = i + 1
+}
+block1hello[15] = 40  // 5*8 bits
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1hello, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1("hello")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-1（完整哈希："The quick brown fox..."）
+// ═══════════════════════════════════════════
+
+make-str-16(block1fox)
+block1fox[0] = 1416125728   // 0x54686520 "The "
+block1fox[1] = 1902461283   // 0x71756963 "quic"
+block1fox[2] = 1796563570   // 0x6B206272 "k br"
+block1fox[3] = 1869449760   // 0x6F776E20 "own "
+block1fox[4] = 1718777888   // 0x666F7820 "fox "
+block1fox[5] = 1785762160   // 0x6A756D70 "jump"
+block1fox[6] = 1931505526   // 0x73206F76 "s ov"
+block1fox[7] = 1701675124   // 0x65722074 "er t"
+block1fox[8] = 1751479916   // 0x6865206C "he l"
+block1fox[9] = 1635014944   // 0x617A7920 "azy "
+block1fox[10] = 1685735296  // 0x646F6780 "dog" + 0x80
+i = 11
+for i < 15 {
+    block1fox[i] = 0
+    i = i + 1
+}
+block1fox[15] = 344  // 43*8 bits
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1fox, 16)(h0, h1, h2, h3, h4)
+
+fmt.print('sha1("fox")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4)
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-256（zero block 壓縮測試）
 // ═══════════════════════════════════════════
 
-block256 = make-str-16()
+make-str-16(block256)
 i = 0
 for i < 16 {
     block256[i] = 0
@@ -80,13 +243,13 @@ sha256(block256, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-zero-block=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-256（空字串填充區塊）
 // ═══════════════════════════════════════════
 
-block256empty = make-str-16()
+make-str-16(block256empty)
 block256empty[0] = 2147483648  // 0x80000000
 i = 1
 for i < 16 {
@@ -101,13 +264,13 @@ sha256(block256empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-empty=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-256（"abc" 填充區塊）
 // ═══════════════════════════════════════════
 
-block256abc = make-str-16()
+make-str-16(block256abc)
 block256abc[0] = 1633837952  // 0x61626380
 i = 1
 for i < 15 {
@@ -123,13 +286,81 @@ sha256(block256abc, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha256-abc=')
 fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
 fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
-fmt.print('')
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-256（完整哈希：""）
+// ═══════════════════════════════════════════
+
+h0 = 1779033703; h1 = 3144134277; h2 = 1013904242; h3 = 2773480762
+h4 = 1359893119; h5 = 2600822924; h6 = 528734635;  h7 = 1541459225
+sha256(block256empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha256("")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-256（完整哈希："hello"）
+// ═══════════════════════════════════════════
+
+make-str-16(block256hello)
+block256hello[0] = 1751477356  // 0x68656c6c "hell"
+block256hello[1] = 1870659584  // 0x6f800000 "o" + 0x80
+i = 2
+for i < 15 {
+    block256hello[i] = 0
+    i = i + 1
+}
+block256hello[15] = 40  // 5*8 bits
+
+h0 = 1779033703; h1 = 3144134277; h2 = 1013904242; h3 = 2773480762
+h4 = 1359893119; h5 = 2600822924; h6 = 528734635;  h7 = 1541459225
+sha256(block256hello, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha256("hello")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-256（完整哈希："The quick brown fox..."）
+// ═══════════════════════════════════════════
+
+make-str-16(block256fox)
+block256fox[0] = 1416125728   // 0x54686520 "The "
+block256fox[1] = 1902461283   // 0x71756963 "quic"
+block256fox[2] = 1796563570   // 0x6b206272 "k br"
+block256fox[3] = 1869449760   // 0x6f776e20 "own "
+block256fox[4] = 1718777888   // 0x666f7820 "fox "
+block256fox[5] = 1785762160   // 0x6a756d70 "jump"
+block256fox[6] = 1931505526   // 0x73206f76 "s ov"
+block256fox[7] = 1701675124   // 0x65722074 "er t"
+block256fox[8] = 1751479916   // 0x6865206c "he l"
+block256fox[9] = 1635014944   // 0x617a7920 "azy "
+block256fox[10] = 1685735296  // 0x646f6780 "dog" + 0x80
+i = 11
+for i < 15 {
+    block256fox[i] = 0
+    i = i + 1
+}
+block256fox[15] = 344  // 43*8 bits
+
+h0 = 1779033703; h1 = 3144134277; h2 = 1013904242; h3 = 2773480762
+h4 = 1359893119; h5 = 2600822924; h6 = 528734635;  h7 = 1541459225
+sha256(block256fox, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha256("fox")=')
+fmt.print-hex32(h0); fmt.print-hex32(h1); fmt.print-hex32(h2); fmt.print-hex32(h3)
+fmt.print-hex32(h4); fmt.print-hex32(h5); fmt.print-hex32(h6); fmt.print-hex32(h7)
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-512（zero block 壓縮測試）
 // ═══════════════════════════════════════════
 
-block512 = make-str-16()
+make-str-16(block512)
 i = 0
 for i < 16 {
     block512[i] = 0
@@ -146,14 +377,14 @@ sha512(block512, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-zero-block=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-512（空字串填充區塊）
 // ═══════════════════════════════════════════
 
-block512empty = make-str-16()
-block512empty[0] = -9223372036854775808  // 0x8000000000000000 (signed)
+make-str-16(block512empty)
+block512empty[0] = 1 << 63  // 0x8000000000000000 (signed i64 min)
 i = 1
 for i < 16 {
     block512empty[i] = 0
@@ -169,13 +400,13 @@ sha512(block512empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-empty=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // SHA-512（"abc" 填充區塊）
 // ═══════════════════════════════════════════
 
-block512abc = make-str-16()
+make-str-16(block512abc)
 block512abc[0] = 7020623177855533056  // 0x6162638000000000
 i = 1
 for i < 15 {
@@ -193,7 +424,75 @@ sha512(block512abc, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
 fmt.print('sha512-abc=')
 fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
 fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
-fmt.print('')
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-512（完整哈希：""）
+// ═══════════════════════════════════════════
+
+h0 = 7640891576956012808;  h1 = -4942790177534073029
+h2 = 4354685564936845355;  h3 = -6534734903238641935
+h4 = 5840696475078001361;  h5 = -7276294671716946913
+h6 = 2270897969802886507;  h7 = 6620516959819538809
+sha512(block512empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha512("")=')
+fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
+fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-512（完整哈希："hello"）
+// ═══════════════════════════════════════════
+
+make-str-16(block512hello)
+block512hello[0] = 7522515962676838400  // 0x68656c6c6f800000 "hello" + 0x80
+i = 1
+for i < 15 {
+    block512hello[i] = 0
+    i = i + 1
+}
+block512hello[15] = 40  // 5*8 bits
+
+h0 = 7640891576956012808;  h1 = -4942790177534073029
+h2 = 4354685564936845355;  h3 = -6534734903238641935
+h4 = 5840696475078001361;  h5 = -7276294671716946913
+h6 = 2270897969802886507;  h7 = 6620516959819538809
+sha512(block512hello, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha512("hello")=')
+fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
+fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
+fmt.println('')
+
+// ═══════════════════════════════════════════
+// SHA-512（完整哈希："The quick brown fox..."）
+// ═══════════════════════════════════════════
+
+make-str-16(block512fox)
+block512fox[0] = 6081398959830894947  // 0x5468652071756963 "The qui"
+block512fox[1] = 7719395192565272096  // 0x6b2062726f776e20 "k brown "
+block512fox[2] = 7380969326568795504  // 0x666f78206a756d70 "fox jump"
+block512fox[3] = 8293047484401967220  // 0x73206f7665722074 "s over t"
+block512fox[4] = 7520170734499707168  // 0x6865206c617a7920 "he lazy "
+block512fox[5] = 7233170654262190080  // 0x646f678000000000 "dog" + 0x80
+i = 6
+for i < 15 {
+    block512fox[i] = 0
+    i = i + 1
+}
+block512fox[15] = 344  // 43*8 bits
+
+h0 = 7640891576956012808;  h1 = -4942790177534073029
+h2 = 4354685564936845355;  h3 = -6534734903238641935
+h4 = 5840696475078001361;  h5 = -7276294671716946913
+h6 = 2270897969802886507;  h7 = 6620516959819538809
+sha512(block512fox, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+
+fmt.print('sha512("fox")=')
+fmt.print-hex64(h0); fmt.print-hex64(h1); fmt.print-hex64(h2); fmt.print-hex64(h3)
+fmt.print-hex64(h4); fmt.print-hex64(h5); fmt.print-hex64(h6); fmt.print-hex64(h7)
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // AES-128（NIST test vector）
@@ -211,7 +510,7 @@ for i < 16 {
     fmt.print-hex8(aes-out[i] & 255)
     i = i + 1
 }
-fmt.print('')
+fmt.println('')
 
 aes-dec = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 aes-128-dec(aes-out, 16, aes-key)(aes-dec)
@@ -222,7 +521,7 @@ for i < 16 {
     fmt.print-hex8(aes-dec[i] & 255)
     i = i + 1
 }
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // DES
@@ -240,7 +539,7 @@ for i < 8 {
     fmt.print-hex8(des-out[i] & 255)
     i = i + 1
 }
-fmt.print('')
+fmt.println('')
 
 des-dec = '\x00\x00\x00\x00\x00\x00\x00\x00'
 des-dec(des-out, 8, des-key)(des-dec)
@@ -251,12 +550,12 @@ for i < 8 {
     fmt.print-hex8(des-dec[i] & 255)
     i = i + 1
 }
-fmt.print('')
+fmt.println('')
 
 // ═══════════════════════════════════════════
 // 輔助函數
 // ═══════════════════════════════════════════
 
-make-str-16()(s str) {
+make-str-16(s) {
     s = '                '
 }
