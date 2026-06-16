@@ -968,14 +968,6 @@ func Format(code string) string {
 		lineToStmt[i] = currentStmt
 	}
 
-	// 收集所有代码行位置
-	codeLinePositions := make([]int, 0, len(lineTypes))
-	for i, lt := range lineTypes {
-		if lt == lineCode {
-			codeLinePositions = append(codeLinePositions, i)
-		}
-	}
-
 	type commentEntry struct {
 		lineIdx int
 		content string
@@ -986,7 +978,6 @@ func Format(code string) string {
 
 	// 将缩进注释按语句分组（仅在 } 之前的内部注释）
 	commentsByStmt := make(map[int][]commentEntry)
-	codePosIdx := 0
 	for i, lt := range lineTypes {
 		if lt != linePreserved {
 			continue
@@ -1045,28 +1036,11 @@ func Format(code string) string {
 			continue
 		}
 
-		// 推进到当前行之后的代码行
-		for codePosIdx < len(codeLinePositions) && codeLinePositions[codePosIdx] <= i {
-			codePosIdx++
-		}
-
-		// 判断是否在语句体内部：下一代码行不是语句起始行，或没有更多代码行（尾部）
-		isInsideBody := false
-		if codePosIdx < len(codeLinePositions) {
-			nextCodeLine := codeLinePositions[codePosIdx]
-			if !stmtStartLines[nextCodeLine] {
-				isInsideBody = true
-			}
-		} else {
-			isInsideBody = true
-		}
-
-		if isInsideBody {
-			stmt := lineToStmt[i]
-			if stmt >= 0 {
-				commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
-				handledComments[i] = true
-			}
+		// 缩进的注释，前一行代码不是 }：始终视为语句体内的注释，预插入到格式化输出中
+		stmt := lineToStmt[i]
+		if stmt >= 0 {
+			commentsByStmt[stmt] = append(commentsByStmt[stmt], commentEntry{lineIdx: i, content: cleanLines[i]})
+			handledComments[i] = true
 		}
 	}
 
@@ -1123,6 +1097,10 @@ func Format(code string) string {
 					occurrenceIdx := 0
 					for j := 0; j < entry.lineIdx; j++ {
 						if lineTypes[j] == lineCode {
+							// 只在同一语句范围内计数，避免跨语句同名行的干扰
+							if lineToStmt[j] != stmtIdx {
+								continue
+							}
 							trimmed := strings.TrimSpace(cleanLines[j])
 							if trimmed == nextCodeLine {
 								codeIndent := len(cleanLines[j]) - len(strings.TrimLeft(cleanLines[j], " \t"))

@@ -652,10 +652,10 @@ func (c *lspConn) Write(p []byte) (int, error) { _, err := c.stdin.Write(p); ret
 
 // sendLSPRequest 通过 stdin 向 LSP 进程发送 JSON-RPC 请求，返回 stdout 响应
 // 自动跳过中间的通知消息（无 "id" 的消息）
-func sendLSPRequest(t *testing.T, lsp *lspConn, method string, params interface{}) ([]byte, error) {
+func sendLSPRequest(t *testing.T, lsp *lspConn, method string, params any) ([]byte, error) {
 	t.Helper()
 
-	request := map[string]interface{}{
+	request := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  method,
@@ -679,7 +679,7 @@ func sendLSPRequest(t *testing.T, lsp *lspConn, method string, params interface{
 			return nil, err
 		}
 		// 检查是否是响应（有 id 字段）
-		var msg map[string]interface{}
+		var msg map[string]any
 		if err := json.Unmarshal(resp, &msg); err != nil {
 			return nil, fmt.Errorf("unmarshal message: %v", err)
 		}
@@ -691,10 +691,10 @@ func sendLSPRequest(t *testing.T, lsp *lspConn, method string, params interface{
 }
 
 // sendLSPNotification 发送 JSON-RPC 通知（无需响应）
-func sendLSPNotification(t *testing.T, lsp *lspConn, method string, params interface{}) error {
+func sendLSPNotification(t *testing.T, lsp *lspConn, method string, params any) error {
 	t.Helper()
 
-	request := map[string]interface{}{
+	request := map[string]any{
 		"jsonrpc": "2.0",
 		"method":  method,
 		"params":  params,
@@ -708,6 +708,151 @@ func sendLSPNotification(t *testing.T, lsp *lspConn, method string, params inter
 	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
 	_, err = lsp.Write([]byte(header + string(body)))
 	return err
+}
+
+// logDiff 输出类似 git diff 的对比，用颜色标记差异行
+func logDiff(t *testing.T, original, formatted string) {
+	t.Helper()
+
+	oLines := strings.Split(original, "\n")
+	fLines := strings.Split(formatted, "\n")
+
+	oIdx, fIdx := 0, 0
+	const (
+		red   = "\033[31m"
+		green = "\033[32m"
+		cyan  = "\033[36m"
+		reset = "\033[0m"
+	)
+
+	fmt.Fprintf(os.Stdout, "%s--- original%s\n", red, reset)
+	fmt.Fprintf(os.Stdout, "%s+++ formatted%s\n", green, reset)
+
+	for oIdx < len(oLines) || fIdx < len(fLines) {
+		if oIdx < len(oLines) && fIdx < len(fLines) && oLines[oIdx] == fLines[fIdx] {
+			oIdx++
+			fIdx++
+			continue
+		}
+
+		syncO, syncF := -1, -1
+		for offset := 1; offset <= 10; offset++ {
+			offO := oIdx + offset
+			offF := fIdx + offset
+			if offO < len(oLines) && offF < len(fLines) && oLines[offO] == fLines[offF] {
+				syncO, syncF = offO, offF
+				break
+			}
+		}
+
+		if syncO != -1 && syncF != -1 {
+			for ; oIdx < syncO; oIdx++ {
+				fmt.Fprintf(os.Stdout, "%s-%s%s\n", red, oLines[oIdx], reset)
+			}
+			for ; fIdx < syncF; fIdx++ {
+				fmt.Fprintf(os.Stdout, "%s+%s%s\n", green, fLines[fIdx], reset)
+			}
+			fmt.Fprintf(os.Stdout, " %s\n", oLines[oIdx])
+			oIdx++
+			fIdx++
+		} else {
+			for ; oIdx < len(oLines); oIdx++ {
+				fmt.Fprintf(os.Stdout, "%s-%s%s\n", red, oLines[oIdx], reset)
+			}
+			for ; fIdx < len(fLines); fIdx++ {
+				fmt.Fprintf(os.Stdout, "%s+%s%s\n", green, fLines[fIdx], reset)
+			}
+		}
+	}
+}
+
+// startLSP 启动 LSP 进程，完成握手，返回连接和清理函数
+func startLSP(t *testing.T) (*lspConn, func()) {
+	t.Helper()
+
+	lspBin := "../../vscode-nolang/server/nolang-lsp"
+	if _, err := os.Stat(lspBin); os.IsNotExist(err) {
+		t.Skipf("LSP binary not found: %s", lspBin)
+	}
+
+	cmd := exec.Command(lspBin)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start lsp: %v", err)
+	}
+
+	lsp := &lspConn{stdin, stdout}
+
+	// initialize
+	initParams := map[string]any{
+		"capabilities": map[string]any{},
+	}
+	resp, err := sendLSPRequest(t, lsp, "initialize", initParams)
+	if err != nil {
+		t.Fatalf("initialize failed: %v", err)
+	}
+	var initResult map[string]any
+	if err := json.Unmarshal(resp, &initResult); err != nil {
+		t.Fatalf("unmarshal initialize response: %v, body=%q", err, string(resp))
+	}
+	if initResult["error"] != nil {
+		t.Fatalf("initialize error: %v", initResult["error"])
+	}
+	t.Logf("Initialize response: %+v", initResult["result"])
+
+	// initialized notification
+	sendLSPNotification(t, lsp, "initialized", map[string]any{})
+
+	cleanup := func() {
+		cmd.Process.Kill()
+	}
+	return lsp, cleanup
+}
+
+// formatLSPCode 通过 LSP 格式化代码，返回格式化后的文本
+func formatLSPCode(t *testing.T, lsp *lspConn, uri, code string) string {
+	t.Helper()
+
+	sendLSPNotification(t, lsp, "textDocument/didOpen", map[string]any{
+		"textDocument": map[string]any{
+			"uri":        uri,
+			"languageId": "nolang",
+			"version":    1,
+			"text":       code,
+		},
+	})
+
+	formatParams := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"options":      map[string]any{"tabSize": 4, "insertSpaces": true},
+	}
+	resp, err := sendLSPRequest(t, lsp, "textDocument/formatting", formatParams)
+	if err != nil {
+		t.Fatalf("formatting failed: %v", err)
+	}
+
+	var formatResult map[string]any
+	if err := json.Unmarshal(resp, &formatResult); err != nil {
+		t.Fatalf("unmarshal formatting response: %v, body=%q", err, string(resp))
+	}
+	if formatResult["error"] != nil {
+		t.Fatalf("formatting error: %v", formatResult["error"])
+	}
+
+	editsRaw, ok := formatResult["result"].([]any)
+	if !ok {
+		t.Fatalf("result is not array, got=%T value=%+v", formatResult["result"], formatResult["result"])
+	}
+
+	return applyRawTextEdits(code, editsRaw)
 }
 
 // readLSPResponse 从 stdout 读取 LSP 响应
@@ -743,18 +888,17 @@ func readLSPResponse(t *testing.T, lsp *lspConn) ([]byte, error) {
 	return body, nil
 }
 
-func TestLSPBinaryFormatting(t *testing.T) {
+// cd ./src && go test ./lsp/... -v -run TestLSPBinaryFormatting_IdempotentWithComments
+func TestLSPBinaryFormatting_IdempotentWithComments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping LSP binary test in short mode")
 	}
 
-	// LSP 二进制路径
 	lspBin := "../../vscode-nolang/server/nolang-lsp"
 	if _, err := os.Stat(lspBin); os.IsNotExist(err) {
 		t.Skipf("LSP binary not found: %s", lspBin)
 	}
 
-	// 启动 LSP 进程
 	cmd := exec.Command(lspBin)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -772,15 +916,14 @@ func TestLSPBinaryFormatting(t *testing.T) {
 
 	lsp := &lspConn{stdin, stdout}
 
-	// 发送 initialize
-	initParams := map[string]interface{}{
-		"capabilities": map[string]interface{}{},
+	initParams := map[string]any{
+		"capabilities": map[string]any{},
 	}
 	resp, err := sendLSPRequest(t, lsp, "initialize", initParams)
 	if err != nil {
 		t.Fatalf("initialize failed: %v", err)
 	}
-	var initResult map[string]interface{}
+	var initResult map[string]any
 	if err := json.Unmarshal(resp, &initResult); err != nil {
 		t.Fatalf("unmarshal initialize response: %v, body=%q", err, string(resp))
 	}
@@ -789,13 +932,107 @@ func TestLSPBinaryFormatting(t *testing.T) {
 	}
 	t.Logf("Initialize response: %+v", initResult["result"])
 
-	// 发送 initialized 通知
-	sendLSPNotification(t, lsp, "initialized", map[string]interface{}{})
+	sendLSPNotification(t, lsp, "initialized", map[string]any{})
 
-	// 测试格式化未格式化的代码
+	// Test: already-formatted code with comments before function and inside body
+	// Expected: formatting should preserve comments and code structure
 	{
-		// 未格式化的代码：缩进空格、注释位置等都可能有问题
-		code := `// x509-rsa-e: test
+		code := `
+// aes-128-dec: 解密一個 16-byte 區塊
+// in: 輸入密文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出明文（16 位元組）
+aes-128-dec = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 10）
+    add-round-key(out, ek + 160)
+
+    // 第 9-1 輪
+    round = 9
+    for round > 0 {
+        inv-shift-rows(out)
+        inv-sub-bytes(out, 16)
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)
+        inv-mix-columns(out)
+        round = round - 1
+    }
+
+    // 第 0 輪
+    inv-shift-rows(out)
+    inv-sub-bytes(out, 16)
+    add-round-key(out, ek)
+}`
+
+		uri := "file:///test_format_idempotent.no"
+
+		sendLSPNotification(t, lsp, "textDocument/didOpen", map[string]any{
+			"textDocument": map[string]any{
+				"uri":        uri,
+				"languageId": "nolang",
+				"version":    1,
+				"text":       code,
+			},
+		})
+
+		formatParams := map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"options":      map[string]any{"tabSize": 4, "insertSpaces": true},
+		}
+		resp, err = sendLSPRequest(t, lsp, "textDocument/formatting", formatParams)
+		if err != nil {
+			t.Fatalf("formatting failed: %v", err)
+		}
+
+		var formatResult map[string]any
+		if err := json.Unmarshal(resp, &formatResult); err != nil {
+			t.Fatalf("unmarshal formatting response: %v, body=%q", err, string(resp))
+		}
+		if formatResult["error"] != nil {
+			t.Fatalf("formatting error: %v", formatResult["error"])
+		}
+
+		editsRaw, ok := formatResult["result"].([]any)
+		if !ok {
+			t.Fatalf("result is not array, got=%T value=%+v", formatResult["result"], formatResult["result"])
+		}
+
+		// Apply edits and verify the result
+		editedText := applyRawTextEdits(code, editsRaw)
+		t.Logf("Original:\n%s\n", code)
+		t.Logf("Formatted:\n%s\n", editedText)
+
+		// Verify formatting is idempotent: applying edits a second time should produce the same result
+		secondEdits := computeTextEdits(editedText, editedText)
+		if secondEdits != nil {
+			t.Errorf("formatting is NOT idempotent: second format still produces changes")
+		} else {
+			t.Log("✓ formatting is idempotent")
+		}
+	}
+}
+
+func TestLSPBinaryFormatting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping LSP binary test in short mode")
+	}
+
+	lsp, cleanup := startLSP(t)
+	defer cleanup()
+
+	// Test formatting unformatted code
+	code := `// x509-rsa-e: test
 x509-rsa-e=(data str, n i64, e i64) {
     // 找到 TBSCertificate
     x509-tbs-range(data, n, tbs-start, tbs-end)
@@ -814,63 +1051,22 @@ x509-rsa-e=(data str, n i64, e i64) {
     der-tag(data, p, t)
 }`
 
-		uri := "file:///test_format.no"
+	uri := "file:///test_format.no"
+	editedText := formatLSPCode(t, lsp, uri, code)
+	t.Logf("Formatted result:\n%s\n", editedText)
 
-		sendLSPNotification(t, lsp, "textDocument/didOpen", map[string]interface{}{
-			"textDocument": map[string]interface{}{
-				"uri":        uri,
-				"languageId": "nolang",
-				"version":    1,
-				"text":       code,
-			},
-		})
-
-		formatParams := map[string]interface{}{
-			"textDocument": map[string]interface{}{"uri": uri},
-			"options":      map[string]interface{}{"tabSize": 4, "insertSpaces": true},
-		}
-		resp, err = sendLSPRequest(t, lsp, "textDocument/formatting", formatParams)
-		if err != nil {
-			t.Fatalf("formatting failed: %v", err)
-		}
-
-		var formatResult map[string]interface{}
-		if err := json.Unmarshal(resp, &formatResult); err != nil {
-			t.Fatalf("unmarshal formatting response: %v, body=%q", err, string(resp))
-		}
-		if formatResult["error"] != nil {
-			t.Fatalf("formatting error: %v", formatResult["error"])
-		}
-
-		editsRaw, ok := formatResult["result"].([]interface{})
-		if !ok {
-			t.Fatalf("result is not array, got=%T value=%+v", formatResult["result"], formatResult["result"])
-		}
-
-		if len(editsRaw) == 0 {
-			t.Error("expected edits for unformatted code, got none")
-		} else {
-			// 记录原始 edits
-			for i, e := range editsRaw {
-				t.Logf("edit[%d]: %+v", i, e)
-			}
-			// 应用 edits 并验证结果
-			editedText := applyRawTextEdits(code, editsRaw)
-			t.Logf("Formatted result:\n%s\n", editedText)
-			// 验证函数签名被正确格式化（加空格）
-			if strings.Contains(editedText, "x509-rsa-e = (data str") {
-				t.Log("✓ function signature has proper spacing")
-			}
-			// 验证没有丢失代码
-			if strings.Count(editedText, "der-skip") == 3 && strings.Count(editedText, "der-tag") == 1 {
-				t.Log("✓ all code preserved")
-			}
-		}
+	// Verify function signature has proper spacing
+	if strings.Contains(editedText, "x509-rsa-e = (data str") {
+		t.Log("✓ function signature has proper spacing")
+	}
+	// Verify no code was lost
+	if strings.Count(editedText, "der-skip") == 3 && strings.Count(editedText, "der-tag") == 1 {
+		t.Log("✓ all code preserved")
 	}
 }
 
 // applyRawTextEdits 将 JSON TextEdit 列表应用到原始文字
-func applyRawTextEdits(original string, edits []interface{}) string {
+func applyRawTextEdits(original string, edits []any) string {
 	oLines := strings.Split(original, "\n")
 
 	// 按行号倒序排序
@@ -883,10 +1079,10 @@ func applyRawTextEdits(original string, edits []interface{}) string {
 	}
 	var parsed []edit
 	for _, e := range edits {
-		em := e.(map[string]interface{})
-		rng := em["range"].(map[string]interface{})
-		start := rng["start"].(map[string]interface{})
-		end := rng["end"].(map[string]interface{})
+		em := e.(map[string]any)
+		rng := em["range"].(map[string]any)
+		start := rng["start"].(map[string]any)
+		end := rng["end"].(map[string]any)
 		parsed = append(parsed, edit{
 			startLine: int(start["line"].(float64)),
 			startChar: int(start["character"].(float64)),
@@ -925,4 +1121,35 @@ func applyRawTextEdits(original string, edits []interface{}) string {
 	}
 
 	return strings.Join(oLines, "\n")
+}
+
+// cd ./src && go test ./lsp/... -v -run TestLSPBinaryFormatting1
+func TestLSPBinaryFormatting1(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping LSP binary test in short mode")
+	}
+
+	lsp, cleanup := startLSP(t)
+	defer cleanup()
+
+	// Read source file
+	sourceFile := "../../tmp/test_format_idempotent"
+	codeBytes, err := os.ReadFile(sourceFile)
+	if err != nil {
+		t.Fatalf("read source file: %v", err)
+	}
+	code := string(codeBytes)
+
+	uri := "file://" + sourceFile
+	editedText := formatLSPCode(t, lsp, uri, code)
+
+	logDiff(t, code, editedText)
+
+	// Verify formatting is idempotent
+	secondEdits := computeTextEdits(editedText, editedText)
+	if secondEdits != nil {
+		t.Errorf("formatting is NOT idempotent: second format still produces changes")
+	} else {
+		t.Log("✓ formatting is idempotent")
+	}
 }

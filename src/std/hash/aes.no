@@ -359,6 +359,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
 // n: 固定 16
 // key: 16-byte 金鑰
 // out: 輸出明文（16 位元組）
+
 aes-128-dec = (in str, n i64, key str, out str) {
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -387,6 +388,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
 }
+
 
 // 展開金鑰
 

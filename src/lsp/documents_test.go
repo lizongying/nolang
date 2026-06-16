@@ -65,40 +65,14 @@ func TestDocumentOpenExisting(t *testing.T) {
 	if doc2.Text != text2 {
 		t.Errorf("expected text %q, got %q", text2, doc2.Text)
 	}
+	if doc2.Item.Text != text2 {
+		t.Errorf("expected Item.Text %q, got %q", text2, doc2.Item.Text)
+	}
+	if doc2.Item.Version != 2 {
+		t.Errorf("expected Item.Version 2, got %d", doc2.Item.Version)
+	}
 	if !doc2.Dirty {
 		t.Error("expected Dirty to be true after update")
-	}
-}
-
-func TestDocumentClose(t *testing.T) {
-	dm := NewDocumentManager()
-	uri := "file:///test/test.no"
-	text := `x = 10`
-
-	_, err := dm.OpenDocument(uri, text)
-	if err != nil {
-		t.Fatalf("OpenDocument failed: %v", err)
-	}
-
-	err = dm.CloseDocument(uri)
-	if err != nil {
-		t.Fatalf("CloseDocument failed: %v", err)
-	}
-
-	doc, err := dm.GetDocument(uri)
-	if err != nil {
-		t.Fatalf("GetDocument failed: %v", err)
-	}
-	if doc.Dirty {
-		t.Error("expected Dirty to be false after CloseDocument")
-	}
-}
-
-func TestDocumentCloseNotFound(t *testing.T) {
-	dm := NewDocumentManager()
-	err := dm.CloseDocument("file:///nonexistent.no")
-	if err != nil {
-		t.Fatalf("CloseDocument should not return error for non-existent document: %v", err)
 	}
 }
 
@@ -317,9 +291,8 @@ func TestDocumentIsDirtyNotFound(t *testing.T) {
 }
 
 func TestDocumentNotFoundError(t *testing.T) {
-	err := &DocumentNotFoundError{}
-	if err.Error() != "document not found" {
-		t.Errorf("unexpected error message: %s", err.Error())
+	if ErrDocumentNotFound.Error() != "document not found" {
+		t.Errorf("unexpected error message: %s", ErrDocumentNotFound.Error())
 	}
 }
 

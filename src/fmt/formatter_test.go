@@ -1217,3 +1217,112 @@ func TestFormatFunction(t *testing.T) {
 		})
 	}
 }
+
+// cd ./src/fmt && go test -v . -run TestFormatComment/1
+func TestFormatComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "0",
+			input: strings.TrimSpace(`
+
+            `),
+			expected: strings.TrimSpace(`
+            
+            `),
+		},
+		{
+			name: "1",
+			input: strings.TrimSpace(`
+
+// aes-128-dec: 解密一個 16-byte 區塊
+// in: 輸入密文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出明文（16 位元組）
+aes-128-dec = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 10）
+    add-round-key(out, ek + 160)
+
+    // 第 9-1 輪
+    round = 9
+    for round > 0 {
+        inv-shift-rows(out)
+        inv-sub-bytes(out, 16)
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)
+        inv-mix-columns(out)
+        round = round - 1
+    }
+
+    // 第 0 輪
+    inv-shift-rows(out)
+    inv-sub-bytes(out, 16)
+    add-round-key(out, ek)
+}
+            `),
+			expected: strings.TrimSpace(`
+
+// aes-128-dec: 解密一個 16-byte 區塊
+// in: 輸入密文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出明文（16 位元組）
+aes-128-dec = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    for i < 16 {
+        out[i] = in[i]
+        i = i + 1
+    }
+
+    // 初始 AddRoundKey（輪 10）
+    add-round-key(out, ek + 160)
+
+    // 第 9-1 輪
+    round = 9
+    for round > 0 {
+        inv-shift-rows(out)
+        inv-sub-bytes(out, 16)
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)
+        inv-mix-columns(out)
+        round = round - 1
+    }
+
+    // 第 0 輪
+    inv-shift-rows(out)
+    inv-sub-bytes(out, 16)
+    add-round-key(out, ek)
+}
+            `),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

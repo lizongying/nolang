@@ -200,16 +200,7 @@ func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams)
 func (s *Server) handleTextDocumentDidClose(params DidCloseTextDocumentParams) (interface{}, error) {
 	log.Printf("TextDocumentDidClose: %+v", params)
 
-	err := s.documents.CloseDocument(params.TextDocument.URI)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.documents.RemoveDocument(params.TextDocument.URI)
-	if err != nil {
-		return nil, err
-	}
-
+	s.documents.RemoveDocument(params.TextDocument.URI)
 	s.publishDocumentDiagnostics(params.TextDocument.URI, nil, nil)
 
 	return nil, nil
@@ -726,7 +717,7 @@ func RunServer(ctx context.Context, server *Server) error {
 	handler := func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		method := req.Method()
 		params := req.Params()
-		log.Printf("Received request: %s", method)
+		log.Printf("Received request: %s %+v ###aaaa##", method, params)
 
 		result, err := server.Handle(method, json.RawMessage(params))
 		return reply(ctx, result, err)

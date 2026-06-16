@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"errors"
 	"strings"
 	"sync"
 
@@ -25,6 +26,8 @@ func (m *DocumentManager) OpenDocument(uri string, text string) (*TextDocument, 
 
 	if doc, ok := m.documents[uri]; ok {
 		doc.Text = text
+		doc.Item.Text = text
+		doc.Item.Version++
 		doc.Dirty = true
 		return doc, nil
 	}
@@ -42,17 +45,6 @@ func (m *DocumentManager) OpenDocument(uri string, text string) (*TextDocument, 
 
 	m.documents[uri] = doc
 	return doc, nil
-}
-
-func (m *DocumentManager) CloseDocument(uri string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if doc, ok := m.documents[uri]; ok {
-		doc.Dirty = false
-	}
-
-	return nil
 }
 
 func (m *DocumentManager) RemoveDocument(uri string) error {
@@ -88,11 +80,6 @@ func (m *DocumentManager) UpdateDocument(uri string, changes []TextDocumentConte
 }
 
 func (m *DocumentManager) applyContentChange(doc *TextDocument, change TextDocumentContentChange) {
-	if change.Range == nil {
-		doc.Text = change.Text
-		return
-	}
-
 	lines := getLines(doc.Text)
 	startLine := int(change.Range.Start.Line)
 	startChar := int(change.Range.Start.Character)
@@ -196,10 +183,4 @@ func (m *DocumentManager) IsDirty(uri string) bool {
 	return doc.Dirty
 }
 
-var ErrDocumentNotFound = &DocumentNotFoundError{}
-
-type DocumentNotFoundError struct{}
-
-func (e *DocumentNotFoundError) Error() string {
-	return "document not found"
-}
+var ErrDocumentNotFound = errors.New("document not found")
