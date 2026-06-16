@@ -70,6 +70,9 @@ func (l *Lexer) LookAhead(n int) Token {
 	var tok Token
 	for i := 0; i <= n; i++ {
 		tok = l.NextToken()
+		for tok.Type == COMMENT {
+			tok = l.NextToken()
+		}
 	}
 	l.RestoreState(state)
 	return tok
@@ -83,15 +86,8 @@ func (l *Lexer) peekChar() byte {
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' || (l.ch == '/' && l.peekChar() == '/') {
-		if l.ch == '/' && l.peekChar() == '/' {
-			// 跳过单行注释
-			for l.ch != '\n' && l.ch != 0 {
-				l.readChar()
-			}
-		} else {
-			l.readChar()
-		}
+	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+		l.readChar()
 	}
 }
 
@@ -232,7 +228,18 @@ func (l *Lexer) NextToken() Token {
 		}
 
 	case '/':
-		if l.peekChar() == '=' {
+		if l.peekChar() == '/' {
+			// 单行注释
+			l.readChar() // skip first /
+			l.readChar() // skip second /
+			start := l.position
+			for l.ch != '\n' && l.ch != 0 {
+				l.readChar()
+			}
+			tok.Type = COMMENT
+			tok.Literal = l.input[start:l.position]
+			return tok
+		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = QUO_ASSIGN
 			tok.Literal = "/="
@@ -376,6 +383,9 @@ func (l *Lexer) PeekToken() (tok Token) {
 
 	// 生成下一个令牌
 	tok = l.NextToken()
+	for tok.Type == COMMENT {
+		tok = l.NextToken()
+	}
 
 	// 恢复状态
 	l.position = position

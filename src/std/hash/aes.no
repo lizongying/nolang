@@ -114,7 +114,6 @@ inv-shift-rows = (state str) {
     state[9] = state[5]
     state[5] = state[1]
     state[1] = t
-    // Row 2: 右旋 2
     t0 = state[2]
     t1 = state[6]
     state[2] = state[10]
@@ -129,6 +128,7 @@ inv-shift-rows = (state str) {
     state[15] = t
 }
 
+// Row 2: 右旋 2
 // mix-col: 混合單一欄（4 位元組）
 // d0 = 2*b0 + 3*b1 + b2 + b3
 // d1 = b0 + 2*b1 + 3*b2 + b3
@@ -283,7 +283,6 @@ sub-word = (w i64, r i64) {
 // aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
 // ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
-    // 複製原始金鑰（前 16 位元組）
     i = 0
     for i < 16 {
         ek[i] = key[i]
@@ -296,6 +295,7 @@ aes-key-expand = (key str, ek str) {
         // 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+    // 複製原始金鑰（前 16 位元組）
         if i % 4 == 0 {
             rot-word(w, rw)
             sub-word(rw, sw)
@@ -325,8 +325,6 @@ aes-128-enc = (in str, n i64, key str, out str) {
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
-
-    // 複製輸入到狀態
     i = 0
     for i < 16 {
         out[i] = in[i]
@@ -355,24 +353,20 @@ aes-128-enc = (in str, n i64, key str, out str) {
     add-round-key(out, ek + 160)
 }
 
+// 複製輸入到狀態
 // aes-128-dec: 解密一個 16-byte 區塊
 // in: 輸入密文（16 位元組）
 // n: 固定 16
 // key: 16-byte 金鑰
 // out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
-    // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
-
-    // 複製輸入到狀態
     i = 0
     for i < 16 {
         out[i] = in[i]
         i = i + 1
     }
-
-    // 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
     // 第 9-1 輪
@@ -386,8 +380,14 @@ aes-128-dec = (in str, n i64, key str, out str) {
         round = round - 1
     }
 
+    // 複製輸入到狀態
+
     // 第 0 輪
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
 }
+
+// 展開金鑰
+
+// 初始 AddRoundKey（輪 10）

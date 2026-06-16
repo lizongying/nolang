@@ -6,6 +6,17 @@ import (
 	"github.com/lizongying/nolang/lexer"
 )
 
+// Comment represents a single comment line.
+type Comment struct {
+	Token lexer.Token
+	Text  string
+}
+
+// CommentGroup represents a sequence of consecutive comment lines.
+type CommentGroup struct {
+	List []*Comment
+}
+
 type Node interface {
 	TokenLiteral() string
 }
@@ -45,6 +56,8 @@ type UseStatement struct {
 	Path     string // 模組路徑（無副檔名）
 	Function string // 函數名
 	Alias    string // 可選別名（空 = 不使用別名）
+	Doc      *CommentGroup
+	Comment  *CommentGroup
 }
 
 func (us *UseStatement) statementNode()       {}
@@ -63,6 +76,8 @@ type LetStatement struct {
 	IsSlice   bool   // [] 切片標記
 	ElemType  string // 元素型別（陣列/切片用）
 	IsOption  bool   // ?type 標記
+	Doc       *CommentGroup
+	Comment   *CommentGroup
 }
 
 func (ls *LetStatement) statementNode()       {}
@@ -85,6 +100,8 @@ func (i *Identifier) Print() {
 type ReturnStatement struct {
 	Token       lexer.Token
 	ReturnValue Expression
+	Doc         *CommentGroup
+	Comment     *CommentGroup
 }
 
 func (rs *ReturnStatement) statementNode()       {}
@@ -96,6 +113,8 @@ func (rs *ReturnStatement) Print() {
 type ExpressionStatement struct {
 	Token      lexer.Token
 	Expression Expression
+	Doc        *CommentGroup
+	Comment    *CommentGroup
 }
 
 func (es *ExpressionStatement) statementNode()       {}
@@ -107,6 +126,8 @@ func (es *ExpressionStatement) Print() {
 type BlockStatement struct {
 	Token      lexer.Token
 	Statements []Statement
+	Doc        *CommentGroup
+	Comment    *CommentGroup
 }
 
 func (bs *BlockStatement) statementNode()       {}
@@ -137,6 +158,8 @@ type FunctionDefinition struct {
 	Results       []*Parameter
 	Body          *BlockStatement
 	IsVariadic    bool // 是否有 ...any 可變參數
+	Doc           *CommentGroup
+	Comment       *CommentGroup
 }
 
 func (fd *FunctionDefinition) statementNode()       {}
@@ -316,7 +339,7 @@ type InfixExpression struct {
 func (ie *InfixExpression) expressionNode()      {}
 func (ie *InfixExpression) TokenLiteral() string { return ie.Token.Literal }
 func (ie *InfixExpression) Print() {
-	fmt.Printf("InfixExpression{%s, %s, %s, %s}\n", ie.Token.Literal, ie.Left, ie.Operator, ie.Right)
+	fmt.Printf("InfixExpression{%s, %v, %s, %v}\n", ie.Token.Literal, ie.Left, ie.Operator, ie.Right)
 }
 
 // if
@@ -330,7 +353,7 @@ type IfExpression struct {
 func (ie *IfExpression) expressionNode()      {}
 func (ie *IfExpression) TokenLiteral() string { return ie.Token.Literal }
 func (ie *IfExpression) Print() {
-	fmt.Printf("IfExpression{%s, %s, %s, %s}\n", ie.Token.Literal, ie.Condition, ie.Consequence, ie.Alternative)
+	fmt.Printf("IfExpression{%s, %v, %v, %v}\n", ie.Token.Literal, ie.Condition, ie.Consequence, ie.Alternative)
 }
 
 // for i in [a..b], (a..b], [a..b), (a..b)
@@ -417,17 +440,21 @@ type ForStatement struct {
 	RangeIdent    string           // 陣列/切片遍歷: for i in a
 	RangeSliceLit *SliceLiteral    // 匿名切片遍歷: for i in [1, 2, 3]
 	CountExpr     Expression       // ! { } 或 N * { } 語法
+	Doc           *CommentGroup
+	Comment       *CommentGroup
 }
 
 func (fs *ForStatement) statementNode()       {}
 func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
 func (fs *ForStatement) Print() {
-	fmt.Printf("ForStatement{%s, label=%s, %s, %s}\n", fs.Token.Literal, fs.Label, fs.Condition, fs.Body)
+	fmt.Printf("ForStatement{%s, label=%s, %v, %v}\n", fs.Token.Literal, fs.Label, fs.Condition, fs.Body)
 }
 
 type BreakStatement struct {
-	Token lexer.Token
-	Label string // 跳轉目標循環名稱（空 = 跳出當前循環）
+	Token   lexer.Token
+	Label   string // 跳轉目標循環名稱（空 = 跳出當前循環）
+	Doc     *CommentGroup
+	Comment *CommentGroup
 }
 
 func (bs *BreakStatement) statementNode()       {}
@@ -437,8 +464,10 @@ func (bs *BreakStatement) Print() {
 }
 
 type ContinueStatement struct {
-	Token lexer.Token
-	Label string // 跳轉目標循環名稱（空 = 繼續當前循環）
+	Token   lexer.Token
+	Label   string // 跳轉目標循環名稱（空 = 繼續當前循環）
+	Doc     *CommentGroup
+	Comment *CommentGroup
 }
 
 func (cs *ContinueStatement) statementNode()       {}
@@ -489,6 +518,8 @@ type EnumDefinition struct {
 	Token  lexer.Token
 	Name   string
 	Values []*EnumValue
+	Doc    *CommentGroup
+	Comment *CommentGroup
 }
 
 func (ed *EnumDefinition) statementNode()       {}
@@ -510,6 +541,8 @@ type TaggedEnumDefinition struct {
 	Token    lexer.Token
 	Name     string
 	Variants []*TaggedEnumVariant
+	Doc      *CommentGroup
+	Comment  *CommentGroup
 }
 
 func (ted *TaggedEnumDefinition) statementNode()       {}
@@ -527,6 +560,8 @@ type InterfaceDefinition struct {
 	Token   lexer.Token
 	Name    string
 	Methods []*InterfaceMethod
+	Doc     *CommentGroup
+	Comment *CommentGroup
 }
 
 func (id *InterfaceDefinition) statementNode()       {}
@@ -540,6 +575,8 @@ type StructDefinition struct {
 	Name       string
 	Implements []string // 實現的介面列表（空 = 無）
 	Fields     []*StructField
+	Doc        *CommentGroup
+	Comment    *CommentGroup
 }
 
 func (sd *StructDefinition) statementNode()       {}

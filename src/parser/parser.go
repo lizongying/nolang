@@ -17,6 +17,7 @@ type Parser struct {
 	peekToken    lexer.Token
 	prevToken    lexer.Token
 	ctx          contextStack // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	comments     []lexer.Token // collected comment tokens
 }
 
 // blockType — { body } 內部的型別分類
@@ -251,7 +252,62 @@ func (p *Parser) restoreState(state parserState) {
 func (p *Parser) nextToken() {
 	p.prevToken = p.currentToken
 	p.currentToken = p.peekToken
-	p.peekToken = p.lexer.NextToken()
+	for {
+		p.peekToken = p.lexer.NextToken()
+		if p.peekToken.Type != lexer.COMMENT {
+			break
+		}
+		p.comments = append(p.comments, p.peekToken)
+	}
+}
+
+// collectDocComments collects all accumulated comment tokens into a CommentGroup
+func (p *Parser) collectDocComments() *CommentGroup {
+	if len(p.comments) == 0 {
+		return nil
+	}
+	group := &CommentGroup{}
+	for _, c := range p.comments {
+		group.List = append(group.List, &Comment{
+			Token: c,
+			Text:  c.Literal,
+		})
+	}
+	p.comments = nil
+	return group
+}
+
+// setDoc sets the Doc field on any Statement that supports it
+func setDoc(stmt Statement, doc *CommentGroup) {
+	if doc == nil || stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *LetStatement:
+		s.Doc = doc
+	case *ReturnStatement:
+		s.Doc = doc
+	case *ExpressionStatement:
+		s.Doc = doc
+	case *FunctionDefinition:
+		s.Doc = doc
+	case *ForStatement:
+		s.Doc = doc
+	case *BreakStatement:
+		s.Doc = doc
+	case *ContinueStatement:
+		s.Doc = doc
+	case *UseStatement:
+		s.Doc = doc
+	case *EnumDefinition:
+		s.Doc = doc
+	case *TaggedEnumDefinition:
+		s.Doc = doc
+	case *InterfaceDefinition:
+		s.Doc = doc
+	case *StructDefinition:
+		s.Doc = doc
+	}
 }
 
 func (p *Parser) Errors() []string {
@@ -283,8 +339,10 @@ func isTypeName(literal string) bool {
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
+		doc := p.collectDocComments()
 		stmt := p.parseStatement()
 		if stmt != nil {
+			setDoc(stmt, doc)
 			program.Statements = append(program.Statements, stmt)
 		}
 
@@ -3057,12 +3115,13 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	p.nextToken()
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+		doc := p.collectDocComments()
 		stmt := p.parseStatement()
 		if stmt != nil {
+			setDoc(stmt, doc)
 			block.Statements = append(block.Statements, stmt)
 		} else {
 			p.nextToken()
-			// break
 		}
 	}
 
