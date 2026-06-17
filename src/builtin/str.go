@@ -8,7 +8,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "str-eq",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Compare two strings for equality",
 		ForwardFunc:  "eq-raw",
 	})

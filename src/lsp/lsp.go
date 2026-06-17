@@ -91,14 +91,14 @@ type TextDocumentPositionParams struct {
 }
 
 type InitializeParams struct {
-	ProcessID             *int64                 `json:"processId,omitempty"`
-	ClientInfo            *ClientInfo            `json:"clientInfo,omitempty"`
-	Locale                string                 `json:"locale,omitempty"`
-	RootURI               *string                `json:"rootUri,omitempty"`
-	InitializationOptions interface{}            `json:"initializationOptions,omitempty"`
-	Capabilities          ClientCapabilities     `json:"capabilities"`
-	WorkspaceFolders      []WorkspaceFolder      `json:"workspaceFolders,omitempty"`
-	Trace                 string                 `json:"trace,omitempty"`
+	ProcessID             *int64             `json:"processId,omitempty"`
+	ClientInfo            *ClientInfo        `json:"clientInfo,omitempty"`
+	Locale                string             `json:"locale,omitempty"`
+	RootURI               *string            `json:"rootUri,omitempty"`
+	InitializationOptions interface{}        `json:"initializationOptions,omitempty"`
+	Capabilities          ClientCapabilities `json:"capabilities"`
+	WorkspaceFolders      []WorkspaceFolder  `json:"workspaceFolders,omitempty"`
+	Trace                 string             `json:"trace,omitempty"`
 }
 
 type ClientInfo struct {
@@ -328,6 +328,7 @@ type ServerCapabilities struct {
 	DocumentOnTypeFormattingProvider *DocumentOnTypeFormattingOptions `json:"documentOnTypeFormattingProvider,omitempty"`
 	RenameProvider                   bool                             `json:"renameProvider,omitempty"`
 	FoldingRangeProvider             bool                             `json:"foldingRangeProvider,omitempty"`
+	SemanticTokensProvider           *SemanticTokensOptions           `json:"semanticTokensProvider,omitempty"`
 	ExecuteCommandProvider           *ExecuteCommandOptions           `json:"executeCommandProvider,omitempty"`
 	WorkspaceSymbolProvider          bool                             `json:"workspaceSymbolProvider,omitempty"`
 	WorkspaceFolders                 *WorkspaceFoldersOptions         `json:"workspaceFolders,omitempty"`
@@ -379,6 +380,13 @@ type DocumentOnTypeFormattingOptions struct {
 
 type ExecuteCommandOptions struct {
 	Commands []string `json:"commands"`
+}
+
+// SemanticTokensOptions defines the options for SemanticTokens support.
+type SemanticTokensOptions struct {
+	Legend SemanticTokensLegend `json:"legend"`
+	Full   interface{}          `json:"full"` // bool or { delta: bool }
+	Range  interface{}          `json:"range,omitempty"`
 }
 
 type WorkspaceFoldersOptions struct {
@@ -439,12 +447,18 @@ type PublishDiagnosticsParams struct {
 }
 
 type Diagnostic struct {
-	Range    Range          `json:"range"`
-	Severity int            `json:"severity,omitempty"`
-	Code     interface{}    `json:"code,omitempty"`
-	Source   string         `json:"source,omitempty"`
-	Message  string         `json:"message"`
-	Tags     []DiagnosticTag `json:"tags,omitempty"`
+	Range              Range                          `json:"range"`
+	Severity           int                            `json:"severity,omitempty"`
+	Code               interface{}                    `json:"code,omitempty"`
+	Source             string                         `json:"source,omitempty"`
+	Message            string                         `json:"message"`
+	Tags               []DiagnosticTag                `json:"tags,omitempty"`
+	RelatedInformation []DiagnosticRelatedInformation `json:"relatedInformation,omitempty"`
+}
+
+type DiagnosticRelatedInformation struct {
+	Location Location `json:"location"`
+	Message  string   `json:"message"`
 }
 
 type DiagnosticTag int

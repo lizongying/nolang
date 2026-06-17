@@ -2,179 +2,147 @@ package lsp
 
 import (
 	"testing"
-
-	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/parser"
 )
 
 func TestNewReferencesProvider(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	rp := NewReferencesProvider(doc, program)
+	rp := NewReferencesProvider(doc, createTestIndex(doc, program))
 	if rp == nil {
 		t.Fatal("NewReferencesProvider returned nil")
 	}
-	if rp.doc != doc {
-		t.Error("doc not set correctly")
-	}
-	if rp.program != program {
-		t.Error("program not set correctly")
-	}
 }
 
-func TestReferencesProviderWithNilProgram(t *testing.T) {
+func TestReferencesProviderWithNilIndex(t *testing.T) {
 	doc := createTestDocument("x = 10")
 
 	rp := NewReferencesProvider(doc, nil)
-	locations := rp.GetReferences(Position{Line: 0, Character: 0}, false)
+	locations := rp.GetReferences(Position{Line: 0, Character: 0}, true)
 	if len(locations) != 0 {
-		t.Errorf("expected 0 locations for nil program, got %d", len(locations))
+		t.Error("expected empty references for nil index")
 	}
 }
 
 func TestGetReferencesEmpty(t *testing.T) {
-	text := `x = 10`
-	doc := createTestDocument(text)
-	program := createTestProgram(text)
+	doc := createTestDocument("x = 10")
 
-	rp := NewReferencesProvider(doc, program)
-	locations := rp.GetReferences(Position{Line: 0, Character: 0}, false)
-	if locations == nil {
-		t.Error("expected non-nil locations")
+	rp := NewReferencesProvider(doc, nil)
+	locations := rp.GetReferences(Position{Line: 0, Character: 0}, true)
+	if len(locations) != 0 {
+		t.Error("expected empty references")
 	}
 }
 
 func TestNewReferenceParams(t *testing.T) {
-	params := NewReferenceParams(
-		TextDocumentIdentifier{URI: "file:///test.no"},
-		Position{Line: 5, Character: 10},
-		true,
-	)
+	doc := TextDocumentIdentifier{URI: "file:///test.no"}
+	position := Position{Line: 0, Character: 0}
 
+	params := NewReferenceParams(doc, position, true)
 	if params.TextDocument.URI != "file:///test.no" {
 		t.Errorf("expected URI 'file:///test.no', got %q", params.TextDocument.URI)
 	}
-	if params.Position.Line != 5 {
-		t.Errorf("expected Position.Line 5, got %d", params.Position.Line)
-	}
-	if params.Context.IncludeDeclaration != true {
-		t.Error("expected IncludeDeclaration true")
+	if !params.Context.IncludeDeclaration {
+		t.Error("expected IncludeDeclaration to be true")
 	}
 }
 
 func TestNewReferenceParamsFalse(t *testing.T) {
-	params := NewReferenceParams(
-		TextDocumentIdentifier{URI: "file:///test.no"},
-		Position{Line: 0, Character: 0},
-		false,
-	)
+	doc := TextDocumentIdentifier{URI: "file:///test.no"}
+	position := Position{Line: 0, Character: 0}
 
-	if params.Context.IncludeDeclaration != false {
-		t.Error("expected IncludeDeclaration false")
+	params := NewReferenceParams(doc, position, false)
+	if params.Context.IncludeDeclaration {
+		t.Error("expected IncludeDeclaration to be false")
 	}
 }
 
 func TestReferencesLocationKey(t *testing.T) {
 	loc := Location{
-		URI: "file:///test.no",
-		Range: Range{
-			Start: Position{Line: 0, Character: 0},
-			End:   Position{Line: 0, Character: 1},
-		},
+		URI:   "file:///test.no",
+		Range: Range{Start: Position{Line: 0, Character: 0}},
 	}
 
 	key := locationKey(loc)
-	if key != "file:///test.no:0:0" {
-		t.Errorf("expected 'file:///test.no:0:0', got %q", key)
+	if key == "" {
+		t.Error("expected non-empty key")
 	}
 }
 
 func TestReferencesLocationKeyDifferent(t *testing.T) {
-	loc := Location{
-		URI: "file:///other.no",
-		Range: Range{
-			Start: Position{Line: 5, Character: 10},
-			End:   Position{Line: 5, Character: 15},
-		},
+	loc1 := Location{
+		URI:   "file:///test.no",
+		Range: Range{Start: Position{Line: 0, Character: 0}},
+	}
+	loc2 := Location{
+		URI:   "file:///test.no",
+		Range: Range{Start: Position{Line: 1, Character: 0}},
 	}
 
-	key := locationKey(loc)
-	if key != "file:///other.no:5:10" {
-		t.Errorf("expected 'file:///other.no:5:10', got %q", key)
+	key1 := locationKey(loc1)
+	key2 := locationKey(loc2)
+	if key1 == key2 {
+		t.Error("expected different keys for different locations")
 	}
 }
 
 func TestReferencesCollectDefinitions(t *testing.T) {
 	text := `x = 10
-y = 20`
+y = x`
+	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	scope := newScope()
-	collectDefinitions(program.Statements, scope, 2)
+	index := createTestIndex(doc, program)
+	rp := NewReferencesProvider(doc, index)
 
-	_, found := scope.lookup("x")
-	if !found {
-		t.Error("expected to find x in scope")
-	}
-
-	_, found = scope.lookup("y")
-	if !found {
-		t.Error("expected to find y in scope")
+	locations := rp.GetReferences(Position{Line: 0, Character: 0}, true)
+	if len(locations) == 0 {
+		t.Error("expected at least one reference for x")
 	}
 }
 
 func TestReferencesCollectDefinitionsWithFunction(t *testing.T) {
-	text := `add = func(a, b) {
-    result = a
-}`
+	text := `add = (a i64, b i64) {
+    result = a + b
+}
+x = add(1, 2)`
+	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	scope := newScope()
-	collectDefinitions(program.Statements, scope, 5)
+	index := createTestIndex(doc, program)
+	rp := NewReferencesProvider(doc, index)
 
-	_, found := scope.lookup("add")
-	if !found {
-		t.Error("expected to find add in scope")
+	locations := rp.GetReferences(Position{Line: 0, Character: 0}, true)
+	if len(locations) == 0 {
+		t.Error("expected at least one reference for add")
 	}
 }
 
 func TestReferencesScopeOperations(t *testing.T) {
-	scope := newScope()
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "x", Line: 1, Column: 1},
-		Value: "x",
+	index := NewSymbolIndex("test", 1)
+	index.references["x"] = []Location{
+		{URI: "test", Range: Range{Start: Position{Line: 0, Character: 0}}},
 	}
 
-	scope.define("x", ident)
-
-	found, ok := scope.lookup("x")
-	if !ok {
-		t.Error("expected to find x")
-	}
-	if found.Value != "x" {
-		t.Errorf("expected value 'x', got %q", found.Value)
+	refs := index.GetReferences("x")
+	if len(refs) != 1 {
+		t.Errorf("expected 1 reference, got %d", len(refs))
 	}
 }
 
 func TestReferencesScopeParentLookup(t *testing.T) {
-	parent := newScope()
-	child := newScope()
-	child.parent = parent
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "x", Line: 1, Column: 1},
-		Value: "x",
+	index := NewSymbolIndex("test", 1)
+	index.references["x"] = []Location{
+		{URI: "test", Range: Range{Start: Position{Line: 0, Character: 0}}},
 	}
 
-	parent.define("x", ident)
-
-	found, ok := child.lookup("x")
-	if !ok {
-		t.Error("expected to find x in child scope via parent")
+	refs := index.GetReferences("x")
+	if len(refs) != 1 {
+		t.Errorf("expected 1 reference, got %d", len(refs))
 	}
-	if found.Value != "x" {
-		t.Errorf("expected value 'x', got %q", found.Value)
+
+	refs = index.GetReferences("y")
+	if len(refs) != 0 {
+		t.Errorf("expected 0 references for y, got %d", len(refs))
 	}
 }

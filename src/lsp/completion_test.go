@@ -25,19 +25,30 @@ func createTestProgram(text string) *parser.Program {
 	return p.ParseProgram()
 }
 
+func createTestIndex(doc *TextDocument, program *parser.Program) *SymbolIndex {
+	index := NewSymbolIndex(doc.Item.URI, 1)
+	index.AddBuiltinSymbols()
+	if program != nil {
+		walker := NewASTWalker(index, doc, program)
+		walker.Walk()
+	}
+	return index
+}
+
 func TestNewCompletionProvider(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
+	index := createTestIndex(doc, program)
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, index)
 	if cp == nil {
 		t.Fatal("NewCompletionProvider returned nil")
 	}
 	if cp.doc != doc {
 		t.Error("doc not set correctly")
 	}
-	if cp.program != program {
-		t.Error("program not set correctly")
+	if cp.index != index {
+		t.Error("index not set correctly")
 	}
 }
 
@@ -46,8 +57,8 @@ func TestCompletionProviderWithNilProgram(t *testing.T) {
 
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
-	if len(items) != 8 {
-		t.Errorf("expected 8 keyword completions, got %d", len(items))
+	if len(items) != 12 {
+		t.Errorf("expected 12 keyword completions, got %d", len(items))
 	}
 }
 
@@ -66,7 +77,7 @@ func TestGetCompletionsNoTrigger(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.GetCompletions(Position{Line: 0, Character: 0}, "")
 
 	if len(items) == 0 {
@@ -78,7 +89,7 @@ func TestGetCompletionsDotTrigger(t *testing.T) {
 	doc := createTestDocument("console.log()")
 	program := createTestProgram("console.log()")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.GetCompletions(Position{Line: 0, Character: 8}, ".")
 	_ = items
 }
@@ -87,7 +98,7 @@ func TestGetCompletionsAfterDotTrigger(t *testing.T) {
 	doc := createTestDocument("console.log()")
 	program := createTestProgram("console.log()")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	receiverStr := cp.getReceiverStringAtPosition(Position{Line: 0, Character: 8})
 	_ = receiverStr
 }
@@ -96,7 +107,7 @@ func TestGetCompletionsColonTrigger(t *testing.T) {
 	doc := createTestDocument("x: ")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.GetCompletions(Position{Line: 0, Character: 2}, ":")
 
 	typeFound := false
@@ -115,7 +126,7 @@ func TestGetCompletionsEqualsTrigger(t *testing.T) {
 	doc := createTestDocument("x = ")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.GetCompletions(Position{Line: 0, Character: 3}, "=")
 
 	valueFound := false
@@ -136,7 +147,7 @@ y = 20`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getAllCompletions(Position{Line: 1, Character: 5})
 
 	if len(items) == 0 {
@@ -148,7 +159,7 @@ func TestGetAllCompletions(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getAllCompletions(Position{Line: 0, Character: 0})
 
 	if len(items) == 0 {
@@ -160,7 +171,7 @@ func TestGetKeywordCompletions(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getKeywordCompletions()
 
 	expectedKeywords := []string{"if", "else", "for", "break", "return", "true", "false", "nil"}
@@ -181,7 +192,7 @@ func TestGetKeywordCompletionsWithFilter(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getKeywordCompletionsWithFilter("fo")
 
 	if len(items) == 0 {
@@ -205,7 +216,7 @@ z = x + y`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getIdentifierCompletions(Position{Line: 2, Character: 8})
 
 	foundX := false
@@ -231,7 +242,7 @@ z = 30`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getIdentifierCompletionsWithFilter(Position{Line: 2, Character: 4}, "z")
 
 	if len(items) == 0 {
@@ -249,7 +260,7 @@ func TestCompletionGetCurrentWord(t *testing.T) {
 	doc := createTestDocument("x = hello")
 	program := createTestProgram("x = hello")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 
 	tests := []struct {
 		position Position
@@ -346,7 +357,7 @@ func TestGetWordRange(t *testing.T) {
 	doc := createTestDocument("x = hello")
 	program := createTestProgram("x = hello")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	range_ := cp.getWordRange(Position{Line: 0, Character: 5})
 
 	if range_.Start.Character != 4 {
@@ -363,12 +374,12 @@ y = 20`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	cp := NewCompletionProvider(doc, program)
-	symbols := cp.collectSymbols(Position{Line: 1, Character: 5})
+	index := createTestIndex(doc, program)
+	entries := index.GetSymbolsBeforeLine(1)
 
 	found := make(map[string]bool)
-	for _, sym := range symbols {
-		found[sym.Name] = true
+	for _, e := range entries {
+		found[e.Name] = true
 	}
 
 	if !found["x"] {
@@ -381,32 +392,27 @@ y = 20`
 
 func TestGetTypeDetail(t *testing.T) {
 	doc := createTestDocument("")
-	program := createTestProgram("")
 
-	cp := NewCompletionProvider(doc, program)
-
-	programs := []*parser.Program{
-		createTestProgram("x = 10"),
-		createTestProgram("x = 10.5"),
-		createTestProgram(`x = 'hello'`),
-		createTestProgram("x = true"),
-		createTestProgram("x = nil"),
+	programs := []string{
+		"x = 10",
+		"x = 10.5",
+		"x = 'hello'",
+		"x = true",
+		"x = nil",
 	}
 
-	types := []string{"int", "float", "string", "bool", "nil"}
+	types := []string{"i64", "f64", "str", "bool", "nil"}
 
-	for i, p := range programs {
-		cp.program = p
-		var expr parser.Expression
-		for _, stmt := range p.Statements {
-			if letStmt, ok := stmt.(*parser.LetStatement); ok {
-				expr = letStmt.Value
-				break
-			}
+	for i, text := range programs {
+		p := createTestProgram(text)
+		idx := createTestIndex(doc, p)
+		entry, ok := idx.GetDefinition("x")
+		if !ok {
+			t.Errorf("expected to find definition for 'x' in %q", text)
+			continue
 		}
-		detail := cp.getTypeDetail(expr)
-		if detail != types[i] {
-			t.Errorf("expected type %s, got %s", types[i], detail)
+		if entry.Type != types[i] {
+			t.Errorf("expected type %s, got %s for %q", types[i], entry.Type, text)
 		}
 	}
 }
@@ -415,7 +421,7 @@ func TestGetCompletionsAfterDot(t *testing.T) {
 	doc := createTestDocument("console.log()")
 	program := createTestProgram("console.log()")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	receiverStr := cp.getReceiverStringAtPosition(Position{Line: 0, Character: 8})
 	_ = receiverStr
 }
@@ -424,7 +430,7 @@ func TestGetCompletionsAfterDotMath(t *testing.T) {
 	doc := createTestDocument("math.Abs()")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	receiverStr := cp.getReceiverStringAtPosition(Position{Line: 0, Character: 5})
 	_ = receiverStr
 }
@@ -433,7 +439,7 @@ func TestGetCompletionsAfterColon(t *testing.T) {
 	doc := createTestDocument("x: ")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getCompletionsAfterColon(Position{Line: 0, Character: 2})
 
 	expected := []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "byte", "char", "str", "bool"}
@@ -454,7 +460,7 @@ func TestGetCompletionsAfterEquals(t *testing.T) {
 	doc := createTestDocument("x = ")
 	program := createTestProgram("x = 10")
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getCompletionsAfterEquals(Position{Line: 0, Character: 3})
 
 	expected := []string{"true", "false", "nil"}
@@ -478,7 +484,7 @@ func TestGetFunctionDeclarations(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	cp := NewCompletionProvider(doc, program)
+	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.GetFunctionDeclarations()
 
 	if len(items) != 0 {
@@ -503,8 +509,8 @@ func TestResolveCompletionItem(t *testing.T) {
 		Kind:  CompletionItemKindVariable,
 	}
 	resolved = cp.ResolveCompletionItem(varItem)
-	if resolved.Documentation == nil {
-		t.Error("expected documentation for variable")
+	if resolved.Documentation != nil {
+		t.Error("expected no documentation for variable with nil index")
 	}
 
 	kwItem := CompletionItem{
@@ -514,6 +520,22 @@ func TestResolveCompletionItem(t *testing.T) {
 	resolved = cp.ResolveCompletionItem(kwItem)
 	if resolved.Documentation == nil {
 		t.Error("expected documentation for keyword")
+	}
+}
+
+func TestResolveCompletionItemWithIndex(t *testing.T) {
+	doc := createTestDocument("x = 10")
+	program := createTestProgram("x = 10")
+	index := createTestIndex(doc, program)
+	cp := NewCompletionProvider(doc, index)
+
+	varItem := CompletionItem{
+		Label: "x",
+		Kind:  CompletionItemKindVariable,
+	}
+	resolved := cp.ResolveCompletionItem(varItem)
+	if resolved.Documentation == nil {
+		t.Error("expected documentation for variable with valid index")
 	}
 }
 

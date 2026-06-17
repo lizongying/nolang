@@ -3,7 +3,6 @@ package lsp
 import (
 	"testing"
 
-	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -11,25 +10,25 @@ func TestNewDefinitionProvider(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	dp := NewDefinitionProvider(doc, program)
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
 	if dp == nil {
 		t.Fatal("NewDefinitionProvider returned nil")
 	}
 	if dp.doc != doc {
 		t.Error("doc not set correctly")
 	}
-	if dp.program != program {
-		t.Error("program not set correctly")
+	if dp.index == nil {
+		t.Error("index not set correctly")
 	}
 }
 
-func TestDefinitionProviderWithNilProgram(t *testing.T) {
+func TestDefinitionProviderWithNilIndex(t *testing.T) {
 	doc := createTestDocument("x = 10")
 
 	dp := NewDefinitionProvider(doc, nil)
 	location, found := dp.GetDefinition(Position{Line: 0, Character: 0})
 	if found {
-		t.Error("expected not found for nil program")
+		t.Error("expected not found for nil index")
 	}
 	_ = location
 }
@@ -40,7 +39,7 @@ y = x`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
 	location, found := dp.GetDefinition(Position{Line: 1, Character: 4})
 
 	if found {
@@ -48,7 +47,6 @@ y = x`
 			t.Errorf("expected URI 'file:///test.no', got %q", location.URI)
 		}
 	}
-	_ = location
 }
 
 func TestDefinitionGetDefinitionNotFound(t *testing.T) {
@@ -56,86 +54,78 @@ func TestDefinitionGetDefinitionNotFound(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-	location, found := dp.GetDefinition(Position{Line: 0, Character: 10})
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
+	location, found := dp.GetDefinition(Position{Line: 0, Character: 0})
 
 	if !found {
-		_ = location
+		t.Error("expected found for 'x' at position (0,0)")
+	}
+	if location.URI != "file:///test.no" {
+		t.Errorf("expected URI 'file:///test.no', got %q", location.URI)
 	}
 }
 
 func TestDefinitionGetDefinitionInFunction(t *testing.T) {
-	text := `add = func(a, b) {
-    result = a
-}
-add(1, 2)`
+	text := `add = (a i64, b i64) {
+    result = a + b
+}`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-	location, found := dp.GetDefinition(Position{Line: 1, Character: 11})
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
+	location, found := dp.GetDefinition(Position{Line: 0, Character: 0})
 
 	if found {
-		_ = location
-	}
-}
-
-func TestDefinitionGetWordAtPosition(t *testing.T) {
-	doc := createTestDocument("hello world")
-
-	tests := []struct {
-		position Position
-		expected string
-	}{
-		{Position{Line: 0, Character: 0}, "hello"},
-		{Position{Line: 0, Character: 5}, "hello"},
-		{Position{Line: 0, Character: 6}, "world"},
-		{Position{Line: 0, Character: 10}, "world"},
-	}
-
-	for _, tt := range tests {
-		result := getWordAtPosition(doc.Text, tt.position)
-		if result != tt.expected {
-			t.Errorf("getWordAtPosition(%v): expected %q, got %q", tt.position, tt.expected, result)
+		if location.URI != "file:///test.no" {
+			t.Errorf("expected URI 'file:///test.no', got %q", location.URI)
 		}
 	}
 }
 
+func TestDefinitionGetWordAtPosition(t *testing.T) {
+	text := `x = 10`
+	doc := createTestDocument(text)
+
+	word := getWordAtPosition(doc.Text, Position{Line: 0, Character: 0})
+	if word != "x" {
+		t.Errorf("expected word 'x', got %q", word)
+	}
+
+	word = getWordAtPosition(doc.Text, Position{Line: 0, Character: 4})
+	if word != "10" {
+		t.Errorf("expected word '10', got %q", word)
+	}
+}
+
 func TestDefinitionGetWordAtPositionEmpty(t *testing.T) {
-	doc := createTestDocument("")
-	result := getWordAtPosition(doc.Text, Position{Line: 0, Character: 0})
-	if result != "" {
-		t.Errorf("expected empty string, got %q", result)
+	word := getWordAtPosition("", Position{Line: 0, Character: 0})
+	if word != "" {
+		t.Errorf("expected empty word, got %q", word)
 	}
 }
 
 func TestDefinitionGetWordAtPositionBeyondLine(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	result := getWordAtPosition(doc.Text, Position{Line: 5, Character: 0})
-	if result != "" {
-		t.Errorf("expected empty string, got %q", result)
+	text := `x = 10`
+	doc := createTestDocument(text)
+
+	word := getWordAtPosition(doc.Text, Position{Line: 5, Character: 0})
+	if word != "" {
+		t.Errorf("expected empty word for beyond line, got %q", word)
 	}
 }
 
 func TestDefinitionFindDefinition(t *testing.T) {
-	text := `x = 10
-y = 20`
+	text := `x = 10`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "x", Line: 1, Column: 1},
-		Value: "x",
-	}
-
-	def := dp.findDefinition(ident, 1)
-	if def == nil {
+	index := createTestIndex(doc, program)
+	entry, found := index.GetDefinition("x")
+	if !found {
 		t.Error("expected to find definition of x")
 	}
-	if def.Value != "x" {
-		t.Errorf("expected definition value 'x', got %q", def.Value)
+	if entry.Name != "x" {
+		t.Errorf("expected definition name 'x', got %q", entry.Name)
 	}
 }
 
@@ -144,77 +134,47 @@ func TestDefinitionFindDefinitionNotFound(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "unknown", Line: 1, Column: 1},
-		Value: "unknown",
-	}
-
-	def := dp.findDefinition(ident, 1)
-	if def != nil {
-		t.Error("expected nil for unknown symbol")
+	index := createTestIndex(doc, program)
+	_, found := index.GetDefinition("unknown")
+	if found {
+		t.Error("expected not found for unknown symbol")
 	}
 }
 
 func TestDefinitionCollectDefinitions(t *testing.T) {
 	text := `x = 10
 y = 20`
+	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	scope := newScope()
-	collectDefinitions(program.Statements, scope, 2)
-
-	ident, found := scope.lookup("x")
-	if !found {
-		t.Error("expected to find x in scope")
+	index := createTestIndex(doc, program)
+	_, foundX := index.GetDefinition("x")
+	if !foundX {
+		t.Error("expected to find x in definitions")
 	}
-	_ = ident
-
-	ident, found = scope.lookup("y")
-	if !found {
-		t.Error("expected to find y in scope")
+	_, foundY := index.GetDefinition("y")
+	if !foundY {
+		t.Error("expected to find y in definitions")
 	}
-	_ = ident
-}
-
-func TestDefinitionCollectDefinitionsFromStatement(t *testing.T) {
-	text := `add = func(a, b) {
-    result = a + b
-}`
-	program := createTestProgram(text)
-
-	scope := newScope()
-	collectDefinitions(program.Statements, scope, 5)
-
-	ident, found := scope.lookup("add")
-	if !found {
-		t.Error("expected to find add in scope")
-	}
-	_ = ident
 }
 
 func TestDefinitionCollectDefinitionsWithFunctionScope(t *testing.T) {
 	text := `x = 10
-add = func(a, b) {
+add = (a i64, b i64) {
     result = x + a + b
 }`
+	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	scope := newScope()
-	collectDefinitions(program.Statements, scope, 5)
-
-	ident, found := scope.lookup("x")
-	if !found {
-		t.Error("expected to find x in scope")
+	index := createTestIndex(doc, program)
+	_, foundX := index.GetDefinition("x")
+	if !foundX {
+		t.Error("expected to find x in definitions")
 	}
-	_ = ident
-
-	ident, found = scope.lookup("add")
-	if !found {
-		t.Error("expected to find add in scope")
+	_, foundAdd := index.GetDefinition("add")
+	if !foundAdd {
+		t.Error("expected to find add in definitions")
 	}
-	_ = ident
 }
 
 func TestDefinitionLocationFromIdentifier(t *testing.T) {
@@ -244,58 +204,13 @@ func TestDefinitionLocationFromNilIdentifier(t *testing.T) {
 	}
 }
 
-func TestDefinitionScopeOperations(t *testing.T) {
-	scope := newScope()
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "x", Line: 1, Column: 1},
-		Value: "x",
-	}
-
-	scope.define("x", ident)
-
-	found, ok := scope.lookup("x")
-	if !ok {
-		t.Error("expected to find x")
-	}
-	if found.Value != "x" {
-		t.Errorf("expected value 'x', got %q", found.Value)
-	}
-
-	found, ok = scope.lookup("y")
-	if ok {
-		t.Error("expected not to find y")
-	}
-}
-
-func TestDefinitionScopeParentLookup(t *testing.T) {
-	parent := newScope()
-	child := newScope()
-	child.parent = parent
-
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: "x", Line: 1, Column: 1},
-		Value: "x",
-	}
-
-	parent.define("x", ident)
-
-	found, ok := child.lookup("x")
-	if !ok {
-		t.Error("expected to find x in child scope via parent")
-	}
-	if found.Value != "x" {
-		t.Errorf("expected value 'x', got %q", found.Value)
-	}
-}
-
 func TestDefinitionGetDefinitionWithAssignment(t *testing.T) {
 	text := `x = 10
 y = x`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
 	location, found := dp.GetDefinition(Position{Line: 1, Character: 4})
 
 	if !found {
@@ -315,7 +230,7 @@ if x > 5 {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
+	dp := NewDefinitionProvider(doc, createTestIndex(doc, program))
 	location, found := dp.GetDefinition(Position{Line: 2, Character: 8})
 
 	if !found {

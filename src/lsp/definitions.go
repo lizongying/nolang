@@ -1,24 +1,14 @@
 package lsp
 
-import (
-	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/parser"
-)
-
 type DefinitionProvider struct {
-	program *parser.Program
-	doc     *TextDocument
+	index *SymbolIndex
+	doc   *TextDocument
 }
 
-type DefinitionResult struct {
-	Name     string
-	Location Location
-}
-
-func NewDefinitionProvider(doc *TextDocument, program *parser.Program) *DefinitionProvider {
+func NewDefinitionProvider(doc *TextDocument, index *SymbolIndex) *DefinitionProvider {
 	return &DefinitionProvider{
-		program: program,
-		doc:     doc,
+		index: index,
+		doc:   doc,
 	}
 }
 
@@ -28,30 +18,17 @@ func (dp *DefinitionProvider) GetDefinition(position Position) (Location, bool) 
 		return Location{}, false
 	}
 
-	ident := &parser.Identifier{
-		Token: lexer.Token{Literal: word},
-		Value: word,
-	}
-
-	def := dp.findDefinition(ident, position.Line)
-	if def == nil {
+	if dp.index == nil {
 		return Location{}, false
 	}
 
-	return locationFromIdentifier(dp.doc.Item.URI, def), true
-}
-
-func (dp *DefinitionProvider) findDefinition(ident *parser.Identifier, beforeLine uint32) *parser.Identifier {
-	if dp.program == nil {
-		return nil
+	entry, ok := dp.index.GetDefinition(word)
+	if !ok {
+		entry, ok = dp.index.Lookup(word)
+		if !ok {
+			return Location{}, false
+		}
 	}
 
-	candidateScope := newScope()
-	collectDefinitions(dp.program.Statements, candidateScope, beforeLine)
-
-	if def, ok := candidateScope.lookup(ident.Value); ok {
-		return def
-	}
-
-	return nil
+	return entry.Location, true
 }

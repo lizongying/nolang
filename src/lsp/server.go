@@ -42,12 +42,22 @@ func NewServer() *Server {
 				ResolveProvider:   true,
 				TriggerCharacters: []string{".", ":", "="},
 			},
+			SignatureHelpProvider: &SignatureHelpOptions{
+				TriggerCharacters: []string{"(", ","},
+			},
 			HoverProvider:              true,
 			DefinitionProvider:         true,
 			ReferencesProvider:         true,
+			DocumentHighlightProvider:  true,
 			DocumentSymbolProvider:     true,
 			WorkspaceSymbolProvider:    true,
 			DocumentFormattingProvider: true,
+			FoldingRangeProvider:       true,
+			RenameProvider:             true,
+			SemanticTokensProvider: &SemanticTokensOptions{
+				Legend: GetSemanticTokensLegend(),
+				Full:   true,
+			},
 		},
 	}
 }
@@ -72,7 +82,7 @@ func (s *Server) handleInitialize(params InitializeParams) (interface{}, error) 
 		Capabilities: s.capabilities,
 		ServerInfo: &ServerInfo{
 			Name:    "nolang-lsp",
-			Version: "0.1.0",
+			Version: "0.2.0",
 		},
 	}, nil
 }
@@ -101,17 +111,19 @@ func (s *Server) handleTextDocumentDidOpen(params DidOpenTextDocumentParams) (in
 		return nil, err
 	}
 
-	ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
-	if err != nil {
-		log.Printf("Error parsing document: %v", err)
-	}
+	go func() {
+		ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
+		if err != nil {
+			log.Printf("Error parsing document: %v", err)
+		}
 
-	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
+		s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
+	}()
 
 	return nil, nil
 }
 
-func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, ast *parser.Program) {
+func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, ast interface{}) {
 	var diagnostics []Diagnostic
 
 	for _, errMsg := range parseErrors {
@@ -119,55 +131,55 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 		diagnostics = append(diagnostics, diagnostic)
 	}
 
-	// 型別檢查
 	if ast != nil {
-		typeErrs := nbuild.ValidateTypes(ast)
-		for _, e := range typeErrs {
-			diagnostic := Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
-					End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
-				},
-				Severity: DiagnosticSeverityError,
-				Source:   "nolang-type-checker",
-				Message:  e.Message,
+		prog, ok := ast.(*parser.Program)
+		if ok && prog != nil {
+			typeErrs := nbuild.ValidateTypes(prog)
+			for _, e := range typeErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
+						End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-type-checker",
+					Message:  e.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostics = append(diagnostics, diagnostic)
-		}
 
-		// 命名規範警告
-		namingWarnings := nbuild.ValidateNaming(ast)
-		for _, w := range namingWarnings {
-			diagnostic := Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
-					End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
-				},
-				Severity: DiagnosticSeverityWarning,
-				Source:   "nolang-lint",
-				Message:  w.Message,
+			namingWarnings := nbuild.ValidateNaming(prog)
+			for _, w := range namingWarnings {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
+						End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
+					},
+					Severity: DiagnosticSeverityWarning,
+					Source:   "nolang-lint",
+					Message:  w.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostics = append(diagnostics, diagnostic)
-		}
 
-		// 未使用變量檢查
-		unusedVars := nbuild.ValidateUnusedVars(ast)
-		for _, u := range unusedVars {
-			endChar := uint32(u.Column)
-			if u.EndColumn > 0 {
-				endChar = uint32(u.EndColumn)
+			unusedVars := nbuild.ValidateUnusedVars(prog)
+			for _, u := range unusedVars {
+				endChar := uint32(u.Column)
+				if u.EndColumn > 0 {
+					endChar = uint32(u.EndColumn)
+				}
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: endChar},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Tags:     []DiagnosticTag{DiagnosticTagUnnecessary},
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostic := Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-					End:   Position{Line: uint32(u.Line - 1), Character: endChar},
-				},
-				Severity: DiagnosticSeverityHint,
-				Source:   "nolang-lint",
-				Tags:     []DiagnosticTag{DiagnosticTagUnnecessary},
-				Message:  u.Message,
-			}
-			diagnostics = append(diagnostics, diagnostic)
 		}
 	}
 
@@ -179,13 +191,11 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	var diagnostic Diagnostic
 	diagnostic.Source = "nolang-parser"
-
 	fmt.Sscanf(errMsg, "line %d, column %d:", &diagnostic.Range.Start.Line, &diagnostic.Range.Start.Character)
 	diagnostic.Range.End = diagnostic.Range.Start
 	diagnostic.Range.End.Character += 1
 	diagnostic.Severity = DiagnosticSeverityError
 	diagnostic.Message = errMsg
-
 	return diagnostic
 }
 
@@ -195,12 +205,14 @@ func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams)
 		return nil, err
 	}
 
-	ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
-	if err != nil {
-		log.Printf("Error parsing document: %v", err)
-	}
+	go func() {
+		ast, parseErrors, err := s.documents.ParseDocument(params.TextDocument.URI)
+		if err != nil {
+			log.Printf("Error parsing document: %v", err)
+		}
 
-	s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
+		s.publishDocumentDiagnostics(params.TextDocument.URI, parseErrors, ast)
+	}()
 
 	return nil, nil
 }
@@ -208,20 +220,22 @@ func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams)
 func (s *Server) handleTextDocumentDidClose(params DidCloseTextDocumentParams) (interface{}, error) {
 	s.documents.RemoveDocument(params.TextDocument.URI)
 	s.publishDocumentDiagnostics(params.TextDocument.URI, nil, nil)
-
 	return nil, nil
 }
 
 func (s *Server) handleTextDocumentCompletion(params TextDocumentPositionParams) (interface{}, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
-		return CompletionList{
-			IsIncomplete: false,
-			Items:        []CompletionItem{},
-		}, nil
+		return CompletionList{IsIncomplete: false, Items: []CompletionItem{}}, nil
 	}
 
-	provider := NewCompletionProvider(doc, getProgram(doc))
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		index = NewSymbolIndex(params.TextDocument.URI, 0)
+		index.AddBuiltinSymbols()
+	}
+
+	provider := NewCompletionProvider(doc, index)
 
 	triggerChar := ""
 	if params.Position.Character > 0 {
@@ -243,15 +257,7 @@ func (s *Server) handleTextDocumentCompletion(params TextDocumentPositionParams)
 }
 
 func (s *Server) handleCompletionItemResolve(item CompletionItem) (interface{}, error) {
-	if item.Kind == CompletionItemKindFunction {
-		item.Documentation = "Function defined in the current scope"
-		item.Command = nil
-	} else if item.Kind == CompletionItemKindVariable {
-		item.Documentation = "Variable defined in the current scope"
-	} else if item.Kind == CompletionItemKindKeyword {
-		item.Documentation = "Nolang keyword"
-	}
-
+	// Resolve is handled inline now
 	return item, nil
 }
 
@@ -261,7 +267,12 @@ func (s *Server) handleTextDocumentHover(params TextDocumentPositionParams) (int
 		return nil, nil
 	}
 
-	provider := NewHoverProvider(doc, getProgram(doc))
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return nil, nil
+	}
+
+	provider := NewHoverProvider(doc, index)
 	hover, found := provider.GetHover(params.Position)
 	if !found {
 		return nil, nil
@@ -276,7 +287,12 @@ func (s *Server) handleTextDocumentDefinition(params TextDocumentPositionParams)
 		return nil, nil
 	}
 
-	provider := NewDefinitionProvider(doc, getProgram(doc))
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return nil, nil
+	}
+
+	provider := NewDefinitionProvider(doc, index)
 	location, found := provider.GetDefinition(params.Position)
 	if !found {
 		return nil, nil
@@ -291,10 +307,30 @@ func (s *Server) handleTextDocumentReferences(params ReferenceParams) (interface
 		return []Location{}, nil
 	}
 
-	provider := NewReferencesProvider(doc, getProgram(doc))
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return []Location{}, nil
+	}
+
+	provider := NewReferencesProvider(doc, index)
 	locations := provider.GetReferences(params.Position, params.Context.IncludeDeclaration)
 
 	return locations, nil
+}
+
+func (s *Server) handleTextDocumentDocumentHighlight(params TextDocumentPositionParams) (interface{}, error) {
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return []DocumentHighlight{}, nil
+	}
+
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return []DocumentHighlight{}, nil
+	}
+
+	provider := NewDocumentHighlightProvider(doc, index)
+	return provider.GetHighlights(params.Position), nil
 }
 
 func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (interface{}, error) {
@@ -303,7 +339,12 @@ func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (interfac
 		return []DocumentSymbol{}, nil
 	}
 
-	provider := NewSymbolProvider(doc, getProgram(doc))
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return []DocumentSymbol{}, nil
+	}
+
+	provider := NewSymbolProvider(doc, index)
 	symbols := provider.GetSymbols()
 
 	return symbols, nil
@@ -313,67 +354,131 @@ func (s *Server) handleWorkspaceSymbol(params WorkspaceSymbolParams) (interface{
 	var symbols []SymbolInformation
 	documents := s.documents.GetAllDocuments()
 
-	for uri, doc := range documents {
-		provider := NewSymbolProvider(doc, getProgram(doc))
-		docSymbols := provider.GetSymbols()
+	for uri := range documents {
+		index := s.documents.GetIndex(uri)
+		if index == nil {
+			continue
+		}
 
-		for _, sym := range docSymbols {
-			s.collectWorkspaceSymbols(sym, uri, params.Query, "", &symbols)
+		entries := index.Search(params.Query)
+		for _, e := range entries {
+			symbols = append(symbols, SymbolInformation{
+				Name:     e.Name,
+				Kind:     e.Kind,
+				Location: e.Location,
+			})
 		}
 	}
 
-	s.sortByRelevance(&symbols, params.Query)
-
-	return symbols, nil
-}
-
-func (s *Server) collectWorkspaceSymbols(docSym DocumentSymbol, uri, query, containerName string, symbols *[]SymbolInformation) {
-	lowerName := strings.ToLower(docSym.Name)
-	lowerQuery := strings.ToLower(query)
-
-	if strings.Contains(lowerName, lowerQuery) {
-		*symbols = append(*symbols, SymbolInformation{
-			Name: docSym.Name,
-			Kind: docSym.Kind,
-			Location: Location{
-				URI:   uri,
-				Range: docSym.SelectionRange,
-			},
-			ContainerName: containerName,
-		})
-	}
-
-	for _, child := range docSym.Children {
-		s.collectWorkspaceSymbols(child, uri, query, docSym.Name, symbols)
-	}
-}
-
-func (s *Server) sortByRelevance(symbols *[]SymbolInformation, query string) {
-	lowerQuery := strings.ToLower(query)
-
-	sort.Slice(*symbols, func(i, j int) bool {
-		a := (*symbols)[i]
-		b := (*symbols)[j]
-
-		aLower := strings.ToLower(a.Name)
-		bLower := strings.ToLower(b.Name)
-
-		aStartsWith := strings.HasPrefix(aLower, lowerQuery)
-		bStartsWith := strings.HasPrefix(bLower, lowerQuery)
-
+	sort.Slice(symbols, func(i, j int) bool {
+		aLower := strings.ToLower(symbols[i].Name)
+		bLower := strings.ToLower(symbols[j].Name)
+		aStartsWith := strings.HasPrefix(aLower, strings.ToLower(params.Query))
+		bStartsWith := strings.HasPrefix(bLower, strings.ToLower(params.Query))
 		if aStartsWith && !bStartsWith {
 			return true
 		}
 		if !aStartsWith && bStartsWith {
 			return false
 		}
-
-		if len(aLower) != len(bLower) {
-			return len(aLower) < len(bLower)
-		}
-
-		return aLower < bLower
+		return len(aLower) < len(bLower)
 	})
+
+	return symbols, nil
+}
+
+func (s *Server) handleTextDocumentSignatureHelp(params TextDocumentPositionParams) (interface{}, error) {
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return nil, nil
+	}
+
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return nil, nil
+	}
+
+	provider := NewSignatureHelpProvider(doc, index)
+	result, found := provider.GetSignatureHelp(params.Position)
+	if !found {
+		return nil, nil
+	}
+	return result, nil
+}
+
+func (s *Server) handleTextDocumentRename(params RenameParams) (interface{}, error) {
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return nil, nil
+	}
+
+	index := s.documents.GetIndex(params.TextDocument.URI)
+	if index == nil {
+		return nil, nil
+	}
+
+	provider := NewRenameProvider(doc, index)
+	edit, found := provider.GetRenameEdits(params.Position, params.NewName)
+	if !found {
+		return nil, nil
+	}
+
+	return edit, nil
+}
+
+func (s *Server) handleTextDocumentFoldingRange(params FoldingRangeParams) (interface{}, error) {
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return []FoldingRange{}, nil
+	}
+
+	provider := NewFoldingRangeProvider(doc)
+	return provider.GetFoldingRanges(), nil
+}
+
+func (s *Server) handleTextDocumentSemanticTokensFull(params SemanticTokensParams) (interface{}, error) {
+	doc, err := s.documents.GetDocument(params.TextDocument.URI)
+	if err != nil {
+		return nil, nil
+	}
+
+	provider := NewSemanticTokensProvider(doc)
+	return provider.GetSemanticTokens(), nil
+}
+
+func getWordBeforePosition(text string, position Position) string {
+	lines := getLines(text)
+	if int(position.Line) >= len(lines) {
+		return ""
+	}
+	line := lines[position.Line]
+	if int(position.Character) < 1 {
+		return ""
+	}
+
+	end := position.Character - 1
+	// Skip whitespace
+	for end > 0 && line[end] == ' ' {
+		end--
+	}
+	if end == 0 {
+		return ""
+	}
+
+	start := end
+	for start > 0 {
+		c := line[start-1]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+			start--
+		} else {
+			break
+		}
+	}
+
+	if start > end {
+		return ""
+	}
+	return line[start : end+1]
 }
 
 func formatNolangCode(content string) string {
@@ -384,14 +489,12 @@ func computeTextEdits(original, formatted string) []TextEdit {
 	if original == formatted {
 		return nil
 	}
-
 	oLines := strings.Split(original, "\n")
 	lastLine := uint32(len(oLines) - 1)
 	lastChar := uint32(0)
 	if lastLine >= 0 && len(oLines) > 0 {
 		lastChar = uint32(len(oLines[lastLine]))
 	}
-
 	return []TextEdit{
 		{
 			Range: Range{
@@ -408,13 +511,11 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	if err != nil {
 		return nil, err
 	}
-
 	formatted := formatNolangCode(doc.Text)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
 	}
-
 	return edits, nil
 }
 
@@ -423,13 +524,11 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	if err != nil {
 		return nil, err
 	}
-
 	formatted := formatNolangCode(doc.Text)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
 	}
-
 	return edits, nil
 }
 
@@ -443,13 +542,10 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleInitialize(p)
-
 	case "shutdown":
 		return s.handleShutdown()
-
 	case "exit":
 		return s.handleExit()
-
 	case "textDocument/didOpen":
 		var p DidOpenTextDocumentParams
 		if params != nil {
@@ -458,7 +554,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentDidOpen(p)
-
 	case "textDocument/didChange":
 		var p DidChangeTextDocumentParams
 		if params != nil {
@@ -467,7 +562,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentDidChange(p)
-
 	case "textDocument/didClose":
 		var p DidCloseTextDocumentParams
 		if params != nil {
@@ -476,7 +570,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentDidClose(p)
-
 	case "textDocument/completion":
 		var p TextDocumentPositionParams
 		if params != nil {
@@ -485,7 +578,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentCompletion(p)
-
 	case "completionItem/resolve":
 		var item CompletionItem
 		if params != nil {
@@ -494,7 +586,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleCompletionItemResolve(item)
-
 	case "textDocument/hover":
 		var p TextDocumentPositionParams
 		if params != nil {
@@ -503,7 +594,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentHover(p)
-
 	case "textDocument/definition":
 		var p TextDocumentPositionParams
 		if params != nil {
@@ -512,7 +602,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentDefinition(p)
-
 	case "textDocument/references":
 		var p ReferenceParams
 		if params != nil {
@@ -521,7 +610,14 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentReferences(p)
-
+	case "textDocument/documentHighlight":
+		var p TextDocumentPositionParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentDocumentHighlight(p)
 	case "textDocument/documentSymbol":
 		var p DocumentSymbolParams
 		if params != nil {
@@ -530,7 +626,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentSymbol(p)
-
 	case "textDocument/formatting":
 		var p DocumentFormattingParams
 		if params != nil {
@@ -539,7 +634,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentFormatting(p)
-
 	case "textDocument/willSaveWaitUntil":
 		var wp WillSaveWaitUntilParams
 		if params != nil {
@@ -548,7 +642,38 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleTextDocumentWillSaveWaitUntil(wp)
-
+	case "textDocument/signatureHelp":
+		var p TextDocumentPositionParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentSignatureHelp(p)
+	case "textDocument/rename":
+		var p RenameParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentRename(p)
+	case "textDocument/foldingRange":
+		var p FoldingRangeParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentFoldingRange(p)
+	case "textDocument/semanticTokens/full":
+		var p SemanticTokensParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentSemanticTokensFull(p)
 	case "workspace/symbol":
 		var p WorkspaceSymbolParams
 		if params != nil {
@@ -557,7 +682,6 @@ func (s *Server) Handle(method string, params json.RawMessage) (interface{}, err
 			}
 		}
 		return s.handleWorkspaceSymbol(p)
-
 	default:
 		return nil, fmt.Errorf("method not found: %s", method)
 	}
@@ -585,7 +709,6 @@ func RunServer(ctx context.Context, server *Server) error {
 	return conn.Err()
 }
 
-// stdrwc 實現 io.ReadWriteCloser 適配 os.Stdin/Stdout
 type stdrwc struct{}
 
 func (stdrwc) Read(p []byte) (int, error)  { return os.Stdin.Read(p) }

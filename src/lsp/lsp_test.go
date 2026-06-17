@@ -96,8 +96,8 @@ func TestHandleInitialize(t *testing.T) {
 	if initResult.ServerInfo.Name != "nolang-lsp" {
 		t.Errorf("expected server name 'nolang-lsp', got %q", initResult.ServerInfo.Name)
 	}
-	if initResult.ServerInfo.Version != "0.1.0" {
-		t.Errorf("expected server version '0.1.0', got %q", initResult.ServerInfo.Version)
+	if initResult.ServerInfo.Version != "0.2.0" {
+		t.Errorf("expected server version '0.2.0', got %q", initResult.ServerInfo.Version)
 	}
 }
 

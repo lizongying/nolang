@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/build/llvm"
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -121,7 +122,16 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		}
 		return "" // 未知變數
 	case *parser.CallExpression:
-		// 函數調用的返回類型 — 目前只能返回 i64
+		// 函數調用的返回類型 — 查詢 builtin 回傳型別
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			for _, m := range builtin.BuiltinMethodList {
+				if m.MethodName == ident.Value {
+					if len(m.Return) > 0 {
+						return m.Return[0].String()
+					}
+				}
+			}
+		}
 		return "i64"
 	case *parser.InfixExpression:
 		// 簡單推斷：比較運算返回 bool，算術返回 i64/f64

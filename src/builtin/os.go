@@ -20,7 +20,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "set-env",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Set the value of an environment variable",
 		CLibCall:     &CLibCall{FuncName: "setenv", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{2: "1"}},
 	})
@@ -40,7 +40,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "ch-dir",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change the current working directory",
 		CLibCall:     &CLibCall{FuncName: "chdir", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
 	})
@@ -80,7 +80,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "mkdir",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a directory with the given mode",
 		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type},
 	})
@@ -90,7 +90,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "remove",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Remove (unlink) a file",
 		CLibCall:     &CLibCall{FuncName: "unlink", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
 	})
@@ -100,7 +100,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "rename",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Rename a file from old to new",
 		CLibCall:     &CLibCall{FuncName: "rename", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
 	})
@@ -110,7 +110,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "is-file",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Check if the path points to a regular file",
 		CLibCall:     &CLibCall{FuncName: "stat", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI8Ptr}, RetType: LLVMI32, CmpRet: true, FixedArgs: map[int]string{1: "null"}},
 	})
@@ -210,7 +210,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "is-dir",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Check if the path points to a directory",
 		ForwardFunc:  "stat-dir",
 	})
@@ -220,7 +220,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "stat-size",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool}, // size, ok
 		Doc:          "Get the size of a file (returns size, ok)",
 		ForwardFunc:  "stat-size",
 	})
@@ -230,7 +230,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "file-size",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
 		Doc:          "Get the size of a file (returns size, ok)",
 		ForwardFunc:  "stat-size",
 	})
@@ -240,7 +240,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "get-line",
 		Params:       []parser.Type{},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
 		Doc:          "Read a line from standard input",
 		ForwardFunc:  "read-stdin-line",
 	})

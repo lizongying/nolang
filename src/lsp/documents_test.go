@@ -299,7 +299,7 @@ func TestDocumentNotFoundError(t *testing.T) {
 func TestDocumentOpenWithFunction(t *testing.T) {
 	dm := NewDocumentManager()
 	uri := "file:///test/test.no"
-	text := `swap = func(a, b) {
+	text := `swap = (a i64, b i64) {
     temp = a
     a = b
     b = temp
@@ -320,7 +320,7 @@ func TestDocumentOpenWithFunction(t *testing.T) {
 func TestDocumentParseFunction(t *testing.T) {
 	dm := NewDocumentManager()
 	uri := "file:///test/test.no"
-	text := `swap = func(a, b) {
+	text := `swap = (a i64, b i64) {
     temp = a
     a = b
     b = temp

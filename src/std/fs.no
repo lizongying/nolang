@@ -1,0 +1,161 @@
+// fs — 檔案系統工具
+//
+// 提供檔案讀寫、複製、移動、刪除等高層操作。
+// 底層依賴 os 模組的系統調用。
+//
+// 用法：
+//   use std/fs
+//   content, n = fs.read-file('path')
+//   ok = fs.write-file('path', content, content-n)
+//   ok = fs.copy('src', 'dst')
+
+// read-file: 讀取完整檔案內容
+// 返回內容字串和實際讀取位元組數
+read-file = (path str) (content str, n i64) {
+    fd = open-read(path)
+    if fd < 0 {
+        n = 0
+        return
+    }
+
+    // 獲取檔案大小
+    size = stat-size(path)
+    if size > 0 {
+        // 一次讀取整個檔案
+        n = read(fd, content, size)
+    }
+    close(fd)
+}
+
+// read-file-n: 讀取檔案前 n 個位元組
+read-file-n = (path str, n i64) (content str, read-n i64) {
+    fd = open-read(path)
+    if fd < 0 {
+        read-n = 0
+        return
+    }
+    read-n = read(fd, content, n)
+    close(fd)
+}
+
+// write-file: 寫入檔案（覆寫）
+// 返回 true=成功, false=失敗
+write-file = (path str, data str, n i64) (ok bool) {
+    fd = open-write(path)
+    if fd < 0 {
+        ok = false
+        return
+    }
+    written = write(fd, data, n)
+    close(fd)
+    ok = written == n
+}
+
+// append-file: 追加內容到檔案末尾
+// 若檔案不存在則建立
+append-file = (path str, data str, n i64) (ok bool) {
+    // 當前無直接 append open，先用 open-write + stat 判斷
+    file-exist = is-file(path)
+    if file-exist == false {
+        fd = open-write(path)
+        if fd < 0 {
+            ok = false
+            return
+        }
+        written = write(fd, data, n)
+        close(fd)
+        ok = written == n
+        return
+    }
+    fd = open-read(path)
+
+    // 無法直接 append，先用 read 後合併再 write
+    // 該實作為簡化版，實際應用需 O-APPEND 支援
+    close(fd)
+    existing; exist-n = read-file(path)
+
+    // 先寫入原有內容，再追加新內容
+    fd = open-write(path)
+    if fd < 0 {
+        ok = false
+        return
+    }
+    write(fd, existing, exist-n)
+    written = write(fd, data, n)
+    close(fd)
+    ok = written == n
+}
+
+// copy: 複製檔案
+// 返回 true=成功, false=失敗
+copy = (src str, dst str) (ok bool) {
+    fd-r = open-read(src)
+    if fd-r < 0 {
+        ok = false
+        return
+    }
+    fd-w = open-write(dst)
+    if fd-w < 0 {
+        close(fd-r)
+        ok = false
+        return
+    }
+    buf = '(4096)'
+    for true {
+        n = read(fd-r, buf, 4096)
+        if n <= 0 {
+            break
+        }
+        write(fd-w, buf, n)
+    }
+    close(fd-r)
+    close(fd-w)
+    ok = true
+}
+
+// move: 移動檔案（rename）
+// 返回 true=成功, false=失敗
+move = (src str, dst str) (ok bool) {
+    ok = rename(src, dst)
+}
+
+// delete: 刪除檔案
+// 返回 true=成功, false=失敗
+delete = (path str) (ok bool) {
+    ok = remove(path)
+}
+
+// exists: 檢查檔案是否存在
+// 返回 true=存在, false=不存在
+exists = (path str) (yes bool) {
+    yes = is-file(path)
+}
+
+// is-directory: 檢查路徑是否為目錄
+// 返回 true=是目錄, false=不是或不存在
+is-directory = (path str) (yes bool) {
+    yes = is-dir(path)
+}
+
+// file-size: 獲取檔案大小
+// 返回大小（位元組），-1 表示錯誤
+file-size = (path str) (sz i64) {
+    sz = stat-size(path)
+}
+
+// make-dir: 建立目錄
+// 返回 true=成功, false=失敗
+make-dir = (path str) (ok bool) {
+    ok = mkdir(path, 511)
+}
+
+// chdir: 切換工作目錄
+// 返回 true=成功, false=失敗
+chdir = (path str) (ok bool) {
+    ok = ch-dir(path)
+}
+
+// getwd: 獲取當前工作目錄
+getwd = () (dir str) {
+    dir = get-wd()
+}

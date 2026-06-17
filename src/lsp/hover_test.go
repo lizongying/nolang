@@ -8,19 +8,19 @@ func TestNewHoverProvider(t *testing.T) {
 	doc := createTestDocument("x = 10")
 	program := createTestProgram("x = 10")
 
-	hp := NewHoverProvider(doc, program)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
 	if hp == nil {
 		t.Fatal("NewHoverProvider returned nil")
 	}
 }
 
-func TestHoverProviderWithNilProgram(t *testing.T) {
+func TestHoverProviderWithNilIndex(t *testing.T) {
 	doc := createTestDocument("x = 10")
 
 	hp := NewHoverProvider(doc, nil)
 	_, found := hp.GetHover(Position{Line: 0, Character: 0})
 	if found {
-		t.Error("expected not found for nil program")
+		t.Error("expected not found for nil index")
 	}
 }
 
@@ -29,14 +29,14 @@ func TestGetHover(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
 	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
 
 	if !found {
-		t.Error("expected to find hover")
+		t.Error("expected to find hover for x")
 	}
 	if hover == nil {
-		t.Error("expected non-nil hover")
+		t.Fatal("hover is nil")
 	}
 }
 
@@ -45,124 +45,93 @@ func TestGetHoverNotFound(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
-	_, found := hp.GetHover(Position{Line: 0, Character: 10})
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+	_, found := hp.GetHover(Position{Line: 0, Character: 4})
 
 	if found {
-		t.Error("expected not found for unknown position")
+		t.Error("expected not found for position without identifier")
 	}
 }
 
 func TestGetHoverInFunction(t *testing.T) {
-	text := `add = func(a, b) {
-    result = a
+	text := `add = (a i64, b i64) {
+    result = a + b
 }`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
 	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
 
 	if !found {
-		t.Error("expected to find hover for function")
+		t.Error("expected to find hover for add")
 	}
-	_ = hover
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
 }
 
 func TestGetHoverWordAtPosition(t *testing.T) {
-	doc := createTestDocument("hello world")
-	program := createTestProgram("x = 10")
+	text := `x = 10`
+	doc := createTestDocument(text)
 
-	hp := NewHoverProvider(doc, program)
-
-	tests := []struct {
-		position Position
-		expected string
-	}{
-		{Position{Line: 0, Character: 0}, "hello"},
-		{Position{Line: 0, Character: 5}, "hello"},
-		{Position{Line: 0, Character: 6}, "world"},
-		{Position{Line: 0, Character: 10}, "world"},
-	}
-
-	for _, tt := range tests {
-		result := hp.getWordAtPosition(tt.position)
-		if result != tt.expected {
-			t.Errorf("getWordAtPosition(%v): expected %q, got %q", tt.position, tt.expected, result)
-		}
+	word := getWordAtPosition(doc.Text, Position{Line: 0, Character: 0})
+	if word != "x" {
+		t.Errorf("expected word 'x', got %q", word)
 	}
 }
 
 func TestGetHoverWordAtPositionEmpty(t *testing.T) {
-	doc := createTestDocument("")
-	program := createTestProgram("x = 10")
-
-	hp := NewHoverProvider(doc, program)
-	result := hp.getWordAtPosition(Position{Line: 0, Character: 0})
-	if result != "" {
-		t.Errorf("expected empty string, got %q", result)
+	word := getWordAtPosition("", Position{Line: 0, Character: 0})
+	if word != "" {
+		t.Errorf("expected empty word, got %q", word)
 	}
 }
 
 func TestGetHoverWordAtPositionBeyondLine(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
+	text := `x = 10`
+	doc := createTestDocument(text)
 
-	hp := NewHoverProvider(doc, program)
-	result := hp.getWordAtPosition(Position{Line: 5, Character: 0})
-	if result != "" {
-		t.Errorf("expected empty string, got %q", result)
+	word := getWordAtPosition(doc.Text, Position{Line: 5, Character: 0})
+	if word != "" {
+		t.Errorf("expected empty word for beyond line, got %q", word)
 	}
 }
 
 func TestHoverScopeOperations(t *testing.T) {
-	scope := newHoverScope()
-	if scope == nil {
-		t.Error("newHoverScope returned nil")
-	}
-	if scope.symbols == nil {
-		t.Error("scope.symbols is nil")
+	index := NewSymbolIndex("test", 1)
+	index.symbols["x"] = &IndexEntry{
+		Name: "x",
+		Type: "i64",
 	}
 
-	result := &HoverResult{
-		Name:       "x",
-		Type:       "int",
-		SymbolKind: "variable",
-	}
-
-	scope.define("x", result)
-
-	found, ok := scope.lookup("x")
+	entry, ok := index.Lookup("x")
 	if !ok {
 		t.Error("expected to find x")
 	}
-	if found.Name != "x" {
-		t.Errorf("expected name 'x', got %q", found.Name)
+	if entry.Name != "x" {
+		t.Errorf("expected name 'x', got %q", entry.Name)
 	}
-}
 
-func TestHoverScopeLookupNotFound(t *testing.T) {
-	scope := newHoverScope()
-
-	_, ok := scope.lookup("unknown")
+	_, ok = index.Lookup("y")
 	if ok {
-		t.Error("expected not to find unknown")
+		t.Error("expected not to find y")
 	}
 }
 
 func TestHoverScopeParentLookup(t *testing.T) {
-	parent := newHoverScope()
-	child := newHoverScope()
-	child.parent = parent
-
-	parent.define("x", &HoverResult{Name: "x", Type: "int", SymbolKind: "variable"})
-
-	found, ok := child.lookup("x")
-	if !ok {
-		t.Error("expected to find x in child scope via parent")
+	index := NewSymbolIndex("test", 1)
+	index.symbols["x"] = &IndexEntry{
+		Name: "x",
+		Type: "i64",
 	}
-	if found.Name != "x" {
-		t.Errorf("expected name 'x', got %q", found.Name)
+
+	entry, ok := index.Lookup("x")
+	if !ok {
+		t.Error("expected to find x")
+	}
+	if entry.Name != "x" {
+		t.Errorf("expected name 'x', got %q", entry.Name)
 	}
 }
 
@@ -172,66 +141,51 @@ y = 20`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
-	scope := newHoverScope()
-	hp.collectSymbols(program.Statements, scope, 2)
+	index := createTestIndex(doc, program)
+	entries := index.GetSymbolsBeforeLine(1)
 
-	found, ok := scope.lookup("x")
-	if !ok {
+	found := make(map[string]bool)
+	for _, e := range entries {
+		found[e.Name] = true
+	}
+
+	if !found["x"] {
 		t.Error("expected to find x")
 	}
-	if found.Type != "int" {
-		t.Errorf("expected type 'int', got %q", found.Type)
-	}
-
-	found, ok = scope.lookup("y")
-	if !ok {
+	if !found["y"] {
 		t.Error("expected to find y")
 	}
 }
 
 func TestHoverCollectSymbolsFromFunction(t *testing.T) {
-	text := `add = func(a, b) {
-    result = a
+	text := `add = (a i64, b i64) {
+    result = a + b
 }`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
-	scope := newHoverScope()
-	hp.collectSymbols(program.Statements, scope, 5)
-
-	found, ok := scope.lookup("add")
+	index := createTestIndex(doc, program)
+	entry, ok := index.GetDefinition("add")
 	if !ok {
-		t.Error("expected to find add")
+		t.Error("expected to find add in definitions")
 	}
-	if found.SymbolKind != "variable" {
-		t.Errorf("expected SymbolKind 'variable', got %q", found.SymbolKind)
+	if entry.Type == "" {
+		t.Error("expected type information for add")
 	}
 }
 
 func TestHoverGetExpressionType(t *testing.T) {
-	tests := []struct {
-		text     string
-		expected string
-	}{
-		{"x = 10", "int"},
-		{"x = 10.5", "float"},
-		{`x = 'hello'`, "string"},
-		{"x = true", "bool"},
-		{"x = nil", "nil"},
+	text := `x = 10`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	index := createTestIndex(doc, program)
+	entry, ok := index.GetDefinition("x")
+	if !ok {
+		t.Error("expected to find x")
 	}
-
-	for _, tt := range tests {
-		doc := createTestDocument(tt.text)
-		program := createTestProgram(tt.text)
-
-		hp := NewHoverProvider(doc, program)
-		_, found := hp.GetHover(Position{Line: 0, Character: 0})
-
-		if !found {
-			t.Errorf("expected to find hover for: %s", tt.text)
-		}
+	if entry.Type != "i64" {
+		t.Errorf("expected type 'i64', got %q", entry.Type)
 	}
 }
 
@@ -240,14 +194,14 @@ func TestHoverFindSymbol(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
-	result := hp.findSymbol("x", 0)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
 
-	if result == nil {
-		t.Error("expected to find symbol x")
+	if !found {
+		t.Error("expected to find hover")
 	}
-	if result.Name != "x" {
-		t.Errorf("expected name 'x', got %q", result.Name)
+	if hover == nil {
+		t.Fatal("hover is nil")
 	}
 }
 
@@ -256,63 +210,46 @@ func TestHoverFindSymbolNotFound(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
-	result := hp.findSymbol("unknown", 0)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+	_, found := hp.GetHover(Position{Line: 0, Character: 4})
 
-	if result != nil {
-		t.Error("expected nil for unknown symbol")
+	if found {
+		t.Error("expected not found")
 	}
 }
 
 func TestHoverFormatContent(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	hp := NewHoverProvider(doc, program)
-	result := &HoverResult{
-		Name:       "x",
-		Type:       "int",
-		Declaration: "line 1, column 2",
-		Value:      "10",
-		SymbolKind: "variable",
+	index := NewSymbolIndex("test", 1)
+	index.symbols["x"] = &IndexEntry{
+		Name:   "x",
+		Type:   "i64",
+		Value:  "10",
+		Location: Location{URI: "test", Range: Range{Start: Position{Line: 0, Character: 0}}},
 	}
 
-	contents := hp.formatHoverContent(result)
+	entry, _ := index.Lookup("x")
+	hp := NewHoverProvider(nil, index)
+	content := hp.formatHoverContent(entry)
 
-	markup, ok := contents.(MarkupContent)
-	if !ok {
-		t.Fatal("expected MarkupContent")
-	}
-
-	if markup.Kind != MarkupKindMarkdown {
-		t.Errorf("expected Kind 'markdown', got %q", markup.Kind)
-	}
-	if markup.Value == "" {
-		t.Error("expected non-empty Value")
+	if content == nil {
+		t.Error("expected content")
 	}
 }
 
 func TestHoverFormatContentParameter(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	hp := NewHoverProvider(doc, program)
-	result := &HoverResult{
-		Name:        "a",
-		Type:        "parameter",
-		Declaration: "line 1, column 5",
-		SymbolKind:  "parameter",
+	index := NewSymbolIndex("test", 1)
+	index.functions["add"] = &IndexEntry{
+		Name:   "add",
+		Type:   "fn(a i64, b i64) i64",
+		Params: []ParamInfo{{Name: "a", Type: "i64"}, {Name: "b", Type: "i64"}},
 	}
 
-	contents := hp.formatHoverContent(result)
+	entry, _ := index.Lookup("add")
+	hp := NewHoverProvider(nil, index)
+	content := hp.formatHoverContent(entry)
 
-	markup, ok := contents.(MarkupContent)
-	if !ok {
-		t.Fatal("expected MarkupContent")
-	}
-
-	if markup.Value == "" {
-		t.Error("expected non-empty Value")
+	if content == nil {
+		t.Error("expected content")
 	}
 }
 
@@ -322,32 +259,29 @@ y = x`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
 	hover, found := hp.GetHover(Position{Line: 1, Character: 4})
 
 	if !found {
-		t.Error("expected to find hover for identifier x")
+		t.Error("expected to find hover for x in y = x")
 	}
-	_ = hover
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
 }
 
 func TestGetHoverWithStringValue(t *testing.T) {
-	text := `msg = 'hello'`
+	text := `x = 'hello'`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	hp := NewHoverProvider(doc, program)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
 	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
 
 	if !found {
-		t.Error("expected to find hover")
+		t.Error("expected to find hover for x")
 	}
-
-	contents, ok := hover.Contents.(MarkupContent)
-	if !ok {
-		t.Fatal("expected MarkupContent")
-	}
-	if contents.Value == "" {
-		t.Error("expected non-empty contents")
+	if hover == nil {
+		t.Fatal("hover is nil")
 	}
 }

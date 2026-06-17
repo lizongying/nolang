@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -364,6 +365,34 @@ func isFloatExpr(e parser.Expression) bool {
 		return isFloatExpr(v.Right)
 	case *parser.GroupedExpression:
 		return isFloatExpr(v.Expression)
+	}
+	return false
+}
+
+// isDoubleExpr 判斷表達式是否為 double (f64) 類型
+// 比 isFloatExpr 更完整，會檢查變數型別和函數回傳型別
+func (g *Generator) isDoubleExpr(expr parser.Expression) bool {
+	switch v := expr.(type) {
+	case *parser.FloatLiteral:
+		return true
+	case *parser.InfixExpression:
+		return g.isDoubleExpr(v.Left) || g.isDoubleExpr(v.Right)
+	case *parser.PrefixExpression:
+		return g.isDoubleExpr(v.Right)
+	case *parser.GroupedExpression:
+		return g.isDoubleExpr(v.Expression)
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			t, ok := g.varTypes[v.Value]
+			return ok && t == "double"
+		}
+	case *parser.CallExpression:
+		if ident, ok := v.Function.(*parser.Identifier); ok {
+			m := builtin.FindBuiltinMethod(ident.Value)
+			if m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -1248,6 +1277,15 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return "0"
 	case "+":
+		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
+		if useDouble {
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%fadd.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fadd double %s, %s\n", g.indent(), reg, left, right))
+			}
+			return reg
+		}
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%add.tmp.%d", g.tmpIdx)
 		if sb != nil {
@@ -1262,6 +1300,15 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			}
 			return g.generateStrConcat(sb, expr.Left, expr.Right)
 		}
+		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
+		if useDouble {
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%fsub.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fsub double %s, %s\n", g.indent(), reg, left, right))
+			}
+			return reg
+		}
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%sub.tmp.%d", g.tmpIdx)
 		if sb != nil {
@@ -1269,6 +1316,15 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return reg
 	case "*":
+		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
+		if useDouble {
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%fmul.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fmul double %s, %s\n", g.indent(), reg, left, right))
+			}
+			return reg
+		}
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%mul.tmp.%d", g.tmpIdx)
 		if sb != nil {
@@ -1276,6 +1332,15 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return reg
 	case "/":
+		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
+		if useDouble {
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%fdiv.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fdiv double %s, %s\n", g.indent(), reg, left, right))
+			}
+			return reg
+		}
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%div.tmp.%d", g.tmpIdx)
 		if sb != nil {
