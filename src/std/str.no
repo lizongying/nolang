@@ -32,7 +32,7 @@
 
 // str-eq: 比较两个字符串的前 n 个字节是否相等
 // 返回 1=相等, 0=不相等
-// build-in (ForwardFunc: eq_raw)
+// build-in (ForwardFunc: eq-raw)
 // str-eq = (a str, b str, n i64) (eq i64) {
 //     eq = 1
 //     i = 0

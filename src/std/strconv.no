@@ -4,105 +4,105 @@
 //   str ↔ i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/bool/byte
 
 // ===== str → int =====
-// build-in (ForwardFunc: atoi_i8)
+// build-in (ForwardFunc: atoi-i8)
 // str-to-i8 = (s str) (n i8) {  // LLVM: call i64 @atoi(s) → trunc i64 to i8
 // }
 
-// build-in (ForwardFunc: atoi_i16)
+// build-in (ForwardFunc: atoi-i16)
 // str-to-i16 = (s str) (n i16) {  // LLVM: call i64 @atoi(s) → trunc i64 to i16
 // }
 
-// build-in (ForwardFunc: atoi_i32)
+// build-in (ForwardFunc: atoi-i32)
 // str-to-i32 = (s str) (n i32) {  // LLVM: call i64 @atoi(s) → trunc i64 to i32
 // }
 
-// build-in (ForwardFunc: atoi_i64)
+// build-in (ForwardFunc: atoi-i64)
 // str-to-i64 = (s str) (n i64) {  // LLVM: call i64 @atoi(s)
 // }
 
 // ===== str → uint =====
-// build-in (ForwardFunc: strtoul_u8)
+// build-in (ForwardFunc: strtoul-u8)
 // str-to-u8 = (s str) (n u8) {  // LLVM: call i64 @strtoul(s) → trunc i64 to u8
 // }
 
-// build-in (ForwardFunc: strtoul_u16)
+// build-in (ForwardFunc: strtoul-u16)
 // str-to-u16 = (s str) (n u16) {  // LLVM: call i64 @strtoul(s) → trunc i64 to u16
 // }
 
-// build-in (ForwardFunc: strtoul_u32)
+// build-in (ForwardFunc: strtoul-u32)
 // str-to-u32 = (s str) (n u32) {  // LLVM: call i64 @strtoul(s) → trunc i64 to u32
 // }
 
-// build-in (ForwardFunc: strtoul_u64)
+// build-in (ForwardFunc: strtoul-u64)
 // str-to-u64 = (s str) (n u64) {  // LLVM: call i64 @strtoul(s)
 // }
 
 // ===== str → float =====
-// build-in (ForwardFunc: strtod_f32)
+// build-in (ForwardFunc: strtod-f32)
 // str-to-f32 = (s str) (val f32) {  // LLVM: call double @strtod(s) → fptrunc double to float
 // }
 
-// build-in (ForwardFunc: strtod_f64)
+// build-in (ForwardFunc: strtod-f64)
 // str-to-f64 = (s str) (val f64) {  // LLVM: call double @strtod(s)
 // }
 
 // ===== str → bool/byte =====
-// build-in (ForwardFunc: str_to_bool)
+// build-in (ForwardFunc: str-to-bool)
 // str-to-bool = (s str) (ok bool) {  // LLVM: strcmp(s, "true") → icmp eq → zext i1 to i8
 // }
 
-// build-in (ForwardFunc: atoi_byte)
+// build-in (ForwardFunc: atoi-byte)
 // str-to-byte = (s str) (b byte) {  // LLVM: call i64 @atoi(s) → trunc i64 to i8
 // }
 
 // ===== int → str =====
-// build-in (ForwardFunc: sprintf_i8)
+// build-in (ForwardFunc: sprintf-i8)
 // i8-to-str = (v i8) (s str) {  // LLVM: zext i8 to i64 → sprintf(buf, "%hhd", v)
 // }
 
-// build-in (ForwardFunc: sprintf_i16)
+// build-in (ForwardFunc: sprintf-i16)
 // i16-to-str = (v i16) (s str) {  // LLVM: zext i16 to i64 → sprintf(buf, "%hd", v)
 // }
 
-// build-in (ForwardFunc: sprintf_i32)
+// build-in (ForwardFunc: sprintf-i32)
 // i32-to-str = (v i32) (s str) {  // LLVM: zext i32 to i64 → sprintf(buf, "%d", v)
 // }
 
-// build-in (ForwardFunc: sprintf_i64)
+// build-in (ForwardFunc: sprintf-i64)
 // i64-to-str = (v i64) (s str) {  // LLVM: sprintf(buf, "%lld", v)
 // }
 
 // ===== uint → str =====
-// build-in (ForwardFunc: sprintf_u8)
+// build-in (ForwardFunc: sprintf-u8)
 // u8-to-str = (v u8) (s str) {  // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", v)
 // }
 
-// build-in (ForwardFunc: sprintf_u16)
+// build-in (ForwardFunc: sprintf-u16)
 // u16-to-str = (v u16) (s str) {  // LLVM: zext i16 to i64 → sprintf(buf, "%hu", v)
 // }
 
-// build-in (ForwardFunc: sprintf_u32)
+// build-in (ForwardFunc: sprintf-u32)
 // u32-to-str = (v u32) (s str) {  // LLVM: zext i32 to i64 → sprintf(buf, "%u", v)
 // }
 
-// build-in (ForwardFunc: sprintf_u64)
+// build-in (ForwardFunc: sprintf-u64)
 // u64-to-str = (v u64) (s str) {  // LLVM: sprintf(buf, "%llu", v)
 // }
 
 // ===== float → str =====
-// build-in (ForwardFunc: sprintf_f32)
+// build-in (ForwardFunc: sprintf-f32)
 // f32-to-str = (v f32) (s str) {  // LLVM: fpext float to double → sprintf(buf, "%g", v)
 // }
 
-// build-in (ForwardFunc: sprintf_f64)
+// build-in (ForwardFunc: sprintf-f64)
 // f64-to-str = (v f64) (s str) {  // LLVM: sprintf(buf, "%g", v)
 // }
 
 // ===== bool/byte → str =====
-// build-in (ForwardFunc: bool_to_str)
+// build-in (ForwardFunc: bool-to-str)
 // bool-to-str = (v bool) (s str) {  // LLVM: select i1 v, "true", "false"
 // }
 
-// build-in (ForwardFunc: sprintf_byte)
+// build-in (ForwardFunc: sprintf-byte)
 // byte-to-str = (v byte) (s str) {  // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", v)
 // }

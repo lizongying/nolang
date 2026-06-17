@@ -54,7 +54,7 @@
 //   s + ' world'     // 拼接
 
 // 列舉（tagged enum / union）
-// 底層：struct { tag i64; data [MAX_SIZE]i8 }
+// 底層：struct { tag i64; data [MAX-SIZE]i8 }
 //
 // 語法：
 //   option { val i64, nil bool, err str }

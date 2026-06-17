@@ -10,7 +10,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Compare two strings for equality",
-		ForwardFunc:  "eq_raw",
+		ForwardFunc:  "eq-raw",
 	})
 
 	// str.len: get string length
@@ -20,7 +20,7 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Return the length of the string",
-		ForwardFunc:  "str_len",
+		ForwardFunc:  "str-len",
 	})
 
 	// str-copy: copy n bytes from src to dst

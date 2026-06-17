@@ -12,7 +12,7 @@
 // 所有排列表為 1-indexed 位元位置字串
 
 // IP: 初始排列（64 位元）
-IP_TBL = '\x3a\x32\x2a\x22\x1a\x12\x0a\x02' +
+IP-TBL = '\x3a\x32\x2a\x22\x1a\x12\x0a\x02' +
          '\x3c\x34\x2c\x24\x1c\x14\x0c\x04' +
          '\x3e\x36\x2e\x26\x1e\x16\x0e\x06' +
          '\x40\x38\x30\x28\x20\x18\x10\x08' +
@@ -22,7 +22,7 @@ IP_TBL = '\x3a\x32\x2a\x22\x1a\x12\x0a\x02' +
          '\x3f\x37\x2f\x27\x1f\x17\x0f\x07'
 
 // FP: 最終排列（IP 的逆）
-FP_TBL = '\x28\x20\x18\x10\x08\x30\x38\x40' +
+FP-TBL = '\x28\x20\x18\x10\x08\x30\x38\x40' +
          '\x26\x1e\x16\x0e\x06\x2e\x36\x3e' +
          '\x24\x1c\x14\x0c\x04\x2c\x34\x3c' +
          '\x22\x1a\x12\x0a\x02\x2a\x32\x3a' +
@@ -32,7 +32,7 @@ FP_TBL = '\x28\x20\x18\x10\x08\x30\x38\x40' +
          '\x12\x0a\x02\x2a\x32\x3a\x22\x1a'
 
 // E: 擴展排列（32→48 位元）
-E_TBL = '\x20\x01\x02\x03\x04\x05' +
+E-TBL = '\x20\x01\x02\x03\x04\x05' +
         '\x04\x05\x06\x07\x08\x09' +
         '\x08\x09\x0a\x0b\x0c\x0d' +
         '\x0c\x0d\x0e\x0f\x10\x11' +
@@ -42,7 +42,7 @@ E_TBL = '\x20\x01\x02\x03\x04\x05' +
         '\x1c\x1d\x1e\x1f\x20\x01'
 
 // P: 排列（32 位元）
-P_TBL = '\x10\x11\x12\x13\x14\x15\x16\x17' +
+P-TBL = '\x10\x11\x12\x13\x14\x15\x16\x17' +
         '\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f' +
         '\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f' +
         '\x00\x01\x02\x03\x04\x05\x06\x07'
@@ -82,18 +82,18 @@ SBOX8 = '\x0d\x02\x08\x04\x06\x0f\x0b\x01\x0a\x09\x03\x0e\x05\x00\x0c\x07' +
         '\x02\x01\x0e\x07\x04\x0a\x08\x0d\x0f\x0c\x09\x00\x03\x05\x06\x0b'
 
 // PC1: 金鑰初始排列（64→56 位元，忽略第 8、16、24、32、40、48、56、64）
-PC1_C = '\x39\x38\x37\x36\x35\x34\x33\x32\x31\x30\x29\x28\x27\x26\x25\x24' +
+PC1-C = '\x39\x38\x37\x36\x35\x34\x33\x32\x31\x30\x29\x28\x27\x26\x25\x24' +
         '\x23\x22\x21\x20\x19\x18\x17\x16\x15\x14\x13\x12'
-PC1_D = '\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a' +
+PC1-D = '\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a' +
         '\x1b\x1c\x1d\x1e\x1f\x20\x21\x22\x23\x24\x25\x26\x27\x28'
 
 // PC2: 金鑰壓縮排列（56→48 位元）
-PC2_TBL = '\x0e\x11\x0b\x18\x01\x05\x03\x1c\x0f\x06\x15\x0a\x17\x13\x0c\x04' +
+PC2-TBL = '\x0e\x11\x0b\x18\x01\x05\x03\x1c\x0f\x06\x15\x0a\x17\x13\x0c\x04' +
           '\x1a\x08\x10\x07\x1b\x14\x0d\x02\x10\x1b\x0d\x08\x04\x07\x1a\x0f' +
           '\x15\x05\x0c\x01\x06\x11\x03\x14\x17\x0a\x18\x0e\x09\x16\x02\x19'
 
 // 左移表（16 輪）
-SHIFT_TBL = '\x01\x01\x02\x02\x02\x02\x02\x02\x01\x02\x02\x02\x02\x02\x02\x01'
+SHIFT-TBL = '\x01\x01\x02\x02\x02\x02\x02\x02\x01\x02\x02\x02\x02\x02\x02\x01'
 
 // ─── 位元排列輔助 ──────────────────────────────
 
@@ -125,7 +125,7 @@ sbox-lookup=(input i64, box str, r i64) {
 // out: 32-bit 輸出
 f = (r i64, k i64, out i64) {
     // 擴展 R 到 48 位元
-    permute(r, E_TBL, 48, er)
+    permute(r, E-TBL, 48, er)
     // XOR 子金鑰
     x = er ^ k
     // S-box 替代（6→4 位元 × 8）
@@ -141,7 +141,7 @@ f = (r i64, k i64, out i64) {
     sb = (s0 << 28) | (s1 << 24) | (s2 << 20) | (s3 << 16) |
          (s4 << 12) | (s5 << 8) | (s6 << 4) | s7
     // P 排列
-    permute(sb, P_TBL, 32, out)
+    permute(sb, P-TBL, 32, out)
 }
 
 // ─── 金鑰排程 ──────────────────────────────────────
@@ -162,10 +162,10 @@ des-key-schedule = (key str, ks str) {
     c = 0; d = 0
     i = 0
     for i < 28 {
-        pos = PC1_C[i] & 255
+        pos = PC1-C[i] & 255
         bit = (k64 >> pos) & 1
         c = c | (bit << i)
-        pos2 = PC1_D[i] & 255
+        pos2 = PC1-D[i] & 255
         bit2 = (k64 >> pos2) & 1
         d = d | (bit2 << i)
         i = i + 1
@@ -174,7 +174,7 @@ des-key-schedule = (key str, ks str) {
     // 16 輪左移 + PC2
     round = 0
     for round < 16 {
-        shift = SHIFT_TBL[round] & 255
+        shift = SHIFT-TBL[round] & 255
         // 左移 C 和 D
         cm = (1 << 28) - 1
         c = ((c << shift) | (c >> (28 - shift))) & cm
@@ -184,7 +184,7 @@ des-key-schedule = (key str, ks str) {
         cd = (c << 28) | d
 
         // PC2 排列（56→48 位元）
-        permute(cd, PC2_TBL, 48, sk)
+        permute(cd, PC2-TBL, 48, sk)
 
         // 儲存子金鑰（6 位元組 big-endian）
         off = round * 6
@@ -214,7 +214,7 @@ des-block= (in str, n i64, ks str, out str) {
     }
 
     // IP 初始排列
-    permute(block, IP_TBL, 64, ip)
+    permute(block, IP-TBL, 64, ip)
     // 分為 L（左 32）和 R（右 32）
     l = (ip >> 32) & 4294967295
     r = ip & 4294967295
@@ -239,7 +239,7 @@ des-block= (in str, n i64, ks str, out str) {
     // 最後交換（L,R）
     pre-out = (r << 32) | l
     // FP 最終排列
-    permute(pre-out, FP_TBL, 64, fp)
+    permute(pre-out, FP-TBL, 64, fp)
 
     // 輸出 8 位元組
     i = 0

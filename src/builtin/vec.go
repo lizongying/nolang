@@ -10,7 +10,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Create a slice of length n, fill all elements with val",
-		ForwardFunc:  "vec_create",
+		ForwardFunc:  "vec-create",
 	})
 
 	// vec-eq: compare two slices for equality
@@ -20,7 +20,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Compare two slices for equality",
-		ForwardFunc:  "vec_eq",
+		ForwardFunc:  "vec-eq",
 	})
 
 	// .len: get slice length (method on []t)
@@ -30,7 +30,7 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Return the length of the slice",
-		ForwardFunc:  "vec_len",
+		ForwardFunc:  "vec-len",
 	})
 
 	// .push: append element to slice
@@ -40,7 +40,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Push an element to the end of the slice",
-		ForwardFunc:  "vec_push",
+		ForwardFunc:  "vec-push",
 	})
 
 	// .pop: remove and return last element
@@ -50,7 +50,7 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Pop the last element from the slice",
-		ForwardFunc:  "vec_pop",
+		ForwardFunc:  "vec-pop",
 	})
 
 	// vec-sort: sort the slice in-place
@@ -60,7 +60,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Sort the slice in ascending order",
-		ForwardFunc:  "vec_sort",
+		ForwardFunc:  "vec-sort",
 	})
 
 	// vec-reverse: reverse the slice in-place
@@ -70,7 +70,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Reverse the slice in-place",
-		ForwardFunc:  "vec_reverse",
+		ForwardFunc:  "vec-reverse",
 	})
 
 	// arr-eq: compare two fixed-size arrays for equality
@@ -80,7 +80,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Compare two fixed-size arrays for equality",
-		ForwardFunc:  "arr_eq",
+		ForwardFunc:  "arr-eq",
 	})
 
 	// .sort-asc: sort slice in ascending order (method on []t)
@@ -90,7 +90,7 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{},
 		Doc:          "Sort the slice in ascending order in-place (insertion sort)",
-		ForwardFunc:  "vec_sort_asc",
+		ForwardFunc:  "vec-sort-asc",
 	})
 
 	// .sort-desc: sort slice in descending order (method on []t)
@@ -100,6 +100,6 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{},
 		Doc:          "Sort the slice in descending order in-place (insertion sort)",
-		ForwardFunc:  "vec_sort_desc",
+		ForwardFunc:  "vec-sort-desc",
 	})
 }

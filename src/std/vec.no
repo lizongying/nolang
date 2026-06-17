@@ -64,12 +64,12 @@ vec-create = (n i64, val i64, out []i64) {
 //   // data == [1, 1, 3, 4, 5]
 
 // sort-asc: 升序排序 data[0..n)
-// build-in (ForwardFunc: vec_sort_asc)
+// build-in (ForwardFunc: vec-sort-asc)
 // []t.sort-asc = () {
 // }
 
 // sort-desc: 降序排序 data[0..n)
-// build-in (ForwardFunc: vec_sort_desc)
+// build-in (ForwardFunc: vec-sort-desc)
 // []t.sort-desc = () {
 // }
 
@@ -77,14 +77,14 @@ vec-create = (n i64, val i64, out []i64) {
 //
 // 泛型參數 n(大小) t(型別) 自動推斷。
 
-// new_cap = old_cap
+// new-cap = old-cap
 
-// if old_cap == 0:
-//     new_cap = 4   # 初始
-// elif old_cap < 1024:
-//     new_cap = old_cap * 2   # 小容量：翻倍
+// if old-cap == 0:
+//     new-cap = 4   # 初始
+// elif old-cap < 1024:
+//     new-cap = old-cap * 2   # 小容量：翻倍
 // else:
-//     new_cap = old_cap * 5 / 4  # 大容量：1.25 倍
+//     new-cap = old-cap * 5 / 4  # 大容量：1.25 倍
 
 // vec {
 //     len i64 read-only

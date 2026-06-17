@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -151,20 +152,32 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return "i64 " + val
 	}
 
+	// 通過 BuiltinMethodList 分派（LLVMIntrinsic / CLibCall / LLVMConv）
+	if m := builtin.FindBuiltinMethod(fnName); m != nil {
+		if m.LLVMIntrinsic != "" {
+			a := evalArgs()
+			argStr := ""
+			for i, v := range a {
+				if i > 0 {
+					argStr += ", "
+				}
+				argStr += "double " + v
+			}
+			return fmt.Sprintf("call double @%s(%s)", m.LLVMIntrinsic, argStr)
+		}
+		if m.CLibCall != nil {
+			return g.genCLibCall(sb, m, evalArgs)
+		}
+		if m.LLVMConv != nil {
+			return g.genLLVMConv(sb, m, evalArgs)
+		}
+	}
+
 	// 嘗試各 domain handler
 	if r := g.callFmt(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
 		return r
 	}
 	if r := g.callStrconv(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
-		return r
-	}
-	if r := g.callOs(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
-		return r
-	}
-	if r := g.callFileIO(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
-		return r
-	}
-	if r := g.callMath(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
 		return r
 	}
 	if r := g.callBuiltin(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {

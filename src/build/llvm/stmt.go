@@ -171,10 +171,16 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		return
 	}
 
-	sb.WriteString("define i32 @main() {\n")
+	sb.WriteString("define i32 @main(i32 %argc, i8** %argv) {\n")
 	g.indentLevel++
 	sb.WriteString(g.indent() + "entry:\n")
 	g.indentLevel++
+
+	// Store argc/argv for use by args-count / args-get
+	sb.WriteString(fmt.Sprintf("%s%%argc.addr = alloca i32\n", g.indent()))
+	sb.WriteString(fmt.Sprintf("%sstore i32 %%argc, i32* %%argc.addr\n", g.indent()))
+	sb.WriteString(fmt.Sprintf("%s%%argv.addr = alloca i8**\n", g.indent()))
+	sb.WriteString(fmt.Sprintf("%sstore i8** %%argv, i8*** %%argv.addr\n", g.indent()))
 
 	varDecls := g.collectVarDecls(program)
 	for k, v := range varDecls {

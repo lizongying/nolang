@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -165,7 +166,181 @@ func (g *Generator) Generate(program *parser.Program) string {
 	return sb.String()
 }
 
-// findLoopTarget 查找循环目标标签。isBreak=true 找 exit 块，isBreak=false 找 cond 块。
+func llvmLLVMType(t builtin.LLVMArgType) string {
+	switch t {
+	case builtin.LLVMI64:
+		return "i64"
+	case builtin.LLVMF64:
+		return "double"
+	case builtin.LLVMI8Ptr:
+		return "i8*"
+	case builtin.LLVMI32:
+		return "i32"
+	case builtin.LLVMStrPtr:
+		return "i8*"
+	default:
+		return "i64"
+	}
+}
+
+func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string) string {
+	a := evalArgs()
+	clib := m.CLibCall
+
+	// Sprintf pattern: sprintf(buf, fmt, args...)
+	if clib.SprintfFmt != "" {
+		fg := g.getFormatGlobal(clib.SprintfFmt)
+		buf := fmt.Sprintf("i8* getelementptr inbounds ([64 x i8], [64 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
+		argStr := buf + ", i8* getelementptr inbounds ([" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8], [" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8]* " + fg + ", i64 0, i64 0)"
+		for i, v := range a {
+			argStr += ", " + llvmLLVMType(clib.ArgTypes[i]) + " " + v
+		}
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), argStr))
+		}
+		return buf
+	}
+
+	// Build argument string
+	evIdx := 0
+	argStr := ""
+	for i := 0; i < len(clib.ArgTypes); i++ {
+		if i > 0 {
+			argStr += ", "
+		}
+		argType := clib.ArgTypes[i]
+
+		if fixedVal, ok := clib.FixedArgs[i]; ok {
+			argStr += llvmLLVMType(argType) + " " + fixedVal
+			continue
+		}
+
+		if fixedGlobal, ok := clib.FixedArgGlobals[i]; ok {
+			argStr += "i8* " + fixedGlobal
+			continue
+		}
+
+		if truncTo, ok := clib.TruncArgs[i]; ok {
+			g.tmpIdx++
+			truncReg := fmt.Sprintf("%%clib.trunc.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, a[evIdx], llvmLLVMType(truncTo)))
+			}
+			argStr += llvmLLVMType(truncTo) + " " + truncReg
+			evIdx++
+			continue
+		}
+
+		if clib.StrDataArg != nil && clib.StrDataArg[i] {
+			dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+			argStr += "i8* " + dataPtr
+			evIdx++
+			continue
+		}
+
+		if argType == builtin.LLVMStrPtr {
+			dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+			argStr += "i8* " + dataPtr
+		} else {
+			argStr += llvmLLVMType(argType) + " " + a[evIdx]
+		}
+		evIdx++
+	}
+
+	// RetBuf: return the buffer pointer instead of C return value
+	if clib.RetBuf {
+		buf := fmt.Sprintf("i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
+		cRetType := llvmLLVMType(clib.RetType)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall %s @%s(%s)\n", g.indent(), cRetType, clib.FuncName, argStr))
+		}
+		return buf
+	}
+
+	cRetType := llvmLLVMType(clib.RetType)
+	if clib.RetType == builtin.LLVMStrPtr {
+		cRetType = "i8*"
+	}
+
+	if clib.RetExt != nil {
+		g.tmpIdx++
+		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), callReg, cRetType, clib.FuncName, argStr))
+		}
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%clib.ext.%d", g.tmpIdx)
+		extInstr := "zext"
+		if clib.RetType == builtin.LLVMI32 {
+			extInstr = "sext"
+		}
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, extInstr, cRetType, callReg))
+		}
+		return extReg
+	}
+
+	if clib.CmpRet {
+		g.tmpIdx++
+		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), callReg, cRetType, clib.FuncName, argStr))
+		}
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%clib.cmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, 0\n", g.indent(), cmpReg, cRetType, callReg))
+		}
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%clib.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+		}
+		return extReg
+	}
+
+	return fmt.Sprintf("call %s @%s(%s)", cRetType, clib.FuncName, argStr)
+}
+
+func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {
+	if strings.HasPrefix(evalResult, "%") {
+		parts := strings.Split(evalResult, ".")
+		varName := strings.TrimPrefix(parts[0], "%")
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[varName]; ok {
+				if t == "%str-smail" {
+					return g.extractStrSmailDataPtr(sb, evalResult)
+				}
+				return g.extractStrDataPtr(sb, evalResult)
+			}
+		}
+		return g.extractStrDataPtr(sb, evalResult)
+	}
+	return evalResult
+}
+
+func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string) string {
+	a := evalArgs()
+	conv := *m.LLVMConv
+	switch conv {
+	case builtin.LLVMConvI64ToFP:
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sitofp i64 %s to double\n", g.indent(), reg, a[0]))
+		}
+		return reg
+	case builtin.LLVMConvFPToI64:
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = fptosi double %s to i64\n", g.indent(), reg, a[0]))
+		}
+		return reg
+	}
+	return ""
+}
+
 func (g *Generator) findLoopTarget(label string, isBreak bool) string {
 	if label != "" {
 		for i := len(g.loopExits) - 1; i >= 0; i-- {

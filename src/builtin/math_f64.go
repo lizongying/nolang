@@ -63,16 +63,6 @@ func init() {
 		LLVMIntrinsic: "llvm.cos.f64",
 	})
 
-	// tan: tangent (radians) via libm
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "tan",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the tangent of an angle in radians",
-		ForwardFunc:  "tan",
-	})
-
 	// pow: power (f64^f64)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType:  ReceiverGlobal,
@@ -90,7 +80,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the cube root of a float",
-		ForwardFunc:  "cbrt",
+		CLibCall:     &CLibCall{FuncName: "cbrt", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// hypot: sqrt(x*x + y*y) via libm
@@ -100,7 +90,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute sqrt(x*x + y*y) without undue overflow or underflow",
-		ForwardFunc:  "hypot",
+		CLibCall:     &CLibCall{FuncName: "hypot", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
 	})
 
 	// asin: arc sine via libm
@@ -110,7 +100,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the arc sine of a float",
-		ForwardFunc:  "asin",
+		CLibCall:     &CLibCall{FuncName: "asin", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// acos: arc cosine via libm
@@ -120,7 +110,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the arc cosine of a float",
-		ForwardFunc:  "acos",
+		CLibCall:     &CLibCall{FuncName: "acos", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// atan: arc tangent via libm
@@ -130,7 +120,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the arc tangent of a float",
-		ForwardFunc:  "atan",
+		CLibCall:     &CLibCall{FuncName: "atan", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// atan2: arc tangent of y/x via libm
@@ -140,7 +130,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the arc tangent of y/x",
-		ForwardFunc:  "atan2",
+		CLibCall:     &CLibCall{FuncName: "atan2", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
 	})
 
 	// sinh: hyperbolic sine via libm
@@ -150,7 +140,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the hyperbolic sine of a float",
-		ForwardFunc:  "sinh",
+		CLibCall:     &CLibCall{FuncName: "sinh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// cosh: hyperbolic cosine via libm
@@ -160,7 +150,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the hyperbolic cosine of a float",
-		ForwardFunc:  "cosh",
+		CLibCall:     &CLibCall{FuncName: "cosh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// tanh: hyperbolic tangent via libm
@@ -170,7 +160,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the hyperbolic tangent of a float",
-		ForwardFunc:  "tanh",
+		CLibCall:     &CLibCall{FuncName: "tanh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
 	})
 
 	// ceil: round up via LLVM intrinsic
@@ -260,7 +250,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Compute the floating-point remainder of x/y",
-		ForwardFunc:  "fmod",
+		CLibCall:     &CLibCall{FuncName: "fmod", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
 	})
 
 	// degrees: convert radians to degrees
@@ -270,7 +260,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert radians to degrees (r * 180 / Pi)",
-		ForwardFunc:  "math_degrees",
+		ForwardFunc:  "math-degrees",
 	})
 
 	// radians: convert degrees to radians
@@ -280,6 +270,6 @@ func init() {
 		Params:       []parser.Type{parser.TypeF64},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert degrees to radians (d * Pi / 180)",
-		ForwardFunc:  "math_radians",
+		ForwardFunc:  "math-radians",
 	})
 }

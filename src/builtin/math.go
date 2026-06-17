@@ -10,7 +10,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Return the maximum value of the two integers",
-		ForwardFunc:  "math_max",
+		ForwardFunc:  "math-max",
 	})
 
 	// min: return the minimum of two integers
@@ -20,7 +20,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Return the minimum value of the two integers",
-		ForwardFunc:  "math_min",
+		ForwardFunc:  "math-min",
 	})
 
 	// abs: return the absolute value
@@ -30,7 +30,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Return the absolute value of the integer",
-		ForwardFunc:  "math_abs",
+		ForwardFunc:  "math-abs",
 	})
 
 	// clamp: clamp a value between min and max
@@ -40,6 +40,6 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Clamp value between min and max",
-		ForwardFunc:  "math_clamp",
+		ForwardFunc:  "math-clamp",
 	})
 }

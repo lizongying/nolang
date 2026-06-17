@@ -41,9 +41,10 @@ e = 2.718281828459045
 // cos = (x f64) (res f64) {  // LLVM: @llvm.cos.f64
 // }
 
-// build-in (ForwardFunc: tan)
-// tan = (x f64) (res f64) {  // LLVM: sin/cos + fdiv
-// }
+// tan: tangent = sin/cos
+tan = (x f64) (res f64) {
+    res = sin(x) / cos(x)
+}
 
 // build-in (ForwardFunc: asin)
 // asin = (x f64) (res f64) {  // LLVM: @llvm.asin.f64
