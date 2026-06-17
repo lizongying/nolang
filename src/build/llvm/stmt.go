@@ -1049,10 +1049,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		return
 	}
 
-	if at, ok := stmt.Type.(*parser.ArrayType); ok && at.Size != nil {
+	if at, ok := stmt.Type.(*parser.ArrayType); ok {
 		var arraySize int64
-		if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
-			arraySize = intLit.Value
+		if at.Size != nil {
+			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+				arraySize = intLit.Value
+			}
+		} else if arrLit, ok := stmt.Value.(*parser.ArrayLiteral); ok {
+			if intLit, ok := arrLit.Size.(*parser.IntegerLiteral); ok && intLit.Value > 0 {
+				arraySize = intLit.Value
+			}
 		}
 		elemType := "i64"
 		if at.Elem != nil {

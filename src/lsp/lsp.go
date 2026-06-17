@@ -4,15 +4,6 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-type jsonrpc2Error struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *jsonrpc2Error) Error() string {
-	return e.Message
-}
-
 const (
 	ProtocolVersion = 3
 
@@ -104,7 +95,7 @@ type InitializeParams struct {
 	ClientInfo            *ClientInfo            `json:"clientInfo,omitempty"`
 	Locale                string                 `json:"locale,omitempty"`
 	RootURI               *string                `json:"rootUri,omitempty"`
-	InitializationOptions *InitializeOptionsTEMP `json:"initializationOptions,omitempty"`
+	InitializationOptions interface{}            `json:"initializationOptions,omitempty"`
 	Capabilities          ClientCapabilities     `json:"capabilities"`
 	WorkspaceFolders      []WorkspaceFolder      `json:"workspaceFolders,omitempty"`
 	Trace                 string                 `json:"trace,omitempty"`
@@ -113,9 +104,6 @@ type InitializeParams struct {
 type ClientInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
-}
-
-type InitializeOptionsTEMP struct {
 }
 
 type ClientCapabilities struct {
@@ -451,12 +439,12 @@ type PublishDiagnosticsParams struct {
 }
 
 type Diagnostic struct {
-	Range    Range       `json:"range"`
-	Severity int         `json:"severity,omitempty"`
-	Code     interface{} `json:"code,omitempty"`
-	Source   string      `json:"source,omitempty"`
-	Message  string      `json:"message"`
-	Tags     []int       `json:"tags,omitempty"`
+	Range    Range          `json:"range"`
+	Severity int            `json:"severity,omitempty"`
+	Code     interface{}    `json:"code,omitempty"`
+	Source   string         `json:"source,omitempty"`
+	Message  string         `json:"message"`
+	Tags     []DiagnosticTag `json:"tags,omitempty"`
 }
 
 type DiagnosticTag int
@@ -630,7 +618,7 @@ type LogMessageParams struct {
 }
 
 type WindowShowMessageRequestParams struct {
-	_Type   int      `json:"type"`
+	Type    int      `json:"type"`
 	Message string   `json:"message"`
 	Actions []string `json:"actions,omitempty"`
 }

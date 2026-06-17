@@ -202,6 +202,14 @@ func (f *formatter) hasBlankLineBetween(prevEndLine, currStartLine int) bool {
 	return false
 }
 
+func (f *formatter) hasDocComment(stmt parser.Statement) bool {
+	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
+		doc := d.GetDoc()
+		return doc != nil && len(doc.List) > 0
+	}
+	return false
+}
+
 func (f *formatter) formatProgram(p *parser.Program) {
 	for i, stmt := range p.Statements {
 		if i > 0 {
@@ -406,11 +414,13 @@ func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 
 func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	f.formatExpression(s.Name)
-	// Render array/slice type: a [3]u16, v []u8
+	// Render array/slice type: a [3]u16, v []u8, a [?]u16
 	if at, ok := s.Type.(*parser.ArrayType); ok {
 		f.write(" [")
 		if at.Size != nil {
 			f.formatExpression(at.Size)
+		} else {
+			f.write("?") // [?] — infer size from literal
 		}
 		f.write("]")
 		// Only output element type if explicitly written (not inferred default i64)
@@ -553,7 +563,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 			} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()
@@ -640,7 +650,7 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 			} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()
@@ -909,7 +919,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()

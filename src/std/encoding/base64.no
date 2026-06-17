@@ -35,6 +35,7 @@ encode = (data []byte, n i64, table str, out str) (out-n i64) {
         i = i + 3
         j = j + 4
     }
+
     // 處理剩餘 1 或 2 位元組
     rem = n - i
     if rem == 1 {
@@ -72,6 +73,7 @@ encode-url = (data []byte, n i64, out str) (out-n i64) {
 decode = (s str, n i64, table str, out []byte) (out-n i64, ok i64) {
     ok = 1
     out-n = 0
+
     // 計算填充數
     pad-count = 0
     if n > 0 {

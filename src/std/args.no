@@ -33,6 +33,7 @@ has-flag = (flag str, flagn i64) (yes i64) {
     i = 1
     for i < n {
         get(i)(arg)
+
         // 精確比對 arg 與 flag
         matched = 1
         if flagn == 0 {
@@ -67,6 +68,7 @@ get-option = (key str, keyn i64, val str) (ok i64) {
     i = 1
     for i < n {
         get(i)(arg)
+
         // 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j = 0
@@ -115,6 +117,7 @@ get-positional = (idx i64) (val str, ok i64) {
     j = 1
     for j < n {
         get(j)(arg)
+
         // 跳過以 '-' 開頭的參數
         c0 = arg[0] & 255
         if c0 == 45 {

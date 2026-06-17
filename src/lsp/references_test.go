@@ -76,11 +76,6 @@ func TestNewReferenceParamsFalse(t *testing.T) {
 }
 
 func TestReferencesLocationKey(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	rp := NewReferencesProvider(doc, program)
-
 	loc := Location{
 		URI: "file:///test.no",
 		Range: Range{
@@ -89,18 +84,13 @@ func TestReferencesLocationKey(t *testing.T) {
 		},
 	}
 
-	key := rp.locationKey(loc)
+	key := locationKey(loc)
 	if key != "file:///test.no:0:0" {
 		t.Errorf("expected 'file:///test.no:0:0', got %q", key)
 	}
 }
 
 func TestReferencesLocationKeyDifferent(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	rp := NewReferencesProvider(doc, program)
-
 	loc := Location{
 		URI: "file:///other.no",
 		Range: Range{
@@ -109,7 +99,7 @@ func TestReferencesLocationKeyDifferent(t *testing.T) {
 		},
 	}
 
-	key := rp.locationKey(loc)
+	key := locationKey(loc)
 	if key != "file:///other.no:5:10" {
 		t.Errorf("expected 'file:///other.no:5:10', got %q", key)
 	}
@@ -118,13 +108,10 @@ func TestReferencesLocationKeyDifferent(t *testing.T) {
 func TestReferencesCollectDefinitions(t *testing.T) {
 	text := `x = 10
 y = 20`
-	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	rp := NewReferencesProvider(doc, program)
-
 	scope := newScope()
-	rp.collectDefinitions(program.Statements, scope, 2)
+	collectDefinitions(program.Statements, scope, 2)
 
 	_, found := scope.lookup("x")
 	if !found {
@@ -141,13 +128,10 @@ func TestReferencesCollectDefinitionsWithFunction(t *testing.T) {
 	text := `add = func(a, b) {
     result = a
 }`
-	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	rp := NewReferencesProvider(doc, program)
-
 	scope := newScope()
-	rp.collectDefinitions(program.Statements, scope, 5)
+	collectDefinitions(program.Statements, scope, 5)
 
 	_, found := scope.lookup("add")
 	if !found {

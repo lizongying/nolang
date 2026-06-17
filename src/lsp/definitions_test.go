@@ -82,9 +82,6 @@ add(1, 2)`
 
 func TestDefinitionGetWordAtPosition(t *testing.T) {
 	doc := createTestDocument("hello world")
-	program := createTestProgram("x = 10")
-
-	dp := NewDefinitionProvider(doc, program)
 
 	tests := []struct {
 		position Position
@@ -97,7 +94,7 @@ func TestDefinitionGetWordAtPosition(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := dp.getWordAtPosition(tt.position)
+		result := getWordAtPosition(doc.Text, tt.position)
 		if result != tt.expected {
 			t.Errorf("getWordAtPosition(%v): expected %q, got %q", tt.position, tt.expected, result)
 		}
@@ -106,10 +103,7 @@ func TestDefinitionGetWordAtPosition(t *testing.T) {
 
 func TestDefinitionGetWordAtPositionEmpty(t *testing.T) {
 	doc := createTestDocument("")
-	program := createTestProgram("x = 10")
-
-	dp := NewDefinitionProvider(doc, program)
-	result := dp.getWordAtPosition(Position{Line: 0, Character: 0})
+	result := getWordAtPosition(doc.Text, Position{Line: 0, Character: 0})
 	if result != "" {
 		t.Errorf("expected empty string, got %q", result)
 	}
@@ -117,10 +111,7 @@ func TestDefinitionGetWordAtPositionEmpty(t *testing.T) {
 
 func TestDefinitionGetWordAtPositionBeyondLine(t *testing.T) {
 	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	dp := NewDefinitionProvider(doc, program)
-	result := dp.getWordAtPosition(Position{Line: 5, Character: 0})
+	result := getWordAtPosition(doc.Text, Position{Line: 5, Character: 0})
 	if result != "" {
 		t.Errorf("expected empty string, got %q", result)
 	}
@@ -169,13 +160,10 @@ func TestDefinitionFindDefinitionNotFound(t *testing.T) {
 func TestDefinitionCollectDefinitions(t *testing.T) {
 	text := `x = 10
 y = 20`
-	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
 	scope := newScope()
-	dp.collectDefinitions(program.Statements, scope, 2)
+	collectDefinitions(program.Statements, scope, 2)
 
 	ident, found := scope.lookup("x")
 	if !found {
@@ -194,13 +182,10 @@ func TestDefinitionCollectDefinitionsFromStatement(t *testing.T) {
 	text := `add = func(a, b) {
     result = a + b
 }`
-	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
 	scope := newScope()
-	dp.collectDefinitions(program.Statements, scope, 5)
+	collectDefinitions(program.Statements, scope, 5)
 
 	ident, found := scope.lookup("add")
 	if !found {
@@ -214,13 +199,10 @@ func TestDefinitionCollectDefinitionsWithFunctionScope(t *testing.T) {
 add = func(a, b) {
     result = x + a + b
 }`
-	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
 	scope := newScope()
-	dp.collectDefinitions(program.Statements, scope, 5)
+	collectDefinitions(program.Statements, scope, 5)
 
 	ident, found := scope.lookup("x")
 	if !found {
@@ -240,11 +222,9 @@ func TestDefinitionLocationFromIdentifier(t *testing.T) {
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
-	dp := NewDefinitionProvider(doc, program)
-
 	for _, stmt := range program.Statements {
 		if letStmt, ok := stmt.(*parser.LetStatement); ok {
-			loc := dp.locationFromIdentifier(letStmt.Name)
+			loc := locationFromIdentifier(doc.Item.URI, letStmt.Name)
 			if loc.URI != "file:///test.no" {
 				t.Errorf("expected URI 'file:///test.no', got %q", loc.URI)
 			}
@@ -257,11 +237,7 @@ func TestDefinitionLocationFromIdentifier(t *testing.T) {
 }
 
 func TestDefinitionLocationFromNilIdentifier(t *testing.T) {
-	doc := createTestDocument("x = 10")
-	program := createTestProgram("x = 10")
-
-	dp := NewDefinitionProvider(doc, program)
-	loc := dp.locationFromIdentifier(nil)
+	loc := locationFromIdentifier("", nil)
 
 	if loc.URI != "" {
 		t.Errorf("expected empty URI, got %q", loc.URI)

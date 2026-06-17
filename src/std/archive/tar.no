@@ -22,6 +22,7 @@ tar-block = (idx i64) (off i64) {
 // tar-next: 跳過第 idx 個條目的 header + data，回傳下個條目偏移
 tar-next = (data []byte, idx i64) (next i64) {
     hdr = idx * 512
+
     // 讀取 size 欄位（偏移 124，8 位元組八進制）
     sz = 0
     i = 0
@@ -32,6 +33,7 @@ tar-next = (data []byte, idx i64) (next i64) {
         }
         i = i + 1
     }
+
     // data 區塊數 = (sz + 511) / 512
     blocks = (sz + 511) / 512
     if blocks < 0 {
@@ -69,6 +71,7 @@ tar-count = (data []byte) (count i64) {
 // tar-name: 讀取第 idx 個條目的檔名
 tar-name = (data []byte, idx i64) (name str) {
     hdr = idx * 512
+
     // 最多 100 字元，遇到 \0 結束
     i = 0
     for i < 100 {

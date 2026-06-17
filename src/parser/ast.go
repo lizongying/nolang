@@ -52,9 +52,14 @@ func (at *ArrayType) Pos() lexer.Position    { return posFromToken(at.Token) }
 func (at *ArrayType) EndPos() lexer.Position { return at.Elem.EndPos() }
 func (at *ArrayType) String() string {
 	if at.Size != nil {
-		return "[?]" + at.Elem.String()
+		switch s := at.Size.(type) {
+		case *IntegerLiteral:
+			return fmt.Sprintf("[%d]%s", s.Value, at.Elem.String())
+		case *Identifier:
+			return "[" + s.Value + "]" + at.Elem.String()
+		}
 	}
-	return "[]" + at.Elem.String()
+	return "[?]" + at.Elem.String()
 }
 
 type SliceType struct {

@@ -1222,9 +1222,19 @@ func buildArraySizeMap(program *parser.Program) map[string]int64 {
 func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil {
-			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
-				sizes[s.Name.Value] = intLit.Value
+		if at, ok := s.Type.(*parser.ArrayType); ok {
+			var arraySize int64
+			if at.Size != nil {
+				if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+					arraySize = intLit.Value
+				}
+			} else if arrLit, ok := s.Value.(*parser.ArrayLiteral); ok {
+				if intLit, ok := arrLit.Size.(*parser.IntegerLiteral); ok && intLit.Value > 0 {
+					arraySize = intLit.Value
+				}
+			}
+			if arraySize > 0 {
+				sizes[s.Name.Value] = arraySize
 			}
 		}
 	case *parser.FunctionDefinition:

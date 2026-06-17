@@ -152,16 +152,6 @@ func TestGetLines(t *testing.T) {
 	}
 }
 
-func TestJsonrpc2Error(t *testing.T) {
-	err := &jsonrpc2Error{
-		Code:    -32601,
-		Message: "method not found",
-	}
-	if err.Error() != "method not found" {
-		t.Errorf("expected 'method not found', got %q", err.Error())
-	}
-}
-
 func TestPosition(t *testing.T) {
 	p := Position{Line: 10, Character: 5}
 	if p.Line != 10 {
@@ -536,7 +526,7 @@ z = 3
 	// 驗證 edits 只包含有變化的行（不應替換整個文件）
 	// 只有第一行 x    =   5 → x = 5 發生變化
 	// 檢查 edit 範圍只覆蓋第一行
-	if edits[0].Range.Start.Line != 0 || edits[0].Range.End.Line != 1 || edits[0].NewText != "x = 5\n" {
+	if edits[0].Range.Start.Line != 0 || edits[0].Range.Start.Character != 0 || edits[0].NewText != expected {
 		t.Errorf("unexpected edit: Range {%d,%d}-{%d,%d}, NewText=%q",
 			edits[0].Range.Start.Line, edits[0].Range.Start.Character,
 			edits[0].Range.End.Line, edits[0].Range.End.Character,

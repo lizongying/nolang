@@ -828,6 +828,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
         sub-bytes(out, 16)
         shift-rows(out)
         mix-columns(out)
+
         // 輪金鑰 round：ek[round*16..round*16+15]
         rk-off = round * 16
         add-round-key(out, ek + rk-off)  // 需要 ek 子字串
@@ -1041,6 +1042,7 @@ sha512 = (s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, 
     T2 = S0 + Maj
     h = g; g = f; f = e; e = d + T1
     d = c; c = b; b = a; a = T1 + T2
+
     // 第 1 輪 (K1 = 0x7137449123EF65CD)
     S1 = ((e >> 14) | (e << 50)); S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
     Ch = (e & f) ^ ((MASK64 ^ e) & g)
@@ -1069,12 +1071,16 @@ x509-rsa-e = (data str, n i64, e i64) {
     //   BIT STRING (subjectPublicKey)
     // 跳過 AlgorithmIdentifier SEQUENCE
     der-skip(data, n, p, p)
+
     // 跳過 INTEGER（序號）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（簽章演算法）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（發行者）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（有效期）
     der-skip(data, n, p, p)
 }
@@ -1092,12 +1098,16 @@ x509-rsa-e = (data str, n i64, e i64) {
     //   BIT STRING (subjectPublicKey)
     // 跳過 AlgorithmIdentifier SEQUENCE
     der-skip(data, n, p, p)
+
     // 跳過 INTEGER（序號）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（簽章演算法）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（發行者）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（有效期）
     der-skip(data, n, p, p)
 }

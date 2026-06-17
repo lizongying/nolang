@@ -1433,6 +1433,11 @@ func (p *Parser) parseLetStatement() Statement {
 			sizeExpr = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			hasSize = true
 			p.nextToken()
+		} else if p.currentToken.Type == lexer.QUESTION {
+			// [?] — infer array size from literal
+			hasSize = true
+			// Size stays nil (nil means inferred)
+			p.nextToken() // skip ? → current = ]
 		}
 		// ] 關閉（無 INT 時 current 已是 ]）
 		if p.currentToken.Type == lexer.RBRACKET {
@@ -1579,7 +1584,17 @@ func (p *Parser) parseLetStatement() Statement {
 
 	// 数组上下文：将 [1, 2, 3]（SliceLiteral）转为 ArrayLiteral
 	if at, ok := stmt.Type.(*ArrayType); ok {
-		if intLit, ok := at.Size.(*IntegerLiteral); ok && intLit.Value > 0 {
+		if at.Size == nil {
+			// [?] — infer size from literal
+			if slice, ok := stmt.Value.(*SliceLiteral); ok {
+				size := int64(len(slice.Elements))
+				stmt.Value = &ArrayLiteral{
+					Token:    slice.Token,
+					Size:     &IntegerLiteral{Token: slice.Token, Value: size, Raw: "?"},
+					Elements: slice.Elements,
+				}
+			}
+		} else if intLit, ok := at.Size.(*IntegerLiteral); ok && intLit.Value > 0 {
 			if slice, ok := stmt.Value.(*SliceLiteral); ok {
 				stmt.Value = &ArrayLiteral{
 					Token:    slice.Token,
@@ -4843,13 +4858,13 @@ func buildType(typeStr string, tok lexer.Token) Type {
 		}
 		return &SliceType{Token: tok, Elem: elem}
 	}
-	// 處理 [n] 或 [ident] 前綴（陣列型別）
+	// 處理 [n] 或 [ident] 或 [?] 前綴（陣列型別）
 	if len(typeStr) > 2 && typeStr[0] == '[' {
 		end := strings.IndexByte(typeStr, ']')
 		if end > 0 {
 			sizeStr := typeStr[1:end]
 			var sizeExpr Expression
-			if sizeStr != "" {
+			if sizeStr != "" && sizeStr != "?" {
 				if val, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
 					sizeExpr = &IntegerLiteral{Token: tok, Value: val, Raw: sizeStr}
 				} else {

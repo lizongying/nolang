@@ -103,23 +103,25 @@ func isWordChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'
 }
 
-func (cp *CompletionProvider) getKeywordCompletions() []CompletionItem {
-	keywords := []struct {
-		keyword string
-		kind    int
-		detail  string
-		snippet string
-	}{
-		{"if", CompletionItemKindKeyword, "if statement", "if ${1:condition} {\n\t$0\n}"},
-		{"else", CompletionItemKindKeyword, "else statement", "else {\n\t$0\n}"},
-		{"for", CompletionItemKindKeyword, "for loop", "for ${1:condition} {\n\t$0\n}"},
-		{"break", CompletionItemKindKeyword, "break statement", "break"},
-		{"return", CompletionItemKindKeyword, "return statement", "return"},
-		{"true", CompletionItemKindKeyword, "boolean true", "true"},
-		{"false", CompletionItemKindKeyword, "boolean false", "false"},
-		{"nil", CompletionItemKindKeyword, "null value", "nil"},
-	}
+type keywordDef struct {
+	keyword string
+	kind    int
+	detail  string
+	snippet string
+}
 
+var keywords = []keywordDef{
+	{"if", CompletionItemKindKeyword, "if statement", "if ${1:condition} {\n\t$0\n}"},
+	{"else", CompletionItemKindKeyword, "else statement", "else {\n\t$0\n}"},
+	{"for", CompletionItemKindKeyword, "for loop", "for ${1:condition} {\n\t$0\n}"},
+	{"break", CompletionItemKindKeyword, "break statement", "break"},
+	{"return", CompletionItemKindKeyword, "return statement", "return"},
+	{"true", CompletionItemKindKeyword, "boolean true", "true"},
+	{"false", CompletionItemKindKeyword, "boolean false", "false"},
+	{"nil", CompletionItemKindKeyword, "null value", "nil"},
+}
+
+func (cp *CompletionProvider) getKeywordCompletions() []CompletionItem {
 	var items []CompletionItem
 	for _, kw := range keywords {
 		item := CompletionItem{
@@ -136,22 +138,6 @@ func (cp *CompletionProvider) getKeywordCompletions() []CompletionItem {
 }
 
 func (cp *CompletionProvider) getKeywordCompletionsWithFilter(filter string) []CompletionItem {
-	keywords := []struct {
-		keyword string
-		kind    int
-		detail  string
-		snippet string
-	}{
-		{"if", CompletionItemKindKeyword, "if statement", "if ${1:condition} {\n\t$0\n}"},
-		{"else", CompletionItemKindKeyword, "else statement", "else {\n\t$0\n}"},
-		{"for", CompletionItemKindKeyword, "for loop", "for ${1:condition} {\n\t$0\n}"},
-		{"break", CompletionItemKindKeyword, "break statement", "break"},
-		{"return", CompletionItemKindKeyword, "return statement", "return"},
-		{"true", CompletionItemKindKeyword, "boolean true", "true"},
-		{"false", CompletionItemKindKeyword, "boolean false", "false"},
-		{"nil", CompletionItemKindKeyword, "null value", "nil"},
-	}
-
 	var items []CompletionItem
 	for _, kw := range keywords {
 		if hasPrefixIgnoreCase(kw.keyword, filter) {

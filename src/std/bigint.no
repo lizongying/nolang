@@ -23,10 +23,13 @@ BASE = 4294967296
 
 // bigint: 任意精度整數
 bigint {
-    sign i64      // 1 = 正數或零, -1 = 負數
-    limbs []i64   // base 2^32 little-endian limbs
-    len i64       // 有效 limb 數
+    sign i64
+    limbs []i64
+    len i64
 }
+// 1 = 正數或零, -1 = 負數
+// base 2^32 little-endian limbs
+// 有效 limb 數
 
 // ═══════════════════════════════════════════════
 // 建構與初始化
@@ -463,16 +466,16 @@ pow = (a bigint, n i64, c bigint) {
     if n == 0 {
         return
     }
-    base = bigint{}
-    copy(a, base)
-    i = n
-    for i > 0 {
-        if i & 1 == 1 {
-            mul(c, base, c)
-        }
-        mul(base, base, base)
-        i = i >> 1
+    base = bigint
+}
+copy(a, base)
+i = n
+for i > 0 {
+    if i & 1 == 1 {
+        mul(c, base, c)
     }
+    mul(base, base, base)
+    i = i >> 1
 }
 
 // mod-pow: r = base^exp mod modulus
@@ -483,28 +486,28 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
         return
     }
     one(r)
-    b = bigint{}
-    copy(base, b)
-    top = exp.limbs[exp.len - 1] & MASK
-    lead = 0
-    tmp = top
-    while tmp != 0 {
-        tmp = tmp >> 1
-        lead = lead + 1
-    }
-    bits = (exp.len - 1) * 32 + lead
-    i = bits - 1
-    for i >= 0 {
-        mul(r, r, r)
+    b = bigint
+}
+copy(base, b)
+top = exp.limbs[exp.len - 1] & MASK
+lead = 0
+tmp = top
+while tmp != 0 {
+    tmp = tmp >> 1
+    lead = lead + 1
+}
+bits = (exp.len - 1) * 32 + lead
+i = bits - 1
+for i >= 0 {
+    mul(r, r, r)
+    div-mod(r, modulus, r, r)
+    e-limb = i / 32
+    e-bit = i % 32
+    if (exp.limbs[e-limb] >> e-bit) & 1 == 1 {
+        mul(r, b, r)
         div-mod(r, modulus, r, r)
-        e-limb = i / 32
-        e-bit = i % 32
-        if (exp.limbs[e-limb] >> e-bit) & 1 == 1 {
-            mul(r, b, r)
-            div-mod(r, modulus, r, r)
-        }
-        i = i - 1
     }
+    i = i - 1
 }
 
 // ═══════════════════════════════════════════════
@@ -513,23 +516,24 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
 
 // gcd: g = gcd(a, b)（歐幾里得演算法）
 gcd = (a bigint, b bigint, g bigint) {
-    x = bigint{}
-    y = bigint{}
-    copy(a, x)
-    copy(b, y)
-    x.sign = 1
-    y.sign = 1
-    is-zero(y)(yz)
-    for yz == 0 {
-        mod(x, y, x)
-        tmp = bigint{}
-        copy(y, tmp)
-        copy(x, y)
-        copy(tmp, x)
-        is-zero(y)(yz)
-    }
-    copy(x, g)
+    x = bigint
 }
+y = bigint
+
+copy(a, x)
+copy(b, y)
+x.sign = 1
+y.sign = 1
+is-zero(y)(yz)
+for yz == 0 {
+    mod(x, y, x)
+    tmp = bigint
+}
+copy(y, tmp)
+copy(x, y)
+copy(tmp, x)
+is-zero(y)(yz)
+copy(x, g)
 
 // lcm: l = lcm(a, b)
 lcm = (a bigint, b bigint, l bigint) {
@@ -644,27 +648,27 @@ to-str = (a bigint, out str) (out-n i64) {
         out[0] = 45
         out-n = 1
     }
-    tmp = bigint{}
-    copy(a, tmp)
-    tmp.sign = 1
-    buf = '(256)'
-    buf-n = 0
-    for true {
-        is-zero(tmp)(tz)
-        if tz == 1 {
-            break
-        }
-        mod-i64(tmp, 10)(d)
-        buf[buf-n] = d + 48
-        buf-n = buf-n + 1
-        div-i64(tmp, 10, tmp)
+    tmp = bigint
+}
+copy(a, tmp)
+tmp.sign = 1
+buf = '(256)'
+buf-n = 0
+for true {
+    is-zero(tmp)(tz)
+    if tz == 1 {
+        break
     }
-    j = buf-n - 1
-    for j >= 0 {
-        out[out-n] = buf[j]
-        out-n = out-n + 1
-        j = j - 1
-    }
+    mod-i64(tmp, 10)(d)
+    buf[buf-n] = d + 48
+    buf-n = buf-n + 1
+    div-i64(tmp, 10, tmp)
+}
+j = buf-n - 1
+for j >= 0 {
+    out[out-n] = buf[j]
+    out-n = out-n + 1
+    j = j - 1
 }
 
 // from-str: 從十進制字串建立 bigint
@@ -703,10 +707,10 @@ from-str = (s str, sn i64, out bigint) {
 
 // add-i64: c = a + v（小整數加法）
 add-i64 = (a bigint, v i64, c bigint) {
-    tmp = bigint{}
-    from-i64(v, tmp)
-    add(a, tmp, c)
+    tmp = bigint
 }
+from-i64(v, tmp)
+add(a, tmp, c)
 
 // ═══════════════════════════════════════════════
 // 十六進制轉換
@@ -766,6 +770,7 @@ from-hex = (s str, sn i64, out bigint) {
             pos = 1
         }
     }
+
     // 跳過 hex 前綴（0x 或 0X）
     if pos + 1 < sn {
         c0 = s[pos] & 255
@@ -776,6 +781,7 @@ from-hex = (s str, sn i64, out bigint) {
             }
         }
     }
+
     // 計算有效 hex 位數
     hex-start = pos
     hex-count = 0
@@ -794,12 +800,14 @@ from-hex = (s str, sn i64, out bigint) {
         if v < 0 {
             break
         }
+
         // 每累積 8 個 hex 位數合成一個 limb
         mul-i64(out, 16, out)
         add-i64(out, v, out)
         hex-count = hex-count + 1
         pos = pos + 1
     }
+
     normalize(out)
 }
 
