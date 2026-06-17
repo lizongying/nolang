@@ -39,13 +39,13 @@ vec-create = (n i64, val i64, out []i64) {
 }
 
 // vec-eq: 比較兩個切片的前 n 個元素是否相等
-// 返回 1=相等, 0=不相等
-[]t.eq = (a []t) (eq bool) {
-    eq = 1
+// 返回 true=相等, false=不相等
+[]t.eq = (a []t, b []t, n i64) (eq bool) {
+    eq = true
     i = 0
     for i < n {
         if a[i] != b[i] {
-            eq = 0
+            eq = false
             return
         }
         i = i + 1
@@ -164,11 +164,11 @@ vec-create = (n i64, val i64, out []i64) {
 }
 
 // []t.to-arr: 切片方法，轉為 [n]t 陣列
-[]t.to-arr = () (out ?[?]t) {
+[]t.to-arr = () (out [?]t) {
     if .len() != n {
-        out = nil
+        return
     }
     for i <- [0..n) {
-        ! out[i] = .[i]
+        out[i] = .[i]
     }
 }

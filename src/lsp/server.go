@@ -153,10 +153,14 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 		// 未使用變量檢查
 		unusedVars := nbuild.ValidateUnusedVars(ast)
 		for _, u := range unusedVars {
+			endChar := uint32(u.Column)
+			if u.EndColumn > 0 {
+				endChar = uint32(u.EndColumn)
+			}
 			diagnostic := Diagnostic{
 				Range: Range{
 					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					End:   Position{Line: uint32(u.Line - 1), Character: endChar},
 				},
 				Severity: DiagnosticSeverityHint,
 				Source:   "nolang-lint",

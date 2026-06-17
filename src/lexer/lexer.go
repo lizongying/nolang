@@ -25,7 +25,7 @@ func New(input string) *Lexer {
 	l := &Lexer{
 		input:  input,
 		line:   1,
-		column: 1,
+		column: 0,
 	}
 	l.readChar()
 	return l
@@ -60,7 +60,7 @@ func (l *Lexer) readChar() {
 	l.column++
 	if l.ch == '\n' {
 		l.line++
-		l.column = 1
+		l.column = 0
 	}
 }
 

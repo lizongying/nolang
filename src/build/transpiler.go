@@ -86,7 +86,20 @@ func callSignature(name string, params []*parser.Parameter) string {
 	return strings.Join(parts, "_")
 }
 
-// inferExprType 推斷表達式的類型字串
+// isConcreteType 檢查型別名稱是否為已知具體型別
+func isConcreteType(typeName string) bool {
+	switch typeName {
+	case "i64", "f64", "str", "bool", "char", "byte", "void":
+		return true
+	}
+	// 複合型別：切片、陣列、可空、指針
+	if strings.HasPrefix(typeName, "[]") || strings.HasPrefix(typeName, "[") ||
+		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") {
+		return true
+	}
+	return false
+}
+
 func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 	if expr == nil {
 		return ""
@@ -129,11 +142,23 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		if e.Operator == "!" {
 			return "bool"
 		}
-		return "i64"
+		// 前綴正負號傳遞內層表達式的型別
+		return inferExprType(e.Right, varTypes)
 	case *parser.DotExpression:
 		return "i64"
 	case *parser.GroupedExpression:
 		return inferExprType(e.Expression, varTypes)
+	case *parser.ConditionalExpression:
+		// 三元運算子：從兩分支推斷型別
+		consequenceType := inferExprType(e.Consequence, varTypes)
+		alternativeType := inferExprType(e.Alternative, varTypes)
+		if consequenceType == alternativeType && consequenceType != "" {
+			return consequenceType
+		}
+		if consequenceType != "" {
+			return consequenceType
+		}
+		return "i64"
 	default:
 		return "i64"
 	}
@@ -1614,9 +1639,10 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 
 // ValidateResult 型別檢查結果
 type ValidateResult struct {
-	Line    int
-	Column  int
-	Message string
+	Line      int
+	Column    int
+	EndColumn int
+	Message   string
 }
 
 // ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
@@ -1770,9 +1796,10 @@ func ValidateUnusedVars(program *parser.Program) []ValidateResult {
 		if !usedVars[name] {
 			def := topLevelVars[name]
 			results = append(results, ValidateResult{
-				Line:    def.line,
-				Column:  def.column,
-				Message: fmt.Sprintf("'%s' is defined but never used", name),
+				Line:      def.line,
+				Column:    def.column,
+				EndColumn: def.column + len(name) - 1,
+				Message:   fmt.Sprintf("'%s' is defined but never used", name),
 			})
 		}
 	}
@@ -1963,6 +1990,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 				localTypes[p.Name] = p.Type.String()
 			}
 		}
+		// 結果參數加入作用域
+		for _, p := range s.Results {
+			if p.Type != nil {
+				localTypes[p.Name] = p.Type.String()
+			}
+		}
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
 				errs := validateStmtTypes(bStmt, funcNames, localTypes)
@@ -2026,7 +2059,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 			if inferredType != "" {
 				if existingType, exists := varTypes[s.Name.Value]; exists {
 					// 變數已有型別，檢查是否相容
-					if inferredType != existingType {
+					if inferredType != existingType && isConcreteType(existingType) {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,
 							Column:  s.Token.Column,
@@ -2085,7 +2118,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes)
-						if valType != "" && valType != existingType {
+						if valType != "" && valType != existingType && isConcreteType(existingType) {
 							results = append(results, ValidateResult{
 								Line:    ident.Token.Line,
 								Column:  ident.Token.Column,

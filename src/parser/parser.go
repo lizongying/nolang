@@ -1008,6 +1008,10 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
 					paramType = "[" + p.currentToken.Literal + "]"
 					p.nextToken()
+				} else if p.currentToken.Type == lexer.QUESTION {
+					// [?] — infer array size from literal
+					paramType = "[?]"
+					p.nextToken()
 				} else {
 					paramType = "[]"
 				}
@@ -1108,6 +1112,10 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					p.nextToken()
 					if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
 						paramType = "[" + p.currentToken.Literal + "]"
+						p.nextToken()
+					} else if p.currentToken.Type == lexer.QUESTION {
+						// [?] — infer array size from literal
+						paramType = "[?]"
 						p.nextToken()
 					} else {
 						paramType = "[]"
@@ -4427,6 +4435,10 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				} else if p.currentToken.Type == lexer.IDENT {
 					paramType = "[" + p.currentToken.Literal + "]"
 					p.nextToken()
+				} else if p.currentToken.Type == lexer.QUESTION {
+					// [?] — infer array size from literal
+					paramType = "[?]"
+					p.nextToken()
 				} else {
 					paramType = "[]"
 				}
@@ -4507,7 +4519,7 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				paramToken := p.currentToken
 				p.nextToken()
 
-				// 支援 []type 切片或 [N]type 陣列作為結果類型
+				// 支援 []type 切片或 [N]type 陣列或 [?]type 陣列作為結果類型
 				paramType := ""
 				isOption := false
 				if p.currentToken.Type == lexer.QUESTION {
@@ -4521,6 +4533,10 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 						p.nextToken()
 					} else if p.currentToken.Type == lexer.IDENT {
 						paramType = "[" + p.currentToken.Literal + "]"
+						p.nextToken()
+					} else if p.currentToken.Type == lexer.QUESTION {
+						// [?] — infer array size from literal
+						paramType = "[?]"
 						p.nextToken()
 					} else {
 						paramType = "[]"

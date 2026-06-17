@@ -720,6 +720,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return capReg
 	}
 
+	if fnName == "i64-to-f64" && hasArgs {
+		a := evalArgs()
+		g.tmpIdx++
+		convReg := fmt.Sprintf("%%i64tof64.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sitofp i64 %s to double\n", g.indent(), convReg, a[0]))
+		}
+		return convReg
+	}
+
+	if fnName == "f64-to-i64" && hasArgs {
+		a := evalArgs()
+		g.tmpIdx++
+		convReg := fmt.Sprintf("%%f64toi64.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = fptosi double %s to i64\n", g.indent(), convReg, a[0]))
+		}
+		return convReg
+	}
+
 	return ""
 }
 

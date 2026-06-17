@@ -97,14 +97,16 @@ pow-i64 = (a i64, n i64) (r i64) {
 }
 
 // i64-to-f64: 整數轉浮點
-i64-to-f64 = (a i64) (r f64) {
-    r = a
-}
+// build-in (sitofp)
+// i64-to-f64 = (a i64) (r f64) {
+//     r = a
+// }
 
 // f64-to-i64: 浮點轉整數（截斷）
-f64-to-i64 = (a f64) (r i64) {
-    r = a
-}
+// build-in (fptosi)
+// f64-to-i64 = (a f64) (r i64) {
+//     r = a
+// }
 
 // i64-to-str: 整數轉字串
 i64-to-str = (a i64) (out str) {
@@ -113,12 +115,14 @@ i64-to-str = (a i64) (out str) {
         out[0] = 48
         return
     }
+
     // 處理負數
     neg = 0
     if a < 0 {
         neg = 1
         a = 0 - a
     }
+
     // 由低位到高位寫入暫存
     buf = '(20)'  // '-'
     i = 0
@@ -128,11 +132,13 @@ i64-to-str = (a i64) (out str) {
         i = i + 1
         a = a / 10
     }
+
     // 負號
     if neg == 1 {
         buf[i] = 45
         i = i + 1
     }
+
     // 反轉到 out
     n = i
     j = 0

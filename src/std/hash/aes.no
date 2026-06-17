@@ -12,7 +12,7 @@
 // 多區塊時，呼叫者自行處理模式（CBC/CTR/GCM 等）。
 
 // ─── S-box（前 16 行 × 16 列 = 256 位元組）───
-SBOX = '\x63\x7c\x77\x7b\xf2\x6b\x6f\xc5\x30\x01\x67\x2b\xfe\xd7\xab\x76' + 
+SBOX = '\x63\x7c\x77\x7b\xf2\x6b\x6f\xc5\x30\x01\x67\x2b\xfe\xd7\xab\x76' +
        '\xca\x82\xc9\x7d\xfa\x59\x47\xf0\xad\xd4\xa2\xaf\x9c\xa4\x72\xc0' +
        '\xb7\xfd\x93\x26\x36\x3f\xf7\xcc\x34\xa5\xe5\xf1\x71\xd8\x31\x15' +
        '\x04\xc7\x23\xc3\x18\x96\x05\x9a\x07\x12\x80\xe2\xeb\x27\xb2\x75' +
@@ -30,7 +30,7 @@ SBOX = '\x63\x7c\x77\x7b\xf2\x6b\x6f\xc5\x30\x01\x67\x2b\xfe\xd7\xab\x76' +
        '\x8c\xa1\x89\x0d\xbf\xe6\x42\x68\x41\x99\x2d\x0f\xb0\x54\xbb\x16'
 
 // ─── 逆 S-box ───
-INV_SBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' + 
+INV-SBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
            '\x7c\xe3\x39\x82\x9b\x2f\xff\x87\x34\x8e\x43\x44\xc4\xde\xe9\xcb' +
            '\x54\x7b\x94\x32\xa6\xc2\x23\x3d\xee\x4c\x95\x0b\x42\xfa\xc3\x4e' +
            '\x08\x2e\xa1\x66\x28\xd9\x24\xb2\x76\x5b\xa2\x49\x6d\x8b\xd1\x25' +
@@ -76,7 +76,7 @@ inv-sub-bytes = (state str, n i64) {
     i = 0
     for i < n {
         b = state[i] & 255
-        state[i] = INV_SBOX[b]
+        state[i] = INV-SBOX[b]
         i = i + 1
     }
 }
@@ -91,6 +91,7 @@ shift-rows = (state str) {
     state[5] = state[9]
     state[9] = state[13]
     state[13] = t
+
     // Row 2: state[2], state[6], state[10], state[14] → 左旋 2
     t0 = state[2]
     t1 = state[6]
@@ -98,6 +99,7 @@ shift-rows = (state str) {
     state[6] = state[14]
     state[10] = t0
     state[14] = t1
+
     // Row 3: state[3], state[7], state[11], state[15] → 左旋 3 (=右旋 1)
     t = state[15]
     state[15] = state[11]
@@ -120,6 +122,7 @@ inv-shift-rows = (state str) {
     state[6] = state[14]
     state[10] = t0
     state[14] = t1
+
     // Row 3: 右旋 3 (=左旋 1)
     t = state[3]
     state[3] = state[7]
@@ -138,12 +141,16 @@ mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
     gf-mul2(b1, a1)
     gf-mul2(b2, a2)
     gf-mul2(b3, a3)
+
     // 2*b0 + 3*b1 + b2 + b3 = 2*b0 + 2*b1 + b1 + b2 + b3 = a0 ^ (a1 ^ b1) ^ b2 ^ b3
     d0 = a0 ^ a1 ^ b1 ^ b2 ^ b3
+
     // b0 + 2*b1 + 3*b2 + b3 = b0 + 2*b1 + 2*b2 + b2 + b3 = b0 ^ a1 ^ (a2 ^ b2) ^ b3
     d1 = b0 ^ a1 ^ a2 ^ b2 ^ b3
+
     // b0 + b1 + 2*b2 + 3*b3 = b0 + b1 + 2*b2 + 2*b3 + b3 = b0 ^ b1 ^ a2 ^ (a3 ^ b3)
     d2 = b0 ^ b1 ^ a2 ^ a3 ^ b3
+
     // 3*b0 + b1 + b2 + 2*b3 = 2*b0 + b0 + b1 + b2 + 2*b3 = (a0 ^ b0) ^ b1 ^ b2 ^ a3
     d3 = a0 ^ b0 ^ b1 ^ b2 ^ a3
 }
@@ -156,18 +163,21 @@ mix-columns = (state str) {
     state[1] = d1
     state[2] = d2
     state[3] = d3
+
     // Column 1: state[4..7]
     mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255, d0, d1, d2, d3)
     state[4] = d0
     state[5] = d1
     state[6] = d2
     state[7] = d3
+
     // Column 2: state[8..11]
     mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255, d0, d1, d2, d3)
     state[8] = d0
     state[9] = d1
     state[10] = d2
     state[11] = d3
+
     // Column 3: state[12..15]
     mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255, d0, d1, d2, d3)
     state[12] = d0
@@ -194,6 +204,7 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
     gf-mul2(b3, m23)
     gf-mul2(m23, m43)
     gf-mul2(m43, m83)
+
     // 14 = 8^4^2
     // 11 = 8^2^1
     // 13 = 8^4^1
@@ -337,6 +348,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
         sub-bytes(out, 16)
         shift-rows(out)
         mix-columns(out)
+
         // 輪金鑰 round：ek[round*16..round*16+15]
         rk-off = round * 16
         add-round-key(out, ek + rk-off)  // 需要 ek 子字串

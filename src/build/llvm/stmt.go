@@ -1113,15 +1113,29 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// Coerce value to declared type if variable was already typed (e.g., a i8; a = 2)
 	if existingType, ok := g.varTypes[name]; ok && existingType != llvmType {
-		if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
-			if strings.HasPrefix(val, "%") {
-				// Register value — insert trunc instruction
+		if strings.HasPrefix(val, "%") {
+			if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
+				// int → int: trunc/zext
 				g.tmpIdx++
 				truncReg := fmt.Sprintf("%%trunc.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, llvmType, val, existingType))
 				val = truncReg
+				llvmType = existingType
+			} else if existingType == "double" && g.isIntegerLLVMType(llvmType) {
+				// int → double: sitofp
+				g.tmpIdx++
+				convReg := fmt.Sprintf("%%sitofp.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to double\n", g.indent(), convReg, llvmType, val))
+				val = convReg
+				llvmType = "double"
+			} else if g.isIntegerLLVMType(existingType) && llvmType == "double" {
+				// double → int: fptosi
+				g.tmpIdx++
+				convReg := fmt.Sprintf("%%fptosi.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = fptosi double %s to %s\n", g.indent(), convReg, val, existingType))
+				val = convReg
+				llvmType = existingType
 			}
-			llvmType = existingType
 		}
 	}
 

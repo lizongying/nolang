@@ -56,9 +56,11 @@ der-len = (data str, pos i64, len i64, adv i64) {
 der-skip = (data str, n i64, pos i64, next i64) {
     // 跳過標籤（1 位元組）
     p = pos + 1
+
     // 讀取長度
     der-len(data, p, l, adv)
     p = p + adv
+
     // 跳過值
     next = p + l
 }
@@ -77,8 +79,10 @@ x509-tbs-range = (data str, n i64, start i64, end i64) {
         end = 0
         return
     }
+
     // 跳過外層 SEQUENCE 標籤 + 長度
     der-len(data, 1, outer-len, adv)
+
     // 內層 SEQUENCE（TBSCertificate）從標籤開始
     start = 1 + adv
     der-tag(data, start, inner-tag)
@@ -100,6 +104,7 @@ x509-serial = (data str, n i64, serial i64) {
         serial = 0
         return
     }
+
     // 跳過 TBS SEQUENCE 標籤 + 長度，進入內容
     p = tbs-start + 1
     der-len(data, p, tbs-len, adv)
@@ -117,6 +122,7 @@ x509-serial = (data str, n i64, serial i64) {
         serial = 0
         return
     }
+
     // 讀取 INTEGER 長度
     der-len(data, p + 1, int-len, adv)
     if int-len > 8 {
@@ -124,6 +130,7 @@ x509-serial = (data str, n i64, serial i64) {
         serial = 0
         return
     }
+
     // 讀取序號值
     val = 0
     i = 0
@@ -146,6 +153,7 @@ x509-rsa-e = (data str, n i64, e i64) {
     }
     p = tbs-start + 1
     der-len(data, p, tbs-len, adv)
+
     // 跳過 TBS SEQUENCE 標籤 + 長度
     p = p + adv
 
@@ -154,20 +162,26 @@ x509-rsa-e = (data str, n i64, e i64) {
     if t == 160 {
         der-skip(data, n, p, p)
     }
+
     // 跳過 SEQUENCE（主體）
     der-skip(data, n, p, p)
+
     // spki-start = 跳過 SPKI 的標籤+長度，指向內容
     // SPKI 內容：
     //   SEQUENCE (AlgorithmIdentifier)
     //   BIT STRING (subjectPublicKey)
     // 跳過 AlgorithmIdentifier SEQUENCE
     der-skip(data, n, p, p)
+
     // 跳過 INTEGER（序號）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（簽章演算法）
     der-skip(data, n, p, p)
+
     // 跳過 SEQUENCE（發行者）
     der-skip(data, n, p, p)
+
     // 讀取 BIT STRING
     der-tag(data, p, t)
     if t != 48 {
@@ -175,8 +189,10 @@ x509-rsa-e = (data str, n i64, e i64) {
         return
     }
     der-skip(data, n, p, spki-start)
+
     // 跳過 SEQUENCE（有效期）
     der-skip(data, n, p, p)
+
     // 跳過 [0] EXPLICIT（版本，可選）
     der-tag(data, p, t)
     if t != 3 {
@@ -184,6 +200,7 @@ x509-rsa-e = (data str, n i64, e i64) {
         return
     }
     der-len(data, p + 1, bit-len, adv)
+
     // 跳過標籤+長度+未使用位元數（1 位元組）
     bit-pos = p + 1 + adv + 1
     bit-content-len = bit-len - 1  // 減去未使用位元數位元組
@@ -195,6 +212,7 @@ x509-rsa-e = (data str, n i64, e i64) {
         return
     }
     der-skip(data, n, bit-pos, rsa-start)
+
     // rsa-start 指向 RSAPublicKey 內容
 
     // RSAPublicKey 內容：
@@ -225,7 +243,6 @@ x509-rsa-e = (data str, n i64, e i64) {
     spki-start = spki-start  // suppress unused warning
 }
 
-
 // ─── SHA-256 憑證指紋 ─────────────────────────────────
 
 // x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋
@@ -250,11 +267,13 @@ x509-fingerprint = (data str, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5
     // 2. 附加 0x00 直到 (tbs-len + 1 + k + 8) % 64 == 0
     // 3. 附加 64-bit big-endian 位元長度
     pad-len = tbs-len + 1 + 8
+
     // 無條件進位到 64 的倍數
     rem = pad-len % 64
     if rem != 0 {
         pad-len = pad-len + 64 - rem
     }
+
     // padded 訊息的總區塊數
     num-blocks = pad-len / 64
 
@@ -429,6 +448,7 @@ x509-fingerprint = (data str, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5
             }
             wi = wi + 1
         }
+
         wi = 0
 
         // 調用內建 SHA-256 壓縮
@@ -457,6 +477,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 1 輪 (K1 = 0x71374491)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -466,6 +487,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 2 輪 (K2 = 0xB5C0FBCF)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -475,6 +497,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 3 輪 (K3 = 0xE9B5DBA5)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -484,6 +507,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 4 輪 (K4 = 0x3956C25B)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -493,6 +517,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 5 輪 (K5 = 0x59F111F1)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -502,6 +527,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 6 輪 (K6 = 0x923F82A4)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -511,6 +537,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 7 輪 (K7 = 0xAB1C5ED5)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -520,6 +547,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 8 輪 (K8 = 0xD807AA98)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -529,6 +557,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 9 輪 (K9 = 0x12835B01)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -538,6 +567,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 10 輪 (K10 = 0x243185BE)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -547,6 +577,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 11 輪 (K11 = 0x550C7DC3)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -556,6 +587,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 12 輪 (K12 = 0x72BE5D74)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -565,6 +597,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 13 輪 (K13 = 0x80DEB1FE)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -574,6 +607,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 14 輪 (K14 = 0x9BDC06A7)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -583,6 +617,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     T2 = (S0 + Maj) & MASK
     h = g; g = f; f = e; e = (d + T1) & MASK
     d = c; c = b; b = a; a = (T1 + T2) & MASK
+
     // 第 15 輪 (K15 = 0xC19BF174)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -601,6 +636,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w14 >> 17) | (w14 << 15)) & MASK; s1_r19 = ((w14 >> 19) | (w14 << 13)) & MASK; s1_sh10 = w14 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w16 = (w0 + s0 + w9 + s1) & MASK
+
     // 第 16 輪 (K16 = 0xE49B69C1)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -617,6 +653,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w15 >> 17) | (w15 << 15)) & MASK; s1_r19 = ((w15 >> 19) | (w15 << 13)) & MASK; s1_sh10 = w15 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w17 = (w1 + s0 + w10 + s1) & MASK
+
     // 第 17 輪 (K17 = 0xEFBE4786)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -633,6 +670,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w16 >> 17) | (w16 << 15)) & MASK; s1_r19 = ((w16 >> 19) | (w16 << 13)) & MASK; s1_sh10 = w16 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w18 = (w2 + s0 + w11 + s1) & MASK
+
     // 第 18 輪 (K18 = 0x0FC19DC6)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -649,6 +687,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w17 >> 17) | (w17 << 15)) & MASK; s1_r19 = ((w17 >> 19) | (w17 << 13)) & MASK; s1_sh10 = w17 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w19 = (w3 + s0 + w12 + s1) & MASK
+
     // 第 19 輪 (K19 = 0x240CA1CC)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -665,6 +704,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w18 >> 17) | (w18 << 15)) & MASK; s1_r19 = ((w18 >> 19) | (w18 << 13)) & MASK; s1_sh10 = w18 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w20 = (w4 + s0 + w13 + s1) & MASK
+
     // 第 20 輪 (K20 = 0x2DE92C6F)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -681,6 +721,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w19 >> 17) | (w19 << 15)) & MASK; s1_r19 = ((w19 >> 19) | (w19 << 13)) & MASK; s1_sh10 = w19 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w21 = (w5 + s0 + w14 + s1) & MASK
+
     // 第 21 輪 (K21 = 0x4A7484AA)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -697,6 +738,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w20 >> 17) | (w20 << 15)) & MASK; s1_r19 = ((w20 >> 19) | (w20 << 13)) & MASK; s1_sh10 = w20 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w22 = (w6 + s0 + w15 + s1) & MASK
+
     // 第 22 輪 (K22 = 0x5CB0A9DC)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -713,6 +755,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w21 >> 17) | (w21 << 15)) & MASK; s1_r19 = ((w21 >> 19) | (w21 << 13)) & MASK; s1_sh10 = w21 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w23 = (w7 + s0 + w16 + s1) & MASK
+
     // 第 23 輪 (K23 = 0x76F988DA)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -729,6 +772,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w22 >> 17) | (w22 << 15)) & MASK; s1_r19 = ((w22 >> 19) | (w22 << 13)) & MASK; s1_sh10 = w22 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w24 = (w8 + s0 + w17 + s1) & MASK
+
     // 第 24 輪 (K24 = 0x983E5152)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -745,6 +789,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w23 >> 17) | (w23 << 15)) & MASK; s1_r19 = ((w23 >> 19) | (w23 << 13)) & MASK; s1_sh10 = w23 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w25 = (w9 + s0 + w18 + s1) & MASK
+
     // 第 25 輪 (K25 = 0xA831C66D)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -761,6 +806,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w24 >> 17) | (w24 << 15)) & MASK; s1_r19 = ((w24 >> 19) | (w24 << 13)) & MASK; s1_sh10 = w24 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w26 = (w10 + s0 + w19 + s1) & MASK
+
     // 第 26 輪 (K26 = 0xB00327C8)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -777,6 +823,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w25 >> 17) | (w25 << 15)) & MASK; s1_r19 = ((w25 >> 19) | (w25 << 13)) & MASK; s1_sh10 = w25 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w27 = (w11 + s0 + w20 + s1) & MASK
+
     // 第 27 輪 (K27 = 0xBF597FC7)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -793,6 +840,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w26 >> 17) | (w26 << 15)) & MASK; s1_r19 = ((w26 >> 19) | (w26 << 13)) & MASK; s1_sh10 = w26 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w28 = (w12 + s0 + w21 + s1) & MASK
+
     // 第 28 輪 (K28 = 0xC6E00BF3)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -809,6 +857,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w27 >> 17) | (w27 << 15)) & MASK; s1_r19 = ((w27 >> 19) | (w27 << 13)) & MASK; s1_sh10 = w27 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w29 = (w13 + s0 + w22 + s1) & MASK
+
     // 第 29 輪 (K29 = 0xD5A79147)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -825,6 +874,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w28 >> 17) | (w28 << 15)) & MASK; s1_r19 = ((w28 >> 19) | (w28 << 13)) & MASK; s1_sh10 = w28 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w30 = (w14 + s0 + w23 + s1) & MASK
+
     // 第 30 輪 (K30 = 0x06CA6351)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -841,6 +891,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w29 >> 17) | (w29 << 15)) & MASK; s1_r19 = ((w29 >> 19) | (w29 << 13)) & MASK; s1_sh10 = w29 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w31 = (w15 + s0 + w24 + s1) & MASK
+
     // 第 31 輪 (K31 = 0x14292967)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -857,6 +908,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w30 >> 17) | (w30 << 15)) & MASK; s1_r19 = ((w30 >> 19) | (w30 << 13)) & MASK; s1_sh10 = w30 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w32 = (w16 + s0 + w25 + s1) & MASK
+
     // 第 32 輪 (K32 = 0x27B70A85)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -873,6 +925,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w31 >> 17) | (w31 << 15)) & MASK; s1_r19 = ((w31 >> 19) | (w31 << 13)) & MASK; s1_sh10 = w31 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w33 = (w17 + s0 + w26 + s1) & MASK
+
     // 第 33 輪 (K33 = 0x2E1B2138)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -889,6 +942,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w32 >> 17) | (w32 << 15)) & MASK; s1_r19 = ((w32 >> 19) | (w32 << 13)) & MASK; s1_sh10 = w32 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w34 = (w18 + s0 + w27 + s1) & MASK
+
     // 第 34 輪 (K34 = 0x4D2C6DFC)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -905,6 +959,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w33 >> 17) | (w33 << 15)) & MASK; s1_r19 = ((w33 >> 19) | (w33 << 13)) & MASK; s1_sh10 = w33 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w35 = (w19 + s0 + w28 + s1) & MASK
+
     // 第 35 輪 (K35 = 0x53380D13)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -921,6 +976,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w34 >> 17) | (w34 << 15)) & MASK; s1_r19 = ((w34 >> 19) | (w34 << 13)) & MASK; s1_sh10 = w34 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w36 = (w20 + s0 + w29 + s1) & MASK
+
     // 第 36 輪 (K36 = 0x650A7354)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -937,6 +993,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w35 >> 17) | (w35 << 15)) & MASK; s1_r19 = ((w35 >> 19) | (w35 << 13)) & MASK; s1_sh10 = w35 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w37 = (w21 + s0 + w30 + s1) & MASK
+
     // 第 37 輪 (K37 = 0x766A0ABB)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -953,6 +1010,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w36 >> 17) | (w36 << 15)) & MASK; s1_r19 = ((w36 >> 19) | (w36 << 13)) & MASK; s1_sh10 = w36 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w38 = (w22 + s0 + w31 + s1) & MASK
+
     // 第 38 輪 (K38 = 0x81C2C92E)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -969,6 +1027,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w37 >> 17) | (w37 << 15)) & MASK; s1_r19 = ((w37 >> 19) | (w37 << 13)) & MASK; s1_sh10 = w37 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w39 = (w23 + s0 + w32 + s1) & MASK
+
     // 第 39 輪 (K39 = 0x92722C85)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -985,6 +1044,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w38 >> 17) | (w38 << 15)) & MASK; s1_r19 = ((w38 >> 19) | (w38 << 13)) & MASK; s1_sh10 = w38 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w40 = (w24 + s0 + w33 + s1) & MASK
+
     // 第 40 輪 (K40 = 0xA2BFE8A1)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1001,6 +1061,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w39 >> 17) | (w39 << 15)) & MASK; s1_r19 = ((w39 >> 19) | (w39 << 13)) & MASK; s1_sh10 = w39 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w41 = (w25 + s0 + w34 + s1) & MASK
+
     // 第 41 輪 (K41 = 0xA81A664B)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1017,6 +1078,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w40 >> 17) | (w40 << 15)) & MASK; s1_r19 = ((w40 >> 19) | (w40 << 13)) & MASK; s1_sh10 = w40 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w42 = (w26 + s0 + w35 + s1) & MASK
+
     // 第 42 輪 (K42 = 0xC24B8B70)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1033,6 +1095,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w41 >> 17) | (w41 << 15)) & MASK; s1_r19 = ((w41 >> 19) | (w41 << 13)) & MASK; s1_sh10 = w41 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w43 = (w27 + s0 + w36 + s1) & MASK
+
     // 第 43 輪 (K43 = 0xC76C51A3)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1049,6 +1112,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w42 >> 17) | (w42 << 15)) & MASK; s1_r19 = ((w42 >> 19) | (w42 << 13)) & MASK; s1_sh10 = w42 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w44 = (w28 + s0 + w37 + s1) & MASK
+
     // 第 44 輪 (K44 = 0xD192E819)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1065,6 +1129,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w43 >> 17) | (w43 << 15)) & MASK; s1_r19 = ((w43 >> 19) | (w43 << 13)) & MASK; s1_sh10 = w43 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w45 = (w29 + s0 + w38 + s1) & MASK
+
     // 第 45 輪 (K45 = 0xD6990624)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1081,6 +1146,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w44 >> 17) | (w44 << 15)) & MASK; s1_r19 = ((w44 >> 19) | (w44 << 13)) & MASK; s1_sh10 = w44 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w46 = (w30 + s0 + w39 + s1) & MASK
+
     // 第 46 輪 (K46 = 0xF40E3585)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1097,6 +1163,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w45 >> 17) | (w45 << 15)) & MASK; s1_r19 = ((w45 >> 19) | (w45 << 13)) & MASK; s1_sh10 = w45 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w47 = (w31 + s0 + w40 + s1) & MASK
+
     // 第 47 輪 (K47 = 0x106AA070)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1113,6 +1180,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w46 >> 17) | (w46 << 15)) & MASK; s1_r19 = ((w46 >> 19) | (w46 << 13)) & MASK; s1_sh10 = w46 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w48 = (w32 + s0 + w41 + s1) & MASK
+
     // 第 48 輪 (K48 = 0x19A4C116)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1129,6 +1197,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w47 >> 17) | (w47 << 15)) & MASK; s1_r19 = ((w47 >> 19) | (w47 << 13)) & MASK; s1_sh10 = w47 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w49 = (w33 + s0 + w42 + s1) & MASK
+
     // 第 49 輪 (K49 = 0x1E376C08)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1145,6 +1214,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w48 >> 17) | (w48 << 15)) & MASK; s1_r19 = ((w48 >> 19) | (w48 << 13)) & MASK; s1_sh10 = w48 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w50 = (w34 + s0 + w43 + s1) & MASK
+
     // 第 50 輪 (K50 = 0x2748774C)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1161,6 +1231,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w49 >> 17) | (w49 << 15)) & MASK; s1_r19 = ((w49 >> 19) | (w49 << 13)) & MASK; s1_sh10 = w49 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w51 = (w35 + s0 + w44 + s1) & MASK
+
     // 第 51 輪 (K51 = 0x34B0BCB5)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1177,6 +1248,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w50 >> 17) | (w50 << 15)) & MASK; s1_r19 = ((w50 >> 19) | (w50 << 13)) & MASK; s1_sh10 = w50 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w52 = (w36 + s0 + w45 + s1) & MASK
+
     // 第 52 輪 (K52 = 0x391C0CB3)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1193,6 +1265,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w51 >> 17) | (w51 << 15)) & MASK; s1_r19 = ((w51 >> 19) | (w51 << 13)) & MASK; s1_sh10 = w51 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w53 = (w37 + s0 + w46 + s1) & MASK
+
     // 第 53 輪 (K53 = 0x4ED8AA4A)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1209,6 +1282,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w52 >> 17) | (w52 << 15)) & MASK; s1_r19 = ((w52 >> 19) | (w52 << 13)) & MASK; s1_sh10 = w52 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w54 = (w38 + s0 + w47 + s1) & MASK
+
     // 第 54 輪 (K54 = 0x5B9CCA4F)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1225,6 +1299,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w53 >> 17) | (w53 << 15)) & MASK; s1_r19 = ((w53 >> 19) | (w53 << 13)) & MASK; s1_sh10 = w53 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w55 = (w39 + s0 + w48 + s1) & MASK
+
     // 第 55 輪 (K55 = 0x682E6FF3)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1241,6 +1316,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w54 >> 17) | (w54 << 15)) & MASK; s1_r19 = ((w54 >> 19) | (w54 << 13)) & MASK; s1_sh10 = w54 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w56 = (w40 + s0 + w49 + s1) & MASK
+
     // 第 56 輪 (K56 = 0x748F82EE)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1257,6 +1333,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w55 >> 17) | (w55 << 15)) & MASK; s1_r19 = ((w55 >> 19) | (w55 << 13)) & MASK; s1_sh10 = w55 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w57 = (w41 + s0 + w50 + s1) & MASK
+
     // 第 57 輪 (K57 = 0x78A5636F)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1273,6 +1350,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w56 >> 17) | (w56 << 15)) & MASK; s1_r19 = ((w56 >> 19) | (w56 << 13)) & MASK; s1_sh10 = w56 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w58 = (w42 + s0 + w51 + s1) & MASK
+
     // 第 58 輪 (K58 = 0x84C87814)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1289,6 +1367,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w57 >> 17) | (w57 << 15)) & MASK; s1_r19 = ((w57 >> 19) | (w57 << 13)) & MASK; s1_sh10 = w57 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w59 = (w43 + s0 + w52 + s1) & MASK
+
     // 第 59 輪 (K59 = 0x8CC70208)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1305,6 +1384,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w58 >> 17) | (w58 << 15)) & MASK; s1_r19 = ((w58 >> 19) | (w58 << 13)) & MASK; s1_sh10 = w58 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w60 = (w44 + s0 + w53 + s1) & MASK
+
     // 第 60 輪 (K60 = 0x90BEFFFA)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1321,6 +1401,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w59 >> 17) | (w59 << 15)) & MASK; s1_r19 = ((w59 >> 19) | (w59 << 13)) & MASK; s1_sh10 = w59 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w61 = (w45 + s0 + w54 + s1) & MASK
+
     // 第 61 輪 (K61 = 0xA4506CEB)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1337,6 +1418,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w60 >> 17) | (w60 << 15)) & MASK; s1_r19 = ((w60 >> 19) | (w60 << 13)) & MASK; s1_sh10 = w60 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w62 = (w46 + s0 + w55 + s1) & MASK
+
     // 第 62 輪 (K62 = 0xBEF9A3F7)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)
@@ -1353,6 +1435,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     s1_r17 = ((w61 >> 17) | (w61 << 15)) & MASK; s1_r19 = ((w61 >> 19) | (w61 << 13)) & MASK; s1_sh10 = w61 >> 10
     s1 = s1_r17 ^ s1_r19 ^ s1_sh10
     w63 = (w47 + s0 + w56 + s1) & MASK
+
     // 第 63 輪 (K63 = 0xC67178F2)
     S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     Ch = (e & f) ^ ((MASK ^ e) & g)

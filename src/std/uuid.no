@@ -21,9 +21,10 @@ HEX = '0123456789abcdef'
 // ═══════════════════════════════════════════════
 
 // uuid: 128-bit 通用唯一識別碼
-uuid {
-    bytes [16]byte
-}
+uuid
+
+bytes[16]
+byte
 
 // ═══════════════════════════════════════════════
 // 生成
@@ -48,8 +49,10 @@ new-v4 = (state i64, out uuid) {
         }
         i = i + 4
     }
+
     // 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
     out.bytes[6] = (out.bytes[6] & 15) | 64
+
     // 設定變體位：byte[8] 的高 2 位 = 10 (RFC 4122)
     out.bytes[8] = (out.bytes[8] & 63) | 128
 }
@@ -62,29 +65,38 @@ new-v4 = (state i64, out uuid) {
 // 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
 to-str = (u uuid, out str) (out-n i64) {
     out-n = 36
+
     // 8-4-4-4-12 格式
     // byte 0-3 → position 0-7
     hex-byte(u.bytes[0], 0, out)
     hex-byte(u.bytes[1], 2, out)
     hex-byte(u.bytes[2], 4, out)
     hex-byte(u.bytes[3], 6, out)
+
     // 連字號
     out[8] = 45
+
     // byte 4-5 → position 9-12
     hex-byte(u.bytes[4], 9, out)
     hex-byte(u.bytes[5], 11, out)
+
     // 連字號
     out[13] = 45
+
     // byte 6-7 → position 14-17
     hex-byte(u.bytes[6], 14, out)
     hex-byte(u.bytes[7], 16, out)
+
     // 連字號
     out[18] = 45
+
     // byte 8-9 → position 19-22
     hex-byte(u.bytes[8], 19, out)
     hex-byte(u.bytes[9], 21, out)
+
     // 連字號
     out[23] = 45
+
     // byte 10-15 → position 24-35
     hex-byte(u.bytes[10], 24, out)
     hex-byte(u.bytes[11], 26, out)
@@ -141,6 +153,7 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 from-str = (s str, sn i64, out uuid) (ok i64) {
     ok = 0
     pos = 0
+
     // 跳過空白
     for pos < sn {
         c = s[pos] & 255
@@ -149,6 +162,7 @@ from-str = (s str, sn i64, out uuid) (ok i64) {
         }
         pos = pos + 1
     }
+
     // 判斷格式（帶連字號 vs 不帶）
     if sn == 36 {
         parse-with-dashes(s, pos, out)(ok)
@@ -168,6 +182,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok i64) {
     out.bytes[1] = v1
     out.bytes[2] = v2
     out.bytes[3] = v3
+
     // 跳過連字號
     if s[pos + 8] & 255 != 45 {
         ok = 0
@@ -246,14 +261,16 @@ parse-hex-byte = (s str, pos i64) (v i64) {
 // validate: 驗證 UUID 格式是否合法
 validate = (u uuid) (ok i64) {
     ok = 1
+
     // 檢查版本位（byte[6] 的 4-7 位應為 4）
     ver = (u.bytes[6] >> 4) & 15
     if ver != 4 {
         // 不強制版本，只檢查變體
     }
+
     // 檢查變體位（byte[8] 的 6-7 位應為 10）
-    variant = (u.bytes[8] >> 6) & 3
-    if variant != 2 {
+    var = (u.bytes[8] >> 6) & 3
+    if var != 2 {
         ok = 0
     }
 }

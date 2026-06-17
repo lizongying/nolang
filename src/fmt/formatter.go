@@ -18,14 +18,19 @@ type formatter struct {
 	buf         strings.Builder
 	indent      int
 	sourceLines []string // original source lines (for blank line detection)
+	column      int      // current output column (0-based)
+	stringAlign int      // alignment column for multi-line string concat continuation lines
 }
 
 func (f *formatter) writeIndent() {
-	f.buf.WriteString(strings.Repeat("    ", f.indent))
+	indent := strings.Repeat("    ", f.indent)
+	f.buf.WriteString(indent)
+	f.column = len(indent)
 }
 
 func (f *formatter) write(s string) {
 	f.buf.WriteString(s)
+	f.column += len(s)
 }
 
 func (f *formatter) writef(format string, args ...interface{}) {
@@ -439,6 +444,7 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	}
 	if s.Value != nil {
 		f.write(" = ")
+		f.stringAlign = f.column
 		// 當 ArraySize > 0 且值為 ArrayLiteral（由 [1, 2, 3] 轉換而來）
 		// 以切片風格輸出 [1, 2, 3]，避免重複 size
 		if at, ok := s.Type.(*parser.ArrayType); ok {
@@ -461,6 +467,7 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 		} else {
 			f.formatExpression(s.Value)
 		}
+		f.stringAlign = 0
 	}
 }
 
@@ -694,7 +701,13 @@ func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 	if multiLine {
 		f.write(" ")
 		f.write(e.Operator)
-		f.write("\n")
+		if f.stringAlign > 0 && e.Operator == "+" {
+			f.buf.WriteString("\n")
+			f.buf.WriteString(strings.Repeat(" ", f.stringAlign))
+			f.column = f.stringAlign
+		} else {
+			f.write("\n")
+		}
 		f.formatExpression(e.Right)
 	} else {
 		f.write(" ")
@@ -976,7 +989,9 @@ func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
 func (f *formatter) formatAssignExpression(e *parser.AssignExpression) {
 	f.formatExpression(e.Left)
 	f.write(" = ")
+	f.stringAlign = f.column
 	f.formatExpression(e.Value)
+	f.stringAlign = 0
 }
 
 func (f *formatter) formatConditionalExpression(e *parser.ConditionalExpression) {
