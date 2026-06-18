@@ -1,15 +1,22 @@
 // This is optional — if there's no ambiguity, explicit import is not needed
 // # std/math
 
+// # /src/utils.greet
+
+// 導入線上模塊
+# github.com/lizongying/nolang/test2/utils.greet
+
+print('greet:', greet())
+
 // Both calling styles are valid:
 // 1. Direct function style (always works, builtin):
 b = sin(1.0)
 
 // 2. Module.function style (works even without explicit # std/math):
-a = math.sin(1.0)
+b = math.sin(1.0)
 
 // Both produce identical LLVM IR
-print('a:', a)
+print('a:', b)
 print('b:', b)
 
 // Constants pi and e are also available:

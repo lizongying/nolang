@@ -203,6 +203,7 @@ var keywords = map[string]TokenType{
 
 	"chan": CHAN,
 	"go":   GO,
+	"use":  USE,
 }
 
 // Position represents a source position (line:col, 1-based).

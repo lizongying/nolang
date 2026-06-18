@@ -180,6 +180,48 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				}
 				diagnostics = append(diagnostics, diagnostic)
 			}
+
+			undefinedVars := nbuild.ValidateUndefinedVars(prog)
+			for _, u := range undefinedVars {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			useKeywordHints := nbuild.ValidateUseKeyword(prog)
+			for _, u := range useKeywordHints {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			stringConcatHints := nbuild.ValidateStringConcat(prog)
+			for _, u := range stringConcatHints {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
 		}
 	}
 

@@ -4749,29 +4749,19 @@ func (p *Parser) parseArgument() Expression {
 	// 根据当前令牌类型解析不同的表达式
 	switch p.currentToken.Type {
 	case lexer.STRING:
-		return p.parseStringLiteral()
+		return p.parseExpression(LOWEST)
 	case lexer.INT:
-		return p.parseIntegerLiteral()
+		return p.parseExpression(LOWEST)
 	case lexer.FLOAT:
-		return p.parseFloatLiteral()
+		return p.parseExpression(LOWEST)
 	case lexer.BYTE:
-		return p.parseByteLiteral()
+		return p.parseExpression(LOWEST)
 	case lexer.TRUE:
-		expr := &BooleanLiteral{
-			Token: p.currentToken,
-			Value: true,
-		}
-		p.nextToken()
-		return expr
+		return p.parseExpression(LOWEST)
 	case lexer.FALSE:
-		expr := &BooleanLiteral{
-			Token: p.currentToken,
-			Value: false,
-		}
-		p.nextToken()
-		return expr
+		return p.parseExpression(LOWEST)
 	case lexer.NIL:
-		return p.parseNilLiteral()
+		return p.parseExpression(LOWEST)
 	case lexer.IDENT:
 		// 使用 parseExpression 处理标识符及后续可能的点操作、函数调用、切片和中缀运算符
 		return p.parseExpression(LOWEST)

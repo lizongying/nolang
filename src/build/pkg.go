@@ -25,7 +25,9 @@ type Package struct {
 	DevDependencies map[string]string `json:"dev-dependencies,omitempty"`
 	Ignore          []string          `json:"ignore,omitempty"`
 	Alias           map[string]string `json:"alias,omitempty"`
+	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 nolang.jsonc）
 	RootDir         string            // 套件根目錄（含 nolang.jsonc）
+	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
 }
 
 // stripJSONC 移除 JSONC 中的 // 和 /* */ 註解
@@ -87,7 +89,55 @@ func stripJSONC(raw []byte) []byte {
 		out.WriteRune(ch)
 	}
 
-	return []byte(out.String())
+	// 移除物件/陣列結尾前的尾隨逗號
+	result := out.String()
+	result = removeTrailingCommas(result)
+
+	return []byte(result)
+}
+
+// removeTrailingCommas 移除 JSON 中物件/陣列結尾前的尾隨逗號
+// 例如 {"a": 1,} → {"a": 1} 或 [1, 2,] → [1, 2]
+func removeTrailingCommas(s string) string {
+	var out strings.Builder
+	inStr := false
+	runes := []rune(s)
+
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+
+		if inStr {
+			out.WriteRune(ch)
+			if ch == '"' && (i == 0 || runes[i-1] != '\\') {
+				inStr = false
+			}
+			continue
+		}
+
+		if ch == '"' {
+			inStr = true
+			out.WriteRune(ch)
+			continue
+		}
+
+		// 跳過 // 註解（防止 "key,//comment" 的情況，但這裡輸入已無註解）
+		// 移除尾隨逗號：逗號後跟空白後跟 } 或 ]
+		if ch == ',' {
+			// 向前查找，忽略空白
+			j := i + 1
+			for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t' || runes[j] == '\n' || runes[j] == '\r') {
+				j++
+			}
+			if j < len(runes) && (runes[j] == '}' || runes[j] == ']') {
+				// 跳過逗號，不寫入
+				continue
+			}
+		}
+
+		out.WriteRune(ch)
+	}
+
+	return out.String()
 }
 
 // LoadPackage 從 dir 目錄尋找並解析 nolang.jsonc
@@ -112,6 +162,14 @@ func LoadPackage(dir string) (*Package, error) {
 				return nil, fmt.Errorf("parsing %s: %w", candidate, err)
 			}
 			pkg.RootDir = root
+
+			// 解析 workspace 路徑
+			if pkg.Workspace != "" {
+				wsPath := filepath.Join(root, pkg.Workspace)
+				if absWS, err := filepath.Abs(wsPath); err == nil {
+					pkg.workspaceRoot = absWS
+				}
+			}
 
 			// 補上預設 alias
 			if pkg.Alias == nil {
@@ -152,4 +210,134 @@ func (p *Package) ResolvePath(inputPath string) string {
 
 	// 沒有匹配 alias，相對於套件根目錄
 	return filepath.Clean(filepath.Join(p.RootDir, inputPath))
+}
+
+// WorkspaceMap 表示 workspace.jsonc 解析結果
+// key 為套件短名稱，value 為相對於 workspaceRoot 的本地路徑
+type WorkspaceMap map[string]string
+
+// LoadWorkspace 載入 workspace.jsonc
+func (p *Package) LoadWorkspace() (WorkspaceMap, error) {
+	if p == nil || p.workspaceRoot == "" {
+		return nil, nil
+	}
+
+	wsFile := filepath.Join(p.workspaceRoot, "workspace.jsonc")
+	raw, err := os.ReadFile(wsFile)
+	if err != nil {
+		return nil, nil // workspace.jsonc 可選
+	}
+
+	cleaned := stripJSONC(raw)
+	var ws WorkspaceMap
+	if err := json.Unmarshal(cleaned, &ws); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+	}
+	return ws, nil
+}
+
+// matchDependency 在依賴中尋找最長前綴匹配
+// 例如 import path="github.com/lizongying/nolang/test2/utils"
+// 依賴 "github.com/lizongying/nolang/test2": "v0.1.0" 匹配
+// 返回 (依賴鍵, 版本號, 是否匹配)
+func (p *Package) matchDependency(importPath string) (string, string, bool) {
+	if p == nil || len(p.Dependencies) == 0 {
+		return "", "", false
+	}
+
+	var matchedKey string
+	var matchedVer string
+
+	for key, version := range p.Dependencies {
+		// 依賴鍵必須是 importPath 的前綴
+		// 且 importPath 中的後續部分應以 / 開頭
+		if strings.HasPrefix(importPath, key) {
+			remainder := strings.TrimPrefix(importPath, key)
+			if remainder == "" || strings.HasPrefix(remainder, "/") {
+				if len(key) > len(matchedKey) {
+					matchedKey = key
+					matchedVer = version
+				}
+			}
+		}
+	}
+
+	if matchedKey == "" {
+		return "", "", false
+	}
+	return matchedKey, matchedVer, true
+}
+
+// packageShortName 從依賴鍵中提取短名稱（最後一段）
+// "github.com/lizongying/nolang/test2" → "test2"
+func packageShortName(depKey string) string {
+	if idx := strings.LastIndex(depKey, "/"); idx >= 0 {
+		return depKey[idx+1:]
+	}
+	return depKey
+}
+
+// resolveDependency 解析依賴路徑，返回本地套件目錄
+// 先檢查 workspace.jsonc 是否有本地覆蓋，否則回退到下載
+func (p *Package) resolveDependency(importPath string) (string, error) {
+	key, version, ok := p.matchDependency(importPath)
+	if !ok {
+		return "", nil
+	}
+
+	shortName := packageShortName(key)
+
+	// 檢查 workspace.jsonc 是否有本地覆蓋
+	if p.workspaceRoot != "" {
+		ws, err := p.LoadWorkspace()
+		if err == nil && ws != nil {
+			if localPath, exists := ws[shortName]; exists {
+				localDir := filepath.Join(p.workspaceRoot, localPath)
+				if info, err := os.Stat(localDir); err == nil && info.IsDir() {
+					return filepath.Clean(localDir), nil
+				}
+			}
+		}
+	}
+
+	// 無本地覆蓋，需要下載
+	return downloadPackage(key, version)
+}
+
+// ResolveDependencyModule 解析依賴中的模組完整路徑
+// 返回模組 .no 檔案的絕對路徑
+func (p *Package) ResolveDependencyModule(importPath string) (string, error) {
+	key, _, ok := p.matchDependency(importPath)
+	if !ok {
+		return "", nil
+	}
+
+	pkgDir, err := p.resolveDependency(importPath)
+	if err != nil {
+		return "", err
+	}
+	if pkgDir == "" {
+		return "", nil
+	}
+
+	// 提取依賴鍵後面的模組路徑
+	modulePart := strings.TrimPrefix(importPath, key)
+	modulePart = strings.TrimPrefix(modulePart, "/")
+
+	if modulePart == "" {
+		return "", fmt.Errorf("no module path after dependency key %s", key)
+	}
+
+	fullPath := filepath.Join(pkgDir, modulePart) + ".no"
+	if _, err := os.Stat(fullPath); err == nil {
+		return filepath.Clean(fullPath), nil
+	}
+
+	// Fallback: try src/{module}.no
+	srcPath := filepath.Join(pkgDir, "src", modulePart) + ".no"
+	if _, err := os.Stat(srcPath); err == nil {
+		return filepath.Clean(srcPath), nil
+	}
+
+	return "", fmt.Errorf("module file not found: %s or %s", fullPath, srcPath)
 }

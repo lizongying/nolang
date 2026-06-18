@@ -331,9 +331,9 @@ func createSrcDirectory() {
 	}
 
 	content := `// Example module
-use std/fmt.println
+# std/fmt.print
 
-greet(name str) {
+greet = (name str) {
     print('Hello, ' + name)
 }
 `

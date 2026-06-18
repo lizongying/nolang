@@ -291,6 +291,18 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
 
+	// 本地模塊：/path → 相對於專案根目錄
+	if strings.HasPrefix(path, "/") {
+		relPath := strings.TrimPrefix(path, "/")
+		if t.pkg != nil {
+			fullPath := filepath.Join(t.pkg.RootDir, relPath) + ".no"
+			return t.parseFile(fullPath)
+		}
+		// 沒有套件配置，相對於當前目錄
+		filePath := relPath + ".no"
+		return t.parseFile(filePath)
+	}
+
 	// std/ 開頭 → 標準庫路徑
 	if strings.HasPrefix(path, "std/") || path == "std" {
 		// 相對於語言根目錄的 src/std/
@@ -324,6 +336,19 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			}
 		}
 		return t.parseFile(srcPath)
+	}
+
+	// 依賴解析：github.com/org/repo/...
+	if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
+		if _, _, matched := t.pkg.matchDependency(path); matched {
+			modPath, err := t.pkg.ResolveDependencyModule(path)
+			if err != nil {
+				return nil, err
+			}
+			if modPath != "" {
+				return t.parseFile(modPath)
+			}
+		}
 	}
 
 	// 非 std 路徑 → 透過 alias 解析
@@ -2080,6 +2105,490 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 	}
 }
 
+// ValidateUndefinedVars detects references to variables that are not defined.
+func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	// 1. Collect all defined names
+	definedVars := make(map[string]bool) // name → true
+	funcNames := make(map[string]bool)   // function names
+
+	// Top-level LetStatements and FunctionDefinitions
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			definedVars[ls.Name.Value] = true
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			definedVars[fd.Name] = true
+			funcNames[fd.Name] = true
+		}
+	}
+
+	// 2. Collect module names (from #use + auto-imported known std modules)
+	//    and also parse those module files for exported constants/functions.
+	moduleNames := collectModuleNames(program)
+	for _, m := range moduleNames {
+		definedVars[m] = true
+	}
+	exportedNames := collectModuleExports(program, moduleNames)
+	for _, n := range exportedNames {
+		definedVars[n] = true
+	}
+
+	// 3. Add explicitly imported function names from UseStatements
+	//    (e.g., # /src/utils.greet → defines greet())
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok && use.Function != "" {
+			definedVars[use.Function] = true
+		}
+	}
+
+	// 4. Walk statements and check for undefined references
+	for _, stmt := range program.Statements {
+		results = append(results, checkUndefinedVarsInStmt(stmt, definedVars, funcNames)...)
+	}
+
+	return results
+}
+
+// ValidateUseKeyword warns when "use" keyword is used instead of "#".
+func ValidateUseKeyword(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "use" {
+			results = append(results, ValidateResult{
+				Line:    us.Token.Line,
+				Column:  us.Token.Column,
+				Message: "'use' keyword is deprecated, use '#' instead (e.g., '# " + us.Path + "')",
+			})
+		}
+	}
+	return results
+}
+
+// ValidateStringConcat warns when "+" is used with string operands and suggests "-" instead.
+func ValidateStringConcat(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		results = append(results, checkStringConcatInStmt(stmt)...)
+	}
+	return results
+}
+
+func checkStringConcatInStmt(stmt parser.Statement) []ValidateResult {
+	var results []ValidateResult
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			results = append(results, checkStringConcatInExpr(s.Expression)...)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			results = append(results, checkStringConcatInExpr(s.Value)...)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkStringConcatInStmt(bodyStmt)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			results = append(results, checkStringConcatInStmt(bodyStmt)...)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			results = append(results, checkStringConcatInExpr(s.ReturnValue)...)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			results = append(results, checkStringConcatInStmt(s.Init)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkStringConcatInExpr(s.Condition)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkStringConcatInStmt(s.Update)...)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkStringConcatInStmt(bodyStmt)...)
+			}
+		}
+	}
+	return results
+}
+
+func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
+	var results []ValidateResult
+	switch e := expr.(type) {
+	case *parser.InfixExpression:
+		if e.Operator == "+" {
+			// Check if either operand is a string literal
+			isStrConcat := false
+			if _, ok := e.Left.(*parser.StringLiteral); ok {
+				isStrConcat = true
+			} else if _, ok := e.Right.(*parser.StringLiteral); ok {
+				isStrConcat = true
+			}
+			if isStrConcat {
+				results = append(results, ValidateResult{
+					Line:    e.Token.Line,
+					Column:  e.Token.Column,
+					Message: "string concatenation: use '-' instead of '+'",
+				})
+			}
+		}
+		// Recurse into sub-expressions
+		results = append(results, checkStringConcatInExpr(e.Left)...)
+		results = append(results, checkStringConcatInExpr(e.Right)...)
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			results = append(results, checkStringConcatInExpr(arg)...)
+		}
+	case *parser.DotExpression:
+		results = append(results, checkStringConcatInExpr(e.Receiver)...)
+	case *parser.PrefixExpression:
+		results = append(results, checkStringConcatInExpr(e.Right)...)
+	case *parser.GroupedExpression:
+		results = append(results, checkStringConcatInExpr(e.Expression)...)
+	case *parser.IndexExpression:
+		results = append(results, checkStringConcatInExpr(e.Left)...)
+		results = append(results, checkStringConcatInExpr(e.Index)...)
+	}
+	return results
+}
+
+// collectModuleNames returns all known module short names (from #use + auto-imported std modules).
+func collectModuleNames(program *parser.Program) []string {
+	seen := make(map[string]bool)
+	var names []string
+
+	for _, name := range knownStdModuleNames() {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok {
+			short := moduleShortName(use.Path)
+			if !seen[short] {
+				seen[short] = true
+				names = append(names, short)
+			}
+		}
+	}
+
+	return names
+}
+
+// ModuleExport holds an exported name and its string value from a module file.
+type ModuleExport struct {
+	Name  string
+	Value string
+}
+
+// GetModuleExports resolves module .no files and extracts their top-level
+// LetStatement names with values (for hover) and function names.
+func GetModuleExports(moduleNames []string) []ModuleExport {
+	seen := make(map[string]bool)
+	var exports []ModuleExport
+
+	for _, m := range moduleNames {
+		filePath := resolveModulePath(m)
+		if filePath == "" {
+			continue
+		}
+
+		source, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		l := lexer.New(string(source))
+		p := parser.New(l)
+		modProg := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			continue
+		}
+
+		for _, stmt := range modProg.Statements {
+			if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+				if seen[ls.Name.Value] {
+					continue
+				}
+				seen[ls.Name.Value] = true
+				val := moduleExprValue(ls.Value)
+				exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val})
+			}
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if seen[fd.Name] {
+					continue
+				}
+				seen[fd.Name] = true
+				exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
+			}
+		}
+	}
+
+	return exports
+}
+
+// moduleExprValue extracts the string representation of a module-level expression value.
+func moduleExprValue(expr parser.Expression) string {
+	if expr == nil {
+		return ""
+	}
+	switch e := expr.(type) {
+	case *parser.IntegerLiteral:
+		return fmt.Sprintf("%d", e.Value)
+	case *parser.FloatLiteral:
+		if e.Raw != "" {
+			return e.Raw
+		}
+		return fmt.Sprintf("%g", e.Value)
+	case *parser.StringLiteral:
+		return "\"" + e.Value + "\""
+	case *parser.BooleanLiteral:
+		if e.Value {
+			return "true"
+		}
+		return "false"
+	case *parser.NilLiteral:
+		return "nil"
+	default:
+		return ""
+	}
+}
+
+// collectModuleExports tries to resolve each module's .no file and extract its
+// top-level LetStatement names (constants) and function names.
+func collectModuleExports(program *parser.Program, moduleNames []string) []string {
+	exports := GetModuleExports(moduleNames)
+	var names []string
+	for _, e := range exports {
+		names = append(names, e.Name)
+	}
+	return names
+}
+
+// resolveModulePath tries to locate a .no file for the given module short name
+// (e.g., "math" → "std/math.no"), using the same fallback chain as resolveUse.
+func resolveModulePath(moduleName string) string {
+	// Try relative to CWD
+	candidates := []string{
+		"std/" + moduleName + ".no",
+		"src/std/" + moduleName + ".no",
+	}
+
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+
+	// Try binary-relative paths
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		// Binary could be at bin/nolang or vscode-nolang/server/nolang-lsp
+		relativePaths := []string{
+			filepath.Join(exeDir, "..", "src", "std", moduleName+".no"),       // bin/ → src/
+			filepath.Join(exeDir, "..", "..", "src", "std", moduleName+".no"), // vscode-nolang/server/ → src/
+		}
+		for _, c := range relativePaths {
+			if _, err := os.Stat(c); err == nil {
+				return c
+			}
+		}
+	}
+
+	return ""
+}
+
+func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[string]bool) []ValidateResult {
+	var results []ValidateResult
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
+		}
+	case *parser.LetStatement:
+		// Name is a definition, not a reference — skip it
+		if s.Value != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
+		}
+	case *parser.FunctionDefinition:
+		// Parameters are defined vars within the function
+		localDefs := make(map[string]bool)
+		for k, v := range definedVars {
+			localDefs[k] = v
+		}
+		for _, p := range s.Parameters {
+			localDefs[p.Name] = true
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames)...)
+		}
+	case *parser.ForStatement:
+		localDefs := make(map[string]bool)
+		for k, v := range definedVars {
+			localDefs[k] = v
+		}
+		if s.IterRange != nil && s.IterRange.Variable != "" {
+			localDefs[s.IterRange.Variable] = true
+		}
+		if s.Init != nil {
+			results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames)...)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
+			}
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.ReturnValue, definedVars, funcNames, false)...)
+		}
+	}
+	return results
+}
+
+func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map[string]bool, isFuncCallArg bool) []ValidateResult {
+	var results []ValidateResult
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		// Skip function call names (checked via builtin + funcNames)
+		if !definedVars[e.Value] {
+			// Check if it's a known function or builtin
+			if funcNames[e.Value] {
+				return nil
+			}
+			if builtin.FindBuiltinMethod(e.Value) != nil {
+				return nil
+			}
+			results = append(results, ValidateResult{
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: fmt.Sprintf("'%s' is not defined", e.Value),
+			})
+		}
+	case *parser.CallExpression:
+		// Function name: check as call target, not variable reference
+		if e.Function != nil {
+			// Don't pass isFuncCallArg=true for the function — the function name
+			// is checked by the Identifier case's builtin/funcName check
+			results = append(results, checkUndefinedVarsInExpr(e.Function, definedVars, funcNames, false)...)
+		}
+		for _, arg := range e.Arguments {
+			results = append(results, checkUndefinedVarsInExpr(arg, definedVars, funcNames, true)...)
+		}
+	case *parser.DotExpression:
+		// Receiver is a module/struct/type name, Property is a method/field name.
+		// Neither is a plain variable reference — skip entirely.
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+		}
+		if e.Right != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
+		}
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false)...)
+		}
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
+		}
+		if e.Consequence != nil {
+			for _, innerStmt := range e.Consequence.Statements {
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+			}
+		}
+		if e.Alternative != nil {
+			for _, innerStmt := range e.Alternative.Statements {
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+			}
+		}
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+		}
+		if e.Index != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Index, definedVars, funcNames, false)...)
+		}
+	case *parser.SliceExpression:
+		if e.Left != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+		}
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				results = append(results, checkUndefinedVarsInExpr(e.Range.Start, definedVars, funcNames, false)...)
+			}
+			if e.Range.End != nil {
+				results = append(results, checkUndefinedVarsInExpr(e.Range.End, definedVars, funcNames, false)...)
+			}
+		}
+	case *parser.AssignExpression:
+		// Left side is a target, not a reference — don't check it
+		if e.Value != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Value, definedVars, funcNames, false)...)
+		}
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
+		}
+		if e.Consequence != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Consequence, definedVars, funcNames, false)...)
+		}
+		if e.Alternative != nil {
+			results = append(results, checkUndefinedVarsInExpr(e.Alternative, definedVars, funcNames, false)...)
+		}
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
+		}
+	case *parser.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				results = append(results, checkUndefinedVarsInExpr(f.Value, definedVars, funcNames, false)...)
+			}
+		}
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			for _, innerStmt := range e.Body.Statements {
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+			}
+		}
+	}
+	return results
+}
+
 // validateStmtTypes 檢查單個語句的型別問題
 func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varTypes map[string]string) []ValidateResult {
 	var results []ValidateResult
@@ -2268,6 +2777,12 @@ func moduleShortName(path string) string {
 // DotExpression property (e.g., math.degrees() → degrees()).
 func knownStdModuleNames() []string {
 	return []string{"math"}
+}
+
+// GetKnownStdModuleNames returns the list of auto-recognized standard library
+// module short names (exported for LSP use).
+func GetKnownStdModuleNames() []string {
+	return knownStdModuleNames()
 }
 
 // resolveModuleCalls walks the program and rewrites module.fn() calls

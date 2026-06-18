@@ -2,9 +2,12 @@ package lsp
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
+	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -167,7 +170,95 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// Rebuild symbol index
 	index := NewSymbolIndex(uri, doc.Item.Version)
 	index.AddBuiltinSymbols()
+
+	// Pre-populate auto-imported module exports (e.g., pi/e from std/math)
+	// before the AST walk, so user-defined vars in main take precedence.
 	if ast != nil {
+		moduleNames := nbuild.GetKnownStdModuleNames()
+		for _, stmt := range ast.Statements {
+			if use, ok := stmt.(*parser.UseStatement); ok {
+				short := use.Path
+				if idx := strings.LastIndex(short, "/"); idx >= 0 {
+					short = short[idx+1:]
+				}
+				moduleNames = append(moduleNames, short)
+			}
+		}
+		exports := nbuild.GetModuleExports(moduleNames)
+		for _, ex := range exports {
+			if ex.Value != "" {
+				index.symbols[ex.Name] = &IndexEntry{
+					Name:  ex.Name,
+					Kind:  SymbolKindConstant,
+					Type:  "f64",
+					Value: ex.Value,
+				}
+				index.definitions[ex.Name] = index.symbols[ex.Name]
+			} else {
+				index.functions[ex.Name] = &IndexEntry{
+					Name: ex.Name,
+					Kind: SymbolKindFunction,
+					Type: "fn",
+				}
+				index.definitions[ex.Name] = index.functions[ex.Name]
+			}
+		}
+
+		// Index local module imports for go-to-definition
+		for _, stmt := range ast.Statements {
+			if use, ok := stmt.(*parser.UseStatement); ok && strings.HasPrefix(use.Path, "/") {
+				relPath := strings.TrimPrefix(use.Path, "/")
+				modFilePath := m.resolveLocalModuleFile(relPath, uri)
+				if _, err := os.Stat(modFilePath); err != nil {
+					continue
+				}
+				source, err := os.ReadFile(modFilePath)
+				if err != nil {
+					continue
+				}
+				l := lexer.New(string(source))
+				p := parser.New(l)
+				modProg := p.ParseProgram()
+				if len(p.Errors()) > 0 {
+					continue
+				}
+				modURI := "file://" + modFilePath
+				for _, ms := range modProg.Statements {
+					m.indexModuleStatement(index, ms, modURI)
+				}
+			}
+		}
+
+		// Index dependency-based module imports (e.g., github.com/org/repo/...)
+		for _, stmt := range ast.Statements {
+			if use, ok := stmt.(*parser.UseStatement); ok {
+				if strings.HasPrefix(use.Path, "/") || strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
+					continue // handled by local or std module indexing
+				}
+				modFilePath := m.resolveDependencyModuleFile(use.Path, uri)
+				if modFilePath == "" {
+					continue
+				}
+				if _, err := os.Stat(modFilePath); err != nil {
+					continue
+				}
+				source, err := os.ReadFile(modFilePath)
+				if err != nil {
+					continue
+				}
+				l := lexer.New(string(source))
+				p := parser.New(l)
+				modProg := p.ParseProgram()
+				if len(p.Errors()) > 0 {
+					continue
+				}
+				modURI := "file://" + modFilePath
+				for _, ms := range modProg.Statements {
+					m.indexModuleStatement(index, ms, modURI)
+				}
+			}
+		}
+
 		walker := NewASTWalker(index, doc, ast)
 		walker.Walk()
 	}
@@ -200,3 +291,100 @@ func (m *DocumentManager) IsDirty(uri string) bool {
 }
 
 var ErrDocumentNotFound = errors.New("document not found")
+
+// resolveLocalModuleFile resolves a local module relative path (no leading /)
+// to an absolute file path by searching for the project root (nolang.jsonc).
+func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string {
+	// Extract document directory from URI (file:///path/to/file.no)
+	docPath := strings.TrimPrefix(docURI, "file://")
+	docDir := filepath.Dir(docPath)
+
+	// Look for nolang.jsonc upward
+	root := docDir
+	for {
+		candidate := filepath.Join(root, "nolang.jsonc")
+		if _, err := os.Stat(candidate); err == nil {
+			return filepath.Join(root, relPath) + ".no"
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			break
+		}
+		root = parent
+	}
+
+	// Fallback: relative to document directory
+	return filepath.Join(docDir, relPath) + ".no"
+}
+
+// resolveDependencyModuleFile resolves a dependency-based module import path
+// (e.g., "github.com/org/repo/pkg/module") to an absolute .no file path.
+func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) string {
+	// Extract document directory from URI
+	docPath := strings.TrimPrefix(docURI, "file://")
+	docDir := filepath.Dir(docPath)
+
+	// Load Package from the document's project root
+	pkg, _ := nbuild.LoadPackage(docDir)
+	if pkg == nil {
+		return ""
+	}
+
+	// Check if this path matches a dependency
+	modPath, err := pkg.ResolveDependencyModule(usePath)
+	if err != nil || modPath == "" {
+		return ""
+	}
+	return modPath
+}
+
+// indexModuleStatement adds a FunctionDefinition or function-typed LetStatement
+// from a module file into the symbol index for go-to-definition support.
+func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.Statement, modURI string) {
+	var name string
+	var token interface{}
+
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		name = s.Name
+		token = s.Token
+	case *parser.LetStatement:
+		if s.Name != nil {
+			if _, ok := s.Value.(*parser.FunctionLiteral); ok {
+				name = s.Name.Value
+				token = s.Name.Token
+			} else {
+				return // regular variable, skip
+			}
+		} else {
+			return
+		}
+	default:
+		return
+	}
+
+	var line, column int
+	switch t := token.(type) {
+	case lexer.Token:
+		line = t.Line
+		column = t.Column
+	default:
+		return
+	}
+
+	loc := Location{
+		URI: modURI,
+		Range: Range{
+			Start: Position{Line: uint32(line - 1), Character: uint32(column - 1)},
+			End:   Position{Line: uint32(line - 1), Character: uint32(column - 1 + len(name))},
+		},
+	}
+	entry := &IndexEntry{
+		Name:     name,
+		Kind:     SymbolKindFunction,
+		Type:     "fn",
+		Location: loc,
+	}
+	index.functions[name] = entry
+	index.definitions[name] = entry
+}

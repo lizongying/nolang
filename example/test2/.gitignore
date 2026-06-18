@@ -1,0 +1,14 @@
+# Nolang project
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# vim swap
+*.sw[ponm]
+*~
+
+# OS
+.DS_Store
+Thumbs.db

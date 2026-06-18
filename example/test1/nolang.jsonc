@@ -2,15 +2,20 @@
   "name": "test1",
   "version": "0.1.0",
   "description": "A new Nolang project",
-  "keywords": [],
-  "author": "",
-  "email": "",
+  "keywords": [
+    "nolang"
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
   "organization": "",
-  "repository": "",
-  "homepage": "",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "https://github.com/lizongying/nolang",
   "license": "MIT",
-  "workspace": "",
-  "dependencies": {},
+  // 尋找../workspace.jsonc, 
+  "workspace": "../../",
+  "dependencies": {
+    "github.com/lizongying/nolang/test2": "v0.1.0",
+  },
   "compiler": {
     "version": "0.1.0",
   },
