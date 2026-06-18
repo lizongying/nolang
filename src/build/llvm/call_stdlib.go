@@ -51,7 +51,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			}
 			return g.extractStrDataPtr(sb, ptr)
 		case *parser.InfixExpression:
-			if a.Operator == "-" && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+			if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
 				ptr := g.generateStrConcat(sb, a.Left, a.Right)
 				return g.extractStrDataPtr(sb, ptr)
 			}
@@ -125,6 +125,11 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		}
 		var sb2 strings.Builder
 		for i, arg := range expr.Arguments {
+			// Skip void function call arguments (call for side effects, don't print)
+			if callExpr, ok := arg.(*parser.CallExpression); ok && !g.isNonVoidCall(callExpr) {
+				g.generateExprWithSB(sb, arg)
+				continue
+			}
 			if i > 0 {
 				fg := g.getFormatGlobal(" ")
 				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))\n%s",
@@ -620,7 +625,7 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 			dataPtr = g.extractStrDataPtr(sb, ptr)
 		}
 	case *parser.InfixExpression:
-		if a.Operator == "-" && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+		if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
 			dataPtr = g.extractStrDataPtr(sb, ptr)
 		}

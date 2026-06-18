@@ -8,6 +8,65 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// isNonVoidCall checks if a CallExpression returns a non-void type.
+func (g *Generator) isNonVoidCall(expr *parser.CallExpression) bool {
+	if ident, ok := expr.Function.(*parser.Identifier); ok {
+		if g.funcRetTypes != nil {
+			if t, ok := g.funcRetTypes[ident.Value]; ok {
+				return t != "void"
+			}
+		}
+		// Builtin methods are always non-void
+		if m := builtin.FindBuiltinMethod(ident.Value); m != nil {
+			return true
+		}
+	}
+	return true // default to non-void for unknown calls
+}
+
+// convertSmailToStr converts a %%str-smail* to a %%str* for use as function argument.
+// Returns the %%str* register name.
+func (g *Generator) convertSmailToStr(sb *strings.Builder, smailReg string) string {
+	g.tmpIdx++
+	strAlloca := fmt.Sprintf("%%str.s2s.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strAlloca))
+
+		// Extract length: load i8, mask 0x7F, zext to i64
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%s2s.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenRaw := fmt.Sprintf("%%s2s.len.raw.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenMask := fmt.Sprintf("%%s2s.len.mask.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenExt := fmt.Sprintf("%%s2s.len.ext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n", g.indent(), lenGEP, smailReg))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), lenRaw, lenGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), lenMask, lenRaw))
+		sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenExt, lenMask))
+
+		// Extract data pointer: bitcast [127 x i8]* field to i8*
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%s2s.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataCast := fmt.Sprintf("%%s2s.data.cast.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n", g.indent(), dataGEP, smailReg))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), dataCast, dataGEP))
+
+		// Store into %%str struct
+		g.tmpIdx++
+		dstLenGEP := fmt.Sprintf("%%s2s.dst.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dstDataGEP := fmt.Sprintf("%%s2s.dst.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), dstLenGEP, strAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenExt, dstLenGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dstDataGEP, strAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataCast, dstDataGEP))
+	}
+	return strAlloca
+}
+
 // generateCallArg 生成單個函數調用參數的 LLVM 表示
 func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) string {
 	switch a := arg.(type) {
@@ -34,6 +93,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		return "double* " + tmpName
 	case *parser.StringLiteral:
 		ev := g.generateExprWithSB(sb, arg)
+		if len(a.Value) <= 127 {
+			ev = g.convertSmailToStr(sb, ev)
+		}
 		return "%str* " + ev
 	case *parser.IntegerLiteral:
 		g.tmpIdx++
@@ -270,6 +332,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		case *parser.StringLiteral:
 			// String literal: generate %str struct and pass as %str*
 			ev := g.generateExprWithSB(sb, arg)
+			if len(a.Value) <= 127 {
+				// SSO string: convert %str-smail to %str for function argument
+				ev = g.convertSmailToStr(sb, ev)
+			}
 			typedArgs[i] = "%str* " + ev
 		case *parser.IntegerLiteral:
 			g.tmpIdx++

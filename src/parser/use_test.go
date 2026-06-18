@@ -12,13 +12,16 @@ func TestUseSyntax(t *testing.T) {
 		wantPath  string
 		wantFn    string
 		wantAlias string
+		wantAsKw  bool
 	}{
-		{"# std/math.add", "std/math", "add", ""},
-		{"# std/math.add a", "std/math", "add", "a"},
-		{"# github.com/utils/math.add", "github.com/utils/math", "add", ""},
-		{"# /utils/math.add", "/utils/math", "add", ""},
-		{"# fab.fib", "fab", "fib", ""},
-		{"# fmt", "fmt", "", ""},
+		{"# std/math.add", "std/math", "add", "", false},
+		{"# std/math.add a", "std/math", "add", "a", false},
+		{"# std/math.add as alias1", "std/math", "add", "alias1", true},
+		{"# github.com/utils/math.add", "github.com/utils/math", "add", "", false},
+		{"# github.com/utils/math.add as alias2", "github.com/utils/math", "add", "alias2", true},
+		{"# /utils/math.add", "/utils/math", "add", "", false},
+		{"# fab.fib", "fab", "fib", "", false},
+		{"# fmt", "fmt", "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -43,6 +46,9 @@ func TestUseSyntax(t *testing.T) {
 			}
 			if us.Alias != tt.wantAlias {
 				t.Errorf("Alias: got %q, want %q", us.Alias, tt.wantAlias)
+			}
+			if us.AsKeyword != tt.wantAsKw {
+				t.Errorf("AsKeyword: got %v, want %v", us.AsKeyword, tt.wantAsKw)
 			}
 		})
 	}

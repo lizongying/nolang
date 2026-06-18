@@ -259,6 +259,19 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 			}
 		}
 
+		// Register aliases for imported functions so that e.g.
+		// "# path.fn as alias" creates an index entry for "alias".
+		for _, stmt := range ast.Statements {
+			if use, ok := stmt.(*parser.UseStatement); ok && use.Function != "" && use.Alias != "" {
+				if entry, ok := index.functions[use.Function]; ok {
+					aliasEntry := *entry
+					aliasEntry.Name = use.Alias
+					index.functions[use.Alias] = &aliasEntry
+					index.definitions[use.Alias] = &aliasEntry
+				}
+			}
+		}
+
 		walker := NewASTWalker(index, doc, ast)
 		walker.Walk()
 	}

@@ -4,9 +4,13 @@
 // # /src/utils.greet
 
 // 導入線上模塊
-# github.com/lizongying/nolang/test2/utils.greet
+# github.com/lizongying/nolang/test2/utils.greet greet1
+# github.com/lizongying/nolang/test2/utils.greet greet2
 
-print('greet:', greet())
+// print('greet:', greet())
+greet1('World')
+greet2('World')
+print()
 
 // Both calling styles are valid:
 // 1. Direct function style (always works, builtin):

@@ -2,5 +2,5 @@
 # std/fmt.print
 
 greet = (name str) {
-    print('Hello, ' + name)
+    print('000Hello, ' + name)
 }

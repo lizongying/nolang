@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -209,6 +210,37 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
+			useAliasHints := nbuild.ValidateUseAlias(prog)
+			for _, u := range useAliasHints {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Validate URL-style import paths are declared in nolang.jsonc dependencies
+			docPath := strings.TrimPrefix(uri, "file://")
+			docDir := filepath.Dir(docPath)
+			depErrs := nbuild.ValidateDependencyImports(prog, docDir)
+			for _, u := range depErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
 			stringConcatHints := nbuild.ValidateStringConcat(prog)
 			for _, u := range stringConcatHints {
 				diagnostic := Diagnostic{
@@ -218,6 +250,20 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 					},
 					Severity: DiagnosticSeverityHint,
 					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			funcArgErrs := nbuild.ValidateFuncArgs(prog, docDir)
+			for _, u := range funcArgErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-type-checker",
 					Message:  u.Message,
 				}
 				diagnostics = append(diagnostics, diagnostic)

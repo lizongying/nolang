@@ -338,17 +338,21 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		return t.parseFile(srcPath)
 	}
 
-	// 依賴解析：github.com/org/repo/...
-	if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
-		if _, _, matched := t.pkg.matchDependency(path); matched {
-			modPath, err := t.pkg.ResolveDependencyModule(path)
-			if err != nil {
-				return nil, err
-			}
-			if modPath != "" {
-				return t.parseFile(modPath)
+	// 依賴解析：domain/org/repo/... 風格的導入路徑
+	if first := strings.SplitN(path, "/", 2)[0]; strings.Contains(first, ".") {
+		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
+			if _, _, matched := t.pkg.matchDependency(path); matched {
+				modPath, err := t.pkg.ResolveDependencyModule(path)
+				if err != nil {
+					return nil, err
+				}
+				if modPath != "" {
+					return t.parseFile(modPath)
+				}
 			}
 		}
+		// URL 風格的導入路徑但未在 dependencies 中宣告
+		return nil, fmt.Errorf("dependency not found: %q is not declared in nolang.jsonc dependencies", path)
 	}
 
 	// 非 std 路徑 → 透過 alias 解析
@@ -2136,10 +2140,15 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 	}
 
 	// 3. Add explicitly imported function names from UseStatements
-	//    (e.g., # /src/utils.greet → defines greet())
+	//    (e.g., # /src/utils.greet → defines greet();
+	//     # /src/utils.greet as myGreet → defines myGreet())
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok && use.Function != "" {
-			definedVars[use.Function] = true
+			if use.Alias != "" {
+				definedVars[use.Alias] = true
+			} else {
+				definedVars[use.Function] = true
+			}
 		}
 	}
 
@@ -2160,6 +2169,57 @@ func ValidateUseKeyword(program *parser.Program) []ValidateResult {
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: "'use' keyword is deprecated, use '#' instead (e.g., '# " + us.Path + "')",
+			})
+		}
+	}
+	return results
+}
+
+// ValidateUseAlias warns when 'as' keyword is used for import aliasing and suggests direct alias style.
+func ValidateUseAlias(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "#" && us.AsKeyword {
+			results = append(results, ValidateResult{
+				Line:    us.Token.Line,
+				Column:  us.Token.Column,
+				Message: fmt.Sprintf("use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
+			})
+		}
+	}
+	return results
+}
+
+// ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
+// are declared in nolang.jsonc dependencies. rootDir is the directory to search upward
+// from for the project's nolang.jsonc.
+func ValidateDependencyImports(program *parser.Program, rootDir string) []ValidateResult {
+	if rootDir == "" {
+		return nil
+	}
+	pkg, _ := LoadPackage(rootDir)
+	if pkg == nil || len(pkg.Dependencies) == 0 {
+		return nil
+	}
+
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		us, ok := stmt.(*parser.UseStatement)
+		if !ok {
+			continue
+		}
+		path := us.Path
+		// Check if this is a URL-style path (first segment contains ".")
+		first := strings.SplitN(path, "/", 2)[0]
+		if !strings.Contains(first, ".") {
+			continue
+		}
+		// Check if declared in dependencies
+		if _, _, matched := pkg.matchDependency(path); !matched {
+			results = append(results, ValidateResult{
+				Line:    us.Token.Line,
+				Column:  us.Token.Column,
+				Message: fmt.Sprintf("dependency not found: %q is not declared in nolang.jsonc dependencies", path),
 			})
 		}
 	}
@@ -3107,4 +3167,314 @@ func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]p
 	default:
 		return e
 	}
+}
+
+// ValidateFuncArgs checks that function call argument types match the function signature.
+// rootDir is optional — if empty, only locally defined function signatures are checked.
+// If provided, imported function signatures from module files are also resolved.
+func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
+	var results []ValidateResult
+
+	// 1. Collect local function signatures (including from resolved imports
+	//    which are already merged into the program at build time)
+	sigs := make(map[string]*funcSig)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			params := make([]paramInfo, len(fd.Parameters))
+			for i, p := range fd.Parameters {
+				t := ""
+				if p.Type != nil {
+					t = p.Type.String()
+				}
+				params[i] = paramInfo{Name: p.Name, Type: t}
+			}
+			sigs[fd.Name] = &funcSig{ParamTypes: params}
+		}
+	}
+
+	// 2. Collect imported function signatures from UseStatements
+	//    by parsing the referenced module files (when rootDir is available)
+	if rootDir != "" {
+		pkg, _ := LoadPackage(rootDir)
+		for _, stmt := range program.Statements {
+			use, ok := stmt.(*parser.UseStatement)
+			if !ok || use.Function == "" {
+				continue
+			}
+			funcName := use.Function
+			if use.Alias != "" {
+				funcName = use.Alias
+			}
+			if _, exists := sigs[funcName]; exists {
+				continue // already defined locally or via another import
+			}
+
+			modProg := resolveUseModule(use, pkg)
+			if modProg == nil {
+				continue
+			}
+			for _, ms := range modProg.Statements {
+				if fd, ok := ms.(*parser.FunctionDefinition); ok && fd.Name == use.Function {
+					params := make([]paramInfo, len(fd.Parameters))
+					for i, p := range fd.Parameters {
+						t := ""
+						if p.Type != nil {
+							t = p.Type.String()
+						}
+						params[i] = paramInfo{Name: p.Name, Type: t}
+					}
+					sigs[funcName] = &funcSig{ParamTypes: params}
+					break
+				}
+			}
+		}
+	}
+
+	// 3. Validate call expressions
+	for _, stmt := range program.Statements {
+		results = append(results, checkCallArgsInStmt(stmt, sigs)...)
+	}
+
+	return results
+}
+
+// resolveUseModule resolves a UseStatement to its module program.
+// It handles local paths (/path), std paths, and dependency paths (domain/...).
+func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
+	path := use.Path
+
+	// Local module paths (starting with /)
+	if strings.HasPrefix(path, "/") {
+		if pkg == nil {
+			return nil
+		}
+		relPath := strings.TrimPrefix(path, "/")
+		fullPath := filepath.Join(pkg.RootDir, relPath) + ".no"
+		return parseProgramFile(fullPath)
+	}
+
+	// std/ paths
+	if strings.HasPrefix(path, "std/") || path == "std" {
+		modPath := resolveModulePath(moduleShortName(path))
+		if modPath == "" {
+			return nil
+		}
+		return parseProgramFile(modPath)
+	}
+
+	// Dependency paths (domain/org/repo/...)
+	if pkg != nil {
+		modPath, err := pkg.ResolveDependencyModule(path)
+		if err == nil && modPath != "" {
+			return parseProgramFile(modPath)
+		}
+	}
+
+	return nil
+}
+
+// parseProgramFile reads and parses a .no file into a Program.
+func parseProgramFile(filePath string) *parser.Program {
+	if _, err := os.Stat(filePath); err != nil {
+		return nil
+	}
+	source, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil
+	}
+	return prog
+}
+
+type funcSig struct {
+	ParamTypes []paramInfo
+}
+
+type paramInfo struct {
+	Name string
+	Type string
+}
+
+func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig) []ValidateResult {
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			return checkCallArgsInExpr(s.Expression, sigs)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			return checkCallArgsInExpr(s.Value, sigs)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			var results []ValidateResult
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkCallArgsInStmt(bs, sigs)...)
+			}
+			return results
+		}
+	case *parser.BlockStatement:
+		var results []ValidateResult
+		for _, bs := range s.Statements {
+			results = append(results, checkCallArgsInStmt(bs, sigs)...)
+		}
+		return results
+	case *parser.ForStatement:
+		var results []ValidateResult
+		if s.Init != nil {
+			results = append(results, checkCallArgsInStmt(s.Init, sigs)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkCallArgsInExpr(s.Condition, sigs)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkCallArgsInStmt(s.Update, sigs)...)
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkCallArgsInStmt(bs, sigs)...)
+			}
+		}
+		return results
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			return checkCallArgsInExpr(s.ReturnValue, sigs)
+		}
+	}
+	return nil
+}
+
+func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []ValidateResult {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		var results []ValidateResult
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			if sig, ok := sigs[ident.Value]; ok {
+				// Check argument count
+				if len(e.Arguments) != len(sig.ParamTypes) {
+					results = append(results, ValidateResult{
+						Line:    e.Token.Line,
+						Column:  e.Token.Column,
+						Message: fmt.Sprintf("function '%s' expects %d argument(s), got %d", ident.Value, len(sig.ParamTypes), len(e.Arguments)),
+					})
+				} else {
+					// Check argument types
+					varTypes := make(map[string]string)
+					for i, arg := range e.Arguments {
+						argType := inferExprType(arg, varTypes)
+						expectedType := sig.ParamTypes[i].Type
+						if expectedType != "" && argType != "" && argType != expectedType {
+							results = append(results, ValidateResult{
+								Line:    e.Token.Line,
+								Column:  e.Token.Column,
+								Message: fmt.Sprintf("argument %d of '%s': expected '%s', got '%s'", i+1, ident.Value, expectedType, argType),
+							})
+						}
+					}
+				}
+			}
+		}
+		// Recurse into arguments for nested calls
+		for _, arg := range e.Arguments {
+			results = append(results, checkCallArgsInExpr(arg, sigs)...)
+		}
+		return results
+
+	case *parser.InfixExpression:
+		var results []ValidateResult
+		if e.Left != nil {
+			results = append(results, checkCallArgsInExpr(e.Left, sigs)...)
+		}
+		if e.Right != nil {
+			results = append(results, checkCallArgsInExpr(e.Right, sigs)...)
+		}
+		return results
+
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			return checkCallArgsInExpr(e.Right, sigs)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			return checkCallArgsInExpr(e.Expression, sigs)
+		}
+	case *parser.IfExpression:
+		var results []ValidateResult
+		if e.Condition != nil {
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs)...)
+		}
+		if e.Consequence != nil {
+			for _, is := range e.Consequence.Statements {
+				results = append(results, checkCallArgsInStmt(is, sigs)...)
+			}
+		}
+		if e.Alternative != nil {
+			for _, is := range e.Alternative.Statements {
+				results = append(results, checkCallArgsInStmt(is, sigs)...)
+			}
+		}
+		return results
+	case *parser.IndexExpression:
+		var results []ValidateResult
+		if e.Left != nil {
+			results = append(results, checkCallArgsInExpr(e.Left, sigs)...)
+		}
+		if e.Index != nil {
+			results = append(results, checkCallArgsInExpr(e.Index, sigs)...)
+		}
+		return results
+	case *parser.AssignExpression:
+		if e.Value != nil {
+			return checkCallArgsInExpr(e.Value, sigs)
+		}
+	case *parser.ConditionalExpression:
+		var results []ValidateResult
+		if e.Condition != nil {
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs)...)
+		}
+		if e.Consequence != nil {
+			results = append(results, checkCallArgsInExpr(e.Consequence, sigs)...)
+		}
+		if e.Alternative != nil {
+			results = append(results, checkCallArgsInExpr(e.Alternative, sigs)...)
+		}
+		return results
+	case *parser.ArrayLiteral:
+		var results []ValidateResult
+		for _, elem := range e.Elements {
+			results = append(results, checkCallArgsInExpr(elem, sigs)...)
+		}
+		return results
+	case *parser.SliceLiteral:
+		var results []ValidateResult
+		for _, elem := range e.Elements {
+			results = append(results, checkCallArgsInExpr(elem, sigs)...)
+		}
+		return results
+	case *parser.StructLiteral:
+		var results []ValidateResult
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				results = append(results, checkCallArgsInExpr(f.Value, sigs)...)
+			}
+		}
+		return results
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			var results []ValidateResult
+			for _, is := range e.Body.Statements {
+				results = append(results, checkCallArgsInStmt(is, sigs)...)
+			}
+			return results
+		}
+	}
+	return nil
 }

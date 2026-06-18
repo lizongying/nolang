@@ -1363,6 +1363,7 @@ func (p *Parser) parseUseStatement() Statement {
 				isFn := p.currentToken.Type == lexer.NEWLINE ||
 					p.currentToken.Type == lexer.EOF ||
 					p.currentToken.Type == lexer.IDENT ||
+					p.currentToken.Type == lexer.AS ||
 					p.currentToken.Type == lexer.RBRACE
 				p.restoreState(state)
 				// currentToken 現在恢復到 DOT
@@ -1372,9 +1373,20 @@ func (p *Parser) parseUseStatement() Statement {
 					stmt.Function = p.currentToken.Literal
 					p.nextToken() // skip funcName
 					// 可選別名
-					if p.currentToken.Type == lexer.IDENT {
-						stmt.Alias = p.currentToken.Literal
-						p.nextToken()
+					if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.AS {
+						if p.currentToken.Type == lexer.AS {
+							stmt.AsKeyword = true
+							// # module.fn as alias → skip "as" and use next IDENT
+							p.nextToken()
+							if p.currentToken.Type == lexer.IDENT {
+								stmt.Alias = p.currentToken.Literal
+								p.nextToken()
+							}
+						} else {
+							// # module.fn alias → use directly
+							stmt.Alias = p.currentToken.Literal
+							p.nextToken()
+						}
 					}
 					stmt.Path = joinPathParts(parts)
 					return stmt

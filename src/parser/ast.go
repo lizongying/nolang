@@ -175,10 +175,11 @@ func (p *Program) EndPos() lexer.Position {
 
 // use path.fn 或 use path.fn alias
 type UseStatement struct {
-	Token    lexer.Token
-	Path     string // 模組路徑（無副檔名）
-	Function string // 函數名
-	Alias    string // 可選別名（空 = 不使用別名）
+	Token     lexer.Token
+	Path      string // 模組路徑（無副檔名）
+	Function  string // 函數名
+	Alias     string // 可選別名（空 = 不使用別名）
+	AsKeyword bool   // true if alias used 'as' keyword (e.g., "# path.fn as alias")
 	CommentedNode
 }
 

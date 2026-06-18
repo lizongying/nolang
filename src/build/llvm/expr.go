@@ -137,6 +137,12 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 	case *parser.CallExpression:
 		result := g.generateCallExpression(sb, e)
 		if strings.HasPrefix(result, "call ") {
+			if strings.HasPrefix(result, "call void") {
+				if sb != nil {
+					sb.WriteString(g.indent() + result + "\n")
+				}
+				return ""
+			}
 			g.tmpIdx++
 			reg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
 			if sb != nil {
@@ -1277,6 +1283,13 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return "0"
 	case "+":
+		// String concatenation: detect if either operand is a string
+		if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+			if sb == nil {
+				return "%strconcat.null"
+			}
+			return g.generateStrConcat(sb, expr.Left, expr.Right)
+		}
 		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
 		if useDouble {
 			g.tmpIdx++
@@ -1466,7 +1479,7 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 			}
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" {
+		if e.Operator == "-" || e.Operator == "+" {
 			return g.isStringExpr(e.Left) || g.isStringExpr(e.Right)
 		}
 	}
@@ -1494,7 +1507,7 @@ func (g *Generator) getStrType(expr parser.Expression) string {
 			return t
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" {
+		if e.Operator == "-" || e.Operator == "+" {
 			return "%str" // concat results are always %str
 		}
 	}
@@ -1539,7 +1552,7 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		}
 		return "0"
 	case *parser.InfixExpression:
-		if a.Operator == "-" && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+		if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
 			return g.extractStrLen(sb, ptr)
 		}
