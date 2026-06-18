@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
 	nfmt "github.com/lizongying/nolang/fmt"
@@ -46,6 +48,9 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "version", "-V", "--version":
+		versionCommand()
+		return
 	case "init":
 		initProject()
 	case "new":
@@ -96,14 +101,14 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("Nolang - A Programming Language")
+	fmt.Printf("Nolang - A Programming Language (version %s)\n", version)
 	fmt.Println("")
 	fmt.Println("Usage:")
 	fmt.Println("Global flags:")
 	fmt.Println("  -v    Verbose mode (apply to all commands)")
+	fmt.Println("  -V    Print version")
 	fmt.Println("")
-	fmt.Println("  nolang new <name>       Create a new Nolang project")
-	fmt.Println("  nolang init             Initialize a new Nolang project in current directory")
+	fmt.Println("  nolang version           Print version information")
 	fmt.Println("")
 	fmt.Println("  nolang fmt [flags] <file|dir>  Format source files")
 	fmt.Println("    Flags:")
@@ -148,6 +153,23 @@ func printUsage() {
 
 // verbose 為全局 -v 旗標
 var verbose = false
+
+// version is injected at build time via -ldflags
+var version = "dev"
+
+// buildDate is injected at build time via -ldflags
+var buildDate = ""
+
+func versionCommand() {
+	if buildDate != "" {
+		if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
+			t := time.Unix(sec, 0).UTC()
+			fmt.Printf("version: %s(%s)\n", version, t.Format("2006-01-02 15:04:05"))
+			return
+		}
+	}
+	fmt.Printf("version: %s\n", version)
+}
 
 func initProject() {
 	dir, err := os.Getwd()
@@ -282,14 +304,13 @@ print('Hello, Nolang!')
 func createGitIgnore() {
 	content := `# Nolang project
 dist/
-*.go
-*.out
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
+
+# vim swap
+*.sw[ponm]
 *~
 
 # OS

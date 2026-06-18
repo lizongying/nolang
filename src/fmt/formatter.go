@@ -166,8 +166,18 @@ func (f *formatter) formatDocComments(doc *parser.CommentGroup) {
 				f.newline()
 			}
 		}
-		f.write("//")
-		f.write(c.Text)
+		text := c.Text
+		if strings.TrimSpace(text) == "" {
+			f.write("//")
+		} else if text[0] != ' ' {
+			// Missing space after // — add one
+			f.write("// ")
+			f.write(text)
+		} else {
+			// Already has space — preserve as-is
+			f.write("//")
+			f.write(text)
+		}
 	}
 }
 

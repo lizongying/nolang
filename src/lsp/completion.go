@@ -70,6 +70,7 @@ func getTriggerType(trigger string) TriggerType {
 func (cp *CompletionProvider) getAllCompletions(position Position) []CompletionItem {
 	var items []CompletionItem
 	items = append(items, cp.getKeywordCompletions()...)
+	items = append(items, cp.getTypeCompletions()...)
 	items = append(items, cp.getIdentifierCompletions(position)...)
 	return items
 }
@@ -81,6 +82,7 @@ func (cp *CompletionProvider) getWordBasedCompletions(position Position) []Compl
 	}
 	var items []CompletionItem
 	items = append(items, cp.getKeywordCompletionsWithFilter(word)...)
+	items = append(items, cp.getTypeCompletionsWithFilter(word)...)
 	items = append(items, cp.getIdentifierCompletionsWithFilter(position, word)...)
 	return items
 }
@@ -116,6 +118,57 @@ func (cp *CompletionProvider) getKeywordCompletionsWithFilter(filter string) []C
 				InsertTextFormat: InsertTextFormatSnippet,
 			}
 			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// builtinTypes lists all Nolang built-in type names.
+var builtinTypes = []struct {
+	name   string
+	detail string
+}{
+	{"i8", "signed 8-bit integer"},
+	{"i16", "signed 16-bit integer"},
+	{"i32", "signed 32-bit integer"},
+	{"i64", "signed 64-bit integer"},
+	{"u8", "unsigned 8-bit integer"},
+	{"u16", "unsigned 16-bit integer"},
+	{"u32", "unsigned 32-bit integer"},
+	{"u64", "unsigned 64-bit integer"},
+	{"f32", "32-bit float"},
+	{"f64", "64-bit float"},
+	{"byte", "byte (uint8)"},
+	{"char", "unicode character"},
+	{"str", "string"},
+	{"bool", "boolean"},
+	{"ptr", "pointer"},
+	{"err", "error"},
+	{"bigint", "big integer"},
+	{"void", "void type"},
+}
+
+func (cp *CompletionProvider) getTypeCompletions() []CompletionItem {
+	var items []CompletionItem
+	for _, t := range builtinTypes {
+		items = append(items, CompletionItem{
+			Label:  t.name,
+			Kind:   CompletionItemKindTypeParameter,
+			Detail: t.detail,
+		})
+	}
+	return items
+}
+
+func (cp *CompletionProvider) getTypeCompletionsWithFilter(filter string) []CompletionItem {
+	var items []CompletionItem
+	for _, t := range builtinTypes {
+		if hasPrefixIgnoreCase(t.name, filter) {
+			items = append(items, CompletionItem{
+				Label:  t.name,
+				Kind:   CompletionItemKindTypeParameter,
+				Detail: t.detail,
+			})
 		}
 	}
 	return items
@@ -298,16 +351,7 @@ func (cp *CompletionProvider) getMethodsForType(typeName string) []CompletionIte
 
 func (cp *CompletionProvider) getCompletionsAfterColon(position Position) []CompletionItem {
 	var items []CompletionItem
-	typeNames := []struct {
-		name   string
-		detail string
-	}{
-		{"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
-		{"u8", "uint8"}, {"u16", "uint16"}, {"u32", "uint32"}, {"u64", "uint64"},
-		{"f32", "float32"}, {"f64", "float64"},
-		{"byte", "byte"}, {"char", "char"}, {"str", "string"}, {"bool", "boolean"},
-	}
-	for _, t := range typeNames {
+	for _, t := range builtinTypes {
 		items = append(items, CompletionItem{
 			Label:  t.name,
 			Kind:   CompletionItemKindTypeParameter,
@@ -376,39 +420,81 @@ func (cp *CompletionProvider) ResolveCompletionItem(item CompletionItem) Complet
 	return item
 }
 
-// getModuleBuiltinCompletions returns completions for module-like prefixes
+// getModuleBuiltinCompletions returns completions for module-like prefixes.
+// It builds the mapping from:
+// 1. Builtin methods whose MethodName contains "-" (e.g. "str-index" → module "str", name "str-index")
+// 2. Builtin methods whose ForwardFunc contains "-" (e.g. ForwardFunc "math-max" → module "math", name "max")
 func getModuleBuiltinCompletions() map[string][]SymbolInfo {
 	result := make(map[string][]SymbolInfo)
 	seen := make(map[string]map[string]bool)
 
 	for _, m := range builtin.BuiltinMethodList {
-		parts := strings.SplitN(m.MethodName, "-", 2)
-		if len(parts) < 2 {
+		module := ""
+
+		// Try MethodName: "str-index" → module "str"
+		if parts := strings.SplitN(m.MethodName, "-", 2); len(parts) >= 2 {
+			module = parts[0]
+		}
+
+		// Try ForwardFunc: "math-max" → module "math"
+		if module == "" && m.ForwardFunc != "" {
+			if parts := strings.SplitN(m.ForwardFunc, "-", 2); len(parts) >= 2 {
+				module = parts[0]
+			}
+		}
+
+		if module == "" {
 			continue
 		}
-		module := parts[0]
+
 		if seen[module] == nil {
 			seen[module] = make(map[string]bool)
 		}
-		if seen[module][m.MethodName] {
+
+		// Use bare method name (without module prefix) as the completion label
+		label := m.MethodName
+		if seen[module][label] {
 			continue
 		}
-		seen[module][m.MethodName] = true
+		seen[module][label] = true
+
 		result[module] = append(result[module], SymbolInfo{
-			Name:   m.MethodName,
+			Name:   label,
 			Kind:   CompletionItemKindFunction,
 			Detail: m.Doc,
 		})
 	}
 
-	// Add common module-like prefixes
-	result["fmt"] = append(result["fmt"],
-		SymbolInfo{Name: "println", Kind: CompletionItemKindFunction, Detail: "Print with newline"},
-		SymbolInfo{Name: "print", Kind: CompletionItemKindFunction, Detail: "Print without newline"},
-		SymbolInfo{Name: "printf", Kind: CompletionItemKindFunction, Detail: "Formatted print"},
-	)
+	// Also include manually-defined std module functions from ast FunctionDefinitions
+	// These are discovered via the document's import statements and resolved at runtime.
+	// For now, known std modules are handled above.
 
 	return result
+}
+
+// getImportedModulesFromText extracts imported module short names from document text.
+// It scans for # patterns like "# std/math" → "math", "# fmt" → "fmt".
+func getImportedModulesFromText(text string) []string {
+	lines := getLines(text)
+	var modules []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Strip # prefix
+		rest := strings.TrimSpace(trimmed[1:])
+		if rest == "" {
+			continue
+		}
+		// Extract last path segment
+		if idx := strings.LastIndex(rest, "/"); idx >= 0 {
+			modules = append(modules, rest[idx+1:])
+		} else {
+			modules = append(modules, rest)
+		}
+	}
+	return modules
 }
 
 type keywordDef struct {

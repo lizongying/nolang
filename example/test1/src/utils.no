@@ -1,0 +1,6 @@
+// Example module
+use std/fmt.println
+
+greet(name str) {
+    print('Hello, ' + name)
+}

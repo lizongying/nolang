@@ -407,13 +407,33 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 自動 enter/leave：插入作用域生命週期調用
 	injectEnterLeave(program)
 
+	// 收集導入的模塊短名稱，用於後續的 module.fn() → fn() 重寫
+	var importedModules []string
+	// 預填充已知 std 模塊短名稱，允許 math.degrees() 等呼叫無需顯式導入
+	// 如果變量名與模塊名衝突，跳過自動添加以避免歧義
+	for _, name := range knownStdModuleNames() {
+		if _, isVar := varTypes[name]; !isVar {
+			importedModules = append(importedModules, name)
+		}
+	}
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok {
+			importedModules = append(importedModules, moduleShortName(use.Path))
+		}
+	}
+
 	// 處理 use 陳述句：載入模組並合併函數定義
 	merged := &parser.Program{Statements: []parser.Statement{}}
+	// 記錄已顯式導入的模組路徑，避免重複載入
+	explicitStdModules := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
 			modProg, err := t.resolveUse(use)
 			if err != nil {
 				return "", fmt.Errorf("loading module %s: %w", use.Path, err)
+			}
+			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
+				explicitStdModules[use.Path] = true
 			}
 			// 將模組中的 FunctionDefinition 加入 merged
 			for _, ms := range modProg.Statements {
@@ -427,6 +447,32 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			merged.Statements = append(merged.Statements, stmt)
 		}
 	}
+
+	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
+	for _, name := range knownStdModuleNames() {
+		// 如果變量名與模塊名衝突，跳過自動載入
+		if _, isVar := varTypes[name]; isVar {
+			continue
+		}
+		path := "std/" + name
+		if explicitStdModules[path] {
+			continue
+		}
+		use := &parser.UseStatement{Path: path, Function: ""}
+		modProg, err := t.resolveUse(use)
+		if err != nil {
+			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
+		}
+		for _, ms := range modProg.Statements {
+			if _, ok := ms.(*parser.FunctionDefinition); ok {
+				merged.Statements = append(merged.Statements, ms)
+			}
+		}
+	}
+
+	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
+	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
+	resolveModuleCalls(merged, importedModules)
 
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
 	monomorphizeGenerics(merged, varTypes)
@@ -453,6 +499,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		merged.Statements = append(merged.Statements, stmt)
 	}
+
+	// 再次解析 module.fn() 呼叫：處理剛剛添加的頂層代碼
+	resolveModuleCalls(merged, importedModules)
 
 	return t.llvmGenerator.Generate(merged), nil
 }
@@ -2157,4 +2206,184 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 	}
 
 	return results
+}
+
+// moduleShortName extracts the last path segment as the module name.
+// "std/math" → "math", "fmt" → "fmt", "hash/md5" → "md5"
+func moduleShortName(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
+}
+
+// knownStdModuleNames returns standard library module short names that should
+// be auto-recognized for module.function() calling style without explicit imports.
+// These modules have ReceiverGlobal builtins whose MethodName matches the
+// DotExpression property (e.g., math.degrees() → degrees()).
+func knownStdModuleNames() []string {
+	return []string{"math"}
+}
+
+// resolveModuleCalls walks the program and rewrites module.fn() calls
+// where the DotExpression receiver matches an imported module name.
+func resolveModuleCalls(program *parser.Program, importedModules []string) {
+	if len(importedModules) == 0 {
+		return
+	}
+	modSet := make(map[string]bool)
+	for _, m := range importedModules {
+		modSet[m] = true
+	}
+	for _, stmt := range program.Statements {
+		resolveModuleCallsInStmt(stmt, modSet)
+	}
+}
+
+func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool) {
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			s.Value = resolveModuleCallsInExpr(s.Value, modSet)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveModuleCallsInStmt(bodyStmt, modSet)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			resolveModuleCallsInStmt(bodyStmt, modSet)
+		}
+	case *parser.ForStatement:
+		if s.Condition != nil {
+			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet)
+		}
+		if s.Init != nil {
+			resolveModuleCallsInStmt(s.Init, modSet)
+		}
+		if s.Update != nil {
+			resolveModuleCallsInStmt(s.Update, modSet)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveModuleCallsInStmt(bodyStmt, modSet)
+			}
+		}
+	}
+}
+
+func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) parser.Expression {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		// Check if this is a module.fn() call
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+				if modSet[recvIdent.Value] {
+					// Rewrite to direct function call
+					e.Function = &parser.Identifier{
+						Token: lexer.Token{Type: lexer.IDENT, Literal: dot.Property},
+						Value: dot.Property,
+					}
+				}
+			}
+		}
+		// Recurse into arguments
+		for i, arg := range e.Arguments {
+			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet)
+		}
+		return e
+
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+		}
+		if e.Right != nil {
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet)
+		}
+		return e
+
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet)
+		}
+		return e
+
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet)
+		}
+		if e.Consequence != nil {
+			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet)
+		}
+		if e.Alternative != nil {
+			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet)
+		}
+		return e
+
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet)
+		}
+		if e.Consequence != nil {
+			for _, bodyStmt := range e.Consequence.Statements {
+				resolveModuleCallsInStmt(bodyStmt, modSet)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bodyStmt := range e.Alternative.Statements {
+				resolveModuleCallsInStmt(bodyStmt, modSet)
+			}
+		}
+		return e
+
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet)
+		}
+		return e
+
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+		}
+		if e.Index != nil {
+			e.Index = resolveModuleCallsInExpr(e.Index, modSet)
+		}
+		return e
+
+	case *parser.SliceExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+		}
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet)
+			}
+			if e.Range.End != nil {
+				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet)
+			}
+		}
+		return e
+
+	case *parser.AssignExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+		}
+		if e.Value != nil {
+			e.Value = resolveModuleCallsInExpr(e.Value, modSet)
+		}
+		return e
+
+	default:
+		return e
+	}
 }

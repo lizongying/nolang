@@ -1,10 +1,13 @@
 # Nolang 構建
 
-GO      ?= go
-BINDIR  ?= bin
-SRCMOD   = src/go.mod
-CLI_BIN  = $(BINDIR)/nolang
-LSP_BIN  = vscode-nolang/server/nolang-lsp
+GO        ?= go
+BINDIR    ?= bin
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u '+%s' 2>/dev/null || echo "0")
+LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_COMMIT) -X main.buildDate=$(BUILD_DATE)"
+SRCMOD     = src/go.mod
+CLI_BIN    = $(BINDIR)/nolang
+LSP_BIN    = vscode-nolang/server/nolang-lsp
 
 .PHONY: all nolang lsp package clean help FORCE
 
@@ -19,12 +22,12 @@ $(BINDIR):
 
 # ── CLI ────────────────────────────────
 $(CLI_BIN): FORCE
-	cd src && $(GO) build -o ../$(CLI_BIN) ./cmd/cli
+	cd src && $(GO) build $(LD_FLAGS) -o ../$(CLI_BIN) ./cmd/cli
 
 # ── LSP ────────────────────────────
 $(LSP_BIN): FORCE
 	mkdir -p $(dir $@)
-	cd src && $(GO) build -o ../$@ ./cmd/lsp
+	cd src && $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 
 package: FORCE
 	$(MAKE) lsp
@@ -47,3 +50,4 @@ help:
 	@echo "環境變量："
 	@echo "  GO=go           指定 Go 編譯器（默認 go）"
 	@echo "  BINDIR=bin      指定輸出目錄（默認 bin）"
+	@echo "  LD_FLAGS=...    自定義鏈接標誌（內建注入 Git commit）"

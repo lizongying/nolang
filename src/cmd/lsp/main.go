@@ -7,9 +7,17 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"time"
 
 	"github.com/lizongying/nolang/lsp"
 )
+
+// version is injected at build time via -ldflags
+var version = "dev"
+
+// buildDate is injected at build time via -ldflags
+var buildDate = ""
 
 func main() {
 	// 定義所有可能的參數
@@ -20,14 +28,21 @@ func main() {
 	flag.Parse()
 
 	if *help {
-		fmt.Println("Nolang Language Server")
+		fmt.Println("Nolang Language Server (version " + version + ")")
 		fmt.Println("\nOptions:")
 		flag.PrintDefaults()
 		return
 	}
 
 	if *showVersion {
-		fmt.Println("nolang-lsp v0.1.0")
+		if buildDate != "" {
+			if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
+				t := time.Unix(sec, 0).UTC()
+				fmt.Printf("version: %s(%s)\n", version, t.Format("2006-01-02 15:04:05"))
+				return
+			}
+		}
+		fmt.Printf("version: %s\n", version)
 		return
 	}
 

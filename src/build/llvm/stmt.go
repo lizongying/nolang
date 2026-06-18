@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -249,6 +250,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if v.Operator == "-" && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
 			return "%str"
 		}
+		if g.isDoubleExpr(v.Left) || g.isDoubleExpr(v.Right) {
+			return "double"
+		}
 		return "i64"
 	case *parser.SliceLiteral:
 		return "%vec"
@@ -275,14 +279,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if strFns[name] {
 				return "%str"
 			}
-			f64Fns := map[string]bool{
-				"str-to-f64": true, "str-to-f32": true,
-			}
-			if f64Fns[name] {
+			// Check if the function is a builtin that returns f64
+			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
 				return "double"
 			}
 		}
 		return "i64"
+	case *parser.FloatLiteral:
+		return "double"
 	case *parser.GroupedExpression:
 		return g.varLLVMType(&parser.LetStatement{Value: v.Expression})
 	default:

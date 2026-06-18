@@ -1,0 +1,13 @@
+// This is optional — if there's no ambiguity, explicit import is not needed
+// # std/math
+
+// Both calling styles are valid:
+// 1. Direct function style (always works, builtin):
+b = sin(1.0)
+
+// 2. Module.function style (works even without explicit # std/math):
+a = math.sin(1.0)
+
+// Both produce identical LLVM IR
+print('a:', a)
+print('b:', b)

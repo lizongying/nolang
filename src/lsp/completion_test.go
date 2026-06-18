@@ -112,7 +112,7 @@ func TestGetCompletionsColonTrigger(t *testing.T) {
 
 	typeFound := false
 	for _, item := range items {
-		if item.Label == "i8" || item.Label == "float64" || item.Label == "string" || item.Label == "bool" {
+		if item.Label == "i8" || item.Label == "f64" || item.Label == "str" || item.Label == "bool" {
 			typeFound = true
 			break
 		}
@@ -442,7 +442,7 @@ func TestGetCompletionsAfterColon(t *testing.T) {
 	cp := NewCompletionProvider(doc, createTestIndex(doc, program))
 	items := cp.getCompletionsAfterColon(Position{Line: 0, Character: 2})
 
-	expected := []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "byte", "char", "str", "bool"}
+	expected := []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "byte", "char", "str", "bool", "ptr", "err", "bigint", "void"}
 	found := make(map[string]bool)
 
 	for _, item := range items {
@@ -474,6 +474,87 @@ func TestGetCompletionsAfterEquals(t *testing.T) {
 		if !found[exp] {
 			t.Errorf("expected value completion %q not found", exp)
 		}
+	}
+}
+
+func TestGetTypeCompletions(t *testing.T) {
+	doc := createTestDocument("")
+	cp := NewCompletionProvider(doc, nil)
+	items := cp.getTypeCompletions()
+
+	expectedTypes := []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+		"f32", "f64", "byte", "char", "str", "bool", "ptr", "err", "bigint", "void"}
+	found := make(map[string]bool)
+	for _, item := range items {
+		found[item.Label] = true
+	}
+	for _, exp := range expectedTypes {
+		if !found[exp] {
+			t.Errorf("expected type completion %q not found", exp)
+		}
+	}
+	if len(items) != len(expectedTypes) {
+		t.Errorf("expected %d type completions, got %d", len(expectedTypes), len(items))
+	}
+}
+
+func TestGetTypeCompletionsWithFilter(t *testing.T) {
+	doc := createTestDocument("")
+	cp := NewCompletionProvider(doc, nil)
+
+	// Typing 'i' should suggest i8, i16, i32, i64
+	items := cp.getTypeCompletionsWithFilter("i")
+	expected := []string{"i8", "i16", "i32", "i64"}
+	if len(items) != len(expected) {
+		t.Errorf("expected %d type completions for 'i', got %d: %v", len(expected), len(items), items)
+	}
+	for _, item := range items {
+		found := false
+		for _, exp := range expected {
+			if item.Label == exp {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unexpected type completion %q for filter 'i'", item.Label)
+		}
+	}
+
+	// Typing 'u' should suggest u8, u16, u32, u64
+	items = cp.getTypeCompletionsWithFilter("u")
+	if len(items) != 4 {
+		t.Errorf("expected 4 type completions for 'u', got %d: %v", len(items), items)
+	}
+
+	// Typing 'f' should suggest f32, f64
+	items = cp.getTypeCompletionsWithFilter("f")
+	if len(items) != 2 {
+		t.Errorf("expected 2 type completions for 'f', got %d: %v", len(items), items)
+	}
+
+	// Typing 'str' should suggest str
+	items = cp.getTypeCompletionsWithFilter("str")
+	if len(items) != 1 || items[0].Label != "str" {
+		t.Errorf("expected 1 type completion 'str' for 'str', got %v", items)
+	}
+}
+
+func TestWordBasedCompletionsIncludesTypes(t *testing.T) {
+	doc := createTestDocument("")
+	cp := NewCompletionProvider(doc, nil)
+
+	// When typing 'i' at position 1 (the 'i'), word-based completions should include type names
+	items := cp.getWordBasedCompletions(Position{Line: 0, Character: 1})
+	foundType := false
+	for _, item := range items {
+		if item.Label == "i64" || item.Label == "i32" {
+			foundType = true
+			break
+		}
+	}
+	if !foundType {
+		t.Error("expected type completions (i64, i32) in word-based completions")
 	}
 }
 
