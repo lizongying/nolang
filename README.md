@@ -20,7 +20,7 @@ Nolang 是一種無 GC、內存安全、語法極簡的系統級編程語言。
 
 推薦使用vscode
 
-[vscode](https://marketplace.visualstudio.com/items?itemName=lizongying.nolang)
+[vscode](https://marketplace.visualstudio.com/items?itemName=lizongying.vscode-nolang)
 
 安裝nolang
 

@@ -491,14 +491,39 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 			for _, ms := range modProg.Statements {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
-					merged.Statements = append(merged.Statements, fd)
+					// If alias is specified, only import the specific function under the alias name
+					if use.Alias != "" {
+						if use.Function != "" && fd.Name == use.Function {
+							fd.Name = use.Alias
+							merged.Statements = append(merged.Statements, fd)
+						}
+						// Skip other functions when alias is used
+					} else {
+						merged.Statements = append(merged.Statements, fd)
+					}
 				}
 				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-					// 如果主程序已有同名變量，跳過以避免衝突
-					if !mainVarNames[ls.Name.Value] {
-						merged.Statements = append(merged.Statements, ls)
-						if isConstantExpr(ls.Value) {
-							moduleConstants[ls.Name.Value] = ls.Value
+					// If alias is specified, only import the specific function under the alias name
+					if use.Alias != "" {
+						if use.Function != "" && ls.Name.Value == use.Function {
+							if _, ok := ls.Value.(*parser.FunctionLiteral); ok {
+								ls.Name.Value = use.Alias
+							}
+							if !mainVarNames[ls.Name.Value] {
+								merged.Statements = append(merged.Statements, ls)
+								if isConstantExpr(ls.Value) {
+									moduleConstants[ls.Name.Value] = ls.Value
+								}
+							}
+						}
+						// Skip other lets when alias is used
+					} else {
+						// 如果主程序已有同名變量，跳過以避免衝突
+						if !mainVarNames[ls.Name.Value] {
+							merged.Statements = append(merged.Statements, ls)
+							if isConstantExpr(ls.Value) {
+								moduleConstants[ls.Name.Value] = ls.Value
+							}
 						}
 					}
 				}

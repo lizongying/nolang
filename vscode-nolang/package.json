@@ -1,8 +1,8 @@
 {
-  "name": "nolang",
+  "name": "vscode-nolang",
   "displayName": "Nolang Support",
   "description": "Nolang support for Visual Studio Code",
-  "version": "0.1.72",
+  "version": "0.1.73",
   "icon": "icon.png",
   "publisher": "lizongying",
   "repository": {
@@ -18,9 +18,7 @@
     "Formatters"
   ],
   "main": "./client/out/extension",
-  "activationEvents": [
-    "onLanguage:nolang"
-  ],
+  "activationEvents": [],
   "contributes": {
     "languages": [
       {
