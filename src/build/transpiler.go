@@ -3,6 +3,7 @@ package build
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -304,13 +305,24 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.parseFile(resolved)
 			}
 		}
-		// fallback: src/std/ 相對於執行目錄
+		// fallback: std/<module>.no 相對於執行目錄
 		fallback := path + ".no"
 		if _, err := os.Stat(fallback); err == nil {
 			return t.parseFile(fallback)
 		}
-		// 再試 src/std/<module>.no
+		// 再試 src/std/<module>.no 相對於執行目錄
 		srcPath := "src/" + path + ".no"
+		if _, err := os.Stat(srcPath); err == nil {
+			return t.parseFile(srcPath)
+		}
+		// 最後嘗試相對於 binary 所在路徑
+		if exe, err := os.Executable(); err == nil {
+			exeDir := filepath.Dir(exe)
+			binSrcPath := filepath.Join(exeDir, "..", "src", path+".no")
+			if _, err := os.Stat(binSrcPath); err == nil {
+				return t.parseFile(binSrcPath)
+			}
+		}
 		return t.parseFile(srcPath)
 	}
 
@@ -422,10 +434,22 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 
-	// 處理 use 陳述句：載入模組並合併函數定義
+	// 收集主程序變量名，避免與合併的模塊定義衝突
+	mainVarNames := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			mainVarNames[ls.Name.Value] = true
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			mainVarNames[fd.Name] = true
+		}
+	}
+
+	// 處理 use 陳述句：載入模組並合併函數定義和常量
 	merged := &parser.Program{Statements: []parser.Statement{}}
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
+	moduleConstants := make(map[string]parser.Expression)
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
 			modProg, err := t.resolveUse(use)
@@ -435,10 +459,19 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
 				explicitStdModules[use.Path] = true
 			}
-			// 將模組中的 FunctionDefinition 加入 merged
+			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 			for _, ms := range modProg.Statements {
-				if _, ok := ms.(*parser.FunctionDefinition); ok {
-					merged.Statements = append(merged.Statements, ms)
+				if fd, ok := ms.(*parser.FunctionDefinition); ok {
+					merged.Statements = append(merged.Statements, fd)
+				}
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+					// 如果主程序已有同名變量，跳過以避免衝突
+					if !mainVarNames[ls.Name.Value] {
+						merged.Statements = append(merged.Statements, ls)
+						if isConstantExpr(ls.Value) {
+							moduleConstants[ls.Name.Value] = ls.Value
+						}
+					}
 				}
 			}
 			continue
@@ -464,11 +497,23 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
 		}
 		for _, ms := range modProg.Statements {
-			if _, ok := ms.(*parser.FunctionDefinition); ok {
-				merged.Statements = append(merged.Statements, ms)
+			if fd, ok := ms.(*parser.FunctionDefinition); ok {
+				merged.Statements = append(merged.Statements, fd)
+			}
+			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+				// 如果主程序已有同名變量，跳過以避免衝突
+				if !mainVarNames[ls.Name.Value] {
+					merged.Statements = append(merged.Statements, ls)
+					if isConstantExpr(ls.Value) {
+						moduleConstants[ls.Name.Value] = ls.Value
+					}
+				}
 			}
 		}
 	}
+
+	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
+	resolveModuleConstants(merged, moduleConstants)
 
 	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
@@ -2383,6 +2428,167 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) pa
 		}
 		return e
 
+	default:
+		return e
+	}
+}
+
+// isConstantExpr returns true if the expression is a compile-time constant literal.
+func isConstantExpr(expr parser.Expression) bool {
+	switch expr.(type) {
+	case *parser.IntegerLiteral:
+		return true
+	case *parser.FloatLiteral:
+		return true
+	case *parser.StringLiteral:
+		return true
+	}
+	return false
+}
+
+// resolveModuleConstants walks the program and replaces Identifier references to
+// module constants with their literal values, allowing module functions like
+// degrees() to reference pi/e directly.
+func resolveModuleConstants(program *parser.Program, constants map[string]parser.Expression) {
+	if len(constants) == 0 {
+		return
+	}
+	for _, stmt := range program.Statements {
+		resolveModuleConstantsInStmt(stmt, constants)
+	}
+}
+
+func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]parser.Expression) {
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			s.Expression = resolveModuleConstantsInExpr(s.Expression, constants)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			s.Value = resolveModuleConstantsInExpr(s.Value, constants)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveModuleConstantsInStmt(bodyStmt, constants)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			resolveModuleConstantsInStmt(bodyStmt, constants)
+		}
+	case *parser.ForStatement:
+		if s.Condition != nil {
+			s.Condition = resolveModuleConstantsInExpr(s.Condition, constants)
+		}
+		if s.Init != nil {
+			resolveModuleConstantsInStmt(s.Init, constants)
+		}
+		if s.Update != nil {
+			resolveModuleConstantsInStmt(s.Update, constants)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveModuleConstantsInStmt(bodyStmt, constants)
+			}
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			s.ReturnValue = resolveModuleConstantsInExpr(s.ReturnValue, constants)
+		}
+	}
+}
+
+func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]parser.Expression) parser.Expression {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		if lit, ok := constants[e.Value]; ok {
+			return lit
+		}
+		return e
+	case *parser.CallExpression:
+		e.Function = resolveModuleConstantsInExpr(e.Function, constants)
+		for i, arg := range e.Arguments {
+			e.Arguments[i] = resolveModuleConstantsInExpr(arg, constants)
+		}
+		return e
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+		}
+		if e.Right != nil {
+			e.Right = resolveModuleConstantsInExpr(e.Right, constants)
+		}
+		return e
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			e.Right = resolveModuleConstantsInExpr(e.Right, constants)
+		}
+		return e
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants)
+		}
+		if e.Consequence != nil {
+			e.Consequence = resolveModuleConstantsInExpr(e.Consequence, constants)
+		}
+		if e.Alternative != nil {
+			e.Alternative = resolveModuleConstantsInExpr(e.Alternative, constants)
+		}
+		return e
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants)
+		}
+		if e.Consequence != nil {
+			for _, bodyStmt := range e.Consequence.Statements {
+				resolveModuleConstantsInStmt(bodyStmt, constants)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bodyStmt := range e.Alternative.Statements {
+				resolveModuleConstantsInStmt(bodyStmt, constants)
+			}
+		}
+		return e
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			e.Expression = resolveModuleConstantsInExpr(e.Expression, constants)
+		}
+		return e
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+		}
+		if e.Index != nil {
+			e.Index = resolveModuleConstantsInExpr(e.Index, constants)
+		}
+		return e
+	case *parser.SliceExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+		}
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				e.Range.Start = resolveModuleConstantsInExpr(e.Range.Start, constants)
+			}
+			if e.Range.End != nil {
+				e.Range.End = resolveModuleConstantsInExpr(e.Range.End, constants)
+			}
+		}
+		return e
+	case *parser.AssignExpression:
+		if e.Left != nil {
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+		}
+		if e.Value != nil {
+			e.Value = resolveModuleConstantsInExpr(e.Value, constants)
+		}
+		return e
 	default:
 		return e
 	}

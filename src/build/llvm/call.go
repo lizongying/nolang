@@ -19,8 +19,19 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
 				return t + "* %" + a.Value
 			}
+			if t, ok := g.varTypes[a.Value]; ok && t == "double" {
+				return "double* %" + a.Value
+			}
 		}
 		return "i64* %" + a.Value
+	case *parser.FloatLiteral:
+		g.tmpIdx++
+		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+			sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+		}
+		return "double* " + tmpName
 	case *parser.StringLiteral:
 		ev := g.generateExprWithSB(sb, arg)
 		return "%str* " + ev
@@ -39,7 +50,21 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		} else if strings.HasPrefix(ev, "%") {
 			parts := strings.Split(ev, ".")
 			varName := strings.TrimPrefix(parts[0], "%")
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[varName]; ok && t == "double" {
+					return "double* %" + varName
+				}
+			}
 			return "i64* %" + varName
+		} else if strings.Contains(ev, ".") {
+			// float literal value (e.g. "180.000000")
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
+			}
+			return "double* " + tmpName
 		} else if _, err := fmt.Sscanf(ev, "%d", new(int)); err == nil {
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -226,7 +251,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					break
 				}
 			}
+			// double 型別用 double* 指標
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[a.Value]; ok && t == "double" {
+					typedArgs[i] = "double* %" + a.Value
+					break
+				}
+			}
 			typedArgs[i] = "i64* %" + a.Value
+		case *parser.FloatLiteral:
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+			}
+			typedArgs[i] = "double* " + tmpName
 		case *parser.StringLiteral:
 			// String literal: generate %str struct and pass as %str*
 			ev := g.generateExprWithSB(sb, arg)
@@ -247,7 +287,23 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			} else if strings.HasPrefix(ev, "%") {
 				parts := strings.Split(ev, ".")
 				varName := strings.TrimPrefix(parts[0], "%")
+				// double 型別用 double* 指標
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[varName]; ok && t == "double" {
+						typedArgs[i] = "double* %" + varName
+						break
+					}
+				}
 				typedArgs[i] = "i64* %" + varName
+			} else if strings.Contains(ev, ".") {
+				// float literal value (e.g. "180.000000")
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
+				}
+				typedArgs[i] = "double* " + tmpName
 			} else if _, err := fmt.Sscanf(ev, "%d", new(int)); err == nil {
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)

@@ -16,6 +16,28 @@ Nolang 是一種無 GC、內存安全、語法極簡的系統級編程語言。
 
 [docs](https://lizongying.github.io/nolang/)
 
+## Usage
+
+推薦使用vscode
+
+[vscode](https://marketplace.visualstudio.com/items?itemName=lizongying.nolang)
+
+安裝nolang
+
+[nolang](https://marketplace.visualstudio.com/items?itemName=lizongying.nolang)
+
+
+### 創建新項目
+
+```shell
+nolang new test1
+
+cd test1
+
+nolang run 
+```
+
+
 ## 语法特性
 
 ### 標識符
@@ -568,6 +590,66 @@ nolang/
 
 ---
 
+
+### 程序結構
+
+- main.no — 入口，執行 main()
+- lib.no — 庫入口，導出函數
+- 其他 .no 文件 — 可作為測試文件，包含自己的 main()
+
+## CLI 命令概覽
+
+| 命令 | 說明 |
+|------|------|
+| `nolang init` | 初始化專案 |
+| `nolang new <name>` | 建立新專案 |
+| `nolang fmt` | 格式化程式碼 |
+| `nolang build` | 構建（輸出 executable） |
+| `nolang run` | 構建並執行 main.no |
+| `nolang test` | 執行測試 |
+| `nolang add` / `remove` / `update` / `list` | 依賴管理 |
+| `nolang install` | 安裝 binary 到系統 |
+| `nolang pub --token <token> [--registry <url>]` | 發布套件至 registry |
+| `nolang sync` | 同步依賴 |
+
+
+## cli使用
+
+```bash
+# 编译 Nolang 代码
+cd src/build && go run . your_file.no
+
+# 格式化代码
+cd src/fmt && go run . your_file.no
+```
+
+### vscode插件
+
+```shell
+cd vscode-nolang
+bun run package
+
+magick -background none icon16x16.svg icon16x16.png
+```
+
+## TODO
+
+- [ ] 重载函數
+- [ ] 實現類型檢查器
+- [ ] 實現編譯器
+- [ ] 實現標準庫
+- [ ] 實現錯誤處理
+- [ ] 實現模塊引用
+- [ ] 常量使用大寫字母和中連結線，不允許大小寫混合
+
+### 內存安全機制
+
+- **變數自動銷毀** 函數結束自動銷毀所有內部變數
+- **禁止手動釋放** 避免誤刪導致的懸垂引用
+- **值複製容器** 數組 / 切片存副本，與原變數分離， 原變量生命周期結束並銷毀時，容器內的數據不受任何影響
+- **無 GC、無分配隱藏成本**
+
+
 ## 標準庫測試
 
 標準庫的實作正確性通過與 **Go 標準庫**的直接比對來驗證。測試架構位於 `tests/` 目錄：
@@ -628,92 +710,4 @@ nolang run tests/test_std_hash.no  → nolang-output.txt
 diff go-output.txt nolang-output.txt
 
 # 無輸出 = 完全一致 = 通過
-```
-
-### 程序結構
-
-- main.no — 入口，執行 main()
-- lib.no — 庫入口，導出函數
-- 其他 .no 文件 — 可作為測試文件，包含自己的 main()
-
-## CLI 命令概覽
-
-| 命令 | 說明 |
-|------|------|
-| `nolang init` | 初始化專案 |
-| `nolang new <name>` | 建立新專案 |
-| `nolang fmt` | 格式化程式碼 |
-| `nolang build` | 構建（輸出 executable） |
-| `nolang run` | 構建並執行 main.no |
-| `nolang test` | 執行測試 |
-| `nolang add` / `remove` / `update` / `list` | 依賴管理 |
-| `nolang install` | 安裝 binary 到系統 |
-| `nolang pub --token <token> [--registry <url>]` | 發布套件至 registry |
-| `nolang sync` | 同步依賴 |
-
-
-## cli使用
-
-```bash
-# 编译 Nolang 代码
-cd src/build && go run . your_file.no
-
-# 格式化代码
-cd src/fmt && go run . your_file.no
-```
-
-### vscode插件
-
-```shell
-cd vscode-nolang
-bun run package
-
-magick -background none icon16x16.svg icon16x16.png
-```
-
-## TODO
-
-- [ ] 重载函數
-- [ ] 實現類型檢查器
-- [ ] 實現編譯器
-- [ ] 實現標準庫
-- [ ] 實現錯誤處理
-- [ ] 實現模塊引用
-- [ ] 常量使用大寫字母和中連結線，不允許大小寫混合
-
-### 內存安全機制
-
-- **變數自動銷毀** 函數結束自動銷毀所有內部變數
-- **禁止手動釋放** 避免誤刪導致的懸垂引用
-- **值複製容器** 數組 / 切片存副本，與原變數分離， 原變量生命周期結束並銷毀時，容器內的數據不受任何影響
-- **無 GC、無分配隱藏成本**
-
-```nolang
-// 
-// 1. 协程创建：go 关键字
-go {
-    // 协程体
-}
-
-// 2. 通道：chan 类型
-let ch: chan(int) = chan()
-
-// 3. 收发：<- 操作符
-ch <- 42          // 发送
-let v = <-ch      // 接收
-
-// 4. 带缓冲通道
-let ch2: chan(str, 10) = chan(10) -->
-
-
-
-do-some(ch chan) {
-    ch <- 42    // 发送
-    v = <-ch    // 接收
-}
-
-```
-
-```shell
-printf 'Content-Length: 130\r\n\r\n{"jsonrpc":"2.0","id":1,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///test.no"},"options":{"tabSize":4,"insertSpaces":true}}}' | vscode-nolang/server/nolang-lsp 2>&1 | head -1
 ```

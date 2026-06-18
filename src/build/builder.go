@@ -37,6 +37,15 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		inputPath = pkg.ResolvePath(mainFile)
 	}
 
+	// 如果仍然是指向目錄（無 package config 的情況），預設使用 main.no
+	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+		mainPath := filepath.Join(inputPath, "main.no")
+		if _, err := os.Stat(mainPath); err != nil {
+			return fmt.Errorf("main.no not found in %s", inputPath)
+		}
+		inputPath = mainPath
+	}
+
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)

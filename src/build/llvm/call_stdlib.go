@@ -16,6 +16,13 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			return v
 		}
 		if strings.HasPrefix(v, "%") {
+			parts := strings.SplitN(v, ".", 2)
+			varName := strings.TrimPrefix(parts[0], "%")
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[varName]; ok && t == "double" {
+					return "double " + v
+				}
+			}
 			return "i64 " + v
 		}
 		if strings.Contains(v, ".") {
@@ -142,7 +149,18 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				if strings.HasPrefix(v, "i8*") {
 					fmtSpec = "%s"
 				} else if strings.HasPrefix(v, "%") {
-					fmtSpec = "%lld"
+					// Check if variable is double type
+					isDouble := false
+					if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
+						if t, ok := g.varTypes[ident.Value]; ok && t == "double" {
+							isDouble = true
+						}
+					}
+					if isDouble {
+						fmtSpec = "%g"
+					} else {
+						fmtSpec = "%lld"
+					}
 				} else if strings.Contains(v, ".") {
 					fmtSpec = "%g"
 				} else {
@@ -160,7 +178,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 	}
 
 	if fnName == "print" || fnName == "fmt.print" {
-		return printVariadic(false)
+		return printVariadic(true)
 	}
 	if fnName == "println" || fnName == "fmt.println" {
 		if !hasArgs {

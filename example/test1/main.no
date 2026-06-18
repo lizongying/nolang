@@ -11,3 +11,11 @@ a = math.sin(1.0)
 // Both produce identical LLVM IR
 print('a:', a)
 print('b:', b)
+
+// Constants pi and e are also available:
+print('pi:', pi)
+print('e:', e)
+
+// Module functions like degrees/radians work too:
+c = math.degrees(3.141592653589793)
+print('degrees(pi):', c)

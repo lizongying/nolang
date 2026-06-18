@@ -283,6 +283,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
 				return "double"
 			}
+			// Check funcRetTypes for non-builtin functions (e.g. module functions like degrees)
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[name]; ok && t == "double" {
+					return "double"
+				}
+			}
 		}
 		return "i64"
 	case *parser.FloatLiteral:
