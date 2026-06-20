@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Package 表示 nolang.jsonc 定義的專案套件
+// Package 表示 mod.jsonc 定義的專案套件
 type Package struct {
 	Name            string            `json:"name"`
 	Version         string            `json:"version"`
@@ -25,9 +25,12 @@ type Package struct {
 	DevDependencies map[string]string `json:"dev-dependencies,omitempty"`
 	Ignore          []string          `json:"ignore,omitempty"`
 	Alias           map[string]string `json:"alias,omitempty"`
-	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 nolang.jsonc）
-	RootDir         string            // 套件根目錄（含 nolang.jsonc）
+	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 mod.jsonc）
+	RootDir         string            // 套件根目錄（含 mod.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
+	lockFile        *LockFile         // 已載入的鎖檔案（可選）
+	sumFile         *SumFile          // 已載入的總和檔案（可選）
+	depGraph        *DependencyGraph  // 已解析的依賴圖（可選）
 }
 
 // stripJSONC 移除 JSONC 中的 // 和 /* */ 註解
@@ -140,17 +143,17 @@ func removeTrailingCommas(s string) string {
 	return out.String()
 }
 
-// LoadPackage 從 dir 目錄尋找並解析 nolang.jsonc
+// LoadPackage 從 dir 目錄尋找並解析 mod.jsonc
 func LoadPackage(dir string) (*Package, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	// 向上尋找 nolang.jsonc
+	// 向上尋找 mod.jsonc
 	root := abs
 	for {
-		candidate := filepath.Join(root, "nolang.jsonc")
+		candidate := filepath.Join(root, "mod.jsonc")
 		if _, err := os.Stat(candidate); err == nil {
 			raw, err := os.ReadFile(candidate)
 			if err != nil {
@@ -171,6 +174,9 @@ func LoadPackage(dir string) (*Package, error) {
 				}
 			}
 
+			// 警告：workspace 內的依賴不應有版本號
+			pkg.warnWorkspaceDepVersion()
+
 			// 補上預設 alias
 			if pkg.Alias == nil {
 				pkg.Alias = make(map[string]string)
@@ -178,6 +184,12 @@ func LoadPackage(dir string) (*Package, error) {
 			if _, ok := pkg.Alias["@"]; !ok {
 				pkg.Alias["@"] = "./"
 			}
+
+			// 載入鎖檔案（可選）
+			pkg.lockFile, _ = LoadLockFile(root)
+
+			// 載入總和檔案（可選）
+			pkg.sumFile, _ = LoadSumFile(root)
 
 			return &pkg, nil
 		}
@@ -301,7 +313,28 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 	}
 
 	// 無本地覆蓋，需要下載
-	return downloadPackage(key, version)
+	pkgDir, _, err := downloadPackage(key, version)
+	return pkgDir, err
+}
+
+// warnWorkspaceDepVersion 警告 workspace 內的依賴不應指定版本號
+func (p *Package) warnWorkspaceDepVersion() {
+	if p == nil || p.workspaceRoot == "" || len(p.Dependencies) == 0 {
+		return
+	}
+	ws, err := p.LoadWorkspace()
+	if err != nil || ws == nil {
+		return
+	}
+	for key, version := range p.Dependencies {
+		if version == "" || version == "*" {
+			continue
+		}
+		shortName := packageShortName(key)
+		if _, exists := ws[shortName]; exists {
+			fmt.Printf("Warning: dependency %q specifies version %q but is a workspace-local package. Remove the version constraint (use \"*\").\n", key, version)
+		}
+	}
 }
 
 // ResolveDependencyModule 解析依賴中的模組完整路徑
@@ -340,4 +373,120 @@ func (p *Package) ResolveDependencyModule(importPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("module file not found: %s or %s", fullPath, srcPath)
+}
+
+// EnsureDependencies 確保所有傳遞依賴已解析
+// 在 BuildFile 中編譯前調用
+// maxDepth 限制最大遞迴深度（0=不限制，建議值 10）
+func (p *Package) EnsureDependencies(maxDepth int) (*DependencyGraph, error) {
+	if p == nil || len(p.Dependencies) == 0 {
+		return NewDependencyGraph(), nil
+	}
+
+	// 如果已經解析過，直接返回
+	if p.depGraph != nil {
+		return p.depGraph, nil
+	}
+
+	graph := NewDependencyGraph()
+
+	// 檢查是否有鎖檔案
+	if p.lockFile != nil {
+		needsResolve, err := CheckLockFile(p, p.lockFile)
+		if err != nil || needsResolve {
+			// 鎖檔案不相容，從頭解析
+			return p.resolveFromScratch(graph, maxDepth)
+		}
+		// 使用鎖檔案解析（從快取載入）
+		return p.resolveFromLock(graph, maxDepth)
+	}
+
+	// 無鎖檔案，從頭解析
+	return p.resolveFromScratch(graph, maxDepth)
+}
+
+// GetDependencyGraph 返回已解析的依賴圖（如果尚未解析則返回 nil）
+func (p *Package) GetDependencyGraph() *DependencyGraph {
+	return p.depGraph
+}
+
+// resolveFromScratch 從頭解析所有依賴（無鎖檔案）
+func (p *Package) resolveFromScratch(graph *DependencyGraph, maxDepth int) (*DependencyGraph, error) {
+	for key, version := range p.Dependencies {
+		// 跳過標準庫依賴
+		if isStdDependency(key) {
+			continue
+		}
+		if err := graph.ResolveAll(key, version, maxDepth); err != nil {
+			return nil, fmt.Errorf("resolving dependency %s@%s: %w", key, version, err)
+		}
+	}
+
+	// 循環依賴檢測
+	if err := graph.DetectCycles(); err != nil {
+		return nil, fmt.Errorf("cycle detection: %w", err)
+	}
+
+	// 解析成功，保存鎖檔案
+	if p.RootDir != "" {
+		if err := SaveLockFile(p.RootDir, graph); err != nil {
+			// 僅記錄警告，不阻止編譯
+			fmt.Printf("Warning: failed to save lock file: %v\n", err)
+		}
+		if err := SaveSumFile(p.RootDir, graph); err != nil {
+			// 僅記錄警告，不阻止編譯
+			fmt.Printf("Warning: failed to save sum file: %v\n", err)
+		}
+	}
+
+	p.depGraph = graph
+	return graph, nil
+}
+
+// resolveFromLock 從鎖檔案解析依賴（跳過下載，直接從快取載入）
+func (p *Package) resolveFromLock(graph *DependencyGraph, maxDepth int) (*DependencyGraph, error) {
+	if p.lockFile == nil {
+		return p.resolveFromScratch(graph, maxDepth)
+	}
+
+	for key, version := range p.Dependencies {
+		if isStdDependency(key) {
+			continue
+		}
+
+		keyWithVer := key + "@" + version
+		lockPkg, exists := p.lockFile.Packages[keyWithVer]
+		if !exists {
+			// 鎖檔案中沒有此依賴，回退到下載
+			return p.resolveFromScratch(graph, maxDepth)
+		}
+
+		// 從快取或下載取得套件目錄及壓縮包 SHA256
+		pkgDir, downloadHash, err := downloadPackage(key, version)
+		if err != nil {
+			return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
+		}
+
+		if _, err := graph.ResolveFromLock(key, version, pkgDir, downloadHash, lockPkg.Dependencies, 0, maxDepth); err != nil {
+			return nil, fmt.Errorf("resolving %s from lock: %w", key, err)
+		}
+	}
+
+	// 循環依賴檢測
+	if err := graph.DetectCycles(); err != nil {
+		return nil, fmt.Errorf("cycle detection: %w", err)
+	}
+
+	// 解析成功，保存鎖檔案和總和檔案
+	if p.RootDir != "" {
+		if err := SaveLockFile(p.RootDir, graph); err != nil {
+			fmt.Printf("Warning: failed to save lock file: %v\n", err)
+		}
+		if err := SaveSumFile(p.RootDir, graph); err != nil {
+			fmt.Printf("Warning: failed to save sum file: %v\n", err)
+		}
+	}
+
+	p.depGraph = graph
+	return graph, nil
 }

@@ -17,7 +17,7 @@ type BuildOptions struct {
 
 // BuildFile compiles a .no source file and produces the output binary/file.
 func BuildFile(inputPath string, opts BuildOptions) error {
-	// 若指定的是目錄，先找目錄內的 nolang.jsonc
+	// 若指定的是目錄，先找目錄內的 mod.jsonc
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
@@ -30,6 +30,11 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 
 	pkg, _ := LoadPackage(pkgDir)
 	if pkg != nil && isDir {
+		// 確保所有傳遞依賴已解析
+		if _, err := pkg.EnsureDependencies(10); err != nil {
+			return fmt.Errorf("dependency resolution failed: %w", err)
+		}
+
 		mainFile := pkg.Main
 		if mainFile == "" {
 			mainFile = "main.no"

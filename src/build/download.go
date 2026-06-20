@@ -5,6 +5,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,22 +36,54 @@ func parseGitHubKey(key string) (owner, repo string, ok bool) {
 	return parts[1], parts[2], true
 }
 
+// archiveFileName 返回快取中壓縮包檔案名
+func archiveFileName(assetURL string) string {
+	if strings.HasSuffix(assetURL, ".zip") {
+		return "_archive.zip"
+	}
+	return "_archive.tar.gz"
+}
+
+// archiveFilePath 返回壓縮包在快取中的完整路徑
+func archiveFilePath(cachePath, assetURL string) string {
+	return filepath.Join(cachePath, archiveFileName(assetURL))
+}
+
+// archiveHashFromFile 從快取中的壓縮包計算 SHA256
+func archiveHashFromFile(archivePath string) (string, error) {
+	data, err := os.ReadFile(archivePath)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:]), nil
+}
+
 // downloadPackage downloads a package from GitHub Releases and caches it locally.
-// It returns the package directory path within the extracted archive.
-func downloadPackage(key, version string) (string, error) {
+// It returns the package directory path and the SHA256 hash of the downloaded archive.
+func downloadPackage(key, version string) (pkgDir string, archiveHash string, err error) {
 	owner, repo, ok := parseGitHubKey(key)
 	if !ok {
-		return "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)
+		return "", "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)
 	}
 
 	// Determine cache path
 	cachePath := filepath.Join(cacheDir(), owner, repo, version)
 	shortName := packageShortName(key)
-	pkgDir := filepath.Join(cachePath, shortName)
+	pkgDir = filepath.Join(cachePath, shortName)
 
 	// Check if already cached
 	if info, err := os.Stat(pkgDir); err == nil && info.IsDir() {
-		return pkgDir, nil
+		// Try to compute hash from saved archive
+		// Try both .tar.gz and .zip
+		for _, name := range []string{"_archive.tar.gz", "_archive.zip"} {
+			archivePath := filepath.Join(cachePath, name)
+			if hash, err := archiveHashFromFile(archivePath); err == nil {
+				return pkgDir, hash, nil
+			}
+		}
+		// Archive not found, return empty hash (no sum entry for cached packages without archive)
+		return pkgDir, "", nil
 	}
 
 	fmt.Printf("Downloading %s@%s...\n", key, version)
@@ -59,19 +93,19 @@ func downloadPackage(key, version string) (string, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
+		return "", "", fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "nolang")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetching release %s: %w", apiURL, err)
+		return "", "", fmt.Errorf("fetching release %s: %w", apiURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to fetch release %s (status %d)", apiURL, resp.StatusCode)
+		return "", "", fmt.Errorf("failed to fetch release %s (status %d)", apiURL, resp.StatusCode)
 	}
 
 	// Parse the release JSON to find the download URL.
@@ -79,7 +113,7 @@ func downloadPackage(key, version string) (string, error) {
 	// Parse the JSON response.
 	releaseInfo, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("reading release info: %w", err)
+		return "", "", fmt.Errorf("reading release info: %w", err)
 	}
 
 	// Simple JSON parsing to find the first asset with .tar.gz or .zip.
@@ -97,27 +131,44 @@ func downloadPackage(key, version string) (string, error) {
 	// Download the archive
 	dlResp, err := client.Get(assetURL)
 	if err != nil {
-		return "", fmt.Errorf("downloading archive: %w", err)
+		return "", "", fmt.Errorf("downloading archive: %w", err)
 	}
 	defer dlResp.Body.Close()
 
 	if dlResp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download archive (status %d)", dlResp.StatusCode)
+		return "", "", fmt.Errorf("failed to download archive (status %d)", dlResp.StatusCode)
 	}
+
+	// Read all bytes for hashing
+	data, err := io.ReadAll(dlResp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("reading archive data: %w", err)
+	}
+
+	// Compute SHA256 of the raw archive
+	h := sha256.Sum256(data)
+	archiveHash = hex.EncodeToString(h[:])
 
 	// Create cache directory
 	if err := os.MkdirAll(cachePath, 0755); err != nil {
-		return "", fmt.Errorf("creating cache directory: %w", err)
+		return "", "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	// Extract archive
+	// Save archive to cache for later re-hashing
+	archivePath := archiveFilePath(cachePath, assetURL)
+	if err := os.WriteFile(archivePath, data, 0644); err != nil {
+		fmt.Printf("Warning: failed to cache archive: %v\n", err)
+	}
+
+	// Extract archive from buffered data
+	r := bytes.NewReader(data)
 	if strings.HasSuffix(assetURL, ".zip") {
-		if err := extractZip(dlResp.Body, cachePath); err != nil {
-			return "", fmt.Errorf("extracting zip archive: %w", err)
+		if err := extractZip(r, cachePath); err != nil {
+			return "", "", fmt.Errorf("extracting zip archive: %w", err)
 		}
 	} else {
-		if err := extractTarGz(dlResp.Body, cachePath); err != nil {
-			return "", fmt.Errorf("extracting tar.gz archive: %w", err)
+		if err := extractTarGz(r, cachePath); err != nil {
+			return "", "", fmt.Errorf("extracting tar.gz archive: %w", err)
 		}
 	}
 
@@ -125,10 +176,10 @@ func downloadPackage(key, version string) (string, error) {
 	// by looking for workspace.jsonc or the shortName directory.
 	actualDir := findPackageDir(cachePath, shortName)
 	if actualDir == "" {
-		return "", fmt.Errorf("package %s not found in extracted archive", shortName)
+		return "", "", fmt.Errorf("package %s not found in extracted archive", shortName)
 	}
 
-	return actualDir, nil
+	return actualDir, archiveHash, nil
 }
 
 // extractDownloadURL does a simple search for browser_download_url in the JSON response.
@@ -305,4 +356,69 @@ func findPackageDir(cachePath, shortName string) string {
 	}
 
 	return ""
+}
+
+// findPackageRoot 在快取路徑中尋找包含 mod.jsonc 的目錄
+// 優先檢查短名稱目錄，然後遍歷子目錄
+func findPackageRoot(cachePath, shortName string) string {
+	// 先檢查短名稱目錄
+	pkgDir := filepath.Join(cachePath, shortName)
+	if hasNolangConfig(pkgDir) {
+		return pkgDir
+	}
+
+	// 檢查 workspace.jsonc 映射
+	wsFile := filepath.Join(cachePath, "workspace.jsonc")
+	if _, err := os.Stat(wsFile); err == nil {
+		raw, err := os.ReadFile(wsFile)
+		if err == nil {
+			cleaned := stripJSONC(raw)
+			var ws WorkspaceMap
+			if err := json.Unmarshal(cleaned, &ws); err == nil {
+				if localPath, exists := ws[shortName]; exists {
+					dir := filepath.Join(cachePath, localPath)
+					if hasNolangConfig(dir) {
+						return filepath.Clean(dir)
+					}
+				}
+			}
+		}
+	}
+
+	// 遍歷子目錄尋找 mod.jsonc
+	entries, err := os.ReadDir(cachePath)
+	if err != nil {
+		return pkgDir // 返回預設路徑
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dir := filepath.Join(cachePath, entry.Name())
+			if hasNolangConfig(dir) {
+				return dir
+			}
+			// 檢查更深一層
+			subEntries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, sub := range subEntries {
+				if sub.IsDir() {
+					subDir := filepath.Join(dir, sub.Name())
+					if hasNolangConfig(subDir) {
+						return subDir
+					}
+				}
+			}
+		}
+	}
+
+	// 沒找到 mod.jsonc，返回短名稱目錄（套件可能沒有配置文件）
+	return pkgDir
+}
+
+// hasNolangConfig 檢查目錄中是否存在 mod.jsonc
+func hasNolangConfig(dir string) bool {
+	cfgFile := filepath.Join(dir, "mod.jsonc")
+	info, err := os.Stat(cfgFile)
+	return err == nil && !info.IsDir()
 }

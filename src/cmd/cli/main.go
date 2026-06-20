@@ -200,7 +200,7 @@ func initProject() {
 	fmt.Printf("Project initialized in %s\n", dir)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - nolang.jsonc (project configuration)")
+	fmt.Println("  - mod.jsonc (project configuration)")
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - .gitignore")
 }
@@ -237,7 +237,7 @@ func newProject(name string) {
 	fmt.Printf("Project created: %s\n", name)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - nolang.jsonc (project configuration)")
+	fmt.Println("  - mod.jsonc (project configuration)")
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - src/ (source directory)")
 	fmt.Println("  - .gitignore")
@@ -271,7 +271,7 @@ func createConfigFile(config ProjectConfig) {
 		config.Compiler.Version,
 	)
 
-	err := os.WriteFile("nolang.jsonc", []byte(content), 0644)
+	err := os.WriteFile("mod.jsonc", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing config file: %v\n", err)
 	}
@@ -360,9 +360,9 @@ func addDependency(name string) {
 }
 
 func loadProjectConfig() (*ProjectConfig, error) {
-	data, err := os.ReadFile("nolang.jsonc")
+	data, err := os.ReadFile("mod.jsonc")
 	if err != nil {
-		return nil, fmt.Errorf("nolang.jsonc not found. Run 'nolang init' first")
+		return nil, fmt.Errorf("mod.jsonc not found. Run 'nolang init' first")
 	}
 	cleaned := removeComments(string(data))
 	var config ProjectConfig
@@ -493,8 +493,30 @@ func removeComments(jsonc string) string {
 
 func syncDependencies() {
 	fmt.Println("Syncing dependencies...")
-	fmt.Println("Note: Dependency sync is not yet implemented.")
-	fmt.Println("Standard library is included by default.")
+
+	pkg, err := nbuild.LoadPackage(".")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	if pkg == nil {
+		fmt.Println("Error: mod.jsonc not found. Run 'nolang init' first")
+		return
+	}
+	if len(pkg.Dependencies) == 0 {
+		fmt.Println("No dependencies to sync.")
+		return
+	}
+
+	graph, err := pkg.EnsureDependencies(10)
+	if err != nil {
+		fmt.Printf("Error syncing dependencies: %v\n", err)
+		return
+	}
+
+	count := len(graph.Resolved())
+	fmt.Printf("Synced %d dependencies.\n", count)
+	fmt.Println("Lock file and integrity sums saved.")
 }
 
 func installCommand() {

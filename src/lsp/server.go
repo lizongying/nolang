@@ -224,7 +224,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			// Validate URL-style import paths are declared in nolang.jsonc dependencies
+			// Validate URL-style import paths are declared in mod.jsonc dependencies
 			docPath := strings.TrimPrefix(uri, "file://")
 			docDir := filepath.Dir(docPath)
 			depErrs := nbuild.ValidateDependencyImports(prog, docDir)

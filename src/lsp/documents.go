@@ -306,16 +306,16 @@ func (m *DocumentManager) IsDirty(uri string) bool {
 var ErrDocumentNotFound = errors.New("document not found")
 
 // resolveLocalModuleFile resolves a local module relative path (no leading /)
-// to an absolute file path by searching for the project root (nolang.jsonc).
+// to an absolute file path by searching for the project root (mod.jsonc).
 func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string {
 	// Extract document directory from URI (file:///path/to/file.no)
 	docPath := strings.TrimPrefix(docURI, "file://")
 	docDir := filepath.Dir(docPath)
 
-	// Look for nolang.jsonc upward
+	// Look for mod.jsonc upward
 	root := docDir
 	for {
-		candidate := filepath.Join(root, "nolang.jsonc")
+		candidate := filepath.Join(root, "mod.jsonc")
 		if _, err := os.Stat(candidate); err == nil {
 			return filepath.Join(root, relPath) + ".no"
 		}

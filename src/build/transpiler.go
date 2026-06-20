@@ -308,7 +308,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// 相對於語言根目錄的 src/std/
 		// 使用硬編碼路徑或透過套件 alias
 		if t.pkg != nil {
-			// 嘗試透過 alias 解析（nolang.jsonc 中的 @std）
+			// 嘗試透過 alias 解析（mod.jsonc 中的 @std）
 			resolved := t.pkg.ResolvePath(path)
 			if !strings.HasSuffix(resolved, ".no") {
 				resolved = resolved + ".no"
@@ -352,7 +352,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			}
 		}
 		// URL 風格的導入路徑但未在 dependencies 中宣告
-		return nil, fmt.Errorf("dependency not found: %q is not declared in nolang.jsonc dependencies", path)
+		return nil, fmt.Errorf("dependency not found: %q is not declared in mod.jsonc dependencies", path)
 	}
 
 	// 非 std 路徑 → 透過 alias 解析
@@ -2216,8 +2216,8 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 }
 
 // ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
-// are declared in nolang.jsonc dependencies. rootDir is the directory to search upward
-// from for the project's nolang.jsonc.
+// are declared in mod.jsonc dependencies. rootDir is the directory to search upward
+// from for the project's mod.jsonc.
 func ValidateDependencyImports(program *parser.Program, rootDir string) []ValidateResult {
 	if rootDir == "" {
 		return nil
@@ -2244,7 +2244,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 			results = append(results, ValidateResult{
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
-				Message: fmt.Sprintf("dependency not found: %q is not declared in nolang.jsonc dependencies", path),
+				Message: fmt.Sprintf("dependency not found: %q is not declared in mod.jsonc dependencies", path),
 			})
 		}
 	}

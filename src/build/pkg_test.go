@@ -5,7 +5,7 @@ import (
 )
 
 func TestLoadPackageTestDir(t *testing.T) {
-	// 確保 test/nolang.jsonc 能被正確解析
+	// 確保 test/mod.jsonc 能被正確解析
 	pkg, err := LoadPackage("../../test")
 	if err != nil {
 		t.Fatalf("LoadPackage(test) error: %v", err)
