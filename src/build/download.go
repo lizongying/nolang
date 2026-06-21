@@ -61,7 +61,7 @@ func archiveHashFromFile(archivePath string) (string, error) {
 
 // downloadPackage downloads a package from GitHub Releases and caches it locally.
 // It returns the package directory path and the SHA256 hash of the downloaded archive.
-func downloadPackage(key, version string) (pkgDir string, archiveHash string, err error) {
+func downloadPackage(key, version string, mirrors []string) (pkgDir string, archiveHash string, err error) {
 	owner, repo, ok := parseGitHubKey(key)
 	if !ok {
 		return "", "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)
@@ -88,9 +88,11 @@ func downloadPackage(key, version string) (pkgDir string, archiveHash string, er
 
 	fmt.Printf("Downloading %s@%s...\n", key, version)
 
+	// Create HTTP client
+	client := &http.Client{}
+
 	// Use GitHub API to get release info
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, version)
-	client := &http.Client{}
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("creating request: %w", err)
@@ -128,21 +130,52 @@ func downloadPackage(key, version string) (pkgDir string, archiveHash string, er
 		assetURL = fallbackURL
 	}
 
-	// Download the archive
-	dlResp, err := client.Get(assetURL)
-	if err != nil {
-		return "", "", fmt.Errorf("downloading archive: %w", err)
+	// Collect download URLs: mirrors first, then original
+	downloadURLs := []string{assetURL}
+	for _, mirror := range mirrors {
+		mirror = strings.TrimRight(mirror, "/")
+		mirrorURL := strings.Replace(assetURL, "https://github.com", mirror, 1)
+		if mirrorURL != assetURL {
+			downloadURLs = append([]string{mirrorURL}, downloadURLs...)
+		}
 	}
-	defer dlResp.Body.Close()
 
-	if dlResp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("failed to download archive (status %d)", dlResp.StatusCode)
+	// Try each URL in order
+	var data []byte
+	var downloadErr error
+	for _, url := range downloadURLs {
+		if url == assetURL {
+			fmt.Printf("  Downloading from %s\n", url)
+		} else {
+			fmt.Printf("  Trying mirror: %s\n", url)
+		}
+
+		dlResp, err := client.Get(url)
+		if err != nil {
+			downloadErr = fmt.Errorf("downloading from %s: %w", url, err)
+			continue
+		}
+
+		if dlResp.StatusCode != http.StatusOK {
+			downloadErr = fmt.Errorf("downloading from %s (status %d)", url, dlResp.StatusCode)
+			dlResp.Body.Close()
+			continue
+		}
+
+		// Read all bytes for hashing
+		data, err = io.ReadAll(dlResp.Body)
+		dlResp.Body.Close()
+		if err != nil {
+			downloadErr = fmt.Errorf("reading archive data from %s: %w", url, err)
+			continue
+		}
+
+		downloadErr = nil
+		break
 	}
 
-	// Read all bytes for hashing
-	data, err := io.ReadAll(dlResp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("reading archive data: %w", err)
+	if downloadErr != nil {
+		return "", "", fmt.Errorf("all download attempts failed: %w", downloadErr)
 	}
 
 	// Compute SHA256 of the raw archive

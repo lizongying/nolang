@@ -14,30 +14,31 @@ sidebar_position: 2
 
 基礎類型
 
-- byte 
+- byte
 - bool // 只允許小寫
 - char // 字符類型，一個中文一個字符，無引号包裹
 - str // 字符串類型，單引號包裹
 - i8
-- i16 
+- i16
 - i32
 - i64 // 數字默認類型，不區分架構
-- u8 
-- u16 
-- u32 
-- u64 
-- f32 
-- f64 
+- u8
+- u16
+- u32
+- u64
+- f32
+- f64
 
 容器類型
 
-- obj // 對象
-- map // 映射
-- arr // 數組
-- vec // 切片
+- obj   // 對象
+- map   // 映射
+- arr   // 定長數組
+- vec   // 變長數組
+- slice // 切片
 
-- * //  指針（ptr） 標準庫專用
-- any // 任意類型 標準庫專用
+- \*  // 指針 僅限標準庫
+- any // 任意類型 僅限標準庫
 
 高級類型
 
@@ -50,7 +51,7 @@ sidebar_position: 2
 
 // 變量沒有關鍵字
 // i64、f64、byte、bool、byte、str可以省略類型標注
-i = 1   
+i = 1
 
 // f64 中間有.
 f = 1.0
@@ -60,14 +61,14 @@ b = x00
 
 
 // i8 如果變量名和類型一致，可以忽略類型標注
-i8 = 3  
+i8 = 3
 
 // 默認0值
 // 變量定義不需要提前聲明
 u16
 
 // str 單引號包裹
-name = 'nolang'  
+name = 'nolang'
 
 // bool true/false 全小寫
 flag = true
@@ -79,27 +80,38 @@ name = 'hello'
 name = 'world'
 
 // 字符串拼接
-greeting = 'hello, ' - name  
+greeting = 'hello, ' - name
 
 // 顯式類型標注
-a u64 = 10           
+a u64 = 10
 
 // 字符（不用引號）
-c char = 中          
+c char = 中
+
+// byte類型
+b = x00
 
 // arr 定長數組
-arr [3] = [1, 2, 3]  
+arr [3] = [1, 2, 3]
 
 // vec 動態數組（切片）
-vec = [4, 5, 6]    
+vec = [4, 5, 6]
 
 // 顯式類型（切片）
-typed []u8 = [1, 2, 3]  
+typed []u8 = [1, 2, 3]
 
 // 數組
 typed [3]u16 = [1, 2, 3]
+```
 
-// 變量名只可以使用中連接符和小寫字母
+## 命名規則
+
+變量名、函數名、結構体名等只可以使用中連接符、小寫字母、數字組成，不能以數字开头
+
+```nolang
+x1 = 10
+x = 10
+-x = 10
 foo-bar = 42
 hello-world = 'Hello World'
 ```
@@ -108,7 +120,18 @@ hello-world = 'Hello World'
 
 函數通過**修改入參**來傳遞結果，`...` 僅用於提前終止，不能跟結果。
 
+Nolang 的函數有以下特點：
+
+- 函數預設無返回值，所有數據交互僅通過參數傳遞
+- 所有函數參數均為引用型別，修改參數會直接影響調用方的數據
+- 函數內的變量在函數退出時自動銷毀
+
+Nolang 的函數不提供返回值機制，所有輸出結果均透過參數本身完成。
+
+系统函数允许语法糖形式的返回值，方便用户使用，由于底层依然是通过入参完成，所以不会有新变量返回，内部是安全的。
+
 ```nolang
+
 add = (a i64, b i64) (result i64) {
     result = a + b             // 通過參數返回結果
     ...                        // 提前終止（可選）
@@ -118,12 +141,78 @@ add = (a i64, b i64) (result i64) {
 add3 = (a ..i64) {
 }
 
-
 // 函數調用
-add(1, 2, sum)                 // sum == 3
+sum = add(1, 2)                 // sum == 3
+
+// 匿名函數 和for？ 有傳參？
+(a i64) { print(a) }(10)
+
+// 函数调用
+add(a, b)
+
+// 也可能有多个返回值
+a, b = swap(5, 3)
 ```
 
 ## 流程控制
+
+```nolang
+// 用for可以替代while/loop
+
+// 无限循环 for { }
+for {
+    break
+}
+
+// 条件循环 for condition { }
+for i < 5 {
+    continue
+}
+
+// 經典三段式
+for i=0; i < 5; i++ {
+}
+
+// 区间语法
+// 未來會支持map, arr, vec
+for i <- [a..b] {     // 闭区间：a ≤ i ≤ b
+    // a, a + 1, ..., b
+}
+
+for i <- (a..b] {     // 左开右闭：a < i ≤ b
+    // a + 1, a + 2, ..., b
+}
+
+for i <- [a..b) {     // 左闭右开：a ≤ i < b
+    // a, a + 1, ..., b - 1
+}
+
+for i <- (a..b) {     // 开区间：a < i < b
+    // a + 1, a + 2, ..., b - 1
+}
+
+for i <- [5..0] {   // 递减
+}
+
+for i <- [5..5] {   // 只執行5
+}
+
+for i <- (5..5) {   // 無
+}
+
+for i <- 'abc' {   // 遍历字符串中的每个字符
+}
+
+// ❌ 明确拒绝
+for i <- [1.5..5.5] {  // 编译错误：区间边界必须是整数
+    // 步长无法确定
+}
+
+// ⚠️ 不支持嵌套
+for i <- [0..[1..5][0]] {  // ❌ 语法错误
+}
+
+```
 
 ```nolang
 
@@ -136,7 +225,7 @@ add(1, 2, sum)                 // sum == 3
 }
 
 // 遍歷
-i <- (a..b] {   
+i <- (a..b] {
 }
 
 // 內部無條件執行
@@ -144,18 +233,18 @@ x == 1 {
     b = 2
 }
 
-// continue 
-i <- (a..b] {   
+// continue
+i <- (a..b] {
     *
 }
 
 // break
-i <- (a..b] {   
+i <- (a..b] {
     **
 }
 
 // return
-i <- (a..b] {   
+i <- (a..b] {
     ...
 }
 
@@ -206,12 +295,12 @@ result = x {
 // ❌ 編譯錯誤：分支裡不能有表達式
 result = x {
     1|
-        a = 1     
+        a = 1
 }
 
 // ❌ 編譯錯誤：語句形式不能有返回值
 x {
-    1| 1          
+    1| 1
 }
 
 // 特殊match，沒有需要返回的值
@@ -257,15 +346,62 @@ max = if x > y { x } else { y }
 
 ## 數組與切片
 
+容器存儲數據副本，原變量與容器獨立，杜絕懸垂引用。
+
+**定長数组arr：**
+
 ```nolang
+
+// 使用定長数组
+a [3] = [1, 2, 3]    // 长度为 3 的定長数组 i64
+a [3]u16 = [1, 2, 3] // 指定类型的定長数组
+
+a [?]u16 = [1, 2, 3] // 自動推斷長度
+```
+
+**變長數組vec：**
+
+```nolang
+v = [1, 2, 3]     // 變長數組 i64
+bs = [0x11, 0x22, 0x33]
+v []u8 = [1, 2, 3] // 指定类型的變長數組
+```
+
+**切片slice：**
+
+```nolang
+// 支持arr/vec/str
+// 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
 
-// 操作（返回 vec）
-nums[..]    // [0, 1, 2, 3, 4]
-nums[1..]   // [1, 2, 3, 4]
-nums[..3]   // [0, 1, 2]
-nums[1..3]  // [1, 2, 3]
-nums[1..3)  // [1, 2]
+nums[..] //  [0 1 2 3 4]
+nums[1..] // [1 2 3 4]
+nums[..4] // [0 1 2 3 4]
+nums[2..3] // [2 3]
+nums[1..3] // [1 2 3]
+nums[1..3) // [1 2]
+nums(1..3) // [2]
+
+// 字符串
+s = 'abc'
+s[1..]   // 'bc'
+s[1..s.len) // 'bc'
+```
+
+### 索引
+
+```nolang
+
+// 字符串獲取char （字符，不是字節）
+str[i]
+
+ // arr、vec獲取元素
+arr[i]
+vec[i]
+
+ // map 獲取 value
+map[str]
+
 ```
 
 ## 結構體
@@ -276,18 +412,25 @@ user {
     age i64
 }
 
-u = user { 
-    name: 'Alice',
+u = user {
+    name: 'Alice'
     age: 30
 }
 u.name = 'Bob'
+u.age = 25
+print(u.name)
 ```
 
 ## 方法
 
 ```nolang
+user {
+    name str
+    age i64
+}
+
 user.greet() {
-    print('Hello, ' + .name)
+    print('Hello, ' - .name)
 }
 ```
 
@@ -321,6 +464,13 @@ user.other() {
 
     // 父實現
     ..to-json()
+}
+```
+
+### 特殊接口
+
+```nolang
+file enter, leave {
 }
 ```
 
@@ -362,47 +512,25 @@ file enter, leave {
     path str
 }
 
-file.enter() { 
+file.enter() {
     open(.path)
 }
 
-file.leave() { 
-    close(self) 
+file.leave() {
+    close(self)
 }
 
 read-file() {
 
     // 自動 f.enter()
-    f = file{ 
+    f = file{
         path: 'data.txt',
     }
-    
+
     // 使用 f
     // 自動 f.leave()
-    read(f) 
+    read(f)
 }
-```
-
-**數組arr（固定大小）：**
-
-```nolang
-
-// 使用數組
-numbers = [1, 2, 3, 4, 5]
-print(numbers)
-
-a [3] = [1, 2, 3]   
-a [3]u16 = [1, 2, 3] 
-```
-
-**切片vec（動態大小）：**
-
-```nolang
-v = [1, 2, 3]   
-v []u8 = [1, 2, 3] 
-
-b = 0x00
-bs = [0x11, 0x22, 0x33]
 ```
 
 ### 可空類型(option)
@@ -412,6 +540,11 @@ bs = [0x11, 0x22, 0x33]
 可空類型變量可以合法持有空值/错误值，編譯器會進行相應的空值檢查。
 
 ```nolang
+
+o ?i64
+o = nil          // 設為空
+o = 42           // 設為有值
+o = err('msg')   // 設為錯誤
 
 nullableValue ?[]str
 nullableString ?str
@@ -425,23 +558,27 @@ nullableString = err('some error')
 // 可通過match判斷
 x {
     err| log(it)
-    nil| 
+    nil|
     |
         do-right-thing(it)
 }
 
+// 強制解包
+// 取消實現
+//!x.say()
+```
+
 ### 泛形
 
 ```nolang
-// 只允許單字母 a-z
 arr_to_vec(arr [n]t) (out []t) {
     for i in [0..n) {
         out[i] = arr[i]
     }
 }
-```
+````
 
-### 類型轉換
+### 類型強制轉換
 
 ```nolang
 
@@ -449,4 +586,30 @@ arr_to_vec(arr [n]t) (out []t) {
 a = typeof(x)
 
 y = x as i64
+```
+
+### 模块系统
+
+- 每个文件就是一个模块
+- 文件名和文件夹名使用中连接符
+
+```shell
+utils/
+└── helper.no    // 模块名为 utils/helper
+```
+
+### 導入模塊
+
+```nolang
+// 這裡是示例，實際上標準庫可能不需要明確導入
+# std/math.add
+
+// 遠程模塊（非std/開頭）
+# github.com/utils/math.add
+
+// 本地模塊，必須/開頭
+# /utils/math.add
+
+// 別名
+# std/math.add a
 ```

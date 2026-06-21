@@ -1,0 +1,46 @@
+// runner — 測試執行器
+//
+// 提供測試計數與結果彙總，簡化測試檔案結構。
+//
+// 用法：
+//   use /test/runner
+//   use /test/assert
+//
+//   main = () (code i64) {
+//       passed = 0
+//       failed = 0
+//       assert-eq(1, 1, 'test 1')(ok)
+//       if ok == false { failed = test-fail(failed) }
+//       else { passed = test-pass(passed) }
+//       test-summary(passed, failed)()
+//       if failed > 0 { return 1 }
+//       return 0
+//   }
+
+// ═══════════════════════════════════════════════
+// 輔助函數
+// ═══════════════════════════════════════════════
+
+// test-pass: 記錄一筆測試通過
+test-pass = (passed i64) (new-passed i64) {
+    new-passed = passed + 1
+}
+
+// test-fail: 記錄一筆測試失敗
+test-fail = (failed i64) (new-failed i64) {
+    new-failed = failed + 1
+}
+
+// test-summary: 輸出測試結果彙總
+test-summary = (passed i64, failed i64) (total i64) {
+    print('--- Test Summary ---')
+    print('passed:', passed)
+    print('failed:', failed)
+    total = passed + failed
+    print('total:', total)
+    if failed == 0 {
+        print('ALL TESTS PASSED')
+    } else {
+        print('SOME TESTS FAILED')
+    }
+}

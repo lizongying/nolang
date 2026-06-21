@@ -1,0 +1,195 @@
+// assert — 測試斷言庫
+//
+// 提供常用的斷言函數，用於測試 .no 檔案。
+// 每個斷言返回 ok bool（true=通過, false=失敗）。
+//
+// 用法：
+//   use /test/assert
+//   assert-eq(a, b, 'msg')(ok)
+//   if ok == false { return 1 }
+
+// ═══════════════════════════════════════════════
+// 整數斷言
+// ═══════════════════════════════════════════════
+
+// assert-eq: a == b
+assert-eq = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a != b {
+        ok = false
+        print('FAIL: assert-eq')
+        print(msg)
+    }
+}
+
+// assert-ne: a != b
+assert-ne = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a == b {
+        ok = false
+        print('FAIL: assert-ne')
+        print(msg)
+    }
+}
+
+// assert-true: val == true
+assert-true = (val bool, msg str) (ok bool) {
+    ok = true
+    if val == false {
+        ok = false
+        print('FAIL: assert-true')
+        print(msg)
+    }
+}
+
+// assert-false: val == false
+assert-false = (val bool, msg str) (ok bool) {
+    ok = true
+    if val == true {
+        ok = false
+        print('FAIL: assert-false')
+        print(msg)
+    }
+}
+
+// assert-gt: a > b
+assert-gt = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a <= b {
+        ok = false
+        print('FAIL: assert-gt')
+        print(msg)
+    }
+}
+
+// assert-ge: a >= b
+assert-ge = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a < b {
+        ok = false
+        print('FAIL: assert-ge')
+        print(msg)
+    }
+}
+
+// assert-lt: a < b
+assert-lt = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a >= b {
+        ok = false
+        print('FAIL: assert-lt')
+        print(msg)
+    }
+}
+
+// assert-le: a <= b
+assert-le = (a i64, b i64, msg str) (ok bool) {
+    ok = true
+    if a > b {
+        ok = false
+        print('FAIL: assert-le')
+        print(msg)
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 浮點斷言
+// ═══════════════════════════════════════════════
+
+// assert-f64-eq: |a - b| < eps
+assert-f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
+    ok = true
+    diff = a - b
+    if diff < 0.0 {
+        diff = 0.0 - diff
+    }
+    if diff >= eps {
+        ok = false
+        print('FAIL: assert-f64-eq')
+        print(msg)
+    }
+}
+
+// assert-f64-ne: 浮點不相等
+assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
+    ok = true
+    diff = a - b
+    if diff < 0.0 {
+        diff = 0.0 - diff
+    }
+    if diff < eps {
+        ok = false
+        print('FAIL: assert-f64-ne')
+        print(msg)
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 字串斷言
+// ═══════════════════════════════════════════════
+
+// assert-str-eq: 字串相等（比較前 n 個字節）
+assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
+    ok = true
+    str-eq(a, b, n)(eq)
+    if eq == false {
+        ok = false
+        print('FAIL: assert-str-eq')
+        print(msg)
+    }
+}
+
+// assert-str-ne: 字串不相等
+assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
+    ok = true
+    str-eq(a, b, n)(eq)
+    if eq == true {
+        ok = false
+        print('FAIL: assert-str-ne')
+        print(msg)
+    }
+}
+
+// assert-str-empty: 字串為空（n == 0）
+assert-str-empty = (s str, n i64, msg str) (ok bool) {
+    ok = true
+    if n != 0 {
+        ok = false
+        print('FAIL: assert-str-empty')
+        print(msg)
+    }
+}
+
+// assert-str-not-empty: 字串非空
+assert-str-not-empty = (s str, n i64, msg str) (ok bool) {
+    ok = true
+    if n == 0 {
+        ok = false
+        print('FAIL: assert-str-not-empty')
+        print(msg)
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 指標斷言
+// ═══════════════════════════════════════════════
+
+// assert-nil: 指標為空
+assert-nil = (p i64, msg str) (ok bool) {
+    ok = true
+    if p != 0 {
+        ok = false
+        print('FAIL: assert-nil')
+        print(msg)
+    }
+}
+
+// assert-not-nil: 指標非空
+assert-not-nil = (p i64, msg str) (ok bool) {
+    ok = true
+    if p == 0 {
+        ok = false
+        print('FAIL: assert-not-nil')
+        print(msg)
+    }
+}

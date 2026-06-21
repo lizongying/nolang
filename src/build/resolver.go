@@ -11,6 +11,7 @@ type DependencyGraph struct {
 	roots    []*DependencyNode          // 頂層依賴節點
 	resolved map[string]*DependencyNode // "key@version" → node（全局唯一，避免重複解析）
 	seen     map[string]bool            // 當前 DFS 路徑（用於循環檢測）
+	mirrors  []string                   // 下載鏡像清單
 }
 
 // DependencyNode 表示依賴樹中的一個節點
@@ -77,7 +78,7 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 	g.seen[keyWithVer] = true
 
 	// 5. 下載/獲取快取路徑（源碼目錄）
-	pkgDir, downloadHash, err := downloadPackage(key, version)
+	pkgDir, downloadHash, err := downloadPackage(key, version, g.mirrors)
 	if err != nil {
 		delete(g.seen, keyWithVer)
 		return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
@@ -161,7 +162,7 @@ func (g *DependencyGraph) ResolveFromLock(key, version, pkgDir, downloadHash str
 		}
 
 		// 下載/從快取獲取套件目錄及壓縮包 SHA256
-		depPkgDir, depDownloadHash, err := downloadPackage(depKey, depVersion)
+		depPkgDir, depDownloadHash, err := downloadPackage(depKey, depVersion, g.mirrors)
 		if err != nil {
 			return nil, fmt.Errorf("downloading %s@%s from lock: %w", depKey, depVersion, err)
 		}

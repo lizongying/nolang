@@ -1,0 +1,115 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Golang
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+
+      - name: Set Version Name
+        id: set_version_name
+        run: |
+          VERSION_WITHOUT_V=$(echo '${{ github.ref_name }}' | sed 's/^v//')
+          echo "version_name=${VERSION_WITHOUT_V}" >> $GITHUB_ENV
+          echo "build_date=$(date -u '+%s')" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          cd ./src
+          mkdir -p ../bin
+
+          go vet ./cmd/nolang
+
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_linux_amd64 ./cmd/nolang
+
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_linux_arm64 ./cmd/nolang
+
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_darwin_amd64 ./cmd/nolang
+
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_darwin_arm64 ./cmd/nolang
+
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_windows_amd64.exe ./cmd/nolang
+
+      - name: Get History
+        id: get_history
+        run: |
+          chmod +x history.sh
+          output=$(./history.sh)
+          echo "$output" > history.md
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+          body_path: history.md
+
+      - name: Upload Release Asset linux_amd64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/no_linux_amd64
+          asset_name: linux_amd64/no
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset linux_arm64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/no_linux_arm64
+          asset_name: linux_arm64/no
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset darwin_amd64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/no_darwin_amd64
+          asset_name: darwin_amd64/no
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset darwin_arm64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/no_darwin_arm64
+          asset_name: darwin_arm64/no
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset windows_amd64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/no_windows_amd64.exe
+          asset_name: windows_amd64/no.exe
+          asset_content_type: application/octet-stream

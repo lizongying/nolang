@@ -26,6 +26,7 @@ type Package struct {
 	Ignore          []string          `json:"ignore,omitempty"`
 	Alias           map[string]string `json:"alias,omitempty"`
 	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 mod.jsonc）
+	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	RootDir         string            // 套件根目錄（含 mod.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
 	lockFile        *LockFile         // 已載入的鎖檔案（可選）
@@ -313,7 +314,7 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 	}
 
 	// 無本地覆蓋，需要下載
-	pkgDir, _, err := downloadPackage(key, version)
+	pkgDir, _, err := downloadPackage(key, version, p.Mirrors)
 	return pkgDir, err
 }
 
@@ -389,6 +390,7 @@ func (p *Package) EnsureDependencies(maxDepth int) (*DependencyGraph, error) {
 	}
 
 	graph := NewDependencyGraph()
+	graph.mirrors = p.Mirrors
 
 	// 檢查是否有鎖檔案
 	if p.lockFile != nil {
@@ -462,7 +464,7 @@ func (p *Package) resolveFromLock(graph *DependencyGraph, maxDepth int) (*Depend
 		}
 
 		// 從快取或下載取得套件目錄及壓縮包 SHA256
-		pkgDir, downloadHash, err := downloadPackage(key, version)
+		pkgDir, downloadHash, err := downloadPackage(key, version, p.Mirrors)
 		if err != nil {
 			return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
 		}
