@@ -6,23 +6,23 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u '+%s' 2>/dev/null || echo "0")
 LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_COMMIT) -X main.buildDate=$(BUILD_DATE)"
 SRCMOD     = src/go.mod
-CLI_BIN    = $(BINDIR)/nolang
-LSP_BIN    = vscode-nolang/server/nolang-lsp
+NO_BIN    = $(BINDIR)/no
+LSP_BIN    = vscode-nolang/server/lsp
 
-.PHONY: all nolang lsp package clean help FORCE
+.PHONY: all no lsp package clean help FORCE
 
-all: $(CLI_BIN) $(LSP_BIN)
+all: $(NO_BIN) $(LSP_BIN)
 
-nolang: $(CLI_BIN)
+no: $(NO_BIN)
 
 lsp: $(LSP_BIN)
 
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
-# ── CLI ────────────────────────────────
-$(CLI_BIN): FORCE
-	cd src && $(GO) build $(LD_FLAGS) -o ../$(CLI_BIN) ./cmd/cli
+# ── NO ────────────────────────────────
+$(NO_BIN): FORCE
+	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 
 # ── LSP ────────────────────────────
 $(LSP_BIN): FORCE
@@ -41,8 +41,8 @@ clean:
 help:
 	@echo "Nolang 構建目標："
 	@echo "  make            構建所有目標"
-	@echo "  make nolang     構建 bin/nolang"
-	@echo "  make lsp        構建 vscode-nolang/server/nolang-lsp"
+	@echo "  make no         構建 bin/no"
+	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make package    編譯 LSP 並打包 VSCode 拓展"
 	@echo "  make clean      清理"
 	@echo "  make help       幫助"

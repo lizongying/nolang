@@ -3,18 +3,18 @@ Thumbs.db
 .idea
 .vscode
 .README.md
-tmp
+
 .reasonix
 .deveco
 .mimocode
 .trae
-**/node_modules/
+
+tmp
+bin
 dist
 
-
+node_modules
 target
-bin
 
-
-src/build/nolang-build
-vscode-nolang/server/nolang-lsp
+vscode-nolang/server/lsp
+vscode-nolang/server/lsp.exe

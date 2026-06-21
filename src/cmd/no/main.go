@@ -55,25 +55,25 @@ func main() {
 		initProject()
 	case "new":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang new <project-name>")
+			fmt.Println("Usage: no new <project-name>")
 			return
 		}
 		newProject(os.Args[2])
 	case "add":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang add <package-name>")
+			fmt.Println("Usage: no add <package-name>")
 			return
 		}
 		addDependency(os.Args[2])
 	case "remove":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang remove <package-name>")
+			fmt.Println("Usage: no remove <package-name>")
 			return
 		}
 		removeDependency(os.Args[2])
 	case "update":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: nolang update <pkg>")
+			fmt.Println("Usage: no update <pkg>")
 			return
 		}
 		updateDependency(os.Args[2])
@@ -108,45 +108,45 @@ func printUsage() {
 	fmt.Println("  -v    Verbose mode (apply to all commands)")
 	fmt.Println("  -V    Print version")
 	fmt.Println("")
-	fmt.Println("  nolang version           Print version information")
+	fmt.Println("  no version           Print version information")
 	fmt.Println("")
-	fmt.Println("  nolang fmt [flags] <file|dir>  Format source files")
+	fmt.Println("  no fmt [flags] <file|dir>  Format source files")
 	fmt.Println("    Flags:")
 	fmt.Println("      -w    write result to source file (in-place)")
 	fmt.Println("      -d    process directory mode (recursive)")
 	fmt.Println("    Examples:")
-	fmt.Println("      nolang fmt main.no              format and print to stdout")
-	fmt.Println("      nolang fmt -w main.no           format file in-place")
-	fmt.Println("      nolang fmt -w -d src/           format all .no files in src/ recursively")
-	fmt.Println("      echo 'x=1' | nolang fmt         format from stdin")
+	fmt.Println("      no fmt main.no              format and print to stdout")
+	fmt.Println("      no fmt -w main.no           format file in-place")
+	fmt.Println("      no fmt -w -d src/           format all .no files in src/ recursively")
+	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("")
-	fmt.Println("  nolang build [flags] [<file|dir>]  Build a Nolang project (default: current dir)")
+	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project (default: current dir)")
 	fmt.Println("    Flags:")
 	fmt.Println("      -o <file>     Output file path")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("    Examples:")
-	fmt.Println("      nolang build main.no")
-	fmt.Println("      nolang build -o output main.no      specify output path")
-	fmt.Println("      nolang build -cc zig main.no        use zig as C compiler")
+	fmt.Println("      no build main.no")
+	fmt.Println("      no build -o output main.no      specify output path")
+	fmt.Println("      no build -cc zig main.no        use zig as C compiler")
 	fmt.Println("")
-	fmt.Println("  nolang run [<file|dir>]          Build and run")
+	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
 	fmt.Println("    Examples:")
-	fmt.Println("      nolang run                     build and run main.no in current dir")
-	fmt.Println("      nolang run main.no             build and run main.no")
-	fmt.Println("      nolang run -cc zig main.no     build and run with Zig compiler")
+	fmt.Println("      no run                     build and run main.no in current dir")
+	fmt.Println("      no run main.no             build and run main.no")
+	fmt.Println("      no run -cc zig main.no     build and run with Zig compiler")
 	fmt.Println("")
-	fmt.Println("  nolang test [<file|dir>]         Run tests")
+	fmt.Println("  no test [<file|dir>]         Run tests")
 	fmt.Println("    If directory, runs main() from all .no files except main.no and lib.no.")
 	fmt.Println("")
-	fmt.Println("  nolang add <pkg>        Add a dependency")
-	fmt.Println("  nolang remove <pkg>     Remove a dependency")
-	fmt.Println("  nolang update <pkg>     Update a specific dependency")
-	fmt.Println("  nolang update-all        Update all dependencies")
-	fmt.Println("  nolang list              List dependencies")
-	fmt.Println("  nolang install           Install nolang binary to system")
-	fmt.Println("  nolang sync              Sync/download dependencies")
-	fmt.Println("  nolang pub               Publish package")
+	fmt.Println("  no add <pkg>        Add a dependency")
+	fmt.Println("  no remove <pkg>     Remove a dependency")
+	fmt.Println("  no update <pkg>     Update a specific dependency")
+	fmt.Println("  no update-all        Update all dependencies")
+	fmt.Println("  no list              List dependencies")
+	fmt.Println("  no install           Install no binary to system")
+	fmt.Println("  no sync              Sync/download dependencies")
+	fmt.Println("  no pub               Publish package")
 	fmt.Println("")
 	fmt.Println("")
 }
@@ -363,7 +363,7 @@ func addDependency(name string) {
 func loadProjectConfig() (*ProjectConfig, error) {
 	data, err := os.ReadFile("mod.jsonc")
 	if err != nil {
-		return nil, fmt.Errorf("mod.jsonc not found. Run 'nolang init' first")
+		return nil, fmt.Errorf("mod.jsonc not found. Run 'no init' first")
 	}
 	cleaned := removeComments(string(data))
 	var config ProjectConfig
@@ -501,7 +501,7 @@ func syncDependencies() {
 		return
 	}
 	if pkg == nil {
-		fmt.Println("Error: mod.jsonc not found. Run 'nolang init' first")
+		fmt.Println("Error: mod.jsonc not found. Run 'no init' first")
 		return
 	}
 	if len(pkg.Dependencies) == 0 {
@@ -545,7 +545,7 @@ func fmtCommand(args []string) {
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	dirMode := fs.Bool("d", false, "process directory mode")
 	fs.Usage = func() {
-		fmt.Println("Usage: nolang fmt [flags] <file|directory>")
+		fmt.Println("Usage: no fmt [flags] <file|directory>")
 		fmt.Println("")
 		fmt.Println("Format Nolang source files.")
 		fmt.Println("When no file is given, reads from stdin.")
@@ -554,10 +554,10 @@ func fmtCommand(args []string) {
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  nolang fmt main.no")
-		fmt.Println("  nolang fmt -w main.no")
-		fmt.Println("  nolang fmt -w -d src/")
-		fmt.Println("  echo 'x=1' | nolang fmt")
+		fmt.Println("  no fmt main.no")
+		fmt.Println("  no fmt -w main.no")
+		fmt.Println("  no fmt -w -d src/")
+		fmt.Println("  echo 'x=1' | no fmt")
 	}
 	_ = fs.Parse(args)
 
@@ -632,7 +632,7 @@ func buildCommand(args []string) {
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	fs.Usage = func() {
-		fmt.Println("Usage: nolang build [flags] <file|directory>")
+		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
 		fmt.Println("Build Nolang source files to an executable.")
 		fmt.Println("")
@@ -640,10 +640,10 @@ func buildCommand(args []string) {
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  nolang build                  build current directory")
-		fmt.Println("  nolang build main.no")
-		fmt.Println("  nolang build -o output main.no")
-		fmt.Println("  nolang build -cc zig main.no")
+		fmt.Println("  no build                  build current directory")
+		fmt.Println("  no build main.no")
+		fmt.Println("  no build -o output main.no")
+		fmt.Println("  no build -cc zig main.no")
 	}
 	_ = fs.Parse(args)
 
@@ -809,7 +809,7 @@ func pubCommand(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Println("nolang pub: publishing is not yet implemented.")
+	fmt.Println("no pub: publishing is not yet implemented.")
 	fmt.Printf("  token: %s\n", *token)
 	fmt.Printf("  registry: %s\n", *registry)
 }
