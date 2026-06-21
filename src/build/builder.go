@@ -8,15 +8,58 @@ import (
 	"strings"
 )
 
+// CheckToolchain verifies that LLVM toolchain (llvm-config) and the chosen
+// C compiler (clang or zig) are available.
+// Returns an error with OS-specific install instructions if not found.
+func CheckToolchain(cc string) error {
+	if _, err := exec.LookPath("llvm-config"); err != nil {
+		return fmt.Errorf(`未檢測到 LLVM 工具鏈
+  macOS: brew install llvm
+  Ubuntu: sudo apt install llvm-dev clang
+  Windows: winget install LLVM.LLVM`)
+	}
+
+	// 讀取版本僅用於顯示，不強制特定版本
+	out, _ := exec.Command("llvm-config", "--version").Output()
+	if verStr := strings.TrimSpace(string(out)); verStr != "" {
+		fmt.Fprintf(os.Stderr, "llvm-config version: %s\n", verStr)
+	}
+
+	switch cc {
+	case "zig":
+		if _, err := exec.LookPath("zig"); err != nil {
+			return fmt.Errorf(`未檢測到 Zig 編譯器
+  macOS: brew install zig
+  Ubuntu: sudo snap install zig --classic
+  Windows: winget install zig.zig`)
+		}
+	default:
+		if _, err := exec.LookPath("clang"); err != nil {
+			return fmt.Errorf(`未檢測到 clang，請確認 LLVM 工具鏈完整安裝
+  macOS: brew install llvm
+  Ubuntu: sudo apt install llvm-dev clang
+  Windows: winget install LLVM.LLVM`)
+		}
+	}
+
+	return nil
+}
+
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
 	CC      string // C compiler: "clang" or "zig"
+	Target  string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
 	Verbose bool
 	Output  string // optional output path ("" = auto)
 }
 
 // BuildFile compiles a .no source file and produces the output binary/file.
 func BuildFile(inputPath string, opts BuildOptions) error {
+	// 工具鏈檢查
+	if err := CheckToolchain(opts.CC); err != nil {
+		return err
+	}
+
 	// 若指定的是目錄，先找目錄內的 mod.jsonc
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
@@ -79,7 +122,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		outPath = filepath.Join(distDir, fileName)
 	}
 
-	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Verbose)
+	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose)
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
@@ -92,7 +135,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 }
 
 // BuildLLVM writes LLVM IR and compiles it to an executable via opt + llc + cc.
-func BuildLLVM(code string, fileName string, outPath string, cc string, verbose bool) error {
+func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool) error {
 	tempDir, err := os.MkdirTemp("", "nolang")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
@@ -135,22 +178,35 @@ func BuildLLVM(code string, fileName string, outPath string, cc string, verbose 
 
 	// llc → .s (assembly)
 	sPath := filepath.Join(tempDir, fileName+".s")
-	llcCmd := exec.Command("llc", llPath, "-o", sPath)
+	llcArgs := []string{llPath, "-o", sPath}
+	if target != "" {
+		llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
+	}
+	llcCmd := exec.Command("llc", llcArgs...)
 	llcCmd.Stdout = os.Stdout
 	llcCmd.Stderr = os.Stderr
 	if verbose {
 		fmt.Printf("Running: llc %s -o %s\n", llPath, sPath)
+		if target != "" {
+			fmt.Printf("  target: %s\n", target)
+		}
 	}
 	if err = llcCmd.Run(); err != nil {
 		return fmt.Errorf("LLVM assembly failed: %w", err)
 	}
 
 	// cc → executable (assemble + link)
+	var clangArgs []string
+	if target != "" {
+		clangArgs = append(clangArgs, "--target="+target)
+	}
+	clangArgs = append(clangArgs, sPath, "-o", outPath)
 	var clangCmd *exec.Cmd
 	if cc == "zig" {
-		clangCmd = exec.Command("zig", "cc", sPath, "-o", outPath)
+		clangArgs = append([]string{"cc"}, clangArgs...)
+		clangCmd = exec.Command("zig", clangArgs...)
 	} else {
-		clangCmd = exec.Command(cc, sPath, "-o", outPath)
+		clangCmd = exec.Command(cc, clangArgs...)
 	}
 	clangCmd.Stdout = os.Stdout
 	clangCmd.Stderr = os.Stderr

@@ -124,10 +124,14 @@ func printUsage() {
 	fmt.Println("    Flags:")
 	fmt.Println("      -o <file>     Output file path")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
+	fmt.Println("      -target <s>   Target triple for cross-compilation")
+	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
+	fmt.Println("                      x86_64-windows-gnu")
 	fmt.Println("    Examples:")
 	fmt.Println("      no build main.no")
 	fmt.Println("      no build -o output main.no      specify output path")
 	fmt.Println("      no build -cc zig main.no        use zig as C compiler")
+	fmt.Println("      no build -target x86_64-linux-gnu main.no  cross-compile")
 	fmt.Println("")
 	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
@@ -138,6 +142,16 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("  no test [<file|dir>]         Run tests")
 	fmt.Println("    If directory, runs main() from all .no files except main.no and lib.no.")
+	fmt.Println("    Flags:")
+	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
+	fmt.Println("      -target <s>   Target triple for cross-compilation")
+	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
+	fmt.Println("                      x86_64-windows-gnu")
+	fmt.Println("    Examples:")
+	fmt.Println("      no test")
+	fmt.Println("      no test my-test.no")
+	fmt.Println("      no test -cc zig")
+	fmt.Println("      no test -target x86_64-linux-gnu")
 	fmt.Println("")
 	fmt.Println("  no add <pkg>        Add a dependency")
 	fmt.Println("  no remove <pkg>     Remove a dependency")
@@ -631,6 +645,7 @@ func buildCommand(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -644,6 +659,7 @@ func buildCommand(args []string) {
 		fmt.Println("  no build main.no")
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
+		fmt.Println("  no build -target x86_64-linux-gnu main.no")
 	}
 	_ = fs.Parse(args)
 
@@ -655,6 +671,7 @@ func buildCommand(args []string) {
 	}
 	opts := nbuild.BuildOptions{
 		CC:      *cc,
+		Target:  *target,
 		Verbose: verbose,
 		Output:  *outputFile,
 	}
@@ -668,6 +685,7 @@ func buildCommand(args []string) {
 func runCommand(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
 	_ = fs.Parse(args)
 
 	inputPath := "."
@@ -694,6 +712,7 @@ func runCommand(args []string) {
 	outPath := filepath.Join(tmpDir, "out")
 	opts := nbuild.BuildOptions{
 		CC:      *cc,
+		Target:  *target,
 		Output:  outPath,
 		Verbose: verbose,
 	}
@@ -713,6 +732,7 @@ func runCommand(args []string) {
 func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
 	_ = fs.Parse(args)
 
 	inputPath := "."
@@ -769,6 +789,7 @@ func testCommand(args []string) {
 		outPath := filepath.Join(tmpDir, "out")
 		opts := nbuild.BuildOptions{
 			CC:      *cc,
+			Target:  *target,
 			Output:  outPath,
 			Verbose: false,
 		}

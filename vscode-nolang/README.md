@@ -15,7 +15,7 @@ VSCode 插件，为 Nolang 语言提供完整的 IDE 支持。
 
 ### 方法一：从 VSIX 安装（推荐）
 
-1. 下载 `vscode-nolang-0.1.0.vsix` 文件
+1. 下载 `vscode-nolang-<version>.vsix` 文件
 2. 打开 VSCode
 3. 打开扩展面板（快捷键：`Ctrl+Shift+X` 或 `Cmd+Shift+X`）
 4. 点击扩展面板右上角的 `...` 菜单
@@ -39,7 +39,7 @@ npm run compile
 npm run package
 
 # 安装到 VSCode
-code --install-extension vscode-nolang-0.1.0.vsix
+code --install-extension vscode-nolang-<version>.vsix
 ```
 
 ## 使用方法
@@ -50,92 +50,24 @@ code --install-extension vscode-nolang-0.1.0.vsix
 2. 将文件保存为 `.no` 扩展名（例如：`main.no`）
 3. VSCode 会自动识别并启用 Nolang 语言支持
 
-### 示例代码
-
-```nolang
-// Nolang 示例代码
-
-// 变量声明（隐式类型推断）
-x = 10
-name = 'Hello World'
-flag = true
-pi = 3.14
-
-// 函数定义
-add(a i64, b i64) {
-    result = a + b
-    print(result)
-}
-
-// 函数调用
-add(5, 3)
-
-// 条件语句
-if x > 5 {
-    print('x is greater than 5')
-}
-
-// 循环
-count = 0
-for count < 10 {
-    print(count)
-    count = count + 1
-}
-
-// 结构体定义
-user {
-    name str
-    age i64
-}
-
-// 对象字面量
-u = user {
-    name: 'Alice'
-    age: 25
-}
-
-// 属性访问
-print(u.name)
-```
-
 ### 快捷键
 
-| 快捷键 | 功能 |
-|--------|------|
-| `F12` | 跳转到定义 |
-| `Ctrl+F12` | 查找引用 |
-| `Ctrl+Space` | 触发代码补全 |
+| 快捷键         | 功能         |
+| -------------- | ------------ |
+| `F12`          | 跳转到定义   |
+| `Ctrl+F12`     | 查找引用     |
+| `Ctrl+Space`   | 触发代码补全 |
 | `Ctrl+Shift+O` | 显示文档符号 |
-| `Ctrl+Hover` | 显示悬停提示 |
+| `Ctrl+Hover`   | 显示悬停提示 |
 
 ## 开发指南
 
 ### 环境要求
 
-- Node.js >= 18.0.0
-- VSCode >= 1.80.0
-- Go >= 1.20 (用于构建 LSP 服务器)
-
-### 项目结构
-
-```
-vscode-nolang/
-├── package.json              # 插件配置
-├── language-configuration.json  # 语言配置（括号配对等）
-├── syntaxes/
-│   └── nolang.tmLanguage.json   # TextMate 语法高亮定义
-├── client/
-│   ├── tsconfig.json         # TypeScript 配置
-│   └── src/
-│       └── extension.ts      # 扩展主入口
-├── server/
-│   └── nolang-lsp            # LSP 服务器可执行文件（需构建）
-└── LICENSE                   # MIT 许可证
-```
-
 ### 启动开发环境
 
 1. 打开项目目录：
+
    ```bash
    code /path/to/vscode-nolang
    ```
@@ -146,12 +78,9 @@ vscode-nolang/
 
 ### 构建 LSP 服务器
 
-LSP 服务器位于 `nolang/lsp/cmd/lsp/`，需要先构建：
-
 ```bash
-cd ../src/lsp/cmd/lsp
-go build -o nolang-lsp .
-cp nolang-lsp ../../vscode-nolang/server/
+cd ../
+make lsp
 ```
 
 ### 调试 LSP 服务器
@@ -164,36 +93,24 @@ cp nolang-lsp ../../vscode-nolang/server/
 
 在 VSCode 设置中搜索 `Nolang` 配置：
 
-| 配置项 | 描述 | 默认值 |
-|--------|------|--------|
-| `nolang.languageServer.path` | LSP 服务器可执行文件路径 | 内置路径 |
-| `nolang.languageServer.debug` | 启用调试日志 | false |
+| 配置项                        | 描述                     | 默认值   |
+| ----------------------------- | ------------------------ | -------- |
+| `nolang.languageServer.path`  | LSP 服务器可执行文件路径 | 内置路径 |
+| `nolang.languageServer.debug` | 启用调试日志             | false    |
 
 ## 故障排除
 
 ### LSP 服务器无法启动
 
-1. 确保 `server/nolang-lsp` 文件存在且有执行权限
+1. 确保 `server/lsp` 文件存在且有执行权限
 2. 检查 VSCode 输出面板中的 "Nolang Language Server" 日志
-3. 尝试手动运行 `./server/nolang-lsp` 检查是否有错误
+3. 尝试手动运行 `./server/lsp` 检查是否有错误
 
 ### 语法高亮不生效
 
 1. 确保文件扩展名是 `.no`
 2. 检查右下角语言模式是否显示为 "Nolang"
 3. 尝试重新加载窗口（`Ctrl+Shift+P` -> `Reload Window`）
-
-## 支持的语法
-
-- 变量声明（隐式类型推断和显式类型标注）
-- 函数定义和调用
-- 匿名函数
-- 条件语句（if-else）
-- 三元表达式
-- 循环语句（for）
-- 数组和切片
-- 结构体定义和对象字面量
-- 单行注释（//）
 
 ## 许可证
 
