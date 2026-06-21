@@ -78,7 +78,7 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 	g.seen[keyWithVer] = true
 
 	// 5. 下載/獲取快取路徑（源碼目錄）
-	pkgDir, downloadHash, err := downloadPackage(key, version, g.mirrors)
+	pkgDir, downloadHash, err := DownloadPackage(key, version, g.mirrors)
 	if err != nil {
 		delete(g.seen, keyWithVer)
 		return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
@@ -162,7 +162,7 @@ func (g *DependencyGraph) ResolveFromLock(key, version, pkgDir, downloadHash str
 		}
 
 		// 下載/從快取獲取套件目錄及壓縮包 SHA256
-		depPkgDir, depDownloadHash, err := downloadPackage(depKey, depVersion, g.mirrors)
+		depPkgDir, depDownloadHash, err := DownloadPackage(depKey, depVersion, g.mirrors)
 		if err != nil {
 			return nil, fmt.Errorf("downloading %s@%s from lock: %w", depKey, depVersion, err)
 		}
@@ -237,7 +237,7 @@ func findPackageRootForDep(key, version, pkgDir string) string {
 		return pkgDir
 	}
 	cachePath := filepath.Join(cacheDir(), owner, repo, version)
-	shortName := packageShortName(key)
+	shortName := PackageShortName(key)
 	root := findPackageRoot(cachePath, shortName)
 	if root != "" {
 		return root

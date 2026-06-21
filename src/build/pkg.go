@@ -281,9 +281,9 @@ func (p *Package) matchDependency(importPath string) (string, string, bool) {
 	return matchedKey, matchedVer, true
 }
 
-// packageShortName 從依賴鍵中提取短名稱（最後一段）
+// PackageShortName 從依賴鍵中提取短名稱（最後一段）
 // "github.com/lizongying/nolang/test2" → "test2"
-func packageShortName(depKey string) string {
+func PackageShortName(depKey string) string {
 	if idx := strings.LastIndex(depKey, "/"); idx >= 0 {
 		return depKey[idx+1:]
 	}
@@ -298,7 +298,7 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 		return "", nil
 	}
 
-	shortName := packageShortName(key)
+	shortName := PackageShortName(key)
 
 	// 檢查 workspace.jsonc 是否有本地覆蓋
 	if p.workspaceRoot != "" {
@@ -314,7 +314,7 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 	}
 
 	// 無本地覆蓋，需要下載
-	pkgDir, _, err := downloadPackage(key, version, p.Mirrors)
+	pkgDir, _, err := DownloadPackage(key, version, p.Mirrors)
 	return pkgDir, err
 }
 
@@ -331,7 +331,7 @@ func (p *Package) warnWorkspaceDepVersion() {
 		if version == "" || version == "*" {
 			continue
 		}
-		shortName := packageShortName(key)
+		shortName := PackageShortName(key)
 		if _, exists := ws[shortName]; exists {
 			fmt.Printf("Warning: dependency %q specifies version %q but is a workspace-local package. Remove the version constraint (use \"*\").\n", key, version)
 		}
@@ -464,7 +464,7 @@ func (p *Package) resolveFromLock(graph *DependencyGraph, maxDepth int) (*Depend
 		}
 
 		// 從快取或下載取得套件目錄及壓縮包 SHA256
-		pkgDir, downloadHash, err := downloadPackage(key, version, p.Mirrors)
+		pkgDir, downloadHash, err := DownloadPackage(key, version, p.Mirrors)
 		if err != nil {
 			return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
 		}

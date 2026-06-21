@@ -59,9 +59,9 @@ func archiveHashFromFile(archivePath string) (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 
-// downloadPackage downloads a package from GitHub Releases and caches it locally.
+// DownloadPackage downloads a package from GitHub Releases and caches it locally.
 // It returns the package directory path and the SHA256 hash of the downloaded archive.
-func downloadPackage(key, version string, mirrors []string) (pkgDir string, archiveHash string, err error) {
+func DownloadPackage(key, version string, mirrors []string) (pkgDir string, archiveHash string, err error) {
 	owner, repo, ok := parseGitHubKey(key)
 	if !ok {
 		return "", "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)
@@ -69,7 +69,7 @@ func downloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 
 	// Determine cache path
 	cachePath := filepath.Join(cacheDir(), owner, repo, version)
-	shortName := packageShortName(key)
+	shortName := PackageShortName(key)
 	pkgDir = filepath.Join(cachePath, shortName)
 
 	// Check if already cached

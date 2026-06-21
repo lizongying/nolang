@@ -48,23 +48,23 @@ vscode 插件
 
 ### CLI 命令
 
-| 命令                                        | 說明                    |
-| ------------------------------------------- | ----------------------- |
-| `no init`                                   | 初始化倉庫              |
-| `no new <name>`                             | 建立新倉庫              |
-| `no fmt`                                    | 格式化源代碼            |
-| `no build`                                  | 構建（輸出 executable） |
-| `no run`                                    | 構建並執行 main.no      |
-| `no test`                                   | 執行測試                |
-| `no add`                                    | 依賴管理                |
-| `no remove`                                 | 依賴管理                |
-| `no update`                                 | 依賴管理                |
-| `no update-all`                             | 依賴管理                |
-| `no sync`                                   | 依賴管理                |
-| `no list`                                   | 依賴管理                |
-| `no install`                                | 安裝 binary 到系統      |
-| `no pub --token <token> [--registry <url>]` | 發布至 registry         |
-| `no sync`                                   | 同步依賴                |
+| 命令                                                         | 說明                                   |
+| ------------------------------------------------------------ | -------------------------------------- |
+| `no init`                                                    | 初始化倉庫                             |
+| `no new <name>`                                              | 建立新倉庫                             |
+| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼                           |
+| `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable）                |
+| `no run [-cc <s>] [-target <s>] [<file\|dir>]`               | 構建並執行 main.no                     |
+| `no test [-cc <s>] [-target <s>] [<file\|dir>]`              | 執行測試                               |
+| `no add <pkg>`                                               | 添加依賴                               |
+| `no remove <pkg>`                                            | 移除依賴                               |
+| `no update <pkg>`                                            | 更新依賴                               |
+| `no update-all`                                              | 更新所有依賴                           |
+| `no list`                                                    | 列出依賴                               |
+| `no sync`                                                    | 同步依賴                               |
+| `no install [-u] [<pkg>@<version>]`                          | 安裝 binary（~/.nolang/bin/ + 軟鏈接） |
+| `no uninstall <name>`                                        | 移除 binary 及軟鏈接                   |
+| `no pub --token <token> [--registry <url>]`                  | 發布至 registry                        |
 
 ```bash
 # 構建（默認尋找 main.no）

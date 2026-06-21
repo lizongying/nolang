@@ -82,7 +82,9 @@ func main() {
 	case "list":
 		listDependencies()
 	case "install":
-		installCommand()
+		installCommand(os.Args[2:])
+	case "uninstall":
+		uninstallCommand(os.Args[2:])
 	case "pub":
 		pubCommand(os.Args[2:])
 	case "sync":
@@ -158,7 +160,11 @@ func printUsage() {
 	fmt.Println("  no update <pkg>     Update a specific dependency")
 	fmt.Println("  no update-all        Update all dependencies")
 	fmt.Println("  no list              List dependencies")
-	fmt.Println("  no install           Install no binary to system")
+	fmt.Println("  no install [-u] [<pkg>@<version>]")
+	fmt.Println("                    Install a package binary (store in ~/.nolang/bin/, symlink in /usr/local/bin/)")
+	fmt.Println("                    -u    force re-download and re-build")
+	fmt.Println("  no uninstall <name>")
+	fmt.Println("                    Remove installed package binary and symlink")
 	fmt.Println("  no sync              Sync/download dependencies")
 	fmt.Println("  no pub               Publish package")
 	fmt.Println("")
@@ -534,24 +540,191 @@ func syncDependencies() {
 	fmt.Println("Lock file and integrity sums saved.")
 }
 
-func installCommand() {
-	exe, err := os.Executable()
+// nolangBinDir 返回 ~/.nolang/bin 目錄
+func nolangBinDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), ".nolang", "bin")
+	}
+	return filepath.Join(home, ".nolang", "bin")
+}
+
+func installCommand(args []string) {
+	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	update := fs.Bool("u", false, "Force re-download and re-build")
+	fs.Usage = func() {
+		fmt.Println("Usage: no install [-u] [<pkg>@<version>]")
+		fmt.Println("")
+		fmt.Println("Install a package binary to system.")
+		fmt.Println("  no install            build and install current package")
+		fmt.Println("  no install -u         force rebuild current package")
+		fmt.Println("  no install pkg@1.0    download and install remote package")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fs.PrintDefaults()
+	}
+	_ = fs.Parse(args)
+
+	remaining := fs.Args()
+	var pkgSpec string
+	if len(remaining) > 0 {
+		pkgSpec = remaining[0]
+	}
+
+	var buildDir string
+	var binName string
+
+	if pkgSpec == "" {
+		// 無參數：安裝當前目錄的包
+		pkg, err := nbuild.LoadPackage(".")
+		if err != nil || pkg == nil {
+			fmt.Fprintf(os.Stderr, "Error: mod.jsonc not found in current directory\n")
+			return
+		}
+		buildDir = "."
+		binName = pkg.Name
+		if !*update {
+			fmt.Printf("Installing current package: %s\n", binName)
+		} else {
+			fmt.Printf("Updating current package: %s\n", binName)
+		}
+	} else {
+		// 解析 <pkg>@<version>
+		parts := strings.SplitN(pkgSpec, "@", 2)
+		pkgKey := parts[0]
+		version := "*"
+		if len(parts) == 2 {
+			version = parts[1]
+		}
+
+		if !*update {
+			// 檢查是否已安裝
+			binDir := nolangBinDir()
+			installed := filepath.Join(binDir, nbuild.PackageShortName(pkgKey))
+			if _, err := os.Stat(installed); err == nil {
+				// 檢查軟鏈接
+				symlink := filepath.Join("/usr/local/bin", nbuild.PackageShortName(pkgKey))
+				if _, err := os.Stat(symlink); err == nil {
+					fmt.Printf("%s already installed. Use -u to update.\n", pkgSpec)
+					return
+				}
+			}
+		}
+
+		fmt.Printf("Downloading %s@%s...\n", pkgKey, version)
+
+		// 從遠端下載包源碼
+		pkgDir, _, err := nbuild.DownloadPackage(pkgKey, version, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", pkgSpec, err)
+			return
+		}
+
+		buildDir = pkgDir
+		binName = nbuild.PackageShortName(pkgKey)
+	}
+
+	// 建立臨時目錄用於構建
+	tmpDir, err := os.MkdirTemp("", "nolang-install")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
 	}
-	dst := "/usr/local/bin/nolang"
-	data, err := os.ReadFile(exe)
+	defer os.RemoveAll(tmpDir)
+
+	outPath := filepath.Join(tmpDir, binName)
+	opts := nbuild.BuildOptions{
+		CC:      "clang",
+		Output:  outPath,
+		Verbose: verbose,
+	}
+
+	fmt.Printf("Building %s...\n", binName)
+	if err := nbuild.BuildFile(buildDir, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error building: %v\n", err)
+		return
+	}
+
+	// 確保 ~/.nolang/bin 目錄存在
+	binDir := nolangBinDir()
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating %s: %v\n", binDir, err)
+		return
+	}
+
+	// 複製 binary 到 ~/.nolang/bin/<name>
+	dst := filepath.Join(binDir, binName)
+	data, err := os.ReadFile(outPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading binary: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error reading built binary: %v\n", err)
 		return
 	}
 	if err := os.WriteFile(dst, data, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Printf("Try: sudo %s install\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", dst, err)
 		return
 	}
-	fmt.Printf("Installed to %s\n", dst)
+
+	// 在 /usr/local/bin/ 建立軟鏈接
+	symlink := filepath.Join("/usr/local/bin", binName)
+	// 移除舊的軟鏈接/文件
+	if _, err := os.Lstat(symlink); err == nil {
+		os.Remove(symlink)
+	}
+	if err := os.Symlink(dst, symlink); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating symlink %s: %v\n", symlink, err)
+		fmt.Printf("Try: sudo ln -sf %s %s\n", dst, symlink)
+		return
+	}
+
+	fmt.Printf("Installed %s\n", binName)
+	fmt.Printf("  binary: %s\n", dst)
+	fmt.Printf("  symlink: %s\n", symlink)
+}
+
+func uninstallCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: no uninstall <name>")
+		fmt.Println("")
+		fmt.Println("Uninstall a package binary.")
+		fmt.Println("  no uninstall pkg    remove pkg binary and symlink")
+		return
+	}
+
+	name := args[0]
+	binDir := nolangBinDir()
+	binary := filepath.Join(binDir, name)
+	symlink := filepath.Join("/usr/local/bin", name)
+
+	removed := false
+
+	// 移除軟鏈接
+	if _, err := os.Lstat(symlink); err == nil {
+		if err := os.Remove(symlink); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing symlink %s: %v\n", symlink, err)
+			fmt.Printf("Try: sudo no uninstall %s\n", name)
+			return
+		}
+		fmt.Printf("Removed symlink: %s\n", symlink)
+		removed = true
+	} else {
+		fmt.Printf("Symlink not found: %s\n", symlink)
+	}
+
+	// 移除 binary
+	if _, err := os.Stat(binary); err == nil {
+		if err := os.Remove(binary); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing %s: %v\n", binary, err)
+			return
+		}
+		fmt.Printf("Removed binary: %s\n", binary)
+		removed = true
+	} else {
+		fmt.Printf("Binary not found: %s\n", binary)
+	}
+
+	if !removed {
+		fmt.Printf("%s is not installed.\n", name)
+	}
 }
 
 func fmtCommand(args []string) {
