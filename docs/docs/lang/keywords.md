@@ -9,7 +9,7 @@ sidebar_position: 4
 - `...` // 返回語句，终止函数 替代return
 - `#` // 引入模塊
 - `->` // 類型轉換
-- <code>&lt;-</code> // for i <- [1,2, 3] 替代in
+- <code>&lt;-</code> // for i <code>{'<-'}</code> [1, 2, 3] 替代in
 - `?` // 空 替代nil
 - `..` // 父類
 - `.` // 真。代表自身，類或參數 替代true
