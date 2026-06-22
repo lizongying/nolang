@@ -23,24 +23,24 @@ sudo mv nolang /usr/local/bin/no
 
 ## CLI 命令
 
-| 命令 | 說明 |
-|------|------|
-| `no version` | 打印版本信息 |
-| `no init` | 在當前目錄初始化倉庫 |
-| `no new <name>` | 建立新倉庫 |
-| `no fmt [-w] [-d] <file\|dir>` | 格式化源代碼 |
+| 命令                                                         | 說明                    |
+| ------------------------------------------------------------ | ----------------------- |
+| `no version`                                                 | 打印版本信息            |
+| `no init`                                                    | 在當前目錄初始化倉庫    |
+| `no new <name>`                                              | 建立新倉庫              |
+| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼            |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable） |
-| `no run [-cc <s>] [-target <s>] [<file\|dir>]` | 構建並執行 main.no |
-| `no test [-cc <s>] [-target <s>] [<file\|dir>]` | 執行測試 |
-| `no add <pkg>` | 添加依賴 |
-| `no remove <pkg>` | 移除依賴 |
-| `no update <pkg>` | 更新依賴 |
-| `no update-all` | 更新所有依賴 |
-| `no list` | 列出依賴 |
-| `no sync` | 同步依賴 |
-| `no install [-u] [<pkg>@<version>]` | 安裝 binary |
-| `no uninstall <name>` | 移除 binary |
-| `no pub --token <token> [--registry <url>]` | 發布至 registry |
+| `no run [-cc <s>] [-target <s>] [<file\|dir>]`               | 構建並執行 main.no      |
+| `no test [-cc <s>] [-target <s>] [<file>]`                   | 執行測試                |
+| `no add <pkg>`                                               | 添加依賴                |
+| `no remove <pkg>`                                            | 移除依賴                |
+| `no update <pkg>`                                            | 更新依賴                |
+| `no update-all`                                              | 更新所有依賴            |
+| `no list`                                                    | 列出依賴                |
+| `no sync`                                                    | 同步依賴                |
+| `no install [-u] [<pkg>@<version>]`                          | 安裝 binary             |
+| `no uninstall <name>`                                        | 移除 binary             |
+| `no pub --token <token> [--registry <url>]`                  | 發布至 registry         |
 
 ## 快速開始
 
@@ -70,27 +70,26 @@ no init
 # 構建（默認尋找 main.no）
 no build                    # 構建當前目錄
 no build main.no            # 構建指定文件
-no build -o output main.no  # 指定輸出路徑
-no build -cc zig main.no    # 使用 Zig 編譯器
-no build -target x86_64-linux-gnu main.no  # 交叉編譯（指定目標平台）
+no build -o output          # 指定輸出路徑
+no build -cc zig            # 使用 Zig 編譯器
+no build -target x86_64-linux-gnu  # 交叉編譯（指定目標平台）
 
 # 運行（構建 + 執行）
 no run                      # 構建並執行 main.no（必須有 main.no）
-no run main.no
-no run -cc zig main.no
-no run -target aarch64-macos-gnu main.no
+no run -cc zig
+no run -target aarch64-macos-gnu
 ```
 
 ### 交叉編譯目標
 
 `-target` 參數格式為 `<arch>-<os>-<abi>`，支持以下目標：
 
-| 目標三元組 | 說明 |
-|-----------|------|
-| `x86_64-linux-gnu` | Linux x86_64 |
-| `aarch64-linux-gnu` | Linux ARM64 |
-| `x86_64-macos-gnu` | macOS x86_64 |
-| `aarch64-macos-gnu` | macOS ARM64 |
+| 目標三元組           | 說明           |
+| -------------------- | -------------- |
+| `x86_64-linux-gnu`   | Linux x86_64   |
+| `aarch64-linux-gnu`  | Linux ARM64    |
+| `x86_64-macos-gnu`   | macOS x86_64   |
+| `aarch64-macos-gnu`  | macOS ARM64    |
 | `x86_64-windows-gnu` | Windows x86_64 |
 
 ### 編譯器選擇
@@ -102,27 +101,28 @@ no run -target aarch64-macos-gnu main.no
 
 ## 入口規則
 
-- **main.no** — 程序入口，不可包含測試斷言
-- **lib.no** — 庫入口，導出函數，不可包含測試斷言（詳見[導出文檔](lang/export)）
-- **其他 .no 文件** — 可包含測試斷言，測試與方法在同一文件
+- **main.no** — 程序入口
+- **lib.no** — 庫入口，導出函數（詳見[導出文檔](lang/export)）
+- **test/ 目錄下所有 .no 文件** — 包含測試斷言
 
 ## 測試
 
 ```bash
-# 執行目錄下所有 .no 文件的 main()，排除 main.no / lib.no
+# 測試test目錄下所有 .no 文件
 no test
 
 # 執行單個測試文件
 no test my-test.no
 
 # 使用指定編譯器或目標
-no test -cc zig my-test.no
+no test -cc zig
 no test -target x86_64-windows-gnu
 ```
 
 測試說明：
+
+- 测试文件统一放在 test/ 目录下
 - 每個測試文件獨立構建
-- 測試文件和功能代碼寫在同一個 `.no` 文件中
 - 若任一測試失敗，返回非零退出碼
 
 ## 安裝與卸載 Binary
@@ -144,9 +144,10 @@ no install -u pkg-name@1.0
 ```
 
 安裝流程：
+
 1. 下載包源碼（遠端包）或使用當前目錄（本地包）
 2. 自動執行構建
-3. 將 binary 複製到 `~/.nolang/bin/` 
+3. 將 binary 複製到 `~/.nolang/bin/`
 4. 在 `/usr/local/bin/` 建立軟鏈接
 
 ### 卸載
@@ -176,13 +177,13 @@ no uninstall pkg-name
   "workspace": "",
   "mirrors": [],
   "dependencies": {
-    "fmt": "*"
+    "fmt": "*",
   },
   "compiler": {
-    "version": "0.1.0"
+    "version": "0.1.0",
   },
   "output": "./dist",
-  "ignore": []
+  "ignore": [],
 }
 ```
 

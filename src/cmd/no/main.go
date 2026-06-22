@@ -142,8 +142,8 @@ func printUsage() {
 	fmt.Println("      no run main.no             build and run main.no")
 	fmt.Println("      no run -cc zig main.no     build and run with Zig compiler")
 	fmt.Println("")
-	fmt.Println("  no test [<file|dir>]         Run tests")
-	fmt.Println("    If directory, runs main() from all .no files except main.no and lib.no.")
+	fmt.Println("  no test [<file>]            Run tests")
+	fmt.Println("    Defaults to test/ directory.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
@@ -151,7 +151,7 @@ func printUsage() {
 	fmt.Println("                      x86_64-windows-gnu")
 	fmt.Println("    Examples:")
 	fmt.Println("      no test")
-	fmt.Println("      no test my-test.no")
+	fmt.Println("      no test test/my-test.no")
 	fmt.Println("      no test -cc zig")
 	fmt.Println("      no test -target x86_64-linux-gnu")
 	fmt.Println("")
@@ -906,46 +906,65 @@ func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	fs.Usage = func() {
+		fmt.Println("Usage: no test [<file>]")
+		fmt.Println("")
+		fmt.Println("Run tests.")
+		fmt.Println("  no test                     run all .no files in test/ directory")
+		fmt.Println("  no test test/my-test.no     run a single test file")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fs.PrintDefaults()
+	}
 	_ = fs.Parse(args)
 
-	inputPath := "."
+	var inputPath string
 	if len(fs.Args()) > 0 {
 		inputPath = fs.Args()[0]
+	} else {
+		inputPath = filepath.Join(".", "test")
 	}
 
 	info, err := os.Stat(inputPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if len(fs.Args()) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: test/ directory not found\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
 	var testFiles []string
 	if info.IsDir() {
-		// 文件夾：掃描所有 .no 文件，排除 main.no 和 lib.no
-		entries, err := os.ReadDir(inputPath)
+		// 目錄：遞迴掃描所有 .no 文件，排除 main.no 和 lib.no
+		err = filepath.WalkDir(inputPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			name := d.Name()
+			if !strings.HasSuffix(name, ".no") {
+				return nil
+			}
+			if name == "main.no" || name == "lib.no" {
+				return nil
+			}
+			testFiles = append(testFiles, path)
+			return nil
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if !strings.HasSuffix(name, ".no") {
-				continue
-			}
-			if name == "main.no" || name == "lib.no" {
-				continue
-			}
-			testFiles = append(testFiles, filepath.Join(inputPath, name))
-		}
 		if len(testFiles) == 0 {
-			fmt.Println("No test files found (no .no files other than main.no/lib.no).")
+			fmt.Println("No test files found in " + inputPath)
 			return
 		}
 	} else {
-		// 單一文件：直接執行
+		// 單一文件
 		testFiles = append(testFiles, inputPath)
 	}
 
