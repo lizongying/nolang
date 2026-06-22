@@ -147,6 +147,8 @@ func dumpAST(node interface{}, indent int) {
 		}
 	case *parser.UseStatement:
 		fmt.Printf("%sUseStatement{path: %s, fn: %s, alias: %s, line: %d}\n", prefix, n.Path, n.Function, n.Alias, n.Token.Line)
+	case *parser.ExportStatement:
+		fmt.Printf("%sExportStatement{path: %s, fn: %s, alias: %s, line: %d}\n", prefix, n.Path, n.Function, n.Alias, n.Token.Line)
 	case *parser.EnumDefinition:
 		fmt.Printf("%sEnumDefinition{name: %s, line: %d}\n", prefix, n.Name, n.Token.Line)
 		for _, v := range n.Values {

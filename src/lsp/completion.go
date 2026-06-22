@@ -1,9 +1,13 @@
 package lsp
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 type SymbolInfo struct {
@@ -28,6 +32,11 @@ func NewCompletionProvider(doc *TextDocument, index *SymbolIndex) *CompletionPro
 }
 
 func (cp *CompletionProvider) GetCompletions(position Position, triggerCharacter string) []CompletionItem {
+	// Check if we're on an @ export line - provide export completions regardless of trigger
+	if cp.isExportLine(position) {
+		return cp.getExportCompletions(position)
+	}
+
 	trigger := getTriggerType(triggerCharacter)
 
 	switch trigger {
@@ -37,6 +46,8 @@ func (cp *CompletionProvider) GetCompletions(position Position, triggerCharacter
 		return cp.getCompletionsAfterColon(position)
 	case TriggerEquals:
 		return cp.getCompletionsAfterEquals(position)
+	case TriggerAt:
+		return cp.getExportCompletions(position)
 	case TriggerWord:
 		return cp.getWordBasedCompletions(position)
 	default:
@@ -52,6 +63,7 @@ const (
 	TriggerColon
 	TriggerEquals
 	TriggerWord
+	TriggerAt
 )
 
 func getTriggerType(trigger string) TriggerType {
@@ -62,6 +74,8 @@ func getTriggerType(trigger string) TriggerType {
 		return TriggerColon
 	case "=":
 		return TriggerEquals
+	case "@":
+		return TriggerAt
 	default:
 		return TriggerWord
 	}
@@ -418,6 +432,205 @@ func (cp *CompletionProvider) ResolveCompletionItem(item CompletionItem) Complet
 		item.Documentation = "Nolang keyword"
 	}
 	return item
+}
+
+// isExportLine checks whether the cursor is on a line starting with @ (export context).
+func (cp *CompletionProvider) isExportLine(position Position) bool {
+	lines := getLines(cp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return false
+	}
+	line := lines[position.Line]
+	cursorCol := int(position.Character)
+	if cursorCol > len(line) {
+		cursorCol = len(line)
+	}
+	lineBeforeCursor := line[:cursorCol]
+	trimmed := strings.TrimSpace(lineBeforeCursor)
+	return strings.HasPrefix(trimmed, "@")
+}
+
+// getExportCompletions provides completions for @ export statements in lib.no.
+// It handles file path completion and function name completion after the dot.
+// Completions use TextEdit with a range to ensure proper spacing after @.
+func (cp *CompletionProvider) getExportCompletions(position Position) []CompletionItem {
+	lines := getLines(cp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return nil
+	}
+	line := lines[position.Line]
+	cursorCol := int(position.Character)
+	if cursorCol > len(line) {
+		cursorCol = len(line)
+	}
+	lineBeforeCursor := line[:cursorCol]
+
+	// Find @ position in the original (untrimmed) line
+	trimmedLeft := strings.TrimLeft(lineBeforeCursor, " \t")
+	atIndex := strings.Index(trimmedLeft, "@")
+	if atIndex < 0 {
+		return nil
+	}
+	// Compute @ column in the original line
+	leadingSpaces := len(lineBeforeCursor) - len(trimmedLeft)
+	atCol := leadingSpaces + atIndex
+
+	// Range from right after @ to cursor (replaces anything typed after @)
+	pathReplaceRange := Range{
+		Start: Position{Line: position.Line, Character: uint32(atCol + 1)},
+		End:   position,
+	}
+
+	// What comes after @ (user-typed path)
+	afterAt := strings.TrimSpace(line[atCol+1 : cursorCol])
+
+	// Find project root
+	docPath := strings.TrimPrefix(cp.doc.Item.URI, "file://")
+	docDir := filepath.Dir(docPath)
+	projectRoot := findProjectRoot(docDir)
+	if projectRoot == "" {
+		return nil
+	}
+
+	// Check if there's a dot (function name completion context)
+	lastDot := strings.LastIndex(lineBeforeCursor, ".")
+	if lastDot >= 0 && lastDot > atCol {
+		funcPrefix := lineBeforeCursor[lastDot+1:]
+
+		// Extract file part: between @ and the dot
+		filePart := strings.TrimSpace(lineBeforeCursor[atCol+1 : lastDot])
+		relPath := strings.TrimPrefix(filePart, "/")
+		filePath := filepath.Join(projectRoot, relPath) + ".no"
+
+		funcRange := Range{
+			Start: Position{Line: position.Line, Character: uint32(lastDot + 1)},
+			End:   position,
+		}
+
+		if _, err := os.Stat(filePath); err == nil {
+			return cp.getFunctionCompletionsFromFile(filePath, funcPrefix, funcRange)
+		}
+		return nil
+	}
+
+	// Otherwise, suggest file path completions
+	pathPrefix := strings.TrimSpace(afterAt)
+	return cp.getFileCompletions(projectRoot, pathPrefix, pathReplaceRange)
+}
+
+// findProjectRoot searches upward from startDir for a mod.jsonc file.
+func findProjectRoot(startDir string) string {
+	dir := startDir
+	for {
+		candidate := filepath.Join(dir, "mod.jsonc")
+		if _, err := os.Stat(candidate); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// getFileCompletions finds .no files under projectRoot matching the given prefix.
+// Paths are shown relative to project root with a leading /.
+func (cp *CompletionProvider) getFileCompletions(projectRoot, prefix string, replaceRange Range) []CompletionItem {
+	prefix = "/" + strings.TrimPrefix(prefix, "/")
+	var items []CompletionItem
+
+	_ = filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			// Skip hidden directories and known dependency dirs
+			if strings.HasPrefix(d.Name(), ".") || d.Name() == "nolang_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".no") {
+			return nil
+		}
+		// Skip lib.no and main.no
+		if d.Name() == "lib.no" || d.Name() == "main.no" {
+			return nil
+		}
+		relPath, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return nil
+		}
+		// Convert to forward-slash path with leading /
+		relPath = "/" + strings.ReplaceAll(relPath, "\\", "/")
+		// Remove .no extension for display
+		displayPath := relPath[:len(relPath)-3]
+
+		if !hasPrefixIgnoreCase(displayPath, prefix) {
+			return nil
+		}
+
+		items = append(items, CompletionItem{
+			Label:  displayPath,
+			Kind:   CompletionItemKindFile,
+			Detail: "export path",
+			TextEdit: &TextEdit{
+				Range:   replaceRange,
+				NewText: " " + displayPath + ".",
+			},
+		})
+		return nil
+	})
+
+	return items
+}
+
+// getFunctionCompletionsFromFile parses a .no file and returns its function names as completions.
+func (cp *CompletionProvider) getFunctionCompletionsFromFile(filePath, prefix string, replaceRange Range) []CompletionItem {
+	source, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil
+	}
+
+	var items []CompletionItem
+	for _, stmt := range prog.Statements {
+		var funcName string
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			funcName = s.Name
+		case *parser.LetStatement:
+			if s.Name != nil {
+				if _, ok := s.Value.(*parser.FunctionLiteral); ok {
+					funcName = s.Name.Value
+				}
+			}
+		}
+		if funcName == "" {
+			continue
+		}
+		if prefix != "" && !hasPrefixIgnoreCase(funcName, prefix) {
+			continue
+		}
+		items = append(items, CompletionItem{
+			Label:  funcName,
+			Kind:   CompletionItemKindFunction,
+			Detail: "export function",
+			TextEdit: &TextEdit{
+				Range:   replaceRange,
+				NewText: funcName + " ",
+			},
+		})
+	}
+
+	return items
 }
 
 // getModuleBuiltinCompletions returns completions for module-like prefixes.

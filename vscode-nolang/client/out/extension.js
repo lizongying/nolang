@@ -40,50 +40,51 @@ const vscode = __importStar(require("vscode"));
 const node_1 = require("vscode-languageclient/node");
 let client;
 function activate(context) {
-    const binName = process.platform === 'win32' ? 'nolang-lsp.exe' : 'nolang-lsp';
-    const serverPath = context.asAbsolutePath(path.join('server', binName));
-    const outputChannel = vscode.window.createOutputChannel('Nolang Language Server');
+    const binName = process.platform === "win32" ? "lsp.exe" : "lsp";
+    const serverPath = context.asAbsolutePath(path.join("server", binName));
+    const outputChannel = vscode.window.createOutputChannel("Nolang Language Server");
     outputChannel.appendLine(`Server path: ${serverPath}`);
     outputChannel.show();
     const serverOptions = {
         run: {
             command: serverPath,
             transport: node_1.TransportKind.stdio,
-            args: []
+            args: [],
         },
         debug: {
             command: serverPath,
             transport: node_1.TransportKind.stdio,
-            args: []
-        }
+            args: [],
+        },
     };
     const clientOptions = {
-        documentSelector: [{ scheme: 'file', language: 'nolang' }],
+        documentSelector: [{ scheme: "file", language: "nolang" }],
         outputChannel: outputChannel,
         // 添加 middleware 來偵錯
         middleware: {
             handleDiagnostics: (uri, diagnostics, next) => {
                 outputChannel.appendLine(`Diagnostics for ${uri}: ${diagnostics.length} issues`);
                 return next(uri, diagnostics);
-            }
-        }
+            },
+        },
     };
-    client = new node_1.LanguageClient('nolang', 'Nolang Language Server', serverOptions, clientOptions);
+    client = new node_1.LanguageClient("nolang", "Nolang Language Server", serverOptions, clientOptions);
     // 使用 onDidChangeState 監聽狀態變化（替代 onReady）
     client.onDidChangeState((event) => {
         outputChannel.appendLine(`State changed: ${event.newState}`);
-        if (event.newState === 2) { // 2 = Running
-            outputChannel.appendLine('✅ Language client is running');
+        if (event.newState === 2) {
+            // 2 = Running
+            outputChannel.appendLine("✅ Language client is running");
             // 獲取 server 能力
             try {
                 const capabilities = client._serverCapabilities;
                 if (capabilities) {
                     outputChannel.appendLine(`Server capabilities: ${JSON.stringify(capabilities, null, 2)}`);
                     if (capabilities.documentFormattingProvider) {
-                        outputChannel.appendLine('✅ Document formatting provider is enabled');
+                        outputChannel.appendLine("✅ Document formatting provider is enabled");
                     }
                     else {
-                        outputChannel.appendLine('❌ Document formatting provider is NOT enabled');
+                        outputChannel.appendLine("❌ Document formatting provider is NOT enabled");
                     }
                 }
             }
@@ -93,9 +94,12 @@ function activate(context) {
         }
     });
     // 啟動 client
-    client.start().then(() => {
-        outputChannel.appendLine('Client start initiated');
-    }).catch((err) => {
+    client
+        .start()
+        .then(() => {
+        outputChannel.appendLine("Client start initiated");
+    })
+        .catch((err) => {
         outputChannel.appendLine(`Failed to start client: ${err.message}`);
     });
     context.subscriptions.push(client);

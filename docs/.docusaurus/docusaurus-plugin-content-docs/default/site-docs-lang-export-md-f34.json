@@ -1,0 +1,27 @@
+{
+  "id": "lang/export",
+  "title": "導出",
+  "description": "Nolang 使用 @ 關鍵字在包的根目錄 lib.no 文件中聲明導出項，外部包通過 # 導入時只能訪問這些已導出的符號。",
+  "source": "@site/docs/lang/export.md",
+  "sourceDirName": "lang",
+  "slug": "/lang/export",
+  "permalink": "/nolang/en/docs/lang/export",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/lang/export.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "sidebar_position": 5
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "字符串",
+    "permalink": "/nolang/en/docs/lang/str"
+  },
+  "next": {
+    "title": "運算符",
+    "permalink": "/nolang/en/docs/lang/symbol"
+  }
+}

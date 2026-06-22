@@ -43,6 +43,11 @@ func dumpNode(buf *strings.Builder, node parser.Node, depth int) {
 			indent(depth), n.Path, n.Function, n.Alias)
 		dumpComments(buf, n, depth+1)
 
+	case *parser.ExportStatement:
+		fmt.Fprintf(buf, "%sExportStatement{path: %s, function: %s, alias: %s}\n",
+			indent(depth), n.Path, n.Function, n.Alias)
+		dumpComments(buf, n, depth+1)
+
 	case *parser.LetStatement:
 		typeStr := ""
 		if n.Type != nil {

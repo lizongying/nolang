@@ -321,6 +321,8 @@ func setComment(stmt Statement, comment *CommentGroup) {
 		s.Comment = comment
 	case *UseStatement:
 		s.Comment = comment
+	case *ExportStatement:
+		s.Comment = comment
 	case *EnumDefinition:
 		s.Comment = comment
 	case *TaggedEnumDefinition:
@@ -363,6 +365,8 @@ func stmtTokenEndLine(stmt Statement) int {
 	case *LetStatement:
 		return s.Name.Token.Line
 	case *UseStatement:
+		return s.Token.Line
+	case *ExportStatement:
 		return s.Token.Line
 	case *ReturnStatement:
 		if s.ReturnValue != nil {
@@ -474,6 +478,8 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *UseStatement:
 		s.Doc = doc
+	case *ExportStatement:
+		s.Doc = doc
 	case *EnumDefinition:
 		s.Doc = doc
 	case *TaggedEnumDefinition:
@@ -565,6 +571,8 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
+	case lexer.AT:
+		return p.parseExportStatement()
 	case lexer.IDENT:
 		// 檢查介面實作：user json, fmt { name str }
 		if p.peekToken.Type == lexer.IDENT {
@@ -1384,6 +1392,84 @@ func (p *Parser) parseUseStatement() Statement {
 							}
 						} else {
 							// # module.fn alias → use directly
+							stmt.Alias = p.currentToken.Literal
+							p.nextToken()
+						}
+					}
+					stmt.Path = joinPathParts(parts)
+					return stmt
+				}
+			}
+			// 路徑中的 DOT（如 github.com）
+			parts = append(parts, ".")
+			p.nextToken() // skip .
+			continue
+		} else {
+			break
+		}
+	}
+
+	// 沒有函數名的情況（不應該發生，但兼容處理）
+	stmt.Path = joinPathParts(parts)
+	return stmt
+}
+
+func (p *Parser) parseExportStatement() Statement {
+	stmt := &ExportStatement{Token: p.currentToken}
+
+	// @ path.fn [alias]
+	p.nextToken() // skip AT
+
+	// 解析路徑：由 IDENT、/、. 組成的序列
+	var parts []string
+
+	// 處理前導 /
+	if p.currentToken.Type == lexer.QUO {
+		parts = append(parts, "/")
+		p.nextToken()
+	}
+
+	for {
+		if p.currentToken.Type != lexer.IDENT {
+			msg := fmt.Sprintf("line %d, column %d: expected identifier in export path, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+		parts = append(parts, p.currentToken.Literal)
+		p.nextToken()
+
+		// 預期 / 或 .
+		if p.currentToken.Type == lexer.QUO {
+			// / → 繼續路徑
+			parts = append(parts, "/")
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.DOT {
+			// DOT 後面是 IDENT + (NEWLINE/EOF/IDENT) → 函數名分隔符
+			if p.peekToken.Type == lexer.IDENT {
+				state := p.saveState()
+				p.nextToken() // skip .
+				p.nextToken() // skip potential func name
+				isFn := p.currentToken.Type == lexer.NEWLINE ||
+					p.currentToken.Type == lexer.EOF ||
+					p.currentToken.Type == lexer.IDENT ||
+					p.currentToken.Type == lexer.AS ||
+					p.currentToken.Type == lexer.RBRACE
+				p.restoreState(state)
+				if isFn {
+					p.nextToken() // skip .
+					stmt.Function = p.currentToken.Literal
+					p.nextToken() // skip funcName
+					// 可選別名
+					if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.AS {
+						if p.currentToken.Type == lexer.AS {
+							stmt.AsKeyword = true
+							p.nextToken()
+							if p.currentToken.Type == lexer.IDENT {
+								stmt.Alias = p.currentToken.Literal
+								p.nextToken()
+							}
+						} else {
 							stmt.Alias = p.currentToken.Literal
 							p.nextToken()
 						}

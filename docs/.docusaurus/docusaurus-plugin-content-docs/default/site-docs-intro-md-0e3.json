@@ -1,11 +1,11 @@
 {
   "id": "intro",
-  "title": "Nolang 简介",
-  "description": "Nolang 是一门实验性的系统编程语言，采用引用传递模型，编译到 Go、LLVM IR 和原生 Nolang 三个后端。",
+  "title": "Nolang 簡介",
+  "description": "Nolang 是一門實驗性的系統編程語言，採用引用傳遞模型、安全作用域模型，實現了內存絕對安全。無GC。",
   "source": "@site/docs/intro.md",
   "sourceDirName": ".",
   "slug": "/intro",
-  "permalink": "/nolang/docs/intro",
+  "permalink": "/nolang/en/docs/intro",
   "draft": false,
   "unlisted": false,
   "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/intro.md",
@@ -17,7 +17,7 @@
   },
   "sidebar": "tutorialSidebar",
   "next": {
-    "title": "语言参考",
-    "permalink": "/nolang/docs/lang/syntax"
+    "title": "安裝與使用",
+    "permalink": "/nolang/en/docs/usage"
   }
 }

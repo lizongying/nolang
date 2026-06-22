@@ -1,0 +1,27 @@
+{
+  "id": "lang/symbol",
+  "title": "運算符",
+  "description": "特殊符號",
+  "source": "@site/docs/lang/symbol.md",
+  "sourceDirName": "lang",
+  "slug": "/lang/symbol",
+  "permalink": "/nolang/en/docs/lang/symbol",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/lang/symbol.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "sidebar_position": 4
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "導出",
+    "permalink": "/nolang/en/docs/lang/export"
+  },
+  "next": {
+    "title": "标准库",
+    "permalink": "/nolang/en/docs/std/overview"
+  }
+}

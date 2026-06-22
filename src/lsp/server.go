@@ -41,7 +41,7 @@ func NewServer() *Server {
 			},
 			CompletionProvider: &CompletionOptions{
 				ResolveProvider:   true,
-				TriggerCharacters: []string{".", ":", "="},
+				TriggerCharacters: []string{".", ":", "=", "@", "/"},
 			},
 			SignatureHelpProvider: &SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
@@ -229,6 +229,21 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			docDir := filepath.Dir(docPath)
 			depErrs := nbuild.ValidateDependencyImports(prog, docDir)
 			for _, u := range depErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Validate export symbols in lib.no
+			exportErrs := nbuild.ValidateExportSymbols(prog, docPath)
+			for _, u := range exportErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
 						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},

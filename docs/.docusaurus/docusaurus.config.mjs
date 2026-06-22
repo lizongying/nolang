@@ -8,7 +8,7 @@ export default {
   "tagline": "A modern systems programming language",
   "favicon": "img/logo.svg",
   "url": "https://lizongying.github.io",
-  "baseUrl": "/nolang/",
+  "baseUrl": "/nolang/en/",
   "organizationName": "lizongying",
   "projectName": "nolang",
   "onBrokenLinks": "throw",

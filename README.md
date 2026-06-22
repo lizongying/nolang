@@ -67,23 +67,22 @@ vscode 插件
 | `no pub --token <token> [--registry <url>]`                  | 發布至 registry                        |
 
 ```bash
-# 構建（默認尋找 main.no）
+# 構建（默認 main.no 開始）
 no build                    # 構建當前目錄
 no build main.no            # 構建指定文件
-no build -o output main.no  # 指定輸出路徑
-no build -cc zig main.no    # 使用 Zig 編譯器
-no build -target x86_64-linux-gnu main.no  # 交叉編譯（指定目標平台）
+no build -o output          # 指定輸出路徑
+no build -cc zig            # 使用 Zig 編譯器
+no build -target x86_64-linux-gnu  # 交叉編譯（指定目標平台）
 
 # 運行（構建 + 執行）
 no run                    # 構建並執行 main.no（必須有 main.no）
-no run main.no
-no run -cc zig main.no
-no run -target aarch64-macos-gnu main.no
+no run -cc zig
+no run -target aarch64-macos-gnu
 
 # 測試（構建 + 執行）
-no test                   # 執行目錄下所有 .no 文件的 main()，排除 main.no / lib.no
-no test my-test.no        # 執行單個測試文件
-no test -cc zig my-test.no
+no test                   # 測試`test`目錄下所有 .no 文件
+no test test/my-test.no        # 執行單個測試文件
+no test -cc zig
 no test -target x86_64-windows-gnu
 ```
 
@@ -99,16 +98,9 @@ no run
 
 ### 入口規則
 
-- **main.no** — 程序入口，不可包含測試斷言
-- **lib.no** — 庫入口，導出函數，不可包含測試斷言
-- **其他 .no 文件** — 可包含測試斷言，測試與方法在同一文件
-
-### 测试说明
-
-- `no test` 会遍历目录下所有 .no 文件（跳过 main.no / lib.no）
-- 每个测试文件独立构建
-- 测试文件和功能代码写在同一个 .no 文件中
-- 若任一测试失败，返回非零退出码
+- **main.no** — 程序入口
+- **lib.no** — 庫入口，導出函數
+- **test/ 目錄下所有 .no 文件** — 包含測試斷言
 
 ---
 

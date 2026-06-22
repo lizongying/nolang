@@ -296,11 +296,11 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		relPath := strings.TrimPrefix(path, "/")
 		if t.pkg != nil {
 			fullPath := filepath.Join(t.pkg.RootDir, relPath) + ".no"
-			return t.parseFile(fullPath)
+			return t.resolveFile(fullPath)
 		}
 		// 沒有套件配置，相對於當前目錄
 		filePath := relPath + ".no"
-		return t.parseFile(filePath)
+		return t.resolveFile(filePath)
 	}
 
 	// std/ 開頭 → 標準庫路徑
@@ -314,28 +314,28 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				resolved = resolved + ".no"
 			}
 			if _, err := os.Stat(resolved); err == nil {
-				return t.parseFile(resolved)
+				return t.resolveFile(resolved)
 			}
 		}
 		// fallback: std/<module>.no 相對於執行目錄
 		fallback := path + ".no"
 		if _, err := os.Stat(fallback); err == nil {
-			return t.parseFile(fallback)
+			return t.resolveFile(fallback)
 		}
 		// 再試 src/std/<module>.no 相對於執行目錄
 		srcPath := "src/" + path + ".no"
 		if _, err := os.Stat(srcPath); err == nil {
-			return t.parseFile(srcPath)
+			return t.resolveFile(srcPath)
 		}
 		// 最後嘗試相對於 binary 所在路徑
 		if exe, err := os.Executable(); err == nil {
 			exeDir := filepath.Dir(exe)
 			binSrcPath := filepath.Join(exeDir, "..", "src", path+".no")
 			if _, err := os.Stat(binSrcPath); err == nil {
-				return t.parseFile(binSrcPath)
+				return t.resolveFile(binSrcPath)
 			}
 		}
-		return t.parseFile(srcPath)
+		return t.resolveFile(srcPath)
 	}
 
 	// 依賴解析：domain/org/repo/... 風格的導入路徑
@@ -347,7 +347,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 					return nil, err
 				}
 				if modPath != "" {
-					return t.parseFile(modPath)
+					return t.resolveFile(modPath)
 				}
 			}
 		}
@@ -361,12 +361,29 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if !strings.HasSuffix(modulePath, ".no") {
 			modulePath = modulePath + ".no"
 		}
-		return t.parseFile(modulePath)
+		return t.resolveFile(modulePath)
 	}
 
 	// 沒有套件配置，直接嘗試
 	filePath := path + ".no"
-	return t.parseFile(filePath)
+	return t.resolveFile(filePath)
+}
+
+// resolveFile parses a .no file and applies lib.no export filtering if present.
+func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
+	prog, err := t.parseFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	// Apply lib.no export filtering
+	pkgRoot := findPackageRootFromFile(filePath)
+	if pkgRoot != "" {
+		libPath := filepath.Join(pkgRoot, "lib.no")
+		if _, err := os.Stat(libPath); err == nil {
+			prog = filterByExports(prog, libPath)
+		}
+	}
+	return prog, nil
 }
 
 func (t *Transpiler) Compile(source string) (string, error) {
@@ -460,6 +477,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
 			importedModules = append(importedModules, moduleShortName(use.Path))
+		}
+		if _, ok := stmt.(*parser.ExportStatement); ok {
+			continue
 		}
 	}
 
@@ -594,6 +614,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			continue
 		}
 		if _, ok := stmt.(*parser.UseStatement); ok {
+			continue
+		}
+		if _, ok := stmt.(*parser.ExportStatement); ok {
 			continue
 		}
 		merged.Statements = append(merged.Statements, stmt)
@@ -2175,6 +2198,9 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 				definedVars[use.Function] = true
 			}
 		}
+		if _, ok := stmt.(*parser.ExportStatement); ok {
+			continue
+		}
 	}
 
 	// 4. Walk statements and check for undefined references
@@ -2245,6 +2271,99 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: fmt.Sprintf("dependency not found: %q is not declared in mod.jsonc dependencies", path),
+			})
+		}
+	}
+	return results
+}
+
+// ValidateExportSymbols checks that all export declarations in lib.no reference
+// symbols that actually exist in the corresponding module source files.
+func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateResult {
+	// Only validate lib.no files
+	if !strings.HasSuffix(docPath, "lib.no") {
+		return nil
+	}
+
+	docDir := filepath.Dir(docPath)
+
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		es, ok := stmt.(*parser.ExportStatement)
+		if !ok {
+			continue
+		}
+		if es.Function == "" {
+			continue
+		}
+
+		// Resolve the module file path
+		modFile := ""
+		path := es.Path
+		if strings.HasPrefix(path, "/") {
+			modFile = filepath.Join(docDir, strings.TrimPrefix(path, "/")) + ".no"
+		} else if strings.HasPrefix(path, "std/") || path == "std" {
+			modFile = path + ".no"
+		}
+
+		if modFile == "" {
+			continue
+		}
+
+		// Parse the module file
+		source, err := os.ReadFile(modFile)
+		if err != nil {
+			results = append(results, ValidateResult{
+				Line:    es.Token.Line,
+				Column:  es.Token.Column,
+				Message: fmt.Sprintf("module file not found: %s", modFile),
+			})
+			continue
+		}
+
+		l := lexer.New(string(source))
+		p := parser.New(l)
+		modProg := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			continue
+		}
+
+		// Check if the function exists in the module
+		found := false
+		for _, modStmt := range modProg.Statements {
+			switch s := modStmt.(type) {
+			case *parser.FunctionDefinition:
+				if s.Name == es.Function {
+					found = true
+				}
+			case *parser.StructDefinition:
+				if s.Name == es.Function {
+					found = true
+				}
+			case *parser.EnumDefinition:
+				if s.Name == es.Function {
+					found = true
+				}
+			case *parser.TaggedEnumDefinition:
+				if s.Name == es.Function {
+					found = true
+				}
+			case *parser.InterfaceDefinition:
+				if s.Name == es.Function {
+					found = true
+				}
+			case *parser.LetStatement:
+				if s.Name != nil && s.Name.Value == es.Function {
+					found = true
+				}
+			}
+		}
+
+		if !found {
+			results = append(results, ValidateResult{
+				Line:    es.Token.Line,
+				Column:  es.Token.Column,
+				Message: fmt.Sprintf("export references undefined symbol %q (not found in %s)", es.Function, modFile),
 			})
 		}
 	}
@@ -2363,6 +2482,9 @@ func collectModuleNames(program *parser.Program) []string {
 				seen[short] = true
 				names = append(names, short)
 			}
+		}
+		if _, ok := stmt.(*parser.ExportStatement); ok {
+			continue
 		}
 	}
 
@@ -3267,6 +3389,8 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 // It handles local paths (/path), std paths, and dependency paths (domain/...).
 func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
 	path := use.Path
+	var prog *parser.Program
+	var filePath string
 
 	// Local module paths (starting with /)
 	if strings.HasPrefix(path, "/") {
@@ -3274,28 +3398,39 @@ func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
 			return nil
 		}
 		relPath := strings.TrimPrefix(path, "/")
-		fullPath := filepath.Join(pkg.RootDir, relPath) + ".no"
-		return parseProgramFile(fullPath)
-	}
-
-	// std/ paths
-	if strings.HasPrefix(path, "std/") || path == "std" {
-		modPath := resolveModulePath(moduleShortName(path))
-		if modPath == "" {
+		filePath = filepath.Join(pkg.RootDir, relPath) + ".no"
+		prog = parseProgramFile(filePath)
+	} else if strings.HasPrefix(path, "std/") || path == "std" {
+		// std/ paths
+		filePath = resolveModulePath(moduleShortName(path))
+		if filePath == "" {
 			return nil
 		}
-		return parseProgramFile(modPath)
-	}
-
-	// Dependency paths (domain/org/repo/...)
-	if pkg != nil {
-		modPath, err := pkg.ResolveDependencyModule(path)
-		if err == nil && modPath != "" {
-			return parseProgramFile(modPath)
+		prog = parseProgramFile(filePath)
+	} else if pkg != nil {
+		// Dependency paths (domain/org/repo/...)
+		var err error
+		filePath, err = pkg.ResolveDependencyModule(path)
+		if err == nil && filePath != "" {
+			prog = parseProgramFile(filePath)
 		}
 	}
 
-	return nil
+	if prog == nil {
+		return nil
+	}
+
+	// Apply lib.no export filtering
+	if filePath != "" {
+		pkgRoot := findPackageRootFromFile(filePath)
+		if pkgRoot != "" {
+			libPath := filepath.Join(pkgRoot, "lib.no")
+			if _, err := os.Stat(libPath); err == nil {
+				prog = filterByExports(prog, libPath)
+			}
+		}
+	}
+	return prog
 }
 
 // parseProgramFile reads and parses a .no file into a Program.
@@ -3502,4 +3637,187 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 		}
 	}
 	return nil
+}
+
+// findPackageRootFromFile walks up from a file path to find the directory containing mod.jsonc.
+func findPackageRootFromFile(filePath string) string {
+	dir := filepath.Dir(filePath)
+	for {
+		cfgFile := filepath.Join(dir, "mod.jsonc")
+		if _, err := os.Stat(cfgFile); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// filterByExports filters a module's program to only include exported items declared in lib.no.
+// It also auto-exports structs/enums/interfaces referenced by exported functions.
+func filterByExports(prog *parser.Program, libPath string) *parser.Program {
+	libSource, err := os.ReadFile(libPath)
+	if err != nil {
+		return prog
+	}
+
+	l := lexer.New(string(libSource))
+	p := parser.New(l)
+	libProg := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return prog
+	}
+
+	type exportEntry struct {
+		fn    string
+		alias string
+	}
+	var exports []exportEntry
+	for _, stmt := range libProg.Statements {
+		if es, ok := stmt.(*parser.ExportStatement); ok {
+			exports = append(exports, exportEntry{
+				fn:    es.Function,
+				alias: es.Alias,
+			})
+		}
+	}
+
+	if len(exports) == 0 {
+		return &parser.Program{Statements: []parser.Statement{}}
+	}
+
+	// Build set of all defined names in the module
+	defined := make(map[string]bool)
+	for _, stmt := range prog.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			defined[s.Name] = true
+		case *parser.StructDefinition:
+			defined[s.Name] = true
+		case *parser.EnumDefinition:
+			defined[s.Name] = true
+		case *parser.TaggedEnumDefinition:
+			defined[s.Name] = true
+		case *parser.InterfaceDefinition:
+			defined[s.Name] = true
+		case *parser.LetStatement:
+			if s.Name != nil {
+				defined[s.Name.Value] = true
+			}
+		}
+	}
+
+	// Validate that all exported names exist in the module
+	for _, e := range exports {
+		if !defined[e.fn] {
+			fmt.Fprintf(os.Stderr, "warning: export references undefined symbol %q (not found in module)\n", e.fn)
+		}
+	}
+
+	exported := make(map[string]string)
+	for _, e := range exports {
+		name := e.fn
+		if e.alias != "" {
+			exported[name] = e.alias
+		} else {
+			exported[name] = ""
+		}
+	}
+
+	// Collect type definitions in this module
+	structs := make(map[string]bool)
+	enums := make(map[string]bool)
+	interfaces := make(map[string]bool)
+	for _, stmt := range prog.Statements {
+		switch s := stmt.(type) {
+		case *parser.StructDefinition:
+			structs[s.Name] = true
+		case *parser.EnumDefinition:
+			enums[s.Name] = true
+		case *parser.InterfaceDefinition:
+			interfaces[s.Name] = true
+		case *parser.TaggedEnumDefinition:
+			enums[s.Name] = true
+		}
+	}
+
+	// Auto-export types referenced by exported functions
+	var collectTypes func(t parser.Type, result map[string]bool)
+	collectTypes = func(t parser.Type, result map[string]bool) {
+		if t == nil {
+			return
+		}
+		switch tt := t.(type) {
+		case *parser.NamedType:
+			if structs[tt.Value] || enums[tt.Value] || interfaces[tt.Value] {
+				result[tt.Value] = true
+			}
+		case *parser.ArrayType:
+			collectTypes(tt.Elem, result)
+		case *parser.SliceType:
+			collectTypes(tt.Elem, result)
+		case *parser.PointerType:
+			collectTypes(tt.Type, result)
+		case *parser.NullableType:
+			collectTypes(tt.Type, result)
+		}
+	}
+
+	autoResult := make(map[string]bool)
+	for _, stmt := range prog.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if _, isExported := exported[fd.Name]; !isExported {
+				continue
+			}
+			for _, param := range fd.Parameters {
+				collectTypes(param.Type, autoResult)
+			}
+			for _, result := range fd.Results {
+				collectTypes(result.Type, autoResult)
+			}
+		}
+	}
+	for name := range autoResult {
+		exported[name] = ""
+	}
+
+	// Filter statements
+	filtered := &parser.Program{Statements: []parser.Statement{}}
+	for _, stmt := range prog.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			if alias, ok := exported[s.Name]; ok {
+				if alias != "" {
+					s.Name = alias
+				}
+				filtered.Statements = append(filtered.Statements, s)
+			}
+		case *parser.StructDefinition:
+			if _, ok := exported[s.Name]; ok {
+				filtered.Statements = append(filtered.Statements, s)
+			}
+		case *parser.EnumDefinition:
+			if _, ok := exported[s.Name]; ok {
+				filtered.Statements = append(filtered.Statements, s)
+			}
+		case *parser.TaggedEnumDefinition:
+			if _, ok := exported[s.Name]; ok {
+				filtered.Statements = append(filtered.Statements, s)
+			}
+		case *parser.InterfaceDefinition:
+			if _, ok := exported[s.Name]; ok {
+				filtered.Statements = append(filtered.Statements, s)
+			}
+		case *parser.LetStatement:
+			if s.Name != nil {
+				if _, ok := exported[s.Name.Value]; ok {
+					filtered.Statements = append(filtered.Statements, s)
+				}
+			}
+		}
+	}
+
+	return filtered
 }

@@ -3,72 +3,61 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 
 export default [
   {
-    path: '/nolang/__docusaurus/debug',
-    component: ComponentCreator('/nolang/__docusaurus/debug', '51a'),
+    path: '/nolang/en/markdown-page',
+    component: ComponentCreator('/nolang/en/markdown-page', '23c'),
     exact: true
   },
   {
-    path: '/nolang/__docusaurus/debug/config',
-    component: ComponentCreator('/nolang/__docusaurus/debug/config', '72e'),
-    exact: true
-  },
-  {
-    path: '/nolang/__docusaurus/debug/content',
-    component: ComponentCreator('/nolang/__docusaurus/debug/content', '23b'),
-    exact: true
-  },
-  {
-    path: '/nolang/__docusaurus/debug/globalData',
-    component: ComponentCreator('/nolang/__docusaurus/debug/globalData', '365'),
-    exact: true
-  },
-  {
-    path: '/nolang/__docusaurus/debug/metadata',
-    component: ComponentCreator('/nolang/__docusaurus/debug/metadata', 'bf5'),
-    exact: true
-  },
-  {
-    path: '/nolang/__docusaurus/debug/registry',
-    component: ComponentCreator('/nolang/__docusaurus/debug/registry', 'b65'),
-    exact: true
-  },
-  {
-    path: '/nolang/__docusaurus/debug/routes',
-    component: ComponentCreator('/nolang/__docusaurus/debug/routes', '10a'),
-    exact: true
-  },
-  {
-    path: '/nolang/markdown-page',
-    component: ComponentCreator('/nolang/markdown-page', '4a8'),
-    exact: true
-  },
-  {
-    path: '/nolang/docs',
-    component: ComponentCreator('/nolang/docs', '9c7'),
+    path: '/nolang/en/docs',
+    component: ComponentCreator('/nolang/en/docs', '4c1'),
     routes: [
       {
-        path: '/nolang/docs',
-        component: ComponentCreator('/nolang/docs', 'e10'),
+        path: '/nolang/en/docs',
+        component: ComponentCreator('/nolang/en/docs', '41b'),
         routes: [
           {
-            path: '/nolang/docs',
-            component: ComponentCreator('/nolang/docs', 'bd1'),
+            path: '/nolang/en/docs',
+            component: ComponentCreator('/nolang/en/docs', 'e25'),
             routes: [
               {
-                path: '/nolang/docs/intro',
-                component: ComponentCreator('/nolang/docs/intro', '81f'),
+                path: '/nolang/en/docs/intro',
+                component: ComponentCreator('/nolang/en/docs/intro', '638'),
                 exact: true,
                 sidebar: "tutorialSidebar"
               },
               {
-                path: '/nolang/docs/lang/syntax',
-                component: ComponentCreator('/nolang/docs/lang/syntax', '909'),
+                path: '/nolang/en/docs/lang/export',
+                component: ComponentCreator('/nolang/en/docs/lang/export', 'e2f'),
                 exact: true,
                 sidebar: "tutorialSidebar"
               },
               {
-                path: '/nolang/docs/std/overview',
-                component: ComponentCreator('/nolang/docs/std/overview', 'cfa'),
+                path: '/nolang/en/docs/lang/str',
+                component: ComponentCreator('/nolang/en/docs/lang/str', 'eb1'),
+                exact: true,
+                sidebar: "tutorialSidebar"
+              },
+              {
+                path: '/nolang/en/docs/lang/symbol',
+                component: ComponentCreator('/nolang/en/docs/lang/symbol', 'b27'),
+                exact: true,
+                sidebar: "tutorialSidebar"
+              },
+              {
+                path: '/nolang/en/docs/lang/syntax',
+                component: ComponentCreator('/nolang/en/docs/lang/syntax', 'c5b'),
+                exact: true,
+                sidebar: "tutorialSidebar"
+              },
+              {
+                path: '/nolang/en/docs/std/overview',
+                component: ComponentCreator('/nolang/en/docs/std/overview', '8c2'),
+                exact: true,
+                sidebar: "tutorialSidebar"
+              },
+              {
+                path: '/nolang/en/docs/usage',
+                component: ComponentCreator('/nolang/en/docs/usage', '86f'),
                 exact: true,
                 sidebar: "tutorialSidebar"
               }
@@ -79,8 +68,8 @@ export default [
     ]
   },
   {
-    path: '/nolang/',
-    component: ComponentCreator('/nolang/', '052'),
+    path: '/nolang/en/',
+    component: ComponentCreator('/nolang/en/', '4cc'),
     exact: true
   },
   {

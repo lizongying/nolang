@@ -259,6 +259,88 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 			}
 		}
 
+		// Index ExportStatement symbols for go-to-definition
+		// e.g. "@ /src/utils.greet a" resolves the alias "a" and function "greet"
+		// to the definition in src/utils.no
+		for _, stmt := range ast.Statements {
+			if export, ok := stmt.(*parser.ExportStatement); ok && export.Path != "" && export.Function != "" {
+				relPath := strings.TrimPrefix(export.Path, "/")
+				targetFilePath := m.resolveLocalModuleFile(relPath, uri)
+				if _, err := os.Stat(targetFilePath); err != nil {
+					continue
+				}
+				source, err := os.ReadFile(targetFilePath)
+				if err != nil {
+					continue
+				}
+				l := lexer.New(string(source))
+				p := parser.New(l)
+				targetProg := p.ParseProgram()
+				if len(p.Errors()) > 0 {
+					continue
+				}
+				targetURI := "file://" + targetFilePath
+
+				for _, ts := range targetProg.Statements {
+					var name string
+					var token interface{}
+
+					switch s := ts.(type) {
+					case *parser.FunctionDefinition:
+						if s.Name == export.Function {
+							name = s.Name
+							token = s.Token
+						}
+					case *parser.LetStatement:
+						if s.Name != nil && s.Name.Value == export.Function {
+							if _, ok := s.Value.(*parser.FunctionLiteral); ok {
+								name = s.Name.Value
+								token = s.Name.Token
+							}
+						}
+					}
+
+					if name == "" {
+						continue
+					}
+
+					var line, column int
+					switch t := token.(type) {
+					case lexer.Token:
+						line = t.Line
+						column = t.Column
+					default:
+						continue
+					}
+
+					loc := Location{
+						URI: targetURI,
+						Range: Range{
+							Start: Position{Line: uint32(line - 1), Character: uint32(column - 1)},
+							End:   Position{Line: uint32(line - 1), Character: uint32(column - 1 + len(name))},
+						},
+					}
+					entry := &IndexEntry{
+						Name:     export.Function,
+						Kind:     CompletionItemKindFunction,
+						Type:     "fn",
+						Location: loc,
+					}
+					index.functions[export.Function] = entry
+					index.definitions[export.Function] = entry
+
+					// Also index the alias so clicking on it navigates to the target
+					if export.Alias != "" {
+						aliasEntry := *entry
+						aliasEntry.Name = export.Alias
+						index.functions[export.Alias] = &aliasEntry
+						index.definitions[export.Alias] = &aliasEntry
+					}
+					break
+				}
+			}
+		}
+
 		// Register aliases for imported functions so that e.g.
 		// "# path.fn as alias" creates an index entry for "alias".
 		for _, stmt := range ast.Statements {

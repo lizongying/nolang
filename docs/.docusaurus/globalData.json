@@ -1,28 +1,48 @@
 {
   "docusaurus-plugin-content-docs": {
     "default": {
-      "path": "/nolang/docs",
+      "path": "/nolang/en/docs",
       "versions": [
         {
           "name": "current",
           "label": "Next",
           "isLast": true,
-          "path": "/nolang/docs",
+          "path": "/nolang/en/docs",
           "mainDocId": "intro",
           "docs": [
             {
               "id": "intro",
-              "path": "/nolang/docs/intro",
+              "path": "/nolang/en/docs/intro",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "lang/export",
+              "path": "/nolang/en/docs/lang/export",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "lang/str",
+              "path": "/nolang/en/docs/lang/str",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "lang/symbol",
+              "path": "/nolang/en/docs/lang/symbol",
               "sidebar": "tutorialSidebar"
             },
             {
               "id": "lang/syntax",
-              "path": "/nolang/docs/lang/syntax",
+              "path": "/nolang/en/docs/lang/syntax",
               "sidebar": "tutorialSidebar"
             },
             {
               "id": "std/overview",
-              "path": "/nolang/docs/std/overview",
+              "path": "/nolang/en/docs/std/overview",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "usage",
+              "path": "/nolang/en/docs/usage",
               "sidebar": "tutorialSidebar"
             }
           ],
@@ -30,7 +50,7 @@
           "sidebars": {
             "tutorialSidebar": {
               "link": {
-                "path": "/nolang/docs/intro",
+                "path": "/nolang/en/docs/intro",
                 "label": "intro"
               }
             }

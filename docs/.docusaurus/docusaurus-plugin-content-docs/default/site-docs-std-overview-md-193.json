@@ -5,7 +5,7 @@
   "source": "@site/docs/std/overview.md",
   "sourceDirName": "std",
   "slug": "/std/overview",
-  "permalink": "/nolang/docs/std/overview",
+  "permalink": "/nolang/en/docs/std/overview",
   "draft": false,
   "unlisted": false,
   "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/std/overview.md",
@@ -17,7 +17,7 @@
   },
   "sidebar": "tutorialSidebar",
   "previous": {
-    "title": "语言参考",
-    "permalink": "/nolang/docs/lang/syntax"
+    "title": "運算符",
+    "permalink": "/nolang/en/docs/lang/symbol"
   }
 }

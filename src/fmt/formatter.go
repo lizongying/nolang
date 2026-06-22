@@ -68,6 +68,8 @@ func stmtTokenEndLine(stmt parser.Statement) int {
 		return s.Token.Line
 	case *parser.UseStatement:
 		return s.Token.Line
+	case *parser.ExportStatement:
+		return s.Token.Line
 	case *parser.ReturnStatement:
 		return s.Token.Line
 	case *parser.ExpressionStatement:
@@ -259,6 +261,8 @@ func stmtTokenLine(stmt parser.Statement) int {
 		return s.Token.Line
 	case *parser.UseStatement:
 		return s.Token.Line
+	case *parser.ExportStatement:
+		return s.Token.Line
 	case *parser.ReturnStatement:
 		return s.Token.Line
 	case *parser.ExpressionStatement:
@@ -306,6 +310,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	switch s := stmt.(type) {
 	case *parser.UseStatement:
 		f.formatUseStatement(s)
+	case *parser.ExportStatement:
+		f.formatExportStatement(s)
 	case *parser.LetStatement:
 		f.formatLetStatement(s)
 	case *parser.ReturnStatement:
@@ -416,6 +422,19 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 	f.write("# ")
+	f.write(s.Path)
+	if s.Function != "" {
+		f.write(".")
+		f.write(s.Function)
+	}
+	if s.Alias != "" {
+		f.write(" ")
+		f.write(s.Alias)
+	}
+}
+
+func (f *formatter) formatExportStatement(s *parser.ExportStatement) {
+	f.write("@ ")
 	f.write(s.Path)
 	if s.Function != "" {
 		f.write(".")

@@ -1,0 +1,27 @@
+{
+  "id": "lang/str",
+  "title": "字符串",
+  "description": "",
+  "source": "@site/docs/lang/str.md",
+  "sourceDirName": "lang",
+  "slug": "/lang/str",
+  "permalink": "/nolang/en/docs/lang/str",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/lang/str.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "sidebar_position": 3
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "語法",
+    "permalink": "/nolang/en/docs/lang/syntax"
+  },
+  "next": {
+    "title": "導出",
+    "permalink": "/nolang/en/docs/lang/export"
+  }
+}

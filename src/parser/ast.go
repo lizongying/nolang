@@ -187,6 +187,20 @@ func (us *UseStatement) statementNode()         {}
 func (us *UseStatement) Pos() lexer.Position    { return posFromToken(us.Token) }
 func (us *UseStatement) EndPos() lexer.Position { return posFromToken(us.Token) }
 
+// @ path.fn 或 @ path.fn alias
+type ExportStatement struct {
+	Token     lexer.Token
+	Path      string // 模組路徑（無副檔名）
+	Function  string // 函數/常量/枚舉名
+	Alias     string // 可選別名（空 = 不使用別名）
+	AsKeyword bool   // true if alias used 'as' keyword (e.g., "@ path.fn as alias")
+	CommentedNode
+}
+
+func (es *ExportStatement) statementNode()         {}
+func (es *ExportStatement) Pos() lexer.Position    { return posFromToken(es.Token) }
+func (es *ExportStatement) EndPos() lexer.Position { return posFromToken(es.Token) }
+
 // a u8 = 8
 type LetStatement struct {
 	Token lexer.Token

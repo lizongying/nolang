@@ -1,0 +1,27 @@
+{
+  "id": "usage",
+  "title": "安裝與使用",
+  "description": "安裝",
+  "source": "@site/docs/usage.md",
+  "sourceDirName": ".",
+  "slug": "/usage",
+  "permalink": "/nolang/en/docs/usage",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/lizongying/nolang/tree/main/docs/docs/usage.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "sidebar_position": 2
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Nolang 簡介",
+    "permalink": "/nolang/en/docs/intro"
+  },
+  "next": {
+    "title": "語法",
+    "permalink": "/nolang/en/docs/lang/syntax"
+  }
+}
