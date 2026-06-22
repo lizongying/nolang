@@ -85,17 +85,17 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
     }
     // string: opening quote
     if c == 34 {
-        parse-str(s, sn, p)(val, next-pos, ok)
+        val, next-pos, ok = parse-str(s, sn, p)
         return
     }
     // number: minus sign
     if c == 45 {
-        parse-num(s, sn, p)(val, next-pos, ok)
+        val, next-pos, ok = parse-num(s, sn, p)
         return
     }
     // number: digit
     if c >= 48 && c <= 57 {
-        parse-num(s, sn, p)(val, next-pos, ok)
+        val, next-pos, ok = parse-num(s, sn, p)
         return
     }
     // array: opening bracket

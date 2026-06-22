@@ -5,7 +5,7 @@
 // 用法：
 //   seed = 123456789
 //   s = '(32 bytes)'
-//   rand-str(seed, 32, s)
+//   s = rand-str(seed, 32)
 
 // rand: 產生下一個偽隨機數（32-bit 無號整數）
 // state: 輸入/輸出狀態變數，初始為任意非零種子
@@ -22,7 +22,7 @@ rand = (state i64, r i64) {
 // s: 輸出字串緩衝區（長度至少 n）
 // n: 產生的字元數
 // CHARS: 可用字元集 (A-Z a-z 0-9)
-rand-str = (state i64, n i64, s str) {
+rand-str = (state i64, n i64) (s str) {
     CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     i = 0
     for i < n {

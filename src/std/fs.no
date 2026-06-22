@@ -72,7 +72,7 @@ append-file = (path str, data str, n i64) (ok bool) {
     // 無法直接 append，先用 read 後合併再 write
     // 該實作為簡化版，實際應用需 O-APPEND 支援
     close(fd)
-    existing; exist-n = read-file(path)
+    existing, exist-n = read-file(path)
 
     // 先寫入原有內容，再追加新內容
     fd = open-write(path)

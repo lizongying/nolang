@@ -83,7 +83,7 @@ lcm = (a i64, b i64) (r i64) {
         r = 0
         return
     }
-    gcd(a, b)(g)
+    g = gcd(a, b)
     r = a / g * b
 }
 

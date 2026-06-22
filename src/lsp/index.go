@@ -7,13 +7,14 @@ import (
 )
 
 type IndexEntry struct {
-	Name     string
-	Kind     int
-	Type     string
-	Location Location
-	Scope    string
-	Value    string
-	Params   []ParamInfo
+	Name         string
+	Kind         int
+	Type         string
+	Location     Location
+	Scope        string
+	Value        string
+	Params       []ParamInfo
+	ResultParams []ParamInfo // result/output parameter types
 }
 
 type ParamInfo struct {

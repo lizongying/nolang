@@ -109,7 +109,7 @@ cmp = (a bigint, b bigint) (r i64) {
         }
         return
     }
-    abs-cmp(a, b)(r)
+    r = abs-cmp(a, b)
     if a.sign == -1 {
         r = 0 - r
     }
@@ -176,7 +176,7 @@ is-pos = (a bigint) (yes i64) {
 
 // eq: 判斷是否相等
 eq = (a bigint, b bigint) (yes i64) {
-    cmp(a, b)(r)
+    r = cmp(a, b)
     yes = 0
     if r == 0 {
         yes = 1
@@ -193,7 +193,7 @@ add = (a bigint, b bigint, c bigint) {
         abs-add(a, b, c)
         c.sign = a.sign
     } else {
-        abs-cmp(a, b)(r)
+        r = abs-cmp(a, b)
         if r >= 0 {
             abs-sub(a, b, c)
             c.sign = a.sign
@@ -243,7 +243,7 @@ sub = (a bigint, b bigint, c bigint) {
         abs-add(a, b, c)
         c.sign = a.sign
     } else {
-        abs-cmp(a, b)(r)
+        r = abs-cmp(a, b)
         if r >= 0 {
             abs-sub(a, b, c)
             c.sign = a.sign
@@ -345,19 +345,19 @@ mul-i64 = (a bigint, v i64, c bigint) {
 
 // div-mod: q = a / b, r = a % b
 div-mod = (a bigint, b bigint, q bigint, r bigint) {
-    is-zero(b)(zb)
+    zb = is-zero(b)
     if zb == 1 {
         zero(q)
         zero(r)
         return
     }
-    is-zero(a)(za)
+    za = is-zero(a)
     if za == 1 {
         zero(q)
         zero(r)
         return
     }
-    abs-cmp(a, b)(ac)
+    ac = abs-cmp(a, b)
     if ac < 0 {
         zero(q)
         copy(a, r)
@@ -390,7 +390,7 @@ div-mod = (a bigint, b bigint, q bigint, r bigint) {
         bit-pos = i % 32
         a-bit = (a.limbs[limb] >> bit-pos) & 1
         r.limbs[0] = r.limbs[0] | a-bit
-        abs-cmp(r, b)(rc)
+        rc = abs-cmp(r, b)
         if rc >= 0 {
             abs-sub(r, b, r)
             q-limb = i / 32
@@ -405,13 +405,13 @@ div-mod = (a bigint, b bigint, q bigint, r bigint) {
     q.sign = q-sign
     r.sign = r-sign
     if r.sign == -1 {
-        is-zero(r)(rz)
+        rz = is-zero(r)
         if rz == 1 {
             r.sign = 1
         }
     }
     if q.sign == -1 {
-        is-zero(q)(qz)
+        qz = is-zero(q)
         if qz == 1 {
             q.sign = 1
         }
@@ -480,7 +480,7 @@ for i > 0 {
 
 // mod-pow: r = base^exp mod modulus
 mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
-    is-zero(modulus)(mz)
+    mz = is-zero(modulus)
     if mz == 1 {
         zero(r)
         return
@@ -524,7 +524,7 @@ copy(a, x)
 copy(b, y)
 x.sign = 1
 y.sign = 1
-is-zero(y)(yz)
+yz = is-zero(y)
 for yz == 0 {
     mod(x, y, x)
     tmp = bigint
@@ -532,13 +532,13 @@ for yz == 0 {
 copy(y, tmp)
 copy(x, y)
 copy(tmp, x)
-is-zero(y)(yz)
+yz = is-zero(y)
 copy(x, g)
 
 // lcm: l = lcm(a, b)
 lcm = (a bigint, b bigint, l bigint) {
-    is-zero(a)(az)
-    is-zero(b)(bz)
+    az = is-zero(a)
+    bz = is-zero(b)
     if az == 1 || bz == 1 {
         zero(l)
         return
@@ -619,7 +619,7 @@ copy = (a bigint, out bigint) {
 // negate: out = -a
 negate = (a bigint, out bigint) {
     copy(a, out)
-    is-zero(out)(z)
+    z = is-zero(out)
     if z == 0 {
         out.sign = 0 - out.sign
     }
@@ -637,7 +637,7 @@ abs = (a bigint, out bigint) {
 
 // to-str: 將 bigint 轉為十進制字串
 to-str = (a bigint, out str) (out-n i64) {
-    is-zero(a)(z)
+    z = is-zero(a)
     if z == 1 {
         out[0] = 48
         out-n = 1
@@ -655,11 +655,11 @@ tmp.sign = 1
 buf = '(256)'
 buf-n = 0
 for true {
-    is-zero(tmp)(tz)
+    tz = is-zero(tmp)
     if tz == 1 {
         break
     }
-    mod-i64(tmp, 10)(d)
+    d = mod-i64(tmp, 10)
     buf[buf-n] = d + 48
     buf-n = buf-n + 1
     div-i64(tmp, 10, tmp)
@@ -817,7 +817,7 @@ from-hex = (s str, sn i64, out bigint) {
 
 // bit-len: 計算 bigint 的位元長度
 bit-len = (a bigint) (n i64) {
-    is-zero(a)(z)
+    z = is-zero(a)
     if z == 1 {
         n = 0
         return

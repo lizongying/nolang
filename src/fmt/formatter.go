@@ -941,7 +941,11 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	}
 	// else: infinite loop: for { }
 
-	f.write(" {")
+	if s.IterRange != nil || s.Init != nil || s.Condition != nil {
+		f.write(": {")
+	} else {
+		f.write(" {")
+	}
 	f.indent++
 	// 過濾掉 ; 分隔符產生的空表達式語句
 	statements := make([]parser.Statement, 0, len(s.Body.Statements))

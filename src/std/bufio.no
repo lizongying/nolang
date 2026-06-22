@@ -29,7 +29,7 @@ reader-fill = (r i64, buf str, bsz i64, pos i64, avail i64) (ok i64) {
 
 // reader-read-byte: 讀取一個位元組
 reader-read-byte = (r i64, buf str, bsz i64, pos i64, avail i64) (b i64, ok i64) {
-    reader-fill(r, buf, bsz, pos, avail)(ok)
+    ok = reader-fill(r, buf, bsz, pos, avail)
     if ok == 0 {
         return
     }
@@ -41,7 +41,7 @@ reader-read-byte = (r i64, buf str, bsz i64, pos i64, avail i64) (b i64, ok i64)
 reader-read-line = (r i64, buf str, bsz i64, pos i64, avail i64) (line str, ok i64) {
     i = 0
     for {
-        reader-fill(r, buf, bsz, pos, avail)(ok)
+        ok = reader-fill(r, buf, bsz, pos, avail)
         if ok == 0 {
             if i > 0 {
                 ok = 1

@@ -174,7 +174,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// Pre-populate auto-imported module exports (e.g., pi/e from std/math)
 	// before the AST walk, so user-defined vars in main take precedence.
 	if ast != nil {
-		moduleNames := nbuild.GetKnownStdModuleNames()
+		moduleNames := nbuild.GetStdModuleShortNames()
 		for _, stmt := range ast.Statements {
 			if use, ok := stmt.(*parser.UseStatement); ok {
 				short := use.Path
@@ -201,6 +201,30 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 					Type: "fn",
 				}
 				index.definitions[ex.Name] = index.functions[ex.Name]
+			}
+		}
+
+		// Index auto-imported std module files with location info for go-to-definition
+		for _, info := range nbuild.GetStdModules() {
+			modFilePath := "src/std/" + info.FullPath + ".no"
+			if _, err := os.Stat(modFilePath); err != nil {
+				continue
+			}
+			source, err := os.ReadFile(modFilePath)
+			if err != nil {
+				continue
+			}
+			l := lexer.New(string(source))
+			p := parser.New(l)
+			modProg := p.ParseProgram()
+			if len(p.Errors()) > 0 {
+				continue
+			}
+			if absPath, err := filepath.Abs(modFilePath); err == nil {
+				modURI := "file://" + absPath
+				for _, ms := range modProg.Statements {
+					m.indexModuleStatement(index, ms, modURI)
+				}
 			}
 		}
 
@@ -438,11 +462,19 @@ func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) st
 func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.Statement, modURI string) {
 	var name string
 	var token interface{}
+	var resultParams []ParamInfo
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		name = s.Name
 		token = s.Token
+		for _, r := range s.Results {
+			typeStr := ""
+			if r.Type != nil {
+				typeStr = r.Type.String()
+			}
+			resultParams = append(resultParams, ParamInfo{Name: r.Name, Type: typeStr})
+		}
 	case *parser.LetStatement:
 		if s.Name != nil {
 			if _, ok := s.Value.(*parser.FunctionLiteral); ok {
@@ -475,10 +507,11 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		},
 	}
 	entry := &IndexEntry{
-		Name:     name,
-		Kind:     SymbolKindFunction,
-		Type:     "fn",
-		Location: loc,
+		Name:         name,
+		Kind:         SymbolKindFunction,
+		Type:         "fn",
+		Location:     loc,
+		ResultParams: resultParams,
 	}
 	index.functions[name] = entry
 	index.definitions[name] = entry

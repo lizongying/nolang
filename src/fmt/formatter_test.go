@@ -76,7 +76,7 @@ func TestFormatBasic(t *testing.T) {
 		{
 			name:     "for loop",
 			input:    "for x<10{x=x+1}",
-			expected: "for x < 10 {\n    x = x + 1\n}",
+			expected: "for x < 10: {\n    x = x + 1\n}",
 		},
 		{
 			name:     "infinite for loop with break",

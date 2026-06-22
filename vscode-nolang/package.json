@@ -2,7 +2,7 @@
   "name": "vscode-nolang",
   "displayName": "Nolang Support",
   "description": "Nolang support for Visual Studio Code",
-  "version": "0.1.73",
+  "version": "0.1.74",
   "icon": "icon.png",
   "publisher": "lizongying",
   "repository": {

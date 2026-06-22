@@ -93,8 +93,8 @@ func TestHandleInitialize(t *testing.T) {
 	if initResult.ServerInfo == nil {
 		t.Fatal("ServerInfo is nil")
 	}
-	if initResult.ServerInfo.Name != "nolang-lsp" {
-		t.Errorf("expected server name 'nolang-lsp', got %q", initResult.ServerInfo.Name)
+	if initResult.ServerInfo.Name != "lsp" {
+		t.Errorf("expected server name 'lsp', got %q", initResult.ServerInfo.Name)
 	}
 	if initResult.ServerInfo.Version != "0.2.0" {
 		t.Errorf("expected server version '0.2.0', got %q", initResult.ServerInfo.Version)
@@ -325,11 +325,11 @@ func TestDocumentSymbol(t *testing.T) {
 
 func TestServerInfo(t *testing.T) {
 	si := ServerInfo{
-		Name:    "nolang-lsp",
+		Name:    "lsp",
 		Version: "1.0.0",
 	}
-	if si.Name != "nolang-lsp" {
-		t.Errorf("expected Name 'nolang-lsp', got %q", si.Name)
+	if si.Name != "lsp" {
+		t.Errorf("expected Name 'lsp', got %q", si.Name)
 	}
 	if si.Version != "1.0.0" {
 		t.Errorf("expected Version '1.0.0', got %q", si.Version)
@@ -761,7 +761,7 @@ func logDiff(t *testing.T, original, formatted string) {
 func startLSP(t *testing.T) (*lspConn, func()) {
 	t.Helper()
 
-	lspBin := "../../vscode-nolang/server/nolang-lsp"
+	lspBin := "../../vscode-nolang/server/lsp"
 	if _, err := os.Stat(lspBin); os.IsNotExist(err) {
 		t.Skipf("LSP binary not found: %s", lspBin)
 	}
@@ -885,7 +885,7 @@ func TestLSPBinaryFormatting_IdempotentWithComments(t *testing.T) {
 		t.Skip("skipping LSP binary test in short mode")
 	}
 
-	lspBin := "../../vscode-nolang/server/nolang-lsp"
+	lspBin := "../../vscode-nolang/server/lsp"
 	if _, err := os.Stat(lspBin); os.IsNotExist(err) {
 		t.Skipf("LSP binary not found: %s", lspBin)
 	}

@@ -82,7 +82,7 @@ func (s *Server) handleInitialize(params InitializeParams) (interface{}, error) 
 	return InitializeResult{
 		Capabilities: s.capabilities,
 		ServerInfo: &ServerInfo{
-			Name:    "nolang-lsp",
+			Name:    "lsp",
 			Version: "0.2.0",
 		},
 	}, nil

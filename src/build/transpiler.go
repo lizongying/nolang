@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
+	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/lexer"
@@ -156,7 +158,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		// 前綴正負號傳遞內層表達式的型別
 		return inferExprType(e.Right, varTypes)
 	case *parser.DotExpression:
-		return "i64"
+		// Struct field access: cannot infer without struct definitions
+		return ""
+	case *parser.IndexExpression:
+		// Array/slice element access: cannot reliably infer element type here
+		return ""
 	case *parser.GroupedExpression:
 		return inferExprType(e.Expression, varTypes)
 	case *parser.ConditionalExpression:
@@ -244,6 +250,10 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 	case *parser.ExpressionStatement:
 		updateCallNames(s.Expression, overloads, mangled, varTypes)
 	case *parser.LetStatement:
+		if s.Value != nil {
+			updateCallNames(s.Value, overloads, mangled, varTypes)
+		}
+	case *parser.MultiAssignStatement:
 		if s.Value != nil {
 			updateCallNames(s.Value, overloads, mangled, varTypes)
 		}
@@ -469,9 +479,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	var importedModules []string
 	// 預填充已知 std 模塊短名稱，允許 math.degrees() 等呼叫無需顯式導入
 	// 如果變量名與模塊名衝突，跳過自動添加以避免歧義
-	for _, name := range knownStdModuleNames() {
-		if _, isVar := varTypes[name]; !isVar {
-			importedModules = append(importedModules, name)
+	for _, info := range knownStdModules() {
+		if _, isVar := varTypes[info.ShortName]; !isVar {
+			importedModules = append(importedModules, info.ShortName)
 		}
 	}
 	for _, stmt := range program.Statements {
@@ -556,12 +566,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
-	for _, name := range knownStdModuleNames() {
+	for _, info := range knownStdModules() {
 		// 如果變量名與模塊名衝突，跳過自動載入
-		if _, isVar := varTypes[name]; isVar {
+		if _, isVar := varTypes[info.ShortName]; isVar {
 			continue
 		}
-		path := "std/" + name
+		path := "std/" + info.FullPath
 		if explicitStdModules[path] {
 			continue
 		}
@@ -617,6 +627,23 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			continue
 		}
 		if _, ok := stmt.(*parser.ExportStatement); ok {
+			continue
+		}
+		// Convert MultiAssignStatement to old nested-call syntax for codegen
+		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
+			if innerCall, ok := mas.Value.(*parser.CallExpression); ok {
+				// Create: innerCall(outerArgs) with outerArgs being the variable names
+				outerArgs := make([]parser.Expression, len(mas.Names))
+				for i, name := range mas.Names {
+					outerArgs[i] = &parser.Identifier{Token: name.Token, Value: name.Value}
+				}
+				outerCall := &parser.CallExpression{
+					Token:     innerCall.Token,
+					Function:  innerCall,
+					Arguments: outerArgs,
+				}
+				merged.Statements = append(merged.Statements, &parser.ExpressionStatement{Expression: outerCall})
+			}
 			continue
 		}
 		merged.Statements = append(merged.Statements, stmt)
@@ -2468,10 +2495,10 @@ func collectModuleNames(program *parser.Program) []string {
 	seen := make(map[string]bool)
 	var names []string
 
-	for _, name := range knownStdModuleNames() {
-		if !seen[name] {
-			seen[name] = true
-			names = append(names, name)
+	for _, info := range knownStdModules() {
+		if !seen[info.ShortName] {
+			seen[info.ShortName] = true
+			names = append(names, info.ShortName)
 		}
 	}
 
@@ -2599,7 +2626,7 @@ func resolveModulePath(moduleName string) string {
 	// Try binary-relative paths
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
-		// Binary could be at bin/nolang or vscode-nolang/server/nolang-lsp
+		// Binary could be at bin/nolang or vscode-nolang/server/lsp
 		relativePaths := []string{
 			filepath.Join(exeDir, "..", "src", "std", moduleName+".no"),       // bin/ → src/
 			filepath.Join(exeDir, "..", "..", "src", "std", moduleName+".no"), // vscode-nolang/server/ → src/
@@ -2622,18 +2649,37 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
 		}
 	case *parser.LetStatement:
-		// Name is a definition, not a reference — skip it
+		// Name is a definition — register it so it can be referenced later
+		if s.Value != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
+		}
+		if s.Name != nil {
+			definedVars[s.Name.Value] = true
+		}
+	case *parser.MultiAssignStatement:
+		// Register all left-side variables as defined
+		for _, name := range s.Names {
+			definedVars[name.Value] = true
+		}
 		if s.Value != nil {
 			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
 		}
 	case *parser.FunctionDefinition:
-		// Parameters are defined vars within the function
+		// Parameters, generic params, and result params are defined vars within the function
 		localDefs := make(map[string]bool)
 		for k, v := range definedVars {
 			localDefs[k] = v
 		}
 		for _, p := range s.Parameters {
 			localDefs[p.Name] = true
+		}
+		for _, gp := range s.GenericParams {
+			localDefs[gp.Value] = true
+		}
+		for _, r := range s.Results {
+			if r.Name != "" {
+				localDefs[r.Name] = true
+			}
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
@@ -2978,18 +3024,82 @@ func moduleShortName(path string) string {
 	return path
 }
 
-// knownStdModuleNames returns standard library module short names that should
-// be auto-recognized for module.function() calling style without explicit imports.
-// These modules have ReceiverGlobal builtins whose MethodName matches the
-// DotExpression property (e.g., math.degrees() → degrees()).
-func knownStdModuleNames() []string {
-	return []string{"math"}
+var (
+	knownStdModulesOnce sync.Once
+	knownStdModulesList []StdModuleInfo
+)
+
+// StdModuleInfo holds information about a standard library module.
+type StdModuleInfo struct {
+	ShortName string // last path segment, e.g. "rand", "math"
+	FullPath  string // relative to std/, e.g. "hash/rand", "math"
 }
 
-// GetKnownStdModuleNames returns the list of auto-recognized standard library
-// module short names (exported for LSP use).
-func GetKnownStdModuleNames() []string {
-	return knownStdModuleNames()
+// knownStdModules returns all embedded standard library modules.
+// Uses //go:embed to discover all .no files in src/std/ at compile time.
+func knownStdModules() []StdModuleInfo {
+	knownStdModulesOnce.Do(func() {
+		var infos []StdModuleInfo
+		seen := make(map[string]bool)
+
+		var walkDir func(dir string)
+		walkDir = func(dir string) {
+			entries, err := nolang.StdFS.ReadDir(dir)
+			if err != nil {
+				return
+			}
+			for _, e := range entries {
+				path := dir + "/" + e.Name()
+				if e.IsDir() {
+					walkDir(path)
+				} else if strings.HasSuffix(e.Name(), ".no") {
+					rel := strings.TrimPrefix(path, "std/")
+					fullPath := strings.TrimSuffix(rel, ".no")
+					if !seen[fullPath] {
+						seen[fullPath] = true
+						shortName := fullPath
+						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+							shortName = fullPath[idx+1:]
+						}
+						infos = append(infos, StdModuleInfo{
+							ShortName: shortName,
+							FullPath:  fullPath,
+						})
+					}
+				}
+			}
+		}
+		walkDir("std")
+		knownStdModulesList = infos
+	})
+	return knownStdModulesList
+}
+
+// GetStdModules returns StdModuleInfo for all embedded standard library modules.
+func GetStdModules() []StdModuleInfo {
+	return knownStdModules()
+}
+
+// GetStdModuleShortNames returns the short names of all embedded standard library
+// modules (for use in definedVars and module name registration).
+func GetStdModuleShortNames() []string {
+	infos := knownStdModules()
+	names := make([]string, len(infos))
+	for i, info := range infos {
+		names[i] = info.ShortName
+	}
+	return names
+}
+
+// GetStdModuleFullPaths returns the full paths of all embedded standard library
+// modules (for use in file resolution and auto-loading).
+func GetStdModuleFullPaths() []string {
+	infos := knownStdModules()
+	paths := make([]string, len(infos))
+	for i, info := range infos {
+		paths[i] = info.FullPath
+	}
+	return paths
 }
 
 // resolveModuleCalls walks the program and rewrites module.fn() calls
@@ -3330,7 +3440,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 			params := make([]paramInfo, len(fd.Parameters))
 			for i, p := range fd.Parameters {
 				t := ""
-				if p.Type != nil {
+				if p != nil && p.Type != nil {
 					t = p.Type.String()
 				}
 				params[i] = paramInfo{Name: p.Name, Type: t}
@@ -3365,7 +3475,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 					params := make([]paramInfo, len(fd.Parameters))
 					for i, p := range fd.Parameters {
 						t := ""
-						if p.Type != nil {
+						if p != nil && p.Type != nil {
 							t = p.Type.String()
 						}
 						params[i] = paramInfo{Name: p.Name, Type: t}
@@ -3377,9 +3487,25 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 		}
 	}
 
-	// 3. Validate call expressions
+	// 3. Collect struct field type info from struct definitions
+	structFields := make(map[string]map[string]string)
 	for _, stmt := range program.Statements {
-		results = append(results, checkCallArgsInStmt(stmt, sigs)...)
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			fields := make(map[string]string)
+			for _, f := range sd.Fields {
+				if f.Type != nil {
+					fields[f.Name] = f.Type.String()
+				}
+			}
+			if len(fields) > 0 {
+				structFields[sd.Name] = fields
+			}
+		}
+	}
+
+	// 4. Validate call expressions
+	for _, stmt := range program.Statements {
+		results = append(results, checkCallArgsInStmt(stmt, sigs, make(map[string]string), structFields)...)
 	}
 
 	return results
@@ -3460,56 +3586,111 @@ type paramInfo struct {
 	Type string
 }
 
-func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig) []ValidateResult {
+func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			return checkCallArgsInExpr(s.Expression, sigs)
+			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			return checkCallArgsInExpr(s.Value, sigs)
+			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
 		}
 	case *parser.FunctionDefinition:
+		// Build local var types including function parameters and result params
+		localTypes := make(map[string]string)
+		for k, v := range varTypes {
+			localTypes[k] = v
+		}
+		for _, p := range s.Parameters {
+			if p.Type != nil {
+				localTypes[p.Name] = p.Type.String()
+			}
+		}
+		for _, r := range s.Results {
+			if r.Name != "" && r.Type != nil {
+				localTypes[r.Name] = r.Type.String()
+			}
+		}
 		if s.Body != nil {
 			var results []ValidateResult
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmt(bs, sigs)...)
+				results = append(results, checkCallArgsInStmt(bs, sigs, localTypes, structFields)...)
 			}
 			return results
 		}
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
-			results = append(results, checkCallArgsInStmt(bs, sigs)...)
+			results = append(results, checkCallArgsInStmt(bs, sigs, varTypes, structFields)...)
 		}
 		return results
 	case *parser.ForStatement:
 		var results []ValidateResult
 		if s.Init != nil {
-			results = append(results, checkCallArgsInStmt(s.Init, sigs)...)
+			results = append(results, checkCallArgsInStmt(s.Init, sigs, varTypes, structFields)...)
 		}
 		if s.Condition != nil {
-			results = append(results, checkCallArgsInExpr(s.Condition, sigs)...)
+			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkCallArgsInStmt(s.Update, sigs)...)
+			results = append(results, checkCallArgsInStmt(s.Update, sigs, varTypes, structFields)...)
 		}
 		if s.Body != nil {
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmt(bs, sigs)...)
+				results = append(results, checkCallArgsInStmt(bs, sigs, varTypes, structFields)...)
 			}
 		}
 		return results
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			return checkCallArgsInExpr(s.ReturnValue, sigs)
+			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields)
 		}
 	}
 	return nil
 }
 
-func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []ValidateResult {
+// resolveExprType resolves the type of an expression, using struct field definitions
+// and variable type info to correctly handle struct field access and array element types.
+func resolveExprType(expr parser.Expression, varTypes map[string]string, structFields map[string]map[string]string) string {
+	if expr == nil {
+		return ""
+	}
+	switch e := expr.(type) {
+	case *parser.IndexExpression:
+		// Array/slice element access: extract element type from [N]type or []type
+		leftType := resolveExprType(e.Left, varTypes, structFields)
+		if strings.HasPrefix(leftType, "[") {
+			if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
+				elemType := leftType[idx+1:]
+				if elemType != "" {
+					return elemType
+				}
+			}
+		}
+		return ""
+	case *parser.DotExpression:
+		// Struct field access: resolve field type from struct definition
+		if ident, ok := e.Receiver.(*parser.Identifier); ok {
+			if receiverType, ok := varTypes[ident.Value]; ok {
+				if fields, ok := structFields[receiverType]; ok {
+					if t, ok := fields[e.Property]; ok {
+						return t
+					}
+				}
+			}
+		}
+		return ""
+	default:
+		return inferExprType(expr, varTypes)
+	}
+}
+
+func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
 	if expr == nil {
 		return nil
 	}
@@ -3526,10 +3707,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 						Message: fmt.Sprintf("function '%s' expects %d argument(s), got %d", ident.Value, len(sig.ParamTypes), len(e.Arguments)),
 					})
 				} else {
-					// Check argument types
-					varTypes := make(map[string]string)
+					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)
 					for i, arg := range e.Arguments {
-						argType := inferExprType(arg, varTypes)
+						argType := resolveExprType(arg, varTypes, structFields)
 						expectedType := sig.ParamTypes[i].Type
 						if expectedType != "" && argType != "" && argType != expectedType {
 							results = append(results, ValidateResult{
@@ -3544,86 +3724,86 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {
-			results = append(results, checkCallArgsInExpr(arg, sigs)...)
+			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields)...)
 		}
 		return results
 
 	case *parser.InfixExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
 		}
 		if e.Right != nil {
-			results = append(results, checkCallArgsInExpr(e.Right, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)...)
 		}
 		return results
 
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			return checkCallArgsInExpr(e.Right, sigs)
+			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)
 		}
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			return checkCallArgsInExpr(e.Expression, sigs)
+			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields)
 		}
 	case *parser.IfExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
 		}
 		if e.Consequence != nil {
 			for _, is := range e.Consequence.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
 			}
 		}
 		if e.Alternative != nil {
 			for _, is := range e.Alternative.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
 			}
 		}
 		return results
 	case *parser.IndexExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
 		}
 		if e.Index != nil {
-			results = append(results, checkCallArgsInExpr(e.Index, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields)...)
 		}
 		return results
 	case *parser.AssignExpression:
 		if e.Value != nil {
-			return checkCallArgsInExpr(e.Value, sigs)
+			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields)
 		}
 	case *parser.ConditionalExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
 		}
 		if e.Consequence != nil {
-			results = append(results, checkCallArgsInExpr(e.Consequence, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields)...)
 		}
 		if e.Alternative != nil {
-			results = append(results, checkCallArgsInExpr(e.Alternative, sigs)...)
+			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields)...)
 		}
 		return results
 	case *parser.ArrayLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
 		}
 		return results
 	case *parser.SliceLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
 		}
 		return results
 	case *parser.StructLiteral:
 		var results []ValidateResult
 		for _, f := range e.Fields {
 			if f.Value != nil {
-				results = append(results, checkCallArgsInExpr(f.Value, sigs)...)
+				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields)...)
 			}
 		}
 		return results
@@ -3631,7 +3811,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 		if e.Body != nil {
 			var results []ValidateResult
 			for _, is := range e.Body.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
 			}
 			return results
 		}

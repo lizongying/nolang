@@ -162,18 +162,18 @@
 // copy-file: 复制文件内容
 copy-file = (src str, dst str) (ok i64) {
     ok = 0
-    open-read(src)(fd-r)
+    fd-r = open-read(src)
     if fd-r < 0 {
         return
     }
-    open-write(dst)(fd-w)
+    fd-w = open-write(dst)
     if fd-w < 0 {
         close(fd-r)()
         return
     }
     buf = '(4096)'
     for true {
-        read(fd-r, buf, 4096)(n)
+        n = read(fd-r, buf, 4096)
         if n <= 0 {
             break
         }

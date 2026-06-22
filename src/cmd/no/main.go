@@ -253,13 +253,17 @@ func newProject(name string) {
 	createMainFile()
 	createGitIgnore()
 	createSrcDirectory()
+	createLibFile()
+	createTestDirectory()
 
 	fmt.Printf("Project created: %s\n", name)
 	fmt.Println("")
 	fmt.Println("Files created:")
 	fmt.Println("  - mod.jsonc (project configuration)")
 	fmt.Println("  - main.no (main entry file)")
+	fmt.Println("  - lib.no (library export file)")
 	fmt.Println("  - src/ (source directory)")
+	fmt.Println("  - test/ (test directory)")
 	fmt.Println("  - .gitignore")
 }
 
@@ -352,8 +356,6 @@ func createSrcDirectory() {
 	}
 
 	content := `// Example module
-# std/fmt.print
-
 greet = (name str) {
     print('Hello, ' + name)
 }
@@ -361,6 +363,36 @@ greet = (name str) {
 	err = os.WriteFile("src/utils.no", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing utils.no: %v\n", err)
+	}
+}
+
+func createLibFile() {
+	content := `// Export declarations
+// @ /src/utils.greet greet
+`
+	err := os.WriteFile("lib.no", []byte(content), 0644)
+	if err != nil {
+		fmt.Printf("Error writing lib.no: %v\n", err)
+	}
+}
+
+func createTestDirectory() {
+	err := os.MkdirAll("test", 0755)
+	if err != nil {
+		fmt.Printf("Error creating test directory: %v\n", err)
+		return
+	}
+
+	content := `// Test example
+// # std/fmt.print
+
+// test-greet = () {
+//     print('test passed')
+// }
+`
+	err = os.WriteFile("test/test.no", []byte(content), 0644)
+	if err != nil {
+		fmt.Printf("Error writing test file: %v\n", err)
 	}
 }
 

@@ -64,7 +64,7 @@ tar-count = (data []byte) (count i64) {
             return
         }
         count = count + 1
-        tar-next(data, off)(off)
+        off = tar-next(data, off)
     }
 }
 
@@ -114,7 +114,7 @@ tar-type = (data []byte, idx i64) (typ str) {
 
 // tar-is-dir: 是否為目錄
 tar-is-dir = (data []byte, idx i64) (yes i64) {
-    tar-type(data, idx)(t)
+    t = tar-type(data, idx)
     if t == 'dir' {
         yes = 1
     } else {
@@ -126,7 +126,7 @@ tar-is-dir = (data []byte, idx i64) (yes i64) {
 
 // tar-read: 提取第 idx 個條目的內容
 tar-read = (data []byte, idx i64) (out []byte) {
-    tar-size(data, idx)(sz)
+    sz = tar-size(data, idx)
     hdr = idx * 512
     if sz > 0 {
         i = 0

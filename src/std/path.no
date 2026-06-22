@@ -259,6 +259,6 @@ clean = (p str, n i64, out str) (out-n i64) {
 
 // split: 將路徑分割為目錄和檔名
 split = (p str, n i64, d str, f str) (dn i64, fn i64) {
-    dir(p, n, d)(dn)
-    base(p, n, f)(fn)
+    dn = dir(p, n, d)
+    fn = base(p, n, f)
 }

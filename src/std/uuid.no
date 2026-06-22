@@ -21,10 +21,9 @@ HEX = '0123456789abcdef'
 // ═══════════════════════════════════════════════
 
 // uuid: 128-bit 通用唯一識別碼
-uuid
-
-bytes[16]
-byte
+uuid {
+    bytes [16]byte
+}
 
 // ═══════════════════════════════════════════════
 // 生成
@@ -32,11 +31,11 @@ byte
 
 // new-v4: 生成隨機 UUID v4
 // state: xorshift32 狀態（輸入/輸出，初始為非零種子）
-new-v4 = (state i64, out uuid) {
+new-v4 = (state i64) (out uuid) {
     // 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
     for i < 16 {
-        rand(state, r)
+        r = rand(state)
         out.bytes[i] = r & 255
         if i + 1 < 16 {
             out.bytes[i + 1] = (r >> 8) & 255
@@ -165,19 +164,19 @@ from-str = (s str, sn i64, out uuid) (ok i64) {
 
     // 判斷格式（帶連字號 vs 不帶）
     if sn == 36 {
-        parse-with-dashes(s, pos, out)(ok)
+        ok = parse-with-dashes(s, pos, out)
     } elif sn == 32 {
-        parse-no-dashes(s, pos, out)(ok)
+        ok = parse-no-dashes(s, pos, out)
     }
 }
 
 // parse-with-dashes: 解析帶連字號的 UUID
 parse-with-dashes = (s str, pos i64, out uuid) (ok i64) {
     ok = 1
-    parse-hex-byte(s, pos)(v0)
-    parse-hex-byte(s, pos + 2)(v1)
-    parse-hex-byte(s, pos + 4)(v2)
-    parse-hex-byte(s, pos + 6)(v3)
+    v0 = parse-hex-byte(s, pos)
+    v1 = parse-hex-byte(s, pos + 2)
+    v2 = parse-hex-byte(s, pos + 4)
+    v3 = parse-hex-byte(s, pos + 6)
     out.bytes[0] = v0
     out.bytes[1] = v1
     out.bytes[2] = v2
@@ -188,36 +187,36 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok i64) {
         ok = 0
         return
     }
-    parse-hex-byte(s, pos + 9)(v4)
-    parse-hex-byte(s, pos + 11)(v5)
+    v4 = parse-hex-byte(s, pos + 9)
+    v5 = parse-hex-byte(s, pos + 11)
     out.bytes[4] = v4
     out.bytes[5] = v5
     if s[pos + 13] & 255 != 45 {
         ok = 0
         return
     }
-    parse-hex-byte(s, pos + 14)(v6)
-    parse-hex-byte(s, pos + 16)(v7)
+    v6 = parse-hex-byte(s, pos + 14)
+    v7 = parse-hex-byte(s, pos + 16)
     out.bytes[6] = v6
     out.bytes[7] = v7
     if s[pos + 18] & 255 != 45 {
         ok = 0
         return
     }
-    parse-hex-byte(s, pos + 19)(v8)
-    parse-hex-byte(s, pos + 21)(v9)
+    v8 = parse-hex-byte(s, pos + 19)
+    v9 = parse-hex-byte(s, pos + 21)
     out.bytes[8] = v8
     out.bytes[9] = v9
     if s[pos + 23] & 255 != 45 {
         ok = 0
         return
     }
-    parse-hex-byte(s, pos + 24)(v10)
-    parse-hex-byte(s, pos + 26)(v11)
-    parse-hex-byte(s, pos + 28)(v12)
-    parse-hex-byte(s, pos + 30)(v13)
-    parse-hex-byte(s, pos + 32)(v14)
-    parse-hex-byte(s, pos + 34)(v15)
+    v10 = parse-hex-byte(s, pos + 24)
+    v11 = parse-hex-byte(s, pos + 26)
+    v12 = parse-hex-byte(s, pos + 28)
+    v13 = parse-hex-byte(s, pos + 30)
+    v14 = parse-hex-byte(s, pos + 32)
+    v15 = parse-hex-byte(s, pos + 34)
     out.bytes[10] = v10
     out.bytes[11] = v11
     out.bytes[12] = v12
@@ -231,7 +230,7 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok i64) {
     ok = 1
     i = 0
     for i < 16 {
-        parse-hex-byte(s, pos + i * 2)(v)
+        v = parse-hex-byte(s, pos + i * 2)
         if v < 0 {
             ok = 0
             return

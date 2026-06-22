@@ -5,7 +5,7 @@
 // 用法：
 //   use std/vec.vec-create
 //   data [16]i64 = [0:16]
-//   vec-create(10, 42, data)
+//   data = vec-create(10, 42)
 //
 // vec-slice
 //
@@ -30,7 +30,7 @@
 // []t(n0..n1)
 
 // vec-create: 創建長度 n 的切片，全部填充 val
-vec-create = (n i64, val i64, out []i64) {
+vec-create = (n i64, val i64) (out []i64) {
     i = 0
     for i < n {
         out[i] = val
@@ -165,10 +165,7 @@ vec-create = (n i64, val i64, out []i64) {
 
 // []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
-    if .len() != n {
-        return
-    }
-    for i <- [0..n) {
+    for i <- [0...len()) {
         out[i] = .[i]
     }
 }

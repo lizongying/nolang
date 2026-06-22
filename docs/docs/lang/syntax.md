@@ -216,38 +216,43 @@ for i <- [0..[1..5][0]] {  // ❌ 语法错误
 
 ```nolang
 
+// loop
 // 一直循環執行
 ! {
 }
 
+// loop
 // 限定執行次數
 10 * {
 }
 
-// 遍歷
-i <- (a..b] {
-}
-
-// 內部無條件執行
-x == 1 {
+// while
+x == 1: {
     b = 2
 }
 
+// for
+// 遍歷
+i <- (a..b]: {
+}
+
+
 // continue
-i <- (a..b] {
+i <- (a..b]: {
     *
 }
 
 // break
-i <- (a..b] {
+i <- (a..b]: {
     **
 }
 
 // return
-i <- (a..b] {
+i <- (a..b]: {
     ...
 }
 
+// 舊式寫法
 // for 循環
 for i < 10 {
     print(i)
@@ -271,54 +276,41 @@ outer for i in [0..10) {
     }
 }
 
-// match
-
-// ✅ match 语句：分支体是代码块
-x {
+// switch
+// 無返回值
+x: {
     1|
         a = 1
         b = 2
-        // 多行，不返回值
     2|
         do-something()
     |
         c = 0
 }
 
-// ✅ match 表達式
-result = x {
+// switch
+// 有返回值，最後一個語句/值
+result = x: {
     1| 1       // 單一值
     2| 2 + 1     //簡單表達式
     | a + b
 }
 
-// ❌ 編譯錯誤：分支裡不能有表達式
-result = x {
-    1|
-        a = 1
-}
-
-// ❌ 編譯錯誤：語句形式不能有返回值
-x {
-    1| 1
-}
-
-// 特殊match，沒有需要返回的值
+// if/else
 {
     a == 1|
         a = 1
         b = 2
-
-        // 多行 不返回值
     a == 2|
         do-something()
     |
         c = 0
 }
 
+// match
 // 判讀返回值可能有錯的情況
 // it用於取參數
-x {
+x: {
     err| log(it)
     nil| log('nil')
     |
@@ -331,6 +323,7 @@ max = sum > 10 ? sum : 10
 
 // 建議使用match語法或三元表達式替代if/else
 
+// 舊式寫法
 // if/elif/else
 if x > 5 {
     a = 1
@@ -339,9 +332,6 @@ if x > 5 {
 } else {
     c = 0
 }
-
-// 作為表達式
-max = if x > y { x } else { y }
 ```
 
 ## 數組與切片
@@ -429,7 +419,7 @@ user {
     age i64
 }
 
-user.greet() {
+user.greet = () {
     print('Hello, ' - .name)
 }
 ```
@@ -443,7 +433,7 @@ json {
 }
 
 // 接口默認實現
-json.to-json() {
+json.to-json = () {
 }
 
 // 接口實現
@@ -453,12 +443,12 @@ user json {
 }
 
 // 重寫 + 調用父實現
-user.to-json() {
+user.to-json = () {
     // 父實現
     ..to-json()
 }
 
-user.other() {
+user.other = () {
     // 當前實現
     .to-json()
 
@@ -520,7 +510,7 @@ file.leave() {
     close(self)
 }
 
-read-file() {
+read-file = () {
 
     // 自動 f.enter()
     f = file{
@@ -556,7 +546,7 @@ nullableString = 'test'
 nullableString = err('some error')
 
 // 可通過match判斷
-x {
+x: {
     err| log(it)
     nil|
     |
@@ -571,7 +561,7 @@ x {
 ### 泛形
 
 ```nolang
-arr_to_vec(arr [n]t) (out []t) {
+arr_to_vec = (arr [n]t) (out []t) {
     for i in [0..n) {
         out[i] = arr[i]
     }

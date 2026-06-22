@@ -131,7 +131,7 @@ assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
 // assert-str-eq: 字串相等（比較前 n 個字節）
 assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
-    str-eq(a, b, n)(eq)
+    eq = str-eq(a, b, n)
     if eq == false {
         ok = false
         print('FAIL: assert-str-eq')
@@ -142,7 +142,7 @@ assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
 // assert-str-ne: 字串不相等
 assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
-    str-eq(a, b, n)(eq)
+    eq = str-eq(a, b, n)
     if eq == true {
         ok = false
         print('FAIL: assert-str-ne')

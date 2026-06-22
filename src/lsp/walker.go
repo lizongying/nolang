@@ -39,7 +39,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	}
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		w.addFunction(s.Name, s.Token, s.Parameters, s.Body, scope)
+		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope)
 		if s.Body != nil {
 			for _, inner := range s.Body.Statements {
 				w.walkStatement(inner, s.Name)
@@ -59,9 +59,9 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				params = w.extractParams(funcLit.Parameters)
 				value = detail
 				entry := &IndexEntry{
-					Name:   s.Name.Value,
-					Kind:   kind,
-					Type:   detail,
+					Name: s.Name.Value,
+					Kind: kind,
+					Type: detail,
 					Location: Location{
 						URI:   w.uri,
 						Range: w.rangeFromIdent(s.Name),
@@ -81,9 +81,9 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				detail = w.getExprType(s.Value)
 				value = w.getExprValue(s.Value)
 				entry := &IndexEntry{
-					Name:   s.Name.Value,
-					Kind:   kind,
-					Type:   detail,
+					Name: s.Name.Value,
+					Kind: kind,
+					Type: detail,
 					Location: Location{
 						URI:   w.uri,
 						Range: w.rangeFromIdent(s.Name),
@@ -94,6 +94,39 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				w.index.symbols[s.Name.Value] = entry
 				w.index.definitions[s.Name.Value] = entry
 			}
+		}
+		if s.Value != nil {
+			w.walkExpression(s.Value, scope)
+		}
+
+	case *parser.MultiAssignStatement:
+		// Resolve types from the function's result parameters
+		var resultTypes []ParamInfo
+		if callExpr, ok := s.Value.(*parser.CallExpression); ok {
+			if ident, ok := callExpr.Function.(*parser.Identifier); ok {
+				if entry, ok := w.index.functions[ident.Value]; ok && len(entry.ResultParams) > 0 {
+					resultTypes = entry.ResultParams
+				}
+			}
+		}
+		// Register each multi-assign target variable as a symbol
+		for i, name := range s.Names {
+			exprType := ""
+			if i < len(resultTypes) {
+				exprType = resultTypes[i].Type
+			}
+			entry := &IndexEntry{
+				Name: name.Value,
+				Kind: SymbolKindVariable,
+				Type: exprType,
+				Location: Location{
+					URI:   w.uri,
+					Range: w.rangeFromIdent(name),
+				},
+				Scope: scope,
+			}
+			w.index.symbols[name.Value] = entry
+			w.index.definitions[name.Value] = entry
 		}
 		if s.Value != nil {
 			w.walkExpression(s.Value, scope)
@@ -174,7 +207,7 @@ func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {
 	}
 }
 
-func (w *ASTWalker) addFunction(name string, token interface{}, params []*parser.Parameter, body *parser.BlockStatement, scope string) {
+func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string) {
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -192,6 +225,15 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params []*parser
 			typeStr = p.Type.String()
 		}
 		paramInfos[i] = ParamInfo{Name: p.Name, Type: typeStr}
+	}
+
+	resultInfos := make([]ParamInfo, len(results))
+	for i, r := range results {
+		typeStr := ""
+		if r.Type != nil {
+			typeStr = r.Type.String()
+		}
+		resultInfos[i] = ParamInfo{Name: r.Name, Type: typeStr}
 	}
 
 	retType := ""
@@ -218,8 +260,9 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params []*parser
 				End:   Position{Line: uint32(line - 1), Character: uint32(column - 1 + len(name))},
 			},
 		},
-		Scope:  scope,
-		Params: paramInfos,
+		Scope:        scope,
+		Params:       paramInfos,
+		ResultParams: resultInfos,
 	}
 	w.index.functions[name] = entry
 	w.index.definitions[name] = entry

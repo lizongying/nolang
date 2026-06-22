@@ -88,6 +88,9 @@ func (p *Parser) classifyBlock() blockType {
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
 		lexer.LESS_EQUALS, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
 		return blockMatch
+	case lexer.LBRACKET:
+		// [N]type or []type — struct field with array/slice type (e.g., bytes [16]byte)
+		return blockStruct
 	case lexer.IDENT, lexer.NIL:
 		// Distinguish struct field (name type\n) from tagged enum variant (name type, ...)
 		tok3 := p.lexer.LookAhead(skip + 2)
@@ -750,6 +753,11 @@ func (p *Parser) parseStatement() Statement {
 			return p.parseForStatement()
 		}
 
+		// 多重賦值：existing, exist-n = read-file(path)
+		if p.peekToken.Type == lexer.COMMA {
+			return p.parseMultiAssignStatement()
+		}
+
 		return p.parseExpressionStatement()
 
 	case lexer.RETURN:
@@ -953,6 +961,9 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		elemToken = p.currentToken
 		arrayType += elemToken.Literal
 		p.nextToken() // skip element type
+		// Infer implicit generic params from the receiver type (e.g. n and t in [n]t)
+		addImplicitGeneric(sizeToken.Literal, def)
+		addImplicitGeneric(elemToken.Literal, def)
 	}
 
 	if p.currentToken.Type != lexer.DOT {
@@ -1499,6 +1510,52 @@ func joinPathParts(parts []string) string {
 		sb.WriteString(part)
 	}
 	return sb.String()
+}
+
+// parseMultiAssignStatement parses multi-variable assignment:
+//
+//	existing, exist-n = read-file(path)
+//
+// The left-side variables are treated as new definitions if not already defined.
+func (p *Parser) parseMultiAssignStatement() Statement {
+	var names []*Identifier
+
+	// First variable name
+	names = append(names, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
+	p.nextToken() // skip first IDENT
+
+	// Additional variables separated by commas
+	for p.currentToken.Type == lexer.COMMA {
+		p.nextToken() // skip COMMA
+		if p.currentToken.Type != lexer.IDENT {
+			msg := fmt.Sprintf("line %d, column %d: expected variable name after ',', got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+		names = append(names, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
+		p.nextToken() // skip IDENT
+	}
+
+	if p.currentToken.Type != lexer.ASSIGN {
+		msg := fmt.Sprintf("line %d, column %d: expected '=' after multi-variable list",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
+		return nil
+	}
+	tok := p.currentToken
+	p.nextToken() // skip =
+
+	value := p.parseExpression(LOWEST)
+	if !p.ctx.contains(CTX_MATCH_ARM) {
+		p.skipToStatementEnd()
+	}
+
+	return &MultiAssignStatement{
+		Token: tok,
+		Names: names,
+		Value: value,
+	}
 }
 
 func (p *Parser) parseLetStatement() Statement {
@@ -3489,13 +3546,16 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseForStatement() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
 
-	// Bare range-for: i <- (a..b] { } — 不使用 for 關鍵字
+	// Bare range-for: i <- (a..b]: { } — 不使用 for 關鍵字
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
 		ir := &IterationExpr{Variable: p.currentToken.Literal, Token: p.peekToken}
 		p.nextToken() // skip IDENT (variable)
 		p.nextToken() // skip ARROW (<-)
 		p.parseForRange(ir)
 		stmt.IterRange = ir
+		if p.currentToken.Type == lexer.COLON {
+			p.nextToken() // skip :
+		}
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
 		return stmt
@@ -3544,6 +3604,10 @@ func (p *Parser) parseForStatement() Statement {
 	}
 
 parseBody:
+	// 消耗冒號
+	if p.currentToken.Type == lexer.COLON {
+		p.nextToken() // skip :
+	}
 	if p.currentToken.Type == lexer.LBRACE {
 		stmt.Condition = nil
 		if init != nil {

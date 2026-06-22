@@ -201,6 +201,22 @@ func (es *ExportStatement) statementNode()         {}
 func (es *ExportStatement) Pos() lexer.Position    { return posFromToken(es.Token) }
 func (es *ExportStatement) EndPos() lexer.Position { return posFromToken(es.Token) }
 
+// MultiAssignStatement represents multi-variable assignment:
+//
+//	v1, v2 = expr
+//
+// The left-side variables are treated as new definitions if not already defined.
+type MultiAssignStatement struct {
+	Token lexer.Token // the ASSIGN token
+	Names []*Identifier
+	Value Expression
+	CommentedNode
+}
+
+func (mas *MultiAssignStatement) statementNode()         {}
+func (mas *MultiAssignStatement) Pos() lexer.Position    { return posFromToken(mas.Token) }
+func (mas *MultiAssignStatement) EndPos() lexer.Position { return mas.Value.EndPos() }
+
 // a u8 = 8
 type LetStatement struct {
 	Token lexer.Token

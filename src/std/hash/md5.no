@@ -179,265 +179,265 @@ md5 = (data []byte) (out [16]byte) {
         // 第 1 輪 (F)
         f = (b & c) | ((MASK ^ b) & d)
         t = (a + f + w0 + 3614090360) & MASK
-        rot-left(t, 7, r)
+        r = rot-left(t, 7)
         a = (b + r) & MASK
         f = (a & b) | ((MASK ^ a) & c)
         t = (d + f + w1 + 3905402710) & MASK
-        rot-left(t, 12, r)
+        r = rot-left(t, 12)
         d = (a + r) & MASK
         f = (d & a) | ((MASK ^ d) & b)
         t = (c + f + w2 + 606105819) & MASK
-        rot-left(t, 17, r)
+        r = rot-left(t, 17)
         c = (d + r) & MASK
         f = (c & d) | ((MASK ^ c) & a)
         t = (b + f + w3 + 3250441966) & MASK
-        rot-left(t, 22, r)
+        r = rot-left(t, 22)
         b = (c + r) & MASK
         f = (b & c) | ((MASK ^ b) & d)
         t = (a + f + w4 + 4118548399) & MASK
-        rot-left(t, 7, r)
+        r = rot-left(t, 7)
         a = (b + r) & MASK
         f = (a & b) | ((MASK ^ a) & c)
         t = (d + f + w5 + 1200080426) & MASK
-        rot-left(t, 12, r)
+        r = rot-left(t, 12)
         d = (a + r) & MASK
         f = (d & a) | ((MASK ^ d) & b)
         t = (c + f + w6 + 2821735955) & MASK
-        rot-left(t, 17, r)
+        r = rot-left(t, 17)
         c = (d + r) & MASK
         f = (c & d) | ((MASK ^ c) & a)
         t = (b + f + w7 + 4249261313) & MASK
-        rot-left(t, 22, r)
+        r = rot-left(t, 22)
         b = (c + r) & MASK
         f = (b & c) | ((MASK ^ b) & d)
         t = (a + f + w8 + 1770035416) & MASK
-        rot-left(t, 7, r)
+        r = rot-left(t, 7)
         a = (b + r) & MASK
         f = (a & b) | ((MASK ^ a) & c)
         t = (d + f + w9 + 2336552879) & MASK
-        rot-left(t, 12, r)
+        r = rot-left(t, 12)
         d = (a + r) & MASK
         f = (d & a) | ((MASK ^ d) & b)
         t = (c + f + w10 + 4294925233) & MASK
-        rot-left(t, 17, r)
+        r = rot-left(t, 17)
         c = (d + r) & MASK
         f = (c & d) | ((MASK ^ c) & a)
         t = (b + f + w11 + 2304563134) & MASK
-        rot-left(t, 22, r)
+        r = rot-left(t, 22)
         b = (c + r) & MASK
         f = (b & c) | ((MASK ^ b) & d)
         t = (a + f + w12 + 1804603682) & MASK
-        rot-left(t, 7, r)
+        r = rot-left(t, 7)
         a = (b + r) & MASK
         f = (a & b) | ((MASK ^ a) & c)
         t = (d + f + w13 + 4254626195) & MASK
-        rot-left(t, 12, r)
+        r = rot-left(t, 12)
         d = (a + r) & MASK
         f = (d & a) | ((MASK ^ d) & b)
         t = (c + f + w14 + 2792965006) & MASK
-        rot-left(t, 17, r)
+        r = rot-left(t, 17)
         c = (d + r) & MASK
         f = (c & d) | ((MASK ^ c) & a)
         t = (b + f + w15 + 1236535329) & MASK
-        rot-left(t, 22, r)
+        r = rot-left(t, 22)
         b = (c + r) & MASK
 
         // 第 2 輪 (G)
         f = (b & d) | (c & (MASK ^ d))
         t = (a + f + w1 + 3905402710) & MASK
-        rot-left(t, 5, r)
+        r = rot-left(t, 5)
         a = (b + r) & MASK
         f = (a & c) | (b & (MASK ^ c))
         t = (d + f + w6 + 2821735955) & MASK
-        rot-left(t, 9, r)
+        r = rot-left(t, 9)
         d = (a + r) & MASK
         f = (d & b) | (a & (MASK ^ b))
         t = (c + f + w11 + 2304563134) & MASK
-        rot-left(t, 14, r)
+        r = rot-left(t, 14)
         c = (d + r) & MASK
         f = (c & a) | (d & (MASK ^ a))
         t = (b + f + w0 + 3614090360) & MASK
-        rot-left(t, 20, r)
+        r = rot-left(t, 20)
         b = (c + r) & MASK
         f = (b & d) | (c & (MASK ^ d))
         t = (a + f + w5 + 1200080426) & MASK
-        rot-left(t, 5, r)
+        r = rot-left(t, 5)
         a = (b + r) & MASK
         f = (a & c) | (b & (MASK ^ c))
         t = (d + f + w10 + 4294925233) & MASK
-        rot-left(t, 9, r)
+        r = rot-left(t, 9)
         d = (a + r) & MASK
         f = (d & b) | (a & (MASK ^ b))
         t = (c + f + w15 + 1236535329) & MASK
-        rot-left(t, 14, r)
+        r = rot-left(t, 14)
         c = (d + r) & MASK
         f = (c & a) | (d & (MASK ^ a))
         t = (b + f + w4 + 4118548399) & MASK
-        rot-left(t, 20, r)
+        r = rot-left(t, 20)
         b = (c + r) & MASK
         f = (b & d) | (c & (MASK ^ d))
         t = (a + f + w9 + 2336552879) & MASK
-        rot-left(t, 5, r)
+        r = rot-left(t, 5)
         a = (b + r) & MASK
         f = (a & c) | (b & (MASK ^ c))
         t = (d + f + w14 + 2792965006) & MASK
-        rot-left(t, 9, r)
+        r = rot-left(t, 9)
         d = (a + r) & MASK
         f = (d & b) | (a & (MASK ^ b))
         t = (c + f + w3 + 3250441966) & MASK
-        rot-left(t, 14, r)
+        r = rot-left(t, 14)
         c = (d + r) & MASK
         f = (c & a) | (d & (MASK ^ a))
         t = (b + f + w8 + 1770035416) & MASK
-        rot-left(t, 20, r)
+        r = rot-left(t, 20)
         b = (c + r) & MASK
         f = (b & d) | (c & (MASK ^ d))
         t = (a + f + w13 + 4254626195) & MASK
-        rot-left(t, 5, r)
+        r = rot-left(t, 5)
         a = (b + r) & MASK
         f = (a & c) | (b & (MASK ^ c))
         t = (d + f + w2 + 606105819) & MASK
-        rot-left(t, 9, r)
+        r = rot-left(t, 9)
         d = (a + r) & MASK
         f = (d & b) | (a & (MASK ^ b))
         t = (c + f + w7 + 4249261313) & MASK
-        rot-left(t, 14, r)
+        r = rot-left(t, 14)
         c = (d + r) & MASK
         f = (c & a) | (d & (MASK ^ a))
         t = (b + f + w12 + 1804603682) & MASK
-        rot-left(t, 20, r)
+        r = rot-left(t, 20)
         b = (c + r) & MASK
 
         // 第 3 輪 (H)
         f = b ^ c ^ d
         t = (a + f + w5 + 1200080426) & MASK
-        rot-left(t, 4, r)
+        r = rot-left(t, 4)
         a = (b + r) & MASK
         f = a ^ b ^ c
         t = (d + f + w8 + 1770035416) & MASK
-        rot-left(t, 11, r)
+        r = rot-left(t, 11)
         d = (a + r) & MASK
         f = d ^ a ^ b
         t = (c + f + w11 + 2304563134) & MASK
-        rot-left(t, 16, r)
+        r = rot-left(t, 16)
         c = (d + r) & MASK
         f = c ^ d ^ a
         t = (b + f + w14 + 2792965006) & MASK
-        rot-left(t, 23, r)
+        r = rot-left(t, 23)
         b = (c + r) & MASK
         f = b ^ c ^ d
         t = (a + f + w1 + 3905402710) & MASK
-        rot-left(t, 4, r)
+        r = rot-left(t, 4)
         a = (b + r) & MASK
         f = a ^ b ^ c
         t = (d + f + w4 + 4118548399) & MASK
-        rot-left(t, 11, r)
+        r = rot-left(t, 11)
         d = (a + r) & MASK
         f = d ^ a ^ b
         t = (c + f + w7 + 4249261313) & MASK
-        rot-left(t, 16, r)
+        r = rot-left(t, 16)
         c = (d + r) & MASK
         f = c ^ d ^ a
         t = (b + f + w10 + 4294925233) & MASK
-        rot-left(t, 23, r)
+        r = rot-left(t, 23)
         b = (c + r) & MASK
         f = b ^ c ^ d
         t = (a + f + w13 + 4254626195) & MASK
-        rot-left(t, 4, r)
+        r = rot-left(t, 4)
         a = (b + r) & MASK
         f = a ^ b ^ c
         t = (d + f + w0 + 3614090360) & MASK
-        rot-left(t, 11, r)
+        r = rot-left(t, 11)
         d = (a + r) & MASK
         f = d ^ a ^ b
         t = (c + f + w3 + 3250441966) & MASK
-        rot-left(t, 16, r)
+        r = rot-left(t, 16)
         c = (d + r) & MASK
         f = c ^ d ^ a
         t = (b + f + w6 + 2821735955) & MASK
-        rot-left(t, 23, r)
+        r = rot-left(t, 23)
         b = (c + r) & MASK
         f = b ^ c ^ d
         t = (a + f + w9 + 2336552879) & MASK
-        rot-left(t, 4, r)
+        r = rot-left(t, 4)
         a = (b + r) & MASK
         f = a ^ b ^ c
         t = (d + f + w12 + 1804603682) & MASK
-        rot-left(t, 11, r)
+        r = rot-left(t, 11)
         d = (a + r) & MASK
         f = d ^ a ^ b
         t = (c + f + w15 + 1236535329) & MASK
-        rot-left(t, 16, r)
+        r = rot-left(t, 16)
         c = (d + r) & MASK
         f = c ^ d ^ a
         t = (b + f + w2 + 606105819) & MASK
-        rot-left(t, 23, r)
+        r = rot-left(t, 23)
         b = (c + r) & MASK
 
         // 第 4 輪 (I)
         f = c ^ (b | (MASK ^ d))
         t = (a + f + w0 + 3614090360) & MASK
-        rot-left(t, 6, r)
+        r = rot-left(t, 6)
         a = (b + r) & MASK
         f = b ^ (a | (MASK ^ c))
         t = (d + f + w7 + 4249261313) & MASK
-        rot-left(t, 10, r)
+        r = rot-left(t, 10)
         d = (a + r) & MASK
         f = a ^ (d | (MASK ^ b))
         t = (c + f + w14 + 2792965006) & MASK
-        rot-left(t, 15, r)
+        r = rot-left(t, 15)
         c = (d + r) & MASK
         f = d ^ (c | (MASK ^ a))
         t = (b + f + w5 + 1200080426) & MASK
-        rot-left(t, 21, r)
+        r = rot-left(t, 21)
         b = (c + r) & MASK
         f = c ^ (b | (MASK ^ d))
         t = (a + f + w12 + 1804603682) & MASK
-        rot-left(t, 6, r)
+        r = rot-left(t, 6)
         a = (b + r) & MASK
         f = b ^ (a | (MASK ^ c))
         t = (d + f + w3 + 3250441966) & MASK
-        rot-left(t, 10, r)
+        r = rot-left(t, 10)
         d = (a + r) & MASK
         f = a ^ (d | (MASK ^ b))
         t = (c + f + w10 + 4294925233) & MASK
-        rot-left(t, 15, r)
+        r = rot-left(t, 15)
         c = (d + r) & MASK
         f = d ^ (c | (MASK ^ a))
         t = (b + f + w1 + 3905402710) & MASK
-        rot-left(t, 21, r)
+        r = rot-left(t, 21)
         b = (c + r) & MASK
         f = c ^ (b | (MASK ^ d))
         t = (a + f + w8 + 1770035416) & MASK
-        rot-left(t, 6, r)
+        r = rot-left(t, 6)
         a = (b + r) & MASK
         f = b ^ (a | (MASK ^ c))
         t = (d + f + w15 + 1236535329) & MASK
-        rot-left(t, 10, r)
+        r = rot-left(t, 10)
         d = (a + r) & MASK
         f = a ^ (d | (MASK ^ b))
         t = (c + f + w6 + 2821735955) & MASK
-        rot-left(t, 15, r)
+        r = rot-left(t, 15)
         c = (d + r) & MASK
         f = d ^ (c | (MASK ^ a))
         t = (b + f + w13 + 4254626195) & MASK
-        rot-left(t, 21, r)
+        r = rot-left(t, 21)
         b = (c + r) & MASK
         f = c ^ (b | (MASK ^ d))
         t = (a + f + w4 + 4118548399) & MASK
-        rot-left(t, 6, r)
+        r = rot-left(t, 6)
         a = (b + r) & MASK
         f = b ^ (a | (MASK ^ c))
         t = (d + f + w11 + 2304563134) & MASK
-        rot-left(t, 10, r)
+        r = rot-left(t, 10)
         d = (a + r) & MASK
         f = a ^ (d | (MASK ^ b))
         t = (c + f + w2 + 606105819) & MASK
-        rot-left(t, 15, r)
+        r = rot-left(t, 15)
         c = (d + r) & MASK
         f = d ^ (c | (MASK ^ a))
         t = (b + f + w9 + 2336552879) & MASK
-        rot-left(t, 21, r)
+        r = rot-left(t, 21)
         b = (c + r) & MASK
 
         // 累加回初始值

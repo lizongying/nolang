@@ -105,7 +105,7 @@ str-index = (s str, sn i64, target str, tn i64) (pos i64) {
 // 返回 1=包含, 0=不包含
 str-contains = (s str, sn i64, target str, tn i64) (yes i64) {
     yes = 0
-    str-index(s, sn, target, tn)(pos)
+    pos = str-index(s, sn, target, tn)
     if pos >= 0 {
         yes = 1
     }

@@ -57,12 +57,12 @@ encode = (data []byte, n i64, table str, out str) (out-n i64) {
 
 // encode-std: 使用標準字母表編碼
 encode-std = (data []byte, n i64, out str) (out-n i64) {
-    encode(data, n, BASE64-STD, out)(out-n)
+    out-n = encode(data, n, BASE64-STD, out)
 }
 
 // encode-url: 使用 URL 安全字母表編碼
 encode-url = (data []byte, n i64, out str) (out-n i64) {
-    encode(data, n, BASE64-URL, out)(out-n)
+    out-n = encode(data, n, BASE64-URL, out)
 }
 
 // ═══════════════════════════════════════════════
