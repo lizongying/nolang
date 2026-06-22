@@ -35,6 +35,10 @@ const (
 	CHAN
 	GO
 	PTR
+	SWITCH
+	CASE
+	DEFAULT
+	MATCH
 
 	// 运算符
 	ASSIGN         // =
@@ -131,6 +135,10 @@ var tokenNames = map[TokenType]string{
 	CHAN:           "CHAN",
 	GO:             "GO",
 	PTR:            "PTR",
+	SWITCH:         "SWITCH",
+	CASE:           "CASE",
+	DEFAULT:        "DEFAULT",
+	MATCH:          "MATCH",
 	ASSIGN:         "ASSIGN(=)",
 	ADD:            "ADD(+)",
 	SUB:            "SUB(-)",
@@ -201,9 +209,13 @@ var keywords = map[string]TokenType{
 	"as":    AS,
 	"ptr":   PTR,
 
-	"chan": CHAN,
-	"go":   GO,
-	"use":  USE,
+	"chan":  CHAN,
+	"go":    GO,
+	"use":   USE,
+	"switch":  SWITCH,
+	"case":    CASE,
+	"default": DEFAULT,
+	"match":   MATCH,
 }
 
 // Position represents a source position (line:col, 1-based).

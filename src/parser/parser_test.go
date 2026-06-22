@@ -774,7 +774,7 @@ func TestForLoop(t *testing.T) {
 		},
 		{
 			name: "for_condition",
-			input: `for i < 5: {
+			input: `for i < 5 {
     continue
 }`,
 			wantErr: false,
@@ -865,7 +865,7 @@ func TestNamedLoop(t *testing.T) {
 		},
 		{
 			name: "bare_break",
-			input: `for i < 10: {
+			input: `for i < 10 {
     if i == 5 {
         break
     }
@@ -1495,7 +1495,7 @@ func TestFunctionSyntax(t *testing.T) {
 		{
 			name: "for_loop_sum",
 			input: `sum = 0
-for i < 10: {
+for i < 10 {
     sum = sum + i
     i = i + 1
 }
@@ -1561,7 +1561,7 @@ result = add(5, 3)
 res = 0
 add1(5, 3, res)
 sum = 0
-for i < 10: {
+for i < 10 {
     sum = sum + i
     i = i + 1
 }

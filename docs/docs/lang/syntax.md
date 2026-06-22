@@ -157,6 +157,7 @@ a, b = swap(5, 3)
 ## 流程控制
 
 ```nolang
+// 舊式寫法
 // 用for可以替代while/loop
 
 // 无限循环 for { }
@@ -212,6 +213,38 @@ for i <- [1.5..5.5] {  // 编译错误：区间边界必须是整数
 for i <- [0..[1..5][0]] {  // ❌ 语法错误
 }
 
+// for 循環
+for i < 10 {
+    print(i)
+    i = i + 1
+}
+
+// range for
+for i in [0..10) {
+    print(i)
+}
+
+// 命名循環 + break/continue
+outer for i in [0..10) {
+    inner for j in [0..10) {
+        if j == 5 {
+            continue outer
+        }
+        if i == 8 {
+            break outer
+        }
+    }
+}
+
+// 舊式寫法
+// if/elif/else
+if x > 5 {
+    a = 1
+} elif x < 0 {
+    b = 2
+} else {
+    c = 0
+}
 ```
 
 ```nolang
@@ -253,27 +286,16 @@ i <- (a..b]: {
 }
 
 // 舊式寫法
-// for 循環
-for i < 10 {
-    print(i)
-    i = i + 1
-}
-
-// range for
-for i in [0..10) {
-    print(i)
-}
-
-// 命名循環 + break/continue
-outer for i in [0..10) {
-    inner for j in [0..10) {
-        if j == 5 {
-            continue outer
-        }
-        if i == 8 {
-            break outer
-        }
-    }
+// switch
+// 無返回值
+switch x {
+    case 1:
+        a = 1
+        b = 2
+    case 2:
+        do-something()
+    default:
+        c = 0
 }
 
 // switch
@@ -307,6 +329,17 @@ result = x: {
         c = 0
 }
 
+// 舊式寫法
+// match
+match x {
+    case err:
+     log(it)
+    case nil:
+     log('nil')
+    default:
+        do-right-thing(it)
+}
+
 // match
 // 判讀返回值可能有錯的情況
 // it用於取參數
@@ -322,16 +355,6 @@ c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
 
 // 建議使用match語法或三元表達式替代if/else
-
-// 舊式寫法
-// if/elif/else
-if x > 5 {
-    a = 1
-} elif x < 0 {
-    b = 2
-} else {
-    c = 0
-}
 ```
 
 ## 數組與切片

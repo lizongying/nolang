@@ -941,7 +941,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	}
 	// else: infinite loop: for { }
 
-	if s.IterRange != nil || s.Init != nil || s.Condition != nil {
+	if s.IterRange != nil {
 		f.write(": {")
 	} else {
 		f.write(" {")

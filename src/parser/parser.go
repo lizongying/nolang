@@ -10,8 +10,9 @@ import (
 )
 
 type Parser struct {
-	lexer  *lexer.Lexer
-	errors []string
+	lexer    *lexer.Lexer
+	errors   []string
+	warnings []string
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
@@ -564,6 +565,13 @@ func (p *Parser) parseStatement() Statement {
 
 	case lexer.FOR:
 		return p.parseForStatement()
+	case lexer.SWITCH:
+		return p.parseSwitchStatement()
+	case lexer.TILDE:
+		if p.peekToken.Type == lexer.MATCH {
+			return p.parseTildeMatchStatement()
+		}
+		return p.parseExpressionStatement()
 	case lexer.BREAK:
 		stmt := p.parseBreakStatement()
 		p.skipToStatementEnd()
@@ -596,6 +604,14 @@ func (p *Parser) parseStatement() Statement {
 		}
 
 		if p.peekToken.Type == lexer.IDENT {
+			// Check for labeled bare range-for: outer i <- (a..b] { }
+			state := p.saveState()
+			p.nextToken() // skip label
+			if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
+				p.restoreState(state)
+				return p.parseForStatement()
+			}
+			p.restoreState(state)
 			stmt := p.parseLetStatement()
 			if stmt != nil {
 				if !p.ctx.contains(CTX_MATCH_ARM) {
@@ -1856,6 +1872,210 @@ func (p *Parser) parseReturnStatement() Statement {
 	return stmt
 }
 
+// parseSwitchStatement parses old-style switch:
+//   switch x { case 1: ... case 2: ... default: ... }
+// Desugars to match expression: x { 1| ... 2| ... | ... }
+func (p *Parser) parseSwitchStatement() Statement {
+	p.saveWarning(fmt.Sprintf("line %d, column %d: 'switch/case/default' is deprecated, use 'x: { 1| ... }' instead",
+		p.currentToken.Line, p.currentToken.Column))
+
+	tok := p.currentToken
+	p.nextToken() // skip switch
+
+	// Parse matched expression
+	cond := p.parseExpression(LOWEST)
+
+	// Expect {
+	if p.currentToken.Type != lexer.LBRACE {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' after switch expression, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return nil
+	}
+	p.nextToken() // skip {
+
+	// Parse case arms → desugar to if/elif/else chain
+	var arms []matchArm
+	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
+			break
+		}
+
+		var ma matchArm
+		if p.currentToken.Type == lexer.CASE {
+			p.nextToken() // skip case
+			ma.condition = p.parseExpression(LOWEST)
+		} else if p.currentToken.Type == lexer.DEFAULT {
+			ma.isWildcard = true
+			p.nextToken() // skip default
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.skipToStatementEnd()
+			continue
+		}
+
+		// Expect :
+		if p.currentToken.Type == lexer.COLON {
+			p.nextToken() // skip :
+		}
+
+		// Parse body until next case/default/}
+		var bodyStmts []Statement
+		for p.currentToken.Type != lexer.CASE && p.currentToken.Type != lexer.DEFAULT &&
+			p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+			if p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+				continue
+			}
+			doc := p.collectDocComments()
+			stmt := p.parseStatement()
+			if stmt != nil {
+				setDoc(stmt, doc)
+				bodyStmts = append(bodyStmts, stmt)
+			} else {
+				p.nextToken()
+			}
+		}
+
+		if len(bodyStmts) == 1 {
+			if es, ok := bodyStmts[0].(*ExpressionStatement); ok {
+				ma.body = &BlockStatement{
+					Token:      tok,
+					Statements: bodyStmts,
+				}
+				_ = es
+			} else {
+				ma.body = &BlockStatement{
+					Token:      tok,
+					Statements: bodyStmts,
+				}
+			}
+		} else {
+			ma.body = &BlockStatement{
+				Token:      tok,
+				Statements: bodyStmts,
+			}
+		}
+
+		arms = append(arms, ma)
+	}
+
+	// Skip }
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
+	}
+
+	if len(arms) == 0 {
+		p.saveError(fmt.Sprintf("line %d, column %d: empty switch statement", tok.Line, tok.Column))
+		return nil
+	}
+
+	// Desugar to match expression: cond { arm1 | arm2 | ... }
+	result := p.buildMatchDesugar(tok, cond, arms)
+	return &ExpressionStatement{Token: tok, Expression: result}
+}
+
+// parseTildeMatchStatement parses old-style ~match:
+//   ~match x { case err: ... case nil: ... default: ... }
+// Desugars to match expression: x { err| ... nil| ... | ... }
+func (p *Parser) parseTildeMatchStatement() Statement {
+	p.saveWarning(fmt.Sprintf("line %d, column %d: '~match/case/default' is deprecated, use 'x: { pattern| ... }' instead",
+		p.currentToken.Line, p.currentToken.Column))
+
+	tok := p.currentToken
+	p.nextToken() // skip ~
+	p.nextToken() // skip match
+
+	// Parse matched expression
+	cond := p.parseExpression(LOWEST)
+
+	// Expect {
+	if p.currentToken.Type != lexer.LBRACE {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' after ~match expression, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return nil
+	}
+	p.nextToken() // skip {
+
+	// Parse case arms → desugar to if/elif/else chain
+	var arms []matchArm
+	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
+			break
+		}
+
+		var ma matchArm
+		if p.currentToken.Type == lexer.CASE {
+			p.nextToken() // skip case
+			// Parse pattern: err, nil, or expression
+			if p.currentToken.Type == lexer.IDENT {
+				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+				p.nextToken()
+			} else {
+				ma.condition = p.parseExpression(LOWEST)
+			}
+		} else if p.currentToken.Type == lexer.DEFAULT {
+			ma.isWildcard = true
+			p.nextToken() // skip default
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.skipToStatementEnd()
+			continue
+		}
+
+		// Expect :
+		if p.currentToken.Type == lexer.COLON {
+			p.nextToken() // skip :
+		}
+
+		// Parse body until next case/default/}
+		var bodyStmts []Statement
+		for p.currentToken.Type != lexer.CASE && p.currentToken.Type != lexer.DEFAULT &&
+			p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+			if p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+				continue
+			}
+			doc := p.collectDocComments()
+			stmt := p.parseStatement()
+			if stmt != nil {
+				setDoc(stmt, doc)
+				bodyStmts = append(bodyStmts, stmt)
+			} else {
+				p.nextToken()
+			}
+		}
+
+		ma.body = &BlockStatement{
+			Token:      tok,
+			Statements: bodyStmts,
+		}
+
+		arms = append(arms, ma)
+	}
+
+	// Skip }
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
+	}
+
+	if len(arms) == 0 {
+		p.saveError(fmt.Sprintf("line %d, column %d: empty ~match statement", tok.Line, tok.Column))
+		return nil
+	}
+
+	// Desugar to match expression: cond { arm1 | arm2 | ... }
+	result := p.buildMatchDesugar(tok, cond, arms)
+	return &ExpressionStatement{Token: tok, Expression: result}
+}
+
 func (p *Parser) parseContinueStatement() Statement {
 	stmt := &ContinueStatement{Token: p.currentToken}
 
@@ -1982,7 +2202,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			p.nextToken()
 			isIncDec = true
 		}
-		// expr { ... } → match or struct literal
+		// expr: { ... } or expr { ... } → match or struct literal
+		if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
+			p.nextToken() // skip :
+		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			if p.classifyBlockAtCurrent() == blockStruct {
 				result := p.parseStructLiteral(leftExp)
@@ -2332,6 +2555,14 @@ func (p *Parser) parseExpression(precedence int) Expression {
 
 func (p *Parser) saveError(msg string) {
 	p.errors = append(p.errors, msg)
+}
+
+func (p *Parser) saveWarning(msg string) {
+	p.warnings = append(p.warnings, msg)
+}
+
+func (p *Parser) Warnings() []string {
+	return p.warnings
 }
 
 // skipToStatementEnd advances tokens until a statement boundary is reached.
@@ -3547,6 +3778,7 @@ func (p *Parser) parseForStatement() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
 
 	// Bare range-for: i <- (a..b]: { } — 不使用 for 關鍵字
+	// Also handle labeled: outer i <- (a..b]: { }
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
 		ir := &IterationExpr{Variable: p.currentToken.Literal, Token: p.peekToken}
 		p.nextToken() // skip IDENT (variable)
@@ -3555,10 +3787,35 @@ func (p *Parser) parseForStatement() Statement {
 		stmt.IterRange = ir
 		if p.currentToken.Type == lexer.COLON {
 			p.nextToken() // skip :
+		} else {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
+				ir.Token.Line, ir.Token.Column))
 		}
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
 		return stmt
+	}
+	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.IDENT {
+		state := p.saveState()
+		stmt.Label = p.currentToken.Literal
+		p.nextToken() // skip label
+		if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ARROW {
+			ir := &IterationExpr{Variable: p.currentToken.Literal, Token: p.peekToken}
+			p.nextToken() // skip IDENT (variable)
+			p.nextToken() // skip ARROW (<-)
+			p.parseForRange(ir)
+			stmt.IterRange = ir
+			if p.currentToken.Type == lexer.COLON {
+				p.nextToken() // skip :
+			} else {
+				p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
+					ir.Token.Line, ir.Token.Column))
+			}
+			stmt.Body = p.parseBlockStatement()
+			p.nextToken() // skip body's }
+			return stmt
+		}
+		p.restoreState(state)
 	}
 
 	// 检查命名循环：label for ...
@@ -3592,6 +3849,10 @@ func (p *Parser) parseForStatement() Statement {
 
 	// 檢查 range for: for i <- [a..b] / (a..b] / [a..b) / (a..b) 或 for i in ...
 	if p.currentToken.Type == lexer.IN || p.currentToken.Type == lexer.ARROW {
+		if p.currentToken.Type == lexer.IN {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for i in ...' is deprecated, use 'i <- ...' instead",
+				p.currentToken.Line, p.currentToken.Column))
+		}
 		if es, ok := init.(*ExpressionStatement); ok {
 			if ident, ok := es.Expression.(*Identifier); ok {
 				ir := &IterationExpr{Variable: ident.Value, Token: p.currentToken}
@@ -3604,8 +3865,9 @@ func (p *Parser) parseForStatement() Statement {
 	}
 
 parseBody:
-	// 消耗冒號
-	if p.currentToken.Type == lexer.COLON {
+	// 消耗冒號 (for range-for and while/for with condition)
+	hasColon := p.currentToken.Type == lexer.COLON
+	if hasColon {
 		p.nextToken() // skip :
 	}
 	if p.currentToken.Type == lexer.LBRACE {
@@ -3613,6 +3875,16 @@ parseBody:
 		if init != nil {
 			if es, ok := init.(*ExpressionStatement); ok {
 				stmt.Condition = es.Expression
+			}
+		}
+		// Warn for old-style "for condition" (without colon)
+		if stmt.Condition != nil && stmt.IterRange == nil {
+			if stmt.Token.Literal == "while" && !hasColon {
+				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use '<condition>: { }' instead",
+					stmt.Token.Line, stmt.Token.Column))
+			} else if stmt.Token.Literal != "while" && !hasColon {
+				p.saveWarning(fmt.Sprintf("line %d, column %d: 'for condition { }' is deprecated, use '<condition>: { }' instead",
+					stmt.Token.Line, stmt.Token.Column))
 			}
 		}
 	} else {
