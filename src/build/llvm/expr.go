@@ -32,13 +32,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[e.Value]; ok && t == "%option" {
 				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%%s.data.gep.%d", e.Value, g.tmpIdx)
+				dataGEP := llvmSSAReg(e.Value, fmt.Sprintf(".data.gep.%d", g.tmpIdx))
 				g.tmpIdx++
-				dataPtr := fmt.Sprintf("%%%s.data.ptr.%d", e.Value, g.tmpIdx)
+				dataPtr := llvmSSAReg(e.Value, fmt.Sprintf(".data.ptr.%d", g.tmpIdx))
 				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%%s.data.val.%d", e.Value, g.tmpIdx)
+				dataLoad := llvmSSAReg(e.Value, fmt.Sprintf(".data.val.%d", g.tmpIdx))
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, e.Value))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to i64*\n", g.indent(), dataPtr, dataGEP))
 					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataPtr))
 				}
@@ -46,7 +46,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 		}
 		g.tmpIdx++
-		reg := fmt.Sprintf("%%%s.val.%d", e.Value, g.tmpIdx)
+		reg := llvmSSAReg(e.Value, fmt.Sprintf(".val.%d", g.tmpIdx))
 		if sb != nil {
 			llvmType := "i64"
 			if g.varTypes != nil {
@@ -55,7 +55,11 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 			}
 			ptrType := llvmType + "*"
-			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %%%s\n", g.indent(), reg, llvmType, ptrType, e.Value))
+			varAddr := llvmVarRef(e.Value)
+			if g.globalVars != nil && g.globalVars[e.Value] {
+				varAddr = "@" + e.Value
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, llvmType, ptrType, varAddr))
 		}
 		return reg
 	case *parser.StringLiteral:
@@ -118,12 +122,9 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				g.tmpIdx++
 				reg := fmt.Sprintf("%%neg.tmp.%d", g.tmpIdx)
 				if sb != nil {
-					// 判斷是否為浮點數：檢查右側是否為浮點常數或 double 型別
-					isFloat := false
-					if strings.Contains(right, ".") {
-						isFloat = true
-					}
-					if isFloat {
+					// 判斷是否為浮點數：使用 isDoubleExpr 遞迴檢查表達式型別
+					// 不能使用 strings.Contains(right, ".") 因為 SSA 暫存器名如 %add.tmp.1 也包含 .
+					if g.isDoubleExpr(e.Right) {
 						sb.WriteString(fmt.Sprintf("%s%s = fneg double %s\n", g.indent(), reg, right))
 					} else {
 						sb.WriteString(fmt.Sprintf("%s%s = sub i64 0, %s\n", g.indent(), reg, right))
@@ -459,7 +460,12 @@ func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string
 	g.tmpIdx++
 	dataLoad := fmt.Sprintf("%%str.data.val.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+		// Handle both @global and %local references
+		if strings.HasPrefix(strPtr, "@") {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+		}
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
 	}
 	return dataLoad
@@ -544,6 +550,177 @@ func (g *Generator) resolveStrPtr(val string) string {
 	return val
 }
 
+// generateStructFieldIndexAssign 處理 struct.field[i] = val 賦值
+func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *parser.DotExpression, index parser.Expression, value parser.Expression) string {
+	recvName := ""
+	if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+		recvName = ident.Value
+	}
+	fieldName := dot.Property
+	idx := g.generateExprWithSB(sb, index)
+	val := g.generateExprWithSB(sb, value)
+
+	structName := ""
+	if t, ok := g.varTypes[recvName]; ok {
+		structName = strings.TrimPrefix(t, "%")
+	}
+
+	if fields, ok := g.structTypes[structName]; ok {
+		fieldIdx := -1
+		var fieldType string
+		for i, f := range fields {
+			if f.name == fieldName {
+				fieldIdx = i
+				fieldType = f.typ
+				break
+			}
+		}
+		if fieldIdx >= 0 && sb != nil {
+			// GEP to field in struct
+			g.tmpIdx++
+			fieldGEP := fmt.Sprintf("%%set.field.gep.%d", g.tmpIdx)
+			structTy := "%" + structName
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+				g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+
+			if fieldType == "%vec" {
+				// Slice field: load data pointer (field 2), bitcast, GEP, store
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%set.vec.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%set.vec.data.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+					g.indent(), dataGEP, fieldGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+
+				// Bitcast to i64*
+				g.tmpIdx++
+				dataTyped := fmt.Sprintf("%%set.vec.typed.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i64*\n",
+					g.indent(), dataTyped, dataLoad))
+
+				// GEP to element index and store
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%set.vec.elem.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i64, i64* %s, i64 %s\n",
+					g.indent(), elemGEP, dataTyped, idx))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n",
+					g.indent(), val, elemGEP))
+				return "0"
+			}
+
+			if strings.HasPrefix(fieldType, "[") {
+				// Inline array field: GEP into the array directly
+				closeB := strings.IndexByte(fieldType, ']')
+				if closeB > 0 {
+					inner := fieldType[1:closeB]
+					xIdx := strings.LastIndex(inner, " x ")
+					elemType := "i64"
+					if xIdx >= 0 {
+						elemType = inner[xIdx+3:]
+					}
+					g.tmpIdx++
+					elemGEP := fmt.Sprintf("%%set.arr.elem.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), elemType, val, elemType, elemGEP))
+					return "0"
+				}
+			}
+		}
+	}
+	return "0"
+}
+
+// generateStructFieldIndexRead 處理 struct.field[i] 讀取
+func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parser.DotExpression, index parser.Expression) string {
+	recvName := ""
+	if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+		recvName = ident.Value
+	}
+	fieldName := dot.Property
+	idx := g.generateExprWithSB(sb, index)
+
+	structName := ""
+	if t, ok := g.varTypes[recvName]; ok {
+		structName = strings.TrimPrefix(t, "%")
+	}
+
+	if fields, ok := g.structTypes[structName]; ok {
+		fieldIdx := -1
+		var fieldType string
+		for i, f := range fields {
+			if f.name == fieldName {
+				fieldIdx = i
+				fieldType = f.typ
+				break
+			}
+		}
+		if fieldIdx >= 0 && sb != nil {
+			// GEP to field in struct
+			g.tmpIdx++
+			fieldGEP := fmt.Sprintf("%%idx.field.gep.%d", g.tmpIdx)
+			structTy := "%" + structName
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+				g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+
+			if fieldType == "%vec" {
+				// Slice field: load data pointer, bitcast, GEP, load
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%idx.vec.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%idx.vec.data.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+					g.indent(), dataGEP, fieldGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+
+				// Bitcast to i64*
+				g.tmpIdx++
+				dataTyped := fmt.Sprintf("%%idx.vec.typed.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i64*\n",
+					g.indent(), dataTyped, dataLoad))
+
+				// GEP to element and load
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%idx.vec.elem.%d", g.tmpIdx)
+				g.tmpIdx++
+				elemLoad := fmt.Sprintf("%%idx.vec.val.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i64, i64* %s, i64 %s\n",
+					g.indent(), elemGEP, dataTyped, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+					g.indent(), elemLoad, elemGEP))
+				return elemLoad
+			}
+
+			if strings.HasPrefix(fieldType, "[") {
+				// Inline array field
+				closeB := strings.IndexByte(fieldType, ']')
+				if closeB > 0 {
+					inner := fieldType[1:closeB]
+					xIdx := strings.LastIndex(inner, " x ")
+					elemType := "i64"
+					if xIdx >= 0 {
+						elemType = inner[xIdx+3:]
+					}
+					g.tmpIdx++
+					elemGEP := fmt.Sprintf("%%idx.arr.elem.%d", g.tmpIdx)
+					g.tmpIdx++
+					elemLoad := fmt.Sprintf("%%idx.arr.val.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+						g.indent(), elemLoad, elemType, elemType, elemGEP))
+					return elemLoad
+				}
+			}
+		}
+	}
+	return "0"
+}
+
 func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.AssignExpression) string {
 	// 欄位賦值: u.name = value → GEP + store
 	if dot, ok := expr.Left.(*parser.DotExpression); ok {
@@ -579,10 +756,14 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 	}
 
 	// 索引賦值: arr[i] = val → GEP + store
+	// 也支援 struct.field[i] = val（如 out.limbs[0] = v）
 	if idxExpr, ok := expr.Left.(*parser.IndexExpression); ok {
 		varName := ""
 		if ident, ok := idxExpr.Left.(*parser.Identifier); ok {
 			varName = ident.Value
+		} else if dot, ok := idxExpr.Left.(*parser.DotExpression); ok {
+			// struct.field[i] = val 模式
+			return g.generateStructFieldIndexAssign(sb, dot, idxExpr.Index, expr.Value)
 		}
 		idx := g.generateExprWithSB(sb, idxExpr.Index)
 		val := g.generateExprWithSB(sb, expr.Value)
@@ -709,18 +890,29 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 }
 
 // generateIndexExpression 處理 arr[i] 讀取
+// 也支援 struct.field[i] 讀取（如 out.limbs[i]）
 func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.IndexExpression) string {
 	// 直接使用 alloca 名稱（而非 loaded value）
 	varName := ""
 	if ident, ok := expr.Left.(*parser.Identifier); ok {
 		varName = ident.Value
+	} else if dot, ok := expr.Left.(*parser.DotExpression); ok {
+		// struct.field[i] 讀取模式
+		return g.generateStructFieldIndexRead(sb, dot, expr.Index)
 	}
 	idx := g.generateExprWithSB(sb, expr.Index)
 
 	// String indexing: s[i] → extract data ptr from %str, then GEP into it
 	if varName != "" {
 		if t, ok := g.varTypes[varName]; ok && t == "%str" {
-			dataPtr := g.extractStrDataPtr(sb, "%"+varName)
+			isGlobal := g.globalVars != nil && g.globalVars[varName]
+			var strPtr string
+			if isGlobal {
+				strPtr = "@" + varName
+			} else {
+				strPtr = "%" + varName
+			}
+			dataPtr := g.extractStrDataPtr(sb, strPtr)
 			g.tmpIdx++
 			charGEP := fmt.Sprintf("%%stridx.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -871,6 +1063,25 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		}
 	}
 	if llvmElemType == "" {
+		// Check if this is a []byte (i8*) type
+		if t, ok := g.varTypes[varName]; ok && t == "i8*" {
+			// []byte parameter: load data pointer from i8** parameter, then GEP
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%idx.data.load.%d", g.tmpIdx)
+			g.tmpIdx++
+			gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %%%s\n", g.indent(), dataLoad, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), gepReg, dataLoad, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), loadReg, gepReg))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, loadReg))
+			}
+			return zextReg
+		}
 		llvmElemType = "i8"
 		arrayLLVMType = "[8 x i8]"
 	}
@@ -883,12 +1094,21 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
 	}
 
-	// Load 元素值
+	// Load 元素值（非 i8* 型別的 fallback，如 str 的 i8 元素）
 	g.tmpIdx++
 	loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 			g.indent(), loadReg, llvmElemType, llvmElemType, gepReg))
+	}
+	// 統一回傳 i64：若元素為 i8 則 zext 到 i64，與其他索引路徑一致
+	if llvmElemType == "i8" {
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, loadReg))
+		}
+		return zextReg
 	}
 	return loadReg
 }

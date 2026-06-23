@@ -232,10 +232,17 @@ func (f *formatter) formatProgram(p *parser.Program) {
 		if i > 0 {
 			prevEndLine := stmtTokenEndLine(p.Statements[i-1])
 			currStartLine := stmtFirstLine(stmt)
-			// 函數定義之間始終插入空行
 			_, prevIsFunc := p.Statements[i-1].(*parser.FunctionDefinition)
 			_, currIsFunc := stmt.(*parser.FunctionDefinition)
-			if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) {
+			_, prevIsUse := p.Statements[i-1].(*parser.UseStatement)
+			_, currIsUse := stmt.(*parser.UseStatement)
+			// 導入語句之間不留空行（也不保留源文件的空白行）
+			if prevIsUse && currIsUse {
+				// no blank line between imports
+			} else if prevIsUse || currIsUse {
+				// 導入語句和其他語句之間保留空行
+				f.newline()
+			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) {
 				f.newline()
 			}
 			f.newline()
@@ -317,7 +324,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	case *parser.ReturnStatement:
 		f.formatReturnStatement(s)
 	case *parser.ExpressionStatement:
-		f.formatExpression(s.Expression)
+		if s.Expression != nil {
+			f.formatExpression(s.Expression)
+		}
+		// nil expression = bare { from condition: { body } syntax — skip silently
 	case *parser.FunctionDefinition:
 		f.formatFunctionDefinition(s)
 	case *parser.ForStatement:
@@ -336,6 +346,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatInterfaceDefinition(s)
 	case *parser.StructDefinition:
 		f.formatStructDefinition(s)
+	case *parser.MultiAssignStatement:
+		f.formatMultiAssignStatement(s)
 	}
 
 	// For FunctionDefinition and ForStatement, inline comment is handled inside the specific formatter.
@@ -480,11 +492,25 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok && intLit.Value > 0 {
 				if arr, ok := s.Value.(*parser.ArrayLiteral); ok && isSliceConverted(arr) {
 					f.write("[")
+					multiLine := len(arr.Elements) > 8
+					if multiLine {
+						f.indent++
+					}
 					for i, el := range arr.Elements {
-						if i > 0 {
+						if i > 0 && !(multiLine && i%8 == 0) {
 							f.write(", ")
 						}
+						if multiLine && i%8 == 0 {
+							f.newline()
+						}
 						f.formatExpression(el)
+						if multiLine && (i%8 == 7 || i == len(arr.Elements)-1) {
+							f.write(",")
+						}
+					}
+					if multiLine {
+						f.indent--
+						f.newline()
 					}
 					f.write("]")
 				} else {
@@ -497,6 +523,20 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 			f.formatExpression(s.Value)
 		}
 		f.stringAlign = 0
+	}
+}
+
+// formatMultiAssignStatement: q, r = func(args)
+func (f *formatter) formatMultiAssignStatement(s *parser.MultiAssignStatement) {
+	for i, name := range s.Names {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.formatExpression(name)
+	}
+	if s.Value != nil {
+		f.write(" = ")
+		f.formatExpression(s.Value)
 	}
 }
 
@@ -903,6 +943,51 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
+	// 裸條件 for-loop：condition: { body }（不包含 for 關鍵字）
+	if s.Token.Type != lexer.FOR {
+		if s.Condition != nil {
+			f.formatExpression(s.Condition)
+		}
+		f.write(": {")
+		f.indent++
+		statements := make([]parser.Statement, 0, len(s.Body.Statements))
+		for _, stmt := range s.Body.Statements {
+			if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+				continue
+			}
+			statements = append(statements, stmt)
+		}
+		for i, stmt := range statements {
+			if i > 0 {
+				prevTokenLine := stmtTokenLine(statements[i-1])
+				currTokenLine := stmtTokenLine(stmt)
+				if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+					f.write("; ")
+				} else {
+					prevEndLine := stmtTokenEndLine(statements[i-1])
+					currStartLine := stmtFirstLine(stmt)
+					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
+						f.write("\n")
+					}
+					f.newline()
+				}
+			} else {
+				openBraceLine := s.Body.Token.Line
+				firstDocStartLine := stmtFirstLine(stmt)
+				if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+					f.write("\n")
+				}
+				f.newline()
+			}
+			f.formatStatement(stmt)
+		}
+		f.formatTrailingComments(s.Body.TrailingComments)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
 	f.write(s.Token.Literal)
 
 	// N * { } 次數循環
@@ -1071,6 +1156,25 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 }
 
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
+	// Use multi-line formatting for arrays with many elements
+	if len(e.Elements) > 8 {
+		f.write("[\n")
+		f.indent++
+		for i, el := range e.Elements {
+			f.newline()
+			f.formatExpression(el)
+			if i < len(e.Elements)-1 {
+				f.write(",")
+			} else {
+				f.write(",") // trailing comma
+			}
+		}
+		f.indent--
+		f.newline()
+		f.write("]")
+		return
+	}
+
 	f.write("[")
 	for i, el := range e.Elements {
 		if i > 0 {
@@ -1083,17 +1187,22 @@ func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 
 func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
 	f.write(e.Type)
+	if len(e.Fields) == 0 {
+		f.write("{}")
+		return
+	}
 	f.write("{")
-	for i, field := range e.Fields {
-		if i > 0 {
-			f.write(", ")
-		}
+	f.indent++
+	for _, field := range e.Fields {
+		f.newline()
 		f.write(field.Name)
 		if field.Value != nil {
 			f.write(": ")
 			f.formatExpression(field.Value)
 		}
 	}
+	f.indent--
+	f.newline()
 	f.write("}")
 }
 

@@ -44,6 +44,8 @@ type Generator struct {
 	arrayElemTypes map[string]string        // variable name → element LLVM type for %arr variables
 	curFuncRetType string                   // 當前函數回傳型別（void/i64/...）
 	curFuncRetName string                   // 當前函數輸出參數名稱（為空表示 void）
+	globalVars     map[string]bool          // module-level vars that should be LLVM globals
+	moduleVarTypes map[string]string        // module-level variable types (preserved across functions)
 }
 
 func NewGenerator() *Generator {
@@ -75,6 +77,26 @@ func (g *Generator) escapeLLVMString(s string) string {
 	return r.Replace(s)
 }
 
+// llvmVarRef returns an LLVM variable reference for the given name.
+// If the name contains special characters like '-', it wraps it in quotes
+// to prevent LLVM from parsing e.g. %bl-1 as (%bl) - 1.
+func llvmVarRef(name string) string {
+	if strings.ContainsAny(name, "-") {
+		return "%\"" + name + "\""
+	}
+	return "%" + name
+}
+
+// llvmSSAReg returns an LLVM SSA register name for the given base name and suffix.
+// For names with special chars like '-', the entire name is quoted.
+// e.g. llvmSSAReg("bl-1", ".val.434") → %"bl-1.val.434"
+func llvmSSAReg(base, suffix string) string {
+	if strings.ContainsAny(base, "-") {
+		return "%\"" + base + suffix + "\""
+	}
+	return "%" + base + suffix
+}
+
 func (g *Generator) Generate(program *parser.Program) string {
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -85,6 +107,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.funcRetTypes = make(map[string]string)
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
+	g.globalVars = make(map[string]bool)
 
 	var sb strings.Builder
 
@@ -95,7 +118,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	g.writeDeclarations(&sb)
 
-	// 預掃描：收集所有函數的回傳型別
+	// 預掃描：收集所有函數的回傳型別和函數名
+	funcNames := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			retType := "void"
@@ -103,6 +127,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				retType = g.mapToLLVMType(fd.Results[0].Type.String())
 			}
 			g.funcRetTypes[fd.Name] = retType
+			funcNames[fd.Name] = true
 		}
 	}
 
@@ -147,6 +172,68 @@ func (g *Generator) Generate(program *parser.Program) string {
 		sb.WriteString(" }\n")
 	}
 	sb.WriteString("\n")
+
+	// 註冊結構體型別名稱到 varTypes，使得 bigint{} 等結構體字面量能正確識別型別
+	// 必須在 collectVarDecls 之前執行
+	for name := range g.structTypes {
+		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
+			continue
+		}
+		if g.varTypes == nil {
+			g.varTypes = make(map[string]string)
+		}
+		g.varTypes[name] = "%" + name
+	}
+
+	// 預先收集所有變數型別（包括模組級常量）
+	// 必須在生成函數定義之前執行，以便函數內的變數引用（如 SBOX）能正確識別型別
+	varDecls := g.collectVarDecls(program)
+	for k, v := range varDecls {
+		g.varTypes[k] = v
+	}
+	// 發出模組級全局變數定義（在函數定義之前，以便所有函數都能訪問）
+	// 只對以下類型的變數發出全局定義：
+	// 1. i64 整數常量（如 MASK = 4294967295）
+	// 2. %str / %str-smail 字串變數（如 SBOX 表）
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			name := ls.Name.Value
+			// Skip if already emitted as global (e.g., multiple let stmts with same name)
+			if g.globalVars[name] {
+				continue
+			}
+			// Skip if name conflicts with a function definition (e.g., module function
+			// with same name as a top-level variable in the test file)
+			if funcNames[name] {
+				continue
+			}
+			llvmType := g.varLLVMType(ls)
+			if llvmType == "%str" || llvmType == "%str-smail" {
+				sb.WriteString(fmt.Sprintf("@%s = global %s zeroinitializer\n", name, llvmType))
+				g.globalVars[name] = true
+			} else if llvmType == "i64" && ls.Value != nil {
+				if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
+					initVal := fmt.Sprintf("%d", intLit.Value)
+					sb.WriteString(fmt.Sprintf("@%s = global i64 %s\n", name, initVal))
+					g.globalVars[name] = true
+				}
+			}
+		}
+	}
+	sb.WriteString("\n")
+
+	// 保存模組級變數型別備份，防止 generateFunctionDefinition 重置時丟失
+	g.moduleVarTypes = make(map[string]string)
+	for k, v := range varDecls {
+		g.moduleVarTypes[k] = v
+	}
+	// 保存結構體型別到 moduleVarTypes（確保函數內也能識別 struct literal 型別）
+	for name := range g.structTypes {
+		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
+			continue
+		}
+		g.moduleVarTypes[name] = "%" + name
+	}
 
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
@@ -221,6 +308,11 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		}
 
 		if truncTo, ok := clib.TruncArgs[i]; ok {
+			if evIdx >= len(a) {
+				argStr += llvmLLVMType(truncTo) + " 0"
+				evIdx++
+				continue
+			}
 			g.tmpIdx++
 			truncReg := fmt.Sprintf("%%clib.trunc.%d", g.tmpIdx)
 			if sb != nil {
@@ -232,17 +324,29 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		}
 
 		if clib.StrDataArg != nil && clib.StrDataArg[i] {
-			dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
-			argStr += "i8* " + dataPtr
+			if evIdx < len(a) {
+				dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+				argStr += "i8* " + dataPtr
+			} else {
+				argStr += "i8* null"
+			}
 			evIdx++
 			continue
 		}
 
 		if argType == builtin.LLVMStrPtr {
-			dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
-			argStr += "i8* " + dataPtr
+			if evIdx < len(a) {
+				dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+				argStr += "i8* " + dataPtr
+			} else {
+				argStr += "i8* null"
+			}
 		} else {
-			argStr += llvmLLVMType(argType) + " " + a[evIdx]
+			if evIdx < len(a) {
+				argStr += llvmLLVMType(argType) + " " + a[evIdx]
+			} else {
+				argStr += llvmLLVMType(argType) + " 0"
+			}
 		}
 		evIdx++
 	}

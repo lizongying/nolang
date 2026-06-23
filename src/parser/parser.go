@@ -82,7 +82,7 @@ func (p *Parser) classifyBlock() blockType {
 		// Struct literal: name : <literal_value>\n (value is STRING/INT/BYTE/BOOL/NIL)
 		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT || tok3.Type == lexer.BYTE ||
 			tok3.Type == lexer.TRUE || tok3.Type == lexer.FALSE || tok3.Type == lexer.NIL) &&
-			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE) {
+			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
 		return blockMatch
@@ -150,6 +150,13 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		return blockMatch
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
 		return blockMatch
+	case lexer.RBRACE:
+		// 空 {} 可能是結構體字面量（如 bigint{}）或空匹配
+		// 在表達式上下文中處理為結構體字面量
+		if !p.ctx.contains(CTX_MATCH_COND) {
+			return blockStruct
+		}
+		return blockMatch
 	}
 
 	if tok1.Type != lexer.IDENT && tok1.Type != lexer.NIL {
@@ -181,7 +188,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		// Struct literal: name : <literal_value>\n
 		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT || tok3.Type == lexer.BYTE ||
 			tok3.Type == lexer.TRUE || tok3.Type == lexer.FALSE || tok3.Type == lexer.NIL) &&
-			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE) {
+			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
 		return blockMatch
@@ -640,15 +647,27 @@ func (p *Parser) parseStatement() Statement {
 				((p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT) && p.peekToken.Type == lexer.ELLIPSIS)
 			// Check for array declaration: [N]type followed by =, or [N] followed by = [...]
 			isArrayDecl := false
-			if !isRange && p.currentToken.Type == lexer.INT {
-				p.nextToken() // skip INT → should be ]
+			if !isRange && (p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT) {
+				p.nextToken() // skip first token
+				// Handle simple infix expression: 160+16, n*2, etc.
+				if p.currentToken.Type == lexer.ADD || p.currentToken.Type == lexer.SUB ||
+					p.currentToken.Type == lexer.MUL || p.currentToken.Type == lexer.QUO ||
+					p.currentToken.Type == lexer.MOD || p.currentToken.Type == lexer.AND ||
+					p.currentToken.Type == lexer.OR || p.currentToken.Type == lexer.XOR ||
+					p.currentToken.Type == lexer.SHL || p.currentToken.Type == lexer.SHR {
+					p.nextToken() // skip operator
+					if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
+						p.nextToken() // skip second operand
+					}
+				}
 				if p.currentToken.Type == lexer.RBRACKET {
 					p.nextToken() // skip ]
 					if p.currentToken.Type == lexer.IDENT {
-						// Has element type: a [3]u16 = [...]
+						// Has element type: a [3]u16 = [...] or a [3]u16 (type annotation)
 						p.nextToken() // skip element type
+						isArrayDecl = true
 						if p.currentToken.Type == lexer.ASSIGN {
-							isArrayDecl = true
+							// Has assignment: name [N]type = value
 						}
 					} else if p.currentToken.Type == lexer.ASSIGN && p.peekToken.Type == lexer.LBRACKET {
 						// No element type but RHS is array literal: a [3] = [1, 2, 3]
@@ -788,6 +807,9 @@ func (p *Parser) parseStatement() Statement {
 			}
 			return nil
 		}
+		// 裸條件 : { body } 語法 — 將 { 作為 ForStatement 的主體
+		// 前面的表達式在 parseExpressionStatement 中已解析
+		// 這裡回退並由 transpiler 處理
 		return p.parseExpressionStatement()
 
 	case lexer.RBRACE:
@@ -1601,22 +1623,19 @@ func (p *Parser) parseLetStatement() Statement {
 		p.nextToken() // consume [ → current = first content token
 		hasSize := false
 		var sizeExpr Expression
-		if p.currentToken.Type == lexer.INT {
-			val, err := strconv.ParseInt(p.currentToken.Literal, 10, 64)
-			if err == nil {
-				sizeExpr = &IntegerLiteral{Token: p.currentToken, Value: val, Raw: p.currentToken.Literal}
-				hasSize = true
-			}
-			p.nextToken() // skip INT → current = ]
-		} else if p.currentToken.Type == lexer.IDENT {
-			sizeExpr = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
-			hasSize = true
-			p.nextToken()
-		} else if p.currentToken.Type == lexer.QUESTION {
+		if p.currentToken.Type == lexer.QUESTION {
 			// [?] — infer array size from literal
 			hasSize = true
 			// Size stays nil (nil means inferred)
 			p.nextToken() // skip ? → current = ]
+		} else if p.currentToken.Type != lexer.RBRACKET {
+			// Parse expression for array size (e.g., 160+16, n*2, 3, etc.)
+			sizeExpr = p.parseExpression(LOWEST)
+			hasSize = true
+			// Advance past the last token of the expression to reach ]
+			if p.currentToken.Type != lexer.RBRACKET {
+				p.nextToken()
+			}
 		}
 		// ] 關閉（無 INT 時 current 已是 ]）
 		if p.currentToken.Type == lexer.RBRACKET {
@@ -1664,7 +1683,10 @@ func (p *Parser) parseLetStatement() Statement {
 	if typeToken.Type != lexer.IDENT && p.currentToken.Type == lexer.IDENT {
 		typeToken = p.currentToken
 	}
-	if typeToken.Type == lexer.IDENT && stmt.Type == nil {
+	// 如果當前已經是 =，則 peek 的 IDENT 是值（表達式）而不是型別
+	// 例如: a = bigint{}  -> 這裡 bigint 是結構體字面量的型別名，不是型別註記
+	// 而: a bigint       -> 這裡 bigint 是型別註記
+	if typeToken.Type == lexer.IDENT && stmt.Type == nil && p.currentToken.Type != lexer.ASSIGN {
 		typeName := typeToken.Literal
 		if letIsOption {
 			typeName = "?" + typeName
@@ -1678,10 +1700,10 @@ func (p *Parser) parseLetStatement() Statement {
 	// 解析赋值运算符
 	if p.currentToken.Type == lexer.ASSIGN {
 		// 陣列/切片註記後 current 已是 =，common push 會推進到值
-	} else if p.currentToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.NEWLINE {
+	} else if p.currentToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.NEWLINE ||
+		p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
 		// 只有型別宣告，無賦值，直接返回
 		if p.currentToken.Type == lexer.IDENT {
-			// type token 仍在 current（來自 parseLetStatement 的行 732 分支），需前進
 			p.nextToken()
 		}
 		return stmt
@@ -1691,7 +1713,7 @@ func (p *Parser) parseLetStatement() Statement {
 		p.saveError(msg)
 		return nil
 	} else {
-		p.nextToken() // 跳过 ASSIGN 令牌，现在 p.currentToken 是 ASSIGN 令牌
+		p.nextToken() // 跳过 ASSIGN 令牌
 	}
 
 	p.nextToken()
@@ -1873,7 +1895,9 @@ func (p *Parser) parseReturnStatement() Statement {
 }
 
 // parseSwitchStatement parses old-style switch:
-//   switch x { case 1: ... case 2: ... default: ... }
+//
+//	switch x { case 1: ... case 2: ... default: ... }
+//
 // Desugars to match expression: x { 1| ... 2| ... | ... }
 func (p *Parser) parseSwitchStatement() Statement {
 	p.saveWarning(fmt.Sprintf("line %d, column %d: 'switch/case/default' is deprecated, use 'x: { 1| ... }' instead",
@@ -1979,7 +2003,9 @@ func (p *Parser) parseSwitchStatement() Statement {
 }
 
 // parseTildeMatchStatement parses old-style ~match:
-//   ~match x { case err: ... case nil: ... default: ... }
+//
+//	~match x { case err: ... case nil: ... default: ... }
+//
 // Desugars to match expression: x { err| ... nil| ... | ... }
 func (p *Parser) parseTildeMatchStatement() Statement {
 	p.saveWarning(fmt.Sprintf("line %d, column %d: '~match/case/default' is deprecated, use 'x: { pattern| ... }' instead",
@@ -2112,6 +2138,36 @@ func (p *Parser) parseExpressionStatement() Statement {
 		Token:      tok,
 		Expression: p.parseExpression(LOWEST),
 	}
+
+	// 裸條件 for-loop：condition: { body }
+	// Also handles struct literal (expr: { field: value }) and match expression
+	state := p.saveState()
+	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
+		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
+		p.nextToken() // skip :
+
+		bt := p.classifyBlockAtCurrent()
+		switch bt {
+		case blockStruct:
+			if result := p.parseStructLiteral(stmt.Expression); result != nil {
+				return &ExpressionStatement{Token: tok, Expression: result}
+			}
+		case blockMatch:
+			if me := p.parseMatchExprFrom(stmt.Expression); me != nil {
+				return &ExpressionStatement{Token: tok, Expression: me}
+			}
+		default:
+			// Bare condition for-loop: condition: { body }
+			forStmt := &ForStatement{
+				Token:     tok,
+				Condition: stmt.Expression,
+			}
+			forStmt.Body = p.parseBlockStatement()
+			p.nextToken() // skip body's }
+			return forStmt
+		}
+	}
+	p.restoreState(state)
 
 	return stmt
 }
@@ -2512,7 +2568,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			p.currentToken.Type == lexer.OR ||
 			p.currentToken.Type == lexer.XOR ||
 			p.currentToken.Type == lexer.SHL ||
-			p.currentToken.Type == lexer.SHR) {
+			p.currentToken.Type == lexer.SHR) &&
+		p.currentPrecedence() >= precedence {
 		// 解析中缀表达式
 		leftExp = p.parseInfixExpression(leftExp)
 	}
@@ -2596,7 +2653,13 @@ func (p *Parser) parseIdentifier() Expression {
 func (p *Parser) parseIntegerLiteral() Expression {
 	lit := &IntegerLiteral{Token: p.currentToken}
 
-	value, err := strconv.ParseInt(p.currentToken.Literal, 10, 64)
+	// Auto-detect base: 0xNNNN = hex, otherwise base 10
+	base := 10
+	raw := p.currentToken.Literal
+	if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+		base = 0 // auto-detect from 0x prefix
+	}
+	value, err := strconv.ParseInt(raw, base, 64)
 	if err != nil {
 		msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
@@ -4202,6 +4265,14 @@ func (p *Parser) parseSliceLiteral() Expression {
 	p.nextToken() // 跳过 LBRACKET
 
 	for p.currentToken.Type != lexer.RBRACKET && p.currentToken.Type != lexer.EOF {
+		// Skip newlines between elements
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RBRACKET {
+			break
+		}
+
 		elem := p.parseExpression(LOWEST)
 		if elem != nil {
 			slice.Elements = append(slice.Elements, elem)
@@ -4209,11 +4280,21 @@ func (p *Parser) parseSliceLiteral() Expression {
 
 		if p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // 跳过 COMMA
+			// Skip newlines after comma before next element
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
 		} else if p.currentToken.Type != lexer.RBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected comma or right bracket in slice literal, got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
-			return nil
+			// Skip newlines before closing bracket
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			if p.currentToken.Type != lexer.RBRACKET {
+				msg := fmt.Sprintf("line %d, column %d: expected comma or right bracket in slice literal, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
 		}
 	}
 

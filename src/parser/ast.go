@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/lizongying/nolang/lexer"
 )
@@ -57,9 +58,51 @@ func (at *ArrayType) String() string {
 			return fmt.Sprintf("[%d]%s", s.Value, at.Elem.String())
 		case *Identifier:
 			return "[" + s.Value + "]" + at.Elem.String()
+		default:
+			return "[" + exprToString(s) + "]" + at.Elem.String()
 		}
 	}
 	return "[?]" + at.Elem.String()
+}
+
+func exprToString(e Expression) string {
+	switch ex := e.(type) {
+	case *IntegerLiteral:
+		return strconv.FormatInt(ex.Value, 10)
+	case *Identifier:
+		return ex.Value
+	case *InfixExpression:
+		// Constant fold integer expressions for display: 160+16 → 176
+		if isInt, val := evalConstIntExpr(ex); isInt {
+			return strconv.FormatInt(val, 10)
+		}
+		return exprToString(ex.Left) + " " + ex.Operator + " " + exprToString(ex.Right)
+	default:
+		return fmt.Sprintf("%v", e)
+	}
+}
+
+// evalConstIntExpr evaluates a constant integer InfixExpression (e.g., 160+16).
+// Returns (true, result) if both sides are integer literals with a supported operator.
+func evalConstIntExpr(e *InfixExpression) (bool, int64) {
+	leftVal, okLeft := e.Left.(*IntegerLiteral)
+	rightVal, okRight := e.Right.(*IntegerLiteral)
+	if !okLeft || !okRight {
+		return false, 0
+	}
+	switch e.Operator {
+	case "+":
+		return true, leftVal.Value + rightVal.Value
+	case "-":
+		return true, leftVal.Value - rightVal.Value
+	case "*":
+		return true, leftVal.Value * rightVal.Value
+	case "/":
+		if rightVal.Value != 0 {
+			return true, leftVal.Value / rightVal.Value
+		}
+	}
+	return false, 0
 }
 
 type SliceType struct {

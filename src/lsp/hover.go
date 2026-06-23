@@ -27,7 +27,7 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 		return nil, false
 	}
 
-	entry, ok := hp.index.Lookup(word)
+	entry, ok := hp.index.LookupAtPosition(word, position)
 	if !ok {
 		entry, ok = hp.index.GetDefinition(word)
 		if !ok {

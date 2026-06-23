@@ -79,6 +79,10 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				}
 			} else {
 				detail = w.getExprType(s.Value)
+				// For type-only declarations (no = value), use the type annotation
+				if detail == "" && s.Type != nil {
+					detail = s.Type.String()
+				}
 				value = w.getExprValue(s.Value)
 				entry := &IndexEntry{
 					Name: s.Name.Value,
@@ -86,17 +90,23 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					Type: detail,
 					Location: Location{
 						URI:   w.uri,
-						Range: w.rangeFromIdent(s.Name),
+						Range: rangeFromNode(s),
 					},
 					Scope: scope,
 					Value: value,
 				}
-				w.index.symbols[s.Name.Value] = entry
-				w.index.definitions[s.Name.Value] = entry
+				// Don't overwrite existing entries — first declaration wins
+				if _, exists := w.index.symbols[s.Name.Value]; !exists {
+					w.index.symbols[s.Name.Value] = entry
+					w.index.definitions[s.Name.Value] = entry
+				}
+				// Store all declarations for AST-range based lookup
+				w.index.declarations[s.Name.Value] = append(w.index.declarations[s.Name.Value], entry)
 			}
-		}
-		if s.Value != nil {
-			w.walkExpression(s.Value, scope)
+
+			if s.Value != nil {
+				w.walkExpression(s.Value, scope)
+			}
 		}
 
 	case *parser.MultiAssignStatement:
@@ -399,6 +409,22 @@ func (w *ASTWalker) rangeFromIdent(ident *parser.Identifier) Range {
 		End: Position{
 			Line:      uint32(ident.Token.Line - 1),
 			Character: uint32(ident.Token.Column - 1 + len(ident.Value)),
+		},
+	}
+}
+
+// rangeFromNode converts an AST node's position range to LSP Range (0-based).
+func rangeFromNode(n parser.Node) Range {
+	p := n.Pos()
+	ep := n.EndPos()
+	return Range{
+		Start: Position{
+			Line:      uint32(p.Line - 1),
+			Character: uint32(p.Column - 1),
+		},
+		End: Position{
+			Line:      uint32(ep.Line - 1),
+			Character: uint32(ep.Column - 1),
 		},
 	}
 }

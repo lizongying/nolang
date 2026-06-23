@@ -1,0 +1,13 @@
+# std/hash/sha1
+
+make-str-16(block1)
+i = 0
+for i < 16 {
+    block1[i] = 0
+    i = i + 1
+}
+
+h0 = 1732584193; h1 = 4023233417; h2 = 2562383102; h3 = 271733878; h4 = 3285377520
+sha1(block1, 16)(h0, h1, h2, h3, h4)
+
+fmt.println('done')

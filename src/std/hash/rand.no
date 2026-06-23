@@ -23,8 +23,8 @@ rand = (state i64) (r i64) {
 // CHARS: 可用字元集 (A-Z a-z 0-9)
 rand-str = (state i64, n i64, s str) {
     CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    i = 0
-    for i < n {
+    i i64 = 0
+    i < n: {
         r = rand(state)
         s[i] = CHARS[r % 62]
         i = i + 1

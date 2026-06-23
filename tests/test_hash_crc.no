@@ -1,0 +1,4 @@
+// test_hash_crc.no
+# std/hash/crc-32
+
+fmt.println('hello')

@@ -1,0 +1,5 @@
+main = () {
+    x i64 = 42
+    println-i64(x)
+}
+main()

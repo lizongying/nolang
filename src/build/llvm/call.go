@@ -73,6 +73,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
+				if g.globalVars != nil && g.globalVars[a.Value] {
+					return "%str* @" + a.Value
+				}
 				return "%str* %" + a.Value
 			}
 			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
@@ -82,7 +85,11 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				return "double* %" + a.Value
 			}
 		}
-		return "i64* %" + a.Value
+		varAddr := "%" + a.Value
+		if g.globalVars != nil && g.globalVars[a.Value] {
+			varAddr = "@" + a.Value
+		}
+		return "i64* " + varAddr
 	case *parser.FloatLiteral:
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -301,7 +308,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// str 型別用 %str* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
-					typedArgs[i] = "%str* %" + a.Value
+					if g.globalVars != nil && g.globalVars[a.Value] {
+						typedArgs[i] = "%str* @" + a.Value
+					} else {
+						typedArgs[i] = "%str* %" + a.Value
+					}
 					break
 				}
 			}
@@ -320,7 +331,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					break
 				}
 			}
-			typedArgs[i] = "i64* %" + a.Value
+			varAddr := "%" + a.Value
+			if g.globalVars != nil && g.globalVars[a.Value] {
+				varAddr = "@" + a.Value
+			}
+			typedArgs[i] = "i64* " + varAddr
 		case *parser.FloatLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -350,6 +365,35 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if strings.HasPrefix(ev, "%strlit") {
 				// String literal alloca
 				typedArgs[i] = "%str* " + ev
+			} else if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
+				// SSA register (value, not pointer): store to temp alloca and pass pointer
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					// Determine type from the SSA register prefix
+					parts := strings.SplitN(ev, ".", 2)
+					baseName := strings.TrimPrefix(parts[0], "%")
+					isDouble := false
+					if g.varTypes != nil {
+						if t, ok := g.varTypes[baseName]; ok && t == "double" {
+							isDouble = true
+						}
+					}
+					if _, ok := arg.(*parser.FloatLiteral); ok {
+						isDouble = true
+					}
+					if isDouble {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
+						typedArgs[i] = "double* " + tmpName
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+						typedArgs[i] = "i64* " + tmpName
+					}
+				} else {
+					typedArgs[i] = "i64* " + tmpName
+				}
 			} else if strings.HasPrefix(ev, "%") {
 				parts := strings.Split(ev, ".")
 				varName := strings.TrimPrefix(parts[0], "%")

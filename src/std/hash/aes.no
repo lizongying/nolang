@@ -64,21 +64,19 @@ gf-mul2 = (x i64, r i64) {
 // sub-bytes: 使用 S-box 取代狀態中每個位元組
 sub-bytes = (state str, n i64) {
     i = 0
-    for i < n {
-        b = state[i] & 255
-        state[i] = SBOX[b]
-        i = i + 1
-    }
+    i < n
+    b = state[i] & 255
+    state[i] = SBOX[b]
+    i = i + 1
 }
 
 // inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state str, n i64) {
     i = 0
-    for i < n {
-        b = state[i] & 255
-        state[i] = INV-SBOX[b]
-        i = i + 1
-    }
+    i < n
+    b = state[i] & 255
+    state[i] = INV-SBOX[b]
+    i = i + 1
 }
 
 // shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
@@ -137,6 +135,7 @@ inv-shift-rows = (state str) {
 // d2 = b0 + b1 + 2*b2 + 3*b3
 // d3 = 3*b0 + b1 + b2 + 2*b3
 mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
+    a0 = 0; a1 = 0; a2 = 0; a3 = 0
     gf-mul2(b0, a0)
     gf-mul2(b1, a1)
     gf-mul2(b2, a2)
@@ -157,29 +156,23 @@ mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
 
 // mix-columns: 混合狀態中所有欄
 mix-columns = (state str) {
-    // Column 0: state[0..3]
-    mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255, d0, d1, d2, d3)
+    d0 = 0; d1 = 0; d2 = 0; d3 = 0
+    d0, d1, d2, d3 = mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255)
     state[0] = d0
     state[1] = d1
     state[2] = d2
     state[3] = d3
-
-    // Column 1: state[4..7]
-    mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255)
     state[4] = d0
     state[5] = d1
     state[6] = d2
     state[7] = d3
-
-    // Column 2: state[8..11]
-    mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255)
     state[8] = d0
     state[9] = d1
     state[10] = d2
     state[11] = d3
-
-    // Column 3: state[12..15]
-    mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255)
     state[12] = d0
     state[13] = d1
     state[14] = d2
@@ -192,6 +185,10 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
     // 9*b0 + 14*b1 + 11*b2 + 13*b3
     // 13*b0 + 9*b1 + 14*b2 + 11*b3
     // 11*b0 + 13*b1 + 9*b2 + 14*b3
+    m20 = 0; m40 = 0; m80 = 0
+    m21 = 0; m41 = 0; m81 = 0
+    m22 = 0; m42 = 0; m82 = 0
+    m23 = 0; m43 = 0; m83 = 0
     gf-mul2(b0, m20)
     gf-mul2(m20, m40)
     gf-mul2(m40, m80)
@@ -216,22 +213,23 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
 }
 
 inv-mix-columns = (state str) {
-    inv-mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255, d0, d1, d2, d3)
+    d0 = 0; d1 = 0; d2 = 0; d3 = 0
+    d0, d1, d2, d3 = inv-mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255)
     state[0] = d0
     state[1] = d1
     state[2] = d2
     state[3] = d3
-    inv-mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = inv-mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255)
     state[4] = d0
     state[5] = d1
     state[6] = d2
     state[7] = d3
-    inv-mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = inv-mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255)
     state[8] = d0
     state[9] = d1
     state[10] = d2
     state[11] = d3
-    inv-mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255, d0, d1, d2, d3)
+    d0, d1, d2, d3 = inv-mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255)
     state[12] = d0
     state[13] = d1
     state[14] = d2
@@ -241,7 +239,7 @@ inv-mix-columns = (state str) {
 // add-round-key: 將狀態與輪金鑰 XOR
 add-round-key = (state str, rk str) {
     i = 0
-    for i < 16 {
+    i < 16: {
         state[i] = (state[i] & 255) ^ (rk[i] & 255)
         i = i + 1
     }
@@ -292,18 +290,21 @@ sub-word = (w i64, r i64) {
 // ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
     i = 0
-    for i < 16 {
+    i < 16: {
         ek[i] = key[i]
         i = i + 1
     }
 
     // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
-    for i < 44 {
+    i < 44: {
         // 讀取前一個字 w[i-1]
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
         if i % 4 == 0 {
+            rw = 0
+            sw = 0
+            rc = 0
             rot-word(w, rw)
             sub-word(rw, sw)
             rcon-val(i / 4, rc)
@@ -333,7 +334,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
     i = 0
-    for i < 16 {
+    i < 16: {
         out[i] = in[i]
         i = i + 1
     }
@@ -344,7 +345,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
 
     // 第 1-9 輪
     round = 1
-    for round < 10 {
+    round < 10: {
         sub-bytes(out, 16)
         shift-rows(out)
         mix-columns(out)
@@ -371,7 +372,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
     i = 0
-    for i < 16 {
+    i < 16: {
         out[i] = in[i]
         i = i + 1
     }
@@ -379,7 +380,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
 
     // 第 9-1 輪
     round = 9
-    for round > 0 {
+    round > 0: {
         inv-shift-rows(out)
         inv-sub-bytes(out, 16)
         rk-off = round * 16

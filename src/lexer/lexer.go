@@ -101,6 +101,15 @@ func (l *Lexer) readIdentifier() string {
 
 func (l *Lexer) readNumber() string {
 	start := l.position
+	// Hex literal: 0xNNNN
+	if l.ch == '0' && (l.peekChar() == 'x' || l.peekChar() == 'X') {
+		l.readChar() // skip 0
+		l.readChar() // skip x/X
+		for isHex(l.ch) {
+			l.readChar()
+		}
+		return l.input[start:l.position]
+	}
 	for isDigit(l.ch) {
 		l.readChar()
 	}

@@ -1195,6 +1195,73 @@ func TestFormatIndentation(t *testing.T) {
 	}
 }
 
+// cd ./src/fmt && go test -v . -run TestFormatProgram
+func TestFormatProgram(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "import then function adds blank line",
+			input:    "# std/bigint\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+			expected: "# std/bigint\n\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+		},
+		{
+			name:     "multiple imports no blanks between",
+			input:    "# std/hash/md5\n# std/hash/sha1\n# std/fmt\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# std/hash/md5\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+		},
+		{
+			name:     "import blanks compressed",
+			input:    "# std/hash/md5\n\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# std/hash/md5\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			t.Logf("input:\n%s", tt.input)
+			t.Logf("result:\n%s", result)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// cd ./src/fmt && go test -v . -run TestFormatMultiAssign
+func TestFormatMultiAssign(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "mod with multi-assign capture",
+			input:    "mod = (a bigint, b bigint, r bigint) { q, r = div-mod(a, b) }",
+			expected: "mod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+		},
+		{
+			name:     "lcm with multi-assign and nested calls",
+			input:    "lcm = (a bigint, b bigint, l bigint) { g = bigint{} gcd(a, b, g) q, r = div-mod(a, g) l = mul(q, b) }",
+			expected: "lcm = (a bigint, b bigint, l bigint) {\n    g = bigint{}; gcd(a, b, g)\n    q, r = div-mod(a, g)\n    l = mul(q, b)\n}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			t.Logf("input:\n%s", tt.input)
+			t.Logf("result:\n%s", result)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestFormatFunction(t *testing.T) {
 	tests := []struct {
 		name     string

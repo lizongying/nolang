@@ -11,10 +11,10 @@
 crc-32 = (s str, n i64, crc i64) {
     crc = 4294967295
     i = 0
-    for i < n {
+    i < n: {
         crc = crc ^ s[i]
         j = 0
-        for j < 8 {
+        j < 8: {
             if crc & 1 == 1 {
                 crc = (crc >> 1) ^ 3988292384
             } else {

@@ -11,7 +11,7 @@
 fnv-1a-32 = (s str, n i64, h i64) {
     h = 2166136261
     i = 0
-    for i < n {
+    i < n: {
         h = h ^ s[i]
         h = h * 16777619
         i = i + 1

@@ -23,23 +23,25 @@ type ParamInfo struct {
 }
 
 type SymbolIndex struct {
-	mu          sync.RWMutex
-	uri         string
-	version     int
-	symbols     map[string]*IndexEntry
-	definitions map[string]*IndexEntry
-	references  map[string][]Location
-	functions   map[string]*IndexEntry
+	mu           sync.RWMutex
+	uri          string
+	version      int
+	symbols      map[string]*IndexEntry
+	definitions  map[string]*IndexEntry
+	references   map[string][]Location
+	functions    map[string]*IndexEntry
+	declarations map[string][]*IndexEntry // all declarations per name, for AST-range lookup
 }
 
 func NewSymbolIndex(uri string, version int) *SymbolIndex {
 	return &SymbolIndex{
-		uri:         uri,
-		version:     version,
-		symbols:     make(map[string]*IndexEntry),
-		definitions: make(map[string]*IndexEntry),
-		references:  make(map[string][]Location),
-		functions:   make(map[string]*IndexEntry),
+		uri:          uri,
+		version:      version,
+		symbols:      make(map[string]*IndexEntry),
+		definitions:  make(map[string]*IndexEntry),
+		references:   make(map[string][]Location),
+		functions:    make(map[string]*IndexEntry),
+		declarations: make(map[string][]*IndexEntry),
 	}
 }
 
@@ -62,6 +64,52 @@ func (idx *SymbolIndex) GetDefinition(name string) (*IndexEntry, bool) {
 		return e, true
 	}
 	return nil, false
+}
+
+// LookupAtPosition finds the declaration whose AST range contains the given position.
+// Uses AST node range containment: node.Start ≤ cursor < node.End
+// Among nested matches, picks the innermost (highest start offset).
+func (idx *SymbolIndex) LookupAtPosition(name string, pos Position) (*IndexEntry, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	var best *IndexEntry
+	for _, e := range idx.declarations[name] {
+		s := e.Location.Range.Start
+		ePos := e.Location.Range.End
+		// Check if cursor is within the AST node's range: start ≤ cursor < end
+		if isPosBeforeOrAt(s, pos) && isPosBefore(pos, ePos) {
+			if best == nil || isPosBefore(best.Location.Range.Start, s) {
+				best = e
+			}
+		}
+	}
+	if best != nil {
+		return best, true
+	}
+	// Fall back to flat lookup
+	if e, ok := idx.symbols[name]; ok {
+		return e, true
+	}
+	if e, ok := idx.functions[name]; ok {
+		return e, true
+	}
+	return nil, false
+}
+
+// isPosBefore returns true if a is strictly before b.
+func isPosBefore(a, b Position) bool {
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	return a.Character < b.Character
+}
+
+// isPosBeforeOrAt returns true if a is before or at the same position as b.
+func isPosBeforeOrAt(a, b Position) bool {
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	return a.Character <= b.Character
 }
 
 func (idx *SymbolIndex) GetReferences(name string) []Location {

@@ -30,14 +30,22 @@ json-value {
 // 常量
 // ═══════════════════════════════════════════════
 
-// json-null: JSON null 值
-json-null = json-value{kind: 0}
+// JSON-NULL: JSON null 值
+JSON-NULL = json-value{
+    kind: 0
+}
 
-// json-true: JSON true 值
-json-true = json-value{kind: 1, bool-val: 1}
+// JSON-TRUE: JSON true 值
+JSON-TRUE = json-value{
+    kind: 1
+    bool-val: 1
+}
 
-// json-false: JSON false 值
-json-false = json-value{kind: 1, bool-val: 0}
+// JSON-FALSE: JSON false 值
+JSON-FALSE = json-value{
+    kind: 1
+    bool-val: 0
+}
 
 // ═══════════════════════════════════════════════
 // 解析
@@ -47,6 +55,7 @@ json-false = json-value{kind: 1, bool-val: 0}
 // 回傳解析結果、下一位置、是否成功
 parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
     ok = 0
+
     // 跳過空白
     p = pos
     for p < sn {
@@ -60,6 +69,7 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         return
     }
     c = s[p] & 255
+
     // null
     if c == 110 {
         val.kind = KIND-NULL
@@ -67,6 +77,7 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         ok = 1
         return
     }
+
     // true
     if c == 116 {
         val.kind = KIND-BOOL
@@ -75,6 +86,7 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         ok = 1
         return
     }
+
     // false
     if c == 102 {
         val.kind = KIND-BOOL
@@ -83,21 +95,25 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         ok = 1
         return
     }
+
     // string: opening quote
     if c == 34 {
         val, next-pos, ok = parse-str(s, sn, p)
         return
     }
+
     // number: minus sign
     if c == 45 {
         val, next-pos, ok = parse-num(s, sn, p)
         return
     }
+
     // number: digit
     if c >= 48 && c <= 57 {
         val, next-pos, ok = parse-num(s, sn, p)
         return
     }
+
     // array: opening bracket
     if c == 91 {
         val.kind = KIND-ARR
@@ -105,6 +121,7 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         ok = 1
         return
     }
+
     // object: opening brace
     if c == 123 {
         val.kind = KIND-OBJ
@@ -127,6 +144,7 @@ parse-str = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
             ok = 1
             return
         }
+
         // 跳過轉義字元
         if c == 92 {
             i = i + 1
@@ -142,10 +160,12 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
     val.kind = KIND-NUM
     ok = 1
     i = pos
+
     // 負號
     if s[i] & 255 == 45 {
         i = i + 1
     }
+
     // 整數部分
     for i < sn {
         c = s[i] & 255
@@ -155,6 +175,7 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         val.num-val = val.num-val * 10.0 + (c - 48)
         i = i + 1
     }
+
     // 小數部分
     if i < sn {
         c = s[i] & 255
@@ -172,6 +193,7 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
             }
         }
     }
+
     // 處理負數
     if s[pos] & 255 == 45 {
         val.num-val = 0.0 - val.num-val

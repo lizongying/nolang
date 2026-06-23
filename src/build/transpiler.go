@@ -163,6 +163,21 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 	case *parser.IndexExpression:
 		// Array/slice element access: cannot reliably infer element type here
 		return ""
+	case *parser.SliceExpression:
+		// Slicing [N]T returns []T; slicing str returns str
+		if e.Left != nil {
+			leftType := inferExprType(e.Left, varTypes)
+			if strings.HasPrefix(leftType, "[") {
+				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
+					return "[]" + leftType[idx+1:]
+				}
+			}
+			if leftType == "str" {
+				return "str"
+			}
+			return leftType
+		}
+		return ""
 	case *parser.GroupedExpression:
 		return inferExprType(e.Expression, varTypes)
 	case *parser.ConditionalExpression:
@@ -2268,6 +2283,55 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// ValidateDuplicateVars checks for duplicate variable declarations and returns diagnostics.
+func ValidateDuplicateVars(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	seen := make(map[string]struct{})
+	for _, stmt := range program.Statements {
+		results = append(results, checkStmtDuplicateVars(stmt, seen)...)
+	}
+	return results
+}
+
+func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []ValidateResult {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Name == nil {
+			return nil
+		}
+		// Check for duplicate only if this is a real type annotation (not parser artifact where Type == Name)
+		if s.Type != nil && s.Type.String() != s.Name.Value {
+			if _, exists := seen[s.Name.Value]; exists {
+				return []ValidateResult{{
+					Line:    s.Token.Line,
+					Column:  s.Token.Column,
+					Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
+				}}
+			}
+		}
+		// Register all declarations to prevent subsequent re-declarations
+		seen[s.Name.Value] = struct{}{}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			bodySeen := make(map[string]struct{})
+			for _, bStmt := range s.Body.Statements {
+				results := checkStmtDuplicateVars(bStmt, bodySeen)
+				if len(results) > 0 {
+					return results
+				}
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bStmt := range s.Statements {
+			results := checkStmtDuplicateVars(bStmt, seen)
+			if len(results) > 0 {
+				return results
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
 // are declared in mod.jsonc dependencies. rootDir is the directory to search upward
 // from for the project's mod.jsonc.
@@ -2665,19 +2729,24 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
 		}
 	case *parser.FunctionDefinition:
-		// Parameters, generic params, and result params are defined vars within the function
+		// Parameters, generic params, and result params are defined vars at BOTH
+		// the function scope (localDefs) AND the outer scope (definedVars), so
+		// result/output parameters like 'ek' are visible at module level.
 		localDefs := make(map[string]bool)
 		for k, v := range definedVars {
 			localDefs[k] = v
 		}
 		for _, p := range s.Parameters {
+			definedVars[p.Name] = true
 			localDefs[p.Name] = true
 		}
 		for _, gp := range s.GenericParams {
+			definedVars[gp.Value] = true
 			localDefs[gp.Value] = true
 		}
 		for _, r := range s.Results {
 			if r.Name != "" {
+				definedVars[r.Name] = true
 				localDefs[r.Name] = true
 			}
 		}
@@ -3594,7 +3663,19 @@ func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTyp
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+			// Register the variable type from assignment for subsequent checks
+			if s.Name != nil {
+				inferred := inferExprType(s.Value, varTypes)
+				if inferred != "" {
+					varTypes[s.Name.Value] = inferred
+				}
+			}
+			return results
+		}
+		// Type-only declaration: name [N]type (no = value)
+		if s.Name != nil && s.Type != nil {
+			varTypes[s.Name.Value] = s.Type.String()
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
@@ -3683,6 +3764,21 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 					}
 				}
 			}
+		}
+		return ""
+	case *parser.SliceExpression:
+		// Slicing [N]T returns []T; slicing str returns str
+		if e.Left != nil {
+			leftType := resolveExprType(e.Left, varTypes, structFields)
+			if strings.HasPrefix(leftType, "[") {
+				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
+					return "[]" + leftType[idx+1:]
+				}
+			}
+			if leftType == "str" {
+				return "str"
+			}
+			return leftType
 		}
 		return ""
 	default:

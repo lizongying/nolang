@@ -224,6 +224,20 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
+			duplicateVars := nbuild.ValidateDuplicateVars(prog)
+			for _, u := range duplicateVars {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
 			// Validate URL-style import paths are declared in mod.jsonc dependencies
 			docPath := strings.TrimPrefix(uri, "file://")
 			docDir := filepath.Dir(docPath)

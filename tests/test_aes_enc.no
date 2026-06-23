@@ -1,0 +1,16 @@
+// test_aes_enc.no — AES-128 加密簡單測試
+# std/hash/aes-128-enc
+
+aes-key = '\x2b\x7e\x15\x16\x28\xae\xd2\xa6\xab\xf7\x15\x88\x09\xcf\x4f\x3c'
+aes-plain = '\x6b\xc1\xbe\xe2\x2e\x40\x9f\x96\xe9\x3d\x7e\x11\x73\x93\x17\x2a'
+
+aes-out = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+aes-128-enc(aes-plain, 16, aes-key)(aes-out)
+
+fmt.print('aes-enc=')
+i = 0
+for i < 16 {
+    fmt.print-hex8(aes-out[i] & 255)
+    i = i + 1
+}
+fmt.println('')

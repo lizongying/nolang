@@ -396,6 +396,42 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
 
 	if fnName == "len" && hasArgs {
+		arg0 := expr.Arguments[0]
+		// Handle string variables: use extractLenDispatch for %str / %str-smail
+		if ident, ok := arg0.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok {
+					if t == "%str" || t == "%str-smail" {
+						return g.extractLenDispatch(sb, ident.Value)
+					}
+					// Handle %arr and %vec: load field 0 (i64 len) from the struct pointer
+					if t == "%arr" || t == "%vec" {
+						g.tmpIdx++
+						lenGEP := fmt.Sprintf("%%builtin.len.gep.%d", g.tmpIdx)
+						g.tmpIdx++
+						lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 0\n", g.indent(), lenGEP, t, t, ident.Value))
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+						}
+						return lenReg
+					}
+					// Handle fixed-size arrays [N x t]: return N as compile-time constant
+					if strings.HasPrefix(t, "[") {
+						closeB := strings.IndexByte(t, ']')
+						if closeB > 0 {
+							sizeStr := t[1:closeB]
+							return sizeStr
+						}
+					}
+				}
+			}
+		}
+		// Handle string literals: compile-time known length
+		if strLit, ok := arg0.(*parser.StringLiteral); ok {
+			return fmt.Sprintf("%d", len(strLit.Value))
+		}
+		// Default fallback: generic i64* load (for raw pointers)
 		a := evalArgs()
 		arg := a[0]
 		g.tmpIdx++

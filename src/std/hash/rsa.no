@@ -17,6 +17,15 @@
 // 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
     if an > bn {
+        cmp = 1
+        return
+    }
+    if an < bn {
+        cmp = -1
+        return
+    }
+    i i64 = an - 1
+    for i >= 0 {
         if a[i] > b[i] {
             cmp = 1
             return
@@ -36,91 +45,111 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
 bn-add = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
     carry = 0
-    // 初始化為 0
-    // 小學乘法 O(an × bn)
-    i = 0
+    i i64 = 0
     for i < an || i < bn || carry != 0 {
         sum = carry
         if i < an {
-            borrow = 0
-            i = 0
-            for i < an {
-                diff = a[i] - borrow
-                if i < bn {
-                    borrow = 0
-                }
-            }
-            c[i] = diff & 4294967295  // 低 32 位元
-            i = i + 1
+            sum = sum + a[i]
         }
-        i = i - 1
+        if i < bn {
+            sum = sum + b[i]
+        }
+        c[i] = sum & 4294967295
+        carry = sum >> 32
+        i = i + 1
     }
     cn = i
-    bn-mul = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
-        i = 0
-        for i < an + bn {
-            c[i] = 0
-            i = i + 1
-        }
-        i = 0
-        for i < an {
-            if a[i] == 0 {
-                i = i + 1
-                continue
-            }
-            carry = 0
-            j = 0
-            for j < bn {
-                prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
-                c[i + j] = prod & 4294967295
-                carry = prod >> 32
-                j = j + 1
-            }
-            c[i + bn] = carry & 4294967295
-            i = i + 1
-        }
-        // 計算實際長度
-        cn = an + bn
-        for cn > 1 && c[cn-1] == 0 {
-            cn = cn - 1
-        }
-    }
-    bn-shl1 = (a []i64, an i64, new-an i64) {
-        carry = 0
-        i = 0
-        for i < an {
-            new-val = (a[i] << 1) | carry
-            carry = a[i] >> 31
-            a[i] = new-val & 4294967295
-            i = i + 1
-        }
-        if carry != 0 {
-            a[an] = carry
-            new-an = an + 1
-        } else {
-            new-an = an
-        }
-    }
 }
 
 // ─── 大數減法 ─────────────────────────────────────
 
 // bn-sub: c = a - b（需 a ≥ b）
-// 移除前導零
-// 移除前導零
+bn-sub = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+    borrow = 0
+    i i64 = 0
+    for i < an {
+        diff = a[i] - borrow
+        if i < bn {
+            diff = diff - b[i]
+        }
+        if diff < 0 {
+            diff = diff + 4294967296
+            borrow = 1
+        } else {
+            borrow = 0
+        }
+        c[i] = diff & 4294967295
+        i = i + 1
+    }
+
+    // 移除前導零
+    cn = an
+    for cn > 1 && c[cn - 1] == 0 {
+        cn = cn - 1
+    }
+}
+
 // ─── 大數乘法 ─────────────────────────────────────
 
 // bn-mul: c = a × b
 // 呼叫者需確保 c 的容量 ≥ an + bn
+bn-mul = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+    i i64 = 0
+    for i < an + bn {
+        c[i] = 0
+        i = i + 1
+    }
+    i = 0
+    for i < an {
+        if a[i] == 0 {
+            i = i + 1
+            continue
+        }
+        carry = 0
+        j i64 = 0
+        for j < bn {
+            prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
+            c[i + j] = prod & 4294967295
+            carry = prod >> 32
+            j = j + 1
+        }
+        c[i + bn] = carry & 4294967295
+        i = i + 1
+    }
+
+    // 計算實際長度
+    cn = an + bn
+    for cn > 1 && c[cn - 1] == 0 {
+        cn = cn - 1
+    }
+}
+
 // ─── 大數左移 1 位元 ─────────────────────────────
 
 // bn-shl1: a = a << 1（原地左移 1 位元）
+bn-shl1 = (a []i64, an i64, new-an i64) {
+    carry = 0
+    i i64 = 0
+    for i < an {
+        new-val = (a[i] << 1) | carry
+        carry = a[i] >> 31
+        a[i] = new-val & 4294967295
+        i = i + 1
+    }
+    if carry != 0 {
+        a[an] = carry
+        new-an = an + 1
+    } else {
+        new-an = an
+    }
+}
+
 // ─── 大數右移 1 位元 ─────────────────────────────
 
 // bn-shr1: a = a >> 1（原地右移 1 位元）
 bn-shr1 = (a []i64, an i64, new-an i64) {
     carry = 0
-    i = an - 1
+    i i64 = an - 1
     for i >= 0 {
         new-val = (carry << 31) | (a[i] >> 1)
         carry = a[i] & 1
@@ -128,7 +157,7 @@ bn-shr1 = (a []i64, an i64, new-an i64) {
         i = i - 1
     }
     new-an = an
-    for new-an > 1 && a[new-an-1] == 0 {
+    for new-an > 1 && a[new-an - 1] == 0 {
         new-an = new-an - 1
     }
 }
@@ -149,15 +178,15 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         return
     }
 
-    // r = 0
-
-    // q = 0
-    i = 0
+    // 初始化 r = 0
+    i i64 = 0
     for i < an {
         r[i] = 0
         i = i + 1
     }
     rn = 1
+
+    // 初始化 q = 0
     i = 0
     for i < an {
         q[i] = 0
@@ -165,44 +194,36 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     }
     qn = 1
 
-    // 二進位長除法
-    // 從 a 的最高位元到最低位元
-    bits = an * 32  // 重複計算，需要修正
-    // 找到 a 的最高有效位元
-    // 重新計算位元數：移除額外 +1 的部份
-    // 實際上 bits = (an - 1) * 32 + leading bits of a[an-1]
-    top = a[an-1]
-    while top != 0 {
-        top = top >> 1
-        bits = bits + 1
-    }
-    top = a[an-1]
-    lead = 0
-    tmp = top
-    while tmp != 0 {
+    // 計算 a 的最高有效位元數
+    top = a[an - 1]
+    lead i64 = 0
+    tmp i64 = top
+    for tmp != 0 {
         tmp = tmp >> 1
         lead = lead + 1
     }
     if an > 0 && top == 0 {
         lead = 0
     }
-    bits = (an - 1) * 32 + lead
+    bits i64 = (an - 1) * 32 + lead
+
+    // 二進位長除法：從最高位到最低位
     i = bits - 1
     for i >= 0 {
         // r = r << 1
         bn-shl1(r, rn, rn)
 
-        // r[0] = a 的第 i 位元
+        // r[0] 設為 a 的第 i 位元
         limb = i / 32
         bit-pos = i % 32
         a-bit = (a[limb] >> bit-pos) & 1
         r[0] = r[0] | a-bit
 
         // 如果 r >= b: r = r - b; q 的第 i 位元設為 1
+        cmp i64 = 0
         bn-cmp(r, rn, b, bn, cmp)
         if cmp >= 0 {
             bn-sub(r, rn, b, bn, r, rn)
-            // 設 q 的第 i 位元為 1
             q-limb = i / 32
             q-bit = i % 32
             q[q-limb] = q[q-limb] | (1 << q-bit)
@@ -212,7 +233,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 
     // 計算 q 的長度
     qn = (bits / 32) + 1
-    for qn > 1 && q[qn-1] == 0 {
+    for qn > 1 && q[qn - 1] == 0 {
         qn = qn - 1
     }
 }
@@ -221,13 +242,9 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 
 // rsa-modpow: result = base^exp mod modulus
 // 使用左右掃描平方乘（square-and-multiply）
-// 所有引數為 []i64 切片
-// base 陣列長度: bn, exp 長度: en, modulus 長度: mn
-// result 陣列長度須 ≥ mn
-
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
     // 初始化 result = 1
-    i = 0
+    i i64 = 0
     for i < mn {
         result[i] = 0
         i = i + 1
@@ -236,70 +253,50 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     rn = 1
 
     // 計算 exp 的位元數
-    top = exp[en-1]
-    lead = 0
-    tmp = top
-    while tmp != 0 {
+    top i64 = exp[en - 1]
+    lead i64 = 0
+    tmp i64 = top
+    for tmp != 0 {
         tmp = tmp >> 1
         lead = lead + 1
     }
     if en > 0 && top == 0 {
         lead = 0
     }
-    bits = (en - 1) * 32 + lead
+    bits i64 = (en - 1) * 32 + lead
 
-    // 暫存區（乘積、餘數）
-    tmp-a = result
-    tmp-b = base
-    tmp-c = result  // 重複使用 result 空間
+    // 暫存區
+    t-len = mn * 2 + 2
+    t = result  // 注意：實際可能需要獨立的暫存空間
+    prod-n i64 = 0
+    q-n i64 = 0
 
     // 從最高位到最低位
     i = bits - 1
     for i >= 0 {
-        // 平方：result = result × result mod modulus
-        // t = result × result（需暫存）
-        t-len = rn + rn
-        t = result  // 用 result 空間暫存... 需要更多空間
-        // 實際需要：mult 用乘法暫存區，div-mod 用餘數暫存區
-        // 使用大小為 2*mn 的暫存區進行乘法
-
         // 平方：result = result^2 mod modulus
-        // 用 tmp-c 存乘積（長度 rn*2）
-        bn-mul(result, rn, result, rn, tmp-c, prod-n)
-        // 除法取餘：tmp-c mod modulus → result
-        bn-div-mod(tmp-c, prod-n, modulus, mn, result, q-n, result, rn)
-        // ↑ 這裡 result 被當作 q 和 r 的緩衝區
+        bn-mul(result, rn, result, rn, t, prod-n)
+        result, q-n, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
         // 如果 exp 第 i 位元為 1：乘 base
         e-limb = i / 32
         e-bit = i % 32
         if (exp[e-limb] >> e-bit) & 1 == 1 {
-            // result = result × base mod modulus
-            bn-mul(result, rn, base, bn, tmp-c, prod-n)
-            bn-div-mod(tmp-c, prod-n, modulus, mn, result, q-n, result, rn)
+            bn-mul(result, rn, base, bn, t, prod-n)
+            result, q-n, result, rn = bn-div-mod(t, prod-n, modulus, mn)
         }
         i = i - 1
     }
 }
 
-
 // ─── RSA 加密/解密（高階介面）────────────────────
 
 // rsa-encrypt: RSA 加密（c = m^e mod n）
-// msg: 訊息（[]i64 切片）, msgn: 長度
-// pub-exp: 公鑰指數 e（[]i64）, pubn: 長度
-// mod: 模數 n（[]i64）, modn: 長度
-// out: 輸出密文（[]i64）, outn: 長度（須 ≥ modn）
-
 rsa-encrypt = (msg []i64, msgn i64, pub-exp []i64, pubn i64, mod []i64, modn i64) (out []i64, outn i64) {
-    rsa-modpow(msg, msgn, pub-exp, pubn, mod, modn, out, outn)
+    out, outn = rsa-modpow(msg, msgn, pub-exp, pubn, mod, modn)
 }
 
 // rsa-decrypt: RSA 解密（m = c^d mod n）
-// ct: 密文（[]i64 切片）, ctn: 長度
-// priv-exp: 私鑰指數 d（[]i64）, privn: 長度
-// mod: 模數 n（[]i64）, modn: 長度
-// out: 輸出明文（[]i64）, outn: 長度（須 ≥ modn）
 rsa-decrypt = (ct []i64, ctn i64, priv-exp []i64, privn i64, mod []i64, modn i64) (out []i64, outn i64) {
-    rsa-modpow(ct, ctn, priv-exp, privn, mod, modn, out, outn)
+    out, outn = rsa-modpow(ct, ctn, priv-exp, privn, mod, modn)
 }

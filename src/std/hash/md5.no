@@ -1,25 +1,40 @@
 // md5 — MD5 訊息摘要算法（128-bit）
 //
-// 計算位元組陣列的 MD5 哈希值。
+// 計算字串的 MD5 哈希值。
 //
 // 用法：
-//   data = [0x61, 0x62, 0x63]  // "abc"
-//   md5(data)(hash)
-//   // hash == [0x90, 0x01, 0x50, 0x98, ...]
+//   out = '(16 bytes)'
+//   md5('hello')(out)
+//   // out == [0x5d, 0x41, 0x40, 0x2a, ...]
 
-// rot-left: 32-bit 循環左移
-rot-left = (x i64, n i64, r i64) {
-    s = 32 - n
-    l = x << n
-    r = x >> s
-    r = l | r
-    r = r & 4294967295
+// md5-pad-byte: 取 MD5 填充後第 boff 個位元組的值
+//   當 boff < dlen 時，取自 data[boff]
+//   當 boff == dlen 時，為 0x80
+//   當 boff 在 (dlen, plen-8) 範圍內時，為 0x00（填充）
+//   當 boff >= plen-8 時，取自 64-bit little-endian 位長度
+md5-pad-byte = (data str, dlen i64, plen i64, blen i64, boff i64, b i64) {
+    len-start = plen - 8
+    if boff < dlen {
+        b = data[boff]
+    } elif boff == dlen {
+        b = 0
+    } elif boff >= len-start {
+        len-idx = boff - len-start
+        b = (blen >> (len-idx * 8)) & 255
+    } else {
+        b = 0
+    }
+}
+
+// rotl32: 32-bit 迴圈左移（內聯輔助）
+rotl32 = (x i64, n i64, r i64) {
+    r = ((x << n) | (x >> (32 - n))) & 4294967295
 }
 
 // md5: 計算 MD5 哈希
-// in: 輸入位元組陣列
+// data: 輸入字串
 // out: 輸出 16 位元組哈希值
-md5 = (data []byte) (out [16]byte) {
+md5 = (data str) (out [16]byte) {
     // MD5 初始值
     MASK = 4294967295
     h0 = 1732584193  // 0x67452301
@@ -39,430 +54,355 @@ md5 = (data []byte) (out [16]byte) {
 
     // 對每個 64 位元組區塊進行壓縮
     bidx = 0
-    for bidx < num-blocks {
-        // 將 64 位元組組裝為 16 個 32-bit 小端字
-        off = bidx * 64
-        wi = 0
-        for wi < 16 {
-            boff = off + wi * 4
-            b0 = 0
-            b1 = 0
-            b2 = 0
-            b3 = 0
-            if boff < dlen {
-                len-byte-idx = boff - (plen - 8)
-                if len-byte-idx == 0 {
-                    b0 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b0 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b0 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b0 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b0 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b0 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b0 = (blen >> 8) & 255
-                } else {
-                    b0 = blen & 255
-                }
-            }
-            if boff + 1 < dlen {
-                len-byte-idx = (boff + 1) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b1 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b1 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b1 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b1 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b1 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b1 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b1 = (blen >> 8) & 255
-                } else {
-                    b1 = blen & 255
-                }
-            }
-            if boff + 2 < dlen {
-                len-byte-idx = (boff + 2) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b2 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b2 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b2 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b2 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b2 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b2 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b2 = (blen >> 8) & 255
-                } else {
-                    b2 = blen & 255
-                }
-            }
-            if boff + 3 < dlen {
-                len-byte-idx = (boff + 3) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b3 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b3 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b3 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b3 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b3 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b3 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b3 = (blen >> 8) & 255
-                } else {
-                    b3 = blen & 255
-                }
-            }
-            word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    bidx < num-blocks
 
-            // 暫存到 wi 變數
-            if wi == 0 {
-                w0 = word
-            } elif wi == 1 {
-                w1 = word
-            } elif wi == 2 {
-                w2 = word
-            } elif wi == 3 {
-                w3 = word
-            } elif wi == 4 {
-                w4 = word
-            } elif wi == 5 {
-                w5 = word
-            } elif wi == 6 {
-                w6 = word
-            } elif wi == 7 {
-                w7 = word
-            } elif wi == 8 {
-                w8 = word
-            } elif wi == 9 {
-                w9 = word
-            } elif wi == 10 {
-                w10 = word
-            } elif wi == 11 {
-                w11 = word
-            } elif wi == 12 {
-                w12 = word
-            } elif wi == 13 {
-                w13 = word
-            } elif wi == 14 {
-                w14 = word
-            } else {
-                w15 = word
-            }
-            wi = wi + 1
-        }
+    // 將 64 位元組組裝為 16 個 32-bit 小端字
+    off = bidx * 64
+    wi = 0
+    w0 = 0; w1 = 0; w2 = 0; w3 = 0
+    w4 = 0; w5 = 0; w6 = 0; w7 = 0
+    w8 = 0; w9 = 0; w10 = 0; w11 = 0
+    w12 = 0; w13 = 0; w14 = 0; w15 = 0
+    wi < 16
+    boff = off + wi * 4
+    b0 = 0; b1 = 0; b2 = 0; b3 = 0
+    md5-pad-byte(data, dlen, plen, blen, boff, b0)
+    md5-pad-byte(data, dlen, plen, blen, boff + 1, b1)
+    md5-pad-byte(data, dlen, plen, blen, boff + 2, b2)
+    md5-pad-byte(data, dlen, plen, blen, boff + 3, b3)
+    word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
-        // MD5 壓縮函數（64 輪）
-        a = h0
-        b = h1
-        c = h2
-        d = h3
-        r = 0
-        t = 0
-
-        // 第 1 輪 (F)
-        f = (b & c) | ((MASK ^ b) & d)
-        t = (a + f + w0 + 3614090360) & MASK
-        r = rot-left(t, 7)
-        a = (b + r) & MASK
-        f = (a & b) | ((MASK ^ a) & c)
-        t = (d + f + w1 + 3905402710) & MASK
-        r = rot-left(t, 12)
-        d = (a + r) & MASK
-        f = (d & a) | ((MASK ^ d) & b)
-        t = (c + f + w2 + 606105819) & MASK
-        r = rot-left(t, 17)
-        c = (d + r) & MASK
-        f = (c & d) | ((MASK ^ c) & a)
-        t = (b + f + w3 + 3250441966) & MASK
-        r = rot-left(t, 22)
-        b = (c + r) & MASK
-        f = (b & c) | ((MASK ^ b) & d)
-        t = (a + f + w4 + 4118548399) & MASK
-        r = rot-left(t, 7)
-        a = (b + r) & MASK
-        f = (a & b) | ((MASK ^ a) & c)
-        t = (d + f + w5 + 1200080426) & MASK
-        r = rot-left(t, 12)
-        d = (a + r) & MASK
-        f = (d & a) | ((MASK ^ d) & b)
-        t = (c + f + w6 + 2821735955) & MASK
-        r = rot-left(t, 17)
-        c = (d + r) & MASK
-        f = (c & d) | ((MASK ^ c) & a)
-        t = (b + f + w7 + 4249261313) & MASK
-        r = rot-left(t, 22)
-        b = (c + r) & MASK
-        f = (b & c) | ((MASK ^ b) & d)
-        t = (a + f + w8 + 1770035416) & MASK
-        r = rot-left(t, 7)
-        a = (b + r) & MASK
-        f = (a & b) | ((MASK ^ a) & c)
-        t = (d + f + w9 + 2336552879) & MASK
-        r = rot-left(t, 12)
-        d = (a + r) & MASK
-        f = (d & a) | ((MASK ^ d) & b)
-        t = (c + f + w10 + 4294925233) & MASK
-        r = rot-left(t, 17)
-        c = (d + r) & MASK
-        f = (c & d) | ((MASK ^ c) & a)
-        t = (b + f + w11 + 2304563134) & MASK
-        r = rot-left(t, 22)
-        b = (c + r) & MASK
-        f = (b & c) | ((MASK ^ b) & d)
-        t = (a + f + w12 + 1804603682) & MASK
-        r = rot-left(t, 7)
-        a = (b + r) & MASK
-        f = (a & b) | ((MASK ^ a) & c)
-        t = (d + f + w13 + 4254626195) & MASK
-        r = rot-left(t, 12)
-        d = (a + r) & MASK
-        f = (d & a) | ((MASK ^ d) & b)
-        t = (c + f + w14 + 2792965006) & MASK
-        r = rot-left(t, 17)
-        c = (d + r) & MASK
-        f = (c & d) | ((MASK ^ c) & a)
-        t = (b + f + w15 + 1236535329) & MASK
-        r = rot-left(t, 22)
-        b = (c + r) & MASK
-
-        // 第 2 輪 (G)
-        f = (b & d) | (c & (MASK ^ d))
-        t = (a + f + w1 + 3905402710) & MASK
-        r = rot-left(t, 5)
-        a = (b + r) & MASK
-        f = (a & c) | (b & (MASK ^ c))
-        t = (d + f + w6 + 2821735955) & MASK
-        r = rot-left(t, 9)
-        d = (a + r) & MASK
-        f = (d & b) | (a & (MASK ^ b))
-        t = (c + f + w11 + 2304563134) & MASK
-        r = rot-left(t, 14)
-        c = (d + r) & MASK
-        f = (c & a) | (d & (MASK ^ a))
-        t = (b + f + w0 + 3614090360) & MASK
-        r = rot-left(t, 20)
-        b = (c + r) & MASK
-        f = (b & d) | (c & (MASK ^ d))
-        t = (a + f + w5 + 1200080426) & MASK
-        r = rot-left(t, 5)
-        a = (b + r) & MASK
-        f = (a & c) | (b & (MASK ^ c))
-        t = (d + f + w10 + 4294925233) & MASK
-        r = rot-left(t, 9)
-        d = (a + r) & MASK
-        f = (d & b) | (a & (MASK ^ b))
-        t = (c + f + w15 + 1236535329) & MASK
-        r = rot-left(t, 14)
-        c = (d + r) & MASK
-        f = (c & a) | (d & (MASK ^ a))
-        t = (b + f + w4 + 4118548399) & MASK
-        r = rot-left(t, 20)
-        b = (c + r) & MASK
-        f = (b & d) | (c & (MASK ^ d))
-        t = (a + f + w9 + 2336552879) & MASK
-        r = rot-left(t, 5)
-        a = (b + r) & MASK
-        f = (a & c) | (b & (MASK ^ c))
-        t = (d + f + w14 + 2792965006) & MASK
-        r = rot-left(t, 9)
-        d = (a + r) & MASK
-        f = (d & b) | (a & (MASK ^ b))
-        t = (c + f + w3 + 3250441966) & MASK
-        r = rot-left(t, 14)
-        c = (d + r) & MASK
-        f = (c & a) | (d & (MASK ^ a))
-        t = (b + f + w8 + 1770035416) & MASK
-        r = rot-left(t, 20)
-        b = (c + r) & MASK
-        f = (b & d) | (c & (MASK ^ d))
-        t = (a + f + w13 + 4254626195) & MASK
-        r = rot-left(t, 5)
-        a = (b + r) & MASK
-        f = (a & c) | (b & (MASK ^ c))
-        t = (d + f + w2 + 606105819) & MASK
-        r = rot-left(t, 9)
-        d = (a + r) & MASK
-        f = (d & b) | (a & (MASK ^ b))
-        t = (c + f + w7 + 4249261313) & MASK
-        r = rot-left(t, 14)
-        c = (d + r) & MASK
-        f = (c & a) | (d & (MASK ^ a))
-        t = (b + f + w12 + 1804603682) & MASK
-        r = rot-left(t, 20)
-        b = (c + r) & MASK
-
-        // 第 3 輪 (H)
-        f = b ^ c ^ d
-        t = (a + f + w5 + 1200080426) & MASK
-        r = rot-left(t, 4)
-        a = (b + r) & MASK
-        f = a ^ b ^ c
-        t = (d + f + w8 + 1770035416) & MASK
-        r = rot-left(t, 11)
-        d = (a + r) & MASK
-        f = d ^ a ^ b
-        t = (c + f + w11 + 2304563134) & MASK
-        r = rot-left(t, 16)
-        c = (d + r) & MASK
-        f = c ^ d ^ a
-        t = (b + f + w14 + 2792965006) & MASK
-        r = rot-left(t, 23)
-        b = (c + r) & MASK
-        f = b ^ c ^ d
-        t = (a + f + w1 + 3905402710) & MASK
-        r = rot-left(t, 4)
-        a = (b + r) & MASK
-        f = a ^ b ^ c
-        t = (d + f + w4 + 4118548399) & MASK
-        r = rot-left(t, 11)
-        d = (a + r) & MASK
-        f = d ^ a ^ b
-        t = (c + f + w7 + 4249261313) & MASK
-        r = rot-left(t, 16)
-        c = (d + r) & MASK
-        f = c ^ d ^ a
-        t = (b + f + w10 + 4294925233) & MASK
-        r = rot-left(t, 23)
-        b = (c + r) & MASK
-        f = b ^ c ^ d
-        t = (a + f + w13 + 4254626195) & MASK
-        r = rot-left(t, 4)
-        a = (b + r) & MASK
-        f = a ^ b ^ c
-        t = (d + f + w0 + 3614090360) & MASK
-        r = rot-left(t, 11)
-        d = (a + r) & MASK
-        f = d ^ a ^ b
-        t = (c + f + w3 + 3250441966) & MASK
-        r = rot-left(t, 16)
-        c = (d + r) & MASK
-        f = c ^ d ^ a
-        t = (b + f + w6 + 2821735955) & MASK
-        r = rot-left(t, 23)
-        b = (c + r) & MASK
-        f = b ^ c ^ d
-        t = (a + f + w9 + 2336552879) & MASK
-        r = rot-left(t, 4)
-        a = (b + r) & MASK
-        f = a ^ b ^ c
-        t = (d + f + w12 + 1804603682) & MASK
-        r = rot-left(t, 11)
-        d = (a + r) & MASK
-        f = d ^ a ^ b
-        t = (c + f + w15 + 1236535329) & MASK
-        r = rot-left(t, 16)
-        c = (d + r) & MASK
-        f = c ^ d ^ a
-        t = (b + f + w2 + 606105819) & MASK
-        r = rot-left(t, 23)
-        b = (c + r) & MASK
-
-        // 第 4 輪 (I)
-        f = c ^ (b | (MASK ^ d))
-        t = (a + f + w0 + 3614090360) & MASK
-        r = rot-left(t, 6)
-        a = (b + r) & MASK
-        f = b ^ (a | (MASK ^ c))
-        t = (d + f + w7 + 4249261313) & MASK
-        r = rot-left(t, 10)
-        d = (a + r) & MASK
-        f = a ^ (d | (MASK ^ b))
-        t = (c + f + w14 + 2792965006) & MASK
-        r = rot-left(t, 15)
-        c = (d + r) & MASK
-        f = d ^ (c | (MASK ^ a))
-        t = (b + f + w5 + 1200080426) & MASK
-        r = rot-left(t, 21)
-        b = (c + r) & MASK
-        f = c ^ (b | (MASK ^ d))
-        t = (a + f + w12 + 1804603682) & MASK
-        r = rot-left(t, 6)
-        a = (b + r) & MASK
-        f = b ^ (a | (MASK ^ c))
-        t = (d + f + w3 + 3250441966) & MASK
-        r = rot-left(t, 10)
-        d = (a + r) & MASK
-        f = a ^ (d | (MASK ^ b))
-        t = (c + f + w10 + 4294925233) & MASK
-        r = rot-left(t, 15)
-        c = (d + r) & MASK
-        f = d ^ (c | (MASK ^ a))
-        t = (b + f + w1 + 3905402710) & MASK
-        r = rot-left(t, 21)
-        b = (c + r) & MASK
-        f = c ^ (b | (MASK ^ d))
-        t = (a + f + w8 + 1770035416) & MASK
-        r = rot-left(t, 6)
-        a = (b + r) & MASK
-        f = b ^ (a | (MASK ^ c))
-        t = (d + f + w15 + 1236535329) & MASK
-        r = rot-left(t, 10)
-        d = (a + r) & MASK
-        f = a ^ (d | (MASK ^ b))
-        t = (c + f + w6 + 2821735955) & MASK
-        r = rot-left(t, 15)
-        c = (d + r) & MASK
-        f = d ^ (c | (MASK ^ a))
-        t = (b + f + w13 + 4254626195) & MASK
-        r = rot-left(t, 21)
-        b = (c + r) & MASK
-        f = c ^ (b | (MASK ^ d))
-        t = (a + f + w4 + 4118548399) & MASK
-        r = rot-left(t, 6)
-        a = (b + r) & MASK
-        f = b ^ (a | (MASK ^ c))
-        t = (d + f + w11 + 2304563134) & MASK
-        r = rot-left(t, 10)
-        d = (a + r) & MASK
-        f = a ^ (d | (MASK ^ b))
-        t = (c + f + w2 + 606105819) & MASK
-        r = rot-left(t, 15)
-        c = (d + r) & MASK
-        f = d ^ (c | (MASK ^ a))
-        t = (b + f + w9 + 2336552879) & MASK
-        r = rot-left(t, 21)
-        b = (c + r) & MASK
-
-        // 累加回初始值
-        h0 = (h0 + a) & MASK
-        h1 = (h1 + b) & MASK
-        h2 = (h2 + c) & MASK
-        h3 = (h3 + d) & MASK
-        bidx = bidx + 1
+    // 暫存到 wi 變數
+    if wi == 0 {
+        w0 = word
+    } elif wi == 1 {
+        w1 = word
+    } elif wi == 2 {
+        w2 = word
+    } elif wi == 3 {
+        w3 = word
+    } elif wi == 4 {
+        w4 = word
+    } elif wi == 5 {
+        w5 = word
+    } elif wi == 6 {
+        w6 = word
+    } elif wi == 7 {
+        w7 = word
+    } elif wi == 8 {
+        w8 = word
+    } elif wi == 9 {
+        w9 = word
+    } elif wi == 10 {
+        w10 = word
+    } elif wi == 11 {
+        w11 = word
+    } elif wi == 12 {
+        w12 = word
+    } elif wi == 13 {
+        w13 = word
+    } elif wi == 14 {
+        w14 = word
+    } else {
+        w15 = word
     }
-
-    // 輸出 16 位元組（小端序 32-bit 字）
-    out[0] = h0 & 255
-    out[1] = (h0 >> 8) & 255
-    out[2] = (h0 >> 16) & 255
-    out[3] = (h0 >> 24) & 255
-    out[4] = h1 & 255
-    out[5] = (h1 >> 8) & 255
-    out[6] = (h1 >> 16) & 255
-    out[7] = (h1 >> 24) & 255
-    out[8] = h2 & 255
-    out[9] = (h2 >> 8) & 255
-    out[10] = (h2 >> 16) & 255
-    out[11] = (h2 >> 24) & 255
-    out[12] = h3 & 255
-    out[13] = (h3 >> 8) & 255
-    out[14] = (h3 >> 16) & 255
-    out[15] = (h3 >> 24) & 255
+    wi = wi + 1
 }
+
+// MD5 壓縮函數（64 輪）
+a = h0
+b = h1
+c = h2
+d = h3
+r = 0
+
+t = 0
+
+// 第 1 輪 (F)
+f = (b & c) | ((MASK ^ b) & d)
+t = (a + f + w0 + 3614090360) & MASK
+rotl32(t, 7, r)
+a = (b + r) & MASK
+f = (a & b) | ((MASK ^ a) & c)
+t = (d + f + w1 + 3905402710) & MASK
+rotl32(t, 12, r)
+d = (a + r) & MASK
+f = (d & a) | ((MASK ^ d) & b)
+t = (c + f + w2 + 606105819) & MASK
+rotl32(t, 17, r)
+c = (d + r) & MASK
+f = (c & d) | ((MASK ^ c) & a)
+t = (b + f + w3 + 3250441966) & MASK
+rotl32(t, 22, r)
+b = (c + r) & MASK
+f = (b & c) | ((MASK ^ b) & d)
+t = (a + f + w4 + 4118548399) & MASK
+rotl32(t, 7, r)
+a = (b + r) & MASK
+f = (a & b) | ((MASK ^ a) & c)
+t = (d + f + w5 + 1200080426) & MASK
+rotl32(t, 12, r)
+d = (a + r) & MASK
+f = (d & a) | ((MASK ^ d) & b)
+t = (c + f + w6 + 2821735955) & MASK
+rotl32(t, 17, r)
+c = (d + r) & MASK
+f = (c & d) | ((MASK ^ c) & a)
+t = (b + f + w7 + 4249261313) & MASK
+rotl32(t, 22, r)
+b = (c + r) & MASK
+f = (b & c) | ((MASK ^ b) & d)
+t = (a + f + w8 + 1770035416) & MASK
+rotl32(t, 7, r)
+a = (b + r) & MASK
+f = (a & b) | ((MASK ^ a) & c)
+t = (d + f + w9 + 2336552879) & MASK
+rotl32(t, 12, r)
+d = (a + r) & MASK
+f = (d & a) | ((MASK ^ d) & b)
+t = (c + f + w10 + 4294925233) & MASK
+rotl32(t, 17, r)
+c = (d + r) & MASK
+f = (c & d) | ((MASK ^ c) & a)
+t = (b + f + w11 + 2304563134) & MASK
+rotl32(t, 22, r)
+b = (c + r) & MASK
+f = (b & c) | ((MASK ^ b) & d)
+t = (a + f + w12 + 1804603682) & MASK
+rotl32(t, 7, r)
+a = (b + r) & MASK
+f = (a & b) | ((MASK ^ a) & c)
+t = (d + f + w13 + 4254626195) & MASK
+rotl32(t, 12, r)
+d = (a + r) & MASK
+f = (d & a) | ((MASK ^ d) & b)
+t = (c + f + w14 + 2792965006) & MASK
+rotl32(t, 17, r)
+c = (d + r) & MASK
+f = (c & d) | ((MASK ^ c) & a)
+t = (b + f + w15 + 1236535329) & MASK
+rotl32(t, 22, r)
+b = (c + r) & MASK
+
+// 第 2 輪 (G)
+f = (b & d) | (c & (MASK ^ d))
+t = (a + f + w1 + 3905402710) & MASK
+rotl32(t, 5, r)
+a = (b + r) & MASK
+f = (a & c) | (b & (MASK ^ c))
+t = (d + f + w6 + 2821735955) & MASK
+rotl32(t, 9, r)
+d = (a + r) & MASK
+f = (d & b) | (a & (MASK ^ b))
+t = (c + f + w11 + 2304563134) & MASK
+rotl32(t, 14, r)
+c = (d + r) & MASK
+f = (c & a) | (d & (MASK ^ a))
+t = (b + f + w0 + 3614090360) & MASK
+rotl32(t, 20, r)
+b = (c + r) & MASK
+f = (b & d) | (c & (MASK ^ d))
+t = (a + f + w5 + 1200080426) & MASK
+rotl32(t, 5, r)
+a = (b + r) & MASK
+f = (a & c) | (b & (MASK ^ c))
+t = (d + f + w10 + 4294925233) & MASK
+rotl32(t, 9, r)
+d = (a + r) & MASK
+f = (d & b) | (a & (MASK ^ b))
+t = (c + f + w15 + 1236535329) & MASK
+rotl32(t, 14, r)
+c = (d + r) & MASK
+f = (c & a) | (d & (MASK ^ a))
+t = (b + f + w4 + 4118548399) & MASK
+rotl32(t, 20, r)
+b = (c + r) & MASK
+f = (b & d) | (c & (MASK ^ d))
+t = (a + f + w9 + 2336552879) & MASK
+rotl32(t, 5, r)
+a = (b + r) & MASK
+f = (a & c) | (b & (MASK ^ c))
+t = (d + f + w14 + 2792965006) & MASK
+rotl32(t, 9, r)
+d = (a + r) & MASK
+f = (d & b) | (a & (MASK ^ b))
+t = (c + f + w3 + 3250441966) & MASK
+rotl32(t, 14, r)
+c = (d + r) & MASK
+f = (c & a) | (d & (MASK ^ a))
+t = (b + f + w8 + 1770035416) & MASK
+rotl32(t, 20, r)
+b = (c + r) & MASK
+f = (b & d) | (c & (MASK ^ d))
+t = (a + f + w13 + 4254626195) & MASK
+rotl32(t, 5, r)
+a = (b + r) & MASK
+f = (a & c) | (b & (MASK ^ c))
+t = (d + f + w2 + 606105819) & MASK
+rotl32(t, 9, r)
+d = (a + r) & MASK
+f = (d & b) | (a & (MASK ^ b))
+t = (c + f + w7 + 4249261313) & MASK
+rotl32(t, 14, r)
+c = (d + r) & MASK
+f = (c & a) | (d & (MASK ^ a))
+t = (b + f + w12 + 1804603682) & MASK
+rotl32(t, 20, r)
+b = (c + r) & MASK
+
+// 第 3 輪 (H)
+f = b ^ c ^ d
+t = (a + f + w5 + 1200080426) & MASK
+rotl32(t, 4, r)
+a = (b + r) & MASK
+f = a ^ b ^ c
+t = (d + f + w8 + 1770035416) & MASK
+rotl32(t, 11, r)
+d = (a + r) & MASK
+f = d ^ a ^ b
+t = (c + f + w11 + 2304563134) & MASK
+rotl32(t, 16, r)
+c = (d + r) & MASK
+f = c ^ d ^ a
+t = (b + f + w14 + 2792965006) & MASK
+rotl32(t, 23, r)
+b = (c + r) & MASK
+f = b ^ c ^ d
+t = (a + f + w1 + 3905402710) & MASK
+rotl32(t, 4, r)
+a = (b + r) & MASK
+f = a ^ b ^ c
+t = (d + f + w4 + 4118548399) & MASK
+rotl32(t, 11, r)
+d = (a + r) & MASK
+f = d ^ a ^ b
+t = (c + f + w7 + 4249261313) & MASK
+rotl32(t, 16, r)
+c = (d + r) & MASK
+f = c ^ d ^ a
+t = (b + f + w10 + 4294925233) & MASK
+rotl32(t, 23, r)
+b = (c + r) & MASK
+f = b ^ c ^ d
+t = (a + f + w13 + 4254626195) & MASK
+rotl32(t, 4, r)
+a = (b + r) & MASK
+f = a ^ b ^ c
+t = (d + f + w0 + 3614090360) & MASK
+rotl32(t, 11, r)
+d = (a + r) & MASK
+f = d ^ a ^ b
+t = (c + f + w3 + 3250441966) & MASK
+rotl32(t, 16, r)
+c = (d + r) & MASK
+f = c ^ d ^ a
+t = (b + f + w6 + 2821735955) & MASK
+rotl32(t, 23, r)
+b = (c + r) & MASK
+f = b ^ c ^ d
+t = (a + f + w9 + 2336552879) & MASK
+rotl32(t, 4, r)
+a = (b + r) & MASK
+f = a ^ b ^ c
+t = (d + f + w12 + 1804603682) & MASK
+rotl32(t, 11, r)
+d = (a + r) & MASK
+f = d ^ a ^ b
+t = (c + f + w15 + 1236535329) & MASK
+rotl32(t, 16, r)
+c = (d + r) & MASK
+f = c ^ d ^ a
+t = (b + f + w2 + 606105819) & MASK
+rotl32(t, 23, r)
+b = (c + r) & MASK
+
+// 第 4 輪 (I)
+f = c ^ (b | (MASK ^ d))
+t = (a + f + w0 + 3614090360) & MASK
+rotl32(t, 6, r)
+a = (b + r) & MASK
+f = b ^ (a | (MASK ^ c))
+t = (d + f + w7 + 4249261313) & MASK
+rotl32(t, 10, r)
+d = (a + r) & MASK
+f = a ^ (d | (MASK ^ b))
+t = (c + f + w14 + 2792965006) & MASK
+rotl32(t, 15, r)
+c = (d + r) & MASK
+f = d ^ (c | (MASK ^ a))
+t = (b + f + w5 + 1200080426) & MASK
+rotl32(t, 21, r)
+b = (c + r) & MASK
+f = c ^ (b | (MASK ^ d))
+t = (a + f + w12 + 1804603682) & MASK
+rotl32(t, 6, r)
+a = (b + r) & MASK
+f = b ^ (a | (MASK ^ c))
+t = (d + f + w3 + 3250441966) & MASK
+rotl32(t, 10, r)
+d = (a + r) & MASK
+f = a ^ (d | (MASK ^ b))
+t = (c + f + w10 + 4294925233) & MASK
+rotl32(t, 15, r)
+c = (d + r) & MASK
+f = d ^ (c | (MASK ^ a))
+t = (b + f + w1 + 3905402710) & MASK
+rotl32(t, 21, r)
+b = (c + r) & MASK
+f = c ^ (b | (MASK ^ d))
+t = (a + f + w8 + 1770035416) & MASK
+rotl32(t, 6, r)
+a = (b + r) & MASK
+f = b ^ (a | (MASK ^ c))
+t = (d + f + w15 + 1236535329) & MASK
+rotl32(t, 10, r)
+d = (a + r) & MASK
+f = a ^ (d | (MASK ^ b))
+t = (c + f + w6 + 2821735955) & MASK
+rotl32(t, 15, r)
+c = (d + r) & MASK
+f = d ^ (c | (MASK ^ a))
+t = (b + f + w13 + 4254626195) & MASK
+rotl32(t, 21, r)
+b = (c + r) & MASK
+f = c ^ (b | (MASK ^ d))
+t = (a + f + w4 + 4118548399) & MASK
+rotl32(t, 6, r)
+a = (b + r) & MASK
+f = b ^ (a | (MASK ^ c))
+t = (d + f + w11 + 2304563134) & MASK
+rotl32(t, 10, r)
+d = (a + r) & MASK
+f = a ^ (d | (MASK ^ b))
+t = (c + f + w2 + 606105819) & MASK
+rotl32(t, 15, r)
+c = (d + r) & MASK
+f = d ^ (c | (MASK ^ a))
+t = (b + f + w9 + 2336552879) & MASK
+rotl32(t, 21, r)
+b = (c + r) & MASK
+
+// 累加回初始值
+h0 = (h0 + a) & MASK
+h1 = (h1 + b) & MASK
+h2 = (h2 + c) & MASK
+h3 = (h3 + d) & MASK
+bidx = bidx + 1
+
+// 輸出 16 位元組（小端序 32-bit 字）
+out[0] = h0 & 255
+out[1] = (h0 >> 8) & 255
+out[2] = (h0 >> 16) & 255
+out[3] = (h0 >> 24) & 255
+out[4] = h1 & 255
+out[5] = (h1 >> 8) & 255
+out[6] = (h1 >> 16) & 255
+out[7] = (h1 >> 24) & 255
+out[8] = h2 & 255
+out[9] = (h2 >> 8) & 255
+out[10] = (h2 >> 16) & 255
+out[11] = (h2 >> 24) & 255
+out[12] = h3 & 255
+out[13] = (h3 >> 8) & 255
+out[14] = (h3 >> 16) & 255
+out[15] = (h3 >> 24) & 255

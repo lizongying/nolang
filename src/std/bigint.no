@@ -14,11 +14,11 @@
 // MASK: 32-bit 遮罩
 MASK = 4294967295
 
-// BASE: 每個 limb 的基數
+// BASE: 2^32
 BASE = 4294967296
 
 // ═══════════════════════════════════════════════
-// 結構定義
+// 型別定義
 // ═══════════════════════════════════════════════
 
 // bigint: 任意精度整數
@@ -27,95 +27,70 @@ bigint {
     limbs []i64
     len i64
 }
-// 1 = 正數或零, -1 = 負數
-// base 2^32 little-endian limbs
-// 有效 limb 數
 
 // ═══════════════════════════════════════════════
 // 建構與初始化
 // ═══════════════════════════════════════════════
 
 // from-i64: 從 i64 建立 bigint
-from-i64 = (v i64, out bigint) {
+from-i64 = (v i64) (out bigint) {
     if v < 0 {
         out.sign = -1
         v = 0 - v
     } else {
         out.sign = 1
     }
-    out.limbs[0] = v & MASK
-    out.limbs[1] = v >> 32
-    if out.limbs[1] == 0 {
-        out.len = 1
-    } else {
-        out.len = 2
-    }
-    normalize(out)
+    out.limbs[0] = v
+    out.len = 1
 }
 
 // from-u64: 從無號 i64 建立 bigint（永遠正數）
-from-u64 = (v i64, out bigint) {
+from-u64 = (v i64) (out bigint) {
     out.sign = 1
-    out.limbs[0] = v & MASK
-    out.limbs[1] = v >> 32
-    if out.limbs[1] == 0 {
-        out.len = 1
-    } else {
-        out.len = 2
-    }
-    normalize(out)
+    out.limbs[0] = v
+    out.len = 1
 }
 
 // zero: 建立零值 bigint
-zero = (out bigint) {
+zero = () (out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
 }
 
 // one: 建立壹值 bigint
-one = (out bigint) {
+one = () (out bigint) {
     out.sign = 1
     out.limbs[0] = 1
     out.len = 1
 }
 
-// ═══════════════════════════════════════════════
-// 規範化
-// ═══════════════════════════════════════════════
-
-// normalize: 移除前導零 limb，修正零的符號
-normalize = (a bigint) {
-    for a.len > 1 && a.limbs[a.len - 1] == 0 {
-        a.len = a.len - 1
-    }
-    if a.len == 1 && a.limbs[0] == 0 {
-        a.sign = 1
+// copy: 深度複製 bigint
+copy = (a bigint) (out bigint) {
+    out.sign = a.sign
+    out.len = a.len
+    i = 0
+    for i < a.len {
+        out.limbs[i] = a.limbs[i]
+        i = i + 1
     }
 }
 
 // ═══════════════════════════════════════════════
-// 比較
+// 比較運算
 // ═══════════════════════════════════════════════
 
-// cmp: 比較兩個 bigint
-// 回傳 1 = a > b, 0 = a == b, -1 = a < b
+// cmp: 比較 a 和 b（1=正, 0=等, -1=負）
 cmp = (a bigint, b bigint) (r i64) {
     if a.sign != b.sign {
-        if a.sign > b.sign {
-            r = 1
-        } else {
-            r = -1
-        }
+        r = a.sign
         return
     }
-    r = abs-cmp(a, b)
-    if a.sign == -1 {
-        r = 0 - r
-    }
+    result = abs-cmp(a, b)
+    r = result * a.sign
 }
 
-// abs-cmp: 比較絕對值（內部用）
+// abs-cmp: 比較 |a| 和 |b|
 abs-cmp = (a bigint, b bigint) (r i64) {
     if a.len > b.len {
         r = 1
@@ -127,13 +102,11 @@ abs-cmp = (a bigint, b bigint) (r i64) {
     }
     i = a.len - 1
     for i >= 0 {
-        al = a.limbs[i] & MASK
-        bl = b.limbs[i] & MASK
-        if al > bl {
+        if a.limbs[i] > b.limbs[i] {
             r = 1
             return
         }
-        if al < bl {
+        if a.limbs[i] < b.limbs[i] {
             r = -1
             return
         }
@@ -142,138 +115,147 @@ abs-cmp = (a bigint, b bigint) (r i64) {
     r = 0
 }
 
-// is-zero: 判斷是否為零
-is-zero = (a bigint) (yes i64) {
-    yes = 0
+// is-zero: 檢查是否為零
+is-zero = (a bigint) (r i64) {
     if a.len == 1 && a.limbs[0] == 0 {
-        yes = 1
+        r = 1
+        return
     }
+    r = 0
 }
 
-// is-neg: 判斷是否為負數
-is-neg = (a bigint) (yes i64) {
-    yes = 0
+// is-neg: 檢查是否為負數
+is-neg = (a bigint) (r i64) {
     if a.sign == -1 {
-        if a.len == 1 && a.limbs[0] == 0 {
-            yes = 0
-        } else {
-            yes = 1
-        }
+        r = 1
+        return
     }
+    r = 0
 }
 
-// is-pos: 判斷是否為正數
-is-pos = (a bigint) (yes i64) {
-    yes = 0
+// is-pos: 檢查是否為正數
+is-pos = (a bigint) (r i64) {
     if a.sign == 1 {
-        if a.len == 1 && a.limbs[0] == 0 {
-            yes = 0
-        } else {
-            yes = 1
+        az = is-zero(a)
+        if az == 0 {
+            r = 1
+            return
         }
     }
+    r = 0
 }
 
-// eq: 判斷是否相等
-eq = (a bigint, b bigint) (yes i64) {
-    r = cmp(a, b)
-    yes = 0
-    if r == 0 {
-        yes = 1
+// eq: a == b ?
+eq = (a bigint, b bigint) (r i64) {
+    if a.sign != b.sign {
+        r = 0
+        return
     }
+    if a.len != b.len {
+        r = 0
+        return
+    }
+    i = a.len - 1
+    for i >= 0 {
+        if a.limbs[i] & MASK != b.limbs[i] & MASK {
+            r = 0
+            return
+        }
+        i = i - 1
+    }
+    r = 1
 }
 
 // ═══════════════════════════════════════════════
-// 加法
+// 加法與減法
 // ═══════════════════════════════════════════════
 
-// add: c = a + b
-add = (a bigint, b bigint, c bigint) {
+// add: a + b
+add = (a bigint, b bigint) (c bigint) {
     if a.sign == b.sign {
         abs-add(a, b, c)
         c.sign = a.sign
-    } else {
-        r = abs-cmp(a, b)
-        if r >= 0 {
-            abs-sub(a, b, c)
-            c.sign = a.sign
-        } else {
-            abs-sub(b, a, c)
-            c.sign = b.sign
-        }
+        return
     }
+    cresult = abs-cmp(a, b)
+    if cresult >= 0 {
+        abs-sub(a, b, c)
+        c.sign = a.sign
+    } else {
+        abs-sub(b, a, c)
+        c.sign = b.sign
+    }
+}
+
+// abs-add: |a| + |b|（忽略正負號）
+abs-add = (a bigint, b bigint, c bigint) {
+    carry = 0
+    i = 0
+    al = a.len
+    bl = b.len
+    cl = al
+    if bl > al {
+        cl = bl
+    }
+    c.len = cl + 1
+    for i < cl {
+        av = 0
+        if i < al {
+            av = a.limbs[i]
+        }
+        bv = 0
+        if i < bl {
+            bv = b.limbs[i]
+        }
+        s = av + bv + carry
+        c.limbs[i] = s & MASK
+        carry = s >> 32
+        i = i + 1
+    }
+    c.limbs[cl] = carry
     normalize(c)
 }
 
-// abs-add: 絕對值加法 c = |a| + |b|
-abs-add = (a bigint, b bigint, c bigint) {
-    carry = 0
-    n = a.len
-    if b.len > n {
-        n = b.len
-    }
-    i = 0
-    for i < n {
-        sum = carry
-        if i < a.len {
-            sum = sum + (a.limbs[i] & MASK)
-        }
-        if i < b.len {
-            sum = sum + (b.limbs[i] & MASK)
-        }
-        c.limbs[i] = sum & MASK
-        carry = sum >> 32
-        i = i + 1
-    }
-    if carry != 0 {
-        c.limbs[i] = carry
-        c.len = i + 1
-    } else {
-        c.len = i
-    }
-}
-
-// ═══════════════════════════════════════════════
-// 減法
-// ═══════════════════════════════════════════════
-
-// sub: c = a - b
+// sub: a - b
 sub = (a bigint, b bigint, c bigint) {
     if a.sign != b.sign {
         abs-add(a, b, c)
         c.sign = a.sign
-    } else {
-        r = abs-cmp(a, b)
-        if r >= 0 {
-            abs-sub(a, b, c)
-            c.sign = a.sign
-        } else {
-            abs-sub(b, a, c)
-            c.sign = 0 - a.sign
-        }
+        return
     }
-    normalize(c)
+    cresult = abs-cmp(a, b)
+    if cresult >= 0 {
+        abs-sub(a, b, c)
+        c.sign = a.sign
+    } else {
+        abs-sub(b, a, c)
+        c.sign = -a.sign
+    }
 }
 
-// abs-sub: 絕對值減法 c = |a| - |b|（需 |a| >= |b|）
+// abs-sub: |a| - |b|（假設 |a| >= |b|）
 abs-sub = (a bigint, b bigint, c bigint) {
     borrow = 0
     i = 0
-    for i < a.len {
-        diff = (a.limbs[i] & MASK) - borrow
-        if i < b.len {
-            diff = diff - (b.limbs[i] & MASK)
+    al = a.len
+    bl = b.len
+    c.len = al
+    for i < al {
+        av = a.limbs[i]
+        bv = 0
+        if i < bl {
+            bv = b.limbs[i]
         }
-        if diff < 0 {
-            diff = diff + BASE
+        d = av - borrow - bv
+        if d < 0 {
+            d = d + BASE
             borrow = 1
         } else {
             borrow = 0
         }
-        c.limbs[i] = diff & MASK
+        c.limbs[i] = d & MASK
         i = i + 1
     }
-    c.len = a.len
     normalize(c)
 }
 
@@ -281,146 +263,182 @@ abs-sub = (a bigint, b bigint, c bigint) {
 // 乘法
 // ═══════════════════════════════════════════════
 
-// mul: c = a * b
-mul = (a bigint, b bigint, c bigint) {
-    n = a.len + b.len
+// mul: a * b
+mul = (a bigint, b bigint) (c bigint) {
+    al = a.len
+    bl = b.len
+    c.len = al + bl
     i = 0
-    for i < n {
+    for i < al + bl {
         c.limbs[i] = 0
         i = i + 1
     }
     i = 0
-    for i < a.len {
-        if a.limbs[i] == 0 {
-            i = i + 1
-            continue
-        }
+    for i < al {
         carry = 0
+        av = a.limbs[i] & MASK
         j = 0
-        for j < b.len {
-            prod = (c.limbs[i + j] & MASK) + (a.limbs[i] & MASK) * (b.limbs[j] & MASK) + carry
-            c.limbs[i + j] = prod & MASK
-            carry = prod >> 32
+        for j < bl {
+            bv = b.limbs[j] & MASK
+            p = av * bv + c.limbs[i + j] + carry
+            c.limbs[i + j] = p & MASK
+            carry = p >> 32
             j = j + 1
         }
-        c.limbs[i + b.len] = carry & MASK
+        c.limbs[i + bl] = carry
         i = i + 1
     }
-    c.len = n
     c.sign = a.sign * b.sign
     normalize(c)
 }
 
-// mul-i64: c = a * v（小整數乘法）
+// mul-i64: a * v（小整數乘法）
 mul-i64 = (a bigint, v i64, c bigint) {
-    neg = 0
+    c.sign = a.sign
     if v < 0 {
-        neg = 1
+        c.sign = -c.sign
         v = 0 - v
     }
+    c.len = a.len + 1
     carry = 0
     i = 0
     for i < a.len {
-        prod = (a.limbs[i] & MASK) * v + carry
-        c.limbs[i] = prod & MASK
-        carry = prod >> 32
+        p = (a.limbs[i] & MASK) * (v & MASK) + carry
+        c.limbs[i] = p & MASK
+        carry = p >> 32
         i = i + 1
     }
-    if carry != 0 {
-        c.limbs[i] = carry
-        c.len = i + 1
-    } else {
-        c.len = i
-    }
-    c.sign = a.sign
-    if neg == 1 {
-        c.sign = 0 - c.sign
-    }
+    c.limbs[a.len] = carry
     normalize(c)
 }
 
 // ═══════════════════════════════════════════════
-// 除法與取模
+// 除法
 // ═══════════════════════════════════════════════
 
-// div-mod: q = a / b, r = a % b
-div-mod = (a bigint, b bigint, q bigint, r bigint) {
-    zb = is-zero(b)
-    if zb == 1 {
-        zero(q)
-        zero(r)
+// div-mod: a / b, 同時傳回商和餘數
+div-mod = (a bigint, b bigint) (q bigint, r bigint) {
+    if b.len == 1 && b.limbs[0] == 0 {
+        q = zero()
+        r = zero()
         return
     }
-    za = is-zero(a)
-    if za == 1 {
-        zero(q)
-        zero(r)
+    cresult = abs-cmp(a, b)
+    if cresult < 0 {
+        q = zero()
+        r = copy(a)
         return
     }
-    ac = abs-cmp(a, b)
-    if ac < 0 {
-        zero(q)
-        copy(a, r)
+    if cresult == 0 {
+        q = one()
+        q.sign = a.sign * b.sign
+        r = zero()
         return
     }
-    if ac == 0 {
-        one(q)
-        zero(r)
-        if a.sign != b.sign {
-            q.sign = -1
+
+    q.len = a.len - b.len + 1
+    i = 0
+    for i < q.len {
+        q.limbs[i] = 0
+        i = i + 1
+    }
+
+    bl = b.len
+    bt = b.limbs[bl - 1] & MASK
+    shift = 0
+    tmp = bt
+    for tmp < 4294967296 / 2 {
+        tmp = tmp << 1
+        shift = shift + 1
+    }
+    if shift > 0 {
+        bt = bt << shift
+    }
+
+    norm-a-len = a.len + 1
+    norm-a = bigint{}
+    norm-a.len = norm-a-len
+    norm-a.sign = 1
+    i = 0
+    for i < norm-a-len {
+        av = 0
+        if i < a.len {
+            av = a.limbs[i]
         }
-        return
+        norm-a.limbs[i] = av
+        i = i + 1
     }
-    q-sign = a.sign * b.sign
-    r-sign = a.sign
-    zero(r)
-    zero(q)
-    top = a.limbs[a.len - 1] & MASK
-    lead = 0
-    tmp = top
-    while tmp != 0 {
-        tmp = tmp >> 1
-        lead = lead + 1
-    }
-    bits = (a.len - 1) * 32 + lead
-    i = bits - 1
-    for i >= 0 {
-        shl1(r)
-        limb = i / 32
-        bit-pos = i % 32
-        a-bit = (a.limbs[limb] >> bit-pos) & 1
-        r.limbs[0] = r.limbs[0] | a-bit
-        rc = abs-cmp(r, b)
-        if rc >= 0 {
-            abs-sub(r, b, r)
-            q-limb = i / 32
-            q-bit = i % 32
-            q.limbs[q-limb] = q.limbs[q-limb] | (1 << q-bit)
+    if shift > 0 {
+        carry = 0
+        i = 0
+        for i < norm-a-len {
+            v = (norm-a.limbs[i] & MASK) << shift | carry
+            norm-a.limbs[i] = v & MASK
+            carry = v >> 32
+            i = i + 1
         }
-        i = i - 1
     }
-    q.len = (bits / 32) + 1
+
+    qi = q.len - 1
+    for qi >= 0 {
+        an = norm-a.limbs[qi + bl] & MASK
+        an1 = norm-a.limbs[qi + bl - 1] & MASK
+        an2 = norm-a.limbs[qi + bl - 2] & MASK
+        qd = an * BASE + an1
+        if bt != 0 {
+            qd = qd / bt
+        }
+        qd = qd & 4294967295
+        if qd > BASE / 2 {
+            qd = BASE / 2
+        }
+
+        carry = 0
+        bj = 0
+        for bj < bl {
+            bv = b.limbs[bj] & MASK
+            p = qd * bv
+            subval = (norm-a.limbs[qi + bj] & MASK) - (p & MASK) - carry
+            norm-a.limbs[qi + bj] = subval & MASK
+            carry = (p >> 32) - (subval >> 32)
+            bj = bj + 1
+        }
+        subval = (norm-a.limbs[qi + bl] & MASK) - carry
+        norm-a.limbs[qi + bl] = subval & MASK
+
+        if subval < 0 {
+            qd = qd - 1
+            carry = 0
+            bj = 0
+            for bj < bl {
+                s = (norm-a.limbs[qi + bj] & MASK) + (b.limbs[bj] & MASK) + carry
+                norm-a.limbs[qi + bj] = s & MASK
+                carry = s >> 32
+                bj = bj + 1
+            }
+            norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry
+        }
+
+        q.limbs[qi] = qd
+        qi = qi - 1
+    }
+
+    q.sign = a.sign * b.sign
     normalize(q)
+
+    r.len = b.len
+    r.sign = a.sign
+    i = 0
+    for i < b.len {
+        r.limbs[i] = norm-a.limbs[i]
+        i = i + 1
+    }
     normalize(r)
-    q.sign = q-sign
-    r.sign = r-sign
-    if r.sign == -1 {
-        rz = is-zero(r)
-        if rz == 1 {
-            r.sign = 1
-        }
-    }
-    if q.sign == -1 {
-        qz = is-zero(q)
-        if qz == 1 {
-            q.sign = 1
-        }
-    }
 }
 
 // mod: r = a % b
 mod = (a bigint, b bigint, r bigint) {
-    div-mod(a, b, r, r)
+    q, r = div-mod(a, b)
 }
 
 // div-i64: q = a / v（小整數除法）
@@ -428,6 +446,7 @@ div-i64 = (a bigint, v i64, q bigint) {
     if v < 0 {
         v = 0 - v
     }
+    q.sign = a.sign
     rem = 0
     i = a.len - 1
     for i >= 0 {
@@ -437,7 +456,6 @@ div-i64 = (a bigint, v i64, q bigint) {
         i = i - 1
     }
     q.len = a.len
-    q.sign = a.sign
     normalize(q)
 }
 
@@ -461,53 +479,51 @@ mod-i64 = (a bigint, v i64) (r i64) {
 // ═══════════════════════════════════════════════
 
 // pow: c = a^n（n >= 0，非負整數冪）
-pow = (a bigint, n i64, c bigint) {
-    one(c)
+pow = (a bigint, n i64) (c bigint) {
+    c = one()
     if n == 0 {
         return
     }
-    base = bigint
-}
-copy(a, base)
-i = n
-for i > 0 {
-    if i & 1 == 1 {
-        mul(c, base, c)
+    base = bigint{}
+    base = copy(a)
+    i = n
+    for i > 0 {
+        if i & 1 == 1 {
+            c = mul(c, base)
+        }
+        base = mul(base, base)
+        i = i >> 1
     }
-    mul(base, base, base)
-    i = i >> 1
 }
 
 // mod-pow: r = base^exp mod modulus
 mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     mz = is-zero(modulus)
     if mz == 1 {
-        zero(r)
+        r = zero()
         return
     }
-    one(r)
-    b = bigint
-}
-copy(base, b)
-top = exp.limbs[exp.len - 1] & MASK
-lead = 0
-tmp = top
-while tmp != 0 {
-    tmp = tmp >> 1
-    lead = lead + 1
-}
-bits = (exp.len - 1) * 32 + lead
-i = bits - 1
-for i >= 0 {
-    mul(r, r, r)
-    div-mod(r, modulus, r, r)
-    e-limb = i / 32
-    e-bit = i % 32
-    if (exp.limbs[e-limb] >> e-bit) & 1 == 1 {
-        mul(r, b, r)
-        div-mod(r, modulus, r, r)
+    r = one()
+    b = bigint{}
+    b = copy(base)
+    top = exp.limbs[exp.len - 1] & MASK
+    lead = 0
+    tmp = top
+    while tmp != 0 {
+        tmp = tmp >> 1
+        lead = lead + 1
     }
-    i = i - 1
+    bits = (exp.len - 1) * 32 + lead
+    i = bits - 1
+    for i >= 0 {
+        r = mul(r, r)
+        elimb = i / 32
+        ebit = i % 32
+        if (exp.limbs[elimb] >> ebit) & 1 == 1 {
+            r = mul(r, b)
+        }
+        i = i - 1
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -516,74 +532,75 @@ for i >= 0 {
 
 // gcd: g = gcd(a, b)（歐幾里得演算法）
 gcd = (a bigint, b bigint, g bigint) {
-    x = bigint
+    x = bigint{}
+    x = copy(a)
+    y = bigint{}
+    y = copy(b)
+    x.sign = 1
+    y.sign = 1
+    yz = is-zero(y)
+    for yz == 0 {
+        mod(x, y, x)
+        tmp = bigint{}
+        tmp = copy(y)
+        y = copy(x)
+        x = copy(tmp)
+        yz = is-zero(y)
+    }
+    g = copy(x)
 }
-y = bigint
-
-copy(a, x)
-copy(b, y)
-x.sign = 1
-y.sign = 1
-yz = is-zero(y)
-for yz == 0 {
-    mod(x, y, x)
-    tmp = bigint
-}
-copy(y, tmp)
-copy(x, y)
-copy(tmp, x)
-yz = is-zero(y)
-copy(x, g)
 
 // lcm: l = lcm(a, b)
 lcm = (a bigint, b bigint, l bigint) {
     az = is-zero(a)
     bz = is-zero(b)
     if az == 1 || bz == 1 {
-        zero(l)
+        l = zero()
         return
     }
+    g = bigint{}
     gcd(a, b, g)
-    div-mod(a, g, tmp, tmp)
-    mul(tmp, b, l)
+    q, r = div-mod(a, g)
+    l = mul(q, b)
 }
 
 // ═══════════════════════════════════════════════
-// 移位
+// 移位運算
 // ═══════════════════════════════════════════════
 
-// shl1: a = a << 1（原地左移 1 位元）
+// shl1: a = a << 1
 shl1 = (a bigint) {
     carry = 0
     i = 0
     for i < a.len {
-        new-val = ((a.limbs[i] & MASK) << 1) | carry
-        carry = a.limbs[i] >> 31
-        a.limbs[i] = new-val & MASK
+        v = (a.limbs[i] & MASK) << 1 | carry
+        carry = v >> 32
+        a.limbs[i] = v & MASK
         i = i + 1
     }
-    if carry != 0 {
+    if carry > 0 {
         a.limbs[a.len] = carry
         a.len = a.len + 1
     }
 }
 
-// shr1: a = a >> 1（原地右移 1 位元）
+// shr1: a = a >> 1
 shr1 = (a bigint) {
-    carry = 0
     i = a.len - 1
     for i >= 0 {
-        new-val = (carry << 31) | ((a.limbs[i] & MASK) >> 1)
         carry = a.limbs[i] & 1
-        a.limbs[i] = new-val & MASK
+        a.limbs[i] = (a.limbs[i] >> 1) & MASK
+        if i > 0 && carry > 0 {
+            a.limbs[i - 1] = a.limbs[i - 1] | (1 << 31)
+        }
         i = i - 1
     }
     normalize(a)
 }
 
-// shl: c = a << n（左移 n 位元）
+// shl: c = a << n
 shl = (a bigint, n i64, c bigint) {
-    copy(a, c)
+    c = copy(a)
     i = 0
     for i < n {
         shl1(c)
@@ -591,9 +608,9 @@ shl = (a bigint, n i64, c bigint) {
     }
 }
 
-// shr: c = a >> n（右移 n 位元）
+// shr: c = a >> n
 shr = (a bigint, n i64, c bigint) {
-    copy(a, c)
+    c = copy(a)
     i = 0
     for i < n {
         shr1(c)
@@ -602,38 +619,15 @@ shr = (a bigint, n i64, c bigint) {
 }
 
 // ═══════════════════════════════════════════════
-// 複製與否定
+// 雜項
 // ═══════════════════════════════════════════════
 
-// copy: 複製 bigint
-copy = (a bigint, out bigint) {
-    out.sign = a.sign
-    i = 0
-    for i < a.len {
-        out.limbs[i] = a.limbs[i]
-        i = i + 1
-    }
-    out.len = a.len
-}
-
-// negate: out = -a
-negate = (a bigint, out bigint) {
-    copy(a, out)
-    z = is-zero(out)
-    if z == 0 {
-        out.sign = 0 - out.sign
+// normalize: 移除前導零，確保 len >= 1
+normalize = (a bigint) {
+    for a.len > 1 && a.limbs[a.len - 1] == 0 {
+        a.len = a.len - 1
     }
 }
-
-// abs: out = |a|
-abs = (a bigint, out bigint) {
-    copy(a, out)
-    out.sign = 1
-}
-
-// ═══════════════════════════════════════════════
-// 字串轉換
-// ═══════════════════════════════════════════════
 
 // to-str: 將 bigint 轉為十進制字串
 to-str = (a bigint, out str) (out-n i64) {
@@ -648,27 +642,27 @@ to-str = (a bigint, out str) (out-n i64) {
         out[0] = 45
         out-n = 1
     }
-    tmp = bigint
-}
-copy(a, tmp)
-tmp.sign = 1
-buf = '(256)'
-buf-n = 0
-for true {
-    tz = is-zero(tmp)
-    if tz == 1 {
-        break
+    tmp = bigint{}
+    tmp = copy(a)
+    tmp.sign = 1
+    buf = '(256)'
+    bufn = 0
+    for true {
+        tz = is-zero(tmp)
+        if tz == 1 {
+            break
+        }
+        d = mod-i64(tmp, 10)
+        buf[bufn] = d + 48
+        bufn = bufn + 1
+        div-i64(tmp, 10, tmp)
     }
-    d = mod-i64(tmp, 10)
-    buf[buf-n] = d + 48
-    buf-n = buf-n + 1
-    div-i64(tmp, 10, tmp)
-}
-j = buf-n - 1
-for j >= 0 {
-    out[out-n] = buf[j]
-    out-n = out-n + 1
-    j = j - 1
+    j = bufn - 1
+    for j >= 0 {
+        out[out-n] = buf[j]
+        out-n = out-n + 1
+        j = j - 1
+    }
 }
 
 // from-str: 從十進制字串建立 bigint
@@ -685,32 +679,32 @@ from-str = (s str, sn i64, out bigint) {
         pos = pos + 1
     }
     if pos < sn {
-        c = s[pos] & 255
-        if c == 45 {
+        if s[pos] == 45 {
             out.sign = -1
             pos = pos + 1
-        } elif c == 43 {
+        } elif s[pos] == 43 {
             pos = pos + 1
         }
     }
     for pos < sn {
         c = s[pos] & 255
-        if c < 48 || c > 57 {
-            break
+        if c >= 48 && c <= 57 {
+            mul-i64(out, 10, out)
+            add-i64(out, c - 48, out)
+            pos = pos + 1
+        } else {
+            pos = pos + 1
         }
-        mul-i64(out, 10, out)
-        add-i64(out, c - 48, out)
-        pos = pos + 1
     }
     normalize(out)
 }
 
 // add-i64: c = a + v（小整數加法）
 add-i64 = (a bigint, v i64, c bigint) {
-    tmp = bigint
+    tmp = bigint{}
+    tmp = from-i64(v)
+    c = add(a, tmp)
 }
-from-i64(v, tmp)
-add(a, tmp, c)
 
 // ═══════════════════════════════════════════════
 // 十六進制轉換
@@ -728,29 +722,26 @@ to-hex = (a bigint, out str) (out-n i64) {
     for i >= 0 {
         limb = a.limbs[i] & MASK
         if i == a.len - 1 {
-            if limb == 0 {
-                out[out-n] = 48
-                out-n = out-n + 1
-            } else {
-                started = 0
-                s = 28
-                for s >= 0 {
-                    nibble = (limb >> s) & 15
-                    if nibble != 0 || started == 1 {
+            if limb != 0 {
+                done = 0
+                shift = 28
+                for shift >= 0 {
+                    nibble = (limb >> shift) & 15
+                    if done == 1 || nibble != 0 {
+                        done = 1
                         out[out-n] = HEX[nibble]
                         out-n = out-n + 1
-                        started = 1
                     }
-                    s = s - 4
+                    shift = shift - 4
                 }
             }
         } else {
-            s = 28
-            for s >= 0 {
-                nibble = (limb >> s) & 15
+            shift = 28
+            for shift >= 0 {
+                nibble = (limb >> shift) & 15
                 out[out-n] = HEX[nibble]
                 out-n = out-n + 1
-                s = s - 4
+                shift = shift - 4
             }
         }
         i = i - 1
@@ -762,79 +753,20 @@ from-hex = (s str, sn i64, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
-    pos = 0
-    if sn > 0 {
-        c = s[0] & 255
-        if c == 45 {
-            out.sign = -1
-            pos = 1
-        }
-    }
-
-    // 跳過 hex 前綴（0x 或 0X）
-    if pos + 1 < sn {
-        c0 = s[pos] & 255
-        c1 = s[pos + 1] & 255
-        if c0 == 48 {
-            if c1 == 120 || c1 == 88 {
-                pos = pos + 2
-            }
-        }
-    }
-
-    // 計算有效 hex 位數
-    hex-start = pos
-    hex-count = 0
-    for pos < sn {
-        c = s[pos] & 255
-        v = -1
+    i = 0
+    for i < sn {
+        c = s[i] & 255
         if c >= 48 && c <= 57 {
-            v = c - 48
+            mul-i64(out, 16, out)
+            add-i64(out, c - 48, out)
+        } elif c >= 97 && c <= 102 {
+            mul-i64(out, 16, out)
+            add-i64(out, c - 87, out)
+        } elif c >= 65 && c <= 70 {
+            mul-i64(out, 16, out)
+            add-i64(out, c - 55, out)
         }
-        if c >= 65 && c <= 70 {
-            v = c - 65 + 10
-        }
-        if c >= 97 && c <= 102 {
-            v = c - 97 + 10
-        }
-        if v < 0 {
-            break
-        }
-
-        // 每累積 8 個 hex 位數合成一個 limb
-        mul-i64(out, 16, out)
-        add-i64(out, v, out)
-        hex-count = hex-count + 1
-        pos = pos + 1
+        i = i + 1
     }
-
     normalize(out)
-}
-
-// ═══════════════════════════════════════════════
-// 位元長度
-// ═══════════════════════════════════════════════
-
-// bit-len: 計算 bigint 的位元長度
-bit-len = (a bigint) (n i64) {
-    z = is-zero(a)
-    if z == 1 {
-        n = 0
-        return
-    }
-    top = a.limbs[a.len - 1] & MASK
-    n = (a.len - 1) * 32
-    while top != 0 {
-        top = top >> 1
-        n = n + 1
-    }
-}
-
-// byte-len: 計算 bigint 的位元組長度
-byte-len = (a bigint) (n i64) {
-    bl = bit-len(a)
-    n = bl / 8
-    if bl % 8 != 0 {
-        n = n + 1
-    }
 }
