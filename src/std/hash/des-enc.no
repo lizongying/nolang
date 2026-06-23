@@ -100,21 +100,20 @@ SHIFT-TBL = '\x01\x01\x02\x02\x02\x02\x02\x02\x01\x02\x02\x02\x02\x02\x02\x01'
 // permute: 根據排列表提取位元
 // input: 輸入值, tbl: 排列表字串, n: 輸出位元數
 // r: 輸出排列後的值
-permute=(input i64, tbl str, n i64, r i64) {
+permute = (input i64, tbl str, n i64) (r i64) {
     r = 0
     i = 0
-    i < n: {
-        pos = tbl[i] & 255
-        bit = (input >> pos) & 1
-        r = r | (bit << i)
-        i = i + 1
-    }
+    i < n
+    pos = tbl[i] & 255
+    bit = (input >> pos) & 1
+    r = r | (bit << i)
+    i = i + 1
 }
 
 // sbox-lookup: 查詢 S-box
 // input: 6 位元值 (0-63), box: S-box 字串 (64 位元組)
 // r: 輸出 4 位元值 (0-15)
-sbox-lookup=(input i64, box str, r i64) {
+sbox-lookup = (input i64, box str, r i64) {
     r = box[input & 63] & 15
 }
 
@@ -125,10 +124,13 @@ sbox-lookup=(input i64, box str, r i64) {
 // out: 32-bit 輸出
 f = (r i64, k i64, out i64) {
     er = 0; s0 = 0; s1 = 0; s2 = 0; s3 = 0; s4 = 0; s5 = 0; s6 = 0; s7 = 0
+
     // 擴展 R 到 48 位元
-    permute(r, E-TBL, 48, er)
+    er = permute(r, E-TBL, 48)
+
     // XOR 子金鑰
     x = er ^ k
+
     // S-box 替代（6→4 位元 × 8）
     sbox-lookup((x >> 42) & 63, SBOX1, s0)
     sbox-lookup((x >> 36) & 63, SBOX2, s1)
@@ -138,11 +140,16 @@ f = (r i64, k i64, out i64) {
     sbox-lookup((x >> 12) & 63, SBOX6, s5)
     sbox-lookup((x >> 6) & 63, SBOX7, s6)
     sbox-lookup(x & 63, SBOX8, s7)
+
     // 組合 32 位元
-    sb = (s0 << 28) | (s1 << 24) | (s2 << 20) | (s3 << 16) |
-         (s4 << 12) | (s5 << 8) | (s6 << 4) | s7
+    sb = (s0 << 28) |
+(s1 << 24) |
+(s2 << 20) |
+(s3 << 16) |
+(s4 << 12) | (s5 << 8) | (s6 << 4) | s7
+
     // P 排列
-    permute(sb, P-TBL, 32, out)
+    out = permute(sb, P-TBL, 32)
 }
 
 // ─── 金鑰排程 ──────────────────────────────────────
@@ -176,6 +183,7 @@ des-key-schedule = (key str, ks str) {
     round = 0
     round < 16: {
         shift = SHIFT-TBL[round] & 255
+
         // 左移 C 和 D
         cm = (1 << 28) - 1
         c = ((c << shift) | (c >> (28 - shift))) & cm
@@ -186,16 +194,16 @@ des-key-schedule = (key str, ks str) {
 
         // PC2 排列（56→48 位元）
         sk = 0
-        permute(cd, PC2-TBL, 48, sk)
+        sk = permute(cd, PC2-TBL, 48)
 
         // 儲存子金鑰（6 位元組 big-endian）
         off = round * 6
         ks[off] = (sk >> 40) & 255
-        ks[off+1] = (sk >> 32) & 255
-        ks[off+2] = (sk >> 24) & 255
-        ks[off+3] = (sk >> 16) & 255
-        ks[off+4] = (sk >> 8) & 255
-        ks[off+5] = sk & 255
+        ks[off + 1] = (sk >> 32) & 255
+        ks[off + 2] = (sk >> 24) & 255
+        ks[off + 3] = (sk >> 16) & 255
+        ks[off + 4] = (sk >> 8) & 255
+        ks[off + 5] = sk & 255
 
         round = round + 1
     }
@@ -206,7 +214,7 @@ des-key-schedule = (key str, ks str) {
 // des-block: DES 單區塊處理（加密）
 // in: 8-byte 輸入, out: 8-byte 輸出
 // ks: 96-byte 子金鑰
-des-block= (in str, n i64, ks str, out str) {
+des-block = (in str, n i64, ks str, out str) {
     // 將輸入轉為 64-bit
     block = 0
     i = 0
@@ -217,7 +225,8 @@ des-block= (in str, n i64, ks str, out str) {
 
     // IP 初始排列
     ip = 0; fout = 0
-    permute(block, IP-TBL, 64, ip)
+    ip = permute(block, IP-TBL, 64)
+
     // 分為 L（左 32）和 R（右 32）
     l = (ip >> 32) & 4294967295
     r = ip & 4294967295
@@ -227,9 +236,11 @@ des-block= (in str, n i64, ks str, out str) {
     round < 16: {
         sk-off = round * 6
         sk = 0
-        sk = (ks[sk-off] << 40) | (ks[sk-off+1] << 32) |
-             (ks[sk-off+2] << 24) | (ks[sk-off+3] << 16) |
-             (ks[sk-off+4] << 8) | ks[sk-off+5]
+        sk = (ks[sk-off] << 40) |
+(ks[sk-off + 1] << 32) |
+(ks[sk-off + 2] << 24) |
+(ks[sk-off + 3] << 16) |
+(ks[sk-off + 4] << 8) | ks[sk-off + 5]
 
         f(r, sk, fout)
         new-l = r
@@ -241,8 +252,9 @@ des-block= (in str, n i64, ks str, out str) {
 
     // 最後交換（L,R）
     pre-out = (r << 32) | l
+
     // FP 最終排列
-    permute(pre-out, FP-TBL, 64, fp)
+    fp = permute(pre-out, FP-TBL, 64)
 
     // 輸出 8 位元組
     i = 0

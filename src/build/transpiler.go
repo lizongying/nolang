@@ -1933,6 +1933,10 @@ func isValidVarName(name string) bool {
 func ValidateNaming(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
+		// Global constants/variables at top level allow uppercase names (e.g., SBOX)
+		if _, ok := stmt.(*parser.LetStatement); ok {
+			continue
+		}
 		results = append(results, checkNaming(stmt)...)
 	}
 	return results

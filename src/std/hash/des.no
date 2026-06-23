@@ -101,7 +101,7 @@ SHIFT-TBL = '\x01\x01\x02\x02\x02\x02\x02\x02\x01\x02\x02\x02\x02\x02\x02\x01'
 // permute: 根據排列表提取位元
 // input: 輸入值, tbl: 排列表字串, n: 輸出位元數
 // r: 輸出排列後的值
-permute = (input i64, tbl str, n i64, r i64) {
+permute = (input i64, tbl str, n i64) (r i64) {
     r = 0
     i = 0
     i < n
@@ -127,7 +127,7 @@ f = (r i64, k i64, out i64) {
     er = 0; s0 = 0; s1 = 0; s2 = 0; s3 = 0; s4 = 0; s5 = 0; s6 = 0; s7 = 0
 
     // 擴展 R 到 48 位元
-    permute(r, E-TBL, 48, er)
+    er = permute(r, E-TBL, 48)
 
     // XOR 子金鑰
     x = er ^ k
@@ -150,7 +150,7 @@ f = (r i64, k i64, out i64) {
 (s4 << 12) | (s5 << 8) | (s6 << 4) | s7
 
     // P 排列
-    permute(sb, P-TBL, 32, out)
+    out = permute(sb, P-TBL, 32)
 }
 
 // ─── 金鑰排程 ──────────────────────────────────────
@@ -195,7 +195,7 @@ des-key-schedule = (key str, ks str) {
 
         // PC2 排列（56→48 位元）
         sk = 0
-        permute(cd, PC2-TBL, 48, sk)
+        sk = permute(cd, PC2-TBL, 48)
 
         // 儲存子金鑰（6 位元組 big-endian）
         off = round * 6
@@ -226,7 +226,7 @@ des-block = (in str, n i64, ks str, encrypt i64, out str) {
 
     // IP 初始排列
     ip = 0; fout = 0
-    permute(block, IP-TBL, 64, ip)
+    ip = permute(block, IP-TBL, 64)
 
     // 分為 L（左 32）和 R（右 32）
     l = (ip >> 32) & 4294967295
@@ -259,7 +259,7 @@ des-block = (in str, n i64, ks str, encrypt i64, out str) {
     pre-out = (r << 32) | l
 
     // FP 最終排列
-    permute(pre-out, FP-TBL, 64, fp)
+    fp = permute(pre-out, FP-TBL, 64)
 
     // 輸出 8 位元組
     i = 0
