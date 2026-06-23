@@ -2232,6 +2232,11 @@ func (p *Parser) currentPrecedence() int {
 }
 
 func (p *Parser) parseExpression(precedence int) Expression {
+	// Skip newlines within expressions (multi-line array/slice literals, etc.)
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
 	var leftExp Expression
 
 	switch p.currentToken.Type {

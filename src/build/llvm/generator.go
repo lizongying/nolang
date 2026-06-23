@@ -211,6 +211,9 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if llvmType == "%str" || llvmType == "%str-smail" {
 				sb.WriteString(fmt.Sprintf("@%s = global %s zeroinitializer\n", name, llvmType))
 				g.globalVars[name] = true
+			} else if llvmType == "%arr" {
+				sb.WriteString(fmt.Sprintf("@%s = global %s zeroinitializer\n", name, llvmType))
+				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
 				if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
 					initVal := fmt.Sprintf("%d", intLit.Value)
