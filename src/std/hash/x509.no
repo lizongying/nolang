@@ -23,14 +23,14 @@
 // der-tag: 讀取 DER 標籤位元組
 // data: DER 編碼資料, pos: 位置
 // tag: 輸出標籤值
-der-tag = (data []byte, pos i64, tag i64) {
+der-tag = (data []byte, pos i64) (tag i64) {
     tag = data[pos] & 255
 }
 
 // der-len: 解碼 DER 長度
 // data: DER 編碼資料, pos: 位置（指向長度位元組）
 // len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
-der-len = (data []byte, pos i64, len i64, adv i64) {
+der-len = (data []byte, pos i64) (len i64, adv i64) {
     b = data[pos] & 255
     if b & 128 == 0 {
         // 短格式：長度 = b (0-127)
@@ -41,10 +41,10 @@ der-len = (data []byte, pos i64, len i64, adv i64) {
         n = b & 127
         len = 0
         i = 0
-        i < n: {
-            len = (len << 8) | (data[pos + 1 + i] & 255)
-            i = i + 1
-        }
+        i < n
+        len = (len << 8) | (data[pos + 1 + i] & 255)
+        i = i + 1
+    }
 
     adv = 1 + n
 }
@@ -56,9 +56,7 @@ der-len = (data []byte, pos i64, len i64, adv i64) {
 der-skip = (data []byte, n i64, pos i64, next i64) {
     // 跳過標籤（1 位元組）
     p = pos + 1
-
-    // 讀取長度
-    der-len(data, p, l, adv)
+    l, adv = der-len(data, p)
     p = p + adv
 
     // 跳過值
@@ -71,7 +69,7 @@ der-skip = (data []byte, n i64, pos i64, next i64) {
 // data: DER 編碼憑證, n: 總長度
 // start: 輸出 TBS 起始位置（含 SEQUENCE 標籤）
 // end: 輸出 TBS 結束位置（不含，即下個元素的起始）
-x509-tbs-range = (data []byte, n i64, start i64, end i64) {
+x509-tbs-range = (data []byte, n i64) (start i64, end i64) {
     // 驗證外層 SEQUENCE
     tag = data[0] & 255
     if tag != 48 {
@@ -79,13 +77,11 @@ x509-tbs-range = (data []byte, n i64, start i64, end i64) {
         end = 0
         return
     }
-
-    // 跳過外層 SEQUENCE 標籤 + 長度
-    der-len(data, 1, outer-len, adv)
+    outer-len, adv = der-len(data, 1)
 
     // 內層 SEQUENCE（TBSCertificate）從標籤開始
     start = 1 + adv
-    der-tag(data, start, inner-tag)
+    inner-tag = der-tag(data, start)
     if inner-tag != 48 {
         start = 0
         end = 0
@@ -98,8 +94,7 @@ x509-tbs-range = (data []byte, n i64, start i64, end i64) {
 // data: DER 編碼憑證, n: 總長度
 // serial: 輸出序號（0 表示無法提取）
 x509-serial = (data []byte, n i64, serial i64) {
-    // 找到 TBSCertificate
-    x509-tbs-range(data, n, tbs-start, tbs-end)
+    tbs-start, tbs-end = x509-tbs-range(data, n)
     if tbs-start == 0 {
         serial = 0
         return
@@ -107,24 +102,22 @@ x509-serial = (data []byte, n i64, serial i64) {
 
     // 跳過 TBS SEQUENCE 標籤 + 長度，進入內容
     p = tbs-start + 1
-    der-len(data, p, tbs-len, adv)
+    tbs-len, adv = der-len(data, p)
     p = p + adv
 
     // 檢查是否為 [0] EXPLICIT（版本，v2/v3 才有）
     // 現在應該是 INTEGER（序號）
-    der-tag(data, p, t)
+    t = der-tag(data, p)
     if t == 160 {
         // 跳過 [0] EXPLICIT 元素
         der-skip(data, n, p, p)
     }
-    der-tag(data, p, t)
+    t = der-tag(data, p)
     if t != 2 {
         serial = 0
         return
     }
-
-    // 讀取 INTEGER 長度
-    der-len(data, p + 1, int-len, adv)
+    int-len, adv = der-len(data, p + 1)
     if int-len > 8 {
         // 序號太大，無法放入 i64
         serial = 0
@@ -222,7 +215,7 @@ x509-rsa-e = (data []byte, n i64, e i64) {
         e = 0
         return
     }
-    der-len(data, rsa-start + 1, exp-len, adv)
+    exp-len, adv = der-len(data, rsa - start + 1)
     if exp-len > 8 {
         e = 0
         return
@@ -246,11 +239,11 @@ x509-rsa-e = (data []byte, n i64, e i64) {
 // 本函數處理完整的 SHA-256 填充和位元組→字轉換。
 
 x509-fingerprint = (data []byte, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
-    x509-tbs-range(data, n, tbs-start, tbs-end)
+    tbs-start, tbs-end = x509-tbs-range(data, n)
     if tbs-start == 0 {
         return
     }
-    MASK = 4294967295
+    mask = 4294967295
 
     // TBS 長度（位元組）
     tbs-len = tbs-end - tbs-start
@@ -274,7 +267,7 @@ x509-fingerprint = (data []byte, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64,
     w0 = 0; w1 = 0; w2 = 0; w3 = 0; w4 = 0; w5 = 0; w6 = 0; w7 = 0
     w8 = 0; w9 = 0; w10 = 0; w11 = 0; w12 = 0; w13 = 0; w14 = 0; w15 = 0
     bidx = 0
-    bidx < num-blocks: {
+    bidx < num-blocks
 
     // 將當前 64 位元組區塊轉換為 16 個 32-bit big-endian 字
     off = bidx * 64
@@ -287,163 +280,162 @@ x509-fingerprint = (data []byte, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64,
 
     wi = 0  // suppress unused warning
     wi < 16: {
-    boff = off + wi * 4  // 此字在 padded 訊息中的位元組偏移
+        boff = off + wi * 4  // 此字在 padded 訊息中的位元組偏移
 
-    // 組裝 4 個位元組 → 32-bit 大端字
-    b0 = 0
-    b1 = 0
-    b2 = 0  // 0x80 已放在 b0 或 b1
-    b3 = 0
+        // 組裝 4 個位元組 → 32-bit 大端字
+        b0 = 0
+        b1 = 0
+        b2 = 0  // 0x80 已放在 b0 或 b1
+        b3 = 0
 
-    // 位元組 0
-    if boff < tbs-len {
-        b0 = data[tbs-start + boff] & 255
-    } elif boff == tbs-len {
-        b0 = 128  // 0x80
-    } elif boff >= pad-len - 8 {
-        // 長度欄位（64-bit big-endian，在位元組偏移 pad-len-8 開始）
-        bit-len = tbs-len * 8
-        len-byte-idx = boff - (pad-len - 8)
-        if len-byte-idx == 0 {
-            b0 = (bit-len >> 56) & 255
-        } elif len-byte-idx == 1 {
-            b0 = (bit-len >> 48) & 255
-        } elif len-byte-idx == 2 {
-            b0 = (bit-len >> 40) & 255
-        } elif len-byte-idx == 3 {
-            b0 = (bit-len >> 32) & 255
-        } elif len-byte-idx == 4 {
-            b0 = (bit-len >> 24) & 255
-        } elif len-byte-idx == 5 {
-            b0 = (bit-len >> 16) & 255
-        } elif len-byte-idx == 6 {
-            b0 = (bit-len >> 8) & 255
-        } else {
-            b0 = bit-len & 255
+        // 位元組 0
+        if boff < tbs-len {
+            b0 = data[tbs-start + boff] & 255
+        } elif boff == tbs-len {
+            b0 = 128  // 0x80
+        } elif boff >= pad-len - 8 {
+            // 長度欄位（64-bit big-endian，在位元組偏移 pad-len-8 開始）
+            bit-len = tbs-len * 8
+            len-byte-idx = boff - (pad-len - 8)
+            if len-byte-idx == 0 {
+                b0 = (bit-len >> 56) & 255
+            } elif len-byte-idx == 1 {
+                b0 = (bit-len >> 48) & 255
+            } elif len-byte-idx == 2 {
+                b0 = (bit-len >> 40) & 255
+            } elif len-byte-idx == 3 {
+                b0 = (bit-len >> 32) & 255
+            } elif len-byte-idx == 4 {
+                b0 = (bit-len >> 24) & 255
+            } elif len-byte-idx == 5 {
+                b0 = (bit-len >> 16) & 255
+            } elif len-byte-idx == 6 {
+                b0 = (bit-len >> 8) & 255
+            } else {
+                b0 = bit-len & 255
+            }
         }
-    }
 
-    // 位元組 1
-    if boff + 1 < tbs-len {
-        b1 = data[tbs-start + boff + 1] & 255
-    } elif boff + 1 == tbs-len {
-        b1 = 128  // 0x80
-    } elif boff + 1 >= pad-len - 8 {
-        bit-len = tbs-len * 8
-        len-byte-idx = (boff + 1) - (pad-len - 8)
-        if len-byte-idx == 0 {
-            b1 = (bit-len >> 56) & 255
-        } elif len-byte-idx == 1 {
-            b1 = (bit-len >> 48) & 255
-        } elif len-byte-idx == 2 {
-            b1 = (bit-len >> 40) & 255
-        } elif len-byte-idx == 3 {
-            b1 = (bit-len >> 32) & 255
-        } elif len-byte-idx == 4 {
-            b1 = (bit-len >> 24) & 255
-        } elif len-byte-idx == 5 {
-            b1 = (bit-len >> 16) & 255
-        } elif len-byte-idx == 6 {
-            b1 = (bit-len >> 8) & 255
-        } else {
-            b1 = bit-len & 255
+        // 位元組 1
+        if boff + 1 < tbs-len {
+            b1 = data[tbs-start + boff + 1] & 255
+        } elif boff + 1 == tbs-len {
+            b1 = 128  // 0x80
+        } elif boff + 1 >= pad-len - 8 {
+            bit-len = tbs-len * 8
+            len-byte-idx = (boff + 1) - (pad-len - 8)
+            if len-byte-idx == 0 {
+                b1 = (bit-len >> 56) & 255
+            } elif len-byte-idx == 1 {
+                b1 = (bit-len >> 48) & 255
+            } elif len-byte-idx == 2 {
+                b1 = (bit-len >> 40) & 255
+            } elif len-byte-idx == 3 {
+                b1 = (bit-len >> 32) & 255
+            } elif len-byte-idx == 4 {
+                b1 = (bit-len >> 24) & 255
+            } elif len-byte-idx == 5 {
+                b1 = (bit-len >> 16) & 255
+            } elif len-byte-idx == 6 {
+                b1 = (bit-len >> 8) & 255
+            } else {
+                b1 = bit-len & 255
+            }
         }
-    }
 
-    // 位元組 2
-    if boff + 2 < tbs-len {
-        b2 = data[tbs-start + boff + 2] & 255
-    } elif boff + 2 == tbs-len {
-        b2 = 0
-        // 實際上 0x80 只需要出現一次。如果 boff+2 == tbs-len，
-        // 表示 0x80 已經在前面的位元組放過了
-    } elif boff + 2 >= pad-len - 8 {
-        bit-len = tbs-len * 8
-        len-byte-idx = (boff + 2) - (pad-len - 8)
-        if len-byte-idx == 0 {
-            b2 = (bit-len >> 56) & 255
-        } elif len-byte-idx == 1 {
-            b2 = (bit-len >> 48) & 255
-        } elif len-byte-idx == 2 {
-            b2 = (bit-len >> 40) & 255
-        } elif len-byte-idx == 3 {
-            b2 = (bit-len >> 32) & 255
-        } elif len-byte-idx == 4 {
-            b2 = (bit-len >> 24) & 255
-        } elif len-byte-idx == 5 {
-            b2 = (bit-len >> 16) & 255
-        } elif len-byte-idx == 6 {
-            b2 = (bit-len >> 8) & 255
-        } else {
-            b2 = bit-len & 255
+        // 位元組 2
+        if boff + 2 < tbs-len {
+            b2 = data[tbs-start + boff + 2] & 255
+        } elif boff + 2 == tbs-len {
+            b2 = 0
+            // 實際上 0x80 只需要出現一次。如果 boff+2 == tbs-len，
+            // 表示 0x80 已經在前面的位元組放過了
+        } elif boff + 2 >= pad-len - 8 {
+            bit-len = tbs-len * 8
+            len-byte-idx = (boff + 2) - (pad-len - 8)
+            if len-byte-idx == 0 {
+                b2 = (bit-len >> 56) & 255
+            } elif len-byte-idx == 1 {
+                b2 = (bit-len >> 48) & 255
+            } elif len-byte-idx == 2 {
+                b2 = (bit-len >> 40) & 255
+            } elif len-byte-idx == 3 {
+                b2 = (bit-len >> 32) & 255
+            } elif len-byte-idx == 4 {
+                b2 = (bit-len >> 24) & 255
+            } elif len-byte-idx == 5 {
+                b2 = (bit-len >> 16) & 255
+            } elif len-byte-idx == 6 {
+                b2 = (bit-len >> 8) & 255
+            } else {
+                b2 = bit-len & 255
+            }
         }
-    }
 
-    // 位元組 3
-    if boff + 3 < tbs-len {
-        b3 = data[tbs-start + boff + 3] & 255
-    } elif boff + 3 == tbs-len {
-        b3 = 128  // 只有當 0x80 剛好在這位置
-    } elif boff + 3 >= pad-len - 8 {
-        bit-len = tbs-len * 8
-        len-byte-idx = (boff + 3) - (pad-len - 8)
-        if len-byte-idx == 0 {
-            b3 = (bit-len >> 56) & 255
-        } elif len-byte-idx == 1 {
-            b3 = (bit-len >> 48) & 255
-        } elif len-byte-idx == 2 {
-            b3 = (bit-len >> 40) & 255
-        } elif len-byte-idx == 3 {
-            b3 = (bit-len >> 32) & 255
-        } elif len-byte-idx == 4 {
-            b3 = (bit-len >> 24) & 255
-        } elif len-byte-idx == 5 {
-            b3 = (bit-len >> 16) & 255
-        } elif len-byte-idx == 6 {
-            b3 = (bit-len >> 8) & 255
-        } else {
-            b3 = bit-len & 255
+        // 位元組 3
+        if boff + 3 < tbs-len {
+            b3 = data[tbs-start + boff + 3] & 255
+        } elif boff + 3 == tbs-len {
+            b3 = 128  // 只有當 0x80 剛好在這位置
+        } elif boff + 3 >= pad-len - 8 {
+            bit-len = tbs-len * 8
+            len-byte-idx = (boff + 3) - (pad-len - 8)
+            if len-byte-idx == 0 {
+                b3 = (bit-len >> 56) & 255
+            } elif len-byte-idx == 1 {
+                b3 = (bit-len >> 48) & 255
+            } elif len-byte-idx == 2 {
+                b3 = (bit-len >> 40) & 255
+            } elif len-byte-idx == 3 {
+                b3 = (bit-len >> 32) & 255
+            } elif len-byte-idx == 4 {
+                b3 = (bit-len >> 24) & 255
+            } elif len-byte-idx == 5 {
+                b3 = (bit-len >> 16) & 255
+            } elif len-byte-idx == 6 {
+                b3 = (bit-len >> 8) & 255
+            } else {
+                b3 = bit-len & 255
+            }
         }
-    }
-    word = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
-    word = word & MASK
-    if wi == 0 {
-        w0 = word
-    } elif wi == 1 {
-        w1 = word
-    } elif wi == 2 {
-        w2 = word
-    } elif wi == 3 {
-        w3 = word
-    } elif wi == 4 {
-        w4 = word
-    } elif wi == 5 {
-        w5 = word
-    } elif wi == 6 {
-        w6 = word
-    } elif wi == 7 {
-        w7 = word
-    } elif wi == 8 {
-        w8 = word
-    } elif wi == 9 {
-        w9 = word
-    } elif wi == 10 {
-        w10 = word
-    } elif wi == 11 {
-        w11 = word
-    } elif wi == 12 {
-        w12 = word
-    } elif wi == 13 {
-        w13 = word
-    } elif wi == 14 {
-        w14 = word
-    } else {
-        w15 = word
-    }
+        word = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+        word = word & mask
+        if wi == 0 {
+            w0 = word
+        } elif wi == 1 {
+            w1 = word
+        } elif wi == 2 {
+            w2 = word
+        } elif wi == 3 {
+            w3 = word
+        } elif wi == 4 {
+            w4 = word
+        } elif wi == 5 {
+            w5 = word
+        } elif wi == 6 {
+            w6 = word
+        } elif wi == 7 {
+            w7 = word
+        } elif wi == 8 {
+            w8 = word
+        } elif wi == 9 {
+            w9 = word
+        } elif wi == 10 {
+            w10 = word
+        } elif wi == 11 {
+            w11 = word
+        } elif wi == 12 {
+            w12 = word
+        } elif wi == 13 {
+            w13 = word
+        } elif wi == 14 {
+            w14 = word
+        } else {
+            w15 = word
+        }
         wi = wi + 1
     }
-    // 調用內建 SHA-256 壓縮
-    sha256-compress(w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, h0, h1, h2, h3, h4, h5, h6, h7)
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha256-compress(w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15)
     bidx = bidx + 1
 }
 
@@ -454,995 +446,995 @@ x509-fingerprint = (data []byte, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64,
 // w0..w15: 16 個 32-bit 大端字（512-bit 區塊）
 // h0..h7: 輸入/輸出 256-bit 哈希狀態
 sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i64, w8 i64, w9 i64, w10 i64, w11 i64, w12 i64, w13 i64, w14 i64, w15 i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
-    MASK = 4294967295
+    mask = 4294967295
     a = h0; b = h1; c = h2; d = h3; e = h4; f = h5; g = h6; h = h7
 
     // 第 0 輪 (K0 = 0x428A2F98)
 
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1116352408 + w0) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1116352408 + w0) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 1 輪 (K1 = 0x71374491)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1899447441 + w1) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1899447441 + w1) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 2 輪 (K2 = 0xB5C0FBCF)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3049323471 + w2) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3049323471 + w2) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 3 輪 (K3 = 0xE9B5DBA5)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3921009573 + w3) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3921009573 + w3) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 4 輪 (K4 = 0x3956C25B)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 961987163 + w4) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 961987163 + w4) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 5 輪 (K5 = 0x59F111F1)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1508970993 + w5) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1508970993 + w5) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 6 輪 (K6 = 0x923F82A4)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2453635748 + w6) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2453635748 + w6) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 7 輪 (K7 = 0xAB1C5ED5)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2870763221 + w7) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2870763221 + w7) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 8 輪 (K8 = 0xD807AA98)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3624381080 + w8) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3624381080 + w8) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 9 輪 (K9 = 0x12835B01)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 310598401 + w9) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 310598401 + w9) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 10 輪 (K10 = 0x243185BE)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 607225278 + w10) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 607225278 + w10) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 11 輪 (K11 = 0x550C7DC3)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1426881987 + w11) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1426881987 + w11) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 12 輪 (K12 = 0x72BE5D74)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1925078388 + w12) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1925078388 + w12) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 13 輪 (K13 = 0x80DEB1FE)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2162078206 + w13) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2162078206 + w13) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 14 輪 (K14 = 0x9BDC06A7)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2614888103 + w14) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2614888103 + w14) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 第 15 輪 (K15 = 0xC19BF174)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3248222580 + w15) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3248222580 + w15) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // ---- 擴展訊息排程 W[16..63] + 壓縮 ----
 
     // W[16]: σ1(w14) + w9 + σ0(w1) + w0
-    s0-r7 = ((w1 >> 7) | (w1 << 25)) & MASK; s0-r18 = ((w1 >> 18) | (w1 << 14)) & MASK; s0-sh3 = w1 >> 3
+    s0-r7 = ((w1 >> 7) | (w1 << 25)) & mask; s0-r18 = ((w1 >> 18) | (w1 << 14)) & mask; s0-sh3 = w1 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w14 >> 17) | (w14 << 15)) & MASK; s1-r19 = ((w14 >> 19) | (w14 << 13)) & MASK; s1-sh10 = w14 >> 10
+    s1-r17 = ((w14 >> 17) | (w14 << 15)) & mask; s1-r19 = ((w14 >> 19) | (w14 << 13)) & mask; s1-sh10 = w14 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w16 = (w0 + s0 + w9 + s1) & MASK
+    w16 = (w0 + s0 + w9 + s1) & mask
 
     // 第 16 輪 (K16 = 0xE49B69C1)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3835390401 + w16) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3835390401 + w16) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[17]: σ1(w15) + w10 + σ0(w2) + w1
-    s0-r7 = ((w2 >> 7) | (w2 << 25)) & MASK; s0-r18 = ((w2 >> 18) | (w2 << 14)) & MASK; s0-sh3 = w2 >> 3
+    s0-r7 = ((w2 >> 7) | (w2 << 25)) & mask; s0-r18 = ((w2 >> 18) | (w2 << 14)) & mask; s0-sh3 = w2 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w15 >> 17) | (w15 << 15)) & MASK; s1-r19 = ((w15 >> 19) | (w15 << 13)) & MASK; s1-sh10 = w15 >> 10
+    s1-r17 = ((w15 >> 17) | (w15 << 15)) & mask; s1-r19 = ((w15 >> 19) | (w15 << 13)) & mask; s1-sh10 = w15 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w17 = (w1 + s0 + w10 + s1) & MASK
+    w17 = (w1 + s0 + w10 + s1) & mask
 
     // 第 17 輪 (K17 = 0xEFBE4786)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 4022224774 + w17) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 4022224774 + w17) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[18]: σ1(w16) + w11 + σ0(w3) + w2
-    s0-r7 = ((w3 >> 7) | (w3 << 25)) & MASK; s0-r18 = ((w3 >> 18) | (w3 << 14)) & MASK; s0-sh3 = w3 >> 3
+    s0-r7 = ((w3 >> 7) | (w3 << 25)) & mask; s0-r18 = ((w3 >> 18) | (w3 << 14)) & mask; s0-sh3 = w3 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w16 >> 17) | (w16 << 15)) & MASK; s1-r19 = ((w16 >> 19) | (w16 << 13)) & MASK; s1-sh10 = w16 >> 10
+    s1-r17 = ((w16 >> 17) | (w16 << 15)) & mask; s1-r19 = ((w16 >> 19) | (w16 << 13)) & mask; s1-sh10 = w16 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w18 = (w2 + s0 + w11 + s1) & MASK
+    w18 = (w2 + s0 + w11 + s1) & mask
 
     // 第 18 輪 (K18 = 0x0FC19DC6)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 264347078 + w18) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 264347078 + w18) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[19]: σ1(w17) + w12 + σ0(w4) + w3
-    s0-r7 = ((w4 >> 7) | (w4 << 25)) & MASK; s0-r18 = ((w4 >> 18) | (w4 << 14)) & MASK; s0-sh3 = w4 >> 3
+    s0-r7 = ((w4 >> 7) | (w4 << 25)) & mask; s0-r18 = ((w4 >> 18) | (w4 << 14)) & mask; s0-sh3 = w4 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w17 >> 17) | (w17 << 15)) & MASK; s1-r19 = ((w17 >> 19) | (w17 << 13)) & MASK; s1-sh10 = w17 >> 10
+    s1-r17 = ((w17 >> 17) | (w17 << 15)) & mask; s1-r19 = ((w17 >> 19) | (w17 << 13)) & mask; s1-sh10 = w17 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w19 = (w3 + s0 + w12 + s1) & MASK
+    w19 = (w3 + s0 + w12 + s1) & mask
 
     // 第 19 輪 (K19 = 0x240CA1CC)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 604807628 + w19) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 604807628 + w19) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[20]: σ1(w18) + w13 + σ0(w5) + w4
-    s0-r7 = ((w5 >> 7) | (w5 << 25)) & MASK; s0-r18 = ((w5 >> 18) | (w5 << 14)) & MASK; s0-sh3 = w5 >> 3
+    s0-r7 = ((w5 >> 7) | (w5 << 25)) & mask; s0-r18 = ((w5 >> 18) | (w5 << 14)) & mask; s0-sh3 = w5 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w18 >> 17) | (w18 << 15)) & MASK; s1-r19 = ((w18 >> 19) | (w18 << 13)) & MASK; s1-sh10 = w18 >> 10
+    s1-r17 = ((w18 >> 17) | (w18 << 15)) & mask; s1-r19 = ((w18 >> 19) | (w18 << 13)) & mask; s1-sh10 = w18 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w20 = (w4 + s0 + w13 + s1) & MASK
+    w20 = (w4 + s0 + w13 + s1) & mask
 
     // 第 20 輪 (K20 = 0x2DE92C6F)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 770255983 + w20) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 770255983 + w20) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[21]: σ1(w19) + w14 + σ0(w6) + w5
-    s0-r7 = ((w6 >> 7) | (w6 << 25)) & MASK; s0-r18 = ((w6 >> 18) | (w6 << 14)) & MASK; s0-sh3 = w6 >> 3
+    s0-r7 = ((w6 >> 7) | (w6 << 25)) & mask; s0-r18 = ((w6 >> 18) | (w6 << 14)) & mask; s0-sh3 = w6 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w19 >> 17) | (w19 << 15)) & MASK; s1-r19 = ((w19 >> 19) | (w19 << 13)) & MASK; s1-sh10 = w19 >> 10
+    s1-r17 = ((w19 >> 17) | (w19 << 15)) & mask; s1-r19 = ((w19 >> 19) | (w19 << 13)) & mask; s1-sh10 = w19 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w21 = (w5 + s0 + w14 + s1) & MASK
+    w21 = (w5 + s0 + w14 + s1) & mask
 
     // 第 21 輪 (K21 = 0x4A7484AA)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1249150122 + w21) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1249150122 + w21) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[22]: σ1(w20) + w15 + σ0(w7) + w6
-    s0-r7 = ((w7 >> 7) | (w7 << 25)) & MASK; s0-r18 = ((w7 >> 18) | (w7 << 14)) & MASK; s0-sh3 = w7 >> 3
+    s0-r7 = ((w7 >> 7) | (w7 << 25)) & mask; s0-r18 = ((w7 >> 18) | (w7 << 14)) & mask; s0-sh3 = w7 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w20 >> 17) | (w20 << 15)) & MASK; s1-r19 = ((w20 >> 19) | (w20 << 13)) & MASK; s1-sh10 = w20 >> 10
+    s1-r17 = ((w20 >> 17) | (w20 << 15)) & mask; s1-r19 = ((w20 >> 19) | (w20 << 13)) & mask; s1-sh10 = w20 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w22 = (w6 + s0 + w15 + s1) & MASK
+    w22 = (w6 + s0 + w15 + s1) & mask
 
     // 第 22 輪 (K22 = 0x5CB0A9DC)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1555081692 + w22) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1555081692 + w22) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[23]: σ1(w21) + w16 + σ0(w8) + w7
-    s0-r7 = ((w8 >> 7) | (w8 << 25)) & MASK; s0-r18 = ((w8 >> 18) | (w8 << 14)) & MASK; s0-sh3 = w8 >> 3
+    s0-r7 = ((w8 >> 7) | (w8 << 25)) & mask; s0-r18 = ((w8 >> 18) | (w8 << 14)) & mask; s0-sh3 = w8 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w21 >> 17) | (w21 << 15)) & MASK; s1-r19 = ((w21 >> 19) | (w21 << 13)) & MASK; s1-sh10 = w21 >> 10
+    s1-r17 = ((w21 >> 17) | (w21 << 15)) & mask; s1-r19 = ((w21 >> 19) | (w21 << 13)) & mask; s1-sh10 = w21 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w23 = (w7 + s0 + w16 + s1) & MASK
+    w23 = (w7 + s0 + w16 + s1) & mask
 
     // 第 23 輪 (K23 = 0x76F988DA)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1996064986 + w23) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1996064986 + w23) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[24]: σ1(w22) + w17 + σ0(w9) + w8
-    s0-r7 = ((w9 >> 7) | (w9 << 25)) & MASK; s0-r18 = ((w9 >> 18) | (w9 << 14)) & MASK; s0-sh3 = w9 >> 3
+    s0-r7 = ((w9 >> 7) | (w9 << 25)) & mask; s0-r18 = ((w9 >> 18) | (w9 << 14)) & mask; s0-sh3 = w9 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w22 >> 17) | (w22 << 15)) & MASK; s1-r19 = ((w22 >> 19) | (w22 << 13)) & MASK; s1-sh10 = w22 >> 10
+    s1-r17 = ((w22 >> 17) | (w22 << 15)) & mask; s1-r19 = ((w22 >> 19) | (w22 << 13)) & mask; s1-sh10 = w22 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w24 = (w8 + s0 + w17 + s1) & MASK
+    w24 = (w8 + s0 + w17 + s1) & mask
 
     // 第 24 輪 (K24 = 0x983E5152)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2554220882 + w24) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2554220882 + w24) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[25]: σ1(w23) + w18 + σ0(w10) + w9
-    s0-r7 = ((w10 >> 7) | (w10 << 25)) & MASK; s0-r18 = ((w10 >> 18) | (w10 << 14)) & MASK; s0-sh3 = w10 >> 3
+    s0-r7 = ((w10 >> 7) | (w10 << 25)) & mask; s0-r18 = ((w10 >> 18) | (w10 << 14)) & mask; s0-sh3 = w10 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w23 >> 17) | (w23 << 15)) & MASK; s1-r19 = ((w23 >> 19) | (w23 << 13)) & MASK; s1-sh10 = w23 >> 10
+    s1-r17 = ((w23 >> 17) | (w23 << 15)) & mask; s1-r19 = ((w23 >> 19) | (w23 << 13)) & mask; s1-sh10 = w23 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w25 = (w9 + s0 + w18 + s1) & MASK
+    w25 = (w9 + s0 + w18 + s1) & mask
 
     // 第 25 輪 (K25 = 0xA831C66D)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2821834349 + w25) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2821834349 + w25) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[26]: σ1(w24) + w19 + σ0(w11) + w10
-    s0-r7 = ((w11 >> 7) | (w11 << 25)) & MASK; s0-r18 = ((w11 >> 18) | (w11 << 14)) & MASK; s0-sh3 = w11 >> 3
+    s0-r7 = ((w11 >> 7) | (w11 << 25)) & mask; s0-r18 = ((w11 >> 18) | (w11 << 14)) & mask; s0-sh3 = w11 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w24 >> 17) | (w24 << 15)) & MASK; s1-r19 = ((w24 >> 19) | (w24 << 13)) & MASK; s1-sh10 = w24 >> 10
+    s1-r17 = ((w24 >> 17) | (w24 << 15)) & mask; s1-r19 = ((w24 >> 19) | (w24 << 13)) & mask; s1-sh10 = w24 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w26 = (w10 + s0 + w19 + s1) & MASK
+    w26 = (w10 + s0 + w19 + s1) & mask
 
     // 第 26 輪 (K26 = 0xB00327C8)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2952996808 + w26) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2952996808 + w26) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[27]: σ1(w25) + w20 + σ0(w12) + w11
-    s0-r7 = ((w12 >> 7) | (w12 << 25)) & MASK; s0-r18 = ((w12 >> 18) | (w12 << 14)) & MASK; s0-sh3 = w12 >> 3
+    s0-r7 = ((w12 >> 7) | (w12 << 25)) & mask; s0-r18 = ((w12 >> 18) | (w12 << 14)) & mask; s0-sh3 = w12 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w25 >> 17) | (w25 << 15)) & MASK; s1-r19 = ((w25 >> 19) | (w25 << 13)) & MASK; s1-sh10 = w25 >> 10
+    s1-r17 = ((w25 >> 17) | (w25 << 15)) & mask; s1-r19 = ((w25 >> 19) | (w25 << 13)) & mask; s1-sh10 = w25 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w27 = (w11 + s0 + w20 + s1) & MASK
+    w27 = (w11 + s0 + w20 + s1) & mask
 
     // 第 27 輪 (K27 = 0xBF597FC7)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3210313671 + w27) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3210313671 + w27) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[28]: σ1(w26) + w21 + σ0(w13) + w12
-    s0-r7 = ((w13 >> 7) | (w13 << 25)) & MASK; s0-r18 = ((w13 >> 18) | (w13 << 14)) & MASK; s0-sh3 = w13 >> 3
+    s0-r7 = ((w13 >> 7) | (w13 << 25)) & mask; s0-r18 = ((w13 >> 18) | (w13 << 14)) & mask; s0-sh3 = w13 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w26 >> 17) | (w26 << 15)) & MASK; s1-r19 = ((w26 >> 19) | (w26 << 13)) & MASK; s1-sh10 = w26 >> 10
+    s1-r17 = ((w26 >> 17) | (w26 << 15)) & mask; s1-r19 = ((w26 >> 19) | (w26 << 13)) & mask; s1-sh10 = w26 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w28 = (w12 + s0 + w21 + s1) & MASK
+    w28 = (w12 + s0 + w21 + s1) & mask
 
     // 第 28 輪 (K28 = 0xC6E00BF3)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3336571891 + w28) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3336571891 + w28) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[29]: σ1(w27) + w22 + σ0(w14) + w13
-    s0-r7 = ((w14 >> 7) | (w14 << 25)) & MASK; s0-r18 = ((w14 >> 18) | (w14 << 14)) & MASK; s0-sh3 = w14 >> 3
+    s0-r7 = ((w14 >> 7) | (w14 << 25)) & mask; s0-r18 = ((w14 >> 18) | (w14 << 14)) & mask; s0-sh3 = w14 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w27 >> 17) | (w27 << 15)) & MASK; s1-r19 = ((w27 >> 19) | (w27 << 13)) & MASK; s1-sh10 = w27 >> 10
+    s1-r17 = ((w27 >> 17) | (w27 << 15)) & mask; s1-r19 = ((w27 >> 19) | (w27 << 13)) & mask; s1-sh10 = w27 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w29 = (w13 + s0 + w22 + s1) & MASK
+    w29 = (w13 + s0 + w22 + s1) & mask
 
     // 第 29 輪 (K29 = 0xD5A79147)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3584524711 + w29) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3584524711 + w29) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[30]: σ1(w28) + w23 + σ0(w15) + w14
-    s0-r7 = ((w15 >> 7) | (w15 << 25)) & MASK; s0-r18 = ((w15 >> 18) | (w15 << 14)) & MASK; s0-sh3 = w15 >> 3
+    s0-r7 = ((w15 >> 7) | (w15 << 25)) & mask; s0-r18 = ((w15 >> 18) | (w15 << 14)) & mask; s0-sh3 = w15 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w28 >> 17) | (w28 << 15)) & MASK; s1-r19 = ((w28 >> 19) | (w28 << 13)) & MASK; s1-sh10 = w28 >> 10
+    s1-r17 = ((w28 >> 17) | (w28 << 15)) & mask; s1-r19 = ((w28 >> 19) | (w28 << 13)) & mask; s1-sh10 = w28 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w30 = (w14 + s0 + w23 + s1) & MASK
+    w30 = (w14 + s0 + w23 + s1) & mask
 
     // 第 30 輪 (K30 = 0x06CA6351)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 113926993 + w30) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 113926993 + w30) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[31]: σ1(w29) + w24 + σ0(w16) + w15
-    s0-r7 = ((w16 >> 7) | (w16 << 25)) & MASK; s0-r18 = ((w16 >> 18) | (w16 << 14)) & MASK; s0-sh3 = w16 >> 3
+    s0-r7 = ((w16 >> 7) | (w16 << 25)) & mask; s0-r18 = ((w16 >> 18) | (w16 << 14)) & mask; s0-sh3 = w16 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w29 >> 17) | (w29 << 15)) & MASK; s1-r19 = ((w29 >> 19) | (w29 << 13)) & MASK; s1-sh10 = w29 >> 10
+    s1-r17 = ((w29 >> 17) | (w29 << 15)) & mask; s1-r19 = ((w29 >> 19) | (w29 << 13)) & mask; s1-sh10 = w29 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w31 = (w15 + s0 + w24 + s1) & MASK
+    w31 = (w15 + s0 + w24 + s1) & mask
 
     // 第 31 輪 (K31 = 0x14292967)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 338241895 + w31) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 338241895 + w31) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[32]: σ1(w30) + w25 + σ0(w17) + w16
-    s0-r7 = ((w17 >> 7) | (w17 << 25)) & MASK; s0-r18 = ((w17 >> 18) | (w17 << 14)) & MASK; s0-sh3 = w17 >> 3
+    s0-r7 = ((w17 >> 7) | (w17 << 25)) & mask; s0-r18 = ((w17 >> 18) | (w17 << 14)) & mask; s0-sh3 = w17 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w30 >> 17) | (w30 << 15)) & MASK; s1-r19 = ((w30 >> 19) | (w30 << 13)) & MASK; s1-sh10 = w30 >> 10
+    s1-r17 = ((w30 >> 17) | (w30 << 15)) & mask; s1-r19 = ((w30 >> 19) | (w30 << 13)) & mask; s1-sh10 = w30 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w32 = (w16 + s0 + w25 + s1) & MASK
+    w32 = (w16 + s0 + w25 + s1) & mask
 
     // 第 32 輪 (K32 = 0x27B70A85)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 666307205 + w32) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 666307205 + w32) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[33]: σ1(w31) + w26 + σ0(w18) + w17
-    s0-r7 = ((w18 >> 7) | (w18 << 25)) & MASK; s0-r18 = ((w18 >> 18) | (w18 << 14)) & MASK; s0-sh3 = w18 >> 3
+    s0-r7 = ((w18 >> 7) | (w18 << 25)) & mask; s0-r18 = ((w18 >> 18) | (w18 << 14)) & mask; s0-sh3 = w18 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w31 >> 17) | (w31 << 15)) & MASK; s1-r19 = ((w31 >> 19) | (w31 << 13)) & MASK; s1-sh10 = w31 >> 10
+    s1-r17 = ((w31 >> 17) | (w31 << 15)) & mask; s1-r19 = ((w31 >> 19) | (w31 << 13)) & mask; s1-sh10 = w31 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w33 = (w17 + s0 + w26 + s1) & MASK
+    w33 = (w17 + s0 + w26 + s1) & mask
 
     // 第 33 輪 (K33 = 0x2E1B2138)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 773529912 + w33) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 773529912 + w33) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[34]: σ1(w32) + w27 + σ0(w19) + w18
-    s0-r7 = ((w19 >> 7) | (w19 << 25)) & MASK; s0-r18 = ((w19 >> 18) | (w19 << 14)) & MASK; s0-sh3 = w19 >> 3
+    s0-r7 = ((w19 >> 7) | (w19 << 25)) & mask; s0-r18 = ((w19 >> 18) | (w19 << 14)) & mask; s0-sh3 = w19 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w32 >> 17) | (w32 << 15)) & MASK; s1-r19 = ((w32 >> 19) | (w32 << 13)) & MASK; s1-sh10 = w32 >> 10
+    s1-r17 = ((w32 >> 17) | (w32 << 15)) & mask; s1-r19 = ((w32 >> 19) | (w32 << 13)) & mask; s1-sh10 = w32 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w34 = (w18 + s0 + w27 + s1) & MASK
+    w34 = (w18 + s0 + w27 + s1) & mask
 
     // 第 34 輪 (K34 = 0x4D2C6DFC)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1294757372 + w34) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1294757372 + w34) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[35]: σ1(w33) + w28 + σ0(w20) + w19
-    s0-r7 = ((w20 >> 7) | (w20 << 25)) & MASK; s0-r18 = ((w20 >> 18) | (w20 << 14)) & MASK; s0-sh3 = w20 >> 3
+    s0-r7 = ((w20 >> 7) | (w20 << 25)) & mask; s0-r18 = ((w20 >> 18) | (w20 << 14)) & mask; s0-sh3 = w20 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w33 >> 17) | (w33 << 15)) & MASK; s1-r19 = ((w33 >> 19) | (w33 << 13)) & MASK; s1-sh10 = w33 >> 10
+    s1-r17 = ((w33 >> 17) | (w33 << 15)) & mask; s1-r19 = ((w33 >> 19) | (w33 << 13)) & mask; s1-sh10 = w33 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w35 = (w19 + s0 + w28 + s1) & MASK
+    w35 = (w19 + s0 + w28 + s1) & mask
 
     // 第 35 輪 (K35 = 0x53380D13)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1396182291 + w35) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1396182291 + w35) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[36]: σ1(w34) + w29 + σ0(w21) + w20
-    s0-r7 = ((w21 >> 7) | (w21 << 25)) & MASK; s0-r18 = ((w21 >> 18) | (w21 << 14)) & MASK; s0-sh3 = w21 >> 3
+    s0-r7 = ((w21 >> 7) | (w21 << 25)) & mask; s0-r18 = ((w21 >> 18) | (w21 << 14)) & mask; s0-sh3 = w21 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w34 >> 17) | (w34 << 15)) & MASK; s1-r19 = ((w34 >> 19) | (w34 << 13)) & MASK; s1-sh10 = w34 >> 10
+    s1-r17 = ((w34 >> 17) | (w34 << 15)) & mask; s1-r19 = ((w34 >> 19) | (w34 << 13)) & mask; s1-sh10 = w34 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w36 = (w20 + s0 + w29 + s1) & MASK
+    w36 = (w20 + s0 + w29 + s1) & mask
 
     // 第 36 輪 (K36 = 0x650A7354)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1695183700 + w36) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1695183700 + w36) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[37]: σ1(w35) + w30 + σ0(w22) + w21
-    s0-r7 = ((w22 >> 7) | (w22 << 25)) & MASK; s0-r18 = ((w22 >> 18) | (w22 << 14)) & MASK; s0-sh3 = w22 >> 3
+    s0-r7 = ((w22 >> 7) | (w22 << 25)) & mask; s0-r18 = ((w22 >> 18) | (w22 << 14)) & mask; s0-sh3 = w22 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w35 >> 17) | (w35 << 15)) & MASK; s1-r19 = ((w35 >> 19) | (w35 << 13)) & MASK; s1-sh10 = w35 >> 10
+    s1-r17 = ((w35 >> 17) | (w35 << 15)) & mask; s1-r19 = ((w35 >> 19) | (w35 << 13)) & mask; s1-sh10 = w35 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w37 = (w21 + s0 + w30 + s1) & MASK
+    w37 = (w21 + s0 + w30 + s1) & mask
 
     // 第 37 輪 (K37 = 0x766A0ABB)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1986661051 + w37) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1986661051 + w37) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[38]: σ1(w36) + w31 + σ0(w23) + w22
-    s0-r7 = ((w23 >> 7) | (w23 << 25)) & MASK; s0-r18 = ((w23 >> 18) | (w23 << 14)) & MASK; s0-sh3 = w23 >> 3
+    s0-r7 = ((w23 >> 7) | (w23 << 25)) & mask; s0-r18 = ((w23 >> 18) | (w23 << 14)) & mask; s0-sh3 = w23 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w36 >> 17) | (w36 << 15)) & MASK; s1-r19 = ((w36 >> 19) | (w36 << 13)) & MASK; s1-sh10 = w36 >> 10
+    s1-r17 = ((w36 >> 17) | (w36 << 15)) & mask; s1-r19 = ((w36 >> 19) | (w36 << 13)) & mask; s1-sh10 = w36 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w38 = (w22 + s0 + w31 + s1) & MASK
+    w38 = (w22 + s0 + w31 + s1) & mask
 
     // 第 38 輪 (K38 = 0x81C2C92E)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2177026350 + w38) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2177026350 + w38) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[39]: σ1(w37) + w32 + σ0(w24) + w23
-    s0-r7 = ((w24 >> 7) | (w24 << 25)) & MASK; s0-r18 = ((w24 >> 18) | (w24 << 14)) & MASK; s0-sh3 = w24 >> 3
+    s0-r7 = ((w24 >> 7) | (w24 << 25)) & mask; s0-r18 = ((w24 >> 18) | (w24 << 14)) & mask; s0-sh3 = w24 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w37 >> 17) | (w37 << 15)) & MASK; s1-r19 = ((w37 >> 19) | (w37 << 13)) & MASK; s1-sh10 = w37 >> 10
+    s1-r17 = ((w37 >> 17) | (w37 << 15)) & mask; s1-r19 = ((w37 >> 19) | (w37 << 13)) & mask; s1-sh10 = w37 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w39 = (w23 + s0 + w32 + s1) & MASK
+    w39 = (w23 + s0 + w32 + s1) & mask
 
     // 第 39 輪 (K39 = 0x92722C85)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2456956037 + w39) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2456956037 + w39) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[40]: σ1(w38) + w33 + σ0(w25) + w24
-    s0-r7 = ((w25 >> 7) | (w25 << 25)) & MASK; s0-r18 = ((w25 >> 18) | (w25 << 14)) & MASK; s0-sh3 = w25 >> 3
+    s0-r7 = ((w25 >> 7) | (w25 << 25)) & mask; s0-r18 = ((w25 >> 18) | (w25 << 14)) & mask; s0-sh3 = w25 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w38 >> 17) | (w38 << 15)) & MASK; s1-r19 = ((w38 >> 19) | (w38 << 13)) & MASK; s1-sh10 = w38 >> 10
+    s1-r17 = ((w38 >> 17) | (w38 << 15)) & mask; s1-r19 = ((w38 >> 19) | (w38 << 13)) & mask; s1-sh10 = w38 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w40 = (w24 + s0 + w33 + s1) & MASK
+    w40 = (w24 + s0 + w33 + s1) & mask
 
     // 第 40 輪 (K40 = 0xA2BFE8A1)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2730488481 + w40) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2730488481 + w40) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[41]: σ1(w39) + w34 + σ0(w26) + w25
-    s0-r7 = ((w26 >> 7) | (w26 << 25)) & MASK; s0-r18 = ((w26 >> 18) | (w26 << 14)) & MASK; s0-sh3 = w26 >> 3
+    s0-r7 = ((w26 >> 7) | (w26 << 25)) & mask; s0-r18 = ((w26 >> 18) | (w26 << 14)) & mask; s0-sh3 = w26 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w39 >> 17) | (w39 << 15)) & MASK; s1-r19 = ((w39 >> 19) | (w39 << 13)) & MASK; s1-sh10 = w39 >> 10
+    s1-r17 = ((w39 >> 17) | (w39 << 15)) & mask; s1-r19 = ((w39 >> 19) | (w39 << 13)) & mask; s1-sh10 = w39 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w41 = (w25 + s0 + w34 + s1) & MASK
+    w41 = (w25 + s0 + w34 + s1) & mask
 
     // 第 41 輪 (K41 = 0xA81A664B)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2820302411 + w41) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2820302411 + w41) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[42]: σ1(w40) + w35 + σ0(w27) + w26
-    s0-r7 = ((w27 >> 7) | (w27 << 25)) & MASK; s0-r18 = ((w27 >> 18) | (w27 << 14)) & MASK; s0-sh3 = w27 >> 3
+    s0-r7 = ((w27 >> 7) | (w27 << 25)) & mask; s0-r18 = ((w27 >> 18) | (w27 << 14)) & mask; s0-sh3 = w27 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w40 >> 17) | (w40 << 15)) & MASK; s1-r19 = ((w40 >> 19) | (w40 << 13)) & MASK; s1-sh10 = w40 >> 10
+    s1-r17 = ((w40 >> 17) | (w40 << 15)) & mask; s1-r19 = ((w40 >> 19) | (w40 << 13)) & mask; s1-sh10 = w40 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w42 = (w26 + s0 + w35 + s1) & MASK
+    w42 = (w26 + s0 + w35 + s1) & mask
 
     // 第 42 輪 (K42 = 0xC24B8B70)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3259730800 + w42) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3259730800 + w42) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[43]: σ1(w41) + w36 + σ0(w28) + w27
-    s0-r7 = ((w28 >> 7) | (w28 << 25)) & MASK; s0-r18 = ((w28 >> 18) | (w28 << 14)) & MASK; s0-sh3 = w28 >> 3
+    s0-r7 = ((w28 >> 7) | (w28 << 25)) & mask; s0-r18 = ((w28 >> 18) | (w28 << 14)) & mask; s0-sh3 = w28 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w41 >> 17) | (w41 << 15)) & MASK; s1-r19 = ((w41 >> 19) | (w41 << 13)) & MASK; s1-sh10 = w41 >> 10
+    s1-r17 = ((w41 >> 17) | (w41 << 15)) & mask; s1-r19 = ((w41 >> 19) | (w41 << 13)) & mask; s1-sh10 = w41 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w43 = (w27 + s0 + w36 + s1) & MASK
+    w43 = (w27 + s0 + w36 + s1) & mask
 
     // 第 43 輪 (K43 = 0xC76C51A3)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3345764771 + w43) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3345764771 + w43) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[44]: σ1(w42) + w37 + σ0(w29) + w28
-    s0-r7 = ((w29 >> 7) | (w29 << 25)) & MASK; s0-r18 = ((w29 >> 18) | (w29 << 14)) & MASK; s0-sh3 = w29 >> 3
+    s0-r7 = ((w29 >> 7) | (w29 << 25)) & mask; s0-r18 = ((w29 >> 18) | (w29 << 14)) & mask; s0-sh3 = w29 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w42 >> 17) | (w42 << 15)) & MASK; s1-r19 = ((w42 >> 19) | (w42 << 13)) & MASK; s1-sh10 = w42 >> 10
+    s1-r17 = ((w42 >> 17) | (w42 << 15)) & mask; s1-r19 = ((w42 >> 19) | (w42 << 13)) & mask; s1-sh10 = w42 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w44 = (w28 + s0 + w37 + s1) & MASK
+    w44 = (w28 + s0 + w37 + s1) & mask
 
     // 第 44 輪 (K44 = 0xD192E819)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3516065817 + w44) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3516065817 + w44) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[45]: σ1(w43) + w38 + σ0(w30) + w29
-    s0-r7 = ((w30 >> 7) | (w30 << 25)) & MASK; s0-r18 = ((w30 >> 18) | (w30 << 14)) & MASK; s0-sh3 = w30 >> 3
+    s0-r7 = ((w30 >> 7) | (w30 << 25)) & mask; s0-r18 = ((w30 >> 18) | (w30 << 14)) & mask; s0-sh3 = w30 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w43 >> 17) | (w43 << 15)) & MASK; s1-r19 = ((w43 >> 19) | (w43 << 13)) & MASK; s1-sh10 = w43 >> 10
+    s1-r17 = ((w43 >> 17) | (w43 << 15)) & mask; s1-r19 = ((w43 >> 19) | (w43 << 13)) & mask; s1-sh10 = w43 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w45 = (w29 + s0 + w38 + s1) & MASK
+    w45 = (w29 + s0 + w38 + s1) & mask
 
     // 第 45 輪 (K45 = 0xD6990624)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3600352804 + w45) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3600352804 + w45) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[46]: σ1(w44) + w39 + σ0(w31) + w30
-    s0-r7 = ((w31 >> 7) | (w31 << 25)) & MASK; s0-r18 = ((w31 >> 18) | (w31 << 14)) & MASK; s0-sh3 = w31 >> 3
+    s0-r7 = ((w31 >> 7) | (w31 << 25)) & mask; s0-r18 = ((w31 >> 18) | (w31 << 14)) & mask; s0-sh3 = w31 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w44 >> 17) | (w44 << 15)) & MASK; s1-r19 = ((w44 >> 19) | (w44 << 13)) & MASK; s1-sh10 = w44 >> 10
+    s1-r17 = ((w44 >> 17) | (w44 << 15)) & mask; s1-r19 = ((w44 >> 19) | (w44 << 13)) & mask; s1-sh10 = w44 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w46 = (w30 + s0 + w39 + s1) & MASK
+    w46 = (w30 + s0 + w39 + s1) & mask
 
     // 第 46 輪 (K46 = 0xF40E3585)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 4094571909 + w46) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 4094571909 + w46) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[47]: σ1(w45) + w40 + σ0(w32) + w31
-    s0-r7 = ((w32 >> 7) | (w32 << 25)) & MASK; s0-r18 = ((w32 >> 18) | (w32 << 14)) & MASK; s0-sh3 = w32 >> 3
+    s0-r7 = ((w32 >> 7) | (w32 << 25)) & mask; s0-r18 = ((w32 >> 18) | (w32 << 14)) & mask; s0-sh3 = w32 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w45 >> 17) | (w45 << 15)) & MASK; s1-r19 = ((w45 >> 19) | (w45 << 13)) & MASK; s1-sh10 = w45 >> 10
+    s1-r17 = ((w45 >> 17) | (w45 << 15)) & mask; s1-r19 = ((w45 >> 19) | (w45 << 13)) & mask; s1-sh10 = w45 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w47 = (w31 + s0 + w40 + s1) & MASK
+    w47 = (w31 + s0 + w40 + s1) & mask
 
     // 第 47 輪 (K47 = 0x106AA070)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 275423344 + w47) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 275423344 + w47) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[48]: σ1(w46) + w41 + σ0(w33) + w32
-    s0-r7 = ((w33 >> 7) | (w33 << 25)) & MASK; s0-r18 = ((w33 >> 18) | (w33 << 14)) & MASK; s0-sh3 = w33 >> 3
+    s0-r7 = ((w33 >> 7) | (w33 << 25)) & mask; s0-r18 = ((w33 >> 18) | (w33 << 14)) & mask; s0-sh3 = w33 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w46 >> 17) | (w46 << 15)) & MASK; s1-r19 = ((w46 >> 19) | (w46 << 13)) & MASK; s1-sh10 = w46 >> 10
+    s1-r17 = ((w46 >> 17) | (w46 << 15)) & mask; s1-r19 = ((w46 >> 19) | (w46 << 13)) & mask; s1-sh10 = w46 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w48 = (w32 + s0 + w41 + s1) & MASK
+    w48 = (w32 + s0 + w41 + s1) & mask
 
     // 第 48 輪 (K48 = 0x19A4C116)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 430227734 + w48) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 430227734 + w48) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[49]: σ1(w47) + w42 + σ0(w34) + w33
-    s0-r7 = ((w34 >> 7) | (w34 << 25)) & MASK; s0-r18 = ((w34 >> 18) | (w34 << 14)) & MASK; s0-sh3 = w34 >> 3
+    s0-r7 = ((w34 >> 7) | (w34 << 25)) & mask; s0-r18 = ((w34 >> 18) | (w34 << 14)) & mask; s0-sh3 = w34 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w47 >> 17) | (w47 << 15)) & MASK; s1-r19 = ((w47 >> 19) | (w47 << 13)) & MASK; s1-sh10 = w47 >> 10
+    s1-r17 = ((w47 >> 17) | (w47 << 15)) & mask; s1-r19 = ((w47 >> 19) | (w47 << 13)) & mask; s1-sh10 = w47 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w49 = (w33 + s0 + w42 + s1) & MASK
+    w49 = (w33 + s0 + w42 + s1) & mask
 
     // 第 49 輪 (K49 = 0x1E376C08)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 506948616 + w49) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 506948616 + w49) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[50]: σ1(w48) + w43 + σ0(w35) + w34
-    s0-r7 = ((w35 >> 7) | (w35 << 25)) & MASK; s0-r18 = ((w35 >> 18) | (w35 << 14)) & MASK; s0-sh3 = w35 >> 3
+    s0-r7 = ((w35 >> 7) | (w35 << 25)) & mask; s0-r18 = ((w35 >> 18) | (w35 << 14)) & mask; s0-sh3 = w35 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w48 >> 17) | (w48 << 15)) & MASK; s1-r19 = ((w48 >> 19) | (w48 << 13)) & MASK; s1-sh10 = w48 >> 10
+    s1-r17 = ((w48 >> 17) | (w48 << 15)) & mask; s1-r19 = ((w48 >> 19) | (w48 << 13)) & mask; s1-sh10 = w48 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w50 = (w34 + s0 + w43 + s1) & MASK
+    w50 = (w34 + s0 + w43 + s1) & mask
 
     // 第 50 輪 (K50 = 0x2748774C)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 659060556 + w50) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 659060556 + w50) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[51]: σ1(w49) + w44 + σ0(w36) + w35
-    s0-r7 = ((w36 >> 7) | (w36 << 25)) & MASK; s0-r18 = ((w36 >> 18) | (w36 << 14)) & MASK; s0-sh3 = w36 >> 3
+    s0-r7 = ((w36 >> 7) | (w36 << 25)) & mask; s0-r18 = ((w36 >> 18) | (w36 << 14)) & mask; s0-sh3 = w36 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w49 >> 17) | (w49 << 15)) & MASK; s1-r19 = ((w49 >> 19) | (w49 << 13)) & MASK; s1-sh10 = w49 >> 10
+    s1-r17 = ((w49 >> 17) | (w49 << 15)) & mask; s1-r19 = ((w49 >> 19) | (w49 << 13)) & mask; s1-sh10 = w49 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w51 = (w35 + s0 + w44 + s1) & MASK
+    w51 = (w35 + s0 + w44 + s1) & mask
 
     // 第 51 輪 (K51 = 0x34B0BCB5)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 883997877 + w51) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 883997877 + w51) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[52]: σ1(w50) + w45 + σ0(w37) + w36
-    s0-r7 = ((w37 >> 7) | (w37 << 25)) & MASK; s0-r18 = ((w37 >> 18) | (w37 << 14)) & MASK; s0-sh3 = w37 >> 3
+    s0-r7 = ((w37 >> 7) | (w37 << 25)) & mask; s0-r18 = ((w37 >> 18) | (w37 << 14)) & mask; s0-sh3 = w37 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w50 >> 17) | (w50 << 15)) & MASK; s1-r19 = ((w50 >> 19) | (w50 << 13)) & MASK; s1-sh10 = w50 >> 10
+    s1-r17 = ((w50 >> 17) | (w50 << 15)) & mask; s1-r19 = ((w50 >> 19) | (w50 << 13)) & mask; s1-sh10 = w50 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w52 = (w36 + s0 + w45 + s1) & MASK
+    w52 = (w36 + s0 + w45 + s1) & mask
 
     // 第 52 輪 (K52 = 0x391C0CB3)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 958139571 + w52) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 958139571 + w52) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[53]: σ1(w51) + w46 + σ0(w38) + w37
-    s0-r7 = ((w38 >> 7) | (w38 << 25)) & MASK; s0-r18 = ((w38 >> 18) | (w38 << 14)) & MASK; s0-sh3 = w38 >> 3
+    s0-r7 = ((w38 >> 7) | (w38 << 25)) & mask; s0-r18 = ((w38 >> 18) | (w38 << 14)) & mask; s0-sh3 = w38 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w51 >> 17) | (w51 << 15)) & MASK; s1-r19 = ((w51 >> 19) | (w51 << 13)) & MASK; s1-sh10 = w51 >> 10
+    s1-r17 = ((w51 >> 17) | (w51 << 15)) & mask; s1-r19 = ((w51 >> 19) | (w51 << 13)) & mask; s1-sh10 = w51 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w53 = (w37 + s0 + w46 + s1) & MASK
+    w53 = (w37 + s0 + w46 + s1) & mask
 
     // 第 53 輪 (K53 = 0x4ED8AA4A)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1322822218 + w53) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1322822218 + w53) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[54]: σ1(w52) + w47 + σ0(w39) + w38
-    s0-r7 = ((w39 >> 7) | (w39 << 25)) & MASK; s0-r18 = ((w39 >> 18) | (w39 << 14)) & MASK; s0-sh3 = w39 >> 3
+    s0-r7 = ((w39 >> 7) | (w39 << 25)) & mask; s0-r18 = ((w39 >> 18) | (w39 << 14)) & mask; s0-sh3 = w39 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w52 >> 17) | (w52 << 15)) & MASK; s1-r19 = ((w52 >> 19) | (w52 << 13)) & MASK; s1-sh10 = w52 >> 10
+    s1-r17 = ((w52 >> 17) | (w52 << 15)) & mask; s1-r19 = ((w52 >> 19) | (w52 << 13)) & mask; s1-sh10 = w52 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w54 = (w38 + s0 + w47 + s1) & MASK
+    w54 = (w38 + s0 + w47 + s1) & mask
 
     // 第 54 輪 (K54 = 0x5B9CCA4F)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1537002063 + w54) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1537002063 + w54) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[55]: σ1(w53) + w48 + σ0(w40) + w39
-    s0-r7 = ((w40 >> 7) | (w40 << 25)) & MASK; s0-r18 = ((w40 >> 18) | (w40 << 14)) & MASK; s0-sh3 = w40 >> 3
+    s0-r7 = ((w40 >> 7) | (w40 << 25)) & mask; s0-r18 = ((w40 >> 18) | (w40 << 14)) & mask; s0-sh3 = w40 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w53 >> 17) | (w53 << 15)) & MASK; s1-r19 = ((w53 >> 19) | (w53 << 13)) & MASK; s1-sh10 = w53 >> 10
+    s1-r17 = ((w53 >> 17) | (w53 << 15)) & mask; s1-r19 = ((w53 >> 19) | (w53 << 13)) & mask; s1-sh10 = w53 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w55 = (w39 + s0 + w48 + s1) & MASK
+    w55 = (w39 + s0 + w48 + s1) & mask
 
     // 第 55 輪 (K55 = 0x682E6FF3)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1747873779 + w55) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1747873779 + w55) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[56]: σ1(w54) + w49 + σ0(w41) + w40
-    s0-r7 = ((w41 >> 7) | (w41 << 25)) & MASK; s0-r18 = ((w41 >> 18) | (w41 << 14)) & MASK; s0-sh3 = w41 >> 3
+    s0-r7 = ((w41 >> 7) | (w41 << 25)) & mask; s0-r18 = ((w41 >> 18) | (w41 << 14)) & mask; s0-sh3 = w41 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w54 >> 17) | (w54 << 15)) & MASK; s1-r19 = ((w54 >> 19) | (w54 << 13)) & MASK; s1-sh10 = w54 >> 10
+    s1-r17 = ((w54 >> 17) | (w54 << 15)) & mask; s1-r19 = ((w54 >> 19) | (w54 << 13)) & mask; s1-sh10 = w54 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w56 = (w40 + s0 + w49 + s1) & MASK
+    w56 = (w40 + s0 + w49 + s1) & mask
 
     // 第 56 輪 (K56 = 0x748F82EE)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 1955562222 + w56) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 1955562222 + w56) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[57]: σ1(w55) + w50 + σ0(w42) + w41
-    s0-r7 = ((w42 >> 7) | (w42 << 25)) & MASK; s0-r18 = ((w42 >> 18) | (w42 << 14)) & MASK; s0-sh3 = w42 >> 3
+    s0-r7 = ((w42 >> 7) | (w42 << 25)) & mask; s0-r18 = ((w42 >> 18) | (w42 << 14)) & mask; s0-sh3 = w42 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w55 >> 17) | (w55 << 15)) & MASK; s1-r19 = ((w55 >> 19) | (w55 << 13)) & MASK; s1-sh10 = w55 >> 10
+    s1-r17 = ((w55 >> 17) | (w55 << 15)) & mask; s1-r19 = ((w55 >> 19) | (w55 << 13)) & mask; s1-sh10 = w55 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w57 = (w41 + s0 + w50 + s1) & MASK
+    w57 = (w41 + s0 + w50 + s1) & mask
 
     // 第 57 輪 (K57 = 0x78A5636F)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2024104815 + w57) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2024104815 + w57) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[58]: σ1(w56) + w51 + σ0(w43) + w42
-    s0-r7 = ((w43 >> 7) | (w43 << 25)) & MASK; s0-r18 = ((w43 >> 18) | (w43 << 14)) & MASK; s0-sh3 = w43 >> 3
+    s0-r7 = ((w43 >> 7) | (w43 << 25)) & mask; s0-r18 = ((w43 >> 18) | (w43 << 14)) & mask; s0-sh3 = w43 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w56 >> 17) | (w56 << 15)) & MASK; s1-r19 = ((w56 >> 19) | (w56 << 13)) & MASK; s1-sh10 = w56 >> 10
+    s1-r17 = ((w56 >> 17) | (w56 << 15)) & mask; s1-r19 = ((w56 >> 19) | (w56 << 13)) & mask; s1-sh10 = w56 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w58 = (w42 + s0 + w51 + s1) & MASK
+    w58 = (w42 + s0 + w51 + s1) & mask
 
     // 第 58 輪 (K58 = 0x84C87814)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2227730452 + w58) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2227730452 + w58) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[59]: σ1(w57) + w52 + σ0(w44) + w43
-    s0-r7 = ((w44 >> 7) | (w44 << 25)) & MASK; s0-r18 = ((w44 >> 18) | (w44 << 14)) & MASK; s0-sh3 = w44 >> 3
+    s0-r7 = ((w44 >> 7) | (w44 << 25)) & mask; s0-r18 = ((w44 >> 18) | (w44 << 14)) & mask; s0-sh3 = w44 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w57 >> 17) | (w57 << 15)) & MASK; s1-r19 = ((w57 >> 19) | (w57 << 13)) & MASK; s1-sh10 = w57 >> 10
+    s1-r17 = ((w57 >> 17) | (w57 << 15)) & mask; s1-r19 = ((w57 >> 19) | (w57 << 13)) & mask; s1-sh10 = w57 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w59 = (w43 + s0 + w52 + s1) & MASK
+    w59 = (w43 + s0 + w52 + s1) & mask
 
     // 第 59 輪 (K59 = 0x8CC70208)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2361852424 + w59) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2361852424 + w59) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[60]: σ1(w58) + w53 + σ0(w45) + w44
-    s0-r7 = ((w45 >> 7) | (w45 << 25)) & MASK; s0-r18 = ((w45 >> 18) | (w45 << 14)) & MASK; s0-sh3 = w45 >> 3
+    s0-r7 = ((w45 >> 7) | (w45 << 25)) & mask; s0-r18 = ((w45 >> 18) | (w45 << 14)) & mask; s0-sh3 = w45 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w58 >> 17) | (w58 << 15)) & MASK; s1-r19 = ((w58 >> 19) | (w58 << 13)) & MASK; s1-sh10 = w58 >> 10
+    s1-r17 = ((w58 >> 17) | (w58 << 15)) & mask; s1-r19 = ((w58 >> 19) | (w58 << 13)) & mask; s1-sh10 = w58 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w60 = (w44 + s0 + w53 + s1) & MASK
+    w60 = (w44 + s0 + w53 + s1) & mask
 
     // 第 60 輪 (K60 = 0x90BEFFFA)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2428436474 + w60) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2428436474 + w60) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[61]: σ1(w59) + w54 + σ0(w46) + w45
-    s0-r7 = ((w46 >> 7) | (w46 << 25)) & MASK; s0-r18 = ((w46 >> 18) | (w46 << 14)) & MASK; s0-sh3 = w46 >> 3
+    s0-r7 = ((w46 >> 7) | (w46 << 25)) & mask; s0-r18 = ((w46 >> 18) | (w46 << 14)) & mask; s0-sh3 = w46 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w59 >> 17) | (w59 << 15)) & MASK; s1-r19 = ((w59 >> 19) | (w59 << 13)) & MASK; s1-sh10 = w59 >> 10
+    s1-r17 = ((w59 >> 17) | (w59 << 15)) & mask; s1-r19 = ((w59 >> 19) | (w59 << 13)) & mask; s1-sh10 = w59 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w61 = (w45 + s0 + w54 + s1) & MASK
+    w61 = (w45 + s0 + w54 + s1) & mask
 
     // 第 61 輪 (K61 = 0xA4506CEB)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 2756734187 + w61) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 2756734187 + w61) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[62]: σ1(w60) + w55 + σ0(w47) + w46
-    s0-r7 = ((w47 >> 7) | (w47 << 25)) & MASK; s0-r18 = ((w47 >> 18) | (w47 << 14)) & MASK; s0-sh3 = w47 >> 3
+    s0-r7 = ((w47 >> 7) | (w47 << 25)) & mask; s0-r18 = ((w47 >> 18) | (w47 << 14)) & mask; s0-sh3 = w47 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w60 >> 17) | (w60 << 15)) & MASK; s1-r19 = ((w60 >> 19) | (w60 << 13)) & MASK; s1-sh10 = w60 >> 10
+    s1-r17 = ((w60 >> 17) | (w60 << 15)) & mask; s1-r19 = ((w60 >> 19) | (w60 << 13)) & mask; s1-sh10 = w60 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w62 = (w46 + s0 + w55 + s1) & MASK
+    w62 = (w46 + s0 + w55 + s1) & mask
 
     // 第 62 輪 (K62 = 0xBEF9A3F7)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3204031479 + w62) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3204031479 + w62) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // W[63]: σ1(w61) + w56 + σ0(w48) + w47
-    s0-r7 = ((w48 >> 7) | (w48 << 25)) & MASK; s0-r18 = ((w48 >> 18) | (w48 << 14)) & MASK; s0-sh3 = w48 >> 3
+    s0-r7 = ((w48 >> 7) | (w48 << 25)) & mask; s0-r18 = ((w48 >> 18) | (w48 << 14)) & mask; s0-sh3 = w48 >> 3
     s0 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 = ((w61 >> 17) | (w61 << 15)) & MASK; s1-r19 = ((w61 >> 19) | (w61 << 13)) & MASK; s1-sh10 = w61 >> 10
+    s1-r17 = ((w61 >> 17) | (w61 << 15)) & mask; s1-r19 = ((w61 >> 19) | (w61 << 13)) & mask; s1-sh10 = w61 >> 10
     s1 = s1-r17 ^ s1-r19 ^ s1-sh10
-    w63 = (w47 + s0 + w56 + s1) & MASK
+    w63 = (w47 + s0 + w56 + s1) & mask
 
     // 第 63 輪 (K63 = 0xC67178F2)
-    S1 = ((e >> 6) | (e << 26)) & MASK; S1 = S1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    Ch = (e & f) ^ ((MASK ^ e) & g)
-    S0 = ((a >> 2) | (a << 30)) & MASK; S0 = S0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    Maj = (a & b) ^ (a & c) ^ (b & c)
-    T1 = (h + S1 + Ch + 3329325298 + w63) & MASK
-    T2 = (S0 + Maj) & MASK
-    h = g; g = f; f = e; e = (d + T1) & MASK
-    d = c; c = b; b = a; a = (T1 + T2) & MASK
+    s1 = ((e >> 6) | (e << 26)) & mask; s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask; s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
+    maj = (a & b) ^ (a & c) ^ (b & c)
+    t1 = (h + s1 + ch + 3329325298 + w63) & mask
+    t2 = (s0 + maj) & mask
+    h = g; g = f; f = e; e = (d + t1) & mask
+    d = c; c = b; b = a; a = (t1 + t2) & mask
 
     // 累加回初始哈希值
-    h0 = (h0 + a) & MASK
-    h1 = (h1 + b) & MASK
-    h2 = (h2 + c) & MASK
-    h3 = (h3 + d) & MASK
-    h4 = (h4 + e) & MASK
-    h5 = (h5 + f) & MASK
-    h6 = (h6 + g) & MASK
-    h7 = (h7 + h) & MASK
+    h0 = (h0 + a) & mask
+    h1 = (h1 + b) & mask
+    h2 = (h2 + c) & mask
+    h3 = (h3 + d) & mask
+    h4 = (h4 + e) & mask
+    h5 = (h5 + f) & mask
+    h6 = (h6 + g) & mask
+    h7 = (h7 + h) & mask
 }
