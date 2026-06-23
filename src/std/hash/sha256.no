@@ -12,7 +12,7 @@
 // s: 16 個 32-bit 字 (big-endian)
 // n: 固定 16
 // h0..h7: 輸入/輸出 256-bit 哈希狀態
-sha256 = (s str, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
+sha256 = (s []i64, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
     MASK = 4294967295
 
     // 初始狀態

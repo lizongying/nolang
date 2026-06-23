@@ -8,7 +8,7 @@
 
 // crc-32: 計算 CRC32 校驗和
 // s: 輸入字串, n: 字串長度, crc: 輸出校驗和
-crc-32 = (s str, n i64, crc i64) {
+crc-32 = (s []byte, n i64, crc i64) {
     crc = 4294967295
     i = 0
     i < n: {
