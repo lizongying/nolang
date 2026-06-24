@@ -30,12 +30,12 @@ print('Hello, Nolang!')
 // 變量聲明
 i64
 
-// 函數定義（普通方法通過參數返回結果）
-add(a i64, b i64, result i64) {
+// 函數定義
+add = (a i64, b i64) (result i64) {
     result = a + b
 }
 
-// 標準庫方法，可以和普通函數類似，有返回值 
+// 標準庫方法，可以直接調用
 c = max(a, b)
 
 // 結構體
@@ -50,7 +50,7 @@ u = user {
 }
 
 // 方法
-user.greet() {
+user.greet = () {
     print('Hello, ' + .name)
 }
 
