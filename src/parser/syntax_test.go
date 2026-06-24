@@ -152,53 +152,53 @@ func TestSwitchMatchSyntax(t *testing.T) {
 	}{
 		// switch - 無返回值
 		{name: "switch_no_result", input: `x: {
-    1|
+    1 ->
         a = 1
-    2|
+    2 ->
         do-something()
-    |
+    ->
         c = 0
 }`, wantErr: false},
 		// switch - 有返回值
 		{name: "switch_with_result", input: `result = x: {
-    1| 1
-    2| 2 + 1
-    | a + b
+    1 -> 1
+    2 -> 2 + 1
+    -> a + b
 }`, wantErr: false},
 		// bare match (if/else) - 無 matched expression
 		{name: "bare_match", input: `{
-    a == 1|
+    a == 1 ->
         a = 1
         b = 2
-    a == 2|
+    a == 2 ->
         do-something()
-    |
+    ->
         c = 0
 }`, wantErr: false},
 		// match - err/nil
 		{name: "match_err_nil", input: `x: {
-    err| log(it)
-    nil| log('nil')
-    |
+    err -> log(it)
+    nil -> log('nil')
+    ->
         do-right-thing(it)
 }`, wantErr: false},
 		// 舊式寫法 without colon
 		{name: "old_switch_no_colon", input: `x {
-    1| 10
-    2| 20
-    _| 0
+    1 -> 10
+    2 -> 20
+    _-> 0
 }`, wantErr: false},
 		// new syntax with colon
 		{name: "new_switch_colon", input: `x: {
-    1| 10
-    2| 20
-    | 0
+    1 -> 10
+    2 -> 20
+    -> 0
 }`, wantErr: false},
 		// new syntax with result
 		{name: "new_switch_result_colon", input: `result = x: {
-    1| 10
-    2| 20
-    | 0
+    1 -> 10
+    2 -> 20
+    -> 0
 }`, wantErr: false},
 	}
 	for _, tt := range tests {
@@ -326,7 +326,7 @@ func TestDeprecationWarnings(t *testing.T) {
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},
 		{name: "for_infinite_no_warning", input: "for {\n    break\n}", wantWarnings: 0},
 		{name: "for_cstyle_no_warning", input: "for i = 0; i < 5; i++ {\n}", wantWarnings: 0},
-		{name: "new_match_no_warning", input: "x: {\n    1| 10\n    | 0\n}", wantWarnings: 0},
+		{name: "new_match_no_warning", input: "x: {\n    1-> 10\n    -> 0\n}", wantWarnings: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

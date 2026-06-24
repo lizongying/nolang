@@ -5,19 +5,19 @@
 
 x = 3
 x {
-    1|
+    1 ->
         print(11)
-    2|
+    2 ->
         print(22)
-    |
+    ->
         print(33)
 }
 
 x = 4
 x {
-    1| print(111)
-    2| print(222)
-    | print(333)
+    1 -> print(111)
+    2 -> print(222)
+    -> print(333)
 }
 
 
@@ -25,21 +25,21 @@ x {
 a = 100
 b = 101
 result = x {
-    1| 1       // 单一值
-    2| 2+1     //簡單表達式
-    | a+b
+    1 -> 1       // 单一值
+    2 -> 2+1     //簡單表達式
+    -> a+b
 }
 print(result)
 
 // todo 特殊match 現在有問題
 {
-    a == 99|
+    a == 99 ->
         a = 1
         b = 2
         // todo      print(a+b)
         print(b)
-    a == 2|
+    a == 2 ->
         print('a')
-    |
+    ->
         print('b')
 }

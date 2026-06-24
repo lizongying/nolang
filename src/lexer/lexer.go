@@ -217,6 +217,10 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok.Type = DEC
 			tok.Literal = "--"
+		} else if l.peekChar() == '>' {
+			l.readChar()
+			tok.Type = RARROW
+			tok.Literal = "->"
 		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = SUB_ASSIGN

@@ -563,9 +563,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_expr_simple",
 			input: `result = x {
-    1| 10
-    2| 20
-    _| 0
+    1 -> 10
+    2 -> 20
+    _-> 0
 }`,
 			wantErr:  false,
 			wantArms: 3,
@@ -587,8 +587,8 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_bare_colon_default",
 			input: `result = x {
-    1| 10
-    | 0
+    1 -> 10
+    -> 0
 }`,
 			wantErr:  false,
 			wantArms: 2,
@@ -596,9 +596,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_no_expr",
 			input: `{
-    a == 1|
+    a == 1 ->
         x = 1
-    a == 2|
+    a == 2 ->
         y = 2
     :
         z = 0
@@ -609,12 +609,12 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_readme_block_body",
 			input: `x {
-    1|
+    1 ->
         a = 1
         b = 2
-    2|
+    2 ->
         doSomething()
-    |
+    ->
         c = 0
 }`,
 			wantErr:  false,
@@ -623,9 +623,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_readme_expr_body",
 			input: `result = x {
-    1| 1
-    2| 2 + 1
-    | a + b
+    1 -> 1
+    2 -> 2 + 1
+    -> a + b
 }`,
 			wantErr:  false,
 			wantArms: 3,
@@ -633,12 +633,12 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_readme_no_expr",
 			input: `{
-    a == 1|
+    a == 1 ->
         a = 1
         b = 2
-    a == 2|
+    a == 2 ->
         doSomething()
-    |
+    ->
         c = 0
 }`,
 			wantErr:  false,
@@ -647,9 +647,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_readme_err_nil",
 			input: `x {
-    err| log(it)
-    nil| log('nil')
-    |
+    err -> log(it)
+    nil -> log('nil')
+    ->
         doRightThing(it)
 }`,
 			wantErr:  false,
@@ -658,9 +658,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_readme_option_empty_nil",
 			input: `x {
-    err| log(it)
-    nil|
-    |
+    err -> log(it)
+    nil ->
+    ->
         doRightThing(it)
 }`,
 			wantErr:  false,
@@ -669,9 +669,9 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_stmt_inline",
 			input: `x {
-    1| print(111)
-    2| print(222)
-    | print(333)
+    1 -> print(111)
+    2 -> print(222)
+    -> print(333)
 }`,
 			wantErr:  false,
 			wantArms: 3,
@@ -679,7 +679,7 @@ func TestMatch(t *testing.T) {
 		{
 			name: "match_expr_block_body",
 			input: `result = x {
-    1|
+    1 ->
         true
 }`,
 			wantErr:  false,

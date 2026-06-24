@@ -586,9 +586,9 @@ nullableString = err('some error')
 
 // 可通過match判斷
 x: {
-    err| log(it)
-    nil|
-    |
+    err -> log(it)
+    nil -> log('nil')
+    ->
         do-right-thing(it)
 }
 

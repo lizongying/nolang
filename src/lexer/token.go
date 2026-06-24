@@ -63,6 +63,7 @@ const (
 	SHL     // <<
 	SHR     // >>
 	ARROW   // <-
+	RARROW  // ->
 	AND     // &
 	OR      // |
 	AND_NOT // &^
@@ -174,6 +175,7 @@ var tokenNames = map[TokenType]string{
 	SHL:            "SHL(<<)",
 	SHR:            "SHR(>>)",
 	ARROW:          "ARROW(<-)",
+	RARROW:         "RARROW(->)",
 	AND_NOT:        "AND_NOT(&^)",
 	ELLIPSIS:       "ELLIPSIS(..)",
 

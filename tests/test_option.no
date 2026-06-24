@@ -19,16 +19,16 @@ test-option-3 = () {
     println-i64(x)
 }
 
-// Test 4: Match on option with err| nil| | patterns
+// Test 4: Match on option with err-> nil-> -> patterns
 test-option-4 = () {
     x ?str
     x = err('error msg')
     x {
-        err|
+        err ->
             println-i64(.)
-        nil|
+        nil ->
             println-i64(0)
-        |
+        ->
             println-i64(1)
     }
 }
@@ -38,11 +38,11 @@ test-option-5 = () {
     x ?str
     x = nil
     x {
-        err|
+        err ->
             println-i64(100)
-        nil|
+        nil ->
             println-i64(200)
-        |
+        ->
             println-i64(300)
     }
 }
@@ -52,11 +52,11 @@ test-option-6 = () {
     x ?str
     x = val('test')
     x {
-        err|
+        err ->
             println-i64(1000)
-        nil|
+        nil ->
             println-i64(2000)
-        |
+        ->
             println-i64(3000)
     }
 }

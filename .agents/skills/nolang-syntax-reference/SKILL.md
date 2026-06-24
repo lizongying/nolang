@@ -25,7 +25,7 @@ This skill provides quick reference to Nolang language syntax. For full details,
 // i64 (default), f64, byte, bool, str can omit type annotation
 i = 1
 f = 1.0
-b = x00
+b = 0x00
 name = 'nolang'
 flag = true
 
@@ -33,10 +33,12 @@ flag = true
 a u64 = 10
 c char = 中
 
-// Arrays
+// Arr
 arr [3] = [1, 2, 3]        // i64 array
 typed [3]u16 = [1, 2, 3]   // typed
-typed []u8 = [1, 2, 3]     // vec/slice
+
+// Vec
+typed []u8 = [1, 2, 3]
 
 // String concat uses '-'
 greeting = 'hello, ' - name
@@ -47,7 +49,7 @@ greeting = 'hello, ' - name
 Variables, functions, structs: may start with underscore, use hyphens, letters, digits. No leading digit, no trailing hyphen, no consecutive hyphens.
 
 ```nolang
-NOLANG = 'nolang'       // global constants uppercase
+NO-LANG = 'nolang'       // global constants uppercase
 _x = 10                 // private
 foo-bar = 42            // hyphenated names
 ```
@@ -69,29 +71,59 @@ add = (a i64, b i64) (result i64) {
 
 ```nolang
 // Infinite loop
+// old
 for { }
+
+// new
 ! { }
 
 // Conditional loop
+// old
 for i < 5 { }
 
+// new
+i < 5: { }
+
+// five times
+5 * { }
+
 // Range for
+// old
 for i in [0..10) { }
+
+// new
+i <- [0..10): { }
 
 // Classic for
 for i=0; i < 5; i++ { }
 
 // Named loops with break/continue
+// old
 outer for i in [0..10) {
     break outer
     continue outer
+}
+
+//new named
+#1
+i <- [0..10): {
+ 
+    #2
+    val: {
+        val == 0x01 -> encrypt()
+        -> zero()
+    }
 }
 
 // If/elif/else
 if x > 5 { } elif x < 0 { } else { }
 
 // Match
-x: { err| log(it) nil| | do-right-thing(it) }
+x: { 
+    err -> log(it)
+    nil -> 
+    -> do-right-thing(it)
+}
 
 // Ternary
 c = flag ? 1 : 2
@@ -105,7 +137,10 @@ user {
     age i64
 }
 
-u = user { name: 'Alice', age: 30 }
+u = user { 
+    name: 'Alice'
+    age: 30
+}
 
 user.greet = () {
     print('Hello, ' - .name)
