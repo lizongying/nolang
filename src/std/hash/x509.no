@@ -41,13 +41,13 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
         n = b & 127
         len = 0
         i = 0
-        i < n
-        len = (len << 8) | (data[pos + 1 + i] & 255)
-        i = i + 1
+        i < n: {
+            len = (len << 8) | (data[pos + 1 + i] & 255)
+            i = i + 1
+        }
+        adv = 1 + n
     }
 }
-
-adv = 1 + n
 
 // der-skip: 跳過一個 DER TLV 元素
 // data: DER 編碼資料, n: 資料總長度
@@ -127,12 +127,12 @@ x509-serial = (data []byte, n i64, serial i64) {
     // 讀取序號值
     val = 0
     i = 0
-    i < int-len
-    val = (val << 8) | (data[p + 1 + adv + i] & 255)
-    i = i + 1
+    i < int-len: {
+        val = (val << 8) | (data[p + 1 + adv + i] & 255)
+        i = i + 1
+    }
+    serial = val
 }
-
-serial = val
 
 // x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
 // data: DER 編碼憑證, n: 總長度
@@ -221,12 +221,12 @@ x509-rsa-e = (data []byte, n i64, e i64) {
     }
     val = 0
     i = 0
-    i < exp-len
-    val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
-    i = i + 1
+    i < exp-len: {
+        val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
+        i = i + 1
+    }
+    e = val
 }
-
-e = val
 
 // ─── SHA-256 憑證指紋 ─────────────────────────────────
 

@@ -1,6 +1,6 @@
 // math - 数学函数标准库
-pi = 3.141592653589793
-e = 2.718281828459045
+PI = 3.141592653589793
+E = 2.718281828459045
 
 // 基础
 // build-in (LLVMIntrinsic: llvm.fabs.f64)
@@ -116,10 +116,10 @@ tan = (x f64) (res f64) {
 
 // degrees: 弧度转角度
 degrees = (r f64) (res f64) {
-    res = r * 180.0 / pi
+    res = r * 180.0 / PI
 }
 
 // radians: 角度转弧度
 radians = (d f64) (res f64) {
-    res = d * pi / 180.0
+    res = d * PI / 180.0
 }

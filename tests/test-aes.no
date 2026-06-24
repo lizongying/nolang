@@ -2,9 +2,9 @@ a = () {
 
     val = 0
     i = 0
-    i < exp-len
-    val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
-    i = i + 1
+    i < exp-len: {
+        val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
+        i = i + 1
+    }
+    e = val
 }
-
-e = val

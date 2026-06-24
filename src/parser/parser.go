@@ -2265,7 +2265,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 		// expr: { ... } or expr { ... } → match or struct literal
 		hasColonBeforeBrace := p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE
-		if hasColonBeforeBrace && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
+		// Only consume `:` from `: {` at the top expression level (precedence == LOWEST)
+		// to avoid stealing `:` from bare condition for-loops like `i < n: { body }`
+		// where the `: {` follows the right operand of an infix expression.
+		if hasColonBeforeBrace && precedence == LOWEST && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			p.nextToken() // skip :
 		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
@@ -3975,25 +3978,59 @@ parseBody:
 							p.nextToken() // skip :
 						}
 						stmt.Init = nil
+						// Skip newlines before {
+						for p.currentToken.Type == lexer.NEWLINE {
+							p.nextToken()
+						}
 						if p.currentToken.Type == lexer.LBRACE {
 							stmt.Body = p.parseBlockStatement()
 							p.nextToken() // skip body's }
 							return stmt
 						}
+					} else {
+						// init 是簡單標識符但不是 < n[:] { } 模式，回退
+						// 重置 init 為完整的 i < n 表達式
+						// 因為左邊已經被 parseStatement 消費了，我們需要重新構造
 					}
 				}
 			}
 		}
 	}
 
-	if p.currentToken.Type != lexer.LBRACE {
-		stmt.Condition = nil
+	// 根據 currentToken 類型分流處理 init
+	if p.currentToken.Type == lexer.SEMICOLON {
+		// C-style for: for init; cond; update { }
+		stmt.Init = init
+		p.nextToken() // skip ;
+		stmt.Condition = p.parseExpression(LOWEST)
+		p.nextToken()
+		update := p.parseExpressionStatement()
+		if update != nil {
+			stmt.Update = update
+		}
+	} else if p.currentToken.Type == lexer.LBRACE {
+		// for condition { } or for { } — init 是完整表達式
+		if es, ok := init.(*ExpressionStatement); ok {
+			stmt.Condition = es.Expression
+			// Warn for old-style for/while (without colon)
+			if stmt.IterRange == nil && !hasColon {
+				if stmt.Token.Literal == "while" {
+					p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use '<condition>: { }' instead",
+						stmt.Token.Line, stmt.Token.Column))
+				} else {
+					p.saveWarning(fmt.Sprintf("line %d, column %d: 'for condition { }' is deprecated, use '<condition>: { }' instead",
+						stmt.Token.Line, stmt.Token.Column))
+				}
+			}
+		}
+	} else {
+		// for condition (NL) { } — condition 是完整表達式，後面有換行
 		if init != nil {
 			if es, ok := init.(*ExpressionStatement); ok {
 				stmt.Condition = es.Expression
 			}
 		}
-		// Warn for old-style "for condition" (without colon)
+		// Warn for old-style for/while (without colon)
 		if stmt.Condition != nil && stmt.IterRange == nil {
 			if stmt.Token.Literal == "while" && !hasColon {
 				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use '<condition>: { }' instead",
@@ -4003,21 +4040,9 @@ parseBody:
 					stmt.Token.Line, stmt.Token.Column))
 			}
 		}
-	} else {
-		stmt.Init = init
-
-		// 跳過 ; (C-style for: init; cond; update)
-		if p.currentToken.Type == lexer.SEMICOLON {
+		// Skip newlines before {
+		for p.currentToken.Type == lexer.NEWLINE {
 			p.nextToken()
-		}
-
-		stmt.Condition = p.parseExpression(LOWEST)
-
-		p.nextToken()
-
-		update := p.parseExpressionStatement()
-		if update != nil {
-			stmt.Update = update
 		}
 	}
 

@@ -96,10 +96,11 @@ gf-mul2 = (x i64, r i64) {
 // inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state []byte, n i64) {
     i = 0
-    i < n
-    b = state[i] & 255
-    state[i] = INV-SBOX[b]
-    i = i + 1
+    i < n: {
+        b = state[i] & 255
+        state[i] = INV-SBOX[b]
+        i = i + 1
+    }
 }
 
 // inv-shift-rows: 逆向列位移（右旋轉）
