@@ -2264,10 +2264,15 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			isIncDec = true
 		}
 		// expr: { ... } or expr { ... } → match or struct literal
-		if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
+		hasColonBeforeBrace := p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE
+		if hasColonBeforeBrace && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			p.nextToken() // skip :
 		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
+			if p.classifyBlockAtCurrent() == blockMatch && !hasColonBeforeBrace {
+				p.saveWarning(fmt.Sprintf("line %d, column %d: 'x { ... }' is deprecated, use 'x: { ... }' instead",
+					p.currentToken.Line, p.currentToken.Column))
+			}
 			if p.classifyBlockAtCurrent() == blockStruct {
 				result := p.parseStructLiteral(leftExp)
 				if result != nil {

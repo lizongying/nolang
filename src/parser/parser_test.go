@@ -562,7 +562,7 @@ func TestMatch(t *testing.T) {
 	}{
 		{
 			name: "match_expr_simple",
-			input: `result = x {
+			input: `result = x: {
     1 -> 10
     2 -> 20
     _-> 0
@@ -572,7 +572,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_stmt_with_blocks",
-			input: `x {
+			input: `x: {
     1:
         a = 1
         b = 2
@@ -586,7 +586,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_bare_colon_default",
-			input: `result = x {
+			input: `result = x: {
     1 -> 10
     -> 0
 }`,
@@ -608,7 +608,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_readme_block_body",
-			input: `x {
+			input: `x: {
     1 ->
         a = 1
         b = 2
@@ -622,7 +622,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_readme_expr_body",
-			input: `result = x {
+			input: `result = x: {
     1 -> 1
     2 -> 2 + 1
     -> a + b
@@ -646,7 +646,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_readme_err_nil",
-			input: `x {
+			input: `x: {
     err -> log(it)
     nil -> log('nil')
     ->
@@ -657,7 +657,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_readme_option_empty_nil",
-			input: `x {
+			input: `x: {
     err -> log(it)
     nil ->
     ->
@@ -668,7 +668,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_stmt_inline",
-			input: `x {
+			input: `x: {
     1 -> print(111)
     2 -> print(222)
     -> print(333)
@@ -678,7 +678,7 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name: "match_expr_block_body",
-			input: `result = x {
+			input: `result = x: {
     1 ->
         true
 }`,

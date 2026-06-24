@@ -23,7 +23,7 @@ test-option-3 = () {
 test-option-4 = () {
     x ?str
     x = err('error msg')
-    x {
+    x: {
         err ->
             println-i64(.)
         nil ->
@@ -37,7 +37,7 @@ test-option-4 = () {
 test-option-5 = () {
     x ?str
     x = nil
-    x {
+    x: {
         err ->
             println-i64(100)
         nil ->
@@ -51,7 +51,7 @@ test-option-5 = () {
 test-option-6 = () {
     x ?str
     x = val('test')
-    x {
+    x: {
         err ->
             println-i64(1000)
         nil ->

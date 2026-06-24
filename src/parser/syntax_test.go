@@ -182,7 +182,7 @@ func TestSwitchMatchSyntax(t *testing.T) {
     ->
         do-right-thing(it)
 }`, wantErr: false},
-		// 舊式寫法 without colon
+		// 舊式寫法 without colon (deprecated)
 		{name: "old_switch_no_colon", input: `x {
     1 -> 10
     2 -> 20
@@ -321,6 +321,7 @@ func TestDeprecationWarnings(t *testing.T) {
 		{name: "switch_deprecated", input: "switch x {\n    case 1: a = 1\n    default: c = 0\n}", wantWarnings: 1},
 		{name: "while_no_colon_deprecated", input: "while i < 5 {\n    break\n}", wantWarnings: 1},
 		{name: "bare_range_no_colon_deprecated", input: "i <- [0..10) {\n    break\n}", wantWarnings: 1},
+		{name: "match_no_colon_deprecated", input: "x {\n    1-> 10\n    -> 0\n}", wantWarnings: 1},
 		// New syntax — no warnings
 		{name: "while_with_colon_no_warning", input: "while i < 5: {\n    break\n}", wantWarnings: 0},
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},
