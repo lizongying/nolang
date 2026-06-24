@@ -712,7 +712,7 @@ add-i64 = (a bigint, v i64, c bigint) {
 
 // to-hex: 將 bigint 轉為十六進制字串（小寫）
 to-hex = (a bigint, out str) (out-n i64) {
-    HEX = '0123456789abcdef'
+    hex = '0123456789abcdef'
     out-n = 0
     if a.sign == -1 {
         out[0] = 45
@@ -729,7 +729,7 @@ to-hex = (a bigint, out str) (out-n i64) {
                     nibble = (limb >> shift) & 15
                     if done == 1 || nibble != 0 {
                         done = 1
-                        out[out-n] = HEX[nibble]
+                        out[out-n] = hex[nibble]
                         out-n = out-n + 1
                     }
                     shift = shift - 4
@@ -739,7 +739,7 @@ to-hex = (a bigint, out str) (out-n i64) {
             shift = 28
             for shift >= 0 {
                 nibble = (limb >> shift) & 15
-                out[out-n] = HEX[nibble]
+                out[out-n] = hex[nibble]
                 out-n = out-n + 1
                 shift = shift - 4
             }

@@ -1248,6 +1248,26 @@ func TestFormatMultiAssign(t *testing.T) {
 			input:    "lcm = (a bigint, b bigint, l bigint) { g = bigint{} gcd(a, b, g) q, r = div-mod(a, g) l = mul(q, b) }",
 			expected: "lcm = (a bigint, b bigint, l bigint) {\n    g = bigint{}; gcd(a, b, g)\n    q, r = div-mod(a, g)\n    l = mul(q, b)\n}",
 		},
+		{
+			// . method call as a bare statement after a let/assignment
+			// — must NOT drop the leading '.' (regression: skipToStatementEnd
+			// used to skip over the DOT, producing 'hash(key, idx)' instead).
+			name:     "dot method call after let before for",
+			input:    "foo = () {\n    idx = 0\n    .hash(key, idx)\n    for x < 10 {\n        print(x)\n    }\n}",
+			expected: "foo = () {\n    idx = 0\n    .hash(key, idx)\n    for x < 10 {\n        print(x)\n    }\n}",
+		},
+		{
+			// . method call whose return is used as a statement (no assignment)
+			name:     "dot method call standalone",
+			input:    "foo = () {\n    .hash(key, idx)\n}",
+			expected: "foo = () {\n    .hash(key, idx)\n}",
+		},
+		{
+			// . method call followed by for loop whose condition also uses '.'
+			name:     "dot method call then dot for condition",
+			input:    "linked-hash-map.put = (key i64, val i64, is-new i64) {\n    idx = 0\n    .hash(key, idx)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
+			expected: "linked-hash-map.put = (key i64, val i64, is-new i64) {\n    idx = 0\n    .hash(key, idx)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
+		},
 	}
 
 	for _, tt := range tests {

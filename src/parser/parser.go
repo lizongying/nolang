@@ -2647,7 +2647,11 @@ func isStatementBoundary(t lexer.TokenType) bool {
 	switch t {
 	case lexer.IF, lexer.IDENT, lexer.RBRACE, lexer.FOR,
 		lexer.RETURN, lexer.BREAK, lexer.CONTINUE,
-		lexer.LPAREN, lexer.LBRACE, lexer.SEMICOLON:
+		lexer.LPAREN, lexer.LBRACE, lexer.SEMICOLON,
+		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
+		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
+		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
+		lexer.LBRACKET:
 		return true
 	}
 	return false

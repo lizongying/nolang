@@ -191,6 +191,12 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 			return consequenceType
 		}
 		return "i64"
+	case *parser.StructLiteral:
+		// A struct literal `name{}` has the type of the struct itself.
+		if e.Type != "" {
+			return e.Type
+		}
+		return "i64"
 	default:
 		return "i64"
 	}
@@ -3502,6 +3508,38 @@ func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]p
 // ValidateFuncArgs checks that function call argument types match the function signature.
 // rootDir is optional — if empty, only locally defined function signatures are checked.
 // If provided, imported function signatures from module files are also resolved.
+
+// funcSigFromDef extracts the parameter and result type info from a function
+// definition, used to build the signature table for type inference.
+func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
+	params := make([]paramInfo, len(fd.Parameters))
+	for i, p := range fd.Parameters {
+		t := ""
+		if p != nil && p.Type != nil {
+			t = p.Type.String()
+		}
+		params[i] = paramInfo{Name: p.Name, Type: t}
+	}
+	results := make([]paramInfo, len(fd.Results))
+	for i, r := range fd.Results {
+		t := ""
+		if r != nil && r.Type != nil {
+			t = r.Type.String()
+		}
+		results[i] = paramInfo{Name: r.Name, Type: t}
+	}
+	return &funcSig{ParamTypes: params, ResultTypes: results}
+}
+
+// funcSigFirstReturnType returns the type of the function's first result
+// parameter, or "" if the function has no results.
+func funcSigFirstReturnType(sig *funcSig) string {
+	if sig == nil || len(sig.ResultTypes) == 0 {
+		return ""
+	}
+	return sig.ResultTypes[0].Type
+}
+
 func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
 	var results []ValidateResult
 
@@ -3510,15 +3548,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 	sigs := make(map[string]*funcSig)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			params := make([]paramInfo, len(fd.Parameters))
-			for i, p := range fd.Parameters {
-				t := ""
-				if p != nil && p.Type != nil {
-					t = p.Type.String()
-				}
-				params[i] = paramInfo{Name: p.Name, Type: t}
-			}
-			sigs[fd.Name] = &funcSig{ParamTypes: params}
+			sigs[fd.Name] = funcSigFromDef(fd)
 		}
 	}
 
@@ -3545,15 +3575,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 			}
 			for _, ms := range modProg.Statements {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok && fd.Name == use.Function {
-					params := make([]paramInfo, len(fd.Parameters))
-					for i, p := range fd.Parameters {
-						t := ""
-						if p != nil && p.Type != nil {
-							t = p.Type.String()
-						}
-						params[i] = paramInfo{Name: p.Name, Type: t}
-					}
-					sigs[funcName] = &funcSig{ParamTypes: params}
+					sigs[funcName] = funcSigFromDef(fd)
 					break
 				}
 			}
@@ -3651,7 +3673,8 @@ func parseProgramFile(filePath string) *parser.Program {
 }
 
 type funcSig struct {
-	ParamTypes []paramInfo
+	ParamTypes  []paramInfo
+	ResultTypes []paramInfo
 }
 
 type paramInfo struct {
@@ -3660,19 +3683,70 @@ type paramInfo struct {
 }
 
 func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields)
+}
+
+// checkCallArgsInIfExpr descends into an IfExpression's branches.
+func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
+	var results []ValidateResult
+	if s.Condition != nil {
+		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
+	}
+	if s.Consequence != nil {
+		for _, bs := range s.Consequence.Statements {
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+		}
+	}
+	if s.Alternative != nil {
+		for _, bs := range s.Alternative.Statements {
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+		}
+	}
+	return results
+}
+
+func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
+			// If-as-statement: ExpressionStatement wraps an IfExpression.
+			// Descend into both branches so result-param types propagate.
+			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields)
+			}
 			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
 			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
-			// Register the variable type from assignment for subsequent checks
-			if s.Name != nil {
-				inferred := inferExprType(s.Value, varTypes)
+			// Register the variable type from assignment for subsequent checks.
+			// Prefer the user-defined function's first return type over the
+			// generic "i64" default of inferExprType for CallExpression.
+			// Skip result parameters: their declared type is authoritative and
+			// must not be overwritten.
+			if s.Name != nil && !resultParamNames[s.Name.Value] {
+				inferred := ""
+				if call, ok := s.Value.(*parser.CallExpression); ok {
+					if fn, ok := call.Function.(*parser.Identifier); ok {
+						inferred = funcSigFirstReturnType(sigs[fn.Value])
+					}
+				}
+				if inferred == "" {
+					inferred = inferExprType(s.Value, varTypes)
+				}
 				if inferred != "" {
 					varTypes[s.Name.Value] = inferred
+				}
+			} else if s.Name != nil && resultParamNames[s.Name.Value] {
+				// Result parameter: only seed the type if we can pin it
+				// from a known function's first return type, otherwise
+				// leave the declared type alone.
+				if ident, ok := s.Value.(*parser.CallExpression); ok {
+					if fn, ok := ident.Function.(*parser.Identifier); ok {
+						if t := funcSigFirstReturnType(sigs[fn.Value]); t != "" {
+							varTypes[s.Name.Value] = t
+						}
+					}
 				}
 			}
 			return results
@@ -3686,11 +3760,15 @@ func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTyp
 			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
 		}
 	case *parser.FunctionDefinition:
-		// Build local var types including function parameters and result params
+		// Build local var types including function parameters and result params.
+		// Result parameter types are FROZEN — they may not be re-inferred from
+		// later assignments in the body (e.g. `q = zero()` must not turn `q`
+		// from `bigint` into the default call return type `i64`).
 		localTypes := make(map[string]string)
 		for k, v := range varTypes {
 			localTypes[k] = v
 		}
+		innerResultParams := make(map[string]bool)
 		for _, p := range s.Parameters {
 			if p.Type != nil {
 				localTypes[p.Name] = p.Type.String()
@@ -3699,35 +3777,36 @@ func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTyp
 		for _, r := range s.Results {
 			if r.Name != "" && r.Type != nil {
 				localTypes[r.Name] = r.Type.String()
+				innerResultParams[r.Name] = true
 			}
 		}
 		if s.Body != nil {
 			var results []ValidateResult
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmt(bs, sigs, localTypes, structFields)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields)...)
 			}
 			return results
 		}
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
-			results = append(results, checkCallArgsInStmt(bs, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
 		}
 		return results
 	case *parser.ForStatement:
 		var results []ValidateResult
 		if s.Init != nil {
-			results = append(results, checkCallArgsInStmt(s.Init, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields)...)
 		}
 		if s.Condition != nil {
 			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkCallArgsInStmt(s.Update, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields)...)
 		}
 		if s.Body != nil {
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmt(bs, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
 			}
 		}
 		return results
