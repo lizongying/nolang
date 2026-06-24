@@ -270,7 +270,7 @@ x == 1: {
     b = 2
 }
 
-// for
+// for in
 // 遍歷
 i <- (a..b]: {
 }
@@ -291,6 +291,16 @@ i <- (a..b]: {
     ...
 }
 
+i <- (a..b]: {
+    1 ->
+        a = 1
+        b = 2
+    2 ->
+        do-something()
+    ->
+        c = 0
+}
+
 // 舊式寫法
 // switch
 // 無返回值
@@ -307,31 +317,31 @@ switch x {
 // switch
 // 無返回值
 x: {
-    1|
+    1 ->
         a = 1
         b = 2
-    2|
+    2 ->
         do-something()
-    |
+    ->
         c = 0
 }
 
 // switch
 // 有返回值，最後一個語句/值
 result = x: {
-    1| 1       // 單一值
-    2| 2 + 1     //簡單表達式
-    | a + b
+    1 -> 1       // 單一值
+    2 -> 2 + 1     //簡單表達式
+    -> a + b
 }
 
 // if/else
 {
-    a == 1|
+    a == 1 ->
         a = 1
         b = 2
-    a == 2|
+    a == 2 ｜ a == 3 ->
         do-something()
-    |
+    ->
         c = 0
 }
 
@@ -350,9 +360,9 @@ match x {
 // 判讀返回值可能有錯的情況
 // it用於取參數
 x: {
-    err| log(it)
-    nil| log('nil')
-    |
+    err -> log(it)
+    nil -> log('nil')
+    ->
         do-right-thing(it)
 }
 
@@ -531,11 +541,11 @@ file enter, leave {
     path str
 }
 
-file.enter() {
+file.enter = () {
     open(.path)
 }
 
-file.leave() {
+file.leave = () {
     close(self)
 }
 
@@ -631,4 +641,11 @@ utils/
 
 // 別名
 # std/math.add a
+```
+
+### 導出模塊
+
+僅適用於lib.no
+```nolang
+@ std/math.add a
 ```

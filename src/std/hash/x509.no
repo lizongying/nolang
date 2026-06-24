@@ -45,15 +45,15 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
         len = (len << 8) | (data[pos + 1 + i] & 255)
         i = i + 1
     }
-
-    adv = 1 + n
 }
+
+adv = 1 + n
 
 // der-skip: 跳過一個 DER TLV 元素
 // data: DER 編碼資料, n: 資料總長度
 // pos: 目前位置（指向標籤位元組）
 // next: 輸出下一個元素的位置
-der-skip = (data []byte, n i64, pos i64, next i64) {
+der-skip = (data []byte, n i64, pos i64) (next i64) {
     // 跳過標籤（1 位元組）
     p = pos + 1
     l, adv = der-len(data, p)
@@ -87,7 +87,7 @@ x509-tbs-range = (data []byte, n i64) (start i64, end i64) {
         end = 0
         return
     }
-    der-skip(data, n, start, end)
+    end = der-skip(data, n, start)
 }
 
 // x509-serial: 提取憑證序號（若可放入 i64）
@@ -110,7 +110,7 @@ x509-serial = (data []byte, n i64, serial i64) {
     t = der-tag(data, p)
     if t == 160 {
         // 跳過 [0] EXPLICIT 元素
-        der-skip(data, n, p, p)
+        p = der-skip(data, n, p)
     }
     t = der-tag(data, p)
     if t != 2 {
@@ -127,19 +127,18 @@ x509-serial = (data []byte, n i64, serial i64) {
     // 讀取序號值
     val = 0
     i = 0
-    i < int-len: {
-        val = (val << 8) | (data[p + 1 + adv + i] & 255)
-        i = i + 1
-    }
-    serial = val
+    i < int-len
+    val = (val << 8) | (data[p + 1 + adv + i] & 255)
+    i = i + 1
 }
+
+serial = val
 
 // x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
 // data: DER 編碼憑證, n: 總長度
 // e: 輸出指數值（0 表示非 RSA 或解析失敗）
 x509-rsa-e = (data []byte, n i64, e i64) {
-    // 找到 TBSCertificate
-    x509-tbs-range(data, n, tbs-start, tbs-end)
+    tbs-start, tbs-end = x509-tbs-range(data, n)
     if tbs-start == 0 {
         e = 0
         return
@@ -147,58 +146,58 @@ x509-rsa-e = (data []byte, n i64, e i64) {
 
     // 進入 TBS 內容（跳過 TBS SEQUENCE 標籤 + 長度）
     p = tbs-start + 1
-    der-len(data, p, tbs-len, adv)
+    tbs-len, adv = der-len(data, p)
     p = p + adv
 
     // 步驟 1：可選——跳過 [0] EXPLICIT（版本，tag 160，僅 v2/v3）
-    der-tag(data, p, t)
+    t = der-tag(data, p)
     if t == 160 {
-        der-skip(data, n, p, p)
+        p = der-skip(data, n, p)
     }
 
     // 步驟 2：跳過 INTEGER（serialNumber，tag 2）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 步驟 3：跳過 SEQUENCE（signature algorithm identifier，tag 48）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 步驟 4：跳過 SEQUENCE（issuer，tag 48）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 步驟 5：跳過 SEQUENCE（validity，tag 48）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 步驟 6：跳過 SEQUENCE（subject，tag 48）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 現在 p 指向 SubjectPublicKeyInfo（SEQUENCE，tag 48）
 
     // 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
     p = p + 1
-    der-len(data, p, spki-len, adv)
+    spki-len, adv = der-len(data, p)
     p = p + adv
 
     // 步驟 8：跳過 SEQUENCE（AlgorithmIdentifier，tag 48）
-    der-skip(data, n, p, p)
+    p = der-skip(data, n, p)
 
     // 步驟 9：讀取 BIT STRING（subjectPublicKey，tag 3）
-    der-tag(data, p, t)
+    t = der-tag(data, p)
     if t != 3 {
         e = 0
         return
     }
-    der-len(data, p + 1, bit-len, adv)
+    bit-len, adv = der-len(data, p + 1)
 
     // BIT STRING 內容：跳過未使用位元組（1 位元組），然後是 RSAPublicKey
     bit-pos = p + 1 + adv + 1  // 跳過標籤+長度+未使用位元數位元組
 
     // 步驟 10：RSAPublicKey（SEQUENCE，tag 48）
-    der-tag(data, bit-pos, t)
+    t = der-tag(data, bit-pos)
     if t != 48 {
         e = 0
         return
     }
-    der-skip(data, n, bit-pos, rsa-start)
+    rsa-start = der-skip(data, n, bit-pos)
 
     // rsa-start 指向 RSAPublicKey 內容
 
@@ -207,10 +206,10 @@ x509-rsa-e = (data []byte, n i64, e i64) {
     //   INTEGER (exponent e)
 
     // 步驟 11：跳過 modulus INTEGER（tag 2）
-    der-skip(data, n, rsa-start, rsa-start)
+    rsa-start = der-skip(data, n, rsa-start)
 
     // 步驟 12：讀取 exponent INTEGER（tag 2）
-    der-tag(data, rsa-start, t)
+    t = der-tag(data, rsa-start)
     if t != 2 {
         e = 0
         return
@@ -222,12 +221,12 @@ x509-rsa-e = (data []byte, n i64, e i64) {
     }
     val = 0
     i = 0
-    i < exp-len: {
-        val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
-        i = i + 1
-    }
-    e = val
+    i < exp-len
+    val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
+    i = i + 1
 }
+
+e = val
 
 // ─── SHA-256 憑證指紋 ─────────────────────────────────
 

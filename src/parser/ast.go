@@ -511,7 +511,12 @@ type PrefixExpression struct {
 
 func (pe *PrefixExpression) expressionNode()        {}
 func (pe *PrefixExpression) Pos() lexer.Position    { return posFromToken(pe.Token) }
-func (pe *PrefixExpression) EndPos() lexer.Position { return pe.Right.EndPos() }
+func (pe *PrefixExpression) EndPos() lexer.Position {
+	if pe.Right == nil {
+		return posFromToken(pe.Token)
+	}
+	return pe.Right.EndPos()
+}
 
 type InfixExpression struct {
 	Token    lexer.Token
@@ -522,7 +527,12 @@ type InfixExpression struct {
 
 func (ie *InfixExpression) expressionNode()        {}
 func (ie *InfixExpression) Pos() lexer.Position    { return posFromToken(ie.Token) }
-func (ie *InfixExpression) EndPos() lexer.Position { return ie.Right.EndPos() }
+func (ie *InfixExpression) EndPos() lexer.Position {
+	if ie.Right == nil {
+		return posFromToken(ie.Token)
+	}
+	return ie.Right.EndPos()
+}
 
 // if
 type IfExpression struct {

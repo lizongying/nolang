@@ -2645,6 +2645,12 @@ func isStatementBoundary(t lexer.TokenType) bool {
 	return false
 }
 
+func isForCompOp(t lexer.TokenType) bool {
+	return t == lexer.LESS || t == lexer.GREATER ||
+		t == lexer.LESS_EQUALS || t == lexer.GREATER_EQUALS ||
+		t == lexer.EQUALS || t == lexer.NOT_EQUALS
+}
+
 func (p *Parser) parseIdentifier() Expression {
 	expr := &Identifier{
 		Token: p.currentToken,
@@ -3938,7 +3944,44 @@ parseBody:
 	if hasColon {
 		p.nextToken() // skip :
 	}
-	if p.currentToken.Type == lexer.LBRACE {
+
+	// 檢查是否為比較運算子：for i < n: { }
+	// 此時 init 是 "i"，currentToken 是 "<"
+	if init != nil && !hasColon && p.currentToken.Type != lexer.LBRACE {
+		if _, ok := init.(*ExpressionStatement); ok {
+			if isForCompOp(p.currentToken.Type) {
+				// 將 init + 比較運算子 + 右運算元 組合成條件
+				// 回退到 init 的位置，重新解析完整條件
+				if es, ok := init.(*ExpressionStatement); ok {
+					if ident, ok := es.Expression.(*Identifier); ok {
+						// init 是簡單標識符，用它作為左運算元
+						leftExpr := ident
+						compOp := p.currentToken.Literal
+						p.nextToken() // skip < > <= >= == !=
+						rightExpr := p.parseExpression(LOWEST)
+						condExpr := &InfixExpression{
+							Token:    leftExpr.Token,
+							Left:     leftExpr,
+							Operator: compOp,
+							Right:    rightExpr,
+						}
+						stmt.Condition = condExpr
+						if p.currentToken.Type == lexer.COLON {
+							p.nextToken() // skip :
+						}
+						stmt.Init = nil
+						if p.currentToken.Type == lexer.LBRACE {
+							stmt.Body = p.parseBlockStatement()
+							p.nextToken() // skip body's }
+							return stmt
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if p.currentToken.Type != lexer.LBRACE {
 		stmt.Condition = nil
 		if init != nil {
 			if es, ok := init.(*ExpressionStatement); ok {
