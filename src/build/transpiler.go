@@ -2777,14 +2777,26 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		if s.IterRange != nil && s.IterRange.Variable != "" {
 			localDefs[s.IterRange.Variable] = true
 		}
-		if s.Init != nil {
-			results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames)...)
+		// Labeled-conditional wrapper: `#2 val: { ... }` is encoded by
+		// parseLabeledStatement as ForStatement{Condition: *IfExpression,
+		// Body: Consequence}. Skip the synthetic Condition check and let
+		// the Body be processed instead.
+		if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
+			if ifExpr.Condition != nil {
+				if id, ok := ifExpr.Condition.(*parser.Identifier); ok {
+					localDefs[id.Value] = true
+				}
+			}
+		} else {
+			if s.Init != nil {
+				results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames)...)
+			}
+			if s.Condition != nil {
+				results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false)...)
+			}
+			if s.Update != nil {
+				results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames)...)
+			}
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {

@@ -1423,3 +1423,156 @@ aes-128-dec = (in str, n i64, key str, out str) {
 		})
 	}
 }
+
+// TestFormatLabeledFor ensures that labeled loop syntax (`#N name ...`) is
+// preserved by the formatter. Before the fix the formatter would mangle
+// the source and emit the labels as bare numbers, completely destroying
+// the program on save.
+func TestFormatLabeledFor(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "labeled bare range-for",
+			input: `#1 i <- [0..256): {
+    x = 1
+}`,
+			expected: `#1 i <- [0..256): {
+    x = 1
+}`,
+		},
+		{
+			name: "labeled infinite loop",
+			input: `#1! {
+    x = 1
+}`,
+			expected: `#1! {
+    x = 1
+}`,
+		},
+		{
+			name: "labeled conditional",
+			input: `#1 val: {
+    val == 1
+    x = 1
+}`,
+			expected: `#1 val: {
+    val == 1
+    x = 1
+}`,
+		},
+		{
+			name: "nested labeled for inside function",
+			input: `f = () {
+    #1 i <- [0..10): {
+        x = 1
+    }
+}`,
+			expected: `f = () {
+    #1 i <- [0..10): {
+        x = 1
+    }
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFormatStarBreakContinue ensures that the `*` (break) and `**`
+// (continue) shorthand forms are preserved by the formatter and that
+// `break #1` / `continue #1` round-trip the numeric label correctly.
+func TestFormatStarBreakContinue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "star shorthand round-trips",
+			input: `f = () {
+    *
+}`,
+			expected: `f = () {
+    *
+}`,
+		},
+		{
+			name: "star star shorthand round-trips",
+			input: `f = () {
+    **
+}`,
+			expected: `f = () {
+    **
+}`,
+		},
+		{
+			name: "star with numeric label round-trips",
+			input: `f = () {
+    * #1
+}`,
+			expected: `f = () {
+    * #1
+}`,
+		},
+		{
+			name: "star star with numeric label round-trips",
+			input: `f = () {
+    ** #1
+}`,
+			expected: `f = () {
+    ** #1
+}`,
+		},
+		{
+			name: "break with hash-prefixed label round-trips",
+			input: `f = () {
+    break #1
+}`,
+			expected: `f = () {
+    break #1
+}`,
+		},
+		{
+			name: "continue with hash-prefixed label round-trips",
+			input: `f = () {
+    continue #1
+}`,
+			expected: `f = () {
+    continue #1
+}`,
+		},
+		{
+			// Regression: `* #1` and `** #1` after `break #1` were
+			// silently dropped because `skipToStatementEnd()` swallowed
+			// them (MUL/STAR_STAR/LABEL missing from isStatementBoundary).
+			name: "sequence of break + star + starstar round-trips",
+			input: `f = () {
+    break #1
+    * #1
+    ** #1
+}`,
+			expected: `f = () {
+    break #1
+    * #1
+    ** #1
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

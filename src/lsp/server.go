@@ -13,6 +13,7 @@ import (
 
 	nbuild "github.com/lizongying/nolang/build"
 	nolangfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 	"go.lsp.dev/jsonrpc2"
 )
@@ -628,6 +629,13 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	if err != nil {
 		return nil, err
 	}
+	// If the document currently has parse errors, do NOT format.
+	// Returning an empty edit list (rather than calling format) prevents
+	// the formatter from re-emitting a half-parsed AST and corrupting the
+	// user's source on save.
+	if s.hasParseErrors(doc.Text) {
+		return []TextEdit{}, nil
+	}
 	formatted := formatNolangCode(doc.Text)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
@@ -641,12 +649,28 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	if err != nil {
 		return nil, err
 	}
+	// Same guard as the synchronous formatting handler: skip format on
+	// parse errors so the editor doesn't silently overwrite the file with
+	// mangled output.
+	if s.hasParseErrors(doc.Text) {
+		return []TextEdit{}, nil
+	}
 	formatted := formatNolangCode(doc.Text)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
 	}
 	return edits, nil
+}
+
+// hasParseErrors returns true when lexer/parser rejects the document.
+// Used to gate formatter on save so an in-progress edit (parse errors
+// present) is left untouched instead of being mangled by the formatter.
+func (s *Server) hasParseErrors(text string) bool {
+	l := lexer.New(text)
+	p := parser.New(l)
+	p.ParseProgram()
+	return len(p.Errors()) > 0
 }
 
 func (s *Server) Handle(method string, params json.RawMessage) (interface{}, error) {

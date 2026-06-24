@@ -577,6 +577,40 @@ str.len = () (n    i64      {
 	}
 }
 
+// TestHandleTextDocumentWillSaveWaitUntil_ParseErrorSafety ensures that
+// the willSaveWaitUntil hook (used by formatOnSave) also bails out when
+// the document has parse errors, instead of emitting a mangled rewrite.
+func TestHandleTextDocumentWillSaveWaitUntil_ParseErrorSafety(t *testing.T) {
+	s := NewServer()
+
+	// Same broken input style as the formatting test.
+	input := strings.TrimSpace(`
+str.len = () (n    i64      {
+    n = .len
+}
+	`)
+
+	uri := "file:///test_method.no"
+	if _, err := s.documents.OpenDocument(uri, input); err != nil {
+		t.Fatalf("OpenDocument failed: %v", err)
+	}
+
+	result, err := s.handleTextDocumentWillSaveWaitUntil(WillSaveWaitUntilParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+	})
+	if err != nil {
+		t.Fatalf("handleTextDocumentWillSaveWaitUntil failed: %v", err)
+	}
+
+	edits, ok := result.([]TextEdit)
+	if !ok {
+		t.Fatal("result is not []TextEdit")
+	}
+	if len(edits) != 0 {
+		t.Errorf("expected 0 edits on parse error, got %d edits", len(edits))
+	}
+}
+
 // applyTextEdits 將 TextEdit 列表按倒序（從文件尾到文件頭）應用到原始文字
 // 使用倒序確保位置偏移不受前面編輯的影響
 func applyTextEdits(original string, edits []TextEdit) string {

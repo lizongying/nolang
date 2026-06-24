@@ -589,6 +589,8 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
+	case lexer.LABEL:
+		return p.parseLabeledStatement()
 	case lexer.AT:
 		return p.parseExportStatement()
 	case lexer.IDENT:
@@ -821,6 +823,16 @@ func (p *Parser) parseStatement() Statement {
 			return p.parseBangLoop()
 		}
 		return p.parseExpressionStatement()
+
+	case lexer.MUL:
+		// `*` 在語句起始位置時是 break 簡寫。
+		// 與 `*` 作為指針解引用或乘法區分：只有當 `*` 出現在語句第一個
+		// token 且後面是 NEWLINE/EOF/LABEL/IDENT/SEMICOLON 時視為 break。
+		return p.parseStarBreakOrExpr()
+
+	case lexer.STAR_STAR:
+		// `**` 是 continue 簡寫。形如 `** #1` 或 `**` 後接換行。
+		return p.parseStarStarContinue()
 
 	case lexer.INT:
 		// 次數循環 N * { }
@@ -2108,8 +2120,8 @@ func (p *Parser) parseContinueStatement() Statement {
 	// 跳过 continue 关键字
 	p.nextToken()
 
-	// 可选的循环名称
-	if p.currentToken.Type == lexer.IDENT {
+	// 可选的循环名称（#N 数字標籤或 IDENT 文本標籤）
+	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal
 		p.nextToken()
 	}
@@ -2123,8 +2135,8 @@ func (p *Parser) parseBreakStatement() Statement {
 	// 跳过 break 关键字
 	p.nextToken()
 
-	// 可选的循环名称
-	if p.currentToken.Type == lexer.IDENT {
+	// 可选的循环名称（#N 数字標籤或 IDENT 文本標籤）
+	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal
 		p.nextToken()
 	}
@@ -2651,7 +2663,11 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
-		lexer.LBRACKET:
+		lexer.LBRACKET,
+		// Shorthand forms and loop labels that can begin a statement
+		// (without these, `skipToStatementEnd` swallows them after a
+		// preceding `break`/`continue`/`return`).
+		lexer.MUL, lexer.STAR_STAR, lexer.LABEL:
 		return true
 	}
 	return false
@@ -4230,6 +4246,126 @@ func (p *Parser) parseBangLoop() Statement {
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
 	return stmt
+}
+
+// parseStarBreakOrExpr handles a `*` at the start of a statement.
+// It is treated as a `break` shorthand (`*` or `* #1`) when the next
+// token indicates statement termination (NEWLINE/EOF/SEMICOLON/RBRACE)
+// or a label (LABEL/IDENT). Otherwise it falls back to normal expression
+// parsing (pointer dereference, multiplication, etc.).
+func (p *Parser) parseStarBreakOrExpr() Statement {
+	// Look ahead one token: if it is NEWLINE/EOF/SEMICOLON/RBRACE/LABEL/IDENT,
+	// treat `*` as break.
+	switch p.peekToken.Type {
+	case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON, lexer.RBRACE, lexer.LABEL, lexer.IDENT:
+		stmt := &BreakStatement{Token: p.currentToken}
+		p.nextToken() // skip MUL
+		if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
+			stmt.Label = p.currentToken.Literal
+			p.nextToken()
+		}
+		return stmt
+	}
+	return p.parseExpressionStatement()
+}
+
+// parseStarStarContinue handles a `**` at the start of a statement as
+// a `continue` shorthand, optionally followed by a label.
+func (p *Parser) parseStarStarContinue() Statement {
+	stmt := &ContinueStatement{Token: p.currentToken}
+	p.nextToken() // skip STAR_STAR
+	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
+		stmt.Label = p.currentToken.Literal
+		p.nextToken()
+	}
+	return stmt
+}
+
+// parseLabeledStatement 解析帶 #N 標籤的循環語句：
+//
+//	#1 i <- [0..256): { ... }   bare range-for
+//	#1! { ... }                 infinite loop
+//	#1 n * { ... }              counted loop (n 為常數計數)
+//	#1 x == 1: { ... }          conditional
+//
+// 標籤名存到 ForStatement.Label，可被 break/continue 引用。
+func (p *Parser) parseLabeledStatement() Statement {
+	label := p.currentToken.Literal
+	p.nextToken() // skip LABEL token
+
+	var stmt Statement
+	switch p.currentToken.Type {
+	case lexer.NOT:
+		stmt = p.parseBangLoop()
+	case lexer.INT:
+		// Counted loop: #1 10 * { ... }
+		stmt = p.parseCountedLoop()
+	case lexer.IDENT, lexer.UNDERSCORE:
+		// Two possibilities:
+		//   bare range-for:  #1 i <- [0..256): { ... }
+		//   conditional:     #1 x == 1: { ... }
+		// Disambiguate by checking whether the second token is ARROW.
+		if p.peekToken.Type == lexer.ARROW {
+			stmt = p.parseForStatement()
+		} else {
+			// Conditional: parse an expression, then expect : and a block.
+			exprTok := p.currentToken
+			expr := p.parseExpression(LOWEST)
+			if p.currentToken.Type == lexer.COLON {
+				p.nextToken() // skip :
+			}
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			bs := &BlockStatement{Token: p.currentToken}
+			if p.currentToken.Type == lexer.LBRACE {
+				bs = p.parseBlockStatement()
+				p.nextToken() // skip body's }
+			}
+			stmt = &ExpressionStatement{
+				Token: exprTok,
+				Expression: &IfExpression{
+					Token:       exprTok,
+					Condition:   expr,
+					Consequence: bs,
+				},
+			}
+		}
+	default:
+		p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s",
+			p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Type.String()))
+		return nil
+	}
+
+	if stmt == nil {
+		return nil
+	}
+	// Attach the label to the ForStatement (or wrap the conditional
+	// expression statement in a ForStatement with Label set, so that
+	// break/continue to this label works uniformly).
+	if fs, ok := stmt.(*ForStatement); ok {
+		fs.Label = label
+		return fs
+	}
+	// Conditional: turn the ExpressionStatement into a labeled ForStatement
+	// whose body is the IfExpression.
+	es, ok := stmt.(*ExpressionStatement)
+	if !ok {
+		return stmt
+	}
+	ifExpr, ok := es.Expression.(*IfExpression)
+	if !ok {
+		return stmt
+	}
+	fs := &ForStatement{
+		Token: es.Token,
+		Label: label,
+		Body:  ifExpr.Consequence,
+	}
+	// Store the IfExpression in Condition so the AST still carries the
+	// original conditional semantics; transpiler can recognise this pattern.
+	fs.Condition = ifExpr
+	return fs
 }
 
 // parseCountedLoop 解析 N * { } 次數循環

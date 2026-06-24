@@ -231,7 +231,11 @@ func (l *Lexer) NextToken() Token {
 		}
 
 	case '*':
-		if l.peekChar() == '=' {
+		if l.peekChar() == '*' {
+			l.readChar()
+			tok.Type = STAR_STAR
+			tok.Literal = "**"
+		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = MUL_ASSIGN
 			tok.Literal = "*="
@@ -335,6 +339,18 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = AT
 		tok.Literal = string(l.ch)
 	case '#':
+		// Distinguish `#N` (numeric label, e.g. `#1 i <- ...`) from `# path`
+		// (use statement, e.g. `# std/bigint`).
+		if isDigit(l.peekChar()) {
+			tok.Type = LABEL
+			l.readChar() // consume '#'
+			start := l.position
+			for isDigit(l.ch) {
+				l.readChar()
+			}
+			tok.Literal = l.input[start:l.position]
+			return tok
+		}
 		tok.Type = USE
 		tok.Literal = "#"
 	case '?':

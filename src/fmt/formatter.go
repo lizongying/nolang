@@ -923,8 +923,12 @@ func isElifBlock(bs *parser.BlockStatement) bool {
 
 func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.Label != "" {
+		f.write("#")
 		f.write(s.Label)
-		f.write(" ")
+		// !: no space between #N and ! (e.g. #1! { ... })
+		if s.Token.Type != lexer.NOT {
+			f.write(" ")
+		}
 	}
 
 	// ! { } 無限循環
@@ -943,8 +947,84 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
+	// Bare range-for: i <- [a..b]: { body } — when token type is IDENT and IterRange set
+	if s.Token.Type != lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
+		f.write(s.IterRange.Variable)
+		f.write(" <- ")
+		if s.IterRange.RangeStr != "" {
+			f.write(s.IterRange.RangeStr)
+		} else if s.IterRange.Range != nil {
+			if s.IterRange.Range.LeftInc {
+				f.write("[")
+			} else {
+				f.write("(")
+			}
+			f.formatExpression(s.IterRange.Range.Start)
+			f.write("..")
+			f.formatExpression(s.IterRange.Range.End)
+			if s.IterRange.Range.RightInc {
+				f.write("]")
+			} else {
+				f.write(")")
+			}
+		} else if s.IterRange.RangeExpr != nil {
+			f.formatExpression(s.IterRange.RangeExpr)
+		} else {
+			f.write("?")
+		}
+		f.write(": {")
+		f.indent++
+		for _, stmt := range s.Body.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.formatTrailingComments(s.Body.TrailingComments)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
+	// Bare counted loop: N * { body } — when token type is INT and CountExpr set
+	if s.Token.Type != lexer.FOR && s.CountExpr != nil {
+		f.formatExpression(s.CountExpr)
+		f.write(" *")
+		f.write(" {")
+		f.indent++
+		for _, stmt := range s.Body.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.formatTrailingComments(s.Body.TrailingComments)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
 	// 裸條件 for-loop：condition: { body }（不包含 for 關鍵字）
 	if s.Token.Type != lexer.FOR {
+		// Labeled-conditional wrapper: `#2 val: { ... }` is encoded by
+		// parseLabeledStatement as ForStatement{Condition: *IfExpression,
+		// Body: Consequence}. Unwrap the synthetic IfExpression so we render
+		// the original `cond: { body }` shape and the body, not a nested
+		// `if cond { ... }: { ... }`.
+		if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
+			if ifExpr.Condition != nil {
+				f.formatExpression(ifExpr.Condition)
+			}
+			f.write(": {")
+			f.indent++
+			for _, stmt := range s.Body.Statements {
+				f.newline()
+				f.formatStatement(stmt)
+			}
+			f.formatTrailingComments(s.Body.TrailingComments)
+			f.indent--
+			f.newline()
+			f.write("}")
+			return
+		}
 		if s.Condition != nil {
 			f.formatExpression(s.Condition)
 		}
@@ -1089,19 +1169,50 @@ func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {
 }
 
 func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
-	f.write("break")
+	// Preserve `*` shorthand if it was the original source.
+	if s.Token.Type == lexer.MUL {
+		f.write("*")
+	} else {
+		f.write("break")
+	}
 	if s.Label != "" {
-		f.write(" ")
+		// Numeric label (`#1`) is encoded as `1` in s.Label; restore the `#`.
+		if s.Token.Type == lexer.MUL || isNumericLabel(s.Label) {
+			f.write(" #")
+		} else {
+			f.write(" ")
+		}
 		f.write(s.Label)
 	}
 }
 
 func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
-	f.write("continue")
+	// Preserve `**` shorthand if it was the original source.
+	if s.Token.Type == lexer.STAR_STAR {
+		f.write("**")
+	} else {
+		f.write("continue")
+	}
 	if s.Label != "" {
-		f.write(" ")
+		if s.Token.Type == lexer.STAR_STAR || isNumericLabel(s.Label) {
+			f.write(" #")
+		} else {
+			f.write(" ")
+		}
 		f.write(s.Label)
 	}
+}
+
+func isNumericLabel(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (f *formatter) formatAssignExpression(e *parser.AssignExpression) {

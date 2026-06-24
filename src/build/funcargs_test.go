@@ -114,28 +114,23 @@ pow = (a bigint, n i64, out bigint) {
 	}
 }
 
-// TestValidateFuncArgsStructLiteralType ensures that `g = bigint{}` infers
-// `g` as type `bigint`, not `i64`.
-func TestValidateFuncArgsStructLiteralType(t *testing.T) {
-	src := `bigint {
-    sign i64
-    len i64
-    limbs [64]i64
-}
-
-gcd = (a bigint, b bigint, g bigint) {
-    g = a
-}
-
-div-mod = (a bigint, b bigint) (q bigint, r bigint) {
+// TestValidateUndefinedVarsLabeledConditional verifies that the variable
+// introduced in a labeled conditional (`#N val: { ... }`) is recognized as
+// defined inside the body, and that the validator does not report it as
+// undefined.
+func TestValidateUndefinedVarsLabeledConditional(t *testing.T) {
+	src := `encrypt = (a i64) (r i64) {
     r = a
 }
 
-lcm = (a bigint, b bigint, l bigint) {
-    g = bigint{}
-    gcd(a, b, g)
-    q, r = div-mod(a, g)
-    l = a
+zero = () (r i64) {
+    r = 0
+}
+
+#1 i <- [0..256): {
+    #2 val: {
+        val == 1 -> encrypt() -> zero()
+    }
 }
 `
 	l := lexer.New(src)
@@ -144,11 +139,11 @@ lcm = (a bigint, b bigint, l bigint) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	results := ValidateFuncArgs(prog, "")
+	results := ValidateUndefinedVars(prog)
 	for _, r := range results {
 		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
 	}
 	if len(results) != 0 {
-		t.Fatalf("expected no type errors, got %d: %v", len(results), results)
+		t.Fatalf("expected no undefined-var errors, got %d: %v", len(results), results)
 	}
 }

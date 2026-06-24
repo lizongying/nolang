@@ -31,6 +31,8 @@ const (
 	SELF
 	IT
 	USE
+	LABEL // #1, #2 ... only when followed by digits, used as a loop/conditional label
+
 	AS
 	CHAN
 	GO
@@ -67,6 +69,8 @@ const (
 	AND     // &
 	OR      // |
 	AND_NOT // &^
+
+	STAR_STAR // ** — used as `continue` shorthand (only at statement start)
 
 	ELLIPSIS // ..
 
@@ -131,6 +135,7 @@ var tokenNames = map[TokenType]string{
 	SELF:           "SELF",
 	IT:             "IT",
 	USE:            "USE(#)",
+	LABEL:          "LABEL(#N)",
 	IN:             "IN",
 	AS:             "AS",
 	CHAN:           "CHAN",
@@ -177,6 +182,7 @@ var tokenNames = map[TokenType]string{
 	ARROW:          "ARROW(<-)",
 	RARROW:         "RARROW(->)",
 	AND_NOT:        "AND_NOT(&^)",
+	STAR_STAR:      "STAR_STAR(**)",
 	ELLIPSIS:       "ELLIPSIS(..)",
 
 	ADD_ASSIGN:     "ADD_ASSIGN(+=)",
@@ -211,9 +217,9 @@ var keywords = map[string]TokenType{
 	"as":    AS,
 	"ptr":   PTR,
 
-	"chan":  CHAN,
-	"go":    GO,
-	"use":   USE,
+	"chan":    CHAN,
+	"go":      GO,
+	"use":     USE,
 	"switch":  SWITCH,
 	"case":    CASE,
 	"default": DEFAULT,
