@@ -34,7 +34,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		for _, fd := range fns {
 			parts := []string{name}
 			for _, p := range fd.Parameters {
-				parts = append(parts, p.Type.String())
+				parts = append(parts, sanitizeTypeForName(p.Type.String()))
 			}
 			mangledName := strings.Join(parts, "_")
 			fd.Name = mangledName // 直接修改 AST
@@ -85,9 +85,27 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 func callSignature(name string, params []*parser.Parameter) string {
 	parts := []string{name}
 	for _, p := range params {
-		parts = append(parts, p.Type.String())
+		parts = append(parts, sanitizeTypeForName(p.Type.String()))
 	}
 	return strings.Join(parts, "_")
+}
+
+// sanitizeTypeForName 將型別字串轉成 LLVM 識別符安全的形式：
+// - "[]byte"   → "slice.byte"
+// - "?i64"     → "opt.i64"
+// - "[4]i64"   → "arr4.i64"
+// - "ptr i64"  → "ptr.i64"
+func sanitizeTypeForName(s string) string {
+	r := strings.NewReplacer(
+		"[]", "slice.",
+		"?", "opt.",
+		"ptr ", "ptr.",
+		"[", "arr",
+		"]", ".",
+		" ", "_",
+		"|", "-",
+	)
+	return r.Replace(s)
 }
 
 // isConcreteType 檢查型別名稱是否為已知具體型別
@@ -226,7 +244,11 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 					argTypes[i] = t
 				}
 				// 查找匹配的重載
-				sig := name + "_" + strings.Join(argTypes, "_")
+				parts := []string{name}
+				for _, t := range argTypes {
+					parts = append(parts, sanitizeTypeForName(t))
+				}
+				sig := strings.Join(parts, "_")
 				if mangledName, ok := mangled[sig]; ok {
 					ident.Value = mangledName
 				} else {
@@ -614,6 +636,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					}
 				}
 			}
+			if sd, ok := ms.(*parser.StructDefinition); ok {
+				merged.Statements = append(merged.Statements, sd)
+			}
+			if ta, ok := ms.(*parser.TypeAlias); ok {
+				merged.Statements = append(merged.Statements, ta)
+			}
 		}
 	}
 
@@ -638,6 +666,16 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		filtered = append(filtered, stmt)
 	}
 	merged.Statements = filtered
+
+	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
+	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
+	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
+	// 一併替換。
+	monomorphizeUnions(merged)
+
+	// 在合併所有 std 模組後再做一次名稱修飾，
+	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
+	mangleOverloads(merged, nil)
 
 	// 非函數定義的陳述句（頂層呼叫）放到最後
 	for _, stmt := range program.Statements {
@@ -758,6 +796,257 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 			scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
 		}
 	}
+}
+
+// monomorphizeUnions 對聯合型別（union type alias）進行單態化。
+// 對每個帶有 ..T（T 為 union alias）的函數（variadic），或參數/結果
+// 使用 union alias 的非 variadic 函數，生成 N 個函數（每個 union
+// 成員一個），函數名為 "<原名>__<成員>"。原函數定義保留作為「範本」
+// 供後續步驟識別用途，但會在 codegen 階段被跳過（靠 IsVariadic &&
+// VariadicUnion != "" 判斷；或 GenericUnion != "" 判斷）。
+func monomorphizeUnions(program *parser.Program) {
+	aliases, _ := ValidateUnionTypes(program)
+	if len(aliases) == 0 {
+		return
+	}
+
+	// 收集所有需要單態化的函數
+	type pending struct {
+		fd        *parser.FunctionDefinition
+		unionName string
+		members   []parser.Type
+	}
+	var pendingFns []pending
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		var unionName string
+		if fd.IsVariadic && fd.VariadicUnion != "" {
+			unionName = fd.VariadicUnion
+		} else if !fd.IsVariadic && fd.GenericUnion != "" {
+			unionName = fd.GenericUnion
+		}
+		if unionName == "" {
+			continue
+		}
+		members := FlattenUnion(unionName, aliases)
+		if len(members) == 0 {
+			continue
+		}
+		pendingFns = append(pendingFns, pending{fd: fd, unionName: unionName, members: members})
+	}
+
+	if len(pendingFns) == 0 {
+		return
+	}
+
+	var newStmts []parser.Statement
+	for _, p := range pendingFns {
+		for _, mem := range p.members {
+			nt, ok := mem.(*parser.NamedType)
+			if !ok {
+				continue
+			}
+			concrete := cloneUnionVariant(p.fd, nt.Value, aliases)
+			newStmts = append(newStmts, concrete)
+		}
+		// 標記原函數為「範本」：在 name 末尾加 __TEMPLATE 使其不與生成版本衝突
+		p.fd.Name = p.fd.Name + "__" + p.unionName + "_TEMPLATE"
+	}
+	program.Statements = append(program.Statements, newStmts...)
+}
+
+// cloneUnionVariant 為 union 函數的某個成員型別複製一份具體實例。
+// 替換函數簽名中的 variadic 元素型別為該成員（若為 variadic），
+// 並將所有 union 別名的參數/結果型別替換為具體成員型別。
+// 對於函數體內所有對「自己」的遞迴呼叫改名為具體版本。
+func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases map[string]*parser.TypeAlias) *parser.FunctionDefinition {
+	// 簡單深拷貝：先淺拷貝結構體，再逐欄位拷貝容器。
+	clone := *fd
+	clone.Parameters = make([]*parser.Parameter, len(fd.Parameters))
+	for i, p := range fd.Parameters {
+		pCopy := *p
+		if i == len(fd.Parameters)-1 && fd.IsVariadic {
+			// 最後一個參數是 variadic；元素型別改為具體成員
+			var tok lexer.Token
+			// Use the underlying type's token if available, otherwise the param token
+			if p.Type != nil {
+				if st, ok := p.Type.(*parser.SliceType); ok {
+					tok = st.Token
+				}
+			}
+			if tok.Type == 0 {
+				tok = p.Token
+			}
+			pCopy.Type = &parser.SliceType{
+				Token: tok,
+				Elem:  &parser.NamedType{Value: memberType},
+			}
+		} else {
+			// 非 variadic 參數：若型別是 union 別名，替換為具體成員
+			if nt, ok := p.Type.(*parser.NamedType); ok {
+				if _, isUnion := aliases[nt.Value]; isUnion {
+					pCopy.Type = &parser.NamedType{Value: memberType}
+				}
+			}
+		}
+		clone.Parameters[i] = &pCopy
+	}
+	clone.Results = make([]*parser.Parameter, len(fd.Results))
+	for i, r := range fd.Results {
+		rCopy := *r
+		// 若結果型別是 union 別名，替換為具體成員型別
+		if nt, ok := r.Type.(*parser.NamedType); ok {
+			if _, isUnion := aliases[nt.Value]; isUnion {
+				rCopy.Type = &parser.NamedType{Value: memberType}
+			}
+		}
+		clone.Results[i] = &rCopy
+	}
+	clone.Name = fd.Name + "__" + memberType
+	// 重設 union 標記：實例化後該函數就是具體的
+	clone.VariadicUnion = ""
+	clone.GenericUnion = ""
+	// 深拷貝 Body
+	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType)
+	return &clone
+}
+
+// cloneBlockForUnion 深拷貝一個 block，遞迴地把對 <oldName> 的呼叫
+// 改名為 <newName>。<memberType> 是當前單態化的具體型別。
+func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType string) *parser.BlockStatement {
+	if bs == nil {
+		return nil
+	}
+	out := &parser.BlockStatement{Token: bs.Token, RBrace: bs.RBrace}
+	for _, s := range bs.Statements {
+		out.Statements = append(out.Statements, cloneStmtForUnion(s, oldName, newName, memberType))
+	}
+	return out
+}
+
+func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType string) parser.Statement {
+	if stmt == nil {
+		return nil
+	}
+	// IfExpression 在源碼中是 *parser.ExpressionStatement 包裝的
+	// IfExpression（因為 IfExpression 實現了 Expression 而非 Statement）。
+	// 我們在 ExpressionStatement case 內處理遞歸；不再單獨 case *IfExpression。
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		// shallow-copy the wrapper and rewrite its expression
+		es := *s
+		es.Expression = cloneExprForUnion(s.Expression, oldName, newName, memberType)
+		return &es
+	case *parser.LetStatement:
+		ls := *s
+		if s.Name != nil {
+			n := *s.Name
+			ls.Name = &n
+		}
+		ls.Type = s.Type
+		ls.Value = cloneExprForUnion(s.Value, oldName, newName, memberType)
+		return &ls
+	case *parser.BlockStatement:
+		return cloneBlockForUnion(s, oldName, newName, memberType)
+	case *parser.ForStatement:
+		fs := *s
+		if s.IterRange != nil {
+			fs.IterRange = cloneIterForUnion(s.IterRange, oldName, newName, memberType)
+		}
+		if s.Condition != nil {
+			fs.Condition = cloneExprForUnion(s.Condition, oldName, newName, memberType)
+		}
+		fs.Body = cloneBlockForUnion(s.Body, oldName, newName, memberType)
+		return &fs
+	case *parser.ReturnStatement:
+		rs := *s
+		rs.ReturnValue = cloneExprForUnion(s.ReturnValue, oldName, newName, memberType)
+		return &rs
+	case *parser.MultiAssignStatement:
+		mas := *s
+		mas.Names = append([]*parser.Identifier{}, s.Names...)
+		mas.Value = cloneExprForUnion(s.Value, oldName, newName, memberType)
+		return &mas
+	}
+	// Fallback: shallow copy via type assertion to the concrete type
+	return stmt
+}
+
+func cloneIterForUnion(it *parser.IterationExpr, oldName, newName, memberType string) *parser.IterationExpr {
+	if it == nil {
+		return nil
+	}
+	cp := *it
+	if it.Range != nil {
+		// RangeExpression has Start and End
+		cp.Range = cloneRangeForUnion(it.Range, oldName, newName, memberType)
+	}
+	if it.RangeExpr != nil {
+		cp.RangeExpr = cloneExprForUnion(it.RangeExpr, oldName, newName, memberType)
+	}
+	return &cp
+}
+
+func cloneRangeForUnion(r *parser.RangeExpression, oldName, newName, memberType string) *parser.RangeExpression {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	if r.Start != nil {
+		cp.Start = cloneExprForUnion(r.Start, oldName, newName, memberType)
+	}
+	if r.End != nil {
+		cp.End = cloneExprForUnion(r.End, oldName, newName, memberType)
+	}
+	return &cp
+}
+
+func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType string) parser.Expression {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		ce := *e
+		ce.Function = cloneExprForUnion(e.Function, oldName, newName, memberType)
+		ce.Arguments = make([]parser.Expression, len(e.Arguments))
+		for i, a := range e.Arguments {
+			ce.Arguments[i] = cloneExprForUnion(a, oldName, newName, memberType)
+		}
+		return &ce
+	case *parser.Identifier:
+		if e.Value == oldName {
+			cp := *e
+			cp.Value = newName
+			return &cp
+		}
+		return e
+	case *parser.DotExpression:
+		de := *e
+		de.Receiver = cloneExprForUnion(e.Receiver, oldName, newName, memberType)
+		return &de
+	case *parser.IfExpression:
+		ie := *e
+		ie.Condition = cloneExprForUnion(e.Condition, oldName, newName, memberType)
+		ie.Consequence = cloneBlockForUnion(e.Consequence, oldName, newName, memberType)
+		if e.Alternative != nil {
+			ie.Alternative = cloneBlockForUnion(e.Alternative, oldName, newName, memberType)
+		}
+		return &ie
+	case *parser.InfixExpression:
+		ie := *e
+		ie.Left = cloneExprForUnion(e.Left, oldName, newName, memberType)
+		ie.Right = cloneExprForUnion(e.Right, oldName, newName, memberType)
+		return &ie
+	case *parser.PrefixExpression:
+		pe := *e
+		pe.Right = cloneExprForUnion(e.Right, oldName, newName, memberType)
+		return &pe
+	}
+	return expr
 }
 
 // processCallExpression handles a single CallExpression for generic resolution
@@ -1916,6 +2205,177 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// ValidateUnionTypes 收集 type alias（單型別和 union）並對函數的
+// 聯合型別/泛型變體做檢查：
+//   - 記錄每個 alias 名稱 -> 解析後的具體型別列表
+//   - 對帶 ..T 形式的函數，若 T 是 union alias，記錄到 FunctionDefinition.VariadicUnion
+//   - 對每個 type alias，遞迴展開成扁平化的 []Type，供 codegen 使用
+//
+// 不在這裡阻擋編譯；錯誤一律以 ValidateResult 報告（warning 級別）。
+func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, []ValidateResult) {
+	aliases := make(map[string]*parser.TypeAlias)
+	var results []ValidateResult
+
+	// Pass 1: 收集所有 type alias
+	for _, stmt := range program.Statements {
+		ta, ok := stmt.(*parser.TypeAlias)
+		if !ok {
+			continue
+		}
+		if _, exists := aliases[ta.Name]; exists {
+			results = append(results, ValidateResult{
+				Line:    ta.Token.Line,
+				Column:  ta.Token.Column,
+				Message: fmt.Sprintf("duplicate type alias %q", ta.Name),
+			})
+			continue
+		}
+		aliases[ta.Name] = ta
+	}
+
+	// Pass 2: 對函數的 variadic 參數，若類型是 union alias 名稱，
+	// 設到 FunctionDefinition.VariadicUnion，供 codegen 單態化。
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || !fd.IsVariadic {
+			continue
+		}
+		if len(fd.Parameters) == 0 {
+			continue
+		}
+		last := fd.Parameters[len(fd.Parameters)-1]
+		if last.Type == nil {
+			continue
+		}
+		// variadic 參數型別以 []t 表示（"切片"）；內部元素名稱就是 union 名
+		typeName := strings.TrimPrefix(last.Type.String(), "[]")
+		if typeName == "" {
+			continue
+		}
+		if ta, ok := aliases[typeName]; ok && ta.IsUnion() {
+			fd.VariadicUnion = typeName
+		}
+	}
+
+	// Pass 3: 對函數的參數或結果型別，若整個函數只使用同一個 union alias
+	// （非 variadic 情況，例如 abs = (a num) (r num)），標記為 GenericUnion
+	// 供 codegen 單態化。
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || fd.IsVariadic {
+			continue
+		}
+		if fd.GenericUnion != "" {
+			continue
+		}
+		unionName := findSingleUnionName(fd, aliases)
+		if unionName != "" {
+			fd.GenericUnion = unionName
+		}
+	}
+
+	return aliases, results
+}
+
+// findSingleUnionName 檢查函數的參數與結果型別，找出唯一使用的 union alias。
+// 若函數只涉及一個 union alias，則返回該名稱；否則返回空字串。
+// 對於 variadic 函數，返回空字串（variadic 由 VariadicUnion 處理）。
+func findSingleUnionName(fd *parser.FunctionDefinition, aliases map[string]*parser.TypeAlias) string {
+	unionNames := make(map[string]bool)
+	for _, p := range fd.Parameters {
+		name := collectUnionNamesFromType(p.Type, aliases)
+		for n := range name {
+			unionNames[n] = true
+		}
+	}
+	for _, r := range fd.Results {
+		name := collectUnionNamesFromType(r.Type, aliases)
+		for n := range name {
+			unionNames[n] = true
+		}
+	}
+	if len(unionNames) == 1 {
+		for n := range unionNames {
+			return n
+		}
+	}
+	return ""
+}
+
+// collectUnionNamesFromType 從型別中收集所有 union alias 名稱。
+func collectUnionNamesFromType(t parser.Type, aliases map[string]*parser.TypeAlias) map[string]bool {
+	out := make(map[string]bool)
+	if t == nil {
+		return out
+	}
+	switch ty := t.(type) {
+	case *parser.NamedType:
+		if ta, ok := aliases[ty.Value]; ok && ta.IsUnion() {
+			out[ty.Value] = true
+		}
+	case *parser.SliceType:
+		sub := collectUnionNamesFromType(ty.Elem, aliases)
+		for n := range sub {
+			out[n] = true
+		}
+	case *parser.ArrayType:
+		sub := collectUnionNamesFromType(ty.Elem, aliases)
+		for n := range sub {
+			out[n] = true
+		}
+	case *parser.PointerType:
+		sub := collectUnionNamesFromType(ty.Type, aliases)
+		for n := range sub {
+			out[n] = true
+		}
+	case *parser.NullableType:
+		sub := collectUnionNamesFromType(ty.Type, aliases)
+		for n := range sub {
+			out[n] = true
+		}
+	}
+	return out
+}
+
+// FlattenUnion 將一個 union alias（或單型別 alias）扁平化為具體型別列表。
+// 對於 union：對每個成員遞迴展開（若成員是另一個 union alias 會被展開）。
+// 對於單型別 alias：返回 [Type]（長度 1）。
+// 對於已知的 builtin（i8/i16/.../f64/bool/byte/char/str）：原樣返回。
+func FlattenUnion(name string, aliases map[string]*parser.TypeAlias) []parser.Type {
+	// 內建類型（不可遞迴展開，視為葉節點）
+	switch name {
+	case "i8", "i16", "i32", "i64",
+		"u8", "u16", "u32", "u64",
+		"f32", "f64",
+		"bool", "byte", "char", "str":
+		return []parser.Type{&parser.NamedType{Value: name}}
+	}
+	ta, ok := aliases[name]
+	if !ok {
+		// 未知型別，當作泛型變量返回
+		return []parser.Type{&parser.NamedType{Value: name}}
+	}
+	if ta.Union != nil {
+		var out []parser.Type
+		for _, t := range ta.Union.Types {
+			if nt, ok := t.(*parser.NamedType); ok {
+				// 對 union 的成員再做遞迴展開
+				out = append(out, FlattenUnion(nt.Value, aliases)...)
+			} else {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	if ta.Type != nil {
+		if nt, ok := ta.Type.(*parser.NamedType); ok {
+			return FlattenUnion(nt.Value, aliases)
+		}
+		return []parser.Type{ta.Type}
+	}
+	return nil
+}
+
 // isValidVarName 檢查名稱是否只包含小寫字母（a-z）、中連接符（-）和數字，且不能以數字開頭
 func isValidVarName(name string) bool {
 	if name == "" {
@@ -2261,6 +2721,143 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 	}
 
 	return results
+}
+
+// ValidateInterfaceImplementation matches dotted-name function definitions
+// (e.g. `i8.gt = ...`) against generic-receiver interface method
+// declarations (e.g. `ord { t.gt(b t) (res bool) }`). Emits a warning
+// when an implementing type is missing or its method signature does not
+// match the interface constraint.
+func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	type ifaceMethod struct {
+		Receiver string
+		Name     string
+		Params   []string // canonical type strings
+		Results  []string
+		Token    lexer.Token
+	}
+	ifaces := map[string][]ifaceMethod{} // interface name → methods
+	for _, stmt := range program.Statements {
+		id, ok := stmt.(*parser.InterfaceDefinition)
+		if !ok {
+			continue
+		}
+		var methods []ifaceMethod
+		for _, m := range id.Methods {
+			if !m.IsGenericReceiver {
+				continue
+			}
+			im := ifaceMethod{Receiver: m.Receiver, Name: m.Name, Token: m.Token}
+			for _, p := range m.Parameters {
+				if p.Type != nil {
+					im.Params = append(im.Params, p.Type.String())
+				}
+			}
+			for _, r := range m.Results {
+				if r.Type != nil {
+					im.Results = append(im.Results, r.Type.String())
+				}
+			}
+			methods = append(methods, im)
+		}
+		ifaces[id.Name] = methods
+	}
+
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || !strings.Contains(fd.Name, ".") {
+			continue
+		}
+		implType, implMethod, ok := splitDottedMethodName(fd.Name)
+		if !ok {
+			continue
+		}
+		// Dotted methods have a hidden self parameter prepended by
+		// parseMethodDefinition. Skip it for signature comparison.
+		implParams := fd.Parameters
+		if len(implParams) > 0 && implParams[0].Name == "self" {
+			implParams = implParams[1:]
+		}
+		implResults := fd.Results
+		for _, methods := range ifaces {
+			for _, m := range methods {
+				if m.Name != implMethod {
+					continue
+				}
+				if len(implParams) != len(m.Params) {
+					results = append(results, ValidateResult{
+						Line:      fd.Token.Line,
+						Column:    fd.Token.Column,
+						EndColumn: fd.Token.Column + len(fd.Name),
+						Message: fmt.Sprintf("method '%s.%s' has %d parameter(s), interface expects %d",
+							implType, implMethod, len(implParams), len(m.Params)),
+					})
+					continue
+				}
+				for i, p := range implParams {
+					if p.Type == nil {
+						continue
+					}
+					paramType := p.Type.String()
+					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
+					if paramType != expected {
+						results = append(results, ValidateResult{
+							Line:      p.Token.Line,
+							Column:    p.Token.Column,
+							EndColumn: p.Token.Column + len(p.Name),
+							Message: fmt.Sprintf("parameter %d of '%s.%s': expected '%s', got '%s'",
+								i+1, implType, implMethod, expected, paramType),
+						})
+					}
+				}
+				if len(implResults) != len(m.Results) {
+					results = append(results, ValidateResult{
+						Line:      fd.Token.Line,
+						Column:    fd.Token.Column,
+						EndColumn: fd.Token.Column + len(fd.Name),
+						Message: fmt.Sprintf("method '%s.%s' has %d result(s), interface expects %d",
+							implType, implMethod, len(implResults), len(m.Results)),
+					})
+				} else {
+					for i, r := range implResults {
+						if r.Type == nil {
+							continue
+						}
+						resType := r.Type.String()
+						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
+						if resType != expected {
+							results = append(results, ValidateResult{
+								Line:      r.Token.Line,
+								Column:    r.Token.Column,
+								EndColumn: r.Token.Column + len(r.Name),
+								Message: fmt.Sprintf("result %d of '%s.%s': expected '%s', got '%s'",
+									i+1, implType, implMethod, expected, resType),
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return results
+}
+
+// splitDottedMethodName splits a function name like "i8.gt" or
+// "[]ord.ast" or "[?]ord.desc" into (implType, methodName). Returns
+// false if the name does not contain a dotted-method form.
+func splitDottedMethodName(name string) (string, string, bool) {
+	idx := strings.LastIndex(name, ".")
+	if idx < 0 {
+		return "", "", false
+	}
+	implType := name[:idx]
+	methodName := name[idx+1:]
+	if implType == "" || methodName == "" {
+		return "", "", false
+	}
+	return implType, methodName, true
 }
 
 // ValidateUseKeyword warns when "use" keyword is used instead of "#".

@@ -5,17 +5,40 @@
 // max: 回傳較大值（泛型 t：i64 或 f64）
 // 使用減法判斷大小以繞過 parser identifier 比較限制
 
-i8.gt = (x i8) (res bool) {
-    res = x > .
+int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float f32 | f64
+num int | float
+
+max = (a ..num) (r num) {
+    r = a[0]
+    n = len(a)
+    i = 1
+    for i < n {
+        if a[i] > r {
+            r = a[i]
+        }
+        i = i + 1
+    }
 }
 
-max = (a t, b t) (r t) {
-    r = a > b ? a : b
+min = (a ..num) (r num) {
+    r = a[0]
+    n = len(a)
+    i = 1
+    for i < n {
+        if a[i] < r {
+            r = a[i]
+        }
+        i = i + 1
+    }
 }
 
-// min: 回傳較小值
-min = (a t, b t) (r t) {
-    r = a > b ? b : a
+abs = (a num) (r num) {
+    if a < 0 {
+        r = 0 - a
+    } else {
+        r = a
+    }
 }
 
 // clamp: 限制在 [lo, hi] 範圍內
@@ -33,35 +56,25 @@ clamp = (v t, lo t, hi t) (r t) {
     }
 }
 
-// abs: 絕對值（整數）
-abs-i64 = (a i64) (r i64) {
-    r = a < 0 ? 0 - a : a
-}
-
-// abs-f64: 絕對值（浮點）
-abs-f64 = (a f64) (r f64) {
-    r = a < 0.0 ? 0.0 - a : a
-}
-
-// sign: 符號（-1, 0, 1）
-sign-i64 = (a i64) (r i64) {
+// sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
+sign = (a num) (r num) {
     if a > 0 {
         r = 1
     } elif a < 0 {
-        r = -1
+        r = 0 - 1
     } else {
         r = 0
     }
 }
 
-// even: 是否為偶數
-even = (a i64) (yes i64) {
+// even: 是否為偶數 — 對所有整數型別（含無符號）通用
+even = (a int) (yes int) {
     r = a % 2
     yes = r == 0 ? 1 : 0
 }
 
-// odd: 是否為奇數
-odd = (a i64) (yes i64) {
+// odd: 是否為奇數 — 對所有整數型別（含無符號）通用
+odd = (a int) (yes int) {
     r = a % 2
     yes = r != 0 ? 1 : 0
 }
@@ -92,8 +105,8 @@ lcm = (a i64, b i64) (r i64) {
     r = a / g * b
 }
 
-// pow-i64: 整數冪 a^n（n ≥ 0）
-pow-i64 = (a i64, n i64) (r i64) {
+// pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
+pow = (a int, n int) (r int) {
     r = 1
     for n > 0 {
         r = r * a
@@ -174,17 +187,6 @@ swap = (a t, b t) {
     tmp = a
     a = b
     b = tmp
-}
-
-// sign-f64: 浮點符號（-1.0, 0.0, 1.0）
-sign-f64 = (a f64) (r f64) {
-    if a > 0.0 {
-        r = 1.0
-    } elif a < 0.0 {
-        r = -1.0
-    } else {
-        r = 0.0
-    }
 }
 // is-nan: 判斷是否為 NaN
 // build-in (LLVMIntrinsic: llvm.isnan.f64)

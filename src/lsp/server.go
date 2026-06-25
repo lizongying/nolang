@@ -197,6 +197,20 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
+			ifaceImplWarnings := nbuild.ValidateInterfaceImplementation(prog)
+			for _, u := range ifaceImplWarnings {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.EndColumn - 1)},
+					},
+					Severity: DiagnosticSeverityWarning,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
 			useKeywordHints := nbuild.ValidateUseKeyword(prog)
 			for _, u := range useKeywordHints {
 				diagnostic := Diagnostic{

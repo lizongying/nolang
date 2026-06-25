@@ -151,7 +151,8 @@ make-dir = (path str) (ok bool) {
 
 // chdir: 切換工作目錄
 // 返回 true=成功, false=失敗
-chdir = (path str) (ok bool) {
+// 注意：改名為 change-dir 以避免與 C 函數 chdir 衝突
+change-dir = (path str) (ok bool) {
     ok = ch-dir(path)
 }
 

@@ -92,6 +92,14 @@ func stmtTokenEndLine(stmt parser.Statement) int {
 		return s.Token.Line
 	case *parser.StructDefinition:
 		return s.Token.Line
+	case *parser.TypeAlias:
+		if s.Union != nil {
+			return s.Union.EndPos().Line
+		}
+		if s.Type != nil {
+			return s.Type.EndPos().Line
+		}
+		return s.Token.Line
 	}
 	return 0
 }
@@ -292,6 +300,8 @@ func stmtTokenLine(stmt parser.Statement) int {
 		return s.Token.Line
 	case *parser.StructDefinition:
 		return s.Token.Line
+	case *parser.TypeAlias:
+		return s.Token.Line
 	}
 	return 0
 }
@@ -321,6 +331,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatExportStatement(s)
 	case *parser.LetStatement:
 		f.formatLetStatement(s)
+	case *parser.TypeAlias:
+		f.formatTypeAlias(s)
 	case *parser.ReturnStatement:
 		f.formatReturnStatement(s)
 	case *parser.ExpressionStatement:
@@ -455,6 +467,23 @@ func (f *formatter) formatExportStatement(s *parser.ExportStatement) {
 	if s.Alias != "" {
 		f.write(" ")
 		f.write(s.Alias)
+	}
+}
+
+func (f *formatter) formatTypeAlias(s *parser.TypeAlias) {
+	f.write(s.Name)
+	if s.IsUnion() {
+		for i, t := range s.Union.Types {
+			if i == 0 {
+				f.write(" ")
+			} else {
+				f.write(" | ")
+			}
+			f.write(t.String())
+		}
+	} else if s.Type != nil {
+		f.write(" ")
+		f.write(s.Type.String())
 	}
 }
 
@@ -1378,10 +1407,21 @@ func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
 	f.indent++
 	for _, m := range s.Methods {
 		f.newline()
+		// Generic-receiver form: t.method(...)
+		if m.IsGenericReceiver {
+			f.write(m.Receiver)
+			f.write(".")
+		}
 		f.write(m.Name)
 		f.write("(")
 		f.formatParameters(m.Parameters, m.IsVariadic)
 		f.write(")")
+		// Optional result declaration: (res type)
+		if len(m.Results) > 0 {
+			f.write(" (")
+			f.formatParameters(m.Results, false)
+			f.write(")")
+		}
 	}
 	f.indent--
 	f.newline()

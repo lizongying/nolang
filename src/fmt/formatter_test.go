@@ -1576,3 +1576,72 @@ func TestFormatStarBreakContinue(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatUnionType(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "single-type alias round-trips",
+			input:    "my-int i64\n",
+			expected: "my-int i64",
+		},
+		{
+			name:     "union type alias round-trips",
+			input:    "int i8 | i16 | i32 | i64\n",
+			expected: "int i8 | i16 | i32 | i64",
+		},
+		{
+			name:     "chained union type alias round-trips",
+			input:    "num int | float\n",
+			expected: "num int | float",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFormatTypeAliasBlankLinePreservation verifies that a blank line between
+// doc comments and a type alias statement is preserved by the formatter.
+// Before the fix, stmtTokenLine() was missing the *TypeAlias case (returned 0),
+// so the blank-line-preservation check failed and the formatter collapsed the
+// blank line away.
+func TestFormatTypeAliasBlankLinePreservation(t *testing.T) {
+	input := `// header comment
+//
+// header 2
+
+int i8 | i16
+`
+	expected := `// header comment
+//
+// header 2
+
+int i8 | i16`
+	if got := Format(input); got != expected {
+		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
+	}
+}
+
+// TestFormatTypeAliasDocAttaches verifies that doc comments preceding a type
+// alias are attached to the *TypeAlias node (not silently dropped) and then
+// emitted by the formatter. Before the fix, setDoc() was missing the
+// *TypeAlias case, causing the doc to vanish.
+func TestFormatTypeAliasDocAttaches(t *testing.T) {
+	input := `// describes int
+int i8 | i16
+`
+	expected := `// describes int
+int i8 | i16`
+	if got := Format(input); got != expected {
+		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
+	}
+}

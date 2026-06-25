@@ -518,6 +518,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// is-dir: 判斷路徑是否為目錄
 	if fnName == "is-dir" && hasArgs {
 		a := evalArgs()
+		// 從 %str 參數提取 i8* 資料指針
+		pathPtr := g.extractStrFromEvalArg(sb, a[0])
 		g.tmpIdx++
 		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -538,7 +540,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// Allocate stat buffer (144 bytes on macOS arm64)
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
 			// stat(path, &statbuf)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, a[0], statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			// Check stat return == 0
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			// Load st_mode (offset 16 on macOS arm64)
@@ -560,6 +562,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// stat-size / file-size: 獲取文件大小
 	if (fnName == "stat-size" || fnName == "file-size") && hasArgs {
 		a := evalArgs()
+		// 從 %str 參數提取 i8* 資料指針
+		pathPtr := g.extractStrFromEvalArg(sb, a[0])
 		g.tmpIdx++
 		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -574,7 +578,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		selReg := fmt.Sprintf("%%stat.sel.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, a[0], statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 48\n", g.indent(), sizeGEP, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))

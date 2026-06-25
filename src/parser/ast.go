@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/lizongying/nolang/lexer"
 )
@@ -346,10 +347,12 @@ func (p *Parameter) EndPos() lexer.Position { return posFromToken(p.Token) }
 
 // FuncSignature captures the shared signature of FunctionDefinition and FunctionLiteral.
 type FuncSignature struct {
-	Parameters    []*Parameter
-	Results       []*Parameter
-	GenericParams []*Identifier // 泛型參數：<N, M, ...>
-	IsVariadic    bool          // 是否有 ...any 可變參數
+	Parameters     []*Parameter
+	Results        []*Parameter
+	GenericParams  []*Identifier // 泛型參數：<N, M, ...>
+	IsVariadic     bool          // 是否有 ...any 可變參數
+	VariadicUnion  string        // 當 IsVariadic && 參數類型是 union alias 時記錄 union 名稱；codegen 會單態化
+	GenericUnion   string        // 當函數的參數/結果型別是 union alias（非 variadic）時記錄 union 名稱；codegen 會單態化
 }
 
 type FunctionDefinition struct {
@@ -509,8 +512,8 @@ type PrefixExpression struct {
 	Right    Expression
 }
 
-func (pe *PrefixExpression) expressionNode()        {}
-func (pe *PrefixExpression) Pos() lexer.Position    { return posFromToken(pe.Token) }
+func (pe *PrefixExpression) expressionNode()     {}
+func (pe *PrefixExpression) Pos() lexer.Position { return posFromToken(pe.Token) }
 func (pe *PrefixExpression) EndPos() lexer.Position {
 	if pe.Right == nil {
 		return posFromToken(pe.Token)
@@ -525,8 +528,8 @@ type InfixExpression struct {
 	Right    Expression
 }
 
-func (ie *InfixExpression) expressionNode()        {}
-func (ie *InfixExpression) Pos() lexer.Position    { return posFromToken(ie.Token) }
+func (ie *InfixExpression) expressionNode()     {}
+func (ie *InfixExpression) Pos() lexer.Position { return posFromToken(ie.Token) }
 func (ie *InfixExpression) EndPos() lexer.Position {
 	if ie.Right == nil {
 		return posFromToken(ie.Token)
@@ -713,6 +716,47 @@ func (ed *EnumDefinition) statementNode()         {}
 func (ed *EnumDefinition) Pos() lexer.Position    { return posFromToken(ed.Token) }
 func (ed *EnumDefinition) EndPos() lexer.Position { return posFromToken(ed.Token) }
 
+// UnionType is a union of multiple Types, e.g. i8 | i16 | ... | u64
+type UnionType struct {
+	Token lexer.Token
+	Types []Type
+}
+
+func (ut *UnionType) typeNode()           {}
+func (ut *UnionType) Pos() lexer.Position { return posFromToken(ut.Token) }
+func (ut *UnionType) EndPos() lexer.Position {
+	if len(ut.Types) == 0 {
+		return posFromToken(ut.Token)
+	}
+	return ut.Types[len(ut.Types)-1].EndPos()
+}
+func (ut *UnionType) String() string {
+	parts := make([]string, len(ut.Types))
+	for i, t := range ut.Types {
+		parts[i] = t.String()
+	}
+	return strings.Join(parts, " | ")
+}
+
+// TypeAlias binds a name to a Type or UnionType.
+// Syntax:  name type-expr        (alias, single concrete type)
+//
+//	name type1 | type2 | ...  (union of two or more types)
+type TypeAlias struct {
+	Token lexer.Token
+	Name  string
+	Type  Type       // set when RHS is a single type
+	Union *UnionType // set when RHS is a union (mutually exclusive with Type)
+	CommentedNode
+}
+
+func (ta *TypeAlias) statementNode()         {}
+func (ta *TypeAlias) Pos() lexer.Position    { return posFromToken(ta.Token) }
+func (ta *TypeAlias) EndPos() lexer.Position { return posFromToken(ta.Token) }
+
+// IsUnion reports whether the alias binds to a union.
+func (ta *TypeAlias) IsUnion() bool { return ta.Union != nil }
+
 // TaggedEnumVariant — 標籤列舉變體（名稱 + 型別）
 type TaggedEnumVariant struct {
 	Token lexer.Token
@@ -734,11 +778,13 @@ func (ted *TaggedEnumDefinition) Pos() lexer.Position    { return posFromToken(t
 func (ted *TaggedEnumDefinition) EndPos() lexer.Position { return posFromToken(ted.Token) }
 
 type InterfaceMethod struct {
-	Token      lexer.Token
-	Name       string
-	Parameters []*Parameter // method parameter names and types
-	IsVariadic bool         // method has variadic parameter (..t)
-	Results    []*Parameter // method result declarations: (res type)
+	Token             lexer.Token
+	Name              string       // method name (e.g. "gt") — dotted prefix lives in Receiver
+	Parameters        []*Parameter // method parameter names and types
+	IsVariadic        bool         // method has variadic parameter (..t)
+	Results           []*Parameter // method result declarations: (res type)
+	Receiver          string       // "" for normal methods, "t" for generic-receiver methods (e.g. t.gt)
+	IsGenericReceiver bool         // true when Receiver is a type variable (e.g. the single letter "t")
 }
 
 type InterfaceDefinition struct {

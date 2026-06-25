@@ -12,7 +12,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Get the value of an environment variable",
-		CLibCall:     &CLibCall{FuncName: "getenv", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI8Ptr},
+		CLibCall:     &CLibCall{FuncName: "getenv", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI8Ptr, RetCStrToStr: true},
 	})
 
 	// set-env: set environment variable
@@ -142,7 +142,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Close a file descriptor",
-		CLibCall:     &CLibCall{FuncName: "close", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "close", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// read: read from a file descriptor (uses @.os-buf)
@@ -182,7 +182,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Sleep for the given number of seconds",
-		CLibCall:     &CLibCall{FuncName: "sleep", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "sleep", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// args: number of command-line arguments

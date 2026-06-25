@@ -1,9 +1,67 @@
 ord {
-    gt(x t)
+    t.gt(b t) (res bool)
 }
 
-ast = (n ..t) {
+i8.gt = (b i8) (res bool) {
+    res = . > b
 }
 
-desc = (n ..t) {
+i16.gt = (b i16) (res bool) {
+    res = . > b
+}
+
+i32.gt = (b i32) (res bool) {
+    res = . > b
+}
+
+i64.gt = (b i64) (res bool) {
+    res = . > b
+}
+
+u8.gt = (b u8) (res bool) {
+    res = . > b
+}
+
+u16.gt = (b u16) (res bool) {
+    res = . > b
+}
+
+u32.gt = (b u32) (res bool) {
+    res = . > b
+}
+
+u64.gt = (b u64) (res bool) {
+    res = . > b
+}
+
+f32.gt = (b f32) (res bool) {
+    res = . > b
+}
+
+f64.gt = (b f64) (res bool) {
+    res = . > b
+}
+
+byte.gt = (b byte) (res bool) {
+    res = . > b
+}
+
+char.gt = (b char) (res bool) {
+    res = . > b
+}
+
+str.gt = (b str) (res bool) {
+    res = . > b
+}
+
+[n]ord.ast = () (res [n]ord) {
+}
+
+[n]ord.desc = () (res [n]ord) {
+}
+
+[]ord.ast = () (res []ord) {
+}
+
+[]ord.desc = () (res []ord) {
 }

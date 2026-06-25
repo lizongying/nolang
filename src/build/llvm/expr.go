@@ -229,7 +229,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// then
 	sb.WriteString(fmt.Sprintf("if.then.%d:\n", labelId))
 	g.indentLevel++
-	thenVal := "0"
+	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 i64/f64 用 0
+	defaultZero := "0"
+	if strings.HasPrefix(g.curFuncRetType, "%") {
+		defaultZero = "zeroinitializer"
+	} else if strings.HasSuffix(g.curFuncRetType, "*") {
+		defaultZero = "null"
+	}
+	thenVal := defaultZero
 	if expr.Consequence != nil && len(expr.Consequence.Statements) > 0 {
 		for i := 0; i < len(expr.Consequence.Statements)-1; i++ {
 			g.generateStatement(sb, expr.Consequence.Statements[i])
@@ -241,13 +248,29 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.generateStatement(sb, last)
 		}
 	}
+	// 若 then 分支的最後一個表達式是 void 函數呼叫（用結果參數），
+	// 則 thenVal 為空，需要從結果參數載入作為 phi 值。
+	if thenVal == "" && g.curFuncRetName != "" {
+		g.tmpIdx++
+		thenLoad := fmt.Sprintf("%%if.then.load.%d", g.tmpIdx)
+		retType := g.curFuncRetType
+		if retType == "" || retType == "void" {
+			retType = "i64"
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n", g.indent(), thenLoad, retType, retType, g.curFuncRetName))
+		thenVal = thenLoad
+	}
+	// 若 then 沒有產生有效值（return 等），回退到 defaultZero
+	if thenVal == "" {
+		thenVal = defaultZero
+	}
 	sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	g.indentLevel--
 
 	// else — detect nested if by saving/resetting nestedIfEndId
 	sb.WriteString(fmt.Sprintf("if.else.%d:\n", labelId))
 	g.indentLevel++
-	elseVal := "0"
+	elseVal := defaultZero
 	elsePredecessor := fmt.Sprintf("%%if.else.%d", labelId) // default
 	nestedIfBeforeElse := g.nestedIfEndId
 	g.nestedIfEndId = 0
@@ -262,6 +285,19 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.generateStatement(sb, last)
 		}
 	}
+	if elseVal == "" && g.curFuncRetName != "" {
+		g.tmpIdx++
+		elseLoad := fmt.Sprintf("%%if.else.load.%d", g.tmpIdx)
+		retType := g.curFuncRetType
+		if retType == "" || retType == "void" {
+			retType = "i64"
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n", g.indent(), elseLoad, retType, retType, g.curFuncRetName))
+		elseVal = elseLoad
+	}
+	if elseVal == "" {
+		elseVal = defaultZero
+	}
 	// If a nested if was generated inside the else block, use its end block as the phi predecessor
 	// instead of the else block (which no longer directly branches to if.end.{labelId})
 	if g.nestedIfEndId > 0 && g.nestedIfEndId != nestedIfBeforeElse {
@@ -274,8 +310,24 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	sb.WriteString(fmt.Sprintf("if.end.%d:\n", labelId))
 	g.tmpIdx++
 	phiReg := fmt.Sprintf("%%if.phi.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = phi i64 [%s, %%if.then.%d], [%s, %s]\n",
-		g.indent(), phiReg, thenVal, labelId, elseVal, elsePredecessor))
+	// phi type matches current function's return type
+	phiType := g.curFuncRetType
+	if phiType == "" || phiType == "void" {
+		phiType = "i64"
+	}
+	// For struct types, use zeroinitializer instead of integer 0
+	zeroVal := "0"
+	if strings.HasPrefix(phiType, "%") {
+		zeroVal = "zeroinitializer"
+	}
+	if thenVal == "" {
+		thenVal = zeroVal
+	}
+	if elseVal == "" {
+		elseVal = zeroVal
+	}
+	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d], [%s, %s]\n",
+		g.indent(), phiReg, phiType, thenVal, labelId, elseVal, elsePredecessor))
 
 	// Set for outer caller
 	g.nestedIfEndId = labelId
@@ -899,6 +951,10 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	} else if dot, ok := expr.Left.(*parser.DotExpression); ok {
 		// struct.field[i] 讀取模式
 		return g.generateStructFieldIndexRead(sb, dot, expr.Index)
+	} else if lit, ok := expr.Left.(*parser.StringLiteral); ok {
+		// 模組字串常量傳播後的情況：HEX-LOWER[b>>4] 中的 Left 變成 StringLiteral
+		// 為此我們需要將字串常量分配到 stack 上，然後 GEP 索引
+		return g.generateStringLiteralIndex(sb, lit, expr.Index)
 	}
 	idx := g.generateExprWithSB(sb, expr.Index)
 
@@ -1082,6 +1138,22 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 			return zextReg
 		}
+		// []str / []T (any T whose LLVM type ends in *): 載入資料指標、GEP、return %T*（不 load，str 為 struct）
+		if t, ok := g.varTypes[varName]; ok && strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
+			elemType := strings.TrimSuffix(t, "*")
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%idx.data.load.%d", g.tmpIdx)
+			g.tmpIdx++
+			gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+			if sb != nil {
+				// 載入 slice 的資料指標（%T** → %T*）
+				sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %%%s\n", g.indent(), dataLoad, elemType, elemType, varName))
+				// GEP 到第 idx 個元素（%T*，不 load）
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), gepReg, elemType, elemType, dataLoad, idx))
+			}
+			return gepReg
+		}
 		llvmElemType = "i8"
 		arrayLLVMType = "[8 x i8]"
 	}
@@ -1111,6 +1183,88 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		return zextReg
 	}
 	return loadReg
+}
+
+// generateStringLiteralIndex 處理字串常量的索引運算（用於模組字串常量傳播後的場景）
+// 例如：HEX-LOWER[b >> 4] 在 resolveModuleConstants 後，Left 變成 StringLiteral。
+// 對於短字串（≤127 bytes），分配 %str-smail；對於長字串，分配 %str。
+func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.StringLiteral, index parser.Expression) string {
+	idx := g.generateExprWithSB(sb, index)
+	strLen := len(lit.Value)
+	g.tmpIdx++
+	strAlloca := fmt.Sprintf("%%strlit.idx.%d", g.tmpIdx)
+	g.tmpIdx++
+	dataPtr := fmt.Sprintf("%%strlit.idx.ptr.%d", g.tmpIdx)
+	g.tmpIdx++
+	charGEP := fmt.Sprintf("%%strlit.idx.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	charLoad := fmt.Sprintf("%%strlit.idx.val.%d", g.tmpIdx)
+	g.tmpIdx++
+	zextReg := fmt.Sprintf("%%strlit.idx.zext.%d", g.tmpIdx)
+
+	if sb == nil {
+		return zextReg
+	}
+
+	if strLen <= 127 {
+		// SSO: %str-smail = { i8, [127 x i8] }
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-smail\n", g.indent(), strAlloca))
+		// field 0: i8 = strLen | 0x80
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%strlit.idx.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, strAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i8 %d, i8* %s\n", g.indent(), strLen|0x80, lenGEP))
+		// field 1: [127 x i8] - copy literal data
+		g.tmpIdx++
+		dataFieldGEP := fmt.Sprintf("%%strlit.idx.datafield.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n",
+			g.indent(), dataFieldGEP, strAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), dataPtr, dataFieldGEP))
+		// Emit the literal as a global string
+		litIdx := g.stringIdx
+		g.stringIdx++
+		escaped := g.escapeLLVMString(lit.Value)
+		g.fmtGlobals = append(g.fmtGlobals,
+			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", litIdx, strLen, escaped))
+		srcPtr := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0)",
+			strLen, strLen, litIdx)
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, %s, i64 %d)\n", g.indent(), dataPtr, srcPtr, strLen))
+		// GEP into the array
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
+			g.indent(), charGEP, dataFieldGEP, idx))
+	} else {
+		// Long string: %str = { i64, i8* }
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strAlloca))
+		// field 0: i64 = strLen
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%strlit.idx.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, strAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
+		// field 1: i8* = data pointer
+		g.tmpIdx++
+		dataFieldGEP := fmt.Sprintf("%%strlit.idx.datafield.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n",
+			g.indent(), dataFieldGEP, strAlloca))
+		// Emit the literal as a global string
+		litIdx := g.stringIdx
+		g.stringIdx++
+		escaped := g.escapeLLVMString(lit.Value)
+		g.fmtGlobals = append(g.fmtGlobals,
+			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", litIdx, strLen, escaped))
+		srcPtr := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0)",
+			strLen, strLen, litIdx)
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), srcPtr, dataFieldGEP))
+		// GEP into the data array
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+			g.indent(), charGEP, srcPtr, idx))
+	}
+
+	// Load the byte and zext to i64
+	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), charLoad, charGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, charLoad))
+	return zextReg
 }
 
 func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.StructLiteral) string {

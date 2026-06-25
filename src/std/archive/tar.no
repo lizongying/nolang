@@ -115,7 +115,8 @@ tar-type = (data []byte, idx i64) (typ str) {
 // tar-is-dir: 是否為目錄
 tar-is-dir = (data []byte, idx i64) (yes i64) {
     t = tar-type(data, idx)
-    if t == 'dir' {
+    c = str-compare(t, 3, 'dir', 3)
+    if c == 0 {
         yes = 1
     } else {
         yes = 0

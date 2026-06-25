@@ -117,14 +117,36 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		if strings.HasPrefix(ev, "%strlit") {
 			return "%str* " + ev
 		} else if strings.HasPrefix(ev, "%") {
-			parts := strings.Split(ev, ".")
-			varName := strings.TrimPrefix(parts[0], "%")
+			// SSA register (value, not pointer) — keep the full register name
+			// and infer its pointer type from varTypes[baseName]
+			parts := strings.SplitN(ev, ".", 2)
+			baseName := strings.TrimPrefix(parts[0], "%")
+			// strip trailing "gep" or other suffixes from baseName for varTypes lookup
+			lookupName := baseName
+			// Use baseName (which may include suffixes) directly; varTypes only has plain var names,
+			// so fall back to plain when suffix-bearing lookup misses.
 			if g.varTypes != nil {
-				if t, ok := g.varTypes[varName]; ok && t == "double" {
-					return "double* %" + varName
+				if t, ok := g.varTypes[lookupName]; ok {
+					if t == "double" {
+						return "double* " + ev
+					}
+					if t == "%str" {
+						return "%str* " + ev
+					}
+				}
+				// try without suffix
+				if idx := strings.IndexByte(baseName, '.'); idx > 0 {
+					if t, ok := g.varTypes[baseName[:idx]]; ok {
+						if t == "double" {
+							return "double* " + ev
+						}
+						if t == "%str" {
+							return "%str* " + ev
+						}
+					}
 				}
 			}
-			return "i64* %" + varName
+			return "i64* " + ev
 		} else if strings.Contains(ev, ".") {
 			// float literal value (e.g. "180.000000")
 			g.tmpIdx++

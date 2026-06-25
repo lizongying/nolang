@@ -264,6 +264,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	case *parser.SliceLiteral:
 		return "%vec"
+	case *parser.ArrayLiteral:
+		return "%arr"
 	case *parser.SliceExpression:
 		// Check source type: slicing %str/%str-smail produces %str, otherwise %vec
 		if ident, ok := v.Left.(*parser.Identifier); ok {
@@ -1077,6 +1079,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
 	llvmType := g.varLLVMType(stmt)
+
+	// 函數呼叫（用結果參數模式）會被 generateExpr 寫成 call void @...，
+	// 並返回空字串表示沒有 SSA 值。對於這種情況，result param
+	// 已經被函數就地修改，不需要再 store。
+	if _, isCall := stmt.Value.(*parser.CallExpression); isCall && val == "" {
+		return
+	}
 
 	// 結構體儲存
 	if sl, ok := stmt.Value.(*parser.StructLiteral); ok {

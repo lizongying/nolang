@@ -122,6 +122,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	funcNames := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			// Skip union monomorphization templates (e.g. max__num_TEMPLATE)
+			if strings.HasSuffix(fd.Name, "_TEMPLATE") {
+				continue
+			}
 			retType := "void"
 			if len(fd.Results) > 0 {
 				retType = g.mapToLLVMType(fd.Results[0].Type.String())
@@ -240,6 +244,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			// Skip union monomorphization templates (e.g. max__num_TEMPLATE)
+			if strings.HasSuffix(fd.Name, "_TEMPLATE") {
+				continue
+			}
 			g.generateFunctionDefinition(&sb, fd)
 		}
 	}
@@ -300,13 +308,23 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		}
 		argType := clib.ArgTypes[i]
 
+		// RetBuf 模式：第一個 i8* 參數使用 BufGlobal 作為緩衝區指針
+		if clib.RetBuf && i == 0 && argType == builtin.LLVMI8Ptr && clib.BufGlobal != "" {
+			argStr += "i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* " + clib.BufGlobal + ", i64 0, i64 0)"
+			evIdx++
+			continue
+		}
+
 		if fixedVal, ok := clib.FixedArgs[i]; ok {
 			argStr += llvmLLVMType(argType) + " " + fixedVal
+			evIdx++
 			continue
 		}
 
 		if fixedGlobal, ok := clib.FixedArgGlobals[i]; ok {
-			argStr += "i8* " + fixedGlobal
+			// value is a full LLVM expression including the type prefix
+			argStr += fixedGlobal
+			evIdx++
 			continue
 		}
 
@@ -355,13 +373,64 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	}
 
 	// RetBuf: return the buffer pointer instead of C return value
+	// 同時需要把 C 字串（null 結尾的 i8*）轉換為 Nolang %str
 	if clib.RetBuf {
-		buf := fmt.Sprintf("i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
+		bufExpr := fmt.Sprintf("getelementptr inbounds ([1024 x i8], [1024 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
+		buf := "i8* " + bufExpr
 		cRetType := llvmLLVMType(clib.RetType)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%scall %s @%s(%s)\n", g.indent(), cRetType, clib.FuncName, argStr))
 		}
+		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str
+		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str 值
+		if clib.RetType == builtin.LLVMI8Ptr {
+			g.tmpIdx++
+			lenReg := fmt.Sprintf("%%retbuf.len.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(%s)\n", g.indent(), lenReg, buf))
+			}
+			g.tmpIdx++
+			strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, %s, 1\n", g.indent(), strReg2, strReg1, buf))
+			}
+			return strReg2
+		}
 		return buf
+	}
+
+	// RetCStrToStr: C 函數返回 i8* (C 字串)，需包裝為 Nolang %str
+	// 1) 調用 C 函數取得 i8* 指針
+	// 2) 調用 strlen 取得長度
+	// 3) 構造 %str 並通過 insertvalue 設定 (len, ptr)
+	// 4) 返回 %str 結構體值（不是 i8*）
+	if clib.RetCStrToStr {
+		// 1) 調用 C 函數取得 i8*
+		g.tmpIdx++
+		cstrReg := fmt.Sprintf("%%cstr.ptr.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @%s(%s)\n", g.indent(), cstrReg, clib.FuncName, argStr))
+		}
+		// 2) strlen
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%cstr.len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
+		}
+		// 3) 構造 %str：先寫 len 到 field 0，再寫 ptr 到 field 1
+		//    每次 insertvalue 都必須產生新的 SSA 寄存器
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
+		}
+		return strReg2
 	}
 
 	cRetType := llvmLLVMType(clib.RetType)
@@ -411,17 +480,26 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 
 func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {
 	if strings.HasPrefix(evalResult, "%") {
-		parts := strings.Split(evalResult, ".")
+		// evalResult 可能是兩種形式：
+		//   1. %key           — 直接是 %str* 指針
+		//   2. %key.val.N     — load 出來的 %str 值
+		// extractStrDataPtr 需要 %str* 指針，因此若帶有 .val. 後綴（已 load 出來的值），
+		// 必須改用 base variable 的指針（去掉 .val.* 部分）。
+		baseRef := evalResult
+		if idx := strings.Index(evalResult, ".val."); idx > 0 {
+			baseRef = evalResult[:idx]
+		}
+		parts := strings.Split(baseRef, ".")
 		varName := strings.TrimPrefix(parts[0], "%")
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[varName]; ok {
 				if t == "%str-smail" {
-					return g.extractStrSmailDataPtr(sb, evalResult)
+					return g.extractStrSmailDataPtr(sb, baseRef)
 				}
-				return g.extractStrDataPtr(sb, evalResult)
+				return g.extractStrDataPtr(sb, baseRef)
 			}
 		}
-		return g.extractStrDataPtr(sb, evalResult)
+		return g.extractStrDataPtr(sb, baseRef)
 	}
 	return evalResult
 }

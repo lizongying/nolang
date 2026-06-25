@@ -68,6 +68,10 @@ func (p *Parser) classifyBlock() blockType {
 		return blockEnum
 	case lexer.LPAREN:
 		return blockIface
+	case lexer.DOT:
+		// Generic-receiver method form: t.method(...)
+		// e.g. ord { t.gt(b t) (res bool) }
+		return blockIface
 	case lexer.RARROW:
 		return blockMatch
 	case lexer.COLON:
@@ -499,6 +503,8 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *StructDefinition:
 		s.Doc = doc
+	case *TypeAlias:
+		s.Doc = doc
 	}
 }
 
@@ -594,6 +600,27 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.AT:
 		return p.parseExportStatement()
 	case lexer.IDENT:
+		// 檢測型別別名 / 聯合型別：name type1 | type2 | ...
+		// 例：int i8 | i16 | ... | u64
+		//     float f32 | f64
+		//     num int | float
+		if p.peekToken.Type == lexer.IDENT {
+			// Look further to determine: is this a let/function call (with
+			// = or ( or something), or a type alias (followed by OR or
+			// NEWLINE)?
+			//
+			// Heuristic: scan ahead a few tokens. If we see an OR
+			// (|) before any newline, equals, parenthesis, brace, or
+			// semicolon, treat as type alias.
+			if p.looksLikeTypeAlias() {
+				stmt := p.parseTypeAlias()
+				if stmt != nil {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
+		}
+
 		// 檢查介面實作：user json, fmt { name str }
 		if p.peekToken.Type == lexer.IDENT {
 			state := p.saveState()
@@ -896,7 +923,7 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	return funcDef
 }
 
-// isArrayTypeMethodDefinition 檢測是否為陣列/切片型別方法定義：[n]t.method(…) 或 []t.method(…) {
+// isArrayTypeMethodDefinition 檢測是否為陣列/切片型別方法定義：[n]t.method(…)、[]t.method(…)、[?]t.method(…) {
 func (p *Parser) isArrayTypeMethodDefinition() bool {
 	state := p.saveState()
 	defer p.restoreState(state)
@@ -904,6 +931,16 @@ func (p *Parser) isArrayTypeMethodDefinition() bool {
 	p.nextToken() // skip [
 	if p.currentToken.Type == lexer.RBRACKET {
 		// []t.method — 切片型別
+		p.nextToken() // skip ]
+		if p.currentToken.Type != lexer.IDENT {
+			return false
+		}
+	} else if p.currentToken.Type == lexer.QUESTION {
+		// [?]t.method — 可空切片型別
+		p.nextToken() // skip ?
+		if p.currentToken.Type != lexer.RBRACKET {
+			return false
+		}
 		p.nextToken() // skip ]
 		if p.currentToken.Type != lexer.IDENT {
 			return false
@@ -974,7 +1011,7 @@ func (p *Parser) isArrayTypeMethodDefinition() bool {
 	return p.currentToken.Type == lexer.LBRACE
 }
 
-// parseArrayTypeMethodDefinition 解析陣列/切片型別方法定義：[n]t.method(…) 或 []t.method(…) {
+// parseArrayTypeMethodDefinition 解析陣列/切片型別方法定義：[n]t.method(…)、[]t.method(…)、[?]t.method(…) {
 func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	def := &FunctionDefinition{
 		Token: p.currentToken,
@@ -985,13 +1022,27 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		},
 	}
 
-	// 建立型別字串 [n]t 或 []t
+	// 建立型別字串 [n]t、[]t 或 [?]t
 	p.nextToken() // skip [
 	var arrayType string
 	var elemToken lexer.Token
 	if p.currentToken.Type == lexer.RBRACKET {
 		// []t — 切片型別
 		arrayType = "[]"
+		p.nextToken() // skip ]
+		elemToken = p.currentToken
+		arrayType += elemToken.Literal
+		p.nextToken() // skip element type
+	} else if p.currentToken.Type == lexer.QUESTION {
+		// [?]t — 可空切片型別
+		arrayType = "[?]"
+		p.nextToken() // skip ?
+		if p.currentToken.Type != lexer.RBRACKET {
+			msg := fmt.Sprintf("line %d, column %d: expected ']' in nullable slice type, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
 		p.nextToken() // skip ]
 		elemToken = p.currentToken
 		arrayType += elemToken.Literal
@@ -4591,7 +4642,19 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			Token: p.currentToken,
 			Name:  p.currentToken.Literal,
 		}
-		p.nextToken() // skip method name
+		p.nextToken() // skip first identifier (receiver or method name)
+
+		// Generic-receiver form: t.method(...)
+		// The first IDENT is the receiver type (e.g. "t"), and the second
+		// IDENT is the method name. Marked as IsGenericReceiver for codegen.
+		if p.currentToken.Type == lexer.DOT && p.peekToken.Type == lexer.IDENT {
+			method.Receiver = method.Name
+			method.IsGenericReceiver = true
+			p.nextToken() // skip DOT
+			method.Name = p.currentToken.Literal
+			method.Token = p.currentToken
+			p.nextToken() // skip method name
+		}
 
 		if p.currentToken.Type != lexer.LPAREN {
 			msg := fmt.Sprintf("line %d, column %d: expected '(' after interface method name, got %s",
@@ -4819,6 +4882,153 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 	}
 
 	return ted
+}
+
+// looksLikeTypeAlias reports whether the current statement looks like a
+// type alias. The current token is the alias name (IDENT) and the next
+// token (peekToken) is the first type. We scan forward looking for `|`
+// (OR) or statement end (=, (, {, newline at the top level, semicolon, or
+// EOF) to decide whether this is a type alias or a let statement.
+func (p *Parser) looksLikeTypeAlias() bool {
+	// If the next token is `=`, this is a let statement, not a type alias.
+	if p.peekToken.Type == lexer.ASSIGN {
+		return false
+	}
+	// If the next token is `(`, this is a function call, not a type alias.
+	if p.peekToken.Type == lexer.LPAREN {
+		return false
+	}
+	// If the second token is `=`, `(` or `{`, also not a type alias.
+	if p.lexer.LookAhead(1).Type == lexer.ASSIGN {
+		return false
+	}
+	const maxLook = 64
+	for i := 0; i < maxLook; i++ {
+		t := p.lexer.LookAhead(i)
+		switch t.Type {
+		case lexer.OR:
+			return true
+		case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
+			// End of statement without OR: still a single-type alias
+			return true
+		case lexer.IDENT, lexer.LBRACKET, lexer.QUESTION, lexer.PTR:
+			// continue scanning
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// parseTypeAlias parses a type alias or union type alias statement.
+//
+//	int i8 | i16 | ... | u64   →  TypeAlias{Name:"int", Union:[i8,i16,...,u64]}
+//	float f32 | f64            →  TypeAlias{Name:"float", Union:[f32,f64]}
+//	num int | float            →  TypeAlias{Name:"num", Union:[int,float]}
+//	my-int i64                 →  TypeAlias{Name:"my-int", Type:NamedType{"i64"}}
+//
+// The first type must be a concrete type. If it is followed by `|`, we
+// collect the rest of the union.
+func (p *Parser) parseTypeAlias() Statement {
+	name := p.currentToken.Literal
+	nameToken := p.currentToken
+	ta := &TypeAlias{Token: nameToken, Name: name}
+
+	p.nextToken() // skip alias name
+	typ, ok := p.parseTypeExpression()
+	if !ok {
+		msg := fmt.Sprintf("line %d, column %d: expected type after %q in type alias",
+			p.currentToken.Line, p.currentToken.Column, name)
+		p.saveError(msg)
+		return nil
+	}
+	// After parseTypeExpression, currentToken is the first non-type token
+	// (e.g. `|`, NEWLINE, EOF).
+	if p.currentToken.Type == lexer.OR {
+		ut := &UnionType{Token: nameToken, Types: []Type{typ}}
+		for p.currentToken.Type == lexer.OR {
+			p.nextToken() // skip |
+			// Allow newlines between | and the next type
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			next, ok := p.parseTypeExpression()
+			if !ok {
+				msg := fmt.Sprintf("line %d, column %d: expected type after '|'",
+					p.currentToken.Line, p.currentToken.Column)
+				p.saveError(msg)
+				return nil
+			}
+			ut.Types = append(ut.Types, next)
+		}
+		ta.Union = ut
+	} else {
+		ta.Type = typ
+	}
+	return ta
+}
+
+// parseTypeExpression parses a single type (used by type aliases). It
+// returns the parsed Type and whether parsing succeeded. The current
+// token is left at the first token that is NOT part of the type
+// (typically NEWLINE, EOF, OR, or a statement-end token).
+func (p *Parser) parseTypeExpression() (Type, bool) {
+	startTok := p.currentToken
+	switch p.currentToken.Type {
+	case lexer.IDENT:
+		// Could be:
+		//   - NamedType (e.g., "i64")
+		//   - PointerType (e.g., "ptr i64") — though typical syntax is
+		//     "ptr" followed by an IDENT.
+		if p.peekToken.Type == lexer.IDENT {
+			// Check for "ptr T" form
+			if p.currentToken.Literal == "ptr" {
+				inner := p.peekToken
+				p.nextToken() // skip "ptr"
+				p.nextToken() // skip inner type
+				return &PointerType{Token: startTok, Type: &NamedType{Token: inner, Value: inner.Literal}}, true
+			}
+		}
+		name := p.currentToken.Literal
+		t := p.currentToken
+		p.nextToken()
+		return &NamedType{Token: t, Value: name}, true
+	case lexer.LBRACKET:
+		p.nextToken() // skip [
+		if p.currentToken.Type == lexer.RBRACKET {
+			// []T
+			p.nextToken() // skip ]
+			elemName := p.currentToken.Literal
+			elemTok := p.currentToken
+			p.nextToken()
+			return &SliceType{Token: startTok, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
+		}
+		if p.currentToken.Type == lexer.QUESTION {
+			// [?]T
+			p.nextToken() // skip ?
+			p.nextToken() // skip ]
+			elemName := p.currentToken.Literal
+			elemTok := p.currentToken
+			p.nextToken()
+			return &SliceType{Token: startTok, Elem: &NullableType{Token: elemTok, Type: &NamedType{Token: elemTok, Value: elemName}}}, true
+		}
+		// [N]T
+		sizeTok := p.currentToken
+		p.nextToken() // skip size
+		p.nextToken() // skip ]
+		elemName := p.currentToken.Literal
+		elemTok := p.currentToken
+		p.nextToken()
+		return &ArrayType{Token: startTok, Size: &Identifier{Token: sizeTok, Value: sizeTok.Literal}, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
+	case lexer.QUESTION:
+		// ?T
+		p.nextToken() // skip ?
+		innerName := p.currentToken.Literal
+		innerTok := p.currentToken
+		p.nextToken()
+		return &NullableType{Token: startTok, Type: &NamedType{Token: innerTok, Value: innerName}}, true
+	}
+	return nil, false
 }
 
 func (p *Parser) parseStructDefinition() Statement {
@@ -5174,7 +5384,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 			if p.currentToken.Type == lexer.ELLIPSIS {
 				p.nextToken()
 				if p.currentToken.Type == lexer.IDENT {
-					paramType = "[]" + p.currentToken.Literal // ..int → []int 切片
+					typeName := p.currentToken.Literal
+					paramType = "[]" + typeName // ..int → []int 切片
 					param := &Parameter{
 						Token: paramToken,
 						Name:  paramName,
