@@ -738,6 +738,7 @@ type InterfaceMethod struct {
 	Name       string
 	Parameters []*Parameter // method parameter names and types
 	IsVariadic bool         // method has variadic parameter (..t)
+	Results    []*Parameter // method result declarations: (res type)
 }
 
 type InterfaceDefinition struct {

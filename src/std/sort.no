@@ -1,10 +1,9 @@
-sort {
-    ast(n ..t)
-    desc(n ..t)
+ord {
+    gt(x t)
 }
 
-sort.ast = (n ..t) {
+ast = (n ..t) {
 }
 
-sort.desc = (n ..t) {
+desc = (n ..t) {
 }

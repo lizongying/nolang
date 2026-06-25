@@ -4705,6 +4705,43 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			p.nextToken() // skip )
 		}
 
+		// Optional result declaration: (res type)
+		// e.g.  gt(x t) (res bool)
+		if p.currentToken.Type == lexer.LPAREN && p.peekToken.Type == lexer.IDENT {
+			p.nextToken() // skip (
+			for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+				if p.currentToken.Type != lexer.IDENT {
+					msg := fmt.Sprintf("line %d, column %d: expected result name in interface method, got %s",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return nil
+				}
+				resName := p.currentToken.Literal
+				resTok := p.currentToken
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					method.Results = append(method.Results, &Parameter{
+						Token: resTok,
+						Name:  resName,
+						Type:  buildType(p.currentToken.Literal, p.currentToken),
+					})
+					p.nextToken()
+				} else {
+					method.Results = append(method.Results, &Parameter{
+						Token: resTok,
+						Name:  resName,
+						Type:  nil,
+					})
+				}
+				if p.currentToken.Type == lexer.COMMA {
+					p.nextToken()
+				}
+			}
+			if p.currentToken.Type == lexer.RPAREN {
+				p.nextToken() // skip )
+			}
+		}
+
 		id.Methods = append(id.Methods, method)
 	}
 

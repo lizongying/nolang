@@ -4,6 +4,11 @@
 
 // max: 回傳較大值（泛型 t：i64 或 f64）
 // 使用減法判斷大小以繞過 parser identifier 比較限制
+
+i8.gt = (x i8) (res bool) {
+    res = x > .
+}
+
 max = (a t, b t) (r t) {
     r = a > b ? a : b
 }
