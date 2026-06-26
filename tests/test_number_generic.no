@@ -8,108 +8,111 @@
 //   - even (a int)    (yes int) — 整型泛型
 //   - odd  (a int)    (yes int) — 整型泛型
 //   - pow  (a int, n int) (r int) — 整型泛型
-//
-// 每個測試都印出實際結果，運行時可以肉眼比對，或用 no test
-// 跑這個檔案並 diff 輸出。
 
 # std/number
 
 // ── max：變參泛型，回傳最大值 ──
-test-max() {
+test-max = () {
     r = 0
 
     // i64
     max(10, 20, r)
-    println-i64(r)        // expect: 20
+    println-i64(r)  // expect: 20
 
     max(3, 1, 4, 1, 5, r)
-    println-i64(r)        // expect: 5
+    println-i64(r)  // expect: 5
 
     max(100, 50, r)
-    println-i64(r)        // expect: 100
+    println-i64(r)  // expect: 100
 }
+
 test-max()
 println-i64(0)
 
 // ── min：變參泛型，回傳最小值 ──
-test-min() {
+test-min = () {
     r = 0
 
     min(10, 20, r)
-    println-i64(r)        // expect: 10
+    println-i64(r)  // expect: 10
 
     min(3, 1, 4, 1, 5, r)
-    println-i64(r)        // expect: 1
+    println-i64(r)  // expect: 1
 }
+
 test-min()
 println-i64(1)
 
 // ── abs：非變參泛型，回傳絕對值 ──
-test-abs() {
+test-abs = () {
     r = 0
 
     abs(-42, r)
-    println-i64(r)        // expect: 42
+    println-i64(r)  // expect: 42
 
     abs(7, r)
-    println-i64(r)        // expect: 7
+    println-i64(r)  // expect: 7
 
     abs(0, r)
-    println-i64(r)        // expect: 0
+    println-i64(r)  // expect: 0
 }
+
 test-abs()
 println-i64(2)
 
 // ── sign：非變參泛型，回傳符號（-1, 0, 1）──
-test-sign() {
+test-sign = () {
     r = 0
 
     sign(5, r)
-    println-i64(r)        // expect: 1
+    println-i64(r)  // expect: 1
 
     sign(-3, r)
-    println-i64(r)        // expect: -1
+    println-i64(r)  // expect: -1
 
     sign(0, r)
-    println-i64(r)        // expect: 0
+    println-i64(r)  // expect: 0
 }
+
 test-sign()
 println-i64(3)
 
 // ── even / odd：整型泛型 ──
-test-even-odd() {
+test-even-odd = () {
     yes = 0
 
     even(4, yes)
-    println-i64(yes)      // expect: 1
+    println-i64(yes)  // expect: 1
 
     even(7, yes)
-    println-i64(yes)      // expect: 0
+    println-i64(yes)  // expect: 0
 
     odd(7, yes)
-    println-i64(yes)      // expect: 1
+    println-i64(yes)  // expect: 1
 
     odd(4, yes)
-    println-i64(yes)      // expect: 0
+    println-i64(yes)  // expect: 0
 }
+
 test-even-odd()
 println-i64(4)
 
 // ── pow：整型冪 ──
-test-pow() {
+test-pow = () {
     r = 0
 
     pow(2, 10, r)
-    println-i64(r)        // expect: 1024
+    println-i64(r)  // expect: 1024
 
     pow(3, 4, r)
-    println-i64(r)        // expect: 81
+    println-i64(r)  // expect: 81
 
     pow(5, 0, r)
-    println-i64(r)        // expect: 1
+    println-i64(r)  // expect: 1
 
     pow(7, 1, r)
-    println-i64(r)        // expect: 7
+    println-i64(r)  // expect: 7
 }
+
 test-pow()
 println-i64(5)

@@ -55,6 +55,7 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	g.funcVars = nil
 	g.varTypes = make(map[string]string) // reset varTypes for each function
+	g.funcLocalNames = make(map[string]bool)
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -64,6 +65,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	}
 	for _, p := range fd.Parameters {
 		g.paramNames[p.Name] = true
+		g.funcLocalNames[p.Name] = true
 		g.varTypes[p.Name] = g.mapToLLVMType(p.Type.String())
 	}
 	// For multi-output functions, result parameters are also passed by reference
@@ -71,6 +73,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for _, r := range fd.Results {
 		if len(fd.Results) > 1 && r.Name != "" {
 			g.paramNames[r.Name] = true
+			g.funcLocalNames[r.Name] = true
 		}
 	}
 
@@ -115,11 +118,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
+		g.funcLocalNames[k] = true
 	}
 	// 確保 range 變數有型別
 	g.collectRangeVarTypes(fd.Body, localVarTypes)
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
+		g.funcLocalNames[k] = true
 	}
 	// 結果參數也要分配空間（多結果時為 passed by reference，不分配；單結果時維持舊行為）
 	for _, r := range fd.Results {
@@ -127,6 +132,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			llvmType := g.mapToLLVMType(r.Type.String())
 			localVarTypes[r.Name] = llvmType
 			g.varTypes[r.Name] = llvmType
+			g.funcLocalNames[r.Name] = true
 		}
 	}
 
@@ -184,6 +190,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 
 func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program) {
 	g.funcVars = nil
+	g.funcLocalNames = make(map[string]bool)
 
 	hasTopLevel := false
 	for _, stmt := range program.Statements {

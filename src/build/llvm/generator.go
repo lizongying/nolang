@@ -51,6 +51,7 @@ type Generator struct {
 	moduleVarTypes  map[string]string        // module-level variable types (preserved across functions)
 	ssaTypes        map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
 	blockTerminated bool                     // true if current basic block ends with a terminator (ret/br)
+	funcLocalNames  map[string]bool          // local variable names in current function (params + allocas)
 }
 
 func NewGenerator() *Generator {
@@ -111,7 +112,12 @@ func llvmGlobalRef(name string) string {
 
 // varAddr returns the LLVM variable reference (local or global) for the given name.
 // It checks globalVars to determine whether to use @ (global) or % (local) prefix.
+// Local variables (parameters and allocas in the current function) take precedence
+// over globals with the same name.
 func (g *Generator) varAddr(name string) string {
+	if g.funcLocalNames != nil && g.funcLocalNames[name] {
+		return llvmVarRef(name)
+	}
 	if g.globalVars != nil && g.globalVars[name] {
 		return llvmGlobalRef(name)
 	}
