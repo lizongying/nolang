@@ -347,12 +347,12 @@ func (p *Parameter) EndPos() lexer.Position { return posFromToken(p.Token) }
 
 // FuncSignature captures the shared signature of FunctionDefinition and FunctionLiteral.
 type FuncSignature struct {
-	Parameters     []*Parameter
-	Results        []*Parameter
-	GenericParams  []*Identifier // 泛型參數：<N, M, ...>
-	IsVariadic     bool          // 是否有 ...any 可變參數
-	VariadicUnion  string        // 當 IsVariadic && 參數類型是 union alias 時記錄 union 名稱；codegen 會單態化
-	GenericUnion   string        // 當函數的參數/結果型別是 union alias（非 variadic）時記錄 union 名稱；codegen 會單態化
+	Parameters    []*Parameter
+	Results       []*Parameter
+	GenericParams []*Identifier // 泛型參數：<N, M, ...>
+	IsVariadic    bool          // 是否有 ...any 可變參數
+	VariadicUnion string        // 當 IsVariadic && 參數類型是 union alias 時記錄 union 名稱；codegen 會單態化
+	GenericUnion  string        // 當函數的參數/結果型別是 union alias（非 variadic）時記錄 union 名稱；codegen 會單態化
 }
 
 type FunctionDefinition struct {
@@ -608,9 +608,17 @@ type ConditionalExpression struct {
 	Alternative Expression
 }
 
-func (ce *ConditionalExpression) expressionNode()        {}
-func (ce *ConditionalExpression) Pos() lexer.Position    { return posFromToken(ce.Token) }
-func (ce *ConditionalExpression) EndPos() lexer.Position { return ce.Alternative.EndPos() }
+func (ce *ConditionalExpression) expressionNode()     {}
+func (ce *ConditionalExpression) Pos() lexer.Position { return posFromToken(ce.Token) }
+func (ce *ConditionalExpression) EndPos() lexer.Position {
+	if ce.Alternative != nil {
+		return ce.Alternative.EndPos()
+	}
+	if ce.Consequence != nil {
+		return ce.Consequence.EndPos()
+	}
+	return posFromToken(ce.Token)
+}
 
 // IterationExpr unifies the different kinds of for-range iteration.
 type IterationExpr struct {

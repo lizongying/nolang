@@ -211,6 +211,18 @@ func (g *Generator) Generate(program *parser.Program) string {
 		{name: "data", typ: "i8*"},
 	}
 
+	// Pre-register built-in str type
+	g.structTypes["str"] = []structField{
+		{name: "len", typ: "i64"},
+		{name: "data", typ: "i8*"},
+	}
+
+	// Pre-register built-in str-smail type
+	g.structTypes["str-smail"] = []structField{
+		{name: "len", typ: "i8"},
+		{name: "data", typ: "[127 x i8]"},
+	}
+
 	// 收集結構體定義並生成 LLVM struct type
 	for _, stmt := range program.Statements {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {

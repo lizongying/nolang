@@ -1114,6 +1114,68 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				return "0"
 			}
 
+			if t == "%str" {
+				// %str type: load data pointer (field 1), GEP, store
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%str.set.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%str.set.data.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %%%s, i32 0, i32 1\n",
+						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+						g.indent(), dataLoad, dataGEP))
+				}
+
+				// GEP into data with index
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%str.set.elem.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
+						g.indent(), elemGEP, dataLoad, idx))
+					storeVal := val
+					if strings.HasPrefix(val, "%") {
+						valType := g.intExprLLVMType(expr.Value)
+						if strings.HasPrefix(valType, "i") && valType != "i8" {
+							g.tmpIdx++
+							truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
+							storeVal = truncReg
+						}
+					}
+					sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n",
+						g.indent(), storeVal, elemGEP))
+				}
+				return "0"
+			}
+
+			if t == "%str-smail" {
+				// %str-smail type: GEP to field 1 (data array), GEP into array, store
+				g.tmpIdx++
+				fieldGEP := fmt.Sprintf("%%strsm.set.field.%d", g.tmpIdx)
+				g.tmpIdx++
+				elemGEP := fmt.Sprintf("%%strsm.set.elem.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %%%s, i32 0, i32 1\n",
+						g.indent(), fieldGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
+						g.indent(), elemGEP, fieldGEP, idx))
+					storeVal := val
+					if strings.HasPrefix(val, "%") {
+						valType := g.intExprLLVMType(expr.Value)
+						if strings.HasPrefix(valType, "i") && valType != "i8" {
+							g.tmpIdx++
+							truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
+							storeVal = truncReg
+						}
+					}
+					sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n",
+						g.indent(), storeVal, elemGEP))
+				}
+				return "0"
+			}
+
 			if strings.HasPrefix(t, "[") {
 				closeB := strings.IndexByte(t, ']')
 				if closeB > 0 {

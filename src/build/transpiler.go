@@ -3990,9 +3990,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 
 		// 記錄型別
 		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
-			// 顯式型別註記
-			varTypes[s.Name.Value] = s.Type.String()
-		} else if s.Value != nil {
+			// 只有新變數才記錄顯式型別；已存在的變數（如函式結果參數）不覆寫
+			if _, exists := varTypes[s.Name.Value]; !exists {
+				varTypes[s.Name.Value] = s.Type.String()
+			}
+		}
+		if s.Value != nil {
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes)
 			if inferredType != "" {
