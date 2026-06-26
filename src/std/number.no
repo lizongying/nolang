@@ -125,128 +125,18 @@ pow = (a int, n int) (r int) {
 // }
 
 // float.to-str: 浮點數轉字串（方法）
-// 將浮點數轉為十進制字串表示
-float.to-str = () (out str) {
-    out = ''
-
-    // 處理 0
-    if . == 0.0 {
-        out[0] = 48
-        out.len = 1
-        return
-    }
-
-    // 處理負數
-    n = .
-    neg = 0
-    if n < 0 {
-        neg = 1
-        n = n - n - n
-    }
-
-    // 取整數部分：反覆減 1.0
-    int-val = 0
-    tmp = n
-    for tmp >= 1.0 {
-        int-val = int-val + 1
-        tmp = tmp - 1.0
-    }
-
-    // 整數部分轉字串：取每個位數
-    // 先找到最高位
-    pow10 = 1
-    p = int-val
-    for p >= 10 {
-        pow10 = pow10 * 10
-        p = p / 10
-    }
-
-    // 由高位到低位轉換
-    i = 0
-
-    // 負號
-    if neg == 1 {
-        out[i] = 45
-        i = i + 1
-    }
-    remain = int-val
-    for pow10 > 0 {
-        digit = remain / pow10
-        out[i] = digit + 48
-        i = i + 1
-        remain = remain % pow10
-        pow10 = pow10 / 10
-    }
-
-    // 加小數點
-    out[i] = 46
-    i = i + 1
-
-    // 小數部分（最多 6 位）
-    frac = tmp
-    j = 0
-    for j < 6 {
-        frac = frac * 10.0
-        d = 0
-        for frac >= 1.0 {
-            d = d + 1
-            frac = frac - 1.0
-        }
-        out[i] = d + 48
-        i = i + 1
-        j = j + 1
-        if frac == 0.0 {
-            break
-        }
-    }
-    out.len = i
-}
+// 使用 strconv 中的 build-in 實現
+// build-in (ForwardFunc: sprintf-f64)
+// float.to-str = () (out str) {
+//     // LLVM: fpext float to double → sprintf(buf, "%g", .)
+// }
 
 // int.to-str: 整数转字串（方法）
-int.to-str = () (out str) {
-    out = ''
-    n = .
-
-    // 處理 0
-    if n == 0 {
-        out[0] = 48
-        out.len = 1
-        return
-    }
-
-    // 處理負數
-    neg = 0
-    if n < 0 {
-        neg = 1
-        n = 0 - n
-    }
-
-    // 由低位到高位寫入
-    i = 0
-    for n > 0 {
-        d = n % 10
-        out[i] = d + 48
-        i = i + 1
-        n = n / 10
-    }
-
-    // 負號
-    if neg == 1 {
-        out[i] = 45
-        i = i + 1
-    }
-
-    // 反轉
-    len = i
-    j = 0
-    for j < len / 2 {
-        tmp = out[j]
-        out[j] = out[len - 1 - j]
-        out[len - 1 - j] = tmp
-        j = j + 1
-    }
-    out.len = len
-}
+// 使用 strconv 中的 build-in 實現
+// build-in (ForwardFunc: sprintf-i64)
+// int.to-str = () (out str) {
+//     // LLVM: sprintf(buf, "%lld", .)
+// }
 
 // div: 整數除法，回傳商（a ÷ b）
 // b 為 0 時行為未定義（執行時期錯誤）

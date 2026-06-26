@@ -2,66 +2,74 @@
 //
 // 為 os.read / os.write 提供緩衝讀寫和行讀取功能。
 
-// reader-init: 建立緩衝讀取器，回傳 fd
-reader-init = (fd i64) (r i64) {
-    r = fd
+// reader: 緩衝讀取器
+reader {
+    fd i64
+    buf []byte
+    pos i64
+    avail i64
 }
 
-// reader-fill: 填充緩衝區
-reader-fill = (r i64, buf str, bsz i64, pos i64, avail i64) (ok i64) {
-    if pos < 0 {
-        ok = 0
+// init: 建立緩衝讀取器
+reader.init = (fd i64, buf []byte) (r reader) {
+    r.fd = fd
+    r.buf = buf
+    r.pos = 0
+    r.avail = 0
+}
+
+// fill: 填充緩衝區
+reader.fill = () (ok bool) {
+    if .pos < 0 {
         return
     }
-    if avail > 0 {
-        ok = 1
+    if .avail > 0 {
+        ok = true
         return
     }
-    n = read(r, buf, bsz)
+    n = read(.fd, .buf, .buf.len)
     if n > 0 {
-        ok = 1
-        pos = 0
-        avail = n
-    } else {
-        ok = 0
+        .pos = 0
+        .avail = n
+        ok = true
     }
 }
 
-// reader-read-byte: 讀取一個位元組
-reader-read-byte = (r i64, buf str, bsz i64, pos i64, avail i64) (b i64, ok i64) {
-    ok = reader-fill(r, buf, bsz, pos, avail)
-    if ok == 0 {
+// read-byte: 讀取一個位元組
+reader.read-byte = () (b byte, ok bool) {
+    ok = .fill()
+    if ok == false {
         return
     }
-    b = buf[pos] & 255
-    pos = pos + 1
+    b = .buf[.pos]
+    .pos = .pos + 1
 }
 
-// reader-read-line: 讀取一行
-reader-read-line = (r i64, buf str, bsz i64, pos i64, avail i64) (line str, ok i64) {
-    i = 0
-    for {
-        ok = reader-fill(r, buf, bsz, pos, avail)
-        if ok == 0 {
-            if i > 0 {
-                ok = 1
+// read-line: 讀取一行
+reader.read-line = (line str) (ok bool) {
+    n = 0
+    ! {
+        ok = .fill()
+        if ok == false {
+            if n > 0 {
+                ok = true
             }
             return
         }
-        for pos < avail {
-            c = buf[pos] & 255
-            pos = pos + 1
+        for .pos < .avail {
+            c = .buf[.pos]
+            .pos = .pos + 1
             if c == 10 {
-                ok = 1
+                ok = true
                 return
             }
-            line[i] = c
-            i = i + 1
+            line[n] = c
+            n = n + 1
         }
     }
 }
 
-// reader-close: 關閉
-reader-close = (r i64) {
-    close(r)
+// close: 關閉
+reader.close = () {
+    close(.fd)
 }

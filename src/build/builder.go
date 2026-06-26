@@ -134,6 +134,60 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 	return nil
 }
 
+// VetFile performs syntax and semantic validation on a .no source file without
+// producing any compilation artifacts (no LLVM IR, no binary).
+func VetFile(inputPath string, opts BuildOptions) error {
+	// 若指定的是目錄，先找目錄內的 mod.jsonc
+	info, err := os.Stat(inputPath)
+	isDir := err == nil && info.IsDir()
+
+	var pkgDir string
+	if isDir {
+		pkgDir = inputPath
+	} else {
+		pkgDir = filepath.Dir(inputPath)
+	}
+
+	pkg, _ := LoadPackage(pkgDir)
+	if pkg != nil && isDir {
+		// 確保所有傳遞依賴已解析
+		if _, err := pkg.EnsureDependencies(10); err != nil {
+			return fmt.Errorf("dependency resolution failed: %w", err)
+		}
+
+		mainFile := pkg.Main
+		if mainFile == "" {
+			mainFile = "main.no"
+		}
+		inputPath = pkg.ResolvePath(mainFile)
+	}
+
+	// 如果仍然是指向目錄（無 package config 的情況），預設使用 main.no
+	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+		mainPath := filepath.Join(inputPath, "main.no")
+		if _, err := os.Stat(mainPath); err != nil {
+			return fmt.Errorf("main.no not found in %s", inputPath)
+		}
+		inputPath = mainPath
+	}
+
+	source, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("reading input file: %w", err)
+	}
+
+	compiler := NewTranspiler(pkg)
+	compiler.sourcePath = inputPath  // 設定源碼路徑用於 std 庫檢測
+	// Compile 會進行解析、型別檢查和 LLVM IR 產生
+	// 我們只關心是否有錯誤，丟棄產生的 LLVM IR
+	_, err = compiler.Compile(string(source))
+	if err != nil {
+		return fmt.Errorf("validation error: %w", err)
+	}
+
+	return nil
+}
+
 // BuildLLVM writes LLVM IR and compiles it to an executable via opt + llc + cc.
 func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool) error {
 	tempDir, err := os.MkdirTemp("", "nolang")

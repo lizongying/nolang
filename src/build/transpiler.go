@@ -160,7 +160,7 @@ func isConcreteType(typeName string) bool {
 	return false
 }
 
-func inferExprType(expr parser.Expression, varTypes map[string]string) string {
+func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
 	}
@@ -175,18 +175,43 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		return "bool"
 	case *parser.CharLiteral:
 		return "char"
+	case *parser.ByteLiteral:
+		return "byte"
 	case *parser.Identifier:
 		if t, ok := varTypes[e.Value]; ok {
 			return t
 		}
 		return "" // 未知變數
 	case *parser.CallExpression:
-		// 函數調用的返回類型 — 查詢 builtin 回傳型別
+		// 1. 檢查內建函數
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			for _, m := range builtin.BuiltinMethodList {
 				if m.MethodName == ident.Value {
 					if len(m.Return) > 0 {
 						return m.Return[0].String()
+					}
+				}
+			}
+			// 2. 檢查用戶定義的函數
+			if retType, exists := funcTypes[ident.Value]; exists {
+				return retType
+			}
+		}
+		// 3. 檢查 struct 方法調用（DotExpression）
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				var typeName string
+				if recv.Value == "self" {
+					// 從當前方法的 self 參數獲取類型
+					typeName = selfType
+				} else if recvType, exists := varTypes[recv.Value]; exists {
+					typeName = recvType
+				}
+
+				if typeName != "" {
+					methodName := typeName + "." + dot.Property
+					if retType, exists := funcTypes[methodName]; exists {
+						return retType
 					}
 				}
 			}
@@ -199,7 +224,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 			return "bool"
 		case "+", "-", "*", "/":
 			// 根據類型推斷
-			leftType := inferExprType(e.Left, varTypes)
+			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
 			if leftType != "" {
 				return leftType
 			}
@@ -212,7 +237,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 			return "bool"
 		}
 		// 前綴正負號傳遞內層表達式的型別
-		return inferExprType(e.Right, varTypes)
+		return inferExprType(e.Right, varTypes, funcTypes, selfType)
 	case *parser.DotExpression:
 		// Struct field access: cannot infer without struct definitions
 		return ""
@@ -222,7 +247,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 	case *parser.SliceExpression:
 		// Slicing [N]T returns []T; slicing str returns str
 		if e.Left != nil {
-			leftType := inferExprType(e.Left, varTypes)
+			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
 			if strings.HasPrefix(leftType, "[") {
 				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
 					return "[]" + leftType[idx+1:]
@@ -235,11 +260,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		}
 		return ""
 	case *parser.GroupedExpression:
-		return inferExprType(e.Expression, varTypes)
+		return inferExprType(e.Expression, varTypes, funcTypes, selfType)
 	case *parser.ConditionalExpression:
 		// 三元運算子：從兩分支推斷型別
-		consequenceType := inferExprType(e.Consequence, varTypes)
-		alternativeType := inferExprType(e.Alternative, varTypes)
+		consequenceType := inferExprType(e.Consequence, varTypes, funcTypes, selfType)
+		alternativeType := inferExprType(e.Alternative, varTypes, funcTypes, selfType)
 		if consequenceType == alternativeType && consequenceType != "" {
 			return consequenceType
 		}
@@ -251,6 +276,24 @@ func inferExprType(expr parser.Expression, varTypes map[string]string) string {
 		// A struct literal `name{}` has the type of the struct itself.
 		if e.Type != "" {
 			return e.Type
+		}
+		return "i64"
+	case *parser.ArrayLiteral:
+		// Array literal v[1, 2, ...] → infer type from elements
+		if len(e.Elements) > 0 {
+			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
+			if elemType != "" {
+				return fmt.Sprintf("[%d]%s", len(e.Elements), elemType)
+			}
+		}
+		return "i64"
+	case *parser.SliceLiteral:
+		// Slice literal [1, 2, ...] → infer type from elements
+		if len(e.Elements) > 0 {
+			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
+			if elemType != "" {
+				return fmt.Sprintf("[]%s", elemType)
+			}
 		}
 		return "i64"
 	default:
@@ -270,7 +313,7 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 				// 收集實參類型
 				argTypes := make([]string, len(e.Arguments))
 				for i, arg := range e.Arguments {
-					t := inferExprType(arg, varTypes)
+					t := inferExprType(arg, varTypes, nil, "")
 					if t == "" {
 						// 無法推斷類型，使用第一個重載
 						if i < len(fns[0].Parameters) {
@@ -348,6 +391,7 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 type Transpiler struct {
 	llvmGenerator *llvm.Generator
 	pkg           *Package // 當前套件（用於路徑解析）
+	sourcePath    string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -494,6 +538,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if t.pkg != nil {
 		root := t.pkg.RootDir
 		if strings.Contains(root, "src/std") || strings.Contains(root, "std") {
+			isUserCode = false
+		}
+	}
+	// 如果 pkg 為 nil，檢查源碼檔案路徑是否為標準庫
+	if isUserCode && t.sourcePath != "" {
+		if strings.Contains(t.sourcePath, "src/std") || strings.Contains(t.sourcePath, "/std/") {
 			isUserCode = false
 		}
 	}
@@ -2305,12 +2355,24 @@ func validateDuplicates(program *parser.Program) error {
 func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		// Only type-annotated declarations count as "definitions" (e.g., a i8)
-		// The parser sets s.Type to the variable name for untyped assignments (a = 2),
-		// so we check if Type.Value differs from Name.Value to detect real type annotations
-		if s.Type == nil || s.Type.String() == s.Name.Value {
+		// In nolang, first assignment is definition, subsequent are reassignments
+		// Only check for duplicates when there's an explicit type annotation in source
+		// Parser-inferred types (where Type.Token position == Name.Token position) should be ignored
+		if s.Type == nil {
 			return nil
 		}
+		// Check if type was inferred by parser (same position as name)
+		if nt, ok := s.Type.(*parser.NamedType); ok {
+			if nt.Token.Line == s.Name.Token.Line && nt.Token.Column == s.Name.Token.Column {
+				// Parser-inferred type, not explicit annotation
+				return nil
+			}
+		}
+		// Check if Type.String() == Name.Value (another parser artifact)
+		if s.Type.String() == s.Name.Value {
+			return nil
+		}
+		// Explicit type annotation (e.g., i i64 = 0)
 		if seen[s.Name.Value] {
 			return fmt.Errorf("duplicate variable '%s'", s.Name.Value)
 		}
@@ -2560,6 +2622,16 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		}
 	}
 
+	// 1.5 構建函數返回類型映射
+	funcTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
+				funcTypes[fd.Name] = fd.Results[0].Type.String()
+			}
+		}
+	}
+
 	// 2. 檢查重複函式簽名（允許重載，但簽名不能重複）
 	sigSeen := make(map[string]int) // signature → first seen line
 	for _, stmt := range program.Statements {
@@ -2583,7 +2655,14 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 
 	// 3. 遍歷頂層語句做型別檢查
 	for _, stmt := range program.Statements {
-		errs := validateStmtTypes(stmt, funcNames, make(map[string]string))
+		// 判斷是否為 struct 方法
+		selfType := ""
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
+				selfType = fd.Parameters[0].Type.String()
+			}
+		}
+		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, make(map[string]string))
 		results = append(results, errs...)
 	}
 
@@ -3291,8 +3370,16 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 		if s.Name == nil {
 			return nil
 		}
-		// Check for duplicate only if this is a real type annotation (not parser artifact where Type == Name)
-		if s.Type != nil && s.Type.String() != s.Name.Value {
+
+		// Detect parser-inferred types (Type.Token at same position as Name.Token)
+		isInferred := false
+		if nt, ok := s.Type.(*parser.NamedType); ok && s.Name != nil {
+			isInferred = nt.Token.Line == s.Name.Token.Line &&
+				nt.Token.Column == s.Name.Token.Column
+		}
+
+		// Check for duplicate only if this is a real type annotation (not parser artifact where Type == Name, and not inferred)
+		if s.Type != nil && s.Type.String() != s.Name.Value && !isInferred {
 			if _, exists := seen[s.Name.Value]; exists {
 				return []ValidateResult{{
 					Line:    s.Token.Line,
@@ -3300,9 +3387,15 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 					Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
 				}}
 			}
+			// Real type annotation — always register
+			seen[s.Name.Value] = struct{}{}
+		} else if isInferred {
+			// Inferred type (e.g. `i = 0`): register only the first declaration,
+			// allow subsequent re-assignments like `i = 4`
+			if _, exists := seen[s.Name.Value]; !exists {
+				seen[s.Name.Value] = struct{}{}
+			}
 		}
-		// Register all declarations to prevent subsequent re-declarations
-		seen[s.Name.Value] = struct{}{}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			bodySeen := make(map[string]struct{})
@@ -3916,7 +4009,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 }
 
 // validateStmtTypes 檢查單個語句的型別問題
-func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varTypes map[string]string) []ValidateResult {
+func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string) []ValidateResult {
 	var results []ValidateResult
 
 	switch s := stmt.(type) {
@@ -3935,9 +4028,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 				localTypes[p.Name] = p.Type.String()
 			}
 		}
+		// 進入方法體時，更新 selfType
+		methodSelfType := selfType
+		if len(s.Parameters) > 0 && s.Parameters[0].Name == "self" {
+			methodSelfType = s.Parameters[0].Type.String()
+		}
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, localTypes)
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, methodSelfType, localTypes)
 				results = append(results, errs...)
 			}
 		}
@@ -3997,11 +4095,15 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 		}
 		if s.Value != nil {
 			// 型別推斷
-			inferredType := inferExprType(s.Value, varTypes)
+			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
 			if inferredType != "" {
 				if existingType, exists := varTypes[s.Name.Value]; exists {
 					// 變數已有型別，檢查是否相容
-					if inferredType != existingType && isConcreteType(existingType) {
+					// 集合字面量 (ArrayLiteral/SliceLiteral) 可初始化陣列變數，跳過型別不匹配檢查
+					_, isSlice := s.Value.(*parser.SliceLiteral)
+					_, isArrayLit := s.Value.(*parser.ArrayLiteral)
+					isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
+					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,
 							Column:  s.Token.Column,
@@ -4020,13 +4122,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 			if ifExpr.Consequence != nil {
 				for _, bStmt := range ifExpr.Consequence.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, varTypes)
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
 					results = append(results, errs...)
 				}
 			}
 			if ifExpr.Alternative != nil {
 				for _, bStmt := range ifExpr.Alternative.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, varTypes)
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
 					results = append(results, errs...)
 				}
 			}
@@ -4059,7 +4161,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 				// 型別不匹配檢查
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
-						valType := inferExprType(assign.Value, varTypes)
+						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
 						if valType != "" && valType != existingType && isConcreteType(existingType) {
 							results = append(results, ValidateResult{
 								Line:    ident.Token.Line,
@@ -4075,14 +4177,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, varType
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, varTypes)
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
 				results = append(results, errs...)
 			}
 		}
 
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			errs := validateStmtTypes(bStmt, funcNames, varTypes)
+			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
 			results = append(results, errs...)
 		}
 
@@ -4841,7 +4943,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 					}
 				}
 				if inferred == "" {
-					inferred = inferExprType(s.Value, varTypes)
+					inferred = inferExprType(s.Value, varTypes, nil, "")
 				}
 				if inferred != "" {
 					varTypes[s.Name.Value] = inferred
@@ -4974,7 +5076,7 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 		}
 		return ""
 	default:
-		return inferExprType(expr, varTypes)
+		return inferExprType(expr, varTypes, nil, "")
 	}
 }
 

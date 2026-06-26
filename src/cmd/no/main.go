@@ -97,6 +97,8 @@ func main() {
 		runCommand(os.Args[2:])
 	case "test":
 		testCommand(os.Args[2:])
+	case "vet":
+		vetCommand(os.Args[2:])
 	default:
 		printUsage()
 	}
@@ -117,23 +119,26 @@ func printUsage() {
 	fmt.Println("      -w    write result to source file (in-place)")
 	fmt.Println("      -d    process directory mode (recursive)")
 	fmt.Println("    Examples:")
+	fmt.Println("      no fmt")
 	fmt.Println("      no fmt main.no              format and print to stdout")
 	fmt.Println("      no fmt -w main.no           format file in-place")
 	fmt.Println("      no fmt -w -d src/           format all .no files in src/ recursively")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("")
-	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project (default: current dir)")
+	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
 	fmt.Println("    Flags:")
 	fmt.Println("      -o <file>     Output file path")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
 	fmt.Println("                      x86_64-windows-gnu")
+	fmt.Println("    Default: build current directory")
 	fmt.Println("    Examples:")
+	fmt.Println("      no build")
 	fmt.Println("      no build main.no")
-	fmt.Println("      no build -o output main.no      specify output path")
-	fmt.Println("      no build -cc zig main.no        use zig as C compiler")
-	fmt.Println("      no build -target x86_64-linux-gnu main.no  cross-compile")
+	fmt.Println("      no build -o output main.no")
+	fmt.Println("      no build -cc zig main.no")
+	fmt.Println("      no build -target x86_64-linux-gnu main.no")
 	fmt.Println("")
 	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
@@ -154,6 +159,11 @@ func printUsage() {
 	fmt.Println("      no test test/my-test.no")
 	fmt.Println("      no test -cc zig")
 	fmt.Println("      no test -target x86_64-linux-gnu")
+	fmt.Println("")
+	fmt.Println("  no vet [<file|dir>]            Validate source files")
+	fmt.Println("    Examples:")
+	fmt.Println("      no vet                     validate main.no in current dir")
+	fmt.Println("      no vet main.no             validate main.no")
 	fmt.Println("")
 	fmt.Println("  no add <pkg>        Add a dependency")
 	fmt.Println("  no remove <pkg>     Remove a dependency")
@@ -764,7 +774,7 @@ func fmtCommand(args []string) {
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	dirMode := fs.Bool("d", false, "process directory mode")
 	fs.Usage = func() {
-		fmt.Println("Usage: no fmt [flags] <file|directory>")
+		fmt.Println("Usage: no fmt [flags] <file|dir>")
 		fmt.Println("")
 		fmt.Println("Format Nolang source files.")
 		fmt.Println("When no file is given, reads from stdin.")
@@ -891,6 +901,20 @@ func runCommand(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	fs.Usage = func() {
+		fmt.Println("Usage: no run [<file|dir>]")
+		fmt.Println("")
+		fmt.Println("Build and run a Nolang project.")
+		fmt.Println("If directory, requires main.no (entry point).")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no run                     build and run main.no in current dir")
+		fmt.Println("  no run main.no             build and run main.no")
+		fmt.Println("  no run -cc zig main.no     build and run with Zig compiler")
+	}
 	_ = fs.Parse(args)
 
 	inputPath := "."
@@ -947,6 +971,12 @@ func testCommand(args []string) {
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no test")
+		fmt.Println("  no test test/my-test.no")
+		fmt.Println("  no test -cc zig")
+		fmt.Println("  no test -target x86_64-linux-gnu")
 	}
 	_ = fs.Parse(args)
 
@@ -1039,6 +1069,67 @@ func testCommand(args []string) {
 
 	if hadFailure {
 		os.Exit(1)
+	}
+}
+
+func vetCommand(args []string) {
+	fs := flag.NewFlagSet("vet", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: no vet [<file|dir>]")
+		fmt.Println("")
+		fmt.Println("Validate Nolang source files without producing output.")
+		fmt.Println("If directory, validates all .no files in that directory.")
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no vet                     validate main.no in current dir")
+		fmt.Println("  no vet main.no             validate main.no")
+		fmt.Println("  no vet src/std/            validate all .no files in src/std/")
+	}
+	_ = fs.Parse(args)
+
+	inputPath := "."
+	if len(fs.Args()) > 0 {
+		inputPath = fs.Args()[0]
+	}
+
+	opts := nbuild.BuildOptions{
+		Verbose: verbose,
+	}
+
+	// 檢查是文件還是目錄
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if info.IsDir() {
+		// 目錄模式：驗證所有 .no 文件
+		files, err := filepath.Glob(filepath.Join(inputPath, "*.no"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(files) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: no .no files found in %s\n", inputPath)
+			os.Exit(1)
+		}
+		for _, file := range files {
+			if err := nbuild.VetFile(file, opts); err != nil {
+				fmt.Fprintf(os.Stderr, "Error in %s: %v\n", file, err)
+				os.Exit(1)
+			}
+		}
+	} else {
+		// 文件模式：驗證單個文件
+		if err := nbuild.VetFile(inputPath, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if verbose {
+		fmt.Println("Validation successful")
 	}
 }
 

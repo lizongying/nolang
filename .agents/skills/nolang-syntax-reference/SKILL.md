@@ -5,6 +5,10 @@ description: Reference for Nolang programming language syntax. Use when working 
 
 # Nolang Syntax Reference
 
+## Golden Rule: Do Not Modify Valid Code
+
+**Never modify valid, syntactically correct Nolang code — including identifiers, variable declarations, or any other language construct — even if you suspect a parser/compiler issue.** If you encounter what appears to be a parsing or tooling error, file a bug report or inform the user; do not change the code.
+
 This skill provides quick reference to Nolang language syntax. For full details, see the project docs at `docs/docs/lang/`.
 
 ## Quick Reference
@@ -66,6 +70,91 @@ add = (a i64, b i64) (result i64) {
     ...
 }
 ```
+
+### Methods on Union Types
+
+Methods attached to a union type (e.g. `int`, `float`, `num`) use `type.method = () (results)` syntax.
+
+The parser automatically adds a hidden `self` parameter with the receiver type, so you must **not** declare the receiver explicitly.
+
+**Definition:**
+```nolang
+// union type alias
+int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float f32 | f64
+num int | float
+
+// method definition — NO explicit self parameter, use `.` inside body
+num.sign = () (r num) {
+    if . > 0 { r = 1 }
+    elif . < 0 { r = -1 }
+    else { r = 0 }
+}
+
+int.to-str = () (out str) {
+    out = ''
+    n = .
+    // ... conversion logic using `n` (not `.` directly after first use)
+    out.len = len
+}
+
+float.to-str = () (out str) {
+    out = ''
+    if . == 0.0 {
+        out[0] = 48
+        out.len = 1
+        return
+    }
+    n = .
+    // ... conversion logic
+    out.len = i
+}
+```
+
+**Why method form is preferred here:**
+- The parser adds a hidden `self: <type>` parameter, enabling `GenericUnion` detection and monomorphization
+- Inside the body, `.` is the receiver — cleaner than passing `v` explicitly
+- The calling convention `to-str(receiver, out)` still works identically via `rewriteUnionCalls`
+
+```nolang
+int.to-str = () (out str) {
+    out = ''
+    n = .
+}
+```
+
+**Calling convention (monomorphization dispatch):**
+
+Union methods are NOT called with dot-notation like `obj.method()`. Instead, they are called as standalone functions — the transpiler's `rewriteUnionCalls` dispatches by argument type:
+
+```nolang
+import
+std / number
+
+main = () {
+    // Method 'num.sign' is called as: sign(receiver, result-out)
+    sign(-5, r)
+    println(r)
+
+    // Method 'int.to-str' is called as: to-str(receiver, result-out)
+    i = 42
+    to-str(i, out)
+    println(out)
+
+    // Method 'float.to-str' is called as: to-str(receiver, result-out)
+    to-str(3.14, out)
+    println(out)
+}
+```
+
+**Dispatch mechanism** (in `src/build/transpiler.go`):
+1. `monomorphizeUnions` creates type-specific versions: `int.to-str__i64`, `int.to-str__i32`, etc.
+2. `rewriteUnionCalls` resolves call `to-str(i, out)` by:
+   - Looking for templates ending with `.to-str`
+   - Inferring member type from first arg (`i` → `i64`)
+   - Validating `i64` is a member of `int` union
+   - Rewriting to `int.to-str__i64`
+3. Name conflicts between different types (e.g. `int.to-str` vs `float.to-str`) resolve correctly because member-type sets are disjoint (`int` → integer types, `float` → floating types).
 
 ### Control Flow
 

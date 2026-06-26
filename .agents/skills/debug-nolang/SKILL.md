@@ -9,7 +9,9 @@ A disciplined test-first workflow for diagnosing and fixing bugs in the Nolang c
 
 ## Core Principle
 
-**Never debug by editing the user's `.no` file directly.** Always:
+**Never debug by editing the user's `.no` file directly.** Even if you suspect a syntax or parsing problem, the user's code is presumed correct. Report the suspected issue to the user and let them decide; do not change valid syntax (identifiers, variable declarations, etc.) on your own authority.
+
+Always:
 
 1. Reproduce the issue with the **smallest possible** test case
 2. Add the test first
@@ -109,9 +111,20 @@ cd src && go test ./pkg/
 cd src && go test ./...
 ```
 
-### 5. Build the deliverable (`make package`)
+### 5. Validate the standard library with `no vet`
 
-After the Go tests are green, rebuild and repackage the VSCode extension so the editor picks up the new LSP behaviour:
+After the Go tests are green, rebuild the compiler and run `no vet` on the standard library to ensure no syntax or semantic errors were introduced:
+
+```bash
+make no                 # rebuild the compiler
+no vet src/std/         # validate all standard library files
+```
+
+This step catches issues that Go unit tests might miss. If `no vet` reports errors, fix them before proceeding.
+
+### 6. Build the deliverable (`make package`)
+
+After `no vet` passes, rebuild and repackage the VSCode extension so the editor picks up the new LSP behaviour:
 
 ```bash
 make package    # builds lsp, then runs `bun run package` inside vscode-nolang
@@ -120,7 +133,7 @@ make package    # builds lsp, then runs `bun run package` inside vscode-nolang
 
 Then reload the editor (for VSCode: `Cmd+Shift+P` → "Developer: Reload Window") and re-open the `.no` file to confirm the fix end-to-end.
 
-### 6. Do **not** delete the test
+### 7. Do **not** delete the test
 
 The new test is now a regression guard. Keep it in the same file as other tests of that layer.
 
