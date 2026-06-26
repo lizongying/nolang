@@ -18,10 +18,8 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		if closeBracket > 0 {
 			sizeStr := nolangType[1:closeBracket]
 			if sizeStr == "" {
-				// []type → 切片（用 i8* 表示）
-				elemType := nolangType[closeBracket+1:]
-				llvmElem := g.mapToLLVMType(elemType)
-				return llvmElem + "*"
+				// []type → 切片，使用 %vec (built-in struct: vec { len i64, cap i64, data i8* })
+				return "%vec"
 			}
 			return "%arr"
 		}

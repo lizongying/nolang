@@ -195,10 +195,6 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	g.tmpIdx++
 	labelId := g.tmpIdx
 
-	// Save and reset nestedIfEndId so we can detect if a nested if is generated
-	savedNestedIfEndId := g.nestedIfEndId
-	g.nestedIfEndId = 0
-
 	// 若條件是 InfixExpression（比較運算），直接取 i1
 	cond := ""
 	if infix, ok := expr.Condition.(*parser.InfixExpression); ok {
@@ -225,9 +221,9 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		g.indent(), cond, labelId, labelId))
 
 	// then
-	sb.WriteString(fmt.Sprintf("if.then.%d:\n", labelId))
+	thenLabel := fmt.Sprintf("if.then.%d", labelId)
+	g.emitLabel(sb, thenLabel)
 	g.indentLevel++
-	g.blockTerminated = false
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
@@ -266,19 +262,17 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		thenVal = defaultZero
 	}
 	thenTerminated := g.blockTerminated
+	thenPredecessor := g.currentBlock
 	if !thenTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
 	g.indentLevel--
 
-	// else — detect nested if by saving/resetting nestedIfEndId
-	sb.WriteString(fmt.Sprintf("if.else.%d:\n", labelId))
+	// else
+	elseLabel := fmt.Sprintf("if.else.%d", labelId)
+	g.emitLabel(sb, elseLabel)
 	g.indentLevel++
-	g.blockTerminated = false
 	elseVal := defaultZero
-	elsePredecessor := fmt.Sprintf("%%if.else.%d", labelId) // default
-	nestedIfBeforeElse := g.nestedIfEndId
-	g.nestedIfEndId = 0
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
 		for i := 0; i < len(expr.Alternative.Statements)-1; i++ {
 			g.generateStatement(sb, expr.Alternative.Statements[i])
@@ -303,20 +297,16 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if elseVal == "" {
 		elseVal = defaultZero
 	}
-	// If a nested if was generated inside the else block, use its end block as the phi predecessor
-	// instead of the else block (which no longer directly branches to if.end.{labelId})
-	if g.nestedIfEndId > 0 && g.nestedIfEndId != nestedIfBeforeElse {
-		elsePredecessor = fmt.Sprintf("%%if.end.%d", g.nestedIfEndId)
-	}
 	elseTerminated := g.blockTerminated
+	elsePredecessor := g.currentBlock
 	if !elseTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
 	g.indentLevel--
 
 	// end
-	sb.WriteString(fmt.Sprintf("if.end.%d:\n", labelId))
-	g.blockTerminated = false
+	endLabel := fmt.Sprintf("if.end.%d", labelId)
+	g.emitLabel(sb, endLabel)
 	g.tmpIdx++
 	phiReg := fmt.Sprintf("%%if.phi.%d", g.tmpIdx)
 	// phi type matches current function's return type
@@ -338,24 +328,22 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		elseVal = zeroVal
 	}
 	// Build phi entries based on which branches are terminated
+	thenPred := fmt.Sprintf("%%%s", thenPredecessor)
+	elsePred := fmt.Sprintf("%%%s", elsePredecessor)
 	if thenTerminated && elseTerminated {
 		// Both branches return — if.end is unreachable; emit a dummy value
 		sb.WriteString(fmt.Sprintf("%s%s = add %s 0, 0\n", g.indent(), phiReg, phiType))
 	} else if thenTerminated {
 		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %s]\n",
-			g.indent(), phiReg, phiType, elseVal, elsePredecessor))
+			g.indent(), phiReg, phiType, elseVal, elsePred))
 	} else if elseTerminated {
-		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d]\n",
-			g.indent(), phiReg, phiType, thenVal, labelId))
+		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %s]\n",
+			g.indent(), phiReg, phiType, thenVal, thenPred))
 	} else {
-		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d], [%s, %s]\n",
-			g.indent(), phiReg, phiType, thenVal, labelId, elseVal, elsePredecessor))
+		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %s], [%s, %s]\n",
+			g.indent(), phiReg, phiType, thenVal, thenPred, elseVal, elsePred))
 	}
 
-	// Set for outer caller
-	g.nestedIfEndId = labelId
-	// Restore outer saved value (our caller will use our labelId, then restore)
-	_ = savedNestedIfEndId
 	return phiReg
 }
 
@@ -394,25 +382,27 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 		g.indent(), cond, labelId, labelId))
 
 	// then (consequence)
-	sb.WriteString(fmt.Sprintf("cond.then.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("cond.then.%d", labelId))
 	g.indentLevel++
 	thenVal := g.generateExprWithSB(sb, expr.Consequence)
+	thenPredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	g.indentLevel--
 
 	// else (alternative)
-	sb.WriteString(fmt.Sprintf("cond.else.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("cond.else.%d", labelId))
 	g.indentLevel++
 	elseVal := g.generateExprWithSB(sb, expr.Alternative)
+	elsePredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	g.indentLevel--
 
 	// end: phi
-	sb.WriteString(fmt.Sprintf("cond.end.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("cond.end.%d", labelId))
 	g.tmpIdx++
 	phiReg := fmt.Sprintf("%%cond.phi.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%cond.then.%d], [%s, %%cond.else.%d]\n",
-		g.indent(), phiReg, phiType, thenVal, labelId, elseVal, labelId))
+	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%%s], [%s, %%%s]\n",
+		g.indent(), phiReg, phiType, thenVal, thenPredecessor, elseVal, elsePredecessor))
 
 	return phiReg
 }

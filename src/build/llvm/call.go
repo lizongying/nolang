@@ -389,33 +389,75 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			retType = t
 		}
 	}
-	typedArgs := make([]string, len(expr.Arguments))
-	for i, arg := range expr.Arguments {
+
+	// Determine if the function has a single named result (output parameter passed as last arg)
+	// Convention: for single-result functions, the last argument is the output parameter
+	// if it's an Identifier (a variable to store the result into).
+	hasOutputParam := false
+	if g.funcNumResults != nil {
+		if n, ok := g.funcNumResults[fnName]; ok && n == 1 && retType != "void" {
+			if len(expr.Arguments) > 0 {
+				if _, ok := expr.Arguments[len(expr.Arguments)-1].(*parser.Identifier); ok {
+					hasOutputParam = true
+				}
+			}
+		}
+	}
+
+	// Separate input args from output param
+	var inputArgs []parser.Expression
+	var outputArg parser.Expression
+	if hasOutputParam && len(expr.Arguments) > 0 {
+		inputArgs = expr.Arguments[:len(expr.Arguments)-1]
+		outputArg = expr.Arguments[len(expr.Arguments)-1]
+	} else {
+		inputArgs = expr.Arguments
+	}
+
+	// For variadic functions, separate non-variadic and variadic args
+	isVariadic := false
+	nonVariadicCount := 0
+	if g.funcIsVariadic != nil {
+		isVariadic = g.funcIsVariadic[fnName]
+		nonVariadicCount = g.funcParamCount[fnName]
+	}
+
+	var nonVariadicArgs []parser.Expression
+	var variadicArgs []parser.Expression
+	if isVariadic {
+		if len(inputArgs) > nonVariadicCount {
+			nonVariadicArgs = inputArgs[:nonVariadicCount]
+			variadicArgs = inputArgs[nonVariadicCount:]
+		} else {
+			nonVariadicArgs = inputArgs
+		}
+	} else {
+		nonVariadicArgs = inputArgs
+	}
+
+	// genTypedArg generates a typed pointer argument for a single expression
+	genTypedArg := func(arg parser.Expression) string {
 		switch a := arg.(type) {
 		case *parser.Identifier:
 			// str 型別用 %str* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
-					typedArgs[i] = "%str* " + g.varAddr(a.Value)
-					break
+					return "%str* " + g.varAddr(a.Value)
 				}
 			}
 			// 陣列型別用正確的指標型別
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
-					// t is already LLVM type (e.g. "[4 x i64]"), don't call mapToLLVMType again
-					typedArgs[i] = t + "* " + g.varAddr(a.Value)
-					break
+					return t + "* " + g.varAddr(a.Value)
 				}
 			}
 			// double 型別用 double* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "double" {
-					typedArgs[i] = "double* " + g.varAddr(a.Value)
-					break
+					return "double* " + g.varAddr(a.Value)
 				}
 			}
-			typedArgs[i] = "i64* " + g.varAddr(a.Value)
+			return "i64* " + g.varAddr(a.Value)
 		case *parser.FloatLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -423,15 +465,13 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
 			}
-			typedArgs[i] = "double* " + tmpName
+			return "double* " + tmpName
 		case *parser.StringLiteral:
-			// String literal: generate %str struct and pass as %str*
 			ev := g.generateExprWithSB(sb, arg)
 			if len(a.Value) <= 127 {
-				// SSO string: convert %str-smail to %str for function argument
 				ev = g.convertSmailToStr(sb, ev)
 			}
-			typedArgs[i] = "%str* " + ev
+			return "%str* " + ev
 		case *parser.IntegerLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -439,9 +479,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))
 			}
-			typedArgs[i] = "i64* " + tmpName
+			return "i64* " + tmpName
 		case *parser.IndexExpression:
-			// 索引表達式可能回傳 %T* (slice/array of structs)、i64 (數字元素) 或 i8* (byte 元素)
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
 				ptrType := "i64*"
@@ -454,19 +493,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						}
 					}
 				}
-				typedArgs[i] = ptrType + " " + ev
-				break
+				return ptrType + " " + ev
 			}
-			// i64 value
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
 			}
-			typedArgs[i] = "i64* " + tmpName
+			return "i64* " + tmpName
 		case *parser.SliceExpression:
-			// 切片表達式回傳 %vec 或 %str（已分配在 stack 上）
 			ev := g.generateExprWithSB(sb, arg)
 			ptrType := "%vec*"
 			if ident, ok := a.Left.(*parser.Identifier); ok {
@@ -478,18 +514,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				}
 			}
-			typedArgs[i] = ptrType + " " + ev
+			return ptrType + " " + ev
 		default:
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.HasPrefix(ev, "%strlit") {
-				// String literal alloca
-				typedArgs[i] = "%str* " + ev
+				return "%str* " + ev
 			} else if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
-				// SSA register (value, not pointer): store to temp alloca and pass pointer
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 				if sb != nil {
-					// Determine type from the SSA register prefix
 					parts := strings.SplitN(ev, ".", 2)
 					baseName := strings.TrimPrefix(parts[0], "%")
 					isDouble := false
@@ -504,35 +537,30 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if isDouble {
 						sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
 						sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
-						typedArgs[i] = "double* " + tmpName
-					} else {
-						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-						sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
-						typedArgs[i] = "i64* " + tmpName
+						return "double* " + tmpName
 					}
-				} else {
-					typedArgs[i] = "i64* " + tmpName
+					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+					return "i64* " + tmpName
 				}
+				return "i64* " + tmpName
 			} else if strings.HasPrefix(ev, "%") {
 				parts := strings.Split(ev, ".")
 				varName := strings.TrimPrefix(parts[0], "%")
-				// double 型別用 double* 指標
 				if g.varTypes != nil {
 					if t, ok := g.varTypes[varName]; ok && t == "double" {
-						typedArgs[i] = "double* %" + varName
-						break
+						return "double* %" + varName
 					}
 				}
-				typedArgs[i] = "i64* %" + varName
+				return "i64* %" + varName
 			} else if strings.Contains(ev, ".") {
-				// float literal value (e.g. "180.000000")
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
 					sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
 				}
-				typedArgs[i] = "double* " + tmpName
+				return "double* " + tmpName
 			} else if _, err := fmt.Sscanf(ev, "%d", new(int)); err == nil {
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -540,11 +568,97 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
 				}
-				typedArgs[i] = "i64* " + tmpName
-			} else {
-				typedArgs[i] = ev
+				return "i64* " + tmpName
 			}
+			return ev
 		}
 	}
-	return fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(fnName), strings.Join(typedArgs, ", "))
+
+	// Generate typed arguments for non-variadic params
+	typedArgs := make([]string, 0, len(nonVariadicArgs)+1)
+	for _, arg := range nonVariadicArgs {
+		typedArgs = append(typedArgs, genTypedArg(arg))
+	}
+
+	// If variadic, pack variadic args into a %vec struct
+	if isVariadic {
+		n := len(variadicArgs)
+		elemType := retType // element type matches return type for monomorphized functions
+		if elemType == "void" || elemType == "" {
+			elemType = "i64"
+		}
+		g.tmpIdx++
+		vecName := fmt.Sprintf("%%vvec.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecName))
+		}
+		if n > 0 {
+			g.tmpIdx++
+			arrName := fmt.Sprintf("%%varr.%d", g.tmpIdx)
+			arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), arrName, arrType))
+			}
+			for i, arg := range variadicArgs {
+				ev := g.generateExprWithSB(sb, arg)
+				g.tmpIdx++
+				gepReg := fmt.Sprintf("%%varr.gep.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), gepReg, arrType, arrType, arrName, i))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
+				}
+			}
+			// Set len (field 0)
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%vvec.len.%d", g.tmpIdx)
+			// Set data (field 2) = bitcast arrName to i8*
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vvec.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataCast := fmt.Sprintf("%%vvec.data.cast.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast [%d x %s]* %s to i8*\n", g.indent(), dataCast, n, elemType, arrName))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataCast, dataGEP))
+			}
+		} else {
+			// Empty variadic: set len=0, data=null
+			if sb != nil {
+				g.tmpIdx++
+				lenGEP := fmt.Sprintf("%%vvec.len.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+			}
+		}
+		typedArgs = append(typedArgs, "%vec* "+vecName)
+	}
+
+	// Make the call
+	callStr := fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(fnName), strings.Join(typedArgs, ", "))
+
+	// If has output param, store return value into output variable
+	if hasOutputParam && outputArg != nil {
+		if ident, ok := outputArg.(*parser.Identifier); ok {
+			if sb != nil {
+				if retType == "void" {
+					sb.WriteString(g.indent() + callStr + "\n")
+				} else {
+					g.tmpIdx++
+					callReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), callReg, callStr))
+					outType := retType
+					if outType == "" {
+						outType = "i64"
+					}
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), outType, callReg, outType, g.varAddr(ident.Value)))
+				}
+			}
+			return ""
+		}
+	}
+
+	return callStr
 }

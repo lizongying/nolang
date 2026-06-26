@@ -38,10 +38,12 @@ type Generator struct {
 	paramNames      map[string]bool          // 函數參數名稱（使用 .addr 存取）
 	funcRetTypes    map[string]string        // 函數名 → 回傳型別
 	funcNumResults  map[string]int           // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
+	funcIsVariadic  map[string]bool          // 函數名 → 是否為 variadic 函數
+	funcParamCount  map[string]int           // 函數名 → 非 variadic 參數數量
 	structTypes     map[string][]structField // struct name → fields
 	structTypeLLVM  string                   // 當前正在生成的 struct LLVM type name
 	loopExits       []loopExit               // 活躍循環退出目標棧
-	nestedIfEndId   int                      // labelId of the most recently generated if expression's end block
+	currentBlock    string                   // current basic block label (for PHI predecessor tracking)
 	arrayElemTypes  map[string]string        // variable name → element LLVM type for %arr variables
 	curFuncRetType  string                   // 當前函數回傳型別（void/i64/...）
 	curFuncRetName  string                   // 當前函數輸出參數名稱（為空表示 void）
@@ -57,6 +59,13 @@ func NewGenerator() *Generator {
 
 func (g *Generator) indent() string {
 	return strings.Repeat("\t", g.indentLevel)
+}
+
+// emitLabel writes a basic block label and updates currentBlock tracking.
+func (g *Generator) emitLabel(sb *strings.Builder, label string) {
+	sb.WriteString(label + ":\n")
+	g.currentBlock = label
+	g.blockTerminated = false
 }
 
 func (g *Generator) getFormatGlobal(fmtStr string) string {
@@ -128,6 +137,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)
 	g.funcNumResults = make(map[string]int)
+	g.funcIsVariadic = make(map[string]bool)
+	g.funcParamCount = make(map[string]int)
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
@@ -156,6 +167,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			g.funcRetTypes[fd.Name] = retType
 			g.funcNumResults[fd.Name] = len(fd.Results)
+			g.funcIsVariadic[fd.Name] = fd.IsVariadic
+			if fd.IsVariadic && len(fd.Parameters) > 0 {
+				g.funcParamCount[fd.Name] = len(fd.Parameters) - 1 // exclude the variadic slice param
+			} else {
+				g.funcParamCount[fd.Name] = len(fd.Parameters)
+			}
 			funcNames[fd.Name] = true
 		}
 	}

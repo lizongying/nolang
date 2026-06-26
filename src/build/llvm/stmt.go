@@ -107,7 +107,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 
 	sb.WriteString(") {\n")
 	g.indentLevel++
-	sb.WriteString(g.indent() + "entry:\n")
+	g.emitLabel(sb, "entry")
 	g.indentLevel++
 
 	// 收集所有變數（一次分配），排除參數（已是指標）
@@ -201,7 +201,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 
 	sb.WriteString("define i32 @main(i32 %argc, i8** %argv) {\n")
 	g.indentLevel++
-	sb.WriteString(g.indent() + "entry:\n")
+	g.emitLabel(sb, "entry")
 	g.indentLevel++
 
 	// Store argc/argv for use by args-count / args-get
@@ -566,7 +566,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
 
 		// cond block
-		sb.WriteString(fmt.Sprintf("for.cond.%d:\n", labelId))
+		g.emitLabel(sb, fmt.Sprintf("for.cond.%d", labelId))
 		g.indentLevel++
 		counterLoad := fmt.Sprintf("%%%s.val", counterVar)
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), counterLoad, counterVar))
@@ -578,7 +578,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		g.indentLevel--
 
 		// body block
-		sb.WriteString(fmt.Sprintf("for.body.%d:\n", labelId))
+		g.emitLabel(sb, fmt.Sprintf("for.body.%d", labelId))
 		g.indentLevel++
 		if stmt.Body != nil {
 			for _, s := range stmt.Body.Statements {
@@ -595,7 +595,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		g.indentLevel--
 
 		// end block
-		sb.WriteString(fmt.Sprintf("for.end.%d:\n", labelId))
+		g.emitLabel(sb, fmt.Sprintf("for.end.%d", labelId))
 		return
 	}
 
@@ -617,7 +617,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
 
 	// cond block
-	sb.WriteString(fmt.Sprintf("for.cond.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("for.cond.%d", labelId))
 	g.indentLevel++
 	condVal := ""
 	if stmt.Condition != nil {
@@ -642,7 +642,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	g.indentLevel--
 
 	// body block
-	sb.WriteString(fmt.Sprintf("for.body.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("for.body.%d", labelId))
 	g.indentLevel++
 	if stmt.Body != nil {
 		for _, s := range stmt.Body.Statements {
@@ -657,7 +657,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	g.indentLevel--
 
 	// end block
-	sb.WriteString(fmt.Sprintf("for.end.%d:\n", labelId))
+	g.emitLabel(sb, fmt.Sprintf("for.end.%d", labelId))
 }
 
 func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForStatement) {
@@ -688,7 +688,7 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	sb.WriteString(fmt.Sprintf("%sbr label %%str.cond.%d\n", g.indent(), lbl))
 
 	// cond block
-	sb.WriteString(fmt.Sprintf("str.cond.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("str.cond.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
 	iLoad := fmt.Sprintf("%%stri.%d", g.tmpIdx)
@@ -700,7 +700,7 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	g.indentLevel--
 
 	// body: char = str[i]; varName = char
-	sb.WriteString(fmt.Sprintf("str.body.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("str.body.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
 	chReg := fmt.Sprintf("%%strch.%d", g.tmpIdx)
@@ -729,7 +729,7 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	sb.WriteString(fmt.Sprintf("%sbr label %%str.cond.%d\n", g.indent(), lbl))
 	g.indentLevel--
 
-	sb.WriteString(fmt.Sprintf("str.end.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("str.end.%d", lbl))
 }
 
 func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStatement) {
@@ -841,7 +841,7 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
 
 	// cond block: i < len
-	sb.WriteString(fmt.Sprintf("arr.cond.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("arr.cond.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
 	iLoad := fmt.Sprintf("%%arr.i.%d", g.tmpIdx)
@@ -853,7 +853,7 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	g.indentLevel--
 
 	// body block
-	sb.WriteString(fmt.Sprintf("arr.body.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("arr.body.%d", lbl))
 	g.indentLevel++
 
 	// Load element from data[i]
@@ -907,7 +907,7 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	g.indentLevel--
 
 	// end block
-	sb.WriteString(fmt.Sprintf("arr.end.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("arr.end.%d", lbl))
 }
 
 func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatement) {
@@ -956,7 +956,7 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
 
 	// cond block: 判斷方向並比較
-	sb.WriteString(fmt.Sprintf("rng.cond.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
 	cmpReg := fmt.Sprintf("%%rng.cmp.%d", g.tmpIdx)
@@ -991,7 +991,7 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	g.indentLevel--
 
 	// body block
-	sb.WriteString(fmt.Sprintf("rng.body.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("rng.body.%d", lbl))
 	g.indentLevel++
 	if stmt.Body != nil {
 		for _, s := range stmt.Body.Statements {
@@ -1013,7 +1013,7 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	g.indentLevel--
 
 	// end block
-	sb.WriteString(fmt.Sprintf("rng.end.%d:\n", lbl))
+	g.emitLabel(sb, fmt.Sprintf("rng.end.%d", lbl))
 }
 
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
