@@ -1,9 +1,10 @@
 // number — 數字操作
 //
-// 泛型數字函數，支援 i64/f64 等型別。
+// 泛型數字函數，支援 i64、f64 等數值型別。
+// 包含：max, min, abs, clamp, sign, even, odd,
+// gcd, lcm, pow, div, mod, swap, is-nan, is-inf
 
-// max: 回傳較大值（泛型 t：i64 或 f64）
-// 使用減法判斷大小以繞過 parser identifier 比較限制
+// max: 回傳最大值（variadic，支援 num 所有成員）
 
 int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float f32 | f64
@@ -42,7 +43,8 @@ abs = (a num) (r num) {
 }
 
 // clamp: 限制在 [lo, hi] 範圍內
-num.clamp = (v num, lo num, hi num) (r num) {
+// 用法：x.clamp(lo, hi, r)
+num.clamp = (lo num, hi num) (r num) {
     if . < lo {
         r = lo
     } elif . > hi {
@@ -53,10 +55,10 @@ num.clamp = (v num, lo num, hi num) (r num) {
 }
 
 // sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
-sign = (a num) (r num) {
-    if a > 0 {
+num.sign = () (r num) {
+    if . > 0 {
         r = 1
-    } elif a < 0 {
+    } elif . < 0 {
         r = 0 - 1
     } else {
         r = 0
@@ -64,19 +66,19 @@ sign = (a num) (r num) {
 }
 
 // even: 是否為偶數 — 對所有整數型別（含無符號）通用
-even = (a int) (yes int) {
+even = (a int) (yes bool) {
     r = a % 2
-    yes = r == 0 ? 1 : 0
+    yes = r == 0 ? true : false
 }
 
 // odd: 是否為奇數 — 對所有整數型別（含無符號）通用
-odd = (a int) (yes int) {
+odd = (a int) (yes bool) {
     r = a % 2
-    yes = r != 0 ? 1 : 0
+    yes = r != 0 ? true : false
 }
 
 // gcd: 最大公因數（輾轉相除法）
-gcd = (a i64, b i64) (r i64) {
+gcd = (a int, b int) (r int) {
     if a < 0 {
         a = 0 - a
     }
@@ -92,7 +94,7 @@ gcd = (a i64, b i64) (r i64) {
 }
 
 // lcm: 最小公倍數
-lcm = (a i64, b i64) (r i64) {
+lcm = (a int, b int) (r int) {
     if a == 0 || b == 0 {
         r = 0
         return
@@ -123,28 +125,29 @@ pow = (a int, n int) (r int) {
 // }
 
 // i64-to-str: 整數轉字串
-i64-to-str = (a i64) (out str) {
+int.to-str = () (out str) {
+    n = .
     // 處理 0
-    if a == 0 {
+    if n == 0 {
         out[0] = 48
         return
     }
 
     // 處理負數
     neg = 0
-    if a < 0 {
+    if n < 0 {
         neg = 1
-        a = 0 - a
+        n = 0 - n
     }
 
     // 由低位到高位寫入暫存
     buf = '(20)'  // '-'
     i = 0
-    for a > 0 {
-        d = a % 10
+    for n > 0 {
+        d = n % 10
         buf[i] = d + 48
         i = i + 1
-        a = a / 10
+        n = n / 10
     }
 
     // 負號
@@ -162,12 +165,14 @@ i64-to-str = (a i64) (out str) {
     }
 }
 
-// div: 商
-div = (a num, b num) (q num) {
+// div: 整數除法，回傳商（a ÷ b）
+// b 為 0 時行為未定義（執行時期錯誤）
+div = (a int, b int) (q int) {
     q = a / b
 }
 
-// mod: 餘數
+// mod: 整數取模，回傳餘數（a % b）
+// b 為 0 時行為未定義（執行時期錯誤）
 mod = (a int, b int) (r int) {
     r = a % b
 }

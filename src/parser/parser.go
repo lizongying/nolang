@@ -2645,7 +2645,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			p.currentToken.Type == lexer.XOR ||
 			p.currentToken.Type == lexer.SHL ||
 			p.currentToken.Type == lexer.SHR) &&
-		p.currentPrecedence() >= precedence {
+		p.currentPrecedence() > precedence {
 		// 解析中缀表达式
 		leftExp = p.parseInfixExpression(leftExp)
 	}

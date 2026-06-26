@@ -328,10 +328,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 			// Check funcRetTypes for non-builtin functions (e.g. module functions like degrees)
 			if g.funcRetTypes != nil {
-				if t, ok := g.funcRetTypes[name]; ok {
-					if t == "double" || t == "%str" {
-						return t
-					}
+				if t, ok := g.funcRetTypes[name]; ok && t != "void" {
+					return t
 				}
 			}
 		}
@@ -1229,9 +1227,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
 				// int → int: trunc/zext
 				g.tmpIdx++
-				truncReg := fmt.Sprintf("%%trunc.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, llvmType, val, existingType))
-				val = truncReg
+				convReg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
+				order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
+				if order[llvmType] > order[existingType] {
+					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, llvmType, val, existingType))
+				} else {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, llvmType, val, existingType))
+				}
+				val = convReg
 				llvmType = existingType
 				alreadyCoerced = true
 			} else if existingType == "double" && g.isIntegerLLVMType(llvmType) {

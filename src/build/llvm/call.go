@@ -396,24 +396,21 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				} else if srcType == "float" {
 					srcType = "f32"
 				}
-				for aliasName, members := range g.unionAliases {
-					for _, m := range members {
-						if m == srcType {
-							// Try monomorphized name first: unionAlias.methodName__memberType
-							monoName := aliasName + "." + dot.Property + "__" + srcType
-							if _, exists := g.funcRetTypes[monoName]; exists {
-								fnName = monoName
-							} else {
-								// Try non-monomorphized name: unionAlias.methodName
-								unionName := aliasName + "." + dot.Property
-								if _, exists := g.funcRetTypes[unionName]; exists {
-									fnName = unionName
-								}
-							}
-							break
-						}
+				for aliasName := range g.unionAliases {
+					if !g.isMemberOfUnionTransitive(srcType, aliasName, make(map[string]bool)) {
+						continue
 					}
-					if fnName != recv.Value+"."+dot.Property {
+					// Try monomorphized name first: unionAlias.methodName__memberType
+					monoName := aliasName + "." + dot.Property + "__" + srcType
+					if _, exists := g.funcRetTypes[monoName]; exists {
+						fnName = monoName
+						methodReceiver = recv
+						break
+					}
+					// Try non-monomorphized name: unionAlias.methodName
+					unionName := aliasName + "." + dot.Property
+					if _, exists := g.funcRetTypes[unionName]; exists {
+						fnName = unionName
 						methodReceiver = recv
 						break
 					}
@@ -433,13 +430,23 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 
 	// Determine if the function has a single named result (output parameter passed as last arg)
 	// Convention: for single-result functions, the last argument is the output parameter
-	// if it's an Identifier (a variable to store the result into).
+	// if it's an Identifier (a variable to store the result into) AND there are more args
+	// than the function's declared parameter count.
 	hasOutputParam := false
 	if g.funcNumResults != nil {
 		if n, ok := g.funcNumResults[fnName]; ok && n == 1 && retType != "void" {
 			if len(expr.Arguments) > 0 {
 				if _, ok := expr.Arguments[len(expr.Arguments)-1].(*parser.Identifier); ok {
-					hasOutputParam = true
+					// Only treat as output param if args > function params
+					paramCount := len(expr.Arguments)
+					if g.funcParamCount != nil {
+						if pc, ok := g.funcParamCount[fnName]; ok {
+							paramCount = pc
+						}
+					}
+					if len(expr.Arguments) > paramCount {
+						hasOutputParam = true
+					}
 				}
 			}
 		}
@@ -498,13 +505,34 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					return t + "* " + g.varAddr(a.Value)
 				}
 			}
-			// double 型別用 double* 指標
+			// 浮點型別
 			if g.varTypes != nil {
-				if t, ok := g.varTypes[a.Value]; ok && t == "double" {
-					return "double* " + g.varAddr(a.Value)
+				if t, ok := g.varTypes[a.Value]; ok && (t == "double" || t == "float") {
+					return t + "* " + g.varAddr(a.Value)
 				}
 			}
-			return "i64* " + g.varAddr(a.Value)
+			// 使用實際型別（不再硬編碼為 i64*）
+			argType := "i64"
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[a.Value]; ok {
+					argType = t
+				}
+			}
+			// 對 by-reference 函數呼叫，先將引數值存到暫存變數，
+			// 避免被呼叫函數修改原始變數（例如 gcd 會修改 a, b）
+			if retType != "void" && g.isIntegerLLVMType(argType) {
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%arg.save.%d", g.tmpIdx)
+				g.tmpIdx++
+				tmpVal := fmt.Sprintf("%%arg.val.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, argType))
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), tmpVal, argType, argType, g.varAddr(a.Value)))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), argType, tmpVal, argType, tmpName))
+				}
+				return argType + "* " + tmpName
+			}
+			return argType + "* " + g.varAddr(a.Value)
 		case *parser.FloatLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -707,5 +735,34 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
+	// For non-void returns without output param: capture return value as expression
+	if retType != "void" && sb != nil {
+		g.tmpIdx++
+		callReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), callReg, callStr))
+		return callReg
+	}
+
 	return callStr
+}
+
+// isMemberOfUnionTransitive checks if typeName is a member of aliasName's union,
+// following transitive union aliases (e.g., int → i64, num → int → i64).
+func (g *Generator) isMemberOfUnionTransitive(typeName, aliasName string, visited map[string]bool) bool {
+	members, ok := g.unionAliases[aliasName]
+	if !ok {
+		return false
+	}
+	for _, m := range members {
+		if m == typeName {
+			return true
+		}
+		if _, isUnion := g.unionAliases[m]; isUnion && !visited[m] {
+			visited[m] = true
+			if g.isMemberOfUnionTransitive(typeName, m, visited) {
+				return true
+			}
+		}
+	}
+	return false
 }

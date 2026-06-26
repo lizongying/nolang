@@ -565,6 +565,15 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		return g.intExprLLVMType(v.Right)
 	case *parser.GroupedExpression:
 		return g.intExprLLVMType(v.Expression)
+	case *parser.CallExpression:
+		if ident, ok := v.Function.(*parser.Identifier); ok {
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[ident.Value]; ok {
+					return t
+				}
+			}
+		}
+		return "i64"
 	}
 	return "i64"
 }
@@ -623,8 +632,14 @@ func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parse
 			// i64 → 較窄型別：trunc
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), cvtReg, v, targetType))
 		} else {
-			// 較窄型別 → 較寬型別：zext
-			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), cvtReg, srcType, v, targetType))
+			order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
+			if order[srcType] > order[targetType] {
+				// 來源比目標寬：trunc
+				sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), cvtReg, srcType, v, targetType))
+			} else {
+				// 來源比目標窄：zext
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), cvtReg, srcType, v, targetType))
+			}
 		}
 		return cvtReg
 	}
@@ -1127,10 +1142,13 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
 			storeVal := val
 			if llvmElemType == "i8" && strings.HasPrefix(val, "%") {
-				g.tmpIdx++
-				truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), truncReg, val))
-				storeVal = truncReg
+				valType := g.intExprLLVMType(expr.Value)
+				if strings.HasPrefix(valType, "i") && valType != "i8" {
+					g.tmpIdx++
+					truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
+					storeVal = truncReg
+				}
 			}
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 				g.indent(), llvmElemType, storeVal, llvmElemType, gepReg))
@@ -1677,12 +1695,12 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 		}
 		lc := g.coerceToFloatReg(sb, left, expr.Left, ft)
 		rc := g.coerceToFloatReg(sb, right, expr.Right, ft)
-		// fcmp 的 eq/ne 不需要 o 前綴，但有也無妨
+		// fcmp 的 eq/ne 需要加 o 前綴
 		fcmpOp := cmpOp
-		if cmpOp == "eq" || cmpOp == "ne" {
-			// 保持 eq/ne
-		} else {
-			// olt/ogt/ole/oge 已是正確的 fcmp 操作
+		if cmpOp == "eq" {
+			fcmpOp = "oeq"
+		} else if cmpOp == "ne" {
+			fcmpOp = "one"
 		}
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = fcmp %s %s %s, %s\n", g.indent(), reg, fcmpOp, ft, lc, rc))
@@ -2248,6 +2266,16 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return reg
 	case "%":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			ld := coerceToFloat(left, expr.Left, ft)
+			rd := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%fmod.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = frem %s %s, %s\n", g.indent(), reg, ft, ld, rd))
+			}
+			return reg
+		}
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)

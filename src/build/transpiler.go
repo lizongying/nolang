@@ -1005,7 +1005,25 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 					fmt.Fprintf(os.Stderr, "[union-debug] walk FunctionDefinition: %s, body=%d stmts\n", s.Name, len(s.Body.Statements))
 				}
 				if s.Body != nil {
-					walk(s.Body.Statements, vt)
+					// Augment varTypes with the function's parameter types to
+					// correctly infer argument types for identifier expressions.
+					// This prevents cross-module template matching (e.g. bigint.gcd
+					// should not be rewritten by the number.gcd template).
+					localVt := make(map[string]string)
+					for k, v := range vt {
+						localVt[k] = v
+					}
+					for _, param := range s.Parameters {
+						if nt, ok := param.Type.(*parser.NamedType); ok {
+							localVt[param.Name] = nt.Value
+						}
+					}
+					for _, result := range s.Results {
+						if nt, ok := result.Type.(*parser.NamedType); ok {
+							localVt[result.Name] = nt.Value
+						}
+					}
+					walk(s.Body.Statements, localVt)
 				}
 			case *parser.BlockStatement:
 				walk(s.Statements, vt)
@@ -1061,9 +1079,47 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 					fmt.Fprintf(os.Stderr, "[union-debug] rewrite call %s: memberType=%s\n", ident.Value, memberType)
 				}
 				if memberType != "" {
-					ident.Value = ident.Value + "__" + memberType
-					if os.Getenv("NOLANG_UNION_DEBUG") != "" {
-						fmt.Fprintf(os.Stderr, "[union-debug]   rewritten to %s\n", ident.Value)
+					// Verify memberType is a valid member of the template's union.
+					// This prevents incorrectly rewriting calls from different
+					// modules that share the same function name (e.g. bigint.gcd
+					// should not be rewritten by the number.gcd template).
+					isValid := false
+					for _, m := range tpl.members {
+						if m == memberType {
+							isValid = true
+							break
+						}
+					}
+					if isValid {
+						ident.Value = ident.Value + "__" + memberType
+						if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+							fmt.Fprintf(os.Stderr, "[union-debug]   rewritten to %s\n", ident.Value)
+						}
+					}
+				}
+			} else {
+				// Not found by plain name; try method-style resolution
+				// e.g., "sign" → "num.sign"
+				for tplName, tpl := range templates {
+					if strings.HasSuffix(tplName, "."+ident.Value) {
+						// Found a method template, rewrite the identifier to use it
+						memberType := inferArgMemberType(e, tpl, varTypes)
+						if memberType != "" {
+							isValid := false
+							for _, m := range tpl.members {
+								if m == memberType {
+									isValid = true
+									break
+								}
+							}
+							if isValid {
+								ident.Value = tplName + "__" + memberType
+								if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+									fmt.Fprintf(os.Stderr, "[union-debug]   rewritten (method) %s → %s\n", ident.Value, ident.Value)
+								}
+								break
+							}
+						}
 					}
 				}
 			}
@@ -1323,12 +1379,11 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 		}
 		return &ce
 	case *parser.Identifier:
-		if e.Value == oldName {
-			cp := *e
+		cp := *e
+		if cp.Value == oldName {
 			cp.Value = newName
-			return &cp
 		}
-		return e
+		return &cp
 	case *parser.DotExpression:
 		de := *e
 		de.Receiver = cloneExprForUnion(e.Receiver, oldName, newName, memberType)

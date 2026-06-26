@@ -1,0 +1,87 @@
+// test_number_div_mod_clamp.no — 測試 div, mod, clamp
+//
+// 覆蓋以下函數：
+//   - div  (a int, b int) (q int)  — 整數除法
+//   - mod  (a int, b int) (r int)  — 整數取模
+//   - clamp (lo num, hi num) (r num) — 數值限幅（方法）
+
+# std/number
+
+// ── div：整數除法 ──
+test-div = () {
+    r = 0
+
+    div(10, 3, r)
+    println-i64(r)  // expect: 3
+
+    div(7, 2, r)
+    println-i64(r)  // expect: 3
+
+    div(100, 4, r)
+    println-i64(r)  // expect: 25
+
+    div(1, 1, r)
+    println-i64(r)  // expect: 1
+
+    div(0, 5, r)
+    println-i64(r)  // expect: 0
+}
+
+test-div()
+println-i64(111)
+
+// ── mod：整數取模 ──
+test-mod = () {
+    r = 0
+
+    mod(10, 3, r)
+    println-i64(r)  // expect: 1
+
+    mod(7, 2, r)
+    println-i64(r)  // expect: 1
+
+    mod(100, 4, r)
+    println-i64(r)  // expect: 0
+
+    mod(5, 5, r)
+    println-i64(r)  // expect: 0
+
+    mod(1, 3, r)
+    println-i64(r)  // expect: 1
+}
+
+test-mod()
+println-i64(222)
+
+// ── clamp：數值限幅 ──
+test-clamp = () {
+    r = 0
+
+    // Within bounds
+    x = 5
+    x.clamp(1, 10, r)
+    println-i64(r)  // expect: 5
+
+    // Below lower bound
+    y = -3
+    y.clamp(0, 5, r)
+    println-i64(r)  // expect: 0
+
+    // Above upper bound
+    z = 20
+    z.clamp(0, 5, r)
+    println-i64(r)  // expect: 5
+
+    // Exactly at lower bound
+    w = 1
+    w.clamp(1, 10, r)
+    println-i64(r)  // expect: 1
+
+    // Exactly at upper bound
+    v = 10
+    v.clamp(1, 10, r)
+    println-i64(r)  // expect: 10
+}
+
+test-clamp()
+println-i64(333)

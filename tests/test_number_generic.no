@@ -5,9 +5,11 @@
 //   - min  (a ..num)  (r num)  — 變參泛型
 //   - abs  (a num)    (r num)  — 非變參泛型
 //   - sign (a num)    (r num)  — 非變參泛型
-//   - even (a int)    (yes int) — 整型泛型
-//   - odd  (a int)    (yes int) — 整型泛型
+//   - even (a int)    (yes bool) — 整型泛型
+//   - odd  (a int)    (yes bool) — 整型泛型
 //   - pow  (a int, n int) (r int) — 整型泛型
+//   - gcd  (a int, b int) (r int) — 整型泛型
+//   - lcm  (a int, b int) (r int) — 整型泛型
 
 # std/number
 
@@ -77,21 +79,37 @@ test-sign = () {
 test-sign()
 println-i64(3)
 
-// ── even / odd：整型泛型 ──
+// ── even / odd：整型泛型，回傳 bool ──
 test-even-odd = () {
     yes = 0
 
     even(4, yes)
-    println-i64(yes)  // expect: 1
+    if yes {
+        println-i64(1)  // expect: 1
+    } else {
+        println-i64(0)
+    }
 
     even(7, yes)
-    println-i64(yes)  // expect: 0
+    if yes {
+        println-i64(1)
+    } else {
+        println-i64(0)  // expect: 0
+    }
 
     odd(7, yes)
-    println-i64(yes)  // expect: 1
+    if yes {
+        println-i64(1)  // expect: 1
+    } else {
+        println-i64(0)
+    }
 
     odd(4, yes)
-    println-i64(yes)  // expect: 0
+    if yes {
+        println-i64(1)
+    } else {
+        println-i64(0)  // expect: 0
+    }
 }
 
 test-even-odd()
@@ -116,3 +134,49 @@ test-pow = () {
 
 test-pow()
 println-i64(5)
+
+// ── gcd：最大公因數 ──
+test-gcd = () {
+    r = 0
+
+    gcd(48, 18, r)
+    println-i64(r)  // expect: 6
+
+    gcd(42, 21, r)
+    println-i64(r)  // expect: 21
+
+    gcd(17, 23, r)
+    println-i64(r)  // expect: 1
+
+    gcd(0, 12, r)
+    println-i64(r)  // expect: 12
+
+    gcd(-12, 8, r)
+    println-i64(r)  // expect: 4
+}
+
+test-gcd()
+println-i64(6)
+
+// ── lcm：最小公倍數 ──
+test-lcm = () {
+    r = 0
+
+    lcm(4, 6, r)
+    println-i64(r)  // expect: 12
+
+    lcm(12, 63, r)
+    println-i64(r)  // expect: 252
+
+    lcm(0, 5, r)
+    println-i64(r)  // expect: 0
+
+    lcm(7, 7, r)
+    println-i64(r)  // expect: 7
+
+    lcm(2, 5, r)
+    println-i64(r)  // expect: 10
+}
+
+test-lcm()
+println-i64(7)
