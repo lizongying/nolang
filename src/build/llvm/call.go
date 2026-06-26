@@ -73,23 +73,20 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
-				if g.globalVars != nil && g.globalVars[a.Value] {
-					return "%str* @" + a.Value
-				}
-				return "%str* %" + a.Value
+				return "%str* " + g.varAddr(a.Value)
 			}
 			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
-				return t + "* %" + a.Value
+				return t + "* " + g.varAddr(a.Value)
 			}
 			if t, ok := g.varTypes[a.Value]; ok && t == "double" {
-				return "double* %" + a.Value
+				return "double* " + g.varAddr(a.Value)
+			}
+			// %vec / %arr / 任何 struct 指標型別 → 變數本身已是指標
+			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "%") {
+				return t + "* " + g.varAddr(a.Value)
 			}
 		}
-		varAddr := "%" + a.Value
-		if g.globalVars != nil && g.globalVars[a.Value] {
-			varAddr = "@" + a.Value
-		}
-		return "i64* " + varAddr
+		return "i64* " + g.varAddr(a.Value)
 	case *parser.FloatLiteral:
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -112,41 +109,89 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))
 		}
 		return "i64* " + tmpName
+	case *parser.IndexExpression:
+		// 索引表達式可能回傳 %T* (slice/array of structs)、i64 (數字元素) 或 i8* (byte 元素)
+		// 對於 struct 切片，SSA 值已經是指標，直接傳遞即可
+		ev := g.generateExprWithSB(sb, arg)
+		// 從 SSA 寄存器名稱推斷型別：GEP for struct slice → %T*；load → i64
+		// %idx.gep.*, %arr.idx.elem.*, %vec.idx.elem.*, %stridx.gep.* 等都是 GEP 結果（指標）
+		// %idx.zext.*, %arr.idx.val.*, %vec.idx.val.* 等是載入值（i64）
+		if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
+			// GEP result is a pointer; need its LLVM type
+			// Determine element type from source variable
+			ptrType := "i64*"
+			if ident, ok := a.Left.(*parser.Identifier); ok {
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[ident.Value]; ok {
+						if strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
+							ptrType = t // %str* etc.
+						}
+					}
+				}
+			}
+			return ptrType + " " + ev
+		}
+		// SSA value (e.g., %idx.zext.* for []byte) — wrap in temp
+		g.tmpIdx++
+		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+		}
+		return "i64* " + tmpName
+	case *parser.SliceExpression:
+		// 切片表達式回傳 %vec 或 %str（已分配在 stack 上）
+		ev := g.generateExprWithSB(sb, arg)
+		// 從變數型別推斷指標型別
+		ptrType := "%vec*"
+		if ident, ok := a.Left.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok {
+					if t == "%str" || t == "%str-smail" {
+						ptrType = "%str*"
+					}
+				}
+			}
+		}
+		return ptrType + " " + ev
 	default:
 		ev := g.generateExprWithSB(sb, arg)
 		if strings.HasPrefix(ev, "%strlit") {
 			return "%str* " + ev
 		} else if strings.HasPrefix(ev, "%") {
-			// SSA register (value, not pointer) — keep the full register name
-			// and infer its pointer type from varTypes[baseName]
+			// SSA register (value, not pointer) — allocate a temp slot and store
+			// the value, so the function can take a pointer to it.
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			ptrType := "i64*"
 			parts := strings.SplitN(ev, ".", 2)
 			baseName := strings.TrimPrefix(parts[0], "%")
-			// strip trailing "gep" or other suffixes from baseName for varTypes lookup
-			lookupName := baseName
-			// Use baseName (which may include suffixes) directly; varTypes only has plain var names,
-			// so fall back to plain when suffix-bearing lookup misses.
 			if g.varTypes != nil {
-				if t, ok := g.varTypes[lookupName]; ok {
+				if t, ok := g.varTypes[baseName]; ok {
 					if t == "double" {
-						return "double* " + ev
-					}
-					if t == "%str" {
-						return "%str* " + ev
+						ptrType = "double*"
+					} else if t == "%str" {
+						ptrType = "%str*"
+					} else if t == "i8*" {
+						ptrType = "i8**"
 					}
 				}
-				// try without suffix
 				if idx := strings.IndexByte(baseName, '.'); idx > 0 {
 					if t, ok := g.varTypes[baseName[:idx]]; ok {
 						if t == "double" {
-							return "double* " + ev
-						}
-						if t == "%str" {
-							return "%str* " + ev
+							ptrType = "double*"
+						} else if t == "%str" {
+							ptrType = "%str*"
 						}
 					}
 				}
 			}
-			return "i64* " + ev
+			elemType := strings.TrimSuffix(ptrType, "*")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), elemType, ev, ptrType, tmpName))
+			}
+			return ptrType + " " + tmpName
 		} else if strings.Contains(ev, ".") {
 			// float literal value (e.g. "180.000000")
 			g.tmpIdx++
@@ -197,6 +242,27 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 
 		if retType == "void" {
+			// void 返回：直接調用
+			// 檢查是否為多結果函數（curried 呼叫 → 單次呼叫，附加輸出參數）
+			numResults := 0
+			if g.funcNumResults != nil {
+				// 嘗試多個名稱變體（可能已被 mangleOverloads 修飾）
+				for _, name := range []string{innerFnName, innerFnName + "_i64_i64_i64_i64"} {
+					if n, ok := g.funcNumResults[name]; ok && n > numResults {
+						numResults = n
+					}
+				}
+			}
+			if numResults > 1 {
+				// 多結果：將輸出參數附加到呼叫，傳遞指標
+				allArgs := make([]string, 0, len(innerArgs)+len(expr.Arguments))
+				allArgs = append(allArgs, innerArgs...)
+				for _, outArg := range expr.Arguments {
+					allArgs = append(allArgs, g.generateCallArg(sb, outArg))
+				}
+				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
+				return ""
+			}
 			// void 返回：直接調用，然後為每個輸出參數分配空間
 			for _, outArg := range expr.Arguments {
 				if ident, ok := outArg.(*parser.Identifier); ok {
@@ -210,14 +276,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				}
 			}
-			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), innerFnName, strings.Join(innerArgs, ", ")))
+			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
 			return ""
 		}
 
 		// 有返回值：生成 call 並捕獲結果
 		g.tmpIdx++
 		retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, innerFnName, strings.Join(innerArgs, ", ")))
+		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
 
 		// 將返回值存入輸出參數變數
 		for _, outArg := range expr.Arguments {
@@ -330,11 +396,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// str 型別用 %str* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
-					if g.globalVars != nil && g.globalVars[a.Value] {
-						typedArgs[i] = "%str* @" + a.Value
-					} else {
-						typedArgs[i] = "%str* %" + a.Value
-					}
+					typedArgs[i] = "%str* " + g.varAddr(a.Value)
 					break
 				}
 			}
@@ -342,22 +404,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "[") {
 					// t is already LLVM type (e.g. "[4 x i64]"), don't call mapToLLVMType again
-					typedArgs[i] = t + "* %" + a.Value
+					typedArgs[i] = t + "* " + g.varAddr(a.Value)
 					break
 				}
 			}
 			// double 型別用 double* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "double" {
-					typedArgs[i] = "double* %" + a.Value
+					typedArgs[i] = "double* " + g.varAddr(a.Value)
 					break
 				}
 			}
-			varAddr := "%" + a.Value
-			if g.globalVars != nil && g.globalVars[a.Value] {
-				varAddr = "@" + a.Value
-			}
-			typedArgs[i] = "i64* " + varAddr
+			typedArgs[i] = "i64* " + g.varAddr(a.Value)
 		case *parser.FloatLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -382,6 +440,45 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))
 			}
 			typedArgs[i] = "i64* " + tmpName
+		case *parser.IndexExpression:
+			// 索引表達式可能回傳 %T* (slice/array of structs)、i64 (數字元素) 或 i8* (byte 元素)
+			ev := g.generateExprWithSB(sb, arg)
+			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
+				ptrType := "i64*"
+				if ident, ok := a.Left.(*parser.Identifier); ok {
+					if g.varTypes != nil {
+						if t, ok := g.varTypes[ident.Value]; ok {
+							if strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
+								ptrType = t
+							}
+						}
+					}
+				}
+				typedArgs[i] = ptrType + " " + ev
+				break
+			}
+			// i64 value
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+			}
+			typedArgs[i] = "i64* " + tmpName
+		case *parser.SliceExpression:
+			// 切片表達式回傳 %vec 或 %str（已分配在 stack 上）
+			ev := g.generateExprWithSB(sb, arg)
+			ptrType := "%vec*"
+			if ident, ok := a.Left.(*parser.Identifier); ok {
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[ident.Value]; ok {
+						if t == "%str" || t == "%str-smail" {
+							ptrType = "%str*"
+						}
+					}
+				}
+			}
+			typedArgs[i] = ptrType + " " + ev
 		default:
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.HasPrefix(ev, "%strlit") {
@@ -449,5 +546,5 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 		}
 	}
-	return fmt.Sprintf("call %s @%s(%s)", retType, fnName, strings.Join(typedArgs, ", "))
+	return fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(fnName), strings.Join(typedArgs, ", "))
 }

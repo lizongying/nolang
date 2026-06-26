@@ -26,26 +26,29 @@ type loopExit struct {
 }
 
 type Generator struct {
-	indentLevel    int
-	fmtStrIdx      int
-	stringIdx      int
-	fmtGlobals     []string
-	tmpIdx         int
-	funcVars       []varInfo                // current function's variables for lifetime.end
-	varTypes       map[string]string        // variable name → LLVM type
-	varSSA         map[string]int           // variable name → current SSA version
-	ssaMode        bool                     // true = 使用 SSA 暫存器
-	paramNames     map[string]bool          // 函數參數名稱（使用 .addr 存取）
-	funcRetTypes   map[string]string        // 函數名 → 回傳型別
-	structTypes    map[string][]structField // struct name → fields
-	structTypeLLVM string                   // 當前正在生成的 struct LLVM type name
-	loopExits      []loopExit               // 活躍循環退出目標棧
-	nestedIfEndId  int                      // labelId of the most recently generated if expression's end block
-	arrayElemTypes map[string]string        // variable name → element LLVM type for %arr variables
-	curFuncRetType string                   // 當前函數回傳型別（void/i64/...）
-	curFuncRetName string                   // 當前函數輸出參數名稱（為空表示 void）
-	globalVars     map[string]bool          // module-level vars that should be LLVM globals
-	moduleVarTypes map[string]string        // module-level variable types (preserved across functions)
+	indentLevel     int
+	fmtStrIdx       int
+	stringIdx       int
+	fmtGlobals      []string
+	tmpIdx          int
+	funcVars        []varInfo                // current function's variables for lifetime.end
+	varTypes        map[string]string        // variable name → LLVM type
+	varSSA          map[string]int           // variable name → current SSA version
+	ssaMode         bool                     // true = 使用 SSA 暫存器
+	paramNames      map[string]bool          // 函數參數名稱（使用 .addr 存取）
+	funcRetTypes    map[string]string        // 函數名 → 回傳型別
+	funcNumResults  map[string]int           // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
+	structTypes     map[string][]structField // struct name → fields
+	structTypeLLVM  string                   // 當前正在生成的 struct LLVM type name
+	loopExits       []loopExit               // 活躍循環退出目標棧
+	nestedIfEndId   int                      // labelId of the most recently generated if expression's end block
+	arrayElemTypes  map[string]string        // variable name → element LLVM type for %arr variables
+	curFuncRetType  string                   // 當前函數回傳型別（void/i64/...）
+	curFuncRetName  string                   // 當前函數輸出參數名稱（為空表示 void）
+	globalVars      map[string]bool          // module-level vars that should be LLVM globals
+	moduleVarTypes  map[string]string        // module-level variable types (preserved across functions)
+	ssaTypes        map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
+	blockTerminated bool                     // true if current basic block ends with a terminator (ret/br)
 }
 
 func NewGenerator() *Generator {
@@ -87,6 +90,25 @@ func llvmVarRef(name string) string {
 	return "%" + name
 }
 
+// llvmGlobalRef returns an LLVM global variable reference for the given name.
+// If the name contains special characters like '-', it wraps it in quotes
+// to prevent LLVM from parsing e.g. @INV-SBOX as (@INV) - SBOX.
+func llvmGlobalRef(name string) string {
+	if strings.ContainsAny(name, "-") {
+		return "@\"" + name + "\""
+	}
+	return "@" + name
+}
+
+// varAddr returns the LLVM variable reference (local or global) for the given name.
+// It checks globalVars to determine whether to use @ (global) or % (local) prefix.
+func (g *Generator) varAddr(name string) string {
+	if g.globalVars != nil && g.globalVars[name] {
+		return llvmGlobalRef(name)
+	}
+	return llvmVarRef(name)
+}
+
 // llvmSSAReg returns an LLVM SSA register name for the given base name and suffix.
 // For names with special chars like '-', the entire name is quoted.
 // e.g. llvmSSAReg("bl-1", ".val.434") → %"bl-1.val.434"
@@ -105,9 +127,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.varTypes = make(map[string]string)
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)
+	g.funcNumResults = make(map[string]int)
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
+	g.ssaTypes = make(map[string]string)
 
 	var sb strings.Builder
 
@@ -127,10 +151,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			retType := "void"
-			if len(fd.Results) > 0 {
+			if len(fd.Results) == 1 {
 				retType = g.mapToLLVMType(fd.Results[0].Type.String())
 			}
 			g.funcRetTypes[fd.Name] = retType
+			g.funcNumResults[fd.Name] = len(fd.Results)
 			funcNames[fd.Name] = true
 		}
 	}
@@ -213,15 +238,15 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			llvmType := g.varLLVMType(ls)
 			if llvmType == "%str" || llvmType == "%str-smail" {
-				sb.WriteString(fmt.Sprintf("@%s = global %s zeroinitializer\n", name, llvmType))
+				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
 			} else if llvmType == "%arr" {
-				sb.WriteString(fmt.Sprintf("@%s = global %s zeroinitializer\n", name, llvmType))
+				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
 				if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
 					initVal := fmt.Sprintf("%d", intLit.Value)
-					sb.WriteString(fmt.Sprintf("@%s = global i64 %s\n", name, initVal))
+					sb.WriteString(fmt.Sprintf("%s = global i64 %s\n", llvmGlobalRef(name), initVal))
 					g.globalVars[name] = true
 				}
 			}

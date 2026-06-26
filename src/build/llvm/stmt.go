@@ -66,19 +66,28 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.paramNames[p.Name] = true
 		g.varTypes[p.Name] = g.mapToLLVMType(p.Type.String())
 	}
+	// For multi-output functions, result parameters are also passed by reference
+	// (treated like input parameters) and must not be allocated as local allocas.
+	for _, r := range fd.Results {
+		if len(fd.Results) > 1 && r.Name != "" {
+			g.paramNames[r.Name] = true
+		}
+	}
 
 	returnType := "void"
-	if len(fd.Results) > 0 {
+	// Functions with multiple results are emitted as `void` with each result
+	// passed by reference as an additional parameter.
+	if len(fd.Results) == 1 {
 		returnType = g.mapToLLVMType(fd.Results[0].Type.String())
 	}
 
 	g.curFuncRetType = returnType
 	g.curFuncRetName = ""
-	if len(fd.Results) > 0 && fd.Results[0].Name != "" {
+	if len(fd.Results) == 1 && fd.Results[0].Name != "" {
 		g.curFuncRetName = fd.Results[0].Name
 	}
 
-	sb.WriteString(fmt.Sprintf("define %s @%s(", returnType, fd.Name))
+	sb.WriteString(fmt.Sprintf("define %s @%s(", returnType, sanitizeLLVMName(fd.Name)))
 
 	for i, param := range fd.Parameters {
 		if i > 0 {
@@ -87,6 +96,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// 引用傳遞：參數為指標 i64* %n
 		llvmType := g.mapToLLVMType(param.Type.String()) + "*"
 		sb.WriteString(fmt.Sprintf("%s %s", llvmType, llvmVarRef(param.Name)))
+	}
+	// Multi-output: add each result as a pointer parameter.
+	if len(fd.Results) > 1 {
+		for _, r := range fd.Results {
+			llvmType := g.mapToLLVMType(r.Type.String()) + "*"
+			sb.WriteString(fmt.Sprintf(", %s %s", llvmType, llvmVarRef(r.Name)))
+		}
 	}
 
 	sb.WriteString(") {\n")
@@ -105,9 +121,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 	}
-	// 結果參數也要分配空間
+	// 結果參數也要分配空間（多結果時為 passed by reference，不分配；單結果時維持舊行為）
 	for _, r := range fd.Results {
-		if r.Name != "" {
+		if r.Name != "" && len(fd.Results) == 1 {
 			llvmType := g.mapToLLVMType(r.Type.String())
 			localVarTypes[r.Name] = llvmType
 			g.varTypes[r.Name] = llvmType
@@ -116,6 +132,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 
 	for _, p := range fd.Parameters {
 		delete(localVarTypes, p.Name)
+	}
+	// Multi-output result parameters: also remove from localVarTypes to avoid
+	// allocating them as local allocas (they're already function parameters).
+	if len(fd.Results) > 1 {
+		for _, r := range fd.Results {
+			delete(localVarTypes, r.Name)
+		}
 	}
 
 	// 分配 + lifetime.start
@@ -258,10 +281,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if (v.Operator == "-" || v.Operator == "+") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
 			return "%str"
 		}
-		if g.isDoubleExpr(v.Left) || g.isDoubleExpr(v.Right) {
-			return "double"
+		// floatLLVMType 已處理混合 float/double 的型別提升
+		if ft := g.floatLLVMType(v); ft != "" {
+			return ft
 		}
-		return "i64"
+		// 整數算術：使用 intExprLLVMType 推斷正確的整數寬度
+		return g.intExprLLVMType(v)
 	case *parser.SliceLiteral:
 		return "%vec"
 	case *parser.ArrayLiteral:
@@ -454,12 +479,14 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		target := g.findLoopTarget(s.Label, true)
 		if target != "" {
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), target))
+			g.blockTerminated = true
 		}
 
 	case *parser.ContinueStatement:
 		target := g.findLoopTarget(s.Label, false)
 		if target != "" {
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), target))
+			g.blockTerminated = true
 		}
 
 	case *parser.InterfaceDefinition:
@@ -504,6 +531,7 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		} else {
 			sb.WriteString(g.indent() + "ret void\n")
 		}
+		g.blockTerminated = true
 	}
 }
 
@@ -1030,22 +1058,22 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			// store len (field 0)
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
-				g.indent(), lenGEP, name))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+				g.indent(), lenGEP, g.varAddr(name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
 
 			// store cap (field 1)
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 1\n",
-				g.indent(), capGEP, name))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
+				g.indent(), capGEP, g.varAddr(name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
 			// store data (field 2)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
-				g.indent(), dataGEP, name))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, g.varAddr(name)))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), ptrReg, dataGEP))
 			return
 		}
@@ -1091,20 +1119,35 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	if sl, ok := stmt.Value.(*parser.StructLiteral); ok {
 		structName := sl.Type
 		fields := g.structTypes[structName]
-		// 逐欄位 store
-		for i, f := range sl.Fields {
+		structTy := "%" + structName
+		// 建立欄位名稱 → 索引映射
+		fieldIndexByName := make(map[string]int)
+		for i, f := range fields {
+			fieldIndexByName[f.name] = i
+		}
+		// 逐欄位 store（按欄位名稱查找定義中的索引）
+		for _, f := range sl.Fields {
+			fieldIdx := -1
 			fieldType := "i64"
-			if i < len(fields) {
-				fieldType = fields[i].typ
+			if idx, ok := fieldIndexByName[f.Name]; ok {
+				fieldIdx = idx
+				fieldType = fields[idx].typ
+			}
+			if fieldIdx < 0 {
+				continue
 			}
 			fieldVal := g.generateExprWithSB(sb, f.Value)
 			fieldVal = g.stripLLVMType(fieldVal)
 			g.tmpIdx++
 			gepReg := fmt.Sprintf("%%st.gep.%d", g.tmpIdx)
-			structTy := "%" + structName
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-				g.indent(), gepReg, structTy, structTy, llvmVarRef(name), i))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+				g.indent(), gepReg, structTy, structTy, g.varAddr(name), fieldIdx))
+			// 若欄位型別為 struct/string 但值不是 struct SSA，用 zeroinitializer 替代純量值
+			if strings.HasPrefix(fieldType, "%") && !strings.HasPrefix(fieldVal, "%") {
+				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			}
 		}
 		return
 	}
@@ -1133,8 +1176,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// Store len field
 		g.tmpIdx++
 		lenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 0\n",
-			g.indent(), lenGEP, name))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, g.varAddr(name)))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arraySize, lenGEP))
 
 		// Allocate data buffer: arraySize * elemSize
@@ -1146,8 +1189,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// Store data pointer in struct
 		g.tmpIdx++
 		dataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
-			g.indent(), dataGEP, name))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+			g.indent(), dataGEP, g.varAddr(name)))
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataReg, dataGEP))
 
 		// Store elements from array literal (if any)
@@ -1172,6 +1215,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 
 	// Coerce value to declared type if variable was already typed (e.g., a i8; a = 2)
+	alreadyCoerced := false
 	if existingType, ok := g.varTypes[name]; ok && existingType != llvmType {
 		if strings.HasPrefix(val, "%") {
 			if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
@@ -1181,6 +1225,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, llvmType, val, existingType))
 				val = truncReg
 				llvmType = existingType
+				alreadyCoerced = true
 			} else if existingType == "double" && g.isIntegerLLVMType(llvmType) {
 				// int → double: sitofp
 				g.tmpIdx++
@@ -1188,6 +1233,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to double\n", g.indent(), convReg, llvmType, val))
 				val = convReg
 				llvmType = "double"
+				alreadyCoerced = true
 			} else if g.isIntegerLLVMType(existingType) && llvmType == "double" {
 				// double → int: fptosi
 				g.tmpIdx++
@@ -1195,7 +1241,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%s%s = fptosi double %s to %s\n", g.indent(), convReg, val, existingType))
 				val = convReg
 				llvmType = existingType
+				alreadyCoerced = true
 			}
+		}
+	}
+
+	// 對單態化後的小整數型別（i8/i16/i32），若值來自 i64 上下文
+	// （如陣列索引 zext 或字面常量運算），需要 trunc 到變數型別
+	// 注意：若上面的型別強制轉換已經處理過，則跳過，避免重複 trunc
+	if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && strings.HasPrefix(val, "%") {
+		valType := g.intExprLLVMType(stmt.Value)
+		if valType == "i64" {
+			g.tmpIdx++
+			truncReg := fmt.Sprintf("%%trunc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmType))
+			val = truncReg
 		}
 	}
 
@@ -1213,33 +1273,39 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			val = copyReg
 		}
 		if isGlobal {
-			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* @%s\n", g.indent(), val, name))
+			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), val, llvmGlobalRef(name)))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %%%s\n", g.indent(), val, name))
+			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), val, llvmVarRef(name)))
 		}
 	case "%str-smail":
 		// Copy %str-smail struct: load from source, store to dest
+		isGlobal := g.globalVars != nil && g.globalVars[name]
 		g.tmpIdx++
 		copyReg := fmt.Sprintf("%%strsm.copy.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = load %%str-smail, %%str-smail* %s\n", g.indent(), copyReg, val))
-		sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %%%s\n", g.indent(), copyReg, name))
+		if isGlobal {
+			sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %s\n", g.indent(), copyReg, llvmGlobalRef(name)))
+		} else {
+			sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %s\n", g.indent(), copyReg, llvmVarRef(name)))
+		}
 	case "%vec":
 		// Copy %vec struct: load from source, store to dest
+		isGlobal := g.globalVars != nil && g.globalVars[name]
 		g.tmpIdx++
 		copyReg := fmt.Sprintf("%%vec.copy.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
-		sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %%%s\n", g.indent(), copyReg, name))
+		if isGlobal {
+			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), copyReg, llvmGlobalRef(name)))
+		} else {
+			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), copyReg, llvmVarRef(name)))
+		}
 	case "i8*":
-		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %%%s\n", g.indent(), val, name))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), val, g.varAddr(name)))
 	case "double":
-		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %%%s\n", g.indent(), val, name))
+		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), val, g.varAddr(name)))
 	default:
 		ptrType := llvmType + "*"
-		varAddr := "%" + name
-		if g.globalVars != nil && g.globalVars[name] {
-			varAddr = "@" + name
-		}
-		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, varAddr))
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, g.varAddr(name)))
 	}
 }
 

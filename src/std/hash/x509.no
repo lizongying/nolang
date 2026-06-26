@@ -214,7 +214,7 @@ x509-rsa-e = (data []byte, n i64, e i64) {
         e = 0
         return
     }
-    exp-len, adv = der-len(data, rsa - start + 1)
+    exp-len, adv = der-len(data, rsa-start - p + 1)
     if exp-len > 8 {
         e = 0
         return

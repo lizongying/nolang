@@ -27,10 +27,27 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 
 	// 2. 對需要修飾的函數生成新名稱
 	mangled := make(map[string]string) // 原始調用簽名 → 修飾後名稱
+	// 記錄需要從 program.Statements 中刪除的重複函數
+	toRemove := make(map[*parser.FunctionDefinition]bool)
 	for name, fns := range overloads {
 		if len(fns) <= 1 {
 			continue // 無重載，不改名
 		}
+		// 去重：對於相同名稱+簽名的重複定義（多模組同函數），只保留第一個
+		seenSigs := make(map[string]bool)
+		uniqueFns := make([]*parser.FunctionDefinition, 0, len(fns))
+		for _, fd := range fns {
+			sig := callSignature(name, fd.Parameters)
+			if !seenSigs[sig] {
+				seenSigs[sig] = true
+				uniqueFns = append(uniqueFns, fd)
+			} else {
+				toRemove[fd] = true
+			}
+		}
+		// 用 uniqueFns 取代 fns 進行後續處理
+		fns = uniqueFns
+		overloads[name] = uniqueFns
 		for _, fd := range fns {
 			parts := []string{name}
 			for _, p := range fd.Parameters {
@@ -41,6 +58,20 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 			sig := callSignature(name, fd.Parameters)
 			mangled[sig] = mangledName
 		}
+	}
+
+	// 從 program.Statements 中刪除重複的函數定義
+	if len(toRemove) > 0 {
+		filtered := make([]parser.Statement, 0, len(program.Statements))
+		for _, stmt := range program.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if toRemove[fd] {
+					continue
+				}
+			}
+			filtered = append(filtered, stmt)
+		}
+		program.Statements = filtered
 	}
 
 	if len(mangled) == 0 {
@@ -65,8 +96,15 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 			case *parser.BlockStatement:
 				walk(s.Statements)
 			case *parser.ForStatement:
+				if s.Condition != nil {
+					updateCallNames(s.Condition, overloads, mangled, varTypes)
+				}
 				if s.Body != nil {
 					walk(s.Body.Statements)
+				}
+			case *parser.MultiAssignStatement:
+				if s.Value != nil {
+					updateCallNames(s.Value, overloads, mangled, varTypes)
 				}
 			case *parser.ReturnStatement:
 				if s.ReturnValue != nil {
@@ -228,7 +266,7 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 	case *parser.CallExpression:
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			name := ident.Value
-			if fns, has := overloads[name]; has && len(fns) > 1 {
+			if fns, has := overloads[name]; has && len(fns) >= 1 {
 				// 收集實參類型
 				argTypes := make([]string, len(e.Arguments))
 				for i, arg := range e.Arguments {
@@ -600,6 +638,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						}
 					}
 				}
+				if use.Alias == "" {
+					if sd, ok := ms.(*parser.StructDefinition); ok {
+						merged.Statements = append(merged.Statements, sd)
+					}
+					if ta, ok := ms.(*parser.TypeAlias); ok {
+						merged.Statements = append(merged.Statements, ta)
+					}
+				}
 			}
 			continue
 		}
@@ -652,6 +698,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
 	resolveModuleCalls(merged, importedModules)
 
+	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
+	resolveSelfMethodCalls(merged)
+
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
 	monomorphizeGenerics(merged, varTypes)
 
@@ -667,17 +716,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 	merged.Statements = filtered
 
-	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
-	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
-	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
-	// 一併替換。
-	monomorphizeUnions(merged)
-
-	// 在合併所有 std 模組後再做一次名稱修飾，
-	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
-	mangleOverloads(merged, nil)
-
 	// 非函數定義的陳述句（頂層呼叫）放到最後
+	// 必須在 monomorphizeUnions/rewriteUnionCalls 之前添加，
+	// 否則頂層呼叫（如 pow(2, 10, r)）不會被重寫為具體版本
 	for _, stmt := range program.Statements {
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
 			continue
@@ -708,8 +749,21 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		merged.Statements = append(merged.Statements, stmt)
 	}
 
-	// 再次解析 module.fn() 呼叫：處理剛剛添加的頂層代碼
+	// 解析頂層代碼中的 module.fn() 呼叫
 	resolveModuleCalls(merged, importedModules)
+
+	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
+	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
+	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
+	// 一併替換。
+	monomorphizeUnions(merged)
+
+	// 重寫對聯合型別泛型函數的呼叫：將 max(args) 改為 max__i64(args)
+	rewriteUnionCalls(merged)
+
+	// 在合併所有 std 模組後再做一次名稱修飾，
+	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
+	mangleOverloads(merged, nil)
 
 	return t.llvmGenerator.Generate(merged), nil
 }
@@ -806,6 +860,26 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 // VariadicUnion != "" 判斷；或 GenericUnion != "" 判斷）。
 func monomorphizeUnions(program *parser.Program) {
 	aliases, _ := ValidateUnionTypes(program)
+	if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "[union-debug] monomorphizeUnions: %d aliases, %d statements\n", len(aliases), len(program.Statements))
+		typeAliasCount := 0
+		for _, stmt := range program.Statements {
+			if ta, ok := stmt.(*parser.TypeAlias); ok {
+				typeAliasCount++
+				fmt.Fprintf(os.Stderr, "[union-debug]   TypeAlias: name=%s isUnion=%v\n", ta.Name, ta.IsUnion())
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[union-debug]   total TypeAlias statements: %d\n", typeAliasCount)
+		for name, ta := range aliases {
+			fmt.Fprintf(os.Stderr, "[union-debug]   alias %s: isUnion=%v\n", name, ta.IsUnion())
+		}
+		for _, stmt := range program.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				fmt.Fprintf(os.Stderr, "[union-debug]   func %s: IsVariadic=%v VariadicUnion=%q GenericUnion=%q\n",
+					fd.Name, fd.IsVariadic, fd.VariadicUnion, fd.GenericUnion)
+			}
+		}
+	}
 	if len(aliases) == 0 {
 		return
 	}
@@ -829,7 +903,14 @@ func monomorphizeUnions(program *parser.Program) {
 			unionName = fd.GenericUnion
 		}
 		if unionName == "" {
+			if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[union-debug] skip %s: IsVariadic=%v VariadicUnion=%q GenericUnion=%q\n",
+					fd.Name, fd.IsVariadic, fd.VariadicUnion, fd.GenericUnion)
+			}
 			continue
+		}
+		if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[union-debug] monomorphize %s: union=%s\n", fd.Name, unionName)
 		}
 		members := FlattenUnion(unionName, aliases)
 		if len(members) == 0 {
@@ -856,6 +937,196 @@ func monomorphizeUnions(program *parser.Program) {
 		p.fd.Name = p.fd.Name + "__" + p.unionName + "_TEMPLATE"
 	}
 	program.Statements = append(program.Statements, newStmts...)
+}
+
+// rewriteUnionCalls 重寫對聯合型別泛型函數的呼叫。
+// 在 monomorphizeUnions 之後，原函數被改名為 "<name>__<union>_TEMPLATE"，
+// 具體版本為 "<name>__<memberType>"。此函數遍歷所有呼叫點，
+// 根據引數型別推斷應使用的具體版本，並將呼叫名改寫為 "<name>__<memberType>"。
+func rewriteUnionCalls(program *parser.Program) {
+	// 收集所有模板函數：原名 → templateInfo
+	// 模板名格式：<origName>__<unionName>_TEMPLATE
+	templates := make(map[string]*unionTemplateInfo)
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		if strings.HasSuffix(fd.Name, "_TEMPLATE") {
+			base := strings.TrimSuffix(fd.Name, "_TEMPLATE")
+			parts := strings.SplitN(base, "__", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			origName := parts[0]
+			unionName := parts[1]
+			aliases, _ := ValidateUnionTypes(program)
+			members := FlattenUnion(unionName, aliases)
+			memberNames := make([]string, 0, len(members))
+			for _, m := range members {
+				if nt, ok := m.(*parser.NamedType); ok {
+					memberNames = append(memberNames, nt.Value)
+				}
+			}
+			templates[origName] = &unionTemplateInfo{origName: origName, unionName: unionName, members: memberNames}
+		}
+	}
+
+	if len(templates) == 0 {
+		if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[union-debug] rewriteUnionCalls: no templates found\n")
+		}
+		return
+	}
+	if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "[union-debug] rewriteUnionCalls: %d templates\n", len(templates))
+		for name, tpl := range templates {
+			fmt.Fprintf(os.Stderr, "[union-debug]   template %s: union=%s members=%v\n", name, tpl.unionName, tpl.members)
+		}
+	}
+
+	// 遍歷所有語句，重寫呼叫
+	var walk func(stmts []parser.Statement)
+	walk = func(stmts []parser.Statement) {
+		for _, stmt := range stmts {
+			switch s := stmt.(type) {
+			case *parser.ExpressionStatement:
+				rewriteUnionCallExpr(s.Expression, templates)
+			case *parser.LetStatement:
+				if s.Value != nil {
+					rewriteUnionCallExpr(s.Value, templates)
+				}
+			case *parser.FunctionDefinition:
+				if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+					fmt.Fprintf(os.Stderr, "[union-debug] walk FunctionDefinition: %s, body=%d stmts\n", s.Name, len(s.Body.Statements))
+				}
+				if s.Body != nil {
+					walk(s.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				walk(s.Statements)
+			case *parser.ForStatement:
+				if s.Condition != nil {
+					rewriteUnionCallExpr(s.Condition, templates)
+				}
+				if s.Body != nil {
+					walk(s.Body.Statements)
+				}
+			case *parser.MultiAssignStatement:
+				if s.Value != nil {
+					rewriteUnionCallExpr(s.Value, templates)
+				}
+			case *parser.ReturnStatement:
+				if s.ReturnValue != nil {
+					rewriteUnionCallExpr(s.ReturnValue, templates)
+				}
+			}
+		}
+	}
+	walk(program.Statements)
+}
+
+// unionTemplateInfo 記錄聯合型別模板函數的資訊
+type unionTemplateInfo struct {
+	origName  string
+	unionName string
+	members   []string
+}
+
+// rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
+func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		// 先遞迴處理引數中的呼叫
+		for _, arg := range e.Arguments {
+			rewriteUnionCallExpr(arg, templates)
+		}
+		// 處理 curried 呼叫：(innerCall)(args)
+		if _, ok := e.Function.(*parser.CallExpression); ok {
+			rewriteUnionCallExpr(e.Function, templates)
+			return
+		}
+		// 檢查是否為聯合型別泛型呼叫
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			if tpl, exists := templates[ident.Value]; exists {
+				memberType := inferArgMemberType(e, tpl)
+				if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+					fmt.Fprintf(os.Stderr, "[union-debug] rewrite call %s: memberType=%s\n", ident.Value, memberType)
+				}
+				if memberType != "" {
+					ident.Value = ident.Value + "__" + memberType
+					if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+						fmt.Fprintf(os.Stderr, "[union-debug]   rewritten to %s\n", ident.Value)
+					}
+				}
+			}
+		}
+	case *parser.InfixExpression:
+		rewriteUnionCallExpr(e.Left, templates)
+		rewriteUnionCallExpr(e.Right, templates)
+	case *parser.PrefixExpression:
+		rewriteUnionCallExpr(e.Right, templates)
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			rewriteUnionCallExpr(e.Condition, templates)
+		}
+		if e.Consequence != nil {
+			for _, s := range e.Consequence.Statements {
+				if es, ok := s.(*parser.ExpressionStatement); ok {
+					rewriteUnionCallExpr(es.Expression, templates)
+				}
+			}
+		}
+		if e.Alternative != nil {
+			for _, s := range e.Alternative.Statements {
+				if es, ok := s.(*parser.ExpressionStatement); ok {
+					rewriteUnionCallExpr(es.Expression, templates)
+				}
+			}
+		}
+	case *parser.AssignExpression:
+		rewriteUnionCallExpr(e.Value, templates)
+	}
+}
+
+// inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別
+func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo) string {
+	if len(call.Arguments) == 0 {
+		return ""
+	}
+	// 對於 variadic 函數（..num），使用第一個引數的型別
+	// 對於非 variadic 函數（abs(a num)），也使用第一個引數的型別
+	firstArg := call.Arguments[0]
+	return inferExprMemberType(firstArg)
+}
+
+// inferExprMemberType 從表達式推斷聯合成員型別
+func inferExprMemberType(expr parser.Expression) string {
+	switch v := expr.(type) {
+	case *parser.IntegerLiteral:
+		return "i64" // 整數字面常量預設為 i64
+	case *parser.FloatLiteral:
+		return "f64"
+	case *parser.Identifier:
+		return "i64"
+	case *parser.PrefixExpression:
+		return inferExprMemberType(v.Right)
+	case *parser.GroupedExpression:
+		return inferExprMemberType(v.Expression)
+	}
+	return "i64"
+}
+
+// isValidType 檢查是否為有效的 Nolang 型別名
+func isValidType(name string) bool {
+	switch name {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64":
+		return true
+	}
+	return false
 }
 
 // cloneUnionVariant 為 union 函數的某個成員型別複製一份具體實例。
@@ -3950,6 +4221,118 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) pa
 
 	default:
 		return e
+	}
+}
+
+// resolveSelfMethodCalls rewrites self.method(args) calls inside method bodies
+// to StructType.method(self, args), where StructType is derived from the
+// function's implicit self parameter.
+func resolveSelfMethodCalls(program *parser.Program) {
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		if len(fd.Parameters) == 0 || fd.Parameters[0].Name != "self" {
+			continue
+		}
+		selfType := fd.Parameters[0].Type.String()
+		if fd.Body != nil {
+			for _, bodyStmt := range fd.Body.Statements {
+				resolveSelfInStmt(bodyStmt, selfType)
+			}
+		}
+	}
+}
+
+func resolveSelfInStmt(stmt parser.Statement, selfType string) {
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			resolveSelfInExpr(s.Expression, selfType)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			resolveSelfInExpr(s.Value, selfType)
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			resolveSelfInExpr(s.Value, selfType)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveSelfInStmt(bodyStmt, selfType)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			resolveSelfInStmt(bodyStmt, selfType)
+		}
+	case *parser.ForStatement:
+		if s.Condition != nil {
+			resolveSelfInExpr(s.Condition, selfType)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveSelfInStmt(bodyStmt, selfType)
+			}
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			resolveSelfInExpr(s.ReturnValue, selfType)
+		}
+	}
+}
+
+func resolveSelfInExpr(expr parser.Expression, selfType string) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok && recv.Value == "self" {
+				concreteName := selfType + "." + dot.Property
+				e.Function = &parser.Identifier{
+					Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+					Value: concreteName,
+				}
+				receiverArg := &parser.Identifier{
+					Token: recv.Token,
+					Value: "self",
+				}
+				e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
+			}
+		}
+		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
+			resolveSelfInExpr(innerCall, selfType)
+		}
+		for _, arg := range e.Arguments {
+			resolveSelfInExpr(arg, selfType)
+		}
+	case *parser.InfixExpression:
+		resolveSelfInExpr(e.Left, selfType)
+		resolveSelfInExpr(e.Right, selfType)
+	case *parser.PrefixExpression:
+		resolveSelfInExpr(e.Right, selfType)
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			for _, s := range e.Consequence.Statements {
+				resolveSelfInStmt(s, selfType)
+			}
+		}
+		if e.Alternative != nil {
+			for _, s := range e.Alternative.Statements {
+				resolveSelfInStmt(s, selfType)
+			}
+		}
+	case *parser.GroupedExpression:
+		resolveSelfInExpr(e.Expression, selfType)
+	case *parser.ConditionalExpression:
+		resolveSelfInExpr(e.Condition, selfType)
+		resolveSelfInExpr(e.Consequence, selfType)
+		resolveSelfInExpr(e.Alternative, selfType)
 	}
 }
 

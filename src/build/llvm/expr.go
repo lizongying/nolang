@@ -55,10 +55,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 			}
 			ptrType := llvmType + "*"
-			varAddr := llvmVarRef(e.Value)
-			if g.globalVars != nil && g.globalVars[e.Value] {
-				varAddr = "@" + e.Value
-			}
+			varAddr := g.varAddr(e.Value)
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, llvmType, ptrType, varAddr))
 		}
 		return reg
@@ -122,12 +119,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				g.tmpIdx++
 				reg := fmt.Sprintf("%%neg.tmp.%d", g.tmpIdx)
 				if sb != nil {
-					// 判斷是否為浮點數：使用 isDoubleExpr 遞迴檢查表達式型別
-					// 不能使用 strings.Contains(right, ".") 因為 SSA 暫存器名如 %add.tmp.1 也包含 .
-					if g.isDoubleExpr(e.Right) {
-						sb.WriteString(fmt.Sprintf("%s%s = fneg double %s\n", g.indent(), reg, right))
+					// 判斷浮點型別：支援 float (f32) 與 double (f64)
+					if ft := g.floatLLVMType(e.Right); ft != "" {
+						sb.WriteString(fmt.Sprintf("%s%s = fneg %s %s\n", g.indent(), reg, ft, right))
 					} else {
-						sb.WriteString(fmt.Sprintf("%s%s = sub i64 0, %s\n", g.indent(), reg, right))
+						negType := g.intExprLLVMType(e.Right)
+						rc := g.coerceToInt(sb, right, e.Right, negType)
+						sb.WriteString(fmt.Sprintf("%s%s = sub %s 0, %s\n", g.indent(), reg, negType, rc))
 					}
 				}
 				return reg
@@ -229,12 +227,15 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// then
 	sb.WriteString(fmt.Sprintf("if.then.%d:\n", labelId))
 	g.indentLevel++
-	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 i64/f64 用 0
+	g.blockTerminated = false
+	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
 		defaultZero = "zeroinitializer"
 	} else if strings.HasSuffix(g.curFuncRetType, "*") {
 		defaultZero = "null"
+	} else if g.curFuncRetType == "float" || g.curFuncRetType == "double" {
+		defaultZero = "0.000000e+00"
 	}
 	thenVal := defaultZero
 	if expr.Consequence != nil && len(expr.Consequence.Statements) > 0 {
@@ -250,7 +251,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	// 若 then 分支的最後一個表達式是 void 函數呼叫（用結果參數），
 	// 則 thenVal 為空，需要從結果參數載入作為 phi 值。
-	if thenVal == "" && g.curFuncRetName != "" {
+	if thenVal == "" && g.curFuncRetName != "" && !g.blockTerminated {
 		g.tmpIdx++
 		thenLoad := fmt.Sprintf("%%if.then.load.%d", g.tmpIdx)
 		retType := g.curFuncRetType
@@ -264,12 +265,16 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if thenVal == "" {
 		thenVal = defaultZero
 	}
-	sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+	thenTerminated := g.blockTerminated
+	if !thenTerminated {
+		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+	}
 	g.indentLevel--
 
 	// else — detect nested if by saving/resetting nestedIfEndId
 	sb.WriteString(fmt.Sprintf("if.else.%d:\n", labelId))
 	g.indentLevel++
+	g.blockTerminated = false
 	elseVal := defaultZero
 	elsePredecessor := fmt.Sprintf("%%if.else.%d", labelId) // default
 	nestedIfBeforeElse := g.nestedIfEndId
@@ -285,7 +290,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.generateStatement(sb, last)
 		}
 	}
-	if elseVal == "" && g.curFuncRetName != "" {
+	if elseVal == "" && g.curFuncRetName != "" && !g.blockTerminated {
 		g.tmpIdx++
 		elseLoad := fmt.Sprintf("%%if.else.load.%d", g.tmpIdx)
 		retType := g.curFuncRetType
@@ -303,11 +308,15 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if g.nestedIfEndId > 0 && g.nestedIfEndId != nestedIfBeforeElse {
 		elsePredecessor = fmt.Sprintf("%%if.end.%d", g.nestedIfEndId)
 	}
-	sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+	elseTerminated := g.blockTerminated
+	if !elseTerminated {
+		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+	}
 	g.indentLevel--
 
 	// end
 	sb.WriteString(fmt.Sprintf("if.end.%d:\n", labelId))
+	g.blockTerminated = false
 	g.tmpIdx++
 	phiReg := fmt.Sprintf("%%if.phi.%d", g.tmpIdx)
 	// phi type matches current function's return type
@@ -319,15 +328,29 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	zeroVal := "0"
 	if strings.HasPrefix(phiType, "%") {
 		zeroVal = "zeroinitializer"
+	} else if phiType == "float" || phiType == "double" {
+		zeroVal = "0.000000e+00"
 	}
-	if thenVal == "" {
+	if thenVal == "" || (strings.HasPrefix(phiType, "%") && thenVal == "0") {
 		thenVal = zeroVal
 	}
-	if elseVal == "" {
+	if elseVal == "" || (strings.HasPrefix(phiType, "%") && elseVal == "0") {
 		elseVal = zeroVal
 	}
-	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d], [%s, %s]\n",
-		g.indent(), phiReg, phiType, thenVal, labelId, elseVal, elsePredecessor))
+	// Build phi entries based on which branches are terminated
+	if thenTerminated && elseTerminated {
+		// Both branches return — if.end is unreachable; emit a dummy value
+		sb.WriteString(fmt.Sprintf("%s%s = add %s 0, 0\n", g.indent(), phiReg, phiType))
+	} else if thenTerminated {
+		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %s]\n",
+			g.indent(), phiReg, phiType, elseVal, elsePredecessor))
+	} else if elseTerminated {
+		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d]\n",
+			g.indent(), phiReg, phiType, thenVal, labelId))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%if.then.%d], [%s, %s]\n",
+			g.indent(), phiReg, phiType, thenVal, labelId, elseVal, elsePredecessor))
+	}
 
 	// Set for outer caller
 	g.nestedIfEndId = labelId
@@ -428,32 +451,170 @@ func isFloatExpr(e parser.Expression) bool {
 	return false
 }
 
-// isDoubleExpr 判斷表達式是否為 double (f64) 類型
-// 比 isFloatExpr 更完整，會檢查變數型別和函數回傳型別
+// isDoubleExpr 判斷表達式是否為浮點型別（float 或 double）。
+// 保留原名以維持向下相容；現在同時涵蓋 f32 (float) 與 f64 (double)。
 func (g *Generator) isDoubleExpr(expr parser.Expression) bool {
+	return g.floatLLVMType(expr) != ""
+}
+
+// floatLLVMType 推斷表達式的 LLVM 浮點型別。
+// 回傳 "float"（f32）、"double"（f64）或 ""（非浮點）。
+// 當運算元混合 float 與 double 時，較寬者勝出（double）。
+// 注意：比較運算（==, !=, <, >, <=, >=）的結果是 i1/bool，不是浮點，
+// 因此對比較運算永遠回傳 ""。
+func (g *Generator) floatLLVMType(expr parser.Expression) string {
 	switch v := expr.(type) {
 	case *parser.FloatLiteral:
-		return true
+		return "double"
 	case *parser.InfixExpression:
-		return g.isDoubleExpr(v.Left) || g.isDoubleExpr(v.Right)
+		// 比較運算的結果是 i1/bool，不是浮點型別
+		switch v.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return ""
+		}
+		lt := g.floatLLVMType(v.Left)
+		rt := g.floatLLVMType(v.Right)
+		if lt == "double" || rt == "double" {
+			return "double"
+		}
+		if lt == "float" || rt == "float" {
+			return "float"
+		}
 	case *parser.PrefixExpression:
-		return g.isDoubleExpr(v.Right)
+		return g.floatLLVMType(v.Right)
 	case *parser.GroupedExpression:
-		return g.isDoubleExpr(v.Expression)
+		return g.floatLLVMType(v.Expression)
 	case *parser.Identifier:
 		if g.varTypes != nil {
-			t, ok := g.varTypes[v.Value]
-			return ok && t == "double"
+			if t, ok := g.varTypes[v.Value]; ok {
+				switch t {
+				case "float":
+					return "float"
+				case "double":
+					return "double"
+				}
+			}
 		}
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			m := builtin.FindBuiltinMethod(ident.Value)
-			if m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
-				return true
+			if m != nil && len(m.Return) > 0 {
+				switch m.Return[0] {
+				case parser.TypeF32:
+					return "float"
+				case parser.TypeF64:
+					return "double"
+				}
 			}
 		}
 	}
-	return false
+	return ""
+}
+
+// intExprLLVMType 推斷表達式的 LLVM 整數型別（i8/i16/i32/i64）。
+// 用於算術與比較運算時選擇正確的型別，避免單態化後 i8/i16/i32 變數
+// 與硬編碼 i64 指令之間的型別不匹配。
+// 注意：IndexExpression 預設回傳 i64，因為 generateIndexExpression
+// 會將 i8 元素 zext 到 i64。
+func (g *Generator) intExprLLVMType(expr parser.Expression) string {
+	switch v := expr.(type) {
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[v.Value]; ok {
+				switch t {
+				case "i8", "i16", "i32", "i64":
+					return t
+				}
+			}
+		}
+	case *parser.InfixExpression:
+		// 比較運算的結果是 i1（zext 後為 i64）
+		switch v.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return "i64"
+		}
+		// 與 arithLLVMType 相同的策略：偏好非字面量運算元的型別
+		_, leftIsLit := v.Left.(*parser.IntegerLiteral)
+		_, rightIsLit := v.Right.(*parser.IntegerLiteral)
+		if !leftIsLit {
+			if t := g.intExprLLVMType(v.Left); t != "i64" {
+				return t
+			}
+		}
+		if !rightIsLit {
+			if t := g.intExprLLVMType(v.Right); t != "i64" {
+				return t
+			}
+		}
+		return widerIntType(g.intExprLLVMType(v.Left), g.intExprLLVMType(v.Right))
+	case *parser.PrefixExpression:
+		return g.intExprLLVMType(v.Right)
+	case *parser.GroupedExpression:
+		return g.intExprLLVMType(v.Expression)
+	}
+	return "i64"
+}
+
+// widerIntType 回傳兩個 LLVM 整數型別中較寬者。
+func widerIntType(a, b string) string {
+	order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
+	if order[a] >= order[b] {
+		return a
+	}
+	return b
+}
+
+// arithLLVMType 推斷算術/比較運算的 LLVM 整數型別。
+// 當一個運算元是整數字面常量（預設為 i64）而另一個是變數時，
+// 優先使用變數的型別，避免字面常量的預設型別主導型別推斷。
+func (g *Generator) arithLLVMType(left, right parser.Expression) string {
+	_, leftIsLit := left.(*parser.IntegerLiteral)
+	_, rightIsLit := right.(*parser.IntegerLiteral)
+	if !leftIsLit {
+		if t := g.intExprLLVMType(left); t != "i64" {
+			return t
+		}
+	}
+	if !rightIsLit {
+		if t := g.intExprLLVMType(right); t != "i64" {
+			return t
+		}
+	}
+	return widerIntType(g.intExprLLVMType(left), g.intExprLLVMType(right))
+}
+
+// coerceToInt 將 SSA 值轉換為目標整數型別。
+// 當值是較窄的整數型別時，進行 zext 擴展；當值是 i64 而目標較窄時，進行 trunc。
+// 當值是整數字面常量時保持原樣（LLVM 會自動處理）。
+func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parser.Expression, targetType string) string {
+	if v == "" || targetType == "i64" {
+		return v
+	}
+	// 整數字面常量：直接使用，LLVM 會自動處理
+	if _, err := fmt.Sscanf(v, "%d", new(int64)); err == nil && !strings.HasPrefix(v, "%") {
+		return v
+	}
+	// SSA 暫存器：若來源型別與目標型別不同，進行轉換
+	if strings.HasPrefix(v, "%") {
+		srcType := g.intExprLLVMType(exprForType)
+		if srcType == targetType {
+			return v
+		}
+		if sb == nil {
+			return v
+		}
+		g.tmpIdx++
+		cvtReg := fmt.Sprintf("%%cvt.%d", g.tmpIdx)
+		if srcType == "i64" {
+			// i64 → 較窄型別：trunc
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), cvtReg, v, targetType))
+		} else {
+			// 較窄型別 → 較寬型別：zext
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), cvtReg, srcType, v, targetType))
+		}
+		return cvtReg
+	}
+	return v
 }
 
 // generateInfixI1 回傳 i1 比較結果（無 zext），用於 for/if 條件
@@ -676,8 +837,16 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					elemGEP := fmt.Sprintf("%%set.arr.elem.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+					// Truncate val to elemType if needed (e.g., i64 → i8 for byte arrays)
+					storeVal := val
+					if elemType != "i64" && strings.HasPrefix(val, "%") {
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, elemType))
+						storeVal = truncReg
+					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), elemType, val, elemType, elemGEP))
+						g.indent(), elemType, storeVal, elemType, elemGEP))
 					return "0"
 				}
 			}
@@ -765,6 +934,12 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 						g.indent(), elemLoad, elemType, elemType, elemGEP))
+					if elemType != "i64" {
+						g.tmpIdx++
+						zextReg := fmt.Sprintf("%%idx.arr.zext.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
+						return zextReg
+					}
 					return elemLoad
 				}
 			}
@@ -857,8 +1032,15 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+					storeVal := val
+					if llvmElemType != "i64" && strings.HasPrefix(val, "%") {
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%arr.set.trunc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmElemType))
+						storeVal = truncReg
+					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), llvmElemType, val, llvmElemType, elemGEP))
+						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 				}
 				return "0"
 			}
@@ -957,17 +1139,23 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		return g.generateStringLiteralIndex(sb, lit, expr.Index)
 	}
 	idx := g.generateExprWithSB(sb, expr.Index)
+	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(expr.Index)
+		if idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
 
 	// String indexing: s[i] → extract data ptr from %str, then GEP into it
 	if varName != "" {
 		if t, ok := g.varTypes[varName]; ok && t == "%str" {
-			isGlobal := g.globalVars != nil && g.globalVars[varName]
-			var strPtr string
-			if isGlobal {
-				strPtr = "@" + varName
-			} else {
-				strPtr = "%" + varName
-			}
+			strPtr := g.varAddr(varName)
 			dataPtr := g.extractStrDataPtr(sb, strPtr)
 			g.tmpIdx++
 			charGEP := fmt.Sprintf("%%stridx.gep.%d", g.tmpIdx)
@@ -1022,14 +1210,20 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				llvmElemType = et
 			}
 
+			// Determine the base reference: @name for globals, %name for local allocas.
+			arrRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] {
+				arrRef = llvmGlobalRef(varName)
+			}
+
 			// Load data pointer from arr struct
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%arr.idx.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
 			dataLoad := fmt.Sprintf("%%arr.idx.data.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
-					g.indent(), dataGEP, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+					g.indent(), dataGEP, arrRef))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 					g.indent(), dataLoad, dataGEP))
 			}
@@ -1057,6 +1251,15 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
 			}
+			// 統一回傳 i64：若元素為 i8 則 zext 到 i64
+			if llvmElemType == "i8" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%arr.idx.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, elemLoad))
+				}
+				return zextReg
+			}
 			return elemLoad
 		}
 
@@ -1064,14 +1267,20 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			// %vec type: load data pointer (field 2), bitcast, GEP, load
 			llvmElemType = "i64"
 
+			// Determine the base reference: @name for globals, %name for local allocas.
+			vecRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] {
+				vecRef = llvmGlobalRef(varName)
+			}
+
 			// Load data pointer from vec struct (field 2)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%vec.idx.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
 			dataLoad := fmt.Sprintf("%%vec.idx.data.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
-					g.indent(), dataGEP, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+					g.indent(), dataGEP, vecRef))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 					g.indent(), dataLoad, dataGEP))
 			}
@@ -1161,9 +1370,14 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	// GEP 取得元素指標：使用 %varName (alloca) 而非 loaded value
 	g.tmpIdx++
 	gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+	// Determine the base reference: @name for globals, %name for local allocas.
+	arrRef := llvmVarRef(varName)
+	if g.globalVars != nil && g.globalVars[varName] {
+		arrRef = llvmGlobalRef(varName)
+	}
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i64 0, i64 %s\n",
-			g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+			g.indent(), gepReg, arrayLLVMType, arrayLLVMType, arrRef, idx))
 	}
 
 	// Load 元素值（非 i8* 型別的 fallback，如 str 的 i8 元素）
@@ -1190,6 +1404,18 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 // 對於短字串（≤127 bytes），分配 %str-smail；對於長字串，分配 %str。
 func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.StringLiteral, index parser.Expression) string {
 	idx := g.generateExprWithSB(sb, index)
+	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(index)
+		if idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%strlit.idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
 	strLen := len(lit.Value)
 	g.tmpIdx++
 	strAlloca := fmt.Sprintf("%%strlit.idx.%d", g.tmpIdx)
@@ -1267,6 +1493,90 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 	return zextReg
 }
 
+// generateStringCmp 使用 strcmp 進行字串比較，回傳 zext 後的 i64 結果。
+// 適用於 ==, !=, <, >, <=, >= 等比較運算子。
+func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExpression) string {
+	leftPtr := g.getStrPtr(sb, expr.Left)
+	rightPtr := g.getStrPtr(sb, expr.Right)
+	leftData := g.extractDataFromExpr(sb, expr.Left, leftPtr)
+	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
+
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%strcmp.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
+	}
+
+	// strcmp 回傳 0=相等, <0=a<b, >0=a>b
+	var cmpOp string
+	switch expr.Operator {
+	case "==":
+		cmpOp = "eq"
+	case "!=":
+		cmpOp = "ne"
+	case "<":
+		cmpOp = "slt"
+	case ">":
+		cmpOp = "sgt"
+	case "<=":
+		cmpOp = "sle"
+	case ">=":
+		cmpOp = "sge"
+	default:
+		cmpOp = "eq"
+	}
+
+	g.tmpIdx++
+	resultReg := fmt.Sprintf("%%strcmpres.%d", g.tmpIdx)
+	g.tmpIdx++
+	extReg := fmt.Sprintf("%%strcmpext.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, resultReg))
+	}
+	return extReg
+}
+
+// generateStringCmpI1 使用 strcmp 進行字串比較，直接回傳 i1 結果。
+// 用於 if/while 條件式中。
+func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixExpression) string {
+	leftPtr := g.getStrPtr(sb, expr.Left)
+	rightPtr := g.getStrPtr(sb, expr.Right)
+	leftData := g.extractDataFromExpr(sb, expr.Left, leftPtr)
+	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
+
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%strcmp.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
+	}
+
+	var cmpOp string
+	switch expr.Operator {
+	case "==":
+		cmpOp = "eq"
+	case "!=":
+		cmpOp = "ne"
+	case "<":
+		cmpOp = "slt"
+	case ">":
+		cmpOp = "sgt"
+	case "<=":
+		cmpOp = "sle"
+	case ">=":
+		cmpOp = "sge"
+	default:
+		cmpOp = "eq"
+	}
+
+	g.tmpIdx++
+	resultReg := fmt.Sprintf("%%strcmpres.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
+	}
+	return resultReg
+}
+
 func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.StructLiteral) string {
 	// struct literal: user { name: 'abc', age: 20 }
 	// 在 generateLet 中處理（varLLVMType 已回傳 struct type）
@@ -1309,6 +1619,14 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 		}
 	}
 
+	// 字串比較：使用 strcmp 直接回傳 i1
+	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+		switch expr.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return g.generateStringCmpI1(sb, expr)
+		}
+	}
+
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
 	g.tmpIdx++
@@ -1320,20 +1638,106 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 	case "!=":
 		cmpOp = "ne"
 	case "<":
-		cmpOp = "slt"
+		cmpOp = "olt"
 	case ">":
-		cmpOp = "sgt"
+		cmpOp = "ogt"
 	case "<=":
-		cmpOp = "sle"
+		cmpOp = "ole"
 	case ">=":
-		cmpOp = "sge"
+		cmpOp = "oge"
 	default:
 		return g.generateInfix(sb, expr) // fallback
 	}
+	// 浮點比較：使用 fcmp
+	if ft := g.floatLLVMType(expr.Left); ft != "" || g.floatLLVMType(expr.Right) != "" {
+		ft := "double"
+		if g.floatLLVMType(expr.Left) == "float" || g.floatLLVMType(expr.Right) == "float" {
+			ft = "float"
+		}
+		if g.floatLLVMType(expr.Left) == "double" || g.floatLLVMType(expr.Right) == "double" {
+			ft = "double"
+		}
+		lc := g.coerceToFloatReg(sb, left, expr.Left, ft)
+		rc := g.coerceToFloatReg(sb, right, expr.Right, ft)
+		// fcmp 的 eq/ne 不需要 o 前綴，但有也無妨
+		fcmpOp := cmpOp
+		if cmpOp == "eq" || cmpOp == "ne" {
+			// 保持 eq/ne
+		} else {
+			// olt/ogt/ole/oge 已是正確的 fcmp 操作
+		}
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = fcmp %s %s %s, %s\n", g.indent(), reg, fcmpOp, ft, lc, rc))
+		}
+		return reg
+	}
+	cmpType := g.arithLLVMType(expr.Left, expr.Right)
+	lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+	rc := g.coerceToInt(sb, right, expr.Right, cmpType)
+	// 整數比較的 icmp 操作名稱
+	intCmpOp := cmpOp
+	switch cmpOp {
+	case "olt":
+		intCmpOp = "slt"
+	case "ogt":
+		intCmpOp = "sgt"
+	case "ole":
+		intCmpOp = "sle"
+	case "oge":
+		intCmpOp = "sge"
+	}
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), reg, cmpOp, left, right))
+		sb.WriteString(fmt.Sprintf("%s%s = icmp %s %s %s, %s\n", g.indent(), reg, intCmpOp, cmpType, lc, rc))
 	}
 	return reg
+}
+
+// coerceToFloatReg 將 SSA 值或字面常量轉換為目標浮點型別（float/double）。
+// 這是 generateInfixI1 用的輔助函式，因為 generateInfix 中的 coerceToFloat 是閉包。
+func (g *Generator) coerceToFloatReg(sb *strings.Builder, v string, exprForType parser.Expression, targetType string) string {
+	if v == "" || targetType == "" {
+		return v
+	}
+	// 浮點字面常量（含 . 或 e/E）→ 保持原樣
+	if _, err := fmt.Sscanf(v, "%f", new(float64)); err == nil && strings.ContainsAny(v, ".eE") {
+		return v
+	}
+	// SSA 暫存器
+	if strings.HasPrefix(v, "%") {
+		srcType := g.floatLLVMType(exprForType)
+		if srcType == targetType {
+			return v
+		}
+		if srcType != "" {
+			if sb != nil {
+				g.tmpIdx++
+				cvtReg := fmt.Sprintf("%%fpcvt.%d", g.tmpIdx)
+				if targetType == "double" && srcType == "float" {
+					sb.WriteString(fmt.Sprintf("%s%s = fpext float %s to double\n", g.indent(), cvtReg, v))
+				} else if targetType == "float" && srcType == "double" {
+					sb.WriteString(fmt.Sprintf("%s%s = fptrunc double %s to float\n", g.indent(), cvtReg, v))
+				} else {
+					return v
+				}
+				return cvtReg
+			}
+			return v
+		}
+		// 整數 → 浮點
+		if sb != nil {
+			intType := g.intExprLLVMType(exprForType)
+			g.tmpIdx++
+			cvtReg := fmt.Sprintf("%%sitofp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
+			return cvtReg
+		}
+		return v
+	}
+	// 整數字面常量
+	if _, err := fmt.Sscanf(v, "%d", new(int64)); err == nil {
+		return v + ".0"
+	}
+	return v
 }
 
 func (g *Generator) generateArrayLiteral(sb *strings.Builder, arr *parser.ArrayLiteral) string {
@@ -1627,6 +2031,81 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
 
+	// coerceToFloat 將值轉換為目標浮點型別（"float" 或 "double"）。
+	// - 浮點字面常量保持原樣（LLVM 會在上下文中自動處理）
+	// - 已是目標型別的 SSA 暫存器保持原樣
+	// - 其他浮點 SSA 暫存器用 fpext/fptrunc 轉換
+	// - 整數 SSA 暫存器用 sitofp 轉換
+	// - 整數字面常量附加 ".0"
+	coerceToFloat := func(v string, exprForType parser.Expression, targetType string) string {
+		if v == "" || targetType == "" {
+			return v
+		}
+		// 浮點字面常量（含 . 或 e/E）→ 保持原樣
+		if _, err := fmt.Sscanf(v, "%f", new(float64)); err == nil && strings.ContainsAny(v, ".eE") {
+			return v
+		}
+		// SSA 暫存器（% 開頭）
+		if strings.HasPrefix(v, "%") {
+			srcType := g.floatLLVMType(exprForType)
+			if srcType == targetType {
+				return v
+			}
+			if srcType != "" {
+				// float ↔ double 轉換
+				if sb != nil {
+					g.tmpIdx++
+					cvtReg := fmt.Sprintf("%%fpcvt.%d", g.tmpIdx)
+					if targetType == "double" && srcType == "float" {
+						sb.WriteString(fmt.Sprintf("%s%s = fpext float %s to double\n", g.indent(), cvtReg, v))
+					} else if targetType == "float" && srcType == "double" {
+						sb.WriteString(fmt.Sprintf("%s%s = fptrunc double %s to float\n", g.indent(), cvtReg, v))
+					} else {
+						return v
+					}
+					return cvtReg
+				}
+				return v
+			}
+			// 整數 → 浮點
+			if sb != nil {
+				intType := g.intExprLLVMType(exprForType)
+				g.tmpIdx++
+				cvtReg := fmt.Sprintf("%%sitofp.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
+				return cvtReg
+			}
+			return v
+		}
+		// 整數字面常量
+		if _, err := fmt.Sscanf(v, "%d", new(int64)); err == nil {
+			return v + ".0"
+		}
+		return v
+	}
+
+	// floatArithType 回傳算術/比較運算的目標浮點型別。
+	// 當任一運算元為浮點時回傳較寬者；否則回傳 ""。
+	floatArithType := func(left, right parser.Expression) string {
+		lt := g.floatLLVMType(left)
+		rt := g.floatLLVMType(right)
+		if lt == "double" || rt == "double" {
+			return "double"
+		}
+		if lt == "float" || rt == "float" {
+			return "float"
+		}
+		return ""
+	}
+
+	// 字串比較：使用 strcmp 而非整數比較指令
+	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+		switch expr.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return g.generateStringCmp(sb, expr)
+		}
+	}
+
 	switch expr.Operator {
 	case "++":
 		if sb != nil {
@@ -1664,19 +2143,23 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			}
 			return g.generateStrConcat(sb, expr.Left, expr.Right)
 		}
-		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
-		if useDouble {
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			ld := coerceToFloat(left, expr.Left, ft)
+			rd := coerceToFloat(right, expr.Right, ft)
 			g.tmpIdx++
 			reg := fmt.Sprintf("%%fadd.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = fadd double %s, %s\n", g.indent(), reg, left, right))
+				sb.WriteString(fmt.Sprintf("%s%s = fadd %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
 			return reg
 		}
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%add.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = add %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "-":
@@ -1687,153 +2170,279 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			}
 			return g.generateStrConcat(sb, expr.Left, expr.Right)
 		}
-		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
-		if useDouble {
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			ld := coerceToFloat(left, expr.Left, ft)
+			rd := coerceToFloat(right, expr.Right, ft)
 			g.tmpIdx++
 			reg := fmt.Sprintf("%%fsub.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = fsub double %s, %s\n", g.indent(), reg, left, right))
+				sb.WriteString(fmt.Sprintf("%s%s = fsub %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
 			return reg
 		}
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%sub.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = sub %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "*":
-		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
-		if useDouble {
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			ld := coerceToFloat(left, expr.Left, ft)
+			rd := coerceToFloat(right, expr.Right, ft)
 			g.tmpIdx++
 			reg := fmt.Sprintf("%%fmul.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = fmul double %s, %s\n", g.indent(), reg, left, right))
+				sb.WriteString(fmt.Sprintf("%s%s = fmul %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
 			return reg
 		}
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%mul.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = mul %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "/":
-		useDouble := g.isDoubleExpr(expr.Left) || g.isDoubleExpr(expr.Right)
-		if useDouble {
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			ld := coerceToFloat(left, expr.Left, ft)
+			rd := coerceToFloat(right, expr.Right, ft)
 			g.tmpIdx++
 			reg := fmt.Sprintf("%%fdiv.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = fdiv double %s, %s\n", g.indent(), reg, left, right))
+				sb.WriteString(fmt.Sprintf("%s%s = fdiv %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
 			return reg
 		}
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%div.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sdiv i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = sdiv %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "%":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%mod.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = srem i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = srem %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "==":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%eq.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%eq.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp oeq %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%eq.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%eq.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case "!=":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%ne.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%ne.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp one %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%ne.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%ne.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case "<":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%lt.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%lt.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp olt %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%lt.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%lt.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case ">":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%gt.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%gt.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp ogt %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%gt.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%gt.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case "<=":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%le.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%le.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp ole %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%le.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%le.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp sle i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sle %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case ">=":
+		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
+			lc := coerceToFloat(left, expr.Left, ft)
+			rc := coerceToFloat(right, expr.Right, ft)
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%ge.cmp.%d", g.tmpIdx)
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%ge.ext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = fcmp oge %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+			}
+			return extReg
+		}
+		cmpType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
+		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%ge.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%ge.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i64 %s, %s\n", g.indent(), cmpReg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
 	case "|":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%or.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = or %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "&":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%and.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = and %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "^":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%xor.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = xor i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case "<<":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%shl.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = shl %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	case ">>":
+		arithType := g.arithLLVMType(expr.Left, expr.Right)
+		lc := g.coerceToInt(sb, left, expr.Left, arithType)
+		rc := g.coerceToInt(sb, right, expr.Right, arithType)
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%shr.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = lshr i64 %s, %s\n", g.indent(), reg, left, right))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
 		return reg
 	default:

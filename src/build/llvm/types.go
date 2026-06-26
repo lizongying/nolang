@@ -27,6 +27,13 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		}
 	}
 
+	// Check if it's a known struct type
+	if g.structTypes != nil {
+		if _, ok := g.structTypes[nolangType]; ok {
+			return "%" + nolangType
+		}
+	}
+
 	switch nolangType {
 	case "i8":
 		return "i8"
@@ -63,4 +70,28 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 	default:
 		return "i64"
 	}
+}
+
+// sanitizeLLVMName 將函式名稱中的非法字元替換為合法字元。
+// LLVM IR 識別碼只允許字母、數字、_、.、-、$，不允許 [ ] ( ) 等。
+// 例如 "[]ord.ast" → "_LB__RB_ord.ast"，"[n]ord.ast" → "_LB_n_RB_ord.ast"
+func sanitizeLLVMName(name string) string {
+	var sb strings.Builder
+	for _, r := range name {
+		switch r {
+		case '[':
+			sb.WriteString("_LB_")
+		case ']':
+			sb.WriteString("_RB_")
+		case '(':
+			sb.WriteString("_LP_")
+		case ')':
+			sb.WriteString("_RP_")
+		case ' ':
+			sb.WriteString("_SP_")
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }

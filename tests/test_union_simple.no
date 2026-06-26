@@ -1,0 +1,12 @@
+# std/number
+
+r = 0
+
+pow(2, 10, r)
+println-i64(r)
+
+abs(-42, r)
+println-i64(r)
+
+max(10, 20, r)
+println-i64(r)
