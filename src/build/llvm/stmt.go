@@ -74,6 +74,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if len(fd.Results) > 1 && r.Name != "" {
 			g.paramNames[r.Name] = true
 			g.funcLocalNames[r.Name] = true
+			g.varTypes[r.Name] = g.mapToLLVMType(r.Type.String())
 		}
 	}
 

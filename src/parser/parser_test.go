@@ -149,23 +149,23 @@ func TestVarDecl(t *testing.T) {
 		wantType string // "" = no explicit type annotation
 		wantErr  bool
 	}{
-		// Inferred types (README 36-41): Type is set to variable name when no explicit annotation
-		{name: "infer_i64", input: "x = 1", wantName: "x", wantType: "x"},
-		{name: "infer_f64", input: "y = 1.0", wantName: "y", wantType: "y"},
-		{name: "infer_str", input: "name = 'hello'", wantName: "name", wantType: "name"},
-		{name: "infer_bool", input: "flag = true", wantName: "flag", wantType: "flag"},
-		{name: "reassign_str", input: "name = 'World'", wantName: "name", wantType: "name"},
+		// Inferred types (README 36-41): Type is inferred from value expression
+		{name: "infer_i64", input: "x = 1", wantName: "x", wantType: "i64"},
+		{name: "infer_f64", input: "y = 1.0", wantName: "y", wantType: "f64"},
+		{name: "infer_str", input: "name = 'hello'", wantName: "name", wantType: "str"},
+		{name: "infer_bool", input: "flag = true", wantName: "flag", wantType: "bool"},
+		{name: "reassign_str", input: "name = 'World'", wantName: "name", wantType: "str"},
 		// String concatenation with - (README 42)
-		{name: "str_concat", input: "greeting = 'Hello, ' - name", wantName: "greeting", wantType: "greeting"},
+		{name: "str_concat", input: "greeting = 'Hello, ' - name", wantName: "greeting", wantType: ""},
 		// Explicit type annotations (README 44-47)
 		{name: "explicit_i8", input: "a i8 = 2", wantName: "a", wantType: "i8"},
 		{name: "explicit_char", input: "c char = 中", wantName: "c", wantType: "char"},
-		{name: "infer_byte", input: "b = x00", wantName: "b", wantType: "b"},
+		{name: "infer_byte", input: "b = x00", wantName: "b", wantType: ""},
 		// Variable name is type name, type auto-inferred (README 50)
 		{name: "type_as_name", input: "i8 = 3", wantName: "i8", wantType: "i8"},
 		// Hyphenated variable names (README 52-54)
-		{name: "hyphen_int", input: "foo-bar = 42", wantName: "foo-bar", wantType: "foo-bar"},
-		{name: "hyphen_str", input: "hello-world = 'Hello World'", wantName: "hello-world", wantType: "hello-world"},
+		{name: "hyphen_int", input: "foo-bar = 42", wantName: "foo-bar", wantType: "i64"},
+		{name: "hyphen_str", input: "hello-world = 'Hello World'", wantName: "hello-world", wantType: "str"},
 		// Full program combining multiple declarations
 		{name: "readme_full_program", input: `x = 1
 y = 1.0
@@ -212,11 +212,15 @@ hello-world = 'Hello World'`, wantName: "", wantType: ""},
 				if letStmt.Name.Value != tt.wantName {
 					t.Errorf("expected name %q, got %q", tt.wantName, letStmt.Name.Value)
 				}
-				if letStmt.Type == nil {
-					t.Fatalf("expected type %q, got nil", tt.wantType)
-				}
-				if letStmt.Type.String() != tt.wantType {
-					t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
+				if tt.wantType != "" {
+					if letStmt.Type == nil {
+						t.Fatalf("expected type %q, got nil", tt.wantType)
+					}
+					if letStmt.Type.String() != tt.wantType {
+						t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
+					}
+				} else if letStmt.Type != nil {
+					t.Errorf("expected no explicit type, got %q", letStmt.Type.String())
 				}
 				if letStmt.Value == nil {
 					t.Errorf("expected value, got nil")

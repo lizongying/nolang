@@ -1749,7 +1749,7 @@ func (p *Parser) parseLetStatement() Statement {
 	// 如果當前已經是 =，則 peek 的 IDENT 是值（表達式）而不是型別
 	// 例如: a = bigint{}  -> 這裡 bigint 是結構體字面量的型別名，不是型別註記
 	// 而: a bigint       -> 這裡 bigint 是型別註記
-	if typeToken.Type == lexer.IDENT && stmt.Type == nil && p.currentToken.Type != lexer.ASSIGN {
+	if typeToken.Type == lexer.IDENT && stmt.Type == nil && p.peekToken.Type != lexer.ASSIGN {
 		typeName := typeToken.Literal
 		if letIsOption {
 			typeName = "?" + typeName

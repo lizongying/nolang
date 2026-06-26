@@ -1,0 +1,72 @@
+// test_number_nan_inf.no — 測試 float.is-nan 和 float.is-inf
+
+# std/number
+
+test-nan-inf = () {
+    // 正常數值
+    a = 1.0
+    yes = 0
+    a.is-nan(yes)
+    if yes {
+        println-i64(1)  // expect: 0 (not printed)
+    } else {
+        println-i64(0)  // expect: 0
+    }
+
+    a.is-inf(yes)
+    if yes {
+        println-i64(1)  // expect: 0 (not printed)
+    } else {
+        println-i64(0)  // expect: 0
+    }
+
+    // NaN = 0.0 / 0.0
+    b = 0.0 / 0.0
+    b.is-nan(yes)
+    if yes {
+        println-i64(1)  // expect: 1
+    } else {
+        println-i64(0)  // expect: 0 (not printed)
+    }
+
+    b.is-inf(yes)
+    if yes {
+        println-i64(1)  // expect: 0 (not printed)
+    } else {
+        println-i64(0)  // expect: 0
+    }
+
+    // +Inf = 1.0 / 0.0
+    c = 1.0 / 0.0
+    c.is-nan(yes)
+    if yes {
+        println-i64(1)  // expect: 0 (not printed)
+    } else {
+        println-i64(0)  // expect: 0
+    }
+
+    c.is-inf(yes)
+    if yes {
+        println-i64(1)  // expect: 1
+    } else {
+        println-i64(0)  // expect: 0 (not printed)
+    }
+
+    // -Inf = -1.0 / 0.0
+    d = -1.0 / 0.0
+    d.is-nan(yes)
+    if yes {
+        println-i64(1)  // expect: 0 (not printed)
+    } else {
+        println-i64(0)  // expect: 0
+    }
+
+    d.is-inf(yes)
+    if yes {
+        println-i64(1)  // expect: 1
+    } else {
+        println-i64(0)  // expect: 0 (not printed)
+    }
+}
+
+test-nan-inf()

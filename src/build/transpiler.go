@@ -520,6 +520,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
+			} else if ls.Value != nil {
+				if t := inferTypeFromExpr(ls.Value); t != "" {
+					varTypes[ls.Name.Value] = t
+				}
 			}
 		}
 		// Also collect variable types from function bodies
@@ -759,7 +763,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	monomorphizeUnions(merged)
 
 	// 重寫對聯合型別泛型函數的呼叫：將 max(args) 改為 max__i64(args)
-	rewriteUnionCalls(merged)
+	rewriteUnionCalls(merged, varTypes)
 
 	// 在合併所有 std 模組後再做一次名稱修飾，
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
@@ -943,7 +947,7 @@ func monomorphizeUnions(program *parser.Program) {
 // 在 monomorphizeUnions 之後，原函數被改名為 "<name>__<union>_TEMPLATE"，
 // 具體版本為 "<name>__<memberType>"。此函數遍歷所有呼叫點，
 // 根據引數型別推斷應使用的具體版本，並將呼叫名改寫為 "<name>__<memberType>"。
-func rewriteUnionCalls(program *parser.Program) {
+func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 	// 收集所有模板函數：原名 → templateInfo
 	// 模板名格式：<origName>__<unionName>_TEMPLATE
 	templates := make(map[string]*unionTemplateInfo)
@@ -986,44 +990,44 @@ func rewriteUnionCalls(program *parser.Program) {
 	}
 
 	// 遍歷所有語句，重寫呼叫
-	var walk func(stmts []parser.Statement)
-	walk = func(stmts []parser.Statement) {
+	var walk func(stmts []parser.Statement, vt map[string]string)
+	walk = func(stmts []parser.Statement, vt map[string]string) {
 		for _, stmt := range stmts {
 			switch s := stmt.(type) {
 			case *parser.ExpressionStatement:
-				rewriteUnionCallExpr(s.Expression, templates)
+				rewriteUnionCallExpr(s.Expression, templates, vt)
 			case *parser.LetStatement:
 				if s.Value != nil {
-					rewriteUnionCallExpr(s.Value, templates)
+					rewriteUnionCallExpr(s.Value, templates, vt)
 				}
 			case *parser.FunctionDefinition:
 				if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 					fmt.Fprintf(os.Stderr, "[union-debug] walk FunctionDefinition: %s, body=%d stmts\n", s.Name, len(s.Body.Statements))
 				}
 				if s.Body != nil {
-					walk(s.Body.Statements)
+					walk(s.Body.Statements, vt)
 				}
 			case *parser.BlockStatement:
-				walk(s.Statements)
+				walk(s.Statements, vt)
 			case *parser.ForStatement:
 				if s.Condition != nil {
-					rewriteUnionCallExpr(s.Condition, templates)
+					rewriteUnionCallExpr(s.Condition, templates, vt)
 				}
 				if s.Body != nil {
-					walk(s.Body.Statements)
+					walk(s.Body.Statements, vt)
 				}
 			case *parser.MultiAssignStatement:
 				if s.Value != nil {
-					rewriteUnionCallExpr(s.Value, templates)
+					rewriteUnionCallExpr(s.Value, templates, vt)
 				}
 			case *parser.ReturnStatement:
 				if s.ReturnValue != nil {
-					rewriteUnionCallExpr(s.ReturnValue, templates)
+					rewriteUnionCallExpr(s.ReturnValue, templates, vt)
 				}
 			}
 		}
 	}
-	walk(program.Statements)
+	walk(program.Statements, varTypes)
 }
 
 // unionTemplateInfo 記錄聯合型別模板函數的資訊
@@ -1034,7 +1038,7 @@ type unionTemplateInfo struct {
 }
 
 // rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
-func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo) {
+func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string) {
 	if expr == nil {
 		return
 	}
@@ -1042,17 +1046,17 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 	case *parser.CallExpression:
 		// 先遞迴處理引數中的呼叫
 		for _, arg := range e.Arguments {
-			rewriteUnionCallExpr(arg, templates)
+			rewriteUnionCallExpr(arg, templates, varTypes)
 		}
 		// 處理 curried 呼叫：(innerCall)(args)
 		if _, ok := e.Function.(*parser.CallExpression); ok {
-			rewriteUnionCallExpr(e.Function, templates)
+			rewriteUnionCallExpr(e.Function, templates, varTypes)
 			return
 		}
 		// 檢查是否為聯合型別泛型呼叫
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if tpl, exists := templates[ident.Value]; exists {
-				memberType := inferArgMemberType(e, tpl)
+				memberType := inferArgMemberType(e, tpl, varTypes)
 				if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 					fmt.Fprintf(os.Stderr, "[union-debug] rewrite call %s: memberType=%s\n", ident.Value, memberType)
 				}
@@ -1065,59 +1069,89 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 			}
 		}
 	case *parser.InfixExpression:
-		rewriteUnionCallExpr(e.Left, templates)
-		rewriteUnionCallExpr(e.Right, templates)
+		rewriteUnionCallExpr(e.Left, templates, varTypes)
+		rewriteUnionCallExpr(e.Right, templates, varTypes)
 	case *parser.PrefixExpression:
-		rewriteUnionCallExpr(e.Right, templates)
+		rewriteUnionCallExpr(e.Right, templates, varTypes)
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			rewriteUnionCallExpr(e.Condition, templates)
+			rewriteUnionCallExpr(e.Condition, templates, varTypes)
 		}
 		if e.Consequence != nil {
 			for _, s := range e.Consequence.Statements {
 				if es, ok := s.(*parser.ExpressionStatement); ok {
-					rewriteUnionCallExpr(es.Expression, templates)
+					rewriteUnionCallExpr(es.Expression, templates, varTypes)
 				}
 			}
 		}
 		if e.Alternative != nil {
 			for _, s := range e.Alternative.Statements {
 				if es, ok := s.(*parser.ExpressionStatement); ok {
-					rewriteUnionCallExpr(es.Expression, templates)
+					rewriteUnionCallExpr(es.Expression, templates, varTypes)
 				}
 			}
 		}
 	case *parser.AssignExpression:
-		rewriteUnionCallExpr(e.Value, templates)
+		rewriteUnionCallExpr(e.Value, templates, varTypes)
 	}
 }
 
 // inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別
-func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo) string {
+func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, varTypes map[string]string) string {
 	if len(call.Arguments) == 0 {
 		return ""
 	}
 	// 對於 variadic 函數（..num），使用第一個引數的型別
 	// 對於非 variadic 函數（abs(a num)），也使用第一個引數的型別
 	firstArg := call.Arguments[0]
-	return inferExprMemberType(firstArg)
+	return inferExprMemberType(firstArg, varTypes)
 }
 
 // inferExprMemberType 從表達式推斷聯合成員型別
-func inferExprMemberType(expr parser.Expression) string {
+func inferExprMemberType(expr parser.Expression, varTypes map[string]string) string {
 	switch v := expr.(type) {
 	case *parser.IntegerLiteral:
 		return "i64" // 整數字面常量預設為 i64
 	case *parser.FloatLiteral:
 		return "f64"
 	case *parser.Identifier:
+		// Look up the variable's actual type, default to i64
+		if varTypes != nil {
+			if t, ok := varTypes[v.Value]; ok {
+				return t
+			}
+		}
 		return "i64"
 	case *parser.PrefixExpression:
-		return inferExprMemberType(v.Right)
+		return inferExprMemberType(v.Right, varTypes)
 	case *parser.GroupedExpression:
-		return inferExprMemberType(v.Expression)
+		return inferExprMemberType(v.Expression, varTypes)
 	}
 	return "i64"
+}
+
+// inferTypeFromExpr 嘗試從值表達式推斷變數型別。無法推斷時返回空白字串。
+func inferTypeFromExpr(expr parser.Expression) string {
+	switch e := expr.(type) {
+	case *parser.IntegerLiteral:
+		return "i64"
+	case *parser.FloatLiteral:
+		return "f64"
+	case *parser.StringLiteral:
+		return "str"
+	case *parser.PrefixExpression:
+		if e.Operator == "-" || e.Operator == "+" {
+			return inferTypeFromExpr(e.Right)
+		}
+	case *parser.InfixExpression:
+		if t := inferTypeFromExpr(e.Left); t != "" {
+			return t
+		}
+		return inferTypeFromExpr(e.Right)
+	case *parser.GroupedExpression:
+		return inferTypeFromExpr(e.Expression)
+	}
+	return ""
 }
 
 // isValidType 檢查是否為有效的 Nolang 型別名
@@ -1342,7 +1376,7 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 
 	// Method call: receiver.method(args)
 	if dot, ok := ce.Function.(*parser.DotExpression); ok {
-		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts)
+		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program)
 	}
 
 	// Recurse into arguments
@@ -1357,7 +1391,7 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	genericFns map[string]*parser.FunctionDefinition, varTypes map[string]string,
-	newStmts *[]parser.Statement) bool {
+	newStmts *[]parser.Statement, program *parser.Program) bool {
 
 	// Get receiver variable name and type
 	recvIdent, ok := dot.Receiver.(*parser.Identifier)
@@ -1410,6 +1444,27 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// Try non-generic method: type.method already exists
 	// Rewrite to direct call with receiver prepended
 	concreteName := recvType + "." + methodName
+
+	// Check if recvType is a member of a union type alias
+	// If so, use the union alias prefix instead of the concrete type
+	if program != nil {
+		for _, stmt := range program.Statements {
+			ta, ok := stmt.(*parser.TypeAlias)
+			if !ok || ta.Union == nil {
+				continue
+			}
+			for _, member := range ta.Union.Types {
+				if nt, ok := member.(*parser.NamedType); ok && nt.Value == recvType {
+					concreteName = ta.Name + "." + methodName
+					break
+				}
+			}
+			if concreteName != recvType+"."+methodName {
+				break
+			}
+		}
+	}
+
 	ce.Function = &parser.Identifier{
 		Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
 		Value: concreteName,
@@ -1853,6 +1908,10 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
+			} else if ls.Value != nil {
+				if t := inferTypeFromExpr(ls.Value); t != "" {
+					varTypes[ls.Name.Value] = t
+				}
 			}
 		}
 		if bs, ok := stmt.(*parser.BlockStatement); ok {

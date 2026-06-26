@@ -52,6 +52,7 @@ type Generator struct {
 	ssaTypes        map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
 	blockTerminated bool                     // true if current basic block ends with a terminator (ret/br)
 	funcLocalNames  map[string]bool          // local variable names in current function (params + allocas)
+	unionAliases    map[string][]string      // union type alias name → member type names (e.g. "float"→["f32","f64"])
 }
 
 func NewGenerator() *Generator {
@@ -149,6 +150,20 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
 	g.ssaTypes = make(map[string]string)
+	g.unionAliases = make(map[string][]string)
+
+	// 收集聯合型別別名，用於解析 receiver method call
+	for _, stmt := range program.Statements {
+		if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Union != nil {
+			members := make([]string, 0, len(ta.Union.Types))
+			for _, m := range ta.Union.Types {
+				if nt, ok := m.(*parser.NamedType); ok {
+					members = append(members, nt.Value)
+				}
+			}
+			g.unionAliases[ta.Name] = members
+		}
+	}
 
 	var sb strings.Builder
 

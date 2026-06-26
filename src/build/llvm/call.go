@@ -381,6 +381,47 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return "0"
 	}
 
+	// For DotExpression-based receiver calls (e.g. a.is-inf), try to resolve
+	// as a union type method call. The receiver variable's type is looked up
+	// in g.varTypes and matched against union type aliases.
+	// If resolution succeeds, track the receiver so it can be passed as self.
+	var methodReceiver parser.Expression = nil
+	if dot, ok := expr.Function.(*parser.DotExpression); ok {
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
+				// Map LLVM type name back to source type name
+				srcType := recvType
+				if srcType == "double" {
+					srcType = "f64"
+				} else if srcType == "float" {
+					srcType = "f32"
+				}
+				for aliasName, members := range g.unionAliases {
+					for _, m := range members {
+						if m == srcType {
+							// Try monomorphized name first: unionAlias.methodName__memberType
+							monoName := aliasName + "." + dot.Property + "__" + srcType
+							if _, exists := g.funcRetTypes[monoName]; exists {
+								fnName = monoName
+							} else {
+								// Try non-monomorphized name: unionAlias.methodName
+								unionName := aliasName + "." + dot.Property
+								if _, exists := g.funcRetTypes[unionName]; exists {
+									fnName = unionName
+								}
+							}
+							break
+						}
+					}
+					if fnName != recv.Value+"."+dot.Property {
+						methodReceiver = recv
+						break
+					}
+				}
+			}
+		}
+	}
+
 	// Default: call @funcName(args) — 引用傳遞模式
 	// 每個參數傳遞指標（不 eval，避免輸出參數產生多餘 load）
 	retType := "void"
@@ -433,6 +474,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	} else {
 		nonVariadicArgs = inputArgs
+	}
+
+	// For resolved DotExpression method calls (union alias resolution),
+	// prepend the receiver variable as the self parameter.
+	if methodReceiver != nil {
+		nonVariadicArgs = append([]parser.Expression{methodReceiver}, nonVariadicArgs...)
 	}
 
 	// genTypedArg generates a typed pointer argument for a single expression

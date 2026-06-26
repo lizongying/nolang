@@ -42,17 +42,13 @@ abs = (a num) (r num) {
 }
 
 // clamp: 限制在 [lo, hi] 範圍內
-clamp = (v t, lo t, hi t) (r t) {
-    dv = v - lo
-    if dv < 0 {
+num.clamp = (v num, lo num, hi num) (r num) {
+    if . < lo {
         r = lo
-        return
-    }
-    dv2 = v - hi
-    if dv2 > 0 {
+    } elif . > hi {
         r = hi
     } else {
-        r = v
+        r = .
     }
 }
 
@@ -166,20 +162,14 @@ i64-to-str = (a i64) (out str) {
     }
 }
 
-// div-mod: 商與餘數
-div-mod = (a i64, b i64) (q i64, r i64) {
+// div: 商
+div = (a num, b num) (q num) {
     q = a / b
-    r = a % b
 }
 
-// between: 判斷值是否在 [lo, hi] 範圍內
-between = (v t, lo t, hi t) (yes i64) {
-    yes = 0
-    d-lo = v - lo
-    d-hi = v - hi
-    if d-lo >= 0 && d-hi <= 0 {
-        yes = 1
-    }
+// mod: 餘數
+mod = (a int, b int) (r int) {
+    r = a % b
 }
 
 // swap: 交換兩個值
@@ -188,13 +178,13 @@ swap = (a t, b t) {
     a = b
     b = tmp
 }
+
 // is-nan: 判斷是否為 NaN
-// build-in (LLVMIntrinsic: llvm.isnan.f64)
-// is-nan = (a f64) (yes i64) {
-//     // LLVM: call i1 @llvm.isnan.f64(a) → zext
-// }
+float.is-nan = () (yes bool) {
+    yes = . != .
+}
+
 // is-inf: 判斷是否為無窮大
-// build-in (LLVMIntrinsic: llvm.isinf.f64)
-// is-inf = (a f64) (yes i64) {
-//     // LLVM: call i1 @llvm.isinf.f64(a) → zext
-// }
+float.is-inf = () (yes bool) {
+    yes = . + . == .
+}

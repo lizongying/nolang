@@ -485,6 +485,30 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+	case *parser.DotExpression:
+		if g.structTypes != nil {
+			varName := ""
+			if ident, ok := v.Receiver.(*parser.Identifier); ok {
+				varName = ident.Value
+			}
+			fieldName := v.Property
+			structName := ""
+			if t, ok := g.varTypes[varName]; ok {
+				structName = strings.TrimPrefix(t, "%")
+			}
+			if fields, ok := g.structTypes[structName]; ok {
+				for _, f := range fields {
+					if f.name == fieldName {
+						switch f.typ {
+						case "float":
+							return "float"
+						case "double":
+							return "double"
+						}
+					}
+				}
+			}
+		}
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			m := builtin.FindBuiltinMethod(ident.Value)
@@ -638,9 +662,11 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 
 	if fields, ok := g.structTypes[structName]; ok {
 		fieldIdx := -1
+		var fieldType string
 		for i, f := range fields {
 			if f.name == fieldName {
 				fieldIdx = i
+				fieldType = f.typ
 				break
 			}
 		}
@@ -648,7 +674,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 			structTy := "%" + structName
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
 				g.indent(), reg, structTy, structTy, varName, fieldIdx))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), loadReg, reg))
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, reg))
 			return loadReg
 		}
 	}
@@ -956,9 +982,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 
 		if fields, ok := g.structTypes[structName]; ok {
 			fieldIdx := -1
+			var fieldType string
 			for i, f := range fields {
 				if f.name == fieldName {
 					fieldIdx = i
+					fieldType = f.typ
 					break
 				}
 			}
@@ -966,7 +994,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				structTy := "%" + structName
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
 					g.indent(), reg, structTy, structTy, varName, fieldIdx))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), val, reg))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, val, fieldType, reg))
 			}
 		}
 		return "0"
