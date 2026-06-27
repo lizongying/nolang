@@ -1,84 +1,90 @@
 // heap — 二元堆積 / 優先權佇列
 //
 // 實作最小堆積（Min-Heap），以小根堆方式儲存 i64 整數。
-// 使用 []i64 作為底層儲存，索引 0 為最小值。
 //
 // 用法：
 //   use std/heap
 //   data [128]i64 = [0:128]
-//   n = 0
-//   n = heap.push(data, n, 42)   // 推入 42
-//   n = heap.push(data, n, 7)    // 推入 7
-//   val, n = heap.pop(data, n)   // 彈出 7（最小值）
+//   h = heap-init(data)
+//   h.push(42)
+//   h.push(7)
+//   val, ok = h.pop()
+
+// heap: 二元堆積
+heap {
+    data []i64
+    n i64
+}
+
+// init: 建立堆積
+heap.init = (data []i64) (h heap) {
+    h.data = data
+    h.n = 0
+}
 
 // push: 向堆積推入一個元素
-// 返回新的堆積大小
-push = (h []i64, n i64, val i64) (new-n i64) {
-    h[n] = val
-    new-n = n + 1
-    i = new-n - 1
+heap.push = (val i64) {
+    .data[.n] = val
+    .n = .n + 1
+    i = .n - 1
     for i > 0 {
         parent = (i - 1) / 2
-        if h[i] >= h[parent] {
+        if .data[i] >= .data[parent] {
             break
         }
-        tmp = h[i]
-        h[i] = h[parent]
-        h[parent] = tmp
+        tmp = .data[i]
+        .data[i] = .data[parent]
+        .data[parent] = tmp
         i = parent
     }
 }
 
 // pop: 從堆積彈出最小元素
-// 返回 val=元素值, new-n=新大小
-pop = (h []i64, n i64) (val i64, new-n i64) {
-    if n == 0 {
-        val = 0
-        new-n = 0
+// 返回 val=元素值, ok=true=堆積非空
+heap.pop = () (val i64, ok bool) {
+    if .n == 0 {
         return
     }
-    val = h[0]
-    new-n = n - 1
-    h[0] = h[new-n]
+    val = .data[0]
+    ok = true
+    .n = .n - 1
+    .data[0] = .data[.n]
     i = 0
     for true {
         smallest = i
         left = 2 * i + 1
         right = 2 * i + 2
-        if left < new-n && h[left] < h[smallest] {
+        if left < .n && .data[left] < .data[smallest] {
             smallest = left
         }
-        if right < new-n && h[right] < h[smallest] {
+        if right < .n && .data[right] < .data[smallest] {
             smallest = right
         }
         if smallest == i {
             break
         }
-        tmp = h[i]
-        h[i] = h[smallest]
-        h[smallest] = tmp
+        tmp = .data[i]
+        .data[i] = .data[smallest]
+        .data[smallest] = tmp
         i = smallest
     }
 }
 
 // peek: 查看最小元素（不移除）
-// 返回 val=元素值, ok=true=堆積非空
-peek = (h []i64, n i64) (val i64, ok bool) {
-    if n == 0 {
-        ok = false
+heap.peek = () (val i64, ok bool) {
+    if .n == 0 {
         return
     }
-    val = h[0]
+    val = .data[0]
     ok = true
 }
 
 // size: 返回堆積大小
-size = (h []i64, n i64) (sz i64) {
-    sz = n
+heap.size = () (sz i64) {
+    sz = .n
 }
 
 // empty: 判斷堆積是否為空
-// 返回 true=空, false=非空
-empty = (h []i64, n i64) (yes bool) {
-    yes = n == 0
+heap.empty = () (yes bool) {
+    yes = .n == 0
 }

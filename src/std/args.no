@@ -27,30 +27,30 @@ program = () (name str) {
 // ═══════════════════════════════════════════════
 
 // has-flag: 判斷標記是否存在（如 --verbose, -v）
-has-flag = (flag str, flagn i64) (yes i64) {
-    yes = 0
+has-flag = (flag str, flagn i64) (yes bool) {
+    yes = false
     n = count()
     i = 1
     for i < n {
         arg = get(i)
 
         // 精確比對 arg 與 flag
-        matched = 1
+        matched = true
         if flagn == 0 {
-            matched = 0
+            matched = false
         }
         j = 0
         for j < flagn {
             ac = arg[j] & 255
             fc = flag[j] & 255
             if ac != fc {
-                matched = 0
+                matched = false
                 break
             }
             j = j + 1
         }
-        if matched == 1 {
-            yes = 1
+        if matched == true {
+            yes = true
             return
         }
         i = i + 1

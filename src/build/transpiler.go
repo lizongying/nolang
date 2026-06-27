@@ -2421,10 +2421,16 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		return validateExprArrayBounds(s.Expression, arraySizes, sliceSizes, stringSizes, varTypes)
 	case *parser.LetStatement:
 		if s.Value != nil {
-			// Check type mismatch for string variables
-			if _, exists := stringSizes[s.Name.Value]; exists {
-				if !isStringExpr(s.Value, stringSizes) {
-					return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
+			// Skip string type check for array/slice variables
+			isArrayVar := false
+			if at, ok := s.Type.(*parser.ArrayType); ok {
+				isArrayVar = at != nil
+			}
+			if !isArrayVar {
+				if _, exists := stringSizes[s.Name.Value]; exists {
+					if !isStringExpr(s.Value, stringSizes) {
+						return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
+					}
 				}
 			}
 			return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)

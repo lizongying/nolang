@@ -2288,6 +2288,13 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return reg
 	case "*":
+		// String repetition: 'str' * n
+		if g.isStringExpr(expr.Left) {
+			if sb == nil {
+				return "%strrepeat.null"
+			}
+			return g.generateStrRepeat(sb, expr.Left, expr.Right)
+		}
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
@@ -2570,7 +2577,7 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 			}
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" || e.Operator == "+" {
+		if e.Operator == "-" || e.Operator == "+" || e.Operator == "*" {
 			return g.isStringExpr(e.Left) || g.isStringExpr(e.Right)
 		}
 	}
@@ -2643,7 +2650,11 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		}
 		return "0"
 	case *parser.InfixExpression:
-		if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+		if (a.Operator == "-" || a.Operator == "+" || a.Operator == "*") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
+			if a.Operator == "*" {
+				ptr := g.generateStrRepeat(sb, a.Left, a.Right)
+				return g.extractStrLen(sb, ptr)
+			}
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
 			return g.extractStrLen(sb, ptr)
 		}
@@ -2702,6 +2713,106 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 
 	g.tmpIdx++
 	dataGEP := fmt.Sprintf("%%concat.data.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
+
+	return resultAlloca
+}
+
+// generateStrRepeat generates LLVM IR for string repetition using `*` operator.
+// Example: 'Hello' * 3 → 'HelloHelloHello'
+func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr parser.Expression) string {
+	if sb == nil {
+		return "%strrepeat.null"
+	}
+
+	// Get string pointer and length
+	strPtr := g.getStrPtr(sb, strExpr)
+	strLen := g.extractLenFromExpr(sb, strExpr, strPtr)
+	strData := g.extractDataFromExpr(sb, strExpr, strPtr)
+
+	// Get count (right operand should be an integer)
+	countReg := g.generateExprWithSB(sb, countExpr)
+
+	// Calculate total length = strLen * count
+	g.tmpIdx++
+	totalLen := fmt.Sprintf("%%repeat.total.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), totalLen, strLen, countReg))
+
+	// Allocate memory for result (totalLen + 1 for null terminator)
+	g.tmpIdx++
+	allocSize := fmt.Sprintf("%%repeat.alloc.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), allocSize, totalLen))
+
+	g.tmpIdx++
+	bufPtr := fmt.Sprintf("%%repeat.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
+
+	// Loop to copy string data count times
+	// We'll use a simple loop: for i in 0..count, memcpy(strData, buf + i*strLen, strLen)
+	g.tmpIdx++
+	loopStart := fmt.Sprintf("%%repeat.loop.start.%d", g.tmpIdx)
+	loopBody := fmt.Sprintf("%%repeat.loop.body.%d", g.tmpIdx)
+	loopEnd := fmt.Sprintf("%%repeat.loop.end.%d", g.tmpIdx)
+
+	// Initialize counter i = 0
+	g.tmpIdx++
+	iReg := fmt.Sprintf("%%repeat.i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iReg))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iReg))
+
+	// Jump to loop start
+	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+
+	// Loop start: check if i < count
+	sb.WriteString(fmt.Sprintf("%s:\n", loopStart))
+	g.tmpIdx++
+	iVal := fmt.Sprintf("%%repeat.i.val.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iReg))
+	g.tmpIdx++
+	cmp := fmt.Sprintf("%%repeat.cmp.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmp, iVal, countReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), cmp, loopBody, loopEnd))
+
+	// Loop body: copy string data to buf + i*strLen
+	sb.WriteString(fmt.Sprintf("%s:\n", loopBody))
+	g.tmpIdx++
+	offset := fmt.Sprintf("%%repeat.offset.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), offset, iVal, strLen))
+	g.tmpIdx++
+	dstPtr := fmt.Sprintf("%%repeat.dst.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), dstPtr, bufPtr, offset))
+	sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n",
+		g.indent(), dstPtr, strData, strLen))
+
+	// Increment i
+	g.tmpIdx++
+	iNext := fmt.Sprintf("%%repeat.i.next.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iReg))
+	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+
+	// Loop end
+	sb.WriteString(fmt.Sprintf("%s:\n", loopEnd))
+
+	// Add null terminator at buf[totalLen]
+	g.tmpIdx++
+	nullPos := fmt.Sprintf("%%repeat.null.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
+	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
+
+	// Create result %str
+	g.tmpIdx++
+	resultAlloca := fmt.Sprintf("%%repeat.result.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), resultAlloca))
+
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%repeat.len.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
+
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%repeat.data.gep.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
 

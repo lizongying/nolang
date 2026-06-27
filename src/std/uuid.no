@@ -285,12 +285,12 @@ uuid.variant = () (v i64) {
 }
 
 // is-nil: 判斷是否為空 UUID（全零）
-uuid.is-nil = () (yes i64) {
-    yes = 1
+uuid.is-nil = () (yes bool) {
+    yes = true
     i = 0
     for i < 16 {
         if .bytes[i] != 0 {
-            yes = 0
+            yes = false
             return
         }
         i = i + 1
@@ -302,12 +302,12 @@ uuid.is-nil = () (yes i64) {
 // ═══════════════════════════════════════════════
 
 // eq: 判斷兩個 UUID 是否相等
-uuid.eq = (b uuid) (yes i64) {
-    yes = 1
+uuid.eq = (b uuid) (yes bool) {
+    yes = true
     i = 0
     for i < 16 {
         if .bytes[i] != b.bytes[i] {
-            yes = 0
+            yes = false
             return
         }
         i = i + 1

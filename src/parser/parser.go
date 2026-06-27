@@ -1833,7 +1833,7 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 	}
 
-	// char 类型：将裸字符 Identifier 转换为 CharLiteral
+	// char 类型：将裸字符 Identifier 或单字符 StringLiteral 转换为 CharLiteral
 	if stmt.Type != nil {
 		typeStr := typeString(stmt.Type)
 		if typeStr == "char" {
@@ -1841,6 +1841,11 @@ func (p *Parser) parseLetStatement() Statement {
 				stmt.Value = &CharLiteral{
 					Token: ident.Token,
 					Value: ident.Value,
+				}
+			} else if str, ok := stmt.Value.(*StringLiteral); ok && len([]rune(str.Value)) == 1 {
+				stmt.Value = &CharLiteral{
+					Token: str.Token,
+					Value: str.Value,
 				}
 			}
 		}

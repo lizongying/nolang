@@ -19,6 +19,32 @@ Always:
 4. Re-run the test to confirm the fix
 5. Leave the test in place — it guards against regressions
 
+### Compiler Improvement Policy
+
+If the language/compiler does not currently support a valid syntactic pattern or semantic feature that the user's code requires, you **may modify the compiler itself** (parser, formatter, build/transpiler, LSP, lexer, etc.) to add or fix support. This includes extending the grammar, adjusting the formatter output, enhancing LSP diagnostics/completions, or improving type inference.
+
+**However, all modifications must be strictly tested:**
+
+- Write a **regression test** for the new feature or fix **before** changing production code
+- Verify that the **full test suite** (`go test ./...` from `src/`) still passes — no regressions on existing syntax
+- After rebuilding (`make no`), validate the standard library with `no build` or project-level build to ensure real `.no` files are unaffected
+- If the change touches the formatter, run the formatter test suite and format the standard library to confirm output stability
+
+This policy is the **counterpart** to "do not edit the user's .no file": when the compiler is at fault, fix the compiler, not the code.
+
+### Standard Library Extension Policy
+
+If the functionality your code requires logically belongs in the standard library but does not yet exist there, **add it to the standard library** (`src/std/*.no`) rather than implementing it inline with low-level syntax (raw byte manipulation, manual LLVM calls, etc.).
+
+Guidelines:
+
+- Follow existing std library conventions: proper types (`bool` for boolean returns, method form with dot notation when operating on a primary type), consistent naming, and result-parameter style
+- Extend `src/std/` with the new function, then update `src/std_embed.go` if needed for LSP visibility
+- Write corresponding tests in `src/std/*_test.go` or the integration test suite
+- Verify with the full test suite and rebuild (`make no`) to confirm the standard library compiles correctly
+
+This keeps user code concise and idiomatic, and enriches the standard library for all projects.
+
 ## Quick Decision: Where Does The Test Go?
 
 Pick the smallest test file that exercises the layer the bug lives in:
@@ -179,6 +205,40 @@ func TestXxx(t *testing.T) {
     //   if len(errs) != 0 { t.Errorf(...) }
 }
 ```
+
+## Function/Method Signature Guidelines
+
+### Boolean return type must use `bool`
+
+Functions returning a boolean result must use `bool` type, not `i64`:
+
+```nolang
+// ✅ Correct — bool type
+uuid.is-nil = () (yes bool) {
+    yes = 1
+    ...
+}
+uuid.eq = (b uuid) (yes bool) { ... }
+is-letter = (r i64) (yes bool) { ... }
+str.path-is-abs = () (yes bool) { ... }
+
+// ❌ Incorrect — i64 is not a boolean type
+uuid.is-nil = () (yes i64) { ... }
+```
+
+### Type-bound functions should use method form
+
+Functions operating on a primary data type should be expressed as type-bound methods with explicit parameter types:
+
+```nolang
+// ✅ Correct — method form with typed parameters
+str.path-join(b str, bn i64) (out str, out-n i64)
+
+// ❌ Incorrect — no receiver, missing types
+join(a, an, b, bn, out) (out-n)
+```
+
+This follows Nolang's compiler semantics where the hidden `self` parameter enables `GenericUnion` detection and monomorphization (see [nolang-syntax-reference](file:///Users/lizongying/IdeaProjects/no/.agents/skills/nolang-syntax-reference/SKILL.md) for details).
 
 ## Anti-Patterns
 

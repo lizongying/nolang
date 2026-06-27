@@ -1,1 +1,5 @@
-fmt.println('hello')
+main() {
+    println('hello world')
+}
+
+main()

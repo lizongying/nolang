@@ -12,28 +12,32 @@ DOT = 46  // '.' ASCII
 // 路徑拼接
 // ═══════════════════════════════════════════════
 
-// join: 拼接兩個路徑元素
+// str.path-join: 拼接兩個路徑元素
 // 處理尾綴/首綴 '/' 的各種組合
-join = (a str, an i64, b str, bn i64, out str) (out-n i64) {
+// `.` 為接收者（a 路徑），b 為待拼接路徑
+// out 為輸出緩衝區，out-n 為結果長度
+str.path-join = (b str, bn i64) (out str, out-n i64) {
     out-n = 0
+
     // 複製 a
     i = 0
-    for i < an {
-        out[i] = a[i]
+    for i < .len {
+        out[i] = .[i]
         out-n = out-n + 1
         i = i + 1
     }
+
     // 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
     need-sep = 1
     if out-n > 0 {
-        last-a = a[an - 1] & 255
-        if last-a == 47 {
+        last-a = .[.len - 1] & 255
+        if last-a == SEP {
             need-sep = 0
         }
     }
     if bn > 0 {
         first-b = b[0] & 255
-        if first-b == 47 {
+        if first-b == SEP {
             need-sep = 0
         }
     }
@@ -41,17 +45,19 @@ join = (a str, an i64, b str, bn i64, out str) (out-n i64) {
         need-sep = 0
     }
     if need-sep == 1 {
-        out[out-n] = 47
+        out[out-n] = SEP
         out-n = out-n + 1
     }
+
     // 如果 b 以 '/' 開頭，跳過
     start-b = 0
     if bn > 0 {
         first-b = b[0] & 255
-        if first-b == 47 {
+        if first-b == SEP {
             start-b = 1
         }
     }
+
     // 複製 b
     j = start-b
     for j < bn {
@@ -65,89 +71,95 @@ join = (a str, an i64, b str, bn i64, out str) (out-n i64) {
 // 路徑分解
 // ═══════════════════════════════════════════════
 
-// base: 路徑最後一個元素（檔名）
-base = (p str, n i64, out str) (out-n i64) {
+// str.path-base: 取出路徑的最後一個元素（檔名）
+// out 為輸出緩衝區，out-n 為結果長度
+str.path-base = (out str) (out-n i64) {
     // 找最右邊的 '/'
     last-sep = -1
     i = 0
-    for i < n {
-        c = p[i] & 255
-        if c == 47 {
+    for i < .len {
+        c = .[i] & 255
+        if c == SEP {
             last-sep = i
         }
         i = i + 1
     }
     start = last-sep + 1
-    out-n = n - start
+    out-n = .len - start
     i = 0
     for i < out-n {
-        out[i] = p[start + i]
+        out[i] = .[start + i]
         i = i + 1
     }
 }
 
-// dir: 路徑的目錄部分
-dir = (p str, n i64, out str) (out-n i64) {
+// str.path-dir: 取出路徑的目錄部分
+// out 為輸出緩衝區，out-n 為結果長度
+str.path-dir = (out str) (out-n i64) {
     // 找最右邊的 '/'
     last-sep = -1
     i = 0
-    for i < n {
-        c = p[i] & 255
-        if c == 47 {
+    for i < .len {
+        c = .[i] & 255
+        if c == SEP {
             last-sep = i
         }
         i = i + 1
     }
     if last-sep < 0 {
         // 無 '/'，輸出 '.'
-        out[0] = 46
+        out[0] = DOT
         out-n = 1
         return
     }
     out-n = last-sep
     if out-n == 0 {
         // 根目錄 '/'
-        out[0] = 47
+        out[0] = SEP
         out-n = 1
         return
     }
     i = 0
     for i < out-n {
-        out[i] = p[i]
+        out[i] = .[i]
         i = i + 1
     }
 }
 
-// ext: 檔案副檔名（含點）
-ext = (p str, n i64, out str) (out-n i64) {
+// str.path-ext: 取出檔案副檔名（含點）
+// out 為輸出緩衝區，out-n 為結果長度
+str.path-ext = (out str) (out-n i64) {
     out-n = 0
+
     // 找最右邊的 '/' 之後的 '.'
     last-sep = -1
     last-dot = -1
     i = 0
-    for i < n {
-        c = p[i] & 255
-        if c == 47 {
+    for i < .len {
+        c = .[i] & 255
+        if c == SEP {
             last-sep = i
         }
-        if c == 46 {
+        if c == DOT {
             last-dot = i
         }
         i = i + 1
     }
+
     // '.' 必須在 '/' 之後
     if last-dot <= last-sep {
         return
     }
+
     // 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
-    if last-dot == n - 1 {
+    if last-dot == .len - 1 {
         return
     }
     start = last-dot
-    out-n = n - start
+    out-n = .len - start
     i = 0
     for i < out-n {
-        out[i] = p[start + i]
+        out[i] = .[start + i]
         i = i + 1
     }
 }
@@ -156,13 +168,14 @@ ext = (p str, n i64, out str) (out-n i64) {
 // 路徑判斷
 // ═══════════════════════════════════════════════
 
-// is-abs: 判斷路徑是否為絕對路徑
-is-abs = (p str, n i64) (yes i64) {
-    yes = 0
-    if n > 0 {
-        c = p[0] & 255
-        if c == 47 {
-            yes = 1
+// str.path-is-abs: 判斷路徑是否為絕對路徑
+// 返回 1=是, 0=否
+str.path-is-abs = () (yes bool) {
+    yes = false
+    if .len > 0 {
+        c = .[0] & 255
+        if c == SEP {
+            yes = true
         }
     }
 }
@@ -171,14 +184,15 @@ is-abs = (p str, n i64) (yes i64) {
 // 路徑清理
 // ═══════════════════════════════════════════════
 
-// clean: 清理路徑（移除 . 和 .. 與重複分隔符）
-clean = (p str, n i64, out str) (out-n i64) {
+// str.path-clean: 清理路徑（移除 . 和 .. 與重複分隔符）
+// out 為輸出緩衝區，out-n 為結果長度
+str.path-clean = (out str) (out-n i64) {
     out-n = 0
     i = 0
     dot-count = 0
-    for i < n {
-        c = p[i] & 255
-        if c == 47 {
+    for i < .len {
+        c = .[i] & 255
+        if c == SEP {
             // 處理上一段
             if dot-count == 1 {
                 // 忽略 './'
@@ -187,7 +201,7 @@ clean = (p str, n i64, out str) (out-n i64) {
                 // 找 out 中前一個 '/'
                 j = out-n - 1
                 for j >= 0 {
-                    if out[j] == 47 {
+                    if out[j] == SEP {
                         break
                     }
                     j = j - 1
@@ -197,27 +211,24 @@ clean = (p str, n i64, out str) (out-n i64) {
                 } else {
                     out-n = j
                 }
-            } else {
-                // 保留分隔符（跳過重複）
-                if out-n > 0 {
-                    prev = out[out-n - 1] & 255
-                    if prev != 47 {
-                        out[out-n] = 47
-                        out-n = out-n + 1
-                    }
-                } else {
-                    out[out-n] = 47
+            } elif out-n > 0 {
+                prev = out[out-n - 1] & 255
+                if prev != SEP {
+                    out[out-n] = SEP
                     out-n = out-n + 1
                 }
+            } else {
+                out[out-n] = SEP
+                out-n = out-n + 1
             }
             dot-count = 0
-        } elif c == 46 {
+        } elif c == DOT {
             dot-count = dot-count + 1
         } else {
             // 寫入之前積累的 '.' 字元
             j = 0
             for j < dot-count {
-                out[out-n] = 46
+                out[out-n] = DOT
                 out-n = out-n + 1
                 j = j + 1
             }
@@ -227,13 +238,14 @@ clean = (p str, n i64, out str) (out-n i64) {
         }
         i = i + 1
     }
+
     // 處理末尾段
     if dot-count == 1 {
         // 忽略末尾 '.'
     } elif dot-count == 2 {
         j = out-n - 1
         for j >= 0 {
-            if out[j] == 47 {
+            if out[j] == SEP {
                 break
             }
             j = j - 1
@@ -244,10 +256,11 @@ clean = (p str, n i64, out str) (out-n i64) {
             out-n = j
         }
     }
+
     // 移除末尾 '/'
     if out-n > 1 {
         prev = out[out-n - 1] & 255
-        if prev == 47 {
+        if prev == SEP {
             out-n = out-n - 1
         }
     }
@@ -257,8 +270,9 @@ clean = (p str, n i64, out str) (out-n i64) {
 // 路徑分割
 // ═══════════════════════════════════════════════
 
-// split: 將路徑分割為目錄和檔名
-split = (p str, n i64, d str, f str) (dn i64, fn i64) {
-    dn = dir(p, n, d)
-    fn = base(p, n, f)
+// str.path-split: 將路徑分割為目錄和檔名
+// d, f 為輸出緩衝區；dn, fn 為各自的長度
+str.path-split = (d str, f str) (dn i64, fn i64) {
+    dn = .path-dir(d)
+    fn = .path-base(f)
 }

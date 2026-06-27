@@ -10,6 +10,7 @@ const (
 	LLVMI8Ptr
 	LLVMI32
 	LLVMStrPtr
+	LLVMI64Ptr
 )
 
 type CLibCall struct {

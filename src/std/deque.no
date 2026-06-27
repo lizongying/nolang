@@ -7,140 +7,135 @@
 // 用法：
 //   use std/deque
 //   buf [128]i64 = [0:128]
-//   cap = 128
-//   head = 0
-//   tail = 0
-//   head, tail = deque.push-back(buf, cap, head, tail, 42)
-//   head, tail = deque.push-back(buf, cap, head, tail, 7)
-//   val, head, tail = deque.pop-front(buf, cap, head, tail)
+//   d = deque { buf: buf, cap: 128, head: 0, tail: 0 }
+//   d.push-back(42)
+//   d.push-back(7)
+//   val = d.pop-front()
+
+// deque: 雙端佇列
+deque {
+    buf []i64
+    cap i64
+    head i64
+    tail i64
+}
 
 // push-front: 從前端推入元素
-push-front = (buf []i64, cap i64, head i64, tail i64, val i64) (new-head i64, new-tail i64) {
-    n = tail - head
-    if n >= cap {
-        new-head = head
-        new-tail = tail
+deque.push-front = (val i64) {
+    n = .tail - .head
+    if n >= .cap {
         return
     }
-    new-head = head - 1
+    new-head = .head - 1
     idx = new-head
     if idx < 0 {
-        idx = idx + cap
+        idx = idx + .cap
     }
-    buf[idx] = val
-    new-tail = tail
+    .buf[idx] = val
+    .head = new-head
 }
 
 // push-back: 從後端推入元素
-push-back = (buf []i64, cap i64, head i64, tail i64, val i64) (new-head i64, new-tail i64) {
-    n = tail - head
-    if n >= cap {
-        new-head = head
-        new-tail = tail
+deque.push-back = (val i64) {
+    n = .tail - .head
+    if n >= .cap {
         return
     }
-    idx = tail
+    idx = .tail
     if idx >= 0 {
-        idx = idx % cap
+        idx = idx % .cap
     } else {
-        idx = cap - ((-idx) % cap)
+        idx = .cap - ((-idx) % .cap)
     }
-    buf[idx] = val
-    new-head = head
-    new-tail = tail + 1
+    .buf[idx] = val
+    .tail = .tail + 1
 }
 
 // pop-front: 從前端彈出元素
-// 返回 val=元素值, new-head, new-tail
-pop-front = (buf []i64, cap i64, head i64, tail i64) (val i64, new-head i64, new-tail i64) {
-    n = tail - head
+// 返回 val=元素值
+deque.pop-front = () (val i64) {
+    n = .tail - .head
     if n <= 0 {
         val = 0
-        new-head = head
-        new-tail = tail
         return
     }
-    idx = head
+    idx = .head
     if idx >= 0 {
-        idx = idx % cap
+        idx = idx % .cap
     } else {
-        idx = cap - ((-idx) % cap)
+        idx = .cap - ((-idx) % .cap)
     }
-    val = buf[idx]
-    new-head = head + 1
-    new-tail = tail
+    val = .buf[idx]
+    .head = .head + 1
 }
 
 // pop-back: 從後端彈出元素
-// 返回 val=元素值, new-head, new-tail
-pop-back = (buf []i64, cap i64, head i64, tail i64) (val i64, new-head i64, new-tail i64) {
-    n = tail - head
+// 返回 val=元素值
+deque.pop-back = () (val i64) {
+    n = .tail - .head
     if n <= 0 {
         val = 0
-        new-head = head
-        new-tail = tail
         return
     }
-    new-tail = tail - 1
+    new-tail = .tail - 1
     idx = new-tail
     if idx >= 0 {
-        idx = idx % cap
+        idx = idx % .cap
     } else {
-        idx = cap - ((-idx) % cap)
+        idx = .cap - ((-idx) % .cap)
     }
-    val = buf[idx]
-    new-head = head
+    val = .buf[idx]
+    .tail = new-tail
 }
 
 // peek-front: 查看前端元素（不移除）
 // 返回 val=元素值, ok=true=佇列非空
-peek-front = (buf []i64, cap i64, head i64, tail i64) (val i64, ok bool) {
-    n = tail - head
+deque.peek-front = () (val i64, ok bool) {
+    n = .tail - .head
     if n <= 0 {
         ok = false
         return
     }
-    idx = head
+    idx = .head
     if idx >= 0 {
-        idx = idx % cap
+        idx = idx % .cap
     } else {
-        idx = cap - ((-idx) % cap)
+        idx = .cap - ((-idx) % .cap)
     }
-    val = buf[idx]
+    val = .buf[idx]
     ok = true
 }
 
 // peek-back: 查看後端元素（不移除）
 // 返回 val=元素值, ok=true=佇列非空
-peek-back = (buf []i64, cap i64, head i64, tail i64) (val i64, ok bool) {
-    n = tail - head
+deque.peek-back = () (val i64, ok bool) {
+    n = .tail - .head
     if n <= 0 {
         ok = false
         return
     }
-    idx = tail - 1
+    idx = .tail - 1
     if idx >= 0 {
-        idx = idx % cap
+        idx = idx % .cap
     } else {
-        idx = cap - ((-idx) % cap)
+        idx = .cap - ((-idx) % .cap)
     }
-    val = buf[idx]
+    val = .buf[idx]
     ok = true
 }
 
 // size: 返回雙端佇列大小
-deque-size = (head i64, tail i64) (sz i64) {
-    sz = tail - head
+deque.size = () (sz i64) {
+    sz = .tail - .head
 }
 
 // empty: 判斷雙端佇列是否為空
 // 返回 true=空, false=非空
-deque-empty = (head i64, tail i64) (yes bool) {
-    yes = tail <= head
+deque.empty = () (yes bool) {
+    yes = .tail <= .head
 }
 
 // clear: 清空雙端佇列
-clear = (head i64, tail i64) (new-head i64, new-tail i64) {
-    new-head = head
-    new-tail = head
+deque.clear = () {
+    .tail = .head
 }

@@ -129,7 +129,7 @@
 
 // build-in (ForwardFunc: stat-dir)
 // is-dir: 判断路径是否为目录
-// is-dir = (p str) (yes i64) {
+// is-dir = (p str) (yes bool) {
 //     // LLVM: call @stat + S-ISDIR(st-mode) → zext
 // }
 

@@ -1,0 +1,113 @@
+// char 标准库 - Unicode 字符操作
+// char 本质上是 i32 (Unicode 码点)
+
+// char.to-bytes: 将字符转换为 UTF-8 编码的字节数组
+char.to-bytes = (c char) (out []byte, out-n i64) {
+    // 使用陣列作为临时缓冲区
+    buf [4]byte = [0x00, 0x00, 0x00, 0x00]
+    len i64 = 0
+
+    if c < 0x80 {
+        buf[0] = c & 255
+        len = 1
+    } elif c < 0x800 {
+        buf[0] = 0xC0 | ((c >> 6) & 0x1F)
+        buf[1] = 0x80 | (c & 0x3F)
+        len = 2
+    } elif c < 0x10000 {
+        buf[0] = 0xE0 | ((c >> 12) & 0x0F)
+        buf[1] = 0x80 | ((c >> 6) & 0x3F)
+        buf[2] = 0x80 | (c & 0x3F)
+        len = 3
+    } else {
+        buf[0] = 0xF0 | ((c >> 18) & 0x07)
+        buf[1] = 0x80 | ((c >> 12) & 0x3F)
+        buf[2] = 0x80 | ((c >> 6) & 0x3F)
+        buf[3] = 0x80 | (c & 0x3F)
+        len = 4
+    }
+
+    out-n = len
+    i = 0
+    for i < len {
+        out[i] = buf[i]
+        i = i + 1
+    }
+}
+
+// char.to-str: 将字符转换为 UTF-8 编码的字符串
+char.to-str = (c char) (s str) {
+    if c < 0x80 {
+        s[0] = c & 255
+    } elif c < 0x800 {
+        s[0] = 0xC0 | ((c >> 6) & 0x1F)
+        s[1] = 0x80 | (c & 0x3F)
+    } elif c < 0x10000 {
+        s[0] = 0xE0 | ((c >> 12) & 0x0F)
+        s[1] = 0x80 | ((c >> 6) & 0x3F)
+        s[2] = 0x80 | (c & 0x3F)
+    } else {
+        s[0] = 0xF0 | ((c >> 18) & 0x07)
+        s[1] = 0x80 | ((c >> 12) & 0x3F)
+        s[2] = 0x80 | ((c >> 6) & 0x3F)
+        s[3] = 0x80 | (c & 0x3F)
+    }
+}
+
+// char.is-digit: 判断字符是否为数字 (0-9)
+// 返回 true=是, false=否
+char.is-digit = (c char) (result bool) {
+    result = false
+    if c >= 48 && c <= 57 {
+        result = true
+    }
+}
+
+// char.is-alpha: 判断字符是否为字母 (a-z, A-Z)
+// 返回 true=是, false=否
+char.is-alpha = (c char) (result bool) {
+    result = false
+    if c >= 97 && c <= 122 {
+        result = true
+        return
+    }
+    if c >= 65 && c <= 90 {
+        result = true
+    }
+}
+
+// char.is-alnum: 判断字符是否为字母或数字
+// 返回 true=是, false=否
+char.is-alnum = (c char) (result bool) {
+    result = false
+    if c.is-digit() || c.is-alpha() {
+        result = true
+    }
+}
+
+// char.is-space: 判断字符是否为空白字符
+// 返回 true=是, false=否
+char.is-space = (c char) (result bool) {
+    result = false
+    if c == 32 || c == 9 || c == 10 || c == 13 {
+        result = true
+    }
+}
+
+// char.to-upper: 将小写字母转换为大写（仅 ASCII）
+char.to-upper = (c char) (result char) {
+    if c >= 97 && c <= 122 {
+        result = c - 32
+    } else {
+        result = c
+    }
+}
+
+// char.to-lower: 将大写字母转换为小写（仅 ASCII）
+char.to-lower = (c char) (result char) {
+    if c >= 65 && c <= 90 {
+        result = c + 32
+    } else {
+        result = c
+    }
+}
