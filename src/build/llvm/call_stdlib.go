@@ -638,96 +638,172 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return strReg
 	}
 
-	// regexp-match: 判断文本是否匹配正则表达式
+	if fnName == "gzip-compress" && hasArgs {
+		a := evalArgs()
+		dataPtr := g.extractStrFromEvalArg(sb, a[0])
+
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%gzip.c.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		destLen := fmt.Sprintf("%%gzip.c.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		destLenPtr := fmt.Sprintf("%%gzip.c.lenptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%gzip.c.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 4096\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 4096, i8* %s)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 4096, i64* %s\n", g.indent(), destLen))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %s to i8*\n", g.indent(), destLenPtr, destLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @compress2(i8* %s, i8* %s, i8* %s, i64 %s, i32 9)\n",
+				g.indent(), retReg, bufReg, destLenPtr, dataPtr, a[1]))
+
+			g.tmpIdx++
+			strReg := fmt.Sprintf("%%gzip.c.str.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strReg))
+			g.tmpIdx++
+			strLenGEP := fmt.Sprintf("%%gzip.c.strlen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), destLen, destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), destLen, strLenGEP))
+			g.tmpIdx++
+			strDataGEP := fmt.Sprintf("%%gzip.c.strdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
+			return strReg
+		}
+		return ""
+	}
+
+	if fnName == "gzip-decompress" && hasArgs {
+		a := evalArgs()
+		dataPtr := g.extractStrFromEvalArg(sb, a[0])
+
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%gzip.d.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		destLen := fmt.Sprintf("%%gzip.d.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		destLenPtr := fmt.Sprintf("%%gzip.d.lenptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%gzip.d.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 4096\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 4096, i8* %s)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 4096, i64* %s\n", g.indent(), destLen))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %s to i8*\n", g.indent(), destLenPtr, destLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @uncompress(i8* %s, i8* %s, i8* %s, i64 %s)\n",
+				g.indent(), retReg, bufReg, destLenPtr, dataPtr, a[1]))
+
+			g.tmpIdx++
+			strReg := fmt.Sprintf("%%gzip.d.str.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strReg))
+			g.tmpIdx++
+			strLenGEP := fmt.Sprintf("%%gzip.d.strlen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), destLen, destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), destLen, strLenGEP))
+			g.tmpIdx++
+			strDataGEP := fmt.Sprintf("%%gzip.d.strdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
+			return strReg
+		}
+		return ""
+	}
+
 	if fnName == "regexp-match" && hasArgs {
 		a := evalArgs()
 		patternPtr := g.extractStrFromEvalArg(sb, a[0])
 		textPtr := g.extractStrFromEvalArg(sb, a[1])
 
 		g.tmpIdx++
-		preg := fmt.Sprintf("%%regex.preg.%d", g.tmpIdx)
+		preg := fmt.Sprintf("%%regexp.m.preg.%d", g.tmpIdx)
 		g.tmpIdx++
-		regcompRet := fmt.Sprintf("%%regex.regcomp.%d", g.tmpIdx)
+		execRet := fmt.Sprintf("%%regexp.m.exec.%d", g.tmpIdx)
 		g.tmpIdx++
-		regexecRet := fmt.Sprintf("%%regex.regexec.%d", g.tmpIdx)
-		g.tmpIdx++
-		matchCmp := fmt.Sprintf("%%regex.match.%d", g.tmpIdx)
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%regex.result.%d", g.tmpIdx)
+		match := fmt.Sprintf("%%regexp.m.match.%d", g.tmpIdx)
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 72\n", g.indent(), preg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 72, i8* %s)\n", g.indent(), preg))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regcomp(i8* %s, i8* %s, i32 0)\n", g.indent(), regcompRet, preg, patternPtr))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regexec(i8* %s, i8* %s, i32 0, i8* null, i32 0)\n", g.indent(), regexecRet, preg, textPtr))
+			sb.WriteString(fmt.Sprintf("%scall i32 @regcomp(i8* %s, i8* %s, i32 0)\n", g.indent(), preg, patternPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regexec(i8* %s, i8* %s, i32 0, i8* null, i32 0)\n", g.indent(), execRet, preg, textPtr))
 			sb.WriteString(fmt.Sprintf("%scall void @regfree(i8* %s)\n", g.indent(), preg))
-			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), matchCmp, regexecRet))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), resultReg, matchCmp))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), match, execRet))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), match, match))
 		}
-		return resultReg
+		return match
 	}
 
-	// regexp-find: 查找第一个匹配
 	if fnName == "regexp-find" && hasArgs {
 		a := evalArgs()
 		patternPtr := g.extractStrFromEvalArg(sb, a[0])
 		textPtr := g.extractStrFromEvalArg(sb, a[1])
 
 		g.tmpIdx++
-		preg := fmt.Sprintf("%%regexf.preg.%d", g.tmpIdx)
+		preg := fmt.Sprintf("%%regexp.f.preg.%d", g.tmpIdx)
 		g.tmpIdx++
-		pmatch := fmt.Sprintf("%%regexf.pmatch.%d", g.tmpIdx)
+		pmatch := fmt.Sprintf("%%regexp.f.pmatch.%d", g.tmpIdx)
 		g.tmpIdx++
-		regcompRet := fmt.Sprintf("%%regexf.regcomp.%d", g.tmpIdx)
+		execRet := fmt.Sprintf("%%regexp.f.exec.%d", g.tmpIdx)
 		g.tmpIdx++
-		regexecRet := fmt.Sprintf("%%regexf.regexec.%d", g.tmpIdx)
+		start := fmt.Sprintf("%%regexp.f.start.%d", g.tmpIdx)
 		g.tmpIdx++
-		matchCmp := fmt.Sprintf("%%regexf.match.%d", g.tmpIdx)
+		end := fmt.Sprintf("%%regexp.f.end.%d", g.tmpIdx)
 		g.tmpIdx++
-		startGEP := fmt.Sprintf("%%regexf.start.%d", g.tmpIdx)
+		lenReg := fmt.Sprintf("%%regexp.f.len.%d", g.tmpIdx)
 		g.tmpIdx++
-		startLoad := fmt.Sprintf("%%regexf.start.ld.%d", g.tmpIdx)
+		strReg := fmt.Sprintf("%%regexp.f.str.%d", g.tmpIdx)
 		g.tmpIdx++
-		endGEP := fmt.Sprintf("%%regexf.end.%d", g.tmpIdx)
+		bufReg := fmt.Sprintf("%%regexp.f.buf.%d", g.tmpIdx)
 		g.tmpIdx++
-		endLoad := fmt.Sprintf("%%regexf.end.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%regexf.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%regexf.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%regexf.buf.%d", g.tmpIdx)
+		matchCmp := fmt.Sprintf("%%regexp.f.cmp.%d", g.tmpIdx)
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 72\n", g.indent(), preg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 72, i8* %s)\n", g.indent(), preg))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 16\n", g.indent(), pmatch))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 16, i8* %s)\n", g.indent(), pmatch))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regcomp(i8* %s, i8* %s, i32 0)\n", g.indent(), regcompRet, preg, patternPtr))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regexec(i8* %s, i8* %s, i32 1, i8* %s, i32 0)\n", g.indent(), regexecRet, preg, textPtr, pmatch))
+			sb.WriteString(fmt.Sprintf("%scall i32 @regcomp(i8* %s, i8* %s, i32 0)\n", g.indent(), preg, patternPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regexec(i8* %s, i8* %s, i32 1, i8* %s, i32 0)\n", g.indent(), execRet, preg, textPtr, pmatch))
 			sb.WriteString(fmt.Sprintf("%scall void @regfree(i8* %s)\n", g.indent(), preg))
-			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), matchCmp, regexecRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 0\n", g.indent(), startGEP, pmatch))
-			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), startLoad, startGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 8\n", g.indent(), endGEP, pmatch))
-			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), endLoad, endGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = sub i32 %s, %s\n", g.indent(), lenReg, endLoad, startLoad))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), matchCmp, execRet))
+
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strReg))
 			g.tmpIdx++
-			strLenGEP := fmt.Sprintf("%%regexf.strlen.%d", g.tmpIdx)
+			strLenGEP := fmt.Sprintf("%%regexp.f.strlen.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
+			g.tmpIdx++
+			strDataGEP := fmt.Sprintf("%%regexp.f.strdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
+
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%regexp.f.match, label %%regexp.f.no_match\n", g.indent(), matchCmp))
+			sb.WriteString(fmt.Sprintf("regexp.f.match:\n"))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), start, pmatch))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* getelementptr inbounds (i8, i8* %s, i64 8)\n", g.indent(), end, pmatch))
+			sb.WriteString(fmt.Sprintf("%s%s = sub nsw i32 %s, %s\n", g.indent(), lenReg, end, start))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, strLenGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), bufReg))
 			g.tmpIdx++
-			textStartGEP := fmt.Sprintf("%%regexf.txtstart.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), textStartGEP, textPtr, startLoad))
-			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), bufReg, textStartGEP, lenReg))
-			g.tmpIdx++
-			strDataGEP := fmt.Sprintf("%%regexf.strdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str, %%str* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
+			textStart := fmt.Sprintf("%%regexp.f.txtstart.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), textStart, textPtr, start))
+			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), bufReg, textStart, lenReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
+			sb.WriteString(fmt.Sprintf("%sb label %%regexp.f.end\n", g.indent()))
+
+			sb.WriteString(fmt.Sprintf("regexp.f.no_match:\n"))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), strLenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i8* null, i8** %s\n", g.indent(), strDataGEP))
+			sb.WriteString(fmt.Sprintf("%sb label %%regexp.f.end\n", g.indent()))
+
+			sb.WriteString(fmt.Sprintf("regexp.f.end:\n"))
 		}
 		return strReg
 	}

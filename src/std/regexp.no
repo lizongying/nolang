@@ -1,0 +1,31 @@
+// regexp — 正则表达式标准库
+//
+// 提供正则表达式匹配和查找功能
+// 底层使用标准正则表达式库实现
+//
+// 用法示例：
+//   matched = regexp-match("^hello", "hello world")
+//   // matched = true
+//
+//   match = regexp-find("\\d+", "price: 123")
+//   // match = "123"
+
+// ═══════════════════════════════════════════════
+// 匹配
+// ═══════════════════════════════════════════════
+
+// regexp-match: 判断 text 是否匹配 pattern
+// 返回 true=匹配, false=不匹配
+// build-in (ForwardFunc: regexp-match)
+regexp-match = (pattern str, text str) (matched bool) {
+}
+
+// ═══════════════════════════════════════════════
+// 查找
+// ═══════════════════════════════════════════════
+
+// regexp-find: 在 text 中查找第一个匹配 pattern 的子串
+// 返回匹配的子串，未找到返回空字符串
+// build-in (ForwardFunc: regexp-find)
+regexp-find = (pattern str, text str) (result str) {
+}

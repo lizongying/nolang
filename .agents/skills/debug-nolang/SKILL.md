@@ -246,6 +246,7 @@ This follows Nolang's compiler semantics where the hidden `self` parameter enabl
 - Editing the user's `.no` file as the "fix" — that only papers over the real bug. Fix the compiler.
 - Deleting the regression test "to clean up" — defeats the purpose.
 - Trusting the editor display of a file you just edited — verify with `sed -n` or `od -c` from a terminal.
+- **Never use `git checkout`** — it is extremely dangerous and can silently discard uncommitted changes. Use `git switch` or `git restore` instead for branch switching or file recovery. `git checkout` is banned.
 
 ## See Also
 
