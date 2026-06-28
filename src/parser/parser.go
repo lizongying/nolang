@@ -650,7 +650,7 @@ func (p *Parser) parseStatement() Statement {
 			p.restoreState(state)
 			stmt := p.parseLetStatement()
 			if stmt != nil {
-				if !p.ctx.contains(CTX_MATCH_ARM) {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
 					p.skipToStatementEnd()
 				}
 				return stmt
@@ -662,7 +662,7 @@ func (p *Parser) parseStatement() Statement {
 			}
 			stmt := p.parseLetStatement()
 			if stmt != nil {
-				if !p.ctx.contains(CTX_MATCH_ARM) {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
 					p.skipToStatementEnd()
 				}
 				return stmt
@@ -4074,10 +4074,14 @@ parseBody:
 	}
 
 	// 根據 currentToken 類型分流處理 init
-	if p.currentToken.Type == lexer.SEMICOLON {
-		// C-style for: for init; cond; update { }
+	if p.currentToken.Type == lexer.SEMICOLON || p.currentToken.Type == lexer.COMMA {
+		// C-style for: for init, cond, update { }（也接受 ; 向後相容）
 		stmt.Init = init
-		p.nextToken() // skip ;
+		if p.currentToken.Type == lexer.SEMICOLON {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for init; cond; update' is deprecated, use commas ',' instead",
+				p.currentToken.Line, p.currentToken.Column))
+		}
+		p.nextToken() // skip ; or ,
 		stmt.Condition = p.parseExpression(LOWEST)
 		p.nextToken()
 		update := p.parseExpressionStatement()

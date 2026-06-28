@@ -19,8 +19,8 @@ block[2] = 0x63  // 'c'
 block[3] = 0x80  // padding
 block[14] =  24   // bit length
 
-for i <- [0..1000000) {
-    block = 
+i <- [0..1000000): {
+    block =
     res = [16]byte
     md5(block, res)
 }

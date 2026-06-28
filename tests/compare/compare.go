@@ -1,6 +1,6 @@
 // compare — Nolang 標準庫 vs Go 標準庫對照測試
 //
-// 輸出 KEY=VALUE 格式，與 tests/test_std_hash.no 的輸出一致。
+// 輸出 KEY=VALUE 格式，與 tests/test-std-hash.no 的輸出一致。
 // 用法：go run tests/compare/compare.go > tests/compare/go-output.txt
 
 package main

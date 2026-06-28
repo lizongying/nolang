@@ -61,7 +61,7 @@ echo -e "${YELLOW}[2/3] 執行 Nolang 測試...${NC}"
 
 if command -v "$NOLANG_CMD" &> /dev/null; then
     cd "$PROJECT_DIR"
-    $NOLANG_CMD run "$SCRIPT_DIR/test_std_hash.no" > "$NOLANG_OUTPUT" 2>&1
+    $NOLANG_CMD run "$SCRIPT_DIR/test-std-hash.no" > "$NOLANG_OUTPUT" 2>&1
     echo -e "      Nolang 輸出 → ${GREEN}$NOLANG_OUTPUT${NC}"
     echo "      $(wc -l < "$NOLANG_OUTPUT") 行"
 else

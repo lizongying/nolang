@@ -326,7 +326,8 @@ func TestDeprecationWarnings(t *testing.T) {
 		{name: "while_with_colon_no_warning", input: "while i < 5: {\n    break\n}", wantWarnings: 0},
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},
 		{name: "for_infinite_no_warning", input: "for {\n    break\n}", wantWarnings: 0},
-		{name: "for_cstyle_no_warning", input: "for i = 0; i < 5; i++ {\n}", wantWarnings: 0},
+		{name: "for_cstyle_no_warning", input: "for i = 0, i < 5, i++ {\n}", wantWarnings: 0},
+		{name: "for_cstyle_semicolon_warn", input: "for i = 0; i < 5; i++ {\n}", wantWarnings: 1},
 		{name: "new_match_no_warning", input: "x: {\n    1-> 10\n    -> 0\n}", wantWarnings: 0},
 	}
 	for _, tt := range tests {

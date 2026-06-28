@@ -1,12 +1,12 @@
-// test_number.no — 數字操作測試
+// test-number.no — 數字操作測試
 
-demo-number() {
+demo-number = () {
     r = 0
     max(10, 20, r)
-    println-i64(r)
+    print(r)
 
     min(10, 20, r)
-    println-i64(r)
+    print(r)
 }
 
 demo-number()

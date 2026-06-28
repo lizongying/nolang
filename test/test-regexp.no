@@ -1,4 +1,4 @@
-main() {
+main = () {
     matched = regexp-match('hello.*world', 'hello nolang world')
     println('regexp-match test 1:', matched)
 

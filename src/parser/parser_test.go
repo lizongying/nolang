@@ -788,6 +788,18 @@ func TestForLoop(t *testing.T) {
 		{
 			name: "for_cstyle",
 			input: `for i = 0; i < 5; i++ {
+    i = i
+}`,
+			wantErr:   false,
+			hasCond:   true,
+			hasInit:   true,
+			hasUpdate: true,
+			hasBody:   true,
+		},
+		{
+			name: "for_cstyle_comma",
+			input: `for i = 0, i < 5, i++ {
+    i = i
 }`,
 			wantErr:   false,
 			hasCond:   true,

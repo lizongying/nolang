@@ -2,21 +2,21 @@
 test-option-1 = () {
     x ?str
     x = nil
-    println-i64(x)
+    print(x)
 }
 
 // Test 2: Set value via val()
 test-option-2 = () {
     x ?str
     x = val('hello')
-    println-i64(x)
+    print(x)
 }
 
 // Test 3: Set error
 test-option-3 = () {
     x ?str
     x = err('error msg')
-    println-i64(x)
+    print(x)
 }
 
 // Test 4: Match on option with err-> nil-> -> patterns
@@ -25,11 +25,11 @@ test-option-4 = () {
     x = err('error msg')
     x: {
         err ->
-            println-i64(.)
+            print(.)
         nil ->
-            println-i64(0)
+            print(0)
         ->
-            println-i64(1)
+            print(1)
     }
 }
 
@@ -39,11 +39,11 @@ test-option-5 = () {
     x = nil
     x: {
         err ->
-            println-i64(100)
+            print(100)
         nil ->
-            println-i64(200)
+            print(200)
         ->
-            println-i64(300)
+            print(300)
     }
 }
 
@@ -53,23 +53,23 @@ test-option-6 = () {
     x = val('test')
     x: {
         err ->
-            println-i64(1000)
+            print(1000)
         nil ->
-            println-i64(2000)
+            print(2000)
         ->
-            println-i64(3000)
+            print(3000)
     }
 }
 
 test-option-1()
-println-i64(0)
+print(0)
 test-option-2()
-println-i64(1)
+print(1)
 test-option-3()
-println-i64(2)
+print(2)
 test-option-4()
-println-i64(3)
+print(3)
 test-option-5()
-println-i64(4)
+print(4)
 test-option-6()
-println-i64(5)
+print(5)

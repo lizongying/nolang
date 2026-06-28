@@ -19,65 +19,65 @@ test-max = () {
 
     // i64
     max(10, 20, r)
-    println-i64(r)  // expect: 20
+    print(r)  // expect: 20
 
     max(3, 1, 4, 1, 5, r)
-    println-i64(r)  // expect: 5
+    print(r)  // expect: 5
 
     max(100, 50, r)
-    println-i64(r)  // expect: 100
+    print(r)  // expect: 100
 }
 
 test-max()
-println-i64(0)
+print(0)
 
 // ── min：變參泛型，回傳最小值 ──
 test-min = () {
     r = 0
 
     min(10, 20, r)
-    println-i64(r)  // expect: 10
+    print(r)  // expect: 10
 
     min(3, 1, 4, 1, 5, r)
-    println-i64(r)  // expect: 1
+    print(r)  // expect: 1
 }
 
 test-min()
-println-i64(1)
+print(1)
 
 // ── abs：非變參泛型，回傳絕對值 ──
 test-abs = () {
     r = 0
 
     abs(-42, r)
-    println-i64(r)  // expect: 42
+    print(r)  // expect: 42
 
     abs(7, r)
-    println-i64(r)  // expect: 7
+    print(r)  // expect: 7
 
     abs(0, r)
-    println-i64(r)  // expect: 0
+    print(r)  // expect: 0
 }
 
 test-abs()
-println-i64(2)
+print(2)
 
 // ── sign：非變參泛型，回傳符號（-1, 0, 1）──
 test-sign = () {
     r = 0
 
     sign(5, r)
-    println-i64(r)  // expect: 1
+    print(r)  // expect: 1
 
     sign(-3, r)
-    println-i64(r)  // expect: -1
+    print(r)  // expect: -1
 
     sign(0, r)
-    println-i64(r)  // expect: 0
+    print(r)  // expect: 0
 }
 
 test-sign()
-println-i64(3)
+print(3)
 
 // ── even / odd：整型泛型，回傳 bool ──
 test-even-odd = () {
@@ -85,98 +85,98 @@ test-even-odd = () {
 
     even(4, yes)
     if yes {
-        println-i64(1)  // expect: 1
+        print(1)  // expect: 1
     } else {
-        println-i64(0)
+        print(0)
     }
 
     even(7, yes)
     if yes {
-        println-i64(1)
+        print(1)
     } else {
-        println-i64(0)  // expect: 0
+        print(0)  // expect: 0
     }
 
     odd(7, yes)
     if yes {
-        println-i64(1)  // expect: 1
+        print(1)  // expect: 1
     } else {
-        println-i64(0)
+        print(0)
     }
 
     odd(4, yes)
     if yes {
-        println-i64(1)
+        print(1)
     } else {
-        println-i64(0)  // expect: 0
+        print(0)  // expect: 0
     }
 }
 
 test-even-odd()
-println-i64(4)
+print(4)
 
 // ── pow：整型冪 ──
 test-pow = () {
     r = 0
 
     pow(2, 10, r)
-    println-i64(r)  // expect: 1024
+    print(r)  // expect: 1024
 
     pow(3, 4, r)
-    println-i64(r)  // expect: 81
+    print(r)  // expect: 81
 
     pow(5, 0, r)
-    println-i64(r)  // expect: 1
+    print(r)  // expect: 1
 
     pow(7, 1, r)
-    println-i64(r)  // expect: 7
+    print(r)  // expect: 7
 }
 
 test-pow()
-println-i64(5)
+print(5)
 
 // ── gcd：最大公因數 ──
 test-gcd = () {
     r = 0
 
     gcd(48, 18, r)
-    println-i64(r)  // expect: 6
+    print(r)  // expect: 6
 
     gcd(42, 21, r)
-    println-i64(r)  // expect: 21
+    print(r)  // expect: 21
 
     gcd(17, 23, r)
-    println-i64(r)  // expect: 1
+    print(r)  // expect: 1
 
     gcd(0, 12, r)
-    println-i64(r)  // expect: 12
+    print(r)  // expect: 12
 
     gcd(-12, 8, r)
-    println-i64(r)  // expect: 4
+    print(r)  // expect: 4
 }
 
 test-gcd()
-println-i64(6)
+print(6)
 
 // ── lcm：最小公倍數 ──
 test-lcm = () {
     r = 0
 
     lcm(4, 6, r)
-    println-i64(r)  // expect: 12
+    print(r)  // expect: 12
 
     lcm(12, 63, r)
-    println-i64(r)  // expect: 252
+    print(r)  // expect: 252
 
     lcm(0, 5, r)
-    println-i64(r)  // expect: 0
+    print(r)  // expect: 0
 
     lcm(7, 7, r)
-    println-i64(r)  // expect: 7
+    print(r)  // expect: 7
 
     lcm(2, 5, r)
-    println-i64(r)  // expect: 10
+    print(r)  // expect: 10
 }
 
 test-lcm()
-println-i64(7)
+print(7)

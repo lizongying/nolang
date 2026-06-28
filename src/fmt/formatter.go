@@ -1121,12 +1121,12 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			f.formatRangeBrackets(s.IterRange.Range)
 		}
 	} else if s.Init != nil {
-		// C-style for: for init; cond; update { }
+		// C-style for: for init, cond, update { }
 		f.write(" ")
 		f.formatStatement(s.Init)
-		f.write("; ")
+		f.write(", ")
 		f.formatExpression(s.Condition)
-		f.write("; ")
+		f.write(", ")
 		f.formatStatement(s.Update)
 	} else if s.Condition != nil {
 		// while-style: for cond { }

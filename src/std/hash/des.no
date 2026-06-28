@@ -187,7 +187,15 @@ sbox-lookup = (input i64, box []byte, r i64) {
 
 // f: DES 輪函數
 f = (r i64, k i64, out i64) {
-    er = 0; s0 = 0; s1 = 0; s2 = 0; s3 = 0; s4 = 0; s5 = 0; s6 = 0; s7 = 0
+    er = 0
+    s0 = 0
+    s1 = 0
+    s2 = 0
+    s3 = 0
+    s4 = 0
+    s5 = 0
+    s6 = 0
+    s7 = 0
 
     er = permute(r, E-TBL, 48)
     x = er ^ k
@@ -221,7 +229,8 @@ des-key-schedule = (key []byte, ks [96]byte) {
         i = i + 1
     }
 
-    c = 0; d = 0
+    c = 0
+    d = 0
     i = 0
     i < 28: {
         pos = PC1-C[i] & 255
@@ -267,7 +276,8 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64, out []byte) {
         i = i + 1
     }
 
-    ip = 0; fout = 0
+    ip = 0
+    fout = 0
     ip = permute(block, IP-TBL, 64)
 
     l = (ip >> 32) & 4294967295

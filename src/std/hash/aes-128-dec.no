@@ -132,10 +132,18 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
     // 9*b0 + 14*b1 + 11*b2 + 13*b3
     // 13*b0 + 9*b1 + 14*b2 + 11*b3
     // 11*b0 + 13*b1 + 9*b2 + 14*b3
-    m20 = 0; m40 = 0; m80 = 0
-    m21 = 0; m41 = 0; m81 = 0
-    m22 = 0; m42 = 0; m82 = 0
-    m23 = 0; m43 = 0; m83 = 0
+    m20 = 0
+    m40 = 0
+    m80 = 0
+    m21 = 0
+    m41 = 0
+    m81 = 0
+    m22 = 0
+    m42 = 0
+    m82 = 0
+    m23 = 0
+    m43 = 0
+    m83 = 0
     gf-mul2(b0, m20)
     gf-mul2(m20, m40)
     gf-mul2(m40, m80)
@@ -155,7 +163,10 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
 }
 
 inv-mix-columns = (state []byte) {
-    d0 = 0; d1 = 0; d2 = 0; d3 = 0
+    d0 = 0
+    d1 = 0
+    d2 = 0
+    d3 = 0
     d0, d1, d2, d3 = inv-mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255)
     state[0] = d0
     state[1] = d1

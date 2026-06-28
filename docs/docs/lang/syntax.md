@@ -8,6 +8,7 @@ sidebar_position: 2
 
 ```nolang
 // 只允許單行註釋
+// 單行內不允許使用; 要分成多行
 ```
 
 ## 數據類型
@@ -122,6 +123,26 @@ foo-bar = 42
 hello-world = 'Hello World'
 ```
 
+## 檔案命名
+
+`.no` 檔名（含文件夾名）一律使用中連字符 `-` 連接單詞，**不使用下劃線 `_`**。這與變量名、函數名、結構體名等 Nolang 標識符的命名風格保持一致。
+
+```shell
+✅ 推薦：
+utils/
+├── string-helper.no
+├── hash-table.no
+└── http-client.no
+```
+
+```shell
+❌ 避免：
+utils/
+├── string_helper.no
+├── hash_table.no
+└── http_client.no
+```
+
 ## 函數定義
 
 函數通過**修改入參**來傳遞結果，`...` 僅用於提前終止，不能跟結果。
@@ -177,7 +198,8 @@ for i < 5 {
 }
 
 // 經典三段式
-for i=0; i < 5; i++ {
+// 儘量不要使用語句，防止多參數、多返回值中的逗號
+for i=0, i < 5, i++ {
 }
 
 // 区间语法
@@ -646,6 +668,7 @@ utils/
 ### 導出模塊
 
 僅適用於lib.no
+
 ```nolang
 @ std/math.add a
 ```

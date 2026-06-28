@@ -1,6 +1,6 @@
-// test_basic.no — 核心編譯驗證
+// test-basic.no — 核心編譯驗證
 
-i64-max(a i64, b i64, r i64) {
+i64-max = (a i64, b i64, r i64) {
     d = a - b
     if d > 0 {
         r = a
@@ -9,7 +9,7 @@ i64-max(a i64, b i64, r i64) {
     }
 }
 
-i64-min(a i64, b i64, r i64) {
+i64-min = (a i64, b i64, r i64) {
     d = a - b
     if d > 0 {
         r = b
@@ -18,7 +18,7 @@ i64-min(a i64, b i64, r i64) {
     }
 }
 
-abs-i64(a i64, r i64) {
+abs-i64 = (a i64, r i64) {
     if a < 0 {
         r = 0 - a
     } else {
@@ -26,10 +26,10 @@ abs-i64(a i64, r i64) {
     }
 }
 
-gcd(a i64, b i64, r i64) {
+gcd = (a i64, b i64, r i64) {
     if a < 0 { a = 0 - a }
     if b < 0 { b = 0 - b }
-    for b != 0 {
+    b != 0: {
         t = b
         b = a % b
         a = t
@@ -37,20 +37,20 @@ gcd(a i64, b i64, r i64) {
     r = a
 }
 
-caller() {
+caller = () {
     r = 0
 
     i64-max(10, 20, r)
-    println-i64(r)
+    print(r)
 
     i64-min(10, 20, r)
-    println-i64(r)
+    print(r)
 
     abs-i64(-42, r)
-    println-i64(r)
+    print(r)
 
     gcd(12, 18, r)
-    println-i64(r)
+    print(r)
 }
 
 caller()

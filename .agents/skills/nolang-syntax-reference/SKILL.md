@@ -58,6 +58,14 @@ _x = 10                 // private
 foo-bar = 42            // hyphenated names
 ```
 
+### File Naming
+
+`.no` 檔名（包含文件夾名）使用中連字符 `-` 連接單詞，**不使用下劃線 `_`**。
+這與變量名、函數名、結構體名等 Nolang 標識符的命名風格保持一致。
+
+✅ `string-helper.no`, `hash-table.no`, `http-client.no`
+❌ `string_helper.no`, `hash_table.no`, `http_client.no`
+
 ### Functions
 
 - **No return value** — all data interaction via parameter modification

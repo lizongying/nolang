@@ -1,4 +1,4 @@
-// test_str_concat.no — String concatenation with - operator
+// test-str-concat.no — String concatenation with - operator
 
 // Test 1: String literal assignment and print
 print('Hello World')

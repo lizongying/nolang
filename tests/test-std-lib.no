@@ -1,19 +1,19 @@
-// test_std_lib.no — 方法調用測試
+// test-std-lib.no — 方法調用測試
 
 // [n]t.fill: 全部填充為 val
-[n]t.fill(val t) {
+[n]t.fill = (val t) {
     i = 0
-    for i < n {
+    i < n: {
         .[i] = val
         i = i + 1
     }
 }
 
 // [n]t.reverse: 反轉陣列
-[n]t.reverse() {
+[n]t.reverse = () {
     i = 0
     j = n - 1
-    for i < j {
+    i < j: {
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
@@ -22,25 +22,25 @@
     }
 }
 
-test-fill() {
-    data [4] = [1, 2, 3, 4]
-    data.fill(42)
-    v0 = data[0]
-    v3 = data[3]
-    println-i64(v0)
-    println-i64(v3)
-}
+test-fill()
 
-test-reverse() {
-    data [4] = [1, 2, 3, 4]
-    data.reverse()
-    v0 = data[0]
-    v3 = data[3]
-    println-i64(v0)
-    println-i64(v3)
-}
+data [4] = [1, 2, 3, 4]
+data.fill(42)
+v0 = data[0]
+v3 = data[3]
+print(v0)
+print(v3)
+
+test-reverse()
+
+data [4] = [1, 2, 3, 4]
+data.reverse()
+v0 = data[0]
+v3 = data[3]
+print(v0)
+print(v3)
 
 test-fill()
-println-i64(-1)
+print(-1)
 test-reverse()
-println-i64(0)
+print(0)

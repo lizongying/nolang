@@ -11,6 +11,8 @@ A disciplined test-first workflow for diagnosing and fixing bugs in the Nolang c
 
 **Never debug by editing the user's `.no` file directly.** Even if you suspect a syntax or parsing problem, the user's code is presumed correct. Report the suspected issue to the user and let them decide; do not change valid syntax (identifiers, variable declarations, etc.) on your own authority.
 
+> **Nolang 檔名使用中連字符 `-`**（如 `string-helper.no`），**不使用下劃線 `_`**。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md)。
+
 Always:
 
 1. Reproduce the issue with the **smallest possible** test case

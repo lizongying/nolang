@@ -84,6 +84,11 @@ func TestFormatBasic(t *testing.T) {
 			expected: "for {\n    break\n}",
 		},
 		{
+			name:     "c-style for loop with comma",
+			input:    "for i=0,i<5,i++{i=i}",
+			expected: "for i = 0, i < 5, i ++  {\n    i = i\n}",
+		},
+		{
 			name:     "return statement",
 			input:    "foo: (a int){return}",
 			expected: "foo: (a int) {\n    return\n}",
