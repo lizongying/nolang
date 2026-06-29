@@ -294,4 +294,24 @@ func init() {
 		Doc:          "Convert f64 to i64",
 		LLVMConv:     &convFPToI64,
 	})
+
+	// i64.to-str: i64 method to string via sprintf (method: v.to-str())
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverI64,
+		MethodName:   "i64.to-str",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Format an i64 as a string (method)",
+		CLibCall:     &CLibCall{FuncName: "sprintf", SprintfFmt: "%lld", BufGlobal: "@.strconv_buf", ArgTypes: []LLVMArgType{LLVMI64}, RetType: LLVMI32},
+	})
+
+	// f64.to-str: f64 method to string via sprintf (method: v.to-str())
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-str",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Format an f64 as a string (method)",
+		CLibCall:     &CLibCall{FuncName: "sprintf", SprintfFmt: "%g", BufGlobal: "@.strconv_buf", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMI32},
+	})
 }

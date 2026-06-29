@@ -40,18 +40,18 @@ print(1)
 test-str-eq = () {
     a = 'hello'
     b = 'hello'
-    eq1 = str-eq(a, b, 5)
+    eq1 = a.eq(b, 5)
     print(eq1)  // expect: 1
 
     c = 'world'
-    eq2 = str-eq(a, c, 5)
+    eq2 = a.eq(c, 5)
     print(eq2)  // expect: 0
 
-    eq3 = str-eq(a, b, 3)
+    eq3 = a.eq(b, 3)
     print(eq3)  // expect: 1
 
     d = 'hell'
-    eq4 = str-eq(a, d, 5)
+    eq4 = a.eq(d, 5)
     print(eq4)  // expect: 0
 }
 
@@ -64,7 +64,7 @@ print(2)
 test-str-copy = () {
     src = 'abcdef'
     dst = '------'
-    str-copy(src, dst, 3)
+    src.copy(dst, 3)
     c0 = dst[0] & 255
     c1 = dst[1] & 255
     c2 = dst[2] & 255
@@ -303,13 +303,13 @@ print(13)
 // 测试 i64-to-str (非方法)
 // ═══════════════════════════════════════════════
 test-i64-to-str = () {
-    s1 = i64-to-str(123)
+    s1 = (123).to-str()
     print(s1.len)  // expect: 3
-    s2 = i64-to-str(0)
+    s2 = (0).to-str()
     print(s2.len)  // expect: 1
-    s3 = i64-to-str(-42)
+    s3 = (-42).to-str()
     print(s3.len)  // expect: 3
-    s4 = i64-to-str(9999)
+    s4 = (9999).to-str()
     print(s4.len)  // expect: 4
 }
 

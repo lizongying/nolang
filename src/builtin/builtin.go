@@ -26,8 +26,8 @@ type CLibCall struct {
 	FixedArgGlobals map[int]string
 	TruncArgs       map[int]LLVMArgType
 	StrDataArg      map[int]bool
-	// RetCStrToStr: C 函數返回 i8* (C 字串)，需轉換為 Nolang %str
-	// 通過 strlen 計算長度，並把 (len, ptr) 寫入目標 %str。
+	// RetCStrToStr: C 函數返回 i8* (C 字串)，需轉換為 Nolang %str-long
+	// 通過 strlen 計算長度，並把 (len, ptr) 寫入目標 %str-long。
 	RetCStrToStr bool
 }
 

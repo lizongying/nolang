@@ -29,7 +29,7 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		return 4
 	case "i64", "i8*", "double":
 		return 8
-	case "%str":
+	case "%str-long":
 		return 16
 	case "%arr":
 		return 16
@@ -37,7 +37,7 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		return 24
 	case "%option":
 		return 24
-	case "%str-smail":
+	case "%str-short":
 		return 128
 	case "float":
 		return 4
@@ -288,12 +288,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	case *parser.StringLiteral:
 		if len(v.Value) <= 127 {
-			return "%str-smail"
+			return "%str-short"
 		}
-		return "%str"
+		return "%str-long"
 	case *parser.InfixExpression:
 		if (v.Operator == "-" || v.Operator == "+") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
-			return "%str"
+			return "%str-long"
 		}
 		// floatLLVMType 已處理混合 float/double 的型別提升
 		if ft := g.floatLLVMType(v); ft != "" {
@@ -306,11 +306,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.ArrayLiteral:
 		return "%arr"
 	case *parser.SliceExpression:
-		// Check source type: slicing %str/%str-smail produces %str, otherwise %vec
+		// Check source type: slicing %str-long/%str-short produces %str-long, otherwise %vec
 		if ident, ok := v.Left.(*parser.Identifier); ok {
 			if g.varTypes != nil {
-				if t, ok := g.varTypes[ident.Value]; ok && (t == "%str" || t == "%str-smail") {
-					return "%str"
+				if t, ok := g.varTypes[ident.Value]; ok && (t == "%str-long" || t == "%str-short") {
+					return "%str-long"
 				}
 			}
 		}
@@ -326,7 +326,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				"get-env": true, "get-wd": true, "host-name": true,
 			}
 			if strFns[name] {
-				return "%str"
+				return "%str-long"
 			}
 			// Check if the function is a builtin that returns f64
 			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
@@ -341,11 +341,16 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		// DotExpression receiver call (e.g. s.contains, s.index): look up str.<method>
 		if dot, ok := v.Function.(*parser.DotExpression); ok {
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			recvExpr := dot.Receiver
+			// Unwrap GroupedExpression: (123).to-str() → 123.to-str()
+			if ge, ok := recvExpr.(*parser.GroupedExpression); ok {
+				recvExpr = ge.Expression
+			}
+			if recv, ok := recvExpr.(*parser.Identifier); ok {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
 					candidates := []string{srcType}
-					if srcType == "str-smail" {
+					if srcType == "str-short" || srcType == "str-long" {
 						candidates = append(candidates, "str")
 					}
 					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
@@ -368,7 +373,44 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 								}
 							}
 						}
+						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
+						if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+							return g.mapToLLVMType(m.Return[0].String())
+						}
 					}
+				}
+			}
+			// IntegerLiteral receiver (e.g., (123).to-str())
+			if _, ok := recvExpr.(*parser.IntegerLiteral); ok {
+				shortName := "i64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+			// FloatLiteral receiver (e.g., (3.14).to-str())
+			if _, ok := recvExpr.(*parser.FloatLiteral); ok {
+				shortName := "f64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+			// PrefixExpression receiver (e.g., (-42).to-str())
+			if _, ok := recvExpr.(*parser.PrefixExpression); ok {
+				shortName := "i64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+			// StringLiteral receiver (e.g., 'hello'.eq(b, n))
+			if _, ok := recvExpr.(*parser.StringLiteral); ok {
+				shortName := "str." + dot.Property
+				if g.funcRetTypes != nil {
+					if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
+						return t
+					}
+				}
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
 				}
 			}
 		}
@@ -473,7 +515,7 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 							recvType = strings.TrimPrefix(t, "%")
 						}
 					}
-					if recvType == "str-smail" {
+					if recvType == "str-short" || recvType == "str-long" {
 						recvType = "str"
 					}
 					if recvType != "" {
@@ -854,9 +896,9 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 		fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", idx, len(str), escaped))
 
 	g.tmpIdx++
-	idxReg := fmt.Sprintf("%%stridx.%d", g.tmpIdx)
+	idxReg := fmt.Sprintf("%%str-longidx.%d", g.tmpIdx)
 	g.tmpIdx++
-	ptrReg := fmt.Sprintf("%%strptr.%d", g.tmpIdx)
+	ptrReg := fmt.Sprintf("%%str-longptr.%d", g.tmpIdx)
 
 	// init: idx = 0
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), idxReg))
@@ -864,32 +906,32 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), ptrReg))
 
 	// br → cond
-	sb.WriteString(fmt.Sprintf("%sbr label %%str.cond.%d\n", g.indent(), lbl))
+	sb.WriteString(fmt.Sprintf("%sbr label %%str-long.cond.%d\n", g.indent(), lbl))
 
 	// cond block
 	g.emitLabel(sb, fmt.Sprintf("str.cond.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
-	iLoad := fmt.Sprintf("%%stri.%d", g.tmpIdx)
+	iLoad := fmt.Sprintf("%%str-longi.%d", g.tmpIdx)
 	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%strcmp.%d", g.tmpIdx)
+	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %d\n", g.indent(), cmpReg, iLoad, len(str)))
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%str.body.%d, label %%str.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%str-long.body.%d, label %%str-long.end.%d\n", g.indent(), cmpReg, lbl, lbl))
 	g.indentLevel--
 
 	// body: char = str[i]; varName = char
 	g.emitLabel(sb, fmt.Sprintf("str.body.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
-	chReg := fmt.Sprintf("%%strch.%d", g.tmpIdx)
+	chReg := fmt.Sprintf("%%str-longch.%d", g.tmpIdx)
 	g.tmpIdx++
-	chZext := fmt.Sprintf("%%strchz.%d", g.tmpIdx)
+	chZext := fmt.Sprintf("%%str-longchz.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%d, i64 0, i64 %s\n",
 		g.indent(), chReg, len(str)+1, len(str)+1, idx, iLoad))
 	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), chZext, chReg))
 	g.tmpIdx++
-	charVal := fmt.Sprintf("%%strcv.%d", g.tmpIdx)
+	charVal := fmt.Sprintf("%%str-longcv.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), charVal, chZext))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), charVal, varName))
 
@@ -902,10 +944,10 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 
 	// update: idx++
 	g.tmpIdx++
-	iNext := fmt.Sprintf("%%strnext.%d", g.tmpIdx)
+	iNext := fmt.Sprintf("%%str-longnext.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
-	sb.WriteString(fmt.Sprintf("%sbr label %%str.cond.%d\n", g.indent(), lbl))
+	sb.WriteString(fmt.Sprintf("%sbr label %%str-long.cond.%d\n", g.indent(), lbl))
 	g.indentLevel--
 
 	g.emitLabel(sb, fmt.Sprintf("str.end.%d", lbl))
@@ -1287,11 +1329,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	val = g.stripLLVMType(val)
 	llvmType := g.varLLVMType(stmt)
 
-	// 若變數已註冊型別（如函數輸出參數 out str 為 %str），
-	// 但數值推斷為不同的短字串型別（%str-smail），優先使用變數型別。
-	// 否則短字串字面量會讓 %str 變數的 data 指向 stack 記憶體。
-	if existingType, ok := g.varTypes[name]; ok && existingType == "%str" && llvmType == "%str-smail" {
-		llvmType = "%str"
+	// 若變數已註冊型別（如函數輸出參數 out str 為 %str-long），
+	// 但數值推斷為不同的短字串型別（%str-short），優先使用變數型別。
+	// 否則短字串字面量會讓 %str-long 變數的 data 指向 stack 記憶體。
+	if existingType, ok := g.varTypes[name]; ok && existingType == "%str-long" && llvmType == "%str-short" {
+		llvmType = "%str-long"
 	}
 
 	// 若變數已有整數型別（如函數輸出參數 yes bool 為 i1），
@@ -1460,18 +1502,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 
 	switch llvmType {
-	case "%str":
-		// Copy %str struct: load from source, store to dest
-		// String literal produces %str-smail* pointer. We cannot use
-		// convertSmailToStr here because the data pointer would point to
-		// the str-smail's stack-allocated inline buffer, which becomes
+	case "%str-long":
+		// Copy %str-long struct: load from source, store to dest
+		// String literal produces %str-short* pointer. We cannot use
+		// convertShortToLong here because the data pointer would point to
+		// the str-short's stack-allocated inline buffer, which becomes
 		// invalid after the function returns, causing a bus error when
-		// the %str value is returned or stored long-term.
+		// the %str-long value is returned or stored long-term.
 		// Instead, use malloc to allocate a heap buffer for the data.
-		// Function call results are already %%str values and can be stored directly.
+		// Function call results are already %%str-long values and can be stored directly.
 		isGlobal := g.globalVars != nil && g.globalVars[name]
-		if strings.HasPrefix(val, "%strlit.") {
-			// Extract len from str-smail: load i8, mask 0x7F, zext to i64
+		if strings.HasPrefix(val, "%str-longlit.") {
+			// Extract len from str-short: load i8, mask 0x7F, zext to i64
 			g.tmpIdx++
 			s2sLenGEP := fmt.Sprintf("%%s2s.len.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -1480,70 +1522,70 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			s2sLenMask := fmt.Sprintf("%%s2s.len.mask.%d", g.tmpIdx)
 			g.tmpIdx++
 			s2sLenExt := fmt.Sprintf("%%s2s.len.ext.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n", g.indent(), s2sLenGEP, val))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), s2sLenGEP, val))
 			sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), s2sLenRaw, s2sLenGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), s2sLenMask, s2sLenRaw))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), s2sLenExt, s2sLenMask))
 
-			// Extract data pointer from str-smail inline buffer
+			// Extract data pointer from str-short inline buffer
 			g.tmpIdx++
 			s2sDataGEP := fmt.Sprintf("%%s2s.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
 			s2sDataCast := fmt.Sprintf("%%s2s.data.cast.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n", g.indent(), s2sDataGEP, val))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), s2sDataGEP, val))
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), s2sDataCast, s2sDataGEP))
 
-			// Allocate heap buffer (128 bytes covers max str-smail capacity)
+			// Allocate heap buffer (128 bytes covers max str-short capacity)
 			g.tmpIdx++
 			s2sBuf := fmt.Sprintf("%%s2s.buf.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 128)\n", g.indent(), s2sBuf))
 
-			// Copy data from str-smail inline buffer to heap
+			// Copy data from str-short inline buffer to heap
 			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), s2sBuf, s2sDataCast, s2sLenExt))
 
-			// Create %str struct pointing to heap buffer
+			// Create %str-long struct pointing to heap buffer
 			g.tmpIdx++
 			s2sResult := fmt.Sprintf("%%s2s.result.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), s2sResult))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), s2sResult))
 
 			g.tmpIdx++
 			s2sDstLenGEP := fmt.Sprintf("%%s2s.dst.len.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), s2sDstLenGEP, s2sResult))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), s2sDstLenGEP, s2sResult))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), s2sLenExt, s2sDstLenGEP))
 
 			g.tmpIdx++
 			s2sDstDataGEP := fmt.Sprintf("%%s2s.dst.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), s2sDstDataGEP, s2sResult))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), s2sDstDataGEP, s2sResult))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), s2sBuf, s2sDstDataGEP))
 
-			// Load from %str alloca to get %str value for storing into target variable
+			// Load from %str-long alloca to get %str-long value for storing into target variable
 			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%str.load.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = load %%str, %%str* %s\n", g.indent(), loadReg, s2sResult))
+			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, s2sResult))
 			val = loadReg
 		} else if g.isStrPtrReg(val) {
-			// val is a %str* pointer (from generateStrConcat or convertSmailToStr).
-			// Load the %str value from the pointer before storing.
+			// val is a %str-long* pointer (from generateStrConcat or convertShortToLong).
+			// Load the %str-long value from the pointer before storing.
 			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%str.load.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = load %%str, %%str* %s\n", g.indent(), loadReg, val))
+			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 			val = loadReg
 		}
 		if isGlobal {
-			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), val, llvmGlobalRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, llvmGlobalRef(name)))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), val, llvmVarRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, llvmVarRef(name)))
 		}
-	case "%str-smail":
-		// Copy %str-smail struct: load from source, store to dest
+	case "%str-short":
+		// Copy %str-short struct: load from source, store to dest
 		isGlobal := g.globalVars != nil && g.globalVars[name]
 		g.tmpIdx++
-		copyReg := fmt.Sprintf("%%strsm.copy.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load %%str-smail, %%str-smail* %s\n", g.indent(), copyReg, val))
+		copyReg := fmt.Sprintf("%%str-longsm.copy.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-short, %%str-short* %s\n", g.indent(), copyReg, val))
 		if isGlobal {
-			sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %s\n", g.indent(), copyReg, llvmGlobalRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-short %s, %%str-short* %s\n", g.indent(), copyReg, llvmGlobalRef(name)))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %%str-smail %s, %%str-smail* %s\n", g.indent(), copyReg, llvmVarRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-short %s, %%str-short* %s\n", g.indent(), copyReg, llvmVarRef(name)))
 		}
 	case "%vec":
 		// Copy %vec struct: load from source, store to dest
@@ -1591,22 +1633,22 @@ func (g *Generator) isIntegerLLVMType(t string) bool {
 	return false
 }
 
-// isStrPtrReg checks if a register name is a %str* pointer (from alloca).
+// isStrPtrReg checks if a register name is a %str-long* pointer (from alloca).
 // In LLVM 21 with opaque pointers, both values and pointers are SSA registers
 // starting with '%', so we identify pointers by naming convention.
 func (g *Generator) isStrPtrReg(val string) bool {
 	if !strings.HasPrefix(val, "%") {
 		return false
 	}
-	// Known alloca patterns that produce a %str* pointer
+	// Known alloca patterns that produce a %str-long* pointer
 	ptrPatterns := []string{
-		"%str.s2s.",       // convertSmailToStr
-		"%s2s.result.",    // s2s conversion in stmt.go
-		"%concat.result.", // generateStrConcat
-		"%strrepeat.null", // generateStrRepeat (no sb)
-		"%strconcat.null", // generateStrConcat (no sb)
-		"%argv.str.",      // args-get in call_stdlib.go
-		"%str.s2s.",       // duplicate, keep
+		"%str-long.s2s.",       // convertShortToLong
+		"%s2s.result.",         // s2s conversion in stmt.go
+		"%concat.result.",      // generateStrConcat
+		"%str-longrepeat.null", // generateStrRepeat (no sb)
+		"%str-longconcat.null", // generateStrConcat (no sb)
+		"%argv.str.",           // args-get in call_stdlib.go
+		"%str-long.s2s.",       // duplicate, keep
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {
@@ -1668,18 +1710,18 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		sb.WriteString(fmt.Sprintf("%sstore [16 x i8] zeroinitializer, [16 x i8]* %s\n", g.indent(), dataGEP))
 	}
 
-	// Helper: copy a %str struct into data field (16 bytes)
+	// Helper: copy a %str-long struct into data field (16 bytes)
 	copyStrToData := func(srcPtr string) {
 		g.tmpIdx++
 		dataGEP := fmt.Sprintf("%%opt.data.gep.%d", g.tmpIdx)
 		g.tmpIdx++
 		dataPtr := fmt.Sprintf("%%opt.data.ptr.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
-		sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to %%str*\n", g.indent(), dataPtr, dataGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to %%str-long*\n", g.indent(), dataPtr, dataGEP))
 		g.tmpIdx++
 		copyReg := fmt.Sprintf("%%opt.str.copy.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load %%str, %%str* %s\n", g.indent(), copyReg, srcPtr))
-		sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), copyReg, dataPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), copyReg, srcPtr))
+		sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), copyReg, dataPtr))
 	}
 
 	// Helper: copy an i64 value into data field
@@ -1709,13 +1751,13 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					srcPtr := g.generateExprWithSB(sb, arg)
 					copyStrToData(srcPtr)
 				} else if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
-					if t, ok := g.varTypes[argIdent.Value]; ok && (t == "%str" || t == "%str-smail") {
-						// String variable: load and copy %str struct
-						// For %str, copy directly
-						if t == "%str" {
+					if t, ok := g.varTypes[argIdent.Value]; ok && (t == "%str-long" || t == "%str-short") {
+						// String variable: load and copy %str-long struct
+						// For %str-long, copy directly
+						if t == "%str-long" {
 							copyStrToData("%" + argIdent.Value)
 						} else {
-							// %str-smail: need to convert to %str first (not yet supported, store as i64 placeholder)
+							// %str-short: need to convert to %str-long first (not yet supported, store as i64 placeholder)
 							zeroData()
 						}
 					} else {
@@ -1737,7 +1779,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					srcPtr := g.generateExprWithSB(sb, arg)
 					copyStrToData(srcPtr)
 				} else if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
-					if t, ok := g.varTypes[argIdent.Value]; ok && t == "%str" {
+					if t, ok := g.varTypes[argIdent.Value]; ok && t == "%str-long" {
 						copyStrToData("%" + argIdent.Value)
 					} else {
 						val := g.generateExprWithSB(sb, arg)

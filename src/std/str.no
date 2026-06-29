@@ -2,7 +2,7 @@
 //
 // str 是对外统一的字符串类型
 // 内部实现：str-short（栈分配 SSO）| str-long（堆分配）
-// str-smail 仅作为编译器内部优化，不出现在公开 API
+// str-short 仅作为编译器内部优化，不出现在公开 API
 //
 // str {
 //     len i64 read-only       // 对外：i64 长度
@@ -25,42 +25,14 @@
 //     c = s[i] & 255
 // }
 
-// str-eq: 比较两个字符串的前 n 个字节是否相等
+// str.eq: 比较两个字符串的前 n 个字节是否相等
 // 返回 true=相等, false=不相等
 // build-in (ForwardFunc: eq-raw)
-// str-eq = (a str, b str, n i64) (eq bool) {
-//     eq = true
-//     i = 0
-//     for i < n {
-//         ai = a[i] & 255
-//         bi = b[i] & 255
-//         if ai != bi {
-//             eq = false
-//             return
-//         }
-//         i = i + 1
-//     }
-// }
+// str.eq = (b str, n i64) (eq bool) { ... }
 
-// str-copy: 将 src 的前 n 个字节复制到 dst
+// str.copy: 将 src 的前 n 个字节复制到 dst
 // build-in (ForwardFunc: memcpy)
-// str-copy = (src str, dst str, n i64) {
-//     i = 0
-//     for i < n {
-//         dst[i] = src[i]
-//         i = i + 1
-//     }
-// }
-
-// str-fill: 将 s 的前 n 个字节填充为 val
-// build-in (ForwardFunc: memset)
-// str-fill = (s str, n i64, val i64) {
-//     i = 0
-//     for i < n {
-//         s[i] = val & 255
-//         i = i + 1
-//     }
-// }
+// str.copy = (dst str, n i64) { ... }
 
 str.fill = (val char, n i64) {
     // UTF-8 編碼 char 到臨時緩衝區
@@ -299,16 +271,6 @@ str.to-bytes = (out str) {
     }
 }
 
-// str.from-bytes: 从字节数组创建字符串
-str-from-bytes = (src []byte, n i64, out str) {
-    out.len = n
-    i = 0
-    for i < n {
-        out[i] = src[i] & 255
-        i = i + 1
-    }
-}
-
 // str.to-i64: 将字符串转为整数
 str.to-i64 = (val i64) {
     val = 0
@@ -331,39 +293,6 @@ str.to-i64 = (val i64) {
     if neg == 1 {
         val = 0 - val
     }
-}
-
-// i64-to-str: 将整数转为字符串
-i64-to-str = (v i64, out str) {
-    if v == 0 {
-        out[0] = 48
-        out.len = 1
-        return
-    }
-    neg = 0
-    if v < 0 {
-        neg = 1
-        v = 0 - v
-    }
-    buf = '(20)'
-    i = 0
-    for v > 0 {
-        d = v % 10
-        buf[i] = d + 48
-        i = i + 1
-        v = v / 10
-    }
-    if neg == 1 {
-        buf[i] = 45
-        i = i + 1
-    }
-    n = i
-    j = 0
-    for j < n {
-        out[j] = buf[n - 1 - j]
-        j = j + 1
-    }
-    out.len = n
 }
 
 // ═══════════════════════════════════════════════

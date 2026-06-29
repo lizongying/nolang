@@ -50,7 +50,7 @@ type Generator struct {
 	curFuncRetName     string                   // 當前函數輸出參數名稱（為空表示 void）
 	globalVars         map[string]bool          // module-level vars that should be LLVM globals
 	moduleVarTypes     map[string]string        // module-level variable types (preserved across functions)
-	ssaTypes           map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
+	ssaTypes           map[string]string        // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated    bool                     // true if current basic block ends with a terminator (ret/br)
 	funcLocalNames     map[string]bool          // local variable names in current function (params + allocas)
 	unionAliases       map[string][]string      // union type alias name → member type names (e.g. "float"→["f32","f64"])
@@ -255,14 +255,14 @@ func (g *Generator) Generate(program *parser.Program) string {
 		{name: "data", typ: "i8*"},
 	}
 
-	// Pre-register built-in str type
-	g.structTypes["str"] = []structField{
+	// Pre-register built-in str-long type (內部堆字串型別，對外仍為 str)
+	g.structTypes["str-long"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "data", typ: "i8*"},
 	}
 
-	// Pre-register built-in str-smail type
-	g.structTypes["str-smail"] = []structField{
+	// Pre-register built-in str-short type
+	g.structTypes["str-short"] = []structField{
 		{name: "len", typ: "i8"},
 		{name: "data", typ: "[127 x i8]"},
 	}
@@ -276,13 +276,13 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 發出 struct type 宣告
 	// Always emit built-in string types
-	sb.WriteString("%str-smail = type { i8, [127 x i8] }\n")
-	sb.WriteString("%str = type { i64, i8* }\n")
+	sb.WriteString("%str-short = type { i8, [127 x i8] }\n")
+	sb.WriteString("%str-long = type { i64, i8* }\n")
 	sb.WriteString("%option = type { i64, [16 x i8] }\n")
 	sb.WriteString("%arr = type { i64, i8* }\n")
 	sb.WriteString("%vec = type { i64, i64, i8* }\n")
 	for name, fields := range g.structTypes {
-		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
 			continue // built-in, already emitted
 		}
 		sb.WriteString(fmt.Sprintf("%%%s = type { ", name))
@@ -299,7 +299,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 註冊結構體型別名稱到 varTypes，使得 bigint{} 等結構體字面量能正確識別型別
 	// 必須在 collectVarDecls 之前執行
 	for name := range g.structTypes {
-		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
 			continue
 		}
 		if g.varTypes == nil {
@@ -317,7 +317,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 發出模組級全局變數定義（在函數定義之前，以便所有函數都能訪問）
 	// 只對以下類型的變數發出全局定義：
 	// 1. i64 整數常量（如 MASK = 4294967295）
-	// 2. %str / %str-smail 字串變數（如 SBOX 表）
+	// 2. %str-long / %str-short 字串變數（如 SBOX 表）
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			name := ls.Name.Value
@@ -331,7 +331,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			llvmType := g.varLLVMType(ls)
-			if llvmType == "%str" || llvmType == "%str-smail" {
+			if llvmType == "%str-long" || llvmType == "%str-short" {
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
 			} else if llvmType == "%arr" {
@@ -355,7 +355,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	// 保存結構體型別到 moduleVarTypes（確保函數內也能識別 struct literal 型別）
 	for name := range g.structTypes {
-		if name == "str" || name == "str-smail" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
 			continue
 		}
 		g.moduleVarTypes[name] = "%" + name
@@ -710,14 +710,14 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
 			}
-			// 通过 insertvalue 构造 %str { len, data }
+			// 通过 insertvalue 构造 %str-long { len, data }
 			g.tmpIdx++
 			strReg1 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
 			g.tmpIdx++
 			strReg2 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, %s, 1\n", g.indent(), strReg2, strReg1, bufPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 1\n", g.indent(), strReg2, strReg1, bufPtr))
 			}
 			return strReg2
 		}
@@ -808,7 +808,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	}
 
 	// RetBuf: return the buffer pointer instead of C return value
-	// 同時需要把 C 字串（null 結尾的 i8*）轉換為 Nolang %str
+	// 同時需要把 C 字串（null 結尾的 i8*）轉換為 Nolang %str-long
 	if clib.RetBuf {
 		bufExpr := fmt.Sprintf("getelementptr inbounds ([1024 x i8], [1024 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
 		buf := "i8* " + bufExpr
@@ -816,8 +816,8 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%scall %s @%s(%s)\n", g.indent(), cRetType, clib.FuncName, argStr))
 		}
-		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str
-		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str 值
+		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str-long
+		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str-long 值
 		returnsStr := false
 		for _, t := range m.Return {
 			if t == parser.TypeStr {
@@ -836,19 +836,19 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			g.tmpIdx++
 			strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, %s, 1\n", g.indent(), strReg2, strReg1, buf))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 1\n", g.indent(), strReg2, strReg1, buf))
 			}
 			return strReg2
 		}
 		return buf
 	}
 
-	// RetCStrToStr: C 函數返回 i8* (C 字串)，需包裝為 Nolang %str
+	// RetCStrToStr: C 函數返回 i8* (C 字串)，需包裝為 Nolang %str-long
 	// 1) 調用 C 函數取得 i8* 指針
 	// 2) 調用 strlen 取得長度
-	// 3) 構造 %str 並通過 insertvalue 設定 (len, ptr)
-	// 4) 返回 %str 結構體值（不是 i8*）
+	// 3) 構造 %str-long 並通過 insertvalue 設定 (len, ptr)
+	// 4) 返回 %str-long 結構體值（不是 i8*）
 	if clib.RetCStrToStr {
 		// 1) 調用 C 函數取得 i8*
 		g.tmpIdx++
@@ -862,15 +862,15 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
 		}
-		// 3) 構造 %str：先寫 len 到 field 0，再寫 ptr 到 field 1
+		// 3) 構造 %str-long：先寫 len 到 field 0，再寫 ptr 到 field 1
 		//    每次 insertvalue 都必須產生新的 SSA 寄存器
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
 		g.tmpIdx++
 		strReg2 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
 		}
 		return strReg2
 	}
@@ -923,9 +923,9 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {
 	if strings.HasPrefix(evalResult, "%") {
 		// evalResult 可能是兩種形式：
-		//   1. %key           — 直接是 %str* 指針
-		//   2. %key.val.N     — load 出來的 %str 值
-		// extractStrDataPtr 需要 %str* 指針，因此若帶有 .val. 後綴（已 load 出來的值），
+		//   1. %key           — 直接是 %str-long* 指針
+		//   2. %key.val.N     — load 出來的 %str-long 值
+		// extractStrDataPtr 需要 %str-long* 指針，因此若帶有 .val. 後綴（已 load 出來的值），
 		// 必須改用 base variable 的指針（去掉 .val.* 部分）。
 		baseRef := evalResult
 		if idx := strings.Index(evalResult, ".val."); idx > 0 {
@@ -935,8 +935,8 @@ func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string
 		varName := strings.TrimPrefix(parts[0], "%")
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[varName]; ok {
-				if t == "%str-smail" {
-					return g.extractStrSmailDataPtr(sb, baseRef)
+				if t == "%str-short" {
+					return g.extractStrShortDataPtr(sb, baseRef)
 				}
 				return g.extractStrDataPtr(sb, baseRef)
 			}

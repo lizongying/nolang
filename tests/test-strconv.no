@@ -96,13 +96,13 @@ test-str-to-byte = () {
 
 // ===== i64 → str =====
 test-i64-to-str = () {
-    s = i64-to-str(42)
+    s = (42).to-str()
     print(s)                     // 期望: 42
 
-    s = i64-to-str(-100)
+    s = (-100).to-str()
     print(s)                     // 期望: -100
 
-    s = i64-to-str(0)
+    s = (0).to-str()
     print(s)                     // 期望: 0
 }
 
@@ -147,7 +147,7 @@ test-byte-to-str = () {
 
 // ===== 往返: i64 → str → i64 =====
 test-roundtrip-i64 = () {
-    s = i64-to-str(12345)
+    s = (12345).to-str()
     n = str-to-i64(s)
     print(n)               // 期望: 12345
 }
@@ -161,10 +161,10 @@ test-roundtrip-f64 = () {
 
 // ===== 边界: i64 极值 =====
 test-edge-i64 = () {
-    s = i64-to-str(9223372036854775807)
+    s = (9223372036854775807).to-str()
     print(s)                     // 期望: 9223372036854775807
 
-    s = i64-to-str(-9223372036854775808)
+    s = (-9223372036854775808).to-str()
     print(s)                     // 期望: -9223372036854775808
 }
 

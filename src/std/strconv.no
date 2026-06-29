@@ -71,6 +71,8 @@
 // build-in (ForwardFunc: sprintf-i64)
 // i64-to-str = (v i64) (s str) {  // LLVM: sprintf(buf, "%lld", v)
 // }
+// method: i64.to-str (CLibCall: sprintf)
+// v.to-str() (s str) { ... }
 
 // ===== uint → str =====
 // build-in (ForwardFunc: sprintf-u8)

@@ -79,3 +79,14 @@ vec-to-arr-byte = (in []byte) (out [?]byte) {
         i = i + 1
     }
 }
+
+// []byte.to-str: 将字节切片转为字符串
+[]byte.to-str = () (out str) {
+    n = len(.)
+    out.len = n
+    i = 0
+    for i < n {
+        out[i] = .[i] & 255
+        i = i + 1
+    }
+}

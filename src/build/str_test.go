@@ -9,10 +9,10 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// TestStrTypeLayout verifies that str and str-smail types have the correct layout
+// TestStrTypeLayout verifies that str and str-short types have the correct layout
 // as documented in str.no:
 //
-//	str-smail {
+//	str-short {
 //	    len byte read-only      // i8
 //	    data [127]byte sealed   // [127 x i8]
 //	}
@@ -22,12 +22,12 @@ import (
 //	    data *byte sealed       // i8*
 //	}
 //
-// Compiler auto-selects: len <= 127 → str-smail (stack), len > 127 → str (heap)
+// Compiler auto-selects: len <= 127 → str-short (stack), len > 127 → str (heap)
 func TestStrTypeLayout(t *testing.T) {
 	// 128 bytes → str (heap)
 	longStr := strings.Repeat("a", 128)
 	src := fmt.Sprintf(`
-// Test str-smail: small string on stack (len <= 127)
+// Test str-short: small string on stack (len <= 127)
 test-smal = () {
 	s = 'hello'
 	n = s.len
@@ -82,8 +82,8 @@ test = () {
 	}
 }
 
-// TestStrSmailLenReadOnly verifies that str-smail.len cannot be modified
-func TestStrSmailLenReadOnly(t *testing.T) {
+// TestStrShortLenReadOnly verifies that str-short.len cannot be modified
+func TestStrShortLenReadOnly(t *testing.T) {
 	src := `
 test = () {
 	s = 'short'
@@ -104,7 +104,7 @@ test = () {
 	varTypes := map[string]string{}
 	err := validateArrayBounds(prog, arraySizes, sliceSizes, stringSizes, varTypes)
 	if err == nil {
-		t.Fatal("expected read-only error for str-smail.len assignment, but got none")
+		t.Fatal("expected read-only error for str-short.len assignment, but got none")
 	}
 	if !strings.Contains(err.Error(), "read-only") {
 		t.Errorf("expected read-only error, got: %v", err)

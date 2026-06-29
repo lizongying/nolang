@@ -2,7 +2,7 @@
 // cd src && go run ./cmd/cli/. build ../tests/str-slice.no
 // ../dist/str-slice
 
-// Short string (%str-smail type)
+// Short string (%str-short type)
 s = 'HelloWorld'
 print(s.len)
 

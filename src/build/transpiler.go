@@ -2293,7 +2293,7 @@ func buildStringSizeMap(program *parser.Program) map[string]int64 {
 func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-smail") {
+		if s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-short") {
 			if sl, ok := s.Value.(*parser.StringLiteral); ok {
 				strSizes[s.Name.Value] = int64(len(sl.Value))
 			} else {

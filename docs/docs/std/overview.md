@@ -87,7 +87,7 @@ str-to-u8(s), str-to-u16(s), str-to-u32(s), str-to-u64(s)
 str-to-f32(s), str-to-f64(s)
 str-to-bool(s), str-to-byte(s), str-to-char(s)
 
-// 數值 → 字串
+// 數值 → 字串（也可用方法形式: v.to-str()）
 i8-to-str(v), i16-to-str(v), i32-to-str(v), i64-to-str(v)
 u8-to-str(v), u16-to-str(v), u32-to-str(v), u64-to-str(v)
 f32-to-str(v), f64-to-str(v)
@@ -110,9 +110,9 @@ char.to-lower(c)(r)              // 轉小寫（ASCII）
 ### str — 字串操作
 
 ```nolang
-str-eq(a, b)(ok)              // 相等比較
-str-copy(src, dst)(n)         // 字串複製
-str-fill(s, n, c)             // 填充（支援 UTF-8 char）
+a.eq(b, n)(ok)                // 相等比較（方法）
+src.copy(dst, n)              // 字串複製（方法）
+s.fill(c, n)                  // 填充（支援 UTF-8 char，方法）
 str-index(s, sub)(pos)        // 子字串位置
 str-contains(s, sub)(ok)      // 是否包含
 str-starts-with(s, sub)(ok)   // 前綴判斷
@@ -123,9 +123,9 @@ str-trim(s)(out)              // 去首尾空白
 str-repeat(s, n)(out)         // 重複
 str-slice(s, start, end)(out) // 切片
 str-to-bytes(s)(b)            // 轉 []byte
-str-from-bytes(b, n)(s)       // []byte 轉 str
+b.to-str()(s)                 // []byte 轉 str（方法）
 str-to-i64(s)(v)              // 字串轉 i64
-i64-to-str(v)(s)              // i64 轉字串
+v.to-str()(s)                 // i64 轉字串（方法）
 str-reverse(s)(out)           // 反轉
 str-compare(a, b)(c)          // 字典序比較
 str-count(s, sub)(n)          // 子字串計數
@@ -145,7 +145,7 @@ even(v), odd(v)               // 奇偶判斷
 gcd(a, b), lcm(a, b)          // 最大公因數/最小公倍數
 pow-i64(a, b)                 // 整數冪
 i64-to-f64(v), f64-to-i64(v)  // 數值轉換
-i64-to-str(v)(s)              // i64 轉字串
+v.to-str()(s)                 // i64 轉字串（方法）
 div-mod(a, b)(q, r)           // 除法取商餘
 between(v, lo, hi)(ok)        // 範圍判斷
 swap(a, b)                    // 交換

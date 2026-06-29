@@ -3,13 +3,13 @@ package builtin
 import "github.com/lizongying/nolang/parser"
 
 func init() {
-	// str-eq: compare two strings for equality
+	// str.eq: compare two strings for equality (method: a.eq(b, n))
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "str-eq",
-		Params:       []parser.Type{parser.TypeStr, parser.TypeStr, parser.TypeI64},
+		ReceiverType: ReceiverStr,
+		MethodName:   "str.eq",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
-		Doc:          "Compare two strings for equality",
+		Doc:          "Compare two strings for equality (method)",
 		ForwardFunc:  "eq-raw",
 	})
 
@@ -23,13 +23,13 @@ func init() {
 		ForwardFunc:  "str-len",
 	})
 
-	// str-copy: copy n bytes from src to dst
+	// str.copy: copy n bytes from src to dst (method: src.copy(dst, n))
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "str-copy",
-		Params:       []parser.Type{parser.TypeStr, parser.TypeStr, parser.TypeI64},
+		ReceiverType: ReceiverStr,
+		MethodName:   "str.copy",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{},
-		Doc:          "Copy n bytes from src to dst",
+		Doc:          "Copy n bytes from src to dst (method)",
 		ForwardFunc:  "memcpy",
 	})
 

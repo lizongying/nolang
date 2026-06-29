@@ -71,47 +71,47 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 
 		if sb != nil {
 			if strLen <= 127 {
-				// SSO: use %str-smail (stack-allocated small string)
+				// SSO: use %str-short (stack-allocated small string)
 				g.tmpIdx++
-				allocaReg := fmt.Sprintf("%%strlit.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-smail\n", g.indent(), allocaReg))
+				allocaReg := fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-short\n", g.indent(), allocaReg))
 				// Store len | 0x80 (field 0, i8)
 				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%strlit.len.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
+				lenGEP := fmt.Sprintf("%%str-longlit.len.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
 				sb.WriteString(fmt.Sprintf("%sstore i8 %d, i8* %s\n", g.indent(), strLen|0x80, lenGEP))
 				// Copy string data into field 1 ([127 x i8])
 				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%strlit.data.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
+				dataGEP := fmt.Sprintf("%%str-longlit.data.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
 				// Bitcast [127 x i8]* to i8* for memcpy
 				g.tmpIdx++
-				dstPtr := fmt.Sprintf("%%strlit.dst.%d", g.tmpIdx)
+				dstPtr := fmt.Sprintf("%%str-longlit.dst.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), dstPtr, dataGEP))
 				sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, %s, i64 %d)\n", g.indent(), dstPtr, dataPtr, strLen))
 				return allocaReg
 			} else {
-				// Large string: use %str (heap pointer)
+				// Large string: use %str-long (heap pointer)
 				g.tmpIdx++
-				allocaReg := fmt.Sprintf("%%strlit.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), allocaReg))
+				allocaReg := fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), allocaReg))
 				// Store len (field 0)
 				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%strlit.len.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
+				lenGEP := fmt.Sprintf("%%str-longlit.len.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
 				// Store data (field 1)
 				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%strlit.data.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
+				dataGEP := fmt.Sprintf("%%str-longlit.data.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
 				sb.WriteString(fmt.Sprintf("%sstore %s, i8** %s\n", g.indent(), dataPtr, dataGEP))
 				return allocaReg
 			}
 		}
 		if strLen <= 127 {
-			return fmt.Sprintf("%%strlit.%d", g.tmpIdx)
+			return fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
 		}
-		return fmt.Sprintf("%%strlit.%d", g.tmpIdx)
+		return fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
 	case *parser.PrefixExpression:
 		right := g.generateExprWithSB(sb, e.Right)
 		if e.Operator == "-" {
@@ -588,7 +588,7 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
 					candidates := []string{srcType}
-					if srcType == "str-smail" {
+					if srcType == "str-short" || srcType == "str-long" {
 						candidates = append(candidates, "str")
 					}
 					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
@@ -731,15 +731,15 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		structName = strings.TrimPrefix(t, "%")
 	}
 
-	// Built-in str/str-smail .len access
+	// Built-in str/str-short .len access
 	if fieldName == "len" && sb != nil {
-		if structName == "str" {
-			// %str: field 0 is i64 len
+		if structName == "str-long" {
+			// %str-long: field 0 is i64 len
 			return g.extractStrLen(sb, "%"+varName)
 		}
-		if structName == "str-smail" {
-			// %str-smail: field 0 is i8 len (with high bit tag), mask and zext
-			return g.extractStrSmailLen(sb, "%"+varName)
+		if structName == "str-short" {
+			// %str-short: field 0 is i8 len (with high bit tag), mask and zext
+			return g.extractStrShortLen(sb, "%"+varName)
 		}
 	}
 
@@ -764,51 +764,51 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 	return "0"
 }
 
-// extractStrDataPtr extracts the i8* data pointer (field 1) from a %str* pointer.
+// extractStrDataPtr extracts the i8* data pointer (field 1) from a %str-long* pointer.
 // Returns the register name holding the i8*.
 func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string {
 	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%str.data.gep.%d", g.tmpIdx)
+	dataGEP := fmt.Sprintf("%%str-long.data.gep.%d", g.tmpIdx)
 	g.tmpIdx++
-	dataLoad := fmt.Sprintf("%%str.data.val.%d", g.tmpIdx)
+	dataLoad := fmt.Sprintf("%%str-long.data.val.%d", g.tmpIdx)
 	if sb != nil {
 		// Handle both @global and %local references
 		if strings.HasPrefix(strPtr, "@") {
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
 		}
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
 	}
 	return dataLoad
 }
 
-// extractStrLen extracts the i64 len (field 0) from a %str* pointer.
+// extractStrLen extracts the i64 len (field 0) from a %str-long* pointer.
 func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%str.len.gep.%d", g.tmpIdx)
+	lenGEP := fmt.Sprintf("%%str-long.len.gep.%d", g.tmpIdx)
 	g.tmpIdx++
-	lenLoad := fmt.Sprintf("%%str.len.val.%d", g.tmpIdx)
+	lenLoad := fmt.Sprintf("%%str-long.len.val.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, strPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strPtr))
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
 	}
 	return lenLoad
 }
 
-// extractStrSmailLen extracts the i64 len from a %str-smail* pointer.
+// extractStrShortLen extracts the i64 len from a %str-short* pointer.
 // Loads field 0 (i8), ANDs with 0x7F to clear the SSO tag bit, then zero-extends to i64.
-func (g *Generator) extractStrSmailLen(sb *strings.Builder, strPtr string) string {
+func (g *Generator) extractStrShortLen(sb *strings.Builder, strPtr string) string {
 	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%strsm.len.gep.%d", g.tmpIdx)
+	lenGEP := fmt.Sprintf("%%str-longsm.len.gep.%d", g.tmpIdx)
 	g.tmpIdx++
-	lenLoad := fmt.Sprintf("%%strsm.len.raw.%d", g.tmpIdx)
+	lenLoad := fmt.Sprintf("%%str-longsm.len.raw.%d", g.tmpIdx)
 	g.tmpIdx++
-	lenMasked := fmt.Sprintf("%%strsm.len.mask.%d", g.tmpIdx)
+	lenMasked := fmt.Sprintf("%%str-longsm.len.mask.%d", g.tmpIdx)
 	g.tmpIdx++
-	lenExt := fmt.Sprintf("%%strsm.len.ext.%d", g.tmpIdx)
+	lenExt := fmt.Sprintf("%%str-longsm.len.ext.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n", g.indent(), lenGEP, strPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), lenGEP, strPtr))
 		sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), lenLoad, lenGEP))
 		sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), lenMasked, lenLoad))
 		sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenExt, lenMasked))
@@ -816,44 +816,44 @@ func (g *Generator) extractStrSmailLen(sb *strings.Builder, strPtr string) strin
 	return lenExt
 }
 
-// extractStrSmailDataPtr extracts the i8* data pointer from a %str-smail* pointer.
+// extractStrShortDataPtr extracts the i8* data pointer from a %str-short* pointer.
 // Returns a pointer to field 1 (the inline [127 x i8] array), bitcast to i8*.
-func (g *Generator) extractStrSmailDataPtr(sb *strings.Builder, strPtr string) string {
+func (g *Generator) extractStrShortDataPtr(sb *strings.Builder, strPtr string) string {
 	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%strsm.data.gep.%d", g.tmpIdx)
+	dataGEP := fmt.Sprintf("%%str-longsm.data.gep.%d", g.tmpIdx)
 	g.tmpIdx++
-	dataPtr := fmt.Sprintf("%%strsm.data.ptr.%d", g.tmpIdx)
+	dataPtr := fmt.Sprintf("%%str-longsm.data.ptr.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), dataGEP, strPtr))
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), dataPtr, dataGEP))
 	}
 	return dataPtr
 }
 
-// extractLenDispatch extracts len from either %str or %str-smail based on known variable type.
+// extractLenDispatch extracts len from either %str-long or %str-short based on known variable type.
 func (g *Generator) extractLenDispatch(sb *strings.Builder, varName string) string {
 	if t, ok := g.varTypes[varName]; ok {
-		if t == "%str-smail" {
-			return g.extractStrSmailLen(sb, "%"+varName)
+		if t == "%str-short" {
+			return g.extractStrShortLen(sb, "%"+varName)
 		}
 		return g.extractStrLen(sb, "%"+varName)
 	}
 	return g.extractStrLen(sb, "%"+varName)
 }
 
-// extractDataPtrDispatch extracts data ptr from either %str or %str-smail based on known variable type.
+// extractDataPtrDispatch extracts data ptr from either %str-long or %str-short based on known variable type.
 func (g *Generator) extractDataPtrDispatch(sb *strings.Builder, varName string) string {
 	if t, ok := g.varTypes[varName]; ok {
-		if t == "%str-smail" {
-			return g.extractStrSmailDataPtr(sb, "%"+varName)
+		if t == "%str-short" {
+			return g.extractStrShortDataPtr(sb, "%"+varName)
 		}
 		return g.extractStrDataPtr(sb, "%"+varName)
 	}
 	return g.extractStrDataPtr(sb, "%"+varName)
 }
 
-// resolveStrPtr resolves a value to a %str* pointer.
-// If the value is a register starting with %, it's already a %str*.
+// resolveStrPtr resolves a value to a %str-long* pointer.
+// If the value is a register starting with %, it's already a %str-long*.
 // Otherwise, it returns the value as-is.
 func (g *Generator) resolveStrPtr(val string) string {
 	if strings.HasPrefix(val, "%") {
@@ -1188,14 +1188,14 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				return "0"
 			}
 
-			if t == "%str" {
-				// %str type: load data pointer (field 1), GEP, store
+			if t == "%str-long" {
+				// %str-long type: load data pointer (field 1), GEP, store
 				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%str.set.data.gep.%d", g.tmpIdx)
+				dataGEP := fmt.Sprintf("%%str-long.set.data.gep.%d", g.tmpIdx)
 				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%str.set.data.%d", g.tmpIdx)
+				dataLoad := fmt.Sprintf("%%str-long.set.data.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %%%s, i32 0, i32 1\n",
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %%%s, i32 0, i32 1\n",
 						g.indent(), dataGEP, varName))
 					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 						g.indent(), dataLoad, dataGEP))
@@ -1203,7 +1203,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 
 				// GEP into data with index
 				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%str.set.elem.%d", g.tmpIdx)
+				elemGEP := fmt.Sprintf("%%str-long.set.elem.%d", g.tmpIdx)
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
 						g.indent(), elemGEP, dataLoad, idx))
@@ -1223,14 +1223,14 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				return "0"
 			}
 
-			if t == "%str-smail" {
-				// %str-smail type: GEP to field 1 (data array), GEP into array, store
+			if t == "%str-short" {
+				// %str-short type: GEP to field 1 (data array), GEP into array, store
 				g.tmpIdx++
-				fieldGEP := fmt.Sprintf("%%strsm.set.field.%d", g.tmpIdx)
+				fieldGEP := fmt.Sprintf("%%str-longsm.set.field.%d", g.tmpIdx)
 				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%strsm.set.elem.%d", g.tmpIdx)
+				elemGEP := fmt.Sprintf("%%str-longsm.set.elem.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %%%s, i32 0, i32 1\n",
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %%%s, i32 0, i32 1\n",
 						g.indent(), fieldGEP, varName))
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldGEP, idx))
@@ -1324,17 +1324,17 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		}
 	}
 
-	// String indexing: s[i] → extract data ptr from %str, then GEP into it
+	// String indexing: s[i] → extract data ptr from %str-long, then GEP into it
 	if varName != "" {
-		if t, ok := g.varTypes[varName]; ok && t == "%str" {
+		if t, ok := g.varTypes[varName]; ok && t == "%str-long" {
 			strPtr := g.varAddr(varName)
 			dataPtr := g.extractStrDataPtr(sb, strPtr)
 			g.tmpIdx++
-			charGEP := fmt.Sprintf("%%stridx.gep.%d", g.tmpIdx)
+			charGEP := fmt.Sprintf("%%str-longidx.gep.%d", g.tmpIdx)
 			g.tmpIdx++
-			charLoad := fmt.Sprintf("%%stridx.val.%d", g.tmpIdx)
+			charLoad := fmt.Sprintf("%%str-longidx.val.%d", g.tmpIdx)
 			g.tmpIdx++
-			charZext := fmt.Sprintf("%%stridx.zext.%d", g.tmpIdx)
+			charZext := fmt.Sprintf("%%str-longidx.zext.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 					g.indent(), charGEP, dataPtr, idx))
@@ -1345,19 +1345,19 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 			return charZext
 		}
-		// str-smail indexing: GEP into field 1 ([127 x i8]) directly
-		if t, ok := g.varTypes[varName]; ok && t == "%str-smail" {
+		// str-short indexing: GEP into field 1 ([127 x i8]) directly
+		if t, ok := g.varTypes[varName]; ok && t == "%str-short" {
 			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%strsm.idx.gep.%d", g.tmpIdx)
+			dataGEP := fmt.Sprintf("%%str-longsm.idx.gep.%d", g.tmpIdx)
 			g.tmpIdx++
-			charGEP := fmt.Sprintf("%%strsm.idx.elem.%d", g.tmpIdx)
+			charGEP := fmt.Sprintf("%%str-longsm.idx.elem.%d", g.tmpIdx)
 			g.tmpIdx++
-			charLoad := fmt.Sprintf("%%strsm.idx.val.%d", g.tmpIdx)
+			charLoad := fmt.Sprintf("%%str-longsm.idx.val.%d", g.tmpIdx)
 			g.tmpIdx++
-			charZext := fmt.Sprintf("%%strsm.idx.zext.%d", g.tmpIdx)
+			charZext := fmt.Sprintf("%%str-longsm.idx.zext.%d", g.tmpIdx)
 			if sb != nil {
 				// GEP to field 1 (the [127 x i8] array)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %%%s, i32 0, i32 1\n",
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %%%s, i32 0, i32 1\n",
 					g.indent(), dataGEP, varName))
 				// GEP into the array at index
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
@@ -1573,7 +1573,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 
 // generateStringLiteralIndex 處理字串常量的索引運算（用於模組字串常量傳播後的場景）
 // 例如：HEX-LOWER[b >> 4] 在 resolveModuleConstants 後，Left 變成 StringLiteral。
-// 對於短字串（≤127 bytes），分配 %str-smail；對於長字串，分配 %str。
+// 對於短字串（≤127 bytes），分配 %str-short；對於長字串，分配 %str-long。
 func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.StringLiteral, index parser.Expression) string {
 	idx := g.generateExprWithSB(sb, index)
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
@@ -1581,7 +1581,7 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 		idxType := g.intExprLLVMType(index)
 		if idxType != "i64" {
 			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%strlit.idx.zext.%d", g.tmpIdx)
+			zextReg := fmt.Sprintf("%%str-longlit.idx.zext.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -1590,33 +1590,33 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 	}
 	strLen := len(lit.Value)
 	g.tmpIdx++
-	strAlloca := fmt.Sprintf("%%strlit.idx.%d", g.tmpIdx)
+	strAlloca := fmt.Sprintf("%%str-longlit.idx.%d", g.tmpIdx)
 	g.tmpIdx++
-	dataPtr := fmt.Sprintf("%%strlit.idx.ptr.%d", g.tmpIdx)
+	dataPtr := fmt.Sprintf("%%str-longlit.idx.ptr.%d", g.tmpIdx)
 	g.tmpIdx++
-	charGEP := fmt.Sprintf("%%strlit.idx.gep.%d", g.tmpIdx)
+	charGEP := fmt.Sprintf("%%str-longlit.idx.gep.%d", g.tmpIdx)
 	g.tmpIdx++
-	charLoad := fmt.Sprintf("%%strlit.idx.val.%d", g.tmpIdx)
+	charLoad := fmt.Sprintf("%%str-longlit.idx.val.%d", g.tmpIdx)
 	g.tmpIdx++
-	zextReg := fmt.Sprintf("%%strlit.idx.zext.%d", g.tmpIdx)
+	zextReg := fmt.Sprintf("%%str-longlit.idx.zext.%d", g.tmpIdx)
 
 	if sb == nil {
 		return zextReg
 	}
 
 	if strLen <= 127 {
-		// SSO: %str-smail = { i8, [127 x i8] }
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-smail\n", g.indent(), strAlloca))
+		// SSO: %str-short = { i8, [127 x i8] }
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-short\n", g.indent(), strAlloca))
 		// field 0: i8 = strLen | 0x80
 		g.tmpIdx++
-		lenGEP := fmt.Sprintf("%%strlit.idx.len.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 0\n",
+		lenGEP := fmt.Sprintf("%%str-longlit.idx.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, strAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore i8 %d, i8* %s\n", g.indent(), strLen|0x80, lenGEP))
 		// field 1: [127 x i8] - copy literal data
 		g.tmpIdx++
-		dataFieldGEP := fmt.Sprintf("%%strlit.idx.datafield.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-smail, %%str-smail* %s, i32 0, i32 1\n",
+		dataFieldGEP := fmt.Sprintf("%%str-longlit.idx.datafield.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n",
 			g.indent(), dataFieldGEP, strAlloca))
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), dataPtr, dataFieldGEP))
 		// Emit the literal as a global string
@@ -1632,18 +1632,18 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
 			g.indent(), charGEP, dataFieldGEP, idx))
 	} else {
-		// Long string: %str = { i64, i8* }
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), strAlloca))
+		// Long string: %str-long = { i64, i8* }
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
 		// field 0: i64 = strLen
 		g.tmpIdx++
-		lenGEP := fmt.Sprintf("%%strlit.idx.len.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n",
+		lenGEP := fmt.Sprintf("%%str-longlit.idx.len.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, strAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
 		// field 1: i8* = data pointer
 		g.tmpIdx++
-		dataFieldGEP := fmt.Sprintf("%%strlit.idx.datafield.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n",
+		dataFieldGEP := fmt.Sprintf("%%str-longlit.idx.datafield.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
 			g.indent(), dataFieldGEP, strAlloca))
 		// Emit the literal as a global string
 		litIdx := g.stringIdx
@@ -1674,7 +1674,7 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
 
 	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%strcmp.%d", g.tmpIdx)
+	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
 	}
@@ -1699,9 +1699,9 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	}
 
 	g.tmpIdx++
-	resultReg := fmt.Sprintf("%%strcmpres.%d", g.tmpIdx)
+	resultReg := fmt.Sprintf("%%str-longcmpres.%d", g.tmpIdx)
 	g.tmpIdx++
-	extReg := fmt.Sprintf("%%strcmpext.%d", g.tmpIdx)
+	extReg := fmt.Sprintf("%%str-longcmpext.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
 		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, resultReg))
@@ -1718,7 +1718,7 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
 
 	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%strcmp.%d", g.tmpIdx)
+	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
 	}
@@ -1742,7 +1742,7 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	}
 
 	g.tmpIdx++
-	resultReg := fmt.Sprintf("%%strcmpres.%d", g.tmpIdx)
+	resultReg := fmt.Sprintf("%%str-longcmpres.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
 	}
@@ -1931,17 +1931,17 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	isVec := false
 	isArr := false
 	isStr := false
-	isStrMail := false
+	isStrShort := false
 	if varName != "" && g.varTypes != nil {
 		if t, ok := g.varTypes[varName]; ok {
 			isVec = t == "%vec"
 			isArr = t == "%arr"
-			isStr = t == "%str"
-			isStrMail = t == "%str-smail"
+			isStr = t == "%str-long"
+			isStrShort = t == "%str-short"
 		}
 	}
 
-	if !isVec && !isArr && !isStr && !isStrMail {
+	if !isVec && !isArr && !isStr && !isStrShort {
 		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec/arr/str): %s\n", g.indent(), leftVal))
 		return "0"
 	}
@@ -1949,8 +1949,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	g.tmpIdx++
 	tid := g.tmpIdx
 	resultType := "%vec"
-	if isStr || isStrMail {
-		resultType = "%str"
+	if isStr || isStrShort {
+		resultType = "%str-long"
 	}
 	resultReg := fmt.Sprintf("%%slic.%d", tid)
 
@@ -1961,10 +1961,10 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	// Variables for source fields
 	var srcLen, srcData, srcCap string
 
-	if isStrMail {
+	if isStrShort {
 		strPtr := fmt.Sprintf("%%%s", varName)
-		srcLen = g.extractStrSmailLen(sb, strPtr)
-		srcData = g.extractStrSmailDataPtr(sb, strPtr)
+		srcLen = g.extractStrShortLen(sb, strPtr)
+		srcData = g.extractStrShortDataPtr(sb, strPtr)
 		srcCap = srcLen
 	} else {
 		// Determine struct type name for source GEPs
@@ -1972,10 +1972,10 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		if isVec {
 			structType = "%vec"
 		} else if isStr {
-			structType = "%str"
+			structType = "%str-long"
 		}
 
-		// Data field index: %arr → field 1, %vec → field 2, %str → field 1
+		// Data field index: %arr → field 1, %vec → field 2, %str-long → field 1
 		dataField := uint32(1)
 		if isVec {
 			dataField = 2
@@ -2005,7 +2005,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 				g.indent(), srcData, srcDataGEP))
 		}
 
-		// Source capacity: for %vec load from field 1, for %arr/%str use len
+		// Source capacity: for %vec load from field 1, for %arr/%str-long use len
 		g.tmpIdx++
 		srcCap = fmt.Sprintf("%%slice.srccap.%d", g.tmpIdx)
 		if isVec {
@@ -2018,7 +2018,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 					g.indent(), srcCap, srcCapGEP))
 			}
 		} else {
-			// %arr/%str has no cap field; use len as cap
+			// %arr/%str-long has no cap field; use len as cap
 			srcCap = srcLen
 		}
 	}
@@ -2097,9 +2097,9 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Compute new data pointer: GEP on i8* with byte offset
-	// byte offset = start * elem_size (default 8 for i64, 1 for str/str-smail)
+	// byte offset = start * elem_size (default 8 for i64, 1 for str/str-short)
 	elemSize := int64(8)
-	if isStr || isStrMail {
+	if isStr || isStrShort {
 		elemSize = 1
 	} else if elemType, ok := g.arrayElemTypes[varName]; ok {
 		switch elemType {
@@ -2155,9 +2155,9 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Store new data
-	// %vec: field 2, %str: field 1
+	// %vec: field 2, %str-long: field 1
 	dstDataField := uint32(2)
-	if isStr || isStrMail {
+	if isStr || isStrShort {
 		dstDataField = 1
 	}
 	g.tmpIdx++
@@ -2311,7 +2311,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		// String concatenation: detect if either operand is a string
 		if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
 			if sb == nil {
-				return "%strconcat.null"
+				return "%str-longconcat.null"
 			}
 			return g.generateStrConcat(sb, expr.Left, expr.Right)
 		}
@@ -2338,7 +2338,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		// String concatenation: detect if either operand is a string
 		if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
 			if sb == nil {
-				return "%strconcat.null"
+				return "%str-longconcat.null"
 			}
 			return g.generateStrConcat(sb, expr.Left, expr.Right)
 		}
@@ -2365,7 +2365,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		// String repetition: 'str' * n
 		if g.isStringExpr(expr.Left) {
 			if sb == nil {
-				return "%strrepeat.null"
+				return "%str-longrepeat.null"
 			}
 			return g.generateStrRepeat(sb, expr.Left, expr.Right)
 		}
@@ -2667,7 +2667,7 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 		return true
 	case *parser.Identifier:
 		if g.varTypes != nil {
-			if t, ok := g.varTypes[e.Value]; ok && (t == "%str" || t == "%str-smail") {
+			if t, ok := g.varTypes[e.Value]; ok && (t == "%str-long" || t == "%str-short") {
 				return true
 			}
 		}
@@ -2679,7 +2679,7 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 	return false
 }
 
-// getStrPtr returns the %str* or %str-smail* pointer for a string expression.
+// getStrPtr returns the %str-long* or %str-short* pointer for a string expression.
 func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) string {
 	if ident, ok := expr.(*parser.Identifier); ok {
 		return "%" + ident.Value
@@ -2692,35 +2692,35 @@ func (g *Generator) getStrType(expr parser.Expression) string {
 	switch e := expr.(type) {
 	case *parser.StringLiteral:
 		if len(e.Value) <= 127 {
-			return "%str-smail"
+			return "%str-short"
 		}
-		return "%str"
+		return "%str-long"
 	case *parser.Identifier:
 		if t, ok := g.varTypes[e.Value]; ok {
 			return t
 		}
 	case *parser.InfixExpression:
 		if e.Operator == "-" || e.Operator == "+" {
-			return "%str" // concat results are always %str
+			return "%str-long" // concat results are always %str-long
 		}
 	}
-	return "%str"
+	return "%str-long"
 }
 
-// extractLenFromExpr extracts i64 len from a string expression (either %str or %str-smail).
+// extractLenFromExpr extracts i64 len from a string expression (either %str-long or %str-short).
 func (g *Generator) extractLenFromExpr(sb *strings.Builder, expr parser.Expression, ptr string) string {
 	stype := g.getStrType(expr)
-	if stype == "%str-smail" {
-		return g.extractStrSmailLen(sb, ptr)
+	if stype == "%str-short" {
+		return g.extractStrShortLen(sb, ptr)
 	}
 	return g.extractStrLen(sb, ptr)
 }
 
-// extractDataFromExpr extracts i8* data pointer from a string expression (either %str or %str-smail).
+// extractDataFromExpr extracts i8* data pointer from a string expression (either %str-long or %str-short).
 func (g *Generator) extractDataFromExpr(sb *strings.Builder, expr parser.Expression, ptr string) string {
 	stype := g.getStrType(expr)
-	if stype == "%str-smail" {
-		return g.extractStrSmailDataPtr(sb, ptr)
+	if stype == "%str-short" {
+		return g.extractStrShortDataPtr(sb, ptr)
 	}
 	return g.extractStrDataPtr(sb, ptr)
 }
@@ -2735,11 +2735,11 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok {
-				if t == "%str" {
+				if t == "%str-long" {
 					return g.extractStrLen(sb, "%"+a.Value)
 				}
-				if t == "%str-smail" {
-					return g.extractStrSmailLen(sb, "%"+a.Value)
+				if t == "%str-short" {
+					return g.extractStrShortLen(sb, "%"+a.Value)
 				}
 			}
 		}
@@ -2760,7 +2760,7 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 // generateStrConcat generates LLVM IR for string concatenation using `-` operator.
 func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr parser.Expression) string {
 	if sb == nil {
-		return "%strconcat.null"
+		return "%str-longconcat.null"
 	}
 
 	leftPtr := g.getStrPtr(sb, leftExpr)
@@ -2799,16 +2799,16 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 
 	g.tmpIdx++
 	resultAlloca := fmt.Sprintf("%%concat.result.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
 
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%concat.len.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
 
 	g.tmpIdx++
 	dataGEP := fmt.Sprintf("%%concat.data.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
 
 	return resultAlloca
@@ -2818,7 +2818,7 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 // Example: 'Hello' * 3 → 'HelloHelloHello'
 func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr parser.Expression) string {
 	if sb == nil {
-		return "%strrepeat.null"
+		return "%str-longrepeat.null"
 	}
 
 	// Get string pointer and length
@@ -2896,19 +2896,19 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
-	// Create result %str
+	// Create result %str-long
 	g.tmpIdx++
 	resultAlloca := fmt.Sprintf("%%repeat.result.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str\n", g.indent(), resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
 
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%repeat.len.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
 
 	g.tmpIdx++
 	dataGEP := fmt.Sprintf("%%repeat.data.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
 
 	return resultAlloca

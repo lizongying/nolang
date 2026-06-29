@@ -56,9 +56,9 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 	case "bool":
 		return "i1"
 	case "str":
-		return "%str"
-	case "str-smail":
-		return "%str-smail"
+		return "%str-long"
+	case "str-short":
+		return "%str-short"
 	case "ptr":
 		return "i8*"
 	case "byte":
