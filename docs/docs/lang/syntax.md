@@ -183,204 +183,74 @@ a, b = swap(5, 3)
 
 ## 流程控制
 
-```nolang
-// 舊式寫法
-// 用for可以替代while/loop
+> **Deprecated 語法（n 版本後移除）**：`for { }` / `for cond { }` / `for init, cond, update { }` / `for i in [..) { }` / `match x { }` / `if/elif/else { }` 仍可解析但會輸出 deprecation warning。請改用下方「**新式語法**」。
 
-// 无限循环 for { }
-for {
-    break
-}
+### 新舊對照
 
-// 条件循环 for condition { }
-for i < 5 {
-    continue
-}
+| 舊式                         | 新式                                               |
+| ---------------------------- | -------------------------------------------------- |
+| `for { }` 無限循環           | `! { }`                                            |
+| `for cond { }` 條件循環      | `cond: { }`（裸條件 for）                          |
+| `for i=0, i<n, i++ { }` 計數 | `n * { }`（常數計數）或 `i <- [0..n): { }`（變數） |
+| `for i <- [a..b] { }` 範圍   | `i <- [a..b]: { }`                                 |
+| `for i in [a..b) { }` 範圍   | `i <- [a..b): { }`                                 |
+| `match x { ... }` 匹配       | `x: { ... }`                                       |
+| `if/elif/else { }` 分支      | `{ cond -> body }`                                 |
+| `continue`                   | `**`                                               |
+| `break`                      | `*`                                                |
+| `return`                     | `...`                                              |
 
-// 經典三段式
-// 儘量不要使用語句，防止多參數、多返回值中的逗號
-for i=0, i < 5, i++ {
-}
-
-// 区间语法
-// 未來會支持map, arr, vec
-for i <- [a..b] {     // 闭区间：a ≤ i ≤ b
-    // a, a + 1, ..., b
-}
-
-for i <- (a..b] {     // 左开右闭：a < i ≤ b
-    // a + 1, a + 2, ..., b
-}
-
-for i <- [a..b) {     // 左闭右开：a ≤ i < b
-    // a, a + 1, ..., b - 1
-}
-
-for i <- (a..b) {     // 开区间：a < i < b
-    // a + 1, a + 2, ..., b - 1
-}
-
-for i <- [5..0] {   // 递减
-}
-
-for i <- [5..5] {   // 只執行5
-}
-
-for i <- (5..5) {   // 無
-}
-
-for i <- 'abc' {   // 遍历字符串中的每个字符
-}
-
-// ❌ 明确拒绝
-for i <- [1.5..5.5] {  // 编译错误：区间边界必须是整数
-    // 步长无法确定
-}
-
-// ⚠️ 不支持嵌套
-for i <- [0..[1..5][0]] {  // ❌ 语法错误
-}
-
-// for 循環
-for i < 10 {
-    print(i)
-    i = i + 1
-}
-
-// range for
-for i in [0..10) {
-    print(i)
-}
-
-// 命名循環 + break/continue
-outer for i in [0..10) {
-    inner for j in [0..10) {
-        if j == 5 {
-            continue outer
-        }
-        if i == 8 {
-            break outer
-        }
-    }
-}
-
-// 舊式寫法
-// if/elif/else
-if x > 5 {
-    a = 1
-} elif x < 0 {
-    b = 2
-} else {
-    c = 0
-}
-```
+### Loop / While / for-in
 
 ```nolang
-
-// loop
-// 一直循環執行
+// 无限循环
 ! {
+    ...
 }
 
-// loop
 // 限定執行次數
 10 * {
 }
 
-// while
-x == 1: {
-    b = 2
+// 區間語法（未來會支持 map, arr, vec）
+i <- [a..b]: {     // 闭区间：a ≤ i ≤ b
+}
+i <- (a..b]: {     // 左开右闭：a < i ≤ b
+}
+i <- [a..b): {     // 左闭右开：a ≤ i < b
+}
+i <- (a..b): {     // 开区间：a < i < b
+}
+i <- [5..0]: {   // 递减
+}
+i <- 'abc': {   // 遍历字符串中的每个字符
 }
 
-// for in
-// 遍歷
-i <- (a..b]: {
+// ❌ 明確拒絕
+//   區間邊界必須是整數；不支持嵌套表達式
+//   for i <- [1.5..5.5] { }   // 編譯錯誤
+//   for i <- [0..[1..5][0]] { } // 語法錯誤
+
+// 條件循環（沒有專用新式）
+for x == 1 {
+    do-something()
 }
+```
 
+### 跳出 / 跳過 / 提前返回
 
-// continue
-i <- (a..b]: {
-    *
+```nolang
+i <- [0..10): {
+    *      // break
+    **     // continue
+    ...    // return/terminate
 }
+```
 
-// break
-i <- (a..b]: {
-    **
-}
+### Match
 
-// return
-i <- (a..b]: {
-    ...
-}
-
-i <- (a..b]: {
-    1 ->
-        a = 1
-        b = 2
-    2 ->
-        do-something()
-    ->
-        c = 0
-}
-
-// 舊式寫法
-// switch
-// 無返回值
-switch x {
-    case 1:
-        a = 1
-        b = 2
-    case 2:
-        do-something()
-    default:
-        c = 0
-}
-
-// switch
-// 無返回值
-x: {
-    1 ->
-        a = 1
-        b = 2
-    2 ->
-        do-something()
-    ->
-        c = 0
-}
-
-// switch
-// 有返回值，最後一個語句/值
-result = x: {
-    1 -> 1       // 單一值
-    2 -> 2 + 1     //簡單表達式
-    -> a + b
-}
-
-// if/else
-{
-    a == 1 ->
-        a = 1
-        b = 2
-    a == 2 ｜ a == 3 ->
-        do-something()
-    ->
-        c = 0
-}
-
-// 舊式寫法
-// match
-match x {
-    case err:
-     log(it)
-    case nil:
-     log('nil')
-    default:
-        do-right-thing(it)
-}
-
-// match
-// 判讀返回值可能有錯的情況
-// it用於取參數
+```nolang
+// 簡單寫法，it 用於取參數
 x: {
     err -> log(it)
     nil -> log('nil')
@@ -388,11 +258,63 @@ x: {
         do-right-thing(it)
 }
 
-// 三元表达式 condition ? true-value : false-value
+// 析構寫法
+x: {
+    err(e) -> log(e)
+    nil -> log('nil')
+    val(v) ->
+        do-right-thing(v)
+}
+
+user: {
+    User{id=1} -> print("管理員")
+    User{name=n} -> print("用戶：", n)
+    -> print("匿名")
+}
+
+score: {
+    [0..59] -> print("不及格")
+    [60..89] -> print("良好")
+    [90..=100] -> print("優秀")
+    -> print("分數非法")
+}
+
+num: {
+    1 || 3 || 5 || 7 -> print("奇數小數")
+    2 || 4 || 6 -> print("偶數小數")
+    -> print("更大數字")
+}
+
+// 有返回值，最後一個語句/值
+result = x: {
+    1 -> 1
+    2 -> 2 + 1
+    -> a + b
+}
+```
+
+> **for-in 體內 match 語義**：`i <- (a..b]: { 1 -> ... 2 -> ... }` 對每個迭代變量 `i` 執行一次 match 體（`1 ->` 等同於 `i == 1 ->`，依此類推）。這是每輪迭代執行一次 match 的語法糖。
+
+### If / Else
+
+```nolang
+// 多分支（推薦新式）
+{
+    a == 1 ->
+        a = 1
+        b = 2
+    a == 2 || a == 3 ->
+        do-something()
+    ->
+        c = 0
+}
+
+// 單 if（保留）
+x == 1 -> do-something()
+
+// 三元表達式 condition ? true-value : false-value
 c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
-
-// 建議使用match語法或三元表達式替代if/else
 ```
 
 ## 數組與切片

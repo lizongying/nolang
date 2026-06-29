@@ -285,3 +285,105 @@ func TestGetHoverWithStringValue(t *testing.T) {
 		t.Fatal("hover is nil")
 	}
 }
+
+// 新式語法關鍵字 hover
+func TestGetHoverNewSyntaxKeywordBang(t *testing.T) {
+	doc := createTestDocument("! {\n    *\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for !")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverNewSyntaxKeywordBreak(t *testing.T) {
+	doc := createTestDocument("! {\n    *\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 1, Character: 4})
+	if !found {
+		t.Fatal("expected hover for *")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverNewSyntaxKeywordContinue(t *testing.T) {
+	doc := createTestDocument("! {\n    **\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 1, Character: 4})
+	if !found {
+		t.Fatal("expected hover for **")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverNewSyntaxKeywordReturn(t *testing.T) {
+	doc := createTestDocument("foo = () {\n    ...\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 1, Character: 4})
+	if !found {
+		t.Fatal("expected hover for ...")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+// 舊式關鍵字 hover（含 deprecation warning）
+func TestGetHoverDeprecatedIf(t *testing.T) {
+	doc := createTestDocument("if x > 0 {\n    1\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for if")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverDeprecatedFor(t *testing.T) {
+	doc := createTestDocument("for i in 0..10 {\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for for")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverDeprecatedMatch(t *testing.T) {
+	doc := createTestDocument("match x {\n    _ => 0\n}")
+	hp := NewHoverProvider(doc, nil)
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for match")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}
+
+// 普通變數在關鍵字 hover 路徑之後仍能正常解析
+func TestGetHoverIdentifierOverridesKeyword(t *testing.T) {
+	text := `x = 10`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for x")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+}

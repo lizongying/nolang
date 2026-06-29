@@ -718,17 +718,23 @@ type keywordDef struct {
 }
 
 var keywords = []keywordDef{
-	{"if", CompletionItemKindKeyword, "if statement", "if ${1:condition} {\n\t$0\n}"},
-	{"else", CompletionItemKindKeyword, "else statement", "else {\n\t$0\n}"},
-	{"elif", CompletionItemKindKeyword, "else if statement", "elif ${1:condition} {\n\t$0\n}"},
-	{"for", CompletionItemKindKeyword, "for loop", "for ${1:condition} {\n\t$0\n}"},
+	// 新式語法
+	{"!", CompletionItemKindKeyword, "infinite loop", "! {\n\t$0\n}"},
+	{"*", CompletionItemKindKeyword, "break shorthand", "*"},
+	{"**", CompletionItemKindKeyword, "continue shorthand", "**"},
+	{"...", CompletionItemKindKeyword, "return/terminate", "..."},
+	// 舊式語法（deprecated，n 版本後移除）
+	{"if", CompletionItemKindKeyword, "if statement (deprecated)", "if ${1:condition} {\n\t$0\n}"},
+	{"else", CompletionItemKindKeyword, "else statement (deprecated)", "else {\n\t$0\n}"},
+	{"elif", CompletionItemKindKeyword, "else if statement (deprecated)", "elif ${1:condition} {\n\t$0\n}"},
+	{"for", CompletionItemKindKeyword, "for loop (deprecated)", "for ${1:condition} {\n\t$0\n}"},
 	{"break", CompletionItemKindKeyword, "break statement", "break"},
 	{"continue", CompletionItemKindKeyword, "continue statement", "continue"},
 	{"return", CompletionItemKindKeyword, "return statement", "return"},
 	{"true", CompletionItemKindKeyword, "boolean true", "true"},
 	{"false", CompletionItemKindKeyword, "boolean false", "false"},
 	{"nil", CompletionItemKindKeyword, "null value", "nil"},
-	{"match", CompletionItemKindKeyword, "match expression", "match ${1:expr} {\n\t${2:pattern} => ${3:value},\n\t_ => ${4:default},\n}"},
+	{"match", CompletionItemKindKeyword, "match expression (deprecated)", "match ${1:expr} {\n\t${2:pattern} => ${3:value},\n\t_ => ${4:default},\n}"},
 	{"fn", CompletionItemKindKeyword, "function literal", "fn(${1:params}) {\n\t$0\n}"},
 }
 

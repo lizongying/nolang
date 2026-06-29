@@ -2215,25 +2215,36 @@ func (p *Parser) parseExpressionStatement() Statement {
 		p.nextToken() // skip :
 
 		bt := p.classifyBlockAtCurrent()
-		switch bt {
-		case blockStruct:
+
+		// Try struct literal first; if it fails, restore state and try match.
+		// If both fail, fall through to for-loop path.
+		if bt == blockStruct {
+			structState := p.saveState()
 			if result := p.parseStructLiteral(stmt.Expression); result != nil {
 				return &ExpressionStatement{Token: tok, Expression: result}
 			}
-		case blockMatch:
+			p.restoreState(structState)
+		}
+
+		// Try match expression
+		if bt == blockMatch {
+			matchState := p.saveState()
 			if me := p.parseMatchExprFrom(stmt.Expression); me != nil {
 				return &ExpressionStatement{Token: tok, Expression: me}
 			}
-		default:
-			// Bare condition for-loop: condition: { body }
-			forStmt := &ForStatement{
-				Token:     tok,
-				Condition: stmt.Expression,
-			}
-			forStmt.Body = p.parseBlockStatement()
-			p.nextToken() // skip body's }
-			return forStmt
+			p.restoreState(matchState)
 		}
+
+		// If neither struct nor match succeeded, treat as bare condition for-loop
+		// (this handles empty {} and any case where classifyBlock returned
+		// blockUnknown or the above attempts failed).
+		forStmt := &ForStatement{
+			Token:     tok,
+			Condition: stmt.Expression,
+		}
+		forStmt.Body = p.parseBlockStatement()
+		p.nextToken() // skip body's }
+		return forStmt
 	}
 	p.restoreState(state)
 
@@ -3005,12 +3016,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			}
 			p.ctx.pop()
 		} else {
-			// Inline expression form
+			// Inline statement form（單行 body）
+			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
 			p.ctx.push(CTX_MATCH_ARM)
-			expr := p.parseExpression(LOWEST)
+			stmt := p.parseStatement()
 			p.ctx.pop()
-			if expr != nil {
-				bodyStmts = append(bodyStmts, &ExpressionStatement{Token: tok, Expression: expr})
+			if stmt != nil {
+				bodyStmts = append(bodyStmts, stmt)
 			}
 		}
 
@@ -3125,12 +3137,13 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			}
 			p.ctx.pop()
 		} else {
-			// Inline expression form
+			// Inline statement form（單行 body）
+			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
 			p.ctx.push(CTX_MATCH_ARM)
-			expr := p.parseExpression(LOWEST)
+			stmt := p.parseStatement()
 			p.ctx.pop()
-			if expr != nil {
-				bodyStmts = append(bodyStmts, &ExpressionStatement{Token: tok, Expression: expr})
+			if stmt != nil {
+				bodyStmts = append(bodyStmts, stmt)
 			}
 		}
 
@@ -3202,9 +3215,12 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 					Token:       tok,
 					Condition:   &IntegerLiteral{Token: tok, Value: 1},
 					Consequence: arm.body,
+					IsBareMatch: true,
 				}
 			} else {
-				ifExpr.Alternative = arm.body
+				if ifExpr.Alternative == nil {
+					ifExpr.Alternative = arm.body
+				}
 			}
 		} else {
 			newIf := &IfExpression{
@@ -3212,6 +3228,7 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 				Condition:   arm.condition,
 				Consequence: arm.body,
 				Alternative: nil,
+				IsBareMatch: true,
 			}
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
@@ -3484,6 +3501,8 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 
 func (p *Parser) parseMatchExpression() Expression {
 	tok := p.currentToken
+	p.saveWarning(fmt.Sprintf("line %d, column %d: 'match' keyword is deprecated, use '<expr>: { ... }' instead",
+		tok.Line, tok.Column))
 	p.nextToken() // skip match
 
 	// Determine form: match <expr> { ... } or match { ... }
@@ -3763,6 +3782,8 @@ func isArmStart(p *Parser) bool {
 
 func (p *Parser) parseIfExpression() Expression {
 	expr := &IfExpression{Token: p.currentToken}
+	p.saveWarning(fmt.Sprintf("line %d, column %d: 'if/elif/else' is deprecated, use '{ <cond> -> <body> }' instead",
+		expr.Token.Line, expr.Token.Column))
 
 	// 跳过 if 关键字
 	p.nextToken()

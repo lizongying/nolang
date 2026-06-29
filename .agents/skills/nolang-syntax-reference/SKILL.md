@@ -86,6 +86,7 @@ Methods attached to a union type (e.g. `int`, `float`, `num`) use `type.method =
 The parser automatically adds a hidden `self` parameter with the receiver type, so you must **not** declare the receiver explicitly.
 
 **Definition:**
+
 ```nolang
 // union type alias
 int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
@@ -120,6 +121,7 @@ float.to-str = () (out str) {
 ```
 
 **Why method form is preferred here:**
+
 - The parser adds a hidden `self: <type>` parameter, enabling `GenericUnion` detection and monomorphization
 - Inside the body, `.` is the receiver — cleaner than passing `v` explicitly
 - The calling convention `to-str(receiver, out)` still works identically via `rewriteUnionCalls`
@@ -156,6 +158,7 @@ main = () {
 ```
 
 **Dispatch mechanism** (in `src/build/transpiler.go`):
+
 1. `monomorphizeUnions` creates type-specific versions: `int.to-str__i64`, `int.to-str__i32`, etc.
 2. `rewriteUnionCalls` resolves call `to-str(i, out)` by:
    - Looking for templates ending with `.to-str`
@@ -166,64 +169,69 @@ main = () {
 
 ### Control Flow
 
-```nolang
-// Infinite loop
-// old
-for { }
+> **舊式語法（deprecated，n 版本後移除）**：`for { }` / `for cond { }` / `for i=0,i<n,i++ { }` / `for i <- [...] { }` / `for i in [...] { }` / `match x { }` / `if/elif/else { }` 仍能解析但會輸出 deprecation warning。請使用下表「新式」語法。
 
-// new
+| 用途     | 新式語法                        | 舊式（deprecated）      |
+| -------- | ------------------------------- | ----------------------- |
+| 無限循環 | `! { }`                         | `for { }`               |
+| 條件循環 | `cond: { }`                     | `for cond { }`          |
+| 計數循環 | `n * { }` 或 `i <- [0..n): { }` | `for i=0, i<n, i++ { }` |
+| 範圍遍歷 | `i <- [a..b]: { }`              | `for i <- [a..b] { }`   |
+| 條件匹配 | `x: { ... }`                    | `match x { ... }`       |
+| 分支選擇 | `{ cond -> body }`              | `if/elif/else { }`      |
+| 跳過本輪 | `**`                            | `continue`              |
+| 跳出循環 | `*`                             | `break`                 |
+| 提前返回 | `...`                           | `return`                |
+
+```nolang
+// Infinite loop（新式）
 ! { }
 
-// Conditional loop
-// old
-for i < 5 { }
-
-// new
+// 條件循環
 i < 5: { }
 
-// five times
+// 五次循環
 5 * { }
 
 // Range for
-// old
-for i in [0..10) { }
-
-// new
 i <- [0..10): { }
 
-// Classic for
-for i=0; i < 5; i++ { }
+// 單if（保留）
+x == 1 -> do-something()
 
-// Named loops with break/continue
-// old
-outer for i in [0..10) {
-    break outer
-    continue outer
-}
-
-//new named
-#1
-i <- [0..10): {
- 
-    #2
-    val: {
-        val == 0x01 -> encrypt()
-        -> zero()
-    }
-}
-
-// If/elif/else
-if x > 5 { } elif x < 0 { } else { }
-
-// Match
-x: { 
-    err -> log(it)
-    nil -> 
-    -> do-right-thing(it)
-}
-
-// Ternary
+// 三元（保留）
 c = flag ? 1 : 2
+```
+
+### Match（新式 `x: { ... }`）
+
+```nolang
+result = x: {
+    1 -> 1
+    2 -> 2 + 1
+    -> a + b
+}
+
+// for-in 體內 match：每輪迭代執行一次 match
+i <- [0..10): {
+    1 -> a = 1
+    2 -> b = 2
+    -> c = 0
+}
+```
+
+### If/Else（新式 `{ cond -> body }`）
+
+```nolang
+{
+    a == 1 ->
+        a = 1
+        b = 2
+    a == 2 || a == 3 ->
+        do-something()
+    ->
+        c = 0
+}
 ```
 
 ### Structs & Methods
@@ -234,7 +242,7 @@ user {
     age i64
 }
 
-u = user { 
+u = user {
     name: 'Alice'
     age: 30
 }
@@ -280,15 +288,32 @@ user json {
 - `..` — parent (super)
 - `.` — self/true
 - `!` — false/error
-- `!{}` — loop
-- `*` — continue
-- `**` — break
+- `! { }` — 無限循環
+- `**` — continue（跳過本輪）
+- `*` — break（跳出循環）
 - `<-` — range iteration
 
 ## Additional Resources
 
 For detailed documentation on each topic, see:
+
 - [Full syntax reference](../../../docs/docs/lang/syntax.md)
 - [Operators and symbols](../../../docs/docs/lang/symbol.md)
 - [Export system](../../../docs/docs/lang/export.md)
 - [String operations](../../../docs/docs/lang/str.md)
+
+## Migration Cheatsheet (old → new)
+
+| Old (deprecated)                     | New                             |
+| ------------------------------------ | ------------------------------- |
+| `for { }`                            | `! { }`                         |
+| `for cond { }`                       | `cond: { }`                     |
+| `for i=0, i<n, i++ { }`              | `n * { }` or `i <- [0..n): { }` |
+| `for i <- [a..b] { }`                | `i <- [a..b]: { }`              |
+| `match x { 1 -> 1, _ -> 0 }`         | `x: { 1 -> 1; -> 0 }`           |
+| `if c { a } elif d { b } else { e }` | `{ c -> a; d -> b; -> e }`      |
+| `break`                              | `*`                             |
+| `continue`                           | `**`                            |
+| `return`                             | `...`                           |
+
+Old syntax still parses but emits a deprecation warning on stderr. Use `no fmt` to apply the migration automatically (the formatter always outputs the new form).

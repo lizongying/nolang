@@ -9,9 +9,11 @@ A disciplined test-first workflow for diagnosing and fixing bugs in the Nolang c
 
 ## Core Principle
 
-**Never debug by editing the user's `.no` file directly.** Even if you suspect a syntax or parsing problem, the user's code is presumed correct. Report the suspected issue to the user and let them decide; do not change valid syntax (identifiers, variable declarations, etc.) on your own authority.
+\*\*Never debug by editing the user's `.no` file directly. Even if you suspect a syntax or parsing problem, the user's code is presumed correct. Report the suspected issue to the user and let them decide; do not change valid syntax (identifiers, variable declarations, etc.) on your own authority.
 
 > **Nolang 檔名使用中連字符 `-`**（如 `string-helper.no`），**不使用下劃線 `_`**。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md)。
+
+> **Deprecation warnings**：舊式流程控制語法（`for { }`、`for cond { }`、`for i=0,i<n,i++ { }`、`for i <- [...] { }`、`for i in [...] { }`、`match x { }`、`if/elif/else { }`）會輸出 deprecation warning 但仍可解析。建議改用新式（`! { }`、`cond: { }`、`n * { }`、`i <- [..]: { }`、`x: { }`、`{ cond -> body }`）。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md) 的 Control Flow 段落。
 
 Always:
 
@@ -249,6 +251,63 @@ This follows Nolang's compiler semantics where the hidden `self` parameter enabl
 - Deleting the regression test "to clean up" — defeats the purpose.
 - Trusting the editor display of a file you just edited — verify with `sed -n` or `od -c` from a terminal.
 - **Never use `git checkout`** — it is extremely dangerous and can silently discard uncommitted changes. Use `git switch` or `git restore` instead for branch switching or file recovery. `git checkout` is banned.
+
+## Common Pitfalls: New vs Deprecated Control Flow
+
+When debugging empty braces being removed, mismatched AST shapes, or stray `ExpressionStatement` nodes, the root cause is usually control-flow ambiguity. The new syntax avoids these traps.
+
+### Empty `{}` gotcha (old syntax)
+
+In the old syntax, `for {}` and `if x {}` and `match x {}` all use the same `{}` block. An empty block was frequently misclassified as a struct literal — the parser would then "consume" the braces and the formatter would emit nothing. Symptom: braces disappear after format.
+
+**Always prefer the new syntax** to avoid this:
+
+```nolang
+// ❌ Old syntax — empty body
+for { }
+
+// ✅ New syntax — explicit infinite loop, no ambiguity
+! { }
+```
+
+### Bare match expression — `{ cond -> body }`
+
+The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
+
+```nolang
+// ✅ Recommended
+{
+    a == 1 -> x = 1
+    a == 2 || a == 3 -> y = 2
+    -> z = 0
+}
+```
+
+This form is parsed into an `IfExpression` with `IsBareMatch = true`. The formatter emits the new-style output, not `if/else`. If the formatter is producing `if/else` output, the `IsBareMatch` flag is missing — check `parseBareMatchDesugar` in `src/parser/parser.go`.
+
+### When to use deprecation warnings
+
+Old-style syntax still parses, but emits a warning to stderr. When debugging a user-reported issue:
+
+1. If the user is on old syntax, recommend migration in the same fix.
+2. If you must support old syntax in tests, add the warning to the parser; do not silence it.
+3. Verify with `parser_test.go:TestDeprecationWarnings` (or the equivalent `syntax_test.go` cases).
+
+## LSP-Facing Issues
+
+### Hover / signature / completion missing for new syntax
+
+The LSP must surface hover docs and completions for the new syntax operators (`!`, `*`, `**`, `...`). If these don't show up:
+
+- `src/lsp/hover.go` — `keywordDoc` map must contain all four operators with markdown.
+- `src/lsp/completion.go` — `keywords` list must include them with proper snippets.
+- `src/lsp/utils.go` — `getTokenAtPosition` must recognise multi-char operators (priority: `...` > `**` > `*` > `!`).
+
+Add a regression test in `src/lsp/hover_test.go` and `src/lsp/completion_test.go` before fixing.
+
+### Hover position offsets
+
+LSP clients report positions in UTF-16 code units, but Nolang source is ASCII for syntax tokens. Off-by-one errors are common when the cursor is at the very end of a line. Use `Position{Line, Character: N}` with N = column index (0-based) to match editor display.
 
 ## See Also
 

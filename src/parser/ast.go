@@ -543,6 +543,9 @@ type IfExpression struct {
 	Condition   Expression
 	Consequence *BlockStatement
 	Alternative *BlockStatement
+	// IsBareMatch 標記此 IfExpression 來自裸 match 表達式 `{ cond -> body }`，
+	// 格式化器應輸出新式語法而非 if/else。
+	IsBareMatch bool
 }
 
 func (ie *IfExpression) expressionNode()     {}

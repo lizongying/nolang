@@ -858,6 +858,11 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 }
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
+	// 裸 match 表達式 `{ cond -> body }` 輸出新式語法
+	if e.IsBareMatch {
+		f.formatBareMatchExpression(e)
+		return
+	}
 	f.write("if ")
 	f.formatExpression(e.Condition)
 	f.write(" {")
@@ -903,6 +908,86 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 			f.newline()
 			f.write("}")
 		}
+	}
+}
+
+// formatBareMatchExpression 將裸 match 鏈（IfExpression desugar）格式化為
+// 新式語法 `{ cond -> body }`。
+// 鏈的結構由 buildBareMatchDesugar 產生：
+//   - 若最後一個 arm 是 wildcard（else），頂層 IfExpression 可能會被包裝在
+//     ExpressionStatement 內。
+//   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
+//   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
+func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
+	f.write("{")
+	f.indent++
+	// 輸出當前 arm
+	f.writeBareMatchArm(e)
+	// 處理後續 arm（Alternative 鏈）
+	for e.Alternative != nil {
+		if len(e.Alternative.Statements) == 1 {
+			es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement)
+			if !ok {
+				break
+			}
+			next, ok := es.Expression.(*parser.IfExpression)
+			if !ok || !next.IsBareMatch {
+				break
+			}
+			e = next
+			f.writeBareMatchArm(e)
+			continue
+		}
+		// Wildcard arm 的 Alternative 是直接的 BlockStatement
+		// 模擬 IfExpression 包裝後調用 writeBareMatchArm
+		wildcardIf := &parser.IfExpression{
+			Token:       e.Token,
+			Condition:   &parser.IntegerLiteral{Token: e.Token, Value: 1},
+			Consequence: e.Alternative,
+			IsBareMatch: true,
+		}
+		f.writeBareMatchArm(wildcardIf)
+		break
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+// writeBareMatchArm 輸出單個 arm。
+// 對於非 wildcard：cond -> body
+// 對於 wildcard：-> body
+// 若 body 只有一行且為 ExpressionStatement / LetStatement，內聯輸出在同一行；
+// 否則每個 statement 換行並縮排。
+func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
+	// 判斷是否為 wildcard（condition 為 IntegerLiteral(1) 標記）
+	isWildcard := false
+	if intLit, ok := e.Condition.(*parser.IntegerLiteral); ok && intLit.Value == 1 {
+		isWildcard = true
+	}
+	f.newline()
+	if isWildcard {
+		f.write("->")
+	} else {
+		f.formatExpression(e.Condition)
+		f.write(" ->")
+	}
+	// 內聯簡單 body：只一個語句且無註釋時，輸出在同一行
+	if len(e.Consequence.Statements) == 1 &&
+		e.Consequence.TrailingComments == nil &&
+		e.Consequence.ClosingBraceComment == nil {
+		stmt := e.Consequence.Statements[0]
+		switch stmt.(type) {
+		case *parser.ExpressionStatement, *parser.LetStatement:
+			f.write(" ")
+			f.formatStatement(stmt)
+			return
+		}
+	}
+	for _, stmt := range e.Consequence.Statements {
+		f.newline()
+		f.write("    ")
+		f.formatStatement(stmt)
 	}
 }
 

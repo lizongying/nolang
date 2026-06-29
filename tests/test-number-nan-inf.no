@@ -7,66 +7,81 @@ test-nan-inf = () {
     a = 1.0
     yes = 0
     a.is-nan(yes)
-    if yes {
-        print(1)  // expect: 0 (not printed)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
 
+    // expect: 0 (not printed)
+    // expect: 0
+
     a.is-inf(yes)
-    if yes {
-        print(1)  // expect: 0 (not printed)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
+
+    // expect: 0 (not printed)
+    // expect: 0
 
     // NaN = 0.0 / 0.0
     b = 0.0 / 0.0
     b.is-nan(yes)
-    if yes {
-        print(1)  // expect: 1
-    } else {
-        print(0)  // expect: 0 (not printed)
+    {
+        yes -> print(1)
+        -> print(0)
     }
 
+    // expect: 1
+    // expect: 0 (not printed)
+
     b.is-inf(yes)
-    if yes {
-        print(1)  // expect: 0 (not printed)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
+
+    // expect: 0 (not printed)
+    // expect: 0
 
     // +Inf = 1.0 / 0.0
     c = 1.0 / 0.0
     c.is-nan(yes)
-    if yes {
-        print(1)  // expect: 0 (not printed)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
 
+    // expect: 0 (not printed)
+    // expect: 0
+
     c.is-inf(yes)
-    if yes {
-        print(1)  // expect: 1
-    } else {
-        print(0)  // expect: 0 (not printed)
+    {
+        yes -> print(1)
+        -> print(0)
     }
+
+    // expect: 1
+    // expect: 0 (not printed)
 
     // -Inf = -1.0 / 0.0
     d = -1.0 / 0.0
     d.is-nan(yes)
-    if yes {
-        print(1)  // expect: 0 (not printed)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
 
+    // expect: 0 (not printed)
+    // expect: 0
+
     d.is-inf(yes)
-    if yes {
-        print(1)  // expect: 1
-    } else {
-        print(0)  // expect: 0 (not printed)
+    {
+        yes -> print(1)
+        -> print(0)
     }
+    // expect: 1
+    // expect: 0 (not printed)
 }
 
 test-nan-inf()

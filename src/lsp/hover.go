@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// keywordDoc 為 LSP hover 提供新式/舊式關鍵字文檔
+var keywordDoc = map[string]string{
+	"!":     "**新式語法** — 無限迴圈語句，類似舊式 `for { }`。\n\n```nolang\n! {\n    *     // break\n    **    // continue\n}\n```",
+	"*":     "**新式語法** — 跳出當前迴圈（break）。",
+	"**":    "**新式語法** — 跳過當前迴圈迭代（continue）。",
+	"...":   "**新式語法** — 終止當前語句序列並回傳值，類似舊式 `return` 後接值。",
+	"if":    "**舊式語法（已廢棄）** — 請改用新式 `{ cond -> body }` 裸 match 表達式。",
+	"elif":  "**舊式語法（已廢棄）** — 請改用新式 `{ cond -> body }` 裸 match 表達式。",
+	"else":  "**舊式語法（已廢棄）** — 請改用新式 `{ cond -> body }` 裸 match 表達式。",
+	"for":   "**舊式語法（已廢棄）** — 請改用新式 `5 * { }` 計次迴圈、`! { }` 無限迴圈或範圍 `for i in a..b { }`。",
+	"match": "**舊式語法（已廢棄）** — 請改用新式 `{ cond -> body }` 裸 match 表達式。",
+}
+
 type HoverProvider struct {
 	index *SymbolIndex
 	doc   *TextDocument
@@ -18,9 +31,19 @@ func NewHoverProvider(doc *TextDocument, index *SymbolIndex) *HoverProvider {
 }
 
 func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
-	word := getWordAtPosition(hp.doc.Text, position)
+	word := getTokenAtPosition(hp.doc.Text, position)
 	if word == "" {
 		return nil, false
+	}
+
+	// 關鍵字 hover（新舊語法）
+	if doc, ok := keywordDoc[word]; ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: doc,
+			},
+		}, true
 	}
 
 	if hp.index == nil {

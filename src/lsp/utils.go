@@ -48,6 +48,35 @@ func getWordAtPosition(text string, position Position) string {
 	return line[start:end]
 }
 
+// getTokenAtPosition 在游標位置查找新式語法運算符（`!`/`*`/`**`/`...`）
+// 游標可在運算符任意字元上。
+func getTokenAtPosition(text string, position Position) string {
+	lines := getLines(text)
+	if int(position.Line) >= len(lines) {
+		return ""
+	}
+	line := lines[position.Line]
+	if int(position.Character) > len(line) {
+		return ""
+	}
+	c := int(position.Character)
+
+	// 按優先級嘗試長度由長到短：`...` > `**` > `*` > `!`
+	for _, op := range []string{"...", "**", "*", "!"} {
+		// 嘗試 op 在 [c-len(op), c) 的位置
+		if c >= len(op) && c <= len(line) && line[c-len(op):c] == op {
+			return op
+		}
+		// 嘗試 op 在 [c, c+len(op)) 的位置
+		if c+len(op) <= len(line) && line[c:c+len(op)] == op {
+			return op
+		}
+	}
+
+	// 回退到一般單字
+	return getWordAtPosition(text, position)
+}
+
 func getProgram(doc *TextDocument) *parser.Program {
 	return doc.AST
 }

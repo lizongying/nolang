@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
@@ -57,8 +58,8 @@ func TestCompletionProviderWithNilProgram(t *testing.T) {
 
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
-	if len(items) != 12 {
-		t.Errorf("expected 12 keyword completions, got %d", len(items))
+	if len(items) != 16 {
+		t.Errorf("expected 16 keyword completions, got %d", len(items))
 	}
 }
 
@@ -655,6 +656,39 @@ func TestGetTriggerType(t *testing.T) {
 		result := getTriggerType(tt.trigger)
 		if result != tt.expected {
 			t.Errorf("getTriggerType(%q): expected %d, got %d", tt.trigger, tt.expected, result)
+		}
+	}
+}
+
+// 新式語法關鍵字補全
+func TestGetKeywordCompletionsNewSyntax(t *testing.T) {
+	doc := createTestDocument("x = 10")
+	cp := NewCompletionProvider(doc, nil)
+	items := cp.getKeywordCompletions()
+
+	expected := []string{"!", "*", "**", "..."}
+	found := make(map[string]bool)
+	for _, item := range items {
+		found[item.Label] = true
+	}
+	for _, kw := range expected {
+		if !found[kw] {
+			t.Errorf("expected new-syntax keyword %q not found", kw)
+		}
+	}
+}
+
+func TestGetKeywordCompletionsDeprecatedMarked(t *testing.T) {
+	doc := createTestDocument("x = 10")
+	cp := NewCompletionProvider(doc, nil)
+	items := cp.getKeywordCompletions()
+
+	for _, item := range items {
+		// 舊式語法關鍵字 detail 應包含 (deprecated)
+		if item.Label == "if" || item.Label == "for" || item.Label == "match" || item.Label == "elif" || item.Label == "else" {
+			if !strings.Contains(item.Detail, "deprecated") {
+				t.Errorf("expected detail of %q to contain 'deprecated', got %q", item.Label, item.Detail)
+			}
 		}
 	}
 }

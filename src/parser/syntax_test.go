@@ -322,6 +322,8 @@ func TestDeprecationWarnings(t *testing.T) {
 		{name: "while_no_colon_deprecated", input: "while i < 5 {\n    break\n}", wantWarnings: 1},
 		{name: "bare_range_no_colon_deprecated", input: "i <- [0..10) {\n    break\n}", wantWarnings: 1},
 		{name: "match_no_colon_deprecated", input: "x {\n    1-> 10\n    -> 0\n}", wantWarnings: 1},
+		{name: "match_keyword_deprecated", input: "match x {\n    1 -> 10\n    -> 0\n}", wantWarnings: 1},
+		{name: "if_keyword_deprecated", input: "if x > 0 {\n    a = 1\n} else {\n    a = 0\n}", wantWarnings: 1},
 		// New syntax — no warnings
 		{name: "while_with_colon_no_warning", input: "while i < 5: {\n    break\n}", wantWarnings: 0},
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},

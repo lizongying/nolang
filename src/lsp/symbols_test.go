@@ -319,3 +319,49 @@ func TestSymbolProviderCollectLocalVariables(t *testing.T) {
 		t.Fatal("expected at least 1 symbol")
 	}
 }
+
+// 新式語法：裸 match 表達式函式體內變數應被收集
+func TestGetSymbolsNewSyntaxBareMatchInFunction(t *testing.T) {
+	text := `foo = () {
+    {
+        x > 0 -> a = 1
+        -> a = 0
+    }
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	sp := NewSymbolProvider(doc, createTestIndex(doc, program))
+	symbols := sp.GetSymbols()
+	if len(symbols) == 0 {
+		t.Fatal("expected at least 1 symbol")
+	}
+
+	foundFoo := false
+	for _, sym := range symbols {
+		if sym.Name == "foo" {
+			foundFoo = true
+			if sym.Kind != SymbolKindFunction {
+				t.Errorf("expected SymbolKindFunction for foo, got %d", sym.Kind)
+			}
+		}
+	}
+	if !foundFoo {
+		t.Error("expected to find function 'foo'")
+	}
+}
+
+// 新式語法：`!` 無限迴圈函式體內變數應被收集
+func TestGetSymbolsNewSyntaxBangLoop(t *testing.T) {
+	text := `! {
+    i = 0
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	sp := NewSymbolProvider(doc, createTestIndex(doc, program))
+	symbols := sp.GetSymbols()
+	if len(symbols) == 0 {
+		t.Fatal("expected at least 1 symbol")
+	}
+}

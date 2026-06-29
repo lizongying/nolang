@@ -84,6 +84,54 @@ func TestFormatBasic(t *testing.T) {
 			expected: "for {\n    break\n}",
 		},
 		{
+			// 新式 ! { } 無限循環
+			name:     "bang_loop",
+			input:    "!{break}",
+			expected: "! {\n    break\n}",
+		},
+		{
+			// 新式 N * { } 計數循環
+			name:     "counted_loop",
+			input:    "5*{print(1)}",
+			expected: "5 * {\n    print(1)\n}",
+		},
+		{
+			// 新式 i <- (a..b]: { } 範圍循環
+			name:     "range_for_with_colon",
+			input:    "i<-[0..10):{print(i)}",
+			expected: "i <- [0..10): {\n    print(i)\n}",
+		},
+		{
+			// 新式 cond: { } 裸條件循環
+			name:     "bare_conditional_for",
+			input:    "i<5:{i=i+1}",
+			expected: "i < 5: {\n    i = i + 1\n}",
+		},
+		{
+			// 新式 { cond -> body } if/else（包在函數內）
+			name:     "if_else_new_syntax",
+			input:    "foo=(){{\nx>0->a=1\n->a=0\n}}",
+			expected: "foo = () {\n    {\n        x > 0 -> a = 1\n        -> a = 0\n    }\n}",
+		},
+		{
+			// 新式 if/else 多分支（包在函數內）
+			name:     "if_else_with_multiple_arms",
+			input:    "foo=(){{\nx==1->a=1\nx==2->a=2\n->a=0\n}}",
+			expected: "foo = () {\n    {\n        x == 1 -> a = 1\n        x == 2 -> a = 2\n        -> a = 0\n    }\n}",
+		},
+		{
+			// 新式 if/else 多行 body（換行 body → 多行格式）
+			name:     "if_else_multiline_body",
+			input:    "foo=(){{\nx==1->\na=1\nb=2\n->\nc=0\n}}",
+			expected: "foo = () {\n    {\n        x == 1 ->\n            a = 1\n            b = 2\n        -> c = 0\n    }\n}",
+		},
+		{
+			// 新式 if/else 或條件
+			name:     "if_else_or_condition",
+			input:    "foo=(){{\nx==2||x==3->a=1\n->a=0\n}}",
+			expected: "foo = () {\n    {\n        x == 2 || x == 3 -> a = 1\n        -> a = 0\n    }\n}",
+		},
+		{
 			name:     "c-style for loop with comma",
 			input:    "for i=0,i<5,i++{i=i}",
 			expected: "for i = 0, i < 5, i ++  {\n    i = i\n}",

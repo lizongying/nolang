@@ -76,17 +76,15 @@ test-str-to-f64 = () {
 // ===== str → bool =====
 test-str-to-bool = () {
     b = str-to-bool('true')
-    if b {
-        print(1)           // 期望: 1
-    } else {
-        print(0)
+    {
+        b -> print(1)           // 期望: 1
+        -> print(0)
     }
 
     b = str-to-bool('false')
-    if b {
-        print(1)
-    } else {
-        print(0)           // 期望: 0
+    {
+        b -> print(1)
+        -> print(0)           // 期望: 0
     }
 }
 

@@ -2,33 +2,34 @@
 
 i64-max = (a i64, b i64, r i64) {
     d = a - b
-    if d > 0 {
-        r = a
-    } else {
-        r = b
+    {
+        d > 0 -> r = a
+        -> r = b
     }
 }
 
 i64-min = (a i64, b i64, r i64) {
     d = a - b
-    if d > 0 {
-        r = b
-    } else {
-        r = a
+    {
+        d > 0 -> r = b
+        -> r = a
     }
 }
 
 abs-i64 = (a i64, r i64) {
-    if a < 0 {
-        r = 0 - a
-    } else {
-        r = a
+    {
+        a < 0 -> r = 0 - a
+        -> r = a
     }
 }
 
 gcd = (a i64, b i64, r i64) {
-    if a < 0 { a = 0 - a }
-    if b < 0 { b = 0 - b }
+    a < 0: {
+        a = 0 - a
+    }
+    b < 0: {
+        b = 0 - b
+    }
     b != 0: {
         t = b
         b = a % b

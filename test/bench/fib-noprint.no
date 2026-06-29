@@ -14,7 +14,7 @@ fib = (n i64, o i64) {
 }
 
 dummy = 0
-for iter = 0, iter < 10000000, iter++ {
+iter <- [0..10000000): {
     result = 0
     fib(40, result)
     dummy = result

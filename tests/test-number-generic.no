@@ -84,32 +84,35 @@ test-even-odd = () {
     yes = 0
 
     even(4, yes)
-    if yes {
-        print(1)  // expect: 1
-    } else {
-        print(0)
+    {
+        yes -> print(1)
+        -> print(0)
     }
+
+    // expect: 1
 
     even(7, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
+
+    // expect: 0
 
     odd(7, yes)
-    if yes {
-        print(1)  // expect: 1
-    } else {
-        print(0)
+    {
+        yes -> print(1)
+        -> print(0)
     }
 
+    // expect: 1
+
     odd(4, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)  // expect: 0
+    {
+        yes -> print(1)
+        -> print(0)
     }
+    // expect: 0
 }
 
 test-even-odd()

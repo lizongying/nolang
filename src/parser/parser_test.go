@@ -807,6 +807,26 @@ func TestForLoop(t *testing.T) {
 			hasUpdate: true,
 			hasBody:   true,
 		},
+		{
+			// Bare condition for-loop with empty body.
+			// Regression test: empty {} was misclassified as a struct literal
+			// and the parser fell through to the ExpressionStatement path,
+			// producing 3 ExpressionStatements (the condition, {, }) instead
+			// of a single ForStatement. The formatter would then drop the
+			// body braces, deleting `{}` on save.
+			name:    "bare_cond_empty_body",
+			input:   "i < 5: {\n}",
+			wantErr: false,
+			hasCond: true,
+			hasBody: false,
+		},
+		{
+			name:    "bare_cond_empty_body_with_newline",
+			input:   "i < 5: {\n    // comment\n}",
+			wantErr: false,
+			hasCond: true,
+			hasBody: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -850,6 +870,125 @@ func TestForLoop(t *testing.T) {
 				if tt.name != "for_cstyle" {
 					t.Errorf("expected non-empty body")
 				}
+			}
+		})
+	}
+}
+
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestDeprecationWarnings$
+// (TestDeprecationWarnings 已存在於 syntax_test.go，本處僅補上 match/if 舊式語法測試)
+
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestNewSyntaxNoWarnings$
+func TestNewSyntaxNoWarnings(t *testing.T) {
+	// 確認新語法不會觸發 deprecation warning
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "bang_loop", input: "!\n{\n    break\n}"},
+		{name: "counted_loop", input: "5 *\n{\n    print(1)\n}"},
+		{name: "range_for_with_colon", input: "i <- [0..10): {\n    print(i)\n}"},
+		{name: "bare_conditional_for", input: "i < 5: {\n    i = i + 1\n}"},
+		{name: "match_with_subject", input: "x: {\n    1 -> 1\n    -> 0\n}"},
+		{name: "bare_match_if_else", input: "{\n    x > 0 -> a = 1\n    -> a = 0\n}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			program := p.ParseProgram()
+			_ = program
+			if len(p.Errors()) != 0 {
+				t.Errorf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if len(p.Warnings()) != 0 {
+				t.Errorf("expected no deprecation warnings for new syntax, got: %v", p.Warnings())
+			}
+		})
+	}
+}
+
+// TestBareMatchIfElse 新式 if/else 語法（{ cond -> body }）的專項測試
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestBareMatchIfElse$
+func TestBareMatchIfElse(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "if_else_simple", input: "{\n    x > 0 -> a = 1\n    -> a = 0\n}", wantErr: false},
+		{name: "if_else_with_three_arms", input: "{\n    x == 1 -> a = 1\n    x == 2 -> a = 2\n    -> a = 0\n}", wantErr: false},
+		{name: "if_else_or_condition", input: "{\n    x == 2 || x == 3 -> a = 1\n    -> a = 0\n}", wantErr: false},
+		{name: "if_else_in_function", input: "foo = (x i64) {\n    {\n        x > 0 -> r = 1\n        -> r = 0\n    }\n}", wantErr: false},
+		{name: "if_else_multiline_body", input: "{\n    x == 1 ->\n        a = 1\n        b = 2\n    ->\n        c = 0\n}", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			program := p.ParseProgram()
+			if tt.wantErr {
+				if len(p.Errors()) == 0 {
+					t.Errorf("expected parser errors, got none")
+				}
+				return
+			}
+			if len(p.Errors()) != 0 {
+				t.Errorf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if program == nil || len(program.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+		})
+	}
+}
+
+// TestNewSyntaxInFunctionBody 新式循環語法（!{}、N*{}、cond:{}）在函數體內的專項測試
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestNewSyntaxInFunctionBody$
+func TestNewSyntaxInFunctionBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "counted_loop_in_function", input: "foo = () {\n    10 * {\n        a = a + 1\n    }\n}", wantErr: false},
+		{name: "bang_loop_in_function", input: "foo = () {\n    ! {\n        *\n    }\n}", wantErr: false},
+		{name: "bare_cond_complex_in_function", input: "foo = () {\n    x < 5 && y > 0: {\n        a = a + 1\n    }\n}", wantErr: false},
+		{name: "range_for_in_function", input: "foo = () {\n    i <- [0..10): {\n        print(i)\n    }\n}", wantErr: false},
+		// 新式 if/else 在函數體內
+		{name: "if_else_in_function_inline", input: "foo = (x i64) {\n    {\n        x > 0 -> r = 1\n        -> r = 0\n    }\n}", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			program := p.ParseProgram()
+			if tt.wantErr {
+				if len(p.Errors()) == 0 {
+					t.Errorf("expected parser errors, got none")
+				}
+				return
+			}
+			if len(p.Errors()) != 0 {
+				t.Errorf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if program == nil || len(program.Statements) == 0 {
+				t.Fatalf("no statements parsed")
 			}
 		})
 	}
