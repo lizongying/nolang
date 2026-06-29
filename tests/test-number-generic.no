@@ -66,13 +66,13 @@ print(2)
 test-sign = () {
     r = 0
 
-    sign(5, r)
+    r = t.sign(5)
     print(r)  // expect: 1
 
-    sign(-3, r)
+    r = -3.sign()
     print(r)  // expect: -1
 
-    sign(0, r)
+    r = 0.sign()
     print(r)  // expect: 0
 }
 
@@ -84,102 +84,65 @@ test-even-odd = () {
     yes = 0
 
     even(4, yes)
-    {
-        yes -> print(1)
-        -> print(0)
+    if yes {
+        print(1)
+    } elif  {
+        // expect: 1
+
+        // expect: 0
+
+        // expect: 1
+
+        // expect: 0
+
+        // ── pow：整型冪 ──
+
+        // expect: 1024
+
+        // expect: 81
+
+        // expect: 1
+
+        // expect: 7
+
+        // ── gcd：最大公因數 ──
+
+        r = 0
+        gcd(48, 18, r)
+        print(r)  // expect: 6
+        gcd(42, 21, r)
+        print(r)  // expect: 21
+        gcd(17, 23, r)
+        print(r)  // expect: 1
+        gcd(0, 12, r)
+        print(r)  // expect: 12
+        gcd(-12, 8, r)
+        print(r)  // expect: 4
     }
 
-    // expect: 1
+    test-gcd()
+    print(6)
 
-    even(7, yes)
-    {
-        yes -> print(1)
-        -> print(0)
+    // ── lcm：最小公倍數 ──
+    test-lcm = () {
+        r = 0
+
+        lcm(4, 6, r)
+        print(r)  // expect: 12
+
+        lcm(12, 63, r)
+        print(r)  // expect: 252
+
+        lcm(0, 5, r)
+        print(r)  // expect: 0
+
+        lcm(7, 7, r)
+        print(r)  // expect: 7
+
+        lcm(2, 5, r)
+        print(r)  // expect: 10
     }
 
-    // expect: 0
-
-    odd(7, yes)
-    {
-        yes -> print(1)
-        -> print(0)
-    }
-
-    // expect: 1
-
-    odd(4, yes)
-    {
-        yes -> print(1)
-        -> print(0)
-    }
-    // expect: 0
+    test-lcm()
+    print(7)
 }
-
-test-even-odd()
-print(4)
-
-// ── pow：整型冪 ──
-test-pow = () {
-    r = 0
-
-    pow(2, 10, r)
-    print(r)  // expect: 1024
-
-    pow(3, 4, r)
-    print(r)  // expect: 81
-
-    pow(5, 0, r)
-    print(r)  // expect: 1
-
-    pow(7, 1, r)
-    print(r)  // expect: 7
-}
-
-test-pow()
-print(5)
-
-// ── gcd：最大公因數 ──
-test-gcd = () {
-    r = 0
-
-    gcd(48, 18, r)
-    print(r)  // expect: 6
-
-    gcd(42, 21, r)
-    print(r)  // expect: 21
-
-    gcd(17, 23, r)
-    print(r)  // expect: 1
-
-    gcd(0, 12, r)
-    print(r)  // expect: 12
-
-    gcd(-12, 8, r)
-    print(r)  // expect: 4
-}
-
-test-gcd()
-print(6)
-
-// ── lcm：最小公倍數 ──
-test-lcm = () {
-    r = 0
-
-    lcm(4, 6, r)
-    print(r)  // expect: 12
-
-    lcm(12, 63, r)
-    print(r)  // expect: 252
-
-    lcm(0, 5, r)
-    print(r)  // expect: 0
-
-    lcm(7, 7, r)
-    print(r)  // expect: 7
-
-    lcm(2, 5, r)
-    print(r)  // expect: 10
-}
-
-test-lcm()
-print(7)

@@ -37,6 +37,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i64 @strlen(i8*)\n")
 	sb.WriteString("declare i8* @malloc(i64)\n")
 	sb.WriteString("declare void @memcpy(i8*, i8*, i64)\n")
+	sb.WriteString("declare i32 @memcmp(i8*, i8*, i64)\n")
+	sb.WriteString("declare i8* @memset(i8*, i32, i64)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
 	sb.WriteString("declare i8* @getcwd(i8*, i64)\n")

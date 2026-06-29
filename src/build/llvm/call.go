@@ -8,6 +8,21 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// llvmTypeToNolang maps LLVM primitive types to all nolang type names that
+// could have produced them. This is needed for method-call resolution, where
+// the receiver's variable has an LLVM type (e.g. i32) but the method is
+// registered under its nolang type name (e.g. char.is-alpha).
+var llvmTypeToNolang = map[string][]string{
+	"i1":     {"bool"},
+	"i8":     {"byte", "i8", "u8"},
+	"i16":    {"i16", "u16"},
+	"i32":    {"char", "i32", "u32"},
+	"i64":    {"i64", "u64"},
+	"float":  {"f32"},
+	"double": {"f64"},
+	"%str":   {"str"},
+}
+
 // isNonVoidCall checks if a CallExpression returns a non-void type.
 func (g *Generator) isNonVoidCall(expr *parser.CallExpression) bool {
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
@@ -222,11 +237,74 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 確定內層調用的返回型別
 		retType := "void"
 		innerFnName := ""
+		var innerMethodRecv *parser.Identifier // method receiver if inner call is s.method(...)
 		if ident, ok := innerCall.Function.(*parser.Identifier); ok {
 			innerFnName = ident.Value
 		} else if dot, ok := innerCall.Function.(*parser.DotExpression); ok {
+			// 解析 receiver method call：s.to-bytes → str.to-bytes
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				innerFnName = recv.Value + "." + dot.Property
+				innerMethodRecv = recv
+				candidate := recv.Value + "." + dot.Property
+				// 嘗試 union alias 解析
+				if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
+					srcType := recvType
+					if srcType == "double" {
+						srcType = "f64"
+					} else if srcType == "float" {
+						srcType = "f32"
+					}
+					for aliasName := range g.unionAliases {
+						if !g.isMemberOfUnionTransitive(srcType, aliasName, make(map[string]bool)) {
+							continue
+						}
+						monoName := aliasName + "." + dot.Property + "__" + srcType
+						if _, exists := g.funcRetTypes[monoName]; exists {
+							innerFnName = monoName
+							innerMethodRecv = nil // monomorphized 名字已含型別
+							break
+						}
+						unionName := aliasName + "." + dot.Property
+						if _, exists := g.funcRetTypes[unionName]; exists {
+							innerFnName = unionName
+							innerMethodRecv = nil
+							break
+						}
+					}
+				}
+				// str/str-smail/arr/vec 方法解析
+				if innerFnName == "" {
+					if recvType, ok := g.varTypes[recv.Value]; ok {
+						srcType := strings.TrimPrefix(recvType, "%")
+						candidates := []string{srcType}
+						if srcType == "str-smail" {
+							candidates = append(candidates, "str")
+						}
+						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+							candidates = append(candidates, primAliases...)
+						}
+						for _, cand := range candidates {
+							shortName := cand + "." + dot.Property
+							if g.funcRetTypes != nil {
+								if t, ok := g.funcRetTypes[shortName]; ok {
+									isMultiResult := false
+									if g.funcNumResults != nil {
+										if n, ok := g.funcNumResults[shortName]; ok && n > 1 {
+											isMultiResult = true
+										}
+									}
+									if t != "void" || isMultiResult {
+										innerFnName = shortName
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+				// fallback
+				if innerFnName == "" {
+					innerFnName = candidate
+				}
 			}
 		}
 		if g.funcRetTypes != nil {
@@ -235,15 +313,29 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 		}
 
-		// 生成內層調用的參數
-		innerArgs := make([]string, len(innerCall.Arguments))
-		for i, arg := range innerCall.Arguments {
-			innerArgs[i] = g.generateCallArg(sb, arg)
+		// 生成內層調用的參數（receiver 作為第一個參數）
+		innerArgs := make([]string, 0)
+		if innerMethodRecv != nil {
+			// str-smail 接收者呼叫 str.* 方法時，需轉換為 %str
+			if strings.HasPrefix(innerFnName, "str.") {
+				if t, ok := g.varTypes[innerMethodRecv.Value]; ok && t == "%str-smail" {
+					smailPtr := g.varAddr(innerMethodRecv.Value)
+					strPtr := g.convertSmailToStr(sb, smailPtr)
+					innerArgs = append(innerArgs, "%str* "+strPtr)
+				} else {
+					innerArgs = append(innerArgs, g.generateCallArg(sb, innerMethodRecv))
+				}
+			} else {
+				innerArgs = append(innerArgs, g.generateCallArg(sb, innerMethodRecv))
+			}
+		}
+		for _, arg := range innerCall.Arguments {
+			innerArgs = append(innerArgs, g.generateCallArg(sb, arg))
 		}
 
 		if retType == "void" {
 			// void 返回：直接調用
-			// 檢查是否為多結果函數（curried 呼叫 → 單次呼叫，附加輸出參數）
+			// 檢查是否為帶輸出參數的函數（curried 呼叫 → 單次呼叫，附加輸出參數）
 			numResults := 0
 			if g.funcNumResults != nil {
 				// 嘗試多個名稱變體（可能已被 mangleOverloads 修飾）
@@ -253,8 +345,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				}
 			}
-			if numResults > 1 {
-				// 多結果：將輸出參數附加到呼叫，傳遞指標
+			if numResults >= 1 {
+				// 帶輸出參數：將輸出參數附加到呼叫，傳遞指標
 				allArgs := make([]string, 0, len(innerArgs)+len(expr.Arguments))
 				allArgs = append(allArgs, innerArgs...)
 				for _, outArg := range expr.Arguments {
@@ -263,19 +355,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
 				return ""
 			}
-			// void 返回：直接調用，然後為每個輸出參數分配空間
-			for _, outArg := range expr.Arguments {
-				if ident, ok := outArg.(*parser.Identifier); ok {
-					varName := ident.Value
-					if _, exists := g.varTypes[varName]; !exists {
-						g.varTypes[varName] = "i64"
-						g.tmpIdx++
-						g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: "i64", Size: 8})
-						sb.WriteString(fmt.Sprintf("%s%%%s = alloca i64\n", g.indent(), varName))
-						sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), varName))
-					}
-				}
-			}
+			// 純 void（無輸出參數）：直接調用
 			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
 			return ""
 		}
@@ -334,7 +414,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return "i64 " + val
 	}
 
-	// 通過 BuiltinMethodList 分派（LLVMIntrinsic / CLibCall / LLVMConv）
+	// 通過 BuiltinMethodList 分派（LLVMIntrinsic / CLibCall / LLVMConv / ForwardFunc）
 	if m := builtin.FindBuiltinMethod(fnName); m != nil {
 		if m.LLVMIntrinsic != "" {
 			a := evalArgs()
@@ -352,6 +432,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 		if m.LLVMConv != nil {
 			return g.genLLVMConv(sb, m, evalArgs)
+		}
+		// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
+		if m.ForwardFunc != "" {
+			if r := g.genForwardFunc(sb, m.ForwardFunc, expr); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
+				return r
+			}
 		}
 	}
 
@@ -416,6 +502,60 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				}
 			}
+			// Also resolve str/str-smail/arr/vec/char/byte/bool receiver methods (e.g. s.index → str.index, c.is-alpha → char.is-alpha)
+			if methodReceiver == nil {
+				if recvType, ok := g.varTypes[recv.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					candidates := []string{srcType}
+					if srcType == "str-smail" {
+						candidates = append(candidates, "str")
+					}
+					// Primitive LLVM types may correspond to multiple nolang type names.
+					// For example, i32 can be char, i32, or u32. Try all candidates.
+					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates = append(candidates, primAliases...)
+					}
+					for _, cand := range candidates {
+						shortName := cand + "." + dot.Property
+						if g.funcRetTypes != nil {
+							// 接受單結果（非 void）或帶輸出參數的 void 函數（funcNumResults >= 1）。
+							// str.repeat / str.trim 等多結果函數的 funcRetTypes 為 void，
+							// 但 funcNumResults 為 2；str.to-i64 等單輸出函數 funcNumResults 為 1。
+							if t, ok := g.funcRetTypes[shortName]; ok {
+								hasOutput := false
+								if g.funcNumResults != nil {
+									if n, ok := g.funcNumResults[shortName]; ok && n >= 1 {
+										hasOutput = true
+									}
+								}
+								if t != "void" || hasOutput {
+									fnName = shortName
+									methodReceiver = recv
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		} else if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+			// 字符串字面量接收者（如 'abc'.compare('abc')）
+			// 字符串字面量永遠是 str 型別，直接嘗試 str.<property>
+			shortName := "str." + dot.Property
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[shortName]; ok {
+					hasOutput := false
+					if g.funcNumResults != nil {
+						if n, ok := g.funcNumResults[shortName]; ok && n >= 1 {
+							hasOutput = true
+						}
+					}
+					if t != "void" || hasOutput {
+						fnName = shortName
+						methodReceiver = dot.Receiver
+					}
+				}
+			}
 		}
 	}
 
@@ -448,6 +588,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						hasOutputParam = true
 					}
 				}
+			}
+		}
+	}
+
+	// void + 單輸出參數，調用方未顯式傳遞輸出變數（如 v1 = s.to-i64()）。
+	// 此類函數（如 str.to-i64）的 funcRetTypes 為 void，但 funcNumResults 為 1，
+	// 輸出通過指標傳遞。需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
+	voidSingleOutput := false
+	voidSingleOutputType := ""
+	if retType == "void" && g.funcNumResults != nil && g.funcResultLLVMType != nil {
+		if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
+			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
+				voidSingleOutput = true
+				voidSingleOutputType = ts[0]
 			}
 		}
 	}
@@ -497,6 +651,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str" {
 					return "%str* " + g.varAddr(a.Value)
+				}
+				// str-smail 接收者呼叫 str.* 方法時，需轉換為 %str
+				if t, ok := g.varTypes[a.Value]; ok && t == "%str-smail" && strings.HasPrefix(fnName, "str.") {
+					smailPtr := g.varAddr(a.Value)
+					strPtr := g.convertSmailToStr(sb, smailPtr)
+					return "%str* " + strPtr
 				}
 			}
 			// 陣列型別用正確的指標型別
@@ -711,6 +871,35 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		typedArgs = append(typedArgs, "%vec* "+vecName)
 	}
 
+	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
+	voidSingleTmp := ""
+	if voidSingleOutput {
+		g.tmpIdx++
+		voidSingleTmp = fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), voidSingleTmp, voidSingleOutputType))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), g.llvmTypeSize(voidSingleOutputType), voidSingleTmp))
+			// %str 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
+			if voidSingleOutputType == "%str" {
+				g.tmpIdx++
+				dataBuf := fmt.Sprintf("%%vso.data.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca [128 x i8]\n", g.indent(), dataBuf))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 128, i8* %s)\n", g.indent(), dataBuf))
+				// 初始化 len = 0
+				g.tmpIdx++
+				lenGEP := fmt.Sprintf("%%vso.len.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				// 設置 data 指標指向緩衝區
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%vso.data.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str, %%str* %s, i32 0, i32 1\n", g.indent(), dataGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+			}
+		}
+		typedArgs = append(typedArgs, voidSingleOutputType+"* "+voidSingleTmp)
+	}
+
 	// Make the call
 	callStr := fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(fnName), strings.Join(typedArgs, ", "))
 
@@ -733,6 +922,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			return ""
 		}
+	}
+
+	// void + 單輸出：調用後載入結果作為返回值
+	if voidSingleOutput {
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s\n", g.indent(), callStr))
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, voidSingleOutputType, voidSingleOutputType, voidSingleTmp))
+			return loadReg
+		}
+		return ""
 	}
 
 	// For non-void returns without output param: capture return value as expression
@@ -765,4 +966,126 @@ func (g *Generator) isMemberOfUnionTransitive(typeName, aliasName string, visite
 		}
 	}
 	return false
+}
+
+// strExprDataPtr extracts the i8* data pointer from a string expression argument.
+// Handles Identifier (str/str-smail variables) and StringLiteral.
+func (g *Generator) strExprDataPtr(sb *strings.Builder, arg parser.Expression) string {
+	switch a := arg.(type) {
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[a.Value]; ok {
+				ptr := g.varAddr(a.Value)
+				if t == "%str-smail" {
+					return g.extractStrSmailDataPtr(sb, ptr)
+				}
+				if t == "%str" {
+					return g.extractStrDataPtr(sb, ptr)
+				}
+			}
+		}
+	case *parser.StringLiteral:
+		ptr := g.generateExprWithSB(sb, arg)
+		if len(a.Value) <= 127 {
+			return g.extractStrSmailDataPtr(sb, ptr)
+		}
+		return g.extractStrDataPtr(sb, ptr)
+	}
+	// Fallback: generate expression and hope it's a usable pointer
+	return g.generateExprWithSB(sb, arg)
+}
+
+// evalI64Arg evaluates an expression to an i64 value string (for use as LLVM argument).
+func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) string {
+	if il, ok := arg.(*parser.IntegerLiteral); ok {
+		return fmt.Sprintf("%d", il.Value)
+	}
+	val := g.generateExprWithSB(sb, arg)
+	// If it's a pointer (starts with % and is a ref.tmp), load it
+	if strings.HasPrefix(val, "%ref.tmp") {
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%fwd.i64.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), loadReg, val))
+		}
+		return loadReg
+	}
+	// If it's a variable pointer, load from it
+	if ident, ok := arg.(*parser.Identifier); ok {
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[ident.Value]; ok && (t == "i64" || t == "i32" || t == "i8" || t == "i1") {
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%fwd.i64.%d", g.tmpIdx)
+				llvmType := t
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, g.varAddr(ident.Value)))
+				}
+				if llvmType != "i64" {
+					g.tmpIdx++
+					extReg := fmt.Sprintf("%%fwd.i64.ext.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, llvmType, loadReg))
+					}
+					return extReg
+				}
+				return loadReg
+			}
+		}
+	}
+	return val
+}
+
+// genForwardFunc handles ForwardFunc builtins: memcpy (str-copy), memcmp (str-eq), memset (str-fill).
+// Returns the SSA register for the result, or "" for void functions.
+func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr *parser.CallExpression) string {
+	switch forwardFunc {
+	case "memcpy":
+		// str-copy(src, dst, n) → memcpy(dst_data, src_data, n)
+		if len(expr.Arguments) < 3 {
+			return ""
+		}
+		srcPtr := g.strExprDataPtr(sb, expr.Arguments[0])
+		dstPtr := g.strExprDataPtr(sb, expr.Arguments[1])
+		nVal := g.evalI64Arg(sb, expr.Arguments[2])
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), dstPtr, srcPtr, nVal))
+		}
+		return ""
+
+	case "eq-raw":
+		// str-eq(a, b, n) → memcmp(a_data, b_data, n) == 0 → zext to i64
+		if len(expr.Arguments) < 3 {
+			return "0"
+		}
+		aPtr := g.strExprDataPtr(sb, expr.Arguments[0])
+		bPtr := g.strExprDataPtr(sb, expr.Arguments[1])
+		nVal := g.evalI64Arg(sb, expr.Arguments[2])
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%eqcmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		eqReg := fmt.Sprintf("%%eqres.%d", g.tmpIdx)
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%eqzext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @memcmp(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
+		}
+		return zextReg
+
+	case "memset":
+		// str-fill(s, n, val) → memset(s_data, val, n)
+		// Note: C memset signature is void* memset(void*, int, size_t)
+		if len(expr.Arguments) < 3 {
+			return ""
+		}
+		sPtr := g.strExprDataPtr(sb, expr.Arguments[0])
+		nVal := g.evalI64Arg(sb, expr.Arguments[1])
+		valVal := g.evalI64Arg(sb, expr.Arguments[2])
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 %s, i64 %s)\n", g.indent(), sPtr, valVal, nVal))
+		}
+		return ""
+	}
+	return ""
 }

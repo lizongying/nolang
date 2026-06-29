@@ -154,15 +154,28 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				if strings.HasPrefix(v, "i8*") {
 					fmtSpec = "%s"
 				} else if strings.HasPrefix(v, "%") {
-					// Check if variable is double type
+					// Check variable type: double, bool, or default i64
 					isDouble := false
+					isBool := false
 					if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
-						if t, ok := g.varTypes[ident.Value]; ok && t == "double" {
-							isDouble = true
+						if t, ok := g.varTypes[ident.Value]; ok {
+							if t == "double" {
+								isDouble = true
+							}
+							if t == "i1" {
+								isBool = true
+							}
 						}
 					}
 					if isDouble {
 						fmtSpec = "%g"
+					} else if isBool {
+						// zext i1 to i64 for printf
+						g.tmpIdx++
+						zextReg := fmt.Sprintf("%%print.zext.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, v))
+						v = zextReg
+						fmtSpec = "%lld"
 					} else {
 						fmtSpec = "%lld"
 					}
@@ -376,16 +389,31 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 		return zextReg
 	}
 
-	// bool-to-str: select
+	// bool-to-str: select + 构造 %str
 	if fnName == "bool-to-str" && hasArgs {
 		a := evalArgs()
 		g.tmpIdx++
-		reg := fmt.Sprintf("%%boolstr.tmp.%d", g.tmpIdx)
+		selectReg := fmt.Sprintf("%%boolstr.tmp.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
-				g.indent(), reg, a[0]))
+				g.indent(), selectReg, a[0]))
 		}
-		return reg
+		// strlen 计算长度（"true" = 4, "false" = 5）
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%boolstr.len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
+		}
+		// 构造 %str { len, data }
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, selectReg))
+		}
+		return strReg2
 	}
 
 	return ""

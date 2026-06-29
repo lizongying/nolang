@@ -1,19 +1,12 @@
 // str — 字符串操作标准库
 //
-// str 底层为 union 类型
-// str str-short | str-long
-// len 最高位如果是1，则是 str-short
-// 不用 tag 分辨
-// str-short 仅分配到栈上，128 字节
+// str 是对外统一的字符串类型
+// 内部实现：str-short（栈分配 SSO）| str-long（堆分配）
+// str-smail 仅作为编译器内部优化，不出现在公开 API
 //
-// str-short {
-//     len byte read-only
-//     data [127]byte sealed
-// }
-//
-// str-long {
-//     len i64 read-only
-//     data *byte sealed
+// str {
+//     len i64 read-only       // 对外：i64 长度
+//     data *byte sealed       // 对外：数据指针
 // }
 
 // ═══════════════════════════════════════════════
@@ -190,9 +183,9 @@ str.ends-with = (target str, tn i64) (yes bool) {
 // ═══════════════════════════════════════════════
 
 // str.to-upper: 将字符串转为大写
-// 返回新字符串和长度
-str.to-upper = (out str, out-n i64) {
-    out-n = .len
+// 返回新字符串
+str.to-upper = (out str) {
+    out.len = .len
     i = 0
     for i < .len {
         c = .[i] & 255
@@ -206,9 +199,9 @@ str.to-upper = (out str, out-n i64) {
 }
 
 // str.to-lower: 将字符串转为小写
-// 返回新字符串和长度
-str.to-lower = (out str, out-n i64) {
-    out-n = .len
+// 返回新字符串
+str.to-lower = (out str) {
+    out.len = .len
     i = 0
     for i < .len {
         c = .[i] & 255
@@ -222,8 +215,8 @@ str.to-lower = (out str, out-n i64) {
 }
 
 // str.trim: 去除字符串首尾空白字符
-// 返回新字符串和长度
-str.trim = (out str, out-n i64) {
+// 返回新字符串
+str.trim = (out str) {
     start = 0
     for start < .len {
         c = .[start] & 255
@@ -240,13 +233,13 @@ str.trim = (out str, out-n i64) {
         }
         end = end - 1
     }
-    out-n = end - start + 1
-    if out-n < 0 {
-        out-n = 0
+    out.len = end - start + 1
+    if out.len < 0 {
+        out.len = 0
         return
     }
     i = 0
-    for i < out-n {
+    for i < out.len {
         out[i] = .[start + i]
         i = i + 1
     }
@@ -257,9 +250,9 @@ str.trim = (out str, out-n i64) {
 // ═══════════════════════════════════════════════
 
 // str.repeat: 将字符串重复 times 次
-// 返回新字符串和长度
-str.repeat = (times i64) (out str, out-n i64) {
-    out-n = .len * times
+// 返回新字符串
+str.repeat = (times i64, out str) {
+    out.len = .len * times
     i = 0
     for i < times {
         j = 0
@@ -272,8 +265,8 @@ str.repeat = (times i64) (out str, out-n i64) {
 }
 
 // str.slice: 截取子串 [start, end)
-// 返回新字符串和长度
-str.slice = (start i64, end i64) (out str, out-n i64) {
+// 返回新字符串
+str.slice = (start i64, end i64, out str) {
     if start < 0 {
         start = 0
     }
@@ -281,12 +274,12 @@ str.slice = (start i64, end i64) (out str, out-n i64) {
         end = .len
     }
     if start >= end {
-        out-n = 0
+        out.len = 0
         return
     }
-    out-n = end - start
+    out.len = end - start
     i = 0
-    for i < out-n {
+    for i < out.len {
         out[i] = .[start + i]
         i = i + 1
     }
@@ -297,8 +290,8 @@ str.slice = (start i64, end i64) (out str, out-n i64) {
 // ═══════════════════════════════════════════════
 
 // str.to-bytes: 将字符串转为字节数组
-str.to-bytes = (out []byte, out-n i64) {
-    out-n = .len
+str.to-bytes = (out str) {
+    out.len = .len
     i = 0
     for i < .len {
         out[i] = .[i] & 255
@@ -307,8 +300,8 @@ str.to-bytes = (out []byte, out-n i64) {
 }
 
 // str.from-bytes: 从字节数组创建字符串
-str-from-bytes = (src []byte, n i64) (out str, out-n i64) {
-    out-n = n
+str-from-bytes = (src []byte, n i64, out str) {
+    out.len = n
     i = 0
     for i < n {
         out[i] = src[i] & 255
@@ -341,10 +334,10 @@ str.to-i64 = (val i64) {
 }
 
 // i64-to-str: 将整数转为字符串
-i64-to-str = (v i64) (out str, out-n i64) {
+i64-to-str = (v i64, out str) {
     if v == 0 {
         out[0] = 48
-        out-n = 1
+        out.len = 1
         return
     }
     neg = 0
@@ -370,7 +363,7 @@ i64-to-str = (v i64) (out str, out-n i64) {
         out[j] = buf[n - 1 - j]
         j = j + 1
     }
-    out-n = n
+    out.len = n
 }
 
 // ═══════════════════════════════════════════════
@@ -378,9 +371,9 @@ i64-to-str = (v i64) (out str, out-n i64) {
 // ═══════════════════════════════════════════════
 
 // str.reverse: 反转字符串
-// 将 s 的前 n 个字节反转后写入 out
-str.reverse = (out str, out-n i64) {
-    out-n = .len
+// 将 s 反转后写入 out
+str.reverse = (out str) {
+    out.len = .len
     i = 0
     for i < .len {
         out[i] = .[.len - 1 - i]
@@ -388,16 +381,18 @@ str.reverse = (out str, out-n i64) {
     }
 }
 
-// str-compare: 字典序比较两个字符串
+// str.compare: 字典序比较两个字符串
 // 返回 -1(a<b), 0(相等), 1(a>b)
-str-compare = (a str, an i64, b str, bn i64) (r i64) {
+str.compare = (b str) (r i64) {
+    an = .len
+    bn = b.len
     min-n = an
     if bn < min-n {
         min-n = bn
     }
     i = 0
     for i < min-n {
-        ai = a[i] & 255
+        ai = .[i] & 255
         bi = b[i] & 255
         if ai < bi {
             r = -1
@@ -441,9 +436,9 @@ str.count = (ch i64) (cnt i64) {
 // ═══════════════════════════════════════════════
 
 // str.replace-byte: 将 s 中所有 old-ch 替换为 new-ch
-// 返回结果字符串和长度
-str.replace-byte = (old-ch i64, new-ch i64) (out str, out-n i64) {
-    out-n = .len
+// 返回结果字符串
+str.replace-byte = (old-ch i64, new-ch i64, out str) {
+    out.len = .len
     old-c = old-ch & 255
     new-c = new-ch & 255
     i = 0
@@ -463,7 +458,7 @@ str.replace-byte = (old-ch i64, new-ch i64) (out str, out-n i64) {
 // ═══════════════════════════════════════════════
 
 // str.trim-char: 去除字符串首尾指定字符
-str.trim-char = (ch i64) (out str, out-n i64) {
+str.trim-char = (ch i64, out str) {
     target = ch & 255
     start = 0
     for start < .len {
@@ -481,13 +476,13 @@ str.trim-char = (ch i64) (out str, out-n i64) {
         }
         end = end - 1
     }
-    out-n = end - start + 1
-    if out-n < 0 {
-        out-n = 0
+    out.len = end - start + 1
+    if out.len < 0 {
+        out.len = 0
         return
     }
     i = 0
-    for i < out-n {
+    for i < out.len {
         out[i] = .[start + i]
         i = i + 1
     }

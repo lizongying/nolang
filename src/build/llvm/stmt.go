@@ -242,6 +242,12 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	if hasUserMain {
 		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
 	}
+	// Generate top-level expression statements (e.g. test-str-len(), print(0))
+	for _, stmt := range program.Statements {
+		if es, ok := stmt.(*parser.ExpressionStatement); ok {
+			g.generateExpressionStmt(sb, es)
+		}
+	}
 	sb.WriteString(g.indent() + "ret i32 0\n")
 	g.indentLevel--
 	g.indentLevel--
@@ -333,6 +339,39 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 			}
 		}
+		// DotExpression receiver call (e.g. s.contains, s.index): look up str.<method>
+		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if recvType, ok := g.varTypes[recv.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					candidates := []string{srcType}
+					if srcType == "str-smail" {
+						candidates = append(candidates, "str")
+					}
+					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
+					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates = append(candidates, primAliases...)
+					}
+					for _, cand := range candidates {
+						shortName := cand + "." + dot.Property
+						if g.funcRetTypes != nil {
+							if t, ok := g.funcRetTypes[shortName]; ok {
+								if t != "void" {
+									return t
+								}
+								// void + 單輸出函數（如 str.empty 返回 i1）：
+								// 使用 funcResultLLVMType 中的輸出型別
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+										return ts[0]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		return "i64"
 	case *parser.FloatLiteral:
 		return "double"
@@ -417,9 +456,89 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 		g.collectVarDeclsFromExpr(s.Expression, vars)
 	case *parser.MultiAssignStatement:
 		// 註冊多賦值左側的所有變數
-		for _, name := range s.Names {
-			if _, exists := vars[name.Value]; !exists {
-				vars[name.Value] = "i64"
+		// 對於多結果函數調用，需要根據函數的輸出參數型別推斷每個變數的型別
+		if callExpr, ok := s.Value.(*parser.CallExpression); ok {
+			fnName := ""
+			if ident, ok := callExpr.Function.(*parser.Identifier); ok {
+				fnName = ident.Value
+			} else if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
+				fnName = dot.Property
+				// 嘗試解析完整方法名（如 str.to-upper）以查詢 funcResultLLVMType
+				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+					recvType := ""
+					if t, ok := vars[recv.Value]; ok {
+						recvType = strings.TrimPrefix(t, "%")
+					} else if g.varTypes != nil {
+						if t, ok := g.varTypes[recv.Value]; ok {
+							recvType = strings.TrimPrefix(t, "%")
+						}
+					}
+					if recvType == "str-smail" {
+						recvType = "str"
+					}
+					if recvType != "" {
+						fullName := recvType + "." + dot.Property
+						if g.funcResultLLVMType != nil {
+							if _, ok := g.funcResultLLVMType[fullName]; ok {
+								fnName = fullName
+							}
+						}
+					}
+				}
+			}
+			if fnName != "" {
+				// 先查 funcResultLLVMType（包含 std 函數）
+				if g.funcResultLLVMType != nil {
+					if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Names) {
+						for i, name := range s.Names {
+							if i < len(rets) {
+								if _, exists := vars[name.Value]; !exists {
+									vars[name.Value] = rets[i]
+								}
+							}
+						}
+					} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Names) {
+						for i, name := range s.Names {
+							if i < len(m.Return) {
+								if _, exists := vars[name.Value]; !exists {
+									vars[name.Value] = g.mapToLLVMType(m.Return[i].String())
+								}
+							}
+						}
+					} else {
+						for _, name := range s.Names {
+							if _, exists := vars[name.Value]; !exists {
+								vars[name.Value] = "i64"
+							}
+						}
+					}
+				} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Names) {
+					for i, name := range s.Names {
+						if i < len(m.Return) {
+							if _, exists := vars[name.Value]; !exists {
+								vars[name.Value] = g.mapToLLVMType(m.Return[i].String())
+							}
+						}
+					}
+				} else {
+					for _, name := range s.Names {
+						if _, exists := vars[name.Value]; !exists {
+							vars[name.Value] = "i64"
+						}
+					}
+				}
+			} else {
+				for _, name := range s.Names {
+					if _, exists := vars[name.Value]; !exists {
+						vars[name.Value] = "i64"
+					}
+				}
+			}
+		} else {
+			for _, name := range s.Names {
+				if _, exists := vars[name.Value]; !exists {
+					vars[name.Value] = "i64"
+				}
 			}
 		}
 		// 遞迴收集值中的變數宣告
@@ -672,10 +791,27 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 			if isCmp {
 				condVal = g.generateInfixI1(sb, infix)
 			} else {
-				condVal = g.generateExprWithSB(sb, stmt.Condition)
+				// 非比較運算（如 && / ||）返回 i64，需 trunc 到 i1
+				rawVal := g.generateExprWithSB(sb, stmt.Condition)
+				if strings.HasPrefix(rawVal, "%") {
+					g.tmpIdx++
+					truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
+					condVal = truncReg
+				} else {
+					condVal = rawVal
+				}
 			}
 		} else {
-			condVal = g.generateExprWithSB(sb, stmt.Condition)
+			rawVal := g.generateExprWithSB(sb, stmt.Condition)
+			if strings.HasPrefix(rawVal, "%") {
+				g.tmpIdx++
+				truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
+				condVal = truncReg
+			} else {
+				condVal = rawVal
+			}
 		}
 	} else {
 		condVal = "1" // infinite loop
@@ -1158,6 +1294,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		llvmType = "%str"
 	}
 
+	// 若變數已有整數型別（如函數輸出參數 yes bool 為 i1），
+	// 但值是字面常量（如 true → "1"），使用變數的型別以避免型別不匹配
+	// （例如 store i64 1, i64* %yes 但 %yes 是 alloca i1）。
+	if existingType, ok := g.varTypes[name]; ok && g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
+		if !strings.HasPrefix(val, "%") {
+			llvmType = existingType
+		}
+	}
+
 	// 函數呼叫（用結果參數模式）會被 generateExpr 寫成 call void @...，
 	// 並返回空字串表示沒有 SSA 值。對於這種情況，result param
 	// 已經被函數就地修改，不需要再 store。
@@ -1376,6 +1521,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			loadReg := fmt.Sprintf("%%str.load.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str, %%str* %s\n", g.indent(), loadReg, s2sResult))
 			val = loadReg
+		} else if g.isStrPtrReg(val) {
+			// val is a %str* pointer (from generateStrConcat or convertSmailToStr).
+			// Load the %str value from the pointer before storing.
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%str.load.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str, %%str* %s\n", g.indent(), loadReg, val))
+			val = loadReg
 		}
 		if isGlobal {
 			sb.WriteString(fmt.Sprintf("%sstore %%str %s, %%str* %s\n", g.indent(), val, llvmGlobalRef(name)))
@@ -1395,14 +1547,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	case "%vec":
 		// Copy %vec struct: load from source, store to dest
+		// val may be either an SSA value (already loaded) or an alloca pointer.
+		// Identifiers produce loaded values; slice expressions produce alloca pointers.
 		isGlobal := g.globalVars != nil && g.globalVars[name]
-		g.tmpIdx++
-		copyReg := fmt.Sprintf("%%vec.copy.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
+		vecPtrPrefixes := []string{
+			"%slic.",    // generateSliceExpression
+			"%vec.tmp.", // for-range with slice literal
+			"%vvec.",    // variadic call args
+		}
+		isPtr := false
+		for _, p := range vecPtrPrefixes {
+			if strings.HasPrefix(val, p) {
+				isPtr = true
+				break
+			}
+		}
+		if isPtr {
+			g.tmpIdx++
+			copyReg := fmt.Sprintf("%%vec.copy.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
+			val = copyReg
+		}
 		if isGlobal {
-			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), copyReg, llvmGlobalRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), val, llvmGlobalRef(name)))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), copyReg, llvmVarRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), val, llvmVarRef(name)))
 		}
 	case "i8*":
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), val, g.varAddr(name)))
@@ -1418,6 +1587,31 @@ func (g *Generator) isIntegerLLVMType(t string) bool {
 	switch t {
 	case "i8", "i16", "i32", "i64", "i1":
 		return true
+	}
+	return false
+}
+
+// isStrPtrReg checks if a register name is a %str* pointer (from alloca).
+// In LLVM 21 with opaque pointers, both values and pointers are SSA registers
+// starting with '%', so we identify pointers by naming convention.
+func (g *Generator) isStrPtrReg(val string) bool {
+	if !strings.HasPrefix(val, "%") {
+		return false
+	}
+	// Known alloca patterns that produce a %str* pointer
+	ptrPatterns := []string{
+		"%str.s2s.",       // convertSmailToStr
+		"%s2s.result.",    // s2s conversion in stmt.go
+		"%concat.result.", // generateStrConcat
+		"%strrepeat.null", // generateStrRepeat (no sb)
+		"%strconcat.null", // generateStrConcat (no sb)
+		"%argv.str.",      // args-get in call_stdlib.go
+		"%str.s2s.",       // duplicate, keep
+	}
+	for _, p := range ptrPatterns {
+		if strings.HasPrefix(val, p) {
+			return true
+		}
 	}
 	return false
 }

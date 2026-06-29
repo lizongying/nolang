@@ -270,20 +270,22 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     t = result  // 注意：實際可能需要獨立的暫存空間
     prod-n i64 = 0
     q-n i64 = 0
+    q []i64 = []
+    qn i64 = 0
 
     // 從最高位到最低位
     i = bits - 1
     for i >= 0 {
         // 平方：result = result^2 mod modulus
         bn-mul(result, rn, result, rn, t, prod-n)
-        result, q-n, result, rn = bn-div-mod(t, prod-n, modulus, mn)
+        q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
         // 如果 exp 第 i 位元為 1：乘 base
         e-limb = i / 32
         e-bit = i % 32
         if (exp[e-limb] >> e-bit) & 1 == 1 {
             bn-mul(result, rn, base, bn, t, prod-n)
-            result, q-n, result, rn = bn-div-mod(t, prod-n, modulus, mn)
+            q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
         }
         i = i - 1
     }

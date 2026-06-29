@@ -536,15 +536,15 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[v.Value]; ok {
 				switch t {
-				case "i8", "i16", "i32", "i64":
+				case "i1", "i8", "i16", "i32", "i64":
 					return t
 				}
 			}
 		}
 	case *parser.InfixExpression:
-		// 比較運算的結果是 i1（zext 後為 i64）
+		// 比較運算與邏輯運算的結果是 i1（已 zext 後為 i64）
 		switch v.Operator {
-		case "==", "!=", "<", ">", "<=", ">=":
+		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
 			return "i64"
 		}
 		// 與 arithLLVMType 相同的策略：偏好非字面量運算元的型別
@@ -569,7 +569,49 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			if g.funcRetTypes != nil {
 				if t, ok := g.funcRetTypes[ident.Value]; ok {
-					return t
+					if t != "void" {
+						return t
+					}
+					// void + 單輸出函數：使用 funcResultLLVMType 中的輸出型別
+					if g.funcResultLLVMType != nil {
+						if ts, ok := g.funcResultLLVMType[ident.Value]; ok && len(ts) == 1 {
+							return ts[0]
+						}
+					}
+					return "i64"
+				}
+			}
+		}
+		// DotExpression receiver call: look up str.<method>
+		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if recvType, ok := g.varTypes[recv.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					candidates := []string{srcType}
+					if srcType == "str-smail" {
+						candidates = append(candidates, "str")
+					}
+					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
+					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates = append(candidates, primAliases...)
+					}
+					for _, cand := range candidates {
+						shortName := cand + "." + dot.Property
+						if g.funcRetTypes != nil {
+							if t, ok := g.funcRetTypes[shortName]; ok {
+								if t != "void" {
+									return t
+								}
+								// void + 單輸出函數（如 str.empty 返回 i1）：
+								// 使用 funcResultLLVMType 中的輸出型別
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+										return ts[0]
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -642,6 +684,32 @@ func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parse
 			}
 		}
 		return cvtReg
+	}
+	return v
+}
+
+// zextBoolToI64 將 i1 運算元 zext 到 i64，以用於 && / || 等邏輯運算。
+// 若運算元已是 i64（如比較結果已 zext、或布林字面常量），則保持不變。
+// 這解決了 void+單輸出函數（如 str.empty() 返回 i1）與 i64 運算元混合的型別不匹配問題。
+func (g *Generator) zextBoolToI64(sb *strings.Builder, v string, expr parser.Expression) string {
+	if v == "" {
+		return v
+	}
+	// 整數字面常量（含布林字面 "0"/"1"）：保持原樣
+	if _, err := fmt.Sscanf(v, "%d", new(int64)); err == nil && !strings.HasPrefix(v, "%") {
+		return v
+	}
+	// SSA 暫存器：若來源型別為 i1，zext 到 i64
+	if strings.HasPrefix(v, "%") {
+		if g.intExprLLVMType(expr) == "i1" {
+			if sb == nil {
+				return v
+			}
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%lzext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, v))
+			return extReg
+		}
 	}
 	return v
 }
@@ -1069,7 +1137,13 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					if llvmElemType != "i64" && strings.HasPrefix(val, "%") {
 						g.tmpIdx++
 						truncReg := fmt.Sprintf("%%arr.set.trunc.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmElemType))
+						// Determine the actual source type from the value's SSA type
+						// (e.g., `& 255` on a char returns i32, not i64)
+						srcType := g.intExprLLVMType(expr.Value)
+						if srcType == "" {
+							srcType = "i64"
+						}
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, srcType, val, llvmElemType))
 						storeVal = truncReg
 					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
@@ -2558,6 +2632,27 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		reg := fmt.Sprintf("%%shr.tmp.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = lshr %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
+		}
+		return reg
+	case "&&":
+		// 邏輯 AND：將 i1 運算元 zext 到 i64（如 str.empty() 返回 i1），
+		// 比較結果已是 i64，保持不變。然後使用 and 指令。
+		leftI64 := g.zextBoolToI64(sb, left, expr.Left)
+		rightI64 := g.zextBoolToI64(sb, right, expr.Right)
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%land.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %s\n", g.indent(), reg, leftI64, rightI64))
+		}
+		return reg
+	case "||":
+		// 邏輯 OR：同上，將 i1 運算元 zext 到 i64 後使用 or 指令。
+		leftI64 := g.zextBoolToI64(sb, left, expr.Left)
+		rightI64 := g.zextBoolToI64(sb, right, expr.Right)
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%lor.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), reg, leftI64, rightI64))
 		}
 		return reg
 	default:

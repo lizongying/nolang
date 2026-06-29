@@ -26,33 +26,34 @@ type loopExit struct {
 }
 
 type Generator struct {
-	indentLevel     int
-	fmtStrIdx       int
-	stringIdx       int
-	fmtGlobals      []string
-	tmpIdx          int
-	funcVars        []varInfo                // current function's variables for lifetime.end
-	varTypes        map[string]string        // variable name → LLVM type
-	varSSA          map[string]int           // variable name → current SSA version
-	ssaMode         bool                     // true = 使用 SSA 暫存器
-	paramNames      map[string]bool          // 函數參數名稱（使用 .addr 存取）
-	funcRetTypes    map[string]string        // 函數名 → 回傳型別
-	funcNumResults  map[string]int           // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
-	funcIsVariadic  map[string]bool          // 函數名 → 是否為 variadic 函數
-	funcParamCount  map[string]int           // 函數名 → 非 variadic 參數數量
-	structTypes     map[string][]structField // struct name → fields
-	structTypeLLVM  string                   // 當前正在生成的 struct LLVM type name
-	loopExits       []loopExit               // 活躍循環退出目標棧
-	currentBlock    string                   // current basic block label (for PHI predecessor tracking)
-	arrayElemTypes  map[string]string        // variable name → element LLVM type for %arr variables
-	curFuncRetType  string                   // 當前函數回傳型別（void/i64/...）
-	curFuncRetName  string                   // 當前函數輸出參數名稱（為空表示 void）
-	globalVars      map[string]bool          // module-level vars that should be LLVM globals
-	moduleVarTypes  map[string]string        // module-level variable types (preserved across functions)
-	ssaTypes        map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
-	blockTerminated bool                     // true if current basic block ends with a terminator (ret/br)
-	funcLocalNames  map[string]bool          // local variable names in current function (params + allocas)
-	unionAliases    map[string][]string      // union type alias name → member type names (e.g. "float"→["f32","f64"])
+	indentLevel        int
+	fmtStrIdx          int
+	stringIdx          int
+	fmtGlobals         []string
+	tmpIdx             int
+	funcVars           []varInfo                // current function's variables for lifetime.end
+	varTypes           map[string]string        // variable name → LLVM type
+	varSSA             map[string]int           // variable name → current SSA version
+	ssaMode            bool                     // true = 使用 SSA 暫存器
+	paramNames         map[string]bool          // 函數參數名稱（使用 .addr 存取）
+	funcRetTypes       map[string]string        // 函數名 → 回傳型別
+	funcNumResults     map[string]int           // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
+	funcResultLLVMType map[string][]string      // 函數名 → 各輸出參數的 LLVM 型別列表
+	funcIsVariadic     map[string]bool          // 函數名 → 是否為 variadic 函數
+	funcParamCount     map[string]int           // 函數名 → 非 variadic 參數數量
+	structTypes        map[string][]structField // struct name → fields
+	structTypeLLVM     string                   // 當前正在生成的 struct LLVM type name
+	loopExits          []loopExit               // 活躍循環退出目標棧
+	currentBlock       string                   // current basic block label (for PHI predecessor tracking)
+	arrayElemTypes     map[string]string        // variable name → element LLVM type for %arr variables
+	curFuncRetType     string                   // 當前函數回傳型別（void/i64/...）
+	curFuncRetName     string                   // 當前函數輸出參數名稱（為空表示 void）
+	globalVars         map[string]bool          // module-level vars that should be LLVM globals
+	moduleVarTypes     map[string]string        // module-level variable types (preserved across functions)
+	ssaTypes           map[string]string        // SSA register name → LLVM type (i64/double/%str/%str*/...)
+	blockTerminated    bool                     // true if current basic block ends with a terminator (ret/br)
+	funcLocalNames     map[string]bool          // local variable names in current function (params + allocas)
+	unionAliases       map[string][]string      // union type alias name → member type names (e.g. "float"→["f32","f64"])
 }
 
 func NewGenerator() *Generator {
@@ -144,6 +145,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)
 	g.funcNumResults = make(map[string]int)
+	g.funcResultLLVMType = make(map[string][]string)
 	g.funcIsVariadic = make(map[string]bool)
 	g.funcParamCount = make(map[string]int)
 	g.structTypes = make(map[string][]structField)
@@ -177,17 +179,27 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 預掃描：收集所有函數的回傳型別和函數名
 	funcNames := make(map[string]bool)
 	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
 			// Skip union monomorphization templates (e.g. max__num_TEMPLATE)
-			if strings.HasSuffix(fd.Name, "_TEMPLATE") {
+			if strings.HasSuffix(s.Name, "_TEMPLATE") {
 				continue
 			}
+			fd := s
 			retType := "void"
 			if len(fd.Results) == 1 {
 				retType = g.mapToLLVMType(fd.Results[0].Type.String())
 			}
 			g.funcRetTypes[fd.Name] = retType
 			g.funcNumResults[fd.Name] = len(fd.Results)
+			// 收集每個輸出參數的 LLVM 型別，供多賦值推斷變數型別使用
+			if len(fd.Results) > 0 {
+				rets := make([]string, len(fd.Results))
+				for i, r := range fd.Results {
+					rets[i] = g.mapToLLVMType(r.Type.String())
+				}
+				g.funcResultLLVMType[fd.Name] = rets
+			}
 			g.funcIsVariadic[fd.Name] = fd.IsVariadic
 			if fd.IsVariadic && len(fd.Parameters) > 0 {
 				g.funcParamCount[fd.Name] = len(fd.Parameters) - 1 // exclude the variadic slice param
@@ -195,8 +207,40 @@ func (g *Generator) Generate(program *parser.Program) string {
 				g.funcParamCount[fd.Name] = len(fd.Parameters)
 			}
 			funcNames[fd.Name] = true
+		case *parser.LetStatement:
+			// 收集 str.to-upper = (out str, out-n i64) { ... } 等帶點名的方法定義
+			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
+				if s.Name != nil && strings.Contains(s.Name.Value, ".") {
+					name := s.Name.Value
+					retType := "void"
+					if len(fl.Results) == 1 {
+						retType = g.mapToLLVMType(fl.Results[0].Type.String())
+					}
+					// 用完整名稱作為 key（含點），便於方法呼叫查找
+					g.funcRetTypes[name] = retType
+					g.funcNumResults[name] = len(fl.Results)
+					if len(fl.Results) > 0 {
+						rets := make([]string, len(fl.Results))
+						for i, r := range fl.Results {
+							rets[i] = g.mapToLLVMType(r.Type.String())
+						}
+						g.funcResultLLVMType[name] = rets
+					}
+					g.funcIsVariadic[name] = fl.IsVariadic
+					if fl.IsVariadic && len(fl.Parameters) > 0 {
+						g.funcParamCount[name] = len(fl.Parameters) - 1
+					} else {
+						g.funcParamCount[name] = len(fl.Parameters)
+					}
+					funcNames[name] = true
+				}
+			}
 		}
 	}
+
+	// 對於 0 個顯式結果的函數，掃描 body 找出被賦值的參數，這些參數實際上是輸出參數。
+	// 例如 str.to-i64 = (val i64) { val = 0; ... } 中的 val 是輸出。
+	g.detectOutputParamsFromBody(program, funcNames)
 
 	// Pre-register built-in arr type (used for all fixed-size arrays)
 	g.structTypes["arr"] = []structField{
@@ -356,6 +400,274 @@ func llvmLLVMType(t builtin.LLVMArgType) string {
 	}
 }
 
+// detectOutputParamsFromBody 對於 0 個顯式結果的函數，掃描 body 找出被賦值的參數，
+// 將其視為輸出參數，補充 funcRetTypes / funcNumResults / funcResultLLVMType。
+// 這樣 str.to-i64 = (val i64) { val = 0; ... } 中的 val 才能被識別為輸出。
+func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcNames map[string]bool) {
+	for _, stmt := range program.Statements {
+		var fd *parser.FunctionDefinition
+		var params []*parser.Parameter
+		var body *parser.BlockStatement
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			fd = s
+			params = s.Parameters
+			body = s.Body
+		case *parser.LetStatement:
+			fl, ok := s.Value.(*parser.FunctionLiteral)
+			if !ok || s.Name == nil {
+				continue
+			}
+			if !strings.Contains(s.Name.Value, ".") {
+				continue
+			}
+			fd = &parser.FunctionDefinition{Name: s.Name.Value}
+			params = fl.Parameters
+			body = fl.Body
+		default:
+			continue
+		}
+		if fd == nil || body == nil {
+			continue
+		}
+		// 只處理目前 0 個結果的函數
+		if n, ok := g.funcNumResults[fd.Name]; ok && n > 0 {
+			continue
+		}
+		// 使用源碼順序遍歷分析參數使用情況，區分輸入和輸出參數。
+		// 核心啟發式：若參數在賦值前被讀取（如 str.slice 的 start 在 `if start < 0` 中先讀，
+		// 然後才 `start = 0`），則為輸入參數；若參數先被賦值才被讀取（如 str.slice 的 out
+		// 先 `out.len = 0` 再 `for i < out.len`），則為輸出參數。
+		outputs := g.analyzeParamUsage(body, params)
+		if len(outputs) == 0 {
+			continue
+		}
+		// 更新預掃描的表
+		// 始終保持 retType 為 void — 即使是單輸出參數也通過指標傳遞，
+		// 與多輸出函數保持一致，避免 detectOutputParamsFromBody 與 generateFunctionDefinition
+		// 之間的簽名不一致（前者可能設為 i64，但後者基於原始 fd.Results=void 生成 void 函數）。
+		retType := "void"
+		g.funcRetTypes[fd.Name] = retType
+		g.funcNumResults[fd.Name] = len(outputs)
+		rets := make([]string, len(outputs))
+		for i, p := range outputs {
+			rets[i] = g.mapToLLVMType(p.Type.String())
+		}
+		g.funcResultLLVMType[fd.Name] = rets
+	}
+}
+
+// analyzeParamUsage 通過源碼順序遍歷函數體，判斷每個參數是輸入還是輸出。
+// 狀態機：0=未讀, 1=賦值前已讀（輸入）, 2=已賦值（可能為輸出）。
+// 輸出參數 = 最終狀態為 2（被賦值且 從未在賦值前被讀取）。
+func (g *Generator) analyzeParamUsage(body *parser.BlockStatement, params []*parser.Parameter) []*parser.Parameter {
+	state := make(map[string]int)
+	for _, p := range params {
+		state[p.Name] = 0
+	}
+	g.walkStmtForAnalysis(body, state)
+	var outputs []*parser.Parameter
+	for _, p := range params {
+		if state[p.Name] == 2 {
+			outputs = append(outputs, p)
+		}
+	}
+	return outputs
+}
+
+// walkStmtForAnalysis 按源碼順序走訪語句，更新參數狀態。
+func (g *Generator) walkStmtForAnalysis(stmt parser.Statement, state map[string]int) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		// RHS 先讀取，再賦值給 LHS
+		if s.Value != nil {
+			g.walkExprReadsForAnalysis(s.Value, state)
+		}
+		if s.Name != nil {
+			g.markParamAssigned(s.Name.Value, state)
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			g.walkExprReadsForAnalysis(s.Value, state)
+		}
+		for _, n := range s.Names {
+			g.markParamAssigned(n.Value, state)
+		}
+	case *parser.ForStatement:
+		// for init; cond; update { body }
+		if s.Init != nil {
+			g.walkStmtForAnalysis(s.Init, state)
+		}
+		if s.IterRange != nil {
+			if s.IterRange.Variable != "" {
+				g.markParamAssigned(s.IterRange.Variable, state)
+			}
+			if s.IterRange.Range != nil {
+				if s.IterRange.Range.Start != nil {
+					g.walkExprReadsForAnalysis(s.IterRange.Range.Start, state)
+				}
+				if s.IterRange.Range.End != nil {
+					g.walkExprReadsForAnalysis(s.IterRange.Range.End, state)
+				}
+			}
+			if s.IterRange.RangeExpr != nil {
+				g.walkExprReadsForAnalysis(s.IterRange.RangeExpr, state)
+			}
+		}
+		if s.Condition != nil {
+			g.walkExprReadsForAnalysis(s.Condition, state)
+		}
+		if s.CountExpr != nil {
+			g.walkExprReadsForAnalysis(s.CountExpr, state)
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				g.walkStmtForAnalysis(ss, state)
+			}
+		}
+		if s.Update != nil {
+			g.walkStmtForAnalysis(s.Update, state)
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			g.walkStmtForAnalysis(ss, state)
+		}
+	case *parser.ExpressionStatement:
+		g.walkExprForAnalysis(s.Expression, state)
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			g.walkExprReadsForAnalysis(s.ReturnValue, state)
+		}
+	}
+}
+
+// walkExprForAnalysis 處理表達式語句，識別賦值表達式並按正確順序處理讀寫。
+func (g *Generator) walkExprForAnalysis(expr parser.Expression, state map[string]int) {
+	if expr == nil {
+		return
+	}
+	if assign, ok := expr.(*parser.AssignExpression); ok {
+		// RHS 先讀取
+		if assign.Value != nil {
+			g.walkExprReadsForAnalysis(assign.Value, state)
+		}
+		// 然後處理 LHS 的賦值
+		switch lhs := assign.Left.(type) {
+		case *parser.Identifier:
+			g.markParamAssigned(lhs.Value, state)
+		case *parser.DotExpression:
+			// out.len = v → out 被賦值（透過欄位）
+			if recv, ok := lhs.Receiver.(*parser.Identifier); ok {
+				g.markParamAssigned(recv.Value, state)
+			} else {
+				// 嵌套的 DotExpression，如 a.b.c = v，保守地不處理
+				g.walkExprReadsForAnalysis(lhs.Receiver, state)
+			}
+		case *parser.IndexExpression:
+			// out[i] = v → out 被賦值（透過索引），i 被讀取
+			if id, ok := lhs.Left.(*parser.Identifier); ok {
+				g.markParamAssigned(id.Value, state)
+			} else {
+				g.walkExprReadsForAnalysis(lhs.Left, state)
+			}
+			g.walkExprReadsForAnalysis(lhs.Index, state)
+		default:
+			// 其他 LHS 類型，保守地讀取
+			g.walkExprReadsForAnalysis(assign.Left, state)
+		}
+		return
+	}
+	// 非賦值表達式：全部視為讀取
+	g.walkExprReadsForAnalysis(expr, state)
+}
+
+// walkExprReadsForAnalysis 走訪表達式中的所有變數讀取。
+func (g *Generator) walkExprReadsForAnalysis(expr parser.Expression, state map[string]int) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		g.markParamRead(e.Value, state)
+	case *parser.AssignExpression:
+		// 嵌套賦值表達式：按完整賦值處理
+		g.walkExprForAnalysis(e, state)
+	case *parser.InfixExpression:
+		g.walkExprReadsForAnalysis(e.Left, state)
+		g.walkExprReadsForAnalysis(e.Right, state)
+	case *parser.PrefixExpression:
+		g.walkExprReadsForAnalysis(e.Right, state)
+	case *parser.CallExpression:
+		g.walkExprReadsForAnalysis(e.Function, state)
+		for _, arg := range e.Arguments {
+			g.walkExprReadsForAnalysis(arg, state)
+		}
+	case *parser.DotExpression:
+		// s.len → s 被讀取
+		g.walkExprReadsForAnalysis(e.Receiver, state)
+	case *parser.IndexExpression:
+		// a[i] → a 和 i 都被讀取
+		g.walkExprReadsForAnalysis(e.Left, state)
+		g.walkExprReadsForAnalysis(e.Index, state)
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			g.walkExprReadsForAnalysis(e.Condition, state)
+		}
+		if e.Consequence != nil {
+			for _, ss := range e.Consequence.Statements {
+				g.walkStmtForAnalysis(ss, state)
+			}
+		}
+		if e.Alternative != nil {
+			for _, ss := range e.Alternative.Statements {
+				g.walkStmtForAnalysis(ss, state)
+			}
+		}
+	case *parser.GroupedExpression:
+		g.walkExprReadsForAnalysis(e.Expression, state)
+	case *parser.SliceExpression:
+		g.walkExprReadsForAnalysis(e.Left, state)
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				g.walkExprReadsForAnalysis(e.Range.Start, state)
+			}
+			if e.Range.End != nil {
+				g.walkExprReadsForAnalysis(e.Range.End, state)
+			}
+		}
+	case *parser.ConditionalExpression:
+		g.walkExprReadsForAnalysis(e.Condition, state)
+		g.walkExprReadsForAnalysis(e.Consequence, state)
+		g.walkExprReadsForAnalysis(e.Alternative, state)
+	case *parser.RangeExpression:
+		if e.Start != nil {
+			g.walkExprReadsForAnalysis(e.Start, state)
+		}
+		if e.End != nil {
+			g.walkExprReadsForAnalysis(e.End, state)
+		}
+		// Literals (Integer, Float, String, Char, Byte, Boolean, Nil) — no reads
+	}
+}
+
+// markParamRead 標記參數被讀取。若參數尚未被賦值（狀態 0），則轉為「賦值前已讀」（狀態 1）。
+func (g *Generator) markParamRead(name string, state map[string]int) {
+	if s, ok := state[name]; ok && s == 0 {
+		state[name] = 1
+	}
+}
+
+// markParamAssigned 標記參數被賦值。僅當參數尚未被讀取（狀態 0）時才轉為「已賦值」（狀態 2）。
+// 若參數已被讀取（狀態 1），則保持不變 — 這表示它是輸入參數（在賦值前被讀取）。
+func (g *Generator) markParamAssigned(name string, state map[string]int) {
+	if s, ok := state[name]; ok && s == 0 {
+		state[name] = 2
+	}
+}
+
 func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string) string {
 	a := evalArgs()
 	clib := m.CLibCall
@@ -363,8 +675,56 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	// Sprintf pattern: sprintf(buf, fmt, args...)
 	if clib.SprintfFmt != "" {
 		fg := g.getFormatGlobal(clib.SprintfFmt)
+		fmtPtr := "i8* getelementptr inbounds ([" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8], [" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8]* " + fg + ", i64 0, i64 0)"
+
+		// 检查返回类型是否为 str
+		returnsStr := false
+		for _, t := range m.Return {
+			if t == parser.TypeStr {
+				returnsStr = true
+				break
+			}
+		}
+
+		if returnsStr {
+			// 分配每次调用的栈缓冲区，避免全局 @.strconv_buf 别名问题
+			g.tmpIdx++
+			bufAlloca := fmt.Sprintf("%%sprintf.buf.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca [64 x i8]\n", g.indent(), bufAlloca))
+			}
+			bufPtr := "i8* " + bufAlloca
+			argStr := bufPtr + ", " + fmtPtr
+			for i, v := range a {
+				argStr += ", " + llvmLLVMType(clib.ArgTypes[i]) + " " + v
+			}
+			// sprintf 返回 i32 = 写入字符数（不含 null 终止符）
+			g.tmpIdx++
+			sprintfRet := fmt.Sprintf("%%sprintf.ret.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), sprintfRet, argStr))
+			}
+			// zext i32 → i64 作为 len 字段
+			g.tmpIdx++
+			lenReg := fmt.Sprintf("%%sprintf.len.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
+			}
+			// 通过 insertvalue 构造 %str { len, data }
+			g.tmpIdx++
+			strReg1 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str %s, %s, 1\n", g.indent(), strReg2, strReg1, bufPtr))
+			}
+			return strReg2
+		}
+
+		// 非 str 返回类型：保持原逻辑（使用全局缓冲区）
 		buf := fmt.Sprintf("i8* getelementptr inbounds ([64 x i8], [64 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
-		argStr := buf + ", i8* getelementptr inbounds ([" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8], [" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8]* " + fg + ", i64 0, i64 0)"
+		argStr := buf + ", " + fmtPtr
 		for i, v := range a {
 			argStr += ", " + llvmLLVMType(clib.ArgTypes[i]) + " " + v
 		}
@@ -458,7 +818,14 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		}
 		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str
 		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str 值
-		if clib.RetType == builtin.LLVMI8Ptr {
+		returnsStr := false
+		for _, t := range m.Return {
+			if t == parser.TypeStr {
+				returnsStr = true
+				break
+			}
+		}
+		if clib.RetType == builtin.LLVMI8Ptr || returnsStr {
 			g.tmpIdx++
 			lenReg := fmt.Sprintf("%%retbuf.len.%d", g.tmpIdx)
 			if sb != nil {

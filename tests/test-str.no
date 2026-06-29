@@ -9,12 +9,13 @@
 test-str-len = () {
     s = 'hello'
     n = s.len
-    print(n)     // expect: 5
+    print(n)  // expect: 5
 
     empty = ''
     m = empty.len
-    print(m)     // expect: 0
+    print(m)  // expect: 0
 }
+
 test-str-len()
 print(0)
 
@@ -23,12 +24,12 @@ print(0)
 // ═══════════════════════════════════════════════
 test-str-at = () {
     s = 'abc'
-    c0 = str-at(s, 0)
-    print(c0)    // expect: 97 (a)
-    c1 = str-at(s, 1)
-    print(c1)    // expect: 98 (b)
-    c2 = str-at(s, 2)
-    print(c2)    // expect: 99 (c)
+    c0 = s[0]
+    print(c0)  // expect: 97 (a)
+    c1 = s[1]
+    print(c1)  // expect: 98 (b)
+    c2 = s[2]
+    print(c2)  // expect: 99 (c)
 }
 test-str-at()
 print(1)
@@ -40,19 +41,20 @@ test-str-eq = () {
     a = 'hello'
     b = 'hello'
     eq1 = str-eq(a, b, 5)
-    print(eq1)   // expect: 1
+    print(eq1)  // expect: 1
 
     c = 'world'
     eq2 = str-eq(a, c, 5)
-    print(eq2)   // expect: 0
+    print(eq2)  // expect: 0
 
     eq3 = str-eq(a, b, 3)
-    print(eq3)   // expect: 1
+    print(eq3)  // expect: 1
 
     d = 'hell'
     eq4 = str-eq(a, d, 5)
-    print(eq4)   // expect: 0
+    print(eq4)  // expect: 0
 }
+
 test-str-eq()
 print(2)
 
@@ -66,355 +68,368 @@ test-str-copy = () {
     c0 = dst[0] & 255
     c1 = dst[1] & 255
     c2 = dst[2] & 255
-    print(c0)    // expect: 97 (a)
-    print(c1)    // expect: 98 (b)
-    print(c2)    // expect: 99 (c)
+    print(c0)  // expect: 97 (a)
+    print(c1)  // expect: 98 (b)
+    print(c2)  // expect: 99 (c)
 }
 test-str-copy()
 print(3)
 
 // ═══════════════════════════════════════════════
-// 测试 str-fill
+// 测试 str.fill (built-in ForwardFunc: memset)
 // ═══════════════════════════════════════════════
 test-str-fill = () {
     s = 'abcdef'
-    str-fill(s, 3, 120)
+    s.fill(120, 3)
     c0 = s[0] & 255
     c3 = s[3] & 255
-    print(c0)    // expect: 120 (x)
-    print(c3)    // expect: 100 (d, unchanged)
+    print(c0)  // expect: 120 (x)
+    print(c3)  // expect: 100 (d, unchanged)
 }
 test-str-fill()
 print(4)
 
 // ═══════════════════════════════════════════════
-// 测试 str-index
+// 测试 str.index (方法)
 // ═══════════════════════════════════════════════
 test-str-index = () {
     s = 'hello world'
-    pos1 = str-index(s, 11, 'world', 5)
+    pos1 = s.index('world', 5)
     print(pos1)  // expect: 6
 
-    pos2 = str-index(s, 11, 'xyz', 3)
+    pos2 = s.index('xyz', 3)
     print(pos2)  // expect: -1
 
-    pos3 = str-index(s, 11, 'hello', 5)
+    pos3 = s.index('hello', 5)
     print(pos3)  // expect: 0
 
-    pos4 = str-index(s, 11, '', 0)
+    pos4 = s.index('', 0)
     print(pos4)  // expect: 0
 }
+
 test-str-index()
 print(5)
 
 // ═══════════════════════════════════════════════
-// 测试 str-contains
+// 测试 str.contains (方法)
 // ═══════════════════════════════════════════════
 test-str-contains = () {
     s = 'hello world'
-    c1 = str-contains(s, 11, 'world', 5)
-    print(c1)    // expect: 1
+    c1 = s.contains('world', 5)
+    print(c1)  // expect: 1
 
-    c2 = str-contains(s, 11, 'xyz', 3)
-    print(c2)    // expect: 0
+    c2 = s.contains('xyz', 3)
+    print(c2)  // expect: 0
 
-    c3 = str-contains(s, 11, 'lo wo', 5)
-    print(c3)    // expect: 1
+    c3 = s.contains('lo wo', 5)
+    print(c3)  // expect: 1
 }
+
 test-str-contains()
 print(6)
 
 // ═══════════════════════════════════════════════
-// 测试 str-starts-with
+// 测试 str.starts-with (方法)
 // ═══════════════════════════════════════════════
 test-str-starts-with = () {
     s = 'hello world'
-    sw1 = str-starts-with(s, 11, 'hello', 5)
-    print(sw1)   // expect: 1
+    sw1 = s.starts-with('hello', 5)
+    print(sw1)  // expect: 1
 
-    sw2 = str-starts-with(s, 11, 'world', 5)
-    print(sw2)   // expect: 0
+    sw2 = s.starts-with('world', 5)
+    print(sw2)  // expect: 0
 
-    sw3 = str-starts-with(s, 11, 'hell', 4)
-    print(sw3)   // expect: 1
+    sw3 = s.starts-with('hell', 4)
+    print(sw3)  // expect: 1
 
-    sw4 = str-starts-with(s, 11, 'hello world', 11)
-    print(sw4)   // expect: 1
+    sw4 = s.starts-with('hello world', 11)
+    print(sw4)  // expect: 1
 
-    sw5 = str-starts-with(s, 11, 'hello world!', 12)
-    print(sw5)   // expect: 0
+    sw5 = s.starts-with('hello world!', 12)
+    print(sw5)  // expect: 0
 }
+
 test-str-starts-with()
 print(7)
 
 // ═══════════════════════════════════════════════
-// 测试 str-ends-with
+// 测试 str.ends-with (方法)
 // ═══════════════════════════════════════════════
 test-str-ends-with = () {
     s = 'hello world'
-    ew1 = str-ends-with(s, 11, 'world', 5)
-    print(ew1)   // expect: 1
+    ew1 = s.ends-with('world', 5)
+    print(ew1)  // expect: 1
 
-    ew2 = str-ends-with(s, 11, 'hello', 5)
-    print(ew2)   // expect: 0
+    ew2 = s.ends-with('hello', 5)
+    print(ew2)  // expect: 0
 
-    ew3 = str-ends-with(s, 11, 'orld', 4)
-    print(ew3)   // expect: 1
+    ew3 = s.ends-with('orld', 4)
+    print(ew3)  // expect: 1
 
-    ew4 = str-ends-with(s, 11, 'hello world', 11)
-    print(ew4)   // expect: 1
+    ew4 = s.ends-with('hello world', 11)
+    print(ew4)  // expect: 1
 
-    ew5 = str-ends-with(s, 11, '!hello world', 12)
-    print(ew5)   // expect: 0
+    ew5 = s.ends-with('!hello world', 12)
+    print(ew5)  // expect: 0
 }
+
 test-str-ends-with()
 print(8)
 
 // ═══════════════════════════════════════════════
-// 测试 str-trim
+// 测试 str.trim (方法)
 // ═══════════════════════════════════════════════
 test-str-trim = () {
     s1 = '  hello  '
-    str-trim(s1, 9)(t1, n1)
-    print(n1)    // expect: 5
+    t1 = s1.trim()
+    print(t1.len)  // expect: 5
 
     s2 = 'hello'
-    str-trim(s2, 5)(t2, n2)
-    print(n2)    // expect: 5
+    t2 = s2.trim()
+    print(t2.len)  // expect: 5
 
     s3 = '   '
-    str-trim(s3, 3)(t3, n3)
-    print(n3)    // expect: 0
+    t3 = s3.trim()
+    print(t3.len)  // expect: 0
 
     s4 = '\thello\n'
-    str-trim(s4, 7)(t4, n4)
-    print(n4)    // expect: 5
+    t4 = s4.trim()
+    print(t4.len)  // expect: 5
 }
+
 test-str-trim()
 print(9)
 
 // ═══════════════════════════════════════════════
-// 测试 str-to-upper / str-to-lower
+// 测试 str.to-upper / str.to-lower (方法)
 // ═══════════════════════════════════════════════
 test-str-case = () {
     s1 = 'hello'
-    str-to-upper(s1, 5)(u1, un1)
-    c0 = str-at(u1, 0)
-    c4 = str-at(u1, 4)
-    print(c0)    // expect: 72 (H)
-    print(c4)    // expect: 79 (O)
+    u1 = s1.to-upper()
+    c0 = u1[0]
+    c4 = u1[4]
+    print(c0)  // expect: 72 (H)
+    print(c4)  // expect: 79 (O)
 
     s2 = 'WORLD'
-    str-to-lower(s2, 5)(l1, ln1)
-    c5 = str-at(l1, 0)
-    c9 = str-at(l1, 4)
-    print(c5)    // expect: 119 (w)
-    print(c9)    // expect: 100 (d)
+    l1 = s2.to-lower()
+    c5 = l1[0]
+    c9 = l1[4]
+    print(c5)  // expect: 119 (w)
+    print(c9)  // expect: 100 (d)
 
     s3 = 'Hello123'
-    str-to-upper(s3, 8)(u2, un2)
-    print(un2)   // expect: 8
-    c10 = str-at(u2, 5)
-    print(c10)   // expect: 49 (1, unchanged)
+    u2 = s3.to-upper()
+    print(u2.len)  // expect: 8
+    c10 = u2[5]
+    print(c10)  // expect: 49 (1, unchanged)
 }
+
 test-str-case()
 print(10)
 
 // ═══════════════════════════════════════════════
-// 测试 str-repeat
+// 测试 str.repeat (方法)
 // ═══════════════════════════════════════════════
 test-str-repeat = () {
     s = 'ab'
-    str-repeat(s, 2, 3)(r1, rn1)
-    print(rn1)   // expect: 6
+    r1 = s.repeat(3)
+    print(r1.len)  // expect: 6
 
-    c0 = str-at(r1, 0)
-    c1 = str-at(r1, 1)
-    c2 = str-at(r1, 2)
-    c3 = str-at(r1, 3)
-    c4 = str-at(r1, 4)
-    c5 = str-at(r1, 5)
-    print(c0)   // expect: 97 (a)
-    print(c1)   // expect: 98 (b)
-    print(c2)   // expect: 97 (a)
-    print(c3)   // expect: 98 (b)
-    print(c4)   // expect: 97 (a)
-    print(c5)   // expect: 98 (b)
+    c0 = r1[0]
+    c1 = r1[1]
+    c2 = r1[2]
+    c3 = r1[3]
+    c4 = r1[4]
+    c5 = r1[5]
+    print(c0)  // expect: 97 (a)
+    print(c1)  // expect: 98 (b)
+    print(c2)  // expect: 97 (a)
+    print(c3)  // expect: 98 (b)
+    print(c4)  // expect: 97 (a)
+    print(c5)  // expect: 98 (b)
 }
+
 test-str-repeat()
 print(11)
 
 // ═══════════════════════════════════════════════
-// 测试 str-slice
+// 测试 str.slice (方法)
 // ═══════════════════════════════════════════════
 test-str-slice = () {
     s = 'hello world'
-    str-slice(s, 11, 0, 5)(sl1, sln1)
-    print(sln1)      // expect: 5
-
-    str-slice(s, 11, 6, 11)(sl2, sln2)
-    print(sln2)      // expect: 5
-
-    str-slice(s, 11, 3, 8)(sl3, sln3)
-    print(sln3)      // expect: 5
-
-    str-slice(s, 11, 0, 11)(sl4, sln4)
-    print(sln4)      // expect: 11
-
-    str-slice(s, 11, 5, 5)(sl5, sln5)
-    print(sln5)      // expect: 0
-
-    str-slice(s, 11, 10, 11)(sl6, sln6)
-    print(sln6)      // expect: 1
+    sl1 = s.slice(0, 5)
+    print(sl1.len)  // expect: 5
+    sl2 = s.slice(6, 11)
+    print(sl2.len)  // expect: 5
+    sl3 = s.slice(3, 8)
+    print(sl3.len)  // expect: 5
+    sl4 = s.slice(0, 11)
+    print(sl4.len)  // expect: 11
+    sl5 = s.slice(5, 5)
+    print(sl5.len)  // expect: 0
+    sl6 = s.slice(10, 11)
+    print(sl6.len)  // expect: 1
 }
+
 test-str-slice()
 print(12)
 
 // ═══════════════════════════════════════════════
-// 测试 str-to-i64
+// 测试 str.to-i64 (方法)
 // ═══════════════════════════════════════════════
 test-str-to-i64 = () {
-    v1 = str-to-i64('123', 3)
-    print(v1)   // expect: 123
+    s1 = '123'
+    v1 = s1.to-i64()
+    print(v1)  // expect: 123
 
-    v2 = str-to-i64('0', 1)
-    print(v2)   // expect: 0
+    s2 = '0'
+    v2 = s2.to-i64()
+    print(v2)  // expect: 0
 
-    v3 = str-to-i64('-42', 3)
-    print(v3)   // expect: -42
+    s3 = '-42'
+    v3 = s3.to-i64()
+    print(v3)  // expect: -42
 
-    v4 = str-to-i64('999', 3)
-    print(v4)   // expect: 999
+    s4 = '999'
+    v4 = s4.to-i64()
+    print(v4)  // expect: 999
 }
+
 test-str-to-i64()
 print(13)
 
 // ═══════════════════════════════════════════════
-// 测试 i64-to-str
+// 测试 i64-to-str (非方法)
 // ═══════════════════════════════════════════════
 test-i64-to-str = () {
-    i64-to-str(123)(s1, n1)
-    print(n1)       // expect: 3
-
-    i64-to-str(0)(s2, n2)
-    print(n2)       // expect: 1
-
-    i64-to-str(-42)(s3, n3)
-    print(n3)       // expect: 3
-
-    i64-to-str(9999)(s4, n4)
-    print(n4)       // expect: 4
+    s1 = i64-to-str(123)
+    print(s1.len)  // expect: 3
+    s2 = i64-to-str(0)
+    print(s2.len)  // expect: 1
+    s3 = i64-to-str(-42)
+    print(s3.len)  // expect: 3
+    s4 = i64-to-str(9999)
+    print(s4.len)  // expect: 4
 }
+
 test-i64-to-str()
 print(14)
 
 // ═══════════════════════════════════════════════
-// 测试 str-to-bytes / str-from-bytes
+// 测试 str.to-bytes (方法)
 // ═══════════════════════════════════════════════
 test-str-bytes = () {
     s = 'abc'
-    str-to-bytes(s, 3)(out, outn)
-    print(outn)    // expect: 3
+    out = s.to-bytes()
+    print(out.len)  // expect: 3
 
     b0 = out[0]
     b1 = out[1]
     b2 = out[2]
-    print(b0)   // expect: 97 (a)
-    print(b1)   // expect: 98 (b)
-    print(b2)   // expect: 99 (c)
+    print(b0)  // expect: 97 (a)
+    print(b1)  // expect: 98 (b)
+    print(b2)  // expect: 99 (c)
 }
+
 test-str-bytes()
 print(15)
 
 // ═══════════════════════════════════════════════
-// 测试 str-reverse
+// 测试 str.reverse (方法)
 // ═══════════════════════════════════════════════
 test-str-reverse = () {
     s1 = 'abc'
-    str-reverse(s1, 3)(r1, rn1)
-    print(rn1)        // expect: 3
-    c0 = str-at(r1, 0)
-    c1 = str-at(r1, 1)
-    c2 = str-at(r1, 2)
-    print(c0)   // expect: 99 (c)
-    print(c1)   // expect: 98 (b)
-    print(c2)   // expect: 97 (a)
+    r1 = s1.reverse()
+    print(r1.len)  // expect: 3
+    c0 = r1[0]
+    c1 = r1[1]
+    c2 = r1[2]
+    print(c0)  // expect: 99 (c)
+    print(c1)  // expect: 98 (b)
+    print(c2)  // expect: 97 (a)
 
     s2 = 'a'
-    str-reverse(s2, 1)(r2, rn2)
-    print(rn2)        // expect: 1
-    c3 = str-at(r2, 0)
-    print(c3)   // expect: 97 (a)
+    r2 = s2.reverse()
+    print(r2.len)  // expect: 1
+    c3 = r2[0]
+    print(c3)  // expect: 97 (a)
 
     s3 = 'abcd'
-    str-reverse(s3, 4)(r3, rn3)
-    c4 = str-at(r3, 0)
-    c5 = str-at(r3, 3)
-    print(c4)   // expect: 100 (d)
-    print(c5)   // expect: 97 (a)
+    r3 = s3.reverse()
+    c4 = r3[0]
+    c5 = r3[3]
+    print(c4)  // expect: 100 (d)
+    print(c5)  // expect: 97 (a)
 }
+
 test-str-reverse()
 print(16)
 
 // ═══════════════════════════════════════════════
-// 测试 str-compare
+// 测试 str.compare (方法)
 // ═══════════════════════════════════════════════
 test-str-compare = () {
-    r1 = str-compare('abc', 3, 'abc', 3)
+    r1 = 'abc'.compare('abc')
     print(r1)  // expect: 0
 
-    r2 = str-compare('abc', 3, 'abd', 3)
+    r2 = 'abc'.compare('abd')
     print(r2)  // expect: -1
 
-    r3 = str-compare('abd', 3, 'abc', 3)
+    r3 = 'abd'.compare('abc')
     print(r3)  // expect: 1
 
-    r4 = str-compare('ab', 2, 'abc', 3)
+    r4 = 'ab'.compare('abc')
     print(r4)  // expect: -1
 
-    r5 = str-compare('abc', 3, 'ab', 2)
+    r5 = 'abc'.compare('ab')
     print(r5)  // expect: 1
 
-    r6 = str-compare('a', 1, 'b', 1)
+    r6 = 'a'.compare('b')
     print(r6)  // expect: -1
 }
+
 test-str-compare()
 print(17)
 
 // ═══════════════════════════════════════════════
-// 测试 str-count
+// 测试 str.count (方法)
 // ═══════════════════════════════════════════════
 test-str-count = () {
-    cnt1 = str-count('hello', 5, 108)
+    s1 = 'hello'
+    cnt1 = s1.count(108)
     print(cnt1)  // expect: 2 (l appears twice)
 
-    cnt2 = str-count('hello', 5, 104)
+    cnt2 = s1.count(104)
     print(cnt2)  // expect: 1 (h appears once)
 
-    cnt3 = str-count('hello', 5, 120)
+    cnt3 = s1.count(120)
     print(cnt3)  // expect: 0 (x not found)
 
-    cnt4 = str-count('aaa', 3, 97)
+    s2 = 'aaa'
+    cnt4 = s2.count(97)
     print(cnt4)  // expect: 3
 
-    cnt5 = str-count('', 0, 97)
+    s3 = ''
+    cnt5 = s3.count(97)
     print(cnt5)  // expect: 0
 }
+
 test-str-count()
 print(18)
 
 // ═══════════════════════════════════════════════
-// 测试 str-replace-byte
+// 测试 str.replace-byte (方法)
 // ═══════════════════════════════════════════════
 test-str-replace-byte = () {
     s = 'hello'
-    str-replace-byte(s, 5, 101, 120)(r1, rn1)
-    print(rn1)    // expect: 5
-    c0 = str-at(r1, 0)
-    c1 = str-at(r1, 1)
-    c2 = str-at(r1, 2)
-    c3 = str-at(r1, 3)
-    c4 = str-at(r1, 4)
+    r1 = s.replace-byte(101, 120)
+    print(r1.len)  // expect: 5
+    c0 = r1[0]
+    c1 = r1[1]
+    c2 = r1[2]
+    c3 = r1[3]
+    c4 = r1[4]
     print(c0)  // expect: 104 (h)
     print(c1)  // expect: 120 (x, replaced)
     print(c2)  // expect: 108 (l)
@@ -425,41 +440,46 @@ test-str-replace-byte()
 print(19)
 
 // ═══════════════════════════════════════════════
-// 测试 str-trim-char
+// 测试 str.trim-char (方法)
 // ═══════════════════════════════════════════════
 test-str-trim-char = () {
     s1 = '///hello///'
-    str-trim-char(s1, 10, 47)(tc1, tcn1)
-    print(tcn1)   // expect: 5
+    tc1 = s1.trim-char(47)
+    print(tc1.len)  // expect: 5
 
     s2 = 'hello'
-    str-trim-char(s2, 5, 47)(tc2, tcn2)
-    print(tcn2)   // expect: 5
+    tc2 = s2.trim-char(47)
+    print(tc2.len)  // expect: 5
 
     s3 = '//////'
-    str-trim-char(s3, 6, 47)(tc3, tcn3)
-    print(tcn3)   // expect: 0
+    tc3 = s3.trim-char(47)
+    print(tc3.len)  // expect: 0
 
     s4 = '-hello-'
-    str-trim-char(s4, 7, 45)(tc4, tcn4)
-    print(tcn4)   // expect: 5
+    tc4 = s4.trim-char(45)
+    print(tc4.len)  // expect: 5
 }
+
 test-str-trim-char()
 print(20)
 
 // ═══════════════════════════════════════════════
-// 测试 str-empty
+// 测试 str.empty (方法)
 // ═══════════════════════════════════════════════
 test-str-empty = () {
-    e1 = str-empty('', 0)
-    print(e1)    // expect: 1
+    s1 = ''
+    e1 = s1.empty()
+    print(e1)  // expect: 1
 
-    e2 = str-empty('a', 1)
-    print(e2)    // expect: 0
+    s2 = 'a'
+    e2 = s2.empty()
+    print(e2)  // expect: 0
 
-    e3 = str-empty('hello', 5)
-    print(e3)    // expect: 0
+    s3 = 'hello'
+    e3 = s3.empty()
+    print(e3)  // expect: 0
 }
+
 test-str-empty()
 print(21)
 
@@ -469,28 +489,27 @@ print(21)
 test-integration = () {
     s = 'Hello' - ' ' - 'World'
     n = s.len
-    print(n)    // expect: 11
+    print(n)  // expect: 11
 
-    contains = str-contains(s, n, 'World', 5)
-    print(contains)   // expect: 1
+    contains = s.contains('World', 5)
+    print(contains)  // expect: 1
 
-    starts = str-starts-with(s, n, 'Hello', 5)
-    print(starts)     // expect: 1
+    starts = s.starts-with('Hello', 5)
+    print(starts)  // expect: 1
 
-    ends = str-ends-with(s, n, 'World', 5)
-    print(ends)       // expect: 1
+    ends = s.ends-with('World', 5)
+    print(ends)  // expect: 1
 
-    idx = str-index(s, n, 'lo Wo', 5)
-    print(idx)        // expect: 3
-
-    str-to-upper(s, n)(upper, uppern)
-    c0 = str-at(upper, 0)
-    print(c0)         // expect: 72 (H)
-
-    str-to-lower(s, n)(lower, lowern)
-    c11 = str-at(lower, 0)
-    print(c11)        // expect: 104 (h)
+    idx = s.index('lo Wo', 5)
+    print(idx)  // expect: 3
+    upper = s.to-upper()
+    c0 = upper[0]
+    print(c0)  // expect: 72 (H)
+    lower = s.to-lower()
+    c11 = lower[0]
+    print(c11)  // expect: 104 (h)
 }
+
 test-integration()
 print(22)
 

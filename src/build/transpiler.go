@@ -2337,6 +2337,15 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		return exists
 	case *parser.GroupedExpression:
 		return isStringExpr(e.Expression, stringSizes)
+	case *parser.InfixExpression:
+		// String concatenation: when both sides are strings, the result is a string
+		if e.Operator == "-" {
+			return isStringExpr(e.Left, stringSizes) && isStringExpr(e.Right, stringSizes)
+		}
+	case *parser.CallExpression:
+		// Function/method calls (e.g., i64-to-str, s.to-upper) may return strings.
+		// Return type cannot be determined at validation time; defer to LLVM type checking.
+		return true
 	}
 	return false
 }
