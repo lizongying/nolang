@@ -171,7 +171,7 @@ copy-file = (src str, dst str) (ok i64) {
         close(fd-r)()
         return
     }
-    buf = '(4096)'
+    buf [4096]byte
     for true {
         n = read(fd-r, buf, 4096)
         if n <= 0 {

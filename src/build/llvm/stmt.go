@@ -1868,6 +1868,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		if innerType == "double" {
 			copyF64ToData(val)
 		} else {
+			// All integer types (i8/u8/i16/u16/i32/u32/i64/u64/bool) stored as i64
 			copyI64ToData(val)
 		}
 	}
@@ -1984,6 +1985,11 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			copyReg := fmt.Sprintf("%%opt.copy.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %%option, %%option* %%%s\n", g.indent(), copyReg, v.Value))
 			sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), copyReg, name))
+		} else {
+			// Implicit value: val = n (plain value → ?T, tag=0)
+			storeTag(0)
+			val := g.generateExprWithSB(sb, stmt.Value)
+			copyToData(val)
 		}
 
 	default:

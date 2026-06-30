@@ -31,11 +31,11 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// Option type variable: extract data from data field (field 1)
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[e.Value]; ok && t == "%option" {
-				// Determine inner type (default: i64)
+				// Determine inner type: double for ?f64, i64 for all integer types
 				innerType := "i64"
 				if g.optionInnerTypes != nil {
-					if it, ok := g.optionInnerTypes[e.Value]; ok && it != "" {
-						innerType = it
+					if it, ok := g.optionInnerTypes[e.Value]; ok && it == "double" {
+						innerType = "double"
 					}
 				}
 				g.tmpIdx++

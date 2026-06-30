@@ -176,18 +176,10 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							if t == "i8" || t == "i16" || t == "i32" {
 								isNarrow = true
 							}
-							// Option variable: check inner type
+							// Option variable: check inner type for double
 							if t == "%option" && g.optionInnerTypes != nil {
-								if it, ok := g.optionInnerTypes[ident.Value]; ok {
-									if it == "double" {
-										isDouble = true
-									}
-									if it == "i1" {
-										isBool = true
-									}
-									if it == "i8" || it == "i16" || it == "i32" {
-										isNarrow = true
-									}
+								if it, ok := g.optionInnerTypes[ident.Value]; ok && it == "double" {
+									isDouble = true
 								}
 							}
 						}

@@ -294,7 +294,7 @@ str.to-i64 = () (val ?i64) {
     if neg == 1 {
         n = 0 - n
     }
-    val = val(n)
+    val = n
 }
 
 // str.to-i8: 將字串解析為 i8
@@ -338,7 +338,7 @@ str.to-i8 = () (val ?i8) {
         n = 0 - n
     }
     if n >= 0 - 128 && n <= 127 {
-        val = val(n)
+        val = n
     } else {
         val = err('val of range for i8')
     }
@@ -385,7 +385,7 @@ str.to-i16 = () (val ?i16) {
         n = 0 - n
     }
     if n >= 0 - 32768 && n <= 32767 {
-        val = val(n)
+        val = n
     } else {
         val = err('val of range for i16')
     }
@@ -432,7 +432,7 @@ str.to-i32 = () (val ?i32) {
         n = 0 - n
     }
     if n >= 0 - 2147483648 && n <= 2147483647 {
-        val = val(n)
+        val = n
     } else {
         val = err('val of range for i32')
     }
@@ -471,7 +471,7 @@ str.to-u8 = () (val ?u8) {
         i = i + 1
     }
     if n >= 0 && n <= 255 {
-        val = val(n)
+        val = n
     } else {
         val = err('out of range for u8')
     }
@@ -510,7 +510,7 @@ str.to-u16 = () (val ?u16) {
         i = i + 1
     }
     if n >= 0 && n <= 65535 {
-        val = val(n)
+        val = n
     } else {
         val = err('out of range for u16')
     }
@@ -549,7 +549,7 @@ str.to-u32 = () (val ?u32) {
         i = i + 1
     }
     if n >= 0 && n <= 4294967295 {
-        val = val(n)
+        val = n
     } else {
         val = err('out of range for u32')
     }
@@ -581,7 +581,7 @@ str.to-u64 = () (val ?u64) {
         n = n * 10 + c - 48
         i = i + 1
     }
-    val = val(n)
+    val = n
 }
 
 // str.to-byte: 將字串解析為 byte（與 u8 等價）
@@ -596,7 +596,7 @@ str.to-byte = () (val ?byte) {
     } elif n == err {
         val = err('invalid byte')
     } elif n >= 0 && n <= 255 {
-        val = val(n)
+        val = n
     } else {
         val = err('out of range for byte')
     }
@@ -642,7 +642,7 @@ str.to-f64 = () (val ?f64) {
 
     // 呼叫內建 strtod 進行解析
     f = .parse-f64-raw()
-    val = val(f)
+    val = f
 }
 
 // str.to-bool: 將字串 "true" / "false" 解析為 bool
@@ -657,7 +657,7 @@ str.to-bool = () (val ?bool) {
     // 比較 "true" (4 bytes)
     if .len == 4 {
         if .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101 {
-            val = val(true)
+            val = true
             return
         }
     }
@@ -665,7 +665,7 @@ str.to-bool = () (val ?bool) {
     // 比較 "false" (5 bytes)
     if .len == 5 {
         if .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101 {
-            val = val(false)
+            val = false
             return
         }
     }

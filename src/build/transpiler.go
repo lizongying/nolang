@@ -4138,6 +4138,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 					}
+					// 隱式值賦值：val = n 可直接賦值給 ?T 變數（tag 自動設為 0）
+					if strings.HasPrefix(existingType, "?") && !isOptionCtor {
+						// 檢查推斷型別是否與 Option 內部型別相符
+						innerType := existingType[1:]
+						if inferredType == innerType || inferredType == "i64" || inferredType == "bool" || inferredType == "f64" {
+							isOptionCtor = true
+						}
+					}
 					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,

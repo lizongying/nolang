@@ -645,7 +645,7 @@ to-str = (a bigint, out str) (out-n i64) {
     tmp = bigint{}
     tmp = copy(a)
     tmp.sign = 1
-    buf = '(256)'
+    buf [256]byte
     bufn = 0
     for true {
         tz = is-zero(tmp)
