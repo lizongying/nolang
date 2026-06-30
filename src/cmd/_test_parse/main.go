@@ -20,30 +20,20 @@ func main() {
 	}
 	for _, s := range prog.Statements {
 		fmt.Printf("  %T\n", s)
-		switch v := s.(type) {
-		case *parser.FunctionDefinition:
-			fmt.Printf("Function: %q IsVariadic=%v VariadicUnion=%q\n", v.Name, v.IsVariadic, v.VariadicUnion)
-		case *parser.TypeAlias:
-			if v.IsUnion() {
-				fmt.Printf("TypeAlias: %q = %s\n", v.Name, v.Union.String())
-			} else {
-				fmt.Printf("TypeAlias: %q = %s (single)\n", v.Name, v.Type.String())
+		if v, ok := s.(*parser.FunctionDefinition); ok {
+			if v.Name == "str.to-i64" {
+				fmt.Printf("Function: %q IsVariadic=%v VariadicUnion=%q\n", v.Name, v.IsVariadic, v.VariadicUnion)
+				fmt.Printf("  Parameters:\n")
+				for _, p := range v.Parameters {
+					fmt.Printf("    %q : %s\n", p.Name, p.Type.String())
+				}
+				fmt.Printf("  Results:\n")
+				for _, r := range v.Results {
+					fmt.Printf("    %q : %s\n", r.Name, r.Type.String())
+				}
 			}
 		}
 	}
 	fmt.Printf("=== Total stmts: %d ===\n", len(prog.Statements))
-	// Test that ValidateUnionTypes + monomorphizeUnions work
-	aliases, results := nbuild.ValidateUnionTypes(prog)
-	fmt.Println("=== ALIASES ===")
-	for name, ta := range aliases {
-		if ta.IsUnion() {
-			fmt.Printf("  %q = %s (union)\n", name, ta.Union.String())
-		} else {
-			fmt.Printf("  %q = %s (single)\n", name, ta.Type.String())
-		}
-	}
-	fmt.Printf("=== ValidateResults: %d ===\n", len(results))
-	for _, r := range results {
-		fmt.Printf("  L%d: %s\n", r.Line, r.Message)
-	}
+	_ = nbuild.ValidateUnionTypes // touch
 }

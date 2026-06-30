@@ -157,6 +157,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 					// Check variable type: double, bool, or default i64
 					isDouble := false
 					isBool := false
+					isNarrow := false
 					if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
 						if t, ok := g.varTypes[ident.Value]; ok {
 							if t == "double" {
@@ -164,6 +165,9 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							}
 							if t == "i1" {
 								isBool = true
+							}
+							if t == "i8" || t == "i16" || t == "i32" {
+								isNarrow = true
 							}
 						}
 					}
@@ -175,6 +179,17 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 						zextReg := fmt.Sprintf("%%print.zext.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, v))
 						v = zextReg
+						fmtSpec = "%lld"
+					} else if isNarrow {
+						// sign-extend i8/i16/i32 to i64 for printf (Nolang 中 i8/i16/i32 為有符號)
+						if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
+							if t, ok := g.varTypes[ident.Value]; ok {
+								g.tmpIdx++
+								extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, t, v))
+								v = extReg
+							}
+						}
 						fmtSpec = "%lld"
 					} else {
 						fmtSpec = "%lld"
@@ -331,44 +346,8 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string) string {
 
-	// str-to-i8/i16/i32/u8/u16/u32/byte: atoi + trunc + zext
-	truncFmts := map[string]string{
-		"str-to-i8": "i8", "str-to-i16": "i16", "str-to-i32": "i32",
-		"str-to-u8": "i8", "str-to-u16": "i16", "str-to-u32": "i32",
-		"str-to-byte": "i8",
-	}
-	if trunc, ok := truncFmts[fnName]; ok && hasArgs {
-		a := evalArgs()
-		g.tmpIdx++
-		aReg := fmt.Sprintf("%%st.a.%d", g.tmpIdx)
-		g.tmpIdx++
-		tReg := fmt.Sprintf("%%st.t.%d", g.tmpIdx)
-		g.tmpIdx++
-		zReg := fmt.Sprintf("%%st.z.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @atoi(%s)\n", g.indent(), aReg, a[0]))
-			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), tReg, aReg, trunc))
-			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zReg, trunc, tReg))
-		}
-		return zReg
-	}
-
-	// str-to-char: load i8 + zext
-	if fnName == "str-to-char" && hasArgs {
-		a := evalArgs()
-		g.tmpIdx++
-		cReg := fmt.Sprintf("%%st.c.%d", g.tmpIdx)
-		g.tmpIdx++
-		zReg := fmt.Sprintf("%%st.cz.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = load i8, %s\n", g.indent(), cReg, a[0]))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zReg, cReg))
-		}
-		return zReg
-	}
-
-	// str-to-bool: strcmp + cmp + zext
-	if fnName == "str-to-bool" && hasArgs {
+	// str.to-bool: strcmp + cmp + zext
+	if fnName == "str.to-bool" && hasArgs {
 		a := evalArgs()
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%boolcmp.tmp.%d", g.tmpIdx)
@@ -389,8 +368,8 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 		return zextReg
 	}
 
-	// bool-to-str: select + 构造 %str-long
-	if fnName == "bool-to-str" && hasArgs {
+	// bool.to-str: select + 构造 %str-long
+	if fnName == "bool.to-str" && hasArgs {
 		a := evalArgs()
 		g.tmpIdx++
 		selectReg := fmt.Sprintf("%%boolstr.tmp.%d", g.tmpIdx)

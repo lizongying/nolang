@@ -1,0 +1,8 @@
+// 通过 let 变量调用
+test-let = () {
+    s = '12345'
+    n = s.to-i64()
+    print(n)
+}
+
+test-let()

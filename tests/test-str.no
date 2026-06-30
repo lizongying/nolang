@@ -64,7 +64,7 @@ print(2)
 test-str-copy = () {
     src = 'abcdef'
     dst = '------'
-    src.copy(dst, 3)
+    src.copy(dst)
     c0 = dst[0] & 255
     c1 = dst[1] & 255
     c2 = dst[2] & 255
@@ -76,15 +76,15 @@ test-str-copy()
 print(3)
 
 // ═══════════════════════════════════════════════
-// 测试 str.fill (built-in ForwardFunc: memset)
+// 测试 str.fill
 // ═══════════════════════════════════════════════
 test-str-fill = () {
     s = 'abcdef'
-    s.fill(120, 3)
+    s.fill(120)
     c0 = s[0] & 255
     c3 = s[3] & 255
     print(c0)  // expect: 120 (x)
-    print(c3)  // expect: 100 (d, unchanged)
+    print(c3)  // expect: 120 (x, filled)
 }
 test-str-fill()
 print(4)

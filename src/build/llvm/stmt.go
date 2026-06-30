@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -53,6 +54,7 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 }
 
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
+	fmt.Fprintf(os.Stderr, "DEBUG-GEN-FUNC: name=%s params=%d results=%d bodyStmts=%d\n", fd.Name, len(fd.Parameters), len(fd.Results), len(fd.Body.Statements))
 	g.funcVars = nil
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
@@ -313,9 +315,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	if _, ok := stmt.Type.(*parser.SliceType); ok {
 		return "%vec"
 	}
-	// Type-only declaration: a i8 (no initializer)
-	if stmt.Value == nil && stmt.Type != nil {
-		return g.mapToLLVMType(stmt.Type.String())
+	// 顯式型別註釋（如 n i32 = 0 或 a i8）：優先使用型別而非從值推斷
+	if stmt.Type != nil {
+		ts := stmt.Type.String()
+		// 對於基本型別別名（如 i8 同時是 byte/char），使用最精確的 LLVM 型別
+		if mapped := g.mapToLLVMType(ts); mapped != "" {
+			return mapped
+		}
 	}
 	switch v := stmt.Value.(type) {
 	case *parser.Identifier:
@@ -359,10 +365,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
 			strFns := map[string]bool{
-				"i64-to-str": true, "i32-to-str": true, "i16-to-str": true, "i8-to-str": true,
-				"u64-to-str": true, "u32-to-str": true, "u16-to-str": true, "u8-to-str": true,
-				"f64-to-str": true, "f32-to-str": true,
-				"bool-to-str": true, "byte-to-str": true, "char-to-str": true,
+				"i64.to-str": true, "i32.to-str": true, "i16.to-str": true, "i8.to-str": true,
+				"u64.to-str": true, "u32.to-str": true, "u16.to-str": true, "u8.to-str": true,
+				"f64.to-str": true, "f32.to-str": true,
+				"bool.to-str": true, "byte.to-str": true, "char-to-str": true,
 				"get-env": true, "get-wd": true, "host-name": true,
 			}
 			if strFns[name] {
@@ -434,8 +440,24 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					return g.mapToLLVMType(m.Return[0].String())
 				}
 			}
+			// BooleanLiteral receiver (e.g., true.to-str())
+			if _, ok := recvExpr.(*parser.BooleanLiteral); ok {
+				shortName := "bool." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
 			// PrefixExpression receiver (e.g., (-42).to-str())
 			if _, ok := recvExpr.(*parser.PrefixExpression); ok {
+				shortName := "i64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+			// InfixExpression receiver (e.g., (-9223372036854775807 - 1).to-str()，
+			// 已被上方 Unwrap GroupedExpression 處理後為 InfixExpression)
+			// 算術表達式視為 i64
+			if _, ok := recvExpr.(*parser.InfixExpression); ok {
 				shortName := "i64." + dot.Property
 				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
 					return g.mapToLLVMType(m.Return[0].String())
@@ -711,6 +733,7 @@ func (g *Generator) collectStructType(sd *parser.StructDefinition) {
 }
 
 func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement) {
+	fmt.Fprintf(os.Stderr, "DEBUG-STMT: type=%T\n", stmt)
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.generateLet(sb, s)
@@ -1712,6 +1735,7 @@ func (g *Generator) generateExpressionStmt(sb *strings.Builder, stmt *parser.Exp
 	if stmt.Expression == nil {
 		return
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG-EXPR-STMT: expr=%T\n", stmt.Expression)
 
 	switch e := stmt.Expression.(type) {
 	case *parser.CallExpression:

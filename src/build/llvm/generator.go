@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -220,6 +221,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
 				if s.Name != nil && strings.Contains(s.Name.Value, ".") {
 					name := s.Name.Value
+					fmt.Fprintf(os.Stderr, "DEBUG-LET-METHOD: name=%q s.Name.Value=%q\n", name, s.Name.Value)
 					retType := "void"
 					if len(fl.Results) == 1 {
 						retType = g.mapToLLVMType(fl.Results[0].Type.String())

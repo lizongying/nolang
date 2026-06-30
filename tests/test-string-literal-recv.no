@@ -1,0 +1,7 @@
+// 测试字符串字面量 receiver
+test-string-literal = () {
+    n = '12345'.to-i64()
+    print(n)
+}
+
+test-string-literal()

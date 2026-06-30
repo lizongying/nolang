@@ -21,6 +21,8 @@ const (
 	ReceiverU64
 	ReceiverVec
 	ReceiverArr
+	ReceiverBool
+	ReceiverByte
 )
 
 // String 實現，方便日誌、LSP、錯誤打印轉文字
@@ -54,6 +56,10 @@ func (k ReceiverKind) String() string {
 		return "[]t"
 	case ReceiverArr:
 		return "[n]t"
+	case ReceiverBool:
+		return "bool"
+	case ReceiverByte:
+		return "byte"
 	default:
 		return "unknown"
 	}

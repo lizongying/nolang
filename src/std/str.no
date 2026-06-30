@@ -30,38 +30,21 @@
 // build-in (ForwardFunc: eq-raw)
 // str.eq = (b str, n i64) (eq bool) { ... }
 
-// str.copy: 将 src 的前 n 个字节复制到 dst
-// build-in (ForwardFunc: memcpy)
-// str.copy = (dst str, n i64) { ... }
-
-str.fill = (val char, n i64) {
-    // UTF-8 編碼 char 到臨時緩衝區
-    buf [4]byte = [0x00, 0x00, 0x00, 0x00]
-    len i64 = 0
-
-    if val < 0x80 {
-        buf[0] = val
-        len = 1
-    } elif val < 0x800 {
-        buf[0] = 0xC0 | ((val >> 6) & 0x1F)
-        buf[1] = 0x80 | (val & 0x3F)
-        len = 2
-    } elif val < 0x10000 {
-        buf[0] = 0xE0 | ((val >> 12) & 0x0F)
-        buf[1] = 0x80 | ((val >> 6) & 0x3F)
-        buf[2] = 0x80 | (val & 0x3F)
-        len = 3
-    } else {
-        buf[0] = 0xF0 | ((val >> 18) & 0x07)
-        buf[1] = 0x80 | ((val >> 12) & 0x3F)
-        buf[2] = 0x80 | ((val >> 6) & 0x3F)
-        buf[3] = 0x80 | (val & 0x3F)
-        len = 4
+// str.copy: 将 src 复制到 dst（整個字串）
+str.copy = () (dst str) {
+    i = 0
+    for i < .len {
+        dst[i] = .[i]
+        i = i + 1
     }
+}
 
-    // 循環填充字符串
-    i <- [0..n): {
-        .[i] = buf[i % len]
+// str.fill: 用 byte 值填充整個字串
+str.fill = (val byte) {
+    i = 0
+    for i < .len {
+        .[i] = val
+        i = i + 1
     }
 }
 
@@ -294,6 +277,73 @@ str.to-i64 = () (val i64) {
         val = 0 - val
     }
 }
+
+// str.to-i8: 将字符串转为 i8
+str.to-i8 = () (val i8) {
+    n i64 = 0
+    .to-i64(n)
+    val = n
+}
+
+// str.to-i16: 将字符串转为 i16
+str.to-i16 = () (val i16) {
+    n i64 = 0
+    .to-i64(n)
+    val = n
+}
+
+// str.to-i32: 将字符串转为 i32
+str.to-i32 = () (val i32) {
+    n i64 = 0
+    .to-i64(n)
+    val = n
+}
+
+// str.to-u8: 将字符串转为 u8
+str.to-u8 = () (val u8) {
+    n i64 = 0
+    .to-i64(n)
+    val = n & 255
+}
+
+// str.to-u16: 将字符串转为 u16
+str.to-u16 = () (val u16) {
+    n i64 = 0
+    .to-i64(n)
+    val = n
+}
+
+// str.to-u32: 将字符串转为 u32
+str.to-u32 = () (val u32) {
+    n i64 = 0
+    .to-i64(n)
+    val = n
+}
+
+// str.to-byte: 将字符串转为 byte
+str.to-byte = () (val byte) {
+    n i64 = 0
+    .to-i64(n)
+    val = n & 255
+}
+
+// str.to-u64: 將字串轉為 u64
+// build-in (CLibCall: strtoull)
+// str.to-u64 = () (val u64) {
+//     // LLVM: strtoull(., null, 10)
+// }
+
+// str.to-f64: 將字串轉為 f64
+// build-in (CLibCall: strtod)
+// str.to-f64 = () (val f64) {
+//     // LLVM: strtod(., null)
+// }
+
+// str.to-bool: 將字串 "true"/"false" 轉為 bool
+// build-in (ForwardFunc: str-to-bool)
+// str.to-bool = () (val bool) {
+//     // LLVM: strcmp(., "true") == 0
+// }
 
 // ═══════════════════════════════════════════════
 // 反转与比较

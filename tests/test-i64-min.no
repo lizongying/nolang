@@ -1,0 +1,7 @@
+// 测试 i64.to-str 边界值
+test-min-i64 = () {
+    s = (-9223372036854775807 - 1).to-str()
+    print(s)
+}
+
+test-min-i64()

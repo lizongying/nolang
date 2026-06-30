@@ -252,6 +252,49 @@ user.greet = () {
 }
 ```
 
+### Method Conventions
+
+Methods use `.` to reference the receiver. The receiver is not declared as a parameter.
+
+**Rules:**
+1. Method names use `type.method` format
+2. Receiver is accessed via `.` inside the method body
+3. Call with `receiver.method(args)` syntax
+4. Return values go in the second set of parentheses
+
+**Examples:**
+
+```nolang
+// str method
+str.to-upper = () (out str) {
+    out.len = .len
+    i = 0
+    for i < .len {
+        c = .[i]
+        if c >= 97 && c <= 122 {
+            out[i] = c - 32
+        } else {
+            out[i] = c
+        }
+        i = i + 1
+    }
+}
+
+// char method
+char.is-digit = () (result bool) {
+    result = false
+    if . >= 48 && . <= 57 {
+        result = true
+    }
+}
+
+// Calling methods
+s = 'hello'
+u = s.to-upper()     // receiver.method()
+c char = 5
+d = c.is-digit()     // receiver.method()
+```
+
 ### Interfaces
 
 ```nolang

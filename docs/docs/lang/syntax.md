@@ -396,7 +396,50 @@ print(u.name)
 
 ## 方法
 
+方法定義在類型上，使用 `.` 引用接收者（receiver）。
+
+### 語法
+
 ```nolang
+type.method-name = (params) (results) {
+    // . 是接收者
+}
+```
+
+### 規則
+
+1. 方法名使用 `type.method` 格式，type 必須是已定義的類型
+2. 接收者不需要顯式聲明參數，在方法體內用 `.` 引用
+3. 調用時使用 `receiver.method(args)` 語法
+4. 返回值放在第二組括號中，與普通函數一致
+
+### 示例
+
+```nolang
+// str 方法
+str.to-upper = () (out str) {
+    out.len = .len
+    i = 0
+    for i < .len {
+        c = .[i]
+        if c >= 97 && c <= 122 {
+            out[i] = c - 32
+        } else {
+            out[i] = c
+        }
+        i = i + 1
+    }
+}
+
+// char 方法
+char.is-digit = () (result bool) {
+    result = false
+    if . >= 48 && . <= 57 {
+        result = true
+    }
+}
+
+// struct 方法
 user {
     name str
     age i64
@@ -405,6 +448,14 @@ user {
 user.greet = () {
     print('Hello, ' - .name)
 }
+
+// 調用
+s = 'hello'
+u = s.to-upper()     // receiver.method()
+c char = 5
+d = c.is-digit()     // receiver.method()
+u = user{name: 'Alice', age: 30}
+u.greet()
 ```
 
 ## 接口

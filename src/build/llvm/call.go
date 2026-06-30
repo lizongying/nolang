@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -230,7 +231,11 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 }
 
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
-	// 處理 func(args)(output) 模式：
+	// DEBUG: 印出所有 call expression 的函數部分類型
+	fmt.Fprintf(os.Stderr, "DEBUG-CALL-ENTER: expr=%T func=%T\n", expr, expr.Function)
+	if dot, ok := expr.Function.(*parser.DotExpression); ok {
+		fmt.Fprintf(os.Stderr, "DEBUG-CALL-DOT: property=%s recvType=%T\n", dot.Property, dot.Receiver)
+	}
 	// 當 Function 是 CallExpression 時，表示內層調用 + 輸出參數捕獲
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {
@@ -415,28 +420,78 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// 通過 BuiltinMethodList 分派（LLVMIntrinsic / CLibCall / LLVMConv / ForwardFunc）
-	if m := builtin.FindBuiltinMethod(fnName); m != nil {
-		if m.LLVMIntrinsic != "" {
-			a := evalArgs()
-			argStr := ""
-			for i, v := range a {
-				if i > 0 {
-					argStr += ", "
+	// 注意：方法呼叫且 funcRetTypes 已有 Nolang 實作者，必須走後面的方法解析路徑，
+	// 否則 CLibCall 會丟失輸出參數（如 .to-i64(n) 變成 atoi(...) 結果未存回 n）。
+	// 處理兩種情況：
+	//   1) expr.Function 仍是 DotExpression（如使用者直接呼叫 obj.method()）
+	//   2) expr.Function 已被 transpiler 改寫為 Identifier，但 fnName 含 "." 且有 Nolang 實作
+	skipBuiltin := false
+	debugSkip := ""
+	if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+		if g.funcRetTypes != nil {
+			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
+				skipBuiltin = true
+				debugSkip = "fnName=" + fnName
+			} else if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				// receiver 為 "self" 時，根據 varTypes 取得實際型別前綴查找
+				if recv.Value == "self" && g.varTypes != nil {
+					if recvType, ok := g.varTypes["self"]; ok {
+						srcType := strings.TrimPrefix(recvType, "%")
+						candidates := []string{srcType}
+						if srcType == "str-short" || srcType == "str-long" {
+							candidates = append(candidates, "str")
+						}
+						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+							candidates = append(candidates, primAliases...)
+						}
+						for _, cand := range candidates {
+							candName := cand + "." + dot.Property
+							if _, hasNolang := g.funcRetTypes[candName]; hasNolang {
+								skipBuiltin = true
+								debugSkip = "candName=" + candName
+								break
+							}
+						}
+					}
 				}
-				argStr += "double " + v
 			}
-			return fmt.Sprintf("call double @%s(%s)", m.LLVMIntrinsic, argStr)
 		}
-		if m.CLibCall != nil {
-			return g.genCLibCall(sb, m, evalArgs)
+	} else if _, isIdent := expr.Function.(*parser.Identifier); isIdent {
+		// transpiler 已將 .method() 改寫為 method()，fnName 含 "." 時視為方法呼叫
+		if strings.Contains(fnName, ".") && g.funcRetTypes != nil {
+			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
+				skipBuiltin = true
+				debugSkip = "rewritten-fnName=" + fnName
+			}
 		}
-		if m.LLVMConv != nil {
-			return g.genLLVMConv(sb, m, evalArgs)
-		}
-		// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
-		if m.ForwardFunc != "" {
-			if r := g.genForwardFunc(sb, m.ForwardFunc, expr, nil); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
-				return r
+	}
+	if skipBuiltin {
+		fmt.Fprintf(os.Stderr, "DEBUG-SKIP-BUILTIN: fnName=%s skipBuiltin=true reason=%s\n", fnName, debugSkip)
+	}
+	if !skipBuiltin {
+		if m := builtin.FindBuiltinMethod(fnName); m != nil {
+			if m.LLVMIntrinsic != "" {
+				a := evalArgs()
+				argStr := ""
+				for i, v := range a {
+					if i > 0 {
+						argStr += ", "
+					}
+					argStr += "double " + v
+				}
+				return fmt.Sprintf("call double @%s(%s)", m.LLVMIntrinsic, argStr)
+			}
+			if m.CLibCall != nil {
+				return g.genCLibCall(sb, m, evalArgs)
+			}
+			if m.LLVMConv != nil {
+				return g.genLLVMConv(sb, m, evalArgs)
+			}
+			// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
+			if m.ForwardFunc != "" {
+				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, nil); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
+					return r
+				}
 			}
 		}
 	}
@@ -555,6 +610,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 字符串字面量接收者（如 'abc'.compare('abc')）
 			// 字符串字面量永遠是 str 型別，直接嘗試 str.<property>
 			shortName := "str." + dot.Property
+			fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT: shortName=%s funcRetTypes=%v funcNumResults=%v\n", shortName, g.funcRetTypes[shortName], g.funcNumResults[shortName])
+			_ = g.funcRetTypes["str.to-i64"] // touch
+			fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT2: methodReceiver before funcRetTypes check = %v\n", methodReceiver)
 			if g.funcRetTypes != nil {
 				if t, ok := g.funcRetTypes[shortName]; ok {
 					hasOutput := false
@@ -566,6 +624,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if t != "void" || hasOutput {
 						fnName = shortName
 						methodReceiver = receiverExpr
+						fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT3: set methodReceiver to StringLiteral, fnName=%s\n", fnName)
 					}
 				}
 			}
@@ -592,8 +651,44 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				fnName = shortName
 				methodReceiver = receiverExpr
 			}
+		} else if _, ok := receiverExpr.(*parser.BooleanLiteral); ok {
+			// 布爾字面量接收者（如 true.to-str()）
+			// 布爾字面量預設為 bool 型別
+			shortName := "bool." + dot.Property
+			if m := builtin.FindBuiltinMethod(shortName); m != nil {
+				fnName = shortName
+				methodReceiver = receiverExpr
+			}
+		} else if group, ok := receiverExpr.(*parser.GroupedExpression); ok {
+			// 帶括號的表達式接收者（如 (-42).to-str()、(-9223372036854775807 - 1).to-str()）
+			// 嘗試解析內部表達式的型別
+			if infix, ok := group.Expression.(*parser.InfixExpression); ok {
+				// 算術表達式視為 i64
+				shortName := "i64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+				_ = infix
+			} else if _, ok := group.Expression.(*parser.IntegerLiteral); ok {
+				shortName := "i64." + dot.Property
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+		} else if infix, ok := receiverExpr.(*parser.InfixExpression); ok {
+			// 帶括號的算術表達式接收者（已被 L478-479 unwrap），
+			// 如 (-9223372036854775807 - 1).to-str() 在 L478 unwrap 後變為 InfixExpression。
+			// 算術表達式視為 i64。
+			_ = infix
+			shortName := "i64." + dot.Property
+			if m := builtin.FindBuiltinMethod(shortName); m != nil {
+				fnName = shortName
+				methodReceiver = receiverExpr
+			}
 		} else if _, ok := receiverExpr.(*parser.PrefixExpression); ok {
-			// 前綴表達式接收者（如 (-42).to-str()）
+			// 前綴表達式接收者（如 -42.to-str()，無括號）
 			// 負整數字面量被解析為 PrefixExpression(-, IntegerLiteral)
 			// 視為 i64 型別
 			shortName := "i64." + dot.Property
@@ -607,35 +702,39 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 方法解析後，檢查是否為 build-in 方法（如 str.eq、str.copy、i64.to-str、f64.to-str）
 	// 此時 fnName 已解析為型別名 + 屬性（如 "str.eq"），methodReceiver 為接收者表達式。
 	// build-in 方法不在 funcRetTypes 中，需透過 FindBuiltinMethod 查找並分派。
+	// 若 Nolang 中已有同名方法（funcRetTypes 中存在），優先使用 Nolang 實作。
 	if methodReceiver != nil {
-		if m := builtin.FindBuiltinMethod(fnName); m != nil {
-			if m.ForwardFunc != "" {
-				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
-					return r
-				}
-			}
-			if m.CLibCall != nil {
-				// 構建包含 receiver 的參數列表
-				methodEvalArgs := func() []string {
-					allArgs := append([]parser.Expression{methodReceiver}, expr.Arguments...)
-					result := make([]string, len(allArgs))
-					for i, arg := range allArgs {
-						result[i] = g.generateExprWithSB(sb, arg)
+		_, hasNolangImpl := g.funcRetTypes[fnName]
+		if !hasNolangImpl {
+			if m := builtin.FindBuiltinMethod(fnName); m != nil {
+				if m.ForwardFunc != "" {
+					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
+						return r
 					}
-					return result
 				}
-				return g.genCLibCall(sb, m, methodEvalArgs)
-			}
-			if m.LLVMConv != nil {
-				methodEvalArgs := func() []string {
-					allArgs := append([]parser.Expression{methodReceiver}, expr.Arguments...)
-					result := make([]string, len(allArgs))
-					for i, arg := range allArgs {
-						result[i] = g.generateExprWithSB(sb, arg)
+				if m.CLibCall != nil {
+					// 構建包含 receiver 的參數列表
+					methodEvalArgs := func() []string {
+						allArgs := append([]parser.Expression{methodReceiver}, expr.Arguments...)
+						result := make([]string, len(allArgs))
+						for i, arg := range allArgs {
+							result[i] = g.generateExprWithSB(sb, arg)
+						}
+						return result
 					}
-					return result
+					return g.genCLibCall(sb, m, methodEvalArgs)
 				}
-				return g.genLLVMConv(sb, m, methodEvalArgs)
+				if m.LLVMConv != nil {
+					methodEvalArgs := func() []string {
+						allArgs := append([]parser.Expression{methodReceiver}, expr.Arguments...)
+						result := make([]string, len(allArgs))
+						for i, arg := range allArgs {
+							result[i] = g.generateExprWithSB(sb, arg)
+						}
+						return result
+					}
+					return g.genLLVMConv(sb, m, methodEvalArgs)
+				}
 			}
 		}
 	}
@@ -1205,6 +1304,66 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 %s, i64 %s)\n", g.indent(), sPtr, valVal, nVal))
 		}
 		return ""
+
+	case "str-to-bool":
+		// str.to-bool: strcmp + cmp + zext
+		if len(args) < 1 {
+			return ""
+		}
+		sPtr := g.strExprDataPtr(sb, args[0])
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%boolcmp.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0))\n",
+				g.indent(), cmpReg, sPtr))
+		}
+		g.tmpIdx++
+		eqReg := fmt.Sprintf("%%booleq.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
+		}
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%boolzext.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
+		}
+		return zextReg
+
+	case "bool-to-str":
+		// bool.to-str: select + strlen + 构造 %str-long
+		if len(args) < 1 {
+			return ""
+		}
+		var bVal string
+		if bl, ok := args[0].(*parser.BooleanLiteral); ok {
+			if bl.Value {
+				bVal = "1"
+			} else {
+				bVal = "0"
+			}
+		} else {
+			bVal = g.generateExprWithSB(sb, args[0])
+		}
+		g.tmpIdx++
+		selectReg := fmt.Sprintf("%%boolstr.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
+				g.indent(), selectReg, bVal))
+		}
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%boolstr.len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
+		}
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, selectReg))
+		}
+		return strReg2
 	}
 	return ""
 }

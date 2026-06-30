@@ -90,3 +90,8 @@ vec-to-arr-byte = (in []byte) (out [?]byte) {
         i = i + 1
     }
 }
+// byte.to-str: 將 byte 轉為字串（"65" → "65"）
+// build-in (CLibCall: sprintf "%hhu")
+// byte.to-str = () (out str) {
+//     // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
+// }

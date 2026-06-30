@@ -23,23 +23,5 @@ func init() {
 		ForwardFunc:  "str-len",
 	})
 
-	// str.copy: copy n bytes from src to dst (method: src.copy(dst, n))
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverStr,
-		MethodName:   "str.copy",
-		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Copy n bytes from src to dst (method)",
-		ForwardFunc:  "memcpy",
-	})
 
-	// str-fill: fill first n bytes of s with val
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "str-fill",
-		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Fill the first n bytes of a string with val",
-		ForwardFunc:  "memset",
-	})
 }

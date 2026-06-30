@@ -1,0 +1,97 @@
+// test-strconv.no 简化版
+test-str-to-i64 = () {
+    n = '12345'.to-i64()
+    print(n)
+}
+
+test-str-to-i32 = () {
+    s = '32767'
+    n i32 = 0
+    s.to-i32(n)
+    print(n)
+}
+
+test-str-to-i16 = () {
+    s = '100'
+    n i16 = 0
+    s.to-i16(n)
+    print(n)
+}
+
+test-str-to-i8 = () {
+    s = '127'
+    n i8 = 0
+    s.to-i8(n)
+    print(n)
+}
+
+test-str-to-u64 = () {
+    s = '99999'
+    n u64 = 0
+    s.to-u64(n)
+    print(n)
+}
+
+test-str-to-f64 = () {
+    s = '3.14'
+    f = s.to-f64()
+    s2 = f.to-str()
+    print(s2)
+}
+
+test-str-to-bool = () {
+    b = 'true'.to-bool()
+    {
+        b -> print(1)
+        -> print(0)
+    }
+}
+
+test-str-to-byte = () {
+    b = '65'.to-byte()
+    print(b)
+}
+
+test-i64-to-str = () {
+    s = (42).to-str()
+    print(s)
+}
+
+test-i32-to-str = () {
+    s = (999).to-str()
+    print(s)
+}
+
+test-u64-to-str = () {
+    s = (12345).to-str()
+    print(s)
+}
+
+test-f64-to-str = () {
+    s = (3.14).to-str()
+    print(s)
+}
+
+test-bool-to-str = () {
+    s = true.to-str()
+    print(s)
+}
+
+test-byte-to-str = () {
+    s = (65).to-str()
+    print(s)
+}
+
+test-roundtrip-i64 = () {
+    s = (12345).to-str()
+    n = s.to-i64()
+    print(n)
+}
+
+test-roundtrip-f64 = () {
+    f = '3.14'.to-f64()
+    s = f.to-str()
+    print(s)
+}
+
+test-str-to-i64()

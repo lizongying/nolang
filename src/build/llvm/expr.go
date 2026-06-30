@@ -191,6 +191,26 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 	}
 }
 
+// generateConditionAsI1 generates LLVM IR for a condition expression,
+// ensuring the result is of type i1. If the expression already produces i1
+// (e.g. bool variable from method call), no trunc is needed.
+func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expression) string {
+	// Check if the condition is already i1
+	if ident, ok := cond.(*parser.Identifier); ok {
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[ident.Value]; ok && t == "i1" {
+				// Already i1, just return the value
+				return g.generateExprWithSB(sb, cond)
+			}
+		}
+	}
+	// Default: assume i64, need trunc to i1
+	g.tmpIdx++
+	reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, cond)))
+	return reg
+}
+
 func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExpression) string {
 	g.tmpIdx++
 	labelId := g.tmpIdx
@@ -204,16 +224,11 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		if isCmp {
 			cond = g.generateInfixI1(sb, infix)
 		} else {
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
-			cond = reg
+			// 非比較運算（如 && / ||）返回 i64，需 trunc 到 i1
+			cond = g.generateConditionAsI1(sb, expr.Condition)
 		}
 	} else {
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
-		cond = reg
+		cond = g.generateConditionAsI1(sb, expr.Condition)
 	}
 
 	// branch
@@ -584,6 +599,22 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		}
 		// DotExpression receiver call: look up str.<method>
 		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			// StringLiteral receiver: always str type
+			if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+				shortName := "str." + dot.Property
+				if g.funcRetTypes != nil {
+					if t, ok := g.funcRetTypes[shortName]; ok {
+						if t != "void" {
+							return t
+						}
+						if g.funcResultLLVMType != nil {
+							if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+								return ts[0]
+							}
+						}
+					}
+				}
+			}
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
