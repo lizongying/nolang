@@ -71,18 +71,18 @@ str.fill = (val char, n i64) {
 
 // str.index: 在 s 中查找 target 子串
 // 返回首次出现的位置，未找到返回 -1
-str.index = (target str, tn i64) (pos i64) {
+str.index = (target str) (pos i64) {
     pos = -1
-    if tn == 0 {
+    if target.len == 0 {
         pos = 0
         return
     }
-    limit = .len - tn
+    limit = .len - target.len
     i = 0
     for i <= limit {
         matched = 1
         j = 0
-        for j < tn {
+        for j < target.len {
             sj = .[i + j] & 255
             tj = target[j] & 255
             if sj != tj {
@@ -101,9 +101,9 @@ str.index = (target str, tn i64) (pos i64) {
 
 // str.contains: 判断 s 是否包含 target 子串
 // 返回 true=包含, false=不包含
-str.contains = (target str, tn i64) (yes bool) {
+str.contains = (target str) (yes bool) {
     yes = false
-    pos = .index(target, tn)
+    pos = .index(target)
     if pos >= 0 {
         yes = true
     }
@@ -111,14 +111,14 @@ str.contains = (target str, tn i64) (yes bool) {
 
 // str.starts-with: 判断 s 是否以 target 开头
 // 返回 true=是, false=否
-str.starts-with = (target str, tn i64) (yes bool) {
+str.starts-with = (target str) (yes bool) {
     yes = true
-    if tn > .len {
+    if target.len > .len {
         yes = false
         return
     }
     i = 0
-    for i < tn {
+    for i < target.len {
         si = .[i] & 255
         ti = target[i] & 255
         if si != ti {
@@ -131,15 +131,15 @@ str.starts-with = (target str, tn i64) (yes bool) {
 
 // str.ends-with: 判断 s 是否以 target 结尾
 // 返回 true=是, false=否
-str.ends-with = (target str, tn i64) (yes bool) {
+str.ends-with = (target str) (yes bool) {
     yes = true
-    if tn > .len {
+    if target.len > .len {
         yes = false
         return
     }
-    off = .len - tn
+    off = .len - target.len
     i = 0
-    for i < tn {
+    for i < target.len {
         si = .[off + i] & 255
         ti = target[i] & 255
         if si != ti {
@@ -262,7 +262,7 @@ str.slice = (start i64, end i64, out str) {
 // ═══════════════════════════════════════════════
 
 // str.to-bytes: 将字符串转为字节数组
-str.to-bytes = (out str) {
+str.to-bytes = (out []byte) {
     out.len = .len
     i = 0
     for i < .len {
@@ -346,17 +346,23 @@ str.compare = (b str) (r i64) {
 // 统计
 // ═══════════════════════════════════════════════
 
-// str.count: 统计字节 ch 在 s 中出现的次数
-str.count = (ch i64) (cnt i64) {
+// str.count: 统计字串中的 char（code point）數量
+// 因為 .len 已經是 byte 數，count 提供 code point 數
+str.count = () (cnt i64) {
     cnt = 0
-    target = ch & 255
     i = 0
     for i < .len {
-        c = .[i] & 255
-        if c == target {
-            cnt = cnt + 1
+        b = .[i] & 255
+        if b < 0x80 {
+            i = i + 1
+        } elif b < 0xE0 {
+            i = i + 2
+        } elif b < 0xF0 {
+            i = i + 3
+        } else {
+            i = i + 4
         }
-        i = i + 1
+        cnt = cnt + 1
     }
 }
 
@@ -364,9 +370,9 @@ str.count = (ch i64) (cnt i64) {
 // 替换
 // ═══════════════════════════════════════════════
 
-// str.replace-byte: 将 s 中所有 old-ch 替换为 new-ch
+// str.replace-char: 将 s 中所有 old-ch 替换为 new-ch
 // 返回结果字符串
-str.replace-byte = (old-ch i64, new-ch i64, out str) {
+str.replace-char = (old-ch char, new-ch char, out str) {
     out.len = .len
     old-c = old-ch & 255
     new-c = new-ch & 255
@@ -387,7 +393,7 @@ str.replace-byte = (old-ch i64, new-ch i64, out str) {
 // ═══════════════════════════════════════════════
 
 // str.trim-char: 去除字符串首尾指定字符
-str.trim-char = (ch i64, out str) {
+str.trim-char = (ch char, out str) {
     target = ch & 255
     start = 0
     for start < .len {

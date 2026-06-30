@@ -725,7 +725,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// genTypedArg generates a typed pointer argument for a single expression
-	genTypedArg := func(arg parser.Expression) string {
+	genTypedArg := func(arg parser.Expression, argIdx int) string {
 		switch a := arg.(type) {
 		case *parser.Identifier:
 			// str 型別用 %str-long* 指標
@@ -791,11 +791,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		case *parser.IntegerLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))
+			elemType := "i64"
+			if g.funcParamLLVMTypes != nil {
+				if types, ok := g.funcParamLLVMTypes[fnName]; ok && argIdx < len(types) {
+					if types[argIdx] == "i32" {
+						elemType = "i32"
+					}
+				}
 			}
-			return "i64* " + tmpName
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %d, %s* %s\n", g.indent(), elemType, a.Value, elemType, tmpName))
+			}
+			return elemType + "* " + tmpName
 		case *parser.IndexExpression:
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
@@ -892,8 +900,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 
 	// Generate typed arguments for non-variadic params
 	typedArgs := make([]string, 0, len(nonVariadicArgs)+1)
-	for _, arg := range nonVariadicArgs {
-		typedArgs = append(typedArgs, genTypedArg(arg))
+	for i, arg := range nonVariadicArgs {
+		typedArgs = append(typedArgs, genTypedArg(arg, i))
 	}
 
 	// If variadic, pack variadic args into a %vec struct
@@ -975,6 +983,28 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%vso.data.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+			} else if voidSingleOutputType == "%vec" {
+				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
+				vecBufSize := 256
+				g.tmpIdx++
+				dataBuf := fmt.Sprintf("%%vso.vecdata.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), dataBuf, vecBufSize))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), vecBufSize, dataBuf))
+				// 初始化 len = 0（field 0）
+				g.tmpIdx++
+				lenGEP := fmt.Sprintf("%%vso.veclen.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				// 設置 cap = vecBufSize（field 1）
+				g.tmpIdx++
+				capGEP := fmt.Sprintf("%%vso.veccap.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+				// 設置 data 指標指向緩衝區（field 2）
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%vso.vecdata.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
 				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 			}
 		}

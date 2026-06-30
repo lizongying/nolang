@@ -41,6 +41,7 @@ type Generator struct {
 	funcResultLLVMType map[string][]string      // 函數名 → 各輸出參數的 LLVM 型別列表
 	funcIsVariadic     map[string]bool          // 函數名 → 是否為 variadic 函數
 	funcParamCount     map[string]int           // 函數名 → 非 variadic 參數數量
+	funcParamLLVMTypes map[string][]string      // 函數名 → 各參數的 LLVM 型別列表（含 receiver）
 	structTypes        map[string][]structField // struct name → fields
 	structTypeLLVM     string                   // 當前正在生成的 struct LLVM type name
 	loopExits          []loopExit               // 活躍循環退出目標棧
@@ -148,6 +149,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.funcResultLLVMType = make(map[string][]string)
 	g.funcIsVariadic = make(map[string]bool)
 	g.funcParamCount = make(map[string]int)
+	g.funcParamLLVMTypes = make(map[string][]string)
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
@@ -207,6 +209,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 				g.funcParamCount[fd.Name] = len(fd.Parameters)
 			}
 			funcNames[fd.Name] = true
+			// 收集參數 LLVM 型別（fd.Parameters 已含 self，無需再從名稱前綴 prepend）
+			paramTypes := make([]string, 0, len(fd.Parameters))
+			for _, p := range fd.Parameters {
+				paramTypes = append(paramTypes, g.mapToLLVMType(p.Type.String()))
+			}
+			g.funcParamLLVMTypes[fd.Name] = paramTypes
 		case *parser.LetStatement:
 			// 收集 str.to-upper = (out str, out-n i64) { ... } 等帶點名的方法定義
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
@@ -233,6 +241,15 @@ func (g *Generator) Generate(program *parser.Program) string {
 						g.funcParamCount[name] = len(fl.Parameters)
 					}
 					funcNames[name] = true
+					// 收集參數 LLVM 型別（含 receiver for methods）
+					paramTypes := make([]string, 0, len(fl.Parameters)+1)
+					if idx := strings.IndexByte(name, '.'); idx > 0 {
+						paramTypes = append(paramTypes, g.mapToLLVMType(name[:idx]))
+					}
+					for _, p := range fl.Parameters {
+						paramTypes = append(paramTypes, g.mapToLLVMType(p.Type.String()))
+					}
+					g.funcParamLLVMTypes[name] = paramTypes
 				}
 			}
 		}
@@ -434,11 +451,17 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 		if n, ok := g.funcNumResults[fd.Name]; ok && n > 0 {
 			continue
 		}
+		// 對於方法定義（名稱含 "."），第一個參數是 receiver（self），
+		// 它是指標傳遞、原地修改，不應視為輸出參數。跳過 self 進行分析。
+		analyzeParams := params
+		if strings.Contains(fd.Name, ".") && len(params) > 0 {
+			analyzeParams = params[1:]
+		}
 		// 使用源碼順序遍歷分析參數使用情況，區分輸入和輸出參數。
 		// 核心啟發式：若參數在賦值前被讀取（如 str.slice 的 start 在 `if start < 0` 中先讀，
 		// 然後才 `start = 0`），則為輸入參數；若參數先被賦值才被讀取（如 str.slice 的 out
 		// 先 `out.len = 0` 再 `for i < out.len`），則為輸出參數。
-		outputs := g.analyzeParamUsage(body, params)
+		outputs := g.analyzeParamUsage(body, analyzeParams)
 		if len(outputs) == 0 {
 			continue
 		}

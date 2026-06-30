@@ -113,25 +113,25 @@ char.to-lower(c)(r)              // 轉小寫（ASCII）
 a.eq(b, n)(ok)                // 相等比較（方法）
 src.copy(dst, n)              // 字串複製（方法）
 s.fill(c, n)                  // 填充（支援 UTF-8 char，方法）
-str-index(s, sub)(pos)        // 子字串位置
-str-contains(s, sub)(ok)      // 是否包含
-str-starts-with(s, sub)(ok)   // 前綴判斷
-str-ends-with(s, sub)(ok)     // 後綴判斷
-str-to-upper(s)               // 轉大寫
-str-to-lower(s)               // 轉小寫
-str-trim(s)(out)              // 去首尾空白
-str-repeat(s, n)(out)         // 重複
-str-slice(s, start, end)(out) // 切片
-str-to-bytes(s)(b)            // 轉 []byte
+s.index(sub)(pos)             // 子字串位置
+s.contains(sub)(ok)           // 是否包含
+s.starts-with(sub)(ok)        // 前綴判斷
+s.ends-with(sub)(ok)          // 後綴判斷
+s.to-upper()                  // 轉大寫
+s.to-lower()                  // 轉小寫
+s.trim()(out)                 // 去首尾空白
+s.repeat(n)(out)              // 重複
+s.slice(start, end)(out)      // 切片
+s.to-bytes()(b)               // 轉 []byte
 b.to-str()(s)                 // []byte 轉 str（方法）
-str-to-i64(s)(v)              // 字串轉 i64
+s.to-i64()(v)                 // 字串轉 i64
 v.to-str()(s)                 // i64 轉字串（方法）
-str-reverse(s)(out)           // 反轉
-str-compare(a, b)(c)          // 字典序比較
-str-count(s, sub)(n)          // 子字串計數
-str-replace-byte(s, old, new) // 取代位元組
-str-trim-char(s, c)(out)      // 去指定字元
-str-empty(s)(ok)              // 是否為空
+s.reverse()(out)              // 反轉
+s.compare(b)(c)               // 字典序比較
+s.count()(n)                  // code point 總數
+s.replace-char(old, new)      // 取代字元
+s.trim-char(c)(out)           // 去指定字元
+s.empty()(ok)                 // 是否為空
 ```
 
 ### number — 數值操作

@@ -94,16 +94,16 @@ print(4)
 // ═══════════════════════════════════════════════
 test-str-index = () {
     s = 'hello world'
-    pos1 = s.index('world', 5)
+    pos1 = s.index('world')
     print(pos1)  // expect: 6
 
-    pos2 = s.index('xyz', 3)
+    pos2 = s.index('xyz')
     print(pos2)  // expect: -1
 
-    pos3 = s.index('hello', 5)
+    pos3 = s.index('hello')
     print(pos3)  // expect: 0
 
-    pos4 = s.index('', 0)
+    pos4 = s.index('')
     print(pos4)  // expect: 0
 }
 
@@ -115,13 +115,13 @@ print(5)
 // ═══════════════════════════════════════════════
 test-str-contains = () {
     s = 'hello world'
-    c1 = s.contains('world', 5)
+    c1 = s.contains('world')
     print(c1)  // expect: 1
 
-    c2 = s.contains('xyz', 3)
+    c2 = s.contains('xyz')
     print(c2)  // expect: 0
 
-    c3 = s.contains('lo wo', 5)
+    c3 = s.contains('lo wo')
     print(c3)  // expect: 1
 }
 
@@ -133,19 +133,19 @@ print(6)
 // ═══════════════════════════════════════════════
 test-str-starts-with = () {
     s = 'hello world'
-    sw1 = s.starts-with('hello', 5)
+    sw1 = s.starts-with('hello')
     print(sw1)  // expect: 1
 
-    sw2 = s.starts-with('world', 5)
+    sw2 = s.starts-with('world')
     print(sw2)  // expect: 0
 
-    sw3 = s.starts-with('hell', 4)
+    sw3 = s.starts-with('hell')
     print(sw3)  // expect: 1
 
-    sw4 = s.starts-with('hello world', 11)
+    sw4 = s.starts-with('hello world')
     print(sw4)  // expect: 1
 
-    sw5 = s.starts-with('hello world!', 12)
+    sw5 = s.starts-with('hello world!')
     print(sw5)  // expect: 0
 }
 
@@ -157,19 +157,19 @@ print(7)
 // ═══════════════════════════════════════════════
 test-str-ends-with = () {
     s = 'hello world'
-    ew1 = s.ends-with('world', 5)
+    ew1 = s.ends-with('world')
     print(ew1)  // expect: 1
 
-    ew2 = s.ends-with('hello', 5)
+    ew2 = s.ends-with('hello')
     print(ew2)  // expect: 0
 
-    ew3 = s.ends-with('orld', 4)
+    ew3 = s.ends-with('orld')
     print(ew3)  // expect: 1
 
-    ew4 = s.ends-with('hello world', 11)
+    ew4 = s.ends-with('hello world')
     print(ew4)  // expect: 1
 
-    ew5 = s.ends-with('!hello world', 12)
+    ew5 = s.ends-with('!hello world')
     print(ew5)  // expect: 0
 }
 
@@ -397,33 +397,27 @@ print(17)
 // ═══════════════════════════════════════════════
 test-str-count = () {
     s1 = 'hello'
-    cnt1 = s1.count(108)
-    print(cnt1)  // expect: 2 (l appears twice)
-
-    cnt2 = s1.count(104)
-    print(cnt2)  // expect: 1 (h appears once)
-
-    cnt3 = s1.count(120)
-    print(cnt3)  // expect: 0 (x not found)
+    cnt1 = s1.count()
+    print(cnt1)  // expect: 5
 
     s2 = 'aaa'
-    cnt4 = s2.count(97)
-    print(cnt4)  // expect: 3
+    cnt2 = s2.count()
+    print(cnt2)  // expect: 3
 
     s3 = ''
-    cnt5 = s3.count(97)
-    print(cnt5)  // expect: 0
+    cnt3 = s3.count()
+    print(cnt3)  // expect: 0
 }
 
 test-str-count()
 print(18)
 
 // ═══════════════════════════════════════════════
-// 测试 str.replace-byte (方法)
+// 测试 str.replace-char (方法)
 // ═══════════════════════════════════════════════
-test-str-replace-byte = () {
+test-str-replace-char = () {
     s = 'hello'
-    r1 = s.replace-byte(101, 120)
+    r1 = s.replace-char(101, 120)
     print(r1.len)  // expect: 5
     c0 = r1[0]
     c1 = r1[1]
@@ -436,7 +430,7 @@ test-str-replace-byte = () {
     print(c3)  // expect: 108 (l)
     print(c4)  // expect: 111 (o)
 }
-test-str-replace-byte()
+test-str-replace-char()
 print(19)
 
 // ═══════════════════════════════════════════════
@@ -491,16 +485,16 @@ test-integration = () {
     n = s.len
     print(n)  // expect: 11
 
-    contains = s.contains('World', 5)
+    contains = s.contains('World')
     print(contains)  // expect: 1
 
-    starts = s.starts-with('Hello', 5)
+    starts = s.starts-with('Hello')
     print(starts)  // expect: 1
 
-    ends = s.ends-with('World', 5)
+    ends = s.ends-with('World')
     print(ends)  // expect: 1
 
-    idx = s.index('lo Wo', 5)
+    idx = s.index('lo Wo')
     print(idx)  // expect: 3
     upper = s.to-upper()
     c0 = upper[0]
