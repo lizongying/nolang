@@ -1,0 +1,25 @@
+test-trim = () {
+    s1 = '  hello  '
+    print(s1.len)
+    t1 = s1.trim()
+    print(t1.len)
+
+    s2 = 'hello'
+    print(s2.len)
+    t2 = s2.trim()
+    print(t2.len)
+}
+
+test-upper = () {
+    s1 = 'hello'
+    print(s1.len)
+    u1 = s1.to-upper()
+    print(u1.len)
+    c0 = u1[0]
+    print(c0)
+}
+
+print('=== test-trim ===')
+test-trim()
+print('=== test-upper ===')
+test-upper()

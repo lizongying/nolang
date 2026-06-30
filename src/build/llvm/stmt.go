@@ -163,6 +163,46 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
 	}
 
+	// 單結果輸出參數（新語法 () (out str)）需初始化 data 指標，
+	// 否則方法體 out[i] = val 會因 data 為未初始化而崩潰。
+	// 與 call.go voidSingleOutput 路徑保持一致。
+	if len(fd.Results) == 1 && fd.Results[0].Name != "" {
+		outName := fd.Results[0].Name
+		outType := g.mapToLLVMType(fd.Results[0].Type.String())
+		if outType == "%str-long" {
+			g.tmpIdx++
+			dataBuf := fmt.Sprintf("%%out.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [128 x i8]\n", g.indent(), dataBuf))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 128, i8* %s)\n", g.indent(), dataBuf))
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%out.len.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%out.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+		} else if outType == "%vec" {
+			vecBufSize := 256
+			g.tmpIdx++
+			dataBuf := fmt.Sprintf("%%out.vecdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), dataBuf, vecBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), vecBufSize, dataBuf))
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%out.veclen.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%out.veccap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%out.vecdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+		}
+	}
+
 	// 參數化為指標（引用傳遞模型）
 	for _, param := range fd.Parameters {
 		llvmType := g.mapToLLVMType(param.Type.String())

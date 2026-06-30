@@ -10,7 +10,7 @@
 // decode-rune: 從字串位置 pos 解碼一個 UTF-8 rune
 // 回傳 rune 值與下一位置
 decode-rune = (s str, pos i64) (r i64, next-pos i64) {
-    b0 = s[pos] & 255
+    b0 = s[pos]
 
     // 單位元組 0xxxxxxx
     if b0 < 128 {
@@ -21,7 +21,7 @@ decode-rune = (s str, pos i64) (r i64, next-pos i64) {
 
     // 雙位元組 110xxxxx
     if b0 >= 192 && b0 < 224 {
-        b1 = s[pos + 1] & 255
+        b1 = s[pos + 1]
         r = ((b0 & 31) << 6) | (b1 & 63)
         next-pos = pos + 2
         return
@@ -29,8 +29,8 @@ decode-rune = (s str, pos i64) (r i64, next-pos i64) {
 
     // 三位元組 1110xxxx
     if b0 >= 224 && b0 < 240 {
-        b1 = s[pos + 1] & 255
-        b2 = s[pos + 2] & 255
+        b1 = s[pos + 1]
+        b2 = s[pos + 2]
         r = ((b0 & 15) << 12) | ((b1 & 63) << 6) | (b2 & 63)
         next-pos = pos + 3
         return
@@ -38,9 +38,9 @@ decode-rune = (s str, pos i64) (r i64, next-pos i64) {
 
     // 四位元組 11110xxx
     if b0 >= 240 && b0 < 248 {
-        b1 = s[pos + 1] & 255
-        b2 = s[pos + 2] & 255
-        b3 = s[pos + 3] & 255
+        b1 = s[pos + 1]
+        b2 = s[pos + 2]
+        b3 = s[pos + 3]
         r = ((b0 & 7) << 18) | ((b1 & 63) << 12) | ((b2 & 63) << 6) | (b3 & 63)
         next-pos = pos + 4
         return

@@ -8,7 +8,7 @@ char.to-bytes = (c char) (out []byte, out-n i64) {
     len i64 = 0
 
     if c < 0x80 {
-        buf[0] = c & 255
+        buf[0] = c
         len = 1
     } elif c < 0x800 {
         buf[0] = 0xC0 | ((c >> 6) & 0x1F)
@@ -38,7 +38,7 @@ char.to-bytes = (c char) (out []byte, out-n i64) {
 // char.to-str: 将字符转换为 UTF-8 编码的字符串
 char.to-str = (c char) (s str) {
     if c < 0x80 {
-        s[0] = c & 255
+        s[0] = c
     } elif c < 0x800 {
         s[0] = 0xC0 | ((c >> 6) & 0x1F)
         s[1] = 0x80 | (c & 0x3F)

@@ -429,7 +429,13 @@ test-str-replace-char = () {
     print(c2)  // expect: 108 (l)
     print(c3)  // expect: 108 (l)
     print(c4)  // expect: 111 (o)
+
+    // 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
+    s2 = 'aTa'
+    r2 = s2.replace-char(0x61, 0x4E2D)
+    print(r2.len)  // expect: 7 (3+1+3)
 }
+
 test-str-replace-char()
 print(19)
 
@@ -452,6 +458,11 @@ test-str-trim-char = () {
     s4 = '-hello-'
     tc4 = s4.trim-char(45)
     print(tc4.len)  // expect: 5
+
+    // 多字節 UTF-8：trim '中' (0x4E2D)
+    s5 = '中hello中'
+    tc5 = s5.trim-char(0x4E2D)
+    print(tc5.len)  // expect: 5 (hello)
 }
 
 test-str-trim-char()

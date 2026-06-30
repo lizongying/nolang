@@ -86,7 +86,7 @@ vec-to-arr-byte = (in []byte) (out [?]byte) {
     out.len = n
     i = 0
     for i < n {
-        out[i] = .[i] & 255
+        out[i] = .[i]
         i = i + 1
     }
 }
