@@ -1,0 +1,29 @@
+// test-bool-debug.no — 調試 str.to-bool
+test-bool-true = () {
+    s = 'true'
+    b = s.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-bool-false = () {
+    s = 'false'
+    b = s.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-bool-true()
+test-bool-false()

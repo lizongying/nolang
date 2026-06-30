@@ -58,6 +58,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.funcVars = nil
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
+	g.optionInnerTypes = make(map[string]string) // reset option inner types for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -70,21 +71,28 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.funcLocalNames[p.Name] = true
 		g.varTypes[p.Name] = g.mapToLLVMType(p.Type.String())
 	}
-	// For multi-output functions, result parameters are also passed by reference
-	// (treated like input parameters) and must not be allocated as local allocas.
+	// 結果參數（無論單結果或多結果）皆以 by-reference 形式傳遞，
+	// 與 call.go 的 hasOutputParam / voidSingleOutput 約定保持一致。
 	for _, r := range fd.Results {
-		if len(fd.Results) > 1 && r.Name != "" {
+		if r.Name != "" {
 			g.paramNames[r.Name] = true
 			g.funcLocalNames[r.Name] = true
-			g.varTypes[r.Name] = g.mapToLLVMType(r.Type.String())
+			typeStr := r.Type.String()
+			g.varTypes[r.Name] = g.mapToLLVMType(typeStr)
+			if strings.HasPrefix(typeStr, "?") {
+				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
+			}
 		}
 	}
 
 	returnType := "void"
-	// Functions with multiple results are emitted as `void` with each result
-	// passed by reference as an additional parameter.
+	// All Nolang functions with results use void + pointer-passing convention:
+	// multi-result: each result passed by reference as an additional parameter
+	// single-result: also passed by reference (for consistency with multi-result
+	// and to support struct types like %option that can't be returned by value
+	// in all contexts)
 	if len(fd.Results) == 1 {
-		returnType = g.mapToLLVMType(fd.Results[0].Type.String())
+		_ = g.mapToLLVMType(fd.Results[0].Type.String()) // result type used in pointer param
 	}
 
 	g.curFuncRetType = returnType
@@ -110,11 +118,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		llvmType := g.mapToLLVMType(param.Type.String()) + "*"
 		sb.WriteString(fmt.Sprintf("%s %s", llvmType, llvmVarRef(param.Name)))
 	}
-	// Multi-output: add each result as a pointer parameter.
-	if len(fd.Results) > 1 {
-		for _, r := range fd.Results {
+	// 結果參數（單結果或多結果）以指標形式附加到參數列表
+	firstResult := true
+	for _, r := range fd.Results {
+		if r.Name != "" {
 			llvmType := g.mapToLLVMType(r.Type.String()) + "*"
-			sb.WriteString(fmt.Sprintf(", %s %s", llvmType, llvmVarRef(r.Name)))
+			sep := ", "
+			if firstResult && len(fd.Parameters) == 0 {
+				sep = "" // 第一個參數前不需逗號
+			}
+			sb.WriteString(fmt.Sprintf("%s%s %s", sep, llvmType, llvmVarRef(r.Name)))
+			firstResult = false
 		}
 	}
 
@@ -136,12 +150,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
 	}
-	// 結果參數也要分配空間（多結果時為 passed by reference，不分配；單結果時維持舊行為）
+	// 結果參數為 passed by reference（單結果與多結果皆同），不分配本地 alloca。
 	for _, r := range fd.Results {
-		if r.Name != "" && len(fd.Results) == 1 {
-			llvmType := g.mapToLLVMType(r.Type.String())
-			localVarTypes[r.Name] = llvmType
-			g.varTypes[r.Name] = llvmType
+		if r.Name != "" {
+			g.varTypes[r.Name] = g.mapToLLVMType(r.Type.String())
 			g.funcLocalNames[r.Name] = true
 		}
 	}
@@ -149,12 +161,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for _, p := range fd.Parameters {
 		delete(localVarTypes, p.Name)
 	}
-	// Multi-output result parameters: also remove from localVarTypes to avoid
-	// allocating them as local allocas (they're already function parameters).
-	if len(fd.Results) > 1 {
-		for _, r := range fd.Results {
-			delete(localVarTypes, r.Name)
-		}
+	// 結果參數：均為 by-reference 形式（單結果與多結果），不應作為本地變量分配。
+	for _, r := range fd.Results {
+		delete(localVarTypes, r.Name)
 	}
 
 	// 分配 + lifetime.start
@@ -364,6 +373,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
+			// Option constructors: val(...), err(...), ok(...) return %option
+			if name == "val" || name == "err" || name == "ok" {
+				return "%option"
+			}
 			strFns := map[string]bool{
 				"i64.to-str": true, "i32.to-str": true, "i16.to-str": true, "i8.to-str": true,
 				"u64.to-str": true, "u32.to-str": true, "u16.to-str": true, "u8.to-str": true,
@@ -1384,6 +1397,40 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %%%s)\n", g.indent(), name))
 			}
 		}
+		// Track inner type for ?T option variables
+		if g.optionInnerTypes != nil {
+			if _, exists := g.optionInnerTypes[name]; !exists {
+				// From explicit type annotation (e.g. val ?f64)
+				if nt, ok := stmt.Type.(*parser.NullableType); ok {
+					g.optionInnerTypes[name] = g.mapToLLVMType(nt.Type.String())
+				}
+			}
+			if _, exists := g.optionInnerTypes[name]; !exists {
+				// From function call return type (e.g. f = '3.14'.to-f64())
+				if call, ok := stmt.Value.(*parser.CallExpression); ok {
+					fnName := ""
+					if ident, ok := call.Function.(*parser.Identifier); ok {
+						fnName = ident.Value
+					} else if dot, ok := call.Function.(*parser.DotExpression); ok {
+						if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+							if recvType, ok := g.varTypes[recv.Value]; ok {
+								srcType := strings.TrimPrefix(recvType, "%")
+								fnName = srcType + "." + dot.Property
+							}
+						}
+						// Also try string literal receiver
+						if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+							fnName = "str." + dot.Property
+						}
+					}
+					if fnName != "" && g.funcResultInnerTypes != nil {
+						if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+							g.optionInnerTypes[name] = innerTypes[0]
+						}
+					}
+				}
+			}
+		}
 		g.generateOptionAssign(sb, stmt)
 		return
 	}
@@ -1799,6 +1846,32 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), val, dataPtr))
 	}
 
+	// Helper: copy a double (f64) value into data field
+	copyF64ToData := func(val string) {
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%opt.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtr := fmt.Sprintf("%%opt.data.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to double*\n", g.indent(), dataPtr, dataGEP))
+		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), val, dataPtr))
+	}
+
+	// copyToData dispatches to the correct copy function based on the option's inner type
+	copyToData := func(val string) {
+		innerType := "i64"
+		if g.optionInnerTypes != nil {
+			if it, ok := g.optionInnerTypes[name]; ok && it != "" {
+				innerType = it
+			}
+		}
+		if innerType == "double" {
+			copyF64ToData(val)
+		} else {
+			copyI64ToData(val)
+		}
+	}
+
 	switch v := stmt.Value.(type) {
 	case *parser.NilLiteral:
 		// x = nil → tag=1, zero data
@@ -1825,13 +1898,13 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 							zeroData()
 						}
 					} else {
-						// i64 variable
+						// i64/f64 variable
 						val := g.generateExprWithSB(sb, arg)
-						copyI64ToData(val)
+						copyToData(val)
 					}
 				} else {
 					val := g.generateExprWithSB(sb, arg)
-					copyI64ToData(val)
+					copyToData(val)
 				}
 				return
 			}
@@ -1847,19 +1920,62 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						copyStrToData("%" + argIdent.Value)
 					} else {
 						val := g.generateExprWithSB(sb, arg)
-						copyI64ToData(val)
+						copyToData(val)
 					}
 				} else {
 					val := g.generateExprWithSB(sb, arg)
-					copyI64ToData(val)
+					copyToData(val)
 				}
 				return
 			}
 		}
-		// Fallback: unknown call, treat as implicit val
+		// Fallback: 處理函數呼叫返回值
+		// Nolang 函數呼叫（如 .to-i64()）透過 voidSingleOutput 路徑會回傳 %option 結構的 load 暫存器，
+		// 此時需複製整個結構到 LHS 變數；其他情況（內建函數、純量運算）視為隱含 val 並存成 i64。
+		// 判斷依據：call 的函式名稱是否在 funcResultLLVMType 中（即 Nolang 函數）且 LLVM 型別為 %option。
+		isNolangOptionCall := false
+		if g.funcResultLLVMType != nil {
+			if dot, isDot := v.Function.(*parser.DotExpression); isDot {
+				// 重組方法名稱：依 varTypes/內建別名表推導型別前綴
+				recv := dot.Receiver
+				if recvIdent, ok := recv.(*parser.Identifier); ok {
+					if recvType, ok := g.varTypes[recvIdent.Value]; ok {
+						srcType := strings.TrimPrefix(recvType, "%")
+						candidates := []string{srcType}
+						if srcType == "str-short" || srcType == "str-long" {
+							candidates = append(candidates, "str")
+						}
+						for _, cand := range candidates {
+							candName := cand + "." + dot.Property
+							if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
+								isNolangOptionCall = true
+								break
+							}
+						}
+					}
+				} else if _, isStrLit := recv.(*parser.StringLiteral); isStrLit {
+					candName := "str." + dot.Property
+					if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
+						isNolangOptionCall = true
+					}
+				}
+			} else if ident, isIdent := v.Function.(*parser.Identifier); isIdent {
+				// 已被 transpiler 改寫為 str.to-i64() 形式
+				if ts, ok := g.funcResultLLVMType[ident.Value]; ok && len(ts) == 1 && ts[0] == "%option" {
+					isNolangOptionCall = true
+				}
+			}
+		}
+		if isNolangOptionCall {
+			// 呼叫函數並複製 %option 結構
+			val := g.generateExprWithSB(sb, v)
+			// val 是 %option 的 load 暫存器，需儲存到 name
+			sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), val, name))
+			return
+		}
 		storeTag(0)
 		val := g.generateExprWithSB(sb, v)
-		copyI64ToData(val)
+		copyToData(val)
 
 	case *parser.Identifier:
 		// Copy %option struct from source variable
@@ -1879,7 +1995,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		} else {
 			val := g.generateExprWithSB(sb, stmt.Value)
 			val = g.stripLLVMType(val)
-			copyI64ToData(val)
+			copyToData(val)
 		}
 	}
 }

@@ -1,0 +1,40 @@
+// 最小化 val/err 測試
+test-simple = () {
+    n ?i64 = val(42)
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-simple2 = () {
+    n ?i64 = nil
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-simple3 = () {
+    n ?i64 = err('oops')
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-simple()
+test-simple2()
+test-simple3()

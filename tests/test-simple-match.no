@@ -1,0 +1,7 @@
+// 簡單 match 測試
+x = 3
+x: {
+    1 -> print(11)
+    2 -> print(22)
+    -> print(33)
+}

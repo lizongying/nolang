@@ -1,0 +1,18 @@
+// test-minmax-debug.no — 調試 i8.MIN
+test1 = () {
+    m ?i64 = nil
+    m = -128
+    if m == -128 {
+        print('var == -128 ok')
+    } else {
+        print('var == -128 bad')
+    }
+}
+
+test2 = () {
+    // 嘗試作為函數定義
+    print(i8.MIN)
+}
+
+test1()
+test2()

@@ -1,0 +1,79 @@
+// 最小化測試：to-u8
+test-u8-ok = () {
+    n = '255'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-u8-fail = () {
+    n = '256'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-u8-zero = () {
+    n = '0'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-u8-bool-true = () {
+    b = 'true'.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-u8-u32 = () {
+    n = '4294967295'.to-u32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-u8-u32-overflow = () {
+    n = '4294967296'.to-u32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-u8-ok()
+test-u8-fail()
+test-u8-zero()
+test-u8-bool-true()
+test-u8-u32()
+test-u8-u32-overflow()

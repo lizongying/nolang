@@ -19,8 +19,15 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			parts := strings.SplitN(v, ".", 2)
 			varName := strings.TrimPrefix(parts[0], "%")
 			if g.varTypes != nil {
-				if t, ok := g.varTypes[varName]; ok && t == "double" {
-					return "double " + v
+				if t, ok := g.varTypes[varName]; ok {
+					if t == "double" {
+						return "double " + v
+					}
+					if t == "%option" && g.optionInnerTypes != nil {
+						if it, ok := g.optionInnerTypes[varName]; ok && it == "double" {
+							return "double " + v
+						}
+					}
 				}
 			}
 			return "i64 " + v
@@ -169,6 +176,20 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							if t == "i8" || t == "i16" || t == "i32" {
 								isNarrow = true
 							}
+							// Option variable: check inner type
+							if t == "%option" && g.optionInnerTypes != nil {
+								if it, ok := g.optionInnerTypes[ident.Value]; ok {
+									if it == "double" {
+										isDouble = true
+									}
+									if it == "i1" {
+										isBool = true
+									}
+									if it == "i8" || it == "i16" || it == "i32" {
+										isNarrow = true
+									}
+								}
+							}
 						}
 					}
 					if isDouble {
@@ -184,10 +205,19 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 						// sign-extend i8/i16/i32 to i64 for printf (Nolang 中 i8/i16/i32 為有符號)
 						if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
 							if t, ok := g.varTypes[ident.Value]; ok {
-								g.tmpIdx++
-								extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
-								sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, t, v))
-								v = extReg
+								// For option variables, use inner type for sext
+								sextType := t
+								if t == "%option" && g.optionInnerTypes != nil {
+									if it, ok := g.optionInnerTypes[ident.Value]; ok {
+										sextType = it
+									}
+								}
+								if sextType != "%option" {
+									g.tmpIdx++
+									extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
+									sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, sextType, v))
+									v = extReg
+								}
 							}
 						}
 						fmtSpec = "%lld"

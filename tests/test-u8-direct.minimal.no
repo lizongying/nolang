@@ -1,0 +1,14 @@
+// 測試 使用方法返回
+test-method = () {
+    n = 'abc'.to-i64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-method()

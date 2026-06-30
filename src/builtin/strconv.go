@@ -15,13 +15,13 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "atoi", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
-	// str.to-f64: string to f64 (method: s.to-f64())
+	// str.parse-f64-raw: internal string to f64 via strtod (used by str.to-f64 wrapper)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverStr,
-		MethodName:   "str.to-f64",
+		MethodName:   "str.parse-f64-raw",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Parse a string to f64 (method)",
+		Doc:          "Parse a string to f64 (internal, used by str.to-f64)",
 		CLibCall:     &CLibCall{FuncName: "strtod", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI8Ptr}, RetType: LLVMF64, FixedArgs: map[int]string{1: "null"}},
 	})
 

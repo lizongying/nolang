@@ -5,11 +5,16 @@
 //
 // 用法：
 //   x ?t                       // 宣告 option<t>
-//   x = val(42)                // 設為有值
+//   x = 42                     // 設為有值
 //   x = nil                    // 設為空
 //   x = err('msg')             // 設為錯誤
-//   x { val-> f(.); nil->; err-> g(.) }  // match
-//   !x                         // 強制解包（panic if nil/err）
+//
+//   match
+//   x: { 
+//       nil -> log('nil')  
+//       err -> log(it)  
+//       -> log(it)  
+//   }
 option {
     val t,
     nil bool,

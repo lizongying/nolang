@@ -3917,6 +3917,10 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			if builtin.FindBuiltinMethod(e.Value) != nil {
 				return nil
 			}
+			// Option constructors: val, err, ok are not real functions
+			if e.Value == "val" || e.Value == "err" || e.Value == "ok" {
+				return nil
+			}
 			results = append(results, ValidateResult{
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
@@ -4118,7 +4122,23 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					_, isSlice := s.Value.(*parser.SliceLiteral)
 					_, isArrayLit := s.Value.(*parser.ArrayLiteral)
 					isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
-					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign {
+					// Option 建構子：err(x) / val(x) / nil 可指派給 ?T 變數
+					isOptionCtor := false
+					if _, isNil := s.Value.(*parser.NilLiteral); isNil {
+						if strings.HasPrefix(existingType, "?") {
+							isOptionCtor = true
+						}
+					}
+					if call, ok := s.Value.(*parser.CallExpression); ok {
+						if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
+							if cid.Value == "err" || cid.Value == "val" || cid.Value == "ok" {
+								if strings.HasPrefix(existingType, "?") {
+									isOptionCtor = true
+								}
+							}
+						}
+					}
+					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,
 							Column:  s.Token.Column,
@@ -4177,10 +4197,21 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						if valType != "" && valType != existingType && isConcreteType(existingType) {
+						// Option 建構子：err(x) / val(x) 可指派給任何 ?T 變數
+						isOptionCtor := false
+						if call, ok := assign.Value.(*parser.CallExpression); ok {
+							if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
+								if cid.Value == "err" || cid.Value == "val" || cid.Value == "ok" {
+									if strings.HasPrefix(existingType, "?") {
+										isOptionCtor = true
+									}
+								}
+							}
+						}
+						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor {
 							results = append(results, ValidateResult{
-								Line:    ident.Token.Line,
-								Column:  ident.Token.Column,
+								Line:    assign.Token.Line,
+								Column:  assign.Token.Column,
 								Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value),
 							})
 						}

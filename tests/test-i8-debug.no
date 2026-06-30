@@ -1,0 +1,40 @@
+// test-i8-debug.no — 調試 str.to-i8
+test-to-i8-127 = () {
+    s = '127'
+    n = s.to-i8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i8-minmax = () {
+    // 直接測試 i8.MIN 和 i8.MAX 常數
+    if i8.MIN == -128 {
+        print('i8.MIN ok')
+    } else {
+        print('i8.MIN bad')
+    }
+    if i8.MAX == 127 {
+        print('i8.MAX ok')
+    } else {
+        print('i8.MAX bad')
+    }
+}
+
+test-to-i8-range = () {
+    n = 127
+    if n >= i8.MIN && n <= i8.MAX {
+        print('127 in range')
+    } else {
+        print('127 not in range')
+    }
+}
+
+test-to-i8-127()
+test-to-i8-minmax()
+test-to-i8-range()

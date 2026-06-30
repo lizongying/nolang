@@ -1,0 +1,8 @@
+// test-debug-method.no — 調試方法調用
+test-m1 = () {
+    s = 'hello'
+    s2 = s.to-upper()
+    print(s2)
+}
+
+test-m1()

@@ -2943,8 +2943,15 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			ma.isDotVal = true
 			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
-			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil") {
-			ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+			// err-> nil-> → option pattern
+			// ok-> → val branch (specific, not catch-all)
+			if p.currentToken.Literal == "ok" {
+				ma.isWildcard = true
+				ma.isDotVal = true
+			} else {
+				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {
 			// !-> → err branch
@@ -3562,9 +3569,15 @@ func (p *Parser) parseMatchExpression() Expression {
 			ma.isDotVal = true
 			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
-			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil") {
-			// err-> nil-> → option pattern（不經 parseExpression，避免 -> 被當作 RARROW 運算子）
-			ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+			// err-> nil-> → option pattern
+			// ok-> → val branch (specific, not catch-all)
+			if p.currentToken.Literal == "ok" {
+				ma.isWildcard = true
+				ma.isDotVal = true
+			} else {
+				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {
 			// !-> → err branch

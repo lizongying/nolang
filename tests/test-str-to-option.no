@@ -1,0 +1,339 @@
+// test-str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
+//
+// 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
+
+// ===== str.to-i64 =====
+test-to-i64-ok = () {
+    n = '12345'.to-i64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i64-neg = () {
+    n = '-42'.to-i64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i64-empty = () {
+    n = ''.to-i64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i64-invalid = () {
+    n = 'abc'.to-i64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-i8 =====
+test-to-i8-ok = () {
+    n = '127'.to-i8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i8-neg = () {
+    n = '-128'.to-i8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i8-overflow = () {
+    n = '128'.to-i8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i8-invalid = () {
+    n = '12a'.to-i8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-i16 =====
+test-to-i16-ok = () {
+    n = '32767'.to-i16()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i16-overflow = () {
+    n = '32768'.to-i16()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-i32 =====
+test-to-i32-ok = () {
+    n = '2147483647'.to-i32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-i32-overflow = () {
+    n = '2147483648'.to-i32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-u8 =====
+test-to-u8-ok = () {
+    n = '255'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-u8-overflow = () {
+    n = '256'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-u8-negative = () {
+    n = '-1'.to-u8()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-u16 =====
+test-to-u16-ok = () {
+    n = '65535'.to-u16()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-u16-overflow = () {
+    n = '65536'.to-u16()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-u32 =====
+test-to-u32-ok = () {
+    n = '4294967295'.to-u32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-u32-overflow = () {
+    n = '4294967296'.to-u32()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-u64 =====
+test-to-u64-ok = () {
+    n = '99999'.to-u64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+test-to-u64-negative = () {
+    n = '-1'.to-u64()
+    if n == nil {
+        print('nil')
+    } elif n == err {
+        print('err')
+    } else {
+        print('val=')
+        print(n)
+    }
+}
+
+// ===== str.to-bool =====
+test-to-bool-true = () {
+    b = 'true'.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-to-bool-false = () {
+    b = 'false'.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-to-bool-empty = () {
+    b = ''.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+test-to-bool-invalid = () {
+    b = 'yes'.to-bool()
+    if b == nil {
+        print('nil')
+    } elif b == err {
+        print('err')
+    } else {
+        print('val=')
+        print(b)
+    }
+}
+
+// 執行
+test-to-i64-ok()
+test-to-i64-neg()
+test-to-i64-empty()
+test-to-i64-invalid()
+test-to-i8-ok()
+test-to-i8-neg()
+test-to-i8-overflow()
+test-to-i8-invalid()
+test-to-i16-ok()
+test-to-i16-overflow()
+test-to-i32-ok()
+test-to-i32-overflow()
+test-to-u8-ok()
+test-to-u8-overflow()
+test-to-u8-negative()
+test-to-u16-ok()
+test-to-u16-overflow()
+test-to-u32-ok()
+test-to-u32-overflow()
+test-to-u64-ok()
+test-to-u64-negative()
+test-to-bool-true()
+test-to-bool-false()
+test-to-bool-empty()
+test-to-bool-invalid()

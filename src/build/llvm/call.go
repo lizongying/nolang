@@ -752,9 +752,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// Convention: for single-result functions, the last argument is the output parameter
 	// if it's an Identifier (a variable to store the result into) AND there are more args
 	// than the function's declared parameter count.
+	// Nolang functions (those in funcResultLLVMType) always use void + output param,
+	// so they also have hasOutputParam even when retType != "void".
+	isNolangSingleResult := false
+	if g.funcResultLLVMType != nil {
+		if _, ok := g.funcResultLLVMType[fnName]; ok {
+			if g.funcNumResults != nil {
+				if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
+					isNolangSingleResult = true
+				}
+			}
+		}
+	}
 	hasOutputParam := false
 	if g.funcNumResults != nil {
-		if n, ok := g.funcNumResults[fnName]; ok && n == 1 && retType != "void" {
+		triggerHasOutput := retType != "void" || isNolangSingleResult
+		if n, ok := g.funcNumResults[fnName]; ok && n == 1 && triggerHasOutput {
 			if len(expr.Arguments) > 0 {
 				if _, ok := expr.Arguments[len(expr.Arguments)-1].(*parser.Identifier); ok {
 					// Only treat as output param if args > function params
@@ -772,12 +785,13 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
-	// void + 單輸出參數，調用方未顯式傳遞輸出變數（如 v1 = s.to-i64()）。
-	// 此類函數（如 str.to-i64）的 funcRetTypes 為 void，但 funcNumResults 為 1，
-	// 輸出通過指標傳遞。需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
+	// 單輸出參數：調用方未顯式傳遞輸出變數（如 v1 = s.to-i64()）。
+	// Nolang 函數的 funcRetTypes 為語意回傳型別（如 %option），但實際 LLVM 簽名是 void + 輸出指標。
+	// 此類函數需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
 	voidSingleOutput := false
 	voidSingleOutputType := ""
-	if retType == "void" && g.funcNumResults != nil && g.funcResultLLVMType != nil {
+	triggerVoidSingle := (retType == "void" || isNolangSingleResult) && g.funcNumResults != nil && g.funcResultLLVMType != nil
+	if triggerVoidSingle {
 		if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
 			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
 				voidSingleOutput = true

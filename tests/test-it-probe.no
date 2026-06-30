@@ -1,0 +1,15 @@
+// Test: build a real test using str.to-i64 and match
+test-str-i64-match = () {
+    s = '42'
+    n = s.to-i64()
+    if n == err {
+        print('err:')
+        print(.)
+    } elif n == nil {
+        print('nil')
+    } else {
+        print(n)
+    }
+}
+
+test-str-i64-match()

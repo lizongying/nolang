@@ -31,6 +31,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// Option type variable: extract data from data field (field 1)
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[e.Value]; ok && t == "%option" {
+				// Determine inner type (default: i64)
+				innerType := "i64"
+				if g.optionInnerTypes != nil {
+					if it, ok := g.optionInnerTypes[e.Value]; ok && it != "" {
+						innerType = it
+					}
+				}
 				g.tmpIdx++
 				dataGEP := llvmSSAReg(e.Value, fmt.Sprintf(".data.gep.%d", g.tmpIdx))
 				g.tmpIdx++
@@ -39,8 +46,8 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				dataLoad := llvmSSAReg(e.Value, fmt.Sprintf(".data.val.%d", g.tmpIdx))
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
-					sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to i64*\n", g.indent(), dataPtr, dataGEP))
-					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataPtr))
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to %s*\n", g.indent(), dataPtr, dataGEP, innerType))
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), dataLoad, innerType, innerType, dataPtr))
 				}
 				return dataLoad
 			}
@@ -84,6 +91,8 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%str-longlit.data.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
+				// Zero the data field first to ensure null-termination for C functions (strtod, atoi, etc.)
+				sb.WriteString(fmt.Sprintf("%sstore [127 x i8] zeroinitializer, [127 x i8]* %s\n", g.indent(), dataGEP))
 				// Bitcast [127 x i8]* to i8* for memcpy
 				g.tmpIdx++
 				dstPtr := fmt.Sprintf("%%str-longlit.dst.%d", g.tmpIdx)
