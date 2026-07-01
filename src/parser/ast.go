@@ -199,6 +199,7 @@ type Program struct {
 	Statements       []Statement
 	FreeComments     []*CommentGroup // standalone comments at file start, between stmts, EOF
 	TrailingComments *CommentGroup
+	Warnings         []string // parser warnings (e.g., dead code, deprecation)
 }
 
 func (p *Program) Pos() lexer.Position {
@@ -557,6 +558,9 @@ type IfExpression struct {
 	// DotValBody marks that the wildcard alternative is an ok-> or .-> val branch
 	// (not a catch-all else). The formatter outputs `ok -> body` instead of `-> body`.
 	DotValBody *BlockStatement
+	// IsStandalone marks a bare if-then expression written as `cond -> body`
+	// without the enclosing `{ }` block. The formatter outputs `cond -> body`.
+	IsStandalone bool
 }
 
 func (ie *IfExpression) expressionNode()     {}

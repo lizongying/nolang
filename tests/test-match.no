@@ -1,4 +1,9 @@
-status {status1, status2, status3, status4}
+status {
+    status1,
+    status2,
+    status3,
+    status4,
+}
 
 test-match = () {
     x ?i64
@@ -65,5 +70,5 @@ test-match = () {
         -> log('else')
     }
 
-    a == 2; log('2')
+    a == 2 -> log('2')
 }

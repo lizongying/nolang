@@ -156,7 +156,29 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		for _, inner := range s.Statements {
 			w.walkStatement(inner, scope)
 		}
+
+	case *parser.EnumDefinition:
+		entry := &IndexEntry{
+			Name:  s.Name,
+			Kind:  SymbolKindVariable,
+			Type:  "enum",
+			Value: formatEnumValues(s.Values),
+			Location: Location{
+				URI:   w.uri,
+				Range: rangeFromNode(s),
+			},
+		}
+		w.index.symbols[s.Name] = entry
+		w.index.definitions[s.Name] = entry
 	}
+}
+
+func formatEnumValues(values []*parser.EnumValue) string {
+	names := make([]string, len(values))
+	for i, v := range values {
+		names[i] = v.Name
+	}
+	return strings.Join(names, " | ")
 }
 
 func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {

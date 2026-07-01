@@ -312,6 +312,14 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				}
 				diagnostics = append(diagnostics, diagnostic)
 			}
+
+			// Emit parser warnings (e.g., unreachable enum else arm) as hints
+			for _, warnMsg := range prog.Warnings {
+				diagnostic := s.parseWarningToDiagnostic(warnMsg)
+				if diagnostic != nil {
+					diagnostics = append(diagnostics, *diagnostic)
+				}
+			}
 		}
 	}
 
@@ -329,6 +337,35 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	diagnostic.Severity = DiagnosticSeverityError
 	diagnostic.Message = errMsg
 	return diagnostic
+}
+
+// parseWarningToDiagnostic converts a parser warning string ("line %d, column %d: message")
+// into an LSP hint diagnostic. Returns nil if parsing fails.
+func (s *Server) parseWarningToDiagnostic(warnMsg string) *Diagnostic {
+	var line, col int
+	if _, err := fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col); err != nil {
+		return nil
+	}
+	// Extract message after "line %d, column %d: "
+	msg := warnMsg
+	if idx := strings.Index(warnMsg, ": "); idx >= 0 && idx+2 < len(warnMsg) {
+		// Find the second ": " to get past "line N, column M: "
+		if idx2 := strings.Index(warnMsg[idx+2:], ": "); idx2 >= 0 {
+			msg = warnMsg[idx+2+idx2+2:]
+		} else {
+			msg = warnMsg[idx+2:]
+		}
+	}
+	return &Diagnostic{
+		Range: Range{
+			Start: Position{Line: uint32(line - 1), Character: uint32(col - 1)},
+			End:   Position{Line: uint32(line - 1), Character: uint32(col)},
+		},
+		Severity: DiagnosticSeverityHint,
+		Source:   "nolang-lint",
+		Tags:     []DiagnosticTag{DiagnosticTagUnnecessary},
+		Message:  msg,
+	}
 }
 
 func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams) (interface{}, error) {

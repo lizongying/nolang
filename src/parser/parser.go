@@ -14,12 +14,13 @@ type Parser struct {
 	errors   []string
 	warnings []string
 
-	currentToken lexer.Token
-	peekToken    lexer.Token
-	prevToken    lexer.Token
-	ctx          contextStack      // replaces inForCond, inMatchCond, inMatchArm, inExprContext
-	comments     []lexer.Token     // collected comment tokens
-	varDeclTypes map[string]string // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
+	currentToken     lexer.Token
+	peekToken        lexer.Token
+	prevToken        lexer.Token
+	ctx              contextStack        // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	comments         []lexer.Token       // collected comment tokens
+	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
+	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
 }
 
 // blockType — { body } 內部的型別分類
@@ -579,6 +580,7 @@ func (p *Parser) ParseProgram() *Program {
 	}
 
 	program.TrailingComments = p.collectDocComments()
+	program.Warnings = append([]string{}, p.warnings...)
 
 	return program
 }
@@ -2281,6 +2283,36 @@ func (p *Parser) parseExpressionStatement() Statement {
 	}
 	p.restoreState(state)
 
+	// Standalone if-then: cond -> body (without enclosing { })
+	if p.currentToken.Type == lexer.RARROW && !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+		p.nextToken() // skip ->
+		body := p.parseExpression(LOWEST)
+		conseq := &BlockStatement{
+			Statements: []Statement{&ExpressionStatement{Expression: body}},
+		}
+
+		// Check for else: -> elseBody
+		var altBody *BlockStatement
+		if p.currentToken.Type == lexer.RARROW {
+			p.nextToken() // skip ->
+			altExpr := p.parseExpression(LOWEST)
+			altBody = &BlockStatement{
+				Statements: []Statement{&ExpressionStatement{Expression: altExpr}},
+			}
+		}
+
+		return &ExpressionStatement{
+			Token: tok,
+			Expression: &IfExpression{
+				Token:        tok,
+				Condition:    stmt.Expression,
+				Consequence:  conseq,
+				Alternative:  altBody,
+				IsStandalone: true,
+			},
+		}
+	}
+
 	return stmt
 }
 
@@ -3544,8 +3576,13 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	// For ?i64, elemType = "i64"
 	elemType := ""
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.varDeclTypes[ident.Value]; ok && strings.HasPrefix(t, "?") {
-			elemType = strings.TrimPrefix(t, "?")
+		if t, ok := p.varDeclTypes[ident.Value]; ok {
+			if strings.HasPrefix(t, "?") {
+				elemType = strings.TrimPrefix(t, "?")
+			} else if _, ok := p.enumVariantNames[t]; ok {
+				// For enum match, set elemType to trigger per-arm it binding path
+				elemType = t
+			}
 		}
 	}
 
@@ -3574,6 +3611,14 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 
 	// Check which variants are explicitly listed (for computing else arm complement)
 	hasExplicitOk, hasExplicitErr, hasExplicitNil := false, false, false
+	// For enum types, track which enum variant identifiers are listed
+	enumListedVariants := make(map[string]bool)
+	matchedIsEnum := false
+	if matchIdent, ok := matched.(*Identifier); ok {
+		if t, ok := p.varDeclTypes[matchIdent.Value]; ok {
+			_, matchedIsEnum = p.enumVariantNames[t]
+		}
+	}
 	for _, a := range arms {
 		if a.isDotVal {
 			hasExplicitOk = true
@@ -3583,6 +3628,8 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					hasExplicitErr = true
 				} else if ident.Value == "nil" {
 					hasExplicitNil = true
+				} else if matchedIsEnum {
+					enumListedVariants[ident.Value] = true
 				}
 			} else if _, ok := a.condition.(*NilLiteral); ok {
 				hasExplicitNil = true
@@ -3597,27 +3644,49 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		// For ?i64: err arm → it: err, nil arm → it: nil, ok arm → it: i64
 		if itStmt != nil && !hasRawCond && elemType != "" {
 			var armType string
+			skipItBinding := false
 			if arm.isWildcard {
 				if arm.isDotVal {
 					armType = "ok" // ok-> is explicit ok case
 				} else {
 					// Compute complement: which variants remain for -> else arm
-					// Three variants: ok(elemType), err, nil
-					okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
-					if okListed && !errListed && nilListed {
-						armType = "err" // only err remains
-					} else if okListed && errListed && !nilListed {
-						armType = "nil" // only nil remains
-					} else if okListed && !errListed && !nilListed {
-						armType = "else" // err | nil
-					} else if !okListed && errListed && nilListed {
-						armType = "ok" // only i64 remains
-					} else if !okListed && !errListed && nilListed {
-						armType = "ok_err" // i64 | err
-					} else if !okListed && errListed && !nilListed {
-						armType = "ok_nil" // i64 | nil
-					} else if !okListed && !errListed && !nilListed {
-						armType = "ok_err_nil" // i64 | err | nil
+					if matchedIsEnum {
+						// For enum types, compute complement dynamically
+						var remaining []string
+						if variants, ok := p.enumVariantNames[elemType]; ok {
+							for _, v := range variants {
+								if !enumListedVariants[v] {
+									remaining = append(remaining, v)
+								}
+							}
+						}
+						if len(remaining) == 0 {
+							// All enum variants listed — the else arm is dead code
+							skipItBinding = true
+							pos := arm.body.Pos()
+							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all enum variants have been listed",
+								pos.Line, pos.Column))
+						} else {
+							armType = strings.Join(remaining, " | ")
+						}
+					} else {
+						// Three variants: ok(elemType), err, nil
+						okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
+						if okListed && !errListed && nilListed {
+							armType = "err" // only err remains
+						} else if okListed && errListed && !nilListed {
+							armType = "nil" // only nil remains
+						} else if okListed && !errListed && !nilListed {
+							armType = "else" // err | nil
+						} else if !okListed && errListed && nilListed {
+							armType = "ok" // only i64 remains
+						} else if !okListed && !errListed && nilListed {
+							armType = "ok_err" // i64 | err
+						} else if !okListed && errListed && !nilListed {
+							armType = "ok_nil" // i64 | nil
+						} else if !okListed && !errListed && !nilListed {
+							armType = "ok_err_nil" // i64 | err | nil
+						}
 					}
 				}
 			} else if ident, ok := arm.condition.(*Identifier); ok {
@@ -3625,6 +3694,8 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					armType = ident.Value
 				} else if ident.Value == "ok" {
 					armType = "ok"
+				} else if matchedIsEnum {
+					armType = ident.Value // Use variant name as arm type for it binding
 				}
 			} else if _, ok := arm.condition.(*NilLiteral); ok {
 				armType = "nil"
@@ -3650,7 +3721,7 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					armIt.SyntheticEnd = bodyEnd
 					arm.body = p.prependStmt(arm.body, armIt)
 				}
-			} else {
+			} else if !skipItBinding {
 				arm.body = p.prependStmt(arm.body, itStmt)
 			}
 		} else if itStmt != nil && !hasRawCond {
@@ -3832,27 +3903,35 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		return nil
 	}
 	t, ok := p.varDeclTypes[ident.Value]
-	if !ok || !strings.HasPrefix(t, "?") || elemType == "" {
+	if !ok || t == "" {
 		return nil
 	}
 
 	var typeStr string
-	switch armType {
-	case "err":
-		typeStr = "err"
-	case "nil":
-		typeStr = "nil"
-	case "ok":
-		typeStr = elemType
-	case "else":
-		typeStr = "err | nil"
-	case "ok_err":
-		typeStr = elemType + " | err"
-	case "ok_nil":
-		typeStr = elemType + " | nil"
-	case "ok_err_nil":
-		typeStr = elemType + " | err | nil"
-	default:
+	if strings.HasPrefix(t, "?") && elemType != "" {
+		// Option type: map armType to specific type string
+		switch armType {
+		case "err":
+			typeStr = "err"
+		case "nil":
+			typeStr = "nil"
+		case "ok":
+			typeStr = elemType
+		case "else":
+			typeStr = "err | nil"
+		case "ok_err":
+			typeStr = elemType + " | err"
+		case "ok_nil":
+			typeStr = elemType + " | nil"
+		case "ok_err_nil":
+			typeStr = elemType + " | err | nil"
+		default:
+			return nil
+		}
+	} else if _, ok := p.enumVariantNames[t]; ok {
+		// Enum type: armType is the variant name or union expression (e.g., "status1" or "status2 | status3")
+		typeStr = armType
+	} else {
 		return nil
 	}
 
@@ -5044,6 +5123,10 @@ func (p *Parser) parseSliceLiteral() Expression {
 
 // parseInterfaceDefinition 解析介面宣告：name { method(), method(), ... }
 func (p *Parser) parseEnumDefinition() Statement {
+	if p.enumVariantNames == nil {
+		p.enumVariantNames = make(map[string][]string)
+	}
+
 	ed := &EnumDefinition{
 		Token:  p.currentToken,
 		Name:   p.currentToken.Literal,
@@ -5077,6 +5160,7 @@ func (p *Parser) parseEnumDefinition() Statement {
 		p.nextToken()
 
 		ed.Values = append(ed.Values, ev)
+		p.enumVariantNames[ed.Name] = append(p.enumVariantNames[ed.Name], ev.Name)
 	}
 
 	if p.currentToken.Type == lexer.RBRACE {

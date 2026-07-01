@@ -54,6 +54,22 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			input:    "x ?i64\nx: { err -> log(it)\n-> log(it) }",
 			expected: []string{"err", "i64 | nil"},
 		},
+		// Enum type test cases
+		{
+			name:     "enum_variants",
+			input:    "f = () { status {s1, s2, s3}\nx status\nx: { s1 -> log(it)\ns2 -> log(it)\n-> log(it) } }",
+			expected: []string{"s1", "s2", "s3"},
+		},
+		{
+			name:     "enum_wildcard_only",
+			input:    "f = () { status {s1, s2, s3}\nx status\nx: { -> log(it) } }",
+			expected: []string{"s1 | s2 | s3"},
+		},
+		{
+			name:     "enum_partial_wildcard",
+			input:    "f = () { status {s1, s2, s3}\nx status\nx: { s1 -> log(it)\n-> log(it) } }",
+			expected: []string{"s1", "s2 | s3"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,13 +89,18 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			var foundTypes []string
 			collectItTypes(prog, &foundTypes)
 
-			fmt.Printf("=== %s ===\n", tt.name)
-			fmt.Printf("  found types: %v\n", foundTypes)
-			fmt.Printf("  expected:    %v\n", tt.expected)
+			t.Logf("=== %s ===", tt.name)
+			t.Logf("  found types: %v", foundTypes)
+			t.Logf("  expected:    %v", tt.expected)
 
 			if len(foundTypes) != len(tt.expected) {
-				// This might not match exactly, just print info
-				t.Logf("found %d it bindings, expected %d", len(foundTypes), len(tt.expected))
+				t.Errorf("found %d it bindings, expected %d", len(foundTypes), len(tt.expected))
+				return
+			}
+			for i, ft := range foundTypes {
+				if ft != tt.expected[i] {
+					t.Errorf("it binding %d: got %q, expected %q", i, ft, tt.expected[i])
+				}
 			}
 		})
 	}
@@ -90,6 +111,12 @@ func collectItTypes(node Node, types *[]string) {
 	case *Program:
 		for _, s := range n.Statements {
 			collectItTypes(s, types)
+		}
+	case *FunctionDefinition:
+		if n.Body != nil {
+			for _, s := range n.Body.Statements {
+				collectItTypes(s, types)
+			}
 		}
 	case *LetStatement:
 		if n.Name != nil && n.Name.Value == "it" && n.IsSynthetic && n.Type != nil {

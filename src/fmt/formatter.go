@@ -885,6 +885,26 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 }
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
+	// Standalone if-then: `cond -> body` (without enclosing { })
+	if e.IsStandalone {
+		f.formatExpression(e.Condition)
+		f.write(" -> ")
+		for _, stmt := range e.Consequence.Statements {
+			if es, ok := stmt.(*parser.ExpressionStatement); ok {
+				f.formatExpression(es.Expression)
+			}
+		}
+		if e.Alternative != nil {
+			f.write(" -> ")
+			for _, stmt := range e.Alternative.Statements {
+				if es, ok := stmt.(*parser.ExpressionStatement); ok {
+					f.formatExpression(es.Expression)
+				}
+			}
+		}
+		return
+	}
+
 	// 裸 match 表達式 `{ cond -> body }` 輸出新式語法
 	if e.IsBareMatch {
 		f.formatBareMatchExpression(e)
@@ -1517,12 +1537,14 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 func (f *formatter) formatEnumDefinition(s *parser.EnumDefinition) {
 	f.write(s.Name)
 	f.write(" {")
-	for i, v := range s.Values {
-		if i > 0 {
-			f.write(", ")
-		}
+	f.indent++
+	for _, v := range s.Values {
+		f.newline()
 		f.write(v.Name)
+		f.write(",")
 	}
+	f.indent--
+	f.newline()
 	f.write("}")
 }
 

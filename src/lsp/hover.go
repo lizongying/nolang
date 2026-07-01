@@ -83,6 +83,10 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 		builder.WriteString(fmt.Sprintf("- **Value**: %s\n", entry.Value))
 	}
 
+	if entry.Type == "enum" && entry.Value != "" {
+		builder.WriteString(fmt.Sprintf("- **Variants**: %s\n", entry.Value))
+	}
+
 	if len(entry.Params) > 0 {
 		builder.WriteString("- **Parameters**:\n")
 		for _, p := range entry.Params {

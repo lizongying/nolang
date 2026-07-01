@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -221,9 +222,9 @@ func TestHoverFindSymbolNotFound(t *testing.T) {
 func TestHoverFormatContent(t *testing.T) {
 	index := NewSymbolIndex("test", 1)
 	index.symbols["x"] = &IndexEntry{
-		Name:   "x",
-		Type:   "i64",
-		Value:  "10",
+		Name:     "x",
+		Type:     "i64",
+		Value:    "10",
 		Location: Location{URI: "test", Range: Range{Start: Position{Line: 0, Character: 0}}},
 	}
 
@@ -385,5 +386,27 @@ func TestGetHoverIdentifierOverridesKeyword(t *testing.T) {
 	}
 	if hover == nil {
 		t.Fatal("hover is nil")
+	}
+}
+
+func TestGetHoverEnumType(t *testing.T) {
+	text := `status {s1, s2, s3}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+	hover, found := hp.GetHover(Position{Line: 0, Character: 0})
+	if !found {
+		t.Fatal("expected hover for status")
+	}
+	if hover == nil {
+		t.Fatal("hover is nil")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatal("expected MarkupContent")
+	}
+	if !strings.Contains(contents.Value, "s1 | s2 | s3") {
+		t.Errorf("expected hover to contain 's1 | s2 | s3', got: %s", contents.Value)
 	}
 }
