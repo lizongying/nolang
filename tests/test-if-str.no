@@ -1,0 +1,10 @@
+test1 = () {
+    r = if 1 {
+        'hello'
+    } else {
+        'world'
+    }
+    print(r)
+}
+
+test1()

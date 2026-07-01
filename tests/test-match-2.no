@@ -1,0 +1,9 @@
+test-match = () {
+    n = 42
+    result = n: {
+        err -> 'err'
+    }
+    print(result)
+}
+
+test-match()

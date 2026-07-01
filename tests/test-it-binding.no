@@ -1,0 +1,47 @@
+// test-it-binding.no — 測試 match 中的 it 變數綁定
+// it 代表 option 的解包值
+
+test-val-it = () {
+    n = 42
+    r = if n ==
+err {
+        .
+        
+        n
+        0
+    } elif n ==
+nil {
+        .
+        
+        n
+        0
+    } elif  {
+        .
+        
+        n
+        .
+    }
+}
+print(r)
+
+test-it-in-cond = () {
+    n = 200
+    r = n
+    ok(. > 127); 'too-big'
+    err; 'got-err'
+    nil; 'got-nil'
+    'in-range'
+}
+print(r)
+
+test-it-small = () {
+    n = 50
+    r = n
+    ok(. > 127); 'too-big'
+    'in-range'
+}
+print(r)
+
+test-val-it()
+test-it-in-cond()
+test-it-small()

@@ -4,7 +4,7 @@ test-str-i64-match = () {
     n = s.to-i64()
     if n == err {
         print('err:')
-        print(.)
+        print(n)
     } elif n == nil {
         print('nil')
     } else {

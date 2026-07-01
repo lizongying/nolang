@@ -1,6 +1,6 @@
 # std/hash/sha1
 
-make-str-16(block1)
+block1 = make-str-16()
 i = 0
 i < 16: {
     block1[i] = 0
@@ -12,6 +12,5 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-sha1(block1, 16)(h0, h1, h2, h3, h4)
-
+h0, h1, h2, h3, h4 = sha1(block1, 16)
 fmt.println('done')

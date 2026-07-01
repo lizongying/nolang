@@ -50,11 +50,11 @@ hello = () {
 外部包通過 `#` 導入時，只能訪問 `lib.no` 中聲明的導出項：
 
 ```nolang
-// 导入別名 a（對應 utils.greet）
-# package-name.a
+// 导入別名 a（對應 package-name.utils.greet）
+# package-name.utils.greet a
 
 // 或者直接使用函數名
-# package-name.greet
+# package-name.utils.greet
 ```
 
 ## LSP 支持

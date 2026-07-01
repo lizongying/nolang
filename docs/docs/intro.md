@@ -45,8 +45,8 @@ user {
 }
 
 u = user { 
-    name: 'Alice', 
-    age: 30，
+    name: 'Alice'
+    age: 30
 }
 
 // 方法

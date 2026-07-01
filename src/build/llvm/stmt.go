@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -54,11 +53,11 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 }
 
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
-	fmt.Fprintf(os.Stderr, "DEBUG-GEN-FUNC: name=%s params=%d results=%d bodyStmts=%d\n", fd.Name, len(fd.Parameters), len(fd.Results), len(fd.Body.Statements))
 	g.funcVars = nil
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
 	g.optionInnerTypes = make(map[string]string) // reset option inner types for each function
+	g.ssaTypes = make(map[string]string)         // reset SSA type tracking for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -494,6 +493,22 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "double"
 	case *parser.GroupedExpression:
 		return g.varLLVMType(&parser.LetStatement{Value: v.Expression})
+	case *parser.IfExpression:
+		// if 表達式：從 consequence 推斷型別
+		if v.Consequence != nil && len(v.Consequence.Statements) > 0 {
+			last := v.Consequence.Statements[len(v.Consequence.Statements)-1]
+			if es, ok := last.(*parser.ExpressionStatement); ok {
+				return g.varLLVMType(&parser.LetStatement{Value: es.Expression})
+			}
+		}
+		// 從 alternative 推斷
+		if v.Alternative != nil && len(v.Alternative.Statements) > 0 {
+			last := v.Alternative.Statements[len(v.Alternative.Statements)-1]
+			if es, ok := last.(*parser.ExpressionStatement); ok {
+				return g.varLLVMType(&parser.LetStatement{Value: es.Expression})
+			}
+		}
+		return "i64"
 	default:
 		return "i64"
 	}
@@ -554,6 +569,11 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
 			}
+		}
+		// Recurse into value expression to collect inner variables
+		// (e.g. `it` injected by match desugar inside if-expression branches)
+		if s.Value != nil {
+			g.collectVarDeclsFromExpr(s.Value, vars)
 		}
 	case *parser.ForStatement:
 		if s.Init != nil {
@@ -746,7 +766,6 @@ func (g *Generator) collectStructType(sd *parser.StructDefinition) {
 }
 
 func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement) {
-	fmt.Fprintf(os.Stderr, "DEBUG-STMT: type=%T\n", stmt)
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.generateLet(sb, s)
@@ -1393,8 +1412,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		if g.varTypes != nil {
 			if _, exists := g.varTypes[name]; !exists {
 				g.varTypes[name] = "%option"
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%option\n", g.indent(), name))
-				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %%%s)\n", g.indent(), name))
+				g.funcLocalNames[name] = true
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%option\n", g.indent(), llvmVarRef(name)))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %s)\n", g.indent(), llvmVarRef(name)))
 			}
 		}
 		// Track inner type for ?T option variables
@@ -1403,6 +1423,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				// From explicit type annotation (e.g. val ?f64)
 				if nt, ok := stmt.Type.(*parser.NullableType); ok {
 					g.optionInnerTypes[name] = g.mapToLLVMType(nt.Type.String())
+				}
+			}
+			if _, exists := g.optionInnerTypes[name]; !exists {
+				// From option variable assignment (e.g. it = n where n is ?i64)
+				if ident, ok := stmt.Value.(*parser.Identifier); ok {
+					if srcInner, ok := g.optionInnerTypes[ident.Value]; ok && srcInner != "" {
+						g.optionInnerTypes[name] = srcInner
+					}
 				}
 			}
 			if _, exists := g.optionInnerTypes[name]; !exists {
@@ -1782,7 +1810,6 @@ func (g *Generator) generateExpressionStmt(sb *strings.Builder, stmt *parser.Exp
 	if stmt.Expression == nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG-EXPR-STMT: expr=%T\n", stmt.Expression)
 
 	switch e := stmt.Expression.(type) {
 	case *parser.CallExpression:
@@ -1881,8 +1908,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
-			if ident.Value == "val" && len(v.Arguments) == 1 {
-				// x = val(expr) → tag=0, copy expr to data
+			if (ident.Value == "val" || ident.Value == "ok") && len(v.Arguments) == 1 {
+				// x = val(expr) / ok(expr) → tag=0, copy expr to data
 				storeTag(0)
 				arg := v.Arguments[0]
 				if _, isStr := arg.(*parser.StringLiteral); isStr {

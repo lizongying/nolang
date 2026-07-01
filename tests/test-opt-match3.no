@@ -1,0 +1,11 @@
+test1 = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+        nil -> 'got-nil'
+        -> 'got-val'
+    }
+    print(r)
+}
+
+test1()

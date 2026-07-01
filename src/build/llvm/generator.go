@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -58,6 +57,7 @@ type Generator struct {
 	unionAliases         map[string][]string      // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	optionInnerTypes     map[string]string        // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
 	funcResultInnerTypes map[string][]string      // function name → inner LLVM types of ?T results
+	enumVariantIndex     map[string]int64         // enum variant name → tag index (e.g. status1→0, status2→1)
 }
 
 func NewGenerator() *Generator {
@@ -160,6 +160,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.unionAliases = make(map[string][]string)
 	g.optionInnerTypes = make(map[string]string)
 	g.funcResultInnerTypes = make(map[string][]string)
+	g.enumVariantIndex = make(map[string]int64)
 
 	// 收集聯合型別別名，用於解析 receiver method call
 	for _, stmt := range program.Statements {
@@ -171,6 +172,26 @@ func (g *Generator) Generate(program *parser.Program) string {
 				}
 			}
 			g.unionAliases[ta.Name] = members
+		}
+	}
+
+	// 收集標籤枚舉 & 簡單枚舉變體名稱 → 索引
+	for _, stmt := range program.Statements {
+		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
+			for i, v := range ted.Variants {
+				g.enumVariantIndex[v.Name] = int64(i)
+				if g.varTypes != nil {
+					g.varTypes[v.Name] = "i64"
+				}
+			}
+		}
+		if ed, ok := stmt.(*parser.EnumDefinition); ok {
+			for _, v := range ed.Values {
+				g.enumVariantIndex[v.Name] = v.Value
+				if g.varTypes != nil {
+					g.varTypes[v.Name] = "i64"
+				}
+			}
 		}
 	}
 
@@ -231,7 +252,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
 				if s.Name != nil && strings.Contains(s.Name.Value, ".") {
 					name := s.Name.Value
-					fmt.Fprintf(os.Stderr, "DEBUG-LET-METHOD: name=%q s.Name.Value=%q\n", name, s.Name.Value)
 					retType := "void"
 					if len(fl.Results) == 1 {
 						retType = g.mapToLLVMType(fl.Results[0].Type.String())

@@ -1,0 +1,5 @@
+test-match = () {
+    n = 42
+}
+
+test-match()

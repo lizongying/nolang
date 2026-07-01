@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -231,11 +230,6 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 }
 
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
-	// DEBUG: 印出所有 call expression 的函數部分類型
-	fmt.Fprintf(os.Stderr, "DEBUG-CALL-ENTER: expr=%T func=%T\n", expr, expr.Function)
-	if dot, ok := expr.Function.(*parser.DotExpression); ok {
-		fmt.Fprintf(os.Stderr, "DEBUG-CALL-DOT: property=%s recvType=%T\n", dot.Property, dot.Receiver)
-	}
 	// 當 Function 是 CallExpression 時，表示內層調用 + 輸出參數捕獲
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {
@@ -426,12 +420,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	//   1) expr.Function 仍是 DotExpression（如使用者直接呼叫 obj.method()）
 	//   2) expr.Function 已被 transpiler 改寫為 Identifier，但 fnName 含 "." 且有 Nolang 實作
 	skipBuiltin := false
-	debugSkip := ""
 	if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
 		if g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
 				skipBuiltin = true
-				debugSkip = "fnName=" + fnName
 			} else if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				// receiver 為 "self" 時，根據 varTypes 取得實際型別前綴查找
 				if recv.Value == "self" && g.varTypes != nil {
@@ -448,7 +440,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							candName := cand + "." + dot.Property
 							if _, hasNolang := g.funcRetTypes[candName]; hasNolang {
 								skipBuiltin = true
-								debugSkip = "candName=" + candName
 								break
 							}
 						}
@@ -461,19 +452,26 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if strings.Contains(fnName, ".") && g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
 				skipBuiltin = true
-				debugSkip = "rewritten-fnName=" + fnName
 			}
 		}
-	}
-	if skipBuiltin {
-		fmt.Fprintf(os.Stderr, "DEBUG-SKIP-BUILTIN: fnName=%s skipBuiltin=true reason=%s\n", fnName, debugSkip)
 	}
 	if !skipBuiltin {
 		if m := builtin.FindBuiltinMethod(fnName); m != nil {
 			if m.LLVMIntrinsic != "" {
-				a := evalArgs()
+				args := make([]string, len(expr.Arguments))
+				for i, arg := range expr.Arguments {
+					v := g.generateExprWithSB(sb, arg)
+					// Only coerce integer types to double; leave non-integer (string, etc.) as 0.0
+					if g.intExprLLVMType(arg) != "" && !g.isStringExpr(arg) {
+						v = g.coerceToFloatReg(sb, v, arg, "double")
+					} else if g.isStringExpr(arg) {
+						// String argument to log() intrinsic: use 0.0 placeholder
+						v = "0.0"
+					}
+					args[i] = v
+				}
 				argStr := ""
-				for i, v := range a {
+				for i, v := range args {
 					if i > 0 {
 						argStr += ", "
 					}
@@ -514,8 +512,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return ""
 	}
 
-	// val() and err() are handled at the assignment level
-	if fnName == "val" || fnName == "err" {
+	// val(), ok() and err() are handled at the assignment level
+	if fnName == "val" || fnName == "err" || fnName == "ok" {
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s; %s() is only valid in assignment context\n", g.indent(), fnName))
 		}
@@ -610,9 +608,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 字符串字面量接收者（如 'abc'.compare('abc')）
 			// 字符串字面量永遠是 str 型別，直接嘗試 str.<property>
 			shortName := "str." + dot.Property
-			fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT: shortName=%s funcRetTypes=%v funcNumResults=%v\n", shortName, g.funcRetTypes[shortName], g.funcNumResults[shortName])
-			_ = g.funcRetTypes["str.to-i64"] // touch
-			fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT2: methodReceiver before funcRetTypes check = %v\n", methodReceiver)
 			if g.funcRetTypes != nil {
 				if t, ok := g.funcRetTypes[shortName]; ok {
 					hasOutput := false
@@ -624,7 +619,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if t != "void" || hasOutput {
 						fnName = shortName
 						methodReceiver = receiverExpr
-						fmt.Fprintf(os.Stderr, "DEBUG-CALL-STRINGLIT3: set methodReceiver to StringLiteral, fnName=%s\n", fnName)
 					}
 				}
 			}

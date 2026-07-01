@@ -307,6 +307,10 @@ func stmtTokenLine(stmt parser.Statement) int {
 }
 
 func (f *formatter) formatStatement(stmt parser.Statement) {
+	// Skip compiler-injected synthetic statements (e.g., `it = matched`)
+	if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
+		return
+	}
 	// Use CommentedNode interface to get Doc comments
 	var doc *parser.CommentGroup
 	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
@@ -376,7 +380,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 func (f *formatter) formatExpression(expr parser.Expression) {
 	switch e := expr.(type) {
 	case *parser.Identifier:
-		if e.Value == "self" || e.Value == "it" {
+		if e.Value == "self" {
 			f.write(".")
 		} else {
 			f.write(e.Value)
@@ -511,6 +515,9 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	} else if nt, ok := s.Type.(*parser.NamedType); ok && nt.Value != "" && !isInferredType(s) {
 		f.write(" ")
 		f.write(nt.Value)
+	} else if nt, ok := s.Type.(*parser.NullableType); ok && !isInferredNullableType(s) {
+		f.write(" ?")
+		f.write(nt.Type.String())
 	}
 	if s.Value != nil {
 		f.write(" = ")
@@ -600,6 +607,23 @@ func isInferredType(s *parser.LetStatement) bool {
 	}
 	return nt.Token.Line == s.Name.Token.Line &&
 		nt.Token.Column == s.Name.Token.Column
+}
+
+// isInferredNullableType 判斷 NullableType 是否為從推斷型別（如 i8.MIN）而來
+// 推斷型別的位置會等於變數名位置
+func isInferredNullableType(s *parser.LetStatement) bool {
+	if s.Type == nil || s.Name == nil {
+		return false
+	}
+	nt, ok := s.Type.(*parser.NullableType)
+	if !ok {
+		return false
+	}
+	if inner, ok := nt.Type.(*parser.NamedType); ok {
+		return inner.Token.Line == s.Name.Token.Line &&
+			inner.Token.Column == s.Name.Token.Column
+	}
+	return false
 }
 
 func (f *formatter) formatReturnStatement(s *parser.ReturnStatement) {
@@ -736,10 +760,13 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	f.write("{")
 	f.indent++
 
-	// 過濾掉 ; 分隔符產生的空表達式語句
+	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
 	statements := make([]parser.Statement, 0, len(s.Statements))
 	for _, stmt := range s.Statements {
 		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 			continue
 		}
 		statements = append(statements, stmt)
@@ -919,24 +946,25 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 //   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
 //   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
 func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
-	f.write("{")
+	if e.MatchedExpr != nil {
+		f.formatExpression(e.MatchedExpr)
+		f.write(": {")
+	} else {
+		f.write("{")
+	}
 	f.indent++
 	// 輸出當前 arm
 	f.writeBareMatchArm(e)
 	// 處理後續 arm（Alternative 鏈）
 	for e.Alternative != nil {
 		if len(e.Alternative.Statements) == 1 {
-			es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement)
-			if !ok {
-				break
+			if es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement); ok {
+				if next, ok := es.Expression.(*parser.IfExpression); ok && next.IsBareMatch {
+					e = next
+					f.writeBareMatchArm(e)
+					continue
+				}
 			}
-			next, ok := es.Expression.(*parser.IfExpression)
-			if !ok || !next.IsBareMatch {
-				break
-			}
-			e = next
-			f.writeBareMatchArm(e)
-			continue
 		}
 		// Wildcard arm 的 Alternative 是直接的 BlockStatement
 		// 模擬 IfExpression 包裝後調用 writeBareMatchArm
@@ -945,6 +973,9 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 			Condition:   &parser.IntegerLiteral{Token: e.Token, Value: 1},
 			Consequence: e.Alternative,
 			IsBareMatch: true,
+		}
+		if e.DotValBody == e.Alternative {
+			wildcardIf.DotValBody = e.Alternative
 		}
 		f.writeBareMatchArm(wildcardIf)
 		break
@@ -967,16 +998,41 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	}
 	f.newline()
 	if isWildcard {
-		f.write("->")
+		if e.DotValBody != nil && e.DotValBody == e.Consequence {
+			f.write("ok ->")
+		} else {
+			f.write("->")
+		}
 	} else {
+		// For matched matches, strip `matched == ` from condition to show just pattern
+		if e.MatchedExpr != nil {
+			if infix, ok := e.Condition.(*parser.InfixExpression); ok && infix.Operator == "==" {
+				if id, ok := infix.Left.(*parser.Identifier); ok {
+					if mid, ok := e.MatchedExpr.(*parser.Identifier); ok && id.Value == mid.Value {
+						f.formatExpression(infix.Right)
+						f.write(" ->")
+						goto writeBody
+					}
+				}
+			}
+		}
 		f.formatExpression(e.Condition)
 		f.write(" ->")
 	}
+writeBody:
+	// 過濾 compiler 注入的合成語句（如 `it = matched`）
+	statements := make([]parser.Statement, 0, len(e.Consequence.Statements))
+	for _, stmt := range e.Consequence.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
 	// 內聯簡單 body：只一個語句且無註釋時，輸出在同一行
-	if len(e.Consequence.Statements) == 1 &&
+	if len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil {
-		stmt := e.Consequence.Statements[0]
+		stmt := statements[0]
 		switch stmt.(type) {
 		case *parser.ExpressionStatement, *parser.LetStatement:
 			f.write(" ")
@@ -984,7 +1040,7 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 			return
 		}
 	}
-	for _, stmt := range e.Consequence.Statements {
+	for _, stmt := range statements {
 		f.newline()
 		f.write("    ")
 		f.formatStatement(stmt)

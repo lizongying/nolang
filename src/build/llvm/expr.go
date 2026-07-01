@@ -12,6 +12,46 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	return g.generateExprWithSB(nil, expr)
 }
 
+// inferSSAType 從 SSA 暫存器名稱或字面量推斷 LLVM 型別
+// 用於 if 表達式 phi 節點的型別推斷（當函數返回型別為 void 時）
+func (g *Generator) inferSSAType(val string) string {
+	if val == "" || val == "0" {
+		return ""
+	}
+	// 字串字面量暫存器：%str-longlit.* 或 %str-shortlit.*
+	if strings.Contains(val, "str-longlit") || strings.Contains(val, "str-shortlit") {
+		return "ptr"
+	}
+	// 字串相關暫存器：%str.* (concat, repeat 等)
+	if strings.Contains(val, "str-concat") || strings.Contains(val, "str-repeat") ||
+		strings.Contains(val, "str-slice") || strings.Contains(val, "str-trim") {
+		return "ptr"
+	}
+	// option 暫存器：%opt.* 或 %option.*
+	if strings.Contains(val, "opt.") || strings.Contains(val, "option.") {
+		return "%option"
+	}
+	// option data pointer (struct inner type, e.g. ?str): %var.data.ptr.*
+	if strings.Contains(val, ".data.ptr.") {
+		return "ptr"
+	}
+	// 浮點數字面量（含小數點或 e+）
+	if strings.Contains(val, ".") && !strings.HasPrefix(val, "%") {
+		return "double"
+	}
+	// 純數字 → i64
+	if !strings.HasPrefix(val, "%") {
+		return "i64"
+	}
+	// 其他 SSA 暫存器：查 ssaTypes（phi 節點等已記錄型別）
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[val]; ok && t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expression) string {
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
@@ -28,18 +68,37 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		}
 		return "0"
 	case *parser.Identifier:
+		// Enum variant: return tag index as constant integer
+		if g.enumVariantIndex != nil {
+			if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
+				return fmt.Sprintf("%d", tagIdx)
+			}
+		}
 		// Option type variable: extract data from data field (field 1)
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[e.Value]; ok && t == "%option" {
-				// Determine inner type: double for ?f64, i64 for all integer types
+				// Determine inner type from optionInnerTypes
 				innerType := "i64"
 				if g.optionInnerTypes != nil {
-					if it, ok := g.optionInnerTypes[e.Value]; ok && it == "double" {
-						innerType = "double"
+					if it, ok := g.optionInnerTypes[e.Value]; ok && it != "" {
+						innerType = it
 					}
 				}
 				g.tmpIdx++
 				dataGEP := llvmSSAReg(e.Value, fmt.Sprintf(".data.gep.%d", g.tmpIdx))
+				// For struct types (e.g. %str-long), return a pointer to the data
+				// field (bitcast to innerType*) instead of loading the struct value.
+				// This matches string literal behavior (which returns ptr to alloca).
+				if strings.HasPrefix(innerType, "%") {
+					g.tmpIdx++
+					dataPtr := llvmSSAReg(e.Value, fmt.Sprintf(".data.ptr.%d", g.tmpIdx))
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to %s*\n", g.indent(), dataPtr, dataGEP, innerType))
+					}
+					return dataPtr
+				}
+				// For primitive types (i64, double, etc.), load the value
 				g.tmpIdx++
 				dataPtr := llvmSSAReg(e.Value, fmt.Sprintf(".data.ptr.%d", g.tmpIdx))
 				g.tmpIdx++
@@ -155,6 +214,16 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			reg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), reg, result))
+			}
+			// Track SSA type for phi node inference
+			if g.ssaTypes != nil {
+				if strings.HasPrefix(result, "call ") {
+					parts := strings.SplitN(result[5:], " ", 2)
+					if len(parts) >= 1 {
+						retType := parts[0]
+						g.ssaTypes[reg] = retType
+					}
+				}
 			}
 			// If call returns i32 (printf, etc.), zext to i64 for consistency
 			if strings.Contains(result, "call i32") {
@@ -338,17 +407,43 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if phiType == "" || phiType == "void" {
 		phiType = "i64"
 	}
+	// 從實際值推斷 phi 型別（處理 if 表達式在 void 函數中返回 string/option 的情況）
+	if thenVal != "" && thenVal != "0" {
+		if inferred := g.inferSSAType(thenVal); inferred != "" {
+			phiType = inferred
+		}
+	} else if elseVal != "" && elseVal != "0" {
+		if inferred := g.inferSSAType(elseVal); inferred != "" {
+			phiType = inferred
+		}
+	}
+	// 若 then/else 一方為 default zero，但另一方推斷出具體型別，沿用該型別
+	if thenVal == defaultZero || thenVal == "0" {
+		if inferred := g.inferSSAType(elseVal); inferred != "" {
+			phiType = inferred
+		}
+	} else if elseVal == defaultZero || elseVal == "0" {
+		if inferred := g.inferSSAType(thenVal); inferred != "" {
+			phiType = inferred
+		}
+	}
+	// 記錄 phi 節點型別，供後續 inferSSAType 查詢
+	if g.ssaTypes != nil {
+		g.ssaTypes[phiReg] = phiType
+	}
 	// For struct types, use zeroinitializer instead of integer 0
 	zeroVal := "0"
 	if strings.HasPrefix(phiType, "%") {
 		zeroVal = "zeroinitializer"
+	} else if phiType == "ptr" {
+		zeroVal = "null"
 	} else if phiType == "float" || phiType == "double" {
 		zeroVal = "0.000000e+00"
 	}
-	if thenVal == "" || (strings.HasPrefix(phiType, "%") && thenVal == "0") {
+	if thenVal == "" || thenVal == "0" {
 		thenVal = zeroVal
 	}
-	if elseVal == "" || (strings.HasPrefix(phiType, "%") && elseVal == "0") {
+	if elseVal == "" || elseVal == "0" {
 		elseVal = zeroVal
 	}
 	// Build phi entries based on which branches are terminated
@@ -1797,16 +1892,24 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 }
 
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {
-	// Option tag comparison: x == err or x == nil for %option typed variables
-	if expr.Operator == "==" {
+	// Option tag comparison: x == err/nil/ok or x != err/nil/ok for %option typed variables
+	// Also handles tagged enum variants: x == status1, x == status2, etc.
+	if expr.Operator == "==" || expr.Operator == "!=" {
 		if leftIdent, ok := expr.Left.(*parser.Identifier); ok {
-			// Check if right side is Identifier (err) or NilLiteral (nil)
+			// Check if right side is Identifier (err/nil/ok/enum-variant) or NilLiteral (nil)
 			var tag int64 = -1
 			if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
 				if rightIdent.Value == "err" {
 					tag = 2
 				} else if rightIdent.Value == "nil" {
 					tag = 1
+				} else if rightIdent.Value == "ok" {
+					tag = 0
+				} else if g.enumVariantIndex != nil {
+					// Check if it's a tagged enum variant
+					if idx, ok := g.enumVariantIndex[rightIdent.Value]; ok {
+						tag = idx
+					}
 				}
 			} else if _, ok := expr.Right.(*parser.NilLiteral); ok {
 				// nil is parsed as NilLiteral, not Identifier
@@ -1820,10 +1923,14 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 					tagLoad := fmt.Sprintf("%%opt.cmp.load.%d", g.tmpIdx)
 					g.tmpIdx++
 					cmpReg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+					cmpOp := "eq"
+					if expr.Operator == "!=" {
+						cmpOp = "ne"
+					}
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
 						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
-						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, %d\n", g.indent(), cmpReg, tagLoad, tag))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %d\n", g.indent(), cmpReg, cmpOp, tagLoad, tag))
 					}
 					return cmpReg
 				}
@@ -2239,6 +2346,37 @@ func (g *Generator) generateSliceLiteral(sb *strings.Builder, slice *parser.Slic
 func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpression) string {
 	// 檢查是否為條件語境（for/if 的條件表達式），是則直接輸出 i1
 	// 由調用方負責在 generateForStatement / generateIfExpression 中處理
+
+	// Option tag comparison: x == err/nil/ok for %option typed variables
+	// Delegate to generateInfixI1 and zext result to i64
+	// (needed when comparison appears inside && or ||, not just as if condition)
+	if expr.Operator == "==" || expr.Operator == "!=" {
+		if leftIdent, ok := expr.Left.(*parser.Identifier); ok {
+			var tag int64 = -1
+			if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+				if rightIdent.Value == "err" {
+					tag = 2
+				} else if rightIdent.Value == "nil" {
+					tag = 1
+				} else if rightIdent.Value == "ok" {
+					tag = 0
+				}
+			} else if _, ok := expr.Right.(*parser.NilLiteral); ok {
+				tag = 1
+			}
+			if tag >= 0 {
+				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
+					i1Result := g.generateInfixI1(sb, expr)
+					g.tmpIdx++
+					reg := fmt.Sprintf("%%optcmp.zext.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
+					}
+					return reg
+				}
+			}
+		}
+	}
 
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)

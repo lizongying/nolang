@@ -2,6 +2,7 @@ package fmt
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -1696,5 +1697,102 @@ int i8 | i16
 int i8 | i16`
 	if got := Format(input); got != expected {
 		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
+	}
+}
+
+// TestFormatMatchIdempotent verifies formatting test-match.no is idempotent.
+func TestFormatMatchIdempotent(t *testing.T) {
+	data, err := os.ReadFile("../../tests/test-match.no")
+	if err != nil {
+		t.Fatalf("read test-match.no: %v", err)
+	}
+	input := string(data)
+	result := Format(input)
+	// Double-format must be idempotent
+	if result != Format(result) {
+		t.Errorf("Format() is not idempotent\nfirst:\n%q\nsecond:\n%q", result, Format(result))
+	}
+}
+
+func TestFormatMatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "deep nesting",
+			input: `
+test-match = () {
+    x ?i64
+
+    // 保存的時候會改變，不要變成if/else 修復它
+    // 直接->是else
+    x: {
+        err -> log(it)
+        nil -> log(it)
+        -> log(it)
+    }
+
+    // 全部列舉
+    x: {
+        err -> log(it)
+        nil -> log(it)
+        ok -> log(it)
+    }
+
+    // 這裡-> 有else的意思
+    x: {
+        ok -> log(it)
+        -> log(it)
+    }
+
+    // 這是if/else
+    {
+        a == 1 -> log('1')
+        -> log('else')
+    }
+}
+            `,
+			expected: `test-match = () {
+    x ?i64
+
+    // 保存的時候會改變，不要變成if/else 修復它
+    // 直接->是else
+    x: {
+        err -> log(it)
+        nil -> log(it)
+        -> log(it)
+    }
+
+    // 全部列舉
+    x: {
+        err -> log(it)
+        nil -> log(it)
+        ok -> log(it)
+    }
+
+    // 這裡-> 有else的意思
+    x: {
+        ok -> log(it)
+        -> log(it)
+    }
+
+    // 這是if/else
+    {
+        a == 1 -> log('1')
+        -> log('else')
+    }
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
 	}
 }

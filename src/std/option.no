@@ -10,13 +10,13 @@
 //   x = err('msg')             // 設為錯誤
 //
 //   match
-//   x: { 
-//       nil -> log('nil')  
-//       err -> log(it)  
-//       -> log(it)  
+//   x: {
+//       nil -> log('nil')
+//       err -> log(it)
+//       -> log(it)
 //   }
 option {
-    val t,
+    ok t,
     nil bool,
     err str,
 }

@@ -1,0 +1,95 @@
+// test-option-match.no — 測試 option 變數的 match 語法
+//
+// match 語法：n: { err -> body; nil -> body; -> body }
+// 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
+
+test-err = () {
+    n = err('boom')
+    r = if n ==
+err {
+        .
+        
+        n
+        'got-err'
+    } elif n ==
+nil {
+        .
+        
+        n
+        'got-nil'
+    } elif  {
+        .
+        
+        n
+        'got-val'
+    }
+}
+print(r)
+
+test-nil = () {
+    n = nil
+    r = if n ==
+err {
+        .
+        
+        n
+        'got-err'
+    } elif n ==
+nil {
+        .
+        
+        n
+        'got-nil'
+    } elif  {
+        .
+        
+        n
+        'got-val'
+    }
+}
+print(r)
+
+test-val = () {
+    n = 42
+    r = if n ==
+err {
+        .
+        
+        n
+        'got-err'
+    } elif n ==
+nil {
+        .
+        
+        n
+        'got-nil'
+    } elif  {
+        .
+        
+        n
+        'got-val'
+    }
+}
+print(r)
+
+test-err-only = () {
+    n = err('boom')
+    r = if n ==
+err {
+        .
+        
+        n
+        'only-err'
+    } elif  {
+        .
+        
+        n
+        'otherwise'
+    }
+}
+print(r)
+
+test-err()
+test-nil()
+test-val()
+test-err-only()

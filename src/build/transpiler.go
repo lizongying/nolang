@@ -199,20 +199,22 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		}
 		// 3. 檢查 struct 方法調用（DotExpression）
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			var typeName string
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				var typeName string
 				if recv.Value == "self" {
 					// 從當前方法的 self 參數獲取類型
 					typeName = selfType
 				} else if recvType, exists := varTypes[recv.Value]; exists {
 					typeName = recvType
 				}
-
-				if typeName != "" {
-					methodName := typeName + "." + dot.Property
-					if retType, exists := funcTypes[methodName]; exists {
-						return retType
-					}
+			} else if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+				// 字串字面量接收者（如 '123'.to-i64()）→ str 型別
+				typeName = "str"
+			}
+			if typeName != "" {
+				methodName := typeName + "." + dot.Property
+				if retType, exists := funcTypes[methodName]; exists {
+					return retType
 				}
 			}
 		}
@@ -3194,6 +3196,20 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 		}
 	}
 
+	// Collect enum variant names from EnumDefinition and TaggedEnumDefinition
+	for _, stmt := range program.Statements {
+		if ed, ok := stmt.(*parser.EnumDefinition); ok {
+			for _, v := range ed.Values {
+				definedVars[v.Name] = true
+			}
+		}
+		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
+			for _, v := range ted.Variants {
+				definedVars[v.Name] = true
+			}
+		}
+	}
+
 	// 4. Walk statements and check for undefined references
 	for _, stmt := range program.Statements {
 		results = append(results, checkUndefinedVarsInStmt(stmt, definedVars, funcNames)...)
@@ -4060,6 +4076,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 
 	case *parser.LetStatement:
+		// Skip compiler-injected synthetic let statements (e.g. match arm `it` bindings)
+		if s.IsSynthetic {
+			// Still record its declared type so later synthetic references can resolve it
+			if s.Type != nil && s.Type.String() != "" {
+				varTypes[s.Name.Value] = s.Type.String()
+			}
+			break
+		}
 		// 檢查是否對函式名稱賦值
 		if funcNames[s.Name.Value] {
 			results = append(results, ValidateResult{

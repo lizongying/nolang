@@ -1,0 +1,10 @@
+// test-minimal-ok.no — 最小化 ok(cond) 測試
+test-ok = () {
+    n ?i64 = 200
+    r = n: {
+        ok(it > 127) -> 'too-big'
+        -> 'in-range'
+    }
+    print(r)
+}
+test-ok()

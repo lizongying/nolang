@@ -1,0 +1,24 @@
+test-match = () {
+    n = 42
+    result = if n ==
+err {
+        .
+        
+        n
+        'err'
+    } elif n ==
+nil {
+        .
+        
+        n
+        'nil'
+    } elif  {
+        .
+        
+        n
+        'ok'
+    }
+}
+print(result)
+
+test-match()

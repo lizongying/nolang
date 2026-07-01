@@ -1,0 +1,46 @@
+// test-opt-match-all.no — 測試 option match 的所有分支
+// err -> ... / nil -> ... / -> ... (val)
+
+test-err = () {
+    n ?i64 = err('boom')
+    r = n: {
+        err -> 'got-err'
+        nil -> 'got-nil'
+        -> 'got-val'
+    }
+    print(r)
+}
+
+test-nil = () {
+    n ?i64 = nil
+    r = n: {
+        err -> 'got-err'
+        nil -> 'got-nil'
+        -> 'got-val'
+    }
+    print(r)
+}
+
+test-val = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+        nil -> 'got-nil'
+        -> 'got-val'
+    }
+    print(r)
+}
+
+test-err-only = () {
+    n ?i64 = err('oops')
+    r = n: {
+        err -> 'only-err'
+        -> 'otherwise'
+    }
+    print(r)
+}
+
+test-err()
+test-nil()
+test-val()
+test-err-only()

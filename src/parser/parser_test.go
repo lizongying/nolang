@@ -509,6 +509,18 @@ func TestElif(t *testing.T) {
 			name:  "if_elif_multiline",
 			input: "if x > 5 {\n    a = 1\n} elif x < 0 {\n    b = 2\n} else {\n    c = 3\n}",
 		},
+		{
+			name:  "if_elif_bare",
+			input: "if x > 5 { a } elif { c = 0 }",
+		},
+		{
+			name:  "if_elif_elif_bare",
+			input: "if x > 5 { a } elif x < 0 { b } elif { c = 0 }",
+		},
+		{
+			name:  "if_elif_bare_multiline",
+			input: "if x > 5 {\n    a = 1\n} elif {\n    c = 0\n}",
+		},
 	}
 
 	for _, tt := range tests {

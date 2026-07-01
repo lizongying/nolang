@@ -17,8 +17,9 @@ type Parser struct {
 	currentToken lexer.Token
 	peekToken    lexer.Token
 	prevToken    lexer.Token
-	ctx          contextStack  // replaces inForCond, inMatchCond, inMatchArm, inExprContext
-	comments     []lexer.Token // collected comment tokens
+	ctx          contextStack      // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	comments     []lexer.Token     // collected comment tokens
+	varDeclTypes map[string]string // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 }
 
 // blockType — { body } 內部的型別分類
@@ -32,6 +33,22 @@ const (
 	blockTaggedEnum           // name { a t, b u }
 	blockMatch                // { pattern-> body } or { cond-> body }
 )
+
+// classifyBlock 分類 `{ body }` 的型別（預測：不消耗 token，只讀 peekToken）
+// 必須在 p.peekToken == LBRACE 時呼叫。
+// 使用有限預測：檢查 { 後第一個非 NEWLINE token + 第二個 token。
+// matchedIsOption 判斷 match 主表達式是否為 Option 變數（用於觸發完整性檢查）
+func (p *Parser) matchedIsOption(matched Expression) bool {
+	if matched == nil {
+		return false // 裸 match 不需完整分支
+	}
+	if ident, ok := matched.(*Identifier); ok {
+		if t, ok := p.varDeclTypes[ident.Value]; ok {
+			return strings.HasPrefix(t, "?")
+		}
+	}
+	return false // 未知變數預設不觸發完整性檢查
+}
 
 // classifyBlock 分類 `{ body }` 的型別（預測：不消耗 token，只讀 peekToken）
 // 必須在 p.peekToken == LBRACE 時呼叫。
@@ -1749,7 +1766,9 @@ func (p *Parser) parseLetStatement() Statement {
 	// 如果當前已經是 =，則 peek 的 IDENT 是值（表達式）而不是型別
 	// 例如: a = bigint{}  -> 這裡 bigint 是結構體字面量的型別名，不是型別註記
 	// 而: a bigint       -> 這裡 bigint 是型別註記
-	if typeToken.Type == lexer.IDENT && stmt.Type == nil && p.peekToken.Type != lexer.ASSIGN {
+	// 例外: a ?i64 = 42 — currentToken 為 i64，peekToken 為 =；typeToken 已設為 currentToken
+	//      僅在 option（?type）解析路徑下允許此繞過，避免 `n = value` 把變數名 n 誤當型別
+	if typeToken.Type == lexer.IDENT && stmt.Type == nil && (p.peekToken.Type != lexer.ASSIGN || (letIsOption && typeToken == p.currentToken)) {
 		typeName := typeToken.Literal
 		if letIsOption {
 			typeName = "?" + typeName
@@ -1768,6 +1787,12 @@ func (p *Parser) parseLetStatement() Statement {
 		// 只有型別宣告，無賦值，直接返回
 		if p.currentToken.Type == lexer.IDENT {
 			p.nextToken()
+		}
+		if stmt.Type != nil {
+			if p.varDeclTypes == nil {
+				p.varDeclTypes = make(map[string]string)
+			}
+			p.varDeclTypes[stmt.Name.Value] = typeString(stmt.Type)
 		}
 		return stmt
 	} else if p.peekToken.Type != lexer.ASSIGN {
@@ -1872,6 +1897,14 @@ func (p *Parser) parseLetStatement() Statement {
 				}
 			}
 		}
+	}
+
+	// 記錄變數宣告型別供後續 match 完整性檢查使用
+	if stmt.Type != nil {
+		if p.varDeclTypes == nil {
+			p.varDeclTypes = make(map[string]string)
+		}
+		p.varDeclTypes[stmt.Name.Value] = typeString(stmt.Type)
 	}
 
 	if stmt.Type == nil {
@@ -2942,6 +2975,20 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			ma.isWildcard = true
 			ma.isDotVal = true
 			p.nextToken() // consume DOT
+		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "ok" && p.peekToken.Type == lexer.LPAREN {
+			// ok(cond) -> body → conditional val arm
+			// Desugars to: matched == ok && cond (built in buildMatchDesugar)
+			p.nextToken() // skip ok
+			p.nextToken() // skip (
+			p.ctx.push(CTX_MATCH_ARM)
+			okCond := p.parseExpression(LOWEST)
+			p.ctx.pop()
+			if p.currentToken.Type != lexer.RPAREN {
+				return nil
+			}
+			p.nextToken() // skip )
+			ma.isRawCond = true
+			ma.condition = okCond
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
 			// err-> nil-> → option pattern
@@ -3016,8 +3063,11 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					p.nextToken()
 					continue
 				}
+				doc := p.collectDocComments()
 				s := p.parseStatement()
 				if s != nil {
+					setDoc(s, doc)
+					p.attachInlineComment(s)
 					bodyStmts = append(bodyStmts, s)
 				}
 			}
@@ -3026,11 +3076,16 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// Inline statement form（單行 body）
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
 			p.ctx.push(CTX_MATCH_ARM)
+			doc := p.collectDocComments()
 			stmt := p.parseStatement()
 			p.ctx.pop()
 			if stmt != nil {
+				setDoc(stmt, doc)
+				p.attachInlineComment(stmt)
 				bodyStmts = append(bodyStmts, stmt)
 			}
+			// Set arm body end position for inline form (current token is just past the body)
+			bodyBlock.RBrace = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		}
 
 		bodyBlock.Statements = bodyStmts
@@ -3064,12 +3119,28 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			}
 		}
 	}
-	if (hasErrArm || hasNilArm) && !hasElseArm {
-		if !hasErrArm || !hasNilArm || !hasValArm {
-			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
-				tok.Line, tok.Column))
+	// Check option match branch completeness (3 occurrences, keep in sync)
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+		if p.matchedIsOption(matched) {
+			var missing []string
+			if !hasErrArm {
+				missing = append(missing, "err")
+			}
+			if !hasNilArm {
+				missing = append(missing, "nil")
+			}
+			if !hasValArm {
+				missing = append(missing, "ok")
+			}
+			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+				tok.Line, tok.Column, strings.Join(missing, ", ")))
 			return nil
 		}
+	}
+
+	// Skip }
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
 	}
 
 	// Build if/elif/else chain
@@ -3190,10 +3261,21 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			}
 		}
 	}
-	if (hasErrArm || hasNilArm) && !hasElseArm {
-		if !hasErrArm || !hasNilArm || !hasValArm {
-			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
-				tok.Line, tok.Column))
+	// Check option match branch completeness (3 occurrences, keep in sync)
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+		if p.matchedIsOption(nil) {
+			var missing []string
+			if !hasErrArm {
+				missing = append(missing, "err")
+			}
+			if !hasNilArm {
+				missing = append(missing, "nil")
+			}
+			if !hasValArm {
+				missing = append(missing, "ok")
+			}
+			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+				tok.Line, tok.Column, strings.Join(missing, ", ")))
 			return nil
 		}
 	}
@@ -3274,6 +3356,7 @@ type matchArm struct {
 	condition   Expression
 	isWildcard  bool
 	isDotVal    bool // .-> → specific val branch (not catch-all)
+	isRawCond   bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
 	body        *BlockStatement
 	isBlockBody bool // true = block form (newline after ->), false = inline expression form
 }
@@ -3342,6 +3425,12 @@ func (p *Parser) classifyInfixReturn(expr *InfixExpression) returnTypeInfo {
 				return leftInfo
 			}
 			return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
+		}
+		// String concatenation: str + unknown (e.g. str + method-call) → str
+		if expr.Operator == "+" {
+			if leftInfo.typeName == "str" || rightInfo.typeName == "str" {
+				return returnTypeInfo{kind: returnConcrete, typeName: "str"}
+			}
 		}
 		return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
 	case "==", "!=", "<", ">", "<=", ">=":
@@ -3442,68 +3531,349 @@ func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []matchArm) bool 
 }
 
 // buildMatchDesugar 建立 if/elif/else 鏈
+//
+// 對 option match（含 err/nil arm），直接使用 `matched == err` / `matched == nil`
+// 比較，由 transpiler 的 generateInfixI1 識別 %option 變數並生成 tag 比較的 LLVM IR。
+// wildcard arm（含 ok/val/->）作為 else 分支。
 func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []matchArm) Expression {
 	if len(arms) == 0 {
 		return nil
 	}
 
+	// Determine element type from option type for per-arm `it` type inference.
+	// For ?i64, elemType = "i64"
+	elemType := ""
+	if ident, ok := matched.(*Identifier); ok {
+		if t, ok := p.varDeclTypes[ident.Value]; ok && strings.HasPrefix(t, "?") {
+			elemType = strings.TrimPrefix(t, "?")
+		}
+	}
+
+	// Shared it binding (used for hasRawCond or fallback)
+	itStmt := p.buildItBinding(tok, matched)
+
+	// For hasRawCond, set the element type on the shared binding for LSP inference
+	if itStmt != nil && elemType != "" {
+		itStmt.Type = &NamedType{Value: elemType}
+	}
+
+	// Check if any arm uses ok(cond) — if so, `it` must be bound BEFORE the if-chain
+	// (not inside arm bodies) because the condition references `it`.
+	hasRawCond := false
+	for _, arm := range arms {
+		if arm.isRawCond {
+			hasRawCond = true
+			break
+		}
+	}
+
 	// Build from last to first (inside-out)
 	var ifExpr *IfExpression
+	var defaultBody *BlockStatement       // 最內層 wildcard body（直接作為 else，避免 if 1 {} 包裝）
+	var defaultDotValBody *BlockStatement // track val branch body separately
+
+	// Check which variants are explicitly listed (for computing else arm complement)
+	hasExplicitOk, hasExplicitErr, hasExplicitNil := false, false, false
+	for _, a := range arms {
+		if a.isDotVal {
+			hasExplicitOk = true
+		} else if a.condition != nil {
+			if ident, ok := a.condition.(*Identifier); ok {
+				if ident.Value == "err" {
+					hasExplicitErr = true
+				} else if ident.Value == "nil" {
+					hasExplicitNil = true
+				}
+			} else if _, ok := a.condition.(*NilLiteral); ok {
+				hasExplicitNil = true
+			}
+		}
+	}
+
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
 
-		// Inject self = matched for all arms
-		itAssign := &LetStatement{
-			Token: tok,
-			Name:  &Identifier{Token: tok, Value: "self"},
-			Value: matched,
-		}
-		arm.body.Statements = append([]Statement{itAssign}, arm.body.Statements...)
-
-		if arm.isWildcard {
-			// Wildcard/default: just the body
-			if ifExpr == nil {
-				ifExpr = &IfExpression{
-					Token:       tok,
-					Condition:   &IntegerLiteral{Token: tok, Value: 1},
-					Consequence: arm.body,
+		// Create per-arm `it` binding with correct unwrapped type for LSP inference.
+		// For ?i64: err arm → it: err, nil arm → it: nil, ok arm → it: i64
+		if itStmt != nil && !hasRawCond && elemType != "" {
+			var armType string
+			if arm.isWildcard {
+				if arm.isDotVal {
+					armType = "ok" // ok-> is explicit ok case
+				} else {
+					// Compute complement: which variants remain for -> else arm
+					// Three variants: ok(elemType), err, nil
+					okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
+					if okListed && !errListed && nilListed {
+						armType = "err" // only err remains
+					} else if okListed && errListed && !nilListed {
+						armType = "nil" // only nil remains
+					} else if okListed && !errListed && !nilListed {
+						armType = "else" // err | nil
+					} else if !okListed && errListed && nilListed {
+						armType = "ok" // only i64 remains
+					} else if !okListed && !errListed && nilListed {
+						armType = "ok_err" // i64 | err
+					} else if !okListed && errListed && !nilListed {
+						armType = "ok_nil" // i64 | nil
+					} else if !okListed && !errListed && !nilListed {
+						armType = "ok_err_nil" // i64 | err | nil
+					}
+				}
+			} else if ident, ok := arm.condition.(*Identifier); ok {
+				if ident.Value == "err" || ident.Value == "nil" {
+					armType = ident.Value
+				} else if ident.Value == "ok" {
+					armType = "ok"
+				}
+			} else if _, ok := arm.condition.(*NilLiteral); ok {
+				armType = "nil"
+			}
+			if armType != "" {
+				// Use per-arm position so walker/index can distinguish synthetic bindings
+				var armTok lexer.Token
+				if arm.condition != nil {
+					pos := arm.condition.Pos()
+					armTok = lexer.Token{Type: lexer.IDENT, Literal: "it", Line: pos.Line, Column: pos.Column}
+				} else if len(arm.body.Statements) > 0 {
+					pos := arm.body.Statements[0].Pos()
+					armTok = lexer.Token{Type: lexer.IDENT, Literal: "it", Line: pos.Line, Column: pos.Column}
+				} else {
+					armTok = tok
+				}
+				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType); armIt != nil {
+					// Set the synthetic end position to cover the arm body
+					bodyEnd := arm.body.EndPos()
+					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.body.Statements) > 0 {
+						bodyEnd = arm.body.Statements[len(arm.body.Statements)-1].EndPos()
+					}
+					armIt.SyntheticEnd = bodyEnd
+					arm.body = p.prependStmt(arm.body, armIt)
 				}
 			} else {
-				ifExpr.Alternative = arm.body
+				arm.body = p.prependStmt(arm.body, itStmt)
+			}
+		} else if itStmt != nil && !hasRawCond {
+			arm.body = p.prependStmt(arm.body, itStmt)
+		}
+
+		if arm.isWildcard {
+			if ifExpr == nil {
+				if defaultBody != nil && arm.isDotVal {
+					// dotVal arm (ok->) after a regular -> wildcard (else):
+					// treat as conditional arm: if matched == ok { body } else { defaultBody }
+					cond := &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    &Identifier{Token: tok, Value: "ok"},
+					}
+					newIf := &IfExpression{
+						Token:       tok,
+						Condition:   cond,
+						Consequence: arm.body,
+						Alternative: defaultBody,
+						IsBareMatch: true,
+						MatchedExpr: matched,
+					}
+					ifExpr = newIf
+				} else {
+					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
+					defaultBody = arm.body
+					if arm.isDotVal {
+						defaultDotValBody = arm.body
+					}
+				}
+			} else {
+				if arm.isDotVal {
+					// ok-> when other arms already processed (e.g., {ok ->, nil ->, ->}):
+					// wrap as outer condition instead of overwriting the alternative
+					cond := &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    &Identifier{Token: tok, Value: "ok"},
+					}
+					newIf := &IfExpression{
+						Token:       tok,
+						Condition:   cond,
+						Consequence: arm.body,
+						Alternative: &BlockStatement{
+							Token:      tok,
+							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
+						},
+						IsBareMatch: true,
+						MatchedExpr: matched,
+					}
+					ifExpr = newIf
+				} else {
+					ifExpr.Alternative = arm.body
+				}
 			}
 		} else {
-			// Pattern match: compare matched == condition
-			cond := &InfixExpression{
-				Token:    tok,
-				Left:     matched,
-				Operator: "==",
-				Right:    arm.condition,
+			// 構造 match 條件
+			var cond Expression
+			if arm.isRawCond {
+				// ok(cond) arm: condition is (matched == ok) && cond
+				cond = &InfixExpression{
+					Token: tok,
+					Left: &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    &Identifier{Token: tok, Value: "ok"},
+					},
+					Operator: "&&",
+					Right:    arm.condition,
+				}
+			} else {
+				// matched == condition
+				// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
+				cond = &InfixExpression{
+					Token:    tok,
+					Left:     matched,
+					Operator: "==",
+					Right:    arm.condition,
+				}
 			}
 			newIf := &IfExpression{
 				Token:       tok,
 				Condition:   cond,
 				Consequence: arm.body,
 				Alternative: nil,
+				IsBareMatch: true,
+				MatchedExpr: matched,
 			}
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
 					Token:      tok,
 					Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 				}
+			} else if defaultBody != nil {
+				// 直接使用 wildcard body 作為 else，避免 if 1 {} 包裝
+				newIf.Alternative = defaultBody
+				if defaultDotValBody == defaultBody {
+					newIf.DotValBody = defaultBody
+				}
 			}
 			ifExpr = newIf
 		}
 	}
 
+	// 若所有 arm 都是 wildcard，或只有 wildcard 而無條件 arm
 	if ifExpr == nil {
+		if defaultBody != nil {
+			// 唯一 arm 是 wildcard：用 if 1 {} 包裝（無法避免）
+			ifExpr = &IfExpression{
+				Token:       tok,
+				Condition:   &IntegerLiteral{Token: tok, Value: 1},
+				Consequence: defaultBody,
+				IsBareMatch: true,
+				MatchedExpr: matched,
+			}
+			if defaultDotValBody == defaultBody {
+				ifExpr.DotValBody = defaultBody
+			}
+		} else {
+			return nil
+		}
+	}
+
+	// When ok(cond) arms exist, wrap the if-chain in `if 1 { it = matched; <if-chain> }`
+	// so that `it` is bound before the condition is evaluated.
+	if hasRawCond && itStmt != nil {
+		ifExpr = &IfExpression{
+			Token:     tok,
+			Condition: &IntegerLiteral{Token: tok, Value: 1},
+			Consequence: &BlockStatement{
+				Token: tok,
+				Statements: []Statement{
+					itStmt,
+					&ExpressionStatement{Token: tok, Expression: ifExpr},
+				},
+			},
+			IsBareMatch: true,
+			MatchedExpr: matched,
+		}
+	}
+
+	return ifExpr
+}
+
+// buildItBinding creates `it = matched` LetStatement when matched is a typed-Identifier.
+// Returns nil if matched is not a typed Identifier.
+func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStatement {
+	ident, ok := matched.(*Identifier)
+	if !ok {
+		return nil
+	}
+	t, ok := p.varDeclTypes[ident.Value]
+	if !ok {
+		return nil
+	}
+	_ = t
+	return &LetStatement{
+		Token:       tok,
+		Name:        &Identifier{Token: tok, Value: "it"},
+		Value:       matched,
+		IsSynthetic: true,
+	}
+}
+
+// buildItBindingForArm creates `it = matched` LetStatement with the correct type
+// for the specific match arm. For option types (e.g., ?i64):
+//
+//	err arm -> it: err (variant type)
+//	nil arm -> it: nil (variant type)
+//	ok arm  -> it: elemType (e.g., i64 for ?i64)
+func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armType string, elemType string) *LetStatement {
+	ident, ok := matched.(*Identifier)
+	if !ok {
+		return nil
+	}
+	t, ok := p.varDeclTypes[ident.Value]
+	if !ok || !strings.HasPrefix(t, "?") || elemType == "" {
 		return nil
 	}
 
-	// Top-level wildcard: wrap in BlockStatement
-	if ifExpr.Alternative == nil {
-		ifExpr.Condition = &IntegerLiteral{Token: tok, Value: 1}
+	var typeStr string
+	switch armType {
+	case "err":
+		typeStr = "err"
+	case "nil":
+		typeStr = "nil"
+	case "ok":
+		typeStr = elemType
+	case "else":
+		typeStr = "err | nil"
+	case "ok_err":
+		typeStr = elemType + " | err"
+	case "ok_nil":
+		typeStr = elemType + " | nil"
+	case "ok_err_nil":
+		typeStr = elemType + " | err | nil"
+	default:
+		return nil
 	}
-	return ifExpr
+
+	return &LetStatement{
+		Token:       tok,
+		Name:        &Identifier{Token: tok, Value: "it"},
+		Value:       matched,
+		Type:        &NamedType{Value: typeStr},
+		IsSynthetic: true,
+	}
+}
+
+// prependStmt prepends a statement to a BlockStatement, returning a new BlockStatement.
+func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStatement {
+	if body == nil {
+		return &BlockStatement{Statements: []Statement{stmt}}
+	}
+	stmts := make([]Statement, 0, len(body.Statements)+1)
+	stmts = append(stmts, stmt)
+	stmts = append(stmts, body.Statements...)
+	return &BlockStatement{Token: body.Token, Statements: stmts}
 }
 
 func (p *Parser) parseMatchExpression() Expression {
@@ -3718,12 +4088,21 @@ func (p *Parser) parseMatchExpression() Expression {
 			}
 		}
 	}
-	if (hasErrArm || hasNilArm) && !hasElseArm {
-		if !hasErrArm || !hasNilArm || !hasValArm {
-			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, and val",
-				tok.Line, tok.Column))
-			return nil
+	// Check option match branch completeness (3 occurrences, keep in sync)
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+		var missing []string
+		if !hasErrArm {
+			missing = append(missing, "err")
 		}
+		if !hasNilArm {
+			missing = append(missing, "nil")
+		}
+		if !hasValArm {
+			missing = append(missing, "ok")
+		}
+		p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+			tok.Line, tok.Column, strings.Join(missing, ", ")))
+		return nil
 	}
 
 	// Build if/elif/else chain from collected arms
@@ -3863,6 +4242,55 @@ func (p *Parser) parseIfExpression() Expression {
 func (p *Parser) parseElifBlock() *BlockStatement {
 	p.nextToken() // skip token before ELIF (e.g., } or NEWLINE)
 	p.nextToken() // skip ELIF → current = first token of condition
+
+	// Bare elif with no condition (e.g., `elif { body }`): treat as else block
+	if p.currentToken.Type == lexer.LBRACE {
+		body := p.parseBlockStatement()
+
+		// Skip newlines, check for more elif/else (same as the normal path below)
+		for p.peekToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+
+		var alternative *BlockStatement
+		if p.peekToken.Type == lexer.ELSE {
+			p.nextToken()
+			p.nextToken() // skip else
+			for p.currentToken.Type != lexer.LBRACE && p.currentToken.Type != lexer.EOF {
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.LBRACE {
+				alternative = p.parseBlockStatement()
+			}
+		} else if p.peekToken.Type == lexer.ELIF {
+			alternative = p.parseElifBlock()
+		}
+
+		// Consume the } that closes the last body in the chain
+		if p.currentToken.Type == lexer.RBRACE {
+			p.nextToken()
+		}
+
+		// If there's an alternative after bare elif, wrap body in an IfExpression
+		// so the else/more elif stays attached
+		if alternative != nil {
+			nestedIf := &IfExpression{
+				Token:       body.Token,
+				Condition:   &Identifier{Token: p.currentToken, Value: "true"},
+				Consequence: body,
+				Alternative: alternative,
+			}
+			return &BlockStatement{
+				Token: body.Token,
+				Statements: []Statement{
+					&ExpressionStatement{Token: body.Token, Expression: nestedIf},
+				},
+			}
+		}
+
+		// Simple bare elif (no more elif/else): return body directly as else block
+		return body
+	}
 
 	// Parse condition
 	condition := p.parseExpression(LOWEST)
@@ -4933,6 +5361,11 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 // (OR) or statement end (=, (, {, newline at the top level, semicolon, or
 // EOF) to decide whether this is a type alias or a let statement.
 func (p *Parser) looksLikeTypeAlias() bool {
+	// Inside a function body, IDENT IDENT NEWLINE is always a variable declaration,
+	// not a type alias. Type aliases are only meaningful at the module level.
+	if p.ctx.contains(CTX_FUNC_BODY) {
+		return false
+	}
 	// If the next token is `=`, this is a let statement, not a type alias.
 	if p.peekToken.Type == lexer.ASSIGN {
 		return false
@@ -5644,7 +6077,9 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 		return
 	}
 
+	p.ctx.push(CTX_FUNC_BODY)
 	def.Body = p.parseBlockStatement()
+	p.ctx.pop()
 
 	// Move inline comment on the same line as { from trailing to inline
 	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&

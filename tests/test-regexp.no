@@ -1,12 +1,8 @@
-main()
-
 matched = regexp-match('hello.*world', 'hello nolang world')
-println('regexp-match test 1:', matched)
+print('regexp-match test 1:', matched)
 
 not_matched = regexp-match('foo.*bar', 'hello world')
-println('regexp-match test 2:', not_matched)
+print('regexp-match test 2:', not_matched)
 
 match_str = regexp-find('[0-9]+', 'abc123def456')
-println('regexp-find test:', match_str)
-
-main()
+print('regexp-find test:', match_str)

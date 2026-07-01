@@ -263,16 +263,21 @@ func (mas *MultiAssignStatement) EndPos() lexer.Position { return mas.Value.EndP
 
 // a u8 = 8
 type LetStatement struct {
-	Token lexer.Token
-	Name  *Identifier
-	Type  Type
-	Value Expression
+	Token        lexer.Token
+	Name         *Identifier
+	Type         Type
+	Value        Expression
+	IsSynthetic  bool           // compiler-injected (e.g. `it = matched`), not from source
+	SyntheticEnd lexer.Position // override EndPos for synthetic bindings
 	CommentedNode
 }
 
 func (ls *LetStatement) statementNode()      {}
 func (ls *LetStatement) Pos() lexer.Position { return posFromToken(ls.Token) }
 func (ls *LetStatement) EndPos() lexer.Position {
+	if ls.IsSynthetic && (ls.SyntheticEnd.Line != 0 || ls.SyntheticEnd.Column != 0) {
+		return ls.SyntheticEnd
+	}
 	if ls.Value != nil {
 		return ls.Value.EndPos()
 	}
@@ -546,6 +551,12 @@ type IfExpression struct {
 	// IsBareMatch 標記此 IfExpression 來自裸 match 表達式 `{ cond -> body }`，
 	// 格式化器應輸出新式語法而非 if/else。
 	IsBareMatch bool
+	// MatchedExpr holds the matched expression in `x: { pattern -> body }` syntax.
+	// When set, the formatter outputs `matched: { ... }` instead of if/else.
+	MatchedExpr Expression
+	// DotValBody marks that the wildcard alternative is an ok-> or .-> val branch
+	// (not a catch-all else). The formatter outputs `ok -> body` instead of `-> body`.
+	DotValBody *BlockStatement
 }
 
 func (ie *IfExpression) expressionNode()     {}

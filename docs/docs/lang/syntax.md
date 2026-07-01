@@ -582,7 +582,7 @@ nullableString = err('some error')
 // 可通過match判斷
 x: {
     err -> log(it)
-    nil -> log('nil')
+    nil -> log(it)
     ->
         do-right-thing(it)
 }

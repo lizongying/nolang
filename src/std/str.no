@@ -590,15 +590,12 @@ str.to-u64 = () (val ?u64) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、負號或超出範圍
 str.to-byte = () (val ?byte) {
-    n = .to-i64()
-    if n == nil {
-        val = nil
-    } elif n == err {
-        val = err('invalid byte')
-    } elif n >= 0 && n <= 255 {
-        val = n
-    } else {
-        val = err('out of range for byte')
+    n ?i64 = .to-i64()
+    n: {
+        nil -> val = nil
+        err -> val = err('invalid byte')
+        ok(it >= 0 && it <= 255) -> val = it
+        -> val = err('out of range for byte')
     }
 }
 
@@ -615,7 +612,7 @@ str.to-f64 = () (val ?f64) {
     }
 
     // 簡易驗證：至少含一個數字字元
-    hasDigit = 0
+    has-digit = 0
     i = 0
     c = .[0]
     if c == 45 || c == 43 {
@@ -624,7 +621,7 @@ str.to-f64 = () (val ?f64) {
     for i < .len {
         c = .[i]
         if c >= 48 && c <= 57 {
-            hasDigit = 1
+            has-digit = 1
         } elif c == 46 {
             // 小數點 - 允許
         } elif c == 101 || c == 69 {
@@ -635,7 +632,7 @@ str.to-f64 = () (val ?f64) {
         }
         i = i + 1
     }
-    if hasDigit == 0 {
+    if has-digit == 0 {
         val = nil
         return
     }
