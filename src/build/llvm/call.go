@@ -181,6 +181,47 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			}
 		}
 		return ptrType + " " + ev
+	case *parser.StructLiteral:
+		// 結構體字面量：分配 temp slot 並依序 store 欄位
+		structName := a.Type
+		structTy := "%" + structName
+		fields := g.structTypes[structName]
+		fieldIndexByName := make(map[string]int)
+		for i, f := range fields {
+			fieldIndexByName[f.name] = i
+		}
+		g.tmpIdx++
+		tmpName := fmt.Sprintf("%%ref.st.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, structTy))
+		}
+		for _, f := range a.Fields {
+			fieldIdx, ok := fieldIndexByName[f.Name]
+			if !ok {
+				continue
+			}
+			fieldType := fields[fieldIdx].typ
+			fieldVal := g.generateExprWithSB(sb, f.Value)
+			fieldVal = g.stripLLVMType(fieldVal)
+			g.tmpIdx++
+			gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
+			}
+			if strings.HasPrefix(fieldType, "%") {
+				if !strings.HasPrefix(fieldVal, "%") {
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
+					}
+				} else if sb != nil {
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+				}
+			} else if sb != nil {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			}
+		}
+		return structTy + "* " + tmpName
 	default:
 		ev := g.generateExprWithSB(sb, arg)
 		if strings.HasPrefix(ev, "%str-longlit") {
@@ -1015,6 +1056,77 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 			return ptrType + " " + ev
+		case *parser.StructLiteral:
+			// 結構體字面量：分配 temp slot 並依序 store 欄位
+			structName := a.Type
+			if structName == "" {
+				// 匿名結構體：從函數簽名推斷 struct 名稱
+				if g.funcParamTypes != nil {
+					// 嘗試 fnName 以及去除前綴（如 "n."）後的名稱
+					candidates := []string{fnName}
+					if idx := strings.LastIndex(fnName, "."); idx > 0 {
+						candidates = append(candidates, fnName[idx+1:])
+					}
+					for _, cname := range candidates {
+						if nolangTypes, ok := g.funcParamTypes[cname]; ok {
+							if argIdx >= 0 && argIdx < len(nolangTypes) {
+								structName = nolangTypes[argIdx]
+								break
+							}
+						}
+					}
+				}
+			}
+			if structName == "" {
+				// 無法推斷，fallback 為 i64
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), tmpName))
+				}
+				return "i64* " + tmpName
+			}
+			structTy := "%" + structName
+			fields := g.structTypes[structName]
+			fieldIndexByName := make(map[string]int)
+			for i, f := range fields {
+				fieldIndexByName[f.name] = i
+			}
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.st.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, structTy))
+				// 先將整個結構體初始化為 zeroinitializer，避免未指定的欄位帶有 stack 殘值
+				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), structTy, structTy, tmpName))
+			}
+			for _, f := range a.Fields {
+				fieldIdx, ok := fieldIndexByName[f.Name]
+				if !ok {
+					continue
+				}
+				fieldType := fields[fieldIdx].typ
+				fieldVal := g.generateExprWithSB(sb, f.Value)
+				fieldVal = g.stripLLVMType(fieldVal)
+				g.tmpIdx++
+				gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
+				}
+				if strings.HasPrefix(fieldType, "%") {
+					if !strings.HasPrefix(fieldVal, "%") {
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
+						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+					}
+				} else if sb != nil {
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+				}
+			}
+			return structTy + "* " + tmpName
 		default:
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.HasPrefix(ev, "%str-longlit") {

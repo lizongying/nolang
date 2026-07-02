@@ -68,6 +68,7 @@ func (p *Parser) classifyBlock() blockType {
 		skip++
 	}
 	tok1 := p.lexer.LookAhead(skip)
+	tok2 := p.lexer.LookAhead(skip + 1)
 
 	// Tokens that only appear in match arms, not struct/enum/iface
 	switch tok1.Type {
@@ -80,9 +81,11 @@ func (p *Parser) classifyBlock() blockType {
 	if tok1.Type != lexer.IDENT && tok1.Type != lexer.NIL {
 		return blockUnknown
 	}
-	tok2 := p.lexer.LookAhead(skip + 1)
 	switch tok2.Type {
 	case lexer.COMMA:
+		return blockEnum
+	case lexer.ASSIGN:
+		// enum 顯式賦值：Name { VARIANT = value, ... }
 		return blockEnum
 	case lexer.LPAREN:
 		return blockIface
@@ -107,6 +110,20 @@ func (p *Parser) classifyBlock() blockType {
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
+		// Struct literal with expression value: name : <expr> , or name : <expr> }
+		// Scan forward to find `,` or `}` (skipping nested brackets); if we hit `->`
+		// before any top-level `,`/`}`, it's a match arm. Otherwise it's a struct literal.
+		if tok3.Type == lexer.IDENT {
+			// Heuristic: only treat as struct literal if tok4 looks like an operator
+			// (|, &, ^, +, -, *, /, %, <<, >>) suggesting "name : expr" where expr is
+			// a compound expression that will be followed by , or }.
+			if tok4.Type == lexer.OR || tok4.Type == lexer.AND || tok4.Type == lexer.XOR ||
+				tok4.Type == lexer.ADD || tok4.Type == lexer.SUB || tok4.Type == lexer.MUL ||
+				tok4.Type == lexer.QUO || tok4.Type == lexer.MOD ||
+				tok4.Type == lexer.SHL || tok4.Type == lexer.SHR {
+				return blockStruct
+			}
+		}
 		return blockMatch
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
 		lexer.LESS_EQUALS, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
@@ -121,17 +138,43 @@ func (p *Parser) classifyBlock() blockType {
 			return blockStruct
 		}
 		if tok3.Type == lexer.COMMA {
+			// Pure tagged enum: read, write, append, ...
+			// (struct fields are "name type," — IDENT+IDENT+COMMA, not IDENT+COMMA)
+			if tok1.Type == lexer.NIL {
+				return blockTaggedEnum
+			}
+			// For IDENT, need to check if next is COMMA (tagged enum) or IDENT (struct field)
+			// peek one more: if IDENT, struct; if COMMA, tagged enum
+			// (already at COMMA here means the simple case read, write, ...)
 			return blockTaggedEnum
 		}
 		// 3+ tokens before newline — could be struct with modifier or tagged enum
-		// Scan forward to find comma (tagged enum) or newline (struct)
-		for i := skip + 3; i < skip+15; i++ {
+		// Scan forward to find comma (tagged enum) or newline (struct).
+		// For struct fields: pattern is IDENT IDENT , (skip IDENT type, then comma)
+		// For tagged enum: pattern is IDENT , (then next IDENT, or end)
+		for i := skip + 3; i < skip+30; i++ {
 			t := p.lexer.LookAhead(i)
-			if t.Type == lexer.COMMA {
-				return blockTaggedEnum
-			}
 			if t.Type == lexer.NEWLINE || t.Type == lexer.RBRACE || t.Type == lexer.EOF {
 				return blockStruct
+			}
+			if t.Type == lexer.COMMA {
+				// Look at next: if IDENT, could still be struct (more fields) or tagged enum (more variants)
+				// Use the previous token: if previous was IDENT (type-like), it's struct; if previous was IDENT (variant), could be either
+				// Heuristic: scan 2 ahead — if IDENT then IDENT after (i.e. ", IDENT IDENT"), it's likely struct
+				prev := p.lexer.LookAhead(i - 1)
+				next1 := p.lexer.LookAhead(i + 1)
+				next2 := p.lexer.LookAhead(i + 2)
+				if prev.Type == lexer.IDENT && next1.Type == lexer.IDENT {
+					// ", IDENT IDENT" → could be struct field continuation or tagged enum variant with no payload
+					// If next2 is COMMA or RBRACE/NEWLINE: tagged enum (variant, ...)
+					// If next2 is anything else: ambiguous, but likely struct
+					if next2.Type == lexer.COMMA || next2.Type == lexer.RBRACE || next2.Type == lexer.NEWLINE {
+						return blockTaggedEnum
+					}
+					// Otherwise keep scanning — likely struct
+				} else {
+					return blockTaggedEnum
+				}
 			}
 		}
 		return blockUnknown
@@ -188,6 +231,9 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	switch tok2.Type {
 	case lexer.COMMA:
 		return blockEnum
+	case lexer.ASSIGN:
+		// enum 顯式賦值：Name { VARIANT = value, ... }
+		return blockEnum
 	case lexer.LPAREN:
 		return blockIface
 	case lexer.RARROW:
@@ -226,6 +272,41 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			if tok4b.Type == lexer.INT &&
 				(tok5b.Type == lexer.NEWLINE || tok5b.Type == lexer.RBRACE || tok5b.Type == lexer.COMMA) {
 				return blockStruct
+			}
+		}
+		// Struct literal with bitwise/arithmetic expression: name : <IDENT> <OP> <IDENT>
+		// e.g. mode: o-wronly | o-creat → name: IDENT OR IDENT
+		// Without this, the parser falls back to blockMatch and parses the field
+		// as the condition of an if-expression.
+		if tok3.Type == lexer.IDENT {
+			if tok4.Type == lexer.OR || tok4.Type == lexer.AND || tok4.Type == lexer.XOR ||
+				tok4.Type == lexer.ADD || tok4.Type == lexer.SUB || tok4.Type == lexer.MUL ||
+				tok4.Type == lexer.QUO || tok4.Type == lexer.MOD ||
+				tok4.Type == lexer.SHL || tok4.Type == lexer.SHR {
+				return blockStruct
+			}
+			// Struct literal: name : EnumName.Variant ... (then operator, comma, or brace)
+			// e.g. mode: FileMode.WRITE | FileMode.CREATE
+			//      perm: FilePerm.PERM_600
+			if tok4.Type == lexer.DOT {
+				var tok5, tok6 lexer.Token
+				if base == -1 {
+					tok5 = p.lexer.LookAhead(3)
+					tok6 = p.lexer.LookAhead(4)
+				} else {
+					tok5 = p.lexer.LookAhead(base + 4)
+					tok6 = p.lexer.LookAhead(base + 5)
+				}
+				// name: EnumName.Variant [op] ... → struct literal
+				if tok5.Type == lexer.IDENT {
+					if tok6.Type == lexer.OR || tok6.Type == lexer.AND || tok6.Type == lexer.XOR ||
+						tok6.Type == lexer.ADD || tok6.Type == lexer.SUB || tok6.Type == lexer.MUL ||
+						tok6.Type == lexer.QUO || tok6.Type == lexer.MOD ||
+						tok6.Type == lexer.SHL || tok6.Type == lexer.SHR ||
+						tok6.Type == lexer.NEWLINE || tok6.Type == lexer.RBRACE || tok6.Type == lexer.COMMA {
+						return blockStruct
+					}
+				}
 			}
 		}
 		return blockMatch
@@ -2577,7 +2658,16 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseSliceLiteral()
 
 	case lexer.LBRACE:
-		if p.classifyBlockAtCurrent() == blockMatch {
+		if p.classifyBlockAtCurrent() == blockStruct {
+			// 匿名結構體字面量：{ field: value, ... }
+			result := p.parseStructLiteral(nil)
+			if result != nil {
+				leftExp = result
+			} else {
+				p.nextToken()
+				return nil
+			}
+		} else if p.classifyBlockAtCurrent() == blockMatch {
 			leftExp = p.parseBareMatchExpr()
 		} else {
 			p.nextToken()
@@ -5183,16 +5273,34 @@ func (p *Parser) parseEnumDefinition() Statement {
 			return nil
 		}
 
+		variantName := p.currentToken.Literal
+		p.nextToken() // skip variant name
+
+		// 支援顯式賦值：VARIANT = <int>
+		var variantValue int64 = nextVal
+		if p.currentToken.Type == lexer.ASSIGN {
+			p.nextToken() // skip =
+			intExpr := p.parseIntegerLiteral()
+			if intLit, ok := intExpr.(*IntegerLiteral); ok {
+				variantValue = intLit.Value
+			} else {
+				msg := fmt.Sprintf("line %d, column %d: expected integer value after '=', got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+		} else {
+			nextVal++
+		}
+
 		ev := &EnumValue{
 			Token: p.currentToken,
-			Name:  p.currentToken.Literal,
-			Value: nextVal,
+			Name:  variantName,
+			Value: variantValue,
 		}
-		nextVal++
-		p.nextToken()
 
 		ed.Values = append(ed.Values, ev)
-		p.enumVariantNames[ed.Name] = append(p.enumVariantNames[ed.Name], ev.Name)
+		p.enumVariantNames[ed.Name] = append(p.enumVariantNames[ed.Name], variantName)
 	}
 
 	if p.currentToken.Type == lexer.RBRACE {
@@ -5735,14 +5843,19 @@ func (p *Parser) parseStructDefinition() Statement {
 }
 
 func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
-	ident, ok := typeExpr.(*Identifier)
-	if !ok {
-		// Not a valid struct literal type expression; caller should handle as match
-		return nil
+	// 處理匿名結構體：typeExpr 為 nil 時，用空字串作為 type（由 codegen 推斷）
+	var typeName string
+	if typeExpr != nil {
+		ident, ok := typeExpr.(*Identifier)
+		if !ok {
+			// Not a valid struct literal type expression; caller should handle as match
+			return nil
+		}
+		typeName = ident.Value
 	}
 	sl := &StructLiteral{
 		Token:  p.currentToken,
-		Type:   ident.Value,
+		Type:   typeName,
 		Fields: []*StructField{},
 	}
 
@@ -6298,9 +6411,18 @@ func (p *Parser) parseCallExpression(function Expression) Expression {
 	}
 
 	for {
+		// 跳過換行，支持多行函數調用參數
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
 		arg := p.parseArgument()
 		if arg != nil {
 			expr.Arguments = append(expr.Arguments, arg)
+		}
+
+		// 跳過結尾的換行
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
 		}
 
 		if p.currentToken.Type == lexer.COMMA {

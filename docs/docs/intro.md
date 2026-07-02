@@ -51,7 +51,7 @@ u = user {
 
 // 方法
 user.greet = () {
-    print('Hello, ' + .name)
+    print('Hello, ' - .name)
 }
 
 u.greet()

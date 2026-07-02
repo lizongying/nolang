@@ -1,0 +1,14 @@
+main = () {
+    tmp = '/tmp/nolang-perm-test.txt'
+    remove(tmp)
+
+    fd = open-file(tmp, 577, 511)
+    if fd < 0 {
+        print('fail')
+        return
+    }
+    print('ok')
+    close(fd)
+}
+
+main()

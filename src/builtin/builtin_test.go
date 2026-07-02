@@ -154,8 +154,8 @@ func TestOSCLibCallMethods(t *testing.T) {
 		{"is-file", "stat"},
 		{"now", "time"},
 		{"sleep", "sleep"},
-		{"open-read", "open"},
-		{"open-write", "open"},
+		{"open-read", "nolang.open3"},
+		{"open-write", "nolang.open3"},
 		{"close", "close"},
 	}
 	for _, tt := range tests {
@@ -178,10 +178,10 @@ func TestStrconvCLibCallMethods(t *testing.T) {
 		name     string
 		funcName string
 	}{
-		{"str-to-i64", "atoi"},
-		{"str-to-f64", "strtod"},
-		{"str-to-f32", "strtod"},
-		{"str-to-u64", "strtoull"},
+		{"str.to-i64", "atoi"},
+		{"str.parse-f64-raw", "strtod"},
+		{"str.to-f32", "strtod"},
+		{"str.to-u64", "strtoull"},
 	}
 	for _, tt := range tests {
 		found := false
@@ -203,17 +203,17 @@ func TestStrconvSprintfMethods(t *testing.T) {
 		name string
 		fmt  string
 	}{
-		{"i8-to-str", "%hhd"},
-		{"i16-to-str", "%hd"},
-		{"i32-to-str", "%d"},
-		{"i64-to-str", "%lld"},
-		{"u8-to-str", "%hhu"},
-		{"u16-to-str", "%hu"},
-		{"u32-to-str", "%u"},
-		{"u64-to-str", "%llu"},
-		{"f32-to-str", "%g"},
-		{"f64-to-str", "%g"},
-		{"byte-to-str", "%hhu"},
+		{"i8.to-str", "%hhd"},
+		{"i16.to-str", "%hd"},
+		{"i32.to-str", "%d"},
+		{"i64.to-str", "%lld"},
+		{"u8.to-str", "%hhu"},
+		{"u16.to-str", "%hu"},
+		{"u32.to-str", "%u"},
+		{"u64.to-str", "%llu"},
+		{"f32.to-str", "%g"},
+		{"f64.to-str", "%g"},
+		{"byte.to-str", "%hhu"},
 		{"char-to-str", "%c"},
 	}
 	for _, tt := range tests {

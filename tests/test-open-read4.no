@@ -1,0 +1,15 @@
+main = () {
+    tmp = '/tmp/nolang-fs-test.txt'
+    remove(tmp)
+
+    fd-w = open-file(tmp, 577, 0)
+    if fd-w < 0 {
+        print('fail: open-file write')
+        return
+    }
+    print('ok: open-file write')
+    close(fd-w)
+    print('done')
+}
+
+main()

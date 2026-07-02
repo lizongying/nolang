@@ -937,7 +937,11 @@ func runCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmpDir)
+	if os.Getenv("NOLANG_KEEP_IR") == "" {
+		defer os.RemoveAll(tmpDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "[debug] keep run tmp dir: %s\n", tmpDir)
+	}
 	outPath := filepath.Join(tmpDir, "out")
 	opts := nbuild.BuildOptions{
 		CC:      *cc,

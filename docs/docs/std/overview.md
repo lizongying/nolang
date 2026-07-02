@@ -32,7 +32,7 @@ Nolang 型別到 LLVM 的對映關係：
 - **切片 `[]t`**：底層 `{ t*, i64 }`（data, len）
 - **陣列 `[N]t`**：LLVM 固定大小陣列
 - **字串 `str`**：union 型別（short ≤127 byte 存棧上 / long 存堆上），支援 `s[i]`、`s[i..j]`、`s + t`
-- **列舉/Union**：`option { val t, nil bool, err str }`（tagged enum）
+- **列舉/Union**：`option { ok t, nil bool, err str }`（tagged enum）
 - **結構體**：`point { x i64, y i64 }`
 - **配列**：底層 linked-hash-map
 - **迭代器**：`iterator { next()(val i64, ok i64) }`
@@ -97,8 +97,8 @@ bool-to-str(v), byte-to-str(v), char-to-str(v)
 ### char — 字元操作
 
 ```nolang
-char.to-bytes(c)(out []byte, n)  // Unicode → UTF-8 位元組
-char.to-str(c)(s)                // Unicode → 字串（UTF-8）
+char.to-bytes()(out []byte)      // Unicode → UTF-8 位元組（方法）
+char.to-str()(s)                 // Unicode → 字串（UTF-8，方法）
 char.is-digit(c)(ok)             // 是否為數字 (0-9)
 char.is-alpha(c)(ok)             // 是否為字母 (a-z, A-Z)
 char.is-alnum(c)(ok)             // 是否為字母或數字
@@ -111,8 +111,8 @@ char.to-lower(c)(r)              // 轉小寫（ASCII）
 
 ```nolang
 a.eq(b, n)(ok)                // 相等比較（方法）
-src.copy(dst, n)              // 字串複製（方法）
-s.fill(c, n)                  // 填充（支援 UTF-8 char，方法）
+s.copy()(dst)                 // 字串複製（方法）
+s.fill(val byte)              // 填充 byte 值（方法）
 s.index(sub)(pos)             // 子字串位置
 s.contains(sub)(ok)           // 是否包含
 s.starts-with(sub)(ok)        // 前綴判斷
@@ -124,12 +124,22 @@ s.repeat(n)(out)              // 重複
 s.slice(start, end)(out)      // 切片
 s.to-bytes()(b)               // 轉 []byte
 b.to-str()(s)                 // []byte 轉 str（方法）
-s.to-i64()(v)                 // 字串轉 i64
+s.to-i64()(v)                 // 字串轉 i64（回傳 ?i64）
+s.to-i8()(v)                  // 字串轉 i8（回傳 ?i8）
+s.to-i16()(v)                 // 字串轉 i16（回傳 ?i16）
+s.to-i32()(v)                 // 字串轉 i32（回傳 ?i32）
+s.to-u8()(v)                  // 字串轉 u8（回傳 ?u8）
+s.to-u16()(v)                 // 字串轉 u16（回傳 ?u16）
+s.to-u32()(v)                 // 字串轉 u32（回傳 ?u32）
+s.to-u64()(v)                 // 字串轉 u64（回傳 ?u64）
+s.to-byte()(v)                // 字串轉 byte（回傳 ?byte）
+s.to-f64()(v)                 // 字串轉 f64（回傳 ?f64）
+s.to-bool()(v)                // 字串 "true"/"false" 轉 bool（回傳 ?bool）
 v.to-str()(s)                 // i64 轉字串（方法）
 s.reverse()(out)              // 反轉
 s.compare(b)(c)               // 字典序比較
 s.count()(n)                  // code point 總數
-s.replace-char(old, new)      // 取代字元
+s.replace-char(old, new)(val) // 取代字元（返回結果字串）
 s.trim-char(c)(out)           // 去指定字元
 s.empty()(ok)                 // 是否為空
 ```
@@ -138,46 +148,58 @@ s.empty()(ok)                 // 是否為空
 
 ```nolang
 max(a, b), min(a, b)          // 大小值
-clamp(v, lo, hi)              // 限制範圍
-abs-i64(v), abs-f64(v)        // 絕對值
-sign-i64(v), sign-f64(v)      // 正負號（-1/0/1）
+num.clamp(lo, hi)(r)          // 限制範圍（方法）
+abs(a)(r)                     // 絕對值（num 泛型）
+num.sign()(r)                 // 正負號（-1/0/1，方法）
 even(v), odd(v)               // 奇偶判斷
 gcd(a, b), lcm(a, b)          // 最大公因數/最小公倍數
-pow-i64(a, b)                 // 整數冪
+pow(a, n)(r)                  // 整數冪
 i64-to-f64(v), f64-to-i64(v)  // 數值轉換
-v.to-str()(s)                 // i64 轉字串（方法）
-div-mod(a, b)(q, r)           // 除法取商餘
-between(v, lo, hi)(ok)        // 範圍判斷
+int.to-str()(s)               // i64 轉字串（方法）
+div(a, b)(q), mod(a, b)(r)    // 除法取商 / 取模
 swap(a, b)                    // 交換
-is-nan(v), is-inf(v)          // NaN/Inf 判斷
+float.is-nan()(yes)           // NaN 判斷（方法）
+float.is-inf()(yes)           // Inf 判斷（方法）
+
+// 範圍常數
+i8.MIN / MAX                  // -128 / 127
+i16.MIN / MAX                 // -32768 / 32767
+i32.MIN / MAX                 // -2147483648 / 2147483647
+i64.MIN / MAX                 // -2^63 / 2^63-1
+u8.MIN / MAX                  // 0 / 255
+u16.MIN / MAX                 // 0 / 65535
+u32.MIN / MAX                 // 0 / 4294967295
+u64.MIN / MAX                 // 0 / 2^64-1
 ```
 
 ### byte — 位元組操作
 
 ```nolang
-to-bytes-be(v, n, out)          // i64 → big-endian []byte
-to-bytes-le(v, n, out)          // i64 → little-endian []byte
-bytes-to-i64-be(b, n)(v)        // big-endian []byte → i64
-bytes-to-i64-le(b, n)(v)        // little-endian []byte → i64
-arr-to-vec-byte(a, n)(v)        // [n]byte → []byte
-vec-to-arr-byte(v, n, out)      // []byte → [n]byte
+to-bytes-be(v)(out)             // i64 → big-endian []byte（8 位元組）
+to-bytes-le(v)(out)             // i64 → little-endian []byte（8 位元組）
+bytes-to-i64-be(in)(v)          // big-endian []byte → i64（1~8 位元組）
+bytes-to-i64-le(in)(v)          // little-endian []byte → i64（1~8 位元組）
+arr-to-vec-byte(arr)(out)       // [n]byte → []byte
+vec-to-arr-byte(in)(out)        // []byte → [n]byte（至多 8 位元組）
+[]byte.to-str()(s)              // []byte 轉 str（方法）
+byte.to-str()(s)                // byte 轉 str（方法）
 ```
 
 ### vec — 切片操作
 
 ```nolang
-vec-create(t)(v)                // 建立空切片
-[]t.eq(b)(ok)                   // 相等比較
+vec-create(n, val)(v)           // 建立長度 n 的切片，全部填充 val
+[]t.eq(a, b, n)(ok)            // 相等比較
 []t.len()(n)                    // 長度
 []t.push(val)                   // 追加
-[]t.pop()(val)                  // 彈出
-[]t.contains(val)(ok)           // 是否包含
-[]t.reverse()                   // 反轉
-[]t.clone()(out)                // 複製
-[]t.fill(val)                   // 填充
-[]t.to-arr(n)(arr)              // 轉陣列
-sort-asc(t, n)                  // 升序排序
-sort-desc(t, n)                 // 降序排序
+[]t.pop()(val, new-n)           // 彈出
+[]t.contains(n, val)(found)     // 是否包含（n 為長度）
+[]t.reverse(n)                  // 反轉前 n 個元素
+[]t.clone(dst)                  // 複製到 dst
+[]t.fill(n, val)                // 前 n 個元素填充
+[]t.to-arr()(arr)               // 轉陣列
+[]t.sort-asc()                  // 升序排序（方法）
+[]t.sort-desc()                 // 降序排序（方法）
 ```
 
 ### arr — 陣列操作
@@ -311,11 +333,11 @@ str.path-split() (d, f) (dn, fn)   // 分割為目錄 + 檔名
 ### bufio — 緩衝讀取
 
 ```nolang
-reader-init(r, fd, buf)        // 初始化
-reader-fill(r, buf)             // 填充緩衝區
-reader-read-byte(r, buf)(b)     // 讀取一個位元組
-reader-read-line(r, buf)(line)  // 讀取一行
-reader-close(r, buf)            // 關閉
+reader.init(fd, buf)(r)         // 初始化緩衝讀取器（傳回 reader）
+reader.fill()(ok)               // 填充緩衝區
+reader.read-byte()(b, ok)       // 讀取一個位元組
+reader.read-line(line)(ok)      // 讀取一行到 line
+reader.close()                  // 關閉
 ```
 
 ---
@@ -360,14 +382,14 @@ debug(msg), info(msg), warn(msg), error(msg), fatal(msg)
 
 ```nolang
 add(s, n, val)(new-n)           // 新增元素
-remove(s, n, val)(new-n)        // 移除元素
+set-remove(s, n, val)(new-n)        // 移除元素
 contains(s, n, val)(ok)         // 是否包含
-union(a, an, b, bn, out)(n)     // 聯集
-intersection(a, an, b, bn, o)(n)// 交集
-difference(a, an, b, bn, o)(n)  // 差集
+union(a, an, b, bn)(new-an)     // 聯集
+intersection(a, an, b, bn)(out, n)// 交集
+difference(a, an, b, bn)(out, n)  // 差集
 to-vec(s, n)(v)                 // 轉切片
-size(s, n)(n)                   // 元素個數
-empty(n)(ok)                    // 是否為空
+set-size(s, n)(sz)                   // 元素個數
+set-empty(s, n)(yes)                    // 是否為空
 ```
 
 ### deque — 雙端佇列
@@ -603,19 +625,19 @@ to-upper-rune(rune), to-lower-rune(rune)  // 大小寫轉換
 ### uuid — UUID v4 產生與解析
 
 ```nolang
-new-v4(seed)(uuid)                  // 產生 UUID v4
-to-str(u)(s)                        // 轉小寫字串
-to-str-upper(u)(s)                  // 轉大寫字串
-from-str(s)(u, ok)                  // 從字串解析
-parse-with-dashes(s)(u, ok)         // 含連字號解析
-parse-no-dashes(s)(u, ok)           // 無連字號解析
-validate(s)(ok)                     // 驗證 UUID 格式
-version(u)(v)                       // 取得版本
-variant(u)(v)                       // 取得變體
-is-nil(u)(ok)                       // 是否為 nil
-eq(a, b)(ok)                        // 相等比較
-cmp(a, b)(c)                        // 比較
-nil-uuid()(u)                       // 回傳 nil UUID
+new-v4(state)(out)                  // 產生 UUID v4
+uuid.to-str(out)(out-n)             // 轉小寫字串（方法）
+uuid.to-str-upper(out)(out-n)       // 轉大寫字串（方法）
+from-str(s, sn, out)(ok)            // 從字串解析（支援連字號/不帶）
+parse-with-dashes(s, pos, out)(ok)  // 含連字號解析
+parse-no-dashes(s, pos, out)(ok)    // 無連字號解析
+uuid.validate()(ok)                 // 驗證 UUID 格式（方法）
+uuid.version()(v)                   // 取得版本（方法）
+uuid.variant()(v)                   // 取得變體（方法）
+uuid.is-nil()(yes)                  // 是否為 nil（方法）
+uuid.eq(b)(yes)                     // 相等比較（方法）
+uuid.cmp(b)(r)                      // 比較（方法）
+nil-uuid(out)                       // 回傳 nil UUID
 ```
 
 ### bigint — 任意精度整數

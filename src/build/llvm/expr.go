@@ -282,6 +282,23 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 			}
 		}
 	}
+	// Dot expression for bool field (e.g. opts.excl) is already i1
+	if dot, ok := cond.(*parser.DotExpression); ok {
+		if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+					structName := strings.TrimPrefix(t, "%")
+					if fields, ok := g.structTypes[structName]; ok {
+						for _, f := range fields {
+							if f.name == dot.Property && f.typ == "i1" {
+								return g.generateExprWithSB(sb, cond)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	// Default: assume i64, need trunc to i1
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
@@ -856,6 +873,22 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		varName = ident.Value
 	}
 	fieldName := expr.Property
+
+	// 命名空間 enum 變體存取：FileMode.WRITE、FilePerm.PERM_600
+	if g.enumVariants != nil {
+		if variants, ok := g.enumVariants[varName]; ok {
+			if val, ok := variants[fieldName]; ok {
+				return fmt.Sprintf("%d", val)
+			}
+		}
+	}
+	// Fallback: 命名空間風格存取，property 為模組級整數常量（如 FileMode.WRITE 中的 WRITE）
+	if g.enumVariantIndex != nil {
+		if val, ok := g.enumVariantIndex[fieldName]; ok {
+			return fmt.Sprintf("%d", val)
+		}
+	}
+
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%dot.gep.%d", g.tmpIdx)
 	g.tmpIdx++

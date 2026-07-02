@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -649,6 +650,11 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
 			// 否則註冊新變數。
 			vt := g.varLLVMType(s)
+			typeStr := ""
+			if s.Type != nil {
+				typeStr = s.Type.String()
+			}
+			fmt.Fprintf(os.Stderr, "DEBUG collect synthetic it: name=%s type=%s vt=%s\n", s.Name.Value, typeStr, vt)
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" {
 				vars[s.Name.Value] = vt
 				if g.varTypes != nil {
@@ -660,6 +666,11 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// Don't overwrite existing type (e.g. %option declared with ?type)
 		if _, exists := vars[s.Name.Value]; !exists {
 			vt := g.varLLVMType(s)
+			typeStr := ""
+			if s.Type != nil {
+				typeStr = s.Type.String()
+			}
+			fmt.Fprintf(os.Stderr, "DEBUG collect let: name=%s type=%s vt=%s\n", s.Name.Value, typeStr, vt)
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
@@ -839,6 +850,15 @@ func (g *Generator) collectVarDeclsFromExpr(expr parser.Expression, vars map[str
 }
 
 func (g *Generator) collectStructType(sd *parser.StructDefinition) {
+	g.collectStructTypeFields(sd)
+	// 註冊 struct type 名稱
+	g.varTypes[sd.Name] = "%" + sd.Name
+}
+
+// collectStructTypeFields 只收集結構體欄位型別到 g.structTypes，不寫入 g.varTypes。
+// 適用於需要 structTypes 已被填充但不希望汙染 varTypes 的早期階段
+// （如函數參數/回傳型別預掃描）。
+func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 	var fields []structField
 	for _, f := range sd.Fields {
 		llvmType := "i64"
@@ -857,8 +877,6 @@ func (g *Generator) collectStructType(sd *parser.StructDefinition) {
 		fields = append(fields, structField{name: f.Name, typ: llvmType})
 	}
 	g.structTypes[sd.Name] = fields
-	// 註冊 struct type 名稱
-	g.varTypes[sd.Name] = "%" + sd.Name
 }
 
 func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement) {

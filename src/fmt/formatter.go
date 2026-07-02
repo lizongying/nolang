@@ -2,6 +2,7 @@ package fmt
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -1541,6 +1542,10 @@ func (f *formatter) formatEnumDefinition(s *parser.EnumDefinition) {
 	for _, v := range s.Values {
 		f.newline()
 		f.write(v.Name)
+		if v.Value != 0 {
+			f.write(" = ")
+			f.write(strconv.FormatInt(v.Value, 10))
+		}
 		f.write(",")
 	}
 	f.indent--
