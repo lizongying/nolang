@@ -213,6 +213,21 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
+		// Struct literal: name : -<int>\n (unary minus on integer literal)
+		if tok3.Type == lexer.SUB {
+			var tok4b, tok5b lexer.Token
+			if base == -1 {
+				tok4b = p.lexer.LookAhead(2)
+				tok5b = p.lexer.LookAhead(3)
+			} else {
+				tok4b = p.lexer.LookAhead(base + 3)
+				tok5b = p.lexer.LookAhead(base + 4)
+			}
+			if tok4b.Type == lexer.INT &&
+				(tok5b.Type == lexer.NEWLINE || tok5b.Type == lexer.RBRACE || tok5b.Type == lexer.COMMA) {
+				return blockStruct
+			}
+		}
 		return blockMatch
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
 		lexer.LESS_EQUALS, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
@@ -2995,6 +3010,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 
 		var ma matchArm
+		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		if p.currentToken.Type == lexer.COLON {
 			ma.isWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
@@ -3201,6 +3217,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 
 		var ma matchArm
+		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		if p.currentToken.Type == lexer.COLON {
 			ma.isWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
@@ -3390,7 +3407,8 @@ type matchArm struct {
 	isDotVal    bool // .-> → specific val branch (not catch-all)
 	isRawCond   bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
 	body        *BlockStatement
-	isBlockBody bool // true = block form (newline after ->), false = inline expression form
+	isBlockBody bool           // true = block form (newline after ->), false = inline expression form
+	pos         lexer.Position // position of condition or -> for diagnostic use
 }
 
 // returnKind — match arm body 的最後一個表達式回傳值分類
@@ -3628,6 +3646,8 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					hasExplicitErr = true
 				} else if ident.Value == "nil" {
 					hasExplicitNil = true
+				} else if ident.Value == "ok" {
+					hasExplicitOk = true
 				} else if matchedIsEnum {
 					enumListedVariants[ident.Value] = true
 				}
@@ -3663,7 +3683,10 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 						if len(remaining) == 0 {
 							// All enum variants listed — the else arm is dead code
 							skipItBinding = true
-							pos := arm.body.Pos()
+							pos := arm.pos
+							if pos.Line == 0 {
+								pos = arm.body.Pos()
+							}
 							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all enum variants have been listed",
 								pos.Line, pos.Column))
 						} else {
@@ -3672,7 +3695,16 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					} else {
 						// Three variants: ok(elemType), err, nil
 						okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
-						if okListed && !errListed && nilListed {
+						if okListed && errListed && nilListed {
+							// All three option variants listed — the else arm is dead code
+							skipItBinding = true
+							pos := arm.pos
+							if pos.Line == 0 {
+								pos = arm.body.Pos()
+							}
+							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all option variants (ok, err, nil) have been listed",
+								pos.Line, pos.Column))
+						} else if okListed && !errListed && nilListed {
 							armType = "err" // only err remains
 						} else if okListed && errListed && !nilListed {
 							armType = "nil" // only nil remains

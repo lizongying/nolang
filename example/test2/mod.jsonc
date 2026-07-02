@@ -9,7 +9,7 @@
   "repository": "",
   "homepage": "",
   "license": "MIT",
-  "workspace": "",
+  "workspace": "../../",
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",

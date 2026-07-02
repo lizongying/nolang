@@ -12,7 +12,8 @@ test-match = () {
     x: {
         err -> log(it)  // it的型態是err
         nil -> log(it)  // it的型態是nil
-        -> log(it)  // it的型態是i64
+        ok -> log(it)  // it的型態是i64
+        -> log(it)
     }
 
     // 全部列舉
@@ -42,9 +43,14 @@ test-match = () {
         -> log(it)
     }
 
+    a i64
+
     x: {
         err -> log(it)
-        ok -> log(it)
+        ok -> {
+            a == 1 -> log(it)
+            -> log('else')
+        }
         -> log(it)
     }
 
@@ -61,8 +67,6 @@ test-match = () {
         status4 -> log(it)
         -> log(it)
     }
-
-    a i64
 
     // 這是if/else
     {

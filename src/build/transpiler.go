@@ -701,6 +701,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					if ta, ok := ms.(*parser.TypeAlias); ok {
 						merged.Statements = append(merged.Statements, ta)
 					}
+					if ed, ok := ms.(*parser.EnumDefinition); ok {
+						merged.Statements = append(merged.Statements, ed)
+					}
+					if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
+						merged.Statements = append(merged.Statements, ted)
+					}
 				}
 			}
 			continue
@@ -743,6 +749,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 			if ta, ok := ms.(*parser.TypeAlias); ok {
 				merged.Statements = append(merged.Statements, ta)
+			}
+			if ed, ok := ms.(*parser.EnumDefinition); ok {
+				merged.Statements = append(merged.Statements, ed)
+			}
+			if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
+				merged.Statements = append(merged.Statements, ted)
 			}
 		}
 	}
@@ -2346,6 +2358,10 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		}
 	case *parser.CallExpression:
 		// Function/method calls (e.g., i64-to-str, s.to-upper) may return strings.
+		// Return type cannot be determined at validation time; defer to LLVM type checking.
+		return true
+	case *parser.DotExpression:
+		// Struct field access (e.g., fp.path) may return a string.
 		// Return type cannot be determined at validation time; defer to LLVM type checking.
 		return true
 	}

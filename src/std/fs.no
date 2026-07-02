@@ -1,162 +1,196 @@
 // fs — 檔案系統工具
 //
-// 提供檔案讀寫、複製、移動、刪除等高層操作。
-// 底層依賴 os 模組的系統調用。
+// 以 file 結構體封裝開啟中的檔案，以 path 結構體封裝路徑。
+// 底層依賴 os 模組的系統調用（open-read、open-write、read、write、close 等）。
 //
 // 用法：
-//   use std/fs
-//   content, n = fs.read-file('path')
-//   ok = fs.write-file('path', content, content-n)
-//   ok = fs.copy('src', 'dst')
+//   f = open(FILE-PATH, write, perm-644)   // 建構函式：回傳 ?file
+//   f.write('hello', 5)                     // 方法呼叫
+//   f.close()
+//
+//   p = path{ p: '/tmp' }
+//   yes = p.exists()
 
-// read-file: 讀取完整檔案內容
-// 返回內容字串和實際讀取位元組數
-read-file = (path str) (content str, n i64) {
-    fd = open-read(path)
-    if fd < 0 {
-        n = 0
-        return
+// ═══════════════════════════════════════════════
+// file 結構體：封裝開啟中的檔案
+// ═══════════════════════════════════════════════
+
+// file: 開啟的檔案
+// fd=-1 表示未開啟；path 為來源路徑
+file {
+    fd i64
+    path str
+}
+
+// file-mode: 檔案開啟模式（預組合）
+file-mode {
+    read,
+    write,
+    append,
+    read-write,
+}
+
+// file-perm: 檔案權限（預組合）
+file-perm {
+    perm-644,
+    perm-664,
+    perm-666,
+    perm-755,
+    perm-777,
+}
+
+// open: 開啟檔案（建構函式）
+// 成功：f = some(file{ fd, path })
+// 失敗：f = nil
+open = (p str, mode file-mode, perm file-perm) (f ?file) {
+    flags i64 = 0
+    mode: {
+        read -> flags = 0
+        write -> flags = 1537
+        append -> flags = 521
+        read-write -> flags = 1538
     }
 
-    // 獲取檔案大小
-    size = stat-size(path)
+    perm-val i64 = 420
+    perm: {
+        perm-644 -> perm-val = 420
+        perm-664 -> perm-val = 436
+        perm-666 -> perm-val = 438
+        perm-755 -> perm-val = 493
+        perm-777 -> perm-val = 511
+    }
+
+    fd = open-file(p, flags, perm-val)
+    if fd < 0 {
+        f = nil
+        return
+    }
+    f = file{
+        fd: fd
+        path: p
+    }
+}
+
+// read: 從檔案讀取最多 n 位元組到 buf
+file.read = (buf str, n i64) (read-n i64) {
+    read-n = 0
+    if .fd < 0 {
+        return
+    }
+    read-n = read(.fd, buf, n)
+}
+
+// write: 將 data 的前 n 位元組寫入檔案
+file.write = (data str, n i64) (written i64) {
+    written = 0
+    if .fd < 0 {
+        return
+    }
+    written = write(.fd, data, n)
+}
+
+// close: 關閉檔案
+// 成功後 fd 重設為 -1
+file.close = () (ok bool) {
+    if .fd < 0 {
+        ok = false
+        return
+    }
+    rc = close(.fd)
+    .fd = -1
+    ok = rc == 0
+}
+
+// is-open: 檢查檔案是否已開啟
+file.is-open = () (yes bool) {
+    yes = .fd >= 0
+}
+
+// size: 取得開啟中檔案的大小（透過 .path 取得原始路徑）
+file.size = () (sz i64) {
+    sz = stat-size(.path)
+}
+
+// read-all: 讀取整個檔案（依據 .path 取得大小）
+file.read-all = () (content str, n i64) {
+    n = 0
+    if .fd < 0 {
+        return
+    }
+    size = stat-size(.path)
     if size > 0 {
-        // 一次讀取整個檔案
-        n = read(fd, content, size)
+        n = read(.fd, content, size)
     }
-    close(fd)
 }
 
-// read-file-n: 讀取檔案前 n 個位元組
-read-file-n = (path str, n i64) (content str, read-n i64) {
-    fd = open-read(path)
-    if fd < 0 {
-        read-n = 0
-        return
-    }
-    read-n = read(fd, content, n)
-    close(fd)
-}
-
-// write-file: 寫入檔案（覆寫）
+// write-all: 將 data 的前 n 位元組寫入檔案（覆寫）
 // 返回 true=成功, false=失敗
-write-file = (path str, data str, n i64) (ok bool) {
-    fd = open-write(path)
-    if fd < 0 {
-        ok = false
+file.write-all = (data str, n i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
         return
     }
-    written = write(fd, data, n)
-    close(fd)
+    written = write(.fd, data, n)
     ok = written == n
 }
 
-// append-file: 追加內容到檔案末尾
-// 若檔案不存在則建立
-append-file = (path str, data str, n i64) (ok bool) {
-    // 當前無直接 append open，先用 open-write + stat 判斷
-    file-exist = is-file(path)
-    if file-exist == false {
-        fd = open-write(path)
-        if fd < 0 {
-            ok = false
-            return
+// append: 追加資料到檔案末尾
+// 簡化實作：先讀取現有內容再合併寫入
+file.append = (data str, n i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    save-path str = .path
+    .close()
+
+    rd-fd = open-read(save-path)
+    if rd-fd < 0 {
+        return
+    }
+    existing [4096]byte
+    exist-n = 0
+    size = stat-size(save-path)
+    if size > 0 {
+        if size > 4096 {
+            exist-n = read(rd-fd, existing, 4096)
+        } else {
+            exist-n = read(rd-fd, existing, size)
         }
-        written = write(fd, data, n)
-        close(fd)
-        ok = written == n
+    }
+    close(rd-fd)
+
+    wr-fd = open-file(save-path, 1537, 420)
+    if wr-fd < 0 {
         return
     }
-    fd = open-read(path)
-
-    // 無法直接 append，先用 read 後合併再 write
-    // 該實作為簡化版，實際應用需 O-APPEND 支援
-    close(fd)
-    existing, exist-n = read-file(path)
-
-    // 先寫入原有內容，再追加新內容
-    fd = open-write(path)
-    if fd < 0 {
-        ok = false
-        return
+    .fd = wr-fd
+    if exist-n > 0 {
+        write(.fd, existing, exist-n)
     }
-    write(fd, existing, exist-n)
-    written = write(fd, data, n)
-    close(fd)
+    written = write(.fd, data, n)
     ok = written == n
 }
 
-// copy: 複製檔案
+// copy-to: 將本檔案複製到 dst-path
 // 返回 true=成功, false=失敗
-copy = (src str, dst str) (ok bool) {
-    fd-r = open-read(src)
-    if fd-r < 0 {
-        ok = false
+file.copy-to = (dst-path str) (ok bool) {
+    ok = false
+    if .fd < 0 {
         return
     }
-    fd-w = open-write(dst)
+    fd-w = open-file(dst-path, 1537, 420)
     if fd-w < 0 {
-        close(fd-r)
-        ok = false
         return
     }
     buf [4096]byte
-    for true {
-        n = read(fd-r, buf, 4096)
+    ! {
+        n = read(.fd, buf, 4096)
         if n <= 0 {
-            break
+            *
         }
         write(fd-w, buf, n)
     }
-    close(fd-r)
     close(fd-w)
     ok = true
-}
-
-// move: 移動檔案（rename）
-// 返回 true=成功, false=失敗
-move = (src str, dst str) (ok bool) {
-    ok = rename(src, dst)
-}
-
-// delete: 刪除檔案
-// 返回 true=成功, false=失敗
-delete = (path str) (ok bool) {
-    ok = remove(path)
-}
-
-// exists: 檢查檔案是否存在
-// 返回 true=存在, false=不存在
-exists = (path str) (yes bool) {
-    yes = is-file(path)
-}
-
-// is-directory: 檢查路徑是否為目錄
-// 返回 true=是目錄, false=不是或不存在
-is-directory = (path str) (yes bool) {
-    yes = is-dir(path)
-}
-
-// file-size: 獲取檔案大小
-// 返回大小（位元組），-1 表示錯誤
-file-size = (path str) (sz i64) {
-    sz = stat-size(path)
-}
-
-// make-dir: 建立目錄
-// 返回 true=成功, false=失敗
-make-dir = (path str) (ok bool) {
-    ok = mkdir(path, 511)
-}
-
-// chdir: 切換工作目錄
-// 返回 true=成功, false=失敗
-// 注意：改名為 change-dir 以避免與 C 函數 chdir 衝突
-change-dir = (path str) (ok bool) {
-    ok = ch-dir(path)
-}
-
-// getwd: 獲取當前工作目錄
-getwd = () (dir str) {
-    dir = get-wd()
 }

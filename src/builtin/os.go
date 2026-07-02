@@ -135,6 +135,16 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "1537", 2: "420"}},
 	})
 
+	// open-file: open a file with custom flags and mode
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "open-file",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Open a file with given flags and mode, returns file descriptor",
+		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
+	})
+
 	// close: close a file descriptor
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

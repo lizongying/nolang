@@ -346,15 +346,12 @@ func (s *Server) parseWarningToDiagnostic(warnMsg string) *Diagnostic {
 	if _, err := fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col); err != nil {
 		return nil
 	}
-	// Extract message after "line %d, column %d: "
+	// Extract message after "line %d, column %d: " prefix
 	msg := warnMsg
-	if idx := strings.Index(warnMsg, ": "); idx >= 0 && idx+2 < len(warnMsg) {
-		// Find the second ": " to get past "line N, column M: "
-		if idx2 := strings.Index(warnMsg[idx+2:], ": "); idx2 >= 0 {
-			msg = warnMsg[idx+2+idx2+2:]
-		} else {
-			msg = warnMsg[idx+2:]
-		}
+	prefix := fmt.Sprintf("line %d, column %d:", line, col)
+	if strings.HasPrefix(warnMsg, prefix) && len(warnMsg) > len(prefix) {
+		msg = strings.TrimPrefix(warnMsg, prefix)
+		msg = strings.TrimPrefix(msg, " ")
 	}
 	return &Diagnostic{
 		Range: Range{
@@ -505,18 +502,35 @@ func (s *Server) handleTextDocumentDocumentHighlight(params TextDocumentPosition
 func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (interface{}, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
-		return []DocumentSymbol{}, nil
+		return []SymbolInformation{}, nil
 	}
 
 	index := s.documents.GetIndex(params.TextDocument.URI)
 	if index == nil {
-		return []DocumentSymbol{}, nil
+		return []SymbolInformation{}, nil
 	}
 
 	provider := NewSymbolProvider(doc, index)
 	symbols := provider.GetSymbols()
 
-	return symbols, nil
+	// Convert DocumentSymbol tree to flat SymbolInformation array
+	// (vscode-languageclient expects SymbolInformation format)
+	var results []SymbolInformation
+	var flatten func(syms []DocumentSymbol, container string)
+	flatten = func(syms []DocumentSymbol, container string) {
+		for _, sym := range syms {
+			results = append(results, SymbolInformation{
+				Name:          sym.Name,
+				Kind:          sym.Kind,
+				Location:      Location{URI: params.TextDocument.URI, Range: sym.Range},
+				ContainerName: container,
+			})
+			flatten(sym.Children, sym.Name)
+		}
+	}
+	flatten(symbols, "")
+
+	return results, nil
 }
 
 func (s *Server) handleWorkspaceSymbol(params WorkspaceSymbolParams) (interface{}, error) {

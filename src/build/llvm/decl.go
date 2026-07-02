@@ -52,7 +52,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @stat(i8*, i8*)\n")
 	sb.WriteString("declare i64 @time(i8*)\n")
 	sb.WriteString("declare i32 @sleep(i32)\n")
-	sb.WriteString("declare i32 @open(i8*, i32, i32)\n")
+	sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
 	sb.WriteString("declare i64 @read(i32, i8*, i64)\n")
 	sb.WriteString("declare i64 @write(i32, i8*, i64)\n")
 	sb.WriteString("declare i32 @close(i32)\n")

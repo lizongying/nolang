@@ -214,8 +214,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			fd := s
+			// 用戶自定義函數一律使用 void + by-reference 輸出，
+			// 因此 funcRetTypes 在 Nolang 函數的場景下也應為 "void"。
+			// funcResultLLVMType 仍保留語意型別（如 %option / i64）用於型別推斷。
 			retType := "void"
-			if len(fd.Results) == 1 {
+			if len(fd.Results) == 1 && fd.Results[0].Name == "" {
 				retType = g.mapToLLVMType(fd.Results[0].Type.String())
 			}
 			g.funcRetTypes[fd.Name] = retType
@@ -735,7 +738,7 @@ func (g *Generator) markParamAssigned(name string, state map[string]int) {
 	}
 }
 
-func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string) string {
+func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string, origExprs []parser.Expression) string {
 	a := evalArgs()
 	clib := m.CLibCall
 
@@ -859,8 +862,19 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 
 		if argType == builtin.LLVMStrPtr {
 			if evIdx < len(a) {
-				dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
-				argStr += "i8* " + dataPtr
+				// 使用 makeNullTerminatedStr 确保传递给 C 函数的字符串有 null 终止符
+				if origExprs != nil && evIdx < len(origExprs) {
+					nullTermPtr := g.makeNullTerminatedStr(sb, origExprs[evIdx])
+					if nullTermPtr != "" {
+						argStr += "i8* " + nullTermPtr
+					} else {
+						dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+						argStr += "i8* " + dataPtr
+					}
+				} else {
+					dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+					argStr += "i8* " + dataPtr
+				}
 			} else {
 				argStr += "i8* null"
 			}
@@ -989,17 +1003,39 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 
 func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {
 	if strings.HasPrefix(evalResult, "%") {
-		// evalResult 可能是兩種形式：
+		// evalResult 可能是以下形式：
 		//   1. %key           — 直接是 %str-long* 指針
 		//   2. %key.val.N     — load 出來的 %str-long 值
-		// extractStrDataPtr 需要 %str-long* 指針，因此若帶有 .val. 後綴（已 load 出來的值），
-		// 必須改用 base variable 的指針（去掉 .val.* 部分）。
+		//   3. %dot.val.N     — 從 struct 欄位載入的值（%dot 不是有效指針）
+		// extractStrDataPtr 需要 %str-long* 指針。
 		baseRef := evalResult
+		loadedValue := ""
 		if idx := strings.Index(evalResult, ".val."); idx > 0 {
+			loadedValue = evalResult
 			baseRef = evalResult[:idx]
 		}
 		parts := strings.Split(baseRef, ".")
 		varName := strings.TrimPrefix(parts[0], "%")
+		// 若有 loaded value 且 varName 不在 varTypes（例如來自 DotExpression 的 %dot）
+		// 則需先將值存入臨時變量，再從臨時變量指針提取資料指針。
+		if loadedValue != "" {
+			_, known := func() (string, bool) {
+				if g.varTypes == nil {
+					return "", false
+				}
+				t, ok := g.varTypes[varName]
+				return t, ok
+			}()
+			if !known {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%str.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), loadedValue, tmpAlloca))
+				}
+				return g.extractStrDataPtr(sb, tmpAlloca)
+			}
+		}
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[varName]; ok {
 				if t == "%str-short" {

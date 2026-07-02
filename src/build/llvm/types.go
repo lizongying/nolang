@@ -93,3 +93,45 @@ func sanitizeLLVMName(name string) string {
 	}
 	return sb.String()
 }
+
+// clibFuncNames 是 C 系統調用（decl.go 中 declare 的函式）名稱集合。
+// 當用戶定義同名函數時，需要加 "n." 前綴以避免 LLVM IR 中 redefinition 錯誤。
+// 其他與 builtin 同名的用戶函數（如 set.remove vs os.remove）不需前綴，
+// 走原本的 dispatch 優先級。
+var clibFuncNames = map[string]bool{
+	"open":      true,
+	"read":      true,
+	"write":     true,
+	"close":     true,
+	"mkdir":     true,
+	"unlink":    true,
+	"rename":    true,
+	"stat":      true,
+	"chdir":     true,
+	"getcwd":    true,
+	"getenv":    true,
+	"setenv":    true,
+	"getpid":    true,
+	"gethostname": true,
+	"malloc":    true,
+	"free":      true,
+	"memcpy":    true,
+	"memset":    true,
+	"memcmp":    true,
+	"printf":    true,
+	"sprintf":   true,
+	"strcmp":    true,
+	"strlen":    true,
+	"time":      true,
+	"sleep":     true,
+	"fopen":     true,
+	"fgets":     true,
+	"fclose":    true,
+	"atoi":      true,
+	"strtoull":  true,
+	"strtod":    true,
+	"fmod":      true,
+	"hypot":     true,
+	"cbrt":      true,
+	"exit":      true,
+}

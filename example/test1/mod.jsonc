@@ -11,7 +11,6 @@
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
   "license": "MIT",
-  // 尋找../workspace.jsonc, 
   "workspace": "../../",
   "dependencies": {
     "github.com/lizongying/nolang/test1": "v0.1.0",

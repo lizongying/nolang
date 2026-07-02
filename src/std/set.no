@@ -27,7 +27,7 @@ add = (s []i64, n i64, val i64) (new-n i64) {
 
 // remove: 從集合移除元素
 // 返回新的大小
-remove = (s []i64, n i64, val i64) (new-n i64) {
+set-remove = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i = 0
     for i < n {

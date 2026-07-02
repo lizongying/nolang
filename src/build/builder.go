@@ -203,8 +203,14 @@ func BuildLLVM(code string, fileName string, outPath string, cc string, target s
 
 	// 保留 .ll 供分析（確保目錄存在）
 	llOut := outPath + ".ll"
-	if err := os.MkdirAll(filepath.Dir(llOut), 0755); err == nil {
-		os.WriteFile(llOut, []byte(code), 0644)
+	if mkErr := os.MkdirAll(filepath.Dir(llOut), 0755); mkErr == nil {
+		if wErr := os.WriteFile(llOut, []byte(code), 0644); wErr != nil {
+			fmt.Fprintf(os.Stderr, "[debug] failed to write %s: %v\n", llOut, wErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "[debug] wrote %s (%d bytes)\n", llOut, len(code))
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "[debug] MkdirAll(%s) failed: %v\n", filepath.Dir(llOut), mkErr)
 	}
 
 	// opt -O2 最佳化

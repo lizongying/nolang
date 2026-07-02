@@ -86,6 +86,18 @@ func (g *Generator) convertShortToLong(sb *strings.Builder, shortReg string) str
 func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) string {
 	switch a := arg.(type) {
 	case *parser.Identifier:
+		// Enum variant: allocate temp i64 and store the constant tag index
+		if g.enumVariantIndex != nil {
+			if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+				}
+				return "i64* " + tmpName
+			}
+		}
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok && t == "%str-long" {
 				return "%str-long* " + g.varAddr(a.Value)
@@ -309,6 +321,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if g.funcRetTypes != nil {
 			if t, ok := g.funcRetTypes[innerFnName]; ok {
 				retType = t
+				// 用戶自定義函數加 "n." 前綴以避免與 clib 系統調用衝突（僅限 clibFuncNames 內名稱）
+				if clibFuncNames[innerFnName] {
+					innerFnName = "n." + innerFnName
+				}
 			}
 		}
 
@@ -390,6 +406,30 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
+	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /
+	// @unlink / @rename / @stat / @chdir / @getcwd / @getenv / @getpid / @gethostname
+	// / @malloc / @free / @memcpy / @memset / @printf / @sprintf / @strcmp / @strlen
+	// / @time / @sleep / @fopen / @fgets / @fclose / @atoi / @strtoull / @strtod
+	// / @fmod / @hypot / @cbrt / @exit）衝突時，才加 "n." 前綴以避免 redefinition。
+	// 其他情況不前綴，保留與 builtin 的 dispatch 優先級。
+	llvmFnName := fnName
+	maybeRenableLLVMName := func() {
+		if g.funcRetTypes != nil {
+			if _, isUser := g.funcRetTypes[fnName]; isUser {
+				if clibFuncNames[fnName] {
+					llvmFnName = "n." + fnName
+				} else {
+					llvmFnName = fnName
+				}
+			} else {
+				llvmFnName = fnName
+			}
+		} else {
+			llvmFnName = fnName
+		}
+	}
+	maybeRenableLLVMName()
+
 	hasArgs := len(expr.Arguments) > 0
 
 	// 共用閉包
@@ -454,6 +494,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				skipBuiltin = true
 			}
 		}
+		// 用戶自定義頂層函數（包含 std 模組內的 fs.open / fs.open-write 等）
+		// 優先於同名 builtin：使用者呼叫 `open(path)` 時若存在用戶自定義函數，
+		// 應優先使用，否則 fs 構造函數會被 clib 系統調用遮蔽。
+		if !skipBuiltin && g.funcRetTypes != nil {
+			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
+				skipBuiltin = true
+			}
+		}
 	}
 	if !skipBuiltin {
 		if m := builtin.FindBuiltinMethod(fnName); m != nil {
@@ -480,7 +528,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				return fmt.Sprintf("call double @%s(%s)", m.LLVMIntrinsic, argStr)
 			}
 			if m.CLibCall != nil {
-				return g.genCLibCall(sb, m, evalArgs)
+				return g.genCLibCall(sb, m, evalArgs, expr.Arguments)
 			}
 			if m.LLVMConv != nil {
 				return g.genLLVMConv(sb, m, evalArgs)
@@ -698,6 +746,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// build-in 方法不在 funcRetTypes 中，需透過 FindBuiltinMethod 查找並分派。
 	// 若 Nolang 中已有同名方法（funcRetTypes 中存在），優先使用 Nolang 實作。
 	if methodReceiver != nil {
+		// 方法解析後，fnName 可能已被更新為型別前綴名稱（如 char.is-alpha），
+		// 重新計算 llvmFnName 以確保與最終 fnName 一致。
+		maybeRenableLLVMName()
 		_, hasNolangImpl := g.funcRetTypes[fnName]
 		if !hasNolangImpl {
 			if m := builtin.FindBuiltinMethod(fnName); m != nil {
@@ -716,7 +767,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						}
 						return result
 					}
-					return g.genCLibCall(sb, m, methodEvalArgs)
+					allExprs := append([]parser.Expression{methodReceiver}, expr.Arguments...)
+					return g.genCLibCall(sb, m, methodEvalArgs, allExprs)
 				}
 				if m.LLVMConv != nil {
 					methodEvalArgs := func() []string {
@@ -741,7 +793,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			retType = t
 		}
 	}
-
 	// Determine if the function has a single named result (output parameter passed as last arg)
 	// Convention: for single-result functions, the last argument is the output parameter
 	// if it's an Identifier (a variable to store the result into) AND there are more args
@@ -757,6 +808,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 		}
+	}
+	// 用戶自定義函數（has funcResultLLVMType）一律使用 void + by-reference 輸出，
+	// 即使 funcRetTypes 中存的是語意回傳型別（如 %option / i64），LLVM 簽名仍是 void。
+	// 避免 call i64 @funcname(...) 與 void 函數簽名不一致。
+	if isNolangSingleResult {
+		retType = "void"
 	}
 	hasOutputParam := false
 	if g.funcNumResults != nil {
@@ -835,6 +892,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	genTypedArg := func(arg parser.Expression, argIdx int) string {
 		switch a := arg.(type) {
 		case *parser.Identifier:
+			// Enum variant: allocate temp i64 and store the constant tag index
+			if g.enumVariantIndex != nil {
+				if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
+					g.tmpIdx++
+					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+					}
+					return "i64* " + tmpName
+				}
+			}
 			// str 型別用 %str-long* 指標
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str-long" {
@@ -1119,7 +1188,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// Make the call
-	callStr := fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(fnName), strings.Join(typedArgs, ", "))
+	callStr := fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(llvmFnName), strings.Join(typedArgs, ", "))
 
 	// If has output param, store return value into output variable
 	if hasOutputParam && outputArg != nil {

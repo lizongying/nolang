@@ -1,0 +1,19 @@
+// test-fs-struct.no — 驗證 file/path 結構體與 ?file option 的 match 處理
+//
+// 參考 /Users/lizongying/IdeaProjects/no/tests/test-match.no 的 match 語法
+// 使用小寫變數名稱；對 ?file 這類 option 使用 match 處理 err/nil/ok 分支
+
+main = () {
+    tmp = '/tmp/nolang-fs-test.txt'
+    payload = 'hello nolang file struct'
+
+    f-w ?file
+    f-w = open(tmp, write, perm-644)
+    f-w: {
+        err -> print('fail: open-write err')
+        nil -> print('fail: open-write nil')
+        ok -> print('ok branch')
+    }
+}
+
+main()
