@@ -206,7 +206,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 
 		// Index auto-imported std module files with location info for go-to-definition
 		for _, info := range nbuild.GetStdModules() {
-			modFilePath := "src/std/" + info.FullPath + ".no"
+			modFilePath := nbuild.GetStdSourceFile(info.FullPath)
 			if _, err := os.Stat(modFilePath); err != nil {
 				continue
 			}

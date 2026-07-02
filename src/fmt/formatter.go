@@ -868,7 +868,7 @@ func (f *formatter) formatCallExpression(e *parser.CallExpression) {
 func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 	if ident, ok := e.Receiver.(*parser.Identifier); ok {
 		switch ident.Value {
-		case "self", "it":
+		case "self":
 			// .property (the dot serves as both self-reference and member access)
 			f.write(".")
 			f.write(e.Property)

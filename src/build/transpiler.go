@@ -454,6 +454,16 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.resolveFile(resolved)
 			}
 		}
+		// 嘗試透過 GetStdSourceDir（讀取 NOLANG_STD_SRC 環境變量）
+		// strip "std/" prefix to get module path relative to std/
+		relPath := strings.TrimPrefix(path, "std/")
+		if path == "std" {
+			relPath = ""
+		}
+		stdFile := GetStdSourceFile(relPath)
+		if _, err := os.Stat(stdFile); err == nil {
+			return t.resolveFile(stdFile)
+		}
 		// fallback: std/<module>.no 相對於執行目錄
 		fallback := path + ".no"
 		if _, err := os.Stat(fallback); err == nil {
@@ -463,14 +473,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		srcPath := "src/" + path + ".no"
 		if _, err := os.Stat(srcPath); err == nil {
 			return t.resolveFile(srcPath)
-		}
-		// 最後嘗試相對於 binary 所在路徑
-		if exe, err := os.Executable(); err == nil {
-			exeDir := filepath.Dir(exe)
-			binSrcPath := filepath.Join(exeDir, "..", "src", path+".no")
-			if _, err := os.Stat(binSrcPath); err == nil {
-				return t.resolveFile(binSrcPath)
-			}
 		}
 		return t.resolveFile(srcPath)
 	}
@@ -3805,9 +3807,16 @@ func collectModuleExports(program *parser.Program, moduleNames []string) []strin
 }
 
 // resolveModulePath tries to locate a .no file for the given module short name
-// (e.g., "math" → "std/math.no"), using the same fallback chain as resolveUse.
+// (e.g., "math" → "std/math.no"), using GetStdSourceDir for resolution.
 func resolveModulePath(moduleName string) string {
-	// Try relative to CWD
+	// Try via GetStdSourceDir (respects NOLANG_STD_SRC env var)
+	// moduleName is the short name (last path segment); also try full path
+	stdFile := GetStdSourceFile(moduleName)
+	if _, err := os.Stat(stdFile); err == nil {
+		return stdFile
+	}
+
+	// Fallback: try relative to CWD
 	candidates := []string{
 		"std/" + moduleName + ".no",
 		"src/std/" + moduleName + ".no",
@@ -3816,21 +3825,6 @@ func resolveModulePath(moduleName string) string {
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c
-		}
-	}
-
-	// Try binary-relative paths
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		// Binary could be at bin/nolang or vscode-nolang/server/lsp
-		relativePaths := []string{
-			filepath.Join(exeDir, "..", "src", "std", moduleName+".no"),       // bin/ → src/
-			filepath.Join(exeDir, "..", "..", "src", "std", moduleName+".no"), // vscode-nolang/server/ → src/
-		}
-		for _, c := range relativePaths {
-			if _, err := os.Stat(c); err == nil {
-				return c
-			}
 		}
 	}
 
@@ -4927,8 +4921,12 @@ func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
 		filePath = filepath.Join(pkg.RootDir, relPath) + ".no"
 		prog = parseProgramFile(filePath)
 	} else if strings.HasPrefix(path, "std/") || path == "std" {
-		// std/ paths
-		filePath = resolveModulePath(moduleShortName(path))
+		// std/ paths — strip "std/" prefix to get module path relative to std/
+		relPath := strings.TrimPrefix(path, "std/")
+		if path == "std" {
+			relPath = ""
+		}
+		filePath = resolveModulePath(relPath)
 		if filePath == "" {
 			return nil
 		}

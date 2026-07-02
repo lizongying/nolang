@@ -62,7 +62,7 @@ vscode 插件
 | `no update-all`                                              | 更新所有依賴                           |
 | `no list`                                                    | 列出依賴                               |
 | `no sync`                                                    | 同步依賴                               |
-| `no install [-u] [<pkg>@<version>]`                          | 安裝 binary（~/.nolang/bin/ + 軟鏈接） |
+| `no install [-u] [<pkg>@<version>]`                          | 安裝 binary（~/no/bin/ + 軟鏈接）     |
 | `no uninstall <name>`                                        | 移除 binary 及軟鏈接                   |
 | `no pub --token <token> [--registry <url>]`                  | 發布至 registry                        |
 

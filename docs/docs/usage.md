@@ -147,7 +147,7 @@ no install -u pkg-name@1.0
 
 1. 下載包源碼（遠端包）或使用當前目錄（本地包）
 2. 自動執行構建
-3. 將 binary 複製到 `~/.nolang/bin/`
+3. 將 binary 複製到 `~/no/bin/`
 4. 在 `/usr/local/bin/` 建立軟鏈接
 
 ### 卸載
@@ -156,7 +156,7 @@ no install -u pkg-name@1.0
 no uninstall pkg-name
 ```
 
-卸載會移除 `/usr/local/bin/` 中的軟鏈接和 `~/.nolang/bin/` 中的 binary。
+卸載會移除 `/usr/local/bin/` 中的軟鏈接和 `~/no/bin/` 中的 binary。
 
 ## 項目配置
 

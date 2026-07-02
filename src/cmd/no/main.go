@@ -99,6 +99,8 @@ func main() {
 		testCommand(os.Args[2:])
 	case "vet":
 		vetCommand(os.Args[2:])
+	case "info":
+		infoCommand()
 	default:
 		printUsage()
 	}
@@ -165,13 +167,15 @@ func printUsage() {
 	fmt.Println("      no vet                     validate main.no in current dir")
 	fmt.Println("      no vet main.no             validate main.no")
 	fmt.Println("")
+	fmt.Println("  no info               Show environment and source directory info")
+	fmt.Println("")
 	fmt.Println("  no add <pkg>        Add a dependency")
 	fmt.Println("  no remove <pkg>     Remove a dependency")
 	fmt.Println("  no update <pkg>     Update a specific dependency")
 	fmt.Println("  no update-all        Update all dependencies")
 	fmt.Println("  no list              List dependencies")
 	fmt.Println("  no install [-u] [<pkg>@<version>]")
-	fmt.Println("                    Install a package binary (store in ~/.nolang/bin/, symlink in /usr/local/bin/)")
+	fmt.Println("                    Install a package binary (store in ~/no/bin/, symlink in /usr/local/bin/)")
 	fmt.Println("                    -u    force re-download and re-build")
 	fmt.Println("  no uninstall <name>")
 	fmt.Println("                    Remove installed package binary and symlink")
@@ -199,6 +203,80 @@ func versionCommand() {
 		}
 	}
 	fmt.Printf("version: %s\n", version)
+}
+
+func infoCommand() {
+	// Version
+	if buildDate != "" {
+		if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
+			t := time.Unix(sec, 0).UTC()
+			fmt.Printf("version:     %s (%s)\n", version, t.Format("2006-01-02 15:04:05"))
+		} else {
+			fmt.Printf("version:     %s\n", version)
+		}
+	} else {
+		fmt.Printf("version:     %s\n", version)
+	}
+
+	// Binary path
+	if exe, err := os.Executable(); err == nil {
+		fmt.Printf("binary:      %s\n", exe)
+	}
+
+	// Std library source directory
+	stdDir, stdSrc := nbuild.GetStdSourceDir()
+	fmt.Printf("std source:  %s\n", stdDir)
+	fmt.Printf("  resolved:  via %s", stdSrc)
+	if stdSrc == "env" {
+		fmt.Printf(" ($%s)", nbuild.NOLANG_STD_SRC)
+	}
+	fmt.Println()
+
+	// Source directory (third-party / local development)
+	srcDir, srcSrc := nbuild.GetSourceDir()
+	fmt.Printf("source:      %s\n", srcDir)
+	fmt.Printf("  resolved:  via %s", srcSrc)
+	if srcSrc == "env" {
+		fmt.Printf(" ($%s)", nbuild.NOLANG_SRC)
+	}
+	fmt.Println()
+
+	// Environment variables
+	stdEnvVal := os.Getenv(nbuild.NOLANG_STD_SRC)
+	if stdEnvVal != "" {
+		fmt.Printf("$%s: %s\n", nbuild.NOLANG_STD_SRC, stdEnvVal)
+	} else {
+		fmt.Printf("$%s: (not set)\n", nbuild.NOLANG_STD_SRC)
+	}
+	srcEnvVal := os.Getenv(nbuild.NOLANG_SRC)
+	if srcEnvVal != "" {
+		fmt.Printf("$%s:  %s\n", nbuild.NOLANG_SRC, srcEnvVal)
+	} else {
+		fmt.Printf("$%s:  (not set)\n", nbuild.NOLANG_SRC)
+	}
+
+	// Working directory
+	if cwd, err := os.Getwd(); err == nil {
+		fmt.Printf("workdir:     %s\n", cwd)
+	}
+
+	// Std module count
+	modules := nbuild.GetStdModules()
+	fmt.Printf("std modules: %d\n", len(modules))
+
+	// Package info (if in a project)
+	cwd, _ := os.Getwd()
+	if pkg, _ := nbuild.LoadPackage(cwd); pkg != nil {
+		fmt.Println()
+		fmt.Println("project:")
+		fmt.Printf("  root:      %s\n", pkg.RootDir)
+		if len(pkg.Dependencies) > 0 {
+			fmt.Printf("  deps:      %d\n", len(pkg.Dependencies))
+			for name, ver := range pkg.Dependencies {
+				fmt.Printf("    %s@%s\n", name, ver)
+			}
+		}
+	}
 }
 
 func initProject() {
@@ -582,13 +660,9 @@ func syncDependencies() {
 	fmt.Println("Lock file and integrity sums saved.")
 }
 
-// nolangBinDir 返回 ~/.nolang/bin 目錄
+// nolangBinDir 返回 ~/no/bin 目錄
 func nolangBinDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), ".nolang", "bin")
-	}
-	return filepath.Join(home, ".nolang", "bin")
+	return filepath.Join(nbuild.NoHomeDir(), "bin")
 }
 
 func installCommand(args []string) {

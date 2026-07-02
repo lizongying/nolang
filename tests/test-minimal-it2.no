@@ -1,23 +1,10 @@
 // test-minimal-it2.no — 測試 it 後續有其他函數
 test-val-it = () {
     n ?i64 = 42
-    r = if n ==
-err {
-        .
-        
-        n
-        0
-    } elif n ==
-nil {
-        .
-        
-        n
-        0
-    } else {
-        .
-        
-        n
-        .
+    r = n: {
+        err -> 0
+        nil -> 0
+        -> it
     }
     print(r)
 }

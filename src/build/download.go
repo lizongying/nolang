@@ -17,13 +17,9 @@ import (
 	"strings"
 )
 
-// cacheDir returns the local package cache directory.
+// cacheDir returns the local package cache directory: ~/no/cache/packages
 func cacheDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), ".nolang", "cache", "packages")
-	}
-	return filepath.Join(home, ".nolang", "cache", "packages")
+	return filepath.Join(NoHomeDir(), "cache", "packages")
 }
 
 // parseGitHubKey extracts owner and repo from a dependency key.

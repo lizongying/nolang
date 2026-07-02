@@ -12,8 +12,8 @@ main = () {
 
     f-w ?file
     f-w = open(tmp, {
-        mode: write
-        perm: perm-644
+        mode: file-mode.write
+        perm: file-perm.perm-644
         excl: false
         truncate: false
         append: false
@@ -29,8 +29,8 @@ main = () {
 
     f-e ?file
     f-e = open(tmp, {
-        mode: write
-        perm: perm-644
+        mode: file-mode.write
+        perm: file-perm.perm-644
         excl: true
         truncate: false
         append: false
@@ -43,8 +43,8 @@ main = () {
 
     f-r ?file
     f-r = open(tmp, {
-        mode: read
-        perm: perm-644
+        mode: file-mode.read
+        perm: file-perm.perm-644
         excl: false
         truncate: false
         append: false
@@ -57,10 +57,10 @@ main = () {
             n = it.read(buf, 256)
             it.close()
             if n == payload.len {
-                print('ok: read length matches')
-            } else {
-                print('fail: read length mismatch')
-            }
+            print('ok: read length matches')
+        } else {
+            print('fail: read length mismatch')
+        }
     }
 
     remove(tmp)
