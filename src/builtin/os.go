@@ -195,6 +195,66 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "sleep", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
+	// now-ms: current Unix timestamp in milliseconds
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "now-ms",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the current Unix timestamp in milliseconds",
+		CLibCall:     &CLibCall{FuncName: "nolang.now_ms", ArgTypes: []LLVMArgType{}, RetType: LLVMI64},
+	})
+
+	// now-us: current Unix timestamp in microseconds
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "now-us",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the current Unix timestamp in microseconds",
+		CLibCall:     &CLibCall{FuncName: "nolang.now_us", ArgTypes: []LLVMArgType{}, RetType: LLVMI64},
+	})
+
+	// now-ns: current timestamp in nanoseconds
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "now-ns",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the current timestamp in nanoseconds",
+		CLibCall:     &CLibCall{FuncName: "nolang.now_ns", ArgTypes: []LLVMArgType{}, RetType: LLVMI64},
+	})
+
+	// sleep-us: sleep for n microseconds
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sleep-us",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Sleep for the given number of microseconds",
+		CLibCall:     &CLibCall{FuncName: "nolang.sleep_us", ArgTypes: []LLVMArgType{LLVMI64}, RetType: LLVMI32},
+	})
+
+	// sleep-ns: sleep for n nanoseconds
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sleep-ns",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Sleep for the given number of nanoseconds",
+		CLibCall:     &CLibCall{FuncName: "nolang.sleep_ns", ArgTypes: []LLVMArgType{LLVMI64}, RetType: LLVMI32},
+	})
+
+	// strerror: convert errno to error message
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "strerror",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Convert errno to error message string",
+		CLibCall:     &CLibCall{FuncName: "strerror", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI8Ptr, RetCStrToStr: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+	})
+
 	// args: number of command-line arguments
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

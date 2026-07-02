@@ -400,7 +400,10 @@ func (ce *CallExpression) EndPos() lexer.Position {
 	if len(ce.GenericArgs) > 0 {
 		return ce.GenericArgs[len(ce.GenericArgs)-1].EndPos()
 	}
-	return ce.Function.EndPos()
+	if ce.Function != nil {
+		return ce.Function.EndPos()
+	}
+	return posFromToken(ce.Token)
 }
 
 type DotExpression struct {

@@ -1,0 +1,74 @@
+// test-time.no — time 模組測試
+//
+// 測試 now-s, now-ms, duration-between, sleep-ms, since-ms, timer, format-duration
+
+# std/time
+
+main = () {
+    // ── 1. now-s 回傳正值 ──
+    ts i64 = 0
+    ts = now-s()
+    if ts > 0 {
+        print('ok: now-s')
+    } else {
+        print('fail: now-s')
+    }
+
+    // ── 2. now-ms 回傳正值 ──
+    ms i64 = 0
+    ms = now-ms()
+    if ms > 0 {
+        print('ok: now-ms')
+    } else {
+        print('fail: now-ms')
+    }
+
+    // ── 3. duration-between 計算差值 ──
+    start i64 = 1000
+    end i64 = 1010
+    diff i64 = 0
+    diff = duration-between(start, end)
+    if diff == 10 {
+        print('ok: duration-between')
+    } else {
+        print('fail: duration-between')
+    }
+
+    // ── 4. sleep-ms(100) 睡眠 ──
+    sleep-ms(100)
+    print('ok: sleep-ms')
+
+    // ── 5. since-ms 計算經過時間 ──
+    before i64 = 0
+    before = now-ms()
+    sleep-ms(50)
+    elapsed i64 = 0
+    elapsed = since-ms(before)
+    if elapsed >= 50 {
+        print('ok: since-ms')
+    } else {
+        print('fail: since-ms')
+    }
+
+    // ── 6. timer 計時器（需明確宣告型別 t timer 才能正確解析方法）──
+    t timer = timer {
+        start-ts: 0
+        end-ts: 0
+    }
+    t.start()
+    sleep-ms(50)
+    t.stop()
+    t-ms i64 = 0
+    t-ms = t.elapsed-ms()
+    if t-ms >= 50 {
+        print('ok: timer elapsed-ms')
+    } else {
+        print('fail: timer elapsed-ms')
+    }
+
+    // ── 7. format-duration(3661) 輸出 '1h1m1s' ──
+    format-duration(3661)
+    print('ok: format-duration')
+}
+
+main()

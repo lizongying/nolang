@@ -9,11 +9,11 @@
 //   if ok == false { return 1 }
 
 // ═══════════════════════════════════════════════
-// 整數斷言
+// 泛型斷言
 // ═══════════════════════════════════════════════
 
 // assert-eq: a == b
-assert-eq = (a i64, b i64, msg str) (ok bool) {
+assert-eq = (a t, b t, msg str) (ok bool) {
     ok = true
     if a != b {
         ok = false
@@ -23,7 +23,7 @@ assert-eq = (a i64, b i64, msg str) (ok bool) {
 }
 
 // assert-ne: a != b
-assert-ne = (a i64, b i64, msg str) (ok bool) {
+assert-ne = (a t, b t, msg str) (ok bool) {
     ok = true
     if a == b {
         ok = false
@@ -53,7 +53,7 @@ assert-false = (val bool, msg str) (ok bool) {
 }
 
 // assert-gt: a > b
-assert-gt = (a i64, b i64, msg str) (ok bool) {
+assert-gt = (a t, b t, msg str) (ok bool) {
     ok = true
     if a <= b {
         ok = false
@@ -63,7 +63,7 @@ assert-gt = (a i64, b i64, msg str) (ok bool) {
 }
 
 // assert-ge: a >= b
-assert-ge = (a i64, b i64, msg str) (ok bool) {
+assert-ge = (a t, b t, msg str) (ok bool) {
     ok = true
     if a < b {
         ok = false
@@ -73,7 +73,7 @@ assert-ge = (a i64, b i64, msg str) (ok bool) {
 }
 
 // assert-lt: a < b
-assert-lt = (a i64, b i64, msg str) (ok bool) {
+assert-lt = (a t, b t, msg str) (ok bool) {
     ok = true
     if a >= b {
         ok = false
@@ -83,7 +83,7 @@ assert-lt = (a i64, b i64, msg str) (ok bool) {
 }
 
 // assert-le: a <= b
-assert-le = (a i64, b i64, msg str) (ok bool) {
+assert-le = (a t, b t, msg str) (ok bool) {
     ok = true
     if a > b {
         ok = false

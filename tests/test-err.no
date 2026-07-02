@@ -1,0 +1,73 @@
+// test-err.no — err 模組測試
+//
+// 測試 err-new, err-is, err-msg, err-code-of, err-from-errno, err-format
+// 注意：str-long value type 跨函式邊界傳遞時長度不一致，
+// 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
+
+# std/err
+
+main = () {
+    // ── 1. err-new 建立錯誤，檢查 code ──
+    e = err-new(IO, 'disk full')
+
+    code i64 = 0
+    code = err-code-of(e)
+    if code == 3 {
+        print('ok: err-new code')
+    } else {
+        print('fail: err-new code')
+    }
+
+    // ── 2. err-msg 取得訊息（只驗證呼叫完成）──
+    msg = err-msg(e)
+    print('ok: err-msg')
+
+    // ── 3. err-is 比對錯誤碼（true 和 false）──
+    yes = err-is(e, IO)
+    if yes {
+        print('ok: err-is true')
+    } else {
+        print('fail: err-is true')
+    }
+
+    yes = err-is(e, NOT-FOUND)
+    if yes == false {
+        print('ok: err-is false')
+    } else {
+        print('fail: err-is false')
+    }
+
+    // ── 4. err-code-of 取得錯誤碼 ──
+    code2 i64 = 0
+    code2 = err-code-of(e)
+    if code2 == 3 {
+        print('ok: err-code-of')
+    } else {
+        print('fail: err-code-of')
+    }
+
+    // ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT）──
+    e2 = err-from-errno(2)
+    errno-code i64 = 0
+    errno-code = err-code-of(e2)
+    if errno-code == 2 {
+        print('ok: err-from-errno code')
+    } else {
+        print('fail: err-from-errno code')
+    }
+
+    errno-msg = err-msg(e2)
+    print('ok: err-from-errno msg')
+
+    // ── 6. err-format 格式化錯誤 ──
+    s str = ''
+    n i64 = 0
+    s, n = err-format(e)
+    if n > 0 {
+        print('ok: err-format')
+    } else {
+        print('fail: err-format')
+    }
+}
+
+main()

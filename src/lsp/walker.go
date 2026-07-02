@@ -485,7 +485,15 @@ func (w *ASTWalker) rangeFromIdent(ident *parser.Identifier) Range {
 // rangeFromNode converts an AST node's position range to LSP Range (0-based).
 func rangeFromNode(n parser.Node) Range {
 	p := n.Pos()
-	ep := n.EndPos()
+	var ep lexer.Position
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ep = p
+			}
+		}()
+		ep = n.EndPos()
+	}()
 	return Range{
 		Start: Position{
 			Line:      uint32(p.Line - 1),

@@ -1,19 +1,23 @@
 // test-open-perm.no — 驗證 open() 檔案權限
 
+# std/fs
+
 main = () {
     tmp = '/tmp/nolang-perm-test.txt'
     remove(tmp)
 
     f ?file
     f = open(tmp, {
-        perm: FilePerm.PERM_600,
-        mode: FileMode.WRITE | FileMode.CREATE,
+        mode: file-mode.write
+        perm: file-perm.perm-600
         excl: false
+        truncate: false
+        append: false
     })
     f: {
         err -> print('fail')
         nil -> print('fail')
-        ok ->
+        ->
             it.write('x', 1)
             it.close()
             print('ok')

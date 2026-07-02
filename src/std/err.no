@@ -1,0 +1,94 @@
+// err — 錯誤處理
+//
+// 提供結構化的錯誤型別與工具函式。
+// error 結構體封裝錯誤碼與訊息，err-code 枚舉定義常見錯誤類別。
+//
+// 用法：
+//   e = err-new(IO, 'disk full')
+//   yes = err-is(e, IO)
+//   err-format(e)(s, n)
+
+// ═══════════════════════════════════════════════
+// 錯誤碼枚舉
+// ═══════════════════════════════════════════════
+
+// err-code: 錯誤類別
+err-code {
+    OK = 0,
+    NOT-FOUND = 1,
+    PERMISSION = 2,
+    IO = 3,
+    TIMEOUT = 4,
+    PARSE = 5,
+    INVALID = 6,
+    OVERFLOW = 7,
+}
+
+// ═══════════════════════════════════════════════
+// 錯誤結構體
+// ═══════════════════════════════════════════════
+
+// error: 結構化錯誤
+// code: 錯誤碼（err-code 枚舉值）
+// msg: 錯誤訊息
+error {
+    code i64
+    msg str
+}
+
+// ═══════════════════════════════════════════════
+// 建構函式
+// ═══════════════════════════════════════════════
+
+// err-new: 建立錯誤
+// code: 錯誤碼（如 IO）
+// msg: 錯誤訊息
+err-new = (code i64, msg str) (e error) {
+    e = error{
+        code: code
+        msg: msg
+    }
+}
+
+// err-from-errno: 從 C errno 建立錯誤
+// errno: C 標準錯誤碼（如 13 = EACCES）
+err-from-errno = (errno i64) (e error) {
+    msg str = strerror(errno)
+    e = error{
+        code: errno
+        msg: msg
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 查詢函式
+// ═══════════════════════════════════════════════
+
+// err-is: 檢查錯誤碼是否匹配
+err-is = (e error, code i64) (yes bool) {
+    yes = false
+    if e.code == code {
+        yes = true
+    }
+}
+
+// err-msg: 取得錯誤訊息
+err-msg = (e error) (msg str) {
+    msg = e.msg
+}
+
+// err-code-of: 取得錯誤碼
+err-code-of = (e error) (code i64) {
+    code = e.code
+}
+
+// ═══════════════════════════════════════════════
+// 格式化
+// ═══════════════════════════════════════════════
+
+// err-format: 格式化錯誤為字串
+// 輸出: s 為錯誤訊息，n 為字串長度
+err-format = (e error) (s str, n i64) {
+    s = e.msg
+    n = s.len
+}

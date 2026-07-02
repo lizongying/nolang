@@ -1,19 +1,23 @@
 // test-open-write.no — 驗證 open() 寫入
 
+# std/fs
+
 main = () {
     tmp = '/tmp/nolang-write-test.txt'
     remove(tmp)
 
     f ?file
     f = open(tmp, {
-        perm: FilePerm.PERM_600,
-        mode: FileMode.WRITE | FileMode.CREATE,
+        mode: file-mode.write
+        perm: file-perm.perm-600
         excl: false
+        truncate: false
+        append: false
     })
     f: {
         err -> print('fail: open-write err')
         nil -> print('fail: open-write nil')
-        ok ->
+        ->
             it.write('hello', 5)
             it.close()
             print('ok: write')
