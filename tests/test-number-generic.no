@@ -1,10 +1,10 @@
-// test/number_generic.no — 測試 std/number 中泛型函數的運行結果
+// test/number-generic.no — 測試 std/number 中泛型函數的運行結果
 //
 // 覆蓋以下函數：
 //   - max  (a ..num)  (r num)  — 變參泛型
 //   - min  (a ..num)  (r num)  — 變參泛型
 //   - abs  (a num)    (r num)  — 非變參泛型
-//   - sign (a num)    (r num)  — 非變參泛型
+//   - sign (num.sign) (r num)  — 方法泛型
 //   - even (a int)    (yes bool) — 整型泛型
 //   - odd  (a int)    (yes bool) — 整型泛型
 //   - pow  (a int, n int) (r int) — 整型泛型
@@ -15,16 +15,13 @@
 
 // ── max：變參泛型，回傳最大值 ──
 test-max = () {
-    r = 0
-
-    // i64
-    max(10, 20, r)
+    r = max(10, 20)
     print(r)  // expect: 20
 
-    max(3, 1, 4, 1, 5, r)
+    r = max(3, 1, 4, 1, 5)
     print(r)  // expect: 5
 
-    max(100, 50, r)
+    r = max(100, 50)
     print(r)  // expect: 100
 }
 
@@ -33,12 +30,10 @@ print(0)
 
 // ── min：變參泛型，回傳最小值 ──
 test-min = () {
-    r = 0
-
-    min(10, 20, r)
+    r = min(10, 20)
     print(r)  // expect: 10
 
-    min(3, 1, 4, 1, 5, r)
+    r = min(3, 1, 4, 1, 5)
     print(r)  // expect: 1
 }
 
@@ -47,32 +42,28 @@ print(1)
 
 // ── abs：非變參泛型，回傳絕對值 ──
 test-abs = () {
-    r = 0
-
-    abs(-42, r)
+    r = abs(-42)
     print(r)  // expect: 42
 
-    abs(7, r)
+    r = abs(7)
     print(r)  // expect: 7
 
-    abs(0, r)
+    r = abs(0)
     print(r)  // expect: 0
 }
 
 test-abs()
 print(2)
 
-// ── sign：非變參泛型，回傳符號（-1, 0, 1）──
+// ── sign：方法泛型，回傳符號（-1, 0, 1）──
 test-sign = () {
-    r = 0
-
-    sign(5, r)
+    r = sign(5)
     print(r)  // expect: 1
 
-    sign(-3, r)
+    r = sign(0 - 3)
     print(r)  // expect: -1
 
-    sign(0, r)
+    r = sign(0)
     print(r)  // expect: 0
 }
 
@@ -81,35 +72,17 @@ print(3)
 
 // ── even / odd：整型泛型，回傳 bool ──
 test-even-odd = () {
-    yes = 0
+    yes = even(4)
+    print(yes)  // expect: true
 
-    even(4, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)
-    }
+    yes = even(7)
+    print(yes)  // expect: false
 
-    odd(5, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)
-    }
+    yes = odd(4)
+    print(yes)  // expect: false
 
-    even(6, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)
-    }
-
-    odd(7, yes)
-    if yes {
-        print(1)
-    } else {
-        print(0)
-    }
+    yes = odd(7)
+    print(yes)  // expect: true
 }
 
 test-even-odd()
@@ -117,18 +90,16 @@ print(4)
 
 // ── pow：整型冪 ──
 test-pow = () {
-    r = 0
-
-    pow(2, 10, r)
+    r = pow(2, 10)
     print(r)  // expect: 1024
 
-    pow(3, 4, r)
+    r = pow(3, 4)
     print(r)  // expect: 81
 
-    pow(5, 0, r)
+    r = pow(5, 0)
     print(r)  // expect: 1
 
-    pow(7, 1, r)
+    r = pow(7, 1)
     print(r)  // expect: 7
 }
 
@@ -137,16 +108,19 @@ print(5)
 
 // ── gcd：最大公因數 ──
 test-gcd = () {
-    r = 0
-    gcd(48, 18, r)
+    r = gcd(48, 18)
     print(r)  // expect: 6
-    gcd(42, 21, r)
+
+    r = gcd(42, 21)
     print(r)  // expect: 21
-    gcd(17, 23, r)
+
+    r = gcd(17, 23)
     print(r)  // expect: 1
-    gcd(0, 12, r)
+
+    r = gcd(0, 12)
     print(r)  // expect: 12
-    gcd(-12, 8, r)
+
+    r = gcd(0 - 12, 8)
     print(r)  // expect: 4
 }
 
@@ -155,21 +129,19 @@ print(6)
 
 // ── lcm：最小公倍數 ──
 test-lcm = () {
-    r = 0
-
-    lcm(4, 6, r)
+    r = lcm(4, 6)
     print(r)  // expect: 12
 
-    lcm(12, 63, r)
+    r = lcm(12, 63)
     print(r)  // expect: 252
 
-    lcm(0, 5, r)
+    r = lcm(0, 5)
     print(r)  // expect: 0
 
-    lcm(7, 7, r)
+    r = lcm(7, 7)
     print(r)  // expect: 7
 
-    lcm(2, 5, r)
+    r = lcm(2, 5)
     print(r)  // expect: 10
 }
 

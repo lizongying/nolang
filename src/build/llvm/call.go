@@ -978,7 +978,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			// 對 by-reference 函數呼叫，先將引數值存到暫存變數，
 			// 避免被呼叫函數修改原始變數（例如 gcd 會修改 a, b）
-			if retType != "void" && g.isIntegerLLVMType(argType) {
+			// Nolang 帶 result parameter 的函數 retType 也是 "void"，需額外檢查 isNolangSingleResult
+			if (retType != "void" || isNolangSingleResult) && g.isIntegerLLVMType(argType) {
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%arg.save.%d", g.tmpIdx)
 				g.tmpIdx++

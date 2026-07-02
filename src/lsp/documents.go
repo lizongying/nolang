@@ -193,21 +193,27 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 					Type:  "f64",
 					Value: ex.Value,
 				}
-				index.definitions[ex.Name] = index.symbols[ex.Name]
+				// Don't overwrite definitions — the module indexing loop below
+				// provides proper Location info for go-to-definition.
+				if _, exists := index.definitions[ex.Name]; !exists {
+					index.definitions[ex.Name] = index.symbols[ex.Name]
+				}
 			} else {
 				index.functions[ex.Name] = &IndexEntry{
 					Name: ex.Name,
 					Kind: SymbolKindFunction,
 					Type: "fn",
 				}
-				index.definitions[ex.Name] = index.functions[ex.Name]
+				if _, exists := index.definitions[ex.Name]; !exists {
+					index.definitions[ex.Name] = index.functions[ex.Name]
+				}
 			}
 		}
 
 		// Index auto-imported std module files with location info for go-to-definition
 		for _, info := range nbuild.GetStdModules() {
-			modFilePath := nbuild.GetStdSourceFile(info.FullPath)
-			if _, err := os.Stat(modFilePath); err != nil {
+			modFilePath := nbuild.ResolveStdModulePath(info.FullPath)
+			if modFilePath == "" {
 				continue
 			}
 			source, err := os.ReadFile(modFilePath)
@@ -515,4 +521,15 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	}
 	index.functions[name] = entry
 	index.definitions[name] = entry
+	// Union methods (e.g. "num.sign") can be called by short name ("sign")
+	// because rewriteUnionCalls dispatches by argument type.
+	// Register the short name so go-to-definition works for short-name calls.
+	if idx := strings.LastIndex(name, "."); idx > 0 {
+		shortName := name[idx+1:]
+		// Don't overwrite an existing entry for the short name
+		if _, exists := index.functions[shortName]; !exists {
+			index.functions[shortName] = entry
+			index.definitions[shortName] = entry
+		}
+	}
 }

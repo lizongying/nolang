@@ -3196,6 +3196,13 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 	exportedNames := collectModuleExports(program, moduleNames)
 	for _, n := range exportedNames {
 		definedVars[n] = true
+		// Union methods (e.g. "num.sign") can be called by short name ("sign")
+		// because rewriteUnionCalls dispatches by argument type.
+		// Register the short name so the validator doesn't flag it as undefined.
+		if idx := strings.LastIndex(n, "."); idx > 0 {
+			shortName := n[idx+1:]
+			definedVars[shortName] = true
+		}
 	}
 
 	// 3. Add explicitly imported function names from UseStatements
@@ -3829,6 +3836,12 @@ func resolveModulePath(moduleName string) string {
 	}
 
 	return ""
+}
+
+// ResolveStdModulePath is the exported version of resolveModulePath,
+// for use by the LSP server to locate std module source files.
+func ResolveStdModulePath(moduleName string) string {
+	return resolveModulePath(moduleName)
 }
 
 func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[string]bool) []ValidateResult {
