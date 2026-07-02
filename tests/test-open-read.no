@@ -1,22 +1,42 @@
+// test-open-read.no — 驗證 open() 讀取
+
 main = () {
-    tmp = '/tmp/nolang-fs-test.txt'
+    tmp = '/tmp/nolang-read-test.txt'
+    payload = 'hello nolang'
     remove(tmp)
 
-    fd-w = open-file(tmp, 577, 384)
-    if fd-w < 0 {
-        print('fail: open-file write')
-        return
+    // 先寫入
+    f-w ?file
+    f-w = open(tmp, {
+        perm: FilePerm.PERM_600,
+        mode: FileMode.WRITE | FileMode.CREATE,
+        excl: false
+    })
+    f-w: {
+        err -> print('fail: write err')
+        nil -> print('fail: write nil')
+        ok ->
+            it.write(payload, payload.len)
+            it.close()
+            print('ok: write')
     }
-    print('ok: open-file write')
-    close(fd-w)
 
-    fd-r = open-file(tmp, 0, 0)
-    if fd-r < 0 {
-        print('fail: open-file read')
-        return
+    // 再讀取
+    f-r ?file
+    f-r = open(tmp, {
+        perm: FilePerm.PERM_600,
+        mode: FileMode.READ,
+        excl: false
+    })
+    f-r: {
+        err -> print('fail: read err')
+        nil -> print('fail: read nil')
+        ok ->
+            buf [256]byte
+            n = it.read(buf, 256)
+            it.close()
+            print('ok: read')
     }
-    print('ok: open-file read')
-    close(fd-r)
 
     remove(tmp)
 }

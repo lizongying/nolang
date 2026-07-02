@@ -1,14 +1,25 @@
+// test-open-write.no — 驗證 open() 寫入
+
 main = () {
     tmp = '/tmp/nolang-write-test.txt'
     remove(tmp)
 
-    fd = open-write(tmp)
-    if fd < 0 {
-        print('fail')
-        return
+    f ?file
+    f = open(tmp, {
+        perm: FilePerm.PERM_600,
+        mode: FileMode.WRITE | FileMode.CREATE,
+        excl: false
+    })
+    f: {
+        err -> print('fail: open-write err')
+        nil -> print('fail: open-write nil')
+        ok ->
+            it.write('hello', 5)
+            it.close()
+            print('ok: write')
     }
-    print('ok')
-    close(fd)
+
+    remove(tmp)
 }
 
 main()

@@ -4,12 +4,30 @@
 // 底層依賴 os 模組的系統調用（open-read、open-write、read、write、close 等）。
 //
 // 用法：
-//   f = open(FILE-PATH, write, perm-644)   // 建構函式：回傳 ?file
+//   f = open(FILE-PATH, { mode: write, perm: perm-644, excl: false, truncate: false, append: false })
 //   f.write('hello', 5)                     // 方法呼叫
 //   f.close()
 //
+//   stdin.read-line()(line, ok)             // 從標準輸入讀取一行
+//   stdout.write('hello', 5)(n)             // 寫入標準輸出
+//   stderr.write('error', 5)(n)             // 寫入標準錯誤
+//
 //   p = path{ p: '/tmp' }
 //   yes = p.exists()
+
+// macOS open() 旗標常量
+O-RDONLY = 0
+O-WRONLY = 1
+O-RDWR = 2
+O-CREAT = 512
+O-TRUNC = 1024
+O-APPEND = 8
+O-EXCL = 2048
+
+// 標準檔案描述符
+STDIN-FD = 0
+STDOUT-FD = 1
+STDERR-FD = 2
 
 // ═══════════════════════════════════════════════
 // file 結構體：封裝開啟中的檔案
@@ -22,6 +40,28 @@ file {
     path str
 }
 
+// ═══════════════════════════════════════════════
+// 特殊檔案：標準輸入/輸出/錯誤
+// ═══════════════════════════════════════════════
+
+// stdin: 標準輸入（fd=0）
+stdin = file{
+    fd: 0
+    path: '<stdin>'
+}
+
+// stdout: 標準輸出（fd=1）
+stdout = file{
+    fd: 1
+    path: '<stdout>'
+}
+
+// stderr: 標準錯誤（fd=2）
+stderr = file{
+    fd: 2
+    path: '<stderr>'
+}
+
 // file-mode: 檔案開啟模式（預組合）
 file-mode {
     read,
@@ -32,6 +72,7 @@ file-mode {
 
 // file-perm: 檔案權限（預組合）
 file-perm {
+    perm-600,
     perm-644,
     perm-664,
     perm-666,
@@ -39,20 +80,52 @@ file-perm {
     perm-777,
 }
 
+// file-opts: open() 選項
+// mode: 檔案模式（file-mode 枚舉）
+// perm: 權限（file-perm 枚舉）
+// excl: 獨佔建立（同 O_EXCL）
+// truncate: 截斷至 0 長度（同 O_TRUNC）
+// append: 附加寫入（同 O_APPEND）
+file-opts {
+    mode file-mode
+    perm file-perm
+    excl bool
+    truncate bool
+    append bool
+}
+
 // open: 開啟檔案（建構函式）
-// 成功：f = some(file{ fd, path })
+// opts: file-opts 結構體
+// 成功：f = file{ fd, path }（自動轉為 ?file）
 // 失敗：f = nil
-open = (p str, mode file-mode, perm file-perm) (f ?file) {
+open = (p str, opts file-opts) (f ?file) {
     flags i64 = 0
-    mode: {
-        read -> flags = 0
-        write -> flags = 1537
-        append -> flags = 521
-        read-write -> flags = 1538
+
+    // 從 opts.mode 取得基礎旗標
+    m file-mode = opts.mode
+    m: {
+        read -> flags = O-RDONLY
+        write -> flags = O-WRONLY | O-CREAT | O-TRUNC
+        append -> flags = O-WRONLY | O-CREAT | O-APPEND
+        read-write -> flags = O-RDWR | O-CREAT | O-TRUNC
     }
 
+    // 附加旗標
+    if opts.excl {
+        flags = flags | O-EXCL
+    }
+    if opts.truncate {
+        flags = flags | O-TRUNC
+    }
+    if opts.append {
+        flags = flags | O-APPEND
+    }
+
+    // 從 opts.perm 取得權限值
     perm-val i64 = 420
-    perm: {
+    pv file-perm = opts.perm
+    pv: {
+        perm-600 -> perm-val = 384
         perm-644 -> perm-val = 420
         perm-664 -> perm-val = 436
         perm-666 -> perm-val = 438
@@ -80,6 +153,15 @@ file.read = (buf str, n i64) (read-n i64) {
     read-n = read(.fd, buf, n)
 }
 
+// read-line: 從檔案讀取一行（最多 4096 位元組）
+file.read-line = () (line str, ok bool) {
+    if .fd < 0 {
+        return
+    }
+    n = read(.fd, line, 4096)
+    ok = n > 0
+}
+
 // write: 將 data 的前 n 位元組寫入檔案
 file.write = (data str, n i64) (written i64) {
     written = 0
@@ -91,9 +173,14 @@ file.write = (data str, n i64) (written i64) {
 
 // close: 關閉檔案
 // 成功後 fd 重設為 -1
+// 標準檔案（stdin/stdout/stderr）不會被關閉
 file.close = () (ok bool) {
     if .fd < 0 {
         ok = false
+        return
+    }
+    if .fd <= 2 {
+        ok = true
         return
     }
     rc = close(.fd)

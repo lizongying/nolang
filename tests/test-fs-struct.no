@@ -1,7 +1,9 @@
 // test-fs-struct.no — 驗證 file-opts 結構體 + open() 自由組合旗標
 //
 // 目標語法：
-//   open('test.dat', { perm: FilePerm.PERM_600, mode: FileMode.WRITE | FileMode.CREATE, excl: true })
+//   open('test.dat', { mode: write, perm: perm-644, excl: true })
+
+# std/fs
 
 main = () {
     tmp = '/tmp/nolang-fs-test.txt'
@@ -10,41 +12,47 @@ main = () {
 
     f-w ?file
     f-w = open(tmp, {
-        perm: FilePerm.PERM_600,
-        mode: FileMode.WRITE | FileMode.CREATE,
-        excl: true
+        mode: write
+        perm: perm-644
+        excl: false
+        truncate: false
+        append: false
     })
     f-w: {
         err -> print('fail: open-write err')
         nil -> print('fail: open-write nil')
-        ok ->
+        ->
             it.write(payload, payload.len)
             it.close()
-            print('ok: open write/create/excl')
+            print('ok: open write')
     }
 
     f-e ?file
     f-e = open(tmp, {
-        perm: FilePerm.PERM_600,
-        mode: FileMode.WRITE | FileMode.CREATE,
+        mode: write
+        perm: perm-644
         excl: true
+        truncate: false
+        append: false
     })
     f-e: {
         err -> print('fail: open-excl err')
         nil -> print('ok: excl blocks existing file')
-        ok -> print('fail: excl did not block')
+        -> print('fail: excl did not block')
     }
 
     f-r ?file
     f-r = open(tmp, {
-        perm: FilePerm.PERM_600,
-        mode: FileMode.READ,
+        mode: read
+        perm: perm-644
         excl: false
+        truncate: false
+        append: false
     })
     f-r: {
         err -> print('fail: open-read err')
         nil -> print('fail: open-read nil')
-        ok ->
+        ->
             buf [256]byte
             n = it.read(buf, 256)
             it.close()

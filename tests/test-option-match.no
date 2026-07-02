@@ -4,90 +4,51 @@
 // 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
 
 test-err = () {
+    n ?str
     n = err('boom')
-    r = if n ==
-err {
-        .
-        
-        n
-        'got-err'
-    } elif n ==
-nil {
-        .
-        
-        n
-        'got-nil'
-    } elif  {
-        .
-        
-        n
-        'got-val'
+    r = ''
+    n: {
+        err -> r = 'got-err'
+        nil -> r = 'got-nil'
+        -> r = 'got-val'
     }
+    print(r)
 }
-print(r)
 
 test-nil = () {
+    n ?str
     n = nil
-    r = if n ==
-err {
-        .
-        
-        n
-        'got-err'
-    } elif n ==
-nil {
-        .
-        
-        n
-        'got-nil'
-    } elif  {
-        .
-        
-        n
-        'got-val'
+    r = ''
+    n: {
+        err -> r = 'got-err'
+        nil -> r = 'got-nil'
+        -> r = 'got-val'
     }
+    print(r)
 }
-print(r)
 
 test-val = () {
+    n ?i64
     n = 42
-    r = if n ==
-err {
-        .
-        
-        n
-        'got-err'
-    } elif n ==
-nil {
-        .
-        
-        n
-        'got-nil'
-    } elif  {
-        .
-        
-        n
-        'got-val'
+    r = ''
+    n: {
+        err -> r = 'got-err'
+        nil -> r = 'got-nil'
+        -> r = 'got-val'
     }
+    print(r)
 }
-print(r)
 
 test-err-only = () {
+    n ?str
     n = err('boom')
-    r = if n ==
-err {
-        .
-        
-        n
-        'only-err'
-    } elif  {
-        .
-        
-        n
-        'otherwise'
+    r = ''
+    n: {
+        err -> r = 'only-err'
+        -> r = 'otherwise'
     }
+    print(r)
 }
-print(r)
 
 test-err()
 test-nil()

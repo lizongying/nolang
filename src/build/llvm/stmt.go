@@ -1948,8 +1948,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	case "i8*":
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), val, g.varAddr(name)))
-	case "double":
-		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), val, g.varAddr(name)))
+	case "float", "double":
+		// Convert integer literal to float format (e.g. "1" → "1.0")
+		// This is needed when monomorphized union-type functions substitute
+		// integer values into float-typed contexts.
+		if !strings.HasPrefix(val, "%") && !strings.ContainsAny(val, ".eE") {
+			if _, err := fmt.Sscanf(val, "%d", new(int64)); err == nil {
+				val = val + ".0"
+			}
+		}
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), llvmType, val, llvmType, g.varAddr(name)))
 	default:
 		ptrType := llvmType + "*"
 		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, g.varAddr(name)))

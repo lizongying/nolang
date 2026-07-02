@@ -179,9 +179,9 @@ main = () {
 | 範圍遍歷 | `i <- [a..b]: { }`              | `for i <- [a..b] { }`   |
 | 條件匹配 | `x: { ... }`                    | `match x { ... }`       |
 | 分支選擇 | `{ cond -> body }`              | `if/elif/else { }`      |
-| 跳過本輪 | `**`                            | `continue`              |
-| 跳出循環 | `*`                             | `break`                 |
-| 提前返回 | `...`                           | `return`                |
+| 跳過本輪 | `continue`（暫時保留）           | `**`（規劃中，暫不替代） |
+| 跳出循環 | `break`（暫時保留）              | `*`（規劃中，暫不替代）  |
+| 提前返回 | `return`（暫時保留）              | `...`（規劃中，暫不替代） |
 
 ```nolang
 // Infinite loop（新式）
@@ -326,14 +326,14 @@ user json {
 
 ### Special Symbols
 
-- `...` — return/terminate
+- `...` — return/terminate（規劃中，目前仍使用 `return`）
 - `#` — import module
 - `..` — parent (super)
 - `.` — self/true
 - `!` — false/error
 - `! { }` — 無限循環
-- `**` — continue（跳過本輪）
-- `*` — break（跳出循環）
+- `**` — continue（跳過本輪）（規劃中，目前仍使用 `continue`）
+- `*` — break（跳出循環）（規劃中，目前仍使用 `break`）
 - `<-` — range iteration
 
 ## Additional Resources
@@ -355,8 +355,8 @@ For detailed documentation on each topic, see:
 | `for i <- [a..b] { }`                | `i <- [a..b]: { }`              |
 | `match x { 1 -> 1, _ -> 0 }`         | `x: { 1 -> 1; -> 0 }`           |
 | `if c { a } elif d { b } else { e }` | `{ c -> a; d -> b; -> e }`      |
-| `break`                              | `*`                             |
-| `continue`                           | `**`                            |
-| `return`                             | `...`                           |
+| `break`（保留，暫不遷移）             | —                               |
+| `continue`（保留，暫不遷移）           | —                               |
+| `return`（保留，暫不遷移）            | —                               |
 
 Old syntax still parses but emits a deprecation warning on stderr. Use `no fmt` to apply the migration automatically (the formatter always outputs the new form).

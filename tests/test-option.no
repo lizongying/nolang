@@ -1,93 +1,54 @@
 // Test 1: Declare and set nil
 test-option-1 = () {
-    x
-    x = nil
-    print(x)
+    x1 ?str
+    x1 = nil
+    print(x1)
 }
 
 // Test 2: Set value via val()
 test-option-2 = () {
-    x
-    x = 'hello'
-    print(x)
+    x2 ?str
+    x2 = 'hello'
+    print(x2)
 }
 
 // Test 3: Set error
 test-option-3 = () {
-    x
-    x = err('error msg')
-    print(x)
+    x3 ?str
+    x3 = err('error msg')
+    print(x3)
 }
 
 // Test 4: Match on option with err-> nil-> -> patterns
 test-option-4 = () {
-    x
-    x = err('error msg')
-    if x ==
-err {
-        .
-        
-        x
-        print(.)
-    } elif x ==
-nil {
-        .
-        
-        x
-        print(0)
-    } elif  {
-        .
-        
-        x
-        print(1)
+    x4 ?str
+    x4 = err('error msg')
+    x4: {
+        err -> print(.)
+        nil -> print(0)
+        -> print(1)
     }
 }
 
 // Test 5: Match on nil
 test-option-5 = () {
-    x
-    x = nil
-    if x ==
-err {
-        .
-        
-        x
-        print(100)
-    } elif x ==
-nil {
-        .
-        
-        x
-        print(200)
-    } elif  {
-        .
-        
-        x
-        print(300)
+    x5 ?str
+    x5 = nil
+    x5: {
+        err -> print(100)
+        nil -> print(200)
+        -> print(300)
     }
 }
 
 // Test 6: Match on val
 test-option-6 = () {
-    x
-    x = 'test'
-    if x ==
-err {
-        .
-        
-        x
-        print(1000)
-    } elif x ==
-nil {
-        .
-        
-        x
-        print(2000)
-    } elif  {
-        .
-        
-        x
-        print(3000)
+    x6 ?str
+    x6 = 'test'
+    x6: {
+        err -> print(1000)
+        nil -> print(2000)
+        -> print(3000)
     }
 }
 

@@ -1,14 +1,25 @@
+// test-open-perm.no — 驗證 open() 檔案權限
+
 main = () {
     tmp = '/tmp/nolang-perm-test.txt'
     remove(tmp)
 
-    fd = open-file(tmp, 577, 511)
-    if fd < 0 {
-        print('fail')
-        return
+    f ?file
+    f = open(tmp, {
+        perm: FilePerm.PERM_600,
+        mode: FileMode.WRITE | FileMode.CREATE,
+        excl: false
+    })
+    f: {
+        err -> print('fail')
+        nil -> print('fail')
+        ok ->
+            it.write('x', 1)
+            it.close()
+            print('ok')
     }
-    print('ok')
-    close(fd)
+
+    remove(tmp)
 }
 
 main()

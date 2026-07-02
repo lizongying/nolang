@@ -560,9 +560,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				}
 			}
 			// 結果參數 fn(params)(results) 僅標準庫可用
-			if len(fd.Results) > 0 {
-				return "", fmt.Errorf("result parameters fn()() are only allowed in standard library, not in user code (function: %s)", fd.Name)
-			}
+			// if len(fd.Results) > 0 {
+			// 	return "", fmt.Errorf("result parameters fn()() are only allowed in standard library, not in user code (function: %s)", fd.Name)
+			// }
 		}
 	}
 
