@@ -39,7 +39,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	}
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope)
+		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope, s.IsVariadic)
 		if s.Body != nil {
 			for _, inner := range s.Body.Statements {
 				w.walkStatement(inner, s.Name)
@@ -57,6 +57,14 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				kind = SymbolKindFunction
 				detail = w.formatFuncLitDetail(funcLit)
 				params = w.extractParams(funcLit.Parameters)
+				// For variadic functions, convert last param's []type to ..type
+				if funcLit.IsVariadic && len(params) > 0 {
+					last := &params[len(params)-1]
+					if strings.HasPrefix(last.Type, "[]") {
+						last.Type = ".." + last.Type[2:]
+					}
+				}
+				resultParams := w.extractParams(funcLit.Results)
 				value = detail
 				entry := &IndexEntry{
 					Name: s.Name.Value,
@@ -66,9 +74,10 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 						URI:   w.uri,
 						Range: w.rangeFromIdent(s.Name),
 					},
-					Scope:  scope,
-					Value:  value,
-					Params: params,
+					Scope:        scope,
+					Value:        value,
+					Params:       params,
+					ResultParams: resultParams,
 				}
 				w.index.functions[s.Name.Value] = entry
 				w.index.definitions[s.Name.Value] = entry
@@ -239,7 +248,7 @@ func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {
 	}
 }
 
-func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string) {
+func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool) {
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -259,6 +268,15 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		paramInfos[i] = ParamInfo{Name: p.Name, Type: typeStr}
 	}
 
+	// For variadic functions, the last parameter's type is stored as []type
+	// but should be displayed as ..type
+	if isVariadic && len(paramInfos) > 0 {
+		last := &paramInfos[len(paramInfos)-1]
+		if strings.HasPrefix(last.Type, "[]") {
+			last.Type = ".." + last.Type[2:]
+		}
+	}
+
 	resultInfos := make([]ParamInfo, len(results))
 	for i, r := range results {
 		typeStr := ""
@@ -268,17 +286,29 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		resultInfos[i] = ParamInfo{Name: r.Name, Type: typeStr}
 	}
 
-	retType := ""
-	s := fmt.Sprintf("fn(")
+	s := "fn("
 	for i, p := range paramInfos {
 		if i > 0 {
 			s += ", "
 		}
 		s += p.Name
+		if p.Type != "" {
+			s += " " + p.Type
+		}
 	}
 	s += ")"
-	if retType != "" {
-		s += " " + retType
+	if len(resultInfos) > 0 {
+		s += " ("
+		for i, r := range resultInfos {
+			if i > 0 {
+				s += ", "
+			}
+			s += r.Name
+			if r.Type != "" {
+				s += " " + r.Type
+			}
+		}
+		s += ")"
 	}
 
 	entry := &IndexEntry{
@@ -345,19 +375,34 @@ func (w *ASTWalker) formatFuncLitDetail(fl *parser.FunctionLiteral) string {
 		if p.Type != nil {
 			typeStr = p.Type.String()
 		}
+		// For variadic, convert []type to ..type on the last parameter
+		if fl.IsVariadic && i == len(fl.Parameters)-1 && strings.HasPrefix(typeStr, "[]") {
+			typeStr = ".." + typeStr[2:]
+		}
 		if typeStr != "" {
 			params[i] = p.Name + " " + typeStr
 		} else {
 			params[i] = p.Name
 		}
 	}
-	retType := ""
+	s := "fn(" + strings.Join(params, ", ") + ")"
 	if len(fl.Results) > 0 {
-		retType = fl.Results[0].Type.String()
-	}
-	s := fmt.Sprintf("fn(%s)", strings.Join(params, ", "))
-	if retType != "" {
-		s += " " + retType
+		s += " ("
+		for i, r := range fl.Results {
+			if i > 0 {
+				s += ", "
+			}
+			typeStr := ""
+			if r.Type != nil {
+				typeStr = r.Type.String()
+			}
+			if typeStr != "" {
+				s += r.Name + " " + typeStr
+			} else {
+				s += r.Name
+			}
+		}
+		s += ")"
 	}
 	return s
 }

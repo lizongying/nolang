@@ -468,12 +468,22 @@ func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) st
 func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.Statement, modURI string) {
 	var name string
 	var token interface{}
+	var params []ParamInfo
 	var resultParams []ParamInfo
+	var isVariadic bool
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		name = s.Name
 		token = s.Token
+		isVariadic = s.IsVariadic
+		for _, p := range s.Parameters {
+			typeStr := ""
+			if p.Type != nil {
+				typeStr = p.Type.String()
+			}
+			params = append(params, ParamInfo{Name: p.Name, Type: typeStr})
+		}
 		for _, r := range s.Results {
 			typeStr := ""
 			if r.Type != nil {
@@ -483,9 +493,24 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		}
 	case *parser.LetStatement:
 		if s.Name != nil {
-			if _, ok := s.Value.(*parser.FunctionLiteral); ok {
+			if funcLit, ok := s.Value.(*parser.FunctionLiteral); ok {
 				name = s.Name.Value
 				token = s.Name.Token
+				isVariadic = funcLit.IsVariadic
+				for _, p := range funcLit.Parameters {
+					typeStr := ""
+					if p.Type != nil {
+						typeStr = p.Type.String()
+					}
+					params = append(params, ParamInfo{Name: p.Name, Type: typeStr})
+				}
+				for _, r := range funcLit.Results {
+					typeStr := ""
+					if r.Type != nil {
+						typeStr = r.Type.String()
+					}
+					resultParams = append(resultParams, ParamInfo{Name: r.Name, Type: typeStr})
+				}
 			} else {
 				return // regular variable, skip
 			}
@@ -496,6 +521,15 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		return
 	}
 
+	// For variadic functions, the last parameter's type is stored as []type
+	// but should be displayed as ..type
+	if isVariadic && len(params) > 0 {
+		last := &params[len(params)-1]
+		if strings.HasPrefix(last.Type, "[]") {
+			last.Type = ".." + last.Type[2:]
+		}
+	}
+
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -503,6 +537,32 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		column = t.Column
 	default:
 		return
+	}
+
+	// Build function signature string: fn(a num, b num) (r num)
+	sig := "fn("
+	for i, p := range params {
+		if i > 0 {
+			sig += ", "
+		}
+		sig += p.Name
+		if p.Type != "" {
+			sig += " " + p.Type
+		}
+	}
+	sig += ")"
+	if len(resultParams) > 0 {
+		sig += " ("
+		for i, r := range resultParams {
+			if i > 0 {
+				sig += ", "
+			}
+			sig += r.Name
+			if r.Type != "" {
+				sig += " " + r.Type
+			}
+		}
+		sig += ")"
 	}
 
 	loc := Location{
@@ -515,8 +575,9 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	entry := &IndexEntry{
 		Name:         name,
 		Kind:         SymbolKindFunction,
-		Type:         "fn",
+		Type:         sig,
 		Location:     loc,
+		Params:       params,
 		ResultParams: resultParams,
 	}
 	index.functions[name] = entry

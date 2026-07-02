@@ -98,6 +98,17 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 		}
 	}
 
+	if len(entry.ResultParams) > 0 {
+		builder.WriteString("- **Returns**:\n")
+		for _, r := range entry.ResultParams {
+			if r.Type != "" {
+				builder.WriteString(fmt.Sprintf("  - `%s: %s`\n", r.Name, r.Type))
+			} else {
+				builder.WriteString(fmt.Sprintf("  - `%s`\n", r.Name))
+			}
+		}
+	}
+
 	return MarkupContent{
 		Kind:  MarkupKindMarkdown,
 		Value: builder.String(),

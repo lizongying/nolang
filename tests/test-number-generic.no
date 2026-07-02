@@ -4,7 +4,7 @@
 //   - max  (a ..num)  (r num)  — 變參泛型
 //   - min  (a ..num)  (r num)  — 變參泛型
 //   - abs  (a num)    (r num)  — 非變參泛型
-//   - sign (num.sign) (r num)  — 方法泛型
+//   - sign (a num)    (r num)  — 方法泛型
 //   - even (a int)    (yes bool) — 整型泛型
 //   - odd  (a int)    (yes bool) — 整型泛型
 //   - pow  (a int, n int) (r int) — 整型泛型
