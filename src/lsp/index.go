@@ -1,9 +1,11 @@
 package lsp
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/parser"
 )
 
 type IndexEntry struct {
@@ -15,6 +17,7 @@ type IndexEntry struct {
 	Value        string
 	Params       []ParamInfo
 	ResultParams []ParamInfo // result/output parameter types
+	Doc          string      // doc comment text
 }
 
 type ParamInfo struct {
@@ -229,4 +232,17 @@ func formatFuncType(params []ParamInfo, retType string) string {
 		s += " " + retType
 	}
 	return s
+}
+
+// extractDocComment extracts doc comment text from a CommentedNode.
+func extractDocComment(cn *parser.CommentedNode) string {
+	if cn == nil || cn.Doc == nil || len(cn.Doc.List) == 0 {
+		return ""
+	}
+	var lines []string
+	for _, c := range cn.Doc.List {
+		text := strings.TrimSpace(c.Text)
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
 }

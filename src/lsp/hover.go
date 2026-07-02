@@ -69,6 +69,10 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 
 	builder.WriteString(fmt.Sprintf("**%s**\n\n", entry.Name))
 
+	if entry.Doc != "" {
+		builder.WriteString(fmt.Sprintf("%s\n\n", entry.Doc))
+	}
+
 	if entry.Type != "" {
 		builder.WriteString(fmt.Sprintf("- **Type**: `%s`\n", entry.Type))
 	}

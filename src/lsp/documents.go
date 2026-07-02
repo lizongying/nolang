@@ -471,12 +471,14 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	var params []ParamInfo
 	var resultParams []ParamInfo
 	var isVariadic bool
+	var doc string
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		name = s.Name
 		token = s.Token
 		isVariadic = s.IsVariadic
+		doc = extractDocComment(&s.CommentedNode)
 		for _, p := range s.Parameters {
 			typeStr := ""
 			if p.Type != nil {
@@ -497,6 +499,7 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 				name = s.Name.Value
 				token = s.Name.Token
 				isVariadic = funcLit.IsVariadic
+				doc = extractDocComment(&s.CommentedNode)
 				for _, p := range funcLit.Parameters {
 					typeStr := ""
 					if p.Type != nil {
@@ -579,6 +582,7 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		Location:     loc,
 		Params:       params,
 		ResultParams: resultParams,
+		Doc:          doc,
 	}
 	index.functions[name] = entry
 	index.definitions[name] = entry

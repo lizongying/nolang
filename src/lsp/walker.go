@@ -39,7 +39,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	}
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope, s.IsVariadic)
+		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope, s.IsVariadic, extractDocComment(&s.CommentedNode))
 		if s.Body != nil {
 			for _, inner := range s.Body.Statements {
 				w.walkStatement(inner, s.Name)
@@ -78,6 +78,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					Value:        value,
 					Params:       params,
 					ResultParams: resultParams,
+					Doc:          extractDocComment(&s.CommentedNode),
 				}
 				w.index.functions[s.Name.Value] = entry
 				w.index.definitions[s.Name.Value] = entry
@@ -248,7 +249,7 @@ func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {
 	}
 }
 
-func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool) {
+func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool, doc string) {
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -325,6 +326,7 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		Scope:        scope,
 		Params:       paramInfos,
 		ResultParams: resultInfos,
+		Doc:          doc,
 	}
 	w.index.functions[name] = entry
 	w.index.definitions[name] = entry
