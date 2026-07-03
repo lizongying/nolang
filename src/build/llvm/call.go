@@ -595,6 +595,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return "i64 " + val
 	}
 
+	// FFI extern 函式分派：在 builtin / 方法解析之前檢查，避免與同名項目衝突。
+	// extern 函式名稱為使用者自選的 FFI 名稱（如 c-strlen、sqlite3-open），與
+	// Nolang 方法名稱（如 str.to-upper）不會碰撞。
+	if g.externFuncs != nil {
+		if ext, ok := g.externFuncs[fnName]; ok {
+			return g.callExtern(sb, ext, expr)
+		}
+	}
+
 	// 通過 BuiltinMethodList 分派（LLVMIntrinsic / CLibCall / LLVMConv / ForwardFunc）
 	// 注意：方法呼叫且 funcRetTypes 已有 Nolang 實作者，必須走後面的方法解析路徑，
 	// 否則 CLibCall 會丟失輸出參數（如 .to-i64(n) 變成 atoi(...) 結果未存回 n）。
@@ -1714,4 +1723,186 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		return strReg2
 	}
 	return ""
+}
+
+// evalF64Arg 評估表達式為 double 值。
+// FloatLiteral / double(或 float) 變數直接取值；其餘（整數表達式等）先取 i64 再 sitofp 成 double。
+func (g *Generator) evalF64Arg(sb *strings.Builder, arg parser.Expression) string {
+	if _, ok := arg.(*parser.FloatLiteral); ok {
+		return g.generateExprWithSB(sb, arg)
+	}
+	if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
+		if t, ok := g.varTypes[ident.Value]; ok && (t == "double" || t == "float") {
+			return g.generateExprWithSB(sb, arg)
+		}
+	}
+	i64Val := g.evalI64Arg(sb, arg)
+	g.tmpIdx++
+	reg := fmt.Sprintf("%%ext.f64.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = sitofp i64 %s to double\n", g.indent(), reg, i64Val))
+	return reg
+}
+
+// callExtern 產生對 FFI extern 函式的 LLVM call 指令，並依 FFI 型別對應表
+// 自動處理輸入參數與回傳值的型別轉換。
+//
+// 輸入轉換（Nolang storage → C）：
+//
+//	i64  → i64 (none)
+//	i32  → trunc i64→i32
+//	f64  → double (none；整數表達式先 sitofp)
+//	str  → makeNullTerminatedStr → i8*
+//	ptr  → inttoptr i64→i8*
+//	bool → trunc i64→i32
+//	pptr → alloca i8*，傳 i8**；呼叫後 load+ptrtoint 存回呼叫端變數
+//
+// 輸出轉換（C → Nolang storage）：
+//
+//	i64  → i64 (none)
+//	i32  → sext i32→i64
+//	f64  → double (none)
+//	str  → strlen + insertvalue %str-long
+//	ptr  → ptrtoint i8*→i64
+//	bool → icmp ne 0 + zext i1→i64
+//	void → "0"
+func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *parser.CallExpression) string {
+	// 乾跑（sb == nil，例如 rangeBoundStr 型別推斷）：回傳佔位值，不發出 IR。
+	if sb == nil {
+		return "0"
+	}
+
+	type pptrSlot struct {
+		slotReg string
+		varName string // 呼叫端變數名；非 Identifier 時為 ""（跳過 store-back）
+	}
+	var pptrSlots []pptrSlot
+
+	llvmArgs := make([]string, 0, len(info.ParamTypes))
+	for i, ptype := range info.ParamTypes {
+		if i >= len(expr.Arguments) {
+			break
+		}
+		arg := expr.Arguments[i]
+		switch ptype {
+		case "i64":
+			llvmArgs = append(llvmArgs, "i64 "+g.evalI64Arg(sb, arg))
+		case "i32":
+			val := g.evalI64Arg(sb, arg)
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%ext.trunc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), reg, val))
+			llvmArgs = append(llvmArgs, "i32 "+reg)
+		case "bool":
+			// 輸入：Nolang bool (i64) → C int (i32)
+			val := g.evalI64Arg(sb, arg)
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%ext.btrunc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), reg, val))
+			llvmArgs = append(llvmArgs, "i32 "+reg)
+		case "f64":
+			llvmArgs = append(llvmArgs, "double "+g.evalF64Arg(sb, arg))
+		case "str":
+			ptr := g.makeNullTerminatedStr(sb, arg)
+			if ptr == "" {
+				ptr = g.strExprDataPtr(sb, arg)
+			}
+			llvmArgs = append(llvmArgs, "i8* "+ptr)
+		case "ptr":
+			val := g.evalI64Arg(sb, arg)
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%ext.ptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), reg, val))
+			llvmArgs = append(llvmArgs, "i8* "+reg)
+		case "pptr":
+			g.tmpIdx++
+			slot := fmt.Sprintf("%%ext.pptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), slot))
+			llvmArgs = append(llvmArgs, "i8** "+slot)
+			varName := ""
+			if ident, ok := arg.(*parser.Identifier); ok {
+				varName = ident.Value
+			}
+			pptrSlots = append(pptrSlots, pptrSlot{slotReg: slot, varName: varName})
+		default:
+			// 未知 FFI 型別：保守地當作 i64
+			llvmArgs = append(llvmArgs, "i64 "+g.evalI64Arg(sb, arg))
+		}
+	}
+
+	// 決定回傳型別（取第一個 result；無 result 為 void）
+	retFFIType := ""
+	if len(info.ResultTypes) > 0 {
+		retFFIType = info.ResultTypes[0]
+	}
+	retLLVMType := "void"
+	if retFFIType != "" {
+		retLLVMType = ffiTypeToLLVM(retFFIType)
+	}
+
+	fnRef := externSymbolRef(info.Name)
+	argStr := strings.Join(llvmArgs, ", ")
+
+	var callReg string
+	if retLLVMType == "void" {
+		sb.WriteString(fmt.Sprintf("%scall void %s(%s)\n", g.indent(), fnRef, argStr))
+	} else {
+		g.tmpIdx++
+		callReg = fmt.Sprintf("%%ext.call.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call %s %s(%s)\n", g.indent(), callReg, retLLVMType, fnRef, argStr))
+	}
+
+	// pptr 輸出參數：從 alloca 載入 i8*，ptrtoint 成 i64，存回呼叫端變數。
+	// 呼叫端引數必須是簡單 Identifier；否則跳過 store-back。
+	for _, ps := range pptrSlots {
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%ext.pptr.load.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, ps.slotReg))
+		g.tmpIdx++
+		intReg := fmt.Sprintf("%%ext.pptr.int.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
+		if ps.varName != "" {
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), intReg, g.varAddr(ps.varName)))
+		}
+	}
+
+	// 回傳值轉換
+	if retLLVMType == "void" {
+		return "0"
+	}
+	switch retFFIType {
+	case "i64":
+		return callReg
+	case "i32":
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%ext.sext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), reg, callReg))
+		return reg
+	case "f64":
+		return callReg
+	case "str":
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%ext.strlen.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, callReg))
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%ext.str1.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%ext.str2.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, callReg))
+		return strReg2
+	case "ptr":
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%ext.ptrtoint.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), reg, callReg))
+		return reg
+	case "bool":
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%ext.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp ne i32 %s, 0\n", g.indent(), cmpReg, callReg))
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%ext.zext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
+		return reg
+	}
+	return callReg
 }

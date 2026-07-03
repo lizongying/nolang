@@ -423,6 +423,58 @@ func (fd *FunctionDefinition) statementNode()         {}
 func (fd *FunctionDefinition) Pos() lexer.Position    { return posFromToken(fd.Token) }
 func (fd *FunctionDefinition) EndPos() lexer.Position { return fd.Body.EndPos() }
 
+// ExternStatement — FFI extern 宣告：extern name = (params) (results)
+// 僅為宣告，無函式主體；對應外部 C 函式。
+type ExternStatement struct {
+	Token      lexer.Token
+	Name       *Identifier
+	Parameters []*Parameter
+	Results    []*Parameter
+	CommentedNode
+}
+
+func (es *ExternStatement) statementNode()       {}
+func (es *ExternStatement) TokenLiteral() string { return es.Token.Literal }
+func (es *ExternStatement) Pos() lexer.Position  { return posFromToken(es.Token) }
+func (es *ExternStatement) EndPos() lexer.Position {
+	if len(es.Results) > 0 {
+		return es.Results[len(es.Results)-1].EndPos()
+	}
+	if len(es.Parameters) > 0 {
+		return es.Parameters[len(es.Parameters)-1].EndPos()
+	}
+	return es.Name.EndPos()
+}
+func (es *ExternStatement) String() string {
+	var out strings.Builder
+	out.WriteString("extern ")
+	out.WriteString(es.Name.Value)
+	out.WriteString(" = (")
+	for i, p := range es.Parameters {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(p.Name)
+		if p.Type != nil {
+			out.WriteString(" ")
+			out.WriteString(p.Type.String())
+		}
+	}
+	out.WriteString(") (")
+	for i, r := range es.Results {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(r.Name)
+		if r.Type != nil {
+			out.WriteString(" ")
+			out.WriteString(r.Type.String())
+		}
+	}
+	out.WriteString(")")
+	return out.String()
+}
+
 type FunctionLiteral struct {
 	Token lexer.Token
 	FuncSignature

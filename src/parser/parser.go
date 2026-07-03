@@ -716,6 +716,8 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
+	case lexer.EXTERN:
+		return p.parseExternStatement()
 	case lexer.LABEL:
 		return p.parseLabeledStatement()
 	case lexer.AT:
@@ -3087,7 +3089,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
-		lexer.LBRACKET,
+		lexer.LBRACKET, lexer.EXTERN,
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
 		// preceding `break`/`continue`/`return`).
@@ -6622,6 +6624,169 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	if p.currentToken.Type == lexer.RBRACE {
 		p.nextToken()
 	}
+}
+
+// parseExternStatement 解析 FFI extern 宣告：
+//
+//	extern name = (params) (results)
+//
+// 僅為宣告，無函式主體。參數/結果型別支援 ptr 關鍵字（不透明指標）以及
+// 一般具名型別（i64, str, ...）。
+func (p *Parser) parseExternStatement() Statement {
+	stmt := &ExternStatement{
+		Token:      p.currentToken,
+		Parameters: []*Parameter{},
+		Results:    []*Parameter{},
+	}
+	p.nextToken() // skip extern
+
+	// 函式名稱
+	if p.currentToken.Type != lexer.IDENT {
+		msg := fmt.Sprintf("line %d, column %d: expected identifier after 'extern', got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	stmt.Name = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+	p.nextToken() // skip name
+
+	// 預期 '='
+	if p.currentToken.Type != lexer.ASSIGN {
+		msg := fmt.Sprintf("line %d, column %d: expected '=' after extern name, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip =
+
+	// 解析 (params)
+	params, ok := p.parseExternParamList()
+	if !ok {
+		return nil
+	}
+	stmt.Parameters = params
+
+	// 跳過 NEWLINE（多行定義）
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// 解析 (results) — 選擇性
+	if p.currentToken.Type == lexer.LPAREN {
+		results, ok := p.parseExternParamList()
+		if !ok {
+			return nil
+		}
+		stmt.Results = results
+	}
+
+	p.skipToStatementEnd()
+	return stmt
+}
+
+// parseExternParamList 解析 extern 宣告中的單一 (name type, ...) 參數列表。
+// 前置條件: currentToken 為 '('；後置條件: currentToken 為 ')' 後的下一個 token。
+func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
+	var params []*Parameter
+	if p.currentToken.Type != lexer.LPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected '(' in extern declaration, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil, false
+	}
+	p.nextToken() // skip (
+
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	if p.currentToken.Type == lexer.RPAREN {
+		p.nextToken()
+		return params, true
+	}
+
+	for {
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RPAREN {
+			break
+		}
+
+		// 參數名稱
+		if p.currentToken.Type != lexer.IDENT {
+			msg := fmt.Sprintf("line %d, column %d: expected parameter name in extern declaration, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil, false
+		}
+		nameTok := p.currentToken
+		name := p.currentToken.Literal
+		p.nextToken() // skip name
+
+		// 參數型別
+		paramType, ok := p.parseExternType()
+		if !ok {
+			return nil, false
+		}
+
+		params = append(params, &Parameter{Token: nameTok, Name: name, Type: paramType})
+
+		if p.currentToken.Type == lexer.RPAREN {
+			break
+		}
+		if p.currentToken.Type != lexer.COMMA {
+			msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis in extern declaration, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil, false
+		}
+		p.nextToken() // skip COMMA
+	}
+
+	if p.currentToken.Type != lexer.RPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis in extern declaration, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil, false
+	}
+	p.nextToken() // skip )
+
+	return params, true
+}
+
+// parseExternType 解析 extern 宣告中的單一型別。支援：
+//   - ptr：不透明指標（PointerType{Type: nil}），或 ptr(type) 形式
+//   - ptr 以外的具名型別、?type、[]type、[N]type 等（重用 parseParamTypeAfterName）
+func (p *Parser) parseExternType() (Type, bool) {
+	if p.currentToken.Type == lexer.PTR {
+		tok := p.currentToken
+		p.nextToken() // skip ptr
+		if p.currentToken.Type == lexer.LPAREN {
+			// ptr(type) 形式
+			p.nextToken() // skip (
+			inner, ok := p.parseExternType()
+			if !ok {
+				return nil, false
+			}
+			if p.currentToken.Type != lexer.RPAREN {
+				msg := fmt.Sprintf("line %d, column %d: expected ')' after ptr( in extern declaration, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil, false
+			}
+			p.nextToken() // skip )
+			return &PointerType{Token: tok, Type: inner}, true
+		}
+		// 不透明指標：ptr 後未跟 (
+		return &PointerType{Token: tok, Type: nil}, true
+	}
+	// 其餘型別重用既有參數型別解析邏輯
+	t, ok := p.parseParamTypeAfterName()
+	if !ok {
+		return nil, false
+	}
+	return t, true
 }
 
 // parseColonFunctionDefinition parses a colon-syntax function definition:

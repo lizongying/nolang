@@ -1001,6 +1001,116 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return strReg
 	}
 
+	// ═══════════════════════════════════════════════
+	// process — 進程操作
+	// ═══════════════════════════════════════════════
+
+	// process-fork: fork current process
+	// Returns: 0=child, >0=parent(child_pid), -1=error
+	if fnName == "process-fork" {
+		g.tmpIdx++
+		forkRet := fmt.Sprintf("%%proc.fork.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		forkExt := fmt.Sprintf("%%proc.fork.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @fork()\n", g.indent(), forkRet))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), forkExt, forkRet))
+		}
+		return forkExt
+	}
+
+	// process-pipe: create a pipe
+	// Returns packed i64: (read_fd << 32) | write_fd
+	if fnName == "process-pipe" {
+		g.tmpIdx++
+		pipeFds := fmt.Sprintf("%%proc.pipe.fds.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeRet := fmt.Sprintf("%%proc.pipe.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeGep0 := fmt.Sprintf("%%proc.pipe.gep0.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeFd0 := fmt.Sprintf("%%proc.pipe.fd0.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeGep1 := fmt.Sprintf("%%proc.pipe.gep1.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeFd1 := fmt.Sprintf("%%proc.pipe.fd1.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeExt0 := fmt.Sprintf("%%proc.pipe.ext0.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeExt1 := fmt.Sprintf("%%proc.pipe.ext1.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipeShl := fmt.Sprintf("%%proc.pipe.shl.%d", g.tmpIdx)
+		g.tmpIdx++
+		pipePack := fmt.Sprintf("%%proc.pipe.pack.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [2 x i32]\n", g.indent(), pipeFds))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @pipe(i32* %s)\n", g.indent(), pipeRet, pipeFds))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 0\n", g.indent(), pipeGep0, pipeFds))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), pipeFd0, pipeGep0))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 1\n", g.indent(), pipeGep1, pipeFds))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), pipeFd1, pipeGep1))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), pipeExt0, pipeFd0))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), pipeExt1, pipeFd1))
+			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 32\n", g.indent(), pipeShl, pipeExt0))
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), pipePack, pipeShl, pipeExt1))
+		}
+		return pipePack
+	}
+
+	// process-waitpid: wait for child process
+	// Args: pid i64, options i64
+	// Returns exit code (WEXITSTATUS: (status >> 8) & 0xFF)
+	if fnName == "process-waitpid" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		pidVal := a[0]
+		optVal := a[1]
+		g.tmpIdx++
+		waitStatus := fmt.Sprintf("%%proc.wait.status.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitPidTrunc := fmt.Sprintf("%%proc.wait.pid.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitOptTrunc := fmt.Sprintf("%%proc.wait.opt.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitRet := fmt.Sprintf("%%proc.wait.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitLd := fmt.Sprintf("%%proc.wait.ld.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitShift := fmt.Sprintf("%%proc.wait.shift.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitCode := fmt.Sprintf("%%proc.wait.code.%d", g.tmpIdx)
+		g.tmpIdx++
+		waitExt := fmt.Sprintf("%%proc.wait.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), waitStatus))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), waitPidTrunc, pidVal))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), waitOptTrunc, optVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @waitpid(i32 %s, i32* %s, i32 %s)\n", g.indent(), waitRet, waitPidTrunc, waitStatus, waitOptTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), waitLd, waitStatus))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr i32 %s, 8\n", g.indent(), waitShift, waitLd))
+			sb.WriteString(fmt.Sprintf("%s%s = and i32 %s, 255\n", g.indent(), waitCode, waitShift))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), waitExt, waitCode))
+		}
+		return waitExt
+	}
+
+	// process-exec: replace current process with new program
+	// Args: program str, arg str
+	// Calls execlp(program, program, arg, NULL)
+	// Returns only on failure (errno via __errno or -1)
+	if fnName == "process-exec" && hasArgs && nArgs >= 2 {
+		progPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		argPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
+		g.tmpIdx++
+		execRet := fmt.Sprintf("%%proc.exec.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		execExt := fmt.Sprintf("%%proc.exec.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @execlp(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, progPtr, progPtr, argPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
+		}
+		return execExt
+	}
+
 	return ""
 }
 

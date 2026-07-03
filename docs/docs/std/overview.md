@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # 標準庫
 
-Nolang 標準庫（`src/std/`）包含 50+ 個模組，涵蓋格式化、數學、字串、資料結構、編解碼、加密、壓縮、檔案操作等。
+Nolang 標準庫（`src/std/`）包含 60+ 個模組，涵蓋格式化、數學、字串、資料結構、編解碼、加密、壓縮、檔案操作、I/O 抽象等。
 
 使用方式：`use std/xxx`（核心模組無需 `use`）。
 
@@ -96,15 +96,21 @@ bool-to-str(v), byte-to-str(v), char-to-str(v)
 
 ### char — 字元操作
 
+char 本質為 i32（Unicode 碼點），所有操作以方法形式提供：
+
 ```nolang
-char.to-bytes()(out []byte)      // Unicode → UTF-8 位元組（方法）
-char.to-str()(s)                 // Unicode → 字串（UTF-8，方法）
-char.is-digit(c)(ok)             // 是否為數字 (0-9)
-char.is-alpha(c)(ok)             // 是否為字母 (a-z, A-Z)
-char.is-alnum(c)(ok)             // 是否為字母或數字
-char.is-space(c)(ok)             // 是否為空白字元
-char.to-upper(c)(r)              // 轉大寫（ASCII）
-char.to-lower(c)(r)              // 轉小寫（ASCII）
+c char = 'A'
+c.is-digit()       // 是否為數字 (0-9)（方法）
+c.is-letter()      // 是否為字母 (a-z, A-Z)（方法）
+c.is-alpha()       // is-letter 別名（方法）
+c.is-alnum()       // 是否為字母或數字（方法）
+c.is-space()       // 是否為空白字元（方法）
+c.is-upper()       // 是否為大寫字母（方法）
+c.is-lower()       // 是否為小寫字母（方法）
+c.to-upper()       // 轉大寫（ASCII）（方法）
+c.to-lower()       // 轉小寫（ASCII）（方法）
+c.to-bytes()       // Unicode → UTF-8 位元組（方法）
+c.to-str()         // Unicode → 字串（UTF-8，方法）
 ```
 
 ### str — 字串操作
@@ -234,62 +240,90 @@ sort.desc                        // 降序
 
 ### os — 作業系統介面
 
+提供環境變數、目錄操作、行程管理、系統資訊、時間等功能。檔案讀寫相關功能請見 `fs` 模組。
+
 ```nolang
 // 環境變數
 get-env(key)(val)
 set-env(key, val)
 
 // 目錄
-get-wd()(path)
-ch-dir(path)
-
-// 檔案/目錄操作
+get-wd()(dir)
+ch-dir(dir)
 mkdir(path, mode)
-remove(path)
-rename(old, new)
-is-file(path)(ok)
-
-// 檔案 I/O
-open-read(path)(fd)
-open-write(path)(fd)
-read(fd)(data)
-write(fd, data)(n)
-close(fd)
 
 // 行程
 exit(code)
 get-pid()(pid)
 
-// 系統
+// 系統資訊
 host-name()(name)
-now()(sec)
-sleep(sec)
+strerror(errnum)(msg)
 
-// 其他
-args()(v), arg(i)(v)
-is-dir(path)(ok)
-stat-size(path)(sz)
-file-size(fd)(sz)
-get-line()(line)
-copy-file(src, dst)
+// 時間
+now()(sec)
+now-ms()(ms)
+now-us()(us)
+now-ns()(ns)
+sleep(sec)
+sleep-us(us)
+sleep-ns(ns)
+
+// 命令列參數
+args()(count)
+arg(idx)(val)
 ```
 
-### fs — 簡化檔案操作
+### fs — 檔案系統工具
+
+以 `file` 結構體封裝開啟中的檔案，以 `path` 結構體封裝路徑。
 
 ```nolang
-read-file(path)(data, n)
-read-file-n(path, n)(data)
-write-file(path, data, n)
-append-file(path, data, n)
-copy(src, dst)
-move(src, dst)
-delete(path)
-exists(path)(ok)
-is-directory(path)(ok)
-file-size(path)(sz)
-make-dir(path)
-chdir(path)
-getwd()(path)
+// 檔案結構體
+file { fd i64, path str }
+
+// 標準檔案
+stdin = file{ fd: 0, path: '<stdin>' }
+stdout = file{ fd: 1, path: '<stdout>' }
+stderr = file{ fd: 2, path: '<stderr>' }
+
+// 開啟檔案（帶選項）
+file-mode { read, write, append, read-write }
+file-perm { perm-600, perm-644, perm-664, perm-666, perm-755, perm-777 }
+file-opts { mode file-mode, perm file-perm, excl bool, truncate bool, append bool }
+open(path, opts)(f ?file)         // 開啟檔案，失敗返回 nil
+
+// file 方法
+f.read(buf, n)(read-n)            // 讀取最多 n 位元組
+f.read-line()(line, ok)           // 讀取一行
+f.read-all()(content, n)          // 讀取整個檔案
+f.write(data, n)(written)         // 寫入 n 位元組
+f.write-all(data, n)(ok)          // 寫入全部（覆寫）
+f.append(data, n)(ok)             // 追加資料
+f.copy-to(dst-path)(ok)           // 複製到目標路徑
+f.close()(ok)                     // 關閉（標準檔案不自動關閉）
+f.is-open()(yes)                  // 是否已開啟
+f.size()(sz)                      // 檔案大小
+
+// 內建函數
+open-read(path)(fd)               // 唯讀開啟
+open-write(path)(fd)              // 寫入開啟（O_CREAT|O_TRUNC, 0644）
+open-file(path, flags, mode)(fd)  // 自訂旗標開啟
+read(fd, buf, n)(n)               // 底層讀取
+write(fd, data, n)(written)       // 底層寫入
+close(fd)(ok)                     // 底層關閉
+remove(path)(ok)                  // 刪除檔案
+rename(old, new)(ok)              // 重新命名
+is-file(path)(ok)                 // 判斷是否為檔案
+is-dir(path)(ok)                  // 判斷是否為目錄
+stat-size(path)(sz)               // 取得檔案大小
+file-size(path)(sz)               // 同 stat-size
+get-line()(line, ok)              // 從標準輸入讀取一行
+copy-file(src, dst)(ok)           // 複製檔案
+
+// macOS open() 旗標常量
+O-RDONLY = 0, O-WRONLY = 1, O-RDWR = 2
+O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
 ```
 
 ### env — 環境變數（簡化封裝）
@@ -316,18 +350,39 @@ get-positional(i)(arg)
 
 ### path — 路徑操作
 
+以 `path` 結構體封裝路徑字串，所有操作以方法形式提供：
+
 ```nolang
 SEP = 47     // '/'（ASCII）
 DOT = 46     // '.'
 
-// 接收者為 path（str 類型），所有方法以 `str.path-` 為前綴
-path.join(b)                      // 拼接兩個路徑（原地修改）
-path.base() (out)                 // 取檔名
-path.dir()                        // 取目錄（原地修改）
-path.ext() (out)                  // 取副檔名
-path.is-abs() (yes)                // 是否為絕對路徑
-path.clean()                        // 正規化（原地修改）
-str.path-split() (d, f) (dn, fn)   // 分割為目錄 + 檔名
+// 結構體
+path { p str }
+
+// 路徑拼接與分解（原地修改 .p）
+p = path{ p: '/a/b/c.txt' }
+p.join(b str)           // 拼接兩個路徑（原地修改）
+p.base() (out)           // 取檔名
+p.dir()                  // 取目錄（原地修改 .p）
+p.ext() (out)            // 取副檔名
+p.clean()                // 正規化（原地修改 .p）
+p.split() (f str)        // 分割為目錄+檔名（.p 改為目錄，返回檔名）
+
+// 路徑判斷
+p.is-abs() (yes bool)    // 是否為絕對路徑
+
+// 檔案系統操作（委託 fs 內建函數）
+p.exists() (yes bool)        // 是否存在
+p.is-dir() (yes bool)        // 是否為目錄
+p.is-file() (yes bool)       // 是否為檔案
+p.size() (sz i64)            // 檔案大小
+p.make-dir() (ok bool)       // 建立目錄
+p.remove() (ok bool)         // 刪除
+p.rename(new-p str) (ok bool)    // 重新命名
+p.change-dir() (ok bool)     // 切換工作目錄
+
+// 建構型方法
+path.current() (out path)    // 取得當前工作目錄
 ```
 
 ### bufio — 緩衝讀取
@@ -338,6 +393,104 @@ reader.fill()(ok)               // 填充緩衝區
 reader.read-byte()(b, ok)       // 讀取一個位元組
 reader.read-line(line)(ok)      // 讀取一行到 line
 reader.close()                  // 關閉
+```
+
+### io — 輸入輸出抽象
+
+提供 `io-reader` 和 `io-writer` 結構體，統一檔案、標準輸入輸出等資料流的讀寫操作：
+
+```nolang
+// 標準檔案描述符
+STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
+
+// io-reader 結構體
+io-reader { fd i64 }
+io-reader.from-fd(fd)(r)        // 從 fd 建立
+io-reader.from-stdin()(r)       // 從標準輸入建立
+r.read(buf, n)(read-n)          // 讀取 n 位元組
+r.read-byte()(b, ok)            // 讀取一位元組
+r.read-line()(line, ok)         // 讀取一行
+r.read-all(buf, size)(total)    // 讀取全部
+
+// io-writer 結構體
+io-writer { fd i64 }
+io-writer.from-fd(fd)(w)        // 從 fd 建立
+io-writer.from-stdout()(w)      // 從標準輸出建立
+io-writer.from-stderr()(w)      // 從標準錯誤建立
+w.write(data, n)(written)       // 寫入 n 位元組
+w.write-str(s)(written)         // 寫入整個字串
+w.write-byte(b)(written)        // 寫入一位元組
+w.write-line(s)(written)        // 寫入字串+換行
+
+// 便捷函數
+io-print(s)(n)                  // 寫入 stdout（不換行）
+io-println(s)(n)                // 寫入 stdout（換行）
+io-err(s)(n)                    // 寫入 stderr（不換行）
+io-errln(s)(n)                  // 寫入 stderr（換行）
+io-read-line()(line, ok)        // 從 stdin 讀取一行
+```
+
+### regexp — 正規表示式
+
+以 `regexp` 結構體封裝 pattern，底層使用 C 標準庫 `regex.h`：
+
+```nolang
+// 結構體
+regexp { pattern str }
+
+// 方法
+re = regexp{ pattern: '^hello' }
+re.matches(text)(matched)       // 判斷是否匹配
+re.find(text)(result)           // 查找第一個匹配子串
+```
+
+### process — 進程操作
+
+提供進程創建、標準流獲取、進程等待、進程信息查詢等功能。底層使用 POSIX fork/exec/pipe/waitpid：
+
+```nolang
+// 信號常量
+SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD = 17
+WNOHANG = 1
+
+// 結構體
+process { pid i64, stdin-fd i64, stdout-fd i64, stderr-fd i64, exit-code i64, running i64 }
+
+// 進程創建
+p = process{}
+p.start(program, arg)(ok)          // fork + exec，捕獲 stdout
+p.start-with-stdin(program, arg)(ok) // fork + exec，捕獲 stdin + stdout
+
+// 進程等待
+p.wait()(ok)                       // 阻塞等待子進程結束
+p.wait-nohang()(ok)                // 非阻塞輪詢
+
+// 進程控制
+p.kill(sig)(ok)                    // 發送信號
+p.terminate()(ok)                  // SIG-TERM
+p.force-kill()(ok)                 // SIG-KILL
+
+// 標準流操作
+p.read(buf, n)(read-n)             // 從 stdout 讀取
+p.read-line()(line, ok)            // 讀取一行
+p.read-all()(content, n)           // 讀取全部 stdout
+p.write(data, n)(written)          // 寫入 stdin
+p.close-stdin()                    // 關閉 stdin 管道
+p.close-stdout()                   // 關閉 stdout 管道
+p.close-stderr()                   // 關閉 stderr 管道
+
+// 進程信息
+p.pid-of()(pid)                    // 子進程 ID
+p.exit-code-of()(code)             // 退出碼
+p.is-running()(yes)                // 是否仍在執行
+process.parent-pid()(pid)          // 父進程 ID
+
+// 生命週期
+p.close()                          // 關閉所有管道並等待
+
+// 便捷函數
+process-run(cmd)(status)           // 執行 shell 命令
+process-output(program, arg)(content, code) // 執行並捕獲輸出
 ```
 
 ---
@@ -394,26 +547,65 @@ set-empty(s, n)(yes)                    // 是否為空
 
 ### deque — 雙端佇列
 
+使用循環緩衝區實作的雙端佇列，以 `deque` 結構體封裝：
+
 ```nolang
-push-front(d, n, val)(new-n)
-push-back(d, n, val)(new-n)
-pop-front(d, n)(val, new-n)
-pop-back(d, n)(val, new-n)
-peek-front(d, n)(val)
-peek-back(d, n)(val)
-size(n)(n)
-empty(n)(ok)
-clear()(n)
+// 結構體
+deque { buf []i64, cap i64, head i64, tail i64 }
+
+// 初始化
+d = deque{ buf: buf, cap: 128, head: 0, tail: 0 }
+
+// 方法
+d.push-front(val)              // 從前端推入
+d.push-back(val)               // 從後端推入
+d.pop-front()(val)             // 從前端彈出
+d.pop-back()(val)              // 從後端彈出
+d.peek-front()(val, ok)        // 查看前端元素
+d.peek-back()(val, ok)         // 查看後端元素
+d.size()(sz)                   // 大小
+d.empty()(yes)                 // 是否為空
+d.clear()                      // 清空
 ```
 
 ### heap — 最小堆
 
+以 `heap` 結構體封裝的二元最小堆積：
+
 ```nolang
-push(h, n, val)(new-n)
-pop(h, n)(val, new-n)
-peek(h, n)(val)
-size(n)(n)
-empty(n)(ok)
+// 結構體
+heap { data []i64, n i64 }
+
+// 初始化
+h = heap.init(data)            // 建立堆積
+
+// 方法
+h.push(val)                    // 推入元素
+h.pop()(val, ok)               // 彈出最小元素
+h.peek()(val, ok)              // 查看最小元素
+h.size()(sz)                   // 大小
+h.empty()(yes)                 // 是否為空
+```
+
+### stack — 堆疊
+
+後進先出（LIFO）資料結構，以 `stack` 結構體封裝：
+
+```nolang
+// 結構體
+stack { data []i64, n i64 }
+
+// 初始化
+buf [128]i64 = [0:128]
+s = stack{ data: buf, n: 0 }
+
+// 方法
+s.push(val)                    // 推入元素
+s.pop()(val, ok)               // 彈出頂端元素
+s.peek()(val, ok)              // 查看頂端元素
+s.size()(sz)                   // 大小
+s.empty()(yes)                 // 是否為空
+s.clear()                      // 清空
 ```
 
 ### map/linked-hash-map — 有序哈希表
@@ -696,17 +888,11 @@ set-key(v json-value, key, val)    // 設定物件屬性
 
 ### unicode — Unicode 支援
 
-```nolang
-decode-rune(s, pos)(rune, size)     // 解碼 UTF-8 字元
-encode-rune(rune, out)(n)           // 編碼 UTF-8 字元
-rune-count(s, n)(count)            // 字元計數
-is-letter(rune)(ok)                // 是否為字母
-is-digit(rune)(ok)                 // 是否為數字
-is-space(rune)(ok)                 // 是否為空白
-is-alnum(rune)(ok)                 // 是否為字母數字
-is-upper(rune), is-lower(rune)     // 大小寫判斷
-to-upper-rune(rune), to-lower-rune(rune)  // 大小寫轉換
-```
+Unicode 相關功能已分散至 `char` 和 `str` 模組：
+
+- 字元分類（`is-letter`, `is-digit`, `is-upper` 等）→ 見 `char` 模組
+- UTF-8 編解碼（`char.to-bytes`, `char.to-str`）→ 見 `char` 模組
+- 字串 rune 計數（`str.count`）→ 見 `str` 模組
 
 ### uuid — UUID v4 產生與解析
 
@@ -762,6 +948,35 @@ to-hex(a, out)(n), from-hex(s, sn, out)
 add-i64(a, v, c), mul-i64(a, v, c)
 ```
 
+### err — 錯誤處理
+
+結構化錯誤型別與工具函式：
+
+```nolang
+// 錯誤碼枚舉
+err-code {
+    OK = 0, NOT-FOUND = 1, PERMISSION = 2, IO = 3,
+    TIMEOUT = 4, PARSE = 5, INVALID = 6, OVERFLOW = 7,
+}
+
+// 結構體
+error { code i64, msg str }
+
+// 函數
+err-new(code, msg)(e)            // 建立錯誤
+err-from-errno(errno)(e)         // 從 C errno 建立
+err-is(e, code)(yes)             // 判斷錯誤碼
+err-msg(e)(msg)                  // 取得錯誤訊息
+err-code-of(e)(code)             // 取得錯誤碼
+err-format(e)(s, n)              // 格式化為字串
+```
+
+### bool — 布爾型別
+
+```nolang
+bool.to-str() (out str)     // true→"true", false→"false"（方法）
+```
+
 ### enter / leave — 生命週期鉤子
 
 ```nolang
@@ -783,12 +998,13 @@ leave { leave() }     // 退出時執行
 | arr                 | 核心   | 陣列（[n]t）操作 |
 | number              | 核心   | 數值工具函數     |
 | byte                | 核心   | 位元組操作       |
-| char                | 核心   | 字元操作         |
+| char                | 核心   | 字元操作（方法） |
 | os                  | 核心   | 作業系統介面     |
 | env                 | 核心   | 環境變數封裝     |
-| fs                  | 核心   | 簡化檔案操作     |
+| fs                  | 核心   | 檔案系統工具     |
+| io                  | 核心   | 輸入輸出抽象     |
 | args                | 核心   | 命令列引數       |
-| path                | 核心   | 路徑處理         |
+| path                | 核心   | 路徑處理（結構體）|
 | bufio               | 核心   | 緩衝讀取         |
 | time                | 核心   | 時間操作         |
 | log                 | 核心   | 分級日誌         |
@@ -797,11 +1013,16 @@ leave { leave() }     // 退出時執行
 | option              | 核心   | 選項型別         |
 | sort                | 核心   | 排序常量         |
 | set                 | 核心   | 集合             |
-| deque               | 核心   | 雙端佇列         |
-| heap                | 核心   | 最小堆           |
-| unicode             | 核心   | Unicode 支援     |
+| deque               | 核心   | 雙端佇列（結構體）|
+| heap                | 核心   | 最小堆（結構體） |
+| stack               | 核心   | 堆疊（結構體）   |
+| regexp              | 核心   | 正規表示式       |
+| process             | 核心   | 進程操作         |
+| unicode             | 核心   | Unicode 說明     |
 | uuid                | 核心   | UUID v4          |
 | bigint              | 核心   | 任意精度整數     |
+| bool                | 核心   | 布爾型別         |
+| err                 | 核心   | 錯誤處理         |
 | enter               | 核心   | 啟動鉤子         |
 | leave               | 核心   | 退出鉤子         |
 | encoding/hex        | 子模組 | 十六進制編解碼   |
@@ -809,7 +1030,12 @@ leave { leave() }     // 退出時執行
 | encoding/csv        | 子模組 | CSV 解析         |
 | archive/tar         | 子模組 | TAR 歸檔         |
 | archive/zip         | 子模組 | ZIP 歸檔         |
+| archive/gzip        | 子模組 | GZIP 壓縮        |
 | map/linked-hash-map | 子模組 | 有序哈希表       |
+| map/hash-set        | 子模組 | i64 哈希集合     |
+| map/str-map         | 子模組 | str→str 哈希映射 |
+| map/str-set         | 子模組 | str 哈希集合     |
+| database/sql        | 子模組 | 資料庫存取介面   |
 | hash/aes            | 子模組 | AES-128 加解密   |
 | hash/aes-128-enc    | 子模組 | AES-128 加密     |
 | hash/aes-128-dec    | 子模組 | AES-128 解密     |

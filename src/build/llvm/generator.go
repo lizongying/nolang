@@ -3,6 +3,7 @@ package llvm
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -18,6 +19,14 @@ type varInfo struct {
 type structField struct {
 	name string
 	typ  string // LLVM type string
+}
+
+// ExternFuncInfo 描述一個 FFI extern 宣告的型別資訊。
+// ParamTypes / ResultTypes 為 FFI 型別名稱（"i64","i32","f64","str","ptr","pptr","bool"）。
+type ExternFuncInfo struct {
+	Name        string
+	ParamTypes  []string
+	ResultTypes []string
 }
 
 type loopExit struct {
@@ -63,6 +72,7 @@ type Generator struct {
 	enumVariants         map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
 	varFnTypes           map[string]*parser.FunctionType // variable name → FunctionType (for indirect calls)
 	fnTypeAliases        map[string]*parser.FunctionType // named function type alias name → FunctionType
+	externFuncs          map[string]*ExternFuncInfo      // extern function name → FFI type info
 }
 
 func NewGenerator() *Generator {
@@ -161,6 +171,72 @@ func intConstValue(expr parser.Expression) (int64, bool) {
 	return 0, false
 }
 
+// ffiTypeName 從 parser.Type 抽出 FFI 型別名稱。
+// ptr（含 ptr(type) 與不透明 ptr）一律視為 "ptr"；其餘（NamedType）直接取 String()。
+func ffiTypeName(t parser.Type) string {
+	if t == nil {
+		return ""
+	}
+	if _, ok := t.(*parser.PointerType); ok {
+		return "ptr"
+	}
+	return t.String()
+}
+
+// ffiTypeToLLVM 將 FFI 型別名稱對應到 LLVM IR 型別字串。
+func ffiTypeToLLVM(t string) string {
+	switch t {
+	case "i64":
+		return "i64"
+	case "i32", "bool":
+		return "i32"
+	case "f64":
+		return "double"
+	case "str", "ptr":
+		return "i8*"
+	case "pptr":
+		return "i8**"
+	default:
+		return "i64"
+	}
+}
+
+// externSymbolRef returns the LLVM symbol reference for an extern (C) function.
+// Nolang source uses hyphens (-) in identifiers, but C ABI symbols use underscores (_).
+// Convert hyphens to underscores so e.g. "sqlite3-open" → @sqlite3_open, matching
+// the actual symbol exported by libsqlite3. Underscores are valid unquoted LLVM
+// identifier characters, so no quoting is needed.
+func externSymbolRef(name string) string {
+	cName := strings.ReplaceAll(name, "-", "_")
+	return "@" + cName
+}
+
+// formatExternDeclare 產生單一 extern 函式的 LLVM declare 敘述。
+// 回傳型別取自第一個 result FFI 型別（無 result 為 void）；
+// 參數型別中 pptr 對應 i8**，其餘依 ffiTypeToLLVM。
+// 符號名稱將連字號轉為底線以匹配 C ABI 命名。
+func (g *Generator) formatExternDeclare(name string, info *ExternFuncInfo) string {
+	retType := "void"
+	if len(info.ResultTypes) > 0 {
+		retType = ffiTypeToLLVM(info.ResultTypes[0])
+	}
+	paramTypes := make([]string, 0, len(info.ParamTypes))
+	for _, pt := range info.ParamTypes {
+		paramTypes = append(paramTypes, ffiTypeToLLVM(pt))
+	}
+	return fmt.Sprintf("declare %s %s(%s)\n", retType, externSymbolRef(name), strings.Join(paramTypes, ", "))
+}
+
+// sortedExternNames 回傳 g.externFuncs 鍵的排序切片，確保輸出順序確定。
+func (g *Generator) sortedExternNames() []string {
+	names := make([]string, 0, len(g.externFuncs))
+	for n := range g.externFuncs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (g *Generator) Generate(program *parser.Program) string {
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -185,6 +261,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)
 	g.fnTypeAliases = make(map[string]*parser.FunctionType)
+	g.externFuncs = make(map[string]*ExternFuncInfo)
 
 	// 收集聯合型別別名，用於解析 receiver method call
 	for _, stmt := range program.Statements {
@@ -246,7 +323,33 @@ func (g *Generator) Generate(program *parser.Program) string {
 	sb.WriteString("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"\n")
 	sb.WriteString("target triple = \"arm64-apple-macosx15.0.0\"\n\n")
 
+	// 預掃描 FFI extern 宣告，收集型別資訊。
+	// 必須在 emit declare 之前完成（declare 緊隨 writeDeclarations 之後發出）。
+	for _, stmt := range program.Statements {
+		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
+			name := es.Name.Value
+			paramTypes := make([]string, 0, len(es.Parameters))
+			for _, p := range es.Parameters {
+				paramTypes = append(paramTypes, ffiTypeName(p.Type))
+			}
+			resultTypes := make([]string, 0, len(es.Results))
+			for _, r := range es.Results {
+				resultTypes = append(resultTypes, ffiTypeName(r.Type))
+			}
+			g.externFuncs[name] = &ExternFuncInfo{
+				Name:        name,
+				ParamTypes:  paramTypes,
+				ResultTypes: resultTypes,
+			}
+		}
+	}
+
 	g.writeDeclarations(&sb)
+
+	// Emit extern function declarations
+	for _, name := range g.sortedExternNames() {
+		sb.WriteString(g.formatExternDeclare(name, g.externFuncs[name]))
+	}
 
 	// 預掃描結構體欄位型別，確保函數回傳型別預掃描時 mapToLLVMType
 	// 能正確解析用戶自定義結構體（如 open() (d db) 的 db 型別）。
@@ -562,6 +665,9 @@ func (g *Generator) Generate(program *parser.Program) string {
 				}
 				g.generateFunctionDefinition(&sb, tmpFD)
 			}
+		case *parser.ExternStatement:
+			// FFI extern 宣告：型別資訊已於預掃描階段收集至 g.externFuncs，
+			// declare 已緊隨 writeDeclarations 之後發出，此處無需再產生 IR。
 		}
 	}
 

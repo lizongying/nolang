@@ -731,6 +731,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
 			merged.Statements = append(merged.Statements, stmt)
 		}
+		if es, ok := stmt.(*parser.ExternStatement); ok {
+			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
+			merged.Statements = append(merged.Statements, es)
+		}
 	}
 
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
@@ -812,6 +816,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			continue
 		}
 		if _, ok := stmt.(*parser.ExportStatement); ok {
+			continue
+		}
+		if _, ok := stmt.(*parser.ExternStatement); ok {
+			// extern 為宣告，非頂層可執行語句（已於前述步驟收集至 merged）
 			continue
 		}
 		// Convert MultiAssignStatement to old nested-call syntax for codegen

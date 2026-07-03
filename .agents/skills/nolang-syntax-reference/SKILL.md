@@ -261,6 +261,8 @@ Methods use `.` to reference the receiver. The receiver is not declared as a par
 2. Receiver is accessed via `.` inside the method body
 3. Call with `receiver.method(args)` syntax
 4. Return values go in the second set of parentheses
+5. Boolean returns must use `bool` type, not `i64`
+6. Avoid reserved words as method names (e.g. use `matches` not `match`)
 
 **Examples:**
 
@@ -293,6 +295,53 @@ s = 'hello'
 u = s.to-upper()     // receiver.method()
 c char = 5
 d = c.is-digit()     // receiver.method()
+```
+
+### Standard Library Struct Pattern
+
+The standard library uses a consistent pattern for data structures and I/O abstractions: define a struct, then attach methods to it. The receiver is accessed via `.` inside the method body, and nested fields via `self.field` (or `.field` for single-level).
+
+```nolang
+// Data structure: stack (LIFO)
+stack {
+    data []i64
+    n i64
+}
+
+stack.push = (val i64) {
+    .data[.n] = val
+    .n = .n + 1
+}
+
+stack.pop = () (val i64, ok bool) {
+    if .n == 0 {
+        return
+    }
+    .n = .n - 1
+    val = .data[.n]
+    ok = true
+}
+
+// Usage
+buf [128]i64 = [0:128]
+s = stack { data: buf, n: 0 }
+s.push(42)
+val, ok = s.pop()
+```
+
+The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`. See `docs/docs/std/overview.md` for the full API.
+
+### String Auto-Length Tracking
+
+The LLVM codegen automatically tracks string length when assigning to `s[i] = v`. The `len` field is updated to `max(len, idx+1)` — you do **not** need to manually set `.len` after writing to string indices.
+
+```nolang
+// len is auto-updated — no manual .len assignment needed
+out[0] = 72      // len becomes 1
+out[1] = 105     // len becomes 2
+
+// Manual .len assignment is only for truncation (shrinking)
+out.len = 5      // truncate to 5 bytes
 ```
 
 ### Interfaces
@@ -344,6 +393,7 @@ For detailed documentation on each topic, see:
 - [Operators and symbols](../../../docs/docs/lang/symbol.md)
 - [Export system](../../../docs/docs/lang/export.md)
 - [String operations](../../../docs/docs/lang/str.md)
+- [Standard library overview](../../../docs/docs/std/overview.md) — complete API reference for all std modules
 
 ## Migration Cheatsheet (old → new)
 
