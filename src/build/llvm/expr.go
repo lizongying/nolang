@@ -299,6 +299,12 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 			}
 		}
 	}
+	// CallExpression returning bool (e.g. rs.next()) is already i1
+	if _, ok := cond.(*parser.CallExpression); ok {
+		if g.intExprLLVMType(cond) == "i1" {
+			return g.generateExprWithSB(sb, cond)
+		}
+	}
 	// Default: assume i64, need trunc to i1
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
@@ -1206,8 +1212,9 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					// Truncate val to elemType if needed (e.g., i64 → i8 for byte arrays)
+					// Only truncate for integer types; struct types (e.g. %str-long) are stored as-is
 					storeVal := val
-					if elemType != "i64" && strings.HasPrefix(val, "%") {
+					if elemType != "i64" && !strings.HasPrefix(elemType, "%") && strings.HasPrefix(val, "%") {
 						g.tmpIdx++
 						truncReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, elemType))
@@ -1296,10 +1303,15 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					}
 					g.tmpIdx++
 					elemGEP := fmt.Sprintf("%%idx.arr.elem.%d", g.tmpIdx)
-					g.tmpIdx++
-					elemLoad := fmt.Sprintf("%%idx.arr.val.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+					// Struct element: return pointer (by-reference), no load needed
+					if strings.HasPrefix(elemType, "%") {
+						return elemGEP
+					}
+					// Integer element: load value
+					g.tmpIdx++
+					elemLoad := fmt.Sprintf("%%idx.arr.val.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 						g.indent(), elemLoad, elemType, elemType, elemGEP))
 					if elemType != "i64" {

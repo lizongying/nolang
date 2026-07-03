@@ -470,6 +470,31 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if strLit, ok := arg0.(*parser.StringLiteral); ok {
 			return fmt.Sprintf("%d", len(strLit.Value))
 		}
+		// Handle DotExpression on a slice field (e.g. len(.data) where .data is []byte).
+		// generateDotExpression loads the %vec / %arr VALUE from the struct field, so the
+		// argument is a struct value, not a pointer. Use extractvalue to get field 0 (len).
+		if dot, ok := arg0.(*parser.DotExpression); ok {
+			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+						structName := strings.TrimPrefix(t, "%")
+						if fields, ok := g.structTypes[structName]; ok {
+							for _, f := range fields {
+								if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
+									a := evalArgs()
+									g.tmpIdx++
+									lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+									if sb != nil {
+										sb.WriteString(fmt.Sprintf("%s%s = extractvalue %s %s, 0\n", g.indent(), lenReg, f.typ, a[0]))
+									}
+									return lenReg
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		// Default fallback: generic i64* load (for raw pointers)
 		a := evalArgs()
 		arg := a[0]
@@ -734,7 +759,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			vecDataGEP := fmt.Sprintf("%%gzip.c.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
-			return vecReg
+			// Load the %vec value to return as SSA (callers expect a value, not a pointer)
+			g.tmpIdx++
+			vecVal := fmt.Sprintf("%%gzip.c.vec.val.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), vecVal, vecReg))
+			if g.ssaTypes != nil {
+				g.ssaTypes[vecVal] = "%vec"
+			}
+			return vecVal
 		}
 		return ""
 	}
@@ -796,7 +828,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			vecDataGEP := fmt.Sprintf("%%gzip.d.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
-			return vecReg
+			// Load the %vec value to return as SSA (callers expect a value, not a pointer)
+			g.tmpIdx++
+			vecVal := fmt.Sprintf("%%gzip.d.vec.val.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), vecVal, vecReg))
+			if g.ssaTypes != nil {
+				g.ssaTypes[vecVal] = "%vec"
+			}
+			return vecVal
 		}
 		return ""
 	}
@@ -858,7 +897,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			vecDataGEP := fmt.Sprintf("%%inflate.d.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
-			return vecReg
+			// Load the %vec value to return as SSA (callers expect a value, not a pointer)
+			g.tmpIdx++
+			vecVal := fmt.Sprintf("%%inflate.d.vec.val.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), vecVal, vecReg))
+			if g.ssaTypes != nil {
+				g.ssaTypes[vecVal] = "%vec"
+			}
+			return vecVal
 		}
 		return ""
 	}
@@ -1008,4 +1054,343 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 	sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), buf, dataPtr, strLen))
 
 	return buf
+}
+
+// callDatabase — SQLite database builtin methods (db-* family).
+// Handles i64↔i8* conversion between Nolang's i64 handles and SQLite's pointer-based API.
+func (g *Generator) callDatabase(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
+	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
+
+	// db-open(dsn str) (handle i64): open SQLite database, returns handle (0 = failed)
+	if fnName == "db-open" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		dsnPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		g.tmpIdx++
+		slotReg := fmt.Sprintf("%%db.slot.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), slotReg))
+		g.tmpIdx++
+		rcReg := fmt.Sprintf("%%db.rc.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_open(i8* %s, i8** %s)\n", g.indent(), rcReg, dsnPtr, slotReg))
+		g.tmpIdx++
+		okReg := fmt.Sprintf("%%db.ok.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), okReg, rcReg))
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%db.load.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, slotReg))
+		g.tmpIdx++
+		intReg := fmt.Sprintf("%%db.int.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
+		g.tmpIdx++
+		resReg := fmt.Sprintf("%%db.res.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), resReg, okReg, intReg))
+		return resReg
+	}
+
+	// db-close(handle i64) (ok bool)
+	if fnName == "db-close" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_close(i8* %s)\n", g.indent(), retReg, ptrReg))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+		g.tmpIdx++
+		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
+		return boolReg
+	}
+
+	// db-exec(handle i64, sql str) (ok bool)
+	if fnName == "db-exec" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		sqlPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_exec(i8* %s, i8* %s, i8* null, i8* null, i8** null)\n", g.indent(), retReg, ptrReg, sqlPtr))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+		g.tmpIdx++
+		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
+		return boolReg
+	}
+
+	// db-prepare(handle i64, sql str) (stmt i64): returns stmt handle (0 = failed)
+	if fnName == "db-prepare" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		sqlPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		slotReg := fmt.Sprintf("%%db.slot.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), slotReg))
+		g.tmpIdx++
+		rcReg := fmt.Sprintf("%%db.rc.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_prepare_v2(i8* %s, i8* %s, i32 -1, i8** %s, i8** null)\n", g.indent(), rcReg, ptrReg, sqlPtr, slotReg))
+		g.tmpIdx++
+		okReg := fmt.Sprintf("%%db.ok.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), okReg, rcReg))
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%db.load.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, slotReg))
+		g.tmpIdx++
+		intReg := fmt.Sprintf("%%db.int.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
+		g.tmpIdx++
+		resReg := fmt.Sprintf("%%db.res.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), resReg, okReg, intReg))
+		return resReg
+	}
+
+	// db-step(stmt i64) (rc i64): returns rc (100=ROW, 101=DONE)
+	if fnName == "db-step" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_step(i8* %s)\n", g.indent(), retReg, ptrReg))
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
+		return extReg
+	}
+
+	// db-column-count(stmt i64) (n i64)
+	if fnName == "db-column-count" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_column_count(i8* %s)\n", g.indent(), retReg, ptrReg))
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
+		return extReg
+	}
+
+	// db-column-int64(stmt i64, col i64) (v i64)
+	if fnName == "db-column-int64" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @sqlite3_column_int64(i8* %s, i32 %s)\n", g.indent(), retReg, ptrReg, colReg))
+		return retReg
+	}
+
+	// db-column-text(stmt i64, col i64) (v str)
+	if fnName == "db-column-text" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
+		g.tmpIdx++
+		cstrReg := fmt.Sprintf("%%db.cstr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @sqlite3_column_text(i8* %s, i32 %s)\n", g.indent(), cstrReg, ptrReg, colReg))
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
+		return strReg2
+	}
+
+	// db-column-double(stmt i64, col i64) (v f64)
+	if fnName == "db-column-double" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call double @sqlite3_column_double(i8* %s, i32 %s)\n", g.indent(), retReg, ptrReg, colReg))
+		return retReg
+	}
+
+	// db-finalize(stmt i64) (ok bool)
+	if fnName == "db-finalize" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_finalize(i8* %s)\n", g.indent(), retReg, ptrReg))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+		g.tmpIdx++
+		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
+		return boolReg
+	}
+
+	// db-last-insert-rowid(handle i64) (id i64)
+	if fnName == "db-last-insert-rowid" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @sqlite3_last_insert_rowid(i8* %s)\n", g.indent(), retReg, ptrReg))
+		return retReg
+	}
+
+	// db-changes(handle i64) (n i64)
+	if fnName == "db-changes" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_changes(i8* %s)\n", g.indent(), retReg, ptrReg))
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
+		return extReg
+	}
+
+	// db-bind-int64(stmt i64, idx i64, v i64) (ok bool)
+	if fnName == "db-bind-int64" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		idxReg := fmt.Sprintf("%%db.idx.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), idxReg, a[1]))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_bind_int64(i8* %s, i32 %s, i64 %s)\n", g.indent(), retReg, ptrReg, idxReg, a[2]))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+		g.tmpIdx++
+		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
+		return boolReg
+	}
+
+	// db-bind-text(stmt i64, idx i64, v str) (ok bool)
+	if fnName == "db-bind-text" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		dataPtr := g.extractStrFromEvalArg(sb, a[2])
+		strLen := g.strLenFromExpr(sb, expr.Arguments[2])
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		idxReg := fmt.Sprintf("%%db.idx.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), idxReg, a[1]))
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), lenReg, strLen))
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_bind_text(i8* %s, i32 %s, i8* %s, i32 %s, i8* inttoptr (i64 -1 to i8*))\n", g.indent(), retReg, ptrReg, idxReg, dataPtr, lenReg))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+		g.tmpIdx++
+		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
+		return boolReg
+	}
+
+	// db-errmsg(handle i64) (msg str)
+	if fnName == "db-errmsg" && hasArgs {
+		if sb == nil {
+			return ""
+		}
+		a := evalArgs()
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
+		g.tmpIdx++
+		cstrReg := fmt.Sprintf("%%db.cstr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @sqlite3_errmsg(i8* %s)\n", g.indent(), cstrReg, ptrReg))
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
+		return strReg2
+	}
+
+	return ""
 }

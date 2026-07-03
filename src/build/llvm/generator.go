@@ -145,6 +145,22 @@ func llvmSSAReg(base, suffix string) string {
 	return "%" + base + suffix
 }
 
+// intConstValue extracts an int64 value from an expression that is either an
+// IntegerLiteral (positive) or a PrefixExpression with "-" operator applied to
+// an IntegerLiteral (negative, e.g. FNV-OFFSET = -3750763034362895579).
+// Returns (value, true) on success.
+func intConstValue(expr parser.Expression) (int64, bool) {
+	if intLit, ok := expr.(*parser.IntegerLiteral); ok {
+		return intLit.Value, true
+	}
+	if pe, ok := expr.(*parser.PrefixExpression); ok && pe.Operator == "-" {
+		if intLit, ok := pe.Right.(*parser.IntegerLiteral); ok {
+			return -intLit.Value, true
+		}
+	}
+	return 0, false
+}
+
 func (g *Generator) Generate(program *parser.Program) string {
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -214,10 +230,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 		}
 	}
 	// 同時收集模組級 i64 整數常量，支援命名空間風格存取（如 FileMode.WRITE）
+	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
-				g.enumVariantIndex[ls.Name.Value] = intLit.Value
+			if v, ok := intConstValue(ls.Value); ok {
+				g.enumVariantIndex[ls.Name.Value] = v
 			}
 		}
 	}
@@ -230,6 +247,15 @@ func (g *Generator) Generate(program *parser.Program) string {
 	sb.WriteString("target triple = \"arm64-apple-macosx15.0.0\"\n\n")
 
 	g.writeDeclarations(&sb)
+
+	// 預掃描結構體欄位型別，確保函數回傳型別預掃描時 mapToLLVMType
+	// 能正確解析用戶自定義結構體（如 open() (d db) 的 db 型別）。
+	// 僅填充 g.structTypes，不汙染 g.varTypes（後者由 collectStructType 負責）。
+	for _, stmt := range program.Statements {
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			g.collectStructTypeFields(sd)
+		}
+	}
 
 	// 預掃描：收集所有函數的回傳型別和函數名
 	funcNames := make(map[string]bool)
@@ -425,11 +451,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 1. i64 整數常量（如 MASK = 4294967295）
 	// 2. %str-long / %str-short 字串變數（如 SBOX 表）
 	// 先收集所有 i64 整數常量的值，以便別名（如 o-append = FileMode.APPEND）能解析
+	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
 	moduleIntConsts := make(map[string]int64)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
-				moduleIntConsts[ls.Name.Value] = intLit.Value
+			if v, ok := intConstValue(ls.Value); ok {
+				moduleIntConsts[ls.Name.Value] = v
 			}
 		}
 	}
@@ -453,8 +480,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
-				if intLit, ok := ls.Value.(*parser.IntegerLiteral); ok {
-					initVal := fmt.Sprintf("%d", intLit.Value)
+				if v, ok := intConstValue(ls.Value); ok {
+					initVal := fmt.Sprintf("%d", v)
 					sb.WriteString(fmt.Sprintf("%s = global i64 %s\n", llvmGlobalRef(name), initVal))
 					g.globalVars[name] = true
 				} else if dot, ok := ls.Value.(*parser.DotExpression); ok {

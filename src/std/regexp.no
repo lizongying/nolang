@@ -1,31 +1,54 @@
-// regexp — 正则表达式标准库
+// regexp — 正規表示式標準庫
 //
-// 提供正则表达式匹配和查找功能
-// 底层使用标准正则表达式库实现
+// 以 regexp 結構體封裝正規表示式 pattern，
+// 提供 match、find 等方法。
+// 底層使用 C 標準庫 regex.h 實作。
 //
 // 用法示例：
-//   matched = regexp-match("^hello", "hello world")
+//   re = regexp{ pattern: '^hello' }
+//   matched = re.matches('hello world')
 //   // matched = true
 //
-//   match = regexp-find("\\d+", "price: 123")
-//   // match = "123"
+//   re = regexp{ pattern: '\\d+' }
+//   match = re.find('price: 123')
+//   // match = '123'
 
 // ═══════════════════════════════════════════════
-// 匹配
+// regexp 結構體：封裝正規表示式
 // ═══════════════════════════════════════════════
 
-// regexp-match: 判断 text 是否匹配 pattern
-// 返回 true=匹配, false=不匹配
-// build-in (ForwardFunc: regexp-match)
-regexp-match = (pattern str, text str) (matched bool) {
+// regexp: 正規表示式
+// pattern 為正規表示式字串
+regexp {
+    pattern str
 }
 
 // ═══════════════════════════════════════════════
-// 查找
+// 內建函數（底層實作）
 // ═══════════════════════════════════════════════
 
-// regexp-find: 在 text 中查找第一个匹配 pattern 的子串
-// 返回匹配的子串，未找到返回空字符串
+// build-in (ForwardFunc: regexp-match)
+// regexp-match: 判斷 text 是否匹配 pattern
+// regexp-match = (pattern str, text str) (matched bool) {
+// }
+
 // build-in (ForwardFunc: regexp-find)
-regexp-find = (pattern str, text str) (result str) {
+// regexp-find: 在 text 中查找第一個匹配 pattern 的子串
+// regexp-find = (pattern str, text str) (result str) {
+// }
+
+// ═══════════════════════════════════════════════
+// 方法
+// ═══════════════════════════════════════════════
+
+// matches: 判斷 text 是否匹配 .pattern
+// 返回 true=匹配, false=不匹配
+regexp.matches = (text str) (matched bool) {
+    matched = regexp-match(.pattern, text)
+}
+
+// find: 在 text 中查找第一個匹配 .pattern 的子串
+// 返回匹配的子串，未找到返回空字串
+regexp.find = (text str) (result str) {
+    result = regexp-find(.pattern, text)
 }

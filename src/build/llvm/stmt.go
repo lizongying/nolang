@@ -456,9 +456,18 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if strFns[name] {
 				return "%str-long"
 			}
-			// Check if the function is a builtin that returns f64
-			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 && m.Return[0] == parser.TypeF64 {
-				return "double"
+			// Check if the function is a builtin that returns f64 or str.
+			// Note: bool-returning builtins (db-close, db-exec, ...) intentionally
+			// fall through to "i64" because their callDatabase IR emits
+			// `zext i1 to i64`, producing an i64 SSA value that the int-coercion
+			// path (trunc i64 to i1) handles correctly.
+			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 {
+				if m.Return[0] == parser.TypeF64 {
+					return "double"
+				}
+				if m.Return[0] == parser.TypeStr {
+					return "%str-long"
+				}
 			}
 			// Check funcRetTypes for non-builtin functions (e.g. module functions like degrees)
 			if g.funcRetTypes != nil {
@@ -1078,10 +1087,17 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		} else {
 			rawVal := g.generateExprWithSB(sb, stmt.Condition)
 			if strings.HasPrefix(rawVal, "%") {
-				g.tmpIdx++
-				truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
-				condVal = truncReg
+				// 判斷條件表達式的 LLVM 型別。若已是 i1（如 bool 返回的用戶函數 rows.next()），
+				// 直接使用；否則為 i64，需 trunc 到 i1。
+				condType := g.intExprLLVMType(stmt.Condition)
+				if condType == "i1" {
+					condVal = rawVal
+				} else {
+					g.tmpIdx++
+					truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
+					condVal = truncReg
+				}
 			} else {
 				condVal = rawVal
 			}

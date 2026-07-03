@@ -1,7 +1,7 @@
 // fs — 檔案系統工具
 //
 // 以 file 結構體封裝開啟中的檔案，以 path 結構體封裝路徑。
-// 底層依賴 os 模組的系統調用（open-read、open-write、read、write、close 等）。
+// 包含檔案操作、讀寫、資訊查詢等底層系統調用。
 //
 // 用法：
 //   f = open(FILE-PATH, { mode: write, perm: perm-644, excl: false, truncate: false, append: false })
@@ -14,6 +14,83 @@
 //
 //   p = path{ p: '/tmp' }
 //   yes = p.exists()
+
+// ═══════════════════════════════════════════════
+// 檔案操作（內建函數）
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: unlink)
+// remove: 刪除檔案
+// remove = (p str) (ok bool) {  // LLVM: call i32 @unlink → zext
+// }
+
+// build-in (ForwardFunc: rename)
+// rename: 重新命名檔案
+// rename = (o str, n str) (ok bool) {  // LLVM: call i32 @rename → zext
+// }
+
+// build-in (ForwardFunc: stat-file)
+// is-file: 判斷路徑是否為普通檔案
+// is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext
+// }
+
+// build-in (ForwardFunc: stat-dir)
+// is-dir: 判斷路徑是否為目錄
+// is-dir = (p str) (yes bool) {  // LLVM: call @stat + S-ISDIR(st-mode) → zext
+// }
+
+// build-in (ForwardFunc: stat-size)
+// stat-size: 取得檔案大小
+// stat-size = (p str) (size i64, ok bool) {  // LLVM: call @stat → st-size
+// }
+
+// build-in (ForwardFunc: stat-size)
+// file-size: 取得檔案大小（同 stat-size）
+// file-size = (p str) (size i64, ok bool) {  // LLVM: call @stat → st-size
+// }
+
+// ═══════════════════════════════════════════════
+// 檔案讀寫（內建函數）
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: open-read)
+// open-read: 以唯讀模式開啟檔案
+// open-read = (path str) (fd i64) {  // LLVM: call i32 @open(O-RDONLY) → zext
+// }
+
+// build-in (ForwardFunc: open-write)
+// open-write: 以寫入模式開啟檔案（O-WRONLY|O-CREAT|O-TRUNC, 0644）
+// open-write = (path str) (fd i64) {  // LLVM: call i32 @open → zext
+// }
+
+// build-in (CLibCall: nolang.open3)
+// open-file: 以自訂旗標和權限開啟檔案
+// open-file = (path str, flags i64, mode i64) (fd i64) {  // LLVM: call i32 @nolang.open3 → zext
+// }
+
+// build-in (ForwardFunc: read)
+// read: 從檔案描述符讀取最多 n 位元組到 buf
+// read = (fd i64, buf str, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
+// }
+
+// build-in (ForwardFunc: write)
+// write: 將 data 的前 n 位元組寫入檔案描述符
+// write = (fd i64, data str, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
+// }
+
+// build-in (ForwardFunc: close)
+// close: 關閉檔案描述符
+// close = (fd i64) (ok i64) {  // LLVM: call i32 @close(fd) → zext
+// }
+
+// ═══════════════════════════════════════════════
+// 標準輸入（內建函數）
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: read-stdin-line)
+// get-line: 從標準輸入讀取一行
+// get-line = () (line str, ok bool) {  // LLVM: call i8* @fgets(buf, size, stdin)
+// }
 
 // macOS open() 旗標常量
 O-RDONLY = 0
@@ -280,4 +357,33 @@ file.copy-to = (dst-path str) (ok bool) {
     }
     close(fd-w)
     ok = true
+}
+
+// ═══════════════════════════════════════════════
+// 檔案複製
+// ═══════════════════════════════════════════════
+
+// copy-file: 複製檔案內容
+copy-file = (src str, dst str) (ok i64) {
+    ok = 0
+    fd-r = open-read(src)
+    if fd-r < 0 {
+        return
+    }
+    fd-w = open-write(dst)
+    if fd-w < 0 {
+        close(fd-r)()
+        return
+    }
+    buf [4096]byte
+    for true {
+        n = read(fd-r, buf, 4096)
+        if n <= 0 {
+            break
+        }
+        write(fd-w, buf, n)()
+    }
+    close(fd-r)()
+    close(fd-w)()
+    ok = 1
 }

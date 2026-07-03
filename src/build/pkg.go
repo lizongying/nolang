@@ -10,7 +10,8 @@ import (
 
 // CompilerOptions 表示 mod.jsonc 的 compiler 區塊選項
 type CompilerOptions struct {
-	AnonymousFnType bool `json:"anonymous-fn-type"`
+	AnonymousFnType bool     `json:"anonymous-fn-type"`
+	LinkLibs        []string `json:"link-libs,omitempty"`
 }
 
 // Package 表示 mod.jsonc 定義的專案套件

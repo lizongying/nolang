@@ -206,4 +206,21 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tstore i64 0, i64* %written\n")
 	sb.WriteString("\tret i32 %ret.init\n")
 	sb.WriteString("}\n\n")
+
+	// SQLite C function declarations
+	sb.WriteString("declare i32 @sqlite3_open(i8*, i8**)\n")
+	sb.WriteString("declare i32 @sqlite3_close(i8*)\n")
+	sb.WriteString("declare i32 @sqlite3_exec(i8*, i8*, i8*, i8*, i8**)\n")
+	sb.WriteString("declare i32 @sqlite3_prepare_v2(i8*, i8*, i32, i8**, i8**)\n")
+	sb.WriteString("declare i32 @sqlite3_step(i8*)\n")
+	sb.WriteString("declare i32 @sqlite3_column_count(i8*)\n")
+	sb.WriteString("declare i64 @sqlite3_column_int64(i8*, i32)\n")
+	sb.WriteString("declare i8* @sqlite3_column_text(i8*, i32)\n")
+	sb.WriteString("declare double @sqlite3_column_double(i8*, i32)\n")
+	sb.WriteString("declare i32 @sqlite3_finalize(i8*)\n")
+	sb.WriteString("declare i64 @sqlite3_last_insert_rowid(i8*)\n")
+	sb.WriteString("declare i32 @sqlite3_changes(i8*)\n")
+	sb.WriteString("declare i32 @sqlite3_bind_int64(i8*, i32, i64)\n")
+	sb.WriteString("declare i32 @sqlite3_bind_text(i8*, i32, i8*, i32, i8*)\n")
+	sb.WriteString("declare i8* @sqlite3_errmsg(i8*)\n")
 }

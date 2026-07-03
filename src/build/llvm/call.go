@@ -275,6 +275,27 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					}
 				}
 			}
+			// DotExpression (e.g. .field) loads a struct value into an SSA register.
+			// The baseName "dot" is not a real variable, so varTypes lookup fails and
+			// ptrType defaults to i64*. Determine the field type from structTypes so
+			// %vec / %arr / %str-long fields get the correct pointer type.
+			if dot, ok := arg.(*parser.DotExpression); ok {
+				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+					if g.varTypes != nil {
+						if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+							structName := strings.TrimPrefix(t, "%")
+							if fields, ok := g.structTypes[structName]; ok {
+								for _, f := range fields {
+									if f.name == dot.Property {
+										ptrType = f.typ + "*"
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 			elemType := strings.TrimSuffix(ptrType, "*")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemType))
@@ -671,6 +692,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		return r
 	}
 	if r := g.callBuiltin(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
+		return r
+	}
+	if r := g.callDatabase(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
 		return r
 	}
 	// sort-asc / sort-desc 直接在 call.go 處理（無需 call_stdlib 函數）
@@ -1252,6 +1276,32 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), ev, tmpName))
 						return "double* " + tmpName
 					}
+					// DotExpression (e.g. .field) loads a struct value into an SSA register.
+					// The baseName "dot" is not a real variable, so varTypes lookup fails and
+					// ptrType defaults to i64*. Determine the field type from structTypes so
+					// %vec / %arr / %str-long fields get the correct pointer type.
+					if dot, ok := arg.(*parser.DotExpression); ok {
+						if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+							if g.varTypes != nil {
+								if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+									structName := strings.TrimPrefix(t, "%")
+									if fields, ok := g.structTypes[structName]; ok {
+										for _, f := range fields {
+											if f.name == dot.Property {
+												fieldType := f.typ
+												if strings.HasPrefix(fieldType, "%") {
+													sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, fieldType))
+													sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, ev, fieldType, tmpName))
+													return fieldType + "* " + tmpName
+												}
+												break
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
 					return "i64* " + tmpName
@@ -1431,6 +1481,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			g.tmpIdx++
 			loadReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, voidSingleOutputType, voidSingleOutputType, voidSingleTmp))
+			// 記錄 SSA 型別，供 inferSSAType 查詢（如 if 表達式 phi 節點推斷）
+			if g.ssaTypes != nil {
+				g.ssaTypes[loadReg] = voidSingleOutputType
+			}
 			return loadReg
 		}
 		return ""
@@ -1441,6 +1495,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		g.tmpIdx++
 		callReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), callReg, callStr))
+		// 記錄 SSA 型別，供 inferSSAType 查詢
+		if g.ssaTypes != nil {
+			g.ssaTypes[callReg] = retType
+		}
 		return callReg
 	}
 

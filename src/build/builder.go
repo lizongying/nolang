@@ -122,7 +122,11 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		outPath = filepath.Join(distDir, fileName)
 	}
 
-	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose)
+	var linkLibs []string
+	if pkg != nil {
+		linkLibs = pkg.Compiler.LinkLibs
+	}
+	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs)
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
@@ -177,7 +181,7 @@ func VetFile(inputPath string, opts BuildOptions) error {
 	}
 
 	compiler := NewTranspiler(pkg)
-	compiler.sourcePath = inputPath  // 設定源碼路徑用於 std 庫檢測
+	compiler.sourcePath = inputPath // 設定源碼路徑用於 std 庫檢測
 	// Compile 會進行解析、型別檢查和 LLVM IR 產生
 	// 我們只關心是否有錯誤，丟棄產生的 LLVM IR
 	_, err = compiler.Compile(string(source))
@@ -189,7 +193,7 @@ func VetFile(inputPath string, opts BuildOptions) error {
 }
 
 // BuildLLVM writes LLVM IR and compiles it to an executable via opt + llc + cc.
-func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool) error {
+func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string) error {
 	tempDir, err := os.MkdirTemp("", "nolang")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
@@ -261,6 +265,9 @@ func BuildLLVM(code string, fileName string, outPath string, cc string, target s
 		clangArgs = append(clangArgs, "--target="+target)
 	}
 	clangArgs = append(clangArgs, sPath, "-o", outPath)
+	for _, lib := range linkLibs {
+		clangArgs = append(clangArgs, "-l"+lib)
+	}
 	var clangCmd *exec.Cmd
 	if cc == "zig" {
 		clangArgs = append([]string{"cc"}, clangArgs...)
