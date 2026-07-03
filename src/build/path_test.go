@@ -11,49 +11,49 @@ import (
 // when called as methods on a str receiver.
 //
 // Refactored from standalone functions to method form in 2026-06:
-//   join  -> str.path-join
-//   base  -> str.path-base
-//   dir   -> str.path-dir
-//   ext   -> str.path-ext
-//   is-abs -> str.path-is-abs
-//   clean -> str.path-clean
+//   join  -> path.join
+//   base  -> path.base
+//   dir   -> path.dir
+//   ext   -> path.ext
+//   is-abs -> path.is-abs
+//   clean -> path.clean
 //   split -> str.path-split
 func TestPathMethods(t *testing.T) {
 	src := `
 test-base = () {
-	p = 'a/b/c.txt'
-	buf = '(16)'
-	n = p.path-base(buf)
+	p = path{}
+	p.p = 'a/b/c.txt'
+	base = p.base()
 }
 
 test-dir = () {
-	p = 'a/b/c.txt'
-	buf = '(16)'
-	n = p.path-dir(buf)
+	p = path{}
+	p.p = 'a/b/c.txt'
+	p.dir()
 }
 
 test-ext = () {
-	p = 'a/b/c.txt'
-	buf = '(16)'
-	n = p.path-ext(buf)
+	p = path{}
+	p.p = 'a/b/c.txt'
+	ext = p.ext()
 }
 
 test-is-abs = () {
-	p = '/etc/hosts'
-	yes = p.path-is-abs()
+	p = path{}
+	p.p = '/etc/hosts'
+	yes = p.is-abs()
 }
 
 test-clean = () {
-	p = 'a/./b/../c'
-	buf = '(16)'
-	n = p.path-clean(buf)
+	p = path{}
+	p.p = 'a/./b/../c'
+	p.clean()
 }
 
 test-join = () {
-	a = 'foo'
-	b = 'bar'
-	buf = '(16)'
-	n = a.path-join(b, b.len, buf)
+	p = path{}
+	p.p = 'foo'
+	p.join('bar')
 }
 
 test-split = () {

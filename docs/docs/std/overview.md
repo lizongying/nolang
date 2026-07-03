@@ -321,12 +321,12 @@ SEP = 47     // '/'（ASCII）
 DOT = 46     // '.'
 
 // 接收者為 path（str 類型），所有方法以 `str.path-` 為前綴
-str.path-join(b, bn) (out, out-n)  // 拼接兩個路徑
-str.path-base() (out, out-n)       // 取檔名
-str.path-dir() (out, out-n)        // 取目錄
-str.path-ext() (out, out-n)        // 取副檔名
-str.path-is-abs() (yes)            // 是否為絕對路徑
-str.path-clean() (out, out-n)      // 正規化
+path.join(b)                      // 拼接兩個路徑（原地修改）
+path.base() (out)                 // 取檔名
+path.dir()                        // 取目錄（原地修改）
+path.ext() (out)                  // 取副檔名
+path.is-abs() (yes)                // 是否為絕對路徑
+path.clean()                        // 正規化（原地修改）
 str.path-split() (d, f) (dn, fn)   // 分割為目錄 + 檔名
 ```
 
