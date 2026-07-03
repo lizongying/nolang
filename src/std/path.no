@@ -322,9 +322,40 @@ path.clean = () {
 // 路徑分割
 // ═══════════════════════════════════════════════
 
-// str.path-split: 將路徑分割為目錄和檔名
-// d, f 為輸出緩衝區；dn, fn 為各自的長度
-str.path-split = (d str, f str) (dn i64, fn i64) {
-    dn = .path-dir(d)
-    fn = .path-base(f)
+// path.split: 將路徑分割為目錄和檔名
+// 原地修改 .p 為目錄部分，返回檔名
+// 例：path{ p: '/a/b/c.txt' }.split() → .p='/a/b', f='c.txt'
+path.split = () (f str) {
+    // 找最右邊的 '/'
+    last-sep = -1
+    i = 0
+    for i < .p.len {
+        c = .p[i] & 255
+        if c == SEP {
+            last-sep = i
+        }
+        i = i + 1
+    }
+    // 提取檔名
+    start = last-sep + 1
+    out-n = .p.len - start
+    i = 0
+    for i < out-n {
+        f[i] = .p[start + i]
+        i = i + 1
+    }
+    // 原地修改 .p 為目錄部分
+    if last-sep < 0 {
+        // 無 '/'，.p 變為 '.'
+        .p[0] = DOT
+        .p.len = 1
+        return
+    }
+    if last-sep == 0 {
+        // 根目錄 '/'
+        .p[0] = SEP
+        .p.len = 1
+        return
+    }
+    .p.len = last-sep
 }

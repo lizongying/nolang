@@ -1,0 +1,62 @@
+// stack — 堆疊
+//
+// 後進先出（LIFO）資料結構，以 []i64 實作。
+//
+// 用法：
+//   use std/stack
+//   buf [128]i64 = [0:128]
+//   s = stack { data: buf, n: 0 }
+//   s.push(42)
+//   s.push(7)
+//   val, ok = s.pop()    // val=7, ok=true
+
+// stack: 堆疊
+// data: 底層儲存切片
+// n: 當前元素數量
+stack {
+    data []i64
+    n i64
+}
+
+// push: 推入元素到堆疊頂端
+stack.push = (val i64) {
+    .data[.n] = val
+    .n = .n + 1
+}
+
+// pop: 從堆疊頂端彈出元素
+// 返回 val=元素值, ok=true=堆疊非空
+stack.pop = () (val i64, ok bool) {
+    if .n == 0 {
+        return
+    }
+    .n = .n - 1
+    val = .data[.n]
+    ok = true
+}
+
+// peek: 查看堆疊頂端元素（不移除）
+// 返回 val=元素值, ok=true=堆疊非空
+stack.peek = () (val i64, ok bool) {
+    if .n == 0 {
+        return
+    }
+    val = .data[.n - 1]
+    ok = true
+}
+
+// size: 返回堆疊大小
+stack.size = () (sz i64) {
+    sz = .n
+}
+
+// empty: 判斷堆疊是否為空
+// 返回 true=空, false=非空
+stack.empty = () (yes bool) {
+    yes = .n == 0
+}
+
+// clear: 清空堆疊
+stack.clear = () {
+    .n = 0
+}

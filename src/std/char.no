@@ -1,9 +1,111 @@
-// char 标准库 - Unicode 字符操作
-// char 本质上是 i32 (Unicode 码点)
+// char — 字元操作
+//
+// char 本質為 i32（Unicode 碼點/rune）。
+// 提供字元分類、大小寫轉換、UTF-8 編碼等方法。
+//
+// 用法：
+//   c char = 'A'
+//   yes = c.is-upper()       // true
+//   u = c.to-lower()         // 'a'
+//   c.to-str()(s)            // s = "A"
 
-// char.to-bytes: 将字符转换为 UTF-8 编码的字节数组
+// ═══════════════════════════════════════════════
+// 字元分類
+// ═══════════════════════════════════════════════
+
+// is-digit: 判斷是否為數字（0-9）
+char.is-digit = () (result bool) {
+    result = false
+    if . >= 48 && . <= 57 {
+        result = true
+    }
+}
+
+// is-letter: 判斷是否為字母（A-Z a-z）
+char.is-letter = () (result bool) {
+    result = false
+    if . >= 65 && . <= 90 {
+        result = true
+        return
+    }
+    if . >= 97 && . <= 122 {
+        result = true
+    }
+}
+
+// is-alpha: 判斷是否為字母（A-Z a-z）
+// is-letter 的別名
+char.is-alpha = () (result bool) {
+    result = false
+    if . >= 65 && . <= 90 {
+        result = true
+        return
+    }
+    if . >= 97 && . <= 122 {
+        result = true
+    }
+}
+
+// is-alnum: 判斷是否為字母或數字
+char.is-alnum = () (result bool) {
+    result = false
+    if .is-digit() || .is-alpha() {
+        result = true
+    }
+}
+
+// is-space: 判斷是否為空白字元（space tab newline cr）
+char.is-space = () (result bool) {
+    result = false
+    if . == 32 || . == 9 || . == 10 || . == 13 {
+        result = true
+    }
+}
+
+// is-upper: 判斷是否為大寫字母（A-Z）
+char.is-upper = () (result bool) {
+    result = false
+    if . >= 65 && . <= 90 {
+        result = true
+    }
+}
+
+// is-lower: 判斷是否為小寫字母（a-z）
+char.is-lower = () (result bool) {
+    result = false
+    if . >= 97 && . <= 122 {
+        result = true
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 大小寫轉換
+// ═══════════════════════════════════════════════
+
+// to-upper: 轉為大寫（僅 ASCII）
+char.to-upper = () (result char) {
+    if . >= 97 && . <= 122 {
+        result = . - 32
+    } else {
+        result = .
+    }
+}
+
+// to-lower: 轉為小寫（僅 ASCII）
+char.to-lower = () (result char) {
+    if . >= 65 && . <= 90 {
+        result = . + 32
+    } else {
+        result = .
+    }
+}
+
+// ═══════════════════════════════════════════════
+// UTF-8 編碼
+// ═══════════════════════════════════════════════
+
+// to-bytes: 轉為 UTF-8 編碼的位元組陣列
 char.to-bytes = () (out []byte) {
-    // 使用陣列作为临时缓冲区
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
     len i64 = 0
 
@@ -34,7 +136,7 @@ char.to-bytes = () (out []byte) {
     }
 }
 
-// char.to-str: 将字符转换为 UTF-8 编码的字符串
+// to-str: 轉為 UTF-8 編碼的字串
 char.to-str = () (s str) {
     if . < 0x80 {
         s[0] = .
@@ -49,64 +151,9 @@ char.to-str = () (s str) {
         s[0] = 0xF0 | ((. >> 18) & 0x07)
         s[1] = 0x80 | ((. >> 12) & 0x3F)
         s[2] = 0x80 | ((. >> 6) & 0x3F)
-        s[3] = 0x80 | (. & 0x3F)
+                s[3] = 0x80 | (. & 0x3F)
     }
 }
 
-// char.is-digit: 判断字符是否为数字 (0-9)
-// 返回 true=是, false=否
-char.is-digit = () (result bool) {
-    result = false
-    if . >= 48 && . <= 57 {
-        result = true
-    }
-}
 
-// char.is-alpha: 判断字符是否为字母 (a-z, A-Z)
-// 返回 true=是, false=否
-char.is-alpha = () (result bool) {
-    result = false
-    if . >= 97 && . <= 122 {
-        result = true
-        return
-    }
-    if . >= 65 && . <= 90 {
-        result = true
-    }
-}
 
-// char.is-alnum: 判断字符是否为字母或数字
-// 返回 true=是, false=否
-char.is-alnum = () (result bool) {
-    result = false
-    if .is-digit() || .is-alpha() {
-        result = true
-    }
-}
-
-// char.is-space: 判断字符是否为空白字符
-// 返回 true=是, false=否
-char.is-space = () (result bool) {
-    result = false
-    if . == 32 || . == 9 || . == 10 || . == 13 {
-        result = true
-    }
-}
-
-// char.to-upper: 将小写字母转换为大写（仅 ASCII）
-char.to-upper = () (result char) {
-    if . >= 97 && . <= 122 {
-        result = . - 32
-    } else {
-        result = .
-    }
-}
-
-// char.to-lower: 将大写字母转换为小写（仅 ASCII）
-char.to-lower = () (result char) {
-    if . >= 65 && . <= 90 {
-        result = . + 32
-    } else {
-        result = .
-    }
-}

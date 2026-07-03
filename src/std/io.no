@@ -1,0 +1,211 @@
+// io — 基本輸入輸出介面
+//
+// 提供 reader/wwriter 抽象介面與便捷函數，
+// 統一檔案、標準輸入輸出、字串等資料流的讀寫操作。
+// 底層依賴 fs 模組的 read/write 內建函數。
+//
+// 用法：
+//   r = io-reader{ src: stdin }
+//   r.read-line()(line, ok)
+//
+//   w = io-writer{ dst: stdout }
+//   w.write-str('hello')(n)
+//
+//   io-print('hello')
+//   io-println('world')
+
+// ═══════════════════════════════════════════════
+// 內建函數（底層實作，定義於 fs 模組）
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: read)
+// read: 從檔案描述符讀取最多 n 位元組到 buf
+// read = (fd i64, buf str, n i64) (n i64) { }
+
+// build-in (ForwardFunc: write)
+// write: 將 data 的前 n 位元組寫入檔案描述符
+// write = (fd i64, data str, n i64) (written i64) { }
+
+// build-in (ForwardFunc: read-stdin-line)
+// get-line: 從標準輸入讀取一行
+// get-line = () (line str, ok bool) { }
+
+// ═══════════════════════════════════════════════
+// 標準檔案描述符
+// ═══════════════════════════════════════════════
+
+STDIN-FD = 0
+STDOUT-FD = 1
+STDERR-FD = 2
+
+// ═══════════════════════════════════════════════
+// reader 結構體：封裝讀取來源
+// ═══════════════════════════════════════════════
+
+// io-reader: 讀取器
+// fd: 底層檔案描述符
+io-reader {
+    fd i64
+}
+
+// io-reader.from-fd: 從檔案描述符建立讀取器
+io-reader.from-fd = (fd i64) (r io-reader) {
+    r.fd = fd
+}
+
+// io-reader.from-stdin: 從標準輸入建立讀取器
+io-reader.from-stdin = () (r io-reader) {
+    r.fd = STDIN-FD
+}
+
+// read: 從讀取器讀取最多 n 位元組到 buf
+// 返回實際讀取的位元組數，0 表示 EOF 或錯誤
+io-reader.read = (buf str, n i64) (read-n i64) {
+    read-n = 0
+    if .fd < 0 {
+        return
+    }
+    read-n = read(.fd, buf, n)
+}
+
+// read-byte: 讀取一個位元組
+// 返回 byte 值與 ok 旗標
+io-reader.read-byte = () (b i64, ok bool) {
+    b = 0
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    buf str = ' '
+    n = read(.fd, buf, 1)
+    if n > 0 {
+        b = buf[0] & 255
+        ok = true
+    }
+}
+
+// read-line: 讀取一行（最多 4096 位元組）
+// 返回讀取的字串與 ok 旗標
+io-reader.read-line = () (line str, ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    n = read(.fd, line, 4096)
+    ok = n > 0
+}
+
+// read-all: 讀取全部內容到 buf（最多 size 位元組）
+// 需要呼叫者傳入大小
+io-reader.read-all = (buf str, size i64) (total i64) {
+    total = 0
+    if .fd < 0 {
+        return
+    }
+    total = read(.fd, buf, size)
+}
+
+// ═══════════════════════════════════════════════
+// writer 結構體：封裝寫入目標
+// ═══════════════════════════════════════════════
+
+// io-writer: 寫入器
+// fd: 底層檔案描述符
+io-writer {
+    fd i64
+}
+
+// io-writer.from-fd: 從檔案描述符建立寫入器
+io-writer.from-fd = (fd i64) (w io-writer) {
+    w.fd = fd
+}
+
+// io-writer.from-stdout: 從標準輸出建立寫入器
+io-writer.from-stdout = () (w io-writer) {
+    w.fd = STDOUT-FD
+}
+
+// io-writer.from-stderr: 從標準錯誤建立寫入器
+io-writer.from-stderr = () (w io-writer) {
+    w.fd = STDERR-FD
+}
+
+// write: 將 data 的前 n 位元組寫入
+// 返回實際寫入的位元組數
+io-writer.write = (data str, n i64) (written i64) {
+    written = 0
+    if .fd < 0 {
+        return
+    }
+    written = write(.fd, data, n)
+}
+
+// write-str: 寫入整個字串
+// 返回實際寫入的位元組數
+io-writer.write-str = (s str) (written i64) {
+    written = 0
+    if .fd < 0 {
+        return
+    }
+    written = write(.fd, s, s.len)
+}
+
+// write-byte: 寫入一個位元組
+// 返回實際寫入的位元組數（0 或 1）
+io-writer.write-byte = (b i64) (written i64) {
+    written = 0
+    if .fd < 0 {
+        return
+    }
+    buf str = ' '
+    buf[0] = b & 255
+    written = write(.fd, buf, 1)
+}
+
+// write-line: 寫入字串並附加換行符
+// 返回實際寫入的位元組數
+io-writer.write-line = (s str) (written i64) {
+    written = 0
+    if .fd < 0 {
+        return
+    }
+    n = write(.fd, s, s.len)
+    nl str = '\n'
+    written = write(.fd, nl, 1)
+    written = written + n
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// io-print: 寫入字串到標準輸出（不換行）
+io-print = (s str) (n i64) {
+    n = write(STDOUT-FD, s, s.len)
+}
+
+// io-println: 寫入字串到標準輸出並換行
+io-println = (s str) (n i64) {
+    n = write(STDOUT-FD, s, s.len)
+    nl str = '\n'
+    m = write(STDOUT-FD, nl, 1)
+    n = n + m
+}
+
+// io-err: 寫入字串到標準錯誤（不換行）
+io-err = (s str) (n i64) {
+    n = write(STDERR-FD, s, s.len)
+}
+
+// io-errln: 寫入字串到標準錯誤並換行
+io-errln = (s str) (n i64) {
+    n = write(STDERR-FD, s, s.len)
+    nl str = '\n'
+    m = write(STDERR-FD, nl, 1)
+    n = n + m
+}
+
+// io-read-line: 從標準輸入讀取一行
+io-read-line = () (line str, ok bool) {
+    get-line()(line, ok)
+}

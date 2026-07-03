@@ -1,174 +1,46 @@
-// sql — SQLite 資料庫存取
+// sql — 資料庫存取介面定義
 //
-// 以 db/rows/result/stmt 結構體封裝 SQLite 操作。
-// 底層依賴 builtin 的 db-* 系列函式。
+// 本檔案定義資料庫存取的標準介面。
+// 各驅動（如 SQLite、PostgreSQL 等）實作此介面，
+// 提供具體的結構體型別與方法。
 //
-// 用法：
-//   use std/database/sql
-//   d = open(':memory:')
-//   d.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
-//   d.exec('INSERT INTO users (name) VALUES (\'Alice\')')
-//   rs = d.query('SELECT id, name FROM users')
-//   for rs.next() {
-//       id = rs.scan-int(0)
-//       name = rs.scan-str(1)
+// 共用結構體：
+//   result — 執行結果（所有驅動共用）
+//
+// 驅動應實作的結構體與方法契約：
+//
+//   db {
+//       handle i64
 //   }
-//   rs.close()
-//   d.close()
+//   db.close = () (ok bool)
+//   db.exec = (sql str) (r result)
+//   db.query = (sql str) (rs rows)
+//   db.prepare = (sql str) (s stmt)
+//
+//   rows {
+//       stmt i64
+//       n-cols i64
+//   }
+//   rows.next = () (ok bool)
+//   rows.scan-int = (col i64) (v i64)
+//   rows.scan-str = (col i64) (v str)
+//   rows.scan-float = (col i64) (v f64)
+//   rows.close = () (ok bool)
+//
+//   stmt {
+//       handle i64
+//       db-handle i64
+//   }
+//   stmt.bind-int = (idx i64, v i64) (ok bool)
+//   stmt.bind-str = (idx i64, v str) (ok bool)
+//   stmt.exec = () (r result)
+//   stmt.query = () (rs rows)
+//   stmt.close = () (ok bool)
+//
+//   open = (dsn str) (d db)  — 由驅動提供
 
-// SQLite result codes
-SQLITE-ROW = 100
-SQLITE-DONE = 101
-
-// ═══════════════════════════════════════════════
-// 結構體定義
-// ═══════════════════════════════════════════════
-
-// db: 資料庫連線
-// handle 為 sqlite3* 指標（以 i64 儲存），0 表示未開啟或失敗
-db {
-    handle i64
-}
-
-// rows: 查詢結果集迭代器
-// stmt 為 sqlite3_stmt* 指標（0 表示失敗），n-cols 為欄位數
-rows {
-    stmt i64
-    n-cols i64
-}
-
-// result: 執行結果
+// result: 執行結果（所有驅動共用）
 result {
     last-id i64
     affected i64
-}
-
-// stmt: 預編譯陳述式
-// handle 為 sqlite3_stmt* 指標（0 表示失敗）
-// db-handle 為所屬資料庫連線指標（用於取得 last-insert-rowid 與 changes）
-stmt {
-    handle i64
-    db-handle i64
-}
-
-// ═══════════════════════════════════════════════
-// open: 開啟資料庫
-// 失敗時 d.handle == 0
-// ═══════════════════════════════════════════════
-
-open = (dsn str) (d db) {
-    h i64 = db-open(dsn)
-    d = db{
-        handle: h
-    }
-}
-
-// ═══════════════════════════════════════════════
-// db 方法
-// ═══════════════════════════════════════════════
-
-// close: 關閉資料庫
-db.close = () (ok bool) {
-    ok = db-close(.handle)
-    .handle = 0
-}
-
-// exec: 執行 SQL（無結果集）
-db.exec = (sql str) (r result) {
-    ok bool = db-exec(.handle, sql)
-    if !ok {
-        return
-    }
-    r.last-id = db-last-insert-rowid(.handle)
-    r.affected = db-changes(.handle)
-}
-
-// query: 查詢結果集
-// 失敗時 rs.stmt == 0
-db.query = (sql str) (rs rows) {
-    s i64 = db-prepare(.handle, sql)
-    n i64 = db-column-count(s)
-    rs = rows{
-        stmt: s
-        n-cols: n
-    }
-}
-
-// prepare: 預編譯陳述式
-// 失敗時 s.handle == 0
-db.prepare = (sql str) (s stmt) {
-    h i64 = db-prepare(.handle, sql)
-    dh i64 = .handle
-    s = stmt{
-        handle: h
-        db-handle: dh
-    }
-}
-
-// ═══════════════════════════════════════════════
-// rows 方法
-// ═══════════════════════════════════════════════
-
-// next: 推進至下一列
-rows.next = () (ok bool) {
-    rc i64 = db-step(.stmt)
-    ok = rc == SQLITE-ROW
-}
-
-// scan-int: 掃描整數欄位
-rows.scan-int = (col i64) (v i64) {
-    v = db-column-int64(.stmt, col)
-}
-
-// scan-str: 掃描字串欄位
-rows.scan-str = (col i64) (v str) {
-    v = db-column-text(.stmt, col)
-}
-
-// scan-float: 掃描浮點數欄位
-rows.scan-float = (col i64) (v f64) {
-    v = db-column-double(.stmt, col)
-}
-
-// close: 關閉結果集
-rows.close = () (ok bool) {
-    ok = db-finalize(.stmt)
-    .stmt = 0
-}
-
-// ═══════════════════════════════════════════════
-// stmt 方法
-// ═══════════════════════════════════════════════
-
-// bind-int: 繫結整數參數
-stmt.bind-int = (idx i64, v i64) (ok bool) {
-    ok = db-bind-int64(.handle, idx, v)
-}
-
-// bind-str: 繫結字串參數
-stmt.bind-str = (idx i64, v str) (ok bool) {
-    ok = db-bind-text(.handle, idx, v)
-}
-
-// exec: 執行預編譯陳述式
-stmt.exec = () (r result) {
-    rc i64 = db-step(.handle)
-    r.last-id = db-last-insert-rowid(.db-handle)
-    r.affected = db-changes(.db-handle)
-}
-
-// query: 以預編譯陳述式查詢
-stmt.query = () (rs rows) {
-    n i64 = db-column-count(.handle)
-    h i64 = .handle
-    rs = rows{
-        stmt: h
-        n-cols: n
-    }
-}
-
-// close: 關閉預編譯陳述式
-stmt.close = () (ok bool) {
-    ok = db-finalize(.handle)
-    .handle = 0
 }

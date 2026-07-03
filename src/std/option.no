@@ -11,7 +11,7 @@
 //
 //   match
 //   x: {
-//       nil -> log('nil')
+//       nil -> log(it)
 //       err -> log(it)
 //       -> log(it)
 //   }
