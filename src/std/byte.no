@@ -79,7 +79,6 @@ HEX-LOWER = '0123456789abcdef'
 // []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 []byte.to-hex = () (out str) {
     n = .len()
-    out.len = n * 2
     i = 0
     i < n: {
         b = .[i] & 255
@@ -92,7 +91,6 @@ HEX-LOWER = '0123456789abcdef'
 // []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 []byte.to-hex-lower = () (out str) {
     n = .len()
-    out.len = n * 2
     i = 0
     i < n: {
         b = .[i] & 255

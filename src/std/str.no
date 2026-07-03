@@ -140,7 +140,6 @@ str.ends-with = (target str) (yes bool) {
 // str.to-upper: 将字符串转为大写
 // 返回新字符串
 str.to-upper = () (val str) {
-    val.len = .len
     i = 0
     for i < .len {
         c = .[i]
@@ -156,7 +155,6 @@ str.to-upper = () (val str) {
 // str.to-lower: 将字符串转为小写
 // 返回新字符串
 str.to-lower = () (val str) {
-    val.len = .len
     i = 0
     for i < .len {
         c = .[i]
@@ -188,13 +186,12 @@ str.trim = () (val str) {
         }
         end = end - 1
     }
-    val.len = end - start + 1
-    if val.len < 0 {
-        val.len = 0
+    n = end - start + 1
+    if n < 0 {
         return
     }
     i = 0
-    for i < val.len {
+    for i < n {
         val[i] = .[start + i]
         i = i + 1
     }
@@ -207,7 +204,6 @@ str.trim = () (val str) {
 // str.repeat: 将字符串重复 times 次
 // 返回新字符串
 str.repeat = (times i64) (val str) {
-    val.len = .len * times
     i = 0
     for i < times {
         j = 0
@@ -229,12 +225,11 @@ str.slice = (start i64, end i64) (val str) {
         end = .len
     }
     if start >= end {
-        val.len = 0
         return
     }
-    val.len = end - start
+    n = end - start
     i = 0
-    for i < val.len {
+    for i < n {
         val[i] = .[start + i]
         i = i + 1
     }
@@ -676,7 +671,6 @@ str.to-bool = () (val ?bool) {
 // str.reverse: 反转字符串
 // 将 s 反转后写入 val
 str.reverse = () (val str) {
-    val.len = .len
     i = 0
     for i < .len {
         val[i] = .[.len - 1 - i]
@@ -747,8 +741,8 @@ str.count = () (cnt i64) {
 // str.replace-char: 将 s 中所有 old-ch 替换为 new-ch（UTF-8 码点）
 // 返回结果字符串
 str.replace-char = (old-ch char, new-ch char) (val str) {
-    // 第一遍：计算输出长度
-    val.len = 0
+    // 第一遍：計算輸出長度
+    out-n = 0
     i = 0
     for i < .len {
         b = .[i]
@@ -769,16 +763,16 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         }
         if cp == old-ch {
             if new-ch < 0x80 {
-                val.len = val.len + 1
+                out-n = out-n + 1
             } elif new-ch < 0x800 {
-                val.len = val.len + 2
+                out-n = out-n + 2
             } elif new-ch < 0x10000 {
-                val.len = val.len + 3
+                out-n = out-n + 3
             } else {
-                val.len = val.len + 4
+                out-n = out-n + 4
             }
         } else {
-            val.len = val.len + clen
+            out-n = out-n + clen
         }
         i = i + clen
     }
@@ -891,13 +885,12 @@ str.trim-char = (ch char) (val str) {
         }
         i = i + clen
     }
-    val.len = end - start
-    if val.len < 0 {
-        val.len = 0
+    n = end - start
+    if n < 0 {
         return
     }
     j = 0
-    for j < val.len {
+    for j < n {
         val[j] = .[start + j]
         j = j + 1
     }
