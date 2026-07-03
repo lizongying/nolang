@@ -116,6 +116,53 @@ func (st *SliceType) Pos() lexer.Position    { return posFromToken(st.Token) }
 func (st *SliceType) EndPos() lexer.Position { return st.Elem.EndPos() }
 func (st *SliceType) String() string         { return "[]" + st.Elem.String() }
 
+// FunctionType represents a function type: (params) (results)?
+// Syntax: cb ()() or cb ()(i64) or cb (n i64)(r i64)
+// Both Params and Results use the same Parameter struct as function definitions.
+// Name-less entries (e.g. (i64) for a single i64 param without a name) are
+// represented with an empty Name field.
+// String() keeps the internal "fn(...)" marker prefix so codegen / transpiler
+// can identify function-type variables via HasPrefix(t, "fn(").
+type FunctionType struct {
+	Token   lexer.Token // the opening '(' token
+	Params  []*Parameter
+	Results []*Parameter
+}
+
+func (ft *FunctionType) typeNode()           {}
+func (ft *FunctionType) Pos() lexer.Position { return posFromToken(ft.Token) }
+func (ft *FunctionType) EndPos() lexer.Position {
+	if len(ft.Results) > 0 {
+		return ft.Results[len(ft.Results)-1].EndPos()
+	}
+	if len(ft.Params) > 0 {
+		return ft.Params[len(ft.Params)-1].EndPos()
+	}
+	return posFromToken(ft.Token)
+}
+func (ft *FunctionType) String() string {
+	var sb strings.Builder
+	sb.WriteString("fn(")
+	for i, p := range ft.Params {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(p.Type.String())
+	}
+	sb.WriteString(")")
+	if len(ft.Results) > 0 {
+		sb.WriteString("(")
+		for i, r := range ft.Results {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString(r.Type.String())
+		}
+		sb.WriteString(")")
+	}
+	return sb.String()
+}
+
 // ---- Helper ----
 
 func posFromToken(t lexer.Token) lexer.Position {
@@ -155,6 +202,8 @@ func typeString(n Node) string {
 		return "?" + typeString(n.Type)
 	case *PointerType:
 		return "ptr " + typeString(n.Type)
+	case *FunctionType:
+		return n.String()
 	default:
 		return fmt.Sprintf("%T", n)
 	}

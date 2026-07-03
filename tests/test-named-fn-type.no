@@ -1,0 +1,51 @@
+// test-named-fn-type.no — 具名函式型別定義測試
+//
+// 使用具名函式型別定義（name = (params)(results)?），
+// 在 anonymous-fn-type: false（預設）下可正常運作。
+
+// 具名函式型別：無參無返回
+test-cb = ()
+
+// 具名函式型別：帶參帶返回
+compute = (n i64)(r i64)
+
+// 使用具名函式型別作為參數型別
+run-suite = (setup test-cb, teardown test-cb) {
+    setup()
+    teardown()
+}
+
+// 使用具名函式型別作為參數型別，並帶返回值
+apply-compute = (cb compute) (out i64) {
+    out = cb(41)
+}
+
+// 回呼實作
+my-setup = () {
+    print('setup called')
+}
+
+my-teardown = () {
+    print('teardown called')
+}
+
+my-compute = (n i64) (r i64) {
+    r = n + 1
+}
+
+main = () {
+    // 測試 1: 無參無返回的具名函式型別
+    run-suite(my-setup, my-teardown)
+    print('ok: run-suite')
+
+    // 測試 2: 帶參帶返回的具名函式型別
+    result i64 = 0
+    result = apply-compute(my-compute)
+    if result == 42 {
+        print('ok: named-fn-type')
+    } else {
+        print('fail: named-fn-type')
+    }
+}
+
+main()

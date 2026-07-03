@@ -98,6 +98,27 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				return "i64* " + tmpName
 			}
 		}
+		// Function reference: when an Identifier refers to a known user-defined
+		// function, pass it as a function pointer. Allocate a temp void (...)* slot
+		// and store @funcName into it, so the callee receives a by-reference pointer.
+		// Function names may also appear in g.varTypes as "i64" (a placeholder from
+		// collectVarDecls), so we check funcRetTypes first to distinguish functions
+		// from real variables.
+		if g.funcRetTypes != nil {
+			if _, isFn := g.funcRetTypes[a.Value]; isFn {
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%fnptr.arg.%d", g.tmpIdx)
+				fnLLVMName := a.Value
+				if clibFuncNames[a.Value] {
+					fnLLVMName = "n." + a.Value
+				}
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca void (...)*\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore void (...)* @%s, void (...)** %s\n", g.indent(), sanitizeLLVMName(fnLLVMName), tmpName))
+				}
+				return "void (...)** " + tmpName
+			}
+		}
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok && t == "%str-long" {
 				return "%str-long* " + g.varAddr(a.Value)
@@ -282,8 +303,67 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 	}
 }
 
+// generateIndirectCall emits a call through a function-pointer variable.
+// varName is the variable holding the function pointer; ft is its FunctionType,
+// used to determine the number of by-reference output parameters.
+func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallExpression, varName string, ft *parser.FunctionType) string {
+	// Load the function pointer: %fnPtr = load void (...)*, void (...)** %var
+	g.tmpIdx++
+	fnPtrReg := fmt.Sprintf("%%fnptr.load.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load void (...)*, void (...)** %s\n", g.indent(), fnPtrReg, g.varAddr(varName)))
+	}
+	// Generate input arguments (by-reference, same convention as direct calls)
+	args := make([]string, 0, len(expr.Arguments)+len(ft.Results))
+	for _, arg := range expr.Arguments {
+		args = append(args, g.generateCallArg(sb, arg))
+	}
+	numResults := len(ft.Results)
+	if numResults == 0 {
+		// Pure void call
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall void %s(%s)\n", g.indent(), fnPtrReg, strings.Join(args, ", ")))
+		}
+		return ""
+	}
+	// One or more results: allocate temp output slots and append as by-reference args
+	resultTypes := make([]string, numResults)
+	resultTemps := make([]string, numResults)
+	for i, r := range ft.Results {
+		llvmType := g.mapToLLVMType(r.Type.String())
+		resultTypes[i] = llvmType
+		g.tmpIdx++
+		tmp := fmt.Sprintf("%%fncall.out.%d", g.tmpIdx)
+		resultTemps[i] = tmp
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmp, llvmType))
+		}
+		args = append(args, llvmType+"* "+tmp)
+	}
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%scall void %s(%s)\n", g.indent(), fnPtrReg, strings.Join(args, ", ")))
+	}
+	// Load the first result to return as the call's SSA value (Phase 1: single result)
+	if numResults >= 1 {
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%fncall.ret.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, resultTypes[0], resultTypes[0], resultTemps[0]))
+		}
+		return loadReg
+	}
+	return ""
+}
+
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
-	// 當 Function 是 CallExpression 時，表示內層調用 + 輸出參數捕獲
+	// Indirect call through a function-type variable (e.g. fn() where fn is a param of type fn (...)).
+	// Detect before any other dispatch: if the callee identifier is registered in
+	// g.varFnTypes, emit a call through a loaded function pointer.
+	if ident, ok := expr.Function.(*parser.Identifier); ok {
+		if ft, ok := g.varFnTypes[ident.Value]; ok {
+			return g.generateIndirectCall(sb, expr, ident.Value, ft)
+		}
+	}
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {
 		// 確定內層調用的返回型別
@@ -943,6 +1023,26 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
 					}
 					return "i64* " + tmpName
+				}
+			}
+			// Function reference: when an Identifier refers to a known user-defined
+			// function, pass it as a function pointer (by-reference convention).
+			// Function names may also appear in g.varTypes as "i64" (a placeholder from
+			// collectVarDecls), so we check funcRetTypes first to distinguish functions
+			// from real variables.
+			if g.funcRetTypes != nil {
+				if _, isFn := g.funcRetTypes[a.Value]; isFn {
+					g.tmpIdx++
+					tmpName := fmt.Sprintf("%%fnptr.arg.%d", g.tmpIdx)
+					fnLLVMName := a.Value
+					if clibFuncNames[a.Value] {
+						fnLLVMName = "n." + a.Value
+					}
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca void (...)*\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore void (...)* @%s, void (...)** %s\n", g.indent(), sanitizeLLVMName(fnLLVMName), tmpName))
+					}
+					return "void (...)** " + tmpName
 				}
 			}
 			// str 型別用 %str-long* 指標

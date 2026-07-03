@@ -32,35 +32,37 @@ type Generator struct {
 	stringIdx            int
 	fmtGlobals           []string
 	tmpIdx               int
-	funcVars             []varInfo                   // current function's variables for lifetime.end
-	varTypes             map[string]string           // variable name → LLVM type
-	varSSA               map[string]int              // variable name → current SSA version
-	ssaMode              bool                        // true = 使用 SSA 暫存器
-	paramNames           map[string]bool             // 函數參數名稱（使用 .addr 存取）
-	funcRetTypes         map[string]string           // 函數名 → 回傳型別
-	funcNumResults       map[string]int              // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
-	funcResultLLVMType   map[string][]string         // 函數名 → 各輸出參數的 LLVM 型別列表
-	funcIsVariadic       map[string]bool             // 函數名 → 是否為 variadic 函數
-	funcParamCount       map[string]int              // 函數名 → 非 variadic 參數數量
-	funcParamLLVMTypes   map[string][]string         // 函數名 → 各參數的 LLVM 型別列表（含 receiver）
-	funcParamTypes       map[string][]string         // 函數名 → 各參數的 Nolang 型別字串列表（含 receiver）
-	structTypes          map[string][]structField    // struct name → fields
-	structTypeLLVM       string                      // 當前正在生成的 struct LLVM type name
-	loopExits            []loopExit                  // 活躍循環退出目標棧
-	currentBlock         string                      // current basic block label (for PHI predecessor tracking)
-	arrayElemTypes       map[string]string           // variable name → element LLVM type for %arr variables
-	curFuncRetType       string                      // 當前函數回傳型別（void/i64/...）
-	curFuncRetName       string                      // 當前函數輸出參數名稱（為空表示 void）
-	globalVars           map[string]bool             // module-level vars that should be LLVM globals
-	moduleVarTypes       map[string]string           // module-level variable types (preserved across functions)
-	ssaTypes             map[string]string           // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
-	blockTerminated      bool                        // true if current basic block ends with a terminator (ret/br)
-	funcLocalNames       map[string]bool             // local variable names in current function (params + allocas)
-	unionAliases         map[string][]string         // union type alias name → member type names (e.g. "float"→["f32","f64"])
-	optionInnerTypes     map[string]string           // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
-	funcResultInnerTypes map[string][]string         // function name → inner LLVM types of ?T results
-	enumVariantIndex     map[string]int64            // enum variant name → tag index (e.g. status1→0, status2→1)
-	enumVariants         map[string]map[string]int64 // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
+	funcVars             []varInfo                       // current function's variables for lifetime.end
+	varTypes             map[string]string               // variable name → LLVM type
+	varSSA               map[string]int                  // variable name → current SSA version
+	ssaMode              bool                            // true = 使用 SSA 暫存器
+	paramNames           map[string]bool                 // 函數參數名稱（使用 .addr 存取）
+	funcRetTypes         map[string]string               // 函數名 → 回傳型別
+	funcNumResults       map[string]int                  // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
+	funcResultLLVMType   map[string][]string             // 函數名 → 各輸出參數的 LLVM 型別列表
+	funcIsVariadic       map[string]bool                 // 函數名 → 是否為 variadic 函數
+	funcParamCount       map[string]int                  // 函數名 → 非 variadic 參數數量
+	funcParamLLVMTypes   map[string][]string             // 函數名 → 各參數的 LLVM 型別列表（含 receiver）
+	funcParamTypes       map[string][]string             // 函數名 → 各參數的 Nolang 型別字串列表（含 receiver）
+	structTypes          map[string][]structField        // struct name → fields
+	structTypeLLVM       string                          // 當前正在生成的 struct LLVM type name
+	loopExits            []loopExit                      // 活躍循環退出目標棧
+	currentBlock         string                          // current basic block label (for PHI predecessor tracking)
+	arrayElemTypes       map[string]string               // variable name → element LLVM type for %arr variables
+	curFuncRetType       string                          // 當前函數回傳型別（void/i64/...）
+	curFuncRetName       string                          // 當前函數輸出參數名稱（為空表示 void）
+	globalVars           map[string]bool                 // module-level vars that should be LLVM globals
+	moduleVarTypes       map[string]string               // module-level variable types (preserved across functions)
+	ssaTypes             map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
+	blockTerminated      bool                            // true if current basic block ends with a terminator (ret/br)
+	funcLocalNames       map[string]bool                 // local variable names in current function (params + allocas)
+	unionAliases         map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
+	optionInnerTypes     map[string]string               // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
+	funcResultInnerTypes map[string][]string             // function name → inner LLVM types of ?T results
+	enumVariantIndex     map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
+	enumVariants         map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
+	varFnTypes           map[string]*parser.FunctionType // variable name → FunctionType (for indirect calls)
+	fnTypeAliases        map[string]*parser.FunctionType // named function type alias name → FunctionType
 }
 
 func NewGenerator() *Generator {
@@ -166,6 +168,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.funcResultInnerTypes = make(map[string][]string)
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)
+	g.fnTypeAliases = make(map[string]*parser.FunctionType)
 
 	// 收集聯合型別別名，用於解析 receiver method call
 	for _, stmt := range program.Statements {
@@ -177,6 +180,13 @@ func (g *Generator) Generate(program *parser.Program) string {
 				}
 			}
 			g.unionAliases[ta.Name] = members
+		}
+		// 收集具名函式型別別名（name = (params)(results)?），用於解析
+		// 參數型別為 NamedType 時的間接呼叫登錄
+		if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil {
+			if ft, ok := ta.Type.(*parser.FunctionType); ok {
+				g.fnTypeAliases[ta.Name] = ft
+			}
 		}
 	}
 

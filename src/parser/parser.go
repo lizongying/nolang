@@ -21,6 +21,12 @@ type Parser struct {
 	comments         []lexer.Token       // collected comment tokens
 	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
+
+	// AllowAnonymousFnType controls whether anonymous function type syntax
+	// (e.g. `cb ()()`) is permitted in parameter lists. When false, only
+	// named function type aliases (e.g. `test-cb = ()` then
+	// `f = (cb test-cb) {}`) are accepted. Defaults to false (zero value).
+	AllowAnonymousFnType bool
 }
 
 // blockType — { body } 內部的型別分類
@@ -775,6 +781,15 @@ func (p *Parser) parseStatement() Statement {
 			if p.isFunctionDefinition() {
 				return p.parseFunctionDefinition()
 			}
+			// 再檢查是否為具名函式型別定義：name = (params)(results)?
+			// 僅在 `(` 開頭且非函式定義（無 { body }）時嘗試
+			if p.isFunctionTypeAlias() {
+				stmt := p.parseFunctionTypeAlias()
+				if stmt != nil {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
 			stmt := p.parseLetStatement()
 			if stmt != nil {
 				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
@@ -1507,16 +1522,51 @@ func (p *Parser) isFunctionDefinition() bool {
 	}
 
 	// 有参数: 跳过 (id, id, ...) 直到 RPAREN
-	for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+	// 當參數型別為函式型別（如 `cb ()()` 或 `cb (n i64)(r i64)`）時，
+	// 允許 LPAREN/RPAREN 巢狀結構通過。函式型別以 `(` 開頭（無 fn 關鍵字），
+	// 故在參數名 IDENT 之後遇到 LPAREN 即視為函式型別起點。函式型別可帶
+	// 選用的結果列表 `(...)`，因此在關閉參數列表後需允許緊接的一個 `(...)`
+	// 作為結果列表。
+	parenDepth := 0
+	prevIdent := false           // 上一個 token 是 IDENT（可能是參數名，後接函式型別 `(`）
+	allowFnResultsParen := false // 允許函式型別關閉參數列表後的結果列表 LPAREN
+	for (p.currentToken.Type != lexer.RPAREN || parenDepth > 0) && p.currentToken.Type != lexer.EOF {
 		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN &&
 			p.currentToken.Type != lexer.INT &&
 			p.currentToken.Type != lexer.QUESTION &&
 			p.currentToken.Type != lexer.COMMA &&
 			p.currentToken.Type != lexer.LBRACKET && p.currentToken.Type != lexer.RBRACKET &&
 			p.currentToken.Type != lexer.ELLIPSIS &&
-			p.currentToken.Type != lexer.NEWLINE {
+			p.currentToken.Type != lexer.NEWLINE &&
+			!(p.currentToken.Type == lexer.LPAREN && prevIdent) &&
+			!(p.currentToken.Type == lexer.LPAREN && allowFnResultsParen) &&
+			!(p.currentToken.Type == lexer.RPAREN && parenDepth > 0) {
 			p.restoreState(state)
 			return false
+		}
+		switch p.currentToken.Type {
+		case lexer.IDENT:
+			prevIdent = true
+			allowFnResultsParen = false
+		case lexer.LPAREN:
+			if prevIdent {
+				parenDepth++
+				prevIdent = false
+			} else if allowFnResultsParen {
+				parenDepth++
+				allowFnResultsParen = false
+			}
+		case lexer.RPAREN:
+			if parenDepth > 0 {
+				parenDepth--
+				// 關閉函式型別的某一組括號後，允許緊接的結果列表 (...)
+				if parenDepth == 0 {
+					allowFnResultsParen = true
+				}
+			}
+		default:
+			prevIdent = false
+			allowFnResultsParen = false
 		}
 		p.nextToken()
 	}
@@ -1553,6 +1603,81 @@ func (p *Parser) isFunctionDefinition() bool {
 
 	p.restoreState(state)
 	return isFunctionDef
+}
+
+// isFunctionTypeAlias 判斷當前位置是否為具名函式型別定義：name = (params)(results)?
+// 判斷依據：
+//  1. currentToken 為 IDENT，peekToken 為 ASSIGN，且其後緊接 LPAREN
+//  2. `(...)` 內容符合函式型別項目模式（空、`name type`、`type`、以逗號分隔的多項）
+//  3. 函式型別後（含選用結果列表）緊接 NEWLINE/EOF/SEMICOLON（陳述句結束）
+//
+// 此方法不消耗任何 token（呼叫前後 parser 狀態相同，但 errors 可能被暫時添加後回滾）。
+func (p *Parser) isFunctionTypeAlias() bool {
+	if p.currentToken.Type != lexer.IDENT {
+		return false
+	}
+	if p.peekToken.Type != lexer.ASSIGN {
+		return false
+	}
+	// `=` 之後必須是 `(`
+	if p.lexer.LookAhead(1).Type != lexer.LPAREN {
+		return false
+	}
+
+	state := p.saveState()
+	errCount := len(p.errors)
+	p.nextToken() // IDENT → ASSIGN
+	p.nextToken() // ASSIGN → LPAREN
+
+	// 嘗試以函式型別解析
+	ft := p.parseFunctionType()
+	parseFailed := len(p.errors) > errCount
+	if parseFailed {
+		// 回滾試解析期間產生的錯誤
+		p.errors = p.errors[:errCount]
+	}
+	// parseFunctionType 恆返回非 nil（含錯誤時亦然），以錯誤計數判斷成敗
+	_ = ft
+
+	// 解析後必須緊接陳述句結束（容許 NEWLINE）
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+	isAlias := !parseFailed &&
+		(p.currentToken.Type == lexer.EOF || p.currentToken.Type == lexer.SEMICOLON)
+
+	p.restoreState(state)
+	return isAlias
+}
+
+// parseFunctionTypeAlias 解析具名函式型別定義：name = (params)(results)?
+// 前置條件: currentToken 為 IDENT（名稱），peekToken 為 ASSIGN
+// 後置條件: currentToken 為函式型別後的第一個 token（通常為 NEWLINE/EOF）
+// 回傳 *TypeAlias{ Name, Type: *FunctionType{...} }
+func (p *Parser) parseFunctionTypeAlias() Statement {
+	name := p.currentToken.Literal
+	nameToken := p.currentToken
+	ta := &TypeAlias{Token: nameToken, Name: name}
+
+	p.nextToken() // skip IDENT → ASSIGN
+	if p.currentToken.Type != lexer.ASSIGN {
+		msg := fmt.Sprintf("line %d, column %d: expected '=' in function type alias, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+	p.nextToken() // skip ASSIGN → LPAREN
+
+	if p.currentToken.Type != lexer.LPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected '(' after '=' in function type alias, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil
+	}
+
+	ft := p.parseFunctionType()
+	ta.Type = ft
+	return ta
 }
 
 func (p *Parser) parseUseStatement() Statement {
@@ -5675,6 +5800,9 @@ func (p *Parser) parseTypeAlias() Statement {
 func (p *Parser) parseTypeExpression() (Type, bool) {
 	startTok := p.currentToken
 	switch p.currentToken.Type {
+	case lexer.LPAREN:
+		// Function type: (params) (results)?
+		return p.parseFunctionType(), true
 	case lexer.IDENT:
 		// Could be:
 		//   - NamedType (e.g., "i64")
@@ -5729,6 +5857,191 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 		return &NullableType{Token: startTok, Type: &NamedType{Token: innerTok, Value: innerName}}, true
 	}
 	return nil, false
+}
+
+// parseFunctionType parses a function type: (params) (results)?
+// Pre-condition: p.currentToken is the opening '(' token.
+// Post-condition: p.currentToken is the first token after the function type
+// (typically NEWLINE, COMMA, RPAREN, or LBRACE).
+// Each entry in params/results can be either "name type" or just "type"
+// (name-less form, stored with empty Name).
+func (p *Parser) parseFunctionType() *FunctionType {
+	ft := &FunctionType{Token: p.currentToken}
+
+	if p.currentToken.Type != lexer.LPAREN {
+		msg := fmt.Sprintf("line %d, column %d: expected '(' to start function type, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return ft
+	}
+	p.nextToken() // skip (
+
+	// parse params
+	if p.currentToken.Type != lexer.RPAREN {
+		for {
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.RPAREN {
+				break
+			}
+			param, ok := p.parseFunctionTypeEntry()
+			if !ok {
+				return ft
+			}
+			ft.Params = append(ft.Params, param)
+
+			if p.currentToken.Type == lexer.RPAREN {
+				break
+			}
+			if p.currentToken.Type != lexer.COMMA {
+				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return ft
+			}
+			p.nextToken() // skip COMMA
+		}
+	}
+	if p.currentToken.Type == lexer.RPAREN {
+		p.nextToken()
+	}
+
+	// Optional results list: (results)
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+	if p.currentToken.Type == lexer.LPAREN {
+		p.nextToken()
+		if p.currentToken.Type != lexer.RPAREN {
+			for {
+				for p.currentToken.Type == lexer.NEWLINE {
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.RPAREN {
+					break
+				}
+				result, ok := p.parseFunctionTypeEntry()
+				if !ok {
+					return ft
+				}
+				ft.Results = append(ft.Results, result)
+
+				if p.currentToken.Type == lexer.RPAREN {
+					break
+				}
+				if p.currentToken.Type != lexer.COMMA {
+					msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return ft
+				}
+				p.nextToken() // skip COMMA
+			}
+		}
+		if p.currentToken.Type == lexer.RPAREN {
+			p.nextToken()
+		}
+	}
+
+	return ft
+}
+
+// parseFunctionTypeEntry parses one entry inside a function type's param or
+// result list. Supports two forms:
+//   - "name type"  (e.g. `n i64`)
+//   - "type"       (name-less, e.g. `i64`)
+//
+// Pre-condition: p.currentToken is the first token of the entry (IDENT or IN).
+// Post-condition: p.currentToken is the first token after the entry
+// (typically COMMA or RPAREN).
+func (p *Parser) parseFunctionTypeEntry() (*Parameter, bool) {
+	if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+		msg := fmt.Sprintf("line %d, column %d: expected parameter name or type, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil, false
+	}
+	firstTok := p.currentToken
+	firstLit := p.currentToken.Literal
+	p.nextToken()
+
+	// If next token starts a type, firstLit was the param name.
+	if p.currentToken.Type == lexer.IDENT ||
+		p.currentToken.Type == lexer.LBRACKET ||
+		p.currentToken.Type == lexer.QUESTION {
+		paramType, ok := p.parseParamTypeAfterName()
+		if !ok {
+			return nil, false
+		}
+		return &Parameter{Token: firstTok, Name: firstLit, Type: paramType}, true
+	}
+
+	// Otherwise firstLit is a name-less simple type (NamedType).
+	return &Parameter{Token: firstTok, Name: "", Type: &NamedType{Token: firstTok, Value: firstLit}}, true
+}
+
+// parseParamTypeAfterName parses a single parameter type after the parameter
+// name has been consumed. Supports: ?type, []type, [N]type, [?]type, named
+// type, and (params)(results) function type. Returns the parsed Type and whether
+// parsing succeeded. On success, p.currentToken is the first token after
+// the type (typically COMMA, RPAREN, or NEWLINE).
+func (p *Parser) parseParamTypeAfterName() (Type, bool) {
+	// Function type: (params) (results)?
+	// 受 anonymous-fn-type 開關控制：開關關閉時，參數列表中的匿名函式型別
+	// 語法（如 `cb ()()`）被拒絕，應改用具名函式型別定義。
+	if p.currentToken.Type == lexer.LPAREN {
+		if !p.AllowAnonymousFnType {
+			msg := fmt.Sprintf("line %d, column %d: anonymous function type syntax '()' is disabled; use a named function type alias or enable 'anonymous-fn-type' in mod.jsonc",
+				p.currentToken.Line, p.currentToken.Column)
+			p.saveError(msg)
+			return nil, false
+		}
+		return p.parseFunctionType(), true
+	}
+
+	paramType := ""
+	isOption := false
+	if p.currentToken.Type == lexer.QUESTION {
+		isOption = true
+		p.nextToken()
+	}
+	if p.currentToken.Type == lexer.LBRACKET {
+		p.nextToken() // skip [
+		if p.currentToken.Type == lexer.INT {
+			paramType = "[" + p.currentToken.Literal + "]"
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.IDENT {
+			paramType = "[" + p.currentToken.Literal + "]"
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.QUESTION {
+			paramType = "[?]"
+			p.nextToken()
+		} else {
+			paramType = "[]"
+		}
+		if p.currentToken.Type == lexer.RBRACKET {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.IDENT {
+			paramType = paramType + p.currentToken.Literal
+			p.nextToken()
+		}
+	} else if p.currentToken.Type == lexer.IDENT {
+		paramType = p.currentToken.Literal
+		p.nextToken()
+	} else if !isOption {
+		msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		p.saveError(msg)
+		return nil, false
+	}
+
+	if isOption {
+		paramType = "?" + paramType
+	}
+
+	return buildType(paramType, p.currentToken), true
 }
 
 func (p *Parser) parseStructDefinition() Statement {
@@ -6107,53 +6420,16 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				}
 			}
 
-			// 支援 ?type option 型別、[]type 切片、[N]type 陣列
-			isOption := false
-			if p.currentToken.Type == lexer.QUESTION {
-				isOption = true
-				p.nextToken()
-			}
-			if p.currentToken.Type == lexer.LBRACKET {
-				p.nextToken() // skip [
-				if p.currentToken.Type == lexer.INT {
-					paramType = "[" + p.currentToken.Literal + "]"
-					p.nextToken()
-				} else if p.currentToken.Type == lexer.IDENT {
-					paramType = "[" + p.currentToken.Literal + "]"
-					p.nextToken()
-				} else if p.currentToken.Type == lexer.QUESTION {
-					// [?] — infer array size from literal
-					paramType = "[?]"
-					p.nextToken()
-				} else {
-					paramType = "[]"
-				}
-				if p.currentToken.Type == lexer.RBRACKET {
-					p.nextToken()
-				}
-				if p.currentToken.Type == lexer.IDENT {
-					paramType = paramType + p.currentToken.Literal
-					p.nextToken()
-				}
-			} else if p.currentToken.Type == lexer.IDENT {
-				paramType = p.currentToken.Literal
-				p.nextToken()
-			} else if !isOption {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
+			// 支援 ?type option 型別、[]type 切片、[N]type 陣列、fn (...) 函式型別
+			paramTypeParsed, ok := p.parseParamTypeAfterName()
+			if !ok {
 				return
-			}
-
-			// 加上 ? 前綴
-			if isOption {
-				paramType = "?" + paramType
 			}
 
 			param := &Parameter{
 				Token: paramToken,
 				Name:  paramName,
-				Type:  buildType(paramType, paramToken),
+				Type:  paramTypeParsed,
 			}
 			def.Parameters = append(def.Parameters, param)
 
@@ -6205,52 +6481,16 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				paramToken := p.currentToken
 				p.nextToken()
 
-				// 支援 []type 切片或 [N]type 陣列或 [?]type 陣列作為結果類型
-				paramType := ""
-				isOption := false
-				if p.currentToken.Type == lexer.QUESTION {
-					isOption = true
-					p.nextToken()
-				}
-				if p.currentToken.Type == lexer.LBRACKET {
-					p.nextToken()
-					if p.currentToken.Type == lexer.INT {
-						paramType = "[" + p.currentToken.Literal + "]"
-						p.nextToken()
-					} else if p.currentToken.Type == lexer.IDENT {
-						paramType = "[" + p.currentToken.Literal + "]"
-						p.nextToken()
-					} else if p.currentToken.Type == lexer.QUESTION {
-						// [?] — infer array size from literal
-						paramType = "[?]"
-						p.nextToken()
-					} else {
-						paramType = "[]"
-					}
-					if p.currentToken.Type == lexer.RBRACKET {
-						p.nextToken()
-					}
-					if p.currentToken.Type == lexer.IDENT {
-						paramType = paramType + p.currentToken.Literal
-						p.nextToken()
-					}
-				} else if p.currentToken.Type == lexer.IDENT {
-					paramType = p.currentToken.Literal
-					p.nextToken()
-				} else if !isOption {
-					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
-						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
+				// 支援 ?type、[]type 切片、[N]type 陣列、[?]type、fn (...) 函式型別作為結果類型
+				paramTypeParsed, ok := p.parseParamTypeAfterName()
+				if !ok {
 					return
-				}
-				if isOption {
-					paramType = "?" + paramType
 				}
 
 				param := &Parameter{
 					Token: paramToken,
 					Name:  paramName,
-					Type:  buildType(paramType, paramToken),
+					Type:  paramTypeParsed,
 				}
 				def.Results = append(def.Results, param)
 

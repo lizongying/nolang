@@ -3,6 +3,12 @@ package llvm
 import "strings"
 
 func (g *Generator) mapToLLVMType(nolangType string) string {
+	// Function type: fn(...) -> function pointer (void + by-reference convention)
+	// All Nolang functions use void + by-reference, so function pointers are
+	// uniformly typed as void (...)* to allow indirect calls without exact signatures.
+	if strings.HasPrefix(nolangType, "fn(") {
+		return "void (...)*"
+	}
 	// ?type → option type
 	if strings.HasPrefix(nolangType, "?") {
 		return "%option"

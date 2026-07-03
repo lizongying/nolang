@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+// CompilerOptions 表示 mod.jsonc 的 compiler 區塊選項
+type CompilerOptions struct {
+	AnonymousFnType bool `json:"anonymous-fn-type"`
+}
+
 // Package 表示 mod.jsonc 定義的專案套件
 type Package struct {
 	Name            string            `json:"name"`
@@ -27,6 +32,7 @@ type Package struct {
 	Alias           map[string]string `json:"alias,omitempty"`
 	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 mod.jsonc）
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
+	Compiler        CompilerOptions   `json:"compiler,omitempty"`
 	RootDir         string            // 套件根目錄（含 mod.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
 	lockFile        *LockFile         // 已載入的鎖檔案（可選）

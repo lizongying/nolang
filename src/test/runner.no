@@ -44,3 +44,12 @@ test-summary = (passed i64, failed i64) (total i64) {
         print('SOME TESTS FAILED')
     }
 }
+
+// test-run: 執行一個無參數回呼函式並計數
+// 印出 'RUN:' + name，呼叫 cb()，若執行完成則 passed=1, failed=0
+test-run = (name str, cb ()()) (passed i64, failed i64) {
+    print('RUN:', name)
+    cb()
+    passed = 1
+    failed = 0
+}

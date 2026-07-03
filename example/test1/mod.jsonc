@@ -18,6 +18,7 @@
   },
   "compiler": {
     "version": "0.1.0",
+    "anonymous-fn-type": false,
   },
   "output": "./dist",
   "ignore": [],

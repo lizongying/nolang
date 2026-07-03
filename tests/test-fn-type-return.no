@@ -1,0 +1,30 @@
+// test-fn-type-return.no — 验证函式型别带返回值语法
+//
+// 测试具名函式型别带返回值：cb ()(i64) 形式（透过具名型别定义）
+//
+// 注意：匿名函式型別語法 `cb ()(i64)` 需在 mod.jsonc 設定
+// `"anonymous-fn-type": true` 才能使用。此測試改用具名函式型別定義，
+// 在預設開關關閉下亦可運作。
+
+// 具名函式型別：無參，返回 i64
+ret-cb = ()(i64)
+
+get-42 = () (r i64) {
+    r = 42
+}
+
+apply-ret = (cb ret-cb) (out i64) {
+    out = cb()
+}
+
+main = () {
+    result i64 = 0
+    result = apply-ret(get-42)
+    if result == 42 {
+        print('ok: fn-type-return')
+    } else {
+        print('fail: fn-type-return')
+    }
+}
+
+main()

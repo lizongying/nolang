@@ -179,6 +179,10 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		return "byte"
 	case *parser.Identifier:
 		if t, ok := varTypes[e.Value]; ok {
+			// Function-type variable: return simplified "fn" marker
+			if strings.HasPrefix(t, "fn(") {
+				return "fn"
+			}
 			return t
 		}
 		return "" // 未知變數
@@ -298,6 +302,10 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			}
 		}
 		return "i64"
+	case *parser.FunctionLiteral:
+		// Phase 1: anonymous function literals are typed with the simplified "fn" marker.
+		// Phase 2 may derive the precise FunctionType signature.
+		return "fn"
 	default:
 		return "i64"
 	}
@@ -391,16 +399,21 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 }
 
 type Transpiler struct {
-	llvmGenerator *llvm.Generator
-	pkg           *Package // 當前套件（用於路徑解析）
-	sourcePath    string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
+	llvmGenerator    *llvm.Generator
+	pkg              *Package // 當前套件（用於路徑解析）
+	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
+	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 mod.jsonc）
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
-	return &Transpiler{
+	t := &Transpiler{
 		llvmGenerator: llvm.NewGenerator(),
 		pkg:           pkg,
 	}
+	if pkg != nil {
+		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
+	}
+	return t
 }
 
 type Target int
@@ -417,6 +430,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	}
 	l := lexer.New(string(source))
 	p := parser.New(l)
+	p.AllowAnonymousFnType = t.allowAnonymousFn
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
@@ -532,6 +546,7 @@ func (t *Transpiler) Compile(source string) (string, error) {
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	l := lexer.New(source)
 	p := parser.New(l)
+	p.AllowAnonymousFnType = t.allowAnonymousFn
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())
@@ -2015,6 +2030,9 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 	case *parser.PointerType:
 		newInner := substituteType(typ.Type, subst)
 		return &parser.PointerType{Token: typ.Token, Type: newInner}
+	case *parser.FunctionType:
+		// Function types are not subject to generic substitution in Phase 1.
+		return t
 	default:
 		return t
 	}
@@ -2832,6 +2850,8 @@ func collectUnionNamesFromType(t parser.Type, aliases map[string]*parser.TypeAli
 		for n := range sub {
 			out[n] = true
 		}
+	case *parser.FunctionType:
+		// Function types do not contribute union alias names.
 	}
 	return out
 }

@@ -68,12 +68,24 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 	}
 }
 
+// resolveParamLLVMType 計算參數的 LLVM 型別字串。
+// 當參數型別為具名型別且對應至具名函式型別別名時，解析為函式指標型別 void (...)*。
+func (g *Generator) resolveParamLLVMType(t parser.Type) string {
+	if nt, ok := t.(*parser.NamedType); ok && g.fnTypeAliases != nil {
+		if ft, ok := g.fnTypeAliases[nt.Value]; ok {
+			return g.mapToLLVMType(ft.String())
+		}
+	}
+	return g.mapToLLVMType(t.String())
+}
+
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	g.funcVars = nil
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
-	g.optionInnerTypes = make(map[string]string) // reset option inner types for each function
-	g.ssaTypes = make(map[string]string)         // reset SSA type tracking for each function
+	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
+	g.ssaTypes = make(map[string]string)                 // reset SSA type tracking for each function
+	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -84,7 +96,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for _, p := range fd.Parameters {
 		g.paramNames[p.Name] = true
 		g.funcLocalNames[p.Name] = true
-		g.varTypes[p.Name] = g.mapToLLVMType(p.Type.String())
+		g.varTypes[p.Name] = g.resolveParamLLVMType(p.Type)
+		// Track FunctionType parameters for indirect call codegen
+		if ft, ok := p.Type.(*parser.FunctionType); ok {
+			g.varFnTypes[p.Name] = ft
+		}
+		// 參數型別為具名型別且對應至具名函式型別別名時，亦登錄為間接呼叫目標
+		if nt, ok := p.Type.(*parser.NamedType); ok && g.fnTypeAliases != nil {
+			if ft, ok := g.fnTypeAliases[nt.Value]; ok {
+				g.varFnTypes[p.Name] = ft
+			}
+		}
 	}
 	// 結果參數（無論單結果或多結果）皆以 by-reference 形式傳遞，
 	// 與 call.go 的 hasOutputParam / voidSingleOutput 約定保持一致。
@@ -135,8 +157,8 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		// 引用傳遞：參數為指標 i64* %n
-		llvmType := g.mapToLLVMType(param.Type.String()) + "*"
+		// 引用傳遞：參數為指標 i64* %n（函式型別參數為 void (...)** %n）
+		llvmType := g.resolveParamLLVMType(param.Type) + "*"
 		sb.WriteString(fmt.Sprintf("%s %s", llvmType, llvmVarRef(param.Name)))
 	}
 	// 結果參數（單結果或多結果）以指標形式附加到參數列表
