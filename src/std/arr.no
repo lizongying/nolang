@@ -71,7 +71,7 @@ arr {
     }
 }
 
-// [n]t.to-vec: 陣列方法，轉為 []t 切片
+// [n]t.to-vec: 陣列方法，轉為 []t vec
 [n]t.to-vec = () (out []t) {
     for i <- [0..n) {
         out[i] = .[i]

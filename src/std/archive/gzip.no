@@ -4,28 +4,34 @@
 // 不依賴外部庫，透過 build-in 函數提供高效能的壓縮功能。
 //
 // 用法：
-//   data = 'hello world'
-//   gzip-compress(data, len(data))(compressed, compressed-n)
-//   gzip-decompress(compressed, compressed-n)(decompressed, decompressed-n)
+//   data = [104, 101, 108, 108, 111]  // []byte
+//   gzip-compress(data)(compressed)
+//   gzip-decompress(compressed)(decompressed)
 
 // ─── 壓縮 ─────────────────────────────────────
 
 // build-in (ForwardFunc: gzip-compress)
 // gzip-compress: 使用 gzip 格式壓縮資料
-//   data: 原始資料
-//   n: 資料長度
-//   out: 壓縮後的資料
-//   out-n: 壓縮後的長度
-gzip-compress = (data str, n i64) (out str, out-n i64) {
+//   data: 原始資料 ([]byte)
+//   out: 壓縮後的資料 ([]byte)
+gzip-compress = (data []byte) (out []byte) {
 }
 
 // ─── 解壓縮 ───────────────────────────────────
 
 // build-in (ForwardFunc: gzip-decompress)
 // gzip-decompress: 解壓縮 gzip 格式的資料
-//   data: 壓縮資料
-//   n: 壓縮資料長度
-//   out: 解壓後的資料
-//   out-n: 解壓後的長度
-gzip-decompress = (data str, n i64) (out str, out-n i64) {
+//   data: 壓縮資料 ([]byte)
+//   out: 解壓後的資料 ([]byte)
+gzip-decompress = (data []byte) (out []byte) {
+}
+
+// ─── 原始 DEFLATE 解壓縮 ──────────────────────
+
+// build-in (ForwardFunc: inflate-decompress)
+// inflate-decompress: 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
+//   data: 壓縮資料 ([]byte)
+//   out-size: 預期解壓後大小 (i64)
+//   out: 解壓後的資料 ([]byte)
+inflate-decompress = (data []byte, out-size i64) (out []byte) {
 }

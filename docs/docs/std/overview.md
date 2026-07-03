@@ -175,13 +175,13 @@ u64.MIN / MAX                 // 0 / 2^64-1
 ### byte — 位元組操作
 
 ```nolang
-to-bytes-be(v)(out)             // i64 → big-endian []byte（8 位元組）
-to-bytes-le(v)(out)             // i64 → little-endian []byte（8 位元組）
-bytes-to-i64-be(in)(v)          // big-endian []byte → i64（1~8 位元組）
-bytes-to-i64-le(in)(v)          // little-endian []byte → i64（1~8 位元組）
-arr-to-vec-byte(arr)(out)       // [n]byte → []byte
-vec-to-arr-byte(in)(out)        // []byte → [n]byte（至多 8 位元組）
+i64.to-bytes-be()(out)          // i64 → big-endian [8]byte
+i64.to-bytes-le()(out)          // i64 → little-endian [8]byte
+[]byte.to-i64-be()(v)           // big-endian []byte → i64（1~8 位元組）
+[]byte.to-i64-le()(v)           // little-endian []byte → i64（1~8 位元組）
 []byte.to-str()(s)              // []byte 轉 str（方法）
+[]byte.to-hex()(s)              // []byte → 大寫十六進制字串
+[]byte.to-hex-lower()(s)        // []byte → 小寫十六進制字串
 byte.to-str()(s)                // byte 轉 str（方法）
 ```
 
@@ -433,6 +433,55 @@ m.is-empty(empty)
 m.for-each(key, val)
 ```
 
+### map/hash-set — i64 哈希集合
+
+固定容量 64，線性探測，O(1) 查找/插入/刪除：
+
+```nolang
+s = hash-set{}
+s.init()
+s.add(val, is-new)
+s.contains(val, found)
+s.remove(val, removed)
+s.clear()
+s.len(n)
+s.is-empty(empty)
+s.for-each(val)
+```
+
+### map/str-map — str→str 哈希映射表
+
+固定容量 256，FNV-1a 雜湊，線性探測：
+
+```nolang
+m = str-map{}
+m.init()
+m.put('key', 'val', is-new)
+m.get('key', found, result)
+m.contains('key', found)
+m.remove('key', removed)
+m.clear()
+m.len(n)
+m.is-empty(empty)
+m.for-each(k, v)
+```
+
+### map/str-set — str 哈希集合
+
+固定容量 256，FNV-1a 雜湊，字串去重：
+
+```nolang
+s = str-set{}
+s.init()
+s.add('hello', is-new)
+s.contains('hello', found)
+s.remove('hello', removed)
+s.clear()
+s.len(n)
+s.is-empty(empty)
+s.for-each(val)
+```
+
 ---
 
 ## 編碼
@@ -440,12 +489,12 @@ m.for-each(key, val)
 ### encoding/hex — 十六進制
 
 ```nolang
-HEX-UPPER = '0123456789ABCDEF'
-HEX-LOWER = '0123456789abcdef'
+// 編碼（定義於 byte 模組）
+data.to-hex()(out)                  // []byte → 大寫 hex str
+data.to-hex-lower()(out)            // []byte → 小寫 hex str
 
-encode(data, n, out)(out-n)         // []byte → 大寫 hex
-encode-lower(data, n, out)(out-n)   // []byte → 小寫 hex
-decode(s, n, out)(out-n, ok)        // hex → []byte
+// 解碼（定義於 str 模組）
+s.from-hex()(out)                   // hex str → ?[]byte（nil=空, err=無效字元）
 ```
 
 ### encoding/base64 — Base64（RFC 4648）
@@ -476,24 +525,61 @@ encode-field(field, fn, out)(out-n)           // 編碼欄位
 ### archive/tar — TAR 歸檔（POSIX ustar）
 
 ```nolang
-tar-count(data)(count)
-tar-name(data, idx)(name)
-tar-size(data, idx)(sz)
-tar-type(data, idx)(typ)          // "file" / "dir" / "unknown"
-tar-is-dir(data, idx)(yes)
-tar-read(data, idx)(out)
-tar-for-each(data, idx, name, sz, typ, data-out)
+// 讀取普通 tar
+archive = tar{ data: raw-bytes }
+archive.count()(count)
+archive.entry(idx)(e)
+archive.name(idx)(name)
+archive.size(idx)(sz)
+archive.type(idx)(typ)              // "file" / "dir" / "unknown"
+archive.is-dir(idx)(yes)
+archive.is-file(idx)(yes)
+archive.read(idx)(out)
+archive.mode(idx)(mode)
+archive.mtime(idx)(ts)
+
+// 讀取 .tar.gz（自動解壓縮）
+archive = tar-open-gz(gz-data)
+
+// tar-entry 方法
+e.name()(name)
+e.size()(sz)
+e.type()(typ)
+e.read()(out)
+
+// 寫入 tar
+builder = tar-builder{}
+builder.add-file(name, content)
+builder.add-dir(name)
+builder.finish()(archive)
 ```
 
 ### archive/zip — ZIP 歸檔解析
 
 ```nolang
-zip-entries(data, n)(count)
-zip-name(data, n, idx)(name)
-zip-size(data, n, idx)(sz)
-zip-compressed-size(data, n, idx)(csz)
-zip-method(data, n, idx)(method)   // 0=stored, 8=deflate
-zip-extract(data, n, idx)(out)     // 僅 stored 模式
+archive = zip{ data: raw-bytes }
+archive.count()(count)                        // 條目數
+archive.entry(idx)(e)                         // 取得 zip-entry
+archive.name(idx)(name)                       // 檔名
+archive.size(idx)(sz)                         // 原始大小
+archive.compressed-size(idx)(csz)             // 壓縮後大小
+archive.method(idx)(method)                   // 0=stored, 8=deflate
+archive.extract(idx)(out)                     // stored 和 deflate 模式
+
+// zip-entry 方法
+e.name()(name)
+e.size()(sz)
+e.compressed-size()(csz)
+e.method()(method)
+e.extract()(out)
+```
+
+### archive/gzip — GZIP 壓縮與原始 DEFLATE
+
+```nolang
+gzip-compress(data)(out)                      // zlib 壓縮
+gzip-decompress(data)(out)                    // zlib 解壓縮
+inflate-decompress(data, out-size)(out)       // 原始 DEFLATE 解壓縮（ZIP method 8）
 ```
 
 ---

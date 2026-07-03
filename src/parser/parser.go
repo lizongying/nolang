@@ -1608,46 +1608,113 @@ func (p *Parser) isFunctionDefinition() bool {
 // isFunctionTypeAlias 判斷當前位置是否為具名函式型別定義：name = (params)(results)?
 // 判斷依據：
 //  1. currentToken 為 IDENT，peekToken 為 ASSIGN，且其後緊接 LPAREN
-//  2. `(...)` 內容符合函式型別項目模式（空、`name type`、`type`、以逗號分隔的多項）
-//  3. 函式型別後（含選用結果列表）緊接 NEWLINE/EOF/SEMICOLON（陳述句結束）
+//  2. 第一組 `(...)` 後緊接 NEWLINE/EOF/SEMICOLON（無結果列表），或緊接另一組 `(...)`
+//     （結果列表），結果列表後再緊接 NEWLINE/EOF/SEMICOLON
+//  3. `(...)` 內容確實為合法的函式型別參數列表（透過 parseFunctionType 驗證）
 //
-// 此方法不消耗任何 token（呼叫前後 parser 狀態相同，但 errors 可能被暫時添加後回滾）。
+// 此方法不消耗任何 token（呼叫前後 parser 狀態相同）。
+// 注意：LookAhead(0) 回傳 peekToken 之後的下一個 token（即 currentToken 之後第二個）。
 func (p *Parser) isFunctionTypeAlias() bool {
+	// Step 1: 結構檢查（快速篩選，避免對非匹配結構呼叫 parseFunctionType）
+	if !p.isFunctionTypeAliasShape() {
+		return false
+	}
+	// Step 2: 內容驗證（透過 parseFunctionType 確認 `(...)` 內容為合法函式型別參數）
+	// 使用 saveState/restoreState 確保不影響 parser 狀態。
+	// 注意：不依賴 parseFunctionType 的游標位置（其會跳過 NEWLINE 尋找結果列表），
+	// 僅以錯誤計數判斷內容是否合法。
+	state := p.saveState()
+	errCount := len(p.errors)
+	p.nextToken() // IDENT → ASSIGN
+	p.nextToken() // ASSIGN → LPAREN
+	p.parseFunctionType()
+	parseFailed := len(p.errors) > errCount
+	if parseFailed {
+		// 回滾試解析期間產生的錯誤
+		p.errors = p.errors[:errCount]
+	}
+	p.restoreState(state)
+	return !parseFailed
+}
+
+// isFunctionTypeAliasShape 以 token 掃描方式判斷當前位置是否符合
+// `name = (params)(results)?` 的括號結構與陳述句邊界。
+// 不檢查 `(...)` 內容是否為合法函式型別參數（由 isFunctionTypeAlias 的 Step 2 負責）。
+// 不消耗任何 token。
+func (p *Parser) isFunctionTypeAliasShape() bool {
 	if p.currentToken.Type != lexer.IDENT {
 		return false
 	}
 	if p.peekToken.Type != lexer.ASSIGN {
 		return false
 	}
-	// `=` 之後必須是 `(`
-	if p.lexer.LookAhead(1).Type != lexer.LPAREN {
+	// `=` 之後必須是 `(`（LookAhead(0) = peekToken 之後的 token）
+	if p.lexer.LookAhead(0).Type != lexer.LPAREN {
 		return false
 	}
 
-	state := p.saveState()
-	errCount := len(p.errors)
-	p.nextToken() // IDENT → ASSIGN
-	p.nextToken() // ASSIGN → LPAREN
-
-	// 嘗試以函式型別解析
-	ft := p.parseFunctionType()
-	parseFailed := len(p.errors) > errCount
-	if parseFailed {
-		// 回滾試解析期間產生的錯誤
-		p.errors = p.errors[:errCount]
+	// 透過 LookAhead 掃描：位置 0=`(`, 1=第一個 ( 內的 token 或 `)`, ...
+	// 我們需要找到第一組 `(...)` 的結尾 `)`，然後檢查其後。
+	// 掃描時追蹤括號深度，遇到深度歸零的 `)` 後檢查下一個 token。
+	depth := 0
+	i := 0
+	// 先找到 `(`（位置 0）
+	for {
+		t := p.lexer.LookAhead(i)
+		switch t.Type {
+		case lexer.LPAREN:
+			depth++
+		case lexer.RPAREN:
+			depth--
+			if depth == 0 {
+				// 找到第一組 `(...)` 的結尾 `)`
+				// 檢查下一個 token
+				next := p.lexer.LookAhead(i + 1)
+				switch next.Type {
+				case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
+					return true
+				case lexer.LPAREN:
+					// 可能是結果列表 `(results)`
+					// 掃描第二組 `(...)`
+					depth2 := 0
+					j := i + 1
+					for {
+						t2 := p.lexer.LookAhead(j)
+						switch t2.Type {
+						case lexer.LPAREN:
+							depth2++
+						case lexer.RPAREN:
+							depth2--
+							if depth2 == 0 {
+								// 第二組 `)` 後必須是陳述句結束
+								next2 := p.lexer.LookAhead(j + 1)
+								switch next2.Type {
+								case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
+									return true
+								default:
+									return false
+								}
+							}
+						case lexer.EOF:
+							return false
+						}
+						j++
+						if j > 256 { // 安全上限
+							return false
+						}
+					}
+				default:
+					return false
+				}
+			}
+		case lexer.EOF:
+			return false
+		}
+		i++
+		if i > 256 { // 安全上限
+			return false
+		}
 	}
-	// parseFunctionType 恆返回非 nil（含錯誤時亦然），以錯誤計數判斷成敗
-	_ = ft
-
-	// 解析後必須緊接陳述句結束（容許 NEWLINE）
-	for p.currentToken.Type == lexer.NEWLINE {
-		p.nextToken()
-	}
-	isAlias := !parseFailed &&
-		(p.currentToken.Type == lexer.EOF || p.currentToken.Type == lexer.SEMICOLON)
-
-	p.restoreState(state)
-	return isAlias
 }
 
 // parseFunctionTypeAlias 解析具名函式型別定義：name = (params)(results)?
@@ -2802,11 +2869,6 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	default:
 		p.nextToken()
 		return nil
-	}
-
-	// 处理可空类型
-	if p.peekToken.Type == lexer.QUESTION {
-		leftExp = p.parseNullableType(leftExp)
 	}
 
 	// 处理点操作符、函数调用、切片和结构体字面量

@@ -424,6 +424,16 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
 
+	// resolveSelfMethodCalls rewrites .len() inside method bodies to
+	// Type.len(self) (e.g. []byte.len(self), str.len(self)).
+	// If Type.len is not a user-defined function (not in funcRetTypes),
+	// redirect to the builtin len handler.
+	if strings.HasSuffix(fnName, ".len") && hasArgs {
+		if _, exists := g.funcRetTypes[fnName]; !exists {
+			fnName = "len"
+		}
+	}
+
 	if fnName == "len" && hasArgs {
 		arg0 := expr.Arguments[0]
 		// Handle string variables: use extractLenDispatch for %str-long / %str-short
@@ -669,7 +679,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	if fnName == "gzip-compress" && hasArgs {
 		a := evalArgs()
-		dataPtr := g.extractStrFromEvalArg(sb, a[0])
+
+		// Extract data pointer and length from []byte (%vec) argument
+		// %vec = { i64 len, i64 cap, i8* data }
+		vecPtr := g.sliceEvalArgToPtr(sb, a[0])
+		g.tmpIdx++
+		dataLenGEP := fmt.Sprintf("%%gzip.c.datalen.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLen := fmt.Sprintf("%%gzip.c.datalen.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtrGEP := fmt.Sprintf("%%gzip.c.dataptr.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtr := fmt.Sprintf("%%gzip.c.dataptr.%d", g.tmpIdx)
 
 		g.tmpIdx++
 		bufReg := fmt.Sprintf("%%gzip.c.buf.%d", g.tmpIdx)
@@ -681,34 +702,57 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		retReg := fmt.Sprintf("%%gzip.c.ret.%d", g.tmpIdx)
 
 		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), dataLenGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLen, dataLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataPtrGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataPtr, dataPtrGEP))
+
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 4096\n", g.indent(), bufReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 4096, i8* %s)\n", g.indent(), bufReg))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), destLen))
 			sb.WriteString(fmt.Sprintf("%sstore i64 4096, i64* %s\n", g.indent(), destLen))
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %s to i8*\n", g.indent(), destLenPtr, destLen))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @compress2(i8* %s, i8* %s, i8* %s, i64 %s, i32 9)\n",
-				g.indent(), retReg, bufReg, destLenPtr, dataPtr, a[1]))
+				g.indent(), retReg, bufReg, destLenPtr, dataPtr, dataLen))
 
+			// Build result %vec { len, cap, data }
 			g.tmpIdx++
-			strReg := fmt.Sprintf("%%gzip.c.str.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+			vecReg := fmt.Sprintf("%%gzip.c.vec.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecReg))
 			g.tmpIdx++
-			strLenGEP := fmt.Sprintf("%%gzip.c.strlen.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), destLen, destLen))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), destLen, strLenGEP))
+			vecLenGEP := fmt.Sprintf("%%gzip.c.veclen.gep.%d", g.tmpIdx)
 			g.tmpIdx++
-			strDataGEP := fmt.Sprintf("%%gzip.c.strdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
-			return strReg
+			vecLenLoad := fmt.Sprintf("%%gzip.c.veclen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), vecLenLoad, destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), vecLenLoad, vecLenGEP))
+			g.tmpIdx++
+			vecCapGEP := fmt.Sprintf("%%gzip.c.veccap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), vecLenLoad, vecCapGEP))
+			g.tmpIdx++
+			vecDataGEP := fmt.Sprintf("%%gzip.c.vecdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
+			return vecReg
 		}
 		return ""
 	}
 
 	if fnName == "gzip-decompress" && hasArgs {
 		a := evalArgs()
-		dataPtr := g.extractStrFromEvalArg(sb, a[0])
+
+		// Extract data pointer and length from []byte (%vec) argument
+		// %vec = { i64 len, i64 cap, i8* data }
+		vecPtr := g.sliceEvalArgToPtr(sb, a[0])
+		g.tmpIdx++
+		dataLenGEP := fmt.Sprintf("%%gzip.d.datalen.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLen := fmt.Sprintf("%%gzip.d.datalen.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtrGEP := fmt.Sprintf("%%gzip.d.dataptr.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtr := fmt.Sprintf("%%gzip.d.dataptr.%d", g.tmpIdx)
 
 		g.tmpIdx++
 		bufReg := fmt.Sprintf("%%gzip.d.buf.%d", g.tmpIdx)
@@ -720,27 +764,101 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		retReg := fmt.Sprintf("%%gzip.d.ret.%d", g.tmpIdx)
 
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 4096\n", g.indent(), bufReg))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 4096, i8* %s)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), dataLenGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLen, dataLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataPtrGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataPtr, dataPtrGEP))
+
+			// Use malloc for output buffer (10 MB, large enough for typical tar.gz)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 10485760)\n", g.indent(), bufReg))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), destLen))
-			sb.WriteString(fmt.Sprintf("%sstore i64 4096, i64* %s\n", g.indent(), destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 10485760, i64* %s\n", g.indent(), destLen))
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %s to i8*\n", g.indent(), destLenPtr, destLen))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @uncompress(i8* %s, i8* %s, i8* %s, i64 %s)\n",
-				g.indent(), retReg, bufReg, destLenPtr, dataPtr, a[1]))
+				g.indent(), retReg, bufReg, destLenPtr, dataPtr, dataLen))
 
+			// Build result %vec { len, cap, data }
 			g.tmpIdx++
-			strReg := fmt.Sprintf("%%gzip.d.str.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+			vecReg := fmt.Sprintf("%%gzip.d.vec.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecReg))
 			g.tmpIdx++
-			strLenGEP := fmt.Sprintf("%%gzip.d.strlen.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), destLen, destLen))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), destLen, strLenGEP))
+			vecLenGEP := fmt.Sprintf("%%gzip.d.veclen.gep.%d", g.tmpIdx)
 			g.tmpIdx++
-			strDataGEP := fmt.Sprintf("%%gzip.d.strdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
-			return strReg
+			vecLenLoad := fmt.Sprintf("%%gzip.d.veclen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), vecLenLoad, destLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), vecLenLoad, vecLenGEP))
+			g.tmpIdx++
+			vecCapGEP := fmt.Sprintf("%%gzip.d.veccap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 10485760, i64* %s\n", g.indent(), vecCapGEP))
+			g.tmpIdx++
+			vecDataGEP := fmt.Sprintf("%%gzip.d.vecdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
+			return vecReg
+		}
+		return ""
+	}
+
+	if fnName == "inflate-decompress" && hasArgs {
+		a := evalArgs()
+
+		// Extract data pointer and length from []byte (%vec) argument
+		vecPtr := g.sliceEvalArgToPtr(sb, a[0])
+		g.tmpIdx++
+		dataLenGEP := fmt.Sprintf("%%inflate.d.datalen.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLen := fmt.Sprintf("%%inflate.d.datalen.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtrGEP := fmt.Sprintf("%%inflate.d.dataptr.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataPtr := fmt.Sprintf("%%inflate.d.dataptr.%d", g.tmpIdx)
+
+		// out_size is the second argument (i64)
+		outSize := a[1]
+
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%inflate.d.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		writtenAlloca := fmt.Sprintf("%%inflate.d.written.%d", g.tmpIdx)
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%inflate.d.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), dataLenGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLen, dataLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataPtrGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataPtr, dataPtrGEP))
+
+			// Allocate output buffer via malloc (heap, since size can be large)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, outSize))
+			// Allocate written counter
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), writtenAlloca))
+			// Call nolang.inflate_raw(in, in_len, out, out_len, &written)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.inflate_raw(i8* %s, i64 %s, i8* %s, i64 %s, i64* %s)\n",
+				g.indent(), retReg, dataPtr, dataLen, bufReg, outSize, writtenAlloca))
+
+			// Build result %vec { len, cap, data }
+			g.tmpIdx++
+			vecReg := fmt.Sprintf("%%inflate.d.vec.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecReg))
+			g.tmpIdx++
+			vecLenGEP := fmt.Sprintf("%%inflate.d.veclen.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			vecLenLoad := fmt.Sprintf("%%inflate.d.veclen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), vecLenLoad, writtenAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), vecLenLoad, vecLenGEP))
+			g.tmpIdx++
+			vecCapGEP := fmt.Sprintf("%%inflate.d.veccap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), outSize, vecCapGEP))
+			g.tmpIdx++
+			vecDataGEP := fmt.Sprintf("%%inflate.d.vecdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, vecDataGEP))
+			return vecReg
 		}
 		return ""
 	}

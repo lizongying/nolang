@@ -1,0 +1,122 @@
+// hash-set — i64 哈希集合
+//
+// 固定容量（64 槽），線性探測，O(1) 查找/插入/刪除。
+// 容量為 2 的冪，建議裝載因子 ≤ 0.75（即最多 ~48 條）。
+//
+// 用法：
+//   s = hash-set{}
+//   s.init()
+//   s.add(42, _)
+//   s.contains(42, yes)    // yes = 1
+//   s.remove(42, _)
+//   s.for-each(val)
+
+hash-set {
+    cap   i64
+    keys  [64]i64
+    occ   [64]i64
+    size  i64
+}
+
+// init: 初始化
+hash-set.init = () {
+    .cap = 64
+    .size = 0
+    i = 0
+    i < 64: {
+        .occ[i] = 0
+        i = i + 1
+    }
+}
+
+// hash: 計算索引
+hash-set.hash = (key i64, idx i64) {
+    idx = key & (.cap - 1)
+}
+
+// add: 加入元素，回傳是否新增
+hash-set.add = (key i64, is-new i64) {
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            is-new = 0
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> idx = 0
+    }
+
+    .keys[idx] = key
+    .occ[idx] = 1
+    .size = .size + 1
+    is-new = 1
+}
+
+// contains: 檢查元素是否存在
+hash-set.contains = (key i64, found i64) {
+    found = 0
+    .size == 0 -> return
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            found = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> idx = 0
+    }
+}
+
+// remove: 刪除元素，回傳是否刪除
+hash-set.remove = (key i64, removed i64) {
+    removed = 0
+    .size == 0 -> return
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            .occ[idx] = 0
+            .size = .size - 1
+            removed = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> idx = 0
+    }
+}
+
+// clear: 清空
+hash-set.clear = () {
+    i = 0
+    i < .cap: {
+        .occ[i] = 0
+        i = i + 1
+    }
+    .size = 0
+}
+
+// len: 返回元素數量
+hash-set.len = (n i64) {
+    n = .size
+}
+
+// is-empty: 是否為空
+hash-set.is-empty = (empty i64) {
+    empty = .size == 0 ? 1 : 0
+}
+
+// for-each: 遍歷所有元素
+hash-set.for-each = (val i64) {
+    i = 0
+    i < .cap: {
+        .occ[i] == 1 -> val = .keys[i]
+        i = i + 1
+    }
+}

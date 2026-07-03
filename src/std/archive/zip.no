@@ -1,13 +1,30 @@
 // zip — ZIP 歸檔解析
 //
 // 讀取 ZIP 檔案格式，列出條目和提取內容。
-// 支援 stored（無壓縮）條目提取。
+// 支援 stored（method 0）和 deflate（method 8）條目提取。
 //
 // 用法：
-//   count = zip-entries(data, n)
-//   zip-name(data, n, 0, name)
-//   zip-size(data, n, 0, sz)
-//   zip-extract(data, n, 0, out)
+//   archive = zip{ data: raw-bytes }
+//   n = archive.count()
+//   i <- [0..n): {
+//       e = archive.entry(i)
+//       name = e.name()
+//       sz = e.size()
+//       content = e.extract()
+//   }
+
+// ─── 結構體定義 ───────────────────────────────
+
+// zip: ZIP 歸檔唯讀視圖
+zip {
+    data []byte
+}
+
+// zip-entry: ZIP 條目（指向 archive.data 中的某個 central directory 條目）
+zip-entry {
+    data []byte
+    off i64
+}
 
 // ─── 位元組輔助 ─────────────────────────────
 
@@ -31,15 +48,16 @@ u16le = (data []byte, off i64) (v i64) {
     v = b0 | (b1 << 8)
 }
 
-// ─── EOCD 定位 ──────────────────────────────
+// ─── zip 方法 ─────────────────────────────────
 
-// zip-find-eocd: 從結尾搜尋 EOCD 簽名
-zip-find-eocd = (data []byte, n i64) (off i64) {
+// find-eocd: 從結尾搜尋 EOCD 簽名
+zip.find-eocd = () (off i64) {
     off = -1
+    n = len(.data)
     i = n - 22
-    for i >= 0 {
-        sig = u32le(data, i)
-        if sig == 101010256 {
+    i >= 0: {
+        sig = u32le(.data, i)
+        sig == 101010256 -> {
             off = i
             return
         }
@@ -47,12 +65,10 @@ zip-find-eocd = (data []byte, n i64) (off i64) {
     }
 }
 
-// ─── 中央目錄讀取 ──────────────────────────
-
-// zip-cd-info: 讀取中央目錄偏移和條目數
-zip-cd-info = (data []byte, n i64) (cd-off i64, total i64) {
-    eocd = zip-find-eocd(data, n)
-    if eocd < 0 {
+// cd-info: 讀取中央目錄偏移和條目數
+zip.cd-info = () (cd-off i64, total i64) {
+    eocd = .find-eocd()
+    eocd < 0 -> {
         cd-off = 0
         total = 0
         return
@@ -60,98 +76,189 @@ zip-cd-info = (data []byte, n i64) (cd-off i64, total i64) {
     off8 = eocd + 8
     off12 = eocd + 12
     off16 = eocd + 16
-    total = u16le(data, off8)
-    cd-sz = u32le(data, off12)
-    cd-off = u32le(data, off16)
+    total = u16le(.data, off8)
+    cd-sz = u32le(.data, off12)
+    cd-off = u32le(.data, off16)
 }
 
-// ─── 中央目錄條目偏移 ──────────────────────
-
-// zip-entry-off: 第 idx 個 central directory 條目的偏移
-zip-entry-off = (data []byte, n i64, idx i64) (off i64) {
-    cd-off, total = zip-cd-info(data, n)
+// entry-off: 第 idx 個 central directory 條目的偏移
+zip.entry-off = (idx i64) (off i64) {
+    cd-off, total = .cd-info()
     off = cd-off
     j = 0
-    for j < idx && j < total {
+    j < idx && j < total: {
         off28 = off + 28
         off30 = off + 30
         off32 = off + 32
-        name-len = u16le(data, off28)
-        extra-len = u16le(data, off30)
-        comment-len = u16le(data, off32)
+        name-len = u16le(.data, off28)
+        extra-len = u16le(.data, off30)
+        comment-len = u16le(.data, off32)
         skip = 46 + name-len + extra-len + comment-len
         off = off + skip
         j = j + 1
     }
 }
 
-// ─── 查詢 ─────────────────────────────────────
-
-// zip-entries: 傳回 ZIP 中的條目數
-zip-entries = (data []byte, n i64) (count i64) {
-    cd-off, count = zip-cd-info(data, n)
+// count: 傳回 ZIP 中的條目數
+zip.count = () (count i64) {
+    cd-off, count = .cd-info()
 }
 
-// zip-name: 第 idx 個條目的檔名
-zip-name = (data []byte, n i64, idx i64) (name str) {
-    off = zip-entry-off(data, n, idx)
+// entry: 取得第 idx 個條目
+zip.entry = (idx i64) (e zip-entry) {
+    e.data = .data
+    e.off = .entry-off(idx)
+}
+
+// name: 第 idx 個條目的檔名
+zip.name = (idx i64) (name str) {
+    off = .entry-off(idx)
     off28 = off + 28
-    name-len = u16le(data, off28)
+    name-len = u16le(.data, off28)
     off46 = off + 46
     i = 0
-    for i < name-len {
+    i < name-len: {
         idx2 = off46 + i
-        name[i] = data[idx2]
+        name[i] = .data[idx2]
         i = i + 1
     }
 }
 
-// zip-size: 原始大小
-zip-size = (data []byte, n i64, idx i64) (sz i64) {
-    off = zip-entry-off(data, n, idx)
+// size: 原始大小
+zip.size = (idx i64) (sz i64) {
+    off = .entry-off(idx)
     off24 = off + 24
-    sz = u32le(data, off24)
+    sz = u32le(.data, off24)
 }
 
-// zip-compressed-size: 壓縮後大小
-zip-compressed-size = (data []byte, n i64, idx i64) (csz i64) {
-    off = zip-entry-off(data, n, idx)
+// compressed-size: 壓縮後大小
+zip.compressed-size = (idx i64) (csz i64) {
+    off = .entry-off(idx)
     off20 = off + 20
-    csz = u32le(data, off20)
+    csz = u32le(.data, off20)
 }
 
-// zip-method: 壓縮方式（0=stored, 8=deflate）
-zip-method = (data []byte, n i64, idx i64) (method i64) {
-    off = zip-entry-off(data, n, idx)
+// method: 壓縮方式（0=stored, 8=deflate）
+zip.method = (idx i64) (method i64) {
+    off = .entry-off(idx)
     off10 = off + 10
-    method = u16le(data, off10)
+    method = u16le(.data, off10)
 }
 
-// ─── 提取 ─────────────────────────────────────
-
-// zip-extract: 提取第 idx 個條目的內容（僅 stored）
-zip-extract = (data []byte, n i64, idx i64) (out []byte) {
-    off = zip-entry-off(data, n, idx)
+// extract: 提取第 idx 個條目的內容（stored 和 deflate）
+zip.extract = (idx i64) (out []byte) {
+    off = .entry-off(idx)
     off24 = off + 24
     off10 = off + 10
     off42 = off + 42
-    sz = u32le(data, off24)
-    method = u16le(data, off10)
-    local-off = u32le(data, off42)
+    off20 = off + 20
+    sz = u32le(.data, off24)
+    csz = u32le(.data, off20)
+    method = u16le(.data, off10)
+    local-off = u32le(.data, off42)
 
     // local file header: 30 + name-len + extra-len
     off26 = local-off + 26
     off28 = local-off + 28
     off30 = local-off + 30
-    name-len2 = u16le(data, off26)
-    extra-len2 = u16le(data, off28)
+    name-len2 = u16le(.data, off26)
+    extra-len2 = u16le(.data, off28)
     data-off = off30 + name-len2 + extra-len2
-    if method == 0 && sz > 0 {
-        i = 0
-        for i < sz {
-            src-off = data-off + i
-            out[i] = data[src-off]
-            i = i + 1
+    {
+        method == 0 && sz > 0 -> {
+            i = 0
+            i < sz: {
+                src-off = data-off + i
+                out[i] = .data[src-off]
+                i = i + 1
+            }
+        }
+        method == 8 && sz > 0 -> {
+            // 提取壓縮資料
+            compressed []byte
+            i = 0
+            i < csz: {
+                compressed[i] = .data[data-off + i]
+                i = i + 1
+            }
+            // 解壓縮 DEFLATE
+            out = inflate-decompress(compressed, sz)
+        }
+    }
+}
+
+// ─── zip-entry 方法 ───────────────────────────
+
+// name: 讀取條目檔名
+zip-entry.name = () (name str) {
+    off = .off
+    off28 = off + 28
+    name-len = u16le(.data, off28)
+    off46 = off + 46
+    i = 0
+    i < name-len: {
+        idx2 = off46 + i
+        name[i] = .data[idx2]
+        i = i + 1
+    }
+}
+
+// size: 讀取條目原始大小
+zip-entry.size = () (sz i64) {
+    off24 = .off + 24
+    sz = u32le(.data, off24)
+}
+
+// compressed-size: 讀取條目壓縮後大小
+zip-entry.compressed-size = () (csz i64) {
+    off20 = .off + 20
+    csz = u32le(.data, off20)
+}
+
+// method: 讀取條目壓縮方式（0=stored, 8=deflate）
+zip-entry.method = () (method i64) {
+    off10 = .off + 10
+    method = u16le(.data, off10)
+}
+
+// extract: 提取條目內容（stored 和 deflate）
+zip-entry.extract = () (out []byte) {
+    off = .off
+    off24 = off + 24
+    off10 = off + 10
+    off42 = off + 42
+    off20 = off + 20
+    sz = u32le(.data, off24)
+    csz = u32le(.data, off20)
+    method = u16le(.data, off10)
+    local-off = u32le(.data, off42)
+
+    // local file header: 30 + name-len + extra-len
+    off26 = local-off + 26
+    off28 = local-off + 28
+    off30 = local-off + 30
+    name-len2 = u16le(.data, off26)
+    extra-len2 = u16le(.data, off28)
+    data-off = off30 + name-len2 + extra-len2
+    {
+        method == 0 && sz > 0 -> {
+            i = 0
+            i < sz: {
+                src-off = data-off + i
+                out[i] = .data[src-off]
+                i = i + 1
+            }
+        }
+        method == 8 && sz > 0 -> {
+            // 提取壓縮資料
+            compressed []byte
+            i = 0
+            i < csz: {
+                compressed[i] = .data[data-off + i]
+                i = i + 1
+            }
+            // 解壓縮 DEFLATE
+            out = inflate-decompress(compressed, sz)
         }
     }
 }

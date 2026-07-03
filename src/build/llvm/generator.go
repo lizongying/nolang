@@ -1158,6 +1158,43 @@ func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string
 	return evalResult
 }
 
+// sliceEvalArgToPtr resolves an eval result (from generateExprWithSB) to a %vec* pointer.
+// If the eval result is a loaded value (%var.val.N), store it into a temporary alloca
+// and return the alloca pointer. If it's already a pointer, return as-is.
+func (g *Generator) sliceEvalArgToPtr(sb *strings.Builder, evalResult string) string {
+	if !strings.HasPrefix(evalResult, "%") {
+		return evalResult
+	}
+	// Check if it's a loaded value (contains ".val.")
+	if idx := strings.Index(evalResult, ".val."); idx > 0 {
+		baseRef := evalResult[:idx]
+		varName := strings.TrimPrefix(baseRef, "%")
+		// If the variable is a known %vec, the loaded value is the struct value;
+		// store it into a temp alloca to get a pointer.
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[varName]; ok && t == "%vec" {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%vec.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), evalResult, tmpAlloca))
+				}
+				return tmpAlloca
+			}
+		}
+		// Unknown variable type — still store into temp
+		g.tmpIdx++
+		tmpAlloca := fmt.Sprintf("%%vec.tmp.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), evalResult, tmpAlloca))
+		}
+		return tmpAlloca
+	}
+	// Already a pointer (e.g., %varname or %vec.tmp.N)
+	return evalResult
+}
+
 func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, evalArgs func() []string) string {
 	a := evalArgs()
 	conv := *m.LLVMConv

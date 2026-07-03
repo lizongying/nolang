@@ -1,215 +1,435 @@
-// tar — TAR 歸檔解析
+// tar — TAR 歸檔讀寫
 //
-// 讀取 POSIX ustar 格式的 TAR 歸檔，支援列出條目和提取檔案。
+// 讀取/寫入 POSIX ustar 格式的 TAR 歸檔。
 // 不依賴外部庫，僅操作 []byte。
 //
-// 用法：
-//   tar-info(data)(count)
-//   for i <- [0..count) {
-//     tar-name(data, i)(name)
-//     tar-size(data, i)(sz)
-//     tar-type(data, i)(typ)
-//     tar-read(data, i)(content)
+// 用法（讀取）：
+//   archive = tar{ data: raw-bytes }
+//   n = archive.count()
+//   i <- [0..n): {
+//       e = archive.entry(i)
+//       name = e.name()
+//       sz = e.size()
+//       typ = e.type()
+//       content = e.read()
 //   }
+//
+// 用法（讀取 .tar.gz）：
+//   archive = tar-open-gz(gz-data)
+//   n = archive.count()
+//   ...
+//
+// 用法（寫入）：
+//   builder = tar-builder{}
+//   builder.add-file('hello.txt', 'hello world')
+//   builder.add-dir('subdir/')
+//   archive = builder.finish()
 
-// ─── 內部輔助 ─────────────────────────────────
+// ─── 結構體定義 ───────────────────────────────
 
-// tar-block: 計算第 idx 個條目的區塊偏移（header 起始）
-tar-block = (idx i64) (off i64) {
-    off = idx * 512
+// tar: TAR 歸檔唯讀視圖
+tar {
+    data []byte
 }
 
-// tar-next: 跳過第 idx 個條目的 header + data，回傳下個條目偏移
-tar-next = (data []byte, idx i64) (next i64) {
-    hdr = idx * 512
+// tar-entry: TAR 條目（指向 archive.data 中的某個 header）
+tar-entry {
+    data []byte
+    idx  i64
+}
 
-    // 讀取 size 欄位（偏移 124，8 位元組八進制）
+// tar-builder: TAR 歸檔建構器
+tar-builder {
+    buf  []byte
+    pos  i64
+}
+
+// ─── 常量 ─────────────────────────────────────
+
+// TAR 區塊大小
+TAR-BLOCK = 512
+
+// 條目類型
+TAR-TYPE-FILE = 48     // '0'
+TAR-TYPE-DIR  = 53     // '5'
+
+// ─── tar 方法 ─────────────────────────────────
+
+// tar-open-gz: 從 gzip 壓縮資料建立 tar 視圖（.tar.gz）
+//   gz-data: gzip 壓縮的 tar 資料 ([]byte)
+//   archive: 解壓後的 tar 歸檔
+tar-open-gz = (gz-data []byte) (archive tar) {
+    archive.data = gzip-decompress(gz-data)
+}
+
+// count: 計算 TAR 中的有效條目數
+tar.count = () (count i64) {
+    count = 0
+    off i64 = 0
+    n = len(.data)
+    off + TAR-BLOCK <= n: {
+        // 檢查是否為結束標記（全零區塊）
+        empty = 1
+        i = 0
+        i < TAR-BLOCK: {
+            .data[off + i] & 255 != 0 -> empty = 0
+            i = i + 1
+        }
+        empty == 1 -> return
+        count = count + 1
+        off = .entry-offset(count)
+    }
+}
+
+// entry-offset: 計算第 idx 個條目的區塊偏移並跳到下個
+tar.entry-offset = (idx i64) (next i64) {
+    hdr = idx * TAR-BLOCK
+
+    // 讀取 size 欄位（偏移 124，12 位元組八進制）
     sz = 0
     i = 0
-    for i < 12 {
-        c = data[hdr + 124 + i] & 255
-        if c >= 48 && c <= 57 {
-            sz = sz * 8 + (c - 48)
-        }
+    i < 12: {
+        c = .data[hdr + 124 + i] & 255
+        c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         i = i + 1
     }
 
     // data 區塊數 = (sz + 511) / 512
-    blocks = (sz + 511) / 512
-    if blocks < 0 {
-        blocks = 0
-    }
-    next = hdr + 512 + blocks * 512
+    blocks = (sz + 511) / TAR-BLOCK
+    blocks < 0 -> blocks = 0
+    next = hdr + TAR-BLOCK + blocks * TAR-BLOCK
 }
 
-// ─── 查詢 ─────────────────────────────────────
-
-// tar-count: 計算 TAR 中的有效條目數
-tar-count = (data []byte) (count i64) {
-    count = 0
-    off = 0
-    n = len(data)
-    for off + 512 <= n {
-        // 檢查是否為結束標記（全零區塊）
-        empty = 1
-        i = 0
-        for i < 512 {
-            if data[off + i] & 255 != 0 {
-                empty = 0
-                break
-            }
-            i = i + 1
-        }
-        if empty == 1 {
-            return
-        }
-        count = count + 1
-        off = tar-next(data, off)
-    }
+// entry: 取得第 idx 個條目
+tar.entry = (idx i64) (e tar-entry) {
+    e.data = .data
+    e.idx = idx
 }
 
-// tar-name: 讀取第 idx 個條目的檔名
-tar-name = (data []byte, idx i64) (name str) {
-    hdr = idx * 512
-
-    // 最多 100 字元，遇到 \0 結束
+// name: 讀取第 idx 個條目的檔名
+tar.name = (idx i64) (name str) {
+    hdr = idx * TAR-BLOCK
     i = 0
-    for i < 100 {
-        c = data[hdr + i] & 255
-        if c == 0 {
-            break
-        }
+    i < 100: {
+        c = .data[hdr + i] & 255
+        c == 0 -> break
         name[i] = c
         i = i + 1
     }
 }
 
-// tar-size: 讀取第 idx 個條目的檔案大小（八進制）
-tar-size = (data []byte, idx i64) (sz i64) {
-    hdr = idx * 512
+// size: 讀取第 idx 個條目的檔案大小（八進制）
+tar.size = (idx i64) (sz i64) {
+    hdr = idx * TAR-BLOCK
     sz = 0
     i = 0
-    for i < 12 {
-        c = data[hdr + 124 + i] & 255
-        if c >= 48 && c <= 57 {
-            sz = sz * 8 + (c - 48)
-        }
+    i < 12: {
+        c = .data[hdr + 124 + i] & 255
+        c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         i = i + 1
     }
 }
 
-// tar-type: 讀取第 idx 個條目的類型
+// type: 讀取第 idx 個條目的類型字串
 // 返回 "file"、"dir" 或 "unknown"
-tar-type = (data []byte, idx i64) (typ str) {
-    hdr = idx * 512
-    c = data[hdr + 156] & 255
+tar.type = (idx i64) (typ str) {
+    hdr = idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
     typ = 'unknown'
-    if c == 48 || c == 0 {
-        typ = 'file'
-    }
-    if c == 53 {
-        typ = 'dir'
+    {
+        c == 48 || c == 0 -> typ = 'file'
+        c == 53 -> typ = 'dir'
     }
 }
 
-// tar-is-dir: 是否為目錄
-tar-is-dir = (data []byte, idx i64) (yes bool) {
-    t = tar-type(data, idx)
-    c = t.compare('dir')
-    if c == 0 {
-        yes = true
-    } else {
-        yes = false
+// is-dir: 判斷第 idx 個條目是否為目錄
+tar.is-dir = (idx i64) (yes bool) {
+    hdr = idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
+    yes = c == 53 ? true : false
+}
+
+// is-file: 判斷第 idx 個條目是否為普通檔案
+tar.is-file = (idx i64) (yes bool) {
+    hdr = idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
+    yes = (c == 48 || c == 0) ? true : false
+}
+
+// read: 提取第 idx 個條目的內容
+tar.read = (idx i64) (out []byte) {
+    sz = .size(idx)
+    hdr = idx * TAR-BLOCK
+    sz > 0 -> {
+        i = 0
+        i < sz: {
+            out[i] = .data[hdr + TAR-BLOCK + i]
+            i = i + 1
+        }
     }
 }
 
-// ─── 提取 ─────────────────────────────────────
+// mode: 讀取第 idx 個條目的權限（八進制）
+tar.mode = (idx i64) (mode i64) {
+    hdr = idx * TAR-BLOCK
+    mode = 0
+    i = 0
+    i < 8: {
+        c = .data[hdr + 100 + i] & 255
+        c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
+        i = i + 1
+    }
+}
 
-// tar-read: 提取第 idx 個條目的內容
-tar-read = (data []byte, idx i64) (out []byte) {
-    sz = tar-size(data, idx)
-    hdr = idx * 512
-    if sz > 0 {
+// mtime: 讀取第 idx 個條目的修改時間（八進制 Unix 時間戳）
+tar.mtime = (idx i64) (ts i64) {
+    hdr = idx * TAR-BLOCK
+    ts = 0
+    i = 0
+    i < 12: {
+        c = .data[hdr + 136 + i] & 255
+        c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
+        i = i + 1
+    }
+}
+
+// ─── tar-entry 方法 ───────────────────────────
+
+// name: 讀取條目檔名
+tar-entry.name = () (name str) {
+    hdr = .idx * TAR-BLOCK
+    i = 0
+    i < 100: {
+        c = .data[hdr + i] & 255
+        c == 0 -> break
+        name[i] = c
+        i = i + 1
+    }
+}
+
+// size: 讀取條目檔案大小
+tar-entry.size = () (sz i64) {
+    hdr = .idx * TAR-BLOCK
+    sz = 0
+    i = 0
+    i < 12: {
+        c = .data[hdr + 124 + i] & 255
+        c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
+        i = i + 1
+    }
+}
+
+// type: 讀取條目類型
+tar-entry.type = () (typ str) {
+    hdr = .idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
+    typ = 'unknown'
+    {
+        c == 48 || c == 0 -> typ = 'file'
+        c == 53 -> typ = 'dir'
+    }
+}
+
+// is-dir: 判斷是否為目錄
+tar-entry.is-dir = () (yes bool) {
+    hdr = .idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
+    yes = c == 53 ? true : false
+}
+
+// is-file: 判斷是否為普通檔案
+tar-entry.is-file = () (yes bool) {
+    hdr = .idx * TAR-BLOCK
+    c = .data[hdr + 156] & 255
+    yes = (c == 48 || c == 0) ? true : false
+}
+
+// read: 提取條目內容
+tar-entry.read = () (out []byte) {
+    sz = .size()
+    hdr = .idx * TAR-BLOCK
+    sz > 0 -> {
         i = 0
-        for i < sz {
-            out[i] = data[hdr + 512 + i]
+        i < sz: {
+            out[i] = .data[hdr + TAR-BLOCK + i]
             i = i + 1
         }
     }
 }
 
-// ─── 迭代器 ───────────────────────────────────
-
-// tar-for-each: 遍歷所有條目
-// 每次回呼傳入 (idx, name, sz, typ, data)
-// 返回 0 繼續，非 0 停止
-tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
-    idx = 0
-    n = len(data)
-    off = 0
-    for off + 512 <= n {
-        // 檢查結束
-        empty = 1
-        i = 0
-        for i < 512 {
-            if data[off + i] & 255 != 0 {
-                empty = 0
-                break
-            }
-            i = i + 1
-        }
-        if empty == 1 {
-            return
-        }
-
-        // 讀取名稱
-        name = ''
-        i = 0
-        for i < 100 {
-            c = data[off + i] & 255
-            if c == 0 {
-                break
-            }
-            name[i] = c
-            i = i + 1
-        }
-
-        // 大小
-        sz = 0
-        i = 0
-        for i < 12 {
-            c = data[off + 124 + i] & 255
-            if c >= 48 && c <= 57 {
-                sz = sz * 8 + (c - 48)
-            }
-            i = i + 1
-        }
-
-        // 類型
-        c = data[off + 156] & 255
-        if c == 48 || c == 0 {
-            typ = 'file'
-        } elif c == 53 {
-            typ = 'dir'
-        } else {
-            typ = 'unknown'
-        }
-
-        // 資料
-        if sz > 0 {
-            i = 0
-            for i < sz {
-                data-out[i] = data[off + 512 + i]
-                i = i + 1
-            }
-        }
-
-        // 前進到下個條目
-        blocks = (sz + 511) / 512
-        if blocks < 0 {
-            blocks = 0
-        }
-        off = off + 512 + blocks * 512
-        idx = idx + 1
+// mode: 讀取條目權限
+tar-entry.mode = () (mode i64) {
+    hdr = .idx * TAR-BLOCK
+    mode = 0
+    i = 0
+    i < 8: {
+        c = .data[hdr + 100 + i] & 255
+        c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
+        i = i + 1
     }
+}
+
+// mtime: 讀取條目修改時間
+tar-entry.mtime = () (ts i64) {
+    hdr = .idx * TAR-BLOCK
+    ts = 0
+    i = 0
+    i < 12: {
+        c = .data[hdr + 136 + i] & 255
+        c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
+        i = i + 1
+    }
+}
+
+// ─── tar-builder 方法 ─────────────────────────
+
+// add-file: 新增檔案條目
+tar-builder.add-file = (name str, content []byte) {
+    .write-header(name, TAR-TYPE-FILE, len(content))
+    // 寫入檔案內容
+    sz = len(content)
+    i = 0
+    i < sz: {
+        .buf[.pos + i] = content[i]
+        i = i + 1
+    }
+    .pos = .pos + sz
+    // 補齊到 512 邊界
+    rem = sz % TAR-BLOCK
+    rem > 0 -> {
+        pad = TAR-BLOCK - rem
+        j = 0
+        j < pad: {
+            .buf[.pos + j] = 0
+            j = j + 1
+        }
+        .pos = .pos + pad
+    }
+}
+
+// add-dir: 新增目錄條目
+tar-builder.add-dir = (name str) {
+    .write-header(name, TAR-TYPE-DIR, 0)
+}
+
+// add-bytes: 新增原始位元組條目
+tar-builder.add-bytes = (name str, content []byte, typ i64) {
+    .write-header(name, typ, len(content))
+    sz = len(content)
+    i = 0
+    i < sz: {
+        .buf[.pos + i] = content[i]
+        i = i + 1
+    }
+    .pos = .pos + sz
+    // 補齊到 512 邊界
+    rem = sz % TAR-BLOCK
+    rem > 0 -> {
+        pad = TAR-BLOCK - rem
+        j = 0
+        j < pad: {
+            .buf[.pos + j] = 0
+            j = j + 1
+        }
+        .pos = .pos + pad
+    }
+}
+
+// write-header: 寫入 512 位元組 header（內部方法）
+tar-builder.write-header = (name str, typ i64, sz i64) {
+    // 清零 header 區
+    i = 0
+    i < TAR-BLOCK: {
+        .buf[.pos + i] = 0
+        i = i + 1
+    }
+
+    // 名稱（偏移 0，最多 100 位元組）
+    name-len = len(name)
+    i = 0
+    i < name-len: {
+        i < 100 -> .buf[.pos + i] = name[i]
+        i = i + 1
+    }
+
+    // 模式（偏移 100，8 位元組八進制 "0000644\0"）
+    .write-octal(100, 7, 420)
+
+    // UID（偏移 108，8 位元組）
+    .write-octal(108, 7, 0)
+
+    // GID（偏移 116，8 位元組）
+    .write-octal(116, 7, 0)
+
+    // 大小（偏移 124，12 位元組八進制）
+    .write-octal(124, 11, sz)
+
+    // 修改時間（偏移 136，12 位元組八進制）
+    .write-octal(136, 11, 0)
+
+    // 類型（偏移 156，1 位元組）
+    .buf[.pos + 156] = typ
+
+    // ustar magic（偏移 257，6 位元組 "ustar\0"）
+    .buf[.pos + 257] = 117  // u
+    .buf[.pos + 258] = 115  // s
+    .buf[.pos + 259] = 116  // t
+    .buf[.pos + 260] = 97   // a
+    .buf[.pos + 261] = 114  // r
+    .buf[.pos + 262] = 0
+
+    // 計算校驗和（偏移 148，8 位元組）
+    // 先填空白
+    .buf[.pos + 148] = 32
+    .buf[.pos + 149] = 32
+    .buf[.pos + 150] = 32
+    .buf[.pos + 151] = 32
+    .buf[.pos + 152] = 32
+    .buf[.pos + 153] = 32
+    .buf[.pos + 154] = 32
+    .buf[.pos + 155] = 32
+
+    checksum i64 = 0
+    i = 0
+    i < TAR-BLOCK: {
+        checksum = checksum + (.buf[.pos + i] & 255)
+        i = i + 1
+    }
+    .write-octal(148, 6, checksum)
+    .buf[.pos + 154] = 0
+    .buf[.pos + 155] = 32
+
+    .pos = .pos + TAR-BLOCK
+}
+
+// write-octal: 在指定偏移寫入八進制數字（內部方法）
+tar-builder.write-octal = (offset i64, width i64, val i64) {
+    base = .pos + offset
+    // 先填空白
+    i = 0
+    i < width: {
+        .buf[base + i] = 32
+        i = i + 1
+    }
+    // 從右往左填數字
+    v = val
+    pos = width - 1
+    v > 0: {
+        .buf[base + pos] = 48 + (v % 8)
+        v = v / 8
+        pos = pos - 1
+    }
+    .buf[base + width] = 0
+}
+
+// finish: 結束建構，寫入結束標記並返回 tar 歸檔
+tar-builder.finish = () (archive tar) {
+    // 寫入兩個全零區塊作為結束標記
+    i = 0
+    i < TAR-BLOCK * 2: {
+        .buf[.pos + i] = 0
+        i = i + 1
+    }
+    // 構建 tar 結構體
+    archive.data = .buf
 }
