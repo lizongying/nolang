@@ -1604,17 +1604,26 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 					storeVal := val
-					if llvmElemType != "i64" && strings.HasPrefix(val, "%") {
-						g.tmpIdx++
-						truncReg := fmt.Sprintf("%%arr.set.trunc.%d", g.tmpIdx)
-						// Determine the actual source type from the value's SSA type
-						// (e.g., `& 255` on a char returns i32, not i64)
+					if strings.HasPrefix(val, "%") {
 						srcType := g.intExprLLVMType(expr.Value)
 						if srcType == "" {
 							srcType = "i64"
 						}
-						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), truncReg, srcType, val, llvmElemType))
-						storeVal = truncReg
+						if srcType != llvmElemType {
+							g.tmpIdx++
+							convReg := fmt.Sprintf("%%arr.set.conv.%d", g.tmpIdx)
+							if srcType == "i64" {
+								// i64 → smaller type: trunc
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
+							} else if llvmElemType == "i64" {
+								// smaller type → i64: zext
+								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, val))
+							} else {
+								// smaller → smaller (both non-i64): trunc to target
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
+							}
+							storeVal = convReg
+						}
 					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))

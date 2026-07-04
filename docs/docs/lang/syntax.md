@@ -51,7 +51,7 @@ sidebar_position: 2
 - vec // 變長數組
 - slice // 切片
 
-- \* // 指針 僅限標準庫
+- \* // 指針 僅限 FFI extern 宣告與標準庫
 - any // 任意類型 僅限標準庫
 
 高級類型
@@ -166,6 +166,36 @@ sha1 = (data []byte) (hash [20]byte) {
     ...
 }
 ```
+
+## 優先使用標準庫
+
+Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組轉換、雜湊計算、網路通訊等。
+
+**規則：如果標準庫中已有對應功能，不建議自行重新實現。** 開發者應仔細查看標準庫文檔（`docs/docs/std/overview.md`），避免重複造輪子。
+
+```nolang
+// ❌ 錯誤：自行實現 str → []byte 轉換
+str-to-bytes = (s str) (out []byte) {
+    n = s.len
+    i = 0
+    i < n: {
+        out[i] = s[i]
+        i = i + 1
+    }
+}
+
+// ✅ 正確：使用標準庫 str.to-bytes() 方法
+data []byte = s.to-bytes()
+```
+
+常見的標準庫替代：
+- `str.to-bytes()` — 字串轉位元組陣列（替代手寫 `str-to-bytes`）
+- `[]byte.to-str()` — 位元組陣列轉字串（替代手寫 `bytes-to-str`）
+- `[n]t.to-vec()` — 定長陣列轉切片（`[20]byte` → `[]byte`）
+- `[]byte.to-hex()` / `[]byte.to-hex-lower()` — 位元組陣列轉十六進制字串
+- `str.to-i64()` / `str.to-f64()` — 字串解析為數字
+- `int.to-str()` / `float.to-str()` — 數字轉字串
+- `std/hash/sha1`、`std/hash/sha256`、`std/hash/sha512` — 雜湊計算
 
 ## 檔案命名
 
@@ -689,3 +719,63 @@ utils/
 ```nolang
 @ std/math.add a
 ```
+
+### FFI（extern）
+
+透過 `extern` 宣告外部 C 函式，實現 FFI（Foreign Function Interface）。
+
+**檔案命名規則**：`extern` 宣告只能出現在檔名為 `*.extern.no` 的檔案中。普通 `.no` 檔案不允許包含 `extern` 宣告，編譯器會報錯。
+
+**分層架構**：FFI 驅動應採用兩層結構：
+- `xxx.extern.no` — 底層 FFI 裸指標綁定，僅包含 `extern` 宣告
+- `xxx.no` — 上層安全包裝，供業務代碼調用，透過 `#` 導入 extern.no 中的函式
+
+**指針型別語法**：FFI 中使用 C 風格的 `*T`、`**T`、`***T` 表示指針，必須有具體型別 `T`。普通代碼不能使用此語法。
+
+| 語法      | 含義              | LLVM IR  | 用途                     |
+| --------- | ----------------- | -------- | ------------------------ |
+| `*byte`   | 指向 byte 的指針  | `i8*`    | 不透明指標（如 db handle） |
+| `**byte`  | 雙重指針          | `i8**`   | 輸出參數（如 `sqlite3**`） |
+| `***byte` | 三重指針          | `i8***`  | 極少見的三重間接           |
+
+```nolang
+// sqlite.extern.no — 底層 FFI 裸綁定
+// 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號
+
+// 基本型別參數
+extern c-strlen = (s str) (n i64)
+
+// 指針參數（*byte = 不透明指標）
+extern sqlite3-close = (db *byte) (rc i32)
+
+// 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數）
+extern sqlite3-open = (filename str, db **byte) (rc i32)
+
+// 多個指針參數
+extern sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
+```
+
+```nolang
+// sqlite.no — 上層安全包裝
+
+// 導入 FFI 裸綁定
+# /sqlite-driver/sqlite.extern
+
+open = (dsn str) (d db-sqlite) {
+    handle i64 = 0
+    rc i32 = sqlite3-open(dsn, handle)
+    rc != SQLITE-OK -> {
+        return
+    }
+    d.handle = handle
+}
+```
+
+**規則：**
+1. `extern` 宣告只能出現在 `*.extern.no` 檔案中
+2. `extern` 僅為宣告，無函式主體
+3. 指針必須有具體型別（如 `*byte`），不允許裸 `ptr`
+4. `**byte` 用於輸出參數：呼叫後 C 函式寫入的指針值會自動轉為 `i64` 存回呼叫端變數
+5. 所有指針在 Nolang 端以 `i64` 儲存（`ptrtoint`）
+6. `str` 型別參數自動轉為 null-terminated `i8*`
+7. 業務代碼不應直接呼叫 `*.extern.no` 中的函式，應使用 `*.no` 中的安全包裝

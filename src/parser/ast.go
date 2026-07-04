@@ -201,7 +201,7 @@ func typeString(n Node) string {
 	case *NullableType:
 		return "?" + typeString(n.Type)
 	case *PointerType:
-		return "ptr " + typeString(n.Type)
+		return "*" + typeString(n.Type)
 	case *FunctionType:
 		return n.String()
 	default:
@@ -536,8 +536,13 @@ type PointerType struct {
 func (pt *PointerType) expressionNode()        {}
 func (pt *PointerType) typeNode()              {}
 func (pt *PointerType) Pos() lexer.Position    { return posFromToken(pt.Token) }
-func (pt *PointerType) EndPos() lexer.Position { return pt.Type.EndPos() }
-func (pt *PointerType) String() string         { return "ptr " + typeString(pt.Type) }
+func (pt *PointerType) EndPos() lexer.Position {
+	if pt.Type != nil {
+		return pt.Type.EndPos()
+	}
+	return posFromToken(pt.Token)
+}
+func (pt *PointerType) String() string         { return "*" + typeString(pt.Type) }
 
 // GroupedExpression represents a parenthesized expression: (expr)
 type GroupedExpression struct {

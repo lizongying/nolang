@@ -353,3 +353,47 @@ func TestDeprecationWarnings(t *testing.T) {
 		})
 	}
 }
+
+func TestExternPointerSyntax(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		filename string
+		wantErr  bool
+	}{
+		{name: "extern_basic", input: "extern c-strlen = (s str) (n i64)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_single_ptr", input: "extern sqlite3-close = (db *byte) (rc i32)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_double_ptr", input: "extern sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_triple_ptr", input: "extern foo = (p ***byte) (rc i32)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_mixed_ptrs", input: "extern sqlite3-exec = (db *byte, sql str, cb *byte, arg *byte, errmsg *byte) (rc i32)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_ptr_result", input: "extern malloc = (n i64) (p *byte)", filename: "test.extern.no", wantErr: false},
+		{name: "extern_ptr_i64", input: "extern foo = (p *i64) (r i32)", filename: "test.extern.no", wantErr: false},
+		// extern in non-extern.no file should error
+		{name: "extern_wrong_filename", input: "extern foo = (n i64) (r i32)", filename: "test.no", wantErr: true},
+		{name: "extern_no_filename", input: "extern foo = (n i64) (r i32)", filename: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			p.Filename = tt.filename
+			program := p.ParseProgram()
+			if tt.wantErr {
+				if len(p.Errors()) == 0 {
+					t.Errorf("expected errors, got none")
+				}
+				return
+			}
+			if len(p.Errors()) != 0 {
+				t.Errorf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if program == nil || len(program.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+		})
+	}
+}

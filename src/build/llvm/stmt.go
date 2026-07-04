@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -80,6 +81,7 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	g.funcVars = nil
+	g.curFuncName = fd.Name
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
 	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
@@ -182,6 +184,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 收集所有變數（一次分配），排除參數（已是指標）
 	localVarTypes := make(map[string]string)
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
+	if fd.Name == "ip-is-loopback" || fd.Name == "ip-is-private" {
+		fmt.Fprintf(os.Stderr, "[DBG collect] fn=%s localVarTypes=%v\n", fd.Name, localVarTypes)
+		fmt.Fprintf(os.Stderr, "[DBG collect] fn=%s varTypes.before=%v\n", fd.Name, g.varTypes)
+	}
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
@@ -442,7 +448,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
 			// FFI extern 函式：依 extern 宣告的 result 型別推斷 Nolang 儲存型別。
-			// callExtern 會將 str 構造為 %str-long、ptr/i32/bool 轉為 i64、f64 保持 double。
+			// callExtern 會將 str 構造為 %str-long、ptr/pptr/ppptr/i32/bool 轉為 i64、f64 保持 double。
 			if g.externFuncs != nil {
 				if ext, ok := g.externFuncs[name]; ok && len(ext.ResultTypes) > 0 {
 					return ffiTypeToNolangStorage(ext.ResultTypes[0])
@@ -636,16 +642,23 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 		switch s := stmt.(type) {
 		case *parser.LetStatement:
 			// Don't overwrite existing type — first declaration wins (e.g., a i8; a = 2)
+			if s.Name.Value == "ok" {
+				valType := fmt.Sprintf("%T", s.Value)
+				fmt.Fprintf(os.Stderr, "[DBG collectVarDecls] ok LetStatement line=%d valueType=%s\n", s.Token.Line, valType)
+			}
 			if _, exists := vars[s.Name.Value]; !exists {
 				t := g.varLLVMType(s)
 				vars[s.Name.Value] = t
 				g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
 			}
 		case *parser.FunctionDefinition:
-			// Skip function bodies - variables inside functions are collected
-			// in generateFunctionDefinition via collectVarDeclsFromStmt.
-			// This prevents synthetic `it` variables from one function (e.g., %file type)
-			// from polluting module-level variable types and leaking into other functions.
+			if strings.Contains(s.Name, "ip-addr") || strings.Contains(s.Name, "parse") {
+				fmt.Fprintf(os.Stderr, "[DBG collectVarDecls] FunctionDefinition name=%s line=%d\n", s.Name, s.Token.Line)
+			}
+		// Skip function bodies - variables inside functions are collected
+		// in generateFunctionDefinition via collectVarDeclsFromStmt.
+		// This prevents synthetic `it` variables from one function (e.g., %file type)
+		// from polluting module-level variable types and leaking into other functions.
 		default:
 			g.collectVarDeclsFromStmtInner(s, vars, true)
 		}
@@ -701,6 +714,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
+			}
+			if s.Name.Value == "ok" {
+				fmt.Fprintf(os.Stderr, "[DBG collectFromStmtInner] added ok=%s isModuleLevel=%v line=%d\n", vt, isModuleLevel, s.Token.Line)
 			}
 		}
 		// Recurse into value expression to collect inner variables
@@ -836,6 +852,7 @@ func (g *Generator) collectVarDeclsFromExpr(expr parser.Expression, vars map[str
 			}
 		}
 	case *parser.CallExpression:
+		fmt.Fprintf(os.Stderr, "[DBG collectExpr] CallExpr args=%d\n", len(e.Arguments))
 		// 註冊輸出參數變數（函調用的最後一個參數為 Identifier 時）
 		if g.funcRetTypes != nil && len(e.Arguments) > 0 {
 			fnName := ""
@@ -2037,6 +2054,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%str-longrepeat.null", // generateStrRepeat (no sb)
 		"%str-longconcat.null", // generateStrConcat (no sb)
 		"%argv.str.",           // args-get in call_stdlib.go
+		"%sprintf.val.",        // sprintf-based str returns (to-str etc.)
 		"%str-long.s2s.",       // duplicate, keep
 	}
 	for _, p := range ptrPatterns {

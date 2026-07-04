@@ -442,6 +442,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	l := lexer.New(string(source))
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
+	p.Filename = filepath.Base(filePath)
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
@@ -558,6 +559,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	l := lexer.New(source)
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
+	if t.sourcePath != "" {
+		p.Filename = filepath.Base(t.sourcePath)
+	}
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())

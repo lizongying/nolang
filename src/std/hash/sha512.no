@@ -2242,8 +2242,12 @@ sha512 = (data []byte) (hash [64]byte) {
     total-len = dlen + 1 + pad-len + 16
 
     // 建立填充緩衝區
-    space str = ' '
-    padded str = space.repeat(total-len)
+    padded []byte
+    i = 0
+    i < total-len: {
+        padded[i] = 0
+        i = i + 1
+    }
 
     // 複製原始資料
     i = 0

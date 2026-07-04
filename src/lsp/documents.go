@@ -159,6 +159,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 
 	l := lexer.New(doc.Text)
 	p := parser.New(l)
+	p.Filename = filenameFromURI(uri)
 	ast := p.ParseProgram()
 
 	errs := p.Errors()
@@ -618,4 +619,11 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 			index.definitions[shortName] = entry
 		}
 	}
+}
+
+// filenameFromURI extracts the base filename from a file:// URI.
+func filenameFromURI(uri string) string {
+	// Strip "file://" prefix
+	path := strings.TrimPrefix(uri, "file://")
+	return filepath.Base(path)
 }

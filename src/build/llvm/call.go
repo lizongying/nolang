@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -87,15 +88,18 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 	switch a := arg.(type) {
 	case *parser.Identifier:
 		// Enum variant: allocate temp i64 and store the constant tag index
+		// 但若同名變數已存在（如 curried call 的輸出參數 ok/err），優先當作變數
 		if g.enumVariantIndex != nil {
-			if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
-				g.tmpIdx++
-				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+			if _, isVar := g.varTypes[a.Value]; !isVar {
+				if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
+					g.tmpIdx++
+					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+					}
+					return "i64* " + tmpName
 				}
-				return "i64* " + tmpName
 			}
 		}
 		// Function reference: when an Identifier refers to a known user-defined
@@ -132,6 +136,10 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// %vec / %arr / 任何 struct 指標型別 → 變數本身已是指標
 			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "%") {
 				return t + "* " + g.varAddr(a.Value)
+			}
+			// bool (i1) 變數 → 返回 i1*
+			if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
+				return "i1* " + g.varAddr(a.Value)
 			}
 		}
 		return "i64* " + g.varAddr(a.Value)
@@ -394,6 +402,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {
+		fmt.Fprintf(os.Stderr, "[DBG curried-enter] args=%d\n", len(expr.Arguments))
 		// 確定內層調用的返回型別
 		retType := "void"
 		innerFnName := ""
@@ -491,11 +500,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					storeType = "i1"
 				}
 			}
-			// CLibCall builtins (如 i64.to-str) 透過 insertvalue 返回 %str-long value。
-			// ForwardFunc builtins (如 get-line) 透過 alloca 返回 %str-long* pointer，需 load。
+			// CLibCall builtins (如 i64.to-str) 透過 sprintf alloca 返回 %str-long* pointer。
+			// ForwardFunc builtins (如 get-line) 透過 alloca 返回 %str-long* pointer。
+			// 兩者都需要 load 成 %str-long value。
 			// ForwardFunc builtins (如 net-dial) 返回 i64 value。
 			actualVal := retReg
-			if storeType == "%str-long" && m.CLibCall == nil {
+			if storeType == "%str-long" {
 				// retReg 是 %str-long* (alloca)，需 load 成 %str-long value
 				g.tmpIdx++
 				loadReg := fmt.Sprintf("%%builtin.load.%d", g.tmpIdx)
@@ -551,6 +561,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if retType == "void" {
 			// void 返回：直接調用
 			// 檢查是否為帶輸出參數的函數（curried 呼叫 → 單次呼叫，附加輸出參數）
+			fmt.Fprintf(os.Stderr, "[DBG curried] innerFnName=%s retType=%s\n", innerFnName, retType)
 			numResults := 0
 			if g.funcNumResults != nil {
 				// 嘗試多個名稱變體（可能已被 mangleOverloads 修飾）
@@ -577,7 +588,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				for outIdx, outArg := range expr.Arguments {
 					// Auto-allocate undeclared output variables (e.g. `total` in `.c.recv-all()(response, total)`)
 					if ident, ok := outArg.(*parser.Identifier); ok {
-						if _, exists := g.varTypes[ident.Value]; !exists {
+						_, exists := g.varTypes[ident.Value]
+						curFn := g.curFuncName
+						fmt.Fprintf(os.Stderr, "[DBG auto-alloc] cur=%s callee=%s var=%s exists=%v outTypes=%v\n", curFn, innerFnName, ident.Value, exists, outTypes)
+						if !exists {
 							outType := "i64"
 							if outIdx < len(outTypes) {
 								outType = outTypes[outIdx]
@@ -602,6 +616,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 
 		// 有返回值：生成 call 並捕獲結果
+		fmt.Fprintf(os.Stderr, "[DBG curried non-void] innerFnName=%s retType=%s\n", innerFnName, retType)
 		g.tmpIdx++
 		retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
@@ -1892,6 +1907,7 @@ func (g *Generator) evalF64Arg(sb *strings.Builder, arg parser.Expression) strin
 //	ptr  → inttoptr i64→i8*
 //	bool → trunc i64→i32
 //	pptr → alloca i8*，傳 i8**；呼叫後 load+ptrtoint 存回呼叫端變數
+//	ppptr → alloca i8**，傳 i8***；呼叫後 load+ptrtoint 存回呼叫端變數
 //
 // 輸出轉換（C → Nolang storage）：
 //
@@ -1900,6 +1916,8 @@ func (g *Generator) evalF64Arg(sb *strings.Builder, arg parser.Expression) strin
 //	f64  → double (none)
 //	str  → strlen + insertvalue %str-long
 //	ptr  → ptrtoint i8*→i64
+//	pptr → ptrtoint i8**→i64
+//	ppptr → ptrtoint i8***→i64
 //	bool → icmp ne 0 + zext i1→i64
 //	void → "0"
 func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *parser.CallExpression) string {
@@ -1909,8 +1927,10 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 	}
 
 	type pptrSlot struct {
-		slotReg string
-		varName string // 呼叫端變數名；非 Identifier 時為 ""（跳過 store-back）
+		slotReg  string
+		varName  string // 呼叫端變數名；非 Identifier 時為 ""（跳過 store-back）
+		llvmType string // alloca 的元素型別（如 "i8*" 或 "i8**"）
+		ptrType  string // slot 的指針型別（如 "i8**" 或 "i8***"）
 	}
 	var pptrSlots []pptrSlot
 
@@ -1959,7 +1979,17 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 			if ident, ok := arg.(*parser.Identifier); ok {
 				varName = ident.Value
 			}
-			pptrSlots = append(pptrSlots, pptrSlot{slotReg: slot, varName: varName})
+			pptrSlots = append(pptrSlots, pptrSlot{slotReg: slot, varName: varName, llvmType: "i8*", ptrType: "i8**"})
+		case "ppptr":
+			g.tmpIdx++
+			slot := fmt.Sprintf("%%ext.ppptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8**\n", g.indent(), slot))
+			llvmArgs = append(llvmArgs, "i8*** "+slot)
+			varName := ""
+			if ident, ok := arg.(*parser.Identifier); ok {
+				varName = ident.Value
+			}
+			pptrSlots = append(pptrSlots, pptrSlot{slotReg: slot, varName: varName, llvmType: "i8**", ptrType: "i8***"})
 		default:
 			// 未知 FFI 型別：保守地當作 i64
 			llvmArgs = append(llvmArgs, "i64 "+g.evalI64Arg(sb, arg))
@@ -1988,15 +2018,15 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 		sb.WriteString(fmt.Sprintf("%s%s = call %s %s(%s)\n", g.indent(), callReg, retLLVMType, fnRef, argStr))
 	}
 
-	// pptr 輸出參數：從 alloca 載入 i8*，ptrtoint 成 i64，存回呼叫端變數。
+	// pptr / ppptr 輸出參數：從 alloca 載入指針，ptrtoint 成 i64，存回呼叫端變數。
 	// 呼叫端引數必須是簡單 Identifier；否則跳過 store-back。
 	for _, ps := range pptrSlots {
 		g.tmpIdx++
 		loadReg := fmt.Sprintf("%%ext.pptr.load.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, ps.slotReg))
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), loadReg, ps.llvmType, ps.ptrType, ps.slotReg))
 		g.tmpIdx++
 		intReg := fmt.Sprintf("%%ext.pptr.int.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s %s to i64\n", g.indent(), intReg, ps.llvmType, loadReg))
 		if ps.varName != "" {
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), intReg, g.varAddr(ps.varName)))
 		}
@@ -2027,10 +2057,11 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, callReg))
 		return strReg2
-	case "ptr":
+	case "ptr", "pptr", "ppptr":
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%ext.ptrtoint.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), reg, callReg))
+		llvmRetType := ffiTypeToLLVM(retFFIType)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s %s to i64\n", g.indent(), reg, llvmRetType, callReg))
 		return reg
 	case "bool":
 		g.tmpIdx++

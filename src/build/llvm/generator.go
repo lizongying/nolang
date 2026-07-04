@@ -21,7 +21,7 @@ type structField struct {
 }
 
 // ExternFuncInfo 描述一個 FFI extern 宣告的型別資訊。
-// ParamTypes / ResultTypes 為 FFI 型別名稱（"i64","i32","f64","str","ptr","pptr","bool"）。
+// ParamTypes / ResultTypes 為 FFI 型別名稱（"i64","i32","f64","str","ptr","pptr","ppptr","bool"）。
 type ExternFuncInfo struct {
 	Name        string
 	ParamTypes  []string
@@ -59,6 +59,7 @@ type Generator struct {
 	arrayElemTypes       map[string]string               // variable name → element LLVM type for %arr variables
 	curFuncRetType       string                          // 當前函數回傳型別（void/i64/...）
 	curFuncRetName       string                          // 當前函數輸出參數名稱（為空表示 void）
+	curFuncName          string                          // 當前函數名稱（debug 用）
 	globalVars           map[string]bool                 // module-level vars that should be LLVM globals
 	moduleVarTypes       map[string]string               // module-level variable types (preserved across functions)
 	ssaTypes             map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
@@ -172,15 +173,38 @@ func intConstValue(expr parser.Expression) (int64, bool) {
 }
 
 // ffiTypeName 從 parser.Type 抽出 FFI 型別名稱。
-// ptr（含 ptr(type) 與不透明 ptr）一律視為 "ptr"；其餘（NamedType）直接取 String()。
+// 指針型別依間接層數返回 "ptr"（*T）、"pptr"（**T）、"ppptr"（***T）；
+// 其餘（NamedType 等）直接取 String()。
 func ffiTypeName(t parser.Type) string {
 	if t == nil {
 		return ""
 	}
-	if _, ok := t.(*parser.PointerType); ok {
+	// 計算指針間接層數
+	level := 0
+	for {
+		pt, ok := t.(*parser.PointerType)
+		if !ok {
+			break
+		}
+		level++
+		if pt.Type == nil {
+			// 不透明指標（舊式 ptr，向後相容）
+			break
+		}
+		t = pt.Type
+	}
+	switch level {
+	case 0:
+		return t.String()
+	case 1:
+		return "ptr"
+	case 2:
+		return "pptr"
+	case 3:
+		return "ppptr"
+	default:
 		return "ptr"
 	}
-	return t.String()
 }
 
 // ffiTypeToLLVM 將 FFI 型別名稱對應到 LLVM IR 型別字串。
@@ -196,6 +220,8 @@ func ffiTypeToLLVM(t string) string {
 		return "i8*"
 	case "pptr":
 		return "i8**"
+	case "ppptr":
+		return "i8***"
 	default:
 		return "i64"
 	}
@@ -204,10 +230,10 @@ func ffiTypeToLLVM(t string) string {
 // ffiTypeToNolangStorage 將 FFI 型別名稱對應到 Nolang 端的儲存型別
 // （即 callExtern 回傳值的 LLVM 型別）。與 ffiTypeToLLVM 不同：
 // str 在 C 端為 i8*，但 callExtern 會構造 %str-long 結構後回傳；
-// ptr / i32 / bool 皆以 i64 儲存（ptrtoint / sext / zext）。
+// ptr / pptr / ppptr / i32 / bool 皆以 i64 儲存（ptrtoint / sext / zext）。
 func ffiTypeToNolangStorage(t string) string {
 	switch t {
-	case "i64", "i32", "ptr", "bool":
+	case "i64", "i32", "ptr", "pptr", "ppptr", "bool":
 		return "i64"
 	case "f64":
 		return "double"
@@ -230,7 +256,7 @@ func externSymbolRef(name string) string {
 
 // formatExternDeclare 產生單一 extern 函式的 LLVM declare 敘述。
 // 回傳型別取自第一個 result FFI 型別（無 result 為 void）；
-// 參數型別中 pptr 對應 i8**，其餘依 ffiTypeToLLVM。
+// 參數型別中 pptr 對應 i8**、ppptr 對應 i8***，其餘依 ffiTypeToLLVM。
 // 符號名稱將連字號轉為底線以匹配 C ABI 命名。
 func (g *Generator) formatExternDeclare(name string, info *ExternFuncInfo) string {
 	retType := "void"
@@ -432,7 +458,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				if s.Name != nil && strings.Contains(s.Name.Value, ".") {
 					name := s.Name.Value
 					retType := "void"
-					if len(fl.Results) == 1 {
+					if len(fl.Results) == 1 && fl.Results[0].Name == "" {
 						retType = g.mapToLLVMType(fl.Results[0].Type.String())
 					}
 					// 用完整名稱作為 key（含點），便於方法呼叫查找
@@ -1037,16 +1063,20 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
 			}
-			// 通过 insertvalue 构造 %str-long { len, data }
+			// 通过 insertvalue 构造 %str-long { len, data }，然后 alloca + store 取得 %str-long*
 			g.tmpIdx++
-			strReg1 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+			strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
 			g.tmpIdx++
-			strReg2 := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+			strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
 			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 1\n", g.indent(), strReg2, strReg1, bufPtr))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg2, strAlloca))
 			}
-			return strReg2
+			return strAlloca
 		}
 
 		// 非 str 返回类型：保持原逻辑（使用全局缓冲区）

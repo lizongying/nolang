@@ -22,6 +22,10 @@ type Parser struct {
 	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
 
+	// Filename is the source file name (e.g. "sqlite.extern.no").
+	// Used to enforce that extern declarations only appear in *.extern.no files.
+	Filename string
+
 	// AllowAnonymousFnType controls whether anonymous function type syntax
 	// (e.g. `cb ()()`) is permitted in parameter lists. When false, only
 	// named function type aliases (e.g. `test-cb = ()` then
@@ -6680,9 +6684,17 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 //
 //	extern name = (params) (results)
 //
-// 僅為宣告，無函式主體。參數/結果型別支援 ptr 關鍵字（不透明指標）以及
-// 一般具名型別（i64, str, ...）。
+// 僅為宣告，無函式主體。參數/結果型別支援 C 風格指針語法
+// （*T、**T、***T，必須有具體型別）以及一般具名型別（i64, str, ...）。
+// extern 宣告只能出現在檔名為 *.extern.no 的檔案中。
 func (p *Parser) parseExternStatement() Statement {
+	// FFI extern 宣告只能出現在 *.extern.no 文件中
+	if !strings.HasSuffix(p.Filename, ".extern.no") {
+		msg := fmt.Sprintf("line %d, column %d: extern declarations are only allowed in *.extern.no files (current file: %q)",
+			p.currentToken.Line, p.currentToken.Column, p.Filename)
+		p.saveError(msg)
+	}
+
 	stmt := &ExternStatement{
 		Token:      p.currentToken,
 		Parameters: []*Parameter{},
@@ -6806,31 +6818,47 @@ func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
 }
 
 // parseExternType 解析 extern 宣告中的單一型別。支援：
-//   - ptr：不透明指標（PointerType{Type: nil}），或 ptr(type) 形式
-//   - ptr 以外的具名型別、?type、[]type、[N]type 等（重用 parseParamTypeAfterName）
+//   - *T、**T、***T 等 C 風格指針型別（必須有具體型別 T）
+//   - 具名型別、?type、[]type、[N]type 等（重用 parseParamTypeAfterName）
+//
+// 不再支援 ptr 關鍵字；FFI 中一律使用 *T 語法。
 func (p *Parser) parseExternType() (Type, bool) {
-	if p.currentToken.Type == lexer.PTR {
-		tok := p.currentToken
-		p.nextToken() // skip ptr
-		if p.currentToken.Type == lexer.LPAREN {
-			// ptr(type) 形式
-			p.nextToken() // skip (
-			inner, ok := p.parseExternType()
-			if !ok {
-				return nil, false
+	// 計算指針間接層數：* = 1 層，** = 2 層，*** = 3 層，……
+	// 語法器將 * 詞法為 MUL，** 詞法為 STAR_STAR。
+	pointerCount := 0
+	var starTok lexer.Token
+	for {
+		if p.currentToken.Type == lexer.MUL {
+			if pointerCount == 0 {
+				starTok = p.currentToken
 			}
-			if p.currentToken.Type != lexer.RPAREN {
-				msg := fmt.Sprintf("line %d, column %d: expected ')' after ptr( in extern declaration, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
-				return nil, false
+			pointerCount++
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.STAR_STAR {
+			if pointerCount == 0 {
+				starTok = p.currentToken
 			}
-			p.nextToken() // skip )
-			return &PointerType{Token: tok, Type: inner}, true
+			pointerCount += 2
+			p.nextToken()
+		} else {
+			break
 		}
-		// 不透明指標：ptr 後未跟 (
-		return &PointerType{Token: tok, Type: nil}, true
 	}
+
+	if pointerCount > 0 {
+		// 解析基礎型別（必須有具體型別）
+		baseType, ok := p.parseParamTypeAfterName()
+		if !ok {
+			return nil, false
+		}
+		// 由內向外包裹 PointerType
+		result := baseType
+		for i := 0; i < pointerCount; i++ {
+			result = &PointerType{Token: starTok, Type: result}
+		}
+		return result, true
+	}
+
 	// 其餘型別重用既有參數型別解析邏輯
 	t, ok := p.parseParamTypeAfterName()
 	if !ok {

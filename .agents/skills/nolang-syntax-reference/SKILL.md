@@ -19,7 +19,7 @@ This skill provides quick reference to Nolang language syntax. For full details,
 
 **Container types:** `obj`, `map`, `arr` (fixed-length), `vec` (dynamic), `slice`
 
-**Special types:** `*` (pointer, std only), `any` (std only), `bigint`, `err`
+**Special types:** `*` (pointer, FFI extern & std only), `any` (std only), `bigint`, `err`
 
 **Optional (nullable) types:** prefix with `?` — e.g. `?i64`, `?str`, `?[]str`
 
@@ -85,7 +85,7 @@ Function doc comments must include full parameter names with types and return pa
 
 // ✅ Correct: full param names, types, return names, types
 // sha1(data []byte) (hash [20]byte) — full hash
-// sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — process block
+// sha1-block(s []i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64) — process block
 
 // Above function definitions:
 // sha1: compute SHA-1 hash
@@ -95,6 +95,36 @@ sha1 = (data []byte) (hash [20]byte) {
     ...
 }
 ```
+
+### Prefer Standard Library
+
+The Nolang standard library provides a rich set of common utilities: string operations, byte conversions, hashing, networking, and more.
+
+**Rule: if the standard library already provides a feature, do NOT reimplement it yourself.** Developers should carefully review the standard library documentation (`docs/docs/std/overview.md`) before writing utility functions.
+
+```nolang
+// ❌ Wrong: reimplementing str → []byte conversion
+str-to-bytes = (s str) (out []byte) {
+    n = s.len
+    i = 0
+    i < n: {
+        out[i] = s[i]
+        i = i + 1
+    }
+}
+
+// ✅ Correct: use standard library str.to-bytes() method
+data []byte = s.to-bytes()
+```
+
+Common standard library replacements:
+- `str.to-bytes()` — string to byte array (replaces hand-written `str-to-bytes`)
+- `[]byte.to-str()` — byte array to string (replaces hand-written `bytes-to-str`)
+- `[n]t.to-vec()` — fixed array to slice (`[20]byte` → `[]byte`)
+- `[]byte.to-hex()` / `[]byte.to-hex-lower()` — byte array to hex string
+- `str.to-i64()` / `str.to-f64()` — string to number
+- `int.to-str()` / `float.to-str()` — number to string
+- `std/hash/sha1`, `std/hash/sha256`, `std/hash/sha512` — hash computation
 
 ### File Naming
 
@@ -422,6 +452,45 @@ user json {
 - `**` — continue（跳過本輪）（規劃中，目前仍使用 `continue`）
 - `*` — break（跳出循環）（規劃中，目前仍使用 `break`）
 - `<-` — range iteration
+
+### FFI (extern)
+
+`extern` declares external C functions. Pointer types use C-style `*T`, `**T`, `***T` syntax — only in `extern` declarations, not in regular code.
+
+**File naming rule**: `extern` declarations are only allowed in `*.extern.no` files. The compiler rejects `extern` in regular `.no` files.
+
+**Layered architecture**: FFI drivers should use a two-layer structure:
+- `xxx.extern.no` — low-level FFI raw pointer bindings (extern declarations only)
+- `xxx.no` — high-level safe wrapper for business code, imports from `xxx.extern.no` via `#`
+
+```nolang
+// sqlite.extern.no — FFI raw bindings
+extern c-strlen = (s str) (n i64)
+extern sqlite3-close = (db *byte) (rc i32)
+extern sqlite3-open = (filename str, db **byte) (rc i32)
+```
+
+```nolang
+// sqlite.no — safe wrapper
+# /sqlite-driver/sqlite.extern
+
+open = (dsn str) (d db-sqlite) {
+    handle i64 = 0
+    rc i32 = sqlite3-open(dsn, handle)
+    rc != SQLITE-OK -> { return }
+    d.handle = handle
+}
+```
+
+**Rules:**
+1. `extern` declarations only allowed in `*.extern.no` files
+2. Pointers must have a concrete type (e.g. `*byte`, not bare `ptr`)
+3. `*T` → `i8*`, `**T` → `i8**`, `***T` → `i8***`
+4. All pointers stored as `i64` on the Nolang side (via `ptrtoint`)
+5. `**T` parameters are output params: C function writes pointer, Nolang auto-converts to `i64` and stores back
+6. Hyphens in names are converted to underscores for C ABI symbols
+7. `str` params are auto-converted to null-terminated `i8*`
+8. Business code should not call `*.extern.no` functions directly; use the safe wrapper in `*.no`
 
 ## Additional Resources
 

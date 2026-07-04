@@ -1,0 +1,101 @@
+// sqlite.extern — SQLite FFI 裸指標綁定（底層）
+//
+// 本檔案僅包含 extern 宣告，直接綁定 libsqlite3 C 函式。
+// 所有指針型別使用 C 風格 *T / **T 語法。
+// 業務代碼不應直接呼叫此處的函式，請使用 sqlite.no 中的安全包裝。
+//
+// 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號。
+// mod.jsonc 中 "link-libs": ["sqlite3"] 負責連結。
+
+// sqlite3-open: 開啟資料庫連線
+// filename str: 資料庫檔名或 ':memory:'
+// db **byte: 輸出，SQLite 資料庫控制代碼
+// 返回 rc i32: 結果碼（SQLITE-OK=0 表示成功）
+extern sqlite3-open = (filename str, db **byte) (rc i32)
+
+// sqlite3-close: 關閉資料庫連線
+// db *byte: SQLite 資料庫控制代碼
+// 返回 rc i32: 結果碼
+extern sqlite3-close = (db *byte) (rc i32)
+
+// sqlite3-exec: 執行 SQL（無結果集）
+// db *byte: SQLite 資料庫控制代碼
+// sql str: SQL 語句
+// callback *byte: 回呼函式（傳 0 = 不使用）
+// arg *byte: 回呼參數（傳 0）
+// errmsg *byte: 錯誤訊息指標（傳 0）
+// 返回 rc i32: 結果碼
+extern sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
+
+// sqlite3-prepare-v2: 編譯 SQL 語句
+// db *byte: SQLite 資料庫控制代碼
+// sql str: SQL 語句
+// n-bytes i32: SQL 長度（-1 = 以 null 結尾）
+// stmt **byte: 輸出，預編譯陳述式控制代碼
+// tail *byte: 剩餘 SQL 指標（傳 0）
+// 返回 rc i32: 結果碼
+extern sqlite3-prepare-v2 = (db *byte, sql str, n-bytes i32, stmt **byte, tail *byte) (rc i32)
+
+// sqlite3-step: 執行預編譯陳述式的下一步
+// stmt *byte: 預編譯陳述式控制代碼
+// 返回 rc i32: 結果碼（SQLITE-ROW=100, SQLITE-DONE=101）
+extern sqlite3-step = (stmt *byte) (rc i32)
+
+// sqlite3-column-count: 取得欄位數量
+// stmt *byte: 預編譯陳述式控制代碼
+// 返回 n i32: 欄位數量
+extern sqlite3-column-count = (stmt *byte) (n i32)
+
+// sqlite3-column-int64: 取得指定欄位的整數值
+// stmt *byte: 預編譯陳述式控制代碼
+// col i32: 欄位索引（從 0 開始）
+// 返回 v i64: 欄位的 64 位元整數值
+extern sqlite3-column-int64 = (stmt *byte, col i32) (v i64)
+
+// sqlite3-column-text: 取得指定欄位的文字值
+// stmt *byte: 預編譯陳述式控制代碼
+// col i32: 欄位索引（從 0 開始）
+// 返回 s str: 欄位的文字內容
+extern sqlite3-column-text = (stmt *byte, col i32) (s str)
+
+// sqlite3-column-double: 取得指定欄位的浮點數值
+// stmt *byte: 預編譯陳述式控制代碼
+// col i32: 欄位索引（從 0 開始）
+// 返回 v f64: 欄位的雙精度浮點數值
+extern sqlite3-column-double = (stmt *byte, col i32) (v f64)
+
+// sqlite3-finalize: 釋放預編譯陳述式
+// stmt *byte: 預編譯陳述式控制代碼
+// 返回 rc i32: 結果碼
+extern sqlite3-finalize = (stmt *byte) (rc i32)
+
+// sqlite3-last-insert-rowid: 取得最後插入的 row ID
+// db *byte: SQLite 資料庫控制代碼
+// 返回 id i64: 最後插入的 row ID
+extern sqlite3-last-insert-rowid = (db *byte) (id i64)
+
+// sqlite3-changes: 取得受影響的列數
+// db *byte: SQLite 資料庫控制代碼
+// 返回 n i32: 受影響的列數
+extern sqlite3-changes = (db *byte) (n i32)
+
+// sqlite3-bind-int64: 綁定整數參數
+// stmt *byte: 預編譯陳述式控制代碼
+// idx i32: 參數索引（從 1 開始）
+// v i64: 要綁定的整數值
+// 返回 rc i32: 結果碼
+extern sqlite3-bind-int64 = (stmt *byte, idx i32, v i64) (rc i32)
+
+// sqlite3-bind-text: 綁定文字參數
+// stmt *byte: 預編譯陳述式控制代碼
+// idx i32: 參數索引（從 1 開始）
+// s str: 要綁定的文字內容
+// n i32: 文字長度
+// destructor *byte: 解構函式（傳 -1 = SQLITE_TRANSIENT）
+// 返回 rc i32: 結果碼
+extern sqlite3-bind-text = (stmt *byte, idx i32, s str, n i32, destructor *byte) (rc i32)
+
+// sqlite3-errmsg: 取得錯誤訊息
+// db *byte: SQLite 資料庫控制代碼
+// 返回 s str: 錯誤訊息字串
+extern sqlite3-errmsg = (db *byte) (s str)
