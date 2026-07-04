@@ -180,6 +180,11 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		}
 		w.index.symbols[s.Name] = entry
 		w.index.definitions[s.Name] = entry
+
+	case *parser.ExternStatement:
+		if s.Name != nil {
+			w.addFunction(s.Name.Value, s.Token, s.Parameters, s.Results, nil, "", false, extractDocComment(&s.CommentedNode))
+		}
 	}
 }
 

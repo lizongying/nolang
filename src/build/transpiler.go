@@ -3214,7 +3214,7 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 	definedVars := make(map[string]bool) // name → true
 	funcNames := make(map[string]bool)   // function names
 
-	// Top-level LetStatements and FunctionDefinitions
+	// Top-level LetStatements, FunctionDefinitions, and ExternStatements
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			definedVars[ls.Name.Value] = true
@@ -3222,6 +3222,10 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			definedVars[fd.Name] = true
 			funcNames[fd.Name] = true
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
+			definedVars[es.Name.Value] = true
+			funcNames[es.Name.Value] = true
 		}
 	}
 
@@ -3973,6 +3977,11 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
 			results = append(results, checkUndefinedVarsInExpr(s.ReturnValue, definedVars, funcNames, false)...)
+		}
+	case *parser.ExternStatement:
+		if s.Name != nil {
+			definedVars[s.Name.Value] = true
+			funcNames[s.Name.Value] = true
 		}
 	}
 	return results

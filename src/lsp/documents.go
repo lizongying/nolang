@@ -520,6 +520,27 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		} else {
 			return
 		}
+	case *parser.ExternStatement:
+		if s.Name == nil {
+			return
+		}
+		name = s.Name.Value
+		token = s.Token
+		doc = extractDocComment(&s.CommentedNode)
+		for _, p := range s.Parameters {
+			typeStr := ""
+			if p.Type != nil {
+				typeStr = p.Type.String()
+			}
+			params = append(params, ParamInfo{Name: p.Name, Type: typeStr})
+		}
+		for _, r := range s.Results {
+			typeStr := ""
+			if r.Type != nil {
+				typeStr = r.Type.String()
+			}
+			resultParams = append(resultParams, ParamInfo{Name: r.Name, Type: typeStr})
+		}
 	default:
 		return
 	}
