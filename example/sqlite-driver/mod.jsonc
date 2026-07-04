@@ -1,0 +1,26 @@
+{
+  "name": "sqlite-driver",
+  "version": "0.1.0",
+  "description": "SQLite driver for Nolang using FFI",
+  "keywords": [
+    "nolang",
+    "sqlite",
+    "ffi"
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
+  "organization": "lizongying",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "https://lizongying.github.io/nolang",
+  "license": "MIT",
+  "workspace": "../../",
+  "dependencies": {},
+  "compiler": {
+    "version": "0.1.0",
+    "link-libs": [
+      "sqlite3"
+    ],
+  },
+  "output": "./dist",
+  "ignore": [],
+}

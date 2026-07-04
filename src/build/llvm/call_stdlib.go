@@ -1111,6 +1111,356 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return execExt
 	}
 
+	// ═══════════════════════════════════════════════
+	// net — 網路操作
+	// ═══════════════════════════════════════════════
+
+	// net-listen: create TCP listening socket
+	// Performs: socket + setsockopt(SO_REUSEADDR) + bind + listen
+	// Args: host str, port i64
+	// Returns: fd i64 (-1 on error)
+	if fnName == "net-listen" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		hostPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		portVal := a[1]
+
+		// Allocate sockaddr_in (16 bytes) and zero it
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%net.l.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%net.l.addrptr.%d", g.tmpIdx)
+
+		// sin_family at offset 1 (macOS: sin_len=0, sin_family=1)
+		g.tmpIdx++
+		famGep := fmt.Sprintf("%%net.l.fam.%d", g.tmpIdx)
+
+		// htons(port): (port & 0xFF) << 8 | (port >> 8) & 0xFF
+		g.tmpIdx++
+		portLo := fmt.Sprintf("%%net.l.plo.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHi := fmt.Sprintf("%%net.l.phi.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHiM := fmt.Sprintf("%%net.l.phm.%d", g.tmpIdx)
+		g.tmpIdx++
+		portSl := fmt.Sprintf("%%net.l.psl.%d", g.tmpIdx)
+		g.tmpIdx++
+		portNet := fmt.Sprintf("%%net.l.pnet.%d", g.tmpIdx)
+		g.tmpIdx++
+		portI16 := fmt.Sprintf("%%net.l.pi16.%d", g.tmpIdx)
+
+		// sin_port at offset 2
+		g.tmpIdx++
+		portGep := fmt.Sprintf("%%net.l.portgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		portCast := fmt.Sprintf("%%net.l.portcast.%d", g.tmpIdx)
+
+		// inet_pton(AF_INET=2, host, &sin_addr at offset 4)
+		g.tmpIdx++
+		addrInGep := fmt.Sprintf("%%net.l.addringe.%d", g.tmpIdx)
+		g.tmpIdx++
+		ptonRet := fmt.Sprintf("%%net.l.pton.%d", g.tmpIdx)
+		g.tmpIdx++
+		ptonOk := fmt.Sprintf("%%net.l.ptonok.%d", g.tmpIdx)
+
+		// socket(AF_INET=2, SOCK_STREAM=1, 0)
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%net.l.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		sockOk := fmt.Sprintf("%%net.l.sockok.%d", g.tmpIdx)
+
+		// setsockopt(fd, SOL_SOCKET=65535, SO_REUSEADDR=4, &val, 4)
+		g.tmpIdx++
+		reuseAlloca := fmt.Sprintf("%%net.l.reuse.%d", g.tmpIdx)
+		g.tmpIdx++
+		reusePtr := fmt.Sprintf("%%net.l.reuseptr.%d", g.tmpIdx)
+
+		// bind(fd, &addr, 16)
+		g.tmpIdx++
+		bindRet := fmt.Sprintf("%%net.l.bind.%d", g.tmpIdx)
+		g.tmpIdx++
+		bindOk := fmt.Sprintf("%%net.l.bindok.%d", g.tmpIdx)
+
+		// listen(fd, 128)
+		g.tmpIdx++
+		listenRet := fmt.Sprintf("%%net.l.listen.%d", g.tmpIdx)
+		g.tmpIdx++
+		listenOk := fmt.Sprintf("%%net.l.listenok.%d", g.tmpIdx)
+
+		// fd as i64
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%net.l.fdext.%d", g.tmpIdx)
+
+		// all.ok = pton.ok AND sock.ok AND bind.ok AND listen.ok
+		g.tmpIdx++
+		ok1 := fmt.Sprintf("%%net.l.ok1.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok2 := fmt.Sprintf("%%net.l.ok2.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok3 := fmt.Sprintf("%%net.l.ok3.%d", g.tmpIdx)
+
+		// result = select all.ok ? fd : -1
+		g.tmpIdx++
+		resultReg := fmt.Sprintf("%%net.l.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 16)\n", g.indent(), addrPtr))
+
+			// sin_family = AF_INET (2)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
+
+			// htons(port)
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portLo, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr i64 %s, 8\n", g.indent(), portHi, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portHiM, portHi))
+			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 8\n", g.indent(), portSl, portLo))
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), portNet, portSl, portHiM))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i16\n", g.indent(), portI16, portNet))
+
+			// sin_port at offset 2
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), portGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i16*\n", g.indent(), portCast, portGep))
+			sb.WriteString(fmt.Sprintf("%sstore i16 %s, i16* %s\n", g.indent(), portI16, portCast))
+
+			// inet_pton(AF_INET=2, host, &sin_addr at offset 4)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrInGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", g.indent(), ptonRet, hostPtr, addrInGep))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 1\n", g.indent(), ptonOk, ptonRet))
+
+			// socket(AF_INET=2, SOCK_STREAM=1, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 1, i32 0)\n", g.indent(), sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), sockOk, sockFd))
+
+			// setsockopt(fd, SOL_SOCKET=65535, SO_REUSEADDR=4, &val=1, 4)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), reuseAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore i32 1, i32* %s\n", g.indent(), reuseAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i32* %s to i8*\n", g.indent(), reusePtr, reuseAlloca))
+			sb.WriteString(fmt.Sprintf("%scall i32 @setsockopt(i32 %s, i32 65535, i32 4, i8* %s, i32 4)\n", g.indent(), sockFd, reusePtr))
+
+			// bind(fd, &addr, 16)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @bind(i32 %s, i8* %s, i32 16)\n", g.indent(), bindRet, sockFd, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), bindOk, bindRet))
+
+			// listen(fd, 128)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @listen(i32 %s, i32 128)\n", g.indent(), listenRet, sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), listenOk, listenRet))
+
+			// fd as i64
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+
+			// all.ok
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok1, ptonOk, sockOk))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok2, ok1, bindOk))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok3, ok2, listenOk))
+
+			// result
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), resultReg, ok3, fdExt))
+		}
+		return resultReg
+	}
+
+	// net-dial: create TCP client connection
+	// Performs: socket + connect
+	// Args: host str, port i64
+	// Returns: fd i64 (-1 on error)
+	if fnName == "net-dial" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		hostPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		portVal := a[1]
+
+		// Allocate sockaddr_in (16 bytes) and zero it
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%net.d.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%net.d.addrptr.%d", g.tmpIdx)
+
+		// sin_family at offset 1
+		g.tmpIdx++
+		famGep := fmt.Sprintf("%%net.d.fam.%d", g.tmpIdx)
+
+		// htons(port)
+		g.tmpIdx++
+		portLo := fmt.Sprintf("%%net.d.plo.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHi := fmt.Sprintf("%%net.d.phi.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHiM := fmt.Sprintf("%%net.d.phm.%d", g.tmpIdx)
+		g.tmpIdx++
+		portSl := fmt.Sprintf("%%net.d.psl.%d", g.tmpIdx)
+		g.tmpIdx++
+		portNet := fmt.Sprintf("%%net.d.pnet.%d", g.tmpIdx)
+		g.tmpIdx++
+		portI16 := fmt.Sprintf("%%net.d.pi16.%d", g.tmpIdx)
+
+		// sin_port at offset 2
+		g.tmpIdx++
+		portGep := fmt.Sprintf("%%net.d.portgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		portCast := fmt.Sprintf("%%net.d.portcast.%d", g.tmpIdx)
+
+		// inet_pton
+		g.tmpIdx++
+		addrInGep := fmt.Sprintf("%%net.d.addringe.%d", g.tmpIdx)
+		g.tmpIdx++
+		ptonRet := fmt.Sprintf("%%net.d.pton.%d", g.tmpIdx)
+		g.tmpIdx++
+		ptonOk := fmt.Sprintf("%%net.d.ptonok.%d", g.tmpIdx)
+
+		// socket
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%net.d.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		sockOk := fmt.Sprintf("%%net.d.sockok.%d", g.tmpIdx)
+
+		// connect
+		g.tmpIdx++
+		connRet := fmt.Sprintf("%%net.d.conn.%d", g.tmpIdx)
+		g.tmpIdx++
+		connOk := fmt.Sprintf("%%net.d.connok.%d", g.tmpIdx)
+
+		// fd as i64
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%net.d.fdext.%d", g.tmpIdx)
+
+		// all.ok
+		g.tmpIdx++
+		ok1 := fmt.Sprintf("%%net.d.ok1.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok2 := fmt.Sprintf("%%net.d.ok2.%d", g.tmpIdx)
+
+		// result
+		g.tmpIdx++
+		resultReg := fmt.Sprintf("%%net.d.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 16)\n", g.indent(), addrPtr))
+
+			// sin_family = AF_INET (2)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
+
+			// htons(port)
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portLo, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr i64 %s, 8\n", g.indent(), portHi, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portHiM, portHi))
+			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 8\n", g.indent(), portSl, portLo))
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), portNet, portSl, portHiM))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i16\n", g.indent(), portI16, portNet))
+
+			// sin_port at offset 2
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), portGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i16*\n", g.indent(), portCast, portGep))
+			sb.WriteString(fmt.Sprintf("%sstore i16 %s, i16* %s\n", g.indent(), portI16, portCast))
+
+			// inet_pton(AF_INET=2, host, &sin_addr at offset 4)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrInGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", g.indent(), ptonRet, hostPtr, addrInGep))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 1\n", g.indent(), ptonOk, ptonRet))
+
+			// socket(AF_INET=2, SOCK_STREAM=1, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 1, i32 0)\n", g.indent(), sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), sockOk, sockFd))
+
+			// connect(fd, &addr, 16)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", g.indent(), connRet, sockFd, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), connOk, connRet))
+
+			// fd as i64
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+
+			// all.ok = pton.ok AND sock.ok AND conn.ok
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok1, ptonOk, sockOk))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok2, ok1, connOk))
+
+			// result
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), resultReg, ok2, fdExt))
+		}
+		return resultReg
+	}
+
+	// net-accept: accept TCP connection
+	// Args: listen-fd i64
+	// Returns: fd i64 (-1 on error)
+	if fnName == "net-accept" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		listenFd := a[0]
+
+		g.tmpIdx++
+		addrBuf := fmt.Sprintf("%%net.a.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%net.a.addrptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenAlloca := fmt.Sprintf("%%net.a.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.a.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		acceptRet := fmt.Sprintf("%%net.a.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		acceptExt := fmt.Sprintf("%%net.a.ext.%d", g.tmpIdx)
+
+		if sb != nil {
+			// Allocate sockaddr storage (16 bytes) and addrlen
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), lenAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore i32 16, i32* %s\n", g.indent(), lenAlloca))
+
+			// trunc listen-fd to i32
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, listenFd))
+
+			// accept(listen-fd, &addr, &addrlen)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @accept(i32 %s, i8* %s, i32* %s)\n", g.indent(), acceptRet, fdTrunc, addrPtr, lenAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), acceptExt, acceptRet))
+		}
+		return acceptExt
+	}
+
+	// net-send: send data on connected socket
+	// Args: fd i64, data str, n i64
+	// Returns: written i64 (-1 on error)
+	if fnName == "net-send" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		fdVal := a[0]
+		dataPtr := g.extractStrFromEvalArg(sb, a[1])
+		nVal := a[2]
+
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.s.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		sendRet := fmt.Sprintf("%%net.s.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @send(i32 %s, i8* %s, i64 %s, i32 0)\n", g.indent(), sendRet, fdTrunc, dataPtr, nVal))
+		}
+		return sendRet
+	}
+
+	// net-recv: receive data on connected socket
+	// Args: fd i64, buf str, n i64
+	// Returns: read-n i64 (-1 on error, 0 on connection closed)
+	if fnName == "net-recv" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		fdVal := a[0]
+		bufPtr := g.extractStrFromEvalArg(sb, a[1])
+		nVal := a[2]
+
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.r.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		recvRet := fmt.Sprintf("%%net.r.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 0)\n", g.indent(), recvRet, fdTrunc, bufPtr, nVal))
+		}
+		return recvRet
+	}
+
 	return ""
 }
 
@@ -1164,343 +1514,4 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 	sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), buf, dataPtr, strLen))
 
 	return buf
-}
-
-// callDatabase — SQLite database builtin methods (db-* family).
-// Handles i64↔i8* conversion between Nolang's i64 handles and SQLite's pointer-based API.
-func (g *Generator) callDatabase(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
-	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
-
-	// db-open(dsn str) (handle i64): open SQLite database, returns handle (0 = failed)
-	if fnName == "db-open" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		dsnPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
-		g.tmpIdx++
-		slotReg := fmt.Sprintf("%%db.slot.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), slotReg))
-		g.tmpIdx++
-		rcReg := fmt.Sprintf("%%db.rc.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_open(i8* %s, i8** %s)\n", g.indent(), rcReg, dsnPtr, slotReg))
-		g.tmpIdx++
-		okReg := fmt.Sprintf("%%db.ok.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), okReg, rcReg))
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%db.load.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, slotReg))
-		g.tmpIdx++
-		intReg := fmt.Sprintf("%%db.int.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
-		g.tmpIdx++
-		resReg := fmt.Sprintf("%%db.res.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), resReg, okReg, intReg))
-		return resReg
-	}
-
-	// db-close(handle i64) (ok bool)
-	if fnName == "db-close" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_close(i8* %s)\n", g.indent(), retReg, ptrReg))
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
-		g.tmpIdx++
-		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
-		return boolReg
-	}
-
-	// db-exec(handle i64, sql str) (ok bool)
-	if fnName == "db-exec" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		sqlPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_exec(i8* %s, i8* %s, i8* null, i8* null, i8** null)\n", g.indent(), retReg, ptrReg, sqlPtr))
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
-		g.tmpIdx++
-		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
-		return boolReg
-	}
-
-	// db-prepare(handle i64, sql str) (stmt i64): returns stmt handle (0 = failed)
-	if fnName == "db-prepare" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		sqlPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		slotReg := fmt.Sprintf("%%db.slot.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), slotReg))
-		g.tmpIdx++
-		rcReg := fmt.Sprintf("%%db.rc.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_prepare_v2(i8* %s, i8* %s, i32 -1, i8** %s, i8** null)\n", g.indent(), rcReg, ptrReg, sqlPtr, slotReg))
-		g.tmpIdx++
-		okReg := fmt.Sprintf("%%db.ok.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), okReg, rcReg))
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%db.load.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), loadReg, slotReg))
-		g.tmpIdx++
-		intReg := fmt.Sprintf("%%db.int.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, loadReg))
-		g.tmpIdx++
-		resReg := fmt.Sprintf("%%db.res.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), resReg, okReg, intReg))
-		return resReg
-	}
-
-	// db-step(stmt i64) (rc i64): returns rc (100=ROW, 101=DONE)
-	if fnName == "db-step" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_step(i8* %s)\n", g.indent(), retReg, ptrReg))
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
-		return extReg
-	}
-
-	// db-column-count(stmt i64) (n i64)
-	if fnName == "db-column-count" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_column_count(i8* %s)\n", g.indent(), retReg, ptrReg))
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
-		return extReg
-	}
-
-	// db-column-int64(stmt i64, col i64) (v i64)
-	if fnName == "db-column-int64" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @sqlite3_column_int64(i8* %s, i32 %s)\n", g.indent(), retReg, ptrReg, colReg))
-		return retReg
-	}
-
-	// db-column-text(stmt i64, col i64) (v str)
-	if fnName == "db-column-text" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
-		g.tmpIdx++
-		cstrReg := fmt.Sprintf("%%db.cstr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @sqlite3_column_text(i8* %s, i32 %s)\n", g.indent(), cstrReg, ptrReg, colReg))
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
-		return strReg2
-	}
-
-	// db-column-double(stmt i64, col i64) (v f64)
-	if fnName == "db-column-double" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		colReg := fmt.Sprintf("%%db.col.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), colReg, a[1]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call double @sqlite3_column_double(i8* %s, i32 %s)\n", g.indent(), retReg, ptrReg, colReg))
-		return retReg
-	}
-
-	// db-finalize(stmt i64) (ok bool)
-	if fnName == "db-finalize" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_finalize(i8* %s)\n", g.indent(), retReg, ptrReg))
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
-		g.tmpIdx++
-		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
-		return boolReg
-	}
-
-	// db-last-insert-rowid(handle i64) (id i64)
-	if fnName == "db-last-insert-rowid" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @sqlite3_last_insert_rowid(i8* %s)\n", g.indent(), retReg, ptrReg))
-		return retReg
-	}
-
-	// db-changes(handle i64) (n i64)
-	if fnName == "db-changes" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_changes(i8* %s)\n", g.indent(), retReg, ptrReg))
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%db.ext.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), extReg, retReg))
-		return extReg
-	}
-
-	// db-bind-int64(stmt i64, idx i64, v i64) (ok bool)
-	if fnName == "db-bind-int64" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		idxReg := fmt.Sprintf("%%db.idx.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), idxReg, a[1]))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_bind_int64(i8* %s, i32 %s, i64 %s)\n", g.indent(), retReg, ptrReg, idxReg, a[2]))
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
-		g.tmpIdx++
-		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
-		return boolReg
-	}
-
-	// db-bind-text(stmt i64, idx i64, v str) (ok bool)
-	if fnName == "db-bind-text" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		dataPtr := g.extractStrFromEvalArg(sb, a[2])
-		strLen := g.strLenFromExpr(sb, expr.Arguments[2])
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		idxReg := fmt.Sprintf("%%db.idx.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), idxReg, a[1]))
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), lenReg, strLen))
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%db.ret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @sqlite3_bind_text(i8* %s, i32 %s, i8* %s, i32 %s, i8* inttoptr (i64 -1 to i8*))\n", g.indent(), retReg, ptrReg, idxReg, dataPtr, lenReg))
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%db.cmp.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
-		g.tmpIdx++
-		boolReg := fmt.Sprintf("%%db.bool.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), boolReg, cmpReg))
-		return boolReg
-	}
-
-	// db-errmsg(handle i64) (msg str)
-	if fnName == "db-errmsg" && hasArgs {
-		if sb == nil {
-			return ""
-		}
-		a := evalArgs()
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%db.ptr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, a[0]))
-		g.tmpIdx++
-		cstrReg := fmt.Sprintf("%%db.cstr.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @sqlite3_errmsg(i8* %s)\n", g.indent(), cstrReg, ptrReg))
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%db.len.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%db.val.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
-		return strReg2
-	}
-
-	return ""
 }

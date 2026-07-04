@@ -1328,6 +1328,103 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 	return "0"
 }
 
+// generateNestedStrIndexRead 處理巢狀索引讀取 .vals[idx][i]：
+// 內層 .vals[idx] 回傳 %str-long* 指標，外層 [i] 取出 data 指標後 GEP 到第 i 個位元組。
+func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *parser.IndexExpression, index parser.Expression) string {
+	// 評估內層索引表達式，取得 %str-long* 指標
+	strPtr := g.generateExprWithSB(sb, innerIdx)
+	if strPtr == "" || strPtr == "0" {
+		return "0"
+	}
+	idx := g.generateExprWithSB(sb, index)
+	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(index)
+		if idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%nestidx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
+	if sb == nil {
+		return "0"
+	}
+	// 從 %str-long* 取出 data 指標（field 1）
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%nestidx.data.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	dataLoad := fmt.Sprintf("%%nestidx.data.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+		g.indent(), dataGEP, strPtr))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+		g.indent(), dataLoad, dataGEP))
+	// GEP 到第 i 個位元組並 load
+	g.tmpIdx++
+	charGEP := fmt.Sprintf("%%nestidx.char.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	charLoad := fmt.Sprintf("%%nestidx.char.val.%d", g.tmpIdx)
+	g.tmpIdx++
+	charZext := fmt.Sprintf("%%nestidx.char.zext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+		g.indent(), charGEP, dataLoad, idx))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
+		g.indent(), charLoad, charGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+		g.indent(), charZext, charLoad))
+	return charZext
+}
+
+// generateNestedStrIndexAssign 處理巢狀索引賦值 .vals[idx][i] = val：
+// 內層 .vals[idx] 回傳 %str-long* 指標，外層 [i] 取出 data 指標後 GEP 到第 i 個位元組並 store。
+func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *parser.IndexExpression, index parser.Expression, value parser.Expression) string {
+	// 評估內層索引表達式，取得 %str-long* 指標
+	strPtr := g.generateExprWithSB(sb, innerIdx)
+	if strPtr == "" || strPtr == "0" {
+		return "0"
+	}
+	idx := g.generateExprWithSB(sb, index)
+	// GEP 索引必須是 i64
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(index)
+		if idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%nestset.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
+	val := g.generateExprWithSB(sb, value)
+	val = g.stripLLVMType(val)
+	// 值需截斷為 i8（位元組存儲）
+	if sb != nil {
+		// 從 %str-long* 取出 data 指標（field 1）
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%nestset.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLoad := fmt.Sprintf("%%nestset.data.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+			g.indent(), dataGEP, strPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+			g.indent(), dataLoad, dataGEP))
+		// GEP 到第 i 個位元組
+		g.tmpIdx++
+		charGEP := fmt.Sprintf("%%nestset.char.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+			g.indent(), charGEP, dataLoad, idx))
+		// 截斷值為 i8 並 store
+		g.tmpIdx++
+		truncReg := fmt.Sprintf("%%nestset.trunc.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), truncReg, val))
+		sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), truncReg, charGEP))
+	}
+	return "0"
+}
+
 func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.AssignExpression) string {
 	// 巢狀欄位賦值: struct.field.subfield = value (e.g., self.p.len = val)
 	if dot, ok := expr.Left.(*parser.DotExpression); ok {
@@ -1428,6 +1525,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		} else if dot, ok := idxExpr.Left.(*parser.DotExpression); ok {
 			// struct.field[i] = val 模式
 			return g.generateStructFieldIndexAssign(sb, dot, idxExpr.Index, expr.Value)
+		} else if innerIdx, ok := idxExpr.Left.(*parser.IndexExpression); ok {
+			// 巢狀索引賦值: .vals[idx][i] = val[i]
+			return g.generateNestedStrIndexAssign(sb, innerIdx, idxExpr.Index, expr.Value)
 		}
 		idx := g.generateExprWithSB(sb, idxExpr.Index)
 		val := g.generateExprWithSB(sb, expr.Value)
@@ -1691,6 +1791,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		// 模組字串常量傳播後的情況：HEX-LOWER[b>>4] 中的 Left 變成 StringLiteral
 		// 為此我們需要將字串常量分配到 stack 上，然後 GEP 索引
 		return g.generateStringLiteralIndex(sb, lit, expr.Index)
+	} else if innerIdx, ok := expr.Left.(*parser.IndexExpression); ok {
+		// 巢狀索引讀取：例如 .vals[idx][i]
+		// 內層 .vals[idx] 由 generateStructFieldIndexRead 回傳 %str-long* 指標，
+		// 外層 [i] 需取出 str-long 的 data 指標後 GEP 到第 i 個位元組。
+		return g.generateNestedStrIndexRead(sb, innerIdx, expr.Index)
 	}
 	idx := g.generateExprWithSB(sb, expr.Index)
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64

@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -196,6 +195,23 @@ func ffiTypeToLLVM(t string) string {
 		return "i8*"
 	case "pptr":
 		return "i8**"
+	default:
+		return "i64"
+	}
+}
+
+// ffiTypeToNolangStorage 將 FFI 型別名稱對應到 Nolang 端的儲存型別
+// （即 callExtern 回傳值的 LLVM 型別）。與 ffiTypeToLLVM 不同：
+// str 在 C 端為 i8*，但 callExtern 會構造 %str-long 結構後回傳；
+// ptr / i32 / bool 皆以 i64 儲存（ptrtoint / sext / zext）。
+func ffiTypeToNolangStorage(t string) string {
+	switch t {
+	case "i64", "i32", "ptr", "bool":
+		return "i64"
+	case "f64":
+		return "double"
+	case "str":
+		return "%str-long"
 	default:
 		return "i64"
 	}
@@ -636,7 +652,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *parser.EnumDefinition:
-			fmt.Fprintf(os.Stderr, "DEBUG: EnumDefinition at module level, name=%s, variants=%d\n", s.Name, len(s.Values))
+			// Enums are emitted via their own pass; nothing to do at module-level generation.
 		case *parser.FunctionDefinition:
 			// Skip union monomorphization templates (e.g. max__num_TEMPLATE)
 			if strings.HasSuffix(s.Name, "_TEMPLATE") {
@@ -644,10 +660,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			g.generateFunctionDefinition(&sb, s)
 		case *parser.LetStatement:
-			fmt.Fprintf(os.Stderr, "DEBUG: LetStatement at module level, name=%v\n", s.Name)
 			// 處理 open = (p str, opts file-opts) (f ?file) { ... } 形式的頂層函數定義
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok && s.Name != nil {
-				fmt.Fprintf(os.Stderr, "DEBUG: Processing LetStatement with FunctionLiteral, name=%s\n", s.Name.Value)
 				llvmFnName := s.Name.Value
 				if clibFuncNames[llvmFnName] {
 					llvmFnName = "n." + llvmFnName

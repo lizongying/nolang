@@ -724,6 +724,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 						merged.Statements = append(merged.Statements, ted)
 					}
+					// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
+					// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
+					if es, ok := ms.(*parser.ExternStatement); ok {
+						merged.Statements = append(merged.Statements, es)
+					}
 				}
 			}
 			continue
@@ -2683,12 +2688,17 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		}
 	}
 
-	// 1.5 構建函數返回類型映射
+	// 1.5 構建函數返回類型映射（含 extern 宣告）
 	funcTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
 				funcTypes[fd.Name] = fd.Results[0].Type.String()
+			}
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok {
+			if len(es.Results) > 0 && es.Results[0].Type != nil {
+				funcTypes[es.Name.Value] = es.Results[0].Type.String()
 			}
 		}
 	}

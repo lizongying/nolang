@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -442,6 +441,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
+			// FFI extern 函式：依 extern 宣告的 result 型別推斷 Nolang 儲存型別。
+			// callExtern 會將 str 構造為 %str-long、ptr/i32/bool 轉為 i64、f64 保持 double。
+			if g.externFuncs != nil {
+				if ext, ok := g.externFuncs[name]; ok && len(ext.ResultTypes) > 0 {
+					return ffiTypeToNolangStorage(ext.ResultTypes[0])
+				}
+			}
 			// Option constructors: val(...), err(...), ok(...) return %option
 			if name == "val" || name == "err" || name == "ok" {
 				return "%option"
@@ -457,10 +463,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				return "%str-long"
 			}
 			// Check if the function is a builtin that returns f64 or str.
-			// Note: bool-returning builtins (db-close, db-exec, ...) intentionally
-			// fall through to "i64" because their callDatabase IR emits
-			// `zext i1 to i64`, producing an i64 SSA value that the int-coercion
-			// path (trunc i64 to i1) handles correctly.
+			// Note: bool-returning builtins intentionally fall through to "i64"
+			// because their IR emits `zext i1 to i64`, producing an i64 SSA
+			// value that the int-coercion path (trunc i64 to i1) handles correctly.
 			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 {
 				if m.Return[0] == parser.TypeF64 {
 					return "double"
@@ -681,11 +686,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
 			// 否則註冊新變數。
 			vt := g.varLLVMType(s)
-			typeStr := ""
-			if s.Type != nil {
-				typeStr = s.Type.String()
-			}
-			fmt.Fprintf(os.Stderr, "DEBUG collect synthetic it: name=%s type=%s vt=%s\n", s.Name.Value, typeStr, vt)
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" {
 				vars[s.Name.Value] = vt
 				if g.varTypes != nil {
@@ -697,11 +697,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// Don't overwrite existing type (e.g. %option declared with ?type)
 		if _, exists := vars[s.Name.Value]; !exists {
 			vt := g.varLLVMType(s)
-			typeStr := ""
-			if s.Type != nil {
-				typeStr = s.Type.String()
-			}
-			fmt.Fprintf(os.Stderr, "DEBUG collect let: name=%s type=%s vt=%s\n", s.Name.Value, typeStr, vt)
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
@@ -1939,6 +1934,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 			val = loadReg
+		} else if !strings.HasPrefix(val, "%") {
+			// 宣告但無初值（如 `dummy str`）：val 為 "0"，使用 zeroinitializer
+			if isGlobal {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmGlobalRef(name)))
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmVarRef(name)))
+			}
+			return
 		}
 		if isGlobal {
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, llvmGlobalRef(name)))
@@ -1948,6 +1951,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	case "%str-short":
 		// Copy %str-short struct: load from source, store to dest
 		isGlobal := g.globalVars != nil && g.globalVars[name]
+		if !strings.HasPrefix(val, "%") {
+			// 宣告但無初值：使用 zeroinitializer
+			if isGlobal {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-short zeroinitializer, %%str-short* %s\n", g.indent(), llvmGlobalRef(name)))
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-short zeroinitializer, %%str-short* %s\n", g.indent(), llvmVarRef(name)))
+			}
+			return
+		}
 		g.tmpIdx++
 		copyReg := fmt.Sprintf("%%str-longsm.copy.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = load %%str-short, %%str-short* %s\n", g.indent(), copyReg, val))

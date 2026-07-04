@@ -703,9 +703,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	if r := g.callBuiltin(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
 		return r
 	}
-	if r := g.callDatabase(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
-		return r
-	}
 	// sort-asc / sort-desc 直接在 call.go 處理（無需 call_stdlib 函數）
 	if (fnName == "sort-asc" || fnName == "sort-desc") && hasArgs && len(expr.Arguments) >= 2 {
 		if sb != nil {

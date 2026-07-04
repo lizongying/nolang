@@ -493,6 +493,84 @@ process-run(cmd)(status)           // 執行 shell 命令
 process-output(program, arg)(content, code) // 執行並捕獲輸出
 ```
 
+### net — 網路操作
+
+提供 TCP 網路編程能力，包括服務端監聽、客戶端連接、資料收發等。底層使用 POSIX socket API：
+
+```nolang
+// 網路常量
+AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
+
+// listener 結構體
+listener { fd i64 }
+
+// 監聽操作
+l = listener{}
+l.listen(host, port)(ok)            // 建立 TCP 監聽（socket+setsockopt+bind+listen）
+l.accept()(c, ok)                   // 接受連接，返回 conn 結構體
+l.close()                           // 關閉監聽 socket
+l.fd-of()(fd)                       // 取得 fd
+
+// conn 結構體
+conn { fd i64 }
+
+// 連接操作
+c = conn{}
+c.dial(host, port)(ok)              // 建立 TCP 連接（socket+connect）
+c.send(data)(written)               // 發送字串
+c.recv(buf, n)(read-n)              // 接收資料到 buf
+c.recv-line()(line, ok)             // 接收一行（最多 4096 位元組）
+c.recv-all()(content, total)        // 接收全部直到連接關閉
+c.close()                           // 關閉連接
+c.fd-of()(fd)                       // 取得 fd
+
+// 便捷函數
+net-listen-on(host, port)(l, ok)    // 建立監聽器並開始監聽
+net-dial-to(host, port)(c, ok)      // 建立連接並撥號
+```
+
+### net/ip — IP 地址操作
+
+提供 IPv4 地址的解析、驗證、轉換與分類功能。純 Nolang 實作：
+
+```nolang
+// 預設地址常量
+IP-ZERO       // 0.0.0.0
+IP-LOOPBACK   // 127.0.0.1
+IP-ANY        // 0.0.0.0
+IP-BROADCAST  // 255.255.255.255
+
+// ip-addr 結構體
+ip-addr { a i64, b i64, c i64, d i64 }
+
+// 解析與轉換
+ip = ip-addr{}
+ip.parse('192.168.1.1')(ok)         // 從字串解析
+ip.to-str()(s)                      // 轉為字串 '192.168.1.1'
+ip.to-u32()(v)                      // 轉為 u32（大端序）
+ip.from-u32(v)                      // 從 u32 建立
+
+// 地址分類
+ip.is-loopback()(yes)               // 127.0.0.0/8
+ip.is-private()(yes)                // 10/8, 172.16/12, 192.168/16
+ip.is-zero()(yes)                   // 0.0.0.0
+ip.is-broadcast()(yes)              // 255.255.255.255
+ip.is-multicast()(yes)              // 224.0.0.0/4
+ip.is-link-local()(yes)             // 169.254.0.0/16
+ip.is-class-a()(yes)                // A 類（1~126）
+ip.is-class-b()(yes)                // B 類（128~191）
+ip.is-class-c()(yes)                // C 類（192~223）
+
+// 比較與子網
+ip.equal(other)(yes)                // 地址相等比較
+ip.in-subnet(base, prefix-len)(yes) // 子網包含檢查
+
+// 便捷函數
+ip-parse(s)(addr, ok)               // 快速解析
+ip-is-loopback(s)(yes)              // 快速判斷環回
+ip-is-private(s)(yes)               // 快速判斷私有
+```
+
 ---
 
 ## 時間與日期
