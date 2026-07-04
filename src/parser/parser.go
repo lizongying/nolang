@@ -3161,11 +3161,16 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	}
 	value, err := strconv.ParseInt(raw, base, 64)
 	if err != nil {
-		msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
-		p.saveError(msg)
-		p.nextToken()
-		return nil
+		// 嘗試以 uint64 解析（用於 u64 字面量，如 18446744073709551615）
+		if uval, uerr := strconv.ParseUint(raw, base, 64); uerr == nil {
+			value = int64(uval)
+		} else {
+			msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
+			p.saveError(msg)
+			p.nextToken()
+			return nil
+		}
 	}
 
 	lit.Value = value

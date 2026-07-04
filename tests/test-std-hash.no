@@ -115,7 +115,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1)
 fmt.print('sha1-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -141,7 +141,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1empty, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1empty)
 fmt.print('sha1-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -168,7 +168,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1abc, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1abc)
 fmt.print('sha1-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -186,7 +186,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1empty, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1empty)
 fmt.print('sha1("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -214,7 +214,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1hello, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1hello)
 fmt.print('sha1("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -251,7 +251,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1(block1fox, 16)
+h0, h1, h2, h3, h4 = sha1-block(block1fox)
 fmt.print('sha1("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -280,7 +280,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256)
 fmt.print('sha256-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -312,7 +312,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256empty, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256empty)
 fmt.print('sha256-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -345,7 +345,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256abc, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256abc)
 fmt.print('sha256-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -369,7 +369,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256empty, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256empty)
 fmt.print('sha256("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -403,7 +403,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256hello, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256hello)
 fmt.print('sha256("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -446,7 +446,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256(block256fox, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block256fox)
 fmt.print('sha256("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -471,14 +471,14 @@ i < 16: {
 
 // sha512-zero-block=cf7881d5774acbe8533362e0fbc780700267639d87460eda3086cb40e85931b0717dc95288a023a396bab2c14ce0b5e06fc4fe04eae33e0b91f4d80cbd668bee
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512(block512, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512)
 fmt.print('sha512-zero-block=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -503,14 +503,14 @@ i < 16: {
 }
 
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-sha512(block512empty, 16)(h0, h1, h2, h3, h4, h5, h6, h7)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512empty)
 
 fmt.print('sha512-empty=')
 fmt.print-hex64(h0)
@@ -537,14 +537,14 @@ i < 15: {
 block512abc[15] = 24
 
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512(block512abc, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512abc)
 fmt.print('sha512-abc=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -561,14 +561,14 @@ fmt.println('')
 // ═══════════════════════════════════════════
 
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512(block512empty, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512empty)
 fmt.print('sha512("")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -594,14 +594,14 @@ i < 15: {
 block512hello[15] = 40  // 5*8 bits
 
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512(block512hello, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512hello)
 fmt.print('sha512("hello")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -632,14 +632,14 @@ i < 15: {
 block512fox[15] = 344  // 43*8 bits
 
 h0 = 7640891576956012808
-h1 = -4942790177534073029
+h1 = 13503953896175478587
 h2 = 4354685564936845355
-h3 = -6534734903238641935
+h3 = 11912009170470909681
 h4 = 5840696475078001361
-h5 = -7276294671716946913
+h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512(block512fox, 16)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block512fox)
 fmt.print('sha512("fox")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)

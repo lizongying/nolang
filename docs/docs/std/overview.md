@@ -891,22 +891,38 @@ md5(data)(out [16]byte)
 ### hash/sha1 — SHA-1（160-bit）
 
 ```nolang
-sha1(block [16]i64, n, h0, h1, h2, h3, h4)
+hash = sha1(data []byte) (hash [20]byte)
+hex = sha1-hex(data []byte) (hex str)
+sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
 ```
 
-處理單個 512-bit 區塊，多區塊需呼叫者自行填充累加。
+`sha1` 計算完整雜湊（含填充與多區塊處理），返回 20 位元組。
+`sha1-hex` 同上但返回 40 字元小寫 hex 字串。
+`sha1-block` 為低階 API，處理單個 512-bit 區塊。
 
 ### hash/sha256 — SHA-256（256-bit）
 
 ```nolang
-sha256(block [16]i64, n, h0, h1, h2, h3, h4, h5, h6, h7)
+sha256(data []byte) (hash [32]byte)
+sha256-hex(data []byte) (hex str)
+sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32)
 ```
+
+`sha256` 計算完整雜湊（含填充與多區塊處理），返回 32 位元組。
+`sha256-hex` 同上但返回 64 字元小寫 hex 字串。
+`sha256-block` 為低階 API，處理單個 512-bit 區塊。
 
 ### hash/sha512 — SHA-512（512-bit）
 
 ```nolang
-sha512(block [16]i64, n, h0, h1, h2, h3, h4, h5, h6, h7)
+sha512(data []byte) (hash [64]byte)
+sha512-hex(data []byte) (hex str)
+sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64)
 ```
+
+`sha512` 計算完整雜湊（含填充與多區塊處理），返回 64 位元組。
+`sha512-hex` 同上但返回 128 字元小寫 hex 字串。
+`sha512-block` 為低階 API，處理單個 1024-bit 區塊。
 
 ### hash/crc-32 — CRC32 校驗
 

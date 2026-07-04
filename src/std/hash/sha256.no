@@ -1,19 +1,31 @@
 // sha256 — SHA-256 安全哈希算法（256-bit）
 //
-// 處理一個 512-bit（16 字）區塊。
-// 多區塊訊息需由呼叫者自行填充和累加。
+// 提供兩層公開 API 與一層低階 API：
+//   sha256(data []byte) (hash [32]byte) — 完整雜湊，含填充與多區塊處理
+//   sha256-hex(data []byte) (hex str) — 完整雜湊，返回 64 字元 hex 字串
+//   sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32) — 處理單一 512-bit 區塊（低階）
 //
 // 用法：
-//   h0 = 1779033703; h1 = 3144134277; h2 = 1013904242; h3 = 2773480762
-//   h4 = 1359893119; h5 = 2600822924; h6 = 528734635;  h7 = 1541459225
-//   sha256(block, 16, h0, h1, h2, h3, h4, h5, h6, h7)
+//   // 公開 API：對位元組陣列計算 SHA-256
+//   hash = sha256(data)       // hash = 32 位元組 [32]byte
+//   hex = sha256-hex(data)    // hex = 64 字元 hex 字串
+//
+//   // 低階：手動管理區塊
+//   h0 = 1779033703
+//   h1 = 3144134277
+//   h2 = 1013904242
+//   h3 = 2773480762
+//   h4 = 1359893119
+//   h5 = 2600822924
+//   h6 = 528734635
+//   h7 = 1541459225
+//   sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-// sha256: 處理一個 512-bit 區塊
-// s: 16 個 32-bit 字 (big-endian)
-// n: 固定 16
-// h0..h7: 輸入/輸出 256-bit 哈希狀態
-sha256 = (s []i64, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
-    mask = 4294967295
+// sha256-block: 處理一個 512-bit 區塊
+// s []u32: 16 個 32-bit 字 (big-endian)
+// h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32: 輸入/輸出 256-bit 哈希狀態
+sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32) {
+    mask u32 = 4294967295
 
     // 初始狀態
     a = h0
@@ -1733,4 +1745,126 @@ sha256 = (s []i64, n i64, h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64
     h5 = (h5 + f) & mask
     h6 = (h6 + g) & mask
     h7 = (h7 + h) & mask
+}
+
+// sha256: 計算 SHA-256 雜湊（含填充與多區塊處理）
+// data []byte: 輸入位元組陣列
+// 返回 hash [32]byte: 32 位元組雜湊值
+sha256 = (data []byte) (hash [32]byte) {
+    // SHA-256 初始狀態
+    h0 u32 = 1779033703
+    h1 u32 = 3144134277
+    h2 u32 = 1013904242
+    h3 u32 = 2773480762
+    h4 u32 = 1359893119
+    h5 u32 = 2600822924
+    h6 u32 = 528734635
+    h7 u32 = 1541459225
+
+    dlen = data.len
+
+    // 計算填充長度
+    // 填充：0x80 + 0x00*pad + 8-byte big-endian bit length
+    // 總長度需為 64 的倍數
+    bit-len = dlen * 8
+    mod-val = (dlen + 9) % 64
+    pad-len = 0
+    mod-val != 0 -> {
+        pad-len = 64 - mod-val
+    }
+    total-len = dlen + 1 + pad-len + 8
+
+    // 建立填充緩衝區
+    space str = ' '
+    padded str = space.repeat(total-len)
+
+    // 複製原始資料
+    i = 0
+    i < dlen: {
+        padded[i] = data[i]
+        i = i + 1
+    }
+
+    // 填充 0x80
+    padded[dlen] = 128
+
+    // 填充 0x00
+    i = dlen + 1
+    i < total-len - 8: {
+        padded[i] = 0
+        i = i + 1
+    }
+
+    // 填充 bit-len（big-endian 64-bit）
+    i = 0
+    i < 8: {
+        padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
+        i = i + 1
+    }
+
+    // 處理每個 64 位元組區塊
+    block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    offset = 0
+    offset < total-len: {
+        // 將 64 位元組轉為 16 個 32-bit big-endian 字
+        i = 0
+        i < 16: {
+            block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
+            i = i + 1
+        }
+        sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        offset = offset + 64
+    }
+
+    // 輸出 32 位元組雜湊值（big-endian）
+    hash[0] = (h0 >> 24) & 255
+    hash[1] = (h0 >> 16) & 255
+    hash[2] = (h0 >> 8) & 255
+    hash[3] = h0 & 255
+    hash[4] = (h1 >> 24) & 255
+    hash[5] = (h1 >> 16) & 255
+    hash[6] = (h1 >> 8) & 255
+    hash[7] = h1 & 255
+    hash[8] = (h2 >> 24) & 255
+    hash[9] = (h2 >> 16) & 255
+    hash[10] = (h2 >> 8) & 255
+    hash[11] = h2 & 255
+    hash[12] = (h3 >> 24) & 255
+    hash[13] = (h3 >> 16) & 255
+    hash[14] = (h3 >> 8) & 255
+    hash[15] = h3 & 255
+    hash[16] = (h4 >> 24) & 255
+    hash[17] = (h4 >> 16) & 255
+    hash[18] = (h4 >> 8) & 255
+    hash[19] = h4 & 255
+    hash[20] = (h5 >> 24) & 255
+    hash[21] = (h5 >> 16) & 255
+    hash[22] = (h5 >> 8) & 255
+    hash[23] = h5 & 255
+    hash[24] = (h6 >> 24) & 255
+    hash[25] = (h6 >> 16) & 255
+    hash[26] = (h6 >> 8) & 255
+    hash[27] = h6 & 255
+    hash[28] = (h7 >> 24) & 255
+    hash[29] = (h7 >> 16) & 255
+    hash[30] = (h7 >> 8) & 255
+    hash[31] = h7 & 255
+}
+
+// sha256-hex: 計算 SHA-256 雜湊並返回 hex 字串
+// data []byte: 輸入位元組陣列
+// 返回 hex str: 64 字元小寫 hex 字串
+sha256-hex = (data []byte) (hex str) {
+    hash = sha256(data)
+
+    hex-chars str = '0123456789abcdef'
+    space str = ' '
+    hex = space.repeat(64)
+
+    i = 0
+    i < 32: {
+        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        i = i + 1
+    }
 }

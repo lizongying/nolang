@@ -1529,6 +1529,18 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 			}
 			if fieldIdx >= 0 && sb != nil {
+				// 當欄位型別為 %str-long 但值是短字串字面量（%str-short*）時，
+				// 需先轉換為 %str-long*，再 load 成 %str-long value
+				if fieldType == "%str-long" {
+					if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) <= 127 {
+						val = g.convertShortToLong(sb, val)
+						// convertShortToLong 返回 %str-long*，需 load 成 %str-long value
+						g.tmpIdx++
+						loadReg := fmt.Sprintf("%%set.val.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, val))
+						val = loadReg
+					}
+				}
 				structTy := "%" + structName
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
 					g.indent(), reg, structTy, structTy, varName, fieldIdx))

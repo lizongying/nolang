@@ -8,19 +8,19 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// llvmTypeToNolang maps LLVM primitive types to all nolang type names that
-// could have produced them. This is needed for method-call resolution, where
-// the receiver's variable has an LLVM type (e.g. i32) but the method is
-// registered under its nolang type name (e.g. char.is-alpha).
+// llvmTypeToNolang maps LLVM primitive types (with leading '%' stripped) to all
+// nolang type names that could have produced them. This is needed for method-call
+// resolution, where the receiver's variable has an LLVM type (e.g. i32) but the
+// method is registered under its nolang type name (e.g. char.is-alpha).
 var llvmTypeToNolang = map[string][]string{
-	"i1":        {"bool"},
-	"i8":        {"byte", "i8", "u8"},
-	"i16":       {"i16", "u16"},
-	"i32":       {"char", "i32", "u32"},
-	"i64":       {"i64", "u64"},
-	"float":     {"f32"},
-	"double":    {"f64"},
-	"%str-long": {"str"},
+	"i1":       {"bool"},
+	"i8":       {"byte", "i8", "u8"},
+	"i16":      {"i16", "u16"},
+	"i32":      {"char", "i32", "u32"},
+	"i64":      {"i64", "u64"},
+	"float":    {"f32"},
+	"double":   {"f64"},
+	"str-long": {"str"},
 }
 
 // isNonVoidCall checks if a CallExpression returns a non-void type.
@@ -247,7 +247,14 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		ev := g.generateExprWithSB(sb, arg)
 		if strings.HasPrefix(ev, "%str-longlit") {
 			return "%str-long* " + ev
-		} else if strings.HasPrefix(ev, "%") {
+		}
+		// String concat / string method call results: ev is a %str-long* SSA register.
+		// Detect via isStringExpr so InfixExpression (- for concat) and other string
+		// expressions are passed as %str-long* instead of being truncated to i64.
+		if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
+			return "%str-long* " + ev
+		}
+		if strings.HasPrefix(ev, "%") {
 			// SSA register (value, not pointer) — allocate a temp slot and store
 			// the value, so the function can take a pointer to it.
 			g.tmpIdx++
@@ -438,17 +445,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						for _, cand := range candidates {
 							shortName := cand + "." + dot.Property
 							if g.funcRetTypes != nil {
-								if t, ok := g.funcRetTypes[shortName]; ok {
-									isMultiResult := false
-									if g.funcNumResults != nil {
-										if n, ok := g.funcNumResults[shortName]; ok && n > 1 {
-											isMultiResult = true
-										}
-									}
-									if t != "void" || isMultiResult {
-										innerFnName = shortName
-										break
-									}
+								if _, ok := g.funcRetTypes[shortName]; ok {
+									innerFnName = shortName
+									break
 								}
 							}
 						}
@@ -468,6 +467,65 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					innerFnName = "n." + innerFnName
 				}
 			}
+		}
+
+		// builtin 方法（如 i64.to-str, net-dial, get-line）不走用戶函數的輸出參數慣例，
+		// 返回值透過 LLVM return register。用 generateCallExpression 分派 builtin，
+		// 並將返回值存入輸出變數。
+		if m := builtin.FindBuiltinMethod(innerFnName); m != nil && innerMethodRecv == nil {
+			// 清空 lastBuiltinExtra（get-line 會設定它）
+			g.lastBuiltinExtra = ""
+			retReg := g.generateCallExpression(sb, innerCall)
+			if retReg == "" {
+				return ""
+			}
+			// 決定 store 型別
+			storeType := "i64"
+			if len(m.Return) > 0 {
+				switch m.Return[0].String() {
+				case "str":
+					storeType = "%str-long"
+				case "f64", "f32":
+					storeType = "double"
+				case "bool":
+					storeType = "i1"
+				}
+			}
+			// CLibCall builtins (如 i64.to-str) 透過 insertvalue 返回 %str-long value。
+			// ForwardFunc builtins (如 get-line) 透過 alloca 返回 %str-long* pointer，需 load。
+			// ForwardFunc builtins (如 net-dial) 返回 i64 value。
+			actualVal := retReg
+			if storeType == "%str-long" && m.CLibCall == nil {
+				// retReg 是 %str-long* (alloca)，需 load 成 %str-long value
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%builtin.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, retReg))
+				actualVal = loadReg
+			}
+			outIdx := 0
+			for _, outArg := range expr.Arguments {
+				if ident, ok := outArg.(*parser.Identifier); ok {
+					varName := ident.Value
+					curStoreType := storeType
+					curVal := actualVal
+					// 多返回值 builtin: 第二個輸出使用 lastBuiltinExtra (如 get-line 的 ok)
+					if outIdx == 1 && g.lastBuiltinExtra != "" {
+						curStoreType = "i1"
+						curVal = g.lastBuiltinExtra
+					}
+					if _, exists := g.varTypes[varName]; !exists {
+						g.varTypes[varName] = curStoreType
+						g.tmpIdx++
+						g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: curStoreType, Size: 8})
+						sb.WriteString(fmt.Sprintf("%s%%%s = alloca %s\n", g.indent(), varName, curStoreType))
+						sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), varName))
+					}
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
+				}
+				outIdx++
+			}
+			g.lastBuiltinExtra = ""
+			return retReg
 		}
 
 		// 生成內層調用的參數（receiver 作為第一個參數）
@@ -801,21 +859,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					for _, cand := range candidates {
 						shortName := cand + "." + dot.Property
 						if g.funcRetTypes != nil {
-							// 接受單結果（非 void）或帶輸出參數的 void 函數（funcNumResults >= 1）。
-							// str.repeat / str.trim 等多結果函數的 funcRetTypes 為 void，
-							// 但 funcNumResults 為 2；str.to-i64 等單輸出函數 funcNumResults 為 1。
-							if t, ok := g.funcRetTypes[shortName]; ok {
-								hasOutput := false
-								if g.funcNumResults != nil {
-									if n, ok := g.funcNumResults[shortName]; ok && n >= 1 {
-										hasOutput = true
-									}
-								}
-								if t != "void" || hasOutput {
-									fnName = shortName
-									methodReceiver = recv
-									break
-								}
+							// 接受任何已註冊的用戶方法（含 void 無輸出參數的方法，如 process.close）。
+							if _, ok := g.funcRetTypes[shortName]; ok {
+								fnName = shortName
+								methodReceiver = recv
+								break
 							}
 						}
 						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
@@ -834,17 +882,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 字符串字面量永遠是 str 型別，直接嘗試 str.<property>
 			shortName := "str." + dot.Property
 			if g.funcRetTypes != nil {
-				if t, ok := g.funcRetTypes[shortName]; ok {
-					hasOutput := false
-					if g.funcNumResults != nil {
-						if n, ok := g.funcNumResults[shortName]; ok && n >= 1 {
-							hasOutput = true
-						}
-					}
-					if t != "void" || hasOutput {
-						fnName = shortName
-						methodReceiver = receiverExpr
-					}
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
 				}
 			}
 			// Also check build-in methods (e.g., 'hello'.eq(b, n))

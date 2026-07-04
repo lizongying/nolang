@@ -72,6 +72,7 @@ type Generator struct {
 	varFnTypes           map[string]*parser.FunctionType // variable name → FunctionType (for indirect calls)
 	fnTypeAliases        map[string]*parser.FunctionType // named function type alias name → FunctionType
 	externFuncs          map[string]*ExternFuncInfo      // extern function name → FFI type info
+	lastBuiltinExtra     string                          // extra return value from multi-result builtin (e.g. get-line ok)
 }
 
 func NewGenerator() *Generator {

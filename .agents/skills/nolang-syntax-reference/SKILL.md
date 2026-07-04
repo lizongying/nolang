@@ -48,6 +48,22 @@ typed []u8 = [1, 2, 3]
 greeting = 'hello, ' - name
 ```
 
+### Comments
+
+Only single-line comments (`//`) are allowed.
+
+**Rule: one statement per line — never use semicolons `;` to combine multiple statements on one line.** This applies to comments too, including code examples inside comments.
+
+```nolang
+// ❌ Wrong: semicolons in comment
+// h0 = 1732584193; h1 = 4023233417; h2 = 2562383102
+
+// ✅ Correct: each statement on its own line
+// h0 = 1732584193
+// h1 = 4023233417
+// h2 = 2562383102
+```
+
 ### Naming Rules
 
 Variables, functions, structs: may start with underscore, use hyphens, letters, digits. No leading digit, no trailing hyphen, no consecutive hyphens.
@@ -56,6 +72,28 @@ Variables, functions, structs: may start with underscore, use hyphens, letters, 
 NO-LANG = 'nolang'       // global constants uppercase
 _x = 10                 // private
 foo-bar = 42            // hyphenated names
+```
+
+### API Documentation Conventions
+
+Function doc comments must include full parameter names with types and return parameter names with types. Module-level API summaries should also use full signatures.
+
+```nolang
+// ❌ Wrong: missing types, missing return names
+// sha1(data) (hash)
+// sha1-block(s, h0..h4)
+
+// ✅ Correct: full param names, types, return names, types
+// sha1(data []byte) (hash [20]byte) — full hash
+// sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — process block
+
+// Above function definitions:
+// sha1: compute SHA-1 hash
+// data []byte: input byte array
+// 返回 hash [20]byte: 20-byte hash value
+sha1 = (data []byte) (hash [20]byte) {
+    ...
+}
 ```
 
 ### File Naming

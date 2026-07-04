@@ -699,6 +699,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// fclose
 			sb.WriteString(fmt.Sprintf("%scall i32 @fclose(i8* %s)\n", g.indent(), stdinReg))
 		}
+		// 記錄 ok 值（cmpReg）供 curried 呼叫使用
+		g.lastBuiltinExtra = cmpReg
 		return strReg
 	}
 
@@ -919,6 +921,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		execRet := fmt.Sprintf("%%regexp.m.exec.%d", g.tmpIdx)
 		g.tmpIdx++
+		matchCmp := fmt.Sprintf("%%regexp.m.match.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
 		match := fmt.Sprintf("%%regexp.m.match.%d", g.tmpIdx)
 
 		if sb != nil {
@@ -927,8 +931,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%scall i32 @regcomp(i8* %s, i8* %s, i32 0)\n", g.indent(), preg, patternPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @regexec(i8* %s, i8* %s, i32 0, i8* null, i32 0)\n", g.indent(), execRet, preg, textPtr))
 			sb.WriteString(fmt.Sprintf("%scall void @regfree(i8* %s)\n", g.indent(), preg))
-			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), match, execRet))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), match, match))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), matchCmp, execRet))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), match, matchCmp))
 		}
 		return match
 	}
@@ -978,27 +982,39 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%regexp.f.match, label %%regexp.f.no_match\n", g.indent(), matchCmp))
 			sb.WriteString(fmt.Sprintf("regexp.f.match:\n"))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), start, pmatch))
-			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* getelementptr inbounds (i8, i8* %s, i64 8)\n", g.indent(), end, pmatch))
-			sb.WriteString(fmt.Sprintf("%s%s = sub nsw i32 %s, %s\n", g.indent(), lenReg, end, start))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, lenReg))
+			g.tmpIdx++
+			endGEP := fmt.Sprintf("%%regexp.f.endgep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 8\n", g.indent(), endGEP, pmatch))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), end, endGEP))
+			g.tmpIdx++
+			lenI32 := fmt.Sprintf("%%regexp.f.leni32.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = sub nsw i32 %s, %s\n", g.indent(), lenI32, end, start))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, lenI32))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, strLenGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), bufReg))
 			g.tmpIdx++
+			startI64 := fmt.Sprintf("%%regexp.f.starti64.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), startI64, start))
+			g.tmpIdx++
 			textStart := fmt.Sprintf("%%regexp.f.txtstart.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), textStart, textPtr, start))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), textStart, textPtr, startI64))
 			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), bufReg, textStart, lenReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
-			sb.WriteString(fmt.Sprintf("%sb label %%regexp.f.end\n", g.indent()))
+			sb.WriteString(fmt.Sprintf("%sbr label %%regexp.f.end\n", g.indent()))
 
 			sb.WriteString(fmt.Sprintf("regexp.f.no_match:\n"))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), strLenGEP))
 			sb.WriteString(fmt.Sprintf("%sstore i8* null, i8** %s\n", g.indent(), strDataGEP))
-			sb.WriteString(fmt.Sprintf("%sb label %%regexp.f.end\n", g.indent()))
+			sb.WriteString(fmt.Sprintf("%sbr label %%regexp.f.end\n", g.indent()))
 
 			sb.WriteString(fmt.Sprintf("regexp.f.end:\n"))
 		}
-		return strReg
+		// strReg 是 %str-long* (alloca)，需 load 成 %str-long value 以便常規賦值路徑使用
+		g.tmpIdx++
+		strVal := fmt.Sprintf("%%regexp.f.strval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), strVal, strReg))
+		return strVal
 	}
 
 	// ═══════════════════════════════════════════════
