@@ -1,19 +1,22 @@
 // sqlite — SQLite 驅動程式（透過 FFI 呼叫 libsqlite3）
 //
-// 本檔案為獨立的 SQLite 驅動，直接以 FFI extern 宣告封裝 SQLite C API。
-// 所有結構體與型別皆於本檔案內定義，不依賴 std/database/sql，確保驅動獨立性。
+// 本驅動實作 std/database/sql 介面。
+// db-sqlite、rows-sqlite、stmt-sqlite 分別實作 db、rows、stmt 介面，
+// 變數離開作用域時自動呼叫 leave() → close()，無需手動關閉。
 //
 // 使用前需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
 // mod.jsonc 中 "link-libs": ["sqlite3"] 負責連結。
 //
 // 用法：
-//   d db = open(':memory:')
+//   d db-sqlite = open(':memory:')
 //   r result = d.exec('CREATE TABLE ...')
-//   rs rows = d.query('SELECT ...')
+//   rs rows-sqlite = d.query('SELECT ...')
 //   rs.next()
 //   v = rs.scan-int(0)
-//   rs.close()
-//   d.close()
+//   // rs、d 離開作用域時自動關閉，無需手動呼叫 close()
+
+// 導入 std/database/sql 介面與共用結構體
+# std/database/sql
 
 // ============================================================================
 // FFI extern 宣告：15 個 SQLite C 函式
@@ -70,29 +73,22 @@ extern sqlite3-bind-text = (stmt ptr, idx i32, s str, n i32, destructor ptr) (rc
 extern sqlite3-errmsg = (db ptr) (s str)
 
 // ============================================================================
-// 結構體定義
-// 指標控制代碼以 i64 儲存（FFI ptr 型別在 Nolang 中以 i64 表示）
+// 結構體定義 — 實作 std/database/sql 介面
 // ============================================================================
 
-// result: 執行結果（last-id=最後插入列號, affected=影響列數）
-result {
-    last-id i64
-    affected i64
-}
-
-// db: 資料庫連線控制代碼
-db {
+// db-sqlite: 資料庫連線，實作 db 介面
+db-sqlite db {
     handle i64
 }
 
-// rows: 查詢結果集（stmt=陳述式指標, n-cols=欄位數）
-rows {
+// rows-sqlite: 查詢結果集，實作 rows 介面
+rows-sqlite rows {
     stmt i64
     n-cols i64
 }
 
-// stmt: 預編譯陳述式（handle=陳述式指標, db-handle=所屬資料庫指標）
-stmt {
+// stmt-sqlite: 預編譯陳述式，實作 stmt 介面
+stmt-sqlite stmt {
     handle i64
     db-handle i64
 }
@@ -111,7 +107,7 @@ SQLITE-DONE = 101 // sqlite3_step 執行完畢
 
 // open: 開啟資料庫連線
 // dsn 為檔名或 ':memory:'。失敗時 d.handle 保持 0。
-open = (dsn str) (d db) {
+open = (dsn str) (d db-sqlite) {
     handle i64 = 0
     rc i32 = sqlite3-open(dsn, handle)
     rc != SQLITE-OK -> {
@@ -122,24 +118,27 @@ open = (dsn str) (d db) {
 }
 
 // ============================================================================
-// 方法：db
+// 方法：db-sqlite — 實作 db 介面
 // ============================================================================
 
-// db.close: 關閉資料庫連線
-db.close = () (ok bool) {
+db-sqlite.enter = () {}
+
+db-sqlite.leave = () {
+    .close()
+}
+
+db-sqlite.close = () (ok bool) {
     rc i32 = sqlite3-close(.handle)
     ok = rc == SQLITE-OK
 }
 
-// db.exec: 執行 SQL（無回傳結果集）
-db.exec = (sql str) (r result) {
+db-sqlite.exec = (sql str) (r result) {
     rc i32 = sqlite3-exec(.handle, sql, 0, 0, 0)
     r.affected = sqlite3-changes(.handle)
     r.last-id = sqlite3-last-insert-rowid(.handle)
 }
 
-// db.query: 查詢，回傳結果集
-db.query = (sql str) (rs rows) {
+db-sqlite.query = (sql str) (rs rows-sqlite) {
     stmt-handle i64 = 0
     rc i32 = sqlite3-prepare-v2(.handle, sql, -1, stmt-handle, 0)
     rc != SQLITE-OK -> {
@@ -150,8 +149,7 @@ db.query = (sql str) (rs rows) {
     rs.n-cols = sqlite3-column-count(stmt-handle)
 }
 
-// db.prepare: 預編譯陳述式
-db.prepare = (sql str) (s stmt) {
+db-sqlite.prepare = (sql str) (s stmt-sqlite) {
     stmt-handle i64 = 0
     rc i32 = sqlite3-prepare-v2(.handle, sql, -1, stmt-handle, 0)
     rc != SQLITE-OK -> {
@@ -162,54 +160,58 @@ db.prepare = (sql str) (s stmt) {
 }
 
 // ============================================================================
-// 方法：rows
+// 方法：rows-sqlite — 實作 rows 介面
 // ============================================================================
 
-// rows.next: 推進到下一行
-rows.next = () (ok bool) {
+rows-sqlite.enter = () {}
+
+rows-sqlite.leave = () {
+    .close()
+}
+
+rows-sqlite.next = () (ok bool) {
     rc i32 = sqlite3-step(.stmt)
     ok = rc == SQLITE-ROW
 }
 
-// rows.scan-int: 讀取整數欄位
-rows.scan-int = (col i64) (v i64) {
+rows-sqlite.scan-int = (col i64) (v i64) {
     v = sqlite3-column-int64(.stmt, col)
 }
 
-// rows.scan-str: 讀取字串欄位
-rows.scan-str = (col i64) (v str) {
+rows-sqlite.scan-str = (col i64) (v str) {
     v = sqlite3-column-text(.stmt, col)
 }
 
-// rows.scan-float: 讀取浮點數欄位
-rows.scan-float = (col i64) (v f64) {
+rows-sqlite.scan-float = (col i64) (v f64) {
     v = sqlite3-column-double(.stmt, col)
 }
 
-// rows.close: 關閉結果集（finalize stmt）
-rows.close = () (ok bool) {
+rows-sqlite.close = () (ok bool) {
     rc i32 = sqlite3-finalize(.stmt)
     ok = rc == SQLITE-OK
 }
 
 // ============================================================================
-// 方法：stmt
+// 方法：stmt-sqlite — 實作 stmt 介面
 // ============================================================================
 
-// stmt.bind-int: 綁定整數參數
-stmt.bind-int = (idx i64, v i64) (ok bool) {
+stmt-sqlite.enter = () {}
+
+stmt-sqlite.leave = () {
+    .close()
+}
+
+stmt-sqlite.bind-int = (idx i64, v i64) (ok bool) {
     rc i32 = sqlite3-bind-int64(.handle, idx, v)
     ok = rc == SQLITE-OK
 }
 
-// stmt.bind-str: 綁定字串參數
-stmt.bind-str = (idx i64, v str) (ok bool) {
+stmt-sqlite.bind-str = (idx i64, v str) (ok bool) {
     rc i32 = sqlite3-bind-text(.handle, idx, v, v.len, -1)
     ok = rc == SQLITE-OK
 }
 
-// stmt.exec: 執行預編譯陳述式
-stmt.exec = () (r result) {
+stmt-sqlite.exec = () (r result) {
     rc i32 = sqlite3-step(.handle)
     rc == SQLITE-DONE -> {
         r.affected = sqlite3-changes(.db-handle)
@@ -217,14 +219,12 @@ stmt.exec = () (r result) {
     }
 }
 
-// stmt.query: 執行預編譯陳述式查詢
-stmt.query = () (rs rows) {
+stmt-sqlite.query = () (rs rows-sqlite) {
     rs.stmt = .handle
     rs.n-cols = sqlite3-column-count(.handle)
 }
 
-// stmt.close: 關閉預編譯陳述式
-stmt.close = () (ok bool) {
+stmt-sqlite.close = () (ok bool) {
     rc i32 = sqlite3-finalize(.handle)
     ok = rc == SQLITE-OK
 }

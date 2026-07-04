@@ -239,6 +239,9 @@ func dumpNode(buf *strings.Builder, node parser.Node, depth int) {
 
 	case *parser.InterfaceDefinition:
 		fmt.Fprintf(buf, "%sInterfaceDefinition{name: %s}\n", indent(depth), n.Name)
+		if len(n.Implements) > 0 {
+			fmt.Fprintf(buf, "%sImplements: %v\n", indent(depth+1), n.Implements)
+		}
 		dumpComments(buf, n, depth+1)
 		for _, m := range n.Methods {
 			fmt.Fprintf(buf, "%sMethod{%s}\n", indent(depth+1), m.Name)

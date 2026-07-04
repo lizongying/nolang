@@ -1,0 +1,278 @@
+// mysql — MySQL 驅動程式（透過 FFI 呼叫 libmysqlclient）
+//
+// 本驅動實作 std/database/sql 介面。
+// db-mysql、rows-mysql、stmt-mysql 分別實作 db、rows、stmt 介面，
+// 變數離開作用域時自動呼叫 leave() → close()，無需手動關閉。
+//
+// 使用前需系統安裝 libmysqlclient。
+// macOS: brew install mysql-connector-c
+// Linux: sudo apt install libmysqlclient-dev
+// mod.jsonc 中 "link-libs": ["mysqlclient"] 負責連結。
+//
+// DSN 格式：user:password@host/dbname（port 預設 3306）
+//
+// 用法：
+//   d db-mysql = open('root:secret@localhost/testdb')
+//   r result = d.exec('CREATE TABLE ...')
+//   rs rows-mysql = d.query('SELECT ...')
+//   rs.next()
+//   v = rs.scan-int(0)
+//   // rs、d 離開作用域時自動關閉，無需手動呼叫 close()
+//
+// 預編譯陳述式採字串替換（無 MYSQL_BIND），bind-* 按順序替換 ? 佔位符。
+// bind-str 不做 SQL 跳脫（MVP 限制），請勿直接綁定含 ' 的使用者輸入。
+
+// 導入 std/database/sql 介面與共用結構體
+# std/database/sql
+
+// ============================================================================
+// FFI extern 宣告：11 個 MySQL C 函式
+// 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號。
+// ============================================================================
+
+// MYSQL* mysql_init(MYSQL* mysql)  — 傳 0 (NULL) 表示新配置
+extern mysql-init = (mysql ptr) (handle ptr)
+
+// MYSQL* mysql_real_connect(MYSQL*, const char* host, const char* user,
+//   const char* passwd, const char* db, unsigned int port,
+//   const char* unix_socket, unsigned long flags)
+// port=0 表示使用預設埠 3306；socket=NULL(0)；flags=0
+extern mysql-real-connect = (mysql ptr, host str, user str, passwd str, db str, port i32, socket ptr, flags i64) (handle ptr)
+
+// int mysql_query(MYSQL*, const char* q)
+extern mysql-query = (mysql ptr, q str) (rc i32)
+
+// MYSQL_RES* mysql_store_result(MYSQL*)
+extern mysql-store-result = (mysql ptr) (res ptr)
+
+// MYSQL_ROW mysql_fetch_row(MYSQL_RES*)  — 回傳 char**，以 ptr(i64) 接收
+// 再以 ffi-cstr-at* intrinsic 做指標陣列索引讀取各欄
+extern mysql-fetch-row = (res ptr) (row ptr)
+
+// unsigned int mysql_num_fields(MYSQL_RES*)
+extern mysql-num-fields = (res ptr) (n i32)
+
+// my_ulonglong mysql_affected_rows(MYSQL*)
+extern mysql-affected-rows = (mysql ptr) (n i64)
+
+// my_ulonglong mysql_insert_id(MYSQL*)
+extern mysql-insert-id = (mysql ptr) (id i64)
+
+// void mysql_free_result(MYSQL_RES*)
+extern mysql-free-result = (res ptr)
+
+// void mysql_close(MYSQL*)
+extern mysql-close = (mysql ptr)
+
+// const char* mysql_error(MYSQL*)
+extern mysql-error = (mysql ptr) (s str)
+
+// ============================================================================
+// 結構體定義 — 實作 std/database/sql 介面
+// ============================================================================
+
+// db-mysql: 資料庫連線，實作 db 介面
+db-mysql db {
+    handle i64
+}
+
+// rows-mysql: 查詢結果集，實作 rows 介面
+// res=MYSQL_RES* 指標, row=當前 MYSQL_ROW (char**) 指標, n-cols=欄位數
+rows-mysql rows {
+    res i64
+    row i64
+    n-cols i64
+}
+
+// stmt-mysql: 預編譯陳述式（字串替換模式），實作 stmt 介面
+// handle=保留欄位(0), db-handle=連線指標, sql=模板, bound=已替換 SQL
+stmt-mysql stmt {
+    handle i64
+    db-handle i64
+    sql str
+    bound str
+}
+
+// ============================================================================
+// 函式：open
+// ============================================================================
+
+// open: 以 DSN 連線 MySQL
+// DSN 格式：user:password@host/dbname
+// port 固定為 0（MySQL 使用預設埠 3306）
+// 失敗時 d.handle 保持 0
+open = (dsn str) (d db-mysql) {
+    // 解析 DSN：user:password@host/dbname
+    at-pos i64 = dsn.index('@')
+    colon-pos i64 = dsn.index(':')
+    slash-pos i64 = dsn.index('/')
+
+    // 任一分隔符找不到即失敗
+    if at-pos < 0 {
+        return
+    }
+    if colon-pos < 0 {
+        return
+    }
+    if slash-pos < 0 {
+        return
+    }
+
+    user str = dsn.slice(0, colon-pos)
+    password str = dsn.slice(colon-pos + 1, at-pos)
+    host str = dsn.slice(at-pos + 1, slash-pos)
+    dbname str = dsn.slice(slash-pos + 1, dsn.len)
+
+    // 連線
+    mysql i64 = mysql-init(0)
+    if mysql == 0 {
+        return
+    }
+    handle i64 = mysql-real-connect(mysql, host, user, password, dbname, 0, 0, 0)
+    if handle == 0 {
+        return
+    }
+    d.handle = handle
+}
+
+// ============================================================================
+// 方法：db-mysql — 實作 db 介面
+// ============================================================================
+
+db-mysql.enter = () {}
+
+db-mysql.leave = () {
+    .close()
+}
+
+db-mysql.close = () (ok bool) {
+    mysql-close(.handle)
+    ok = true
+}
+
+db-mysql.exec = (sql str) (r result) {
+    rc i32 = mysql-query(.handle, sql)
+    r.affected = mysql-affected-rows(.handle)
+    r.last-id = mysql-insert-id(.handle)
+}
+
+db-mysql.query = (sql str) (rs rows-mysql) {
+    rc i32 = mysql-query(.handle, sql)
+    if rc != 0 {
+        return
+    }
+    res i64 = mysql-store-result(.handle)
+    if res == 0 {
+        return
+    }
+    rs.res = res
+    rs.n-cols = mysql-num-fields(res)
+}
+
+db-mysql.prepare = (sql str) (s stmt-mysql) {
+    s.db-handle = .handle
+    s.sql = sql
+    s.bound = sql
+}
+
+// ============================================================================
+// 方法：rows-mysql — 實作 rows 介面
+// ============================================================================
+
+rows-mysql.enter = () {}
+
+rows-mysql.leave = () {
+    .close()
+}
+
+rows-mysql.next = () (ok bool) {
+    row i64 = mysql-fetch-row(.res)
+    if row == 0 {
+        ok = false
+        return
+    }
+    .row = row
+    ok = true
+}
+
+rows-mysql.scan-int = (col i64) (v i64) {
+    v = ffi-cstr-at-int(.row, col)
+}
+
+rows-mysql.scan-str = (col i64) (v str) {
+    v = ffi-cstr-at(.row, col)
+}
+
+rows-mysql.scan-float = (col i64) (v f64) {
+    v = ffi-cstr-at-float(.row, col)
+}
+
+rows-mysql.close = () (ok bool) {
+    mysql-free-result(.res)
+    ok = true
+}
+
+// ============================================================================
+// 方法：stmt-mysql — 實作 stmt 介面（字串替換模式）
+// bind-* 按順序替換第一個 ? 佔位符；idx 參數保留但不使用順序語意
+// ============================================================================
+
+stmt-mysql.enter = () {}
+
+stmt-mysql.leave = () {
+    .close()
+}
+
+stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
+    cur str = .bound
+    pos i64 = cur.index('?')
+    if pos < 0 {
+        ok = false
+        return
+    }
+    vstr str = v.to-str()
+    before str = cur.slice(0, pos)
+    after str = cur.slice(pos + 1, cur.len)
+    .bound = before - vstr - after
+    ok = true
+}
+
+// stmt-mysql.bind-str: 綁定字串參數（替換第一個 ?，以單引號包圍）
+// 注意：不做 SQL 跳脫，MVP 限制
+stmt-mysql.bind-str = (idx i64, v str) (ok bool) {
+    cur str = .bound
+    pos i64 = cur.index('?')
+    if pos < 0 {
+        ok = false
+        return
+    }
+    // char-to-str(39) = 單引號 '（ASCII 39）
+    q str = char-to-str(39)
+    before str = cur.slice(0, pos)
+    after str = cur.slice(pos + 1, cur.len)
+    .bound = before - q - v - q - after
+    ok = true
+}
+
+stmt-mysql.exec = () (r result) {
+    rc i32 = mysql-query(.db-handle, .bound)
+    r.affected = mysql-affected-rows(.db-handle)
+    r.last-id = mysql-insert-id(.db-handle)
+}
+
+stmt-mysql.query = () (rs rows-mysql) {
+    rc i32 = mysql-query(.db-handle, .bound)
+    if rc != 0 {
+        return
+    }
+    res i64 = mysql-store-result(.db-handle)
+    if res == 0 {
+        return
+    }
+    rs.res = res
+    rs.n-cols = mysql-num-fields(res)
+}
+
+stmt-mysql.close = () (ok bool) {
+    ok = true
+}

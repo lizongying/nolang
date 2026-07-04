@@ -885,23 +885,29 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 	f.write(e.Property)
 }
 
+// formatStandaloneBody formats the body of a standalone if-then (cond -> body).
+// If the body is a single expression, it outputs `expr`.
+// If the body contains multiple statements or non-expression statements (e.g. return),
+// it outputs `{ stmts }`.
+func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
+	if len(body.Statements) == 1 {
+		if es, ok := body.Statements[0].(*parser.ExpressionStatement); ok {
+			f.formatExpression(es.Expression)
+			return
+		}
+	}
+	f.formatBlockStatement(body)
+}
+
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 	// Standalone if-then: `cond -> body` (without enclosing { })
 	if e.IsStandalone {
 		f.formatExpression(e.Condition)
 		f.write(" -> ")
-		for _, stmt := range e.Consequence.Statements {
-			if es, ok := stmt.(*parser.ExpressionStatement); ok {
-				f.formatExpression(es.Expression)
-			}
-		}
+		f.formatStandaloneBody(e.Consequence)
 		if e.Alternative != nil {
 			f.write(" -> ")
-			for _, stmt := range e.Alternative.Statements {
-				if es, ok := stmt.(*parser.ExpressionStatement); ok {
-					f.formatExpression(es.Expression)
-				}
-			}
+			f.formatStandaloneBody(e.Alternative)
 		}
 		return
 	}
@@ -1511,7 +1517,7 @@ func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
 func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.write(s.Name)
 	if len(s.Implements) > 0 {
-		f.write(" : ")
+		f.write(" ")
 		f.write(strings.Join(s.Implements, ", "))
 	}
 	f.write(" {")
@@ -1571,6 +1577,10 @@ func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
 
 func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
 	f.write(s.Name)
+	if len(s.Implements) > 0 {
+		f.write(" ")
+		f.write(strings.Join(s.Implements, ", "))
+	}
 	f.write(" {")
 	f.indent++
 	for _, m := range s.Methods {

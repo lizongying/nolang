@@ -1,46 +1,60 @@
 // sql — 資料庫存取介面定義
 //
 // 本檔案定義資料庫存取的標準介面。
-// 各驅動（如 SQLite、PostgreSQL 等）實作此介面，
+// 各驅動（如 SQLite、MySQL、PostgreSQL 等）實作此介面，
 // 提供具體的結構體型別與方法。
+//
+// 介面：
+//   db    — 資料庫連線（繼承 enter/leave，作用域結束自動關閉）
+//   rows  — 查詢結果集（繼承 enter/leave，作用域結束自動關閉）
+//   stmt  — 預編譯陳述式（繼承 enter/leave，作用域結束自動關閉）
 //
 // 共用結構體：
 //   result — 執行結果（所有驅動共用）
 //
-// 驅動應實作的結構體與方法契約：
-//
-//   db {
-//       handle i64
-//   }
-//   db.close = () (ok bool)
-//   db.exec = (sql str) (r result)
-//   db.query = (sql str) (rs rows)
-//   db.prepare = (sql str) (s stmt)
-//
-//   rows {
-//       stmt i64
-//       n-cols i64
-//   }
-//   rows.next = () (ok bool)
-//   rows.scan-int = (col i64) (v i64)
-//   rows.scan-str = (col i64) (v str)
-//   rows.scan-float = (col i64) (v f64)
-//   rows.close = () (ok bool)
-//
-//   stmt {
-//       handle i64
-//       db-handle i64
-//   }
-//   stmt.bind-int = (idx i64, v i64) (ok bool)
-//   stmt.bind-str = (idx i64, v str) (ok bool)
-//   stmt.exec = () (r result)
-//   stmt.query = () (rs rows)
-//   stmt.close = () (ok bool)
-//
-//   open = (dsn str) (d db)  — 由驅動提供
+// 驅動應提供的函式：
+//   open = (dsn str) (d db) — 由驅動提供
 
 // result: 執行結果（所有驅動共用）
 result {
     last-id i64
     affected i64
+}
+
+// ============================================================================
+// 介面：db — 資料庫連線
+// 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+// ============================================================================
+
+db enter, leave {
+    close() (ok bool)
+    exec(sql str) (r result)
+    query(sql str) (rs rows)
+    prepare(sql str) (s stmt)
+}
+
+// ============================================================================
+// 介面：rows — 查詢結果集
+// 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+// ============================================================================
+
+rows enter, leave {
+    next() (ok bool)
+    scan-int(col i64) (v i64)
+    scan-str(col i64) (v str)
+    scan-float(col i64) (v f64)
+    close() (ok bool)
+}
+
+// ============================================================================
+// 介面：stmt — 預編譯陳述式
+// 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+// ============================================================================
+
+stmt enter, leave {
+    bind-int(idx i64, v i64) (ok bool)
+    bind-str(idx i64, v str) (ok bool)
+    exec() (r result)
+    query() (rs rows)
+    close() (ok bool)
 }

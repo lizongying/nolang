@@ -918,9 +918,10 @@ type InterfaceMethod struct {
 }
 
 type InterfaceDefinition struct {
-	Token   lexer.Token
-	Name    string
-	Methods []*InterfaceMethod
+	Token      lexer.Token
+	Name       string
+	Implements []string // 繼承的介面列表（空 = 無）
+	Methods    []*InterfaceMethod
 	CommentedNode
 }
 

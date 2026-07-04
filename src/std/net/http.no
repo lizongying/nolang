@@ -1,0 +1,248 @@
+// http — HTTP/1.1 客戶端
+//
+// 提供簡易的 HTTP/1.1 用戶端，支援 GET、POST 等常見方法。
+// 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
+//
+// 用法：
+//   http-get('http://example.com/path')(resp, ok)
+//   if ok {
+//       print(resp.status-code)
+//       print(resp.body)
+//   }
+//
+//   http-post('http://example.com/api', '{"key":"value"}')(resp, ok)
+//
+//   // 一般請求
+//   http-do('PUT', 'http://example.com/item', 'data')(resp, ok)
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// 接收緩衝區大小
+HTTP-BUF-SIZE = 4096
+
+// 最大回應大小
+HTTP-MAX-RESPONSE = 16384
+
+// 預設 HTTP 埠號
+HTTP-DEFAULT-PORT = 80
+
+// ═══════════════════════════════════════════════
+// http-response 結構體
+// ═══════════════════════════════════════════════
+
+// http-response: HTTP 回應
+// status-code: 狀態碼（如 200、404）
+// status-text: 狀態文字（如 OK、Not Found）
+// headers: 回應標頭（原始字串，含多行）
+// body: 回應主體
+http-response {
+    status-code i64
+    status-text str
+    headers str
+    body str
+}
+
+// ═══════════════════════════════════════════════
+// 主要 API
+// ═══════════════════════════════════════════════
+
+// http-do: 執行 HTTP 請求
+// method: HTTP 方法（GET、POST、PUT、DELETE 等）
+// url: 完整 URL（如 http://host:port/path）
+// body: 請求主體（GET 應傳空字串）
+// 返回 resp=回應, ok=true=成功
+http-do = (method str, url str, body str) (resp http-response, ok bool) {
+    ok = false
+
+    // ── 字串變數（頂層宣告，供 if 區塊內使用）──
+    scheme str = 'http://'
+    rest str = ''
+    host str = ''
+    port i64 = HTTP-DEFAULT-PORT
+    path str = '/'
+    host-only str = ''
+    port-str str = ''
+    cr str = char-to-str(13)
+    lf str = char-to-str(10)
+    crlf str = cr - lf
+    req str = ''
+    len-str str = ''
+    space str = ' '
+    buf str = space.repeat(HTTP-BUF-SIZE)
+    raw str = space.repeat(HTTP-MAX-RESPONSE)
+    total i64 = 0
+    recv-raw str = ''
+    separator str = crlf - crlf
+    head str = ''
+    status-line str = ''
+    after-code str = ''
+    code-str str = ''
+
+    // ── 解析 URL ──
+    if url.starts-with(scheme) == false {
+        return
+    }
+    rest = url.slice(scheme.len, url.len)
+
+    // 分離 host[:port] 與 path（找到第一個 /）
+    slash-pos = rest.index('/')
+    if slash-pos < 0 {
+        host = rest
+    } else {
+        host = rest.slice(0, slash-pos)
+        path = rest.slice(slash-pos, rest.len)
+    }
+
+    // 檢查 host 是否含 :port
+    colon-pos = host.index(':')
+    if colon-pos >= 0 {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p i64 = 0
+        i = 0
+        for i < port-str.len {
+            c = port-str[i]
+            if c < 48 || c > 57 {
+                return
+            }
+            p = p * 10 + c - 48
+            i = i + 1
+        }
+        port = p
+        host = host-only
+    }
+
+    if host.len == 0 {
+        return
+    }
+
+    // ── 建立連接 ──
+    fd = net-dial(host, port)
+    if fd < 0 {
+        return
+    }
+
+    // ── 建構請求 ──
+    req = method
+    req = req - ' '
+    req = req - path
+    req = req - ' HTTP/1.1'
+    req = req - crlf
+    req = req - 'Host: '
+    req = req - host
+    req = req - crlf
+    req = req - 'Connection: close'
+    req = req - crlf
+    req = req - 'User-Agent: nolang-http/1.0'
+    req = req - crlf
+
+    if body.len > 0 {
+        body-len i64 = body.len
+        len-str = body-len.to-str()
+        req = req - 'Content-Length: '
+        req = req - len-str
+        req = req - crlf
+    }
+    req = req - crlf
+    if body.len > 0 {
+        req = req - body
+    }
+
+    // ── 發送請求 ──
+    written = net-send(fd, req, req.len)
+    if written < 0 {
+        close(fd)
+        return
+    }
+
+    // ── 接收回應 ──
+    // net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
+    ! {
+        n = net-recv(fd, buf, HTTP-BUF-SIZE)
+        if n <= 0 {
+            *
+        }
+        if total + n > HTTP-MAX-RESPONSE {
+            *
+        }
+        // 將接收的位元組複製到 raw
+        i = 0
+        for i < n {
+            raw[total + i] = buf[i]
+            i = i + 1
+        }
+        total = total + n
+    }
+    close(fd)
+
+    if total == 0 {
+        return
+    }
+
+    // 取得實際接收的資料（raw.len 仍為 HTTP-MAX-RESPONSE，用 slice 擷取）
+    recv-raw = raw.slice(0, total)
+
+    // ── 解析回應 ──
+    sep-pos = recv-raw.index(separator)
+    if sep-pos < 0 {
+        return
+    }
+
+    head = recv-raw.slice(0, sep-pos)
+    resp.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
+
+    // 解析狀態行（第一行）
+    first-line-end = head.index(crlf)
+    if first-line-end < 0 {
+        status-line = head
+        resp.headers = ''
+    } else {
+        status-line = head.slice(0, first-line-end)
+        resp.headers = head.slice(first-line-end + crlf.len, head.len)
+    }
+
+    // 狀態行格式：HTTP/1.1 200 OK
+    sp1 = status-line.index(' ')
+    if sp1 < 0 {
+        return
+    }
+    after-code = status-line.slice(sp1 + 1, status-line.len)
+    sp2 = after-code.index(' ')
+    if sp2 < 0 {
+        return
+    }
+    code-str = after-code.slice(0, sp2)
+    resp.status-text = after-code.slice(sp2 + 1, after-code.len)
+
+    // 解析狀態碼
+    code i64 = 0
+    i = 0
+    for i < code-str.len {
+        c = code-str[i]
+        if c < 48 || c > 57 {
+            return
+        }
+        code = code * 10 + c - 48
+        i = i + 1
+    }
+    resp.status-code = code
+
+    ok = true
+}
+
+// http-get: 執行 HTTP GET 請求
+// url: 完整 URL
+// 返回 resp=回應, ok=true=成功
+http-get = (url str) (resp http-response, ok bool) {
+    http-do('GET', url, '')(resp, ok)
+}
+
+// http-post: 執行 HTTP POST 請求
+// url: 完整 URL
+// body: 請求主體
+// 返回 resp=回應, ok=true=成功
+http-post = (url str, body str) (resp http-response, ok bool) {
+    http-do('POST', url, body)(resp, ok)
+}

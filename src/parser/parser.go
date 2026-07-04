@@ -744,22 +744,43 @@ func (p *Parser) parseStatement() Statement {
 			}
 		}
 
-		// 檢查介面實作：user json, fmt { name str }
+		// 檢查介面實作/繼承：user json, fmt { name str } 或 db enter, leave { close() }
 		if p.peekToken.Type == lexer.IDENT {
-			state := p.saveState()
-			p.nextToken() // skip struct name
-			// 跳過介面名列表：name, name, ...
-			for p.currentToken.Type == lexer.IDENT {
-				p.nextToken() // skip interface name
-				if p.currentToken.Type == lexer.COMMA {
-					p.nextToken()
+			// 用 LookAhead 掃過介面名列表，找到 { 後分類區塊型別
+			skip := 0
+			for {
+				tok := p.lexer.LookAhead(skip)
+				if tok.Type == lexer.COMMA {
+					skip++
+					if p.lexer.LookAhead(skip).Type != lexer.IDENT {
+						break
+					}
+					skip++
+					continue
 				}
+				break
 			}
-			if p.currentToken.Type == lexer.LBRACE {
-				p.restoreState(state)
+			// LookAhead(skip) 應為 { 或其他
+			if p.lexer.LookAhead(skip).Type == lexer.LBRACE {
+				// 找到 {，往後看分類區塊內容
+				contentSkip := skip + 1
+				for {
+					tok := p.lexer.LookAhead(contentSkip)
+					if tok.Type != lexer.NEWLINE {
+						break
+					}
+					contentSkip++
+				}
+				tok1 := p.lexer.LookAhead(contentSkip)
+				tok2 := p.lexer.LookAhead(contentSkip + 1)
+
+				// 介面繼承：method() 或 t.method() 形式
+				if tok1.Type == lexer.IDENT && (tok2.Type == lexer.LPAREN || tok2.Type == lexer.DOT) {
+					return p.parseInterfaceDefinition()
+				}
+				// 結構體實作
 				return p.parseStructDefinition()
 			}
-			p.restoreState(state)
 		}
 
 		if p.peekToken.Type == lexer.IDENT {
@@ -2576,18 +2597,32 @@ func (p *Parser) parseExpressionStatement() Statement {
 	// Standalone if-then: cond -> body (without enclosing { })
 	if p.currentToken.Type == lexer.RARROW && !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
 		p.nextToken() // skip ->
-		body := p.parseExpression(LOWEST)
-		conseq := &BlockStatement{
-			Statements: []Statement{&ExpressionStatement{Expression: body}},
+
+		var conseq *BlockStatement
+		if p.currentToken.Type == lexer.LBRACE {
+			// Block body: cond -> { stmts } — can contain return, assignments, etc.
+			conseq = p.parseBlockStatement()
+			p.nextToken() // skip body's }
+		} else {
+			// Single-expression body: cond -> expr
+			body := p.parseExpression(LOWEST)
+			conseq = &BlockStatement{
+				Statements: []Statement{&ExpressionStatement{Expression: body}},
+			}
 		}
 
 		// Check for else: -> elseBody
 		var altBody *BlockStatement
 		if p.currentToken.Type == lexer.RARROW {
 			p.nextToken() // skip ->
-			altExpr := p.parseExpression(LOWEST)
-			altBody = &BlockStatement{
-				Statements: []Statement{&ExpressionStatement{Expression: altExpr}},
+			if p.currentToken.Type == lexer.LBRACE {
+				altBody = p.parseBlockStatement()
+				p.nextToken() // skip body's }
+			} else {
+				altExpr := p.parseExpression(LOWEST)
+				altBody = &BlockStatement{
+					Statements: []Statement{&ExpressionStatement{Expression: altExpr}},
+				}
 			}
 		}
 
@@ -5506,6 +5541,16 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 	}
 
 	p.nextToken() // 跳过 name
+
+	// 檢查介面繼承：db enter, leave { ... }
+	for p.currentToken.Type == lexer.IDENT {
+		id.Implements = append(id.Implements, p.currentToken.Literal)
+		p.nextToken() // 跳过 interface name
+		if p.currentToken.Type == lexer.COMMA {
+			p.nextToken() // 跳过逗號
+		}
+	}
+
 	p.nextToken() // 跳过 LBRACE
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {

@@ -93,6 +93,122 @@ func TestParseInterfaceMethodGenericReceiver(t *testing.T) {
 	}
 }
 
+// TestParseInterfaceWithImplements verifies that an interface can inherit
+// from other interfaces using the `name iface1, iface2 { ... }` syntax,
+// e.g.:
+//
+//	db enter, leave {
+//	    close() (ok bool)
+//	    query(sql str) (rs rows)
+//	}
+//
+// This is interface inheritance/merging — the interface `db` inherits the
+// method signatures from `enter` and `leave` and adds its own methods.
+func TestParseInterfaceWithImplements(t *testing.T) {
+	src := `db enter, leave {
+    close() (ok bool)
+    query(sql str) (rs rows)
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	id, ok := prog.Statements[0].(*InterfaceDefinition)
+	if !ok {
+		t.Fatalf("expected *InterfaceDefinition, got %T", prog.Statements[0])
+	}
+	if id.Name != "db" {
+		t.Errorf("expected interface name 'db', got %q", id.Name)
+	}
+	if len(id.Implements) != 2 {
+		t.Fatalf("expected 2 implemented interfaces, got %d", len(id.Implements))
+	}
+	if id.Implements[0] != "enter" || id.Implements[1] != "leave" {
+		t.Errorf("expected implements [enter, leave], got %v", id.Implements)
+	}
+	if len(id.Methods) != 2 {
+		t.Fatalf("expected 2 methods, got %d", len(id.Methods))
+	}
+	if id.Methods[0].Name != "close" {
+		t.Errorf("expected first method 'close', got %q", id.Methods[0].Name)
+	}
+	if id.Methods[1].Name != "query" {
+		t.Errorf("expected second method 'query', got %q", id.Methods[1].Name)
+	}
+}
+
+// TestParseInterfaceSingleImplements verifies interface inheritance with
+// a single inherited interface.
+func TestParseInterfaceSingleImplements(t *testing.T) {
+	src := `writer flush {
+    write(data str) (n i64)
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	id, ok := prog.Statements[0].(*InterfaceDefinition)
+	if !ok {
+		t.Fatalf("expected *InterfaceDefinition, got %T", prog.Statements[0])
+	}
+	if id.Name != "writer" {
+		t.Errorf("expected interface name 'writer', got %q", id.Name)
+	}
+	if len(id.Implements) != 1 || id.Implements[0] != "flush" {
+		t.Errorf("expected implements [flush], got %v", id.Implements)
+	}
+	if len(id.Methods) != 1 || id.Methods[0].Name != "write" {
+		t.Errorf("expected 1 method 'write', got %v", id.Methods)
+	}
+}
+
+// TestParseStructWithImplementsStillWorks verifies that struct-with-implements
+// syntax (`name iface { fields }`) is still parsed as a struct, not an interface.
+func TestParseStructWithImplementsStillWorks(t *testing.T) {
+	src := `file enter, leave {
+    path str
+    fd i64
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	sd, ok := prog.Statements[0].(*StructDefinition)
+	if !ok {
+		t.Fatalf("expected *StructDefinition, got %T", prog.Statements[0])
+	}
+	if sd.Name != "file" {
+		t.Errorf("expected struct name 'file', got %q", sd.Name)
+	}
+	if len(sd.Implements) != 2 {
+		t.Fatalf("expected 2 implemented interfaces, got %d", len(sd.Implements))
+	}
+	if sd.Implements[0] != "enter" || sd.Implements[1] != "leave" {
+		t.Errorf("expected implements [enter, leave], got %v", sd.Implements)
+	}
+	if len(sd.Fields) != 2 {
+		t.Fatalf("expected 2 fields, got %d", len(sd.Fields))
+	}
+}
+
 // TestParseInterfaceMethodWithResult verifies that interface methods
 // can declare a return type using `(res type)` after the parameter
 // list, e.g.:

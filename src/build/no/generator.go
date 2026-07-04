@@ -408,6 +408,14 @@ func (g *Generator) generateEnumDefinition(ed *parser.EnumDefinition) string {
 func (g *Generator) generateInterfaceDefinition(id *parser.InterfaceDefinition) string {
 	var sb strings.Builder
 	sb.WriteString(id.Name)
+	for i, iface := range id.Implements {
+		if i == 0 {
+			sb.WriteString(" ")
+		} else {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(iface)
+	}
 	sb.WriteString(" {\n")
 	g.indentLevel++
 	for _, m := range id.Methods {

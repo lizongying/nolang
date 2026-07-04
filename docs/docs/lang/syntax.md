@@ -537,11 +537,11 @@ file enter, leave {
 }
 
 file.enter = () {
-    open(.path)
+    .open()
 }
 
 file.leave = () {
-    close(self)
+    .close()
 }
 
 read-file = () {

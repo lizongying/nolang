@@ -1,0 +1,154 @@
+// client — 高階 TCP 客戶端
+//
+// 封裝 conn，對稱於 listener，提供連接狀態追蹤、重連、請求-回應模式等便利功能。
+// 底層使用 net.no 的 conn 結構體與 net-* built-in 函數。
+//
+// 用法：
+//   c = client{}
+//   c.connect('127.0.0.1', 8080)(ok)
+//   c.send('hello')(n)
+//   c.recv(buf, 1024)(n)
+//   c.close()
+//
+//   // 請求-回應模式
+//   c.request('PING')(response, ok)
+//
+//   // 重連
+//   c.reconnect()(ok)
+//
+//   // 便捷函數
+//   net-client('127.0.0.1', 8080)(c, ok)
+
+// ═══════════════════════════════════════════════
+// client 結構體
+// ═══════════════════════════════════════════════
+
+// client: 高階 TCP 客戶端
+// c: 底層 TCP 連接（conn 結構體）
+// host: 目標主機（記錄供 reconnect 使用）
+// port: 目標埠號
+// connected: 連接狀態
+client {
+    c conn
+    host str
+    port i64
+    connected bool
+}
+
+// connect: 連接到指定主機與埠號
+// 記錄 host/port 供後續 reconnect 使用
+// 返回 ok=true=成功
+client.connect = (host str, port i64) (ok bool) {
+    ok = false
+    .host = host
+    .port = port
+    .connected = false
+    .c.dial(host, port)(ok)
+    if ok {
+        .connected = true
+    }
+}
+
+// reconnect: 使用已記錄的 host/port 重新連接
+// 先關閉舊連接（避免 fd 洩漏），再重新 dial
+// 返回 ok=true=成功
+client.reconnect = () (ok bool) {
+    ok = false
+    if .host.len == 0 {
+        return
+    }
+    if .connected {
+        .c.close()
+        .connected = false
+    }
+    .c.dial(.host, .port)(ok)
+    if ok {
+        .connected = true
+    }
+}
+
+// send: 發送字串資料
+// 返回 written=實際發送位元組數（-1=錯誤）
+client.send = (data str) (written i64) {
+    written = -1
+    if .connected == false {
+        return
+    }
+    .c.send(data)(written)
+}
+
+// recv: 接收資料到緩衝區
+// buf: 接收緩衝區（str）
+// n: 最多接收的位元組數
+// 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
+client.recv = (buf str, n i64) (read-n i64) {
+    read-n = -1
+    if .connected == false {
+        return
+    }
+    .c.recv(buf, n)(read-n)
+}
+
+// recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
+// 返回 line=接收的字串, ok=true=成功
+client.recv-line = () (line str, ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+    .c.recv-line()(line, ok)
+}
+
+// request: 請求-回應模式
+// 發送資料後接收全部回應直到連接關閉
+// 返回 response=回應內容, ok=true=成功
+client.request = (data str) (response str, ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+    .c.send(data)(written)
+    if written < 0 {
+        return
+    }
+    .c.recv-all()(response, total)
+    ok = true
+}
+
+// send-line: 發送一行（附加換行符 \n）
+// 返回 written=實際發送位元組數（-1=錯誤）
+client.send-line = (line str) (written i64) {
+    written = -1
+    if .connected == false {
+        return
+    }
+    // char-to-str(10) = 換行符 \n（ASCII 10）
+    nl str = char-to-str(10)
+    .c.send(line - nl)(written)
+}
+
+// is-connected: 檢查連接狀態
+// 返回 yes=true=已連接
+client.is-connected = () (yes bool) {
+    yes = .connected
+}
+
+// close: 關閉連接並重置狀態
+client.close = () {
+    if .connected {
+        .c.close()
+        .connected = false
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// net-client: 建立客戶端並連接
+// 返回 c=客戶端, ok=true=成功
+net-client = (host str, port i64) (c client, ok bool) {
+    ok = false
+    c = client{}
+    c.connect(host, port)(ok)
+}

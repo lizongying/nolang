@@ -196,8 +196,13 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 					}
 				}
 			}
-			// 2. 檢查用戶定義的函數
+			// 2. 檢查用戶定義的函數（含 extern）
 			if retType, exists := funcTypes[ident.Value]; exists {
+				// FFI ptr 型別在 Nolang 層以 i64 儲存（透過 ptrtoint/inttoptr 轉換）
+				// ptr 可能是 "ptr <nil>"（不透明指標）或 "ptr T"（具型別指標）
+				if strings.HasPrefix(retType, "ptr") {
+					return "i64"
+				}
 				return retType
 			}
 		}
@@ -219,6 +224,12 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				methodName := typeName + "." + dot.Property
 				if retType, exists := funcTypes[methodName]; exists {
 					return retType
+				}
+				// 查詢內建方法（如 i64.to-str, str.to-i64, str.to-bool 等）
+				for _, m := range builtin.BuiltinMethodList {
+					if m.MethodName == methodName && len(m.Return) > 0 {
+						return m.Return[0].String()
+					}
 				}
 			}
 		}
@@ -715,6 +726,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					if sd, ok := ms.(*parser.StructDefinition); ok {
 						merged.Statements = append(merged.Statements, sd)
 					}
+					if id, ok := ms.(*parser.InterfaceDefinition); ok {
+						merged.Statements = append(merged.Statements, id)
+					}
 					if ta, ok := ms.(*parser.TypeAlias); ok {
 						merged.Statements = append(merged.Statements, ta)
 					}
@@ -772,6 +786,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 			if sd, ok := ms.(*parser.StructDefinition); ok {
 				merged.Statements = append(merged.Statements, sd)
+			}
+			if id, ok := ms.(*parser.InterfaceDefinition); ok {
+				merged.Statements = append(merged.Statements, id)
 			}
 			if ta, ok := ms.(*parser.TypeAlias); ok {
 				merged.Statements = append(merged.Statements, ta)
@@ -2351,6 +2368,12 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			strSizes[s.Name.Value] = int64(len(sl.Value))
 		}
 	case *parser.FunctionDefinition:
+		// Add str parameters to stringSizes so they're recognized as strings
+		for _, p := range s.Parameters {
+			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+				strSizes[p.Name] = 0
+			}
+		}
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
 				collectStringSizeMapFromStmt(ss, strSizes)
@@ -2700,6 +2723,25 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			if len(es.Results) > 0 && es.Results[0].Type != nil {
 				funcTypes[es.Name.Value] = es.Results[0].Type.String()
 			}
+		}
+	}
+
+	// 預填 stdlib 方法回傳型別（定義在 src/std/*.no，在 ValidateTypes 之後才合併）
+	stdlibMethodTypes := map[string]string{
+		"str.index":       "i64",
+		"str.slice":       "str",
+		"str.contains":    "bool",
+		"str.starts-with": "bool",
+		"str.ends-with":   "bool",
+		"str.to-upper":    "str",
+		"str.to-lower":    "str",
+		"str.trim":        "str",
+		"str.repeat":      "str",
+		"str.copy":        "str",
+	}
+	for k, v := range stdlibMethodTypes {
+		if _, exists := funcTypes[k]; !exists {
+			funcTypes[k] = v
 		}
 	}
 

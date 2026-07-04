@@ -1718,6 +1718,80 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, selectReg))
 		}
 		return strReg2
+
+	case "ffi-cstr-at", "ffi-cstr-at-int", "ffi-cstr-at-float":
+		// ffi-cstr-at*(arr i64, idx i64): 從 char** 陣列讀取第 idx 個 C 字串
+		// NULL 安全：以 alloca i8 + store 0 建立空字串，select 避免 NULL 傳入 strlen/strtoll/strtod
+		if len(args) < 2 {
+			return ""
+		}
+		arrVal := g.evalI64Arg(sb, args[0])
+		idxVal := g.evalI64Arg(sb, args[1])
+
+		// 1. inttoptr i64 → i8**
+		g.tmpIdx++
+		ptrReg := fmt.Sprintf("%%cstr.ptr.%d", g.tmpIdx)
+		// 2. getelementptr i8*, i8** %ptr, i64 %idx
+		g.tmpIdx++
+		gepReg := fmt.Sprintf("%%cstr.gep.%d", g.tmpIdx)
+		// 3. load i8*, i8** %gep
+		g.tmpIdx++
+		fieldReg := fmt.Sprintf("%%cstr.field.%d", g.tmpIdx)
+		// 4. icmp eq i8* %field, null
+		g.tmpIdx++
+		isnullReg := fmt.Sprintf("%%cstr.isnull.%d", g.tmpIdx)
+		// 5. alloca i8 + store i8 0
+		g.tmpIdx++
+		emptyReg := fmt.Sprintf("%%cstr.empty.%d", g.tmpIdx)
+		// 6. select i1 %isnull, i8* %empty, i8* %field
+		g.tmpIdx++
+		safeReg := fmt.Sprintf("%%cstr.safe.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8**\n", g.indent(), ptrReg, arrVal))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, ptrReg, idxVal))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), fieldReg, gepReg))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), isnullReg, fieldReg))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8\n", g.indent(), emptyReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), emptyReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* %s\n", g.indent(), safeReg, isnullReg, emptyReg, fieldReg))
+		}
+
+		switch forwardFunc {
+		case "ffi-cstr-at":
+			// 7. strlen → 8/9. insertvalue %str-long
+			g.tmpIdx++
+			lenReg := fmt.Sprintf("%%cstr.len.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg1 := fmt.Sprintf("%%cstr.s1.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%cstr.s2.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, safeReg))
+			}
+			return strReg2
+
+		case "ffi-cstr-at-int":
+			// 7. strtoll(safe, null, 10)
+			g.tmpIdx++
+			valReg := fmt.Sprintf("%%cstr.ival.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strtoll(i8* %s, i8* null, i32 10)\n", g.indent(), valReg, safeReg))
+			}
+			return valReg
+
+		case "ffi-cstr-at-float":
+			// 7. strtod(safe, null)
+			g.tmpIdx++
+			valReg := fmt.Sprintf("%%cstr.fval.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call double @strtod(i8* %s, i8* null)\n", g.indent(), valReg, safeReg))
+			}
+			return valReg
+		}
+		return ""
 	}
 	return ""
 }
