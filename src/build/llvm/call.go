@@ -504,9 +504,35 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			if numResults >= 1 {
 				// 帶輸出參數：將輸出參數附加到呼叫，傳遞指標
+				// 先取得輸出型別（用於 auto-allocate 未宣告的輸出變數）
+				var outTypes []string
+				if g.funcResultLLVMType != nil {
+					for _, name := range []string{innerFnName, innerFnName + "_i64_i64_i64_i64"} {
+						if ts, ok := g.funcResultLLVMType[name]; ok && len(ts) > 0 {
+							outTypes = ts
+							break
+						}
+					}
+				}
 				allArgs := make([]string, 0, len(innerArgs)+len(expr.Arguments))
 				allArgs = append(allArgs, innerArgs...)
-				for _, outArg := range expr.Arguments {
+				for outIdx, outArg := range expr.Arguments {
+					// Auto-allocate undeclared output variables (e.g. `total` in `.c.recv-all()(response, total)`)
+					if ident, ok := outArg.(*parser.Identifier); ok {
+						if _, exists := g.varTypes[ident.Value]; !exists {
+							outType := "i64"
+							if outIdx < len(outTypes) {
+								outType = outTypes[outIdx]
+							}
+							g.varTypes[ident.Value] = outType
+							g.tmpIdx++
+							g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
+							if sb != nil {
+								sb.WriteString(fmt.Sprintf("%s%%%s = alloca %s\n", g.indent(), ident.Value, outType))
+								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), ident.Value))
+							}
+						}
+					}
 					allArgs = append(allArgs, g.generateCallArg(sb, outArg))
 				}
 				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))

@@ -1,11 +1,12 @@
 {
   "name": "mysql-driver",
   "version": "0.1.0",
-  "description": "MySQL driver for Nolang using FFI",
+  "description": "MySQL driver for Nolang (pure Nolang, no libmysqlclient)",
   "keywords": [
     "nolang",
     "mysql",
-    "ffi"
+    "protocol",
+    "pure"
   ],
   "author": "lizongying",
   "email": "lizongying@msn.com",
@@ -17,9 +18,6 @@
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",
-    "link-libs": [
-      "mysqlclient"
-    ],
   },
   "output": "./dist",
   "ignore": [],

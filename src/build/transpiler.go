@@ -4636,7 +4636,14 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) pa
 // resolveSelfMethodCalls rewrites self.method(args) calls inside method bodies
 // to StructType.method(self, args), where StructType is derived from the
 // function's implicit self parameter.
+//
+// Also rewrites .field.method(args) calls (where .field is self.field) to
+// FieldType.method(self.field, args), so that method calls on struct fields
+// are dispatched to the field's type method. This mirrors the self.method()
+// rewrite and is required because the LLVM generator only handles Identifier
+// receivers, not DotExpression receivers.
 func resolveSelfMethodCalls(program *parser.Program) {
+	structFields := collectStructFields(program)
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok {
@@ -4648,59 +4655,81 @@ func resolveSelfMethodCalls(program *parser.Program) {
 		selfType := fd.Parameters[0].Type.String()
 		if fd.Body != nil {
 			for _, bodyStmt := range fd.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType)
+				resolveSelfInStmt(bodyStmt, selfType, structFields)
 			}
 		}
 	}
 }
 
-func resolveSelfInStmt(stmt parser.Statement, selfType string) {
+// collectStructFields builds a map from struct name to field name → field type
+// string. Used by resolveSelfInExpr to look up field types when rewriting
+// .field.method(args) calls.
+func collectStructFields(program *parser.Program) map[string]map[string]string {
+	result := make(map[string]map[string]string)
+	for _, stmt := range program.Statements {
+		sd, ok := stmt.(*parser.StructDefinition)
+		if !ok {
+			continue
+		}
+		fields := make(map[string]string)
+		for _, f := range sd.Fields {
+			if f.Type != nil {
+				fields[f.Name] = f.Type.String()
+			}
+		}
+		result[sd.Name] = fields
+	}
+	return result
+}
+
+func resolveSelfInStmt(stmt parser.Statement, selfType string, structFields map[string]map[string]string) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			resolveSelfInExpr(s.Expression, selfType)
+			resolveSelfInExpr(s.Expression, selfType, structFields)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			resolveSelfInExpr(s.Value, selfType)
+			resolveSelfInExpr(s.Value, selfType, structFields)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			resolveSelfInExpr(s.Value, selfType)
+			resolveSelfInExpr(s.Value, selfType, structFields)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType)
+				resolveSelfInStmt(bodyStmt, selfType, structFields)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveSelfInStmt(bodyStmt, selfType)
+			resolveSelfInStmt(bodyStmt, selfType, structFields)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			resolveSelfInExpr(s.Condition, selfType)
+			resolveSelfInExpr(s.Condition, selfType, structFields)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType)
+				resolveSelfInStmt(bodyStmt, selfType, structFields)
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			resolveSelfInExpr(s.ReturnValue, selfType)
+			resolveSelfInExpr(s.ReturnValue, selfType, structFields)
 		}
 	}
 }
 
-func resolveSelfInExpr(expr parser.Expression, selfType string) {
+func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map[string]map[string]string) {
 	if expr == nil {
 		return
 	}
 	switch e := expr.(type) {
 	case *parser.CallExpression:
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			// Case 1: self.method(args) → StructType.method(self, args)
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok && recv.Value == "self" {
 				concreteName := selfType + "." + dot.Property
 				e.Function = &parser.Identifier{
@@ -4713,35 +4742,61 @@ func resolveSelfInExpr(expr parser.Expression, selfType string) {
 				}
 				e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
 			}
+			// Case 2: .field.method(args) → FieldType.method(.field, args)
+			// where .field is self.field (DotExpression with Receiver=Identifier{"self"})
+			if innerDot, ok := dot.Receiver.(*parser.DotExpression); ok {
+				if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
+					fieldName := innerDot.Property
+					if fields, ok := structFields[selfType]; ok {
+						if fieldType, ok := fields[fieldName]; ok {
+							concreteName := fieldType + "." + dot.Property
+							e.Function = &parser.Identifier{
+								Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+								Value: concreteName,
+							}
+							// receiver arg: .field (= self.field)
+							receiverArg := &parser.DotExpression{
+								Token:    innerDot.Token,
+								Property: fieldName,
+								Receiver: &parser.Identifier{
+									Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
+									Value: "self",
+								},
+							}
+							e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
+						}
+					}
+				}
+			}
 		}
 		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
-			resolveSelfInExpr(innerCall, selfType)
+			resolveSelfInExpr(innerCall, selfType, structFields)
 		}
 		for _, arg := range e.Arguments {
-			resolveSelfInExpr(arg, selfType)
+			resolveSelfInExpr(arg, selfType, structFields)
 		}
 	case *parser.InfixExpression:
-		resolveSelfInExpr(e.Left, selfType)
-		resolveSelfInExpr(e.Right, selfType)
+		resolveSelfInExpr(e.Left, selfType, structFields)
+		resolveSelfInExpr(e.Right, selfType, structFields)
 	case *parser.PrefixExpression:
-		resolveSelfInExpr(e.Right, selfType)
+		resolveSelfInExpr(e.Right, selfType, structFields)
 	case *parser.IfExpression:
 		if e.Consequence != nil {
 			for _, s := range e.Consequence.Statements {
-				resolveSelfInStmt(s, selfType)
+				resolveSelfInStmt(s, selfType, structFields)
 			}
 		}
 		if e.Alternative != nil {
 			for _, s := range e.Alternative.Statements {
-				resolveSelfInStmt(s, selfType)
+				resolveSelfInStmt(s, selfType, structFields)
 			}
 		}
 	case *parser.GroupedExpression:
-		resolveSelfInExpr(e.Expression, selfType)
+		resolveSelfInExpr(e.Expression, selfType, structFields)
 	case *parser.ConditionalExpression:
-		resolveSelfInExpr(e.Condition, selfType)
-		resolveSelfInExpr(e.Consequence, selfType)
-		resolveSelfInExpr(e.Alternative, selfType)
+		resolveSelfInExpr(e.Condition, selfType, structFields)
+		resolveSelfInExpr(e.Consequence, selfType, structFields)
+		resolveSelfInExpr(e.Alternative, selfType, structFields)
 	}
 }
 

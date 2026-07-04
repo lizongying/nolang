@@ -683,6 +683,28 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+	case *parser.DotExpression:
+		// Field access on a struct variable: look up field's LLVM type.
+		// e.g. .connected (where self.connected is bool) → i1
+		if ident, ok := v.Receiver.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+					structName := strings.TrimPrefix(t, "%")
+					if fields, ok := g.structTypes[structName]; ok {
+						for _, f := range fields {
+							if f.name == v.Property {
+								switch f.typ {
+								case "i1", "i8", "i16", "i32", "i64":
+									return f.typ
+								}
+								// Non-integer field (struct/str/etc.) — default to i64
+								return "i64"
+							}
+						}
+					}
+				}
+			}
+		}
 	case *parser.InfixExpression:
 		// 比較運算與邏輯運算的結果是 i1（已 zext 後為 i64）
 		switch v.Operator {

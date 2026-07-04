@@ -1,7 +1,20 @@
-// json — JSON 序列化/反序列化基礎
+// json — JSON 序列化/反序列化
 //
-// 基於字串操作的簡易 JSON 值讀寫。
-// 無反射機制，使用者需手動映射結構體。
+// 基於節點池（pool）的 JSON 樹狀結構，支援巢狀陣列與物件。
+//
+// 用法：
+//   p = json-pool{}
+//   p.init()
+//   p.parse('{"name":"Alice","age":30}', 0)(root, next, ok)
+//   if ok == 1 {
+//       p.get-key(root, 'name')(val-idx, found)
+//       if found == 1 {
+//           p.get-str(val-idx)(buf, ok2)
+//           if ok2 == 1 {
+//               print(buf)
+//           }
+//       }
+//   }
 
 // ═══════════════════════════════════════════════
 // JSON 值類型常量
@@ -14,50 +27,96 @@ KIND-STR = 3
 KIND-ARR = 4
 KIND-OBJ = 5
 
+// 池最大節點數
+JSON-MAX-NODES = 64
+// 每節點最大子元素數
+JSON-MAX-CHILDREN = 16
+
 // ═══════════════════════════════════════════════
-// JSON 值結構
+// 結構
 // ═══════════════════════════════════════════════
 
-// json-value: JSON 值型別
+// json-value: JSON 節點
 json-value {
     kind i64
     str-val str
     num-val f64
     bool-val i64
+    children [16]i64
+    keys [16]str
+    count i64
+}
+
+// json-pool: JSON 節點池
+json-pool {
+    nodes [64]json-value
+    count i64
 }
 
 // ═══════════════════════════════════════════════
-// 常量
+// 初始化
 // ═══════════════════════════════════════════════
 
-// JSON-NULL: JSON null 值
-JSON-NULL = json-value{
-    kind: 0
+// init: 初始化節點池
+json-pool.init = () {
+    .count = 0
+    i = 0
+    for i < JSON-MAX-NODES {
+        .nodes[i].count = 0
+        .nodes[i].kind = KIND-NULL
+        .nodes[i].str-val.len = 0
+        .nodes[i].num-val = 0.0
+        .nodes[i].bool-val = 0
+        j = 0
+        for j < JSON-MAX-CHILDREN {
+            .nodes[i].children[j] = -1
+            .nodes[i].keys[j].len = 0
+            j = j + 1
+        }
+        i = i + 1
+    }
 }
 
-// JSON-TRUE: JSON true 值
-JSON-TRUE = json-value{
-    kind: 1
-    bool-val: 1
-}
-
-// JSON-FALSE: JSON false 值
-JSON-FALSE = json-value{
-    kind: 1
-    bool-val: 0
+// alloc: 分配新節點，返回索引（-1=池滿）
+json-pool.alloc = () (idx i64) {
+    idx = -1
+    if .count >= JSON-MAX-NODES {
+        return
+    }
+    idx = .count
+    .count = .count + 1
+    .nodes[idx].count = 0
+    .nodes[idx].kind = KIND-NULL
+    .nodes[idx].str-val.len = 0
+    .nodes[idx].num-val = 0.0
+    .nodes[idx].bool-val = 0
 }
 
 // ═══════════════════════════════════════════════
-// 解析
+// 剖析
 // ═══════════════════════════════════════════════
 
-// parse: 從字串位置 pos 解析 JSON 值
-// 回傳解析結果、下一位置、是否成功
-parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
+// parse: 從字串位置 pos 剖析 JSON 值
+// 返回 node-idx=根節點索引, next-pos=下一位置, ok=1=成功
+json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     ok = 0
+    node-idx = -1
+    sn = s.len
+    p = pos
+    c i64 = 0
+    c2 i64 = 0
+    cnt i64 = 0
+    child-idx i64 = 0
+    child-next i64 = 0
+    child-ok i64 = 0
+    key-idx i64 = 0
+    key-next i64 = 0
+    key-ok i64 = 0
+    val-idx i64 = 0
+    val-next i64 = 0
+    val-ok i64 = 0
 
     // 跳過空白
-    p = pos
     for p < sn {
         c = s[p] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
@@ -70,9 +129,15 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
     }
     c = s[p] & 255
 
+    // 分配節點
+    .alloc()(node-idx)
+    if node-idx < 0 {
+        return
+    }
+
     // null
     if c == 110 {
-        val.kind = KIND-NULL
+        .nodes[node-idx].kind = KIND-NULL
         next-pos = p + 4
         ok = 1
         return
@@ -80,8 +145,8 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
 
     // true
     if c == 116 {
-        val.kind = KIND-BOOL
-        val.bool-val = 1
+        .nodes[node-idx].kind = KIND-BOOL
+        .nodes[node-idx].bool-val = 1
         next-pos = p + 4
         ok = 1
         return
@@ -89,80 +154,222 @@ parse = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
 
     // false
     if c == 102 {
-        val.kind = KIND-BOOL
-        val.bool-val = 0
+        .nodes[node-idx].kind = KIND-BOOL
+        .nodes[node-idx].bool-val = 0
         next-pos = p + 5
         ok = 1
         return
     }
 
-    // string: opening quote
+    // string
     if c == 34 {
-        val, next-pos, ok = parse-str(s, sn, p)
+        .nodes[node-idx].kind = KIND-STR
+        .parse-str(node-idx, s, sn, p)(next-pos, ok)
         return
     }
 
-    // number: minus sign
+    // number
     if c == 45 {
-        val, next-pos, ok = parse-num(s, sn, p)
+        .nodes[node-idx].kind = KIND-NUM
+        .parse-num(node-idx, s, sn, p)(next-pos, ok)
         return
     }
-
-    // number: digit
     if c >= 48 && c <= 57 {
-        val, next-pos, ok = parse-num(s, sn, p)
+        .nodes[node-idx].kind = KIND-NUM
+        .parse-num(node-idx, s, sn, p)(next-pos, ok)
         return
     }
 
-    // array: opening bracket
+    // array
     if c == 91 {
-        val.kind = KIND-ARR
-        next-pos = p + 1
-        ok = 1
-        return
+        .nodes[node-idx].kind = KIND-ARR
+        .nodes[node-idx].count = 0
+        p = p + 1
+        p = .skip-ws(s, sn, p)
+        if p >= sn {
+            return
+        }
+        // empty array
+        if s[p] & 255 == 93 {
+            next-pos = p + 1
+            ok = 1
+            return
+        }
+        // parse elements
+        ! {
+            p = .skip-ws(s, sn, p)
+            if p >= sn {
+                return
+            }
+            .parse(s, p)(child-idx, child-next, child-ok)
+            if child-ok == 0 {
+                return
+            }
+            cnt = .nodes[node-idx].count
+            if cnt >= JSON-MAX-CHILDREN {
+                return
+            }
+            .nodes[node-idx].children[cnt] = child-idx
+            .nodes[node-idx].count = cnt + 1
+            p = child-next
+            p = .skip-ws(s, sn, p)
+            if p >= sn {
+                return
+            }
+            c2 = s[p] & 255
+            if c2 == 93 {
+                next-pos = p + 1
+                ok = 1
+                return
+            }
+            if c2 == 44 {
+                p = p + 1
+            } else {
+                return
+            }
+        }
     }
 
-    // object: opening brace
+    // object
     if c == 123 {
-        val.kind = KIND-OBJ
-        next-pos = p + 1
-        ok = 1
-        return
+        .nodes[node-idx].kind = KIND-OBJ
+        .nodes[node-idx].count = 0
+        p = p + 1
+        p = .skip-ws(s, sn, p)
+        if p >= sn {
+            return
+        }
+        // empty object
+        if s[p] & 255 == 125 {
+            next-pos = p + 1
+            ok = 1
+            return
+        }
+        // parse key-value pairs
+        ! {
+            p = .skip-ws(s, sn, p)
+            if p >= sn {
+                return
+            }
+            // key must be string
+            if s[p] & 255 != 34 {
+                return
+            }
+            .parse(s, p)(key-idx, key-next, key-ok)
+            if key-ok == 0 {
+                return
+            }
+            p = key-next
+            p = .skip-ws(s, sn, p)
+            if p >= sn {
+                return
+            }
+            // expect ':'
+            if s[p] & 255 != 58 {
+                return
+            }
+            p = p + 1
+            // parse value
+            .parse(s, p)(val-idx, val-next, val-ok)
+            if val-ok == 0 {
+                return
+            }
+            // add to object
+            cnt = .nodes[node-idx].count
+            if cnt >= JSON-MAX-CHILDREN {
+                return
+            }
+            // copy key string
+            .nodes[node-idx].keys[cnt].len = .nodes[key-idx].str-val.len
+            j i64 = 0
+            for j < .nodes[key-idx].str-val.len {
+                .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
+                j = j + 1
+            }
+            .nodes[node-idx].children[cnt] = val-idx
+            .nodes[node-idx].count = cnt + 1
+            p = val-next
+            p = .skip-ws(s, sn, p)
+            if p >= sn {
+                return
+            }
+            c2 = s[p] & 255
+            if c2 == 125 {
+                next-pos = p + 1
+                ok = 1
+                return
+            }
+            if c2 == 44 {
+                p = p + 1
+            } else {
+                return
+            }
+        }
+    }
+}
+
+// skip-ws: 跳過空白字元
+json-pool.skip-ws = (s str, sn i64, pos i64) (p i64) {
+    p = pos
+    for p < sn {
+        c = s[p] & 255
+        if c != 32 && c != 9 && c != 10 && c != 13 {
+            return
+        }
+        p = p + 1
     }
 }
 
 // parse-str: 解析 JSON 字串（從開引號開始）
-parse-str = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
-    val.kind = KIND-STR
+json-pool.parse-str = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i64) {
     ok = 0
     i = pos + 1
     j = 0
+    c i64 = 0
     for i < sn {
         c = s[i] & 255
         if c == 34 {
+            .nodes[node-idx].str-val.len = j
             next-pos = i + 1
             ok = 1
             return
         }
-
         // 跳過轉義字元
         if c == 92 {
             i = i + 1
+            if i >= sn {
+                return
+            }
+            c = s[i] & 255
+            // 處理常見轉義
+            if c == 110 {
+                c = 10
+            }
+            if c == 116 {
+                c = 9
+            }
+            if c == 114 {
+                c = 13
+            }
+            // c == 34, 92, 47 保留原樣
         }
-        val.str-val[j] = c
+        .nodes[node-idx].str-val[j] = c
         j = j + 1
         i = i + 1
     }
 }
 
 // parse-num: 解析 JSON 數字
-parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
-    val.kind = KIND-NUM
+json-pool.parse-num = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i64) {
     ok = 1
     i = pos
+    c i64 = 0
+    negative i64 = 0
+    .nodes[node-idx].num-val = 0.0
 
     // 負號
     if s[i] & 255 == 45 {
+        negative = 1
         i = i + 1
     }
 
@@ -172,7 +379,7 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
         if c < 48 || c > 57 {
             break
         }
-        val.num-val = val.num-val * 10.0 + (c - 48)
+        .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
         i = i + 1
     }
 
@@ -187,7 +394,7 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
                 if c < 48 || c > 57 {
                     break
                 }
-                val.num-val = val.num-val + frac * (c - 48)
+                .nodes[node-idx].num-val = .nodes[node-idx].num-val + frac * (c - 48)
                 frac = frac * 0.1
                 i = i + 1
             }
@@ -195,93 +402,338 @@ parse-num = (s str, sn i64, pos i64) (val json-value, next-pos i64, ok i64) {
     }
 
     // 處理負數
-    if s[pos] & 255 == 45 {
-        val.num-val = 0.0 - val.num-val
+    if negative == 1 {
+        .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     }
     next-pos = i
-}
-
-// ═══════════════════════════════════════════════
-// 序列化
-// ═══════════════════════════════════════════════
-
-// stringify: 將 JSON 值序列化為字串
-stringify = (val json-value, out str) (out-n i64) {
-    out-n = 0
-    if val.kind == KIND-NULL {
-        out[0] = 110
-        out[1] = 117
-        out[2] = 108
-        out[3] = 108
-        out-n = 4
-        return
-    }
-    if val.kind == KIND-BOOL {
-        if val.bool-val == 1 {
-            out[0] = 116
-            out[1] = 114
-            out[2] = 117
-            out[3] = 101
-            out-n = 4
-        } else {
-            out[0] = 102
-            out[1] = 97
-            out[2] = 108
-            out[3] = 115
-            out[4] = 101
-            out-n = 5
-        }
-        return
-    }
-    if val.kind == KIND-NUM {
-        // 簡易 f64 轉字串
-        // LLVM: call @snprintf(out, 64, "%g", val.num-val)
-        return
-    }
-    if val.kind == KIND-STR {
-        out[0] = 34
-        out-n = 1
-        // 複製字串值
-        i = 0
-        for true {
-            c = val.str-val[i] & 255
-            if c == 0 {
-                break
-            }
-            out[out-n] = c
-            out-n = out-n + 1
-            i = i + 1
-        }
-        out[out-n] = 34
-        out-n = out-n + 1
-        return
-    }
-    if val.kind == KIND-ARR {
-        out[0] = 91
-        out[1] = 93
-        out-n = 2
-        return
-    }
-    if val.kind == KIND-OBJ {
-        out[0] = 123
-        out[1] = 125
-        out-n = 2
-        return
-    }
 }
 
 // ═══════════════════════════════════════════════
 // 物件存取
 // ═══════════════════════════════════════════════
 
-// get-key: 從 JSON 物件取得指定鍵的值
-get-key = (obj json-value, key str, keyn i64) (val json-value, ok i64) {
-    ok = 0
-    // 需要遍歷物件鍵值對
-    // 目前為 stub，待 LLVM 支援動態結構
+// str-eq: 比較兩個 str 是否相等
+json-pool.str-eq = (a str, b str) (eq i64) {
+    eq = 0
+    if a.len != b.len {
+        return
+    }
+    i = 0
+    for i < a.len {
+        if a[i] != b[i] {
+            return
+        }
+        i = i + 1
+    }
+    eq = 1
 }
 
-// set-key: 在 JSON 物件設定鍵值
-set-key = (obj json-value, key str, keyn i64, val json-value) {
-    // 目前為 stub，待 LLVM 支援動態結構
+// get-key: 從物件節點取得鍵對應的子節點索引
+// 返回 val-idx=子節點索引, ok=1=找到
+json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok i64) {
+    ok = 0
+    val-idx = -1
+    if obj-idx < 0 || obj-idx >= .count {
+        return
+    }
+    if .nodes[obj-idx].kind != KIND-OBJ {
+        return
+    }
+    cnt = .nodes[obj-idx].count
+    i = 0
+    for i < cnt {
+        eq = 0
+        .str-eq(.nodes[obj-idx].keys[i], key)(eq)
+        if eq == 1 {
+            val-idx = .nodes[obj-idx].children[i]
+            ok = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// set-key: 在物件節點設定鍵值
+// 返回 ok=1=成功
+json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok i64) {
+    ok = 0
+    if obj-idx < 0 || obj-idx >= .count {
+        return
+    }
+    if .nodes[obj-idx].kind != KIND-OBJ {
+        return
+    }
+    // 檢查鍵是否存在（更新）
+    cnt = .nodes[obj-idx].count
+    i = 0
+    for i < cnt {
+        eq = 0
+        .str-eq(.nodes[obj-idx].keys[i], key)(eq)
+        if eq == 1 {
+            .nodes[obj-idx].children[i] = val-idx
+            ok = 1
+            return
+        }
+        i = i + 1
+    }
+    // 新增鍵
+    if cnt >= JSON-MAX-CHILDREN {
+        return
+    }
+    // 複製鍵字串
+    .nodes[obj-idx].keys[cnt].len = key.len
+    j = 0
+    for j < key.len {
+        .nodes[obj-idx].keys[cnt][j] = key[j]
+        j = j + 1
+    }
+    .nodes[obj-idx].children[cnt] = val-idx
+    .nodes[obj-idx].count = cnt + 1
+    ok = 1
+}
+
+// ═══════════════════════════════════════════════
+// 陣列存取
+// ═══════════════════════════════════════════════
+
+// arr-get: 從陣列節點取得指定索引的子節點
+// 返回 val-idx=子節點索引, ok=1=成功
+json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok i64) {
+    ok = 0
+    val-idx = -1
+    if arr-idx < 0 || arr-idx >= .count {
+        return
+    }
+    if .nodes[arr-idx].kind != KIND-ARR {
+        return
+    }
+    if elem < 0 || elem >= .nodes[arr-idx].count {
+        return
+    }
+    val-idx = .nodes[arr-idx].children[elem]
+    ok = 1
+}
+
+// arr-len: 取得陣列長度
+json-pool.arr-len = (arr-idx i64) (n i64) {
+    n = 0
+    if arr-idx < 0 || arr-idx >= .count {
+        return
+    }
+    if .nodes[arr-idx].kind != KIND-ARR {
+        return
+    }
+    n = .nodes[arr-idx].count
+}
+
+// ═══════════════════════════════════════════════
+// 標量存取
+// ═══════════════════════════════════════════════
+
+// get-kind: 取得節點類型
+json-pool.get-kind = (node-idx i64) (kind i64) {
+    kind = KIND-NULL
+    if node-idx < 0 || node-idx >= .count {
+        return
+    }
+    kind = .nodes[node-idx].kind
+}
+
+// get-str: 取得字串值
+// 返回 out=字串副本, ok=1=成功
+json-pool.get-str = (node-idx i64) (out str, ok i64) {
+    ok = 0
+    if node-idx < 0 || node-idx >= .count {
+        return
+    }
+    if .nodes[node-idx].kind != KIND-STR {
+        return
+    }
+    out = .nodes[node-idx].str-val
+    ok = 1
+}
+
+// get-num: 取得數值
+json-pool.get-num = (node-idx i64) (val f64, ok i64) {
+    ok = 0
+    val = 0.0
+    if node-idx < 0 || node-idx >= .count {
+        return
+    }
+    if .nodes[node-idx].kind != KIND-NUM {
+        return
+    }
+    val = .nodes[node-idx].num-val
+    ok = 1
+}
+
+// get-bool: 取得布林值
+// 返回 val=1=true/0=false, ok=1=成功
+json-pool.get-bool = (node-idx i64) (val i64, ok i64) {
+    ok = 0
+    val = 0
+    if node-idx < 0 || node-idx >= .count {
+        return
+    }
+    if .nodes[node-idx].kind != KIND-BOOL {
+        return
+    }
+    val = .nodes[node-idx].bool-val
+    ok = 1
+}
+
+// ═══════════════════════════════════════════════
+// 序列化
+// ═══════════════════════════════════════════════
+
+// stringify: 將節點序列化為字串
+// start=開始寫入位置, 返回 out-n=寫入後位置
+json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
+    out-n = start
+    if node-idx < 0 || node-idx >= .count {
+        return
+    }
+    kind = .nodes[node-idx].kind
+    c i64 = 0
+    cnt i64 = 0
+    i i64 = 0
+    j i64 = 0
+    child-n i64 = 0
+    num-val f64 = 0.0
+    num-str str = ''
+
+    if kind == KIND-NULL {
+        out[out-n] = 110
+        out[out-n + 1] = 117
+        out[out-n + 2] = 108
+        out[out-n + 3] = 108
+        out-n = out-n + 4
+        return
+    }
+    if kind == KIND-BOOL {
+        if .nodes[node-idx].bool-val == 1 {
+            out[out-n] = 116
+            out[out-n + 1] = 114
+            out[out-n + 2] = 117
+            out[out-n + 3] = 101
+            out-n = out-n + 4
+        } else {
+            out[out-n] = 102
+            out[out-n + 1] = 97
+            out[out-n + 2] = 108
+            out[out-n + 3] = 115
+            out[out-n + 4] = 101
+            out-n = out-n + 5
+        }
+        return
+    }
+    if kind == KIND-NUM {
+        num-val = .nodes[node-idx].num-val
+        num-str = num-val.to-str()
+        j = 0
+        for j < num-str.len {
+            out[out-n] = num-str[j]
+            out-n = out-n + 1
+            j = j + 1
+        }
+        return
+    }
+    if kind == KIND-STR {
+        out[out-n] = 34
+        out-n = out-n + 1
+        j = 0
+        for j < .nodes[node-idx].str-val.len {
+            c = .nodes[node-idx].str-val[j] & 255
+            // 跳脫特殊字元
+            if c == 34 {
+                out[out-n] = 92
+                out[out-n + 1] = 34
+                out-n = out-n + 2
+            } else {
+                if c == 92 {
+                    out[out-n] = 92
+                    out[out-n + 1] = 92
+                    out-n = out-n + 2
+                } else {
+                    if c == 10 {
+                        out[out-n] = 92
+                        out[out-n + 1] = 110
+                        out-n = out-n + 2
+                    } else {
+                        if c == 9 {
+                            out[out-n] = 92
+                            out[out-n + 1] = 116
+                            out-n = out-n + 2
+                        } else {
+                            if c == 13 {
+                                out[out-n] = 92
+                                out[out-n + 1] = 114
+                                out-n = out-n + 2
+                            } else {
+                                out[out-n] = c
+                                out-n = out-n + 1
+                            }
+                        }
+                    }
+                }
+            }
+            j = j + 1
+        }
+        out[out-n] = 34
+        out-n = out-n + 1
+        return
+    }
+    if kind == KIND-ARR {
+        out[out-n] = 91
+        out-n = out-n + 1
+        cnt = .nodes[node-idx].count
+        i = 0
+        for i < cnt {
+            if i > 0 {
+                out[out-n] = 44
+                out-n = out-n + 1
+            }
+            child-n = 0
+            .stringify(.nodes[node-idx].children[i], out, out-n)(child-n)
+            out-n = child-n
+            i = i + 1
+        }
+        out[out-n] = 93
+        out-n = out-n + 1
+        return
+    }
+    if kind == KIND-OBJ {
+        out[out-n] = 123
+        out-n = out-n + 1
+        cnt = .nodes[node-idx].count
+        i = 0
+        for i < cnt {
+            if i > 0 {
+                out[out-n] = 44
+                out-n = out-n + 1
+            }
+            // key
+            out[out-n] = 34
+            out-n = out-n + 1
+            j = 0
+            for j < .nodes[node-idx].keys[i].len {
+                out[out-n] = .nodes[node-idx].keys[i][j]
+                out-n = out-n + 1
+                j = j + 1
+            }
+            out[out-n] = 34
+            out-n = out-n + 1
+            // ':'
+            out[out-n] = 58
+            out-n = out-n + 1
+            // value
+            child-n = 0
+            .stringify(.nodes[node-idx].children[i], out, out-n)(child-n)
+            out-n = child-n
+            i = i + 1
+        }
+        out[out-n] = 125
+        out-n = out-n + 1
+        return
+    }
 }
