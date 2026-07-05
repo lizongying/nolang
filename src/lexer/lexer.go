@@ -324,6 +324,16 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = COLON
 		tok.Literal = string(l.ch)
 	case '_':
+		// If _ is followed by a letter or digit, it's the start of an identifier (e.g. _sqlite3-open)
+		if unicode.IsLetter(rune(l.peekChar())) || isDigit(l.peekChar()) {
+			literal := l.readIdentifier()
+			tok.Type = keywords[literal]
+			if tok.Type == 0 {
+				tok.Type = IDENT
+			}
+			tok.Literal = literal
+			return tok
+		}
 		tok.Type = UNDERSCORE
 		tok.Literal = string(l.ch)
 	case '.':
@@ -339,13 +349,26 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = AT
 		tok.Literal = string(l.ch)
 	case '#':
-		// Distinguish `#N` (numeric label, e.g. `#1 i <- ...`) from `# path`
-		// (use statement, e.g. `# std/bigint`).
+		// Distinguish three forms:
+		//   #N   — numeric label (e.g. `#1 i <- ...`)
+		//   #c   — FFI directive (no space between # and language name)
+		//   # path — use/import statement (space after #)
 		if isDigit(l.peekChar()) {
 			tok.Type = LABEL
 			l.readChar() // consume '#'
 			start := l.position
 			for isDigit(l.ch) {
+				l.readChar()
+			}
+			tok.Literal = l.input[start:l.position]
+			return tok
+		}
+		// FFI directive: #c, #cpp, #rust, ... (letter immediately after #)
+		if unicode.IsLetter(rune(l.peekChar())) {
+			tok.Type = FFI
+			l.readChar() // consume '#', now l.ch is first letter
+			start := l.position
+			for isLetter(l.ch) || isDigit(l.ch) {
 				l.readChar()
 			}
 			tok.Literal = l.input[start:l.position]

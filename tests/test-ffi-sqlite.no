@@ -2,7 +2,7 @@
 //
 // 測試 open/exec/query/scan/prepare/bind 完整流程。
 // 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
-// 驅動包 example/sqlite-driver 使用 FFI extern 直接呼叫 SQLite C API。
+// 驅動包 example/sqlite-driver 使用 #c FFI 指令直接呼叫 SQLite C API。
 
 # /example/sqlite-driver/sqlite
 

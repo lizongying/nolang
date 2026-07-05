@@ -246,11 +246,16 @@ func ffiTypeToNolangStorage(t string) string {
 
 // externSymbolRef returns the LLVM symbol reference for an extern (C) function.
 // Nolang source uses hyphens (-) in identifiers, but C ABI symbols use underscores (_).
-// Convert hyphens to underscores so e.g. "sqlite3-open" → @sqlite3_open, matching
-// the actual symbol exported by libsqlite3. Underscores are valid unquoted LLVM
-// identifier characters, so no quoting is needed.
+// A leading underscore in the Nolang name marks the declaration as private (not
+// exported from the module); it is stripped before generating the C ABI symbol.
+// So "_sqlite3-open" → @sqlite3_open, matching the actual libsqlite3 symbol.
 func externSymbolRef(name string) string {
-	cName := strings.ReplaceAll(name, "-", "_")
+	cName := name
+	// Strip leading underscore (private marker) for C ABI symbol
+	if strings.HasPrefix(cName, "_") {
+		cName = cName[1:]
+	}
+	cName = strings.ReplaceAll(cName, "-", "_")
 	return "@" + cName
 }
 

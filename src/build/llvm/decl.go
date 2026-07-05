@@ -234,4 +234,19 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// macOS addrinfo layout: ai_addr at offset 32
 	sb.WriteString("declare i32 @getaddrinfo(i8*, i8*, i8*, i8**)\n")
 	sb.WriteString("declare void @freeaddrinfo(i8*)\n")
+
+	// OpenSSL functions for TLS (HTTPS / HTTP/2 over TLS)
+	sb.WriteString("@.tls-ctx = private global i8* null\n")
+	sb.WriteString("declare i32 @OPENSSL_init_ssl(i64, i8*)\n")
+	sb.WriteString("declare i8* @TLS_client_method()\n")
+	sb.WriteString("declare i8* @SSL_CTX_new(i8*)\n")
+	sb.WriteString("declare void @SSL_CTX_free(i8*)\n")
+	sb.WriteString("declare i8* @SSL_new(i8*)\n")
+	sb.WriteString("declare void @SSL_free(i8*)\n")
+	sb.WriteString("declare i32 @SSL_set_fd(i8*, i32)\n")
+	sb.WriteString("declare i32 @SSL_set_tlsext_host_name(i8*, i8*)\n")
+	sb.WriteString("declare i32 @SSL_connect(i8*)\n")
+	sb.WriteString("declare i32 @SSL_read(i8*, i8*, i32)\n")
+	sb.WriteString("declare i32 @SSL_write(i8*, i8*, i32)\n")
+	sb.WriteString("declare i32 @SSL_shutdown(i8*)\n")
 }

@@ -226,30 +226,43 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		ev := g.generateExprWithSB(sb, arg)
 		// 從 SSA 寄存器名稱推斷型別：GEP for struct slice → %T*；load → i64
 		// %idx.gep.*, %arr.idx.elem.*, %vec.idx.elem.*, %str-longidx.gep.* 等都是 GEP 結果（指標）
-		// %idx.zext.*, %arr.idx.val.*, %vec.idx.val.* 等是載入值（i64）
+		// %idx.zext.*, %arr.idx.val.*, %vec.idx.val.* 等是載入值（i64 或 %str-long）
+		// 使用 exprResultLLVMType 推導元素型別（支援 Identifier 和 DotExpression receiver）
+		elemLLVMType := g.exprResultLLVMType(arg)
+		if elemLLVMType == "" {
+			elemLLVMType = "i64"
+		}
 		if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
-			// GEP result is a pointer; need its LLVM type
-			// Determine element type from source variable
-			ptrType := "i64*"
-			if ident, ok := a.Left.(*parser.Identifier); ok {
-				if g.varTypes != nil {
-					if t, ok := g.varTypes[ident.Value]; ok {
-						if strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
-							ptrType = t // %str-long* etc.
-						}
+			// GEP result is a pointer
+			return elemLLVMType + "* " + ev
+		}
+		// SSA value (e.g., %idx.zext.* for []byte, %arr.idx.val.* for []str)
+		// 需根據元素型別選擇正確的 alloca/store 型別
+		// 若 SSA 值為 i64（如 zext 後的 byte）但元素型別為 i8/i16/i32，需 trunc
+		storeVal := ev
+		if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
+			srcType := g.intExprLLVMType(arg)
+			if srcType == "" {
+				srcType = "i64"
+			}
+			if srcType != elemLLVMType {
+				g.tmpIdx++
+				convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
+				if sb != nil {
+					if g.isIntegerLLVMType(srcType) {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
 					}
 				}
+				storeVal = convReg
 			}
-			return ptrType + " " + ev
 		}
-		// SSA value (e.g., %idx.zext.* for []byte) — wrap in temp
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemLLVMType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemLLVMType, storeVal, elemLLVMType, tmpName))
 		}
-		return "i64* " + tmpName
+		return elemLLVMType + "* " + tmpName
 	case *parser.SliceExpression:
 		// 切片表達式回傳 %vec 或 %str-long（已分配在 stack 上）
 		ev := g.generateExprWithSB(sb, arg)
@@ -460,7 +473,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 確定內層調用的返回型別
 		retType := "void"
 		innerFnName := ""
-		var innerMethodRecv *parser.Identifier // method receiver if inner call is s.method(...)
+		var innerMethodRecv parser.Expression // method receiver if inner call is s.method(...)
 		if ident, ok := innerCall.Function.(*parser.Identifier); ok {
 			innerFnName = ident.Value
 		} else if dot, ok := innerCall.Function.(*parser.DotExpression); ok {
@@ -519,6 +532,28 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// fallback
 				if innerFnName == "" {
 					innerFnName = candidate
+				}
+			} else if _, ok := dot.Receiver.(*parser.IndexExpression); ok {
+				// 陣列元素接收者（如 names[i].slice(0, nlen)）
+				// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
+				elemType := g.exprResultLLVMType(dot.Receiver)
+				srcType := strings.TrimPrefix(elemType, "%")
+				candidates := []string{srcType}
+				if srcType == "str-short" || srcType == "str-long" {
+					candidates = append(candidates, "str")
+				}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if _, ok := g.funcRetTypes[shortName]; ok {
+							innerFnName = shortName
+							innerMethodRecv = dot.Receiver
+							break
+						}
+					}
 				}
 			}
 		}
@@ -597,10 +632,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if innerMethodRecv != nil {
 			// str-short 接收者呼叫 str.* 方法時，需轉換為 %str-long
 			if strings.HasPrefix(innerFnName, "str.") {
-				if t, ok := g.varTypes[innerMethodRecv.Value]; ok && t == "%str-short" {
-					shortPtr := g.varAddr(innerMethodRecv.Value)
-					strPtr := g.convertShortToLong(sb, shortPtr)
-					innerArgs = append(innerArgs, "%str-long* "+strPtr)
+				if recvIdent, ok := innerMethodRecv.(*parser.Identifier); ok {
+					if t, ok := g.varTypes[recvIdent.Value]; ok && t == "%str-short" {
+						shortPtr := g.varAddr(recvIdent.Value)
+						strPtr := g.convertShortToLong(sb, shortPtr)
+						innerArgs = append(innerArgs, "%str-long* "+strPtr)
+					} else {
+						innerArgs = append(innerArgs, g.generateCallArg(sb, innerMethodRecv))
+					}
 				} else {
 					innerArgs = append(innerArgs, g.generateCallArg(sb, innerMethodRecv))
 				}
@@ -1020,6 +1059,35 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				fnName = shortName
 				methodReceiver = receiverExpr
 			}
+		} else if _, ok := receiverExpr.(*parser.IndexExpression); ok {
+			// 陣列元素接收者（如 names[i].slice(0, nlen)）
+			// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			candidates := []string{srcType}
+			if srcType == "str-short" || srcType == "str-long" {
+				candidates = append(candidates, "str")
+			}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -1285,26 +1353,38 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			return elemType + "* " + tmpName
 		case *parser.IndexExpression:
 			ev := g.generateExprWithSB(sb, arg)
+			// 使用 exprResultLLVMType 推導元素型別（支援 Identifier 和 DotExpression receiver）
+			elemLLVMType := g.exprResultLLVMType(arg)
+			if elemLLVMType == "" {
+				elemLLVMType = "i64"
+			}
 			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
-				ptrType := "i64*"
-				if ident, ok := a.Left.(*parser.Identifier); ok {
-					if g.varTypes != nil {
-						if t, ok := g.varTypes[ident.Value]; ok {
-							if strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
-								ptrType = t
-							}
-						}
-					}
+				// GEP result is a pointer
+				return elemLLVMType + "* " + ev
+			}
+			// 若 SSA 值為 i64（如 zext 後的 byte）但元素型別為 i8/i16/i32，需 trunc
+			storeVal := ev
+			if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
+				srcType := g.intExprLLVMType(arg)
+				if srcType == "" {
+					srcType = "i64"
 				}
-				return ptrType + " " + ev
+				if srcType != elemLLVMType && g.isIntegerLLVMType(srcType) {
+					g.tmpIdx++
+					convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+					}
+					storeVal = convReg
+				}
 			}
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemLLVMType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemLLVMType, storeVal, elemLLVMType, tmpName))
 			}
-			return "i64* " + tmpName
+			return elemLLVMType + "* " + tmpName
 		case *parser.SliceExpression:
 			ev := g.generateExprWithSB(sb, arg)
 			ptrType := "%vec*"

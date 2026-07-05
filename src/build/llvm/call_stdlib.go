@@ -1555,6 +1555,150 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return recvRet
 	}
 
+	// ═══════════════════════════════════════════════
+	// TLS builtins (OpenSSL)
+	// ═══════════════════════════════════════════════
+
+	// tls-init: initialize OpenSSL and create global SSL_CTX
+	// Returns: i64 (1=success, 0=fail)
+	if fnName == "tls-init" {
+		g.tmpIdx++
+		initRet := fmt.Sprintf("%%tls.init.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		methodVal := fmt.Sprintf("%%tls.init.method.%d", g.tmpIdx)
+		g.tmpIdx++
+		ctxVal := fmt.Sprintf("%%tls.init.ctx.%d", g.tmpIdx)
+		g.tmpIdx++
+		ctxNull := fmt.Sprintf("%%tls.init.null.%d", g.tmpIdx)
+		g.tmpIdx++
+		resultVal := fmt.Sprintf("%%tls.init.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @OPENSSL_init_ssl(i64 0, i8* null)\n", g.indent(), initRet))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @TLS_client_method()\n", g.indent(), methodVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @SSL_CTX_new(i8* %s)\n", g.indent(), ctxVal, methodVal))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** @.tls-ctx\n", g.indent(), ctxVal))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), ctxNull, ctxVal))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), resultVal, ctxNull))
+		}
+		return resultVal
+	}
+
+	// tls-connect: wrap an existing fd with TLS
+	// Args: fd i64, host str
+	// Returns: i64 (SSL* pointer, 0 on error)
+	if fnName == "tls-connect" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		fdVal := a[0]
+		hostPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
+
+		g.tmpIdx++
+		ctxLoad := fmt.Sprintf("%%tls.c.ctx.%d", g.tmpIdx)
+		g.tmpIdx++
+		sslVal := fmt.Sprintf("%%tls.c.ssl.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%tls.c.fd.%d", g.tmpIdx)
+		g.tmpIdx++
+		setFdRet := fmt.Sprintf("%%tls.c.setfd.%d", g.tmpIdx)
+		g.tmpIdx++
+		setSniRet := fmt.Sprintf("%%tls.c.setsni.%d", g.tmpIdx)
+		g.tmpIdx++
+		connRet := fmt.Sprintf("%%tls.c.conn.%d", g.tmpIdx)
+		g.tmpIdx++
+		connOk := fmt.Sprintf("%%tls.c.ok.%d", g.tmpIdx)
+		g.tmpIdx++
+		sslI64 := fmt.Sprintf("%%tls.c.ssli64.%d", g.tmpIdx)
+		g.tmpIdx++
+		result := fmt.Sprintf("%%tls.c.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** @.tls-ctx\n", g.indent(), ctxLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @SSL_new(i8* %s)\n", g.indent(), sslVal, ctxLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_set_fd(i8* %s, i32 %s)\n", g.indent(), setFdRet, sslVal, fdTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_set_tlsext_host_name(i8* %s, i8* %s)\n", g.indent(), setSniRet, sslVal, hostPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_connect(i8* %s)\n", g.indent(), connRet, sslVal))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i32 %s, 0\n", g.indent(), connOk, connRet))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), sslI64, sslVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), result, connOk, sslI64))
+		}
+		return result
+	}
+
+	// tls-send: send data over TLS
+	// Args: ssl i64, data str, n i64
+	// Returns: i64 (bytes written, -1 on error)
+	if fnName == "tls-send" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		sslVal := a[0]
+		dataPtr := g.extractStrFromEvalArg(sb, a[1])
+		nVal := a[2]
+
+		g.tmpIdx++
+		sslPtr := fmt.Sprintf("%%tls.s.sslptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		nTrunc := fmt.Sprintf("%%tls.s.n.%d", g.tmpIdx)
+		g.tmpIdx++
+		sendRet := fmt.Sprintf("%%tls.s.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		sendRetI64 := fmt.Sprintf("%%tls.s.reti64.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), sslPtr, sslVal))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), nTrunc, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_write(i8* %s, i8* %s, i32 %s)\n", g.indent(), sendRet, sslPtr, dataPtr, nTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), sendRetI64, sendRet))
+		}
+		return sendRetI64
+	}
+
+	// tls-recv: receive data over TLS
+	// Args: ssl i64, buf str, n i64
+	// Returns: i64 (bytes read, -1 on error, 0 on closed)
+	if fnName == "tls-recv" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		sslVal := a[0]
+		bufPtr := g.extractStrFromEvalArg(sb, a[1])
+		nVal := a[2]
+
+		g.tmpIdx++
+		sslPtr := fmt.Sprintf("%%tls.r.sslptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		nTrunc := fmt.Sprintf("%%tls.r.n.%d", g.tmpIdx)
+		g.tmpIdx++
+		recvRet := fmt.Sprintf("%%tls.r.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		recvRetI64 := fmt.Sprintf("%%tls.r.reti64.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), sslPtr, sslVal))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), nTrunc, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_read(i8* %s, i8* %s, i32 %s)\n", g.indent(), recvRet, sslPtr, bufPtr, nTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), recvRetI64, recvRet))
+		}
+		return recvRetI64
+	}
+
+	// tls-close: close TLS connection
+	// Args: ssl i64
+	// Returns: i64 (1=success)
+	if fnName == "tls-close" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		sslVal := a[0]
+
+		g.tmpIdx++
+		sslPtr := fmt.Sprintf("%%tls.cl.sslptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		shutRet := fmt.Sprintf("%%tls.cl.shut.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), sslPtr, sslVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @SSL_shutdown(i8* %s)\n", g.indent(), shutRet, sslPtr))
+			sb.WriteString(fmt.Sprintf("%scall void @SSL_free(i8* %s)\n", g.indent(), sslPtr))
+		}
+		return "1"
+	}
+
 	return ""
 }
 

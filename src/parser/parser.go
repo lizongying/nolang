@@ -22,8 +22,8 @@ type Parser struct {
 	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
 
-	// Filename is the source file name (e.g. "sqlite.extern.no").
-	// Used to enforce that extern declarations only appear in *.extern.no files.
+	// Filename is the source file name (e.g. "sqlite.no").
+	// Used for diagnostics and error reporting.
 	Filename string
 
 	// AllowAnonymousFnType controls whether anonymous function type syntax
@@ -720,8 +720,8 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
-	case lexer.EXTERN:
-		return p.parseExternStatement()
+	case lexer.FFI:
+		return p.parseFFIDeclaration()
 	case lexer.LABEL:
 		return p.parseLabeledStatement()
 	case lexer.AT:
@@ -3143,7 +3143,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
-		lexer.LBRACKET, lexer.EXTERN,
+		lexer.LBRACKET, lexer.FFI,
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
 		// preceding `break`/`continue`/`return`).
@@ -6695,32 +6695,34 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 }
 
-// parseExternStatement 解析 FFI extern 宣告：
+// parseFFIDeclaration 解析 FFI 宣告：
 //
-//	extern name = (params) (results)
+//	#c
+//	_name = (params) (results)
 //
-// 僅為宣告，無函式主體。參數/結果型別支援 C 風格指針語法
-// （*T、**T、***T，必須有具體型別）以及一般具名型別（i64, str, ...）。
-// extern 宣告只能出現在檔名為 *.extern.no 的檔案中。
-func (p *Parser) parseExternStatement() Statement {
-	// FFI extern 宣告只能出現在 *.extern.no 文件中
-	if !strings.HasSuffix(p.Filename, ".extern.no") {
-		msg := fmt.Sprintf("line %d, column %d: extern declarations are only allowed in *.extern.no files (current file: %q)",
-			p.currentToken.Line, p.currentToken.Column, p.Filename)
-		p.saveError(msg)
-	}
-
+// #c（或 #cpp 等）獨立一行，標記下一個宣告為 FFI 綁定。
+// 名稱以 _ 開頭表示私有（不導出），C ABI 符號自動去除前綴 _ 並將連字號轉為底線。
+// 參數/結果型別支援 C 風格指針語法（*T、**T、***T，必須有具體型別）以及一般具名型別。
+func (p *Parser) parseFFIDeclaration() Statement {
+	// 讀取 FFI 指令（#c、#cpp 等），取得語言名稱
+	lang := p.currentToken.Literal
 	stmt := &ExternStatement{
 		Token:      p.currentToken,
+		Lang:       lang,
 		Parameters: []*Parameter{},
 		Results:    []*Parameter{},
 	}
-	p.nextToken() // skip extern
+	p.nextToken() // skip FFI token
 
-	// 函式名稱
+	// 跳過 NEWLINE（#c 獨立一行，宣告在後續行）
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// 函式名稱（可以 _ 開頭表示私有）
 	if p.currentToken.Type != lexer.IDENT {
-		msg := fmt.Sprintf("line %d, column %d: expected identifier after 'extern', got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+		msg := fmt.Sprintf("line %d, column %d: expected identifier after #%s directive, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, lang, p.currentToken.Type.String())
 		p.saveError(msg)
 		return nil
 	}
@@ -6729,7 +6731,7 @@ func (p *Parser) parseExternStatement() Statement {
 
 	// 預期 '='
 	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' after extern name, got %s instead",
+		msg := fmt.Sprintf("line %d, column %d: expected '=' after FFI name, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
 		return nil

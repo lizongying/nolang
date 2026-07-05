@@ -1,0 +1,281 @@
+// test-hpack — HPACK 標頭壓縮測試
+// # std/net/hpack
+
+HPACK-TEST-BUF = 256
+
+// test-encode-int-small: 編碼小整數（fit in prefix）
+test-encode-int-small = () {
+    space str = ' '
+    out str = space.repeat(HPACK-TEST-BUF)
+    n i64 = 0
+    hpack-encode-int(10, 5, 0)(out, n)
+    // 10 < 2^5 - 1 = 31，所以 out[0] = 0 | 10 = 10
+    if out[0] != 10 {
+        print('FAIL: expected 10, got')
+        print(out[0])
+        return
+    }
+    if n != 1 {
+        print('FAIL: expected n=1')
+        return
+    }
+    print('PASS: encode-int-small')
+}
+
+// test-encode-int-multi: 編碼多 byte 整數
+test-encode-int-multi = () {
+    space str = ' '
+    out str = space.repeat(HPACK-TEST-BUF)
+    n i64 = 0
+    // 1337 with 5-bit prefix: 1337 > 31, so multi-byte
+    // First byte: 31 (all 1s in prefix)
+    // 1337 - 31 = 1306
+    // 1306 in 7-bit groups (LSB first):
+    //   1306 & 127 = 42, 1306 >> 7 = 10
+    //   10 & 127 = 10, 10 >> 7 = 0
+    // So: out[0] = 31, out[1] = 42 | 128 = 170, out[2] = 10
+    hpack-encode-int(1337, 5, 0)(out, n)
+    if n != 3 {
+        print('FAIL: expected n=3')
+        return
+    }
+    if out[0] != 31 {
+        print('FAIL: expected out[0]=31')
+        return
+    }
+    if out[1] != 170 {
+        print('FAIL: expected out[1]=170')
+        return
+    }
+    if out[2] != 10 {
+        print('FAIL: expected out[2]=10')
+        return
+    }
+    print('PASS: encode-int-multi')
+}
+
+// test-decode-int-small: 解碼小整數
+test-decode-int-small = () {
+    space str = ' '
+    data str = space.repeat(HPACK-TEST-BUF)
+    data[0] = 10
+    val i64 = 0
+    next i64 = 0
+    hpack-decode-int(data, 0, 5)(val, next)
+    if val != 10 {
+        print('FAIL: expected val=10')
+        return
+    }
+    if next != 1 {
+        print('FAIL: expected next=1')
+        return
+    }
+    print('PASS: decode-int-small')
+}
+
+// test-decode-int-multi: 解碼多 byte 整數
+test-decode-int-multi = () {
+    space str = ' '
+    data str = space.repeat(HPACK-TEST-BUF)
+    data[0] = 31
+    data[1] = 170
+    data[2] = 10
+    val i64 = 0
+    next i64 = 0
+    hpack-decode-int(data, 0, 5)(val, next)
+    if val != 1337 {
+        print('FAIL: expected val=1337')
+        return
+    }
+    if next != 3 {
+        print('FAIL: expected next=3')
+        return
+    }
+    print('PASS: decode-int-multi')
+}
+
+// test-encode-str: 編碼字串
+test-encode-str = () {
+    space str = ' '
+    out str = space.repeat(HPACK-TEST-BUF)
+    n i64 = 0
+    hpack-encode-str('abc')(out, n)
+    // H=0, length=3 (fits in 7-bit prefix), then 'a','b','c'
+    if n != 4 {
+        print('FAIL: expected n=4')
+        return
+    }
+    if out[0] != 3 {
+        print('FAIL: expected out[0]=3')
+        return
+    }
+    if out[1] != 97 {
+        print('FAIL: expected out[1]=97 (a)')
+        return
+    }
+    print('PASS: encode-str')
+}
+
+// test-decode-str: 解碼字串
+test-decode-str = () {
+    space str = ' '
+    data str = space.repeat(HPACK-TEST-BUF)
+    data[0] = 3
+    data[1] = 97
+    data[2] = 98
+    data[3] = 99
+    out str = ''
+    next i64 = 0
+    hpack-decode-str(data, 0)(out, next)
+    if next != 4 {
+        print('FAIL: expected next=4')
+        return
+    }
+    if out.len != 3 {
+        print('FAIL: expected out.len=3')
+        return
+    }
+    if out[0] != 97 {
+        print('FAIL: expected out[0]=97 (a)')
+        return
+    }
+    print('PASS: decode-str')
+}
+
+// test-static-table: 靜態表查找
+test-static-table = () {
+    t hpack-tables
+    t.init()
+    // 查找 :method GET (靜態表索引 2)
+    idx i64 = 0
+    t.find(':method', 'GET')(idx)
+    if idx != 2 {
+        print('FAIL: expected idx=2 for :method GET')
+        return
+    }
+    // 查找 :status 200 (靜態表索引 8)
+    idx = 0
+    t.find(':status', '200')(idx)
+    if idx != 8 {
+        print('FAIL: expected idx=8 for :status 200')
+        return
+    }
+    print('PASS: static-table')
+}
+
+// test-dyn-table: 動態表新增和查找
+test-dyn-table = () {
+    t hpack-tables
+    t.init()
+    t.dyn-add('x-custom', 'hello')
+    // 動態表索引從 62 開始
+    idx i64 = 0
+    t.find('x-custom', 'hello')(idx)
+    if idx != 62 {
+        print('FAIL: expected idx=62 for x-custom')
+        return
+    }
+    // lookup 驗證
+    name str = ''
+    value str = ''
+    found bool = false
+    t.lookup(62)(name, value, found)
+    if found == false {
+        print('FAIL: lookup not found')
+        return
+    }
+    if name.len != 8 {
+        print('FAIL: expected name.len=8')
+        return
+    }
+    if value.len != 5 {
+        print('FAIL: expected value.len=5')
+        return
+    }
+    print('PASS: dyn-table')
+}
+
+// test-encode-header-indexed: 編碼已知標頭（完全匹配→indexed）
+test-encode-header-indexed = () {
+    space str = ' '
+    t hpack-tables
+    t.init()
+    out str = space.repeat(HPACK-TEST-BUF)
+    n i64 = 0
+    t.encode-header(':method', 'GET')(out, n)
+    // :method GET 是靜態表索引 2 → indexed representation
+    // 格式: 1xxxxxxx (高 bit=1), 7-bit index = 2
+    // out[0] = 128 | 2 = 130
+    if n != 1 {
+        print('FAIL: expected n=1')
+        return
+    }
+    if out[0] != 130 {
+        print('FAIL: expected out[0]=130')
+        return
+    }
+    print('PASS: encode-header-indexed')
+}
+
+// test-decode-headers: 解碼標頭塊
+test-decode-headers = () {
+    space str = ' '
+    t hpack-tables
+    t.init()
+    // 編碼 :method GET → indexed (130)
+    // 編碼 :path / → indexed (4)
+    enc-out str = space.repeat(HPACK-TEST-BUF)
+    enc-n i64 = 0
+    t.encode-header(':method', 'GET')(enc-out, enc-n)
+    // 編碼 :path /
+    enc2 str = space.repeat(HPACK-TEST-BUF)
+    enc2-n i64 = 0
+    t.encode-header(':path', '/')(enc2, enc2-n)
+    // 合併
+    i = 0
+    for i < enc2-n {
+        enc-out[enc-n + i] = enc2[i]
+        i = i + 1
+    }
+    enc-n = enc-n + enc2-n
+    // 解碼
+    names [128]str
+    values [128]str
+    count i64 = 0
+    ok bool = false
+    t.decode-headers(enc-out, enc-n)(names, values, count, ok)
+    if ok == false {
+        print('FAIL: decode failed')
+        return
+    }
+    if count != 2 {
+        print('FAIL: expected count=2')
+        return
+    }
+    // 第一個應該是 :method GET
+    if names[0].len != 7 {
+        print('FAIL: expected names[0].len=7')
+        return
+    }
+    if values[0].len != 3 {
+        print('FAIL: expected values[0].len=3')
+        return
+    }
+    print('PASS: decode-headers')
+}
+
+// test-run-all: 執行所有測試
+test-run-all = () {
+    print('=== HPACK Tests ===')
+    test-encode-int-small()
+    test-encode-int-multi()
+    test-decode-int-small()
+    test-decode-int-multi()
+    test-encode-str()
+    test-decode-str()
+    test-static-table()
+    test-dyn-table()
+    test-encode-header-indexed()
+    test-decode-headers()
+    print('=== HPACK Tests Done ===')
+}

@@ -515,3 +515,85 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     // 關閉連線
     close(conn.fd)
 }
+
+// ═══════════════════════════════════════════════
+// 便捷函數（返回 http-response）
+// ═══════════════════════════════════════════════
+
+// http2-do-req: HTTP/2 請求，返回 http-response
+// method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
+// url: 'http://host:port/path'
+// body: 請求主體（空字串=無主體）
+http2-do-req = (method str, url str, body str) (resp http-response, ok bool) {
+    ok = false
+    names [32]str
+    values [32]str
+    header-count i64 = 0
+    raw-body str = ''
+    body-n i64 = 0
+    http2-do(method, url, body)(names, values, header-count, raw-body, body-n, ok)
+    if ok == false {
+        return
+    }
+    // 複製標頭到 resp（用 slice 載入值）
+    resp.header-count = header-count
+    i = 0
+    for i < header-count {
+        nlen = names[i].len
+        vlen = values[i].len
+        resp.header-names[i] = names[i].slice(0, nlen)
+        resp.header-values[i] = values[i].slice(0, vlen)
+        // 尋找 :status
+        if nlen == 7 {
+            is-status = 1
+            status-hdr str = ':status'
+            j = 0
+            for j < 7 {
+                if names[i][j] != status-hdr[j] {
+                    is-status = 0
+                    break
+                }
+                j = j + 1
+            }
+            if is-status == 1 {
+                resp.status-code = 0
+                j = 0
+                for j < vlen {
+                    resp.status-code = resp.status-code * 10 + (values[i][j] - 48)
+                    j = j + 1
+                }
+                resp.status-text = values[i].slice(0, vlen)
+            }
+        }
+        i = i + 1
+    }
+    // 複製 body
+    if body-n > 0 {
+        resp.body = raw-body.slice(0, body-n)
+    }
+}
+
+// http2-get: HTTP/2 GET 請求
+http2-get = (url str) (resp http-response, ok bool) {
+    http2-do-req('GET', url, '')(resp, ok)
+}
+
+// http2-post: HTTP/2 POST 請求
+http2-post = (url str, body str) (resp http-response, ok bool) {
+    http2-do-req('POST', url, body)(resp, ok)
+}
+
+// http2-put: HTTP/2 PUT 請求
+http2-put = (url str, body str) (resp http-response, ok bool) {
+    http2-do-req('PUT', url, body)(resp, ok)
+}
+
+// http2-delete: HTTP/2 DELETE 請求
+http2-delete = (url str) (resp http-response, ok bool) {
+    http2-do-req('DELETE', url, '')(resp, ok)
+}
+
+// http2-patch: HTTP/2 PATCH 請求
+http2-patch = (url str, body str) (resp http-response, ok bool) {
+    http2-do-req('PATCH', url, body)(resp, ok)
+}

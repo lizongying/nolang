@@ -107,6 +107,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				g.varFnTypes[p.Name] = ft
 			}
 		}
+		// 陣列型輸入參數需註冊元素型別，供後續索引賦值/讀取使用
+		if at, ok := p.Type.(*parser.ArrayType); ok && at.Elem != nil {
+			g.arrayElemTypes[p.Name] = g.mapToLLVMType(at.Elem.String())
+		}
 	}
 	// 結果參數（無論單結果或多結果）皆以 by-reference 形式傳遞，
 	// 與 call.go 的 hasOutputParam / voidSingleOutput 約定保持一致。
@@ -118,6 +122,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.varTypes[r.Name] = g.mapToLLVMType(typeStr)
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
+			}
+			// 陣列型結果參數需註冊元素型別，供後續索引賦值/讀取使用
+			if at, ok := r.Type.(*parser.ArrayType); ok && at.Elem != nil {
+				g.arrayElemTypes[r.Name] = g.mapToLLVMType(at.Elem.String())
 			}
 		}
 	}
@@ -1513,6 +1521,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	_, isSliceExpr := stmt.Value.(*parser.SliceExpression)
 	_, isSliceType := stmt.Type.(*parser.SliceType)
 	if (isSliceType || isSliceLit) && !isSliceExpr {
+		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
+		g.varTypes[name] = "%vec"
+		g.funcLocalNames[name] = true
 		if isSliceLit {
 			slice := stmt.Value.(*parser.SliceLiteral)
 			elemType := "i64"
@@ -1759,6 +1770,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 
 	if at, ok := stmt.Type.(*parser.ArrayType); ok {
+		// 註冊變數型別為 %arr，供後續索引賦值/讀取/指標取得使用
+		g.varTypes[name] = "%arr"
+		g.funcLocalNames[name] = true
 		var arraySize int64
 		if at.Size != nil {
 			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
@@ -2015,7 +2029,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), llvmType, val, llvmType, g.varAddr(name)))
 	default:
 		ptrType := llvmType + "*"
-		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, g.varAddr(name)))
+		// 宣告但無初值（如 `f http2-frame`）：val 為 "0"，struct 需用 zeroinitializer
+		if strings.HasPrefix(llvmType, "%") && !strings.HasPrefix(val, "%") {
+			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s %s\n", g.indent(), llvmType, ptrType, g.varAddr(name)))
+		} else {
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, g.varAddr(name)))
+		}
 	}
 }
 

@@ -51,7 +51,7 @@ sidebar_position: 2
 - vec // 變長數組
 - slice // 切片
 
-- \* // 指針 僅限 FFI extern 宣告與標準庫
+- \* // 指針 僅限 FFI #c 宣告與標準庫
 - any // 任意類型 僅限標準庫
 
 高級類型
@@ -435,6 +435,33 @@ s[1..]   // 'bc'
 s[1..s.len) // 'bc'
 ```
 
+**切片的方法繼承：**
+
+切片操作會根據原型別產生對應的結果型別，因此原型別的方法自動適用於切片結果：
+
+| 原型別 | 切片結果型別 | 適用的方法 |
+| ------ | ------------ | ---------- |
+| `arr` (`[n]t`) | `[]t` (`vec`) | `[]t` 的所有方法（如 `len`、`push`、`pop`、`contains`、`reverse`、`clone`、`fill`、`to-arr` 等） |
+| `vec` (`[]t`) | `[]t` (`vec`) | 同上 |
+| `str` | `str` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等） |
+
+```nolang
+// arr 切片 → vec，可使用 vec 方法
+a [5]u8 = [0, 1, 2, 3, 4]
+s = a[1..4]    // s 是 []u8
+n = s.len      // 使用 vec.len
+
+// vec 切片 → vec，可使用 vec 方法
+v = [10, 20, 30, 40, 50]
+s = v[2..]     // s 是 []i64
+s.reverse(s.len)  // 使用 vec.reverse
+
+// str 切片 → str，可使用 str 方法
+s = 'Hello World'
+sub = s[6..]   // sub 是 'World'
+upper = sub.to-upper()  // 使用 str.to-upper
+```
+
 ### 索引
 
 ```nolang
@@ -720,15 +747,15 @@ utils/
 @ std/math.add a
 ```
 
-### FFI（extern）
+### FFI（#c 指令）
 
-透過 `extern` 宣告外部 C 函式，實現 FFI（Foreign Function Interface）。
+透過 `#c` 指令宣告外部 C 函式，實現 FFI（Foreign Function Interface）。
 
-**檔案命名規則**：`extern` 宣告只能出現在檔名為 `*.extern.no` 的檔案中。普通 `.no` 檔案不允許包含 `extern` 宣告，編譯器會報錯。
+**語法**：`#c` 獨立一行，標記下一行為 FFI 宣告。`#c` 與語言名稱之間**沒有空格**（與 `#` 導入語句區分）。未來可擴展 `#cpp` 等其他語言。
 
-**分層架構**：FFI 驅動應採用兩層結構：
-- `xxx.extern.no` — 底層 FFI 裸指標綁定，僅包含 `extern` 宣告
-- `xxx.no` — 上層安全包裝，供業務代碼調用，透過 `#` 導入 extern.no 中的函式
+**私有宣告**：名稱以 `_` 開頭表示私有（不導出），C ABI 符號自動去除前綴 `_` 並將連字號轉為底線。
+
+**不再需要分開檔案**：FFI 宣告與普通代碼可寫在同一個 `.no` 檔案中。
 
 **指針型別語法**：FFI 中使用 C 風格的 `*T`、`**T`、`***T` 表示指針，必須有具體型別 `T`。普通代碼不能使用此語法。
 
@@ -739,31 +766,33 @@ utils/
 | `***byte` | 三重指針          | `i8***`  | 極少見的三重間接           |
 
 ```nolang
-// sqlite.extern.no — 底層 FFI 裸綁定
+// sqlite.no — FFI 綁定與安全包裝在同一檔案
 // 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號
+// 以 _ 開頭的名稱為私有，C ABI 符號自動去除前綴 _
 
 // 基本型別參數
-extern c-strlen = (s str) (n i64)
+#c
+c-strlen = (s str) (n i64)
 
-// 指針參數（*byte = 不透明指標）
-extern sqlite3-close = (db *byte) (rc i32)
+// 指針參數（*byte = 不透明指標），私有宣告
+#c
+_sqlite3-close = (db *byte) (rc i32)
 
-// 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數）
-extern sqlite3-open = (filename str, db **byte) (rc i32)
+// 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數），私有宣告
+#c
+_sqlite3-open = (filename str, db **byte) (rc i32)
 
-// 多個指針參數
-extern sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
+// 多個指針參數，私有宣告
+#c
+_sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
 ```nolang
-// sqlite.no — 上層安全包裝
-
-// 導入 FFI 裸綁定
-# /sqlite-driver/sqlite.extern
+// 同一檔案中的安全包裝
 
 open = (dsn str) (d db-sqlite) {
     handle i64 = 0
-    rc i32 = sqlite3-open(dsn, handle)
+    rc i32 = _sqlite3-open(dsn, handle)
     rc != SQLITE-OK -> {
         return
     }
@@ -772,10 +801,12 @@ open = (dsn str) (d db-sqlite) {
 ```
 
 **規則：**
-1. `extern` 宣告只能出現在 `*.extern.no` 檔案中
-2. `extern` 僅為宣告，無函式主體
-3. 指針必須有具體型別（如 `*byte`），不允許裸 `ptr`
-4. `**byte` 用於輸出參數：呼叫後 C 函式寫入的指針值會自動轉為 `i64` 存回呼叫端變數
-5. 所有指針在 Nolang 端以 `i64` 儲存（`ptrtoint`）
-6. `str` 型別參數自動轉為 null-terminated `i8*`
-7. 業務代碼不應直接呼叫 `*.extern.no` 中的函式，應使用 `*.no` 中的安全包裝
+1. `#c` 獨立一行，標記下一行為 FFI 宣告
+2. `#c` 與語言名稱之間沒有空格（與 `# path` 導入語句區分）
+3. FFI 僅為宣告，無函式主體
+4. 指針必須有具體型別（如 `*byte`），不允許裸 `ptr`
+5. `**byte` 用於輸出參數：呼叫後 C 函式寫入的指針值會自動轉為 `i64` 存回呼叫端變數
+6. 所有指針在 Nolang 端以 `i64` 儲存（`ptrtoint`）
+7. `str` 型別參數自動轉為 null-terminated `i8*`
+8. 名稱以 `_` 開頭表示私有（不導出），C ABI 符號去除前綴 `_`
+9. FFI 宣告與普通代碼可寫在同一個 `.no` 檔案中

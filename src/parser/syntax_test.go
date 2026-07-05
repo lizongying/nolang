@@ -354,23 +354,23 @@ func TestDeprecationWarnings(t *testing.T) {
 	}
 }
 
-func TestExternPointerSyntax(t *testing.T) {
+func TestFFIDeclarationSyntax(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		filename string
 		wantErr  bool
 	}{
-		{name: "extern_basic", input: "extern c-strlen = (s str) (n i64)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_single_ptr", input: "extern sqlite3-close = (db *byte) (rc i32)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_double_ptr", input: "extern sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_triple_ptr", input: "extern foo = (p ***byte) (rc i32)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_mixed_ptrs", input: "extern sqlite3-exec = (db *byte, sql str, cb *byte, arg *byte, errmsg *byte) (rc i32)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_ptr_result", input: "extern malloc = (n i64) (p *byte)", filename: "test.extern.no", wantErr: false},
-		{name: "extern_ptr_i64", input: "extern foo = (p *i64) (r i32)", filename: "test.extern.no", wantErr: false},
-		// extern in non-extern.no file should error
-		{name: "extern_wrong_filename", input: "extern foo = (n i64) (r i32)", filename: "test.no", wantErr: true},
-		{name: "extern_no_filename", input: "extern foo = (n i64) (r i32)", filename: "", wantErr: true},
+		{name: "ffi_basic", input: "#c\nc-strlen = (s str) (n i64)", filename: "test.no", wantErr: false},
+		{name: "ffi_single_ptr", input: "#c\nsqlite3-close = (db *byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_double_ptr", input: "#c\nsqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_triple_ptr", input: "#c\nfoo = (p ***byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_mixed_ptrs", input: "#c\nsqlite3-exec = (db *byte, sql str, cb *byte, arg *byte, errmsg *byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_ptr_result", input: "#c\nmalloc = (n i64) (p *byte)", filename: "test.no", wantErr: false},
+		{name: "ffi_ptr_i64", input: "#c\nfoo = (p *i64) (r i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_private_underscore", input: "#c\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_with_newline_gap", input: "#c\n\n_sqlite3-open = (db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "ffi_no_results", input: "#c\nfoo = (n i64)", filename: "test.no", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

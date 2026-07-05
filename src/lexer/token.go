@@ -32,6 +32,7 @@ const (
 	IT
 	USE
 	LABEL // #1, #2 ... only when followed by digits, used as a loop/conditional label
+	FFI   // #c, #cpp ... FFI directive, no space between # and language name
 
 	AS
 	CHAN
@@ -41,7 +42,7 @@ const (
 	CASE
 	DEFAULT
 	MATCH
-	EXTERN
+	EXTERN // deprecated: kept for backward compat, no longer a keyword
 
 	// 运算符
 	ASSIGN         // =
@@ -137,6 +138,7 @@ var tokenNames = map[TokenType]string{
 	IT:             "IT",
 	USE:            "USE(#)",
 	LABEL:          "LABEL(#N)",
+	FFI:            "FFI(#lang)",
 	IN:             "IN",
 	AS:             "AS",
 	CHAN:           "CHAN",
@@ -146,7 +148,6 @@ var tokenNames = map[TokenType]string{
 	CASE:           "CASE",
 	DEFAULT:        "DEFAULT",
 	MATCH:          "MATCH",
-	EXTERN:         "EXTERN",
 	ASSIGN:         "ASSIGN(=)",
 	ADD:            "ADD(+)",
 	SUB:            "SUB(-)",
@@ -226,7 +227,6 @@ var keywords = map[string]TokenType{
 	"case":    CASE,
 	"default": DEFAULT,
 	"match":   MATCH,
-	"extern":  EXTERN,
 }
 
 // Position represents a source position (line:col, 1-based).

@@ -1118,9 +1118,91 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 			}
 		}
 	case *parser.IndexExpression:
-		// IndexExpression 對 struct 元素已回傳 %T* 指標
-		return g.generateExprWithSB(sb, v)
+		// 對陣列/切片元素，需回傳元素指標（而非載入的值）
+		// 否則 arr[i].field = val 會把 struct value 當作指標使用
+		return g.generateIndexExprPtr(sb, v)
 	}
+	return ""
+}
+
+// generateIndexExprPtr 生成陣列/切片元素的指標（GEP），不載入值
+func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExpression) string {
+	varName := ""
+	if ident, ok := v.Left.(*parser.Identifier); ok {
+		varName = ident.Value
+	} else if dot, ok := v.Left.(*parser.DotExpression); ok {
+		// struct.field[i] 讀取：委託給 generateStructFieldIndexRead
+		// 但這裡需要指標，所以用 generateExprPtr 取得欄位指標
+		return g.generateExprPtr(sb, dot)
+	}
+	if varName == "" {
+		// 無法取得指標，回退到載入值
+		return ""
+	}
+
+	idx := g.generateExprWithSB(sb, v.Index)
+
+	if t, ok := g.varTypes[varName]; ok {
+		if t == "%arr" {
+			llvmElemType := "i64"
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				llvmElemType = et
+			}
+			arrRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] {
+				arrRef = llvmGlobalRef(varName)
+			}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%arr.ptr.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%arr.ptr.data.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataTyped := fmt.Sprintf("%%arr.ptr.typed.%d", g.tmpIdx)
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%arr.ptr.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+					g.indent(), dataGEP, arrRef))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+					g.indent(), dataTyped, dataLoad, llvmElemType))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			}
+			return elemGEP
+		}
+		if t == "%vec" {
+			llvmElemType := "i64"
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				llvmElemType = et
+			}
+			vecRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] {
+				vecRef = llvmGlobalRef(varName)
+			}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vec.ptr.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%vec.ptr.data.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataTyped := fmt.Sprintf("%%vec.ptr.typed.%d", g.tmpIdx)
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%vec.ptr.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+					g.indent(), dataGEP, vecRef))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+					g.indent(), dataTyped, dataLoad, llvmElemType))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			}
+			return elemGEP
+		}
+	}
+	// 其他情況回退到載入值
 	return ""
 }
 
@@ -1640,13 +1722,29 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 	return "0"
 }
 
-// generateNestedStrIndexRead 處理巢狀索引讀取 .vals[idx][i]：
-// 內層 .vals[idx] 回傳 %str-long* 指標，外層 [i] 取出 data 指標後 GEP 到第 i 個位元組。
+// generateNestedStrIndexRead 處理巢狀索引讀取 names[i][j] 或 .vals[idx][i]：
+// 內層 names[i] / .vals[idx] 回傳 %str-long* 指標，外層 [j] 取出 data 指標後 GEP 到第 j 個位元組。
 func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *parser.IndexExpression, index parser.Expression) string {
 	// 評估內層索引表達式，取得 %str-long* 指標
-	strPtr := g.generateExprWithSB(sb, innerIdx)
+	// 使用 generateExprPtr 取得元素指標（而非載入的 struct value），
+	// 否則後續 GEP 會把 struct 值當作指標使用。
+	strPtr := g.generateExprPtr(sb, innerIdx)
 	if strPtr == "" || strPtr == "0" {
-		return "0"
+		// Fallback: generateExprPtr 無法取得指標時，嘗試載入值後存入臨時 alloca
+		val := g.generateExprWithSB(sb, innerIdx)
+		if val == "" || val == "0" {
+			return "0"
+		}
+		recvType := g.exprResultLLVMType(innerIdx)
+		if sb != nil && recvType != "" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%nestidx.tmp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
+			strPtr = tmpAlloca
+		} else {
+			return "0"
+		}
 	}
 	idx := g.generateExprWithSB(sb, index)
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
@@ -1693,7 +1791,8 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 // 內層 .vals[idx] 回傳 %str-long* 指標，外層 [i] 取出 data 指標後 GEP 到第 i 個位元組並 store。
 func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *parser.IndexExpression, index parser.Expression, value parser.Expression) string {
 	// 評估內層索引表達式，取得 %str-long* 指標
-	strPtr := g.generateExprWithSB(sb, innerIdx)
+	// 使用 generateIndexExprPtr 取得元素指標（而非載入的 str-long value）
+	strPtr := g.generateIndexExprPtr(sb, innerIdx)
 	if strPtr == "" || strPtr == "0" {
 		return "0"
 	}
@@ -1923,12 +2022,56 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 					storeVal := val
-					if strings.HasPrefix(val, "%") {
-						srcType := g.intExprLLVMType(expr.Value)
-						if srcType == "" {
-							srcType = "i64"
+					// 處理字串值儲存到陣列元素：
+					// - 元素型別為 %str-long：字串字面量（str-short*）需轉為 str-long value；
+					//   str-long 變數需 load 出 struct value
+					// - 元素型別為 i64（str 以指標儲存）：字串指標需 ptrtoint
+					// 注意：字串拼接（InfixExpression）結果是 %str-long value，不是指標，不在此處理。
+					if llvmElemType == "%str-long" {
+						if strLit, ok := expr.Value.(*parser.StringLiteral); ok {
+							if len(strLit.Value) <= 127 {
+								storeVal = g.convertStrLongLitToLongValue(sb, val)
+							}
+						} else if ident, ok := expr.Value.(*parser.Identifier); ok {
+							if t, ok := g.varTypes[ident.Value]; ok && t == "%str-long" {
+								// val is already a loaded %str-long value from generateExprWithSB,
+								// so we can use it directly without another load.
+								storeVal = val
+							}
 						}
-						if srcType != llvmElemType {
+					} else if llvmElemType == "i64" {
+						needPtrToInt := false
+						strLLVMType := ""
+						switch e := expr.Value.(type) {
+						case *parser.StringLiteral:
+							needPtrToInt = true
+							if len(e.Value) <= 127 {
+								strLLVMType = "%str-short*"
+							} else {
+								strLLVMType = "%str-long*"
+							}
+						case *parser.Identifier:
+							if t, ok := g.varTypes[e.Value]; ok {
+								if t == "%str-long" {
+									needPtrToInt = true
+									strLLVMType = "%str-long*"
+								} else if t == "%str-short" {
+									needPtrToInt = true
+									strLLVMType = "%str-short*"
+								}
+							}
+						}
+						if needPtrToInt {
+							g.tmpIdx++
+							convReg := fmt.Sprintf("%%arr.set.conv.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s %s to i64\n", g.indent(), convReg, strLLVMType, val))
+							storeVal = convReg
+						}
+					}
+					if storeVal == val && strings.HasPrefix(val, "%") {
+						srcType := g.intExprLLVMType(expr.Value)
+						// Only convert between integer types; skip for struct types (e.g. %str-long)
+						if srcType != "" && srcType != llvmElemType && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) {
 							g.tmpIdx++
 							convReg := fmt.Sprintf("%%arr.set.conv.%d", g.tmpIdx)
 							if srcType == "i64" {

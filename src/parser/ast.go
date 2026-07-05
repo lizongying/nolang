@@ -423,10 +423,11 @@ func (fd *FunctionDefinition) statementNode()         {}
 func (fd *FunctionDefinition) Pos() lexer.Position    { return posFromToken(fd.Token) }
 func (fd *FunctionDefinition) EndPos() lexer.Position { return fd.Body.EndPos() }
 
-// ExternStatement — FFI extern 宣告：extern name = (params) (results)
+// ExternStatement — FFI 宣告：#c \\n name = (params) (results)
 // 僅為宣告，無函式主體；對應外部 C 函式。
 type ExternStatement struct {
 	Token      lexer.Token
+	Lang       string // FFI language: "c", "cpp", etc.
 	Name       *Identifier
 	Parameters []*Parameter
 	Results    []*Parameter
@@ -447,7 +448,11 @@ func (es *ExternStatement) EndPos() lexer.Position {
 }
 func (es *ExternStatement) String() string {
 	var out strings.Builder
-	out.WriteString("extern ")
+	if es.Lang != "" {
+		out.WriteString("#")
+		out.WriteString(es.Lang)
+		out.WriteString("\n")
+	}
 	out.WriteString(es.Name.Value)
 	out.WriteString(" = (")
 	for i, p := range es.Parameters {

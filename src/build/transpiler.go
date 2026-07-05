@@ -3363,8 +3363,8 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	}
 
 	// 3b. Collect symbols from local module imports (paths starting with /)
-	//     These include extern declarations, functions, and constants from
-	//     imported files like `# /sqlite-driver/sqlite.extern`.
+	//     These include FFI declarations (#c), functions, and constants from
+	//     imported files like `# /sqlite-driver/sqlite`.
 	if rootDir != "" {
 		pkg, _ := LoadPackage(rootDir)
 		for _, stmt := range program.Statements {
@@ -3383,8 +3383,11 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 			}
 			for _, ms := range modProg.Statements {
 				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
-					definedVars[es.Name.Value] = true
-					funcNames[es.Name.Value] = true
+					// Skip private FFI declarations (underscore-prefixed)
+					if !strings.HasPrefix(es.Name.Value, "_") {
+						definedVars[es.Name.Value] = true
+						funcNames[es.Name.Value] = true
+					}
 				}
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
 					definedVars[fd.Name] = true
@@ -3946,6 +3949,10 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 				exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
 			}
 			if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
+				// Skip private FFI declarations (underscore-prefixed)
+				if strings.HasPrefix(es.Name.Value, "_") {
+					continue
+				}
 				if seen[es.Name.Value] {
 					continue
 				}

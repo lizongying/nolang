@@ -4,7 +4,7 @@
 // 需系統安裝 libmysqlclient 且 MySQL 伺服器正在運行。
 // macOS: brew install mysql-connector-c
 // Linux: sudo apt install libmysqlclient-dev
-// 驅動包 example/mysql-driver 使用 FFI extern 直接呼叫 MySQL C API。
+// 驅動包 example/mysql-driver 使用純 Nolang 實作 MySQL 協議（不使用 FFI）。
 //
 // 注意：本測試為 vet-only（語法驗證），不執行，因需 live MySQL server。
 // 執行前需建立資料庫 testdb 並設定 root/secret 帳密。

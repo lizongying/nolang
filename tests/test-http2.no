@@ -1,0 +1,165 @@
+// test-http2 — HTTP/2 影格與連線測試（vet-only，需伺服器才能執行）
+// # std/net/http2
+
+// test-frame-parse: 影格標頭解析
+test-frame-parse = () {
+    space str = ' '
+    data str = space.repeat(16)
+    // 構建一個 HEADERS 影格標頭
+    // length = 10 (0x00000a), type = 1 (HEADERS), flags = 4 (END_HEADERS)
+    // stream-id = 1
+    data[0] = 0
+    data[1] = 0
+    data[2] = 10
+    data[3] = 1
+    data[4] = 4
+    data[5] = 0
+    data[6] = 0
+    data[7] = 0
+    data[8] = 1
+    f http2-frame
+    next i64 = 0
+    ok bool = false
+    f.parse(data, 0)(next, ok)
+    if ok == false {
+        print('FAIL: parse returned error')
+        return
+    }
+    if f.length != 10 {
+        print('FAIL: expected length=10')
+        return
+    }
+    if f.frame-type != 1 {
+        print('FAIL: expected frame-type=1')
+        return
+    }
+    if f.flags != 4 {
+        print('FAIL: expected flags=4')
+        return
+    }
+    if f.stream-id != 1 {
+        print('FAIL: expected stream-id=1')
+        return
+    }
+    if next != 9 {
+        print('FAIL: expected next=9')
+        return
+    }
+    print('PASS: frame-parse')
+}
+
+// test-frame-serialize: 影格標頭序列化
+test-frame-serialize = () {
+    space str = ' '
+    f http2-frame
+    f.length = 10
+    f.frame-type = 1
+    f.flags = 4
+    f.stream-id = 1
+    buf str = space.repeat(16)
+    next i64 = 0
+    f.serialize(buf, 0)(next)
+    if next != 9 {
+        print('FAIL: expected next=9')
+        return
+    }
+    if buf[0] != 0 {
+        print('FAIL: expected buf[0]=0')
+        return
+    }
+    if buf[1] != 0 {
+        print('FAIL: expected buf[1]=0')
+        return
+    }
+    if buf[2] != 10 {
+        print('FAIL: expected buf[2]=10')
+        return
+    }
+    if buf[3] != 1 {
+        print('FAIL: expected buf[3]=1')
+        return
+    }
+    if buf[4] != 4 {
+        print('FAIL: expected buf[4]=4')
+        return
+    }
+    if buf[8] != 1 {
+        print('FAIL: expected buf[8]=1')
+        return
+    }
+    print('PASS: frame-serialize')
+}
+
+// test-conn-init: 連線初始化
+test-conn-init = () {
+    conn http2-conn
+    conn.init()
+    if conn.fd != -1 {
+        print('FAIL: expected fd=-1')
+        return
+    }
+    if conn.next-stream-id != 1 {
+        print('FAIL: expected next-stream-id=1')
+        return
+    }
+    if conn.send-window != 65535 {
+        print('FAIL: expected send-window=65535')
+        return
+    }
+    if conn.initialized != true {
+        print('FAIL: expected initialized=true')
+        return
+    }
+    print('PASS: conn-init')
+}
+
+// test-http2-do-req-signature: http2-do-req 函數簽名驗證（vet-only）
+test-http2-do-req-signature = () {
+    // 此測試只驗證函數可被正確呼叫，不實際連線
+    resp http-response
+    ok bool = false
+    // 這行會嘗試連線並失敗，但驗證了函數簽名正確
+    http2-do-req('GET', 'http://127.0.0.1:1/test', '')(resp, ok)
+    // 預期 ok=false（連線失敗）
+    if ok == true {
+        print('FAIL: expected connection failure')
+        return
+    }
+    print('PASS: http2-do-req-signature')
+}
+
+// test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
+test-http2-get-signature = () {
+    resp http-response
+    ok bool = false
+    http2-get('http://127.0.0.1:1/test')(resp, ok)
+    if ok == true {
+        print('FAIL: expected connection failure')
+        return
+    }
+    print('PASS: http2-get-signature')
+}
+
+// test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
+test-http2-post-signature = () {
+    resp http-response
+    ok bool = false
+    http2-post('http://127.0.0.1:1/test', 'body')(resp, ok)
+    if ok == true {
+        print('FAIL: expected connection failure')
+        return
+    }
+    print('PASS: http2-post-signature')
+}
+
+// test-run-all: 執行所有測試
+test-run-all = () {
+    print('=== HTTP/2 Tests ===')
+    test-frame-parse()
+    test-frame-serialize()
+    test-conn-init()
+    test-http2-do-req-signature()
+    test-http2-get-signature()
+    test-http2-post-signature()
+    print('=== HTTP/2 Tests Done ===')
+}
