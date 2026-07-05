@@ -1,0 +1,118 @@
+// hmac — HMAC-SHA256（基於 SHA-256 的金鑰雜湊訊息認證碼）
+//
+// 實作 RFC 2104 定義的 HMAC 演算法，使用 SHA-256 作為底層雜湊函數。
+// HMAC(K, m) = H((K' ⊕ opad) || H((K' ⊕ ipad) || m))
+//
+// 用法：
+//   key []byte = '(32 bytes key)'
+//   msg []byte = 'hello'
+//   hmac-sha256(key, key.len, msg, msg.len, out)
+//   // out 為 [32]byte 雜湊值
+
+# std/hash/sha256
+
+// ─── 常量 ─────────────────────────────────────────
+
+// SHA-256 區塊大小（位元組）
+HMAC-BLOCK-SIZE = 64
+
+// SHA-256 輸出大小（位元組）
+HMAC-HASH-SIZE = 32
+
+// ipad / opad 常量
+HMAC-IPAD = 54
+HMAC-OPAD = 92
+
+// ─── HMAC-SHA256 ─────────────────────────────────
+
+// hmac-sha256: 計算 HMAC-SHA256
+// key []byte: 金鑰
+// key-n i64: 金鑰長度
+// msg []byte: 訊息
+// msg-n i64: 訊息長度
+// 返回 out [32]byte: 32 位元組 HMAC 值
+hmac-sha256 = (key []byte, key-n i64, msg []byte, msg-n i64) (out [32]byte) {
+    // K': 將金鑰調整為區塊大小（64 位元組）
+    // 若金鑰 > 64 位元組，先雜湊；若 < 64 位元組，補零
+    k [64]byte
+    i = 0
+    i < 64: {
+        k[i] = 0
+        i = i + 1
+    }
+
+    {
+        key-n <= 64 ->
+            i = 0
+            i < key-n: {
+                k[i] = key[i]
+                i = i + 1
+        ->
+            // 金鑰太長，先雜湰
+            h = sha256(key)
+            i = 0
+            i < 32: {
+                k[i] = h[i]
+                i = i + 1
+    }
+
+    // ipad-key = K' ⊕ ipad
+    ipad-key [64]byte
+    i = 0
+    i < 64: {
+        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        i = i + 1
+    }
+
+    // opad-key = K' ⊕ opad
+    opad-key [64]byte
+    i = 0
+    i < 64: {
+        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        i = i + 1
+    }
+
+    // inner = H(ipad-key || msg)
+    inner-data []byte
+    i = 0
+    i < 64: {
+        inner-data[i] = ipad-key[i]
+        i = i + 1
+    }
+    i = 0
+    i < msg-n: {
+        inner-data[64 + i] = msg[i]
+        i = i + 1
+    }
+    inner-hash = sha256(inner-data)
+
+    // outer = H(opad-key || inner)
+    outer-data []byte
+    i = 0
+    i < 64: {
+        outer-data[i] = opad-key[i]
+        i = i + 1
+    }
+    i = 0
+    i < 32: {
+        outer-data[64 + i] = inner-hash[i]
+        i = i + 1
+    }
+    out = sha256(outer-data)
+}
+
+// hmac-sha256-vec: 計算 HMAC-SHA256，返回 []byte（方便串接）
+// key []byte: 金鑰
+// key-n i64: 金鑰長度
+// msg []byte: 訊息
+// msg-n i64: 訊息長度
+// 返回 out []byte: 32 位元組 HMAC 值
+hmac-sha256-vec = (key []byte, key-n i64, msg []byte, msg-n i64) (out []byte) {
+    h [32]byte
+    h = hmac-sha256(key, key-n, msg, msg-n)
+    i = 0
+    i < 32: {
+        out[i] = h[i]
+        i = i + 1
+    }
+}

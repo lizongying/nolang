@@ -226,6 +226,86 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
     e = val
 }
 
+// x509-rsa-n: 提取 RSA 公鑰模數（big-endian 位元組陣列）
+// data []byte: DER 編碼憑證, n i64: 總長度
+// 返回 out []byte: 模數位元組（big-endian，不含前導 0x00）
+// 返回 out-n i64: 模數位元組長度（0 表示非 RSA 或解析失敗）
+x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
+    out-n = 0
+    tbs-start, tbs-end = x509-tbs-range(data, n)
+    if tbs-start == 0 {
+        return
+    }
+
+    // 進入 TBS 內容
+    p = tbs-start + 1
+    tbs-len, adv = der-len(data, p)
+    p = p + adv
+
+    // 跳過版本、序號、簽章演算法、簽發者、有效期、主體
+    t = der-tag(data, p)
+    if t == 160 {
+        p = der-skip(data, n, p)
+    }
+    p = der-skip(data, n, p)
+    p = der-skip(data, n, p)
+    p = der-skip(data, n, p)
+    p = der-skip(data, n, p)
+    p = der-skip(data, n, p)
+
+    // 進入 SPKI
+    p = p + 1
+    spki-len, adv = der-len(data, p)
+    p = p + adv
+
+    // 跳過 AlgorithmIdentifier
+    p = der-skip(data, n, p)
+
+    // 讀取 BIT STRING
+    t = der-tag(data, p)
+    if t != 3 {
+        return
+    }
+    bit-len, adv = der-len(data, p + 1)
+    bit-pos = p + 1 + adv + 1
+
+    // RSAPublicKey SEQUENCE
+    t = der-tag(data, bit-pos)
+    if t != 48 {
+        return
+    }
+    rsa-start = der-skip(data, n, bit-pos)
+
+    // rsa-start 指向 RSAPublicKey 內容
+    // 第一個 INTEGER 是模數
+    t = der-tag(data, rsa-start)
+    if t != 2 {
+        return
+    }
+
+    // 讀取模數長度
+    mod-len, len-adv = der-len(data, rsa-start + 1)
+    mod-val-start = rsa-start + 1 + len-adv
+
+    // 跳過前導 0x00（用於保持正號）
+    actual-start = mod-val-start
+    actual-len = mod-len
+    if mod-len > 0 {
+        if (data[mod-val-start] & 255) == 0 {
+            actual-start = mod-val-start + 1
+            actual-len = mod-len - 1
+        }
+    }
+
+    // 複製模數位元組
+    i = 0
+    i < actual-len: {
+        out[i] = data[actual-start + i]
+        i = i + 1
+    }
+    out-n = actual-len
+}
+
 // ─── SHA-256 憑證指紋 ─────────────────────────────────
 
 // x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋

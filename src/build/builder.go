@@ -128,8 +128,8 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 	}
 	// 標準庫 gzip 模組依賴 libz； regexp/process 已由 libc 提供。
 	// 統一附加 -lz 以避免運行測試或獨立編譯時 undefined symbol。
-	// TLS (HTTPS / HTTP/2 over TLS) 依賴 OpenSSL 的 libssl 和 libcrypto。
-	linkLibs = append(linkLibs, "z", "ssl", "crypto")
+	// TLS 由純 Nolang 實現（std/net/tls.no），不依賴外部 ssl/crypto 庫。
+	linkLibs = append(linkLibs, "z")
 	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs)
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)

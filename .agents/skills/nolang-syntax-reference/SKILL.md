@@ -475,14 +475,15 @@ user json {
 
 ### Special Symbols
 
-- `...` — return/terminate（規劃中，目前仍使用 `return`）
 - `#` — import module
 - `..` — parent (super)
-- `.` — self/true
-- `!` — false/error
+- `.` — self
+- `!` — false（規劃中，目前仍使用 `false`）
+- `!!` — true（規劃中，目前仍使用 `true`）
 - `! { }` — 無限循環
 - `**` — continue（跳過本輪）（規劃中，目前仍使用 `continue`）
 - `*` — break（跳出循環）（規劃中，目前仍使用 `break`）
+- `...` — return/terminate（規劃中，目前仍使用 `return`）
 - `<-` — range iteration
 
 ### FFI (#c directive)

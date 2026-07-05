@@ -2684,18 +2684,23 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-					if _, exists := arraySizes[ident.Value]; exists {
-						return fmt.Errorf("array '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-					}
-					if _, exists := sliceSizes[ident.Value]; exists {
-						return fmt.Errorf("slice '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-					}
-					if _, exists := stringSizes[ident.Value]; exists {
-						return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-					}
-					// For any other typed variable, also reject .len() method
-					if typeName, exists := varTypes[ident.Value]; exists {
-						return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
+					// self.len() inside method bodies is valid — resolveSelfMethodCalls
+					// will rewrite it to Type.len(self), which the codegen handles as
+					// a builtin field access. Skip validation for the implicit receiver.
+					if ident.Value != "self" {
+						if _, exists := arraySizes[ident.Value]; exists {
+							return fmt.Errorf("array '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+						}
+						if _, exists := sliceSizes[ident.Value]; exists {
+							return fmt.Errorf("slice '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+						}
+						if _, exists := stringSizes[ident.Value]; exists {
+							return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
+						}
+						// For any other typed variable, also reject .len() method
+						if typeName, exists := varTypes[ident.Value]; exists {
+							return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
+						}
 					}
 				}
 			}
