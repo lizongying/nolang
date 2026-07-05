@@ -1,0 +1,791 @@
+// hpack — HPACK 標頭壓縮（RFC 7541）
+//
+// HTTP/2.0 使用的標頭壓縮格式。本實作為純 Nolang，不依賴 FFI。
+// 簡化策略：
+//   - 字串編碼用 literal（H bit=0），不支援 Huffman 壓縮
+//   - 靜態表 61 項（RFC 7541 Appendix A）
+//   - 動態表最多 64 項
+//   - 編碼優先使用 indexed 表示（完全匹配），其次 literal with incremental indexing
+//
+// 用法：
+//   t = hpack-tables{}
+//   t.init()
+//   out, n = t.encode-header(':method', 'GET')
+//   names, values, cnt, ok = t.decode-headers(data, n)
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+HPACK-STATIC-COUNT = 61
+HPACK-DYN-MAX = 64
+HPACK-OUT-BUF = 4096
+
+// ═══════════════════════════════════════════════
+// 結構體
+// ═══════════════════════════════════════════════
+
+// hpack-tables: HPACK 編解碼狀態（含靜態表 + 動態表）
+hpack-tables {
+    static-names [61]str
+    static-values [61]str
+    static-init bool
+    dyn-names [64]str
+    dyn-values [64]str
+    dyn-count i64
+    dyn-size i64
+    dyn-max i64
+}
+
+// ═══════════════════════════════════════════════
+// 初始化
+// ═══════════════════════════════════════════════
+
+// init: 初始化 HPACK 表（靜態表 + 動態表）
+hpack-tables.init = () {
+    .dyn-count = 0
+    .dyn-size = 0
+    .dyn-max = 4096
+    i = 0
+    for i < HPACK-DYN-MAX {
+        .dyn-names[i] = ' '
+        .dyn-names[i].len = 0
+        .dyn-values[i] = ' '
+        .dyn-values[i].len = 0
+        i = i + 1
+    }
+    if .static-init {
+        return
+    }
+    .static-init = true
+    // RFC 7541 Appendix A 靜態表（61 項）
+    // 索引 0 保留，1-61 為靜態表項
+    .static-names[0] = ':authority'
+    .static-values[0] = ''
+    .static-names[1] = ':method'
+    .static-values[1] = 'GET'
+    .static-names[2] = ':method'
+    .static-values[2] = 'POST'
+    .static-names[3] = ':path'
+    .static-values[3] = '/'
+    .static-names[4] = ':path'
+    .static-values[4] = '/index.html'
+    .static-names[5] = ':scheme'
+    .static-values[5] = 'http'
+    .static-names[6] = ':scheme'
+    .static-values[6] = 'https'
+    .static-names[7] = ':status'
+    .static-values[7] = '200'
+    .static-names[8] = ':status'
+    .static-values[8] = '204'
+    .static-names[9] = ':status'
+    .static-values[9] = '206'
+    .static-names[10] = ':status'
+    .static-values[10] = '304'
+    .static-names[11] = ':status'
+    .static-values[11] = '400'
+    .static-names[12] = ':status'
+    .static-values[12] = '404'
+    .static-names[13] = ':status'
+    .static-values[13] = '500'
+    .static-names[14] = 'accept-charset'
+    .static-values[14] = ''
+    .static-names[15] = 'accept-encoding'
+    .static-values[15] = 'gzip, deflate'
+    .static-names[16] = 'accept-language'
+    .static-values[16] = ''
+    .static-names[17] = 'accept-ranges'
+    .static-values[17] = ''
+    .static-names[18] = 'accept'
+    .static-values[18] = ''
+    .static-names[19] = 'access-control-allow-origin'
+    .static-values[19] = ''
+    .static-names[20] = 'age'
+    .static-values[20] = ''
+    .static-names[21] = 'allow'
+    .static-values[21] = ''
+    .static-names[22] = 'authorization'
+    .static-values[22] = ''
+    .static-names[23] = 'cache-control'
+    .static-values[23] = ''
+    .static-names[24] = 'content-disposition'
+    .static-values[24] = ''
+    .static-names[25] = 'content-encoding'
+    .static-values[25] = ''
+    .static-names[26] = 'content-language'
+    .static-values[26] = ''
+    .static-names[27] = 'content-length'
+    .static-values[27] = ''
+    .static-names[28] = 'content-location'
+    .static-values[28] = ''
+    .static-names[29] = 'content-range'
+    .static-values[29] = ''
+    .static-names[30] = 'content-type'
+    .static-values[30] = ''
+    .static-names[31] = 'cookie'
+    .static-values[31] = ''
+    .static-names[32] = 'date'
+    .static-values[32] = ''
+    .static-names[33] = 'etag'
+    .static-values[33] = ''
+    .static-names[34] = 'expect'
+    .static-values[34] = ''
+    .static-names[35] = 'expires'
+    .static-values[35] = ''
+    .static-names[36] = 'from'
+    .static-values[36] = ''
+    .static-names[37] = 'host'
+    .static-values[37] = ''
+    .static-names[38] = 'if-match'
+    .static-values[38] = ''
+    .static-names[39] = 'if-modified-since'
+    .static-values[39] = ''
+    .static-names[40] = 'if-none-match'
+    .static-values[40] = ''
+    .static-names[41] = 'if-range'
+    .static-values[41] = ''
+    .static-names[42] = 'if-unmodified-since'
+    .static-values[42] = ''
+    .static-names[43] = 'last-modified'
+    .static-values[43] = ''
+    .static-names[44] = 'link'
+    .static-values[44] = ''
+    .static-names[45] = 'location'
+    .static-values[45] = ''
+    .static-names[46] = 'max-forwards'
+    .static-values[46] = ''
+    .static-names[47] = 'proxy-authenticate'
+    .static-values[47] = ''
+    .static-names[48] = 'proxy-authorization'
+    .static-values[48] = ''
+    .static-names[49] = 'range'
+    .static-values[49] = ''
+    .static-names[50] = 'referer'
+    .static-values[50] = ''
+    .static-names[51] = 'refresh'
+    .static-values[51] = ''
+    .static-names[52] = 'retry-after'
+    .static-values[52] = ''
+    .static-names[53] = 'server'
+    .static-values[53] = ''
+    .static-names[54] = 'set-cookie'
+    .static-values[54] = ''
+    .static-names[55] = 'strict-transport-security'
+    .static-values[55] = ''
+    .static-names[56] = 'transfer-encoding'
+    .static-values[56] = ''
+    .static-names[57] = 'user-agent'
+    .static-values[57] = ''
+    .static-names[58] = 'vary'
+    .static-values[58] = ''
+    .static-names[59] = 'via'
+    .static-values[59] = ''
+    .static-names[60] = 'www-authenticate'
+    .static-values[60] = ''
+}
+
+// ═══════════════════════════════════════════════
+// 動態表操作
+// ═══════════════════════════════════════════════
+
+// dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
+hpack-tables.dyn-add = (name str, value str) {
+    if .dyn-count >= HPACK-DYN-MAX {
+        return
+    }
+    // 向後移動（從尾部開始避免覆蓋）
+    i = .dyn-count
+    for i > 0 {
+        // 用 slice 複製（CallExpression 正確載入 str-long value）
+        prev-name-len = .dyn-names[i - 1].len
+        prev-val-len = .dyn-values[i - 1].len
+        // 逐 byte 複製 name
+        .dyn-names[i].len = prev-name-len
+        j = 0
+        for j < prev-name-len {
+            .dyn-names[i][j] = .dyn-names[i - 1][j]
+            j = j + 1
+        }
+        // 逐 byte 複製 value
+        .dyn-values[i].len = prev-val-len
+        j = 0
+        for j < prev-val-len {
+            .dyn-values[i][j] = .dyn-values[i - 1][j]
+            j = j + 1
+        }
+        i = i - 1
+    }
+    // 新項放索引 0
+    .dyn-names[0].len = name.len
+    j = 0
+    for j < name.len {
+        .dyn-names[0][j] = name[j]
+        j = j + 1
+    }
+    .dyn-values[0].len = value.len
+    j = 0
+    for j < value.len {
+        .dyn-values[0][j] = value[j]
+        j = j + 1
+    }
+    .dyn-count = .dyn-count + 1
+    .dyn-size = .dyn-size + name.len + value.len + 32
+}
+
+// ═══════════════════════════════════════════════
+// 查詢
+// ═══════════════════════════════════════════════
+
+// find: 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
+// 返回 idx=0=未找到，idx>0=索引
+hpack-tables.find = (name str, value str) (idx i64) {
+    idx = 0
+    // 查靜態表（1-61，靜態表內部從 0 開始存）
+    i = 0
+    for i < HPACK-STATIC-COUNT {
+        if .static-names[i].len == name.len {
+            matched = 1
+            j = 0
+            for j < name.len {
+                if .static-names[i][j] != name[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+            if matched == 1 {
+                // name 匹配，檢查 value
+                if .static-values[i].len == value.len {
+                    v-matched = 1
+                    j = 0
+                    for j < value.len {
+                        if .static-values[i][j] != value[j] {
+                            v-matched = 0
+                            break
+                        }
+                        j = j + 1
+                    }
+                    if v-matched == 1 {
+                        idx = i + 1
+                        return
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    // 查動態表（索引從 62 開始）
+    i = 0
+    for i < .dyn-count {
+        if .dyn-names[i].len == name.len {
+            matched = 1
+            j = 0
+            for j < name.len {
+                if .dyn-names[i][j] != name[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+            if matched == 1 {
+                if .dyn-values[i].len == value.len {
+                    v-matched = 1
+                    j = 0
+                    for j < value.len {
+                        if .dyn-values[i][j] != value[j] {
+                            v-matched = 0
+                            break
+                        }
+                        j = j + 1
+                    }
+                    if v-matched == 1 {
+                        idx = HPACK-STATIC-COUNT + i + 1
+                        return
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+// find-name: 只匹配 name，返回全局索引
+// 返回 idx=0=未找到，idx>0=索引
+hpack-tables.find-name = (name str) (idx i64) {
+    idx = 0
+    i = 0
+    for i < HPACK-STATIC-COUNT {
+        if .static-names[i].len == name.len {
+            matched = 1
+            j = 0
+            for j < name.len {
+                if .static-names[i][j] != name[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+            if matched == 1 {
+                idx = i + 1
+                return
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    for i < .dyn-count {
+        if .dyn-names[i].len == name.len {
+            matched = 1
+            j = 0
+            for j < name.len {
+                if .dyn-names[i][j] != name[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+            if matched == 1 {
+                idx = HPACK-STATIC-COUNT + i + 1
+                return
+            }
+        }
+        i = i + 1
+    }
+}
+
+// lookup: 根據索引取得 name/value
+// idx 1-61=靜態表，62+=動態表
+// 返回 name, value, ok=true=找到
+hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
+    ok = false
+    if idx <= 0 {
+        return
+    }
+    if idx <= HPACK-STATIC-COUNT {
+        // 靜態表（內部從 0 開始）
+        arr-idx = idx - 1
+        n-len = .static-names[arr-idx].len
+        v-len = .static-values[arr-idx].len
+        name = .static-names[arr-idx].slice(0, n-len)
+        if v-len > 0 {
+            value = .static-values[arr-idx].slice(0, v-len)
+        }
+        ok = true
+        return
+    }
+    dyn-idx = idx - HPACK-STATIC-COUNT - 1
+    if dyn-idx < .dyn-count {
+        n-len = .dyn-names[dyn-idx].len
+        v-len = .dyn-values[dyn-idx].len
+        name = .dyn-names[dyn-idx].slice(0, n-len)
+        if v-len > 0 {
+            value = .dyn-values[dyn-idx].slice(0, v-len)
+        }
+        ok = true
+        return
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 變長整數編解碼（RFC 7541 §5.1）
+// ═══════════════════════════════════════════════
+
+// hpack-encode-int: 編碼變長整數到 out
+// val: 要編碼的值
+// prefix-bits: 前綴位數（1-8）
+// prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
+// 返回 out=編碼後的字串, out-n=編碼長度
+hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str, out-n i64) {
+    max-prefix = (1 << prefix-bits) - 1
+    out-n = 0
+    if val < max-prefix {
+        out[0] = prefix-byte | val
+        out-n = 1
+        return
+    }
+    // 第一個 byte: prefix 全 1
+    out[0] = prefix-byte | max-prefix
+    out-n = 1
+    val = val - max-prefix
+    for val >= 128 {
+        out[out-n] = (val & 127) | 128
+        out-n = out-n + 1
+        val = val >> 7
+    }
+    out[out-n] = val
+    out-n = out-n + 1
+}
+
+// hpack-decode-int: 從 data 的 pos 位置解碼變長整數
+// prefix-bits: 前綴位數
+// 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
+hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
+    val = 0
+    next-pos = pos
+    if pos >= data.len {
+        next-pos = -1
+        return
+    }
+    max-prefix = (1 << prefix-bits) - 1
+    first = data[pos] & max-prefix
+    val = first
+    next-pos = pos + 1
+    if first < max-prefix {
+        return
+    }
+    // 多 byte 編碼
+    m = 0
+    ! {
+        if next-pos >= data.len {
+            next-pos = -1
+            *
+        }
+        b = data[next-pos]
+        next-pos = next-pos + 1
+        val = val + ((b & 127) << m)
+        m = m + 7
+        if (b & 128) == 0 {
+            *
+        }
+        if m >= 35 {
+            next-pos = -1
+            *
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 字串編解碼（RFC 7541 §5.2，不支援 Huffman）
+// ═══════════════════════════════════════════════
+
+// hpack-encode-str: 編碼字串（literal，H=0）
+// 返回 out=編碼後字串, out-n=編碼長度
+hpack-encode-str = (s str) (out str, out-n i64) {
+    // H bit=0, 長度用 7-bit prefix 編碼
+    len-out str = ' '
+    len-n i64 = 0
+    hpack-encode-int(s.len, 7, 0)(len-out, len-n)
+    // 複製長度編碼到 out
+    i = 0
+    for i < len-n {
+        out[i] = len-out[i]
+        i = i + 1
+    }
+    out-n = len-n
+    // 複製字串內容
+    i = 0
+    for i < s.len {
+        out[out-n + i] = s[i]
+        i = i + 1
+    }
+    out-n = out-n + s.len
+}
+
+// hpack-decode-str: 從 data 的 pos 位置解碼字串
+// 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
+hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
+    if pos >= data.len {
+        next-pos = -1
+        return
+    }
+    first = data[pos]
+    // H bit = first & 128，本實作不支援 Huffman
+    // 長度用 7-bit prefix
+    len i64 = 0
+    p i64 = 0
+    hpack-decode-int(data, pos, 7)(len, p)
+    if p < 0 {
+        next-pos = -1
+        return
+    }
+    if p + len > data.len {
+        next-pos = -1
+        return
+    }
+    // 複製字串內容
+    i = 0
+    for i < len {
+        out[i] = data[p + i]
+        i = i + 1
+    }
+    out.len = len
+    next-pos = p + len
+}
+
+// ═══════════════════════════════════════════════
+// 標頭編解碼
+// ═══════════════════════════════════════════════
+
+// encode-header: 編碼單個標頭
+// 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
+//       否則→literal with indexing（新 name）
+// 返回 out=編碼字串, out-n=編碼長度
+hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
+    out-n = 0
+    // 1. 完全匹配 → Indexed Header Field（6.1）
+    full-idx i64 = 0
+    .find(name, value)(full-idx)
+    if full-idx > 0 {
+        // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
+        hpack-encode-int(full-idx, 7, 128)(out, out-n)
+        return
+    }
+    // 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
+    name-idx i64 = 0
+    .find-name(name)(name-idx)
+    if name-idx > 0 {
+        // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
+        idx-out str = ' '
+        idx-n i64 = 0
+        hpack-encode-int(name-idx, 6, 64)(idx-out, idx-n)
+        // 複製到 out
+        i = 0
+        for i < idx-n {
+            out[i] = idx-out[i]
+            i = i + 1
+        }
+        out-n = idx-n
+        // 編碼 value
+        val-out str = ' '
+        val-n i64 = 0
+        hpack-encode-str(value)(val-out, val-n)
+        i = 0
+        for i < val-n {
+            out[out-n + i] = val-out[i]
+            i = i + 1
+        }
+        out-n = out-n + val-n
+        // 加入動態表
+        .dyn-add(name, value)
+        return
+    }
+    // 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
+    // 格式：01000000（索引 0 = 新 name）
+    out[0] = 64
+    out-n = 1
+    // 編碼 name
+    name-out str = ' '
+    name-n i64 = 0
+    hpack-encode-str(name)(name-out, name-n)
+    i = 0
+    for i < name-n {
+        out[out-n + i] = name-out[i]
+        i = i + 1
+    }
+    out-n = out-n + name-n
+    // 編碼 value
+    val-out str = ' '
+    val-n i64 = 0
+    hpack-encode-str(value)(val-out, val-n)
+    i = 0
+    for i < val-n {
+        out[out-n + i] = val-out[i]
+        i = i + 1
+    }
+    out-n = out-n + val-n
+    // 加入動態表
+    .dyn-add(name, value)
+}
+
+// decode-headers: 解碼標頭塊
+// data: 二進位資料, n: 資料長度
+// 返回 names/values 陣列, count=標頭數, ok=true=成功
+hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str, count i64, ok bool) {
+    ok = false
+    count = 0
+    // 初始化輸出陣列
+    i = 0
+    for i < 128 {
+        names[i] = ' '
+        names[i].len = 0
+        values[i] = ' '
+        values[i].len = 0
+        i = i + 1
+    }
+    if n == 0 {
+        ok = true
+        return
+    }
+    pos = 0
+    ! {
+        if pos >= n {
+            *
+        }
+        if count >= 128 {
+            *
+        }
+        b = data[pos]
+        // Indexed Header Field（6.1）：1xxxxxxx
+        if (b & 128) != 0 {
+            idx i64 = 0
+            next i64 = 0
+            hpack-decode-int(data, pos, 7)(idx, next)
+            if next < 0 {
+                return
+            }
+            lk-name str = ''
+            lk-val str = ''
+            found bool = false
+            .lookup(idx)(lk-name, lk-val, found)
+            if found == false {
+                return
+            }
+            // 複製到輸出
+            j = 0
+            for j < lk-name.len {
+                names[count][j] = lk-name[j]
+                j = j + 1
+            }
+            names[count].len = lk-name.len
+            j = 0
+            for j < lk-val.len {
+                values[count][j] = lk-val[j]
+                j = j + 1
+            }
+            values[count].len = lk-val.len
+            count = count + 1
+            pos = next
+        }
+        // Literal with Incremental Indexing（6.2.1）：01xxxxxx
+        elif (b & 192) == 64 {
+            name-idx i64 = 0
+            next i64 = 0
+            hpack-decode-int(data, pos, 6)(name-idx, next)
+            if next < 0 {
+                return
+            }
+            pos = next
+            name str = ''
+            value str = ''
+            if name-idx == 0 {
+                // 新 name
+                hpack-decode-str(data, pos)(name, pos)
+                if pos < 0 {
+                    return
+                }
+            } else {
+                lk-name str = ''
+                lk-val str = ''
+                found bool = false
+                .lookup(name-idx)(lk-name, lk-val, found)
+                if found == false {
+                    return
+                }
+                name = lk-name
+            }
+            hpack-decode-str(data, pos)(value, pos)
+            if pos < 0 {
+                return
+            }
+            // 複製到輸出
+            j = 0
+            for j < name.len {
+                names[count][j] = name[j]
+                j = j + 1
+            }
+            names[count].len = name.len
+            j = 0
+            for j < value.len {
+                values[count][j] = value[j]
+                j = j + 1
+            }
+            values[count].len = value.len
+            count = count + 1
+            // 加入動態表
+            .dyn-add(name, value)
+        }
+        // Literal without Indexing（6.2.2）：0000xxxx
+        elif (b & 240) == 0 {
+            name-idx i64 = 0
+            next i64 = 0
+            hpack-decode-int(data, pos, 4)(name-idx, next)
+            if next < 0 {
+                return
+            }
+            pos = next
+            name str = ''
+            value str = ''
+            if name-idx == 0 {
+                hpack-decode-str(data, pos)(name, pos)
+                if pos < 0 {
+                    return
+                }
+            } else {
+                lk-name str = ''
+                lk-val str = ''
+                found bool = false
+                .lookup(name-idx)(lk-name, lk-val, found)
+                if found == false {
+                    return
+                }
+                name = lk-name
+            }
+            hpack-decode-str(data, pos)(value, pos)
+            if pos < 0 {
+                return
+            }
+            j = 0
+            for j < name.len {
+                names[count][j] = name[j]
+                j = j + 1
+            }
+            names[count].len = name.len
+            j = 0
+            for j < value.len {
+                values[count][j] = value[j]
+                j = j + 1
+            }
+            values[count].len = value.len
+            count = count + 1
+        }
+        // Literal Never Indexed（6.2.3）：0001xxxx
+        elif (b & 240) == 16 {
+            name-idx i64 = 0
+            next i64 = 0
+            hpack-decode-int(data, pos, 4)(name-idx, next)
+            if next < 0 {
+                return
+            }
+            pos = next
+            name str = ''
+            value str = ''
+            if name-idx == 0 {
+                hpack-decode-str(data, pos)(name, pos)
+                if pos < 0 {
+                    return
+                }
+            } else {
+                lk-name str = ''
+                lk-val str = ''
+                found bool = false
+                .lookup(name-idx)(lk-name, lk-val, found)
+                if found == false {
+                    return
+                }
+                name = lk-name
+            }
+            hpack-decode-str(data, pos)(value, pos)
+            if pos < 0 {
+                return
+            }
+            j = 0
+            for j < name.len {
+                names[count][j] = name[j]
+                j = j + 1
+            }
+            names[count].len = name.len
+            j = 0
+            for j < value.len {
+                values[count][j] = value[j]
+                j = j + 1
+            }
+            values[count].len = value.len
+            count = count + 1
+        }
+        else {
+            // 未知表示類型
+            return
+        }
+    }
+    ok = true
+}

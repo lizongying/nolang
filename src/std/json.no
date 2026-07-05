@@ -64,12 +64,16 @@ json-pool.init = () {
     for i < JSON-MAX-NODES {
         .nodes[i].count = 0
         .nodes[i].kind = KIND-NULL
+        // 用空格字串初始化 str-val，使 data buffer 非 null
+        .nodes[i].str-val = ' '
         .nodes[i].str-val.len = 0
         .nodes[i].num-val = 0.0
         .nodes[i].bool-val = 0
         j = 0
         for j < JSON-MAX-CHILDREN {
             .nodes[i].children[j] = -1
+            // 用空格字串初始化 keys[j]，使 data buffer 非 null
+            .nodes[i].keys[j] = ' '
             .nodes[i].keys[j].len = 0
             j = j + 1
         }
@@ -87,9 +91,18 @@ json-pool.alloc = () (idx i64) {
     .count = .count + 1
     .nodes[idx].count = 0
     .nodes[idx].kind = KIND-NULL
+    // 用空格字串初始化 str-val，使 data buffer 非 null
+    .nodes[idx].str-val = ' '
     .nodes[idx].str-val.len = 0
     .nodes[idx].num-val = 0.0
     .nodes[idx].bool-val = 0
+    j = 0
+    for j < JSON-MAX-CHILDREN {
+        .nodes[idx].children[j] = -1
+        .nodes[idx].keys[j] = ' '
+        .nodes[idx].keys[j].len = 0
+        j = j + 1
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -279,10 +292,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
             if cnt >= JSON-MAX-CHILDREN {
                 return
             }
-            // copy key string
-            .nodes[node-idx].keys[cnt].len = .nodes[key-idx].str-val.len
+            // copy key string to keys[cnt]
+            key-len = .nodes[key-idx].str-val.len
+            .nodes[node-idx].keys[cnt].len = key-len
             j i64 = 0
-            for j < .nodes[key-idx].str-val.len {
+            for j < key-len {
                 .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
                 j = j + 1
             }
@@ -442,9 +456,9 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok i64) {
     cnt = .nodes[obj-idx].count
     i = 0
     for i < cnt {
-        eq = 0
-        .str-eq(.nodes[obj-idx].keys[i], key)(eq)
-        if eq == 1 {
+        found-eq = 0
+        .str-eq(.nodes[obj-idx].keys[i], key)(found-eq)
+        if found-eq == 1 {
             val-idx = .nodes[obj-idx].children[i]
             ok = 1
             return
@@ -467,9 +481,9 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok i64) {
     cnt = .nodes[obj-idx].count
     i = 0
     for i < cnt {
-        eq = 0
-        .str-eq(.nodes[obj-idx].keys[i], key)(eq)
-        if eq == 1 {
+        found-eq = 0
+        .str-eq(.nodes[obj-idx].keys[i], key)(found-eq)
+        if found-eq == 1 {
             .nodes[obj-idx].children[i] = val-idx
             ok = 1
             return
@@ -480,7 +494,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok i64) {
     if cnt >= JSON-MAX-CHILDREN {
         return
     }
-    // 複製鍵字串
+    // 复制键字符串到 keys[cnt]
     .nodes[obj-idx].keys[cnt].len = key.len
     j = 0
     for j < key.len {

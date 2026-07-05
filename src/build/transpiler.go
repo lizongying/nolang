@@ -219,6 +219,10 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			} else if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
 				// 字串字面量接收者（如 '123'.to-i64()）→ str 型別
 				typeName = "str"
+			} else if _, ok := dot.Receiver.(*parser.IndexExpression); ok {
+				// 陣列元素接收者（如 arr[i].slice(...)）— 元素型別無法靜態推斷，
+				// 返回空字串跳過型別檢查，由 LLVM 端驗證
+				return ""
 			}
 			if typeName != "" {
 				methodName := typeName + "." + dot.Property
@@ -231,6 +235,9 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 						return m.Return[0].String()
 					}
 				}
+				// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
+				// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
+				return ""
 			}
 		}
 		return "i64"
@@ -2283,6 +2290,20 @@ func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 				sizes[s.Name.Value] = arraySize
 			}
 		}
+	case *parser.ExpressionStatement:
+		// if/else 表達式中的局部变量也需收集
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				for _, ss := range ifExpr.Consequence.Statements {
+					collectArraySizesFromStmt(ss, sizes)
+				}
+			}
+			if ifExpr.Alternative != nil {
+				for _, ss := range ifExpr.Alternative.Statements {
+					collectArraySizesFromStmt(ss, sizes)
+				}
+			}
+		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
@@ -2326,6 +2347,20 @@ func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64)
 		} else if sl, ok := s.Value.(*parser.SliceLiteral); ok {
 			// Also detect slice from SliceLiteral value (inferred type, no [] annotation)
 			slices[s.Name.Value] = int64(len(sl.Elements))
+		}
+	case *parser.ExpressionStatement:
+		// if/else 表達式中的局部变量也需收集
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				for _, ss := range ifExpr.Consequence.Statements {
+					collectSliceSizeMapFromStmt(ss, slices)
+				}
+			}
+			if ifExpr.Alternative != nil {
+				for _, ss := range ifExpr.Alternative.Statements {
+					collectSliceSizeMapFromStmt(ss, slices)
+				}
+			}
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
@@ -2383,6 +2418,20 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 				collectStringSizeMapFromStmt(ss, strSizes)
 			}
 		}
+	case *parser.ExpressionStatement:
+		// if/else 表達式中的局部变量也需收集
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				for _, ss := range ifExpr.Consequence.Statements {
+					collectStringSizeMapFromStmt(ss, strSizes)
+				}
+			}
+			if ifExpr.Alternative != nil {
+				for _, ss := range ifExpr.Alternative.Statements {
+					collectStringSizeMapFromStmt(ss, strSizes)
+				}
+			}
+		}
 	case *parser.ForStatement:
 		if s.Init != nil {
 			collectStringSizeMapFromStmt(s.Init, strSizes)
@@ -2422,6 +2471,10 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		return true
 	case *parser.DotExpression:
 		// Struct field access (e.g., fp.path) may return a string.
+		// Return type cannot be determined at validation time; defer to LLVM type checking.
+		return true
+	case *parser.IndexExpression:
+		// Array element access (e.g., req.headers[i], arr[i]) may return a string.
 		// Return type cannot be determined at validation time; defer to LLVM type checking.
 		return true
 	}
@@ -3253,7 +3306,7 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 }
 
 // ValidateUndefinedVars detects references to variables that are not defined.
-func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
+func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
 	var results []ValidateResult
 
 	// 1. Collect all defined names
@@ -3306,6 +3359,41 @@ func ValidateUndefinedVars(program *parser.Program) []ValidateResult {
 		}
 		if _, ok := stmt.(*parser.ExportStatement); ok {
 			continue
+		}
+	}
+
+	// 3b. Collect symbols from local module imports (paths starting with /)
+	//     These include extern declarations, functions, and constants from
+	//     imported files like `# /sqlite-driver/sqlite.extern`.
+	if rootDir != "" {
+		pkg, _ := LoadPackage(rootDir)
+		for _, stmt := range program.Statements {
+			use, ok := stmt.(*parser.UseStatement)
+			if !ok {
+				continue
+			}
+			// Only handle module-level imports (no specific function)
+			// Function-specific imports are already handled in step 3.
+			if use.Function != "" {
+				continue
+			}
+			modProg := resolveUseModule(use, pkg)
+			if modProg == nil {
+				continue
+			}
+			for _, ms := range modProg.Statements {
+				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
+					definedVars[es.Name.Value] = true
+					funcNames[es.Name.Value] = true
+				}
+				if fd, ok := ms.(*parser.FunctionDefinition); ok {
+					definedVars[fd.Name] = true
+					funcNames[fd.Name] = true
+				}
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+					definedVars[ls.Name.Value] = true
+				}
+			}
 		}
 	}
 
@@ -3856,6 +3944,13 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 				}
 				seen[fd.Name] = true
 				exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
+			}
+			if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
+				if seen[es.Name.Value] {
+					continue
+				}
+				seen[es.Name.Value] = true
+				exports = append(exports, ModuleExport{Name: es.Name.Value, Value: ""})
 			}
 		}
 	}
@@ -4678,7 +4773,15 @@ func collectStructFields(program *parser.Program) map[string]map[string]string {
 		fields := make(map[string]string)
 		for _, f := range sd.Fields {
 			if f.Type != nil {
-				fields[f.Name] = f.Type.String()
+				// StructField 把陣列大小存在 ArraySize/IsSlice，而非 f.Type。
+				// f.Type 只是元素型別。重建完整型別字串。
+				typeStr := f.Type.String()
+				if f.ArraySize > 0 {
+					typeStr = fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
+				} else if f.IsSlice {
+					typeStr = "[]" + typeStr
+				}
+				fields[f.Name] = typeStr
 			}
 		}
 		result[sd.Name] = fields
@@ -4768,6 +4871,43 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 								},
 							}
 							e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
+						}
+					}
+				}
+			}
+			// Case 3: .field[i].method(args) → ElementType.method(.field[i], args)
+			// where .field is self.field and field is an array type [N]T
+			if idxExpr, ok := dot.Receiver.(*parser.IndexExpression); ok {
+				if innerDot, ok := idxExpr.Left.(*parser.DotExpression); ok {
+					if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
+						fieldName := innerDot.Property
+						if fields, ok := structFields[selfType]; ok {
+							if fieldType, ok := fields[fieldName]; ok {
+								// fieldType 形如 "[N]T" — 提取元素型別 T
+								closingIdx := strings.LastIndex(fieldType, "]")
+								if closingIdx >= 0 && closingIdx+1 < len(fieldType) {
+									elemType := fieldType[closingIdx+1:]
+									concreteName := elemType + "." + dot.Property
+									e.Function = &parser.Identifier{
+										Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+										Value: concreteName,
+									}
+									// receiver arg: .field[i] (= self.field[i])
+									receiverArg := &parser.IndexExpression{
+										Token: idxExpr.Token,
+										Left: &parser.DotExpression{
+											Token:    innerDot.Token,
+											Property: fieldName,
+											Receiver: &parser.Identifier{
+												Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
+												Value: "self",
+											},
+										},
+										Index: idxExpr.Index,
+									}
+									e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
+								}
+							}
 						}
 					}
 				}

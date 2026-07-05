@@ -82,6 +82,41 @@ str.index = (target str) (pos i64) {
     }
 }
 
+// str.index-from: 在 s 中從 from 位置開始查找 target 子串
+// 返回首次出現的位置，未找到返回 -1
+str.index-from = (target str, from i64) (pos i64) {
+    pos = -1
+    if target.len == 0 {
+        if from <= .len {
+            pos = from
+        }
+        return
+    }
+    if from < 0 {
+        from = 0
+    }
+    limit = .len - target.len
+    i = from
+    for i <= limit {
+        matched = 1
+        j = 0
+        for j < target.len {
+            sj = .[i + j]
+            tj = target[j]
+            if sj != tj {
+                matched = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched == 1 {
+            pos = i
+            return
+        }
+        i = i + 1
+    }
+}
+
 // str.contains: 判断 s 是否包含 target 子串
 // 返回 true=包含, false=不包含
 str.contains = (target str) (yes bool) {

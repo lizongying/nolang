@@ -82,6 +82,62 @@ func (g *Generator) convertShortToLong(sb *strings.Builder, shortReg string) str
 	return strAlloca
 }
 
+// convertStrLongLitToLongValue converts a %str-longlit.N register (from StringLiteral
+// codegen, which is a %str-short* alloca) to a %str-long VALUE with a heap-allocated
+// data buffer. Unlike convertShortToLong which points to the stack-allocated inline
+// buffer (unsafe after function return), this uses malloc+memcpy for long-term safety.
+// Returns the %str-long value register name (suitable for direct store).
+func (g *Generator) convertStrLongLitToLongValue(sb *strings.Builder, val string) string {
+	// Extract len from str-short: load i8, mask 0x7F, zext to i64
+	g.tmpIdx++
+	s2sLenGEP := fmt.Sprintf("%%s2s.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	s2sLenRaw := fmt.Sprintf("%%s2s.len.raw.%d", g.tmpIdx)
+	g.tmpIdx++
+	s2sLenMask := fmt.Sprintf("%%s2s.len.mask.%d", g.tmpIdx)
+	g.tmpIdx++
+	s2sLenExt := fmt.Sprintf("%%s2s.len.ext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), s2sLenGEP, val))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), s2sLenRaw, s2sLenGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), s2sLenMask, s2sLenRaw))
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), s2sLenExt, s2sLenMask))
+
+	// Extract data pointer from str-short inline buffer
+	g.tmpIdx++
+	s2sDataGEP := fmt.Sprintf("%%s2s.data.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	s2sDataCast := fmt.Sprintf("%%s2s.data.cast.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), s2sDataGEP, val))
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), s2sDataCast, s2sDataGEP))
+
+	// Allocate heap buffer (128 bytes covers max str-short capacity)
+	g.tmpIdx++
+	s2sBuf := fmt.Sprintf("%%s2s.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 128)\n", g.indent(), s2sBuf))
+	sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), s2sBuf, s2sDataCast, s2sLenExt))
+
+	// Create %str-long struct pointing to heap buffer
+	g.tmpIdx++
+	s2sResult := fmt.Sprintf("%%s2s.result.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), s2sResult))
+
+	g.tmpIdx++
+	s2sDstLenGEP := fmt.Sprintf("%%s2s.dst.len.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), s2sDstLenGEP, s2sResult))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), s2sLenExt, s2sDstLenGEP))
+
+	g.tmpIdx++
+	s2sDstDataGEP := fmt.Sprintf("%%s2s.dst.data.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), s2sDstDataGEP, s2sResult))
+	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), s2sBuf, s2sDstDataGEP))
+
+	// Load from %str-long alloca to get %str-long value
+	g.tmpIdx++
+	loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, s2sResult))
+	return loadReg
+}
+
 // generateCallArg 生成單個函數調用參數的 LLVM 表示
 func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) string {
 	switch a := arg.(type) {

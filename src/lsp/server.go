@@ -136,6 +136,9 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 	if ast != nil {
 		prog, ok := ast.(*parser.Program)
 		if ok && prog != nil {
+			docPath := strings.TrimPrefix(uri, "file://")
+			docDir := filepath.Dir(docPath)
+
 			typeErrs := nbuild.ValidateTypes(prog)
 			for _, e := range typeErrs {
 				diagnostic := Diagnostic{
@@ -183,7 +186,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			undefinedVars := nbuild.ValidateUndefinedVars(prog)
+			undefinedVars := nbuild.ValidateUndefinedVars(prog, docDir)
 			for _, u := range undefinedVars {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -254,8 +257,6 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Validate URL-style import paths are declared in mod.jsonc dependencies
-			docPath := strings.TrimPrefix(uri, "file://")
-			docDir := filepath.Dir(docPath)
 			depErrs := nbuild.ValidateDependencyImports(prog, docDir)
 			for _, u := range depErrs {
 				diagnostic := Diagnostic{

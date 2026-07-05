@@ -46,7 +46,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "PARSE WARN: %s\n", w)
 	}
 
-	undefinedVars := build.ValidateUndefinedVars(prog)
+	undefinedVars := build.ValidateUndefinedVars(prog, "")
 	if len(undefinedVars) > 0 {
 		hasErrors = true
 		for _, u := range undefinedVars {

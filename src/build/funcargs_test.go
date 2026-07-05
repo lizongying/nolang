@@ -139,7 +139,7 @@ zero = () (r i64) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	results := ValidateUndefinedVars(prog)
+	results := ValidateUndefinedVars(prog, "")
 	for _, r := range results {
 		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
 	}

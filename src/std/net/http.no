@@ -1,6 +1,7 @@
-// http — HTTP/1.1 客戶端
+// http — HTTP/1.1 客戶端（含 REST 支援）
 //
-// 提供簡易的 HTTP/1.1 用戶端，支援 GET、POST 等常見方法。
+// 提供簡易的 HTTP/1.1 用戶端，支援 GET、POST、PUT、DELETE、PATCH 等方法。
+// 支援自訂標頭、回應標頭解析。
 // 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
 //
 // 用法：
@@ -8,12 +9,20 @@
 //   if ok {
 //       print(resp.status-code)
 //       print(resp.body)
+//       ct, found = resp.get-header('Content-Type')
 //   }
 //
 //   resp, ok = http-post('http://example.com/api', '{"key":"value"}')
 //
 //   // 一般請求
 //   resp, ok = http-do('PUT', 'http://example.com/item', 'data')
+//
+//   // 自訂請求（含標頭）
+//   req = http-request{}
+//   req.init('PUT', 'http://example.com/item', 'data')
+//   req.add-header('Content-Type', 'application/json')
+//   req.add-header('Authorization', 'Bearer token123')
+//   resp, ok = http-do-req(req)
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -28,20 +37,198 @@ HTTP-MAX-RESPONSE = 16384
 // 預設 HTTP 埠號
 HTTP-DEFAULT-PORT = 80
 
+// 請求最大自訂標頭數
+HTTP-MAX-REQ-HEADERS = 16
+
+// 回應最大解析標頭數
+HTTP-MAX-RESP-HEADERS = 32
+
 // ═══════════════════════════════════════════════
-// http-response 結構體
+// 結構體
 // ═══════════════════════════════════════════════
+
+// http-request: HTTP 請求（支援自訂標頭）
+// headers: 標頭行陣列，每行格式 'Name: Value'
+// header-count: 已加入的標頭數
+http-request {
+    method str
+    url str
+    body str
+    headers [16]str
+    header-count i64
+}
 
 // http-response: HTTP 回應
 // status-code: 狀態碼（如 200、404）
 // status-text: 狀態文字（如 OK、Not Found）
-// headers: 回應標頭（原始字串，含多行）
+// headers: 回應標頭（原始字串，含多行，向後相容）
+// header-names/header-values: 解析後的標頭名/值（parse-headers 填入）
+// header-count: 解析後的標頭數
 // body: 回應主體
 http-response {
     status-code i64
     status-text str
     headers str
+    header-names [32]str
+    header-values [32]str
+    header-count i64
     body str
+}
+
+// ═══════════════════════════════════════════════
+// http-request 方法
+// ═══════════════════════════════════════════════
+
+// init: 初始化請求
+// method: HTTP 方法（GET、POST、PUT、DELETE、PATCH 等）
+// url: 完整 URL
+// body: 請求主體（GET/DELETE 可傳空字串）
+http-request.init = (method str, url str, body str) {
+    .method = method
+    .url = url
+    .body = body
+    .header-count = 0
+    i = 0
+    for i < HTTP-MAX-REQ-HEADERS {
+        // 用空格字串初始化 headers[i]，使 data buffer 非 null
+        .headers[i] = ' '
+        .headers[i].len = 0
+        i = i + 1
+    }
+}
+
+// add-header: 新增自訂標頭
+// 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
+// 返回 ok=true=成功, false=標頭數已滿
+http-request.add-header = (name str, value str) (ok bool) {
+    ok = false
+    if .header-count >= HTTP-MAX-REQ-HEADERS {
+        return
+    }
+    idx = .header-count
+    // 複製 name 到 headers[idx]
+    i = 0
+    for i < name.len {
+        .headers[idx][i] = name[i]
+        i = i + 1
+    }
+    // 加 ': '
+    .headers[idx][name.len] = 58      // ':'
+    .headers[idx][name.len + 1] = 32  // ' '
+    // 複製 value
+    j = 0
+    for j < value.len {
+        .headers[idx][name.len + 2 + j] = value[j]
+        j = j + 1
+    }
+    .headers[idx].len = name.len + 2 + value.len
+    .header-count = idx + 1
+    ok = true
+}
+
+// ═══════════════════════════════════════════════
+// http-response 方法
+// ═══════════════════════════════════════════════
+
+// parse-headers: 將 headers 字串拆分到 header-names / header-values
+// 必須在 headers 欄位被填入後呼叫（http-do / http-do-req 內部會自動呼叫）
+http-response.parse-headers = () {
+    .header-count = 0
+    // 初始化標頭陣列（用空格字串使 data buffer 非 null）
+    i = 0
+    for i < HTTP-MAX-RESP-HEADERS {
+        .header-names[i] = ' '
+        .header-names[i].len = 0
+        .header-values[i] = ' '
+        .header-values[i].len = 0
+        i = i + 1
+    }
+
+    hs str = .headers
+    n = hs.len
+    if n == 0 {
+        return
+    }
+
+    cr str = char-to-str(13)
+    lf str = char-to-str(10)
+    crlf str = cr - lf
+
+    pos = 0
+    ! {
+        if pos >= n {
+            *
+        }
+        // 找下一個 CRLF
+        next-crlf = hs.index-from(crlf, pos)
+        line-end = next-crlf
+        if line-end < 0 {
+            line-end = n
+        }
+        // 在 [pos, line-end) 中找 ': '
+        colon-pos = hs.index-from(': ', pos)
+        if colon-pos >= 0 && colon-pos < line-end {
+            cnt = .header-count
+            if cnt < HTTP-MAX-RESP-HEADERS {
+                // 複製 name: [pos, colon-pos)
+                name-len = colon-pos - pos
+                j = 0
+                for j < name-len {
+                    .header-names[cnt][j] = hs[pos + j]
+                    j = j + 1
+                }
+                .header-names[cnt].len = name-len
+                // 複製 value: [colon-pos+2, line-end)
+                val-start = colon-pos + 2
+                val-len = line-end - val-start
+                j = 0
+                for j < val-len {
+                    .header-values[cnt][j] = hs[val-start + j]
+                    j = j + 1
+                }
+                .header-values[cnt].len = val-len
+                .header-count = cnt + 1
+            }
+        }
+        if next-crlf < 0 {
+            *
+        }
+        pos = next-crlf + 2
+    }
+}
+
+// get-header: 取得指定標頭值（線性搜尋）
+// name: 標頭名（如 'Content-Type'）
+// 返回 val=標頭值, ok=true=找到
+http-response.get-header = (name str) (val str, ok bool) {
+    ok = false
+    cnt = .header-count
+    i = 0
+    for i < cnt {
+        // 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
+        matched = 1
+        if .header-names[i].len != name.len {
+            matched = 0
+        }
+        if matched == 1 {
+            j = 0
+            for j < name.len {
+                if .header-names[i][j] != name[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+        }
+        if matched == 1 {
+            // 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+            vlen = .header-values[i].len
+            val = .header-values[i].slice(0, vlen)
+            ok = true
+            return
+        }
+        i = i + 1
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -229,8 +416,203 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     }
     resp.status-code = code
 
+    // 解析回應標頭到 header-names / header-values
+    resp.parse-headers()
+
     ok = true
 }
+
+// http-do-req: 用 http-request 發送請求（支援自訂標頭）
+// req: 已初始化的 http-request（含自訂標頭）
+// 返回 resp=回應, ok=true=成功
+http-do-req = (req http-request) (resp http-response, ok bool) {
+    ok = false
+
+    // ── 字串變數 ──
+    scheme str = 'http://'
+    rest str = ''
+    host str = ''
+    port i64 = HTTP-DEFAULT-PORT
+    path str = '/'
+    host-only str = ''
+    port-str str = ''
+    cr str = char-to-str(13)
+    lf str = char-to-str(10)
+    crlf str = cr - lf
+    req-str str = ''
+    len-str str = ''
+    space str = ' '
+    buf str = space.repeat(HTTP-BUF-SIZE)
+    raw str = space.repeat(HTTP-MAX-RESPONSE)
+    total i64 = 0
+    recv-raw str = ''
+    separator str = crlf - crlf
+    head str = ''
+    status-line str = ''
+    after-code str = ''
+    code-str str = ''
+    body str = req.body
+    method str = req.method
+    url str = req.url
+
+    // ── 解析 URL ──
+    if url.starts-with(scheme) == false {
+        return
+    }
+    rest = url.slice(scheme.len, url.len)
+
+    slash-pos = rest.index('/')
+    if slash-pos < 0 {
+        host = rest
+    } else {
+        host = rest.slice(0, slash-pos)
+        path = rest.slice(slash-pos, rest.len)
+    }
+
+    colon-pos = host.index(':')
+    if colon-pos >= 0 {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p i64 = 0
+        i = 0
+        for i < port-str.len {
+            c = port-str[i]
+            if c < 48 || c > 57 {
+                return
+            }
+            p = p * 10 + c - 48
+            i = i + 1
+        }
+        port = p
+        host = host-only
+    }
+
+    if host.len == 0 {
+        return
+    }
+
+    // ── 建立連接 ──
+    fd = net-dial(host, port)
+    if fd < 0 {
+        return
+    }
+
+    // ── 建構請求（含自訂標頭）──
+    req-str = method
+    req-str = req-str - ' '
+    req-str = req-str - path
+    req-str = req-str - ' HTTP/1.1'
+    req-str = req-str - crlf
+    req-str = req-str - 'Host: '
+    req-str = req-str - host
+    req-str = req-str - crlf
+    req-str = req-str - 'Connection: close'
+    req-str = req-str - crlf
+    req-str = req-str - 'User-Agent: nolang-http/1.0'
+    req-str = req-str - crlf
+
+    // 附加自訂標頭
+    hi = 0
+    for hi < req.header-count {
+        req-str = req-str - req.headers[hi]
+        req-str = req-str - crlf
+        hi = hi + 1
+    }
+
+    if body.len > 0 {
+        body-len i64 = body.len
+        len-str = body-len.to-str()
+        req-str = req-str - 'Content-Length: '
+        req-str = req-str - len-str
+        req-str = req-str - crlf
+    }
+    req-str = req-str - crlf
+    if body.len > 0 {
+        req-str = req-str - body
+    }
+
+    // ── 發送請求 ──
+    written = net-send(fd, req-str, req-str.len)
+    if written < 0 {
+        close(fd)
+        return
+    }
+
+    // ── 接收回應 ──
+    ! {
+        n = net-recv(fd, buf, HTTP-BUF-SIZE)
+        if n <= 0 {
+            *
+        }
+        if total + n > HTTP-MAX-RESPONSE {
+            *
+        }
+        i = 0
+        for i < n {
+            raw[total + i] = buf[i]
+            i = i + 1
+        }
+        total = total + n
+    }
+    close(fd)
+
+    if total == 0 {
+        return
+    }
+
+    recv-raw = raw.slice(0, total)
+
+    // ── 解析回應 ──
+    sep-pos = recv-raw.index(separator)
+    if sep-pos < 0 {
+        return
+    }
+
+    head = recv-raw.slice(0, sep-pos)
+    resp.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
+
+    first-line-end = head.index(crlf)
+    if first-line-end < 0 {
+        status-line = head
+        resp.headers = ''
+    } else {
+        status-line = head.slice(0, first-line-end)
+        resp.headers = head.slice(first-line-end + crlf.len, head.len)
+    }
+
+    sp1 = status-line.index(' ')
+    if sp1 < 0 {
+        return
+    }
+    after-code = status-line.slice(sp1 + 1, status-line.len)
+    sp2 = after-code.index(' ')
+    if sp2 < 0 {
+        return
+    }
+    code-str = after-code.slice(0, sp2)
+    resp.status-text = after-code.slice(sp2 + 1, after-code.len)
+
+    code i64 = 0
+    i = 0
+    for i < code-str.len {
+        c = code-str[i]
+        if c < 48 || c > 57 {
+            return
+        }
+        code = code * 10 + c - 48
+        i = i + 1
+    }
+    resp.status-code = code
+
+    // 解析回應標頭
+    resp.parse-headers()
+
+    ok = true
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
 
 // http-get: 執行 HTTP GET 請求
 // url: 完整 URL
@@ -245,4 +627,27 @@ http-get = (url str) (resp http-response, ok bool) {
 // 返回 resp=回應, ok=true=成功
 http-post = (url str, body str) (resp http-response, ok bool) {
     http-do('POST', url, body)(resp, ok)
+}
+
+// http-put: 執行 HTTP PUT 請求
+// url: 完整 URL
+// body: 請求主體
+// 返回 resp=回應, ok=true=成功
+http-put = (url str, body str) (resp http-response, ok bool) {
+    http-do('PUT', url, body)(resp, ok)
+}
+
+// http-delete: 執行 HTTP DELETE 請求
+// url: 完整 URL
+// 返回 resp=回應, ok=true=成功
+http-delete = (url str) (resp http-response, ok bool) {
+    http-do('DELETE', url, '')(resp, ok)
+}
+
+// http-patch: 執行 HTTP PATCH 請求
+// url: 完整 URL
+// body: 請求主體
+// 返回 resp=回應, ok=true=成功
+http-patch = (url str, body str) (resp http-response, ok bool) {
+    http-do('PATCH', url, body)(resp, ok)
 }

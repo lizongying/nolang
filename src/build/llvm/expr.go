@@ -1417,13 +1417,18 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					// Truncate val to elemType if needed (e.g., i64 → i8 for byte arrays)
-					// Only truncate for integer types; struct types (e.g. %str-long) are stored as-is
+					// Only truncate for integer types; struct types (e.g. %str-long) need conversion
 					storeVal := val
 					if elemType != "i64" && !strings.HasPrefix(elemType, "%") && strings.HasPrefix(val, "%") {
 						g.tmpIdx++
 						truncReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, elemType))
 						storeVal = truncReg
+					}
+					// s2s conversion: StringLiteral (%str-short* alloca) → %str-long value
+					// when assigning to a %str-long array element (e.g., keys[i] = 'foo')
+					if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
+						storeVal = g.convertStrLongLitToLongValue(sb, val)
 					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), elemType, storeVal, elemType, elemGEP))
@@ -1843,15 +1848,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 			if fieldIdx >= 0 && sb != nil {
 				// 當欄位型別為 %str-long 但值是短字串字面量（%str-short*）時，
-				// 需先轉換為 %str-long*，再 load 成 %str-long value
+				// 需用 malloc 配置 heap buffer 並轉換為 %str-long value，
+				// 因為 convertShortToLong 會指向 str-short 的 stack buffer，函數返回後失效。
 				if fieldType == "%str-long" {
 					if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) <= 127 {
-						val = g.convertShortToLong(sb, val)
-						// convertShortToLong 返回 %str-long*，需 load 成 %str-long value
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%set.val.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, val))
-						val = loadReg
+						val = g.convertStrLongLitToLongValue(sb, val)
 					}
 				}
 				structTy := "%" + structName
