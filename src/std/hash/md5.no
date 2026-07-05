@@ -4,7 +4,7 @@
 //
 // 用法：
 //   data = [0x61, 0x62, 0x63]  // "abc"
-//   md5(data)(hash)
+//   hash = md5(data)
 //   // hash == [0x90, 0x01, 0x50, 0x98, ...]
 
 // rot-left: 32-bit 循環左移

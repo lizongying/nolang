@@ -5,8 +5,8 @@
 //
 // 用法：
 //   data = [104, 101, 108, 108, 111]  // []byte
-//   gzip-compress(data)(compressed)
-//   gzip-decompress(compressed)(decompressed)
+//   compressed = gzip-compress(data)
+//   decompressed = gzip-decompress(compressed)
 
 // ─── 壓縮 ─────────────────────────────────────
 

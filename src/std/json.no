@@ -5,11 +5,11 @@
 // 用法：
 //   p = json-pool{}
 //   p.init()
-//   p.parse('{"name":"Alice","age":30}', 0)(root, next, ok)
+//   root, next, ok = p.parse('{"name":"Alice","age":30}', 0)
 //   if ok == 1 {
-//       p.get-key(root, 'name')(val-idx, found)
+//       val-idx, found = p.get-key(root, 'name')
 //       if found == 1 {
-//           p.get-str(val-idx)(buf, ok2)
+//           buf, ok2 = p.get-str(val-idx)
 //           if ok2 == 1 {
 //               print(buf)
 //           }
@@ -115,7 +115,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     val-idx i64 = 0
     val-next i64 = 0
     val-ok i64 = 0
-    print('[DBG parse] enter sn=' - sn.to-str() - ' pos=' - pos.to-str())
 
     // 跳過空白
     for p < sn {
@@ -129,11 +128,9 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
         return
     }
     c = s[p] & 255
-    print('[DBG parse] p=' - p.to-str() - ' c=' - c.to-str())
 
     // 分配節點
     .alloc()(node-idx)
-    print('[DBG parse] alloc node-idx=' - node-idx.to-str())
     if node-idx < 0 {
         return
     }
@@ -168,7 +165,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     if c == 34 {
         .nodes[node-idx].kind = KIND-STR
         .parse-str(node-idx, s, sn, p)(next-pos, ok)
-        print('[DBG parse str] ok=' - ok.to-str() - ' next-pos=' - next-pos.to-str())
         return
     }
 
@@ -260,7 +256,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
                 return
             }
             .parse(s, p)(key-idx, key-next, key-ok)
-            print('[DBG obj] key-ok=' - key-ok.to-str() - ' key-idx=' - key-idx.to-str() - ' key-next=' - key-next.to-str())
             if key-ok == 0 {
                 return
             }
@@ -331,14 +326,12 @@ json-pool.parse-str = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i
     i = pos + 1
     j = 0
     c i64 = 0
-    print('[DBG parse-str] enter pos=' - pos.to-str() - ' sn=' - sn.to-str())
     for i < sn {
         c = s[i] & 255
         if c == 34 {
             .nodes[node-idx].str-val.len = j
             next-pos = i + 1
             ok = 1
-            print('[DBG parse-str] done next-pos=' - next-pos.to-str() - ' j=' - j.to-str())
             return
         }
         // 跳過轉義字元

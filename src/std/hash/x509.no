@@ -7,16 +7,14 @@
 //   - SHA-256 憑證指紋計算
 //
 // 用法：
-//   cert = '(DER bytes)'; n = len(cert)
+//   cert = '(DER bytes)'
+//   n = len(cert)
 //
 //   // 計算憑證指紋
-//   h0=1779033703; h1=3144134277; h2=1013904242; h3=2773480762
-//   h4=1359893119; h5=2600822924; h6=528734635;  h7=1541459225
-//   x509-fingerprint(cert, n, h0, h1, h2, h3, h4, h5, h6, h7)
+//   h0, h1, h2, h3, h4, h5, h6, h7 = x509-fingerprint(cert, n)
 //
 //   // 提取 RSA 公鑰指數
-//   e = 0
-//   x509-rsa-e(cert, n, e)
+//   e = x509-rsa-e(cert, n)
 
 // ─── DER TLV 底層解析 ─────────────────────────────────
 
@@ -137,7 +135,7 @@ x509-serial = (data []byte, n i64, serial i64) {
 // x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
 // data: DER 編碼憑證, n: 總長度
 // e: 輸出指數值（0 表示非 RSA 或解析失敗）
-x509-rsa-e = (data []byte, n i64, e i64) {
+x509-rsa-e = (data []byte, n i64) (e i64) {
     tbs-start, tbs-end = x509-tbs-range(data, n)
     if tbs-start == 0 {
         e = 0

@@ -1,0 +1,20 @@
+// test parse min
+
+main = () {
+    print('start')
+    json-str str = '"hello"'
+    root i64 = -1
+    next i64 = 0
+    ok i64 = 0
+    p = json-pool{}
+    p.init()
+    p.parse(json-str, 0)(root, next, ok)
+    if ok == 1 {
+        print('ok: parse str')
+    } else {
+        print('fail: parse str')
+    }
+    print('next=')
+    print(next)
+}
+main()

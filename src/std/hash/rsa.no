@@ -8,14 +8,13 @@
 //
 // 用法：
 //   // base, exp, mod 為 []i64 切片
-//   // result 為輸出切片（長度 ≥ mod 的長度）
-//   rsa-modpow(base, base-n, exp, exp-n, mod, mod-n, result, result-n)
+//   result, result-n = rsa-modpow(base, base-n, exp, exp-n, mod, mod-n)
 
 // ─── 大數比較 ─────────────────────────────────────
 
 // bn-cmp: 比較兩個大數 a 和 b
 // 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
-bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
+bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     if an > bn {
         cmp = 1
         return
@@ -43,7 +42,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
 
 // bn-add: c = a + b
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
-bn-add = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
     i i64 = 0
     for i < an || i < bn || carry != 0 {
@@ -64,7 +63,7 @@ bn-add = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 // ─── 大數減法 ─────────────────────────────────────
 
 // bn-sub: c = a - b（需 a ≥ b）
-bn-sub = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
     i i64 = 0
     for i < an {
@@ -93,7 +92,7 @@ bn-sub = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 
 // bn-mul: c = a × b
 // 呼叫者需確保 c 的容量 ≥ an + bn
-bn-mul = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
+bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     i i64 = 0
     for i < an + bn {
         c[i] = 0
@@ -127,7 +126,7 @@ bn-mul = (a []i64, an i64, b []i64, bn i64, c []i64, cn i64) {
 // ─── 大數左移 1 位元 ─────────────────────────────
 
 // bn-shl1: a = a << 1（原地左移 1 位元）
-bn-shl1 = (a []i64, an i64, new-an i64) {
+bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i i64 = 0
     for i < an {
@@ -147,7 +146,7 @@ bn-shl1 = (a []i64, an i64, new-an i64) {
 // ─── 大數右移 1 位元 ─────────────────────────────
 
 // bn-shr1: a = a >> 1（原地右移 1 位元）
-bn-shr1 = (a []i64, an i64, new-an i64) {
+bn-shr1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i i64 = an - 1
     for i >= 0 {
@@ -211,7 +210,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     i = bits - 1
     for i >= 0 {
         // r = r << 1
-        bn-shl1(r, rn, rn)
+        rn = bn-shl1(r, rn)
 
         // r[0] 設為 a 的第 i 位元
         limb = i / 32
@@ -221,9 +220,9 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 
         // 如果 r >= b: r = r - b; q 的第 i 位元設為 1
         cmp i64 = 0
-        bn-cmp(r, rn, b, bn, cmp)
+        cmp = bn-cmp(r, rn, b, bn)
         if cmp >= 0 {
-            bn-sub(r, rn, b, bn, r, rn)
+            r, rn = bn-sub(r, rn, b, bn)
             q-limb = i / 32
             q-bit = i % 32
             q[q-limb] = q[q-limb] | (1 << q-bit)
@@ -277,14 +276,14 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     i = bits - 1
     for i >= 0 {
         // 平方：result = result^2 mod modulus
-        bn-mul(result, rn, result, rn, t, prod-n)
+        t, prod-n = bn-mul(result, rn, result, rn)
         q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
         // 如果 exp 第 i 位元為 1：乘 base
         e-limb = i / 32
         e-bit = i % 32
         if (exp[e-limb] >> e-bit) & 1 == 1 {
-            bn-mul(result, rn, base, bn, t, prod-n)
+            t, prod-n = bn-mul(result, rn, base, bn)
             q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
         }
         i = i - 1

@@ -1,0 +1,16 @@
+// test-ok-shadow.no — minimal test for ok variable shadowing
+
+# std/json
+
+main = () {
+    ok i64 = 0
+    print('start')
+    ok = 1
+    print('ok=' - ok.to-str())
+    if ok == 1 {
+        print('ok: if works')
+    } else {
+        print('fail: if broken')
+    }
+}
+main()

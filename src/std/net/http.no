@@ -4,16 +4,16 @@
 // 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
 //
 // 用法：
-//   http-get('http://example.com/path')(resp, ok)
+//   resp, ok = http-get('http://example.com/path')
 //   if ok {
 //       print(resp.status-code)
 //       print(resp.body)
 //   }
 //
-//   http-post('http://example.com/api', '{"key":"value"}')(resp, ok)
+//   resp, ok = http-post('http://example.com/api', '{"key":"value"}')
 //
 //   // 一般請求
-//   http-do('PUT', 'http://example.com/item', 'data')(resp, ok)
+//   resp, ok = http-do('PUT', 'http://example.com/item', 'data')
 
 // ═══════════════════════════════════════════════
 // 常量

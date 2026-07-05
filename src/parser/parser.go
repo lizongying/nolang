@@ -2741,23 +2741,32 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		// Only consume `:` from `: {` at the top expression level (precedence == LOWEST)
 		// to avoid stealing `:` from bare condition for-loops like `i < n: { body }`
 		// where the `: {` follows the right operand of an infix expression.
+		// Save state before consuming `:` so we can restore it if the block
+		// turns out to be a bare condition for-loop (e.g. `n: { body }`).
+		var preColonState parserState
+		colonConsumed := false
 		if hasColonBeforeBrace && precedence == LOWEST && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
+			preColonState = p.saveState()
 			p.nextToken() // skip :
+			colonConsumed = true
 		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			if p.classifyBlockAtCurrent() == blockMatch && !hasColonBeforeBrace {
 				p.saveWarning(fmt.Sprintf("line %d, column %d: 'x { ... }' is deprecated, use 'x: { ... }' instead",
 					p.currentToken.Line, p.currentToken.Column))
 			}
+			blockHandled := false
 			if p.classifyBlockAtCurrent() == blockStruct {
 				result := p.parseStructLiteral(leftExp)
 				if result != nil {
 					leftExp = result
+					blockHandled = true
 				} else {
 					state := p.saveState()
 					me := p.parseMatchExprFrom(leftExp)
 					if me != nil {
 						leftExp = me
+						blockHandled = true
 					} else {
 						p.restoreState(state)
 					}
@@ -2767,9 +2776,15 @@ func (p *Parser) parseExpression(precedence int) Expression {
 				me := p.parseMatchExprFrom(leftExp)
 				if me != nil {
 					leftExp = me
+					blockHandled = true
 				} else {
 					p.restoreState(state)
 				}
+			}
+			// If the block was not a struct or match, restore `:` so that
+			// parseExpressionStatement can handle `cond: { body }` as a for-loop.
+			if !blockHandled && colonConsumed {
+				p.restoreState(preColonState)
 			}
 		}
 

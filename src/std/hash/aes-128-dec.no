@@ -5,8 +5,7 @@
 //
 // 用法：
 //   key  = '(16 bytes key)'
-//   out  = '(16 bytes buffer)'
-//   aes-128-dec(cipher, 16, key, out)
+//   out  = aes-128-dec(cipher, 16, key)
 
 // ─── S-box（前 16 行 × 16 列 = 256 位元組）───
 SBOX [256]byte = [
@@ -83,7 +82,7 @@ INV-SBOX [256]byte = [
 // ─── GF(2^8) 輔助函數 ──────────────────────────────
 
 // gf-mul2: 在 GF(2^8) 中乘以 x（即多項式 x）
-gf-mul2 = (x i64, r i64) {
+gf-mul2 = (x i64) (r i64) {
     r = x << 1
     if r & 256 != 0 {
         r = r ^ 283
@@ -144,18 +143,18 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
     m23 = 0
     m43 = 0
     m83 = 0
-    gf-mul2(b0, m20)
-    gf-mul2(m20, m40)
-    gf-mul2(m40, m80)
-    gf-mul2(b1, m21)
-    gf-mul2(m21, m41)
-    gf-mul2(m41, m81)
-    gf-mul2(b2, m22)
-    gf-mul2(m22, m42)
-    gf-mul2(m42, m82)
-    gf-mul2(b3, m23)
-    gf-mul2(m23, m43)
-    gf-mul2(m43, m83)
+    m20 = gf-mul2(b0)
+    m40 = gf-mul2(m20)
+    m80 = gf-mul2(m40)
+    m21 = gf-mul2(b1)
+    m41 = gf-mul2(m21)
+    m81 = gf-mul2(m41)
+    m22 = gf-mul2(b2)
+    m42 = gf-mul2(m22)
+    m82 = gf-mul2(m42)
+    m23 = gf-mul2(b3)
+    m43 = gf-mul2(m23)
+    m83 = gf-mul2(m43)
     d0 = (m80 ^ m40 ^ m20) ^ (m81 ^ m21 ^ b1) ^ (m82 ^ m42 ^ b2) ^ (m83 ^ b3)
     d1 = (m80 ^ b0) ^ (m81 ^ m41 ^ m21) ^ (m82 ^ m22 ^ b2) ^ (m83 ^ m43 ^ b3)
     d2 = (m80 ^ m40 ^ b0) ^ (m81 ^ b1) ^ (m82 ^ m42 ^ m22) ^ (m83 ^ m23 ^ b3)
@@ -201,7 +200,7 @@ add-round-key = (state []byte, rk []byte) {
 // ─── 金鑰展開 ─────────────────────────────────────
 
 // rcon: 輪常數
-rcon-val = (round i64, r i64) {
+rcon-val = (round i64) (r i64) {
     if round == 1 {
         r = 1
     } elif round == 2 {
@@ -226,12 +225,12 @@ rcon-val = (round i64, r i64) {
 }
 
 // rot-word: 循環左移 1 位元組
-rot-word = (w i64, r i64) {
+rot-word = (w i64) (r i64) {
     r = ((w << 8) | ((w >> 24) & 255)) & 4294967295
 }
 
 // sub-word: 對 4 個位元組分別套用 S-box
-sub-word = (w i64, r i64) {
+sub-word = (w i64) (r i64) {
     b0 = SBOX[(w >> 24) & 255] & 255
     b1 = SBOX[(w >> 16) & 255] & 255
     b2 = SBOX[(w >> 8) & 255] & 255
@@ -240,7 +239,7 @@ sub-word = (w i64, r i64) {
 }
 
 // aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
-aes-key-expand = (key []byte, ek [176]byte) {
+aes-key-expand = (key []byte) (ek [176]byte) {
     i = 0
     i < 16: {
         ek[i] = key[i]
@@ -255,9 +254,9 @@ aes-key-expand = (key []byte, ek [176]byte) {
             rw = 0
             sw = 0
             rc = 0
-            rot-word(w, rw)
-            sub-word(rw, sw)
-            rcon-val(i / 4, rc)
+    rw = rot-word(w)
+    sw = sub-word(rw)
+    rc = rcon-val(i / 4)
             w = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
             w = (w ^ sw ^ (rc << 24)) & 4294967295
         } else {
@@ -275,9 +274,9 @@ aes-key-expand = (key []byte, ek [176]byte) {
 // ─── 單區塊解密 ──────────────────────────────
 
 // aes-128-dec: 解密一個 16-byte 區塊
-aes-128-dec = (in []byte, n i64, key []byte, out []byte) {
+aes-128-dec = (in []byte, n i64, key []byte) (out []byte) {
     ek [16 + 160]byte
-    aes-key-expand(key, ek)
+    ek = aes-key-expand(key)
     i = 0
     i < 16: {
         out[i] = in[i]

@@ -6,10 +6,10 @@
 //
 // 用法：
 //   r = io-reader{ src: stdin }
-//   r.read-line()(line, ok)
+//   line, ok = r.read-line()
 //
 //   w = io-writer{ dst: stdout }
-//   w.write-str('hello')(n)
+//   n = w.write-str('hello')
 //
 //   io-print('hello')
 //   io-println('world')

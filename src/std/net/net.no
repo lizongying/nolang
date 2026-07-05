@@ -6,23 +6,23 @@
 // 用法：
 //   // TCP 服務端
 //   l = listener{}
-//   l.listen('127.0.0.1', 8080)(ok)
-//   l.accept()(c, ok)
-//   c.recv(buf, 1024)(n)
-//   c.send('hello')(n)
+//   ok = l.listen('127.0.0.1', 8080)
+//   c, ok = l.accept()
+//   n = c.recv(buf, 1024)
+//   n = c.send('hello')
 //   c.close()
 //   l.close()
 //
 //   // TCP 客戶端
 //   c = conn{}
-//   c.dial('127.0.0.1', 8080)(ok)
-//   c.send('hello')(n)
-//   c.recv(buf, 1024)(n)
+//   ok = c.dial('127.0.0.1', 8080)
+//   n = c.send('hello')
+//   n = c.recv(buf, 1024)
 //   c.close()
 //
 //   // 便捷函數
-//   net-listen-on('127.0.0.1', 8080)(l, ok)
-//   net-dial-to('127.0.0.1', 8080)(c, ok)
+//   l, ok = net-listen-on('127.0.0.1', 8080)
+//   c, ok = net-dial-to('127.0.0.1', 8080)
 
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作）

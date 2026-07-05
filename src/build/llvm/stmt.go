@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -184,10 +183,6 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 收集所有變數（一次分配），排除參數（已是指標）
 	localVarTypes := make(map[string]string)
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
-	if fd.Name == "ip-is-loopback" || fd.Name == "ip-is-private" {
-		fmt.Fprintf(os.Stderr, "[DBG collect] fn=%s localVarTypes=%v\n", fd.Name, localVarTypes)
-		fmt.Fprintf(os.Stderr, "[DBG collect] fn=%s varTypes.before=%v\n", fd.Name, g.varTypes)
-	}
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
@@ -375,18 +370,22 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "%" + sl.Type
 	}
 	// struct 欄位讀取 (e.g. p-local = fp.path)：依 receiver 型別與欄位名稱查詢 LLVM 型別
+	// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
 	if dot, ok := stmt.Value.(*parser.DotExpression); ok {
-		if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-			if recvType, ok := g.varTypes[ident.Value]; ok {
-				structName := strings.TrimPrefix(recvType, "%")
-				if fields, ok := g.structTypes[structName]; ok {
-					for _, f := range fields {
-						if f.name == dot.Property {
-							return f.typ
-						}
+		recvType := g.exprResultLLVMType(dot.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName := strings.TrimPrefix(recvType, "%")
+			if fields, ok := g.structTypes[structName]; ok {
+				for _, f := range fields {
+					if f.name == dot.Property {
+						return f.typ
 					}
 				}
 			}
+		}
+		// .len on str → i64
+		if dot.Property == "len" && (recvType == "%str-long" || recvType == "%str-short") {
+			return "i64"
 		}
 		return "i64"
 	}
@@ -642,19 +641,12 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 		switch s := stmt.(type) {
 		case *parser.LetStatement:
 			// Don't overwrite existing type — first declaration wins (e.g., a i8; a = 2)
-			if s.Name.Value == "ok" {
-				valType := fmt.Sprintf("%T", s.Value)
-				fmt.Fprintf(os.Stderr, "[DBG collectVarDecls] ok LetStatement line=%d valueType=%s\n", s.Token.Line, valType)
-			}
 			if _, exists := vars[s.Name.Value]; !exists {
 				t := g.varLLVMType(s)
 				vars[s.Name.Value] = t
 				g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
 			}
 		case *parser.FunctionDefinition:
-			if strings.Contains(s.Name, "ip-addr") || strings.Contains(s.Name, "parse") {
-				fmt.Fprintf(os.Stderr, "[DBG collectVarDecls] FunctionDefinition name=%s line=%d\n", s.Name, s.Token.Line)
-			}
 		// Skip function bodies - variables inside functions are collected
 		// in generateFunctionDefinition via collectVarDeclsFromStmt.
 		// This prevents synthetic `it` variables from one function (e.g., %file type)
@@ -714,9 +706,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
-			}
-			if s.Name.Value == "ok" {
-				fmt.Fprintf(os.Stderr, "[DBG collectFromStmtInner] added ok=%s isModuleLevel=%v line=%d\n", vt, isModuleLevel, s.Token.Line)
 			}
 		}
 		// Recurse into value expression to collect inner variables
@@ -852,7 +841,6 @@ func (g *Generator) collectVarDeclsFromExpr(expr parser.Expression, vars map[str
 			}
 		}
 	case *parser.CallExpression:
-		fmt.Fprintf(os.Stderr, "[DBG collectExpr] CallExpr args=%d\n", len(e.Arguments))
 		// 註冊輸出參數變數（函調用的最後一個參數為 Identifier 時）
 		if g.funcRetTypes != nil && len(e.Arguments) > 0 {
 			fnName := ""

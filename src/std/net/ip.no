@@ -6,11 +6,11 @@
 // 用法：
 //   // 解析 IP 字串
 //   ip = ip-addr{}
-//   ip.parse('192.168.1.1')(ok)
+//   ok = ip.parse('192.168.1.1')
 //   if ok {
-//       ip.to-str()(s)       // s = '192.168.1.1'
-//       ip.is-loopback()(yes) // yes = false
-//       ip.is-private()(yes)  // yes = true
+//       s = ip.to-str()       // s = '192.168.1.1'
+//       yes = ip.is-loopback() // yes = false
+//       yes = ip.is-private()  // yes = true
 //   }
 //
 //   // 從 4 個 octet 建立

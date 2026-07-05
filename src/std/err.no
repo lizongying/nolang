@@ -6,7 +6,7 @@
 // 用法：
 //   e = err-new(IO, 'disk full')
 //   yes = err-is(e, IO)
-//   err-format(e)(s, n)
+//   s, n = err-format(e)
 
 // ═══════════════════════════════════════════════
 // 錯誤碼枚舉

@@ -6,6 +6,7 @@
 # std/json
 
 main = () {
+    print('start')
     // ── 所有變數頂層宣告（遵循 http-no 慣例）──
     json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
     root i64 = -1
@@ -19,7 +20,7 @@ main = () {
     arr-idx i64 = -1
     n i64 = 0
     elem-idx i64 = -1
-    out-buf str = ' '.repeat(512)
+    out-buf str = ''
     out-n i64 = 0
     result str = ''
 

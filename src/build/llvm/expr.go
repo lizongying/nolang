@@ -68,8 +68,12 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		}
 		return "0"
 	case *parser.Identifier:
+		// Local variables and parameters shadow enum variants:
+		// if a function has a parameter or local named "ok"/"err"/"nil",
+		// it must be treated as the variable, not the option-enum variant.
+		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[e.Value]
 		// Enum variant: return tag index as constant integer
-		if g.enumVariantIndex != nil {
+		if !isLocalVar && g.enumVariantIndex != nil {
 			if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
 				return fmt.Sprintf("%d", tagIdx)
 			}
@@ -628,24 +632,20 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 			}
 		}
 	case *parser.DotExpression:
+		// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
 		if g.structTypes != nil {
-			varName := ""
-			if ident, ok := v.Receiver.(*parser.Identifier); ok {
-				varName = ident.Value
-			}
-			fieldName := v.Property
-			structName := ""
-			if t, ok := g.varTypes[varName]; ok {
-				structName = strings.TrimPrefix(t, "%")
-			}
-			if fields, ok := g.structTypes[structName]; ok {
-				for _, f := range fields {
-					if f.name == fieldName {
-						switch f.typ {
-						case "float":
-							return "float"
-						case "double":
-							return "double"
+			recvType := g.exprResultLLVMType(v.Receiver)
+			if strings.HasPrefix(recvType, "%") {
+				structName := strings.TrimPrefix(recvType, "%")
+				if fields, ok := g.structTypes[structName]; ok {
+					for _, f := range fields {
+						if f.name == v.Property {
+							switch f.typ {
+							case "float":
+								return "float"
+							case "double":
+								return "double"
+							}
 						}
 					}
 				}
@@ -686,21 +686,21 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 	case *parser.DotExpression:
 		// Field access on a struct variable: look up field's LLVM type.
 		// e.g. .connected (where self.connected is bool) → i1
-		if ident, ok := v.Receiver.(*parser.Identifier); ok {
-			if g.varTypes != nil {
-				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
-					structName := strings.TrimPrefix(t, "%")
-					if fields, ok := g.structTypes[structName]; ok {
-						for _, f := range fields {
-							if f.name == v.Property {
-								switch f.typ {
-								case "i1", "i8", "i16", "i32", "i64":
-									return f.typ
-								}
-								// Non-integer field (struct/str/etc.) — default to i64
-								return "i64"
-							}
+		// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
+		recvType := g.exprResultLLVMType(v.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName := strings.TrimPrefix(recvType, "%")
+			if fields, ok := g.structTypes[structName]; ok {
+				for _, f := range fields {
+					if f.name == v.Property {
+						switch f.typ {
+						case "i1", "i8", "i16", "i32", "i64":
+							return f.typ
+						case "double":
+							return "double"
 						}
+						// Non-integer field (struct/str/etc.) — default to i64
+						return "i64"
 					}
 				}
 			}
@@ -895,6 +895,69 @@ func (g *Generator) zextBoolToI64(sb *strings.Builder, v string, expr parser.Exp
 }
 
 // generateInfixI1 回傳 i1 比較結果（無 zext），用於 for/if 條件
+
+// exprResultLLVMType 推導任意表達式的結果 LLVM 型別。
+// 用於鏈式 DotExpression / IndexExpression 的型別推導，
+// 例如 .nodes[idx].str-val 中 .nodes[idx] 回傳 %json-value*，
+// 需由此函式推導出 "json-value" 以解析後續 .str-val 欄位。
+func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
+	switch v := expr.(type) {
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[v.Value]; ok {
+				return t
+			}
+		}
+	case *parser.DotExpression:
+		recvType := g.exprResultLLVMType(v.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName := strings.TrimPrefix(recvType, "%")
+			if fields, ok := g.structTypes[structName]; ok {
+				for _, f := range fields {
+					if f.name == v.Property {
+						return f.typ
+					}
+				}
+			}
+		}
+		// str-long/str-short .len → i64
+		if v.Property == "len" && (recvType == "%str-long" || recvType == "%str-short") {
+			return "i64"
+		}
+	case *parser.IndexExpression:
+		leftType := g.exprResultLLVMType(v.Left)
+		if strings.HasPrefix(leftType, "[") {
+			closeB := strings.IndexByte(leftType, ']')
+			if closeB > 0 {
+				inner := leftType[1:closeB]
+				xIdx := strings.LastIndex(inner, " x ")
+				if xIdx >= 0 {
+					return inner[xIdx+3:]
+				}
+			}
+		}
+		// %vec / %arr: element type tracked separately
+		if ident, ok := v.Left.(*parser.Identifier); ok {
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok {
+					return et
+				}
+			}
+		}
+	case *parser.CallExpression:
+		if g.ssaTypes != nil {
+			if ident, ok := v.Function.(*parser.Identifier); ok {
+				if g.funcRetTypes != nil {
+					if t, ok := g.funcRetTypes[ident.Value]; ok && t != "void" {
+						return t
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotExpression) string {
 	varName := ""
 	if ident, ok := expr.Receiver.(*parser.Identifier); ok {
@@ -903,7 +966,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 	fieldName := expr.Property
 
 	// 命名空間 enum 變體存取：FileMode.WRITE、FilePerm.PERM_600
-	if g.enumVariants != nil {
+	if g.enumVariants != nil && varName != "" {
 		if variants, ok := g.enumVariants[varName]; ok {
 			if val, ok := variants[fieldName]; ok {
 				return fmt.Sprintf("%d", val)
@@ -911,31 +974,67 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 	}
 	// Fallback: 命名空間風格存取，property 為模組級整數常量（如 FileMode.WRITE 中的 WRITE）
-	if g.enumVariantIndex != nil {
+	if g.enumVariantIndex != nil && varName == "" {
 		if val, ok := g.enumVariantIndex[fieldName]; ok {
 			return fmt.Sprintf("%d", val)
 		}
 	}
 
-	g.tmpIdx++
-	reg := fmt.Sprintf("%%dot.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	loadReg := fmt.Sprintf("%%dot.val.%d", g.tmpIdx)
-
+	// 判定 receiver 的 struct 名稱與基底指標
+	// - Identifier receiver: 使用變數名稱（%%%s）
+	// - 非 Identifier receiver（IndexExpression / DotExpression）: 遞迴生成取得 SSA 指標
 	structName := ""
-	if t, ok := g.varTypes[varName]; ok {
-		structName = strings.TrimPrefix(t, "%")
+	basePtr := "" // 非空時表示 receiver 是非 Identifier，需用 SSA 指標而非變數名
+
+	if varName != "" {
+		if t, ok := g.varTypes[varName]; ok {
+			structName = strings.TrimPrefix(t, "%")
+		}
+	} else {
+		// 先推導型別（不生成 IR），確認為 struct 後再生成 IR
+		recvType := g.exprResultLLVMType(expr.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName = strings.TrimPrefix(recvType, "%")
+		}
 	}
 
 	// Built-in str/str-short .len access
+	// .len 需要字串的指標（%str-long* / %str-short*），而非載入後的值。
+	// 因此對鏈式 receiver 使用 generateExprPtr 取得指標，避免 load。
 	if fieldName == "len" && sb != nil {
-		if structName == "str-long" {
-			// %str-long: field 0 is i64 len
-			return g.extractStrLen(sb, "%"+varName)
+		if structName == "str-long" || structName == "str-short" {
+			ptr := ""
+			if varName != "" {
+				ptr = g.varAddr(varName)
+			} else {
+				ptr = g.generateExprPtr(sb, expr.Receiver)
+			}
+			if structName == "str-long" {
+				return g.extractStrLen(sb, ptr)
+			}
+			return g.extractStrShortLen(sb, ptr)
 		}
-		if structName == "str-short" {
-			// %str-short: field 0 is i8 len (with high bit tag), mask and zext
-			return g.extractStrShortLen(sb, "%"+varName)
+	}
+
+	// 生成 receiver 程式碼取得 SSA 指標（用於一般欄位存取）
+	// 非 Identifier receiver 必須取得指標（%T*），而非載入後的值，
+	// 否則後續 GEP 會把 struct 值當作指標使用（如 self.buf.len 的 %vec 值）。
+	if varName == "" && sb != nil {
+		basePtr = g.generateExprPtr(sb, expr.Receiver)
+		// Fallback: generateExprPtr 不支援的表達式類型（如 CallExpression）
+		// 透過 generateExprWithSB 取得值後存入臨時 alloca 以獲得指標。
+		if basePtr == "" {
+			val := g.generateExprWithSB(sb, expr.Receiver)
+			if val != "" && val != "0" {
+				recvType := g.exprResultLLVMType(expr.Receiver)
+				if recvType != "" {
+					g.tmpIdx++
+					tmpAlloca := fmt.Sprintf("%%recv.tmp.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
+					basePtr = tmpAlloca
+				}
+			}
 		}
 	}
 
@@ -951,13 +1050,78 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 		if fieldIdx >= 0 && sb != nil {
 			structTy := "%" + structName
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-				g.indent(), reg, structTy, structTy, varName, fieldIdx))
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%dot.gep.%d", g.tmpIdx)
+			if basePtr != "" {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+					g.indent(), reg, structTy, structTy, varName, fieldIdx))
+			}
+			// 一律 load 欄位值。對 struct 型別的鏈式存取由 generateExprPtr 處理（需指標的情況）。
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%dot.val.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, reg))
 			return loadReg
 		}
 	}
 	return "0"
+}
+
+// generateExprPtr 生成表達式的 LLVM IR 並回傳指向結果的指標（%T*），
+// 而非載入後的值。用於需要指標的場景，例如 .len 存取需 %str-long*。
+// 對 Identifier 回傳變數地址；對 DotExpression 回傳欄位 GEP 指標；
+// 對 IndexExpression 回傳元素指標（struct 元素）。
+func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression) string {
+	switch v := expr.(type) {
+	case *parser.Identifier:
+		return g.varAddr(v.Value)
+	case *parser.DotExpression:
+		// 取得 receiver 指標，GEP 到欄位，回傳指標（不 load）
+		recvName := ""
+		if ident, ok := v.Receiver.(*parser.Identifier); ok {
+			recvName = ident.Value
+		}
+		structName := ""
+		basePtr := ""
+		if recvName != "" {
+			if t, ok := g.varTypes[recvName]; ok {
+				structName = strings.TrimPrefix(t, "%")
+			}
+		} else {
+			recvType := g.exprResultLLVMType(v.Receiver)
+			if strings.HasPrefix(recvType, "%") {
+				structName = strings.TrimPrefix(recvType, "%")
+			}
+			if sb != nil {
+				basePtr = g.generateExprPtr(sb, v.Receiver)
+			}
+		}
+		if fields, ok := g.structTypes[structName]; ok {
+			for i, f := range fields {
+				if f.name == v.Property {
+					g.tmpIdx++
+					reg := fmt.Sprintf("%%dot.ptr.gep.%d", g.tmpIdx)
+					structTy := "%" + structName
+					if sb != nil {
+						if basePtr != "" {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+								g.indent(), reg, structTy, structTy, basePtr, i))
+						} else {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+								g.indent(), reg, structTy, structTy, recvName, i))
+						}
+					}
+					return reg
+				}
+			}
+		}
+	case *parser.IndexExpression:
+		// IndexExpression 對 struct 元素已回傳 %T* 指標
+		return g.generateExprWithSB(sb, v)
+	}
+	return ""
 }
 
 // extractStrDataPtr extracts the i8* data pointer (field 1) from a %str-long* pointer.
@@ -1068,9 +1232,23 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 	idx := g.generateExprWithSB(sb, index)
 	val := g.generateExprWithSB(sb, value)
 
+	// 判定 struct 名稱與基底指標
+	// - Identifier receiver: 使用變數名稱（%%%s）
+	// - 非 Identifier receiver: 使用 generateExprPtr 取得指標
 	structName := ""
-	if t, ok := g.varTypes[recvName]; ok {
-		structName = strings.TrimPrefix(t, "%")
+	basePtr := ""
+	if recvName != "" {
+		if t, ok := g.varTypes[recvName]; ok {
+			structName = strings.TrimPrefix(t, "%")
+		}
+	} else {
+		recvType := g.exprResultLLVMType(dot.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName = strings.TrimPrefix(recvType, "%")
+		}
+		if sb != nil {
+			basePtr = g.generateExprPtr(sb, dot.Receiver)
+		}
 	}
 
 	if fields, ok := g.structTypes[structName]; ok {
@@ -1088,8 +1266,13 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 			g.tmpIdx++
 			fieldGEP := fmt.Sprintf("%%set.field.gep.%d", g.tmpIdx)
 			structTy := "%" + structName
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-				g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+			if basePtr != "" {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, basePtr, fieldIdx))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+			}
 
 			if fieldType == "%vec" {
 				// Slice field: load data pointer (field 2), bitcast, GEP, store
@@ -1261,9 +1444,39 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 	fieldName := dot.Property
 	idx := g.generateExprWithSB(sb, index)
 
+	// 判定 receiver 的 struct 名稱與基底指標
+	// - Identifier receiver: 使用變數名稱（%%%s）
+	// - 非 Identifier receiver（IndexExpression / DotExpression）: 遞迴生成取得 SSA 指標
 	structName := ""
-	if t, ok := g.varTypes[recvName]; ok {
-		structName = strings.TrimPrefix(t, "%")
+	basePtr := "" // 非空時表示 receiver 是非 Identifier，需用 SSA 指標而非變數名
+
+	if recvName != "" {
+		if t, ok := g.varTypes[recvName]; ok {
+			structName = strings.TrimPrefix(t, "%")
+		}
+	} else {
+		recvType := g.exprResultLLVMType(dot.Receiver)
+		if strings.HasPrefix(recvType, "%") {
+			structName = strings.TrimPrefix(recvType, "%")
+		}
+		if sb != nil {
+			// 非 Identifier receiver 必須取得指標（%T*），而非載入後的值，
+			// 否則後續 GEP 會把 struct 值當作指標使用。
+			basePtr = g.generateExprPtr(sb, dot.Receiver)
+			// Fallback: generateExprPtr 不支援的表達式類型
+			if basePtr == "" {
+				val := g.generateExprWithSB(sb, dot.Receiver)
+				if val != "" && val != "0" {
+					if recvType != "" {
+						g.tmpIdx++
+						tmpAlloca := fmt.Sprintf("%%recv.tmp.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
+						basePtr = tmpAlloca
+					}
+				}
+			}
+		}
 	}
 
 	if fields, ok := g.structTypes[structName]; ok {
@@ -1281,8 +1494,13 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 			g.tmpIdx++
 			fieldGEP := fmt.Sprintf("%%idx.field.gep.%d", g.tmpIdx)
 			structTy := "%" + structName
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-				g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+			if basePtr != "" {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, basePtr, fieldIdx))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+			}
 
 			if fieldType == "%vec" {
 				// Slice field: load data pointer, bitcast, GEP, load
@@ -1311,6 +1529,73 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
 					g.indent(), elemLoad, elemGEP))
 				return elemLoad
+			}
+
+			if fieldType == "%str-long" {
+				// str-long field: load data pointer (field 1), GEP to byte, load, zext to i64
+				// 對應 generateStructFieldIndexAssign 的 %str-long case（讀取版本）
+				strIdx := idx
+				if strings.HasPrefix(idx, "%") {
+					idxType := g.intExprLLVMType(index)
+					if idxType != "i64" {
+						g.tmpIdx++
+						zextReg := fmt.Sprintf("%%idx.strf.zext.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+						strIdx = zextReg
+					}
+				}
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%idx.strf.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				dataLoad := fmt.Sprintf("%%idx.strf.data.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+					g.indent(), dataGEP, fieldGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+					g.indent(), dataLoad, dataGEP))
+				g.tmpIdx++
+				charGEP := fmt.Sprintf("%%idx.strf.char.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				charLoad := fmt.Sprintf("%%idx.strf.char.val.%d", g.tmpIdx)
+				g.tmpIdx++
+				charZext := fmt.Sprintf("%%idx.strf.char.zext.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+					g.indent(), charGEP, dataLoad, strIdx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
+					g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+					g.indent(), charZext, charLoad))
+				return charZext
+			}
+
+			if fieldType == "%str-short" {
+				// str-short field: GEP to data array (field 1), GEP to byte, load, zext to i64
+				strIdx := idx
+				if strings.HasPrefix(idx, "%") {
+					idxType := g.intExprLLVMType(index)
+					if idxType != "i64" {
+						g.tmpIdx++
+						zextReg := fmt.Sprintf("%%idx.strsf.zext.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+						strIdx = zextReg
+					}
+				}
+				g.tmpIdx++
+				arrGEP := fmt.Sprintf("%%idx.strsf.arr.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n",
+					g.indent(), arrGEP, fieldGEP))
+				g.tmpIdx++
+				charGEP := fmt.Sprintf("%%idx.strsf.char.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				charLoad := fmt.Sprintf("%%idx.strsf.char.val.%d", g.tmpIdx)
+				g.tmpIdx++
+				charZext := fmt.Sprintf("%%idx.strsf.char.zext.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
+					g.indent(), charGEP, arrGEP, strIdx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
+					g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+					g.indent(), charZext, charLoad))
+				return charZext
 			}
 
 			if strings.HasPrefix(fieldType, "[") {
@@ -1504,17 +1789,45 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 	}
 
 	// 欄位賦值: u.name = value → GEP + store
+	// 支援鏈式存取：.nodes[i].field = value, .nodes[i].str-val.len = value
 	if dot, ok := expr.Left.(*parser.DotExpression); ok {
 		varName := ""
 		if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 			varName = ident.Value
 		}
-		structName := ""
-		if t, ok := g.varTypes[varName]; ok {
-			structName = strings.TrimPrefix(t, "%")
-		}
 		fieldName := dot.Property
 		val := g.generateExprWithSB(sb, expr.Value)
+
+		// 判定 struct 名稱與基底指標
+		// - Identifier receiver: 使用變數名稱（%%%s）
+		// - 非 Identifier receiver: 使用 generateExprPtr 取得指標
+		structName := ""
+		basePtr := ""
+		if varName != "" {
+			if t, ok := g.varTypes[varName]; ok {
+				structName = strings.TrimPrefix(t, "%")
+			}
+		} else {
+			recvType := g.exprResultLLVMType(dot.Receiver)
+			if strings.HasPrefix(recvType, "%") {
+				structName = strings.TrimPrefix(recvType, "%")
+			}
+			if sb != nil {
+				basePtr = g.generateExprPtr(sb, dot.Receiver)
+				if basePtr == "" {
+					// Fallback: 生成值後存入臨時 alloca
+					val2 := g.generateExprWithSB(sb, dot.Receiver)
+					if val2 != "" && val2 != "0" && recvType != "" {
+						g.tmpIdx++
+						tmpAlloca := fmt.Sprintf("%%assign.tmp.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val2, recvType, tmpAlloca))
+						basePtr = tmpAlloca
+					}
+				}
+			}
+		}
+
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
 
@@ -1542,8 +1855,13 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					}
 				}
 				structTy := "%" + structName
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-					g.indent(), reg, structTy, structTy, varName, fieldIdx))
+				if basePtr != "" {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
+				} else {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+						g.indent(), reg, structTy, structTy, varName, fieldIdx))
+				}
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, val, fieldType, reg))
 			}
 		}

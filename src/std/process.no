@@ -6,7 +6,7 @@
 // 用法：
 //   p = process{}
 //   p.start('ls', '-la')
-//   p.wait()(code)
+//   code = p.wait()
 //   println('exit code: ' - code.to-str())
 //
 //   // 簡易命令執行

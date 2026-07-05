@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -402,7 +401,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {
-		fmt.Fprintf(os.Stderr, "[DBG curried-enter] args=%d\n", len(expr.Arguments))
 		// 確定內層調用的返回型別
 		retType := "void"
 		innerFnName := ""
@@ -561,7 +559,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if retType == "void" {
 			// void 返回：直接調用
 			// 檢查是否為帶輸出參數的函數（curried 呼叫 → 單次呼叫，附加輸出參數）
-			fmt.Fprintf(os.Stderr, "[DBG curried] innerFnName=%s retType=%s\n", innerFnName, retType)
 			numResults := 0
 			if g.funcNumResults != nil {
 				// 嘗試多個名稱變體（可能已被 mangleOverloads 修飾）
@@ -589,8 +586,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					// Auto-allocate undeclared output variables (e.g. `total` in `.c.recv-all()(response, total)`)
 					if ident, ok := outArg.(*parser.Identifier); ok {
 						_, exists := g.varTypes[ident.Value]
-						curFn := g.curFuncName
-						fmt.Fprintf(os.Stderr, "[DBG auto-alloc] cur=%s callee=%s var=%s exists=%v outTypes=%v\n", curFn, innerFnName, ident.Value, exists, outTypes)
 						if !exists {
 							outType := "i64"
 							if outIdx < len(outTypes) {
@@ -616,7 +611,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 
 		// 有返回值：生成 call 並捕獲結果
-		fmt.Fprintf(os.Stderr, "[DBG curried non-void] innerFnName=%s retType=%s\n", innerFnName, retType)
 		g.tmpIdx++
 		retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))

@@ -8,9 +8,9 @@
 //   f.write('hello', 5)                     // 方法呼叫
 //   f.close()
 //
-//   stdin.read-line()(line, ok)             // 從標準輸入讀取一行
-//   stdout.write('hello', 5)(n)             // 寫入標準輸出
-//   stderr.write('error', 5)(n)             // 寫入標準錯誤
+//   line, ok = stdin.read-line()             // 從標準輸入讀取一行
+//   n = stdout.write('hello', 5)             // 寫入標準輸出
+//   n = stderr.write('error', 5)             // 寫入標準錯誤
 //
 //   p = path{ p: '/tmp' }
 //   yes = p.exists()

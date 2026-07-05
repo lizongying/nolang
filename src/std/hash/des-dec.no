@@ -5,8 +5,7 @@
 //
 // 用法：
 //   key  = '(8 bytes key)'
-//   out  = '(8 bytes buffer)'
-//   des-dec(cipher, 8, key, out)
+//   out  = des-dec(cipher, 8, key)
 
 // ─── 排列表 ─────────────────────────────────────
 
@@ -178,14 +177,14 @@ permute = (input i64, tbl []byte, n i64) (r i64) {
 }
 
 // sbox-lookup: 查詢 S-box
-sbox-lookup = (input i64, box []byte, r i64) {
+sbox-lookup = (input i64, box []byte) (r i64) {
     r = box[input & 63] & 15
 }
 
 // ─── Feistel 輪函數 ──────────────────────────────
 
 // f: DES 輪函數
-f = (r i64, k i64, out i64) {
+f = (r i64, k i64) (out i64) {
     er = 0
     s0 = 0
     s1 = 0
@@ -199,14 +198,14 @@ f = (r i64, k i64, out i64) {
     er = permute(r, E-TBL, 48)
     x = er ^ k
 
-    sbox-lookup((x >> 42) & 63, SBOX1, s0)
-    sbox-lookup((x >> 36) & 63, SBOX2, s1)
-    sbox-lookup((x >> 30) & 63, SBOX3, s2)
-    sbox-lookup((x >> 24) & 63, SBOX4, s3)
-    sbox-lookup((x >> 18) & 63, SBOX5, s4)
-    sbox-lookup((x >> 12) & 63, SBOX6, s5)
-    sbox-lookup((x >> 6) & 63, SBOX7, s6)
-    sbox-lookup(x & 63, SBOX8, s7)
+    s0 = sbox-lookup((x >> 42) & 63, SBOX1)
+    s1 = sbox-lookup((x >> 36) & 63, SBOX2)
+    s2 = sbox-lookup((x >> 30) & 63, SBOX3)
+    s3 = sbox-lookup((x >> 24) & 63, SBOX4)
+    s4 = sbox-lookup((x >> 18) & 63, SBOX5)
+    s5 = sbox-lookup((x >> 12) & 63, SBOX6)
+    s6 = sbox-lookup((x >> 6) & 63, SBOX7)
+    s7 = sbox-lookup(x & 63, SBOX8)
 
     sb = (s0 << 28) |
 (s1 << 24) |
@@ -220,7 +219,7 @@ f = (r i64, k i64, out i64) {
 // ─── 金鑰排程 ──────────────────────────────────────
 
 // des-key-schedule: 產生 16 個 48-bit 子金鑰
-des-key-schedule = (key []byte, ks [96]byte) {
+des-key-schedule = (key []byte) (ks [96]byte) {
     k64 = 0
     i = 0
     i < 8: {
@@ -267,7 +266,7 @@ des-key-schedule = (key []byte, ks [96]byte) {
 // ─── 單區塊解密 ──────────────────────────────
 
 // des-block: DES 單區塊處理（解密，逆序子金鑰）
-des-block = (in []byte, n i64, ks [96]byte, out []byte) {
+des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     block = 0
     i = 0
     i < 8: {
@@ -293,7 +292,7 @@ des-block = (in []byte, n i64, ks [96]byte, out []byte) {
 (ks[sk-off + 3] << 16) |
 (ks[sk-off + 4] << 8) | ks[sk-off + 5]
 
-        f(r, sk, fout)
+        fout = f(r, sk)
         new-l = r
         r = l ^ fout
         l = new-l
@@ -312,8 +311,8 @@ des-block = (in []byte, n i64, ks [96]byte, out []byte) {
 }
 
 // des-dec: 解密一個 8-byte 區塊
-des-dec = (in []byte, n i64, key []byte, out []byte) {
+des-dec = (in []byte, n i64, key []byte) (out []byte) {
     ks [96]byte
-    des-key-schedule(key, ks)
-    des-block(in, n, ks, out)
+    ks = des-key-schedule(key)
+    out = des-block(in, n, ks)
 }

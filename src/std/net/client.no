@@ -5,19 +5,19 @@
 //
 // 用法：
 //   c = client{}
-//   c.connect('127.0.0.1', 8080)(ok)
-//   c.send('hello')(n)
-//   c.recv(buf, 1024)(n)
+//   ok = c.connect('127.0.0.1', 8080)
+//   n = c.send('hello')
+//   n = c.recv(buf, 1024)
 //   c.close()
 //
 //   // 請求-回應模式
-//   c.request('PING')(response, ok)
+//   response, ok = c.request('PING')
 //
 //   // 重連
-//   c.reconnect()(ok)
+//   ok = c.reconnect()
 //
 //   // 便捷函數
-//   net-client('127.0.0.1', 8080)(c, ok)
+//   c, ok = net-client('127.0.0.1', 8080)
 
 // ═══════════════════════════════════════════════
 // client 結構體
