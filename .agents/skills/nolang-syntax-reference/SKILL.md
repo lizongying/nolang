@@ -357,17 +357,34 @@ i <- [0..10): {
     2 -> b = 2
     -> c = 0
 }
+
+// 多行 arm body 必須使用大括號 -> { ... }
+x: {
+    nil -> {
+        log('nil')
+        do-cleanup()
+        return
+    }
+    err -> {
+        log(it)
+        do-cleanup()
+        return
+    }
+    ok -> println(it)
+}
 ```
+
+> **多行 arm body 規則**：當 arm body 包含多個語句時，必須使用大括號 `-> { ... }` 括起來。單行 body 可直接寫在 `->` 之後。多行 body 若不使用大括號，option match 的 `it` 綁定將無法正確插入，導致編譯錯誤。
 
 ### If/Else（新式 `{ cond -> body }`）
 
 ```nolang
 {
-    a == 1 ->
+    a == 1 -> {
         a = 1
         b = 2
-    a == 2 || a == 3 ->
-        do-something()
+    }
+    a == 2 || a == 3 -> do-something()
     ->
         c = 0
 }

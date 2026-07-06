@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,10 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		// 用 uniqueFns 取代 fns 進行後續處理
 		fns = uniqueFns
 		overloads[name] = uniqueFns
+		// 去重後若僅剩單一函數（同簽名重複定義），無需改名
+		if len(uniqueFns) <= 1 {
+			continue
+		}
 		for _, fd := range fns {
 			parts := []string{name}
 			for _, p := range fd.Parameters {
@@ -585,12 +590,82 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	return t.CompileTarget(source, TargetLLVM)
 }
 
+// preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
+// 這些簽名會注入到 parser 中，使 let 型別推斷能處理跨文件方法調用。
+func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string, map[string]map[string]string) {
+	funcSigs := make(map[string][]string)
+	structFields := make(map[string]map[string]string)
+
+	// 用正則掃描 use 語句，提取模組路徑（可能包含 .function 後綴）
+	useRe := regexp.MustCompile(`(?m)^\s*use\s+([\w/.\-]+)`)
+	matches := useRe.FindAllStringSubmatch(source, -1)
+	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		rawPath := m[1]
+		// 嘗試解析模組路徑：先嘗試完整路徑，再嘗試去掉最後 .function 部分
+		candidates := []string{rawPath}
+		if idx := strings.LastIndex(rawPath, "."); idx > 0 {
+			candidates = append(candidates, rawPath[:idx])
+		}
+		var modProg *parser.Program
+		for _, usePath := range candidates {
+			if loadedPaths[usePath] {
+				modProg = nil
+				break
+			}
+			fakeUse := &parser.UseStatement{Path: usePath}
+			prog, err := t.resolveUse(fakeUse)
+			if err == nil && prog != nil {
+				modProg = prog
+				loadedPaths[usePath] = true
+				break
+			}
+		}
+		if modProg == nil {
+			continue
+		}
+		// 收集函數簽名和 struct 定義
+		for _, stmt := range modProg.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.Results) > 0 {
+					rets := make([]string, len(fd.Results))
+					for i, r := range fd.Results {
+						rets[i] = r.Type.String()
+					}
+					funcSigs[fd.Name] = rets
+				}
+			}
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				fields := make(map[string]string)
+				for _, f := range sd.Fields {
+					if f.Type != nil {
+						fields[f.Name] = f.Type.String()
+					}
+				}
+				structFields[sd.Name] = fields
+			}
+		}
+	}
+
+	return funcSigs, structFields
+}
+
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
+	// 預載入跨文件模組簽名，供 parser 型別推斷使用
+	externFuncSigs, externStructFields := t.preloadModuleSignatures(source)
+
 	l := lexer.New(source)
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	if t.sourcePath != "" {
 		p.Filename = filepath.Base(t.sourcePath)
+	}
+	// 注入外部簽名
+	if len(externFuncSigs) > 0 || len(externStructFields) > 0 {
+		p.SetExternSignatures(externFuncSigs, externStructFields)
 	}
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
@@ -984,8 +1059,27 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
+			// Build per-function varTypes to avoid cross-function name pollution.
+			// The global varTypes is shared across all functions, so a local variable
+			// named `resp` of type `str` in one function would pollute the lookup for
+			// a parameter named `resp` of type `http-response` in another function.
+			funcVarTypes := make(map[string]string)
+			for k, v := range varTypes {
+				funcVarTypes[k] = v
+			}
+			for _, p := range s.Parameters {
+				if p.Type != nil {
+					funcVarTypes[p.Name] = p.Type.String()
+				}
+			}
+			for _, r := range s.Results {
+				if r.Name != "" && r.Type != nil {
+					funcVarTypes[r.Name] = r.Type.String()
+				}
+			}
+			collectVarTypesFromBody(s.Body, funcVarTypes)
 			for _, bodyStmt := range s.Body.Statements {
-				scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
 			}
 		}
 	case *parser.ForStatement:

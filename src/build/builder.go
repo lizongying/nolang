@@ -100,6 +100,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 	}
 
 	compiler := NewTranspiler(pkg)
+	compiler.sourcePath = inputPath // 設定源碼路徑用於 std 庫檢測
 	code, err := compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)

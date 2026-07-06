@@ -1,9 +1,9 @@
-// sse — Server-Sent Events 客戶端
+// sse — Server-Sent Events 客戶端與服務端
 //
-// 支援 W3C EventSource 規範的 SSE 串流接收。
-// 底層使用 HTTP/1.1 長連接，支援明文 HTTP 與 HTTPS（TLS）。
+// 支援 W3C EventSource 規範的 SSE 串流接收與發送。
+// 底層使用 HTTP/1.1 長連接，支援明文 HTTP 與 HTTPS（TLS，客戶端）。
 //
-// 用法：
+// 用法（客戶端）：
 //   client = sse-connect('http://localhost:3000/events')   // 返回 ?sse-client
 //   client: {
 //       nil -> println('SSE connection failed')
@@ -13,11 +13,28 @@
 //               ev: {
 //                   nil -> *
 //                   err -> println('error: ' - it)
-                         *
+//                         *
 //                   -> println(ev.event - ': ' - ev.data)
 //               }
 //           }
 //           client.close()
+//   }
+//
+// 用法（服務端）：
+//   srv = sse-listen-on('0.0.0.0', 3000)   // 返回 ?sse-server
+//   srv: {
+//       nil -> return
+//       ->
+//           ! {
+//               c = srv.accept()             // 返回 ?sse-server-conn
+//               c: {
+//                   nil -> *
+//                   ->
+//                       c.send-event('message', 'hello', '', -1)
+//                       c.send-comment('heartbeat')
+//                       c.close()
+//               }
+//           }
 //   }
 
 # std/net/tls
@@ -104,37 +121,23 @@ sse-client.next-event = () (ev ?sse-event) {
     ! {
         // 建立緩衝區視圖（slice 會複製，安全）
         data = .recv-buf.slice(0, .recv-buf-len)
-
         // 搜尋事件分隔符（\n\n 或 \r\n\r\n）
         pos1 = data.index(lf-lf)
         pos2 = data.index(crlf-crlf)
-
         sep-pos = -1
         sep-len = 0
-
         {
-            pos1 >= 0 && pos2 >= 0 ->
-                pos1 <= pos2 ->
-                    sep-pos = pos1
-                    sep-len = 2
-                ->
-                    sep-pos = pos2
-                    sep-len = 4
-            pos1 >= 0 ->
-                sep-pos = pos1
-                sep-len = 2
-            pos2 >= 0 ->
+            pos1 >= 0 && pos2 >= 0 -> pos1 <= pos2
+            ->
                 sep-pos = pos2
                 sep-len = 4
             ->
         }
-
         if sep-pos >= 0 {
             // 找到事件邊界
             event-block = data.slice(0, sep-pos)
             remaining-start = sep-pos + sep-len
             remaining = data.slice(remaining-start, data.len)
-
             // 將剩餘資料移到緩衝區開頭
             i = 0
             for i < remaining.len {
@@ -142,14 +145,12 @@ sse-client.next-event = () (ev ?sse-event) {
                 i = i + 1
             }
             .recv-buf-len = remaining.len
-
             // 解析事件區塊
             e-event = 'message'
             e-data = ''
             e-id = ''
             e-retry i64 = -1
             has-data = false
-
             pos = 0
             for pos < event-block.len {
                 nl = event-block.index-from(lf, pos)
@@ -184,7 +185,6 @@ sse-client.next-event = () (ev ?sse-event) {
                             }
                             value = line.slice(val-start, line.len)
                         }
-
                         if field == 'data' {
                             if has-data {
                                 e-data = e-data - lf - value
@@ -210,7 +210,6 @@ sse-client.next-event = () (ev ?sse-event) {
 
                 pos = line-end + 1
             }
-
             // 只有包含 data 的事件才回傳
             if has-data {
                 ev = sse-event{
@@ -221,26 +220,29 @@ sse-client.next-event = () (ev ?sse-event) {
                 }
                 return
             }
-
             // 此事件無 data，繼續讀取下一個事件
         }
-
         if sep-pos < 0 {
             // 未找到完整事件，接收更多資料
             if .recv-buf-len >= SSE-BUF-SIZE {
                 ev = err('event too large')
                 return
             }
-
             tmp str = ' '.repeat(SSE-RECV-SIZE)
             n = 0
             recv-ok = false
             if .use-tls {
-                n, recv-ok = .tls-c.recv(tmp, SSE-RECV-SIZE)
-                if recv-ok == false {
-                    .connected = false
-                    ev = err('recv failed')
-                    return
+rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
+rn: {
+                    nil ->
+                        .connected = false
+                        ev = err('recv failed')
+                        return
+                    err ->
+                        .connected = false
+                        ev = err('recv failed')
+                        return
+                    ok -> n = it
                 }
             }
             if .use-tls == false {
@@ -298,11 +300,13 @@ sse-client.reconnect = () (ok bool) {
 
     // 建立連線
     if .use-tls {
-        .tls-c, tls-ok = tls-dial(.host, .port)
-        if tls-ok == false {
+        .tls-c.init()
+        ok2 = .tls-c.connect(.host, .port)
+        if ok2 == false {
             return
         }
     }
+
     if .use-tls == false {
         .fd = net-dial(.host, .port)
         if .fd < 0 {
@@ -339,12 +343,13 @@ sse-client.reconnect = () (ok bool) {
 
     // 發送請求
     written = 0
-    send-ok = false
     if .use-tls {
-        written, send-ok = .tls-c.send(req)
-        if send-ok == false {
-            .close()
-            return
+w = .tls-c.send(req)
+w: {
+            nil ->
+                .close()
+                return
+            ->
         }
     }
     if .use-tls == false {
@@ -361,7 +366,6 @@ sse-client.reconnect = () (ok bool) {
     tmp = space.repeat(SSE-RECV-SIZE)
     total = 0
     n = 0
-    recv-ok = false
     separator = crlf - crlf
     sep-pos i64 = -1
 
@@ -371,10 +375,15 @@ sse-client.reconnect = () (ok bool) {
             return
         }
         if .use-tls {
-            n, recv-ok = .tls-c.recv(tmp, SSE-RECV-SIZE)
-            if recv-ok == false {
-                .close()
-                return
+rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
+rn: {
+                nil ->
+                    .close()
+                    return
+                err ->
+                    .close()
+                    return
+                ok -> n = it
             }
         }
         if .use-tls == false {
@@ -473,7 +482,6 @@ sse-connect = (url str) (client ?sse-client) {
     use-tls = false
     fd i64 = -1
     tls-c tls-conn
-    tls-ok = false
 
     if url.starts-with('https://') {
         use-tls = true
@@ -523,8 +531,9 @@ sse-connect = (url str) (client ?sse-client) {
 
     // ── 建立連線 ──
     if use-tls {
-        tls-c, tls-ok = tls-dial(host, port)
-        if tls-ok == false {
+        tls-c.init()
+        ok2 = tls-c.connect(host, port)
+        if ok2 == false {
             client = err('TLS connection failed')
             return
         }
@@ -560,13 +569,14 @@ sse-connect = (url str) (client ?sse-client) {
 
     // ── 發送請求 ──
     written = 0
-    send-ok = false
     if use-tls {
-        written, send-ok = tls-c.send(req)
-        if send-ok == false {
-            tls-c.close()
-            client = err('send failed')
-            return
+w = tls-c.send(req)
+w: {
+            nil ->
+                tls-c.close()
+                client = err('send failed')
+                return
+            ->
         }
     }
     if use-tls == false {
@@ -584,7 +594,6 @@ sse-connect = (url str) (client ?sse-client) {
     tmp = space.repeat(SSE-RECV-SIZE)
     total = 0
     n = 0
-    recv-ok = false
     separator = crlf - crlf
     sep-pos i64 = -1
 
@@ -600,11 +609,17 @@ sse-connect = (url str) (client ?sse-client) {
             return
         }
         if use-tls {
-            n, recv-ok = tls-c.recv(tmp, SSE-RECV-SIZE)
-            if recv-ok == false {
-                tls-c.close()
-                client = err('recv failed')
-                return
+rn = tls-c.recv(tmp, SSE-RECV-SIZE)
+rn: {
+                nil ->
+                    tls-c.close()
+                    client = err('recv failed')
+                    return
+                err ->
+                    tls-c.close()
+                    client = err('recv failed')
+                    return
+                ok -> n = it
             }
         }
         if use-tls == false {
@@ -714,4 +729,281 @@ sse-connect = (url str) (client ?sse-client) {
     }
 
     client = cli
+}
+
+// ═══════════════════════════════════════════════
+// SSE 服務端
+// ═══════════════════════════════════════════════
+
+// sse-server: SSE 服務端監聽器
+// fd: 監聽 socket 檔案描述符（-1=未開啟）
+// host: 綁定的 IP 地址
+// port: 監聽埠號
+sse-server {
+    fd i64
+    host str
+    port i64
+}
+
+// sse-server-conn: SSE 服務端客戶端連接
+// fd: 客戶端 socket 檔案描述符（-1=未連接）
+// connected: 連線狀態
+sse-server-conn {
+    fd i64
+    connected bool
+}
+
+// ═══════════════════════════════════════════════
+// sse-server 方法
+// ═══════════════════════════════════════════════
+
+// listen: 開始監聽
+// host str: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
+// port i64: 監聽埠號
+// 返回 ok bool: true=成功
+sse-server.listen = (host str, port i64) (ok bool) {
+    ok = false
+    .fd = -1
+    .host = host
+    .port = port
+    fd = net-listen(host, port)
+    if fd < 0 {
+        return
+    }
+    .fd = fd
+    ok = true
+}
+
+// accept: 接受新的 SSE 客戶端連接並完成 HTTP 交握
+// 返回 c ?sse-server-conn: ok=已交握的客戶端, nil=失敗
+sse-server.accept = () (c ?sse-server-conn) {
+    c = nil
+    if .fd < 0 {
+        return
+    }
+
+    client-fd = net-accept(.fd)
+    if client-fd < 0 {
+        return
+    }
+
+    conn = sse-server-conn{
+        fd: client-fd
+        connected: false
+    }
+
+    conn.handshake()
+    if conn.connected == false {
+        conn.close()
+        return
+    }
+
+    c = conn
+}
+
+// close: 關閉 SSE 服務端
+sse-server.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// sse-server-conn 方法
+// ═══════════════════════════════════════════════
+
+// handshake: 完成 SSE HTTP 交握
+// 讀取客戶端 HTTP 請求，驗證方法為 GET，發送 SSE 回應標頭。
+// 返回 ok bool: true=成功
+sse-server-conn.handshake = () (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    separator = crlf - crlf
+
+    // 讀取 HTTP 請求（直到 \r\n\r\n）
+    space = ' '
+    raw = space.repeat(SSE-BUF-SIZE)
+    total = 0
+    sep-pos i64 = -1
+
+    ! {
+        if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
+            return
+        }
+        tmp = space.repeat(SSE-RECV-SIZE)
+        n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+        if n <= 0 {
+            return
+        }
+        i = 0
+        for i < n {
+            raw[total + i] = tmp[i]
+            i = i + 1
+        }
+        total = total + n
+        data = raw.slice(0, total)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+    }
+
+    // 解析請求行
+    head = raw.slice(0, sep-pos)
+    first-line-end = head.index(crlf)
+    request-line = head
+    if first-line-end >= 0 {
+        request-line = head.slice(0, first-line-end)
+    }
+
+    // 驗證方法為 GET
+    sp1 = request-line.index(' ')
+    if sp1 < 0 {
+        return
+    }
+    method = request-line.slice(0, sp1)
+    if method != 'GET' {
+        resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
+        resp = resp - 'Content-Length: 0' - crlf
+        resp = resp - 'Allow: GET' - crlf
+        resp = resp - crlf
+        net-send(.fd, resp, resp.len)
+        return
+    }
+
+    // 發送 SSE 回應標頭
+    resp = 'HTTP/1.1 200 OK' - crlf
+    resp = resp - 'Content-Type: text/event-stream' - crlf
+    resp = resp - 'Cache-Control: no-cache' - crlf
+    resp = resp - 'Connection: keep-alive' - crlf
+    resp = resp - 'Access-Control-Allow-Origin: *' - crlf
+    resp = resp - crlf
+    written = net-send(.fd, resp, resp.len)
+    if written < 0 {
+        return
+    }
+
+    .connected = true
+    ok = true
+}
+
+// send-event: 發送 SSE 事件
+// event str: 事件類型（空字串=不發送 event 欄位，使用預設 'message'）
+// data str: 事件資料（可多行，每行以 data: 前綴發送）
+// id str: 事件 ID（空字串=不發送 id 欄位）
+// retry i64: 重連等待毫秒數（-1=不發送 retry 欄位）
+// 返回 ok bool: true=成功
+sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+
+    lf = char-to-str(10)
+
+    msg = ''
+
+    if event.len > 0 {
+        msg = msg - 'event: ' - event - lf
+    }
+
+    // 處理多行 data（每行以 data: 前綴）
+    if data.len > 0 {
+        pos = 0
+        ! {
+            nl = data.index-from(lf, pos)
+            line-end = nl
+            if nl < 0 {
+                line-end = data.len
+            }
+            line = data.slice(pos, line-end)
+            msg = msg - 'data: ' - line - lf
+            if nl < 0 {
+                *
+            }
+            pos = nl + 1
+        }
+    } else {
+        msg = msg - 'data: ' - lf
+    }
+
+    if id.len > 0 {
+        msg = msg - 'id: ' - id - lf
+    }
+    if retry >= 0 {
+        retry-s = retry.to-str()
+        msg = msg - 'retry: ' - retry-s - lf
+    }
+
+    // 事件結束分隔符（空行）
+    msg = msg - lf
+
+    written = net-send(.fd, msg, msg.len)
+    if written < 0 {
+        .connected = false
+        return
+    }
+
+    ok = true
+}
+
+// send-comment: 發送 SSE 註解（用於心跳保活）
+// comment str: 註解內容
+// 返回 ok bool: true=成功
+sse-server-conn.send-comment = (comment str) (ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+
+    lf = char-to-str(10)
+    msg = ':' - comment - lf - lf
+
+    written = net-send(.fd, msg, msg.len)
+    if written < 0 {
+        .connected = false
+        return
+    }
+
+    ok = true
+}
+
+// is-connected: 檢查連線狀態
+// 返回 yes bool: true=已連接
+sse-server-conn.is-connected = () (yes bool) {
+    yes = .connected
+}
+
+// close: 關閉客戶端連接
+sse-server-conn.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+    .connected = false
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// sse-listen-on: 建立 SSE 服務端並開始監聽
+// host str: 綁定的 IP 地址（如 '0.0.0.0'）
+// port i64: 監聽埠號
+// 返回 s ?sse-server: ok=服務端, nil=失敗
+sse-listen-on = (host str, port i64) (s ?sse-server) {
+    s = nil
+    srv = sse-server{}
+    ok = false
+    ok = srv.listen(host, port)
+    if ok {
+        s = srv
+    }
 }

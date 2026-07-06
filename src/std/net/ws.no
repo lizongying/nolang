@@ -1,0 +1,1321 @@
+// ws — WebSocket 客戶端與服務端
+//
+// 支援 RFC 6455 WebSocket 協定，提供服務端監聽與客戶端連線。
+// 底層使用 HTTP/1.1 升級交握，支援明文 WS（WSS 暫不支援）。
+//
+// 用法（服務端）：
+//   srv = ws-listen-on('0.0.0.0', 8080)   // 返回 ?ws-server
+//   srv: {
+//       nil -> return
+//       ->
+//           ! {
+//               c = srv.accept()             // 返回 ?ws-server-conn
+//               c: {
+//                   nil -> *
+//                   ->
+//                       msg = c.recv()        // 返回 ?ws-message
+//                       msg: {
+//                           nil -> *
+//                           err -> *
+//                           -> c.send-text('echo: ' - msg.data)
+//                              c.close()
+//                       }
+//               }
+//           }
+//   }
+//
+// 用法（客戶端）：
+//   c = ws-connect('ws://127.0.0.1:8080/path')   // 返回 ?ws-client
+//   c: {
+//       nil -> println('connect failed')
+//       ->
+//           c.send-text('hello')
+//           msg = c.recv()
+//           msg: {
+//               nil -> println('closed')
+//               err -> println('error')
+//               -> println(msg.data)
+//           }
+//           c.close()
+//   }
+
+# std/hash/sha1
+# std/encoding/base64
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// 接收緩衝區大小
+WS-BUF-SIZE = 8192
+
+// 單次接收大小
+WS-RECV-SIZE = 4096
+
+// 預設 WS 埠號
+WS-DEFAULT-PORT = 80
+
+// 預設 WSS 埠號
+WS-DEFAULT-TLS-PORT = 443
+
+// RFC 6455 固定 GUID（用於 Sec-WebSocket-Accept 計算）
+WS-GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+// Opcode 常量
+WS-OP-CONT = 0
+WS-OP-TEXT = 1
+WS-OP-BINARY = 2
+WS-OP-CLOSE = 8
+WS-OP-PING = 9
+WS-OP-PONG = 10
+
+// 全域偽隨機計數器（用於產生 mask key 與 Sec-WebSocket-Key）
+WS-RAND-COUNTER = 0
+
+// ═══════════════════════════════════════════════
+// 結構體
+// ═══════════════════════════════════════════════
+
+// ws-message: WebSocket 訊息
+// opcode i64: 1=text, 2=binary, 8=close, 9=ping, 10=pong
+// data str: 訊息內容
+// fin bool: 是否為最終片段
+ws-message {
+    opcode i64
+    data str
+    fin bool
+}
+
+// ws-server: WebSocket 服務端監聽器
+// fd i64: 監聽 socket 檔案描述符（-1=未開啟）
+// host str: 綁定的 IP 地址
+// port i64: 監聽埠號
+ws-server {
+    fd i64
+    host str
+    port i64
+}
+
+// ws-server-conn: WebSocket 服務端客戶端連接
+// fd i64: 客戶端 socket 檔案描述符（-1=未連接）
+// connected bool: 連線狀態
+// recv-buf str: 接收緩衝區
+// recv-buf-len i64: 緩衝區中實際資料長度
+ws-server-conn {
+    fd i64
+    connected bool
+    recv-buf str
+    recv-buf-len i64
+}
+
+// ws-client: WebSocket 客戶端連線
+// fd i64: TCP socket 檔案描述符（-1=未連接）
+// use-tls bool: 是否使用 TLS
+// connected bool: 連線狀態
+// host str: 伺服器主機名
+// port i64: 埠號
+// path str: 請求路徑
+// recv-buf str: 接收緩衝區
+// recv-buf-len i64: 緩衝區中實際資料長度
+// send-counter i64: mask key 偽隨機計數器
+ws-client {
+    fd i64
+    use-tls bool
+    connected bool
+    host str
+    port i64
+    path str
+    recv-buf str
+    recv-buf-len i64
+    send-counter i64
+}
+
+// ═══════════════════════════════════════════════
+// 工具函數
+// ═══════════════════════════════════════════════
+
+// ws-compute-accept: 計算 Sec-WebSocket-Accept 值
+// key str: 客戶端送來的 Sec-WebSocket-Key
+// 返回 accept str: base64(sha1(key - WS-GUID))
+ws-compute-accept = (key str) (accept str) {
+    guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+    combined = key - guid
+    cb []byte = combined.to-bytes()
+    hash = sha1(cb)
+
+    // 將 [20]byte 複製到 []byte 供 base64 使用
+    hash-vec []byte = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+
+    i = 0
+    i < 20: {
+        hash-vec[i] = hash[i]
+        i = i + 1
+    }
+    space = ' '
+    accept = space.repeat(32)
+    encode-std(hash-vec, 20, accept)
+}
+
+// ws-next-rand: 產生下一個偽隨機 i64
+// 以全域計數器與簡單 LCG 組合
+ws-next-rand = () (r i64) {
+    WS-RAND-COUNTER = WS-RAND-COUNTER + 1
+    c = WS-RAND-COUNTER
+
+    // LCG: r = (c * 1103515245 + 12345) & 0x7fffffff
+    r = (c * 1103515245 + 12345) & 2147483647
+}
+
+// ws-gen-mask-key: 產生 4-byte mask key 字串
+// seed i64: 種子值
+// 返回 key str: 4 字元字串
+ws-gen-mask-key = (seed i64) (key str) {
+    space = ' '
+    key = space.repeat(4)
+    key[0] = (seed & 255)
+    key[1] = ((seed >> 8) & 255)
+    key[2] = ((seed >> 16) & 255)
+    key[3] = ((seed >> 24) & 255)
+}
+
+// ws-gen-client-key: 產生 16-byte Sec-WebSocket-Key 並 base64 編碼
+// seed i64: 種子值
+// 返回 key str: base64 編碼字串（24 字元含 padding）
+ws-gen-client-key = (seed i64) (key str) {
+    space = ' '
+    raw str = space.repeat(16)
+    i = 0
+    i < 16: {
+        s = seed + i * 31
+        raw[i] = (s * 1103515245 + 12345) & 255
+        i = i + 1
+    }
+    rv = raw.to-bytes()
+    key = space.repeat(24)
+    encode-std(rv, 16, key)
+}
+
+// ws-build-frame: 組裝 WebSocket frame
+// opcode i64: 訊息類型
+// data str: 訊息內容
+// mask bool: 是否加 mask（client 必須 true，server 必須 false）
+// mask-key str: 4-byte mask key（mask=true 時使用）
+// 返回 frame str: 完整的 frame 字串
+ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
+    dlen = data.len
+    header-len = 2
+    if dlen > 125 && dlen <= 65535 {
+        header-len = 4
+    }
+    if dlen > 65535 {
+        header-len = 10
+    }
+    if mask {
+        header-len = header-len + 4
+    }
+    total = header-len + dlen
+
+    space = ' '
+    frame str = space.repeat(total)
+
+    // byte 0: FIN(1) | opcode
+    frame[0] = 128 | (opcode & 15)
+
+    // byte 1: mask | len
+    mask-bit = 0
+    if mask {
+        mask-bit = 128
+    }
+
+    if dlen <= 125 {
+        frame[1] = mask-bit | dlen
+    }
+    if dlen > 125 && dlen <= 65535 {
+        frame[1] = mask-bit | 126
+        frame[2] = (dlen >> 8) & 255
+        frame[3] = dlen & 255
+    }
+    if dlen > 65535 {
+        frame[1] = mask-bit | 127
+        i = 0
+        i < 8: {
+            frame[2 + i] = (dlen >> (56 - i * 8)) & 255
+            i = i + 1
+        }
+    }
+
+    // mask key
+    mk-start = 2
+    if dlen > 125 && dlen <= 65535 {
+        mk-start = 4
+    }
+    if dlen > 65535 {
+        mk-start = 10
+    }
+
+    if mask {
+        i = 0
+        i < 4: {
+            frame[mk-start + i] = mask-key[i]
+            i = i + 1
+        }
+        // masked payload
+        i = 0
+        i < dlen: {
+            frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
+            i = i + 1
+        }
+    }
+    if mask == false {
+        // unmasked payload
+        i = 0
+        i < dlen: {
+            frame[header-len + i] = data[i]
+            i = i + 1
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════
+// ws-server 方法
+// ═══════════════════════════════════════════════
+
+// listen: 開始監聽
+// host str: 綁定的 IP 地址（如 '0.0.0.0'）
+// port i64: 監聽埠號
+// 返回 ok bool: true=成功
+ws-server.listen = (host str, port i64) (ok bool) {
+    ok = false
+    .fd = -1
+    .host = host
+    .port = port
+    fd = net-listen(host, port)
+    if fd < 0 {
+        return
+    }
+    .fd = fd
+    ok = true
+}
+
+// accept: 接受新的 WebSocket 客戶端連接並完成交握
+// 返回 c ?ws-server-conn: ok=已交握的客戶端, nil=失敗
+ws-server.accept = () (c ?ws-server-conn) {
+    c = nil
+    if .fd < 0 {
+        return
+    }
+
+    client-fd = net-accept(.fd)
+    if client-fd < 0 {
+        return
+    }
+
+    space = ' '
+    buf = space.repeat(WS-BUF-SIZE)
+    conn = ws-server-conn{
+        fd: client-fd
+        connected: false
+        recv-buf: buf
+        recv-buf-len: 0
+    }
+
+    conn.handshake()
+    if conn.connected == false {
+        conn.close()
+        return
+    }
+
+    c = conn
+}
+
+// close: 關閉 WebSocket 服務端
+ws-server.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// ws-server-conn 方法
+// ═══════════════════════════════════════════════
+
+// handshake: 完成 WebSocket HTTP 交握
+// 讀取客戶端 HTTP 升級請求，驗證必要標頭，發送 101 回應。
+// 成功時設置 .connected = true。
+ws-server-conn.handshake = () {
+    if .fd < 0 {
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    separator = crlf - crlf
+
+    // 讀取 HTTP 請求（直到 \r\n\r\n）
+    space = ' '
+    raw str = space.repeat(WS-BUF-SIZE)
+    total = 0
+    sep-pos i64 = -1
+
+    ! {
+        if total + WS-RECV-SIZE > WS-BUF-SIZE {
+            return
+        }
+        tmp str = space.repeat(WS-RECV-SIZE)
+        n = net-recv(.fd, tmp, WS-RECV-SIZE)
+        if n <= 0 {
+            return
+        }
+        i = 0
+        i < n: {
+            raw[total + i] = tmp[i]
+            i = i + 1
+        }
+        total = total + n
+        data = raw.slice(0, total)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+    }
+
+    head = raw.slice(0, sep-pos)
+
+    // 解析請求行，驗證方法為 GET
+    first-line-end = head.index(crlf)
+    request-line = head
+    if first-line-end >= 0 {
+        request-line = head.slice(0, first-line-end)
+    }
+    sp1 = request-line.index(' ')
+    if sp1 < 0 {
+        return
+    }
+    method = request-line.slice(0, sp1)
+    if method != 'GET' {
+        resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
+        resp = resp - 'Content-Length: 0' - crlf
+        resp = resp - 'Allow: GET' - crlf
+        resp = resp - crlf
+        net-send(.fd, resp, resp.len)
+        return
+    }
+
+    // 提取 Sec-WebSocket-Key 標頭
+    key-marker = 'Sec-WebSocket-Key:'
+    key-pos = head.index(key-marker)
+    if key-pos < 0 {
+        key-marker = 'sec-websocket-key:'
+        key-pos = head.index(key-marker)
+    }
+    if key-pos < 0 {
+        return
+    }
+
+    val-start = key-pos + key-marker.len
+
+    // 跳過空白
+    {
+        val-start < head.len && head[val-start] == 32 -> val-start = val-start + 1
+        ->
+    }
+    val-end = head.index-from(crlf, val-start)
+    if val-end < 0 {
+        val-end = head.len
+    }
+    client-key = head.slice(val-start, val-end)
+
+    // 驗證 Upgrade: websocket
+    up-marker = 'Upgrade:'
+    up-pos = head.index(up-marker)
+    if up-pos < 0 {
+        up-marker = 'upgrade:'
+        up-pos = head.index(up-marker)
+    }
+    if up-pos < 0 {
+        return
+    }
+    up-val-start = up-pos + up-marker.len
+    {
+        up-val-start < head.len && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
+        ->
+    }
+    up-val-end = head.index-from(crlf, up-val-start)
+    if up-val-end < 0 {
+        up-val-end = head.len
+    }
+    up-val = head.slice(up-val-start, up-val-end)
+    up-low = up-val.to-lower()
+    if up-low != 'websocket' {
+        return
+    }
+
+    // 計算 Sec-WebSocket-Accept
+    accept-val = ws-compute-accept(client-key)
+
+    // 發送 101 回應
+    resp = 'HTTP/1.1 101 Switching Protocols' - crlf
+    resp = resp - 'Upgrade: websocket' - crlf
+    resp = resp - 'Connection: Upgrade' - crlf
+    resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
+    resp = resp - crlf
+    written = net-send(.fd, resp, resp.len)
+    if written < 0 {
+        return
+    }
+
+    // 儲存標頭後的剩餘資料（可能包含第一個 frame）
+    body-start = sep-pos + separator.len
+    if total > body-start {
+        remaining = raw.slice(body-start, total)
+        i = 0
+        i < remaining.len: {
+            .recv-buf[i] = remaining[i]
+            i = i + 1
+        }
+        .recv-buf-len = remaining.len
+    }
+
+    .connected = true
+}
+
+// send: 發送 WebSocket 訊框（server 不加 mask）
+// opcode i64: 訊息類型（WS-OP-TEXT / WS-OP-BINARY / ...）
+// data str: 訊息內容
+// 返回 ok bool: true=成功
+ws-server-conn.send = (opcode i64, data str) (ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+
+    empty-key = ''
+    frame = ws-build-frame(opcode, data, false, empty-key)
+    written = net-send(.fd, frame, frame.len)
+    if written < 0 {
+        .connected = false
+        return
+    }
+
+    ok = true
+}
+
+// send-text: 發送文字訊息
+// data str: 訊息內容
+// 返回 ok bool: true=成功
+ws-server-conn.send-text = (data str) (ok bool) {
+    ok = .send(WS-OP-TEXT, data)
+}
+
+// send-binary: 發送二進位訊息
+// data str: 訊息內容
+// 返回 ok bool: true=成功
+ws-server-conn.send-binary = (data str) (ok bool) {
+    ok = .send(WS-OP-BINARY, data)
+}
+
+// send-ping: 發送 ping
+// data str: ping 內容
+// 返回 ok bool: true=成功
+ws-server-conn.send-ping = (data str) (ok bool) {
+    ok = .send(WS-OP-PING, data)
+}
+
+// send-pong: 發送 pong
+// data str: pong 內容
+// 返回 ok bool: true=成功
+ws-server-conn.send-pong = (data str) (ok bool) {
+    ok = .send(WS-OP-PONG, data)
+}
+
+// send-close: 發送 close 訊框
+// code i64: 關閉狀態碼（如 1000）
+// reason str: 關閉原因
+// 返回 ok bool: true=成功
+ws-server-conn.send-close = (code i64, reason str) (ok bool) {
+    ok = false
+    if .connected == false {
+        return
+    }
+
+    // payload: 2-byte big-endian code + reason
+    space = ' '
+    payload = space.repeat(2 + reason.len)
+    payload[0] = (code >> 8) & 255
+    payload[1] = code & 255
+    i = 0
+    i < reason.len: {
+        payload[2 + i] = reason[i]
+        i = i + 1
+    }
+    ok = .send(WS-OP-CLOSE, payload)
+}
+
+// recv: 阻塞讀取一個完整 WebSocket 訊息
+// 支援分片訊息（continuation opcode）收集。
+// 收到 ping 自動回 pong；收到 close 設 connected=false 並返回 nil。
+// 返回 msg ?ws-message:
+//   ok = 訊息
+//   nil = 連線已關閉
+//   err = 錯誤
+ws-server-conn.recv = () (msg ?ws-message) {
+    msg = nil
+    if .connected == false {
+        msg = err('not connected')
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    // 收集分片訊息
+    acc-data = ''
+    acc-opcode i64 = 0
+    has-acc = false
+
+    ! {
+        // 確保 recv-buf 至少有 2 bytes（frame header）
+        .recv-buf-len: {
+            ->
+                return
+        }
+        if .recv-buf-len < 2 {
+            tmp str = ' '.repeat(WS-RECV-SIZE)
+            n = net-recv(.fd, tmp, WS-RECV-SIZE)
+            if n <= 0 {
+                .connected = false
+                msg = nil
+                return
+            }
+            i = 0
+            i < n: {
+                .recv-buf[.recv-buf-len + i] = tmp[i]
+                i = i + 1
+            }
+            .recv-buf-len = .recv-buf-len + n
+        }
+        // 解析 frame header
+        b0 = .recv-buf[0]
+        b1 = .recv-buf[1]
+        fin = (b0 & 128) != 0
+        opcode = b0 & 15
+        masked = (b1 & 128) != 0
+        payload-len = b1 & 127
+        // 計算剩餘 header 長度
+        extra-len = 0
+        {
+            payload-len == 126 -> extra-len = 2
+            payload-len == 127 -> extra-len = 8
+            ->
+        }
+        if masked {
+            extra-len = extra-len + 4
+        }
+        header-total = 2 + extra-len
+        // 若 payload-len == 127，讀取 8-byte 長度
+        if payload-len == 127 {
+            // 確保 recv-buf 有足夠資料
+            if .recv-buf-len < header-total {
+                need = header-total - .recv-buf-len
+                tmp str = ' '.repeat(WS-RECV-SIZE)
+                n = net-recv(.fd, tmp, need)
+                if n <= 0 {
+                    .connected = false
+                    msg = err('incomplete frame')
+                    return
+                }
+                i = 0
+                i < n: {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                    i = i + 1
+                }
+                .recv-buf-len = .recv-buf-len + n
+            }
+            // 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
+            payload-len = 0
+            i = 0
+            i < 8: {
+                payload-len = (payload-len << 8) | .recv-buf[2 + i]
+                i = i + 1
+            }
+        }
+        if payload-len == 126 {
+            // 確保 recv-buf 有足夠資料
+            if .recv-buf-len < header-total {
+                need = header-total - .recv-buf-len
+                tmp str = ' '.repeat(WS-RECV-SIZE)
+                n = net-recv(.fd, tmp, need)
+                if n <= 0 {
+                    .connected = false
+                    msg = err('incomplete frame')
+                    return
+                }
+                i = 0
+                i < n: {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                    i = i + 1
+                }
+                .recv-buf-len = .recv-buf-len + n
+            }
+            payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+        }
+        // 確保 recv-buf 有完整 frame
+        frame-total = header-total + payload-len
+        if .recv-buf-len < frame-total {
+            need = frame-total - .recv-buf-len
+            tmp str = ' '.repeat(WS-RECV-SIZE)
+            ! {
+                if need <= 0 {
+                    *
+                }
+                n = net-recv(.fd, tmp, need)
+                if n <= 0 {
+                    .connected = false
+                    msg = err('incomplete frame')
+                    return
+                }
+                i = 0
+                i < n: {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                    i = i + 1
+                }
+                .recv-buf-len = .recv-buf-len + n
+                need = frame-total - .recv-buf-len
+            }
+        }
+        // 提取 mask key（如有）
+        actual-extra = 0
+        if (b1 & 127) == 126 {
+            actual-extra = 2
+        }
+        if (b1 & 127) == 127 {
+            actual-extra = 8
+        }
+        mask-start = 2 + actual-extra
+        mask-key = ''
+        if masked {
+            space = ' '
+            mask-key = space.repeat(4)
+            i = 0
+            i < 4: {
+                mask-key[i] = .recv-buf[mask-start + i]
+                i = i + 1
+            }
+        }
+        // 提取 payload 並 demask
+        payload-start = 2 + actual-extra
+        if masked {
+            payload-start = 2 + actual-extra + 4
+        }
+        space = ' '
+        payload str = space.repeat(payload-len)
+        i = 0
+        i < payload-len: {
+            b = .recv-buf[payload-start + i]
+            if masked {
+                b = b ^ mask-key[i % 4]
+            }
+            payload[i] = b & 255
+            i = i + 1
+        }
+        // 從 recv-buf 移除已消費的 frame
+        remaining-start = frame-total
+        remaining-len = .recv-buf-len - remaining-start
+        i = 0
+        i < remaining-len: {
+            .recv-buf[i] = .recv-buf[remaining-start + i]
+            i = i + 1
+        }
+        .recv-buf-len = remaining-len
+        // 處理控制訊框（close/ping/pong）
+        if opcode == WS-OP-CLOSE {
+            .connected = false
+            msg = nil
+            return
+        }
+        if opcode == WS-OP-PING {
+            .send-pong(payload)
+        }
+        // pong 和其他控制 opcode 忽略，繼續讀取
+
+        // 處理資料訊框（text/binary/continuation）
+        if opcode == WS-OP-TEXT || opcode == WS-OP-BINARY {
+            acc-data = payload
+            acc-opcode = opcode
+            has-acc = true
+        }
+        if opcode == WS-OP-CONT {
+            if has-acc == false {
+                msg = err('unexpected continuation')
+                return
+            }
+            acc-data = acc-data - payload
+        }
+        // 未知 opcode，忽略
+
+        if has-acc && fin {
+            msg = ws-message{
+                opcode: acc-opcode
+                data: acc-data
+                fin: true
+            }
+            return
+        }
+    }
+
+    // is-connected: 檢查連線狀態
+    // 返回 yes bool: true=已連接
+    ws-server-conn.is-connected = () (yes bool) {
+        yes = .connected
+    }
+
+    // close: 關閉客戶端連接
+    ws-server-conn.close = () {
+        if .fd >= 0 {
+            close(.fd)
+            .fd = -1
+        }
+        .connected = false
+    }
+
+    // ═══════════════════════════════════════════════
+    // ws-client 方法
+    // ═══════════════════════════════════════════════
+
+    // send: 發送 WebSocket 訊框（client 必須加 mask）
+    // opcode i64: 訊息類型
+    // data str: 訊息內容
+    // 返回 ok bool: true=成功
+    ws-client.send = (opcode i64, data str) (ok bool) {
+        ok = false
+        if .connected == false {
+            return
+        }
+
+        .send-counter = .send-counter + 1
+        seed = ws-next-rand() + .send-counter
+        mask-key = ws-gen-mask-key(seed)
+        frame = ws-build-frame(opcode, data, true, mask-key)
+        written = net-send(.fd, frame, frame.len)
+        if written < 0 {
+            .connected = false
+            return
+        }
+
+        ok = true
+    }
+
+    // send-text: 發送文字訊息
+    ws-client.send-text = (data str) (ok bool) {
+        ok = .send(WS-OP-TEXT, data)
+    }
+
+    // send-binary: 發送二進位訊息
+    ws-client.send-binary = (data str) (ok bool) {
+        ok = .send(WS-OP-BINARY, data)
+    }
+
+    // send-ping: 發送 ping
+    ws-client.send-ping = (data str) (ok bool) {
+        ok = .send(WS-OP-PING, data)
+    }
+
+    // send-close: 發送 close 訊框
+    // code i64: 關閉狀態碼
+    // reason str: 關閉原因
+    // 返回 ok bool: true=成功
+    ws-client.send-close = (code i64, reason str) (ok bool) {
+        ok = false
+        if .connected == false {
+            return
+        }
+        space = ' '
+        payload = space.repeat(2 + reason.len)
+        payload[0] = (code >> 8) & 255
+        payload[1] = code & 255
+        i = 0
+        i < reason.len: {
+            payload[2 + i] = reason[i]
+            i = i + 1
+        }
+        ok = .send(WS-OP-CLOSE, payload)
+    }
+
+    // recv: 阻塞讀取一個完整 WebSocket 訊息
+    // server 不 mask，無需 demask（但仍會檢查 mask bit）
+    // 返回 msg ?ws-message:
+    //   ok = 訊息
+    //   nil = 連線已關閉
+    //   err = 錯誤
+    ws-client.recv = () (msg ?ws-message) {
+        msg = nil
+        if .connected == false {
+            msg = err('not connected')
+            return
+        }
+
+        acc-data = ''
+        acc-opcode i64 = 0
+        has-acc = false
+
+        ! {
+            // 確保 recv-buf 至少有 2 bytes
+            if .recv-buf-len < 2 {
+                tmp str = ' '.repeat(WS-RECV-SIZE)
+                n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                if n <= 0 {
+                    .connected = false
+                    msg = nil
+                    return
+                }
+                i = 0
+                i < n: {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                    i = i + 1
+                }
+                .recv-buf-len = .recv-buf-len + n
+            }
+            b0 = .recv-buf[0]
+            b1 = .recv-buf[1]
+            fin = (b0 & 128) != 0
+            opcode = b0 & 15
+            masked = (b1 & 128) != 0
+            payload-len = b1 & 127
+            extra-len = 0
+            {
+                payload-len == 126 -> extra-len = 2
+                payload-len == 127 -> extra-len = 8
+                ->
+            }
+            if masked {
+                extra-len = extra-len + 4
+            }
+            header-total = 2 + extra-len
+            if payload-len == 127 {
+                if .recv-buf-len < header-total {
+                    need = header-total - .recv-buf-len
+                    tmp str = ' '.repeat(WS-RECV-SIZE)
+                    n = net-recv(.fd, tmp, need)
+                    if n <= 0 {
+                        .connected = false
+                        msg = err('incomplete frame')
+                        return
+                    }
+                    i = 0
+                    i < n: {
+                        .recv-buf[.recv-buf-len + i] = tmp[i]
+                        i = i + 1
+                    }
+                    .recv-buf-len = .recv-buf-len + n
+                }
+                payload-len = 0
+                i = 0
+                i < 8: {
+                    payload-len = (payload-len << 8) | .recv-buf[2 + i]
+                    i = i + 1
+                }
+            }
+            if payload-len == 126 {
+                if .recv-buf-len < header-total {
+                    need = header-total - .recv-buf-len
+                    tmp str = ' '.repeat(WS-RECV-SIZE)
+                    n = net-recv(.fd, tmp, need)
+                    if n <= 0 {
+                        .connected = false
+                        msg = err('incomplete frame')
+                        return
+                    }
+                    i = 0
+                    i < n: {
+                        .recv-buf[.recv-buf-len + i] = tmp[i]
+                        i = i + 1
+                    }
+                    .recv-buf-len = .recv-buf-len + n
+                }
+                payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+            }
+            frame-total = header-total + payload-len
+            if .recv-buf-len < frame-total {
+                need = frame-total - .recv-buf-len
+                tmp str = ' '.repeat(WS-RECV-SIZE)
+                ! {
+                    if need <= 0 {
+                        *
+                    }
+                    n = net-recv(.fd, tmp, need)
+                    if n <= 0 {
+                        .connected = false
+                        msg = err('incomplete frame')
+                        return
+                    }
+                    i = 0
+                    i < n: {
+                        .recv-buf[.recv-buf-len + i] = tmp[i]
+                        i = i + 1
+                    }
+                    .recv-buf-len = .recv-buf-len + n
+                    need = frame-total - .recv-buf-len
+                }
+            }
+            mask-key = ''
+            mask-start = 2
+            actual-extra = 0
+            if (b1 & 127) == 126 {
+                actual-extra = 2
+            }
+            if (b1 & 127) == 127 {
+                actual-extra = 8
+            }
+            mask-start = 2 + actual-extra
+            if masked {
+                space = ' '
+                mask-key = space.repeat(4)
+                i = 0
+                i < 4: {
+                    mask-key[i] = .recv-buf[mask-start + i]
+                    i = i + 1
+                }
+            }
+            payload-start = 2 + actual-extra
+            if masked {
+                payload-start = 2 + actual-extra + 4
+            }
+            space = ' '
+            payload = space.repeat(payload-len)
+            i = 0
+            i < payload-len: {
+                b = .recv-buf[payload-start + i]
+                if masked {
+                    b = b ^ mask-key[i % 4]
+                }
+                payload[i] = b & 255
+                i = i + 1
+            }
+            remaining-start = frame-total
+            remaining-len = .recv-buf-len - remaining-start
+            i = 0
+            i < remaining-len: {
+                .recv-buf[i] = .recv-buf[remaining-start + i]
+                i = i + 1
+            }
+            .recv-buf-len = remaining-len
+            if opcode == WS-OP-CLOSE {
+                .connected = false
+                msg = nil
+                return
+            }
+            if opcode == WS-OP-PING {
+                .send-pong(payload)
+            }
+            // pong 和其他控制 opcode 忽略，繼續讀取
+            if opcode == WS-OP-TEXT || opcode == WS-OP-BINARY {
+                acc-data = payload
+                acc-opcode = opcode
+                has-acc = true
+            }
+            if opcode == WS-OP-CONT {
+                if has-acc == false {
+                    msg = err('unexpected continuation')
+                    return
+                }
+                acc-data = acc-data - payload
+            }
+            if has-acc && fin {
+                msg = ws-message{
+                    opcode: acc-opcode
+                    data: acc-data
+                    fin: true
+                }
+                return
+            }
+        }
+    }
+
+    // is-connected: 檢查連線狀態
+    // 返回 yes bool: true=已連接
+    ws-client.is-connected = () (yes bool) {
+        yes = .connected
+    }
+
+    // close: 關閉連線
+    ws-client.close = () {
+        if .fd >= 0 {
+            close(.fd)
+            .fd = -1
+        }
+        .connected = false
+    }
+
+    // ═══════════════════════════════════════════════
+    // 便捷函數
+    // ═══════════════════════════════════════════════
+
+    // ws-listen-on: 建立 WebSocket 服務端並開始監聽
+    // host str: 綁定的 IP 地址（如 '0.0.0.0'）
+    // port i64: 監聽埠號
+    // 返回 s ?ws-server: ok=服務端, nil=失敗
+    ws-listen-on = (host str, port i64) (s ?ws-server) {
+        s = nil
+        srv = ws-server{}
+        ok = false
+        ok = srv.listen(host, port)
+        if ok {
+            s = srv
+        }
+    }
+
+    // ws-connect: 連接到 WebSocket 端點
+    // url str: WS 端點 URL（ws://host:port/path）
+    // 返回 c ?ws-client:
+    //   ok = 已連接的客戶端
+    //   nil = 連線失敗
+    //   err = 錯誤訊息
+    ws-connect = (url str) (c ?ws-client) {
+        c = nil
+
+        // 解析 URL
+        scheme = 'ws://'
+        rest = ''
+        host = ''
+        port i64 = WS-DEFAULT-PORT
+        path = '/'
+        host-only = ''
+        port-str = ''
+
+        if url.starts-with('wss://') {
+            c = err('WSS not supported')
+            return
+        }
+        if url.starts-with('ws://') == false {
+            c = err('invalid URL: must start with ws://')
+            return
+        }
+        rest = url.slice(scheme.len, url.len)
+
+        slash-pos = rest.index('/')
+        if slash-pos < 0 {
+            host = rest
+        }
+        if slash-pos >= 0 {
+            host = rest.slice(0, slash-pos)
+            path = rest.slice(slash-pos, rest.len)
+        }
+
+        colon-pos = host.index(':')
+        if colon-pos >= 0 {
+            host-only = host.slice(0, colon-pos)
+            port-str = host.slice(colon-pos + 1, host.len)
+            p = 0
+            i = 0
+            i < port-str.len: {
+                ch = port-str[i]
+                if ch < 48 || ch > 57 {
+                    c = err('invalid port')
+                    return
+                }
+                p = p * 10 + ch - 48
+                i = i + 1
+            }
+            port = p
+            host = host-only
+        }
+
+        if host.len == 0 {
+            c = err('empty host')
+            return
+        }
+
+        // 建立 TCP 連線
+        fd = net-dial(host, port)
+        if fd < 0 {
+            c = err('TCP connection failed')
+            return
+        }
+
+        // 產生 Sec-WebSocket-Key
+        seed = ws-next-rand() + fd
+        client-key = ws-gen-client-key(seed)
+
+        // 建構 HTTP 升級請求
+        cr = char-to-str(13)
+        lf = char-to-str(10)
+        crlf = cr - lf
+        req = 'GET ' - path - ' HTTP/1.1' - crlf
+        req = req - 'Host: ' - host - crlf
+        req = req - 'Upgrade: websocket' - crlf
+        req = req - 'Connection: Upgrade' - crlf
+        req = req - 'Sec-WebSocket-Key: ' - client-key - crlf
+        req = req - 'Sec-WebSocket-Version: 13' - crlf
+        req = req - 'User-Agent: nolang-ws/1.0' - crlf
+        req = req - crlf
+
+        // 發送請求
+        written = net-send(fd, req, req.len)
+        if written < 0 {
+            close(fd)
+            c = err('send failed')
+            return
+        }
+
+        // 接收回應標頭（直到 \r\n\r\n）
+        space = ' '
+        raw str = space.repeat(WS-BUF-SIZE)
+        tmp str = space.repeat(WS-RECV-SIZE)
+        total = 0
+        sep-pos i64 = -1
+        separator = crlf - crlf
+
+        ! {
+            if total + WS-RECV-SIZE > WS-BUF-SIZE {
+                close(fd)
+                c = err('response headers too large')
+                return
+            }
+            n = net-recv(fd, tmp, WS-RECV-SIZE)
+            if n <= 0 {
+                close(fd)
+                c = err('connection closed during handshake')
+                return
+            }
+            i = 0
+            i < n: {
+                raw[total + i] = tmp[i]
+                i = i + 1
+            }
+            total = total + n
+            data = raw.slice(0, total)
+            sep-pos = data.index(separator)
+            if sep-pos >= 0 {
+                *
+            }
+        }
+
+        // 驗證狀態碼為 101
+        head = raw.slice(0, sep-pos)
+        first-line-end = head.index(crlf)
+        status-line = head
+        if first-line-end >= 0 {
+            status-line = head.slice(0, first-line-end)
+        }
+
+        sp1 = status-line.index(' ')
+        if sp1 < 0 {
+            close(fd)
+            c = err('invalid status line')
+            return
+        }
+        after-code = status-line.slice(sp1 + 1, status-line.len)
+        sp2 = after-code.index(' ')
+        code-str = after-code
+        if sp2 >= 0 {
+            code-str = after-code.slice(0, sp2)
+        }
+
+        code = 0
+        i = 0
+        i < code-str.len: {
+            ch = code-str[i]
+            if ch < 48 || ch > 57 {
+                close(fd)
+                c = err('invalid status code')
+                return
+            }
+            code = code * 10 + ch - 48
+            i = i + 1
+        }
+
+        if code != 101 {
+            close(fd)
+            code-s = code.to-str()
+            c = err('server returned status ' - code-s)
+            return
+        }
+
+        // 驗證 Sec-WebSocket-Accept
+        accept-marker = 'Sec-WebSocket-Accept:'
+        accept-pos = head.index(accept-marker)
+        if accept-pos < 0 {
+            accept-marker = 'sec-websocket-accept:'
+            accept-pos = head.index(accept-marker)
+        }
+        if accept-pos < 0 {
+            close(fd)
+            c = err('missing Sec-WebSocket-Accept')
+            return
+        }
+
+        val-start = accept-pos + accept-marker.len
+        {
+            val-start < head.len && head[val-start] == 32 -> val-start = val-start + 1
+            ->
+        }
+        val-end = head.index-from(crlf, val-start)
+        if val-end < 0 {
+            val-end = head.len
+        }
+        server-accept = head.slice(val-start, val-end)
+        expected-accept = ws-compute-accept(client-key)
+        if server-accept != expected-accept {
+            close(fd)
+            c = err('invalid Sec-WebSocket-Accept')
+            return
+        }
+
+        // 建立客戶端，儲存標頭後的剩餘資料
+        body-start = sep-pos + separator.len
+        remaining-len = 0
+        if total > body-start {
+            remaining = raw.slice(body-start, total)
+            remaining-len = remaining.len
+        }
+
+        rb = space.repeat(WS-BUF-SIZE)
+        if remaining-len > 0 {
+            remaining = raw.slice(body-start, total)
+            i = 0
+            i < remaining-len: {
+                rb[i] = remaining[i]
+                i = i + 1
+            }
+        }
+
+        cli = ws-client{
+            fd: fd
+            use-tls: false
+            connected: true
+            host: host
+            port: port
+            path: path
+            recv-buf: rb
+            recv-buf-len: remaining-len
+            send-counter: 0
+        }
+
+        c = cli
+    }
+}

@@ -375,7 +375,24 @@ result = x: {
     2 -> 2 + 1
     -> a + b
 }
+
+// 多行 arm body 必須使用大括號 -> { ... }
+x: {
+    nil -> {
+        log('nil')
+        do-cleanup()
+        return
+    }
+    err -> {
+        log(it)
+        do-cleanup()
+        return
+    }
+    ok -> println(it)
+}
 ```
+
+> **多行 arm body 規則**：當 arm body 包含多個語句時，必須使用大括號 `-> { ... }` 括起來。單行 body 可直接寫在 `->` 之後。這是因為多行 body 若不使用大括號，option match 的 `it` 綁定將無法正確插入，導致編譯錯誤。
 
 > **for-in 體內 match 語義**：`i <- (a..b]: { 1 -> ... 2 -> ... }` 對每個迭代變量 `i` 執行一次 match 體（`1 ->` 等同於 `i == 1 ->`，依此類推）。這是每輪迭代執行一次 match 的語法糖。
 
@@ -384,11 +401,11 @@ result = x: {
 ```nolang
 // 多分支（推薦新式）
 {
-    a == 1 ->
+    a == 1 -> {
         a = 1
         b = 2
-    a == 2 || a == 3 ->
-        do-something()
+    }
+    a == 2 || a == 3 -> do-something()
     ->
         c = 0
 }

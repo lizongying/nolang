@@ -112,15 +112,18 @@ http-request.add-header = (name str, value str) (ok bool) {
         return
     }
     idx = .header-count
+
     // 複製 name 到 headers[idx]
     i = 0
     for i < name.len {
         .headers[idx][i] = name[i]
         i = i + 1
     }
+
     // 加 ': '
-    .headers[idx][name.len] = 58      // ':'
+    .headers[idx][name.len] = 58  // ':'
     .headers[idx][name.len + 1] = 32  // ' '
+
     // 複製 value
     j = 0
     for j < value.len {
@@ -140,6 +143,7 @@ http-request.add-header = (name str, value str) (ok bool) {
 // 必須在 headers 欄位被填入後呼叫（http-do / http-do-req 內部會自動呼叫）
 http-response.parse-headers = () {
     .header-count = 0
+
     // 初始化標頭陣列（用空格字串使 data buffer 非 null）
     i = 0
     for i < HTTP-MAX-RESP-HEADERS {
@@ -275,9 +279,6 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     fd i64 = -1
     tls-c tls-conn
     written = 0
-    tls-ok = false
-    send-ok = false
-    recv-ok = false
     n = 0
 
     // ── 解析 URL ──
@@ -285,10 +286,8 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
         use-tls = true
         scheme = 'https://'
         port = HTTPS-DEFAULT-PORT
-    } else {
-        if url.starts-with('http://') == false {
-            return
-        }
+    } elif url.starts-with('http://') == false {
+        return
     }
     rest = url.slice(scheme.len, url.len)
 
@@ -326,8 +325,9 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
 
     // ── 建立連接 ──
     if use-tls {
-        tls-c, tls-ok = tls-dial(host, port)
-        if tls-ok == false {
+        tls-c.init()
+        ok2 = tls-c.connect(host, port)
+        if ok2 == false {
             return
         }
     } else {
@@ -365,10 +365,15 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-        written, send-ok = tls-c.send(req)
-        if send-ok == false {
-            tls-c.close()
-            return
+w = tls-c.send(req)
+w: {
+            nil ->
+                tls-c.close()
+                return
+            err ->
+                tls-c.close()
+                return
+            ->
         }
     } else {
         written = net-send(fd, req, req.len)
@@ -382,9 +387,13 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     // net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     ! {
         if use-tls {
-            n, recv-ok = tls-c.recv(buf, HTTP-BUF-SIZE)
-            if recv-ok == false {
-                *
+rn = tls-c.recv(buf, HTTP-BUF-SIZE)
+rn: {
+                nil ->
+                    *
+                err ->
+                    *
+                ok -> n = it
             }
         } else {
             n = net-recv(fd, buf, HTTP-BUF-SIZE)
@@ -503,9 +512,6 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
     fd i64 = -1
     tls-c tls-conn
     written = 0
-    tls-ok = false
-    send-ok = false
-    recv-ok = false
     n = 0
 
     // ── 解析 URL ──
@@ -513,10 +519,8 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
         use-tls = true
         scheme = 'https://'
         port = HTTPS-DEFAULT-PORT
-    } else {
-        if url.starts-with('http://') == false {
-            return
-        }
+    } elif url.starts-with('http://') == false {
+        return
     }
     rest = url.slice(scheme.len, url.len)
 
@@ -552,8 +556,9 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
 
     // ── 建立連接 ──
     if use-tls {
-        tls-c, tls-ok = tls-dial(host, port)
-        if tls-ok == false {
+        tls-c.init()
+        ok2 = tls-c.connect(host, port)
+        if ok2 == false {
             return
         }
     } else {
@@ -599,10 +604,15 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-        written, send-ok = tls-c.send(req-str)
-        if send-ok == false {
-            tls-c.close()
-            return
+w = tls-c.send(req-str)
+w: {
+            nil ->
+                tls-c.close()
+                return
+            err ->
+                tls-c.close()
+                return
+            ->
         }
     } else {
         written = net-send(fd, req-str, req-str.len)
@@ -615,9 +625,13 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
     // ── 接收回應 ──
     ! {
         if use-tls {
-            n, recv-ok = tls-c.recv(buf, HTTP-BUF-SIZE)
-            if recv-ok == false {
-                *
+rn = tls-c.recv(buf, HTTP-BUF-SIZE)
+rn: {
+                nil ->
+                    *
+                err ->
+                    *
+                ok -> n = it
             }
         } else {
             n = net-recv(fd, buf, HTTP-BUF-SIZE)

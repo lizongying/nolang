@@ -3,9 +3,8 @@
 
 // test-tls-put-u16: 測試 16-bit 大端序寫入
 test-tls-put-u16 = () {
-    space str = ' '
-    buf str = space.repeat(8)
-    tls-put-u16-s(buf, 0, 0x1234)
+    buf []byte
+    tls-put-u16(buf, 0, 0x1234)
     if buf[0] != 0x12 {
         print('FAIL: expected 0x12')
         return
@@ -19,12 +18,11 @@ test-tls-put-u16 = () {
 
 // test-tls-get-u16: 測試 16-bit 大端序讀取
 test-tls-get-u16 = () {
-    space str = ' '
-    buf str = space.repeat(8)
+    buf []byte
     buf[0] = 0xAB
     buf[1] = 0xCD
     val i64 = 0
-    val = tls-get-u16-s(buf, 0)
+    val = tls-get-u16(buf, 0)
     if val != 0xABCD {
         print('FAIL: expected 0xABCD')
         return
@@ -34,9 +32,8 @@ test-tls-get-u16 = () {
 
 // test-tls-put-u24: 測試 24-bit 大端序寫入
 test-tls-put-u24 = () {
-    space str = ' '
-    buf str = space.repeat(8)
-    tls-put-u24-s(buf, 0, 0x123456)
+    buf []byte
+    tls-put-u24(buf, 0, 0x123456)
     if buf[0] != 0x12 {
         print('FAIL: expected 0x12')
         return
@@ -54,13 +51,12 @@ test-tls-put-u24 = () {
 
 // test-tls-get-u24: 測試 24-bit 大端序讀取
 test-tls-get-u24 = () {
-    space str = ' '
-    buf str = space.repeat(8)
+    buf []byte
     buf[0] = 0x12
     buf[1] = 0x34
     buf[2] = 0x56
     val i64 = 0
-    val = tls-get-u24-s(buf, 0)
+    val = tls-get-u24(buf, 0)
     if val != 0x123456 {
         print('FAIL: expected 0x123456')
         return

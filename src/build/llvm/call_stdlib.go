@@ -1531,6 +1531,33 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
 			}
 			dataPtr = dataLoad
+		} else if dataArgType == "%arr" {
+			// [n]byte: extract data pointer from arr field 1
+			// resolve eval result to %arr* pointer (may need temp alloca for loaded values)
+			arrEval := a[1]
+			arrPtr := arrEval
+			if idx := strings.Index(arrEval, ".val."); idx > 0 {
+				// loaded value: store into temp %arr alloca to get a pointer
+				baseRef := arrEval[:idx]
+				varName := strings.TrimPrefix(baseRef, "%")
+				_ = varName
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%net.s.arrtmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+				}
+				arrPtr = tmpAlloca
+			}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%net.s.arrgep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%net.s.arrptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, arrPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+			}
+			dataPtr = dataLoad
 		} else {
 			// str: use existing path
 			dataPtr = g.extractStrFromEvalArg(sb, a[1])
@@ -1568,6 +1595,28 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			bufLoad := fmt.Sprintf("%%net.r.dataptr.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), bufLoad, bufGEP))
+			}
+			bufPtr = bufLoad
+		} else if bufArgType == "%arr" {
+			// [n]byte: extract data pointer from arr field 1
+			arrEval := a[1]
+			arrPtr := arrEval
+			if idx := strings.Index(arrEval, ".val."); idx > 0 {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%net.r.arrtmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+				}
+				arrPtr = tmpAlloca
+			}
+			g.tmpIdx++
+			bufGEP := fmt.Sprintf("%%net.r.arrgep.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufLoad := fmt.Sprintf("%%net.r.arrptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), bufGEP, arrPtr))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), bufLoad, bufGEP))
 			}
 			bufPtr = bufLoad

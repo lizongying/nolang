@@ -14,13 +14,16 @@ type Parser struct {
 	errors   []string
 	warnings []string
 
-	currentToken     lexer.Token
-	peekToken        lexer.Token
-	prevToken        lexer.Token
-	ctx              contextStack        // replaces inForCond, inMatchCond, inMatchArm, inExprContext
-	comments         []lexer.Token       // collected comment tokens
-	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
-	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
+	currentToken      lexer.Token
+	peekToken         lexer.Token
+	prevToken         lexer.Token
+	ctx               contextStack                 // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	comments          []lexer.Token                // collected comment tokens
+	varDeclTypes      map[string]string            // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
+	enumVariantNames  map[string][]string          // 枚舉類型名 → 枚舉值名列表
+	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
+	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
+	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
@@ -372,6 +375,71 @@ func New(lexer *lexer.Lexer) *Parser {
 	p.nextToken()
 
 	return p
+}
+
+// SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
+// 供 parseLetStatement 的型別推斷使用。由 transpiler 在解析前呼叫。
+func (p *Parser) SetExternSignatures(funcSigs map[string][]string, structFields map[string]map[string]string) {
+	if p.funcSignatures == nil {
+		p.funcSignatures = make(map[string][]string)
+	}
+	for k, v := range funcSigs {
+		p.funcSignatures[k] = v
+	}
+	if p.structFields == nil {
+		p.structFields = make(map[string]map[string]string)
+	}
+	for k, v := range structFields {
+		p.structFields[k] = v
+	}
+}
+
+// resolveReceiverType 解析方法調用接收者的型別，用於推斷方法返回型別。
+// 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})
+func (p *Parser) resolveReceiverType(receiver Expression) string {
+	if ident, ok := receiver.(*Identifier); ok {
+		if t, ok := p.varDeclTypes[ident.Value]; ok {
+			return strings.TrimPrefix(t, "?")
+		}
+	}
+	if dot, ok := receiver.(*DotExpression); ok {
+		// self.field → 查詢 struct 欄位型別
+		if selfIdent, ok := dot.Receiver.(*Identifier); ok && selfIdent.Value == "self" {
+			if len(p.methodStructStack) > 0 {
+				structName := p.methodStructStack[len(p.methodStructStack)-1]
+				if fields, ok := p.structFields[structName]; ok {
+					if fieldType, ok := fields[dot.Property]; ok {
+						return strings.TrimPrefix(fieldType, "?")
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// inferTypeFromCallExpr 嘗試從函數/方法調用推斷返回型別。
+// 返回空字串表示無法推斷。
+func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
+	if p.funcSignatures == nil {
+		return ""
+	}
+	fnName := ""
+	if ident, ok := call.Function.(*Identifier); ok {
+		fnName = ident.Value
+	} else if dot, ok := call.Function.(*DotExpression); ok {
+		receiverType := p.resolveReceiverType(dot.Receiver)
+		if receiverType != "" {
+			fnName = receiverType + "." + dot.Property
+		}
+	}
+	if fnName == "" {
+		return ""
+	}
+	if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
+		return rets[0]
+	}
+	return ""
 }
 
 func (p *Parser) saveState() parserState {
@@ -1060,29 +1128,46 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	methodName := p.currentToken.Literal
 	fullName := structToken.Literal + "." + methodName
 
-	// 調用 parseFunctionDefinition 解析主體
-	fd := p.parseFunctionDefinition()
-	if fd == nil {
-		return nil
-	}
+// 推入方法上下文，供 let 型別推斷解析 self.field 型別
+p.methodStructStack = append(p.methodStructStack, structToken.Literal)
 
-	funcDef, ok := fd.(*FunctionDefinition)
-	if !ok {
-		return fd
-	}
+// 調用 parseFunctionDefinition 解析主體
+fd := p.parseFunctionDefinition()
 
-	// 修改名稱
-	funcDef.Name = fullName
+// 彈出方法上下文
+if len(p.methodStructStack) > 0 {
+p.methodStructStack = p.methodStructStack[:len(p.methodStructStack)-1]
+}
 
-	// 插入 self 參數
-	selfParam := &Parameter{
-		Token: structToken,
-		Name:  "self",
-		Type:  buildType(structToken.Literal, structToken),
-	}
-	funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
+if fd == nil {
+return nil
+}
 
-	return funcDef
+funcDef, ok := fd.(*FunctionDefinition)
+if !ok {
+return fd
+}
+
+// 修改名稱
+funcDef.Name = fullName
+
+// 修復 funcSignatures 鍵：parseFunctionBody 以原始方法名存儲，需更新為完整名
+if p.funcSignatures != nil {
+if rets, ok := p.funcSignatures[methodName]; ok {
+delete(p.funcSignatures, methodName)
+p.funcSignatures[fullName] = rets
+}
+}
+
+// 插入 self 參數
+selfParam := &Parameter{
+Token: structToken,
+Name:  "self",
+Type:  buildType(structToken.Literal, structToken),
+}
+funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
+
+return funcDef
 }
 
 // isArrayTypeMethodDefinition 檢測是否為陣列/切片型別方法定義：[n]t.method(…)、[]t.method(…)、[?]t.method(…) {
@@ -2297,6 +2382,16 @@ func (p *Parser) parseLetStatement() Statement {
 		case *ArrayLiteral:
 		case *StructLiteral:
 
+		case *CallExpression:
+			// 從函數/方法調用推斷返回型別
+			if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
+				stmt.Type = buildType(inferred, nameToken)
+				if p.varDeclTypes == nil {
+					p.varDeclTypes = make(map[string]string)
+				}
+				p.varDeclTypes[stmt.Name.Value] = inferred
+			}
+
 		}
 	}
 
@@ -3440,8 +3535,21 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
-		if p.currentToken.Type == lexer.NEWLINE {
-			// Block form
+		if p.currentToken.Type == lexer.LBRACE {
+			// Explicit block form: -> { ... }
+			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
+			ma.isBlockBody = true
+			p.ctx.push(CTX_MATCH_ARM)
+			block := p.parseBlockStatement()
+			p.ctx.pop()
+			if block != nil {
+				bodyStmts = block.Statements
+			}
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken()
+			}
+		} else if p.currentToken.Type == lexer.NEWLINE {
+			// Block form (newline-separated statements, no braces)
 			ma.isBlockBody = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -3588,8 +3696,21 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
-		if p.currentToken.Type == lexer.NEWLINE {
-			// Block form
+		if p.currentToken.Type == lexer.LBRACE {
+			// Explicit block form: -> { ... }
+			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
+			ma.isBlockBody = true
+			p.ctx.push(CTX_MATCH_ARM)
+			block := p.parseBlockStatement()
+			p.ctx.pop()
+			if block != nil {
+				bodyStmts = block.Statements
+			}
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken()
+			}
+		} else if p.currentToken.Type == lexer.NEWLINE {
+			// Block form (newline-separated statements, no braces)
 			ma.isBlockBody = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -4449,8 +4570,16 @@ func (p *Parser) parseMatchExpression() Expression {
 			p.nextToken() // skip :
 		}
 
-		// Statement form (newline after :) or expression form (inline)
-		if p.currentToken.Type == lexer.NEWLINE {
+		// Block form (-> { ... }), statement form (newline after :), or expression form (inline)
+		if p.currentToken.Type == lexer.LBRACE {
+			// Explicit block form: parse as block statement so option-match
+			// desugar can correctly insert `it` binding at the block head.
+			ma.body = p.parseBlockStatement()
+			// parseBlockStatement stops at } but does not consume it; advance past.
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken()
+			}
+		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Statement form: parse block until next arm or }
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -6316,6 +6445,19 @@ func (p *Parser) parseStructDefinition() Statement {
 	}
 
 	p.nextToken() // 跳过 RBRACE
+
+	// 收集 struct 欄位型別，供方法調用型別推斷使用
+	if p.structFields == nil {
+		p.structFields = make(map[string]map[string]string)
+	}
+	fields := make(map[string]string)
+	for _, f := range sd.Fields {
+		if f.Type != nil {
+			fields[f.Name] = f.Type.String()
+		}
+	}
+	p.structFields[sd.Name] = fields
+
 	return sd
 }
 
@@ -6723,6 +6865,18 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 
 	if p.currentToken.Type == lexer.RBRACE {
 		p.nextToken()
+	}
+
+	// 收集函數簽名（結果型別），供後續 let 型別推斷使用
+	if len(def.Results) > 0 {
+		if p.funcSignatures == nil {
+			p.funcSignatures = make(map[string][]string)
+		}
+		rets := make([]string, len(def.Results))
+		for i, r := range def.Results {
+			rets[i] = typeString(r.Type)
+		}
+		p.funcSignatures[def.Name] = rets
 	}
 }
 
@@ -7481,7 +7635,7 @@ func (p *Parser) parseAnnotationValue() AnnotationValue {
 				Token:    saveCur,
 				Start:    firstVal,
 				End:      endVal,
-				LeftInc:  true,  // [
+				LeftInc:  true, // [
 				RightInc: rightInc,
 			}
 		}
@@ -7570,7 +7724,7 @@ func (p *Parser) parseAnnotationArray() AnnotationValue {
 		}
 
 		// 元素可以是簡單值或巢狀陣列/範圍
-	 elem := p.parseAnnotationValue()
+		elem := p.parseAnnotationValue()
 		if elem != nil {
 			elements = append(elements, elem)
 		}
