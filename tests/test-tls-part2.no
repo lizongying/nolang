@@ -13,9 +13,8 @@ main = () {
     b[0] = 4
     b[1] = 5
     out []byte
-    out-n i64 = 0
-    out, out-n = tls-bytes-cat(a, 3, b, 2)
-    if out-n != 5 { print('FAIL: bytes-cat len'); return }
+    out = tls-bytes-cat(a, b)
+    if out.len != 5 { print('FAIL: bytes-cat len'); return }
     if out[0] != 1 { print('FAIL: bytes-cat out[0]'); return }
     if out[3] != 4 { print('FAIL: bytes-cat out[3]'); return }
     print('PASS: bytes-cat')
@@ -27,9 +26,8 @@ main = () {
     data[2] = 0x03
     data[3] = 0x04
     bn-out []i64
-    bn-n i64 = 0
-    bn-out, bn-n = tls-bytes-to-bn(data, 4)
-    if bn-n != 1 { print('FAIL: bytes-to-bn n'); return }
+    bn-out = tls-bytes-to-bn(data)
+    if bn-out.len != 1 { print('FAIL: bytes-to-bn n'); return }
     if bn-out[0] != 0x01020304 { print('FAIL: bytes-to-bn val'); return }
     print('PASS: bytes-to-bn')
 
@@ -37,9 +35,8 @@ main = () {
     num []i64
     num[0] = 0x01020304
     bb-out []byte
-    bb-n i64 = 0
-    bb-out, bb-n = tls-bn-to-bytes(num, 1)
-    if bb-n != 4 { print('FAIL: bn-to-bytes n'); return }
+    bb-out = tls-bn-to-bytes(num)
+    if bb-out.len != 4 { print('FAIL: bn-to-bytes n'); return }
     if bb-out[0] != 0x01 { print('FAIL: bn-to-bytes out[0]'); return }
     print('PASS: bn-to-bytes')
 

@@ -4,8 +4,8 @@
 // error 結構體封裝錯誤碼與訊息，err-code 枚舉定義常見錯誤類別。
 //
 // 用法：
-//   e = err-new(io, 'disk full')
-//   yes = err-is(e, io)
+//   e = err-new(err-code.io, 'disk full')
+//   yes = err-is(e, err-code.io)
 //   s, n = err-format(e)
 
 // ═══════════════════════════════════════════════
@@ -41,7 +41,7 @@ error {
 // ═══════════════════════════════════════════════
 
 // err-new: 建立錯誤
-// code: 錯誤碼（err-code 枚舉值，如 io）
+// code: 錯誤碼（err-code 枚舉值，如 err-code.io）
 // msg: 錯誤訊息
 err-new = (code err-code, msg str) (e error) {
     e = error{

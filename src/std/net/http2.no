@@ -50,7 +50,6 @@ http2-frame {
     flags i64           // 旗標（8-bit）
     stream-id i64       // 串流 ID（31-bit）
     payload str         // 影格資料
-    payload-len i64     // 資料長度
 }
 
 // http2-conn: HTTP/2 連線
@@ -83,7 +82,6 @@ http2-frame.parse = (data str, pos i64) (next-pos i64, ok bool) {
     .flags = data[pos + 4]
     // 31-bit stream-id（big-endian，高位保留）
     .stream-id = ((data[pos + 5] & 127) << 24) | (data[pos + 6] << 16) | (data[pos + 7] << 8) | data[pos + 8]
-    .payload-len = 0
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
     ok = true
 }
@@ -133,7 +131,7 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
     written = 0
     send-ok = false
     if .use-tls {
-        written, send-ok = .tls-c.send(hdr, HTTP2-FRAME-HEADER-SIZE)
+        written, send-ok = .tls-c.send(hdr)
         if send-ok == false {
             return
         }
@@ -144,15 +142,15 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
         }
     }
     // 發送 payload
-    if frame.payload-len > 0 {
+    if frame.payload.len > 0 {
         if .use-tls {
-            written, send-ok = .tls-c.send(frame.payload, frame.payload-len)
+            written, send-ok = .tls-c.send(frame.payload)
             if send-ok == false {
                 return
             }
         } else {
-            written = net-send(.fd, frame.payload, frame.payload-len)
-            if written != frame.payload-len {
+            written = net-send(.fd, frame.payload, frame.payload.len)
+            if written != frame.payload.len {
                 return
             }
         }
@@ -207,7 +205,7 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
         if frame.length > HTTP2-MAX-PAYLOAD {
             return
         }
-        frame.payload = space.repeat(HTTP2-MAX-PAYLOAD)
+        frame.payload = space.repeat(frame.length)
         payload-total = 0
         ! {
             if payload-total >= frame.length {
@@ -231,7 +229,6 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
             }
             payload-total = payload-total + recv-n
         }
-        frame.payload-len = frame.length
     }
     ok = true
 }
@@ -248,7 +245,6 @@ http2-conn.send-settings = (ack bool) (ok bool) {
         f.flags = 0
     }
     f.stream-id = 0
-    f.payload-len = 0
     ok = .send-frame(f)
 }
 
@@ -268,15 +264,14 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
         n str = names[i].slice(0, nlen)
         v str = values[i].slice(0, vlen)
         hdr-out = ' '
-        hdr-n = 0
-        hdr-out, hdr-n = self.hpack.encode-header(n, v)
+        hdr-out = self.hpack.encode-header(n, v)
         // 複製到 block
         j = 0
-        for j < hdr-n {
+        for j < hdr-out.len {
             block[block-n + j] = hdr-out[j]
             j = j + 1
         }
-        block-n = block-n + hdr-n
+        block-n = block-n + hdr-out.len
         i = i + 1
     }
     // 構建 HEADERS 影格
@@ -289,13 +284,14 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     }
     f.stream-id = stream-id
     f.payload = block
-    f.payload-len = block-n
+    f.payload.len = block-n
     ok = .send-frame(f)
 }
 
 // http2-conn.send-data: 發送 DATA 影格
-http2-conn.send-data = (stream-id i64, data str, n i64, end-stream bool) (ok bool) {
+http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     ok = false
+    n = data.len
     f http2-frame
     f.length = n
     f.frame-type = FRAME-DATA
@@ -306,7 +302,6 @@ http2-conn.send-data = (stream-id i64, data str, n i64, end-stream bool) (ok boo
     }
     f.stream-id = stream-id
     f.payload = data
-    f.payload-len = n
     ok = .send-frame(f)
 }
 
@@ -346,7 +341,7 @@ http2-connect = (host str, port i64) (conn http2-conn, ok bool) {
     // 3. 接收伺服器 SETTINGS 並 ACK
     f http2-frame
     recv-ok = false
-    recv-ok = conn.recv-frame(f)
+    f, recv-ok = conn.recv-frame()
     if recv-ok == false {
         close(fd)
         conn.fd = -1
@@ -384,7 +379,7 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = 0
     send-ok = false
-    written, send-ok = tls-c.send(preface, preface.len)
+    written, send-ok = tls-c.send(preface)
     if send-ok == false {
         tls-c.close()
         conn.fd = -1
@@ -405,7 +400,7 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
     // 4. 接收伺服器 SETTINGS 並 ACK
     f http2-frame
     recv-ok = false
-    recv-ok = conn.recv-frame(f)
+    f, recv-ok = conn.recv-frame()
     if recv-ok == false {
         tls-c.close()
         conn.fd = -1
@@ -493,7 +488,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     }
     // 發送 DATA（如果有主體）
     if has-body {
-        send-ok = .send-data(stream-id, body, body-len, true)
+        send-ok = .send-data(stream-id, body, true)
         if send-ok == false {
             return
         }
@@ -502,7 +497,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     ! {
         f http2-frame
         recv-ok = false
-        recv-ok = .recv-frame(f)
+        f, recv-ok = .recv-frame()
         if recv-ok == false {
             return
         }
@@ -512,7 +507,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
             dec-values [128]str
             dec-count = 0
             dec-ok = false
-            dec-names, dec-values, dec-count, dec-ok = self.hpack.decode-headers(f.payload, f.payload-len)
+            dec-names, dec-values, dec-count, dec-ok = self.hpack.decode-headers(f.payload)
             if dec-ok == false {
                 return
             }
@@ -538,11 +533,11 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
         elif f.frame-type == FRAME-DATA {
             // 複製到 resp-body
             i = 0
-            for i < f.payload-len {
+            for i < f.payload.len {
                 resp-body[resp-n + i] = f.payload[i]
                 i = i + 1
             }
-            resp-n = resp-n + f.payload-len
+            resp-n = resp-n + f.payload.len
             if (f.flags & FLAG-END-STREAM) != 0 {
                 ok = true
                 *

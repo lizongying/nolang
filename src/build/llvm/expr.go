@@ -275,39 +275,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 
 // generateConditionAsI1 generates LLVM IR for a condition expression,
 // ensuring the result is of type i1. If the expression already produces i1
-// (e.g. bool variable from method call), no trunc is needed.
+// (e.g. bool variable, bool struct field, bool method call), no trunc is needed.
 func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expression) string {
-	// Check if the condition is already i1
-	if ident, ok := cond.(*parser.Identifier); ok {
-		if g.varTypes != nil {
-			if t, ok := g.varTypes[ident.Value]; ok && t == "i1" {
-				// Already i1, just return the value
-				return g.generateExprWithSB(sb, cond)
-			}
-		}
-	}
-	// Dot expression for bool field (e.g. opts.excl) is already i1
-	if dot, ok := cond.(*parser.DotExpression); ok {
-		if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-			if g.varTypes != nil {
-				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
-					structName := strings.TrimPrefix(t, "%")
-					if fields, ok := g.structTypes[structName]; ok {
-						for _, f := range fields {
-							if f.name == dot.Property && f.typ == "i1" {
-								return g.generateExprWithSB(sb, cond)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	// CallExpression returning bool (e.g. rs.next()) is already i1
-	if _, ok := cond.(*parser.CallExpression); ok {
-		if g.intExprLLVMType(cond) == "i1" {
-			return g.generateExprWithSB(sb, cond)
-		}
+	// Use intExprLLVMType to detect i1 conditions across all expression kinds:
+	// Identifier (bool var), DotExpression (bool field, incl. chained access like
+	// self.value.b), CallExpression (bool-returning function), etc.
+	if g.intExprLLVMType(cond) == "i1" {
+		return g.generateExprWithSB(sb, cond)
 	}
 	// Default: assume i64, need trunc to i1
 	g.tmpIdx++

@@ -70,8 +70,8 @@ encode-url = (data []byte, n i64, out str) (out-n i64) {
 // ═══════════════════════════════════════════════
 
 // decode: 使用指定字母表進行 Base64 解碼
-decode = (s str, n i64, table str, out []byte) (out-n i64, ok i64) {
-    ok = 1
+decode = (s str, n i64, table str, out []byte) (out-n i64, ok bool) {
+    ok = true
     out-n = 0
 
     // 計算填充數
@@ -96,14 +96,14 @@ decode = (s str, n i64, table str, out []byte) (out-n i64, ok i64) {
         v2 = b64-val(s[i + 2], table)
         v3 = b64-val(s[i + 3], table)
         if v0 < 0 || v1 < 0 {
-            ok = 0
+            ok = false
             out-n = 0
             return
         }
         out[j] = (v0 << 2) | (v1 >> 4)
         if s[i + 2] & 255 != 61 {
             if v2 < 0 {
-                ok = 0
+                ok = false
                 out-n = 0
                 return
             }
@@ -111,7 +111,7 @@ decode = (s str, n i64, table str, out []byte) (out-n i64, ok i64) {
         }
         if s[i + 3] & 255 != 61 {
             if v3 < 0 {
-                ok = 0
+                ok = false
                 out-n = 0
                 return
             }

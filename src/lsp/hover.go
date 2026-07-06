@@ -91,6 +91,10 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 		builder.WriteString(fmt.Sprintf("- **Variants**: %s\n", entry.Value))
 	}
 
+	if entry.Kind == SymbolKindEnumMember && entry.Type != "" {
+		builder.WriteString(fmt.Sprintf("- **Enum**: `%s`\n", entry.Type))
+	}
+
 	if len(entry.Params) > 0 {
 		builder.WriteString("- **Parameters**:\n")
 		for _, p := range entry.Params {

@@ -1124,9 +1124,15 @@ x509-rsa-e(cert, n, e)             // RSA 公鑰指數提取
 ### json — JSON 解析與產生
 
 ```nolang
-// 型別常量
-KIND-NULL, KIND-BOOL, KIND-NUM, KIND-STR, KIND-ARR, KIND-OBJ
-JSON-NULL, JSON-TRUE, JSON-FALSE
+// 型別枚舉
+json-kind {
+    null,
+    bool,
+    num,
+    str,
+    arr,
+    obj,
+}
 
 // 解析
 v = parse(s, n)          // 完整解析
@@ -1249,9 +1255,9 @@ error {
 }
 
 // 函數
-e = err-new(code, msg)            // 建立錯誤
+e = err-new(err-code.io, msg)      // 建立錯誤
 e = err-from-errno(errno)         // 從 C errno 建立
-yes = err-is(e, code)             // 判斷錯誤碼
+yes = err-is(e, err-code.io)      // 判斷錯誤碼
 msg = err-msg(e)                  // 取得錯誤訊息
 code = err-code-of(e)             // 取得錯誤碼
 s, n = err-format(e)              // 格式化為字串

@@ -410,3 +410,94 @@ func TestGetHoverEnumType(t *testing.T) {
 		t.Errorf("expected hover to contain 's1 | s2 | s3', got: %s", contents.Value)
 	}
 }
+
+func TestGetHoverEnumVariant(t *testing.T) {
+	text := `err-code {
+    ok,
+    not-found,
+    io,
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	index := createTestIndex(doc, program)
+	hp := NewHoverProvider(doc, index)
+
+	// Hover over "io" on line 3
+	// "    io," — "io" starts at column 4 (0-based)
+	hover, found := hp.GetHover(Position{Line: 3, Character: 5})
+	if !found {
+		t.Fatal("expected hover for enum variant 'io'")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatal("expected MarkupContent")
+	}
+	if !strings.Contains(contents.Value, "io") {
+		t.Errorf("expected hover to contain 'io', got: %s", contents.Value)
+	}
+	if !strings.Contains(contents.Value, "err-code") {
+		t.Errorf("expected hover to contain enum type 'err-code', got: %s", contents.Value)
+	}
+}
+
+func TestEnumVariantCompletion(t *testing.T) {
+	text := `err-code {
+    ok,
+    not-found,
+    io,
+}
+
+e = err-new(`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	index := createTestIndex(doc, program)
+
+	cp := NewCompletionProvider(doc, index)
+	// Position after '=' on line 6 — should offer enum variants
+	completions := cp.getCompletionsAfterEquals(Position{Line: 6, Character: 12})
+
+	foundOk := false
+	foundIo := false
+	for _, c := range completions {
+		if c.Label == "ok" {
+			foundOk = true
+		}
+		if c.Label == "io" {
+			foundIo = true
+		}
+	}
+	if !foundOk {
+		t.Error("expected completion to include 'ok' enum variant")
+	}
+	if !foundIo {
+		t.Error("expected completion to include 'io' enum variant")
+	}
+}
+
+func TestEnumVariantInSymbolIndex(t *testing.T) {
+	text := `err-code {
+    ok,
+    not-found,
+    io,
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	index := createTestIndex(doc, program)
+
+	// Each variant should be in the symbol index
+	variants := []string{"ok", "not-found", "io"}
+	for _, v := range variants {
+		entry, found := index.Lookup(v)
+		if !found {
+			t.Errorf("expected enum variant '%s' to be in symbol index", v)
+			continue
+		}
+		if entry.Kind != SymbolKindEnumMember {
+			t.Errorf("expected '%s' to have Kind SymbolKindEnumMember (%d), got %d", v, SymbolKindEnumMember, entry.Kind)
+		}
+		if entry.Type != "err-code" {
+			t.Errorf("expected '%s' to have Type 'err-code', got '%s'", v, entry.Type)
+		}
+	}
+}

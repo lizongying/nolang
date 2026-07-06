@@ -8,11 +8,11 @@
 
 main = () {
     // ── 1. err-new 建立錯誤，檢查 code ──
-    e = err-new(io, 'disk full')
+    e = err-new(err-code.io, 'disk full')
 
-    code i64 = 0
+    code err-code = err-code.ok
     code = err-code-of(e)
-    if code == 3 {
+    if code == err-code.io {
         print('ok: err-new code')
     } else {
         print('fail: err-new code')
@@ -23,14 +23,14 @@ main = () {
     print('ok: err-msg')
 
     // ── 3. err-is 比對錯誤碼（true 和 false）──
-    yes = err-is(e, io)
+    yes = err-is(e, err-code.io)
     if yes {
         print('ok: err-is true')
     } else {
         print('fail: err-is true')
     }
 
-    yes = err-is(e, not-found)
+    yes = err-is(e, err-code.not-found)
     if yes == false {
         print('ok: err-is false')
     } else {
@@ -38,9 +38,9 @@ main = () {
     }
 
     // ── 4. err-code-of 取得錯誤碼 ──
-    code2 i64 = 0
+    code2 err-code = err-code.ok
     code2 = err-code-of(e)
-    if code2 == 3 {
+    if code2 == err-code.io {
         print('ok: err-code-of')
     } else {
         print('fail: err-code-of')

@@ -365,7 +365,7 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-        written, send-ok = tls-c.send(req, req.len)
+        written, send-ok = tls-c.send(req)
         if send-ok == false {
             tls-c.close()
             return
@@ -599,7 +599,7 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-        written, send-ok = tls-c.send(req-str, req-str.len)
+        written, send-ok = tls-c.send(req-str)
         if send-ok == false {
             tls-c.close()
             return

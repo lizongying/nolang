@@ -377,8 +377,8 @@ file.copy-to = (dst-path str) (ok bool) {
 // ═══════════════════════════════════════════════
 
 // copy-file: 複製檔案內容
-copy-file = (src str, dst str) (ok i64) {
-    ok = 0
+copy-file = (src str, dst str) (ok bool) {
+    ok = false
     fd-r = open-read(src)
     if fd-r < 0 {
         return
@@ -398,5 +398,5 @@ copy-file = (src str, dst str) (ok i64) {
     }
     close(fd-r)
     close(fd-w)
-    ok = 1
+    ok = true
 }

@@ -34,10 +34,9 @@ main = () {
     b[0] = 3
     b[1] = 4
     out []byte
-    out-n i64 = 0
-    out, out-n = tls-bytes-cat(a, 2, b, 2)
-    if out-n != 4 {
-        print('FAIL: expected out-n=4')
+    out = tls-bytes-cat(a, b)
+    if out.len != 4 {
+        print('FAIL: expected out.len=4')
         return
     }
     print('PASS: tls-bytes-cat')

@@ -11,7 +11,7 @@
 //   t = hpack-tables{}
 //   t.init()
 //   out, n = t.encode-header(':method', 'GET')
-//   names, values, cnt = t.decode-headers(data, n)  // cnt=-1 表示失敗
+//   names, values, cnt = t.decode-headers(data)  // cnt=-1 表示失敗
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -394,26 +394,23 @@ hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
 // val: 要編碼的值
 // prefix-bits: 前綴位數（1-8）
 // prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
-// 返回 out=編碼後的字串, out-n=編碼長度
-hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str, out-n i64) {
+// 返回 out=編碼後的字串
+hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     max-prefix = (1 << prefix-bits) - 1
-    out-n = 0
     if val < max-prefix {
         out[0] = prefix-byte | val
-        out-n = 1
         return
     }
     // 第一個 byte: prefix 全 1
     out[0] = prefix-byte | max-prefix
-    out-n = 1
+    n = 1
     val = val - max-prefix
     for val >= 128 {
-        out[out-n] = (val & 127) | 128
-        out-n = out-n + 1
+        out[n] = (val & 127) | 128
+        n = n + 1
         val = val >> 7
     }
-    out[out-n] = val
-    out-n = out-n + 1
+    out[n] = val
 }
 
 // hpack-decode-int: 從 data 的 pos 位置解碼變長整數
@@ -459,26 +456,24 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
 // ═══════════════════════════════════════════════
 
 // hpack-encode-str: 編碼字串（literal，H=0）
-// 返回 out=編碼後字串, out-n=編碼長度
-hpack-encode-str = (s str) (out str, out-n i64) {
+// 返回 out=編碼後字串
+hpack-encode-str = (s str) (out str) {
     // H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
-    len-n = 0
-    len-out, len-n = hpack-encode-int(s.len, 7, 0)
+    len-out = hpack-encode-int(s.len, 7, 0)
     // 複製長度編碼到 out
     i = 0
-    for i < len-n {
+    for i < len-out.len {
         out[i] = len-out[i]
         i = i + 1
     }
-    out-n = len-n
+    out-n = len-out.len
     // 複製字串內容
     i = 0
     for i < s.len {
         out[out-n + i] = s[i]
         i = i + 1
     }
-    out-n = out-n + s.len
 }
 
 // hpack-decode-str: 從 data 的 pos 位置解碼字串
@@ -508,7 +503,6 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
         out[i] = data[p + i]
         i = i + 1
     }
-    out.len = len
     next-pos = p + len
 }
 
@@ -519,15 +513,14 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
 // encode-header: 編碼單個標頭
 // 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
 //       否則→literal with indexing（新 name）
-// 返回 out=編碼字串, out-n=編碼長度
-hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
-    out-n = 0
+// 返回 out=編碼字串
+hpack-tables.encode-header = (name str, value str) (out str) {
     // 1. 完全匹配 → Indexed Header Field（6.1）
     full-idx = 0
     full-idx = .find(name, value)
     if full-idx > 0 {
         // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
-        out, out-n = hpack-encode-int(full-idx, 7, 128)
+        out = hpack-encode-int(full-idx, 7, 128)
         return
     }
     // 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
@@ -536,28 +529,25 @@ hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
     if name-idx > 0 {
         // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
         idx-out = ' '
-        idx-n = 0
-        idx-out, idx-n = hpack-encode-int(name-idx, 6, 64)
+        idx-out = hpack-encode-int(name-idx, 6, 64)
         // 複製到 out
         i = 0
-        for i < idx-n {
+        for i < idx-out.len {
             out[i] = idx-out[i]
             i = i + 1
         }
-        out-n = idx-n
+        out-n = idx-out.len
         // 編碼 value
         val-out = ' '
-        val-n = 0
-        val-out, val-n = hpack-encode-str(value)
+        val-out = hpack-encode-str(value)
         i = 0
-        for i < val-n {
+        for i < val-out.len {
             out[out-n + i] = val-out[i]
             i = i + 1
         }
-        out-n = out-n + val-n
-        // 加入動態表
-        .dyn-add(name, value)
-        return
+    // 加入動態表
+    .dyn-add(name, value)
+    return
     }
     // 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
     // 格式：01000000（索引 0 = 新 name）
@@ -565,32 +555,29 @@ hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
     out-n = 1
     // 編碼 name
     name-out = ' '
-    name-n = 0
-    name-out, name-n = hpack-encode-str(name)
+    name-out = hpack-encode-str(name)
     i = 0
-    for i < name-n {
+    for i < name-out.len {
         out[out-n + i] = name-out[i]
         i = i + 1
     }
-    out-n = out-n + name-n
+    out-n = out-n + name-out.len
     // 編碼 value
     val-out = ' '
-    val-n = 0
-    val-out, val-n = hpack-encode-str(value)
+    val-out = hpack-encode-str(value)
     i = 0
-    for i < val-n {
+    for i < val-out.len {
         out[out-n + i] = val-out[i]
         i = i + 1
     }
-    out-n = out-n + val-n
     // 加入動態表
     .dyn-add(name, value)
 }
 
 // decode-headers: 解碼標頭塊
-// data: 二進位資料, n: 資料長度
+// data: 二進位資料
 // 返回 names/values 陣列, count=標頭數, ok=true=成功
-hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str, count i64, ok bool) {
+hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, ok bool) {
     ok = false
     count = 0
     // 初始化輸出陣列
@@ -602,6 +589,7 @@ hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str
         values[i].len = 0
         i = i + 1
     }
+    n = data.len
     if n == 0 {
         ok = true
         return

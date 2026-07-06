@@ -78,10 +78,9 @@ test-tls-bytes-cat = () {
     b[0] = 4
     b[1] = 5
     out []byte
-    out-n i64 = 0
-    out, out-n = tls-bytes-cat(a, 3, b, 2)
-    if out-n != 5 {
-        print('FAIL: expected out-n=5')
+    out = tls-bytes-cat(a, b)
+    if out.len != 5 {
+        print('FAIL: expected out.len=5')
         return
     }
     if out[0] != 1 {
@@ -103,11 +102,10 @@ test-tls-bytes-to-bn = () {
     data[2] = 0x03
     data[3] = 0x04
     out []i64
-    out-n i64 = 0
-    out, out-n = tls-bytes-to-bn(data, 4)
+    out = tls-bytes-to-bn(data)
     // 4 bytes → 1 limb
-    if out-n != 1 {
-        print('FAIL: expected out-n=1')
+    if out.len != 1 {
+        print('FAIL: expected out.len=1')
         return
     }
     // little-endian base 2^32: 0x01020304
@@ -123,11 +121,10 @@ test-tls-bn-to-bytes = () {
     num []i64
     num[0] = 0x01020304
     out []byte
-    out-n i64 = 0
-    out, out-n = tls-bn-to-bytes(num, 1)
+    out = tls-bn-to-bytes(num)
     // 1 limb → 4 bytes, then strip leading zeros (0x01 is not zero)
-    if out-n != 4 {
-        print('FAIL: expected out-n=4')
+    if out.len != 4 {
+        print('FAIL: expected out.len=4')
         return
     }
     if out[0] != 0x01 {

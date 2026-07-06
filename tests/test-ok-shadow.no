@@ -3,11 +3,11 @@
 # std/json
 
 main = () {
-    ok i64 = 0
+    ok bool = false
     print('start')
-    ok = 1
+    ok = true
     print('ok=' - ok.to-str())
-    if ok == 1 {
+    if ok {
         print('ok: if works')
     } else {
         print('fail: if broken')

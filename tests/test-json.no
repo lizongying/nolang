@@ -11,12 +11,12 @@ main = () {
     json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
     root i64 = -1
     next i64 = 0
-    ok i64 = 0
+    ok bool = false
     val-idx i64 = -1
-    found i64 = 0
+    found bool = false
     str-val str = ''
     num-val f64 = 0.0
-    bool-val i64 = 0
+    bool-val bool = false
     arr-idx i64 = -1
     n i64 = 0
     elem-idx i64 = -1
@@ -28,7 +28,7 @@ main = () {
     p = json-pool{}
     p.init()
     root, next, ok = p.parse(json-str, 0)
-    if ok == 1 {
+    if ok {
         print('ok: parse object')
     } else {
         print('fail: parse object')
@@ -37,9 +37,9 @@ main = () {
 
     // ── 測試 2: get-key "name" → 字串 ──
     val-idx, found = p.get-key(root, 'name')
-    if found == 1 {
+    if found {
         str-val, ok = p.get-str(val-idx)
-        if ok == 1 {
+        if ok {
             print('ok: name=' - str-val)
         } else {
             print('fail: get-str name')
@@ -50,9 +50,9 @@ main = () {
 
     // ── 測試 3: get-key "age" → 數字 30 ──
     val-idx, found = p.get-key(root, 'age')
-    if found == 1 {
+    if found {
         num-val, ok = p.get-num(val-idx)
-        if ok == 1 {
+        if ok {
             // 用比較驗證，避免 f64.to-str 的 codegen bug
             if num-val == 30.0 {
                 print('ok: age=30')
@@ -68,7 +68,7 @@ main = () {
 
     // ── 測試 4: get-key "items" → 陣列 [1,2,3] ──
     arr-idx, found = p.get-key(root, 'items')
-    if found == 1 {
+    if found {
         n = p.arr-len(arr-idx)
         if n == 3 {
             print('ok: items len=3')
@@ -78,9 +78,9 @@ main = () {
         }
         // arr-get items[0] → 1
         elem-idx, ok = p.arr-get(arr-idx, 0)
-        if ok == 1 {
+        if ok {
             num-val, ok = p.get-num(elem-idx)
-            if ok == 1 {
+            if ok {
                 if num-val == 1.0 {
                     print('ok: items[0]=1')
                 } else {
@@ -98,10 +98,10 @@ main = () {
 
     // ── 測試 5: get-key "active" → true ──
     val-idx, found = p.get-key(root, 'active')
-    if found == 1 {
+    if found {
         bool-val, ok = p.get-bool(val-idx)
-        if ok == 1 {
-            if bool-val == 1 {
+        if ok {
+            if bool-val {
                 print('ok: active=true')
             } else {
                 print('fail: active should be true')
@@ -124,7 +124,7 @@ main = () {
 
     // ── 測試 7: get-key 不存在的鍵 ──
     val-idx, found = p.get-key(root, 'nonexistent')
-    if found == 0 {
+    if found == false {
         print('ok: nonexistent key not found')
     } else {
         print('fail: nonexistent key should not be found')

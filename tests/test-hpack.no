@@ -5,18 +5,15 @@ HPACK-TEST-BUF = 256
 
 // test-encode-int-small: 編碼小整數（fit in prefix）
 test-encode-int-small = () {
-    space str = ' '
-    out str = space.repeat(HPACK-TEST-BUF)
-    n i64 = 0
-    hpack-encode-int(10, 5, 0)(out, n)
+    out = hpack-encode-int(10, 5, 0)
     // 10 < 2^5 - 1 = 31，所以 out[0] = 0 | 10 = 10
     if out[0] != 10 {
         print('FAIL: expected 10, got')
         print(out[0])
         return
     }
-    if n != 1 {
-        print('FAIL: expected n=1')
+    if out.len != 1 {
+        print('FAIL: expected out.len=1')
         return
     }
     print('PASS: encode-int-small')
@@ -24,9 +21,6 @@ test-encode-int-small = () {
 
 // test-encode-int-multi: 編碼多 byte 整數
 test-encode-int-multi = () {
-    space str = ' '
-    out str = space.repeat(HPACK-TEST-BUF)
-    n i64 = 0
     // 1337 with 5-bit prefix: 1337 > 31, so multi-byte
     // First byte: 31 (all 1s in prefix)
     // 1337 - 31 = 1306
@@ -34,9 +28,9 @@ test-encode-int-multi = () {
     //   1306 & 127 = 42, 1306 >> 7 = 10
     //   10 & 127 = 10, 10 >> 7 = 0
     // So: out[0] = 31, out[1] = 42 | 128 = 170, out[2] = 10
-    hpack-encode-int(1337, 5, 0)(out, n)
-    if n != 3 {
-        print('FAIL: expected n=3')
+    out = hpack-encode-int(1337, 5, 0)
+    if out.len != 3 {
+        print('FAIL: expected out.len=3')
         return
     }
     if out[0] != 31 {
@@ -96,13 +90,10 @@ test-decode-int-multi = () {
 
 // test-encode-str: 編碼字串
 test-encode-str = () {
-    space str = ' '
-    out str = space.repeat(HPACK-TEST-BUF)
-    n i64 = 0
-    hpack-encode-str('abc')(out, n)
+    out = hpack-encode-str('abc')
     // H=0, length=3 (fits in 7-bit prefix), then 'a','b','c'
-    if n != 4 {
-        print('FAIL: expected n=4')
+    if out.len != 4 {
+        print('FAIL: expected out.len=4')
         return
     }
     if out[0] != 3 {
@@ -197,17 +188,14 @@ test-dyn-table = () {
 
 // test-encode-header-indexed: 編碼已知標頭（完全匹配→indexed）
 test-encode-header-indexed = () {
-    space str = ' '
     t hpack-tables
     t.init()
-    out str = space.repeat(HPACK-TEST-BUF)
-    n i64 = 0
-    t.encode-header(':method', 'GET')(out, n)
+    out = t.encode-header(':method', 'GET')
     // :method GET 是靜態表索引 2 → indexed representation
     // 格式: 1xxxxxxx (高 bit=1), 7-bit index = 2
     // out[0] = 128 | 2 = 130
-    if n != 1 {
-        print('FAIL: expected n=1')
+    if out.len != 1 {
+        print('FAIL: expected out.len=1')
         return
     }
     if out[0] != 130 {
@@ -224,26 +212,22 @@ test-decode-headers = () {
     t.init()
     // 編碼 :method GET → indexed (130)
     // 編碼 :path / → indexed (4)
-    enc-out str = space.repeat(HPACK-TEST-BUF)
-    enc-n i64 = 0
-    t.encode-header(':method', 'GET')(enc-out, enc-n)
+    enc-out = t.encode-header(':method', 'GET')
     // 編碼 :path /
-    enc2 str = space.repeat(HPACK-TEST-BUF)
-    enc2-n i64 = 0
-    t.encode-header(':path', '/')(enc2, enc2-n)
+    enc2 = t.encode-header(':path', '/')
     // 合併
     i = 0
-    for i < enc2-n {
-        enc-out[enc-n + i] = enc2[i]
+    for i < enc2.len {
+        enc-out[enc-out.len + i] = enc2[i]
         i = i + 1
     }
-    enc-n = enc-n + enc2-n
+    enc-out.len = enc-out.len + enc2.len
     // 解碼
     names [128]str
     values [128]str
     count i64 = 0
     ok bool = false
-    t.decode-headers(enc-out, enc-n)(names, values, count, ok)
+    t.decode-headers(enc-out)(names, values, count, ok)
     if ok == false {
         print('FAIL: decode failed')
         return

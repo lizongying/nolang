@@ -1752,7 +1752,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
 // sha256: 計算 SHA-256 雜湊（含填充與多區塊處理）
 // data []byte: 輸入位元組陣列
 // 返回 hash [32]byte: 32 位元組雜湊值
-sha256 = (data []byte, data-len i64) (hash [32]byte) {
+sha256 = (data []byte) (hash [32]byte) {
     // SHA-256 初始狀態
     h0 u32 = 1779033703
     h1 u32 = 3144134277
@@ -1763,7 +1763,7 @@ sha256 = (data []byte, data-len i64) (hash [32]byte) {
     h6 u32 = 528734635
     h7 u32 = 1541459225
 
-    dlen = data-len
+    dlen = data.len
 
     // 計算填充長度
     // 填充：0x80 + 0x00*pad + 8-byte big-endian bit length
@@ -1865,10 +1865,9 @@ sha256 = (data []byte, data-len i64) (hash [32]byte) {
 
 // sha256-hex: 計算 SHA-256 雜湊並返回 hex 字串
 // data []byte: 輸入位元組陣列
-// data-len i64: 輸入位元組長度
 // 返回 hex str: 64 字元小寫 hex 字串
-sha256-hex = (data []byte, data-len i64) (hex str) {
-    hash = sha256(data, data-len)
+sha256-hex = (data []byte) (hex str) {
+    hash = sha256(data)
 
     hex-chars = '0123456789abcdef'
     space = ' '

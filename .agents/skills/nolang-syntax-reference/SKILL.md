@@ -393,6 +393,32 @@ user.greet = () {
 }
 ```
 
+### Enums
+
+Enum definitions use the same syntax as structs, but with commas between values. Values auto-increment from 0.
+
+```nolang
+color {
+    red,
+    green,
+    blue,
+}
+```
+
+**Rule: enum values must always be referenced using qualified form `enum-type.value`, never as bare names.** This prevents naming conflicts and ensures external packages cannot use values directly without qualification.
+
+```nolang
+// ❌ Wrong: bare enum value
+kind = null
+yes = err-is(e, io)
+
+// ✅ Correct: qualified form
+kind = json-kind.null
+yes = err-is(e, err-code.io)
+```
+
+Enum types can be used as struct field types, function parameter types, and return types.
+
 ### Method Conventions
 
 Methods use `.` to reference the receiver. The receiver is not declared as a parameter.
