@@ -73,37 +73,36 @@ main = () {
     }
 
     // ── 測試 5: get-header ──
-    ct str = ''
-    ct-ok bool = false
-    r.get-header('Content-Type')(ct, ct-ok)
-    if ct-ok {
-        if ct == 'text/html' {
-            print('ok: get-header Content-Type')
-        } else {
-            print('fail: get-header Content-Type value')
-            print(ct)
+    ct = r.get-header('Content-Type')
+    ct: {
+        nil -> print('fail: get-header Content-Type not found')
+        -> {
+            if it == 'text/html' {
+                print('ok: get-header Content-Type')
+            } else {
+                print('fail: get-header Content-Type value')
+                print(it)
+            }
         }
-    } else {
-        print('fail: get-header Content-Type not found')
     }
 
-    cl str = ''
-    cl-ok bool = false
-    r.get-header('Content-Length')(cl, cl-ok)
-    if cl-ok && cl == '13' {
-        print('ok: get-header Content-Length')
-    } else {
-        print('fail: get-header Content-Length')
+    cl = r.get-header('Content-Length')
+    cl: {
+        nil -> print('fail: get-header Content-Length')
+        -> {
+            if it == '13' {
+                print('ok: get-header Content-Length')
+            } else {
+                print('fail: get-header Content-Length')
+            }
+        }
     }
 
     // 不存在的標頭
-    none str = ''
-    none-ok bool = true
-    r.get-header('X-Nonexistent')(none, none-ok)
-    if none-ok == false {
-        print('ok: get-header nonexistent returns false')
-    } else {
-        print('fail: get-header nonexistent should return false')
+    none = r.get-header('X-Nonexistent')
+    none: {
+        nil -> print('ok: get-header nonexistent returns nil')
+        -> print('fail: get-header nonexistent should return nil')
     }
 
     // ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）

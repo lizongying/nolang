@@ -712,6 +712,64 @@ x: {
 //!x.say()
 ```
 
+### 風格指引：使用 ?t option 取代 (val, ok)
+
+當函數可能失敗或返回空值時，**應優先使用 `?t` option 類型**，而非 `(val t, ok bool)` 雙返回值模式。
+
+`?t` 是標籤列舉，有三種狀態：`ok(v)`（有值）、`nil`（空值）、`err(s)`（錯誤）。當操作只是找不到值時用 `nil`，當操作遇到實際錯誤時用 `err(...)`。
+
+```nolang
+// ❌ 不推薦：雙返回值模式
+stack.pop = () (val i64, ok bool) {
+    if .n == 0 {
+        return
+    }
+    val = .data[.n]
+    ok = true
+}
+
+// ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
+stack.pop = () (val ?i64) {
+    if .n == 0 {
+        val = nil
+        return
+    }
+    val = .data[.n]
+}
+
+// ✅ 返回錯誤
+file.read = () (data ?str) {
+    if .fd < 0 {
+        data = err('file not open')
+        return
+    }
+    // ... 讀取資料
+    data = buf
+}
+```
+
+使用 match 解包 option：
+
+```nolang
+val = s.pop()
+val: {
+    nil -> println('empty')
+    err -> println(it)          // it = 錯誤訊息
+    -> println(it)              // it = 彈出的值
+}
+```
+
+**適用場景：**
+- `pop` / `peek` 等可能為空的容器操作 → `?t`（`nil` = 空）
+- `read-line` / `read-byte` 等 I/O 操作 → `?str` / `?i64`（`nil` = EOF，`err` = 錯誤）
+- `lookup` / `get` 等查找操作 → `?t`（`nil` = 未找到）
+- `parse` / `from-str` 等解析操作 → `?t`（`nil` = 空，`err` = 無效輸入）
+- `accept` / `dial` 等網路連接 → `?conn`（`nil` = 無連接，`err` = 錯誤）
+
+**nil vs err：** 當缺失是正常/預期的結果（空堆疊、鍵不存在、EOF）時用 `nil`；當缺失代表實際的錯誤狀態（I/O 失敗、輸入無效、連接被拒）時用 `err('msg')`。
+
+**例外：** 當函數需要返回多個獨立值（如 `(name str, value str, ok bool)`）時，可保留多返回值模式。
+
 ### 泛形
 
 ```nolang

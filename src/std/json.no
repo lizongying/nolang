@@ -5,7 +5,7 @@
 // 用法：
 //   p = json-pool{}
 //   p.init()
-//   root, next, ok = p.parse('{"name":"Alice","age":30}', 0)
+//   root, next = p.parse('{"name":"Alice","age":30}', 0)  // next=-1 表示失敗
 //   if ok == 1 {
 //       val-idx, found = p.get-key(root, 'name')
 //       if found == 1 {

@@ -11,7 +11,7 @@
 //   t = hpack-tables{}
 //   t.init()
 //   out, n = t.encode-header(':method', 'GET')
-//   names, values, cnt, ok = t.decode-headers(data, n)
+//   names, values, cnt = t.decode-headers(data, n)  // cnt=-1 表示失敗
 
 // ═══════════════════════════════════════════════
 // 常量

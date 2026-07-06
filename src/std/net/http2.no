@@ -4,8 +4,8 @@
 // 不支援 Upgrade 協商，直接送出 preface。
 //
 // 用法：
-//   conn, ok = http2-connect(host, port)
-//   resp, ok = http2-do('GET', 'http://host/path', '')
+//   conn = http2-connect(host, port)            // 返回 ?http2-conn
+//   resp = http2-do('GET', 'http://host/path', '')  // 返回 ?http-response
 
 # std/net/tls
 

@@ -11,13 +11,13 @@
 //   c.close()
 //
 //   // 請求-回應模式
-//   response, ok = c.request('PING')
+//   response = c.request('PING')              // 返回 ?str
 //
 //   // 重連
 //   ok = c.reconnect()
 //
 //   // 便捷函數
-//   c, ok = net-client('127.0.0.1', 8080)
+//   c = net-client('127.0.0.1', 8080)          // 返回 ?client
 
 // ═══════════════════════════════════════════════
 // client 結構體
@@ -90,20 +90,20 @@ client.recv = (buf str, n i64) (read-n i64) {
 }
 
 // recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
-// 返回 line=接收的字串, ok=true=成功
-client.recv-line = () (line str, ok bool) {
-    ok = false
+// 返回 line ?str: ok(s)=接收內容, nil=失敗或連接關閉
+client.recv-line = () (line ?str) {
+    line = nil
     if .connected == false {
         return
     }
-    .c.recv-line()(line, ok)
+    line = .c.recv-line()
 }
 
 // request: 請求-回應模式
 // 發送資料後接收全部回應直到連接關閉
-// 返回 response=回應內容, ok=true=成功
-client.request = (data str) (response str, ok bool) {
-    ok = false
+// 返回 response ?str: ok(s)=回應內容, nil=失敗
+client.request = (data str) (response ?str) {
+    response = nil
     if .connected == false {
         return
     }
@@ -111,8 +111,10 @@ client.request = (data str) (response str, ok bool) {
     if written < 0 {
         return
     }
-    .c.recv-all()(response, total)
-    ok = true
+    s str = ' '.repeat(NET-BUF-SIZE)
+    total i64 = 0
+    .c.recv-all()(s, total)
+    response = s
 }
 
 // send-line: 發送一行（附加換行符 \n）
@@ -146,9 +148,13 @@ client.close = () {
 // ═══════════════════════════════════════════════
 
 // net-client: 建立客戶端並連接
-// 返回 c=客戶端, ok=true=成功
-net-client = (host str, port i64) (c client, ok bool) {
-    ok = false
-    c = client{}
-    c.connect(host, port)(ok)
+// 返回 c ?client: ok(v)=客戶端, nil=失敗
+net-client = (host str, port i64) (c ?client) {
+    c = nil
+    cl = client{}
+    ok bool = false
+    cl.connect(host, port)(ok)
+    if ok {
+        c = cl
+    }
 }

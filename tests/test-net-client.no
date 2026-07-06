@@ -48,11 +48,10 @@ main = () {
     } else {
         print('fail: send-line')
     }
-    c.recv-line()(line, line-ok)
-    if line-ok {
-        print('ok: recv-line')
-    } else {
-        print('fail: recv-line')
+    line = c.recv-line()
+    line: {
+        nil -> print('fail: recv-line')
+        -> print('ok: recv-line')
     }
 
     // 測試 5: close
@@ -73,12 +72,13 @@ main = () {
     }
 
     // 測試 7: 便捷函數 net-client
-    net-client('127.0.0.1', 8080)(c2, nc-ok)
-    if nc-ok {
-        print('ok: net-client')
-        c2.close()
-    } else {
-        print('fail: net-client')
+    c2 = net-client('127.0.0.1', 8080)
+    c2: {
+        nil -> print('fail: net-client')
+        -> {
+            print('ok: net-client')
+            c2.close()
+        }
     }
 
     print('ok: all tests done')

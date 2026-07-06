@@ -46,24 +46,6 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     r22 u32 = ((a >> 22) | (a << 10)) & mask
     s0 u32 = r2 ^ r13 ^ r22
     maj u32 = (a & b) ^ (a & c) ^ (b & c)
-    print('mask=')
-    print(mask)
-    print('a=')
-    print(a)
-    print('a>>13=')
-    print(a >> 13)
-    print('a<<19=')
-    print(a << 19)
-    print('r0 r2=')
-    print(r2)
-    print('r0 r13=')
-    print(r13)
-    print('r0 r22=')
-    print(r22)
-    print('r0 s0=')
-    print(s0)
-    print('r0 maj=')
-    print(maj)
     t1 u32 = (h + s1 + ch + 1116352408 + s[0]) & mask
     t2 u32 = (s0 + maj) & mask
     h = g
@@ -74,15 +56,6 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
-
-    print('round0 a=')
-    print(a)
-    print('round0 e=')
-    print(e)
-    print('round0 t1=')
-    print(t1)
-    print('round0 t2=')
-    print(t2)
 
     // 第 1 輪 (K = 0x71374491 = 1899447441)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -919,6 +892,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round16 a=')
+    print(a)
+    print('round16 e=')
+    print(e)
+    print('round16 t1=')
+    print(t1)
+    print('round16 t2=')
+    print(t2)
+    print('round16 w16=')
+    print(w16)
+
     // 第 17 輪 (K = 0xEFBE4786 = 4022224774)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -936,6 +920,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round17 a=')
+    print(a)
+    print('round17 e=')
+    print(e)
+    print('round17 t1=')
+    print(t1)
+    print('round17 t2=')
+    print(t2)
+    print('round17 w17=')
+    print(w17)
 
     // 第 18 輪 (K = 0x0FC19DC6 = 264347078)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -990,6 +985,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round20 a=')
+    print(a)
+    print('round20 e=')
+    print(e)
+    print('round20 t1=')
+    print(t1)
+    print('round20 t2=')
+    print(t2)
+    print('round20 w20=')
+    print(w20)
 
     // 第 21 輪 (K = 0x4A7484AA = 1249150122)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -1063,6 +1069,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round24 a=')
+    print(a)
+    print('round24 e=')
+    print(e)
+    print('round24 t1=')
+    print(t1)
+    print('round24 t2=')
+    print(t2)
+    print('round24 w24=')
+    print(w24)
+
     // 第 25 輪 (K = 0xA831C66D = 2821834349)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -1117,6 +1134,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round27 a=')
+    print(a)
+    print('round27 e=')
+    print(e)
+    print('round27 t1=')
+    print(t1)
+    print('round27 t2=')
+    print(t2)
+    print('round27 w27=')
+    print(w27)
+
     // 第 28 輪 (K = 0xC6E00BF3 = 3336571891)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -1135,14 +1163,25 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
-    // 第 29 輪 (K = 0xD5A79147 = 3584524711)
+    print('round28 a=')
+    print(a)
+    print('round28 e=')
+    print(e)
+    print('round28 t1=')
+    print(t1)
+    print('round28 t2=')
+    print(t2)
+    print('round28 w28=')
+    print(w28)
+
+    // 第 29 輪 (K = 0xD5A79147 = 3584528711)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
     ch = (e & f) ^ ((mask ^ e) & g)
     s0 = ((a >> 2) | (a << 30)) & mask
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
-    t1 = (h + s1 + ch + 3584524711 + w29) & mask
+    t1 = (h + s1 + ch + 3584528711 + w29) & mask
     t2 = (s0 + maj) & mask
     h = g
     g = f
@@ -1152,6 +1191,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round29 a=')
+    print(a)
+    print('round29 e=')
+    print(e)
+    print('round29 t1=')
+    print(t1)
+    print('round29 t2=')
+    print(t2)
+    print('round29 w29=')
+    print(w29)
 
     // 第 30 輪 (K = 0x06CA6351 = 113926993)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -1171,6 +1221,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round30 a=')
+    print(a)
+    print('round30 e=')
+    print(e)
+    print('round30 t1=')
+    print(t1)
+    print('round30 t2=')
+    print(t2)
+    print('round30 w30=')
+    print(w30)
+
     // 第 31 輪 (K = 0x14292967 = 338241895)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -1189,6 +1250,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round31 a=')
+    print(a)
+    print('round31 e=')
+    print(e)
+    print('round31 t1=')
+    print(t1)
+    print('round31 t2=')
+    print(t2)
+    print('round31 w31=')
+    print(w31)
+
     // 第 32 輪 (K = 0x27B70A85 = 666307205)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -1206,6 +1278,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round32 a=')
+    print(a)
+    print('round32 e=')
+    print(e)
+    print('round32 t1=')
+    print(t1)
+    print('round32 t2=')
+    print(t2)
+    print('round32 w32=')
+    print(w32)
 
     // 第 33 輪 (K = 0x2E1B2138 = 773529912)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -1459,6 +1542,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     b = a
     a = (t1 + t2) & mask
 
+    print('round46 a=')
+    print(a)
+    print('round46 e=')
+    print(e)
+    print('round46 t1=')
+    print(t1)
+    print('round46 t2=')
+    print(t2)
+    print('round46 w46=')
+    print(w46)
+
     // 第 47 輪 (K = 0x106AA070 = 275423344)
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
@@ -1476,6 +1570,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round47 a=')
+    print(a)
+    print('round47 e=')
+    print(e)
+    print('round47 t1=')
+    print(t1)
+    print('round47 t2=')
+    print(t2)
+    print('round47 w47=')
+    print(w47)
 
     // 第 48 輪 (K = 0x19A4C116 = 430227734)
     s1 = ((e >> 6) | (e << 26)) & mask
@@ -1764,6 +1869,17 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     c = b
     b = a
     a = (t1 + t2) & mask
+
+    print('round63 a=')
+    print(a)
+    print('round63 e=')
+    print(e)
+    print('round63 t1=')
+    print(t1)
+    print('round63 t2=')
+    print(t2)
+    print('round63 w63=')
+    print(w63)
 
     // 累加回初始哈希值
     h0 = (h0 + a) & mask

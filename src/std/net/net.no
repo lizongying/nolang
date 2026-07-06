@@ -5,24 +5,21 @@
 //
 // 用法：
 //   // TCP 服務端
-//   l = listener{}
-//   ok = l.listen('127.0.0.1', 8080)
-//   c, ok = l.accept()
+//   l = net-listen-on('127.0.0.1', 8080)         // 返回 ?listener
+//   l: {
+//       nil -> return
+//       -> c = l.accept()                      // 返回 ?conn
+//   }
 //   n = c.recv(buf, 1024)
 //   n = c.send('hello')
 //   c.close()
 //   l.close()
 //
 //   // TCP 客戶端
-//   c = conn{}
-//   ok = c.dial('127.0.0.1', 8080)
+//   c = net-dial-to('127.0.0.1', 8080)           // 返回 ?conn
 //   n = c.send('hello')
 //   n = c.recv(buf, 1024)
 //   c.close()
-//
-//   // 便捷函數
-//   l, ok = net-listen-on('127.0.0.1', 8080)
-//   c, ok = net-dial-to('127.0.0.1', 8080)
 
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作）
@@ -107,9 +104,9 @@ listener.listen = (host str, port i64) (ok bool) {
 }
 
 // accept: 接受新的 TCP 連接
-// 返回 c=連接結構體, ok=true=成功
-listener.accept = () (c conn, ok bool) {
-    ok = false
+// 返回 c ?conn: ok(v)=連接結構體, nil=失敗
+listener.accept = () (c ?conn) {
+    c = nil
     if .fd < 0 {
         return
     }
@@ -117,8 +114,9 @@ listener.accept = () (c conn, ok bool) {
     if fd < 0 {
         return
     }
-    c.fd = fd
-    ok = true
+    c = conn{
+        fd: fd
+    }
 }
 
 // close: 關閉監聽 socket
@@ -183,14 +181,17 @@ conn.recv = (buf str, n i64) (read-n i64) {
 }
 
 // recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
-// 返回 line=接收的字串, ok=true=成功
-conn.recv-line = () (line str, ok bool) {
-    ok = false
+// 返回 line ?str: ok(s)=接收內容, nil=失敗或連接關閉
+conn.recv-line = () (line ?str) {
+    line = nil
     if .fd < 0 {
         return
     }
-    n = net-recv(.fd, line, NET-BUF-SIZE)
-    ok = n > 0
+    buf str = ' '.repeat(NET-BUF-SIZE)
+    n = net-recv(.fd, buf, NET-BUF-SIZE)
+    if n > 0 {
+        line = buf
+    }
 }
 
 // recv-all: 接收全部資料直到連接關閉
@@ -227,17 +228,25 @@ conn.fd-of = () (fd i64) {
 // ═══════════════════════════════════════════════
 
 // net-listen-on: 建立監聽器並開始監聽
-// 返回 l=監聽器, ok=true=成功
-net-listen-on = (host str, port i64) (l listener, ok bool) {
-    ok = false
-    l = listener{}
-    l.listen(host, port)(ok)
+// 返回 l ?listener: ok(v)=監聽器, nil=失敗
+net-listen-on = (host str, port i64) (l ?listener) {
+    l = nil
+    lst = listener{}
+    ok bool = false
+    lst.listen(host, port)(ok)
+    if ok {
+        l = lst
+    }
 }
 
 // net-dial-to: 建立連接並撥號
-// 返回 c=連接, ok=true=成功
-net-dial-to = (host str, port i64) (c conn, ok bool) {
-    ok = false
-    c = conn{}
-    c.dial(host, port)(ok)
+// 返回 c ?conn: ok(v)=連接, nil=失敗
+net-dial-to = (host str, port i64) (c ?conn) {
+    c = nil
+    cn = conn{}
+    ok bool = false
+    cn.dial(host, port)(ok)
+    if ok {
+        c = cn
+    }
 }

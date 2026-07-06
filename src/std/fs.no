@@ -14,7 +14,7 @@
 //   f.write('hello', 5)                     // 方法呼叫
 //   f.close()
 //
-//   line, ok = stdin.read-line()             // 從標準輸入讀取一行
+//   line = stdin.read-line()              // 從標準輸入讀取一行，返回 ?str
 //   n = stdout.write('hello', 5)             // 寫入標準輸出
 //   n = stderr.write('error', 5)             // 寫入標準錯誤
 //
@@ -49,12 +49,12 @@
 
 // build-in (ForwardFunc: stat-size)
 // stat-size: 取得檔案大小
-// stat-size = (p str) (size i64, ok bool) {  // LLVM: call @stat → st-size
+// stat-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
 // }
 
 // build-in (ForwardFunc: stat-size)
 // file-size: 取得檔案大小（同 stat-size）
-// file-size = (p str) (size i64, ok bool) {  // LLVM: call @stat → st-size
+// file-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
 // }
 
 // ═══════════════════════════════════════════════
@@ -97,7 +97,7 @@
 
 // build-in (ForwardFunc: read-stdin-line)
 // get-line: 從標準輸入讀取一行
-// get-line = () (line str, ok bool) {  // LLVM: call i8* @fgets(buf, size, stdin)
+// get-line = () (line ?str) {  // LLVM: call i8* @fgets(buf, size, stdin)
 // }
 
 // macOS open() 旗標常量
@@ -239,12 +239,17 @@ file.read = (buf str, n i64) (read-n i64) {
 }
 
 // read-line: 從檔案讀取一行（最多 4096 位元組）
-file.read-line = () (line str, ok bool) {
+// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+file.read-line = () (line ?str) {
+    line = nil
     if .fd < 0 {
         return
     }
-    n = read(.fd, line, 4096)
-    ok = n > 0
+    buf str = ' '.repeat(4096)
+    n = read(.fd, buf, 4096)
+    if n > 0 {
+        line = buf
+    }
 }
 
 // write: 將 data 的前 n 位元組寫入檔案

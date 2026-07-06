@@ -8,7 +8,7 @@
 //   r = io-reader{
 //       src: stdin
 //   }
-//   line, ok = r.read-line()
+//   line = r.read-line()
 //
 //   w = io-writer{
 //       dst: stdout
@@ -32,7 +32,7 @@
 
 // build-in (ForwardFunc: read-stdin-line)
 // get-line: 從標準輸入讀取一行
-// get-line = () (line str, ok bool) { }
+// get-line = () (line ?str) { }
 
 // ═══════════════════════════════════════════════
 // 標準檔案描述符
@@ -73,10 +73,9 @@ io-reader.read = (buf str, n i64) (read-n i64) {
 }
 
 // read-byte: 讀取一個位元組
-// 返回 byte 值與 ok 旗標
-io-reader.read-byte = () (b i64, ok bool) {
-    b = 0
-    ok = false
+// 返回 b ?i64: ok(v)=位元組值, nil=EOF 或錯誤
+io-reader.read-byte = () (b ?i64) {
+    b = nil
     if .fd < 0 {
         return
     }
@@ -84,19 +83,21 @@ io-reader.read-byte = () (b i64, ok bool) {
     n = read(.fd, buf, 1)
     if n > 0 {
         b = buf[0] & 255
-        ok = true
     }
 }
 
 // read-line: 讀取一行（最多 4096 位元組）
-// 返回讀取的字串與 ok 旗標
-io-reader.read-line = () (line str, ok bool) {
-    ok = false
+// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+io-reader.read-line = () (line ?str) {
+    line = nil
     if .fd < 0 {
         return
     }
-    n = read(.fd, line, 4096)
-    ok = n > 0
+    buf str = ' '.repeat(4096)
+    n = read(.fd, buf, 4096)
+    if n > 0 {
+        line = buf
+    }
 }
 
 // read-all: 讀取全部內容到 buf（最多 size 位元組）
@@ -210,6 +211,13 @@ io-errln = (s str) (n i64) {
 }
 
 // io-read-line: 從標準輸入讀取一行
-io-read-line = () (line str, ok bool) {
-    get-line()(line, ok)
+// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+io-read-line = () (line ?str) {
+    line = nil
+    s str = ''
+    ok bool = false
+    get-line()(s, ok)
+    if ok {
+        line = s
+    }
 }

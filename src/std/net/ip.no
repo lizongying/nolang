@@ -140,9 +140,15 @@ ip-addr.parse = (s str) (ok bool) {
 }
 
 // from-str: 從字串建立 ip-addr（靜態函數）
-// 返回 addr=解析結果, ok=true=成功
-ip-addr.from-str = (s str) (addr ip-addr, ok bool) {
-    addr.parse(s)(ok)
+// 返回 addr ?ip-addr: ok(v)=解析結果, nil=解析失敗
+ip-addr.from-str = (s str) (addr ?ip-addr) {
+    addr = nil
+    a = ip-addr{}
+    ok bool = false
+    a.parse(s)(ok)
+    if ok {
+        addr = a
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -393,10 +399,15 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 // ═══════════════════════════════════════════════
 
 // ip-parse: 快速解析 IP 字串
-// 返回 addr=解析結果, ok=true=成功
-ip-parse = (s str) (addr ip-addr, ok bool) {
-    addr = ip-addr{}
-    addr.parse(s)(ok)
+// 返回 addr ?ip-addr: ok(v)=解析結果, nil=解析失敗
+ip-parse = (s str) (addr ?ip-addr) {
+    addr = nil
+    a = ip-addr{}
+    ok bool = false
+    a.parse(s)(ok)
+    if ok {
+        addr = a
+    }
 }
 
 // ip-is-loopback: 快速判斷字串是否為環回地址

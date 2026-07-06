@@ -5,24 +5,25 @@
 // 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
 //
 // 用法：
-//   resp, ok = http-get('http://example.com/path')
-//   if ok {
-//       print(resp.status-code)
-//       print(resp.body)
-//       ct, found = resp.get-header('Content-Type')
+//   resp = http-get('http://example.com/path')   // 返回 ?http-response
+//   resp: {
+//       nil -> println('request failed')
+//       -> print(resp.status-code)
+//         print(resp.body)
+//         ct = resp.get-header('Content-Type')  // 返回 ?str
 //   }
 //
-//   resp, ok = http-post('http://example.com/api', '{"key":"value"}')
+//   resp = http-post('http://example.com/api', '{"key":"value"}')
 //
 //   // 一般請求
-//   resp, ok = http-do('PUT', 'http://example.com/item', 'data')
+//   resp = http-do('PUT', 'http://example.com/item', 'data')
 //
 //   // 自訂請求（含標頭）
 //   req = http-request{}
 //   req.init('PUT', 'http://example.com/item', 'data')
 //   req.add-header('Content-Type', 'application/json')
 //   req.add-header('Authorization', 'Bearer token123')
-//   resp, ok = http-do-req(req)
+//   resp = http-do-req(req)
 
 # std/net/tls
 
@@ -204,9 +205,9 @@ http-response.parse-headers = () {
 
 // get-header: 取得指定標頭值（線性搜尋）
 // name: 標頭名（如 'Content-Type'）
-// 返回 val=標頭值, ok=true=找到
-http-response.get-header = (name str) (val str, ok bool) {
-    ok = false
+// 返回 val ?str: ok(s)=標頭值, nil=未找到
+http-response.get-header = (name str) (val ?str) {
+    val = nil
     cnt = .header-count
     i = 0
     for i < cnt {
@@ -229,7 +230,6 @@ http-response.get-header = (name str) (val str, ok bool) {
             // 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
             vlen = .header-values[i].len
             val = .header-values[i].slice(0, vlen)
-            ok = true
             return
         }
         i = i + 1

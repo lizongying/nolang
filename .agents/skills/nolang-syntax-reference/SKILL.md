@@ -144,6 +144,7 @@ Common standard library replacements:
 - **No return value** — all data interaction via parameter modification
 - **All parameters are reference types**
 - Parameters with result annotation are writable output params
+- **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
 
 ```nolang
 add = (a i64, b i64) (result i64) {
@@ -151,6 +152,61 @@ add = (a i64, b i64) (result i64) {
     ...
 }
 ```
+
+#### Option Style: Prefer `?t` over `(val, ok)`
+
+When a function may fail or return empty, **use `?t` option type** instead of `(val t, ok bool)` dual-return. This is the idiomatic Nolang style.
+
+`?t` is a tagged enum with three states: `ok(v)` (has value), `nil` (empty), and `err(s)` (error). Use `nil` when the operation simply found nothing, and `err(...)` when the operation encountered an actual error.
+
+```nolang
+// ❌ Wrong: dual-return pattern
+stack.pop = () (val i64, ok bool) {
+    if .n == 0 { return }
+    val = .data[.n]
+    ok = true
+}
+
+// ✅ Correct: option type (nil for empty, err for errors)
+stack.pop = () (val ?i64) {
+    if .n == 0 {
+        val = nil
+        return
+    }
+    val = .data[.n]
+}
+
+// ✅ Returning an error
+file.read = () (data ?str) {
+    if .fd < 0 {
+        data = err('file not open')
+        return
+    }
+    // ... read data
+    data = buf
+}
+```
+
+Unwrap with match:
+```nolang
+val = s.pop()
+val: {
+    nil -> println('empty')
+    err -> println(it)          // it = error message
+    -> println(it)              // it = the value
+}
+```
+
+**Applicable scenarios:**
+- `pop` / `peek` (container may be empty) → `?t` (`nil` = empty)
+- `read-line` / `read-byte` (I/O may fail) → `?str` / `?i64` (`nil` = EOF, `err` = error)
+- `lookup` / `get` (key may not exist) → `?t` (`nil` = not found)
+- `parse` / `from-str` (input may be invalid) → `?t` (`nil` = empty, `err` = invalid input)
+- `accept` / `dial` (connection may fail) → `?conn` (`nil` = no connection, `err` = error)
+
+**nil vs err:** use `nil` when the absence is a normal/expected outcome (empty stack, key not found, EOF); use `err('msg')` when the absence represents an actual error condition (I/O failure, invalid input, connection refused).
+
+**Exception:** when a function needs to return multiple independent values (e.g. `(name str, value str, ok bool)`), the multi-return pattern is acceptable.
 
 ### Methods on Union Types
 

@@ -7,11 +7,12 @@
 // 加密原語使用 std/hash 下的 AES-128, SHA-256, RSA, HMAC-SHA256, X.509
 //
 // 用法：
-//   conn, ok = tls-dial('example.com', 443)
-//   if ok {
-//       conn.send(data, data.len)(written, ok)
-//       conn.recv(buf, 4096)(n, ok)
-//       conn.close()
+//   conn = tls-dial('example.com', 443)         // 返回 ?tls-conn
+//   conn: {
+//       nil -> return
+//       -> conn.send(data, data.len)(written, ok)
+//         conn.recv(buf, 4096)(n, ok)
+//         conn.close()
 //   }
 
 # std/hash/sha256

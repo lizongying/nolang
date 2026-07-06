@@ -8,7 +8,11 @@
 //   s = stack { data: buf, n: 0 }
 //   s.push(42)
 //   s.push(7)
-//   val, ok = s.pop()    // val=7, ok=true
+//   val = s.pop()    // val=ok(7)（後入先出）
+//   val: {
+//       nil -> println('empty')
+//       -> println(it)
+//   }
 
 // stack: 堆疊
 // data: 底層儲存切片
@@ -25,24 +29,24 @@ stack.push = (val i64) {
 }
 
 // pop: 從堆疊頂端彈出元素
-// 返回 val=元素值, ok=true=堆疊非空
-stack.pop = () (val i64, ok bool) {
+// 返回 val ?i64: ok(v)=彈出值, nil=堆疊為空
+stack.pop = () (val ?i64) {
     if .n == 0 {
+        val = nil
         return
     }
     .n = .n - 1
     val = .data[.n]
-    ok = true
 }
 
 // peek: 查看堆疊頂端元素（不移除）
-// 返回 val=元素值, ok=true=堆疊非空
-stack.peek = () (val i64, ok bool) {
+// 返回 val ?i64: ok(v)=頂端值, nil=堆疊為空
+stack.peek = () (val ?i64) {
     if .n == 0 {
+        val = nil
         return
     }
     val = .data[.n - 1]
-    ok = true
 }
 
 // size: 返回堆疊大小

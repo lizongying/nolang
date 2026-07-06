@@ -2299,6 +2299,16 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		}
 		if innerType == "double" {
 			copyF64ToData(val)
+		} else if strings.HasPrefix(innerType, "%") {
+			// Struct types (e.g. %str-long, %client, %conn): bitcast
+			// option data field to the struct pointer and store the value
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%opt.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataPtr := fmt.Sprintf("%%opt.data.ptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast [16 x i8]* %s to %s*\n", g.indent(), dataPtr, dataGEP, innerType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), innerType, val, innerType, dataPtr))
 		} else {
 			// All integer types (i8/u8/i16/u16/i32/u32/i64/u64/bool) stored as i64
 			copyI64ToData(val)

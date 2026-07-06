@@ -50,6 +50,8 @@ x { val-> f(.); nil->; err-> g(.) }  // match
 !x                  // 強制解包（panic if nil/err）
 ```
 
+**風格指引：** 函數可能失敗或返回空值時，應使用 `?t` option 而非 `(val, ok bool)`。`?t` 有三種狀態：`ok(v)`（有值）、`nil`（空值/正常缺失）、`err(s)`（錯誤）。例如 `pop()` 返回 `?i64`（`nil` = 空）、`read-line()` 返回 `?str`（`nil` = EOF，`err` = 錯誤）、`lookup()` 返回 `?str`（`nil` = 未找到）。詳見語法文檔。
+
 ---
 
 ## 核心函式庫

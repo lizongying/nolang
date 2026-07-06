@@ -8,7 +8,7 @@
 //   h = heap-init(data)
 //   h.push(42)
 //   h.push(7)
-//   val, ok = h.pop()
+//   val = h.pop()
 
 // heap: 二元堆積
 heap {
@@ -40,13 +40,13 @@ heap.push = (val i64) {
 }
 
 // pop: 從堆積彈出最小元素
-// 返回 val=元素值, ok=true=堆積非空
-heap.pop = () (val i64, ok bool) {
+// 返回 val ?i64: ok(v)=最小值, nil=堆積為空
+heap.pop = () (val ?i64) {
     if .n == 0 {
+        val = nil
         return
     }
     val = .data[0]
-    ok = true
     .n = .n - 1
     .data[0] = .data[.n]
     i = 0
@@ -71,12 +71,13 @@ heap.pop = () (val i64, ok bool) {
 }
 
 // peek: 查看最小元素（不移除）
-heap.peek = () (val i64, ok bool) {
+// 返回 val ?i64: ok(v)=最小值, nil=堆積為空
+heap.peek = () (val ?i64) {
     if .n == 0 {
+        val = nil
         return
     }
     val = .data[0]
-    ok = true
 }
 
 // size: 返回堆積大小
