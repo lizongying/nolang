@@ -5,11 +5,15 @@
 // 底層使用 C 標準庫 regex.h 實作。
 //
 // 用法示例：
-//   re = regexp{ pattern: '^hello' }
+//   re = regexp{
+//       pattern: '^hello'
+//   }
 //   matched = re.matches('hello world')
 //   // matched = true
 //
-//   re = regexp{ pattern: '\\d+' }
+//   re = regexp{
+//       pattern: '\\d+'
+//   }
 //   match = re.find('price: 123')
 //   // match = '123'
 

@@ -309,6 +309,8 @@ i <- [0..10): {
 
 ### Structs & Methods
 
+Struct definitions and literals must always use multi-line form. Each field occupies its own line. Fields are not separated by commas, and there is no trailing comma.
+
 ```nolang
 user {
     name str

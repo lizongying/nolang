@@ -14,7 +14,12 @@
 //   }
 //
 //   // 從 4 個 octet 建立
-//   ip = ip-addr{ a: 192, b: 168, c: 1, d: 1 }
+//   ip = ip-addr{
+//       a: 192
+//       b: 168
+//       c: 1
+//       d: 1
+//   }
 //
 //   // 特殊地址常量
 //   ip = IP-ZERO      // 0.0.0.0
@@ -25,16 +30,36 @@
 // ═══════════════════════════════════════════════
 
 // IP-ZERO: 0.0.0.0
-IP-ZERO = ip-addr{ a: 0, b: 0, c: 0, d: 0 }
+IP-ZERO = ip-addr{
+    a: 0
+    b: 0
+    c: 0
+    d: 0
+}
 
 // IP-LOOPBACK: 127.0.0.1
-IP-LOOPBACK = ip-addr{ a: 127, b: 0, c: 0, d: 1 }
+IP-LOOPBACK = ip-addr{
+    a: 127
+    b: 0
+    c: 0
+    d: 1
+}
 
 // IP-ANY: 0.0.0.0（同 IP-ZERO，語義化命名）
-IP-ANY = ip-addr{ a: 0, b: 0, c: 0, d: 0 }
+IP-ANY = ip-addr{
+    a: 0
+    b: 0
+    c: 0
+    d: 0
+}
 
 // IP-BROADCAST: 255.255.255.255
-IP-BROADCAST = ip-addr{ a: 255, b: 255, c: 255, d: 255 }
+IP-BROADCAST = ip-addr{
+    a: 255
+    b: 255
+    c: 255
+    d: 255
+}
 
 // ═══════════════════════════════════════════════
 // ip-addr 結構體

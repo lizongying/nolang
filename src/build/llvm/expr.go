@@ -2490,9 +2490,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
 			}
-			// 當元素型別小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
-			// 這與 %arr 路徑的處理保持一致。
-			if llvmElemType != "i64" {
+			// 當元素型別為整數且小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
+			// 注意：struct 型別（如 %str-long）不應 zext。
+			if llvmElemType == "i1" || llvmElemType == "i8" || llvmElemType == "i16" || llvmElemType == "i32" {
 				g.tmpIdx++
 				zextReg := fmt.Sprintf("%%vec.idx.zext.%d", g.tmpIdx)
 				if sb != nil {
@@ -2500,6 +2500,30 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 						g.indent(), zextReg, llvmElemType, elemLoad))
 				}
 				return zextReg
+			}
+			// float（32-bit）→ i64：先 bitcast 至 i32 再 zext 至 i64
+			if llvmElemType == "float" {
+				g.tmpIdx++
+				bcReg := fmt.Sprintf("%%vec.idx.bc.%d", g.tmpIdx)
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%vec.idx.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast float %s to i32\n",
+						g.indent(), bcReg, elemLoad))
+					sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n",
+						g.indent(), zextReg, bcReg))
+				}
+				return zextReg
+			}
+			// double（64-bit）→ i64：直接 bitcast
+			if llvmElemType == "double" {
+				g.tmpIdx++
+				bcReg := fmt.Sprintf("%%vec.idx.bc.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast double %s to i64\n",
+						g.indent(), bcReg, elemLoad))
+				}
+				return bcReg
 			}
 			return elemLoad
 		}

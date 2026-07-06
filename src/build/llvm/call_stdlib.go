@@ -161,59 +161,42 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				if strings.HasPrefix(v, "i8*") {
 					fmtSpec = "%s"
 				} else if strings.HasPrefix(v, "%") {
-					// Check variable type: double, bool, or default i64
-					isDouble := false
-					isBool := false
-					isNarrow := false
+					// Determine expression's source LLVM type so we can correctly
+					// sext/zext narrow integers / i1 to i64 (printf %lld expects i64),
+					// and emit %g for double. Identifier path uses varTypes (handles
+					// %option inner type); other expressions use intExprLLVMType.
+					srcType := "i64"
 					if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
 						if t, ok := g.varTypes[ident.Value]; ok {
-							if t == "double" {
-								isDouble = true
-							}
-							if t == "i1" {
-								isBool = true
-							}
-							if t == "i8" || t == "i16" || t == "i32" {
-								isNarrow = true
-							}
-							// Option variable: check inner type for double
+							srcType = t
 							if t == "%option" && g.optionInnerTypes != nil {
-								if it, ok := g.optionInnerTypes[ident.Value]; ok && it == "double" {
-									isDouble = true
+								if it, ok := g.optionInnerTypes[ident.Value]; ok {
+									srcType = it
 								}
 							}
 						}
+					} else {
+						t := g.intExprLLVMType(arg)
+						if t != "" {
+							srcType = t
+						}
 					}
-					if isDouble {
+					switch srcType {
+					case "double":
 						fmtSpec = "%g"
-					} else if isBool {
-						// zext i1 to i64 for printf
+					case "i1":
 						g.tmpIdx++
 						zextReg := fmt.Sprintf("%%print.zext.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, v))
 						v = zextReg
 						fmtSpec = "%lld"
-					} else if isNarrow {
-						// sign-extend i8/i16/i32 to i64 for printf (Nolang 中 i8/i16/i32 為有符號)
-						if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
-							if t, ok := g.varTypes[ident.Value]; ok {
-								// For option variables, use inner type for sext
-								sextType := t
-								if t == "%option" && g.optionInnerTypes != nil {
-									if it, ok := g.optionInnerTypes[ident.Value]; ok {
-										sextType = it
-									}
-								}
-								if sextType != "%option" {
-									g.tmpIdx++
-									extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
-									sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, sextType, v))
-									v = extReg
-								}
-							}
-						}
+					case "i8", "i16", "i32":
+						g.tmpIdx++
+						extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, srcType, v))
+						v = extReg
 						fmtSpec = "%lld"
-					} else {
+					default:
 						fmtSpec = "%lld"
 					}
 				} else if strings.Contains(v, ".") {

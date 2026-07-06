@@ -283,9 +283,18 @@ arg(idx)(val)
 file { fd i64, path str }
 
 // 標準檔案
-stdin = file{ fd: 0, path: '<stdin>' }
-stdout = file{ fd: 1, path: '<stdout>' }
-stderr = file{ fd: 2, path: '<stderr>' }
+stdin = file{
+    fd: 0
+    path: '<stdin>'
+}
+stdout = file{
+    fd: 1
+    path: '<stdout>'
+}
+stderr = file{
+    fd: 2
+    path: '<stderr>'
+}
 
 // 開啟檔案（帶選項）
 file-mode { read, write, append, read-write }
@@ -360,7 +369,9 @@ DOT = 46     // '.'
 path { p str }
 
 // 路徑拼接與分解（原地修改 .p）
-p = path{ p: '/a/b/c.txt' }
+p = path{
+    p: '/a/b/c.txt'
+}
 p.join(b str)           // 拼接兩個路徑（原地修改）
 p.base() (out)           // 取檔名
 p.dir()                  // 取目錄（原地修改 .p）
@@ -439,7 +450,9 @@ io-read-line()(line, ok)        // 從 stdin 讀取一行
 regexp { pattern str }
 
 // 方法
-re = regexp{ pattern: '^hello' }
+re = regexp{
+    pattern: '^hello'
+}
 re.matches(text)(matched)       // 判斷是否匹配
 re.find(text)(result)           // 查找第一個匹配子串
 ```
@@ -632,7 +645,12 @@ set-empty(s, n)(yes)                    // 是否為空
 deque { buf []i64, cap i64, head i64, tail i64 }
 
 // 初始化
-d = deque{ buf: buf, cap: 128, head: 0, tail: 0 }
+d = deque{
+    buf: buf
+    cap: 128
+    head: 0
+    tail: 0
+}
 
 // 方法
 d.push-front(val)              // 從前端推入
@@ -675,7 +693,10 @@ stack { data []i64, n i64 }
 
 // 初始化
 buf [128]i64 = [0:128]
-s = stack{ data: buf, n: 0 }
+s = stack{
+    data: buf
+    n: 0
+}
 
 // 方法
 s.push(val)                    // 推入元素
@@ -796,7 +817,9 @@ encode-field(field, fn, out)(out-n)           // 編碼欄位
 
 ```nolang
 // 讀取普通 tar
-archive = tar{ data: raw-bytes }
+archive = tar{
+    data: raw-bytes
+}
 archive.count()(count)
 archive.entry(idx)(e)
 archive.name(idx)(name)
@@ -827,7 +850,9 @@ builder.finish()(archive)
 ### archive/zip — ZIP 歸檔解析
 
 ```nolang
-archive = zip{ data: raw-bytes }
+archive = zip{
+    data: raw-bytes
+}
 archive.count()(count)                        // 條目數
 archive.entry(idx)(e)                         // 取得 zip-entry
 archive.name(idx)(name)                       // 檔名

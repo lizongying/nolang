@@ -5,10 +5,14 @@
 // 底層依賴 fs 模組的 read/write 內建函數。
 //
 // 用法：
-//   r = io-reader{ src: stdin }
+//   r = io-reader{
+//       src: stdin
+//   }
 //   line, ok = r.read-line()
 //
-//   w = io-writer{ dst: stdout }
+//   w = io-writer{
+//       dst: stdout
+//   }
 //   n = w.write-str('hello')
 //
 //   io-print('hello')

@@ -4,7 +4,13 @@
 // 包含檔案操作、讀寫、資訊查詢等底層系統調用。
 //
 // 用法：
-//   f = open(FILE-PATH, { mode: write, perm: perm-644, excl: false, truncate: false, append: false })
+//   f = open(FILE-PATH, {
+//       mode: write
+//       perm: perm-644
+//       excl: false
+//       truncate: false
+//       append: false
+//   })
 //   f.write('hello', 5)                     // 方法呼叫
 //   f.close()
 //
@@ -12,7 +18,9 @@
 //   n = stdout.write('hello', 5)             // 寫入標準輸出
 //   n = stderr.write('error', 5)             // 寫入標準錯誤
 //
-//   p = path{ p: '/tmp' }
+//   p = path{
+//       p: '/tmp'
+//   }
 //   yes = p.exists()
 
 // ═══════════════════════════════════════════════

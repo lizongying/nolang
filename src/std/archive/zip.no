@@ -4,7 +4,9 @@
 // 支援 stored（method 0）和 deflate（method 8）條目提取。
 //
 // 用法：
-//   archive = zip{ data: raw-bytes }
+//   archive = zip{
+//       data: raw-bytes
+//   }
 //   n = archive.count()
 //   i <- [0..n): {
 //       e = archive.entry(i)

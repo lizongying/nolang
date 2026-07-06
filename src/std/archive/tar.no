@@ -4,7 +4,9 @@
 // 不依賴外部庫，僅操作 []byte。
 //
 // 用法（讀取）：
-//   archive = tar{ data: raw-bytes }
+//   archive = tar{
+//       data: raw-bytes
+//   }
 //   n = archive.count()
 //   i <- [0..n): {
 //       e = archive.entry(i)

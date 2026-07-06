@@ -325,6 +325,7 @@ path.clean = () {
 // path.split: 將路徑分割為目錄和檔名
 // 原地修改 .p 為目錄部分，返回檔名
 // 例：path{ p: '/a/b/c.txt' }.split() → .p='/a/b', f='c.txt'
+// （結構體字面量必須多行，此處為簡寫示意）
 path.split = () (f str) {
     // 找最右邊的 '/'
     last-sep = -1

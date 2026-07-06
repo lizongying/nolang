@@ -494,6 +494,8 @@ map[str]
 
 ## 結構體
 
+結構體定義和字面量都必須使用多行形式，每個字段獨佔一行，字段之間不以逗號分隔，末尾也不跟逗號。
+
 ```nolang
 user {
     name str
@@ -569,7 +571,10 @@ s = 'hello'
 u = s.to-upper()     // receiver.method()
 c char = 5
 d = c.is-digit()     // receiver.method()
-u = user{name: 'Alice', age: 30}
+u = user{
+    name: 'Alice'
+    age: 30
+}
 u.greet()
 ```
 
