@@ -31,8 +31,9 @@ const (
 	SELF
 	IT
 	USE
-	LABEL // #1, #2 ... only when followed by digits, used as a loop/conditional label
-	FFI   // #c, #cpp ... FFI directive, no space between # and language name
+	LABEL       // #1, #2 ... only when followed by digits, used as a loop/conditional label
+	FFI         // #c, #cpp ... FFI directive, no space between # and language name
+	HASH_LBRACE // #{ ... annotation directive
 
 	AS
 	CHAN
@@ -139,6 +140,7 @@ var tokenNames = map[TokenType]string{
 	USE:            "USE(#)",
 	LABEL:          "LABEL(#N)",
 	FFI:            "FFI(#lang)",
+	HASH_LBRACE:    "HASH_LBRACE(#{)",
 	IN:             "IN",
 	AS:             "AS",
 	CHAN:           "CHAN",

@@ -349,10 +349,18 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = AT
 		tok.Literal = string(l.ch)
 	case '#':
-		// Distinguish three forms:
+		// Distinguish four forms:
+		//   #{   — annotation directive (e.g. `#{c}`, `#{derive=[Serialize, Deserialize]}`)
 		//   #N   — numeric label (e.g. `#1 i <- ...`)
 		//   #c   — FFI directive (no space between # and language name)
 		//   # path — use/import statement (space after #)
+		if l.peekChar() == '{' {
+			tok.Type = HASH_LBRACE
+			l.readChar() // consume '#', now l.ch is '{'
+			l.readChar() // consume '{', now l.ch is first char inside annotation
+			tok.Literal = "#{"
+			return tok
+		}
 		if isDigit(l.peekChar()) {
 			tok.Type = LABEL
 			l.readChar() // consume '#'

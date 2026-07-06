@@ -930,7 +930,7 @@ tls-send-finished = (self tls-conn, master []byte) (ok bool) {
     ok = false
 
     // 計算 handshake hash
-    hs-hash = sha256(self.hs-buf)
+    hs-hash = sha256(self.hs-buf, self.hs-buf-len)
 
     // verify_data = PRF(master, "client finished", hash, 12)
     verify []byte
@@ -1014,7 +1014,7 @@ tls-read-finished = (self tls-conn, master []byte) (ok bool) {
     tls-append-hs(self, data, plain-n)
 
     // 驗證 verify_data
-    hs-hash = sha256(self.hs-buf)
+    hs-hash = sha256(self.hs-buf, self.hs-buf-len)
     verify []byte
     verify = tls-prf(master, TLS-PREMASTER-SIZE, 'server finished', hs-hash, 32, TLS-FINISHED-SIZE)
 

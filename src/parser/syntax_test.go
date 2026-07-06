@@ -371,6 +371,20 @@ func TestFFIDeclarationSyntax(t *testing.T) {
 		{name: "ffi_private_underscore", input: "#c\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
 		{name: "ffi_with_newline_gap", input: "#c\n\n_sqlite3-open = (db **byte) (rc i32)", filename: "test.no", wantErr: false},
 		{name: "ffi_no_results", input: "#c\nfoo = (n i64)", filename: "test.no", wantErr: false},
+		// #{c} annotation syntax (new style, replacing #c)
+		{name: "annot_ffi_basic", input: "#{c}\nc-strlen = (s str) (n i64)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_single_ptr", input: "#{c}\nsqlite3-close = (db *byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_double_ptr", input: "#{c}\nsqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_private_underscore", input: "#{c}\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_no_results", input: "#{c}\nfoo = (n i64)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_with_extra", input: "#{c, debug}\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		// General annotations (non-FFI)
+		{name: "annot_bool", input: "#{debug}", filename: "test.no", wantErr: false},
+		{name: "annot_int", input: "#{max=100}", filename: "test.no", wantErr: false},
+		{name: "annot_string", input: "#{name='hello'}", filename: "test.no", wantErr: false},
+		{name: "annot_array", input: "#{derive=[Serialize, Deserialize]}", filename: "test.no", wantErr: false},
+		{name: "annot_range", input: "#{range=[0..256)}", filename: "test.no", wantErr: false},
+		{name: "annot_complex", input: "#{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}", filename: "test.no", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

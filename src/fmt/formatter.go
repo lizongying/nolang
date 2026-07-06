@@ -101,6 +101,10 @@ func stmtTokenEndLine(stmt parser.Statement) int {
 			return s.Type.EndPos().Line
 		}
 		return s.Token.Line
+	case *parser.ExternStatement:
+		return s.EndPos().Line
+	case *parser.AnnotationStatement:
+		return s.Token.Line
 	}
 	return 0
 }
@@ -303,6 +307,10 @@ func stmtTokenLine(stmt parser.Statement) int {
 		return s.Token.Line
 	case *parser.TypeAlias:
 		return s.Token.Line
+	case *parser.ExternStatement:
+		return s.Token.Line
+	case *parser.AnnotationStatement:
+		return s.Token.Line
 	}
 	return 0
 }
@@ -365,6 +373,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatStructDefinition(s)
 	case *parser.MultiAssignStatement:
 		f.formatMultiAssignStatement(s)
+	case *parser.ExternStatement:
+		f.formatExternStatement(s)
+	case *parser.AnnotationStatement:
+		f.formatAnnotationStatement(s)
 	}
 
 	// For FunctionDefinition and ForStatement, inline comment is handled inside the specific formatter.
@@ -1651,4 +1663,55 @@ func Format(code string) string {
 
 func (f *Formatter) Format(code string) string {
 	return Format(code)
+}
+
+func (f *formatter) formatExternStatement(s *parser.ExternStatement) {
+	// 輸出 #{c} 或 #{c, extra=...} 格式
+	f.write("#{")
+	f.write(s.Lang)
+	for _, a := range s.Annotations {
+		f.write(", ")
+		f.write(a.String())
+	}
+	f.write("}")
+	f.newline()
+	// 輸出函式宣告
+	f.write(s.Name.Value)
+	f.write(" = (")
+	for i, p := range s.Parameters {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.write(p.Name)
+		if p.Type != nil {
+			f.write(" ")
+			f.write(p.Type.String())
+		}
+	}
+	f.write(")")
+	if len(s.Results) > 0 {
+		f.write(" (")
+		for i, r := range s.Results {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.write(r.Name)
+			if r.Type != nil {
+				f.write(" ")
+				f.write(r.Type.String())
+			}
+		}
+		f.write(")")
+	}
+}
+
+func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) {
+	f.write("#{")
+	for i, e := range s.Entries {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.write(e.String())
+	}
+	f.write("}")
 }

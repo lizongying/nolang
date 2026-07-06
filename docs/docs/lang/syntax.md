@@ -51,7 +51,7 @@ sidebar_position: 2
 - vec // 變長數組
 - slice // 切片
 
-- \* // 指針 僅限 FFI #c 宣告與標準庫
+- \* // 指針 僅限 FFI #{c} 宣告與標準庫
 - any // 任意類型 僅限標準庫
 
 高級類型
@@ -761,11 +761,11 @@ utils/
 @ std/math.add a
 ```
 
-### FFI（#c 指令）
+### FFI（#{c} 註解）
 
-透過 `#c` 指令宣告外部 C 函式，實現 FFI（Foreign Function Interface）。
+透過 `#{c}` 註解宣告外部 C 函式，實現 FFI（Foreign Function Interface）。
 
-**語法**：`#c` 獨立一行，標記下一行為 FFI 宣告。`#c` 與語言名稱之間**沒有空格**（與 `#` 導入語句區分）。未來可擴展 `#cpp` 等其他語言。
+**語法**：`#{c}` 獨立一行，標記下一行為 FFI 宣告。`#{c}` 是註解系統的 FFI 語言鍵，也支援 `#{cpp}`、`#{rust}` 等其他語言。舊語法 `#c` 仍向後相容。
 
 **私有宣告**：名稱以 `_` 開頭表示私有（不導出），C ABI 符號自動去除前綴 `_` 並將連字號轉為底線。
 
@@ -785,19 +785,19 @@ utils/
 // 以 _ 開頭的名稱為私有，C ABI 符號自動去除前綴 _
 
 // 基本型別參數
-#c
+#{c}
 c-strlen = (s str) (n i64)
 
 // 指針參數（*byte = 不透明指標），私有宣告
-#c
+#{c}
 _sqlite3-close = (db *byte) (rc i32)
 
 // 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數），私有宣告
-#c
+#{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 
 // 多個指針參數，私有宣告
-#c
+#{c}
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
@@ -815,12 +815,44 @@ open = (dsn str) (d db-sqlite) {
 ```
 
 **規則：**
-1. `#c` 獨立一行，標記下一行為 FFI 宣告
-2. `#c` 與語言名稱之間沒有空格（與 `# path` 導入語句區分）
-3. FFI 僅為宣告，無函式主體
-4. 指針必須有具體型別（如 `*byte`），不允許裸 `ptr`
-5. `**byte` 用於輸出參數：呼叫後 C 函式寫入的指針值會自動轉為 `i64` 存回呼叫端變數
-6. 所有指針在 Nolang 端以 `i64` 儲存（`ptrtoint`）
-7. `str` 型別參數自動轉為 null-terminated `i8*`
-8. 名稱以 `_` 開頭表示私有（不導出），C ABI 符號去除前綴 `_`
-9. FFI 宣告與普通代碼可寫在同一個 `.no` 檔案中
+1. `#{c}` 獨立一行，標記下一行為 FFI 宣告（舊語法 `#c` 仍向後相容）
+2. FFI 僅為宣告，無函式主體
+3. 指針必須有具體型別（如 `*byte`），不允許裸 `ptr`
+4. `**byte` 用於輸出參數：呼叫後 C 函式寫入的指針值會自動轉為 `i64` 存回呼叫端變數
+5. 所有指針在 Nolang 端以 `i64` 儲存（`ptrtoint`）
+6. `str` 型別參數自動轉為 null-terminated `i8*`
+7. 名稱以 `_` 開頭表示私有（不導出），C ABI 符號去除前綴 `_`
+8. FFI 宣告與普通代碼可寫在同一個 `.no` 檔案中
+
+### 註解系統（#{...}）
+
+`#{...}` 是通用註解系統，以逗號分隔的鍵值對列表。支援以下值類型：
+
+| 語法 | 類型 | 範例 |
+| --- | --- | --- |
+| 獨立鍵 | 布爾 | `#{debug}` |
+| 數值 | 整數 | `#{max=100}` |
+| 文字 | 字串 | `#{name='hello'}` |
+| 識別字 | 識別字 | `#{mode=fast}` |
+| 陣列 | 陣列 | `#{derive=[Serialize, Deserialize]}` |
+| 範圍 | 範圍 | `#{range=[0..256)}` |
+
+多個鍵值對以逗號分隔：
+
+```nolang
+#{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
+```
+
+範圍語法支援四種括號組合：
+- `[a..b]` — 兩端閉區間
+- `[a..b)` — 左閉右開
+- `(a..b)` — 兩端開區間
+- `(a..b]` — 左開右閉
+
+FFI 註解 `#{c}` 是註解系統的特殊形式，當註解包含 FFI 語言鍵（`c`、`cpp`、`rust` 等）且後續為函式宣告時，編譯器將其識別為 FFI 綁定：
+
+```nolang
+// #{c} 帶額外註解
+#{c, debug}
+_sqlite3-open = (filename str, db **byte) (rc i32)
+```

@@ -49,7 +49,7 @@ hmac-sha256 = (key []byte, key-n i64, msg []byte, msg-n i64) (out [32]byte) {
                 i = i + 1
         ->
             // 金鑰太長，先雜湰
-            h = sha256(key)
+            h = sha256(key, key-n)
             i = 0
             i < 32: {
                 k[i] = h[i]
@@ -84,7 +84,7 @@ hmac-sha256 = (key []byte, key-n i64, msg []byte, msg-n i64) (out [32]byte) {
         inner-data[64 + i] = msg[i]
         i = i + 1
     }
-    inner-hash = sha256(inner-data)
+    inner-hash = sha256(inner-data, 64 + msg-n)
 
     // outer = H(opad-key || inner)
     outer-data []byte
@@ -98,7 +98,7 @@ hmac-sha256 = (key []byte, key-n i64, msg []byte, msg-n i64) (out [32]byte) {
         outer-data[64 + i] = inner-hash[i]
         i = i + 1
     }
-    out = sha256(outer-data)
+    out = sha256(outer-data, 64 + 32)
 }
 
 // hmac-sha256-vec: 計算 HMAC-SHA256，返回 []byte（方便串接）

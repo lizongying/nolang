@@ -1,4 +1,4 @@
-// test-sha256 — 測試 sha256
+// test-sha256-min — minimal test for std sha256
 // # std/hash/sha256
 
 main = () {
@@ -9,7 +9,7 @@ main = () {
     msg[2] = 0x63
     print('before sha256')
     h [32]byte
-    h = sha256(msg, 3)
+    sha256(msg, 3)(h)
     print('after sha256')
     print(h[0])
     print('done')

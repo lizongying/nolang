@@ -423,14 +423,16 @@ func (fd *FunctionDefinition) statementNode()         {}
 func (fd *FunctionDefinition) Pos() lexer.Position    { return posFromToken(fd.Token) }
 func (fd *FunctionDefinition) EndPos() lexer.Position { return fd.Body.EndPos() }
 
-// ExternStatement — FFI 宣告：#c \\n name = (params) (results)
+// ExternStatement — FFI 宣告：#{c} \n name = (params) (results)
 // 僅為宣告，無函式主體；對應外部 C 函式。
+// 支援 #{c}（新語法）和 #c（舊語法，向後相容）。
 type ExternStatement struct {
-	Token      lexer.Token
-	Lang       string // FFI language: "c", "cpp", etc.
-	Name       *Identifier
-	Parameters []*Parameter
-	Results    []*Parameter
+	Token       lexer.Token
+	Lang        string // FFI language: "c", "cpp", etc.
+	Name        *Identifier
+	Parameters  []*Parameter
+	Results     []*Parameter
+	Annotations []*AnnotationEntry // 來自 #{c, ...} 的額外註解條目
 	CommentedNode
 }
 
@@ -449,9 +451,16 @@ func (es *ExternStatement) EndPos() lexer.Position {
 func (es *ExternStatement) String() string {
 	var out strings.Builder
 	if es.Lang != "" {
-		out.WriteString("#")
+		out.WriteString("#{")
 		out.WriteString(es.Lang)
-		out.WriteString("\n")
+		for _, a := range es.Annotations {
+			if a.Key == es.Lang {
+				continue
+			}
+			out.WriteString(", ")
+			out.WriteString(a.String())
+		}
+		out.WriteString("}\n")
 	}
 	out.WriteString(es.Name.Value)
 	out.WriteString(" = (")
@@ -478,6 +487,185 @@ func (es *ExternStatement) String() string {
 	}
 	out.WriteString(")")
 	return out.String()
+}
+
+// ---- Annotation System ----
+
+// AnnotationValue 是註解值的介面，支援布爾、整數、字串、識別字、陣列、範圍等值類型。
+type AnnotationValue interface {
+	Node
+	annotationValueNode()
+	String() string
+}
+
+// AnnotationBoolValue — 獨立布爾鍵（例如 #{debug} 中的 debug）
+type AnnotationBoolValue struct {
+	Token lexer.Token
+}
+
+func (v *AnnotationBoolValue) annotationValueNode()     {}
+func (v *AnnotationBoolValue) Pos() lexer.Position       { return posFromToken(v.Token) }
+func (v *AnnotationBoolValue) EndPos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationBoolValue) String() string            { return "true" }
+
+// AnnotationIntValue — 整數值（例如 max=100）
+type AnnotationIntValue struct {
+	Token lexer.Token
+	Value int64
+}
+
+func (v *AnnotationIntValue) annotationValueNode()     {}
+func (v *AnnotationIntValue) Pos() lexer.Position      { return posFromToken(v.Token) }
+func (v *AnnotationIntValue) EndPos() lexer.Position   { return posFromToken(v.Token) }
+func (v *AnnotationIntValue) String() string           { return strconv.FormatInt(v.Value, 10) }
+
+// AnnotationStringValue — 字串值（例如 name='hello'）
+type AnnotationStringValue struct {
+	Token lexer.Token
+	Value string
+}
+
+func (v *AnnotationStringValue) annotationValueNode()     {}
+func (v *AnnotationStringValue) Pos() lexer.Position       { return posFromToken(v.Token) }
+func (v *AnnotationStringValue) EndPos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationStringValue) String() string            { return "'" + v.Value + "'" }
+
+// AnnotationIdentValue — 識別字值（例如 mode=fast）
+type AnnotationIdentValue struct {
+	Token lexer.Token
+	Value string
+}
+
+func (v *AnnotationIdentValue) annotationValueNode()     {}
+func (v *AnnotationIdentValue) Pos() lexer.Position      { return posFromToken(v.Token) }
+func (v *AnnotationIdentValue) EndPos() lexer.Position   { return posFromToken(v.Token) }
+func (v *AnnotationIdentValue) String() string           { return v.Value }
+
+// AnnotationArrayValue — 陣列值（例如 derive=[Serialize, Deserialize]）
+type AnnotationArrayValue struct {
+	Token    lexer.Token
+	Elements []AnnotationValue
+}
+
+func (v *AnnotationArrayValue) annotationValueNode()  {}
+func (v *AnnotationArrayValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationArrayValue) EndPos() lexer.Position  { return posFromToken(v.Token) }
+func (v *AnnotationArrayValue) String() string {
+	var out strings.Builder
+	out.WriteString("[")
+	for i, el := range v.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.String())
+	}
+	out.WriteString("]")
+	return out.String()
+}
+
+// AnnotationRangeValue — 範圍值（例如 range=[0..256)）
+type AnnotationRangeValue struct {
+	Token    lexer.Token
+	Start    AnnotationValue
+	End      AnnotationValue
+	LeftInc  bool // [ = true, ( = false
+	RightInc bool // ] = true, ) = false
+}
+
+func (v *AnnotationRangeValue) annotationValueNode()  {}
+func (v *AnnotationRangeValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationRangeValue) EndPos() lexer.Position  { return posFromToken(v.Token) }
+func (v *AnnotationRangeValue) String() string {
+	var out strings.Builder
+	if v.LeftInc {
+		out.WriteString("[")
+	} else {
+		out.WriteString("(")
+	}
+	if v.Start != nil {
+		out.WriteString(v.Start.String())
+	}
+	out.WriteString("..")
+	if v.End != nil {
+		out.WriteString(v.End.String())
+	}
+	if v.RightInc {
+		out.WriteString("]")
+	} else {
+		out.WriteString(")")
+	}
+	return out.String()
+}
+
+// AnnotationEntry — 註解中的單個鍵值對或獨立布爾鍵。
+type AnnotationEntry struct {
+	Key   string           // 鍵名，如 "derive"、"range"、"max"、"debug"、"c"
+	Value AnnotationValue  // 值；nil 表示布爾獨立鍵
+	Token lexer.Token      // 鍵名的 token
+}
+
+func (e *AnnotationEntry) Pos() lexer.Position    { return posFromToken(e.Token) }
+func (e *AnnotationEntry) EndPos() lexer.Position {
+	if e.Value != nil {
+		return e.Value.EndPos()
+	}
+	return posFromToken(e.Token)
+}
+func (e *AnnotationEntry) String() string {
+	if e.Value != nil {
+		return e.Key + "=" + e.Value.String()
+	}
+	return e.Key
+}
+
+// IsBool 報告此 entry 是否為獨立布爾鍵（無值）。
+func (e *AnnotationEntry) IsBool() bool { return e.Value == nil }
+
+// AnnotationStatement — #{...} 註解語句。
+// 當註解包含 FFI 語言鍵（如 c、cpp、rust）且後續為函式宣告時，
+// 解析器會將其轉換為 ExternStatement，此時 AnnotationStatement 不會出現在 AST 中。
+// 其他註解（如 #{derive=[Serialize, Deserialize], debug}）作為獨立語句保留。
+type AnnotationStatement struct {
+	Token   lexer.Token
+	Entries []*AnnotationEntry
+	CommentedNode
+}
+
+func (as *AnnotationStatement) statementNode()         {}
+func (as *AnnotationStatement) TokenLiteral() string   { return as.Token.Literal }
+func (as *AnnotationStatement) Pos() lexer.Position    { return posFromToken(as.Token) }
+func (as *AnnotationStatement) EndPos() lexer.Position { return posFromToken(as.Token) }
+func (as *AnnotationStatement) String() string {
+	var out strings.Builder
+	out.WriteString("#{")
+	for i, e := range as.Entries {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(e.String())
+	}
+	out.WriteString("}")
+	return out.String()
+}
+
+// GetFFILang 檢查註解是否包含 FFI 語言鍵。
+// 若存在，返回語言名稱（如 "c"、"cpp"）；否則返回空字串。
+func (as *AnnotationStatement) GetFFILang() string {
+	for _, e := range as.Entries {
+		if e.IsBool() && isFFILang(e.Key) {
+			return e.Key
+		}
+	}
+	return ""
+}
+
+// isFFILang 報告給定字串是否為已知的 FFI 語言名稱。
+func isFFILang(lang string) bool {
+	switch lang {
+	case "c", "cpp", "rust", "go", "zig", "objc", "asm":
+		return true
+	}
+	return false
 }
 
 type FunctionLiteral struct {

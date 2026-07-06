@@ -2096,6 +2096,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			if t == "%vec" {
 				// %vec type: load data pointer (field 2), bitcast, GEP, store
 				llvmElemType = "i64"
+				if et, ok := g.arrayElemTypes[varName]; ok {
+					llvmElemType = et
+				}
 
 				// Load data pointer from vec struct (field 2)
 				g.tmpIdx++
@@ -2117,6 +2120,18 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), dataTyped, dataLoad, llvmElemType))
 				}
 
+				// Coerce val to element type if needed (e.g., i64 → i32)
+				storeVal := val
+				if llvmElemType != "i64" && strings.HasPrefix(val, "%") {
+					g.tmpIdx++
+					truncReg := fmt.Sprintf("%%vec.set.trunc.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n",
+							g.indent(), truncReg, val, llvmElemType))
+					}
+					storeVal = truncReg
+				}
+
 				// GEP to element index and store
 				g.tmpIdx++
 				elemGEP := fmt.Sprintf("%%vec.set.elem.%d", g.tmpIdx)
@@ -2124,7 +2139,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), llvmElemType, val, llvmElemType, elemGEP))
+						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 				}
 				return "0"
 			}
@@ -2430,6 +2445,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		if t == "%vec" {
 			// %vec type: load data pointer (field 2), bitcast, GEP, load
 			llvmElemType = "i64"
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				llvmElemType = et
+			}
 
 			// Determine the base reference: @name for globals, %name for local allocas.
 			vecRef := llvmVarRef(varName)
@@ -2471,6 +2489,17 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
+			}
+			// 當元素型別小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
+			// 這與 %arr 路徑的處理保持一致。
+			if llvmElemType != "i64" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%vec.idx.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
+						g.indent(), zextReg, llvmElemType, elemLoad))
+				}
+				return zextReg
 			}
 			return elemLoad
 		}

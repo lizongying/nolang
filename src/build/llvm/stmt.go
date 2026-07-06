@@ -111,6 +111,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if at, ok := p.Type.(*parser.ArrayType); ok && at.Elem != nil {
 			g.arrayElemTypes[p.Name] = g.mapToLLVMType(at.Elem.String())
 		}
+		// 切片型輸入參數也需註冊元素型別，供 IndexExpression 使用正確型別
+		if st, ok := p.Type.(*parser.SliceType); ok && st.Elem != nil {
+			g.arrayElemTypes[p.Name] = g.mapToLLVMType(st.Elem.String())
+		}
 	}
 	// 結果參數（無論單結果或多結果）皆以 by-reference 形式傳遞，
 	// 與 call.go 的 hasOutputParam / voidSingleOutput 約定保持一致。
@@ -1569,6 +1573,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
 		g.funcLocalNames[name] = true
+		// 記錄切片元素型別，供 IndexExpression 使用正確型別讀取
+		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
+			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+		} else {
+			g.arrayElemTypes[name] = "i64"
+		}
 		if isSliceLit {
 			slice := stmt.Value.(*parser.SliceLiteral)
 			elemType := "i64"
