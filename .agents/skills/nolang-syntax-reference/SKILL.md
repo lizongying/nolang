@@ -52,16 +52,26 @@ greeting = 'hello, ' - name
 
 Only single-line comments (`//`) are allowed.
 
-**Rule: one statement per line — never use semicolons `;` to combine multiple statements on one line.** This applies to comments too, including code examples inside comments.
+**Rule: one statement per line — never use semicolons `;` or commas `,` to combine multiple statements on one line.** This applies to comments too, including code examples inside comments.
 
 ```nolang
 // ❌ Wrong: semicolons in comment
 // h0 = 1732584193; h1 = 4023233417; h2 = 2562383102
 
+// ❌ Wrong: commas combining multiple statements
+// out = from-i64(v), out = from-u64(v)
+// debug(msg), info(msg), warn(msg)
+
 // ✅ Correct: each statement on its own line
 // h0 = 1732584193
 // h1 = 4023233417
 // h2 = 2562383102
+//
+// out = from-i64(v)
+// out = from-u64(v)
+// debug(msg)
+// info(msg)
+// warn(msg)
 ```
 
 ### Naming Rules
@@ -480,20 +490,23 @@ stack.push = (val i64) {
     .n = .n + 1
 }
 
-stack.pop = () (val i64, ok bool) {
+stack.pop = () (val ?i64) {
     if .n == 0 {
+        val = nil
         return
     }
     .n = .n - 1
     val = .data[.n]
-    ok = true
 }
 
 // Usage
 buf [128]i64 = [0:128]
-s = stack { data: buf, n: 0 }
+s = stack {
+    data: buf
+    n: 0
+}
 s.push(42)
-val, ok = s.pop()
+val = s.pop()
 ```
 
 The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`, `sse-client`. See `docs/docs/std/overview.md` for the full API.
@@ -536,7 +549,7 @@ Method calls on struct fields via `self.field` (abbreviated `.field`) are fully 
 data = .recv-buf.slice(0, .recv-buf-len)   // correctly inferred as str
 
 // .tls-c is a tls-conn field → .tls-c.send() works directly
-written, ok = .tls-c.send(req, req.len)
+written = .tls-c.send(req, req.len)
 ```
 
 ### String Auto-Length Tracking
@@ -567,6 +580,8 @@ user json {
 
 ### Import System
 
+> **New syntax: `# path` (recommended). The old `use path` keyword is deprecated but still supported. Always prefer `#` in new code.**
+
 ```nolang
 // Std modules
 # std/math.add
@@ -579,6 +594,12 @@ user json {
 
 // Aliases
 # std/math.add a
+
+// ── Old syntax (deprecated, still works) ──
+// use std/math.add
+// use github.com/utils/math.add
+// use /utils/math.add
+// use std/math.add a
 ```
 
 ### Special Symbols

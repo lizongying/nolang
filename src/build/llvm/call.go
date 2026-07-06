@@ -1473,7 +1473,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.HasPrefix(ev, "%str-longlit") {
 				return "%str-long* " + ev
-			} else if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
+			}
+			// String concat / string method call results: ev is a %str-long* SSA register.
+			// Detect via isStringExpr so InfixExpression (- for concat) and other string
+			// expressions are passed as %str-long* instead of being truncated to i64.
+			if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
+				return "%str-long* " + ev
+			}
+			if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 				if sb != nil {

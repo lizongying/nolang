@@ -211,6 +211,38 @@ func (sp *SemanticTokensProvider) walkStmt(stmt parser.Statement, typeMap map[[2
 		if s.ReturnValue != nil {
 			sp.walkExpr(s.ReturnValue, typeMap, modMap)
 		}
+	case *parser.EnumDefinition:
+		// Enum type name → enum
+		pos := [2]int{s.Token.Line, s.Token.Column}
+		typeMap[pos] = SemTokenTypeEnum
+		modMap[pos] = SemTokenModDefinition
+		// Each variant → enumMember
+		for _, v := range s.Values {
+			vp := [2]int{v.Token.Line, v.Token.Column}
+			typeMap[vp] = SemTokenTypeEnumMember
+			modMap[vp] = SemTokenModDefinition | SemTokenModReadonly
+		}
+	case *parser.TaggedEnumDefinition:
+		// Tagged enum type name → enum
+		pos := [2]int{s.Token.Line, s.Token.Column}
+		typeMap[pos] = SemTokenTypeEnum
+		modMap[pos] = SemTokenModDefinition
+		// Each variant → enumMember
+		for _, v := range s.Variants {
+			vp := [2]int{v.Token.Line, v.Token.Column}
+			typeMap[vp] = SemTokenTypeEnumMember
+			modMap[vp] = SemTokenModDefinition | SemTokenModReadonly
+		}
+	case *parser.StructDefinition:
+		// Struct name → struct
+		pos := [2]int{s.Token.Line, s.Token.Column}
+		typeMap[pos] = SemTokenTypeStruct
+		modMap[pos] = SemTokenModDefinition
+	case *parser.InterfaceDefinition:
+		// Interface name → interface
+		pos := [2]int{s.Token.Line, s.Token.Column}
+		typeMap[pos] = SemTokenTypeInterface
+		modMap[pos] = SemTokenModDefinition
 	}
 }
 

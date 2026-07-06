@@ -4,8 +4,8 @@
 // error 結構體封裝錯誤碼與訊息，err-code 枚舉定義常見錯誤類別。
 //
 // 用法：
-//   e = err-new(IO, 'disk full')
-//   yes = err-is(e, IO)
+//   e = err-new(io, 'disk full')
+//   yes = err-is(e, io)
 //   s, n = err-format(e)
 
 // ═══════════════════════════════════════════════
@@ -14,14 +14,14 @@
 
 // err-code: 錯誤類別
 err-code {
-    OK = 0,
-    NOT-FOUND = 1,
-    PERMISSION = 2,
-    IO = 3,
-    TIMEOUT = 4,
-    PARSE = 5,
-    INVALID = 6,
-    OVERFLOW = 7,
+    ok,
+    not-found,
+    permission,
+    io,
+    timeout,
+    parse,
+    invalid,
+    overflow,
 }
 
 // ═══════════════════════════════════════════════
@@ -32,7 +32,7 @@ err-code {
 // code: 錯誤碼（err-code 枚舉值）
 // msg: 錯誤訊息
 error {
-    code i64
+    code err-code
     msg str
 }
 
@@ -41,9 +41,9 @@ error {
 // ═══════════════════════════════════════════════
 
 // err-new: 建立錯誤
-// code: 錯誤碼（如 IO）
+// code: 錯誤碼（err-code 枚舉值，如 io）
 // msg: 錯誤訊息
-err-new = (code i64, msg str) (e error) {
+err-new = (code err-code, msg str) (e error) {
     e = error{
         code: code
         msg: msg
@@ -65,7 +65,7 @@ err-from-errno = (errno i64) (e error) {
 // ═══════════════════════════════════════════════
 
 // err-is: 檢查錯誤碼是否匹配
-err-is = (e error, code i64) (yes bool) {
+err-is = (e error, code err-code) (yes bool) {
     yes = false
     if e.code == code {
         yes = true
@@ -78,7 +78,7 @@ err-msg = (e error) (msg str) {
 }
 
 // err-code-of: 取得錯誤碼
-err-code-of = (e error) (code i64) {
+err-code-of = (e error) (code err-code) {
     code = e.code
 }
 

@@ -10,8 +10,8 @@
 //   conn = tls-dial('example.com', 443)         // 返回 ?tls-conn
 //   conn: {
 //       nil -> return
-//       -> conn.send(data, data.len)(written, ok)
-//         conn.recv(buf, 4096)(n, ok)
+//       -> written, ok = conn.send(data, data.len)
+//         n, ok = conn.recv(buf, 4096)
 //         conn.close()
 //   }
 

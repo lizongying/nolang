@@ -8,7 +8,7 @@
 
 main = () {
     // ── 1. err-new 建立錯誤，檢查 code ──
-    e = err-new(IO, 'disk full')
+    e = err-new(io, 'disk full')
 
     code i64 = 0
     code = err-code-of(e)
@@ -23,14 +23,14 @@ main = () {
     print('ok: err-msg')
 
     // ── 3. err-is 比對錯誤碼（true 和 false）──
-    yes = err-is(e, IO)
+    yes = err-is(e, io)
     if yes {
         print('ok: err-is true')
     } else {
         print('fail: err-is true')
     }
 
-    yes = err-is(e, NOT-FOUND)
+    yes = err-is(e, not-found)
     if yes == false {
         print('ok: err-is false')
     } else {

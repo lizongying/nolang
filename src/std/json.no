@@ -143,7 +143,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     c = s[p] & 255
 
     // 分配節點
-    .alloc()(node-idx)
+    node-idx = .alloc()
     if node-idx < 0 {
         return
     }
@@ -177,19 +177,19 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     // string
     if c == 34 {
         .nodes[node-idx].kind = KIND-STR
-        .parse-str(node-idx, s, sn, p)(next-pos, ok)
+        next-pos, ok = .parse-str(node-idx, s, sn, p)
         return
     }
 
     // number
     if c == 45 {
         .nodes[node-idx].kind = KIND-NUM
-        .parse-num(node-idx, s, sn, p)(next-pos, ok)
+        next-pos, ok = .parse-num(node-idx, s, sn, p)
         return
     }
     if c >= 48 && c <= 57 {
         .nodes[node-idx].kind = KIND-NUM
-        .parse-num(node-idx, s, sn, p)(next-pos, ok)
+        next-pos, ok = .parse-num(node-idx, s, sn, p)
         return
     }
 
@@ -214,7 +214,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
             if p >= sn {
                 return
             }
-            .parse(s, p)(child-idx, child-next, child-ok)
+            child-idx, child-next, child-ok = .parse(s, p)
             if child-ok == 0 {
                 return
             }
@@ -268,7 +268,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
             if s[p] & 255 != 34 {
                 return
             }
-            .parse(s, p)(key-idx, key-next, key-ok)
+            key-idx, key-next, key-ok = .parse(s, p)
             if key-ok == 0 {
                 return
             }
@@ -283,7 +283,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
             }
             p = p + 1
             // parse value
-            .parse(s, p)(val-idx, val-next, val-ok)
+            val-idx, val-next, val-ok = .parse(s, p)
             if val-ok == 0 {
                 return
             }
@@ -457,7 +457,7 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok i64) {
     i = 0
     for i < cnt {
         found-eq = 0
-        .str-eq(.nodes[obj-idx].keys[i], key)(found-eq)
+        found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
         if found-eq == 1 {
             val-idx = .nodes[obj-idx].children[i]
             ok = 1
@@ -482,7 +482,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok i64) {
     i = 0
     for i < cnt {
         found-eq = 0
-        .str-eq(.nodes[obj-idx].keys[i], key)(found-eq)
+        found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
         if found-eq == 1 {
             .nodes[obj-idx].children[i] = val-idx
             ok = 1
@@ -708,7 +708,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
                 out-n = out-n + 1
             }
             child-n = 0
-            .stringify(.nodes[node-idx].children[i], out, out-n)(child-n)
+            child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
             out-n = child-n
             i = i + 1
         }
@@ -742,7 +742,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
             out-n = out-n + 1
             // value
             child-n = 0
-            .stringify(.nodes[node-idx].children[i], out, out-n)(child-n)
+            child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
             out-n = child-n
             i = i + 1
         }

@@ -8,7 +8,7 @@ main = () {
     ok i64 = 0
     p = json-pool{}
     p.init()
-    p.parse(json-str, 0)(root, next, ok)
+    root, next, ok = p.parse(json-str, 0)
     if ok == 1 {
         print('ok: parse str')
     } else {

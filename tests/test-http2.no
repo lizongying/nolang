@@ -20,7 +20,7 @@ test-frame-parse = () {
     f http2-frame
     next i64 = 0
     ok bool = false
-    f.parse(data, 0)(next, ok)
+    next, ok = f.parse(data, 0)
     if ok == false {
         print('FAIL: parse returned error')
         return
@@ -58,7 +58,7 @@ test-frame-serialize = () {
     f.stream-id = 1
     buf str = space.repeat(16)
     next i64 = 0
-    f.serialize(buf, 0)(next)
+    next = f.serialize(buf, 0)
     if next != 9 {
         print('FAIL: expected next=9')
         return
@@ -119,7 +119,7 @@ test-http2-do-req-signature = () {
     resp http-response
     ok bool = false
     // 這行會嘗試連線並失敗，但驗證了函數簽名正確
-    http2-do-req('GET', 'http://127.0.0.1:1/test', '')(resp, ok)
+    resp, ok = http2-do-req('GET', 'http://127.0.0.1:1/test', '')
     // 預期 ok=false（連線失敗）
     if ok == true {
         print('FAIL: expected connection failure')
@@ -132,7 +132,7 @@ test-http2-do-req-signature = () {
 test-http2-get-signature = () {
     resp http-response
     ok bool = false
-    http2-get('http://127.0.0.1:1/test')(resp, ok)
+    resp, ok = http2-get('http://127.0.0.1:1/test')
     if ok == true {
         print('FAIL: expected connection failure')
         return
@@ -144,7 +144,7 @@ test-http2-get-signature = () {
 test-http2-post-signature = () {
     resp http-response
     ok bool = false
-    http2-post('http://127.0.0.1:1/test', 'body')(resp, ok)
+    resp, ok = http2-post('http://127.0.0.1:1/test', 'body')
     if ok == true {
         print('FAIL: expected connection failure')
         return

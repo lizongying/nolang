@@ -384,10 +384,10 @@ func (cp *CompletionProvider) getCompletionsAfterEquals(position Position) []Com
 	)
 	entries := cp.index.GetSymbolsBeforeLine(position.Line)
 	for _, e := range entries {
-		if e.Kind == CompletionItemKindVariable || e.Kind == CompletionItemKindConstant {
+		if e.Kind == SymbolKindVariable || e.Kind == SymbolKindConstant || e.Kind == SymbolKindEnumMember {
 			items = append(items, CompletionItem{
 				Label:  e.Name,
-				Kind:   e.Kind,
+				Kind:   CompletionItemKindEnumMember,
 				Detail: e.Type,
 			})
 		}

@@ -6,7 +6,11 @@ sidebar_position: 3
 
 Nolang 標準庫（`src/std/`）包含 60+ 個模組，涵蓋格式化、數學、字串、資料結構、編解碼、加密、壓縮、檔案操作、I/O 抽象等。
 
-使用方式：`use std/xxx`（核心模組無需 `use`）。
+使用方式：`# std/xxx`（核心模組無需導入）。
+
+> **舊式 `use std/xxx` 仍可使用，但已廢棄（deprecated），建議改用新式 `# std/xxx` 語法。**
+
+> **注意：本文檔中的程式碼範例均遵守「每行一條語句」規則——禁止使用分號 `;` 或逗號 `,` 將多條語句寫在同一行。** 例如 `out = from-i64(v), out = from-u64(v)` 是錯誤寫法，應拆分為多行。
 
 ---
 
@@ -29,25 +33,30 @@ Nolang 型別到 LLVM 的對映關係：
 
 **複合型別：**
 
-- **切片 `[]t`**：底層 `{ t*, i64 }`（data, len）
-- **陣列 `[N]t`**：LLVM 固定大小陣列
+- **變長數組 `[]t`**：底層 `{ t*, i64 }`（data, len）
+- **定長數組 `[n]t`**：LLVM 固定大小陣列
 - **字串 `str`**：union 型別（short ≤127 byte 存棧上 / long 存堆上），支援 `s[i]`、`s[i..j]`、`s + t`
-- **列舉/Union**：`option { ok t, nil bool, err str }`（tagged enum）
-- **結構體**：`point { x i64, y i64 }`
+- **列舉/Union**：`option` tagged enum（`ok t` / `nil` / `err str`）
+- **結構體**：必須多行定義，欄位不加逗號
 - **配列**：底層 linked-hash-map
-- **迭代器**：`iterator { next()(val i64, ok i64) }`
+- **迭代器**：`for iter.next() {}`（介面方法 `next() (ok bool)`）
 
 ### option — 選項型別
 
-`option<T>` 標籤列舉（tag=0=val, 1=nil, 2=err）：
+`option<t>` 標籤列舉（tag=0=val, 1=nil, 2=err）：
 
 ```nolang
 x ?t                // 宣告 option<t>
-x = val(42)         // 設為有值
+x = 42              // 設為有值
 x = nil             // 設為空
 x = err('msg')      // 設為錯誤
-x { val-> f(.); nil->; err-> g(.) }  // match
-!x                  // 強制解包（panic if nil/err）
+
+// match
+x: {
+    val -> f(it)
+    nil ->
+    err -> g(it)
+}  
 ```
 
 **風格指引：** 函數可能失敗或返回空值時，應使用 `?t` option 而非 `(val, ok bool)`。`?t` 有三種狀態：`ok`（有值）、`nil`（空值/正常缺失）、`err`（錯誤）。正常值會隱性綁定。例如 `pop()` 返回 `?i64`（`nil` = 空）、`read-line()` 返回 `?str`（`nil` = EOF，`err` = 錯誤）、`lookup()` 返回 `?str`（`nil` = 未找到）。詳見語法文檔。
@@ -84,16 +93,34 @@ println-empty()         // 列印空行
 
 ```nolang
 // 字串 → 數值
-str-to-i8(s), str-to-i16(s), str-to-i32(s), str-to-i64(s)
-str-to-u8(s), str-to-u16(s), str-to-u32(s), str-to-u64(s)
-str-to-f32(s), str-to-f64(s)
-str-to-bool(s), str-to-byte(s), str-to-char(s)
+str.to-i8()
+str.to-i16()
+str.to-i32()
+str.to-i64()
+str.to-u8()
+str.to-u16()
+str.to-u32()
+str.to-u64()
+str.to-f32()
+str.to-f64()
+str.to-bool()
+str.to-byte()
+str.to-char()
 
-// 數值 → 字串（也可用方法形式: v.to-str()）
-i8-to-str(v), i16-to-str(v), i32-to-str(v), i64-to-str(v)
-u8-to-str(v), u16-to-str(v), u32-to-str(v), u64-to-str(v)
-f32-to-str(v), f64-to-str(v)
-bool-to-str(v), byte-to-str(v), char-to-str(v)
+// 數值 → 字串
+i8.to-str()
+i16.to-str()
+i32.to-str()
+i64.to-str()
+u8.to-str()
+u16.to-str()
+u32.to-str()
+u64.to-str()
+f32.to-str()
+f64.to-str()
+bool.to-str()
+byte.to-str()
+char.to-str()
 ```
 
 ### char — 字元操作
@@ -118,56 +145,61 @@ c.to-str()         // Unicode → 字串（UTF-8，方法）
 ### str — 字串操作
 
 ```nolang
-a.eq(b, n)(ok)                // 相等比較（方法）
-s.copy()(dst)                 // 字串複製（方法）
+ok = a.eq(b, n)               // 相等比較（方法）
+dst = s.copy()                // 字串複製（方法）
 s.fill(val byte)              // 填充 byte 值（方法）
-s.index(sub)(pos)             // 子字串位置
-s.contains(sub)(ok)           // 是否包含
-s.starts-with(sub)(ok)        // 前綴判斷
-s.ends-with(sub)(ok)          // 後綴判斷
+pos = s.index(sub)            // 子字串位置
+ok = s.contains(sub)          // 是否包含
+ok = s.starts-with(sub)       // 前綴判斷
+ok = s.ends-with(sub)         // 後綴判斷
 s.to-upper()                  // 轉大寫
 s.to-lower()                  // 轉小寫
-s.trim()(out)                 // 去首尾空白
-s.repeat(n)(out)              // 重複
-s.slice(start, end)(out)      // 切片
-s.to-bytes()(b)               // 轉 []byte
-b.to-str()(s)                 // []byte 轉 str（方法）
-s.to-i64()(v)                 // 字串轉 i64（回傳 ?i64）
-s.to-i8()(v)                  // 字串轉 i8（回傳 ?i8）
-s.to-i16()(v)                 // 字串轉 i16（回傳 ?i16）
-s.to-i32()(v)                 // 字串轉 i32（回傳 ?i32）
-s.to-u8()(v)                  // 字串轉 u8（回傳 ?u8）
-s.to-u16()(v)                 // 字串轉 u16（回傳 ?u16）
-s.to-u32()(v)                 // 字串轉 u32（回傳 ?u32）
-s.to-u64()(v)                 // 字串轉 u64（回傳 ?u64）
-s.to-byte()(v)                // 字串轉 byte（回傳 ?byte）
-s.to-f64()(v)                 // 字串轉 f64（回傳 ?f64）
-s.to-bool()(v)                // 字串 "true"/"false" 轉 bool（回傳 ?bool）
-v.to-str()(s)                 // i64 轉字串（方法）
-s.reverse()(out)              // 反轉
-s.compare(b)(c)               // 字典序比較
-s.count()(n)                  // code point 總數
-s.replace-char(old, new)(val) // 取代字元（返回結果字串）
-s.trim-char(c)(out)           // 去指定字元
-s.empty()(ok)                 // 是否為空
+out = s.trim()                // 去首尾空白
+out = s.repeat(n)             // 重複
+out = s.slice(start, end)     // 切片
+b = s.to-bytes()              // 轉 []byte
+s = b.to-str()                // []byte 轉 str（方法）
+v = s.to-i64()                // 字串轉 i64（回傳 ?i64）
+v = s.to-i8()                 // 字串轉 i8（回傳 ?i8）
+v = s.to-i16()                // 字串轉 i16（回傳 ?i16）
+v = s.to-i32()                // 字串轉 i32（回傳 ?i32）
+v = s.to-u8()                 // 字串轉 u8（回傳 ?u8）
+v = s.to-u16()                // 字串轉 u16（回傳 ?u16）
+v = s.to-u32()                // 字串轉 u32（回傳 ?u32）
+v = s.to-u64()                // 字串轉 u64（回傳 ?u64）
+v = s.to-byte()               // 字串轉 byte（回傳 ?byte）
+v = s.to-f64()                // 字串轉 f64（回傳 ?f64）
+v = s.to-bool()               // 字串 "true"/"false" 轉 bool（回傳 ?bool）
+s = v.to-str()                // i64 轉字串（方法）
+out = s.reverse()             // 反轉
+c = s.compare(b)              // 字典序比較
+n = s.count()                 // code point 總數
+val = s.replace-char(old, new) // 取代字元（返回結果字串）
+out = s.trim-char(c)          // 去指定字元
+ok = s.empty()                // 是否為空
 ```
 
 ### number — 數值操作
 
 ```nolang
-max(a, b), min(a, b)          // 大小值
-num.clamp(lo, hi)(r)          // 限制範圍（方法）
-abs(a)(r)                     // 絕對值（num 泛型）
-num.sign()(r)                 // 正負號（-1/0/1，方法）
-even(v), odd(v)               // 奇偶判斷
-gcd(a, b), lcm(a, b)          // 最大公因數/最小公倍數
-pow(a, n)(r)                  // 整數冪
-i64-to-f64(v), f64-to-i64(v)  // 數值轉換
-int.to-str()(s)               // i64 轉字串（方法）
-div(a, b)(q), mod(a, b)(r)    // 除法取商 / 取模
+max(a, b)                     // 最大值
+min(a, b)                     // 最小值
+r = num.clamp(lo, hi)         // 限制範圍（方法）
+r = abs(a)                    // 絕對值（num 泛型）
+r = num.sign()                // 正負號（-1/0/1，方法）
+even(v)                       // 奇偶判斷
+odd(v)
+gcd(a, b)                     // 最大公因數
+lcm(a, b)                     // 最小公倍數
+r = pow(a, n)                 // 整數冪
+i64-to-f64(v)                 // 數值轉換
+f64-to-i64(v)
+s = int.to-str()              // i64 轉字串（方法）
+q = div(a, b)                 // 除法取商
+r = mod(a, b)                 // 取模
 swap(a, b)                    // 交換
-float.is-nan()(yes)           // NaN 判斷（方法）
-float.is-inf()(yes)           // Inf 判斷（方法）
+yes = float.is-nan()          // NaN 判斷（方法）
+yes = float.is-inf()          // Inf 判斷（方法）
 
 // 範圍常數
 i8.MIN / MAX                  // -128 / 127
@@ -183,29 +215,29 @@ u64.MIN / MAX                 // 0 / 2^64-1
 ### byte — 位元組操作
 
 ```nolang
-i64.to-bytes-be()(out)          // i64 → big-endian [8]byte
-i64.to-bytes-le()(out)          // i64 → little-endian [8]byte
-[]byte.to-i64-be()(v)           // big-endian []byte → i64（1~8 位元組）
-[]byte.to-i64-le()(v)           // little-endian []byte → i64（1~8 位元組）
-[]byte.to-str()(s)              // []byte 轉 str（方法）
-[]byte.to-hex()(s)              // []byte → 大寫十六進制字串
-[]byte.to-hex-lower()(s)        // []byte → 小寫十六進制字串
-byte.to-str()(s)                // byte 轉 str（方法）
+out = i64.to-bytes-be()         // i64 → big-endian [8]byte
+out = i64.to-bytes-le()         // i64 → little-endian [8]byte
+v = []byte.to-i64-be()          // big-endian []byte → i64（1~8 位元組）
+v = []byte.to-i64-le()          // little-endian []byte → i64（1~8 位元組）
+s = []byte.to-str()             // []byte 轉 str（方法）
+s = []byte.to-hex()             // []byte → 大寫十六進制字串
+s = []byte.to-hex-lower()       // []byte → 小寫十六進制字串
+s = byte.to-str()               // byte 轉 str（方法）
 ```
 
 ### vec — 切片操作
 
 ```nolang
-vec-create(n, val)(v)           // 建立長度 n 的切片，全部填充 val
-[]t.eq(a, b, n)(ok)            // 相等比較
-[]t.len()(n)                    // 長度
+v = vec-create(n, val)         // 建立長度 n 的切片，全部填充 val
+ok = []t.eq(a, b, n)           // 相等比較
+n = []t.len()                  // 長度
 []t.push(val)                   // 追加
-[]t.pop()(val, new-n)           // 彈出
-[]t.contains(n, val)(found)     // 是否包含（n 為長度）
+val, new-n = []t.pop()         // 彈出
+found = []t.contains(n, val)   // 是否包含（n 為長度）
 []t.reverse(n)                  // 反轉前 n 個元素
 []t.clone(dst)                  // 複製到 dst
 []t.fill(n, val)                // 前 n 個元素填充
-[]t.to-arr()(arr)               // 轉陣列
+arr = []t.to-arr()             // 轉陣列
 []t.sort-asc()                  // 升序排序（方法）
 []t.sort-desc()                 // 降序排序（方法）
 ```
@@ -213,18 +245,18 @@ vec-create(n, val)(v)           // 建立長度 n 的切片，全部填充 val
 ### arr — 陣列操作
 
 ```nolang
-[n]t.clone()(out)               // 複製
-[n]t.eq(b)(ok)                  // 相等比較
+out = [n]t.clone()             // 複製
+ok = [n]t.eq(b)                // 相等比較
 [n]t.fill(val)                  // 填充
 [n]t.reverse()                  // 反轉
-[n]t.contains(val)(ok)          // 是否包含
-[n]t.to-vec()(v)                // 轉切片
-[n]t.max()(v)                   // 最大值
-[n]t.min()(v)                   // 最小值
-[n]t.sum()(v)                   // 總和
-[n]t.index-of(val)(i)           // 索引
-[n]t.last()(v)                  // 最後元素
-[n]t.first()(v)                 // 首元素
+ok = [n]t.contains(val)        // 是否包含
+v = [n]t.to-vec()              // 轉切片
+v = [n]t.max()                 // 最大值
+v = [n]t.min()                 // 最小值
+v = [n]t.sum()                 // 總和
+i = [n]t.index-of(val)          // 索引
+v = [n]t.last()                // 最後元素
+v = [n]t.first()               // 首元素
 [n]t.sort-asc()                 // 升序排序
 [n]t.sort-desc()                // 降序排序
 ```
@@ -246,34 +278,34 @@ sort.desc                        // 降序
 
 ```nolang
 // 環境變數
-get-env(key)(val)
+val = get-env(key)
 set-env(key, val)
 
 // 目錄
-get-wd()(dir)
+dir = get-wd()
 ch-dir(dir)
 mkdir(path, mode)
 
 // 行程
 exit(code)
-get-pid()(pid)
+pid = get-pid()
 
 // 系統資訊
-host-name()(name)
-strerror(errnum)(msg)
+name = host-name()
+msg = strerror(errnum)
 
 // 時間
-now()(sec)
-now-ms()(ms)
-now-us()(us)
-now-ns()(ns)
+sec = now()
+ms = now-ms()
+us = now-us()
+ns = now-ns()
 sleep(sec)
 sleep-us(us)
 sleep-ns(ns)
 
 // 命令列參數
-args()(count)
-arg(idx)(val)
+count = args()
+val = arg(idx)
 ```
 
 ### fs — 檔案系統工具
@@ -282,7 +314,10 @@ arg(idx)(val)
 
 ```nolang
 // 檔案結構體
-file { fd i64, path str }
+file {
+    fd i64
+    path str
+}
 
 // 標準檔案
 stdin = file{
@@ -299,38 +334,56 @@ stderr = file{
 }
 
 // 開啟檔案（帶選項）
-file-mode { read, write, append, read-write }
-file-perm { perm-600, perm-644, perm-664, perm-666, perm-755, perm-777 }
-file-opts { mode file-mode, perm file-perm, excl bool, truncate bool, append bool }
-open(path, opts)(f ?file)         // 開啟檔案，失敗返回 nil
+file-mode {
+    read,
+    write,
+    append,
+    read-write,
+}
+file-perm {
+    perm-600,
+    perm-644,
+    perm-664,
+    perm-666,
+    perm-755,
+    perm-777,
+}
+file-opts {
+    mode file-mode
+    perm file-perm
+    excl bool
+    truncate bool
+    append bool
+}
+f = open(path, opts)             // 開啟檔案，失敗返回 nil
 
 // file 方法
-f.read(buf, n)(read-n)            // 讀取最多 n 位元組
-f.read-line()(line, ok)           // 讀取一行
-f.read-all()(content, n)          // 讀取整個檔案
-f.write(data, n)(written)         // 寫入 n 位元組
-f.write-all(data, n)(ok)          // 寫入全部（覆寫）
-f.append(data, n)(ok)             // 追加資料
-f.copy-to(dst-path)(ok)           // 複製到目標路徑
-f.close()(ok)                     // 關閉（標準檔案不自動關閉）
-f.is-open()(yes)                  // 是否已開啟
-f.size()(sz)                      // 檔案大小
+read-n = f.read(buf, n)          // 讀取最多 n 位元組
+line = f.read-line()              // 讀取一行（?str, nil=EOF）
+content, n = f.read-all()        // 讀取整個檔案
+written = f.write(data, n)       // 寫入 n 位元組
+ok = f.write-all(data, n)        // 寫入全部（覆寫）
+ok = f.append(data, n)           // 追加資料
+ok = f.copy-to(dst-path)         // 複製到目標路徑
+ok = f.close()                   // 關閉（標準檔案不自動關閉）
+yes = f.is-open()                // 是否已開啟
+sz = f.size()                    // 檔案大小
 
 // 內建函數
-open-read(path)(fd)               // 唯讀開啟
-open-write(path)(fd)              // 寫入開啟（O_CREAT|O_TRUNC, 0644）
-open-file(path, flags, mode)(fd)  // 自訂旗標開啟
-read(fd, buf, n)(n)               // 底層讀取
-write(fd, data, n)(written)       // 底層寫入
-close(fd)(ok)                     // 底層關閉
-remove(path)(ok)                  // 刪除檔案
-rename(old, new)(ok)              // 重新命名
-is-file(path)(ok)                 // 判斷是否為檔案
-is-dir(path)(ok)                  // 判斷是否為目錄
-stat-size(path)(sz)               // 取得檔案大小
-file-size(path)(sz)               // 同 stat-size
-get-line()(line, ok)              // 從標準輸入讀取一行
-copy-file(src, dst)(ok)           // 複製檔案
+fd = open-read(path)             // 唯讀開啟
+fd = open-write(path)            // 寫入開啟（O_CREAT|O_TRUNC, 0644）
+fd = open-file(path, flags, mode) // 自訂旗標開啟
+n = read(fd, buf, n)             // 底層讀取
+written = write(fd, data, n)     // 底層寫入
+ok = close(fd)                   // 底層關閉
+ok = remove(path)                // 刪除檔案
+ok = rename(old, new)            // 重新命名
+ok = is-file(path)               // 判斷是否為檔案
+ok = is-dir(path)                // 判斷是否為目錄
+sz = stat-size(path)             // 取得檔案大小
+sz = file-size(path)             // 同 stat-size
+line = get-line()                // 從標準輸入讀取一行（?str, nil=EOF）
+ok = copy-file(src, dst)         // 複製檔案
 
 // macOS open() 旗標常量
 O-RDONLY = 0, O-WRONLY = 1, O-RDWR = 2
@@ -340,23 +393,23 @@ O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
 ### env — 環境變數（簡化封裝）
 
 ```nolang
-get(key)(val)
-lookup(key)(val, ok)
+val = get(key)
+val = lookup(key)               // 返回 ?str（nil=未找到）
 set(key, val)
 unset(key)
-get-with-default(key, default)(val)
-is-set(key)(ok)
+val = get-with-default(key, default)
+ok = is-set(key)
 ```
 
 ### args — 命令列引數
 
 ```nolang
-count()(n)
-get(i)(arg)
-program()(name)
-has-flag(name)(ok)
-get-option(name)(val)
-get-positional(i)(arg)
+n = count()
+arg = get(i)
+name = program()
+ok = has-flag(name)
+val = get-option(name)
+arg = get-positional(i)
 ```
 
 ### path — 路徑操作
@@ -368,7 +421,9 @@ SEP = 47     // '/'（ASCII）
 DOT = 46     // '.'
 
 // 結構體
-path { p str }
+path {
+    p str
+}
 
 // 路徑拼接與分解（原地修改 .p）
 p = path{
@@ -401,10 +456,10 @@ path.current() (out path)    // 取得當前工作目錄
 ### bufio — 緩衝讀取
 
 ```nolang
-reader.init(fd, buf)(r)         // 初始化緩衝讀取器（傳回 reader）
-reader.fill()(ok)               // 填充緩衝區
-reader.read-byte()(b, ok)       // 讀取一個位元組
-reader.read-line(line)(ok)      // 讀取一行到 line
+r = reader.init(fd, buf)       // 初始化緩衝讀取器（傳回 reader）
+ok = reader.fill()              // 填充緩衝區
+b = reader.read-byte()          // 讀取一個位元組（?byte, nil=EOF）
+ok = reader.read-line(line)     // 讀取一行到 line
 reader.close()                  // 關閉
 ```
 
@@ -417,30 +472,34 @@ reader.close()                  // 關閉
 STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
 
 // io-reader 結構體
-io-reader { fd i64 }
-io-reader.from-fd(fd)(r)        // 從 fd 建立
-io-reader.from-stdin()(r)       // 從標準輸入建立
-r.read(buf, n)(read-n)          // 讀取 n 位元組
-r.read-byte()(b, ok)            // 讀取一位元組
-r.read-line()(line, ok)         // 讀取一行
-r.read-all(buf, size)(total)    // 讀取全部
+io-reader {
+    fd i64
+}
+r = io-reader.from-fd(fd)      // 從 fd 建立
+r = io-reader.from-stdin()     // 從標準輸入建立
+read-n = r.read(buf, n)        // 讀取 n 位元組
+b = r.read-byte()              // 讀取一位元組（?byte, nil=EOF）
+line = r.read-line()           // 讀取一行（?str, nil=EOF）
+total = r.read-all(buf, size)  // 讀取全部
 
 // io-writer 結構體
-io-writer { fd i64 }
-io-writer.from-fd(fd)(w)        // 從 fd 建立
-io-writer.from-stdout()(w)      // 從標準輸出建立
-io-writer.from-stderr()(w)      // 從標準錯誤建立
-w.write(data, n)(written)       // 寫入 n 位元組
-w.write-str(s)(written)         // 寫入整個字串
-w.write-byte(b)(written)        // 寫入一位元組
-w.write-line(s)(written)        // 寫入字串+換行
+io-writer {
+    fd i64
+}
+w = io-writer.from-fd(fd)      // 從 fd 建立
+w = io-writer.from-stdout()    // 從標準輸出建立
+w = io-writer.from-stderr()    // 從標準錯誤建立
+written = w.write(data, n)     // 寫入 n 位元組
+written = w.write-str(s)       // 寫入整個字串
+written = w.write-byte(b)      // 寫入一位元組
+written = w.write-line(s)      // 寫入字串+換行
 
 // 便捷函數
-io-print(s)(n)                  // 寫入 stdout（不換行）
-io-println(s)(n)                // 寫入 stdout（換行）
-io-err(s)(n)                    // 寫入 stderr（不換行）
-io-errln(s)(n)                  // 寫入 stderr（換行）
-io-read-line()(line, ok)        // 從 stdin 讀取一行
+n = io-print(s)                // 寫入 stdout（不換行）
+n = io-println(s)              // 寫入 stdout（換行）
+n = io-err(s)                  // 寫入 stderr（不換行）
+n = io-errln(s)                // 寫入 stderr（換行）
+line = io-read-line()          // 從 stdin 讀取一行（?str, nil=EOF）
 ```
 
 ### regexp — 正規表示式
@@ -449,14 +508,16 @@ io-read-line()(line, ok)        // 從 stdin 讀取一行
 
 ```nolang
 // 結構體
-regexp { pattern str }
+regexp {
+    pattern str
+}
 
 // 方法
 re = regexp{
     pattern: '^hello'
 }
-re.matches(text)(matched)       // 判斷是否匹配
-re.find(text)(result)           // 查找第一個匹配子串
+matched = re.matches(text)        // 判斷是否匹配
+result = re.find(text)           // 查找第一個匹配子串
 ```
 
 ### process — 進程操作
@@ -469,43 +530,50 @@ SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD
 WNOHANG = 1
 
 // 結構體
-process { pid i64, stdin-fd i64, stdout-fd i64, stderr-fd i64, exit-code i64, running i64 }
+process {
+    pid i64
+    stdin-fd i64
+    stdout-fd i64
+    stderr-fd i64
+    exit-code i64
+    running i64
+}
 
 // 進程創建
 p = process{}
-p.start(program, arg)(ok)          // fork + exec，捕獲 stdout
-p.start-with-stdin(program, arg)(ok) // fork + exec，捕獲 stdin + stdout
+ok = p.start(program, arg)          // fork + exec，捕獲 stdout
+ok = p.start-with-stdin(program, arg) // fork + exec，捕獲 stdin + stdout
 
 // 進程等待
-p.wait()(ok)                       // 阻塞等待子進程結束
-p.wait-nohang()(ok)                // 非阻塞輪詢
+ok = p.wait()                       // 阻塞等待子進程結束
+ok = p.wait-nohang()                // 非阻塞輪詢
 
 // 進程控制
-p.kill(sig)(ok)                    // 發送信號
-p.terminate()(ok)                  // SIG-TERM
-p.force-kill()(ok)                 // SIG-KILL
+ok = p.kill(sig)                    // 發送信號
+ok = p.terminate()                  // SIG-TERM
+ok = p.force-kill()                 // SIG-KILL
 
 // 標準流操作
-p.read(buf, n)(read-n)             // 從 stdout 讀取
-p.read-line()(line, ok)            // 讀取一行
-p.read-all()(content, n)           // 讀取全部 stdout
-p.write(data, n)(written)          // 寫入 stdin
+read-n = p.read(buf, n)             // 從 stdout 讀取
+line = p.read-line()               // 讀取一行（?str, nil=EOF）
+content, n = p.read-all()           // 讀取全部 stdout
+written = p.write(data, n)          // 寫入 stdin
 p.close-stdin()                    // 關閉 stdin 管道
 p.close-stdout()                   // 關閉 stdout 管道
 p.close-stderr()                   // 關閉 stderr 管道
 
 // 進程信息
-p.pid-of()(pid)                    // 子進程 ID
-p.exit-code-of()(code)             // 退出碼
-p.is-running()(yes)                // 是否仍在執行
-process.parent-pid()(pid)          // 父進程 ID
+pid = p.pid-of()                    // 子進程 ID
+code = p.exit-code-of()             // 退出碼
+yes = p.is-running()                // 是否仍在執行
+pid = process.parent-pid()          // 父進程 ID
 
 // 生命週期
 p.close()                          // 關閉所有管道並等待
 
 // 便捷函數
-process-run(cmd)(status)           // 執行 shell 命令
-process-output(program, arg)(content, code) // 執行並捕獲輸出
+status = process-run(cmd)           // 執行 shell 命令
+content, code = process-output(program, arg) // 執行並捕獲輸出
 ```
 
 ### net — 網路操作
@@ -517,31 +585,35 @@ process-output(program, arg)(content, code) // 執行並捕獲輸出
 AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
 
 // listener 結構體
-listener { fd i64 }
+listener {
+    fd i64
+}
 
 // 監聽操作
 l = listener{}
-l.listen(host, port)(ok)            // 建立 TCP 監聽（socket+setsockopt+bind+listen）
-l.accept()(c, ok)                   // 接受連接，返回 conn 結構體
+ok = l.listen(host, port)            // 建立 TCP 監聽（socket+setsockopt+bind+listen）
+c = l.accept()                       // 接受連接（?conn, nil=無連接）
 l.close()                           // 關閉監聽 socket
-l.fd-of()(fd)                       // 取得 fd
+fd = l.fd-of()                       // 取得 fd
 
 // conn 結構體
-conn { fd i64 }
+conn {
+    fd i64
+}
 
 // 連接操作
 c = conn{}
-c.dial(host, port)(ok)              // 建立 TCP 連接（socket+connect）
-c.send(data)(written)               // 發送字串
-c.recv(buf, n)(read-n)              // 接收資料到 buf
-c.recv-line()(line, ok)             // 接收一行（最多 4096 位元組）
-c.recv-all()(content, total)        // 接收全部直到連接關閉
+ok = c.dial(host, port)              // 建立 TCP 連接（socket+connect）
+written = c.send(data)               // 發送字串
+read-n = c.recv(buf, n)              // 接收資料到 buf
+line = c.recv-line()                 // 接收一行（?str, nil=EOF, 最多 4096 位元組）
+content, total = c.recv-all()        // 接收全部直到連接關閉
 c.close()                           // 關閉連接
-c.fd-of()(fd)                       // 取得 fd
+fd = c.fd-of()                       // 取得 fd
 
 // 便捷函數
-net-listen-on(host, port)(l, ok)    // 建立監聽器並開始監聽
-net-dial-to(host, port)(c, ok)      // 建立連接並撥號
+l = net-listen-on(host, port)        // 建立監聽器並開始監聽（?listener）
+c = net-dial-to(host, port)          // 建立連接並撥號（?conn）
 ```
 
 ### net/ip — IP 地址操作
@@ -556,34 +628,39 @@ IP-ANY        // 0.0.0.0
 IP-BROADCAST  // 255.255.255.255
 
 // ip-addr 結構體
-ip-addr { a i64, b i64, c i64, d i64 }
+ip-addr {
+    a i64
+    b i64
+    c i64
+    d i64
+}
 
 // 解析與轉換
 ip = ip-addr{}
-ip.parse('192.168.1.1')(ok)         // 從字串解析
-ip.to-str()(s)                      // 轉為字串 '192.168.1.1'
-ip.to-u32()(v)                      // 轉為 u32（大端序）
+ok = ip.parse('192.168.1.1')         // 從字串解析
+s = ip.to-str()                      // 轉為字串 '192.168.1.1'
+v = ip.to-u32()                      // 轉為 u32（大端序）
 ip.from-u32(v)                      // 從 u32 建立
 
 // 地址分類
-ip.is-loopback()(yes)               // 127.0.0.0/8
-ip.is-private()(yes)                // 10/8, 172.16/12, 192.168/16
-ip.is-zero()(yes)                   // 0.0.0.0
-ip.is-broadcast()(yes)              // 255.255.255.255
-ip.is-multicast()(yes)              // 224.0.0.0/4
-ip.is-link-local()(yes)             // 169.254.0.0/16
-ip.is-class-a()(yes)                // A 類（1~126）
-ip.is-class-b()(yes)                // B 類（128~191）
-ip.is-class-c()(yes)                // C 類（192~223）
+yes = ip.is-loopback()               // 127.0.0.0/8
+yes = ip.is-private()                // 10/8, 172.16/12, 192.168/16
+yes = ip.is-zero()                   // 0.0.0.0
+yes = ip.is-broadcast()              // 255.255.255.255
+yes = ip.is-multicast()              // 224.0.0.0/4
+yes = ip.is-link-local()             // 169.254.0.0/16
+yes = ip.is-class-a()                // A 類（1~126）
+yes = ip.is-class-b()                // B 類（128~191）
+yes = ip.is-class-c()                // C 類（192~223）
 
 // 比較與子網
-ip.equal(other)(yes)                // 地址相等比較
-ip.in-subnet(base, prefix-len)(yes) // 子網包含檢查
+yes = ip.equal(other)                // 地址相等比較
+yes = ip.in-subnet(base, prefix-len) // 子網包含檢查
 
 // 便捷函數
-ip-parse(s)(addr, ok)               // 快速解析
-ip-is-loopback(s)(yes)              // 快速判斷環回
-ip-is-private(s)(yes)               // 快速判斷私有
+addr = ip-parse(s)                   // 快速解析（?ip-addr, nil=無效）
+yes = ip-is-loopback(s)              // 快速判斷環回
+yes = ip-is-private(s)               // 快速判斷私有
 ```
 
 ### net/sse — Server-Sent Events 客戶端
@@ -628,8 +705,8 @@ client: {
 }
 
 // 其他方法
-client.is-connected()(yes)         // 檢查連線狀態
-client.reconnect()(ok)             // 重新連線（使用 last-event-id）
+yes = client.is-connected()         // 檢查連線狀態
+ok = client.reconnect()             // 重新連線（使用 last-event-id）
 ```
 
 ---
@@ -639,14 +716,14 @@ client.reconnect()(ok)             // 重新連線（使用 last-event-id）
 ### time — 時間操作
 
 ```nolang
-now-s()(sec)                    // 目前 Unix 時間戳（秒）
-now-ms()(ms)                    // 目前時間戳（毫秒）
-now-us()(us)                    // 目前時間戳（微秒）
-format-time(t, fmt)(out)        // 格式化時間
+sec = now-s()                   // 目前 Unix 時間戳（秒）
+ms = now-ms()                   // 目前時間戳（毫秒）
+us = now-us()                   // 目前時間戳（微秒）
+out = format-time(t, fmt)        // 格式化時間
 sleep-ms(ms)                    // 睡眠（毫秒）
 sleep-us(us)                    // 睡眠（微秒）
-duration-between(start, end)(d) // 耗時（秒）
-duration-ms-between(s, e)(d)    // 耗時（毫秒）
+d = duration-between(start, end) // 耗時（秒）
+d = duration-ms-between(s, e)    // 耗時（毫秒）
 ```
 
 ---
@@ -663,7 +740,11 @@ LEVEL-ERROR = 3
 LEVEL-FATAL = 4
 
 set-level(lvl)
-debug(msg), info(msg), warn(msg), error(msg), fatal(msg)
+debug(msg)
+info(msg)
+warn(msg)
+error(msg)
+fatal(msg)
 ```
 
 ---
@@ -673,15 +754,15 @@ debug(msg), info(msg), warn(msg), error(msg), fatal(msg)
 ### set — 集合（基於陣列）
 
 ```nolang
-add(s, n, val)(new-n)           // 新增元素
-set-remove(s, n, val)(new-n)        // 移除元素
-contains(s, n, val)(ok)         // 是否包含
-union(a, an, b, bn)(new-an)     // 聯集
-intersection(a, an, b, bn)(out, n)// 交集
-difference(a, an, b, bn)(out, n)  // 差集
-to-vec(s, n)(v)                 // 轉切片
-set-size(s, n)(sz)                   // 元素個數
-set-empty(s, n)(yes)                    // 是否為空
+new-n = add(s, n, val)           // 新增元素
+new-n = set-remove(s, n, val)        // 移除元素
+ok = contains(s, n, val)         // 是否包含
+new-an = union(a, an, b, bn)     // 聯集
+out, n = intersection(a, an, b, bn)// 交集
+out, n = difference(a, an, b, bn)  // 差集
+v = to-vec(s, n)                 // 轉切片
+sz = set-size(s, n)                   // 元素個數
+yes = set-empty(s, n)                    // 是否為空
 ```
 
 ### deque — 雙端佇列
@@ -690,7 +771,12 @@ set-empty(s, n)(yes)                    // 是否為空
 
 ```nolang
 // 結構體
-deque { buf []i64, cap i64, head i64, tail i64 }
+deque {
+    buf []i64
+    cap i64
+    head i64
+    tail i64
+}
 
 // 初始化
 d = deque{
@@ -703,12 +789,12 @@ d = deque{
 // 方法
 d.push-front(val)              // 從前端推入
 d.push-back(val)               // 從後端推入
-d.pop-front()(val)             // 從前端彈出
-d.pop-back()(val)              // 從後端彈出
-d.peek-front()(val, ok)        // 查看前端元素
-d.peek-back()(val, ok)         // 查看後端元素
-d.size()(sz)                   // 大小
-d.empty()(yes)                 // 是否為空
+val = d.pop-front()             // 從前端彈出
+val = d.pop-back()              // 從後端彈出
+val = d.peek-front()            // 查看前端元素（?i64, nil=空）
+val = d.peek-back()             // 查看後端元素（?i64, nil=空）
+sz = d.size()                   // 大小
+yes = d.empty()                 // 是否為空
 d.clear()                      // 清空
 ```
 
@@ -718,17 +804,20 @@ d.clear()                      // 清空
 
 ```nolang
 // 結構體
-heap { data []i64, n i64 }
+heap {
+    data []i64
+    n i64
+}
 
 // 初始化
 h = heap.init(data)            // 建立堆積
 
 // 方法
 h.push(val)                    // 推入元素
-h.pop()(val, ok)               // 彈出最小元素
-h.peek()(val, ok)              // 查看最小元素
-h.size()(sz)                   // 大小
-h.empty()(yes)                 // 是否為空
+val = h.pop()                  // 彈出最小元素（?i64, nil=空）
+val = h.peek()                 // 查看最小元素（?i64, nil=空）
+sz = h.size()                  // 大小
+yes = h.empty()                // 是否為空
 ```
 
 ### stack — 堆疊
@@ -737,7 +826,10 @@ h.empty()(yes)                 // 是否為空
 
 ```nolang
 // 結構體
-stack { data []i64, n i64 }
+stack {
+    data []i64
+    n i64
+}
 
 // 初始化
 buf [128]i64 = [0:128]
@@ -748,10 +840,10 @@ s = stack{
 
 // 方法
 s.push(val)                    // 推入元素
-s.pop()(val, ok)               // 彈出頂端元素
-s.peek()(val, ok)              // 查看頂端元素
-s.size()(sz)                   // 大小
-s.empty()(yes)                 // 是否為空
+val = s.pop()                  // 彈出頂端元素（?i64, nil=空）
+val = s.peek()                 // 查看頂端元素（?i64, nil=空）
+sz = s.size()                  // 大小
+yes = s.empty()                // 是否為空
 s.clear()                      // 清空
 ```
 
@@ -829,11 +921,11 @@ s.for-each(val)
 
 ```nolang
 // 編碼（定義於 byte 模組）
-data.to-hex()(out)                  // []byte → 大寫 hex str
-data.to-hex-lower()(out)            // []byte → 小寫 hex str
+out = data.to-hex()                  // []byte → 大寫 hex str
+out = data.to-hex-lower()            // []byte → 小寫 hex str
 
 // 解碼（定義於 str 模組）
-s.from-hex()(out)                   // hex str → ?[]byte（nil=空, err=無效字元）
+out = s.from-hex()                   // hex str → ?[]byte（nil=空, err=無效字元）
 ```
 
 ### encoding/base64 — Base64（RFC 4648）
@@ -843,18 +935,18 @@ BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  // '='
 
-encode(data, n, table, out)(out-n)    // Base64 編碼
-encode-std(data, n, out)(out-n)       // 標準編碼
-encode-url(data, n, out)(out-n)       // URL 安全編碼
-decode(s, n, table, out)(out-n, ok)   // Base64 解碼
+out-n = encode(data, n, table, out)    // Base64 編碼
+out-n = encode-std(data, n, out)       // 標準編碼
+out-n = encode-url(data, n, out)       // URL 安全編碼
+out-n = decode(s, n, table, out)   // Base64 解碼（?i64, nil=無效輸入）
 ```
 
 ### encoding/csv — CSV 解析（RFC 4180）
 
 ```nolang
-parse-field(s, sn, pos, field)(fn, new-pos)  // 解析單個欄位
-parse-line(s, sn, fields, max)(n)             // 解析一行
-encode-field(field, fn, out)(out-n)           // 編碼欄位
+fn, new-pos = parse-field(s, sn, pos, field)  // 解析單個欄位
+n = parse-line(s, sn, fields, max)             // 解析一行
+out-n = encode-field(field, fn, out)           // 編碼欄位
 ```
 
 ---
@@ -868,31 +960,31 @@ encode-field(field, fn, out)(out-n)           // 編碼欄位
 archive = tar{
     data: raw-bytes
 }
-archive.count()(count)
-archive.entry(idx)(e)
-archive.name(idx)(name)
-archive.size(idx)(sz)
-archive.type(idx)(typ)              // "file" / "dir" / "unknown"
-archive.is-dir(idx)(yes)
-archive.is-file(idx)(yes)
-archive.read(idx)(out)
-archive.mode(idx)(mode)
-archive.mtime(idx)(ts)
+count = archive.count()
+e = archive.entry(idx)
+name = archive.name(idx)
+sz = archive.size(idx)
+typ = archive.type(idx)              // "file" / "dir" / "unknown"
+yes = archive.is-dir(idx)
+yes = archive.is-file(idx)
+out = archive.read(idx)
+mode = archive.mode(idx)
+ts = archive.mtime(idx)
 
 // 讀取 .tar.gz（自動解壓縮）
 archive = tar-open-gz(gz-data)
 
 // tar-entry 方法
-e.name()(name)
-e.size()(sz)
-e.type()(typ)
-e.read()(out)
+name = e.name()
+sz = e.size()
+typ = e.type()
+out = e.read()
 
 // 寫入 tar
 builder = tar-builder{}
 builder.add-file(name, content)
 builder.add-dir(name)
-builder.finish()(archive)
+archive = builder.finish()
 ```
 
 ### archive/zip — ZIP 歸檔解析
@@ -901,28 +993,28 @@ builder.finish()(archive)
 archive = zip{
     data: raw-bytes
 }
-archive.count()(count)                        // 條目數
-archive.entry(idx)(e)                         // 取得 zip-entry
-archive.name(idx)(name)                       // 檔名
-archive.size(idx)(sz)                         // 原始大小
-archive.compressed-size(idx)(csz)             // 壓縮後大小
-archive.method(idx)(method)                   // 0=stored, 8=deflate
-archive.extract(idx)(out)                     // stored 和 deflate 模式
+count = archive.count()                        // 條目數
+e = archive.entry(idx)                         // 取得 zip-entry
+name = archive.name(idx)                       // 檔名
+sz = archive.size(idx)                         // 原始大小
+csz = archive.compressed-size(idx)             // 壓縮後大小
+method = archive.method(idx)                   // 0=stored, 8=deflate
+out = archive.extract(idx)                     // stored 和 deflate 模式
 
 // zip-entry 方法
-e.name()(name)
-e.size()(sz)
-e.compressed-size()(csz)
-e.method()(method)
-e.extract()(out)
+name = e.name()
+sz = e.size()
+csz = e.compressed-size()
+method = e.method()
+out = e.extract()
 ```
 
 ### archive/gzip — GZIP 壓縮與原始 DEFLATE
 
 ```nolang
-gzip-compress(data)(out)                      // zlib 壓縮
-gzip-decompress(data)(out)                    // zlib 解壓縮
-inflate-decompress(data, out-size)(out)       // 原始 DEFLATE 解壓縮（ZIP method 8）
+out = gzip-compress(data)                      // zlib 壓縮
+out = gzip-decompress(data)                    // zlib 解壓縮
+out = inflate-decompress(data, out-size)       // 原始 DEFLATE 解壓縮（ZIP method 8）
 ```
 
 ---
@@ -958,7 +1050,7 @@ rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
 ### hash/md5 — MD5（128-bit）
 
 ```nolang
-md5(data)(out [16]byte)
+out [16]byte = md5(data)
 ```
 
 ### hash/sha1 — SHA-1（160-bit）
@@ -1012,15 +1104,15 @@ fnv-1a-32(s []byte, n, h)
 ### hash/rand — 隨機數產生器（xorshift32）
 
 ```nolang
-rand(state)(r)                     // 32-bit 偽隨機數
+r = rand(state)                     // 32-bit 偽隨機數
 rand-str(state, n, s)              // 隨機字母數字字串
 ```
 
 ### hash/x509 — X.509 憑證 DER 解析
 
 ```nolang
-der-tag(data, pos)(tag)
-der-len(data, pos)(len, adv)
+tag = der-tag(data, pos)
+len, adv = der-len(data, pos)
 x509-fingerprint(cert, n, h0..h7)  // SHA-256 憑證指紋
 x509-rsa-e(cert, n, e)             // RSA 公鑰指數提取
 ```
@@ -1037,15 +1129,15 @@ KIND-NULL, KIND-BOOL, KIND-NUM, KIND-STR, KIND-ARR, KIND-OBJ
 JSON-NULL, JSON-TRUE, JSON-FALSE
 
 // 解析
-parse(s, n)(v json-value)          // 完整解析
-parse-str(s, n)(v)                 // 解析字串值
-parse-num(s, n)(v)                 // 解析數值值
+v = parse(s, n)          // 完整解析
+v = parse-str(s, n)                 // 解析字串值
+v = parse-num(s, n)                 // 解析數值值
 
 // 產生
-stringify(v json-value, out)(n)    // 序列化
+n = stringify(v, out)    // 序列化
 
 // 存取
-get-key(v json-value, key)(val)    // 取得物件屬性
+val = get-key(v, key)    // 取得物件屬性
 set-key(v json-value, key, val)    // 設定物件屬性
 ```
 
@@ -1064,55 +1156,73 @@ Unicode 相關功能已分散至 `char` 和 `str` 模組：
 ### uuid — UUID v4 產生與解析
 
 ```nolang
-new-v4(state)(out)                  // 產生 UUID v4
-uuid.to-str(out)(out-n)             // 轉小寫字串（方法）
-uuid.to-str-upper(out)(out-n)       // 轉大寫字串（方法）
-from-str(s, sn, out)(ok)            // 從字串解析（支援連字號/不帶）
-parse-with-dashes(s, pos, out)(ok)  // 含連字號解析
-parse-no-dashes(s, pos, out)(ok)    // 無連字號解析
-uuid.validate()(ok)                 // 驗證 UUID 格式（方法）
-uuid.version()(v)                   // 取得版本（方法）
-uuid.variant()(v)                   // 取得變體（方法）
-uuid.is-nil()(yes)                  // 是否為 nil（方法）
-uuid.eq(b)(yes)                     // 相等比較（方法）
-uuid.cmp(b)(r)                      // 比較（方法）
-nil-uuid(out)                       // 回傳 nil UUID
+out = new-v4(state)                  // 產生 UUID v4
+out-n = uuid.to-str(out)             // 轉小寫字串（方法）
+out-n = uuid.to-str-upper(out)       // 轉大寫字串（方法）
+ok = from-str(s, sn, out)            // 從字串解析（支援連字號/不帶）
+ok = parse-with-dashes(s, pos, out)  // 含連字號解析
+ok = parse-no-dashes(s, pos, out)    // 無連字號解析
+ok = uuid.validate()                 // 驗證 UUID 格式（方法）
+v = uuid.version()                   // 取得版本（方法）
+v = uuid.variant()                   // 取得變體（方法）
+yes = uuid.is-nil()                  // 是否為 nil（方法）
+yes = uuid.eq(b)                     // 相等比較（方法）
+r = uuid.cmp(b)                      // 比較（方法）
+nil-uuid(out)                        // 回傳 nil UUID
 ```
 
 ### bigint — 任意精度整數
 
 ```nolang
 // 型別
-bigint { sign i64, limbs []i64, len i64 }
+bigint {
+    sign i64
+    limbs []i64
+    len i64
+}
 
 // 建構
-from-i64(v)(out), from-u64(v)(out)
-zero()(out), one()(out)
-copy(a)(out)
+out = from-i64(v)
+out = from-u64(v)
+out = zero()
+out = one()
+out = copy(a)
 
 // 比較
-cmp(a, b)(r), eq(a, b)(r)
-is-zero(a)(r), is-neg(a)(r), is-pos(a)(r)
+r = cmp(a, b)
+r = eq(a, b)
+r = is-zero(a)
+r = is-neg(a)
+r = is-pos(a)
 
 // 運算
-add(a, b)(c), sub(a, b, c)
-mul(a, b)(c)
-div-mod(a, b)(q, r), mod(a, b, r)
-div-i64(a, v, q), mod-i64(a, v)(r)
-pow(a, n)(c), mod-pow(base, exp, mod, r)
+c = add(a, b)
+c = sub(a, b)
+c = mul(a, b)
+q, r = div-mod(a, b)
+r = mod(a, b)
+q = div-i64(a, v)
+r = mod-i64(a, v)
+c = pow(a, n)
+r = mod-pow(base, exp, mod, r)
 
 // 數論
-gcd(a, b, g), lcm(a, b, l)
+gcd(a, b, g)
+lcm(a, b, l)
 
 // 移位
-shl(a, n, c), shr(a, n, c)
+shl(a, n, c)
+shr(a, n, c)
 
 // 字串轉換
-to-str(a, out)(n), from-str(s, sn, out)
-to-hex(a, out)(n), from-hex(s, sn, out)
+n = to-str(a, out)
+out = from-str(s, sn)
+n = to-hex(a, out)
+out = from-hex(s, sn)
 
 // 小整數輔助
-add-i64(a, v, c), mul-i64(a, v, c)
+add-i64(a, v, c)
+mul-i64(a, v, c)
 ```
 
 ### err — 錯誤處理
@@ -1122,20 +1232,29 @@ add-i64(a, v, c), mul-i64(a, v, c)
 ```nolang
 // 錯誤碼枚舉
 err-code {
-    OK = 0, NOT-FOUND = 1, PERMISSION = 2, IO = 3,
-    TIMEOUT = 4, PARSE = 5, INVALID = 6, OVERFLOW = 7,
+    ok,
+    not-found,
+    permission,
+    io,
+    timeout,
+    parse,
+    invalid,
+    overflow,
 }
 
 // 結構體
-error { code i64, msg str }
+error {
+    code err-code
+    msg str
+}
 
 // 函數
-err-new(code, msg)(e)            // 建立錯誤
-err-from-errno(errno)(e)         // 從 C errno 建立
-err-is(e, code)(yes)             // 判斷錯誤碼
-err-msg(e)(msg)                  // 取得錯誤訊息
-err-code-of(e)(code)             // 取得錯誤碼
-err-format(e)(s, n)              // 格式化為字串
+e = err-new(code, msg)            // 建立錯誤
+e = err-from-errno(errno)         // 從 C errno 建立
+yes = err-is(e, code)             // 判斷錯誤碼
+msg = err-msg(e)                  // 取得錯誤訊息
+code = err-code-of(e)             // 取得錯誤碼
+s, n = err-format(e)              // 格式化為字串
 ```
 
 ### bool — 布爾型別
@@ -1147,8 +1266,16 @@ bool.to-str() (out str)     // true→"true", false→"false"（方法）
 ### enter / leave — 生命週期鉤子
 
 ```nolang
-enter { enter() }     // 啟動時執行
-leave { leave() }     // 退出時執行
+
+// 啟動時執行
+enter { 
+    enter()
+}     
+
+// 退出時執行
+leave {
+    leave()
+}     
 ```
 
 ---

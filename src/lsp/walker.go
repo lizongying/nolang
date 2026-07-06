@@ -170,7 +170,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	case *parser.EnumDefinition:
 		entry := &IndexEntry{
 			Name:  s.Name,
-			Kind:  SymbolKindVariable,
+			Kind:  SymbolKindEnum,
 			Type:  "enum",
 			Value: formatEnumValues(s.Values),
 			Location: Location{
@@ -180,6 +180,28 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		}
 		w.index.symbols[s.Name] = entry
 		w.index.definitions[s.Name] = entry
+
+		// Register each enum variant as an EnumMember symbol
+		for _, v := range s.Values {
+			variantEntry := &IndexEntry{
+				Name:  v.Name,
+				Kind:  SymbolKindEnumMember,
+				Type:  s.Name,
+				Value: fmt.Sprintf("%d", v.Value),
+				Location: Location{
+					URI: w.uri,
+					Range: Range{
+						Start: Position{Line: uint32(v.Token.Line - 1), Character: uint32(v.Token.Column - 1)},
+						End:   Position{Line: uint32(v.Token.Line - 1), Character: uint32(v.Token.Column - 1 + len(v.Name))},
+					},
+				},
+			}
+			if _, exists := w.index.symbols[v.Name]; !exists {
+				w.index.symbols[v.Name] = variantEntry
+				w.index.definitions[v.Name] = variantEntry
+			}
+			w.index.declarations[v.Name] = append(w.index.declarations[v.Name], variantEntry)
+		}
 
 	case *parser.ExternStatement:
 		if s.Name != nil {

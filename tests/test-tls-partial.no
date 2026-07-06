@@ -19,7 +19,7 @@ main = () {
     buf2[0] = 0xAB
     buf2[1] = 0xCD
     val i64 = 0
-    tls-get-u16(buf2, 0)(val)
+    val = tls-get-u16(buf2, 0)
     if val != 0xABCD {
         print('FAIL: get-u16 expected 0xABCD')
         return
@@ -41,7 +41,7 @@ main = () {
     buf4[1] = 0x34
     buf4[2] = 0x56
     val2 i64 = 0
-    tls-get-u24(buf4, 0)(val2)
+    val2 = tls-get-u24(buf4, 0)
     if val2 != 0x123456 {
         print('FAIL: get-u24 expected 0x123456')
         return

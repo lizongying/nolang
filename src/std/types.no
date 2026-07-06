@@ -105,6 +105,9 @@
 // ═══════════════════════════════════════════════
 
 // iterator 為介面（interface）：
-//   iterator {
-//       next()(val i64, ok i64)
+//   next() (ok bool)
+//
+// 使用 for 條件循環遍歷：
+//   for iter.next() {
+//       // 處理每個元素
 //   }

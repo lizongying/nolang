@@ -659,7 +659,7 @@ aes-key = '\x2b\x7e\x15\x16\x28\xae\xd2\xa6\xab\xf7\x15\x88\x09\xcf\x4f\x3c'
 aes-plain = '\x6b\xc1\xbe\xe2\x2e\x40\x9f\x96\xe9\x3d\x7e\x11\x73\x93\x17\x2a'
 
 aes-out = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-aes-128-enc(aes-plain, 16, aes-key)(aes-out)
+aes-out = aes-128-enc(aes-plain, 16, aes-key)
 
 fmt.print('aes-enc=')
 i = 0
@@ -670,7 +670,7 @@ i < 16: {
 fmt.println('')
 
 aes-dec = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-aes-128-dec(aes-out, 16, aes-key)(aes-dec)
+aes-dec = aes-128-dec(aes-out, 16, aes-key)
 
 fmt.print('aes-dec=')
 i = 0
@@ -688,7 +688,7 @@ des-key = '\x13\x34\x57\x79\x9b\xbc\xdf\xf1'
 des-plain = '\x01\x23\x45\x67\x89\xab\xcd\xef'
 
 des-out = '\x00\x00\x00\x00\x00\x00\x00\x00'
-des-enc(des-plain, 8, des-key)(des-out)
+des-out = des-enc(des-plain, 8, des-key)
 
 fmt.print('des-enc=')
 i = 0
@@ -699,7 +699,7 @@ i < 8: {
 fmt.println('')
 
 des-dec = '\x00\x00\x00\x00\x00\x00\x00\x00'
-des-dec(des-out, 8, des-key)(des-dec)
+des-dec = des-dec(des-out, 8, des-key)
 
 fmt.print('des-dec=')
 i = 0

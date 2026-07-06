@@ -55,8 +55,8 @@ main = () {
     node-idx i64 = 0
     key-idx i64 = 0
 
-    p.alloc()(node-idx)
-    p.alloc()(key-idx)
+    node-idx = p.alloc()
+    key-idx = p.alloc()
 
     p.nodes[key-idx].kind = KIND-STR
     p.nodes[key-idx].str-val.len = 1

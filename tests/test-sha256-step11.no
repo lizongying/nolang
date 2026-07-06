@@ -11,7 +11,7 @@ main = () {
     print('start')
     print('before my-fn')
     h [32]byte
-    my-fn()(h)
+    h = my-fn()
     print('after my-fn')
     print(h[0])
     print(h[1])

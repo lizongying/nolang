@@ -9,7 +9,7 @@ main = () {
     msg[2] = 0x63
     print('before sha256')
     h [32]byte
-    sha256(msg)(h)
+    h = sha256(msg)
     print('after sha256')
     print(h[0])
     print('done')

@@ -86,6 +86,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
 	g.ssaTypes = make(map[string]string)                 // reset SSA type tracking for each function
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
+	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -250,6 +251,37 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+		}
+		// [N]T 局部陣列需 malloc 資料緩衝區並初始化 len/data，否則 arr[i] = val
+		// 會因 data 為未初始化（stack 殘值）而寫入垃圾地址，造成堆損壞。
+		if varType == "%arr" {
+			arrSize := int64(0)
+			if g.arraySizes != nil {
+				if sz, ok := g.arraySizes[varName]; ok {
+					arrSize = sz
+				}
+			}
+			elemSize := int64(8)
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[varName]; ok {
+					elemSize = g.llvmTypeSize(et)
+				}
+			}
+			totalSize := arrSize * elemSize
+			if totalSize <= 0 {
+				totalSize = 64
+			}
+			g.tmpIdx++
+			arrDataBuf := fmt.Sprintf("%%local.arrdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+			g.tmpIdx++
+			arrLenGEP := fmt.Sprintf("%%local.arrlen.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
+			g.tmpIdx++
+			arrDataGEP := fmt.Sprintf("%%local.arrdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), arrDataBuf, arrDataGEP))
 		}
 	}
 
@@ -767,6 +799,52 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
+			}
+			// Track array size for [N]T locals so we can malloc the data buffer
+			if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil {
+				if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+					if g.arraySizes != nil {
+						g.arraySizes[s.Name.Value] = intLit.Value
+					}
+					// Also register element type for IndexExpression
+					if at.Elem != nil && g.arrayElemTypes != nil {
+						g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
+					}
+				}
+			}
+			// Infer array element type and size from function call return type
+			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte)
+			if vt == "%arr" && g.funcResultNolangTypes != nil {
+				fnName := ""
+				if call, ok := s.Value.(*parser.CallExpression); ok {
+					if ident, ok := call.Function.(*parser.Identifier); ok {
+						fnName = ident.Value
+					}
+				}
+				if fnName != "" {
+					if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
+						// Parse [N]T format
+						nolangType := nolangRets[0]
+						if strings.HasPrefix(nolangType, "[") {
+							// Extract element type: [N]T → T
+							if rbracket := strings.Index(nolangType, "]"); rbracket > 1 {
+								elemType := nolangType[rbracket+1:]
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(elemType)
+								}
+								// Extract size: [N]T → N
+								sizeStr := nolangType[1:rbracket]
+								if n, err := fmt.Sscanf(sizeStr, "%d", new(int64)); err == nil && n == 1 {
+									if g.arraySizes != nil {
+										var sz int64
+										fmt.Sscanf(sizeStr, "%d", &sz)
+										g.arraySizes[s.Name.Value] = sz
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 		// Recurse into value expression to collect inner variables

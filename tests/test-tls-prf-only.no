@@ -13,7 +13,7 @@ main = () {
     seed[1] = 0xBB
     seed[2] = 0xCC
     prf-out []byte
-    tls-prf(secret, 4, 'test label', seed, 3, 32)(prf-out)
+    prf-out = tls-prf(secret, 4, 'test label', seed, 3, 32)
     print('after prf')
     has-nonzero = 0
     i = 0

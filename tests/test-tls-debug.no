@@ -18,7 +18,7 @@ main = () {
     // 測試 2: tls-get-u16
     print('test 2: tls-get-u16')
     val i64 = 0
-    tls-get-u16-s(buf, 0)(val)
+    val = tls-get-u16-s(buf, 0)
     if val != 0x1234 {
         print('FAIL: expected 0x1234')
         return
@@ -35,7 +35,7 @@ main = () {
     b[1] = 4
     out []byte
     out-n i64 = 0
-    tls-bytes-cat(a, 2, b, 2)(out, out-n)
+    out, out-n = tls-bytes-cat(a, 2, b, 2)
     if out-n != 4 {
         print('FAIL: expected out-n=4')
         return
@@ -46,7 +46,7 @@ main = () {
     print('test 4: tls-rand-bytes')
     state i64 = 12345
     r-out []byte
-    tls-rand-bytes(state, 8)(r-out)
+    r-out = tls-rand-bytes(state, 8)
     print('PASS: tls-rand-bytes')
 
     print('=== Done ===')

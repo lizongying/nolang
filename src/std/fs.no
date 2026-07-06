@@ -385,7 +385,7 @@ copy-file = (src str, dst str) (ok i64) {
     }
     fd-w = open-write(dst)
     if fd-w < 0 {
-        close(fd-r)()
+        close(fd-r)
         return
     }
     buf [4096]byte
@@ -394,9 +394,9 @@ copy-file = (src str, dst str) (ok i64) {
         if n <= 0 {
             break
         }
-        write(fd-w, buf, n)()
+        write(fd-w, buf, n)
     }
-    close(fd-r)()
-    close(fd-w)()
+    close(fd-r)
+    close(fd-w)
     ok = 1
 }

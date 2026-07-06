@@ -6,7 +6,7 @@ main = () {
     s str = 'test label'
     b []byte
     print('before method call')
-    s.to-bytes()(b)
+    b = s.to-bytes()
     print('after method call')
     print(b[0])
     print('done')

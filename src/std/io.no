@@ -216,7 +216,7 @@ io-read-line = () (line ?str) {
     line = nil
     s = ''
     ok = false
-    get-line()(s, ok)
+    s, ok = get-line()
     if ok {
         line = s
     }

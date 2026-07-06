@@ -10,7 +10,7 @@
 main = () {
     // 測試 1: connect
     c client = client{}
-    c.connect('127.0.0.1', 8080)(ok)
+    ok = c.connect('127.0.0.1', 8080)
     if ok {
         print('ok: connect')
     } else {
@@ -19,7 +19,7 @@ main = () {
     }
 
     // 測試 2: is-connected
-    c.is-connected()(yes)
+    yes = c.is-connected()
     if yes {
         print('ok: is-connected')
     } else {
@@ -28,13 +28,13 @@ main = () {
 
     // 測試 3: send / recv
     buf str = ''
-    c.send('hello')(written)
+    written = c.send('hello')
     if written > 0 {
         print('ok: send')
     } else {
         print('fail: send')
     }
-    c.recv(buf, 1024)(read-n)
+    read-n = c.recv(buf, 1024)
     if read-n > 0 {
         print('ok: recv')
     } else {
@@ -42,7 +42,7 @@ main = () {
     }
 
     // 測試 4: send-line / recv-line
-    c.send-line('world')(written2)
+    written2 = c.send-line('world')
     if written2 > 0 {
         print('ok: send-line')
     } else {
@@ -56,7 +56,7 @@ main = () {
 
     // 測試 5: close
     c.close()
-    c.is-connected()(yes2)
+    yes2 = c.is-connected()
     if yes2 == false {
         print('ok: close')
     } else {
@@ -64,7 +64,7 @@ main = () {
     }
 
     // 測試 6: reconnect
-    c.reconnect()(re-ok)
+    re-ok = c.reconnect()
     if re-ok {
         print('ok: reconnect')
     } else {

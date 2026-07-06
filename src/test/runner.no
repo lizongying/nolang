@@ -9,10 +9,10 @@
 //   main = () (code i64) {
 //       passed = 0
 //       failed = 0
-//       assert-eq(1, 1, 'test 1')(ok)
+//       ok = assert-eq(1, 1, 'test 1')
 //       if ok == false { failed = test-fail(failed) }
 //       else { passed = test-pass(passed) }
-//       test-summary(passed, failed)()
+//       test-summary(passed, failed)
 //       if failed > 0 { return 1 }
 //       return 0
 //   }
