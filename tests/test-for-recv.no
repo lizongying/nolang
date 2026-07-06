@@ -1,0 +1,11 @@
+// test-for-recv — 測試 for 循環中的 str 變數
+main = () {
+    n i64 = 5
+    total i64 = 0
+    for (total < n) {
+        tmp str = ' '
+        print('tmp created')
+        total = total + 1
+    }
+    print('done')
+}

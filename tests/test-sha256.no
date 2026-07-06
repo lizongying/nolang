@@ -1,0 +1,16 @@
+// test-sha256 — 測試 sha256
+// # std/hash/sha256
+
+main = () {
+    print('start')
+    msg []byte
+    msg[0] = 0x61
+    msg[1] = 0x62
+    msg[2] = 0x63
+    print('before sha256')
+    h [32]byte
+    h = sha256(msg)
+    print('after sha256')
+    print(h[0])
+    print('done')
+}

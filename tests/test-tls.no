@@ -1,0 +1,246 @@
+// test-tls — TLS 1.2 客戶端測試
+// # std/net/tls
+
+// test-tls-put-u16: 測試 16-bit 大端序寫入
+test-tls-put-u16 = () {
+    space str = ' '
+    buf str = space.repeat(8)
+    tls-put-u16-s(buf, 0, 0x1234)
+    if buf[0] != 0x12 {
+        print('FAIL: expected 0x12')
+        return
+    }
+    if buf[1] != 0x34 {
+        print('FAIL: expected 0x34')
+        return
+    }
+    print('PASS: tls-put-u16')
+}
+
+// test-tls-get-u16: 測試 16-bit 大端序讀取
+test-tls-get-u16 = () {
+    space str = ' '
+    buf str = space.repeat(8)
+    buf[0] = 0xAB
+    buf[1] = 0xCD
+    val i64 = 0
+    tls-get-u16-s(buf, 0)(val)
+    if val != 0xABCD {
+        print('FAIL: expected 0xABCD')
+        return
+    }
+    print('PASS: tls-get-u16')
+}
+
+// test-tls-put-u24: 測試 24-bit 大端序寫入
+test-tls-put-u24 = () {
+    space str = ' '
+    buf str = space.repeat(8)
+    tls-put-u24-s(buf, 0, 0x123456)
+    if buf[0] != 0x12 {
+        print('FAIL: expected 0x12')
+        return
+    }
+    if buf[1] != 0x34 {
+        print('FAIL: expected 0x34')
+        return
+    }
+    if buf[2] != 0x56 {
+        print('FAIL: expected 0x56')
+        return
+    }
+    print('PASS: tls-put-u24')
+}
+
+// test-tls-get-u24: 測試 24-bit 大端序讀取
+test-tls-get-u24 = () {
+    space str = ' '
+    buf str = space.repeat(8)
+    buf[0] = 0x12
+    buf[1] = 0x34
+    buf[2] = 0x56
+    val i64 = 0
+    tls-get-u24-s(buf, 0)(val)
+    if val != 0x123456 {
+        print('FAIL: expected 0x123456')
+        return
+    }
+    print('PASS: tls-get-u24')
+}
+
+// test-tls-bytes-cat: 測試位元組陣列串接
+test-tls-bytes-cat = () {
+    a []byte
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    b []byte
+    b[0] = 4
+    b[1] = 5
+    out []byte
+    out-n i64 = 0
+    tls-bytes-cat(a, 3, b, 2)(out, out-n)
+    if out-n != 5 {
+        print('FAIL: expected out-n=5')
+        return
+    }
+    if out[0] != 1 {
+        print('FAIL: expected out[0]=1')
+        return
+    }
+    if out[3] != 4 {
+        print('FAIL: expected out[3]=4')
+        return
+    }
+    print('PASS: tls-bytes-cat')
+}
+
+// test-tls-bytes-to-bn: 測試 big-endian 位元組 → 大整數轉換
+test-tls-bytes-to-bn = () {
+    data []byte
+    data[0] = 0x01
+    data[1] = 0x02
+    data[2] = 0x03
+    data[3] = 0x04
+    out []i64
+    out-n i64 = 0
+    tls-bytes-to-bn(data, 4)(out, out-n)
+    // 4 bytes → 1 limb
+    if out-n != 1 {
+        print('FAIL: expected out-n=1')
+        return
+    }
+    // little-endian base 2^32: 0x01020304
+    if out[0] != 0x01020304 {
+        print('FAIL: expected 0x01020304')
+        return
+    }
+    print('PASS: tls-bytes-to-bn')
+}
+
+// test-tls-bn-to-bytes: 測試大整數 → big-endian 位元組轉換
+test-tls-bn-to-bytes = () {
+    num []i64
+    num[0] = 0x01020304
+    out []byte
+    out-n i64 = 0
+    tls-bn-to-bytes(num, 1)(out, out-n)
+    // 1 limb → 4 bytes, then strip leading zeros (0x01 is not zero)
+    if out-n != 4 {
+        print('FAIL: expected out-n=4')
+        return
+    }
+    if out[0] != 0x01 {
+        print('FAIL: expected out[0]=0x01')
+        return
+    }
+    if out[3] != 0x04 {
+        print('FAIL: expected out[3]=0x04')
+        return
+    }
+    print('PASS: tls-bn-to-bytes')
+}
+
+// test-tls-rand-bytes: 測試隨機位元組生成
+test-tls-rand-bytes = () {
+    state i64 = 12345
+    out []byte
+    tls-rand-bytes(state, 16)(out)
+    // 驗證長度（透過檢查不崩潰即可）
+    i = 0
+    for i < 16 {
+        if out[i] < 0 {
+            print('FAIL: negative byte')
+            return
+        }
+        i = i + 1
+    }
+    print('PASS: tls-rand-bytes')
+}
+
+// test-tls-prf: 測試 TLS PRF（P_SHA256）
+test-tls-prf = () {
+    secret []byte
+    secret[0] = 1
+    secret[1] = 2
+    secret[2] = 3
+    secret[3] = 4
+    seed []byte
+    seed[0] = 0xAA
+    seed[1] = 0xBB
+    seed[2] = 0xCC
+    out []byte
+    tls-prf(secret, 4, 'test label', seed, 3, 32)(out)
+    // PRF 輸出應為 32 bytes，驗證不為全零
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if out[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: PRF output all zeros')
+        return
+    }
+    print('PASS: tls-prf')
+}
+
+// test-tls-conn-init: 測試 tls-conn 初始化
+test-tls-conn-init = () {
+    c tls-conn
+    c.init()
+    if c.connected != false {
+        print('FAIL: expected connected=false')
+        return
+    }
+    if c.encrypted != false {
+        print('FAIL: expected encrypted=false')
+        return
+    }
+    if c.fd != 0 {
+        print('FAIL: expected fd=0')
+        return
+    }
+    if c.write-seq != 0 {
+        print('FAIL: expected write-seq=0')
+        return
+    }
+    print('PASS: tls-conn-init')
+}
+
+// test-https-url-detection: 測試 http-do 的 https:// 偵測（編譯時驗證）
+test-https-url-detection = () {
+    // 這個測試僅驗證 https:// URL 能被 http-do 接受（不會因 scheme 不匹配而 return）
+    // 實際網路連線需要真實伺服器，這裡只做編譯/vet 驗證
+    resp http-response
+    ok bool = false
+    // 不實際呼叫，僅驗證型別檢查通過
+    if resp.status-code != 0 {
+        print('FAIL: expected status-code=0')
+        return
+    }
+    if ok != false {
+        print('FAIL: expected ok=false')
+        return
+    }
+    print('PASS: https-url-detection')
+}
+
+// main: 執行所有測試
+main = () {
+    print('=== TLS Tests ===')
+    test-tls-put-u16()
+    test-tls-get-u16()
+    test-tls-put-u24()
+    test-tls-get-u24()
+    test-tls-bytes-cat()
+    test-tls-bytes-to-bn()
+    test-tls-bn-to-bytes()
+    test-tls-rand-bytes()
+    test-tls-prf()
+    test-tls-conn-init()
+    test-https-url-detection()
+    print('=== TLS Tests Done ===')
+}

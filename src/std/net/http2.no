@@ -7,6 +7,8 @@
 //   conn, ok = http2-connect(host, port)
 //   resp, ok = http2-do('GET', 'http://host/path', '')
 
+# std/net/tls
+
 // ═══════════════════════════════════════════════
 // 常量
 // ═══════════════════════════════════════════════
@@ -15,6 +17,8 @@ HTTP2-FRAME-HEADER-SIZE = 9
 HTTP2-MAX-PAYLOAD = 16384
 HTTP2-DEFAULT-WINDOW = 65535
 HTTP2-INITIAL-STREAM-ID = 1
+HTTP2-DEFAULT-PORT = 80
+HTTP2-DEFAULT-TLS-PORT = 443
 
 // 影格類型
 FRAME-DATA = 0
@@ -57,6 +61,8 @@ http2-conn {
     send-window i64
     recv-window i64
     initialized bool
+    use-tls bool
+    tls-c tls-conn
 }
 
 // ═══════════════════════════════════════════════
@@ -124,15 +130,31 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
     hdr str = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     frame.serialize(hdr, 0)(0)
     // 發送標頭
-    written = net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
-    if written != HTTP2-FRAME-HEADER-SIZE {
-        return
+    written i64 = 0
+    send-ok bool = false
+    if .use-tls {
+        written, send-ok = .tls-c.send(hdr, HTTP2-FRAME-HEADER-SIZE)
+        if send-ok == false {
+            return
+        }
+    } else {
+        written = net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
+        if written != HTTP2-FRAME-HEADER-SIZE {
+            return
+        }
     }
     // 發送 payload
     if frame.payload-len > 0 {
-        written = net-send(.fd, frame.payload, frame.payload-len)
-        if written != frame.payload-len {
-            return
+        if .use-tls {
+            written, send-ok = .tls-c.send(frame.payload, frame.payload-len)
+            if send-ok == false {
+                return
+            }
+        } else {
+            written = net-send(.fd, frame.payload, frame.payload-len)
+            if written != frame.payload-len {
+                return
+            }
         }
     }
     ok = true
@@ -149,21 +171,30 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
     // 讀取 9-byte 影格標頭
     hdr-buf str = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     hdr-total i64 = 0
+    recv-n i64 = 0
+    recv-ok bool = false
     ! {
         if hdr-total >= HTTP2-FRAME-HEADER-SIZE {
             *
         }
-        n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
-        if n <= 0 {
+        if .use-tls {
+            recv-n, recv-ok = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+            if recv-ok == false {
+                return
+            }
+        } else {
+            recv-n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+        }
+        if recv-n <= 0 {
             return
         }
         // net-recv 覆寫 buf[0]，需要位移複製
         i = 0
-        for i < n {
+        for i < recv-n {
             hdr-buf[hdr-total + i] = hdr-buf[i]
             i = i + 1
         }
-        hdr-total = hdr-total + n
+        hdr-total = hdr-total + recv-n
     }
     // 解析標頭
     next-pos i64 = 0
@@ -182,16 +213,23 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
             if payload-total >= frame.length {
                 *
             }
-            n = net-recv(.fd, frame.payload, frame.length - payload-total)
-            if n <= 0 {
+            if .use-tls {
+                recv-n, recv-ok = .tls-c.recv(frame.payload, frame.length - payload-total)
+                if recv-ok == false {
+                    return
+                }
+            } else {
+                recv-n = net-recv(.fd, frame.payload, frame.length - payload-total)
+            }
+            if recv-n <= 0 {
                 return
             }
             i = 0
-            for i < n {
+            for i < recv-n {
                 frame.payload[payload-total + i] = frame.payload[i]
                 i = i + 1
             }
-            payload-total = payload-total + n
+            payload-total = payload-total + recv-n
         }
         frame.payload-len = frame.length
     }
@@ -322,6 +360,77 @@ http2-connect = (host str, port i64) (conn http2-conn, ok bool) {
         return
     }
     ok = true
+}
+
+// http2-connect-tls: 建立 HTTP/2 over TLS 連線
+// 先建立 TLS 連線，再送出 HTTP/2 preface + SETTINGS
+// 返回 conn=連線, ok=true=成功
+http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
+    ok = false
+    // 1. 建立 TLS 連線
+    tls-c tls-conn
+    tls-ok bool = false
+    tls-c, tls-ok = tls-dial(host, port)
+    if tls-ok == false {
+        return
+    }
+    conn.init()
+    conn.use-tls = true
+    conn.tls-c = tls-c
+    conn.fd = tls-c.fd
+    // 2. 送出連線 preface（透過 TLS）
+    cr str = char-to-str(13)
+    lf str = char-to-str(10)
+    preface str = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
+    written i64 = 0
+    send-ok bool = false
+    written, send-ok = tls-c.send(preface, preface.len)
+    if send-ok == false {
+        tls-c.close()
+        conn.fd = -1
+        return
+    }
+    if written != preface.len {
+        tls-c.close()
+        conn.fd = -1
+        return
+    }
+    // 3. 送出空 SETTINGS
+    conn.send-settings(false)(send-ok)
+    if send-ok == false {
+        tls-c.close()
+        conn.fd = -1
+        return
+    }
+    // 4. 接收伺服器 SETTINGS 並 ACK
+    f http2-frame
+    recv-ok bool = false
+    conn.recv-frame(f)(recv-ok)
+    if recv-ok == false {
+        tls-c.close()
+        conn.fd = -1
+        return
+    }
+    // 5. ACK 伺服器 SETTINGS
+    conn.send-settings(true)(send-ok)
+    if send-ok == false {
+        tls-c.close()
+        conn.fd = -1
+        return
+    }
+    ok = true
+}
+
+// http2-conn.close: 關閉連線（自動處理 TLS/明文）
+http2-conn.close = () {
+    if .use-tls {
+        .tls-c.close()
+    } else {
+        if .fd >= 0 {
+            close(.fd)
+        }
+    }
+    .fd = -1
 }
 
 // http2-conn.request: 執行 HTTP/2 請求
@@ -462,23 +571,43 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     resp-n = 0
     // 解析 URL
     host str = ''
-    port i64 = 80
+    port i64 = HTTP2-DEFAULT-PORT
     path str = '/'
-    // 去掉 'http://'
+    use-tls bool = false
     u str = url
-    if u.len >= 7 {
-        prefix str = 'http://'
-        matched = 1
+    // 偵測 scheme 並去掉前綴
+    if u.len >= 8 {
+        prefix-https str = 'https://'
+        matched-https = 1
         i = 0
-        for i < 7 {
-            if u[i] != prefix[i] {
-                matched = 0
+        for i < 8 {
+            if u[i] != prefix-https[i] {
+                matched-https = 0
                 break
             }
             i = i + 1
         }
-        if matched == 1 {
-            u = u.slice(7, u.len)
+        if matched-https == 1 {
+            use-tls = true
+            port = HTTP2-DEFAULT-TLS-PORT
+            u = u.slice(8, u.len)
+        }
+    }
+    if use-tls == false {
+        if u.len >= 7 {
+            prefix str = 'http://'
+            matched = 1
+            i = 0
+            for i < 7 {
+                if u[i] != prefix[i] {
+                    matched = 0
+                    break
+                }
+                i = i + 1
+            }
+            if matched == 1 {
+                u = u.slice(7, u.len)
+            }
         }
     }
     // 分離 host:port 和 path
@@ -506,14 +635,18 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     // 建立連線
     conn http2-conn
     conn-ok bool = false
-    http2-connect(host, port)(conn, conn-ok)
+    if use-tls {
+        http2-connect-tls(host, port)(conn, conn-ok)
+    } else {
+        http2-connect(host, port)(conn, conn-ok)
+    }
     if conn-ok == false {
         return
     }
     // 發送請求
     conn.request(method, path, host, body)(names, values, header-count, resp-body, resp-n, ok)
     // 關閉連線
-    close(conn.fd)
+    conn.close()
 }
 
 // ═══════════════════════════════════════════════

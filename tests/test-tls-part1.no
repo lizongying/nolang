@@ -1,0 +1,31 @@
+// test-tls-part1 — 前四個測試
+// # std/net/tls
+
+main = () {
+    print('=== TLS Part 1 ===')
+
+    // test-tls-put-u16
+    space str = ' '
+    buf str = space.repeat(8)
+    tls-put-u16-s(buf, 0, 0x1234)
+    if buf[0] != 0x12 { print('FAIL: put-u16'); return }
+    print('PASS: put-u16')
+
+    // test-tls-get-u16
+    val i64 = 0
+    tls-get-u16-s(buf, 0)(val)
+    if val != 0x1234 { print('FAIL: get-u16'); return }
+    print('PASS: get-u16')
+
+    // test-tls-put-u24
+    tls-put-u24-s(buf, 0, 0x123456)
+    if buf[0] != 0x12 { print('FAIL: put-u24'); return }
+    print('PASS: put-u24')
+
+    // test-tls-get-u24
+    tls-get-u24-s(buf, 0)(val)
+    if val != 0x123456 { print('FAIL: get-u24'); return }
+    print('PASS: get-u24')
+
+    print('=== Done ===')
+}

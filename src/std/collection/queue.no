@@ -1,0 +1,144 @@
+// queue — 泛型佇列（基於定長陣列的環形緩衝區）
+//
+// 先進先出（FIFO）資料結構，以 [n]t 定長陣列作為底層儲存。
+// 使用環形緩衝區（ring buffer）實作，head 指向隊首、tail 指向下一個寫入位置。
+// 容量固定為 n-1（犧牲一個位置以區分「滿」與「空」）。
+//
+// 泛型設計：值操作方法（push/pop/peek）定義在 [n]t 上，
+// 泛型參數 n（陣列大小）和 t（元素型別）由編譯器自動推斷。
+// 佇列狀態（cap/head/tail）獨立儲存在 queue 結構體中。
+//
+// 與 deque 的差異：
+// - queue 僅支援 FIFO（後端入、前端出），API 更簡潔
+// - queue 使用泛型 [n]t，支援任意元素型別（i64/u8/byte 等）
+// - deque 僅支援 []i64
+//
+// 用法：
+//   buf [128]i64 = [0:128]
+//   q = buf.queue-init()
+//   ok = buf.queue-push(q, 42)
+//   ok = buf.queue-push(q, 7)
+//   val = buf.queue-pop(q)      // val = ok(42)
+//   val = buf.queue-pop(q)      // val = ok(7)
+//   val = buf.queue-pop(q)      // val = nil（佇列為空）
+//   sz = q.size()
+//   yes = q.empty()
+//
+//   // option 解包
+//   val = buf.queue-pop(q)
+//   val: {
+//       nil -> println('empty')
+//       -> println(it)          // it = 彈出的值
+//   }
+
+// queue: 佇列狀態（不含緩衝區，緩衝區由 [n]t receiver 提供）
+// cap: 環形緩衝區容量（= 陣列長度 n）
+// head: 隊首索引（邏輯索引，取模後映射到實體位置）
+// tail: 隊尾索引（下一個寫入位置）
+queue {
+    cap i64
+    head i64
+    tail i64
+}
+
+// ═══════════════════════════════════════════════
+// 泛型方法（定義在 [n]t 上，由編譯器單態化）
+// ═══════════════════════════════════════════════
+
+// [n]t.queue-init: 初始化佇列狀態
+// cap 自動設為陣列大小 n
+// 返回 q queue: 初始化後的佇列狀態
+[n]t.queue-init = () (q queue) {
+    q.cap = n
+    q.head = 0
+    q.tail = 0
+}
+
+// [n]t.queue-push: 推入元素到佇列尾端
+// q queue: 佇列狀態
+// val t: 要推入的值
+// 返回 ok bool: true=成功, false=佇列已滿
+[n]t.queue-push = (q queue, val t) (ok bool) {
+    ok = false
+    sz = q.tail - q.head
+    if sz >= q.cap - 1 {
+        return
+    }
+    idx = q.tail
+    {
+        idx >= 0 ->
+            idx = idx % q.cap
+        ->
+            idx = q.cap - ((-idx) % q.cap)
+    }
+    .[idx] = val
+    q.tail = q.tail + 1
+    ok = true
+}
+
+// [n]t.queue-pop: 從佇列前端彈出元素
+// q queue: 佇列狀態
+// 返回 val ?t: ok(v)=彈出值, nil=佇列為空
+[n]t.queue-pop = (q queue) (val ?t) {
+    sz = q.tail - q.head
+    if sz <= 0 {
+        val = nil
+        return
+    }
+    idx = q.head
+    {
+        idx >= 0 ->
+            idx = idx % q.cap
+        ->
+            idx = q.cap - ((-idx) % q.cap)
+    }
+    val = .[idx]
+    q.head = q.head + 1
+}
+
+// [n]t.queue-peek: 查看隊首元素（不移除）
+// q queue: 佇列狀態
+// 返回 val ?t: ok(v)=隊首值, nil=佇列為空
+[n]t.queue-peek = (q queue) (val ?t) {
+    sz = q.tail - q.head
+    if sz <= 0 {
+        val = nil
+        return
+    }
+    idx = q.head
+    {
+        idx >= 0 ->
+            idx = idx % q.cap
+        ->
+            idx = q.cap - ((-idx) % q.cap)
+    }
+    val = .[idx]
+}
+
+// ═══════════════════════════════════════════════
+// 狀態查詢方法（定義在 queue 上，不涉及元素型別）
+// ═══════════════════════════════════════════════
+
+// size: 返回佇列中元素數量
+// 返回 sz i64: 元素數量
+queue.size = () (sz i64) {
+    sz = .tail - .head
+}
+
+// empty: 判斷佇列是否為空
+// 返回 yes bool: true=空, false=非空
+queue.empty = () (yes bool) {
+    yes = .tail <= .head
+}
+
+// full: 判斷佇列是否已滿
+// 返回 yes bool: true=已滿, false=未滿
+queue.full = () (yes bool) {
+    yes = .tail - .head >= .cap - 1
+}
+
+// clear: 清空佇列
+queue.clear = () {
+    .head = 0
+    .tail = 0
+}

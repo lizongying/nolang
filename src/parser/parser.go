@@ -3040,7 +3040,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			leftExp = p.parseSliceExpression(leftExp)
 		} else if p.currentToken.Type == lexer.LBRACE {
 			// Struct literal: user { name: 'abc' age: 20 }
-			if p.classifyBlockAtCurrent() == blockStruct {
+			// 在 for 條件上下文中，{ 是循環體，不應解析為結構體字面量
+			if !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && p.classifyBlockAtCurrent() == blockStruct {
 				result := p.parseStructLiteral(leftExp)
 				if result != nil {
 					leftExp = result

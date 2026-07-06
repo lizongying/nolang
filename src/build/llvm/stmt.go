@@ -223,6 +223,26 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: varType, Size: sz})
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
+		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
+		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
+		if varType == "%vec" {
+			vecBufSize := 4096
+			g.tmpIdx++
+			dataBuf := fmt.Sprintf("%%local.vecdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%local.veclen.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%local.veccap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+		}
 	}
 
 	// 單結果輸出參數（新語法 () (out str)）需初始化 data 指標，
@@ -245,11 +265,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(outName)))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 		} else if outType == "%vec" {
-			vecBufSize := 256
+			// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
+			vecBufSize := 4096
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%out.vecdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), dataBuf, vecBufSize))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), vecBufSize, dataBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%out.veclen.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
@@ -262,6 +282,31 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			dataGEP := fmt.Sprintf("%%out.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+		} else if outType == "%arr" {
+			// [N]byte 輸出參數需初始化 len 與 data 指標，否則 hash[i] = val 會因 data 為 null 而崩潰。
+			// 使用 malloc 使得資料在函數返回後仍然有效（呼叫者會 load 輸出參數）。
+			var arrSize int64 = 0
+			if at, ok := fd.Results[0].Type.(*parser.ArrayType); ok && at.Size != nil {
+				if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+					arrSize = intLit.Value
+				}
+			}
+			elemSize := int64(1)
+			if at, ok := fd.Results[0].Type.(*parser.ArrayType); ok && at.Elem != nil {
+				elemSize = g.llvmTypeSize(g.mapToLLVMType(at.Elem.String()))
+			}
+			totalSize := arrSize * elemSize
+			g.tmpIdx++
+			arrDataBuf := fmt.Sprintf("%%out.arrdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+			g.tmpIdx++
+			arrLenGEP := fmt.Sprintf("%%out.arrlen.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
+			g.tmpIdx++
+			arrDataGEP := fmt.Sprintf("%%out.arrdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), arrDataBuf, arrDataGEP))
 		}
 	}
 

@@ -1,0 +1,11 @@
+// test-forloop3 — 測試 for 循環變數 (不同名稱)
+main = () {
+    print('start')
+    cnt = 0
+    for cnt < 3 {
+        print('cnt=')
+        print(cnt)
+        cnt = cnt + 1
+    }
+    print('end')
+}

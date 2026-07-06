@@ -4,9 +4,10 @@
 // 内部实现：str-short（栈分配 SSO）| str-long（堆分配）
 // str-short 仅作为编译器内部优化，不出现在公开 API
 //
-// 切片方法繼承：對 str 進行切片操作（如 s[1..3]）仍產生 str 型別，
+// 切片是視圖，非獨立類型：對 str 進行切片操作（如 s[1..3]）仍產生 str 視圖，
+// 共享 str 的底層記憶體，不複製資料。
 // 因此 str 的所有方法（to-upper、to-lower、index、contains、slice、copy、fill 等）
-// 均適用於 str 的切片結果。
+// 均適用於 str 的切片視圖。通過切片修改元素會影響原始 str。
 //
 // str {
 //     len i64 read-only       // 对外：i64 长度

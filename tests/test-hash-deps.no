@@ -1,0 +1,9 @@
+# std/hash/sha256
+# std/hash/hmac
+# std/hash/aes
+# std/hash/aes-cbc
+# std/hash/rand
+
+main = () {
+    print('hash deps ok')
+}

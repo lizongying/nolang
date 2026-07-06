@@ -1,0 +1,438 @@
+// link — 泛型雙向鏈結串列（基於定長陣列節點池）
+//
+// 雙向鏈結串列（Doubly Linked List），以 [n]t 定長陣列作為值儲存，
+// 搭配 []i64 索引陣列實現 next/prev 鏈結。
+// 使用空閒鏈結串列（free list）管理節點分配與回收，支援 O(1) 插入/刪除。
+//
+// 泛型設計：值操作方法定義在 [n]t 上，
+// 泛型參數 n（陣列大小）和 t（元素型別）由編譯器自動推斷。
+// 鏈結狀態（head/tail/free-head/size）獨立儲存在 link 結構體中。
+//
+// 與 queue/arr-stack 的差異：
+// - link 支援任意位置插入/刪除（O(n) 定位 + O(1) 修改）
+// - link 支援雙端 push/pop，且 pop-back 為 O(1)
+// - queue 僅 FIFO，arr-stack 僅 LIFO
+// - link 需要額外的 next/prev 索引陣列
+//
+// 用法：
+//   buf [128]i64 = [0:128]
+//   nxt [128]i64 = [0:128]
+//   prv [128]i64 = [0:128]
+//   l = buf.link-init(nxt, prv)
+//   ok = buf.link-push-back(l, 10)
+//   ok = buf.link-push-back(l, 20)
+//   ok = buf.link-push-front(l, 5)
+//   // 串列: 5 → 10 → 20
+//   val = buf.link-pop-front(l)   // val = ok(5)
+//   val = buf.link-pop-back(l)    // val = ok(20)
+//   // 串列: 10
+//   sz = l.size()
+//   yes = l.empty()
+//
+//   // option 解包
+//   val = buf.link-pop-front(l)
+//   val: {
+//       nil -> println('empty')
+//       -> println(it)
+//   }
+
+// link: 鏈結串列狀態（不含值緩衝區，值由 [n]t receiver 提供）
+// head: 頭節點索引，-1=空串列
+// tail: 尾節點索引，-1=空串列
+// free-head: 空閒鏈結串列頭索引，-1=節點池已滿
+// size: 當前元素數量
+// next: 下一節點索引陣列（由呼叫者提供）
+// prev: 前一節點索引陣列（由呼叫者提供）
+link {
+    head i64
+    tail i64
+    free-head i64
+    size i64
+    next []i64
+    prev []i64
+}
+
+// ═══════════════════════════════════════════════
+// 泛型方法（定義在 [n]t 上，由編譯器單態化）
+// ═══════════════════════════════════════════════
+
+// [n]t.link-init: 初始化鏈結串列
+// nxt []i64: 下一節點索引陣列（由呼叫者提供，大小 ≥ n）
+// prv []i64: 前一節點索引陣列（由呼叫者提供，大小 ≥ n）
+// 返回 l link: 初始化後的鏈結串列
+[n]t.link-init = (nxt []i64, prv []i64) (l link) {
+    l.head = -1
+    l.tail = -1
+    l.free-head = 0
+    l.size = 0
+    l.next = nxt
+    l.prev = prv
+    // 初始化空閒鏈結串列: 0→1→2→...→n-1→-1
+    i = 0
+    for i < n - 1 {
+        l.next[i] = i + 1
+        i = i + 1
+    }
+    l.next[n - 1] = -1
+}
+
+// [n]t.link-push-front: 插入元素到鏈結串列頭部
+// l link: 鏈結串列狀態
+// val t: 要插入的值
+// 返回 ok bool: true=成功, false=節點池已滿
+[n]t.link-push-front = (l link, val t) (ok bool) {
+    ok = false
+    // 從空閒鏈結串列分配節點
+    idx = l.free-head
+    if idx < 0 {
+        return
+    }
+    l.free-head = l.next[idx]
+    // 寫入值
+    .[idx] = val
+    // 鏈結到頭部
+    l.next[idx] = l.head
+    l.prev[idx] = -1
+    if l.head >= 0 {
+        l.prev[l.head] = idx
+    }
+    l.head = idx
+    if l.tail < 0 {
+        l.tail = idx
+    }
+    l.size = l.size + 1
+    ok = true
+}
+
+// [n]t.link-push-back: 插入元素到鏈結串列尾部
+// l link: 鏈結串列狀態
+// val t: 要插入的值
+// 返回 ok bool: true=成功, false=節點池已滿
+[n]t.link-push-back = (l link, val t) (ok bool) {
+    ok = false
+    idx = l.free-head
+    if idx < 0 {
+        return
+    }
+    l.free-head = l.next[idx]
+    .[idx] = val
+    l.next[idx] = -1
+    l.prev[idx] = l.tail
+    if l.tail >= 0 {
+        l.next[l.tail] = idx
+    }
+    l.tail = idx
+    if l.head < 0 {
+        l.head = idx
+    }
+    l.size = l.size + 1
+    ok = true
+}
+
+// [n]t.link-pop-front: 從鏈結串列頭部彈出元素
+// l link: 鏈結串列狀態
+// 返回 val ?t: ok(v)=彈出值, nil=串列為空
+[n]t.link-pop-front = (l link) (val ?t) {
+    if l.head < 0 {
+        val = nil
+        return
+    }
+    idx = l.head
+    val = .[idx]
+    l.head = l.next[idx]
+    if l.head >= 0 {
+        l.prev[l.head] = -1
+    } else {
+        l.tail = -1
+    }
+    // 回收節點到空閒鏈結串列
+    l.next[idx] = l.free-head
+    l.free-head = idx
+    l.size = l.size - 1
+}
+
+// [n]t.link-pop-back: 從鏈結串列尾部彈出元素
+// l link: 鏈結串列狀態
+// 返回 val ?t: ok(v)=彈出值, nil=串列為空
+[n]t.link-pop-back = (l link) (val ?t) {
+    if l.tail < 0 {
+        val = nil
+        return
+    }
+    idx = l.tail
+    val = .[idx]
+    l.tail = l.prev[idx]
+    if l.tail >= 0 {
+        l.next[l.tail] = -1
+    } else {
+        l.head = -1
+    }
+    l.next[idx] = l.free-head
+    l.free-head = idx
+    l.size = l.size - 1
+}
+
+// [n]t.link-peek-front: 查看頭部元素（不移除）
+// l link: 鏈結串列狀態
+// 返回 val ?t: ok(v)=頭部值, nil=串列為空
+[n]t.link-peek-front = (l link) (val ?t) {
+    if l.head < 0 {
+        val = nil
+        return
+    }
+    val = .[l.head]
+}
+
+// [n]t.link-peek-back: 查看尾部元素（不移除）
+// l link: 鏈結串列狀態
+// 返回 val ?t: ok(v)=尾部值, nil=串列為空
+[n]t.link-peek-back = (l link) (val ?t) {
+    if l.tail < 0 {
+        val = nil
+        return
+    }
+    val = .[l.tail]
+}
+
+// [n]t.link-insert-at: 在指定位置插入元素
+// l link: 鏈結串列狀態
+// pos i64: 插入位置（0=頭部, size=尾部）
+// val t: 要插入的值
+// 返回 ok bool: true=成功, false=位置越界或節點池已滿
+[n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
+    ok = false
+    if pos < 0 || pos > l.size {
+        return
+    }
+    if pos == 0 {
+        // 插入頭部
+        idx = l.free-head
+        if idx < 0 {
+            return
+        }
+        l.free-head = l.next[idx]
+        .[idx] = val
+        l.next[idx] = l.head
+        l.prev[idx] = -1
+        if l.head >= 0 {
+            l.prev[l.head] = idx
+        }
+        l.head = idx
+        if l.tail < 0 {
+            l.tail = idx
+        }
+        l.size = l.size + 1
+        ok = true
+        return
+    }
+    if pos == l.size {
+        // 插入尾部
+        idx = l.free-head
+        if idx < 0 {
+            return
+        }
+        l.free-head = l.next[idx]
+        .[idx] = val
+        l.next[idx] = -1
+        l.prev[idx] = l.tail
+        if l.tail >= 0 {
+            l.next[l.tail] = idx
+        }
+        l.tail = idx
+        if l.head < 0 {
+            l.head = idx
+        }
+        l.size = l.size + 1
+        ok = true
+        return
+    }
+    // 插入中間：定位到 pos 的節點
+    idx = l.head
+    i = 0
+    for i < pos {
+        idx = l.next[idx]
+        i = i + 1
+    }
+    // 分配新節點
+    new = l.free-head
+    if new < 0 {
+        return
+    }
+    l.free-head = l.next[new]
+    .[new] = val
+    // 插入到 idx 之前
+    p = l.prev[idx]
+    l.prev[new] = p
+    l.next[new] = idx
+    l.next[p] = new
+    l.prev[idx] = new
+    l.size = l.size + 1
+    ok = true
+}
+
+// [n]t.link-remove-at: 移除指定位置的元素
+// l link: 鏈結串列狀態
+// pos i64: 移除位置
+// 返回 val ?t: ok(v)=移除的值, nil=位置越界
+[n]t.link-remove-at = (l link, pos i64) (val ?t) {
+    if pos < 0 || pos >= l.size {
+        val = nil
+        return
+    }
+    if pos == 0 {
+        // 移除頭部
+        idx = l.head
+        val = .[idx]
+        l.head = l.next[idx]
+        if l.head >= 0 {
+            l.prev[l.head] = -1
+        } else {
+            l.tail = -1
+        }
+        l.next[idx] = l.free-head
+        l.free-head = idx
+        l.size = l.size - 1
+        return
+    }
+    if pos == l.size - 1 {
+        // 移除尾部
+        idx = l.tail
+        val = .[idx]
+        l.tail = l.prev[idx]
+        if l.tail >= 0 {
+            l.next[l.tail] = -1
+        } else {
+            l.head = -1
+        }
+        l.next[idx] = l.free-head
+        l.free-head = idx
+        l.size = l.size - 1
+        return
+    }
+    // 移除中間：定位到 pos 的節點
+    idx = l.head
+    i = 0
+    for i < pos {
+        idx = l.next[idx]
+        i = i + 1
+    }
+    val = .[idx]
+    p = l.prev[idx]
+    nx = l.next[idx]
+    l.next[p] = nx
+    l.prev[nx] = p
+    // 回收節點
+    l.next[idx] = l.free-head
+    l.free-head = idx
+    l.size = l.size - 1
+}
+
+// [n]t.link-get-at: 取得指定位置的元素
+// l link: 鏈結串列狀態
+// pos i64: 位置
+// 返回 val ?t: ok(v)=元素值, nil=位置越界
+[n]t.link-get-at = (l link, pos i64) (val ?t) {
+    if pos < 0 || pos >= l.size {
+        val = nil
+        return
+    }
+    idx = l.head
+    i = 0
+    for i < pos {
+        idx = l.next[idx]
+        i = i + 1
+    }
+    val = .[idx]
+}
+
+// [n]t.link-set-at: 設定指定位置的元素
+// l link: 鏈結串列狀態
+// pos i64: 位置
+// val t: 新值
+// 返回 ok bool: true=成功, false=位置越界
+[n]t.link-set-at = (l link, pos i64, val t) (ok bool) {
+    ok = false
+    if pos < 0 || pos >= l.size {
+        return
+    }
+    idx = l.head
+    i = 0
+    for i < pos {
+        idx = l.next[idx]
+        i = i + 1
+    }
+    .[idx] = val
+    ok = true
+}
+
+// [n]t.link-find: 查找值的位置
+// l link: 鏈結串列狀態
+// val t: 要查找的值
+// 返回 pos i64: 位置索引, -1=未找到
+[n]t.link-find = (l link, val t) (pos i64) {
+    pos = -1
+    idx = l.head
+    i = 0
+    for i < l.size {
+        d = .[idx] - val
+        if d == 0 {
+            pos = i
+            return
+        }
+        idx = l.next[idx]
+        i = i + 1
+    }
+}
+
+// [n]t.link-reverse: 反轉鏈結串列
+// 交換所有節點的 next/prev，然後交換 head/tail
+// l link: 鏈結串列狀態
+[n]t.link-reverse = (l link) {
+    idx = l.head
+    for idx >= 0 {
+        nx = l.next[idx]
+        l.next[idx] = l.prev[idx]
+        l.prev[idx] = nx
+        idx = nx
+    }
+    tmp = l.head
+    l.head = l.tail
+    l.tail = tmp
+}
+
+// [n]t.link-clear: 清空鏈結串列，回收所有節點
+// l link: 鏈結串列狀態
+[n]t.link-clear = (l link) {
+    idx = l.head
+    for idx >= 0 {
+        nx = l.next[idx]
+        l.next[idx] = l.free-head
+        l.free-head = idx
+        idx = nx
+    }
+    l.head = -1
+    l.tail = -1
+    l.size = 0
+}
+
+// ═══════════════════════════════════════════════
+// 狀態查詢方法（定義在 link 上，不涉及元素型別）
+// ═══════════════════════════════════════════════
+
+// size: 返回鏈結串列中元素數量
+// 返回 sz i64: 元素數量
+link.size = () (sz i64) {
+    sz = .size
+}
+
+// empty: 判斷鏈結串列是否為空
+// 返回 yes bool: true=空, false=非空
+link.empty = () (yes bool) {
+    yes = .size <= 0
+}
+
+// full: 判斷節點池是否已滿
+// 返回 yes bool: true=已滿, false=未滿
+link.full = () (yes bool) {
+    yes = .free-head < 0
+}

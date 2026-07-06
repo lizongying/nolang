@@ -205,8 +205,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				}
 				return retType
 			}
+			// 跨模組函數呼叫（定義在 std 模組中，vet 階段尚未 merge），
+			// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
+			return ""
 		}
-		// 3. 檢查 struct 方法調用（DotExpression）
+		// 4. 檢查 struct 方法調用（DotExpression）
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			var typeName string
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {

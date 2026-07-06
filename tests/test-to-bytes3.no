@@ -1,0 +1,13 @@
+// test-to-bytes3 — 測試不同調用方式
+// # std/net/tls
+
+main = () {
+    print('start')
+    s str = 'test label'
+    b []byte
+    print('before method call')
+    s.to-bytes()(b)
+    print('after method call')
+    print(b[0])
+    print('done')
+}

@@ -1642,11 +1642,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 			} else if voidSingleOutputType == "%vec" {
 				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
-				vecBufSize := 256
+				// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
+				vecBufSize := 4096
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%vso.vecdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), dataBuf, vecBufSize))
-				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), vecBufSize, dataBuf))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 				// 初始化 len = 0（field 0）
 				g.tmpIdx++
 				lenGEP := fmt.Sprintf("%%vso.veclen.gep.%d", g.tmpIdx)

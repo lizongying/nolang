@@ -1,0 +1,13 @@
+// test-str-repeat-only — 測試 str.repeat 是否正常
+main = () {
+    print('start')
+    space str = ' '
+    print('before repeat')
+    buf str = space.repeat(8)
+    print('after repeat')
+    if buf[0] != 32 {
+        print('FAIL: expected space')
+        return
+    }
+    print('PASS: str.repeat')
+}

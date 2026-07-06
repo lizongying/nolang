@@ -1,0 +1,5 @@
+# std/hash/sha256
+
+main = () {
+    print('sha256 import ok')
+}

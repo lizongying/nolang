@@ -1,0 +1,44 @@
+// test-sha256-step14 — my-sha256 只有填充計算
+// # std/hash/sha256
+
+my-sha256 = (data []byte) (hash [32]byte) {
+    dlen = data.len
+    print('dlen')
+    print(dlen)
+
+    bit-len = dlen * 8
+    mod-val = (dlen + 9) % 64
+    pad-len = 0
+    if mod-val != 0 {
+        pad-len = 64 - mod-val
+    }
+    total-len = dlen + 1 + pad-len + 8
+    print('total-len')
+    print(total-len)
+
+    padded []byte
+    i = 0
+    for i < total-len {
+        padded[i] = 0
+        i = i + 1
+    }
+    print('padded init done')
+
+    hash[0] = total-len & 255
+    hash[1] = (total-len >> 8) & 255
+}
+
+main = () {
+    print('start')
+    msg []byte
+    msg[0] = 0x61
+    msg[1] = 0x62
+    msg[2] = 0x63
+    print('before my-sha256')
+    h [32]byte
+    h = my-sha256(msg)
+    print('after my-sha256')
+    print(h[0])
+    print(h[1])
+    print('done')
+}

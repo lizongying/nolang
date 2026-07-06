@@ -1,0 +1,14 @@
+// test-tls-step1 — 只測試 tls-put-u16
+// # std/net/tls
+
+main = () {
+    print('test 1: tls-put-u16')
+    space str = ' '
+    buf str = space.repeat(8)
+    tls-put-u16-s(buf, 0, 0x1234)
+    if buf[0] != 0x12 {
+        print('FAIL: expected 0x12')
+        return
+    }
+    print('PASS: tls-put-u16')
+}

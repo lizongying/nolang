@@ -1,0 +1,57 @@
+// test-sha256-simplified — 簡化版 sha256 測試
+// # std/hash/sha256
+
+main = () {
+    print('start')
+    msg []byte
+    msg[0] = 0x61
+    msg[1] = 0x62
+    msg[2] = 0x63
+
+    // 模擬 sha256 的前幾步
+    dlen i64 = 3
+    print('dlen')
+    print(dlen)
+
+    bit-len i64 = dlen * 8
+    print('bit-len')
+    print(bit-len)
+
+    mod-val i64 = (dlen + 9) % 64
+    print('mod-val')
+    print(mod-val)
+
+    pad-len i64 = 0
+    if mod-val != 0 {
+        pad-len = 64 - mod-val
+    }
+    print('pad-len')
+    print(pad-len)
+
+    total-len i64 = dlen + 1 + pad-len + 8
+    print('total-len')
+    print(total-len)
+
+    // 測試 padded []byte
+    padded []byte
+    i i64 = 0
+    for i < total-len {
+        padded[i] = 0
+        i = i + 1
+    }
+    print('padded init done')
+
+    // 複製原始資料
+    i = 0
+    for i < dlen {
+        padded[i] = msg[i]
+        i = i + 1
+    }
+    print('copy done')
+
+    // 填充 0x80
+    padded[dlen] = 128
+    print('0x80 done')
+
+    print('done')
+}

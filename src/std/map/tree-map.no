@@ -1,0 +1,549 @@
+// tree-map — 有序映射表（基於 AVL 自平衡二元搜尋樹）
+//
+// i64→i64 的有序映射，使用 AVL 樹實作。
+// 所有操作為 O(log n)，鍵值按升序遍歷。
+//
+// 與 linked-hash-map 的差異：
+// - tree-map 按鍵值排序（升序），linked-hash-map 按插入順序
+// - tree-map 支援 lower-bound/upper-bound 有序查詢
+// - tree-map 使用 AVL 樹，linked-hash-map 使用哈希表+鏈表
+// - tree-map 的 get 返回 ?i64 option，linked-hash-map 用 (found, result) 參數
+//
+// 用法：
+//   m = tree-map{}
+//   m.init()
+//   ok = m.put(3, 30)       // ok=true（新增）
+//   ok = m.put(1, 10)       // ok=true
+//   ok = m.put(2, 20)       // ok=true
+//   ok = m.put(1, 99)       // ok=false（更新已存在鍵）
+//   val = m.get(2)           // val = ok(20)
+//   key = m.first()          // key = ok(1)（最小鍵）
+//   key = m.last()           // key = ok(3)（最大鍵）
+//   key = m.lower-bound(2)   // key = ok(2)（第一個 ≥ 2 的鍵）
+//   key = m.upper-bound(2)   // key = ok(3)（第一個 > 2 的鍵）
+//   ok = m.remove(2)         // ok=true
+//   yes = m.contains(3)      // yes=true
+//   m.for-each(k, v)         // 按升序遍歷所有鍵值對
+//
+//   // option 解包
+//   val = m.get(42)
+//   val: {
+//       nil -> println('not found')
+//       -> println(it)
+//   }
+
+TM-CAP = 64
+
+// tree-map: AVL 有序映射
+// root: 樹根節點索引，-1=空樹
+// free-head: 空閒節點池頭索引，-1=池已滿
+// size: 當前元素數量
+// keys/vals: 鍵值儲存
+// left/right/parent: 樹結構索引，-1=NIL
+// height: 節點高度（葉=1，NIL=0）
+tree-map {
+    root i64
+    free-head i64
+    size i64
+    keys [64]i64
+    vals [64]i64
+    left [64]i64
+    right [64]i64
+    parent [64]i64
+    height [64]i64
+}
+
+// ═══════════════════════════════════════════════
+// 初始化
+// ═══════════════════════════════════════════════
+
+// init: 初始化空樹與空閒節點池
+tree-map.init = () {
+    .root = -1
+    .free-head = 0
+    .size = 0
+    i = 0
+    for i < TM-CAP - 1 {
+        .left[i] = i + 1
+        i = i + 1
+    }
+    .left[TM-CAP - 1] = -1
+}
+
+// ═══════════════════════════════════════════════
+// 內部方法：節點池管理
+// ═══════════════════════════════════════════════
+
+// alloc-node: 從空閒池分配節點
+// 返回 idx i64: 節點索引，-1=池已滿
+tree-map.alloc-node = () (idx i64) {
+    idx = .free-head
+    if idx < 0 {
+        return
+    }
+    .free-head = .left[idx]
+    .left[idx] = -1
+    .right[idx] = -1
+    .parent[idx] = -1
+    .height[idx] = 1
+}
+
+// free-node: 將節點歸還空閒池
+// idx i64: 要釋放的節點索引
+tree-map.free-node = (idx i64) {
+    .left[idx] = .free-head
+    .free-head = idx
+}
+
+// ═══════════════════════════════════════════════
+// 內部方法：AVL 高度與平衡
+// ═══════════════════════════════════════════════
+
+// ht: 取得節點高度（NIL=0）
+// idx i64: 節點索引
+// 返回 h i64: 高度
+tree-map.ht = (idx i64) (h i64) {
+    h = 0
+    if idx < 0 {
+        return
+    }
+    h = .height[idx]
+}
+
+// update-ht: 重新計算節點高度
+// idx i64: 節點索引
+tree-map.update-ht = (idx i64) {
+    lh = .ht(.left[idx])
+    rh = .ht(.right[idx])
+    .height[idx] = (lh > rh ? lh : rh) + 1
+}
+
+// bf: 取得平衡因子（左高 - 右高）
+// idx i64: 節點索引
+// 返回 b i64: 平衡因子
+tree-map.bf = (idx i64) (b i64) {
+    lh = .ht(.left[idx])
+    rh = .ht(.right[idx])
+    b = lh - rh
+}
+
+// ═══════════════════════════════════════════════
+// 內部方法：AVL 旋轉
+// ═══════════════════════════════════════════════
+
+// rot-left: 左旋
+//     x                y
+//    / \              / \
+//   a   y     =>     x   c
+//      / \          / \
+//     b   c        a   b
+// x i64: 旋轉軸節點
+tree-map.rot-left = (x i64) {
+    y = .right[x]
+    b = .left[y]
+    .right[x] = b
+    if b >= 0 {
+        .parent[b] = x
+    }
+    .left[y] = x
+    .parent[y] = .parent[x]
+    p = .parent[x]
+    if p < 0 {
+        .root = y
+    } else {
+        if .left[p] == x {
+            .left[p] = y
+        } else {
+            .right[p] = y
+        }
+    }
+    .parent[x] = y
+    .update-ht(x)
+    .update-ht(y)
+}
+
+// rot-right: 右旋
+//       x              y
+//      / \            / \
+//     y   c   =>     a   x
+//    / \                / \
+//   a   b              b   c
+// x i64: 旋轉軸節點
+tree-map.rot-right = (x i64) {
+    y = .left[x]
+    b = .right[y]
+    .left[x] = b
+    if b >= 0 {
+        .parent[b] = x
+    }
+    .right[y] = x
+    .parent[y] = .parent[x]
+    p = .parent[x]
+    if p < 0 {
+        .root = y
+    } else {
+        if .left[p] == x {
+            .left[p] = y
+        } else {
+            .right[p] = y
+        }
+    }
+    .parent[x] = y
+    .update-ht(x)
+    .update-ht(y)
+}
+
+// ═══════════════════════════════════════════════
+// 內部方法：AVL 再平衡
+// ═══════════════════════════════════════════════
+
+// rebalance: 在節點 idx 檢查並修復平衡
+// idx i64: 節點索引
+// 返回 nr i64: 再平衡後的子樹根索引
+tree-map.rebalance = (idx i64) (nr i64) {
+    nr = idx
+    b = .bf(idx)
+    // 左重（b > 1）
+    if b > 1 {
+        lb = .bf(.left[idx])
+        if lb < 0 {
+            .rot-left(.left[idx])
+        }
+        .rot-right(idx)
+        nr = .parent[idx]
+        return
+    }
+    // 右重（b < -1）
+    if b < -1 {
+        rb = .bf(.right[idx])
+        if rb > 0 {
+            .rot-right(.right[idx])
+        }
+        .rot-left(idx)
+        nr = .parent[idx]
+        return
+    }
+    .update-ht(idx)
+}
+
+// rebalance-up: 從 idx 向上逐層再平衡
+// idx i64: 起始節點索引
+tree-map.rebalance-up = (idx i64) {
+    for idx >= 0 {
+        nr = .rebalance(idx)
+        idx = .parent[nr]
+    }
+}
+
+// successor: 求節點的中序後繼
+// idx i64: 節點索引
+// 返回 succ i64: 後繼索引，-1=無後繼
+tree-map.successor = (idx i64) (succ i64) {
+    succ = -1
+    if .right[idx] >= 0 {
+        succ = .right[idx]
+        for .left[succ] >= 0 {
+            succ = .left[succ]
+        }
+        return
+    }
+    p = .parent[idx]
+    for p >= 0 {
+        if idx != .right[p] {
+            break
+        }
+        idx = p
+        p = .parent[p]
+    }
+    succ = p
+}
+
+// ═══════════════════════════════════════════════
+// 公開 API：增刪查
+// ═══════════════════════════════════════════════
+
+// put: 插入或更新 key→value
+// key i64: 鍵
+// val i64: 值
+// 返回 ok bool: true=新增, false=更新已存在鍵或池已滿
+tree-map.put = (key i64, val i64) (ok bool) {
+    ok = false
+    // 空樹
+    if .root < 0 {
+        idx = .alloc-node()
+        if idx < 0 {
+            return
+        }
+        .keys[idx] = key
+        .vals[idx] = val
+        .root = idx
+        .size = 1
+        ok = true
+        return
+    }
+    // BST 搜尋插入點
+    cur = .root
+    ! {
+        if key == .keys[cur] {
+            .vals[cur] = val
+            return
+        }
+        if key < .keys[cur] {
+            if .left[cur] < 0 {
+                idx = .alloc-node()
+                if idx < 0 {
+                    return
+                }
+                .keys[idx] = key
+                .vals[idx] = val
+                .left[cur] = idx
+                .parent[idx] = cur
+                .size = .size + 1
+                ok = true
+                .rebalance-up(cur)
+                return
+            }
+            cur = .left[cur]
+        } else {
+            if .right[cur] < 0 {
+                idx = .alloc-node()
+                if idx < 0 {
+                    return
+                }
+                .keys[idx] = key
+                .vals[idx] = val
+                .right[cur] = idx
+                .parent[idx] = cur
+                .size = .size + 1
+                ok = true
+                .rebalance-up(cur)
+                return
+            }
+            cur = .right[cur]
+        }
+    }
+}
+
+// get: 查找鍵對應的值
+// key i64: 鍵
+// 返回 val ?i64: ok(v)=找到, nil=未找到
+tree-map.get = (key i64) (val ?i64) {
+    idx = .root
+    for idx >= 0 {
+        if key == .keys[idx] {
+            val = .vals[idx]
+            return
+        }
+        if key < .keys[idx] {
+            idx = .left[idx]
+        } else {
+            idx = .right[idx]
+        }
+    }
+    val = nil
+}
+
+// contains: 檢查鍵是否存在
+// key i64: 鍵
+// 返回 yes bool: true=存在, false=不存在
+tree-map.contains = (key i64) (yes bool) {
+    yes = false
+    idx = .root
+    for idx >= 0 {
+        if key == .keys[idx] {
+            yes = true
+            return
+        }
+        if key < .keys[idx] {
+            idx = .left[idx]
+        } else {
+            idx = .right[idx]
+        }
+    }
+}
+
+// remove: 刪除鍵
+// key i64: 鍵
+// 返回 ok bool: true=已刪除, false=未找到
+tree-map.remove = (key i64) (ok bool) {
+    ok = false
+    // BST 搜尋
+    idx = .root
+    for idx >= 0 {
+        if key == .keys[idx] {
+            break
+        }
+        if key < .keys[idx] {
+            idx = .left[idx]
+        } else {
+            idx = .right[idx]
+        }
+    }
+    if idx < 0 {
+        return
+    }
+    ok = true
+    .size = .size - 1
+    // 雙子節點：用後繼替換後刪除後繼
+    if .left[idx] >= 0 && .right[idx] >= 0 {
+        succ = .right[idx]
+        for .left[succ] >= 0 {
+            succ = .left[succ]
+        }
+        .keys[idx] = .keys[succ]
+        .vals[idx] = .vals[succ]
+        idx = succ
+    }
+    // 此時 idx 最多一個子節點
+    child = .left[idx]
+    if child < 0 {
+        child = .right[idx]
+    }
+    p = .parent[idx]
+    if child >= 0 {
+        .parent[child] = p
+    }
+    if p < 0 {
+        .root = child
+    } else {
+        if .left[p] == idx {
+            .left[p] = child
+        } else {
+            .right[p] = child
+        }
+    }
+    .free-node(idx)
+    // 從父節點向上再平衡
+    if p >= 0 {
+        .rebalance-up(p)
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 公開 API：有序操作
+// ═══════════════════════════════════════════════
+
+// first: 取得最小鍵
+// 返回 key ?i64: ok(k)=最小鍵, nil=空樹
+tree-map.first = () (key ?i64) {
+    idx = .root
+    if idx < 0 {
+        key = nil
+        return
+    }
+    for .left[idx] >= 0 {
+        idx = .left[idx]
+    }
+    key = .keys[idx]
+}
+
+// last: 取得最大鍵
+// 返回 key ?i64: ok(k)=最大鍵, nil=空樹
+tree-map.last = () (key ?i64) {
+    idx = .root
+    if idx < 0 {
+        key = nil
+        return
+    }
+    for .right[idx] >= 0 {
+        idx = .right[idx]
+    }
+    key = .keys[idx]
+}
+
+// lower-bound: 找第一個 ≥ target 的鍵
+// target i64: 目標鍵
+// 返回 key ?i64: ok(k)=找到, nil=無此鍵
+tree-map.lower-bound = (target i64) (key ?i64) {
+    result = -1
+    idx = .root
+    for idx >= 0 {
+        if .keys[idx] >= target {
+            result = idx
+            idx = .left[idx]
+        } else {
+            idx = .right[idx]
+        }
+    }
+    if result < 0 {
+        key = nil
+        return
+    }
+    key = .keys[result]
+}
+
+// upper-bound: 找第一個 > target 的鍵
+// target i64: 目標鍵
+// 返回 key ?i64: ok(k)=找到, nil=無此鍵
+tree-map.upper-bound = (target i64) (key ?i64) {
+    result = -1
+    idx = .root
+    for idx >= 0 {
+        if .keys[idx] > target {
+            result = idx
+            idx = .left[idx]
+        } else {
+            idx = .right[idx]
+        }
+    }
+    if result < 0 {
+        key = nil
+        return
+    }
+    key = .keys[result]
+}
+
+// for-each: 按鍵升序遍歷所有鍵值對
+// k i64: 輸出鍵（每個元素更新）
+// v i64: 輸出值（每個元素更新）
+tree-map.for-each = (k i64, v i64) {
+    idx = .root
+    if idx < 0 {
+        return
+    }
+    // 定位到最小鍵
+    for .left[idx] >= 0 {
+        idx = .left[idx]
+    }
+    // 逐個後繼遍歷
+    for idx >= 0 {
+        k = .keys[idx]
+        v = .vals[idx]
+        idx = .successor(idx)
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 公開 API：狀態查詢
+// ═══════════════════════════════════════════════
+
+// clear: 清空所有元素，重建空閒池
+tree-map.clear = () {
+    .root = -1
+    .free-head = 0
+    .size = 0
+    i = 0
+    for i < TM-CAP - 1 {
+        .left[i] = i + 1
+        i = i + 1
+    }
+    .left[TM-CAP - 1] = -1
+}
+
+// size: 返回元素數量
+// 返回 sz i64: 元素數量
+tree-map.size = () (sz i64) {
+    sz = .size
+}
+
+// empty: 判斷是否為空
+// 返回 yes bool: true=空, false=非空
+tree-map.empty = () (yes bool) {
+    yes = .size <= 0
+}
+
+// full: 判斷節點池是否已滿
+// 返回 yes bool: true=已滿, false=未滿
+tree-map.full = () (yes bool) {
+    yes = .free-head < 0
+}

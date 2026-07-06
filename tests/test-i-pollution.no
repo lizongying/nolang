@@ -1,0 +1,12 @@
+// test-i-pollution — 測試 import hmac 後 i 變數是否被污染
+// # std/hash/hmac
+
+main = () {
+    print('start')
+    i i64 = 0
+    for i < 5 {
+        print(i)
+        i = i + 1
+    }
+    print('done')
+}

@@ -1,5 +1,4 @@
+// test-minimal — 最小測試
 main = () {
-    x i64 = 42
-    print(x)
+    print('hello')
 }
-main()

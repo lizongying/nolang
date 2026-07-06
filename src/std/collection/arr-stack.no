@@ -1,0 +1,115 @@
+// arr-stack — 泛型堆疊（基於定長陣列）
+//
+// 後進先出（LIFO）資料結構，以 [n]t 定長陣列作為底層儲存。
+// top 指向下一個寫入位置（同時等於當前元素數量）。
+//
+// 泛型設計：值操作方法（push/pop/peek）定義在 [n]t 上，
+// 泛型參數 n（陣列大小）和 t（元素型別）由編譯器自動推斷。
+// 堆疊狀態（cap/top）獨立儲存在 arr-stack 結構體中。
+//
+// 與 stack 的差異：
+// - arr-stack 使用泛型 [n]t，支援任意元素型別（i64/u8/byte 等）
+// - stack 僅支援 []i64
+// - arr-stack 的 pop/peek 返回 ?t option，stack 返回 (val, ok)
+//
+// 用法：
+//   buf [128]i64 = [0:128]
+//   s = buf.arr-stack-init()
+//   ok = buf.arr-stack-push(s, 42)
+//   ok = buf.arr-stack-push(s, 7)
+//   val = buf.arr-stack-pop(s)      // val = ok(7)（後入先出）
+//   val = buf.arr-stack-pop(s)      // val = ok(42)
+//   val = buf.arr-stack-pop(s)      // val = nil（堆疊為空）
+//   sz = s.size()
+//   yes = s.empty()
+//
+//   // option 解包
+//   val = buf.arr-stack-pop(s)
+//   val: {
+//       nil -> println('empty')
+//       -> println(it)          // it = 彈出的值
+//   }
+
+// arr-stack: 堆疊狀態（不含緩衝區，緩衝區由 [n]t receiver 提供）
+// cap: 容量（= 陣列長度 n）
+// top: 堆疊頂端索引（下一個寫入位置，同時等於元素數量）
+arr-stack {
+    cap i64
+    top i64
+}
+
+// ═══════════════════════════════════════════════
+// 泛型方法（定義在 [n]t 上，由編譯器單態化）
+// ═══════════════════════════════════════════════
+
+// [n]t.arr-stack-init: 初始化堆疊狀態
+// cap 自動設為陣列大小 n
+// 返回 s arr-stack: 初始化後的堆疊狀態
+[n]t.arr-stack-init = () (s arr-stack) {
+    s.cap = n
+    s.top = 0
+}
+
+// [n]t.arr-stack-push: 推入元素到堆疊頂端
+// s arr-stack: 堆疊狀態
+// val t: 要推入的值
+// 返回 ok bool: true=成功, false=堆疊已滿
+[n]t.arr-stack-push = (s arr-stack, val t) (ok bool) {
+    ok = false
+    if s.top >= s.cap {
+        return
+    }
+    .[s.top] = val
+    s.top = s.top + 1
+    ok = true
+}
+
+// [n]t.arr-stack-pop: 從堆疊頂端彈出元素
+// s arr-stack: 堆疊狀態
+// 返回 val ?t: ok(v)=彈出值, nil=堆疊為空
+[n]t.arr-stack-pop = (s arr-stack) (val ?t) {
+    if s.top <= 0 {
+        val = nil
+        return
+    }
+    s.top = s.top - 1
+    val = .[s.top]
+}
+
+// [n]t.arr-stack-peek: 查看堆疊頂端元素（不移除）
+// s arr-stack: 堆疊狀態
+// 返回 val ?t: ok(v)=頂端值, nil=堆疊為空
+[n]t.arr-stack-peek = (s arr-stack) (val ?t) {
+    if s.top <= 0 {
+        val = nil
+        return
+    }
+    val = .[s.top - 1]
+}
+
+// ═══════════════════════════════════════════════
+// 狀態查詢方法（定義在 arr-stack 上，不涉及元素型別）
+// ═══════════════════════════════════════════════
+
+// size: 返回堆疊中元素數量
+// 返回 sz i64: 元素數量
+arr-stack.size = () (sz i64) {
+    sz = .top
+}
+
+// empty: 判斷堆疊是否為空
+// 返回 yes bool: true=空, false=非空
+arr-stack.empty = () (yes bool) {
+    yes = .top <= 0
+}
+
+// full: 判斷堆疊是否已滿
+// 返回 yes bool: true=已滿, false=未滿
+arr-stack.full = () (yes bool) {
+    yes = .top >= .cap
+}
+
+// clear: 清空堆疊
+arr-stack.clear = () {
+    .top = 0
+}

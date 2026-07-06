@@ -1,0 +1,5 @@
+# std/net/tls
+
+main = () {
+    print('tls import ok')
+}

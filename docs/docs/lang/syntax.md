@@ -414,7 +414,14 @@ bs = [0x11, 0x22, 0x33]
 v []u8 = [1, 2, 3] // 指定类型的變長數組
 ```
 
-**切片slice：**
+**切片slice（視圖，非獨立類型）：**
+
+切片是對原始資料的**視圖（view）**，不會複製資料，也不會產生新的獨立類型。
+切片內部只記錄一個指向原始緩衝區的指標、長度和容量，因此：
+
+- 通過切片修改元素會影響原始資料，反之亦然
+- 切片不擁有資料，原始變數釋放後切片即失效
+- 切片的類型由原始類型決定，方法自然適用，無需「繼承」機制
 
 ```nolang
 // 支持arr/vec/str
@@ -435,31 +442,38 @@ s[1..]   // 'bc'
 s[1..s.len) // 'bc'
 ```
 
-**切片的方法繼承：**
+**切片的類型與方法：**
 
-切片操作會根據原型別產生對應的結果型別，因此原型別的方法自動適用於切片結果：
+切片不生成新的獨立類型，只是原始類型的一個視圖（調整了起始指標和長度）。
+因此原始類型的方法直接可用：
 
-| 原型別 | 切片結果型別 | 適用的方法 |
-| ------ | ------------ | ---------- |
-| `arr` (`[n]t`) | `[]t` (`vec`) | `[]t` 的所有方法（如 `len`、`push`、`pop`、`contains`、`reverse`、`clone`、`fill`、`to-arr` 等） |
-| `vec` (`[]t`) | `[]t` (`vec`) | 同上 |
-| `str` | `str` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等） |
+| 原始類型 | 切片視圖類型 | 可用方法 |
+| -------- | ------------ | -------- |
+| `arr` (`[n]t`) | `[]t<range>` | `[]t` 的所有方法（如 `len`、`push`、`pop`、`contains`、`reverse`、`clone`、`fill`、`to-arr` 等） |
+| `vec` (`[]t`) | `[]<range>` | 同上 |
+| `str` | `str<range>` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等） |
 
 ```nolang
-// arr 切片 → vec，可使用 vec 方法
+// arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
-s = a[1..4]    // s 是 []u8
-n = s.len      // 使用 vec.len
+s = a[1..4]    // s 是 []u8 視圖，指向 a 的記憶體
+n = s.len      // slice.len
 
-// vec 切片 → vec，可使用 vec 方法
+// vec 切片 → vec 視圖，共享 vec 的底層記憶體
 v = [10, 20, 30, 40, 50]
-s = v[2..]     // s 是 []i64
-s.reverse(s.len)  // 使用 vec.reverse
+s = v[2..]     // s 是 []i64 視圖
+s.reverse(s.len)  // slice.reverse
 
-// str 切片 → str，可使用 str 方法
+// str 切片 → str 視圖，共享 str 的底層記憶體
 s = 'Hello World'
-sub = s[6..]   // sub 是 'World'
-upper = sub.to-upper()  // 使用 str.to-upper
+sub = s[6..]   // sub 是 'World' 視圖
+upper = sub.to-upper()  // str.to-upper
+
+// 通過切片修改元素會影響原始資料
+data = [10, 20, 30, 40, 50]
+view = data[1..4]    // view = [20, 30, 40]
+view[0] = 99         // 修改 view 的元素
+// data[1] 現在也是 99，因為 view 共享 data 的記憶體
 ```
 
 ### 索引

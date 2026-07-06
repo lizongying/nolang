@@ -1,0 +1,19 @@
+// test-to-bytes — 測試 str.to-bytes
+// # std/net/tls
+
+main = () {
+    print('start')
+    s str = 'test label'
+    print('before len')
+    n i64 = s.len
+    print('after len')
+    print(n)
+    print('before to-bytes')
+    b []byte = s.to-bytes()
+    print('after to-bytes')
+    if b[0] != 116 {
+        print('FAIL: expected t')
+        return
+    }
+    print('PASS: to-bytes')
+}

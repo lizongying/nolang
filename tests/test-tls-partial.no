@@ -1,0 +1,52 @@
+// test-tls-partial — 部分 TLS 測試
+// # std/net/tls
+
+main = () {
+    print('=== TLS Partial Tests ===')
+
+    // 測試 1: tls-put-u16
+    space str = ' '
+    buf str = space.repeat(8)
+    tls-put-u16(buf, 0, 0x1234)
+    if buf[0] != 0x12 {
+        print('FAIL: put-u16 expected 0x12')
+        return
+    }
+    print('PASS: tls-put-u16')
+
+    // 測試 2: tls-get-u16
+    buf2 str = space.repeat(8)
+    buf2[0] = 0xAB
+    buf2[1] = 0xCD
+    val i64 = 0
+    tls-get-u16(buf2, 0)(val)
+    if val != 0xABCD {
+        print('FAIL: get-u16 expected 0xABCD')
+        return
+    }
+    print('PASS: tls-get-u16')
+
+    // 測試 3: tls-put-u24
+    buf3 str = space.repeat(8)
+    tls-put-u24(buf3, 0, 0x123456)
+    if buf3[0] != 0x12 {
+        print('FAIL: put-u24 expected 0x12')
+        return
+    }
+    print('PASS: tls-put-u24')
+
+    // 測試 4: tls-get-u24
+    buf4 str = space.repeat(8)
+    buf4[0] = 0x12
+    buf4[1] = 0x34
+    buf4[2] = 0x56
+    val2 i64 = 0
+    tls-get-u24(buf4, 0)(val2)
+    if val2 != 0x123456 {
+        print('FAIL: get-u24 expected 0x123456')
+        return
+    }
+    print('PASS: tls-get-u24')
+
+    print('=== Done ===')
+}

@@ -370,31 +370,40 @@ c char = 5
 d = c.is-digit()     // receiver.method()
 ```
 
-### Slice Method Inheritance
+### Slices (Views, Not New Types)
 
-Slicing (`arr[1..3]`, `vec[1..3]`, `str[1..3]`) produces a result type that inherits methods from the base type:
+Slicing (`arr[1..3]`, `vec[1..3]`, `str[1..3]`) produces a **view** into the original data — it does **not** copy data or create a new independent type. The slice is a lightweight descriptor (pointer + length + capacity) that shares the original buffer:
 
-| Base type | Slice result type | Available methods |
-| --------- | ----------------- | ----------------- |
+- Modifications through a slice affect the original data, and vice versa
+- The slice does not own the data; it becomes invalid when the original is released
+- Methods of the original type are directly available — no "inheritance" mechanism needed
+
+| Original type | Slice view type | Available methods |
+| ------------- | --------------- | ----------------- |
 | `arr` (`[n]t`) | `[]t` (`vec`) | All `[]t` methods (`len`, `push`, `pop`, `contains`, `reverse`, `clone`, `fill`, `to-arr`, etc.) |
 | `vec` (`[]t`) | `[]t` (`vec`) | Same as above |
 | `str` | `str` | All `str` methods (`to-upper`, `to-lower`, `index`, `contains`, `slice`, `copy`, `fill`, etc.) |
 
 ```nolang
-// arr slice → vec, vec methods available
+// arr slice → vec view, shares arr's memory
 a [5]u8 = [0, 1, 2, 3, 4]
-s = a[1..4]       // s is []u8
+s = a[1..4]       // s is []u8 view into a's buffer
 n = s.len         // vec.len
 
-// vec slice → vec, vec methods available
+// vec slice → vec view, shares vec's memory
 v = [10, 20, 30, 40, 50]
-s = v[2..]        // s is []i64
+s = v[2..]        // s is []i64 view
 s.reverse(s.len)  // vec.reverse
 
-// str slice → str, str methods available
+// str slice → str view, shares str's memory
 s = 'Hello World'
-sub = s[6..]      // sub is 'World'
+sub = s[6..]      // sub is 'World' view
 upper = sub.to-upper()  // str.to-upper
+
+// Modifying through a slice affects the original
+data = [10, 20, 30, 40, 50]
+view = data[1..4]  // view = [20, 30, 40]
+view[0] = 99       // modifies data[1] too — shared memory
 ```
 
 ### Standard Library Struct Pattern

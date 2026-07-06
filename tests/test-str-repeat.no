@@ -1,0 +1,18 @@
+// test-str-repeat — 測試 str.repeat
+// # std/net/tls
+
+main = () {
+    print('=== str.repeat Test ===')
+    space str = ' '
+    print('space created')
+    buf str = space.repeat(8)
+    print('buf created')
+    buf[0] = 0x12
+    print('buf[0] set')
+    if buf[0] != 0x12 {
+        print('FAIL: buf[0] expected 0x12')
+        return
+    }
+    print('PASS: buf[0] = 0x12')
+    print('=== Done ===')
+}

@@ -1,0 +1,7 @@
+# std/hash/sha256
+# std/hash/rsa
+# std/hash/x509
+
+main = () {
+    print('rsa x509 ok')
+}

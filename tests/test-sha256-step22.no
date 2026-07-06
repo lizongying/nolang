@@ -1,0 +1,40 @@
+// test-sha256-step22 — 箭頭條件 + padded 冒號循環
+// # std/hash/sha256
+
+my-fn = (data []byte) (hash [32]byte) {
+    dlen = data.len
+    bit-len = dlen * 8
+    mod-val = (dlen + 9) % 64
+    pad-len = 0
+    mod-val != 0 -> {
+        pad-len = 64 - mod-val
+    }
+    total-len = dlen + 1 + pad-len + 8
+    print('total-len')
+    print(total-len)
+
+    padded []byte
+    i = 0
+    i < total-len: {
+        padded[i] = 0
+        i = i + 1
+    }
+    print('padded done')
+
+    hash[0] = padded[0]
+    hash[1] = padded[1]
+}
+
+main = () {
+    print('start')
+    msg []byte
+    msg[0] = 0x61
+    msg[1] = 0x62
+    msg[2] = 0x63
+    print('before my-fn')
+    h [32]byte
+    h = my-fn(msg)
+    print('after my-fn')
+    print(h[0])
+    print('done')
+}
