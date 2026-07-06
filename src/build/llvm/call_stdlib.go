@@ -68,6 +68,20 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				return g.extractStrDataPtr(sb, ptr)
 			}
 			return ""
+		case *parser.DotExpression:
+			// .field 或 obj.field：generateDotExpression 會載入 struct 值到 SSA register
+			// 對於 str 欄位，返回的是 %str-long SSA value。需先 alloca 再 store 以取得指標。
+			ptr := g.generateExprWithSB(sb, a)
+			et := g.exprResultLLVMType(a)
+			if et == "%str-long" {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%str-long.dot.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+				return g.extractStrDataPtr(sb, tmpAlloca)
+			} else if et == "%str-short" {
+				return g.extractStrShortDataPtr(sb, ptr)
+			}
 		}
 		return ""
 	}
@@ -1497,12 +1511,31 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	}
 
 	// net-send: send data on connected socket
-	// Args: fd i64, data str, n i64
+	// Args: fd i64, data str|[]byte, n i64
 	// Returns: written i64 (-1 on error)
 	if fnName == "net-send" && hasArgs && nArgs >= 3 {
 		a := evalArgs()
 		fdVal := a[0]
-		dataPtr := g.extractStrFromEvalArg(sb, a[1])
+
+		var dataPtr string
+		dataArgType := g.exprResultLLVMType(expr.Arguments[1])
+		if dataArgType == "%vec" {
+			// []byte: extract data pointer from vec field 2
+			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%net.s.datagep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%net.s.dataptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+			}
+			dataPtr = dataLoad
+		} else {
+			// str: use existing path
+			dataPtr = g.extractStrFromEvalArg(sb, a[1])
+		}
+
 		nVal := a[2]
 
 		g.tmpIdx++
@@ -1518,12 +1551,31 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	}
 
 	// net-recv: receive data on connected socket
-	// Args: fd i64, buf str, n i64
+	// Args: fd i64, buf str|[]byte, n i64
 	// Returns: read-n i64 (-1 on error, 0 on connection closed)
 	if fnName == "net-recv" && hasArgs && nArgs >= 3 {
 		a := evalArgs()
 		fdVal := a[0]
-		bufPtr := g.extractStrFromEvalArg(sb, a[1])
+
+		var bufPtr string
+		bufArgType := g.exprResultLLVMType(expr.Arguments[1])
+		if bufArgType == "%vec" {
+			// []byte: extract data pointer from vec field 2
+			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+			g.tmpIdx++
+			bufGEP := fmt.Sprintf("%%net.r.datagep.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufLoad := fmt.Sprintf("%%net.r.dataptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), bufLoad, bufGEP))
+			}
+			bufPtr = bufLoad
+		} else {
+			// str: use existing path
+			bufPtr = g.extractStrFromEvalArg(sb, a[1])
+		}
+
 		nVal := a[2]
 
 		g.tmpIdx++

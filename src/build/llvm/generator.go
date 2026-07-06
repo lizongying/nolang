@@ -51,6 +51,7 @@ type Generator struct {
 	funcResultNolangTypes map[string][]string             // 函數名 → 各輸出參數的 Nolang 型別字串列表
 	funcIsVariadic        map[string]bool                 // 函數名 → 是否為 variadic 函數
 	funcParamCount        map[string]int                  // 函數名 → 非 variadic 參數數量
+	funcHeuristicOutput   map[string]bool                 // 函數名 → 是否為啟發式檢測的輸出參數（非顯式 fd.Results）
 	funcParamLLVMTypes    map[string][]string             // 函數名 → 各參數的 LLVM 型別列表（含 receiver）
 	funcParamTypes        map[string][]string             // 函數名 → 各參數的 Nolang 型別字串列表（含 receiver）
 	structTypes           map[string][]structField        // struct name → fields
@@ -300,6 +301,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.funcResultNolangTypes = make(map[string][]string)
 	g.funcIsVariadic = make(map[string]bool)
 	g.funcParamCount = make(map[string]int)
+	g.funcHeuristicOutput = make(map[string]bool)
 	g.funcParamLLVMTypes = make(map[string][]string)
 	g.funcParamTypes = make(map[string][]string)
 	g.structTypes = make(map[string][]structField)
@@ -672,6 +674,16 @@ func (g *Generator) Generate(program *parser.Program) string {
 						g.globalVars[name] = true
 					}
 				}
+			} else if llvmType == "double" && ls.Value != nil {
+				// float/double 模組級常量（如 E = 2.718282, PI = 3.141593）
+				if fl, ok := ls.Value.(*parser.FloatLiteral); ok {
+					floatStr := fl.Raw
+					if floatStr == "" {
+						floatStr = fmt.Sprintf("%v", fl.Value)
+					}
+					sb.WriteString(fmt.Sprintf("%s = global double %s\n", llvmGlobalRef(name), floatStr))
+					g.globalVars[name] = true
+				}
 			}
 		}
 	}
@@ -810,6 +822,9 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 		retType := "void"
 		g.funcRetTypes[fd.Name] = retType
 		g.funcNumResults[fd.Name] = len(outputs)
+		// 標記為啟發式檢測的輸出：這些參數已存在於 fd.Parameters 中，
+		// 函數定義已將其作為常規 LLVM 參數生成，調用方不需額外返回槽。
+		g.funcHeuristicOutput[fd.Name] = true
 		rets := make([]string, len(outputs))
 		nolangRets := make([]string, len(outputs))
 		innerRets := make([]string, len(outputs))

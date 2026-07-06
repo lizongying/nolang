@@ -1975,8 +1975,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.tmpIdx++
 				dataLoad := fmt.Sprintf("%%arr.set.data.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %%%s, i32 0, i32 1\n",
-						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+						g.indent(), dataGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 						g.indent(), dataLoad, dataGEP))
 				}
@@ -2114,6 +2114,27 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
+
+					// Auto-update len (field 0) to max(len, idx+1). Without this,
+					// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
+					// elements were written via vec[i] = val, producing wrong outputs.
+					g.tmpIdx++
+					lenGEP := fmt.Sprintf("%%vec.set.len.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					curLen := fmt.Sprintf("%%vec.set.cur-len.%d", g.tmpIdx)
+					g.tmpIdx++
+					newLen := fmt.Sprintf("%%vec.set.new-len.%d", g.tmpIdx)
+					g.tmpIdx++
+					cmpReg := fmt.Sprintf("%%vec.set.cmp.%d", g.tmpIdx)
+					g.tmpIdx++
+					finalLen := fmt.Sprintf("%%vec.set.final-len.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
+						g.indent(), lenGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
+					sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
+					sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, newLen, curLen))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
 				}
 				return "0"
 			}
@@ -2126,8 +2147,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.tmpIdx++
 				dataLoad := fmt.Sprintf("%%str-long.set.data.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %%%s, i32 0, i32 1\n",
-						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+						g.indent(), dataGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 						g.indent(), dataLoad, dataGEP))
 				}
@@ -2162,8 +2183,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					cmpReg := fmt.Sprintf("%%str-long.set.cmp.%d", g.tmpIdx)
 					g.tmpIdx++
 					finalLen := fmt.Sprintf("%%str-long.set.final-len.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %%%s, i32 0, i32 0\n",
-						g.indent(), lenGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
+						g.indent(), lenGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
 					sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
 					sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
@@ -2181,8 +2202,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.tmpIdx++
 				elemGEP := fmt.Sprintf("%%str-longsm.set.elem.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %%%s, i32 0, i32 1\n",
-						g.indent(), fieldGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n",
+						g.indent(), fieldGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldGEP, idx))
 					storeVal := val
@@ -2213,8 +2234,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					finalLen64 := fmt.Sprintf("%%str-short.set.final-len64.%d", g.tmpIdx)
 					g.tmpIdx++
 					finalLen8 := fmt.Sprintf("%%str-short.set.final-len8.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %%%s, i32 0, i32 0\n",
-						g.indent(), lenGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n",
+						g.indent(), lenGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), curLen8, lenGEP))
 					sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), curLen, curLen8))
 					sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
@@ -3835,6 +3856,20 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 			}
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
 			return g.extractStrLen(sb, ptr)
+		}
+	case *parser.DotExpression:
+		// .field 或 obj.field：generateDotExpression 會載入 struct 值到 SSA register
+		// 對於 str 欄位，返回的是 %str-long SSA value。需先 alloca 再 store 以取得指標。
+		ptr := g.generateExprWithSB(sb, a)
+		et := g.exprResultLLVMType(a)
+		if et == "%str-long" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%strlen.dot.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+			return g.extractStrLen(sb, tmpAlloca)
+		} else if et == "%str-short" {
+			return g.extractStrShortLen(sb, ptr)
 		}
 	}
 	return "0"

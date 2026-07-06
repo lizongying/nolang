@@ -167,7 +167,7 @@ test-tls-prf = () {
     seed[1] = 0xBB
     seed[2] = 0xCC
     out []byte
-    out = tls-prf(secret, 4, 'test label', seed, 3, 32)
+    out = tls-prf(secret, 'test label', seed, 32)
     // PRF 輸出應為 32 bytes，驗證不為全零
     has-nonzero = 0
     i = 0

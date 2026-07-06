@@ -969,6 +969,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								methodReceiver = recv
 								break
 							}
+							// Fallback: try mangled name from mangleOverloads.
+							// When duplicate method definitions exist (e.g. user code + auto-imported
+							// std module), mangleOverloads appends parameter type suffixes:
+							// "json-pool.alloc" → "json-pool.alloc_json-pool"
+							mangledName := shortName + "_" + cand
+							if _, ok := g.funcRetTypes[mangledName]; ok {
+								fnName = mangledName
+								methodReceiver = recv
+								break
+							}
 						}
 						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
 						if methodReceiver == nil {
@@ -1189,14 +1199,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 單輸出參數：調用方未顯式傳遞輸出變數（如 v1 = s.to-i64()）。
 	// Nolang 函數的 funcRetTypes 為語意回傳型別（如 %option），但實際 LLVM 簽名是 void + 輸出指標。
 	// 此類函數需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
+	// 注意：啟發式檢測的輸出參數（funcHeuristicOutput）已存在於 fd.Parameters 中，
+	// 函數定義已將其作為常規 LLVM 參數生成，調用方已傳遞，不應再加返回槽。
 	voidSingleOutput := false
 	voidSingleOutputType := ""
 	triggerVoidSingle := (retType == "void" || isNolangSingleResult) && g.funcNumResults != nil && g.funcResultLLVMType != nil
 	if triggerVoidSingle {
 		if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
 			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
-				voidSingleOutput = true
-				voidSingleOutputType = ts[0]
+				if h, ok := g.funcHeuristicOutput[fnName]; ok && h {
+					// 啟發式輸出：參數已在 fd.Parameters 中，調用方已傳遞，不加返回槽
+				} else {
+					voidSingleOutput = true
+					voidSingleOutputType = ts[0]
+				}
 			}
 		}
 	}
@@ -1243,7 +1259,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		switch a := arg.(type) {
 		case *parser.Identifier:
 			// Enum variant: allocate temp i64 and store the constant tag index
-			if g.enumVariantIndex != nil {
+			// 局部變數/參數優先於枚舉變體（避免名稱遮蔽：如 json-kind 的 num 變體
+			// 與局部變數 num 衝突）
+			if g.enumVariantIndex != nil && (g.funcLocalNames == nil || !g.funcLocalNames[a.Value]) {
 				if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
 					g.tmpIdx++
 					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
@@ -1650,7 +1668,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			} else if voidSingleOutputType == "%vec" {
 				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
 				// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
-				vecBufSize := 4096
+				vecBufSize := 16384
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%vso.vecdata.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))

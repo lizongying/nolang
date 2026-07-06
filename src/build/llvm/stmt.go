@@ -235,7 +235,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
 		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
 		if varType == "%vec" {
-			vecBufSize := 4096
+			vecBufSize := 16384
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%local.vecdata.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -387,6 +387,14 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	g.funcVars = nil
 	g.funcLocalNames = make(map[string]bool)
 
+	// Restore module-level variable types (reset by generateFunctionDefinition)
+	if g.moduleVarTypes != nil {
+		g.varTypes = make(map[string]string)
+		for k, v := range g.moduleVarTypes {
+			g.varTypes[k] = v
+		}
+	}
+
 	hasTopLevel := false
 	for _, stmt := range program.Statements {
 		switch stmt.(type) {
@@ -426,13 +434,52 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	sb.WriteString(fmt.Sprintf("%sstore i8** %%argv, i8*** %%argv.addr\n", g.indent()))
 
 	g.emitLifetimeEnd(sb)
+
+	// Pre-allocate all top-level local variables (not globals, not functions)
+	// This is needed because CallExpression values use the variable's address
+	// as an output parameter before generateLet would allocate it.
+	if g.moduleVarTypes != nil {
+		for name, varType := range g.moduleVarTypes {
+			if g.globalVars != nil && g.globalVars[name] {
+				continue
+			}
+			if _, isFn := g.funcRetTypes[name]; isFn {
+				continue
+			}
+			if varType == "" || strings.HasPrefix(varType, "%") == false && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" {
+				// Skip complex types that need special allocation (handled by generateLet)
+				continue
+			}
+			if !g.funcLocalNames[name] {
+				g.funcLocalNames[name] = true
+				sz := g.llvmTypeSize(varType)
+				if sz == 0 {
+					sz = 8
+				}
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(name), varType))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(name)))
+			}
+		}
+	}
+
 	if hasUserMain {
 		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
 	}
-	// Generate top-level expression statements (e.g. test-str-len(), print(0))
+	// Generate top-level statements (e.g. h = crc-32('', 0), test-str-len(), print(0))
 	// Skip calls to user-defined main() when hasUserMain is true, since _nolang_main()
 	// already calls the user's main. Otherwise we get infinite recursion.
 	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			// Skip LetStatements already emitted as globals
+			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
+				continue
+			}
+			// Skip function-typed LetStatements (already collected as functions)
+			if _, isFn := g.funcRetTypes[ls.Name.Value]; isFn {
+				continue
+			}
+			g.generateLet(sb, ls)
+		}
 		if es, ok := stmt.(*parser.ExpressionStatement); ok {
 			if hasUserMain {
 				if call, ok := es.Expression.(*parser.CallExpression); ok {
@@ -1846,6 +1893,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		structName := sl.Type
 		fields := g.structTypes[structName]
 		structTy := "%" + structName
+		// Ensure variable is allocated (needed for top-level LetStatements in main function)
+		if _, exists := g.funcLocalNames[name]; !exists {
+			if _, isGlobal := g.globalVars[name]; !isGlobal {
+				g.varTypes[name] = structTy
+				g.funcLocalNames[name] = true
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(name), structTy))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), llvmVarRef(name)))
+			}
+		}
 		// 建立欄位名稱 → 索引映射
 		fieldIndexByName := make(map[string]int)
 		for i, f := range fields {
