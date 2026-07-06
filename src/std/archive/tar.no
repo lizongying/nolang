@@ -67,7 +67,7 @@ tar-open-gz = (gz-data []byte) (archive tar) {
 // count: 計算 TAR 中的有效條目數
 tar.count = () (count i64) {
     count = 0
-    off i64 = 0
+    off = 0
     n = len(.data)
     off + TAR-BLOCK <= n: {
         // 檢查是否為結束標記（全零區塊）
@@ -391,7 +391,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     .buf[.pos + 154] = 32
     .buf[.pos + 155] = 32
 
-    checksum i64 = 0
+    checksum = 0
     i = 0
     i < TAR-BLOCK: {
         checksum = checksum + (.buf[.pos + i] & 255)

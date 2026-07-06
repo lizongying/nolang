@@ -53,7 +53,7 @@ err-new = (code i64, msg str) (e error) {
 // err-from-errno: 從 C errno 建立錯誤
 // errno: C 標準錯誤碼（如 13 = EACCES）
 err-from-errno = (errno i64) (e error) {
-    msg str = strerror(errno)
+    msg = strerror(errno)
     e = error{
         code: errno
         msg: msg

@@ -483,7 +483,7 @@ str.to-u8 = () (val ?u8) {
         val = nil
         return
     }
-    n i64 = 0
+    n = 0
     i = 0
     c = .[0]
     if c == 45 {
@@ -522,7 +522,7 @@ str.to-u16 = () (val ?u16) {
         val = nil
         return
     }
-    n i64 = 0
+    n = 0
     i = 0
     c = .[0]
     if c == 45 {
@@ -561,7 +561,7 @@ str.to-u32 = () (val ?u32) {
         val = nil
         return
     }
-    n i64 = 0
+    n = 0
     i = 0
     c = .[0]
     if c == 45 {
@@ -787,7 +787,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     for i < .len {
         b = .[i]
         cp i64 = b
-        clen i64 = 1
+        clen = 1
         if b < 0x80 {
             cp = b
             clen = 1
@@ -880,7 +880,7 @@ str.trim-char = (ch char) (val str) {
     for start < .len {
         b = .[start]
         cp i64 = b
-        clen i64 = 1
+        clen = 1
         if b < 0x80 {
             cp = b
             clen = 1

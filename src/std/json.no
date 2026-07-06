@@ -116,18 +116,18 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
     node-idx = -1
     sn = s.len
     p = pos
-    c i64 = 0
-    c2 i64 = 0
-    cnt i64 = 0
-    child-idx i64 = 0
-    child-next i64 = 0
-    child-ok i64 = 0
-    key-idx i64 = 0
-    key-next i64 = 0
-    key-ok i64 = 0
-    val-idx i64 = 0
-    val-next i64 = 0
-    val-ok i64 = 0
+    c = 0
+    c2 = 0
+    cnt = 0
+    child-idx = 0
+    child-next = 0
+    child-ok = 0
+    key-idx = 0
+    key-next = 0
+    key-ok = 0
+    val-idx = 0
+    val-next = 0
+    val-ok = 0
 
     // 跳過空白
     for p < sn {
@@ -295,7 +295,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok i64) {
             // copy key string to keys[cnt]
             key-len = .nodes[key-idx].str-val.len
             .nodes[node-idx].keys[cnt].len = key-len
-            j i64 = 0
+            j = 0
             for j < key-len {
                 .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
                 j = j + 1
@@ -339,7 +339,7 @@ json-pool.parse-str = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i
     ok = 0
     i = pos + 1
     j = 0
-    c i64 = 0
+    c = 0
     for i < sn {
         c = s[i] & 255
         if c == 34 {
@@ -377,8 +377,8 @@ json-pool.parse-str = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i
 json-pool.parse-num = (node-idx i64, s str, sn i64, pos i64) (next-pos i64, ok i64) {
     ok = 1
     i = pos
-    c i64 = 0
-    negative i64 = 0
+    c = 0
+    negative = 0
     .nodes[node-idx].num-val = 0.0
 
     // 負號
@@ -608,13 +608,13 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
         return
     }
     kind = .nodes[node-idx].kind
-    c i64 = 0
-    cnt i64 = 0
-    i i64 = 0
-    j i64 = 0
-    child-n i64 = 0
+    c = 0
+    cnt = 0
+    i = 0
+    j = 0
+    child-n = 0
     num-val f64 = 0.0
-    num-str str = ''
+    num-str = ''
 
     if kind == KIND-NULL {
         out[out-n] = 110

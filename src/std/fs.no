@@ -184,7 +184,7 @@ file-opts {
 // 成功：f = file{ fd, path }（自動轉為 ?file）
 // 失敗：f = nil
 open = (p str, opts file-opts) (f ?file) {
-    flags i64 = 0
+    flags = 0
 
     // 從 opts.mode 取得基礎旗標
     m file-mode = opts.mode
@@ -207,7 +207,7 @@ open = (p str, opts file-opts) (f ?file) {
     }
 
     // 從 opts.perm 取得權限值
-    perm-val i64 = 420
+    perm-val = 420
     pv file-perm = opts.perm
     pv: {
         perm-600 -> perm-val = 384
@@ -239,7 +239,7 @@ file.read = (buf str, n i64) (read-n i64) {
 }
 
 // read-line: 從檔案讀取一行（最多 4096 位元組）
-// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+// 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 file.read-line = () (line ?str) {
     line = nil
     if .fd < 0 {
@@ -318,7 +318,7 @@ file.append = (data str, n i64) (ok bool) {
     if .fd < 0 {
         return
     }
-    save-path str = .path
+    save-path = .path
     .close()
 
     rd-fd = open-read(save-path)

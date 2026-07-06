@@ -17,10 +17,10 @@
 //   ok = s.add(2)             // ok=true
 //   ok = s.add(1)             // ok=false（已存在）
 //   yes = s.contains(2)       // yes=true
-//   val = s.first()           // val = ok(1)（最小值）
-//   val = s.last()            // val = ok(3)（最大值）
-//   val = s.lower-bound(2)    // val = ok(2)（第一個 ≥ 2）
-//   val = s.upper-bound(2)    // val = ok(3)（第一個 > 2）
+//   val = s.first()           // val = ok（最小值）
+//   val = s.last()            // val = ok（最大值）
+//   val = s.lower-bound(2)    // val = ok（第一個 ≥ 2）
+//   val = s.upper-bound(2)    // val = ok（第一個 > 2）
 //   ok = s.remove(2)          // ok=true
 //   s.for-each(v)             // 按升序遍歷所有元素
 //
@@ -397,7 +397,7 @@ tree-set.remove = (key i64) (ok bool) {
 // ═══════════════════════════════════════════════
 
 // first: 取得最小值
-// 返回 val ?i64: ok(v)=最小值, nil=空集合
+// 返回 val ?i64: ok=最小值, nil=空集合
 tree-set.first = () (val ?i64) {
     idx = .root
     if idx < 0 {
@@ -411,7 +411,7 @@ tree-set.first = () (val ?i64) {
 }
 
 // last: 取得最大值
-// 返回 val ?i64: ok(v)=最大值, nil=空集合
+// 返回 val ?i64: ok=最大值, nil=空集合
 tree-set.last = () (val ?i64) {
     idx = .root
     if idx < 0 {
@@ -426,7 +426,7 @@ tree-set.last = () (val ?i64) {
 
 // lower-bound: 找第一個 ≥ target 的元素
 // target i64: 目標值
-// 返回 val ?i64: ok(v)=找到, nil=無此元素
+// 返回 val ?i64: ok=找到, nil=無此元素
 tree-set.lower-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root
@@ -447,7 +447,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
 
 // upper-bound: 找第一個 > target 的元素
 // target i64: 目標值
-// 返回 val ?i64: ok(v)=找到, nil=無此元素
+// 返回 val ?i64: ok=找到, nil=無此元素
 tree-set.upper-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root

@@ -1572,6 +1572,20 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
 			dataPtr = g.extractStrDataPtr(sb, ptr)
 		}
+	case *parser.DotExpression:
+		// .field 或 obj.field：generateDotExpression 會載入 struct 值到 SSA register
+		// 對於 str 欄位，返回的是 %str-long SSA value。需先 alloca 再 store 以取得指標。
+		ptr := g.generateExprWithSB(sb, a)
+		et := g.exprResultLLVMType(a)
+		if et == "%str-long" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%str-long.dot.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+			dataPtr = g.extractStrDataPtr(sb, tmpAlloca)
+		} else if et == "%str-short" {
+			dataPtr = g.extractStrShortDataPtr(sb, ptr)
+		}
 	}
 
 	if dataPtr == "" {

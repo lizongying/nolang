@@ -107,7 +107,7 @@ char.to-lower = () (result char) {
 // to-bytes: 轉為 UTF-8 編碼的位元組陣列
 char.to-bytes = () (out []byte) {
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
-    len i64 = 0
+    len = 0
 
     if . < 0x80 {
         buf[0] = .

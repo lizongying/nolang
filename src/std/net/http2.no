@@ -126,12 +126,12 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
         return
     }
     // 序列化標頭
-    space str = ' '
-    hdr str = space.repeat(HTTP2-FRAME-HEADER-SIZE)
-    frame.serialize(hdr, 0)(0)
+    space = ' '
+    hdr = space.repeat(HTTP2-FRAME-HEADER-SIZE)
+    frame.serialize(hdr, 0)
     // 發送標頭
-    written i64 = 0
-    send-ok bool = false
+    written = 0
+    send-ok = false
     if .use-tls {
         written, send-ok = .tls-c.send(hdr, HTTP2-FRAME-HEADER-SIZE)
         if send-ok == false {
@@ -167,12 +167,12 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
     if .fd < 0 {
         return
     }
-    space str = ' '
+    space = ' '
     // 讀取 9-byte 影格標頭
-    hdr-buf str = space.repeat(HTTP2-FRAME-HEADER-SIZE)
-    hdr-total i64 = 0
-    recv-n i64 = 0
-    recv-ok bool = false
+    hdr-buf = space.repeat(HTTP2-FRAME-HEADER-SIZE)
+    hdr-total = 0
+    recv-n = 0
+    recv-ok = false
     ! {
         if hdr-total >= HTTP2-FRAME-HEADER-SIZE {
             *
@@ -197,8 +197,8 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
         hdr-total = hdr-total + recv-n
     }
     // 解析標頭
-    next-pos i64 = 0
-    frame.parse(hdr-buf, 0)(next-pos, ok)
+    next-pos = 0
+    next-pos, ok = frame.parse(hdr-buf, 0)
     if ok == false {
         return
     }
@@ -208,7 +208,7 @@ http2-conn.recv-frame = () (frame http2-frame, ok bool) {
             return
         }
         frame.payload = space.repeat(HTTP2-MAX-PAYLOAD)
-        payload-total i64 = 0
+        payload-total = 0
         ! {
             if payload-total >= frame.length {
                 *
@@ -249,7 +249,7 @@ http2-conn.send-settings = (ack bool) (ok bool) {
     }
     f.stream-id = 0
     f.payload-len = 0
-    .send-frame(f)(ok)
+    ok = .send-frame(f)
 }
 
 // http2-conn.send-headers: 發送 HEADERS 影格
@@ -257,9 +257,9 @@ http2-conn.send-settings = (ack bool) (ok bool) {
 http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, end-stream bool) (ok bool) {
     ok = false
     // 用 HPACK 編碼標頭
-    space str = ' '
-    block str = space.repeat(HTTP2-MAX-PAYLOAD)
-    block-n i64 = 0
+    space = ' '
+    block = space.repeat(HTTP2-MAX-PAYLOAD)
+    block-n = 0
     i = 0
     for i < count {
         // 用 slice 載入值（避開 IndexExpression codegen 問題）
@@ -267,9 +267,9 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
         vlen = values[i].len
         n str = names[i].slice(0, nlen)
         v str = values[i].slice(0, vlen)
-        hdr-out str = ' '
-        hdr-n i64 = 0
-        self.hpack.encode-header(n, v)(hdr-out, hdr-n)
+        hdr-out = ' '
+        hdr-n = 0
+        hdr-out, hdr-n = self.hpack.encode-header(n, v)
         // 複製到 block
         j = 0
         for j < hdr-n {
@@ -290,7 +290,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     f.stream-id = stream-id
     f.payload = block
     f.payload-len = block-n
-    .send-frame(f)(ok)
+    ok = .send-frame(f)
 }
 
 // http2-conn.send-data: 發送 DATA 影格
@@ -307,7 +307,7 @@ http2-conn.send-data = (stream-id i64, data str, n i64, end-stream bool) (ok boo
     f.stream-id = stream-id
     f.payload = data
     f.payload-len = n
-    .send-frame(f)(ok)
+    ok = .send-frame(f)
 }
 
 // ═══════════════════════════════════════════════
@@ -326,9 +326,9 @@ http2-connect = (host str, port i64) (conn http2-conn, ok bool) {
     conn.init()
     conn.fd = fd
     // 1. 送出連線 preface
-    cr str = char-to-str(13)
-    lf str = char-to-str(10)
-    preface str = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = net-send(fd, preface, preface.len)
     if written != preface.len {
         close(fd)
@@ -336,8 +336,8 @@ http2-connect = (host str, port i64) (conn http2-conn, ok bool) {
         return
     }
     // 2. 送出空 SETTINGS
-    send-ok bool = false
-    conn.send-settings(false)(send-ok)
+    send-ok = false
+    send-ok = conn.send-settings(false)
     if send-ok == false {
         close(fd)
         conn.fd = -1
@@ -345,15 +345,15 @@ http2-connect = (host str, port i64) (conn http2-conn, ok bool) {
     }
     // 3. 接收伺服器 SETTINGS 並 ACK
     f http2-frame
-    recv-ok bool = false
-    conn.recv-frame(f)(recv-ok)
+    recv-ok = false
+    recv-ok = conn.recv-frame(f)
     if recv-ok == false {
         close(fd)
         conn.fd = -1
         return
     }
     // 4. ACK 伺服器 SETTINGS
-    conn.send-settings(true)(send-ok)
+    send-ok = conn.send-settings(true)
     if send-ok == false {
         close(fd)
         conn.fd = -1
@@ -369,7 +369,7 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
     ok = false
     // 1. 建立 TLS 連線
     tls-c tls-conn
-    tls-ok bool = false
+    tls-ok = false
     tls-c, tls-ok = tls-dial(host, port)
     if tls-ok == false {
         return
@@ -379,11 +379,11 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
     conn.tls-c = tls-c
     conn.fd = tls-c.fd
     // 2. 送出連線 preface（透過 TLS）
-    cr str = char-to-str(13)
-    lf str = char-to-str(10)
-    preface str = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
-    written i64 = 0
-    send-ok bool = false
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
+    written = 0
+    send-ok = false
     written, send-ok = tls-c.send(preface, preface.len)
     if send-ok == false {
         tls-c.close()
@@ -396,7 +396,7 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
         return
     }
     // 3. 送出空 SETTINGS
-    conn.send-settings(false)(send-ok)
+    send-ok = conn.send-settings(false)
     if send-ok == false {
         tls-c.close()
         conn.fd = -1
@@ -404,15 +404,15 @@ http2-connect-tls = (host str, port i64) (conn http2-conn, ok bool) {
     }
     // 4. 接收伺服器 SETTINGS 並 ACK
     f http2-frame
-    recv-ok bool = false
-    conn.recv-frame(f)(recv-ok)
+    recv-ok = false
+    recv-ok = conn.recv-frame(f)
     if recv-ok == false {
         tls-c.close()
         conn.fd = -1
         return
     }
     // 5. ACK 伺服器 SETTINGS
-    conn.send-settings(true)(send-ok)
+    send-ok = conn.send-settings(true)
     if send-ok == false {
         tls-c.close()
         conn.fd = -1
@@ -443,7 +443,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     ok = false
     header-count = 0
     resp-n = 0
-    space str = ' '
+    space = ' '
     resp-body = space.repeat(HTTP2-MAX-PAYLOAD)
     if .fd < 0 {
         return
@@ -453,7 +453,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     // 構建標頭
     hdr-names [64]str
     hdr-values [64]str
-    hdr-count i64 = 0
+    hdr-count = 0
     // :method
     hdr-names[0] = ':method'
     hdr-values[0] = method
@@ -477,7 +477,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
         has-body = true
         // content-length
         hdr-names[4] = 'content-length'
-        blen-str str = body-len.to-str()
+        blen-str = body-len.to-str()
         hdr-values[4] = blen-str
         hdr-count = 5
     }
@@ -486,14 +486,14 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     if has-body == false {
         end-stream = true
     }
-    send-ok bool = false
-    .send-headers(stream-id, hdr-names, hdr-values, hdr-count, end-stream)(send-ok)
+    send-ok = false
+    send-ok = .send-headers(stream-id, hdr-names, hdr-values, hdr-count, end-stream)
     if send-ok == false {
         return
     }
     // 發送 DATA（如果有主體）
     if has-body {
-        .send-data(stream-id, body, body-len, true)(send-ok)
+        send-ok = .send-data(stream-id, body, body-len, true)
         if send-ok == false {
             return
         }
@@ -501,8 +501,8 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     // 接收回應影格
     ! {
         f http2-frame
-        recv-ok bool = false
-        .recv-frame(f)(recv-ok)
+        recv-ok = false
+        recv-ok = .recv-frame(f)
         if recv-ok == false {
             return
         }
@@ -510,9 +510,9 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
             // 用 HPACK 解碼標頭
             dec-names [128]str
             dec-values [128]str
-            dec-count i64 = 0
-            dec-ok bool = false
-            self.hpack.decode-headers(f.payload, f.payload-len)(dec-names, dec-values, dec-count, dec-ok)
+            dec-count = 0
+            dec-ok = false
+            dec-names, dec-values, dec-count, dec-ok = self.hpack.decode-headers(f.payload, f.payload-len)
             if dec-ok == false {
                 return
             }
@@ -570,14 +570,14 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     header-count = 0
     resp-n = 0
     // 解析 URL
-    host str = ''
+    host = ''
     port i64 = HTTP2-DEFAULT-PORT
-    path str = '/'
-    use-tls bool = false
-    u str = url
+    path = '/'
+    use-tls = false
+    u = url
     // 偵測 scheme 並去掉前綴
     if u.len >= 8 {
-        prefix-https str = 'https://'
+        prefix-https = 'https://'
         matched-https = 1
         i = 0
         for i < 8 {
@@ -595,7 +595,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     }
     if use-tls == false {
         if u.len >= 7 {
-            prefix str = 'http://'
+            prefix = 'http://'
             matched = 1
             i = 0
             for i < 7 {
@@ -622,8 +622,8 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     // 解析 port
     colon-idx = host.index(':')
     if colon-idx >= 0 {
-        host-only str = host.slice(0, colon-idx)
-        port-str str = host.slice(colon-idx + 1, host.len)
+        host-only = host.slice(0, colon-idx)
+        port-str = host.slice(colon-idx + 1, host.len)
         port = 0
         i = 0
         for i < port-str.len {
@@ -634,17 +634,17 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     }
     // 建立連線
     conn http2-conn
-    conn-ok bool = false
+    conn-ok = false
     if use-tls {
-        http2-connect-tls(host, port)(conn, conn-ok)
+        conn, conn-ok = http2-connect-tls(host, port)
     } else {
-        http2-connect(host, port)(conn, conn-ok)
+        conn, conn-ok = http2-connect(host, port)
     }
     if conn-ok == false {
         return
     }
     // 發送請求
-    conn.request(method, path, host, body)(names, values, header-count, resp-body, resp-n, ok)
+    names, values, header-count, resp-body, resp-n, ok = conn.request(method, path, host, body)
     // 關閉連線
     conn.close()
 }
@@ -661,10 +661,10 @@ http2-do-req = (method str, url str, body str) (resp http-response, ok bool) {
     ok = false
     names [32]str
     values [32]str
-    header-count i64 = 0
-    raw-body str = ''
-    body-n i64 = 0
-    http2-do(method, url, body)(names, values, header-count, raw-body, body-n, ok)
+    header-count = 0
+    raw-body = ''
+    body-n = 0
+    names, values, header-count, raw-body, body-n, ok = http2-do(method, url, body)
     if ok == false {
         return
     }
@@ -679,7 +679,7 @@ http2-do-req = (method str, url str, body str) (resp http-response, ok bool) {
         // 尋找 :status
         if nlen == 7 {
             is-status = 1
-            status-hdr str = ':status'
+            status-hdr = ':status'
             j = 0
             for j < 7 {
                 if names[i][j] != status-hdr[j] {
@@ -708,25 +708,25 @@ http2-do-req = (method str, url str, body str) (resp http-response, ok bool) {
 
 // http2-get: HTTP/2 GET 請求
 http2-get = (url str) (resp http-response, ok bool) {
-    http2-do-req('GET', url, '')(resp, ok)
+    resp, ok = http2-do-req('GET', url, '')
 }
 
 // http2-post: HTTP/2 POST 請求
 http2-post = (url str, body str) (resp http-response, ok bool) {
-    http2-do-req('POST', url, body)(resp, ok)
+    resp, ok = http2-do-req('POST', url, body)
 }
 
 // http2-put: HTTP/2 PUT 請求
 http2-put = (url str, body str) (resp http-response, ok bool) {
-    http2-do-req('PUT', url, body)(resp, ok)
+    resp, ok = http2-do-req('PUT', url, body)
 }
 
 // http2-delete: HTTP/2 DELETE 請求
 http2-delete = (url str) (resp http-response, ok bool) {
-    http2-do-req('DELETE', url, '')(resp, ok)
+    resp, ok = http2-do-req('DELETE', url, '')
 }
 
 // http2-patch: HTTP/2 PATCH 請求
 http2-patch = (url str, body str) (resp http-response, ok bool) {
-    http2-do-req('PATCH', url, body)(resp, ok)
+    resp, ok = http2-do-req('PATCH', url, body)
 }

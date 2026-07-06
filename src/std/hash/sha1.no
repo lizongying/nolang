@@ -1113,8 +1113,8 @@ sha1 = (data []byte) (hash [20]byte) {
 sha1-hex = (data []byte) (hex str) {
     hash = sha1(data)
 
-    hex-chars str = '0123456789abcdef'
-    space str = ' '
+    hex-chars = '0123456789abcdef'
+    space = ' '
     hex = space.repeat(40)
 
     i = 0

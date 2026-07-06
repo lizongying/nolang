@@ -3772,6 +3772,27 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	if ident, ok := expr.(*parser.Identifier); ok {
 		return "%" + ident.Value
 	}
+	// DotExpression 會回傳 %str-long SSA value（loaded from struct field），
+	// 但 extractStrLen/extractStrDataPtr 需要的是 %str-long* 指標。
+	// 將 value 物化到臨時 alloca，再傳回指標。
+	if dot, ok := expr.(*parser.DotExpression); ok {
+		val := g.generateExprWithSB(sb, expr)
+		if val == "" {
+			return val
+		}
+		if strings.HasPrefix(val, "@") {
+			return val
+		}
+		et := g.exprResultLLVMType(dot)
+		if et == "%str-long" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
+			return tmpAlloca
+		}
+		return val
+	}
 	return g.generateExprWithSB(sb, expr)
 }
 

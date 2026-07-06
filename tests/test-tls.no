@@ -113,6 +113,8 @@ test-tls-bytes-to-bn = () {
     // little-endian base 2^32: 0x01020304
     if out[0] != 0x01020304 {
         print('FAIL: expected 0x01020304')
+        print('actual out[0]=')
+        print(out[0])
         return
     }
     print('PASS: tls-bytes-to-bn')
@@ -199,8 +201,8 @@ test-tls-conn-init = () {
         print('FAIL: expected encrypted=false')
         return
     }
-    if c.fd != 0 {
-        print('FAIL: expected fd=0')
+    if c.fd != -1 {
+        print('FAIL: expected fd=-1')
         return
     }
     if c.write-seq != 0 {
@@ -232,15 +234,26 @@ test-https-url-detection = () {
 main = () {
     print('=== TLS Tests ===')
     test-tls-put-u16()
+    print('1 done')
     test-tls-get-u16()
+    print('2 done')
     test-tls-put-u24()
+    print('3 done')
     test-tls-get-u24()
+    print('4 done')
     test-tls-bytes-cat()
+    print('5 done')
     test-tls-bytes-to-bn()
+    print('6 done')
     test-tls-bn-to-bytes()
+    print('7 done')
     test-tls-rand-bytes()
+    print('8 done')
     test-tls-prf()
+    print('9 done')
     test-tls-conn-init()
+    print('10 done')
     test-https-url-detection()
+    print('11 done')
     print('=== TLS Tests Done ===')
 }

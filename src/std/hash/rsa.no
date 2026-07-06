@@ -44,7 +44,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
 bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
-    i i64 = 0
+    i = 0
     for i < an || i < bn || carry != 0 {
         sum = carry
         if i < an {
@@ -65,7 +65,7 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-sub: c = a - b（需 a ≥ b）
 bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
-    i i64 = 0
+    i = 0
     for i < an {
         diff = a[i] - borrow
         if i < bn {
@@ -93,7 +93,7 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-mul: c = a × b
 // 呼叫者需確保 c 的容量 ≥ an + bn
 bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
-    i i64 = 0
+    i = 0
     for i < an + bn {
         c[i] = 0
         i = i + 1
@@ -105,7 +105,7 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
             continue
         }
         carry = 0
-        j i64 = 0
+        j = 0
         for j < bn {
             prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
             c[i + j] = prod & 4294967295
@@ -128,7 +128,7 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-shl1: a = a << 1（原地左移 1 位元）
 bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
-    i i64 = 0
+    i = 0
     for i < an {
         new-val = (a[i] << 1) | carry
         carry = a[i] >> 31
@@ -178,7 +178,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     }
 
     // 初始化 r = 0
-    i i64 = 0
+    i = 0
     for i < an {
         r[i] = 0
         i = i + 1
@@ -195,7 +195,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 
     // 計算 a 的最高有效位元數
     top = a[an - 1]
-    lead i64 = 0
+    lead = 0
     tmp i64 = top
     for tmp != 0 {
         tmp = tmp >> 1
@@ -219,7 +219,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         r[0] = r[0] | a-bit
 
         // 如果 r >= b: r = r - b; q 的第 i 位元設為 1
-        cmp i64 = 0
+        cmp = 0
         cmp = bn-cmp(r, rn, b, bn)
         if cmp >= 0 {
             r, rn = bn-sub(r, rn, b, bn)
@@ -243,7 +243,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 // 使用左右掃描平方乘（square-and-multiply）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
     // 初始化 result = 1
-    i i64 = 0
+    i = 0
     for i < mn {
         result[i] = 0
         i = i + 1
@@ -253,7 +253,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
     // 計算 exp 的位元數
     top i64 = exp[en - 1]
-    lead i64 = 0
+    lead = 0
     tmp i64 = top
     for tmp != 0 {
         tmp = tmp >> 1
@@ -267,10 +267,10 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     // 暫存區
     t-len = mn * 2 + 2
     t = result  // 注意：實際可能需要獨立的暫存空間
-    prod-n i64 = 0
-    q-n i64 = 0
+    prod-n = 0
+    q-n = 0
     q []i64 = []
-    qn i64 = 0
+    qn = 0
 
     // 從最高位到最低位
     i = bits - 1

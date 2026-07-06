@@ -104,7 +104,7 @@ listener.listen = (host str, port i64) (ok bool) {
 }
 
 // accept: 接受新的 TCP 連接
-// 返回 c ?conn: ok(v)=連接結構體, nil=失敗
+// 返回 c ?conn: ok=連接結構體, nil=失敗
 listener.accept = () (c ?conn) {
     c = nil
     if .fd < 0 {
@@ -181,7 +181,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
 }
 
 // recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
-// 返回 line ?str: ok(s)=接收內容, nil=失敗或連接關閉
+// 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
 conn.recv-line = () (line ?str) {
     line = nil
     if .fd < 0 {
@@ -228,24 +228,24 @@ conn.fd-of = () (fd i64) {
 // ═══════════════════════════════════════════════
 
 // net-listen-on: 建立監聽器並開始監聽
-// 返回 l ?listener: ok(v)=監聽器, nil=失敗
+// 返回 l ?listener: ok=監聽器, nil=失敗
 net-listen-on = (host str, port i64) (l ?listener) {
     l = nil
     lst = listener{}
-    ok bool = false
-    lst.listen(host, port)(ok)
+    ok = false
+    ok = lst.listen(host, port)
     if ok {
         l = lst
     }
 }
 
 // net-dial-to: 建立連接並撥號
-// 返回 c ?conn: ok(v)=連接, nil=失敗
+// 返回 c ?conn: ok=連接, nil=失敗
 net-dial-to = (host str, port i64) (c ?conn) {
     c = nil
     cn = conn{}
-    ok bool = false
-    cn.dial(host, port)(ok)
+    ok = false
+    ok = cn.dial(host, port)
     if ok {
         c = cn
     }

@@ -272,7 +272,7 @@ process.read = (buf str, n i64) (read-n i64) {
 }
 
 // read-line: 從子進程的 stdout 讀取一行
-// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+// 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 process.read-line = () (line ?str) {
     line = nil
     if .stdout-fd < 0 {

@@ -23,8 +23,8 @@
 //   ok = buf.link-push-back(l, 20)
 //   ok = buf.link-push-front(l, 5)
 //   // 串列: 5 → 10 → 20
-//   val = buf.link-pop-front(l)   // val = ok(5)
-//   val = buf.link-pop-back(l)    // val = ok(20)
+//   val = buf.link-pop-front(l)   // val = ok
+//   val = buf.link-pop-back(l)    // val = ok
 //   // 串列: 10
 //   sz = l.size()
 //   yes = l.empty()
@@ -131,7 +131,7 @@ link {
 
 // [n]t.link-pop-front: 從鏈結串列頭部彈出元素
 // l link: 鏈結串列狀態
-// 返回 val ?t: ok(v)=彈出值, nil=串列為空
+// 返回 val ?t: ok=彈出值, nil=串列為空
 [n]t.link-pop-front = (l link) (val ?t) {
     if l.head < 0 {
         val = nil
@@ -153,7 +153,7 @@ link {
 
 // [n]t.link-pop-back: 從鏈結串列尾部彈出元素
 // l link: 鏈結串列狀態
-// 返回 val ?t: ok(v)=彈出值, nil=串列為空
+// 返回 val ?t: ok=彈出值, nil=串列為空
 [n]t.link-pop-back = (l link) (val ?t) {
     if l.tail < 0 {
         val = nil
@@ -174,7 +174,7 @@ link {
 
 // [n]t.link-peek-front: 查看頭部元素（不移除）
 // l link: 鏈結串列狀態
-// 返回 val ?t: ok(v)=頭部值, nil=串列為空
+// 返回 val ?t: ok=頭部值, nil=串列為空
 [n]t.link-peek-front = (l link) (val ?t) {
     if l.head < 0 {
         val = nil
@@ -185,7 +185,7 @@ link {
 
 // [n]t.link-peek-back: 查看尾部元素（不移除）
 // l link: 鏈結串列狀態
-// 返回 val ?t: ok(v)=尾部值, nil=串列為空
+// 返回 val ?t: ok=尾部值, nil=串列為空
 [n]t.link-peek-back = (l link) (val ?t) {
     if l.tail < 0 {
         val = nil
@@ -273,7 +273,7 @@ link {
 // [n]t.link-remove-at: 移除指定位置的元素
 // l link: 鏈結串列狀態
 // pos i64: 移除位置
-// 返回 val ?t: ok(v)=移除的值, nil=位置越界
+// 返回 val ?t: ok=移除的值, nil=位置越界
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
     if pos < 0 || pos >= l.size {
         val = nil
@@ -330,7 +330,7 @@ link {
 // [n]t.link-get-at: 取得指定位置的元素
 // l link: 鏈結串列狀態
 // pos i64: 位置
-// 返回 val ?t: ok(v)=元素值, nil=位置越界
+// 返回 val ?t: ok=元素值, nil=位置越界
 [n]t.link-get-at = (l link, pos i64) (val ?t) {
     if pos < 0 || pos >= l.size {
         val = nil

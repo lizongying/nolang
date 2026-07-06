@@ -50,7 +50,7 @@ x { val-> f(.); nil->; err-> g(.) }  // match
 !x                  // 強制解包（panic if nil/err）
 ```
 
-**風格指引：** 函數可能失敗或返回空值時，應使用 `?t` option 而非 `(val, ok bool)`。`?t` 有三種狀態：`ok(v)`（有值）、`nil`（空值/正常缺失）、`err(s)`（錯誤）。例如 `pop()` 返回 `?i64`（`nil` = 空）、`read-line()` 返回 `?str`（`nil` = EOF，`err` = 錯誤）、`lookup()` 返回 `?str`（`nil` = 未找到）。詳見語法文檔。
+**風格指引：** 函數可能失敗或返回空值時，應使用 `?t` option 而非 `(val, ok bool)`。`?t` 有三種狀態：`ok`（有值）、`nil`（空值/正常缺失）、`err`（錯誤）。正常值會隱性綁定。例如 `pop()` 返回 `?i64`（`nil` = 空）、`read-line()` 返回 `?str`（`nil` = EOF，`err` = 錯誤）、`lookup()` 返回 `?str`（`nil` = 未找到）。詳見語法文檔。
 
 ---
 
@@ -584,6 +584,52 @@ ip.in-subnet(base, prefix-len)(yes) // 子網包含檢查
 ip-parse(s)(addr, ok)               // 快速解析
 ip-is-loopback(s)(yes)              // 快速判斷環回
 ip-is-private(s)(yes)               // 快速判斷私有
+```
+
+### net/sse — Server-Sent Events 客戶端
+
+支援 W3C EventSource 規範的 SSE 串流接收。底層使用 HTTP/1.1 長連接，支援明文 HTTP 與 HTTPS（TLS）：
+
+```nolang
+// sse-event 結構體
+sse-event {
+    event str       // 事件類型（預設 'message'）
+    data str        // 事件資料（多行 data 以 \n 連接）
+    id str          // 事件 ID
+    retry i64       // 重連等待毫秒數（-1=未設定）
+}
+
+// sse-client 結構體
+sse-client {
+    fd i64              // TCP socket fd
+    tls-c tls-conn      // TLS 連線
+    use-tls bool        // 是否使用 TLS
+    connected bool      // 連線狀態
+    host str            // 伺服器主機名
+    port i64            // 埠號
+    path str            // 請求路徑
+    last-event-id str   // 最後收到的事件 ID
+    recv-buf str        // 接收緩衝區
+    recv-buf-len i64    // 緩衝區資料長度
+}
+
+// 連接與事件接收
+client = sse-connect('http://host:3000/events')  // 返回 ?sse-client
+client: {
+    nil -> println('connect failed')
+    ->
+        ev = client.next-event()     // 返回 ?sse-event（nil=EOF, err=錯誤）
+        ev: {
+            nil -> println('connection closed')
+            err -> println('error: ' - it)
+            -> println(ev.data)
+        }
+        client.close()
+}
+
+// 其他方法
+client.is-connected()(yes)         // 檢查連線狀態
+client.reconnect()(ok)             // 重新連線（使用 last-event-id）
 ```
 
 ---

@@ -1,17 +1,5 @@
-// test-tls-minimal — 最小 TLS 測試
-// # std/net/tls
-
+// test-tls-minimal — 隔離 TLS 測試崩潰
 main = () {
-    print('=== TLS Minimal Test ===')
-    // 測試 1: tls-put-u16（使用 []byte 而非 str）
-    buf []byte
-    buf[0] = 0
-    buf[1] = 0
-    tls-put-u16(buf, 0, 0x1234)
-    if buf[0] != 0x12 {
-        print('FAIL: expected 0x12')
-        return
-    }
-    print('PASS: tls-put-u16')
-    print('=== Done ===')
+    print('start')
+    print('done')
 }

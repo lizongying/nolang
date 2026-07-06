@@ -150,15 +150,15 @@ http-response.parse-headers = () {
         i = i + 1
     }
 
-    hs str = .headers
+    hs = .headers
     n = hs.len
     if n == 0 {
         return
     }
 
-    cr str = char-to-str(13)
-    lf str = char-to-str(10)
-    crlf str = cr - lf
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
 
     pos = 0
     ! {
@@ -205,7 +205,7 @@ http-response.parse-headers = () {
 
 // get-header: 取得指定標頭值（線性搜尋）
 // name: 標頭名（如 'Content-Type'）
-// 返回 val ?str: ok(s)=標頭值, nil=未找到
+// 返回 val ?str: ok=標頭值, nil=未找到
 http-response.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
@@ -249,36 +249,36 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     ok = false
 
     // ── 字串變數（頂層宣告，供 if 區塊內使用）──
-    scheme str = 'http://'
-    rest str = ''
-    host str = ''
+    scheme = 'http://'
+    rest = ''
+    host = ''
     port i64 = HTTP-DEFAULT-PORT
-    path str = '/'
-    host-only str = ''
-    port-str str = ''
-    cr str = char-to-str(13)
-    lf str = char-to-str(10)
-    crlf str = cr - lf
-    req str = ''
-    len-str str = ''
-    space str = ' '
-    buf str = space.repeat(HTTP-BUF-SIZE)
-    raw str = space.repeat(HTTP-MAX-RESPONSE)
-    total i64 = 0
-    recv-raw str = ''
-    separator str = crlf - crlf
-    head str = ''
-    status-line str = ''
-    after-code str = ''
-    code-str str = ''
-    use-tls bool = false
+    path = '/'
+    host-only = ''
+    port-str = ''
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    req = ''
+    len-str = ''
+    space = ' '
+    buf = space.repeat(HTTP-BUF-SIZE)
+    raw = space.repeat(HTTP-MAX-RESPONSE)
+    total = 0
+    recv-raw = ''
+    separator = crlf - crlf
+    head = ''
+    status-line = ''
+    after-code = ''
+    code-str = ''
+    use-tls = false
     fd i64 = -1
     tls-c tls-conn
-    written i64 = 0
-    tls-ok bool = false
-    send-ok bool = false
-    recv-ok bool = false
-    n i64 = 0
+    written = 0
+    tls-ok = false
+    send-ok = false
+    recv-ok = false
+    n = 0
 
     // ── 解析 URL ──
     if url.starts-with('https://') {
@@ -306,7 +306,7 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     if colon-pos >= 0 {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
-        p i64 = 0
+        p = 0
         i = 0
         for i < port-str.len {
             c = port-str[i]
@@ -449,7 +449,7 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
     resp.status-text = after-code.slice(sp2 + 1, after-code.len)
 
     // 解析狀態碼
-    code i64 = 0
+    code = 0
     i = 0
     for i < code-str.len {
         c = code-str[i]
@@ -474,39 +474,39 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
     ok = false
 
     // ── 字串變數 ──
-    scheme str = 'http://'
-    rest str = ''
-    host str = ''
+    scheme = 'http://'
+    rest = ''
+    host = ''
     port i64 = HTTP-DEFAULT-PORT
-    path str = '/'
-    host-only str = ''
-    port-str str = ''
-    cr str = char-to-str(13)
-    lf str = char-to-str(10)
-    crlf str = cr - lf
-    req-str str = ''
-    len-str str = ''
-    space str = ' '
-    buf str = space.repeat(HTTP-BUF-SIZE)
-    raw str = space.repeat(HTTP-MAX-RESPONSE)
-    total i64 = 0
-    recv-raw str = ''
-    separator str = crlf - crlf
-    head str = ''
-    status-line str = ''
-    after-code str = ''
-    code-str str = ''
-    body str = req.body
-    method str = req.method
-    url str = req.url
-    use-tls bool = false
+    path = '/'
+    host-only = ''
+    port-str = ''
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    req-str = ''
+    len-str = ''
+    space = ' '
+    buf = space.repeat(HTTP-BUF-SIZE)
+    raw = space.repeat(HTTP-MAX-RESPONSE)
+    total = 0
+    recv-raw = ''
+    separator = crlf - crlf
+    head = ''
+    status-line = ''
+    after-code = ''
+    code-str = ''
+    body = req.body
+    method = req.method
+    url = req.url
+    use-tls = false
     fd i64 = -1
     tls-c tls-conn
-    written i64 = 0
-    tls-ok bool = false
-    send-ok bool = false
-    recv-ok bool = false
-    n i64 = 0
+    written = 0
+    tls-ok = false
+    send-ok = false
+    recv-ok = false
+    n = 0
 
     // ── 解析 URL ──
     if url.starts-with('https://') {
@@ -532,7 +532,7 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
     if colon-pos >= 0 {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
-        p i64 = 0
+        p = 0
         i = 0
         for i < port-str.len {
             c = port-str[i]
@@ -677,7 +677,7 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
     code-str = after-code.slice(0, sp2)
     resp.status-text = after-code.slice(sp2 + 1, after-code.len)
 
-    code i64 = 0
+    code = 0
     i = 0
     for i < code-str.len {
         c = code-str[i]
@@ -703,7 +703,7 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
 // url: 完整 URL
 // 返回 resp=回應, ok=true=成功
 http-get = (url str) (resp http-response, ok bool) {
-    http-do('GET', url, '')(resp, ok)
+    resp, ok = http-do('GET', url, '')
 }
 
 // http-post: 執行 HTTP POST 請求
@@ -711,7 +711,7 @@ http-get = (url str) (resp http-response, ok bool) {
 // body: 請求主體
 // 返回 resp=回應, ok=true=成功
 http-post = (url str, body str) (resp http-response, ok bool) {
-    http-do('POST', url, body)(resp, ok)
+    resp, ok = http-do('POST', url, body)
 }
 
 // http-put: 執行 HTTP PUT 請求
@@ -719,14 +719,14 @@ http-post = (url str, body str) (resp http-response, ok bool) {
 // body: 請求主體
 // 返回 resp=回應, ok=true=成功
 http-put = (url str, body str) (resp http-response, ok bool) {
-    http-do('PUT', url, body)(resp, ok)
+    resp, ok = http-do('PUT', url, body)
 }
 
 // http-delete: 執行 HTTP DELETE 請求
 // url: 完整 URL
 // 返回 resp=回應, ok=true=成功
 http-delete = (url str) (resp http-response, ok bool) {
-    http-do('DELETE', url, '')(resp, ok)
+    resp, ok = http-do('DELETE', url, '')
 }
 
 // http-patch: 執行 HTTP PATCH 請求
@@ -734,5 +734,5 @@ http-delete = (url str) (resp http-response, ok bool) {
 // body: 請求主體
 // 返回 resp=回應, ok=true=成功
 http-patch = (url str, body str) (resp http-response, ok bool) {
-    http-do('PATCH', url, body)(resp, ok)
+    resp, ok = http-do('PATCH', url, body)
 }

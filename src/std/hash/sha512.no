@@ -2367,8 +2367,8 @@ sha512 = (data []byte) (hash [64]byte) {
 sha512-hex = (data []byte) (hex str) {
     hash = sha512(data)
 
-    hex-chars str = '0123456789abcdef'
-    space str = ' '
+    hex-chars = '0123456789abcdef'
+    space = ' '
     hex = space.repeat(128)
 
     i = 0

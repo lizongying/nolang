@@ -462,9 +462,9 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
 // 返回 out=編碼後字串, out-n=編碼長度
 hpack-encode-str = (s str) (out str, out-n i64) {
     // H bit=0, 長度用 7-bit prefix 編碼
-    len-out str = ' '
-    len-n i64 = 0
-    hpack-encode-int(s.len, 7, 0)(len-out, len-n)
+    len-out = ' '
+    len-n = 0
+    len-out, len-n = hpack-encode-int(s.len, 7, 0)
     // 複製長度編碼到 out
     i = 0
     for i < len-n {
@@ -491,9 +491,9 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
     first = data[pos]
     // H bit = first & 128，本實作不支援 Huffman
     // 長度用 7-bit prefix
-    len i64 = 0
-    p i64 = 0
-    hpack-decode-int(data, pos, 7)(len, p)
+    len = 0
+    p = 0
+    len, p = hpack-decode-int(data, pos, 7)
     if p < 0 {
         next-pos = -1
         return
@@ -523,21 +523,21 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
 hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
     out-n = 0
     // 1. 完全匹配 → Indexed Header Field（6.1）
-    full-idx i64 = 0
-    .find(name, value)(full-idx)
+    full-idx = 0
+    full-idx = .find(name, value)
     if full-idx > 0 {
         // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
-        hpack-encode-int(full-idx, 7, 128)(out, out-n)
+        out, out-n = hpack-encode-int(full-idx, 7, 128)
         return
     }
     // 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
-    name-idx i64 = 0
-    .find-name(name)(name-idx)
+    name-idx = 0
+    name-idx = .find-name(name)
     if name-idx > 0 {
         // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
-        idx-out str = ' '
-        idx-n i64 = 0
-        hpack-encode-int(name-idx, 6, 64)(idx-out, idx-n)
+        idx-out = ' '
+        idx-n = 0
+        idx-out, idx-n = hpack-encode-int(name-idx, 6, 64)
         // 複製到 out
         i = 0
         for i < idx-n {
@@ -546,9 +546,9 @@ hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
         }
         out-n = idx-n
         // 編碼 value
-        val-out str = ' '
-        val-n i64 = 0
-        hpack-encode-str(value)(val-out, val-n)
+        val-out = ' '
+        val-n = 0
+        val-out, val-n = hpack-encode-str(value)
         i = 0
         for i < val-n {
             out[out-n + i] = val-out[i]
@@ -564,9 +564,9 @@ hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
     out[0] = 64
     out-n = 1
     // 編碼 name
-    name-out str = ' '
-    name-n i64 = 0
-    hpack-encode-str(name)(name-out, name-n)
+    name-out = ' '
+    name-n = 0
+    name-out, name-n = hpack-encode-str(name)
     i = 0
     for i < name-n {
         out[out-n + i] = name-out[i]
@@ -574,9 +574,9 @@ hpack-tables.encode-header = (name str, value str) (out str, out-n i64) {
     }
     out-n = out-n + name-n
     // 編碼 value
-    val-out str = ' '
-    val-n i64 = 0
-    hpack-encode-str(value)(val-out, val-n)
+    val-out = ' '
+    val-n = 0
+    val-out, val-n = hpack-encode-str(value)
     i = 0
     for i < val-n {
         out[out-n + i] = val-out[i]
@@ -617,16 +617,16 @@ hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str
         b = data[pos]
         // Indexed Header Field（6.1）：1xxxxxxx
         if (b & 128) != 0 {
-            idx i64 = 0
-            next i64 = 0
-            hpack-decode-int(data, pos, 7)(idx, next)
+            idx = 0
+            next = 0
+            idx, next = hpack-decode-int(data, pos, 7)
             if next < 0 {
                 return
             }
-            lk-name str = ''
-            lk-val str = ''
-            found bool = false
-            .lookup(idx)(lk-name, lk-val, found)
+            lk-name = ''
+            lk-val = ''
+            found = false
+            lk-name, lk-val, found = .lookup(idx)
             if found == false {
                 return
             }
@@ -648,32 +648,32 @@ hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str
         }
         // Literal with Incremental Indexing（6.2.1）：01xxxxxx
         elif (b & 192) == 64 {
-            name-idx i64 = 0
-            next i64 = 0
-            hpack-decode-int(data, pos, 6)(name-idx, next)
+            name-idx = 0
+            next = 0
+            name-idx, next = hpack-decode-int(data, pos, 6)
             if next < 0 {
                 return
             }
             pos = next
-            name str = ''
-            value str = ''
+            name = ''
+            value = ''
             if name-idx == 0 {
                 // 新 name
-                hpack-decode-str(data, pos)(name, pos)
+                name, pos = hpack-decode-str(data, pos)
                 if pos < 0 {
                     return
                 }
             } else {
-                lk-name str = ''
-                lk-val str = ''
-                found bool = false
-                .lookup(name-idx)(lk-name, lk-val, found)
+                lk-name = ''
+                lk-val = ''
+                found = false
+                lk-name, lk-val, found = .lookup(name-idx)
                 if found == false {
                     return
                 }
                 name = lk-name
             }
-            hpack-decode-str(data, pos)(value, pos)
+            value, pos = hpack-decode-str(data, pos)
             if pos < 0 {
                 return
             }
@@ -696,31 +696,31 @@ hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str
         }
         // Literal without Indexing（6.2.2）：0000xxxx
         elif (b & 240) == 0 {
-            name-idx i64 = 0
-            next i64 = 0
-            hpack-decode-int(data, pos, 4)(name-idx, next)
+            name-idx = 0
+            next = 0
+            name-idx, next = hpack-decode-int(data, pos, 4)
             if next < 0 {
                 return
             }
             pos = next
-            name str = ''
-            value str = ''
+            name = ''
+            value = ''
             if name-idx == 0 {
-                hpack-decode-str(data, pos)(name, pos)
+                name, pos = hpack-decode-str(data, pos)
                 if pos < 0 {
                     return
                 }
             } else {
-                lk-name str = ''
-                lk-val str = ''
-                found bool = false
-                .lookup(name-idx)(lk-name, lk-val, found)
+                lk-name = ''
+                lk-val = ''
+                found = false
+                lk-name, lk-val, found = .lookup(name-idx)
                 if found == false {
                     return
                 }
                 name = lk-name
             }
-            hpack-decode-str(data, pos)(value, pos)
+            value, pos = hpack-decode-str(data, pos)
             if pos < 0 {
                 return
             }
@@ -740,31 +740,31 @@ hpack-tables.decode-headers = (data str, n i64) (names [128]str, values [128]str
         }
         // Literal Never Indexed（6.2.3）：0001xxxx
         elif (b & 240) == 16 {
-            name-idx i64 = 0
-            next i64 = 0
-            hpack-decode-int(data, pos, 4)(name-idx, next)
+            name-idx = 0
+            next = 0
+            name-idx, next = hpack-decode-int(data, pos, 4)
             if next < 0 {
                 return
             }
             pos = next
-            name str = ''
-            value str = ''
+            name = ''
+            value = ''
             if name-idx == 0 {
-                hpack-decode-str(data, pos)(name, pos)
+                name, pos = hpack-decode-str(data, pos)
                 if pos < 0 {
                     return
                 }
             } else {
-                lk-name str = ''
-                lk-val str = ''
-                found bool = false
-                .lookup(name-idx)(lk-name, lk-val, found)
+                lk-name = ''
+                lk-val = ''
+                found = false
+                lk-name, lk-val, found = .lookup(name-idx)
                 if found == false {
                     return
                 }
                 name = lk-name
             }
-            hpack-decode-str(data, pos)(value, pos)
+            value, pos = hpack-decode-str(data, pos)
             if pos < 0 {
                 return
             }

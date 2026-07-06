@@ -131,6 +131,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if at, ok := r.Type.(*parser.ArrayType); ok && at.Elem != nil {
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(at.Elem.String())
 			}
+			// 切片型結果參數也需註冊元素型別，供 IndexExpression 使用正確型別
+			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
+				g.arrayElemTypes[r.Name] = g.mapToLLVMType(st.Elem.String())
+			}
 		}
 	}
 
@@ -2345,6 +2349,11 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						val := g.generateExprWithSB(sb, arg)
 						copyToData(val)
 					}
+				} else if g.isStringExpr(arg) {
+					// String expression (e.g. concat 'a' - b): result is %str-long*
+					// alloca, copy as str struct regardless of option inner type
+					srcPtr := g.generateExprWithSB(sb, arg)
+					copyStrToData(srcPtr)
 				} else {
 					val := g.generateExprWithSB(sb, arg)
 					copyToData(val)
@@ -2365,6 +2374,11 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						val := g.generateExprWithSB(sb, arg)
 						copyToData(val)
 					}
+				} else if g.isStringExpr(arg) {
+					// String expression (e.g. concat 'a' - b): result is %str-long*
+					// alloca, copy as str struct regardless of option inner type
+					srcPtr := g.generateExprWithSB(sb, arg)
+					copyStrToData(srcPtr)
 				} else {
 					val := g.generateExprWithSB(sb, arg)
 					copyToData(val)

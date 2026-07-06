@@ -40,7 +40,7 @@ heap.push = (val i64) {
 }
 
 // pop: 從堆積彈出最小元素
-// 返回 val ?i64: ok(v)=最小值, nil=堆積為空
+// 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
     if .n == 0 {
         val = nil
@@ -71,7 +71,7 @@ heap.pop = () (val ?i64) {
 }
 
 // peek: 查看最小元素（不移除）
-// 返回 val ?i64: ok(v)=最小值, nil=堆積為空
+// 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.peek = () (val ?i64) {
     if .n == 0 {
         val = nil

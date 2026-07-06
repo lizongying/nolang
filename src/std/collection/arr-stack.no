@@ -17,8 +17,8 @@
 //   s = buf.arr-stack-init()
 //   ok = buf.arr-stack-push(s, 42)
 //   ok = buf.arr-stack-push(s, 7)
-//   val = buf.arr-stack-pop(s)      // val = ok(7)（後入先出）
-//   val = buf.arr-stack-pop(s)      // val = ok(42)
+//   val = buf.arr-stack-pop(s)      // val = ok（後入先出）
+//   val = buf.arr-stack-pop(s)      // val = ok
 //   val = buf.arr-stack-pop(s)      // val = nil（堆疊為空）
 //   sz = s.size()
 //   yes = s.empty()
@@ -66,7 +66,7 @@ arr-stack {
 
 // [n]t.arr-stack-pop: 從堆疊頂端彈出元素
 // s arr-stack: 堆疊狀態
-// 返回 val ?t: ok(v)=彈出值, nil=堆疊為空
+// 返回 val ?t: ok=彈出值, nil=堆疊為空
 [n]t.arr-stack-pop = (s arr-stack) (val ?t) {
     if s.top <= 0 {
         val = nil
@@ -78,7 +78,7 @@ arr-stack {
 
 // [n]t.arr-stack-peek: 查看堆疊頂端元素（不移除）
 // s arr-stack: 堆疊狀態
-// 返回 val ?t: ok(v)=頂端值, nil=堆疊為空
+// 返回 val ?t: ok=頂端值, nil=堆疊為空
 [n]t.arr-stack-peek = (s arr-stack) (val ?t) {
     if s.top <= 0 {
         val = nil

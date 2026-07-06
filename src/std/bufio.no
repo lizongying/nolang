@@ -36,7 +36,7 @@ reader.fill = () (ok bool) {
 }
 
 // read-byte: 讀取一個位元組
-// 返回 b ?byte: ok(v)=位元組值, nil=EOF 或錯誤
+// 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
 reader.read-byte = () (b ?byte) {
     ok = .fill()
     if ok == false {

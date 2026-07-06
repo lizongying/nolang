@@ -56,7 +56,7 @@ deque.push-back = (val i64) {
 }
 
 // pop-front: 從前端彈出元素
-// 返回 val ?i64: ok(v)=彈出值, nil=佇列為空
+// 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-front = () (val ?i64) {
     n = .tail - .head
     if n <= 0 {
@@ -74,7 +74,7 @@ deque.pop-front = () (val ?i64) {
 }
 
 // pop-back: 從後端彈出元素
-// 返回 val ?i64: ok(v)=彈出值, nil=佇列為空
+// 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-back = () (val ?i64) {
     n = .tail - .head
     if n <= 0 {
@@ -93,7 +93,7 @@ deque.pop-back = () (val ?i64) {
 }
 
 // peek-front: 查看前端元素（不移除）
-// 返回 val ?i64: ok(v)=前端值, nil=佇列為空
+// 返回 val ?i64: ok=前端值, nil=佇列為空
 deque.peek-front = () (val ?i64) {
     n = .tail - .head
     if n <= 0 {
@@ -110,7 +110,7 @@ deque.peek-front = () (val ?i64) {
 }
 
 // peek-back: 查看後端元素（不移除）
-// 返回 val ?i64: ok(v)=後端值, nil=佇列為空
+// 返回 val ?i64: ok=後端值, nil=佇列為空
 deque.peek-back = () (val ?i64) {
     n = .tail - .head
     if n <= 0 {

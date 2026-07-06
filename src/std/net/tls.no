@@ -232,33 +232,33 @@ tls-bn-to-bytes = (num []i64, n i64) (out []byte, out-n i64) {
 tls-prf = (secret []byte, secret-n i64, label str, seed []byte, seed-n i64, out-len i64) (out []byte) {
     // label-seed = label || seed
     label-bytes []byte
-    label.to-bytes()(label-bytes)
+    label-bytes = label.to-bytes()
     label-len = label.len
 
     ls []byte
-    ls-n i64 = 0
-    tls-bytes-cat(label-bytes, label-len, seed, seed-n)(ls, ls-n)
+    ls-n = 0
+    ls, ls-n = tls-bytes-cat(label-bytes, label-len, seed, seed-n)
 
     // A(0) = label-seed
     a [32]byte
     a = hmac-sha256(secret, secret-n, ls, ls-n)
 
-    out-off i64 = 0
+    out-off = 0
     for out-off < out-len {
         // P_i = HMAC(secret, A(i) || label-seed)
         a-and-ls []byte
-        al-n i64 = 0
-        tls-bytes-cat(a, 32, ls, ls-n)(a-and-ls, al-n)
+        al-n = 0
+        a-and-ls, al-n = tls-bytes-cat(a, 32, ls, ls-n)
 
         p [32]byte
         p = hmac-sha256(secret, secret-n, a-and-ls, al-n)
 
         // 複製到輸出
-        copy-n i64 = 32
+        copy-n = 32
         if out-off + copy-n > out-len {
             copy-n = out-len - out-off
         }
-        i i64 = 0
+        i = 0
         for i < copy-n {
             out[out-off + i] = p[i]
             i = i + 1
@@ -283,7 +283,7 @@ tls-recv-n = (fd i64, buf str, n i64) (ok bool) {
     ok = false
     total = 0
     for total < n {
-        tmp str = ' '
+        tmp = ' '
         tmp = tmp.repeat(n - total)
         r = net-recv(fd, tmp, n - total)
         if r <= 0 {
@@ -309,8 +309,8 @@ tls-read-record = (fd i64, buf str) (ct i64, rlen i64) {
     rlen = 0
 
     // 讀取 5 位元組標頭
-    ok bool = false
-    tls-recv-n(fd, buf, 5)(ok)
+    ok = false
+    ok = tls-recv-n(fd, buf, 5)
     if ok == false {
         return
     }
@@ -326,7 +326,7 @@ tls-read-record = (fd i64, buf str) (ct i64, rlen i64) {
     }
 
     // 讀取資料
-    tls-recv-n(fd, buf, rlen + 5)(ok)
+    ok = tls-recv-n(fd, buf, rlen + 5)
     if ok == false {
         ct = -1
         return
@@ -339,7 +339,7 @@ tls-read-record = (fd i64, buf str) (ct i64, rlen i64) {
 // data str: 資料
 // n i64: 資料長度
 tls-send-raw = (fd i64, ct i64, data str, n i64) {
-    hdr str = ' '
+    hdr = ' '
     hdr = hdr.repeat(5)
     hdr[0] = ct & 255
     tls-put-u16-s(hdr, 1, TLS-VERSION)
@@ -411,7 +411,7 @@ tls-encrypt-record = (self tls-conn, ct i64, data []byte, n i64) (ok bool) {
 
     // 3. PKCS#7 填充
     padded []byte
-    padded-n i64 = 0
+    padded-n = 0
     padded, padded-n = pkcs7-pad(plain, plain-len)
 
     // 4. 生成隨機 IV
@@ -429,7 +429,7 @@ tls-encrypt-record = (self tls-conn, ct i64, data []byte, n i64) (ok bool) {
 
     // 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
     rec-len = 16 + padded-n
-    rec str = ' '
+    rec = ' '
     rec = rec.repeat(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     tls-put-u16-s(rec, 1, TLS-VERSION)
@@ -605,12 +605,12 @@ tls-rsa-pkcs1-encrypt = (msg []byte, msg-n i64, mod-bytes []byte, mod-n i64, exp
 
     // 轉換為大整數
     m-bn []i64
-    m-bn-n i64 = 0
+    m-bn-n = 0
     m-bn, m-bn-n = tls-bytes-to-bn(padded, padded-n)
 
     // 模數轉大整數
     n-bn []i64
-    n-bn-n i64 = 0
+    n-bn-n = 0
     n-bn, n-bn-n = tls-bytes-to-bn(mod-bytes, mod-n)
 
     // 指數轉大整數
@@ -620,7 +620,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, msg-n i64, mod-bytes []byte, mod-n i64, exp
 
     // RSA 加密: c = m^e mod n
     c-bn []i64
-    c-bn-n i64 = 0
+    c-bn-n = 0
     c-bn, c-bn-n = rsa-modpow(m-bn, m-bn-n, e-bn, e-bn-n, n-bn, n-bn-n)
 
     // 轉換回位元組
@@ -704,7 +704,7 @@ tls-send-client-hello = (self tls-conn) (ok bool) {
     tls-put-u24(hs, 1, body-len)
 
     // 轉為 str 發送
-    hs-str str = ' '
+    hs-str = ' '
     hs-str = hs-str.repeat(pos)
     i = 0
     for i < pos {
@@ -726,12 +726,12 @@ tls-send-client-hello = (self tls-conn) (ok bool) {
 // 返回 ok bool: true=成功
 tls-read-server-hello = (self tls-conn) (ok bool) {
     ok = false
-    buf str = ' '
+    buf = ' '
     buf = buf.repeat(16389)
 
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(self.fd, buf)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(self.fd, buf)
     if ct != TLS-CT-HANDSHAKE {
         return
     }
@@ -791,12 +791,12 @@ tls-read-server-hello = (self tls-conn) (ok bool) {
 tls-read-certificate = (self tls-conn, cert-out []byte) (cert-n i64, ok bool) {
     ok = false
     cert-n = 0
-    buf str = ' '
+    buf = ' '
     buf = buf.repeat(16389)
 
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(self.fd, buf)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(self.fd, buf)
     if ct != TLS-CT-HANDSHAKE {
         return
     }
@@ -834,12 +834,12 @@ tls-read-certificate = (self tls-conn, cert-out []byte) (cert-n i64, ok bool) {
 // 返回 ok bool: true=成功
 tls-read-server-hello-done = (self tls-conn) (ok bool) {
     ok = false
-    buf str = ' '
+    buf = ' '
     buf = buf.repeat(16389)
 
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(self.fd, buf)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(self.fd, buf)
     if ct != TLS-CT-HANDSHAKE {
         return
     }
@@ -866,7 +866,7 @@ tls-send-client-key-exchange = (self tls-conn, premaster []byte, cert []byte, ce
 
     // 提取 RSA 公鑰
     mod-bytes []byte
-    mod-n i64 = 0
+    mod-n = 0
     mod-bytes, mod-n = x509-rsa-n(cert, cert-n)
     if mod-n == 0 {
         return
@@ -878,7 +878,7 @@ tls-send-client-key-exchange = (self tls-conn, premaster []byte, cert []byte, ce
 
     // RSA 加密 premaster secret
     enc-premaster []byte
-    enc-n i64 = 0
+    enc-n = 0
     enc-premaster, enc-n = tls-rsa-pkcs1-encrypt(premaster, TLS-PREMASTER-SIZE, mod-bytes, mod-n, exp)
     if enc-n == 0 {
         return
@@ -901,7 +901,7 @@ tls-send-client-key-exchange = (self tls-conn, premaster []byte, cert []byte, ce
     hs-len = 4 + body-len
 
     // 轉為 str
-    hs-str str = ' '
+    hs-str = ' '
     hs-str = hs-str.repeat(hs-len)
     i = 0
     for i < hs-len {
@@ -918,7 +918,7 @@ tls-send-client-key-exchange = (self tls-conn, premaster []byte, cert []byte, ce
 // tls-send-change-cipher-spec: 發送 ChangeCipherSpec
 // self tls-conn: 連線
 tls-send-change-cipher-spec = (self tls-conn) {
-    ccs str = ' '
+    ccs = ' '
     ccs[0] = 1
     tls-send-raw(self.fd, TLS-CT-CCS, ccs, 1)
 }
@@ -952,7 +952,7 @@ tls-send-finished = (self tls-conn, master []byte) (ok bool) {
     tls-append-hs(self, hs, hs-len)
 
     // 加密發送
-    tls-encrypt-record(self, TLS-CT-HANDSHAKE, hs, hs-len)(ok)
+    ok = tls-encrypt-record(self, TLS-CT-HANDSHAKE, hs, hs-len)
 }
 
 // tls-read-change-cipher-spec: 讀取 ChangeCipherSpec
@@ -960,12 +960,12 @@ tls-send-finished = (self tls-conn, master []byte) (ok bool) {
 // 返回 ok bool: true=成功
 tls-read-change-cipher-spec = (self tls-conn) (ok bool) {
     ok = false
-    buf str = ' '
+    buf = ' '
     buf = buf.repeat(10)
 
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(self.fd, buf)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(self.fd, buf)
     if ct != TLS-CT-CCS {
         return
     }
@@ -984,21 +984,21 @@ tls-read-change-cipher-spec = (self tls-conn) (ok bool) {
 // 返回 ok bool: true=成功
 tls-read-finished = (self tls-conn, master []byte) (ok bool) {
     ok = false
-    buf str = ' '
+    buf = ' '
     buf = buf.repeat(16389)
 
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(self.fd, buf)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(self.fd, buf)
     if ct != TLS-CT-APP-DATA {
         return
     }
 
     // 解密
-    plain str = ' '
+    plain = ' '
     plain = plain.repeat(16384)
-    plain-n i64 = 0
-    d-ct i64 = 0
+    plain-n = 0
+    d-ct = 0
     d-ct, plain, plain-n = tls-decrypt-record(self, buf)
     if d-ct < 0 {
         return
@@ -1140,14 +1140,14 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     .connected = true
 
     // 2. 送出 ClientHello
-    tls-send-client-hello(.)(ok)
+    ok = tls-send-client-hello(.)
     if ok == false {
         .close()
         return
     }
 
     // 3. 讀取 ServerHello
-    tls-read-server-hello(.)(ok)
+    ok = tls-read-server-hello(.)
     if ok == false {
         .close()
         return
@@ -1155,15 +1155,15 @@ tls-conn.connect = (host str, port i64) (ok bool) {
 
     // 4. 讀取 Certificate
     cert []byte
-    cert-n i64 = 0
-    tls-read-certificate(., cert)(cert-n, ok)
+    cert-n = 0
+    cert-n, ok = tls-read-certificate(., cert)
     if ok == false {
         .close()
         return
     }
 
     // 5. 讀取 ServerHelloDone
-    tls-read-server-hello-done(.)(ok)
+    ok = tls-read-server-hello-done(.)
     if ok == false {
         .close()
         return
@@ -1184,7 +1184,7 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     tls-derive-keys(., premaster)
 
     // 8. 發送 ClientKeyExchange
-    tls-send-client-key-exchange(., premaster, cert, cert-n)(ok)
+    ok = tls-send-client-key-exchange(., premaster, cert, cert-n)
     if ok == false {
         .close()
         return
@@ -1195,21 +1195,21 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     .encrypted = true
 
     // 10. 發送 Finished（加密）
-    tls-send-finished(., premaster)(ok)
+    ok = tls-send-finished(., premaster)
     if ok == false {
         .close()
         return
     }
 
     // 11. 讀取 ChangeCipherSpec
-    tls-read-change-cipher-spec(.)(ok)
+    ok = tls-read-change-cipher-spec(.)
     if ok == false {
         .close()
         return
     }
 
     // 12. 讀取 Finished（加密）
-    tls-read-finished(., premaster)(ok)
+    ok = tls-read-finished(., premaster)
     if ok == false {
         .close()
         return
@@ -1234,7 +1234,7 @@ tls-conn.send = (data str, n i64) (written i64, ok bool) {
     }
 
     data-bytes []byte = data.to-bytes()
-    tls-encrypt-record(., TLS-CT-APP-DATA, data-bytes, n)(ok)
+    ok = tls-encrypt-record(., TLS-CT-APP-DATA, data-bytes, n)
     if ok == false {
         return
     }
@@ -1258,20 +1258,20 @@ tls-conn.recv = (buf str, n i64) (read-n i64, ok bool) {
     }
 
     // 讀取加密記錄
-    rec str = ' '
+    rec = ' '
     rec = rec.repeat(16389)
-    ct i64 = 0
-    rlen i64 = 0
-    tls-read-record(.fd, rec)(ct, rlen)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls-read-record(.fd, rec)
     if ct < 0 {
         return
     }
 
     // 解密
-    plain str = ' '
+    plain = ' '
     plain = plain.repeat(16384)
-    plain-n i64 = 0
-    d-ct i64 = 0
+    plain-n = 0
+    d-ct = 0
     d-ct, plain, plain-n = tls-decrypt-record(., rec)
     if d-ct < 0 {
         return
@@ -1315,7 +1315,7 @@ tls-conn.close = () {
 tls-dial = (host str, port i64) (conn tls-conn, ok bool) {
     ok = false
     conn.init()
-    conn.connect(host, port)(ok)
+    ok = conn.connect(host, port)
     if ok == false {
         conn.close()
     }

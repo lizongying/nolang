@@ -160,6 +160,11 @@ func isConcreteType(typeName string) bool {
 	return false
 }
 
+// validationStructFields holds struct name → field name → field type string,
+// populated by ValidateTypes for use in inferExprType when resolving
+// self.field method calls (e.g. .recv-buf.slice()).
+var validationStructFields map[string]map[string]string
+
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
@@ -222,6 +227,19 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			} else if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
 				// 字串字面量接收者（如 '123'.to-i64()）→ str 型別
 				typeName = "str"
+			} else if innerDot, ok := dot.Receiver.(*parser.DotExpression); ok {
+				// struct field 方法調用（如 .field.method() 即 self.field.method()）
+				// 遞迴推斷接收者型別
+				if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
+					// self.field → 查 struct 定義取得 field 型別
+					if validationStructFields != nil {
+						if fields, ok := validationStructFields[selfType]; ok {
+							if fieldType, ok := fields[innerDot.Property]; ok {
+								typeName = fieldType
+							}
+						}
+					}
+				}
 			} else if _, ok := dot.Receiver.(*parser.IndexExpression); ok {
 				// 陣列元素接收者（如 arr[i].slice(...)）— 元素型別無法靜態推斷，
 				// 返回空字串跳過型別檢查，由 LLVM 端驗證
@@ -243,7 +261,9 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				return ""
 			}
 		}
-		return "i64"
+		// 接收者型別未知（如跨模組函數返回的變數、struct field 存取結果等），
+		// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
+		return ""
 	case *parser.InfixExpression:
 		// 簡單推斷：比較運算返回 bool，算術返回 i64/f64
 		switch e.Operator {
@@ -2405,13 +2425,23 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			} else {
 				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-		} else if sl, ok := s.Value.(*parser.StringLiteral); ok {
-			// Also detect string from StringLiteral value (inferred type)
-			strSizes[s.Name.Value] = int64(len(sl.Value))
+		} else if isStringExprForCollect(s.Value, strSizes) {
+			// Also detect string from inferred expression (StringLiteral, string concatenation,
+			// string method calls like slice/repeat, char-to-str, copy from known string var)
+			if sl, ok := s.Value.(*parser.StringLiteral); ok {
+				strSizes[s.Name.Value] = int64(len(sl.Value))
+			} else {
+				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			}
 		}
 	case *parser.FunctionDefinition:
-		// Add str parameters to stringSizes so they're recognized as strings
+		// Add str parameters and results to stringSizes so they're recognized as strings
 		for _, p := range s.Parameters {
+			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+				strSizes[p.Name] = 0
+			}
+		}
+		for _, p := range s.Results {
 			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
 				strSizes[p.Name] = 0
 			}
@@ -2453,10 +2483,56 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 
 // validateArrayBounds 編譯期陣列邊界檢查
 // 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
+// isStringExprForCollect is a stricter version of isStringExpr used during the
+// string size map collection phase. Unlike isStringExpr (which defers unknown
+// types to LLVM), this function only returns true for expressions that are
+// DEFINITELY strings, avoiding false positives like struct field access (DotExpression)
+// or array element access (IndexExpression) which may be non-string types.
+func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) bool {
+	switch e := expr.(type) {
+	case *parser.StringLiteral:
+		return true
+	case *parser.Identifier:
+		_, exists := strSizes[e.Value]
+		return exists
+	case *parser.GroupedExpression:
+		return isStringExprForCollect(e.Expression, strSizes)
+	case *parser.InfixExpression:
+		// String concatenation: when both sides are strings, the result is a string
+		if e.Operator == "-" {
+			return isStringExprForCollect(e.Left, strSizes) && isStringExprForCollect(e.Right, strSizes)
+		}
+	case *parser.CallExpression:
+		// Check if it's a method call on a known string receiver (e.g., s.slice(), s.repeat())
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+				if _, exists := strSizes[ident.Value]; exists {
+					return true // method call on known string variable
+				}
+			}
+			// 'literal'.method() — method call on string literal
+			if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+				return true
+			}
+		}
+		// Check if it's a global builtin function call that returns str (e.g., char-to-str)
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			switch ident.Value {
+			case "char-to-str":
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // isStringExpr checks if an expression is a string type
 func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral:
+		return true
+	case *parser.NilLiteral:
+		// nil can be assigned to ?str (option string) variables
 		return true
 	case *parser.Identifier:
 		_, exists := stringSizes[e.Value]
@@ -2570,7 +2646,12 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				isArrayVar = at != nil
 			}
 			if !isArrayVar {
-				if _, exists := stringSizes[s.Name.Value]; exists {
+				// Only check explicitly str-typed variables (not inferred ones).
+				// Inferred string variables (from StringLiteral, etc.) may later be
+				// assigned from struct field access or cross-module calls whose
+				// return type is unknown at vet time; deferring to LLVM is safer.
+				isExplicitStr := s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-short")
+				if isExplicitStr {
 					if !isStringExpr(s.Value, stringSizes) {
 						return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
 					}
@@ -2579,9 +2660,27 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 			return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)
 		}
 	case *parser.FunctionDefinition:
+		// Build a fresh per-function stringSizes map to avoid variable name
+		// collisions between functions (e.g., 'pos' may be str in one function
+		// and i64 in another). Only include this function's parameters, results,
+		// and local variables — not global constants or other functions' variables.
+		funcStringSizes := make(map[string]int64)
+		for _, p := range s.Parameters {
+			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+				funcStringSizes[p.Name] = 0
+			}
+		}
+		for _, p := range s.Results {
+			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+				funcStringSizes[p.Name] = 0
+			}
+		}
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				collectStringSizeMapFromStmt(ss, funcStringSizes)
+			}
+			for _, ss := range s.Body.Statements {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, funcStringSizes, varTypes); err != nil {
 					return err
 				}
 			}
@@ -2664,14 +2763,10 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 				}
 			}
 		}
-		// a = val type mismatch check
-		if ident, ok := e.Left.(*parser.Identifier); ok {
-			if _, exists := stringSizes[ident.Value]; exists {
-				if !isStringExpr(e.Value, stringSizes) {
-					return fmt.Errorf("cannot assign non-string value to string variable '%s'", ident.Value)
-				}
-			}
-		}
+		// Note: string type check for reassignments is intentionally omitted.
+		// Inferred string variables may be reassigned from struct field access or
+		// cross-module calls whose return type is unknown at vet time.
+		// The LetStatement check for explicitly str-typed variables is sufficient.
 		// a[i] = val → 檢查 Left 中的 IndexExpression
 		// （slice 的索引檢查已在 IndexExpression case 中處理）
 		return validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes)
@@ -2832,6 +2927,8 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	}
 
 	// 3. 遍歷頂層語句做型別檢查
+	// 收集 struct 定義的欄位型別，供 inferExprType 解析 self.field.method() 接收者型別
+	validationStructFields = collectStructFields(program)
 	for _, stmt := range program.Statements {
 		// 判斷是否為 struct 方法
 		selfType := ""

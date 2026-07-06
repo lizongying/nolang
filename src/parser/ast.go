@@ -319,6 +319,7 @@ type LetStatement struct {
 	Value        Expression
 	IsSynthetic  bool           // compiler-injected (e.g. `it = matched`), not from source
 	SyntheticEnd lexer.Position // override EndPos for synthetic bindings
+	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	CommentedNode
 }
 
@@ -1019,12 +1020,13 @@ func (sl *SliceLiteral) EndPos() lexer.Position {
 }
 
 type StructField struct {
-	Token     lexer.Token
-	Name      string
-	Type      Type
-	ArraySize int64 // >0 = 定長陣列 [N]type
-	IsSlice   bool  // true = 切片 []type
-	Value     Expression
+	Token        lexer.Token
+	Name         string
+	Type         Type
+	ArraySize    int64 // >0 = 定長陣列 [N]type
+	IsSlice      bool  // true = 切片 []type
+	Value        Expression
+	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目
 }
 
 type EnumValue struct {
@@ -1128,10 +1130,11 @@ func (id *InterfaceDefinition) Pos() lexer.Position    { return posFromToken(id.
 func (id *InterfaceDefinition) EndPos() lexer.Position { return posFromToken(id.Token) }
 
 type StructDefinition struct {
-	Token      lexer.Token
-	Name       string
-	Implements []string // 實現的介面列表（空 = 無）
-	Fields     []*StructField
+	Token       lexer.Token
+	Name        string
+	Implements  []string // 實現的介面列表（空 = 無）
+	Fields      []*StructField
+	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	CommentedNode
 }
 

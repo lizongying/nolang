@@ -22,6 +22,9 @@ type Parser struct {
 	varDeclTypes     map[string]string   // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames map[string][]string // 枚舉類型名 → 枚舉值名列表
 
+	// pendingAnnotations 暫存待附加到宣告的註解條目
+	pendingAnnotations []*AnnotationEntry
+
 	// Filename is the source file name (e.g. "sqlite.no").
 	// Used for diagnostics and error reporting.
 	Filename string
@@ -6214,6 +6217,30 @@ func (p *Parser) parseStructDefinition() Statement {
 		if p.currentToken.Type == lexer.RBRACE {
 			break
 		}
+
+		// 支援欄位前的 #{...} 註解
+		var fieldAnnotations []*AnnotationEntry
+		if p.currentToken.Type == lexer.HASH_LBRACE {
+			annotToken := p.currentToken
+			p.nextToken() // skip #{
+			fieldAnnotations = p.parseAnnotationBody()
+			if p.currentToken.Type != lexer.RBRACE {
+				msg := fmt.Sprintf("line %d, column %d: expected '}' to close field annotation, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken() // skip }
+			_ = annotToken
+			// 跳過換行
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.RBRACE {
+				break
+			}
+		}
+
 		if p.currentToken.Type != lexer.IDENT {
 			msg := fmt.Sprintf("line %d, column %d: expected field name in struct definition, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
@@ -6222,8 +6249,9 @@ func (p *Parser) parseStructDefinition() Statement {
 		}
 
 		field := &StructField{
-			Token: p.currentToken,
-			Name:  p.currentToken.Literal,
+			Token:       p.currentToken,
+			Name:        p.currentToken.Literal,
+			Annotations: fieldAnnotations,
 		}
 
 		p.nextToken() // 跳过 field name
@@ -7203,7 +7231,10 @@ func detectImplicitGeneric(t Type, def *FunctionDefinition) {
 //	#{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
 //
 // 當註解包含 FFI 語言鍵（c、cpp、rust 等）且後續為函式宣告時，
-// 轉換為 ExternStatement；否則作為 AnnotationStatement 保留。
+// 轉換為 ExternStatement。
+//
+// 對於非 FFI 註解，若後續為宣告（let、struct definition、function definition），
+// 註解條目會附加到該宣告上；否則作為獨立 AnnotationStatement 保留。
 func (p *Parser) parseAnnotationStatement() Statement {
 	// currentToken 為 HASH_LBRACE (#{)
 	annotToken := p.currentToken
@@ -7247,8 +7278,39 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		}
 	}
 
+	// 非 FFI 註解：嘗試附加到後續宣告
+	// 跳過 NEWLINE，檢查後續是否為宣告
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// 若後續為 IDENT 開頭的宣告，附加註解
+	if p.currentToken.Type == lexer.IDENT {
+		// 暫存註解條目，解析下一個語句後附加
+		p.pendingAnnotations = entries
+		stmt := p.parseStatement()
+		if stmt != nil {
+			p.attachAnnotations(stmt, entries)
+			p.pendingAnnotations = nil
+			return stmt
+		}
+		p.pendingAnnotations = nil
+	}
+
 	p.skipToStatementEnd()
 	return annotStmt
+}
+
+// attachAnnotations 將註解條目附加到宣告語句上。
+func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		s.Annotations = entries
+	case *StructDefinition:
+		s.Annotations = entries
+	case *FunctionDefinition:
+		// 函式定義暫不附加，保留為獨立語句
+	}
 }
 
 // parseAnnotationFFIDeclaration 從 #{c} 註解建立 ExternStatement。

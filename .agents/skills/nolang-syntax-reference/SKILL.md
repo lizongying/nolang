@@ -157,7 +157,7 @@ add = (a i64, b i64) (result i64) {
 
 When a function may fail or return empty, **use `?t` option type** instead of `(val t, ok bool)` dual-return. This is the idiomatic Nolang style.
 
-`?t` is a tagged enum with three states: `ok(v)` (has value), `nil` (empty), and `err(s)` (error). Use `nil` when the operation simply found nothing, and `err(...)` when the operation encountered an actual error.
+`?t` is a tagged enum with three states: `ok` (has value, implicitly bound), `nil` (empty), and `err` (error). Use `nil` when the operation simply found nothing, and `err(...)` when the operation encountered an actual error.
 
 ```nolang
 // ❌ Wrong: dual-return pattern
@@ -496,7 +496,48 @@ s.push(42)
 val, ok = s.pop()
 ```
 
-The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`. See `docs/docs/std/overview.md` for the full API.
+The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`, `sse-client`. See `docs/docs/std/overview.md` for the full API.
+
+### Networking Modules
+
+The standard library includes HTTP and SSE client modules under `std/net/`:
+
+- `std/net/http` — HTTP/1.1 client (GET, POST, PUT, DELETE, PATCH), supports TLS
+- `std/net/http2` — HTTP/2.0 client (h2c prior knowledge mode)
+- `std/net/sse` — Server-Sent Events client (W3C EventSource), supports TLS and auto-reconnect
+- `std/net/tls` — TLS 1.2 client connection
+- `std/net/client` — High-level TCP client with reconnect support
+- `std/net/ip` — IPv4 address parsing and classification
+
+```nolang
+// SSE client usage
+client = sse-connect('http://localhost:3000/events')  // returns ?sse-client
+client: {
+    nil -> println('connection failed')
+    ->
+        ! {
+            ev = client.next-event()     // returns ?sse-event
+            ev: {
+                nil -> *                  // EOF
+                err -> println(it)        // error
+                -> println(ev.data)       // event data
+            }
+        }
+        client.close()
+}
+```
+
+### Struct Field Method Calls
+
+Method calls on struct fields via `self.field` (abbreviated `.field`) are fully supported. The type checker resolves the field type from the struct definition, so return types are correctly inferred:
+
+```nolang
+// .recv-buf is a str field → .recv-buf.slice() returns str
+data = .recv-buf.slice(0, .recv-buf-len)   // correctly inferred as str
+
+// .tls-c is a tls-conn field → .tls-c.send() works directly
+written, ok = .tls-c.send(req, req.len)
+```
 
 ### String Auto-Length Tracking
 
@@ -599,6 +640,62 @@ open = (dsn str) (d db-sqlite) {
 8. `str` params are auto-converted to null-terminated `i8*`
 9. Names starting with `_` are private (not exported); C ABI symbol strips leading `_`
 10. FFI declarations and regular code can be in the same `.no` file
+
+### Annotations (#{...} system)
+
+`#{...}` is the general annotation system — a comma-separated list of key-value pairs. It supersedes the `#c` directive: `#{c}` is the new FFI syntax (old `#c` still works).
+
+**Supported value types:**
+
+| Syntax | Type | Example |
+| --- | --- | --- |
+| Bare key | bool | `#{debug}` |
+| Integer | int | `#{max=100}` |
+| String | string | `#{name='hello'}` |
+| Identifier | ident | `#{mode=fast}` |
+| Array | array | `#{derive=[Serialize, Deserialize]}` |
+| Range | range | `#{range=[0..256)}` |
+
+**Range syntax** supports four bracket combinations:
+- `[a..b]` — closed on both ends
+- `[a..b)` — left-closed, right-open
+- `(a..b)` — open on both ends
+- `(a..b]` — left-open, right-closed
+
+#### Annotations attached to declarations
+
+Non-FFI annotations are automatically attached to the declaration that follows. This is useful for tagging numeric types (like `num`) with range constraints:
+
+```nolang
+// Variable declaration with range annotation
+#{range=[0..256)}
+x num = 42
+
+// Struct definition with annotation
+#{derive=[Serialize, Deserialize]}
+point {
+    x i64
+    y i64
+}
+
+// Struct field with range annotation (for num and other numeric types)
+person {
+    #{range=[0..150]}
+    age num
+    #{range=[0..256)}
+    score i64
+    name str
+}
+```
+
+The `range` annotation is particularly useful for `num` type (`num int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
+
+```nolang
+#{range=[i8.MIN..i8.MAX]}
+val i8 = 100
+```
+
+If an annotation is not followed by a declaration, it remains a standalone `AnnotationStatement`.
 
 ## Additional Resources
 

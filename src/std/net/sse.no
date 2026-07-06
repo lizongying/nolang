@@ -1,0 +1,717 @@
+// sse — Server-Sent Events 客戶端
+//
+// 支援 W3C EventSource 規範的 SSE 串流接收。
+// 底層使用 HTTP/1.1 長連接，支援明文 HTTP 與 HTTPS（TLS）。
+//
+// 用法：
+//   client = sse-connect('http://localhost:3000/events')   // 返回 ?sse-client
+//   client: {
+//       nil -> println('SSE connection failed')
+//       ->
+//           ! {
+//               ev = client.next-event()       // 返回 ?sse-event
+//               ev: {
+//                   nil -> *
+//                   err -> println('error: ' - it)
+                         *
+//                   -> println(ev.event - ': ' - ev.data)
+//               }
+//           }
+//           client.close()
+//   }
+
+# std/net/tls
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// 接收緩衝區大小
+SSE-BUF-SIZE = 8192
+
+// 單次接收大小
+SSE-RECV-SIZE = 4096
+
+// 預設 HTTP 埠號
+SSE-DEFAULT-PORT = 80
+
+// 預設 HTTPS 埠號
+SSE-DEFAULT-TLS-PORT = 443
+
+// ═══════════════════════════════════════════════
+// 結構體
+// ═══════════════════════════════════════════════
+
+// sse-event: SSE 事件
+// event: 事件類型（預設 'message'）
+// data: 事件資料（多行 data 以 \n 連接）
+// id: 事件 ID
+// retry: 重連等待毫秒數（-1=未設定）
+sse-event {
+    event str
+    data str
+    id str
+    retry i64
+}
+
+// sse-client: SSE 客戶端連線
+// fd: TCP socket 檔案描述符（-1=未連接）
+// tls-c: TLS 連線（use-tls=true 時使用）
+// use-tls: 是否使用 TLS
+// connected: 連線狀態
+// host: 伺服器主機名
+// port: 埠號
+// path: 請求路徑
+// last-event-id: 最後收到的事件 ID（用於重連）
+// recv-buf: 接收緩衝區
+// recv-buf-len: 緩衝區中實際資料長度
+sse-client {
+    fd i64
+    tls-c tls-conn
+    use-tls bool
+    connected bool
+    host str
+    port i64
+    path str
+    last-event-id str
+    recv-buf str
+    recv-buf-len i64
+}
+
+// ═══════════════════════════════════════════════
+// sse-client 方法
+// ═══════════════════════════════════════════════
+
+// next-event: 讀取下一個 SSE 事件
+// 阻塞直到收到完整事件或連線關閉。
+// 返回 ev ?sse-event:
+//   ok = 事件
+//   nil   = 連線已關閉（EOF）
+//   err = 錯誤
+sse-client.next-event = () (ev ?sse-event) {
+    ev = nil
+    if .connected == false {
+        ev = err('not connected')
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    lf-lf = lf - lf
+    crlf-crlf = crlf - crlf
+
+    ! {
+        // 建立緩衝區視圖（slice 會複製，安全）
+        data = .recv-buf.slice(0, .recv-buf-len)
+
+        // 搜尋事件分隔符（\n\n 或 \r\n\r\n）
+        pos1 = data.index(lf-lf)
+        pos2 = data.index(crlf-crlf)
+
+        sep-pos = -1
+        sep-len = 0
+
+        {
+            pos1 >= 0 && pos2 >= 0 ->
+                pos1 <= pos2 ->
+                    sep-pos = pos1
+                    sep-len = 2
+                ->
+                    sep-pos = pos2
+                    sep-len = 4
+            pos1 >= 0 ->
+                sep-pos = pos1
+                sep-len = 2
+            pos2 >= 0 ->
+                sep-pos = pos2
+                sep-len = 4
+            ->
+        }
+
+        if sep-pos >= 0 {
+            // 找到事件邊界
+            event-block = data.slice(0, sep-pos)
+            remaining-start = sep-pos + sep-len
+            remaining = data.slice(remaining-start, data.len)
+
+            // 將剩餘資料移到緩衝區開頭
+            i = 0
+            for i < remaining.len {
+                .recv-buf[i] = remaining[i]
+                i = i + 1
+            }
+            .recv-buf-len = remaining.len
+
+            // 解析事件區塊
+            e-event = 'message'
+            e-data = ''
+            e-id = ''
+            e-retry i64 = -1
+            has-data = false
+
+            pos = 0
+            for pos < event-block.len {
+                nl = event-block.index-from(lf, pos)
+                line-end = nl
+                if line-end < 0 {
+                    line-end = event-block.len
+                }
+                line = event-block.slice(pos, line-end)
+
+                // 去除行尾 \r
+                if line.len > 0 {
+                    if line[line.len - 1] == 13 {
+                        line = line.slice(0, line.len - 1)
+                    }
+                }
+
+                // 跳過空行和註解行
+                if line.len > 0 {
+                    // 註解行以 : 開頭
+                    if line[0] != 58 {
+                        // 尋找冒號分隔符
+                        colon = line.index(':')
+                        field = line
+                        value = ''
+                        if colon >= 0 {
+                            field = line.slice(0, colon)
+                            val-start = colon + 1
+                            if val-start < line.len {
+                                if line[val-start] == 32 {
+                                    val-start = val-start + 1
+                                }
+                            }
+                            value = line.slice(val-start, line.len)
+                        }
+
+                        if field == 'data' {
+                            if has-data {
+                                e-data = e-data - lf - value
+                            } else {
+                                e-data = value
+                                has-data = true
+                            }
+                        } elif field == 'event' {
+                            e-event = value
+                        } elif field == 'id' {
+                            e-id = value
+                            .last-event-id = value
+                        } elif field == 'retry' {
+                            retry-val ?i64 = value.to-i64()
+                            retry-val: {
+                                nil -> e-retry = -1
+                                err -> e-retry = -1
+                                -> e-retry = it
+                            }
+                        }
+                    }
+                }
+
+                pos = line-end + 1
+            }
+
+            // 只有包含 data 的事件才回傳
+            if has-data {
+                ev = sse-event{
+                    event: e-event
+                    data: e-data
+                    id: e-id
+                    retry: e-retry
+                }
+                return
+            }
+
+            // 此事件無 data，繼續讀取下一個事件
+        }
+
+        if sep-pos < 0 {
+            // 未找到完整事件，接收更多資料
+            if .recv-buf-len >= SSE-BUF-SIZE {
+                ev = err('event too large')
+                return
+            }
+
+            tmp str = ' '.repeat(SSE-RECV-SIZE)
+            n = 0
+            recv-ok = false
+            if .use-tls {
+                n, recv-ok = .tls-c.recv(tmp, SSE-RECV-SIZE)
+                if recv-ok == false {
+                    .connected = false
+                    ev = err('recv failed')
+                    return
+                }
+            }
+            if .use-tls == false {
+                n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+            }
+            if n <= 0 {
+                .connected = false
+                ev = nil
+                return
+            }
+            // 複製到緩衝區末尾
+            i = 0
+            for i < n {
+                .recv-buf[.recv-buf-len + i] = tmp[i]
+                i = i + 1
+            }
+            .recv-buf-len = .recv-buf-len + n
+        }
+    }
+}
+
+// close: 關閉 SSE 連線
+sse-client.close = () {
+    if .connected {
+        if .use-tls {
+            .tls-c.close()
+        }
+        if .use-tls == false {
+            if .fd >= 0 {
+                close(.fd)
+            }
+        }
+        .fd = -1
+        .connected = false
+    }
+}
+
+// is-connected: 檢查連線狀態
+// 返回 yes bool: true=已連接
+sse-client.is-connected = () (yes bool) {
+    yes = .connected
+}
+
+// reconnect: 重新連線（使用 last-event-id 繼續接收）
+// 返回 ok bool: true=成功
+sse-client.reconnect = () (ok bool) {
+    ok = false
+    if .connected {
+        .close()
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    // 建立連線
+    if .use-tls {
+        .tls-c, tls-ok = tls-dial(.host, .port)
+        if tls-ok == false {
+            return
+        }
+    }
+    if .use-tls == false {
+        .fd = net-dial(.host, .port)
+        if .fd < 0 {
+            return
+        }
+    }
+    .connected = true
+
+    // 建構 SSE 請求
+    req = 'GET '
+    req = req - .path
+    req = req - ' HTTP/1.1'
+    req = req - crlf
+    req = req - 'Host: '
+    req = req - .host
+    req = req - crlf
+    req = req - 'Accept: text/event-stream'
+    req = req - crlf
+    req = req - 'Cache-Control: no-cache'
+    req = req - crlf
+    req = req - 'Connection: keep-alive'
+    req = req - crlf
+
+    // 如有 last-event-id，加入標頭
+    if .last-event-id.len > 0 {
+        req = req - 'Last-Event-ID: '
+        req = req - .last-event-id
+        req = req - crlf
+    }
+
+    req = req - 'User-Agent: nolang-sse/1.0'
+    req = req - crlf
+    req = req - crlf
+
+    // 發送請求
+    written = 0
+    send-ok = false
+    if .use-tls {
+        written, send-ok = .tls-c.send(req, req.len)
+        if send-ok == false {
+            .close()
+            return
+        }
+    }
+    if .use-tls == false {
+        written = net-send(.fd, req, req.len)
+        if written < 0 {
+            .close()
+            return
+        }
+    }
+
+    // 接收回應標頭（直到 \r\n\r\n）
+    space = ' '
+    raw = space.repeat(SSE-BUF-SIZE)
+    tmp = space.repeat(SSE-RECV-SIZE)
+    total = 0
+    n = 0
+    recv-ok = false
+    separator = crlf - crlf
+    sep-pos i64 = -1
+
+    ! {
+        if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
+            .close()
+            return
+        }
+        if .use-tls {
+            n, recv-ok = .tls-c.recv(tmp, SSE-RECV-SIZE)
+            if recv-ok == false {
+                .close()
+                return
+            }
+        }
+        if .use-tls == false {
+            n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+        }
+        if n <= 0 {
+            .close()
+            return
+        }
+        i = 0
+        for i < n {
+            raw[total + i] = tmp[i]
+            i = i + 1
+        }
+        total = total + n
+        data = raw.slice(0, total)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+    }
+
+    // 驗證狀態碼
+    head = raw.slice(0, sep-pos)
+    first-line-end = head.index(crlf)
+    status-line = head
+    if first-line-end >= 0 {
+        status-line = head.slice(0, first-line-end)
+    }
+
+    sp1 = status-line.index(' ')
+    if sp1 < 0 {
+        .close()
+        return
+    }
+    after-code = status-line.slice(sp1 + 1, status-line.len)
+    sp2 = after-code.index(' ')
+    code-str = after-code
+    if sp2 >= 0 {
+        code-str = after-code.slice(0, sp2)
+    }
+
+    code = 0
+    i = 0
+    for i < code-str.len {
+        c = code-str[i]
+        if c < 48 || c > 57 {
+            .close()
+            return
+        }
+        code = code * 10 + c - 48
+        i = i + 1
+    }
+
+    if code != 200 {
+        .close()
+        return
+    }
+
+    // 儲存標頭後的剩餘資料
+    body-start = sep-pos + separator.len
+    remaining = raw.slice(body-start, total)
+
+    .recv-buf = space.repeat(SSE-BUF-SIZE)
+    .recv-buf-len = remaining.len
+    i = 0
+    for i < remaining.len {
+        .recv-buf[i] = remaining[i]
+        i = i + 1
+    }
+
+    ok = true
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// sse-connect: 連接到 SSE 端點
+// url str: SSE 端點 URL（http://host:port/path 或 https://host:port/path）
+// 返回 client ?sse-client:
+//   ok = 已連接的客戶端
+//   nil   = 連線失敗
+//   err = 錯誤訊息
+sse-connect = (url str) (client ?sse-client) {
+    client = nil
+
+    // ── 解析 URL ──
+    scheme = 'http://'
+    rest = ''
+    host = ''
+    port i64 = SSE-DEFAULT-PORT
+    path = '/'
+    host-only = ''
+    port-str = ''
+    use-tls = false
+    fd i64 = -1
+    tls-c tls-conn
+    tls-ok = false
+
+    if url.starts-with('https://') {
+        use-tls = true
+        scheme = 'https://'
+        port = SSE-DEFAULT-TLS-PORT
+    }
+    if url.starts-with('http://') == false {
+        if use-tls == false {
+            client = err('invalid URL: must start with http:// or https://')
+            return
+        }
+    }
+    rest = url.slice(scheme.len, url.len)
+
+    slash-pos = rest.index('/')
+    if slash-pos < 0 {
+        host = rest
+    }
+    if slash-pos >= 0 {
+        host = rest.slice(0, slash-pos)
+        path = rest.slice(slash-pos, rest.len)
+    }
+
+    colon-pos = host.index(':')
+    if colon-pos >= 0 {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p = 0
+        i = 0
+        for i < port-str.len {
+            c = port-str[i]
+            if c < 48 || c > 57 {
+                client = err('invalid port')
+                return
+            }
+            p = p * 10 + c - 48
+            i = i + 1
+        }
+        port = p
+        host = host-only
+    }
+
+    if host.len == 0 {
+        client = err('empty host')
+        return
+    }
+
+    // ── 建立連線 ──
+    if use-tls {
+        tls-c, tls-ok = tls-dial(host, port)
+        if tls-ok == false {
+            client = err('TLS connection failed')
+            return
+        }
+    }
+    if use-tls == false {
+        fd = net-dial(host, port)
+        if fd < 0 {
+            client = err('TCP connection failed')
+            return
+        }
+    }
+
+    // ── 建構 SSE 請求 ──
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    req = 'GET '
+    req = req - path
+    req = req - ' HTTP/1.1'
+    req = req - crlf
+    req = req - 'Host: '
+    req = req - host
+    req = req - crlf
+    req = req - 'Accept: text/event-stream'
+    req = req - crlf
+    req = req - 'Cache-Control: no-cache'
+    req = req - crlf
+    req = req - 'Connection: keep-alive'
+    req = req - crlf
+    req = req - 'User-Agent: nolang-sse/1.0'
+    req = req - crlf
+    req = req - crlf
+
+    // ── 發送請求 ──
+    written = 0
+    send-ok = false
+    if use-tls {
+        written, send-ok = tls-c.send(req, req.len)
+        if send-ok == false {
+            tls-c.close()
+            client = err('send failed')
+            return
+        }
+    }
+    if use-tls == false {
+        written = net-send(fd, req, req.len)
+        if written < 0 {
+            close(fd)
+            client = err('send failed')
+            return
+        }
+    }
+
+    // ── 接收回應標頭（直到 \r\n\r\n）──
+    space = ' '
+    raw = space.repeat(SSE-BUF-SIZE)
+    tmp = space.repeat(SSE-RECV-SIZE)
+    total = 0
+    n = 0
+    recv-ok = false
+    separator = crlf - crlf
+    sep-pos i64 = -1
+
+    ! {
+        if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
+            if use-tls {
+                tls-c.close()
+            }
+            if use-tls == false {
+                close(fd)
+            }
+            client = err('response headers too large')
+            return
+        }
+        if use-tls {
+            n, recv-ok = tls-c.recv(tmp, SSE-RECV-SIZE)
+            if recv-ok == false {
+                tls-c.close()
+                client = err('recv failed')
+                return
+            }
+        }
+        if use-tls == false {
+            n = net-recv(fd, tmp, SSE-RECV-SIZE)
+        }
+        if n <= 0 {
+            if use-tls {
+                tls-c.close()
+            }
+            if use-tls == false {
+                close(fd)
+            }
+            client = err('connection closed during handshake')
+            return
+        }
+        i = 0
+        for i < n {
+            raw[total + i] = tmp[i]
+            i = i + 1
+        }
+        total = total + n
+        data = raw.slice(0, total)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+    }
+
+    // ── 驗證狀態碼 ──
+    head = raw.slice(0, sep-pos)
+    first-line-end = head.index(crlf)
+    status-line = head
+    if first-line-end >= 0 {
+        status-line = head.slice(0, first-line-end)
+    }
+
+    sp1 = status-line.index(' ')
+    if sp1 < 0 {
+        if use-tls {
+            tls-c.close()
+        }
+        if use-tls == false {
+            close(fd)
+        }
+        client = err('invalid status line')
+        return
+    }
+    after-code = status-line.slice(sp1 + 1, status-line.len)
+    sp2 = after-code.index(' ')
+    code-str = after-code
+    if sp2 >= 0 {
+        code-str = after-code.slice(0, sp2)
+    }
+
+    code = 0
+    i = 0
+    for i < code-str.len {
+        c = code-str[i]
+        if c < 48 || c > 57 {
+            if use-tls {
+                tls-c.close()
+            }
+            if use-tls == false {
+                close(fd)
+            }
+            client = err('invalid status code')
+            return
+        }
+        code = code * 10 + c - 48
+        i = i + 1
+    }
+
+    if code != 200 {
+        if use-tls {
+            tls-c.close()
+        }
+        if use-tls == false {
+            close(fd)
+        }
+        code-s = code.to-str()
+        client = err('server returned status ' - code-s)
+        return
+    }
+
+    // ── 建立客戶端，儲存標頭後的剩餘資料 ──
+    body-start = sep-pos + separator.len
+    remaining = raw.slice(body-start, total)
+
+    rb = space.repeat(SSE-BUF-SIZE)
+    i = 0
+    for i < remaining.len {
+        rb[i] = remaining[i]
+        i = i + 1
+    }
+
+    cli sse-client = sse-client{
+        fd: fd
+        tls-c: tls-c
+        use-tls: use-tls
+        connected: true
+        host: host
+        port: port
+        path: path
+        last-event-id: ''
+        recv-buf: rb
+        recv-buf-len: remaining.len
+    }
+
+    client = cli
+}

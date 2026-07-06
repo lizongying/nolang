@@ -43,7 +43,7 @@ client.connect = (host str, port i64) (ok bool) {
     .host = host
     .port = port
     .connected = false
-    .c.dial(host, port)(ok)
+    ok = .c.dial(host, port)
     if ok {
         .connected = true
     }
@@ -61,7 +61,7 @@ client.reconnect = () (ok bool) {
         .c.close()
         .connected = false
     }
-    .c.dial(.host, .port)(ok)
+    ok = .c.dial(.host, .port)
     if ok {
         .connected = true
     }
@@ -74,7 +74,7 @@ client.send = (data str) (written i64) {
     if .connected == false {
         return
     }
-    .c.send(data)(written)
+    written = .c.send(data)
 }
 
 // recv: 接收資料到緩衝區
@@ -86,11 +86,11 @@ client.recv = (buf str, n i64) (read-n i64) {
     if .connected == false {
         return
     }
-    .c.recv(buf, n)(read-n)
+    read-n = .c.recv(buf, n)
 }
 
 // recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
-// 返回 line ?str: ok(s)=接收內容, nil=失敗或連接關閉
+// 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
 client.recv-line = () (line ?str) {
     line = nil
     if .connected == false {
@@ -101,19 +101,19 @@ client.recv-line = () (line ?str) {
 
 // request: 請求-回應模式
 // 發送資料後接收全部回應直到連接關閉
-// 返回 response ?str: ok(s)=回應內容, nil=失敗
+// 返回 response ?str: ok=回應內容, nil=失敗
 client.request = (data str) (response ?str) {
     response = nil
     if .connected == false {
         return
     }
-    .c.send(data)(written)
+    written = .c.send(data)
     if written < 0 {
         return
     }
     s str = ' '.repeat(NET-BUF-SIZE)
-    total i64 = 0
-    .c.recv-all()(s, total)
+    total = 0
+    s, total = .c.recv-all()
     response = s
 }
 
@@ -125,8 +125,8 @@ client.send-line = (line str) (written i64) {
         return
     }
     // char-to-str(10) = 換行符 \n（ASCII 10）
-    nl str = char-to-str(10)
-    .c.send(line - nl)(written)
+    nl = char-to-str(10)
+    written = .c.send(line - nl)
 }
 
 // is-connected: 檢查連接狀態
@@ -148,12 +148,12 @@ client.close = () {
 // ═══════════════════════════════════════════════
 
 // net-client: 建立客戶端並連接
-// 返回 c ?client: ok(v)=客戶端, nil=失敗
+// 返回 c ?client: ok=客戶端, nil=失敗
 net-client = (host str, port i64) (c ?client) {
     c = nil
     cl = client{}
-    ok bool = false
-    cl.connect(host, port)(ok)
+    ok = false
+    ok = cl.connect(host, port)
     if ok {
         c = cl
     }

@@ -16,11 +16,11 @@
 //   ok = m.put(1, 10)       // ok=true
 //   ok = m.put(2, 20)       // ok=true
 //   ok = m.put(1, 99)       // ok=false（更新已存在鍵）
-//   val = m.get(2)           // val = ok(20)
-//   key = m.first()          // key = ok(1)（最小鍵）
-//   key = m.last()           // key = ok(3)（最大鍵）
-//   key = m.lower-bound(2)   // key = ok(2)（第一個 ≥ 2 的鍵）
-//   key = m.upper-bound(2)   // key = ok(3)（第一個 > 2 的鍵）
+//   val = m.get(2)           // val = ok
+//   key = m.first()          // key = ok（最小鍵）
+//   key = m.last()           // key = ok（最大鍵）
+//   key = m.lower-bound(2)   // key = ok（第一個 ≥ 2 的鍵）
+//   key = m.upper-bound(2)   // key = ok（第一個 > 2 的鍵）
 //   ok = m.remove(2)         // ok=true
 //   yes = m.contains(3)      // yes=true
 //   m.for-each(k, v)         // 按升序遍歷所有鍵值對
@@ -326,7 +326,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
 
 // get: 查找鍵對應的值
 // key i64: 鍵
-// 返回 val ?i64: ok(v)=找到, nil=未找到
+// 返回 val ?i64: ok=找到, nil=未找到
 tree-map.get = (key i64) (val ?i64) {
     idx = .root
     for idx >= 0 {
@@ -424,7 +424,7 @@ tree-map.remove = (key i64) (ok bool) {
 // ═══════════════════════════════════════════════
 
 // first: 取得最小鍵
-// 返回 key ?i64: ok(k)=最小鍵, nil=空樹
+// 返回 key ?i64: ok=最小鍵, nil=空樹
 tree-map.first = () (key ?i64) {
     idx = .root
     if idx < 0 {
@@ -438,7 +438,7 @@ tree-map.first = () (key ?i64) {
 }
 
 // last: 取得最大鍵
-// 返回 key ?i64: ok(k)=最大鍵, nil=空樹
+// 返回 key ?i64: ok=最大鍵, nil=空樹
 tree-map.last = () (key ?i64) {
     idx = .root
     if idx < 0 {
@@ -453,7 +453,7 @@ tree-map.last = () (key ?i64) {
 
 // lower-bound: 找第一個 ≥ target 的鍵
 // target i64: 目標鍵
-// 返回 key ?i64: ok(k)=找到, nil=無此鍵
+// 返回 key ?i64: ok=找到, nil=無此鍵
 tree-map.lower-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
@@ -474,7 +474,7 @@ tree-map.lower-bound = (target i64) (key ?i64) {
 
 // upper-bound: 找第一個 > target 的鍵
 // target i64: 目標鍵
-// 返回 key ?i64: ok(k)=找到, nil=無此鍵
+// 返回 key ?i64: ok=找到, nil=無此鍵
 tree-map.upper-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root

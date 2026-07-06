@@ -385,6 +385,14 @@ func TestFFIDeclarationSyntax(t *testing.T) {
 		{name: "annot_array", input: "#{derive=[Serialize, Deserialize]}", filename: "test.no", wantErr: false},
 		{name: "annot_range", input: "#{range=[0..256)}", filename: "test.no", wantErr: false},
 		{name: "annot_complex", input: "#{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}", filename: "test.no", wantErr: false},
+		// Annotation attached to declaration
+		{name: "annot_attach_let", input: "#{range=[0..256)}\nx num = 42", filename: "test.no", wantErr: false},
+		{name: "annot_attach_let_range_closed", input: "#{range=[0..255]}\nx i64 = 0", filename: "test.no", wantErr: false},
+		{name: "annot_attach_let_paren", input: "#{range=(0..256)}\nx i64 = 1", filename: "test.no", wantErr: false},
+		{name: "annot_attach_struct", input: "#{range=[0..256)}\npoint {\n    x i64\n    y i64\n}", filename: "test.no", wantErr: false},
+		{name: "annot_struct_field", input: "person {\n    #{range=[0..256)}\n    age num\n    name str\n}", filename: "test.no", wantErr: false},
+		{name: "annot_struct_field_range", input: "config {\n    #{range=[0..100)}\n    port i64\n}", filename: "test.no", wantErr: false},
+		{name: "annot_standalone", input: "#{debug}\nx = 1", filename: "test.no", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

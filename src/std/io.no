@@ -73,13 +73,13 @@ io-reader.read = (buf str, n i64) (read-n i64) {
 }
 
 // read-byte: 讀取一個位元組
-// 返回 b ?i64: ok(v)=位元組值, nil=EOF 或錯誤
+// 返回 b ?i64: ok=位元組值, nil=EOF 或錯誤
 io-reader.read-byte = () (b ?i64) {
     b = nil
     if .fd < 0 {
         return
     }
-    buf str = ' '
+    buf = ' '
     n = read(.fd, buf, 1)
     if n > 0 {
         b = buf[0] & 255
@@ -87,7 +87,7 @@ io-reader.read-byte = () (b ?i64) {
 }
 
 // read-line: 讀取一行（最多 4096 位元組）
-// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+// 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 io-reader.read-line = () (line ?str) {
     line = nil
     if .fd < 0 {
@@ -162,7 +162,7 @@ io-writer.write-byte = (b i64) (written i64) {
     if .fd < 0 {
         return
     }
-    buf str = ' '
+    buf = ' '
     buf[0] = b & 255
     written = write(.fd, buf, 1)
 }
@@ -175,7 +175,7 @@ io-writer.write-line = (s str) (written i64) {
         return
     }
     n = write(.fd, s, s.len)
-    nl str = '\n'
+    nl = '\n'
     written = write(.fd, nl, 1)
     written = written + n
 }
@@ -192,7 +192,7 @@ io-print = (s str) (n i64) {
 // io-println: 寫入字串到標準輸出並換行
 io-println = (s str) (n i64) {
     n = write(STDOUT-FD, s, s.len)
-    nl str = '\n'
+    nl = '\n'
     m = write(STDOUT-FD, nl, 1)
     n = n + m
 }
@@ -205,17 +205,17 @@ io-err = (s str) (n i64) {
 // io-errln: 寫入字串到標準錯誤並換行
 io-errln = (s str) (n i64) {
     n = write(STDERR-FD, s, s.len)
-    nl str = '\n'
+    nl = '\n'
     m = write(STDERR-FD, nl, 1)
     n = n + m
 }
 
 // io-read-line: 從標準輸入讀取一行
-// 返回 line ?str: ok(s)=讀取內容, nil=EOF 或錯誤
+// 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 io-read-line = () (line ?str) {
     line = nil
-    s str = ''
-    ok bool = false
+    s = ''
+    ok = false
     get-line()(s, ok)
     if ok {
         line = s

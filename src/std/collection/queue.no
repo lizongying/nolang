@@ -18,8 +18,8 @@
 //   q = buf.queue-init()
 //   ok = buf.queue-push(q, 42)
 //   ok = buf.queue-push(q, 7)
-//   val = buf.queue-pop(q)      // val = ok(42)
-//   val = buf.queue-pop(q)      // val = ok(7)
+//   val = buf.queue-pop(q)      // val = ok
+//   val = buf.queue-pop(q)      // val = ok
 //   val = buf.queue-pop(q)      // val = nil（佇列為空）
 //   sz = q.size()
 //   yes = q.empty()
@@ -78,7 +78,7 @@ queue {
 
 // [n]t.queue-pop: 從佇列前端彈出元素
 // q queue: 佇列狀態
-// 返回 val ?t: ok(v)=彈出值, nil=佇列為空
+// 返回 val ?t: ok=彈出值, nil=佇列為空
 [n]t.queue-pop = (q queue) (val ?t) {
     sz = q.tail - q.head
     if sz <= 0 {
@@ -98,7 +98,7 @@ queue {
 
 // [n]t.queue-peek: 查看隊首元素（不移除）
 // q queue: 佇列狀態
-// 返回 val ?t: ok(v)=隊首值, nil=佇列為空
+// 返回 val ?t: ok=隊首值, nil=佇列為空
 [n]t.queue-peek = (q queue) (val ?t) {
     sz = q.tail - q.head
     if sz <= 0 {
