@@ -4,7 +4,7 @@
 // HMAC(K, m) = H((K' ⊕ opad) || H((K' ⊕ ipad) || m))
 //
 // 用法：
-//   key []byte = '(32 bytes key)'
+//   key []byte
 //   msg []byte = 'hello'
 //   out = hmac-sha256(key, msg)
 //   // out 為 [32]byte 雜湊值

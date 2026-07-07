@@ -655,10 +655,10 @@ fmt.println('')
 // AES-128（NIST test vector）
 // ═══════════════════════════════════════════
 
-aes-key = '\x2b\x7e\x15\x16\x28\xae\xd2\xa6\xab\xf7\x15\x88\x09\xcf\x4f\x3c'
-aes-plain = '\x6b\xc1\xbe\xe2\x2e\x40\x9f\x96\xe9\x3d\x7e\x11\x73\x93\x17\x2a'
+aes-key [16]byte = [0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+aes-plain [16]byte = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
 
-aes-out = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+aes-out [16]byte
 aes-out = aes-128-enc(aes-plain, aes-key)
 
 fmt.print('aes-enc=')
@@ -669,7 +669,7 @@ i < 16: {
 }
 fmt.println('')
 
-aes-dec = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+aes-dec [16]byte
 aes-dec = aes-128-dec(aes-out, aes-key)
 
 fmt.print('aes-dec=')
@@ -684,7 +684,7 @@ fmt.println('')
 // DES
 // ═══════════════════════════════════════════
 
-des-key = '\x13\x34\x57\x79\x9b\xbc\xdf\xf1'
+des-key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
 des-plain = '\x01\x23\x45\x67\x89\xab\xcd\xef'
 
 des-out = '\x00\x00\x00\x00\x00\x00\x00\x00'

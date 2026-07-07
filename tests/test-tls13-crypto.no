@@ -94,14 +94,14 @@ test-hkdf-expand-label = () {
 // test-aes-gcm-seal-open: 測試 AES-128-GCM 加密/解密往返
 test-aes-gcm-seal-open = () {
     // 16-byte key
-    key []byte
+    key [16]byte
     i = 0
     for i < 16 {
         key[i] = i + 1
         i = i + 1
     }
     // 12-byte IV
-    iv []byte
+    iv [12]byte
     i = 0
     for i < 12 {
         iv[i] = i + 10
@@ -154,14 +154,14 @@ test-aes-gcm-seal-open = () {
 // test-x25519-scalarmult: 測試 X25519 純量乘法（自乘基點）
 test-x25519-scalarmult = () {
     // 生成私鑰（固定值）
-    priv []byte
+    priv [32]byte
     i = 0
     for i < 32 {
         priv[i] = i + 1
         i = i + 1
     }
     // 計算公鑰 = priv * basepoint
-    pub []byte
+    pub [32]byte
     pub = x25519-scalarmult-base(priv)
     // 公鑰不應為全零
     has-nonzero = 0
@@ -177,7 +177,7 @@ test-x25519-scalarmult = () {
         return
     }
     // 共享金鑰: scalarmult(priv, pub) 應不為全零
-    shared []byte
+    shared [32]byte
     shared = x25519-scalarmult(priv, pub)
     has-nonzero = 0
     i = 0
@@ -196,8 +196,8 @@ test-x25519-scalarmult = () {
 
 // test-x25519-keypair: 測試金鑰對生成
 test-x25519-keypair = () {
-    priv []byte
-    pub []byte
+    priv [32]byte
+    pub [32]byte
     priv, pub = x25519-gen-keypair(123456789)
     // 私鑰應已 clamping
     if (priv[0] & 7) != 0 {

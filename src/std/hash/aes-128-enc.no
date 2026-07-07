@@ -4,7 +4,7 @@
 // ECB 模式，每個區塊獨立處理。
 //
 // 用法：
-//   key  = '(16 bytes key)'
+//   key [16]byte
 //   out  = aes-128-enc(plain, key)
 
 // ─── S-box（前 16 行 × 16 列 = 256 位元組）───
@@ -180,7 +180,7 @@ sub-word = (w i64) (r i64) {
 }
 
 // aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
-aes-key-expand = (key []byte) (ek [176]byte) {
+aes-key-expand = (key [16]byte) (ek [176]byte) {
     i = 0
     i < 16: {
         ek[i] = key[i]
@@ -215,7 +215,7 @@ aes-key-expand = (key []byte) (ek [176]byte) {
 // ─── 單區塊加密 ──────────────────────────────
 
 // aes-128-enc: 加密一個 16-byte 區塊
-aes-128-enc = (in []byte, key []byte) (out []byte) {
+aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
     ek [16 + 160]byte
     ek = aes-key-expand(key)
     i = 0
@@ -223,21 +223,21 @@ aes-128-enc = (in []byte, key []byte) (out []byte) {
         out[i] = in[i]
         i = i + 1
     }
-    add-round-key(out, ek[..])
+    add-round-key(out[..], ek[..])
 
     // 第 1-9 輪
     round = 1
     round < 10: {
-        sub-bytes(out, 16)
-        shift-rows(out)
-        mix-columns(out)
+        sub-bytes(out[..], 16)
+        shift-rows(out[..])
+        mix-columns(out[..])
         rk-off = round * 16
-        add-round-key(out, ek[rk-off..])
+        add-round-key(out[..], ek[rk-off..])
         round = round + 1
     }
 
     // 第 10 輪（無 MixColumns）
-    sub-bytes(out, 16)
-    shift-rows(out)
-    add-round-key(out, ek[160..])
+    sub-bytes(out[..], 16)
+    shift-rows(out[..])
+    add-round-key(out[..], ek[160..])
 }

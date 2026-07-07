@@ -6,10 +6,10 @@
 // 用法：
 //   # std/hash/x25519
 //   // 生成金鑰對
-//   priv []byte = '(32 bytes private key)'
-//   pub []byte = x25519-scalarmult-base(priv)  // 返回 32 bytes
+//   priv [32]byte
+//   pub [32]byte = x25519-scalarmult-base(priv)
 //   // 共享金鑰
-//   shared []byte = x25519-scalarmult(priv, peer-pub)
+//   shared [32]byte = x25519-scalarmult(priv, peer-pub)
 
 # std/hash/rand
 
@@ -386,7 +386,7 @@ fe-invert = (out []i64, a []i64) {
 // ═══════════════════════════════════════════════
 
 // fe-frombytes: 從 32 位元組（小端序）載入域元素
-fe-frombytes = (h []i64, s []byte) {
+fe-frombytes = (h []i64, s [32]byte) {
     h[0] = (s[0] & 255) | ((s[1] & 255) << 8) | ((s[2] & 255) << 16) | (((s[3] & 255) << 24))
     h[0] = h[0] & MASK-26
     h[1] = ((s[3] & 255) >> 2) | ((s[4] & 255) << 6) | ((s[5] & 255) << 14) | (((s[6] & 255) << 22))
@@ -411,7 +411,7 @@ fe-frombytes = (h []i64, s []byte) {
 }
 
 // fe-tobytes: 將域元素序列化為 32 位元組（小端序）
-fe-tobytes = (s []byte, h []i64) {
+fe-tobytes = (s [32]byte, h []i64) {
     // 規約化: 確保 h < p
     // 計算 h - p，若結果為負則使用 h
     // p = 2^255 - 19
@@ -512,10 +512,10 @@ fe-tobytes = (s []byte, h []i64) {
 // ═══════════════════════════════════════════════
 
 // x25519-scalarmult: X25519 純量乘法
-// scalar []byte: 32 位元組純量（私鑰）
-// point []byte: 32 位元組點座標（公鑰）
-// 返回 out []byte: 32 位元組結果
-x25519-scalarmult = (scalar []byte, point []byte) (out []byte) {
+// scalar [32]byte: 純量（私鑰）
+// point [32]byte: 點座標（公鑰）
+// 返回 out [32]byte: 結果
+x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     // Clamping: 固定純量的某些位元
     // scalar[0] &= 248, scalar[31] &= 127, scalar[31] |= 64
     k []byte
@@ -633,16 +633,16 @@ x25519-scalarmult = (scalar []byte, point []byte) (out []byte) {
 // ═══════════════════════════════════════════════
 
 // x25519-get-basepoint: 返回基點 u 座標 (9, 0, 0, ..., 0)
-x25519-get-basepoint = () (base []byte) {
+x25519-get-basepoint = () (base [32]byte) {
     base[0] = 9
     // 其餘為 0
 }
 
 // x25519-scalarmult-base: 計算純量 * 基點
-// scalar []byte: 32 位元組純量（私鑰）
-// 返回 out []byte: 32 位元組公鑰
-x25519-scalarmult-base = (scalar []byte) (out []byte) {
-    base []byte
+// scalar [32]byte: 純量（私鑰）
+// 返回 out [32]byte: 公鑰
+x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
+    base [32]byte
     base = x25519-get-basepoint()
     out = x25519-scalarmult(scalar, base)
 }
@@ -653,9 +653,9 @@ x25519-scalarmult-base = (scalar []byte) (out []byte) {
 
 // x25519-gen-keypair: 生成隨機金鑰對
 // seed i64: 隨機種子
-// 返回 priv []byte: 32 位元組私鑰
-// 返回 pub []byte: 32 位元組公鑰
-x25519-gen-keypair = (seed i64) (priv []byte, pub []byte) {
+// 返回 priv [32]byte: 私鑰
+// 返回 pub [32]byte: 公鑰
+x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     // 用 PRNG 生成 32 位元組私鑰
     state = seed
     i = 0

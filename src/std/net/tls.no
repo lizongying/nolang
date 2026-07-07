@@ -107,27 +107,27 @@ tls-conn {
     write-seq i64
     read-seq i64
     rand-state i64
-    client-random []byte
-    server-random []byte
-    client-mac-key []byte
-    server-mac-key []byte
-    client-enc-key []byte
-    server-enc-key []byte
+    client-random [32]byte
+    server-random [32]byte
+    client-mac-key [32]byte
+    server-mac-key [32]byte
+    client-enc-key [16]byte
+    server-enc-key [16]byte
     hs-buf []byte
     hs-buf-len i64
     // TLS 1.3 欄位
-    client-priv []byte
-    client-pub []byte
-    server-pub []byte
-    shared-secret []byte
-    hs-client-key []byte
-    hs-client-iv []byte
-    hs-server-key []byte
-    hs-server-iv []byte
-    ap-client-key []byte
-    ap-client-iv []byte
-    ap-server-key []byte
-    ap-server-iv []byte
+    client-priv [32]byte
+    client-pub [32]byte
+    server-pub [32]byte
+    shared-secret [32]byte
+    hs-client-key [16]byte
+    hs-client-iv [12]byte
+    hs-server-key [16]byte
+    hs-server-iv [12]byte
+    ap-client-key [16]byte
+    ap-client-iv [12]byte
+    ap-server-key [16]byte
+    ap-server-iv [12]byte
     hs-write-seq i64
     hs-read-seq i64
     ap-write-seq i64
@@ -435,7 +435,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         i = i + 1
     }
     mac [32]byte
-    mac = hmac-sha256(.client-mac-key, mac-input)
+    mac = hmac-sha256(.client-mac-key[..], mac-input)
 
     // 2. 明文 + MAC
     plain []byte
@@ -566,7 +566,7 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
         i = i + 1
     }
     exp-mac [32]byte
-    exp-mac = hmac-sha256(.server-mac-key, mac-input)
+    exp-mac = hmac-sha256(.server-mac-key[..], mac-input)
 
     // 驗證 MAC
     recv-mac-off = content-len
@@ -1356,7 +1356,7 @@ tls-conn.derive-handshake-keys-13 = () {
 
     // 4. Handshake Secret = HKDF-Extract(derived, ECDHE_shared_secret)
     hs-prk [32]byte
-    hs-prk = hkdf-extract(derived-early, .shared-secret)
+    hs-prk = hkdf-extract(derived-early, .shared-secret[..])
 
     // 5. 計算 transcript hash = SHA-256(ClientHello + ServerHello)
     // .hs-buf 目前包含 ClientHello 和 ServerHello
@@ -1372,13 +1372,35 @@ tls-conn.derive-handshake-keys-13 = () {
 
     // 8. 推導金鑰和 IV
     // client handshake key = HKDF-Expand-Label(c_hs_secret, "key", "", 16)
-    .hs-client-key = hkdf-expand-label-vec(c-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    key-tmp []byte
+    key-tmp = hkdf-expand-label-vec(c-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    i = 0
+    for i < 16 {
+        .hs-client-key[i] = key-tmp[i]
+        i = i + 1
+    }
     // client handshake IV = HKDF-Expand-Label(c_hs_secret, "iv", "", 12)
-    .hs-client-iv = hkdf-expand-label-vec(c-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    iv-tmp []byte
+    iv-tmp = hkdf-expand-label-vec(c-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    i = 0
+    for i < 12 {
+        .hs-client-iv[i] = iv-tmp[i]
+        i = i + 1
+    }
     // server handshake key
-    .hs-server-key = hkdf-expand-label-vec(s-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    key-tmp = hkdf-expand-label-vec(s-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    i = 0
+    for i < 16 {
+        .hs-server-key[i] = key-tmp[i]
+        i = i + 1
+    }
     // server handshake IV
-    .hs-server-iv = hkdf-expand-label-vec(s-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    iv-tmp = hkdf-expand-label-vec(s-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    i = 0
+    for i < 12 {
+        .hs-server-iv[i] = iv-tmp[i]
+        i = i + 1
+    }
 
     // 儲存 handshake secret 供後續推導應用金鑰
     // 保存到 shared-secret 的空間（重用）
@@ -1424,20 +1446,42 @@ tls-conn.derive-application-keys-13 = () {
     s-ap-secret = hkdf-expand-label(ms-prk, 's ap traffic', hs-hash, 32)
 
     // 推導金鑰和 IV
-    .ap-client-key = hkdf-expand-label-vec(c-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    .ap-client-iv = hkdf-expand-label-vec(c-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
-    .ap-server-key = hkdf-expand-label-vec(s-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    .ap-server-iv = hkdf-expand-label-vec(s-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    key-tmp []byte
+    key-tmp = hkdf-expand-label-vec(c-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    i = 0
+    for i < 16 {
+        .ap-client-key[i] = key-tmp[i]
+        i = i + 1
+    }
+    iv-tmp []byte
+    iv-tmp = hkdf-expand-label-vec(c-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    i = 0
+    for i < 12 {
+        .ap-client-iv[i] = iv-tmp[i]
+        i = i + 1
+    }
+    key-tmp = hkdf-expand-label-vec(s-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
+    i = 0
+    for i < 16 {
+        .ap-server-key[i] = key-tmp[i]
+        i = i + 1
+    }
+    iv-tmp = hkdf-expand-label-vec(s-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
+    i = 0
+    for i < 12 {
+        .ap-server-iv[i] = iv-tmp[i]
+        i = i + 1
+    }
 
     .ap-write-seq = 0
     .ap-read-seq = 0
 }
 
 // tls13-build-nonce: 構建 AEAD nonce
-// iv []byte: 12 位元組 IV
+// iv [12]byte: IV
 // seq i64: 序號
-// 返回 nonce []byte: 12 位元組 nonce
-tls13-build-nonce = (iv []byte, seq i64) (nonce []byte) {
+// 返回 nonce [12]byte: nonce
+tls13-build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i = 0
     for i < 12 {
         nonce[i] = iv[i]
@@ -1454,11 +1498,11 @@ tls13-build-nonce = (iv []byte, seq i64) (nonce []byte) {
 // encrypt-record-13: TLS 1.3 AEAD 加密記錄並發送
 // ct i64: 原始 content type
 // data []byte: 明文資料
-// key []byte: AEAD 金鑰
-// iv []byte: AEAD IV
+// key [16]byte: AEAD 金鑰
+// iv [12]byte: AEAD IV
 // seq i64: 序號
 // 返回 ok bool: true=成功
-tls-conn.encrypt-record-13 = (ct i64, data []byte, key []byte, iv []byte, seq i64) (ok bool) {
+tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
     ok = false
     n = data.len
 
@@ -1473,7 +1517,7 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key []byte, iv []byte, seq i6
     plain-len = n + 1
 
     // 構建 nonce
-    nonce []byte
+    nonce [12]byte
     nonce = tls13-build-nonce(iv, seq)
 
     // 構建 AAD = record_header(5 bytes): type(23) + version(0x0303) + length
@@ -1510,12 +1554,12 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key []byte, iv []byte, seq i6
 
 // decrypt-record-13: TLS 1.3 AEAD 解密記錄
 // rec []byte: 接收到的記錄（含標頭）
-// key []byte: AEAD 金鑰
-// iv []byte: AEAD IV
+// key [16]byte: AEAD 金鑰
+// iv [12]byte: AEAD IV
 // seq i64: 序號
 // 返回 ct i64: 原始 content type（-1=錯誤）
 // 返回 out []byte: 解密後的明文（不含 content type byte）
-tls-conn.decrypt-record-13 = (rec []byte, key []byte, iv []byte, seq i64) (ct i64, out []byte) {
+tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
 
     rlen i64 = tls-get-u16(rec, 3)
@@ -1532,7 +1576,7 @@ tls-conn.decrypt-record-13 = (rec []byte, key []byte, iv []byte, seq i64) (ct i6
     }
 
     // 構建 nonce
-    nonce []byte
+    nonce [12]byte
     nonce = tls13-build-nonce(iv, seq)
 
     // 構建 AAD = record_header(5 bytes)
@@ -1564,12 +1608,12 @@ tls-conn.decrypt-record-13 = (rec []byte, key []byte, iv []byte, seq i64) (ct i6
 }
 
 // read-encrypted-record-13: 讀取並解密一筆 TLS 1.3 記錄
-// key []byte: AEAD 金鑰
-// iv []byte: AEAD IV
+// key [16]byte: AEAD 金鑰
+// iv [12]byte: AEAD IV
 // seq i64: 序號（讀取後自動遞增）
 // 返回 ct i64: 原始 content type（-1=錯誤）
 // 返回 out []byte: 解密後的明文
-tls-conn.read-encrypted-record-13 = (key []byte, iv []byte, seq i64) (ct i64, out []byte) {
+tls-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
 
     // 讀取記錄

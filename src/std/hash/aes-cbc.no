@@ -9,8 +9,8 @@
 // 用法：
 //   # std/hash/aes
 //   # std/hash/aes-cbc
-//   iv [16]byte = '(16 bytes iv)'
-//   key []byte = '(16 bytes key)'
+//   iv [16]byte
+//   key [16]byte
 //   aes-128-cbc-enc(plain, key, iv, cipher)
 //   aes-128-cbc-dec(cipher, key, iv, plain)
 
@@ -21,10 +21,10 @@ AES-BLOCK-SIZE = 16
 
 // aes-128-cbc-enc: AES-128-CBC 加密
 // in []byte: 輸入資料（長度需為 16 的倍數）
-// key []byte: 16 位元組金鑰
+// key [16]byte: 金鑰
 // iv [16]byte: 初始向量
 // 返回 out []byte: 加密後的資料
-aes-128-cbc-enc = (in []byte, key []byte, iv [16]byte) (out []byte) {
+aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     // 上一個密文區塊（初始為 IV）
     prev [16]byte
     i = 0
@@ -45,7 +45,7 @@ aes-128-cbc-enc = (in []byte, key []byte, iv [16]byte) (out []byte) {
         }
 
         // AES 加密
-        enc-block []byte
+        enc-block [16]byte
         enc-block = aes-128-enc(xored, key)
 
         // 輸出密文
@@ -68,10 +68,10 @@ aes-128-cbc-enc = (in []byte, key []byte, iv [16]byte) (out []byte) {
 
 // aes-128-cbc-dec: AES-128-CBC 解密
 // in []byte: 輸入密文（長度需為 16 的倍數）
-// key []byte: 16 位元組金鑰
+// key [16]byte: 金鑰
 // iv [16]byte: 初始向量
 // 返回 out []byte: 解密後的資料
-aes-128-cbc-dec = (in []byte, key []byte, iv [16]byte) (out []byte) {
+aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     // 上一個密文區塊（初始為 IV）
     prev [16]byte
     i = 0
@@ -92,7 +92,7 @@ aes-128-cbc-dec = (in []byte, key []byte, iv [16]byte) (out []byte) {
         }
 
         // AES 解密
-        dec-block []byte
+        dec-block [16]byte
         dec-block = aes-128-dec(cur-cipher, key)
 
         // XOR 與 prev 得到明文

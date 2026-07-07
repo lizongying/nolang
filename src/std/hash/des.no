@@ -4,7 +4,7 @@
 // 56-bit 金鑰儲存在 8 bytes 中（第 8 位元為奇偶校驗位，被忽略）。
 //
 // 用法：
-//   key  = '(8 bytes key)'
+//   key [8]byte
 //   out  = des-enc(plain, 8, key)   // 加密
 //   out  = des-dec(cipher, 8, key)  // 解密
 
@@ -220,7 +220,7 @@ f = (r i64, k i64) (out i64) {
 // ─── 金鑰排程 ──────────────────────────────────────
 
 // des-key-schedule: 產生 16 個 48-bit 子金鑰
-des-key-schedule = (key []byte) (ks [96]byte) {
+des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i = 0
     i < 8: {
@@ -315,14 +315,14 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
 }
 
 // des-enc: 加密一個 8-byte 區塊
-des-enc = (in []byte, n i64, key []byte) (out []byte) {
+des-enc = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)
     out = des-block(in, n, ks, 1)
 }
 
 // des-dec: 解密一個 8-byte 區塊
-des-dec = (in []byte, n i64, key []byte) (out []byte) {
+des-dec = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)
     out = des-block(in, n, ks, 0)

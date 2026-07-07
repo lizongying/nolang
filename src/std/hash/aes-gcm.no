@@ -5,8 +5,8 @@
 //
 // 用法：
 //   # std/hash/aes-gcm
-//   key []byte = '(16 bytes key)'
-//   iv []byte = '(12 bytes iv)'
+//   key [16]byte
+//   iv [12]byte
 //   aad []byte = 'additional data'
 //   plain []byte = 'plaintext'
 //   // 加密：返回 ciphertext + 16-byte tag
@@ -231,11 +231,11 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 // ═══════════════════════════════════════════════
 
 // aes-128-ctr-xor: 使用 AES-CTR 模式生成密鑰流並 XOR
-// key []byte: 16 位元組金鑰
+// key [16]byte: 金鑰
 // icb [16]byte: 初始計數器區塊
 // data []byte: 輸入資料
 // 返回 out []byte: XOR 後的資料
-aes-128-ctr-xor = (key []byte, icb [16]byte, data []byte) (out []byte) {
+aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     cb [16]byte
     i = 0
     for i < 16 {
@@ -246,8 +246,8 @@ aes-128-ctr-xor = (key []byte, icb [16]byte, data []byte) (out []byte) {
     pos = 0
     for pos < data.len {
         // 加密當前計數器區塊
-        ks []byte
-        ks = aes-128-enc(cb, key)
+ks [16]byte
+ks = aes-128-enc(cb, key)
 
         // XOR 16 位元組（或剩餘部分）
         n = 16
@@ -290,12 +290,12 @@ aes-128-ctr-xor = (key []byte, icb [16]byte, data []byte) (out []byte) {
 // ═══════════════════════════════════════════════
 
 // aes-128-gcm-seal: AES-128-GCM 加密
-// key []byte: 16 位元組金鑰
-// iv []byte: 12 位元組 IV（nonce）
+// key [16]byte: 金鑰
+// iv [12]byte: IV（nonce）
 // aad []byte: 額外認證資料
 // plain []byte: 明文
 // 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len + 16）
-aes-128-gcm-seal = (key []byte, iv []byte, aad []byte, plain []byte) (sealed []byte) {
+aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
     // 1. 計算雜湊子金鑰 H = AES-enc(key, 0^128)
     zero-block [16]byte
     i = 0
@@ -303,8 +303,8 @@ aes-128-gcm-seal = (key []byte, iv []byte, aad []byte, plain []byte) (sealed []b
         zero-block[i] = 0
         i = i + 1
     }
-    h-bytes []byte
-    h-bytes = aes-128-enc(zero-block, key)
+h-bytes [16]byte
+h-bytes = aes-128-enc(zero-block, key)
     h [16]byte
     i = 0
     for i < 16 {
@@ -350,8 +350,8 @@ aes-128-gcm-seal = (key []byte, iv []byte, aad []byte, plain []byte) (sealed []b
     ghash-out = ghash(h, aad, cipher)
 
     // 5. 計算 tag = AES-enc(key, J0) XOR GHASH
-    j0-enc []byte
-    j0-enc = aes-128-enc(j0, key)
+j0-enc [16]byte
+j0-enc = aes-128-enc(j0, key)
     tag [16]byte
     i = 0
     for i < 16 {
@@ -373,12 +373,12 @@ aes-128-gcm-seal = (key []byte, iv []byte, aad []byte, plain []byte) (sealed []b
 }
 
 // aes-128-gcm-open: AES-128-GCM 解密
-// key []byte: 16 位元組金鑰
-// iv []byte: 12 位元組 IV
+// key [16]byte: 金鑰
+// iv [12]byte: IV
 // aad []byte: 額外認證資料
 // sealed []byte: 密文 + 16 位元組 tag
 // 返回 plain []byte: 明文（認證失敗時長度為 0）
-aes-128-gcm-open = (key []byte, iv []byte, aad []byte, sealed []byte) (plain []byte) {
+aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
     if sealed.len < 16 {
         return
     }
@@ -391,8 +391,8 @@ aes-128-gcm-open = (key []byte, iv []byte, aad []byte, sealed []byte) (plain []b
         zero-block[i] = 0
         i = i + 1
     }
-    h-bytes []byte
-    h-bytes = aes-128-enc(zero-block, key)
+h-bytes [16]byte
+h-bytes = aes-128-enc(zero-block, key)
     h [16]byte
     i = 0
     for i < 16 {
@@ -430,8 +430,8 @@ aes-128-gcm-open = (key []byte, iv []byte, aad []byte, sealed []byte) (plain []b
     // 4. 驗證 tag
     ghash-out [16]byte
     ghash-out = ghash(h, aad, cipher)
-    j0-enc []byte
-    j0-enc = aes-128-enc(j0, key)
+j0-enc [16]byte
+j0-enc = aes-128-enc(j0, key)
     exp-tag [16]byte
     i = 0
     for i < 16 {
