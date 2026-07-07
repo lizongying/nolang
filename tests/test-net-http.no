@@ -19,47 +19,36 @@ main = () {
     }
 
     // 測試 2: http-get（需要網路連線，僅驗證語法）
-    resp http-response = http-response{}
-    ok bool = false
-    resp, ok = http-get('http://example.com/')
-    if ok {
-        print('ok: http-get connected')
-        print(resp.status-code)
-        print(resp.status-text)
-        print(resp.body)
-    } else {
-        print('skip: http-get (no network)')
+    resp = http-get('http://example.com/')
+    resp: {
+        nil -> print('skip: http-get (no network)')
+        -> {
+            print('ok: http-get connected')
+            print(it.status-code)
+            print(it.status-text)
+            print(it.body)
+        }
     }
 
     // 測試 3: http-post（需要網路連線，僅驗證語法）
-    resp2 http-response = http-response{}
-    ok2 bool = false
-    resp2, ok2 = http-post('http://example.com/api', '{"key":"value"}')
-    if ok2 {
-        print('ok: http-post connected')
-        print(resp2.status-code)
-    } else {
-        print('skip: http-post (no network)')
+    resp2 = http-post('http://example.com/api', '{"key":"value"}')
+    resp2: {
+        nil -> print('skip: http-post (no network)')
+        -> print('ok: http-post connected')
     }
 
     // 測試 4: http-do 一般請求
-    resp3 http-response = http-response{}
-    ok3 bool = false
-    resp3, ok3 = http-do('PUT', 'http://example.com/item', 'data')
-    if ok3 {
-        print('ok: http-do connected')
-    } else {
-        print('skip: http-do (no network)')
+    resp3 = http-do('PUT', 'http://example.com/item', 'data')
+    resp3: {
+        nil -> print('skip: http-do (no network)')
+        -> print('ok: http-do connected')
     }
 
     // 測試 5: 帶埠號的 URL
-    resp4 http-response = http-response{}
-    ok4 bool = false
-    resp4, ok4 = http-get('http://localhost:8080/path')
-    if ok4 {
-        print('ok: http-get with port')
-    } else {
-        print('skip: http-get with port (no server)')
+    resp4 = http-get('http://localhost:8080/path')
+    resp4: {
+        nil -> print('skip: http-get with port (no server)')
+        -> print('ok: http-get with port')
     }
 
     print('ok: all tests done')

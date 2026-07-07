@@ -207,15 +207,10 @@ test-tls-conn-init = () {
 test-https-url-detection = () {
     // 這個測試僅驗證 https:// URL 能被 http-do 接受（不會因 scheme 不匹配而 return）
     // 實際網路連線需要真實伺服器，這裡只做編譯/vet 驗證
-    resp http-response
-    ok bool = false
     // 不實際呼叫，僅驗證型別檢查通過
-    if resp.status-code != 0 {
-        print('FAIL: expected status-code=0')
-        return
-    }
-    if ok != false {
-        print('FAIL: expected ok=false')
+    resp = http-do('GET', 'https://example.com/', '')
+    if resp != nil {
+        print('FAIL: expected nil')
         return
     }
     print('PASS: https-url-detection')

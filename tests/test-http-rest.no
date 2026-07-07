@@ -106,32 +106,27 @@ main = () {
     }
 
     // ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
-    resp http-response = http-response{}
-    put-ok bool = false
-    http-put('http://example.com/api/item', 'data')(resp, put-ok)
-    if put-ok {
-        print('ok: http-put connected')
-        print(resp.status-code)
-    } else {
-        print('skip: http-put (no network)')
+    resp = http-put('http://example.com/api/item', 'data')
+    resp: {
+        nil -> print('skip: http-put (no network)')
+        -> {
+            print('ok: http-put connected')
+            print(it.status-code)
+        }
     }
 
     // ── 測試 7: http-delete 便捷函數
-    del-ok bool = false
-    http-delete('http://example.com/api/item/1')(resp, del-ok)
-    if del-ok {
-        print('ok: http-delete connected')
-    } else {
-        print('skip: http-delete (no network)')
+    resp2 = http-delete('http://example.com/api/item/1')
+    resp2: {
+        nil -> print('skip: http-delete (no network)')
+        -> print('ok: http-delete connected')
     }
 
     // ── 測試 8: http-patch 便捷函數
-    patch-ok bool = false
-    http-patch('http://example.com/api/item/1', '{"key":"v"}')(resp, patch-ok)
-    if patch-ok {
-        print('ok: http-patch connected')
-    } else {
-        print('skip: http-patch (no network)')
+    resp3 = http-patch('http://example.com/api/item/1', '{"key":"v"}')
+    resp3: {
+        nil -> print('skip: http-patch (no network)')
+        -> print('ok: http-patch connected')
     }
 
     // ── 測試 9: http-do-req（自訂標頭）
@@ -139,12 +134,10 @@ main = () {
     req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
     req2.add-header('Content-Type', 'application/json')
     req2.add-header('X-Request-Id', 'abc123')
-    do-req-ok bool = false
-    http-do-req(req2)(resp, do-req-ok)
-    if do-req-ok {
-        print('ok: http-do-req connected')
-    } else {
-        print('skip: http-do-req (no network)')
+    resp4 = http-do-req(req2)
+    resp4: {
+        nil -> print('skip: http-do-req (no network)')
+        -> print('ok: http-do-req connected')
     }
 
     print('ok: all tests done')

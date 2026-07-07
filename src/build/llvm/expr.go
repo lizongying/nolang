@@ -126,6 +126,17 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			ptrType := llvmType + "*"
 			varAddr := g.varAddr(e.Value)
+			// For synthetic `it` shared across matches with different types,
+			// the alloca may use a different (larger) type. Bitcast the pointer
+			// before loading to match the current varTypes type.
+			if g.itAllocTypes != nil {
+				if allocType, ok := g.itAllocTypes[e.Value]; ok && allocType != llvmType {
+					g.tmpIdx++
+					castReg := fmt.Sprintf("%%it.rcast.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, allocType, varAddr, llvmType))
+					varAddr = castReg
+				}
+			}
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, llvmType, ptrType, varAddr))
 		}
 		return reg

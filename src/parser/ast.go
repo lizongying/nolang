@@ -116,6 +116,33 @@ func (st *SliceType) Pos() lexer.Position    { return posFromToken(st.Token) }
 func (st *SliceType) EndPos() lexer.Position { return st.Elem.EndPos() }
 func (st *SliceType) String() string         { return "[]" + st.Elem.String() }
 
+// MapType represents a map type: [K]V where K is the key type and V is the value type.
+// Syntax: m [str]i64 declares a map with str keys and i64 values.
+// Distinct from ArrayType [N]T where N is a size; here the bracket content is a type.
+type MapType struct {
+	Token lexer.Token // [
+	Key   Type
+	Value Type
+}
+
+func (mt *MapType) typeNode()              {}
+func (mt *MapType) Pos() lexer.Position    { return posFromToken(mt.Token) }
+func (mt *MapType) EndPos() lexer.Position { return mt.Value.EndPos() }
+func (mt *MapType) String() string         { return "[" + mt.Key.String() + "]" + mt.Value.String() }
+
+// MapPair represents a single key:value pair in a map literal.
+type MapPair struct {
+	Token lexer.Token // the key's first token (or colon token)
+	Key   Expression
+	Value Expression
+}
+
+func (mp *MapPair) Pos() lexer.Position    { return mp.Key.Pos() }
+func (mp *MapPair) EndPos() lexer.Position { return mp.Value.EndPos() }
+func (mp *MapPair) String() string {
+	return mp.Key.String() + ":" + mp.Value.String()
+}
+
 // FunctionType represents a function type: (params) (results)?
 // Syntax: cb ()() or cb ()(i64) or cb (n i64)(r i64)
 // Both Params and Results use the same Parameter struct as function definitions.

@@ -570,7 +570,7 @@ The standard library includes HTTP and SSE client modules under `std/net/`:
 client = sse-connect('http://localhost:3000/events')  // returns ?sse-client
 client: {
     nil -> println('connection failed')
-    ->
+    -> {
         ! {
             ev = client.next-event()     // returns ?sse-event
             ev: {
@@ -580,6 +580,7 @@ client: {
             }
         }
         client.close()
+    }
 }
 ```
 

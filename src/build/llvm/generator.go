@@ -70,6 +70,7 @@ type Generator struct {
 	funcLocalNames        map[string]bool                 // local variable names in current function (params + allocas)
 	unionAliases          map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	optionInnerTypes      map[string]string               // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
+	itAllocTypes          map[string]string               // synthetic `it` variable name → allocated LLVM type (for bitcast when shared across matches with different types)
 	funcResultInnerTypes  map[string][]string             // function name → inner LLVM types of ?T results
 	enumVariantIndex      map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
 	enumVariants          map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
@@ -310,6 +311,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.ssaTypes = make(map[string]string)
 	g.unionAliases = make(map[string][]string)
 	g.optionInnerTypes = make(map[string]string)
+	g.itAllocTypes = make(map[string]string)
 	g.funcResultInnerTypes = make(map[string][]string)
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)

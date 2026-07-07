@@ -449,6 +449,11 @@ type Transpiler struct {
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 mod.jsonc）
+
+	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
+	// 注入到所有 parser 實例中以支援 let 型別推斷
+	externFuncSigs     map[string][]string
+	externStructFields map[string]map[string]string
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -478,6 +483,10 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	p.Filename = filepath.Base(filePath)
+	// 注入預載入的跨文件簽名，支援 let 型別推斷
+	if t.externFuncSigs != nil || t.externStructFields != nil {
+		p.SetExternSignatures(t.externFuncSigs, t.externStructFields)
+	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
@@ -592,14 +601,39 @@ func (t *Transpiler) Compile(source string) (string, error) {
 
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
 // 這些簽名會注入到 parser 中，使 let 型別推斷能處理跨文件方法調用。
+// 也預載入所有已知 std 模組的簽名，因為 transpiler 會自動載入這些模組。
 func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string, map[string]map[string]string) {
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
-
-	// 用正則掃描 use 語句，提取模組路徑（可能包含 .function 後綴）
-	useRe := regexp.MustCompile(`(?m)^\s*use\s+([\w/.\-]+)`)
-	matches := useRe.FindAllStringSubmatch(source, -1)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
+
+	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
+	collectSignaturesFromProg := func(modProg *parser.Program) {
+		for _, stmt := range modProg.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.Results) > 0 {
+					rets := make([]string, len(fd.Results))
+					for i, r := range fd.Results {
+						rets[i] = r.Type.String()
+					}
+					funcSigs[fd.Name] = rets
+				}
+			}
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				fields := make(map[string]string)
+				for _, f := range sd.Fields {
+					if f.Type != nil {
+						fields[f.Name] = f.Type.String()
+					}
+				}
+				structFields[sd.Name] = fields
+			}
+		}
+	}
+
+	// 1. 掃描顯式 use/# 語句
+	useRe := regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
+	matches := useRe.FindAllStringSubmatch(source, -1)
 	for _, m := range matches {
 		if len(m) < 2 {
 			continue
@@ -624,30 +658,24 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 				break
 			}
 		}
-		if modProg == nil {
+		if modProg != nil {
+			collectSignaturesFromProg(modProg)
+		}
+	}
+
+	// 2. 預載入所有已知 std 模組的簽名（transpiler 會自動載入這些模組）
+	for _, info := range knownStdModules() {
+		path := "std/" + info.FullPath
+		if loadedPaths[path] {
 			continue
 		}
-		// 收集函數簽名和 struct 定義
-		for _, stmt := range modProg.Statements {
-			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				if len(fd.Results) > 0 {
-					rets := make([]string, len(fd.Results))
-					for i, r := range fd.Results {
-						rets[i] = r.Type.String()
-					}
-					funcSigs[fd.Name] = rets
-				}
-			}
-			if sd, ok := stmt.(*parser.StructDefinition); ok {
-				fields := make(map[string]string)
-				for _, f := range sd.Fields {
-					if f.Type != nil {
-						fields[f.Name] = f.Type.String()
-					}
-				}
-				structFields[sd.Name] = fields
-			}
+		fakeUse := &parser.UseStatement{Path: path}
+		prog, err := t.resolveUse(fakeUse)
+		if err != nil || prog == nil {
+			continue
 		}
+		loadedPaths[path] = true
+		collectSignaturesFromProg(prog)
 	}
 
 	return funcSigs, structFields
@@ -656,6 +684,9 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預載入跨文件模組簽名，供 parser 型別推斷使用
 	externFuncSigs, externStructFields := t.preloadModuleSignatures(source)
+	// 存儲到 Transpiler 中，使 parseFile（用於解析自動載入的模組）也能注入簽名
+	t.externFuncSigs = externFuncSigs
+	t.externStructFields = externStructFields
 
 	l := lexer.New(source)
 	p := parser.New(l)
@@ -1434,6 +1465,8 @@ func inferTypeFromExpr(expr parser.Expression) string {
 		return "f64"
 	case *parser.StringLiteral:
 		return "str"
+	case *parser.StructLiteral:
+		return e.Type
 	case *parser.PrefixExpression:
 		if e.Operator == "-" || e.Operator == "+" {
 			return inferTypeFromExpr(e.Right)
@@ -2734,6 +2767,12 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		return validateExprArrayBounds(s.Expression, arraySizes, sliceSizes, stringSizes, varTypes)
 	case *parser.LetStatement:
 		if s.Value != nil {
+			// Skip validation for synthetic `it` bindings injected by match desugar.
+			// These have sentinel types ("err", "nil") or element types ("str", "i64")
+			// but their value is an option variable, not a direct string/integer.
+			if s.IsSynthetic {
+				return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)
+			}
 			// Skip string type check for array/slice variables
 			isArrayVar := false
 			if at, ok := s.Type.(*parser.ArrayType); ok {

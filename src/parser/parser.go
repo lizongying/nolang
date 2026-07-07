@@ -24,6 +24,7 @@ type Parser struct {
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
+	declaredVars      map[string]bool              // 已宣告的變數名（用於避免重複推斷）
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
@@ -419,6 +420,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 }
 
 // inferTypeFromCallExpr 嘗試從函數/方法調用推斷返回型別。
+// 僅推斷 option 型別（?type），避免泛型/聯合型別的特化問題。
 // 返回空字串表示無法推斷。
 func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 	if p.funcSignatures == nil {
@@ -437,7 +439,10 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 		return ""
 	}
 	if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-		return rets[0]
+		// 僅推斷 option 型別，避免泛型/聯合型別的特化問題
+		if strings.HasPrefix(rets[0], "?") {
+			return rets[0]
+		}
 	}
 	return ""
 }
@@ -1128,46 +1133,46 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	methodName := p.currentToken.Literal
 	fullName := structToken.Literal + "." + methodName
 
-// 推入方法上下文，供 let 型別推斷解析 self.field 型別
-p.methodStructStack = append(p.methodStructStack, structToken.Literal)
+	// 推入方法上下文，供 let 型別推斷解析 self.field 型別
+	p.methodStructStack = append(p.methodStructStack, structToken.Literal)
 
-// 調用 parseFunctionDefinition 解析主體
-fd := p.parseFunctionDefinition()
+	// 調用 parseFunctionDefinition 解析主體
+	fd := p.parseFunctionDefinition()
 
-// 彈出方法上下文
-if len(p.methodStructStack) > 0 {
-p.methodStructStack = p.methodStructStack[:len(p.methodStructStack)-1]
-}
+	// 彈出方法上下文
+	if len(p.methodStructStack) > 0 {
+		p.methodStructStack = p.methodStructStack[:len(p.methodStructStack)-1]
+	}
 
-if fd == nil {
-return nil
-}
+	if fd == nil {
+		return nil
+	}
 
-funcDef, ok := fd.(*FunctionDefinition)
-if !ok {
-return fd
-}
+	funcDef, ok := fd.(*FunctionDefinition)
+	if !ok {
+		return fd
+	}
 
-// 修改名稱
-funcDef.Name = fullName
+	// 修改名稱
+	funcDef.Name = fullName
 
-// 修復 funcSignatures 鍵：parseFunctionBody 以原始方法名存儲，需更新為完整名
-if p.funcSignatures != nil {
-if rets, ok := p.funcSignatures[methodName]; ok {
-delete(p.funcSignatures, methodName)
-p.funcSignatures[fullName] = rets
-}
-}
+	// 修復 funcSignatures 鍵：parseFunctionBody 以原始方法名存儲，需更新為完整名
+	if p.funcSignatures != nil {
+		if rets, ok := p.funcSignatures[methodName]; ok {
+			delete(p.funcSignatures, methodName)
+			p.funcSignatures[fullName] = rets
+		}
+	}
 
-// 插入 self 參數
-selfParam := &Parameter{
-Token: structToken,
-Name:  "self",
-Type:  buildType(structToken.Literal, structToken),
-}
-funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
+	// 插入 self 參數
+	selfParam := &Parameter{
+		Token: structToken,
+		Name:  "self",
+		Type:  buildType(structToken.Literal, structToken),
+	}
+	funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
 
-return funcDef
+	return funcDef
 }
 
 // isArrayTypeMethodDefinition 檢測是否為陣列/切片型別方法定義：[n]t.method(…)、[]t.method(…)、[?]t.method(…) {
@@ -2383,22 +2388,28 @@ func (p *Parser) parseLetStatement() Statement {
 		case *StructLiteral:
 
 		case *CallExpression:
-			// 從函數/方法調用推斷返回型別
-			if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
-				stmt.Type = buildType(inferred, nameToken)
-				if p.varDeclTypes == nil {
-					p.varDeclTypes = make(map[string]string)
+			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
+			if p.declaredVars == nil || !p.declaredVars[stmt.Name.Value] {
+				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
+					stmt.Type = buildType(inferred, nameToken)
+					if p.varDeclTypes == nil {
+						p.varDeclTypes = make(map[string]string)
+					}
+					p.varDeclTypes[stmt.Name.Value] = inferred
 				}
-				p.varDeclTypes[stmt.Name.Value] = inferred
 			}
 
 		}
 	}
 
+	// 記錄已宣告的變數（用於避免重複型別推斷）
+	if p.declaredVars == nil {
+		p.declaredVars = make(map[string]bool)
+	}
+	p.declaredVars[stmt.Name.Value] = true
+
 	return stmt
 }
-
-// return 仅用于终止函数，不携带返回值
 func (p *Parser) parseReturnStatement() Statement {
 	stmt := &ReturnStatement{Token: p.currentToken}
 
@@ -3535,9 +3546,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
-		if p.currentToken.Type == lexer.LBRACE {
+		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() != blockMatch {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
+			// 但若 { } 內容本身是 bare match（如 `-> { cond -> body }`），走 inline 路徑讓 parseStatement 處理。
 			ma.isBlockBody = true
 			p.ctx.push(CTX_MATCH_ARM)
 			block := p.parseBlockStatement()
@@ -3696,9 +3708,10 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
-		if p.currentToken.Type == lexer.LBRACE {
+		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() != blockMatch {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
+			// 但若 { } 內容本身是 bare match（如 `-> { cond -> body }`），走 inline 路徑讓 parseStatement 處理。
 			ma.isBlockBody = true
 			p.ctx.push(CTX_MATCH_ARM)
 			block := p.parseBlockStatement()
@@ -4416,12 +4429,12 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 			typeStr = elemType
 		case "else":
 			typeStr = "err | nil"
-		case "ok_err":
-			typeStr = elemType + " | err"
-		case "ok_nil":
-			typeStr = elemType + " | nil"
-		case "ok_err_nil":
-			typeStr = elemType + " | err | nil"
+	case "ok_err":
+		typeStr = elemType
+	case "ok_nil":
+		typeStr = elemType
+	case "ok_err_nil":
+		typeStr = elemType
 		default:
 			return nil
 		}

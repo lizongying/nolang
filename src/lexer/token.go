@@ -43,6 +43,7 @@ const (
 	CASE
 	DEFAULT
 	MATCH
+	MAP
 	EXTERN // deprecated: kept for backward compat, no longer a keyword
 
 	// 运算符
@@ -150,6 +151,7 @@ var tokenNames = map[TokenType]string{
 	CASE:           "CASE",
 	DEFAULT:        "DEFAULT",
 	MATCH:          "MATCH",
+	MAP:            "MAP",
 	ASSIGN:         "ASSIGN(=)",
 	ADD:            "ADD(+)",
 	SUB:            "SUB(-)",
@@ -229,6 +231,7 @@ var keywords = map[string]TokenType{
 	"case":    CASE,
 	"default": DEFAULT,
 	"match":   MATCH,
+	"map":     MAP,
 }
 
 // Position represents a source position (line:col, 1-based).

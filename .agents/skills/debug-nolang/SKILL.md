@@ -275,13 +275,26 @@ for { }
 The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
 
 ```nolang
-// ✅ Recommended
+// ✅ Recommended (single-line body)
 {
     a == 1 -> x = 1
     a == 2 || a == 3 -> y = 2
     -> z = 0
 }
+
+// ✅ Multi-line arm body must use braces -> { ... }
+{
+    a == 1 -> {
+        x = 1
+        y = 2
+    }
+    a == 2 || a == 3 -> do-something()
+    ->
+        z = 0
+}
 ```
+
+> **多行 arm body 規則**：當 arm body 包含多個語句時，必須使用大括號 `-> { ... }` 括起來。否則 option match 的 `it` 綁定將無法正確插入，導致 `%it` undefined 編譯錯誤。
 
 This form is parsed into an `IfExpression` with `IsBareMatch = true`. The formatter emits the new-style output, not `if/else`. If the formatter is producing `if/else` output, the `IsBareMatch` flag is missing — check `parseBareMatchDesugar` in `src/parser/parser.go`.
 

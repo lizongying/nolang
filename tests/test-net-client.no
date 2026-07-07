@@ -77,7 +77,7 @@ main = () {
         nil -> print('fail: net-client')
         -> {
             print('ok: net-client')
-            c2.close()
+            it.close()
         }
     }
 

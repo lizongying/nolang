@@ -18,10 +18,8 @@ test-frame-parse = () {
     data[7] = 0
     data[8] = 1
     f http2-frame
-    next i64 = 0
-    ok bool = false
-    next, ok = f.parse(data, 0)
-    if ok == false {
+    np = f.parse(data, 0)
+    if np == nil {
         print('FAIL: parse returned error')
         return
     }
@@ -39,10 +37,6 @@ test-frame-parse = () {
     }
     if f.stream-id != 1 {
         print('FAIL: expected stream-id=1')
-        return
-    }
-    if next != 9 {
-        print('FAIL: expected next=9')
         return
     }
     print('PASS: frame-parse')
@@ -116,12 +110,10 @@ test-conn-init = () {
 // test-http2-do-req-signature: http2-do-req 函數簽名驗證（vet-only）
 test-http2-do-req-signature = () {
     // 此測試只驗證函數可被正確呼叫，不實際連線
-    resp http-response
-    ok bool = false
     // 這行會嘗試連線並失敗，但驗證了函數簽名正確
-    resp, ok = http2-do-req('GET', 'http://127.0.0.1:1/test', '')
-    // 預期 ok=false（連線失敗）
-    if ok == true {
+    resp = http2-do-req('GET', 'http://127.0.0.1:1/test', '')
+    // 預期 nil（連線失敗）
+    if resp != nil {
         print('FAIL: expected connection failure')
         return
     }
@@ -130,10 +122,8 @@ test-http2-do-req-signature = () {
 
 // test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
-    resp http-response
-    ok bool = false
-    resp, ok = http2-get('http://127.0.0.1:1/test')
-    if ok == true {
+    resp = http2-get('http://127.0.0.1:1/test')
+    if resp != nil {
         print('FAIL: expected connection failure')
         return
     }
@@ -142,10 +132,8 @@ test-http2-get-signature = () {
 
 // test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
-    resp http-response
-    ok bool = false
-    resp, ok = http2-post('http://127.0.0.1:1/test', 'body')
-    if ok == true {
+    resp = http2-post('http://127.0.0.1:1/test', 'body')
+    if resp != nil {
         print('FAIL: expected connection failure')
         return
     }

@@ -230,6 +230,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for varName, varType := range localVarTypes {
 		sz := g.llvmTypeSize(varType)
 		g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: varType, Size: sz})
+		// Record allocated type for synthetic `it` variables so that
+		// bitcasts can be generated when the actual type differs (e.g.
+		// allocated as %http2-frame but storing/loading i64).
+		if varName == "it" && g.itAllocTypes != nil {
+			g.itAllocTypes[varName] = varType
+		}
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
@@ -827,16 +833,23 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 					return
 				}
 			}
-			// Synthetic let with non-err/non-nil type (e.g. ok arm with elemType "file"):
-			// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
-			// 否則註冊新變數。
-			vt := g.varLLVMType(s)
-			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" {
+		// Synthetic let with non-err/non-nil type (e.g. ok arm with elemType "file"):
+		// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
+		// 否則註冊新變數。
+		// `it` 變數跨多個 match 共用：每個 match 的 ok arm 可能有不同的元素型別
+		// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
+		// 方法呼叫解析（it.close()）能正確找到型別前綴。
+		vt := g.varLLVMType(s)
+		if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
+			// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
+			// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
+			if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) {
 				vars[s.Name.Value] = vt
 				if g.varTypes != nil {
 					g.varTypes[s.Name.Value] = vt
 				}
 			}
+		}
 			return
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
@@ -1779,7 +1792,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 優先使用變數型別而非從 funcRetTypes 推斷的 %option。
 	// 解決 fs.no 中 open-write-raw 內 fd = open-write(p) 場景：
 	// varLLVMType 從 funcRetTypes 推斷為 %option，但 fd 是 i64，實際 dispatch 走 builtin 返回 i64。
-	if llvmTypeCheck == "%option" && g.varTypes != nil {
+	// 但 synthetic `it` 綁定（來自 match desugar）不在此列：
+	// it 的值來自 option 變數，必須走 option 賦值路徑，不能被 nil arm 的 i64 佔位符覆蓋。
+	if llvmTypeCheck == "%option" && g.varTypes != nil && !stmt.IsSynthetic {
 		if t, ok := g.varTypes[stmt.Name.Value]; ok && t != "" && t != "%option" {
 			llvmTypeCheck = t
 		}
@@ -1850,6 +1865,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// generateExprWithSB returns a pointer to the option's data field
 	// (bitcast to inner struct pointer) for struct inner types.
 	// We need to load the struct value before storing into `it`.
+	// Additionally, `it` may be allocated with a different struct type
+	// (e.g. %client) when shared across multiple matches with different
+	// element types (e.g. ?str → %str-long, ?client → %client).
+	// In that case, bitcast the alloca pointer to the value's type.
 	if stmt.IsSynthetic && strings.HasPrefix(llvmType, "%") {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if g.varTypes != nil {
@@ -2077,6 +2096,37 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// Compute the store address for `it` when it's shared across matches
+	// with different element types (e.g. allocated as %http2-frame but storing i64).
+	// Also update g.varTypes so subsequent reads of `it` in this match arm
+	// use the correct type (not the allocated type from a different match).
+	storeAddr := g.varAddr(name)
+	if stmt.IsSynthetic {
+		allocType := ""
+		if g.itAllocTypes != nil {
+			if at, ok := g.itAllocTypes[name]; ok {
+				allocType = at
+			}
+		}
+		if allocType == "" {
+			if at, ok := g.varTypes[name]; ok {
+				allocType = at
+			}
+		}
+		if allocType != "" && allocType != llvmType {
+			// Bitcast pointer when allocated type differs from actual type
+			// (e.g. allocated as %http2-frame* but storing/loading i64)
+			g.tmpIdx++
+			castReg := fmt.Sprintf("%%it.cast.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, allocType, storeAddr, llvmType))
+			storeAddr = castReg
+		}
+		// Update varTypes so reads of `it` in this arm use the correct type
+		if g.varTypes != nil {
+			g.varTypes[name] = llvmType
+		}
+	}
+
 	switch llvmType {
 	case "%str-long":
 		// Copy %str-long struct: load from source, store to dest
@@ -2151,14 +2201,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if isGlobal {
 				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmGlobalRef(name)))
 			} else {
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmVarRef(name)))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), storeAddr))
 			}
 			return
 		}
 		if isGlobal {
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, llvmGlobalRef(name)))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, llvmVarRef(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, storeAddr))
 		}
 	case "%str-short":
 		// Copy %str-short struct: load from source, store to dest
@@ -2224,9 +2274,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		ptrType := llvmType + "*"
 		// 宣告但無初值（如 `f http2-frame`）：val 為 "0"，struct 需用 zeroinitializer
 		if strings.HasPrefix(llvmType, "%") && !strings.HasPrefix(val, "%") {
-			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s %s\n", g.indent(), llvmType, ptrType, g.varAddr(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s %s\n", g.indent(), llvmType, ptrType, storeAddr))
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, g.varAddr(name)))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, storeAddr))
 		}
 	}
 }

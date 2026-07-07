@@ -248,9 +248,10 @@ http-response.get-header = (name str) (val ?str) {
 // method: HTTP 方法（GET、POST、PUT、DELETE 等）
 // url: 完整 URL（如 http://host:port/path）
 // body: 請求主體（GET 應傳空字串）
-// 返回 resp=回應, ok=true=成功
-http-do = (method str, url str, body str) (resp http-response, ok bool) {
-    ok = false
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-do = (method str, url str, body str) (resp ?http-response) {
+    resp = nil
+    r http-response
 
     // ── 字串變數（頂層宣告，供 if 區塊內使用）──
     scheme = 'http://'
@@ -365,8 +366,8 @@ http-do = (method str, url str, body str) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-w = tls-c.send(req)
-w: {
+        w = tls-c.send(req)
+        w: {
             nil ->
                 tls-c.close()
                 return
@@ -387,8 +388,8 @@ w: {
     // net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     ! {
         if use-tls {
-rn = tls-c.recv(buf, HTTP-BUF-SIZE)
-rn: {
+            rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
+            rn: {
                 nil ->
                     *
                 err ->
@@ -432,16 +433,16 @@ rn: {
     }
 
     head = recv-raw.slice(0, sep-pos)
-    resp.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
+    r.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
 
     // 解析狀態行（第一行）
     first-line-end = head.index(crlf)
     if first-line-end < 0 {
         status-line = head
-        resp.headers = ''
+        r.headers = ''
     } else {
         status-line = head.slice(0, first-line-end)
-        resp.headers = head.slice(first-line-end + crlf.len, head.len)
+        r.headers = head.slice(first-line-end + crlf.len, head.len)
     }
 
     // 狀態行格式：HTTP/1.1 200 OK
@@ -455,7 +456,7 @@ rn: {
         return
     }
     code-str = after-code.slice(0, sp2)
-    resp.status-text = after-code.slice(sp2 + 1, after-code.len)
+    r.status-text = after-code.slice(sp2 + 1, after-code.len)
 
     // 解析狀態碼
     code = 0
@@ -468,19 +469,20 @@ rn: {
         code = code * 10 + c - 48
         i = i + 1
     }
-    resp.status-code = code
+    r.status-code = code
 
     // 解析回應標頭到 header-names / header-values
-    resp.parse-headers()
+    r.parse-headers()
 
-    ok = true
+    resp = r
 }
 
 // http-do-req: 用 http-request 發送請求（支援自訂標頭）
 // req: 已初始化的 http-request（含自訂標頭）
-// 返回 resp=回應, ok=true=成功
-http-do-req = (req http-request) (resp http-response, ok bool) {
-    ok = false
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-do-req = (req http-request) (resp ?http-response) {
+    resp = nil
+    r http-response
 
     // ── 字串變數 ──
     scheme = 'http://'
@@ -604,8 +606,8 @@ http-do-req = (req http-request) (resp http-response, ok bool) {
 
     // ── 發送請求 ──
     if use-tls {
-w = tls-c.send(req-str)
-w: {
+        w = tls-c.send(req-str)
+        w: {
             nil ->
                 tls-c.close()
                 return
@@ -625,8 +627,8 @@ w: {
     // ── 接收回應 ──
     ! {
         if use-tls {
-rn = tls-c.recv(buf, HTTP-BUF-SIZE)
-rn: {
+            rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
+            rn: {
                 nil ->
                     *
                 err ->
@@ -668,15 +670,15 @@ rn: {
     }
 
     head = recv-raw.slice(0, sep-pos)
-    resp.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
+    r.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
 
     first-line-end = head.index(crlf)
     if first-line-end < 0 {
         status-line = head
-        resp.headers = ''
+        r.headers = ''
     } else {
         status-line = head.slice(0, first-line-end)
-        resp.headers = head.slice(first-line-end + crlf.len, head.len)
+        r.headers = head.slice(first-line-end + crlf.len, head.len)
     }
 
     sp1 = status-line.index(' ')
@@ -689,7 +691,7 @@ rn: {
         return
     }
     code-str = after-code.slice(0, sp2)
-    resp.status-text = after-code.slice(sp2 + 1, after-code.len)
+    r.status-text = after-code.slice(sp2 + 1, after-code.len)
 
     code = 0
     i = 0
@@ -701,12 +703,12 @@ rn: {
         code = code * 10 + c - 48
         i = i + 1
     }
-    resp.status-code = code
+    r.status-code = code
 
     // 解析回應標頭
-    resp.parse-headers()
+    r.parse-headers()
 
-    ok = true
+    resp = r
 }
 
 // ═══════════════════════════════════════════════
@@ -715,38 +717,38 @@ rn: {
 
 // http-get: 執行 HTTP GET 請求
 // url: 完整 URL
-// 返回 resp=回應, ok=true=成功
-http-get = (url str) (resp http-response, ok bool) {
-    resp, ok = http-do('GET', url, '')
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-get = (url str) (resp ?http-response) {
+    resp = http-do('GET', url, '')
 }
 
 // http-post: 執行 HTTP POST 請求
 // url: 完整 URL
 // body: 請求主體
-// 返回 resp=回應, ok=true=成功
-http-post = (url str, body str) (resp http-response, ok bool) {
-    resp, ok = http-do('POST', url, body)
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-post = (url str, body str) (resp ?http-response) {
+    resp = http-do('POST', url, body)
 }
 
 // http-put: 執行 HTTP PUT 請求
 // url: 完整 URL
 // body: 請求主體
-// 返回 resp=回應, ok=true=成功
-http-put = (url str, body str) (resp http-response, ok bool) {
-    resp, ok = http-do('PUT', url, body)
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-put = (url str, body str) (resp ?http-response) {
+    resp = http-do('PUT', url, body)
 }
 
 // http-delete: 執行 HTTP DELETE 請求
 // url: 完整 URL
-// 返回 resp=回應, ok=true=成功
-http-delete = (url str) (resp http-response, ok bool) {
-    resp, ok = http-do('DELETE', url, '')
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-delete = (url str) (resp ?http-response) {
+    resp = http-do('DELETE', url, '')
 }
 
 // http-patch: 執行 HTTP PATCH 請求
 // url: 完整 URL
 // body: 請求主體
-// 返回 resp=回應, ok=true=成功
-http-patch = (url str, body str) (resp http-response, ok bool) {
-    resp, ok = http-do('PATCH', url, body)
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-patch = (url str, body str) (resp ?http-response) {
+    resp = http-do('PATCH', url, body)
 }
