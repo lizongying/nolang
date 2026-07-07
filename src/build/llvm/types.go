@@ -18,6 +18,25 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		elemType := nolangType[1:]
 		return g.mapToLLVMType(elemType) + "*"
 	}
+	// Union type: "A | B" → use the first non-err/non-nil type.
+	// Synthetic `it` bindings from match desugar use union type strings
+	// (e.g. "http2-frame | err", "i64 | err | nil") to represent which
+	// option variants a wildcard arm covers. For codegen we only care
+	// about the concrete (ok) element type, so extract it.
+	if strings.Contains(nolangType, "|") {
+		parts := strings.Split(nolangType, "|")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "err" || p == "nil" || p == "" {
+				continue
+			}
+			mapped := g.mapToLLVMType(p)
+			if mapped != "i64" {
+				return mapped
+			}
+		}
+		return "i64"
+	}
 	// hashmap-K-V → %hashmap-K-V (MapType.String() returns "hashmap-{key}-{value}",
 	// matching the struct name defined in src/std/map/map.no).
 	// This aligns with the transpiler's method dispatch which constructs

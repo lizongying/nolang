@@ -1642,6 +1642,257 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// TLS builtins removed — TLS is now implemented in pure Nolang (std/net/tls.no).
 	// No OpenSSL dependency required.
 
+	// net-udp-open: create a UDP socket
+	// Performs: socket(AF_INET, SOCK_DGRAM, 0)
+	// Returns: fd i64 (-1 on error)
+	if fnName == "net-udp-open" {
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%net.udp.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%net.udp.fdext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 2, i32 0)\n", g.indent(), sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+		}
+		return fdExt
+	}
+
+	// net-udp-sendto: send UDP datagram
+	// Args: fd i64, data str|[]byte, n i64, host str, port i64
+	// Returns: written i64 (-1 on error)
+	if fnName == "net-udp-sendto" && hasArgs && nArgs >= 5 {
+		a := evalArgs()
+		fdVal := a[0]
+		nVal := a[2]
+		hostPtr := g.makeNullTerminatedStr(sb, expr.Arguments[3])
+		portVal := a[4]
+
+		// extract data pointer (same logic as net-send)
+		var dataPtr string
+		dataArgType := g.exprResultLLVMType(expr.Arguments[1])
+		if dataArgType == "%vec" {
+			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%net.us.datagep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%net.us.dataptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+			}
+			dataPtr = dataLoad
+		} else if dataArgType == "%arr" {
+			arrEval := a[1]
+			arrPtr := arrEval
+			if idx := strings.Index(arrEval, ".val."); idx > 0 {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%net.us.arrtmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+				}
+				arrPtr = tmpAlloca
+			}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%net.us.arrgep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%net.us.arrptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, arrPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+			}
+			dataPtr = dataLoad
+		} else {
+			dataPtr = g.extractStrFromEvalArg(sb, a[1])
+		}
+
+		// Build sockaddr_in (16 bytes)
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%net.us.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%net.us.addrptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		famGep := fmt.Sprintf("%%net.us.fam.%d", g.tmpIdx)
+		g.tmpIdx++
+		portLo := fmt.Sprintf("%%net.us.plo.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHi := fmt.Sprintf("%%net.us.phi.%d", g.tmpIdx)
+		g.tmpIdx++
+		portHiM := fmt.Sprintf("%%net.us.phm.%d", g.tmpIdx)
+		g.tmpIdx++
+		portSl := fmt.Sprintf("%%net.us.psl.%d", g.tmpIdx)
+		g.tmpIdx++
+		portNet := fmt.Sprintf("%%net.us.pnet.%d", g.tmpIdx)
+		g.tmpIdx++
+		portI16 := fmt.Sprintf("%%net.us.pi16.%d", g.tmpIdx)
+		g.tmpIdx++
+		portGep := fmt.Sprintf("%%net.us.portgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		portCast := fmt.Sprintf("%%net.us.portcast.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrInGep := fmt.Sprintf("%%net.us.addringe.%d", g.tmpIdx)
+		g.tmpIdx++
+		ptonRet := fmt.Sprintf("%%net.us.pton.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.us.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		sendRet := fmt.Sprintf("%%net.us.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 16)\n", g.indent(), addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portLo, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr i64 %s, 8\n", g.indent(), portHi, portVal))
+			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portHiM, portHi))
+			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 8\n", g.indent(), portSl, portLo))
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), portNet, portSl, portHiM))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i16\n", g.indent(), portI16, portNet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), portGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i16*\n", g.indent(), portCast, portGep))
+			sb.WriteString(fmt.Sprintf("%sstore i16 %s, i16* %s\n", g.indent(), portI16, portCast))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrInGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", g.indent(), ptonRet, hostPtr, addrInGep))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			// sendto(fd, data, n, 0, &addr, 16)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @sendto(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32 16)\n", g.indent(), sendRet, fdTrunc, dataPtr, nVal, addrPtr))
+		}
+		return sendRet
+	}
+
+	// net-udp-recvfrom: receive UDP datagram
+	// Args: fd i64, buf str|[]byte, n i64
+	// Returns: read-n i64 (-1 on error, 0 on timeout)
+	if fnName == "net-udp-recvfrom" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		fdVal := a[0]
+
+		var bufPtr string
+		bufArgType := g.exprResultLLVMType(expr.Arguments[1])
+		if bufArgType == "%vec" {
+			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+			g.tmpIdx++
+			bufGEP := fmt.Sprintf("%%net.ur.datagep.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufLoad := fmt.Sprintf("%%net.ur.dataptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), bufLoad, bufGEP))
+			}
+			bufPtr = bufLoad
+		} else if bufArgType == "%arr" {
+			arrEval := a[1]
+			arrPtr := arrEval
+			if idx := strings.Index(arrEval, ".val."); idx > 0 {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%net.ur.arrtmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+				}
+				arrPtr = tmpAlloca
+			}
+			g.tmpIdx++
+			bufGEP := fmt.Sprintf("%%net.ur.arrgep.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufLoad := fmt.Sprintf("%%net.ur.arrptr.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), bufGEP, arrPtr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), bufLoad, bufGEP))
+			}
+			bufPtr = bufLoad
+		} else {
+			bufPtr = g.extractStrFromEvalArg(sb, a[1])
+		}
+
+		nVal := a[2]
+
+		// Allocate sockaddr_in for source address (we don't use it, but recvfrom needs it)
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%net.ur.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%net.ur.addrptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenAlloca := fmt.Sprintf("%%net.ur.addrlen.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.ur.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		recvRet := fmt.Sprintf("%%net.ur.ret.%d", g.tmpIdx)
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 16)\n", g.indent(), addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), lenAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore i32 16, i32* %s\n", g.indent(), lenAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			// recvfrom(fd, buf, n, 0, &addr, &addrlen)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @recvfrom(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32* %s)\n", g.indent(), recvRet, fdTrunc, bufPtr, nVal, addrPtr, lenAlloca))
+		}
+		return recvRet
+	}
+
+	// net-set-recv-timeout: set socket recv timeout (SO_RCVTIMEO)
+	// Args: fd i64, timeout-ms i64
+	// Returns: ok i64 (0=success, -1=error)
+	if fnName == "net-set-recv-timeout" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		fdVal := a[0]
+		timeoutMs := a[1]
+
+		g.tmpIdx++
+		tvAlloca := fmt.Sprintf("%%net.to.tv.%d", g.tmpIdx)
+		g.tmpIdx++
+		tvPtr := fmt.Sprintf("%%net.to.tvptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		secVal := fmt.Sprintf("%%net.to.sec.%d", g.tmpIdx)
+		g.tmpIdx++
+		remainMs := fmt.Sprintf("%%net.to.remain.%d", g.tmpIdx)
+		g.tmpIdx++
+		usecVal := fmt.Sprintf("%%net.to.usec.%d", g.tmpIdx)
+		g.tmpIdx++
+		tvSecGep := fmt.Sprintf("%%net.to.tvsec.%d", g.tmpIdx)
+		g.tmpIdx++
+		tvSecCast := fmt.Sprintf("%%net.to.tvsecc.%d", g.tmpIdx)
+		g.tmpIdx++
+		tvUsecGep := fmt.Sprintf("%%net.to.tvusec.%d", g.tmpIdx)
+		g.tmpIdx++
+		tvUsecCast := fmt.Sprintf("%%net.to.tvusecc.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdTrunc := fmt.Sprintf("%%net.to.fdtrunc.%d", g.tmpIdx)
+		g.tmpIdx++
+		setRet := fmt.Sprintf("%%net.to.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		retExt := fmt.Sprintf("%%net.to.ext.%d", g.tmpIdx)
+
+		if sb != nil {
+			// struct timeval { long tv_sec, long tv_usec } = 16 bytes on 64-bit
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), tvAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), tvPtr, tvAlloca))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 16)\n", g.indent(), tvPtr))
+			// tv_sec = timeout_ms / 1000
+			sb.WriteString(fmt.Sprintf("%s%s = sdiv i64 %s, 1000\n", g.indent(), secVal, timeoutMs))
+			// tv_usec = (timeout_ms % 1000) * 1000
+			sb.WriteString(fmt.Sprintf("%s%s = srem i64 %s, 1000\n", g.indent(), remainMs, timeoutMs))
+			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, 1000\n", g.indent(), usecVal, remainMs))
+			// store tv_sec at offset 0
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 0\n", g.indent(), tvSecGep, tvPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i64*\n", g.indent(), tvSecCast, tvSecGep))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), secVal, tvSecCast))
+			// store tv_usec at offset 8
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 8\n", g.indent(), tvUsecGep, tvPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i64*\n", g.indent(), tvUsecCast, tvUsecGep))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), usecVal, tvUsecCast))
+			// setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @setsockopt(i32 %s, i32 65535, i32 20, i8* %s, i32 16)\n", g.indent(), setRet, fdTrunc, tvPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), retExt, setRet))
+		}
+		return retExt
+	}
+
 	return ""
 }
 

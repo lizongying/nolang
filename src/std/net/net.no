@@ -250,3 +250,149 @@ net-dial-to = (host str, port i64) (c ?conn) {
         c = cn
     }
 }
+
+// ═══════════════════════════════════════════════
+// UDP 結構體與方法
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: net-udp-open)
+// net-udp-open: 建立 UDP socket
+// 返回 fd（-1=失敗）
+// net-udp-open = () (fd i64) { }
+
+// build-in (ForwardFunc: net-udp-sendto)
+// net-udp-sendto: 發送 UDP 資料到指定位址
+// 返回實際發送位元組數（-1=錯誤）
+// net-udp-sendto = (fd i64, data str, n i64, host str, port i64) (written i64) { }
+
+// build-in (ForwardFunc: net-udp-recvfrom)
+// net-udp-recvfrom: 接收 UDP 資料
+// 返回實際接收位元組數（-1=錯誤, 0=逾時）
+// net-udp-recvfrom = (fd i64, buf str, n i64) (read-n i64) { }
+
+// build-in (ForwardFunc: net-set-recv-timeout)
+// net-set-recv-timeout: 設定 socket 接收逾時
+// 返回 0=成功, -1=錯誤
+// net-set-recv-timeout = (fd i64, timeout-ms i64) (ok i64) { }
+
+// socket 類型（UDP）
+SOCK-DGRAM = 2
+
+// SO_RCVTIMEO
+SO-RCVTIMEO = 20
+
+// udp-conn: UDP 連接
+// fd: socket 檔案描述符（-1=未開啟）
+// host: 目標主機 IP
+// port: 目標埠號
+udp-conn {
+    fd i64
+    host str
+    port i64
+}
+
+// open: 建立 UDP socket
+// 返回 ok=true=成功
+udp-conn.open = () (ok bool) {
+    ok = false
+    .fd = net-udp-open()
+    if .fd < 0 {
+        return
+    }
+    ok = true
+}
+
+// set-timeout: 設定接收逾時
+// timeout-ms i64: 逾時毫秒數
+// 返回 ok=true=成功
+udp-conn.set-timeout = (timeout-ms i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    ret = net-set-recv-timeout(.fd, timeout-ms)
+    if ret == 0 {
+        ok = true
+    }
+}
+
+// send: 發送 UDP 資料到 .host:.port
+// data str: 要發送的資料
+// 返回 written=實際發送位元組數（-1=錯誤）
+udp-conn.send = (data str) (written i64) {
+    written = -1
+    if .fd < 0 {
+        return
+    }
+    written = net-udp-sendto(.fd, data, data.len, .host, .port)
+}
+
+// send-bytes: 發送 UDP 位元組陣列到 .host:.port
+// data []byte: 要發送的資料
+// 返回 written=實際發送位元組數（-1=錯誤）
+udp-conn.send-bytes = (data []byte) (written i64) {
+    written = -1
+    if .fd < 0 {
+        return
+    }
+    written = net-udp-sendto(.fd, data, data.len, .host, .port)
+}
+
+// recv: 接收 UDP 資料到緩衝區
+// buf str: 接收緩衝區
+// n i64: 最多接收的位元組數
+// 返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+udp-conn.recv = (buf str, n i64) (read-n i64) {
+    read-n = -1
+    if .fd < 0 {
+        return
+    }
+    read-n = net-udp-recvfrom(.fd, buf, n)
+}
+
+// recv-bytes: 接收 UDP 資料到位元組陣列
+// buf []byte: 接收緩衝區
+// n i64: 最多接收的位元組數
+// 返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
+    read-n = -1
+    if .fd < 0 {
+        return
+    }
+    read-n = net-udp-recvfrom(.fd, buf, n)
+}
+
+// close: 關閉 UDP socket
+udp-conn.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+// fd-of: 取得 socket 檔案描述符
+// 返回 fd
+udp-conn.fd-of = () (fd i64) {
+    fd = .fd
+}
+
+// ═══════════════════════════════════════════════
+// UDP 便捷函數
+// ═══════════════════════════════════════════════
+
+// udp-dial-to: 建立 UDP 連接並設定目標位址
+// host str: 目標 IP 地址
+// port i64: 目標埠號
+// 返回 c ?udp-conn: ok=連接, nil=失敗
+udp-dial-to = (host str, port i64) (c ?udp-conn) {
+    c = nil
+    uc = udp-conn{}
+    ok = false
+    ok = uc.open()
+    if ok == false {
+        return
+    }
+    uc.host = host
+    uc.port = port
+    c = uc
+}

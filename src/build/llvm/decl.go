@@ -229,6 +229,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @connect(i32, i8*, i32)\n")
 	sb.WriteString("declare i64 @send(i32, i8*, i64, i32)\n")
 	sb.WriteString("declare i64 @recv(i32, i8*, i64, i32)\n")
+	sb.WriteString("declare i64 @sendto(i32, i8*, i64, i32, i8*, i32)\n")
+	sb.WriteString("declare i64 @recvfrom(i32, i8*, i64, i32, i8*, i32*)\n")
 	sb.WriteString("declare i32 @inet_pton(i32, i8*, i8*)\n")
 	// DNS resolution (getaddrinfo fallback for net-dial)
 	// macOS addrinfo layout: ai_addr at offset 32

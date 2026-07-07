@@ -1,0 +1,411 @@
+// test-http3 — HTTP/3 和 QUIC 模組測試
+// 驗證 QUIC 變長整數、影格解析、金鑰推導、HTTP/3 影格編解碼
+
+# std/net/quic
+# std/net/http3
+# std/hash/hkdf
+# std/hash/aes-gcm
+# std/hash/aes
+# std/hash/sha256
+
+// ═══════════════════════════════════════════════
+// QUIC 變長整數測試
+// ═══════════════════════════════════════════════
+
+// test-quic-varint-1byte: 測試 1 位元組變長整數
+test-quic-varint-1byte = () {
+    buf []byte
+    n = 0
+    buf, n = quic-varint-encode(37)
+    if n != 1 {
+        print('FAIL: quic-varint-encode(37) expected n=1, got ')
+        println(n.to-str())
+        return
+    }
+    if (buf[0] & 255) != 37 {
+        print('FAIL: quic-varint-encode(37) expected byte=37, got ')
+        println((buf[0] & 255).to-str())
+        return
+    }
+
+    val = 0
+    np = 0
+    val, np = quic-varint-decode(buf, 0)
+    if val != 37 {
+        print('FAIL: quic-varint-decode expected 37, got ')
+        println(val.to-str())
+        return
+    }
+    if np != 1 {
+        print('FAIL: quic-varint-decode expected np=1, got ')
+        println(np.to-str())
+        return
+    }
+    print('PASS: quic-varint-1byte')
+}
+
+// test-quic-varint-2byte: 測試 2 位元組變長整數
+test-quic-varint-2byte = () {
+    buf []byte
+    n = 0
+    buf, n = quic-varint-encode(15293)
+    if n != 2 {
+        print('FAIL: quic-varint-encode(15293) expected n=2, got ')
+        println(n.to-str())
+        return
+    }
+
+    val = 0
+    np = 0
+    val, np = quic-varint-decode(buf, 0)
+    if val != 15293 {
+        print('FAIL: quic-varint-decode expected 15293, got ')
+        println(val.to-str())
+        return
+    }
+    if np != 2 {
+        print('FAIL: quic-varint-decode expected np=2, got ')
+        println(np.to-str())
+        return
+    }
+    print('PASS: quic-varint-2byte')
+}
+
+// test-quic-varint-4byte: 測試 4 位元組變長整數
+test-quic-varint-4byte = () {
+    buf []byte
+    n = 0
+    buf, n = quic-varint-encode(494878333)
+    if n != 4 {
+        print('FAIL: quic-varint-encode expected n=4, got ')
+        println(n.to-str())
+        return
+    }
+
+    val = 0
+    np = 0
+    val, np = quic-varint-decode(buf, 0)
+    if val != 494878333 {
+        print('FAIL: quic-varint-decode expected 494878333, got ')
+        println(val.to-str())
+        return
+    }
+    if np != 4 {
+        print('FAIL: quic-varint-decode expected np=4, got ')
+        println(np.to-str())
+        return
+    }
+    print('PASS: quic-varint-4byte')
+}
+
+// test-quic-varint-8byte: 測試 8 位元組變長整數
+test-quic-varint-8byte = () {
+    buf []byte
+    n = 0
+    buf, n = quic-varint-encode(151288809941952652)
+    if n != 8 {
+        print('FAIL: quic-varint-encode expected n=8, got ')
+        println(n.to-str())
+        return
+    }
+
+    val = 0
+    np = 0
+    val, np = quic-varint-decode(buf, 0)
+    if val != 151288809941952652 {
+        print('FAIL: quic-varint-decode expected 151288809941952652, got ')
+        println(val.to-str())
+        return
+    }
+    print('PASS: quic-varint-8byte')
+}
+
+// ═══════════════════════════════════════════════
+// QUIC 金鑰推導測試
+// ═══════════════════════════════════════════════
+
+// test-quic-derive-initial-keys: 測試 Initial 金鑰推導
+test-quic-derive-initial-keys = () {
+    // 使用 RFC 9001 Appendix A 的測試向量
+    // dst_cid = 0x8394c8f03e515708
+    dst-cid []byte
+    dst-cid[0] = 0x83
+    dst-cid[1] = 0x94
+    dst-cid[2] = 0xc8
+    dst-cid[3] = 0xf0
+    dst-cid[4] = 0x3e
+    dst-cid[5] = 0x51
+    dst-cid[6] = 0x57
+    dst-cid[7] = 0x08
+
+    key [16]byte
+    iv [12]byte
+    hp [16]byte
+    key, iv, hp = quic-derive-initial-keys(dst-cid, true)
+
+    // 檢查金鑰不為全零
+    has-nonzero = 0
+    i = 0
+    for i < 16 {
+        if key[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: quic-derive-initial-keys client key all zeros')
+        return
+    }
+
+    // 驗證 RFC 9001 Appendix A 的金鑰
+    // client_initial_key = 0xb99d6cd1c3d9c78c
+    //                     0c3f8d37c09d68a1
+    expected-key []byte
+    expected-key[0] = 0xb9
+    expected-key[1] = 0x9d
+    expected-key[2] = 0x6c
+    expected-key[3] = 0xd1
+    expected-key[4] = 0xc3
+    expected-key[5] = 0xd9
+    expected-key[6] = 0xc7
+    expected-key[7] = 0x8c
+    expected-key[8] = 0x0c
+    expected-key[9] = 0x3f
+    expected-key[10] = 0x8d
+    expected-key[11] = 0x37
+    expected-key[12] = 0xc0
+    expected-key[13] = 0x9d
+    expected-key[14] = 0x68
+    expected-key[15] = 0xa1
+
+    match = 1
+    i = 0
+    for i < 16 {
+        if key[i] != expected-key[i] {
+            match = 0
+        }
+        i = i + 1
+    }
+    if match == 0 {
+        print('FAIL: quic-derive-initial-keys client key mismatch')
+        i = 0
+        for i < 16 {
+            print(key[i].to-hex())
+            i = i + 1
+        }
+        println('')
+        return
+    }
+
+    print('PASS: quic-derive-initial-keys')
+}
+
+// ═══════════════════════════════════════════════
+// QUIC CID 生成測試
+// ═══════════════════════════════════════════════
+
+// test-quic-gen-cid: 測試 Connection ID 生成
+test-quic-gen-cid = () {
+    cid = quic-gen-cid(8)
+    if cid.len != 8 {
+        print('FAIL: quic-gen-cid expected len=8, got ')
+        println(cid.len.to-str())
+        return
+    }
+    // 檢查不為全零（機率極低）
+    has-nonzero = 0
+    i = 0
+    for i < 8 {
+        if cid[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: quic-gen-cid all zeros')
+        return
+    }
+    print('PASS: quic-gen-cid')
+}
+
+// ═══════════════════════════════════════════════
+// HTTP/3 影格編解碼測試
+// ═══════════════════════════════════════════════
+
+// test-http3-frame-encode-decode: 測試 HTTP/3 影格編解碼
+test-http3-frame-encode-decode = () {
+    // 編碼一個 SETTINGS 影格
+    payload []byte
+    payload[0] = 0x42
+    payload[1] = 0x43
+
+    buf []byte
+    n = 0
+    buf, n = http3-encode-frame(HTTP3-FRAME-SETTINGS, payload)
+    if n != 4 {
+        print('FAIL: http3-encode-frame expected n=4, got ')
+        println(n.to-str())
+        return
+    }
+
+    // 解碼
+    ft = 0
+    decoded-payload []byte
+    np = 0
+    ft, decoded-payload, np = http3-parse-frame(buf, 0)
+    if ft != HTTP3-FRAME-SETTINGS {
+        print('FAIL: http3-parse-frame expected SETTINGS, got ')
+        println(ft.to-str())
+        return
+    }
+    if np != 4 {
+        print('FAIL: http3-parse-frame expected np=4, got ')
+        println(np.to-str())
+        return
+    }
+    print('PASS: http3-frame-encode-decode')
+}
+
+// ═══════════════════════════════════════════════
+// QPACK 編解碼測試
+// ═══════════════════════════════════════════════
+
+// test-qpack-encode-decode: 測試 QPACK 標頭編解碼
+test-qpack-encode-decode = () {
+    // 編碼單個標頭
+    buf []byte
+    n = 0
+    buf, n = qpack-encode-header('content-type', 'text/plain')
+    if n == 0 {
+        print('FAIL: qpack-encode-header returned n=0')
+        return
+    }
+
+    // 解碼
+    name = ''
+    value = ''
+    np = 0
+    name, value, np = qpack-decode-header(buf, 0)
+    if np < 0 {
+        print('FAIL: qpack-decode-header failed')
+        return
+    }
+    if name != 'content-type' {
+        print('FAIL: qpack-decode-header name mismatch: ')
+        println(name)
+        return
+    }
+    if value != 'text/plain' {
+        print('FAIL: qpack-decode-header value mismatch: ')
+        println(value)
+        return
+    }
+    print('PASS: qpack-encode-decode')
+}
+
+// ═══════════════════════════════════════════════
+// UDP 連接測試
+// ═══════════════════════════════════════════════
+
+// test-udp-open-close: 測試 UDP socket 建立和關閉
+test-udp-open-close = () {
+    fd = net-udp-open()
+    if fd < 0 {
+        print('FAIL: net-udp-open returned ')
+        println(fd.to-str())
+        return
+    }
+    close(fd)
+    print('PASS: udp-open-close')
+}
+
+// ═══════════════════════════════════════════════
+// URL 解析測試
+// ═══════════════════════════════════════════════
+
+// test-http3-parse-url: 測試 URL 解析
+test-http3-parse-url = () {
+    host = ''
+    port i64 = 0
+    path = ''
+    ok = false
+    host, port, path, ok = http3-parse-url('https://example.com:8443/api/v1')
+    if ok == false {
+        print('FAIL: http3-parse-url returned ok=false')
+        return
+    }
+    if host != 'example.com' {
+        print('FAIL: http3-parse-url host mismatch: ')
+        println(host)
+        return
+    }
+    if port != 8443 {
+        print('FAIL: http3-parse-url port mismatch: ')
+        println(port.to-str())
+        return
+    }
+    if path != '/api/v1' {
+        print('FAIL: http3-parse-url path mismatch: ')
+        println(path)
+        return
+    }
+
+    // 測試無埠號的 URL
+    host2 = ''
+    port2 i64 = 0
+    path2 = ''
+    ok2 = false
+    host2, port2, path2, ok2 = http3-parse-url('https://example.com/')
+    if ok2 == false {
+        print('FAIL: http3-parse-url (no port) returned ok=false')
+        return
+    }
+    if port2 != 443 {
+        print('FAIL: http3-parse-url expected default port 443, got ')
+        println(port2.to-str())
+        return
+    }
+    print('PASS: http3-parse-url')
+}
+
+// ═══════════════════════════════════════════════
+// 主函數
+// ═══════════════════════════════════════════════
+
+main = () {
+    println('=== HTTP/3 Test Suite ===')
+    println('')
+
+    println('--- QUIC Variable-Length Integer ---')
+    test-quic-varint-1byte()
+    test-quic-varint-2byte()
+    test-quic-varint-4byte()
+    test-quic-varint-8byte()
+
+    println('')
+    println('--- QUIC Key Derivation ---')
+    test-quic-derive-initial-keys()
+
+    println('')
+    println('--- QUIC CID ---')
+    test-quic-gen-cid()
+
+    println('')
+    println('--- HTTP/3 Frame ---')
+    test-http3-frame-encode-decode()
+
+    println('')
+    println('--- QPACK ---')
+    test-qpack-encode-decode()
+
+    println('')
+    println('--- UDP ---')
+    test-udp-open-close()
+
+    println('')
+    println('--- URL Parsing ---')
+    test-http3-parse-url()
+
+    println('')
+    println('=== All tests completed ===')
+}

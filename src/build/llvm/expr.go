@@ -3025,7 +3025,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	var srcLen, srcData, srcCap string
 
 	if isStrShort {
-		strPtr := fmt.Sprintf("%%%s", varName)
+		strPtr := g.varAddr(varName)
 		srcLen = g.extractStrShortLen(sb, strPtr)
 		srcData = g.extractStrShortDataPtr(sb, strPtr)
 		srcCap = srcLen
@@ -3050,8 +3050,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		g.tmpIdx++
 		srcLen = fmt.Sprintf("%%slice.srclen.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 0\n",
-				g.indent(), srcLenGEP, structType, structType, varName))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+				g.indent(), srcLenGEP, structType, structType, g.varAddr(varName)))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
 				g.indent(), srcLen, srcLenGEP))
 		}
@@ -3062,8 +3062,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		g.tmpIdx++
 		srcData = fmt.Sprintf("%%slice.srcdata.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-				g.indent(), srcDataGEP, structType, structType, varName, dataField))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), srcDataGEP, structType, structType, g.varAddr(varName), dataField))
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 				g.indent(), srcData, srcDataGEP))
 		}
@@ -3075,8 +3075,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			g.tmpIdx++
 			srcCapGEP := fmt.Sprintf("%%slice.srccap.gep.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 1\n",
-					g.indent(), srcCapGEP, structType, structType, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+					g.indent(), srcCapGEP, structType, structType, g.varAddr(varName)))
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
 					g.indent(), srcCap, srcCapGEP))
 			}

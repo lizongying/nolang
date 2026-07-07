@@ -64,4 +64,53 @@ func init() {
 		Doc:          "Receive data on connected socket. Accepts str or []byte buffer. Returns bytes received (-1 on error, 0 on closed)",
 		ForwardFunc:  "net-recv",
 	})
+
+	// net-udp-open: create a UDP socket
+	// Performs: socket(AF_INET, SOCK_DGRAM, 0)
+	// Args: none
+	// Returns: fd i64 (socket fd, -1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-udp-open",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Create UDP socket (SOCK_DGRAM). Returns fd (-1 on error)",
+		ForwardFunc:  "net-udp-open",
+	})
+
+	// net-udp-sendto: send UDP datagram to address
+	// Args: fd i64, data str|[]byte, n i64, host str, port i64
+	// Returns: written i64 (bytes sent, -1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-udp-sendto",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeStr, parser.TypeI64, parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Send UDP datagram to host:port. Returns bytes sent (-1 on error)",
+		ForwardFunc:  "net-udp-sendto",
+	})
+
+	// net-udp-recvfrom: receive UDP datagram
+	// Args: fd i64, buf str|[]byte, n i64
+	// Returns: read-n i64 (bytes received, -1 on error, 0 on timeout/closed)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-udp-recvfrom",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Receive UDP datagram. Returns bytes received (-1 on error, 0 on timeout)",
+		ForwardFunc:  "net-udp-recvfrom",
+	})
+
+	// net-set-recv-timeout: set socket recv timeout (SO_RCVTIMEO)
+	// Args: fd i64, timeout-ms i64
+	// Returns: ok i64 (0=success, -1=error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-set-recv-timeout",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Set socket recv timeout in milliseconds. Returns 0 on success, -1 on error",
+		ForwardFunc:  "net-set-recv-timeout",
+	})
 }
