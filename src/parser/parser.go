@@ -954,6 +954,20 @@ func (p *Parser) parseStatement() Statement {
 					} else if p.currentToken.Type == lexer.ASSIGN && p.peekToken.Type == lexer.LBRACKET {
 						// No element type but RHS is array literal: a [3] = [1, 2, 3]
 						isArrayDecl = true
+					} else if p.currentToken.Type == lexer.LBRACKET {
+						// Nested array type: a [N][M]T = [...]
+						// Skip the inner [M]T to confirm it's a type annotation
+						p.nextToken() // skip inner [
+						if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
+							p.nextToken() // skip M
+						}
+						if p.currentToken.Type == lexer.RBRACKET {
+							p.nextToken() // skip inner ]
+							if p.currentToken.Type == lexer.IDENT {
+								p.nextToken() // skip T
+								isArrayDecl = true
+							}
+						}
 					}
 				}
 			}
@@ -2191,6 +2205,16 @@ func (p *Parser) parseLetStatement() Statement {
 						stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
 					}
 					p.nextToken()
+				} else if p.currentToken.Type == lexer.LBRACKET {
+					// Nested array type: [N][M]T — recursively parse element type
+					elemType, ok := p.parseTypeExpression()
+					if ok {
+						if hasSize {
+							stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elemType}
+						} else {
+							stmt.Type = &SliceType{Token: bracketToken, Elem: elemType}
+						}
+					}
 				} else {
 					if hasSize {
 						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
@@ -6487,6 +6511,14 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 		sizeTok := p.currentToken
 		p.nextToken() // skip size
 		p.nextToken() // skip ]
+		// [N][M]T — nested array type
+		if p.currentToken.Type == lexer.LBRACKET {
+			elemType, ok := p.parseTypeExpression()
+			if ok {
+				return &ArrayType{Token: startTok, Size: &Identifier{Token: sizeTok, Value: sizeTok.Literal}, Elem: elemType}, true
+			}
+			return nil, false
+		}
 		elemName := p.currentToken.Literal
 		elemTok := p.currentToken
 		p.nextToken()

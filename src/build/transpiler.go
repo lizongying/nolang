@@ -352,6 +352,20 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// Phase 1: anonymous function literals are typed with the simplified "fn" marker.
 		// Phase 2 may derive the precise FunctionType signature.
 		return "fn"
+	case *parser.MapLiteral:
+		// Map literal { k:v, ... } → infer type from associated MapType if present
+		if e.MapType != nil {
+			return e.MapType.String()
+		}
+		// Fallback: infer from first pair's key/value types
+		if len(e.Pairs) > 0 {
+			keyType := inferExprType(e.Pairs[0].Key, varTypes, funcTypes, selfType)
+			valType := inferExprType(e.Pairs[0].Value, varTypes, funcTypes, selfType)
+			if keyType != "" && valType != "" {
+				return "[" + keyType + "]" + valType
+			}
+		}
+		return ""
 	default:
 		return "i64"
 	}
@@ -1478,6 +1492,18 @@ func inferTypeFromExpr(expr parser.Expression) string {
 		return inferTypeFromExpr(e.Right)
 	case *parser.GroupedExpression:
 		return inferTypeFromExpr(e.Expression)
+	case *parser.MapLiteral:
+		if e.MapType != nil {
+			return e.MapType.String()
+		}
+		if len(e.Pairs) > 0 {
+			keyType := inferTypeFromExpr(e.Pairs[0].Key)
+			valType := inferTypeFromExpr(e.Pairs[0].Value)
+			if keyType != "" && valType != "" {
+				return "[" + keyType + "]" + valType
+			}
+		}
+		return ""
 	}
 	return ""
 }

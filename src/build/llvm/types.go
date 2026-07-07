@@ -1,6 +1,11 @@
 package llvm
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/lizongying/nolang/parser"
+)
 
 func (g *Generator) mapToLLVMType(nolangType string) string {
 	// Function type: fn(...) -> function pointer (void + by-reference convention)
@@ -37,10 +42,10 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		}
 		return "i64"
 	}
-	// hashmap-K-V → %hashmap-K-V (MapType.String() returns "hashmap-{key}-{value}",
-	// matching the struct name defined in src/std/map/map.no).
-	// This aligns with the transpiler's method dispatch which constructs
-	// function names as recvType + "." + method (e.g. hashmap-str-i64.get).
+	// hashmap-K-V → %hashmap-K-V (callers pass MapType.LLVMName() which returns
+	// "hashmap-{key}-{value}", matching the struct name defined in src/std/map/map.no).
+	// Kept as a safety net: String() now returns the spec-mandated [K]V form which
+	// is ambiguous with [N]T arrays, so codegen must route through LLVMName().
 	if strings.HasPrefix(nolangType, "hashmap-") {
 		return "%" + nolangType
 	}
@@ -109,6 +114,65 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 	default:
 		return "i64"
 	}
+}
+
+// arrayTypeToLLVM converts a (possibly nested) ArrayType AST node to its LLVM
+// array type string. For [12][16]i64 it returns "[12 x [16 x i64]]".
+func (g *Generator) arrayTypeToLLVM(at *parser.ArrayType) string {
+	size := int64(0)
+	if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+		size = intLit.Value
+	}
+	var elemLLVMType string
+	if inner, ok := at.Elem.(*parser.ArrayType); ok {
+		elemLLVMType = g.arrayTypeToLLVM(inner)
+	} else {
+		elemLLVMType = g.mapToLLVMType(at.Elem.String())
+	}
+	return fmt.Sprintf("[%d x %s]", size, elemLLVMType)
+}
+
+// extractArrayElemType parses an LLVM array type string like "[12 x [16 x i64]]"
+// and returns the element type "[16 x i64]". Returns "" if parsing fails.
+func extractArrayElemType(llvmType string) string {
+	if !strings.HasPrefix(llvmType, "[") {
+		return ""
+	}
+	// Find the matching closing bracket for the outermost [
+	depth := 0
+	closeB := -1
+	for i, c := range llvmType {
+		if c == '[' {
+			depth++
+		} else if c == ']' {
+			depth--
+			if depth == 0 {
+				closeB = i
+				break
+			}
+		}
+	}
+	if closeB < 0 {
+		return ""
+	}
+	inner := llvmType[1:closeB] // e.g. "12 x [16 x i64]"
+	// Find the FIRST " x " at depth 0 (the outermost separator)
+	depth = 0
+	xIdx := -1
+	for i := 0; i < len(inner)-2; i++ {
+		if inner[i] == '[' {
+			depth++
+		} else if inner[i] == ']' {
+			depth--
+		} else if depth == 0 && inner[i] == ' ' && inner[i+1] == 'x' && inner[i+2] == ' ' {
+			xIdx = i
+			break
+		}
+	}
+	if xIdx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(inner[xIdx+3:])
 }
 
 // sanitizeLLVMName 將函式名稱中的非法字元替換為合法字元。

@@ -76,41 +76,41 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     if name-bytes.len < 64 {
         buf[pos] = name-bytes.len & 255
         pos = pos + 1
-    } {
-        // 大於等於 64 的長度使用多位元組編碼
-        buf[pos] = 0x40 | ((name-bytes.len >> 8) & 255)
-        buf[pos + 1] = name-bytes.len & 255
-        pos = pos + 2
     }
 
-    // 名稱資料
-    i = 0
-    for i < name-bytes.len {
-        buf[pos + i] = name-bytes[i]
-        i = i + 1
-    }
-    pos = pos + name-bytes.len
-
-    // 值長度
-    if value-bytes.len < 64 {
-        buf[pos] = value-bytes.len & 255
-        pos = pos + 1
-    } {
-        buf[pos] = 0x40 | ((value-bytes.len >> 8) & 255)
-        buf[pos + 1] = value-bytes.len & 255
-        pos = pos + 2
-    }
-
-    // 值資料
-    i = 0
-    for i < value-bytes.len {
-        buf[pos + i] = value-bytes[i]
-        i = i + 1
-    }
-    pos = pos + value-bytes.len
-
-    n = pos
+    // 大於等於 64 的長度使用多位元組編碼
+    buf[pos] = 0x40 | ((name-bytes.len >> 8) & 255)
+    buf[pos + 1] = name-bytes.len & 255
+    pos = pos + 2
 }
+
+// 名稱資料
+i = 0
+for i < name-bytes.len {
+    buf[pos + i] = name-bytes[i]
+    i = i + 1
+}
+pos = pos + name-bytes.len
+
+// 值長度
+if value-bytes.len < 64 {
+    buf[pos] = value-bytes.len & 255
+    pos = pos + 1
+}
+
+buf[pos] = 0x40 | ((value-bytes.len >> 8) & 255)
+buf[pos + 1] = value-bytes.len & 255
+pos = pos + 2
+
+// 值資料
+i = 0
+for i < value-bytes.len {
+    buf[pos + i] = value-bytes[i]
+    i = i + 1
+}
+pos = pos + value-bytes.len
+
+n = pos
 
 // qpack-encode-headers: 編碼多個標頭
 // names [16]str: 標頭名稱陣列
@@ -248,8 +248,6 @@ http3-encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []b
     qpack-buf []byte
     qpack-n = 0
     qpack-buf, qpack-n = qpack-encode-headers(names, values, count)
-
-    // 包裝成 HEADERS 影格（payload 資料長度 = qpack-n）
     buf, n = http3-encode-frame(HTTP3-FRAME-HEADERS, qpack-buf[..qpack-n])
 }
 
@@ -371,35 +369,34 @@ http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
     slash-pos = rest.index('/')
     if slash-pos < 0 {
         host = rest
-    } {
-        host = rest.slice(0, slash-pos)
-        path = rest.slice(slash-pos, rest.len)
     }
-
-    colon-pos = host.index(':')
-    if colon-pos >= 0 {
-        host-only = host.slice(0, colon-pos)
-        port-str = host.slice(colon-pos + 1, host.len)
-        p = 0
-        i = 0
-        for i < port-str.len {
-            c = port-str[i]
-            if c < 48 || c > 57 {
-                return
-            }
-            p = p * 10 + c - 48
-            i = i + 1
-        }
-        port = p
-        host = host-only
-    }
-
-    if host.len == 0 {
-        return
-    }
-
-    ok = true
+    host = rest.slice(0, slash-pos)
+    path = rest.slice(slash-pos, rest.len)
 }
+
+colon-pos = host.index(':')
+if colon-pos >= 0 {
+    host-only = host.slice(0, colon-pos)
+    port-str = host.slice(colon-pos + 1, host.len)
+    p = 0
+    i = 0
+    for i < port-str.len {
+        c = port-str[i]
+        if c < 48 || c > 57 {
+            return
+        }
+        p = p * 10 + c - 48
+        i = i + 1
+    }
+    port = p
+    host = host-only
+}
+
+if host.len == 0 {
+    return
+}
+
+ok = true
 
 // ═══════════════════════════════════════════════
 // HTTP/3 客戶端連接
@@ -495,6 +492,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // ── 構建 QUIC STREAM 影格 ──
     // 串流 ID = 4（客戶端雙向串流）
     stream-id = HTTP3-CLIENT-STREAM-BASE
+
     // STREAM 影格: type=0x08 | OFF(0) | LEN | FIN
     // 0x08 | 0x04(has_off) | 0x02(has_len) | 0x01(fin) = 0x0f
     pkt []byte
@@ -585,52 +583,48 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
         }
         pos = np
 
-        {
-            ft == HTTP3-FRAME-HEADERS -> {
-                // 解析 QPACK 標頭區塊
-                qpack-pos = 2
-                for qpack-pos < payload.len {
-                    name = ''
-                    value = ''
-                    qpack-np = 0
-                    name, value, qpack-np = qpack-decode-header(payload, qpack-pos)
-                    if qpack-np < 0 {
-                        break
-                    }
-                    qpack-pos = qpack-np
+        // 解析 QPACK 標頭區塊
+        2
+        for qpack-pos < payload.len {
+            name = ''
+            value = ''
+            qpack-np = 0
+            name, value, qpack-np = qpack-decode-header(payload, qpack-pos)
+            if qpack-np < 0 {
+                break
+            }
+            qpack-pos = qpack-np
 
-                    // :status 標頭
-                    if name == ':status' {
-                        r.status-code = value.to-i64()
-                    } {
-                        if r.header-count < 32 {
-                            r.header-names[r.header-count] = name
-                            r.header-values[r.header-count] = value
-                            r.header-count = r.header-count + 1
-                        }
-                    }
-                }
+            // :status 標頭
+            if name == ':status' {
+                r.status-code = value.to-i64()
             }
-            ft == HTTP3-FRAME-DATA -> {
-                // 追加到 body
-                i = 0
-                for i < payload.len {
-                    r.body[r.body.len] = payload[i]
-                    i = i + 1
-                }
-            }
-            -> {
-                // 忽略其他影格類型
+            if r.header-count < 32 {
+                r.header-names[r.header-count] = name
+                r.header-values[r.header-count] = value
+                r.header-count = r.header-count + 1
             }
         }
     }
-
-    if r.status-code == 0 {
-        return
-    }
-
-    resp = r
 }
+
+ft == HTTP3-FRAME-DATA -> {
+    // 追加到 body
+    i = 0
+    for i < payload.len {
+        r.body[r.body.len] = payload[i]
+        i = i + 1
+    }
+}
+
+{}
+// 忽略其他影格類型
+
+if r.status-code == 0 {
+    return
+}
+
+resp = r
 
 // ═══════════════════════════════════════════════
 // 便捷函數
@@ -652,7 +646,10 @@ http3-get = (url str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil -> return
+        nil ->
+            return
+        err ->
+            return
         ok -> resp = http3-send-request(it, 'GET', path, host, '')
     }
 }
@@ -674,7 +671,10 @@ http3-post = (url str, body str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil -> return
+        nil ->
+            return
+        err ->
+            return
         ok -> resp = http3-send-request(it, 'POST', path, host, body)
     }
 }
@@ -697,7 +697,10 @@ http3-do = (method str, url str, body str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil -> return
+        nil ->
+            return
+        err ->
+            return
         ok -> resp = http3-send-request(it, method, path, host, body)
     }
 }

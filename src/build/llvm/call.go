@@ -238,18 +238,25 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		}
 		// SSA value (e.g., %idx.zext.* for []byte, %arr.idx.val.* for []str)
 		// 需根據元素型別選擇正確的 alloca/store 型別
-		// 若 SSA 值為 i64（如 zext 後的 byte）但元素型別為 i8/i16/i32，需 trunc
+		// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
 		storeVal := ev
 		if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
-			srcType := g.intExprLLVMType(arg)
-			if srcType == "" {
-				srcType = "i64"
-			}
+			// generateIndexExpression always zexts narrow integer elements to i64,
+			// so the SSA value type is i64 regardless of elemLLVMType.
+			// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
+			srcType := "i64"
 			if srcType != elemLLVMType {
 				g.tmpIdx++
 				convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
 				if sb != nil {
-					if g.isIntegerLLVMType(srcType) {
+					if srcType == "i64" {
+						// i64 → smaller type: trunc
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+					} else if elemLLVMType == "i64" {
+						// smaller type → i64: zext
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+					} else {
+						// smaller → smaller (both non-i64): trunc to target
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
 					}
 				}
@@ -1070,122 +1077,122 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				methodReceiver = receiverExpr
 			}
 		} else if _, ok := receiverExpr.(*parser.IndexExpression); ok {
-		// 陣列元素接收者（如 names[i].slice(0, nlen)）
-		// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
-		elemType := g.exprResultLLVMType(receiverExpr)
-		srcType := strings.TrimPrefix(elemType, "%")
-		candidates := []string{srcType}
-		if srcType == "str-short" || srcType == "str-long" {
-			candidates = append(candidates, "str")
-		}
-		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-			candidates = append(candidates, primAliases...)
-		}
-		for _, cand := range candidates {
-			shortName := cand + "." + dot.Property
-			if g.funcRetTypes != nil {
-				if _, ok := g.funcRetTypes[shortName]; ok {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
+			// 陣列元素接收者（如 names[i].slice(0, nlen)）
+			// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			candidates := []string{srcType}
+			if srcType == "str-short" || srcType == "str-long" {
+				candidates = append(candidates, "str")
+			}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
 				}
 			}
-			if methodReceiver == nil {
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
+		} else if _, ok := receiverExpr.(*parser.DotExpression); ok {
+			// 結構欄位接收者（如 c.name.trim()、self.buf.len）
+			// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			candidates := []string{srcType}
+			if srcType == "str-short" || srcType == "str-long" {
+				candidates = append(candidates, "str")
+			}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+			}
+		} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
+			// 切片結果接收者（如 buf[pos..end].to-str()）
+			// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			candidates := []string{srcType}
+			if srcType == "str-short" || srcType == "str-long" {
+				candidates = append(candidates, "str")
+			}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+			}
+		} else if _, ok := receiverExpr.(*parser.CallExpression); ok {
+			// 函數呼叫結果接收者（如 foo().trim()）
+			// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			candidates := []string{srcType}
+			if srcType == "str-short" || srcType == "str-long" {
+				candidates = append(candidates, "str")
+			}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
 				}
 			}
 		}
-	} else if _, ok := receiverExpr.(*parser.DotExpression); ok {
-		// 結構欄位接收者（如 c.name.trim()、self.buf.len）
-		// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
-		elemType := g.exprResultLLVMType(receiverExpr)
-		srcType := strings.TrimPrefix(elemType, "%")
-		candidates := []string{srcType}
-		if srcType == "str-short" || srcType == "str-long" {
-			candidates = append(candidates, "str")
-		}
-		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-			candidates = append(candidates, primAliases...)
-		}
-		for _, cand := range candidates {
-			shortName := cand + "." + dot.Property
-			if g.funcRetTypes != nil {
-				if _, ok := g.funcRetTypes[shortName]; ok {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-			if methodReceiver == nil {
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-		}
-	} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
-		// 切片結果接收者（如 buf[pos..end].to-str()）
-		// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
-		elemType := g.exprResultLLVMType(receiverExpr)
-		srcType := strings.TrimPrefix(elemType, "%")
-		candidates := []string{srcType}
-		if srcType == "str-short" || srcType == "str-long" {
-			candidates = append(candidates, "str")
-		}
-		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-			candidates = append(candidates, primAliases...)
-		}
-		for _, cand := range candidates {
-			shortName := cand + "." + dot.Property
-			if g.funcRetTypes != nil {
-				if _, ok := g.funcRetTypes[shortName]; ok {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-			if methodReceiver == nil {
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-		}
-	} else if _, ok := receiverExpr.(*parser.CallExpression); ok {
-		// 函數呼叫結果接收者（如 foo().trim()）
-		// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法
-		elemType := g.exprResultLLVMType(receiverExpr)
-		srcType := strings.TrimPrefix(elemType, "%")
-		candidates := []string{srcType}
-		if srcType == "str-short" || srcType == "str-long" {
-			candidates = append(candidates, "str")
-		}
-		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-			candidates = append(candidates, primAliases...)
-		}
-		for _, cand := range candidates {
-			shortName := cand + "." + dot.Property
-			if g.funcRetTypes != nil {
-				if _, ok := g.funcRetTypes[shortName]; ok {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-			if methodReceiver == nil {
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-		}
-	}
 	}
 
 	// 方法解析後，檢查是否為 build-in 方法（如 str.eq、str.copy、i64.to-str、f64.to-str）
@@ -1467,18 +1474,27 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// GEP result is a pointer
 				return elemLLVMType + "* " + ev
 			}
-			// 若 SSA 值為 i64（如 zext 後的 byte）但元素型別為 i8/i16/i32，需 trunc
+			// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
 			storeVal := ev
 			if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
-				srcType := g.intExprLLVMType(arg)
-				if srcType == "" {
-					srcType = "i64"
-				}
-				if srcType != elemLLVMType && g.isIntegerLLVMType(srcType) {
+				// generateIndexExpression always zexts narrow integer elements to i64,
+				// so the SSA value type is i64 regardless of elemLLVMType.
+				// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
+				srcType := "i64"
+				if srcType != elemLLVMType {
 					g.tmpIdx++
 					convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
 					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+						if srcType == "i64" {
+							// i64 → smaller type: trunc
+							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+						} else if elemLLVMType == "i64" {
+							// smaller type → i64: zext
+							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+						} else {
+							// smaller → smaller (both non-i64): trunc to target
+							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+						}
 					}
 					storeVal = convReg
 				}

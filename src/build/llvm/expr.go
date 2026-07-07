@@ -288,17 +288,44 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 
 // generateCastExpression handles `expr as Type` type casts.
 //
-// Simplified implementation: all Nolang integers are stored as i64 in LLVM
-// (see intExprLLVMType and the i64 load in the Identifier case), so integer-
-// to-integer casts (e.g. i64 as u64, u32 as u64, i32 as u64) are effectively
-// no-ops at the IR level — the bit pattern is identical. We therefore simply
-// return the underlying expression's value. The 48 usages in src/std/hash/
-// are all integer-to-integer casts, so this covers them.
-//
-// If non-integer casts (struct/str/etc.) are added in the future, this
-// function should be extended with proper conversion logic.
+// For integer-to-integer casts (e.g. i32 as u64, i64 as u32), emit the
+// appropriate trunc/zext instruction so the LLVM type matches the target.
+// Non-integer casts (struct/str/etc.) are currently not supported and
+// return the underlying expression unchanged.
 func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastExpression) string {
-	return g.generateExprWithSB(sb, e.Expr)
+	val := g.generateExprWithSB(sb, e.Expr)
+	if e.Type == nil || sb == nil {
+		return val
+	}
+	srcType := g.intExprLLVMType(e.Expr)
+	// generateIndexExpression always zexts narrow integer elements to i64,
+	// so for IndexExpression the srcType is already i64 (intExprLLVMType default).
+	if srcType == "" {
+		srcType = "i64"
+	}
+	tgtType := g.mapToLLVMType(e.Type.String())
+	if !g.isIntegerLLVMType(srcType) || !g.isIntegerLLVMType(tgtType) {
+		return val
+	}
+	if srcType == tgtType {
+		return val
+	}
+	if !strings.HasPrefix(val, "%") {
+		return val
+	}
+	g.tmpIdx++
+	castReg := fmt.Sprintf("%%cast.%d", g.tmpIdx)
+	if srcType == "i64" {
+		// i64 → smaller: trunc
+		sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), castReg, srcType, val, tgtType))
+	} else if tgtType == "i64" {
+		// smaller → i64: zext
+		sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), castReg, srcType, val))
+	} else {
+		// smaller → smaller (both non-i64): trunc to target
+		sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), castReg, srcType, val, tgtType))
+	}
+	return castReg
 }
 
 // generateConditionAsI1 generates LLVM IR for a condition expression,
@@ -731,6 +758,15 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		return g.intExprLLVMType(v.Right)
 	case *parser.GroupedExpression:
 		return g.intExprLLVMType(v.Expression)
+	case *parser.CastExpression:
+		// `expr as Type`: the result type is the target type
+		if v.Type != nil {
+			t := g.mapToLLVMType(v.Type.String())
+			if g.isIntegerLLVMType(t) {
+				return t
+			}
+		}
+		return g.intExprLLVMType(v.Expr)
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			if g.funcRetTypes != nil {
@@ -1413,7 +1449,9 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
 					g.indent(), elemGEP, dataLoad, idx))
 				storeVal := val
-				if strings.HasPrefix(val, "%") {
+				if newVal, ok := g.coerceStrLitToByte(sb, val, value); ok {
+					storeVal = newVal
+				} else if strings.HasPrefix(val, "%") {
 					valType := g.intExprLLVMType(value)
 					if strings.HasPrefix(valType, "i") && valType != "i8" {
 						g.tmpIdx++
@@ -1458,7 +1496,9 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
 					g.indent(), elemGEP, arrFieldGEP, idx))
 				storeVal := val
-				if strings.HasPrefix(val, "%") {
+				if newVal, ok := g.coerceStrLitToByte(sb, val, value); ok {
+					storeVal = newVal
+				} else if strings.HasPrefix(val, "%") {
 					valType := g.intExprLLVMType(value)
 					if strings.HasPrefix(valType, "i") && valType != "i8" {
 						g.tmpIdx++
@@ -1849,6 +1889,43 @@ func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *
 	return "0"
 }
 
+// coerceStrLitToByte loads the first byte from a %str-longlit.N pointer (string
+// literal) when it needs to be used as an i8 value (e.g., out[pos] = '=').
+// Returns (byteReg, true) if coercion was applied, or (originalVal, false) otherwise.
+func (g *Generator) coerceStrLitToByte(sb *strings.Builder, val string, expr parser.Expression) (string, bool) {
+	if !strings.HasPrefix(val, "%str-longlit.") {
+		return val, false
+	}
+	lit, ok := expr.(*parser.StringLiteral)
+	if !ok {
+		return val, false
+	}
+	if sb == nil {
+		return "0", true
+	}
+	if len(lit.Value) <= 127 {
+		// %str-short*: field 1 is [127 x i8] inline data
+		g.tmpIdx++
+		byteGEP := fmt.Sprintf("%%strlit.byte.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		byteLoad := fmt.Sprintf("%%strlit.byte.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1, i64 0\n", g.indent(), byteGEP, val))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), byteLoad, byteGEP))
+		return byteLoad, true
+	}
+	// %str-long*: field 1 is i8* pointer
+	g.tmpIdx++
+	dataPtrGEP := fmt.Sprintf("%%strlit.dataptr.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	dataPtrLoad := fmt.Sprintf("%%strlit.dataptr.%d", g.tmpIdx)
+	g.tmpIdx++
+	byteLoad := fmt.Sprintf("%%strlit.byte.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataPtrGEP, val))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataPtrLoad, dataPtrGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), byteLoad, dataPtrLoad))
+	return byteLoad, true
+}
+
 func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.AssignExpression) string {
 	// 巢狀欄位賦值: struct.field.subfield = value (e.g., self.p.len = val)
 	if dot, ok := expr.Left.(*parser.DotExpression); ok {
@@ -2133,16 +2210,28 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), dataTyped, dataLoad, llvmElemType))
 				}
 
-				// Coerce val to element type if needed (e.g., i64 → i32)
+				// Coerce val to element type if needed (e.g., i64 → i32, i32 → i64, i32 → i32)
 				storeVal := val
-				if llvmElemType != "i64" && strings.HasPrefix(val, "%") {
-					g.tmpIdx++
-					truncReg := fmt.Sprintf("%%vec.set.trunc.%d", g.tmpIdx)
-					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n",
-							g.indent(), truncReg, val, llvmElemType))
+				if strings.HasPrefix(val, "%") {
+					srcType := g.intExprLLVMType(expr.Value)
+					// Only convert between integer types; skip for struct types (e.g. %str-long)
+					if srcType != "" && srcType != llvmElemType && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) {
+						g.tmpIdx++
+						convReg := fmt.Sprintf("%%vec.set.conv.%d", g.tmpIdx)
+						if sb != nil {
+							if srcType == "i64" {
+								// i64 → smaller type: trunc
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
+							} else if llvmElemType == "i64" {
+								// smaller type → i64: zext
+								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, val, llvmElemType))
+							} else {
+								// smaller → smaller (both non-i64): trunc to target
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
+							}
+						}
+						storeVal = convReg
 					}
-					storeVal = truncReg
 				}
 
 				// GEP to element index and store
@@ -2199,7 +2288,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
 						g.indent(), elemGEP, dataLoad, idx))
 					storeVal := val
-					if strings.HasPrefix(val, "%") {
+					if newVal, ok := g.coerceStrLitToByte(sb, val, expr.Value); ok {
+						storeVal = newVal
+					} else if strings.HasPrefix(val, "%") {
 						valType := g.intExprLLVMType(expr.Value)
 						if strings.HasPrefix(valType, "i") && valType != "i8" {
 							g.tmpIdx++
@@ -2246,7 +2337,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [127 x i8], [127 x i8]* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldGEP, idx))
 					storeVal := val
-					if strings.HasPrefix(val, "%") {
+					if newVal, ok := g.coerceStrLitToByte(sb, val, expr.Value); ok {
+						storeVal = newVal
+					} else if strings.HasPrefix(val, "%") {
 						valType := g.intExprLLVMType(expr.Value)
 						if strings.HasPrefix(valType, "i") && valType != "i8" {
 							g.tmpIdx++
@@ -2313,13 +2406,17 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i64 0, i64 %s\n",
 				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
 			storeVal := val
-			if llvmElemType == "i8" && strings.HasPrefix(val, "%") {
-				valType := g.intExprLLVMType(expr.Value)
-				if strings.HasPrefix(valType, "i") && valType != "i8" {
-					g.tmpIdx++
-					truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
-					storeVal = truncReg
+			if llvmElemType == "i8" {
+				if newVal, ok := g.coerceStrLitToByte(sb, val, expr.Value); ok {
+					storeVal = newVal
+				} else if strings.HasPrefix(val, "%") {
+					valType := g.intExprLLVMType(expr.Value)
+					if strings.HasPrefix(valType, "i") && valType != "i8" {
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
+						storeVal = truncReg
+					}
 				}
 			}
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
@@ -2464,12 +2561,12 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
 			}
-			// 統一回傳 i64：若元素為 i8 則 zext 到 i64
-			if llvmElemType == "i8" {
+			// 統一回傳 i64：若元素為較窄整數型別則 zext 到 i64（與 %vec 路徑一致）
+			if llvmElemType == "i1" || llvmElemType == "i8" || llvmElemType == "i16" || llvmElemType == "i32" {
 				g.tmpIdx++
 				zextReg := fmt.Sprintf("%%arr.idx.zext.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, elemLoad))
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, llvmElemType, elemLoad))
 				}
 				return zextReg
 			}
@@ -2563,18 +2660,69 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		}
 
 		// t is LLVM type like "[4 x i64]" (g.varTypes stores LLVM types)
+		// Also handles "[16 x i64]*" (pointer to array, from s = arr2d[i])
 		if strings.HasPrefix(t, "[") {
-			closeB := strings.IndexByte(t, ']')
-			if closeB > 0 {
-				// Parse LLVM array format: [4 x i64] → element is "i64"
-				inner := t[1:closeB] // "4 x i64"
-				xIdx := strings.LastIndex(inner, " x ")
-				if xIdx >= 0 {
-					llvmElemType = inner[xIdx+3:] // "i64"
-				} else {
-					llvmElemType = "i64"
+			// Check if it's a pointer to array (e.g. [16 x i64]*)
+			if strings.HasSuffix(t, "*") {
+				// s is a pointer to an array: load the pointer, then GEP
+				arrayType := strings.TrimSuffix(t, "*") // "[16 x i64]"
+				elemType := extractArrayElemType(arrayType)
+				if elemType != "" {
+					llvmElemType = elemType
+					arrayLLVMType = arrayType
+					// Load the pointer from the alloca
+					g.tmpIdx++
+					ptrLoad := fmt.Sprintf("%%idx.ptr.load.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %s\n",
+							g.indent(), ptrLoad, arrayType, arrayType, g.varAddr(varName)))
+					}
+					// GEP into the loaded pointer
+					g.tmpIdx++
+					gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+							g.indent(), gepReg, arrayType, arrayType, ptrLoad, idx))
+					}
+					// Load element value
+					g.tmpIdx++
+					loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+							g.indent(), loadReg, llvmElemType, llvmElemType, gepReg))
+					}
+					if llvmElemType == "i8" {
+						g.tmpIdx++
+						zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, loadReg))
+						}
+						return zextReg
+					}
+					return loadReg
 				}
-				arrayLLVMType = t
+			} else {
+				// Raw array type (e.g. [12 x [16 x i64]] for 2D array constants)
+				elemType := extractArrayElemType(t)
+				if elemType != "" {
+					llvmElemType = elemType
+					arrayLLVMType = t
+					// If the element type is itself an array (nested 2D array),
+					// return the GEP pointer without loading (e.g. s = arr2d[i])
+					if strings.HasPrefix(elemType, "[") {
+						g.tmpIdx++
+						gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+						arrRef := llvmVarRef(varName)
+						if g.globalVars != nil && g.globalVars[varName] {
+							arrRef = llvmGlobalRef(varName)
+						}
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+								g.indent(), gepReg, arrayLLVMType, arrayLLVMType, arrRef, idx))
+						}
+						return gepReg
+					}
+				}
 			}
 		}
 	}
@@ -2788,6 +2936,74 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	return extReg
 }
 
+// generateByteCmp 使用整數 icmp 進行 byte 值比較，回傳 zext 後的 i64 結果。
+// 適用於 byte 值（如 s[i]）與單字元 StringLiteral（如 '='）的比較，
+// 避免誤用 strcmp 將 byte 值當作 %str-long* 指標。
+func (g *Generator) generateByteCmp(sb *strings.Builder, expr *parser.InfixExpression) string {
+	if sb == nil {
+		return "0"
+	}
+
+	// 判斷 byte 端與 StringLiteral 端，並記住原始左右順序以正確處理 <, >, <=, >=
+	// 透過 isSingleCharStringLit 找出 StringLiteral 端，另一側即為 byte 端。
+	var byteSide, strLitSide parser.Expression
+	byteOnLeft := false
+	if isSingleCharStringLit(expr.Right) {
+		byteSide = expr.Left
+		strLitSide = expr.Right
+		byteOnLeft = true
+	} else {
+		byteSide = expr.Right
+		strLitSide = expr.Left
+	}
+
+	// byte 端：產生 i64 值（str 索引已 zext i8 to i64）
+	byteVal := g.generateExprWithSB(sb, byteSide)
+	// StringLiteral 端：產生 %str-longlit.N 指標，再取出首 byte
+	strLitVal := g.generateExprWithSB(sb, strLitSide)
+	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
+	g.tmpIdx++
+	strLitByteZext := fmt.Sprintf("%%bytecmp.zext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
+
+	// operator → icmp predicate（與 generateStringCmp 相同語意）
+	var cmpOp string
+	switch expr.Operator {
+	case "==":
+		cmpOp = "eq"
+	case "!=":
+		cmpOp = "ne"
+	case "<":
+		cmpOp = "slt"
+	case ">":
+		cmpOp = "sgt"
+	case "<=":
+		cmpOp = "sle"
+	case ">=":
+		cmpOp = "sge"
+	default:
+		cmpOp = "eq"
+	}
+
+	// 依照原始左右順序放置運算元，確保 <, >, <=, >= 語意正確
+	var lhs, rhs string
+	if byteOnLeft {
+		lhs = byteVal
+		rhs = strLitByteZext
+	} else {
+		lhs = strLitByteZext
+		rhs = byteVal
+	}
+
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%bytecmp.cmp.%d", g.tmpIdx)
+	g.tmpIdx++
+	extReg := fmt.Sprintf("%%bytecmp.ext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, lhs, rhs))
+	sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+	return extReg
+}
+
 // generateStringCmpI1 使用 strcmp 進行字串比較，直接回傳 i1 結果。
 // 用於 if/while 條件式中。
 func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixExpression) string {
@@ -2826,6 +3042,112 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
 	}
 	return resultReg
+}
+
+// generateByteCmpI1 使用整數 icmp 進行 byte 值比較，直接回傳 i1 結果。
+// 用於 if/while 條件式中 byte vs single-char-string-literal 的比較。
+func (g *Generator) generateByteCmpI1(sb *strings.Builder, expr *parser.InfixExpression) string {
+	if sb == nil {
+		return "0"
+	}
+
+	var byteSide, strLitSide parser.Expression
+	byteOnLeft := false
+	if isSingleCharStringLit(expr.Right) {
+		byteSide = expr.Left
+		strLitSide = expr.Right
+		byteOnLeft = true
+	} else {
+		byteSide = expr.Right
+		strLitSide = expr.Left
+	}
+
+	byteVal := g.generateExprWithSB(sb, byteSide)
+	strLitVal := g.generateExprWithSB(sb, strLitSide)
+	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
+	g.tmpIdx++
+	strLitByteZext := fmt.Sprintf("%%bytecmp.zext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
+
+	var cmpOp string
+	switch expr.Operator {
+	case "==":
+		cmpOp = "eq"
+	case "!=":
+		cmpOp = "ne"
+	case "<":
+		cmpOp = "slt"
+	case ">":
+		cmpOp = "sgt"
+	case "<=":
+		cmpOp = "sle"
+	case ">=":
+		cmpOp = "sge"
+	default:
+		cmpOp = "eq"
+	}
+
+	var lhs, rhs string
+	if byteOnLeft {
+		lhs = byteVal
+		rhs = strLitByteZext
+	} else {
+		lhs = strLitByteZext
+		rhs = byteVal
+	}
+
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%bytecmp.i1.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, lhs, rhs))
+	return cmpReg
+}
+
+// generateByteArith 使用整數 add/sub 進行 byte 值與單字元 StringLiteral 的算術。
+// 適用於 c - 'A' 或 c + '0' 等表達式，避免誤用字串拼接。
+func (g *Generator) generateByteArith(sb *strings.Builder, expr *parser.InfixExpression) string {
+	if sb == nil {
+		return "0"
+	}
+
+	var byteSide, strLitSide parser.Expression
+	byteOnLeft := false
+	if isSingleCharStringLit(expr.Right) {
+		byteSide = expr.Left
+		strLitSide = expr.Right
+		byteOnLeft = true
+	} else {
+		byteSide = expr.Right
+		strLitSide = expr.Left
+	}
+
+	byteVal := g.generateExprWithSB(sb, byteSide)
+	strLitVal := g.generateExprWithSB(sb, strLitSide)
+	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
+	g.tmpIdx++
+	strLitByteZext := fmt.Sprintf("%%bytarith.zext.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
+
+	var lhs, rhs string
+	if byteOnLeft {
+		lhs = byteVal
+		rhs = strLitByteZext
+	} else {
+		lhs = strLitByteZext
+		rhs = byteVal
+	}
+
+	g.tmpIdx++
+	switch expr.Operator {
+	case "+":
+		reg := fmt.Sprintf("%%bytarith.add.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), reg, lhs, rhs))
+		return reg
+	case "-":
+		reg := fmt.Sprintf("%%bytarith.sub.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n", g.indent(), reg, lhs, rhs))
+		return reg
+	}
+	return "0"
 }
 
 func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.StructLiteral) string {
@@ -2879,6 +3201,15 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 					return cmpReg
 				}
 			}
+		}
+	}
+
+	// byte vs single-char-string-literal: 使用整數比較（非 strcmp），回傳 i1
+	if (isSingleCharStringLit(expr.Left) && !g.isStringExpr(expr.Right)) ||
+		(isSingleCharStringLit(expr.Right) && !g.isStringExpr(expr.Left)) {
+		switch expr.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return g.generateByteCmpI1(sb, expr)
 		}
 	}
 
@@ -3014,23 +3345,29 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	leftVal := g.generateExprWithSB(sb, expr.Left)
 
 	// Determine if the left expression is a vec, arr, or str by resolving its name
+	// or, for non-Identifier receivers (DotExpression/IndexExpression/...),
+	// by deriving the LLVM type via exprResultLLVMType and the pointer via generateExprPtr.
 	varName := ""
+	recvType := ""
+	recvPtr := ""
 	if ident, ok := expr.Left.(*parser.Identifier); ok {
 		varName = ident.Value
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[varName]; ok {
+				recvType = t
+			}
+		}
+		recvPtr = g.varAddr(varName)
+	} else {
+		// Non-Identifier receiver: derive type and pointer generically.
+		recvType = g.exprResultLLVMType(expr.Left)
+		recvPtr = g.generateExprPtr(sb, expr.Left)
 	}
 
-	isVec := false
-	isArr := false
-	isStr := false
-	isStrShort := false
-	if varName != "" && g.varTypes != nil {
-		if t, ok := g.varTypes[varName]; ok {
-			isVec = t == "%vec"
-			isArr = t == "%arr"
-			isStr = t == "%str-long"
-			isStrShort = t == "%str-short"
-		}
-	}
+	isVec := recvType == "%vec"
+	isArr := recvType == "%arr"
+	isStr := recvType == "%str-long"
+	isStrShort := recvType == "%str-short"
 
 	if !isVec && !isArr && !isStr && !isStrShort {
 		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec/arr/str): %s\n", g.indent(), leftVal))
@@ -3053,7 +3390,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	var srcLen, srcData, srcCap string
 
 	if isStrShort {
-		strPtr := g.varAddr(varName)
+		strPtr := recvPtr
 		srcLen = g.extractStrShortLen(sb, strPtr)
 		srcData = g.extractStrShortDataPtr(sb, strPtr)
 		srcCap = srcLen
@@ -3079,7 +3416,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		srcLen = fmt.Sprintf("%%slice.srclen.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
-				g.indent(), srcLenGEP, structType, structType, g.varAddr(varName)))
+				g.indent(), srcLenGEP, structType, structType, recvPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
 				g.indent(), srcLen, srcLenGEP))
 		}
@@ -3091,7 +3428,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		srcData = fmt.Sprintf("%%slice.srcdata.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-				g.indent(), srcDataGEP, structType, structType, g.varAddr(varName), dataField))
+				g.indent(), srcDataGEP, structType, structType, recvPtr, dataField))
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
 				g.indent(), srcData, srcDataGEP))
 		}
@@ -3104,7 +3441,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			srcCapGEP := fmt.Sprintf("%%slice.srccap.gep.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
-					g.indent(), srcCapGEP, structType, structType, g.varAddr(varName)))
+					g.indent(), srcCapGEP, structType, structType, recvPtr))
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
 					g.indent(), srcCap, srcCapGEP))
 			}
@@ -3192,11 +3529,13 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	elemSize := int64(8)
 	if isStr || isStrShort {
 		elemSize = 1
-	} else if elemType, ok := g.arrayElemTypes[varName]; ok {
-		switch elemType {
-		case "i8", "i16", "i32", "i64":
-			if s := g.llvmTypeSize(elemType); s > 0 {
-				elemSize = s
+	} else if varName != "" {
+		if elemType, ok := g.arrayElemTypes[varName]; ok {
+			switch elemType {
+			case "i8", "i16", "i32", "i64":
+				if s := g.llvmTypeSize(elemType); s > 0 {
+					elemSize = s
+				}
 			}
 		}
 	}
@@ -3390,6 +3729,19 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			return "float"
 		}
 		return ""
+	}
+
+	// byte vs single-char-string-literal: 使用整數比較（非 strcmp）
+	// 例如 s[i] == '=' 其中 s[i] 是 byte 值，'=' 是單字元 StringLiteral
+	// 也涵蓋 c <= 'Z' 其中 c 是 i64 變數（持有 byte 值）的情況。
+	if (isSingleCharStringLit(expr.Left) && !g.isStringExpr(expr.Right)) ||
+		(isSingleCharStringLit(expr.Right) && !g.isStringExpr(expr.Left)) {
+		switch expr.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return g.generateByteCmp(sb, expr)
+		case "+", "-":
+			return g.generateByteArith(sb, expr)
+		}
 	}
 
 	// 字串比較：使用 strcmp 而非整數比較指令
@@ -3795,8 +4147,49 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 		}
 	case *parser.InfixExpression:
 		if e.Operator == "-" || e.Operator == "+" || e.Operator == "*" {
+			// A single-char StringLiteral paired with a non-string operand is
+			// byte arithmetic (e.g., c - 'A'), not string concatenation.
+			if isSingleCharStringLit(e.Left) && !g.isStringExpr(e.Right) {
+				return false
+			}
+			if isSingleCharStringLit(e.Right) && !g.isStringExpr(e.Left) {
+				return false
+			}
 			return g.isStringExpr(e.Left) || g.isStringExpr(e.Right)
 		}
+	}
+	return false
+}
+
+// isByteValueExpr checks if an expression produces a byte value (i8/i64 from str
+// indexing or a byte-typed variable). Used to dispatch byte vs single-char-string
+// comparisons (e.g. s[i] == '=') to integer icmp instead of strcmp.
+func (g *Generator) isByteValueExpr(expr parser.Expression) bool {
+	switch e := expr.(type) {
+	case *parser.IndexExpression:
+		if ident, ok := e.Left.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok && (t == "%str-long" || t == "%str-short") {
+					return true
+				}
+			}
+		}
+		return false
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[e.Value]; ok && t == "i8" {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// isSingleCharStringLit checks if an expression is a single-character string literal.
+func isSingleCharStringLit(expr parser.Expression) bool {
+	if lit, ok := expr.(*parser.StringLiteral); ok {
+		return len(lit.Value) == 1
 	}
 	return false
 }

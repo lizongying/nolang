@@ -683,6 +683,7 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
     c ?conn = net-dial-to(host, port)
     c: {
         nil -> return
+        err -> return
         ok -> {
             e enc-conn
             e.init(it, key)

@@ -134,6 +134,13 @@ func (mt *MapType) typeNode()              {}
 func (mt *MapType) Pos() lexer.Position    { return posFromToken(mt.Token) }
 func (mt *MapType) EndPos() lexer.Position { return mt.Value.EndPos() }
 func (mt *MapType) String() string {
+	return "[" + mt.Key.String() + "]" + mt.Value.String()
+}
+
+// LLVMName returns the LLVM struct name for this map type, e.g. "hashmap-str-i64".
+// Used by codegen to derive %hashmap-K-V struct names; distinct from String()
+// which returns the spec-mandated [K]V form (ambiguous with [N]T arrays).
+func (mt *MapType) LLVMName() string {
 	return "hashmap-" + mt.Key.String() + "-" + mt.Value.String()
 }
 

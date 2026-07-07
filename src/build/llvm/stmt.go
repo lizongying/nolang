@@ -75,6 +75,11 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 			return g.mapToLLVMType(ft.String())
 		}
 	}
+	// MapType: String() returns [K]V which is ambiguous with [N]T arrays in
+	// string-based dispatch; use LLVMName() to get the hashmap-K-V struct name.
+	if mt, ok := t.(*parser.MapType); ok {
+		return g.mapToLLVMType(mt.LLVMName())
+	}
 	return g.mapToLLVMType(t.String())
 }
 
@@ -123,7 +128,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if r.Name != "" {
 			g.paramNames[r.Name] = true
 			g.funcLocalNames[r.Name] = true
-			typeStr := r.Type.String()
+			// MapType: use LLVMName() to avoid [K]V matching the array branch.
+			var typeStr string
+			if mt, ok := r.Type.(*parser.MapType); ok {
+				typeStr = mt.LLVMName()
+			} else {
+				typeStr = r.Type.String()
+			}
 			g.varTypes[r.Name] = g.mapToLLVMType(typeStr)
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
@@ -536,11 +547,20 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	}
 	// 陣列/切片
-	if _, ok := stmt.Type.(*parser.ArrayType); ok {
+	if at, ok := stmt.Type.(*parser.ArrayType); ok {
+		// Nested array type (e.g. [12][16]i64): use raw LLVM array type [12 x [16 x i64]]
+		if _, isNested := at.Elem.(*parser.ArrayType); isNested {
+			return g.arrayTypeToLLVM(at)
+		}
 		return "%arr"
 	}
 	if _, ok := stmt.Type.(*parser.SliceType); ok {
 		return "%vec"
+	}
+	// 映射表：m [K]V — use LLVMName() because String() returns [K]V which is
+	// indistinguishable from [N]T arrays in string-based dispatch.
+	if mt, ok := stmt.Type.(*parser.MapType); ok {
+		return g.mapToLLVMType(mt.LLVMName())
 	}
 	// 顯式型別註釋（如 n i32 = 0 或 a i8）：優先使用型別而非從值推斷
 	if stmt.Type != nil {
@@ -566,6 +586,18 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		return "%str-long"
 	case *parser.InfixExpression:
+		// 位元組算術（單字元 StringLiteral 配非字串運算元，如 c - 'A'）應推導為整數
+		// 型別，而非 %str-long。需在字串相接檢查之前判斷。
+		if v.Operator == "-" || v.Operator == "+" || v.Operator == "*" {
+			if (isSingleCharStringLit(v.Left) && !g.isStringExpr(v.Right)) ||
+				(isSingleCharStringLit(v.Right) && !g.isStringExpr(v.Left)) {
+				// 落入整數算術推導路徑（intExprLLVMType 回傳 i64）
+				if ft := g.floatLLVMType(v); ft != "" {
+					return ft
+				}
+				return g.intExprLLVMType(v)
+			}
+		}
 		if (v.Operator == "-" || v.Operator == "+") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
 			return "%str-long"
 		}
@@ -579,6 +611,20 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "%vec"
 	case *parser.ArrayLiteral:
 		return "%arr"
+	case *parser.IndexExpression:
+		// s = arr2d[i] — when arr2d has a raw LLVM array type like [12 x [16 x i64]],
+		// the result is a pointer to the element row: [16 x i64]*
+		if ident, ok := v.Left.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "[") {
+					elemType := extractArrayElemType(t)
+					if elemType != "" {
+						return elemType + "*"
+					}
+				}
+			}
+		}
+		return "i64"
 	case *parser.SliceExpression:
 		// Check source type: slicing %str-long/%str-short produces %str-long, otherwise %vec
 		if ident, ok := v.Left.(*parser.Identifier); ok {
@@ -589,6 +635,15 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		return "%vec"
+	case *parser.CastExpression:
+		// `expr as Type`: use the target type's LLVM mapping
+		if v.Type != nil {
+			t := g.mapToLLVMType(v.Type.String())
+			if t != "" {
+				return t
+			}
+		}
+		return "i64"
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
@@ -2016,10 +2071,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// MapType: m [K]V = { k1:v1, k2:v2 } → alloca %hashmap-K-V + init() + put() calls
 	// The alloca itself is emitted by generateFunctionDefinition's collection phase
-	// (collectVarDeclsFromStmt → varLLVMType → mapToLLVMType("map[K]V") → "%hashmap-K-V").
+	// (collectVarDeclsFromStmt → varLLVMType → mapToLLVMType(mt.LLVMName()) → "%hashmap-K-V").
 	// Here we only emit the init() call and put() calls for each MapLiteral pair.
 	if mt, ok := stmt.Type.(*parser.MapType); ok {
-		llvmType := g.mapToLLVMType(mt.String()) // e.g. %hashmap-str-i64
+		llvmType := g.mapToLLVMType(mt.LLVMName()) // e.g. %hashmap-str-i64
 		g.varTypes[name] = llvmType
 		g.funcLocalNames[name] = true
 		structName := strings.TrimPrefix(llvmType, "%")
@@ -2147,6 +2202,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 對單態化後的小整數型別（i8/i16/i32），若值來自 i64 上下文
 	// （如陣列索引 zext 或字面常量運算），需要 trunc 到變數型別
 	// 注意：若上面的型別強制轉換已經處理過，則跳過，避免重複 trunc
+	// 字串字面量 → byte (i8)：從 str-short/str-long 資料欄位載入第一個 byte
+	if !alreadyCoerced && llvmType == "i8" && strings.HasPrefix(val, "%str-longlit.") {
+		if newVal, ok := g.coerceStrLitToByte(sb, val, stmt.Value); ok {
+			val = newVal
+			alreadyCoerced = true
+		}
+	}
 	if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && strings.HasPrefix(val, "%") {
 		valType := g.intExprLLVMType(stmt.Value)
 		if valType == "i64" {

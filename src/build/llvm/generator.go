@@ -643,6 +643,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 			} else if llvmType == "%arr" {
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
+			} else if strings.HasPrefix(llvmType, "[") {
+				// Raw LLVM array type (e.g. [12 x [16 x i64]] for 2D array constants)
+				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
+				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
 				if v, ok := intConstValue(ls.Value); ok {
 					initVal := fmt.Sprintf("%d", v)

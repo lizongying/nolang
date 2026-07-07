@@ -315,53 +315,47 @@ http-server-conn.parse = () (ok bool) {
     }
     conn-val = .get-header('Connection')
     conn-val: {
-        nil ->
-        ok -> {
-            cl = conn-val.to-lower()
-            if cl == 'close' {
-                .keep-alive = false
-            }
-            if cl == 'keep-alive' {
-                .keep-alive = true
-            }
+        nil -> err -> ok
+        cl = conn-val.to-lower()
+        if cl == 'close' {
+            .keep-alive = false
         }
-        ->
-    }
-
-    // 讀取請求體（如有 Content-Length）
-    .body = ''
-    cl-str = .get-header('Content-Length')
-    cl-str: {
-        nil ->
-        ok -> {
-            content-len = 0
-            j = 0
-            for j < cl-str.len {
-                ch = cl-str[j]
-                if ch >= 48 && ch <= 57 {
-                    content-len = content-len * 10 + ch - 48
-                }
-                j = j + 1
-            }
-            if content-len > 0 && content-len <= HTTP-SRV-MAX-BODY {
-                // 標頭後已接收的資料
-                available = .recv-buf-len - body-start
-                // 如果不足，繼續接收
-                for available < content-len {
-                    n = .recv-more()
-                    if n <= 0 {
-                        return
-                    }
-                    available = .recv-buf-len - body-start
-                }
-                .body = .recv-buf.slice(body-start, body-start + content-len)
-            }
+        if cl == 'keep-alive' {
+            .keep-alive = true
         }
-        ->
     }
-
-    ok = true
 }
+
+// 讀取請求體（如有 Content-Length）
+.body = ''
+cl-str = .get-header('Content-Length')
+cl-str: {
+    nil -> err -> ok
+    content-len = 0
+    j = 0
+    for j < cl-str.len {
+        ch = cl-str[j]
+        if ch >= 48 && ch <= 57 {
+            content-len = content-len * 10 + ch - 48
+        }
+        j = j + 1
+    }
+    if content-len > 0 && content-len <= HTTP-SRV-MAX-BODY {
+        // 標頭後已接收的資料
+        available = .recv-buf-len - body-start
+        // 如果不足，繼續接收
+        for available < content-len {
+            n = .recv-more()
+            if n <= 0 {
+                return
+            }
+            available = .recv-buf-len - body-start
+        }
+        .body = .recv-buf.slice(body-start, body-start + content-len)
+    }
+}
+
+ok = true
 
 // get-header: 取得指定標頭值
 // name str: 標頭名（如 'Content-Type'）
@@ -380,6 +374,7 @@ http-server-conn.get-header = (name str) (val ?str) {
             for j < name.len {
                 c1 = .header-names[i][j]
                 c2 = name[j]
+
                 // 大小寫不敏感比較
                 if c1 >= 65 && c1 <= 90 {
                     c1 = c1 + 32
@@ -394,6 +389,7 @@ http-server-conn.get-header = (name str) (val ?str) {
                 j = j + 1
             }
         }
+
         if matched == 1 {
             vlen = .header-values[i].len
             val = .header-values[i].slice(0, vlen)
@@ -679,44 +675,44 @@ http-listen-on = (host str, port i64) (s ?http-server) {
 // 返回 val ?str: ok=Cookie 值, nil=未找到
 http-server-conn.get-cookie = (name str) (val ?str) {
     val = nil
+
     // 取得 Cookie 標頭
     cookie-header ?str = .get-header('Cookie')
     cookie-header: {
-        nil -> return
-        ok -> {
-            // 解析 Cookie 標頭
-            hdr = it
-            pos = 0
-            ! {
-                // 跳過空格
-                for pos < hdr.len && hdr[pos] == 32 {
-                    pos = pos + 1
-                }
-                if pos >= hdr.len {
-                    *
-                }
-                // 找下一個分號
-                next-semi = hdr.index-from(';', pos)
-                pair-end = next-semi
-                if pair-end < 0 {
-                    pair-end = hdr.len
-                }
-                pair = hdr.slice(pos, pair-end)
-                pair = pair.trim()
-                eq-pos = pair.index('=')
-                if eq-pos >= 0 {
-                    cname = pair.slice(0, eq-pos)
-                    cvalue = pair.slice(eq-pos + 1, pair.len)
-                    if cname == name {
-                        val = cvalue
-                        return
-                    }
-                }
-                if next-semi < 0 {
-                    *
-                }
-                pos = next-semi + 1
+        nil -> err -> ok
+
+        // 解析 Cookie 標頭
+        hdr = it
+        pos = 0
+        ! {
+            // 跳過空格
+            for pos < hdr.len && hdr[pos] == 32 {
+                pos = pos + 1
             }
+            if pos >= hdr.len {
+                *
+            }
+            // 找下一個分號
+            next-semi = hdr.index-from(';', pos)
+            pair-end = next-semi
+            if pair-end < 0 {
+                pair-end = hdr.len
+            }
+            pair = hdr.slice(pos, pair-end)
+            pair = pair.trim()
+            eq-pos = pair.index('=')
+            if eq-pos >= 0 {
+                cname = pair.slice(0, eq-pos)
+                cvalue = pair.slice(eq-pos + 1, pair.len)
+                if cname == name {
+                    val = cvalue
+                    return
+                }
+            }
+            if next-semi < 0 {
+                *
+            }
+            pos = next-semi + 1
         }
     }
 }
@@ -729,18 +725,17 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
     val = nil
     signed ?str = .get-cookie(name)
     signed: {
-        nil -> return
-        ok -> {
-            // 驗證簽名
-            signed-val = it
-            ok = false
-            raw = ''
-            ok, raw = cookie-verify(name, signed-val, key)
-            if ok {
-                val = raw
-            } else {
-                val = nil
-            }
+        nil -> err -> ok
+
+        // 驗證簽名
+        signed-val = it
+        ok = false
+        raw = ''
+        ok, raw = cookie-verify(name, signed-val, key)
+        if ok {
+            val = raw
+        } else {
+            val = nil
         }
     }
 }
@@ -753,60 +748,63 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
     ok = false
     auth-header ?str = .get-header('Authorization')
     auth-header: {
-        nil -> return
-        ok -> {
-            // 檢查 'Basic ' 前綴
-            hdr = it
-            prefix = 'Basic '
-            if hdr.starts-with(prefix) == false {
-                return
+        nil -> err -> ok
+
+        // 檢查 'Basic ' 前綴
+        hdr = it
+        prefix = 'Basic '
+        if hdr.starts-with(prefix) == false {
+            return
+        }
+
+        // Base64 解碼
+        b64 = hdr.slice(prefix.len, hdr.len)
+        raw []byte
+        n = b64.len
+        raw-n = 0
+        decoded = false
+        raw-n, decoded = decode(b64, n, BASE64-STD, raw)
+        if decoded == false {
+            return
+        }
+
+        // 尋找冒號分隔符
+        colon = -1
+        i = 0
+        for i < raw-n {
+            if raw[i] == 58 {
+                colon = i
+                break
             }
-            // Base64 解碼
-            b64 = hdr.slice(prefix.len, hdr.len)
-            raw []byte
-            n = b64.len
-            raw-n = 0
-            decoded = false
-            raw-n, decoded = decode(b64, n, BASE64-STD, raw)
-            if decoded == false {
-                return
-            }
-            // 尋找冒號分隔符
-            colon = -1
-            i = 0
-            for i < raw-n {
-                if raw[i] == 58 {
-                    colon = i
-                    break
-                }
-                i = i + 1
-            }
-            if colon < 0 {
-                return
-            }
-            // 提取用戶名和密碼
-            user-bytes []byte
-            j = 0
-            for j < colon {
-                user-bytes[j] = raw[j]
-                j = j + 1
-            }
-            user = user-bytes.to-str()
-            pass-bytes []byte
-            j = colon + 1
-            k = 0
-            for j < raw-n {
-                pass-bytes[k] = raw[j]
-                j = j + 1
-                k = k + 1
-            }
-            pass = pass-bytes.to-str()
-            // 比較（常數時間比較）
-            user-ok = secure-compare(user, expected-user)
-            pass-ok = secure-compare(pass, expected-pass)
-            if user-ok && pass-ok {
-                ok = true
-            }
+            i = i + 1
+        }
+        if colon < 0 {
+            return
+        }
+
+        // 提取用戶名和密碼
+        user-bytes []byte
+        j = 0
+        for j < colon {
+            user-bytes[j] = raw[j]
+            j = j + 1
+        }
+        user = user-bytes.to-str()
+        pass-bytes []byte
+        j = colon + 1
+        k = 0
+        for j < raw-n {
+            pass-bytes[k] = raw[j]
+            j = j + 1
+            k = k + 1
+        }
+        pass = pass-bytes.to-str()
+
+        // 比較（常數時間比較）
+        user-ok = secure-compare(user, expected-user)
+        pass-ok = secure-compare(pass, expected-pass)
+        if user-ok && pass-ok {
+            ok = true
         }
     }
 }

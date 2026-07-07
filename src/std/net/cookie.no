@@ -551,6 +551,7 @@ cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str
     signed-val ?str = .get(name, domain, path)
     signed-val: {
         nil -> return
+        err -> return
         ok -> {
             verified-ok = false
             verified-val = ''
