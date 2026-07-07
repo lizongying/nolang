@@ -5,7 +5,7 @@
 //
 // 用法：
 //   key  = '(16 bytes key)'
-//   out  = aes-128-dec(cipher, 16, key)
+//   out  = aes-128-dec(cipher, key)
 
 // ─── S-box（前 16 行 × 16 列 = 256 位元組）───
 SBOX [256]byte = [
@@ -274,7 +274,7 @@ aes-key-expand = (key []byte) (ek [176]byte) {
 // ─── 單區塊解密 ──────────────────────────────
 
 // aes-128-dec: 解密一個 16-byte 區塊
-aes-128-dec = (in []byte, n i64, key []byte) (out []byte) {
+aes-128-dec = (in []byte, key []byte) (out []byte) {
     ek [16 + 160]byte
     ek = aes-key-expand(key)
     i = 0

@@ -1,7 +1,7 @@
 // ws — WebSocket 客戶端與服務端
 //
 // 支援 RFC 6455 WebSocket 協定，提供服務端監聽與客戶端連線。
-// 底層使用 HTTP/1.1 升級交握，支援明文 WS（WSS 暫不支援）。
+// 底層使用 HTTP/1.1 升級交握，支援明文 WS 與加密 WSS（TLS 1.2）。
 //
 // 用法（服務端）：
 //   srv = ws-listen-on('0.0.0.0', 8080)   // 返回 ?ws-server
@@ -24,7 +24,7 @@
 //           }
 //   }
 //
-// 用法（客戶端）：
+// 用法（客戶端 WS）：
 //   c = ws-connect('ws://127.0.0.1:8080/path')   // 返回 ?ws-client
 //   c: {
 //       nil -> println('connect failed')
@@ -38,9 +38,25 @@
 //           }
 //           c.close()
 //   }
+//
+// 用法（客戶端 WSS）：
+//   c = ws-connect('wss://echo.websocket.org/path')   // 返回 ?ws-client
+//   c: {
+//       nil -> println('connect failed')
+//       ->
+//           c.send-text('hello over TLS')
+//           msg = c.recv()
+//           msg: {
+//               nil -> println('closed')
+//               err -> println('error')
+//               -> println(msg.data)
+//           }
+//           c.close()
+//   }
 
 # std/hash/sha1
 # std/encoding/base64
+# std/net/tls
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -110,7 +126,8 @@ ws-server-conn {
 
 // ws-client: WebSocket 客戶端連線
 // fd i64: TCP socket 檔案描述符（-1=未連接）
-// use-tls bool: 是否使用 TLS
+// use-tls bool: 是否使用 TLS（WSS）
+// tls-c tls-conn: TLS 連線（use-tls=true 時使用）
 // connected bool: 連線狀態
 // host str: 伺服器主機名
 // port i64: 埠號
@@ -121,6 +138,7 @@ ws-server-conn {
 ws-client {
     fd i64
     use-tls bool
+    tls-c tls-conn
     connected bool
     host str
     port i64
@@ -821,10 +839,23 @@ ws-server-conn.recv = () (msg ?ws-message) {
         seed = ws-next-rand() + .send-counter
         mask-key = ws-gen-mask-key(seed)
         frame = ws-build-frame(opcode, data, true, mask-key)
-        written = net-send(.fd, frame, frame.len)
-        if written < 0 {
-            .connected = false
-            return
+        if .use-tls {
+            w = .tls-c.send(frame)
+            w: {
+                nil ->
+                    .connected = false
+                    return
+                err ->
+                    .connected = false
+                    return
+                ->
+            }
+        } else {
+            written = net-send(.fd, frame, frame.len)
+            if written < 0 {
+                .connected = false
+                return
+            }
         }
 
         ok = true
@@ -843,6 +874,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
     // send-ping: 發送 ping
     ws-client.send-ping = (data str) (ok bool) {
         ok = .send(WS-OP-PING, data)
+    }
+
+    // send-pong: 發送 pong
+    ws-client.send-pong = (data str) (ok bool) {
+        ok = .send(WS-OP-PONG, data)
     }
 
     // send-close: 發送 close 訊框
@@ -887,7 +923,20 @@ ws-server-conn.recv = () (msg ?ws-message) {
             // 確保 recv-buf 至少有 2 bytes
             if .recv-buf-len < 2 {
                 tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                n = 0
+                if .use-tls {
+                    rn = .tls-c.recv(tmp, WS-RECV-SIZE)
+                    rn: {
+                        ok -> n = it
+                        -> {
+                            .connected = false
+                            msg = nil
+                            return
+                        }
+                    }
+                } else {
+                    n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                }
                 if n <= 0 {
                     .connected = false
                     msg = nil
@@ -920,7 +969,20 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 if .recv-buf-len < header-total {
                     need = header-total - .recv-buf-len
                     tmp str = ' '.repeat(WS-RECV-SIZE)
-                    n = net-recv(.fd, tmp, need)
+                    n = 0
+                    if .use-tls {
+                        rn = .tls-c.recv(tmp, need)
+                        rn: {
+                            ok -> n = it
+                            -> {
+                                .connected = false
+                                msg = err('incomplete frame')
+                                return
+                            }
+                        }
+                    } else {
+                        n = net-recv(.fd, tmp, need)
+                    }
                     if n <= 0 {
                         .connected = false
                         msg = err('incomplete frame')
@@ -944,7 +1006,20 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 if .recv-buf-len < header-total {
                     need = header-total - .recv-buf-len
                     tmp str = ' '.repeat(WS-RECV-SIZE)
-                    n = net-recv(.fd, tmp, need)
+                    n = 0
+                    if .use-tls {
+                        rn = .tls-c.recv(tmp, need)
+                        rn: {
+                            ok -> n = it
+                            -> {
+                                .connected = false
+                                msg = err('incomplete frame')
+                                return
+                            }
+                        }
+                    } else {
+                        n = net-recv(.fd, tmp, need)
+                    }
                     if n <= 0 {
                         .connected = false
                         msg = err('incomplete frame')
@@ -967,7 +1042,20 @@ ws-server-conn.recv = () (msg ?ws-message) {
                     if need <= 0 {
                         *
                     }
-                    n = net-recv(.fd, tmp, need)
+                    n = 0
+                    if .use-tls {
+                        rn = .tls-c.recv(tmp, need)
+                        rn: {
+                            ok -> n = it
+                            -> {
+                                .connected = false
+                                msg = err('incomplete frame')
+                                return
+                            }
+                        }
+                    } else {
+                        n = net-recv(.fd, tmp, need)
+                    }
                     if n <= 0 {
                         .connected = false
                         msg = err('incomplete frame')
@@ -1064,9 +1152,13 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
     // close: 關閉連線
     ws-client.close = () {
-        if .fd >= 0 {
-            close(.fd)
-            .fd = -1
+        if .use-tls {
+            .tls-c.close()
+        } else {
+            if .fd >= 0 {
+                close(.fd)
+                .fd = -1
+            }
         }
         .connected = false
     }
@@ -1090,7 +1182,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
     }
 
     // ws-connect: 連接到 WebSocket 端點
-    // url str: WS 端點 URL（ws://host:port/path）
+    // url str: WS/WSS 端點 URL（ws://host:port/path 或 wss://host:port/path）
     // 返回 c ?ws-client:
     //   ok = 已連接的客戶端
     //   nil = 連線失敗
@@ -1099,6 +1191,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
         c = nil
 
         // 解析 URL
+        use-tls = false
         scheme = 'ws://'
         rest = ''
         host = ''
@@ -1108,11 +1201,12 @@ ws-server-conn.recv = () (msg ?ws-message) {
         port-str = ''
 
         if url.starts-with('wss://') {
-            c = err('WSS not supported')
-            return
+            use-tls = true
+            scheme = 'wss://'
+            port = WS-DEFAULT-TLS-PORT
         }
-        if url.starts-with('ws://') == false {
-            c = err('invalid URL: must start with ws://')
+        if use-tls == false && url.starts-with('ws://') == false {
+            c = err('invalid URL: must start with ws:// or wss://')
             return
         }
         rest = url.slice(scheme.len, url.len)
@@ -1150,11 +1244,24 @@ ws-server-conn.recv = () (msg ?ws-message) {
             return
         }
 
-        // 建立 TCP 連線
-        fd = net-dial(host, port)
-        if fd < 0 {
-            c = err('TCP connection failed')
-            return
+        // 建立連線（TLS 或 TCP）
+        fd i64 = -1
+        tc tls-conn
+        if use-tls {
+            tc.init()
+            ok = tc.connect(host, port)
+            if ok == false {
+                tc.close()
+                c = err('TLS connection failed')
+                return
+            }
+            fd = tc.fd
+        } else {
+            fd = net-dial(host, port)
+            if fd < 0 {
+                c = err('TCP connection failed')
+                return
+            }
         }
 
         // 產生 Sec-WebSocket-Key
@@ -1175,11 +1282,26 @@ ws-server-conn.recv = () (msg ?ws-message) {
         req = req - crlf
 
         // 發送請求
-        written = net-send(fd, req, req.len)
-        if written < 0 {
-            close(fd)
-            c = err('send failed')
-            return
+        if use-tls {
+            w = tc.send(req)
+            w: {
+                nil ->
+                    tc.close()
+                    c = err('send failed')
+                    return
+                err ->
+                    tc.close()
+                    c = err('send failed')
+                    return
+                ->
+            }
+        } else {
+            written = net-send(fd, req, req.len)
+            if written < 0 {
+                close(fd)
+                c = err('send failed')
+                return
+            }
         }
 
         // 接收回應標頭（直到 \r\n\r\n）
@@ -1192,13 +1314,45 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
         ! {
             if total + WS-RECV-SIZE > WS-BUF-SIZE {
-                close(fd)
+                if use-tls {
+                    tc.close()
+                } else {
+                    close(fd)
+                }
                 c = err('response headers too large')
                 return
             }
-            n = net-recv(fd, tmp, WS-RECV-SIZE)
+            n i64 = 0
+            if use-tls {
+                rn = tc.recv(tmp, WS-RECV-SIZE)
+                rn: {
+                    nil ->
+                        if use-tls {
+                            tc.close()
+                        } else {
+                            close(fd)
+                        }
+                        c = err('connection closed during handshake')
+                        return
+                    err ->
+                        if use-tls {
+                            tc.close()
+                        } else {
+                            close(fd)
+                        }
+                        c = err('connection closed during handshake')
+                        return
+                    -> n = it
+                }
+            } else {
+                n = net-recv(fd, tmp, WS-RECV-SIZE)
+            }
             if n <= 0 {
-                close(fd)
+                if use-tls {
+                    tc.close()
+                } else {
+                    close(fd)
+                }
                 c = err('connection closed during handshake')
                 return
             }
@@ -1225,7 +1379,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
         sp1 = status-line.index(' ')
         if sp1 < 0 {
-            close(fd)
+            if use-tls {
+                tc.close()
+            } else {
+                close(fd)
+            }
             c = err('invalid status line')
             return
         }
@@ -1241,7 +1399,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
         i < code-str.len: {
             ch = code-str[i]
             if ch < 48 || ch > 57 {
-                close(fd)
+                if use-tls {
+                    tc.close()
+                } else {
+                    close(fd)
+                }
                 c = err('invalid status code')
                 return
             }
@@ -1250,7 +1412,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
         }
 
         if code != 101 {
-            close(fd)
+            if use-tls {
+                tc.close()
+            } else {
+                close(fd)
+            }
             code-s = code.to-str()
             c = err('server returned status ' - code-s)
             return
@@ -1264,7 +1430,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
             accept-pos = head.index(accept-marker)
         }
         if accept-pos < 0 {
-            close(fd)
+            if use-tls {
+                tc.close()
+            } else {
+                close(fd)
+            }
             c = err('missing Sec-WebSocket-Accept')
             return
         }
@@ -1281,7 +1451,11 @@ ws-server-conn.recv = () (msg ?ws-message) {
         server-accept = head.slice(val-start, val-end)
         expected-accept = ws-compute-accept(client-key)
         if server-accept != expected-accept {
-            close(fd)
+            if use-tls {
+                tc.close()
+            } else {
+                close(fd)
+            }
             c = err('invalid Sec-WebSocket-Accept')
             return
         }
@@ -1306,7 +1480,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
         cli = ws-client{
             fd: fd
-            use-tls: false
+            use-tls: use-tls
+            tls-c: tc
             connected: true
             host: host
             port: port

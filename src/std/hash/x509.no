@@ -8,13 +8,12 @@
 //
 // 用法：
 //   cert = '(DER bytes)'
-//   n = len(cert)
 //
 //   // 計算憑證指紋
-//   h0, h1, h2, h3, h4, h5, h6, h7 = x509-fingerprint(cert, n)
+//   h0, h1, h2, h3, h4, h5, h6, h7 = x509-fingerprint(cert)
 //
 //   // 提取 RSA 公鑰指數
-//   e = x509-rsa-e(cert, n)
+//   e = x509-rsa-e(cert)
 
 // ─── DER TLV 底層解析 ─────────────────────────────────
 
@@ -48,10 +47,10 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
 }
 
 // der-skip: 跳過一個 DER TLV 元素
-// data: DER 編碼資料, n: 資料總長度
+// data: DER 編碼資料
 // pos: 目前位置（指向標籤位元組）
 // next: 輸出下一個元素的位置
-der-skip = (data []byte, n i64, pos i64) (next i64) {
+der-skip = (data []byte, pos i64) (next i64) {
     // 跳過標籤（1 位元組）
     p = pos + 1
     l, adv = der-len(data, p)
@@ -64,10 +63,10 @@ der-skip = (data []byte, n i64, pos i64) (next i64) {
 // ─── X.509 結構導航 ─────────────────────────────────
 
 // x509-tbs-range: 找出 TBSCertificate 的位元組範圍
-// data: DER 編碼憑證, n: 總長度
+// data: DER 編碼憑證
 // start: 輸出 TBS 起始位置（含 SEQUENCE 標籤）
 // end: 輸出 TBS 結束位置（不含，即下個元素的起始）
-x509-tbs-range = (data []byte, n i64) (start i64, end i64) {
+x509-tbs-range = (data []byte) (start i64, end i64) {
     // 驗證外層 SEQUENCE
     tag = data[0] & 255
     if tag != 48 {
@@ -85,14 +84,14 @@ x509-tbs-range = (data []byte, n i64) (start i64, end i64) {
         end = 0
         return
     }
-    end = der-skip(data, n, start)
+    end = der-skip(data, start)
 }
 
 // x509-serial: 提取憑證序號（若可放入 i64）
-// data: DER 編碼憑證, n: 總長度
+// data: DER 編碼憑證
 // serial: 輸出序號（0 表示無法提取）
-x509-serial = (data []byte, n i64, serial i64) {
-    tbs-start, tbs-end = x509-tbs-range(data, n)
+x509-serial = (data []byte, serial i64) {
+    tbs-start, tbs-end = x509-tbs-range(data)
     if tbs-start == 0 {
         serial = 0
         return
@@ -108,7 +107,7 @@ x509-serial = (data []byte, n i64, serial i64) {
     t = der-tag(data, p)
     if t == 160 {
         // 跳過 [0] EXPLICIT 元素
-        p = der-skip(data, n, p)
+        p = der-skip(data, p)
     }
     t = der-tag(data, p)
     if t != 2 {
@@ -133,10 +132,10 @@ x509-serial = (data []byte, n i64, serial i64) {
 }
 
 // x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
-// data: DER 編碼憑證, n: 總長度
+// data: DER 編碼憑證
 // e: 輸出指數值（0 表示非 RSA 或解析失敗）
-x509-rsa-e = (data []byte, n i64) (e i64) {
-    tbs-start, tbs-end = x509-tbs-range(data, n)
+x509-rsa-e = (data []byte) (e i64) {
+    tbs-start, tbs-end = x509-tbs-range(data)
     if tbs-start == 0 {
         e = 0
         return
@@ -150,23 +149,23 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
     // 步驟 1：可選——跳過 [0] EXPLICIT（版本，tag 160，僅 v2/v3）
     t = der-tag(data, p)
     if t == 160 {
-        p = der-skip(data, n, p)
+        p = der-skip(data, p)
     }
 
     // 步驟 2：跳過 INTEGER（serialNumber，tag 2）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 步驟 3：跳過 SEQUENCE（signature algorithm identifier，tag 48）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 步驟 4：跳過 SEQUENCE（issuer，tag 48）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 步驟 5：跳過 SEQUENCE（validity，tag 48）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 步驟 6：跳過 SEQUENCE（subject，tag 48）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 現在 p 指向 SubjectPublicKeyInfo（SEQUENCE，tag 48）
 
@@ -176,7 +175,7 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
     p = p + adv
 
     // 步驟 8：跳過 SEQUENCE（AlgorithmIdentifier，tag 48）
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 步驟 9：讀取 BIT STRING（subjectPublicKey，tag 3）
     t = der-tag(data, p)
@@ -195,7 +194,7 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
         e = 0
         return
     }
-    rsa-start = der-skip(data, n, bit-pos)
+    rsa-start = der-skip(data, bit-pos)
 
     // rsa-start 指向 RSAPublicKey 內容
 
@@ -204,7 +203,7 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
     //   INTEGER (exponent e)
 
     // 步驟 11：跳過 modulus INTEGER（tag 2）
-    rsa-start = der-skip(data, n, rsa-start)
+    rsa-start = der-skip(data, rsa-start)
 
     // 步驟 12：讀取 exponent INTEGER（tag 2）
     t = der-tag(data, rsa-start)
@@ -227,12 +226,10 @@ x509-rsa-e = (data []byte, n i64) (e i64) {
 }
 
 // x509-rsa-n: 提取 RSA 公鑰模數（big-endian 位元組陣列）
-// data []byte: DER 編碼憑證, n i64: 總長度
+// data []byte: DER 編碼憑證
 // 返回 out []byte: 模數位元組（big-endian，不含前導 0x00）
-// 返回 out-n i64: 模數位元組長度（0 表示非 RSA 或解析失敗）
-x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
-    out-n = 0
-    tbs-start, tbs-end = x509-tbs-range(data, n)
+x509-rsa-n = (data []byte) (out []byte) {
+    tbs-start, tbs-end = x509-tbs-range(data)
     if tbs-start == 0 {
         return
     }
@@ -245,13 +242,13 @@ x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
     // 跳過版本、序號、簽章演算法、簽發者、有效期、主體
     t = der-tag(data, p)
     if t == 160 {
-        p = der-skip(data, n, p)
+        p = der-skip(data, p)
     }
-    p = der-skip(data, n, p)
-    p = der-skip(data, n, p)
-    p = der-skip(data, n, p)
-    p = der-skip(data, n, p)
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
+    p = der-skip(data, p)
+    p = der-skip(data, p)
+    p = der-skip(data, p)
+    p = der-skip(data, p)
 
     // 進入 SPKI
     p = p + 1
@@ -259,7 +256,7 @@ x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
     p = p + adv
 
     // 跳過 AlgorithmIdentifier
-    p = der-skip(data, n, p)
+    p = der-skip(data, p)
 
     // 讀取 BIT STRING
     t = der-tag(data, p)
@@ -274,7 +271,7 @@ x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
     if t != 48 {
         return
     }
-    rsa-start = der-skip(data, n, bit-pos)
+    rsa-start = der-skip(data, bit-pos)
 
     // rsa-start 指向 RSAPublicKey 內容
     // 第一個 INTEGER 是模數
@@ -303,20 +300,19 @@ x509-rsa-n = (data []byte, n i64) (out []byte, out-n i64) {
         out[i] = data[actual-start + i]
         i = i + 1
     }
-    out-n = actual-len
 }
 
 // ─── SHA-256 憑證指紋 ─────────────────────────────────
 
 // x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋
 // 即 TBSCertificate 的 SHA-256 哈希值。
-// data: DER 編碼憑證, n: 總長度
+// data: DER 編碼憑證
 // h0..h7: 輸入必須為 SHA-256 初始值，輸出為 256-bit 指紋
 //
 // 本函數處理完整的 SHA-256 填充和位元組→字轉換。
 
-x509-fingerprint = (data []byte, n i64) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
-    tbs-start, tbs-end = x509-tbs-range(data, n)
+x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
+    tbs-start, tbs-end = x509-tbs-range(data)
     if tbs-start == 0 {
         return
     }

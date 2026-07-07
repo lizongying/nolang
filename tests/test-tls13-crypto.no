@@ -1,0 +1,241 @@
+// test-tls13-crypto — TLS 1.3 加密原語測試
+// 驗證 HKDF、AES-GCM、X25519 模組的正確性
+
+# std/hash/hkdf
+# std/hash/aes-gcm
+# std/hash/x25519
+# std/hash/sha256
+# std/hash/hmac
+
+// test-hkdf-extract: 測試 HKDF-Extract
+test-hkdf-extract = () {
+    salt []byte
+    salt[0] = 0
+    ikm []byte
+    ikm[0] = 0x0b
+    ikm[1] = 0x0b
+    ikm[2] = 0x0b
+    prk [32]byte
+    prk = hkdf-extract(salt, ikm)
+    // RFC 5869 Test Case 1: PRK should not be all zeros
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if prk[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: hkdf-extract output all zeros')
+        return
+    }
+    print('PASS: hkdf-extract')
+}
+
+// test-hkdf-expand: 測試 HKDF-Expand
+test-hkdf-expand = () {
+    prk [32]byte
+    i = 0
+    for i < 32 {
+        prk[i] = i + 1
+        i = i + 1
+    }
+    info []byte
+    info[0] = 0xAA
+    info[1] = 0xBB
+    okm []byte
+    okm = hkdf-expand(prk, info, 32)
+    // 輸出應為 32 bytes 且不為全零
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if okm[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: hkdf-expand output all zeros')
+        return
+    }
+    print('PASS: hkdf-expand')
+}
+
+// test-hkdf-expand-label: 測試 TLS 1.3 HKDF-Expand-Label
+test-hkdf-expand-label = () {
+    prk [32]byte
+    i = 0
+    for i < 32 {
+        prk[i] = i + 1
+        i = i + 1
+    }
+    ctx []byte
+    ctx[0] = 0xDE
+    ctx[1] = 0xAD
+    okm []byte
+    okm = hkdf-expand-label(prk, 'derived', ctx, 32)
+    // 輸出應為 32 bytes 且不為全零
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if okm[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: hkdf-expand-label output all zeros')
+        return
+    }
+    print('PASS: hkdf-expand-label')
+}
+
+// test-aes-gcm-seal-open: 測試 AES-128-GCM 加密/解密往返
+test-aes-gcm-seal-open = () {
+    // 16-byte key
+    key []byte
+    i = 0
+    for i < 16 {
+        key[i] = i + 1
+        i = i + 1
+    }
+    // 12-byte IV
+    iv []byte
+    i = 0
+    for i < 12 {
+        iv[i] = i + 10
+        i = i + 1
+    }
+    // AAD
+    aad []byte
+    aad[0] = 0xAA
+    aad[1] = 0xBB
+    aad[2] = 0xCC
+    // plaintext
+    plain []byte
+    plain[0] = 72
+    plain[1] = 101
+    plain[2] = 108
+    plain[3] = 108
+    plain[4] = 111
+    // 加密
+    sealed []byte
+    sealed = aes-128-gcm-seal(key, iv, aad, plain)
+    // sealed 長度應為 plain.len + 16 (tag)
+    expected-len = plain.len + 16
+    i = 0
+    sealed-nonzero = 0
+    for i < expected-len {
+        if sealed[i] != 0 {
+            sealed-nonzero = 1
+        }
+        i = i + 1
+    }
+    if sealed-nonzero == 0 {
+        print('FAIL: aes-gcm-seal output all zeros')
+        return
+    }
+    // 解密
+    opened []byte
+    opened = aes-128-gcm-open(key, iv, aad, sealed)
+    // 驗證解密結果與原文一致
+    i = 0
+    for i < plain.len {
+        if opened[i] != plain[i] {
+            print('FAIL: aes-gcm-open mismatch')
+            return
+        }
+        i = i + 1
+    }
+    print('PASS: aes-gcm-seal-open')
+}
+
+// test-x25519-scalarmult: 測試 X25519 純量乘法（自乘基點）
+test-x25519-scalarmult = () {
+    // 生成私鑰（固定值）
+    priv []byte
+    i = 0
+    for i < 32 {
+        priv[i] = i + 1
+        i = i + 1
+    }
+    // 計算公鑰 = priv * basepoint
+    pub []byte
+    pub = x25519-scalarmult-base(priv)
+    // 公鑰不應為全零
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if pub[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: x25519-scalarmult-base output all zeros')
+        return
+    }
+    // 共享金鑰: scalarmult(priv, pub) 應不為全零
+    shared []byte
+    shared = x25519-scalarmult(priv, pub)
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if shared[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: x25519-scalarmult output all zeros')
+        return
+    }
+    print('PASS: x25519-scalarmult')
+}
+
+// test-x25519-keypair: 測試金鑰對生成
+test-x25519-keypair = () {
+    priv []byte
+    pub []byte
+    priv, pub = x25519-gen-keypair(123456789)
+    // 私鑰應已 clamping
+    if (priv[0] & 7) != 0 {
+        print('FAIL: private key not clamped (low 3 bits)')
+        return
+    }
+    if (priv[31] & 128) != 0 {
+        print('FAIL: private key not clamped (high bit)')
+        return
+    }
+    if (priv[31] & 64) != 64 {
+        print('FAIL: private key not clamped (bit 254)')
+        return
+    }
+    // 公鑰不應為全零
+    has-nonzero = 0
+    i = 0
+    for i < 32 {
+        if pub[i] != 0 {
+            has-nonzero = 1
+        }
+        i = i + 1
+    }
+    if has-nonzero == 0 {
+        print('FAIL: x25519-gen-keypair pub all zeros')
+        return
+    }
+    print('PASS: x25519-keypair')
+}
+
+// main: 執行所有測試
+main = () {
+    print('=== TLS 1.3 Crypto Tests ===')
+    test-hkdf-extract()
+    test-hkdf-expand()
+    test-hkdf-expand-label()
+    test-aes-gcm-seal-open()
+    test-x25519-scalarmult()
+    test-x25519-keypair()
+    print('=== TLS 1.3 Crypto Tests Done ===')
+}

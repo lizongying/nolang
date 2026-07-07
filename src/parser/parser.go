@@ -974,6 +974,15 @@ func (p *Parser) parseStatement() Statement {
 					return stmt
 				}
 			}
+		} else if p.peekToken.Type == lexer.MAP {
+			// m map[K]V = { ... } — explicit map type annotation
+			stmt := p.parseLetStatement()
+			if stmt != nil {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
 		}
 
 		if p.peekToken.Type == lexer.QUESTION {
@@ -1573,7 +1582,9 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		p.saveError(msg)
 		return nil
 	}
+	p.ctx.push(CTX_FUNC_BODY)
 	def.Body = p.parseBlockStatement()
+	p.ctx.pop()
 
 	// Move inline comment on the same line as { from trailing to inline
 	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&
