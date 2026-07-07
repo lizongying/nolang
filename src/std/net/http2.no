@@ -421,7 +421,7 @@ w: {
             tls-c.close()
             return
         }
-        -> if it != preface.len {
+        ok -> if it != preface.len {
             tls-c.close()
             return
         }
@@ -543,7 +543,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
         recv-f = .recv-frame()
         recv-f: {
             nil -> return
-            -> f = it
+            ok -> f = it
         }
         if f.frame-type == FRAME-HEADERS {
             // 用 HPACK 解碼標頭
@@ -682,7 +682,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     }
     conn: {
         nil -> return
-        -> {
+        ok -> {
             names, values, header-count, resp-body, resp-n, ok = it.request(method, path, host, body)
             it.close()
         }

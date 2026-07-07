@@ -683,24 +683,25 @@ http-server-conn.get-cookie = (name str) (val ?str) {
     cookie-header ?str = .get-header('Cookie')
     cookie-header: {
         nil -> return
-        -> {
+        ok -> {
             // 解析 Cookie 標頭
+            hdr = it
             pos = 0
             ! {
                 // 跳過空格
-                for pos < it.len && it[pos] == 32 {
+                for pos < hdr.len && hdr[pos] == 32 {
                     pos = pos + 1
                 }
-                if pos >= it.len {
+                if pos >= hdr.len {
                     *
                 }
                 // 找下一個分號
-                next-semi = it.index-from(';', pos)
+                next-semi = hdr.index-from(';', pos)
                 pair-end = next-semi
                 if pair-end < 0 {
-                    pair-end = it.len
+                    pair-end = hdr.len
                 }
-                pair = it.slice(pos, pair-end)
+                pair = hdr.slice(pos, pair-end)
                 pair = pair.trim()
                 eq-pos = pair.index('=')
                 if eq-pos >= 0 {
@@ -729,11 +730,12 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
     signed ?str = .get-cookie(name)
     signed: {
         nil -> return
-        -> {
+        ok -> {
             // 驗證簽名
+            signed-val = it
             ok = false
             raw = ''
-            ok, raw = cookie-verify(name, it, key)
+            ok, raw = cookie-verify(name, signed-val, key)
             if ok {
                 val = raw
             } else {
@@ -752,14 +754,15 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
     auth-header ?str = .get-header('Authorization')
     auth-header: {
         nil -> return
-        -> {
+        ok -> {
             // 檢查 'Basic ' 前綴
+            hdr = it
             prefix = 'Basic '
-            if it.starts-with(prefix) == false {
+            if hdr.starts-with(prefix) == false {
                 return
             }
             // Base64 解碼
-            b64 = it.slice(prefix.len, it.len)
+            b64 = hdr.slice(prefix.len, hdr.len)
             raw []byte
             n = b64.len
             raw-n = 0

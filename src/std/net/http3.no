@@ -653,7 +653,7 @@ http3-get = (url str) (resp ?http3-response) {
     conn = http3-connect(host, port)
     conn: {
         nil -> return
-        -> resp = http3-send-request(it, 'GET', path, host, '')
+        ok -> resp = http3-send-request(it, 'GET', path, host, '')
     }
 }
 
@@ -675,7 +675,7 @@ http3-post = (url str, body str) (resp ?http3-response) {
     conn = http3-connect(host, port)
     conn: {
         nil -> return
-        -> resp = http3-send-request(it, 'POST', path, host, body)
+        ok -> resp = http3-send-request(it, 'POST', path, host, body)
     }
 }
 
@@ -698,6 +698,6 @@ http3-do = (method str, url str, body str) (resp ?http3-response) {
     conn = http3-connect(host, port)
     conn: {
         nil -> return
-        -> resp = http3-send-request(it, method, path, host, body)
+        ok -> resp = http3-send-request(it, method, path, host, body)
     }
 }

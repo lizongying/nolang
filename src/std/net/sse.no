@@ -203,7 +203,7 @@ sse-client.next-event = () (ev ?sse-event) {
                             retry-val: {
                                 nil -> e-retry = -1
                                 err -> e-retry = -1
-                                -> e-retry = it
+                                ok -> e-retry = it
                             }
                         }
                     }

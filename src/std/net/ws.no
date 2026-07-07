@@ -1342,7 +1342,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         }
                         c = err('connection closed during handshake')
                         return
-                    -> n = it
+                    ok -> n = it
                 }
             } else {
                 n = net-recv(fd, tmp, WS-RECV-SIZE)
