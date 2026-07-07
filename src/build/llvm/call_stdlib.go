@@ -1893,6 +1893,194 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return retExt
 	}
 
+	// unix-listen: create Unix domain listening socket
+	// Performs: unlink(path) + socket(AF_UNIX, SOCK_STREAM, 0) + bind + listen
+	// Args: path str
+	// Returns: fd i64 (-1 on error)
+	if fnName == "unix-listen" && hasArgs && nArgs >= 1 {
+		evalArgs()
+		pathPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		pathLen := g.strLenFromExpr(sb, expr.Arguments[0])
+
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%unix.l.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%unix.l.addrptr.%d", g.tmpIdx)
+
+		// sun_family at offset 1 (macOS: sun_len=0, sun_family=1)
+		g.tmpIdx++
+		famGep := fmt.Sprintf("%%unix.l.fam.%d", g.tmpIdx)
+
+		// sun_path at offset 2
+		g.tmpIdx++
+		pathGep := fmt.Sprintf("%%unix.l.path.%d", g.tmpIdx)
+
+		// cap path length at 103
+		g.tmpIdx++
+		capCmp := fmt.Sprintf("%%unix.l.capcmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		cappedLen := fmt.Sprintf("%%unix.l.caplen.%d", g.tmpIdx)
+
+		// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%unix.l.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		sockOk := fmt.Sprintf("%%unix.l.sockok.%d", g.tmpIdx)
+
+		// bind(fd, &addr, 106)
+		g.tmpIdx++
+		bindRet := fmt.Sprintf("%%unix.l.bind.%d", g.tmpIdx)
+		g.tmpIdx++
+		bindOk := fmt.Sprintf("%%unix.l.bindok.%d", g.tmpIdx)
+
+		// listen(fd, 128)
+		g.tmpIdx++
+		listenRet := fmt.Sprintf("%%unix.l.listen.%d", g.tmpIdx)
+		g.tmpIdx++
+		listenOk := fmt.Sprintf("%%unix.l.listenok.%d", g.tmpIdx)
+
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%unix.l.fdext.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok1 := fmt.Sprintf("%%unix.l.ok1.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok2 := fmt.Sprintf("%%unix.l.ok2.%d", g.tmpIdx)
+		g.tmpIdx++
+		resultReg := fmt.Sprintf("%%unix.l.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			// unlink(path) — remove existing socket file, ignore result
+			sb.WriteString(fmt.Sprintf("%scall i32 @unlink(i8* %s)\n", g.indent(), pathPtr))
+
+			// allocate sockaddr_un (110 bytes), zero it
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [110 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [110 x i8], [110 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 110)\n", g.indent(), addrPtr))
+
+			// sun_len = 106 at offset 0 (macOS)
+			sb.WriteString(fmt.Sprintf("%sstore i8 106, i8* %s\n", g.indent(), addrPtr))
+
+			// sun_family = AF_UNIX (1) at offset 1 (macOS)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 1, i8* %s\n", g.indent(), famGep))
+
+			// copy path to offset 2, capped at 103 bytes
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), pathGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, 103\n", g.indent(), capCmp, pathLen))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 103, i64 %s\n", g.indent(), cappedLen, capCmp, pathLen))
+			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), pathGep, pathPtr, cappedLen))
+
+			// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 1, i32 1, i32 0)\n", g.indent(), sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), sockOk, sockFd))
+
+			// bind(fd, &addr, 106)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @bind(i32 %s, i8* %s, i32 106)\n", g.indent(), bindRet, sockFd, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), bindOk, bindRet))
+
+			// listen(fd, 128)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @listen(i32 %s, i32 128)\n", g.indent(), listenRet, sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), listenOk, listenRet))
+
+			// fd as i64
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+
+			// all.ok
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok1, sockOk, bindOk))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok2, ok1, listenOk))
+
+			// result
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), resultReg, ok2, fdExt))
+		}
+		return resultReg
+	}
+
+	// unix-dial: connect to Unix domain socket
+	// Performs: socket(AF_UNIX, SOCK_STREAM, 0) + connect
+	// Args: path str
+	// Returns: fd i64 (-1 on error)
+	if fnName == "unix-dial" && hasArgs && nArgs >= 1 {
+		evalArgs()
+		pathPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		pathLen := g.strLenFromExpr(sb, expr.Arguments[0])
+
+		g.tmpIdx++
+		addrReg := fmt.Sprintf("%%unix.d.addr.%d", g.tmpIdx)
+		g.tmpIdx++
+		addrPtr := fmt.Sprintf("%%unix.d.addrptr.%d", g.tmpIdx)
+
+		// sun_family at offset 1 (macOS: sun_len=0, sun_family=1)
+		g.tmpIdx++
+		famGep := fmt.Sprintf("%%unix.d.fam.%d", g.tmpIdx)
+
+		// sun_path at offset 2
+		g.tmpIdx++
+		pathGep := fmt.Sprintf("%%unix.d.path.%d", g.tmpIdx)
+
+		// cap path length at 103
+		g.tmpIdx++
+		capCmp := fmt.Sprintf("%%unix.d.capcmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		cappedLen := fmt.Sprintf("%%unix.d.caplen.%d", g.tmpIdx)
+
+		// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%unix.d.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		sockOk := fmt.Sprintf("%%unix.d.sockok.%d", g.tmpIdx)
+
+		// connect(fd, &addr, 106)
+		g.tmpIdx++
+		connRet := fmt.Sprintf("%%unix.d.conn.%d", g.tmpIdx)
+		g.tmpIdx++
+		connOk := fmt.Sprintf("%%unix.d.connok.%d", g.tmpIdx)
+
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%unix.d.fdext.%d", g.tmpIdx)
+		g.tmpIdx++
+		ok1 := fmt.Sprintf("%%unix.d.ok1.%d", g.tmpIdx)
+		g.tmpIdx++
+		resultReg := fmt.Sprintf("%%unix.d.result.%d", g.tmpIdx)
+
+		if sb != nil {
+			// allocate sockaddr_un (110 bytes), zero it
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [110 x i8]\n", g.indent(), addrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [110 x i8], [110 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 110)\n", g.indent(), addrPtr))
+
+			// sun_len = 106 at offset 0 (macOS)
+			sb.WriteString(fmt.Sprintf("%sstore i8 106, i8* %s\n", g.indent(), addrPtr))
+
+			// sun_family = AF_UNIX (1) at offset 1 (macOS)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 1, i8* %s\n", g.indent(), famGep))
+
+			// copy path to offset 2, capped at 103 bytes
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), pathGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, 103\n", g.indent(), capCmp, pathLen))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 103, i64 %s\n", g.indent(), cappedLen, capCmp, pathLen))
+			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), pathGep, pathPtr, cappedLen))
+
+			// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 1, i32 1, i32 0)\n", g.indent(), sockFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), sockOk, sockFd))
+
+			// connect(fd, &addr, 106)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @connect(i32 %s, i8* %s, i32 106)\n", g.indent(), connRet, sockFd, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), connOk, connRet))
+
+			// fd as i64
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+
+			// all.ok
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ok1, sockOk, connOk))
+
+			// result
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), resultReg, ok1, fdExt))
+		}
+		return resultReg
+	}
+
 	return ""
 }
 

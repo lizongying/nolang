@@ -1,0 +1,474 @@
+// url — URL 解析與建構
+//
+// 提供 URL 的解析、建構、編碼與解碼功能。
+// 支援 scheme://host:port/path?query#fragment 格式。
+//
+// 用法：
+//   u = url-parse('https://example.com:8080/api/v1?key=value#section')
+//   if u.ok {
+//       print(u.scheme)    // 'https'
+//       print(u.host)      // 'example.com'
+//       print(u.port)      // 8080
+//       print(u.path)      // '/api/v1'
+//       print(u.query)     // 'key=value'
+//       print(u.fragment)  // 'section'
+//   }
+//
+//   // 查詢參數
+//   q = u.get-query('key')  // 返回 ?str
+//
+//   // URL 編碼
+//   enc = url-encode('hello world!')  // 'hello%20world%21'
+//   dec = url-decode('hello%20world') // 'hello world'
+
+// ═══════════════════════════════════════════════
+// 結構體
+// ═══════════════════════════════════════════════
+
+// url-info: URL 解析結果
+// ok bool: 解析是否成功
+// scheme str: 協議（如 http, https）
+// host str: 主機名
+// port i64: 埠號（-1=未指定）
+// path str: 路徑（如 /api/v1）
+// query str: 查詢字串（不含 ?）
+// fragment str: 片段（不含 #）
+// user str: 用戶名（如 user:pass@host 中的 user）
+// password str: 密碼
+url-info {
+    ok bool
+    scheme str
+    host str
+    port i64
+    path str
+    query str
+    fragment str
+    user str
+    password str
+}
+
+// ═══════════════════════════════════════════════
+// URL 解析
+// ═══════════════════════════════════════════════
+
+// url-parse: 解析 URL 字串
+// url-str str: 完整 URL
+// 返回 u url-info: 解析結果（u.ok=true=成功）
+url-parse = (url-str str) (u url-info) {
+    u.ok = false
+    u.scheme = ''
+    u.host = ''
+    u.port = -1
+    u.path = '/'
+    u.query = ''
+    u.fragment = ''
+    u.user = ''
+    u.password = ''
+
+    n = url-str.len
+    if n == 0 {
+        return
+    }
+
+    pos = 0
+
+    // 解析 scheme（尋找 ://）
+    scheme-end = url-str.index('://')
+    if scheme-end < 0 {
+        // 無 scheme，視為相對路徑
+        u.path = url-str
+        u.ok = true
+        return
+    }
+    u.scheme = url-str.slice(0, scheme-end)
+    pos = scheme-end + 3
+
+    // 解析 fragment（#）
+    frag-pos = url-str.index-from('#', pos)
+    if frag-pos >= 0 {
+        u.fragment = url-str.slice(frag-pos + 1, n)
+        n = frag-pos
+    }
+
+    // 解析 query（?）
+    query-pos = url-str.index-from('?', pos)
+    if query-pos >= 0 && query-pos < n {
+        u.query = url-str.slice(query-pos + 1, n)
+        n = query-pos
+    }
+
+    // 解析 path（/）
+    path-pos = url-str.index-from('/', pos)
+    if path-pos >= 0 && path-pos < n {
+        u.path = url-str.slice(path-pos, n)
+        n = path-pos
+    }
+
+    // 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
+    authority = url-str.slice(pos, n)
+
+    // 解析 user:pass@
+    at-pos = authority.index('@')
+    if at-pos >= 0 {
+        userinfo = authority.slice(0, at-pos)
+        authority = authority.slice(at-pos + 1, authority.len)
+        colon-pos = userinfo.index(':')
+        if colon-pos >= 0 {
+            u.user = userinfo.slice(0, colon-pos)
+            u.password = userinfo.slice(colon-pos + 1, userinfo.len)
+        } else {
+            u.user = userinfo
+        }
+    }
+
+    // 解析 host:port
+    colon-pos = authority.index(':')
+    if colon-pos >= 0 {
+        u.host = authority.slice(0, colon-pos)
+        port-str = authority.slice(colon-pos + 1, authority.len)
+        p = 0
+        valid = true
+        i = 0
+        for i < port-str.len {
+            ch = port-str[i]
+            if ch < 48 || ch > 57 {
+                valid = false
+                break
+            }
+            p = p * 10 + ch - 48
+            i = i + 1
+        }
+        if valid {
+            u.port = p
+        }
+    } else {
+        u.host = authority
+    }
+
+    // 設定預設埠號
+    if u.port < 0 {
+        {
+            u.scheme == 'http' -> u.port = 80
+            u.scheme == 'https' -> u.port = 443
+            u.scheme == 'ws' -> u.port = 80
+            u.scheme == 'wss' -> u.port = 443
+            u.scheme == 'ftp' -> u.port = 21
+            ->
+        }
+    }
+
+    u.ok = true
+}
+
+// url-info.get-query: 取得查詢參數值
+// key str: 參數名
+// 返回 val ?str: ok=參數值, nil=未找到
+url-info.get-query = (key str) (val ?str) {
+    val = nil
+    if .query.len == 0 {
+        return
+    }
+    q = .query
+    pos = 0
+    ! {
+        if pos >= q.len {
+            *
+        }
+        // 找下一個 &
+        next-amp = q.index-from('&', pos)
+        pair-end = next-amp
+        if pair-end < 0 {
+            pair-end = q.len
+        }
+        pair = q.slice(pos, pair-end)
+        eq-pos = pair.index('=')
+        if eq-pos >= 0 {
+            k = pair.slice(0, eq-pos)
+            v = pair.slice(eq-pos + 1, pair.len)
+            if k == key {
+                val = url-decode(v)
+                return
+            }
+        } else {
+            if pair == key {
+                val = ''
+                return
+            }
+        }
+        if next-amp < 0 {
+            *
+        }
+        pos = next-amp + 1
+    }
+}
+
+// url-info.set-query: 設定查詢參數值
+// key str: 參數名
+// value str: 參數值
+url-info.set-query = (key str, value str) {
+    if .query.len == 0 {
+        .query = key - '=' - value
+        return
+    }
+    // 檢查是否已存在
+    found = false
+    q = .query
+    new-query = ''
+    pos = 0
+    ! {
+        if pos >= q.len {
+            *
+        }
+        next-amp = q.index-from('&', pos)
+        pair-end = next-amp
+        if pair-end < 0 {
+            pair-end = q.len
+        }
+        pair = q.slice(pos, pair-end)
+        eq-pos = pair.index('=')
+        if eq-pos >= 0 {
+            k = pair.slice(0, eq-pos)
+            if k == key {
+                pair = key - '=' - value
+                found = true
+            }
+        }
+        if new-query.len > 0 {
+            new-query = new-query - '&' - pair
+        } else {
+            new-query = pair
+        }
+        if next-amp < 0 {
+            *
+        }
+        pos = next-amp + 1
+    }
+    if found == false {
+        if new-query.len > 0 {
+            new-query = new-query - '&' - key - '=' - value
+        } else {
+            new-query = key - '=' - value
+        }
+    }
+    .query = new-query
+}
+
+// url-info.to-str: 將 URL 重新組裝為字串
+// 返回 out str: 完整 URL
+url-info.to-str = () (out str) {
+    out = ''
+    if .scheme.len > 0 {
+        out = out - .scheme - '://'
+    }
+    if .user.len > 0 {
+        out = out - .user
+        if .password.len > 0 {
+            out = out - ':' - .password
+        }
+        out = out - '@'
+    }
+    out = out - .host
+    // 只在埠號非預設值時輸出
+    show-port = false
+    {
+        .scheme == 'http' && .port != 80 -> show-port = true
+        .scheme == 'https' && .port != 443 -> show-port = true
+        .scheme == 'ws' && .port != 80 -> show-port = true
+        .scheme == 'wss' && .port != 443 -> show-port = true
+        .scheme == 'ftp' && .port != 21 -> show-port = true
+        .port > 0 && .scheme.len == 0 -> show-port = true
+        ->
+    }
+    if show-port {
+        port-s = .port.to-str()
+        out = out - ':' - port-s
+    }
+    if .path.len > 0 && .path[0] == 47 {
+        out = out - .path
+    } elif .path.len > 0 {
+        out = out - '/' - .path
+    }
+    if .query.len > 0 {
+        out = out - '?' - .query
+    }
+    if .fragment.len > 0 {
+        out = out - '#' - .fragment
+    }
+}
+
+// ═══════════════════════════════════════════════
+// URL 編碼/解碼
+// ═══════════════════════════════════════════════
+
+// url-encode: URL 編碼（百分號編碼）
+// s str: 原始字串
+// 返回 out str: 編碼後字串
+url-encode = (s str) (out str) {
+    hex-chars = '0123456789ABCDEF'
+    out = ''
+    i = 0
+    for i < s.len {
+        c = s[i] & 255
+        // 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
+        keep = false
+        {
+            c >= 65 && c <= 90 -> keep = true
+            c >= 97 && c <= 122 -> keep = true
+            c >= 48 && c <= 57 -> keep = true
+            c == 45 -> keep = true
+            c == 95 -> keep = true
+            c == 46 -> keep = true
+            c == 126 -> keep = true
+            ->
+        }
+        if keep {
+            out[out.len] = c
+        } else {
+            out[out.len] = 37
+            out[out.len] = hex-chars[c >> 4]
+            out[out.len] = hex-chars[c & 15]
+        }
+        i = i + 1
+    }
+}
+
+// url-encode-component: URL 編碼（元件模式，也編碼 / 和 ?）
+// s str: 原始字串
+// 返回 out str: 編碼後字串
+url-encode-component = (s str) (out str) {
+    hex-chars = '0123456789ABCDEF'
+    out = ''
+    i = 0
+    for i < s.len {
+        c = s[i] & 255
+        // 只保留 A-Z, a-z, 0-9, -, _, ., ~
+        keep = false
+        {
+            c >= 65 && c <= 90 -> keep = true
+            c >= 97 && c <= 122 -> keep = true
+            c >= 48 && c <= 57 -> keep = true
+            c == 45 -> keep = true
+            c == 95 -> keep = true
+            c == 46 -> keep = true
+            c == 126 -> keep = true
+            ->
+        }
+        if keep {
+            out[out.len] = c
+        } else {
+            out[out.len] = 37
+            out[out.len] = hex-chars[c >> 4]
+            out[out.len] = hex-chars[c & 15]
+        }
+        i = i + 1
+    }
+}
+
+// url-decode: URL 解碼（百分號解碼）
+// s str: 編碼字串
+// 返回 out str: 解碼後字串
+url-decode = (s str) (out str) {
+    out = ''
+    i = 0
+    for i < s.len {
+        c = s[i] & 255
+        if c == 37 {
+            // %XX
+            if i + 2 < s.len {
+                h1 = s[i + 1]
+                h2 = s[i + 2]
+                val = 0
+                // 解析十六進制
+                {
+                    h1 >= 48 && h1 <= 57 -> val = (h1 - 48) << 4
+                    h1 >= 65 && h1 <= 70 -> val = (h1 - 55) << 4
+                    h1 >= 97 && h1 <= 102 -> val = (h1 - 87) << 4
+                    ->
+                }
+                {
+                    h2 >= 48 && h2 <= 57 -> val = val | (h2 - 48)
+                    h2 >= 65 && h2 <= 70 -> val = val | (h2 - 55)
+                    h2 >= 97 && h2 <= 102 -> val = val | (h2 - 87)
+                    ->
+                }
+                out[out.len] = val & 255
+                i = i + 2
+            }
+        } elif c == 43 {
+            // + 號轉空格
+            out[out.len] = 32
+        } else {
+            out[out.len] = c
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 查詢字串建構
+// ═══════════════════════════════════════════════
+
+// url-build-query: 從鍵值對建構查詢字串
+// keys [16]str: 鍵陣列
+// values [16]str: 值陣列
+// count i64: 鍵值對數量
+// 返回 out str: 查詢字串（如 key1=val1&key2=val2）
+url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
+    out = ''
+    i = 0
+    for i < count {
+        enc-k = url-encode(keys[i])
+        enc-v = url-encode(values[i])
+        if out.len > 0 {
+            out = out - '&'
+        }
+        out = out - enc-k - '=' - enc-v
+        i = i + 1
+    }
+}
+
+// url-join: 連接基礎 URL 和路徑
+// base str: 基礎 URL
+// path-str str: 要附加的路徑
+// 返回 out str: 完整 URL
+url-join = (base str, path-str str) (out str) {
+    // 如果 path-str 是完整 URL，直接返回
+    if path-str.starts-with('http://') || path-str.starts-with('https://') {
+        out = path-str
+        return
+    }
+    // 如果以 / 開頭，替換基礎路徑
+    if path-str.len > 0 && path-str[0] == 47 {
+        u url-info
+        u = url-parse(base)
+        if u.ok {
+            out = u.scheme - '://' - u.host
+            if u.port > 0 {
+                port-s = u.port.to-str()
+                out = out - ':' - port-s
+            }
+            out = out - path-str
+            return
+        }
+    }
+    // 相對路徑：找到最後一個 / 並替換
+    slash-pos = -1
+    i = base.len - 1
+    for i >= 0 {
+        if base[i] == 47 {
+            slash-pos = i
+            break
+        }
+        i = i - 1
+    }
+    if slash-pos >= 0 {
+        // 確保不是 protocol:// 中的 //
+        if slash-pos > 0 && base[slash-pos - 1] == 58 {
+            out = base - '/' - path-str
+        } else {
+            out = base.slice(0, slash-pos + 1) - path-str
+        }
+    } else {
+        out = base - '/' - path-str
+    }
+}

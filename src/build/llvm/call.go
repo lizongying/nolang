@@ -1070,35 +1070,122 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				methodReceiver = receiverExpr
 			}
 		} else if _, ok := receiverExpr.(*parser.IndexExpression); ok {
-			// 陣列元素接收者（如 names[i].slice(0, nlen)）
-			// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
-			elemType := g.exprResultLLVMType(receiverExpr)
-			srcType := strings.TrimPrefix(elemType, "%")
-			candidates := []string{srcType}
-			if srcType == "str-short" || srcType == "str-long" {
-				candidates = append(candidates, "str")
-			}
-			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-				candidates = append(candidates, primAliases...)
-			}
-			for _, cand := range candidates {
-				shortName := cand + "." + dot.Property
-				if g.funcRetTypes != nil {
-					if _, ok := g.funcRetTypes[shortName]; ok {
-						fnName = shortName
-						methodReceiver = receiverExpr
-						break
-					}
+		// 陣列元素接收者（如 names[i].slice(0, nlen)）
+		// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
+		elemType := g.exprResultLLVMType(receiverExpr)
+		srcType := strings.TrimPrefix(elemType, "%")
+		candidates := []string{srcType}
+		if srcType == "str-short" || srcType == "str-long" {
+			candidates = append(candidates, "str")
+		}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
 				}
-				if methodReceiver == nil {
-					if m := builtin.FindBuiltinMethod(shortName); m != nil {
-						fnName = shortName
-						methodReceiver = receiverExpr
-						break
-					}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
 				}
 			}
 		}
+	} else if _, ok := receiverExpr.(*parser.DotExpression); ok {
+		// 結構欄位接收者（如 c.name.trim()、self.buf.len）
+		// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
+		elemType := g.exprResultLLVMType(receiverExpr)
+		srcType := strings.TrimPrefix(elemType, "%")
+		candidates := []string{srcType}
+		if srcType == "str-short" || srcType == "str-long" {
+			candidates = append(candidates, "str")
+		}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+		}
+	} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
+		// 切片結果接收者（如 buf[pos..end].to-str()）
+		// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
+		elemType := g.exprResultLLVMType(receiverExpr)
+		srcType := strings.TrimPrefix(elemType, "%")
+		candidates := []string{srcType}
+		if srcType == "str-short" || srcType == "str-long" {
+			candidates = append(candidates, "str")
+		}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+		}
+	} else if _, ok := receiverExpr.(*parser.CallExpression); ok {
+		// 函數呼叫結果接收者（如 foo().trim()）
+		// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法
+		elemType := g.exprResultLLVMType(receiverExpr)
+		srcType := strings.TrimPrefix(elemType, "%")
+		candidates := []string{srcType}
+		if srcType == "str-short" || srcType == "str-long" {
+			candidates = append(candidates, "str")
+		}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+		}
+	}
 	}
 
 	// 方法解析後，檢查是否為 build-in 方法（如 str.eq、str.copy、i64.to-str、f64.to-str）

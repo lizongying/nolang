@@ -396,3 +396,120 @@ udp-dial-to = (host str, port i64) (c ?udp-conn) {
     uc.port = port
     c = uc
 }
+
+// ═══════════════════════════════════════════════
+// 超時/截止時間支援
+// ═══════════════════════════════════════════════
+
+// conn.set-recv-timeout: 設定接收逾時
+// timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
+// 返回 ok bool: true=成功
+conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    ret = net-set-recv-timeout(.fd, timeout-ms)
+    if ret == 0 {
+        ok = true
+    }
+}
+
+// conn.set-timeout: 設定接收逾時（別名，語義同 set-recv-timeout）
+// timeout-ms i64: 逾時毫秒數
+// 返回 ok bool: true=成功
+conn.set-timeout = (timeout-ms i64) (ok bool) {
+    ok = .set-recv-timeout(timeout-ms)
+}
+
+// conn.recv-with-timeout: 帶逾時的接收
+// buf str: 接收緩衝區
+// n i64: 最多接收的位元組數
+// timeout-ms i64: 逾時毫秒數
+// 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
+conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
+    read-n = -1
+    if .fd < 0 {
+        return
+    }
+    ret = net-set-recv-timeout(.fd, timeout-ms)
+    if ret != 0 {
+        return
+    }
+    read-n = net-recv(.fd, buf, n)
+    // 恢復為阻塞模式
+    net-set-recv-timeout(.fd, 0)
+}
+
+// conn.send-with-timeout: 帶逾時的發送（目前直接發送，無獨立 send timeout）
+// data str: 要發送的資料
+// timeout-ms i64: 逾時毫秒數（目前忽略，僅設置 recv timeout 作為參考）
+// 返回 written i64: 實際發送位元組數（-1=錯誤）
+conn.send-with-timeout = (data str, timeout-ms i64) (written i64) {
+    written = -1
+    if .fd < 0 {
+        return
+    }
+    // 設定 recv 逾時（send 逾時在底層共享）
+    net-set-recv-timeout(.fd, timeout-ms)
+    written = net-send(.fd, data, data.len)
+    net-set-recv-timeout(.fd, 0)
+}
+
+// listener.set-timeout: 設定 accept 逾時
+// timeout-ms i64: 逾時毫秒數
+// 返回 ok bool: true=成功
+listener.set-timeout = (timeout-ms i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    ret = net-set-recv-timeout(.fd, timeout-ms)
+    if ret == 0 {
+        ok = true
+    }
+}
+
+// listener.accept-with-timeout: 帶逾時的 accept
+// timeout-ms i64: 逾時毫秒數
+// 返回 c ?conn: ok=連接, nil=逾時或失敗
+listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
+    c = nil
+    if .fd < 0 {
+        return
+    }
+    ret = net-set-recv-timeout(.fd, timeout-ms)
+    if ret != 0 {
+        return
+    }
+    fd = net-accept(.fd)
+    net-set-recv-timeout(.fd, 0)
+    if fd < 0 {
+        return
+    }
+    c = conn{
+        fd: fd
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 便捷撥號函數（帶逾時）
+// ═══════════════════════════════════════════════
+
+// net-dial-timeout: 帶連接逾時的撥號
+// host str: 目標主機
+// port i64: 目標埠號
+// timeout-ms i64: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
+// 返回 c ?conn: ok=連接, nil=失敗
+net-dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
+    c = nil
+    fd = net-dial(host, port)
+    if fd < 0 {
+        return
+    }
+    net-set-recv-timeout(fd, timeout-ms)
+    cn = conn{
+        fd: fd
+    }
+    c = cn
+}

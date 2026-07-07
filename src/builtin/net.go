@@ -113,4 +113,30 @@ func init() {
 		Doc:          "Set socket recv timeout in milliseconds. Returns 0 on success, -1 on error",
 		ForwardFunc:  "net-set-recv-timeout",
 	})
+
+	// unix-listen: create Unix domain listening socket
+	// Performs: unlink(path) + socket(AF_UNIX, SOCK_STREAM, 0) + bind + listen
+	// Args: path str (socket file path)
+	// Returns: fd i64 (socket fd, -1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "unix-listen",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Create Unix domain listening socket. Returns fd (-1 on error)",
+		ForwardFunc:  "unix-listen",
+	})
+
+	// unix-dial: connect to Unix domain socket
+	// Performs: socket(AF_UNIX, SOCK_STREAM, 0) + connect
+	// Args: path str (socket file path)
+	// Returns: fd i64 (socket fd, -1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "unix-dial",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Connect to Unix domain socket. Returns fd (-1 on error)",
+		ForwardFunc:  "unix-dial",
+	})
 }

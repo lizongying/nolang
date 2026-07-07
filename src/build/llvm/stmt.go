@@ -734,6 +734,39 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					return g.mapToLLVMType(m.Return[0].String())
 				}
 			}
+			// 結構欄位 / 陣列元素 / 切片結果 / 函數呼叫結果接收者
+			// （如 c.name.trim()、names[i].slice()、buf[..].to-str()、foo().trim()）
+			// 透過 exprResultLLVMType 推導接收者型別，再映射到 nolang 型別名查找方法返回型別
+			switch recvExpr.(type) {
+			case *parser.DotExpression, *parser.IndexExpression, *parser.SliceExpression, *parser.CallExpression:
+				elemType := g.exprResultLLVMType(recvExpr)
+				srcType := strings.TrimPrefix(elemType, "%")
+				candidates := []string{srcType}
+				if srcType == "str-short" || srcType == "str-long" {
+					candidates = append(candidates, "str")
+				}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if t, ok := g.funcRetTypes[shortName]; ok {
+							if t != "void" {
+								return t
+							}
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+									return ts[0]
+								}
+							}
+						}
+					}
+					if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+						return g.mapToLLVMType(m.Return[0].String())
+					}
+				}
+			}
 		}
 		return "i64"
 	case *parser.FloatLiteral:

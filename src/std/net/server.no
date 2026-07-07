@@ -1,0 +1,669 @@
+// server — HTTP/1.1 伺服器
+//
+// 提供簡易的 HTTP/1.1 伺服器，支援路由分發、請求解析、回應建構。
+// 支援 GET、POST、PUT、DELETE、PATCH 方法，Keep-Alive 連接复用。
+// 底層使用 net.no 的 listener/conn 結構體。
+//
+// 用法：
+//   srv = http-server{}
+//   ok = srv.listen('0.0.0.0', 8080)
+//   if ok {
+//       ! {
+//           req = srv.accept()           // 返回 ?http-server-conn
+//           req: {
+//               nil -> *
+//               ->
+//                   req.parse()
+//                   if req.method == 'GET' {
+//                       req.write-text(200, 'Hello, World!')
+//                   }
+//                   req.close()
+//           }
+//       }
+//   }
+
+# std/net/net
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// 伺服器接收緩衝區大小
+HTTP-SRV-BUF-SIZE = 8192
+
+// 單次接收大小
+HTTP-SRV-RECV-SIZE = 4096
+
+// 最大請求標頭數
+HTTP-SRV-MAX-HEADERS = 32
+
+// 最大請求體大小
+HTTP-SRV-MAX-BODY = 1048576
+
+// Keep-Alive 最大請求數
+HTTP-SRV-MAX-KEEPALIVE = 100
+
+// Keep-Alive 逾時（毫秒）
+HTTP-SRV-KEEPALIVE-TIMEOUT = 5000
+
+// ═══════════════════════════════════════════════
+// 結構體
+// ═══════════════════════════════════════════════
+
+// http-server: HTTP 伺服器
+// fd: 監聽 socket fd（-1=未開啟）
+// host: 綁定的 IP 地址
+// port: 監聽埠號
+http-server {
+    fd i64
+    host str
+    port i64
+}
+
+// http-server-conn: 伺服器端客戶端連接
+// fd: 客戶端 socket fd（-1=未連接）
+// method: 請求方法（GET/POST/PUT/DELETE/PATCH）
+// path: 請求路徑
+// query: 查詢字串（不含 ?）
+// version: HTTP 版本（如 HTTP/1.1）
+// headers: 原始標頭字串（多行）
+// header-names: 解析後的標頭名
+// header-values: 解析後的標頭值
+// header-count: 標頭數量
+// body: 請求體
+// remote-addr: 客戶端 IP 地址（未使用，保留）
+// keep-alive: 是否保持連接
+// recv-buf: 接收緩衝區
+// recv-buf-len: 緩衝區中實際資料長度
+http-server-conn {
+    fd i64
+    method str
+    path str
+    query str
+    version str
+    headers str
+    header-names [32]str
+    header-values [32]str
+    header-count i64
+    body str
+    remote-addr str
+    keep-alive bool
+    recv-buf str
+    recv-buf-len i64
+}
+
+// ═══════════════════════════════════════════════
+// http-server 方法
+// ═══════════════════════════════════════════════
+
+// listen: 開始監聽
+// host str: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
+// port i64: 監聽埠號
+// 返回 ok bool: true=成功
+http-server.listen = (host str, port i64) (ok bool) {
+    ok = false
+    .fd = -1
+    .host = host
+    .port = port
+    fd = net-listen(host, port)
+    if fd < 0 {
+        return
+    }
+    .fd = fd
+    ok = true
+}
+
+// accept: 接受新的 HTTP 連接
+// 返回 c ?http-server-conn: ok=連接, nil=失敗
+http-server.accept = () (c ?http-server-conn) {
+    c = nil
+    if .fd < 0 {
+        return
+    }
+    client-fd = net-accept(.fd)
+    if client-fd < 0 {
+        return
+    }
+    space = ' '
+    buf = space.repeat(HTTP-SRV-BUF-SIZE)
+    conn = http-server-conn{
+        fd: client-fd
+        method: ''
+        path: ''
+        query: ''
+        version: ''
+        headers: ''
+        header-count: 0
+        body: ''
+        remote-addr: ''
+        keep-alive: false
+        recv-buf: buf
+        recv-buf-len: 0
+    }
+    c = conn
+}
+
+// close: 關閉伺服器
+http-server.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+// fd-of: 取得監聽 socket fd
+// 返回 fd i64
+http-server.fd-of = () (fd i64) {
+    fd = .fd
+}
+
+// ═══════════════════════════════════════════════
+// http-server-conn 方法
+// ═══════════════════════════════════════════════
+
+// recv-more: 從 socket 接收更多資料到 recv-buf
+// 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+http-server-conn.recv-more = () (n i64) {
+    n = -1
+    if .fd < 0 {
+        return
+    }
+    space = ' '
+    tmp = space.repeat(HTTP-SRV-RECV-SIZE)
+    n = net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
+    if n > 0 {
+        i = 0
+        for i < n {
+            .recv-buf[.recv-buf-len + i] = tmp[i]
+            i = i + 1
+        }
+        .recv-buf-len = .recv-buf-len + n
+    }
+}
+
+// parse: 解析 HTTP 請求
+// 讀取並解析完整的 HTTP 請求（請求行 + 標頭 + 可選的請求體）
+// 返回 ok bool: true=解析成功
+http-server-conn.parse = () (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    separator = crlf - crlf
+
+    // 讀取直到找到 \r\n\r\n（標頭結束）
+    sep-pos i64 = -1
+    ! {
+        // 檢查緩衝區中是否已有分隔符
+        data = .recv-buf.slice(0, .recv-buf-len)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+        // 緩衝區已滿但未找到分隔符
+        if .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE {
+            return
+        }
+        // 接收更多資料
+        n = .recv-more()
+        if n <= 0 {
+            return
+        }
+    }
+
+    // 解析請求行和標頭
+    head = .recv-buf.slice(0, sep-pos)
+    body-start = sep-pos + separator.len
+
+    // 請求行（第一行）
+    first-line-end = head.index(crlf)
+    if first-line-end < 0 {
+        return
+    }
+    request-line = head.slice(0, first-line-end)
+
+    // 解析方法、路徑、版本
+    sp1 = request-line.index(' ')
+    if sp1 < 0 {
+        return
+    }
+    .method = request-line.slice(0, sp1)
+    after-method = request-line.slice(sp1 + 1, request-line.len)
+    sp2 = after-method.index(' ')
+    if sp2 < 0 {
+        return
+    }
+    full-path = after-method.slice(0, sp2)
+    .version = after-method.slice(sp2 + 1, after-method.len)
+
+    // 分離 path 和 query
+    q-pos = full-path.index('?')
+    if q-pos >= 0 {
+        .path = full-path.slice(0, q-pos)
+        .query = full-path.slice(q-pos + 1, full-path.len)
+    } else {
+        .path = full-path
+        .query = ''
+    }
+
+    // 標頭
+    .headers = head.slice(first-line-end + crlf.len, head.len)
+
+    // 解析標頭到 header-names / header-values
+    .header-count = 0
+    i = 0
+    for i < HTTP-SRV-MAX-HEADERS {
+        .header-names[i] = ' '
+        .header-names[i].len = 0
+        .header-values[i] = ' '
+        .header-values[i].len = 0
+        i = i + 1
+    }
+
+    hs = .headers
+    hn = hs.len
+    if hn > 0 {
+        pos = 0
+        ! {
+            if pos >= hn {
+                *
+            }
+            next-crlf = hs.index-from(crlf, pos)
+            line-end = next-crlf
+            if line-end < 0 {
+                line-end = hn
+            }
+            colon-pos = hs.index-from(': ', pos)
+            if colon-pos >= 0 && colon-pos < line-end {
+                cnt = .header-count
+                if cnt < HTTP-SRV-MAX-HEADERS {
+                    name-len = colon-pos - pos
+                    j = 0
+                    for j < name-len {
+                        .header-names[cnt][j] = hs[pos + j]
+                        j = j + 1
+                    }
+                    .header-names[cnt].len = name-len
+                    val-start = colon-pos + 2
+                    val-len = line-end - val-start
+                    j = 0
+                    for j < val-len {
+                        .header-values[cnt][j] = hs[val-start + j]
+                        j = j + 1
+                    }
+                    .header-values[cnt].len = val-len
+                    .header-count = cnt + 1
+                }
+            }
+            if next-crlf < 0 {
+                *
+            }
+            pos = next-crlf + 2
+        }
+    }
+
+    // 判斷 Keep-Alive
+    .keep-alive = false
+    if .version == 'HTTP/1.1' {
+        .keep-alive = true
+    }
+    conn-val = .get-header('Connection')
+    conn-val: {
+        nil ->
+        ok -> {
+            cl = conn-val.to-lower()
+            if cl == 'close' {
+                .keep-alive = false
+            }
+            if cl == 'keep-alive' {
+                .keep-alive = true
+            }
+        }
+        ->
+    }
+
+    // 讀取請求體（如有 Content-Length）
+    .body = ''
+    cl-str = .get-header('Content-Length')
+    cl-str: {
+        nil ->
+        ok -> {
+            content-len = 0
+            j = 0
+            for j < cl-str.len {
+                ch = cl-str[j]
+                if ch >= 48 && ch <= 57 {
+                    content-len = content-len * 10 + ch - 48
+                }
+                j = j + 1
+            }
+            if content-len > 0 && content-len <= HTTP-SRV-MAX-BODY {
+                // 標頭後已接收的資料
+                available = .recv-buf-len - body-start
+                // 如果不足，繼續接收
+                for available < content-len {
+                    n = .recv-more()
+                    if n <= 0 {
+                        return
+                    }
+                    available = .recv-buf-len - body-start
+                }
+                .body = .recv-buf.slice(body-start, body-start + content-len)
+            }
+        }
+        ->
+    }
+
+    ok = true
+}
+
+// get-header: 取得指定標頭值
+// name str: 標頭名（如 'Content-Type'）
+// 返回 val ?str: ok=標頭值, nil=未找到
+http-server-conn.get-header = (name str) (val ?str) {
+    val = nil
+    cnt = .header-count
+    i = 0
+    for i < cnt {
+        matched = 1
+        if .header-names[i].len != name.len {
+            matched = 0
+        }
+        if matched == 1 {
+            j = 0
+            for j < name.len {
+                c1 = .header-names[i][j]
+                c2 = name[j]
+                // 大小寫不敏感比較
+                if c1 >= 65 && c1 <= 90 {
+                    c1 = c1 + 32
+                }
+                if c2 >= 65 && c2 <= 90 {
+                    c2 = c2 + 32
+                }
+                if c1 != c2 {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+        }
+        if matched == 1 {
+            vlen = .header-values[i].len
+            val = .header-values[i].slice(0, vlen)
+            return
+        }
+        i = i + 1
+    }
+}
+
+// write-status: 寫入 HTTP 狀態行
+// code i64: 狀態碼（如 200, 404, 500）
+// 返回 ok bool: true=成功
+http-server-conn.write-status = (code i64) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    code-s = code.to-str()
+    status-text = 'OK'
+    {
+        code == 200 -> status-text = 'OK'
+        code == 201 -> status-text = 'Created'
+        code == 204 -> status-text = 'No Content'
+        code == 301 -> status-text = 'Moved Permanently'
+        code == 302 -> status-text = 'Found'
+        code == 304 -> status-text = 'Not Modified'
+        code == 400 -> status-text = 'Bad Request'
+        code == 401 -> status-text = 'Unauthorized'
+        code == 403 -> status-text = 'Forbidden'
+        code == 404 -> status-text = 'Not Found'
+        code == 405 -> status-text = 'Method Not Allowed'
+        code == 408 -> status-text = 'Request Timeout'
+        code == 413 -> status-text = 'Payload Too Large'
+        code == 414 -> status-text = 'URI Too Long'
+        code == 500 -> status-text = 'Internal Server Error'
+        code == 501 -> status-text = 'Not Implemented'
+        code == 502 -> status-text = 'Bad Gateway'
+        code == 503 -> status-text = 'Service Unavailable'
+        code == 504 -> status-text = 'Gateway Timeout'
+        ->
+    }
+
+    line = 'HTTP/1.1 ' - code-s - ' ' - status-text - crlf
+    written = net-send(.fd, line, line.len)
+    if written < 0 {
+        return
+    }
+    ok = true
+}
+
+// write-header: 寫入單個回應標頭
+// name str: 標頭名
+// value str: 標頭值
+// 返回 ok bool: true=成功
+http-server-conn.write-header = (name str, value str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    line = name - ': ' - value - crlf
+    written = net-send(.fd, line, line.len)
+    if written < 0 {
+        return
+    }
+    ok = true
+}
+
+// write-headers-done: 寫入空行表示標頭結束
+// 返回 ok bool: true=成功
+http-server-conn.write-headers-done = () (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    written = net-send(.fd, crlf, crlf.len)
+    if written < 0 {
+        return
+    }
+    ok = true
+}
+
+// write-body: 寫入回應體
+// data str: 回應體資料
+// 返回 ok bool: true=成功
+http-server-conn.write-body = (data str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    if data.len > 0 {
+        written = net-send(.fd, data, data.len)
+        if written < 0 {
+            return
+        }
+    }
+    ok = true
+}
+
+// write-text: 便捷方法 — 寫入完整文字回應
+// code i64: 狀態碼
+// text str: 回應文字
+// content-type str: Content-Type 值（空字串=不寫）
+// 返回 ok bool: true=成功
+http-server-conn.write-text = (code i64, text str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    // 狀態行
+    ok = .write-status(code)
+    if ok == false {
+        return
+    }
+
+    // 標頭
+    text-len = text.len
+    len-s = text-len.to-str()
+    .write-header('Content-Type', 'text/plain; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    if .keep-alive {
+        .write-header('Connection', 'keep-alive')
+    } else {
+        .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-http/1.0')
+    .write-headers-done()
+
+    // 回應體
+    .write-body(text)
+    ok = true
+}
+
+// write-json: 便捷方法 — 寫入 JSON 回應
+// code i64: 狀態碼
+// json-str str: JSON 字串
+// 返回 ok bool: true=成功
+http-server-conn.write-json = (code i64, json-str str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    .write-status(code)
+    json-len = json-str.len
+    len-s = json-len.to-str()
+    .write-header('Content-Type', 'application/json; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    if .keep-alive {
+        .write-header('Connection', 'keep-alive')
+    } else {
+        .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-http/1.0')
+    .write-headers-done()
+    .write-body(json-str)
+    ok = true
+}
+
+// write-html: 便捷方法 — 寫入 HTML 回應
+// code i64: 狀態碼
+// html str: HTML 內容
+// 返回 ok bool: true=成功
+http-server-conn.write-html = (code i64, html str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    .write-status(code)
+    html-len = html.len
+    len-s = html-len.to-str()
+    .write-header('Content-Type', 'text/html; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    if .keep-alive {
+        .write-header('Connection', 'keep-alive')
+    } else {
+        .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-http/1.0')
+    .write-headers-done()
+    .write-body(html)
+    ok = true
+}
+
+// write-redirect: 便捷方法 — 寫入重定向回應
+// code i64: 狀態碼（301 或 302）
+// location str: 重定向目標 URL
+// 返回 ok bool: true=成功
+http-server-conn.write-redirect = (code i64, location str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    .write-status(code)
+    .write-header('Location', location)
+    .write-header('Content-Length', '0')
+    .write-header('Connection', 'close')
+    .write-headers-done()
+    ok = true
+}
+
+// write-error: 便捷方法 — 寫入錯誤回應
+// code i64: 狀態碼（如 404, 500）
+// message str: 錯誤訊息
+// 返回 ok bool: true=成功
+http-server-conn.write-error = (code i64, message str) (ok bool) {
+    ok = false
+    if .fd < 0 {
+        return
+    }
+
+    .write-status(code)
+    msg-len = message.len
+    len-s = msg-len.to-str()
+    .write-header('Content-Type', 'text/plain; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    .write-header('Connection', 'close')
+    .write-header('Server', 'nolang-http/1.0')
+    .write-headers-done()
+    .write-body(message)
+    ok = true
+}
+
+// reset: 重置連接狀態以复用（Keep-Alive）
+http-server-conn.reset = () {
+    .method = ''
+    .path = ''
+    .query = ''
+    .version = ''
+    .headers = ''
+    .header-count = 0
+    .body = ''
+    .recv-buf-len = 0
+}
+
+// close: 關閉連接
+http-server-conn.close = () {
+    if .fd >= 0 {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// http-listen-on: 建立 HTTP 伺服器並開始監聽
+// host str: 綁定的 IP 地址
+// port i64: 監聽埠號
+// 返回 s ?http-server: ok=伺服器, nil=失敗
+http-listen-on = (host str, port i64) (s ?http-server) {
+    s = nil
+    srv = http-server{}
+    ok = false
+    ok = srv.listen(host, port)
+    if ok {
+        s = srv
+    }
+}

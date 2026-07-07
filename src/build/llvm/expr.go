@@ -929,6 +929,17 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+	case *parser.SliceExpression:
+		// 切片表達式的結果型別：
+		// - str-long/str-short 切片 → %str-long
+		// - vec/arr 切片 → %vec
+		recvType := g.exprResultLLVMType(v.Left)
+		if recvType == "%str-long" || recvType == "%str-short" {
+			return "%str-long"
+		}
+		if recvType == "%vec" || recvType == "%arr" {
+			return "%vec"
+		}
 	case *parser.CallExpression:
 		if g.ssaTypes != nil {
 			if ident, ok := v.Function.(*parser.Identifier); ok {
@@ -3778,28 +3789,38 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	if ident, ok := expr.(*parser.Identifier); ok {
 		return "%" + ident.Value
 	}
-	// DotExpression 會回傳 %str-long SSA value（loaded from struct field），
-	// 但 extractStrLen/extractStrDataPtr 需要的是 %str-long* 指標。
-	// 將 value 物化到臨時 alloca，再傳回指標。
-	if dot, ok := expr.(*parser.DotExpression); ok {
-		val := g.generateExprWithSB(sb, expr)
-		if val == "" {
-			return val
+	// IndexExpression（如 names[i]）：使用 generateExprPtr 取得元素指標，
+	// 避免 load 出 %str-long value 後無法 GEP 存取 len/data 欄位。
+	if _, ok := expr.(*parser.IndexExpression); ok {
+		if ptr := g.generateExprPtr(sb, expr); ptr != "" {
+			return ptr
 		}
-		if strings.HasPrefix(val, "@") {
-			return val
-		}
-		et := g.exprResultLLVMType(dot)
-		if et == "%str-long" {
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
-			return tmpAlloca
-		}
+	}
+	// DotExpression / 其他表達式：生成值後物化到臨時 alloca 取得指標。
+	// extractStrLen/extractStrDataPtr 需要的是 %str-long* 指標，而非載入的值。
+	val := g.generateExprWithSB(sb, expr)
+	if val == "" {
 		return val
 	}
-	return g.generateExprWithSB(sb, expr)
+	if strings.HasPrefix(val, "@") {
+		return val
+	}
+	et := g.exprResultLLVMType(expr)
+	if et == "%str-long" {
+		g.tmpIdx++
+		tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
+		return tmpAlloca
+	}
+	if et == "%str-short" {
+		g.tmpIdx++
+		tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-short\n", g.indent(), tmpAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore %%str-short %s, %%str-short* %s\n", g.indent(), val, tmpAlloca))
+		return tmpAlloca
+	}
+	return val
 }
 
 // getStrType returns the LLVM type string for a string expression.

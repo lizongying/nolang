@@ -1,0 +1,487 @@
+// multipart — Multipart/form-data 編解碼（RFC 2046）
+//
+// 提供 HTTP multipart/form-data 的編碼（用於檔案上傳）與解析功能。
+// 支援文字欄位和檔案欄位，自動生成邊界（boundary）。
+//
+// 用法：
+//   // 建構 multipart 請求體
+//   w = multipart-create()
+//   w.write-field('name', 'Alice')
+//   w.write-file('avatar', 'photo.jpg', 'image/jpeg', file-data)
+//   w.close-form()
+//   body = w.body()
+//   ct = w.content-type()
+//   // 設定 HTTP 標頭
+//   req.add-header('Content-Type', ct)
+//   resp = http-post('http://example.com/upload', body)
+//
+//   // 解析 multipart 回應
+//   r = multipart-parse(boundary, body)
+//   r: {
+//       nil -> println('parse failed')
+//       -> {
+//           r: {
+//               ok -> {
+//                   name = r.field-name()
+//                   data = r.field-data()
+//               }
+//               -> break
+//           }
+//       }
+//   }
+
+# std/hash/rand
+
+// ═══════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════
+
+// 邊界前綴
+MULTIPART-BOUNDARY-PREFIX = '----NolangBoundary'
+
+// 最大欄位數
+MULTIPART-MAX-FIELDS = 32
+
+// 邊界長度
+MULTIPART-BOUNDARY-LEN = 32
+
+// ═══════════════════════════════════════════════
+// 工具函數
+// ═══════════════════════════════════════════════
+
+// multipart-gen-boundary: 生成隨機邊界字串
+// seed i64: 隨機種子（輸入/輸出）
+// 返回 boundary str: 邊界字串
+multipart-gen-boundary = (seed i64) (boundary str) {
+    boundary = MULTIPART-BOUNDARY-PREFIX
+    chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    prefix-len = boundary.len
+    i = 0
+    i < 16: {
+        r = rand(seed)
+        boundary[prefix-len + i] = chars[r % 36]
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// multipart-writer 結構體
+// ═══════════════════════════════════════════════
+
+// multipart-writer: Multipart 表單編碼器
+// boundary str: 邊界字串
+// body str: 已建構的請求體
+// closed bool: 是否已關閉（已寫入結束邊界）
+// seed i64: 隨機種子
+multipart-writer {
+    boundary str
+    body str
+    closed bool
+    seed i64
+}
+
+// init: 初始化編碼器（自動生成邊界）
+// 返回 ok=true=成功
+multipart-writer.init = () (ok bool) {
+    ok = true
+    .seed = 123456789
+    .boundary = multipart-gen-boundary(.seed)
+    .body = ''
+    .closed = false
+}
+
+// init-boundary: 使用指定邊界初始化
+// boundary str: 邊界字串
+multipart-writer.init-boundary = (boundary str) {
+    .boundary = boundary
+    .body = ''
+    .closed = false
+    .seed = 0
+}
+
+// write-field: 寫入文字欄位
+// name str: 欄位名稱
+// value str: 欄位值
+// 返回 ok=true=成功
+multipart-writer.write-field = (name str, value str) (ok bool) {
+    ok = false
+    if .closed {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    .body = .body - '--' - .boundary - crlf
+    .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
+    .body = .body - crlf
+    .body = .body - value - crlf
+    ok = true
+}
+
+// write-file: 寫入檔案欄位
+// name str: 欄位名稱
+// filename str: 檔案名稱
+// content-type str: 內容類型（如 'image/jpeg'）
+// content str: 檔案內容
+// 返回 ok=true=成功
+multipart-writer.write-file = (name str, filename str, content-type str, content str) (ok bool) {
+    ok = false
+    if .closed {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    .body = .body - '--' - .boundary - crlf
+    .body = .body - 'Content-Disposition: form-data; name="' - name - '"; filename="' - filename - '"' - crlf
+    .body = .body - 'Content-Type: ' - content-type - crlf
+    .body = .body - crlf
+    .body = .body - content - crlf
+    ok = true
+}
+
+// close-form: 寫入結束邊界，完成表單
+// 返回 ok=true=成功
+multipart-writer.close-form = () (ok bool) {
+    ok = false
+    if .closed {
+        return
+    }
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    .body = .body - '--' - .boundary - '--' - crlf
+    .closed = true
+    ok = true
+}
+
+// body-of: 取得已建構的請求體
+// 返回 body str
+multipart-writer.body-of = () (body str) {
+    body = .body
+}
+
+// boundary-of: 取得邊界字串
+// 返回 boundary str
+multipart-writer.boundary-of = () (boundary str) {
+    boundary = .boundary
+}
+
+// content-type: 取得 Content-Type 標頭值
+// 返回 ct str: 如 'multipart/form-data; boundary=----NolangBoundary...'
+multipart-writer.content-type = () (ct str) {
+    ct = 'multipart/form-data; boundary=' - .boundary
+}
+
+// ═══════════════════════════════════════════════
+// multipart-reader 結構體（解析）
+// ═══════════════════════════════════════════════
+
+// multipart-part: 單個 multipart 部分
+// name str: 欄位名稱
+// filename str: 檔案名稱（空=非檔案）
+// content-type str: 內容類型（空=未指定）
+// data str: 部分資料
+multipart-part {
+    name str
+    filename str
+    content-type str
+    data str
+}
+
+// multipart-reader: Multipart 表單解析器
+// boundary str: 邊界字串
+// data str: 原始資料
+// pos i64: 當前解析位置
+// end i64: 資料總長度
+// current multipart-part: 當前部分
+// has-current bool: 是否有當前部分
+multipart-reader {
+    boundary str
+    data str
+    pos i64
+    end i64
+    current multipart-part
+    has-current bool
+}
+
+// init: 初始化解析器
+// boundary str: 邊界字串（不含 '--' 前綴）
+// data str: 原始資料
+multipart-reader.init = (boundary str, data str) {
+    .boundary = boundary
+    .data = data
+    .end = data.len
+    .pos = 0
+    .has-current = false
+}
+
+// parse-headers: 解析部分標頭
+// header-block str: 標頭區塊（不含結尾 CRLFCRLF）
+// part multipart-part: 輸出，解析結果
+multipart-reader.parse-headers = (header-block str, part multipart-part) {
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    pos = 0
+    ! {
+        // 找到下一個 CRLF
+        next-crlf = header-block.index-from(crlf, pos)
+        if next-crlf < 0 {
+            // 最後一行
+            line = header-block.slice(pos, header-block.len)
+            .parse-header-line(line, part)
+            break
+        }
+        line = header-block.slice(pos, next-crlf)
+        .parse-header-line(line, part)
+        pos = next-crlf + 2
+        if pos >= header-block.len {
+            break
+        }
+    }
+}
+
+// parse-header-line: 解析單個標頭行
+// line str: 標頭行
+// part multipart-part: 輸出，解析結果
+multipart-reader.parse-header-line = (line str, part multipart-part) {
+    // Content-Disposition: form-data; name="field"; filename="file.txt"
+    if line.starts-with('Content-Disposition:') {
+        // 提取 name
+        name-marker = 'name="'
+        name-pos = line.index(name-marker)
+        if name-pos >= 0 {
+            name-start = name-pos + name-marker.len
+            name-end = line.index-from('"', name-start)
+            if name-end >= 0 {
+                part.name = line.slice(name-start, name-end)
+            }
+        }
+        // 提取 filename
+        file-marker = 'filename="'
+        file-pos = line.index(file-marker)
+        if file-pos >= 0 {
+            file-start = file-pos + file-marker.len
+            file-end = line.index-from('"', file-start)
+            if file-end >= 0 {
+                part.filename = line.slice(file-start, file-end)
+            }
+        }
+    }
+    if line.starts-with('Content-Type:') {
+        ct-start = 13
+        part.content-type = line.slice(ct-start, line.len)
+        part.content-type = part.content-type.trim()
+    }
+}
+
+// next: 前進到下一個部分
+// 返回 has-part bool: true=有下一個部分, false=已到結尾
+multipart-reader.next = () (has-part bool) {
+    has-part = false
+    .has-current = false
+
+    if .pos >= .end {
+        return
+    }
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    // 尋找邊界行: --boundary
+    boundary-marker = '--' - .boundary
+    marker-pos = .data.index-from(boundary-marker, .pos)
+    if marker-pos < 0 {
+        return
+    }
+
+    // 檢查是否為結束邊界: --boundary--
+    after-marker = marker-pos + boundary-marker.len
+    if after-marker + 1 < .end {
+        if .data[after-marker] == 45 && .data[after-marker + 1] == 45 {
+            // '--' = 結束邊界
+            .pos = .end
+            return
+        }
+    }
+
+    // 跳過邊界行後的 CRLF
+    header-start = after-marker
+    if header-start + 1 < .end {
+        if .data[header-start] == 13 && .data[header-start + 1] == 10 {
+            header-start = header-start + 2
+        }
+    }
+
+    // 尋找標頭結束（CRLFCRLF）
+    header-end-marker = crlf - crlf
+    header-end = .data.index-from(header-end-marker, header-start)
+    if header-end < 0 {
+        return
+    }
+
+    // 解析標頭
+    header-block = .data.slice(header-start, header-end)
+    part multipart-part
+    .parse-headers(header-block, part)
+
+    // 資料起始 = 標頭結束 + CRLFCRLF
+    data-start = header-end + 4
+
+    // 尋找下一個邊界（資料結束位置）
+    next-boundary = .data.index-from(boundary-marker, data-start)
+    if next-boundary < 0 {
+        return
+    }
+
+    // 資料結束 = 下一個邊界前 - CRLF
+    data-end = next-boundary - 2
+    if data-end < data-start {
+        data-end = data-start
+    }
+
+    part.data = .data.slice(data-start, data-end)
+    .current = part
+    .has-current = true
+    .pos = next-boundary
+    has-part = true
+}
+
+// field-name: 取得當前欄位名稱
+// 返回 name str
+multipart-reader.field-name = () (name str) {
+    name = .current.name
+}
+
+// field-filename: 取得當前檔案名稱
+// 返回 filename str: 空=非檔案欄位
+multipart-reader.field-filename = () (filename str) {
+    filename = .current.filename
+}
+
+// field-content-type: 取得當前內容類型
+// 返回 ct str: 空=未指定
+multipart-reader.field-content-type = () (ct str) {
+    ct = .current.content-type
+}
+
+// field-data: 取得當前欄位資料
+// 返回 data str
+multipart-reader.field-data = () (data str) {
+    data = .current.data
+}
+
+// is-file: 判斷當前部分是否為檔案
+// 返回 yes bool: true=檔案
+multipart-reader.is-file = () (yes bool) {
+    yes = false
+    if .current.filename.len > 0 {
+        yes = true
+    }
+}
+
+// has-current-part: 判斷是否有當前部分
+// 返回 yes bool
+multipart-reader.has-current-part = () (yes bool) {
+    yes = .has-current
+}
+
+// ═══════════════════════════════════════════════
+// 便捷函數
+// ═══════════════════════════════════════════════
+
+// multipart-create: 建立新的 multipart 編碼器
+// 返回 w ?multipart-writer: ok=編碼器, nil=失敗
+multipart-create = () (w ?multipart-writer) {
+    w = nil
+    writer = multipart-writer{}
+    ok = false
+    ok = writer.init()
+    if ok {
+        w = writer
+    }
+}
+
+// multipart-create-boundary: 使用指定邊界建立編碼器
+// boundary str: 邊界字串
+// 返回 w multipart-writer
+multipart-create-boundary = (boundary str) (w multipart-writer) {
+    w.init-boundary(boundary)
+}
+
+// multipart-parse: 從 Content-Type 標頭和請求體解析 multipart
+// content-type str: Content-Type 標頭值（含 boundary=...）
+// body str: 請求體
+// 返回 r ?multipart-reader: ok=解析器, nil=失敗
+multipart-parse = (content-type str, body str) (r ?multipart-reader) {
+    r = nil
+    // 從 Content-Type 提取 boundary
+    boundary-marker = 'boundary='
+    bpos = content-type.index(boundary-marker)
+    if bpos < 0 {
+        return
+    }
+    bstart = bpos + boundary-marker.len
+    // 處理可能的引號
+    if bstart < content-type.len {
+        if content-type[bstart] == 34 {
+            // 引號開始，找結束引號
+            bstart = bstart + 1
+            bend = content-type.index-from('"', bstart)
+            if bend < 0 {
+                return
+            }
+            boundary = content-type.slice(bstart, bend)
+        } else {
+            // 無引號，取到行尾或分號
+            bend = content-type.index-from(';', bstart)
+            if bend < 0 {
+                bend = content-type.len
+            }
+            boundary = content-type.slice(bstart, bend)
+            boundary = boundary.trim()
+        }
+    } else {
+        return
+    }
+
+    reader = multipart-reader{}
+    reader.init(boundary, body)
+    r = reader
+}
+
+// multipart-extract-boundary: 從 Content-Type 提取 boundary 值
+// content-type str: Content-Type 標頭值
+// 返回 boundary str: 邊界字串（空=未找到）
+multipart-extract-boundary = (content-type str) (boundary str) {
+    boundary = ''
+    boundary-marker = 'boundary='
+    bpos = content-type.index(boundary-marker)
+    if bpos < 0 {
+        return
+    }
+    bstart = bpos + boundary-marker.len
+    if bstart < content-type.len {
+        if content-type[bstart] == 34 {
+            bstart = bstart + 1
+            bend = content-type.index-from('"', bstart)
+            if bend < 0 {
+                return
+            }
+            boundary = content-type.slice(bstart, bend)
+        } else {
+            bend = content-type.index-from(';', bstart)
+            if bend < 0 {
+                bend = content-type.len
+            }
+            boundary = content-type.slice(bstart, bend)
+            boundary = boundary.trim()
+        }
+    }
+}
