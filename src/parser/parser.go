@@ -2854,6 +2854,7 @@ const (
 var precedences = map[lexer.TokenType]int{
 	lexer.COMMA:          COMMA,
 	lexer.QUESTION:       CONDITIONAL,
+	lexer.AS:             CONDITIONAL, // `as` cast: lower than arithmetic, higher than assignment
 	lexer.LOR:            LOGICAL_OR,
 	lexer.LAND:           LOGICAL_AND,
 	lexer.EQUALS:         EQUALS,
@@ -3044,9 +3045,15 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 
 	case lexer.AS:
-		expr := &Identifier{Token: p.currentToken, Value: "as"}
+		// `as` is now handled as a postfix cast operator after the prefix
+		// expression is parsed (see AS handling after the infix loop below).
+		// If we reach here, `as` appeared where an expression was expected,
+		// which is a parse error. Skip it and return nil.
+		msg := fmt.Sprintf("line %d, column %d: unexpected 'as' at start of expression",
+			p.currentToken.Line, p.currentToken.Column)
+		p.saveError(msg)
 		p.nextToken()
-		leftExp = expr
+		return nil
 
 	case lexer.PTR:
 		leftExp = p.parsePointerType()
@@ -3245,29 +3252,44 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 	}
 
-	// 处理中缀运算符（不包括三元表达式）
+	// 处理中缀运算符与 `as` 类型转换（不包括三元表达式）
+	// `as` 的优先级低于算术（PRODUCT/SUM/...），高于赋值；
+	// 循环允许 (expr as Type) op expr 形式，例如 (r[4]*5) as u64 后跟 +
 	for p.currentToken.Type != lexer.EOF &&
 		!(p.ctx.contains(CTX_MATCH_ARM) && p.currentToken.Type == lexer.RARROW) &&
-		(p.currentToken.Type == lexer.LAND ||
-			p.currentToken.Type == lexer.LOR ||
-			p.currentToken.Type == lexer.ADD ||
-			p.currentToken.Type == lexer.SUB ||
-			p.currentToken.Type == lexer.MUL ||
-			p.currentToken.Type == lexer.QUO ||
-			p.currentToken.Type == lexer.MOD ||
-			p.currentToken.Type == lexer.EQUALS ||
-			p.currentToken.Type == lexer.NOT_EQUALS ||
-			p.currentToken.Type == lexer.LESS ||
-			p.currentToken.Type == lexer.LESS_EQUALS ||
-			p.currentToken.Type == lexer.GREATER ||
-			p.currentToken.Type == lexer.GREATER_EQUALS ||
-			p.currentToken.Type == lexer.AND ||
-			p.currentToken.Type == lexer.OR ||
-			p.currentToken.Type == lexer.XOR ||
-			p.currentToken.Type == lexer.SHL ||
-			p.currentToken.Type == lexer.SHR) &&
 		p.currentPrecedence() > precedence {
-		// 解析中缀表达式
+
+		// `as` 类型转换：expr as Type
+		if p.currentToken.Type == lexer.AS {
+			asTok := p.currentToken
+			p.nextToken() // skip as
+			// 解析目标类型（NamedType / NullableType / PointerType 等）
+			typ, ok := p.parseTypeExpression()
+			if !ok || typ == nil {
+				msg := fmt.Sprintf("line %d, column %d: expected type after 'as', got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			leftExp = &CastExpression{
+				Token: asTok,
+				Expr:  leftExp,
+				Type:  typ,
+			}
+			continue
+		}
+
+		// 一般中缀运算符
+		t := p.currentToken.Type
+		if !(t == lexer.LAND || t == lexer.LOR || t == lexer.ADD || t == lexer.SUB ||
+			t == lexer.MUL || t == lexer.QUO || t == lexer.MOD ||
+			t == lexer.EQUALS || t == lexer.NOT_EQUALS ||
+			t == lexer.LESS || t == lexer.LESS_EQUALS ||
+			t == lexer.GREATER || t == lexer.GREATER_EQUALS ||
+			t == lexer.AND || t == lexer.OR || t == lexer.XOR ||
+			t == lexer.SHL || t == lexer.SHR) {
+			break
+		}
 		leftExp = p.parseInfixExpression(leftExp)
 	}
 

@@ -279,9 +279,26 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateInfix(sb, e)
 	case *parser.GroupedExpression:
 		return g.generateExprWithSB(sb, e.Expression)
+	case *parser.CastExpression:
+		return g.generateCastExpression(sb, e)
 	default:
 		return "0"
 	}
+}
+
+// generateCastExpression handles `expr as Type` type casts.
+//
+// Simplified implementation: all Nolang integers are stored as i64 in LLVM
+// (see intExprLLVMType and the i64 load in the Identifier case), so integer-
+// to-integer casts (e.g. i64 as u64, u32 as u64, i32 as u64) are effectively
+// no-ops at the IR level — the bit pattern is identical. We therefore simply
+// return the underlying expression's value. The 48 usages in src/std/hash/
+// are all integer-to-integer casts, so this covers them.
+//
+// If non-integer casts (struct/str/etc.) are added in the future, this
+// function should be extended with proper conversion logic.
+func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastExpression) string {
+	return g.generateExprWithSB(sb, e.Expr)
 }
 
 // generateConditionAsI1 generates LLVM IR for a condition expression,

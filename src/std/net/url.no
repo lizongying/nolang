@@ -20,6 +20,11 @@
 //   // URL 編碼
 //   enc = url-encode('hello world!')  // 'hello%20world%21'
 //   dec = url-decode('hello%20world') // 'hello world'
+//
+//   // HTTP Basic 認證
+//   auth = url-basic-auth('user', 'pass')  // 'Basic dXNlcjpwYXNz'
+
+# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 結構體
@@ -471,4 +476,74 @@ url-join = (base str, path-str str) (out str) {
     } else {
         out = base - '/' - path-str
     }
+}
+
+// ═══════════════════════════════════════════════
+// HTTP Basic 認證
+// ═══════════════════════════════════════════════
+
+// url-basic-auth: 產生 HTTP Basic 認證標頭值
+// user str: 用戶名
+// password str: 密碼
+// 返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
+url-basic-auth = (user str, password str) (out str) {
+    // 拼接 user:password
+    raw = user - ':' - password
+    raw-bytes []byte = raw.to-bytes()
+    n = raw.len
+    // 計算 Base64 編碼後長度
+    enc-len = ((n + 2) / 3) * 4
+    space = ' '
+    enc-str = space.repeat(enc-len)
+    encode-std(raw-bytes, n, enc-str)
+    out = 'Basic ' - enc-str
+}
+
+// url-parse-basic-auth: 解析 HTTP Basic 認證標頭
+// header str: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
+// 返回 user str: 用戶名（空=解析失敗）
+// 返回 password str: 密碼
+url-parse-basic-auth = (header str) (user str, password str) {
+    user = ''
+    password = ''
+    // 檢查 'Basic ' 前綴
+    prefix = 'Basic '
+    if header.starts-with(prefix) == false {
+        return
+    }
+    b64 = header.slice(prefix.len, header.len)
+    b64-bytes []byte = b64.to-bytes()
+    n = b64.len
+    raw []byte
+    decode(b64, n, BASE64-STD, raw)
+    // 尋找冒號分隔符
+    colon = -1
+    i = 0
+    for i < raw.len {
+        if raw[i] == 58 {
+            colon = i
+            break
+        }
+        i = i + 1
+    }
+    if colon < 0 {
+        return
+    }
+    // 提取 user 和 password
+    user-bytes []byte
+    j = 0
+    for j < colon {
+        user-bytes[j] = raw[j]
+        j = j + 1
+    }
+    user = user-bytes.to-str()
+    pass-bytes []byte
+    j = colon + 1
+    k = 0
+    for j < raw.len {
+        pass-bytes[k] = raw[j]
+        j = j + 1
+        k = k + 1
+    }
+    password = pass-bytes.to-str()
 }

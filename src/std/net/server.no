@@ -23,6 +23,8 @@
 //   }
 
 # std/net/net
+# std/net/cookie
+# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -666,4 +668,172 @@ http-listen-on = (host str, port i64) (s ?http-server) {
     if ok {
         s = srv
     }
+}
+
+// ═══════════════════════════════════════════════
+// 伺服器端加密/認證支援
+// ═══════════════════════════════════════════════
+
+// get-cookie: 從請求標頭取得指定 Cookie 值
+// name str: Cookie 名稱
+// 返回 val ?str: ok=Cookie 值, nil=未找到
+http-server-conn.get-cookie = (name str) (val ?str) {
+    val = nil
+    // 取得 Cookie 標頭
+    cookie-header ?str = .get-header('Cookie')
+    cookie-header: {
+        nil -> return
+        -> {
+            // 解析 Cookie 標頭
+            pos = 0
+            ! {
+                // 跳過空格
+                for pos < it.len && it[pos] == 32 {
+                    pos = pos + 1
+                }
+                if pos >= it.len {
+                    *
+                }
+                // 找下一個分號
+                next-semi = it.index-from(';', pos)
+                pair-end = next-semi
+                if pair-end < 0 {
+                    pair-end = it.len
+                }
+                pair = it.slice(pos, pair-end)
+                pair = pair.trim()
+                eq-pos = pair.index('=')
+                if eq-pos >= 0 {
+                    cname = pair.slice(0, eq-pos)
+                    cvalue = pair.slice(eq-pos + 1, pair.len)
+                    if cname == name {
+                        val = cvalue
+                        return
+                    }
+                }
+                if next-semi < 0 {
+                    *
+                }
+                pos = next-semi + 1
+            }
+        }
+    }
+}
+
+// get-signed-cookie: 取得並驗證簽名 Cookie
+// name str: Cookie 名稱
+// key []byte: HMAC-SHA256 簽名金鑰
+// 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
+http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
+    val = nil
+    signed ?str = .get-cookie(name)
+    signed: {
+        nil -> return
+        -> {
+            // 驗證簽名
+            ok = false
+            raw = ''
+            ok, raw = cookie-verify(name, it, key)
+            if ok {
+                val = raw
+            } else {
+                val = nil
+            }
+        }
+    }
+}
+
+// verify-basic-auth: 驗證 HTTP Basic 認證
+// expected-user str: 期望的用戶名
+// expected-pass str: 期望的密碼
+// 返回 ok bool: true=認證通過
+http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok bool) {
+    ok = false
+    auth-header ?str = .get-header('Authorization')
+    auth-header: {
+        nil -> return
+        -> {
+            // 檢查 'Basic ' 前綴
+            prefix = 'Basic '
+            if it.starts-with(prefix) == false {
+                return
+            }
+            // Base64 解碼
+            b64 = it.slice(prefix.len, it.len)
+            raw []byte
+            n = b64.len
+            raw-n = 0
+            decoded = false
+            raw-n, decoded = decode(b64, n, BASE64-STD, raw)
+            if decoded == false {
+                return
+            }
+            // 尋找冒號分隔符
+            colon = -1
+            i = 0
+            for i < raw-n {
+                if raw[i] == 58 {
+                    colon = i
+                    break
+                }
+                i = i + 1
+            }
+            if colon < 0 {
+                return
+            }
+            // 提取用戶名和密碼
+            user-bytes []byte
+            j = 0
+            for j < colon {
+                user-bytes[j] = raw[j]
+                j = j + 1
+            }
+            user = user-bytes.to-str()
+            pass-bytes []byte
+            j = colon + 1
+            k = 0
+            for j < raw-n {
+                pass-bytes[k] = raw[j]
+                j = j + 1
+                k = k + 1
+            }
+            pass = pass-bytes.to-str()
+            // 比較（常數時間比較）
+            user-ok = secure-compare(user, expected-user)
+            pass-ok = secure-compare(pass, expected-pass)
+            if user-ok && pass-ok {
+                ok = true
+            }
+        }
+    }
+}
+
+// secure-compare: 常數時間字串比較
+// a str: 字串 A
+// b str: 字串 B
+// 返回 ok bool: true=相等
+secure-compare = (a str, b str) (ok bool) {
+    ok = false
+    if a.len != b.len {
+        return
+    }
+    diff = 0
+    i = 0
+    for i < a.len {
+        diff = diff | (a[i] ^ b[i])
+        i = i + 1
+    }
+    if diff == 0 {
+        ok = true
+    }
+}
+
+// set-signed-cookie: 設定簽名 Cookie 到回應
+// name str: Cookie 名稱
+// value str: Cookie 值
+// key []byte: HMAC-SHA256 簽名金鑰
+http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
+    signed-value = cookie-sign(name, value, key)
+    cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
+    .write-header('Set-Cookie', cookie-val)
 }

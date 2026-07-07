@@ -26,6 +26,7 @@
 //   resp = http-do-req(req)
 
 # std/net/tls
+# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -747,4 +748,71 @@ http-delete = (url str) (resp ?http-response) {
 // 返回 resp ?http-response: ok=回應, nil=失敗
 http-patch = (url str, body str) (resp ?http-response) {
     resp = http-do('PATCH', url, body)
+}
+
+// ═══════════════════════════════════════════════
+// 認證便捷函數
+// ═══════════════════════════════════════════════
+
+// http-set-basic-auth: 為請求加入 HTTP Basic 認證標頭
+// req http-request: 請求結構體
+// user str: 用戶名
+// password str: 密碼
+// 返回 ok=true=成功
+http-set-basic-auth = (req http-request, user str, password str) (ok bool) {
+    // 拼接 user:password 並 Base64 編碼
+    raw = user - ':' - password
+    raw-bytes []byte = raw.to-bytes()
+    n = raw.len
+    enc-len = ((n + 2) / 3) * 4
+    space = ' '
+    enc-str = space.repeat(enc-len)
+    encode-std(raw-bytes, n, enc-str)
+    auth-val = 'Basic ' - enc-str
+    ok = req.add-header('Authorization', auth-val)
+}
+
+// http-set-bearer-auth: 為請求加入 Bearer Token 認證標頭
+// req http-request: 請求結構體
+// token str: Bearer token
+// 返回 ok=true=成功
+http-set-bearer-auth = (req http-request, token str) (ok bool) {
+    auth-val = 'Bearer ' - token
+    ok = req.add-header('Authorization', auth-val)
+}
+
+// http-set-api-key: 為請求加入 API Key 標頭
+// req http-request: 請求結構體
+// header-name str: 標頭名稱（如 'X-API-Key'）
+// api-key str: API 金鑰
+// 返回 ok=true=成功
+http-set-api-key = (req http-request, header-name str, api-key str) (ok bool) {
+    ok = req.add-header(header-name, api-key)
+}
+
+// http-get-auth: 執行帶 Basic 認證的 HTTP GET 請求
+// url str: 完整 URL
+// user str: 用戶名
+// password str: 密碼
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-get-auth = (url str, user str, password str) (resp ?http-response) {
+    resp = nil
+    r http-request
+    r.init('GET', url, '')
+    http-set-basic-auth(r, user, password)
+    resp = http-do-req(r)
+}
+
+// http-post-auth: 執行帶 Basic 認證的 HTTP POST 請求
+// url str: 完整 URL
+// body str: 請求主體
+// user str: 用戶名
+// password str: 密碼
+// 返回 resp ?http-response: ok=回應, nil=失敗
+http-post-auth = (url str, body str, user str, password str) (resp ?http-response) {
+    resp = nil
+    r http-request
+    r.init('POST', url, body)
+    http-set-basic-auth(r, user, password)
+    resp = http-do-req(r)
 }

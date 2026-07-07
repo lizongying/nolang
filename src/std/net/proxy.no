@@ -19,6 +19,7 @@
 
 # std/net/net
 # std/net/tls
+# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -74,11 +75,15 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
 
     // 代理認證（Basic 認證）
     if username.len > 0 {
-        // 簡化：直接使用明文（實際應使用 base64 編碼）
         // 格式: Proxy-Authorization: Basic base64(user:pass)
-        // 這裡使用原始格式，某些代理可能支援
-        auth = username - ':' - password
-        req = req - 'Proxy-Authorization: Basic ' - auth - crlf
+        auth-raw = username - ':' - password
+        auth-bytes []byte = auth-raw.to-bytes()
+        auth-len = auth-raw.len
+        enc-len = ((auth-len + 2) / 3) * 4
+        space = ' '
+        enc-str = space.repeat(enc-len)
+        encode-std(auth-bytes, auth-len, enc-str)
+        req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
 
     req = req - crlf

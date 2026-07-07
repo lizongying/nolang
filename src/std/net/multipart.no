@@ -2,6 +2,7 @@
 //
 // 提供 HTTP multipart/form-data 的編碼（用於檔案上傳）與解析功能。
 // 支援文字欄位和檔案欄位，自動生成邊界（boundary）。
+// 支援 AES-256-GCM 加密檔案上傳，保護敏感資料。
 //
 // 用法：
 //   // 建構 multipart 請求體
@@ -14,6 +15,12 @@
 //   // 設定 HTTP 標頭
 //   req.add-header('Content-Type', ct)
 //   resp = http-post('http://example.com/upload', body)
+//
+//   // 加密檔案上傳
+//   w = multipart-create()
+//   w.write-encrypted-file('secret', 'data.bin', 'application/octet-stream', file-data, key, iv)
+//   w.close-form()
+//   // 接收端使用 multipart-reader 解析後，用 aes-256-gcm-open 解密
 //
 //   // 解析 multipart 回應
 //   r = multipart-parse(boundary, body)
@@ -31,6 +38,8 @@
 //   }
 
 # std/hash/rand
+# std/hash/aes-256-gcm
+# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -484,4 +493,144 @@ multipart-extract-boundary = (content-type str) (boundary str) {
             boundary = boundary.trim()
         }
     }
+}
+
+// ═══════════════════════════════════════════════
+// 加密檔案上傳（AES-256-GCM）
+// ═══════════════════════════════════════════════
+
+// multipart-writer.write-encrypted-file: 寫入 AES-256-GCM 加密檔案欄位
+// name str: 欄位名稱
+// filename str: 檔案名稱
+// content-type str: 內容類型
+// content str: 檔案明文內容
+// key [32]byte: AES-256 金鑰
+// iv [12]byte: GCM IV（nonce）
+// 返回 ok=true=成功
+multipart-writer.write-encrypted-file = (name str, filename str, content-type str, content str, key [32]byte, iv [12]byte) (ok bool) {
+    ok = false
+    if .closed {
+        return
+    }
+    // 加密內容（AAD 為空，檔案加密不需要額外認證資料）
+    plain []byte = content.to-bytes()
+    aad []byte
+    sealed []byte = aes-256-gcm-seal(key, iv, aad, plain)
+    // 將 IV + 密文轉為 Base64 字串
+    // 格式: base64(iv || sealed)
+    combined []byte
+    i = 0
+    for i < 12 {
+        combined[i] = iv[i]
+        i = i + 1
+    }
+    sealed-n = sealed.len
+    i = 0
+    for i < sealed-n {
+        combined[12 + i] = sealed[i]
+        i = i + 1
+    }
+    combined-n = 12 + sealed-n
+    enc-len = ((combined-n + 2) / 3) * 4
+    space = ' '
+    enc-str = space.repeat(enc-len)
+    encode-std(combined, combined-n, enc-str)
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    .body = .body - '--' - .boundary - crlf
+    .body = .body - 'Content-Disposition: form-data; name="' - name - '"; filename="' - filename - '"' - crlf
+    .body = .body - 'Content-Type: ' - content-type - crlf
+    .body = .body - 'X-Encryption: aes-256-gcm' - crlf
+    .body = .body - crlf
+    .body = .body - enc-str - crlf
+    ok = true
+}
+
+// multipart-writer.write-encrypted-field: 寫入 AES-256-GCM 加密文字欄位
+// name str: 欄位名稱
+// value str: 明文值
+// key [32]byte: AES-256 金鑰
+// iv [12]byte: GCM IV
+// 返回 ok=true=成功
+multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv [12]byte) (ok bool) {
+    ok = false
+    if .closed {
+        return
+    }
+    // 加密值
+    plain []byte = value.to-bytes()
+    aad []byte = name.to-bytes()
+    sealed []byte = aes-256-gcm-seal(key, iv, aad, plain)
+    // 將 IV + 密文轉為 Base64
+    combined []byte
+    i = 0
+    for i < 12 {
+        combined[i] = iv[i]
+        i = i + 1
+    }
+    sealed-n = sealed.len
+    i = 0
+    for i < sealed-n {
+        combined[12 + i] = sealed[i]
+        i = i + 1
+    }
+    combined-n = 12 + sealed-n
+    enc-len = ((combined-n + 2) / 3) * 4
+    space = ' '
+    enc-str = space.repeat(enc-len)
+    encode-std(combined, combined-n, enc-str)
+
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    .body = .body - '--' - .boundary - crlf
+    .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
+    .body = .body - 'X-Encryption: aes-256-gcm' - crlf
+    .body = .body - crlf
+    .body = .body - enc-str - crlf
+    ok = true
+}
+
+// multipart-decrypt-field: 解密加密的 multipart 欄位資料
+// encrypted-data str: Base64 編碼的加密資料（含 12 byte IV 前綴）
+// key [32]byte: AES-256 金鑰
+// aad []byte: 額外認證資料（欄位名稱）
+// 返回 plain ?str: ok=解密後明文, nil=解密失敗
+multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain ?str) {
+    plain = nil
+    // Base64 解碼
+    raw []byte
+    n = encrypted-data.len
+    raw-n = 0
+    ok = false
+    raw-n, ok = decode(encrypted-data, n, BASE64-STD, raw)
+    if ok == false || raw-n < 12 {
+        return
+    }
+    // 提取 IV（前 12 位元組）
+    iv [12]byte
+    i = 0
+    for i < 12 {
+        iv[i] = raw[i]
+        i = i + 1
+    }
+    // 提取密文+tag
+    sealed []byte
+    sealed-n = raw-n - 12
+    i = 0
+    for i < sealed-n {
+        sealed[i] = raw[12 + i]
+        i = i + 1
+    }
+    // 解密
+    opened []byte = aes-256-gcm-open(key, iv, aad, sealed)
+    if opened.len == 0 {
+        plain = err('decryption failed')
+        return
+    }
+    plain = opened.to-str()
 }

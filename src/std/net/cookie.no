@@ -2,6 +2,7 @@
 //
 // 提供 Cookie 的解析、建構與管理（Cookie Jar）功能。
 // 支援 Set-Cookie 標頭解析、Cookie 標頭建構、Cookie 存儲與檢索。
+// 支援基於 HMAC-SHA256 的簽名 Cookie，防止篡改。
 //
 // 用法：
 //   // 解析 Set-Cookie 標頭
@@ -19,8 +20,14 @@
 //   jar.set('sessionid', 'abc123', '/', '', 0)
 //   header = jar.build-header('example.com', '/api')  // 'sessionid=abc123'
 //
-//   // 解析回應中的 Set-Cookie
-//   jar.parse-response('Set-Cookie: token=xyz; Path=/; Max-Age=3600', 'example.com', '/')
+//   // 簽名 Cookie
+//   signed = cookie-sign('sessionid=abc123', secret-key)
+//   // signed = 'sessionid=abc123.hmac-hex-signature'
+//   ok = cookie-verify(signed, secret-key)
+//   // ok = true 表示簽名驗證通過
+
+# std/hash/hmac
+# std/hash/sha256
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -445,4 +452,114 @@ cookie-jar.clear = () {
 // 返回 n i64: Cookie 數量
 cookie-jar.count-of = () (n i64) {
     n = .count
+}
+
+// ═══════════════════════════════════════════════
+// 簽名 Cookie（HMAC-SHA256）
+// ═══════════════════════════════════════════════
+
+// cookie-sign: 對 Cookie 值進行 HMAC-SHA256 簽名
+// name str: Cookie 名稱
+// value str: Cookie 值
+// key []byte: 簽名金鑰
+// 返回 signed str: 簽名後的值（格式: value.hex-hmac）
+cookie-sign = (name str, value str, key []byte) (signed str) {
+    // 簽名內容 = name=value
+    msg-str = name - '=' - value
+    msg []byte = msg-str.to-bytes()
+    mac [32]byte = hmac-sha256(key, msg)
+    // 轉為 hex 字串
+    hex-chars = '0123456789abcdef'
+    space = ' '
+    hex-str = space.repeat(64)
+    i = 0
+    for i < 32 {
+        hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
+        hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
+        i = i + 1
+    }
+    signed = value - '.' - hex-str
+}
+
+// cookie-verify: 驗證簽名 Cookie
+// name str: Cookie 名稱
+// signed-value str: 簽名後的值（格式: value.hex-hmac）
+// key []byte: 簽名金鑰
+// 返回 ok bool: true=驗證通過
+// 返回 value str: 原始 Cookie 值（驗證失敗時為空）
+cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
+    ok = false
+    value = ''
+    // 尋找最後一個 '.'
+    dot-pos = -1
+    i = signed-value.len - 1
+    for i >= 0 {
+        if signed-value[i] == 46 {
+            dot-pos = i
+            break
+        }
+        i = i - 1
+    }
+    if dot-pos < 0 {
+        return
+    }
+    // 提取原始值和簽名
+    value = signed-value.slice(0, dot-pos)
+    provided-hex = signed-value.slice(dot-pos + 1, signed-value.len)
+    // 計算期望的簽名
+    expected-signed = cookie-sign(name, value, key)
+    // 提取期望的 hex 部分
+    expected-hex = expected-signed.slice(value.len + 1, expected-signed.len)
+    // 比較簽名（常數時間比較）
+    if provided-hex.len != expected-hex.len {
+        value = ''
+        return
+    }
+    diff = 0
+    i = 0
+    for i < provided-hex.len {
+        diff = diff | (provided-hex[i] ^ expected-hex[i])
+        i = i + 1
+    }
+    if diff == 0 {
+        ok = true
+    } else {
+        value = ''
+    }
+}
+
+// cookie-jar.set-signed: 設定簽名 Cookie
+// name str: Cookie 名稱
+// value str: Cookie 值
+// domain str: 域名
+// path str: 路徑
+// max-age i64: 最大存活秒數
+// key []byte: 簽名金鑰
+cookie-jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []byte) {
+    signed-value = cookie-sign(name, value, key)
+    .set(name, signed-value, domain, path, max-age)
+}
+
+// cookie-jar.get-verified: 取得並驗證簽名 Cookie
+// name str: Cookie 名稱
+// domain str: 域名
+// path str: 路徑
+// key []byte: 簽名金鑰
+// 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
+cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
+    val = nil
+    signed-val ?str = .get(name, domain, path)
+    signed-val: {
+        nil -> return
+        -> {
+            verified-ok = false
+            verified-val = ''
+            verified-ok, verified-val = cookie-verify(name, it, key)
+            if verified-ok {
+                val = verified-val
+            } else {
+                val = nil
+            }
+        }
+    }
 }

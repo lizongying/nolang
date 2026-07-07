@@ -975,6 +975,30 @@ func (ce *ConditionalExpression) EndPos() lexer.Position {
 	return posFromToken(ce.Token)
 }
 
+// CastExpression represents a type cast: expr as Type
+// All Nolang integers are stored as i64 in LLVM, so integer-to-integer
+// casts are effectively no-ops at the IR level (see codegen in expr.go).
+type CastExpression struct {
+	Token lexer.Token // the `as` token
+	Expr  Expression
+	Type  Type
+}
+
+func (ce *CastExpression) expressionNode()     {}
+func (ce *CastExpression) Pos() lexer.Position { return ce.Expr.Pos() }
+func (ce *CastExpression) EndPos() lexer.Position {
+	if ce.Type != nil {
+		return ce.Type.EndPos()
+	}
+	return ce.Expr.EndPos()
+}
+func (ce *CastExpression) String() string {
+	if ce.Type != nil {
+		return exprToString(ce.Expr) + " as " + ce.Type.String()
+	}
+	return exprToString(ce.Expr) + " as ?"
+}
+
 // IterationExpr unifies the different kinds of for-range iteration.
 type IterationExpr struct {
 	Token     lexer.Token // the IN or ARROW token
