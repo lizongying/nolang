@@ -396,6 +396,92 @@ x: {
 
 > **for-in 體內 match 語義**：`i <- (a..b]: { 1 -> ... 2 -> ... }` 對每個迭代變量 `i` 執行一次 match 體（`1 ->` 等同於 `i == 1 ->`，依此類推）。這是每輪迭代執行一次 match 的語法糖。
 
+#### Match 風格指引
+
+```nolang
+// ❌ 避免重複分支體
+w = tls-c.send(req)
+w: {
+    nil -> {
+        tls-c.close()
+        return
+    }
+    err -> {
+        tls-c.close()
+        return
+    }
+    ok -> n = it
+}
+
+// ✅ 公共邏輯放 -> catch-all
+w = tls-c.send(req)
+w: {
+    ok -> n = it
+    -> {
+        tls-c.close()
+        return
+    }
+}
+
+// ✅ 反之亦然：簡單分支命名，複雜邏輯放 ->
+val: {
+    nil -> return
+    err -> log(it)
+    -> {
+        n = it
+        total = total + n
+        process(n)
+    }
+}
+```
+
+```nolang
+// 單語句 — 不加大括號
+val: {
+    ok -> println(it)
+    -> println('empty or error')
+}
+
+// 多語句 — 必須加大括號
+val: {
+    ok -> {
+        n = it
+        total = total + n
+    }
+    -> {
+        log('failed')
+        return
+    }
+}
+```
+
+```nolang
+// it 隱式綁定
+val: {
+    ok -> process(it)       // it = 解包後的值
+    err -> log(it)          // it = 錯誤訊息字串
+    -> log('empty')         // catch-all，此處為 nil
+}
+```
+
+```nolang
+// ✅ 組合 option 模式：nil || err -> body
+// 當 option 為 nil 或 err 時共用同一個分支
+val: {
+    nil || err -> {
+        cleanup()
+        return
+    }
+    ok -> process(it)
+}
+
+// ✅ 也可與 -> catch-all 混用
+val: {
+    nil || err -> log('failed')
+    ok -> process(it)
+}
+```
+
 ### If / Else
 
 ```nolang

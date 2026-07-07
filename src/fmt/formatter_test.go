@@ -121,10 +121,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: "foo = () {\n    {\n        x == 1 -> a = 1\n        x == 2 -> a = 2\n        -> a = 0\n    }\n}",
 		},
 		{
-			// 新式 if/else 多行 body（換行 body → 多行格式）
+			// 新式 if/else 多行 body（多語句 body → 用大括號包裹）
 			name:     "if_else_multiline_body",
 			input:    "foo=(){{\nx==1->\na=1\nb=2\n->\nc=0\n}}",
-			expected: "foo = () {\n    {\n        x == 1 ->\n            a = 1\n            b = 2\n        -> c = 0\n    }\n}",
+			expected: "foo = () {\n    {\n        x == 1 -> {\n            a = 1\n            b = 2\n        }\n        -> c = 0\n    }\n}",
 		},
 		{
 			// 新式 if/else 或條件
@@ -1802,6 +1802,81 @@ test-match = () {
     {
         a == 1 -> log('1')
         -> log('else')
+    }
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatCombinedOptionPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "nil || err with ok arm",
+			input: `test = () {
+    x ?i64
+    x: {
+        nil || err -> {
+            cleanup()
+            return
+        }
+        ok -> process(it)
+    }
+}`,
+			expected: `test = () {
+    x ?i64
+    x: {
+        nil || err -> {
+            cleanup()
+            return
+        }
+        ok -> process(it)
+    }
+}`,
+		},
+		{
+			name: "nil || err inline body",
+			input: `test = () {
+    x ?i64
+    x: {
+        nil || err -> log('failed')
+        ok -> process(it)
+    }
+}`,
+			expected: `test = () {
+    x ?i64
+    x: {
+        nil || err -> log('failed')
+        ok -> process(it)
+    }
+}`,
+		},
+		{
+			name: "err || nil order preserved",
+			input: `test = () {
+    x ?i64
+    x: {
+        err || nil -> log('failed')
+        ok -> process(it)
+    }
+}`,
+			expected: `test = () {
+    x ?i64
+    x: {
+        err || nil -> log('failed')
+        ok -> process(it)
     }
 }`,
 		},

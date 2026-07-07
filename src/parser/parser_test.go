@@ -1767,3 +1767,230 @@ print(numbers)`,
 		})
 	}
 }
+
+// TestParseMapType verifies that parseTypeExpression resolves both the implicit
+// [K]V form and the explicit map[K]V form to *MapType when K is a builtin type
+// name (str, i64, bool, ...). parseTypeExpression is exercised directly because
+// the explicit `map[K]V` form is only reachable through type-expression parsing
+// (struct fields, params, etc.); the statement-level dispatch routes the
+// `name [K]V` form through parseLetStatement, which is covered by the
+// map-literal tests below.
+func TestParseMapType(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string // MapType.String()
+	}{
+		{name: "implicit_str_i64", input: `[str]i64`, want: `[str]i64`},
+		{name: "implicit_i64_str", input: `[i64]str`, want: `[i64]str`},
+		{name: "implicit_bool_i64", input: `[bool]i64`, want: `[bool]i64`},
+		{name: "explicit_map_str_i64", input: `map[str]i64`, want: `[str]i64`},
+		{name: "explicit_map_i64_str", input: `map[i64]str`, want: `[i64]str`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			ty, ok := p.parseTypeExpression()
+
+			if len(p.Errors()) != 0 {
+				t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+			}
+			if !ok || ty == nil {
+				t.Fatalf("parseTypeExpression returned nil")
+			}
+			mt, ok := ty.(*MapType)
+			if !ok {
+				t.Fatalf("expected *MapType, got %T (%v)", ty, ty)
+			}
+			if mt.String() != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, mt.String())
+			}
+		})
+	}
+}
+
+// TestParseArrayTypeRegression ensures the map-syntax change did not break the
+// pre-existing array/slice parsing: [N]T (integer size), [n]T (non-type
+// identifier), []T (slice) and [?]T must NOT be classified as *MapType.
+//
+// [N]T / [n]T / [K]V / []T are exercised through LetStatement parsing (the path
+// the map-syntax change touched). [?]T is exercised through parseTypeExpression
+// directly: in statement position `a [?]i64` is dispatched as an index
+// expression, so the [?] form is only reachable via type-expression parsing.
+func TestParseArrayTypeRegression(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		direct bool // true: parse via parseTypeExpression; false: parse via LetStatement
+		isMap  bool
+		want   string // expected concrete type (via %T)
+	}{
+		{name: "int_size", input: `a [10]i64`, direct: false, isMap: false, want: "*parser.ArrayType"},
+		{name: "ident_size", input: `a [n]i64`, direct: false, isMap: false, want: "*parser.ArrayType"},
+		{name: "type_key", input: `a [str]i64`, direct: false, isMap: true, want: "*parser.MapType"},
+		{name: "slice", input: `a []i64`, direct: false, isMap: false, want: "*parser.SliceType"},
+		{name: "nullable", input: `[?]i64`, direct: true, isMap: false, want: "*parser.SliceType"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+
+			var ty Type
+			if tt.direct {
+				var ok bool
+				ty, ok = p.parseTypeExpression()
+				if !ok || ty == nil {
+					t.Fatalf("parseTypeExpression returned nil")
+				}
+			} else {
+				program := p.ParseProgram()
+				if program == nil || len(program.Statements) == 0 {
+					t.Fatalf("no statements parsed")
+				}
+				letStmt, ok := program.Statements[0].(*LetStatement)
+				if !ok {
+					t.Fatalf("expected LetStatement, got %T", program.Statements[0])
+				}
+				ty = letStmt.Type
+			}
+
+			if len(p.Errors()) != 0 {
+				t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+			}
+			if ty == nil {
+				t.Fatalf("expected a type, got nil")
+			}
+			_, isMap := ty.(*MapType)
+			if isMap != tt.isMap {
+				t.Fatalf("expected isMap=%v, got %v (%T)", tt.isMap, isMap, ty)
+			}
+			if got := fmt.Sprintf("%T", ty); got != tt.want {
+				t.Errorf("expected type %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+// TestParseMapLiteral verifies { k1:v1, k2:v2 } parsing for a MapType-typed let
+// statement, including concrete element types of the first pair.
+func TestParseMapLiteral(t *testing.T) {
+	input := `m [str]i64 = { 'a':0, 'b':1 }`
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+		for _, err := range p.Errors() {
+			t.Errorf("parser error: %s", err)
+		}
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+	letStmt, ok := program.Statements[0].(*LetStatement)
+	if !ok {
+		t.Fatalf("expected LetStatement, got %T", program.Statements[0])
+	}
+	if _, ok := letStmt.Type.(*MapType); !ok {
+		t.Fatalf("expected *MapType, got %T", letStmt.Type)
+	}
+	ml, ok := letStmt.Value.(*MapLiteral)
+	if !ok {
+		t.Fatalf("expected *MapLiteral, got %T", letStmt.Value)
+	}
+	if len(ml.Pairs) != 2 {
+		t.Fatalf("expected 2 pairs, got %d", len(ml.Pairs))
+	}
+	key0, ok := ml.Pairs[0].Key.(*StringLiteral)
+	if !ok {
+		t.Fatalf("expected *StringLiteral for first key, got %T", ml.Pairs[0].Key)
+	}
+	if key0.Value != "a" {
+		t.Errorf("expected first key 'a', got %q", key0.Value)
+	}
+	val0, ok := ml.Pairs[0].Value.(*IntegerLiteral)
+	if !ok {
+		t.Fatalf("expected *IntegerLiteral for first value, got %T", ml.Pairs[0].Value)
+	}
+	if val0.Value != 0 {
+		t.Errorf("expected first value 0, got %d", val0.Value)
+	}
+}
+
+// TestParseMapLiteralMultiline verifies that map literals whose pairs are
+// separated by newlines (rather than commas) parse correctly.
+func TestParseMapLiteralMultiline(t *testing.T) {
+	input := `m [str]i64 = {
+'a':0
+'b':1
+}`
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+		for _, err := range p.Errors() {
+			t.Errorf("parser error: %s", err)
+		}
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+	letStmt, ok := program.Statements[0].(*LetStatement)
+	if !ok {
+		t.Fatalf("expected LetStatement, got %T", program.Statements[0])
+	}
+	if _, ok := letStmt.Type.(*MapType); !ok {
+		t.Fatalf("expected *MapType, got %T", letStmt.Type)
+	}
+	ml, ok := letStmt.Value.(*MapLiteral)
+	if !ok {
+		t.Fatalf("expected *MapLiteral, got %T", letStmt.Value)
+	}
+	if len(ml.Pairs) != 2 {
+		t.Fatalf("expected 2 pairs, got %d", len(ml.Pairs))
+	}
+}
+
+// TestParseEmptyMapLiteral verifies that an empty map literal {} parses to a
+// MapLiteral with zero pairs.
+func TestParseEmptyMapLiteral(t *testing.T) {
+	input := `m [str]i64 = {}`
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+		for _, err := range p.Errors() {
+			t.Errorf("parser error: %s", err)
+		}
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+	letStmt, ok := program.Statements[0].(*LetStatement)
+	if !ok {
+		t.Fatalf("expected LetStatement, got %T", program.Statements[0])
+	}
+	if _, ok := letStmt.Type.(*MapType); !ok {
+		t.Fatalf("expected *MapType, got %T", letStmt.Type)
+	}
+	ml, ok := letStmt.Value.(*MapLiteral)
+	if !ok {
+		t.Fatalf("expected *MapLiteral, got %T", letStmt.Value)
+	}
+	if len(ml.Pairs) != 0 {
+		t.Fatalf("expected 0 pairs, got %d", len(ml.Pairs))
+	}
+}

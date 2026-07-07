@@ -1024,11 +1024,44 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 	f.write("}")
 }
 
+// extractOptionPatterns extracts option pattern names from an || chain of
+// (matched == pattern) comparisons. Returns nil if the chain doesn't match
+// the expected form.
+func extractOptionPatterns(expr *parser.InfixExpression, matched parser.Expression) []string {
+	mid, ok := matched.(*parser.Identifier)
+	if !ok {
+		return nil
+	}
+	var patterns []string
+	var collect func(e parser.Expression) bool
+	collect = func(e parser.Expression) bool {
+		if inf, ok := e.(*parser.InfixExpression); ok {
+			if inf.Operator == "==" {
+				if id, ok := inf.Left.(*parser.Identifier); ok && id.Value == mid.Value {
+					if right, ok := inf.Right.(*parser.Identifier); ok {
+						patterns = append(patterns, right.Value)
+						return true
+					}
+				}
+				return false
+			}
+			if inf.Operator == "||" {
+				return collect(inf.Left) && collect(inf.Right)
+			}
+		}
+		return false
+	}
+	if collect(expr) && len(patterns) >= 2 {
+		return patterns
+	}
+	return nil
+}
+
 // writeBareMatchArm 輸出單個 arm。
 // 對於非 wildcard：cond -> body
 // 對於 wildcard：-> body
-// 若 body 只有一行且為 ExpressionStatement / LetStatement，內聯輸出在同一行；
-// 否則每個 statement 換行並縮排。
+// 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
+// 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
 func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 判斷是否為 wildcard（condition 為 IntegerLiteral(1) 標記）
 	isWildcard := false
@@ -1054,6 +1087,14 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 					}
 				}
 			}
+			// Combined option patterns: (matched == nil) || (matched == err)
+			if infix, ok := e.Condition.(*parser.InfixExpression); ok && infix.Operator == "||" {
+				if patterns := extractOptionPatterns(infix, e.MatchedExpr); patterns != nil {
+					f.write(strings.Join(patterns, " || "))
+					f.write(" ->")
+					goto writeBody
+				}
+			}
 		}
 		f.formatExpression(e.Condition)
 		f.write(" ->")
@@ -1067,23 +1108,52 @@ writeBody:
 		}
 		statements = append(statements, stmt)
 	}
+	// 空 body（如 wildcard `->`）：不輸出任何內容
+	if len(statements) == 0 &&
+		e.Consequence.TrailingComments == nil &&
+		e.Consequence.ClosingBraceComment == nil {
+		return
+	}
 	// 內聯簡單 body：只一個語句且無註釋時，輸出在同一行
 	if len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil {
 		stmt := statements[0]
 		switch stmt.(type) {
-		case *parser.ExpressionStatement, *parser.LetStatement:
+		case *parser.ExpressionStatement, *parser.LetStatement,
+			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
 			f.write(" ")
 			f.formatStatement(stmt)
 			return
 		}
 	}
-	for _, stmt := range statements {
-		f.newline()
-		f.write("    ")
+	// 多語句 body：用 { } 大括號包裹
+	f.write(" {")
+	f.indent++
+	for i, stmt := range statements {
+		if i > 0 {
+			prevTokenLine := stmtTokenLine(statements[i-1])
+			currTokenLine := stmtTokenLine(stmt)
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// Same line: use semicolon separator
+				f.write("; ")
+			} else {
+				prevEndLine := stmtTokenEndLine(statements[i-1])
+				currStartLine := stmtFirstLine(stmt)
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
+					f.write("\n") // blank line (no indent)
+				}
+				f.newline()
+			}
+		} else {
+			f.newline()
+		}
 		f.formatStatement(stmt)
 	}
+	f.formatTrailingComments(e.Consequence.TrailingComments)
+	f.indent--
+	f.newline()
+	f.write("}")
 }
 
 func (f *formatter) formatElifChain(alt *parser.BlockStatement) {

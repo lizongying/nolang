@@ -50,29 +50,34 @@ main = () {
     // 測試 2: is-connected
     client: {
         nil -> return
-        ->
+        -> {
             yes = client.is-connected()
             if yes {
                 println('ok: is-connected')
             } else {
                 println('fail: is-connected')
             }
+        }
     }
 
     // 測試 3: next-event（讀取 3 個事件）
     client: {
         nil -> return
-        ->
+        -> {
             c = it
             count = 0
             ! {
                 ev = c.next-event()
                 ev: {
-                    nil -> println('connection closed')
-                         *
-                    err -> println('error')
-                         *
-                    ->
+                    nil -> {
+                        println('connection closed')
+                        *
+                    }
+                    err -> {
+                        println('error')
+                        *
+                    }
+                    -> {
                         println('event: ' - ev.event)
                         println('data: ' - ev.data)
                         if ev.id.len > 0 {
@@ -87,14 +92,16 @@ main = () {
                         if count >= 3 {
                             *
                         }
+                    }
                 }
             }
+        }
     }
 
     // 測試 4: close
     client: {
         nil -> return
-        ->
+        -> {
             client.close()
             yes = client.is-connected()
             if yes {
@@ -102,14 +109,17 @@ main = () {
             } else {
                 println('ok: close')
             }
+        }
     }
 
     // 測試 5: HTTPS SSE 連線
     https-client = sse-connect('https://example.com/events')
     https-client: {
         nil -> println('skip: HTTPS SSE (expected without live server)')
-        -> println('ok: HTTPS connect')
-           https-client.close()
+        -> {
+            println('ok: HTTPS connect')
+            https-client.close()
+        }
     }
 
     // 測試 6: 無效 URL

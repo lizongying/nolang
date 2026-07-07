@@ -17,10 +17,11 @@ main = () {
     f: {
         err -> print('fail: open-write err')
         nil -> print('fail: open-write nil')
-        ->
+        -> {
             it.write('hello', 5)
             it.close()
             print('ok: write')
+        }
     }
 
     remove(tmp)

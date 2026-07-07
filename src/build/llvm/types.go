@@ -18,6 +18,22 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		elemType := nolangType[1:]
 		return g.mapToLLVMType(elemType) + "*"
 	}
+	// hashmap-K-V → %hashmap-K-V (MapType.String() returns "hashmap-{key}-{value}",
+	// matching the struct name defined in src/std/map/map.no).
+	// This aligns with the transpiler's method dispatch which constructs
+	// function names as recvType + "." + method (e.g. hashmap-str-i64.get).
+	if strings.HasPrefix(nolangType, "hashmap-") {
+		return "%" + nolangType
+	}
+	// map[K]V → %hashmap-K-V (explicit map[K]V syntax; construct struct name)
+	if strings.HasPrefix(nolangType, "map[") {
+		closeBracket := strings.IndexByte(nolangType, ']')
+		if closeBracket > 0 {
+			keyType := nolangType[4:closeBracket]
+			valueType := nolangType[closeBracket+1:]
+			return "%hashmap-" + keyType + "-" + valueType
+		}
+	}
 	// [N]type → %arr (built-in struct: arr { len i64, data *any })
 	if strings.HasPrefix(nolangType, "[") {
 		closeBracket := strings.IndexByte(nolangType, ']')
@@ -105,39 +121,39 @@ func sanitizeLLVMName(name string) string {
 // 其他與 builtin 同名的用戶函數（如 set.remove vs os.remove）不需前綴，
 // 走原本的 dispatch 優先級。
 var clibFuncNames = map[string]bool{
-	"open":      true,
-	"read":      true,
-	"write":     true,
-	"close":     true,
-	"mkdir":     true,
-	"unlink":    true,
-	"rename":    true,
-	"stat":      true,
-	"chdir":     true,
-	"getcwd":    true,
-	"getenv":    true,
-	"setenv":    true,
-	"getpid":    true,
+	"open":        true,
+	"read":        true,
+	"write":       true,
+	"close":       true,
+	"mkdir":       true,
+	"unlink":      true,
+	"rename":      true,
+	"stat":        true,
+	"chdir":       true,
+	"getcwd":      true,
+	"getenv":      true,
+	"setenv":      true,
+	"getpid":      true,
 	"gethostname": true,
-	"malloc":    true,
-	"free":      true,
-	"memcpy":    true,
-	"memset":    true,
-	"memcmp":    true,
-	"printf":    true,
-	"sprintf":   true,
-	"strcmp":    true,
-	"strlen":    true,
-	"time":      true,
-	"sleep":     true,
-	"fopen":     true,
-	"fgets":     true,
-	"fclose":    true,
-	"atoi":      true,
-	"strtoull":  true,
-	"strtod":    true,
-	"fmod":      true,
-	"hypot":     true,
-	"cbrt":      true,
-	"exit":      true,
+	"malloc":      true,
+	"free":        true,
+	"memcpy":      true,
+	"memset":      true,
+	"memcmp":      true,
+	"printf":      true,
+	"sprintf":     true,
+	"strcmp":      true,
+	"strlen":      true,
+	"time":        true,
+	"sleep":       true,
+	"fopen":       true,
+	"fgets":       true,
+	"fclose":      true,
+	"atoi":        true,
+	"strtoull":    true,
+	"strtod":      true,
+	"fmod":        true,
+	"hypot":       true,
+	"cbrt":        true,
+	"exit":        true,
 }

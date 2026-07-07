@@ -734,6 +734,35 @@ func isTypeName(literal string) bool {
 	return false
 }
 
+// isBuiltinTypeName reports whether name is a builtin type name usable as a
+// map key or value type (e.g. [str]i64).
+func isBuiltinTypeName(name string) bool {
+	switch name {
+	case "str", "i64", "i32", "i16", "i8",
+		"u64", "u32", "u16", "u8",
+		"bool", "byte", "char",
+		"f64", "f32":
+		return true
+	}
+	return false
+}
+
+// isRegisteredTypeName reports whether name is a registered struct or enum
+// type name (usable as a map key or value type).
+func (p *Parser) isRegisteredTypeName(name string) bool {
+	if p.structFields != nil {
+		if _, ok := p.structFields[name]; ok {
+			return true
+		}
+	}
+	if p.enumVariantNames != nil {
+		if _, ok := p.enumVariantNames[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
@@ -2113,40 +2142,86 @@ func (p *Parser) parseLetStatement() Statement {
 		bracketToken := p.peekToken
 		p.nextToken() // skip [ → current = LBRACKET
 		p.nextToken() // consume [ → current = first content token
-		hasSize := false
-		var sizeExpr Expression
-		if p.currentToken.Type == lexer.QUESTION {
-			// [?] — infer array size from literal
-			hasSize = true
-			// Size stays nil (nil means inferred)
-			p.nextToken() // skip ? → current = ]
-		} else if p.currentToken.Type != lexer.RBRACKET {
-			// Parse expression for array size (e.g., 160+16, n*2, 3, etc.)
-			sizeExpr = p.parseExpression(LOWEST)
-			hasSize = true
-			// Advance past the last token of the expression to reach ]
-			if p.currentToken.Type != lexer.RBRACKET {
+
+		// Check for map type: [K]V where K is a builtin or registered type name
+		if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RBRACKET &&
+			(isBuiltinTypeName(p.currentToken.Literal) || p.isRegisteredTypeName(p.currentToken.Literal)) {
+			keyName := p.currentToken.Literal
+			keyTok := p.currentToken
+			p.nextToken() // skip K → current = ]
+			p.nextToken() // skip ] → current = V
+			if p.currentToken.Type == lexer.IDENT {
+				valName := p.currentToken.Literal
+				valTok := p.currentToken
 				p.nextToken()
+				stmt.Type = &MapType{
+					Token: bracketToken,
+					Key:   &NamedType{Token: keyTok, Value: keyName},
+					Value: &NamedType{Token: valTok, Value: valName},
+				}
+			}
+		} else {
+			hasSize := false
+			var sizeExpr Expression
+			if p.currentToken.Type == lexer.QUESTION {
+				// [?] — infer array size from literal
+				hasSize = true
+				// Size stays nil (nil means inferred)
+				p.nextToken() // skip ? → current = ]
+			} else if p.currentToken.Type != lexer.RBRACKET {
+				// Parse expression for array size (e.g., 160+16, n*2, 3, etc.)
+				sizeExpr = p.parseExpression(LOWEST)
+				hasSize = true
+				// Advance past the last token of the expression to reach ]
+				if p.currentToken.Type != lexer.RBRACKET {
+					p.nextToken()
+				}
+			}
+			// ] 關閉（無 INT 時 current 已是 ]）
+			if p.currentToken.Type == lexer.RBRACKET {
+				p.nextToken()
+				// 可選元素型別: [3]u16 或 []u8
+				if p.currentToken.Type == lexer.IDENT {
+					elemType := p.currentToken.Literal
+					elem := &NamedType{Token: p.currentToken, Value: elemType}
+					if hasSize {
+						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
+					} else {
+						stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
+					}
+					p.nextToken()
+				} else {
+					if hasSize {
+						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+					} else {
+						stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+					}
+				}
 			}
 		}
-		// ] 關閉（無 INT 時 current 已是 ]）
-		if p.currentToken.Type == lexer.RBRACKET {
-			p.nextToken()
-			// 可選元素型別: [3]u16 或 []u8
+	} else if p.peekToken.Type == lexer.MAP {
+		// Explicit map type: m map[K]V
+		mapTok := p.peekToken
+		p.nextToken() // skip to map keyword → current = MAP
+		p.nextToken() // skip map → current = [
+		if p.currentToken.Type == lexer.LBRACKET {
+			p.nextToken() // skip [
 			if p.currentToken.Type == lexer.IDENT {
-				elemType := p.currentToken.Literal
-				elem := &NamedType{Token: p.currentToken, Value: elemType}
-				if hasSize {
-					stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
-				} else {
-					stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
-				}
-				p.nextToken()
-			} else {
-				if hasSize {
-					stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
-				} else {
-					stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+				keyName := p.currentToken.Literal
+				keyTok := p.currentToken
+				p.nextToken() // skip K → current = ]
+				if p.currentToken.Type == lexer.RBRACKET {
+					p.nextToken() // skip ] → current = V
+					if p.currentToken.Type == lexer.IDENT {
+						valName := p.currentToken.Literal
+						valTok := p.currentToken
+						p.nextToken()
+						stmt.Type = &MapType{
+							Token: mapTok,
+							Key:   &NamedType{Token: keyTok, Value: keyName},
+							Value: &NamedType{Token: valTok, Value: valName},
+						}
+					}
 				}
 			}
 		}
@@ -2219,7 +2294,11 @@ func (p *Parser) parseLetStatement() Statement {
 	p.nextToken()
 
 	p.ctx.push(CTX_EXPR)
-	stmt.Value = p.parseExpression(LOWEST)
+	if mt, isMap := stmt.Type.(*MapType); isMap && p.currentToken.Type == lexer.LBRACE {
+		stmt.Value = p.parseMapLiteral(mt)
+	} else {
+		stmt.Value = p.parseExpression(LOWEST)
+	}
 	p.ctx.pop()
 
 	if stmt.Value == nil {
@@ -3498,6 +3577,36 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			}
 			p.nextToken()
+		} else if (p.currentToken.Type == lexer.NIL ||
+			(p.currentToken.Type == lexer.IDENT &&
+				(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok"))) &&
+			p.peekToken.Type == lexer.LOR {
+			// nil || err -> body → combined option patterns
+			// Collect all patterns joined by ||
+			// Note: nil is a NIL token, err/ok are IDENT tokens
+			firstPat := "nil"
+			if p.currentToken.Type == lexer.IDENT {
+				firstPat = p.currentToken.Literal
+			}
+			patterns := []string{firstPat}
+			p.nextToken() // skip first pattern
+			p.nextToken() // skip ||
+			for p.currentToken.Type == lexer.NIL ||
+				(p.currentToken.Type == lexer.IDENT &&
+					(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok")) {
+				if p.currentToken.Type == lexer.NIL {
+					patterns = append(patterns, "nil")
+				} else {
+					patterns = append(patterns, p.currentToken.Literal)
+				}
+				p.nextToken()
+				if p.currentToken.Type == lexer.LOR {
+					p.nextToken()
+				} else {
+					break
+				}
+			}
+			ma.multiOptionPatterns = patterns
 		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {
 			// !-> → err branch
 			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
@@ -3612,6 +3721,19 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 	// Check option match branch completeness
 	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
 	for _, a := range arms {
+		if len(a.multiOptionPatterns) > 0 {
+			// Combined option patterns: nil || err → mark all as covered
+			for _, pat := range a.multiOptionPatterns {
+				if pat == "err" {
+					hasErrArm = true
+				} else if pat == "nil" {
+					hasNilArm = true
+				} else if pat == "ok" {
+					hasValArm = true
+				}
+			}
+			continue
+		}
 		if a.isWildcard {
 			if a.isDotVal {
 				hasValArm = true
@@ -3865,9 +3987,24 @@ func (p *Parser) isArmStart() bool {
 	case lexer.INT, lexer.UNDERSCORE, lexer.COLON, lexer.RARROW:
 		return true
 	case lexer.IDENT:
-		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.RARROW
+		if p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.RARROW {
+			return true
+		}
+		// nil || err -> body: combined option patterns
+		if p.peekToken.Type == lexer.LOR &&
+			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+			return true
+		}
+		return false
 	case lexer.NIL:
-		return p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.RARROW
+		if p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.RARROW {
+			return true
+		}
+		// nil || err -> body: combined option patterns
+		if p.peekToken.Type == lexer.LOR {
+			return true
+		}
+		return false
 	case lexer.NOT:
 		return p.peekToken.Type == lexer.RARROW
 	case lexer.QUESTION:
@@ -3880,13 +4017,14 @@ func (p *Parser) isArmStart() bool {
 
 // matchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）
 type matchArm struct {
-	condition   Expression
-	isWildcard  bool
-	isDotVal    bool // .-> → specific val branch (not catch-all)
-	isRawCond   bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
-	body        *BlockStatement
-	isBlockBody bool           // true = block form (newline after ->), false = inline expression form
-	pos         lexer.Position // position of condition or -> for diagnostic use
+	condition          Expression
+	isWildcard         bool
+	isDotVal           bool // .-> → specific val branch (not catch-all)
+	isRawCond          bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
+	body               *BlockStatement
+	isBlockBody        bool           // true = block form (newline after ->), false = inline expression form
+	pos                lexer.Position // position of condition or -> for diagnostic use
+	multiOptionPatterns []string      // nil || err → ["nil", "err"]; combined option patterns joined by ||
 }
 
 // returnKind — match arm body 的最後一個表達式回傳值分類
@@ -4116,7 +4254,18 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		}
 	}
 	for _, a := range arms {
-		if a.isDotVal {
+		if len(a.multiOptionPatterns) > 0 {
+			// Combined option patterns: mark all as explicit
+			for _, pat := range a.multiOptionPatterns {
+				if pat == "err" {
+					hasExplicitErr = true
+				} else if pat == "nil" {
+					hasExplicitNil = true
+				} else if pat == "ok" {
+					hasExplicitOk = true
+				}
+			}
+		} else if a.isDotVal {
 			hasExplicitOk = true
 		} else if a.condition != nil {
 			if ident, ok := a.condition.(*Identifier); ok {
@@ -4143,7 +4292,35 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		if itStmt != nil && !hasRawCond && elemType != "" {
 			var armType string
 			skipItBinding := false
-			if arm.isWildcard {
+			if len(arm.multiOptionPatterns) > 0 {
+				// Combined option patterns: compute armType from pattern set
+				hasOk, hasErr, hasNil := false, false, false
+				for _, pat := range arm.multiOptionPatterns {
+					switch pat {
+					case "ok":
+						hasOk = true
+					case "err":
+						hasErr = true
+					case "nil":
+						hasNil = true
+					}
+				}
+				if hasOk && hasErr && hasNil {
+					armType = "ok_err_nil"
+				} else if hasOk && hasErr {
+					armType = "ok_err"
+				} else if hasOk && hasNil {
+					armType = "ok_nil"
+				} else if hasErr && hasNil {
+					armType = "else" // err | nil
+				} else if hasOk {
+					armType = "ok"
+				} else if hasErr {
+					armType = "err"
+				} else if hasNil {
+					armType = "nil"
+				}
+			} else if arm.isWildcard {
 				if arm.isDotVal {
 					armType = "ok" // ok-> is explicit ok case
 				} else {
@@ -4294,7 +4471,27 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		} else {
 			// 構造 match 條件
 			var cond Expression
-			if arm.isRawCond {
+			if len(arm.multiOptionPatterns) > 0 {
+				// Combined option patterns: (matched == p1) || (matched == p2) || ...
+				for i, pat := range arm.multiOptionPatterns {
+					patCond := &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    &Identifier{Token: tok, Value: pat},
+					}
+					if i == 0 {
+						cond = patCond
+					} else {
+						cond = &InfixExpression{
+							Token:    tok,
+							Left:     cond,
+							Operator: "||",
+							Right:    patCond,
+						}
+					}
+				}
+			} else if arm.isRawCond {
 				// ok(cond) arm: condition is (matched == ok) && cond
 				cond = &InfixExpression{
 					Token: tok,
@@ -4429,12 +4626,12 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 			typeStr = elemType
 		case "else":
 			typeStr = "err | nil"
-	case "ok_err":
-		typeStr = elemType
-	case "ok_nil":
-		typeStr = elemType
-	case "ok_err_nil":
-		typeStr = elemType
+		case "ok_err":
+			typeStr = elemType + " | err"
+		case "ok_nil":
+			typeStr = elemType + " | nil"
+		case "ok_err_nil":
+			typeStr = elemType + " | err | nil"
 		default:
 			return nil
 		}
@@ -5639,6 +5836,71 @@ func (p *Parser) parseSliceLiteral() Expression {
 	return slice
 }
 
+// parseMapLiteral parses a map literal: { k1:v1, k2:v2, ... }
+// Supports comma or newline as separator between pairs.
+// Pre-condition: p.currentToken is LBRACE.
+// Post-condition: p.currentToken is the token after the closing RBRACE.
+func (p *Parser) parseMapLiteral(mapType *MapType) Expression {
+	ml := &MapLiteral{
+		Token:   p.currentToken,
+		Pairs:   []MapPair{},
+		MapType: mapType,
+	}
+	p.nextToken() // skip {
+
+	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+		// skip leading newlines
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.RBRACE {
+			break
+		}
+
+		// save key's first token for MapPair.Token
+		keyTok := p.currentToken
+
+		// parse key
+		key := p.parseExpression(LOWEST)
+		if key == nil {
+			return nil
+		}
+
+		// expect ':'
+		if p.currentToken.Type != lexer.COLON {
+			msg := fmt.Sprintf("line %d, column %d: expected ':' in map literal, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+		p.nextToken() // skip :
+
+		// parse value
+		val := p.parseExpression(LOWEST)
+		if val == nil {
+			return nil
+		}
+
+		ml.Pairs = append(ml.Pairs, MapPair{
+			Token: keyTok,
+			Key:   key,
+			Value: val,
+		})
+
+		// skip trailing newlines
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+
+		if p.currentToken.Type == lexer.COMMA {
+			p.nextToken() // skip ,
+		}
+	}
+
+	p.nextToken() // skip }
+	return ml
+}
+
 // parseInterfaceDefinition 解析介面宣告：name { method(), method(), ... }
 func (p *Parser) parseEnumDefinition() Statement {
 	if p.enumVariantNames == nil {
@@ -6084,6 +6346,35 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 	case lexer.LPAREN:
 		// Function type: (params) (results)?
 		return p.parseFunctionType(), true
+	case lexer.MAP:
+		// Explicit map type: map[K]V
+		mapTok := p.currentToken
+		p.nextToken() // skip map
+		if p.currentToken.Type != lexer.LBRACKET {
+			msg := fmt.Sprintf("line %d, column %d: expected '[' after 'map', got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil, false
+		}
+		p.nextToken() // skip [
+		// parse key type
+		keyType, ok := p.parseTypeExpression()
+		if !ok {
+			return nil, false
+		}
+		if p.currentToken.Type != lexer.RBRACKET {
+			msg := fmt.Sprintf("line %d, column %d: expected ']' in map type, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil, false
+		}
+		p.nextToken() // skip ]
+		// parse value type
+		valType, ok := p.parseTypeExpression()
+		if !ok {
+			return nil, false
+		}
+		return &MapType{Token: mapTok, Key: keyType, Value: valType}, true
 	case lexer.IDENT:
 		// Could be:
 		//   - NamedType (e.g., "i64")
@@ -6120,6 +6411,19 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 			elemTok := p.currentToken
 			p.nextToken()
 			return &SliceType{Token: startTok, Elem: &NullableType{Token: elemTok, Type: &NamedType{Token: elemTok, Value: elemName}}}, true
+		}
+		// [K]V — MapType when K is a builtin or registered type name;
+		// otherwise [N]T — ArrayType with size.
+		if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RBRACKET &&
+			(isBuiltinTypeName(p.currentToken.Literal) || p.isRegisteredTypeName(p.currentToken.Literal)) {
+			keyName := p.currentToken.Literal
+			keyTok := p.currentToken
+			p.nextToken() // skip K
+			p.nextToken() // skip ]
+			valName := p.currentToken.Literal
+			valTok := p.currentToken
+			p.nextToken()
+			return &MapType{Token: startTok, Key: &NamedType{Token: keyTok, Value: keyName}, Value: &NamedType{Token: valTok, Value: valName}}, true
 		}
 		// [N]T
 		sizeTok := p.currentToken

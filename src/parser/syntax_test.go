@@ -226,6 +226,69 @@ func TestSwitchMatchSyntax(t *testing.T) {
 	}
 }
 
+func TestCombinedOptionPatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// nil || err with ok arm — should parse without errors
+		{name: "nil_or_err_with_ok", input: `x ?i64
+x: {
+    nil || err -> log('failed')
+    ok -> process(it)
+}`, wantErr: false},
+		// err || nil — order should not matter
+		{name: "err_or_nil_with_ok", input: `x ?i64
+x: {
+    err || nil -> log('failed')
+    ok -> process(it)
+}`, wantErr: false},
+		// nil || err with block body
+		{name: "nil_or_err_block_body", input: `x ?i64
+x: {
+    nil || err -> {
+        cleanup()
+        return
+    }
+    ok -> process(it)
+}`, wantErr: false},
+		// nil || err without ok — should error (missing ok branch)
+		{name: "nil_or_err_missing_ok", input: `x ?i64
+x: {
+    nil || err -> log('failed')
+}`, wantErr: true},
+		// nil only without err and ok — should error (missing err and ok)
+		{name: "nil_only_missing_err_ok", input: `x ?i64
+x: {
+    nil -> log('nil')
+}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			program := p.ParseProgram()
+			if tt.wantErr {
+				if len(p.Errors()) == 0 {
+					t.Errorf("expected errors, got none")
+				}
+				return
+			}
+			if len(p.Errors()) != 0 {
+				t.Errorf("parser has %d errors, expected 0", len(p.Errors()))
+				for _, err := range p.Errors() {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if program == nil || len(program.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+		})
+	}
+}
+
 func TestContinueBreakReturnSyntax(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -833,23 +833,23 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 					return
 				}
 			}
-		// Synthetic let with non-err/non-nil type (e.g. ok arm with elemType "file"):
-		// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
-		// 否則註冊新變數。
-		// `it` 變數跨多個 match 共用：每個 match 的 ok arm 可能有不同的元素型別
-		// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
-		// 方法呼叫解析（it.close()）能正確找到型別前綴。
-		vt := g.varLLVMType(s)
-		if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
-			// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
-			// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
-			if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) {
-				vars[s.Name.Value] = vt
-				if g.varTypes != nil {
-					g.varTypes[s.Name.Value] = vt
+			// Synthetic let with non-err/non-nil type (e.g. ok arm with elemType "file"):
+			// 若之前已有 placeholder（i64 from err/nil arm），需覆寫以使用真實型別。
+			// 否則註冊新變數。
+			// `it` 變數跨多個 match 共用：每個 match 的 ok arm 可能有不同的元素型別
+			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
+			// 方法呼叫解析（it.close()）能正確找到型別前綴。
+			vt := g.varLLVMType(s)
+			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
+				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
+				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
+				if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) {
+					vars[s.Name.Value] = vt
+					if g.varTypes != nil {
+						g.varTypes[s.Name.Value] = vt
+					}
 				}
 			}
-		}
 			return
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
@@ -1976,6 +1976,34 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				}
 			} else {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			}
+		}
+		return
+	}
+
+	// MapType: m [K]V = { k1:v1, k2:v2 } → alloca %hashmap-K-V + init() + put() calls
+	// The alloca itself is emitted by generateFunctionDefinition's collection phase
+	// (collectVarDeclsFromStmt → varLLVMType → mapToLLVMType("map[K]V") → "%hashmap-K-V").
+	// Here we only emit the init() call and put() calls for each MapLiteral pair.
+	if mt, ok := stmt.Type.(*parser.MapType); ok {
+		llvmType := g.mapToLLVMType(mt.String()) // e.g. %hashmap-str-i64
+		g.varTypes[name] = llvmType
+		g.funcLocalNames[name] = true
+		structName := strings.TrimPrefix(llvmType, "%")
+		recvArg := llvmType + "* " + g.varAddr(name)
+		// init() call: @hashmap-str-i64.init(%hashmap-str-i64* %m)
+		sb.WriteString(fmt.Sprintf("%scall void @%s.init(%s)\n", g.indent(), sanitizeLLVMName(structName), recvArg))
+		// If value is MapLiteral, generate put() calls for each pair
+		if ml, ok := stmt.Value.(*parser.MapLiteral); ok {
+			for _, pair := range ml.Pairs {
+				keyArg := g.generateCallArg(sb, pair.Key)
+				valArg := g.generateCallArg(sb, pair.Value)
+				// is-new i64 output param (discarded); map.no declares is-new as i64
+				g.tmpIdx++
+				isNewTmp := fmt.Sprintf("%%map.isnew.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), isNewTmp))
+				sb.WriteString(fmt.Sprintf("%scall void @%s.put(%s, %s, %s, i64* %s)\n",
+					g.indent(), sanitizeLLVMName(structName), recvArg, keyArg, valArg, isNewTmp))
 			}
 		}
 		return

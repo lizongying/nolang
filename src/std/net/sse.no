@@ -128,9 +128,10 @@ sse-client.next-event = () (ev ?sse-event) {
         sep-len = 0
         {
             pos1 >= 0 && pos2 >= 0 -> pos1 <= pos2
-            ->
+            -> {
                 sep-pos = pos2
                 sep-len = 4
+            }
             ->
         }
         if sep-pos >= 0 {
@@ -232,17 +233,14 @@ sse-client.next-event = () (ev ?sse-event) {
             n = 0
             recv-ok = false
             if .use-tls {
-rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
-rn: {
-                    nil ->
-                        .connected = false
-                        ev = err('recv failed')
-                        return
-                    err ->
-                        .connected = false
-                        ev = err('recv failed')
-                        return
+                rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
+                rn: {
                     ok -> n = it
+                    -> {
+                        .connected = false
+                        ev = err('recv failed')
+                        return
+                    }
                 }
             }
             if .use-tls == false {
@@ -344,11 +342,12 @@ sse-client.reconnect = () (ok bool) {
     // 發送請求
     written = 0
     if .use-tls {
-w = .tls-c.send(req)
-w: {
-            nil ->
+        w = .tls-c.send(req)
+        w: {
+            nil -> {
                 .close()
                 return
+            }
             ->
         }
     }
@@ -375,15 +374,13 @@ w: {
             return
         }
         if .use-tls {
-rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
-rn: {
-                nil ->
-                    .close()
-                    return
-                err ->
-                    .close()
-                    return
+            rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
+            rn: {
                 ok -> n = it
+                -> {
+                    .close()
+                    return
+                }
             }
         }
         if .use-tls == false {
@@ -570,12 +567,13 @@ sse-connect = (url str) (client ?sse-client) {
     // ── 發送請求 ──
     written = 0
     if use-tls {
-w = tls-c.send(req)
-w: {
-            nil ->
+        w = tls-c.send(req)
+        w: {
+            nil -> {
                 tls-c.close()
                 client = err('send failed')
                 return
+            }
             ->
         }
     }
@@ -609,17 +607,14 @@ w: {
             return
         }
         if use-tls {
-rn = tls-c.recv(tmp, SSE-RECV-SIZE)
-rn: {
-                nil ->
-                    tls-c.close()
-                    client = err('recv failed')
-                    return
-                err ->
-                    tls-c.close()
-                    client = err('recv failed')
-                    return
+            rn = tls-c.recv(tmp, SSE-RECV-SIZE)
+            rn: {
                 ok -> n = it
+                -> {
+                    tls-c.close()
+                    client = err('recv failed')
+                    return
+                }
             }
         }
         if use-tls == false {

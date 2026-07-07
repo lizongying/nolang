@@ -72,6 +72,11 @@ func exprToString(e Expression) string {
 		return strconv.FormatInt(ex.Value, 10)
 	case *Identifier:
 		return ex.Value
+	case *StringLiteral:
+		if ex.Raw != "" {
+			return ex.Raw
+		}
+		return "'" + ex.Value + "'"
 	case *InfixExpression:
 		// Constant fold integer expressions for display: 160+16 → 176
 		if isInt, val := evalConstIntExpr(ex); isInt {
@@ -128,7 +133,9 @@ type MapType struct {
 func (mt *MapType) typeNode()              {}
 func (mt *MapType) Pos() lexer.Position    { return posFromToken(mt.Token) }
 func (mt *MapType) EndPos() lexer.Position { return mt.Value.EndPos() }
-func (mt *MapType) String() string         { return "[" + mt.Key.String() + "]" + mt.Value.String() }
+func (mt *MapType) String() string {
+	return "hashmap-" + mt.Key.String() + "-" + mt.Value.String()
+}
 
 // MapPair represents a single key:value pair in a map literal.
 type MapPair struct {
@@ -140,7 +147,7 @@ type MapPair struct {
 func (mp *MapPair) Pos() lexer.Position    { return mp.Key.Pos() }
 func (mp *MapPair) EndPos() lexer.Position { return mp.Value.EndPos() }
 func (mp *MapPair) String() string {
-	return mp.Key.String() + ":" + mp.Value.String()
+	return exprToString(mp.Key) + ":" + exprToString(mp.Value)
 }
 
 // FunctionType represents a function type: (params) (results)?
@@ -344,8 +351,8 @@ type LetStatement struct {
 	Name         *Identifier
 	Type         Type
 	Value        Expression
-	IsSynthetic  bool           // compiler-injected (e.g. `it = matched`), not from source
-	SyntheticEnd lexer.Position // override EndPos for synthetic bindings
+	IsSynthetic  bool               // compiler-injected (e.g. `it = matched`), not from source
+	SyntheticEnd lexer.Position     // override EndPos for synthetic bindings
 	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	CommentedNode
 }
@@ -531,10 +538,10 @@ type AnnotationBoolValue struct {
 	Token lexer.Token
 }
 
-func (v *AnnotationBoolValue) annotationValueNode()     {}
-func (v *AnnotationBoolValue) Pos() lexer.Position       { return posFromToken(v.Token) }
-func (v *AnnotationBoolValue) EndPos() lexer.Position    { return posFromToken(v.Token) }
-func (v *AnnotationBoolValue) String() string            { return "true" }
+func (v *AnnotationBoolValue) annotationValueNode()   {}
+func (v *AnnotationBoolValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationBoolValue) EndPos() lexer.Position { return posFromToken(v.Token) }
+func (v *AnnotationBoolValue) String() string         { return "true" }
 
 // AnnotationIntValue — 整數值（例如 max=100）
 type AnnotationIntValue struct {
@@ -542,10 +549,10 @@ type AnnotationIntValue struct {
 	Value int64
 }
 
-func (v *AnnotationIntValue) annotationValueNode()     {}
-func (v *AnnotationIntValue) Pos() lexer.Position      { return posFromToken(v.Token) }
-func (v *AnnotationIntValue) EndPos() lexer.Position   { return posFromToken(v.Token) }
-func (v *AnnotationIntValue) String() string           { return strconv.FormatInt(v.Value, 10) }
+func (v *AnnotationIntValue) annotationValueNode()   {}
+func (v *AnnotationIntValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationIntValue) EndPos() lexer.Position { return posFromToken(v.Token) }
+func (v *AnnotationIntValue) String() string         { return strconv.FormatInt(v.Value, 10) }
 
 // AnnotationStringValue — 字串值（例如 name='hello'）
 type AnnotationStringValue struct {
@@ -553,10 +560,10 @@ type AnnotationStringValue struct {
 	Value string
 }
 
-func (v *AnnotationStringValue) annotationValueNode()     {}
-func (v *AnnotationStringValue) Pos() lexer.Position       { return posFromToken(v.Token) }
-func (v *AnnotationStringValue) EndPos() lexer.Position    { return posFromToken(v.Token) }
-func (v *AnnotationStringValue) String() string            { return "'" + v.Value + "'" }
+func (v *AnnotationStringValue) annotationValueNode()   {}
+func (v *AnnotationStringValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationStringValue) EndPos() lexer.Position { return posFromToken(v.Token) }
+func (v *AnnotationStringValue) String() string         { return "'" + v.Value + "'" }
 
 // AnnotationIdentValue — 識別字值（例如 mode=fast）
 type AnnotationIdentValue struct {
@@ -564,10 +571,10 @@ type AnnotationIdentValue struct {
 	Value string
 }
 
-func (v *AnnotationIdentValue) annotationValueNode()     {}
-func (v *AnnotationIdentValue) Pos() lexer.Position      { return posFromToken(v.Token) }
-func (v *AnnotationIdentValue) EndPos() lexer.Position   { return posFromToken(v.Token) }
-func (v *AnnotationIdentValue) String() string           { return v.Value }
+func (v *AnnotationIdentValue) annotationValueNode()   {}
+func (v *AnnotationIdentValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationIdentValue) EndPos() lexer.Position { return posFromToken(v.Token) }
+func (v *AnnotationIdentValue) String() string         { return v.Value }
 
 // AnnotationArrayValue — 陣列值（例如 derive=[Serialize, Deserialize]）
 type AnnotationArrayValue struct {
@@ -575,9 +582,9 @@ type AnnotationArrayValue struct {
 	Elements []AnnotationValue
 }
 
-func (v *AnnotationArrayValue) annotationValueNode()  {}
+func (v *AnnotationArrayValue) annotationValueNode()   {}
 func (v *AnnotationArrayValue) Pos() lexer.Position    { return posFromToken(v.Token) }
-func (v *AnnotationArrayValue) EndPos() lexer.Position  { return posFromToken(v.Token) }
+func (v *AnnotationArrayValue) EndPos() lexer.Position { return posFromToken(v.Token) }
 func (v *AnnotationArrayValue) String() string {
 	var out strings.Builder
 	out.WriteString("[")
@@ -600,9 +607,9 @@ type AnnotationRangeValue struct {
 	RightInc bool // ] = true, ) = false
 }
 
-func (v *AnnotationRangeValue) annotationValueNode()  {}
+func (v *AnnotationRangeValue) annotationValueNode()   {}
 func (v *AnnotationRangeValue) Pos() lexer.Position    { return posFromToken(v.Token) }
-func (v *AnnotationRangeValue) EndPos() lexer.Position  { return posFromToken(v.Token) }
+func (v *AnnotationRangeValue) EndPos() lexer.Position { return posFromToken(v.Token) }
 func (v *AnnotationRangeValue) String() string {
 	var out strings.Builder
 	if v.LeftInc {
@@ -627,12 +634,12 @@ func (v *AnnotationRangeValue) String() string {
 
 // AnnotationEntry — 註解中的單個鍵值對或獨立布爾鍵。
 type AnnotationEntry struct {
-	Key   string           // 鍵名，如 "derive"、"range"、"max"、"debug"、"c"
-	Value AnnotationValue  // 值；nil 表示布爾獨立鍵
-	Token lexer.Token      // 鍵名的 token
+	Key   string          // 鍵名，如 "derive"、"range"、"max"、"debug"、"c"
+	Value AnnotationValue // 值；nil 表示布爾獨立鍵
+	Token lexer.Token     // 鍵名的 token
 }
 
-func (e *AnnotationEntry) Pos() lexer.Position    { return posFromToken(e.Token) }
+func (e *AnnotationEntry) Pos() lexer.Position { return posFromToken(e.Token) }
 func (e *AnnotationEntry) EndPos() lexer.Position {
 	if e.Value != nil {
 		return e.Value.EndPos()
@@ -754,16 +761,16 @@ type PointerType struct {
 	Type  Type // implements both Expression and Type
 }
 
-func (pt *PointerType) expressionNode()        {}
-func (pt *PointerType) typeNode()              {}
-func (pt *PointerType) Pos() lexer.Position    { return posFromToken(pt.Token) }
+func (pt *PointerType) expressionNode()     {}
+func (pt *PointerType) typeNode()           {}
+func (pt *PointerType) Pos() lexer.Position { return posFromToken(pt.Token) }
 func (pt *PointerType) EndPos() lexer.Position {
 	if pt.Type != nil {
 		return pt.Type.EndPos()
 	}
 	return posFromToken(pt.Token)
 }
-func (pt *PointerType) String() string         { return "*" + typeString(pt.Type) }
+func (pt *PointerType) String() string { return "*" + typeString(pt.Type) }
 
 // GroupedExpression represents a parenthesized expression: (expr)
 type GroupedExpression struct {
@@ -1032,6 +1039,36 @@ func (al *ArrayLiteral) EndPos() lexer.Position {
 	return posFromToken(al.Token)
 }
 
+// MapLiteral represents a map literal: { k1:v1, k2:v2, ... }
+// Used in declarations like: m [str]i64 = { 'a':0, 'b':1 }
+type MapLiteral struct {
+	Token   lexer.Token // {
+	Pairs   []MapPair
+	MapType *MapType // optional: associated MapType for type inference
+}
+
+func (ml *MapLiteral) expressionNode()     {}
+func (ml *MapLiteral) Pos() lexer.Position { return posFromToken(ml.Token) }
+func (ml *MapLiteral) EndPos() lexer.Position {
+	if len(ml.Pairs) > 0 {
+		return ml.Pairs[len(ml.Pairs)-1].EndPos()
+	}
+	return posFromToken(ml.Token)
+}
+func (ml *MapLiteral) String() string {
+	var sb strings.Builder
+	sb.WriteString("{ ")
+	for i, p := range ml.Pairs {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(p.String())
+	}
+	sb.WriteString(" }")
+	return sb.String()
+}
+func (ml *MapLiteral) TokenLiteral() string { return "{" }
+
 type SliceLiteral struct {
 	Token    lexer.Token
 	Elements []Expression
@@ -1047,13 +1084,13 @@ func (sl *SliceLiteral) EndPos() lexer.Position {
 }
 
 type StructField struct {
-	Token        lexer.Token
-	Name         string
-	Type         Type
-	ArraySize    int64 // >0 = 定長陣列 [N]type
-	IsSlice      bool  // true = 切片 []type
-	Value        Expression
-	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目
+	Token       lexer.Token
+	Name        string
+	Type        Type
+	ArraySize   int64 // >0 = 定長陣列 [N]type
+	IsSlice     bool  // true = 切片 []type
+	Value       Expression
+	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目
 }
 
 type EnumValue struct {

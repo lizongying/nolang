@@ -1,0 +1,583 @@
+// map — 預設雜湊映射表
+//
+// 本檔案提供三個具體的 hashmap 實作（MVP，無泛型）：
+//   - hashmap-str-i64: str → i64
+//   - hashmap-i64-i64: i64 → i64
+//   - hashmap-str-str: str → str
+//
+// 所有實作均為固定容量（256 槽）、線性探測。
+// 適合小型鍵值對場景（建議 ≤ 192 條，裝載因子 ≤ 0.75）。
+//
+// 用法：
+//   m = hashmap-str-i64{}
+//   m.init()
+//   m.put('name', 42, _)
+//   m.get('name', found, val)
+
+// FNV-1a 常量
+FNV-OFFSET = -3750763034362895579
+FNV-PRIME = 1099511628211
+
+HASHMAP-STR-I64-CAP = 256
+HASHMAP-I64-I64-CAP = 256
+HASHMAP-STR-STR-CAP = 256
+
+// ============================================================
+// 1. hashmap-str-i64 — str→i64 雜湊映射表
+// ============================================================
+
+// hashmap-str-i64 — str→i64 雜湊映射表
+//
+// 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
+// 適合小型鍵值對場景（建議 ≤ 192 條）。
+//
+// 用法：
+//   m = hashmap-str-i64{}
+//   m.init()
+//   m.put('name', 42, _)
+//   m.get('name', found, val)
+
+hashmap-str-i64 {
+    cap i64
+    keys [256]str
+    vals [256]i64
+    occ [256]i64
+    size i64
+}
+
+// init: 初始化
+hashmap-str-i64.init = () {
+    .cap = 256
+    .size = 0
+    i = 0
+    i < 256: {
+        .occ[i] = 0
+        .keys[i].len = 0
+        .vals[i] = 0
+        i = i + 1
+    }
+}
+
+// hash: FNV-1a 字串雜湊
+hashmap-str-i64.hash = (key str, idx i64) {
+    h = FNV-OFFSET
+    i = 0
+    i < key.len: {
+        h = h ^ (key[i] & 255)
+        h = h * FNV-PRIME
+        i = i + 1
+    }
+    idx = h & (.cap - 1)
+}
+
+// str-eq: 比較兩個 str 是否相等
+hashmap-str-i64.str-eq = (a str, b str, eq i64) {
+    eq = 0
+    a.len != b.len -> {
+        return
+    }
+    i = 0
+    i < a.len: {
+        a[i] != b[i] -> {
+            return
+        }
+        i = i + 1
+    }
+    eq = 1
+}
+
+// put: 插入或更新 key→value，回傳是否新增
+hashmap-str-i64.put = (key str, val i64, is-new i64) {
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            .vals[idx] = val
+            is-new = 0
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+
+    // 複製 key
+    .keys[idx].len = key.len
+    i = 0
+    i < key.len: {
+        .keys[idx][i] = key[i]
+        i = i + 1
+    }
+    .vals[idx] = val
+    .occ[idx] = 1
+    .size = .size + 1
+    is-new = 1
+}
+
+// get: 查找 key
+hashmap-str-i64.get = (key str, found i64, result i64) {
+    found = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            result = .vals[idx]
+            found = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// contains: 檢查 key 是否存在
+hashmap-str-i64.contains = (key str, found i64) {
+    dummy = 0
+    .get(key, found, dummy)
+}
+
+// remove: 刪除 key
+hashmap-str-i64.remove = (key str, removed i64) {
+    removed = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            .occ[idx] = 0
+            .keys[idx].len = 0
+            .vals[idx] = 0
+            .size = .size - 1
+            removed = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// clear: 清空
+hashmap-str-i64.clear = () {
+    i = 0
+    i < .cap: {
+        .occ[i] = 0
+        .keys[i].len = 0
+        .vals[i] = 0
+        i = i + 1
+    }
+    .size = 0
+}
+
+// len: 返回元素數量
+hashmap-str-i64.len = (n i64) {
+    n = .size
+}
+
+// is-empty: 是否為空
+hashmap-str-i64.is-empty = (empty i64) {
+    empty = .size == 0 ? 1 : 0
+}
+
+// for-each: 遍歷所有 (key, value)
+hashmap-str-i64.for-each = (k str, v i64) {
+    i = 0
+    i < .cap: {
+        .occ[i] == 1 -> {
+            j = 0
+            j < .keys[i].len: {
+                k[j] = .keys[i][j]
+                j = j + 1
+            }
+            v = .vals[i]
+        }
+        i = i + 1
+    }
+}
+
+// ============================================================
+// 2. hashmap-i64-i64 — i64→i64 雜湊映射表
+// ============================================================
+
+// hashmap-i64-i64 — i64→i64 雜湊映射表
+//
+// 固定容量（256 槽），線性探測，模數雜湊。
+//
+// 用法：
+//   m = hashmap-i64-i64{}
+//   m.init()
+//   m.put(42, 100, _)
+//   m.get(42, found, val)
+
+hashmap-i64-i64 {
+    cap i64
+    keys [256]i64
+    vals [256]i64
+    occ [256]i64
+    size i64
+}
+
+// init: 初始化
+hashmap-i64-i64.init = () {
+    .cap = 256
+    .size = 0
+    i = 0
+    i < 256: {
+        .occ[i] = 0
+        .keys[i] = 0
+        .vals[i] = 0
+        i = i + 1
+    }
+}
+
+// hash: 計算索引（位元遮罩）
+hashmap-i64-i64.hash = (key i64, idx i64) {
+    idx = key & (.cap - 1)
+}
+
+// put: 插入或更新 key→value，回傳是否新增
+hashmap-i64-i64.put = (key i64, val i64, is-new i64) {
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            .vals[idx] = val
+            is-new = 0
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+
+    .keys[idx] = key
+    .vals[idx] = val
+    .occ[idx] = 1
+    .size = .size + 1
+    is-new = 1
+}
+
+// get: 查找 key
+hashmap-i64-i64.get = (key i64, found i64, result i64) {
+    found = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            result = .vals[idx]
+            found = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// contains: 檢查 key 是否存在
+hashmap-i64-i64.contains = (key i64, found i64) {
+    dummy = 0
+    .get(key, found, dummy)
+}
+
+// remove: 刪除 key
+hashmap-i64-i64.remove = (key i64, removed i64) {
+    removed = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        .keys[idx] == key -> {
+            .occ[idx] = 0
+            .keys[idx] = 0
+            .vals[idx] = 0
+            .size = .size - 1
+            removed = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// clear: 清空
+hashmap-i64-i64.clear = () {
+    i = 0
+    i < .cap: {
+        .occ[i] = 0
+        .keys[i] = 0
+        .vals[i] = 0
+        i = i + 1
+    }
+    .size = 0
+}
+
+// len: 返回元素數量
+hashmap-i64-i64.len = (n i64) {
+    n = .size
+}
+
+// is-empty: 是否為空
+hashmap-i64-i64.is-empty = (empty i64) {
+    empty = .size == 0 ? 1 : 0
+}
+
+// for-each: 遍歷所有 (key, value)
+hashmap-i64-i64.for-each = (k i64, v i64) {
+    i = 0
+    i < .cap: {
+        .occ[i] == 1 -> {
+            k = .keys[i]
+            v = .vals[i]
+        }
+        i = i + 1
+    }
+}
+
+// ============================================================
+// 3. hashmap-str-str — str→str 雜湊映射表
+// ============================================================
+
+// hashmap-str-str — str→str 雜湊映射表
+//
+// 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
+// 適合小型鍵值對場景（建議 ≤ 192 條）。
+//
+// 用法：
+//   m = hashmap-str-str{}
+//   m.init()
+//   m.put('name', 'Alice', _)
+//   m.get('name', found, val)
+
+hashmap-str-str {
+    cap i64
+    keys [256]str
+    vals [256]str
+    occ [256]i64
+    size i64
+}
+
+// init: 初始化
+hashmap-str-str.init = () {
+    .cap = 256
+    .size = 0
+    i = 0
+    i < 256: {
+        .occ[i] = 0
+        .keys[i].len = 0
+        .vals[i].len = 0
+        i = i + 1
+    }
+}
+
+// hash: FNV-1a 字串雜湊
+hashmap-str-str.hash = (key str, idx i64) {
+    h = FNV-OFFSET
+    i = 0
+    i < key.len: {
+        h = h ^ (key[i] & 255)
+        h = h * FNV-PRIME
+        i = i + 1
+    }
+    idx = h & (.cap - 1)
+}
+
+// str-eq: 比較兩個 str 是否相等
+hashmap-str-str.str-eq = (a str, b str, eq i64) {
+    eq = 0
+    a.len != b.len -> {
+        return
+    }
+    i = 0
+    i < a.len: {
+        a[i] != b[i] -> {
+            return
+        }
+        i = i + 1
+    }
+    eq = 1
+}
+
+// put: 插入或更新 key→value，回傳是否新增
+hashmap-str-str.put = (key str, val str, is-new i64) {
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            .vals[idx] = val
+            .vals[idx].len = val.len
+            i = 0
+            i < val.len: {
+                .vals[idx][i] = val[i]
+                i = i + 1
+            }
+            is-new = 0
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+
+    // 複製 key
+    .keys[idx].len = key.len
+    i = 0
+    i < key.len: {
+        .keys[idx][i] = key[i]
+        i = i + 1
+    }
+
+    // 複製 val
+    .vals[idx].len = val.len
+    i = 0
+    i < val.len: {
+        .vals[idx][i] = val[i]
+        i = i + 1
+    }
+    .occ[idx] = 1
+    .size = .size + 1
+    is-new = 1
+}
+
+// get: 查找 key
+hashmap-str-str.get = (key str, found i64, result str) {
+    found = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            i = 0
+            i < .vals[idx].len: {
+                result[i] = .vals[idx][i]
+                i = i + 1
+            }
+            found = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// contains: 檢查 key 是否存在
+hashmap-str-str.contains = (key str, found i64) {
+    dummy str
+    .get(key, found, dummy)
+}
+
+// remove: 刪除 key
+hashmap-str-str.remove = (key str, removed i64) {
+    removed = 0
+    .size == 0 -> {
+        return
+    }
+
+    idx = 0
+    .hash(key, idx)
+
+    .occ[idx] == 1: {
+        eq = 0
+        .str-eq(.keys[idx], key, eq)
+        eq == 1 -> {
+            .occ[idx] = 0
+            .keys[idx].len = 0
+            .vals[idx].len = 0
+            .size = .size - 1
+            removed = 1
+            return
+        }
+        idx = idx + 1
+        idx >= .cap -> {
+            idx = 0
+        }
+    }
+}
+
+// clear: 清空
+hashmap-str-str.clear = () {
+    i = 0
+    i < .cap: {
+        .occ[i] = 0
+        .keys[i].len = 0
+        .vals[i].len = 0
+        i = i + 1
+    }
+    .size = 0
+}
+
+// len: 返回元素數量
+hashmap-str-str.len = (n i64) {
+    n = .size
+}
+
+// is-empty: 是否為空
+hashmap-str-str.is-empty = (empty i64) {
+    empty = .size == 0 ? 1 : 0
+}
+
+// for-each: 遍歷所有 (key, value)
+hashmap-str-str.for-each = (k str, v str) {
+    i = 0
+    i < .cap: {
+        .occ[i] == 1 -> {
+            j = 0
+            j < .keys[i].len: {
+                k[j] = .keys[i][j]
+                j = j + 1
+            }
+            j = 0
+            j < .vals[i].len: {
+                v[j] = .vals[i][j]
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+}

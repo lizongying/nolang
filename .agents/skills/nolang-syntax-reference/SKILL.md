@@ -376,6 +376,92 @@ x: {
 
 > **多行 arm body 規則**：當 arm body 包含多個語句時，必須使用大括號 `-> { ... }` 括起來。單行 body 可直接寫在 `->` 之後。多行 body 若不使用大括號，option match 的 `it` 綁定將無法正確插入，導致編譯錯誤。
 
+#### Match 風格指引
+
+```nolang
+// ❌ Avoid: duplicate branch bodies
+w = tls-c.send(req)
+w: {
+    nil -> {
+        tls-c.close()
+        return
+    }
+    err -> {
+        tls-c.close()
+        return
+    }
+    ok -> n = it
+}
+
+// ✅ Shared logic in -> catch-all
+w = tls-c.send(req)
+w: {
+    ok -> n = it
+    -> {
+        tls-c.close()
+        return
+    }
+}
+
+// ✅ Or vice versa: name simple branches, complex logic in ->
+val: {
+    nil -> return
+    err -> log(it)
+    -> {
+        n = it
+        total = total + n
+        process(n)
+    }
+}
+```
+
+```nolang
+// Single statement — no braces
+val: {
+    ok -> println(it)
+    -> println('empty or error')
+}
+
+// Multiple statements — must use braces
+val: {
+    ok -> {
+        n = it
+        total = total + n
+    }
+    -> {
+        log('failed')
+        return
+    }
+}
+```
+
+```nolang
+// it implicit binding
+val: {
+    ok -> process(it)       // it = unwrapped value
+    err -> log(it)          // it = error message string
+    -> log('empty')         // catch-all, handles nil here
+}
+```
+
+```nolang
+// ✅ Combined option patterns: nil || err -> body
+// Matches when the option is nil OR err, sharing the same body.
+val: {
+    nil || err -> {
+        cleanup()
+        return
+    }
+    ok -> process(it)
+}
+
+// ✅ Also valid: any combination of nil, err, ok joined by ||
+val: {
+    nil || err -> log('failed')
+    ok -> process(it)
+}
+```
+
 ### If/Else（新式 `{ cond -> body }`）
 
 ```nolang

@@ -368,13 +368,11 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     if use-tls {
         w = tls-c.send(req)
         w: {
-            nil ->
+            ok ->
+            -> {
                 tls-c.close()
                 return
-            err ->
-                tls-c.close()
-                return
-            ->
+            }
         }
     } else {
         written = net-send(fd, req, req.len)
@@ -608,13 +606,11 @@ http-do-req = (req http-request) (resp ?http-response) {
     if use-tls {
         w = tls-c.send(req-str)
         w: {
-            nil ->
+            ok ->
+            -> {
                 tls-c.close()
                 return
-            err ->
-                tls-c.close()
-                return
-            ->
+            }
         }
     } else {
         written = net-send(fd, req-str, req-str.len)

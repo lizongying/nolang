@@ -33,11 +33,12 @@ print(result)
 
 // todo 特殊match 現在有問題
 {
-    a == 99 ->
+    a == 99 -> {
         a = 1
         b = 2
         // todo      print(a+b)
         print(b)
+    }
     a == 2 ->
         print('a')
     ->

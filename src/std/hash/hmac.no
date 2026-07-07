@@ -43,13 +43,14 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     }
 
     {
-        key-n <= 64 ->
+        key-n <= 64 -> {
             i = 0
             for i < key-n {
                 k[i] = key[i]
                 i = i + 1
             }
-        ->
+        }
+        -> {
             // 金鑰太長，先雜湰
             h = sha256(key)
             i = 0
@@ -57,6 +58,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
                 k[i] = h[i]
                 i = i + 1
             }
+        }
     }
 
     // ipad-key = K' ⊕ ipad

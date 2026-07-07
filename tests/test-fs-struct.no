@@ -21,10 +21,11 @@ main = () {
     f-w: {
         err -> print('fail: open-write err')
         nil -> print('fail: open-write nil')
-        ->
+        -> {
             it.write(payload, payload.len)
             it.close()
             print('ok: open write')
+        }
     }
 
     f-e ?file
@@ -52,14 +53,15 @@ main = () {
     f-r: {
         err -> print('fail: open-read err')
         nil -> print('fail: open-read nil')
-        ->
+        -> {
             buf [256]byte
             n = it.read(buf, 256)
             it.close()
             if n == payload.len {
-            print('ok: read length matches')
-        } else {
-            print('fail: read length mismatch')
+                print('ok: read length matches')
+            } else {
+                print('fail: read length mismatch')
+            }
         }
     }
 

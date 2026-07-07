@@ -372,9 +372,10 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     // 3. 接收伺服器 SETTINGS 並 ACK
     recv-f = c.recv-frame()
     recv-f: {
-        nil ->
+        nil -> {
             close(fd)
             return
+        }
         ->
     }
 
@@ -412,12 +413,14 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
 w = tls-c.send(preface)
 w: {
-        nil ->
+        nil -> {
             tls-c.close()
             return
-        err ->
+        }
+        err -> {
             tls-c.close()
             return
+        }
         -> if it != preface.len {
             tls-c.close()
             return
@@ -434,9 +437,10 @@ w: {
     // 4. 接收伺服器 SETTINGS 並 ACK
     recv-f = c.recv-frame()
     recv-f: {
-        nil ->
+        nil -> {
             tls-c.close()
             return
+        }
         ->
     }
 
