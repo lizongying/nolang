@@ -760,10 +760,8 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         // Base64 解碼
         b64 = hdr.slice(prefix.len, hdr.len)
         raw []byte
-        n = b64.len
-        raw-n = 0
         decoded = false
-        raw-n, decoded = decode(b64, n, BASE64-STD, raw)
+        decoded = decode(b64, BASE64-STD, raw)
         if decoded == false {
             return
         }
@@ -771,7 +769,7 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         // 尋找冒號分隔符
         colon = -1
         i = 0
-        for i < raw-n {
+        for i < raw.len {
             if raw[i] == 58 {
                 colon = i
                 break
@@ -793,7 +791,7 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         pass-bytes []byte
         j = colon + 1
         k = 0
-        for j < raw-n {
+        for j < raw.len {
             pass-bytes[k] = raw[j]
             j = j + 1
             k = k + 1

@@ -423,6 +423,9 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 		updateCallNames(e.Right, overloads, mangled, varTypes)
 
 	case *parser.IfExpression:
+		if e.Condition != nil {
+			updateCallNames(e.Condition, overloads, mangled, varTypes)
+		}
 		if e.Consequence != nil {
 			for _, s := range e.Consequence.Statements {
 				updateCallNamesInStmt(s, overloads, mangled, varTypes)
@@ -1102,6 +1105,11 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 		if ce, ok := s.Expression.(*parser.CallExpression); ok {
 			processCallExpression(ce, genericFns, varTypes, program, newStmts)
 		}
+		// Also handle IfExpression (e.g. `if cond { ... }` as a statement),
+		// whose Condition may contain method calls (e.g. `elif path.starts-with(x)`).
+		if ie, ok := s.Expression.(*parser.IfExpression); ok {
+			scanIfExpressionForGenericCalls(ie, genericFns, varTypes, program, newStmts)
+		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			// Build per-function varTypes to avoid cross-function name pollution.
@@ -1127,6 +1135,30 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
 			}
 		}
+	case *parser.LetStatement:
+		// Method definitions: type.method = (params) { ... }
+		// These are LetStatements with FunctionLiteral values; scan their bodies
+		// for method calls that need resolution.
+		if fl, ok := s.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+			funcVarTypes := make(map[string]string)
+			for k, v := range varTypes {
+				funcVarTypes[k] = v
+			}
+			for _, p := range fl.Parameters {
+				if p.Type != nil {
+					funcVarTypes[p.Name] = p.Type.String()
+				}
+			}
+			for _, r := range fl.Results {
+				if r.Name != "" && r.Type != nil {
+					funcVarTypes[r.Name] = r.Type.String()
+				}
+			}
+			collectVarTypesFromBody(fl.Body, funcVarTypes)
+			for _, bodyStmt := range fl.Body.Statements {
+				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
+			}
+		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
@@ -1137,6 +1169,47 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 		for _, bodyStmt := range s.Statements {
 			scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
 		}
+	}
+}
+
+// scanIfExpressionForGenericCalls recursively scans an IfExpression's Condition,
+// Consequence, and Alternative for method calls that need resolution.
+func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[string]*parser.FunctionDefinition,
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	if ie.Condition != nil {
+		scanExprForGenericCalls(ie.Condition, genericFns, varTypes, program, newStmts)
+	}
+	if ie.Consequence != nil {
+		for _, s := range ie.Consequence.Statements {
+			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts)
+		}
+	}
+	if ie.Alternative != nil {
+		for _, s := range ie.Alternative.Statements {
+			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts)
+		}
+	}
+}
+
+// scanExprForGenericCalls recursively walks an expression tree to find
+// CallExpressions (including method calls) that need generic/method resolution.
+func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*parser.FunctionDefinition,
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		processCallExpression(e, genericFns, varTypes, program, newStmts)
+		for _, arg := range e.Arguments {
+			scanExprForGenericCalls(arg, genericFns, varTypes, program, newStmts)
+		}
+	case *parser.InfixExpression:
+		scanExprForGenericCalls(e.Left, genericFns, varTypes, program, newStmts)
+		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts)
+	case *parser.PrefixExpression:
+		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts)
+	case *parser.IfExpression:
+		scanIfExpressionForGenericCalls(e, genericFns, varTypes, program, newStmts)
+	case *parser.GroupedExpression:
+		scanExprForGenericCalls(e.Expression, genericFns, varTypes, program, newStmts)
 	}
 }
 
@@ -4850,59 +4923,78 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 	for _, m := range importedModules {
 		modSet[m] = true
 	}
+	// Collect simple (non-dotted) function names — these are module-level
+	// functions like `degrees` (from math.no). Method definitions like
+	// `str.starts-with` or `path.exists` have dots and are NOT module functions.
+	// This prevents incorrectly rewriting `variable.method(args)` as `method(args)`
+	// when the variable name collides with a module name (e.g., `path` is both
+	// a std module and a common variable name).
+	moduleFns := make(map[string]bool)
 	for _, stmt := range program.Statements {
-		resolveModuleCallsInStmt(stmt, modSet)
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if !strings.Contains(fd.Name, ".") {
+				moduleFns[fd.Name] = true
+			}
+		}
+	}
+	for _, stmt := range program.Statements {
+		resolveModuleCallsInStmt(stmt, modSet, moduleFns)
 	}
 }
 
-func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool) {
+func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet)
+			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet, moduleFns)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet)
+			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveModuleCallsInStmt(bodyStmt, modSet)
+			resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet)
+			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet, moduleFns)
 		}
 		if s.Init != nil {
-			resolveModuleCallsInStmt(s.Init, modSet)
+			resolveModuleCallsInStmt(s.Init, modSet, moduleFns)
 		}
 		if s.Update != nil {
-			resolveModuleCallsInStmt(s.Update, modSet)
+			resolveModuleCallsInStmt(s.Update, modSet, moduleFns)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns)
 			}
 		}
 	}
 }
 
-func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) parser.Expression {
+func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, moduleFns map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
 	switch e := expr.(type) {
 	case *parser.CallExpression:
-		// Check if this is a module.fn() call
+		// Check if this is a module.fn() call.
+		// Only rewrite when dot.Property is a known module-level function
+		// (a simple, non-dotted FunctionDefinition name). This avoids
+		// rewriting variable.method() calls where the variable name
+		// collides with a module name (e.g., `path` is both a std module
+		// and a common parameter/variable name).
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
-				if modSet[recvIdent.Value] {
+				if modSet[recvIdent.Value] && moduleFns[dot.Property] {
 					// Rewrite to direct function call
 					e.Function = &parser.Identifier{
 						Token: lexer.Token{Type: lexer.IDENT, Literal: dot.Property},
@@ -4913,88 +5005,88 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool) pa
 		}
 		// Recurse into arguments
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet)
+			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns)
 		}
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet)
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet)
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet)
+			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet, moduleFns)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet)
+			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns)
 		}
 		if e.Consequence != nil {
 			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns)
 			}
 		}
 		return e
 
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet)
+			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns)
 		}
 		if e.Index != nil {
-			e.Index = resolveModuleCallsInExpr(e.Index, modSet)
+			e.Index = resolveModuleCallsInExpr(e.Index, modSet, moduleFns)
 		}
 		return e
 
 	case *parser.SliceExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns)
 		}
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet)
+				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet, moduleFns)
 			}
 			if e.Range.End != nil {
-				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet)
+				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet, moduleFns)
 			}
 		}
 		return e
 
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns)
 		}
 		if e.Value != nil {
-			e.Value = resolveModuleCallsInExpr(e.Value, modSet)
+			e.Value = resolveModuleCallsInExpr(e.Value, modSet, moduleFns)
 		}
 		return e
 

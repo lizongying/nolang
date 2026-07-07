@@ -2224,7 +2224,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
 							} else if llvmElemType == "i64" {
 								// smaller type → i64: zext
-								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, val, llvmElemType))
+								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, val))
 							} else {
 								// smaller → smaller (both non-i64): trunc to target
 								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
@@ -4158,7 +4158,9 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 			return g.isStringExpr(e.Left) || g.isStringExpr(e.Right)
 		}
 	}
-	return false
+	// Fallback: use exprResultLLVMType for DotExpression and other complex expressions
+	t := g.exprResultLLVMType(expr)
+	return t == "%str-long" || t == "%str-short"
 }
 
 // isByteValueExpr checks if an expression produces a byte value (i8/i64 from str

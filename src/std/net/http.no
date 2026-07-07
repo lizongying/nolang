@@ -763,11 +763,7 @@ http-set-basic-auth = (req http-request, user str, password str) (ok bool) {
     // 拼接 user:password 並 Base64 編碼
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
-    n = raw.len
-    enc-len = ((n + 2) / 3) * 4
-    space = ' '
-    enc-str = space.repeat(enc-len)
-    encode-std(raw-bytes, n, enc-str)
+    enc-str = encode-std(raw-bytes)
     auth-val = 'Basic ' - enc-str
     ok = req.add-header('Authorization', auth-val)
 }

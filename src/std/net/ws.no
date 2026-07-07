@@ -191,9 +191,7 @@ ws-compute-accept = (key str) (accept str) {
         hash-vec[i] = hash[i]
         i = i + 1
     }
-    space = ' '
-    accept = space.repeat(32)
-    encode-std(hash-vec, 20, accept)
+    accept = encode-std(hash-vec)
 }
 
 // ws-next-rand: 產生下一個偽隨機 i64
@@ -231,8 +229,7 @@ ws-gen-client-key = (seed i64) (key str) {
         i = i + 1
     }
     rv = raw.to-bytes()
-    key = space.repeat(24)
-    encode-std(rv, 16, key)
+    key = encode-std(rv)
 }
 
 // ws-build-frame: 組裝 WebSocket frame

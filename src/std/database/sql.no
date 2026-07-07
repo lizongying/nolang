@@ -54,6 +54,7 @@ rows enter, leave {
 stmt enter, leave {
     bind-int(idx i64, v i64) (ok bool)
     bind-str(idx i64, v str) (ok bool)
+    bind-bool(idx i64, v bool) (ok bool)
     exec() (r result)
     query() (rs rows)
     close() (ok bool)

@@ -77,25 +77,25 @@ ge-add = (r []i64, p []i64, q []i64) {
     a []i64
     t1 []i64
     t2 []i64
-    fe-sub(t1, p + 10, p)
-    fe-sub(t2, q + 30, q)
+    fe-sub(t1, p[10..], p)
+    fe-sub(t2, q[30..], q)
     fe-mul(a, t1, t2)
 
     // B = (Y1+X1)*(Y2+X2)
     b []i64
-    fe-add(t1, p + 10, p)
-    fe-add(t2, q + 30, q)
+    fe-add(t1, p[10..], p)
+    fe-add(t2, q[30..], q)
     fe-mul(b, t1, t2)
 
     // C = T1*2*d*T2
     c []i64
-    fe-mul(t1, p + 30, q + 30)
+    fe-mul(t1, p[30..], q[30..])
     fe-mul(t2, t1, ED-D)
     fe-add(c, t2, t2)
 
     // D = Z1*2*Z2
     d []i64
-    fe-mul(t1, p + 20, q + 20)
+    fe-mul(t1, p[20..], q[20..])
     fe-add(d, t1, t1)
 
     // E = B-A
@@ -117,11 +117,11 @@ ge-add = (r []i64, p []i64, q []i64) {
     // X3 = E*F
     fe-mul(r, e, f)
     // Y3 = G*H
-    fe-mul(r + 10, g, hh)
+    fe-mul(r[10..], g, hh)
     // T3 = E*H
-    fe-mul(r + 30, e, hh)
+    fe-mul(r[30..], e, hh)
     // Z3 = F*G
-    fe-mul(r + 20, f, g)
+    fe-mul(r[20..], f, g)
 }
 
 // ge-double: 點倍乘 R = 2*P
@@ -132,11 +132,11 @@ ge-double = (r []i64, p []i64) {
 
     // B = Y1^2
     b []i64
-    fe-sq(b, p + 10)
+    fe-sq(b, p[10..])
 
     // C = 2*Z1^2
     c []i64
-    fe-sq(c, p + 20)
+    fe-sq(c, p[20..])
     fe-add(c, c, c)
 
     // H = A+B
@@ -146,7 +146,7 @@ ge-double = (r []i64, p []i64) {
     // E = H - (X1+Y1)^2
     e []i64
     t []i64
-    fe-add(t, p, p + 10)
+    fe-add(t, p, p[10..])
     fe-sq(e, t)
     fe-sub(e, hh, e)
 
@@ -161,11 +161,11 @@ ge-double = (r []i64, p []i64) {
     // X3 = E*F
     fe-mul(r, e, f)
     // Y3 = G*H
-    fe-mul(r + 10, g, hh)
+    fe-mul(r[10..], g, hh)
     // T3 = E*H
-    fe-mul(r + 30, e, hh)
+    fe-mul(r[30..], e, hh)
     // Z3 = F*G
-    fe-mul(r + 20, f, g)
+    fe-mul(r[20..], f, g)
 }
 
 // ge-scalar-mult: 純量乘法 R = scalar * P（double-and-add）
@@ -176,9 +176,9 @@ ge-double = (r []i64, p []i64) {
 ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
     // 初始化 R 為單位元 (0, 1, 1, 0)
     fe-zero(r)
-    fe-one(r + 10)
-    fe-one(r + 20)
-    fe-zero(r + 30)
+    fe-one(r[10..])
+    fe-one(r[20..])
+    fe-zero(r[30..])
 
     // 從高位到低位進行 double-and-add
     t = 254
@@ -187,9 +187,9 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         tmp []i64
         ge-double(tmp, r)
         fe-copy(r, tmp)
-        fe-copy(r + 10, tmp + 10)
-        fe-copy(r + 20, tmp + 20)
-        fe-copy(r + 30, tmp + 30)
+        fe-copy(r[10..], tmp[10..])
+        fe-copy(r[20..], tmp[20..])
+        fe-copy(r[30..], tmp[30..])
 
         // 如果 bit t 為 1，R = R + P
         byte-idx = t / 8
@@ -199,9 +199,9 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         if bit == 1 {
             ge-add(tmp, r, p)
             fe-copy(r, tmp)
-            fe-copy(r + 10, tmp + 10)
-            fe-copy(r + 20, tmp + 20)
-            fe-copy(r + 30, tmp + 30)
+            fe-copy(r[10..], tmp[10..])
+            fe-copy(r[20..], tmp[20..])
+            fe-copy(r[30..], tmp[30..])
         }
 
         t = t - 1
@@ -218,13 +218,13 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 ge-pack = (p []i64) (out [32]byte) {
     // 計算 x = X/Z, y = Y/Z
     z-inv []i64
-    fe-invert(z-inv, p + 20)
+    fe-invert(z-inv, p[20..])
 
     x []i64
     fe-mul(x, p, z-inv)
 
     y []i64
-    fe-mul(y, p + 10, z-inv)
+    fe-mul(y, p[10..], z-inv)
 
     // 序列化 y
     y-bytes [32]byte
@@ -271,8 +271,8 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     // 計算 v = d*y^2 + 1
     v []i64
     fe-mul(v, y2, ED-D)
-    fe-one(v + 10)
-    fe-add(v, v, v + 10)
+    fe-one(v[10..])
+    fe-add(v, v, v[10..])
 
     // 計算 x = u * v^(-1) 的平方根
     // x^2 = u/v = u * v^(-1)
@@ -371,9 +371,9 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     // 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
     fe-copy(p, x)
-    fe-copy(p + 10, y)
-    fe-one(p + 20)
-    fe-mul(p + 30, x, y)
+    fe-copy(p[10..], y)
+    fe-one(p[20..])
+    fe-mul(p[30..], x, y)
 
     ok = 1
 }
@@ -417,9 +417,9 @@ ge-basepoint = () (bp []i64) {
     fe-frombytes(x, x-correct)
 
     fe-copy(bp, x)
-    fe-copy(bp + 10, y)
-    fe-one(bp + 20)
-    fe-mul(bp + 30, x, y)
+    fe-copy(bp[10..], y)
+    fe-one(bp[20..])
+    fe-mul(bp[30..], x, y)
 }
 
 // ge-scalar-mult-base: 基點純量乘法 R = scalar * B

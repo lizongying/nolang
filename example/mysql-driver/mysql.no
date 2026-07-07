@@ -899,6 +899,24 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     ok = true
 }
 
+// stmt-mysql.bind-bool: 綁定布林參數（替換第一個 ?，true=1, false=0）
+stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
+    cur str = .bound
+    pos i64 = cur.index('?')
+    if pos < 0 {
+        ok = false
+        return
+    }
+    bstr str = '0'
+    if v {
+        bstr = '1'
+    }
+    before str = cur.slice(0, pos)
+    after str = cur.slice(pos + 1, cur.len)
+    .bound = before - bstr - after
+    ok = true
+}
+
 stmt-mysql.exec = () (r result) {
     if .fd < 0 {
         return

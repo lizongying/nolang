@@ -1,4 +1,0 @@
-// encoding/hex — 十六進制編解碼
-//
-// 編碼請使用 []byte.to-hex() / []byte.to-hex-lower()（定義於 byte 模組）。
-// 解碼請使用 str.from-hex()（定義於 str 模組）。

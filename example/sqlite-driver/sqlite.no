@@ -311,6 +311,19 @@ stmt-sqlite.bind-str = (idx i64, v str) (ok bool) {
     ok = rc == SQLITE-OK
 }
 
+// stmt-sqlite.bind-bool: 綁定布林參數
+// idx i64: 參數索引（從 1 開始）
+// v bool: 要綁定的布林值（true=1, false=0）
+// 返回 ok bool: true=成功
+stmt-sqlite.bind-bool = (idx i64, v bool) (ok bool) {
+    iv i64 = 0
+    if v {
+        iv = 1
+    }
+    rc i32 = _sqlite3-bind-int64(.handle, idx, iv)
+    ok = rc == SQLITE-OK
+}
+
 // stmt-sqlite.exec: 執行預編譯陳述式（無結果集）
 // 返回 r result: 執行結果（affected=受影響列數, last-id=最後插入 ID）
 stmt-sqlite.exec = () (r result) {

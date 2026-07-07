@@ -490,12 +490,7 @@ url-basic-auth = (user str, password str) (out str) {
     // 拼接 user:password
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
-    n = raw.len
-    // 計算 Base64 編碼後長度
-    enc-len = ((n + 2) / 3) * 4
-    space = ' '
-    enc-str = space.repeat(enc-len)
-    encode-std(raw-bytes, n, enc-str)
+    enc-str = encode-std(raw-bytes)
     out = 'Basic ' - enc-str
 }
 
@@ -512,10 +507,8 @@ url-parse-basic-auth = (header str) (user str, password str) {
         return
     }
     b64 = header.slice(prefix.len, header.len)
-    b64-bytes []byte = b64.to-bytes()
-    n = b64.len
     raw []byte
-    decode(b64, n, BASE64-STD, raw)
+    decode(b64, BASE64-STD, raw)
     // 尋找冒號分隔符
     colon = -1
     i = 0

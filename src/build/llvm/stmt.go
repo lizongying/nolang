@@ -2802,6 +2802,12 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		if _, isStr := stmt.Value.(*parser.StringLiteral); isStr {
 			srcPtr := g.generateExprWithSB(sb, stmt.Value)
 			copyStrToData(srcPtr)
+		} else if g.isStringExpr(stmt.Value) {
+			// String expression (e.g. array element access .values[i], concat):
+			// generateExprWithSB returns a %str-long* pointer, which copyStrToData
+			// will load before storing into the option data field.
+			srcPtr := g.generateExprWithSB(sb, stmt.Value)
+			copyStrToData(srcPtr)
 		} else {
 			val := g.generateExprWithSB(sb, stmt.Value)
 			val = g.stripLLVMType(val)

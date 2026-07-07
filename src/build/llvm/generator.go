@@ -514,6 +514,28 @@ func (g *Generator) Generate(program *parser.Program) string {
 				} else if s.Name != nil {
 					// 收集 open = (p str, opts file-opts) { ... } 等普通函數的參數型別
 					name := s.Name.Value
+					retType := "void"
+					if len(fl.Results) == 1 && fl.Results[0].Name == "" {
+						retType = g.mapToLLVMType(fl.Results[0].Type.String())
+					}
+					g.funcRetTypes[name] = retType
+					g.funcNumResults[name] = len(fl.Results)
+					if len(fl.Results) > 0 {
+						rets := make([]string, len(fl.Results))
+						nolangRets := make([]string, len(fl.Results))
+						innerRets := make([]string, len(fl.Results))
+						for i, r := range fl.Results {
+							typeStr := r.Type.String()
+							rets[i] = g.mapToLLVMType(typeStr)
+							nolangRets[i] = typeStr
+							if strings.HasPrefix(typeStr, "?") {
+								innerRets[i] = g.mapToLLVMType(typeStr[1:])
+							}
+						}
+						g.funcResultLLVMType[name] = rets
+						g.funcResultNolangTypes[name] = nolangRets
+						g.funcResultInnerTypes[name] = innerRets
+					}
 					g.funcIsVariadic[name] = fl.IsVariadic
 					if fl.IsVariadic && len(fl.Parameters) > 0 {
 						g.funcParamCount[name] = len(fl.Parameters) - 1

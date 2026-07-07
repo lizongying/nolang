@@ -531,10 +531,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
         i = i + 1
     }
     combined-n = 12 + sealed-n
-    enc-len = ((combined-n + 2) / 3) * 4
-    space = ' '
-    enc-str = space.repeat(enc-len)
-    encode-std(combined, combined-n, enc-str)
+    enc-str = encode-std(combined)
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -578,10 +575,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
         i = i + 1
     }
     combined-n = 12 + sealed-n
-    enc-len = ((combined-n + 2) / 3) * 4
-    space = ' '
-    enc-str = space.repeat(enc-len)
-    encode-std(combined, combined-n, enc-str)
+    enc-str = encode-std(combined)
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -604,11 +598,9 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     plain = nil
     // Base64 解碼
     raw []byte
-    n = encrypted-data.len
-    raw-n = 0
     ok = false
-    raw-n, ok = decode(encrypted-data, n, BASE64-STD, raw)
-    if ok == false || raw-n < 12 {
+    ok = decode(encrypted-data, BASE64-STD, raw)
+    if ok == false || raw.len < 12 {
         return
     }
     // 提取 IV（前 12 位元組）
@@ -620,7 +612,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     }
     // 提取密文+tag
     sealed []byte
-    sealed-n = raw-n - 12
+    sealed-n = raw.len - 12
     i = 0
     for i < sealed-n {
         sealed[i] = raw[12 + i]

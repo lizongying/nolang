@@ -630,11 +630,12 @@ normalize = (a bigint) {
 }
 
 // to-str: 將 bigint 轉為十進制字串
-to-str = (a bigint, out str) (out-n i64) {
+// a bigint: 輸入
+// 返回 out str: 十進制字串
+to-str = (a bigint) (out str) {
     z = is-zero(a)
     if z == 1 {
         out[0] = 48
-        out-n = 1
         return
     }
     out-n = 0
@@ -666,19 +667,21 @@ to-str = (a bigint, out str) (out-n i64) {
 }
 
 // from-str: 從十進制字串建立 bigint
-from-str = (s str, sn i64, out bigint) {
+// s str: 十進制字串
+// out bigint: 輸出
+from-str = (s str, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
     pos = 0
-    for pos < sn {
+    for pos < s.len {
         c = s[pos] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
             break
         }
         pos = pos + 1
     }
-    if pos < sn {
+    if pos < s.len {
         if s[pos] == 45 {
             out.sign = -1
             pos = pos + 1
@@ -686,7 +689,7 @@ from-str = (s str, sn i64, out bigint) {
             pos = pos + 1
         }
     }
-    for pos < sn {
+    for pos < s.len {
         c = s[pos] & 255
         if c >= 48 && c <= 57 {
             mul-i64(out, 10, out)
@@ -711,7 +714,9 @@ add-i64 = (a bigint, v i64, c bigint) {
 // ═══════════════════════════════════════════════
 
 // to-hex: 將 bigint 轉為十六進制字串（小寫）
-to-hex = (a bigint, out str) (out-n i64) {
+// a bigint: 輸入
+// 返回 out str: 十六進制字串
+to-hex = (a bigint) (out str) {
     hex = '0123456789abcdef'
     out-n = 0
     if a.sign == -1 {
@@ -749,12 +754,14 @@ to-hex = (a bigint, out str) (out-n i64) {
 }
 
 // from-hex: 從十六進制字串建立 bigint
-from-hex = (s str, sn i64, out bigint) {
+// s str: 十六進制字串
+// out bigint: 輸出
+from-hex = (s str, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
     i = 0
-    for i < sn {
+    for i < s.len {
         c = s[i] & 255
         if c >= 48 && c <= 57 {
             mul-i64(out, 16, out)

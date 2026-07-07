@@ -326,6 +326,48 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			}
 		}
 		return structTy + "* " + tmpName
+	case *parser.SliceLiteral:
+		// Slice literal passed as function argument in indirect/curried calls.
+		// Default to i64 element type (parameter type info unavailable here).
+		n := int64(len(a.Elements))
+		g.tmpIdx++
+		vecName := fmt.Sprintf("%%callvec.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecName))
+		}
+		if n > 0 {
+			g.tmpIdx++
+			tmpArr := fmt.Sprintf("%%callvec.arr.%d", g.tmpIdx)
+			arrType := fmt.Sprintf("[%d x i64]", n)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+				for i, elem := range a.Elements {
+					ev := g.generateExprWithSB(sb, elem)
+					ev = g.stripLLVMType(ev)
+					g.tmpIdx++
+					gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), gepReg, arrType, arrType, tmpArr, i))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, gepReg))
+				}
+				g.tmpIdx++
+				ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
+				g.tmpIdx++
+				lenGEP := fmt.Sprintf("%%callvec.len.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+				g.tmpIdx++
+				capGEP := fmt.Sprintf("%%callvec.cap.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%callvec.data.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), ptrReg, dataGEP))
+			}
+		}
+		return "%vec* " + vecName
 	default:
 		ev := g.generateExprWithSB(sb, arg)
 		if strings.HasPrefix(ev, "%str-longlit") {
@@ -334,8 +376,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		// String concat / string method call results: ev is a %str-long* SSA register.
 		// Detect via isStringExpr so InfixExpression (- for concat) and other string
 		// expressions are passed as %str-long* instead of being truncated to i64.
+		// But DotExpression loads a %str-long VALUE (not a pointer), so it must fall
+		// through to the alloca+store path below.
 		if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
-			return "%str-long* " + ev
+			if _, isDot := arg.(*parser.DotExpression); !isDot {
+				return "%str-long* " + ev
+			}
 		}
 		if strings.HasPrefix(ev, "%") {
 			// SSA register (value, not pointer) — allocate a temp slot and store
@@ -1590,6 +1636,67 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 			return structTy + "* " + tmpName
+		case *parser.SliceLiteral:
+			// Slice literal as function argument (e.g. bn-sub(m, [2, 0, ...]))
+			// Determine element type from the parameter's declared type.
+			elemType := "i64"
+			if g.funcParamTypes != nil {
+				if types, ok := g.funcParamTypes[fnName]; ok && argIdx < len(types) {
+					paramType := types[argIdx]
+					if strings.HasPrefix(paramType, "[]") {
+						mapped := g.mapToLLVMType(paramType[2:])
+						if g.isIntegerLLVMType(mapped) {
+							elemType = mapped
+						}
+					}
+				}
+			}
+			n := int64(len(a.Elements))
+			g.tmpIdx++
+			vecName := fmt.Sprintf("%%callvec.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecName))
+			}
+			if n > 0 {
+				g.tmpIdx++
+				tmpArr := fmt.Sprintf("%%callvec.arr.%d", g.tmpIdx)
+				arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+					for i, elem := range a.Elements {
+						ev := g.generateExprWithSB(sb, elem)
+						ev = g.stripLLVMType(ev)
+						g.tmpIdx++
+						gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), gepReg, arrType, arrType, tmpArr, i))
+						storeVal := ev
+						if elemType != "i64" && strings.HasPrefix(ev, "%") {
+							g.tmpIdx++
+							truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, elemType))
+							storeVal = truncReg
+						}
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, gepReg))
+					}
+					g.tmpIdx++
+					ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
+					g.tmpIdx++
+					lenGEP := fmt.Sprintf("%%callvec.len.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+					g.tmpIdx++
+					capGEP := fmt.Sprintf("%%callvec.cap.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, vecName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
+					g.tmpIdx++
+					dataGEP := fmt.Sprintf("%%callvec.data.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecName))
+					sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), ptrReg, dataGEP))
+				}
+			}
+			return "%vec* " + vecName
 		default:
 			ev := g.generateExprWithSB(sb, arg)
 			if strings.HasPrefix(ev, "%str-longlit") {
@@ -1598,8 +1705,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// String concat / string method call results: ev is a %str-long* SSA register.
 			// Detect via isStringExpr so InfixExpression (- for concat) and other string
 			// expressions are passed as %str-long* instead of being truncated to i64.
+			// But DotExpression loads a %str-long VALUE (not a pointer), so it must fall
+			// through to the alloca+store path below.
 			if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
-				return "%str-long* " + ev
+				if _, isDot := arg.(*parser.DotExpression); !isDot {
+					return "%str-long* " + ev
+				}
 			}
 			if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
 				g.tmpIdx++

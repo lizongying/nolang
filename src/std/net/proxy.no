@@ -78,11 +78,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
         // 格式: Proxy-Authorization: Basic base64(user:pass)
         auth-raw = username - ':' - password
         auth-bytes []byte = auth-raw.to-bytes()
-        auth-len = auth-raw.len
-        enc-len = ((auth-len + 2) / 3) * 4
-        space = ' '
-        enc-str = space.repeat(enc-len)
-        encode-std(auth-bytes, auth-len, enc-str)
+        enc-str = encode-std(auth-bytes)
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
 

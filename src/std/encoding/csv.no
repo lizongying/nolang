@@ -6,14 +6,17 @@
 // 用法：
 //   use std/encoding/csv
 //   line = 'a,b,c'
-//   n = csv.parse-line(line, 5, fields, 3)
+//   n = csv.parse-line(line, fields, 3)
 
 // parse-field: 解析 CSV 中的一個欄位
 // 從 s[pos] 開始解析，處理雙引號和逗號
-// 返回解析後的欄位內容（寫入 field 陣列）和 pos 新位置
-parse-field = (s str, sn i64, pos i64, field str) (fn i64, new-pos i64) {
+// s str: CSV 文字
+// pos i64: 開始位置
+// field str: 輸出欄位內容
+// 返回 new-pos i64: 解析後的新位置
+parse-field = (s str, pos i64, field str) (new-pos i64) {
     fn = 0
-    if pos >= sn {
+    if pos >= s.len {
         new-pos = pos
         return
     }
@@ -26,11 +29,11 @@ parse-field = (s str, sn i64, pos i64, field str) (fn i64, new-pos i64) {
     if c == 34 {
         // 雙引號包圍的欄位
         pos = pos + 1
-        for pos < sn {
+        for pos < s.len {
             c = s[pos] & 255
             if c == 34 {
                 // 檢查是否為跳脫的雙引號
-                if pos + 1 < sn {
+                if pos + 1 < s.len {
                     nc = s[pos + 1] & 255
                     if nc == 34 {
                         field[fn] = 34
@@ -42,7 +45,7 @@ parse-field = (s str, sn i64, pos i64, field str) (fn i64, new-pos i64) {
                 // 結束雙引號
                 pos = pos + 1
                 // 跳過後續逗號
-                if pos < sn {
+                if pos < s.len {
                     nc = s[pos] & 255
                     if nc == 44 {
                         pos = pos + 1
@@ -66,7 +69,7 @@ parse-field = (s str, sn i64, pos i64, field str) (fn i64, new-pos i64) {
         return
     }
     // 普通欄位（無引號）
-    for pos < sn {
+    for pos < s.len {
         c = s[pos] & 255
         if c == 44 {
             pos = pos + 1
@@ -86,22 +89,27 @@ parse-field = (s str, sn i64, pos i64, field str) (fn i64, new-pos i64) {
 }
 
 // parse-line: 解析一行 CSV 文字
-// 返回欄位數量和 error（0=成功）
-parse-line = (s str, sn i64, fields []str, max-fields i64) (n i64) {
+// s str: CSV 文字
+// fields []str: 輸出欄位陣列
+// max-fields i64: 最大欄位數
+// 返回 n i64: 實際解析的欄位數量
+parse-line = (s str, fields []str, max-fields i64) (n i64) {
     n = 0
     pos = 0
-    for pos < sn && n < max-fields {
-        fn, pos = parse-field(s, sn, pos, fields[n])
+    for pos < s.len && n < max-fields {
+        pos = parse-field(s, pos, fields[n])
         n = n + 1
     }
 }
 
 // encode-field: 將一個欄位編碼為 CSV 格式
 // 若包含逗號、雙引號或換行，則用雙引號包圍並跳脫
-encode-field = (field str, fn i64, out str) (out-n i64) {
+// field str: 要編碼的欄位
+// 返回 out str: CSV 編碼後的字串
+encode-field = (field str) (out str) {
     need-quote = false
     i = 0
-    for i < fn {
+    for i < field.len {
         c = field[i] & 255
         if c == 44 || c == 34 || c == 10 || c == 13 {
             need-quote = true
@@ -110,29 +118,24 @@ encode-field = (field str, fn i64, out str) (out-n i64) {
         i = i + 1
     }
     if need-quote == false {
-        i = 0
-        for i < fn {
-            out[i] = field[i]
-            i = i + 1
-        }
-        out-n = fn
+        out = field
         return
     }
-    out[0] = 34
-    out-n = 1
+    j = 0
+    out[j] = 34
+    j = j + 1
     i = 0
-    for i < fn {
+    for i < field.len {
         c = field[i] & 255
         if c == 34 {
-            out[out-n] = 34
-            out-n = out-n + 1
-            out[out-n] = 34
+            out[j] = 34
+            j = j + 1
+            out[j] = 34
         } else {
-            out[out-n] = c
+            out[j] = c
         }
-        out-n = out-n + 1
+        j = j + 1
         i = i + 1
     }
-    out[out-n] = 34
-    out-n = out-n + 1
+    out[j] = 34
 }

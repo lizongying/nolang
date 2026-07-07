@@ -62,9 +62,8 @@ new-v4 = (state i64) (out uuid) {
 
 // to-str: 將 UUID 格式化為標準字串
 // 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
-uuid.to-str = (out str) (out-n i64) {
-    out-n = 36
-
+// 返回 out str: UUID 字串
+uuid.to-str = () (out str) {
     // 8-4-4-4-12 格式
     // byte 0-3 → position 0-7
     hex-byte(.bytes[0], 0, out)
@@ -112,9 +111,9 @@ hex-byte = (b byte, pos i64, out str) {
 }
 
 // to-str-upper: 將 UUID 格式化為大寫字串
-uuid.to-str-upper = (out str) (out-n i64) {
+// 返回 out str: UUID 大寫字串
+uuid.to-str-upper = () (out str) {
     HEX-U = '0123456789ABCDEF'
-    out-n = 36
     hex-byte-upper(.bytes[0], 0, out, HEX-U)
     hex-byte-upper(.bytes[1], 2, out, HEX-U)
     hex-byte-upper(.bytes[2], 4, out, HEX-U)
@@ -149,12 +148,15 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 
 // from-str: 從字串解析 UUID
 // 支援帶連字號（36 字元）和不帶連字號（32 字元）格式
-from-str = (s str, sn i64, out uuid) (ok bool) {
+// s str: UUID 字串
+// out uuid: 輸出 UUID
+// 返回 ok bool: true=解析成功
+from-str = (s str, out uuid) (ok bool) {
     ok = false
     pos = 0
 
     // 跳過空白
-    for pos < sn {
+    for pos < s.len {
         c = s[pos] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
             break
@@ -163,9 +165,9 @@ from-str = (s str, sn i64, out uuid) (ok bool) {
     }
 
     // 判斷格式（帶連字號 vs 不帶）
-    if sn == 36 {
+    if s.len == 36 {
         ok = parse-with-dashes(s, pos, out)
-    } elif sn == 32 {
+    } elif s.len == 32 {
         ok = parse-no-dashes(s, pos, out)
     }
 }
