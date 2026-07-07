@@ -227,10 +227,16 @@ The parser automatically adds a hidden `self` parameter with the receiver type, 
 **Definition:**
 
 ```nolang
-// union type alias
-int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
-float f32 | f64
-num int | float
+// type aliases & union types — equals syntax
+// name = type1 | type2 | ...  — union of multiple types
+// name = type               — single type alias
+int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
+
+// Single type alias
+bytes = []byte
+buf = [16]u8
 
 // method definition — NO explicit self parameter, use `.` inside body
 num.sign = () (r num) {
@@ -839,7 +845,7 @@ person {
 }
 ```
 
-The `range` annotation is particularly useful for `num` type (`num int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
+The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 
 ```nolang
 #{range=[i8.MIN..i8.MAX]}

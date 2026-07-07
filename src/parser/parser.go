@@ -25,6 +25,7 @@ type Parser struct {
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 	declaredVars      map[string]bool              // 已宣告的變數名（用於避免重複推斷）
+	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
@@ -834,27 +835,6 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.AT:
 		return p.parseExportStatement()
 	case lexer.IDENT:
-		// 檢測型別別名 / 聯合型別：name type1 | type2 | ...
-		// 例：int i8 | i16 | ... | u64
-		//     float f32 | f64
-		//     num int | float
-		if p.peekToken.Type == lexer.IDENT {
-			// Look further to determine: is this a let/function call (with
-			// = or ( or something), or a type alias (followed by OR or
-			// NEWLINE)?
-			//
-			// Heuristic: scan ahead a few tokens. If we see an OR
-			// (|) before any newline, equals, parenthesis, brace, or
-			// semicolon, treat as type alias.
-			if p.looksLikeTypeAlias() {
-				stmt := p.parseTypeAlias()
-				if stmt != nil {
-					p.skipToStatementEnd()
-				}
-				return stmt
-			}
-		}
-
 		// 檢查介面實作/繼承：user json, fmt { name str } 或 db enter, leave { close() }
 		if p.peekToken.Type == lexer.IDENT {
 			// 用 LookAhead 掃過介面名列表，找到 { 後分類區塊型別
@@ -919,6 +899,15 @@ func (p *Parser) parseStatement() Statement {
 			// 僅在 `(` 開頭且非函式定義（無 { body }）時嘗試
 			if p.isFunctionTypeAlias() {
 				stmt := p.parseFunctionTypeAlias()
+				if stmt != nil {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
+			// 等號語法型別別名：name = []type 或 name = ?type
+			// 例：bytes = []byte
+			if p.looksLikeEqualsTypeAlias() {
+				stmt := p.parseTypeAlias()
 				if stmt != nil {
 					p.skipToStatementEnd()
 				}
@@ -1916,7 +1905,8 @@ func (p *Parser) parseUseStatement() Statement {
 	}
 
 	for {
-		if p.currentToken.Type != lexer.IDENT {
+		// use path 段接受 IDENT，以及可能作為路徑名稱的關鍵字（如 map）
+		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.MAP {
 			msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.saveError(msg)
@@ -4017,14 +4007,14 @@ func (p *Parser) isArmStart() bool {
 
 // matchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）
 type matchArm struct {
-	condition          Expression
-	isWildcard         bool
-	isDotVal           bool // .-> → specific val branch (not catch-all)
-	isRawCond          bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
-	body               *BlockStatement
-	isBlockBody        bool           // true = block form (newline after ->), false = inline expression form
-	pos                lexer.Position // position of condition or -> for diagnostic use
-	multiOptionPatterns []string      // nil || err → ["nil", "err"]; combined option patterns joined by ||
+	condition           Expression
+	isWildcard          bool
+	isDotVal            bool // .-> → specific val branch (not catch-all)
+	isRawCond           bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
+	body                *BlockStatement
+	isBlockBody         bool           // true = block form (newline after ->), false = inline expression form
+	pos                 lexer.Position // position of condition or -> for diagnostic use
+	multiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
 }
 
 // returnKind — match arm body 的最後一個表達式回傳值分類
@@ -6247,53 +6237,79 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 	return ted
 }
 
-// looksLikeTypeAlias reports whether the current statement looks like a
-// type alias. The current token is the alias name (IDENT) and the next
-// token (peekToken) is the first type. We scan forward looking for `|`
-// (OR) or statement end (=, (, {, newline at the top level, semicolon, or
-// EOF) to decide whether this is a type alias or a let statement.
-func (p *Parser) looksLikeTypeAlias() bool {
-	// Inside a function body, IDENT IDENT NEWLINE is always a variable declaration,
-	// not a type alias. Type aliases are only meaningful at the module level.
+// builtInTypeNames are the built-in type names that can be used in type aliases.
+// When `name = IDENT` is seen at the top level and IDENT is one of these,
+// it is treated as a type alias rather than a let statement.
+var builtInTypeNames = map[string]bool{
+	"i8": true, "i16": true, "i32": true, "i64": true,
+	"u8": true, "u16": true, "u32": true, "u64": true,
+	"f32": true, "f64": true,
+	"byte": true, "bool": true, "str": true, "any": true,
+}
+
+// looksLikeEqualsTypeAlias reports whether the current statement looks like an
+// equals-syntax type alias: name = type | type | ..., name = []type,
+// name = [N]type, name = ?type, or name = known-type-name
+// The current token is the alias name (IDENT), peekToken is ASSIGN.
+// Note: LookAhead(0) returns the token AFTER peekToken (=), i.e. the first RHS token.
+func (p *Parser) looksLikeEqualsTypeAlias() bool {
 	if p.ctx.contains(CTX_FUNC_BODY) {
 		return false
 	}
-	// If the next token is `=`, this is a let statement, not a type alias.
-	if p.peekToken.Type == lexer.ASSIGN {
-		return false
-	}
-	// If the next token is `(`, this is a function call, not a type alias.
-	if p.peekToken.Type == lexer.LPAREN {
-		return false
-	}
-	// If the second token is `=`, `(` or `{`, also not a type alias.
-	if p.lexer.LookAhead(1).Type == lexer.ASSIGN {
-		return false
-	}
-	const maxLook = 64
-	for i := 0; i < maxLook; i++ {
-		t := p.lexer.LookAhead(i)
-		switch t.Type {
-		case lexer.OR:
+	t1 := p.lexer.LookAhead(0) // first RHS token (after '=')
+	switch t1.Type {
+	case lexer.IDENT:
+		// name = IDENT | IDENT | ... → union type alias
+		// name = IDENT              → single type alias (if IDENT is a known type)
+		t2 := p.lexer.LookAhead(1)
+		if t2.Type == lexer.OR {
 			return true
-		case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
-			// End of statement without OR: still a single-type alias
-			return true
-		case lexer.IDENT, lexer.LBRACKET, lexer.QUESTION, lexer.PTR:
-			// continue scanning
-		default:
+		}
+		if t2.Type == lexer.NEWLINE || t2.Type == lexer.EOF || t2.Type == lexer.SEMICOLON {
+			return builtInTypeNames[t1.Literal] || (p.typeAliasNames != nil && p.typeAliasNames[t1.Literal])
+		}
+		return false
+	case lexer.LBRACKET:
+		// name = []type or name = [N]type
+		t2 := p.lexer.LookAhead(1)
+		if t2.Type == lexer.RBRACKET {
+			// []type — check that next is IDENT (type name)
+			t3 := p.lexer.LookAhead(2)
+			if t3.Type == lexer.IDENT {
+				return true
+			}
 			return false
 		}
+		if t2.Type == lexer.INT {
+			t3 := p.lexer.LookAhead(2)
+			if t3.Type == lexer.RBRACKET {
+				t4 := p.lexer.LookAhead(3)
+				if t4.Type == lexer.IDENT {
+					return true
+				}
+			}
+		}
+		return false
+	case lexer.QUESTION:
+		// name = ?type — ? at expression start is not valid
+		t2 := p.lexer.LookAhead(1)
+		if t2.Type == lexer.IDENT {
+			return true
+		}
+		return false
+	default:
+		return false
 	}
-	return false
 }
 
 // parseTypeAlias parses a type alias or union type alias statement.
 //
-//	int i8 | i16 | ... | u64   →  TypeAlias{Name:"int", Union:[i8,i16,...,u64]}
-//	float f32 | f64            →  TypeAlias{Name:"float", Union:[f32,f64]}
-//	num int | float            →  TypeAlias{Name:"num", Union:[int,float]}
-//	my-int i64                 →  TypeAlias{Name:"my-int", Type:NamedType{"i64"}}
+//	int = i8 | i16 | ... | u64   →  TypeAlias{Name:"int", Union:[i8,i16,...,u64]}
+//	float = f32 | f64            →  TypeAlias{Name:"float", Union:[f32,f64]}
+//	num = int | float            →  TypeAlias{Name:"num", Union:[int,float]}
+//	my-int = i64                 →  TypeAlias{Name:"my-int", Type:NamedType{"i64"}}
+//	bytes = []byte               →  TypeAlias{Name:"bytes", Type:SliceType{byte}}
+//	buf = [16]u8                 →  TypeAlias{Name:"buf", Type:ArrayType{16,u8}}
 //
 // The first type must be a concrete type. If it is followed by `|`, we
 // collect the rest of the union.
@@ -6302,7 +6318,11 @@ func (p *Parser) parseTypeAlias() Statement {
 	nameToken := p.currentToken
 	ta := &TypeAlias{Token: nameToken, Name: name}
 
-	p.nextToken() // skip alias name
+	p.nextToken() // skip alias name → ASSIGN
+	// Skip ASSIGN
+	if p.currentToken.Type == lexer.ASSIGN {
+		p.nextToken() // skip =
+	}
 	typ, ok := p.parseTypeExpression()
 	if !ok {
 		msg := fmt.Sprintf("line %d, column %d: expected type after %q in type alias",
@@ -6333,6 +6353,11 @@ func (p *Parser) parseTypeAlias() Statement {
 	} else {
 		ta.Type = typ
 	}
+	// Record the type alias name for future detection
+	if p.typeAliasNames == nil {
+		p.typeAliasNames = make(map[string]bool)
+	}
+	p.typeAliasNames[name] = true
 	return ta
 }
 

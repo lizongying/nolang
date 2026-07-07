@@ -489,17 +489,15 @@ func (f *formatter) formatExportStatement(s *parser.ExportStatement) {
 
 func (f *formatter) formatTypeAlias(s *parser.TypeAlias) {
 	f.write(s.Name)
+	f.write(" = ")
 	if s.IsUnion() {
 		for i, t := range s.Union.Types {
-			if i == 0 {
-				f.write(" ")
-			} else {
+			if i > 0 {
 				f.write(" | ")
 			}
 			f.write(t.String())
 		}
 	} else if s.Type != nil {
-		f.write(" ")
 		f.write(s.Type.String())
 	}
 }

@@ -1657,20 +1657,62 @@ func TestFormatUnionType(t *testing.T) {
 		input    string
 		expected string
 	}{
+	{
+		name:     "single-type alias round-trips",
+		input:    "my-int = i64\n",
+		expected: "my-int = i64",
+	},
+	{
+		name:     "union type alias round-trips",
+		input:    "int = i8 | i16 | i32 | i64\n",
+		expected: "int = i8 | i16 | i32 | i64",
+	},
+	{
+		name:     "chained union type alias round-trips",
+		input:    "num = int | float\n",
+		expected: "num = int | float",
+	},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatEqualsTypeAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
-			name:     "single-type alias round-trips",
-			input:    "my-int i64\n",
-			expected: "my-int i64",
+			name:     "equals union type",
+			input:    "int = i8 | i16 | i32 | i64\n",
+			expected: "int = i8 | i16 | i32 | i64",
 		},
 		{
-			name:     "union type alias round-trips",
-			input:    "int i8 | i16 | i32 | i64\n",
-			expected: "int i8 | i16 | i32 | i64",
+			name:     "equals chained union",
+			input:    "num = int | float\n",
+			expected: "num = int | float",
 		},
 		{
-			name:     "chained union type alias round-trips",
-			input:    "num int | float\n",
-			expected: "num int | float",
+			name:     "equals single type alias",
+			input:    "bytes = []byte\n",
+			expected: "bytes = []byte",
+		},
+		{
+			name:     "equals simple alias",
+			input:    "my-int = i64\n",
+			expected: "my-int = i64",
+		},
+		{
+			name:     "equals array type alias",
+			input:    "buf = [16]u8\n",
+			expected: "buf = [16]u8",
 		},
 	}
 	for _, tt := range tests {
@@ -1693,13 +1735,13 @@ func TestFormatTypeAliasBlankLinePreservation(t *testing.T) {
 //
 // header 2
 
-int i8 | i16
+int = i8 | i16
 `
 	expected := `// header comment
 //
 // header 2
 
-int i8 | i16`
+int = i8 | i16`
 	if got := Format(input); got != expected {
 		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
 	}
@@ -1711,10 +1753,10 @@ int i8 | i16`
 // *TypeAlias case, causing the doc to vanish.
 func TestFormatTypeAliasDocAttaches(t *testing.T) {
 	input := `// describes int
-int i8 | i16
+int = i8 | i16
 `
 	expected := `// describes int
-int i8 | i16`
+int = i8 | i16`
 	if got := Format(input); got != expected {
 		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
 	}

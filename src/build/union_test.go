@@ -8,9 +8,9 @@ import (
 )
 
 func TestValidateUnionTypes(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64
+float = f32 | f64
+num = int | float
 `
 	l := lexer.New(src)
 	p := parser.New(l)
@@ -34,9 +34,9 @@ num int | float
 }
 
 func TestFlattenUnionChain(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64
+float = f32 | f64
+num = int | float
 `
 	l := lexer.New(src)
 	p := parser.New(l)
@@ -53,8 +53,8 @@ num int | float
 }
 
 func TestMonomorphizeUnionFunction(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64
-num int
+	src := `int = i8 | i16 | i32 | i64
+num = int
 max = (a ..num) (r num) {
     r = a
 }
@@ -103,8 +103,8 @@ max = (a ..num) (r num) {
 }
 
 func TestUnionTypeAliasDuplicate(t *testing.T) {
-	src := `int i8
-int i64
+	src := `int = i8
+int = i64
 `
 	l := lexer.New(src)
 	p := parser.New(l)
@@ -123,9 +123,9 @@ int i64
 // one concrete function per union member. The result types must be
 // specialized to the concrete member (e.g. i8), not the union alias.
 func TestGenericUnionMonomorphize(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64
+float = f32 | f64
+num = int | float
 abs = (a num) (r num) {
     r = a
 }
@@ -192,9 +192,9 @@ abs = (a num) (r num) {
 // It also verifies the template is renamed, parameter slice element type
 // becomes the concrete member, and result type is the concrete member.
 func TestMonomorphizeVariadicMax(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
 max = (a ..num) (r num) {
     r = a[0]
 }
@@ -259,9 +259,9 @@ max = (a ..num) (r num) {
 // (non-variadic generic) generates per-member concrete versions with both
 // the parameter and result type specialized.
 func TestMonomorphizeGenericSign(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64
+float = f32 | f64
+num = int | float
 sign = (a num) (r num) {
     r = 0
 }
@@ -318,9 +318,9 @@ sign = (a num) (r num) {
 // functions declared as (a int) are only monomorphized for integer members
 // (not floats), since `int` union does not include float types.
 func TestMonomorphizeIntegerOnlyGeneric(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
 even = (a int) (yes int) {
     yes = 0
 }
@@ -364,9 +364,9 @@ even = (a int) (yes int) {
 // recursively calls itself, the monomorphized body's call is renamed from
 // the original generic name to the concrete monomorphized name.
 func TestMonomorphizeRecursiveCallInBody(t *testing.T) {
-	src := `int i8 | i16
-float f32 | f64
-num int | float
+	src := `int = i8 | i16
+float = f32 | f64
+num = int | float
 gcd = (a num, b num) (r num) {
     if b == 0 {
         r = a
@@ -469,13 +469,13 @@ gcd = (a num, b num) (r num) {
 }
 
 // TestFlattenUnionAllMembers enumerates all members produced by flattening
-// `num int | float` with the full int/float declarations used in number.no.
+// `num = int | float` with the full int/float declarations used in number.no.
 // This guards against accidentally dropping or duplicating members during
 // recursive flattening.
 func TestFlattenUnionAllMembers(t *testing.T) {
-	src := `int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
-float f32 | f64
-num int | float
+	src := `int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
 `
 	l := lexer.New(src)
 	p := parser.New(l)

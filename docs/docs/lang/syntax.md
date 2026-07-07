@@ -69,6 +69,67 @@ sidebar_position: 2
 - bigint
 - err
 
+## 類型別名與聯合類型
+
+類型別名為現有類型建立一個新名稱。使用等號語法 `name = type`，支援單一類型別名和多類型聯合。
+
+### 語法
+
+```nolang
+// 聯合類型：多個類型用 | 分隔
+int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
+
+// 單一類型別名
+bytes = []byte
+buf = [16]u8
+```
+
+### 聯合類型的鏈式引用
+
+聯合類型可以引用其他聯合類型，形成層次結構：
+
+```nolang
+int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float     // num 是 int 和 float 的聯合
+```
+
+### 在函數中使用
+
+聯合類型可用於函數參數和返回值，編譯器會自動進行單態化（monomorphization），為每個成員類型生成獨立的函數版本：
+
+```nolang
+// 參數類型為 num 聯合
+max = (a ..num) (r num) {
+    r = a[0]
+    n = len(a)
+    i = 1
+    for i < n {
+        if a[i] > r { r = a[i] }
+        i = i + 1
+    }
+}
+
+// 方法定義在聯合類型上
+num.sign = () (r num) {
+    if . > 0 { r = 1 }
+    elif . < 0 { r = -1 }
+    else { r = 0 }
+}
+```
+
+### 偵測規則
+
+等號語法在以下情況下被識別為類型別名（而非變數賦值）：
+
+- `name = type | type | ...`：聯合類型（含 `|`）
+- `name = []type`：切片類型
+- `name = [N]type`：陣列類型
+- `name = ?type`：可選類型
+- `name = known-type`：單一類型別名，其中 `known-type` 是內建類型名（如 `i64`、`f64`、`bool`、`str` 等）或先前已定義的類型別名名稱
+
 ## 變量聲明
 
 ```nolang
@@ -1085,7 +1146,7 @@ person {
 }
 ```
 
-`range` 註解特別適用於 `num` 型別（`num int | float`），用於標記數值的有效範圍。範圍值可以是整數或識別字：
+`range` 註解特別適用於 `num` 型別（`num = int | float`），用於標記數值的有效範圍。範圍值可以是整數或識別字：
 
 ```nolang
 // 使用常量識別字作為範圍邊界

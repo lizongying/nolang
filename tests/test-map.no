@@ -1,0 +1,18 @@
+// test-map.no — 測試 map 關鍵字與 hashmap 實作
+
+# std/map/map
+
+test-map-str-i64 = () {
+    m map[str]i64 = { 'a':0, 'b':1 }
+    m.put('c', 2, _)
+
+    found = 0
+    v = 0
+    m.get('a', found, v)
+    print(v)  // expect: 0
+
+    m.get('c', found, v)
+    print(v)  // expect: 2
+}
+
+test-map-str-i64()

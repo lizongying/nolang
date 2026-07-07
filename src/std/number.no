@@ -7,9 +7,9 @@
 
 // max: 回傳最大值（variadic，支援 num 所有成員）
 
-int i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
-float f32 | f64
-num int | float
+int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+float = f32 | f64
+num = int | float
 
 // ═══════════════════════════════════════════════
 // 數值範圍常數（用於範圍檢查，如 str.to-i8 等）
