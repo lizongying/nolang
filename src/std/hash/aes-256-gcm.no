@@ -1,0 +1,245 @@
+// aes-256-gcm — AES-256-GCM AEAD 加密/解密（NIST SP 800-38D）
+//
+// 在 AES-256-ECB 的基礎上實作 GCM（Galois/Counter Mode）。
+// 複用 aes-gcm.no 的 GHASH 函數。
+//
+// 用法：
+//   # std/hash/aes-256-gcm
+//   key [32]byte
+//   iv [12]byte
+//   aad []byte = 'additional data'
+//   plain []byte = 'plaintext'
+//   sealed = aes-256-gcm-seal(key, iv, aad, plain)
+//   opened = aes-256-gcm-open(key, iv, aad, sealed)
+
+# std/hash/aes-256
+# std/hash/aes-gcm
+
+// aes-256-ctr-xor: 使用 AES-256-CTR 模式生成密鑰流並 XOR
+// key [32]byte: 金鑰
+// icb [16]byte: 初始計數器區塊
+// data []byte: 輸入資料
+// 返回 out []byte: XOR 後的資料
+aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
+    cb [16]byte
+    i = 0
+    for i < 16 {
+        cb[i] = icb[i]
+        i = i + 1
+    }
+
+    pos = 0
+    for pos < data.len {
+        ks [16]byte
+        ks = aes-256-enc(cb, key)
+
+        n = 16
+        if pos + n > data.len {
+            n = data.len - pos
+        }
+        i = 0
+        for i < n {
+            out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
+            i = i + 1
+        }
+
+        // 遞增計數器（大端序，最低 32 位元）
+        j = 15
+        for j >= 12 {
+            cb[j] = (cb[j] + 1) & 255
+            if cb[j] != 0 {
+                break
+            }
+            j = j - 1
+        }
+        if cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 {
+            j = 11
+            for j >= 0 {
+                cb[j] = (cb[j] + 1) & 255
+                if cb[j] != 0 {
+                    break
+                }
+                j = j - 1
+            }
+        }
+
+        pos = pos + n
+    }
+}
+
+// aes-256-gcm-seal: AES-256-GCM 加密
+// key [32]byte: 金鑰
+// iv [12]byte: IV（nonce）
+// aad []byte: 額外認證資料
+// plain []byte: 明文
+// 返回 sealed []byte: 密文 + 16 位元組 tag
+aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
+    // 1. H = AES-256-enc(key, 0^128)
+    zero-block [16]byte
+    i = 0
+    for i < 16 {
+        zero-block[i] = 0
+        i = i + 1
+    }
+    h-bytes [16]byte
+    h-bytes = aes-256-enc(zero-block, key)
+    h [16]byte
+    i = 0
+    for i < 16 {
+        h[i] = h-bytes[i]
+        i = i + 1
+    }
+
+    // 2. J0 = iv || 0x00000001
+    j0 [16]byte
+    i = 0
+    for i < 12 {
+        j0[i] = iv[i]
+        i = i + 1
+    }
+    j0[12] = 0
+    j0[13] = 0
+    j0[14] = 0
+    j0[15] = 1
+
+    // 3. CTR 從 J0+1 開始加密
+    ctr [16]byte
+    i = 0
+    for i < 16 {
+        ctr[i] = j0[i]
+        i = i + 1
+    }
+    j = 15
+    for j >= 12 {
+        ctr[j] = (ctr[j] + 1) & 255
+        if ctr[j] != 0 {
+            break
+        }
+        j = j - 1
+    }
+
+    cipher []byte
+    cipher = aes-256-ctr-xor(key, ctr, plain)
+
+    // 4. GHASH
+    ghash-out [16]byte
+    ghash-out = ghash(h, aad, cipher)
+
+    // 5. tag = AES-256-enc(key, J0) XOR GHASH
+    j0-enc [16]byte
+    j0-enc = aes-256-enc(j0, key)
+    tag [16]byte
+    i = 0
+    for i < 16 {
+        tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
+        i = i + 1
+    }
+
+    // 6. 輸出密文 + tag
+    i = 0
+    for i < cipher.len {
+        sealed[i] = cipher[i]
+        i = i + 1
+    }
+    i = 0
+    for i < 16 {
+        sealed[cipher.len + i] = tag[i]
+        i = i + 1
+    }
+}
+
+// aes-256-gcm-open: AES-256-GCM 解密
+// key [32]byte: 金鑰
+// iv [12]byte: IV
+// aad []byte: 額外認證資料
+// sealed []byte: 密文 + 16 位元組 tag
+// 返回 plain []byte: 明文（認證失敗時長度為 0）
+aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
+    if sealed.len < 16 {
+        return
+    }
+    cipher-len = sealed.len - 16
+
+    // 1. H
+    zero-block [16]byte
+    i = 0
+    for i < 16 {
+        zero-block[i] = 0
+        i = i + 1
+    }
+    h-bytes [16]byte
+    h-bytes = aes-256-enc(zero-block, key)
+    h [16]byte
+    i = 0
+    for i < 16 {
+        h[i] = h-bytes[i]
+        i = i + 1
+    }
+
+    // 2. J0
+    j0 [16]byte
+    i = 0
+    for i < 12 {
+        j0[i] = iv[i]
+        i = i + 1
+    }
+    j0[12] = 0
+    j0[13] = 0
+    j0[14] = 0
+    j0[15] = 1
+
+    // 3. 提取密文和 tag
+    cipher []byte
+    i = 0
+    for i < cipher-len {
+        cipher[i] = sealed[i]
+        i = i + 1
+    }
+
+    tag [16]byte
+    i = 0
+    for i < 16 {
+        tag[i] = sealed[cipher-len + i]
+        i = i + 1
+    }
+
+    // 4. 驗證 tag
+    ghash-out [16]byte
+    ghash-out = ghash(h, aad, cipher)
+    j0-enc [16]byte
+    j0-enc = aes-256-enc(j0, key)
+    exp-tag [16]byte
+    i = 0
+    for i < 16 {
+        exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
+        i = i + 1
+    }
+
+    diff = 0
+    i = 0
+    for i < 16 {
+        diff = diff | (tag[i] ^ exp-tag[i])
+        i = i + 1
+    }
+    if diff != 0 {
+        return
+    }
+
+    // 5. 解密
+    ctr [16]byte
+    i = 0
+    for i < 16 {
+        ctr[i] = j0[i]
+        i = i + 1
+    }
+    j = 15
+    for j >= 12 {
+        ctr[j] = (ctr[j] + 1) & 255
+        if ctr[j] != 0 {
+            break
+        }
+        j = j - 1
+    }
+
+    plain = aes-256-ctr-xor(key, ctr, cipher)
+}

@@ -1,0 +1,55 @@
+// rc4 — RC4 串流加密器
+//
+// RC4 是一個簡單的串流加密器，使用 256-byte 狀態陣列。
+// 加密和解密使用相同的操作（XOR）。
+//
+// 注意：RC4 已被認為不安全，僅供遺留系統相容使用。
+//
+// 用法：
+//   # std/hash/rc4
+//   key []byte = 'secret key'
+//   cipher = rc4(plain, key)   // 加密
+//   plain = rc4(cipher, key)   // 解密（相同操作）
+
+// rc4: RC4 加密/解密
+// in []byte: 輸入資料
+// key []byte: 金鑰（1-256 位元組）
+// 返回 out []byte: 輸出資料
+rc4 = (in []byte, key []byte) (out []byte) {
+    // KSA: 金鑰排程
+    s [256]byte
+    i = 0
+    for i < 256 {
+        s[i] = i
+        i = i + 1
+    }
+
+    key-len = key.len
+    j = 0
+    i = 0
+    for i < 256 {
+        j = (j + (s[i] & 255) + (key[i % key-len] & 255)) % 256
+        // Swap s[i] and s[j]
+        t = s[i]
+        s[i] = s[j]
+        s[j] = t
+        i = i + 1
+    }
+
+    // PRGA: 偽隨機生成
+    i = 0
+    j = 0
+    pos = 0
+    for pos < in.len {
+        i = (i + 1) % 256
+        j = (j + (s[i] & 255)) % 256
+        // Swap s[i] and s[j]
+        t = s[i]
+        s[i] = s[j]
+        s[j] = t
+        // 生成密鑰流位元組
+        k = s[((s[i] & 255) + (s[j] & 255)) % 256]
+        out[pos] = (in[pos] & 255) ^ (k & 255)
+        pos = pos + 1
+    }
+}

@@ -1,0 +1,305 @@
+// scrypt — Scrypt 記憶體困難金鑰推導函數（RFC 7914）
+//
+// Scrypt 設計為記憶體困難的 KDF，抵抗 ASIC/GPU 破解。
+// 使用 PBKDF2-HMAC-SHA256 + Salsa20/8 核心函數。
+//
+// 用法：
+//   # std/hash/scrypt
+//   password []byte = 'password'
+//   salt []byte = 'salt'
+//   N = 16384    // CPU/Memory 參數（必須是 2 的冪）
+//   r = 8        // 區塊大小參數
+//   p = 1        // 並行參數
+//   key-len = 32
+//   derived = scrypt(password, salt, N, r, p, key-len)
+
+# std/hash/pbkdf2
+
+// ═══════════════════════════════════════════════
+// Salsa20/8 核心函數
+// ═══════════════════════════════════════════════
+
+// Salsa20/8 核心：對 64 位元組區塊進行 8 輪混合
+// block []byte: 64 位元組輸入/輸出（原地修改）
+salsa20-8-core = (block []byte) {
+    // 載入 16 個 32-bit 字（小端序）
+    x [16]u32
+    i = 0
+    for i < 16 {
+        off = i * 4
+        x[i] = (block[off] & 255) | ((block[off + 1] & 255) << 8) | ((block[off + 2] & 255) << 16) | ((block[off + 3] & 255) << 24)
+        i = i + 1
+    }
+
+    // 保存初始值
+    init [16]u32
+    i = 0
+    for i < 16 {
+        init[i] = x[i]
+        i = i + 1
+    }
+
+    // 8 輪（4 次雙輪）
+    mask u32 = 4294967295
+    round = 0
+    for round < 4 {
+        // 列輪
+        // QR(x[0], x[4], x[8], x[12])
+        x[4] = (x[4] ^ (((x[0] + x[12]) & mask) << 7)) & mask
+        x[8] = (x[8] ^ (((x[4] + x[0]) & mask) << 9)) & mask
+        x[12] = (x[12] ^ (((x[8] + x[4]) & mask) << 13)) & mask
+        x[0] = (x[0] ^ (((x[12] + x[8]) & mask) << 18)) & mask
+
+        // QR(x[5], x[9], x[13], x[1])
+        x[9] = (x[9] ^ (((x[5] + x[1]) & mask) << 7)) & mask
+        x[13] = (x[13] ^ (((x[9] + x[5]) & mask) << 9)) & mask
+        x[1] = (x[1] ^ (((x[13] + x[9]) & mask) << 13)) & mask
+        x[5] = (x[5] ^ (((x[1] + x[13]) & mask) << 18)) & mask
+
+        // QR(x[10], x[14], x[2], x[6])
+        x[14] = (x[14] ^ (((x[10] + x[6]) & mask) << 7)) & mask
+        x[2] = (x[2] ^ (((x[14] + x[10]) & mask) << 9)) & mask
+        x[6] = (x[6] ^ (((x[2] + x[14]) & mask) << 13)) & mask
+        x[10] = (x[10] ^ (((x[6] + x[2]) & mask) << 18)) & mask
+
+        // QR(x[15], x[3], x[7], x[11])
+        x[3] = (x[3] ^ (((x[15] + x[11]) & mask) << 7)) & mask
+        x[7] = (x[7] ^ (((x[3] + x[15]) & mask) << 9)) & mask
+        x[11] = (x[11] ^ (((x[7] + x[3]) & mask) << 13)) & mask
+        x[15] = (x[15] ^ (((x[11] + x[7]) & mask) << 18)) & mask
+
+        // 行輪
+        // QR(x[0], x[1], x[2], x[3])
+        x[1] = (x[1] ^ (((x[0] + x[3]) & mask) << 7)) & mask
+        x[2] = (x[2] ^ (((x[1] + x[0]) & mask) << 9)) & mask
+        x[3] = (x[3] ^ (((x[2] + x[1]) & mask) << 13)) & mask
+        x[0] = (x[0] ^ (((x[3] + x[2]) & mask) << 18)) & mask
+
+        // QR(x[5], x[6], x[7], x[4])
+        x[6] = (x[6] ^ (((x[5] + x[4]) & mask) << 7)) & mask
+        x[7] = (x[7] ^ (((x[6] + x[5]) & mask) << 9)) & mask
+        x[4] = (x[4] ^ (((x[7] + x[6]) & mask) << 13)) & mask
+        x[5] = (x[5] ^ (((x[4] + x[7]) & mask) << 18)) & mask
+
+        // QR(x[10], x[11], x[8], x[9])
+        x[11] = (x[11] ^ (((x[10] + x[9]) & mask) << 7)) & mask
+        x[8] = (x[8] ^ (((x[11] + x[10]) & mask) << 9)) & mask
+        x[9] = (x[9] ^ (((x[8] + x[11]) & mask) << 13)) & mask
+        x[10] = (x[10] ^ (((x[9] + x[8]) & mask) << 18)) & mask
+
+        // QR(x[15], x[12], x[13], x[14])
+        x[12] = (x[12] ^ (((x[15] + x[14]) & mask) << 7)) & mask
+        x[13] = (x[13] ^ (((x[12] + x[15]) & mask) << 9)) & mask
+        x[14] = (x[14] ^ (((x[13] + x[12]) & mask) << 13)) & mask
+        x[15] = (x[15] ^ (((x[14] + x[13]) & mask) << 18)) & mask
+
+        round = round + 1
+    }
+
+    // 加上初始值並寫回（小端序）
+    i = 0
+    for i < 16 {
+        val = (x[i] + init[i]) & 4294967295
+        off = i * 4
+        block[off] = val & 255
+        block[off + 1] = (val >> 8) & 255
+        block[off + 2] = (val >> 16) & 255
+        block[off + 3] = (val >> 24) & 255
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// BlockMix
+// ═══════════════════════════════════════════════
+
+// scrypt-blockmix: 區塊混合函數
+// B []byte: 輸入區塊（128*r 位元組）
+// r i64: 區塊大小參數
+// 返回 out []byte: 混合後的區塊（128*r 位元組）
+scrypt-blockmix = (b []byte, r i64) (out []byte) {
+    block-size = 64
+    total = 2 * r
+
+    // X = B[2r-1]（最後一個 64 位元組區塊）
+    x []byte
+    i = 0
+    for i < 64 {
+        x[i] = b[(total - 1) * 64 + i]
+        i = i + 1
+    }
+
+    // Y 陣列（2r 個 64 位元組區塊）
+    y []byte
+
+    // 逐區塊處理
+    i = 0
+    for i < total {
+        // X = B[i] XOR X
+        j = 0
+        for j < 64 {
+            x[j] = (b[i * 64 + j] & 255) ^ (x[j] & 255)
+            j = j + 1
+        }
+        // X = Salsa20/8(X)
+        salsa20-8-core(x)
+
+        // Y[i] = X
+        j = 0
+        for j < 64 {
+            y[i * 64 + j] = x[j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+
+    // 輸出: (Y[0], Y[2], ..., Y[2r-2], Y[1], Y[3], ..., Y[2r-1])
+    i = 0
+    for i < r {
+        j = 0
+        for j < 64 {
+            out[i * 64 + j] = y[(2 * i) * 64 + j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    for i < r {
+        j = 0
+        for j < 64 {
+            out[(r + i) * 64 + j] = y[(2 * i + 1) * 64 + j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// ROMix
+// ═══════════════════════════════════════════════
+
+// scrypt-romix: 記憶體困難混合函數
+// b []byte: 輸入區塊（128*r 位元組）
+// n i64: CPU/記憶體參數（2 的冪）
+// r i64: 區塊大小參數
+// 返回 out []byte: 混合後的區塊
+scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
+    block-bytes = 128 * r
+
+    // V 陣列：n 個區塊，每個 block-bytes 位元組
+    // 由於記憶體限制，逐塊處理
+
+    // X = B
+    x []byte
+    i = 0
+    for i < block-bytes {
+        x[i] = b[i]
+        i = i + 1
+    }
+
+    // 第一階段：填充 V
+    // V[0] = X, V[i] = BlockMix(V[i-1])
+    v []byte
+    i = 0
+    for i < block-bytes {
+        v[i] = x[i]
+        i = i + 1
+    }
+
+    n-idx = 1
+    for n-idx < n {
+        // X = BlockMix(X)
+        mixed []byte
+        mixed = scrypt-blockmix(x, r)
+        i = 0
+        for i < block-bytes {
+            x[i] = mixed[i]
+            v[n-idx * block-bytes + i] = mixed[i]
+            i = i + 1
+        }
+        n-idx = n-idx + 1
+    }
+
+    // 第二階段：偽隨機存取
+    n-idx = 0
+    for n-idx < n {
+        // j = Integerify(X) mod N
+        // Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數
+        j = 0
+        j = (x[(2 * r - 1) * 64] & 255) | ((x[(2 * r - 1) * 64 + 1] & 255) << 8) | ((x[(2 * r - 1) * 64 + 2] & 255) << 16) | ((x[(2 * r - 1) * 64 + 3] & 255) << 24) | ((x[(2 * r - 1) * 64 + 4] & 255) << 32) | ((x[(2 * r - 1) * 64 + 5] & 255) << 40) | ((x[(2 * r - 1) * 64 + 6] & 255) << 48) | ((x[(2 * r - 1) * 64 + 7] & 255) << 56)
+        j = j % n
+
+        // X = X XOR V[j]
+        i = 0
+        for i < block-bytes {
+            x[i] = (x[i] & 255) ^ (v[j * block-bytes + i] & 255)
+            i = i + 1
+        }
+
+        // X = BlockMix(X)
+        mixed []byte
+        mixed = scrypt-blockmix(x, r)
+        i = 0
+        for i < block-bytes {
+            x[i] = mixed[i]
+            i = i + 1
+        }
+
+        n-idx = n-idx + 1
+    }
+
+    // 輸出 X
+    i = 0
+    for i < block-bytes {
+        out[i] = x[i]
+        i = i + 1
+    }
+}
+
+// ═══════════════════════════════════════════════
+// Scrypt 公開 API
+// ═══════════════════════════════════════════════
+
+// scrypt: Scrypt 金鑰推導
+// password []byte: 密碼
+// salt []byte: 鹽值
+// n i64: CPU/記憶體參數（2 的冪，如 16384）
+// r i64: 區塊大小參數（如 8）
+// p i64: 並行參數（如 1）
+// key-len i64: 期望金鑰長度
+// 返回 out []byte: 推導出的金鑰
+scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out []byte) {
+    // 1. B = PBKDF2-HMAC-SHA256(password, salt, 1, p * 128 * r)
+    b-len = p * 128 * r
+    b []byte
+    b = pbkdf2-hmac-sha256(password, salt, 1, b-len)
+
+    // 2. For i = 0 to p-1: B_i = ROMix(B_i, N, r)
+    block-bytes = 128 * r
+    i = 0
+    for i < p {
+        // 提取 B_i
+        b-i []byte
+        j = 0
+        for j < block-bytes {
+            b-i[j] = b[i * block-bytes + j]
+            j = j + 1
+        }
+
+        // ROMix
+        mixed []byte
+        mixed = scrypt-romix(b-i, n, r)
+
+        // 寫回 B
+        j = 0
+        for j < block-bytes {
+            b[i * block-bytes + j] = mixed[j]
+            j = j + 1
+        }
+
+        i = i + 1
+    }
+
+    // 3. DK = PBKDF2-HMAC-SHA256(password, B, 1, key-len)
+    out = pbkdf2-hmac-sha256(password, b, 1, key-len)
+}

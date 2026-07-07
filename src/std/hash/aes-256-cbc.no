@@ -1,0 +1,84 @@
+// aes-256-cbc — AES-256-CBC 加密/解密模式
+//
+// 在 AES-256-ECB 的基礎上實作 CBC（Cipher Block Chaining）模式。
+// CBC 加密: C_i = AES_enc(P_i ⊕ C_{i-1}), C_0 = IV
+// CBC 解密: P_i = AES_dec(C_i) ⊕ C_{i-1}, C_0 = IV
+//
+// 用法：
+//   # std/hash/aes-256-cbc
+//   iv [16]byte
+//   key [32]byte
+//   cipher = aes-256-cbc-enc(plain, key, iv)
+//   plain = aes-256-cbc-dec(cipher, key, iv)
+
+# std/hash/aes-256
+
+// aes-256-cbc-enc: AES-256-CBC 加密
+// in []byte: 輸入資料（長度需為 16 的倍數）
+// key [32]byte: 256-bit 金鑰
+// iv [16]byte: 初始向量
+// 返回 out []byte: 加密後的資料
+aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
+    prev [16]byte
+    i = 0
+    i < 16: {
+        prev[i] = iv[i]
+        i = i + 1
+    }
+
+    blk = 0
+    blk < in.len: {
+        xored [16]byte
+        i = 0
+        i < 16: {
+            xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
+            i = i + 1
+        }
+
+        enc-block [16]byte
+        enc-block = aes-256-enc(xored, key)
+
+        i = 0
+        i < 16: {
+            out[blk + i] = enc-block[i]
+            prev[i] = enc-block[i]
+            i = i + 1
+        }
+        blk = blk + 16
+    }
+}
+
+// aes-256-cbc-dec: AES-256-CBC 解密
+// in []byte: 輸入密文（長度需為 16 的倍數）
+// key [32]byte: 256-bit 金鑰
+// iv [16]byte: 初始向量
+// 返回 out []byte: 解密後的資料
+aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
+    prev [16]byte
+    i = 0
+    i < 16: {
+        prev[i] = iv[i]
+        i = i + 1
+    }
+
+    blk = 0
+    blk < in.len: {
+        cipher-block [16]byte
+        i = 0
+        i < 16: {
+            cipher-block[i] = in[blk + i]
+            i = i + 1
+        }
+
+        dec-block [16]byte
+        dec-block = aes-256-dec(cipher-block, key)
+
+        i = 0
+        i < 16: {
+            out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)
+            prev[i] = cipher-block[i]
+            i = i + 1
+        }
+        blk = blk + 16
+    }
+}
