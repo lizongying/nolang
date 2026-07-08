@@ -2940,32 +2940,80 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 	return nil
 }
 
+// tryEvalConstInt 嘗試在編譯期求值整數常數表達式。
+// 支援：IntegerLiteral、PrefixExpression(-)、InfixExpression(+,-,*)、GroupedExpression。
+// 若成功求值回傳 (value, true)，否則回傳 (0, false)。
+func tryEvalConstInt(expr parser.Expression) (int64, bool) {
+	switch e := expr.(type) {
+	case *parser.IntegerLiteral:
+		return e.Value, true
+	case *parser.PrefixExpression:
+		if e.Operator == "-" {
+			if v, ok := tryEvalConstInt(e.Right); ok {
+				return -v, true
+			}
+		}
+		if e.Operator == "+" {
+			return tryEvalConstInt(e.Right)
+		}
+	case *parser.InfixExpression:
+		lv, lok := tryEvalConstInt(e.Left)
+		rv, rok := tryEvalConstInt(e.Right)
+		if lok && rok {
+			switch e.Operator {
+			case "+":
+				return lv + rv, true
+			case "-":
+				return lv - rv, true
+			case "*":
+				return lv * rv, true
+			}
+		}
+	case *parser.GroupedExpression:
+		return tryEvalConstInt(e.Expression)
+	}
+	return 0, false
+}
+
+// checkConstIndexBounds 檢查常數索引是否越界（負數或 >= size）。
+// 若索引非常數或 size <= 0 則跳過。回傳錯誤或 nil。
+func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string, typeName string) error {
+	if size <= 0 {
+		return nil
+	}
+	idx, ok := tryEvalConstInt(idxExpr)
+	if !ok {
+		return nil
+	}
+	if idx < 0 {
+		return fmt.Errorf("index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+	}
+	if idx >= size {
+		return fmt.Errorf("index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+	}
+	return nil
+}
+
 func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
 	switch e := expr.(type) {
 	case *parser.IndexExpression:
 		// 檢查索引是否為常數且超出陣列長度
 		if ident, ok := e.Left.(*parser.Identifier); ok {
-			if size, exists := arraySizes[ident.Value]; exists && size > 0 {
-				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
-					if lit.Value >= size {
-						return fmt.Errorf("index %d out of bounds for array '%s' of size %d", lit.Value, ident.Value, size)
-					}
+			if size, exists := arraySizes[ident.Value]; exists {
+				if err := checkConstIndexBounds(e.Index, size, ident.Value, "array"); err != nil {
+					return err
 				}
 			}
 			// Also check slice bounds
-			if size, exists := sliceSizes[ident.Value]; exists && size > 0 {
-				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
-					if lit.Value >= size {
-						return fmt.Errorf("index %d out of bounds for slice '%s' of length %d", lit.Value, ident.Value, size)
-					}
+			if size, exists := sliceSizes[ident.Value]; exists {
+				if err := checkConstIndexBounds(e.Index, size, ident.Value, "slice"); err != nil {
+					return err
 				}
 			}
 			// Also check string index bounds
-			if size, exists := stringSizes[ident.Value]; exists && size > 0 {
-				if lit, ok := e.Index.(*parser.IntegerLiteral); ok {
-					if lit.Value >= size {
-						return fmt.Errorf("index %d out of bounds for string '%s' of length %d", lit.Value, ident.Value, size)
-					}
+			if size, exists := stringSizes[ident.Value]; exists {
+				if err := checkConstIndexBounds(e.Index, size, ident.Value, "string"); err != nil {
+					return err
 				}
 			}
 		}

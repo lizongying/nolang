@@ -177,6 +177,8 @@ n = s.count()                 // code point 總數
 val = s.replace-char(old, new) // 取代字元（返回結果字串）
 out = s.trim-char(c)          // 去指定字元
 ok = s.empty()                // 是否為空
+parts = s.split(sep)          // 用分隔符分割（返回 []str，方法）
+out = ss.join(sep)            // []str 用分隔符連接（方法）
 ```
 
 ### number — 數值操作

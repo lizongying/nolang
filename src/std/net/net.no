@@ -571,7 +571,8 @@ enc-conn.gen-iv = () (iv [12]byte) {
     // 用 rand 生成剩餘 8 bytes
     i = 4
     for i < 12 {
-        r = rand(.rand-seed)
+        s, r = rand(.rand-seed)
+        .rand-seed = s
         iv[i] = r & 255
         i = i + 1
     }

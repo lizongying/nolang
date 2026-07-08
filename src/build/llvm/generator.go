@@ -443,9 +443,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 				innerRets := make([]string, len(fd.Results))
 				for i, r := range fd.Results {
 					typeStr := r.Type.String()
-					rets[i] = g.mapToLLVMType(typeStr)
+					rets[i] = g.resolveParamLLVMType(r.Type)
 					nolangRets[i] = typeStr
-					if strings.HasPrefix(typeStr, "?") {
+					if nt, ok := r.Type.(*parser.NullableType); ok {
+						innerRets[i] = g.resolveParamLLVMType(nt.Type)
+					} else if strings.HasPrefix(typeStr, "?") {
 						innerRets[i] = g.mapToLLVMType(typeStr[1:])
 					}
 				}
@@ -493,9 +495,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 						innerRets := make([]string, len(fl.Results))
 						for i, r := range fl.Results {
 							typeStr := r.Type.String()
-							rets[i] = g.mapToLLVMType(typeStr)
+							rets[i] = g.resolveParamLLVMType(r.Type)
 							nolangRets[i] = typeStr
-							if strings.HasPrefix(typeStr, "?") {
+							if nt, ok := r.Type.(*parser.NullableType); ok {
+								innerRets[i] = g.resolveParamLLVMType(nt.Type)
+							} else if strings.HasPrefix(typeStr, "?") {
 								innerRets[i] = g.mapToLLVMType(typeStr[1:])
 							}
 						}
@@ -540,9 +544,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 						innerRets := make([]string, len(fl.Results))
 						for i, r := range fl.Results {
 							typeStr := r.Type.String()
-							rets[i] = g.mapToLLVMType(typeStr)
+							rets[i] = g.resolveParamLLVMType(r.Type)
 							nolangRets[i] = typeStr
-							if strings.HasPrefix(typeStr, "?") {
+							if nt, ok := r.Type.(*parser.NullableType); ok {
+								innerRets[i] = g.resolveParamLLVMType(nt.Type)
+							} else if strings.HasPrefix(typeStr, "?") {
 								innerRets[i] = g.mapToLLVMType(typeStr[1:])
 							}
 						}

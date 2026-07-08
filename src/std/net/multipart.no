@@ -67,7 +67,7 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     prefix-len = boundary.len
     i = 0
     i < 16: {
-        r = rand(seed)
+        seed, r = rand(seed)
         boundary[prefix-len + i] = chars[r % 36]
         i = i + 1
     }

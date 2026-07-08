@@ -2,10 +2,17 @@
 //
 // printf(fmt str, args ...any)  → @printf(i8*, ...)
 // print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg) + 換行
+// sprintf(fmt str, args ...any) (out str) → @sprintf(buf, fmt, args...)
 // printf: formatted print
 // build-in (ForwardFunc: printf)
 // printf = (fmt str) {
 //     // LLVM: call i32 @printf(i8* %fmt, ...args)
+// }
+
+// sprintf: format string and return it
+// build-in (ForwardFunc: sprintf)
+// sprintf = (fmt str, args ...any) (out str) {
+//     // LLVM: call i32 @sprintf(buf, fmt, ...args) → construct %str-long
 // }
 
 // print: print with newline

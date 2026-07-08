@@ -161,7 +161,24 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("@.os-buf = private global [1024 x i8] zeroinitializer\n")
 	sb.WriteString("@.str.true = private unnamed_addr constant [5 x i8] c\"true\\00\"\n")
 	sb.WriteString("@.str.false = private unnamed_addr constant [6 x i8] c\"false\\00\"\n")
-	sb.WriteString("@.str.r = private unnamed_addr constant [2 x i8] c\"r\\00\"\n\n")
+	sb.WriteString("@.str.r = private unnamed_addr constant [2 x i8] c\"r\\00\"\n")
+	sb.WriteString("@.str.oob = private unnamed_addr constant [36 x i8] c\"runtime error: index out of bounds\\0A\\00\"\n\n")
+
+	// nolang.bounds_check: runtime array/slice/string bounds check
+	// If idx < 0 || idx >= len, writes error to stderr and exits.
+	sb.WriteString("define internal void @nolang.bounds_check(i64 %idx, i64 %len) {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%lo = icmp slt i64 %idx, 0\n")
+	sb.WriteString("\t%hi = icmp sge i64 %idx, %len\n")
+	sb.WriteString("\t%oob = or i1 %lo, %hi\n")
+	sb.WriteString("\tbr i1 %oob, label %err, label %ok\n")
+	sb.WriteString("err:\n")
+	sb.WriteString("\tcall i64 @write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+	sb.WriteString("\tcall void @exit(i32 1)\n")
+	sb.WriteString("\tunreachable\n")
+	sb.WriteString("ok:\n")
+	sb.WriteString("\tret void\n")
+	sb.WriteString("}\n\n")
 
 	// zlib functions for raw DEFLATE decompression (ZIP method 8)
 	sb.WriteString("declare i32 @inflateInit2_(i8*, i32, i8*, i32)\n")

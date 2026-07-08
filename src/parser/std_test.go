@@ -10,16 +10,15 @@ import (
 func TestStdFiles(t *testing.T) {
 	files := []string{
 		"../../src/std/hash/fnv-1a.no",
-		"../../src/std/hash/crc32.no",
+		"../../src/std/hash/crc-32.no",
 		"../../src/std/arr.no",
-		"../../src/std/arr/arr.no",
 		"../../src/std/vec.no",
 		"../../src/std/option.no",
 		"../../src/std/archive/tar.no",
 		"../../src/std/archive/zip.no",
-		"../../src/std/bufio/bufio.no",
-		"../../src/std/str/str.no",
-		"../../src/std/number/number.no",
+		"../../src/std/bufio.no",
+		"../../src/std/str.no",
+		"../../src/std/number.no",
 		"../../src/std/types.no",
 	}
 	for _, f := range files {

@@ -80,6 +80,13 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 	if mt, ok := t.(*parser.MapType); ok {
 		return g.mapToLLVMType(mt.LLVMName())
 	}
+	// Fixed-size ArrayType (e.g. [32]byte) → raw LLVM array [32 x i8] to match
+	// struct field type (collectStructTypeFields uses the same raw array form).
+	// Without this, [32]byte params would be typed as %arr (struct with len/data
+	// pointer), which is incompatible with [32 x i8] struct fields.
+	if at, ok := t.(*parser.ArrayType); ok && at.Size != nil {
+		return g.arrayTypeToLLVM(at)
+	}
 	return g.mapToLLVMType(t.String())
 }
 
@@ -807,8 +814,16 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if _, ok := recvExpr.(*parser.StringLiteral); ok {
 				shortName := "str." + dot.Property
 				if g.funcRetTypes != nil {
-					if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
-						return t
+					if t, ok := g.funcRetTypes[shortName]; ok {
+						if t != "void" {
+							return t
+						}
+						// void + 單輸出函數（如 str.repeat 返回 str）：使用 funcResultLLVMType
+						if g.funcResultLLVMType != nil {
+							if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+								return ts[0]
+							}
+						}
 					}
 				}
 				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
@@ -1001,6 +1016,14 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 						g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
 					}
 				}
+			}
+			// Register slice element type for []T locals (e.g. []byte → "i8").
+			// This must happen during collection (not just in generateLet) so that
+			// subsequent varLLVMType calls can resolve []T.method calls (e.g.
+			// packet-str = packet.to-str() needs arrayElemTypes["packet"]="i8"
+			// to find []byte.to-str and infer %str-long instead of defaulting to i64).
+			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
+				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 			}
 			// Infer array element type and size from function call return type
 			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte)
@@ -1818,12 +1841,23 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	name := stmt.Name.Value
 
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
-	// 這些 let 的 Type 為 "err" / "nil" 哨兵字串，無法映射到真實的 LLVM 型別。
+	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串，無法映射到真實的 LLVM 型別。
 	// 為了避免嘗試將 ?file option 的內部 struct 指標存入 i64* 而產生型別衝突，
 	// 將其型別降為 i64 並直接賦值 0 作為佔位符（`it` 在 err/nil 分支語意上無值）。
 	if stmt.IsSynthetic {
 		if nt, ok := stmt.Type.(*parser.NamedType); ok {
-			if nt.Value == "err" || nt.Value == "nil" {
+			// 判斷型別字串是否僅由 err/nil 組成（如 "err"、"nil"、"err | nil"），
+			// 不含任何具體元素型別（如 "[]byte | err" 仍需綁定 it = inner value）。
+			onlyErrNil := true
+			for _, p := range strings.Split(nt.Value, "|") {
+				p = strings.TrimSpace(p)
+				if p == "err" || p == "nil" || p == "" {
+					continue
+				}
+				onlyErrNil = false
+				break
+			}
+			if onlyErrNil {
 				if g.varTypes != nil {
 					if _, exists := g.varTypes[name]; !exists {
 						g.varTypes[name] = "i64"
@@ -2859,6 +2893,21 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		} else {
 			val := g.generateExprWithSB(sb, stmt.Value)
 			val = g.stripLLVMType(val)
+			// For struct inner types (e.g. ?conn), generateExprWithSB may return a
+			// pointer (e.g. %conn* from .conns[i]) rather than a loaded value.
+			// Detect this: if val starts with "%" and the option's inner type is a
+			// struct, treat val as a pointer and load the struct value first.
+			if g.optionInnerTypes != nil {
+				if innerType, ok := g.optionInnerTypes[name]; ok && strings.HasPrefix(innerType, "%") {
+					if strings.HasPrefix(val, "%") {
+						// val is a pointer to the struct; load the value
+						g.tmpIdx++
+						loadReg := fmt.Sprintf("%%opt.struct.load.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, innerType, innerType, val))
+						val = loadReg
+					}
+				}
+			}
 			copyToData(val)
 		}
 	}

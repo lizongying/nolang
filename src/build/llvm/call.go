@@ -1013,6 +1013,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 						candidates = append(candidates, primAliases...)
 					}
+					// vec/arr 變數：依元素型別構造 []T 候選（如 opened.to-str → []byte.to-str）
+					if srcType == "vec" || srcType == "arr" {
+						if g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[recv.Value]; ok {
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+									}
+								}
+							}
+						}
+					}
 					for _, cand := range candidates {
 						shortName := cand + "." + dot.Property
 						if g.funcRetTypes != nil {
@@ -1776,7 +1788,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					// DotExpression (e.g. .field) loads a struct value into an SSA register.
 					// The baseName "dot" is not a real variable, so varTypes lookup fails and
 					// ptrType defaults to i64*. Determine the field type from structTypes so
-					// %vec / %arr / %str-long fields get the correct pointer type.
+					// %vec / %arr / %str-long / [N x T] fields get the correct pointer type.
 					if dot, ok := arg.(*parser.DotExpression); ok {
 						if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 							if g.varTypes != nil {
@@ -1786,7 +1798,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 										for _, f := range fields {
 											if f.name == dot.Property {
 												fieldType := f.typ
-												if strings.HasPrefix(fieldType, "%") {
+												if fieldType != "i64" {
 													sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, fieldType))
 													sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, ev, fieldType, tmpName))
 													return fieldType + "* " + tmpName

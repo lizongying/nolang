@@ -1206,6 +1206,9 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 			if g.globalVars != nil && g.globalVars[varName] {
 				arrRef = llvmGlobalRef(varName)
 			}
+			// Bounds check: load arr len and verify idx
+			arrLen := g.emitArrLenLoad(sb, arrRef)
+			g.emitBoundsCheck(sb, idx, arrLen)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%arr.ptr.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -1235,6 +1238,9 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 			if g.globalVars != nil && g.globalVars[varName] {
 				vecRef = llvmGlobalRef(varName)
 			}
+			// Bounds check: load vec len and verify idx
+			vecLen := g.emitVecLenLoad(sb, vecRef)
+			g.emitBoundsCheck(sb, idx, vecLen)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%vec.ptr.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -1252,6 +1258,27 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 					g.indent(), dataTyped, dataLoad, llvmElemType))
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			}
+			return elemGEP
+		}
+		// Fixed-size array parameter (e.g. [64 x %str-long]): varTypes[name] is the
+		// raw LLVM array type. Generate a direct GEP on the array variable.
+		// Without this branch, names[i].len on a [64]str parameter returns "" and
+		// produces `getelementptr %str-long, %str-long* , ...` with an empty pointer.
+		if strings.HasPrefix(t, "[") {
+			llvmElemType := extractArrayElemType(t)
+			if llvmElemType == "" {
+				llvmElemType = "i64"
+			}
+			arrRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] {
+				arrRef = llvmGlobalRef(varName)
+			}
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%fixarr.ptr.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+					g.indent(), elemGEP, t, t, arrRef, idx))
 			}
 			return elemGEP
 		}
@@ -1310,6 +1337,44 @@ func (g *Generator) extractStrShortLen(sb *strings.Builder, strPtr string) strin
 		sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenExt, lenMasked))
 	}
 	return lenExt
+}
+
+// emitBoundsCheck emits a call to @nolang.bounds_check(idx, len).
+// idx and len must be i64 SSA registers or literals.
+func (g *Generator) emitBoundsCheck(sb *strings.Builder, idx string, lenExpr string) {
+	if sb == nil {
+		return
+	}
+	sb.WriteString(fmt.Sprintf("%scall void @nolang.bounds_check(i64 %s, i64 %s)\n",
+		g.indent(), idx, lenExpr))
+}
+
+// emitArrLenLoad loads the i64 len (field 0) from a %arr* pointer.
+func (g *Generator) emitArrLenLoad(sb *strings.Builder, arrRef string) string {
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	lenLoad := fmt.Sprintf("%%arr.len.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, arrRef))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
+	}
+	return lenLoad
+}
+
+// emitVecLenLoad loads the i64 len (field 0) from a %vec* pointer.
+func (g *Generator) emitVecLenLoad(sb *strings.Builder, vecRef string) string {
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	lenLoad := fmt.Sprintf("%%vec.len.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, vecRef))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
+	}
+	return lenLoad
 }
 
 // extractStrShortDataPtr extracts the i8* data pointer from a %str-short* pointer.
@@ -2115,6 +2180,18 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			return g.generateNestedStrIndexAssign(sb, innerIdx, idxExpr.Index, expr.Value)
 		}
 		idx := g.generateExprWithSB(sb, idxExpr.Index)
+		// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
+		if strings.HasPrefix(idx, "%") {
+			idxType := g.intExprLLVMType(idxExpr.Index)
+			if idxType != "i64" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%idx.set.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				}
+				idx = zextReg
+			}
+		}
 		val := g.generateExprWithSB(sb, expr.Value)
 
 		// 取得陣列 LLVM 型別
@@ -2127,6 +2204,10 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				if et, ok := g.arrayElemTypes[varName]; ok {
 					llvmElemType = et
 				}
+
+				// Bounds check: load arr len and verify idx
+				arrLen := g.emitArrLenLoad(sb, g.varAddr(varName))
+				g.emitBoundsCheck(sb, idx, arrLen)
 
 				// Load data pointer from arr struct
 				g.tmpIdx++
@@ -2242,6 +2323,10 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					llvmElemType = et
 				}
 
+				// Bounds check: load vec len and verify idx
+				vecLen := g.emitVecLenLoad(sb, llvmVarRef(varName))
+				g.emitBoundsCheck(sb, idx, vecLen)
+
 				// Load data pointer from vec struct (field 2)
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%vec.set.data.gep.%d", g.tmpIdx)
@@ -2322,6 +2407,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			if t == "%str-long" {
 				// %str-long type: load data pointer (field 1), GEP, store
 				// Also auto-update len (field 0) to max(len, idx+1)
+
+				// Bounds check: load str len and verify idx
+				strLen := g.extractStrLen(sb, g.varAddr(varName))
+				g.emitBoundsCheck(sb, idx, strLen)
+
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%str-long.set.data.gep.%d", g.tmpIdx)
 				g.tmpIdx++
@@ -2379,6 +2469,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			if t == "%str-short" {
 				// %str-short type: GEP to field 1 (data array), GEP into array, store
 				// Also auto-update len (field 0) to max(len, idx+1)
+
+				// Bounds check: load str len and verify idx
+				strLen := g.extractStrShortLen(sb, g.varAddr(varName))
+				g.emitBoundsCheck(sb, idx, strLen)
+
 				g.tmpIdx++
 				fieldGEP := fmt.Sprintf("%%str-longsm.set.field.%d", g.tmpIdx)
 				g.tmpIdx++
@@ -2518,6 +2613,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	if varName != "" {
 		if t, ok := g.varTypes[varName]; ok && t == "%str-long" {
 			strPtr := g.varAddr(varName)
+			// Bounds check: load str len and verify idx
+			strLen := g.extractStrLen(sb, strPtr)
+			g.emitBoundsCheck(sb, idx, strLen)
 			dataPtr := g.extractStrDataPtr(sb, strPtr)
 			g.tmpIdx++
 			charGEP := fmt.Sprintf("%%str-longidx.gep.%d", g.tmpIdx)
@@ -2537,6 +2635,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		}
 		// str-short indexing: GEP into field 1 ([127 x i8]) directly
 		if t, ok := g.varTypes[varName]; ok && t == "%str-short" {
+			// Bounds check: load str len and verify idx
+			strLen := g.extractStrShortLen(sb, g.varAddr(varName))
+			g.emitBoundsCheck(sb, idx, strLen)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-longsm.idx.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -2577,6 +2678,10 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			if g.globalVars != nil && g.globalVars[varName] {
 				arrRef = llvmGlobalRef(varName)
 			}
+
+			// Bounds check: load arr len and verify idx
+			arrLen := g.emitArrLenLoad(sb, arrRef)
+			g.emitBoundsCheck(sb, idx, arrLen)
 
 			// Load data pointer from arr struct
 			g.tmpIdx++
@@ -2637,6 +2742,10 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			if g.globalVars != nil && g.globalVars[varName] {
 				vecRef = llvmGlobalRef(varName)
 			}
+
+			// Bounds check: load vec len and verify idx
+			vecLen := g.emitVecLenLoad(sb, vecRef)
+			g.emitBoundsCheck(sb, idx, vecLen)
 
 			// Load data pointer from vec struct (field 2)
 			g.tmpIdx++

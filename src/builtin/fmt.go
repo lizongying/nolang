@@ -13,6 +13,16 @@ func init() {
 		ForwardFunc:  "printf",
 	})
 
+	// sprintf: formatted string (returns the formatted string)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sprintf",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Format and return a string (variadic, format string + args)",
+		ForwardFunc:  "sprintf",
+	})
+
 	// print: print with newline
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

@@ -994,3 +994,61 @@ str.from-hex = () (out ?[]byte) {
         i = i + 1
     }
 }
+
+// ═══════════════════════════════════════════════
+// 分割與連接
+// ═══════════════════════════════════════════════
+
+// str.split: 用分隔符將字串分割為多個子字串
+// sep str: 分隔符
+// 返回 out []str: 分割後的子字串切片
+// 空分隔符時返回整個字串作為唯一元素
+str.split = (sep str) (out []str) {
+    if sep.len == 0 {
+        out[0] = .slice(0, .len)
+        out.len = 1
+        return
+    }
+    count = 0
+    start = 0
+    pos = .index-from(sep, start)
+    for pos >= 0 {
+        out[count] = .slice(start, pos)
+        count = count + 1
+        start = pos + sep.len
+        pos = .index-from(sep, start)
+    }
+    out[count] = .slice(start, .len)
+    count = count + 1
+    out.len = count
+}
+
+// []str.join: 用分隔符連接字串切片中的所有元素
+// sep str: 分隔符
+// 返回 out str: 連接後的字串
+[]str.join = (sep str) (out str) {
+    n = .len
+    if n == 0 {
+        return
+    }
+    pos = 0
+    i = 0
+    for i < n {
+        if i > 0 {
+            j = 0
+            for j < sep.len {
+                out[pos] = sep[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+        s = .[i]
+        j = 0
+        for j < s.len {
+            out[pos] = s[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        i = i + 1
+    }
+}

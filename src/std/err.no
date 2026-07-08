@@ -50,12 +50,26 @@ err-new = (code err-code, msg str) (e error) {
     }
 }
 
+// errno-to-code: 將 C errno 對映為 err-code 列舉
+errno-to-code = (errno i64) (code err-code) {
+    code = err-code.invalid
+    {
+        errno == 0 -> code = err-code.ok
+        errno == 2 -> code = err-code.not-found
+        errno == 1 || errno == 13 || errno == 30 || errno == 79 -> code = err-code.permission
+        errno == 5 || errno == 32 || errno == 100 || errno == 104 || errno == 112 || errno == 113 -> code = err-code.io
+        errno == 11 || errno == 35 || errno == 110 -> code = err-code.timeout
+        errno == 84 -> code = err-code.parse
+        errno == 12 || errno == 28 || errno == 34 || errno == 75 -> code = err-code.overflow
+    }
+}
+
 // err-from-errno: 從 C errno 建立錯誤
 // errno: C 標準錯誤碼（如 13 = EACCES）
 err-from-errno = (errno i64) (e error) {
     msg = strerror(errno)
     e = error{
-        code: errno
+        code: errno-to-code(errno)
         msg: msg
     }
 }

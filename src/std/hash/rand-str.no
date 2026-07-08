@@ -9,11 +9,11 @@
 // rand: 產生下一個偽隨機數（32-bit 無號整數）
 // state: 輸入/輸出狀態變數，初始為任意非零種子
 // 返回 r: 輸出隨機值 (0..4294967295)
-rand = (state i64) (r i64) {
-    state = state ^ (state << 13)
-    state = state ^ (state >> 17)
-    state = state ^ (state << 5)
-    r = state & 4294967295
+rand = (state i64) (new-state i64, r i64) {
+    new-state = state ^ (state << 13)
+    new-state = new-state ^ (new-state >> 17)
+    new-state = new-state ^ (new-state << 5)
+    r = new-state & 4294967295
 }
 
 // rand-str: 產生指定長度的隨機字母數字字串
@@ -27,7 +27,7 @@ rand-str = (state i64, n i64) (s str) {
     r = 0
     i < n: {
         r = 0
-        r = rand(state)
+        state, r = rand(state)
         s[i] = chars[r % 62]
         i = i + 1
     }

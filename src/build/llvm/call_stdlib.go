@@ -135,6 +135,78 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		return fmt.Sprintf("call i32 (i8*, ...) @printf(%s)", args)
 	}
 
+	// sprintf: format string and return it
+	if (fnName == "sprintf" || fnName == "fmt.sprintf") && hasArgs {
+		var fmtArg string
+		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
+			fg := g.getFormatGlobal(strLit.Value)
+			fmtArg = fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+				len(strLit.Value)+1, len(strLit.Value)+1, fg)
+		} else {
+			fmtData := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+			if fmtData != "" {
+				fmtArg = "i8* " + fmtData
+			} else {
+				a := evalArgs()
+				fmtArg = strArg(a[0])
+			}
+		}
+		// Allocate buffer for the result
+		g.tmpIdx++
+		bufAlloca := fmt.Sprintf("%%sprintf.buf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [4096 x i8]\n", g.indent(), bufAlloca))
+		}
+		bufPtr := "i8* " + bufAlloca
+		args := bufPtr + ", " + fmtArg
+		for i := 1; i < len(expr.Arguments); i++ {
+			data := strDataPtr(expr.Arguments[i])
+			if data != "" {
+				nullStr := g.makeNullTerminatedStr(sb, expr.Arguments[i])
+				if nullStr != "" {
+					args += ", i8* " + nullStr
+				} else {
+					args += ", i8* " + data
+				}
+			} else {
+				a := evalArgs()
+				args += ", " + typedArg(a[i])
+			}
+		}
+		// Call sprintf(buf, fmt, args...)
+		g.tmpIdx++
+		sprintfRet := fmt.Sprintf("%%sprintf.ret.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), sprintfRet, args))
+		}
+		// zext i32 → i64 as string length
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%sprintf.len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
+		}
+		// Get pointer to the buffer data (i8* pointing to first element)
+		g.tmpIdx++
+		bufDataPtr := fmt.Sprintf("%%sprintf.bufptr.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [4096 x i8], [4096 x i8]* %s, i64 0, i64 0\n", g.indent(), bufDataPtr, bufAlloca))
+		}
+		// Construct %str-long { len, data_ptr } via insertvalue, then alloca + store
+		g.tmpIdx++
+		strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, bufDataPtr))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg2, strAlloca))
+		}
+		return strAlloca
+	}
+
 	printVariadic := func(newline bool) string {
 		if !hasArgs {
 			if newline {

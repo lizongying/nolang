@@ -35,7 +35,7 @@ new-v4 = (state i64) (out uuid) {
     // 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
     for i < 16 {
-        r = rand(state)
+        state, r = rand(state)
         out.bytes[i] = r & 255
         if i + 1 < 16 {
             out.bytes[i + 1] = (r >> 8) & 255

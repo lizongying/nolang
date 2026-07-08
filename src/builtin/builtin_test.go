@@ -231,6 +231,22 @@ func TestStrconvSprintfMethods(t *testing.T) {
 	}
 }
 
+func TestSprintfBuiltin(t *testing.T) {
+	m := FindBuiltinMethod("sprintf")
+	if m == nil {
+		t.Fatal("FindBuiltinMethod(sprintf) returned nil")
+	}
+	if m.ForwardFunc != "sprintf" {
+		t.Errorf("sprintf ForwardFunc = %q, want \"sprintf\"", m.ForwardFunc)
+	}
+	if len(m.Return) != 1 || m.Return[0].String() != "str" {
+		t.Errorf("sprintf Return = %v, want [str]", m.Return)
+	}
+	if len(m.Params) != 1 || m.Params[0].String() != "str" {
+		t.Errorf("sprintf Params = %v, want [str]", m.Params)
+	}
+}
+
 func TestReceiverKindString(t *testing.T) {
 	tests := []struct {
 		kind ReceiverKind

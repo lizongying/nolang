@@ -76,41 +76,41 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     if name-bytes.len < 64 {
         buf[pos] = name-bytes.len & 255
         pos = pos + 1
+    } else {
+        // 大於等於 64 的長度使用多位元組編碼
+        buf[pos] = 0x40 | ((name-bytes.len >> 8) & 255)
+        buf[pos + 1] = name-bytes.len & 255
+        pos = pos + 2
     }
 
-    // 大於等於 64 的長度使用多位元組編碼
-    buf[pos] = 0x40 | ((name-bytes.len >> 8) & 255)
-    buf[pos + 1] = name-bytes.len & 255
-    pos = pos + 2
+    // 名稱資料
+    i = 0
+    for i < name-bytes.len {
+        buf[pos + i] = name-bytes[i]
+        i = i + 1
+    }
+    pos = pos + name-bytes.len
+
+    // 值長度
+    if value-bytes.len < 64 {
+        buf[pos] = value-bytes.len & 255
+        pos = pos + 1
+    } else {
+        buf[pos] = 0x40 | ((value-bytes.len >> 8) & 255)
+        buf[pos + 1] = value-bytes.len & 255
+        pos = pos + 2
+    }
+
+    // 值資料
+    i = 0
+    for i < value-bytes.len {
+        buf[pos + i] = value-bytes[i]
+        i = i + 1
+    }
+    pos = pos + value-bytes.len
+
+    n = pos
 }
-
-// 名稱資料
-i = 0
-for i < name-bytes.len {
-    buf[pos + i] = name-bytes[i]
-    i = i + 1
-}
-pos = pos + name-bytes.len
-
-// 值長度
-if value-bytes.len < 64 {
-    buf[pos] = value-bytes.len & 255
-    pos = pos + 1
-}
-
-buf[pos] = 0x40 | ((value-bytes.len >> 8) & 255)
-buf[pos + 1] = value-bytes.len & 255
-pos = pos + 2
-
-// 值資料
-i = 0
-for i < value-bytes.len {
-    buf[pos + i] = value-bytes[i]
-    i = i + 1
-}
-pos = pos + value-bytes.len
-
-n = pos
 
 // qpack-encode-headers: 編碼多個標頭
 // names [16]str: 標頭名稱陣列
@@ -369,34 +369,35 @@ http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
     slash-pos = rest.index('/')
     if slash-pos < 0 {
         host = rest
+    } else {
+        host = rest.slice(0, slash-pos)
+        path = rest.slice(slash-pos, rest.len)
     }
-    host = rest.slice(0, slash-pos)
-    path = rest.slice(slash-pos, rest.len)
-}
 
-colon-pos = host.index(':')
-if colon-pos >= 0 {
-    host-only = host.slice(0, colon-pos)
-    port-str = host.slice(colon-pos + 1, host.len)
-    p = 0
-    i = 0
-    for i < port-str.len {
-        c = port-str[i]
-        if c < 48 || c > 57 {
-            return
+    colon-pos = host.index(':')
+    if colon-pos >= 0 {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p = 0
+        i = 0
+        for i < port-str.len {
+            c = port-str[i]
+            if c < 48 || c > 57 {
+                return
+            }
+            p = p * 10 + c - 48
+            i = i + 1
         }
-        p = p * 10 + c - 48
-        i = i + 1
+        port = p
+        host = host-only
     }
-    port = p
-    host = host-only
-}
 
-if host.len == 0 {
-    return
-}
+    if host.len == 0 {
+        return
+    }
 
-ok = true
+    ok = true
+}
 
 // ═══════════════════════════════════════════════
 // HTTP/3 客戶端連接
@@ -583,52 +584,53 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
         }
         pos = np
 
-        // 解析 QPACK 標頭區塊
-        2
-        for qpack-pos < payload.len {
-            name = ''
-            value = ''
-            qpack-np = 0
-            name, value, qpack-np = qpack-decode-header(payload, qpack-pos)
-            if qpack-np < 0 {
-                break
-            }
-            qpack-pos = qpack-np
+        // HEADERS 影格: 解析 QPACK 標頭區塊
+        if ft == HTTP3-FRAME-HEADERS {
+            qpack-pos = 0
+            for qpack-pos < payload.len {
+                name = ''
+                value = ''
+                qpack-np = 0
+                name, value, qpack-np = qpack-decode-header(payload, qpack-pos)
+                if qpack-np < 0 {
+                    break
+                }
+                qpack-pos = qpack-np
 
-            // :status 標頭
-            if name == ':status' {
-                status-val ?i64 = value.to-i64()
-                status-val: {
-                    ok -> r.status-code = it
-                    -> r.status-code = 0
+                // :status 標頭
+                if name == ':status' {
+                    status-val ?i64 = value.to-i64()
+                    status-val: {
+                        ok -> r.status-code = it
+                        -> r.status-code = 0
+                    }
+                }
+                if r.header-count < 32 {
+                    r.header-names[r.header-count] = name
+                    r.header-values[r.header-count] = value
+                    r.header-count = r.header-count + 1
                 }
             }
-            if r.header-count < 32 {
-                r.header-names[r.header-count] = name
-                r.header-values[r.header-count] = value
-                r.header-count = r.header-count + 1
+        }
+
+        // DATA 影格: 追加到 body
+        if ft == HTTP3-FRAME-DATA {
+            i = 0
+            for i < payload.len {
+                r.body[r.body.len] = payload[i]
+                i = i + 1
             }
         }
+
+        // 忽略其他影格類型
     }
-}
 
-ft == HTTP3-FRAME-DATA -> {
-    // 追加到 body
-    i = 0
-    for i < payload.len {
-        r.body[r.body.len] = payload[i]
-        i = i + 1
+    if r.status-code == 0 {
+        return
     }
+
+    resp = r
 }
-
-{}
-// 忽略其他影格類型
-
-if r.status-code == 0 {
-    return
-}
-
-resp = r
 
 // ═══════════════════════════════════════════════
 // 便捷函數

@@ -508,7 +508,12 @@ url-parse-basic-auth = (header str) (user str, password str) {
     }
     b64 = header.slice(prefix.len, header.len)
     raw []byte
-    decode(b64, BASE64-STD, raw)
+    dec = decode(b64, BASE64-STD)
+    dec: {
+        ok -> raw = it
+        nil -> return
+        err -> return
+    }
     // 尋找冒號分隔符
     colon = -1
     i = 0

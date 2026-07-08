@@ -141,6 +141,11 @@ func (p *Parser) classifyBlock() blockType {
 				tok4.Type == lexer.SHL || tok4.Type == lexer.SHR {
 				return blockStruct
 			}
+			// Struct literal field with function call value: name : func(args)
+			// Match arms never have "name: ident(" form, so LPAREN → struct literal.
+			if tok4.Type == lexer.LPAREN {
+				return blockStruct
+			}
 		}
 		return blockMatch
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
@@ -301,6 +306,11 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 				tok4.Type == lexer.ADD || tok4.Type == lexer.SUB || tok4.Type == lexer.MUL ||
 				tok4.Type == lexer.QUO || tok4.Type == lexer.MOD ||
 				tok4.Type == lexer.SHL || tok4.Type == lexer.SHR {
+				return blockStruct
+			}
+			// Struct literal field with function call value: name : func(args)
+			// Match arms never have "name: ident(" form, so LPAREN → struct literal.
+			if tok4.Type == lexer.LPAREN {
 				return blockStruct
 			}
 			// Struct literal: name : EnumName.Variant ... (then operator, comma, or brace)
