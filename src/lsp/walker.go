@@ -130,23 +130,26 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 			}
 		}
 		// Register each multi-assign target variable as a symbol
-		for i, name := range s.Names {
-			exprType := ""
-			if i < len(resultTypes) {
-				exprType = resultTypes[i].Type
+		for i, target := range s.Targets {
+			if ident, ok := target.(*parser.Identifier); ok {
+				exprType := ""
+				if i < len(resultTypes) {
+					exprType = resultTypes[i].Type
+				}
+				entry := &IndexEntry{
+					Name: ident.Value,
+					Kind: SymbolKindVariable,
+					Type: exprType,
+					Location: Location{
+						URI:   w.uri,
+						Range: w.rangeFromIdent(ident),
+					},
+					Scope: scope,
+				}
+				w.index.symbols[ident.Value] = entry
+				w.index.definitions[ident.Value] = entry
 			}
-			entry := &IndexEntry{
-				Name: name.Value,
-				Kind: SymbolKindVariable,
-				Type: exprType,
-				Location: Location{
-					URI:   w.uri,
-					Range: w.rangeFromIdent(name),
-				},
-				Scope: scope,
-			}
-			w.index.symbols[name.Value] = entry
-			w.index.definitions[name.Value] = entry
+			// IndexExpression targets (e.g., fields[n]) are not new symbols
 		}
 		if s.Value != nil {
 			w.walkExpression(s.Value, scope)
@@ -293,7 +296,7 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		if p.Type != nil {
 			typeStr = p.Type.String()
 		}
-		paramInfos[i] = ParamInfo{Name: p.Name, Type: typeStr}
+		paramInfos[i] = ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)}
 	}
 
 	// For variadic functions, the last parameter's type is stored as []type
@@ -319,10 +322,13 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		if i > 0 {
 			s += ", "
 		}
-		s += p.Name
-		if p.Type != "" {
-			s += " " + p.Type
-		}
+	s += p.Name
+	if p.Type != "" {
+		s += " " + p.Type
+	}
+	if p.DefaultValue != "" {
+		s += " = " + p.DefaultValue
+	}
 	}
 	s += ")"
 	if len(resultInfos) > 0 {
@@ -392,9 +398,37 @@ func (w *ASTWalker) extractParams(params []*parser.Parameter) []ParamInfo {
 		if p.Type != nil {
 			typeStr = p.Type.String()
 		}
-		result[i] = ParamInfo{Name: p.Name, Type: typeStr}
+		result[i] = ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)}
 	}
 	return result
+}
+
+// defaultExprString 將參數默認值表達式轉為字串表示。
+func defaultExprString(expr parser.Expression) string {
+	if expr == nil {
+		return ""
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		return e.Value
+	case *parser.IntegerLiteral:
+		return e.Token.Literal
+	case *parser.FloatLiteral:
+		return e.Token.Literal
+	case *parser.StringLiteral:
+		return "'" + e.Value + "'"
+	case *parser.BooleanLiteral:
+		if e.Value {
+			return "true"
+		}
+		return "false"
+	case *parser.InfixExpression:
+		return defaultExprString(e.Left) + " " + e.Operator + " " + defaultExprString(e.Right)
+	case *parser.PrefixExpression:
+		return e.Operator + defaultExprString(e.Right)
+	default:
+		return ""
+	}
 }
 
 func (w *ASTWalker) formatFuncLitDetail(fl *parser.FunctionLiteral) string {
@@ -412,6 +446,9 @@ func (w *ASTWalker) formatFuncLitDetail(fl *parser.FunctionLiteral) string {
 			params[i] = p.Name + " " + typeStr
 		} else {
 			params[i] = p.Name
+		}
+		if p.DefaultExpr != nil {
+			params[i] += " = " + defaultExprString(p.DefaultExpr)
 		}
 	}
 	s := "fn(" + strings.Join(params, ", ") + ")"

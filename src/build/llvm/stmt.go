@@ -530,6 +530,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
 	if dot, ok := stmt.Value.(*parser.DotExpression); ok {
 		recvType := g.exprResultLLVMType(dot.Receiver)
+		// .len on str → i64 (must check before struct field lookup, because
+		// str-short is registered as a struct with len field of type i8,
+		// but .len should always return i64)
+		if dot.Property == "len" && (recvType == "%str-long" || recvType == "%str-short") {
+			return "i64"
+		}
 		if strings.HasPrefix(recvType, "%") {
 			structName := strings.TrimPrefix(recvType, "%")
 			if fields, ok := g.structTypes[structName]; ok {
@@ -539,10 +545,6 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					}
 				}
 			}
-		}
-		// .len on str → i64
-		if dot.Property == "len" && (recvType == "%str-long" || recvType == "%str-short") {
-			return "i64"
 		}
 		return "i64"
 	}
@@ -620,6 +622,19 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					elemType := extractArrayElemType(t)
 					if elemType != "" {
 						return elemType + "*"
+					}
+				}
+				// 切片/陣列元素讀取（如 r = records[i] 其中 records []dns-record）：
+				// 依 arrayElemTypes 推導元素型別。struct 元素返回值型別
+				// （generateIndexExpression 對 vec/arr 載入元素值而非指標）；
+				// 基本型別（i8 等）保持 i64（generateIndexExpression 會 zext i8 → i64）。
+				if g.arrayElemTypes != nil {
+					if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
+						if strings.HasPrefix(elemType, "%") {
+							return elemType
+						}
+						// 基本型別仍回 i64（byte 讀取在 codegen 中 zext 為 i64）
+						return "i64"
 					}
 				}
 			}
@@ -717,6 +732,17 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 						candidates = append(candidates, primAliases...)
 					}
+					// 切片/陣列 receiver（如 query []byte）：依元素型別構造 []T 候選名稱，
+					// 使 []byte.to-str 等方法能被查找到。
+					if (srcType == "vec" || srcType == "arr") && g.arrayElemTypes != nil {
+						if elemLLVMType, ok := g.arrayElemTypes[recv.Value]; ok {
+							if elemAliases, ok := llvmTypeToNolang[elemLLVMType]; ok {
+								for _, alias := range elemAliases {
+									candidates = append(candidates, "[]"+alias)
+								}
+							}
+						}
+					}
 					for _, cand := range candidates {
 						shortName := cand + "." + dot.Property
 						if g.funcRetTypes != nil {
@@ -802,6 +828,22 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 					candidates = append(candidates, primAliases...)
+				}
+				// vec/arr 切片結果：依元素型別構造 []T 候選（如 []byte.to-str）
+				if srcType == "vec" || srcType == "arr" {
+					if sliceExpr, ok := recvExpr.(*parser.SliceExpression); ok {
+						if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
+							if g.arrayElemTypes != nil {
+								if et, ok := g.arrayElemTypes[ident.Value]; ok {
+									if elemAliases, ok := llvmTypeToNolang[et]; ok {
+										for _, alias := range elemAliases {
+											candidates = append(candidates, "[]"+alias)
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 				for _, cand := range candidates {
 					shortName := cand + "." + dot.Property
@@ -1048,58 +1090,42 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 					}
 				}
 			}
+			// Determine the return types for each target position
+			var retTypes []string
 			if fnName != "" {
-				// 先查 funcResultLLVMType（包含 std 函數）
 				if g.funcResultLLVMType != nil {
-					if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Names) {
-						for i, name := range s.Names {
-							if i < len(rets) {
-								if _, exists := vars[name.Value]; !exists {
-									vars[name.Value] = rets[i]
-								}
-							}
-						}
-					} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Names) {
-						for i, name := range s.Names {
-							if i < len(m.Return) {
-								if _, exists := vars[name.Value]; !exists {
-									vars[name.Value] = g.mapToLLVMType(m.Return[i].String())
-								}
-							}
-						}
-					} else {
-						for _, name := range s.Names {
-							if _, exists := vars[name.Value]; !exists {
-								vars[name.Value] = "i64"
-							}
+					if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Targets) {
+						retTypes = rets
+					} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
+						for _, r := range m.Return {
+							retTypes = append(retTypes, g.mapToLLVMType(r.String()))
 						}
 					}
-				} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Names) {
-					for i, name := range s.Names {
-						if i < len(m.Return) {
-							if _, exists := vars[name.Value]; !exists {
-								vars[name.Value] = g.mapToLLVMType(m.Return[i].String())
-							}
-						}
-					}
-				} else {
-					for _, name := range s.Names {
-						if _, exists := vars[name.Value]; !exists {
-							vars[name.Value] = "i64"
-						}
-					}
-				}
-			} else {
-				for _, name := range s.Names {
-					if _, exists := vars[name.Value]; !exists {
-						vars[name.Value] = "i64"
+				} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
+					for _, r := range m.Return {
+						retTypes = append(retTypes, g.mapToLLVMType(r.String()))
 					}
 				}
 			}
+			// Register each Identifier target with the corresponding return type
+			for i, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					if _, exists := vars[ident.Value]; !exists {
+						if i < len(retTypes) {
+							vars[ident.Value] = retTypes[i]
+						} else {
+							vars[ident.Value] = "i64"
+						}
+					}
+				}
+				// IndexExpression targets (e.g., fields[n]) are not new variables
+			}
 		} else {
-			for _, name := range s.Names {
-				if _, exists := vars[name.Value]; !exists {
-					vars[name.Value] = "i64"
+			for _, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					if _, exists := vars[ident.Value]; !exists {
+						vars[ident.Value] = "i64"
+					}
 				}
 			}
 		}
@@ -1231,14 +1257,10 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	// struct definition 本身不生成 IR（type 已由 Generate 發出）
 	case *parser.MultiAssignStatement:
 		if innerCall, ok := s.Value.(*parser.CallExpression); ok {
-			outerArgs := make([]parser.Expression, len(s.Names))
-			for i, name := range s.Names {
-				outerArgs[i] = &parser.Identifier{Token: name.Token, Value: name.Value}
-			}
 			outerCall := &parser.CallExpression{
 				Token:     innerCall.Token,
 				Function:  innerCall,
-				Arguments: outerArgs,
+				Arguments: s.Targets,
 			}
 			g.generateExpressionStmt(sb, &parser.ExpressionStatement{Expression: outerCall})
 		}
@@ -1372,21 +1394,42 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 				}
 			}
 		} else {
-			rawVal := g.generateExprWithSB(sb, stmt.Condition)
-			if strings.HasPrefix(rawVal, "%") {
-				// 判斷條件表達式的 LLVM 型別。若已是 i1（如 bool 返回的用戶函數 rows.next()），
-				// 直接使用；否則為 i64，需 trunc 到 i1。
-				condType := g.intExprLLVMType(stmt.Condition)
-				if condType == "i1" {
-					condVal = rawVal
-				} else {
+			// Option variable as boolean condition (e.g. for cond = recv-f where
+			// recv-f is ?T): check tag != 1 (nil) instead of truncating the data
+			// pointer to i1. Without this, struct inner types (e.g. ?http2-frame)
+			// would return a %T* data pointer and fail to truncate.
+			if ident, ok := stmt.Condition.(*parser.Identifier); ok {
+				if t, ok := g.varTypes[ident.Value]; ok && t == "%option" {
 					g.tmpIdx++
-					truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
-					condVal = truncReg
+					tagGEP := fmt.Sprintf("%%for.opt.tag.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					tagLoad := fmt.Sprintf("%%for.opt.tag.%d", g.tmpIdx)
+					g.tmpIdx++
+					cmpReg := fmt.Sprintf("%%for.opt.cmp.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n",
+						g.indent(), tagGEP, llvmVarRef(ident.Value)))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = icmp ne i64 %s, 1\n", g.indent(), cmpReg, tagLoad))
+					condVal = cmpReg
 				}
-			} else {
-				condVal = rawVal
+			}
+			if condVal == "" {
+				rawVal := g.generateExprWithSB(sb, stmt.Condition)
+				if strings.HasPrefix(rawVal, "%") {
+					// 判斷條件表達式的 LLVM 型別。若已是 i1（如 bool 返回的用戶函數 rows.next()），
+					// 直接使用；否則為 i64，需 trunc 到 i1。
+					condType := g.intExprLLVMType(stmt.Condition)
+					if condType == "i1" {
+						condVal = rawVal
+					} else {
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%for.trunc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
+						condVal = truncReg
+					}
+				} else {
+					condVal = rawVal
+				}
 			}
 		}
 	} else {
@@ -2803,10 +2846,15 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			srcPtr := g.generateExprWithSB(sb, stmt.Value)
 			copyStrToData(srcPtr)
 		} else if g.isStringExpr(stmt.Value) {
-			// String expression (e.g. array element access .values[i], concat):
-			// generateExprWithSB returns a %str-long* pointer, which copyStrToData
-			// will load before storing into the option data field.
-			srcPtr := g.generateExprWithSB(sb, stmt.Value)
+			// String expression: obtain a pointer to the %str-long value and let
+			// copyStrToData load + store it. generateExprPtr covers Identifier,
+			// DotExpression (field GEP), and IndexExpression (element GEP).
+			// For expressions where generateExprPtr is unsupported (e.g. concat
+			// returning an alloca pointer), fall back to generateExprWithSB.
+			srcPtr := g.generateExprPtr(sb, stmt.Value)
+			if srcPtr == "" {
+				srcPtr = g.generateExprWithSB(sb, stmt.Value)
+			}
 			copyStrToData(srcPtr)
 		} else {
 			val := g.generateExprWithSB(sb, stmt.Value)

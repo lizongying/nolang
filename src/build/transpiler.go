@@ -1004,15 +1004,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// Convert MultiAssignStatement to old nested-call syntax for codegen
 		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
 			if innerCall, ok := mas.Value.(*parser.CallExpression); ok {
-				// Create: innerCall(outerArgs) with outerArgs being the variable names
-				outerArgs := make([]parser.Expression, len(mas.Names))
-				for i, name := range mas.Names {
-					outerArgs[i] = &parser.Identifier{Token: name.Token, Value: name.Value}
-				}
+				// Create: innerCall(outerArgs) with outerArgs being the target expressions
 				outerCall := &parser.CallExpression{
 					Token:     innerCall.Token,
 					Function:  innerCall,
-					Arguments: outerArgs,
+					Arguments: mas.Targets,
 				}
 				merged.Statements = append(merged.Statements, &parser.ExpressionStatement{Expression: outerCall})
 			}
@@ -1699,7 +1695,7 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 		return &rs
 	case *parser.MultiAssignStatement:
 		mas := *s
-		mas.Names = append([]*parser.Identifier{}, s.Names...)
+		mas.Targets = append([]parser.Expression{}, s.Targets...)
 		mas.Value = cloneExprForUnion(s.Value, oldName, newName, memberType)
 		return &mas
 	}
@@ -4388,8 +4384,10 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		}
 	case *parser.MultiAssignStatement:
 		// Register all left-side variables as defined
-		for _, name := range s.Names {
-			definedVars[name.Value] = true
+		for _, target := range s.Targets {
+			if ident, ok := target.(*parser.Identifier); ok {
+				definedVars[ident.Value] = true
+			}
 		}
 		if s.Value != nil {
 			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
@@ -4819,6 +4817,63 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		for _, bStmt := range s.Statements {
 			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
 			results = append(results, errs...)
+		}
+
+	case *parser.MultiAssignStatement:
+		// Type-check multi-return assignment: fields[n], pos = parse-field(s, pos)
+		// For each Identifier target, infer the type from the call's return types
+		// and check compatibility with any existing type.
+		if s.Value != nil {
+			// Determine the return types of the call expression
+			var returnTypes []string
+			if callExpr, ok := s.Value.(*parser.CallExpression); ok {
+				fnName := ""
+				if ident, ok := callExpr.Function.(*parser.Identifier); ok {
+					fnName = ident.Value
+				} else if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
+					fnName = dot.Property
+					// Try full method name (e.g., str.to-upper)
+					if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+						fnName = recv.Value + "." + fnName
+					}
+				}
+				if fnName != "" {
+					// Look up function return types from funcTypes (only first return type is stored)
+					// For multi-return, we need to look at the program's function definitions.
+					// Since funcTypes only stores the first return type, we infer each target
+					// from the call's return type signature.
+					if rt, ok := funcTypes[fnName]; ok && len(s.Targets) == 1 {
+						returnTypes = []string{rt}
+					}
+				}
+			}
+			// For each target, check type compatibility
+			for i, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					// Only check if we know the return type for this position
+					if i < len(returnTypes) {
+						inferredType := returnTypes[i]
+						if existingType, exists := varTypes[ident.Value]; exists {
+							if inferredType != "" && existingType != "" &&
+								inferredType != existingType &&
+								isConcreteType(existingType) {
+								results = append(results, ValidateResult{
+									Line:    s.Token.Line,
+									Column:  s.Token.Column,
+									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, ident.Value),
+								})
+							}
+						} else {
+							// First assignment: record the inferred type
+							if inferredType != "" {
+								varTypes[ident.Value] = inferredType
+							}
+						}
+					}
+				}
+				// IndexExpression targets (e.g., fields[n]) are assignments to
+				// existing array elements — no new variable definition or type check needed.
+			}
 		}
 
 	}
@@ -5481,7 +5536,7 @@ func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
 		if p != nil && p.Type != nil {
 			t = p.Type.String()
 		}
-		params[i] = paramInfo{Name: p.Name, Type: t}
+		params[i] = paramInfo{Name: p.Name, Type: t, HasDefault: p.DefaultExpr != nil}
 	}
 	results := make([]paramInfo, len(fd.Results))
 	for i, r := range fd.Results {
@@ -5645,8 +5700,9 @@ type funcSig struct {
 }
 
 type paramInfo struct {
-	Name string
-	Type string
+	Name       string
+	Type       string
+	HasDefault bool // 參數是否有默認值
 }
 
 func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
@@ -5845,16 +5901,29 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 		var results []ValidateResult
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if sig, ok := sigs[ident.Value]; ok {
-				// Check argument count
-				if len(e.Arguments) != len(sig.ParamTypes) {
+				// Check argument count (allow fewer args when default values exist)
+				minArgs := len(sig.ParamTypes)
+				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
+					if sig.ParamTypes[j].HasDefault {
+						minArgs = j
+					} else {
+						break
+					}
+				}
+				if len(e.Arguments) > len(sig.ParamTypes) {
+					// More args than params: last arg might be output param, check up to param count
+				} else if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
-						Message: fmt.Sprintf("function '%s' expects %d argument(s), got %d", ident.Value, len(sig.ParamTypes), len(e.Arguments)),
+						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
 					})
 				} else {
 					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)
 					for i, arg := range e.Arguments {
+						if i >= len(sig.ParamTypes) {
+							break
+						}
 						argType := resolveExprType(arg, varTypes, structFields)
 						expectedType := sig.ParamTypes[i].Type
 						if expectedType != "" && argType != "" && argType != expectedType {

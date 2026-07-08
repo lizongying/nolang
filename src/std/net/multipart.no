@@ -598,9 +598,12 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     plain = nil
     // Base64 解碼
     raw []byte
-    ok = false
-    ok = decode(encrypted-data, BASE64-STD, raw)
-    if ok == false || raw.len < 12 {
+    dec = decode(encrypted-data, BASE64-STD)
+    dec: {
+        ok -> raw = it
+        nil || err -> return
+    }
+    if raw.len < 12 {
         return
     }
     // 提取 IV（前 12 位元組）

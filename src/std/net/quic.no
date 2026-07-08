@@ -1048,8 +1048,14 @@ quic-dial = (host str, port i64) (conn ?quic-conn) {
     c.remote-cid = c.local-cid
 
     // 3. 推導 Initial 金鑰
-    c.client-initial-key, c.client-initial-iv, c.client-initial-hp = quic-derive-initial-keys(c.local-cid, true)
-    c.server-initial-key, c.server-initial-iv, c.server-initial-hp = quic-derive-initial-keys(c.local-cid, false)
+    cik, cii, cih = quic-derive-initial-keys(c.local-cid, true)
+    c.client-initial-key = cik
+    c.client-initial-iv = cii
+    c.client-initial-hp = cih
+    sik, sii, sih = quic-derive-initial-keys(c.local-cid, false)
+    c.server-initial-key = sik
+    c.server-initial-iv = sii
+    c.server-initial-hp = sih
 
     conn = c
 }

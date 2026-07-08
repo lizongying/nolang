@@ -1192,6 +1192,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
+			// vec/arr 切片：依元素型別構造 []T 候選（如 []byte.to-str）
+			if srcType == "vec" || srcType == "arr" {
+				if sliceExpr, ok := receiverExpr.(*parser.SliceExpression); ok {
+					if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
+						if g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[ident.Value]; ok {
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 			for _, cand := range candidates {
 				shortName := cand + "." + dot.Property
 				if g.funcRetTypes != nil {
@@ -1392,6 +1408,31 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// prepend the receiver variable as the self parameter.
 	if methodReceiver != nil {
 		nonVariadicArgs = append([]parser.Expression{methodReceiver}, nonVariadicArgs...)
+	}
+
+	// 參數默認值填充：若提供的參數數量少於函數聲明的參數數量，
+	// 使用默認值表達式補齊缺失的參數。
+	if g.funcParamDefaults != nil && !isVariadic {
+		if defaults, ok := g.funcParamDefaults[fnName]; ok {
+			paramCount := len(defaults)
+			if methodReceiver != nil {
+				// receiver 已 prepend 到 nonVariadicArgs，對齊 defaults 的偏移
+				providedCount := len(nonVariadicArgs) - 1 // 減去 receiver
+				for i := providedCount; i < paramCount-1 && i >= 0; i++ {
+					// defaults[i+1] 對應非 receiver 參數（defaults[0] 是 receiver slot）
+					if i+1 < len(defaults) && defaults[i+1] != nil {
+						nonVariadicArgs = append(nonVariadicArgs, defaults[i+1])
+					}
+				}
+			} else {
+				providedCount := len(nonVariadicArgs)
+				for i := providedCount; i < paramCount && i >= 0; i++ {
+					if defaults[i] != nil {
+						nonVariadicArgs = append(nonVariadicArgs, defaults[i])
+					}
+				}
+			}
+		}
 	}
 
 	// genTypedArg generates a typed pointer argument for a single expression

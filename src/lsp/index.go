@@ -21,8 +21,9 @@ type IndexEntry struct {
 }
 
 type ParamInfo struct {
-	Name string
-	Type string
+	Name         string
+	Type         string
+	DefaultValue string // 參數默認值的字串表示（如 "1024"），空串表示無默認值
 }
 
 type SymbolIndex struct {

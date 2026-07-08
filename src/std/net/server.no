@@ -760,10 +760,10 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         // Base64 解碼
         b64 = hdr.slice(prefix.len, hdr.len)
         raw []byte
-        decoded = false
-        decoded = decode(b64, BASE64-STD, raw)
-        if decoded == false {
-            return
+        dec = decode(b64, BASE64-STD)
+        dec: {
+            ok -> raw = it
+            nil || err -> return
         }
 
         // 尋找冒號分隔符

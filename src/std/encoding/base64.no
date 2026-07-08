@@ -79,10 +79,9 @@ encode-url = (data []byte) (out str) {
 // decode: 使用指定字母表進行 Base64 解碼
 // s str: Base64 字串
 // table str: Base64 字母表
-// out []byte: 輸出資料
-// 返回 ok bool: true=成功
-decode = (s str, table str, out []byte) (ok bool) {
-    ok = true
+// 返回 out ?[]byte: ok=解碼後資料, err=無效字元
+decode = (s str, table str) (out ?[]byte) {
+    out = nil
     n = s.len
 
     // 計算填充數
@@ -107,23 +106,20 @@ decode = (s str, table str, out []byte) (ok bool) {
         v2 = b64-val(s[i + 2], table)
         v3 = b64-val(s[i + 3], table)
         if v0 < 0 || v1 < 0 {
-            ok = false
-            out.len = 0
+            out = err('invalid base64 character')
             return
         }
         out[j] = (v0 << 2) | (v1 >> 4)
         if s[i + 2] & 255 != 61 {
             if v2 < 0 {
-                ok = false
-                out.len = 0
+                out = err('invalid base64 character')
                 return
             }
             out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
         }
         if s[i + 3] & 255 != 61 {
             if v3 < 0 {
-                ok = false
-                out.len = 0
+                out = err('invalid base64 character')
                 return
             }
             out[j + 2] = ((v2 & 3) << 6) | v3

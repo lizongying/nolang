@@ -575,11 +575,11 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 
 // formatMultiAssignStatement: q, r = func(args)
 func (f *formatter) formatMultiAssignStatement(s *parser.MultiAssignStatement) {
-	for i, name := range s.Names {
+	for i, target := range s.Targets {
 		if i > 0 {
 			f.write(", ")
 		}
-		f.formatExpression(name)
+		f.formatExpression(target)
 	}
 	if s.Value != nil {
 		f.write(" = ")
@@ -763,6 +763,10 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 			} else {
 				f.write(p.Type.String())
 			}
+		}
+		if p.DefaultExpr != nil {
+			f.write(" = ")
+			f.formatExpression(p.DefaultExpr)
 		}
 	}
 }

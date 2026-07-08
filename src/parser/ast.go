@@ -339,12 +339,15 @@ func (es *ExportStatement) EndPos() lexer.Position { return posFromToken(es.Toke
 // MultiAssignStatement represents multi-variable assignment:
 //
 //	v1, v2 = expr
+//	fields[n], pos = expr
 //
-// The left-side variables are treated as new definitions if not already defined.
+// The left-side targets are treated as new definitions if not already defined.
+// Targets can be Identifiers (variable definition/assignment) or IndexExpressions
+// (array element assignment).
 type MultiAssignStatement struct {
-	Token lexer.Token // the ASSIGN token
-	Names []*Identifier
-	Value Expression
+	Token   lexer.Token // the ASSIGN token
+	Targets []Expression // left-side targets: Identifier or IndexExpression
+	Value   Expression
 	CommentedNode
 }
 
@@ -433,9 +436,10 @@ func (bs *BlockStatement) Pos() lexer.Position    { return posFromToken(bs.Token
 func (bs *BlockStatement) EndPos() lexer.Position { return bs.RBrace }
 
 type Parameter struct {
-	Token lexer.Token
-	Name  string
-	Type  Type
+	Token       lexer.Token
+	Name        string
+	Type        Type
+	DefaultExpr Expression // 參數默認值表達式（如 `max-fields i64 = 1024` 中的 `1024`），nil 表示無默認值
 }
 
 func (p *Parameter) expressionNode()        {}

@@ -96,21 +96,29 @@ func dumpNode(buf *strings.Builder, node parser.Node, depth int) {
 	case *parser.FunctionDefinition:
 		fmt.Fprintf(buf, "%sFunctionDefinition{name: %s}\n", indent(depth), n.Name)
 		dumpComments(buf, n, depth+1)
-		for _, p := range n.Parameters {
+	for _, p := range n.Parameters {
+		if p.DefaultExpr != nil {
+			fmt.Fprintf(buf, "%sParam{%s %s = %s}\n", indent(depth+1), p.Name, p.Type, nodeString(p.DefaultExpr))
+		} else {
 			fmt.Fprintf(buf, "%sParam{%s %s}\n", indent(depth+1), p.Name, p.Type)
 		}
-		if n.Body != nil {
-			dumpNode(buf, n.Body, depth+1)
-		}
+	}
+	if n.Body != nil {
+		dumpNode(buf, n.Body, depth+1)
+	}
 
 	case *parser.FunctionLiteral:
 		fmt.Fprintf(buf, "%sFunctionLiteral\n", indent(depth))
-		for _, p := range n.Parameters {
+	for _, p := range n.Parameters {
+		if p.DefaultExpr != nil {
+			fmt.Fprintf(buf, "%sParam{%s %s = %s}\n", indent(depth+1), p.Name, p.Type, nodeString(p.DefaultExpr))
+		} else {
 			fmt.Fprintf(buf, "%sParam{%s %s}\n", indent(depth+1), p.Name, p.Type)
 		}
-		if n.Body != nil {
-			dumpNode(buf, n.Body, depth+1)
-		}
+	}
+	if n.Body != nil {
+		dumpNode(buf, n.Body, depth+1)
+	}
 
 	case *parser.CallExpression:
 		fmt.Fprintf(buf, "%sCallExpression{fn: %s, args: %d}\n",

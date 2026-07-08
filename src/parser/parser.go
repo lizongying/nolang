@@ -1449,11 +1449,19 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				paramType = "?" + paramType
 			}
 
-			def.Parameters = append(def.Parameters, &Parameter{
+			param := &Parameter{
 				Token: paramToken,
 				Name:  paramName,
 				Type:  buildType(paramType, paramToken),
-			})
+			}
+
+			// 參數默認值：name type = expr
+			if p.currentToken.Type == lexer.ASSIGN {
+				p.nextToken() // skip =
+				param.DefaultExpr = p.parseExpression(LOWEST)
+			}
+
+			def.Parameters = append(def.Parameters, param)
 
 			if p.currentToken.Type == lexer.RPAREN {
 				break
@@ -1695,7 +1703,30 @@ func (p *Parser) isFunctionDefinition() bool {
 	parenDepth := 0
 	prevIdent := false           // 上一個 token 是 IDENT（可能是參數名，後接函式型別 `(`）
 	allowFnResultsParen := false // 允許函式型別關閉參數列表後的結果列表 LPAREN
+	skippingDefault := false     // 正在跳過參數默認值表達式
 	for (p.currentToken.Type != lexer.RPAREN || parenDepth > 0) && p.currentToken.Type != lexer.EOF {
+		// 跳過參數默認值表達式：遇到 ASSIGN 後，跳到下一個 COMMA 或 RPAREN（depth 0）
+		if skippingDefault {
+			if p.currentToken.Type == lexer.COMMA && parenDepth == 0 {
+				skippingDefault = false
+			} else if p.currentToken.Type == lexer.RPAREN && parenDepth == 0 {
+				skippingDefault = false
+				continue // 不消耗 RPAREN，讓迴圈條件判斷
+			} else if p.currentToken.Type == lexer.LPAREN {
+				parenDepth++
+			} else if p.currentToken.Type == lexer.RPAREN && parenDepth > 0 {
+				parenDepth--
+			}
+			p.nextToken()
+			continue
+		}
+		if p.currentToken.Type == lexer.ASSIGN {
+			skippingDefault = true
+			prevIdent = false
+			allowFnResultsParen = false
+			p.nextToken()
+			continue
+		}
 		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN &&
 			p.currentToken.Type != lexer.INT &&
 			p.currentToken.Type != lexer.QUESTION &&
@@ -2092,10 +2123,10 @@ func joinPathParts(parts []string) string {
 //
 // The left-side variables are treated as new definitions if not already defined.
 func (p *Parser) parseMultiAssignStatement() Statement {
-	var names []*Identifier
+	var targets []Expression
 
-	// First variable name
-	names = append(names, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
+	// First variable name (already confirmed as IDENT by caller)
+	targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
 	p.nextToken() // skip first IDENT
 
 	// Additional variables separated by commas
@@ -2107,7 +2138,7 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 			p.saveError(msg)
 			return nil
 		}
-		names = append(names, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
+		targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
 		p.nextToken() // skip IDENT
 	}
 
@@ -2126,9 +2157,9 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 	}
 
 	return &MultiAssignStatement{
-		Token: tok,
-		Names: names,
-		Value: value,
+		Token:   tok,
+		Targets: targets,
+		Value:   value,
 	}
 }
 
@@ -2767,9 +2798,44 @@ func (p *Parser) parseBreakStatement() Statement {
 
 func (p *Parser) parseExpressionStatement() Statement {
 	tok := p.currentToken
+	firstExpr := p.parseExpression(LOWEST)
 	stmt := &ExpressionStatement{
 		Token:      tok,
-		Expression: p.parseExpression(LOWEST),
+		Expression: firstExpr,
+	}
+
+	// Multi-assign with expression target: expr, ident = call()
+	// e.g., fields[n], pos = parse-field(s, pos)
+	if p.currentToken.Type == lexer.COMMA {
+		targets := []Expression{firstExpr}
+		for p.currentToken.Type == lexer.COMMA {
+			p.nextToken() // skip COMMA
+			if p.currentToken.Type != lexer.IDENT {
+				msg := fmt.Sprintf("line %d, column %d: expected variable name after ',', got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
+			p.nextToken() // skip IDENT
+		}
+		if p.currentToken.Type != lexer.ASSIGN {
+			msg := fmt.Sprintf("line %d, column %d: expected '=' after multi-variable list",
+				p.currentToken.Line, p.currentToken.Column)
+			p.saveError(msg)
+			return nil
+		}
+		assignTok := p.currentToken
+		p.nextToken() // skip =
+		value := p.parseExpression(LOWEST)
+		if !p.ctx.contains(CTX_MATCH_ARM) {
+			p.skipToStatementEnd()
+		}
+		return &MultiAssignStatement{
+			Token:   assignTok,
+			Targets: targets,
+			Value:   value,
+		}
 	}
 
 	// 裸條件 for-loop：condition: { body }
@@ -7144,6 +7210,13 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				Name:  paramName,
 				Type:  paramTypeParsed,
 			}
+
+			// 參數默認值：name type = expr
+			if p.currentToken.Type == lexer.ASSIGN {
+				p.nextToken() // skip =
+				param.DefaultExpr = p.parseExpression(LOWEST)
+			}
+
 			def.Parameters = append(def.Parameters, param)
 
 			if p.currentToken.Type == lexer.RPAREN {

@@ -485,7 +485,7 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 			if p.Type != nil {
 				typeStr = p.Type.String()
 			}
-			params = append(params, ParamInfo{Name: p.Name, Type: typeStr})
+			params = append(params, ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)})
 		}
 		for _, r := range s.Results {
 			typeStr := ""
@@ -501,13 +501,13 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 				token = s.Name.Token
 				isVariadic = funcLit.IsVariadic
 				doc = extractDocComment(&s.CommentedNode)
-				for _, p := range funcLit.Parameters {
-					typeStr := ""
-					if p.Type != nil {
-						typeStr = p.Type.String()
-					}
-					params = append(params, ParamInfo{Name: p.Name, Type: typeStr})
+			for _, p := range funcLit.Parameters {
+				typeStr := ""
+				if p.Type != nil {
+					typeStr = p.Type.String()
 				}
+				params = append(params, ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)})
+			}
 				for _, r := range funcLit.Results {
 					typeStr := ""
 					if r.Type != nil {

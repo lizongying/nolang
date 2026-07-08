@@ -302,6 +302,21 @@ Nolang 的函數不提供返回值機制，所有輸出結果均透過參數本�
 
 系统函数允许语法糖形式的返回值，方便用户使用，由于底层依然是通过入参完成，所以不会有新变量返回，内部是安全的。
 
+### 參數默認值
+
+函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
+
+```nolang
+// 帶默認值的函數定義
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+    ...
+}
+
+// 以下兩種調用方式都合法：
+fields = csv.parse-line(line)              // max-fields 默認為 1024
+fields = csv.parse-line(line, 256)         // max-fields = 256
+```
+
 ```nolang
 
 add = (a i64, b i64) (result i64) {

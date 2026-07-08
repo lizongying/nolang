@@ -1994,3 +1994,104 @@ func TestParseEmptyMapLiteral(t *testing.T) {
 		t.Fatalf("expected 0 pairs, got %d", len(ml.Pairs))
 	}
 }
+
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestDefaultParameterValue$
+func TestDefaultParameterValue(t *testing.T) {
+	input := `
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+    fields[0] = s
+}
+`
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+		for _, err := range p.Errors() {
+			t.Errorf("parser error: %s", err)
+		}
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+
+	fd, ok := program.Statements[0].(*FunctionDefinition)
+	if !ok {
+		t.Fatalf("expected FunctionDefinition, got %T", program.Statements[0])
+	}
+	if len(fd.Parameters) != 2 {
+		t.Fatalf("expected 2 parameters, got %d", len(fd.Parameters))
+	}
+
+	// First parameter: s str (no default)
+	if fd.Parameters[0].Name != "s" {
+		t.Errorf("expected param 0 name 's', got '%s'", fd.Parameters[0].Name)
+	}
+	if fd.Parameters[0].DefaultExpr != nil {
+		t.Errorf("expected param 0 to have no default, got %v", fd.Parameters[0].DefaultExpr)
+	}
+
+	// Second parameter: max-fields i64 = 1024 (has default)
+	if fd.Parameters[1].Name != "max-fields" {
+		t.Errorf("expected param 1 name 'max-fields', got '%s'", fd.Parameters[1].Name)
+	}
+	if fd.Parameters[1].DefaultExpr == nil {
+		t.Fatalf("expected param 1 to have default value, got nil")
+	}
+	intLit, ok := fd.Parameters[1].DefaultExpr.(*IntegerLiteral)
+	if !ok {
+		t.Fatalf("expected IntegerLiteral default, got %T", fd.Parameters[1].DefaultExpr)
+	}
+	if intLit.Value != 1024 {
+		t.Errorf("expected default value 1024, got %d", intLit.Value)
+	}
+}
+
+// go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestDefaultParameterValueMultiple$
+func TestDefaultParameterValueMultiple(t *testing.T) {
+	input := `
+config = (host str = 'localhost', port i64 = 8080, debug bool = true) {
+    x = 1
+}
+`
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser has %d errors, expected 0", len(p.Errors()))
+		for _, err := range p.Errors() {
+			t.Errorf("parser error: %s", err)
+		}
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+
+	fd, ok := program.Statements[0].(*FunctionDefinition)
+	if !ok {
+		t.Fatalf("expected FunctionDefinition, got %T", program.Statements[0])
+	}
+	if len(fd.Parameters) != 3 {
+		t.Fatalf("expected 3 parameters, got %d", len(fd.Parameters))
+	}
+
+	// All three should have defaults
+	for i, p := range fd.Parameters {
+		if p.DefaultExpr == nil {
+			t.Errorf("param %d ('%s') should have default value", i, p.Name)
+		}
+	}
+
+	// Check specific values
+	strLit, ok := fd.Parameters[0].DefaultExpr.(*StringLiteral)
+	if !ok || strLit.Value != "localhost" {
+		t.Errorf("expected param 0 default 'localhost', got %v", fd.Parameters[0].DefaultExpr)
+	}
+
+	intLit, ok := fd.Parameters[1].DefaultExpr.(*IntegerLiteral)
+	if !ok || intLit.Value != 8080 {
+		t.Errorf("expected param 1 default 8080, got %v", fd.Parameters[1].DefaultExpr)
+	}
+}

@@ -138,6 +138,11 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 			}
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, llvmType, ptrType, varAddr))
+			// Record SSA type for phi type inference (e.g. bool/i1 variables
+			// used as if-expression branch values).
+			if g.ssaTypes != nil {
+				g.ssaTypes[reg] = llvmType
+			}
 		}
 		return reg
 	case *parser.StringLiteral:
@@ -1565,6 +1570,25 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
 						storeVal = g.convertStrLongLitToLongValue(sb, val)
 					}
+					// Struct element copy (e.g., .names[i] = .names[last]):
+					// generateExprWithSB returns a %str-long* pointer (from
+					// generateStructFieldIndexRead for IndexExpression, or alloca from
+					// concat/repeat), which must be loaded before storing as a struct value.
+					// StringLiteral is handled above; Identifier returns a loaded value.
+					if strings.HasPrefix(elemType, "%") {
+						_, isStrLit := value.(*parser.StringLiteral)
+						_, isIdent := value.(*parser.Identifier)
+						if !isStrLit && !isIdent {
+							_, isIdx := value.(*parser.IndexExpression)
+							if isIdx || g.isStringExpr(value) {
+								g.tmpIdx++
+								loadReg := fmt.Sprintf("%%set.arr.load.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+									g.indent(), loadReg, elemType, elemType, val))
+								storeVal = loadReg
+							}
+						}
+					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), elemType, storeVal, elemType, elemGEP))
 					return "0"
@@ -2044,6 +2068,25 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						val = g.convertStrLongLitToLongValue(sb, val)
 					}
 				}
+				// Struct field assignment from a pointer-producing expression (e.g.,
+				// rec.value = a - b, rec.field = .names[i]): generateExprWithSB returns
+				// a %str-long* pointer (alloca from concat/repeat, or GEP from array
+				// element read), which must be loaded before storing as a struct value.
+				// StringLiteral is handled above; Identifier returns a loaded value.
+				if strings.HasPrefix(fieldType, "%") {
+					_, isStrLit := expr.Value.(*parser.StringLiteral)
+					_, isIdent := expr.Value.(*parser.Identifier)
+					if !isStrLit && !isIdent {
+						_, isIdx := expr.Value.(*parser.IndexExpression)
+						if isIdx || g.isStringExpr(expr.Value) {
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%set.fld.load.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+								g.indent(), loadReg, fieldType, fieldType, val))
+							val = loadReg
+						}
+					}
+				}
 				structTy := "%" + structName
 				if basePtr != "" {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -2128,6 +2171,15 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 								// so we can use it directly without another load.
 								storeVal = val
 							}
+						} else if g.isStrPtrReg(val) {
+							// val is a %str-long* pointer (e.g. sprintf-based to-str result).
+							// Load the %str-long value from the pointer before storing.
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+							if sb != nil {
+								sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+							}
+							storeVal = loadReg
 						}
 					} else if llvmElemType == "i64" {
 						needPtrToInt := false

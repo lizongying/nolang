@@ -597,7 +597,11 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
 
             // :status 標頭
             if name == ':status' {
-                r.status-code = value.to-i64()
+                status-val ?i64 = value.to-i64()
+                status-val: {
+                    ok -> r.status-code = it
+                    -> r.status-code = 0
+                }
             }
             if r.header-count < 32 {
                 r.header-names[r.header-count] = name
@@ -646,10 +650,8 @@ http3-get = (url str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil ->
-            return
-        err ->
-            return
+        nil -> return
+        err -> return
         ok -> resp = http3-send-request(it, 'GET', path, host, '')
     }
 }
@@ -671,10 +673,8 @@ http3-post = (url str, body str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil ->
-            return
-        err ->
-            return
+        nil -> return
+        err -> return
         ok -> resp = http3-send-request(it, 'POST', path, host, body)
     }
 }
@@ -697,10 +697,8 @@ http3-do = (method str, url str, body str) (resp ?http3-response) {
 
     conn = http3-connect(host, port)
     conn: {
-        nil ->
-            return
-        err ->
-            return
+        nil -> return
+        err -> return
         ok -> resp = http3-send-request(it, method, path, host, body)
     }
 }

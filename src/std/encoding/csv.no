@@ -6,15 +6,16 @@
 // 用法：
 //   use std/encoding/csv
 //   line = 'a,b,c'
-//   n = csv.parse-line(line, fields, 3)
+//   fields = csv.parse-line(line)           // max-fields 默認 1024
+//   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
 // parse-field: 解析 CSV 中的一個欄位
 // 從 s[pos] 開始解析，處理雙引號和逗號
 // s str: CSV 文字
 // pos i64: 開始位置
-// field str: 輸出欄位內容
+// 返回 field str: 解析出的欄位內容
 // 返回 new-pos i64: 解析後的新位置
-parse-field = (s str, pos i64, field str) (new-pos i64) {
+parse-field = (s str, pos i64) (field str, new-pos i64) {
     fn = 0
     if pos >= s.len {
         new-pos = pos
@@ -90,16 +91,16 @@ parse-field = (s str, pos i64, field str) (new-pos i64) {
 
 // parse-line: 解析一行 CSV 文字
 // s str: CSV 文字
-// fields []str: 輸出欄位陣列
 // max-fields i64: 最大欄位數
-// 返回 n i64: 實際解析的欄位數量
-parse-line = (s str, fields []str, max-fields i64) (n i64) {
+// 返回 fields []str: 解析出的欄位陣列
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
     for pos < s.len && n < max-fields {
-        pos = parse-field(s, pos, fields[n])
+        fields[n], pos = parse-field(s, pos)
         n = n + 1
     }
+    fields.len = n
 }
 
 // encode-field: 將一個欄位編碼為 CSV 格式

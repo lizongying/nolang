@@ -99,7 +99,11 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 		builder.WriteString("- **Parameters**:\n")
 		for _, p := range entry.Params {
 			if p.Type != "" {
-				builder.WriteString(fmt.Sprintf("  - `%s: %s`\n", p.Name, p.Type))
+				if p.DefaultValue != "" {
+					builder.WriteString(fmt.Sprintf("  - `%s: %s = %s`\n", p.Name, p.Type, p.DefaultValue))
+				} else {
+					builder.WriteString(fmt.Sprintf("  - `%s: %s`\n", p.Name, p.Type))
+				}
 			} else {
 				builder.WriteString(fmt.Sprintf("  - `%s`\n", p.Name))
 			}

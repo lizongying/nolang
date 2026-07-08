@@ -52,6 +52,7 @@ type Generator struct {
 	funcIsVariadic        map[string]bool                 // 函數名 → 是否為 variadic 函數
 	funcParamCount        map[string]int                  // 函數名 → 非 variadic 參數數量
 	funcHeuristicOutput   map[string]bool                 // 函數名 → 是否為啟發式檢測的輸出參數（非顯式 fd.Results）
+	funcParamDefaults     map[string][]parser.Expression  // 函數名 → 各參數的默認值表達式（nil 表示無默認值）
 	funcParamLLVMTypes    map[string][]string             // 函數名 → 各參數的 LLVM 型別列表（含 receiver）
 	funcParamTypes        map[string][]string             // 函數名 → 各參數的 Nolang 型別字串列表（含 receiver）
 	structTypes           map[string][]structField        // struct name → fields
@@ -303,6 +304,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.funcIsVariadic = make(map[string]bool)
 	g.funcParamCount = make(map[string]int)
 	g.funcHeuristicOutput = make(map[string]bool)
+	g.funcParamDefaults = make(map[string][]parser.Expression)
 	g.funcParamLLVMTypes = make(map[string][]string)
 	g.funcParamTypes = make(map[string][]string)
 	g.structTypes = make(map[string][]structField)
@@ -467,6 +469,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			g.funcParamLLVMTypes[fd.Name] = paramTypes
 			g.funcParamTypes[fd.Name] = paramNolangTypes
+			// 收集參數默認值
+			defaults := make([]parser.Expression, len(fd.Parameters))
+			for i, p := range fd.Parameters {
+				defaults[i] = p.DefaultExpr
+			}
+			g.funcParamDefaults[fd.Name] = defaults
 		case *parser.LetStatement:
 			// 收集 str.to-upper = (out str, out-n i64) { ... } 等帶點名的方法定義
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
@@ -511,6 +519,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 						paramTypes = append(paramTypes, g.mapToLLVMType(p.Type.String()))
 					}
 					g.funcParamLLVMTypes[name] = paramTypes
+					// 收集參數默認值（含 receiver slot）
+					defaults := make([]parser.Expression, len(fl.Parameters)+1) // +1 for receiver
+					for i, p := range fl.Parameters {
+						defaults[i+1] = p.DefaultExpr
+					}
+					g.funcParamDefaults[name] = defaults
 				} else if s.Name != nil {
 					// 收集 open = (p str, opts file-opts) { ... } 等普通函數的參數型別
 					name := s.Name.Value
@@ -551,6 +565,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 					}
 					g.funcParamLLVMTypes[name] = paramTypes
 					g.funcParamTypes[name] = paramNolangTypes
+					// 收集參數默認值
+					defaults := make([]parser.Expression, len(fl.Parameters))
+					for i, p := range fl.Parameters {
+						defaults[i] = p.DefaultExpr
+					}
+					g.funcParamDefaults[name] = defaults
 				}
 			}
 		}
@@ -906,8 +926,10 @@ func (g *Generator) walkStmtForAnalysis(stmt parser.Statement, state map[string]
 		if s.Value != nil {
 			g.walkExprReadsForAnalysis(s.Value, state)
 		}
-		for _, n := range s.Names {
-			g.markParamAssigned(n.Value, state)
+		for _, target := range s.Targets {
+			if ident, ok := target.(*parser.Identifier); ok {
+				g.markParamAssigned(ident.Value, state)
+			}
 		}
 	case *parser.ForStatement:
 		// for init; cond; update { body }

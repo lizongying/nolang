@@ -2097,6 +2097,19 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 					dataPtr = g.extractStrDataPtr(sb, "%"+a.Value)
 				} else if t == "%str-short" {
 					dataPtr = g.extractStrShortDataPtr(sb, "%"+a.Value)
+				} else if t == "%option" {
+					// ?str variable: generateExprWithSB extracts the option data
+					// field as a %str-long* pointer (for struct inner types).
+					innerType := "i64"
+					if g.optionInnerTypes != nil {
+						if it, ok := g.optionInnerTypes[a.Value]; ok {
+							innerType = it
+						}
+					}
+					if innerType == "%str-long" {
+						ptr := g.generateExprWithSB(sb, a)
+						dataPtr = g.extractStrDataPtr(sb, ptr)
+					}
 				}
 			}
 		}

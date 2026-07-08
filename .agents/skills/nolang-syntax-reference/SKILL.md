@@ -155,12 +155,22 @@ Common standard library replacements:
 - **All parameters are reference types**
 - Parameters with result annotation are writable output params
 - **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
+- **Parameter default values**: use `name type = expr` syntax. Parameters with defaults can be omitted at the call site. Default parameters must be the last parameters.
 
 ```nolang
 add = (a i64, b i64) (result i64) {
     result = a + b
     ...
 }
+
+// Default parameter value
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+    ...
+}
+
+// Both calls are valid:
+fields = csv.parse-line(line)              // max-fields defaults to 1024
+fields = csv.parse-line(line, 256)         // max-fields = 256
 ```
 
 #### Option Style: Prefer `?t` over `(val, ok)`
