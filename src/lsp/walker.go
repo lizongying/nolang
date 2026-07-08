@@ -88,10 +88,15 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					}
 				}
 			} else {
-				detail = w.getExprType(s.Value)
-				// For type-only declarations (no = value), use the type annotation
-				if detail == "" && s.Type != nil {
+				// Prefer the explicit type annotation (e.g. `BLAKE2B-MASK u64 = ...`)
+				// over the inferred type from the value (which would be "i64" for
+				// integer literals, or "f64" for float literals).
+				detail = ""
+				if s.Type != nil {
 					detail = s.Type.String()
+				}
+				if detail == "" {
+					detail = w.getExprType(s.Value)
 				}
 				value = w.getExprValue(s.Value)
 				entry := &IndexEntry{
@@ -105,8 +110,10 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					Scope: scope,
 					Value: value,
 				}
-				// Don't overwrite existing entries — first declaration wins
-				if _, exists := w.index.symbols[s.Name.Value]; !exists {
+				// Current file definitions always take precedence over auto-imported
+				// module export entries (which lack proper Location info). This ensures
+				// go-to-definition and hover use the correct type and location.
+				if existing, exists := w.index.symbols[s.Name.Value]; !exists || existing.Location.URI == "" {
 					w.index.symbols[s.Name.Value] = entry
 					w.index.definitions[s.Name.Value] = entry
 				}
@@ -516,6 +523,11 @@ func (w *ASTWalker) getExprValue(expr parser.Expression) string {
 	}
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
+		// Use the token literal so values that overflow int64 (e.g. 18446744073709551615)
+		// display correctly instead of showing the wrapped int64 value (e.g. -1).
+		if e.Token.Literal != "" {
+			return e.Token.Literal
+		}
 		return fmt.Sprintf("%d", e.Value)
 	case *parser.FloatLiteral:
 		return fmt.Sprintf("%f", e.Value)

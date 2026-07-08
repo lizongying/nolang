@@ -118,6 +118,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 // bn-mod: 模約簡 a mod m（重複減法）
 bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
+    diff [32]byte
     i = 0
     for i < 32 {
         work[i] = a[i]
@@ -132,7 +133,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         if cmp < 0 {
             break
         }
-        diff = 0
+        diff.zero()
         borrow = 0
         diff, borrow = bn-sub(work, m)
         i = 0
@@ -324,7 +325,7 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
         tmp [32]byte
         carry = 0
         tmp, carry = bn-add(m, a)
-        out = 0
+        out.zero()
         diff2 [32]byte
         borrow2 = 0
         diff2, borrow2 = bn-sub(tmp, b)
@@ -343,7 +344,7 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     // m-2
     exp [32]byte
     borrow = 0
-    exp, borrow = bn-sub(m, [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    exp, borrow = bn-sub(m, [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
 
     // result = 1
     result [32]byte
@@ -413,21 +414,21 @@ ec-point-double = (p []byte) (r []byte) {
     // Y' = M * (S - X') - 8 * Y⁴
     // Z' = 2 * Y * Z
 
-    X []byte = p[0..32]
-    Y []byte = p[32..64]
-    Z []byte = p[64..96]
+    x []byte = p[0..32]
+    y []byte = p[32..64]
+    z []byte = p[64..96]
 
     // Z²
     z2 [32]byte
-    z2 = bn-mulmod(Z, Z, P256-P)
+    z2 = bn-mulmod(z, z, P256-P)
 
     // X - Z²
     x-mz2 [32]byte
-    x-mz2 = bn-submod(X, z2, P256-P)
+    x-mz2 = bn-submod(x, z2, P256-P)
 
     // X + Z²
     x-pz2 [32]byte
-    x-pz2 = bn-addmod(X, z2, P256-P)
+    x-pz2 = bn-addmod(x, z2, P256-P)
 
     // M = 3 * (X-Z²) * (X+Z²)
     m [32]byte
@@ -437,11 +438,11 @@ ec-point-double = (p []byte) (r []byte) {
 
     // Y²
     y2 [32]byte
-    y2 = bn-mulmod(Y, Y, P256-P)
+    y2 = bn-mulmod(y, y, P256-P)
 
     // S = 4 * X * Y²
     s [32]byte
-    s = bn-mulmod(X, y2, P256-P)
+    s = bn-mulmod(x, y2, P256-P)
     s = bn-addmod(s, s, P256-P)
     s = bn-addmod(s, s, P256-P)
 
@@ -470,7 +471,7 @@ ec-point-double = (p []byte) (r []byte) {
 
     // Z' = 2 * Y * Z
     z3 [32]byte
-    z3 = bn-mulmod(Y, Z, P256-P)
+    z3 = bn-mulmod(y, z, P256-P)
     z3 = bn-addmod(z3, z3, P256-P)
 
     // 輸出
@@ -486,12 +487,12 @@ ec-point-double = (p []byte) (r []byte) {
 // ec-point-add: 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
 // 返回 r []byte: 96 位元組
 ec-point-add = (p []byte, q []byte) (r []byte) {
-    X1 []byte = p[0..32]
-    Y1 []byte = p[32..64]
-    Z1 []byte = p[64..96]
-    X2 []byte = q[0..32]
-    Y2 []byte = q[32..64]
-    Z2 []byte = q[64..96]
+    x1 []byte = p[0..32]
+    y1 []byte = p[32..64]
+    z1 []byte = p[64..96]
+    x2 []byte = q[0..32]
+    y2 []byte = q[32..64]
+    z2 []byte = q[64..96]
 
     // 檢查 P 是否為無窮遠點
     p-inf = 1
@@ -531,31 +532,31 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     // Z1², Z2²
     z1-2 [32]byte
-    z1-2 = bn-mulmod(Z1, Z1, P256-P)
+    z1-2 = bn-mulmod(z1, z1, P256-P)
     z2-2 [32]byte
-    z2-2 = bn-mulmod(Z2, Z2, P256-P)
+    z2-2 = bn-mulmod(z2, z2, P256-P)
 
     // Z1³, Z2³
     z1-3 [32]byte
-    z1-3 = bn-mulmod(z1-2, Z1, P256-P)
+    z1-3 = bn-mulmod(z1-2, z1, P256-P)
     z2-3 [32]byte
-    z2-3 = bn-mulmod(z2-2, Z2, P256-P)
+    z2-3 = bn-mulmod(z2-2, z2, P256-P)
 
     // U2 = X2 * Z1²
     u2 [32]byte
-    u2 = bn-mulmod(X2, z1-2, P256-P)
+    u2 = bn-mulmod(x2, z1-2, P256-P)
 
     // S2 = Y2 * Z1³
     s2 [32]byte
-    s2 = bn-mulmod(Y2, z1-3, P256-P)
+    s2 = bn-mulmod(y2, z1-3, P256-P)
 
     // U1 = X1 * Z2²
     u1 [32]byte
-    u1 = bn-mulmod(X1, z2-2, P256-P)
+    u1 = bn-mulmod(x1, z2-2, P256-P)
 
     // S1 = Y1 * Z2³
     s1 [32]byte
-    s1 = bn-mulmod(Y1, z2-3, P256-P)
+    s1 = bn-mulmod(y1, z2-3, P256-P)
 
     // H = U2 - U1
     h [32]byte
@@ -628,8 +629,8 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     // Z3 = H * Z1 * Z2
     z3 [32]byte
-    z3 = bn-mulmod(h, Z1, P256-P)
-    z3 = bn-mulmod(z3, Z2, P256-P)
+    z3 = bn-mulmod(h, z1, P256-P)
+    z3 = bn-mulmod(z3, z2, P256-P)
 
     i = 0
     for i < 32 {
@@ -684,15 +685,15 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 // p []byte: Jacobian 點 (96 位元組)
 // 返回 out [65]byte: 04 || x || y
 ec-point-to-bytes = (p []byte) (out [65]byte) {
-    X []byte = p[0..32]
-    Y []byte = p[32..64]
-    Z []byte = p[64..96]
+    px []byte = p[0..32]
+    py []byte = p[32..64]
+    pz []byte = p[64..96]
 
     // 檢查無窮遠點
     z-is-zero = 1
     i = 0
     for i < 32 {
-        if Z[i] != 0 {
+        if pz[i] != 0 {
             z-is-zero = 0
         }
         i = i + 1
@@ -704,11 +705,11 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 
     // Z²
     z2 [32]byte
-    z2 = bn-mulmod(Z, Z, P256-P)
+    z2 = bn-mulmod(pz, pz, P256-P)
 
     // Z³
     z3 [32]byte
-    z3 = bn-mulmod(z2, Z, P256-P)
+    z3 = bn-mulmod(z2, pz, P256-P)
 
     // Z²的逆
     z2-inv [32]byte
@@ -720,11 +721,11 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 
     // x = X * (Z²)^(-1)
     x [32]byte
-    x = bn-mulmod(X, z2-inv, P256-P)
+    x = bn-mulmod(px, z2-inv, P256-P)
 
     // y = Y * (Z³)^(-1)
     y [32]byte
-    y = bn-mulmod(Y, z3-inv, P256-P)
+    y = bn-mulmod(py, z3-inv, P256-P)
 
     // 輸出: 04 || x || y（大端序）
     out[0] = 4

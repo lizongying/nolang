@@ -176,6 +176,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 	}
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
+		// 十六進位字面量（0xNN）優先推斷為 byte
+		raw := e.Token.Literal
+		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+			return "byte"
+		}
 		return "i64"
 	case *parser.FloatLiteral:
 		return "f64"
@@ -275,10 +280,16 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
 			return "bool"
 		case "+", "-", "*", "/":
-			// 根據類型推斷
+			// 根據類型推斷：先看左運算元，再看右運算元
+			// （與 resolveExprType 行為一致，確保如 c.name - '=' 的字串連接
+			//   在左運算元為未知 struct field 時也能正確推斷為 str）
 			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
 			if leftType != "" {
 				return leftType
+			}
+			rightType := inferExprType(e.Right, varTypes, funcTypes, selfType)
+			if rightType != "" {
+				return rightType
 			}
 			return "i64"
 		default:
@@ -4310,6 +4321,7 @@ func collectModuleNames(program *parser.Program) []string {
 type ModuleExport struct {
 	Name  string
 	Value string
+	Type  string
 }
 
 // GetModuleExports resolves module .no files and extracts their top-level
@@ -4343,7 +4355,11 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 				}
 				seen[ls.Name.Value] = true
 				val := moduleExprValue(ls.Value)
-				exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val})
+				typeStr := ""
+				if ls.Type != nil {
+					typeStr = ls.Type.String()
+				}
+				exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val, Type: typeStr})
 			}
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 				if seen[fd.Name] {
@@ -4376,6 +4392,11 @@ func moduleExprValue(expr parser.Expression) string {
 	}
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
+		// Use the token literal so values that overflow int64 (e.g. 18446744073709551615)
+		// display correctly instead of showing the wrapped int64 value (e.g. -1).
+		if e.Token.Literal != "" {
+			return e.Token.Literal
+		}
 		return fmt.Sprintf("%d", e.Value)
 	case *parser.FloatLiteral:
 		if e.Raw != "" {
@@ -4809,8 +4830,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						if inferredType == innerType || inferredType == "i64" || inferredType == "bool" || inferredType == "f64" {
 							isOptionCtor = true
 						}
-					}
-					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor {
+				}
+				if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,
 							Column:  s.Token.Column,
@@ -5877,18 +5898,29 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			// Skip result parameters: their declared type is authoritative and
 			// must not be overwritten.
 			if s.Name != nil && !resultParamNames[s.Name.Value] {
-				inferred := ""
-				if call, ok := s.Value.(*parser.CallExpression); ok {
-					if fn, ok := call.Function.(*parser.Identifier); ok {
-						inferred = funcSigFirstReturnType(sigs[fn.Value])
+				// If the variable has an explicit type annotation, that type
+				// is authoritative — do not overwrite with inferred type.
+				// e.g. `t u64 = 0` should register "u64", not "i64".
+				if s.Type != nil && s.Type.String() != "" {
+					varTypes[s.Name.Value] = s.Type.String()
+				} else if _, exists := varTypes[s.Name.Value]; !exists {
+					// No explicit type and variable not yet seen: infer from value.
+					inferred := ""
+					if call, ok := s.Value.(*parser.CallExpression); ok {
+						if fn, ok := call.Function.(*parser.Identifier); ok {
+							inferred = funcSigFirstReturnType(sigs[fn.Value])
+						}
+					}
+					if inferred == "" {
+						inferred = inferExprType(s.Value, varTypes, nil, "")
+					}
+					if inferred != "" {
+						varTypes[s.Name.Value] = inferred
 					}
 				}
-				if inferred == "" {
-					inferred = inferExprType(s.Value, varTypes, nil, "")
-				}
-				if inferred != "" {
-					varTypes[s.Name.Value] = inferred
-				}
+				// If variable already exists in varTypes (e.g. declared with
+				// explicit type earlier), keep the existing type — do not
+				// overwrite with inferred type from reassignment.
 			} else if s.Name != nil && resultParamNames[s.Name.Value] {
 				// Result parameter: only seed the type if we can pin it
 				// from a known function's first return type, otherwise
@@ -6054,11 +6086,38 @@ func isNumericType(t string) bool {
 	return false
 }
 
+// intTypeRange returns the (min, max) range for a given integer type.
+func intTypeRange(t string) (min, max int64, ok bool) {
+	switch t {
+	case "i8":
+		return -128, 127, true
+	case "i16":
+		return -32768, 32767, true
+	case "i32":
+		return -2147483648, 2147483647, true
+	case "i64":
+		return -9223372036854775808, 9223372036854775807, true
+	case "u8":
+		return 0, 255, true
+	case "u16":
+		return 0, 65535, true
+	case "u32":
+		return 0, 4294967295, true
+	case "u64":
+		// u64 max (2^64-1) cannot be represented in int64.
+		// We use int64 max as the upper bound; values > i64 max
+		// are extremely rare in practice and would already be
+		// stored as a different representation by the parser.
+		return 0, 9223372036854775807, true
+	}
+	return 0, 0, false
+}
+
 // isArgTypeCompatible checks whether argType can be used where expectedType
 // is required. This handles implicit coercions that the compiler allows:
 //   - [N]T → []T  (fixed array passed where slice is expected)
-//   - i64 literal → any numeric type (integer literals are i64 by default
-//     but fit into u64, i32, etc. when the value is small enough)
+//   - i64 literal → any integer type whose range includes the literal value
+//     (e.g. 200 fits u8, but 300 does not; -1 does not fit any unsigned type)
 func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
 	if argType == expectedType {
 		return true
@@ -6072,13 +6131,31 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			}
 		}
 	}
-	// Integer literals (inferred as i64) are compatible with any numeric type
-	if _, ok := arg.(*parser.IntegerLiteral); ok {
-		if argType == "i64" && isNumericType(expectedType) {
-			return true
+	// Integer literals (inferred as i64 or byte) are compatible with integer types
+	// whose range includes the literal value.
+	if val, ok := integerLiteralValue(arg); ok {
+		if argType == "i64" || argType == "byte" {
+			if min, max, ok := intTypeRange(expectedType); ok {
+				return val >= min && val <= max
+			}
 		}
 	}
 	return false
+}
+
+// integerLiteralValue extracts the int64 value from an integer literal,
+// including negative literals expressed as PrefixExpression("-", IntegerLiteral).
+func integerLiteralValue(expr parser.Expression) (int64, bool) {
+	if lit, ok := expr.(*parser.IntegerLiteral); ok {
+		return lit.Value, true
+	}
+	// Handle negative literals: -100 is parsed as PrefixExpression("-", IntegerLiteral(100))
+	if prefix, ok := expr.(*parser.PrefixExpression); ok && prefix.Operator == "-" {
+		if lit, ok := prefix.Right.(*parser.IntegerLiteral); ok {
+			return -lit.Value, true
+		}
+	}
+	return 0, false
 }
 
 func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {

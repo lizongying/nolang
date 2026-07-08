@@ -156,12 +156,8 @@ linked-hash-map.len = (n i64) {
 }
 
 // is-empty: 是否為空
-linked-hash-map.is-empty = (empty i64) {
-    if .size == 0 {
-        empty = 1
-    } else {
-        empty = 0
-    }
+linked-hash-map.is-empty = () (empty bool) {
+    empty = .size == 0
 }
 
 // for-each: 按插入順序遍歷所有 (key, value)

@@ -108,8 +108,8 @@ hash-set.len = (n i64) {
 }
 
 // is-empty: 是否為空
-hash-set.is-empty = (empty i64) {
-    empty = .size == 0 ? 1 : 0
+hash-set.is-empty = () (empty bool) {
+    empty = .size == 0
 }
 
 // for-each: 遍歷所有元素

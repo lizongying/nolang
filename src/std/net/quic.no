@@ -227,61 +227,101 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ft = ft-val & 255
         frames[count].frame-type = ft
 
-        {
-            // PADDING
-            ft == QUIC-FRAME-PADDING -> {
-                frames[count].length = 0
-                count = count + 1
+        if ft == QUIC-FRAME-PADDING {
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-PING {
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-ACK {
+            // ACK ranges: skip largest_acked + ack_range_count
+            ack-val = 0
+            ack-np = 0
+            ack-val, ack-np = quic-varint-decode(buf, pos)
+            if ack-np < 0 {
+                count = -1
+                return
             }
-            // PING
-            ft == QUIC-FRAME-PING -> {
-                frames[count].length = 0
-                count = count + 1
+            pos = ack-np
+            rng-val = 0
+            rng-np = 0
+            rng-val, rng-np = quic-varint-decode(buf, pos)
+            if rng-np < 0 {
+                count = -1
+                return
             }
-            // ACK
-            ft == QUIC-FRAME-ACK -> {
-                // ACK ranges: skip largest_acked + ack_range_count
-                ack-val = 0
-                ack-np = 0
-                ack-val, ack-np = quic-varint-decode(buf, pos)
-                if ack-np < 0 {
+            pos = rng-np
+            // skip ACK range(s)
+            for rng-val > 0 {
+                gap-val = 0
+                gap-np = 0
+                gap-val, gap-np = quic-varint-decode(buf, pos)
+                if gap-np < 0 {
                     count = -1
                     return
                 }
-                pos = ack-np
-                rng-val = 0
-                rng-np = 0
-                rng-val, rng-np = quic-varint-decode(buf, pos)
-                if rng-np < 0 {
+                pos = gap-np
+                len-val = 0
+                len-np = 0
+                len-val, len-np = quic-varint-decode(buf, pos)
+                if len-np < 0 {
                     count = -1
                     return
                 }
-                pos = rng-np
-                // skip ACK range(s)
-                for rng-val > 0 {
-                    gap-val = 0
-                    gap-np = 0
-                    gap-val, gap-np = quic-varint-decode(buf, pos)
-                    if gap-np < 0 {
-                        count = -1
-                        return
-                    }
-                    pos = gap-np
-                    len-val = 0
-                    len-np = 0
-                    len-val, len-np = quic-varint-decode(buf, pos)
-                    if len-np < 0 {
-                        count = -1
-                        return
-                    }
-                    pos = len-np
-                    rng-val = rng-val - 1
-                }
-                frames[count].length = 0
-                count = count + 1
+                pos = len-np
+                rng-val = rng-val - 1
             }
-            // CRYPTO
-            ft == QUIC-FRAME-CRYPTO -> {
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-CRYPTO {
+            off-val = 0
+            off-np = 0
+            off-val, off-np = quic-varint-decode(buf, pos)
+            if off-np < 0 {
+                count = -1
+                return
+            }
+            pos = off-np
+            frames[count].offset = off-val
+
+            len-val = 0
+            len-np = 0
+            len-val, len-np = quic-varint-decode(buf, pos)
+            if len-np < 0 {
+                count = -1
+                return
+            }
+            pos = len-np
+            frames[count].length = len-val
+
+            // 複製資料
+            i = 0
+            for i < len-val {
+                frames[count].data[i] = buf[pos + i]
+                i = i + 1
+            }
+            pos = pos + len-val
+            count = count + 1
+        }
+        elif ft >= QUIC-FRAME-STREAM && ft <= 0x0f {
+            has-off = (ft & 4) != 0
+            has_len = (ft & 2) != 0
+            fin = (ft & 1) != 0
+
+            sid-val = 0
+            sid-np = 0
+            sid-val, sid-np = quic-varint-decode(buf, pos)
+            if sid-np < 0 {
+                count = -1
+                return
+            }
+            pos = sid-np
+            frames[count].stream-id = sid-val
+
+            if has_off {
                 off-val = 0
                 off-np = 0
                 off-val, off-np = quic-varint-decode(buf, pos)
@@ -291,7 +331,9 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
                 }
                 pos = off-np
                 frames[count].offset = off-val
+            }
 
+            if has_len {
                 len-val = 0
                 len-np = 0
                 len-val, len-np = quic-varint-decode(buf, pos)
@@ -301,153 +343,98 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
                 }
                 pos = len-np
                 frames[count].length = len-val
+            } else {
+                frames[count].length = end - pos
+            }
 
-                // 複製資料
-                i = 0
-                for i < len-val {
-                    frames[count].data[i] = buf[pos + i]
-                    i = i + 1
-                }
-                pos = pos + len-val
-                count = count + 1
+            // 複製資料
+            i = 0
+            for i < frames[count].length {
+                frames[count].data[i] = buf[pos + i]
+                i = i + 1
             }
-            // STREAM (0x08-0x0f)
-            ft >= QUIC-FRAME-STREAM && ft <= 0x0f -> {
-                has-off = (ft & 4) != 0
-                has_len = (ft & 2) != 0
-                fin = (ft & 1) != 0
-
-                sid-val = 0
-                sid-np = 0
-                sid-val, sid-np = quic-varint-decode(buf, pos)
-                if sid-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = sid-np
-                frames[count].stream-id = sid-val
-
-                if has_off {
-                    off-val = 0
-                    off-np = 0
-                    off-val, off-np = quic-varint-decode(buf, pos)
-                    if off-np < 0 {
-                        count = -1
-                        return
-                    }
-                    pos = off-np
-                    frames[count].offset = off-val
-                }
-
-                if has_len {
-                    len-val = 0
-                    len-np = 0
-                    len-val, len-np = quic-varint-decode(buf, pos)
-                    if len-np < 0 {
-                        count = -1
-                        return
-                    }
-                    pos = len-np
-                    frames[count].length = len-val
-                } {
-                    frames[count].length = end - pos
-                }
-
-                // 複製資料
-                i = 0
-                for i < frames[count].length {
-                    frames[count].data[i] = buf[pos + i]
-                    i = i + 1
-                }
-                pos = pos + frames[count].length
-                count = count + 1
+            pos = pos + frames[count].length
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-CONNECTION-CLOSE {
+            // error_code + frame_type + reason_length + reason
+            ec-val = 0
+            ec-np = 0
+            ec-val, ec-np = quic-varint-decode(buf, pos)
+            if ec-np < 0 {
+                count = -1
+                return
             }
-            // CONNECTION_CLOSE (0x1c)
-            ft == QUIC-FRAME-CONNECTION-CLOSE -> {
-                // error_code + frame_type + reason_length + reason
-                ec-val = 0
-                ec-np = 0
-                ec-val, ec-np = quic-varint-decode(buf, pos)
-                if ec-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = ec-np
-                ft2-val = 0
-                ft2-np = 0
-                ft2-val, ft2-np = quic-varint-decode(buf, pos)
-                if ft2-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = ft2-np
-                rl-val = 0
-                rl-np = 0
-                rl-val, rl-np = quic-varint-decode(buf, pos)
-                if rl-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = rl-np + rl-val
-                frames[count].length = 0
-                count = count + 1
+            pos = ec-np
+            ft2-val = 0
+            ft2-np = 0
+            ft2-val, ft2-np = quic-varint-decode(buf, pos)
+            if ft2-np < 0 {
+                count = -1
+                return
             }
-            // CONNECTION_CLOSE (0x1d) — application
-            ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
-                ec-val = 0
-                ec-np = 0
-                ec-val, ec-np = quic-varint-decode(buf, pos)
-                if ec-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = ec-np
-                rl-val = 0
-                rl-np = 0
-                rl-val, rl-np = quic-varint-decode(buf, pos)
-                if rl-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = rl-np + rl-val
-                frames[count].length = 0
-                count = count + 1
+            pos = ft2-np
+            rl-val = 0
+            rl-np = 0
+            rl-val, rl-np = quic-varint-decode(buf, pos)
+            if rl-np < 0 {
+                count = -1
+                return
             }
-            // HANDSHAKE_DONE
-            ft == QUIC-FRAME-HANDSHAKE-DONE -> {
-                frames[count].length = 0
-                count = count + 1
+            pos = rl-np + rl-val
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-CONNECTION-CLOSE-APP {
+            ec-val = 0
+            ec-np = 0
+            ec-val, ec-np = quic-varint-decode(buf, pos)
+            if ec-np < 0 {
+                count = -1
+                return
             }
-            // NEW_TOKEN
-            ft == QUIC-FRAME-NEW-TOKEN -> {
-                tl-val = 0
-                tl-np = 0
-                tl-val, tl-np = quic-varint-decode(buf, pos)
-                if tl-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = tl-np + tl-val
-                frames[count].length = 0
-                count = count + 1
+            pos = ec-np
+            rl-val = 0
+            rl-np = 0
+            rl-val, rl-np = quic-varint-decode(buf, pos)
+            if rl-np < 0 {
+                count = -1
+                return
             }
-            // MAX_DATA, MAX_STREAMS, etc. — 帶單個 varint
-            ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
-                mv-val = 0
-                mv-np = 0
-                mv-val, mv-np = quic-varint-decode(buf, pos)
-                if mv-np < 0 {
-                    count = -1
-                    return
-                }
-                pos = mv-np
-                frames[count].length = 0
-                count = count + 1
+            pos = rl-np + rl-val
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-HANDSHAKE-DONE {
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-NEW-TOKEN {
+            tl-val = 0
+            tl-np = 0
+            tl-val, tl-np = quic-varint-decode(buf, pos)
+            if tl-np < 0 {
+                count = -1
+                return
             }
-            // 未知影格 — 跳過剩餘資料
-            -> {
-                pos = end
+            pos = tl-np + tl-val
+            frames[count].length = 0
+            count = count + 1
+        }
+        elif ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED {
+            mv-val = 0
+            mv-np = 0
+            mv-val, mv-np = quic-varint-decode(buf, pos)
+            if mv-np < 0 {
+                count = -1
+                return
             }
+            pos = mv-np
+            frames[count].length = 0
+            count = count + 1
+        }
+        else {
+            pos = end
         }
     }
 }

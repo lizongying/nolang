@@ -188,10 +188,17 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		exports := nbuild.GetModuleExports(moduleNames)
 		for _, ex := range exports {
 			if ex.Value != "" {
+				// Use the actual type from the module's type annotation
+				// (e.g. "u64" for BLAKE2B-MASK), falling back to "i64"
+				// for integer constants without explicit type.
+				constType := ex.Type
+				if constType == "" {
+					constType = "i64"
+				}
 				index.symbols[ex.Name] = &IndexEntry{
 					Name:  ex.Name,
 					Kind:  SymbolKindConstant,
-					Type:  "f64",
+					Type:  constType,
 					Value: ex.Value,
 				}
 				// Don't overwrite definitions — the module indexing loop below
@@ -516,7 +523,32 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 					resultParams = append(resultParams, ParamInfo{Name: r.Name, Type: typeStr})
 				}
 			} else {
-				return // regular variable, skip
+				// Regular variable/constant: index with location info so
+				// go-to-definition works for module-level constants.
+				typeStr := ""
+				if s.Type != nil {
+					typeStr = s.Type.String()
+				}
+				loc := Location{
+					URI: modURI,
+					Range: Range{
+						Start: Position{Line: uint32(s.Name.Token.Line - 1), Character: uint32(s.Name.Token.Column - 1)},
+						End:   Position{Line: uint32(s.Name.Token.Line - 1), Character: uint32(s.Name.Token.Column - 1 + len(s.Name.Value))},
+					},
+				}
+				entry := &IndexEntry{
+					Name:     s.Name.Value,
+					Kind:     SymbolKindConstant,
+					Type:     typeStr,
+					Location: loc,
+					Doc:      extractDocComment(&s.CommentedNode),
+				}
+				// Only add if not already defined with location info
+				if existing, exists := index.definitions[s.Name.Value]; !exists || existing.Location.URI == "" {
+					index.symbols[s.Name.Value] = entry
+					index.definitions[s.Name.Value] = entry
+				}
+				return
 			}
 		} else {
 			return

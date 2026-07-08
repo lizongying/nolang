@@ -113,27 +113,27 @@ hex-byte = (b byte, pos i64, out str) {
 // to-str-upper: 將 UUID 格式化為大寫字串
 // 返回 out str: UUID 大寫字串
 uuid.to-str-upper = () (out str) {
-    HEX-U = '0123456789ABCDEF'
-    hex-byte-upper(.bytes[0], 0, out, HEX-U)
-    hex-byte-upper(.bytes[1], 2, out, HEX-U)
-    hex-byte-upper(.bytes[2], 4, out, HEX-U)
-    hex-byte-upper(.bytes[3], 6, out, HEX-U)
+    hex-u = '0123456789ABCDEF'
+    hex-byte-upper(.bytes[0], 0, out, hex-u)
+    hex-byte-upper(.bytes[1], 2, out, hex-u)
+    hex-byte-upper(.bytes[2], 4, out, hex-u)
+    hex-byte-upper(.bytes[3], 6, out, hex-u)
     out[8] = 45
-    hex-byte-upper(.bytes[4], 9, out, HEX-U)
-    hex-byte-upper(.bytes[5], 11, out, HEX-U)
+    hex-byte-upper(.bytes[4], 9, out, hex-u)
+    hex-byte-upper(.bytes[5], 11, out, hex-u)
     out[13] = 45
-    hex-byte-upper(.bytes[6], 14, out, HEX-U)
-    hex-byte-upper(.bytes[7], 16, out, HEX-U)
+    hex-byte-upper(.bytes[6], 14, out, hex-u)
+    hex-byte-upper(.bytes[7], 16, out, hex-u)
     out[18] = 45
-    hex-byte-upper(.bytes[8], 19, out, HEX-U)
-    hex-byte-upper(.bytes[9], 21, out, HEX-U)
+    hex-byte-upper(.bytes[8], 19, out, hex-u)
+    hex-byte-upper(.bytes[9], 21, out, hex-u)
     out[23] = 45
-    hex-byte-upper(.bytes[10], 24, out, HEX-U)
-    hex-byte-upper(.bytes[11], 26, out, HEX-U)
-    hex-byte-upper(.bytes[12], 28, out, HEX-U)
-    hex-byte-upper(.bytes[13], 30, out, HEX-U)
-    hex-byte-upper(.bytes[14], 32, out, HEX-U)
-    hex-byte-upper(.bytes[15], 34, out, HEX-U)
+    hex-byte-upper(.bytes[10], 24, out, hex-u)
+    hex-byte-upper(.bytes[11], 26, out, hex-u)
+    hex-byte-upper(.bytes[12], 28, out, hex-u)
+    hex-byte-upper(.bytes[13], 30, out, hex-u)
+    hex-byte-upper(.bytes[14], 32, out, hex-u)
+    hex-byte-upper(.bytes[15], 34, out, hex-u)
 }
 
 // hex-byte-upper: 大寫 hex 位元組寫入
@@ -202,7 +202,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[6] = v6
     out.bytes[7] = v7
     if s[pos + 18] & 255 != 45 {
-        ok = 0
+        ok = false
         return
     }
     v8 = parse-hex-byte(s, pos + 19)
@@ -210,7 +210,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[8] = v8
     out.bytes[9] = v9
     if s[pos + 23] & 255 != 45 {
-        ok = 0
+        ok = false
         return
     }
     v10 = parse-hex-byte(s, pos + 24)

@@ -195,8 +195,8 @@ hashmap-str-i64.len = (n i64) {
 }
 
 // is-empty: 是否為空
-hashmap-str-i64.is-empty = (empty i64) {
-    empty = .size == 0 ? 1 : 0
+hashmap-str-i64.is-empty = () (empty bool) {
+    empty = .size == 0
 }
 
 // for-each: 遍歷所有 (key, value)
@@ -352,8 +352,8 @@ hashmap-i64-i64.len = (n i64) {
 }
 
 // is-empty: 是否為空
-hashmap-i64-i64.is-empty = (empty i64) {
-    empty = .size == 0 ? 1 : 0
+hashmap-i64-i64.is-empty = () (empty bool) {
+    empty = .size == 0
 }
 
 // for-each: 遍歷所有 (key, value)
@@ -558,8 +558,8 @@ hashmap-str-str.len = (n i64) {
 }
 
 // is-empty: 是否為空
-hashmap-str-str.is-empty = (empty i64) {
-    empty = .size == 0 ? 1 : 0
+hashmap-str-str.is-empty = () (empty bool) {
+    empty = .size == 0
 }
 
 // for-each: 遍歷所有 (key, value)

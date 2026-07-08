@@ -265,7 +265,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
 					} else if elemLLVMType == "i64" {
 						// smaller type → i64: zext
-						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev))
 					} else {
 						// smaller → smaller (both non-i64): trunc to target
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
@@ -1298,7 +1298,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if !hasNolangImpl {
 			if m := builtin.FindBuiltinMethod(fnName); m != nil {
 				if m.ForwardFunc != "" {
-					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
+					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "arr-zero" {
 						return r
 					}
 				}
@@ -1325,6 +1325,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						return result
 					}
 					return g.genLLVMConv(sb, m, methodEvalArgs)
+				}
+			}
+		}
+	}
+
+	// Intercept .zero() calls that were rewritten by the transpiler
+	// (e.g. [4]i64.zero(data) → _LB_4_RB_i64.zero). If the function doesn't
+	// exist in funcRetTypes, generate llvm.memset directly.
+	if strings.HasSuffix(fnName, ".zero") && g.funcRetTypes != nil {
+		if _, exists := g.funcRetTypes[fnName]; !exists {
+			if len(expr.Arguments) > 0 {
+				if r := g.genArrZero(sb, expr.Arguments[0]); r {
+					return ""
 				}
 			}
 		}
@@ -1615,7 +1628,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
 						} else if elemLLVMType == "i64" {
 							// smaller type → i64: zext
-							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev, elemLLVMType))
+							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev))
 						} else {
 							// smaller → smaller (both non-i64): trunc to target
 							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
@@ -2128,6 +2141,70 @@ func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) strin
 	return val
 }
 
+// genArrZero generates llvm.memset to zero an array/slice in-place.
+// receiverArg is the first argument (the array/slice variable) passed to the
+// rewritten .zero() call. Returns true if IR was generated.
+func (g *Generator) genArrZero(sb *strings.Builder, receiverArg parser.Expression) bool {
+	ident, ok := receiverArg.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	recvName := ident.Value
+	recvType := ""
+	if g.varTypes != nil {
+		recvType = g.varTypes[recvName]
+	}
+	// 確定元素大小（位元組）
+	elemSize := int64(8) // 預設 i64
+	if g.arrayElemTypes != nil {
+		if et, ok := g.arrayElemTypes[recvName]; ok {
+			elemSize = llvmTypeSize(et)
+		}
+	}
+	recvAddr := g.varAddr(recvName)
+	if sb == nil {
+		return true
+	}
+	if recvType == "%arr" {
+		// 定長陣列：%arr = { i64, i8* }
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%az.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%az.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%az.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataReg := fmt.Sprintf("%%az.data.%d", g.tmpIdx)
+		g.tmpIdx++
+		totalReg := fmt.Sprintf("%%az.total.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, recvAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataReg, dataGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), totalReg, lenReg, elemSize))
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), dataReg, totalReg))
+	} else {
+		// 切片：%vec = { i64, i64, i8* }
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%az.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%az.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%az.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataReg := fmt.Sprintf("%%az.data.%d", g.tmpIdx)
+		g.tmpIdx++
+		totalReg := fmt.Sprintf("%%az.total.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, recvAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataReg, dataGEP))
+		sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), totalReg, lenReg, elemSize))
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), dataReg, totalReg))
+	}
+	return true
+}
+
 // genForwardFunc handles ForwardFunc builtins: memcpy (str.copy), memcmp (str.eq), memset (str-fill).
 // receiver is non-nil for method-style calls (e.g. a.eq(b, n)); nil for global function calls.
 // Returns the SSA register for the result, or "" for void functions.
@@ -2319,6 +2396,76 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = call double @strtod(i8* %s, i8* null)\n", g.indent(), valReg, safeReg))
 			}
 			return valReg
+		}
+		return ""
+
+	case "arr-zero":
+		// []<type>.zero / [n]<type>.zero — 使用 llvm.memset 將所有元素置零
+		// receiver 是陣列/切片變數；無額外參數。
+		// %arr = type { i64, i8* }  (len, data)
+		// %vec = type { i64, i64, i8* } (len, cap, data)
+		if len(args) < 1 {
+			return ""
+		}
+		ident, ok := args[0].(*parser.Identifier)
+		if !ok {
+			return ""
+		}
+		recvName := ident.Value
+		recvType := ""
+		if g.varTypes != nil {
+			recvType = g.varTypes[recvName]
+		}
+		// 確定元素大小（位元組）
+		elemSize := int64(8) // 預設 i64
+		if g.arrayElemTypes != nil {
+			if et, ok := g.arrayElemTypes[recvName]; ok {
+				elemSize = llvmTypeSize(et)
+			}
+		}
+		recvAddr := g.varAddr(recvName)
+		if recvType == "%arr" {
+			// 定長陣列：%arr = { i64, i8* }
+			// field 0 = len, field 1 = data
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%az.len.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			lenReg := fmt.Sprintf("%%az.len.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%az.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataReg := fmt.Sprintf("%%az.data.%d", g.tmpIdx)
+			g.tmpIdx++
+			totalReg := fmt.Sprintf("%%az.total.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, recvAddr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataReg, dataGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), totalReg, lenReg, elemSize))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), dataReg, totalReg))
+			}
+		} else {
+			// 切片：%vec = { i64, i64, i8* }
+			// field 0 = len, field 2 = data
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%az.len.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			lenReg := fmt.Sprintf("%%az.len.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%az.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataReg := fmt.Sprintf("%%az.data.%d", g.tmpIdx)
+			g.tmpIdx++
+			totalReg := fmt.Sprintf("%%az.total.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, recvAddr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataReg, dataGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), totalReg, lenReg, elemSize))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), dataReg, totalReg))
+			}
 		}
 		return ""
 	}

@@ -205,3 +205,23 @@ float.is-nan = () (yes bool) {
 float.is-inf = () (yes bool) {
     yes = . + . == .
 }
+
+// [n]num.zero / []num.zero — 使用 llvm.memset 置零
+// build-in (ForwardFunc: arr-zero → @llvm.memset.p0i8.i64)
+// 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
+// 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
+// [n]num.zero = () {
+//     i = 0
+//     for i < n {
+//         .[i] = 0
+//         i = i + 1
+//     }
+// }
+//
+// []num.zero = () {
+//     i = 0
+//     for i < .len() {
+//         .[i] = 0
+//         i = i + 1
+//     }
+// }

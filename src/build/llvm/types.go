@@ -240,3 +240,19 @@ var clibFuncNames = map[string]bool{
 	"cbrt":        true,
 	"exit":        true,
 }
+
+// llvmTypeSize returns the size in bytes of a primitive LLVM type.
+func llvmTypeSize(llvmType string) int64 {
+	switch llvmType {
+	case "i8", "u8":
+		return 1
+	case "i16", "u16":
+		return 2
+	case "i32", "u32", "float":
+		return 4
+	case "i64", "u64", "double":
+		return 8
+	default:
+		return 8 // 預設 i64
+	}
+}

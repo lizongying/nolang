@@ -601,7 +601,8 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     dec = encoding.base64.decode(encrypted-data, encoding.base64.BASE64-STD)
     dec: {
         ok -> raw = it
-        nil || err -> return
+        nil -> return
+        err -> return
     }
     if raw.len < 12 {
         return
