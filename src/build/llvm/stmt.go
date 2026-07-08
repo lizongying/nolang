@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -218,7 +219,26 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 
 	// 收集所有變數（一次分配），排除參數（已是指標）
 	localVarTypes := make(map[string]string)
+	// Reset itAllocTypes per function to prevent type leakage from prior functions
+	g.itAllocTypes = make(map[string]string)
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
+	if fd.Name == "http-server-conn.get-cookie" {
+		fmt.Fprintf(os.Stderr, "[DEBUG get-cookie #%d] localVarTypes: %d entries\n", g.debugCallCount, len(localVarTypes))
+		for k, v := range localVarTypes {
+			fmt.Fprintf(os.Stderr, "  %s = %s\n", k, v)
+		}
+		// Check if 'it' is in varTypes
+		if t, ok := g.varTypes["it"]; ok {
+			fmt.Fprintf(os.Stderr, "  g.varTypes[it] = %s\n", t)
+		} else {
+			fmt.Fprintf(os.Stderr, "  g.varTypes[it] NOT FOUND\n")
+		}
+		fmt.Fprintf(os.Stderr, "[DEBUG get-cookie #%d] body stmts: %d\n", g.debugCallCount, len(fd.Body.Statements))
+		for i, s := range fd.Body.Statements {
+			fmt.Fprintf(os.Stderr, "  [%d] %T\n", i, s)
+		}
+		g.debugCallCount++
+	}
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
@@ -957,6 +977,9 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map[string]string, isModuleLevel bool) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
+		if s.Name != nil && s.Name.Value == "cookie-header" {
+			fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header LetStatement: IsSynthetic=%v, Type=%T=%v\n", s.IsSynthetic, s.Type, s.Type)
+		}
 		// Skip synthetic let statements with "err"/"nil" type sentinels.
 		// 這些是 match 對應 err/nil arm 注入的 `it = matched`，
 		// 變數型別語意上是 err/nil（無值），LLVM 端以 i64 佔位即可。
@@ -1000,8 +1023,36 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
 		if _, exists := vars[s.Name.Value]; !exists {
+			if s.Name != nil && s.Name.Value == "cookie-header" {
+				fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header entering collection block, vars has %d entries\n", len(vars))
+			}
+			// Slice view variables (view = arr[0..4]) don't need alloca:
+			// they are registered as aliases with adjusted data pointers.
+			// Skip collection to avoid wasting stack space + malloc.
+			if _, isSliceExpr := s.Value.(*parser.SliceExpression); isSliceExpr {
+				if ident, ok := s.Value.(*parser.SliceExpression).Left.(*parser.Identifier); ok {
+					if _, isVar := g.varTypes[ident.Value]; isVar {
+						// Register the type for method resolution, but don't alloca
+						vt := g.varLLVMType(s)
+						vars[s.Name.Value] = vt
+						if g.varTypes != nil {
+							g.varTypes[s.Name.Value] = vt
+						}
+						// Propagate element type from base variable
+						if g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[ident.Value]; ok {
+								g.arrayElemTypes[s.Name.Value] = et
+							}
+						}
+						return
+					}
+				}
+			}
 			vt := g.varLLVMType(s)
 			vars[s.Name.Value] = vt
+			if s.Name != nil && s.Name.Value == "cookie-header" {
+				fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header stored as vt=%s, vars now has %d entries\n", vt, len(vars))
+			}
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
@@ -1158,6 +1209,12 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			g.collectVarDeclsFromExpr(s.Value, vars)
 		}
 	case *parser.BlockStatement:
+		if len(s.Statements) > 0 {
+			first := s.Statements[0]
+			if ls, ok := first.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == "val" {
+				fmt.Fprintf(os.Stderr, "[DEBUG collect] BlockStatement with %d stmts, first=val\n", len(s.Statements))
+			}
+		}
 		for _, ss := range s.Statements {
 			g.collectVarDeclsFromStmt(ss, vars)
 		}
@@ -1566,6 +1623,90 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	if ident, ok := ir.RangeExpr.(*parser.Identifier); ok {
 		// Named variable: for i in a
 		identName := ident.Value
+
+		// Slice view: use adjusted data pointer + view length directly
+		if g.isSliceViewVar(identName) {
+			view := g.sliceViews[identName]
+			elemType = view.elemType
+			structType = view.baseType
+			isVec = !view.isStr
+
+			g.tmpIdx++
+			lbl := g.tmpIdx
+			g.loopExits = append(g.loopExits, loopExit{
+				name: stmt.Label,
+				cond: fmt.Sprintf("arr.cond.%d", lbl),
+				exit: fmt.Sprintf("arr.end.%d", lbl),
+			})
+			defer func() {
+				g.loopExits = g.loopExits[:len(g.loopExits)-1]
+			}()
+
+			// Initialize i = 0
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
+
+			// br → cond
+			sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+
+			// cond block: i < viewLen
+			g.emitLabel(sb, fmt.Sprintf("arr.cond.%d", lbl))
+			g.indentLevel++
+			g.tmpIdx++
+			iLoad := fmt.Sprintf("%%arr.i.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%arr.cmp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, iLoad, view.viewLen))
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%arr.body.%d, label %%arr.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+			g.indentLevel--
+
+			// body block
+			g.emitLabel(sb, fmt.Sprintf("arr.body.%d", lbl))
+			g.indentLevel++
+
+			// Load element from view data[i] using adjusted data pointer
+			g.tmpIdx++
+			castReg := fmt.Sprintf("%%arr.cast.%d", g.tmpIdx)
+			ptrType := elemType + "*"
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s\n", g.indent(), castReg, view.dataPtrReg, ptrType))
+
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%arr.elem.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s %s, i64 %s\n",
+				g.indent(), elemGEP, elemType, ptrType, castReg, iLoad))
+
+			g.tmpIdx++
+			elemLoad := fmt.Sprintf("%%arr.elem.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), elemLoad, elemType, ptrType, elemGEP))
+
+			// Store element into loop variable
+			g.varTypes[varName] = elemType
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %%%s\n", g.indent(), elemType, elemLoad, ptrType, varName))
+
+			// Generate body statements
+			for _, s := range stmt.Body.Statements {
+				g.generateStatement(sb, s)
+			}
+			g.indentLevel--
+
+			if !g.blockTerminated {
+				// Increment i
+				g.tmpIdx++
+				iLoad2 := fmt.Sprintf("%%arr.i2.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
+				g.tmpIdx++
+				iInc := fmt.Sprintf("%%arr.inc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInc, iLoad2))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInc, varName))
+				sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+			}
+			g.blockTerminated = false
+
+			// end block
+			g.emitLabel(sb, fmt.Sprintf("arr.end.%d", lbl))
+			return
+		}
+
 		structType = g.varTypes[identName]
 		isVec = structType == "%vec"
 		if structType == "" {
@@ -2839,6 +2980,23 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		} else {
 			// Implicit value: val = n (plain value → ?T, tag=0)
 			storeTag(0)
+			// If option inner type is a struct (e.g. %str-long) but source
+			// variable was alloca'd as i64 (type inference gap), bitcast
+			// the i64* to the struct pointer and load the struct value.
+			if g.optionInnerTypes != nil {
+				if innerType, ok := g.optionInnerTypes[name]; ok && strings.HasPrefix(innerType, "%") {
+					if srcType, ok := g.varTypes[v.Value]; !ok || (srcType != innerType && !strings.HasPrefix(srcType, "%")) {
+						g.tmpIdx++
+						castReg := fmt.Sprintf("%%opt.src.cast.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %%%s to %s*\n", g.indent(), castReg, v.Value, innerType))
+						g.tmpIdx++
+						loadReg := fmt.Sprintf("%%opt.struct.load.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, innerType, innerType, castReg))
+						copyToData(loadReg)
+						return
+					}
+				}
+			}
 			val := g.generateExprWithSB(sb, stmt.Value)
 			copyToData(val)
 		}

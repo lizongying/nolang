@@ -1030,6 +1030,13 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			if fields, ok := g.structTypes[structName]; ok {
 				for _, f := range fields {
 					if f.name == v.Property {
+						// Inline array field (e.g. [32 x i8]) should be treated as
+						// %arr for slicing/codegen purposes, so that
+						// generateSliceExpression and generateCallArg can handle
+						// struct field slices like .client-mac-key[..]
+						if strings.HasPrefix(f.typ, "[") {
+							return "%arr"
+						}
 						return f.typ
 					}
 				}
@@ -3716,6 +3723,25 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	isStr := recvType == "%str-long"
 	isStrShort := recvType == "%str-short"
 
+	// Detect inline array field (e.g. .client-mac-key is [32 x i8], not %arr struct).
+	// exprResultLLVMType maps these to "%arr", so we check the raw field type.
+	inlineArrayType := ""
+	if dot, ok := expr.Left.(*parser.DotExpression); ok {
+		if recvType2 := g.exprResultLLVMType(dot.Receiver); strings.HasPrefix(recvType2, "%") {
+			structName2 := strings.TrimPrefix(recvType2, "%")
+			if fields, ok := g.structTypes[structName2]; ok {
+				for _, f := range fields {
+					if f.name == dot.Property {
+						if strings.HasPrefix(f.typ, "[") {
+							inlineArrayType = f.typ
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
 	if !isVec && !isArr && !isStr && !isStrShort {
 		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec/arr/str): %s\n", g.indent(), leftVal))
 		return "0"
@@ -3736,7 +3762,45 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	// Variables for source fields
 	var srcLen, srcData, srcCap string
 
-	if isStrShort {
+	if inlineArrayType != "" {
+		// Inline array field (e.g. [32 x i8]): recvPtr points directly to [N x T],
+		// not to an %arr struct. Extract N from the type string and bitcast to i8*.
+		// Parse "[32 x i8]" → N=32, elemType=i8
+		closeBracket := strings.IndexByte(inlineArrayType, ']')
+		if closeBracket < 0 {
+			sb.WriteString(fmt.Sprintf("%s; ERROR: cannot parse inline array type %s\n", g.indent(), inlineArrayType))
+			return "0"
+		}
+		inner := inlineArrayType[1:closeBracket] // "32 x i8"
+		sepIdx := strings.Index(inner, " x ")
+		if sepIdx < 0 {
+			return "0"
+		}
+		sizeStr := inner[:sepIdx]               // "32"
+		inlineElemType := inner[sepIdx+3:]      // "i8"
+
+		// srcLen = N (constant)
+		srcLen = sizeStr
+		srcCap = sizeStr
+
+		// srcData = bitcast [N x T]* to i8*
+		g.tmpIdx++
+		srcData = fmt.Sprintf("%%slice.inlinedata.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n",
+				g.indent(), srcData, inlineArrayType, recvPtr))
+		}
+
+		// Track elem type for offset calculation
+		if g.arrayElemTypes != nil {
+			// Use a synthetic key to propagate elem type into the elemSize logic below
+			// We'll set varName to a sentinel that arrayElemTypes can resolve
+			if _, ok := g.arrayElemTypes["__inline_slice__"]; !ok {
+				g.arrayElemTypes["__inline_slice__"] = inlineElemType
+			}
+			varName = "__inline_slice__"
+		}
+	} else if isStrShort {
 		strPtr := recvPtr
 		srcLen = g.extractStrShortLen(sb, strPtr)
 		srcData = g.extractStrShortDataPtr(sb, strPtr)

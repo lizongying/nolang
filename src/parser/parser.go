@@ -3700,6 +3700,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			}
 			p.nextToken()
+		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "ok" &&
+			(p.peekToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.RBRACE) {
+			// ok without -> (e.g. "nil -> err -> ok\n body...")
+			// Treat as ok val branch with body on subsequent lines
+			ma.isWildcard = true
+			ma.isDotVal = true
+			p.nextToken()
 		} else if (p.currentToken.Type == lexer.NIL ||
 			(p.currentToken.Type == lexer.IDENT &&
 				(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok"))) &&
@@ -3771,7 +3778,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.COLON {
 			p.nextToken()
-		} else {
+		} else if !ma.isWildcard {
 			return nil
 		}
 
@@ -3819,17 +3826,23 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		} else {
 			// Inline statement form（單行 body）
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
-			p.ctx.push(CTX_MATCH_ARM)
-			doc := p.collectDocComments()
-			stmt := p.parseStatement()
-			p.ctx.pop()
-			if stmt != nil {
-				setDoc(stmt, doc)
-				p.attachInlineComment(stmt)
-				bodyStmts = append(bodyStmts, stmt)
+			// But if the body is actually another option pattern (e.g. "nil -> err -> ok"),
+			// treat the current arm as having an empty body (fallthrough).
+			if isOptionPatternStart(p) {
+				// Empty body — next token is a new arm pattern
+			} else {
+				p.ctx.push(CTX_MATCH_ARM)
+				doc := p.collectDocComments()
+				stmt := p.parseStatement()
+				p.ctx.pop()
+				if stmt != nil {
+					setDoc(stmt, doc)
+					p.attachInlineComment(stmt)
+					bodyStmts = append(bodyStmts, stmt)
+				}
+				// Set arm body end position for inline form (current token is just past the body)
+				bodyBlock.RBrace = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 			}
-			// Set arm body end position for inline form (current token is just past the body)
-			bodyBlock.RBrace = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		}
 
 		bodyBlock.Statements = bodyStmts
@@ -5084,6 +5097,31 @@ func isArmStart(p *Parser) bool {
 		return true
 	}
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.COLON {
+		return true
+	}
+	return false
+}
+
+// isOptionPatternStart checks if the current token starts an option pattern
+// (nil, err, ok, ->, .->, !->, ?->) used in "nil -> err -> ok" fallthrough syntax.
+func isOptionPatternStart(p *Parser) bool {
+	if p.currentToken.Type == lexer.RARROW {
+		return true // -> (wildcard)
+	}
+	if p.currentToken.Type == lexer.NIL {
+		return true
+	}
+	if p.currentToken.Type == lexer.IDENT &&
+		(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+		return true
+	}
+	if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {
+		return true
+	}
+	if p.currentToken.Type == lexer.QUESTION && p.peekToken.Type == lexer.RARROW {
+		return true
+	}
+	if p.currentToken.Type == lexer.DOT && p.peekToken.Type == lexer.RARROW {
 		return true
 	}
 	return false

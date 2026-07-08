@@ -294,6 +294,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					}
 				}
 			}
+		} else {
+			// Non-Identifier receiver (e.g. .field[..]): use exprResultLLVMType
+			recvType := g.exprResultLLVMType(a.Left)
+			if recvType == "%str-long" || recvType == "%str-short" {
+				ptrType = "%str-long*"
+			}
 		}
 		return ptrType + " " + ev
 	case *parser.StructLiteral:

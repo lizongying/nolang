@@ -79,7 +79,8 @@ type Generator struct {
 	fnTypeAliases         map[string]*parser.FunctionType // named function type alias name → FunctionType
 	externFuncs           map[string]*ExternFuncInfo      // extern function name → FFI type info
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
-	sliceViews             map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
+	sliceViews            map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
+	debugCallCount        int                             // debug counter for tracing function generation calls
 }
 
 // sliceViewInfo tracks a slice view alias: a variable that references a portion

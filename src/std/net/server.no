@@ -753,7 +753,8 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         // 檢查 'Basic ' 前綴
         hdr = it
         prefix = 'Basic '
-        if hdr.starts-with(prefix) == false {
+        starts-ok = hdr.starts-with(prefix)
+        if starts-ok == false {
             return
         }
 
