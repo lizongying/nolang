@@ -270,9 +270,9 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
 		return ""
 	case *parser.InfixExpression:
-		// 簡單推斷：比較運算返回 bool，算術返回 i64/f64
+		// 簡單推斷：比較與邏輯運算返回 bool，算術返回 i64/f64
 		switch e.Operator {
-		case "==", "!=", "<", ">", "<=", ">=":
+		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
 			return "bool"
 		case "+", "-", "*", "/":
 			// 根據類型推斷
@@ -648,8 +648,8 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			if sd, ok := stmt.(*parser.StructDefinition); ok {
 				fields := make(map[string]string)
 				for _, f := range sd.Fields {
-					if f.Type != nil {
-						fields[f.Name] = f.Type.String()
+					if typeStr := structFieldTypeString(f); typeStr != "" {
+						fields[f.Name] = typeStr
 					}
 				}
 				structFields[sd.Name] = fields
@@ -1555,19 +1555,35 @@ func inferTypeFromExpr(expr parser.Expression) string {
 		return "f64"
 	case *parser.StringLiteral:
 		return "str"
+	case *parser.BooleanLiteral:
+		return "bool"
 	case *parser.StructLiteral:
 		return e.Type
 	case *parser.PrefixExpression:
 		if e.Operator == "-" || e.Operator == "+" {
 			return inferTypeFromExpr(e.Right)
 		}
+		if e.Operator == "!" {
+			return "bool"
+		}
 	case *parser.InfixExpression:
+		// Comparison and logical operators always produce bool
+		switch e.Operator {
+		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
+			return "bool"
+		}
 		if t := inferTypeFromExpr(e.Left); t != "" {
 			return t
 		}
 		return inferTypeFromExpr(e.Right)
 	case *parser.GroupedExpression:
 		return inferTypeFromExpr(e.Expression)
+	case *parser.ConditionalExpression:
+		// `cond ? a : b` — type is the type of the consequence (or alternative)
+		if t := inferTypeFromExpr(e.Consequence); t != "" {
+			return t
+		}
+		return inferTypeFromExpr(e.Alternative)
 	case *parser.MapLiteral:
 		if e.MapType != nil {
 			return e.MapType.String()
@@ -5285,6 +5301,23 @@ func resolveSelfMethodCalls(program *parser.Program) {
 // collectStructFields builds a map from struct name to field name → field type
 // string. Used by resolveSelfInExpr to look up field types when rewriting
 // .field.method(args) calls.
+// structFieldTypeString returns the full type string of a struct field,
+// taking into account ArraySize and IsSlice flags that are stored separately
+// from f.Type (which only holds the element type).
+func structFieldTypeString(f *parser.StructField) string {
+	if f.Type == nil {
+		return ""
+	}
+	typeStr := f.Type.String()
+	if f.ArraySize > 0 {
+		return fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
+	}
+	if f.IsSlice {
+		return "[]" + typeStr
+	}
+	return typeStr
+}
+
 func collectStructFields(program *parser.Program) map[string]map[string]string {
 	result := make(map[string]map[string]string)
 	for _, stmt := range program.Statements {
@@ -5294,15 +5327,7 @@ func collectStructFields(program *parser.Program) map[string]map[string]string {
 		}
 		fields := make(map[string]string)
 		for _, f := range sd.Fields {
-			if f.Type != nil {
-				// StructField 把陣列大小存在 ArraySize/IsSlice，而非 f.Type。
-				// f.Type 只是元素型別。重建完整型別字串。
-				typeStr := f.Type.String()
-				if f.ArraySize > 0 {
-					typeStr = fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
-				} else if f.IsSlice {
-					typeStr = "[]" + typeStr
-				}
+			if typeStr := structFieldTypeString(f); typeStr != "" {
 				fields[f.Name] = typeStr
 			}
 		}
@@ -5710,8 +5735,8 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
 			fields := make(map[string]string)
 			for _, f := range sd.Fields {
-				if f.Type != nil {
-					fields[f.Name] = f.Type.String()
+				if typeStr := structFieldTypeString(f); typeStr != "" {
+					fields[f.Name] = typeStr
 				}
 			}
 			if len(fields) > 0 {
@@ -5991,9 +6016,69 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 			return leftType
 		}
 		return ""
+	case *parser.InfixExpression:
+		// Comparison and logical operators always produce bool
+		switch e.Operator {
+		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
+			return "bool"
+		}
+		// For arithmetic and bitwise operators, infer from operands.
+		// Use resolveExprType (not inferExprType) so that IndexExpression
+		// (e.g. v[d]) and DotExpression (e.g. .field) are resolved correctly.
+		if t := resolveExprType(e.Left, varTypes, structFields); t != "" {
+			return t
+		}
+		return resolveExprType(e.Right, varTypes, structFields)
+	case *parser.PrefixExpression:
+		if e.Operator == "!" {
+			return "bool"
+		}
+		return resolveExprType(e.Right, varTypes, structFields)
 	default:
 		return inferExprType(expr, varTypes, nil, "")
 	}
+}
+
+// isIntegerLiteral checks if an expression is an integer literal.
+func isIntegerLiteral(expr parser.Expression) bool {
+	_, ok := expr.(*parser.IntegerLiteral)
+	return ok
+}
+
+// isNumericType returns true for all integer and float types.
+func isNumericType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64":
+		return true
+	}
+	return false
+}
+
+// isArgTypeCompatible checks whether argType can be used where expectedType
+// is required. This handles implicit coercions that the compiler allows:
+//   - [N]T → []T  (fixed array passed where slice is expected)
+//   - i64 literal → any numeric type (integer literals are i64 by default
+//     but fit into u64, i32, etc. when the value is small enough)
+func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
+	if argType == expectedType {
+		return true
+	}
+	// [N]T is compatible with []T (array-to-slice coercion)
+	if strings.HasPrefix(argType, "[") && !strings.HasPrefix(argType, "[]") {
+		if idx := strings.Index(argType, "]"); idx >= 0 {
+			elemType := argType[idx+1:]
+			if "[]"+elemType == expectedType {
+				return true
+			}
+		}
+	}
+	// Integer literals (inferred as i64) are compatible with any numeric type
+	if _, ok := arg.(*parser.IntegerLiteral); ok {
+		if argType == "i64" && isNumericType(expectedType) {
+			return true
+		}
+	}
+	return false
 }
 
 func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
@@ -6028,9 +6113,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if i >= len(sig.ParamTypes) {
 							break
 						}
-						argType := resolveExprType(arg, varTypes, structFields)
-						expectedType := sig.ParamTypes[i].Type
-						if expectedType != "" && argType != "" && argType != expectedType {
+					argType := resolveExprType(arg, varTypes, structFields)
+					expectedType := sig.ParamTypes[i].Type
+					if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
 							results = append(results, ValidateResult{
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,

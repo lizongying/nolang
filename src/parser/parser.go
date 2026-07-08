@@ -3394,9 +3394,9 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	}
 
 	// 处理三元表达式（最低优先级）
-	// if p.currentToken.Type == lexer.QUESTION {
-	// 	return p.parseConditionalExpression(expr)
-	// }
+	if p.currentToken.Type == lexer.QUESTION {
+		return p.parseConditionalExpression(leftExp)
+	}
 
 	// if p.currentToken.Type == lexer.INC {
 	// 	fmt.Println("INC", p.currentToken)
@@ -6974,7 +6974,13 @@ func (p *Parser) parseStructDefinition() Statement {
 	fields := make(map[string]string)
 	for _, f := range sd.Fields {
 		if f.Type != nil {
-			fields[f.Name] = f.Type.String()
+			typeStr := f.Type.String()
+			if f.ArraySize > 0 {
+				typeStr = fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
+			} else if f.IsSlice {
+				typeStr = "[]" + typeStr
+			}
+			fields[f.Name] = typeStr
 		}
 	}
 	p.structFields[sd.Name] = fields

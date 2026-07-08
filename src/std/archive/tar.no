@@ -148,14 +148,14 @@ tar.type = (idx i64) (typ str) {
 tar.is-dir = (idx i64) (yes bool) {
     hdr = idx * TAR-BLOCK
     c = .data[hdr + 156] & 255
-    yes = c == 53 ? true : false
+    yes = (c == 53)
 }
 
 // is-file: 判斷第 idx 個條目是否為普通檔案
 tar.is-file = (idx i64) (yes bool) {
     hdr = idx * TAR-BLOCK
     c = .data[hdr + 156] & 255
-    yes = (c == 48 || c == 0) ? true : false
+    yes = (c == 48 || c == 0)
 }
 
 // read: 提取第 idx 個條目的內容
@@ -236,14 +236,14 @@ tar-entry.type = () (typ str) {
 tar-entry.is-dir = () (yes bool) {
     hdr = .idx * TAR-BLOCK
     c = .data[hdr + 156] & 255
-    yes = c == 53 ? true : false
+    yes = (c == 53)
 }
 
 // is-file: 判斷是否為普通檔案
 tar-entry.is-file = () (yes bool) {
     hdr = .idx * TAR-BLOCK
     c = .data[hdr + 156] & 255
-    yes = (c == 48 || c == 0) ? true : false
+    yes = (c == 48 || c == 0)
 }
 
 // read: 提取條目內容

@@ -748,6 +748,160 @@ user json {
 // use std/math.add a
 ```
 
+### 跨模組調用前綴規則 (Module Prefix Rules)
+
+在一個 `.no` 檔案中調用**其他模組**定義的函數或常量時，必須使用 `ShortPath.` 前綴。這是強制性的命名空間規範，用於避免跨模組命名衝突。
+
+#### 需要前綴
+
+| 場景 | 範例 | 說明 |
+| --- | --- | --- |
+| 其他模組的模組級函數 | `hash.sha256.sha256(data)` | `sha256()` 定義在 `std/hash/sha256.no` |
+| 其他模組的模組級函數 | `fs.open(path, opts)` | `open()` 定義在 `std/fs.no` |
+| 其他模組的模組級函數 | `archive.gzip.gzip-decompress(data)` | 定義在 `std/archive/gzip.no` |
+| 其他模組的常量 | `net.NET-BUF-SIZE` | 定義在 `std/net/net.no` |
+| 其他模組的常量 | `math.PI` | 定義在 `std/math.no` |
+
+#### 不需要前綴
+
+| 場景 | 範例 | 說明 |
+| --- | --- | --- |
+| `printf` / `sprintf` / `print` | `printf('hello %d', n)` | 依規定免除，**非因 builtin**；其他 builtin 仍需前綴 |
+| 同檔案定義的函數 | `sha256(data)` | `sha256` 定義在當前檔案 |
+| 同檔案定義的常量 | `HMAC-BLOCK-SIZE` | 定義在當前檔案 |
+| 內置類型方法 | `'hello'.starts-with('he')` | `str`、`i64`、`vec`、`arr`、`byte`、`char` 等內置類型 |
+| 內置類型方法 | `n.to-str()` | 方法已內建於型別 |
+| 結構體實例方法 | `f.read(buf, n)` | `f` 是 `file` 結構體實例，方法通過型別解析 |
+
+> **注意**：方法調用是否需要前綴取決於**方法所有者**。內置類型（`str`、`i64`、`vec` 等）的方法不需前綴；但模組級函數（即使名稱類似方法）必須帶 `ShortPath.` 前綴。例如 `fs.fil()` 中 `fs` 是模組 ShortPath 而非變數名，`fs.` 前綴不可省略。
+
+#### ShortPath 定義
+
+ShortPath 是模組的簡短路徑，用於跨模組調用時的前綴。規則：當目錄名與檔名相同時，省略重複的目錄名。
+
+| 檔案路徑 | FullPath | ShortPath | 說明 |
+| --- | --- | --- | --- |
+| `std/math.no` | `math` | `math` | 頂層檔案 |
+| `std/fs.no` | `fs` | `fs` | 頂層檔案 |
+| `std/net/net.no` | `net/net` | `net` | 目錄名=檔名，省略目錄 |
+| `std/net/client.no` | `net/client` | `net.client` | 目錄名≠檔名，保留兩段 |
+| `std/hash/sha256.no` | `hash/sha256` | `hash.sha256` | 目錄名≠檔名，保留兩段 |
+| `std/archive/gzip.no` | `archive/gzip` | `archive.gzip` | 目錄名≠檔名，保留兩段 |
+
+ShortPath 在程式碼中以點分隔（`hash.sha256`），對應檔案系統路徑以斜線分隔（`hash/sha256`）。
+
+#### 完整範例
+
+```nolang
+// ─── 不需前綴 ───
+
+// 同檔案函數（sha256 定義在同一檔案）
+sha256(data)
+
+// 內置類型方法
+'hello'.starts-with('he')
+n.to-str()
+v.push(42)
+
+// 結構體實例方法（f 是 file 實例，方法通過型別解析）
+f.read(buf, n)
+f.close()
+
+// printf/sprintf/print（依規定免除）
+printf('hello %d', n)
+s = sprintf('x=%d', x)
+
+// ─── 需要前綴 ───
+
+// 模組級函數
+hash.sha256.sha256(data)
+hash.sha256.sha256-hex(data)
+fs.open(path, opts)
+archive.gzip.gzip-decompress(data)
+math.degrees(rad)
+
+// 模組常量
+net.NET-BUF-SIZE
+math.PI
+```
+
+### 跨模組調用前綴規則 (Module Prefix Rules)
+
+在一個 `.no` 檔案中調用**其他模組**定義的函數或常量時，必須使用 `ShortPath.` 前綴。這是強制性的命名空間規範，用於避免跨模組命名衝突。
+
+#### 需要前綴
+
+| 場景 | 範例 | 說明 |
+| --- | --- | --- |
+| 其他模組的模組級函數 | `hash.sha256.sha256(data)` | `sha256()` 定義在 `std/hash/sha256.no` |
+| 其他模組的模組級函數 | `fs.open(path, opts)` | `open()` 定義在 `std/fs.no` |
+| 其他模組的模組級函數 | `archive.gzip.gzip-decompress(data)` | 定義在 `std/archive/gzip.no` |
+| 其他模組的常量 | `net.NET-BUF-SIZE` | 定義在 `std/net/net.no` |
+| 其他模組的常量 | `math.PI` | 定義在 `std/math.no` |
+
+#### 不需要前綴
+
+| 場景 | 範例 | 說明 |
+| --- | --- | --- |
+| `printf` / `sprintf` / `print` | `printf('hello %d', n)` | 依規定免除，**非因 builtin**；其他 builtin 仍需前綴 |
+| 同檔案定義的函數 | `sha256(data)` | `sha256` 定義在當前檔案 |
+| 同檔案定義的常量 | `HMAC-BLOCK-SIZE` | 定義在當前檔案 |
+| 內置類型方法 | `'hello'.starts-with('he')` | `str`、`i64`、`vec`、`arr`、`byte`、`char` 等內置類型 |
+| 內置類型方法 | `n.to-str()` | 方法已內建於型別 |
+| 結構體實例方法 | `f.read(buf, n)` | `f` 是 `file` 結構體實例，方法通過型別解析 |
+
+> **注意**：方法調用是否需要前綴取決於**方法所有者**。內置類型（`str`、`i64`、`vec` 等）的方法不需前綴；但模組級函數（即使名稱類似方法）必須帶 `ShortPath.` 前綴。例如 `fs.fil()` 中 `fs` 是模組 ShortPath 而非變數名，`fs.` 前綴不可省略。
+
+#### ShortPath 定義
+
+ShortPath 是模組的簡短路徑，用於跨模組調用時的前綴。規則：當目錄名與檔名相同時，省略重複的目錄名。
+
+| 檔案路徑 | FullPath | ShortPath | 說明 |
+| --- | --- | --- | --- |
+| `std/math.no` | `math` | `math` | 頂層檔案 |
+| `std/fs.no` | `fs` | `fs` | 頂層檔案 |
+| `std/net/net.no` | `net/net` | `net` | 目錄名=檔名，省略目錄 |
+| `std/net/client.no` | `net/client` | `net.client` | 目錄名≠檔名，保留兩段 |
+| `std/hash/sha256.no` | `hash/sha256` | `hash.sha256` | 目錄名≠檔名，保留兩段 |
+| `std/archive/gzip.no` | `archive/gzip` | `archive.gzip` | 目錄名≠檔名，保留兩段 |
+
+ShortPath 在程式碼中以點分隔（`hash.sha256`），對應檔案系統路徑以斜線分隔（`hash/sha256`）。
+
+#### 完整範例
+
+```nolang
+// ─── 不需前綴 ───
+
+// 同檔案函數（sha256 定義在同一檔案）
+sha256(data)
+
+// 內置類型方法
+'hello'.starts-with('he')
+n.to-str()
+v.push(42)
+
+// 結構體實例方法（f 是 file 實例，方法通過型別解析）
+f.read(buf, n)
+f.close()
+
+// printf/sprintf/print（依規定免除）
+printf('hello %d', n)
+s = sprintf('x=%d', x)
+
+// ─── 需要前綴 ───
+
+// 模組級函數
+hash.sha256.sha256(data)
+hash.sha256.sha256-hex(data)
+fs.open(path, opts)
+archive.gzip.gzip-decompress(data)
+math.degrees(rad)
+
+// 模組常量
+net.NET-BUF-SIZE
+math.PI
+```
+
 ### Special Symbols
 
 - `#` — import module

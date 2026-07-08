@@ -3,12 +3,17 @@
 // 用法: go run ./tools/add_modprefix <root-dir>
 // 例如: go run ./tools/add_modprefix /path/to/no
 //
-// 規則：
-// - printf, sprintf, print 不添加前綴（builtin）
-// - 同文件內定義的函數不添加前綴
-// - 方法調用（x.method()）不添加前綴
-// - 函數定義（funcname = (...)）不添加前綴
-// - 註釋和字串中的內容不處理
+// 跨模組調用前綴規則：
+//   需要前綴：
+//   - 其他模組定義的模組級函數（如 hash.sha256.sha256()、fs.open()）
+//   - 其他模組定義的常量（如 net.NET-BUF-SIZE、math.PI）
+//
+//   不需要前綴：
+//   - printf / sprintf / print（依規定免除，非因 builtin）
+//   - 同檔案內定義的函數、常量、方法
+//   - 內置類型的方法調用（str/i64/vec/arr/byte/char 等，如 s.starts-with()）
+//   - 結構體實例的方法調用（如 f.read()，方法已通過型別解析）
+//   - 字串字面量與註釋中的內容（工具不處理，僅修改程式碼）
 package main
 
 import (
