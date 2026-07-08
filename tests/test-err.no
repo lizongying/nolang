@@ -8,10 +8,10 @@
 
 main = () {
     // ── 1. err-new 建立錯誤，檢查 code ──
-    e = err-new(err-code.io, 'disk full')
+    e = err.err-new(err-code.io, 'disk full')
 
     code err-code = err-code.ok
-    code = err-code-of(e)
+    code = err.err-code-of(e)
     if code == err-code.io {
         print('ok: err-new code')
     } else {
@@ -19,18 +19,18 @@ main = () {
     }
 
     // ── 2. err-msg 取得訊息（只驗證呼叫完成）──
-    msg = err-msg(e)
+    msg = err.err-msg(e)
     print('ok: err-msg')
 
     // ── 3. err-is 比對錯誤碼（true 和 false）──
-    yes = err-is(e, err-code.io)
+    yes = err.err-is(e, err-code.io)
     if yes {
         print('ok: err-is true')
     } else {
         print('fail: err-is true')
     }
 
-    yes = err-is(e, err-code.not-found)
+    yes = err.err-is(e, err-code.not-found)
     if yes == false {
         print('ok: err-is false')
     } else {
@@ -39,7 +39,7 @@ main = () {
 
     // ── 4. err-code-of 取得錯誤碼 ──
     code2 err-code = err-code.ok
-    code2 = err-code-of(e)
+    code2 = err.err-code-of(e)
     if code2 == err-code.io {
         print('ok: err-code-of')
     } else {
@@ -47,22 +47,22 @@ main = () {
     }
 
     // ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT）──
-    e2 = err-from-errno(2)
+    e2 = err.err-from-errno(2)
     errno-code i64 = 0
-    errno-code = err-code-of(e2)
+    errno-code = err.err-code-of(e2)
     if errno-code == 2 {
         print('ok: err-from-errno code')
     } else {
         print('fail: err-from-errno code')
     }
 
-    errno-msg = err-msg(e2)
+    errno-msg = err.err-msg(e2)
     print('ok: err-from-errno msg')
 
     // ── 6. err-format 格式化錯誤 ──
     s str = ''
     n i64 = 0
-    s, n = err-format(e)
+    s, n = err.err-format(e)
     if n > 0 {
         print('ok: err-format')
     } else {

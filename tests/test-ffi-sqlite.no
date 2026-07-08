@@ -8,7 +8,7 @@
 
 main = () {
     // 測試 1: 開啟記憶體資料庫
-    d db = open(':memory:')
+    d db = fs.open(':memory:')
     if d.handle == 0 {
         print('fail: open database')
         return

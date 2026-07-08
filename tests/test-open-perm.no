@@ -7,7 +7,7 @@ main = () {
     remove(tmp)
 
     f ?file
-    f = open(tmp, {
+    f = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-600
         excl: false

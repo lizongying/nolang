@@ -78,7 +78,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
         // 格式: Proxy-Authorization: Basic base64(user:pass)
         auth-raw = username - ':' - password
         auth-bytes []byte = auth-raw.to-bytes()
-        enc-str = encode-std(auth-bytes)
+        enc-str = encoding.base64.encode-std(auth-bytes)
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
 
@@ -232,7 +232,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
     } else {
         // TLS 1.2 fallback
-        c.version = TLS-VERSION
+        c.version = net.tls.TLS-VERSION
 
         cert []byte
         ok = c.read-certificate(cert)
@@ -251,7 +251,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
         premaster []byte
         premaster[0] = 0x03
         premaster[1] = 0x03
-        rand-bytes []byte = tls-rand-bytes(c.rand-state, 46)
+        rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
         i = 0
         for i < 46 {
             premaster[2 + i] = rand-bytes[i]
@@ -329,7 +329,7 @@ proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
             return
         }
     } else {
-        c.version = TLS-VERSION
+        c.version = net.tls.TLS-VERSION
         cert []byte
         ok = c.read-certificate(cert)
         if ok == false {
@@ -344,7 +344,7 @@ proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
         premaster []byte
         premaster[0] = 0x03
         premaster[1] = 0x03
-        rand-bytes []byte = tls-rand-bytes(c.rand-state, 46)
+        rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
         i = 0
         for i < 46 {
             premaster[2 + i] = rand-bytes[i]

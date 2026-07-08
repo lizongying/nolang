@@ -159,7 +159,7 @@ ws-compute-accept = (key str) (accept str) {
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
     combined = key - guid
     cb []byte = combined.to-bytes()
-    hash = sha1(cb)
+    hash = hash.sha1.sha1(cb)
 
     // 將 [20]byte 複製到 []byte 供 base64 使用
     hash-vec []byte = [
@@ -191,7 +191,7 @@ ws-compute-accept = (key str) (accept str) {
         hash-vec[i] = hash[i]
         i = i + 1
     }
-    accept = encode-std(hash-vec)
+    accept = encoding.base64.encode-std(hash-vec)
 }
 
 // ws-next-rand: 產生下一個偽隨機 i64
@@ -229,7 +229,7 @@ ws-gen-client-key = (seed i64) (key str) {
         i = i + 1
     }
     rv = raw.to-bytes()
-    key = encode-std(rv)
+    key = encoding.base64.encode-std(rv)
 }
 
 // ws-build-frame: 組裝 WebSocket frame

@@ -6,23 +6,23 @@ main = () {
 
     // test-tls-put-u16
     buf []byte
-    tls-put-u16(buf, 0, 0x1234)
+    net.tls.tls-put-u16(buf, 0, 0x1234)
     if buf[0] != 0x12 { print('FAIL: put-u16'); return }
     print('PASS: put-u16')
 
     // test-tls-get-u16
     val i64 = 0
-    val = tls-get-u16(buf, 0)
+    val = net.tls.tls-get-u16(buf, 0)
     if val != 0x1234 { print('FAIL: get-u16'); return }
     print('PASS: get-u16')
 
     // test-tls-put-u24
-    tls-put-u24(buf, 0, 0x123456)
+    net.tls.tls-put-u24(buf, 0, 0x123456)
     if buf[0] != 0x12 { print('FAIL: put-u24'); return }
     print('PASS: put-u24')
 
     // test-tls-get-u24
-    val = tls-get-u24(buf, 0)
+    val = net.tls.tls-get-u24(buf, 0)
     if val != 0x123456 { print('FAIL: get-u24'); return }
     print('PASS: get-u24')
 

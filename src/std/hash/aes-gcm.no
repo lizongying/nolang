@@ -247,7 +247,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     for pos < data.len {
         // 加密當前計數器區塊
 ks [16]byte
-ks = aes-128-enc(cb, key)
+ks = hash.aes.aes-128-enc(cb, key)
 
         // XOR 16 位元組（或剩餘部分）
         n = 16
@@ -304,7 +304,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         i = i + 1
     }
 h-bytes [16]byte
-h-bytes = aes-128-enc(zero-block, key)
+h-bytes = hash.aes.aes-128-enc(zero-block, key)
     h [16]byte
     i = 0
     for i < 16 {
@@ -351,7 +351,7 @@ h-bytes = aes-128-enc(zero-block, key)
 
     // 5. 計算 tag = AES-enc(key, J0) XOR GHASH
 j0-enc [16]byte
-j0-enc = aes-128-enc(j0, key)
+j0-enc = hash.aes.aes-128-enc(j0, key)
     tag [16]byte
     i = 0
     for i < 16 {
@@ -392,7 +392,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         i = i + 1
     }
 h-bytes [16]byte
-h-bytes = aes-128-enc(zero-block, key)
+h-bytes = hash.aes.aes-128-enc(zero-block, key)
     h [16]byte
     i = 0
     for i < 16 {
@@ -431,7 +431,7 @@ h-bytes = aes-128-enc(zero-block, key)
     ghash-out [16]byte
     ghash-out = ghash(h, aad, cipher)
 j0-enc [16]byte
-j0-enc = aes-128-enc(j0, key)
+j0-enc = hash.aes.aes-128-enc(j0, key)
     exp-tag [16]byte
     i = 0
     for i < 16 {

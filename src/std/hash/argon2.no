@@ -86,7 +86,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
         // 使用 Blake2b 自定義輸出長度
         // 由於 blake2b 固定輸出 64 位元組，這裡截斷
         hash [64]byte
-        hash = blake2b(combined)
+        hash = hash.blake2.blake2b(combined)
         i = 0
         for i < out-len {
             out[i] = hash[i]
@@ -106,7 +106,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
             i = i + 1
         }
         v [64]byte
-        v = blake2b(combined)
+        v = hash.blake2.blake2b(combined)
 
         // 輸出前 32 位元組
         i = 0
@@ -118,7 +118,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
         remaining = out-len - 32
         pos = 32
         for remaining > 64 {
-            v = blake2b(v)
+            v = hash.blake2.blake2b(v)
             i = 0
             for i < 32 {
                 out[pos + i] = v[i]
@@ -130,7 +130,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 
         // 最後一個區塊
         last-hash [64]byte
-        last-hash = blake2b(v)
+        last-hash = hash.blake2.blake2b(v)
         i = 0
         for i < remaining {
             out[pos + i] = last-hash[i]
@@ -333,7 +333,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
 
     // H0 = Blake2b(h0-input)
     h0 [64]byte
-    h0 = blake2b(h0-input)
+    h0 = hash.blake2.blake2b(h0-input)
 
     // 初始化記憶體矩陣
     // 簡化：使用單個 lane（parallelism=1）

@@ -61,7 +61,7 @@ TAR-TYPE-DIR  = 53     // '5'
 //   gz-data: gzip 壓縮的 tar 資料 ([]byte)
 //   archive: 解壓後的 tar 歸檔
 tar-open-gz = (gz-data []byte) (archive tar) {
-    archive.data = gzip-decompress(gz-data)
+    archive.data = archive.gzip.gzip-decompress(gz-data)
 }
 
 // count: 計算 TAR 中的有效條目數

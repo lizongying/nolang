@@ -67,7 +67,7 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     prefix-len = boundary.len
     i = 0
     i < 16: {
-        seed, r = rand(seed)
+        seed, r = hash.rand.rand(seed)
         boundary[prefix-len + i] = chars[r % 36]
         i = i + 1
     }
@@ -515,7 +515,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     // 加密內容（AAD 為空，檔案加密不需要額外認證資料）
     plain []byte = content.to-bytes()
     aad []byte
-    sealed []byte = aes-256-gcm-seal(key, iv, aad, plain)
+    sealed []byte = hash.aes-256-gcm.aes-256-gcm-seal(key, iv, aad, plain)
     // 將 IV + 密文轉為 Base64 字串
     // 格式: base64(iv || sealed)
     combined []byte
@@ -531,7 +531,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
         i = i + 1
     }
     combined-n = 12 + sealed-n
-    enc-str = encode-std(combined)
+    enc-str = encoding.base64.encode-std(combined)
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -560,7 +560,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     // 加密值
     plain []byte = value.to-bytes()
     aad []byte = name.to-bytes()
-    sealed []byte = aes-256-gcm-seal(key, iv, aad, plain)
+    sealed []byte = hash.aes-256-gcm.aes-256-gcm-seal(key, iv, aad, plain)
     // 將 IV + 密文轉為 Base64
     combined []byte
     i = 0
@@ -575,7 +575,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
         i = i + 1
     }
     combined-n = 12 + sealed-n
-    enc-str = encode-std(combined)
+    enc-str = encoding.base64.encode-std(combined)
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -598,7 +598,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     plain = nil
     // Base64 解碼
     raw []byte
-    dec = decode(encrypted-data, BASE64-STD)
+    dec = encoding.base64.decode(encrypted-data, encoding.base64.BASE64-STD)
     dec: {
         ok -> raw = it
         nil || err -> return
@@ -622,7 +622,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
         i = i + 1
     }
     // 解密
-    opened []byte = aes-256-gcm-open(key, iv, aad, sealed)
+    opened []byte = hash.aes-256-gcm.aes-256-gcm-open(key, iv, aad, sealed)
     if opened.len == 0 {
         plain = err('decryption failed')
         return

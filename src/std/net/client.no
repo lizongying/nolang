@@ -111,7 +111,7 @@ client.request = (data str) (response ?str) {
     if written < 0 {
         return
     }
-    s str = ' '.repeat(NET-BUF-SIZE)
+    s str = ' '.repeat(net.NET-BUF-SIZE)
     total = 0
     s, total = .c.recv-all()
     response = s

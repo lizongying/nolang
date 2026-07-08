@@ -571,7 +571,7 @@ enc-conn.gen-iv = () (iv [12]byte) {
     // 用 rand 生成剩餘 8 bytes
     i = 4
     for i < 12 {
-        s, r = rand(.rand-seed)
+        s, r = hash.rand.rand(.rand-seed)
         .rand-seed = s
         iv[i] = r & 255
         i = i + 1
@@ -591,7 +591,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     // 加密
     plain []byte = data.to-bytes()
     aad []byte
-    sealed []byte = aes-256-gcm-seal(.key, iv, aad, plain)
+    sealed []byte = hash.aes-256-gcm.aes-256-gcm-seal(.key, iv, aad, plain)
     sealed-n = sealed.len
     // 封包格式: [4-byte length][12-byte IV][sealed]
     // length = 12 + sealed-n
@@ -661,7 +661,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     }
     // 解密
     aad []byte
-    opened []byte = aes-256-gcm-open(.key, iv, aad, sealed)
+    opened []byte = hash.aes-256-gcm.aes-256-gcm-open(.key, iv, aad, sealed)
     if opened.len == 0 {
         data = err('decryption failed')
         return

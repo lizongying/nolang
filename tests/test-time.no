@@ -7,7 +7,7 @@
 main = () {
     // ── 1. now-s 回傳正值 ──
     ts i64 = 0
-    ts = now-s()
+    ts = time.now-s()
     if ts > 0 {
         print('ok: now-s')
     } else {
@@ -27,7 +27,7 @@ main = () {
     start i64 = 1000
     end i64 = 1010
     diff i64 = 0
-    diff = duration-between(start, end)
+    diff = time.duration-between(start, end)
     if diff == 10 {
         print('ok: duration-between')
     } else {
@@ -35,15 +35,15 @@ main = () {
     }
 
     // ── 4. sleep-ms(100) 睡眠 ──
-    sleep-ms(100)
+    time.sleep-ms(100)
     print('ok: sleep-ms')
 
     // ── 5. since-ms 計算經過時間 ──
     before i64 = 0
     before = now-ms()
-    sleep-ms(50)
+    time.sleep-ms(50)
     elapsed i64 = 0
-    elapsed = since-ms(before)
+    elapsed = time.since-ms(before)
     if elapsed >= 50 {
         print('ok: since-ms')
     } else {
@@ -56,7 +56,7 @@ main = () {
         end-ts: 0
     }
     t.start()
-    sleep-ms(50)
+    time.sleep-ms(50)
     t.stop()
     t-ms i64 = 0
     t-ms = t.elapsed-ms()
@@ -67,7 +67,7 @@ main = () {
     }
 
     // ── 7. format-duration(3661) 輸出 '1h1m1s' ──
-    format-duration(3661)
+    time.format-duration(3661)
     print('ok: format-duration')
 }
 

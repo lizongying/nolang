@@ -16,7 +16,7 @@
 test-quic-varint-1byte = () {
     buf []byte
     n = 0
-    buf, n = quic-varint-encode(37)
+    buf, n = net.quic.quic-varint-encode(37)
     if n != 1 {
         print('FAIL: quic-varint-encode(37) expected n=1, got ')
         println(n.to-str())
@@ -30,7 +30,7 @@ test-quic-varint-1byte = () {
 
     val = 0
     np = 0
-    val, np = quic-varint-decode(buf, 0)
+    val, np = net.quic.quic-varint-decode(buf, 0)
     if val != 37 {
         print('FAIL: quic-varint-decode expected 37, got ')
         println(val.to-str())
@@ -48,7 +48,7 @@ test-quic-varint-1byte = () {
 test-quic-varint-2byte = () {
     buf []byte
     n = 0
-    buf, n = quic-varint-encode(15293)
+    buf, n = net.quic.quic-varint-encode(15293)
     if n != 2 {
         print('FAIL: quic-varint-encode(15293) expected n=2, got ')
         println(n.to-str())
@@ -57,7 +57,7 @@ test-quic-varint-2byte = () {
 
     val = 0
     np = 0
-    val, np = quic-varint-decode(buf, 0)
+    val, np = net.quic.quic-varint-decode(buf, 0)
     if val != 15293 {
         print('FAIL: quic-varint-decode expected 15293, got ')
         println(val.to-str())
@@ -75,7 +75,7 @@ test-quic-varint-2byte = () {
 test-quic-varint-4byte = () {
     buf []byte
     n = 0
-    buf, n = quic-varint-encode(494878333)
+    buf, n = net.quic.quic-varint-encode(494878333)
     if n != 4 {
         print('FAIL: quic-varint-encode expected n=4, got ')
         println(n.to-str())
@@ -84,7 +84,7 @@ test-quic-varint-4byte = () {
 
     val = 0
     np = 0
-    val, np = quic-varint-decode(buf, 0)
+    val, np = net.quic.quic-varint-decode(buf, 0)
     if val != 494878333 {
         print('FAIL: quic-varint-decode expected 494878333, got ')
         println(val.to-str())
@@ -102,7 +102,7 @@ test-quic-varint-4byte = () {
 test-quic-varint-8byte = () {
     buf []byte
     n = 0
-    buf, n = quic-varint-encode(151288809941952652)
+    buf, n = net.quic.quic-varint-encode(151288809941952652)
     if n != 8 {
         print('FAIL: quic-varint-encode expected n=8, got ')
         println(n.to-str())
@@ -111,7 +111,7 @@ test-quic-varint-8byte = () {
 
     val = 0
     np = 0
-    val, np = quic-varint-decode(buf, 0)
+    val, np = net.quic.quic-varint-decode(buf, 0)
     if val != 151288809941952652 {
         print('FAIL: quic-varint-decode expected 151288809941952652, got ')
         println(val.to-str())
@@ -141,7 +141,7 @@ test-quic-derive-initial-keys = () {
     key [16]byte
     iv [12]byte
     hp [16]byte
-    key, iv, hp = quic-derive-initial-keys(dst-cid, true)
+    key, iv, hp = net.quic.quic-derive-initial-keys(dst-cid, true)
 
     // 檢查金鑰不為全零
     has-nonzero = 0
@@ -206,7 +206,7 @@ test-quic-derive-initial-keys = () {
 
 // test-quic-gen-cid: 測試 Connection ID 生成
 test-quic-gen-cid = () {
-    cid = quic-gen-cid(8)
+    cid = net.quic.quic-gen-cid(8)
     if cid.len != 8 {
         print('FAIL: quic-gen-cid expected len=8, got ')
         println(cid.len.to-str())
@@ -241,7 +241,7 @@ test-http3-frame-encode-decode = () {
 
     buf []byte
     n = 0
-    buf, n = http3-encode-frame(HTTP3-FRAME-SETTINGS, payload)
+    buf, n = net.http3.http3-encode-frame(net.http3.HTTP3-FRAME-SETTINGS, payload)
     if n != 4 {
         print('FAIL: http3-encode-frame expected n=4, got ')
         println(n.to-str())
@@ -252,8 +252,8 @@ test-http3-frame-encode-decode = () {
     ft = 0
     decoded-payload []byte
     np = 0
-    ft, decoded-payload, np = http3-parse-frame(buf, 0)
-    if ft != HTTP3-FRAME-SETTINGS {
+    ft, decoded-payload, np = net.http3.http3-parse-frame(buf, 0)
+    if ft != net.http3.HTTP3-FRAME-SETTINGS {
         print('FAIL: http3-parse-frame expected SETTINGS, got ')
         println(ft.to-str())
         return
@@ -275,7 +275,7 @@ test-qpack-encode-decode = () {
     // 編碼單個標頭
     buf []byte
     n = 0
-    buf, n = qpack-encode-header('content-type', 'text/plain')
+    buf, n = net.http3.qpack-encode-header('content-type', 'text/plain')
     if n == 0 {
         print('FAIL: qpack-encode-header returned n=0')
         return
@@ -285,7 +285,7 @@ test-qpack-encode-decode = () {
     name = ''
     value = ''
     np = 0
-    name, value, np = qpack-decode-header(buf, 0)
+    name, value, np = net.http3.qpack-decode-header(buf, 0)
     if np < 0 {
         print('FAIL: qpack-decode-header failed')
         return
@@ -329,7 +329,7 @@ test-http3-parse-url = () {
     port i64 = 0
     path = ''
     ok = false
-    host, port, path, ok = http3-parse-url('https://example.com:8443/api/v1')
+    host, port, path, ok = net.http3.http3-parse-url('https://example.com:8443/api/v1')
     if ok == false {
         print('FAIL: http3-parse-url returned ok=false')
         return
@@ -355,7 +355,7 @@ test-http3-parse-url = () {
     port2 i64 = 0
     path2 = ''
     ok2 = false
-    host2, port2, path2, ok2 = http3-parse-url('https://example.com/')
+    host2, port2, path2, ok2 = net.http3.http3-parse-url('https://example.com/')
     if ok2 == false {
         print('FAIL: http3-parse-url (no port) returned ok=false')
         return

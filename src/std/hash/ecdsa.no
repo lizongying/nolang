@@ -822,7 +822,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     // 計算哈希 h = SHA-256(msg)
     h [32]byte
-    h = sha256(msg)
+    h = hash.sha256.sha256(msg)
 
     // 將哈希轉為小端序
     h-le [32]byte
@@ -845,7 +845,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     state = 0
     i = 0
     for i < 32 {
-        state = rand(state + d[i] + h-le[i] + i)
+        state = hash.rand.rand(state + d[i] + h-le[i] + i)
         k[i] = state & 255
         i = i + 1
     }
@@ -962,7 +962,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
 
     // h = SHA-256(msg)
     h [32]byte
-    h = sha256(msg)
+    h = hash.sha256.sha256(msg)
     h-le [32]byte
     i = 0
     for i < 32 {

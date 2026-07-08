@@ -77,95 +77,95 @@ ge-add = (r []i64, p []i64, q []i64) {
     a []i64
     t1 []i64
     t2 []i64
-    fe-sub(t1, p[10..], p)
-    fe-sub(t2, q[30..], q)
-    fe-mul(a, t1, t2)
+    hash.x25519.fe-sub(t1, p[10..], p)
+    hash.x25519.fe-sub(t2, q[30..], q)
+    hash.x25519.fe-mul(a, t1, t2)
 
     // B = (Y1+X1)*(Y2+X2)
     b []i64
-    fe-add(t1, p[10..], p)
-    fe-add(t2, q[30..], q)
-    fe-mul(b, t1, t2)
+    hash.x25519.fe-add(t1, p[10..], p)
+    hash.x25519.fe-add(t2, q[30..], q)
+    hash.x25519.fe-mul(b, t1, t2)
 
     // C = T1*2*d*T2
     c []i64
-    fe-mul(t1, p[30..], q[30..])
-    fe-mul(t2, t1, ED-D)
-    fe-add(c, t2, t2)
+    hash.x25519.fe-mul(t1, p[30..], q[30..])
+    hash.x25519.fe-mul(t2, t1, ED-D)
+    hash.x25519.fe-add(c, t2, t2)
 
     // D = Z1*2*Z2
     d []i64
-    fe-mul(t1, p[20..], q[20..])
-    fe-add(d, t1, t1)
+    hash.x25519.fe-mul(t1, p[20..], q[20..])
+    hash.x25519.fe-add(d, t1, t1)
 
     // E = B-A
     e []i64
-    fe-sub(e, b, a)
+    hash.x25519.fe-sub(e, b, a)
 
     // F = D-C
     f []i64
-    fe-sub(f, d, c)
+    hash.x25519.fe-sub(f, d, c)
 
     // G = D+C
     g []i64
-    fe-add(g, d, c)
+    hash.x25519.fe-add(g, d, c)
 
     // H = B+A
     hh []i64
-    fe-add(hh, b, a)
+    hash.x25519.fe-add(hh, b, a)
 
     // X3 = E*F
-    fe-mul(r, e, f)
+    hash.x25519.fe-mul(r, e, f)
     // Y3 = G*H
-    fe-mul(r[10..], g, hh)
+    hash.x25519.fe-mul(r[10..], g, hh)
     // T3 = E*H
-    fe-mul(r[30..], e, hh)
+    hash.x25519.fe-mul(r[30..], e, hh)
     // Z3 = F*G
-    fe-mul(r[20..], f, g)
+    hash.x25519.fe-mul(r[20..], f, g)
 }
 
 // ge-double: 點倍乘 R = 2*P
 ge-double = (r []i64, p []i64) {
     // A = X1^2
     a []i64
-    fe-sq(a, p)
+    hash.x25519.fe-sq(a, p)
 
     // B = Y1^2
     b []i64
-    fe-sq(b, p[10..])
+    hash.x25519.fe-sq(b, p[10..])
 
     // C = 2*Z1^2
     c []i64
-    fe-sq(c, p[20..])
-    fe-add(c, c, c)
+    hash.x25519.fe-sq(c, p[20..])
+    hash.x25519.fe-add(c, c, c)
 
     // H = A+B
     hh []i64
-    fe-add(hh, a, b)
+    hash.x25519.fe-add(hh, a, b)
 
     // E = H - (X1+Y1)^2
     e []i64
     t []i64
-    fe-add(t, p, p[10..])
-    fe-sq(e, t)
-    fe-sub(e, hh, e)
+    hash.x25519.fe-add(t, p, p[10..])
+    hash.x25519.fe-sq(e, t)
+    hash.x25519.fe-sub(e, hh, e)
 
     // G = A-B
     g []i64
-    fe-sub(g, a, b)
+    hash.x25519.fe-sub(g, a, b)
 
     // F = C+G
     f []i64
-    fe-add(f, c, g)
+    hash.x25519.fe-add(f, c, g)
 
     // X3 = E*F
-    fe-mul(r, e, f)
+    hash.x25519.fe-mul(r, e, f)
     // Y3 = G*H
-    fe-mul(r[10..], g, hh)
+    hash.x25519.fe-mul(r[10..], g, hh)
     // T3 = E*H
-    fe-mul(r[30..], e, hh)
+    hash.x25519.fe-mul(r[30..], e, hh)
     // Z3 = F*G
-    fe-mul(r[20..], f, g)
+    hash.x25519.fe-mul(r[20..], f, g)
 }
 
 // ge-scalar-mult: 純量乘法 R = scalar * P（double-and-add）
@@ -175,10 +175,10 @@ ge-double = (r []i64, p []i64) {
 // p []i64: 輸入點（4×10 = 40 個 i64）
 ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
     // 初始化 R 為單位元 (0, 1, 1, 0)
-    fe-zero(r)
-    fe-one(r[10..])
-    fe-one(r[20..])
-    fe-zero(r[30..])
+    hash.x25519.fe-zero(r)
+    hash.x25519.fe-one(r[10..])
+    hash.x25519.fe-one(r[20..])
+    hash.x25519.fe-zero(r[30..])
 
     // 從高位到低位進行 double-and-add
     t = 254
@@ -186,10 +186,10 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         // R = 2*R
         tmp []i64
         ge-double(tmp, r)
-        fe-copy(r, tmp)
-        fe-copy(r[10..], tmp[10..])
-        fe-copy(r[20..], tmp[20..])
-        fe-copy(r[30..], tmp[30..])
+        hash.x25519.fe-copy(r, tmp)
+        hash.x25519.fe-copy(r[10..], tmp[10..])
+        hash.x25519.fe-copy(r[20..], tmp[20..])
+        hash.x25519.fe-copy(r[30..], tmp[30..])
 
         // 如果 bit t 為 1，R = R + P
         byte-idx = t / 8
@@ -198,10 +198,10 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 
         if bit == 1 {
             ge-add(tmp, r, p)
-            fe-copy(r, tmp)
-            fe-copy(r[10..], tmp[10..])
-            fe-copy(r[20..], tmp[20..])
-            fe-copy(r[30..], tmp[30..])
+            hash.x25519.fe-copy(r, tmp)
+            hash.x25519.fe-copy(r[10..], tmp[10..])
+            hash.x25519.fe-copy(r[20..], tmp[20..])
+            hash.x25519.fe-copy(r[30..], tmp[30..])
         }
 
         t = t - 1
@@ -218,21 +218,21 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 ge-pack = (p []i64) (out [32]byte) {
     // 計算 x = X/Z, y = Y/Z
     z-inv []i64
-    fe-invert(z-inv, p[20..])
+    hash.x25519.fe-invert(z-inv, p[20..])
 
     x []i64
-    fe-mul(x, p, z-inv)
+    hash.x25519.fe-mul(x, p, z-inv)
 
     y []i64
-    fe-mul(y, p[10..], z-inv)
+    hash.x25519.fe-mul(y, p[10..], z-inv)
 
     // 序列化 y
     y-bytes [32]byte
-    fe-tobytes(y-bytes, y)
+    hash.x25519.fe-tobytes(y-bytes, y)
 
     // x 的最低位元作為符號位
     x-bytes [32]byte
-    fe-tobytes(x-bytes, x)
+    hash.x25519.fe-tobytes(x-bytes, x)
 
     // 設置最高位元為 x 的最低位元
     y-bytes[31] = y-bytes[31] | ((x-bytes[0] & 1) << 7)
@@ -259,70 +259,70 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     // 載入 y
     y []i64
-    fe-frombytes(y, s-copy)
+    hash.x25519.fe-frombytes(y, s-copy)
 
     // 計算 u = y^2 - 1
     y2 []i64
-    fe-sq(y2, y)
+    hash.x25519.fe-sq(y2, y)
     u []i64
-    fe-one(u)
-    fe-sub(u, y2, u)
+    hash.x25519.fe-one(u)
+    hash.x25519.fe-sub(u, y2, u)
 
     // 計算 v = d*y^2 + 1
     v []i64
-    fe-mul(v, y2, ED-D)
-    fe-one(v[10..])
-    fe-add(v, v, v[10..])
+    hash.x25519.fe-mul(v, y2, ED-D)
+    hash.x25519.fe-one(v[10..])
+    hash.x25519.fe-add(v, v, v[10..])
 
     // 計算 x = u * v^(-1) 的平方根
     // x^2 = u/v = u * v^(-1)
     // 使用 x = u * v^3 * (u * v^7)^((p-5)/8)
     v3 []i64
-    fe-sq(v3, v)
-    fe-mul(v3, v3, v)
+    hash.x25519.fe-sq(v3, v)
+    hash.x25519.fe-mul(v3, v3, v)
 
     v7 []i64
-    fe-sq(v7, v3)
-    fe-mul(v7, v7, v)
+    hash.x25519.fe-sq(v7, v3)
+    hash.x25519.fe-mul(v7, v7, v)
 
     // uv7 = u * v^7
     uv7 []i64
-    fe-mul(uv7, u, v7)
+    hash.x25519.fe-mul(uv7, u, v7)
 
     // pow = (uv7)^((p-5)/8)
     // p-5 = 2^255 - 24
     // 使用簡化的冪計算
     pow-uv7 []i64
-    fe-sq(pow-uv7, uv7)
+    hash.x25519.fe-sq(pow-uv7, uv7)
     // 需要計算 uv7^(2^252 - 2)
     i = 0
     for i < 251 {
-        fe-sq(pow-uv7, pow-uv7)
+        hash.x25519.fe-sq(pow-uv7, pow-uv7)
         i = i + 1
     }
-    fe-mul(pow-uv7, pow-uv7, uv7)
+    hash.x25519.fe-mul(pow-uv7, pow-uv7, uv7)
 
     // x = u * v^3 * pow
     x []i64
-    fe-mul(x, u, v3)
-    fe-mul(x, x, pow-uv7)
+    hash.x25519.fe-mul(x, u, v3)
+    hash.x25519.fe-mul(x, x, pow-uv7)
 
     // 驗證: v * x^2 == u ?
     x2 []i64
-    fe-sq(x2, x)
+    hash.x25519.fe-sq(x2, x)
     check []i64
-    fe-mul(check, v, x2)
+    hash.x25519.fe-mul(check, v, x2)
 
     // 比較 check 和 u
     check-neg []i64
     fe-neg(check-neg, u)
     diff []i64
-    fe-add(diff, check, check-neg)
+    hash.x25519.fe-add(diff, check, check-neg)
 
     // 規約化 diff 並檢查是否為 0
     // 簡化：如果 diff != 0，嘗試 x = x * sqrt(-1)
     diff-bytes [32]byte
-    fe-tobytes(diff-bytes, diff)
+    hash.x25519.fe-tobytes(diff-bytes, diff)
 
     is-zero = 1
     i = 0
@@ -338,14 +338,14 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
         // sqrt(-1) mod p = 2^((p-1)/4)
         // 預計算值
         sqrt-m1 [10]i64 = [-32595792, -7943725, 9377950, -3500415, 27508682, 7555289, -2773299, -2996918, -13890057, 0]
-        fe-mul(x, x, sqrt-m1)
+        hash.x25519.fe-mul(x, x, sqrt-m1)
 
         // 再次驗證
-        fe-sq(x2, x)
-        fe-mul(check, v, x2)
+        hash.x25519.fe-sq(x2, x)
+        hash.x25519.fe-mul(check, v, x2)
         fe-neg(check-neg, u)
-        fe-add(diff, check, check-neg)
-        fe-tobytes(diff-bytes, diff)
+        hash.x25519.fe-add(diff, check, check-neg)
+        hash.x25519.fe-tobytes(diff-bytes, diff)
 
         is-zero = 1
         i = 0
@@ -364,16 +364,16 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     // 檢查符號：如果 x 的最低位元 != sign，取負
     x-bytes [32]byte
-    fe-tobytes(x-bytes, x)
+    hash.x25519.fe-tobytes(x-bytes, x)
     if (x-bytes[0] & 1) != sign {
         fe-neg(x, x)
     }
 
     // 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
-    fe-copy(p, x)
-    fe-copy(p[10..], y)
-    fe-one(p[20..])
-    fe-mul(p[30..], x, y)
+    hash.x25519.fe-copy(p, x)
+    hash.x25519.fe-copy(p[10..], y)
+    hash.x25519.fe-one(p[20..])
+    hash.x25519.fe-mul(p[30..], x, y)
 
     ok = 1
 }
@@ -385,7 +385,7 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 // ge-frombytes-no-check: 從位元組載入域元素（不清除高位）
 // 用於載入基點
 fe-frombytes-raw = (h []i64, s [32]byte) {
-    fe-frombytes(h, s)
+    hash.x25519.fe-frombytes(h, s)
 }
 
 // 獲取基點 B 的 extended 座標
@@ -393,7 +393,7 @@ ge-basepoint = () (bp []i64) {
     // y = 4/5 mod p
     // 載入預計算的 y 值
     y []i64
-    fe-frombytes(y, ED-BYTES)
+    hash.x25519.fe-frombytes(y, ED-BYTES)
 
     // x 為基點的正根（預計算）
     // x = 15112221349535400772501151409588531511454012693041857206046113283949847762202
@@ -404,7 +404,7 @@ ge-basepoint = () (bp []i64) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ]
     x []i64
-    fe-frombytes(x, x-bytes)
+    hash.x25519.fe-frombytes(x, x-bytes)
 
     // 實際上需要正確的 x 座標
     // 基點 x 的小端編碼:
@@ -414,12 +414,12 @@ ge-basepoint = () (bp []i64) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ]
-    fe-frombytes(x, x-correct)
+    hash.x25519.fe-frombytes(x, x-correct)
 
-    fe-copy(bp, x)
-    fe-copy(bp[10..], y)
-    fe-one(bp[20..])
-    fe-mul(bp[30..], x, y)
+    hash.x25519.fe-copy(bp, x)
+    hash.x25519.fe-copy(bp[10..], y)
+    hash.x25519.fe-one(bp[20..])
+    hash.x25519.fe-mul(bp[30..], x, y)
 }
 
 // ge-scalar-mult-base: 基點純量乘法 R = scalar * B
@@ -630,7 +630,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     // H = SHA-512(seed) = 64 位元組
     h [64]byte
-    h = sha512(seed)
+    h = hash.sha512.sha512(seed)
 
     // 取前 32 位元組並 clamp
     a []byte
@@ -658,7 +658,7 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
 ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     // H = SHA-512(seed)
     h [64]byte
-    h = sha512(seed)
+    h = hash.sha512.sha512(seed)
 
     // a = clamp(H[0:32])
     a []byte
@@ -697,7 +697,7 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         i = i + 1
     }
     r-hash [64]byte
-    r-hash = sha512(r-input)
+    r-hash = hash.sha512.sha512(r-input)
     r [32]byte
     r = sc-reduce(r-hash)
 
@@ -725,7 +725,7 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         i = i + 1
     }
     k-hash [64]byte
-    k-hash = sha512(k-input)
+    k-hash = hash.sha512.sha512(k-input)
     k [32]byte
     k = sc-reduce(k-hash)
 
@@ -817,7 +817,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         i = i + 1
     }
     k-hash [64]byte
-    k-hash = sha512(k-input)
+    k-hash = hash.sha512.sha512(k-input)
     k [32]byte
     k = sc-reduce(k-hash)
 

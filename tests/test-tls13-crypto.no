@@ -16,7 +16,7 @@ test-hkdf-extract = () {
     ikm[1] = 0x0b
     ikm[2] = 0x0b
     prk [32]byte
-    prk = hkdf-extract(salt, ikm)
+    prk = hash.hkdf.hkdf-extract(salt, ikm)
     // RFC 5869 Test Case 1: PRK should not be all zeros
     has-nonzero = 0
     i = 0
@@ -45,7 +45,7 @@ test-hkdf-expand = () {
     info[0] = 0xAA
     info[1] = 0xBB
     okm []byte
-    okm = hkdf-expand(prk, info, 32)
+    okm = hash.hkdf.hkdf-expand(prk, info, 32)
     // 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
     i = 0
@@ -74,7 +74,7 @@ test-hkdf-expand-label = () {
     ctx[0] = 0xDE
     ctx[1] = 0xAD
     okm []byte
-    okm = hkdf-expand-label(prk, 'derived', ctx, 32)
+    okm = hash.hkdf.hkdf-expand-label(prk, 'derived', ctx, 32)
     // 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
     i = 0
@@ -121,7 +121,7 @@ test-aes-gcm-seal-open = () {
     plain[4] = 111
     // 加密
     sealed []byte
-    sealed = aes-128-gcm-seal(key, iv, aad, plain)
+    sealed = hash.aes-gcm.aes-128-gcm-seal(key, iv, aad, plain)
     // sealed 長度應為 plain.len + 16 (tag)
     expected-len = plain.len + 16
     i = 0
@@ -138,7 +138,7 @@ test-aes-gcm-seal-open = () {
     }
     // 解密
     opened []byte
-    opened = aes-128-gcm-open(key, iv, aad, sealed)
+    opened = hash.aes-gcm.aes-128-gcm-open(key, iv, aad, sealed)
     // 驗證解密結果與原文一致
     i = 0
     for i < plain.len {
@@ -162,7 +162,7 @@ test-x25519-scalarmult = () {
     }
     // 計算公鑰 = priv * basepoint
     pub [32]byte
-    pub = x25519-scalarmult-base(priv)
+    pub = hash.x25519.x25519-scalarmult-base(priv)
     // 公鑰不應為全零
     has-nonzero = 0
     i = 0
@@ -178,7 +178,7 @@ test-x25519-scalarmult = () {
     }
     // 共享金鑰: scalarmult(priv, pub) 應不為全零
     shared [32]byte
-    shared = x25519-scalarmult(priv, pub)
+    shared = hash.x25519.x25519-scalarmult(priv, pub)
     has-nonzero = 0
     i = 0
     for i < 32 {
@@ -198,7 +198,7 @@ test-x25519-scalarmult = () {
 test-x25519-keypair = () {
     priv [32]byte
     pub [32]byte
-    priv, pub = x25519-gen-keypair(123456789)
+    priv, pub = hash.x25519.x25519-gen-keypair(123456789)
     // 私鑰應已 clamping
     if (priv[0] & 7) != 0 {
         print('FAIL: private key not clamped (low 3 bits)')

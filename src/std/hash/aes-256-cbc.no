@@ -36,7 +36,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         }
 
         enc-block [16]byte
-        enc-block = aes-256-enc(xored, key)
+        enc-block = hash.aes-256.aes-256-enc(xored, key)
 
         i = 0
         i < 16: {
@@ -71,7 +71,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         }
 
         dec-block [16]byte
-        dec-block = aes-256-dec(cipher-block, key)
+        dec-block = hash.aes-256.aes-256-dec(cipher-block, key)
 
         i = 0
         i < 16: {

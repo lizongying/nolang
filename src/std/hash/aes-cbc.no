@@ -46,7 +46,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
         // AES 加密
         enc-block [16]byte
-        enc-block = aes-128-enc(xored, key)
+        enc-block = hash.aes.aes-128-enc(xored, key)
 
         // 輸出密文
         i = 0
@@ -93,7 +93,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
         // AES 解密
         dec-block [16]byte
-        dec-block = aes-128-dec(cur-cipher, key)
+        dec-block = hash.aes.aes-128-dec(cur-cipher, key)
 
         // XOR 與 prev 得到明文
         i = 0

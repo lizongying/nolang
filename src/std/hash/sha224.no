@@ -82,7 +82,7 @@ sha224 = (data []byte) (hash [28]byte) {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
             i = i + 1
         }
-        sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        hash.sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 64
     }
 

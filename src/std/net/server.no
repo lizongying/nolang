@@ -731,7 +731,7 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
         signed-val = it
         ok = false
         raw = ''
-        ok, raw = cookie-verify(name, signed-val, key)
+        ok, raw = net.cookie.cookie-verify(name, signed-val, key)
         if ok {
             val = raw
         } else {
@@ -761,7 +761,7 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
         // Base64 解碼
         b64 = hdr.slice(prefix.len, hdr.len)
         raw []byte
-        dec = decode(b64, BASE64-STD)
+        dec = encoding.base64.decode(b64, encoding.base64.BASE64-STD)
         dec: {
             ok -> raw = it
             nil || err -> return
@@ -833,7 +833,7 @@ secure-compare = (a str, b str) (ok bool) {
 // value str: Cookie 值
 // key []byte: HMAC-SHA256 簽名金鑰
 http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
-    signed-value = cookie-sign(name, value, key)
+    signed-value = net.cookie.cookie-sign(name, value, key)
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)
 }

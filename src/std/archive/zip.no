@@ -184,7 +184,7 @@ zip.extract = (idx i64) (out []byte) {
                 i = i + 1
             }
             // 解壓縮 DEFLATE
-            out = inflate-decompress(compressed, sz)
+            out = archive.gzip.inflate-decompress(compressed, sz)
         }
     }
 }
@@ -260,7 +260,7 @@ zip-entry.extract = () (out []byte) {
                 i = i + 1
             }
             // 解壓縮 DEFLATE
-            out = inflate-decompress(compressed, sz)
+            out = archive.gzip.inflate-decompress(compressed, sz)
         }
     }
 }

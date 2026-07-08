@@ -7,7 +7,7 @@ main = () {
     // 測試 1: tls-put-u16
     space str = ' '
     buf str = space.repeat(8)
-    tls-put-u16(buf, 0, 0x1234)
+    net.tls.tls-put-u16(buf, 0, 0x1234)
     if buf[0] != 0x12 {
         print('FAIL: put-u16 expected 0x12')
         return
@@ -19,7 +19,7 @@ main = () {
     buf2[0] = 0xAB
     buf2[1] = 0xCD
     val i64 = 0
-    val = tls-get-u16(buf2, 0)
+    val = net.tls.tls-get-u16(buf2, 0)
     if val != 0xABCD {
         print('FAIL: get-u16 expected 0xABCD')
         return
@@ -28,7 +28,7 @@ main = () {
 
     // 測試 3: tls-put-u24
     buf3 str = space.repeat(8)
-    tls-put-u24(buf3, 0, 0x123456)
+    net.tls.tls-put-u24(buf3, 0, 0x123456)
     if buf3[0] != 0x12 {
         print('FAIL: put-u24 expected 0x12')
         return
@@ -41,7 +41,7 @@ main = () {
     buf4[1] = 0x34
     buf4[2] = 0x56
     val2 i64 = 0
-    val2 = tls-get-u24(buf4, 0)
+    val2 = net.tls.tls-get-u24(buf4, 0)
     if val2 != 0x123456 {
         print('FAIL: get-u24 expected 0x123456')
         return

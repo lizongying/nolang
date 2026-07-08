@@ -176,10 +176,10 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 // len i64: CID 長度（通常 8）
 // 返回 cid []byte: 隨機 CID
 quic-gen-cid = (len i64) (cid []byte) {
-    state i64 = rand(0)
+    state i64 = hash.rand.rand(0)
     i = 0
     for i < len {
-        state = rand(state)
+        state = hash.rand.rand(state)
         cid[i] = state & 255
         i = i + 1
     }
@@ -471,7 +471,7 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
         i = i + 1
     }
     initial-secret [32]byte
-    initial-secret = hkdf-extract(initial-salt, dst-cid)
+    initial-secret = hash.hkdf.hkdf-extract(initial-salt, dst-cid)
 
     // 2. Label 選擇
     label = 'server in'
@@ -482,11 +482,11 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
     // 3. Secret = HKDF-Expand-Label(Initial_Secret, label, "", 32)
     empty-ctx []byte
     secret []byte
-    secret = hkdf-expand-label(initial-secret, label, empty-ctx, 32)
+    secret = hash.hkdf.hkdf-expand-label(initial-secret, label, empty-ctx, 32)
 
     // 4. Key = HKDF-Expand-Label(Secret, "quic key", "", 16)
     key-tmp []byte
-    key-tmp = hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
+    key-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
     i = 0
     for i < QUIC-KEY-SIZE {
         key[i] = key-tmp[i]
@@ -495,7 +495,7 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
 
     // 5. IV = HKDF-Expand-Label(Secret, "quic iv", "", 12)
     iv-tmp []byte
-    iv-tmp = hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
+    iv-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
     i = 0
     for i < QUIC-IV-SIZE {
         iv[i] = iv-tmp[i]
@@ -504,7 +504,7 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
 
     // 6. HP = HKDF-Expand-Label(Secret, "quic hp", "", 16)
     hp-tmp []byte
-    hp-tmp = hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
+    hp-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
     i = 0
     for i < QUIC-HP-SIZE {
         hp[i] = hp-tmp[i]
@@ -536,7 +536,7 @@ quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-lo
 
     // AES-128-ECB 加密樣本得到 mask
     mask [16]byte
-    mask = aes-128-enc(sample, hp)
+    mask = hash.aes.aes-128-enc(sample, hp)
 
     // Long Header: mask[0] 的低位 4 bits
     // Short Header: mask[0] 的低位 5 bits
@@ -857,7 +857,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     // Encrypt
     sealed []byte
-    sealed = aes-128-gcm-seal(.client-initial-key, nonce, aad, plain)
+    sealed = hash.aes-gcm.aes-128-gcm-seal(.client-initial-key, nonce, aad, plain)
 
     // 組合: header + sealed
     final-pos = pn-offset
@@ -998,7 +998,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 
     // 解密
     plain []byte
-    plain = aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
+    plain = hash.aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
     if plain.len == 0 {
         return
     }

@@ -45,15 +45,15 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         // 步驟 1: E_K1
         tmp1 []byte
-        tmp1 = des-enc(block, 8, k1)
+        tmp1 = hash.des.des-enc(block, 8, k1)
 
         // 步驟 2: D_K2
         tmp2 []byte
-        tmp2 = des-dec(tmp1, 8, k2)
+        tmp2 = hash.des.des-dec(tmp1, 8, k2)
 
         // 步驟 3: E_K3
         tmp3 []byte
-        tmp3 = des-enc(tmp2, 8, k3)
+        tmp3 = hash.des.des-enc(tmp2, 8, k3)
 
         // 寫回輸出
         i = 0
@@ -94,15 +94,15 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 
         // 步驟 1: D_K3
         tmp1 []byte
-        tmp1 = des-dec(block, 8, k3)
+        tmp1 = hash.des.des-dec(block, 8, k3)
 
         // 步驟 2: E_K2
         tmp2 []byte
-        tmp2 = des-enc(tmp1, 8, k2)
+        tmp2 = hash.des.des-enc(tmp1, 8, k2)
 
         // 步驟 3: D_K1
         tmp3 []byte
-        tmp3 = des-dec(tmp2, 8, k1)
+        tmp3 = hash.des.des-dec(tmp2, 8, k1)
 
         i = 0
         for i < 8 {

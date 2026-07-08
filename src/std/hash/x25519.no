@@ -660,7 +660,7 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     state = seed
     i = 0
     for i < 32 {
-        state = rand(state)
+        state = hash.rand.rand(state)
         priv[i] = state & 255
         i = i + 1
     }

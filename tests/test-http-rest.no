@@ -106,7 +106,7 @@ main = () {
     }
 
     // ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
-    resp = http-put('http://example.com/api/item', 'data')
+    resp = net.http.http-put('http://example.com/api/item', 'data')
     resp: {
         nil -> print('skip: http-put (no network)')
         -> {
@@ -116,14 +116,14 @@ main = () {
     }
 
     // ── 測試 7: http-delete 便捷函數
-    resp2 = http-delete('http://example.com/api/item/1')
+    resp2 = net.http.http-delete('http://example.com/api/item/1')
     resp2: {
         nil -> print('skip: http-delete (no network)')
         -> print('ok: http-delete connected')
     }
 
     // ── 測試 8: http-patch 便捷函數
-    resp3 = http-patch('http://example.com/api/item/1', '{"key":"v"}')
+    resp3 = net.http.http-patch('http://example.com/api/item/1', '{"key":"v"}')
     resp3: {
         nil -> print('skip: http-patch (no network)')
         -> print('ok: http-patch connected')
@@ -134,7 +134,7 @@ main = () {
     req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
     req2.add-header('Content-Type', 'application/json')
     req2.add-header('X-Request-Id', 'abc123')
-    resp4 = http-do-req(req2)
+    resp4 = net.http.http-do-req(req2)
     resp4: {
         nil -> print('skip: http-do-req (no network)')
         -> print('ok: http-do-req connected')

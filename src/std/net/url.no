@@ -490,7 +490,7 @@ url-basic-auth = (user str, password str) (out str) {
     // 拼接 user:password
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
-    enc-str = encode-std(raw-bytes)
+    enc-str = encoding.base64.encode-std(raw-bytes)
     out = 'Basic ' - enc-str
 }
 
@@ -508,7 +508,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
     }
     b64 = header.slice(prefix.len, header.len)
     raw []byte
-    dec = decode(b64, BASE64-STD)
+    dec = encoding.base64.decode(b64, encoding.base64.BASE64-STD)
     dec: {
         ok -> raw = it
         nil -> return

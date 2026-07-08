@@ -13,7 +13,7 @@
 
 main = () {
     // 測試 1: 以 DSN 連線
-    d db = open('root:secret@localhost/testdb')
+    d db = fs.open('root:secret@localhost/testdb')
     if d.handle == 0 {
         print('fail: open database')
         return

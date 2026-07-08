@@ -9,7 +9,7 @@ main = () {
 
     // 先寫入
     f-w ?file
-    f-w = open(tmp, {
+    f-w = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-600
         excl: false
@@ -28,7 +28,7 @@ main = () {
 
     // 再讀取
     f-r ?file
-    f-r = open(tmp, {
+    f-r = fs.open(tmp, {
         mode: file-mode.read
         perm: file-perm.perm-600
         excl: false

@@ -7,7 +7,7 @@ main = () {
     // 測試 1: tls-put-u16
     print('test 1: tls-put-u16')
     buf []byte
-    tls-put-u16(buf, 0, 0x1234)
+    net.tls.tls-put-u16(buf, 0, 0x1234)
     if buf[0] != 0x12 {
         print('FAIL: expected 0x12')
         return
@@ -17,7 +17,7 @@ main = () {
     // 測試 2: tls-get-u16
     print('test 2: tls-get-u16')
     val i64 = 0
-    val = tls-get-u16(buf, 0)
+    val = net.tls.tls-get-u16(buf, 0)
     if val != 0x1234 {
         print('FAIL: expected 0x1234')
         return
@@ -33,7 +33,7 @@ main = () {
     b[0] = 3
     b[1] = 4
     out []byte
-    out = tls-bytes-cat(a, b)
+    out = net.tls.tls-bytes-cat(a, b)
     if out.len != 4 {
         print('FAIL: expected out.len=4')
         return
@@ -44,7 +44,7 @@ main = () {
     print('test 4: tls-rand-bytes')
     state i64 = 12345
     r-out []byte
-    r-out = tls-rand-bytes(state, 8)
+    r-out = net.tls.tls-rand-bytes(state, 8)
     print('PASS: tls-rand-bytes')
 
     print('=== Done ===')

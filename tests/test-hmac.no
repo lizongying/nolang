@@ -11,7 +11,7 @@ main = () {
     msg[1] = 0xBB
     print('before hmac')
     a [32]byte
-    a = hmac-sha256(key, msg)
+    a = hash.hmac.hmac-sha256(key, msg)
     print('after hmac')
     print(a[0])
     print('done')

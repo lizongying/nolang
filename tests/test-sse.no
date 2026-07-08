@@ -40,7 +40,7 @@
 
 main = () {
     // 測試 1: connect（明文 HTTP）
-    client = sse-connect('http://127.0.0.1:3000/events')
+    client = net.sse.sse-connect('http://127.0.0.1:3000/events')
     client: {
         nil -> println('fail: connect')
         ->
@@ -113,7 +113,7 @@ main = () {
     }
 
     // 測試 5: HTTPS SSE 連線
-    https-client = sse-connect('https://example.com/events')
+    https-client = net.sse.sse-connect('https://example.com/events')
     https-client: {
         nil -> println('skip: HTTPS SSE (expected without live server)')
         -> {
@@ -123,7 +123,7 @@ main = () {
     }
 
     // 測試 6: 無效 URL
-    bad = sse-connect('ftp://invalid')
+    bad = net.sse.sse-connect('ftp://invalid')
     bad: {
         nil -> println('fail: expected err for invalid URL')
         err -> println('ok: invalid URL rejected')

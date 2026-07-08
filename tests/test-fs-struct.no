@@ -11,7 +11,7 @@ main = () {
     remove(tmp)
 
     f-w ?file
-    f-w = open(tmp, {
+    f-w = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -29,7 +29,7 @@ main = () {
     }
 
     f-e ?file
-    f-e = open(tmp, {
+    f-e = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: true
@@ -43,7 +43,7 @@ main = () {
     }
 
     f-r ?file
-    f-r = open(tmp, {
+    f-r = fs.open(tmp, {
         mode: file-mode.read
         perm: file-perm.perm-644
         excl: false

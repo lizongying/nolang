@@ -213,7 +213,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 
 		// Index auto-imported std module files with location info for go-to-definition
 		for _, info := range nbuild.GetStdModules() {
-			modFilePath := nbuild.ResolveStdModulePath(info.FullPath)
+			modFilePath := nbuild.ResolveStdModulePath(info.ShortPath)
 			if modFilePath == "" {
 				continue
 			}

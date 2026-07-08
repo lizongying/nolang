@@ -207,7 +207,7 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     // 影格類型（varint）
     ft-buf []byte
     ft-n = 0
-    ft-buf, ft-n = quic-varint-encode(frame-type)
+    ft-buf, ft-n = net.quic.quic-varint-encode(frame-type)
     i = 0
     for i < ft-n {
         buf[pos + i] = ft-buf[i]
@@ -218,7 +218,7 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     // 影格長度（varint）
     len-buf []byte
     len-n = 0
-    len-buf, len-n = quic-varint-encode(payload.len)
+    len-buf, len-n = net.quic.quic-varint-encode(payload.len)
     i = 0
     for i < len-n {
         buf[pos + i] = len-buf[i]
@@ -282,7 +282,7 @@ http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-
 
     ft = 0
     ft-np = 0
-    ft, ft-np = quic-varint-decode(buf, pos)
+    ft, ft-np = net.quic.quic-varint-decode(buf, pos)
     if ft-np < 0 {
         return
     }
@@ -291,7 +291,7 @@ http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-
 
     len-val = 0
     len-np = 0
-    len-val, len-np = quic-varint-decode(buf, pos)
+    len-val, len-np = net.quic.quic-varint-decode(buf, pos)
     if len-np < 0 {
         return
     }
@@ -408,7 +408,7 @@ http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
 // port i64: 埠號
 // 返回 conn ?quic-conn: ok=連線, nil=失敗
 http3-connect = (host str, port i64) (conn ?quic-conn) {
-    conn = quic-dial(host, port)
+    conn = net.quic.quic-dial(host, port)
 }
 
 // http3-send-request: 在 QUIC 連線上發送 HTTP/3 請求
@@ -502,7 +502,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // STREAM 影格類型
     stream-ft []byte
     stream-ft-n = 0
-    stream-ft, stream-ft-n = quic-varint-encode(0x0f)
+    stream-ft, stream-ft-n = net.quic.quic-varint-encode(0x0f)
     i = 0
     for i < stream-ft-n {
         pkt[pkt-pos + i] = stream-ft[i]
@@ -513,7 +513,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // 串流 ID
     sid-buf []byte
     sid-n = 0
-    sid-buf, sid-n = quic-varint-encode(stream-id)
+    sid-buf, sid-n = net.quic.quic-varint-encode(stream-id)
     i = 0
     for i < sid-n {
         pkt[pkt-pos + i] = sid-buf[i]
@@ -524,7 +524,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // Offset = 0
     off-buf []byte
     off-n = 0
-    off-buf, off-n = quic-varint-encode(0)
+    off-buf, off-n = net.quic.quic-varint-encode(0)
     i = 0
     for i < off-n {
         pkt[pkt-pos + i] = off-buf[i]
@@ -535,7 +535,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // Length
     len-buf []byte
     len-n = 0
-    len-buf, len-n = quic-varint-encode(stream-pos)
+    len-buf, len-n = net.quic.quic-varint-encode(stream-pos)
     i = 0
     for i < len-n {
         pkt[pkt-pos + i] = len-buf[i]

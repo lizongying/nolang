@@ -48,7 +48,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         // U1 = HMAC(password, salt || INT_32_BE(block_idx))
         u [32]byte
-        u = hmac-sha256(password, u-input)
+        u = hash.hmac.hmac-sha256(password, u-input)
 
         // T = U1
         t [32]byte
@@ -62,7 +62,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         iter = 1
         for iter < iterations {
             // U_{iter+1} = HMAC(password, U_iter)
-            u = hmac-sha256(password, u)
+            u = hash.hmac.hmac-sha256(password, u)
 
             // T = T XOR U
             i = 0
@@ -121,7 +121,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         u-input[salt-len + 3] = block-idx & 255
 
         u [64]byte
-        u = hmac-sha512(password, u-input)
+        u = hash.hmac.hmac-sha512(password, u-input)
 
         t [64]byte
         i = 0
@@ -132,7 +132,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         iter = 1
         for iter < iterations {
-            u = hmac-sha512(password, u)
+            u = hash.hmac.hmac-sha512(password, u)
             i = 0
             for i < 64 {
                 t[i] = t[i] ^ u[i]
@@ -187,7 +187,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         u-input[salt-len + 3] = block-idx & 255
 
         u [20]byte
-        u = hmac-sha1(password, u-input)
+        u = hash.hmac.hmac-sha1(password, u-input)
 
         t [20]byte
         i = 0
@@ -198,7 +198,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
 
         iter = 1
         for iter < iterations {
-            u = hmac-sha1(password, u)
+            u = hash.hmac.hmac-sha1(password, u)
             i = 0
             for i < 20 {
                 t[i] = t[i] ^ u[i]

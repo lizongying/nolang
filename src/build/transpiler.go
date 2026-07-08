@@ -551,6 +551,15 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if _, err := os.Stat(stdFile); err == nil {
 			return t.resolveFile(stdFile)
 		}
+		// Lookup table: match ShortPath to FullPath (e.g. "net" → "net/net")
+		for _, info := range knownStdModules() {
+			if info.ShortPath == relPath {
+				stdFile := GetStdSourceFile(info.FullPath)
+				if _, err := os.Stat(stdFile); err == nil {
+					return t.resolveFile(stdFile)
+				}
+			}
+		}
 		// fallback: std/<module>.no 相對於執行目錄
 		fallback := path + ".no"
 		if _, err := os.Stat(fallback); err == nil {
@@ -682,7 +691,7 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 
 	// 2. 預載入所有已知 std 模組的簽名（transpiler 會自動載入這些模組）
 	for _, info := range knownStdModules() {
-		path := "std/" + info.FullPath
+		path := "std/" + info.ShortPath
 		if loadedPaths[path] {
 			continue
 		}
@@ -797,14 +806,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 自動 enter/leave：插入作用域生命週期調用
 	injectEnterLeave(program)
 
-	// 收集導入的模塊短名稱，用於後續的 module.fn() → fn() 重寫
+	// 收集導入的模塊路徑（ShortPath），用於後續的 module.fn() → fn() 重寫
 	var importedModules []string
-	// 預填充已知 std 模塊短名稱，允許 math.degrees() 等呼叫無需顯式導入
-	// 如果變量名與模塊名衝突，跳過自動添加以避免歧義
+	// 預填充已知 std 模塊的 ShortPath，允許 math.degrees() 等呼叫無需顯式導入
+	// 使用 ShortPath 而非 ShortName 以避免名稱衝突
 	for _, info := range knownStdModules() {
-		if _, isVar := varTypes[info.ShortName]; !isVar {
-			importedModules = append(importedModules, info.ShortName)
-		}
+		importedModules = append(importedModules, info.ShortPath)
 	}
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
@@ -919,7 +926,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if _, isVar := varTypes[info.ShortName]; isVar {
 			continue
 		}
-		path := "std/" + info.FullPath
+		path := "std/" + info.ShortPath
 		if explicitStdModules[path] {
 			continue
 		}
@@ -4255,15 +4262,15 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 	return results
 }
 
-// collectModuleNames returns all known module short names (from #use + auto-imported std modules).
+// collectModuleNames returns all known module ShortPaths (from #use + auto-imported std modules).
 func collectModuleNames(program *parser.Program) []string {
 	seen := make(map[string]bool)
 	var names []string
 
 	for _, info := range knownStdModules() {
-		if !seen[info.ShortName] {
-			seen[info.ShortName] = true
-			names = append(names, info.ShortName)
+		if !seen[info.ShortPath] {
+			seen[info.ShortPath] = true
+			names = append(names, info.ShortPath)
 		}
 	}
 
@@ -4384,17 +4391,33 @@ func collectModuleExports(program *parser.Program, moduleNames []string) []strin
 	return names
 }
 
-// resolveModulePath tries to locate a .no file for the given module short name
-// (e.g., "math" → "std/math.no"), using GetStdSourceDir for resolution.
+// resolveModulePath tries to locate a .no file for the given module name.
+// It consults the knownStdModules() lookup table, matching by ShortPath
+// (which omits the redundant directory name when dir==file), then uses
+// FullPath to resolve the actual file.
 func resolveModulePath(moduleName string) string {
-	// Try via GetStdSourceDir (respects NOLANG_STD_SRC env var)
-	// moduleName is the short name (last path segment); also try full path
+	// 1. Consult knownStdModules lookup table.
+	//    Match by ShortPath (or FullPath as fallback), resolve via FullPath.
+	//    - "math"   → FullPath: "math"      → std/math.no
+	//    - "net"    → FullPath: "net/net"   → std/net/net.no
+	//    - "client" → FullPath: "net/client"→ std/net/client.no
+	//    - "hmac"   → FullPath: "hash/hmac" → std/hash/hmac.no
+	for _, info := range knownStdModules() {
+		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
+			stdFile := GetStdSourceFile(info.FullPath)
+			if _, err := os.Stat(stdFile); err == nil {
+				return stdFile
+			}
+		}
+	}
+
+	// 2. Try direct path via GetStdSourceDir (respects NOLANG_STD_SRC env var)
 	stdFile := GetStdSourceFile(moduleName)
 	if _, err := os.Stat(stdFile); err == nil {
 		return stdFile
 	}
 
-	// Fallback: try relative to CWD
+	// 3. Fallback: try relative to CWD
 	candidates := []string{
 		"std/" + moduleName + ".no",
 		"src/std/" + moduleName + ".no",
@@ -4945,8 +4968,9 @@ var (
 
 // StdModuleInfo holds information about a standard library module.
 type StdModuleInfo struct {
-	ShortName string // last path segment, e.g. "rand", "math"
-	FullPath  string // relative to std/, e.g. "hash/rand", "math"
+	ShortName string // last path segment of FullPath, e.g. "rand", "math"
+	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
+	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
 }
 
 // knownStdModules returns all embedded standard library modules.
@@ -4975,9 +4999,20 @@ func knownStdModules() []StdModuleInfo {
 						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
 							shortName = fullPath[idx+1:]
 						}
+						// ShortPath: omit the redundant directory name when
+						// file name equals directory name (e.g. "net/net" → "net").
+						shortPath := fullPath
+						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+							dir := fullPath[:idx]
+							file := fullPath[idx+1:]
+							if dir == file {
+								shortPath = file
+							}
+						}
 						infos = append(infos, StdModuleInfo{
 							ShortName: shortName,
 							FullPath:  fullPath,
+							ShortPath: shortPath,
 						})
 					}
 				}
@@ -5017,7 +5052,9 @@ func GetStdModuleFullPaths() []string {
 }
 
 // resolveModuleCalls walks the program and rewrites module.fn() calls
-// where the DotExpression receiver matches an imported module name.
+// where the DotExpression receiver chain matches an imported module ShortPath.
+// Supports both single-level (math.sqrt → sqrt) and multi-level
+// (hash.sha256.sha256 → sha256) module paths.
 func resolveModuleCalls(program *parser.Program, importedModules []string) {
 	if len(importedModules) == 0 {
 		return
@@ -5029,9 +5066,6 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 	// Collect simple (non-dotted) function names — these are module-level
 	// functions like `degrees` (from math.no). Method definitions like
 	// `str.starts-with` or `path.exists` have dots and are NOT module functions.
-	// This prevents incorrectly rewriting `variable.method(args)` as `method(args)`
-	// when the variable name collides with a module name (e.g., `path` is both
-	// a std module and a common variable name).
 	moduleFns := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
@@ -5043,6 +5077,32 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 	for _, stmt := range program.Statements {
 		resolveModuleCallsInStmt(stmt, modSet, moduleFns)
 	}
+}
+
+// extractModulePathAndFunc walks a DotExpression chain to extract the
+// module path (joined with "/") and the final property (function name).
+// For example:
+//   DotExpression{Identifier("math"), "sqrt"}     → ("math", "sqrt")
+//   DotExpression{DotExpression{Identifier("hash"), "sha256"}, "sha256"}
+//                                                 → ("hash/sha256", "sha256")
+// Returns ("", "") if the chain contains non-Identifier nodes.
+func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
+	fnName = dot.Property
+	var segments []string
+	cur := dot.Receiver
+	for {
+		if d, ok := cur.(*parser.DotExpression); ok {
+			segments = append([]string{d.Property}, segments...)
+			cur = d.Receiver
+		} else if ident, ok := cur.(*parser.Identifier); ok {
+			segments = append([]string{ident.Value}, segments...)
+			break
+		} else {
+			return "", ""
+		}
+	}
+	path = strings.Join(segments, "/")
+	return path, fnName
 }
 
 func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool) {
@@ -5089,20 +5149,16 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 	}
 	switch e := expr.(type) {
 	case *parser.CallExpression:
-		// Check if this is a module.fn() call.
-		// Only rewrite when dot.Property is a known module-level function
-		// (a simple, non-dotted FunctionDefinition name). This avoids
-		// rewriting variable.method() calls where the variable name
-		// collides with a module name (e.g., `path` is both a std module
-		// and a common parameter/variable name).
+		// Check if this is a module.fn() call (single or multi-level).
+		// Only rewrite when the function property is a known module-level function
+		// and the receiver chain matches a known module ShortPath.
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
-				if modSet[recvIdent.Value] && moduleFns[dot.Property] {
-					// Rewrite to direct function call
-					e.Function = &parser.Identifier{
-						Token: lexer.Token{Type: lexer.IDENT, Literal: dot.Property},
-						Value: dot.Property,
-					}
+			modPath, fnName := extractModulePathAndFunc(dot)
+			if modPath != "" && modSet[modPath] && moduleFns[fnName] {
+				// Rewrite to direct function call
+				e.Function = &parser.Identifier{
+					Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
+					Value: fnName,
 				}
 			}
 		}

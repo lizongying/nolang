@@ -35,7 +35,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     for pos < in.len {
         // 加密當前計數器區塊
         ks [16]byte
-        ks = aes-128-enc(ctr, key)
+        ks = hash.aes.aes-128-enc(ctr, key)
 
         // XOR
         n = 16
@@ -93,7 +93,7 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     pos = 0
     for pos < in.len {
         ks [16]byte
-        ks = aes-256-enc(ctr, key)
+        ks = hash.aes-256.aes-256-enc(ctr, key)
 
         n = 16
         if pos + n > in.len {

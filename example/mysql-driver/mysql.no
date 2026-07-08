@@ -188,10 +188,10 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 // 返回 token [20]byte: 20 位元組認證權杖
 mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     // stage1 = SHA1(password)
-    stage1 [20]byte = sha1(password.to-bytes())
+    stage1 [20]byte = hash.sha1.sha1(password.to-bytes())
 
     // stage2 = SHA1(stage1)
-    stage2 [20]byte = sha1(stage1.to-vec())
+    stage2 [20]byte = hash.sha1.sha1(stage1.to-vec())
 
     // combined = seed + stage2 (40 bytes)
     combined [40]byte
@@ -207,7 +207,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     }
 
     // stage3 = SHA1(combined)
-    stage3 [20]byte = sha1(combined.to-vec())
+    stage3 [20]byte = hash.sha1.sha1(combined.to-vec())
 
     // token = stage1 XOR stage3
     i = 0

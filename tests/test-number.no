@@ -2,10 +2,10 @@
 
 demo-number = () {
     r = 0
-    max(10, 20, r)
+    number.max(10, 20, r)
     print(r)
 
-    min(10, 20, r)
+    number.min(10, 20, r)
     print(r)
 }
 

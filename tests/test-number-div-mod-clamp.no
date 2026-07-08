@@ -11,19 +11,19 @@
 test-div = () {
     r = 0
 
-    div(10, 3, r)
+    number.div(10, 3, r)
     print(r)  // expect: 3
 
-    div(7, 2, r)
+    number.div(7, 2, r)
     print(r)  // expect: 3
 
-    div(100, 4, r)
+    number.div(100, 4, r)
     print(r)  // expect: 25
 
-    div(1, 1, r)
+    number.div(1, 1, r)
     print(r)  // expect: 1
 
-    div(0, 5, r)
+    number.div(0, 5, r)
     print(r)  // expect: 0
 }
 
@@ -34,19 +34,19 @@ print(111)
 test-mod = () {
     r = 0
 
-    mod(10, 3, r)
+    number.mod(10, 3, r)
     print(r)  // expect: 1
 
-    mod(7, 2, r)
+    number.mod(7, 2, r)
     print(r)  // expect: 1
 
-    mod(100, 4, r)
+    number.mod(100, 4, r)
     print(r)  // expect: 0
 
-    mod(5, 5, r)
+    number.mod(5, 5, r)
     print(r)  // expect: 0
 
-    mod(1, 3, r)
+    number.mod(1, 3, r)
     print(r)  // expect: 1
 }
 

@@ -72,7 +72,7 @@ main = () {
     }
 
     // 測試 7: 便捷函數 net-client
-    c2 = net-client('127.0.0.1', 8080)
+    c2 = net.client.net-client('127.0.0.1', 8080)
     c2: {
         nil -> print('fail: net-client')
         -> {

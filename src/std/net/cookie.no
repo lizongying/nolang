@@ -467,7 +467,7 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     // 簽名內容 = name=value
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()
-    mac [32]byte = hmac-sha256(key, msg)
+    mac [32]byte = hash.hmac.hmac-sha256(key, msg)
     // 轉為 hex 字串
     hex-chars = '0123456789abcdef'
     space = ' '

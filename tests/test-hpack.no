@@ -5,7 +5,7 @@ HPACK-TEST-BUF = 256
 
 // test-encode-int-small: 編碼小整數（fit in prefix）
 test-encode-int-small = () {
-    out = hpack-encode-int(10, 5, 0)
+    out = net.hpack.hpack-encode-int(10, 5, 0)
     // 10 < 2^5 - 1 = 31，所以 out[0] = 0 | 10 = 10
     if out[0] != 10 {
         print('FAIL: expected 10, got')
@@ -28,7 +28,7 @@ test-encode-int-multi = () {
     //   1306 & 127 = 42, 1306 >> 7 = 10
     //   10 & 127 = 10, 10 >> 7 = 0
     // So: out[0] = 31, out[1] = 42 | 128 = 170, out[2] = 10
-    out = hpack-encode-int(1337, 5, 0)
+    out = net.hpack.hpack-encode-int(1337, 5, 0)
     if out.len != 3 {
         print('FAIL: expected out.len=3')
         return
@@ -55,7 +55,7 @@ test-decode-int-small = () {
     data[0] = 10
     val i64 = 0
     next i64 = 0
-    hpack-decode-int(data, 0, 5)(val, next)
+    net.hpack.hpack-decode-int(data, 0, 5)(val, next)
     if val != 10 {
         print('FAIL: expected val=10')
         return
@@ -76,7 +76,7 @@ test-decode-int-multi = () {
     data[2] = 10
     val i64 = 0
     next i64 = 0
-    hpack-decode-int(data, 0, 5)(val, next)
+    net.hpack.hpack-decode-int(data, 0, 5)(val, next)
     if val != 1337 {
         print('FAIL: expected val=1337')
         return
@@ -90,7 +90,7 @@ test-decode-int-multi = () {
 
 // test-encode-str: 編碼字串
 test-encode-str = () {
-    out = hpack-encode-str('abc')
+    out = net.hpack.hpack-encode-str('abc')
     // H=0, length=3 (fits in 7-bit prefix), then 'a','b','c'
     if out.len != 4 {
         print('FAIL: expected out.len=4')
@@ -117,7 +117,7 @@ test-decode-str = () {
     data[3] = 99
     out str = ''
     next i64 = 0
-    hpack-decode-str(data, 0)(out, next)
+    net.hpack.hpack-decode-str(data, 0)(out, next)
     if next != 4 {
         print('FAIL: expected next=4')
         return
