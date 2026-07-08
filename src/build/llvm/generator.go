@@ -79,10 +79,27 @@ type Generator struct {
 	fnTypeAliases         map[string]*parser.FunctionType // named function type alias name → FunctionType
 	externFuncs           map[string]*ExternFuncInfo      // extern function name → FFI type info
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
+	sliceViews             map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
+}
+
+// sliceViewInfo tracks a slice view alias: a variable that references a portion
+// of an underlying arr/vec/str without allocating an independent struct.
+// The view is described by an adjusted data pointer + computed length,
+// enabling zero-copy, zero-allocation slicing.
+type sliceViewInfo struct {
+	baseVar    string // original variable name (e.g. "arr")
+	baseType   string // %arr, %vec, %str-long, %str-short
+	startOff   string // LLVM i64 value for start offset (constant or register)
+	viewLen    string // LLVM i64 value for computed view length
+	dataPtrReg string // LLVM i8* register for adjusted data pointer (base_data + start * elemSize)
+	elemType   string // element LLVM type (e.g. "i64", "i8")
+	isStr      bool   // is this a string slice?
 }
 
 func NewGenerator() *Generator {
-	return &Generator{}
+	return &Generator{
+		sliceViews: make(map[string]*sliceViewInfo),
+	}
 }
 
 func (g *Generator) indent() string {
@@ -884,9 +901,11 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 		innerRets := make([]string, len(outputs))
 		for i, p := range outputs {
 			typeStr := p.Type.String()
-			rets[i] = g.mapToLLVMType(typeStr)
+			rets[i] = g.resolveParamLLVMType(p.Type)
 			nolangRets[i] = typeStr
-			if strings.HasPrefix(typeStr, "?") {
+			if nt, ok := p.Type.(*parser.NullableType); ok {
+				innerRets[i] = g.resolveParamLLVMType(nt.Type)
+			} else if strings.HasPrefix(typeStr, "?") {
 				innerRets[i] = g.mapToLLVMType(typeStr[1:])
 			}
 		}

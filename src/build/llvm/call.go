@@ -179,6 +179,17 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			}
 		}
 		if g.varTypes != nil {
+			// Slice view variable passed as function argument:
+			// materialize a temporary struct with shared data pointer (no clone).
+			// This preserves the reference semantics of Nolang function parameters.
+			if g.isSliceViewVar(a.Value) {
+				view := g.sliceViews[a.Value]
+				matPtr := g.materializeSliceView(sb, a.Value)
+				if view.isStr {
+					return "%str-long* " + matPtr
+				}
+				return "%vec* " + matPtr
+			}
 			if t, ok := g.varTypes[a.Value]; ok && t == "%str-long" {
 				return "%str-long* " + g.varAddr(a.Value)
 			}
@@ -1487,6 +1498,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			// str 型別用 %str-long* 指標
 			if g.varTypes != nil {
+				// Slice view variable as method receiver or argument
+				if g.isSliceViewVar(a.Value) {
+					view := g.sliceViews[a.Value]
+					matPtr := g.materializeSliceView(sb, a.Value)
+					if view.isStr {
+						return "%str-long* " + matPtr
+					}
+					return "%vec* " + matPtr
+				}
 				if t, ok := g.varTypes[a.Value]; ok && t == "%str-long" {
 					return "%str-long* " + g.varAddr(a.Value)
 				}

@@ -115,6 +115,28 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				return dataLoad
 			}
 		}
+		// Slice view variable used as expression value:
+		// materialize to temporary struct (shared data), load and return value.
+		// This handles cases like `out = view` or `result = view` where the
+		// slice view needs to be converted to a concrete struct value.
+		if g.isSliceViewVar(e.Value) {
+			view := g.sliceViews[e.Value]
+			llvmType := "%vec"
+			if view.isStr {
+				llvmType = "%str-long"
+			}
+			g.tmpIdx++
+			reg := llvmSSAReg(e.Value, fmt.Sprintf(".svmat.val.%d", g.tmpIdx))
+			if sb != nil {
+				matPtr := g.materializeSliceView(sb, e.Value)
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+					g.indent(), reg, llvmType, llvmType, matPtr))
+				if g.ssaTypes != nil {
+					g.ssaTypes[reg] = llvmType
+				}
+			}
+			return reg
+		}
 		g.tmpIdx++
 		reg := llvmSSAReg(e.Value, fmt.Sprintf(".val.%d", g.tmpIdx))
 		if sb != nil {
@@ -507,6 +529,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if elseVal == "" || elseVal == "0" {
 		elseVal = zeroVal
 	}
+	// Coerce branch values to phiType to avoid type mismatches in phi nodes.
+	// This handles cases where one branch returns i1 (bool) and the other i64.
+	if !thenTerminated && strings.HasPrefix(thenVal, "%") {
+		thenVal = g.coercePhiValue(sb, thenVal, phiType)
+	}
+	if !elseTerminated && strings.HasPrefix(elseVal, "%") {
+		elseVal = g.coercePhiValue(sb, elseVal, phiType)
+	}
 	// Build phi entries based on which branches are terminated
 	thenPred := fmt.Sprintf("%%%s", thenPredecessor)
 	elsePred := fmt.Sprintf("%%%s", elsePredecessor)
@@ -525,6 +555,48 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 
 	return phiReg
+}
+
+// coercePhiValue converts an SSA value to the target phi type if needed.
+// Handles i1→i64 (zext), i8/i16/i32→i64 (zext), and other size mismatches.
+func (g *Generator) coercePhiValue(sb *strings.Builder, val, targetType string) string {
+	if val == "" || !strings.HasPrefix(val, "%") {
+		return val
+	}
+	// Determine the actual type of the value
+	valType := ""
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[val]; ok && t != "" {
+			valType = t
+		}
+	}
+	if valType == "" {
+		valType = g.inferSSAType(val)
+	}
+	if valType == "" || valType == targetType {
+		return val
+	}
+	// Coerce small integer types to i64
+	if targetType == "i64" && g.isIntegerLLVMType(valType) && valType != "i64" {
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%phi.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
+				g.indent(), zextReg, valType, val))
+		}
+		return zextReg
+	}
+	// Coerce i64 to i1 (trunc) — less common but possible
+	if targetType == "i1" && valType == "i64" {
+		g.tmpIdx++
+		truncReg := fmt.Sprintf("%%phi.trunc.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i1\n",
+				g.indent(), truncReg, valType, val))
+		}
+		return truncReg
+	}
+	return val
 }
 
 // generateConditionalExpression 產生三元運算子的 LLVM IR
@@ -1052,6 +1124,11 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 	}
 
+	// Slice view .len: return computed view length directly (no struct access)
+	if fieldName == "len" && varName != "" && g.isSliceViewVar(varName) {
+		return g.sliceViewLen(varName)
+	}
+
 	// Built-in str/str-short .len access
 	// .len 需要字串的指標（%str-long* / %str-short*），而非載入後的值。
 	// 因此對鏈式 receiver 使用 generateExprPtr 取得指標，避免 load。
@@ -1130,6 +1207,10 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression) string {
 	switch v := expr.(type) {
 	case *parser.Identifier:
+		// Slice view: materialize to temporary struct and return pointer
+		if g.isSliceViewVar(v.Value) && sb != nil {
+			return g.materializeSliceView(sb, v.Value)
+		}
 		return g.varAddr(v.Value)
 	case *parser.DotExpression:
 		// 取得 receiver 指標，GEP 到欄位，回傳指標（不 load）
@@ -1195,6 +1276,24 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 	}
 
 	idx := g.generateExprWithSB(sb, v.Index)
+
+	// Slice view element pointer: view[i] = val → use adjusted data pointer
+	if g.isSliceViewVar(varName) {
+		view := g.sliceViews[varName]
+		// Bounds check: use view length
+		g.emitBoundsCheck(sb, idx, view.viewLen)
+		g.tmpIdx++
+		dataTyped := fmt.Sprintf("%%sv.ptr.typed.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%sv.ptr.elem.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataTyped, view.dataPtrReg, view.elemType))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+				g.indent(), elemGEP, view.elemType, view.elemType, dataTyped, idx))
+		}
+		return elemGEP
+	}
 
 	if t, ok := g.varTypes[varName]; ok {
 		if t == "%arr" {
@@ -2194,6 +2293,37 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		}
 		val := g.generateExprWithSB(sb, expr.Value)
 
+		// Slice view index assignment: view[i] = val → use adjusted data pointer
+		if varName != "" && g.isSliceViewVar(varName) {
+			view := g.sliceViews[varName]
+			// Bounds check: use view length
+			g.emitBoundsCheck(sb, idx, view.viewLen)
+			g.tmpIdx++
+			dataTyped := fmt.Sprintf("%%sv.set.typed.%d", g.tmpIdx)
+			g.tmpIdx++
+			elemGEP := fmt.Sprintf("%%sv.set.elem.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+					g.indent(), dataTyped, view.dataPtrReg, view.elemType))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, view.elemType, view.elemType, dataTyped, idx))
+				// Truncate i64 to smaller element type if needed
+				storeVal := val
+				if view.elemType != "i64" && !strings.HasPrefix(val, "%") {
+					storeVal = val // constant, LLVM will handle truncation
+				} else if view.elemType != "i64" && strings.HasPrefix(val, "%") {
+					g.tmpIdx++
+					truncReg := fmt.Sprintf("%%sv.set.trunc.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n",
+						g.indent(), truncReg, val, view.elemType))
+					storeVal = truncReg
+				}
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+					g.indent(), view.elemType, storeVal, view.elemType, elemGEP))
+			}
+			return "0"
+		}
+
 		// 取得陣列 LLVM 型別
 		var llvmElemType string
 		var arrayLLVMType string
@@ -2607,6 +2737,57 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 			idx = zextReg
 		}
+	}
+
+	// Slice view indexing: view[i] → use adjusted data pointer + offset, no struct access
+	if varName != "" && g.isSliceViewVar(varName) {
+		view := g.sliceViews[varName]
+		// Bounds check: use view length
+		g.emitBoundsCheck(sb, idx, view.viewLen)
+		if view.isStr {
+			// String slice: GEP into i8* data pointer, load byte, zext to i64
+			g.tmpIdx++
+			charGEP := fmt.Sprintf("%%sv.idx.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			charLoad := fmt.Sprintf("%%sv.idx.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			charZext := fmt.Sprintf("%%sv.idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+					g.indent(), charGEP, view.dataPtrReg, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
+					g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+					g.indent(), charZext, charLoad))
+			}
+			return charZext
+		}
+		// Vec/arr slice: GEP into typed data pointer, load element
+		g.tmpIdx++
+		dataTyped := fmt.Sprintf("%%sv.idx.typed.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%sv.idx.elem.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemLoad := fmt.Sprintf("%%sv.idx.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataTyped, view.dataPtrReg, view.elemType))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+				g.indent(), elemGEP, view.elemType, view.elemType, dataTyped, idx))
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+				g.indent(), elemLoad, view.elemType, view.elemType, elemGEP))
+		}
+		// Type-extend small integers to i64 for uniform handling
+		if view.elemType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%sv.idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
+					g.indent(), zextReg, view.elemType, elemLoad))
+			}
+			return zextReg
+		}
+		return elemLoad
 	}
 
 	// String indexing: s[i] → extract data ptr from %str-long, then GEP into it
@@ -3518,7 +3699,12 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 				recvType = t
 			}
 		}
-		recvPtr = g.varAddr(varName)
+		// Slice view as base for inline slicing: materialize to temporary struct
+		if g.isSliceViewVar(varName) && sb != nil {
+			recvPtr = g.materializeSliceView(sb, varName)
+		} else {
+			recvPtr = g.varAddr(varName)
+		}
 	} else {
 		// Non-Identifier receiver: derive type and pointer generically.
 		recvType = g.exprResultLLVMType(expr.Left)

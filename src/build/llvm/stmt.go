@@ -99,6 +99,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.ssaTypes = make(map[string]string)                 // reset SSA type tracking for each function
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
+	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -1872,11 +1873,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// 切片視圖賦值：view = arr[0..4]
+	// 註冊為 slice view alias，不創建獨立結構體，通過 offset 計算訪問原始數據
+	if _, isSliceExpr := stmt.Value.(*parser.SliceExpression); isSliceExpr {
+		if g.generateSliceViewAssignment(sb, stmt, name) {
+			return
+		}
+		// 若 generateSliceViewAssignment 無法處理（如 base 不是 Identifier），
+		// 則回退到原本的 generateSliceExpression 路徑
+	}
+
 	// 切片儲存：使用 %vec 結構體
 	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
-	_, isSliceExpr := stmt.Value.(*parser.SliceExpression)
+	_, isSliceExpr2 := stmt.Value.(*parser.SliceExpression)
 	_, isSliceType := stmt.Type.(*parser.SliceType)
-	if (isSliceType || isSliceLit) && !isSliceExpr {
+	if (isSliceType || isSliceLit) && !isSliceExpr2 {
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
 		g.funcLocalNames[name] = true
