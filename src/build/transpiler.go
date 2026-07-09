@@ -1050,6 +1050,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 解析頂層代碼中的 module.fn() 呼叫
 	resolveModuleCalls(merged, importedModules)
 
+	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
+	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
+	monomorphizeGenericStructs(merged)
+
 	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
 	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
 	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
@@ -2228,7 +2232,7 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 			Token: s.Token,
 			Name:  s.Name,
 			Value: substituteExpr(s.Value, subst),
-			Type:  s.Type,
+			Type:  substituteType(s.Type, subst),
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{
@@ -2273,11 +2277,17 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 	switch e := expr.(type) {
 	case *parser.Identifier:
 		if val, ok := subst[e.Value]; ok {
-			// 將泛型參數替換為具體整數值
-			intVal, _ := strconv.ParseInt(val, 10, 64)
-			return &parser.IntegerLiteral{
+			// 整數替換值（如陣列大小泛型 [n]t）：轉為 IntegerLiteral
+			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return &parser.IntegerLiteral{
+					Token: e.Token,
+					Value: intVal,
+				}
+			}
+			// 非整數替換值（如方法名重寫 hashmap-*-tmpl.hash → hashmap-K-V.hash）：保留為 Identifier
+			return &parser.Identifier{
 				Token: e.Token,
-				Value: intVal,
+				Value: val,
 			}
 		}
 		return e
@@ -3123,8 +3133,13 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 							return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
 						}
 						// For any other typed variable, also reject .len() method
+						// Exception: map types (hashmap-K-V or [K]V) have a legitimate len() method
 						if typeName, exists := varTypes[ident.Value]; exists {
-							return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
+							if strings.Contains(typeName, "hashmap-") || isMapTypeString(typeName) {
+								// map types have a len() method — skip rejection
+							} else {
+								return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
+							}
 						}
 					}
 				}
@@ -4497,10 +4512,16 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
+			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+				fmt.Fprintf(os.Stderr, "[DEBUG VUV ExprStmt] IfExpression at line %d, req=%v, crlf=%v\n", ifExpr.Token.Line, definedVars["req"], definedVars["crlf"])
+			}
 			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
 		}
 	case *parser.LetStatement:
 		// Name is a definition — register it so it can be referenced later
+		if s.Name != nil && (s.Name.Value == "req" || s.Name.Value == "crlf") {
+			fmt.Fprintf(os.Stderr, "[DEBUG VUV] LetStatement name=%s at line %d\n", s.Name.Value, s.Token.Line)
+		}
 		if s.Value != nil {
 			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
 		}
@@ -4521,6 +4542,9 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		// Parameters, generic params, and result params are defined vars at BOTH
 		// the function scope (localDefs) AND the outer scope (definedVars), so
 		// result/output parameters like 'ek' are visible at module level.
+		if strings.Contains(s.Name, "reconnect") {
+			fmt.Fprintf(os.Stderr, "[DEBUG VUV FuncDef] name=%s, req in definedVars=%v, crlf in definedVars=%v\n", s.Name, definedVars["req"], definedVars["crlf"])
+		}
 		localDefs := make(map[string]bool)
 		for k, v := range definedVars {
 			localDefs[k] = v
@@ -4612,7 +4636,9 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				return nil
 			}
 			// Option constructors: val, err, ok are not real functions
-			if e.Value == "val" || e.Value == "err" || e.Value == "ok" {
+			// nil/it are option-pattern keywords and match-binding variables
+			if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
+				e.Value == "nil" || e.Value == "it" {
 				return nil
 			}
 			results = append(results, ValidateResult{
@@ -4847,8 +4873,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						if inferredType == innerType || inferredType == "i64" || inferredType == "bool" || inferredType == "f64" {
 							isOptionCtor = true
 						}
-				}
-				if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor {
+					}
+					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+						!isArgTypeCompatible(existingType, inferredType, s.Value) {
 						results = append(results, ValidateResult{
 							Line:    s.Token.Line,
 							Column:  s.Token.Column,
@@ -4918,7 +4945,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							}
 						}
-						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor {
+						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
+							!isArgTypeCompatible(existingType, valType, assign.Value) {
 							results = append(results, ValidateResult{
 								Line:    assign.Token.Line,
 								Column:  assign.Token.Column,
@@ -4981,7 +5009,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						if existingType, exists := varTypes[ident.Value]; exists {
 							if inferredType != "" && existingType != "" &&
 								inferredType != existingType &&
-								isConcreteType(existingType) {
+								isConcreteType(existingType) &&
+								!isArgTypeCompatible(existingType, inferredType, nil) {
 								results = append(results, ValidateResult{
 									Line:    s.Token.Line,
 									Column:  s.Token.Column,
@@ -5185,9 +5214,11 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 // extractModulePathAndFunc walks a DotExpression chain to extract the
 // module path (joined with "/") and the final property (function name).
 // For example:
-//   DotExpression{Identifier("math"), "sqrt"}     → ("math", "sqrt")
-//   DotExpression{DotExpression{Identifier("hash"), "sha256"}, "sha256"}
-//                                                 → ("hash/sha256", "sha256")
+//
+//	DotExpression{Identifier("math"), "sqrt"}     → ("math", "sqrt")
+//	DotExpression{DotExpression{Identifier("hash"), "sha256"}, "sha256"}
+//	                                              → ("hash/sha256", "sha256")
+//
 // Returns ("", "") if the chain contains non-Identifier nodes.
 func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
 	fnName = dot.Property
@@ -6268,9 +6299,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if i >= len(sig.ParamTypes) {
 							break
 						}
-					argType := resolveExprType(arg, varTypes, structFields)
-					expectedType := sig.ParamTypes[i].Type
-					if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
+						argType := resolveExprType(arg, varTypes, structFields)
+						expectedType := sig.ParamTypes[i].Type
+						if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
 							results = append(results, ValidateResult{
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,

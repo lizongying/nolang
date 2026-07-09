@@ -667,6 +667,37 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 			}
 		}
+		// struct.field[i] — 推導欄位陣列的元素型別
+		// （如 .vals[idx] 其中 vals 為 [256 x %str-long]）
+		if dot, ok := v.Left.(*parser.DotExpression); ok {
+			recvName := ""
+			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+				recvName = ident.Value
+			}
+			if recvName != "" && g.varTypes != nil {
+				if t, ok := g.varTypes[recvName]; ok {
+					structName := strings.TrimPrefix(t, "%")
+					if fields, ok := g.structTypes[structName]; ok {
+						for _, f := range fields {
+							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
+								closeB := strings.IndexByte(f.typ, ']')
+								if closeB > 0 {
+									inner := f.typ[1:closeB]
+									xIdx := strings.LastIndex(inner, " x ")
+									if xIdx >= 0 {
+										elemType := inner[xIdx+3:]
+										if strings.HasPrefix(elemType, "%") {
+											return elemType
+										}
+										return "i64"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		return "i64"
 	case *parser.SliceExpression:
 		// Check source type: slicing %str-long/%str-short produces %str-long, otherwise %vec
@@ -2658,6 +2689,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%argv.str.",           // args-get in call_stdlib.go
 		"%sprintf.val.",        // sprintf-based str returns (to-str etc.)
 		"%str-long.s2s.",       // duplicate, keep
+		"%idx.arr.elem.",       // generateStructFieldIndexRead: [N x %str-long] element GEP
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

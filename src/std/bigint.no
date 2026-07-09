@@ -641,11 +641,13 @@ from-str = (s str, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
-    pos <- [0..s.len): {
+    pos = 0
+    for pos < s.len {
         c = s[pos] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
             break
         }
+        pos = pos + 1
     }
     if pos < s.len {
         if s[pos] == 45 {

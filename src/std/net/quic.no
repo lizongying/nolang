@@ -209,6 +209,7 @@ quic-frame {
 // 返回 count i64: 影格數量（-1=錯誤）
 quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count i64) {
     count = 0
+    ft = 0
     for pos < end {
         if count >= QUIC-MAX-FRAMES {
             return
@@ -224,8 +225,8 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
 
         frames[count].frame-type = ft-val & 255
 
+        ft = ft-val & 255
         {
-            ft = ft-val & 255
             // PADDING
             ft == QUIC-FRAME-PADDING -> {
                 frames[count].length = 0
@@ -323,7 +324,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
                 pos = sid-np
                 frames[count].stream-id = sid-val
 
-                if has_off {
+                if has-off {
                     off-val = 0
                     off-np = 0
                     off-val, off-np = quic-varint-decode(buf, pos)
@@ -350,7 +351,8 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
                 }
 
                 // 複製資料
-                i <- [0..frames[count].length): {
+                data-len = frames[count].length
+                i <- [0..data-len): {
                     frames[count].data[i] = buf[pos + i]
                 }
                 pos = pos + frames[count].length
@@ -519,25 +521,24 @@ quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-lo
     }
 
     // AES-128-ECB 加密樣本得到 mask
-    mask [16]byte
     mask = hash.aes.aes-128-enc(sample, hp)
 
     // Long Header: mask[0] 的低位 4 bits
     // Short Header: mask[0] 的低位 5 bits
-    mask-offset = 0
+    mask-offset = 1
+    mask-bits = 0x1f
     if is-long-header {
-        packet[pn-offset] = packet[pn-offset] ^ (mask[0] & 0x0f)
-        mask-offset = 1
-    } {
-        packet[pn-offset] = packet[pn-offset] ^ (mask[0] & 0x1f)
-        mask-offset = 1
+        mask-bits = 0x0f
     }
+    packet[pn-offset] = packet[pn-offset] ^ (mask[0] & mask-bits)
 
     // XOR 封包號碼的 4 位元組
-    i <- [0..4): {
-        if pn-offset + i < packet.len {
-            packet[pn-offset + i] = packet[pn-offset + i] ^ mask[mask-offset + i]
+    j = 0
+    for j < 4 {
+        if pn-offset + j < packet.len {
+            packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
         }
+        j = j + 1
     }
 }
 

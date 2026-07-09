@@ -8012,14 +8012,42 @@ func (p *Parser) parseAnnotationStatement() Statement {
 
 // attachAnnotations 將註解條目附加到宣告語句上。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
+	params := extractGenericParams(entries)
 	switch s := stmt.(type) {
 	case *LetStatement:
 		s.Annotations = entries
+		s.GenericParams = params
 	case *StructDefinition:
 		s.Annotations = entries
+		s.GenericParams = params
 	case *FunctionDefinition:
-		// 函式定義暫不附加，保留為獨立語句
+		// 方法定義：從 #{generic=[K,V]} 註解提取泛型型別參數
+		for _, name := range params {
+			s.GenericParams = append(s.GenericParams, &Identifier{Value: name})
+		}
 	}
+}
+
+// extractGenericParams 從註解條目中找出 generic 鍵的陣列值，提取型別參數名稱列表。
+// 例如 #{generic=[K,V]} 會回傳 ["K", "V"]；若無 generic 鍵則回傳 nil。
+func extractGenericParams(entries []*AnnotationEntry) []string {
+	for _, e := range entries {
+		if e.Key != "generic" {
+			continue
+		}
+		arr, ok := e.Value.(*AnnotationArrayValue)
+		if !ok {
+			continue
+		}
+		var params []string
+		for _, el := range arr.Elements {
+			if ident, ok := el.(*AnnotationIdentValue); ok {
+				params = append(params, ident.Value)
+			}
+		}
+		return params
+	}
+	return nil
 }
 
 // parseAnnotationFFIDeclaration 從 #{c} 註解建立 ExternStatement。

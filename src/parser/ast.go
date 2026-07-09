@@ -345,7 +345,7 @@ func (es *ExportStatement) EndPos() lexer.Position { return posFromToken(es.Toke
 // Targets can be Identifiers (variable definition/assignment) or IndexExpressions
 // (array element assignment).
 type MultiAssignStatement struct {
-	Token   lexer.Token // the ASSIGN token
+	Token   lexer.Token  // the ASSIGN token
 	Targets []Expression // left-side targets: Identifier or IndexExpression
 	Value   Expression
 	CommentedNode
@@ -357,13 +357,14 @@ func (mas *MultiAssignStatement) EndPos() lexer.Position { return mas.Value.EndP
 
 // a u8 = 8
 type LetStatement struct {
-	Token        lexer.Token
-	Name         *Identifier
-	Type         Type
-	Value        Expression
-	IsSynthetic  bool               // compiler-injected (e.g. `it = matched`), not from source
-	SyntheticEnd lexer.Position     // override EndPos for synthetic bindings
-	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目
+	Token         lexer.Token
+	Name          *Identifier
+	Type          Type
+	Value         Expression
+	IsSynthetic   bool               // compiler-injected (e.g. `it = matched`), not from source
+	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
+	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
+	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	CommentedNode
 }
 
@@ -1229,11 +1230,12 @@ func (id *InterfaceDefinition) Pos() lexer.Position    { return posFromToken(id.
 func (id *InterfaceDefinition) EndPos() lexer.Position { return posFromToken(id.Token) }
 
 type StructDefinition struct {
-	Token       lexer.Token
-	Name        string
-	Implements  []string // 實現的介面列表（空 = 無）
-	Fields      []*StructField
-	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目
+	Token         lexer.Token
+	Name          string
+	Implements    []string // 實現的介面列表（空 = 無）
+	Fields        []*StructField
+	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
+	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	CommentedNode
 }
 

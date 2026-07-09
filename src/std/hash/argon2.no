@@ -366,7 +366,6 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         }
 
         // 計算新區塊 = G(mem[prev], mem[ref])
-        new-block []byte
         new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
@@ -391,7 +390,6 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
             }
 
             // 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
-            new-block []byte
             new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {

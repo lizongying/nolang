@@ -1,0 +1,100 @@
+// test-map-generics.no — 測試 map 泛型特化
+
+# std/map/map
+
+// str → i64
+test-str-i64 = () {
+    m = m.put('c', 2)
+
+    found = 0
+    v = 0
+    m.get('a', found, v)
+    print(v)  // expect: 0
+
+    m.get('c', found, v)
+    print(v)  // expect: 2
+
+    m.contains('b', found)
+    print(found)  // expect: 1
+
+    removed = 0
+    m.remove('b', removed)
+    m.contains('b', found)
+    print(found)  // expect: 0
+}
+
+// str → str
+test-str-str = () {
+    m = m.put('name', 'Alice')
+
+    found = 0
+    v = ''
+    m.get('name', found, v)
+    print(v)  // expect: Alice
+}
+
+// i64 → i64
+test-i64-i64 = () {
+    m = m.put(42, 100)
+    m.put(10, 20)
+
+    found = 0
+    v = 0
+    m.get(42, found, v)
+    print(v)  // expect: 100
+
+    m.get(10, found, v)
+    print(v)  // expect: 20
+}
+
+// i32 → str (非預設 int 鍵寬度)
+test-i32-str = () {
+    m = m.put(7, 'seven')
+
+    found = 0
+    v = ''
+    m.get(7, found, v)
+    print(v)  // expect: seven
+}
+
+// bool → i64
+test-bool-i64 = () {
+    m = m.put(true, 1)
+    m.put(false, 0)
+
+    found = 0
+    v = 0
+    m.get(true, found, v)
+    print(v)  // expect: 1
+
+    m.get(false, found, v)
+    print(v)  // expect: 0
+}
+
+// 非預設組合: str → bool
+test-str-bool = () {
+    m = m.put('yes', true)
+
+    found = 0
+    v = false
+    m.get('yes', found, v)
+    print(v)  // expect: 1
+}
+
+// 非預設組合: u8 → i64
+test-u8-i64 = () {
+    m = m.put(200, 200)
+
+    found = 0
+    v = 0
+    m.get(200, found, v)
+    print(v)  // expect: 200
+}
+
+test-str-i64()
+test-str-str()
+test-i64-i64()
+test-i32-str()
+test-bool-i64()
+test-str-bool()
+test-u8-i64()

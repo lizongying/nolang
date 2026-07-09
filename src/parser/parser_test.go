@@ -2078,3 +2078,132 @@ config = (host str = 'localhost', port i64 = 8080, debug bool = true) {
 		t.Errorf("expected param 1 default 8080, got %v", fd.Parameters[1].DefaultExpr)
 	}
 }
+
+// TestGenericAnnotationStruct verifies that #{generic=[K,V]} attached to a
+// struct definition populates StructDefinition.GenericParams.
+func TestGenericAnnotationStruct(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+	}{
+		{
+			name: "generic_two_params",
+			input: `#{generic=[K,V]}
+hashmap {
+    k K
+    v V
+}`,
+			want: []string{"K", "V"},
+		},
+		{
+			name: "generic_single_param",
+			input: `#{generic=[V]}
+vec {
+    data V
+}`,
+			want: []string{"V"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			prog := p.ParseProgram()
+			if errs := p.Errors(); len(errs) != 0 {
+				t.Fatalf("parser has %d errors, expected 0", len(errs))
+				for _, err := range errs {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if prog == nil || len(prog.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+			sd, ok := prog.Statements[0].(*StructDefinition)
+			if !ok {
+				t.Fatalf("expected StructDefinition, got %T", prog.Statements[0])
+			}
+			if len(sd.GenericParams) != len(tt.want) {
+				t.Fatalf("expected %d generic params, got %d (%v)", len(tt.want), len(sd.GenericParams), sd.GenericParams)
+			}
+			for i, gp := range tt.want {
+				if sd.GenericParams[i] != gp {
+					t.Errorf("generic param %d: expected %q, got %q", i, gp, sd.GenericParams[i])
+				}
+			}
+		})
+	}
+}
+
+// TestGenericAnnotationMethod verifies that #{generic=[K,V]} attached to a
+// method definition populates FunctionDefinition.GenericParams.
+func TestGenericAnnotationMethod(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+	}{
+		{
+			name: "method_generic_two_params",
+			input: `#{generic=[K,V]}
+hashmap.put = (k K, v V) {
+    return
+}`,
+			want: []string{"K", "V"},
+		},
+		{
+			name: "method_generic_single_param",
+			input: `#{generic=[V]}
+vec.push = (v V) {
+    return
+}`,
+			want: []string{"V"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			prog := p.ParseProgram()
+			if errs := p.Errors(); len(errs) != 0 {
+				t.Fatalf("parser has %d errors, expected 0", len(errs))
+				for _, err := range errs {
+					t.Errorf("parser error: %s", err)
+				}
+				return
+			}
+			if prog == nil || len(prog.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+			fd, ok := prog.Statements[0].(*FunctionDefinition)
+			if !ok {
+				t.Fatalf("expected FunctionDefinition, got %T", prog.Statements[0])
+			}
+			if len(fd.GenericParams) < len(tt.want) {
+				t.Fatalf("expected at least %d generic params, got %d", len(tt.want), len(fd.GenericParams))
+			}
+			// GenericParams may include implicit params inferred from the receiver;
+			// verify all expected annotation-derived params are present in order.
+			idx := 0
+			for _, gp := range fd.GenericParams {
+				if idx < len(tt.want) && gp.Value == tt.want[idx] {
+					idx++
+				}
+			}
+			if idx != len(tt.want) {
+				t.Errorf("expected generic params %v, got params: %v", tt.want, collectGenericParamNames(fd.GenericParams))
+			}
+		})
+	}
+}
+
+func collectGenericParamNames(params []*Identifier) []string {
+	names := make([]string, 0, len(params))
+	for _, gp := range params {
+		names = append(names, gp.Value)
+	}
+	return names
+}

@@ -101,10 +101,7 @@ str-map.get = (key str, found i64, result str) {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
-            result.len = .vals[idx].len
-            i <- [0..result.len): {
-                result[i] = .vals[idx][i]
-            }
+            result = .vals[idx]
             found = 1
             return
         }
@@ -167,14 +164,8 @@ str-map.is-empty = () (empty bool) {
 str-map.for-each = (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-            k.len = .keys[i].len
-            j <- [0..k.len): {
-                k[j] = .keys[i][j]
-            }
-            v.len = .vals[i].len
-            j <- [0..v.len): {
-                v[j] = .vals[i][j]
-            }
+            k = .keys[i]
+            v = .vals[i]
         }
     }
 }

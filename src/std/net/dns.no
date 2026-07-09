@@ -150,7 +150,7 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
     query[pos + 1] = 1
     pos = pos + 2
 
-    query.len = pos
+    query = query.slice(0, pos)
 }
 
 // dns-parse-name: 從回應封包中解析域名（支援壓縮指標）
@@ -199,7 +199,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     // 移除末尾的點
     if name.len > 0 {
         if name[name.len - 1] == 46 {
-            name.len = name.len - 1
+            name = name.slice(0, name.len - 1)
         }
     }
 
@@ -352,7 +352,7 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     i <- [0..n): {
         resp[i] = resp-str[i]
     }
-    resp.len = n
+    resp = resp.slice(0, n)
 
     records []dns-record
     ok = false
@@ -420,7 +420,7 @@ dns-resolve-all = (domain str) (records []dns-record, ok bool) {
     i <- [0..n): {
         resp[i] = resp-str[i]
     }
-    resp.len = n
+    resp = resp.slice(0, n)
 
     records, ok = dns-parse-response(resp)
 }

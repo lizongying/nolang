@@ -141,12 +141,9 @@ str-set.is-empty = () (empty bool) {
 
 // for-each: 遍歷所有元素
 str-set.for-each = (val str) {
-    i <- [0...cap): {
-        .occ[i] == 1 -> {
-            val.len = .keys[i].len
-            j <- [0..val.len): {
-                val[j] = .keys[i][j]
-            }
-        }
-    }
+i <- [0...cap): {
+.occ[i] == 1 -> {
+val = .keys[i]
+}
+}
 }

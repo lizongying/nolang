@@ -279,7 +279,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     }
 
     // 最終約簡
-    c u32 = h1 >> 26
+    c = h1 >> 26
     h1 = h1 & 67108863
     h2 = (h2 + c) & CC-MASK32
     c = h2 >> 26

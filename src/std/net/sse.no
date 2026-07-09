@@ -284,6 +284,8 @@ sse-client.is-connected = () (yes bool) {
 // 返回 ok bool: true=成功
 sse-client.reconnect = () (ok bool) {
     ok = false
+    req = ''
+    crlf = ''
     if .connected {
         .close()
     }

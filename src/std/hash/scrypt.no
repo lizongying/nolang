@@ -180,13 +180,12 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     n-idx = 1
     for n-idx < n {
-        // X = BlockMix(X)
-        mixed []byte
-        mixed = scrypt-blockmix(x, r)
-        i <- [0..block-bytes): {
-            x[i] = mixed[i]
-            v[n-idx * block-bytes + i] = mixed[i]
-        }
+// X = BlockMix(X)
+mixed = scrypt-blockmix(x, r)
+i <- [0..block-bytes): {
+x[i] = mixed[i]
+v[n-idx * block-bytes + i] = mixed[i]
+}
         n-idx = n-idx + 1
     }
 
@@ -204,12 +203,11 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             x[i] = (x[i] & 255) ^ (v[j * block-bytes + i] & 255)
         }
 
-        // X = BlockMix(X)
-        mixed []byte
-        mixed = scrypt-blockmix(x, r)
-        i <- [0..block-bytes): {
-            x[i] = mixed[i]
-        }
+// X = BlockMix(X)
+mixed = scrypt-blockmix(x, r)
+i <- [0..block-bytes): {
+x[i] = mixed[i]
+}
 
         n-idx = n-idx + 1
     }
@@ -247,9 +245,8 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
             b-i[j] = b[i * block-bytes + j]
         }
 
-        // ROMix
-        mixed []byte
-        mixed = scrypt-romix(b-i, n, r)
+// ROMix
+mixed = scrypt-romix(b-i, n, r)
 
         // 寫回 B
         j <- [0..block-bytes): {

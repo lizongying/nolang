@@ -44,7 +44,8 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
 bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
-    i <- [0..an || i < bn || carry != 0): {
+    i = 0
+    for i < an || i < bn || carry != 0 {
         sum = carry
         if i < an {
             sum = sum + a[i]
@@ -54,6 +55,7 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         }
         c[i] = sum & 4294967295
         carry = sum >> 32
+        i = i + 1
     }
     cn = i
 }

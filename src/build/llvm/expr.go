@@ -1058,6 +1058,35 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+		// struct.field[i] — when the field is an inline array (e.g. .domains[i]
+		// where domains is [64 x %str-long]), exprResultLLVMType(v.Left) returns
+		// "%arr" (per the DotExpression case above), which hides the element type.
+		// Look up the raw array type from the struct definition and extract it.
+		if dot, ok := v.Left.(*parser.DotExpression); ok {
+			recvName := ""
+			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+				recvName = ident.Value
+			}
+			if recvName != "" && g.varTypes != nil {
+				if t, ok := g.varTypes[recvName]; ok {
+					structName := strings.TrimPrefix(t, "%")
+					if fields, ok := g.structTypes[structName]; ok {
+						for _, f := range fields {
+							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
+								closeB := strings.IndexByte(f.typ, ']')
+								if closeB > 0 {
+									inner := f.typ[1:closeB]
+									xIdx := strings.LastIndex(inner, " x ")
+									if xIdx >= 0 {
+										return inner[xIdx+3:]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		// %vec / %arr: element type tracked separately
 		if ident, ok := v.Left.(*parser.Identifier); ok {
 			if g.arrayElemTypes != nil {
@@ -3776,8 +3805,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		if sepIdx < 0 {
 			return "0"
 		}
-		sizeStr := inner[:sepIdx]               // "32"
-		inlineElemType := inner[sepIdx+3:]      // "i8"
+		sizeStr := inner[:sepIdx]          // "32"
+		inlineElemType := inner[sepIdx+3:] // "i8"
 
 		// srcLen = N (constant)
 		srcLen = sizeStr
