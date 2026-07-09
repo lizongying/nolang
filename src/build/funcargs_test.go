@@ -114,6 +114,110 @@ pow = (a bigint, n i64, out bigint) {
 	}
 }
 
+// TestValidateUndefinedVarsScopeAfterMatch verifies that variables defined
+// before an `if` block containing a match expression (`w: { nil -> ... -> }`)
+// are still recognized as defined after the `if` block, inside a `!! { }`
+// loop, and after the loop.
+// This is a regression test for a scope-tracking bug where the match
+// desugaring inside an `if` consequence caused the validator to lose
+// track of previously defined variables.
+func TestValidateUndefinedVarsScopeAfterMatch(t *testing.T) {
+	src := `tls-conn {
+    fd i64
+}
+
+send = (c tls-conn, req str) (w ?i64) {
+    w = nil
+}
+
+net-recv = (fd i64, buf str, n i64) (rn i64) {
+    rn = 0
+}
+
+reconnect = () (ok bool) {
+    ok = false
+    req = ''
+    crlf = ''
+
+    written = 0
+    if .use-tls {
+        w = send(.tls-c, req)
+        w: {
+            nil -> {
+                .close()
+                return
+            }
+            ->
+        }
+    }
+    if .use-tls == false {
+        written = net-recv(.fd, req, req.len)
+        if written < 0 {
+            .close()
+            return
+        }
+    }
+
+    space = ' '
+    raw = space.repeat(64)
+    tmp = space.repeat(32)
+    total = 0
+    n = 0
+    separator = crlf - crlf
+    sep-pos i64 = -1
+
+    !! {
+        if total + 32 > 64 {
+            .close()
+            return
+        }
+        if .use-tls {
+            rn = .tls-c.recv(tmp, 32)
+            rn: {
+                ok -> n = it
+                -> {
+                    .close()
+                    return
+                }
+            }
+        }
+        if .use-tls == false {
+            n = net-recv(.fd, tmp, 32)
+        }
+        if n <= 0 {
+            .close()
+            return
+        }
+        i <- [0..n): {
+            raw[total + i] = tmp[i]
+        }
+        total = total + n
+        data = raw.slice(0, total)
+        sep-pos = data.index(separator)
+        if sep-pos >= 0 {
+            *
+        }
+    }
+
+    head = raw.slice(0, sep-pos)
+    first-line-end = head.index(crlf)
+    ok = true
+}`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateUndefinedVars(prog, "")
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected no undefined-var errors, got %d: %v", len(results), results)
+	}
+}
+
 // TestValidateUndefinedVarsLabeledConditional verifies that the variable
 // introduced in a labeled conditional (`#N val: { ... }`) is recognized as
 // defined inside the body, and that the validator does not report it as

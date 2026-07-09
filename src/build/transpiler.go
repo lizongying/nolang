@@ -4667,7 +4667,6 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false)...)
 		}
 	case *parser.IfExpression:
-		fmt.Fprintf(os.Stderr, "[DEBUG VUV IfExpr] line=%d, addr=%p, tmp=%v, separator=%v\n", e.Token.Line, definedVars, definedVars["tmp"], definedVars["separator"])
 		if e.Condition != nil {
 			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
 		}
@@ -4676,7 +4675,6 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
 			}
 		}
-		fmt.Fprintf(os.Stderr, "[DEBUG VUV IfExpr after] line=%d, addr=%p, tmp=%v, separator=%v\n", e.Token.Line, definedVars, definedVars["tmp"], definedVars["separator"])
 		if e.Alternative != nil {
 			for _, innerStmt := range e.Alternative.Statements {
 				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)

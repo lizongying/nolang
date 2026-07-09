@@ -243,6 +243,8 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		// e.g. { .scheme == 'http' -> ... }
 		// But if .field is followed by = (assignment), it's a statement block,
 		// not a match arm. e.g. -> { .connected = false ... }
+		// Also, .method() (LPAREN after IDENT) is a method call statement,
+		// not a match arm pattern.
 		if tok2.Type == lexer.IDENT {
 			var tok3 lexer.Token
 			if base == -1 {
@@ -252,6 +254,9 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			}
 			if tok3.Type == lexer.ASSIGN {
 				return blockUnknown // statement block, not match
+			}
+			if tok3.Type == lexer.LPAREN {
+				return blockUnknown // method call statement, not match
 			}
 		}
 		return blockMatch

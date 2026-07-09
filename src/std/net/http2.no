@@ -673,9 +673,11 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                 conn = http2-connect(host, port)
             }
             conn: {
-                nil -> err -> ok
-                names, values, header-count, resp-body, resp-n, ok = it.request(method, path, host, body)
-                it.close()
+                nil || err ->
+                ok -> {
+                    names, values, header-count, resp-body, resp-n, ok = it.request(method, path, host, body)
+                    it.close()
+                }
             }
         }
     }
