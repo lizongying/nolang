@@ -2501,9 +2501,15 @@ func (p *Parser) parseLetStatement() Statement {
 	if stmt.Type == nil {
 		switch v := stmt.Value.(type) {
 		case *IntegerLiteral:
+			// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64
+			inferredType := ValueTypeInt64.String()
+			raw := v.Token.Literal
+			if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+				inferredType = ValueTypeByte.String()
+			}
 			stmt.Type = &NamedType{
 				Token: nameToken,
-				Value: ValueTypeInt64.String(),
+				Value: inferredType,
 			}
 
 		case *FloatLiteral:

@@ -563,7 +563,11 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                         names[i] = dec-names[i].slice(0, nlen)
                         values[i] = dec-values[i].slice(0, vlen)
                     }
-                    header-count = i
+                    if dec-count <= 32 {
+                        header-count = dec-count
+                    } else {
+                        header-count = 32
+                    }
                     // 檢查 END_STREAM
                     if (f.flags & FLAG-END-STREAM) != 0 {
                         ok = true

@@ -1573,6 +1573,11 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) str
 func inferTypeFromExpr(expr parser.Expression) string {
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
+		// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64
+		raw := e.Token.Literal
+		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+			return "byte"
+		}
 		return "i64"
 	case *parser.FloatLiteral:
 		return "f64"
@@ -6148,6 +6153,7 @@ func isNumericType(t string) bool {
 }
 
 // intTypeRange returns the (min, max) range for a given integer type.
+// byte is treated as u8 (0–255).
 func intTypeRange(t string) (min, max int64, ok bool) {
 	switch t {
 	case "i8":
@@ -6158,7 +6164,7 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		return -2147483648, 2147483647, true
 	case "i64":
 		return -9223372036854775808, 9223372036854775807, true
-	case "u8":
+	case "u8", "byte":
 		return 0, 255, true
 	case "u16":
 		return 0, 65535, true
@@ -6179,6 +6185,9 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 //   - [N]T → []T  (fixed array passed where slice is expected)
 //   - i64 literal → any integer type whose range includes the literal value
 //     (e.g. 200 fits u8, but 300 does not; -1 does not fit any unsigned type)
+//   - Implicit widening: a narrower integer type (e.g. byte/u8) can be
+//     passed where a wider type (e.g. i64) is expected, as long as every
+//     value of the narrower type fits within the wider type's range.
 func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
 	if argType == expectedType {
 		return true
@@ -6199,6 +6208,14 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			if min, max, ok := intTypeRange(expectedType); ok {
 				return val >= min && val <= max
 			}
+		}
+	}
+	// Implicit widening: if both types are integer types and the argType's
+	// range is fully contained within the expectedType's range, allow the
+	// conversion (e.g. byte → i64, u8 → i32, i8 → i64).
+	if aMin, aMax, aOk := intTypeRange(argType); aOk {
+		if eMin, eMax, eOk := intTypeRange(expectedType); eOk {
+			return aMin >= eMin && aMax <= eMax
 		}
 	}
 	return false

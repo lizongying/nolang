@@ -272,31 +272,30 @@ str.to-i64 = () (val ?i64) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     neg = 0
     c = .[0]
     if c == 45 {
         neg = 1
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone minus')
             return
         }
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if neg == 1 {
         n = 0 - n
@@ -315,31 +314,30 @@ str.to-i8 = () (val ?i8) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     neg = 0
     c = .[0]
     if c == 45 {
         neg = 1
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone minus')
             return
         }
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if neg == 1 {
         n = 0 - n
@@ -362,31 +360,30 @@ str.to-i16 = () (val ?i16) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     neg = 0
     c = .[0]
     if c == 45 {
         neg = 1
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone minus')
             return
         }
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if neg == 1 {
         n = 0 - n
@@ -409,31 +406,30 @@ str.to-i32 = () (val ?i32) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     neg = 0
     c = .[0]
     if c == 45 {
         neg = 1
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone minus')
             return
         }
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if neg == 1 {
         n = 0 - n
@@ -456,26 +452,25 @@ str.to-u8 = () (val ?u8) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     c = .[0]
     if c == 45 {
         val = err('invalid u8: negative sign not allowed')
         return
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if n >= 0 && n <= 255 {
         val = n
@@ -495,26 +490,25 @@ str.to-u16 = () (val ?u16) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     c = .[0]
     if c == 45 {
         val = err('invalid u16: negative sign not allowed')
         return
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if n >= 0 && n <= 65535 {
         val = n
@@ -534,26 +528,25 @@ str.to-u32 = () (val ?u32) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     c = .[0]
     if c == 45 {
         val = err('invalid u32: negative sign not allowed')
         return
     } elif c == 43 {
-        i = 1
+        start = 1
         if .len == 1 {
             val = err('invalid number: lone plus')
             return
         }
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     if n >= 0 && n <= 4294967295 {
         val = n
@@ -575,18 +568,17 @@ str.to-u64 = () (val ?u64) {
         return
     }
     n = 0
-    i = 0
+    start = 0
     if c == 43 {
-        i = 1
+        start = 1
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c < 48 || c > 57 {
             val = err('invalid number: non-digit character')
             return
         }
         n = n * 10 + c - 48
-        i = i + 1
     }
     val = n
 }
@@ -620,12 +612,12 @@ str.to-f64 = () (val ?f64) {
 
     // 簡易驗證：至少含一個數字字元
     has-digit = 0
-    i = 0
+    start = 0
     c = .[0]
     if c == 45 || c == 43 {
-        i = 1
+        start = 1
     }
-    for i < .len {
+    i <- [start...len): {
         c = .[i]
         if c >= 48 && c <= 57 {
             has-digit = 1
@@ -637,7 +629,6 @@ str.to-f64 = () (val ?f64) {
             val = err('invalid float')
             return
         }
-        i = i + 1
     }
     if has-digit == 0 {
         val = nil
