@@ -21,16 +21,16 @@
 aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     prev [16]byte
     i = 0
-    i < 16: {
+    for i < 16 {
         prev[i] = iv[i]
         i = i + 1
     }
 
     blk = 0
-    blk < in.len: {
+    for blk < in.len {
         xored [16]byte
         i = 0
-        i < 16: {
+        for i < 16 {
             xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
             i = i + 1
         }
@@ -39,7 +39,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         enc-block = hash.aes-256.aes-256-enc(xored, key)
 
         i = 0
-        i < 16: {
+        for i < 16 {
             out[blk + i] = enc-block[i]
             prev[i] = enc-block[i]
             i = i + 1
@@ -56,16 +56,16 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     prev [16]byte
     i = 0
-    i < 16: {
+    for i < 16 {
         prev[i] = iv[i]
         i = i + 1
     }
 
     blk = 0
-    blk < in.len: {
+    for blk < in.len {
         cipher-block [16]byte
         i = 0
-        i < 16: {
+        for i < 16 {
             cipher-block[i] = in[blk + i]
             i = i + 1
         }
@@ -74,7 +74,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         dec-block = hash.aes-256.aes-256-dec(cipher-block, key)
 
         i = 0
-        i < 16: {
+        for i < 16 {
             out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)
             prev[i] = cipher-block[i]
             i = i + 1

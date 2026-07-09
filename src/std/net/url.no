@@ -175,7 +175,7 @@ url-info.get-query = (key str) (val ?str) {
     }
     q = .query
     pos = 0
-    ! {
+    !! {
         if pos >= q.len {
             *
         }
@@ -220,7 +220,7 @@ url-info.set-query = (key str, value str) {
     q = .query
     new-query = ''
     pos = 0
-    ! {
+    !! {
         if pos >= q.len {
             *
         }

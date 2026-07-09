@@ -161,6 +161,10 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok.Type = NOT_EQUALS
 			tok.Literal = "!="
+		} else if l.peekChar() == '!' {
+			l.readChar()
+			tok.Type = BANG_BANG
+			tok.Literal = "!!"
 		} else {
 			tok.Type = NOT
 			tok.Literal = "!"

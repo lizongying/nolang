@@ -312,7 +312,7 @@ func (sp *SemanticTokensProvider) mapTokenType(tok lexer.Token, identTypes map[[
 	case lexer.ASSIGN, lexer.ADD, lexer.SUB, lexer.MUL, lexer.QUO, lexer.MOD,
 		lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.LESS_EQUALS,
 		lexer.GREATER, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR,
-		lexer.INC, lexer.DEC, lexer.NOT, lexer.XOR, lexer.SHL, lexer.SHR,
+		lexer.INC, lexer.DEC, lexer.NOT, lexer.BANG_BANG, lexer.XOR, lexer.SHL, lexer.SHR,
 		lexer.ARROW, lexer.RARROW, lexer.AND, lexer.OR, lexer.AND_NOT,
 		lexer.ADD_ASSIGN, lexer.SUB_ASSIGN, lexer.MUL_ASSIGN,
 		lexer.QUO_ASSIGN, lexer.MOD_ASSIGN, lexer.AND_ASSIGN,

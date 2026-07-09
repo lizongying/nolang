@@ -42,7 +42,7 @@ i64.to-bytes-le = () (out [?]byte) {
     v = 0
     n = .len()
     i = 0
-    i < n: {
+    for i < n {
         v = (v << 8) | (.[i] & 255)
         i = i + 1
     }
@@ -53,7 +53,7 @@ i64.to-bytes-le = () (out [?]byte) {
     v = 0
     n = .len()
     i = 0
-    i < n: {
+    for i < n {
         v = v | ((.[i] & 255) << (i * 8))
         i = i + 1
     }
@@ -80,7 +80,7 @@ HEX-LOWER = '0123456789abcdef'
 []byte.to-hex = () (out str) {
     n = .len()
     i = 0
-    i < n: {
+    for i < n {
         b = .[i] & 255
         out[i * 2] = HEX-UPPER[b >> 4]
         out[i * 2 + 1] = HEX-UPPER[b & 15]
@@ -92,7 +92,7 @@ HEX-LOWER = '0123456789abcdef'
 []byte.to-hex-lower = () (out str) {
     n = .len()
     i = 0
-    i < n: {
+    for i < n {
         b = .[i] & 255
         out[i * 2] = HEX-LOWER[b >> 4]
         out[i * 2 + 1] = HEX-LOWER[b & 15]

@@ -118,7 +118,7 @@ sse-client.next-event = () (ev ?sse-event) {
     lf-lf = lf - lf
     crlf-crlf = crlf - crlf
 
-    ! {
+    !! {
         // 建立緩衝區視圖（slice 會複製，安全）
         data = .recv-buf.slice(0, .recv-buf-len)
         // 搜尋事件分隔符（\n\n 或 \r\n\r\n）
@@ -368,7 +368,7 @@ sse-client.reconnect = () (ok bool) {
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    ! {
+    !! {
         if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
             .close()
             return
@@ -595,7 +595,7 @@ sse-connect = (url str) (client ?sse-client) {
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    ! {
+    !! {
         if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
             if use-tls {
                 tls-c.close()
@@ -828,7 +828,7 @@ sse-server-conn.handshake = () (ok bool) {
     total = 0
     sep-pos i64 = -1
 
-    ! {
+    !! {
         if total + SSE-RECV-SIZE > SSE-BUF-SIZE {
             return
         }
@@ -912,7 +912,7 @@ sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) 
     // 處理多行 data（每行以 data: 前綴）
     if data.len > 0 {
         pos = 0
-        ! {
+        !! {
             nl = data.index-from(lf, pos)
             line-end = nl
             if nl < 0 {

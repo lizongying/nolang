@@ -819,26 +819,8 @@ func TestForLoop(t *testing.T) {
 			hasUpdate: true,
 			hasBody:   true,
 		},
-		{
-			// Bare condition for-loop with empty body.
-			// Regression test: empty {} was misclassified as a struct literal
-			// and the parser fell through to the ExpressionStatement path,
-			// producing 3 ExpressionStatements (the condition, {, }) instead
-			// of a single ForStatement. The formatter would then drop the
-			// body braces, deleting `{}` on save.
-			name:    "bare_cond_empty_body",
-			input:   "i < 5: {\n}",
-			wantErr: false,
-			hasCond: true,
-			hasBody: false,
-		},
-		{
-			name:    "bare_cond_empty_body_with_newline",
-			input:   "i < 5: {\n    // comment\n}",
-			wantErr: false,
-			hasCond: true,
-			hasBody: false,
-		},
+		// NOTE: bare cond: {} is no longer a for-loop; it's now always a match expression.
+		// Conditional loops must use the `for` keyword: `for cond { body }`.
 	}
 
 	for _, tt := range tests {
@@ -897,10 +879,10 @@ func TestNewSyntaxNoWarnings(t *testing.T) {
 		name  string
 		input string
 	}{
-		{name: "bang_loop", input: "!\n{\n    break\n}"},
+		{name: "bang_loop", input: "!!\n{\n    break\n}"},
 		{name: "counted_loop", input: "5 *\n{\n    print(1)\n}"},
 		{name: "range_for_with_colon", input: "i <- [0..10): {\n    print(i)\n}"},
-		{name: "bare_conditional_for", input: "i < 5: {\n    i = i + 1\n}"},
+		{name: "for_cond_keyword", input: "for i < 5 {\n    i = i + 1\n}"},
 		{name: "match_with_subject", input: "x: {\n    1 -> 1\n    -> 0\n}"},
 		{name: "bare_match_if_else", input: "{\n    x > 0 -> a = 1\n    -> a = 0\n}"},
 	}
@@ -965,7 +947,8 @@ func TestBareMatchIfElse(t *testing.T) {
 	}
 }
 
-// TestNewSyntaxInFunctionBody 新式循環語法（!{}、N*{}、cond:{}）在函數體內的專項測試
+// TestNewSyntaxInFunctionBody 新式循環語法（!{}、N*{}）在函數體內的專項測試
+// 注意：cond: {} 不再作為 for-loop，只解析為 match expression
 // go test github.com/lizongying/nolang/parser -test.fullpath=true -v -run ^TestNewSyntaxInFunctionBody$
 func TestNewSyntaxInFunctionBody(t *testing.T) {
 	tests := []struct {
@@ -974,8 +957,8 @@ func TestNewSyntaxInFunctionBody(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "counted_loop_in_function", input: "foo = () {\n    10 * {\n        a = a + 1\n    }\n}", wantErr: false},
-		{name: "bang_loop_in_function", input: "foo = () {\n    ! {\n        *\n    }\n}", wantErr: false},
-		{name: "bare_cond_complex_in_function", input: "foo = () {\n    x < 5 && y > 0: {\n        a = a + 1\n    }\n}", wantErr: false},
+		{name: "bang_loop_in_function", input: "foo = () {\n    !! {\n        *\n    }\n}", wantErr: false},
+		{name: "for_cond_in_function", input: "foo = () {\n    for x < 5 && y > 0 {\n        a = a + 1\n    }\n}", wantErr: false},
 		{name: "range_for_in_function", input: "foo = () {\n    i <- [0..10): {\n        print(i)\n    }\n}", wantErr: false},
 		// 新式 if/else 在函數體內
 		{name: "if_else_in_function_inline", input: "foo = (x i64) {\n    {\n        x > 0 -> r = 1\n        -> r = 0\n    }\n}", wantErr: false},

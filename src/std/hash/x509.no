@@ -38,7 +38,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
         n = b & 127
         len = 0
         i = 0
-        i < n: {
+        for i < n {
             len = (len << 8) | (data[pos + 1 + i] & 255)
             i = i + 1
         }
@@ -124,7 +124,7 @@ x509-serial = (data []byte, serial i64) {
     // 讀取序號值
     val = 0
     i = 0
-    i < int-len: {
+    for i < int-len {
         val = (val << 8) | (data[p + 1 + adv + i] & 255)
         i = i + 1
     }
@@ -218,7 +218,7 @@ x509-rsa-e = (data []byte) (e i64) {
     }
     val = 0
     i = 0
-    i < exp-len: {
+    for i < exp-len {
         val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
         i = i + 1
     }
@@ -296,7 +296,7 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     // 複製模數位元組
     i = 0
-    i < actual-len: {
+    for i < actual-len {
         out[i] = data[actual-start + i]
         i = i + 1
     }
@@ -366,7 +366,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
     //   [pad-len-8, pad-len)：64-bit 位元長度（大端序）
 
     wi = 0  // suppress unused warning
-    wi < 16: {
+    for wi < 16 {
         boff = off + wi * 4  // 此字在 padded 訊息中的位元組偏移
 
         // 組裝 4 個位元組 → 32-bit 大端字

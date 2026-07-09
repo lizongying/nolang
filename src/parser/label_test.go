@@ -9,7 +9,7 @@ import (
 // TestParseLabeledFor verifies that #N can be used as a label prefix for
 // the various for-style loops that support break/continue:
 //   - bare range-for:       #1 i <- [0..256): { ... }
-//   - infinite loop:        #1! { ... }
+//   - infinite loop:        #1!! { ... }
 //   - multiplicative count: #1 n * { ... }
 //   - conditional:          #1 x == 1: { ... }
 func TestParseLabeledFor(t *testing.T) {
@@ -24,8 +24,8 @@ func TestParseLabeledFor(t *testing.T) {
 }`,
 		},
 		{
-			name: "labeled infinite loop with !",
-			input: `#1! {
+		name: "labeled infinite loop with !!",
+		input: `#1!! {
     break #1
 }`,
 		},
@@ -79,7 +79,7 @@ func TestParseBreakContinueLabel(t *testing.T) {
 	input := `#1 i <- [0..10): {
     break #1
 }
-#2! {
+#2!! {
     continue #2
 }
 `
@@ -110,7 +110,7 @@ func TestParseBreakContinueLabel(t *testing.T) {
 	if bs.Label != "1" {
 		t.Fatalf("expected break label=1, got %q", bs.Label)
 	}
-	// Second: #2! { continue #2 }
+	// Second: #2!! { continue #2 }
 	fs2, ok := prog.Statements[1].(*ForStatement)
 	if !ok {
 		t.Fatalf("expected stmt[1] to be *ForStatement, got %T", prog.Statements[1])

@@ -292,7 +292,7 @@ process.read-all = () (content str, n i64) {
     if .stdout-fd < 0 {
         return
     }
-    ! {
+    !! {
         chunk-n = read(.stdout-fd, content, 4096)
         if chunk-n <= 0 {
             *

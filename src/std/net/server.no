@@ -199,7 +199,7 @@ http-server-conn.parse = () (ok bool) {
 
     // 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
-    ! {
+    !! {
         // 檢查緩衝區中是否已有分隔符
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
@@ -270,7 +270,7 @@ http-server-conn.parse = () (ok bool) {
     hn = hs.len
     if hn > 0 {
         pos = 0
-        ! {
+        !! {
             if pos >= hn {
                 *
             }
@@ -684,7 +684,7 @@ http-server-conn.get-cookie = (name str) (val ?str) {
         // 解析 Cookie 標頭
         hdr = it
         pos = 0
-        ! {
+        !! {
             // 跳過空格
             for pos < hdr.len && hdr[pos] == 32 {
                 pos = pos + 1

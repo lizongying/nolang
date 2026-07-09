@@ -23,7 +23,7 @@ hash-set.init = () {
     .cap = 64
     .size = 0
     i = 0
-    i < 64: {
+    for i < 64 {
         .occ[i] = 0
         i = i + 1
     }
@@ -39,7 +39,7 @@ hash-set.add = (key i64, is-new i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             is-new = 0
             return
@@ -62,7 +62,7 @@ hash-set.contains = (key i64, found i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             found = 1
             return
@@ -80,7 +80,7 @@ hash-set.remove = (key i64, removed i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             .occ[idx] = 0
             .size = .size - 1
@@ -95,7 +95,7 @@ hash-set.remove = (key i64, removed i64) {
 // clear: 清空
 hash-set.clear = () {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] = 0
         i = i + 1
     }
@@ -115,7 +115,7 @@ hash-set.is-empty = () (empty bool) {
 // for-each: 遍歷所有元素
 hash-set.for-each = (val i64) {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] == 1 -> val = .keys[i]
         i = i + 1
     }

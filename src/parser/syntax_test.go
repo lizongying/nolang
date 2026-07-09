@@ -26,7 +26,7 @@ func TestOldSyntax(t *testing.T) {
 		{name: "bare_range_bracket", input: "i <- [a..b] {\n}", wantErr: false},
 		{name: "labeled_for", input: "outer for i < 5 {\n    break\n}", wantErr: false},
 		{name: "labeled_for_range", input: "outer for i <- [0..5) {\n}", wantErr: false},
-		{name: "bang_loop", input: "! {\n    break\n}", wantErr: false},
+		{name: "bang_loop", input: "!! {\n    break\n}", wantErr: false},
 		{name: "counted_loop", input: "10 * {\n    break\n}", wantErr: false},
 		{name: "for_string", input: "for i <- 'abc' {\n}", wantErr: false},
 	}
@@ -379,7 +379,8 @@ func TestDeprecationWarnings(t *testing.T) {
 		wantWarnings int
 	}{
 		// Old syntax — should warn
-		{name: "for_condition_deprecated", input: "for i < 5 {\n    break\n}", wantWarnings: 1},
+		// 'for cond { }' is now a valid form (for loops where range-for doesn't apply)
+		{name: "for_condition_no_warning", input: "for i < 5 {\n    break\n}", wantWarnings: 0},
 		{name: "for_in_deprecated", input: "for i in [0..10) {\n    break\n}", wantWarnings: 1},
 		{name: "switch_deprecated", input: "switch x {\n    case 1: a = 1\n    default: c = 0\n}", wantWarnings: 1},
 		{name: "while_no_colon_deprecated", input: "while i < 5 {\n    break\n}", wantWarnings: 1},

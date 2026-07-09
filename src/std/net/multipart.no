@@ -66,7 +66,7 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
     prefix-len = boundary.len
     i = 0
-    i < 16: {
+    for i < 16 {
         seed, r = hash.rand.rand(seed)
         boundary[prefix-len + i] = chars[r % 36]
         i = i + 1
@@ -237,7 +237,7 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
     crlf = cr - lf
 
     pos = 0
-    ! {
+    !! {
         // 找到下一個 CRLF
         next-crlf = header-block.index-from(crlf, pos)
         if next-crlf < 0 {

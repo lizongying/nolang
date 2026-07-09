@@ -187,7 +187,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     hdr-buf = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     hdr-total = 0
     recv-n = 0
-    ! {
+    !! {
         if hdr-total >= HTTP2-FRAME-HEADER-SIZE {
             *
         }
@@ -230,7 +230,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
         }
         f.payload = space.repeat(f.length)
         payload-total = 0
-        ! {
+        !! {
             if payload-total >= f.length {
                 *
             }
@@ -541,7 +541,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             }
 
             // 接收回應影格
-            ! {
+            !! {
                 f http2-frame
                 recv-f = .recv-frame()
                 recv-f: {

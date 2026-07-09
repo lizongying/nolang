@@ -164,7 +164,7 @@ ip-addr.to-str = () (out str) {
     sb = .b.to-str()
     tmp = sb.copy()
     j = 0
-    j < tmp.len: {
+    for j < tmp.len {
         out[n + 1 + j] = tmp[j]
         j = j + 1
     }
@@ -173,7 +173,7 @@ ip-addr.to-str = () (out str) {
     sc = .c.to-str()
     tmp = sc.copy()
     j = 0
-    j < tmp.len: {
+    for j < tmp.len {
         out[n + 1 + j] = tmp[j]
         j = j + 1
     }
@@ -182,7 +182,7 @@ ip-addr.to-str = () (out str) {
     sd = .d.to-str()
     tmp = sd.copy()
     j = 0
-    j < tmp.len: {
+    for j < tmp.len {
         out[n + 1 + j] = tmp[j]
         j = j + 1
     }

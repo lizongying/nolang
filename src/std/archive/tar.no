@@ -69,11 +69,11 @@ tar.count = () (count i64) {
     count = 0
     off = 0
     n = len(.data)
-    off + TAR-BLOCK <= n: {
+    for off + TAR-BLOCK <= n {
         // 檢查是否為結束標記（全零區塊）
         empty = 1
         i = 0
-        i < TAR-BLOCK: {
+        for i < TAR-BLOCK {
             .data[off + i] & 255 != 0 -> empty = 0
             i = i + 1
         }
@@ -90,7 +90,7 @@ tar.entry-offset = (idx i64) (next i64) {
     // 讀取 size 欄位（偏移 124，12 位元組八進制）
     sz = 0
     i = 0
-    i < 12: {
+    for i < 12 {
         c = .data[hdr + 124 + i] & 255
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         i = i + 1
@@ -112,7 +112,7 @@ tar.entry = (idx i64) (e tar-entry) {
 tar.name = (idx i64) (name str) {
     hdr = idx * TAR-BLOCK
     i = 0
-    i < 100: {
+    for i < 100 {
         c = .data[hdr + i] & 255
         c == 0 -> break
         name[i] = c
@@ -125,7 +125,7 @@ tar.size = (idx i64) (sz i64) {
     hdr = idx * TAR-BLOCK
     sz = 0
     i = 0
-    i < 12: {
+    for i < 12 {
         c = .data[hdr + 124 + i] & 255
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         i = i + 1
@@ -164,7 +164,7 @@ tar.read = (idx i64) (out []byte) {
     hdr = idx * TAR-BLOCK
     sz > 0 -> {
         i = 0
-        i < sz: {
+        for i < sz {
             out[i] = .data[hdr + TAR-BLOCK + i]
             i = i + 1
         }
@@ -176,7 +176,7 @@ tar.mode = (idx i64) (mode i64) {
     hdr = idx * TAR-BLOCK
     mode = 0
     i = 0
-    i < 8: {
+    for i < 8 {
         c = .data[hdr + 100 + i] & 255
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
         i = i + 1
@@ -188,7 +188,7 @@ tar.mtime = (idx i64) (ts i64) {
     hdr = idx * TAR-BLOCK
     ts = 0
     i = 0
-    i < 12: {
+    for i < 12 {
         c = .data[hdr + 136 + i] & 255
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
         i = i + 1
@@ -201,7 +201,7 @@ tar.mtime = (idx i64) (ts i64) {
 tar-entry.name = () (name str) {
     hdr = .idx * TAR-BLOCK
     i = 0
-    i < 100: {
+    for i < 100 {
         c = .data[hdr + i] & 255
         c == 0 -> break
         name[i] = c
@@ -214,7 +214,7 @@ tar-entry.size = () (sz i64) {
     hdr = .idx * TAR-BLOCK
     sz = 0
     i = 0
-    i < 12: {
+    for i < 12 {
         c = .data[hdr + 124 + i] & 255
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         i = i + 1
@@ -252,7 +252,7 @@ tar-entry.read = () (out []byte) {
     hdr = .idx * TAR-BLOCK
     sz > 0 -> {
         i = 0
-        i < sz: {
+        for i < sz {
             out[i] = .data[hdr + TAR-BLOCK + i]
             i = i + 1
         }
@@ -264,7 +264,7 @@ tar-entry.mode = () (mode i64) {
     hdr = .idx * TAR-BLOCK
     mode = 0
     i = 0
-    i < 8: {
+    for i < 8 {
         c = .data[hdr + 100 + i] & 255
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
         i = i + 1
@@ -276,7 +276,7 @@ tar-entry.mtime = () (ts i64) {
     hdr = .idx * TAR-BLOCK
     ts = 0
     i = 0
-    i < 12: {
+    for i < 12 {
         c = .data[hdr + 136 + i] & 255
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
         i = i + 1
@@ -291,7 +291,7 @@ tar-builder.add-file = (name str, content []byte) {
     // 寫入檔案內容
     sz = len(content)
     i = 0
-    i < sz: {
+    for i < sz {
         .buf[.pos + i] = content[i]
         i = i + 1
     }
@@ -301,7 +301,7 @@ tar-builder.add-file = (name str, content []byte) {
     rem > 0 -> {
         pad = TAR-BLOCK - rem
         j = 0
-        j < pad: {
+        for j < pad {
             .buf[.pos + j] = 0
             j = j + 1
         }
@@ -319,7 +319,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     .write-header(name, typ, len(content))
     sz = len(content)
     i = 0
-    i < sz: {
+    for i < sz {
         .buf[.pos + i] = content[i]
         i = i + 1
     }
@@ -329,7 +329,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     rem > 0 -> {
         pad = TAR-BLOCK - rem
         j = 0
-        j < pad: {
+        for j < pad {
             .buf[.pos + j] = 0
             j = j + 1
         }
@@ -341,7 +341,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
 tar-builder.write-header = (name str, typ i64, sz i64) {
     // 清零 header 區
     i = 0
-    i < TAR-BLOCK: {
+    for i < TAR-BLOCK {
         .buf[.pos + i] = 0
         i = i + 1
     }
@@ -349,7 +349,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     // 名稱（偏移 0，最多 100 位元組）
     name-len = len(name)
     i = 0
-    i < name-len: {
+    for i < name-len {
         i < 100 -> .buf[.pos + i] = name[i]
         i = i + 1
     }
@@ -393,7 +393,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
     checksum = 0
     i = 0
-    i < TAR-BLOCK: {
+    for i < TAR-BLOCK {
         checksum = checksum + (.buf[.pos + i] & 255)
         i = i + 1
     }
@@ -409,14 +409,14 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
     base = .pos + offset
     // 先填空白
     i = 0
-    i < width: {
+    for i < width {
         .buf[base + i] = 32
         i = i + 1
     }
     // 從右往左填數字
     v = val
     pos = width - 1
-    v > 0: {
+    for v > 0 {
         .buf[base + pos] = 48 + (v % 8)
         v = v / 8
         pos = pos - 1
@@ -428,7 +428,7 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
 tar-builder.finish = () (archive tar) {
     // 寫入兩個全零區塊作為結束標記
     i = 0
-    i < TAR-BLOCK * 2: {
+    for i < TAR-BLOCK * 2 {
         .buf[.pos + i] = 0
         i = i + 1
     }

@@ -432,7 +432,7 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
     }
     // 多 byte 編碼
     m = 0
-    ! {
+    !! {
         if next-pos >= data.len {
             next-pos = -1
             *
@@ -595,7 +595,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
         return
     }
     pos = 0
-    ! {
+    !! {
         if pos >= n {
             *
         }

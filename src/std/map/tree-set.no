@@ -279,7 +279,7 @@ tree-set.add = (key i64) (ok bool) {
     }
     // BST 搜尋插入點
     cur = .root
-    ! {
+    !! {
         if key == .keys[cur] {
             return
         }

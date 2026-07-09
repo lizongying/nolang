@@ -666,7 +666,7 @@ func TestGetKeywordCompletionsNewSyntax(t *testing.T) {
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
 
-	expected := []string{"!", "*", "**", "..."}
+	expected := []string{"!!", "*", "**", "..."}
 	found := make(map[string]bool)
 	for _, item := range items {
 		found[item.Label] = true

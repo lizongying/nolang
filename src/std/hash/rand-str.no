@@ -25,7 +25,7 @@ rand-str = (state i64, n i64) (s str) {
     chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     i = 0
     r = 0
-    i < n: {
+    for i < n {
         r = 0
         state, r = rand(state)
         s[i] = chars[r % 62]

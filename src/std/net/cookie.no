@@ -129,7 +129,7 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
 
     // 解析屬性
     pos = 0
-    ! {
+    !! {
         // 跳過前導空格
         for pos < rest.len && rest[pos] == 32 {
             pos = pos + 1
@@ -209,7 +209,7 @@ cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count 
         return
     }
     pos = 0
-    ! {
+    !! {
         // 跳過空格
         for pos < cookie-header.len && cookie-header[pos] == 32 {
             pos = pos + 1

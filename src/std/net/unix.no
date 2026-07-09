@@ -208,7 +208,7 @@ unix-conn.recv-all = () (content str, total i64) {
     if .fd < 0 {
         return
     }
-    ! {
+    !! {
         chunk-n = net-recv(.fd, content, UNIX-BUF-SIZE)
         if chunk-n <= 0 {
             break

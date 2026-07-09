@@ -241,6 +241,19 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	case lexer.DOT:
 		// Bare match arm starting with .field (self.field access),
 		// e.g. { .scheme == 'http' -> ... }
+		// But if .field is followed by = (assignment), it's a statement block,
+		// not a match arm. e.g. -> { .connected = false ... }
+		if tok2.Type == lexer.IDENT {
+			var tok3 lexer.Token
+			if base == -1 {
+				tok3 = p.lexer.LookAhead(1)
+			} else {
+				tok3 = p.lexer.LookAhead(base + 2)
+			}
+			if tok3.Type == lexer.ASSIGN {
+				return blockUnknown // statement block, not match
+			}
+		}
 		return blockMatch
 	case lexer.RBRACE:
 		// 空 {} 可能是結構體字面量（如 bigint{}）或空匹配
@@ -411,7 +424,8 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, structFields 
 }
 
 // resolveReceiverType 解析方法調用接收者的型別，用於推斷方法返回型別。
-// 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})
+// 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
+// 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
 	if ident, ok := receiver.(*Identifier); ok {
 		if t, ok := p.varDeclTypes[ident.Value]; ok {
@@ -424,6 +438,17 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 			if len(p.methodStructStack) > 0 {
 				structName := p.methodStructStack[len(p.methodStructStack)-1]
 				if fields, ok := p.structFields[structName]; ok {
+					if fieldType, ok := fields[dot.Property]; ok {
+						return strings.TrimPrefix(fieldType, "?")
+					}
+				}
+			}
+		}
+		// self.field.subfield → 遞迴解析 receiver 型別，再查其 struct 欄位
+		if innerDot, ok := dot.Receiver.(*DotExpression); ok {
+			innerType := p.resolveReceiverType(innerDot)
+			if innerType != "" {
+				if fields, ok := p.structFields[innerType]; ok {
 					if fieldType, ok := fields[dot.Property]; ok {
 						return strings.TrimPrefix(fieldType, "?")
 					}
@@ -448,6 +473,11 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 		receiverType := p.resolveReceiverType(dot.Receiver)
 		if receiverType != "" {
 			fnName = receiverType + "." + dot.Property
+		} else {
+			// Multi-level dot expression (e.g. encoding.base64.decode):
+			// receiver is a module path, not a variable. Try matching
+			// just the last property name against funcSignatures.
+			fnName = dot.Property
 		}
 	}
 	if fnName == "" {
@@ -1134,8 +1164,8 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.RBRACE:
 		return nil
 
-	case lexer.NOT:
-		// 無限循環 ! { }
+	case lexer.BANG_BANG:
+		// 無限循環 !! { }
 		if p.peekToken.Type == lexer.LBRACE {
 			return p.parseBangLoop()
 		}
@@ -2852,8 +2882,8 @@ func (p *Parser) parseExpressionStatement() Statement {
 		}
 	}
 
-	// 裸條件 for-loop：condition: { body }
-	// Also handles struct literal (expr: { field: value }) and match expression
+	// cond: {} → 只解析為 struct literal 或 match expression，不再作為 for-loop
+	// 條件循環必須使用 for 關鍵字；新式寫法僅保留 ! {}（無限循環）和 n * {}（次數循環）
 	state := p.saveState()
 	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
 		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
@@ -2862,7 +2892,6 @@ func (p *Parser) parseExpressionStatement() Statement {
 		bt := p.classifyBlockAtCurrent()
 
 		// Try struct literal first; if it fails, restore state and try match.
-		// If both fail, fall through to for-loop path.
 		if bt == blockStruct {
 			structState := p.saveState()
 			if result := p.parseStructLiteral(stmt.Expression); result != nil {
@@ -2871,27 +2900,16 @@ func (p *Parser) parseExpressionStatement() Statement {
 			p.restoreState(structState)
 		}
 
-		// Try match expression
-		if bt == blockMatch {
-			matchState := p.saveState()
-			if me := p.parseMatchExprFrom(stmt.Expression); me != nil {
-				return &ExpressionStatement{Token: tok, Expression: me}
-			}
-			p.restoreState(matchState)
+		// Try match expression (always, since cond: {} is only match)
+		matchState := p.saveState()
+		if me := p.parseMatchExprFrom(stmt.Expression); me != nil {
+			return &ExpressionStatement{Token: tok, Expression: me}
 		}
+		p.restoreState(matchState)
 
-		// If neither struct nor match succeeded, treat as bare condition for-loop
-		// (this handles empty {} and any case where classifyBlock returned
-		// blockUnknown or the above attempts failed).
-		forStmt := &ForStatement{
-			Token:     tok,
-			Condition: stmt.Expression,
-		}
-		forStmt.Body = p.parseBlockStatement()
-		p.nextToken() // skip body's }
-		return forStmt
+		// If neither struct nor match succeeded, restore and fall through
+		p.restoreState(state)
 	}
-	p.restoreState(state)
 
 	// Standalone if-then: cond -> body (without enclosing { })
 	if p.currentToken.Type == lexer.RARROW && !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
@@ -3171,20 +3189,19 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parsePrefixExpression()
 
 	case lexer.NOT:
-		// !! = true, ! = false (standalone), !expr = prefix NOT
-		if p.peekToken.Type == lexer.NOT {
-			// !! → true
-			leftExp = &BooleanLiteral{Token: p.currentToken, Value: true}
-			p.nextToken() // consume second !
-		} else {
-			switch p.peekToken.Type {
-			case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF, lexer.RPAREN, lexer.RBRACE, lexer.RBRACKET:
-				leftExp = &BooleanLiteral{Token: p.currentToken, Value: false}
-				p.nextToken()
-			default:
-				leftExp = p.parsePrefixExpression()
-			}
+		// ! = false (standalone), !expr = prefix NOT
+		switch p.peekToken.Type {
+		case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF, lexer.RPAREN, lexer.RBRACE, lexer.RBRACKET:
+			leftExp = &BooleanLiteral{Token: p.currentToken, Value: false}
+			p.nextToken()
+		default:
+			leftExp = p.parsePrefixExpression()
 		}
+
+	case lexer.BANG_BANG:
+		// !! → true (standalone boolean)
+		leftExp = &BooleanLiteral{Token: p.currentToken, Value: true}
+		p.nextToken()
 
 	case lexer.LPAREN:
 		// Detect anonymous function: (a i64, b i64) { ... }
@@ -3465,7 +3482,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
 		// preceding `break`/`continue`/`return`).
-		lexer.MUL, lexer.STAR_STAR, lexer.LABEL:
+		lexer.MUL, lexer.STAR_STAR, lexer.BANG_BANG, lexer.LABEL:
 		return true
 	}
 	return false
@@ -5513,16 +5530,13 @@ parseBody:
 		// for condition { } or for { } — init 是完整表達式
 		if es, ok := init.(*ExpressionStatement); ok {
 			stmt.Condition = es.Expression
-			// Warn for old-style for/while (without colon)
-			if stmt.IterRange == nil && !hasColon {
-				if stmt.Token.Literal == "while" {
-					p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use '<condition>: { }' instead",
-						stmt.Token.Line, stmt.Token.Column))
-				} else {
-					p.saveWarning(fmt.Sprintf("line %d, column %d: 'for condition { }' is deprecated, use '<condition>: { }' instead",
-						stmt.Token.Line, stmt.Token.Column))
-				}
-			}
+		// Warn only for 'while' (deprecated); 'for cond { }' is a valid form
+		// for conditional loops where range-for (i <- [a..b): {}) doesn't apply
+		// (e.g. non-unit step or complex conditions).
+		if stmt.IterRange == nil && !hasColon && stmt.Token.Literal == "while" {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+				stmt.Token.Line, stmt.Token.Column))
+		}
 		}
 	} else {
 		// for condition (NL) { } — condition 是完整表達式，後面有換行
@@ -5531,15 +5545,12 @@ parseBody:
 				stmt.Condition = es.Expression
 			}
 		}
-		// Warn for old-style for/while (without colon)
-		if stmt.Condition != nil && stmt.IterRange == nil {
-			if stmt.Token.Literal == "while" && !hasColon {
-				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use '<condition>: { }' instead",
-					stmt.Token.Line, stmt.Token.Column))
-			} else if stmt.Token.Literal != "while" && !hasColon {
-				p.saveWarning(fmt.Sprintf("line %d, column %d: 'for condition { }' is deprecated, use '<condition>: { }' instead",
-					stmt.Token.Line, stmt.Token.Column))
-			}
+		// Warn only for 'while' (deprecated); 'for cond { }' is a valid form
+		// for conditional loops where range-for doesn't apply.
+		if stmt.Condition != nil && stmt.IterRange == nil &&
+			stmt.Token.Literal == "while" && !hasColon {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+				stmt.Token.Line, stmt.Token.Column))
 		}
 		// Skip newlines before {
 		for p.currentToken.Type == lexer.NEWLINE {
@@ -5719,11 +5730,11 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 	}
 }
 
-// parseBangLoop 解析 ! { } 無限循環
+// parseBangLoop 解析 !! { } 無限循環
 func (p *Parser) parseBangLoop() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
-	// ! 後直接接 {
-	p.nextToken() // skip !
+	// !! 後直接接 {
+	p.nextToken() // skip !!
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
 	return stmt
@@ -5765,7 +5776,7 @@ func (p *Parser) parseStarStarContinue() Statement {
 // parseLabeledStatement 解析帶 #N 標籤的循環語句：
 //
 //	#1 i <- [0..256): { ... }   bare range-for
-//	#1! { ... }                 infinite loop
+//	#1!! { ... }                infinite loop
 //	#1 n * { ... }              counted loop (n 為常數計數)
 //	#1 x == 1: { ... }          conditional
 //
@@ -5776,7 +5787,7 @@ func (p *Parser) parseLabeledStatement() Statement {
 
 	var stmt Statement
 	switch p.currentToken.Type {
-	case lexer.NOT:
+	case lexer.BANG_BANG:
 		stmt = p.parseBangLoop()
 	case lexer.INT:
 		// Counted loop: #1 10 * { ... }

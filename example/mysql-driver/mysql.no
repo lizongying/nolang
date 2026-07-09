@@ -71,7 +71,7 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
     tmp str = space.repeat(MYSQL-RECV-BUF)
 
     total = 0
-    total < n: {
+    for total < n {
         remaining = n - total
         if remaining > MYSQL-RECV-BUF {
             remaining = MYSQL-RECV-BUF
@@ -82,7 +82,7 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
         }
         // 複製到位據
         i = 0
-        i < read-n: {
+        for i < read-n {
             data[total + i] = tmp[i]
             i = i + 1
         }
@@ -196,12 +196,12 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     // combined = seed + stage2 (40 bytes)
     combined [40]byte
     i = 0
-    i < 20: {
+    for i < 20 {
         combined[i] = seed[i]
         i = i + 1
     }
     i = 0
-    i < 20: {
+    for i < 20 {
         combined[20 + i] = stage2[i]
         i = i + 1
     }
@@ -211,7 +211,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 
     // token = stage1 XOR stage3
     i = 0
-    i < 20: {
+    for i < 20 {
         token[i] = stage1[i] ^ stage3[i]
         i = i + 1
     }
@@ -308,7 +308,7 @@ open = (dsn str) (d db-mysql) {
         port-str str = host-port.slice(hp-colon + 1, host-port.len)
         p i64 = 0
         i = 0
-        i < port-str.len: {
+        for i < port-str.len {
             c = port-str[i]
             if c < 48 || c > 57 {
                 return
@@ -359,7 +359,7 @@ open = (dsn str) (d db-mysql) {
 
     pos i64 = 1
     // 跳過 server version（null-terminated）
-    pos < hs-len: {
+    for pos < hs-len {
         if handshake[pos] == 0 {
             break
         }
@@ -373,7 +373,7 @@ open = (dsn str) (d db-mysql) {
     // auth_seed_part1 (8 bytes)
     seed [20]byte
     i = 0
-    i < 8: {
+    for i < 8 {
         seed[i] = handshake[pos + i]
         i = i + 1
     }
@@ -407,7 +407,7 @@ open = (dsn str) (d db-mysql) {
         seed2-len = auth-plugin-data-len - 8
     }
     i = 0
-    i < seed2-len: {
+    for i < seed2-len {
         seed[8 + i] = handshake[pos + i]
         i = i + 1
     }
@@ -454,7 +454,7 @@ open = (dsn str) (d db-mysql) {
 
     // Reserved (23 bytes of 0x00)
     i = 0
-    i < 23: {
+    for i < 23 {
         resp[9 + i] = 0
         i = i + 1
     }
@@ -462,7 +462,7 @@ open = (dsn str) (d db-mysql) {
 
     // Username (null-terminated)
     i = 0
-    i < user.len: {
+    for i < user.len {
         resp[wpos] = user[i]
         wpos = wpos + 1
         i = i + 1
@@ -474,7 +474,7 @@ open = (dsn str) (d db-mysql) {
     resp[wpos] = 20
     wpos = wpos + 1
     i = 0
-    i < 20: {
+    for i < 20 {
         resp[wpos] = auth-token[i]
         wpos = wpos + 1
         i = i + 1
@@ -482,7 +482,7 @@ open = (dsn str) (d db-mysql) {
 
     // Database (null-terminated)
     i = 0
-    i < dbname.len: {
+    for i < dbname.len {
         resp[wpos] = dbname[i]
         wpos = wpos + 1
         i = i + 1
@@ -493,7 +493,7 @@ open = (dsn str) (d db-mysql) {
     // Auth plugin name (null-terminated)
     plugin-name str = 'mysql_native_password'
     i = 0
-    i < plugin-name.len: {
+    for i < plugin-name.len {
         resp[wpos] = plugin-name[i]
         wpos = wpos + 1
         i = i + 1
@@ -561,7 +561,7 @@ db-mysql.exec = (sql str) (r result) {
     payload str = space.repeat(sql.len + 1)
     payload[0] = COM-QUERY
     i = 0
-    i < sql.len: {
+    for i < sql.len {
         payload[1 + i] = sql[i]
         i = i + 1
     }
@@ -605,7 +605,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     payload str = space.repeat(sql.len + 1)
     payload[0] = COM-QUERY
     i = 0
-    i < sql.len: {
+    for i < sql.len {
         payload[1 + i] = sql[i]
         i = i + 1
     }
@@ -647,7 +647,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     // 跳過欄位定義封包
     i = 0
-    i < n-cols: {
+    for i < n-cols {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         if cd-ok == false {
             rs.eof = true
@@ -727,7 +727,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
     // 跳過前 col 個欄位
     c = 0
-    c < col: {
+    for c < col {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         if fn == false {
@@ -753,7 +753,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
             i = i + 1
         }
     }
-    i < end: {
+    for i < end {
         ch = .row-data[i]
         if ch >= 48 && ch <= 57 {
             v = v * 10 + ch - 48
@@ -769,7 +769,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
 rows-mysql.scan-str = (col i64) (v str) {
     // 跳過前 col 個欄位
     c = 0
-    c < col: {
+    for c < col {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         if fn == false {
@@ -796,7 +796,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
 
     // 跳過前 col 個欄位
     c = 0
-    c < col: {
+    for c < col {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         if fn == false {
@@ -826,7 +826,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
             i = 1
         }
     }
-    i < field-len: {
+    for i < field-len {
         ch = .row-data[base + i]
         if ch >= 48 && ch <= 57 {
             if has-dot == 0 {
@@ -927,7 +927,7 @@ stmt-mysql.exec = () (r result) {
     payload str = space.repeat(.bound.len + 1)
     payload[0] = COM-QUERY
     i = 0
-    i < .bound.len: {
+    for i < .bound.len {
         payload[1 + i] = .bound[i]
         i = i + 1
     }
@@ -967,7 +967,7 @@ stmt-mysql.query = () (rs rows-mysql) {
     payload str = space.repeat(.bound.len + 1)
     payload[0] = COM-QUERY
     i = 0
-    i < .bound.len: {
+    for i < .bound.len {
         payload[1 + i] = .bound[i]
         i = i + 1
     }
@@ -1005,7 +1005,7 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     // 跳過欄位定義封包
     i = 0
-    i < n-cols: {
+    for i < n-cols {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         if cd-ok == false {
             rs.eof = true

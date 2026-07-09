@@ -212,7 +212,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             return
         }
         // parse elements
-        ! {
+        !! {
             p = .skip-ws(s, p)
             if p >= sn {
                 return
@@ -262,7 +262,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             return
         }
         // parse key-value pairs
-        ! {
+        !! {
             p = .skip-ws(s, p)
             if p >= sn {
                 return

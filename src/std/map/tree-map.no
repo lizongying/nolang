@@ -283,7 +283,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
     }
     // BST 搜尋插入點
     cur = .root
-    ! {
+    !! {
         if key == .keys[cur] {
             .vals[cur] = val
             return

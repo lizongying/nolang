@@ -361,7 +361,7 @@ file.copy-to = (dst-path str) (ok bool) {
         return
     }
     buf [4096]byte
-    ! {
+    !! {
         n = read(.fd, buf, 4096)
         if n <= 0 {
             *

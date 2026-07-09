@@ -50,7 +50,7 @@ reader.read-byte = () (b ?byte) {
 // read-line: 讀取一行
 reader.read-line = (line str) (ok bool) {
     n = 0
-    ! {
+    !! {
         ok = .fill()
         if ok == false {
             if n > 0 {

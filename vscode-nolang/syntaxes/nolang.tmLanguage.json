@@ -12,7 +12,7 @@
     },
     {
       "name": "keyword.control.nolang",
-      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|as|chan|go|match|while)\\b|\\*\\*|\\*(?=\\s|$|\\})|!(?=\\s*\\{)"
+      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|as|chan|go|match|while)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
     },
     {
       "name": "keyword.control.import.nolang",

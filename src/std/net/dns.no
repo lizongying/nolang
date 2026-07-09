@@ -167,7 +167,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     jump-pos = 0
     end-pos = 0
 
-    ! {
+    !! {
         if pos >= data.len {
             *
         }

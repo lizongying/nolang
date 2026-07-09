@@ -1041,14 +1041,14 @@ sha1 = (data []byte) (hash [20]byte) {
     // 建立填充緩衝區
     padded []byte
     i = 0
-    i < total-len: {
+    for i < total-len {
         padded[i] = 0
         i = i + 1
     }
 
     // 複製原始資料
     i = 0
-    i < dlen: {
+    for i < dlen {
         padded[i] = data[i]
         i = i + 1
     }
@@ -1058,14 +1058,14 @@ sha1 = (data []byte) (hash [20]byte) {
 
     // 填充 0x00
     i = dlen + 1
-    i < total-len - 8: {
+    for i < total-len - 8 {
         padded[i] = 0
         i = i + 1
     }
 
     // 填充 bit-len（big-endian 64-bit）
     i = 0
-    i < 8: {
+    for i < 8 {
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
         i = i + 1
     }
@@ -1073,10 +1073,10 @@ sha1 = (data []byte) (hash [20]byte) {
     // 處理每個 64 位元組區塊
     block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     offset = 0
-    offset < total-len: {
+    for offset < total-len {
         // 將 64 位元組轉為 16 個 32-bit big-endian 字
         i = 0
-        i < 16: {
+        for i < 16 {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
             i = i + 1
         }
@@ -1118,7 +1118,7 @@ sha1-hex = (data []byte) (hex str) {
     hex = space.repeat(40)
 
     i = 0
-    i < 20: {
+    for i < 20 {
     hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
     hex[i * 2 + 1] = hex-chars[hash[i] & 15]
         i = i + 1

@@ -11,10 +11,10 @@
 crc-32 = (s []byte, n i64) (crc i64) {
     crc = 4294967295
     i = 0
-    i < n: {
+    for i < n {
         crc = crc ^ s[i]
         j = 0
-        j < 8: {
+        for j < 8 {
             if crc & 1 == 1 {
                 crc = (crc >> 1) ^ 3988292384
             } else {

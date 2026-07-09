@@ -719,7 +719,7 @@ type keywordDef struct {
 
 var keywords = []keywordDef{
 	// 新式語法
-	{"!", CompletionItemKindKeyword, "infinite loop", "! {\n\t$0\n}"},
+	{"!!", CompletionItemKindKeyword, "infinite loop", "!! {\n\t$0\n}"},
 	{"*", CompletionItemKindKeyword, "break shorthand", "*"},
 	{"**", CompletionItemKindKeyword, "continue shorthand", "**"},
 	{"...", CompletionItemKindKeyword, "return/terminate", "..."},

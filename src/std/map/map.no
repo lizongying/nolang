@@ -50,7 +50,7 @@ hashmap-str-i64.init = () {
     .cap = 256
     .size = 0
     i = 0
-    i < 256: {
+    for i < 256 {
         .occ[i] = 0
         .keys[i].len = 0
         .vals[i] = 0
@@ -62,7 +62,7 @@ hashmap-str-i64.init = () {
 hashmap-str-i64.hash = (key str, idx i64) {
     h = FNV-OFFSET
     i = 0
-    i < key.len: {
+    for i < key.len {
         h = h ^ (key[i] & 255)
         h = h * FNV-PRIME
         i = i + 1
@@ -77,7 +77,7 @@ hashmap-str-i64.str-eq = (a str, b str, eq i64) {
         return
     }
     i = 0
-    i < a.len: {
+    for i < a.len {
         a[i] != b[i] -> {
             return
         }
@@ -91,7 +91,7 @@ hashmap-str-i64.put = (key str, val i64, is-new i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
@@ -108,7 +108,7 @@ hashmap-str-i64.put = (key str, val i64, is-new i64) {
     // 複製 key
     .keys[idx].len = key.len
     i = 0
-    i < key.len: {
+    for i < key.len {
         .keys[idx][i] = key[i]
         i = i + 1
     }
@@ -128,7 +128,7 @@ hashmap-str-i64.get = (key str, found i64, result i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
@@ -159,7 +159,7 @@ hashmap-str-i64.remove = (key str, removed i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
@@ -180,7 +180,7 @@ hashmap-str-i64.remove = (key str, removed i64) {
 // clear: 清空
 hashmap-str-i64.clear = () {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] = 0
         .keys[i].len = 0
         .vals[i] = 0
@@ -202,10 +202,10 @@ hashmap-str-i64.is-empty = () (empty bool) {
 // for-each: 遍歷所有 (key, value)
 hashmap-str-i64.for-each = (k str, v i64) {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] == 1 -> {
             j = 0
-            j < .keys[i].len: {
+            for j < .keys[i].len {
                 k[j] = .keys[i][j]
                 j = j + 1
             }
@@ -242,7 +242,7 @@ hashmap-i64-i64.init = () {
     .cap = 256
     .size = 0
     i = 0
-    i < 256: {
+    for i < 256 {
         .occ[i] = 0
         .keys[i] = 0
         .vals[i] = 0
@@ -260,7 +260,7 @@ hashmap-i64-i64.put = (key i64, val i64, is-new i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             .vals[idx] = val
             is-new = 0
@@ -289,7 +289,7 @@ hashmap-i64-i64.get = (key i64, found i64, result i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             result = .vals[idx]
             found = 1
@@ -318,7 +318,7 @@ hashmap-i64-i64.remove = (key i64, removed i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         .keys[idx] == key -> {
             .occ[idx] = 0
             .keys[idx] = 0
@@ -337,7 +337,7 @@ hashmap-i64-i64.remove = (key i64, removed i64) {
 // clear: 清空
 hashmap-i64-i64.clear = () {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] = 0
         .keys[i] = 0
         .vals[i] = 0
@@ -359,7 +359,7 @@ hashmap-i64-i64.is-empty = () (empty bool) {
 // for-each: 遍歷所有 (key, value)
 hashmap-i64-i64.for-each = (k i64, v i64) {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] == 1 -> {
             k = .keys[i]
             v = .vals[i]
@@ -396,7 +396,7 @@ hashmap-str-str.init = () {
     .cap = 256
     .size = 0
     i = 0
-    i < 256: {
+    for i < 256 {
         .occ[i] = 0
         .keys[i].len = 0
         .vals[i].len = 0
@@ -408,7 +408,7 @@ hashmap-str-str.init = () {
 hashmap-str-str.hash = (key str, idx i64) {
     h = FNV-OFFSET
     i = 0
-    i < key.len: {
+    for i < key.len {
         h = h ^ (key[i] & 255)
         h = h * FNV-PRIME
         i = i + 1
@@ -423,7 +423,7 @@ hashmap-str-str.str-eq = (a str, b str, eq i64) {
         return
     }
     i = 0
-    i < a.len: {
+    for i < a.len {
         a[i] != b[i] -> {
             return
         }
@@ -437,14 +437,14 @@ hashmap-str-str.put = (key str, val str, is-new i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
             .vals[idx] = val
             .vals[idx].len = val.len
             i = 0
-            i < val.len: {
+            for i < val.len {
                 .vals[idx][i] = val[i]
                 i = i + 1
             }
@@ -460,7 +460,7 @@ hashmap-str-str.put = (key str, val str, is-new i64) {
     // 複製 key
     .keys[idx].len = key.len
     i = 0
-    i < key.len: {
+    for i < key.len {
         .keys[idx][i] = key[i]
         i = i + 1
     }
@@ -468,7 +468,7 @@ hashmap-str-str.put = (key str, val str, is-new i64) {
     // 複製 val
     .vals[idx].len = val.len
     i = 0
-    i < val.len: {
+    for i < val.len {
         .vals[idx][i] = val[i]
         i = i + 1
     }
@@ -487,12 +487,12 @@ hashmap-str-str.get = (key str, found i64, result str) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
             i = 0
-            i < .vals[idx].len: {
+            for i < .vals[idx].len {
                 result[i] = .vals[idx][i]
                 i = i + 1
             }
@@ -522,7 +522,7 @@ hashmap-str-str.remove = (key str, removed i64) {
     idx = 0
     .hash(key, idx)
 
-    .occ[idx] == 1: {
+    for .occ[idx] == 1 {
         eq = 0
         .str-eq(.keys[idx], key, eq)
         eq == 1 -> {
@@ -543,7 +543,7 @@ hashmap-str-str.remove = (key str, removed i64) {
 // clear: 清空
 hashmap-str-str.clear = () {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] = 0
         .keys[i].len = 0
         .vals[i].len = 0
@@ -565,15 +565,15 @@ hashmap-str-str.is-empty = () (empty bool) {
 // for-each: 遍歷所有 (key, value)
 hashmap-str-str.for-each = (k str, v str) {
     i = 0
-    i < .cap: {
+    for i < .cap {
         .occ[i] == 1 -> {
             j = 0
-            j < .keys[i].len: {
+            for j < .keys[i].len {
                 k[j] = .keys[i][j]
                 j = j + 1
             }
             j = 0
-            j < .vals[i].len: {
+            for j < .vals[i].len {
                 v[j] = .vals[i][j]
                 j = j + 1
             }

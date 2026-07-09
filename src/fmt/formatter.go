@@ -1206,15 +1206,15 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.Label != "" {
 		f.write("#")
 		f.write(s.Label)
-		// !: no space between #N and ! (e.g. #1! { ... })
-		if s.Token.Type != lexer.NOT {
+		// !!: no space between #N and !! (e.g. #1!! { ... })
+		if s.Token.Type != lexer.BANG_BANG {
 			f.write(" ")
 		}
 	}
 
-	// ! { } 無限循環
-	if s.Token.Type == lexer.NOT {
-		f.write("!")
+	// !! { } 無限循環
+	if s.Token.Type == lexer.BANG_BANG {
+		f.write("!!")
 		f.write(" {")
 		f.indent++
 		for _, stmt := range s.Body.Statements {

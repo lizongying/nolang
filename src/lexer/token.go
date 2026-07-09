@@ -74,7 +74,8 @@ const (
 	OR      // |
 	AND_NOT // &^
 
-	STAR_STAR // ** — used as `continue` shorthand (only at statement start)
+	STAR_STAR  // ** — used as `continue` shorthand (only at statement start)
+	BANG_BANG  // !! — used as infinite loop `!! { }` (at statement start) or `true` (expression)
 
 	ELLIPSIS // ..
 
@@ -190,6 +191,7 @@ var tokenNames = map[TokenType]string{
 	RARROW:         "RARROW(->)",
 	AND_NOT:        "AND_NOT(&^)",
 	STAR_STAR:      "STAR_STAR(**)",
+	BANG_BANG:      "BANG_BANG(!!)",
 	ELLIPSIS:       "ELLIPSIS(..)",
 
 	ADD_ASSIGN:     "ADD_ASSIGN(+=)",

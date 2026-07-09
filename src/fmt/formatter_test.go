@@ -85,10 +85,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: "for {\n    break\n}",
 		},
 		{
-			// 新式 ! { } 無限循環
+			// 新式 !! { } 無限循環
 			name:     "bang_loop",
-			input:    "!{break}",
-			expected: "! {\n    break\n}",
+			input:    "!!{break}",
+			expected: "!! {\n    break\n}",
 		},
 		{
 			// 新式 N * { } 計數循環
@@ -103,10 +103,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: "i <- [0..10): {\n    print(i)\n}",
 		},
 		{
-			// 新式 cond: { } 裸條件循環
-			name:     "bare_conditional_for",
-			input:    "i<5:{i=i+1}",
-			expected: "i < 5: {\n    i = i + 1\n}",
+			// for cond { } 條件循環（保留 for 關鍵字形式）
+			name:     "for_cond_keyword",
+			input:    "for i<5 {i=i+1}",
+			expected: "for i < 5 {\n    i = i + 1\n}",
 		},
 		{
 			// 新式 { cond -> body } if/else（包在函數內）
@@ -1519,10 +1519,10 @@ func TestFormatLabeledFor(t *testing.T) {
 		},
 		{
 			name: "labeled infinite loop",
-			input: `#1! {
+		input: `#1!! {
     x = 1
 }`,
-			expected: `#1! {
+		expected: `#1!! {
     x = 1
 }`,
 		},

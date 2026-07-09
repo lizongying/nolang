@@ -100,7 +100,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    ! {
+    !! {
         if total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE {
             close(fd)
             fd = -1

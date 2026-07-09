@@ -223,7 +223,7 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i = 0
-    i < 8: {
+    for i < 8 {
         k64 = (k64 << 8) | (key[i] & 255)
         i = i + 1
     }
@@ -231,7 +231,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     c = 0
     d = 0
     i = 0
-    i < 28: {
+    for i < 28 {
         pos = PC1-C[i] & 255
         bit = (k64 >> pos) & 1
         c = c | (bit << i)
@@ -242,7 +242,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     }
 
     round = 0
-    round < 16: {
+    for round < 16 {
         shift = SHIFT-TBL[round] & 255
         cm = (1 << 28) - 1
         c = ((c << shift) | (c >> (28 - shift))) & cm
@@ -270,7 +270,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i = 0
-    i < 8: {
+    for i < 8 {
         block = (block << 8) | (in[i] & 255)
         i = i + 1
     }
@@ -283,7 +283,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     r = ip & 4294967295
 
     round = 0
-    round < 16: {
+    for round < 16 {
         if encrypt == 1 {
             sk-off = round * 6
         } else {
@@ -308,7 +308,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     fp = permute(pre-out, FP-TBL, 64)
 
     i = 0
-    i < 8: {
+    for i < 8 {
         out[i] = (fp >> (56 - i * 8)) & 255
         i = i + 1
     }
