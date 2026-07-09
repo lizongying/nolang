@@ -4512,16 +4512,10 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-				fmt.Fprintf(os.Stderr, "[DEBUG VUV ExprStmt] IfExpression at line %d, req=%v, crlf=%v\n", ifExpr.Token.Line, definedVars["req"], definedVars["crlf"])
-			}
 			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
 		}
 	case *parser.LetStatement:
 		// Name is a definition — register it so it can be referenced later
-		if s.Name != nil && (s.Name.Value == "req" || s.Name.Value == "crlf") {
-			fmt.Fprintf(os.Stderr, "[DEBUG VUV] LetStatement name=%s at line %d\n", s.Name.Value, s.Token.Line)
-		}
 		if s.Value != nil {
 			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
 		}
@@ -4542,9 +4536,6 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		// Parameters, generic params, and result params are defined vars at BOTH
 		// the function scope (localDefs) AND the outer scope (definedVars), so
 		// result/output parameters like 'ek' are visible at module level.
-		if strings.Contains(s.Name, "reconnect") {
-			fmt.Fprintf(os.Stderr, "[DEBUG VUV FuncDef] name=%s, req in definedVars=%v, crlf in definedVars=%v\n", s.Name, definedVars["req"], definedVars["crlf"])
-		}
 		localDefs := make(map[string]bool)
 		for k, v := range definedVars {
 			localDefs[k] = v
@@ -4676,6 +4667,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false)...)
 		}
 	case *parser.IfExpression:
+		fmt.Fprintf(os.Stderr, "[DEBUG VUV IfExpr] line=%d, addr=%p, tmp=%v, separator=%v\n", e.Token.Line, definedVars, definedVars["tmp"], definedVars["separator"])
 		if e.Condition != nil {
 			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
 		}
@@ -4684,6 +4676,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
 			}
 		}
+		fmt.Fprintf(os.Stderr, "[DEBUG VUV IfExpr after] line=%d, addr=%p, tmp=%v, separator=%v\n", e.Token.Line, definedVars, definedVars["tmp"], definedVars["separator"])
 		if e.Alternative != nil {
 			for _, innerStmt := range e.Alternative.Statements {
 				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
@@ -5249,6 +5242,10 @@ func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, mod
 		if s.Value != nil {
 			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns)
 		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns)
+		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
@@ -5283,6 +5280,12 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 	}
 	switch e := expr.(type) {
 	case *parser.CallExpression:
+		// For curried calls (e.g. `mod.fn(args)(out1, out2)`), the outer
+		// CallExpression's Function is itself a CallExpression. Recurse into
+		// it first so the inner module-qualified name gets resolved.
+		if _, isCall := e.Function.(*parser.CallExpression); isCall {
+			e.Function = resolveModuleCallsInExpr(e.Function, modSet, moduleFns)
+		}
 		// Check if this is a module.fn() call (single or multi-level).
 		// Only rewrite when the function property is a known module-level function
 		// and the receiver chain matches a known module ShortPath.
@@ -5641,6 +5644,10 @@ func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]pa
 			s.Expression = resolveModuleConstantsInExpr(s.Expression, constants)
 		}
 	case *parser.LetStatement:
+		if s.Value != nil {
+			s.Value = resolveModuleConstantsInExpr(s.Value, constants)
+		}
+	case *parser.MultiAssignStatement:
 		if s.Value != nil {
 			s.Value = resolveModuleConstantsInExpr(s.Value, constants)
 		}

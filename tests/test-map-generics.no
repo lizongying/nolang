@@ -4,7 +4,8 @@
 
 // str → i64
 test-str-i64 = () {
-    m = m.put('c', 2)
+    m map[str]i64 = { 'a':0, 'b':1 }
+    m.put('c', 2, _)
 
     found = 0
     v = 0
@@ -25,7 +26,7 @@ test-str-i64 = () {
 
 // str → str
 test-str-str = () {
-    m = m.put('name', 'Alice')
+    m map[str]str = { 'name':'Alice' }
 
     found = 0
     v = ''
@@ -35,8 +36,8 @@ test-str-str = () {
 
 // i64 → i64
 test-i64-i64 = () {
-    m = m.put(42, 100)
-    m.put(10, 20)
+    m map[i64]i64 = { 10:20 }
+    m.put(42, 100, _)
 
     found = 0
     v = 0
@@ -49,7 +50,7 @@ test-i64-i64 = () {
 
 // i32 → str (非預設 int 鍵寬度)
 test-i32-str = () {
-    m = m.put(7, 'seven')
+    m map[i32]str = { 7:'seven' }
 
     found = 0
     v = ''
@@ -59,8 +60,9 @@ test-i32-str = () {
 
 // bool → i64
 test-bool-i64 = () {
-    m = m.put(true, 1)
-    m.put(false, 0)
+    m map[bool]i64 = { }
+    m.put(true, 1, _)
+    m.put(false, 0, _)
 
     found = 0
     v = 0
@@ -73,7 +75,7 @@ test-bool-i64 = () {
 
 // 非預設組合: str → bool
 test-str-bool = () {
-    m = m.put('yes', true)
+    m map[str]bool = { 'yes':true }
 
     found = 0
     v = false
@@ -83,7 +85,7 @@ test-str-bool = () {
 
 // 非預設組合: u8 → i64
 test-u8-i64 = () {
-    m = m.put(200, 200)
+    m map[u8]i64 = { 200:200 }
 
     found = 0
     v = 0

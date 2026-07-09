@@ -23,6 +23,22 @@ var llvmTypeToNolang = map[string][]string{
 	"str-long": {"str"},
 }
 
+// flattenDottedExpr 將鏈式 DotExpression（如 net.quic.fn）展開為完整名稱字串。
+// 僅處理 Identifier 與 DotExpression 兩種節點；遇到其他節點返回 ""。
+func flattenDottedExpr(expr parser.Expression) string {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		return e.Value
+	case *parser.DotExpression:
+		left := flattenDottedExpr(e.Receiver)
+		if left == "" {
+			return ""
+		}
+		return left + "." + e.Property
+	}
+	return ""
+}
+
 // isNonVoidCall checks if a CallExpression returns a non-void type.
 func (g *Generator) isNonVoidCall(expr *parser.CallExpression) bool {
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
@@ -801,9 +817,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
 		fnName = ident.Value
 	} else if dot, ok := expr.Function.(*parser.DotExpression); ok {
-		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-			fnName = recv.Value + "." + dot.Property
-		}
+		// 支援多段限定名（如 net.quic.quic-varint-encode）：
+		// 鏈式 DotExpression 的 Receiver 本身也是 DotExpression，
+		// 需遞迴展開為完整名稱。
+		fnName = flattenDottedExpr(dot)
 	}
 
 	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /

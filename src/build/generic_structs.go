@@ -79,13 +79,9 @@ func scanStmtForMapTypes(stmt parser.Statement, results *[]mapTypePair) {
 	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.Type != nil {
-			fmt.Fprintf(os.Stderr, "[DEBUG scanStmt] LetStatement name=%q type=%T typeStr=%q\n", s.Name.Value, s.Type, s.Type.String())
-		}
 		scanForMapTypes(s.Type, results)
 		scanExprForMapTypes(s.Value, results)
 	case *parser.FunctionDefinition:
-		fmt.Fprintf(os.Stderr, "[DEBUG scanStmt] FunctionDefinition name=%q body stmts=%d\n", s.Name, len(s.Body.Statements))
 		for _, p := range s.Parameters {
 			scanForMapTypes(p.Type, results)
 		}
@@ -302,10 +298,6 @@ func monomorphizeGenericStructs(program *parser.Program) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "[DEBUG monomorphizeGenericStructs] templateStructs=%d\n", len(templateStructs))
-	for name := range templateStructs {
-		fmt.Fprintf(os.Stderr, "  template: %s\n", name)
-	}
 	if len(templateStructs) == 0 {
 		return
 	}
@@ -322,16 +314,9 @@ func monomorphizeGenericStructs(program *parser.Program) {
 			}
 		}
 	}
-	for name, methods := range templateMethods {
-		fmt.Fprintf(os.Stderr, "  templateMethods[%s]=%d\n", name, len(methods))
-	}
 
 	// 2. 收集 map 型別使用點
 	pairs := collectMapTypeUsages(program)
-	fmt.Fprintf(os.Stderr, "[DEBUG monomorphizeGenericStructs] pairs=%d\n", len(pairs))
-	for _, p := range pairs {
-		fmt.Fprintf(os.Stderr, "  pair: key=%s value=%s\n", p.key, p.value)
-	}
 
 	// 3. 對每組 (K,V) 生成具體定義
 	var generated []parser.Statement

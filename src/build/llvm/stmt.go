@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -222,23 +221,6 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// Reset itAllocTypes per function to prevent type leakage from prior functions
 	g.itAllocTypes = make(map[string]string)
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
-	if fd.Name == "http-server-conn.get-cookie" {
-		fmt.Fprintf(os.Stderr, "[DEBUG get-cookie #%d] localVarTypes: %d entries\n", g.debugCallCount, len(localVarTypes))
-		for k, v := range localVarTypes {
-			fmt.Fprintf(os.Stderr, "  %s = %s\n", k, v)
-		}
-		// Check if 'it' is in varTypes
-		if t, ok := g.varTypes["it"]; ok {
-			fmt.Fprintf(os.Stderr, "  g.varTypes[it] = %s\n", t)
-		} else {
-			fmt.Fprintf(os.Stderr, "  g.varTypes[it] NOT FOUND\n")
-		}
-		fmt.Fprintf(os.Stderr, "[DEBUG get-cookie #%d] body stmts: %d\n", g.debugCallCount, len(fd.Body.Statements))
-		for i, s := range fd.Body.Statements {
-			fmt.Fprintf(os.Stderr, "  [%d] %T\n", i, s)
-		}
-		g.debugCallCount++
-	}
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
@@ -1008,9 +990,6 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map[string]string, isModuleLevel bool) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.Name != nil && s.Name.Value == "cookie-header" {
-			fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header LetStatement: IsSynthetic=%v, Type=%T=%v\n", s.IsSynthetic, s.Type, s.Type)
-		}
 		// Skip synthetic let statements with "err"/"nil" type sentinels.
 		// 這些是 match 對應 err/nil arm 注入的 `it = matched`，
 		// 變數型別語意上是 err/nil（無值），LLVM 端以 i64 佔位即可。
@@ -1054,9 +1033,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
 		if _, exists := vars[s.Name.Value]; !exists {
-			if s.Name != nil && s.Name.Value == "cookie-header" {
-				fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header entering collection block, vars has %d entries\n", len(vars))
-			}
 			// Slice view variables (view = arr[0..4]) don't need alloca:
 			// they are registered as aliases with adjusted data pointers.
 			// Skip collection to avoid wasting stack space + malloc.
@@ -1081,9 +1057,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			}
 			vt := g.varLLVMType(s)
 			vars[s.Name.Value] = vt
-			if s.Name != nil && s.Name.Value == "cookie-header" {
-				fmt.Fprintf(os.Stderr, "[DEBUG collect] cookie-header stored as vt=%s, vars now has %d entries\n", vt, len(vars))
-			}
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
@@ -1240,12 +1213,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			g.collectVarDeclsFromExpr(s.Value, vars)
 		}
 	case *parser.BlockStatement:
-		if len(s.Statements) > 0 {
-			first := s.Statements[0]
-			if ls, ok := first.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == "val" {
-				fmt.Fprintf(os.Stderr, "[DEBUG collect] BlockStatement with %d stmts, first=val\n", len(s.Statements))
-			}
-		}
 		for _, ss := range s.Statements {
 			g.collectVarDeclsFromStmt(ss, vars)
 		}
