@@ -44,8 +44,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 // 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
 bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
-    i = 0
-    for i < an || i < bn || carry != 0 {
+    i <- [0..an || i < bn || carry != 0): {
         sum = carry
         if i < an {
             sum = sum + a[i]
@@ -55,7 +54,6 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         }
         c[i] = sum & 4294967295
         carry = sum >> 32
-        i = i + 1
     }
     cn = i
 }
@@ -65,8 +63,7 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-sub: c = a - b（需 a ≥ b）
 bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         diff = a[i] - borrow
         if i < bn {
             diff = diff - b[i]
@@ -78,7 +75,6 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
             borrow = 0
         }
         c[i] = diff & 4294967295
-        i = i + 1
     }
 
     // 移除前導零
@@ -93,27 +89,20 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-mul: c = a × b
 // 呼叫者需確保 c 的容量 ≥ an + bn
 bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
-    i = 0
-    for i < an + bn {
+    i <- [0..an + bn): {
         c[i] = 0
-        i = i + 1
     }
-    i = 0
-    for i < an {
+    i <- [0..an): {
         if a[i] == 0 {
-            i = i + 1
             continue
         }
         carry = 0
-        j = 0
-        for j < bn {
+        j <- [0..bn): {
             prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
             c[i + j] = prod & 4294967295
             carry = prod >> 32
-            j = j + 1
         }
         c[i + bn] = carry & 4294967295
-        i = i + 1
     }
 
     // 計算實際長度
@@ -128,12 +117,10 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 // bn-shl1: a = a << 1（原地左移 1 位元）
 bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         new-val = (a[i] << 1) | carry
         carry = a[i] >> 31
         a[i] = new-val & 4294967295
-        i = i + 1
     }
     if carry != 0 {
         a[an] = carry
@@ -178,18 +165,14 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     }
 
     // 初始化 r = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         r[i] = 0
-        i = i + 1
     }
     rn = 1
 
     // 初始化 q = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         q[i] = 0
-        i = i + 1
     }
     qn = 1
 
@@ -243,10 +226,8 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 // 使用左右掃描平方乘（square-and-multiply）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
     // 初始化 result = 1
-    i = 0
-    for i < mn {
+    i <- [0..mn): {
         result[i] = 0
-        i = i + 1
     }
     result[0] = 1
     rn = 1

@@ -111,11 +111,9 @@ path.join = (b str) {
     }
 
     // 複製 b
-    j = start-b
-    for j < bn {
+    j <- [start-b..bn): {
         .p[out-n] = b[j]
         out-n = out-n + 1
-        j = j + 1
     }
 
 }
@@ -129,20 +127,16 @@ path.join = (b str) {
 path.base = () (out str) {
     // 找最右邊的 '/'
     last-sep = -1
-    i = 0
-    for i < .p.len {
+    i <- [0...p.len): {
         c = .p[i] & 255
         if c == SEP {
             last-sep = i
         }
-        i = i + 1
     }
     start = last-sep + 1
     out-n = .p.len - start
-    i = 0
-    for i < out-n {
+    i <- [0..out-n): {
         out[i] = .p[start + i]
-        i = i + 1
     }
 }
 
@@ -151,13 +145,11 @@ path.base = () (out str) {
 path.dir = () {
     // 找最右邊的 '/'
     last-sep = -1
-    i = 0
-    for i < .p.len {
+    i <- [0...p.len): {
         c = .p[i] & 255
         if c == SEP {
             last-sep = i
         }
-        i = i + 1
     }
     if last-sep < 0 {
         // 無 '/'，變為 '.'
@@ -183,8 +175,7 @@ path.ext = () (out str) {
     // 找最右邊的 '/' 之後的 '.'
     last-sep = -1
     last-dot = -1
-    i = 0
-    for i < .p.len {
+    i <- [0...p.len): {
         c = .p[i] & 255
         if c == SEP {
             last-sep = i
@@ -192,7 +183,6 @@ path.ext = () (out str) {
         if c == DOT {
             last-dot = i
         }
-        i = i + 1
     }
 
     // '.' 必須在 '/' 之後
@@ -206,10 +196,8 @@ path.ext = () (out str) {
     }
     start = last-dot
     out-n = .p.len - start
-    i = 0
-    for i < out-n {
+    i <- [0..out-n): {
         out[i] = .p[start + i]
-        i = i + 1
     }
 
 }
@@ -238,9 +226,8 @@ path.is-abs = () (yes bool) {
 // 原地修改 .p
 path.clean = () {
     out-n = 0
-    i = 0
     dot-count = 0
-    for i < .p.len {
+    i <- [0...p.len): {
         c = .p[i] & 255
         if c == SEP {
             // 處理上一段
@@ -276,17 +263,14 @@ path.clean = () {
             dot-count = dot-count + 1
         } else {
             // 寫入之前積累的 '.' 字元
-            j = 0
-            for j < dot-count {
+            j <- [0..dot-count): {
                 .p[out-n] = DOT
                 out-n = out-n + 1
-                j = j + 1
             }
             dot-count = 0
             .p[out-n] = c
             out-n = out-n + 1
         }
-        i = i + 1
     }
 
     // 處理末尾段
@@ -329,21 +313,17 @@ path.clean = () {
 path.split = () (f str) {
     // 找最右邊的 '/'
     last-sep = -1
-    i = 0
-    for i < .p.len {
+    i <- [0...p.len): {
         c = .p[i] & 255
         if c == SEP {
             last-sep = i
         }
-        i = i + 1
     }
     // 提取檔名
     start = last-sep + 1
     out-n = .p.len - start
-    i = 0
-    for i < out-n {
+    i <- [0..out-n): {
         f[i] = .p[start + i]
-        i = i + 1
     }
     // 原地修改 .p 為目錄部分
     if last-sep < 0 {

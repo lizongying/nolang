@@ -30,8 +30,7 @@ program = () (name str) {
 has-flag = (flag str, flagn i64) (yes bool) {
     yes = false
     n = count()
-    i = 1
-    for i < n {
+    i <- [1..n): {
         arg = get(i)
 
         // 精確比對 arg 與 flag
@@ -39,21 +38,18 @@ has-flag = (flag str, flagn i64) (yes bool) {
         if flagn == 0 {
             matched = false
         }
-        j = 0
-        for j < flagn {
+        j <- [0..flagn): {
             ac = arg[j] & 255
             fc = flag[j] & 255
             if ac != fc {
                 matched = false
                 break
             }
-            j = j + 1
         }
         if matched == true {
             yes = true
             return
         }
-        i = i + 1
     }
 }
 
@@ -65,21 +61,18 @@ has-flag = (flag str, flagn i64) (yes bool) {
 get-option = (key str, keyn i64, val str) (ok bool) {
     ok = false
     n = count()
-    i = 1
-    for i < n {
+    i <- [1..n): {
         arg = get(i)
 
         // 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
-        j = 0
-        for j < keyn {
+        j <- [0..keyn): {
             ac = arg[j] & 255
             kc = key[j] & 255
             if ac != kc {
                 matched-prefix = 0
                 break
             }
-            j = j + 1
         }
         if matched-prefix == 1 {
             // 檢查 key 後是 '='
@@ -101,7 +94,6 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                 return
             }
         }
-        i = i + 1
     }
 }
 

@@ -26,17 +26,13 @@ json-pool {
 
 json-pool.init = () {
     .count = 0
-    i = 0
-    for i < 4 {
+    i <- [0..4): {
         .nodes[i].count = 0
         .nodes[i].kind = json-kind.null
         .nodes[i].str-val.len = 0
-        j = 0
-        for j < 16 {
+        j <- [0..16): {
             .nodes[i].keys[j].len = 0
-            j = j + 1
         }
-        i = i + 1
     }
 }
 
@@ -72,10 +68,8 @@ main = () {
     cnt i64 = 0
     p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len
     print('set len ok')
-    j i64 = 0
-    for j < p.nodes[key-idx].str-val.len {
+    j <- [0..p.nodes[key-idx].str-val.len): {
         p.nodes[node-idx].keys[cnt][j] = p.nodes[key-idx].str-val[j]
-        j = j + 1
     }
     print('copy ok')
 

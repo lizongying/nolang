@@ -17,19 +17,15 @@ crc-64 = (data []byte) (crc u64) {
     // 反射多項式: 0xC96C5795D7870F42
     poly u64 = 14180682008813511362
     crc = 0
-    i = 0
-    for i < data.len {
+    i <- [0..data.len): {
         crc = crc ^ (data[i] & 255)
-        j = 0
-        for j < 8 {
+        j <- [0..8): {
             if crc & 1 != 0 {
                 crc = ((crc >> 1) ^ poly) & mask
             } else {
                 crc = (crc >> 1) & mask
             }
-            j = j + 1
         }
-        i = i + 1
     }
 }
 
@@ -41,9 +37,7 @@ crc-64-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex = space.repeat(16)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
-        i = i + 1
     }
 }

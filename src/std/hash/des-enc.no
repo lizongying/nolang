@@ -229,29 +229,24 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     // 將 8-byte 金鑰轉為 64-bit 值
     k64 = 0
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         k64 = (k64 << 8) | (key[i] & 255)
-        i = i + 1
     }
 
     // PC1 排列（64→56 位元）：分成 C（28 位元）和 D（28 位元）
     c = 0
     d = 0
-    i = 0
-    for i < 28 {
+    i <- [0..28): {
         pos = PC1-C[i] & 255
         bit = (k64 >> pos) & 1
         c = c | (bit << i)
         pos2 = PC1-D[i] & 255
         bit2 = (k64 >> pos2) & 1
         d = d | (bit2 << i)
-        i = i + 1
     }
 
     // 16 輪左移 + PC2
-    round = 0
-    for round < 16 {
+    round <- [0..16): {
         shift = SHIFT-TBL[round] & 255
 
         // 左移 C 和 D
@@ -275,7 +270,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         ks[off + 4] = (sk >> 8) & 255
         ks[off + 5] = sk & 255
 
-        round = round + 1
     }
 }
 
@@ -285,10 +279,8 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     // 將輸入轉為 64-bit
     block = 0
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         block = (block << 8) | (in[i] & 255)
-        i = i + 1
     }
 
     // IP 初始排列
@@ -301,8 +293,7 @@ des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     r = ip & 4294967295
 
     // 16 輪
-    round = 0
-    for round < 16 {
+    round <- [0..16): {
         sk-off = round * 6
         sk = 0
         sk = (ks[sk-off] << 40) |
@@ -316,7 +307,6 @@ des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
         r = l ^ fout
         l = new-l
 
-        round = round + 1
     }
 
     // 最後交換（L,R）
@@ -326,10 +316,8 @@ des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     fp = permute(pre-out, FP-TBL, 64)
 
     // 輸出 8 位元組
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         out[i] = (fp >> (56 - i * 8)) & 255
-        i = i + 1
     }
 }
 

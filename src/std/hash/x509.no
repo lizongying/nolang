@@ -37,10 +37,8 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
         // 長格式：後續 (b & 0x7F) 個位元組編碼長度
         n = b & 127
         len = 0
-        i = 0
-        for i < n {
+        i <- [0..n): {
             len = (len << 8) | (data[pos + 1 + i] & 255)
-            i = i + 1
         }
         adv = 1 + n
     }
@@ -123,10 +121,8 @@ x509-serial = (data []byte, serial i64) {
 
     // 讀取序號值
     val = 0
-    i = 0
-    for i < int-len {
+    i <- [0..int-len): {
         val = (val << 8) | (data[p + 1 + adv + i] & 255)
-        i = i + 1
     }
     serial = val
 }
@@ -217,10 +213,8 @@ x509-rsa-e = (data []byte) (e i64) {
         return
     }
     val = 0
-    i = 0
-    for i < exp-len {
+    i <- [0..exp-len): {
         val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
-        i = i + 1
     }
     e = val
 }
@@ -295,10 +289,8 @@ x509-rsa-n = (data []byte) (out []byte) {
     }
 
     // 複製模數位元組
-    i = 0
-    for i < actual-len {
+    i <- [0..actual-len): {
         out[i] = data[actual-start + i]
-        i = i + 1
     }
 }
 
@@ -365,8 +357,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
     //   (tbs-len, pad-len-8)：0x00 填充
     //   [pad-len-8, pad-len)：64-bit 位元長度（大端序）
 
-    wi = 0  // suppress unused warning
-    for wi < 16 {
+    wi <- [0..16): {
         boff = off + wi * 4  // 此字在 padded 訊息中的位元組偏移
 
         // 組裝 4 個位元組 → 32-bit 大端字
@@ -520,7 +511,6 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         } else {
             w15 = word
         }
-        wi = wi + 1
     }
     h0, h1, h2, h3, h4, h5, h6, h7 = sha256-compress(w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15)
     bidx = bidx + 1

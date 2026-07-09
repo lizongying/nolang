@@ -37,19 +37,15 @@
 
 // str.copy: 将 src 复制到 dst（整個字串）
 str.copy = () (dst str) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         dst[i] = .[i]
-        i = i + 1
     }
 }
 
 // str.fill: 用 byte 值填充整個字串
 str.fill = (val byte) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         .[i] = val
-        i = i + 1
     }
 }
 
@@ -69,15 +65,13 @@ str.index = (target str) (pos i64) {
     i = 0
     for i <= limit {
         matched = 1
-        j = 0
-        for j < target.len {
+        j <- [0..target.len): {
             sj = .[i + j]
             tj = target[j]
             if sj != tj {
                 matched = 0
                 break
             }
-            j = j + 1
         }
         if matched == 1 {
             pos = i
@@ -104,15 +98,13 @@ str.index-from = (target str, from i64) (pos i64) {
     i = from
     for i <= limit {
         matched = 1
-        j = 0
-        for j < target.len {
+        j <- [0..target.len): {
             sj = .[i + j]
             tj = target[j]
             if sj != tj {
                 matched = 0
                 break
             }
-            j = j + 1
         }
         if matched == 1 {
             pos = i
@@ -140,15 +132,13 @@ str.starts-with = (target str) (yes bool) {
         yes = false
         return
     }
-    i = 0
-    for i < target.len {
+    i <- [0..target.len): {
         si = .[i]
         ti = target[i]
         if si != ti {
             yes = false
             return
         }
-        i = i + 1
     }
 }
 
@@ -161,15 +151,13 @@ str.ends-with = (target str) (yes bool) {
         return
     }
     off = .len - target.len
-    i = 0
-    for i < target.len {
+    i <- [0..target.len): {
         si = .[off + i]
         ti = target[i]
         if si != ti {
             yes = false
             return
         }
-        i = i + 1
     }
 }
 
@@ -180,43 +168,37 @@ str.ends-with = (target str) (yes bool) {
 // str.to-upper: 将字符串转为大写
 // 返回新字符串
 str.to-upper = () (val str) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         c = .[i]
         if c >= 97 && c <= 122 {
             val[i] = c - 32
         } else {
             val[i] = c
         }
-        i = i + 1
     }
 }
 
 // str.to-lower: 将字符串转为小写
 // 返回新字符串
 str.to-lower = () (val str) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         c = .[i]
         if c >= 65 && c <= 90 {
             val[i] = c + 32
         } else {
             val[i] = c
         }
-        i = i + 1
     }
 }
 
 // str.trim: 去除字符串首尾空白字符
 // 返回新字符串
 str.trim = () (val str) {
-    start = 0
-    for start < .len {
+    start <- [0...len): {
         c = .[start]
         if c != 32 && c != 9 && c != 10 && c != 13 {
             break
         }
-        start = start + 1
     }
     end = .len - 1
     for end >= start {
@@ -230,10 +212,8 @@ str.trim = () (val str) {
     if n < 0 {
         return
     }
-    i = 0
-    for i < n {
+    i <- [0..n): {
         val[i] = .[start + i]
-        i = i + 1
     }
 }
 
@@ -244,14 +224,10 @@ str.trim = () (val str) {
 // str.repeat: 将字符串重复 times 次
 // 返回新字符串
 str.repeat = (times i64) (val str) {
-    i = 0
-    for i < times {
-        j = 0
-        for j < .len {
+    i <- [0..times): {
+        j <- [0...len): {
             val[i * .len + j] = .[j]
-            j = j + 1
         }
-        i = i + 1
     }
 }
 
@@ -268,10 +244,8 @@ str.slice = (start i64, end i64) (val str) {
         return
     }
     n = end - start
-    i = 0
-    for i < n {
+    i <- [0..n): {
         val[i] = .[start + i]
-        i = i + 1
     }
 }
 
@@ -282,10 +256,8 @@ str.slice = (start i64, end i64) (val str) {
 // str.to-bytes: 将字符串转为字节数组
 str.to-bytes = () (val []byte) {
     val.len = .len
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         val[i] = .[i]
-        i = i + 1
     }
 }
 
@@ -711,10 +683,8 @@ str.to-bool = () (val ?bool) {
 // str.reverse: 反转字符串
 // 将 s 反转后写入 val
 str.reverse = () (val str) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         val[i] = .[.len - 1 - i]
-        i = i + 1
     }
 }
 
@@ -727,8 +697,7 @@ str.compare = (b str) (r i64) {
     if bn < min-n {
         min-n = bn
     }
-    i = 0
-    for i < min-n {
+    i <- [0..min-n): {
         ai = .[i]
         bi = b[i]
         if ai < bi {
@@ -739,7 +708,6 @@ str.compare = (b str) (r i64) {
             r = 1
             return
         }
-        i = i + 1
     }
     if an < bn {
         r = -1
@@ -858,10 +826,8 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 j = j + 4
             }
         } else {
-            k = 0
-            for k < clen {
+            k <- [0..clen): {
                 val[j + k] = .[i + k]
-                k = k + 1
             }
             j = j + clen
         }
@@ -929,10 +895,8 @@ str.trim-char = (ch char) (val str) {
     if n < 0 {
         return
     }
-    j = 0
-    for j < n {
+    j <- [0..n): {
         val[j] = .[start + j]
-        j = j + 1
     }
 }
 
@@ -982,8 +946,7 @@ str.from-hex = () (out ?[]byte) {
     }
     n = .len / 2
     out.len = n
-    i = 0
-    for i < n {
+    i <- [0..n): {
         hi = hex-val(.[i * 2])
         lo = hex-val(.[i * 2 + 1])
         if hi < 0 || lo < 0 {
@@ -991,7 +954,6 @@ str.from-hex = () (out ?[]byte) {
             return
         }
         out[i] = (hi << 4) | lo
-        i = i + 1
     }
 }
 
@@ -1032,23 +994,17 @@ str.split = (sep str) (out []str) {
         return
     }
     pos = 0
-    i = 0
-    for i < n {
+    i <- [0..n): {
         if i > 0 {
-            j = 0
-            for j < sep.len {
+            j <- [0..sep.len): {
                 out[pos] = sep[j]
                 pos = pos + 1
-                j = j + 1
             }
         }
         s = .[i]
-        j = 0
-        for j < s.len {
+        j <- [0..s.len): {
             out[pos] = s[j]
             pos = pos + 1
-            j = j + 1
         }
-        i = i + 1
     }
 }

@@ -112,10 +112,8 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
             fd = -1
             return
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = buf[i]
-            i = i + 1
         }
         total = total + n
         data = raw.slice(0, total)
@@ -148,8 +146,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     }
 
     code = 0
-    i = 0
-    for i < code-str.len {
+    i <- [0..code-str.len): {
         ch = code-str[i]
         if ch < 48 || ch > 57 {
             close(fd)
@@ -157,7 +154,6 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
             return
         }
         code = code * 10 + ch - 48
-        i = i + 1
     }
 
     if code != 200 {
@@ -252,10 +248,8 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
         premaster[0] = 0x03
         premaster[1] = 0x03
         rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
-        i = 0
-        for i < 46 {
+        i <- [0..46): {
             premaster[2 + i] = rand-bytes[i]
-            i = i + 1
         }
 
         c.derive-keys(premaster)
@@ -345,10 +339,8 @@ proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
         premaster[0] = 0x03
         premaster[1] = 0x03
         rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
-        i = 0
-        for i < 46 {
+        i <- [0..46): {
             premaster[2 + i] = rand-bytes[i]
-            i = i + 1
         }
         c.derive-keys(premaster)
         ok = c.send-client-key-exchange(premaster, cert)
@@ -456,19 +448,15 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         pos = pos + 1
         auth-req[pos] = username.len & 255
         pos = pos + 1
-        i = 0
-        for i < username.len {
+        i <- [0..username.len): {
             auth-req[pos] = username[i] & 255
             pos = pos + 1
-            i = i + 1
         }
         auth-req[pos] = password.len & 255
         pos = pos + 1
-        i = 0
-        for i < password.len {
+        i <- [0..password.len): {
             auth-req[pos] = password[i] & 255
             pos = pos + 1
-            i = i + 1
         }
         auth-str = auth-req.to-str()
         written = net-send(fd, auth-str, pos)
@@ -506,11 +494,9 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     pos = pos + 1
     conn-req[pos] = target-host.len & 255
     pos = pos + 1
-    i = 0
-    for i < target-host.len {
+    i <- [0..target-host.len): {
         conn-req[pos] = target-host[i] & 255
         pos = pos + 1
-        i = i + 1
     }
     conn-req[pos] = (target-port >> 8) & 255
     pos = pos + 1

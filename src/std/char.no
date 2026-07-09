@@ -129,10 +129,8 @@ char.to-bytes = () (out []byte) {
         len = 4
     }
 
-    i = 0
-    for i < len {
+    i <- [0..len): {
         out[i] = buf[i]
-        i = i + 1
     }
 }
 

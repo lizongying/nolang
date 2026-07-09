@@ -19,12 +19,10 @@ test-hkdf-extract = () {
     prk = hash.hkdf.hkdf-extract(salt, ikm)
     // RFC 5869 Test Case 1: PRK should not be all zeros
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if prk[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: hkdf-extract output all zeros')
@@ -36,10 +34,8 @@ test-hkdf-extract = () {
 // test-hkdf-expand: 測試 HKDF-Expand
 test-hkdf-expand = () {
     prk [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         prk[i] = i + 1
-        i = i + 1
     }
     info []byte
     info[0] = 0xAA
@@ -48,12 +44,10 @@ test-hkdf-expand = () {
     okm = hash.hkdf.hkdf-expand(prk, info, 32)
     // 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if okm[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: hkdf-expand output all zeros')
@@ -65,10 +59,8 @@ test-hkdf-expand = () {
 // test-hkdf-expand-label: 測試 TLS 1.3 HKDF-Expand-Label
 test-hkdf-expand-label = () {
     prk [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         prk[i] = i + 1
-        i = i + 1
     }
     ctx []byte
     ctx[0] = 0xDE
@@ -77,12 +69,10 @@ test-hkdf-expand-label = () {
     okm = hash.hkdf.hkdf-expand-label(prk, 'derived', ctx, 32)
     // 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if okm[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: hkdf-expand-label output all zeros')
@@ -95,17 +85,13 @@ test-hkdf-expand-label = () {
 test-aes-gcm-seal-open = () {
     // 16-byte key
     key [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         key[i] = i + 1
-        i = i + 1
     }
     // 12-byte IV
     iv [12]byte
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         iv[i] = i + 10
-        i = i + 1
     }
     // AAD
     aad []byte
@@ -124,13 +110,11 @@ test-aes-gcm-seal-open = () {
     sealed = hash.aes-gcm.aes-128-gcm-seal(key, iv, aad, plain)
     // sealed 長度應為 plain.len + 16 (tag)
     expected-len = plain.len + 16
-    i = 0
     sealed-nonzero = 0
-    for i < expected-len {
+    i <- [0..expected-len): {
         if sealed[i] != 0 {
             sealed-nonzero = 1
         }
-        i = i + 1
     }
     if sealed-nonzero == 0 {
         print('FAIL: aes-gcm-seal output all zeros')
@@ -140,13 +124,11 @@ test-aes-gcm-seal-open = () {
     opened []byte
     opened = hash.aes-gcm.aes-128-gcm-open(key, iv, aad, sealed)
     // 驗證解密結果與原文一致
-    i = 0
-    for i < plain.len {
+    i <- [0..plain.len): {
         if opened[i] != plain[i] {
             print('FAIL: aes-gcm-open mismatch')
             return
         }
-        i = i + 1
     }
     print('PASS: aes-gcm-seal-open')
 }
@@ -155,22 +137,18 @@ test-aes-gcm-seal-open = () {
 test-x25519-scalarmult = () {
     // 生成私鑰（固定值）
     priv [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         priv[i] = i + 1
-        i = i + 1
     }
     // 計算公鑰 = priv * basepoint
     pub [32]byte
     pub = hash.x25519.x25519-scalarmult-base(priv)
     // 公鑰不應為全零
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if pub[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: x25519-scalarmult-base output all zeros')
@@ -180,12 +158,10 @@ test-x25519-scalarmult = () {
     shared [32]byte
     shared = hash.x25519.x25519-scalarmult(priv, pub)
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if shared[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: x25519-scalarmult output all zeros')
@@ -214,12 +190,10 @@ test-x25519-keypair = () {
     }
     // 公鑰不應為全零
     has-nonzero = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if pub[i] != 0 {
             has-nonzero = 1
         }
-        i = i + 1
     }
     if has-nonzero == 0 {
         print('FAIL: x25519-gen-keypair pub all zeros')

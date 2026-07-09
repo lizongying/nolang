@@ -37,10 +37,8 @@
 
 // vec-create: 創建長度 n 的切片，全部填充 val
 vec-create = (n i64, val i64) (out []i64) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         out[i] = val
-        i = i + 1
     }
 }
 
@@ -48,13 +46,11 @@ vec-create = (n i64, val i64) (out []i64) {
 // 返回 true=相等, false=不相等
 []t.eq = (a []t, b []t, n i64) (eq bool) {
     eq = true
-    i = 0
-    for i < n {
+    i <- [0..n): {
         if a[i] != b[i] {
             eq = false
             return
         }
-        i = i + 1
     }
 }
 
@@ -129,13 +125,11 @@ vec-create = (n i64, val i64) (out []i64) {
 // []t.contains: 是否包含值 val
 []t.contains = (n i64, val t) (found i64) {
     found = 0
-    i = 0
-    for i < n {
+    i <- [0..n): {
         d = .[i] - val
         if d == 0 {
             found = 1
         }
-        i = i + 1
     }
 }
 
@@ -155,25 +149,21 @@ vec-create = (n i64, val i64) (out []i64) {
 
 // []t.clone: 複製到 dst
 []t.clone = (dst []t) {
-    i = 0
-    for i < .len {
+    i <- [0...len): {
         dst[i] = .[i]
-        i = i + 1
     }
 }
 
 // []t.fill: 前 n 個元素填充為 val
 []t.fill = (n i64, val t) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         .[i] = val
-        i = i + 1
     }
 }
 
 // []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
-    for i <- [0...len()) {
+    i <- [0...len): {
         out[i] = .[i]
     }
 }

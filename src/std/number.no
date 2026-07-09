@@ -52,24 +52,20 @@ u64.MAX = 0 - 1
 max = (a ..num) (r num) {
     r = a[0]
     n = len(a)
-    i = 1
-    for i < n {
+    i <- [1..n): {
         if a[i] > r {
             r = a[i]
         }
-        i = i + 1
     }
 }
 
 min = (a ..num) (r num) {
     r = a[0]
     n = len(a)
-    i = 1
-    for i < n {
+    i <- [1..n): {
         if a[i] < r {
             r = a[i]
         }
-        i = i + 1
     }
 }
 

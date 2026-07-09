@@ -186,10 +186,8 @@ ws-compute-accept = (key str) (accept str) {
         0,
     ]
 
-    i = 0
-    for i < 20 {
+    i <- [0..20): {
         hash-vec[i] = hash[i]
-        i = i + 1
     }
     accept = encoding.base64.encode-std(hash-vec)
 }
@@ -222,11 +220,9 @@ ws-gen-mask-key = (seed i64) (key str) {
 ws-gen-client-key = (seed i64) (key str) {
     space = ' '
     raw str = space.repeat(16)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         s = seed + i * 31
         raw[i] = (s * 1103515245 + 12345) & 255
-        i = i + 1
     }
     rv = raw.to-bytes()
     key = encoding.base64.encode-std(rv)
@@ -274,10 +270,8 @@ ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     }
     if dlen > 65535 {
         frame[1] = mask-bit | 127
-        i = 0
-        for i < 8 {
+        i <- [0..8): {
             frame[2 + i] = (dlen >> (56 - i * 8)) & 255
-            i = i + 1
         }
     }
 
@@ -291,24 +285,18 @@ ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     }
 
     if mask {
-        i = 0
-        for i < 4 {
+        i <- [0..4): {
             frame[mk-start + i] = mask-key[i]
-            i = i + 1
         }
         // masked payload
-        i = 0
-        for i < dlen {
+        i <- [0..dlen): {
             frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
-            i = i + 1
         }
     }
     if mask == false {
         // unmasked payload
-        i = 0
-        for i < dlen {
+        i <- [0..dlen): {
             frame[header-len + i] = data[i]
-            i = i + 1
         }
     }
 }
@@ -405,10 +393,8 @@ ws-server-conn.handshake = () {
         if n <= 0 {
             return
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = tmp[i]
-            i = i + 1
         }
         total = total + n
         data = raw.slice(0, total)
@@ -507,10 +493,8 @@ ws-server-conn.handshake = () {
     body-start = sep-pos + separator.len
     if total > body-start {
         remaining = raw.slice(body-start, total)
-        i = 0
-        for i < remaining.len {
+        i <- [0..remaining.len): {
             .recv-buf[i] = remaining[i]
-            i = i + 1
         }
         .recv-buf-len = remaining.len
     }
@@ -582,10 +566,8 @@ ws-server-conn.send-close = (code i64, reason str) (ok bool) {
     payload = space.repeat(2 + reason.len)
     payload[0] = (code >> 8) & 255
     payload[1] = code & 255
-    i = 0
-    for i < reason.len {
+    i <- [0..reason.len): {
         payload[2 + i] = reason[i]
-        i = i + 1
     }
     ok = .send(WS-OP-CLOSE, payload)
 }
@@ -626,10 +608,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 msg = nil
                 return
             }
-            i = 0
-            for i < n {
+            i <- [0..n): {
                 .recv-buf[.recv-buf-len + i] = tmp[i]
-                i = i + 1
             }
             .recv-buf-len = .recv-buf-len + n
         }
@@ -663,19 +643,15 @@ ws-server-conn.recv = () (msg ?ws-message) {
                     msg = err('incomplete frame')
                     return
                 }
-                i = 0
-                for i < n {
+                i <- [0..n): {
                     .recv-buf[.recv-buf-len + i] = tmp[i]
-                    i = i + 1
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
             // 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
             payload-len = 0
-            i = 0
-            for i < 8 {
+            i <- [0..8): {
                 payload-len = (payload-len << 8) | .recv-buf[2 + i]
-                i = i + 1
             }
         }
         if payload-len == 126 {
@@ -689,10 +665,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                     msg = err('incomplete frame')
                     return
                 }
-                i = 0
-                for i < n {
+                i <- [0..n): {
                     .recv-buf[.recv-buf-len + i] = tmp[i]
-                    i = i + 1
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
@@ -713,10 +687,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                     msg = err('incomplete frame')
                     return
                 }
-                i = 0
-                for i < n {
+                i <- [0..n): {
                     .recv-buf[.recv-buf-len + i] = tmp[i]
-                    i = i + 1
                 }
                 .recv-buf-len = .recv-buf-len + n
                 need = frame-total - .recv-buf-len
@@ -735,10 +707,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
         if masked {
             space = ' '
             mask-key = space.repeat(4)
-            i = 0
-            for i < 4 {
+            i <- [0..4): {
                 mask-key[i] = .recv-buf[mask-start + i]
-                i = i + 1
             }
         }
         // 提取 payload 並 demask
@@ -748,22 +718,18 @@ ws-server-conn.recv = () (msg ?ws-message) {
         }
         space = ' '
         payload str = space.repeat(payload-len)
-        i = 0
-        for i < payload-len {
+        i <- [0..payload-len): {
             b = .recv-buf[payload-start + i]
             if masked {
                 b = b ^ mask-key[i % 4]
             }
             payload[i] = b & 255
-            i = i + 1
         }
         // 從 recv-buf 移除已消費的 frame
         remaining-start = frame-total
         remaining-len = .recv-buf-len - remaining-start
-        i = 0
-        for i < remaining-len {
+        i <- [0..remaining-len): {
             .recv-buf[i] = .recv-buf[remaining-start + i]
-            i = i + 1
         }
         .recv-buf-len = remaining-len
         // 處理控制訊框（close/ping/pong）
@@ -892,10 +858,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
         payload = space.repeat(2 + reason.len)
         payload[0] = (code >> 8) & 255
         payload[1] = code & 255
-        i = 0
-        for i < reason.len {
+        i <- [0..reason.len): {
             payload[2 + i] = reason[i]
-            i = i + 1
         }
         ok = .send(WS-OP-CLOSE, payload)
     }
@@ -940,10 +904,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                     msg = nil
                     return
                 }
-                i = 0
-                for i < n {
+                i <- [0..n): {
                     .recv-buf[.recv-buf-len + i] = tmp[i]
-                    i = i + 1
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
@@ -986,18 +948,14 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         msg = err('incomplete frame')
                         return
                     }
-                    i = 0
-                    for i < n {
+                    i <- [0..n): {
                         .recv-buf[.recv-buf-len + i] = tmp[i]
-                        i = i + 1
                     }
                     .recv-buf-len = .recv-buf-len + n
                 }
                 payload-len = 0
-                i = 0
-                for i < 8 {
+                i <- [0..8): {
                     payload-len = (payload-len << 8) | .recv-buf[2 + i]
-                    i = i + 1
                 }
             }
             if payload-len == 126 {
@@ -1023,10 +981,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         msg = err('incomplete frame')
                         return
                     }
-                    i = 0
-                    for i < n {
+                    i <- [0..n): {
                         .recv-buf[.recv-buf-len + i] = tmp[i]
-                        i = i + 1
                     }
                     .recv-buf-len = .recv-buf-len + n
                 }
@@ -1059,10 +1015,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         msg = err('incomplete frame')
                         return
                     }
-                    i = 0
-                    for i < n {
+                    i <- [0..n): {
                         .recv-buf[.recv-buf-len + i] = tmp[i]
-                        i = i + 1
                     }
                     .recv-buf-len = .recv-buf-len + n
                     need = frame-total - .recv-buf-len
@@ -1081,10 +1035,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
             if masked {
                 space = ' '
                 mask-key = space.repeat(4)
-                i = 0
-                for i < 4 {
+                i <- [0..4): {
                     mask-key[i] = .recv-buf[mask-start + i]
-                    i = i + 1
                 }
             }
             payload-start = 2 + actual-extra
@@ -1093,21 +1045,17 @@ ws-server-conn.recv = () (msg ?ws-message) {
             }
             space = ' '
             payload = space.repeat(payload-len)
-            i = 0
-            for i < payload-len {
+            i <- [0..payload-len): {
                 b = .recv-buf[payload-start + i]
                 if masked {
                     b = b ^ mask-key[i % 4]
                 }
                 payload[i] = b & 255
-                i = i + 1
             }
             remaining-start = frame-total
             remaining-len = .recv-buf-len - remaining-start
-            i = 0
-            for i < remaining-len {
+            i <- [0..remaining-len): {
                 .recv-buf[i] = .recv-buf[remaining-start + i]
-                i = i + 1
             }
             .recv-buf-len = remaining-len
             if opcode == WS-OP-CLOSE {
@@ -1221,15 +1169,13 @@ ws-server-conn.recv = () (msg ?ws-message) {
             host-only = host.slice(0, colon-pos)
             port-str = host.slice(colon-pos + 1, host.len)
             p = 0
-            i = 0
-            for i < port-str.len {
+            i <- [0..port-str.len): {
                 ch = port-str[i]
                 if ch < 48 || ch > 57 {
                     c = err('invalid port')
                     return
                 }
                 p = p * 10 + ch - 48
-                i = i + 1
             }
             port = p
             host = host-only
@@ -1356,10 +1302,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 c = err('connection closed during handshake')
                 return
             }
-            i = 0
-            for i < n {
+            i <- [0..n): {
                 raw[total + i] = tmp[i]
-                i = i + 1
             }
             total = total + n
             data = raw.slice(0, total)
@@ -1395,8 +1339,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
         }
 
         code = 0
-        i = 0
-        for i < code-str.len {
+        i <- [0..code-str.len): {
             ch = code-str[i]
             if ch < 48 || ch > 57 {
                 if use-tls {
@@ -1408,7 +1351,6 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 return
             }
             code = code * 10 + ch - 48
-            i = i + 1
         }
 
         if code != 101 {
@@ -1471,10 +1413,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
         rb = space.repeat(WS-BUF-SIZE)
         if remaining-len > 0 {
             remaining = raw.slice(body-start, total)
-            i = 0
-            for i < remaining-len {
+            i <- [0..remaining-len): {
                 rb[i] = remaining[i]
-                i = i + 1
             }
         }
 

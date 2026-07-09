@@ -66,10 +66,8 @@ pool.init = (host str, port i64, max-size i64) {
     }
     .max-size = max-size
     .count = 0
-    i = 0
-    for i < POOL-MAX-CONNS {
+    i <- [0..POOL-MAX-CONNS): {
         .in-use[i] = false
-        i = i + 1
     }
 }
 
@@ -78,14 +76,12 @@ pool.init = (host str, port i64, max-size i64) {
 pool.get = () (c ?conn) {
     c = nil
     // 尋找空閒連接
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .in-use[i] == false {
             .in-use[i] = true
             c = .conns[i]
             return
         }
-        i = i + 1
     }
     // 沒有空閒連接，嘗試新建
     if .count < .max-size {
@@ -105,13 +101,11 @@ pool.get = () (c ?conn) {
 // c conn: 要歸還的連接
 pool.put = (c conn) {
     // 尋找該連接在池中的位置
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .conns[i].fd == c.fd {
             .in-use[i] = false
             return
         }
-        i = i + 1
     }
     // 不在池中，直接關閉
     c.close()
@@ -135,10 +129,8 @@ pool.close-conn = (idx i64) {
 
 // close-all: 關閉所有連接
 pool.close-all = () {
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         .conns[i].close()
-        i = i + 1
     }
     .count = 0
 }
@@ -147,12 +139,10 @@ pool.close-all = () {
 // 返回 n i64: 活躍連接數
 pool.active-count = () (n i64) {
     n = 0
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .in-use[i] {
             n = n + 1
         }
-        i = i + 1
     }
 }
 
@@ -160,12 +150,10 @@ pool.active-count = () (n i64) {
 // 返回 n i64: 空閒連接數
 pool.idle-count = () (n i64) {
     n = 0
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .in-use[i] == false {
             n = n + 1
         }
-        i = i + 1
     }
 }
 

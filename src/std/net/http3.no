@@ -84,10 +84,8 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     }
 
     // 名稱資料
-    i = 0
-    for i < name-bytes.len {
+    i <- [0..name-bytes.len): {
         buf[pos + i] = name-bytes[i]
-        i = i + 1
     }
     pos = pos + name-bytes.len
 
@@ -102,10 +100,8 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     }
 
     // 值資料
-    i = 0
-    for i < value-bytes.len {
+    i <- [0..value-bytes.len): {
         buf[pos + i] = value-bytes[i]
-        i = i + 1
     }
     pos = pos + value-bytes.len
 
@@ -126,18 +122,14 @@ qpack-encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n
     buf[1] = 0
     pos = 2
 
-    i = 0
-    for i < count {
+    i <- [0..count): {
         hdr-buf []byte
         hdr-n = 0
         hdr-buf, hdr-n = qpack-encode-header(names[i], values[i])
-        j = 0
-        for j < hdr-n {
+        j <- [0..hdr-n): {
             buf[pos + j] = hdr-buf[j]
-            j = j + 1
         }
         pos = pos + hdr-n
-        i = i + 1
     }
 
     n = pos
@@ -208,10 +200,8 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     ft-buf []byte
     ft-n = 0
     ft-buf, ft-n = net.quic.quic-varint-encode(frame-type)
-    i = 0
-    for i < ft-n {
+    i <- [0..ft-n): {
         buf[pos + i] = ft-buf[i]
-        i = i + 1
     }
     pos = pos + ft-n
 
@@ -219,18 +209,14 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     len-buf []byte
     len-n = 0
     len-buf, len-n = net.quic.quic-varint-encode(payload.len)
-    i = 0
-    for i < len-n {
+    i <- [0..len-n): {
         buf[pos + i] = len-buf[i]
-        i = i + 1
     }
     pos = pos + len-n
 
     // 影格資料
-    i = 0
-    for i < payload.len {
+    i <- [0..payload.len): {
         buf[pos + i] = payload[i]
-        i = i + 1
     }
     pos = pos + payload.len
 
@@ -301,10 +287,8 @@ http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-
         return
     }
 
-    i = 0
-    for i < len-val {
+    i <- [0..len-val): {
         payload[i] = buf[pos + i]
-        i = i + 1
     }
 
     next-pos = pos + len-val
@@ -334,14 +318,12 @@ http3-response {
 http3-response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
-    i = 0
-    for i < .header-count {
+    i <- [0...header-count): {
         h = .header-names[i].to-lower()
         if h == target {
             val = .header-values[i]
             return
         }
-        i = i + 1
     }
 }
 
@@ -379,14 +361,12 @@ http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
         p = 0
-        i = 0
-        for i < port-str.len {
+        i <- [0..port-str.len): {
             c = port-str[i]
             if c < 48 || c > 57 {
                 return
             }
             p = p * 10 + c - 48
-            i = i + 1
         }
         port = p
         host = host-only
@@ -477,16 +457,12 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // ── 合併為串流資料 ──
     stream-data []byte
     stream-pos = 0
-    i = 0
-    for i < hdr-n {
+    i <- [0..hdr-n): {
         stream-data[stream-pos + i] = hdr-buf[i]
-        i = i + 1
     }
     stream-pos = stream-pos + hdr-n
-    i = 0
-    for i < data-n {
+    i <- [0..data-n): {
         stream-data[stream-pos + i] = data-buf[i]
-        i = i + 1
     }
     stream-pos = stream-pos + data-n
 
@@ -503,10 +479,8 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     stream-ft []byte
     stream-ft-n = 0
     stream-ft, stream-ft-n = net.quic.quic-varint-encode(0x0f)
-    i = 0
-    for i < stream-ft-n {
+    i <- [0..stream-ft-n): {
         pkt[pkt-pos + i] = stream-ft[i]
-        i = i + 1
     }
     pkt-pos = pkt-pos + stream-ft-n
 
@@ -514,10 +488,8 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     sid-buf []byte
     sid-n = 0
     sid-buf, sid-n = net.quic.quic-varint-encode(stream-id)
-    i = 0
-    for i < sid-n {
+    i <- [0..sid-n): {
         pkt[pkt-pos + i] = sid-buf[i]
-        i = i + 1
     }
     pkt-pos = pkt-pos + sid-n
 
@@ -525,10 +497,8 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     off-buf []byte
     off-n = 0
     off-buf, off-n = net.quic.quic-varint-encode(0)
-    i = 0
-    for i < off-n {
+    i <- [0..off-n): {
         pkt[pkt-pos + i] = off-buf[i]
-        i = i + 1
     }
     pkt-pos = pkt-pos + off-n
 
@@ -536,18 +506,14 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     len-buf []byte
     len-n = 0
     len-buf, len-n = net.quic.quic-varint-encode(stream-pos)
-    i = 0
-    for i < len-n {
+    i <- [0..len-n): {
         pkt[pkt-pos + i] = len-buf[i]
-        i = i + 1
     }
     pkt-pos = pkt-pos + len-n
 
     // 資料
-    i = 0
-    for i < stream-pos {
+    i <- [0..stream-pos): {
         pkt[pkt-pos + i] = stream-data[i]
-        i = i + 1
     }
     pkt-pos = pkt-pos + stream-pos
 
@@ -615,10 +581,8 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
 
         // DATA 影格: 追加到 body
         if ft == HTTP3-FRAME-DATA {
-            i = 0
-            for i < payload.len {
+            i <- [0..payload.len): {
                 r.body[r.body.len] = payload[i]
-                i = i + 1
             }
         }
 

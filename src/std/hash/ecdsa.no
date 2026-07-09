@@ -88,12 +88,10 @@ bn-cmp = (a []byte, b []byte) (r i64) {
 // 返回 sum [32]byte 和 carry i64
 bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         val = (a[i] & 255) + (b[i] & 255) + carry
         sum[i] = val & 255
         carry = val >> 8
-        i = i + 1
     }
 }
 
@@ -101,8 +99,7 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
 // 返回 diff [32]byte 和 borrow i64
 bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         val = (a[i] & 255) - (b[i] & 255) - borrow
         if val < 0 {
             val = val + 256
@@ -111,7 +108,6 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
             borrow = 0
         }
         diff[i] = val
-        i = i + 1
     }
 }
 
@@ -119,15 +115,12 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         work[i] = a[i]
-        i = i + 1
     }
 
     // 重複減去 m 直到 work < m
-    round = 0
-    for round < 512 {
+    round <- [0..512): {
         cmp = 0
         cmp = bn-cmp(work, m)
         if cmp < 0 {
@@ -136,18 +129,13 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         diff.zero()
         borrow = 0
         diff, borrow = bn-sub(work, m)
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             work[i] = diff[i]
-            i = i + 1
         }
-        round = round + 1
     }
 
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[i] = work[i]
-        i = i + 1
     }
 }
 
@@ -155,23 +143,18 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
 bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     // 512-bit 乘積（64 位元組）
     product [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         product[i] = 0
-        i = i + 1
     }
 
     // Schoolbook 乘法
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         carry = 0
-        j = 0
-        for j < 32 {
+        j <- [0..32): {
             idx = i + j
             val = (product[idx] & 255) + (a[i] & 255) * (b[j] & 255) + carry
             product[idx] = val & 255
             carry = val >> 8
-            j = j + 1
         }
         // 傳播進位
         idx = i + 32
@@ -181,17 +164,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             carry = val >> 8
             idx = idx + 1
         }
-        i = i + 1
     }
 
     // 規約 mod m（處理 512-bit → 256-bit）
     // 將高 256 位逐次減去 m 的適當倍數
     // 簡化方法：重複減法（高位部分）
     work [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         work[i] = product[i]
-        i = i + 1
     }
 
     // 從高位開始，每次減去 m << (bit_pos)
@@ -205,12 +185,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             shift = bit - 256
             shifted [64]byte
             // m << shift
-            i = 0
-            for i < 32 {
+            i <- [0..32): {
                 src-byte = i
                 dst-byte-start = (i * 8 + shift) / 8
                 // 簡化：只在 byte 邊界對齊時處理
-                i = i + 1
             }
             // 由於位元級移位複雜，使用更簡單的方法
             // 直接從高 32 位元組開始減法
@@ -231,8 +209,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         // 嘗試減去 m << (shift_byte * 8)
         // 即在 work[shift_byte..shift_byte+32] 處減去 m
         can-sub = 1
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             wi = 0
             if shift-byte + i < 64 {
                 wi = work[shift-byte + i] & 255
@@ -244,13 +221,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 can-sub = 0
                 break
             }
-            i = i + 1
         }
 
         if can-sub == 1 {
             borrow = 0
-            i = 0
-            for i < 32 {
+            i <- [0..32): {
                 idx = shift-byte + i
                 if idx < 64 {
                     val = (work[idx] & 255) - (m[i] & 255) - borrow
@@ -273,17 +248,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         work[idx] = val
                     }
                 }
-                i = i + 1
             }
             // 如果還能減，再減一次
             shift-byte = shift-byte + 1
         }
     }
 
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[i] = work[i]
-        i = i + 1
     }
 }
 
@@ -309,10 +281,8 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
         diff [32]byte
         borrow = 0
         diff, borrow = bn-sub(a, b)
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             out[i] = diff[i]
-            i = i + 1
         }
     } else {
         // a < b, result = m - (b - a)
@@ -329,10 +299,8 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
         diff2 [32]byte
         borrow2 = 0
         diff2, borrow2 = bn-sub(tmp, b)
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             out[i] = diff2[i]
-            i = i + 1
         }
     }
 }
@@ -349,10 +317,8 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     // result = 1
     result [32]byte
     result[0] = 1
-    i = 1
-    for i < 32 {
+    i <- [1..32): {
         result[i] = 0
-        i = i + 1
     }
 
     // base = a mod m
@@ -360,21 +326,17 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     base = bn-mod(a, m)
 
     // 平方-乘法（從低位到高位）
-    bit = 0
-    for bit < 256 {
+    bit <- [0..256): {
         byte-idx = bit / 8
         bit-idx = bit % 8
         if (exp[byte-idx] >> bit-idx) & 1 == 1 {
             result = bn-mulmod(result, base, m)
         }
         base = bn-mulmod(base, base, m)
-        bit = bit + 1
     }
 
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[i] = result[i]
-        i = i + 1
     }
 }
 
@@ -390,18 +352,14 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 ec-point-double = (p []byte) (r []byte) {
     // 如果 Y == 0，返回無窮遠點
     is-zero = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if p[32 + i] != 0 {
             is-zero = 0
         }
-        i = i + 1
     }
     if is-zero == 1 {
-        i = 0
-        for i < 96 {
+        i <- [0..96): {
             r[i] = 0
-            i = i + 1
         }
         return
     }
@@ -475,12 +433,10 @@ ec-point-double = (p []byte) (r []byte) {
     z3 = bn-addmod(z3, z3, P256-P)
 
     // 輸出
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         r[i] = x3[i]
         r[32 + i] = y3[i]
         r[64 + i] = z3[i]
-        i = i + 1
     }
 }
 
@@ -496,36 +452,28 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     // 檢查 P 是否為無窮遠點
     p-inf = 1
-    i = 0
-    for i < 96 {
+    i <- [0..96): {
         if p[i] != 0 {
             p-inf = 0
         }
-        i = i + 1
     }
     if p-inf == 1 {
-        i = 0
-        for i < 96 {
+        i <- [0..96): {
             r[i] = q[i]
-            i = i + 1
         }
         return
     }
 
     // 檢查 Q 是否為無窮遠點
     q-inf = 1
-    i = 0
-    for i < 96 {
+    i <- [0..96): {
         if q[i] != 0 {
             q-inf = 0
         }
-        i = i + 1
     }
     if q-inf == 1 {
-        i = 0
-        for i < 96 {
+        i <- [0..96): {
             r[i] = p[i]
-            i = i + 1
         }
         return
     }
@@ -570,30 +518,24 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     //   如果 R == 0: return 2*P
     //   否則: return infinity
     h-is-zero = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if h[i] != 0 {
             h-is-zero = 0
         }
-        i = i + 1
     }
     if h-is-zero == 1 {
         r-is-zero = 1
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             if rr[i] != 0 {
                 r-is-zero = 0
             }
-            i = i + 1
         }
         if r-is-zero == 1 {
             r = ec-point-double(p)
             return
         } else {
-            i = 0
-            for i < 96 {
+            i <- [0..96): {
                 r[i] = 0
-                i = i + 1
             }
             return
         }
@@ -632,12 +574,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     z3 = bn-mulmod(h, z1, P256-P)
     z3 = bn-mulmod(z3, z2, P256-P)
 
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         r[i] = x3[i]
         r[32 + i] = y3[i]
         r[64 + i] = z3[i]
-        i = i + 1
     }
 }
 
@@ -647,10 +587,8 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 // 返回 r []byte: 96 位元組
 ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     // R = 無窮遠點
-    i = 0
-    for i < 96 {
+    i <- [0..96): {
         r[i] = 0
-        i = i + 1
     }
 
     // 從高位到低位進行 double-and-add
@@ -659,10 +597,8 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         // R = 2*R
         tmp []byte
         tmp = ec-point-double(r)
-        i = 0
-        for i < 96 {
+        i <- [0..96): {
             r[i] = tmp[i]
-            i = i + 1
         }
 
         // 如果 bit 為 1，R = R + P
@@ -670,10 +606,8 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         bit-idx = bit % 8
         if (k[byte-idx] >> bit-idx) & 1 == 1 {
             tmp = ec-point-add(r, p)
-            i = 0
-            for i < 96 {
+            i <- [0..96): {
                 r[i] = tmp[i]
-                i = i + 1
             }
         }
 
@@ -691,12 +625,10 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 
     // 檢查無窮遠點
     z-is-zero = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if pz[i] != 0 {
             z-is-zero = 0
         }
-        i = i + 1
     }
     if z-is-zero == 1 {
         // 返回全零
@@ -729,11 +661,9 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 
     // 輸出: 04 || x || y（大端序）
     out[0] = 4
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[1 + i] = x[31 - i]
         out[33 + i] = y[31 - i]
-        i = i + 1
     }
 }
 
@@ -744,25 +674,19 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     // 提取 x, y（轉為小端序）
     x [32]byte
     y [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         x[i] = in[1 + 31 - i]
         y[i] = in[33 + 31 - i]
-        i = i + 1
     }
 
     // Jacobian: (X, Y, Z) = (x, y, 1)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[i] = x[i]
         out[32 + i] = y[i]
-        i = i + 1
     }
     out[64] = 1
-    i = 1
-    for i < 32 {
+    i <- [1..32): {
         out[64 + i] = 0
-        i = i + 1
     }
 }
 
@@ -773,18 +697,14 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 // ec-get-basepoint: 獲取基點 G 的 Jacobian 座標
 ec-get-basepoint = () (g []byte) {
     // Gx, Gy 轉為小端序
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         g[i] = P256-GX[31 - i]
         g[32 + i] = P256-GY[31 - i]
-        i = i + 1
     }
     // Z = 1
     g[64] = 1
-    i = 1
-    for i < 32 {
+    i <- [1..32): {
         g[64 + i] = 0
-        i = i + 1
     }
 }
 
@@ -798,10 +718,8 @@ ec-get-basepoint = () (g []byte) {
 ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     // 將私鑰轉為小端序
     k [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         k[i] = priv[31 - i]
-        i = i + 1
     }
 
     // G = 基點
@@ -827,39 +745,31 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
     // 將哈希轉為小端序
     h-le [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         h-le[i] = h[31 - i]
-        i = i + 1
     }
 
     // 私鑰轉小端序
     d [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         d[i] = priv[31 - i]
-        i = i + 1
     }
 
     // 使用私鑰作為隨機數種子生成 k（簡化，生產環境應使用 RFC 6979）
     k [32]byte
     state = 0
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         state = hash.rand.rand(state + d[i] + h-le[i] + i)
         k[i] = state & 255
-        i = i + 1
     }
     // 確保 k 在 [1, n-1] 範圍內
     k = bn-mod(k, P256-N)
     if k[0] == 0 {
-        i = 1
         all-zero = 1
-        for i < 32 {
+        i <- [1..32): {
             if k[i] != 0 {
                 all-zero = 0
             }
-            i = i + 1
         }
         if all-zero == 1 {
             k[0] = 1
@@ -877,10 +787,8 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     r-point-bytes = ec-point-to-bytes(r-point)
     // 提取 x（大端序 → 小端序）
     rx [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         rx[i] = r-point-bytes[1 + 31 - i]
-        i = i + 1
     }
     r-val [32]byte
     r-val = bn-mod(rx, P256-N)
@@ -899,11 +807,9 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     s-val = bn-mulmod(k-inv, h-rd, P256-N)
 
     // 輸出（大端序）
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         sig[i] = r-val[31 - i]
         sig[32 + i] = s-val[31 - i]
-        i = i + 1
     }
 }
 
@@ -916,22 +822,18 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     // 提取 r, s（大端序 → 小端序）
     r-val [32]byte
     s-val [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         r-val[i] = sig[31 - i]
         s-val[i] = sig[32 + 31 - i]
-        i = i + 1
     }
 
     // 檢查 r, s ∈ [1, n-1]
     // r != 0
     r-zero = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if r-val[i] != 0 {
             r-zero = 0
         }
-        i = i + 1
     }
     if r-zero == 1 {
         ok = 0
@@ -939,12 +841,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     }
     // s != 0
     s-zero = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if s-val[i] != 0 {
             s-zero = 0
         }
-        i = i + 1
     }
     if s-zero == 1 {
         ok = 0
@@ -965,10 +865,8 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     h [32]byte
     h = hash.sha256.sha256(msg)
     h-le [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         h-le[i] = h[31 - i]
-        i = i + 1
     }
 
     // w = s^(-1) mod n
@@ -1003,12 +901,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
 
     // 檢查 R 是否為無窮遠點
     r-inf = 1
-    i = 0
-    for i < 96 {
+    i <- [0..96): {
         if r-point[i] != 0 {
             r-inf = 0
         }
-        i = i + 1
     }
     if r-inf == 1 {
         ok = 0
@@ -1019,21 +915,17 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-point-bytes [65]byte
     r-point-bytes = ec-point-to-bytes(r-point)
     rx [32]byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         rx[i] = r-point-bytes[1 + 31 - i]
-        i = i + 1
     }
     v [32]byte
     v = bn-mod(rx, P256-N)
 
     // 驗證 v == r
     ok = 1
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         if v[i] != r-val[i] {
             ok = 0
         }
-        i = i + 1
     }
 }

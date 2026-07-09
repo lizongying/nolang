@@ -34,18 +34,14 @@ main = () {
 
     // 測試 padded []byte
     padded []byte
-    i i64 = 0
-    for i < total-len {
+    i <- [0..total-len): {
         padded[i] = 0
-        i = i + 1
     }
     print('padded init done')
 
     // 複製原始資料
-    i = 0
-    for i < dlen {
+    i <- [0..dlen): {
         padded[i] = msg[i]
-        i = i + 1
     }
     print('copy done')
 

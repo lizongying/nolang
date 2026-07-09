@@ -161,15 +161,13 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
                 attr-name-lower == 'max-age' -> {
                     ma = 0
                     valid = true
-                    j = 0
-                    for j < attr-val.len {
+                    j <- [0..attr-val.len): {
                         ch = attr-val[j]
                         if ch < 48 || ch > 57 {
                             valid = false
                             break
                         }
                         ma = ma * 10 + ch - 48
-                        j = j + 1
                     }
                     if valid {
                         c.max-age = ma
@@ -275,13 +273,11 @@ cookie-build-set = (c cookie) (out str) {
 // 返回 out str: Cookie 標頭值（如 'name1=val1; name2=val2'）
 cookie-build-header = (names [16]str, values [16]str, count i64) (out str) {
     out = ''
-    i = 0
-    for i < count {
+    i <- [0..count): {
         if out.len > 0 {
             out = out - '; '
         }
         out = out - names[i] - '=' - values[i]
-        i = i + 1
     }
 }
 
@@ -297,13 +293,11 @@ cookie-build-header = (names [16]str, values [16]str, count i64) (out str) {
 // max-age i64: 最大存活秒數
 cookie-jar.set = (name str, value str, domain str, path str, max-age i64) {
     // 檢查是否已存在同名 Cookie
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .names[i] == name && .domains[i] == domain && .paths[i] == path {
             .values[i] = value
             return
         }
-        i = i + 1
     }
     // 新增 Cookie
     if .count < COOKIE-JAR-MAX {
@@ -322,8 +316,7 @@ cookie-jar.set = (name str, value str, domain str, path str, max-age i64) {
 // 返回 val ?str: ok=Cookie 值, nil=未找到
 cookie-jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .names[i] == name {
             // 域名匹配（簡化：精確匹配或子域名匹配）
             domain-match = false
@@ -348,7 +341,6 @@ cookie-jar.get = (name str, domain str, path str) (val ?str) {
                 return
             }
         }
-        i = i + 1
     }
 }
 
@@ -357,8 +349,7 @@ cookie-jar.get = (name str, domain str, path str) (val ?str) {
 // domain str: 域名
 // path str: 路徑
 cookie-jar.delete = (name str, domain str, path str) {
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         if .names[i] == name && .domains[i] == domain && .paths[i] == path {
             // 將最後一個移到當前位置
             last = .count - 1
@@ -371,7 +362,6 @@ cookie-jar.delete = (name str, domain str, path str) {
             .count = .count - 1
             return
         }
-        i = i + 1
     }
 }
 
@@ -381,8 +371,7 @@ cookie-jar.delete = (name str, domain str, path str) {
 // 返回 out str: Cookie 標頭值
 cookie-jar.build-header = (domain str, path str) (out str) {
     out = ''
-    i = 0
-    for i < .count {
+    i <- [0...count): {
         // 域名匹配
         domain-match = false
         if .domains[i].len == 0 {
@@ -405,7 +394,6 @@ cookie-jar.build-header = (domain str, path str) (out str) {
             }
             out = out - .names[i] - '=' - .values[i]
         }
-        i = i + 1
     }
 }
 
@@ -472,11 +460,9 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex-str = space.repeat(64)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
-        i = i + 1
     }
     signed = value - '.' - hex-str
 }
@@ -516,10 +502,8 @@ cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
         return
     }
     diff = 0
-    i = 0
-    for i < provided-hex.len {
+    i <- [0..provided-hex.len): {
         diff = diff | (provided-hex[i] ^ expected-hex[i])
-        i = i + 1
     }
     if diff == 0 {
         ok = true

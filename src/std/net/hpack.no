@@ -46,13 +46,11 @@ hpack-tables.init = () {
     .dyn-count = 0
     .dyn-size = 0
     .dyn-max = 4096
-    i = 0
-    for i < HPACK-DYN-MAX {
+    i <- [0..HPACK-DYN-MAX): {
         .dyn-names[i] = ' '
         .dyn-names[i].len = 0
         .dyn-values[i] = ' '
         .dyn-values[i].len = 0
-        i = i + 1
     }
     if .static-init {
         return
@@ -201,32 +199,24 @@ hpack-tables.dyn-add = (name str, value str) {
         prev-val-len = .dyn-values[i - 1].len
         // 逐 byte 複製 name
         .dyn-names[i].len = prev-name-len
-        j = 0
-        for j < prev-name-len {
+        j <- [0..prev-name-len): {
             .dyn-names[i][j] = .dyn-names[i - 1][j]
-            j = j + 1
         }
         // 逐 byte 複製 value
         .dyn-values[i].len = prev-val-len
-        j = 0
-        for j < prev-val-len {
+        j <- [0..prev-val-len): {
             .dyn-values[i][j] = .dyn-values[i - 1][j]
-            j = j + 1
         }
         i = i - 1
     }
     // 新項放索引 0
     .dyn-names[0].len = name.len
-    j = 0
-    for j < name.len {
+    j <- [0..name.len): {
         .dyn-names[0][j] = name[j]
-        j = j + 1
     }
     .dyn-values[0].len = value.len
-    j = 0
-    for j < value.len {
+    j <- [0..value.len): {
         .dyn-values[0][j] = value[j]
-        j = j + 1
     }
     .dyn-count = .dyn-count + 1
     .dyn-size = .dyn-size + name.len + value.len + 32
@@ -241,29 +231,24 @@ hpack-tables.dyn-add = (name str, value str) {
 hpack-tables.find = (name str, value str) (idx i64) {
     idx = 0
     // 查靜態表（1-61，靜態表內部從 0 開始存）
-    i = 0
-    for i < HPACK-STATIC-COUNT {
+    i <- [0..HPACK-STATIC-COUNT): {
         if .static-names[i].len == name.len {
             matched = 1
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 if .static-names[i][j] != name[j] {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
             if matched == 1 {
                 // name 匹配，檢查 value
                 if .static-values[i].len == value.len {
                     v-matched = 1
-                    j = 0
-                    for j < value.len {
+                    j <- [0..value.len): {
                         if .static-values[i][j] != value[j] {
                             v-matched = 0
                             break
                         }
-                        j = j + 1
                     }
                     if v-matched == 1 {
                         idx = i + 1
@@ -272,31 +257,25 @@ hpack-tables.find = (name str, value str) (idx i64) {
                 }
             }
         }
-        i = i + 1
     }
     // 查動態表（索引從 62 開始）
-    i = 0
-    for i < .dyn-count {
+    i <- [0...dyn-count): {
         if .dyn-names[i].len == name.len {
             matched = 1
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 if .dyn-names[i][j] != name[j] {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
             if matched == 1 {
                 if .dyn-values[i].len == value.len {
                     v-matched = 1
-                    j = 0
-                    for j < value.len {
+                    j <- [0..value.len): {
                         if .dyn-values[i][j] != value[j] {
                             v-matched = 0
                             break
                         }
-                        j = j + 1
                     }
                     if v-matched == 1 {
                         idx = HPACK-STATIC-COUNT + i + 1
@@ -305,7 +284,6 @@ hpack-tables.find = (name str, value str) (idx i64) {
                 }
             }
         }
-        i = i + 1
     }
 }
 
@@ -313,43 +291,35 @@ hpack-tables.find = (name str, value str) (idx i64) {
 // 返回 idx=0=未找到，idx>0=索引
 hpack-tables.find-name = (name str) (idx i64) {
     idx = 0
-    i = 0
-    for i < HPACK-STATIC-COUNT {
+    i <- [0..HPACK-STATIC-COUNT): {
         if .static-names[i].len == name.len {
             matched = 1
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 if .static-names[i][j] != name[j] {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
             if matched == 1 {
                 idx = i + 1
                 return
             }
         }
-        i = i + 1
     }
-    i = 0
-    for i < .dyn-count {
+    i <- [0...dyn-count): {
         if .dyn-names[i].len == name.len {
             matched = 1
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 if .dyn-names[i][j] != name[j] {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
             if matched == 1 {
                 idx = HPACK-STATIC-COUNT + i + 1
                 return
             }
         }
-        i = i + 1
     }
 }
 
@@ -462,17 +432,13 @@ hpack-encode-str = (s str) (out str) {
     len-out = ' '
     len-out = hpack-encode-int(s.len, 7, 0)
     // 複製長度編碼到 out
-    i = 0
-    for i < len-out.len {
+    i <- [0..len-out.len): {
         out[i] = len-out[i]
-        i = i + 1
     }
     out-n = len-out.len
     // 複製字串內容
-    i = 0
-    for i < s.len {
+    i <- [0..s.len): {
         out[out-n + i] = s[i]
-        i = i + 1
     }
 }
 
@@ -498,10 +464,8 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
         return
     }
     // 複製字串內容
-    i = 0
-    for i < len {
+    i <- [0..len): {
         out[i] = data[p + i]
-        i = i + 1
     }
     next-pos = p + len
 }
@@ -531,19 +495,15 @@ hpack-tables.encode-header = (name str, value str) (out str) {
         idx-out = ' '
         idx-out = hpack-encode-int(name-idx, 6, 64)
         // 複製到 out
-        i = 0
-        for i < idx-out.len {
+        i <- [0..idx-out.len): {
             out[i] = idx-out[i]
-            i = i + 1
         }
         out-n = idx-out.len
         // 編碼 value
         val-out = ' '
         val-out = hpack-encode-str(value)
-        i = 0
-        for i < val-out.len {
+        i <- [0..val-out.len): {
             out[out-n + i] = val-out[i]
-            i = i + 1
         }
     // 加入動態表
     .dyn-add(name, value)
@@ -556,19 +516,15 @@ hpack-tables.encode-header = (name str, value str) (out str) {
     // 編碼 name
     name-out = ' '
     name-out = hpack-encode-str(name)
-    i = 0
-    for i < name-out.len {
+    i <- [0..name-out.len): {
         out[out-n + i] = name-out[i]
-        i = i + 1
     }
     out-n = out-n + name-out.len
     // 編碼 value
     val-out = ' '
     val-out = hpack-encode-str(value)
-    i = 0
-    for i < val-out.len {
+    i <- [0..val-out.len): {
         out[out-n + i] = val-out[i]
-        i = i + 1
     }
     // 加入動態表
     .dyn-add(name, value)
@@ -581,13 +537,11 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
     ok = false
     count = 0
     // 初始化輸出陣列
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         names[i] = ' '
         names[i].len = 0
         values[i] = ' '
         values[i].len = 0
-        i = i + 1
     }
     n = data.len
     if n == 0 {
@@ -619,16 +573,12 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 return
             }
             // 複製到輸出
-            j = 0
-            for j < lk-name.len {
+            j <- [0..lk-name.len): {
                 names[count][j] = lk-name[j]
-                j = j + 1
             }
             names[count].len = lk-name.len
-            j = 0
-            for j < lk-val.len {
+            j <- [0..lk-val.len): {
                 values[count][j] = lk-val[j]
-                j = j + 1
             }
             values[count].len = lk-val.len
             count = count + 1
@@ -666,16 +616,12 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 return
             }
             // 複製到輸出
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 names[count][j] = name[j]
-                j = j + 1
             }
             names[count].len = name.len
-            j = 0
-            for j < value.len {
+            j <- [0..value.len): {
                 values[count][j] = value[j]
-                j = j + 1
             }
             values[count].len = value.len
             count = count + 1
@@ -712,16 +658,12 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
             if pos < 0 {
                 return
             }
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 names[count][j] = name[j]
-                j = j + 1
             }
             names[count].len = name.len
-            j = 0
-            for j < value.len {
+            j <- [0..value.len): {
                 values[count][j] = value[j]
-                j = j + 1
             }
             values[count].len = value.len
             count = count + 1
@@ -756,16 +698,12 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
             if pos < 0 {
                 return
             }
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 names[count][j] = name[j]
-                j = j + 1
             }
             names[count].len = name.len
-            j = 0
-            for j < value.len {
+            j <- [0..value.len): {
                 values[count][j] = value[j]
-                j = j + 1
             }
             values[count].len = value.len
             count = count + 1

@@ -207,10 +207,8 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
             return
         }
         // net-recv 覆寫 buf[0]，需要位移複製
-        i = 0
-        for i < recv-n {
+        i <- [0..recv-n): {
             hdr-buf[hdr-total + i] = hdr-buf[i]
-            i = i + 1
         }
         hdr-total = hdr-total + recv-n
     }
@@ -249,10 +247,8 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
             if recv-n <= 0 {
                 return
             }
-            i = 0
-            for i < recv-n {
+            i <- [0..recv-n): {
                 f.payload[payload-total + i] = f.payload[i]
-                i = i + 1
             }
             payload-total = payload-total + recv-n
         }
@@ -284,8 +280,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     space = ' '
     block = space.repeat(HTTP2-MAX-PAYLOAD)
     block-n = 0
-    i = 0
-    for i < count {
+    i <- [0..count): {
         // 用 slice 載入值（避開 IndexExpression codegen 問題）
         nlen = names[i].len
         vlen = values[i].len
@@ -295,13 +290,10 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
         hdr-out = .hpack.encode-header(n, v)
 
         // 複製到 block
-        j = 0
-        for j < hdr-out.len {
+        j <- [0..hdr-out.len): {
             block[block-n + j] = hdr-out[j]
-            j = j + 1
         }
         block-n = block-n + hdr-out.len
-        i = i + 1
     }
 
     // 構建 HEADERS 影格
@@ -562,8 +554,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                         return
                     }
                     // 複製到輸出（最多 32 項）
-                    i = 0
-                    for i < dec-count {
+                    i <- [0..dec-count): {
                         if i >= 32 {
                             break
                         }
@@ -571,7 +562,6 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                         vlen = dec-values[i].len
                         names[i] = dec-names[i].slice(0, nlen)
                         values[i] = dec-values[i].slice(0, vlen)
-                        i = i + 1
                     }
                     header-count = i
                     // 檢查 END_STREAM
@@ -581,10 +571,8 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                     }
                 } elif f.frame-type == FRAME-DATA {
                     // 複製到 resp-body
-                    i = 0
-                    for i < f.payload.len {
+                    i <- [0..f.payload.len): {
                         resp-body[resp-n + i] = f.payload[i]
-                        i = i + 1
                     }
                     resp-n = resp-n + f.payload.len
                     if (f.flags & FLAG-END-STREAM) != 0 {
@@ -623,13 +611,11 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             if u.len >= 8 {
                 prefix-https = 'https://'
                 matched-https = 1
-                i = 0
-                for i < 8 {
+                i <- [0..8): {
                     if u[i] != prefix-https[i] {
                         matched-https = 0
                         break
                     }
-                    i = i + 1
                 }
                 if matched-https == 1 {
                     use-tls = true
@@ -641,13 +627,11 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                 if u.len >= 7 {
                     prefix = 'http://'
                     matched = 1
-                    i = 0
-                    for i < 7 {
+                    i <- [0..7): {
                         if u[i] != prefix[i] {
                             matched = 0
                             break
                         }
-                        i = i + 1
                     }
                     if matched == 1 {
                         u = u.slice(7, u.len)
@@ -671,10 +655,8 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                 host-only = host.slice(0, colon-idx)
                 port-str = host.slice(colon-idx + 1, host.len)
                 port = 0
-                i = 0
-                for i < port-str.len {
+                i <- [0..port-str.len): {
                     port = port * 10 + (port-str[i] - 48)
-                    i = i + 1
                 }
                 host = host-only
             }
@@ -719,8 +701,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
 
         // 複製標頭到 r（用 slice 載入值）
         r.header-count = header-count
-        i = 0
-        for i < header-count {
+        i <- [0..header-count): {
             nlen = names[i].len
             vlen = values[i].len
             r.header-names[i] = names[i].slice(0, nlen)
@@ -730,25 +711,20 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             if nlen == 7 {
                 is-status = 1
                 status-hdr = ':status'
-                j = 0
-                for j < 7 {
+                j <- [0..7): {
                     if names[i][j] != status-hdr[j] {
                         is-status = 0
                         break
                     }
-                    j = j + 1
                 }
                 if is-status == 1 {
                     r.status-code = 0
-                    j = 0
-                    for j < vlen {
+                    j <- [0..vlen): {
                         r.status-code = r.status-code * 10 + (values[i][j] - 48)
-                        j = j + 1
                     }
                     r.status-text = values[i].slice(0, vlen)
                 }
             }
-            i = i + 1
         }
 
         // 複製 body

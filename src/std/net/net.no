@@ -569,12 +569,10 @@ enc-conn.gen-iv = () (iv [12]byte) {
     iv[2] = (seq >> 8) & 255
     iv[3] = seq & 255
     // 用 rand 生成剩餘 8 bytes
-    i = 4
-    for i < 12 {
+    i <- [4..12): {
         s, r = hash.rand.rand(.rand-seed)
         .rand-seed = s
         iv[i] = r & 255
-        i = i + 1
     }
 }
 
@@ -602,16 +600,12 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     packet[2] = (payload-len >> 8) & 255
     packet[3] = payload-len & 255
     // 複製 IV
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         packet[4 + i] = iv[i]
-        i = i + 1
     }
     // 複製密文
-    i = 0
-    for i < sealed-n {
+    i <- [0..sealed-n): {
         packet[16 + i] = sealed[i]
-        i = i + 1
     }
     packet-str = packet.to-str()
     packet-total = 4 + payload-len
@@ -646,18 +640,14 @@ enc-conn.recv-encrypted = () (data ?str) {
     }
     // 提取 IV
     iv [12]byte
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         iv[i] = payload-buf[i]
-        i = i + 1
     }
     // 提取密文
     sealed-n = payload-len - 12
     sealed []byte
-    i = 0
-    for i < sealed-n {
+    i <- [0..sealed-n): {
         sealed[i] = payload-buf[12 + i]
-        i = i + 1
     }
     // 解密
     aad []byte

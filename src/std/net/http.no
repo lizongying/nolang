@@ -95,12 +95,10 @@ http-request.init = (method str, url str, body str) {
     .url = url
     .body = body
     .header-count = 0
-    i = 0
-    for i < HTTP-MAX-REQ-HEADERS {
+    i <- [0..HTTP-MAX-REQ-HEADERS): {
         // 用空格字串初始化 headers[i]，使 data buffer 非 null
         .headers[i] = ' '
         .headers[i].len = 0
-        i = i + 1
     }
 }
 
@@ -115,10 +113,8 @@ http-request.add-header = (name str, value str) (ok bool) {
     idx = .header-count
 
     // 複製 name 到 headers[idx]
-    i = 0
-    for i < name.len {
+    i <- [0..name.len): {
         .headers[idx][i] = name[i]
-        i = i + 1
     }
 
     // 加 ': '
@@ -126,10 +122,8 @@ http-request.add-header = (name str, value str) (ok bool) {
     .headers[idx][name.len + 1] = 32  // ' '
 
     // 複製 value
-    j = 0
-    for j < value.len {
+    j <- [0..value.len): {
         .headers[idx][name.len + 2 + j] = value[j]
-        j = j + 1
     }
     .headers[idx].len = name.len + 2 + value.len
     .header-count = idx + 1
@@ -146,13 +140,11 @@ http-response.parse-headers = () {
     .header-count = 0
 
     // 初始化標頭陣列（用空格字串使 data buffer 非 null）
-    i = 0
-    for i < HTTP-MAX-RESP-HEADERS {
+    i <- [0..HTTP-MAX-RESP-HEADERS): {
         .header-names[i] = ' '
         .header-names[i].len = 0
         .header-values[i] = ' '
         .header-values[i].len = 0
-        i = i + 1
     }
 
     hs = .headers
@@ -183,19 +175,15 @@ http-response.parse-headers = () {
             if cnt < HTTP-MAX-RESP-HEADERS {
                 // 複製 name: [pos, colon-pos)
                 name-len = colon-pos - pos
-                j = 0
-                for j < name-len {
+                j <- [0..name-len): {
                     .header-names[cnt][j] = hs[pos + j]
-                    j = j + 1
                 }
                 .header-names[cnt].len = name-len
                 // 複製 value: [colon-pos+2, line-end)
                 val-start = colon-pos + 2
                 val-len = line-end - val-start
-                j = 0
-                for j < val-len {
+                j <- [0..val-len): {
                     .header-values[cnt][j] = hs[val-start + j]
-                    j = j + 1
                 }
                 .header-values[cnt].len = val-len
                 .header-count = cnt + 1
@@ -214,21 +202,18 @@ http-response.parse-headers = () {
 http-response.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
-    i = 0
-    for i < cnt {
+    i <- [0..cnt): {
         // 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
         matched = 1
         if .header-names[i].len != name.len {
             matched = 0
         }
         if matched == 1 {
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 if .header-names[i][j] != name[j] {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
         }
         if matched == 1 {
@@ -237,7 +222,6 @@ http-response.get-header = (name str) (val ?str) {
             val = .header-values[i].slice(0, vlen)
             return
         }
-        i = i + 1
     }
 }
 
@@ -308,14 +292,12 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
         p = 0
-        i = 0
-        for i < port-str.len {
+        i <- [0..port-str.len): {
             c = port-str[i]
             if c < 48 || c > 57 {
                 return
             }
             p = p * 10 + c - 48
-            i = i + 1
         }
         port = p
         host = host-only
@@ -405,10 +387,8 @@ http-do = (method str, url str, body str) (resp ?http-response) {
             *
         }
         // 將接收的位元組複製到 raw
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = buf[i]
-            i = i + 1
         }
         total = total + n
     }
@@ -459,14 +439,12 @@ http-do = (method str, url str, body str) (resp ?http-response) {
 
     // 解析狀態碼
     code = 0
-    i = 0
-    for i < code-str.len {
+    i <- [0..code-str.len): {
         c = code-str[i]
         if c < 48 || c > 57 {
             return
         }
         code = code * 10 + c - 48
-        i = i + 1
     }
     r.status-code = code
 
@@ -538,14 +516,12 @@ http-do-req = (req http-request) (resp ?http-response) {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
         p = 0
-        i = 0
-        for i < port-str.len {
+        i <- [0..port-str.len): {
             c = port-str[i]
             if c < 48 || c > 57 {
                 return
             }
             p = p * 10 + c - 48
-            i = i + 1
         }
         port = p
         host = host-only
@@ -584,11 +560,9 @@ http-do-req = (req http-request) (resp ?http-response) {
     req-str = req-str - crlf
 
     // 附加自訂標頭
-    hi = 0
-    for hi < req.header-count {
+    hi <- [0..req.header-count): {
         req-str = req-str - req.headers[hi]
         req-str = req-str - crlf
-        hi = hi + 1
     }
 
     if body.len > 0 {
@@ -641,10 +615,8 @@ http-do-req = (req http-request) (resp ?http-response) {
         if total + n > HTTP-MAX-RESPONSE {
             *
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = buf[i]
-            i = i + 1
         }
         total = total + n
     }
@@ -691,14 +663,12 @@ http-do-req = (req http-request) (resp ?http-response) {
     r.status-text = after-code.slice(sp2 + 1, after-code.len)
 
     code = 0
-    i = 0
-    for i < code-str.len {
+    i <- [0..code-str.len): {
         c = code-str[i]
         if c < 48 || c > 57 {
             return
         }
         code = code * 10 + c - 48
-        i = i + 1
     }
     r.status-code = code
 

@@ -178,10 +178,8 @@ mix-columns = (state []byte) {
 
 // add-round-key: 將狀態與輪金鑰 XOR
 add-round-key = (state []byte, rk []byte) {
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         state[i] = (state[i] & 255) ^ (rk[i] & 255)
-        i = i + 1
     }
 }
 
@@ -355,16 +353,13 @@ sub-word = (w i64) (r i64) {
 // 返回 ek [240]byte: 展開後的輪金鑰（15 輪 × 16 位元組）
 aes-256-key-expand = (key [32]byte) (ek [240]byte) {
     // 複製原始金鑰前 32 位元組
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         ek[i] = key[i]
-        i = i + 1
     }
 
     // Nk=8, 展開到 60 words (240 bytes)
     // i 從 8 到 59
-    i = 8
-    for i < 60 {
+    i <- [8..60): {
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
 
@@ -395,7 +390,6 @@ aes-256-key-expand = (key [32]byte) (ek [240]byte) {
         ek[i * 4 + 1] = (w >> 16) & 255
         ek[i * 4 + 2] = (w >> 8) & 255
         ek[i * 4 + 3] = w & 255
-        i = i + 1
     }
 }
 
@@ -408,23 +402,19 @@ aes-256-key-expand = (key [32]byte) (ek [240]byte) {
 aes-256-enc = (in [16]byte, key [32]byte) (out [16]byte) {
     ek [240]byte
     ek = aes-256-key-expand(key)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         out[i] = in[i]
-        i = i + 1
     }
     // 第 0 輪：AddRoundKey
     add-round-key(out[..], ek[..])
 
     // 第 1-13 輪
-    round = 1
-    for round < 14 {
+    round <- [1..14): {
         sub-bytes(out[..], 16)
         shift-rows(out[..])
         mix-columns(out[..])
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
-        round = round + 1
     }
 
     // 第 14 輪（無 MixColumns）
@@ -440,10 +430,8 @@ aes-256-enc = (in [16]byte, key [32]byte) (out [16]byte) {
 aes-256-dec = (in [16]byte, key [32]byte) (out [16]byte) {
     ek [240]byte
     ek = aes-256-key-expand(key)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         out[i] = in[i]
-        i = i + 1
     }
     // 逆向第 14 輪：AddRoundKey
     add-round-key(out[..], ek[224..])

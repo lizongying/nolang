@@ -25,22 +25,18 @@ str-set {
 str-set.init = () {
     .cap = 256
     .size = 0
-    i = 0
-    for i < 256 {
+    i <- [0..256): {
         .occ[i] = 0
         .keys[i].len = 0
-        i = i + 1
     }
 }
 
 // hash: FNV-1a 字串雜湊
 str-set.hash = (key str, idx i64) {
     h = SS-FNV-OFFSET
-    i = 0
-    for i < key.len {
+    i <- [0..key.len): {
         h = h ^ (key[i] & 255)
         h = h * SS-FNV-PRIME
-        i = i + 1
     }
     idx = h & (.cap - 1)
 }
@@ -49,10 +45,8 @@ str-set.hash = (key str, idx i64) {
 str-set.str-eq = (a str, b str, eq i64) {
     eq = 0
     a.len != b.len -> return
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         a[i] != b[i] -> return
-        i = i + 1
     }
     eq = 1
 }
@@ -75,10 +69,8 @@ str-set.add = (key str, is-new i64) {
 
     // 複製 key
     .keys[idx].len = key.len
-    i = 0
-    for i < key.len {
+    i <- [0..key.len): {
         .keys[idx][i] = key[i]
-        i = i + 1
     }
     .occ[idx] = 1
     .size = .size + 1
@@ -130,11 +122,9 @@ str-set.remove = (key str, removed i64) {
 
 // clear: 清空
 str-set.clear = () {
-    i = 0
-    for i < .cap {
+    i <- [0...cap): {
         .occ[i] = 0
         .keys[i].len = 0
-        i = i + 1
     }
     .size = 0
 }
@@ -151,16 +141,12 @@ str-set.is-empty = () (empty bool) {
 
 // for-each: 遍歷所有元素
 str-set.for-each = (val str) {
-    i = 0
-    for i < .cap {
+    i <- [0...cap): {
         .occ[i] == 1 -> {
             val.len = .keys[i].len
-            j = 0
-            for j < val.len {
+            j <- [0..val.len): {
                 val[j] = .keys[i][j]
-                j = j + 1
             }
         }
-        i = i + 1
     }
 }

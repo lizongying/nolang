@@ -68,10 +68,8 @@ link {
     l.next = nxt
     l.prev = prv
     // 初始化空閒鏈結串列: 0→1→2→...→n-1→-1
-    i = 0
-    for i < n - 1 {
+    i <- [0..n - 1): {
         l.next[i] = i + 1
-        i = i + 1
     }
     l.next[n - 1] = -1
 }
@@ -248,10 +246,8 @@ link {
     }
     // 插入中間：定位到 pos 的節點
     idx = l.head
-    i = 0
-    for i < pos {
+    i <- [0..pos): {
         idx = l.next[idx]
-        i = i + 1
     }
     // 分配新節點
     new = l.free-head
@@ -311,10 +307,8 @@ link {
     }
     // 移除中間：定位到 pos 的節點
     idx = l.head
-    i = 0
-    for i < pos {
+    i <- [0..pos): {
         idx = l.next[idx]
-        i = i + 1
     }
     val = .[idx]
     p = l.prev[idx]
@@ -337,10 +331,8 @@ link {
         return
     }
     idx = l.head
-    i = 0
-    for i < pos {
+    i <- [0..pos): {
         idx = l.next[idx]
-        i = i + 1
     }
     val = .[idx]
 }
@@ -356,10 +348,8 @@ link {
         return
     }
     idx = l.head
-    i = 0
-    for i < pos {
+    i <- [0..pos): {
         idx = l.next[idx]
-        i = i + 1
     }
     .[idx] = val
     ok = true
@@ -372,15 +362,13 @@ link {
 [n]t.link-find = (l link, val t) (pos i64) {
     pos = -1
     idx = l.head
-    i = 0
-    for i < l.size {
+    i <- [0..l.size): {
         d = .[idx] - val
         if d == 0 {
             pos = i
             return
         }
         idx = l.next[idx]
-        i = i + 1
     }
 }
 

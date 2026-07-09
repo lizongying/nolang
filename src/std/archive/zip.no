@@ -87,8 +87,7 @@ zip.cd-info = () (cd-off i64, total i64) {
 zip.entry-off = (idx i64) (off i64) {
     cd-off, total = .cd-info()
     off = cd-off
-    j = 0
-    for j < idx && j < total {
+    j <- [0..idx && j < total): {
         off28 = off + 28
         off30 = off + 30
         off32 = off + 32
@@ -97,7 +96,6 @@ zip.entry-off = (idx i64) (off i64) {
         comment-len = u16le(.data, off32)
         skip = 46 + name-len + extra-len + comment-len
         off = off + skip
-        j = j + 1
     }
 }
 
@@ -118,11 +116,9 @@ zip.name = (idx i64) (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
-    i = 0
-    for i < name-len {
+    i <- [0..name-len): {
         idx2 = off46 + i
         name[i] = .data[idx2]
-        i = i + 1
     }
 }
 
@@ -168,20 +164,16 @@ zip.extract = (idx i64) (out []byte) {
     data-off = off30 + name-len2 + extra-len2
     {
         method == 0 && sz > 0 -> {
-            i = 0
-            for i < sz {
+            i <- [0..sz): {
                 src-off = data-off + i
                 out[i] = .data[src-off]
-                i = i + 1
             }
         }
         method == 8 && sz > 0 -> {
             // 提取壓縮資料
             compressed []byte
-            i = 0
-            for i < csz {
+            i <- [0..csz): {
                 compressed[i] = .data[data-off + i]
-                i = i + 1
             }
             // 解壓縮 DEFLATE
             out = archive.gzip.inflate-decompress(compressed, sz)
@@ -197,11 +189,9 @@ zip-entry.name = () (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
-    i = 0
-    for i < name-len {
+    i <- [0..name-len): {
         idx2 = off46 + i
         name[i] = .data[idx2]
-        i = i + 1
     }
 }
 
@@ -244,20 +234,16 @@ zip-entry.extract = () (out []byte) {
     data-off = off30 + name-len2 + extra-len2
     {
         method == 0 && sz > 0 -> {
-            i = 0
-            for i < sz {
+            i <- [0..sz): {
                 src-off = data-off + i
                 out[i] = .data[src-off]
-                i = i + 1
             }
         }
         method == 8 && sz > 0 -> {
             // 提取壓縮資料
             compressed []byte
-            i = 0
-            for i < csz {
+            i <- [0..csz): {
                 compressed[i] = .data[data-off + i]
-                i = i + 1
             }
             // 解壓縮 DEFLATE
             out = archive.gzip.inflate-decompress(compressed, sz)

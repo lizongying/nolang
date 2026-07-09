@@ -42,23 +42,18 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
     // z = 0
     z [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         z[i] = 0
-        i = i + 1
     }
 
     // v = x（副本）
     v [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         v[i] = x[i]
-        i = i + 1
     }
 
     // 逐位元處理 x 的每一位
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         // 取 x 的第 i 位元（從最高位開始）
         byte-idx = i / 8
         bit-idx = 7 - (i % 8)
@@ -87,13 +82,10 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             v[0] = v[0] ^ 225
         }
 
-        i = i + 1
     }
 
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         out[i] = z[i]
-        i = i + 1
     }
 }
 
@@ -106,45 +98,33 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     // y = 0
     y [16]byte
     blk [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         y[i] = 0
-        i = i + 1
     }
 
     // 處理 AAD（每 16 位元組一區塊）
     pos = 0
     for pos + 16 <= aad.len {
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             blk[i] = aad[pos + i]
-            i = i + 1
         }
         // y = (y XOR block) * H
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             y[i] = y[i] ^ blk[i]
-            i = i + 1
         }
         y = ghash-mul(y, h)
         pos = pos + 16
     }
     // AAD 最後不完整區塊
     if pos < aad.len {
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             blk[i] = 0
-            i = i + 1
         }
-        i = 0
-        for i < aad.len - pos {
+        i <- [0..aad.len - pos): {
             blk[i] = aad[pos + i]
-            i = i + 1
         }
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             y[i] = y[i] ^ blk[i]
-            i = i + 1
         }
         y = ghash-mul(y, h)
     }
@@ -152,44 +132,32 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     // 處理密文
     pos = 0
     for pos + 16 <= cipher.len {
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             blk[i] = cipher[pos + i]
-            i = i + 1
         }
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             y[i] = y[i] ^ blk[i]
-            i = i + 1
         }
         y = ghash-mul(y, h)
         pos = pos + 16
     }
     if pos < cipher.len {
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             blk[i] = 0
-            i = i + 1
         }
-        i = 0
-        for i < cipher.len - pos {
+        i <- [0..cipher.len - pos): {
             blk[i] = cipher[pos + i]
-            i = i + 1
         }
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             y[i] = y[i] ^ blk[i]
-            i = i + 1
         }
         y = ghash-mul(y, h)
     }
 
     // 最後區塊: len(AAD)_64bit || len(cipher)_64bit（以位元為單位）
     len-blk [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         len-blk[i] = 0
-        i = i + 1
     }
     aad-bits = aad.len * 8
     cipher-bits = cipher.len * 8
@@ -212,17 +180,13 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     len-blk[14] = (cipher-bits >> 8) & 255
     len-blk[15] = cipher-bits & 255
 
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         y[i] = y[i] ^ len-blk[i]
-        i = i + 1
     }
     y = ghash-mul(y, h)
 
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         out[i] = y[i]
-        i = i + 1
     }
 }
 
@@ -237,10 +201,8 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 // 返回 out []byte: XOR 後的資料
 aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     cb [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         cb[i] = icb[i]
-        i = i + 1
     }
 
     pos = 0
@@ -254,10 +216,8 @@ ks = hash.aes.aes-128-enc(cb, key)
         if pos + n > data.len {
             n = data.len - pos
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
-            i = i + 1
         }
 
         // 遞增計數器（大端序，最低 32 位元）
@@ -298,26 +258,20 @@ ks = hash.aes.aes-128-enc(cb, key)
 aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
     // 1. 計算雜湊子金鑰 H = AES-enc(key, 0^128)
     zero-block [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         zero-block[i] = 0
-        i = i + 1
     }
 h-bytes [16]byte
 h-bytes = hash.aes.aes-128-enc(zero-block, key)
     h [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         h[i] = h-bytes[i]
-        i = i + 1
     }
 
     // 2. 構建 J0 = iv || 0x00000001
     j0 [16]byte
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         j0[i] = iv[i]
-        i = i + 1
     }
     j0[12] = 0
     j0[13] = 0
@@ -326,10 +280,8 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
 
     // 3. 加密: CTR 從 J0+1 開始
     ctr [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         ctr[i] = j0[i]
-        i = i + 1
     }
     // 遞增 J0 → J0+1
     j = 15
@@ -353,22 +305,16 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
 j0-enc [16]byte
 j0-enc = hash.aes.aes-128-enc(j0, key)
     tag [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
-        i = i + 1
     }
 
     // 6. 輸出密文 + tag
-    i = 0
-    for i < cipher.len {
+    i <- [0..cipher.len): {
         sealed[i] = cipher[i]
-        i = i + 1
     }
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         sealed[cipher.len + i] = tag[i]
-        i = i + 1
     }
 }
 
@@ -386,26 +332,20 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
 
     // 1. 計算 H
     zero-block [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         zero-block[i] = 0
-        i = i + 1
     }
 h-bytes [16]byte
 h-bytes = hash.aes.aes-128-enc(zero-block, key)
     h [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         h[i] = h-bytes[i]
-        i = i + 1
     }
 
     // 2. 構建 J0
     j0 [16]byte
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         j0[i] = iv[i]
-        i = i + 1
     }
     j0[12] = 0
     j0[13] = 0
@@ -414,17 +354,13 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
 
     // 3. 提取密文和 tag
     cipher []byte
-    i = 0
-    for i < cipher-len {
+    i <- [0..cipher-len): {
         cipher[i] = sealed[i]
-        i = i + 1
     }
 
     tag [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         tag[i] = sealed[cipher-len + i]
-        i = i + 1
     }
 
     // 4. 驗證 tag
@@ -433,18 +369,14 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
 j0-enc [16]byte
 j0-enc = hash.aes.aes-128-enc(j0, key)
     exp-tag [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
-        i = i + 1
     }
 
     // 常數時間比較
     diff = 0
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
-        i = i + 1
     }
     if diff != 0 {
         // 認證失敗
@@ -453,10 +385,8 @@ j0-enc = hash.aes.aes-128-enc(j0, key)
 
     // 5. 解密
     ctr [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         ctr[i] = j0[i]
-        i = i + 1
     }
     j = 15
     for j >= 12 {

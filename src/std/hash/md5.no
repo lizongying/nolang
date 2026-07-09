@@ -38,11 +38,9 @@ md5 = (data []byte) (out [16]byte) {
     num-blocks = plen / 64
 
     // 對每個 64 位元組區塊進行壓縮
-    bidx = 0
-    for bidx < num-blocks {
+    bidx <- [0..num-blocks): {
         // 將 64 位元組組裝為 16 個 32-bit 小端字
         off = bidx * 64
-        wi = 0
 
         w0 = 0
         w1 = 0
@@ -61,7 +59,7 @@ md5 = (data []byte) (out [16]byte) {
         w14 = 0
         w15 = 0
 
-        for wi < 16 {
+        wi <- [0..16): {
             boff = off + wi * 4
             b0 = 0
             b1 = 0
@@ -183,7 +181,6 @@ md5 = (data []byte) (out [16]byte) {
             } else {
                 w15 = word
             }
-            wi = wi + 1
         }
 
         // MD5 壓縮函數（64 輪）
@@ -463,7 +460,6 @@ md5 = (data []byte) (out [16]byte) {
         h1 = (h1 + b) & mask
         h2 = (h2 + c) & mask
         h3 = (h3 + d) & mask
-        bidx = bidx + 1
     }
 
     // 輸出 16 位元組（小端序 32-bit 字）

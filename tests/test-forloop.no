@@ -1,11 +1,9 @@
 // test-forloop — 測試 for 循環變數
 main = () {
     print('start')
-    i = 0
-    for i < 3 {
+    i <- [0..3): {
         print('i=')
         print(i)
-        i = i + 1
     }
     print('end')
 }

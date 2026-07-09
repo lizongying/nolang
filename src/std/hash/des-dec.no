@@ -221,27 +221,22 @@ f = (r i64, k i64) (out i64) {
 // des-key-schedule: 產生 16 個 48-bit 子金鑰
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         k64 = (k64 << 8) | (key[i] & 255)
-        i = i + 1
     }
 
     c = 0
     d = 0
-    i = 0
-    for i < 28 {
+    i <- [0..28): {
         pos = PC1-C[i] & 255
         bit = (k64 >> pos) & 1
         c = c | (bit << i)
         pos2 = PC1-D[i] & 255
         bit2 = (k64 >> pos2) & 1
         d = d | (bit2 << i)
-        i = i + 1
     }
 
-    round = 0
-    for round < 16 {
+    round <- [0..16): {
         shift = SHIFT-TBL[round] & 255
         cm = (1 << 28) - 1
         c = ((c << shift) | (c >> (28 - shift))) & cm
@@ -259,7 +254,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         ks[off + 4] = (sk >> 8) & 255
         ks[off + 5] = sk & 255
 
-        round = round + 1
     }
 }
 
@@ -268,10 +262,8 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 // des-block: DES 單區塊處理（解密，逆序子金鑰）
 des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     block = 0
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         block = (block << 8) | (in[i] & 255)
-        i = i + 1
     }
 
     ip = 0
@@ -282,8 +274,7 @@ des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
     r = ip & 4294967295
 
     // 16 輪（逆序子金鑰）
-    round = 0
-    for round < 16 {
+    round <- [0..16): {
         sk-off = (15 - round) * 6
         sk = 0
         sk = (ks[sk-off] << 40) |
@@ -297,16 +288,13 @@ des-block = (in []byte, n i64, ks [96]byte) (out []byte) {
         r = l ^ fout
         l = new-l
 
-        round = round + 1
     }
 
     pre-out = (r << 32) | l
     fp = permute(pre-out, FP-TBL, 64)
 
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         out[i] = (fp >> (56 - i * 8)) & 255
-        i = i + 1
     }
 }
 

@@ -140,10 +140,8 @@ sse-client.next-event = () (ev ?sse-event) {
             remaining-start = sep-pos + sep-len
             remaining = data.slice(remaining-start, data.len)
             // 將剩餘資料移到緩衝區開頭
-            i = 0
-            for i < remaining.len {
+            i <- [0..remaining.len): {
                 .recv-buf[i] = remaining[i]
-                i = i + 1
             }
             .recv-buf-len = remaining.len
             // 解析事件區塊
@@ -252,10 +250,8 @@ sse-client.next-event = () (ev ?sse-event) {
                 return
             }
             // 複製到緩衝區末尾
-            i = 0
-            for i < n {
+            i <- [0..n): {
                 .recv-buf[.recv-buf-len + i] = tmp[i]
-                i = i + 1
             }
             .recv-buf-len = .recv-buf-len + n
         }
@@ -390,10 +386,8 @@ sse-client.reconnect = () (ok bool) {
             .close()
             return
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = tmp[i]
-            i = i + 1
         }
         total = total + n
         data = raw.slice(0, total)
@@ -424,15 +418,13 @@ sse-client.reconnect = () (ok bool) {
     }
 
     code = 0
-    i = 0
-    for i < code-str.len {
+    i <- [0..code-str.len): {
         c = code-str[i]
         if c < 48 || c > 57 {
             .close()
             return
         }
         code = code * 10 + c - 48
-        i = i + 1
     }
 
     if code != 200 {
@@ -446,10 +438,8 @@ sse-client.reconnect = () (ok bool) {
 
     .recv-buf = space.repeat(SSE-BUF-SIZE)
     .recv-buf-len = remaining.len
-    i = 0
-    for i < remaining.len {
+    i <- [0..remaining.len): {
         .recv-buf[i] = remaining[i]
-        i = i + 1
     }
 
     ok = true
@@ -507,15 +497,13 @@ sse-connect = (url str) (client ?sse-client) {
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len)
         p = 0
-        i = 0
-        for i < port-str.len {
+        i <- [0..port-str.len): {
             c = port-str[i]
             if c < 48 || c > 57 {
                 client = err('invalid port')
                 return
             }
             p = p * 10 + c - 48
-            i = i + 1
         }
         port = p
         host = host-only
@@ -630,10 +618,8 @@ sse-connect = (url str) (client ?sse-client) {
             client = err('connection closed during handshake')
             return
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = tmp[i]
-            i = i + 1
         }
         total = total + n
         data = raw.slice(0, total)
@@ -670,8 +656,7 @@ sse-connect = (url str) (client ?sse-client) {
     }
 
     code = 0
-    i = 0
-    for i < code-str.len {
+    i <- [0..code-str.len): {
         c = code-str[i]
         if c < 48 || c > 57 {
             if use-tls {
@@ -684,7 +669,6 @@ sse-connect = (url str) (client ?sse-client) {
             return
         }
         code = code * 10 + c - 48
-        i = i + 1
     }
 
     if code != 200 {
@@ -704,10 +688,8 @@ sse-connect = (url str) (client ?sse-client) {
     remaining = raw.slice(body-start, total)
 
     rb = space.repeat(SSE-BUF-SIZE)
-    i = 0
-    for i < remaining.len {
+    i <- [0..remaining.len): {
         rb[i] = remaining[i]
-        i = i + 1
     }
 
     cli sse-client = sse-client{
@@ -837,10 +819,8 @@ sse-server-conn.handshake = () (ok bool) {
         if n <= 0 {
             return
         }
-        i = 0
-        for i < n {
+        i <- [0..n): {
             raw[total + i] = tmp[i]
-            i = i + 1
         }
         total = total + n
         data = raw.slice(0, total)

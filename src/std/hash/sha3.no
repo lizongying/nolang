@@ -47,42 +47,31 @@ SHA3-MASK64 u64 = 18446744073709551615
 // keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
 // state []u64: 25 個 64-bit lane（輸入/輸出）
 keccak-f1600 = (state []u64) {
-    round = 0
-    for round < 24 {
+    round <- [0..24): {
         // θ (theta)
         c [5]u64
-        x = 0
-        for x < 5 {
+        x <- [0..5): {
             c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
-            x = x + 1
         }
 
         d [5]u64
-        x = 0
-        for x < 5 {
+        x <- [0..5): {
             x1 = (x + 1) % 5
             x4 = (x + 4) % 5
             d[x] = c[x1] ^ ((c[x4] << 1) | (c[x4] >> 63))
             d[x] = d[x] & SHA3-MASK64
-            x = x + 1
         }
 
-        x = 0
-        for x < 5 {
-            y = 0
-            for y < 5 {
+        x <- [0..5): {
+            y <- [0..5): {
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
-                y = y + 1
             }
-            x = x + 1
         }
 
         // ρ (rho) + π (pi) 合併
         b [25]u64
-        x = 0
-        for x < 5 {
-            y = 0
-            for y < 5 {
+        x <- [0..5): {
+            y <- [0..5): {
                 rc = KECCAK-RC[x + 5 * y]
                 val = state[x + 5 * y]
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
@@ -93,28 +82,21 @@ keccak-f1600 = (state []u64) {
                 nx = y
                 ny = (2 * x + 3 * y) % 5
                 b[nx + 5 * ny] = rotated
-                y = y + 1
             }
-            x = x + 1
         }
 
         // χ (chi)
-        x = 0
-        for x < 5 {
-            y = 0
-            for y < 5 {
+        x <- [0..5): {
+            y <- [0..5): {
                 x1 = (x + 1) % 5
                 x2 = (x + 2) % 5
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
-                y = y + 1
             }
-            x = x + 1
         }
 
         // ι (iota)
         state[0] = state[0] ^ KECCAK-RC-FINAL[round]
 
-        round = round + 1
     }
 }
 
@@ -132,10 +114,8 @@ keccak-f1600 = (state []u64) {
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
     // 初始化狀態（25 個 64-bit lane，全零）
     state []u64
-    i = 0
-    for i < 25 {
+    i <- [0..25): {
         state[i] = 0
-        i = i + 1
     }
 
     dlen = data.len
@@ -145,14 +125,12 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     absorbed = 0
     for absorbed < dlen {
         // 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
-        i = 0
-        for i < rate {
+        i <- [0..rate): {
             if absorbed + i < dlen {
                 lane-idx = i / 8
                 byte-idx = i % 8
                 state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
             }
-            i = i + 1
         }
         keccak-f1600(state)
         absorbed = absorbed + rate
@@ -181,14 +159,12 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     // 擠出階段（squeezing）
     squeezed = 0
     for squeezed < out-len {
-        i = 0
-        for i < rate {
+        i <- [0..rate): {
             if squeezed + i < out-len {
                 lane-idx = i / 8
                 byte-idx = i % 8
                 out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
             }
-            i = i + 1
         }
         if squeezed + rate < out-len {
             keccak-f1600(state)
@@ -206,10 +182,8 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 // 返回 hash [28]byte: 28 位元組雜湊值
 sha3-224 = (data []byte) (hash [28]byte) {
     out []byte = keccak-sponge(data, 144, 56, 28, 0x06)
-    i = 0
-    for i < 28 {
+    i <- [0..28): {
         hash[i] = out[i]
-        i = i + 1
     }
 }
 
@@ -218,10 +192,8 @@ sha3-224 = (data []byte) (hash [28]byte) {
 // 返回 hash [32]byte: 32 位元組雜湊值
 sha3-256 = (data []byte) (hash [32]byte) {
     out []byte = keccak-sponge(data, 136, 64, 32, 0x06)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hash[i] = out[i]
-        i = i + 1
     }
 }
 
@@ -230,10 +202,8 @@ sha3-256 = (data []byte) (hash [32]byte) {
 // 返回 hash [48]byte: 48 位元組雜湊值
 sha3-384 = (data []byte) (hash [48]byte) {
     out []byte = keccak-sponge(data, 104, 96, 48, 0x06)
-    i = 0
-    for i < 48 {
+    i <- [0..48): {
         hash[i] = out[i]
-        i = i + 1
     }
 }
 
@@ -242,10 +212,8 @@ sha3-384 = (data []byte) (hash [48]byte) {
 // 返回 hash [64]byte: 64 位元組雜湊值
 sha3-512 = (data []byte) (hash [64]byte) {
     out []byte = keccak-sponge(data, 72, 128, 64, 0x06)
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         hash[i] = out[i]
-        i = i + 1
     }
 }
 
@@ -261,11 +229,9 @@ sha3-224-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex = space.repeat(56)
-    i = 0
-    for i < 28 {
+    i <- [0..28): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
-        i = i + 1
     }
 }
 
@@ -277,11 +243,9 @@ sha3-256-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex = space.repeat(64)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
-        i = i + 1
     }
 }
 
@@ -293,11 +257,9 @@ sha3-384-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex = space.repeat(96)
-    i = 0
-    for i < 48 {
+    i <- [0..48): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
-        i = i + 1
     }
 }
 
@@ -309,10 +271,8 @@ sha3-512-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     space = ' '
     hex = space.repeat(128)
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
-        i = i + 1
     }
 }

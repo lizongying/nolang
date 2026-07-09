@@ -19,33 +19,27 @@ arr {
 
 // [n]t.clone: 將陣列複製到 dst
 [n]t.clone = () (dst [n]t) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         dst[i] = .[i]
-        i = i + 1
     }
 }
 
 // [n]t.eq: 比較兩個陣列是否相等
 [n]t.eq = (b [n]t) (yes bool) {
     yes = true
-    i = 0
-    for i < n {
+    i <- [0..n): {
         d = .[i] - b[i]
         if d != 0 {
             yes = false
             return
         }
-        i = i + 1
     }
 }
 
 // [n]t.fill: 全部填充為 val
 [n]t.fill = (val t) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         .[i] = val
-        i = i + 1
     }
 }
 
@@ -65,20 +59,18 @@ arr {
 // [n]t.contains: 是否包含值 val
 [n]t.contains = (val t) (found i64) {
     found = 0
-    i = 0
-    for i < n {
+    i <- [0..n): {
         d = .[i] - val
         if d == 0 {
             found = 1
             return
         }
-        i = i + 1
     }
 }
 
 // [n]t.to-vec: 陣列方法，轉為 []t vec
 [n]t.to-vec = () (out []t) {
-    for i <- [0..n) {
+    i <- [0..n): {
         out[i] = .[i]
     }
 }
@@ -86,50 +78,42 @@ arr {
 // [n]t.max: 陣列中的最大值
 [n]t.max = () (max t) {
     max = .[0]
-    i = 1
-    for i < n {
+    i <- [1..n): {
         d = .[i] - max
         if d > 0 {
             max = .[i]
         }
-        i = i + 1
     }
 }
 
 // [n]t.min: 陣列中的最小值
 [n]t.min = () (min t) {
     min = .[0]
-    i = 1
-    for i < n {
+    i <- [1..n): {
         d = .[i] - min
         if d < 0 {
             min = .[i]
         }
-        i = i + 1
     }
 }
 
 // [n]t.sum: 陣列元素總和
 [n]t.sum = () (sum t) {
     sum = 0
-    i = 0
-    for i < n {
+    i <- [0..n): {
         sum = sum + .[i]
-        i = i + 1
     }
 }
 
 // [n]t.index-of: 找到值返回索引，否則 -1
 [n]t.index-of = (val t) (idx i64) {
     idx = -1
-    i = 0
-    for i < n {
+    i <- [0..n): {
         d = .[i] - val
         if d == 0 {
             idx = i
             return
         }
-        i = i + 1
     }
 }
 
@@ -145,8 +129,7 @@ arr {
 
 // [n]t.sort-asc: 升序原地排序（插入排序）
 [n]t.sort-asc = () {
-    i = 1
-    for i < n {
+    i <- [1..n): {
         key = .[i]
         j = i - 1
         for j >= 0 {
@@ -158,14 +141,12 @@ arr {
             j = j - 1
         }
         .[j + 1] = key
-        i = i + 1
     }
 }
 
 // [n]t.sort-desc: 降序原地排序（插入排序）
 [n]t.sort-desc = () {
-    i = 1
-    for i < n {
+    i <- [1..n): {
         key = .[i]
         j = i - 1
         for j >= 0 {
@@ -177,6 +158,5 @@ arr {
             j = j - 1
         }
         .[j + 1] = key
-        i = i + 1
     }
 }

@@ -63,8 +63,7 @@ json-pool {
 // init: 初始化節點池
 json-pool.init = () {
     .count = 0
-    i = 0
-    for i < JSON-MAX-NODES {
+    i <- [0..JSON-MAX-NODES): {
         .nodes[i].count = 0
         .nodes[i].kind = json-kind.null
         // 用空格字串初始化 str-val，使 data buffer 非 null
@@ -72,15 +71,12 @@ json-pool.init = () {
         .nodes[i].str-val.len = 0
         .nodes[i].num-val = 0.0
         .nodes[i].bool-val = false
-        j = 0
-        for j < JSON-MAX-CHILDREN {
+        j <- [0..JSON-MAX-CHILDREN): {
             .nodes[i].children[j] = -1
             // 用空格字串初始化 keys[j]，使 data buffer 非 null
             .nodes[i].keys[j] = ' '
             .nodes[i].keys[j].len = 0
-            j = j + 1
         }
-        i = i + 1
     }
 }
 
@@ -99,12 +95,10 @@ json-pool.alloc = () (idx i64) {
     .nodes[idx].str-val.len = 0
     .nodes[idx].num-val = 0.0
     .nodes[idx].bool-val = false
-    j = 0
-    for j < JSON-MAX-CHILDREN {
+    j <- [0..JSON-MAX-CHILDREN): {
         .nodes[idx].children[j] = -1
         .nodes[idx].keys[j] = ' '
         .nodes[idx].keys[j].len = 0
-        j = j + 1
     }
 }
 
@@ -298,10 +292,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             // copy key string to keys[cnt]
             key-len = .nodes[key-idx].str-val.len
             .nodes[node-idx].keys[cnt].len = key-len
-            j = 0
-            for j < key-len {
+            j <- [0..key-len): {
                 .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
-                j = j + 1
             }
             .nodes[node-idx].children[cnt] = val-idx
             .nodes[node-idx].count = cnt + 1
@@ -327,13 +319,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
 // skip-ws: 跳過空白字元
 json-pool.skip-ws = (s str, pos i64) (p i64) {
-    p = pos
-    for p < s.len {
+    p <- [pos..s.len): {
         c = s[p] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
             return
         }
-        p = p + 1
     }
 }
 
@@ -435,12 +425,10 @@ json-pool.str-eq = (a str, b str) (eq i64) {
     if a.len != b.len {
         return
     }
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         if a[i] != b[i] {
             return
         }
-        i = i + 1
     }
     eq = 1
 }
@@ -457,8 +445,7 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
         return
     }
     cnt = .nodes[obj-idx].count
-    i = 0
-    for i < cnt {
+    i <- [0..cnt): {
         found-eq = 0
         found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
         if found-eq == 1 {
@@ -466,7 +453,6 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
             ok = true
             return
         }
-        i = i + 1
     }
 }
 
@@ -482,8 +468,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     }
     // 檢查鍵是否存在（更新）
     cnt = .nodes[obj-idx].count
-    i = 0
-    for i < cnt {
+    i <- [0..cnt): {
         found-eq = 0
         found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
         if found-eq == 1 {
@@ -491,7 +476,6 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
             ok = true
             return
         }
-        i = i + 1
     }
     // 新增鍵
     if cnt >= JSON-MAX-CHILDREN {
@@ -499,10 +483,8 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     }
     // 复制键字符串到 keys[cnt]
     .nodes[obj-idx].keys[cnt].len = key.len
-    j = 0
-    for j < key.len {
+    j <- [0..key.len): {
         .nodes[obj-idx].keys[cnt][j] = key[j]
-        j = j + 1
     }
     .nodes[obj-idx].children[cnt] = val-idx
     .nodes[obj-idx].count = cnt + 1
@@ -647,19 +629,16 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
     if kind == json-kind.num {
         num-val = .nodes[node-idx].num-val
         num-str = num-val.to-str()
-        j = 0
-        for j < num-str.len {
+        j <- [0..num-str.len): {
             out[out-n] = num-str[j]
             out-n = out-n + 1
-            j = j + 1
         }
         return
     }
     if kind == json-kind.str {
         out[out-n] = 34
         out-n = out-n + 1
-        j = 0
-        for j < .nodes[node-idx].str-val.len {
+        j <- [0...nodes[node-idx].str-val.len): {
             c = .nodes[node-idx].str-val[j] & 255
             // 跳脫特殊字元
             if c == 34 {
@@ -694,7 +673,6 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
                     }
                 }
             }
-            j = j + 1
         }
         out[out-n] = 34
         out-n = out-n + 1
@@ -704,8 +682,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
         out[out-n] = 91
         out-n = out-n + 1
         cnt = .nodes[node-idx].count
-        i = 0
-        for i < cnt {
+        i <- [0..cnt): {
             if i > 0 {
                 out[out-n] = 44
                 out-n = out-n + 1
@@ -713,7 +690,6 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
             child-n = 0
             child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
             out-n = child-n
-            i = i + 1
         }
         out[out-n] = 93
         out-n = out-n + 1
@@ -723,8 +699,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
         out[out-n] = 123
         out-n = out-n + 1
         cnt = .nodes[node-idx].count
-        i = 0
-        for i < cnt {
+        i <- [0..cnt): {
             if i > 0 {
                 out[out-n] = 44
                 out-n = out-n + 1
@@ -732,11 +707,9 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
             // key
             out[out-n] = 34
             out-n = out-n + 1
-            j = 0
-            for j < .nodes[node-idx].keys[i].len {
+            j <- [0...nodes[node-idx].keys[i].len): {
                 out[out-n] = .nodes[node-idx].keys[i][j]
                 out-n = out-n + 1
-                j = j + 1
             }
             out[out-n] = 34
             out-n = out-n + 1
@@ -747,7 +720,6 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
             child-n = 0
             child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
             out-n = child-n
-            i = i + 1
         }
         out[out-n] = 125
         out-n = out-n + 1

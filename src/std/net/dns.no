@@ -126,11 +126,9 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
             if label-len > 0 {
                 query[pos] = label-len & 255
                 pos = pos + 1
-                j = 0
-                for j < label-len {
+                j <- [0..label-len): {
                     query[pos] = domain[label-start + j] & 255
                     pos = pos + 1
-                    j = j + 1
                 }
             }
             label-start = i + 1
@@ -190,10 +188,8 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         } elif (len-byte & 0xC0) == 0 {
             label-len = len-byte
             pos = pos + 1
-            i = 0
-            for i < label-len {
+            i <- [0..label-len): {
                 name[name.len] = data[pos + i]
-                i = i + 1
             }
             name[name.len] = 46
             pos = pos + label-len
@@ -243,18 +239,15 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
     pos = 12
 
     // 跳過問題部分
-    i = 0
-    for i < qdcount {
+    i <- [0..qdcount): {
         qname = ''
         qname, pos = dns-parse-name(data, pos)
         // 跳過 QTYPE(2) + QCLASS(2)
         pos = pos + 4
-        i = i + 1
     }
 
     // 解析回答部分
-    i = 0
-    for i < ancount {
+    i <- [0..ancount): {
         rname = ''
         rname, pos = dns-parse-name(data, pos)
         if pos + 10 > data.len {
@@ -266,10 +259,8 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
         pos = pos + 2
         // TTL (4 bytes)
         ttl = 0
-        j = 0
-        for j < 4 {
+        j <- [0..4): {
             ttl = (ttl << 8) | (data[pos + j] & 255)
-            j = j + 1
         }
         pos = pos + 4
         // RDLENGTH (2 bytes)
@@ -307,7 +298,6 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
 
         records[i] = rec
         pos = pos + rdlength
-        i = i + 1
     }
 
     ok = true
@@ -359,10 +349,8 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
 
     // 解析回應
     resp []byte
-    i = 0
-    for i < n {
+    i <- [0..n): {
         resp[i] = resp-str[i]
-        i = i + 1
     }
     resp.len = n
 
@@ -374,14 +362,12 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     }
 
     // 尋找 A 記錄
-    i = 0
-    for i < records.len {
+    i <- [0..records.len): {
         r = records[i]
         if r.rtype == DNS-TYPE-A {
             ip = r.value
             return
         }
-        i = i + 1
     }
 }
 
@@ -431,10 +417,8 @@ dns-resolve-all = (domain str) (records []dns-record, ok bool) {
     }
 
     resp []byte
-    i = 0
-    for i < n {
+    i <- [0..n): {
         resp[i] = resp-str[i]
-        i = i + 1
     }
     resp.len = n
 

@@ -174,10 +174,8 @@ http-server-conn.recv-more = () (n i64) {
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
     n = net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     if n > 0 {
-        i = 0
-        for i < n {
+        i <- [0..n): {
             .recv-buf[.recv-buf-len + i] = tmp[i]
-            i = i + 1
         }
         .recv-buf-len = .recv-buf-len + n
     }
@@ -257,13 +255,11 @@ http-server-conn.parse = () (ok bool) {
 
     // 解析標頭到 header-names / header-values
     .header-count = 0
-    i = 0
-    for i < HTTP-SRV-MAX-HEADERS {
+    i <- [0..HTTP-SRV-MAX-HEADERS): {
         .header-names[i] = ' '
         .header-names[i].len = 0
         .header-values[i] = ' '
         .header-values[i].len = 0
-        i = i + 1
     }
 
     hs = .headers
@@ -284,18 +280,14 @@ http-server-conn.parse = () (ok bool) {
                 cnt = .header-count
                 if cnt < HTTP-SRV-MAX-HEADERS {
                     name-len = colon-pos - pos
-                    j = 0
-                    for j < name-len {
+                    j <- [0..name-len): {
                         .header-names[cnt][j] = hs[pos + j]
-                        j = j + 1
                     }
                     .header-names[cnt].len = name-len
                     val-start = colon-pos + 2
                     val-len = line-end - val-start
-                    j = 0
-                    for j < val-len {
+                    j <- [0..val-len): {
                         .header-values[cnt][j] = hs[val-start + j]
-                        j = j + 1
                     }
                     .header-values[cnt].len = val-len
                     .header-count = cnt + 1
@@ -332,13 +324,11 @@ cl-str = .get-header('Content-Length')
 cl-str: {
     nil -> err -> ok
     content-len = 0
-    j = 0
-    for j < cl-str.len {
+    j <- [0..cl-str.len): {
         ch = cl-str[j]
         if ch >= 48 && ch <= 57 {
             content-len = content-len * 10 + ch - 48
         }
-        j = j + 1
     }
     if content-len > 0 && content-len <= HTTP-SRV-MAX-BODY {
         // 標頭後已接收的資料
@@ -363,15 +353,13 @@ ok = true
 http-server-conn.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
-    i = 0
-    for i < cnt {
+    i <- [0..cnt): {
         matched = 1
         if .header-names[i].len != name.len {
             matched = 0
         }
         if matched == 1 {
-            j = 0
-            for j < name.len {
+            j <- [0..name.len): {
                 c1 = .header-names[i][j]
                 c2 = name[j]
 
@@ -386,7 +374,6 @@ http-server-conn.get-header = (name str) (val ?str) {
                     matched = 0
                     break
                 }
-                j = j + 1
             }
         }
 
@@ -395,7 +382,6 @@ http-server-conn.get-header = (name str) (val ?str) {
             val = .header-values[i].slice(0, vlen)
             return
         }
-        i = i + 1
     }
 }
 
@@ -769,13 +755,11 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
 
         // 尋找冒號分隔符
         colon = -1
-        i = 0
-        for i < raw.len {
+        i <- [0..raw.len): {
             if raw[i] == 58 {
                 colon = i
                 break
             }
-            i = i + 1
         }
         if colon < 0 {
             return
@@ -783,18 +767,14 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
 
         // 提取用戶名和密碼
         user-bytes []byte
-        j = 0
-        for j < colon {
+        j <- [0..colon): {
             user-bytes[j] = raw[j]
-            j = j + 1
         }
         user = user-bytes.to-str()
         pass-bytes []byte
-        j = colon + 1
         k = 0
-        for j < raw.len {
+        j <- [colon + 1..raw.len): {
             pass-bytes[k] = raw[j]
-            j = j + 1
             k = k + 1
         }
         pass = pass-bytes.to-str()
@@ -818,10 +798,8 @@ secure-compare = (a str, b str) (ok bool) {
         return
     }
     diff = 0
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         diff = diff | (a[i] ^ b[i])
-        i = i + 1
     }
     if diff == 0 {
         ok = true

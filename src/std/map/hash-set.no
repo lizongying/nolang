@@ -22,10 +22,8 @@ hash-set {
 hash-set.init = () {
     .cap = 64
     .size = 0
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         .occ[i] = 0
-        i = i + 1
     }
 }
 
@@ -94,10 +92,8 @@ hash-set.remove = (key i64, removed i64) {
 
 // clear: 清空
 hash-set.clear = () {
-    i = 0
-    for i < .cap {
+    i <- [0...cap): {
         .occ[i] = 0
-        i = i + 1
     }
     .size = 0
 }
@@ -114,9 +110,7 @@ hash-set.is-empty = () (empty bool) {
 
 // for-each: 遍歷所有元素
 hash-set.for-each = (val i64) {
-    i = 0
-    for i < .cap {
+    i <- [0...cap): {
         .occ[i] == 1 -> val = .keys[i]
-        i = i + 1
     }
 }

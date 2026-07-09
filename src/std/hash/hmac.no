@@ -47,72 +47,54 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     // K': 將金鑰調整為區塊大小（64 位元組）
     // 若金鑰 > 64 位元組，先雜湊；若 < 64 位元組，補零
     k [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         k[i] = 0
-        i = i + 1
     }
 
     {
         key-n <= 64 -> {
-            i = 0
-            for i < key-n {
+            i <- [0..key-n): {
                 k[i] = key[i]
-                i = i + 1
             }
         }
         -> {
             // 金鑰太長，先雜湰
             h = hash.sha256.sha256(key)
-            i = 0
-            for i < 32 {
+            i <- [0..32): {
                 k[i] = h[i]
-                i = i + 1
             }
         }
     }
 
     // ipad-key = K' ⊕ ipad
     ipad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
-        i = i + 1
     }
 
     // opad-key = K' ⊕ opad
     opad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
-        i = i + 1
     }
 
     // inner = H(ipad-key || msg)
     inner-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         inner-data[i] = ipad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
-        i = i + 1
     }
     inner-hash = hash.sha256.sha256(inner-data)
 
     // outer = H(opad-key || inner)
     outer-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         outer-data[i] = opad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         outer-data[64 + i] = inner-hash[i]
-        i = i + 1
     }
     out = hash.sha256.sha256(outer-data)
 }
@@ -124,10 +106,8 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     h [32]byte
     h = hmac-sha256(key, msg)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         out[i] = h[i]
-        i = i + 1
     }
 }
 
@@ -148,67 +128,49 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     msg-n = msg.len
 
     k [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         k[i] = 0
-        i = i + 1
     }
 
     {
         key-n <= 64 -> {
-            i = 0
-            for i < key-n {
+            i <- [0..key-n): {
                 k[i] = key[i]
-                i = i + 1
             }
         }
         -> {
             h = hash.sha1.sha1(key)
-            i = 0
-            for i < 20 {
+            i <- [0..20): {
                 k[i] = h[i]
-                i = i + 1
             }
         }
     }
 
     ipad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
-        i = i + 1
     }
 
     opad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
-        i = i + 1
     }
 
     inner-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         inner-data[i] = ipad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
-        i = i + 1
     }
     inner-hash = hash.sha1.sha1(inner-data)
 
     outer-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         outer-data[i] = opad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < 20 {
+    i <- [0..20): {
         outer-data[64 + i] = inner-hash[i]
-        i = i + 1
     }
     out = hash.sha1.sha1(outer-data)
 }
@@ -220,10 +182,8 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
     h [20]byte
     h = hmac-sha1(key, msg)
-    i = 0
-    for i < 20 {
+    i <- [0..20): {
         out[i] = h[i]
-        i = i + 1
     }
 }
 
@@ -245,67 +205,49 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
     // SHA-512 區塊大小 = 128 位元組
     k [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         k[i] = 0
-        i = i + 1
     }
 
     {
         key-n <= 128 -> {
-            i = 0
-            for i < key-n {
+            i <- [0..key-n): {
                 k[i] = key[i]
-                i = i + 1
             }
         }
         -> {
             h = hash.sha512.sha512(key)
-            i = 0
-            for i < 64 {
+            i <- [0..64): {
                 k[i] = h[i]
-                i = i + 1
             }
         }
     }
 
     ipad-key [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
-        i = i + 1
     }
 
     opad-key [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
-        i = i + 1
     }
 
     inner-data []byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         inner-data[i] = ipad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         inner-data[128 + i] = msg[i]
-        i = i + 1
     }
     inner-hash = hash.sha512.sha512(inner-data)
 
     outer-data []byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         outer-data[i] = opad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         outer-data[128 + i] = inner-hash[i]
-        i = i + 1
     }
     out = hash.sha512.sha512(outer-data)
 }
@@ -317,10 +259,8 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
     h [64]byte
     h = hmac-sha512(key, msg)
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         out[i] = h[i]
-        i = i + 1
     }
 }
 
@@ -335,67 +275,49 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     msg-n = msg.len
 
     k [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         k[i] = 0
-        i = i + 1
     }
 
     {
         key-n <= 128 -> {
-            i = 0
-            for i < key-n {
+            i <- [0..key-n): {
                 k[i] = key[i]
-                i = i + 1
             }
         }
         -> {
             h = hash.sha384.sha384(key)
-            i = 0
-            for i < 48 {
+            i <- [0..48): {
                 k[i] = h[i]
-                i = i + 1
             }
         }
     }
 
     ipad-key [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
-        i = i + 1
     }
 
     opad-key [128]byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
-        i = i + 1
     }
 
     inner-data []byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         inner-data[i] = ipad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         inner-data[128 + i] = msg[i]
-        i = i + 1
     }
     inner-hash = hash.sha384.sha384(inner-data)
 
     outer-data []byte
-    i = 0
-    for i < 128 {
+    i <- [0..128): {
         outer-data[i] = opad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < 48 {
+    i <- [0..48): {
         outer-data[128 + i] = inner-hash[i]
-        i = i + 1
     }
     out = hash.sha384.sha384(outer-data)
 }
@@ -407,10 +329,8 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
     h [48]byte
     h = hmac-sha384(key, msg)
-    i = 0
-    for i < 48 {
+    i <- [0..48): {
         out[i] = h[i]
-        i = i + 1
     }
 }
 
@@ -425,67 +345,49 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     msg-n = msg.len
 
     k [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         k[i] = 0
-        i = i + 1
     }
 
     {
         key-n <= 64 -> {
-            i = 0
-            for i < key-n {
+            i <- [0..key-n): {
                 k[i] = key[i]
-                i = i + 1
             }
         }
         -> {
             h = hash.md5.md5(key)
-            i = 0
-            for i < 16 {
+            i <- [0..16): {
                 k[i] = h[i]
-                i = i + 1
             }
         }
     }
 
     ipad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
-        i = i + 1
     }
 
     opad-key [64]byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
-        i = i + 1
     }
 
     inner-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         inner-data[i] = ipad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
-        i = i + 1
     }
     inner-hash = hash.md5.md5(inner-data)
 
     outer-data []byte
-    i = 0
-    for i < 64 {
+    i <- [0..64): {
         outer-data[i] = opad-key[i]
-        i = i + 1
     }
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         outer-data[64 + i] = inner-hash[i]
-        i = i + 1
     }
     out = hash.md5.md5(outer-data)
 }
@@ -497,9 +399,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 hmac-md5-vec = (key []byte, msg []byte) (out []byte) {
     h [16]byte
     h = hmac-md5(key, msg)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         out[i] = h[i]
-        i = i + 1
     }
 }

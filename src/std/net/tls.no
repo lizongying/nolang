@@ -142,11 +142,9 @@ tls-conn {
 // n i64: 需要的位元組數
 // 返回 out []byte: 隨機位元組陣列
 tls-rand-bytes = (state i64, n i64) (out []byte) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         state = hash.rand.rand(state)
         out[i] = state & 255
-        i = i + 1
     }
 }
 
@@ -180,15 +178,11 @@ tls-get-u24 = (buf []byte, pos i64) (val i64) {
 tls-bytes-cat = (a []byte, b []byte) (out []byte) {
     an = a.len
     bn = b.len
-    i = 0
-    for i < an {
+    i <- [0..an): {
         out[i] = a[i]
-        i = i + 1
     }
-    i = 0
-    for i < bn {
+    i <- [0..bn): {
         out[an + i] = b[i]
-        i = i + 1
     }
     out.len = an + bn
 }
@@ -203,18 +197,14 @@ tls-bytes-cat = (a []byte, b []byte) (out []byte) {
 tls-bytes-to-bn = (data []byte) (out []i64) {
     n = data.len
     limb-count = (n + 3) / 4
-    i = 0
-    for i < limb-count {
+    i <- [0..limb-count): {
         out[i] = 0
-        i = i + 1
     }
-    i = 0
-    for i < n {
+    i <- [0..n): {
         byte-from-lsb = n - 1 - i
         limb = byte-from-lsb / 4
         shift = (byte-from-lsb % 4) * 8
         out[limb] = out[limb] | ((data[i] & 255) << shift)
-        i = i + 1
     }
     out.len = limb-count
 }
@@ -225,21 +215,17 @@ tls-bytes-to-bn = (data []byte) (out []i64) {
 tls-bn-to-bytes = (num []i64) (out []byte) {
     n = num.len
     out-n = n * 4
-    i = 0
-    for i < out-n {
+    i <- [0..out-n): {
         byte-from-lsb = out-n - 1 - i
         limb = byte-from-lsb / 4
         shift = (byte-from-lsb % 4) * 8
         out[i] = (num[limb] >> shift) & 255
-        i = i + 1
     }
 
     // 移除前導零
     for out-n > 1 && out[0] == 0 {
-        i = 0
-        for i < out-n - 1 {
+        i <- [0..out-n - 1): {
             out[i] = out[i + 1]
-            i = i + 1
         }
         out-n = out-n - 1
     }
@@ -271,10 +257,8 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     a-tmp [32]byte
     a-tmp = hash.hmac.hmac-sha256(secret, ls)
     a []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         a[i] = a-tmp[i]
-        i = i + 1
     }
 
     out-off = 0
@@ -286,10 +270,8 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         p-tmp [32]byte
         p-tmp = hash.hmac.hmac-sha256(secret, a-and-ls)
         p []byte
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             p[i] = p-tmp[i]
-            i = i + 1
         }
 
         // 複製到輸出
@@ -297,19 +279,15 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         if out-off + copy-n > out-len {
             copy-n = out-len - out-off
         }
-        i = 0
-        for i < copy-n {
+        i <- [0..copy-n): {
             out[out-off + i] = p[i]
-            i = i + 1
         }
         out-off = out-off + copy-n
 
         // A(i+1) = HMAC(secret, A(i))
         a-tmp = hash.hmac.hmac-sha256(secret, a)
-        i = 0
-        for i < 32 {
+        i <- [0..32): {
             a[i] = a-tmp[i]
-            i = i + 1
         }
     }
 }
@@ -332,10 +310,8 @@ tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
         if r <= 0 {
             return
         }
-        i = 0
-        for i < r {
+        i <- [0..r): {
             buf[total + i] = tmp[i]
-            i = i + 1
         }
         total = total + r
     }
@@ -401,10 +377,8 @@ tls-send-raw = (fd i64, ct i64, data []byte) {
 // data []byte: 訊息資料
 tls-conn.append-hs = (data []byte) {
     n = data.len
-    i = 0
-    for i < n {
+    i <- [0..n): {
         .hs-buf[.hs-buf-len + i] = data[i]
-        i = i + 1
     }
     .hs-buf-len = .hs-buf-len + n
     .hs-buf.len = .hs-buf-len
@@ -424,33 +398,25 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     // seq_num (8 bytes big-endian)
     seq = .write-seq
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         mac-input[7 - i] = (seq >> (i * 8)) & 255
-        i = i + 1
     }
     mac-input[8] = ct & 255
     tls-put-u16(mac-input, 9, TLS-VERSION)
     tls-put-u16(mac-input, 11, n)
-    i = 0
-    for i < n {
+    i <- [0..n): {
         mac-input[13 + i] = data[i]
-        i = i + 1
     }
     mac [32]byte
     mac = hash.hmac.hmac-sha256(.client-mac-key[..], mac-input)
 
     // 2. 明文 + MAC
     plain []byte
-    i = 0
-    for i < n {
+    i <- [0..n): {
         plain[i] = data[i]
-        i = i + 1
     }
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         plain[n + i] = mac[i]
-        i = i + 1
     }
     plain-len = n + 32
 
@@ -461,10 +427,8 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     // 4. 生成隨機 IV
     iv [16]byte
     iv-bytes []byte = tls-rand-bytes(.rand-state, 16)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         iv[i] = iv-bytes[i]
-        i = i + 1
     }
 
     // 5. AES-128-CBC 加密
@@ -477,15 +441,11 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     rec[0] = TLS-CT-APP-DATA & 255
     tls-put-u16(rec, 1, TLS-VERSION)
     tls-put-u16(rec, 3, rec-len)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         rec[5 + i] = iv[i]
-        i = i + 1
     }
-    i = 0
-    for i < padded.len {
+    i <- [0..padded.len): {
         rec[5 + 16 + i] = cipher[i]
-        i = i + 1
     }
 
     // 7. 發送
@@ -512,19 +472,15 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
 
     // 提取 IV
     iv [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         iv[i] = buf[5 + i] & 255
-        i = i + 1
     }
 
     // 密文
     cipher-len = rlen - 16
     cipher []byte
-    i = 0
-    for i < cipher-len {
+    i <- [0..cipher-len): {
         cipher[i] = buf[5 + 16 + i] & 255
-        i = i + 1
     }
 
     // AES-128-CBC 解密
@@ -548,10 +504,8 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     // 計算期望 MAC
     mac-input []byte
     seq = .read-seq
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         mac-input[7 - i] = (seq >> (i * 8)) & 255
-        i = i + 1
     }
 
     // 原始 content type 在加密前的記錄中
@@ -564,31 +518,25 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     mac-input[8] = TLS-CT-APP-DATA & 255
     tls-put-u16(mac-input, 9, TLS-VERSION)
     tls-put-u16(mac-input, 11, content-len)
-    i = 0
-    for i < content-len {
+    i <- [0..content-len): {
         mac-input[13 + i] = plain[i]
-        i = i + 1
     }
     exp-mac [32]byte
     exp-mac = hash.hmac.hmac-sha256(.server-mac-key[..], mac-input)
 
     // 驗證 MAC
     recv-mac-off = content-len
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         b1 = plain[recv-mac-off + i] & 255
         b2 = exp-mac[i] & 255
         if b1 != b2 {
             return
         }
-        i = i + 1
     }
 
     // 輸出明文
-    i = 0
-    for i < content-len {
+    i <- [0..content-len): {
         out[i] = plain[i]
-        i = i + 1
     }
     ct = TLS-CT-APP-DATA
     .read-seq = .read-seq + 1
@@ -621,23 +569,19 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     // PS: 非零隨機位元組
     state = now-ns()
-    i = 0
-    for i < ps-len {
+    i <- [0..ps-len): {
         state = hash.rand.rand(state)
         b = state & 255
         if b == 0 {
             b = 1
         }
         padded[2 + i] = b
-        i = i + 1
     }
     padded[2 + ps-len] = 0
 
     // 複製訊息
-    i = 0
-    for i < msg-n {
+    i <- [0..msg-n): {
         padded[3 + ps-len + i] = msg[i]
-        i = i + 1
     }
     padded-n = mod-n
 
@@ -669,10 +613,8 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
             out[i + shift] = out[i]
             i = i - 1
         }
-        i = 0
-        for i < shift {
+        i <- [0..shift): {
             out[i] = 0
-            i = i + 1
         }
         out.len = mod-n
     }
@@ -704,11 +646,9 @@ tls-conn.send-client-hello = () (ok bool) {
 
     // random (32 bytes)
     rand-bytes []byte = tls-rand-bytes(.rand-state, 32)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs[pos + i] = rand-bytes[i]
         .client-random[i] = rand-bytes[i]
-        i = i + 1
     }
     pos = pos + 32
 
@@ -774,10 +714,8 @@ tls-conn.read-server-hello = () (ok bool) {
     pos = pos + 2
 
     // random (32 bytes)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         .server-random[i] = buf[pos + i] & 255
-        i = i + 1
     }
     pos = pos + 32
 
@@ -835,10 +773,8 @@ tls-conn.read-certificate = (cert-out []byte) (ok bool) {
     pos = pos + 3
 
     // 複製憑證
-    i = 0
-    for i < cert-len {
+    i <- [0..cert-len): {
         cert-out[i] = buf[pos + i]
-        i = i + 1
     }
     cert-out.len = cert-len
     ok = true
@@ -905,10 +841,8 @@ tls-conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     tls-put-u16(hs, 4, enc-premaster.len)
 
     // encrypted premaster
-    i = 0
-    for i < enc-premaster.len {
+    i <- [0..enc-premaster.len): {
         hs[6 + i] = enc-premaster[i]
-        i = i + 1
     }
     hs-len = 4 + body-len
 
@@ -949,10 +883,8 @@ tls-conn.send-finished = (master []byte) (ok bool) {
     hs []byte
     hs[0] = TLS-HS-FINISHED
     tls-put-u24(hs, 1, TLS-FINISHED-SIZE)
-    i = 0
-    for i < TLS-FINISHED-SIZE {
+    i <- [0..TLS-FINISHED-SIZE): {
         hs[4 + i] = verify[i]
-        i = i + 1
     }
     hs-len = 4 + TLS-FINISHED-SIZE
 
@@ -1020,14 +952,12 @@ tls-conn.read-finished = (master []byte) (ok bool) {
     verify []byte
     verify = tls-prf(master, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
-    i = 0
-    for i < TLS-FINISHED-SIZE {
+    i <- [0..TLS-FINISHED-SIZE): {
         b1 = plain[4 + i] & 255
         b2 = verify[i] & 255
         if b1 != b2 {
             return
         }
-        i = i + 1
     }
 
     ok = true
@@ -1042,15 +972,11 @@ tls-conn.read-finished = (master []byte) (ok bool) {
 tls-conn.derive-keys = (premaster []byte) {
     // master_secret = PRF(premaster, "master secret", client_random + server_random, 48)
     seed []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         seed[i] = .client-random[i]
-        i = i + 1
     }
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         seed[32 + i] = .server-random[i]
-        i = i + 1
     }
 
     master []byte
@@ -1059,15 +985,11 @@ tls-conn.derive-keys = (premaster []byte) {
     // key_block = PRF(master, "key expansion", server_random + client_random, 96)
     // 96 = 2*MAC_KEY + 2*ENC_KEY (no IVs in TLS 1.2 CBC)
     ks []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         ks[i] = .server-random[i]
-        i = i + 1
     }
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         ks[32 + i] = .client-random[i]
-        i = i + 1
     }
 
     key-block []byte
@@ -1075,31 +997,23 @@ tls-conn.derive-keys = (premaster []byte) {
 
     // 分割 key_block
     // client_write_MAC_key (32)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         .client-mac-key[i] = key-block[i]
-        i = i + 1
     }
 
     // server_write_MAC_key (32)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         .server-mac-key[i] = key-block[32 + i]
-        i = i + 1
     }
 
     // client_write key (16)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .client-enc-key[i] = key-block[64 + i]
-        i = i + 1
     }
 
     // server_write key (16)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .server-enc-key[i] = key-block[80 + i]
-        i = i + 1
     }
 
     // 重置序號
@@ -1138,11 +1052,9 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     // random (32 bytes)
     rand-bytes []byte = tls-rand-bytes(.rand-state, 32)
     .rand-state = .rand-state + 32
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs[pos + i] = rand-bytes[i]
         .client-random[i] = rand-bytes[i]
-        i = i + 1
     }
     pos = pos + 32
 
@@ -1240,10 +1152,8 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     // key = 32 bytes
     tls-put-u16(hs, pos, 32)
     pos = pos + 2
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs[pos + i] = .client-pub[i]
-        i = i + 1
     }
     pos = pos + 32
 
@@ -1290,10 +1200,8 @@ tls-conn.read-server-hello-13 = () (ok bool) {
     pos = pos + 2
 
     // random (32 bytes)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         .server-random[i] = buf[pos + i] & 255
-        i = i + 1
     }
     pos = pos + 32
 
@@ -1343,10 +1251,8 @@ tls-conn.read-server-hello-13 = () (ok bool) {
             ks-group = tls-get-u16(buf, pos)
             ks-len i64 = tls-get-u16(buf, pos + 2)
             if ks-group == TLS-GROUP-X25519 && ks-len == 32 {
-                i = 0
-                for i < 32 {
+                i <- [0..32): {
                     .server-pub[i] = buf[pos + 4 + i] & 255
-                    i = i + 1
                 }
             }
         }
@@ -1402,43 +1308,33 @@ tls-conn.derive-handshake-keys-13 = () {
     // client handshake key = HKDF-Expand-Label(c_hs_secret, "key", "", 16)
     key-tmp []byte
     key-tmp = hash.hkdf.hkdf-expand-label-vec(c-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .hs-client-key[i] = key-tmp[i]
-        i = i + 1
     }
 
     // client handshake IV = HKDF-Expand-Label(c_hs_secret, "iv", "", 12)
     iv-tmp []byte
     iv-tmp = hash.hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         .hs-client-iv[i] = iv-tmp[i]
-        i = i + 1
     }
 
     // server handshake key
     key-tmp = hash.hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .hs-server-key[i] = key-tmp[i]
-        i = i + 1
     }
 
     // server handshake IV
     iv-tmp = hash.hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         .hs-server-iv[i] = iv-tmp[i]
-        i = i + 1
     }
 
     // 儲存 handshake secret 供後續推導應用金鑰
     // 保存到 shared-secret 的空間（重用）
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         .shared-secret[i] = hs-prk[i]
-        i = i + 1
     }
 
     .hs-write-seq = 0
@@ -1449,10 +1345,8 @@ tls-conn.derive-handshake-keys-13 = () {
 tls-conn.derive-application-keys-13 = () {
     // 從 handshake secret 推導
     hs-prk []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs-prk[i] = .shared-secret[i]
-        i = i + 1
     }
 
     // derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
@@ -1479,29 +1373,21 @@ tls-conn.derive-application-keys-13 = () {
     // 推導金鑰和 IV
     key-tmp []byte
     key-tmp = hash.hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .ap-client-key[i] = key-tmp[i]
-        i = i + 1
     }
     iv-tmp []byte
     iv-tmp = hash.hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         .ap-client-iv[i] = iv-tmp[i]
-        i = i + 1
     }
     key-tmp = hash.hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', zero-ikm, TLS13-KEY-SIZE)
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         .ap-server-key[i] = key-tmp[i]
-        i = i + 1
     }
     iv-tmp = hash.hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', zero-ikm, TLS13-IV-SIZE)
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         .ap-server-iv[i] = iv-tmp[i]
-        i = i + 1
     }
 
     .ap-write-seq = 0
@@ -1513,17 +1399,13 @@ tls-conn.derive-application-keys-13 = () {
 // seq i64: 序號
 // 返回 nonce [12]byte: nonce
 tls13-build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
-    i = 0
-    for i < 12 {
+    i <- [0..12): {
         nonce[i] = iv[i]
-        i = i + 1
     }
 
     // XOR sequence number (right-aligned 8 bytes) with last 8 bytes of IV
-    i = 0
-    for i < 8 {
+    i <- [0..8): {
         nonce[4 + i] = nonce[4 + i] ^ ((seq >> ((7 - i) * 8)) & 255)
-        i = i + 1
     }
 }
 
@@ -1540,10 +1422,8 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, se
 
     // 明文 = data + content_type(1 byte)
     plain []byte
-    i = 0
-    for i < n {
+    i <- [0..n): {
         plain[i] = data[i]
-        i = i + 1
     }
     plain[n] = ct & 255
     plain-len = n + 1
@@ -1570,10 +1450,8 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, se
     rec[0] = TLS-CT-APP-DATA & 255
     tls-put-u16(rec, 1, TLS-VERSION)
     tls-put-u16(rec, 3, rec-len)
-    i = 0
-    for i < rec-len {
+    i <- [0..rec-len): {
         rec[5 + i] = sealed[i]
-        i = i + 1
     }
 
     // 發送
@@ -1602,10 +1480,8 @@ tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (c
 
     // 提取密文+tag
     sealed []byte
-    i = 0
-    for i < rlen {
+    i <- [0..rlen): {
         sealed[i] = rec[5 + i] & 255
-        i = i + 1
     }
 
     // 構建 nonce
@@ -1632,10 +1508,8 @@ tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (c
     ct = plain[plain-len - 1] & 255
     plain-len = plain-len - 1
 
-    i = 0
-    for i < plain-len {
+    i <- [0..plain-len): {
         out[i] = plain[i]
-        i = i + 1
     }
     out.len = plain-len
 }
@@ -1681,10 +1555,8 @@ tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     // 解析 handshake message
     msg-type = plain[0] & 255
     msg-len i64 = tls-get-u24(plain, 1)
-    i = 0
-    for i < msg-len {
+    i <- [0..msg-len): {
         msg-data[i] = plain[4 + i] & 255
-        i = i + 1
     }
     msg-data.len = msg-len
 
@@ -1776,10 +1648,8 @@ tls-conn.send-finished-13 = () (ok bool) {
     // 但需要用 handshake secret 重新推導
     // 使用保存的 handshake secret（在 shared-secret 中）
     hs-prk []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs-prk[i] = .shared-secret[i]
-        i = i + 1
     }
 
     finished-key []byte
@@ -1797,10 +1667,8 @@ tls-conn.send-finished-13 = () (ok bool) {
     hs []byte
     hs[0] = TLS-HS-FINISHED
     tls-put-u24(hs, 1, 32)
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         hs[4 + i] = verify[i]
-        i = i + 1
     }
     hs-len = 4 + 32
 
@@ -1886,10 +1754,8 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         premaster[0] = 0x03
         premaster[1] = 0x03
         rand-bytes []byte = tls-rand-bytes(.rand-state, 46)
-        i = 0
-        for i < 46 {
+        i <- [0..46): {
             premaster[2 + i] = rand-bytes[i]
-            i = i + 1
         }
         // 7. 推導金鑰
         .derive-keys(premaster)
@@ -2005,10 +1871,8 @@ tls-conn.recv = (buf str, n i64) (read-n ?i64) {
         if copy-n > n {
             copy-n = n
         }
-        i = 0
-        for i < copy-n {
+        i <- [0..copy-n): {
             buf[i] = plain[i]
-            i = i + 1
         }
         read-n = copy-n
     } else {
@@ -2033,10 +1897,8 @@ tls-conn.recv = (buf str, n i64) (read-n ?i64) {
         if copy-n > n {
             copy-n = n
         }
-        i = 0
-        for i < copy-n {
+        i <- [0..copy-n): {
             buf[i] = plain[i]
-            i = i + 1
         }
         read-n = copy-n
     }

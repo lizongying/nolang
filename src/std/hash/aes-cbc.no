@@ -27,10 +27,8 @@ AES-BLOCK-SIZE = 16
 aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     // 上一個密文區塊（初始為 IV）
     prev [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         prev[i] = iv[i]
-        i = i + 1
     }
 
     // 逐區塊加密
@@ -38,10 +36,8 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     for blk < in.len {
         // XOR 當前區塊與 prev
         xored [16]byte
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
-            i = i + 1
         }
 
         // AES 加密
@@ -49,17 +45,13 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         enc-block = hash.aes.aes-128-enc(xored, key)
 
         // 輸出密文
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             out[blk + i] = enc-block[i]
-            i = i + 1
         }
 
         // 更新 prev 為當前密文區塊
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             prev[i] = out[blk + i]
-            i = i + 1
         }
 
         blk = blk + 16
@@ -74,10 +66,8 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     // 上一個密文區塊（初始為 IV）
     prev [16]byte
-    i = 0
-    for i < 16 {
+    i <- [0..16): {
         prev[i] = iv[i]
-        i = i + 1
     }
 
     // 逐區塊解密
@@ -85,10 +75,8 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     for blk < in.len {
         // 保存當前密文區塊（解密前）
         cur-cipher [16]byte
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             cur-cipher[i] = in[blk + i]
-            i = i + 1
         }
 
         // AES 解密
@@ -96,17 +84,13 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         dec-block = hash.aes.aes-128-dec(cur-cipher, key)
 
         // XOR 與 prev 得到明文
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)
-            i = i + 1
         }
 
         // 更新 prev 為當前密文區塊
-        i = 0
-        for i < 16 {
+        i <- [0..16): {
             prev[i] = cur-cipher[i]
-            i = i + 1
         }
 
         blk = blk + 16
@@ -122,15 +106,11 @@ pkcs7-pad = (in []byte) (out []byte) {
         pad-len = 16
     }
 
-    i = 0
-    for i < in.len {
+    i <- [0..in.len): {
         out[i] = in[i]
-        i = i + 1
     }
-    i = 0
-    for i < pad-len {
+    i <- [0..pad-len): {
         out[in.len + i] = pad-len
-        i = i + 1
     }
 }
 
@@ -148,13 +128,11 @@ pkcs7-unpad = (in []byte) (out-n i64) {
         return
     }
     // 驗證填充
-    i = 0
-    for i < pad-len {
+    i <- [0..pad-len): {
         if (in[in.len - 1 - i] & 255) != pad-len {
             out-n = -1
             return
         }
-        i = i + 1
     }
     out-n = in.len - pad-len
 }

@@ -104,12 +104,10 @@ fe-cswap = (a []i64, b []i64, mask i64) {
     // 常數時間：mask=0 時不交換，mask=-1（即全1）時交換
     // 使用 mask = -mask 將 0/1 轉為 0/0xFFFFFFFFFFFFFFFF
     m = 0 - mask
-    i = 0
-    for i < 10 {
+    i <- [0..10): {
         t = m & (a[i] ^ b[i])
         a[i] = a[i] ^ t
         b[i] = b[i] ^ t
-        i = i + 1
     }
 }
 
@@ -305,10 +303,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t2 = a^(8 * 2^10) = a^8192
     fe-sq(t2, t1)
-    i = 0
-    for i < 9 {
+    i <- [0..9): {
         fe-sq(t2, t2)
-        i = i + 1
     }
 
     // t2 = a^(8192 + 8) = a^8200
@@ -316,10 +312,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t3 = a^(8200 * 2^20) = a^8598323200
     fe-sq(t3, t2)
-    i = 0
-    for i < 19 {
+    i <- [0..19): {
         fe-sq(t3, t3)
-        i = i + 1
     }
 
     // t3 = a^(8598323200 + 8200) = a^8598331400
@@ -327,10 +321,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t0 = a^(8598331400 * 2^10) = a^8804263535360
     fe-sq(t0, t3)
-    i = 0
-    for i < 9 {
+    i <- [0..9): {
         fe-sq(t0, t0)
-        i = i + 1
     }
 
     // t0 = a^(8804263535360 + 8200) = a^8804263543560
@@ -338,10 +330,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t1 = a^(8804263543560 * 2^50)
     fe-sq(t1, t0)
-    i = 0
-    for i < 49 {
+    i <- [0..49): {
         fe-sq(t1, t1)
-        i = i + 1
     }
 
     // t1 = t1 * t0
@@ -349,10 +339,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t2 = t1^(2^100)
     fe-sq(t2, t1)
-    i = 0
-    for i < 99 {
+    i <- [0..99): {
         fe-sq(t2, t2)
-        i = i + 1
     }
 
     // t2 = t2 * t1
@@ -360,10 +348,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t1 = t2^(2^50)
     fe-sq(t1, t2)
-    i = 0
-    for i < 49 {
+    i <- [0..49): {
         fe-sq(t1, t1)
-        i = i + 1
     }
 
     // t1 = t1 * t0
@@ -371,10 +357,8 @@ fe-invert = (out []i64, a []i64) {
 
     // t1 = t1^(2^5)
     fe-sq(t1, t1)
-    i = 0
-    for i < 4 {
+    i <- [0..4): {
         fe-sq(t1, t1)
-        i = i + 1
     }
 
     // out = t1 * t0 = a^(2^255 - 21)
@@ -519,10 +503,8 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     // Clamping: 固定純量的某些位元
     // scalar[0] &= 248, scalar[31] &= 127, scalar[31] |= 64
     k []byte
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         k[i] = scalar[i]
-        i = i + 1
     }
     k[0] = k[0] & 248
     k[31] = k[31] & 127
@@ -658,11 +640,9 @@ x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
 x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     // 用 PRNG 生成 32 位元組私鑰
     state = seed
-    i = 0
-    for i < 32 {
+    i <- [0..32): {
         state = hash.rand.rand(state)
         priv[i] = state & 255
-        i = i + 1
     }
 
     // Clamping

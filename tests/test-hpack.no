@@ -216,10 +216,8 @@ test-decode-headers = () {
     // 編碼 :path /
     enc2 = t.encode-header(':path', '/')
     // 合併
-    i = 0
-    for i < enc2.len {
+    i <- [0..enc2.len): {
         enc-out[enc-out.len + i] = enc2[i]
-        i = i + 1
     }
     enc-out.len = enc-out.len + enc2.len
     // 解碼

@@ -60,10 +60,8 @@ tree-set.init = () {
     .root = -1
     .free-head = 0
     .size = 0
-    i = 0
-    for i < TS-CAP - 1 {
+    i <- [0..TS-CAP - 1): {
         .left[i] = i + 1
-        i = i + 1
     }
     .left[TS-CAP - 1] = -1
 }
@@ -493,10 +491,8 @@ tree-set.clear = () {
     .root = -1
     .free-head = 0
     .size = 0
-    i = 0
-    for i < TS-CAP - 1 {
+    i <- [0..TS-CAP - 1): {
         .left[i] = i + 1
-        i = i + 1
     }
     .left[TS-CAP - 1] = -1
 }

@@ -69,10 +69,8 @@ one = () (out bigint) {
 copy = (a bigint) (out bigint) {
     out.sign = a.sign
     out.len = a.len
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         out.limbs[i] = a.limbs[i]
-        i = i + 1
     }
 }
 
@@ -190,7 +188,6 @@ add = (a bigint, b bigint) (c bigint) {
 // abs-add: |a| + |b|（忽略正負號）
 abs-add = (a bigint, b bigint, c bigint) {
     carry = 0
-    i = 0
     al = a.len
     bl = b.len
     cl = al
@@ -198,7 +195,7 @@ abs-add = (a bigint, b bigint, c bigint) {
         cl = bl
     }
     c.len = cl + 1
-    for i < cl {
+    i <- [0..cl): {
         av = 0
         if i < al {
             av = a.limbs[i]
@@ -210,7 +207,6 @@ abs-add = (a bigint, b bigint, c bigint) {
         s = av + bv + carry
         c.limbs[i] = s & MASK
         carry = s >> 32
-        i = i + 1
     }
     c.limbs[cl] = carry
     normalize(c)
@@ -236,11 +232,10 @@ sub = (a bigint, b bigint, c bigint) {
 // abs-sub: |a| - |b|（假設 |a| >= |b|）
 abs-sub = (a bigint, b bigint, c bigint) {
     borrow = 0
-    i = 0
     al = a.len
     bl = b.len
     c.len = al
-    for i < al {
+    i <- [0..al): {
         av = a.limbs[i]
         bv = 0
         if i < bl {
@@ -254,7 +249,6 @@ abs-sub = (a bigint, b bigint, c bigint) {
             borrow = 0
         }
         c.limbs[i] = d & MASK
-        i = i + 1
     }
     normalize(c)
 }
@@ -268,25 +262,19 @@ mul = (a bigint, b bigint) (c bigint) {
     al = a.len
     bl = b.len
     c.len = al + bl
-    i = 0
-    for i < al + bl {
+    i <- [0..al + bl): {
         c.limbs[i] = 0
-        i = i + 1
     }
-    i = 0
-    for i < al {
+    i <- [0..al): {
         carry = 0
         av = a.limbs[i] & MASK
-        j = 0
-        for j < bl {
+        j <- [0..bl): {
             bv = b.limbs[j] & MASK
             p = av * bv + c.limbs[i + j] + carry
             c.limbs[i + j] = p & MASK
             carry = p >> 32
-            j = j + 1
         }
         c.limbs[i + bl] = carry
-        i = i + 1
     }
     c.sign = a.sign * b.sign
     normalize(c)
@@ -301,12 +289,10 @@ mul-i64 = (a bigint, v i64, c bigint) {
     }
     c.len = a.len + 1
     carry = 0
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         p = (a.limbs[i] & MASK) * (v & MASK) + carry
         c.limbs[i] = p & MASK
         carry = p >> 32
-        i = i + 1
     }
     c.limbs[a.len] = carry
     normalize(c)
@@ -337,10 +323,8 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     }
 
     q.len = a.len - b.len + 1
-    i = 0
-    for i < q.len {
+    i <- [0..q.len): {
         q.limbs[i] = 0
-        i = i + 1
     }
 
     bl = b.len
@@ -359,23 +343,19 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     norm-a = bigint{}
     norm-a.len = norm-a-len
     norm-a.sign = 1
-    i = 0
-    for i < norm-a-len {
+    i <- [0..norm-a-len): {
         av = 0
         if i < a.len {
             av = a.limbs[i]
         }
         norm-a.limbs[i] = av
-        i = i + 1
     }
     if shift > 0 {
         carry = 0
-        i = 0
-        for i < norm-a-len {
+        i <- [0..norm-a-len): {
             v = (norm-a.limbs[i] & MASK) << shift | carry
             norm-a.limbs[i] = v & MASK
             carry = v >> 32
-            i = i + 1
         }
     }
 
@@ -394,14 +374,12 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         }
 
         carry = 0
-        bj = 0
-        for bj < bl {
+        bj <- [0..bl): {
             bv = b.limbs[bj] & MASK
             p = qd * bv
             subval = (norm-a.limbs[qi + bj] & MASK) - (p & MASK) - carry
             norm-a.limbs[qi + bj] = subval & MASK
             carry = (p >> 32) - (subval >> 32)
-            bj = bj + 1
         }
         subval = (norm-a.limbs[qi + bl] & MASK) - carry
         norm-a.limbs[qi + bl] = subval & MASK
@@ -409,12 +387,10 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         if subval < 0 {
             qd = qd - 1
             carry = 0
-            bj = 0
-            for bj < bl {
+            bj <- [0..bl): {
                 s = (norm-a.limbs[qi + bj] & MASK) + (b.limbs[bj] & MASK) + carry
                 norm-a.limbs[qi + bj] = s & MASK
                 carry = s >> 32
-                bj = bj + 1
             }
             norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry
         }
@@ -428,10 +404,8 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
 
     r.len = b.len
     r.sign = a.sign
-    i = 0
-    for i < b.len {
+    i <- [0..b.len): {
         r.limbs[i] = norm-a.limbs[i]
-        i = i + 1
     }
     normalize(r)
 }
@@ -571,12 +545,10 @@ lcm = (a bigint, b bigint, l bigint) {
 // shl1: a = a << 1
 shl1 = (a bigint) {
     carry = 0
-    i = 0
-    for i < a.len {
+    i <- [0..a.len): {
         v = (a.limbs[i] & MASK) << 1 | carry
         carry = v >> 32
         a.limbs[i] = v & MASK
-        i = i + 1
     }
     if carry > 0 {
         a.limbs[a.len] = carry
@@ -601,20 +573,16 @@ shr1 = (a bigint) {
 // shl: c = a << n
 shl = (a bigint, n i64, c bigint) {
     c = copy(a)
-    i = 0
-    for i < n {
+    i <- [0..n): {
         shl1(c)
-        i = i + 1
     }
 }
 
 // shr: c = a >> n
 shr = (a bigint, n i64, c bigint) {
     c = copy(a)
-    i = 0
-    for i < n {
+    i <- [0..n): {
         shr1(c)
-        i = i + 1
     }
 }
 
@@ -673,13 +641,11 @@ from-str = (s str, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
-    pos = 0
-    for pos < s.len {
+    pos <- [0..s.len): {
         c = s[pos] & 255
         if c != 32 && c != 9 && c != 10 && c != 13 {
             break
         }
-        pos = pos + 1
     }
     if pos < s.len {
         if s[pos] == 45 {
@@ -760,8 +726,7 @@ from-hex = (s str, out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
-    i = 0
-    for i < s.len {
+    i <- [0..s.len): {
         c = s[i] & 255
         if c >= 48 && c <= 57 {
             mul-i64(out, 16, out)
@@ -773,7 +738,6 @@ from-hex = (s str, out bigint) {
             mul-i64(out, 16, out)
             add-i64(out, c - 55, out)
         }
-        i = i + 1
     }
     normalize(out)
 }

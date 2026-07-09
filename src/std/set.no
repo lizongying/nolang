@@ -14,12 +14,10 @@
 // 返回新的大小
 add = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
-    i = 0
-    for i < n {
+    i <- [0..n): {
         if s[i] == val {
             return
         }
-        i = i + 1
     }
     s[n] = val
     new-n = n + 1
@@ -29,15 +27,13 @@ add = (s []i64, n i64, val i64) (new-n i64) {
 // 返回新的大小
 set-remove = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
-    i = 0
-    for i < n {
+    i <- [0..n): {
         if s[i] == val {
             // 將最後一個元素移到該位置
             s[i] = s[n - 1]
             new-n = n - 1
             return
         }
-        i = i + 1
     }
 }
 
@@ -45,13 +41,11 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
 // 返回 true=存在, false=不存在
 contains = (s []i64, n i64, val i64) (yes bool) {
     yes = false
-    i = 0
-    for i < n {
+    i <- [0..n): {
         if s[i] == val {
             yes = true
             return
         }
-        i = i + 1
     }
 }
 
@@ -60,23 +54,19 @@ contains = (s []i64, n i64, val i64) (yes bool) {
 // 返回新的大小
 union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
     new-an = an
-    i = 0
-    for i < bn {
+    i <- [0..bn): {
         v = b[i]
         found = false
-        j = 0
-        for j < an {
+        j <- [0..an): {
             if a[j] == v {
                 found = true
                 break
             }
-            j = j + 1
         }
         if found == false {
             a[new-an] = v
             new-an = new-an + 1
         }
-        i = i + 1
     }
 }
 
@@ -85,19 +75,15 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
 // 返回交集中的元素數量
 intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         v = a[i]
-        j = 0
-        for j < bn {
+        j <- [0..bn): {
             if b[j] == v {
                 out[out-n] = v
                 out-n = out-n + 1
                 break
             }
-            j = j + 1
         }
-        i = i + 1
     }
 }
 
@@ -105,32 +91,26 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
 // 返回差集中的元素數量
 difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
-    i = 0
-    for i < an {
+    i <- [0..an): {
         v = a[i]
         found = false
-        j = 0
-        for j < bn {
+        j <- [0..bn): {
             if b[j] == v {
                 found = true
                 break
             }
-            j = j + 1
         }
         if found == false {
             out[out-n] = v
             out-n = out-n + 1
         }
-        i = i + 1
     }
 }
 
 // to-vec: 將集合轉為切片（無序）
 to-vec = (s []i64, n i64) (out []i64) {
-    i = 0
-    for i < n {
+    i <- [0..n): {
         out[i] = s[i]
-        i = i + 1
     }
 }
 

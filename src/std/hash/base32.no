@@ -131,8 +131,7 @@ base32-decode = (in str) (out []byte) {
         v7 = 0
 
         // 將字元映射回 5-bit 值
-        i = 0
-        for i < 8 {
+        i <- [0..8): {
             c = in[pos + i]
             val = 0
             if c >= 'A' && c <= 'Z' {
@@ -152,7 +151,6 @@ base32-decode = (in str) (out []byte) {
             elif i == 5 { v5 = val }
             elif i == 6 { v6 = val }
             elif i == 7 { v7 = val }
-            i = i + 1
         }
 
         // 組合為 5 位元組
