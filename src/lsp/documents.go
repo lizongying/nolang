@@ -160,6 +160,11 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	l := lexer.New(doc.Text)
 	p := parser.New(l)
 	p.Filename = filenameFromURI(uri)
+	// Inject std module function signatures and struct field types so that
+	// the parser can infer types from cross-module method calls (e.g.
+	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
+	funcSigs, structFields := nbuild.CollectStdModuleSignatures()
+	p.SetExternSignatures(funcSigs, structFields)
 	ast := p.ParseProgram()
 
 	errs := p.Errors()

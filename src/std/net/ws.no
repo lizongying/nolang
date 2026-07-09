@@ -616,8 +616,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
     ! {
         // 確保 recv-buf 至少有 2 bytes（frame header）
         .recv-buf-len: {
-            ->
-                return
+            -> return
         }
         if .recv-buf-len < 2 {
             tmp str = ' '.repeat(WS-RECV-SIZE)
@@ -839,12 +838,14 @@ ws-server-conn.recv = () (msg ?ws-message) {
         if .use-tls {
             w = .tls-c.send(frame)
             w: {
-                nil ->
+                nil -> {
                     .connected = false
                     return
-                err ->
+                }
+                err -> {
                     .connected = false
                     return
+                }
                 ->
             }
         } else {
@@ -1151,11 +1152,9 @@ ws-server-conn.recv = () (msg ?ws-message) {
     ws-client.close = () {
         if .use-tls {
             .tls-c.close()
-        } else {
-            if .fd >= 0 {
-                close(.fd)
-                .fd = -1
-            }
+        } elif .fd >= 0 {
+            close(.fd)
+            .fd = -1
         }
         .connected = false
     }
@@ -1282,14 +1281,16 @@ ws-server-conn.recv = () (msg ?ws-message) {
         if use-tls {
             w = tc.send(req)
             w: {
-                nil ->
+                nil -> {
                     tc.close()
                     c = err('send failed')
                     return
-                err ->
+                }
+                err -> {
                     tc.close()
                     c = err('send failed')
                     return
+                }
                 ->
             }
         } else {
@@ -1323,7 +1324,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             if use-tls {
                 rn = tc.recv(tmp, WS-RECV-SIZE)
                 rn: {
-                    nil ->
+                    nil -> {
                         if use-tls {
                             tc.close()
                         } else {
@@ -1331,7 +1332,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         }
                         c = err('connection closed during handshake')
                         return
-                    err ->
+                    }
+                    err -> {
                         if use-tls {
                             tc.close()
                         } else {
@@ -1339,6 +1341,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
                         }
                         c = err('connection closed during handshake')
                         return
+                    }
                     ok -> n = it
                 }
             } else {

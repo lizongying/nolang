@@ -280,16 +280,10 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
 			return "bool"
 		case "+", "-", "*", "/":
-			// 根據類型推斷：先看左運算元，再看右運算元
-			// （與 resolveExprType 行為一致，確保如 c.name - '=' 的字串連接
-			//   在左運算元為未知 struct field 時也能正確推斷為 str）
+			// 根據類型推斷
 			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
 			if leftType != "" {
 				return leftType
-			}
-			rightType := inferExprType(e.Right, varTypes, funcTypes, selfType)
-			if rightType != "" {
-				return rightType
 			}
 			return "i64"
 		default:
@@ -302,7 +296,25 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// 前綴正負號傳遞內層表達式的型別
 		return inferExprType(e.Right, varTypes, funcTypes, selfType)
 	case *parser.DotExpression:
-		// Struct field access: cannot infer without struct definitions
+		// Struct field access: look up receiver type in varTypes,
+		// then resolve field type from validationStructFields.
+		if validationStructFields != nil {
+			var typeName string
+			if recv, ok := e.Receiver.(*parser.Identifier); ok {
+				if recv.Value == "self" {
+					typeName = selfType
+				} else if t, exists := varTypes[recv.Value]; exists {
+					typeName = t
+				}
+			}
+			if typeName != "" {
+				if fields, ok := validationStructFields[typeName]; ok {
+					if fieldType, ok := fields[e.Property]; ok {
+						return fieldType
+					}
+				}
+			}
+		}
 		return ""
 	case *parser.IndexExpression:
 		// Array/slice element access: cannot reliably infer element type here
@@ -5064,6 +5076,55 @@ func knownStdModules() []StdModuleInfo {
 // GetStdModules returns StdModuleInfo for all embedded standard library modules.
 func GetStdModules() []StdModuleInfo {
 	return knownStdModules()
+}
+
+// CollectStdModuleSignatures parses all std module source files and returns
+// function signatures (funcName → return types) and struct field types
+// (structName → field name → field type). This is used by the LSP to inject
+// extern signatures into the parser so that type inference (e.g. option match
+// `it` binding) works correctly for cross-module method calls.
+func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
+	funcSigs := make(map[string][]string)
+	structFields := make(map[string]map[string]string)
+
+	for _, info := range knownStdModules() {
+		modFilePath := ResolveStdModulePath(info.ShortPath)
+		if modFilePath == "" {
+			continue
+		}
+		source, err := os.ReadFile(modFilePath)
+		if err != nil {
+			continue
+		}
+		l := lexer.New(string(source))
+		p := parser.New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			continue
+		}
+		for _, stmt := range prog.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.Results) > 0 {
+					rets := make([]string, len(fd.Results))
+					for i, r := range fd.Results {
+						rets[i] = r.Type.String()
+					}
+					funcSigs[fd.Name] = rets
+				}
+			}
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				fields := make(map[string]string)
+				for _, f := range sd.Fields {
+					if typeStr := structFieldTypeString(f); typeStr != "" {
+						fields[f.Name] = typeStr
+					}
+				}
+				structFields[sd.Name] = fields
+			}
+		}
+	}
+
+	return funcSigs, structFields
 }
 
 // GetStdModuleShortNames returns the short names of all embedded standard library

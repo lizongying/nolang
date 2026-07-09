@@ -238,6 +238,10 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		return blockMatch
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
 		return blockMatch
+	case lexer.DOT:
+		// Bare match arm starting with .field (self.field access),
+		// e.g. { .scheme == 'http' -> ... }
+		return blockMatch
 	case lexer.RBRACE:
 		// 空 {} 可能是結構體字面量（如 bigint{}）或空匹配
 		// 在表達式上下文中處理為結構體字面量

@@ -2,6 +2,8 @@ package lsp
 
 import (
 	"testing"
+
+	nbuild "github.com/lizongying/nolang/build"
 )
 
 func TestDocumentManagerNew(t *testing.T) {
@@ -360,5 +362,57 @@ func TestDocumentMultipleUpdates(t *testing.T) {
 	}
 	if doc.Item.Version != 3 {
 		t.Errorf("expected version 3, got %d", doc.Item.Version)
+	}
+}
+
+// TestOptionMatchItBindingWithCrossModuleCall verifies that the LSP's parser
+// can infer option types from cross-module method calls (e.g. tls-conn.send → ?i64),
+// enabling the `it` binding injection in option match arms. Without extern
+// signature injection, `it` would be reported as undefined.
+func TestOptionMatchItBindingWithCrossModuleCall(t *testing.T) {
+	dm := NewDocumentManager()
+	uri := "file:///test/test.no"
+	// Simulate a pattern like http2.no: w = tls-c.send(preface); w: { ok -> if it != n { ... } }
+	text := `test-fn = (host str) (conn ?i64) {
+    conn = nil
+    tc tls-conn
+    tc.init()
+    w = tc.send(host)
+    w: {
+        nil -> {
+            return
+        }
+        err -> {
+            return
+        }
+        ok -> if it != 10 {
+            return
+        }
+    }
+    conn = 1
+}`
+
+	_, err := dm.OpenDocument(uri, text)
+	if err != nil {
+		t.Fatalf("OpenDocument failed: %v", err)
+	}
+
+	ast, parseErrors, err := dm.ParseDocument(uri)
+	if err != nil {
+		t.Fatalf("ParseDocument failed: %v", err)
+	}
+	if len(parseErrors) != 0 {
+		t.Fatalf("unexpected parse errors: %v", parseErrors)
+	}
+	if ast == nil {
+		t.Fatal("ParseDocument returned nil AST")
+	}
+
+	// ValidateTypes should not report 'it' is not defined
+	typeErrs := nbuild.ValidateTypes(ast)
+	for _, e := range typeErrs {
+		if e.Message == "'it' is not defined" {
+			t.Errorf("ValidateTypes reported 'it' is not defined — extern signatures not injected properly")
+		}
 	}
 }
