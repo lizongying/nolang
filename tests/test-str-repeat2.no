@@ -1,9 +1,7 @@
 // test-str-repeat2 — 測試 str.repeat (無 tls 依賴)
-main = () {
-    print('=== str.repeat Test 2 ===')
-    space str = ' '
-    print('space created')
-    buf str = space.repeat(8)
-    print('buf created')
-    print('=== Done ===')
-}
+print('=== str.repeat Test 2 ===')
+space str = ' '
+print('space created')
+buf str = space.repeat(8)
+print('buf created')
+print('=== Done ===')

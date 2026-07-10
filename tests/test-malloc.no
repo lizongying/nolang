@@ -1,9 +1,6 @@
 // test malloc
 
-main = () {
-    print('start')
-    p i64 = malloc(256)
-    print('malloc ok')
-    print(p)
-}
-main()
+print('start')
+p i64 = malloc(256)
+print('malloc ok')
+print(p)

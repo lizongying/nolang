@@ -1,10 +1,8 @@
 // test-arr-byte — 測試 [32]byte 數組分配
-main = () {
-    print('start')
-    a [32]byte
-    print('before assign')
-    a[0] = 0x42
-    print('after assign')
-    print(a[0])
-    print('done')
-}
+print('start')
+a [32]byte
+print('before assign')
+a[0] = 0x42
+print('after assign')
+print(a[0])
+print('done')

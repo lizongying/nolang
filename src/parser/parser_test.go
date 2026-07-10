@@ -2079,7 +2079,7 @@ config = (host str = 'localhost', port i64 = 8080, debug bool = true) {
 	}
 }
 
-// TestGenericAnnotationStruct verifies that #{generic=[K,V]} attached to a
+// TestGenericAnnotationStruct verifies that #{generic=[k,v]} attached to a
 // struct definition populates StructDefinition.GenericParams.
 func TestGenericAnnotationStruct(t *testing.T) {
 	tests := []struct {
@@ -2089,20 +2089,20 @@ func TestGenericAnnotationStruct(t *testing.T) {
 	}{
 		{
 			name: "generic_two_params",
-			input: `#{generic=[K,V]}
+			input: `#{generic=[k,v]}
 hashmap {
-    k K
-    v V
+    k k
+    v v
 }`,
-			want: []string{"K", "V"},
+			want: []string{"k", "v"},
 		},
 		{
 			name: "generic_single_param",
-			input: `#{generic=[V]}
+			input: `#{generic=[v]}
 vec {
-    data V
+    data v
 }`,
-			want: []string{"V"},
+			want: []string{"v"},
 		},
 	}
 
@@ -2137,7 +2137,7 @@ vec {
 	}
 }
 
-// TestGenericAnnotationMethod verifies that #{generic=[K,V]} attached to a
+// TestGenericAnnotationMethod verifies that #{generic=[k,v]} attached to a
 // method definition populates FunctionDefinition.GenericParams.
 func TestGenericAnnotationMethod(t *testing.T) {
 	tests := []struct {
@@ -2147,19 +2147,19 @@ func TestGenericAnnotationMethod(t *testing.T) {
 	}{
 		{
 			name: "method_generic_two_params",
-			input: `#{generic=[K,V]}
-hashmap.put = (k K, v V) {
+			input: `#{generic=[k,v]}
+hashmap.put = (k k, v v) {
     return
 }`,
-			want: []string{"K", "V"},
+			want: []string{"k", "v"},
 		},
 		{
 			name: "method_generic_single_param",
-			input: `#{generic=[V]}
-vec.push = (v V) {
+			input: `#{generic=[v]}
+vec.push = (v v) {
     return
 }`,
-			want: []string{"V"},
+			want: []string{"v"},
 		},
 	}
 

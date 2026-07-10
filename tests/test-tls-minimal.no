@@ -1,5 +1,3 @@
 // test-tls-minimal — 隔離 TLS 測試崩潰
-main = () {
-    print('start')
-    print('done')
-}
+print('start')
+print('done')

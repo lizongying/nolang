@@ -27,19 +27,16 @@ apply = (n i64, cb compute-cb) (out i64) {
     out = cb(n)
 }
 
-main = () {
-    // 測試 1: 無參數回呼
-    test-run('hello', greet)
-    print('ok: greet')
+// 測試 1: 無參數回呼
+test-run('hello', greet)
+print('ok: greet')
 
-    // 測試 2: 帶參數回呼
-    result i64 = 0
-    result = apply(41, add-one)
-    if result == 42 {
-        print('ok: apply')
-    } else {
-        print('fail: apply')
-    }
+// 測試 2: 帶參數回呼
+result i64 = 0
+result = apply(41, add-one)
+if result == 42 {
+    print('ok: apply')
+} else {
+    print('fail: apply')
 }
 
-main()

@@ -5,131 +5,128 @@
 
 # std/json
 
-main = () {
-    print('start')
-    // ── 所有變數頂層宣告（遵循 http-no 慣例）──
-    json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
-    root i64 = -1
-    next i64 = 0
-    ok bool = false
-    val-idx i64 = -1
-    found bool = false
-    str-val str = ''
-    num-val f64 = 0.0
-    bool-val bool = false
-    arr-idx i64 = -1
-    n i64 = 0
-    elem-idx i64 = -1
-    out-buf str = ''
-    out-n i64 = 0
-    result str = ''
+print('start')
+// ── 所有變數頂層宣告（遵循 http-no 慣例）──
+json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
+root i64 = -1
+next i64 = 0
+ok bool = false
+val-idx i64 = -1
+found bool = false
+str-val str = ''
+num-val f64 = 0.0
+bool-val bool = false
+arr-idx i64 = -1
+n i64 = 0
+elem-idx i64 = -1
+out-buf str = ''
+out-n i64 = 0
+result str = ''
 
-    // ── 測試 1: 剖析物件 ──
-    p = json-pool{}
-    p.init()
-    root, next, ok = p.parse(json-str, 0)
-    if ok {
-        print('ok: parse object')
-    } else {
-        print('fail: parse object')
-        return
-    }
-
-    // ── 測試 2: get-key "name" → 字串 ──
-    val-idx, found = p.get-key(root, 'name')
-    if found {
-        str-val, ok = p.get-str(val-idx)
-        if ok {
-            print('ok: name=' - str-val)
-        } else {
-            print('fail: get-str name')
-        }
-    } else {
-        print('fail: get-key name')
-    }
-
-    // ── 測試 3: get-key "age" → 數字 30 ──
-    val-idx, found = p.get-key(root, 'age')
-    if found {
-        num-val, ok = p.get-num(val-idx)
-        if ok {
-            // 用比較驗證，避免 f64.to-str 的 codegen bug
-            if num-val == 30.0 {
-                print('ok: age=30')
-            } else {
-                print('fail: age should be 30')
-            }
-        } else {
-            print('fail: get-num age')
-        }
-    } else {
-        print('fail: get-key age')
-    }
-
-    // ── 測試 4: get-key "items" → 陣列 [1,2,3] ──
-    arr-idx, found = p.get-key(root, 'items')
-    if found {
-        n = p.arr-len(arr-idx)
-        if n == 3 {
-            print('ok: items len=3')
-        } else {
-            print('fail: items len')
-            print(n)
-        }
-        // arr-get items[0] → 1
-        elem-idx, ok = p.arr-get(arr-idx, 0)
-        if ok {
-            num-val, ok = p.get-num(elem-idx)
-            if ok {
-                if num-val == 1.0 {
-                    print('ok: items[0]=1')
-                } else {
-                    print('fail: items[0] should be 1')
-                }
-            } else {
-                print('fail: get-num items[0]')
-            }
-        } else {
-            print('fail: arr-get items[0]')
-        }
-    } else {
-        print('fail: get-key items')
-    }
-
-    // ── 測試 5: get-key "active" → true ──
-    val-idx, found = p.get-key(root, 'active')
-    if found {
-        bool-val, ok = p.get-bool(val-idx)
-        if ok {
-            if bool-val {
-                print('ok: active=true')
-            } else {
-                print('fail: active should be true')
-            }
-        } else {
-            print('fail: get-bool active')
-        }
-    } else {
-        print('fail: get-key active')
-    }
-
-    // ── 測試 6: stringify ──
-    out-n = p.stringify(root, out-buf, 0)
-    if out-n > 0 {
-        result = out-buf.slice(0, out-n)
-        print('ok: stringify=' - result)
-    } else {
-        print('fail: stringify')
-    }
-
-    // ── 測試 7: get-key 不存在的鍵 ──
-    val-idx, found = p.get-key(root, 'nonexistent')
-    if found == false {
-        print('ok: nonexistent key not found')
-    } else {
-        print('fail: nonexistent key should not be found')
-    }
-
-    print('ok: all tests done')
+// ── 測試 1: 剖析物件 ──
+p = json-pool{}
+p.init()
+root, next, ok = p.parse(json-str, 0)
+if ok {
+    print('ok: parse object')
+} else {
+    print('fail: parse object')
+    return
 }
-main()
+
+// ── 測試 2: get-key "name" → 字串 ──
+val-idx, found = p.get-key(root, 'name')
+if found {
+    str-val, ok = p.get-str(val-idx)
+    if ok {
+        print('ok: name=' - str-val)
+    } else {
+        print('fail: get-str name')
+    }
+} else {
+    print('fail: get-key name')
+}
+
+// ── 測試 3: get-key "age" → 數字 30 ──
+val-idx, found = p.get-key(root, 'age')
+if found {
+    num-val, ok = p.get-num(val-idx)
+    if ok {
+        // 用比較驗證，避免 f64.to-str 的 codegen bug
+        if num-val == 30.0 {
+            print('ok: age=30')
+        } else {
+            print('fail: age should be 30')
+        }
+    } else {
+        print('fail: get-num age')
+    }
+} else {
+    print('fail: get-key age')
+}
+
+// ── 測試 4: get-key "items" → 陣列 [1,2,3] ──
+arr-idx, found = p.get-key(root, 'items')
+if found {
+    n = p.arr-len(arr-idx)
+    if n == 3 {
+        print('ok: items len=3')
+    } else {
+        print('fail: items len')
+        print(n)
+    }
+    // arr-get items[0] → 1
+    elem-idx, ok = p.arr-get(arr-idx, 0)
+    if ok {
+        num-val, ok = p.get-num(elem-idx)
+        if ok {
+            if num-val == 1.0 {
+                print('ok: items[0]=1')
+            } else {
+                print('fail: items[0] should be 1')
+            }
+        } else {
+            print('fail: get-num items[0]')
+        }
+    } else {
+        print('fail: arr-get items[0]')
+    }
+} else {
+    print('fail: get-key items')
+}
+
+// ── 測試 5: get-key "active" → true ──
+val-idx, found = p.get-key(root, 'active')
+if found {
+    bool-val, ok = p.get-bool(val-idx)
+    if ok {
+        if bool-val {
+            print('ok: active=true')
+        } else {
+            print('fail: active should be true')
+        }
+    } else {
+        print('fail: get-bool active')
+    }
+} else {
+    print('fail: get-key active')
+}
+
+// ── 測試 6: stringify ──
+out-n = p.stringify(root, out-buf, 0)
+if out-n > 0 {
+    result = out-buf.slice(0, out-n)
+    print('ok: stringify=' - result)
+} else {
+    print('fail: stringify')
+}
+
+// ── 測試 7: get-key 不存在的鍵 ──
+val-idx, found = p.get-key(root, 'nonexistent')
+if found == false {
+    print('ok: nonexistent key not found')
+} else {
+    print('fail: nonexistent key should not be found')
+}
+
+print('ok: all tests done')

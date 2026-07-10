@@ -1,15 +1,15 @@
 // map — 泛型雜湊映射表
 //
-// 本檔案提供三個泛型 hashmap 模板，由編譯器針對任意 K/V 組合特化：
-//   - hashmap-str-tmpl: str 鍵（#{generic=[V]}）
-//   - hashmap-int-tmpl: int 鍵（#{generic=[K,V]}）
-//   - hashmap-bool-tmpl: bool 鍵（#{generic=[V]}）
+// 本檔案提供三個泛型 hashmap 模板，由編譯器針對任意 k/v 組合特化：
+//   - hashmap-str-tmpl: str 鍵（#{generic=[v]}）
+//   - hashmap-int-tmpl: int 鍵（#{generic=[k,v]}）
+//   - hashmap-bool-tmpl: bool 鍵（#{generic=[v]}）
 //
 // 所有實作均為固定容量、線性探測。
 // str/int 模板為 256 槽（建議 ≤ 192 條，裝載因子 ≤ 0.75）。
 // bool 模板為 2 槽（true/false 直接索引，無需探測）。
 //
-// 用法（特化後，例如 V=i64）：
+// 用法（特化後，例如 v=i64）：
 //   m = hashmap-str-tmpl{}
 //   m.init()
 //   m.put('name', 42)
@@ -30,9 +30,9 @@ HASHMAP-STR-STR-CAP = 256
 // hashmap-str-tmpl — str 鍵泛型雜湊映射表
 //
 // 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
-// 值型別為泛型 V，由編譯器特化。
+// 值型別為泛型 v，由編譯器特化。
 //
-// 用法（特化後，例如 V=i64）：
+// 用法（特化後，例如 v=i64）：
 //   m = hashmap-str-tmpl{}
 //   m.init()
 //   m.put('name', 42)
@@ -41,7 +41,7 @@ HASHMAP-STR-STR-CAP = 256
 hashmap-str-tmpl {
     cap i64
     keys [256]str
-    vals [256]V
+    vals [256]v
     occ [256]i64
     size i64
 }
@@ -58,7 +58,7 @@ hashmap-str-tmpl.init = () {
 }
 
 // hash: FNV-1a 字串雜湊
-hashmap-str-tmpl.hash = (key str)(idx i64) {
+hashmap-str-tmpl.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
         h = h ^ (key[i] & 255)
@@ -68,7 +68,7 @@ hashmap-str-tmpl.hash = (key str)(idx i64) {
 }
 
 // str-eq: 比較兩個 str 是否相等
-hashmap-str-tmpl.str-eq = (a str, b str)(eq bool) {
+hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     eq = false
     a.len != b.len -> {
         return
@@ -82,7 +82,7 @@ hashmap-str-tmpl.str-eq = (a str, b str)(eq bool) {
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-str-tmpl.put = (key str, val V)(is-new bool) {
+hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -109,8 +109,8 @@ hashmap-str-tmpl.put = (key str, val V)(is-new bool) {
     is-new = true
 }
 
-// get: 查找 key，返回 ?V（nil=未找到）
-hashmap-str-tmpl.get = (key str)(result ?V) {
+// get: 查找 key，返回 ?v（nil=未找到）
+hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -133,7 +133,7 @@ hashmap-str-tmpl.get = (key str)(result ?V) {
 }
 
 // contains: 檢查 key 是否存在
-hashmap-str-tmpl.contains = (key str)(found bool) {
+hashmap-str-tmpl.contains = (key str) (found bool) {
     found = false
     val = .get(key)
     val: {
@@ -142,7 +142,7 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 }
 
 // remove: 刪除 key
-hashmap-str-tmpl.remove = (key str)(removed bool) {
+hashmap-str-tmpl.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> {
         return
@@ -188,7 +188,7 @@ hashmap-str-tmpl.is-empty = () (empty bool) {
 }
 
 // for-each: 遍歷所有 (key, value)
-hashmap-str-tmpl.for-each = (k str, v V) {
+hashmap-str-tmpl.for-each = (k str, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             j <- [0...keys[i].len): {
@@ -206,9 +206,9 @@ hashmap-str-tmpl.for-each = (k str, v V) {
 // hashmap-int-tmpl — int 鍵泛型雜湊映射表
 //
 // 固定容量（256 槽），線性探測，模數雜湊（位元遮罩）。
-// 鍵型別為泛型 K（int），值型別為泛型 V，由編譯器特化。
+// 鍵型別為泛型 k（int），值型別為泛型 v，由編譯器特化。
 //
-// 用法（特化後，例如 K=i64 且 V=i64）：
+// 用法（特化後，例如 k=i64 且 v=i64）：
 //   m = hashmap-int-tmpl{}
 //   m.init()
 //   m.put(42, 100)
@@ -216,8 +216,8 @@ hashmap-str-tmpl.for-each = (k str, v V) {
 
 hashmap-int-tmpl {
     cap i64
-    keys [256]K
-    vals [256]V
+    keys [256]k
+    vals [256]v
     occ [256]i64
     size i64
 }
@@ -234,12 +234,12 @@ hashmap-int-tmpl.init = () {
 }
 
 // hash: 計算索引（位元遮罩）
-hashmap-int-tmpl.hash = (key K)(idx i64) {
+hashmap-int-tmpl.hash = (key k) (idx i64) {
     idx = key & (.cap - 1)
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-int-tmpl.put = (key K, val V)(is-new bool) {
+hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -261,8 +261,8 @@ hashmap-int-tmpl.put = (key K, val V)(is-new bool) {
     is-new = true
 }
 
-// get: 查找 key，返回 ?V（nil=未找到）
-hashmap-int-tmpl.get = (key K)(result ?V) {
+// get: 查找 key，返回 ?v（nil=未找到）
+hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -284,7 +284,7 @@ hashmap-int-tmpl.get = (key K)(result ?V) {
 }
 
 // contains: 檢查 key 是否存在
-hashmap-int-tmpl.contains = (key K)(found bool) {
+hashmap-int-tmpl.contains = (key k) (found bool) {
     found = false
     val = .get(key)
     val: {
@@ -293,7 +293,7 @@ hashmap-int-tmpl.contains = (key K)(found bool) {
 }
 
 // remove: 刪除 key
-hashmap-int-tmpl.remove = (key K)(removed bool) {
+hashmap-int-tmpl.remove = (key k) (removed bool) {
     removed = false
     .size == 0 -> {
         return
@@ -338,7 +338,7 @@ hashmap-int-tmpl.is-empty = () (empty bool) {
 }
 
 // for-each: 遍歷所有 (key, value)
-hashmap-int-tmpl.for-each = (k K, v V) {
+hashmap-int-tmpl.for-each = (k k, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             k = .keys[i]
@@ -354,9 +354,9 @@ hashmap-int-tmpl.for-each = (k K, v V) {
 // hashmap-bool-tmpl — bool 鍵泛型雜湊映射表
 //
 // 固定容量（2 槽），true/false 直接索引，無需線性探測。
-// 值型別為泛型 V，由編譯器特化。
+// 值型別為泛型 v，由編譯器特化。
 //
-// 用法（特化後，例如 V=i64）：
+// 用法（特化後，例如 v=i64）：
 //   m = hashmap-bool-tmpl{}
 //   m.init()
 //   m.put(true, 1)
@@ -365,7 +365,7 @@ hashmap-int-tmpl.for-each = (k K, v V) {
 hashmap-bool-tmpl {
     cap i64
     keys [2]bool
-    vals [2]V
+    vals [2]v
     occ [2]i64
     size i64
 }
@@ -382,7 +382,7 @@ hashmap-bool-tmpl.init = () {
 }
 
 // hash: 直接索引（true→1，false→0）
-hashmap-bool-tmpl.hash = (key bool)(idx i64) {
+hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     {
         key == true -> idx = 1
         -> idx = 0
@@ -390,7 +390,7 @@ hashmap-bool-tmpl.hash = (key bool)(idx i64) {
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-bool-tmpl.put = (key bool, val V)(is-new bool) {
+hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -406,8 +406,8 @@ hashmap-bool-tmpl.put = (key bool, val V)(is-new bool) {
     is-new = true
 }
 
-// get: 查找 key，返回 ?V（nil=未找到）
-hashmap-bool-tmpl.get = (key bool)(result ?V) {
+// get: 查找 key，返回 ?v（nil=未找到）
+hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -423,7 +423,7 @@ hashmap-bool-tmpl.get = (key bool)(result ?V) {
 }
 
 // contains: 檢查 key 是否存在
-hashmap-bool-tmpl.contains = (key bool)(found bool) {
+hashmap-bool-tmpl.contains = (key bool) (found bool) {
     found = false
     val = .get(key)
     val: {
@@ -432,7 +432,7 @@ hashmap-bool-tmpl.contains = (key bool)(found bool) {
 }
 
 // remove: 刪除 key
-hashmap-bool-tmpl.remove = (key bool)(removed bool) {
+hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     removed = false
     .size == 0 -> {
         return
@@ -470,7 +470,7 @@ hashmap-bool-tmpl.is-empty = () (empty bool) {
 }
 
 // for-each: 遍歷所有 (key, value)
-hashmap-bool-tmpl.for-each = (k bool, v V) {
+hashmap-bool-tmpl.for-each = (k bool, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             k = .keys[i]

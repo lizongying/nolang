@@ -19,7 +19,7 @@ func TestKeyCategory(t *testing.T) {
 		{"i8", "int"}, {"i16", "int"}, {"i32", "int"}, {"i64", "int"},
 		{"u8", "int"}, {"u16", "int"}, {"u32", "int"}, {"u64", "int"},
 		{"f32", ""}, {"f64", ""}, {"byte", ""}, {"char", ""},
-		{"V", ""}, {"K", ""}, {"", ""},
+		{"v", ""}, {"k", ""}, {"", ""},
 	}
 	for _, tt := range tests {
 		got := keyCategory(tt.in)
@@ -143,11 +143,11 @@ func parseTemplate(t *testing.T, src string) (*parser.StructDefinition, []*parse
 func TestSpecializeGenericStructStr(t *testing.T) {
 	src := `hashmap-str-tmpl {
     cap i64
-    vals [2]V
+    vals [2]v
     size i64
 }
 
-hashmap-str-tmpl.put = (key str, val V) {
+hashmap-str-tmpl.put = (key str, val v) {
     .vals[0] = val
 }
 
@@ -189,7 +189,7 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 		t.Fatalf("no vals field")
 	}
 	if valsField.Type.String() != "i64" {
-		t.Errorf("vals type = %s, want i64 (V substituted)", valsField.Type.String())
+		t.Errorf("vals type = %s, want i64 (v substituted)", valsField.Type.String())
 	}
 	if valsField.ArraySize != 2 {
 		t.Errorf("vals ArraySize = %d, want 2 (preserved)", valsField.ArraySize)
@@ -223,7 +223,7 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 	for _, stmt := range generated[1:] {
 		fd := stmt.(*parser.FunctionDefinition)
 		if fd.Name == "hashmap-str-i64.put" {
-			// param[2] = val: V → i64
+			// param[2] = val: v → i64
 			if fd.Parameters[2].Name != "val" || fd.Parameters[2].Type.String() != "i64" {
 				t.Errorf("put val param = %s:%s, want val:i64", fd.Parameters[2].Name, fd.Parameters[2].Type.String())
 			}
@@ -234,9 +234,9 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 			for _, st := range fd.Body.Statements {
 				if ls, ok := st.(*parser.LetStatement); ok && ls.Name.Value == "val" {
 					foundAssign = true
-					// val 的型別應為 ?i64（V 替換後）
+					// val 的型別應為 ?i64（v 替換後）
 					if ls.Type != nil && ls.Type.String() != "?i64" {
-						t.Errorf("contains val type = %s, want ?i64 (V substituted in body)", ls.Type.String())
+						t.Errorf("contains val type = %s, want ?i64 (v substituted in body)", ls.Type.String())
 					}
 				}
 			}
@@ -247,11 +247,11 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 
 func TestSpecializeGenericStructInt(t *testing.T) {
 	src := `hashmap-int-tmpl {
-    keys [2]K
-    vals [2]V
+    keys [2]k
+    vals [2]v
 }
 
-hashmap-int-tmpl.put = (key K, val V) {
+hashmap-int-tmpl.put = (key k, val v) {
     .keys[0] = key
     .vals[0] = val
 }
@@ -265,7 +265,7 @@ hashmap-int-tmpl.put = (key K, val V) {
 	if newSD.Name != "hashmap-i64-bool" {
 		t.Errorf("struct name = %q, want hashmap-i64-bool", newSD.Name)
 	}
-	// keys 欄位 K → i64, vals 欄位 V → bool
+	// keys 欄位 k → i64, vals 欄位 v → bool
 	var keysField, valsField *parser.StructField
 	for _, f := range newSD.Fields {
 		if f.Name == "keys" {
@@ -276,10 +276,10 @@ hashmap-int-tmpl.put = (key K, val V) {
 		}
 	}
 	if keysField == nil || keysField.Type.String() != "i64" {
-		t.Errorf("keys type = %v, want i64 (K substituted)", keysField)
+		t.Errorf("keys type = %v, want i64 (k substituted)", keysField)
 	}
 	if valsField == nil || valsField.Type.String() != "bool" {
-		t.Errorf("vals type = %v, want bool (V substituted)", valsField)
+		t.Errorf("vals type = %v, want bool (v substituted)", valsField)
 	}
 	// 方法 self 型別
 	fd := generated[1].(*parser.FunctionDefinition)
@@ -289,7 +289,7 @@ hashmap-int-tmpl.put = (key K, val V) {
 	if fd.Parameters[0].Type.String() != "hashmap-i64-bool" {
 		t.Errorf("self type = %s, want hashmap-i64-bool", fd.Parameters[0].Type.String())
 	}
-	// key: K → i64, val: V → bool
+	// key: k → i64, val: v → bool
 	if fd.Parameters[1].Type.String() != "i64" {
 		t.Errorf("key type = %s, want i64", fd.Parameters[1].Type.String())
 	}
@@ -303,15 +303,15 @@ hashmap-int-tmpl.put = (key K, val V) {
 func TestMonomorphizeGenericStructsRemovesTemplates(t *testing.T) {
 	src := `hashmap-str-tmpl {
     cap i64
-    vals [2]V
+    vals [2]v
     size i64
 }
 
-hashmap-str-tmpl.put = (key str, val V) {
+hashmap-str-tmpl.put = (key str, val v) {
     .vals[0] = val
 }
 
-hashmap-str-tmpl.get = (key str, result V) {
+hashmap-str-tmpl.get = (key str, result v) {
     result = .vals[0]
 }
 
@@ -369,19 +369,19 @@ m map[str]i64
 
 func TestMonomorphizeGenericStructsMultiplePairs(t *testing.T) {
 	src := `hashmap-str-tmpl {
-    vals [2]V
+    vals [2]v
 }
 
-hashmap-str-tmpl.put = (key str, val V) {
+hashmap-str-tmpl.put = (key str, val v) {
     .vals[0] = val
 }
 
 hashmap-int-tmpl {
-    keys [2]K
-    vals [2]V
+    keys [2]k
+    vals [2]v
 }
 
-hashmap-int-tmpl.put = (key K, val V) {
+hashmap-int-tmpl.put = (key k, val v) {
     .keys[0] = key
 }
 
@@ -462,7 +462,7 @@ func TestSpecializeGenericStructRewritesMethodCalls(t *testing.T) {
 	tmplSD := &parser.StructDefinition{
 		Name: "hashmap-str-tmpl",
 		Fields: []*parser.StructField{
-			{Name: "vals", Type: &parser.NamedType{Value: "V"}, ArraySize: 2},
+			{Name: "vals", Type: &parser.NamedType{Value: "v"}, ArraySize: 2},
 		},
 	}
 	// hash 方法：被 get 呼叫的輔助方法

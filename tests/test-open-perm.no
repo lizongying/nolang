@@ -2,29 +2,26 @@
 
 # std/fs
 
-main = () {
-    tmp = '/tmp/nolang-perm-test.txt'
-    remove(tmp)
+tmp = '/tmp/nolang-perm-test.txt'
+remove(tmp)
 
-    f ?file
-    f = fs.open(tmp, {
-        mode: file-mode.write
-        perm: file-perm.perm-600
-        excl: false
-        truncate: false
-        append: false
-    })
-    f: {
-        err -> print('fail')
-        nil -> print('fail')
-        -> {
-            it.write('x', 1)
-            it.close()
-            print('ok')
-        }
+f ?file
+f = fs.open(tmp, {
+    mode: file-mode.write
+    perm: file-perm.perm-600
+    excl: false
+    truncate: false
+    append: false
+})
+f: {
+    err -> print('fail')
+    nil -> print('fail')
+    -> {
+        it.write('x', 1)
+        it.close()
+        print('ok')
     }
-
-    remove(tmp)
 }
 
-main()
+remove(tmp)
+

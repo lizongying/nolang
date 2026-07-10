@@ -364,40 +364,38 @@ test-http3-parse-url = () {
 // 主函數
 // ═══════════════════════════════════════════════
 
-main = () {
-    println('=== HTTP/3 Test Suite ===')
-    println('')
+println('=== HTTP/3 Test Suite ===')
+println('')
 
-    println('--- QUIC Variable-Length Integer ---')
-    test-quic-varint-1byte()
-    test-quic-varint-2byte()
-    test-quic-varint-4byte()
-    test-quic-varint-8byte()
+println('--- QUIC Variable-Length Integer ---')
+test-quic-varint-1byte()
+test-quic-varint-2byte()
+test-quic-varint-4byte()
+test-quic-varint-8byte()
 
-    println('')
-    println('--- QUIC Key Derivation ---')
-    test-quic-derive-initial-keys()
+println('')
+println('--- QUIC Key Derivation ---')
+test-quic-derive-initial-keys()
 
-    println('')
-    println('--- QUIC CID ---')
-    test-quic-gen-cid()
+println('')
+println('--- QUIC CID ---')
+test-quic-gen-cid()
 
-    println('')
-    println('--- HTTP/3 Frame ---')
-    test-http3-frame-encode-decode()
+println('')
+println('--- HTTP/3 Frame ---')
+test-http3-frame-encode-decode()
 
-    println('')
-    println('--- QPACK ---')
-    test-qpack-encode-decode()
+println('')
+println('--- QPACK ---')
+test-qpack-encode-decode()
 
-    println('')
-    println('--- UDP ---')
-    test-udp-open-close()
+println('')
+println('--- UDP ---')
+test-udp-open-close()
 
-    println('')
-    println('--- URL Parsing ---')
-    test-http3-parse-url()
+println('')
+println('--- URL Parsing ---')
+test-http3-parse-url()
 
-    println('')
-    println('=== All tests completed ===')
-}
+println('')
+println('=== All tests completed ===')

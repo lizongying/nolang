@@ -1,4 +1,2 @@
 // test-minimal — 最小測試
-main = () {
-    print('hello')
-}
+print('hello')

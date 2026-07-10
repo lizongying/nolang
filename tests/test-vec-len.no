@@ -1,14 +1,12 @@
 // test-vec-len — 測試 []byte 的 len 欄位
-main = () {
-    print('start')
-    msg []byte
-    print('before len')
-    n i64 = msg.len
-    print('after len')
-    print(n)
-    msg[0] = 0x61
-    msg[1] = 0x62
-    n = msg.len
-    print(n)
-    print('done')
-}
+print('start')
+msg []byte
+print('before len')
+n i64 = msg.len
+print('after len')
+print(n)
+msg[0] = 0x61
+msg[1] = 0x62
+n = msg.len
+print(n)
+print('done')

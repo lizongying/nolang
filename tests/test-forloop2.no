@@ -1,9 +1,7 @@
 // test-forloop2 — 測試 for 循環變數 (顯式型別)
-main = () {
-    print('start')
-    n <- [0..3): {
-        print('n=')
-        print(n)
-    }
-    print('end')
+print('start')
+n <- [0..3): {
+    print('n=')
+    print(n)
 }
+print('end')

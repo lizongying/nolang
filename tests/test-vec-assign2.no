@@ -1,15 +1,13 @@
 // test-vec-assign2 — 只有 []u32 賦值
-main = () {
-    print('start')
-    block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    print('block init done')
-    print(block[0])
+print('start')
+block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+print('block init done')
+print(block[0])
 
-    block[0] = 1
-    block[1] = 2
-    print('assign done')
-    print(block[0])
-    print(block[1])
+block[0] = 1
+block[1] = 2
+print('assign done')
+print(block[0])
+print(block[1])
 
-    print('done')
-}
+print('done')

@@ -1,9 +1,7 @@
 // test-u32-vec — 測試 []u32 數組字面量
-main = () {
-    print('start')
-    block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    print('after init')
-    block[0] = 0x12345678
-    print(block[0])
-    print('done')
-}
+print('start')
+block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+print('after init')
+block[0] = 0x12345678
+print(block[0])
+print('done')

@@ -1,50 +1,48 @@
 // test-tls-part2 — bytes 相關測試
 // # std/net/tls
 
-main = () {
-    print('=== TLS Part 2 ===')
+print('=== TLS Part 2 ===')
 
-    // test-tls-bytes-cat
-    a []byte
-    a[0] = 1
-    a[1] = 2
-    a[2] = 3
-    b []byte
-    b[0] = 4
-    b[1] = 5
-    out []byte
-    out = net.tls.tls-bytes-cat(a, b)
-    if out.len != 5 { print('FAIL: bytes-cat len'); return }
-    if out[0] != 1 { print('FAIL: bytes-cat out[0]'); return }
-    if out[3] != 4 { print('FAIL: bytes-cat out[3]'); return }
-    print('PASS: bytes-cat')
+// test-tls-bytes-cat
+a []byte
+a[0] = 1
+a[1] = 2
+a[2] = 3
+b []byte
+b[0] = 4
+b[1] = 5
+out []byte
+out = net.tls.tls-bytes-cat(a, b)
+if out.len != 5 { print('FAIL: bytes-cat len'); return }
+if out[0] != 1 { print('FAIL: bytes-cat out[0]'); return }
+if out[3] != 4 { print('FAIL: bytes-cat out[3]'); return }
+print('PASS: bytes-cat')
 
-    // test-tls-bytes-to-bn
-    data []byte
-    data[0] = 0x01
-    data[1] = 0x02
-    data[2] = 0x03
-    data[3] = 0x04
-    bn-out []i64
-    bn-out = net.tls.tls-bytes-to-bn(data)
-    if bn-out.len != 1 { print('FAIL: bytes-to-bn n'); return }
-    if bn-out[0] != 0x01020304 { print('FAIL: bytes-to-bn val'); return }
-    print('PASS: bytes-to-bn')
+// test-tls-bytes-to-bn
+data []byte
+data[0] = 0x01
+data[1] = 0x02
+data[2] = 0x03
+data[3] = 0x04
+bn-out []i64
+bn-out = net.tls.tls-bytes-to-bn(data)
+if bn-out.len != 1 { print('FAIL: bytes-to-bn n'); return }
+if bn-out[0] != 0x01020304 { print('FAIL: bytes-to-bn val'); return }
+print('PASS: bytes-to-bn')
 
-    // test-tls-bn-to-bytes
-    num []i64
-    num[0] = 0x01020304
-    bb-out []byte
-    bb-out = net.tls.tls-bn-to-bytes(num)
-    if bb-out.len != 4 { print('FAIL: bn-to-bytes n'); return }
-    if bb-out[0] != 0x01 { print('FAIL: bn-to-bytes out[0]'); return }
-    print('PASS: bn-to-bytes')
+// test-tls-bn-to-bytes
+num []i64
+num[0] = 0x01020304
+bb-out []byte
+bb-out = net.tls.tls-bn-to-bytes(num)
+if bb-out.len != 4 { print('FAIL: bn-to-bytes n'); return }
+if bb-out[0] != 0x01 { print('FAIL: bn-to-bytes out[0]'); return }
+print('PASS: bn-to-bytes')
 
-    // test-tls-rand-bytes
-    state i64 = 12345
-    r-out []byte
-    r-out = net.tls.tls-rand-bytes(state, 16)
-    print('PASS: rand-bytes')
+// test-tls-rand-bytes
+state i64 = 12345
+r-out []byte
+r-out = net.tls.tls-rand-bytes(state, 16)
+print('PASS: rand-bytes')
 
-    print('=== Done ===')
-}
+print('=== Done ===')

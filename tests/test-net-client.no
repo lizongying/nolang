@@ -7,80 +7,77 @@
 
 # std/net/client
 
-main = () {
-    // 測試 1: connect
-    c client = client{}
-    ok = c.connect('127.0.0.1', 8080)
-    if ok {
-        print('ok: connect')
-    } else {
-        print('fail: connect')
-        return
-    }
-
-    // 測試 2: is-connected
-    yes = c.is-connected()
-    if yes {
-        print('ok: is-connected')
-    } else {
-        print('fail: is-connected')
-    }
-
-    // 測試 3: send / recv
-    buf str = ''
-    written = c.send('hello')
-    if written > 0 {
-        print('ok: send')
-    } else {
-        print('fail: send')
-    }
-    read-n = c.recv(buf, 1024)
-    if read-n > 0 {
-        print('ok: recv')
-    } else {
-        print('fail: recv')
-    }
-
-    // 測試 4: send-line / recv-line
-    written2 = c.send-line('world')
-    if written2 > 0 {
-        print('ok: send-line')
-    } else {
-        print('fail: send-line')
-    }
-    line = c.recv-line()
-    line: {
-        nil -> print('fail: recv-line')
-        -> print('ok: recv-line')
-    }
-
-    // 測試 5: close
-    c.close()
-    yes2 = c.is-connected()
-    if yes2 == false {
-        print('ok: close')
-    } else {
-        print('fail: close')
-    }
-
-    // 測試 6: reconnect
-    re-ok = c.reconnect()
-    if re-ok {
-        print('ok: reconnect')
-    } else {
-        print('fail: reconnect')
-    }
-
-    // 測試 7: 便捷函數 net-client
-    c2 = net.client.net-client('127.0.0.1', 8080)
-    c2: {
-        nil -> print('fail: net-client')
-        -> {
-            print('ok: net-client')
-            it.close()
-        }
-    }
-
-    print('ok: all tests done')
+// 測試 1: connect
+c client = client{}
+ok = c.connect('127.0.0.1', 8080)
+if ok {
+    print('ok: connect')
+} else {
+    print('fail: connect')
+    return
 }
-main()
+
+// 測試 2: is-connected
+yes = c.is-connected()
+if yes {
+    print('ok: is-connected')
+} else {
+    print('fail: is-connected')
+}
+
+// 測試 3: send / recv
+buf str = ''
+written = c.send('hello')
+if written > 0 {
+    print('ok: send')
+} else {
+    print('fail: send')
+}
+read-n = c.recv(buf, 1024)
+if read-n > 0 {
+    print('ok: recv')
+} else {
+    print('fail: recv')
+}
+
+// 測試 4: send-line / recv-line
+written2 = c.send-line('world')
+if written2 > 0 {
+    print('ok: send-line')
+} else {
+    print('fail: send-line')
+}
+line = c.recv-line()
+line: {
+    nil -> print('fail: recv-line')
+    -> print('ok: recv-line')
+}
+
+// 測試 5: close
+c.close()
+yes2 = c.is-connected()
+if yes2 == false {
+    print('ok: close')
+} else {
+    print('fail: close')
+}
+
+// 測試 6: reconnect
+re-ok = c.reconnect()
+if re-ok {
+    print('ok: reconnect')
+} else {
+    print('fail: reconnect')
+}
+
+// 測試 7: 便捷函數 net-client
+c2 = net.client.net-client('127.0.0.1', 8080)
+c2: {
+    nil -> print('fail: net-client')
+    -> {
+        print('ok: net-client')
+        it.close()
+    }
+}
+
+print('ok: all tests done')

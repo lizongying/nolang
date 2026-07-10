@@ -1,6 +1,4 @@
 // test-parse-grouped.no — 測試 (-42 - 1).to-str() 的解析結構
-main = () {
-    // 簡化版: (-42 - 1).to-str()
-    s = (-42 - 1).to-str()
-    print(s)
-}
+// 簡化版: (-42 - 1).to-str()
+s = (-42 - 1).to-str()
+print(s)

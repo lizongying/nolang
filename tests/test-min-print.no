@@ -1,4 +1,2 @@
-main = () {
-    print('start')
-    print('done')
-}
+print('start')
+print('done')

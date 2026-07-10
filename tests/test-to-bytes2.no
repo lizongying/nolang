@@ -1,13 +1,11 @@
 // test-to-bytes2 — 測試 str.to-bytes 返回值訪問
 // # std/net/tls
 
-main = () {
-    print('start')
-    s str = 'test label'
-    print('before to-bytes')
-    b []byte = s.to-bytes()
-    print('after to-bytes')
-    // 不訪問 b[0]，只打印 len
-    print('before print')
-    print('done')
-}
+print('start')
+s str = 'test label'
+print('before to-bytes')
+b []byte = s.to-bytes()
+print('after to-bytes')
+// 不訪問 b[0]，只打印 len
+print('before print')
+print('done')

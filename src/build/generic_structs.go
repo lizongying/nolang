@@ -200,10 +200,10 @@ func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefin
 	subst := make(map[string]string)
 	switch cat {
 	case "str", "bool":
-		subst["V"] = valueStr
+		subst["v"] = valueStr
 	case "int":
-		subst["K"] = keyStr
-		subst["V"] = valueStr
+		subst["k"] = keyStr
+		subst["v"] = valueStr
 	}
 	// 將模板結構名稱對應至具體名稱，以替換 self 參數型別
 	subst[tmplSD.Name] = concreteName

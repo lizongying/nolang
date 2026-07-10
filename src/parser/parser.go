@@ -8034,7 +8034,7 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 }
 
 // extractGenericParams 從註解條目中找出 generic 鍵的陣列值，提取型別參數名稱列表。
-// 例如 #{generic=[K,V]} 會回傳 ["K", "V"]；若無 generic 鍵則回傳 nil。
+// 例如 #{generic=[k,v]} 會回傳 ["k", "v"]；若無 generic 鍵則回傳 nil。
 func extractGenericParams(entries []*AnnotationEntry) []string {
 	for _, e := range entries {
 		if e.Key != "generic" {

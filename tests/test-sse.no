@@ -38,95 +38,93 @@
 
 # std/net/sse
 
-main = () {
-    // 測試 1: connect（明文 HTTP）
-    client = net.sse.sse-connect('http://127.0.0.1:3000/events')
-    client: {
-        nil -> println('fail: connect')
-        ->
-            println('ok: connect')
-    }
+// 測試 1: connect（明文 HTTP）
+client = net.sse.sse-connect('http://127.0.0.1:3000/events')
+client: {
+    nil -> println('fail: connect')
+    ->
+        println('ok: connect')
+}
 
-    // 測試 2: is-connected
-    client: {
-        nil -> return
-        -> {
-            yes = client.is-connected()
-            if yes {
-                println('ok: is-connected')
-            } else {
-                println('fail: is-connected')
-            }
+// 測試 2: is-connected
+client: {
+    nil -> return
+    -> {
+        yes = client.is-connected()
+        if yes {
+            println('ok: is-connected')
+        } else {
+            println('fail: is-connected')
         }
     }
+}
 
-    // 測試 3: next-event（讀取 3 個事件）
-    client: {
-        nil -> return
-        -> {
-            c = it
-            count = 0
-            ! {
-                ev = c.next-event()
-                ev: {
-                    nil -> {
-                        println('connection closed')
-                        *
+// 測試 3: next-event（讀取 3 個事件）
+client: {
+    nil -> return
+    -> {
+        c = it
+        count = 0
+        ! {
+            ev = c.next-event()
+            ev: {
+                nil -> {
+                    println('connection closed')
+                    *
+                }
+                err -> {
+                    println('error')
+                    *
+                }
+                -> {
+                    println('event: ' - ev.event)
+                    println('data: ' - ev.data)
+                    if ev.id.len > 0 {
+                        println('id: ' - ev.id)
                     }
-                    err -> {
-                        println('error')
-                        *
+                    if ev.retry >= 0 {
+                        r = ev.retry.to-str()
+                        println('retry: ' - r)
                     }
-                    -> {
-                        println('event: ' - ev.event)
-                        println('data: ' - ev.data)
-                        if ev.id.len > 0 {
-                            println('id: ' - ev.id)
-                        }
-                        if ev.retry >= 0 {
-                            r = ev.retry.to-str()
-                            println('retry: ' - r)
-                        }
-                        println('---')
-                        count = count + 1
-                        if count >= 3 {
-                            *
-                        }
+                    println('---')
+                    count = count + 1
+                    if count >= 3 {
+                        *
                     }
                 }
             }
         }
     }
+}
 
-    // 測試 4: close
-    client: {
-        nil -> return
-        -> {
-            client.close()
-            yes = client.is-connected()
-            if yes {
-                println('fail: close')
-            } else {
-                println('ok: close')
-            }
+// 測試 4: close
+client: {
+    nil -> return
+    -> {
+        client.close()
+        yes = client.is-connected()
+        if yes {
+            println('fail: close')
+        } else {
+            println('ok: close')
         }
     }
+}
 
-    // 測試 5: HTTPS SSE 連線
-    https-client = net.sse.sse-connect('https://example.com/events')
-    https-client: {
-        nil -> println('skip: HTTPS SSE (expected without live server)')
-        -> {
-            println('ok: HTTPS connect')
-            https-client.close()
-        }
+// 測試 5: HTTPS SSE 連線
+https-client = net.sse.sse-connect('https://example.com/events')
+https-client: {
+    nil -> println('skip: HTTPS SSE (expected without live server)')
+    -> {
+        println('ok: HTTPS connect')
+        https-client.close()
     }
+}
 
-    // 測試 6: 無效 URL
-    bad = net.sse.sse-connect('ftp://invalid')
-    bad: {
-        nil -> println('fail: expected err for invalid URL')
-        err -> println('ok: invalid URL rejected')
-        -> println('fail: expected err for invalid URL')
-    }
+// 測試 6: 無效 URL
+bad = net.sse.sse-connect('ftp://invalid')
+bad: {
+    nil -> println('fail: expected err for invalid URL')
+    err -> println('ok: invalid URL rejected')
+    -> println('fail: expected err for invalid URL')
 }

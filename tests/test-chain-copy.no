@@ -48,33 +48,30 @@ json-pool.alloc = () (idx i64) {
     .nodes[idx].str-val.len = 0
 }
 
-main = () {
-    print('start')
-    p = json-pool{}
-    p.init()
+print('start')
+p = json-pool{}
+p.init()
 
-    node-idx i64 = 0
-    key-idx i64 = 0
+node-idx i64 = 0
+key-idx i64 = 0
 
-    node-idx = p.alloc()
-    key-idx = p.alloc()
+node-idx = p.alloc()
+key-idx = p.alloc()
 
-    p.nodes[key-idx].kind = json-kind.str
-    p.nodes[key-idx].str-val.len = 1
-    p.nodes[key-idx].str-val[0] = 97
+p.nodes[key-idx].kind = json-kind.str
+p.nodes[key-idx].str-val.len = 1
+p.nodes[key-idx].str-val[0] = 97
 
-    print('before copy')
+print('before copy')
 
-    cnt i64 = 0
-    p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len
-    print('set len ok')
-    j <- [0..p.nodes[key-idx].str-val.len): {
-        p.nodes[node-idx].keys[cnt][j] = p.nodes[key-idx].str-val[j]
-    }
-    print('copy ok')
-
-    val i64 = p.nodes[node-idx].keys[cnt][0]
-    print('val=')
-    print(val)
+cnt i64 = 0
+p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len
+print('set len ok')
+j <- [0..p.nodes[key-idx].str-val.len): {
+    p.nodes[node-idx].keys[cnt][j] = p.nodes[key-idx].str-val[j]
 }
-main()
+print('copy ok')
+
+val i64 = p.nodes[node-idx].keys[cnt][0]
+print('val=')
+print(val)

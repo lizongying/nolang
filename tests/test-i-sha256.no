@@ -1,10 +1,8 @@
 // test-i-sha256 — 測試 import sha256 後 i 變數
 // # std/hash/sha256
 
-main = () {
-    print('start')
-    i <- [0..5): {
-        print(i)
-    }
-    print('done')
+print('start')
+i <- [0..5): {
+    print(i)
 }
+print('done')

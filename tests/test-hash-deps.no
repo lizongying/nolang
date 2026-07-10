@@ -4,6 +4,4 @@
 # std/hash/aes-cbc
 # std/hash/rand
 
-main = () {
-    print('hash deps ok')
-}
+print('hash deps ok')

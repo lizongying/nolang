@@ -2,15 +2,12 @@
 
 # std/json
 
-main = () {
-    ok bool = false
-    print('start')
-    ok = true
-    print('ok=' - ok.to-str())
-    if ok {
-        print('ok: if works')
-    } else {
-        print('fail: if broken')
-    }
+ok bool = false
+print('start')
+ok = true
+print('ok=' - ok.to-str())
+if ok {
+    print('ok: if works')
+} else {
+    print('fail: if broken')
 }
-main()

@@ -5,67 +5,64 @@
 
 # std/fs
 
-main = () {
-    tmp = '/tmp/nolang-fs-test.txt'
-    payload = 'hello nolang file struct'
-    remove(tmp)
+tmp = '/tmp/nolang-fs-test.txt'
+payload = 'hello nolang file struct'
+remove(tmp)
 
-    f-w ?file
-    f-w = fs.open(tmp, {
-        mode: file-mode.write
-        perm: file-perm.perm-644
-        excl: false
-        truncate: false
-        append: false
-    })
-    f-w: {
-        err -> print('fail: open-write err')
-        nil -> print('fail: open-write nil')
-        -> {
-            it.write(payload, payload.len)
-            it.close()
-            print('ok: open write')
-        }
+f-w ?file
+f-w = fs.open(tmp, {
+    mode: file-mode.write
+    perm: file-perm.perm-644
+    excl: false
+    truncate: false
+    append: false
+})
+f-w: {
+    err -> print('fail: open-write err')
+    nil -> print('fail: open-write nil')
+    -> {
+        it.write(payload, payload.len)
+        it.close()
+        print('ok: open write')
     }
-
-    f-e ?file
-    f-e = fs.open(tmp, {
-        mode: file-mode.write
-        perm: file-perm.perm-644
-        excl: true
-        truncate: false
-        append: false
-    })
-    f-e: {
-        err -> print('fail: open-excl err')
-        nil -> print('ok: excl blocks existing file')
-        -> print('fail: excl did not block')
-    }
-
-    f-r ?file
-    f-r = fs.open(tmp, {
-        mode: file-mode.read
-        perm: file-perm.perm-644
-        excl: false
-        truncate: false
-        append: false
-    })
-    f-r: {
-        err -> print('fail: open-read err')
-        nil -> print('fail: open-read nil')
-        -> {
-            buf [256]byte
-            n = it.read(buf, 256)
-            it.close()
-            if n == payload.len {
-                print('ok: read length matches')
-            } else {
-                print('fail: read length mismatch')
-            }
-        }
-    }
-
-    remove(tmp)
 }
 
-main()
+f-e ?file
+f-e = fs.open(tmp, {
+    mode: file-mode.write
+    perm: file-perm.perm-644
+    excl: true
+    truncate: false
+    append: false
+})
+f-e: {
+    err -> print('fail: open-excl err')
+    nil -> print('ok: excl blocks existing file')
+    -> print('fail: excl did not block')
+}
+
+f-r ?file
+f-r = fs.open(tmp, {
+    mode: file-mode.read
+    perm: file-perm.perm-644
+    excl: false
+    truncate: false
+    append: false
+})
+f-r: {
+    err -> print('fail: open-read err')
+    nil -> print('fail: open-read nil')
+    -> {
+        buf [256]byte
+        n = it.read(buf, 256)
+        it.close()
+        if n == payload.len {
+            print('ok: read length matches')
+        } else {
+            print('fail: read length mismatch')
+        }
+    }
+}
+
+remove(tmp)
+

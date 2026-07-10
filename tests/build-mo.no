@@ -1,8 +1,6 @@
 // Auto-generated main entry
-main = () {
-    x i64 = 0
-    result = {
-        x == 0 -> 1
-        x == x -> 0
-    }
+x i64 = 0
+result = {
+    x == 0 -> 1
+    x == x -> 0
 }

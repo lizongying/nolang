@@ -3,9 +3,6 @@ str.to-i64 = () (val i64) {
     val = 0
 }
 
-main = () {
-    s = '12345'
-    n = s.to-i64()
-    print(n)
-}
-main()
+s = '12345'
+n = s.to-i64()
+print(n)

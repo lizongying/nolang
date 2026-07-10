@@ -14,29 +14,26 @@ test1 = () {
     print('test1 running')
 }
 
-main = () {
-    p i64 = 0
-    f i64 = 0
-    p, f = test-run('greet', greet)
-    if p == 1 {
-        print('ok: test-run greet passed')
-    } else {
-        print('fail: test-run greet passed')
-    }
-    if f == 0 {
-        print('ok: test-run greet failed=0')
-    } else {
-        print('fail: test-run greet failed=0')
-    }
-
-    p2 i64 = 0
-    f2 i64 = 0
-    p2, f2 = test-run('test1', test1)
-    if p2 == 1 {
-        print('ok: test-run test1 passed')
-    } else {
-        print('fail: test-run test1 passed')
-    }
+p i64 = 0
+f i64 = 0
+p, f = test-run('greet', greet)
+if p == 1 {
+    print('ok: test-run greet passed')
+} else {
+    print('fail: test-run greet passed')
+}
+if f == 0 {
+    print('ok: test-run greet failed=0')
+} else {
+    print('fail: test-run greet failed=0')
 }
 
-main()
+p2 i64 = 0
+f2 i64 = 0
+p2, f2 = test-run('test1', test1)
+if p2 == 1 {
+    print('ok: test-run test1 passed')
+} else {
+    print('fail: test-run test1 passed')
+}
+

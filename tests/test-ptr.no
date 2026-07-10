@@ -1,9 +1,6 @@
 // test ptr type
 
-main = () {
-    print('start')
-    p ptr = 0
-    print('ptr ok')
-    print(p)
-}
-main()
+print('start')
+p ptr = 0
+print('ptr ok')
+print(p)

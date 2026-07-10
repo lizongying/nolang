@@ -50,6 +50,7 @@ sidebar_position: 2
 - u16
 - u32
 - u64
+- usize //僅用於ffi 
 - f32
 - f64
 
@@ -59,7 +60,7 @@ sidebar_position: 2
 - map // 映射
 - arr // 定長數組
 - vec // 變長數組
-- slice // 切片
+- slice // 切片（視圖）沒有獨立數據結構，必須依附於arr/vec
 
 - \* // 指針 僅限 FFI #{c} 宣告與標準庫
 - any // 任意類型 僅限標準庫

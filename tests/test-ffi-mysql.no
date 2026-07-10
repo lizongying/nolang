@@ -11,113 +11,110 @@
 
 # /example/mysql-driver/mysql
 
-main = () {
-    // 測試 1: 以 DSN 連線
-    d db = fs.open('root:secret@localhost/testdb')
-    if d.handle == 0 {
-        print('fail: open database')
-        return
-    }
-    print('ok: open database')
+// 測試 1: 以 DSN 連線
+d db = fs.open('root:secret@localhost/testdb')
+if d.handle == 0 {
+    print('fail: open database')
+    return
+}
+print('ok: open database')
 
-    // 測試 2: 建表
-    r result = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
-    print('ok: create table')
+// 測試 2: 建表
+r result = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
+print('ok: create table')
 
-    // 測試 3: 插入資料
-    d.exec('DELETE FROM users')
-    r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
-    if r.affected == 1 {
-        print('ok: insert')
-    } else {
-        print('fail: insert affected=')
-        print(r.affected)
-    }
+// 測試 3: 插入資料
+d.exec('DELETE FROM users')
+r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
+if r.affected == 1 {
+    print('ok: insert')
+} else {
+    print('fail: insert affected=')
+    print(r.affected)
+}
 
-    // 測試 4: 查詢並掃描
-    rs rows = d.query('SELECT id, name, age FROM users')
-    if rs.res == 0 {
-        print('fail: query')
-        d.close()
-        return
-    }
+// 測試 4: 查詢並掃描
+rs rows = d.query('SELECT id, name, age FROM users')
+if rs.res == 0 {
+    print('fail: query')
+    d.close()
+    return
+}
 
-    count i64 = 0
-    for rs.next() {
-        id i64 = rs.scan-int(0)
-        name = rs.scan-str(1)
-        age = rs.scan-float(2)
-        if id == 1 {
-            if name == 'Alice' {
-                if age > 30.0 {
-                    if age < 31.0 {
-                        print('ok: query scan')
-                    } else {
-                        print('fail: age too high')
-                    }
+count i64 = 0
+for rs.next() {
+    id i64 = rs.scan-int(0)
+    name = rs.scan-str(1)
+    age = rs.scan-float(2)
+    if id == 1 {
+        if name == 'Alice' {
+            if age > 30.0 {
+                if age < 31.0 {
+                    print('ok: query scan')
                 } else {
-                    print('fail: age too low')
+                    print('fail: age too high')
                 }
             } else {
-                print('fail: name mismatch')
+                print('fail: age too low')
             }
         } else {
-            print('fail: id mismatch')
+            print('fail: name mismatch')
         }
-        count = count + 1
-    }
-    rs.close()
-
-    // 測試 5: 預編譯陳述式（插入，字串替換模式）
-    s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
-    s.bind-str(1, 'Bob')
-    s.bind-int(2, 25)
-    r2 result = s.exec()
-    if r2.affected == 1 {
-        print('ok: prepared insert')
     } else {
-        print('fail: prepared insert')
+        print('fail: id mismatch')
     }
-    s.close()
-
-    // 測試 6: 預編譯陳述式（查詢，字串替換模式）
-    s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
-    s2.bind-int(1, 2)
-    rs2 rows = s2.query()
-    if rs2.res == 0 {
-        print('fail: prepared query')
-        s2.close()
-        d.close()
-        return
-    }
-    for rs2.next() {
-        name2 = rs2.scan-str(0)
-        if name2 == 'Bob' {
-            print('ok: prepared query scan')
-        } else {
-            print('fail: prepared query name mismatch')
-        }
-    }
-    rs2.close()
-    s2.close()
-
-    // 測試 7: 驗證總列數
-    rs3 rows = d.query('SELECT id FROM users')
-    if rs3.res != 0 {
-        total i64 = 0
-        for rs3.next() {
-            total = total + 1
-        }
-        if total == 2 {
-            print('ok: total rows')
-        } else {
-            print('fail: total rows=')
-            print(total)
-        }
-        rs3.close()
-    }
-
-    d.close()
-    print('ok: all tests done')
+    count = count + 1
 }
-main()
+rs.close()
+
+// 測試 5: 預編譯陳述式（插入，字串替換模式）
+s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
+s.bind-str(1, 'Bob')
+s.bind-int(2, 25)
+r2 result = s.exec()
+if r2.affected == 1 {
+    print('ok: prepared insert')
+} else {
+    print('fail: prepared insert')
+}
+s.close()
+
+// 測試 6: 預編譯陳述式（查詢，字串替換模式）
+s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
+s2.bind-int(1, 2)
+rs2 rows = s2.query()
+if rs2.res == 0 {
+    print('fail: prepared query')
+    s2.close()
+    d.close()
+    return
+}
+for rs2.next() {
+    name2 = rs2.scan-str(0)
+    if name2 == 'Bob' {
+        print('ok: prepared query scan')
+    } else {
+        print('fail: prepared query name mismatch')
+    }
+}
+rs2.close()
+s2.close()
+
+// 測試 7: 驗證總列數
+rs3 rows = d.query('SELECT id FROM users')
+if rs3.res != 0 {
+    total i64 = 0
+    for rs3.next() {
+        total = total + 1
+    }
+    if total == 2 {
+        print('ok: total rows')
+    } else {
+        print('fail: total rows=')
+        print(total)
+    }
+    rs3.close()
+}
+
+d.close()
+print('ok: all tests done')
