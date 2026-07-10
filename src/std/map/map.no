@@ -98,11 +98,8 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         }
     }
 
-    // 複製 key
-    .keys[idx].len = key.len
-    i <- [0..key.len): {
-        .keys[idx][i] = key[i]
-    }
+    // 複製 key（全結構賦值，包含 data 指標）
+    .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
     .size = .size + 1

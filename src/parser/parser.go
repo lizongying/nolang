@@ -360,6 +360,37 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			}
 		}
 		return blockMatch
+	case lexer.DOT:
+		// IDENT.method(...) -> ... : method call expression as match arm condition.
+		// Scan forward to find RARROW at depth 0 (match arm). If NEWLINE/EOF/RBRACE
+		// is encountered at depth 0 first, it's a statement block, not a match.
+		depth := 0
+		for i := base + 2; i < base+40; i++ {
+			t := p.lexer.LookAhead(i)
+			switch t.Type {
+			case lexer.LPAREN, lexer.LBRACE, lexer.LBRACKET:
+				depth++
+			case lexer.RPAREN, lexer.RBRACKET:
+				if depth == 0 {
+					return blockUnknown
+				}
+				depth--
+			case lexer.RBRACE:
+				if depth == 0 {
+					return blockUnknown
+				}
+				depth--
+			case lexer.RARROW:
+				if depth == 0 {
+					return blockMatch
+				}
+			case lexer.NEWLINE, lexer.EOF:
+				if depth == 0 {
+					return blockUnknown
+				}
+			}
+		}
+		return blockUnknown
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
 		lexer.LESS_EQUALS, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
 		return blockMatch
@@ -385,6 +416,36 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		}
 		return blockUnknown
 	default:
+		// For patterns like `i % 4 == 0 -> ...` or `a + b > 10 -> ...`,
+		// scan forward to find RARROW at depth 0 (match arm condition).
+		if tok1.Type == lexer.IDENT {
+			depth := 0
+			for i := base + 2; i < base+40; i++ {
+				t := p.lexer.LookAhead(i)
+				switch t.Type {
+				case lexer.LPAREN, lexer.LBRACE, lexer.LBRACKET:
+					depth++
+				case lexer.RPAREN, lexer.RBRACKET:
+					if depth == 0 {
+						return blockUnknown
+					}
+					depth--
+				case lexer.RBRACE:
+					if depth == 0 {
+						return blockUnknown
+					}
+					depth--
+				case lexer.RARROW:
+					if depth == 0 {
+						return blockMatch
+					}
+				case lexer.NEWLINE, lexer.EOF:
+					if depth == 0 {
+						return blockUnknown
+					}
+				}
+			}
+		}
 		return blockUnknown
 	}
 }
@@ -477,6 +538,15 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 	} else if dot, ok := call.Function.(*DotExpression); ok {
 		receiverType := p.resolveReceiverType(dot.Receiver)
 		if receiverType != "" {
+			// Map types are stored as [K]V in varDeclTypes but function
+			// signatures use hashmap-K-V. Convert for lookup.
+			if strings.HasPrefix(receiverType, "[") {
+				if idx := strings.Index(receiverType, "]"); idx > 0 {
+					keyPart := receiverType[1:idx]
+					valPart := receiverType[idx+1:]
+					receiverType = "hashmap-" + keyPart + "-" + valPart
+				}
+			}
 			fnName = receiverType + "." + dot.Property
 		} else {
 			// Multi-level dot expression (e.g. encoding.base64.decode):
@@ -1153,7 +1223,8 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseReturnStatement()
 
 	case lexer.LBRACE:
-		if p.classifyBlockAtCurrent() == blockMatch {
+		bt := p.classifyBlockAtCurrent()
+		if bt == blockMatch {
 			tok := p.currentToken
 			expr := p.parseBareMatchExpr()
 			if expr != nil {
@@ -1241,6 +1312,14 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 	funcDef, ok := fd.(*FunctionDefinition)
 	if !ok {
 		return fd
+	}
+
+	// 對泛型結構體模板的方法（如 hashmap-str-tmpl.put），
+	// 清除 detectImplicitGeneric 誤加的函數級 GenericParams。
+	// 這些方法使用的單字母型別（如 v）是結構體級泛型參數，
+	// 由 monomorphizeGenericStructs 處理，不應被 monomorphizeGenerics 的過濾器移除。
+	if strings.HasSuffix(structToken.Literal, "-tmpl") && len(funcDef.GenericParams) > 0 {
+		funcDef.GenericParams = []*Identifier{}
 	}
 
 	// 修改名稱
@@ -2933,9 +3012,21 @@ func (p *Parser) parseExpressionStatement() Statement {
 			p.nextToken() // skip body's }
 		} else {
 			// Single-expression body: cond -> expr
-			body := p.parseExpression(LOWEST)
-			conseq = &BlockStatement{
-				Statements: []Statement{&ExpressionStatement{Expression: body}},
+			// Also handle statement keywords: cond -> return, cond -> break, etc.
+			if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
+				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
+				p.currentToken.Type == lexer.STAR_STAR {
+				bodyStmt := p.parseStatement()
+				if bodyStmt != nil {
+					conseq = &BlockStatement{Statements: []Statement{bodyStmt}}
+				} else {
+					conseq = &BlockStatement{}
+				}
+			} else {
+				body := p.parseExpression(LOWEST)
+				conseq = &BlockStatement{
+					Statements: []Statement{&ExpressionStatement{Expression: body}},
+				}
 			}
 		}
 
@@ -2946,6 +3037,15 @@ func (p *Parser) parseExpressionStatement() Statement {
 			if p.currentToken.Type == lexer.LBRACE {
 				altBody = p.parseBlockStatement()
 				p.nextToken() // skip body's }
+			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
+				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
+				p.currentToken.Type == lexer.STAR_STAR {
+				altStmt := p.parseStatement()
+				if altStmt != nil {
+					altBody = &BlockStatement{Statements: []Statement{altStmt}}
+				} else {
+					altBody = &BlockStatement{}
+				}
 			} else {
 				altExpr := p.parseExpression(LOWEST)
 				altBody = &BlockStatement{
@@ -3820,11 +3920,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() != blockMatch {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
-			// 但若 { } 內容本身是 bare match（如 `-> { cond -> body }`），走 inline 路徑讓 parseStatement 處理。
+			// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> body` 應視為 standalone if-then，
+			// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
 			ma.isBlockBody = true
-			p.ctx.push(CTX_MATCH_ARM)
 			block := p.parseBlockStatement()
-			p.ctx.pop()
 			if block != nil {
 				bodyStmts = block.Statements
 			}
@@ -3998,19 +4097,48 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
-		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() != blockMatch {
+		if p.currentToken.Type == lexer.LBRACE {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
-			// 但若 { } 內容本身是 bare match（如 `-> { cond -> body }`），走 inline 路徑讓 parseStatement 處理。
-			ma.isBlockBody = true
-			p.ctx.push(CTX_MATCH_ARM)
-			block := p.parseBlockStatement()
-			p.ctx.pop()
-			if block != nil {
-				bodyStmts = block.Statements
-			}
-			if p.currentToken.Type == lexer.RBRACE {
-				p.nextToken()
+			// 若 { } 內容本身是 bare match（如 `-> { cond -> body }`），先嘗試 parseStatement
+			// 處理 inline bare match；若失敗（如 block 含 match 後接其他語句），則回退為
+			// parseBlockStatement 解析為敘述區塊。
+			if p.classifyBlockAtCurrent() != blockMatch {
+				ma.isBlockBody = true
+				// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> return` 應視為 standalone if-then，
+				// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
+				block := p.parseBlockStatement()
+				if block != nil {
+					bodyStmts = block.Statements
+				}
+				if p.currentToken.Type == lexer.RBRACE {
+					p.nextToken()
+				}
+			} else {
+				// Try inline bare match first; fall back to block on failure
+				armState := p.saveState()
+				p.ctx.push(CTX_MATCH_ARM)
+				stmt := p.parseStatement()
+				p.ctx.pop()
+				if stmt != nil {
+					ma.isBlockBody = true
+					bodyStmts = append(bodyStmts, stmt)
+					if p.currentToken.Type == lexer.RBRACE {
+						p.nextToken()
+					}
+				} else {
+					// parseStatement failed — restore and parse as block
+					p.restoreState(armState)
+					ma.isBlockBody = true
+					// 不推送 CTX_MATCH_ARM：fallback 為普通 block，允許 standalone if-then
+					block := p.parseBlockStatement()
+					if block != nil {
+						bodyStmts = block.Statements
+					}
+					if p.currentToken.Type == lexer.RBRACE {
+						p.nextToken()
+					}
+				}
 			}
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)
@@ -4746,18 +4874,23 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	return ifExpr
 }
 
-// buildItBinding creates `it = matched` LetStatement when matched is a typed-Identifier.
-// Returns nil if matched is not a typed Identifier.
+// buildItBinding creates `it = matched` LetStatement when matched is an Identifier.
+// Returns nil if matched is not an Identifier.
+//
+// When the variable has a known parse-time type (in varDeclTypes), the binding
+// is created normally. When the type is unknown at parse time (e.g. the variable
+// was assigned from a generic method call whose return type is only resolved
+// after monomorphization, like v = m.get('a') where get returns ?v), a fallback
+// binding with Type = nil is created. The codegen determines the type from
+// g.varTypes at generation time.
 func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStatement {
-	ident, ok := matched.(*Identifier)
+	_, ok := matched.(*Identifier)
 	if !ok {
 		return nil
 	}
-	t, ok := p.varDeclTypes[ident.Value]
-	if !ok {
-		return nil
-	}
-	_ = t
+	// Create the binding regardless of whether the type is known at parse time.
+	// When varDeclTypes doesn't have the variable, Type is left nil so codegen
+	// can infer it from g.varTypes (e.g. %option for option-returning calls).
 	return &LetStatement{
 		Token:       tok,
 		Name:        &Identifier{Token: tok, Value: "it"},
@@ -5541,13 +5674,13 @@ parseBody:
 		// for condition { } or for { } — init 是完整表達式
 		if es, ok := init.(*ExpressionStatement); ok {
 			stmt.Condition = es.Expression
-		// Warn only for 'while' (deprecated); 'for cond { }' is a valid form
-		// for conditional loops where range-for (i <- [a..b): {}) doesn't apply
-		// (e.g. non-unit step or complex conditions).
-		if stmt.IterRange == nil && !hasColon && stmt.Token.Literal == "while" {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
-				stmt.Token.Line, stmt.Token.Column))
-		}
+			// Warn only for 'while' (deprecated); 'for cond { }' is a valid form
+			// for conditional loops where range-for (i <- [a..b): {}) doesn't apply
+			// (e.g. non-unit step or complex conditions).
+			if stmt.IterRange == nil && !hasColon && stmt.Token.Literal == "while" {
+				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+					stmt.Token.Line, stmt.Token.Column))
+			}
 		}
 	} else {
 		// for condition (NL) { } — condition 是完整表達式，後面有換行
@@ -7403,6 +7536,22 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 	for _, param := range def.Results {
 		detectImplicitGeneric(param.Type, def)
+	}
+
+	// 註冊參數與結果型別到 varDeclTypes，使 match desugar 能為 option 型別參數
+	// 生成正確的 `it` 綁定（如 `x ?i64` 在 `x: { ok -> result = it }` 中需要 it: i64）。
+	if p.varDeclTypes == nil {
+		p.varDeclTypes = make(map[string]string)
+	}
+	for _, param := range def.Parameters {
+		if param.Type != nil {
+			p.varDeclTypes[param.Name] = typeString(param.Type)
+		}
+	}
+	for _, param := range def.Results {
+		if param.Type != nil && param.Name != "" {
+			p.varDeclTypes[param.Name] = typeString(param.Type)
+		}
 	}
 
 	if p.currentToken.Type != lexer.LBRACE {

@@ -1,0 +1,20 @@
+// test-shortname-import — 驗證 ShortName 前綴免顯式導入
+//
+// 標準庫模組由編譯器自動載入，可直接使用 ShortName 前綴調用。
+// 不需 # std/... 導入註解。
+
+// 測試常量存取：base64.BASE64-STD
+print('base64.BASE64-STD=')
+print(base64.BASE64-STD)
+print('')
+
+// 測試函數調用：sha256.sha256(data)
+msg []byte
+msg[0] = 0x61
+msg[1] = 0x62
+msg[2] = 0x63
+h [32]byte
+sha256.sha256(msg)(h)
+print('sha256(abc) first byte=')
+print(h[0])
+print('done')

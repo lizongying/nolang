@@ -49,6 +49,21 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 					if t == "%str-short" {
 						return g.extractStrShortDataPtr(sb, "%"+a.Value)
 					}
+					// Option variable with string inner type (e.g. ?str):
+					// extract the inner %str-long*/%str-short* pointer from
+					// the option's data field, then get the string data pointer.
+					if t == "%option" && g.optionInnerTypes != nil {
+						if innerType, ok := g.optionInnerTypes[a.Value]; ok {
+							if innerType == "%str-long" {
+								ptr := g.generateExprWithSB(sb, a)
+								return g.extractStrDataPtr(sb, ptr)
+							}
+							if innerType == "%str-short" {
+								ptr := g.generateExprWithSB(sb, a)
+								return g.extractStrShortDataPtr(sb, ptr)
+							}
+						}
+					}
 				}
 			}
 		case *parser.StringLiteral:
@@ -1049,7 +1064,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
 
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%regexp.f.match, label %%regexp.f.no_match\n", g.indent(), matchCmp))
-			sb.WriteString(fmt.Sprintf("regexp.f.match:\n"))
+			g.emitLabel(sb, "regexp.f.match")
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), start, pmatch))
 			g.tmpIdx++
 			endGEP := fmt.Sprintf("%%regexp.f.endgep.%d", g.tmpIdx)
@@ -1072,12 +1087,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, strDataGEP))
 			sb.WriteString(fmt.Sprintf("%sbr label %%regexp.f.end\n", g.indent()))
 
-			sb.WriteString(fmt.Sprintf("regexp.f.no_match:\n"))
+			g.emitLabel(sb, "regexp.f.no_match")
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), strLenGEP))
 			sb.WriteString(fmt.Sprintf("%sstore i8* null, i8** %s\n", g.indent(), strDataGEP))
 			sb.WriteString(fmt.Sprintf("%sbr label %%regexp.f.end\n", g.indent()))
 
-			sb.WriteString(fmt.Sprintf("regexp.f.end:\n"))
+			g.emitLabel(sb, "regexp.f.end")
 		}
 		// strReg 是 %str-long* (alloca)，需 load 成 %str-long value 以便常規賦值路徑使用
 		g.tmpIdx++
@@ -1490,7 +1505,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), ptonOk, doSocket, tryResolve))
 
 			// try_resolve: call getaddrinfo
-			sb.WriteString(fmt.Sprintf("%s:\n", tryResolve))
+			g.emitLabel(sb, tryResolve)
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [48 x i8]\n", g.indent(), hintsReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [48 x i8], [48 x i8]* %s, i64 0, i64 0\n", g.indent(), hintsPtr, hintsReg))
 			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 0, i64 48)\n", g.indent(), hintsPtr))
@@ -1510,7 +1525,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), gaiOk, useResolved, failLabel))
 
 			// use_resolved: copy ai_addr to our sockaddr_in
-			sb.WriteString(fmt.Sprintf("%s:\n", useResolved))
+			g.emitLabel(sb, useResolved)
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), resVal, resReg))
 			// macOS addrinfo layout: ai_addr at offset 32
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 32\n", g.indent(), aiAddrGep, resVal))
@@ -1523,7 +1538,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doSocket))
 
 			// do_socket: socket + connect
-			sb.WriteString(fmt.Sprintf("%s:\n", doSocket))
+			g.emitLabel(sb, doSocket)
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 1, i32 0)\n", g.indent(), sockFd))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), sockOk, sockFd))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", g.indent(), connRet, sockFd, addrPtr))
@@ -1533,11 +1548,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
 
 			// fail: result = -1
-			sb.WriteString(fmt.Sprintf("%s:\n", failLabel))
+			g.emitLabel(sb, failLabel)
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
 
 			// merge: phi to determine final result
-			sb.WriteString(fmt.Sprintf("%s:\n", mergeLabel))
+			g.emitLabel(sb, mergeLabel)
 			sb.WriteString(fmt.Sprintf("%s%s = phi i1 [ false, %%%s ], [ %s, %%%s ]\n", g.indent(), finalOk, failLabel, sockConnOk, doSocket))
 			sb.WriteString(fmt.Sprintf("%s%s = phi i64 [ -1, %%%s ], [ %s, %%%s ]\n", g.indent(), finalFd, failLabel, fdExt, doSocket))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), resultReg, finalOk, finalFd))

@@ -12,7 +12,6 @@
 //   # std/net/http3
 //   resp = http3-get('https://example.com/path')
 
-
 // ═══════════════════════════════════════════════
 // 常量
 // ═══════════════════════════════════════════════
@@ -201,9 +200,9 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ft-pos = 0
         ft-val, ft-pos = quic-varint-decode(buf, pos)
         ft-pos < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = ft-pos
 
         frames[count].frame-type = ft-val & 255
@@ -211,7 +210,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ft = ft-val & 255
 
         // 複製資料
-        frames[count].length
+        data-len = frames[count].length
         i <- [0..data-len): {
             frames[count].data[i] = buf[pos + i]
         }
@@ -226,25 +225,25 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ec-np = 0
         ec-val, ec-np = quic-varint-decode(buf, pos)
         ec-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = ec-np
         ft2-val = 0
         ft2-np = 0
         ft2-val, ft2-np = quic-varint-decode(buf, pos)
         ft2-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = ft2-np
         rl-val = 0
         rl-np = 0
         rl-val, rl-np = quic-varint-decode(buf, pos)
         rl-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = rl-np + rl-val
         frames[count].length = 0
         count = count + 1
@@ -256,17 +255,17 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ec-np = 0
         ec-val, ec-np = quic-varint-decode(buf, pos)
         ec-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = ec-np
         rl-val = 0
         rl-np = 0
         rl-val, rl-np = quic-varint-decode(buf, pos)
         rl-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = rl-np + rl-val
         frames[count].length = 0
         count = count + 1
@@ -284,9 +283,9 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         tl-np = 0
         tl-val, tl-np = quic-varint-decode(buf, pos)
         tl-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = tl-np + tl-val
         frames[count].length = 0
         count = count + 1
@@ -298,9 +297,9 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         mv-np = 0
         mv-val, mv-np = quic-varint-decode(buf, pos)
         mv-np < 0 -> {
-    count = -1
-                return
-}
+            count = -1
+            return
+        }
         pos = mv-np
         frames[count].length = 0
         count = count + 1
@@ -414,14 +413,10 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
     pn-len = 0
 
     pn-offset >= packet.len -> return
-
-    // 讀取前兩位元判斷 pn 長度
     first = packet[pn-offset] & 255
     pn-len = (first & 3) + 1
 
     pn-offset + pn-len > packet.len -> return
-
-    // 讀取 pn_len 位元組
     truncated-pn = 0
     i <- [0..pn-len): {
         truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i] & 255)
@@ -454,7 +449,7 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
 
     // 恢復完整封包號碼
     candidate-pn = (expected-pn & (-1 - pn-mask)) | truncated-pn
-        {
+    {
         candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> candidate-pn = candidate-pn + pn-win
         candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> candidate-pn = candidate-pn - pn-win
     }
@@ -526,9 +521,9 @@ quic-conn.init = () {
 // quic-conn.close: 關閉連線
 quic-conn.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
     .connected = false
 }
 
@@ -704,8 +699,6 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     buf []byte
     n = net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
     n <= 0 -> return
-
-    // 解析 Long Header（使用前 n 位元組）
     end = n
 
     end < 1 -> return
@@ -713,11 +706,8 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 
     // 檢查是否為 Long Header
     (first & 0x80) == 0 -> return
-
-    // 檢查是否為 Initial 封包
     pkt-type = first & 0x30
     pkt-type != QUIC-PACKET-INITIAL -> return
-
     pos = 1
 
     // 跳過 Version (4 bytes)
@@ -757,8 +747,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     pn = 0
     pn-len = 0
     pn, pn-len = quic-decode-packet-number(buf, pn-offset, .largest-initial-pn)
-    pn-len <= 0 -> return
-    .largest-initial-pn = pn
+    pn-len <= 0 -> .largest-initial-pn = pn
 
     // AEAD 解密
     // Nonce
@@ -788,7 +777,6 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     plain.len == 0 -> return
     frames, count = quic-parse-frames(plain, 0, plain.len)
     count < 0 -> return
-
     ok = true
 }
 
@@ -816,10 +804,9 @@ quic-dial = (host str, port i64) (conn ?quic-conn) {
 
     // 1. 建立 UDP socket
     c.fd = net-udp-open()
-    c.fd < 0 -> return
+    c.fd < 0 -> net-set-recv-timeout(c.fd, 5000)
 
     // 設定接收逾時（5 秒）
-    net-set-recv-timeout(c.fd, 5000)
 
     // 2. 生成 Connection IDs
     c.local-cid = quic-gen-cid(8)

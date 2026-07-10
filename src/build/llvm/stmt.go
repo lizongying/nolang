@@ -784,6 +784,20 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
+					// Option type (?T): try the inner type as a candidate
+					// (e.g. conn-val is ?str, conn-val.to-lower() → str.to-lower)
+					if srcType == "option" && g.optionInnerTypes != nil {
+						if innerType, ok := g.optionInnerTypes[recv.Value]; ok && innerType != "" {
+							innerSrc := strings.TrimPrefix(innerType, "%")
+							candidates = append(candidates, innerSrc)
+							if innerSrc == "str-short" || innerSrc == "str-long" {
+								candidates = append(candidates, "str")
+							}
+							if primAliases, ok := llvmTypeToNolang[innerSrc]; ok {
+								candidates = append(candidates, primAliases...)
+							}
+						}
+					}
 					for _, cand := range candidates {
 						shortName := cand + "." + dot.Property
 						if g.funcRetTypes != nil {
@@ -940,6 +954,48 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	}
 }
 
+// inferOptionInnerType determines the inner LLVM type of a ?T option variable
+// from its LetStatement. Used during var collection (before codegen) so that
+// subsequent varLLVMType calls can resolve method calls on option variables
+// (e.g. cl = conn-val.to-lower() where conn-val is ?str).
+func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
+	// From explicit type annotation (e.g. val ?f64)
+	if nt, ok := stmt.Type.(*parser.NullableType); ok {
+		return g.mapToLLVMType(nt.Type.String())
+	}
+	// From option variable assignment (e.g. it = n where n is ?i64)
+	if ident, ok := stmt.Value.(*parser.Identifier); ok {
+		if g.optionInnerTypes != nil {
+			if srcInner, ok := g.optionInnerTypes[ident.Value]; ok && srcInner != "" {
+				return srcInner
+			}
+		}
+	}
+	// From function call return type (e.g. f = .get-header(...) returning ?str)
+	if call, ok := stmt.Value.(*parser.CallExpression); ok {
+		fnName := ""
+		if ident, ok := call.Function.(*parser.Identifier); ok {
+			fnName = ident.Value
+		} else if dot, ok := call.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if recvType, ok := g.varTypes[recv.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					fnName = srcType + "." + dot.Property
+				}
+			}
+			if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
+				fnName = "str." + dot.Property
+			}
+		}
+		if fnName != "" && g.funcResultInnerTypes != nil {
+			if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+				return innerTypes[0]
+			}
+		}
+	}
+	return ""
+}
+
 func (g *Generator) collectRangeVarTypes(stmt parser.Statement, vars map[string]string) {
 	switch s := stmt.(type) {
 	case *parser.ForStatement:
@@ -1060,6 +1116,16 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
 				g.varTypes[s.Name.Value] = vt
+			}
+			// Populate optionInnerTypes for ?T variables during collection so that
+			// subsequent varLLVMType calls can resolve method calls on option
+			// variables (e.g. cl = conn-val.to-lower() where conn-val is ?str).
+			if vt == "%option" && g.optionInnerTypes != nil {
+				if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
+					if inner := g.inferOptionInnerType(s); inner != "" {
+						g.optionInnerTypes[s.Name.Value] = inner
+					}
+				}
 			}
 			// Track array size for [N]T locals so we can malloc the data buffer
 			if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil {
@@ -2487,7 +2553,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// the %str-long value is returned or stored long-term.
 		// Instead, use malloc to allocate a heap buffer for the data.
 		// Function call results are already %%str-long values and can be stored directly.
-		isGlobal := g.globalVars != nil && g.globalVars[name]
+		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
 		if strings.HasPrefix(val, "%str-longlit.") {
 			// Extract len from str-short: load i8, mask 0x7F, zext to i64
 			g.tmpIdx++
@@ -2562,7 +2628,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	case "%str-short":
 		// Copy %str-short struct: load from source, store to dest
-		isGlobal := g.globalVars != nil && g.globalVars[name]
+		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
 		if !strings.HasPrefix(val, "%") {
 			// 宣告但無初值：使用 zeroinitializer
 			if isGlobal {
@@ -2584,7 +2650,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// Copy %vec struct: load from source, store to dest
 		// val may be either an SSA value (already loaded) or an alloca pointer.
 		// Identifiers produce loaded values; slice expressions produce alloca pointers.
-		isGlobal := g.globalVars != nil && g.globalVars[name]
+		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
 		vecPtrPrefixes := []string{
 			"%slic.",    // generateSliceExpression
 			"%vec.tmp.", // for-range with slice literal

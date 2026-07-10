@@ -1,0 +1,33 @@
+// test-bare-match — isolate bare match classification bug
+
+TS-CAP = 4
+
+tree-set {
+    root i64
+    keys [4]i64
+    left [4]i64
+    right [4]i64
+}
+
+tree-set.test-match = (key i64) (ok bool) {
+    ok = false
+    cur = .root
+    {
+        key < .keys[cur] -> {
+            cur = .left[cur]
+        }
+        -> {
+            cur = .right[cur]
+        }
+    }
+    ok = true
+}
+
+s = tree-set{}
+s.root = 0
+s.keys[0] = 5
+s.left[0] = -1
+s.right[0] = -1
+ok = s.test-match(3)
+print(ok)
+print('done')

@@ -239,6 +239,8 @@ func typeString(n Node) string {
 		return n.String()
 	case *SliceType:
 		return n.String()
+	case *MapType:
+		return n.String()
 	case *NullableType:
 		return "?" + typeString(n.Type)
 	case *PointerType:

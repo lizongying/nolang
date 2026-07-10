@@ -43,6 +43,24 @@ func isMapTypeString(s string) bool {
 	return keyCategory(keyType) != ""
 }
 
+// mapTypeToHashmapName 將 map 型別字串（如 "[bool]i64"）轉換為特化結構名稱（如 "hashmap-bool-i64"）。
+// 若輸入不是 map 型別，回傳空字串。
+func mapTypeToHashmapName(mapType string) string {
+	if !strings.HasPrefix(mapType, "[") {
+		return ""
+	}
+	closeBracket := strings.IndexByte(mapType, ']')
+	if closeBracket <= 1 {
+		return ""
+	}
+	keyType := mapType[1:closeBracket]
+	if keyCategory(keyType) == "" {
+		return ""
+	}
+	valueType := mapType[closeBracket+1:]
+	return "hashmap-" + keyType + "-" + valueType
+}
+
 // scanForMapTypes 遞迴掃描 Type 節點，將所有 MapType 的 (key,value) 收集至 results。
 // 處理巢狀型別（ArrayType/SliceType/NullableType/PointerType/FunctionType/MapType）。
 func scanForMapTypes(t parser.Type, results *[]mapTypePair) {

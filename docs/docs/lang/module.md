@@ -106,8 +106,7 @@ p.exists()                 // path.exists 是結構體方法，不需前綴
 ## 完整範例
 
 ```nolang
-# std/hash/sha256
-# std/fs
+// 標準庫模組自動載入，無需顯式導入
 
 // ─── 不需前綴 ───
 
@@ -131,10 +130,10 @@ s = sprintf('x=%d', x)
 // ─── 需要前綴 ───
 
 // 模組級函數
-hash.sha256.sha256(data)
-hash.sha256.sha256-hex(data)
+sha256.sha256(data)
+sha256.sha256-hex(data)
 fs.open(path, opts)
-archive.gzip.gzip-decompress(data)
+gzip.gzip-decompress(data)
 math.degrees(rad)
 
 // 模組常量

@@ -106,10 +106,8 @@ num = int | float     // num 是 int 和 float 的聯合
 max = (a ..num) (r num) {
     r = a[0]
     n = len(a)
-    i = 1
-    for i < n {
+    i <- [1..n): {
         a[i] > r -> r = a[i]
-        i = i + 1
     }
 }
 

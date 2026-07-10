@@ -569,7 +569,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     // RSA 加密: c = m^e mod n
     c-bn []i64
-    c-bn, c-bn-n = hash.rsa.rsa-modpow(m-bn, m-bn.len, e-bn, 1, n-bn, n-bn.len)
+    c-bn, c-bn-n = rsa.rsa-modpow(m-bn, m-bn.len, e-bn, 1, n-bn, n-bn.len)
 
     // 轉換回位元組
     out = tls-bn-to-bytes(c-bn)

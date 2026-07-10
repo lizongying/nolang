@@ -565,8 +565,13 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		} else if dot, ok := innerCall.Function.(*parser.DotExpression); ok {
 			// 解析 receiver method call：s.to-bytes → str.to-bytes
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				innerMethodRecv = recv
 				candidate := recv.Value + "." + dot.Property
+				// 僅當 receiver 是已註冊變數時才視為方法呼叫（需傳 receiver 作為首參）。
+				// 若 receiver 不在 varTypes 中（如模組名 rsa.rsa-modpow），
+				// 則為模組限定呼叫，不設定 innerMethodRecv。
+				if _, isVar := g.varTypes[recv.Value]; isVar {
+					innerMethodRecv = recv
+				}
 				// 嘗試 union alias 解析
 				if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
 					srcType := recvType
@@ -1041,6 +1046,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					candidates := []string{srcType}
 					if srcType == "str-short" || srcType == "str-long" {
 						candidates = append(candidates, "str")
+					}
+					// Option type (?T): try the inner type as a candidate
+					// (e.g. conn-val is ?str → try str.to-lower)
+					if srcType == "option" && g.optionInnerTypes != nil {
+						if innerType, ok := g.optionInnerTypes[recv.Value]; ok {
+							innerSrc := strings.TrimPrefix(innerType, "%")
+							candidates = append(candidates, innerSrc)
+							if innerSrc == "str-short" || innerSrc == "str-long" {
+								candidates = append(candidates, "str")
+							}
+							if primAliases, ok := llvmTypeToNolang[innerSrc]; ok {
+								candidates = append(candidates, primAliases...)
+							}
+						}
 					}
 					// Primitive LLVM types may correspond to multiple nolang type names.
 					// For example, i32 can be char, i32, or u32. Try all candidates.

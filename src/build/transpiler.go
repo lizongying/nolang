@@ -1920,7 +1920,11 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 
 	// Try non-generic method: type.method already exists
 	// Rewrite to direct call with receiver prepended
+	// Map types use "hashmap-K-V" naming convention (not "[K]V")
 	concreteName := recvType + "." + methodName
+	if hmName := mapTypeToHashmapName(recvType); hmName != "" {
+		concreteName = hmName + "." + methodName
+	}
 
 	// Check if recvType is a member of a union type alias
 	// If so, use the union alias prefix instead of the concrete type
@@ -5709,6 +5713,13 @@ func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]p
 	}
 	switch e := expr.(type) {
 	case *parser.Identifier:
+		// Skip option type variant names (ok/nil/err) — these are built-in
+		// keywords used in match patterns and must never be replaced by
+		// module constants, even if a module happens to define a top-level
+		// or local variable with the same name.
+		if e.Value == "ok" || e.Value == "nil" || e.Value == "err" {
+			return e
+		}
 		if lit, ok := constants[e.Value]; ok {
 			return lit
 		}

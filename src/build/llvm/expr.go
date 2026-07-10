@@ -775,6 +775,25 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 
 // intExprLLVMType 推斷表達式的 LLVM 整數型別（i8/i16/i32/i64）。
 // 用於算術與比較運算時選擇正確的型別，避免單態化後 i8/i16/i32 變數
+// llvmIntBitWidth returns the bit width of an LLVM integer type string.
+// Returns 64 for unknown/non-integer types (defaulting to i64 behavior).
+func llvmIntBitWidth(t string) int {
+	switch t {
+	case "i1":
+		return 1
+	case "i8":
+		return 8
+	case "i16":
+		return 16
+	case "i32":
+		return 32
+	case "i64":
+		return 64
+	default:
+		return 64
+	}
+}
+
 // 與硬編碼 i64 指令之間的型別不匹配。
 // 注意：IndexExpression 預設回傳 i64，因為 generateIndexExpression
 // 會將 i8 元素 zext 到 i64。
@@ -1115,6 +1134,37 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 					}
 				}
 			}
+			// Method calls (e.g. base.slice(0, n)): resolve receiver type
+			// and look up method return type via funcRetTypes/funcResultLLVMType.
+			if dot, ok := v.Function.(*parser.DotExpression); ok {
+				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+					if g.varTypes != nil {
+						if recvType, ok := g.varTypes[recv.Value]; ok {
+							srcType := strings.TrimPrefix(recvType, "%")
+							candidates := []string{srcType}
+							if srcType == "str-short" || srcType == "str-long" {
+								candidates = append(candidates, "str")
+							}
+							if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+								candidates = append(candidates, primAliases...)
+							}
+							for _, cand := range candidates {
+								shortName := cand + "." + dot.Property
+								if g.funcRetTypes != nil {
+									if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
+										return t
+									}
+								}
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+										return ts[0]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	return ""
@@ -1302,9 +1352,62 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 	if ident, ok := v.Left.(*parser.Identifier); ok {
 		varName = ident.Value
 	} else if dot, ok := v.Left.(*parser.DotExpression); ok {
-		// struct.field[i] 讀取：委託給 generateStructFieldIndexRead
-		// 但這裡需要指標，所以用 generateExprPtr 取得欄位指標
-		return g.generateExprPtr(sb, dot)
+		// struct.field[i]: get field pointer, then GEP into array with index
+		basePtr := g.generateExprPtr(sb, dot)
+		if basePtr == "" {
+			return ""
+		}
+		// Determine the field's LLVM array type by looking up the struct definition
+		recvName := ""
+		if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+			recvName = ident.Value
+		}
+		structName := ""
+		if recvName != "" {
+			if t, ok := g.varTypes[recvName]; ok {
+				structName = strings.TrimPrefix(t, "%")
+			}
+		} else {
+			recvType := g.exprResultLLVMType(dot.Receiver)
+			if strings.HasPrefix(recvType, "%") {
+				structName = strings.TrimPrefix(recvType, "%")
+			}
+		}
+		fieldArrType := ""
+		if structName != "" {
+			if fields, ok := g.structTypes[structName]; ok {
+				for _, f := range fields {
+					if f.name == dot.Property {
+						fieldArrType = f.typ
+						break
+					}
+				}
+			}
+		}
+		if fieldArrType == "" || !strings.HasPrefix(fieldArrType, "[") {
+			// Not an array field, return field pointer as fallback
+			return basePtr
+		}
+		idx := g.generateExprWithSB(sb, v.Index)
+		// Ensure idx is i64
+		if strings.HasPrefix(idx, "%") {
+			idxType := g.intExprLLVMType(v.Index)
+			if idxType != "i64" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%dotarr.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				}
+				idx = zextReg
+			}
+		}
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%dotarr.ptr.elem.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+				g.indent(), elemGEP, fieldArrType, fieldArrType, basePtr, idx))
+		}
+		return elemGEP
 	}
 	if varName == "" {
 		// 無法取得指標，回退到載入值
@@ -1756,14 +1859,27 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					elemGEP := fmt.Sprintf("%%set.arr.elem.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
-					// Truncate val to elemType if needed (e.g., i64 → i8 for byte arrays)
-					// Only truncate for integer types; struct types (e.g. %str-long) need conversion
+					// Truncate/extend val to elemType if needed (e.g., i64 → i8 for byte arrays)
+					// Only convert for integer types; struct types (e.g. %str-long) need different handling
 					storeVal := val
 					if elemType != "i64" && !strings.HasPrefix(elemType, "%") && strings.HasPrefix(val, "%") {
-						g.tmpIdx++
-						truncReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, elemType))
-						storeVal = truncReg
+						valType := g.intExprLLVMType(value)
+						if valType == "" {
+							valType = "i64" // default assumption
+						}
+						if valType != elemType {
+							g.tmpIdx++
+							convReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
+							// Determine if we need trunc (wider→narrower) or zext (narrower→wider)
+							valW := llvmIntBitWidth(valType)
+							elemW := llvmIntBitWidth(elemType)
+							if valW >= elemW {
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, valType, val, elemType))
+							} else {
+								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, valType, val, elemType))
+							}
+							storeVal = convReg
+						}
 					}
 					// s2s conversion: StringLiteral (%str-short* alloca) → %str-long value
 					// when assigning to a %str-long array element (e.g., keys[i] = 'foo')
@@ -1776,16 +1892,22 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					// concat/repeat), which must be loaded before storing as a struct value.
 					// StringLiteral is handled above; Identifier returns a loaded value.
 					if strings.HasPrefix(elemType, "%") {
-						_, isStrLit := value.(*parser.StringLiteral)
-						_, isIdent := value.(*parser.Identifier)
-						if !isStrLit && !isIdent {
-							_, isIdx := value.(*parser.IndexExpression)
-							if isIdx || g.isStringExpr(value) {
-								g.tmpIdx++
-								loadReg := fmt.Sprintf("%%set.arr.load.%d", g.tmpIdx)
-								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-									g.indent(), loadReg, elemType, elemType, val))
-								storeVal = loadReg
+						// Integer literal 0 assigned to a struct-type array element
+						// (e.g., .vals[i] = 0 where vals is [256]str): use zeroinitializer.
+						if intLit, ok := value.(*parser.IntegerLiteral); ok && intLit.Value == 0 {
+							storeVal = "zeroinitializer"
+						} else {
+							_, isStrLit := value.(*parser.StringLiteral)
+							_, isIdent := value.(*parser.Identifier)
+							if !isStrLit && !isIdent {
+								_, isIdx := value.(*parser.IndexExpression)
+								if isIdx || g.isStringExpr(value) {
+									g.tmpIdx++
+									loadReg := fmt.Sprintf("%%set.arr.load.%d", g.tmpIdx)
+									sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+										g.indent(), loadReg, elemType, elemType, val))
+									storeVal = loadReg
+								}
 							}
 						}
 					}
@@ -2274,16 +2396,27 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// element read), which must be loaded before storing as a struct value.
 				// StringLiteral is handled above; Identifier returns a loaded value.
 				if strings.HasPrefix(fieldType, "%") {
-					_, isStrLit := expr.Value.(*parser.StringLiteral)
-					_, isIdent := expr.Value.(*parser.Identifier)
-					if !isStrLit && !isIdent {
-						_, isIdx := expr.Value.(*parser.IndexExpression)
-						if isIdx || g.isStringExpr(expr.Value) {
-							g.tmpIdx++
-							loadReg := fmt.Sprintf("%%set.fld.load.%d", g.tmpIdx)
-							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-								g.indent(), loadReg, fieldType, fieldType, val))
-							val = loadReg
+					// Integer literal 0 assigned to a struct-type field (e.g.,
+					// rec.field = 0 where field is str): use zeroinitializer.
+					if intLit, ok := expr.Value.(*parser.IntegerLiteral); ok && intLit.Value == 0 {
+						val = "zeroinitializer"
+					} else {
+						_, isStrLit := expr.Value.(*parser.StringLiteral)
+						_, isIdent := expr.Value.(*parser.Identifier)
+						if !isStrLit && !isIdent {
+							_, isIdx := expr.Value.(*parser.IndexExpression)
+							_, isInfix := expr.Value.(*parser.InfixExpression)
+							// Only load for pointer-producing expressions:
+							//   - IndexExpression (GEP → pointer)
+							//   - InfixExpression (string concat/repeat → alloca pointer)
+							// CallExpression and DotExpression return loaded values, not pointers.
+							if isIdx || (isInfix && g.isStringExpr(expr.Value)) {
+								g.tmpIdx++
+								loadReg := fmt.Sprintf("%%set.fld.load.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+									g.indent(), loadReg, fieldType, fieldType, val))
+								val = loadReg
+							}
 						}
 					}
 				}
@@ -4729,6 +4862,21 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 				if t == "%str-short" {
 					return g.extractStrShortLen(sb, "%"+a.Value)
 				}
+				// Option variable with string inner type (e.g. ?str):
+				// extract the inner %str-long*/%str-short* pointer from
+				// the option's data field, then get the string length.
+				if t == "%option" && g.optionInnerTypes != nil {
+					if innerType, ok := g.optionInnerTypes[a.Value]; ok {
+						if innerType == "%str-long" {
+							ptr := g.generateExprWithSB(sb, a)
+							return g.extractStrLen(sb, ptr)
+						}
+						if innerType == "%str-short" {
+							ptr := g.generateExprWithSB(sb, a)
+							return g.extractStrShortLen(sb, ptr)
+						}
+					}
+				}
 			}
 		}
 		return "0"
@@ -4863,6 +5011,8 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	// Loop start: check if i < count
 	sb.WriteString(fmt.Sprintf("%s:\n", loopStart))
+	g.currentBlock = strings.TrimPrefix(loopStart, "%")
+	g.blockTerminated = false
 	g.tmpIdx++
 	iVal := fmt.Sprintf("%%repeat.i.val.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iReg))
@@ -4873,6 +5023,8 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	// Loop body: copy string data to buf + i*strLen
 	sb.WriteString(fmt.Sprintf("%s:\n", loopBody))
+	g.currentBlock = strings.TrimPrefix(loopBody, "%")
+	g.blockTerminated = false
 	g.tmpIdx++
 	offset := fmt.Sprintf("%%repeat.offset.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), offset, iVal, strLen))
@@ -4891,6 +5043,8 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	// Loop end
 	sb.WriteString(fmt.Sprintf("%s:\n", loopEnd))
+	g.currentBlock = strings.TrimPrefix(loopEnd, "%")
+	g.blockTerminated = false
 
 	// Add null terminator at buf[totalLen]
 	g.tmpIdx++
