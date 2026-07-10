@@ -1339,8 +1339,8 @@ func TestFormatMultiAssign(t *testing.T) {
 		{
 			// . method call followed by for loop whose condition also uses '.'
 			name:     "dot method call then dot for condition",
-			input:    "linked-hash-map.put = (key i64, val i64, is-new i64) {\n    idx = 0\n    .hash(key, idx)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
-			expected: "linked-hash-map.put = (key i64, val i64, is-new i64) {\n    idx = 0\n    .hash(key, idx)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
+			input:    "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
+			expected: "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
 		},
 	}
 

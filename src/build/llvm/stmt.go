@@ -2313,11 +2313,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			for _, pair := range ml.Pairs {
 				keyArg := g.generateCallArg(sb, pair.Key)
 				valArg := g.generateCallArg(sb, pair.Value)
-				// is-new i64 output param (discarded); map.no declares is-new as i64
+				// is-new bool result param (discarded); map.no declares is-new as bool result
 				g.tmpIdx++
 				isNewTmp := fmt.Sprintf("%%map.isnew.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), isNewTmp))
-				sb.WriteString(fmt.Sprintf("%scall void @%s.put(%s, %s, %s, i64* %s)\n",
+				sb.WriteString(fmt.Sprintf("%s%s = alloca i1\n", g.indent(), isNewTmp))
+				sb.WriteString(fmt.Sprintf("%scall void @%s.put(%s, %s, %s, i1* %s)\n",
 					g.indent(), sanitizeLLVMName(structName), recvArg, keyArg, valArg, isNewTmp))
 			}
 		}

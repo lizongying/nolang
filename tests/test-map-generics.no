@@ -5,22 +5,23 @@
 // str → i64
 test-str-i64 = () {
     m map[str]i64 = { 'a':0, 'b':1 }
-    m.put('c', 2, _)
+    m.put('c', 2)
 
-    found = 0
-    v = 0
-    m.get('a', found, v)
-    print(v)  // expect: 0
+    v = m.get('a')
+    v: {
+        ok -> print(it)  // expect: 0
+    }
 
-    m.get('c', found, v)
-    print(v)  // expect: 2
+    v = m.get('c')
+    v: {
+        ok -> print(it)  // expect: 2
+    }
 
-    m.contains('b', found)
+    found = m.contains('b')
     print(found)  // expect: 1
 
-    removed = 0
-    m.remove('b', removed)
-    m.contains('b', found)
+    removed = m.remove('b')
+    found = m.contains('b')
     print(found)  // expect: 0
 }
 
@@ -28,69 +29,73 @@ test-str-i64 = () {
 test-str-str = () {
     m map[str]str = { 'name':'Alice' }
 
-    found = 0
-    v = ''
-    m.get('name', found, v)
-    print(v)  // expect: Alice
+    v = m.get('name')
+    v: {
+        ok -> print(it)  // expect: Alice
+    }
 }
 
 // i64 → i64
 test-i64-i64 = () {
     m map[i64]i64 = { 10:20 }
-    m.put(42, 100, _)
+    m.put(42, 100)
 
-    found = 0
-    v = 0
-    m.get(42, found, v)
-    print(v)  // expect: 100
+    v = m.get(42)
+    v: {
+        ok -> print(it)  // expect: 100
+    }
 
-    m.get(10, found, v)
-    print(v)  // expect: 20
+    v = m.get(10)
+    v: {
+        ok -> print(it)  // expect: 20
+    }
 }
 
 // i32 → str (非預設 int 鍵寬度)
 test-i32-str = () {
     m map[i32]str = { 7:'seven' }
 
-    found = 0
-    v = ''
-    m.get(7, found, v)
-    print(v)  // expect: seven
+    v = m.get(7)
+    v: {
+        ok -> print(it)  // expect: seven
+    }
 }
 
 // bool → i64
 test-bool-i64 = () {
     m map[bool]i64 = { }
-    m.put(true, 1, _)
-    m.put(false, 0, _)
+    m.put(true, 1)
+    m.put(false, 0)
 
-    found = 0
-    v = 0
-    m.get(true, found, v)
-    print(v)  // expect: 1
+    v = m.get(true)
+    v: {
+        ok -> print(it)  // expect: 1
+    }
 
-    m.get(false, found, v)
-    print(v)  // expect: 0
+    v = m.get(false)
+    v: {
+        ok -> print(it)  // expect: 0
+    }
 }
 
 // 非預設組合: str → bool
 test-str-bool = () {
     m map[str]bool = { 'yes':true }
 
-    found = 0
-    v = false
-    m.get('yes', found, v)
-    print(v)  // expect: 1
+    v = m.get('yes')
+    v: {
+        ok -> print(it)  // expect: 1
+    }
 }
 
 // 非預設組合: u8 → i64
 test-u8-i64 = () {
     m map[u8]i64 = { 200:200 }
 
-    found = 0
-    v = 0
-    m.get(200, found, v)
-    print(v)  // expect: 200
+    v = m.get(200)
+    v: {
+        ok -> print(it)  // expect: 200
+    }
 }
 
 test-str-i64()

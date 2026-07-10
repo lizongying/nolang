@@ -856,13 +856,13 @@ s.clear()                      // 清空
 ```nolang
 m = linked-hash-map{}
 m.init()
-m.put(key, val, is-new)
-m.get(key, found, result)
-m.contains(key, found)
-m.remove(key, is-new)
+m.put(key, val)
+result = m.get(key)   // ?i64, nil=未找到
+found = m.contains(key)
+removed = m.remove(key)
 m.clear()
-m.len(n)
-m.is-empty(empty)
+n = m.len()
+empty = m.is-empty()
 m.for-each(key, val)
 ```
 
@@ -873,12 +873,12 @@ m.for-each(key, val)
 ```nolang
 s = hash-set{}
 s.init()
-s.add(val, is-new)
-s.contains(val, found)
-s.remove(val, removed)
+is-new = s.add(val)
+found = s.contains(val)
+removed = s.remove(val)
 s.clear()
-s.len(n)
-s.is-empty(empty)
+n = s.len()
+empty = s.is-empty()
 s.for-each(val)
 ```
 
@@ -889,13 +889,13 @@ s.for-each(val)
 ```nolang
 m = str-map{}
 m.init()
-m.put('key', 'val', is-new)
-m.get('key', found, result)
-m.contains('key', found)
-m.remove('key', removed)
+m.put('key', 'val')
+result = m.get('key')   // ?str, nil=未找到
+found = m.contains('key')
+removed = m.remove('key')
 m.clear()
-m.len(n)
-m.is-empty(empty)
+n = m.len()
+empty = m.is-empty()
 m.for-each(k, v)
 ```
 
@@ -906,12 +906,12 @@ m.for-each(k, v)
 ```nolang
 s = str-set{}
 s.init()
-s.add('hello', is-new)
-s.contains('hello', found)
-s.remove('hello', removed)
+is-new = s.add('hello')
+found = s.contains('hello')
+removed = s.remove('hello')
 s.clear()
-s.len(n)
-s.is-empty(empty)
+n = s.len()
+empty = s.is-empty()
 s.for-each(val)
 ```
 

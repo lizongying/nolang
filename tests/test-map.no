@@ -4,15 +4,17 @@
 
 test-map-str-i64 = () {
     m map[str]i64 = { 'a':0, 'b':1 }
-    m.put('c', 2, _)
+    m.put('c', 2)
 
-    found = 0
-    v = 0
-    m.get('a', found, v)
-    print(v)  // expect: 0
+    v = m.get('a')
+    v: {
+        ok -> print(it)  // expect: 0
+    }
 
-    m.get('c', found, v)
-    print(v)  // expect: 2
+    v = m.get('c')
+    v: {
+        ok -> print(it)  // expect: 2
+    }
 }
 
 test-map-str-i64()

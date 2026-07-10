@@ -152,6 +152,38 @@ no vet src/std/         # validate all standard library files
 
 This step catches issues that Go unit tests might miss. If `no vet` reports errors, fix them before proceeding.
 
+### 5b. Validate the standard library with `nolang-lsp vet`
+
+`no vet` only runs the compiler pipeline (`Compile()`), which checks parse errors and type errors. The LSP vet pipeline (`src/lsp/vet.go`) runs **additional validators** that `no vet` does not:
+
+- `ValidateUndefinedVars` — detects references to undefined variables
+- `ValidateNaming` — naming convention warnings
+- `ValidateUnusedVars` — unused variable hints
+- `ValidateDuplicateVars` — duplicate variable declarations
+- `ValidateFuncArgs` — function argument type checking
+- `ValidateDependencyImports` — dependency import validation
+- `ValidateExportSymbols` — export symbol validation
+- `ValidateInterfaceImplementation` — interface method conformance
+- `ValidateStringConcat` — string concatenation hints
+
+After `no vet` passes, rebuild the LSP binary and run the full LSP diagnostic pipeline:
+
+```bash
+make lsp                                                  # rebuild the LSP binary
+./vscode-nolang/server/lsp vet src/std/                   # validate all .no files recursively
+./vscode-nolang/server/lsp vet src/std/net/sse.no         # validate a single file
+```
+
+Check the output for `[ERROR]` lines:
+
+```bash
+./vscode-nolang/server/lsp vet src/std/ 2>&1 | grep '\[ERROR\]'
+```
+
+If LSP vet reports `[ERROR]` diagnostics that `no vet` did not, the bug is in a `Validate…` function in `src/build/transpiler.go` or in the parser's AST construction (e.g. `classifyBlockAtCurrent` misclassifying a block, causing match expressions to fail silently). Fix the root cause before proceeding.
+
+> **Key difference**: `no vet` catches *compile-time* errors (parse + type). `nolang-lsp vet` catches *diagnostic-level* errors (undefined vars, naming, unused, duplicate, etc.). Always run **both** — `no vet` first, then `nolang-lsp vet`.
+
 ### 6. Build the deliverable (`make package`)
 
 After `no vet` passes, rebuild and repackage the VSCode extension so the editor picks up the new LSP behaviour:

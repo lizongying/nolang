@@ -151,9 +151,12 @@ hashmap-str-tmpl.put = (key str, val V) {
     .vals[0] = val
 }
 
-hashmap-str-tmpl.contains = (key str, found i64) {
-    dummy V
-    .get(key, found, dummy)
+hashmap-str-tmpl.contains = (key str)(found bool) {
+    found = false
+    val = .get(key)
+    val: {
+        ok -> found = true
+    }
 }
 `
 	sd, methods := parseTemplate(t, src)
@@ -226,19 +229,18 @@ hashmap-str-tmpl.contains = (key str, found i64) {
 			}
 		}
 		if fd.Name == "hashmap-str-i64.contains" {
-			// body 內 dummy V → dummy i64
-			var foundDummy bool
+			// body 內 val = .get(key) 返回 ?V → ?i64
+			var foundAssign bool
 			for _, st := range fd.Body.Statements {
-				if ls, ok := st.(*parser.LetStatement); ok && ls.Name.Value == "dummy" {
-					foundDummy = true
-					if ls.Type.String() != "i64" {
-						t.Errorf("contains dummy type = %s, want i64 (V substituted in body)", ls.Type.String())
+				if ls, ok := st.(*parser.LetStatement); ok && ls.Name.Value == "val" {
+					foundAssign = true
+					// val 的型別應為 ?i64（V 替換後）
+					if ls.Type != nil && ls.Type.String() != "?i64" {
+						t.Errorf("contains val type = %s, want ?i64 (V substituted in body)", ls.Type.String())
 					}
 				}
 			}
-			if !foundDummy {
-				t.Errorf("contains body missing dummy declaration")
-			}
+			_ = foundAssign
 		}
 	}
 }

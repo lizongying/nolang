@@ -12,8 +12,8 @@
 // 用法（特化後，例如 V=i64）：
 //   m = hashmap-str-tmpl{}
 //   m.init()
-//   m.put('name', 42, _)
-//   m.get('name', found, val)
+//   m.put('name', 42)
+//   val = m.get('name')   // val = ok(42) 或 nil
 
 // FNV-1a 常量
 FNV-OFFSET = -3750763034362895579
@@ -35,8 +35,8 @@ HASHMAP-STR-STR-CAP = 256
 // 用法（特化後，例如 V=i64）：
 //   m = hashmap-str-tmpl{}
 //   m.init()
-//   m.put('name', 42, _)
-//   m.get('name', found, val)
+//   m.put('name', 42)
+//   val = m.get('name')   // val = ok(42) 或 nil
 
 hashmap-str-tmpl {
     cap i64
@@ -58,7 +58,7 @@ hashmap-str-tmpl.init = () {
 }
 
 // hash: FNV-1a 字串雜湊
-hashmap-str-tmpl.hash = (key str, idx i64) {
+hashmap-str-tmpl.hash = (key str)(idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
         h = h ^ (key[i] & 255)
@@ -68,8 +68,8 @@ hashmap-str-tmpl.hash = (key str, idx i64) {
 }
 
 // str-eq: 比較兩個 str 是否相等
-hashmap-str-tmpl.str-eq = (a str, b str, eq i64) {
-    eq = 0
+hashmap-str-tmpl.str-eq = (a str, b str)(eq bool) {
+    eq = false
     a.len != b.len -> {
         return
     }
@@ -78,20 +78,18 @@ hashmap-str-tmpl.str-eq = (a str, b str, eq i64) {
             return
         }
     }
-    eq = 1
+    eq = true
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-str-tmpl.put = (key str, val V, is-new i64) {
-    idx = 0
-    .hash(key, idx)
+hashmap-str-tmpl.put = (key str, val V)(is-new bool) {
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
-        eq = 0
-        .str-eq(.keys[idx], key, eq)
-        eq == 1 -> {
+        eq = .str-eq(.keys[idx], key)
+        eq -> {
             .vals[idx] = val
-            is-new = 0
+            is-new = false
             return
         }
         idx = idx + 1
@@ -108,25 +106,22 @@ hashmap-str-tmpl.put = (key str, val V, is-new i64) {
     .vals[idx] = val
     .occ[idx] = 1
     .size = .size + 1
-    is-new = 1
+    is-new = true
 }
 
-// get: 查找 key
-hashmap-str-tmpl.get = (key str, found i64, result V) {
-    found = 0
+// get: 查找 key，返回 ?V（nil=未找到）
+hashmap-str-tmpl.get = (key str)(result ?V) {
     .size == 0 -> {
+        result = nil
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
-        eq = 0
-        .str-eq(.keys[idx], key, eq)
-        eq == 1 -> {
+        eq = .str-eq(.keys[idx], key)
+        eq -> {
             result = .vals[idx]
-            found = 1
             return
         }
         idx = idx + 1
@@ -134,33 +129,35 @@ hashmap-str-tmpl.get = (key str, found i64, result V) {
             idx = 0
         }
     }
+    result = nil
 }
 
 // contains: 檢查 key 是否存在
-hashmap-str-tmpl.contains = (key str, found i64) {
-    dummy V
-    .get(key, found, dummy)
+hashmap-str-tmpl.contains = (key str)(found bool) {
+    found = false
+    val = .get(key)
+    val: {
+        ok -> found = true
+    }
 }
 
 // remove: 刪除 key
-hashmap-str-tmpl.remove = (key str, removed i64) {
-    removed = 0
+hashmap-str-tmpl.remove = (key str)(removed bool) {
+    removed = false
     .size == 0 -> {
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
-        eq = 0
-        .str-eq(.keys[idx], key, eq)
-        eq == 1 -> {
+        eq = .str-eq(.keys[idx], key)
+        eq -> {
             .occ[idx] = 0
             .keys[idx].len = 0
             .vals[idx] = 0
             .size = .size - 1
-            removed = 1
+            removed = true
             return
         }
         idx = idx + 1
@@ -181,7 +178,7 @@ hashmap-str-tmpl.clear = () {
 }
 
 // len: 返回元素數量
-hashmap-str-tmpl.len = (n i64) {
+hashmap-str-tmpl.len = () (n i64) {
     n = .size
 }
 
@@ -214,8 +211,8 @@ hashmap-str-tmpl.for-each = (k str, v V) {
 // 用法（特化後，例如 K=i64 且 V=i64）：
 //   m = hashmap-int-tmpl{}
 //   m.init()
-//   m.put(42, 100, _)
-//   m.get(42, found, val)
+//   m.put(42, 100)
+//   val = m.get(42)   // val = ok(100) 或 nil
 
 hashmap-int-tmpl {
     cap i64
@@ -237,19 +234,18 @@ hashmap-int-tmpl.init = () {
 }
 
 // hash: 計算索引（位元遮罩）
-hashmap-int-tmpl.hash = (key K, idx i64) {
+hashmap-int-tmpl.hash = (key K)(idx i64) {
     idx = key & (.cap - 1)
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-int-tmpl.put = (key K, val V, is-new i64) {
-    idx = 0
-    .hash(key, idx)
+hashmap-int-tmpl.put = (key K, val V)(is-new bool) {
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
             .vals[idx] = val
-            is-new = 0
+            is-new = false
             return
         }
         idx = idx + 1
@@ -262,23 +258,21 @@ hashmap-int-tmpl.put = (key K, val V, is-new i64) {
     .vals[idx] = val
     .occ[idx] = 1
     .size = .size + 1
-    is-new = 1
+    is-new = true
 }
 
-// get: 查找 key
-hashmap-int-tmpl.get = (key K, found i64, result V) {
-    found = 0
+// get: 查找 key，返回 ?V（nil=未找到）
+hashmap-int-tmpl.get = (key K)(result ?V) {
     .size == 0 -> {
+        result = nil
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
             result = .vals[idx]
-            found = 1
             return
         }
         idx = idx + 1
@@ -286,23 +280,26 @@ hashmap-int-tmpl.get = (key K, found i64, result V) {
             idx = 0
         }
     }
+    result = nil
 }
 
 // contains: 檢查 key 是否存在
-hashmap-int-tmpl.contains = (key K, found i64) {
-    dummy V
-    .get(key, found, dummy)
+hashmap-int-tmpl.contains = (key K)(found bool) {
+    found = false
+    val = .get(key)
+    val: {
+        ok -> found = true
+    }
 }
 
 // remove: 刪除 key
-hashmap-int-tmpl.remove = (key K, removed i64) {
-    removed = 0
+hashmap-int-tmpl.remove = (key K)(removed bool) {
+    removed = false
     .size == 0 -> {
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
@@ -310,7 +307,7 @@ hashmap-int-tmpl.remove = (key K, removed i64) {
             .keys[idx] = 0
             .vals[idx] = 0
             .size = .size - 1
-            removed = 1
+            removed = true
             return
         }
         idx = idx + 1
@@ -331,7 +328,7 @@ hashmap-int-tmpl.clear = () {
 }
 
 // len: 返回元素數量
-hashmap-int-tmpl.len = (n i64) {
+hashmap-int-tmpl.len = () (n i64) {
     n = .size
 }
 
@@ -362,8 +359,8 @@ hashmap-int-tmpl.for-each = (k K, v V) {
 // 用法（特化後，例如 V=i64）：
 //   m = hashmap-bool-tmpl{}
 //   m.init()
-//   m.put(true, 1, _)
-//   m.get(true, found, val)
+//   m.put(true, 1)
+//   val = m.get(true)   // val = ok(1) 或 nil
 
 hashmap-bool-tmpl {
     cap i64
@@ -385,7 +382,7 @@ hashmap-bool-tmpl.init = () {
 }
 
 // hash: 直接索引（true→1，false→0）
-hashmap-bool-tmpl.hash = (key bool, idx i64) {
+hashmap-bool-tmpl.hash = (key bool)(idx i64) {
     {
         key == true -> idx = 1
         -> idx = 0
@@ -393,13 +390,12 @@ hashmap-bool-tmpl.hash = (key bool, idx i64) {
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-hashmap-bool-tmpl.put = (key bool, val V, is-new i64) {
-    idx = 0
-    .hash(key, idx)
+hashmap-bool-tmpl.put = (key bool, val V)(is-new bool) {
+    idx = .hash(key)
 
     .occ[idx] == 1 -> {
         .vals[idx] = val
-        is-new = 0
+        is-new = false
         return
     }
 
@@ -407,47 +403,49 @@ hashmap-bool-tmpl.put = (key bool, val V, is-new i64) {
     .vals[idx] = val
     .occ[idx] = 1
     .size = .size + 1
-    is-new = 1
+    is-new = true
 }
 
-// get: 查找 key
-hashmap-bool-tmpl.get = (key bool, found i64, result V) {
-    found = 0
+// get: 查找 key，返回 ?V（nil=未找到）
+hashmap-bool-tmpl.get = (key bool)(result ?V) {
     .size == 0 -> {
+        result = nil
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     .occ[idx] == 1 -> {
         result = .vals[idx]
-        found = 1
+        return
     }
+    result = nil
 }
 
 // contains: 檢查 key 是否存在
-hashmap-bool-tmpl.contains = (key bool, found i64) {
-    dummy V
-    .get(key, found, dummy)
+hashmap-bool-tmpl.contains = (key bool)(found bool) {
+    found = false
+    val = .get(key)
+    val: {
+        ok -> found = true
+    }
 }
 
 // remove: 刪除 key
-hashmap-bool-tmpl.remove = (key bool, removed i64) {
-    removed = 0
+hashmap-bool-tmpl.remove = (key bool)(removed bool) {
+    removed = false
     .size == 0 -> {
         return
     }
 
-    idx = 0
-    .hash(key, idx)
+    idx = .hash(key)
 
     .occ[idx] == 1 -> {
         .occ[idx] = 0
         .keys[idx] = false
         .vals[idx] = 0
         .size = .size - 1
-        removed = 1
+        removed = true
     }
 }
 
@@ -462,7 +460,7 @@ hashmap-bool-tmpl.clear = () {
 }
 
 // len: 返回元素數量
-hashmap-bool-tmpl.len = (n i64) {
+hashmap-bool-tmpl.len = () (n i64) {
     n = .size
 }
 
