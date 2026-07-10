@@ -19,26 +19,26 @@ test-frame-parse = () {
     data[8] = 1
     f http2-frame
     np = f.parse(data, 0)
-    if np == nil {
-        print('FAIL: parse returned error')
-        return
-    }
-    if f.length != 10 {
-        print('FAIL: expected length=10')
-        return
-    }
-    if f.frame-type != 1 {
-        print('FAIL: expected frame-type=1')
-        return
-    }
-    if f.flags != 4 {
-        print('FAIL: expected flags=4')
-        return
-    }
-    if f.stream-id != 1 {
-        print('FAIL: expected stream-id=1')
-        return
-    }
+    np == nil -> {
+    print('FAIL: parse returned error')
+            return
+}
+    f.length != 10 -> {
+    print('FAIL: expected length=10')
+            return
+}
+    f.frame-type != 1 -> {
+    print('FAIL: expected frame-type=1')
+            return
+}
+    f.flags != 4 -> {
+    print('FAIL: expected flags=4')
+            return
+}
+    f.stream-id != 1 -> {
+    print('FAIL: expected stream-id=1')
+            return
+}
     print('PASS: frame-parse')
 }
 
@@ -53,34 +53,34 @@ test-frame-serialize = () {
     buf str = space.repeat(16)
     next i64 = 0
     next = f.serialize(buf, 0)
-    if next != 9 {
-        print('FAIL: expected next=9')
-        return
-    }
-    if buf[0] != 0 {
-        print('FAIL: expected buf[0]=0')
-        return
-    }
-    if buf[1] != 0 {
-        print('FAIL: expected buf[1]=0')
-        return
-    }
-    if buf[2] != 10 {
-        print('FAIL: expected buf[2]=10')
-        return
-    }
-    if buf[3] != 1 {
-        print('FAIL: expected buf[3]=1')
-        return
-    }
-    if buf[4] != 4 {
-        print('FAIL: expected buf[4]=4')
-        return
-    }
-    if buf[8] != 1 {
-        print('FAIL: expected buf[8]=1')
-        return
-    }
+    next != 9 -> {
+    print('FAIL: expected next=9')
+            return
+}
+    buf[0] != 0 -> {
+    print('FAIL: expected buf[0]=0')
+            return
+}
+    buf[1] != 0 -> {
+    print('FAIL: expected buf[1]=0')
+            return
+}
+    buf[2] != 10 -> {
+    print('FAIL: expected buf[2]=10')
+            return
+}
+    buf[3] != 1 -> {
+    print('FAIL: expected buf[3]=1')
+            return
+}
+    buf[4] != 4 -> {
+    print('FAIL: expected buf[4]=4')
+            return
+}
+    buf[8] != 1 -> {
+    print('FAIL: expected buf[8]=1')
+            return
+}
     print('PASS: frame-serialize')
 }
 
@@ -88,22 +88,22 @@ test-frame-serialize = () {
 test-conn-init = () {
     conn http2-conn
     conn.init()
-    if conn.fd != -1 {
-        print('FAIL: expected fd=-1')
-        return
-    }
-    if conn.next-stream-id != 1 {
-        print('FAIL: expected next-stream-id=1')
-        return
-    }
-    if conn.send-window != 65535 {
-        print('FAIL: expected send-window=65535')
-        return
-    }
-    if conn.initialized != true {
-        print('FAIL: expected initialized=true')
-        return
-    }
+    conn.fd != -1 -> {
+    print('FAIL: expected fd=-1')
+            return
+}
+    conn.next-stream-id != 1 -> {
+    print('FAIL: expected next-stream-id=1')
+            return
+}
+    conn.send-window != 65535 -> {
+    print('FAIL: expected send-window=65535')
+            return
+}
+    conn.initialized != true -> {
+    print('FAIL: expected initialized=true')
+            return
+}
     print('PASS: conn-init')
 }
 
@@ -113,30 +113,30 @@ test-http2-do-req-signature = () {
     // 這行會嘗試連線並失敗，但驗證了函數簽名正確
     resp = http2-do-req('GET', 'http://127.0.0.1:1/test', '')
     // 預期 nil（連線失敗）
-    if resp != nil {
-        print('FAIL: expected connection failure')
-        return
-    }
+    resp != nil -> {
+    print('FAIL: expected connection failure')
+            return
+}
     print('PASS: http2-do-req-signature')
 }
 
 // test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
     resp = http2-get('http://127.0.0.1:1/test')
-    if resp != nil {
-        print('FAIL: expected connection failure')
-        return
-    }
+    resp != nil -> {
+    print('FAIL: expected connection failure')
+            return
+}
     print('PASS: http2-get-signature')
 }
 
 // test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
     resp = http2-post('http://127.0.0.1:1/test', 'body')
-    if resp != nil {
-        print('FAIL: expected connection failure')
-        return
-    }
+    resp != nil -> {
+    print('FAIL: expected connection failure')
+            return
+}
     print('PASS: http2-post-signature')
 }
 

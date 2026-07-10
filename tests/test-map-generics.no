@@ -1,6 +1,5 @@
 // test-map-generics.no — 測試 map 泛型特化
 
-# std/map/map
 
 // str → i64
 test-str-i64 = () {

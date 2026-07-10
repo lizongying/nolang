@@ -1,5 +1,2 @@
-# std/hash/sha256
-# std/hash/rsa
-# std/hash/x509
 
 print('rsa x509 ok')

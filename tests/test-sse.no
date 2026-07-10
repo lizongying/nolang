@@ -36,10 +36,9 @@
 //         i += 1
 //   http.server.HTTPServer(('',3000), SSE).serve_forever()
 
-# std/net/sse
 
 // 測試 1: connect（明文 HTTP）
-client = net.sse.sse-connect('http://127.0.0.1:3000/events')
+client = sse.sse-connect('http://127.0.0.1:3000/events')
 client: {
     nil -> println('fail: connect')
     ->
@@ -51,10 +50,9 @@ client: {
     nil -> return
     -> {
         yes = client.is-connected()
-        if yes {
-            println('ok: is-connected')
-        } else {
-            println('fail: is-connected')
+                {
+            yes -> println('ok: is-connected')
+            -> println('fail: is-connected')
         }
     }
 }
@@ -79,18 +77,14 @@ client: {
                 -> {
                     println('event: ' - ev.event)
                     println('data: ' - ev.data)
-                    if ev.id.len > 0 {
-                        println('id: ' - ev.id)
-                    }
-                    if ev.retry >= 0 {
-                        r = ev.retry.to-str()
-                        println('retry: ' - r)
-                    }
+                    ev.id.len > 0 -> println('id: ' - ev.id)
+                    ev.retry >= 0 -> {
+    r = ev.retry.to-str()
+                            println('retry: ' - r)
+}
                     println('---')
                     count = count + 1
-                    if count >= 3 {
-                        *
-                    }
+                    count >= 3 -> *
                 }
             }
         }
@@ -103,16 +97,15 @@ client: {
     -> {
         client.close()
         yes = client.is-connected()
-        if yes {
-            println('fail: close')
-        } else {
-            println('ok: close')
+                {
+            yes -> println('fail: close')
+            -> println('ok: close')
         }
     }
 }
 
 // 測試 5: HTTPS SSE 連線
-https-client = net.sse.sse-connect('https://example.com/events')
+https-client = sse.sse-connect('https://example.com/events')
 https-client: {
     nil -> println('skip: HTTPS SSE (expected without live server)')
     -> {
@@ -122,7 +115,7 @@ https-client: {
 }
 
 // 測試 6: 無效 URL
-bad = net.sse.sse-connect('ftp://invalid')
+bad = sse.sse-connect('ftp://invalid')
 bad: {
     nil -> println('fail: expected err for invalid URL')
     err -> println('ok: invalid URL rejected')

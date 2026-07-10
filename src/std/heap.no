@@ -29,9 +29,7 @@ heap.push = (val i64) {
     i = .n - 1
     for i > 0 {
         parent = (i - 1) / 2
-        if .data[i] >= .data[parent] {
-            break
-        }
+        .data[i] >= .data[parent] -> break
         tmp = .data[i]
         .data[i] = .data[parent]
         .data[parent] = tmp
@@ -42,10 +40,10 @@ heap.push = (val i64) {
 // pop: 從堆積彈出最小元素
 // 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
-    if .n == 0 {
-        val = nil
-        return
-    }
+    .n == 0 -> {
+    val = nil
+            return
+}
     val = .data[0]
     .n = .n - 1
     .data[0] = .data[.n]
@@ -54,15 +52,9 @@ heap.pop = () (val ?i64) {
         smallest = i
         left = 2 * i + 1
         right = 2 * i + 2
-        if left < .n && .data[left] < .data[smallest] {
-            smallest = left
-        }
-        if right < .n && .data[right] < .data[smallest] {
-            smallest = right
-        }
-        if smallest == i {
-            break
-        }
+        left < .n && .data[left] < .data[smallest] -> smallest = left
+        right < .n && .data[right] < .data[smallest] -> smallest = right
+        smallest == i -> break
         tmp = .data[i]
         .data[i] = .data[smallest]
         .data[smallest] = tmp
@@ -73,10 +65,10 @@ heap.pop = () (val ?i64) {
 // peek: 查看最小元素（不移除）
 // 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.peek = () (val ?i64) {
-    if .n == 0 {
-        val = nil
-        return
-    }
+    .n == 0 -> {
+    val = nil
+            return
+}
     val = .data[0]
 }
 

@@ -6,8 +6,8 @@ space str = ' '
 print('before repeat')
 buf str = space.repeat(8)
 print('after repeat')
-if buf[0] != 32 {
+buf[0] != 32 -> {
     print('FAIL: expected space')
-    return
+        return
 }
 print('PASS: str.repeat with tls import')

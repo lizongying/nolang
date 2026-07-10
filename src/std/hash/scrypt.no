@@ -13,7 +13,6 @@
 //   key-len = 32
 //   derived = scrypt(password, salt, N, r, p, key-len)
 
-# std/hash/pbkdf2
 
 // ═══════════════════════════════════════════════
 // Salsa20/8 核心函數
@@ -234,7 +233,7 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
     // 1. B = PBKDF2-HMAC-SHA256(password, salt, 1, p * 128 * r)
     b-len = p * 128 * r
     b []byte
-    b = hash.pbkdf2.pbkdf2-hmac-sha256(password, salt, 1, b-len)
+    b = pbkdf2.pbkdf2-hmac-sha256(password, salt, 1, b-len)
 
     // 2. For i = 0 to p-1: B_i = ROMix(B_i, N, r)
     block-bytes = 128 * r
@@ -256,5 +255,5 @@ mixed = scrypt-romix(b-i, n, r)
     }
 
     // 3. DK = PBKDF2-HMAC-SHA256(password, B, 1, key-len)
-    out = hash.pbkdf2.pbkdf2-hmac-sha256(password, b, 1, key-len)
+    out = pbkdf2.pbkdf2-hmac-sha256(password, b, 1, key-len)
 }

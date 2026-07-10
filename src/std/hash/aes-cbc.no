@@ -14,7 +14,6 @@
 //   aes-128-cbc-enc(plain, key, iv, cipher)
 //   aes-128-cbc-dec(cipher, key, iv, plain)
 
-# std/hash/aes
 
 // AES 區塊大小
 AES-BLOCK-SIZE = 16
@@ -42,7 +41,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
         // AES 加密
         enc-block [16]byte
-        enc-block = hash.aes.aes-128-enc(xored, key)
+        enc-block = aes.aes-128-enc(xored, key)
 
         // 輸出密文
         i <- [0..16): {
@@ -81,7 +80,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
         // AES 解密
         dec-block [16]byte
-        dec-block = hash.aes.aes-128-dec(cur-cipher, key)
+        dec-block = aes.aes-128-dec(cur-cipher, key)
 
         // XOR 與 prev 得到明文
         i <- [0..16): {
@@ -102,9 +101,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 // 返回 out []byte: 填充後的資料
 pkcs7-pad = (in []byte) (out []byte) {
     pad-len = 16 - (in.len % 16)
-    if pad-len == 0 {
-        pad-len = 16
-    }
+    pad-len == 0 -> pad-len = 16
 
     i <- [0..in.len): {
         out[i] = in[i]
@@ -118,21 +115,21 @@ pkcs7-pad = (in []byte) (out []byte) {
 // in []byte: 輸入資料（含填充）
 // 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
 pkcs7-unpad = (in []byte) (out-n i64) {
-    if in.len == 0 {
-        out-n = -1
-        return
-    }
+    in.len == 0 -> {
+    out-n = -1
+            return
+}
     pad-len = in[in.len - 1] & 255
-    if pad-len == 0 || pad-len > 16 {
-        out-n = -1
-        return
-    }
+    pad-len == 0 || pad-len > 16 -> {
+    out-n = -1
+            return
+}
     // 驗證填充
     i <- [0..pad-len): {
-        if (in[in.len - 1 - i] & 255) != pad-len {
-            out-n = -1
-            return
-        }
+        (in[in.len - 1 - i] & 255) != pad-len -> {
+    out-n = -1
+                return
+}
     }
     out-n = in.len - pad-len
 }

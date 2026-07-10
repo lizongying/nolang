@@ -40,9 +40,8 @@ print('ok: run-suite')
 // 測試 2: 帶參帶返回的具名函式型別
 result i64 = 0
 result = apply-compute(my-compute)
-if result == 42 {
-    print('ok: named-fn-type')
-} else {
-    print('fail: named-fn-type')
+{
+    result == 42 -> print('ok: named-fn-type')
+    -> print('fail: named-fn-type')
 }
 

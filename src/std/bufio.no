@@ -20,29 +20,27 @@ reader.init = (fd i64, buf []byte) (r reader) {
 
 // fill: 填充緩衝區
 reader.fill = () (ok bool) {
-    if .pos < 0 {
-        return
-    }
-    if .avail > 0 {
-        ok = true
-        return
-    }
+    .pos < 0 -> return
+    .avail > 0 -> {
+    ok = true
+            return
+}
     n = read(.fd, .buf, .buf.len)
-    if n > 0 {
-        .pos = 0
-        .avail = n
-        ok = true
-    }
+    n > 0 -> {
+    .pos = 0
+            .avail = n
+            ok = true
+}
 }
 
 // read-byte: 讀取一個位元組
 // 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
 reader.read-byte = () (b ?byte) {
     ok = .fill()
-    if ok == false {
-        b = nil
-        return
-    }
+    ok == false -> {
+    b = nil
+            return
+}
     b = .buf[.pos]
     .pos = .pos + 1
 }
@@ -52,19 +50,17 @@ reader.read-line = (line str) (ok bool) {
     n = 0
     !! {
         ok = .fill()
-        if ok == false {
-            if n > 0 {
-                ok = true
-            }
-            return
-        }
+        ok == false -> {
+    n > 0 -> ok = true
+                return
+}
         for .pos < .avail {
             c = .buf[.pos]
             .pos = .pos + 1
-            if c == 10 {
-                ok = true
-                return
-            }
+            c == 10 -> {
+    ok = true
+                    return
+}
             line[n] = c
             n = n + 1
         }

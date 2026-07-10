@@ -1,97 +1,97 @@
 // 邊界值測試
 test-u8-100 = () {
     n = '100'.to-u8()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-u8-200 = () {
     n = '200'.to-u8()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-u8-255 = () {
     n = '255'.to-u8()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-u16-65535 = () {
     n = '65535'.to-u16()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-u32-4b = () {
     n = '4294967295'.to-u32()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-u32-3b = () {
     n = '1000000000'.to-u32()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-i8-127 = () {
     n = '127'.to-i8()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 
 test-i8-128 = () {
     n = '128'.to-i8()
-    if n == nil {
-        print('nil')
-    } elif n == err {
-        print('err')
-    } else {
-        print('val=')
-        print(n)
+        {
+        n == nil -> print('nil')
+        n == err -> print('err')
+        -> {
+            print('val=')
+                    print(n)
+        }
     }
 }
 

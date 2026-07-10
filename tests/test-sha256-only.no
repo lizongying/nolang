@@ -1,3 +1,2 @@
-# std/hash/sha256
 
 print('sha256 import ok')

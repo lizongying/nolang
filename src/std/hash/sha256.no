@@ -1771,9 +1771,7 @@ sha256 = (data []byte) (hash [32]byte) {
     bit-len = dlen * 8
     mod-val = (dlen + 9) % 64
     pad-len = 0
-    if mod-val != 0 {
-        pad-len = 64 - mod-val
-    }
+    mod-val != 0 -> pad-len = 64 - mod-val
     total-len = dlen + 1 + pad-len + 8
 
     // 建立填充緩衝區

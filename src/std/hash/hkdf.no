@@ -9,8 +9,6 @@
 //   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
 //   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用
 
-# std/hash/sha256
-# std/hash/hmac
 
 // ═══════════════════════════════════════════════
 // HKDF-Extract
@@ -24,16 +22,19 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     // PRK = HMAC-SHA256(salt, IKM)
     // 若 salt 為空，使用 32 個零位元組
     k []byte
-    if salt.len == 0 {
-        i <- [0..32): {
-            k[i] = 0
+        {
+        salt.len == 0 -> {
+            i <- [0..32): {
+                        k[i] = 0
+                    }
         }
-    } else {
-        i <- [0..salt.len): {
-            k[i] = salt[i]
+        -> {
+            i <- [0..salt.len): {
+                        k[i] = salt[i]
+                    }
         }
     }
-    prk = hash.hmac.hmac-sha256(k, ikm)
+    prk = hmac.hmac-sha256(k, ikm)
 }
 
 // ═══════════════════════════════════════════════
@@ -53,9 +54,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     }
 
     n = (out-len + 31) / 32
-    if n > 255 {
-        n = 255
-    }
+    n > 255 -> n = 255
 
     // T(0) = 空字串
     t []byte
@@ -78,7 +77,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
         msg-len = msg-len + 1
 
         t-tmp [32]byte
-        t-tmp = hash.hmac.hmac-sha256(prk-vec, msg)
+        t-tmp = hmac.hmac-sha256(prk-vec, msg)
         t-len = 32
         i <- [0..32): {
             t[i] = t-tmp[i]
@@ -86,9 +85,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
         // 複製到輸出
         copy-n = 32
-        if off + copy-n > out-len {
-            copy-n = out-len - off
-        }
+        off + copy-n > out-len -> copy-n = out-len - off
         i <- [0..copy-n): {
             okm[off + i] = t[i]
         }

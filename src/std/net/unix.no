@@ -24,7 +24,6 @@
 //   }
 //   c.close()
 
-# std/net/net
 
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作）
@@ -75,9 +74,7 @@ unix-listener.listen = (path str) (ok bool) {
     .fd = -1
     .path = path
     fd = unix-listen(path)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     .fd = fd
     ok = true
 }
@@ -86,13 +83,9 @@ unix-listener.listen = (path str) (ok bool) {
 // 返回 c ?unix-conn: ok=連接結構體, nil=失敗
 unix-listener.accept = () (c ?unix-conn) {
     c = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     fd = net-accept(.fd)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     c = unix-conn{
         fd: fd
     }
@@ -103,13 +96,9 @@ unix-listener.accept = () (c ?unix-conn) {
 // 返回 ok bool: true=成功
 unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     ret = net-set-recv-timeout(.fd, timeout-ms)
-    if ret == 0 {
-        ok = true
-    }
+    ret == 0 -> ok = true
 }
 
 // accept-with-timeout: 帶逾時的 accept
@@ -117,18 +106,12 @@ unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
 // 返回 c ?unix-conn: ok=連接, nil=逾時或失敗
 unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     c = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     ret = net-set-recv-timeout(.fd, timeout-ms)
-    if ret != 0 {
-        return
-    }
+    ret != 0 -> return
     fd = net-accept(.fd)
     net-set-recv-timeout(.fd, 0)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     c = unix-conn{
         fd: fd
     }
@@ -136,10 +119,10 @@ unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
 
 // close: 關閉監聽 socket（不自動刪除 socket 檔案）
 unix-listener.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
 }
 
 // fd-of: 取得監聽 socket 的檔案描述符
@@ -171,9 +154,7 @@ unix-conn.dial = (path str) (ok bool) {
     ok = false
     .fd = -1
     fd = unix-dial(path)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     .fd = fd
     ok = true
 }
@@ -183,9 +164,7 @@ unix-conn.dial = (path str) (ok bool) {
 // 返回 written i64: 實際發送位元組數（-1=錯誤）
 unix-conn.send = (data str) (written i64) {
     written = -1
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     written = net-send(.fd, data, data.len)
 }
 
@@ -195,9 +174,7 @@ unix-conn.send = (data str) (written i64) {
 // 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=連接關閉）
 unix-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     read-n = net-recv(.fd, buf, n)
 }
 
@@ -205,14 +182,10 @@ unix-conn.recv = (buf str, n i64) (read-n i64) {
 // 返回 content str: 接收的內容, total i64: 總位元組數
 unix-conn.recv-all = () (content str, total i64) {
     total = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     !! {
         chunk-n = net-recv(.fd, content, UNIX-BUF-SIZE)
-        if chunk-n <= 0 {
-            break
-        }
+        chunk-n <= 0 -> break
         total = total + chunk-n
     }
 }
@@ -222,13 +195,9 @@ unix-conn.recv-all = () (content str, total i64) {
 // 返回 ok bool: true=成功
 unix-conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     ret = net-set-recv-timeout(.fd, timeout-ms)
-    if ret == 0 {
-        ok = true
-    }
+    ret == 0 -> ok = true
 }
 
 // set-timeout: 設定接收逾時（別名，語義同 set-recv-timeout）
@@ -245,13 +214,9 @@ unix-conn.set-timeout = (timeout-ms i64) (ok bool) {
 // 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
 unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     read-n = -1
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     ret = net-set-recv-timeout(.fd, timeout-ms)
-    if ret != 0 {
-        return
-    }
+    ret != 0 -> return
     read-n = net-recv(.fd, buf, n)
     // 恢復為阻塞模式
     net-set-recv-timeout(.fd, 0)
@@ -259,10 +224,10 @@ unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
 
 // close: 關閉連接
 unix-conn.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
 }
 
 // fd-of: 取得連接 socket 的檔案描述符
@@ -283,9 +248,7 @@ unix-listen-on = (path str) (l ?unix-listener) {
     lst = unix-listener{}
     ok = false
     ok = lst.listen(path)
-    if ok {
-        l = lst
-    }
+    ok -> l = lst
 }
 
 // unix-dial-to: 建立 Unix Domain Socket 連接並撥號
@@ -296,9 +259,7 @@ unix-dial-to = (path str) (c ?unix-conn) {
     cn = unix-conn{}
     ok = false
     ok = cn.dial(path)
-    if ok {
-        c = cn
-    }
+    ok -> c = cn
 }
 
 // unix-dial-timeout: 帶逾時的 Unix Domain Socket 撥號
@@ -308,9 +269,7 @@ unix-dial-to = (path str) (c ?unix-conn) {
 unix-dial-timeout = (path str, timeout-ms i64) (c ?unix-conn) {
     c = nil
     fd = unix-dial(path)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     net-set-recv-timeout(fd, timeout-ms)
     cn = unix-conn{
         fd: fd

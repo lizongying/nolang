@@ -1,6 +1,5 @@
 // test-map.no — 測試 map 關鍵字與 hashmap 實作
 
-# std/map/map
 
 test-map-str-i64 = () {
     m map[str]i64 = { 'a':0, 'b':1 }

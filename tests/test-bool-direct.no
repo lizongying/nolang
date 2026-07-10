@@ -1,13 +1,13 @@
 // test-bool-direct.no — 調試 str.to-bool 直接調用
 test1 = () {
     b = 'true'.to-bool()
-    if b == nil {
-        print('nil')
-    } elif b == err {
-        print('err')
-    } else {
-        print('val=')
-        print(b)
+        {
+        b == nil -> print('nil')
+        b == err -> print('err')
+        -> {
+            print('val=')
+                    print(b)
+        }
     }
 }
 

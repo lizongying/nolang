@@ -17,9 +17,6 @@
 //       -> w = tc.send('GET / HTTP/1.1\r\nHost: target.example.com\r\n\r\n')
 //   }
 
-# std/net/net
-# std/net/tls
-# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -60,9 +57,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     fd = -1
     // 連接到代理伺服器
     fd = net-dial(proxy-host, proxy-port)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -74,23 +69,23 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     req = req - 'Host: ' - target-host - ':' - target-port-s - crlf
 
     // 代理認證（Basic 認證）
-    if username.len > 0 {
-        // 格式: Proxy-Authorization: Basic base64(user:pass)
-        auth-raw = username - ':' - password
-        auth-bytes []byte = auth-raw.to-bytes()
-        enc-str = encoding.base64.encode-std(auth-bytes)
-        req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
-    }
+    username.len > 0 -> {
+    // 格式: Proxy-Authorization: Basic base64(user:pass)
+            auth-raw = username - ':' - password
+            auth-bytes []byte = auth-raw.to-bytes()
+            enc-str = base64.encode-std(auth-bytes)
+            req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
+}
 
     req = req - crlf
 
     // 發送 CONNECT 請求
     written = net-send(fd, req, req.len)
-    if written < 0 {
-        close(fd)
-        fd = -1
-        return
-    }
+    written < 0 -> {
+    close(fd)
+            fd = -1
+            return
+}
 
     // 接收回應（雙緩衝區：buf 接收, raw 累積）
     space = ' '
@@ -101,66 +96,60 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     sep-pos i64 = -1
 
     !! {
-        if total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE {
-            close(fd)
-            fd = -1
-            return
-        }
+        total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE -> {
+    close(fd)
+                fd = -1
+                return
+}
         n = net-recv(fd, buf, PROXY-BUF-SIZE)
-        if n <= 0 {
-            close(fd)
-            fd = -1
-            return
-        }
+        n <= 0 -> {
+    close(fd)
+                fd = -1
+                return
+}
         i <- [0..n): {
             raw[total + i] = buf[i]
         }
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        if sep-pos >= 0 {
-            break
-        }
+        sep-pos >= 0 -> break
     }
 
     // 解析狀態行
     head = raw.slice(0, sep-pos)
     first-line-end = head.index(crlf)
     status-line = head
-    if first-line-end >= 0 {
-        status-line = head.slice(0, first-line-end)
-    }
+    first-line-end >= 0 -> status-line = head.slice(0, first-line-end)
 
     // 檢查狀態碼（200 = 成功）
     sp1 = status-line.index(' ')
-    if sp1 < 0 {
-        close(fd)
-        fd = -1
-        return
-    }
+    sp1 < 0 -> {
+    close(fd)
+            fd = -1
+            return
+}
     after-code = status-line.slice(sp1 + 1, status-line.len)
     sp2 = after-code.index(' ')
     code-str = after-code
-    if sp2 >= 0 {
-        code-str = after-code.slice(0, sp2)
-    }
+    sp2 >= 0 -> code-str = after-code.slice(0, sp2)
 
     code = 0
     i <- [0..code-str.len): {
         ch = code-str[i]
-        if ch < 48 || ch > 57 {
-            close(fd)
-            fd = -1
-            return
-        }
+        ch < 48 || ch > 57 -> {
+    close(fd)
+                fd = -1
+                return
+}
         code = code * 10 + ch - 48
     }
 
-    if code != 200 {
-        close(fd)
-        fd = -1
-        return
-    }
+    code != 200 -> {
+    close(fd)
+            fd = -1
+            return
+}
 }
 
 // proxy-dial: 通過代理建立 TCP 連接（便捷函數，無認證）
@@ -199,9 +188,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     tc = nil
     // 1. 通過代理建立 TCP 隧道
     fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, '', '')
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     // 2. 在隧道上建立 TLS 連接
     c tls-conn
     c.init()
@@ -212,73 +199,76 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     // 發送 TLS ClientHello
     ok = false
     ok = c.send-client-hello-13()
-    if ok == false {
-        c.close()
-        return
-    }
+    ok == false -> {
+    c.close()
+            return
+}
 
     // 讀取 ServerHello 並偵測版本
     ok = c.read-server-hello-13()
-    if ok {
-        // TLS 1.3 路徑
-        ok = c.connect-13()
-        if ok == false {
-            c.close()
-            return
+        {
+        ok -> {
+            // TLS 1.3 路徑
+                    ok = c.connect-13()
+                    ok == false -> {
+    c.close()
+                            return
+}
         }
-    } else {
-        // TLS 1.2 fallback
-        c.version = net.tls.TLS-VERSION
+        -> {
+            // TLS 1.2 fallback
+                    c.version = tls.TLS-VERSION
 
-        cert []byte
-        ok = c.read-certificate(cert)
-        if ok == false {
-            c.close()
-            return
-        }
+                    cert []byte
+                    ok = c.read-certificate(cert)
+                    ok == false -> {
+    c.close()
+                            return
+}
 
-        ok = c.read-server-hello-done()
-        if ok == false {
-            c.close()
-            return
-        }
+                    ok = c.read-server-hello-done()
+                    ok == false -> {
+    c.close()
+                            return
+}
 
-        // 生成 premaster secret
-        premaster []byte
-        premaster[0] = 0x03
-        premaster[1] = 0x03
-        rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
-        i <- [0..46): {
-            premaster[2 + i] = rand-bytes[i]
-        }
+                    // 生成 premaster secret
+                    premaster []byte
+                    premaster[0] = 0x03
+                    premaster[1] = 0x03
+                    rand-bytes []byte = tls.tls-rand-bytes(c.rand-state, 46)
+                    i <- [0..46): {
+                        premaster[2 + i] = rand-bytes[i]
+                    }
 
-        c.derive-keys(premaster)
+                    c.derive-keys(premaster)
 
-        ok = c.send-client-key-exchange(premaster, cert)
-        if ok == false {
-            c.close()
-            return
-        }
+                    ok = c.send-client-key-exchange(premaster, cert)
+                    ok == false -> {
+    c.close()
+                            return
+}
 
-        c.send-change-cipher-spec()
-        c.encrypted = true
+                    c.send-change-cipher-spec()
+                    c.encrypted = true
 
-        ok = c.send-finished(premaster)
-        if ok == false {
-            c.close()
-            return
-        }
+                    ok = c.send-finished(premaster)
+                    ok == false -> {
+    c.close()
+                            return
+}
 
-        ok = c.read-change-cipher-spec()
-        if ok == false {
-            c.close()
-            return
-        }
+                    ok = c.read-change-cipher-spec()
+                    ok == false -> {
+    c.close()
+                            return
+}
 
-        ok = c.read-finished(premaster)
-        if ok == false {
-            c.close()
-            return
+                    ok = c.read-finished(premaster)
+                    ok == false -> {
+    c.close()
+                            return
+}
         }
     }
 
@@ -300,9 +290,7 @@ proxy-config.connect = (target-host str, target-port i64) (fd i64) {
 proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
     tc = nil
     fd = proxy-connect(.host, .port, target-host, target-port, .username, .password)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     c tls-conn
     c.init()
     c.fd = fd
@@ -311,59 +299,62 @@ proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
 
     ok = false
     ok = c.send-client-hello-13()
-    if ok == false {
-        c.close()
-        return
-    }
+    ok == false -> {
+    c.close()
+            return
+}
     ok = c.read-server-hello-13()
-    if ok {
-        ok = c.connect-13()
-        if ok == false {
-            c.close()
-            return
+        {
+        ok -> {
+            ok = c.connect-13()
+                    ok == false -> {
+    c.close()
+                            return
+}
         }
-    } else {
-        c.version = net.tls.TLS-VERSION
-        cert []byte
-        ok = c.read-certificate(cert)
-        if ok == false {
-            c.close()
-            return
-        }
-        ok = c.read-server-hello-done()
-        if ok == false {
-            c.close()
-            return
-        }
-        premaster []byte
-        premaster[0] = 0x03
-        premaster[1] = 0x03
-        rand-bytes []byte = net.tls.tls-rand-bytes(c.rand-state, 46)
-        i <- [0..46): {
-            premaster[2 + i] = rand-bytes[i]
-        }
-        c.derive-keys(premaster)
-        ok = c.send-client-key-exchange(premaster, cert)
-        if ok == false {
-            c.close()
-            return
-        }
-        c.send-change-cipher-spec()
-        c.encrypted = true
-        ok = c.send-finished(premaster)
-        if ok == false {
-            c.close()
-            return
-        }
-        ok = c.read-change-cipher-spec()
-        if ok == false {
-            c.close()
-            return
-        }
-        ok = c.read-finished(premaster)
-        if ok == false {
-            c.close()
-            return
+        -> {
+            c.version = tls.TLS-VERSION
+                    cert []byte
+                    ok = c.read-certificate(cert)
+                    ok == false -> {
+    c.close()
+                            return
+}
+                    ok = c.read-server-hello-done()
+                    ok == false -> {
+    c.close()
+                            return
+}
+                    premaster []byte
+                    premaster[0] = 0x03
+                    premaster[1] = 0x03
+                    rand-bytes []byte = tls.tls-rand-bytes(c.rand-state, 46)
+                    i <- [0..46): {
+                        premaster[2 + i] = rand-bytes[i]
+                    }
+                    c.derive-keys(premaster)
+                    ok = c.send-client-key-exchange(premaster, cert)
+                    ok == false -> {
+    c.close()
+                            return
+}
+                    c.send-change-cipher-spec()
+                    c.encrypted = true
+                    ok = c.send-finished(premaster)
+                    ok == false -> {
+    c.close()
+                            return
+}
+                    ok = c.read-change-cipher-spec()
+                    ok == false -> {
+    c.close()
+                            return
+}
+                    ok = c.read-finished(premaster)
+                    ok == false -> {
+    c.close()
+                            return
+}
         }
     }
     tc = c
@@ -400,85 +391,86 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     fd = -1
     // 連接到 SOCKS5 代理
     fd = net-dial(proxy-host, proxy-port)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
 
     // 1. 握手 — 方法協商
     space = ' '
     req []byte
     req[0] = SOCKS5-VERSION
-    if username.len > 0 {
-        req[1] = 2
-        req[2] = SOCKS5-METHOD-NO-AUTH
-        req[3] = SOCKS5-METHOD-USER-PASS
-    } else {
-        req[1] = 1
-        req[2] = SOCKS5-METHOD-NO-AUTH
+        {
+        username.len > 0 -> {
+            req[1] = 2
+                    req[2] = SOCKS5-METHOD-NO-AUTH
+                    req[3] = SOCKS5-METHOD-USER-PASS
+        }
+        -> {
+            req[1] = 1
+                    req[2] = SOCKS5-METHOD-NO-AUTH
+        }
     }
     req-str = req.to-str()
     written = net-send(fd, req-str, req.len + 1)
-    if written < 0 {
-        close(fd)
-        fd = -1
-        return
-    }
+    written < 0 -> {
+    close(fd)
+            fd = -1
+            return
+}
 
     // 接收方法選擇回應（2 bytes）
     resp = space.repeat(2)
     n = net-recv(fd, resp, 2)
-    if n != 2 {
-        close(fd)
-        fd = -1
-        return
-    }
+    n != 2 -> {
+    close(fd)
+            fd = -1
+            return
+}
     ver = resp[0] & 255
     method = resp[1] & 255
-    if ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE {
-        close(fd)
-        fd = -1
-        return
-    }
+    ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE -> {
+    close(fd)
+            fd = -1
+            return
+}
 
     // 如果需要用戶名/密碼認證
-    if method == SOCKS5-METHOD-USER-PASS {
-        auth-req []byte
-        pos = 0
-        auth-req[pos] = 1
-        pos = pos + 1
-        auth-req[pos] = username.len & 255
-        pos = pos + 1
-        i <- [0..username.len): {
-            auth-req[pos] = username[i] & 255
+    method == SOCKS5-METHOD-USER-PASS -> {
+    auth-req []byte
+            pos = 0
+            auth-req[pos] = 1
             pos = pos + 1
-        }
-        auth-req[pos] = password.len & 255
-        pos = pos + 1
-        i <- [0..password.len): {
-            auth-req[pos] = password[i] & 255
+            auth-req[pos] = username.len & 255
             pos = pos + 1
-        }
-        auth-str = auth-req.to-str()
-        written = net-send(fd, auth-str, pos)
-        if written < 0 {
-            close(fd)
-            fd = -1
-            return
-        }
-        // 接收認證回應（2 bytes）
-        auth-resp = space.repeat(2)
-        n = net-recv(fd, auth-resp, 2)
-        if n != 2 {
-            close(fd)
-            fd = -1
-            return
-        }
-        if (auth-resp[1] & 255) != 0 {
-            close(fd)
-            fd = -1
-            return
-        }
-    }
+            i <- [0..username.len): {
+                auth-req[pos] = username[i] & 255
+                pos = pos + 1
+            }
+            auth-req[pos] = password.len & 255
+            pos = pos + 1
+            i <- [0..password.len): {
+                auth-req[pos] = password[i] & 255
+                pos = pos + 1
+            }
+            auth-str = auth-req.to-str()
+            written = net-send(fd, auth-str, pos)
+            written < 0 -> {
+    close(fd)
+                    fd = -1
+                    return
+}
+            // 接收認證回應（2 bytes）
+            auth-resp = space.repeat(2)
+            n = net-recv(fd, auth-resp, 2)
+            n != 2 -> {
+    close(fd)
+                    fd = -1
+                    return
+}
+            (auth-resp[1] & 255) != 0 -> {
+    close(fd)
+                    fd = -1
+                    return
+}
+}
 
     // 2. 連接請求
     conn-req []byte
@@ -504,31 +496,31 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     pos = pos + 1
     conn-str = conn-req.to-str()
     written = net-send(fd, conn-str, pos)
-    if written < 0 {
-        close(fd)
-        fd = -1
-        return
-    }
+    written < 0 -> {
+    close(fd)
+            fd = -1
+            return
+}
 
     // 接收連接回應（至少 10 bytes）
     reply = space.repeat(16)
     n = net-recv(fd, reply, 16)
-    if n < 4 {
-        close(fd)
-        fd = -1
-        return
-    }
-    if (reply[0] & 255) != SOCKS5-VERSION {
-        close(fd)
-        fd = -1
-        return
-    }
+    n < 4 -> {
+    close(fd)
+            fd = -1
+            return
+}
+    (reply[0] & 255) != SOCKS5-VERSION -> {
+    close(fd)
+            fd = -1
+            return
+}
     rep = reply[1] & 255
-    if rep != 0 {
-        close(fd)
-        fd = -1
-        return
-    }
+    rep != 0 -> {
+    close(fd)
+            fd = -1
+            return
+}
     // 連接成功
 }
 

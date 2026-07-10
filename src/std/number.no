@@ -53,9 +53,7 @@ max = (a ..num) (r num) {
     r = a[0]
     n = len(a)
     i <- [1..n): {
-        if a[i] > r {
-            r = a[i]
-        }
+        a[i] > r -> r = a[i]
     }
 }
 
@@ -63,40 +61,33 @@ min = (a ..num) (r num) {
     r = a[0]
     n = len(a)
     i <- [1..n): {
-        if a[i] < r {
-            r = a[i]
-        }
+        a[i] < r -> r = a[i]
     }
 }
 
 abs = (a num) (r num) {
-    if a < 0 {
-        r = 0 - a
-    } else {
-        r = a
+        {
+        a < 0 -> r = 0 - a
+        -> r = a
     }
 }
 
 // clamp: 限制在 [lo, hi] 範圍內
 // 用法：x.clamp(lo, hi, r)
 num.clamp = (lo num, hi num) (r num) {
-    if . < lo {
-        r = lo
-    } elif . > hi {
-        r = hi
-    } else {
-        r = .
+        {
+        . < lo -> r = lo
+        . > hi -> r = hi
+        -> r = .
     }
 }
 
 // sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
 num.sign = () (r num) {
-    if . > 0 {
-        r = 1
-    } elif . < 0 {
-        r = 0 - 1
-    } else {
-        r = 0
+        {
+        . > 0 -> r = 1
+        . < 0 -> r = 0 - 1
+        -> r = 0
     }
 }
 
@@ -114,12 +105,8 @@ odd = (a int) (yes bool) {
 
 // gcd: 最大公因數（輾轉相除法）
 gcd = (a int, b int) (r int) {
-    if a < 0 {
-        a = 0 - a
-    }
-    if b < 0 {
-        b = 0 - b
-    }
+    a < 0 -> a = 0 - a
+    b < 0 -> b = 0 - b
     for b != 0 {
         t = b
         b = a % b
@@ -130,10 +117,10 @@ gcd = (a int, b int) (r int) {
 
 // lcm: 最小公倍數
 lcm = (a int, b int) (r int) {
-    if a == 0 || b == 0 {
-        r = 0
-        return
-    }
+    a == 0 || b == 0 -> {
+    r = 0
+            return
+}
     g = gcd(a, b)
     r = a / g * b
 }

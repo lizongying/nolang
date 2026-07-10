@@ -11,7 +11,6 @@
 //   - gcd  (a int, b int) (r int) — 整型泛型
 //   - lcm  (a int, b int) (r int) — 整型泛型
 
-# std/number
 
 // ── max：變參泛型，回傳最大值 ──
 test-max = () {

@@ -87,9 +87,7 @@ INV-SBOX [256]byte = [
 // gf-mul2: 在 GF(2^8) 中乘以 x（即多項式 x）
 gf-mul2 = (x i64) (r i64) {
     r = x << 1
-    if r & 256 != 0 {
-        r = r ^ 283
-    }
+    r & 256 != 0 -> r = r ^ 283
     r = r & 255
 }
 
@@ -267,26 +265,17 @@ add-round-key = (state []byte, rk []byte) {
 
 // rcon: 輪常數
 rcon-val = (round i64) (r i64) {
-    if round == 1 {
-        r = 1
-    } elif round == 2 {
-        r = 2
-    } elif round == 3 {
-        r = 4
-    } elif round == 4 {
-        r = 8
-    } elif round == 5 {
-        r = 16
-    } elif round == 6 {
-        r = 32
-    } elif round == 7 {
-        r = 64
-    } elif round == 8 {
-        r = 128
-    } elif round == 9 {
-        r = 27
-    } else {
-        r = 54
+        {
+        round == 1 -> r = 1
+        round == 2 -> r = 2
+        round == 3 -> r = 4
+        round == 4 -> r = 8
+        round == 5 -> r = 16
+        round == 6 -> r = 32
+        round == 7 -> r = 64
+        round == 8 -> r = 128
+        round == 9 -> r = 27
+        -> r = 54
     }
 }
 
@@ -313,18 +302,21 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
     i <- [4..44): {
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
-        if i % 4 == 0 {
-            rw = 0
-            sw = 0
-            rc = 0
-    rw = rot-word(w)
-    sw = sub-word(rw)
-    rc = rcon-val(i / 4)
-            w = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
-            w = (w ^ sw ^ (rc << 24)) & 4294967295
-        } else {
-            w-prev4 = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
-            w = (w-prev4 ^ w) & 4294967295
+                {
+            i % 4 == 0 -> {
+                rw = 0
+                            sw = 0
+                            rc = 0
+                    rw = rot-word(w)
+                    sw = sub-word(rw)
+                    rc = rcon-val(i / 4)
+                            w = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
+                            w = (w ^ sw ^ (rc << 24)) & 4294967295
+            }
+            -> {
+                w-prev4 = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
+                            w = (w-prev4 ^ w) & 4294967295
+            }
         }
         ek[i * 4] = (w >> 24) & 255
         ek[i * 4 + 1] = (w >> 16) & 255

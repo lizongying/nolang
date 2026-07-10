@@ -41,21 +41,21 @@ encode = (data []byte, table str) (out str) {
 
     // 處理剩餘 1 或 2 位元組
     rem = n - i
-    if rem == 1 {
-        b0 = data[i] & 255
-        out[j] = table[b0 >> 2]
-        out[j + 1] = table[(b0 & 3) << 4]
-        out[j + 2] = PAD
-        out[j + 3] = PAD
-    }
-    if rem == 2 {
-        b0 = data[i] & 255
-        b1 = data[i + 1] & 255
-        out[j] = table[b0 >> 2]
-        out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
-        out[j + 2] = table[(b1 & 15) << 2]
-        out[j + 3] = PAD
-    }
+    rem == 1 -> {
+    b0 = data[i] & 255
+            out[j] = table[b0 >> 2]
+            out[j + 1] = table[(b0 & 3) << 4]
+            out[j + 2] = PAD
+            out[j + 3] = PAD
+}
+    rem == 2 -> {
+    b0 = data[i] & 255
+            b1 = data[i + 1] & 255
+            out[j] = table[b0 >> 2]
+            out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
+            out[j + 2] = table[(b1 & 15) << 2]
+            out[j + 3] = PAD
+}
 }
 
 // encode-std: 使用標準字母表編碼
@@ -86,18 +86,14 @@ decode = (s str, table str) (out ?[]byte) {
 
     // 計算填充數
     pad-count = 0
-    if n > 0 {
-        last = s[n - 1] & 255
-        if last == 61 {
-            pad-count = 1
-        }
-    }
-    if n > 1 {
-        last2 = s[n - 2] & 255
-        if last2 == 61 {
-            pad-count = 2
-        }
-    }
+    n > 0 -> {
+    last = s[n - 1] & 255
+            last == 61 -> pad-count = 1
+}
+    n > 1 -> {
+    last2 = s[n - 2] & 255
+            last2 == 61 -> pad-count = 2
+}
     i = 0
     j = 0
     for i + 4 <= n {
@@ -105,32 +101,30 @@ decode = (s str, table str) (out ?[]byte) {
         v1 = b64-val(s[i + 1], table)
         v2 = b64-val(s[i + 2], table)
         v3 = b64-val(s[i + 3], table)
-        if v0 < 0 || v1 < 0 {
-            out = err('invalid base64 character')
-            return
-        }
+        v0 < 0 || v1 < 0 -> {
+    out = err('invalid base64 character')
+                return
+}
         out[j] = (v0 << 2) | (v1 >> 4)
-        if s[i + 2] & 255 != 61 {
-            if v2 < 0 {
-                out = err('invalid base64 character')
-                return
-            }
-            out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
-        }
-        if s[i + 3] & 255 != 61 {
-            if v3 < 0 {
-                out = err('invalid base64 character')
-                return
-            }
-            out[j + 2] = ((v2 & 3) << 6) | v3
-        }
+        s[i + 2] & 255 != 61 -> {
+    v2 < 0 -> {
+    out = err('invalid base64 character')
+                        return
+}
+                out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
+}
+        s[i + 3] & 255 != 61 -> {
+    v3 < 0 -> {
+    out = err('invalid base64 character')
+                        return
+}
+                out[j + 2] = ((v2 & 3) << 6) | v3
+}
         j = j + 3
         i = i + 4
     }
     out.len = j - pad-count
-    if out.len < 0 {
-        out.len = 0
-    }
+    out.len < 0 -> out.len = 0
 }
 
 // ═══════════════════════════════════════════════
@@ -141,15 +135,15 @@ decode = (s str, table str) (out ?[]byte) {
 // 填充字元回傳 0，無效字元回傳 -1
 b64-val = (c i64, table str) (v i64) {
     v = -1
-    if c == 61 {
-        v = 0
-        return
-    }
+    c == 61 -> {
+    v = 0
+            return
+}
     i <- [0..64): {
         tc = table[i] & 255
-        if tc == c {
-            v = i
-            return
-        }
+        tc == c -> {
+    v = i
+                return
+}
     }
 }

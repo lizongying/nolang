@@ -54,9 +54,6 @@
 //           c.close()
 //   }
 
-# std/hash/sha1
-# std/encoding/base64
-# std/net/tls
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -159,7 +156,7 @@ ws-compute-accept = (key str) (accept str) {
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
     combined = key - guid
     cb []byte = combined.to-bytes()
-    hash = hash.sha1.sha1(cb)
+    hash = sha1.sha1(cb)
 
     // 將 [20]byte 複製到 []byte 供 base64 使用
     hash-vec []byte = [
@@ -189,7 +186,7 @@ ws-compute-accept = (key str) (accept str) {
     i <- [0..20): {
         hash-vec[i] = hash[i]
     }
-    accept = encoding.base64.encode-std(hash-vec)
+    accept = base64.encode-std(hash-vec)
 }
 
 // ws-next-rand: 產生下一個偽隨機 i64
@@ -225,7 +222,7 @@ ws-gen-client-key = (seed i64) (key str) {
         raw[i] = (s * 1103515245 + 12345) & 255
     }
     rv = raw.to-bytes()
-    key = encoding.base64.encode-std(rv)
+    key = base64.encode-std(rv)
 }
 
 // ws-build-frame: 組裝 WebSocket frame
@@ -237,15 +234,9 @@ ws-gen-client-key = (seed i64) (key str) {
 ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     dlen = data.len
     header-len = 2
-    if dlen > 125 && dlen <= 65535 {
-        header-len = 4
-    }
-    if dlen > 65535 {
-        header-len = 10
-    }
-    if mask {
-        header-len = header-len + 4
-    }
+    dlen > 125 && dlen <= 65535 -> header-len = 4
+    dlen > 65535 -> header-len = 10
+    mask -> header-len = header-len + 4
     total = header-len + dlen
 
     space = ' '
@@ -256,49 +247,41 @@ ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     // byte 1: mask | len
     mask-bit = 0
-    if mask {
-        mask-bit = 128
-    }
+    mask -> mask-bit = 128
 
-    if dlen <= 125 {
-        frame[1] = mask-bit | dlen
-    }
-    if dlen > 125 && dlen <= 65535 {
-        frame[1] = mask-bit | 126
-        frame[2] = (dlen >> 8) & 255
-        frame[3] = dlen & 255
-    }
-    if dlen > 65535 {
-        frame[1] = mask-bit | 127
-        i <- [0..8): {
-            frame[2 + i] = (dlen >> (56 - i * 8)) & 255
-        }
-    }
+    dlen <= 125 -> frame[1] = mask-bit | dlen
+    dlen > 125 && dlen <= 65535 -> {
+    frame[1] = mask-bit | 126
+            frame[2] = (dlen >> 8) & 255
+            frame[3] = dlen & 255
+}
+    dlen > 65535 -> {
+    frame[1] = mask-bit | 127
+            i <- [0..8): {
+                frame[2 + i] = (dlen >> (56 - i * 8)) & 255
+            }
+}
 
     // mask key
     mk-start = 2
-    if dlen > 125 && dlen <= 65535 {
-        mk-start = 4
-    }
-    if dlen > 65535 {
-        mk-start = 10
-    }
+    dlen > 125 && dlen <= 65535 -> mk-start = 4
+    dlen > 65535 -> mk-start = 10
 
-    if mask {
-        i <- [0..4): {
-            frame[mk-start + i] = mask-key[i]
-        }
-        // masked payload
-        i <- [0..dlen): {
-            frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
-        }
-    }
-    if mask == false {
-        // unmasked payload
-        i <- [0..dlen): {
-            frame[header-len + i] = data[i]
-        }
-    }
+    mask -> {
+    i <- [0..4): {
+                frame[mk-start + i] = mask-key[i]
+            }
+            // masked payload
+            i <- [0..dlen): {
+                frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
+            }
+}
+    mask == false -> {
+    // unmasked payload
+            i <- [0..dlen): {
+                frame[header-len + i] = data[i]
+            }
+}
 }
 
 // ═══════════════════════════════════════════════
@@ -315,9 +298,7 @@ ws-server.listen = (host str, port i64) (ok bool) {
     .host = host
     .port = port
     fd = net-listen(host, port)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     .fd = fd
     ok = true
 }
@@ -326,14 +307,10 @@ ws-server.listen = (host str, port i64) (ok bool) {
 // 返回 c ?ws-server-conn: ok=已交握的客戶端, nil=失敗
 ws-server.accept = () (c ?ws-server-conn) {
     c = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     client-fd = net-accept(.fd)
-    if client-fd < 0 {
-        return
-    }
+    client-fd < 0 -> return
 
     space = ' '
     buf = space.repeat(WS-BUF-SIZE)
@@ -345,20 +322,20 @@ ws-server.accept = () (c ?ws-server-conn) {
     }
 
     conn.handshake()
-    if conn.connected == false {
-        conn.close()
-        return
-    }
+    conn.connected == false -> {
+    conn.close()
+            return
+}
 
     c = conn
 }
 
 // close: 關閉 WebSocket 服務端
 ws-server.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
 }
 
 // ═══════════════════════════════════════════════
@@ -369,9 +346,7 @@ ws-server.close = () {
 // 讀取客戶端 HTTP 升級請求，驗證必要標頭，發送 101 回應。
 // 成功時設置 .connected = true。
 ws-server-conn.handshake = () {
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -385,23 +360,17 @@ ws-server-conn.handshake = () {
     sep-pos i64 = -1
 
     !! {
-        if total + WS-RECV-SIZE > WS-BUF-SIZE {
-            return
-        }
+        total + WS-RECV-SIZE > WS-BUF-SIZE -> return
         tmp str = space.repeat(WS-RECV-SIZE)
         n = net-recv(.fd, tmp, WS-RECV-SIZE)
-        if n <= 0 {
-            return
-        }
+        n <= 0 -> return
         i <- [0..n): {
             raw[total + i] = tmp[i]
         }
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        if sep-pos >= 0 {
-            *
-        }
+        sep-pos >= 0 -> *
     }
 
     head = raw.slice(0, sep-pos)
@@ -409,33 +378,27 @@ ws-server-conn.handshake = () {
     // 解析請求行，驗證方法為 GET
     first-line-end = head.index(crlf)
     request-line = head
-    if first-line-end >= 0 {
-        request-line = head.slice(0, first-line-end)
-    }
+    first-line-end >= 0 -> request-line = head.slice(0, first-line-end)
     sp1 = request-line.index(' ')
-    if sp1 < 0 {
-        return
-    }
+    sp1 < 0 -> return
     method = request-line.slice(0, sp1)
-    if method != 'GET' {
-        resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
-        resp = resp - 'Content-Length: 0' - crlf
-        resp = resp - 'Allow: GET' - crlf
-        resp = resp - crlf
-        net-send(.fd, resp, resp.len)
-        return
-    }
+    method != 'GET' -> {
+    resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
+            resp = resp - 'Content-Length: 0' - crlf
+            resp = resp - 'Allow: GET' - crlf
+            resp = resp - crlf
+            net-send(.fd, resp, resp.len)
+            return
+}
 
     // 提取 Sec-WebSocket-Key 標頭
     key-marker = 'Sec-WebSocket-Key:'
     key-pos = head.index(key-marker)
-    if key-pos < 0 {
-        key-marker = 'sec-websocket-key:'
-        key-pos = head.index(key-marker)
-    }
-    if key-pos < 0 {
-        return
-    }
+    key-pos < 0 -> {
+    key-marker = 'sec-websocket-key:'
+            key-pos = head.index(key-marker)
+}
+    key-pos < 0 -> return
 
     val-start = key-pos + key-marker.len
 
@@ -445,35 +408,27 @@ ws-server-conn.handshake = () {
         ->
     }
     val-end = head.index-from(crlf, val-start)
-    if val-end < 0 {
-        val-end = head.len
-    }
+    val-end < 0 -> val-end = head.len
     client-key = head.slice(val-start, val-end)
 
     // 驗證 Upgrade: websocket
     up-marker = 'Upgrade:'
     up-pos = head.index(up-marker)
-    if up-pos < 0 {
-        up-marker = 'upgrade:'
-        up-pos = head.index(up-marker)
-    }
-    if up-pos < 0 {
-        return
-    }
+    up-pos < 0 -> {
+    up-marker = 'upgrade:'
+            up-pos = head.index(up-marker)
+}
+    up-pos < 0 -> return
     up-val-start = up-pos + up-marker.len
     {
         up-val-start < head.len && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
         ->
     }
     up-val-end = head.index-from(crlf, up-val-start)
-    if up-val-end < 0 {
-        up-val-end = head.len
-    }
+    up-val-end < 0 -> up-val-end = head.len
     up-val = head.slice(up-val-start, up-val-end)
     up-low = up-val.to-lower()
-    if up-low != 'websocket' {
-        return
-    }
+    up-low != 'websocket' -> return
 
     // 計算 Sec-WebSocket-Accept
     accept-val = ws-compute-accept(client-key)
@@ -485,19 +440,17 @@ ws-server-conn.handshake = () {
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
     resp = resp - crlf
     written = net-send(.fd, resp, resp.len)
-    if written < 0 {
-        return
-    }
+    written < 0 -> return
 
     // 儲存標頭後的剩餘資料（可能包含第一個 frame）
     body-start = sep-pos + separator.len
-    if total > body-start {
-        remaining = raw.slice(body-start, total)
-        i <- [0..remaining.len): {
-            .recv-buf[i] = remaining[i]
-        }
-        .recv-buf-len = remaining.len
-    }
+    total > body-start -> {
+    remaining = raw.slice(body-start, total)
+            i <- [0..remaining.len): {
+                .recv-buf[i] = remaining[i]
+            }
+            .recv-buf-len = remaining.len
+}
 
     .connected = true
 }
@@ -508,17 +461,15 @@ ws-server-conn.handshake = () {
 // 返回 ok bool: true=成功
 ws-server-conn.send = (opcode i64, data str) (ok bool) {
     ok = false
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
 
     empty-key = ''
     frame = ws-build-frame(opcode, data, false, empty-key)
     written = net-send(.fd, frame, frame.len)
-    if written < 0 {
-        .connected = false
-        return
-    }
+    written < 0 -> {
+    .connected = false
+            return
+}
 
     ok = true
 }
@@ -557,9 +508,7 @@ ws-server-conn.send-pong = (data str) (ok bool) {
 // 返回 ok bool: true=成功
 ws-server-conn.send-close = (code i64, reason str) (ok bool) {
     ok = false
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
 
     // payload: 2-byte big-endian code + reason
     space = ' '
@@ -581,10 +530,10 @@ ws-server-conn.send-close = (code i64, reason str) (ok bool) {
 //   err = 錯誤
 ws-server-conn.recv = () (msg ?ws-message) {
     msg = nil
-    if .connected == false {
-        msg = err('not connected')
-        return
-    }
+    .connected == false -> {
+    msg = err('not connected')
+            return
+}
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -600,19 +549,19 @@ ws-server-conn.recv = () (msg ?ws-message) {
         .recv-buf-len: {
             -> return
         }
-        if .recv-buf-len < 2 {
-            tmp str = ' '.repeat(WS-RECV-SIZE)
-            n = net-recv(.fd, tmp, WS-RECV-SIZE)
-            if n <= 0 {
-                .connected = false
-                msg = nil
-                return
-            }
-            i <- [0..n): {
-                .recv-buf[.recv-buf-len + i] = tmp[i]
-            }
-            .recv-buf-len = .recv-buf-len + n
-        }
+        .recv-buf-len < 2 -> {
+    tmp str = ' '.repeat(WS-RECV-SIZE)
+                n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                n <= 0 -> {
+    .connected = false
+                        msg = nil
+                        return
+}
+                i <- [0..n): {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                }
+                .recv-buf-len = .recv-buf-len + n
+}
         // 解析 frame header
         b0 = .recv-buf[0]
         b1 = .recv-buf[1]
@@ -627,102 +576,90 @@ ws-server-conn.recv = () (msg ?ws-message) {
             payload-len == 127 -> extra-len = 8
             ->
         }
-        if masked {
-            extra-len = extra-len + 4
-        }
+        masked -> extra-len = extra-len + 4
         header-total = 2 + extra-len
         // 若 payload-len == 127，讀取 8-byte 長度
-        if payload-len == 127 {
-            // 確保 recv-buf 有足夠資料
-            if .recv-buf-len < header-total {
-                need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = net-recv(.fd, tmp, need)
-                if n <= 0 {
-                    .connected = false
-                    msg = err('incomplete frame')
-                    return
+        payload-len == 127 -> {
+    // 確保 recv-buf 有足夠資料
+                .recv-buf-len < header-total -> {
+    need = header-total - .recv-buf-len
+                        tmp str = ' '.repeat(WS-RECV-SIZE)
+                        n = net-recv(.fd, tmp, need)
+                        n <= 0 -> {
+    .connected = false
+                                msg = err('incomplete frame')
+                                return
+}
+                        i <- [0..n): {
+                            .recv-buf[.recv-buf-len + i] = tmp[i]
+                        }
+                        .recv-buf-len = .recv-buf-len + n
+}
+                // 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
+                payload-len = 0
+                i <- [0..8): {
+                    payload-len = (payload-len << 8) | .recv-buf[2 + i]
                 }
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
-            }
-            // 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
-            payload-len = 0
-            i <- [0..8): {
-                payload-len = (payload-len << 8) | .recv-buf[2 + i]
-            }
-        }
-        if payload-len == 126 {
-            // 確保 recv-buf 有足夠資料
-            if .recv-buf-len < header-total {
-                need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = net-recv(.fd, tmp, need)
-                if n <= 0 {
-                    .connected = false
-                    msg = err('incomplete frame')
-                    return
-                }
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
-            }
-            payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
-        }
+}
+        payload-len == 126 -> {
+    // 確保 recv-buf 有足夠資料
+                .recv-buf-len < header-total -> {
+    need = header-total - .recv-buf-len
+                        tmp str = ' '.repeat(WS-RECV-SIZE)
+                        n = net-recv(.fd, tmp, need)
+                        n <= 0 -> {
+    .connected = false
+                                msg = err('incomplete frame')
+                                return
+}
+                        i <- [0..n): {
+                            .recv-buf[.recv-buf-len + i] = tmp[i]
+                        }
+                        .recv-buf-len = .recv-buf-len + n
+}
+                payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+}
         // 確保 recv-buf 有完整 frame
         frame-total = header-total + payload-len
-        if .recv-buf-len < frame-total {
-            need = frame-total - .recv-buf-len
-            tmp str = ' '.repeat(WS-RECV-SIZE)
-            !! {
-                if need <= 0 {
-                    *
+        .recv-buf-len < frame-total -> {
+    need = frame-total - .recv-buf-len
+                tmp str = ' '.repeat(WS-RECV-SIZE)
+                !! {
+                    need <= 0 -> *
+                    n = net-recv(.fd, tmp, need)
+                    n <= 0 -> {
+    .connected = false
+                            msg = err('incomplete frame')
+                            return
+}
+                    i <- [0..n): {
+                        .recv-buf[.recv-buf-len + i] = tmp[i]
+                    }
+                    .recv-buf-len = .recv-buf-len + n
+                    need = frame-total - .recv-buf-len
                 }
-                n = net-recv(.fd, tmp, need)
-                if n <= 0 {
-                    .connected = false
-                    msg = err('incomplete frame')
-                    return
-                }
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
-                need = frame-total - .recv-buf-len
-            }
-        }
+}
         // 提取 mask key（如有）
         actual-extra = 0
-        if (b1 & 127) == 126 {
-            actual-extra = 2
-        }
-        if (b1 & 127) == 127 {
-            actual-extra = 8
-        }
+        (b1 & 127) == 126 -> actual-extra = 2
+        (b1 & 127) == 127 -> actual-extra = 8
         mask-start = 2 + actual-extra
         mask-key = ''
-        if masked {
-            space = ' '
-            mask-key = space.repeat(4)
-            i <- [0..4): {
-                mask-key[i] = .recv-buf[mask-start + i]
-            }
-        }
+        masked -> {
+    space = ' '
+                mask-key = space.repeat(4)
+                i <- [0..4): {
+                    mask-key[i] = .recv-buf[mask-start + i]
+                }
+}
         // 提取 payload 並 demask
         payload-start = 2 + actual-extra
-        if masked {
-            payload-start = 2 + actual-extra + 4
-        }
+        masked -> payload-start = 2 + actual-extra + 4
         space = ' '
         payload str = space.repeat(payload-len)
         i <- [0..payload-len): {
             b = .recv-buf[payload-start + i]
-            if masked {
-                b = b ^ mask-key[i % 4]
-            }
+            masked -> b = b ^ mask-key[i % 4]
             payload[i] = b & 255
         }
         // 從 recv-buf 移除已消費的 frame
@@ -733,39 +670,37 @@ ws-server-conn.recv = () (msg ?ws-message) {
         }
         .recv-buf-len = remaining-len
         // 處理控制訊框（close/ping/pong）
-        if opcode == WS-OP-CLOSE {
-            .connected = false
-            msg = nil
-            return
-        }
-        if opcode == WS-OP-PING {
-            .send-pong(payload)
-        }
+        opcode == WS-OP-CLOSE -> {
+    .connected = false
+                msg = nil
+                return
+}
+        opcode == WS-OP-PING -> .send-pong(payload)
         // pong 和其他控制 opcode 忽略，繼續讀取
 
         // 處理資料訊框（text/binary/continuation）
-        if opcode == WS-OP-TEXT || opcode == WS-OP-BINARY {
-            acc-data = payload
-            acc-opcode = opcode
-            has-acc = true
-        }
-        if opcode == WS-OP-CONT {
-            if has-acc == false {
-                msg = err('unexpected continuation')
-                return
-            }
-            acc-data = acc-data - payload
-        }
+        opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
+    acc-data = payload
+                acc-opcode = opcode
+                has-acc = true
+}
+        opcode == WS-OP-CONT -> {
+    has-acc == false -> {
+    msg = err('unexpected continuation')
+                        return
+}
+                acc-data = acc-data - payload
+}
         // 未知 opcode，忽略
 
-        if has-acc && fin {
-            msg = ws-message{
-                opcode: acc-opcode
-                data: acc-data
-                fin: true
-            }
-            return
-        }
+        has-acc && fin -> {
+    msg = ws-message{
+                    opcode: acc-opcode
+                    data: acc-data
+                    fin: true
+                }
+                return
+}
     }
 
     // is-connected: 檢查連線狀態
@@ -776,10 +711,10 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
     // close: 關閉客戶端連接
     ws-server-conn.close = () {
-        if .fd >= 0 {
-            close(.fd)
-            .fd = -1
-        }
+        .fd >= 0 -> {
+    close(.fd)
+                .fd = -1
+}
         .connected = false
     }
 
@@ -793,32 +728,33 @@ ws-server-conn.recv = () (msg ?ws-message) {
     // 返回 ok bool: true=成功
     ws-client.send = (opcode i64, data str) (ok bool) {
         ok = false
-        if .connected == false {
-            return
-        }
+        .connected == false -> return
 
         .send-counter = .send-counter + 1
         seed = ws-next-rand() + .send-counter
         mask-key = ws-gen-mask-key(seed)
         frame = ws-build-frame(opcode, data, true, mask-key)
-        if .use-tls {
-            w = .tls-c.send(frame)
-            w: {
-                nil -> {
-                    .connected = false
-                    return
-                }
-                err -> {
-                    .connected = false
-                    return
-                }
-                ->
+                {
+            .use-tls -> {
+                w = .tls-c.send(frame)
+                            w: {
+                                nil -> {
+                                    .connected = false
+                                    return
+                                }
+                                err -> {
+                                    .connected = false
+                                    return
+                                }
+                                ->
+                            }
             }
-        } else {
-            written = net-send(.fd, frame, frame.len)
-            if written < 0 {
-                .connected = false
-                return
+            -> {
+                written = net-send(.fd, frame, frame.len)
+                            written < 0 -> {
+    .connected = false
+                                    return
+}
             }
         }
 
@@ -851,9 +787,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
     // 返回 ok bool: true=成功
     ws-client.send-close = (code i64, reason str) (ok bool) {
         ok = false
-        if .connected == false {
-            return
-        }
+        .connected == false -> return
         space = ' '
         payload = space.repeat(2 + reason.len)
         payload[0] = (code >> 8) & 255
@@ -872,10 +806,10 @@ ws-server-conn.recv = () (msg ?ws-message) {
     //   err = 錯誤
     ws-client.recv = () (msg ?ws-message) {
         msg = nil
-        if .connected == false {
-            msg = err('not connected')
-            return
-        }
+        .connected == false -> {
+    msg = err('not connected')
+                return
+}
 
         acc-data = ''
         acc-opcode i64 = 0
@@ -883,32 +817,33 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
         !! {
             // 確保 recv-buf 至少有 2 bytes
-            if .recv-buf-len < 2 {
-                tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = 0
-                if .use-tls {
-                    rn = .tls-c.recv(tmp, WS-RECV-SIZE)
-                    rn: {
-                        ok -> n = it
-                        -> {
-                            .connected = false
+            .recv-buf-len < 2 -> {
+    tmp str = ' '.repeat(WS-RECV-SIZE)
+                    n = 0
+                                        {
+                        .use-tls -> {
+                            rn = .tls-c.recv(tmp, WS-RECV-SIZE)
+                                                    rn: {
+                                                        ok -> n = it
+                                                        -> {
+                                                            .connected = false
+                                                            msg = nil
+                                                            return
+                                                        }
+                                                    }
+                        }
+                        -> n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                    }
+                    n <= 0 -> {
+    .connected = false
                             msg = nil
                             return
-                        }
+}
+                    i <- [0..n): {
+                        .recv-buf[.recv-buf-len + i] = tmp[i]
                     }
-                } else {
-                    n = net-recv(.fd, tmp, WS-RECV-SIZE)
-                }
-                if n <= 0 {
-                    .connected = false
-                    msg = nil
-                    return
-                }
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
-            }
+                    .recv-buf-len = .recv-buf-len + n
+}
             b0 = .recv-buf[0]
             b1 = .recv-buf[1]
             fin = (b0 & 128) != 0
@@ -921,135 +856,126 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 payload-len == 127 -> extra-len = 8
                 ->
             }
-            if masked {
-                extra-len = extra-len + 4
-            }
+            masked -> extra-len = extra-len + 4
             header-total = 2 + extra-len
-            if payload-len == 127 {
-                if .recv-buf-len < header-total {
-                    need = header-total - .recv-buf-len
-                    tmp str = ' '.repeat(WS-RECV-SIZE)
-                    n = 0
-                    if .use-tls {
-                        rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
-                                msg = err('incomplete frame')
-                                return
+            payload-len == 127 -> {
+    .recv-buf-len < header-total -> {
+    need = header-total - .recv-buf-len
+                            tmp str = ' '.repeat(WS-RECV-SIZE)
+                            n = 0
+                                                        {
+                                .use-tls -> {
+                                    rn = .tls-c.recv(tmp, need)
+                                                                    rn: {
+                                                                        ok -> n = it
+                                                                        -> {
+                                                                            .connected = false
+                                                                            msg = err('incomplete frame')
+                                                                            return
+                                                                        }
+                                                                    }
+                                }
+                                -> n = net-recv(.fd, tmp, need)
                             }
-                        }
-                    } else {
-                        n = net-recv(.fd, tmp, need)
-                    }
-                    if n <= 0 {
-                        .connected = false
-                        msg = err('incomplete frame')
-                        return
-                    }
-                    i <- [0..n): {
-                        .recv-buf[.recv-buf-len + i] = tmp[i]
-                    }
-                    .recv-buf-len = .recv-buf-len + n
-                }
-                payload-len = 0
-                i <- [0..8): {
-                    payload-len = (payload-len << 8) | .recv-buf[2 + i]
-                }
-            }
-            if payload-len == 126 {
-                if .recv-buf-len < header-total {
-                    need = header-total - .recv-buf-len
-                    tmp str = ' '.repeat(WS-RECV-SIZE)
-                    n = 0
-                    if .use-tls {
-                        rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
-                                msg = err('incomplete frame')
-                                return
+                            n <= 0 -> {
+    .connected = false
+                                    msg = err('incomplete frame')
+                                    return
+}
+                            i <- [0..n): {
+                                .recv-buf[.recv-buf-len + i] = tmp[i]
                             }
-                        }
-                    } else {
-                        n = net-recv(.fd, tmp, need)
+                            .recv-buf-len = .recv-buf-len + n
+}
+                    payload-len = 0
+                    i <- [0..8): {
+                        payload-len = (payload-len << 8) | .recv-buf[2 + i]
                     }
-                    if n <= 0 {
-                        .connected = false
-                        msg = err('incomplete frame')
-                        return
-                    }
-                    i <- [0..n): {
-                        .recv-buf[.recv-buf-len + i] = tmp[i]
-                    }
-                    .recv-buf-len = .recv-buf-len + n
-                }
-                payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
-            }
+}
+            payload-len == 126 -> {
+    .recv-buf-len < header-total -> {
+    need = header-total - .recv-buf-len
+                            tmp str = ' '.repeat(WS-RECV-SIZE)
+                            n = 0
+                                                        {
+                                .use-tls -> {
+                                    rn = .tls-c.recv(tmp, need)
+                                                                    rn: {
+                                                                        ok -> n = it
+                                                                        -> {
+                                                                            .connected = false
+                                                                            msg = err('incomplete frame')
+                                                                            return
+                                                                        }
+                                                                    }
+                                }
+                                -> n = net-recv(.fd, tmp, need)
+                            }
+                            n <= 0 -> {
+    .connected = false
+                                    msg = err('incomplete frame')
+                                    return
+}
+                            i <- [0..n): {
+                                .recv-buf[.recv-buf-len + i] = tmp[i]
+                            }
+                            .recv-buf-len = .recv-buf-len + n
+}
+                    payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+}
             frame-total = header-total + payload-len
-            if .recv-buf-len < frame-total {
-                need = frame-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
-                !! {
-                    if need <= 0 {
-                        *
-                    }
-                    n = 0
-                    if .use-tls {
-                        rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
+            .recv-buf-len < frame-total -> {
+    need = frame-total - .recv-buf-len
+                    tmp str = ' '.repeat(WS-RECV-SIZE)
+                    !! {
+                        need <= 0 -> *
+                        n = 0
+                                                {
+                            .use-tls -> {
+                                rn = .tls-c.recv(tmp, need)
+                                                            rn: {
+                                                                ok -> n = it
+                                                                -> {
+                                                                    .connected = false
+                                                                    msg = err('incomplete frame')
+                                                                    return
+                                                                }
+                                                            }
+                            }
+                            -> n = net-recv(.fd, tmp, need)
+                        }
+                        n <= 0 -> {
+    .connected = false
                                 msg = err('incomplete frame')
                                 return
-                            }
+}
+                        i <- [0..n): {
+                            .recv-buf[.recv-buf-len + i] = tmp[i]
                         }
-                    } else {
-                        n = net-recv(.fd, tmp, need)
+                        .recv-buf-len = .recv-buf-len + n
+                        need = frame-total - .recv-buf-len
                     }
-                    if n <= 0 {
-                        .connected = false
-                        msg = err('incomplete frame')
-                        return
-                    }
-                    i <- [0..n): {
-                        .recv-buf[.recv-buf-len + i] = tmp[i]
-                    }
-                    .recv-buf-len = .recv-buf-len + n
-                    need = frame-total - .recv-buf-len
-                }
-            }
+}
             mask-key = ''
             mask-start = 2
             actual-extra = 0
-            if (b1 & 127) == 126 {
-                actual-extra = 2
-            }
-            if (b1 & 127) == 127 {
-                actual-extra = 8
-            }
+            (b1 & 127) == 126 -> actual-extra = 2
+            (b1 & 127) == 127 -> actual-extra = 8
             mask-start = 2 + actual-extra
-            if masked {
-                space = ' '
-                mask-key = space.repeat(4)
-                i <- [0..4): {
-                    mask-key[i] = .recv-buf[mask-start + i]
-                }
-            }
+            masked -> {
+    space = ' '
+                    mask-key = space.repeat(4)
+                    i <- [0..4): {
+                        mask-key[i] = .recv-buf[mask-start + i]
+                    }
+}
             payload-start = 2 + actual-extra
-            if masked {
-                payload-start = 2 + actual-extra + 4
-            }
+            masked -> payload-start = 2 + actual-extra + 4
             space = ' '
             payload = space.repeat(payload-len)
             i <- [0..payload-len): {
                 b = .recv-buf[payload-start + i]
-                if masked {
-                    b = b ^ mask-key[i % 4]
-                }
+                masked -> b = b ^ mask-key[i % 4]
                 payload[i] = b & 255
             }
             remaining-start = frame-total
@@ -1058,35 +984,33 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 .recv-buf[i] = .recv-buf[remaining-start + i]
             }
             .recv-buf-len = remaining-len
-            if opcode == WS-OP-CLOSE {
-                .connected = false
-                msg = nil
-                return
-            }
-            if opcode == WS-OP-PING {
-                .send-pong(payload)
-            }
-            // pong 和其他控制 opcode 忽略，繼續讀取
-            if opcode == WS-OP-TEXT || opcode == WS-OP-BINARY {
-                acc-data = payload
-                acc-opcode = opcode
-                has-acc = true
-            }
-            if opcode == WS-OP-CONT {
-                if has-acc == false {
-                    msg = err('unexpected continuation')
+            opcode == WS-OP-CLOSE -> {
+    .connected = false
+                    msg = nil
                     return
-                }
-                acc-data = acc-data - payload
-            }
-            if has-acc && fin {
-                msg = ws-message{
-                    opcode: acc-opcode
-                    data: acc-data
-                    fin: true
-                }
-                return
-            }
+}
+            opcode == WS-OP-PING -> .send-pong(payload)
+            // pong 和其他控制 opcode 忽略，繼續讀取
+            opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
+    acc-data = payload
+                    acc-opcode = opcode
+                    has-acc = true
+}
+            opcode == WS-OP-CONT -> {
+    has-acc == false -> {
+    msg = err('unexpected continuation')
+                            return
+}
+                    acc-data = acc-data - payload
+}
+            has-acc && fin -> {
+    msg = ws-message{
+                        opcode: acc-opcode
+                        data: acc-data
+                        fin: true
+                    }
+                    return
+}
         }
     }
 
@@ -1098,11 +1022,12 @@ ws-server-conn.recv = () (msg ?ws-message) {
 
     // close: 關閉連線
     ws-client.close = () {
-        if .use-tls {
-            .tls-c.close()
-        } elif .fd >= 0 {
-            close(.fd)
-            .fd = -1
+                {
+            .use-tls -> .tls-c.close()
+            .fd >= 0 -> {
+                close(.fd)
+                            .fd = -1
+            }
         }
         .connected = false
     }
@@ -1120,9 +1045,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
         srv = ws-server{}
         ok = false
         ok = srv.listen(host, port)
-        if ok {
-            s = srv
-        }
+        ok -> s = srv
     }
 
     // ws-connect: 連接到 WebSocket 端點
@@ -1144,65 +1067,66 @@ ws-server-conn.recv = () (msg ?ws-message) {
         host-only = ''
         port-str = ''
 
-        if url.starts-with('wss://') {
-            use-tls = true
-            scheme = 'wss://'
-            port = WS-DEFAULT-TLS-PORT
-        }
-        if use-tls == false && url.starts-with('ws://') == false {
-            c = err('invalid URL: must start with ws:// or wss://')
-            return
-        }
+        url.starts-with('wss://') -> {
+    use-tls = true
+                scheme = 'wss://'
+                port = WS-DEFAULT-TLS-PORT
+}
+        use-tls == false && url.starts-with('ws://') == false -> {
+    c = err('invalid URL: must start with ws:// or wss://')
+                return
+}
         rest = url.slice(scheme.len, url.len)
 
         slash-pos = rest.index('/')
-        if slash-pos < 0 {
-            host = rest
-        }
-        if slash-pos >= 0 {
-            host = rest.slice(0, slash-pos)
-            path = rest.slice(slash-pos, rest.len)
-        }
+        slash-pos < 0 -> host = rest
+        slash-pos >= 0 -> {
+    host = rest.slice(0, slash-pos)
+                path = rest.slice(slash-pos, rest.len)
+}
 
         colon-pos = host.index(':')
-        if colon-pos >= 0 {
-            host-only = host.slice(0, colon-pos)
-            port-str = host.slice(colon-pos + 1, host.len)
-            p = 0
-            i <- [0..port-str.len): {
-                ch = port-str[i]
-                if ch < 48 || ch > 57 {
-                    c = err('invalid port')
-                    return
+        colon-pos >= 0 -> {
+    host-only = host.slice(0, colon-pos)
+                port-str = host.slice(colon-pos + 1, host.len)
+                p = 0
+                i <- [0..port-str.len): {
+                    ch = port-str[i]
+                    ch < 48 || ch > 57 -> {
+    c = err('invalid port')
+                            return
+}
+                    p = p * 10 + ch - 48
                 }
-                p = p * 10 + ch - 48
-            }
-            port = p
-            host = host-only
-        }
+                port = p
+                host = host-only
+}
 
-        if host.len == 0 {
-            c = err('empty host')
-            return
-        }
+        host.len == 0 -> {
+    c = err('empty host')
+                return
+}
 
         // 建立連線（TLS 或 TCP）
         fd i64 = -1
         tc tls-conn
-        if use-tls {
-            tc.init()
-            ok = tc.connect(host, port)
-            if ok == false {
-                tc.close()
-                c = err('TLS connection failed')
-                return
+                {
+            use-tls -> {
+                tc.init()
+                            ok = tc.connect(host, port)
+                            ok == false -> {
+    tc.close()
+                                    c = err('TLS connection failed')
+                                    return
+}
+                            fd = tc.fd
             }
-            fd = tc.fd
-        } else {
-            fd = net-dial(host, port)
-            if fd < 0 {
-                c = err('TCP connection failed')
-                return
+            -> {
+                fd = net-dial(host, port)
+                            fd < 0 -> {
+    c = err('TCP connection failed')
+                                    return
+}
             }
         }
 
@@ -1224,27 +1148,30 @@ ws-server-conn.recv = () (msg ?ws-message) {
         req = req - crlf
 
         // 發送請求
-        if use-tls {
-            w = tc.send(req)
-            w: {
-                nil -> {
-                    tc.close()
-                    c = err('send failed')
-                    return
-                }
-                err -> {
-                    tc.close()
-                    c = err('send failed')
-                    return
-                }
-                ->
+                {
+            use-tls -> {
+                w = tc.send(req)
+                            w: {
+                                nil -> {
+                                    tc.close()
+                                    c = err('send failed')
+                                    return
+                                }
+                                err -> {
+                                    tc.close()
+                                    c = err('send failed')
+                                    return
+                                }
+                                ->
+                            }
             }
-        } else {
-            written = net-send(fd, req, req.len)
-            if written < 0 {
-                close(fd)
-                c = err('send failed')
-                return
+            -> {
+                written = net-send(fd, req, req.len)
+                            written < 0 -> {
+    close(fd)
+                                    c = err('send failed')
+                                    return
+}
             }
         }
 
@@ -1257,129 +1184,116 @@ ws-server-conn.recv = () (msg ?ws-message) {
         separator = crlf - crlf
 
         !! {
-            if total + WS-RECV-SIZE > WS-BUF-SIZE {
-                if use-tls {
-                    tc.close()
-                } else {
-                    close(fd)
-                }
-                c = err('response headers too large')
-                return
-            }
+            total + WS-RECV-SIZE > WS-BUF-SIZE -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                    c = err('response headers too large')
+                    return
+}
             n i64 = 0
-            if use-tls {
-                rn = tc.recv(tmp, WS-RECV-SIZE)
-                rn: {
-                    nil -> {
-                        if use-tls {
-                            tc.close()
-                        } else {
-                            close(fd)
-                        }
-                        c = err('connection closed during handshake')
-                        return
-                    }
-                    err -> {
-                        if use-tls {
-                            tc.close()
-                        } else {
-                            close(fd)
-                        }
-                        c = err('connection closed during handshake')
-                        return
-                    }
-                    ok -> n = it
+                        {
+                use-tls -> {
+                    rn = tc.recv(tmp, WS-RECV-SIZE)
+                                    rn: {
+                                        nil -> {
+                                                                                        {
+                                                use-tls -> tc.close()
+                                                -> close(fd)
+                                            }
+                                            c = err('connection closed during handshake')
+                                            return
+                                        }
+                                        err -> {
+                                                                                        {
+                                                use-tls -> tc.close()
+                                                -> close(fd)
+                                            }
+                                            c = err('connection closed during handshake')
+                                            return
+                                        }
+                                        ok -> n = it
+                                    }
                 }
-            } else {
-                n = net-recv(fd, tmp, WS-RECV-SIZE)
+                -> n = net-recv(fd, tmp, WS-RECV-SIZE)
             }
-            if n <= 0 {
-                if use-tls {
-                    tc.close()
-                } else {
-                    close(fd)
-                }
-                c = err('connection closed during handshake')
-                return
-            }
+            n <= 0 -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                    c = err('connection closed during handshake')
+                    return
+}
             i <- [0..n): {
                 raw[total + i] = tmp[i]
             }
             total = total + n
             data = raw.slice(0, total)
             sep-pos = data.index(separator)
-            if sep-pos >= 0 {
-                *
-            }
+            sep-pos >= 0 -> *
         }
 
         // 驗證狀態碼為 101
         head = raw.slice(0, sep-pos)
         first-line-end = head.index(crlf)
         status-line = head
-        if first-line-end >= 0 {
-            status-line = head.slice(0, first-line-end)
-        }
+        first-line-end >= 0 -> status-line = head.slice(0, first-line-end)
 
         sp1 = status-line.index(' ')
-        if sp1 < 0 {
-            if use-tls {
-                tc.close()
-            } else {
-                close(fd)
-            }
-            c = err('invalid status line')
-            return
-        }
+        sp1 < 0 -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                c = err('invalid status line')
+                return
+}
         after-code = status-line.slice(sp1 + 1, status-line.len)
         sp2 = after-code.index(' ')
         code-str = after-code
-        if sp2 >= 0 {
-            code-str = after-code.slice(0, sp2)
-        }
+        sp2 >= 0 -> code-str = after-code.slice(0, sp2)
 
         code = 0
         i <- [0..code-str.len): {
             ch = code-str[i]
-            if ch < 48 || ch > 57 {
-                if use-tls {
-                    tc.close()
-                } else {
-                    close(fd)
-                }
-                c = err('invalid status code')
-                return
-            }
+            ch < 48 || ch > 57 -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                    c = err('invalid status code')
+                    return
+}
             code = code * 10 + ch - 48
         }
 
-        if code != 101 {
-            if use-tls {
-                tc.close()
-            } else {
-                close(fd)
-            }
-            code-s = code.to-str()
-            c = err('server returned status ' - code-s)
-            return
-        }
+        code != 101 -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                code-s = code.to-str()
+                c = err('server returned status ' - code-s)
+                return
+}
 
         // 驗證 Sec-WebSocket-Accept
         accept-marker = 'Sec-WebSocket-Accept:'
         accept-pos = head.index(accept-marker)
-        if accept-pos < 0 {
-            accept-marker = 'sec-websocket-accept:'
-            accept-pos = head.index(accept-marker)
-        }
-        if accept-pos < 0 {
-            if use-tls {
-                tc.close()
-            } else {
-                close(fd)
-            }
-            c = err('missing Sec-WebSocket-Accept')
-            return
-        }
+        accept-pos < 0 -> {
+    accept-marker = 'sec-websocket-accept:'
+                accept-pos = head.index(accept-marker)
+}
+        accept-pos < 0 -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                c = err('missing Sec-WebSocket-Accept')
+                return
+}
 
         val-start = accept-pos + accept-marker.len
         {
@@ -1387,36 +1301,33 @@ ws-server-conn.recv = () (msg ?ws-message) {
             ->
         }
         val-end = head.index-from(crlf, val-start)
-        if val-end < 0 {
-            val-end = head.len
-        }
+        val-end < 0 -> val-end = head.len
         server-accept = head.slice(val-start, val-end)
         expected-accept = ws-compute-accept(client-key)
-        if server-accept != expected-accept {
-            if use-tls {
-                tc.close()
-            } else {
-                close(fd)
-            }
-            c = err('invalid Sec-WebSocket-Accept')
-            return
-        }
+        server-accept != expected-accept -> {
+        {
+        use-tls -> tc.close()
+        -> close(fd)
+    }
+                c = err('invalid Sec-WebSocket-Accept')
+                return
+}
 
         // 建立客戶端，儲存標頭後的剩餘資料
         body-start = sep-pos + separator.len
         remaining-len = 0
-        if total > body-start {
-            remaining = raw.slice(body-start, total)
-            remaining-len = remaining.len
-        }
+        total > body-start -> {
+    remaining = raw.slice(body-start, total)
+                remaining-len = remaining.len
+}
 
         rb = space.repeat(WS-BUF-SIZE)
-        if remaining-len > 0 {
-            remaining = raw.slice(body-start, total)
-            i <- [0..remaining-len): {
-                rb[i] = remaining[i]
-            }
-        }
+        remaining-len > 0 -> {
+    remaining = raw.slice(body-start, total)
+                i <- [0..remaining-len): {
+                    rb[i] = remaining[i]
+                }
+}
 
         cli = ws-client{
             fd: fd

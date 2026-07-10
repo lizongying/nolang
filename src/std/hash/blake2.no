@@ -86,9 +86,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     // 由於 t 是 u64，高位為 0，跳過
 
     // 如果是最後一個區塊，反轉 v[14]
-    if last != 0 {
-        v[14] = v[14] ^ BLAKE2B-MASK
-    }
+    last != 0 -> v[14] = v[14] ^ BLAKE2B-MASK
 
     // 載入訊息字（16 個 u64，小端序）
     m [16]u64
@@ -291,9 +289,7 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
     }
 
     v[12] = (v[12] ^ t) & BLAKE2S-MASK
-    if last != 0 {
-        v[14] = v[14] ^ BLAKE2S-MASK
-    }
+    last != 0 -> v[14] = v[14] ^ BLAKE2S-MASK
 
     m [16]u32
     i <- [0..16): {

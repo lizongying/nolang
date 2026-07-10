@@ -1,4 +1,3 @@
-# std/str
 
 s = 'hello'
 n = s.len

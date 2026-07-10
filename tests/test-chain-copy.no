@@ -38,9 +38,7 @@ json-pool.init = () {
 
 json-pool.alloc = () (idx i64) {
     idx = -1
-    if .count >= 4 {
-        return
-    }
+    .count >= 4 -> return
     idx = .count
     .count = .count + 1
     .nodes[idx].count = 0

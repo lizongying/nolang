@@ -2,13 +2,13 @@
 test-str-i64-match = () {
     s = '42'
     n = s.to-i64()
-    if n == err {
-        print('err:')
-        print(n)
-    } elif n == nil {
-        print('nil')
-    } else {
-        print(n)
+        {
+        n == err -> {
+            print('err:')
+                    print(n)
+        }
+        n == nil -> print('nil')
+        -> print(n)
     }
 }
 

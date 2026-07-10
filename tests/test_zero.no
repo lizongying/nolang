@@ -1,5 +1,4 @@
 // test_zero — 測試 .zero() 方法
-# std/number
 
 data [4]i64 = [1, 2, 3, 4]
 data.zero()

@@ -182,14 +182,14 @@ When a function may fail or return empty, **use `?t` option type** instead of `(
 ```nolang
 // ❌ Wrong: dual-return pattern
 stack.pop = () (val i64, ok bool) {
-    if .n == 0 { return }
+    .n == 0 -> return
     val = .data[.n]
     ok = true
 }
 
 // ✅ Correct: option type (nil for empty, err for errors)
 stack.pop = () (val ?i64) {
-    if .n == 0 {
+    .n == 0 -> {
         val = nil
         return
     }
@@ -198,7 +198,7 @@ stack.pop = () (val ?i64) {
 
 // ✅ Returning an error
 file.read = () (data ?str) {
-    if .fd < 0 {
+    .fd < 0 -> {
         data = err('file not open')
         return
     }
@@ -250,9 +250,11 @@ buf = [16]u8
 
 // method definition — NO explicit self parameter, use `.` inside body
 num.sign = () (r num) {
-    if . > 0 { r = 1 }
-    elif . < 0 { r = -1 }
-    else { r = 0 }
+    {
+        . > 0 -> r = 1
+        . < 0 -> r = -1
+        -> r = 0
+    }
 }
 
 int.to-str = () (out str) {
@@ -264,7 +266,7 @@ int.to-str = () (out str) {
 
 float.to-str = () (out str) {
     out = ''
-    if . == 0.0 {
+    . == 0.0 -> {
         out[0] = 48
         out.len = 1
         return
@@ -559,10 +561,9 @@ str.to-upper = () (out str) {
     i = 0
     for i < .len {
         c = .[i]
-        if c >= 97 && c <= 122 {
-            out[i] = c - 32
-        } else {
-            out[i] = c
+        {
+            c >= 97 && c <= 122 -> out[i] = c - 32
+            -> out[i] = c
         }
         i = i + 1
     }
@@ -571,9 +572,7 @@ str.to-upper = () (out str) {
 // char method
 char.is-digit = () (result bool) {
     result = false
-    if . >= 48 && . <= 57 {
-        result = true
-    }
+    . >= 48 && . <= 57 -> result = true
 }
 
 // Calling methods
@@ -636,7 +635,7 @@ stack.push = (val i64) {
 }
 
 stack.pop = () (val ?i64) {
-    if .n == 0 {
+    .n == 0 -> {
         val = nil
         return
     }

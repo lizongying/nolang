@@ -81,33 +81,25 @@ path.join = (b str) {
 
     // 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
     need-sep = 1
-    if out-n > 0 {
+    out-n > 0 -> {
         last-a = .p[out-n - 1] & 255
-        if last-a == SEP {
-            need-sep = 0
-        }
+        last-a == SEP -> need-sep = 0
     }
-    if bn > 0 {
+    bn > 0 -> {
         first-b = b[0] & 255
-        if first-b == SEP {
-            need-sep = 0
-        }
+        first-b == SEP -> need-sep = 0
     }
-    if out-n == 0 {
-        need-sep = 0
-    }
-    if need-sep == 1 {
+    out-n == 0 -> need-sep = 0
+    need-sep == 1 -> {
         .p[out-n] = SEP
         out-n = out-n + 1
     }
 
     // 如果 b 以 '/' 開頭，跳過
     start-b = 0
-    if bn > 0 {
+    bn > 0 -> {
         first-b = b[0] & 255
-        if first-b == SEP {
-            start-b = 1
-        }
+        first-b == SEP -> start-b = 1
     }
 
     // 複製 b
@@ -129,9 +121,7 @@ path.base = () (out str) {
     last-sep = -1
     i <- [0...p.len): {
         c = .p[i] & 255
-        if c == SEP {
-            last-sep = i
-        }
+        c == SEP -> last-sep = i
     }
     start = last-sep + 1
     out-n = .p.len - start
@@ -147,24 +137,26 @@ path.dir = () {
     last-sep = -1
     i <- [0...p.len): {
         c = .p[i] & 255
-        if c == SEP {
-            last-sep = i
+        c == SEP -> last-sep = i
+    }
+    {
+        last-sep < 0 -> {
+            // 無 '/'，變為 '.'
+            .p[0] = DOT
+            .p.len = 1
+            return
+        }
+        -> {
+            out-n = last-sep
+            out-n == 0 -> {
+                // 根目錄 '/'
+                .p[0] = SEP
+                .p.len = 1
+                return
+            }
+            .p.len = out-n
         }
     }
-    if last-sep < 0 {
-        // 無 '/'，變為 '.'
-        .p[0] = DOT
-        .p.len = 1
-        return
-    }
-    out-n = last-sep
-    if out-n == 0 {
-        // 根目錄 '/'
-        .p[0] = SEP
-        .p.len = 1
-        return
-    }
-    .p.len = out-n
 }
 
 // path.ext: 取出檔案副檔名（含點）
@@ -177,23 +169,16 @@ path.ext = () (out str) {
     last-dot = -1
     i <- [0...p.len): {
         c = .p[i] & 255
-        if c == SEP {
-            last-sep = i
-        }
-        if c == DOT {
-            last-dot = i
-        }
+        c == SEP -> last-sep = i
+        c == DOT -> last-dot = i
     }
 
     // '.' 必須在 '/' 之後
-    if last-dot <= last-sep {
-        return
-    }
+    last-dot <= last-sep -> return
 
     // 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
-    if last-dot == .p.len - 1 {
-        return
-    }
+    last-dot == .p.len - 1 -> return
+
     start = last-dot
     out-n = .p.len - start
     i <- [0..out-n): {
@@ -210,11 +195,9 @@ path.ext = () (out str) {
 // 返回 true=是, false=否
 path.is-abs = () (yes bool) {
     yes = false
-    if .p.len > 0 {
+    .p.len > 0 -> {
         c = .p[0] & 255
-        if c == SEP {
-            yes = true
-        }
+        c == SEP -> yes = true
     }
 }
 
@@ -229,74 +212,76 @@ path.clean = () {
     dot-count = 0
     i <- [0...p.len): {
         c = .p[i] & 255
-        if c == SEP {
-            // 處理上一段
-            if dot-count == 1 {
-                // 忽略 './'
-            } elif dot-count == 2 {
-                // 回退 '..'
-                // 找 .p 中前一個 '/'
-                j = out-n - 1
-                for j >= 0 {
-                    if .p[j] == SEP {
-                        break
+        {
+            c == SEP -> {
+                // 處理上一段
+                {
+                    dot-count == 1 -> {
+                        // 忽略 './'
                     }
-                    j = j - 1
+                    dot-count == 2 -> {
+                        // 回退 '..'
+                        // 找 .p 中前一個 '/'
+                        j = out-n - 1
+                        for j >= 0 {
+                            .p[j] == SEP -> break
+                            j = j - 1
+                        }
+                        {
+                            j < 0 -> out-n = 0
+                            -> out-n = j
+                        }
+                    }
+                    out-n > 0 -> {
+                        prev = .p[out-n - 1] & 255
+                        prev != SEP -> {
+                            .p[out-n] = SEP
+                            out-n = out-n + 1
+                        }
+                    }
+                    -> {
+                        .p[out-n] = SEP
+                        out-n = out-n + 1
+                    }
                 }
-                if j < 0 {
-                    out-n = 0
-                } else {
-                    out-n = j
-                }
-            } elif out-n > 0 {
-                prev = .p[out-n - 1] & 255
-                if prev != SEP {
-                    .p[out-n] = SEP
+                dot-count = 0
+            }
+            c == DOT -> dot-count = dot-count + 1
+            -> {
+                // 寫入之前積累的 '.' 字元
+                j <- [0..dot-count): {
+                    .p[out-n] = DOT
                     out-n = out-n + 1
                 }
-            } else {
-                .p[out-n] = SEP
+                dot-count = 0
+                .p[out-n] = c
                 out-n = out-n + 1
             }
-            dot-count = 0
-        } elif c == DOT {
-            dot-count = dot-count + 1
-        } else {
-            // 寫入之前積累的 '.' 字元
-            j <- [0..dot-count): {
-                .p[out-n] = DOT
-                out-n = out-n + 1
-            }
-            dot-count = 0
-            .p[out-n] = c
-            out-n = out-n + 1
         }
     }
 
     // 處理末尾段
-    if dot-count == 1 {
-        // 忽略末尾 '.'
-    } elif dot-count == 2 {
-        j = out-n - 1
-        for j >= 0 {
-            if .p[j] == SEP {
-                break
-            }
-            j = j - 1
+    {
+        dot-count == 1 -> {
+            // 忽略末尾 '.'
         }
-        if j < 0 {
-            out-n = 0
-        } else {
-            out-n = j
+        dot-count == 2 -> {
+            j = out-n - 1
+            for j >= 0 {
+                .p[j] == SEP -> break
+                j = j - 1
+            }
+            {
+                j < 0 -> out-n = 0
+                -> out-n = j
+            }
         }
     }
 
     // 移除末尾 '/'
-    if out-n > 1 {
+    out-n > 1 -> {
         prev = .p[out-n - 1] & 255
-        if prev == SEP {
-            out-n = out-n - 1
-        }
+        prev == SEP -> out-n = out-n - 1
     }
 
     .p.len = out-n
@@ -315,9 +300,7 @@ path.split = () (f str) {
     last-sep = -1
     i <- [0...p.len): {
         c = .p[i] & 255
-        if c == SEP {
-            last-sep = i
-        }
+        c == SEP -> last-sep = i
     }
     // 提取檔名
     start = last-sep + 1
@@ -326,17 +309,19 @@ path.split = () (f str) {
         f[i] = .p[start + i]
     }
     // 原地修改 .p 為目錄部分
-    if last-sep < 0 {
-        // 無 '/'，.p 變為 '.'
-        .p[0] = DOT
-        .p.len = 1
-        return
+    {
+        last-sep < 0 -> {
+            // 無 '/'，.p 變為 '.'
+            .p[0] = DOT
+            .p.len = 1
+            return
+        }
+        last-sep == 0 -> {
+            // 根目錄 '/'
+            .p[0] = SEP
+            .p.len = 1
+            return
+        }
+        -> .p.len = last-sep
     }
-    if last-sep == 0 {
-        // 根目錄 '/'
-        .p[0] = SEP
-        .p.len = 1
-        return
-    }
-    .p.len = last-sep
 }

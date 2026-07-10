@@ -196,15 +196,9 @@ open = (p str, opts file-opts) (f ?file) {
     }
 
     // 附加旗標
-    if opts.excl {
-        flags = flags | O-EXCL
-    }
-    if opts.truncate {
-        flags = flags | O-TRUNC
-    }
-    if opts.append {
-        flags = flags | O-APPEND
-    }
+    opts.excl -> flags = flags | O-EXCL
+    opts.truncate -> flags = flags | O-TRUNC
+    opts.append -> flags = flags | O-APPEND
 
     // 從 opts.perm 取得權限值
     perm-val = 420
@@ -219,10 +213,10 @@ open = (p str, opts file-opts) (f ?file) {
     }
 
     fd = open-file(p, flags, perm-val)
-    if fd < 0 {
-        f = nil
-        return
-    }
+    fd < 0 -> {
+    f = nil
+            return
+}
     f = file{
         fd: fd
         path: p
@@ -232,9 +226,7 @@ open = (p str, opts file-opts) (f ?file) {
 // read: 從檔案讀取最多 n 位元組到 buf
 file.read = (buf str, n i64) (read-n i64) {
     read-n = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     read-n = read(.fd, buf, n)
 }
 
@@ -242,22 +234,16 @@ file.read = (buf str, n i64) (read-n i64) {
 // 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 file.read-line = () (line ?str) {
     line = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     buf str = ' '.repeat(4096)
     n = read(.fd, buf, 4096)
-    if n > 0 {
-        line = buf
-    }
+    n > 0 -> line = buf
 }
 
 // write: 將 data 的前 n 位元組寫入檔案
 file.write = (data str, n i64) (written i64) {
     written = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     written = write(.fd, data, n)
 }
 
@@ -265,14 +251,14 @@ file.write = (data str, n i64) (written i64) {
 // 成功後 fd 重設為 -1
 // 標準檔案（stdin/stdout/stderr）不會被關閉
 file.close = () (ok bool) {
-    if .fd < 0 {
-        ok = false
-        return
-    }
-    if .fd <= 2 {
-        ok = true
-        return
-    }
+    .fd < 0 -> {
+    ok = false
+            return
+}
+    .fd <= 2 -> {
+    ok = true
+            return
+}
     rc = close(.fd)
     .fd = -1
     ok = rc == 0
@@ -291,22 +277,16 @@ file.size = () (sz i64) {
 // read-all: 讀取整個檔案（依據 .path 取得大小）
 file.read-all = () (content str, n i64) {
     n = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     size = stat-size(.path)
-    if size > 0 {
-        n = read(.fd, content, size)
-    }
+    size > 0 -> n = read(.fd, content, size)
 }
 
 // write-all: 將 data 的前 n 位元組寫入檔案（覆寫）
 // 返回 true=成功, false=失敗
 file.write-all = (data str, n i64) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     written = write(.fd, data, n)
     ok = written == n
 }
@@ -315,36 +295,27 @@ file.write-all = (data str, n i64) (ok bool) {
 // 簡化實作：先讀取現有內容再合併寫入
 file.append = (data str, n i64) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     save-path = .path
     .close()
 
     rd-fd = open-read(save-path)
-    if rd-fd < 0 {
-        return
-    }
+    rd-fd < 0 -> return
     existing [4096]byte
     exist-n = 0
     size = stat-size(save-path)
-    if size > 0 {
-        if size > 4096 {
-            exist-n = read(rd-fd, existing, 4096)
-        } else {
-            exist-n = read(rd-fd, existing, size)
-        }
+    size > 0 -> {
+        {
+        size > 4096 -> exist-n = read(rd-fd, existing, 4096)
+        -> exist-n = read(rd-fd, existing, size)
     }
+}
     close(rd-fd)
 
     wr-fd = open-file(save-path, 1537, 420)
-    if wr-fd < 0 {
-        return
-    }
+    wr-fd < 0 -> return
     .fd = wr-fd
-    if exist-n > 0 {
-        write(.fd, existing, exist-n)
-    }
+    exist-n > 0 -> write(.fd, existing, exist-n)
     written = write(.fd, data, n)
     ok = written == n
 }
@@ -353,19 +324,13 @@ file.append = (data str, n i64) (ok bool) {
 // 返回 true=成功, false=失敗
 file.copy-to = (dst-path str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     fd-w = open-file(dst-path, 1537, 420)
-    if fd-w < 0 {
-        return
-    }
+    fd-w < 0 -> return
     buf [4096]byte
     !! {
         n = read(.fd, buf, 4096)
-        if n <= 0 {
-            *
-        }
+        n <= 0 -> *
         write(fd-w, buf, n)
     }
     close(fd-w)
@@ -380,20 +345,16 @@ file.copy-to = (dst-path str) (ok bool) {
 copy-file = (src str, dst str) (ok bool) {
     ok = false
     fd-r = open-read(src)
-    if fd-r < 0 {
-        return
-    }
+    fd-r < 0 -> return
     fd-w = open-write(dst)
-    if fd-w < 0 {
-        close(fd-r)
-        return
-    }
+    fd-w < 0 -> {
+    close(fd-r)
+            return
+}
     buf [4096]byte
     for true {
         n = read(fd-r, buf, 4096)
-        if n <= 0 {
-            break
-        }
+        n <= 0 -> break
         write(fd-w, buf, n)
     }
     close(fd-r)

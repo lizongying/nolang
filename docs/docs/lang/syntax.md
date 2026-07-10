@@ -108,16 +108,18 @@ max = (a ..num) (r num) {
     n = len(a)
     i = 1
     for i < n {
-        if a[i] > r { r = a[i] }
+        a[i] > r -> r = a[i]
         i = i + 1
     }
 }
 
 // 方法定義在聯合類型上
 num.sign = () (r num) {
-    if . > 0 { r = 1 }
-    elif . < 0 { r = -1 }
-    else { r = 0 }
+    {
+        . > 0 -> r = 1
+        . < 0 -> r = -1
+        -> r = 0
+    }
 }
 ```
 
@@ -570,8 +572,9 @@ val: {
         b = 2
     }
     a == 2 || a == 3 -> do-something()
-    ->
+    -> {
         c = 0
+    }
 }
 
 // 單 if（保留）
@@ -730,10 +733,9 @@ str.to-upper = () (out str) {
     i = 0
     for i < .len {
         c = .[i]
-        if c >= 97 && c <= 122 {
-            out[i] = c - 32
-        } else {
-            out[i] = c
+        {
+            c >= 97 && c <= 122 -> out[i] = c - 32
+            -> out[i] = c
         }
         i = i + 1
     }
@@ -742,9 +744,7 @@ str.to-upper = () (out str) {
 // char 方法
 char.is-digit = () (result bool) {
     result = false
-    if . >= 48 && . <= 57 {
-        result = true
-    }
+    . >= 48 && . <= 57 -> result = true
 }
 
 // struct 方法
@@ -930,16 +930,14 @@ x: {
 ```nolang
 // ❌ 不推薦：雙返回值模式
 stack.pop = () (val i64, ok bool) {
-    if .n == 0 {
-        return
-    }
+    .n == 0 -> return
     val = .data[.n]
     ok = true
 }
 
 // ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
 stack.pop = () (val ?i64) {
-    if .n == 0 {
+    .n == 0 -> {
         val = nil
         return
     }
@@ -948,7 +946,7 @@ stack.pop = () (val ?i64) {
 
 // ✅ 返回錯誤
 file.read = () (data ?str) {
-    if .fd < 0 {
+    .fd < 0 -> {
         data = err('file not open')
         return
     }

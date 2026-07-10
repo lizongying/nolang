@@ -11,7 +11,6 @@
 //   // 共享金鑰
 //   shared [32]byte = x25519-scalarmult(priv, peer-pub)
 
-# std/hash/rand
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -641,7 +640,7 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     // 用 PRNG 生成 32 位元組私鑰
     state = seed
     i <- [0..32): {
-        state = hash.rand.rand(state)
+        state = rand.rand(state)
         priv[i] = state & 255
     }
 

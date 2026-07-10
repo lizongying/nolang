@@ -57,10 +57,10 @@ str.fill = (val byte) {
 // 返回首次出现的位置，未找到返回 -1
 str.index = (target str) (pos i64) {
     pos = -1
-    if target.len == 0 {
-        pos = 0
-        return
-    }
+    target.len == 0 -> {
+    pos = 0
+            return
+}
     limit = .len - target.len
     i = 0
     for i <= limit {
@@ -68,15 +68,15 @@ str.index = (target str) (pos i64) {
         j <- [0..target.len): {
             sj = .[i + j]
             tj = target[j]
-            if sj != tj {
-                matched = 0
-                break
-            }
+            sj != tj -> {
+    matched = 0
+                    break
+}
         }
-        if matched == 1 {
-            pos = i
-            return
-        }
+        matched == 1 -> {
+    pos = i
+                return
+}
         i = i + 1
     }
 }
@@ -85,15 +85,11 @@ str.index = (target str) (pos i64) {
 // 返回首次出現的位置，未找到返回 -1
 str.index-from = (target str, from i64) (pos i64) {
     pos = -1
-    if target.len == 0 {
-        if from <= .len {
-            pos = from
-        }
-        return
-    }
-    if from < 0 {
-        from = 0
-    }
+    target.len == 0 -> {
+    from <= .len -> pos = from
+            return
+}
+    from < 0 -> from = 0
     limit = .len - target.len
     i = from
     for i <= limit {
@@ -101,15 +97,15 @@ str.index-from = (target str, from i64) (pos i64) {
         j <- [0..target.len): {
             sj = .[i + j]
             tj = target[j]
-            if sj != tj {
-                matched = 0
-                break
-            }
+            sj != tj -> {
+    matched = 0
+                    break
+}
         }
-        if matched == 1 {
-            pos = i
-            return
-        }
+        matched == 1 -> {
+    pos = i
+                return
+}
         i = i + 1
     }
 }
@@ -119,26 +115,24 @@ str.index-from = (target str, from i64) (pos i64) {
 str.contains = (target str) (yes bool) {
     yes = false
     pos = .index(target)
-    if pos >= 0 {
-        yes = true
-    }
+    pos >= 0 -> yes = true
 }
 
 // str.starts-with: 判断 s 是否以 target 开头
 // 返回 true=是, false=否
 str.starts-with = (target str) (yes bool) {
     yes = true
-    if target.len > .len {
-        yes = false
-        return
-    }
+    target.len > .len -> {
+    yes = false
+            return
+}
     i <- [0..target.len): {
         si = .[i]
         ti = target[i]
-        if si != ti {
-            yes = false
-            return
-        }
+        si != ti -> {
+    yes = false
+                return
+}
     }
 }
 
@@ -146,18 +140,18 @@ str.starts-with = (target str) (yes bool) {
 // 返回 true=是, false=否
 str.ends-with = (target str) (yes bool) {
     yes = true
-    if target.len > .len {
-        yes = false
-        return
-    }
+    target.len > .len -> {
+    yes = false
+            return
+}
     off = .len - target.len
     i <- [0..target.len): {
         si = .[off + i]
         ti = target[i]
-        if si != ti {
-            yes = false
-            return
-        }
+        si != ti -> {
+    yes = false
+                return
+}
     }
 }
 
@@ -170,10 +164,9 @@ str.ends-with = (target str) (yes bool) {
 str.to-upper = () (val str) {
     i <- [0...len): {
         c = .[i]
-        if c >= 97 && c <= 122 {
-            val[i] = c - 32
-        } else {
-            val[i] = c
+                {
+            c >= 97 && c <= 122 -> val[i] = c - 32
+            -> val[i] = c
         }
     }
 }
@@ -183,10 +176,9 @@ str.to-upper = () (val str) {
 str.to-lower = () (val str) {
     i <- [0...len): {
         c = .[i]
-        if c >= 65 && c <= 90 {
-            val[i] = c + 32
-        } else {
-            val[i] = c
+                {
+            c >= 65 && c <= 90 -> val[i] = c + 32
+            -> val[i] = c
         }
     }
 }
@@ -196,22 +188,16 @@ str.to-lower = () (val str) {
 str.trim = () (val str) {
     start <- [0...len): {
         c = .[start]
-        if c != 32 && c != 9 && c != 10 && c != 13 {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
     end = .len - 1
     for end >= start {
         c = .[end]
-        if c != 32 && c != 9 && c != 10 && c != 13 {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
         end = end - 1
     }
     n = end - start + 1
-    if n < 0 {
-        return
-    }
+    n < 0 -> return
     i <- [0..n): {
         val[i] = .[start + i]
     }
@@ -234,15 +220,9 @@ str.repeat = (times i64) (val str) {
 // str.slice: 截取子串 [start, end)
 // 返回新字符串
 str.slice = (start i64, end i64) (val str) {
-    if start < 0 {
-        start = 0
-    }
-    if end > .len {
-        end = .len
-    }
-    if start >= end {
-        return
-    }
+    start < 0 -> start = 0
+    end > .len -> end = .len
+    start >= end -> return
     n = end - start
     i <- [0..n): {
         val[i] = .[start + i]
@@ -267,39 +247,40 @@ str.to-bytes = () (val []byte) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或格式錯誤
 str.to-i64 = () (val ?i64) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     neg = 0
     c = .[0]
-    if c == 45 {
-        neg = 1
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone minus')
-            return
+        {
+        c == 45 -> {
+            neg = 1
+                    start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone minus')
+                            return
+}
         }
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if neg == 1 {
-        n = 0 - n
-    }
+    neg == 1 -> n = 0 - n
     val = n
 }
 
@@ -309,43 +290,43 @@ str.to-i64 = () (val ?i64) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i8 = () (val ?i8) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     neg = 0
     c = .[0]
-    if c == 45 {
-        neg = 1
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone minus')
-            return
+        {
+        c == 45 -> {
+            neg = 1
+                    start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone minus')
+                            return
+}
         }
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if neg == 1 {
-        n = 0 - n
-    }
-    if n >= 0 - 128 && n <= 127 {
-        val = n
-    } else {
-        val = err('val of range for i8')
+    neg == 1 -> n = 0 - n
+        {
+        n >= 0 - 128 && n <= 127 -> val = n
+        -> val = err('val of range for i8')
     }
 }
 
@@ -355,43 +336,43 @@ str.to-i8 = () (val ?i8) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i16 = () (val ?i16) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     neg = 0
     c = .[0]
-    if c == 45 {
-        neg = 1
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone minus')
-            return
+        {
+        c == 45 -> {
+            neg = 1
+                    start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone minus')
+                            return
+}
         }
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if neg == 1 {
-        n = 0 - n
-    }
-    if n >= 0 - 32768 && n <= 32767 {
-        val = n
-    } else {
-        val = err('val of range for i16')
+    neg == 1 -> n = 0 - n
+        {
+        n >= 0 - 32768 && n <= 32767 -> val = n
+        -> val = err('val of range for i16')
     }
 }
 
@@ -401,43 +382,43 @@ str.to-i16 = () (val ?i16) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i32 = () (val ?i32) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     neg = 0
     c = .[0]
-    if c == 45 {
-        neg = 1
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone minus')
-            return
+        {
+        c == 45 -> {
+            neg = 1
+                    start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone minus')
+                            return
+}
         }
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if neg == 1 {
-        n = 0 - n
-    }
-    if n >= 0 - 2147483648 && n <= 2147483647 {
-        val = n
-    } else {
-        val = err('val of range for i32')
+    neg == 1 -> n = 0 - n
+        {
+        n >= 0 - 2147483648 && n <= 2147483647 -> val = n
+        -> val = err('val of range for i32')
     }
 }
 
@@ -447,35 +428,37 @@ str.to-i32 = () (val ?i32) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u8 = () (val ?u8) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     c = .[0]
-    if c == 45 {
-        val = err('invalid u8: negative sign not allowed')
-        return
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        {
+        c == 45 -> {
+            val = err('invalid u8: negative sign not allowed')
+                    return
+        }
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if n >= 0 && n <= 255 {
-        val = n
-    } else {
-        val = err('out of range for u8')
+        {
+        n >= 0 && n <= 255 -> val = n
+        -> val = err('out of range for u8')
     }
 }
 
@@ -485,35 +468,37 @@ str.to-u8 = () (val ?u8) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u16 = () (val ?u16) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     c = .[0]
-    if c == 45 {
-        val = err('invalid u16: negative sign not allowed')
-        return
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        {
+        c == 45 -> {
+            val = err('invalid u16: negative sign not allowed')
+                    return
+        }
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if n >= 0 && n <= 65535 {
-        val = n
-    } else {
-        val = err('out of range for u16')
+        {
+        n >= 0 && n <= 65535 -> val = n
+        -> val = err('out of range for u16')
     }
 }
 
@@ -523,61 +508,61 @@ str.to-u16 = () (val ?u16) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u32 = () (val ?u32) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     n = 0
     start = 0
     c = .[0]
-    if c == 45 {
-        val = err('invalid u32: negative sign not allowed')
-        return
-    } elif c == 43 {
-        start = 1
-        if .len == 1 {
-            val = err('invalid number: lone plus')
-            return
+        {
+        c == 45 -> {
+            val = err('invalid u32: negative sign not allowed')
+                    return
+        }
+        c == 43 -> {
+            start = 1
+                    .len == 1 -> {
+    val = err('invalid number: lone plus')
+                            return
+}
         }
     }
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
-    if n >= 0 && n <= 4294967295 {
-        val = n
-    } else {
-        val = err('out of range for u32')
+        {
+        n >= 0 && n <= 4294967295 -> val = n
+        -> val = err('out of range for u32')
     }
 }
 
 // str.to-u64: 將字串解析為 u64
 // 拒絕負號；不檢查 i64 範圍溢位（截斷由 LLVM 自動處理）
 str.to-u64 = () (val ?u64) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
     c = .[0]
-    if c == 45 {
-        val = err('invalid u64: negative sign not allowed')
-        return
-    }
+    c == 45 -> {
+    val = err('invalid u64: negative sign not allowed')
+            return
+}
     n = 0
     start = 0
-    if c == 43 {
-        start = 1
-    }
+    c == 43 -> start = 1
     i <- [start...len): {
         c = .[i]
-        if c < 48 || c > 57 {
-            val = err('invalid number: non-digit character')
-            return
-        }
+        c < 48 || c > 57 -> {
+    val = err('invalid number: non-digit character')
+                return
+}
         n = n * 10 + c - 48
     }
     val = n
@@ -605,35 +590,32 @@ str.to-byte = () (val ?byte) {
 //   err('msg') - 含非數字字元
 // 使用內建 strtod 進行實際解析，此處負責驗證與 Option 包裝
 str.to-f64 = () (val ?f64) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
 
     // 簡易驗證：至少含一個數字字元
     has-digit = 0
     start = 0
     c = .[0]
-    if c == 45 || c == 43 {
-        start = 1
-    }
+    c == 45 || c == 43 -> start = 1
     i <- [start...len): {
         c = .[i]
-        if c >= 48 && c <= 57 {
-            has-digit = 1
-        } elif c == 46 {
-            // 小數點 - 允許
-        } elif c == 101 || c == 69 {
-            // 科學記號 e/E - 允許
-        } else {
-            val = err('invalid float')
-            return
+                {
+            c >= 48 && c <= 57 -> has-digit = 1
+            c == 46 -> // 小數點 - 允許
+            c == 101 || c == 69 -> // 科學記號 e/E - 允許
+            -> {
+                val = err('invalid float')
+                            return
+            }
         }
     }
-    if has-digit == 0 {
-        val = nil
-        return
-    }
+    has-digit == 0 -> {
+    val = nil
+            return
+}
 
     // 呼叫內建 strtod 進行解析
     f = .parse-f64-raw()
@@ -644,26 +626,26 @@ str.to-f64 = () (val ?f64) {
 // 大小寫敏感；空字串 → nil，其他 → err
 // 使用逐字節比較以避免 strcmp 在跨函數呼叫時的記憶體問題
 str.to-bool = () (val ?bool) {
-    if .len == 0 {
-        val = nil
-        return
-    }
+    .len == 0 -> {
+    val = nil
+            return
+}
 
     // 比較 "true" (4 bytes)
-    if .len == 4 {
-        if .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101 {
-            val = true
-            return
-        }
-    }
+    .len == 4 -> {
+    .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101 -> {
+    val = true
+                    return
+}
+}
 
     // 比較 "false" (5 bytes)
-    if .len == 5 {
-        if .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101 {
-            val = false
-            return
-        }
-    }
+    .len == 5 -> {
+    .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101 -> {
+    val = false
+                    return
+}
+}
     val = err('not a bool')
 }
 
@@ -685,27 +667,23 @@ str.compare = (b str) (r i64) {
     an = .len
     bn = b.len
     min-n = an
-    if bn < min-n {
-        min-n = bn
-    }
+    bn < min-n -> min-n = bn
     i <- [0..min-n): {
         ai = .[i]
         bi = b[i]
-        if ai < bi {
-            r = -1
-            return
-        }
-        if ai > bi {
-            r = 1
-            return
-        }
+        ai < bi -> {
+    r = -1
+                return
+}
+        ai > bi -> {
+    r = 1
+                return
+}
     }
-    if an < bn {
-        r = -1
-    } elif an > bn {
-        r = 1
-    } else {
-        r = 0
+        {
+        an < bn -> r = -1
+        an > bn -> r = 1
+        -> r = 0
     }
 }
 
@@ -720,14 +698,11 @@ str.count = () (cnt i64) {
     i = 0
     for i < .len {
         b = .[i]
-        if b < 0x80 {
-            i = i + 1
-        } elif b < 0xE0 {
-            i = i + 2
-        } elif b < 0xF0 {
-            i = i + 3
-        } else {
-            i = i + 4
+                {
+            b < 0x80 -> i = i + 1
+            b < 0xE0 -> i = i + 2
+            b < 0xF0 -> i = i + 3
+            -> i = i + 4
         }
         cnt = cnt + 1
     }
@@ -747,31 +722,34 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b = .[i]
         cp i64 = b
         clen = 1
-        if b < 0x80 {
-            cp = b
-            clen = 1
-        } elif b < 0xE0 {
-            cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
-            clen = 2
-        } elif b < 0xF0 {
-            cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
-            clen = 3
-        } else {
-            cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
-            clen = 4
-        }
-        if cp == old-ch {
-            if new-ch < 0x80 {
-                out-n = out-n + 1
-            } elif new-ch < 0x800 {
-                out-n = out-n + 2
-            } elif new-ch < 0x10000 {
-                out-n = out-n + 3
-            } else {
-                out-n = out-n + 4
+                {
+            b < 0x80 -> {
+                cp = b
+                            clen = 1
             }
-        } else {
-            out-n = out-n + clen
+            b < 0xE0 -> {
+                cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
+                            clen = 2
+            }
+            b < 0xF0 -> {
+                cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
+                            clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
+                            clen = 4
+            }
+        }
+                {
+            cp == old-ch -> {
+                                {
+                    new-ch < 0x80 -> out-n = out-n + 1
+                    new-ch < 0x800 -> out-n = out-n + 2
+                    new-ch < 0x10000 -> out-n = out-n + 3
+                    -> out-n = out-n + 4
+                }
+            }
+            -> out-n = out-n + clen
         }
         i = i + clen
     }
@@ -783,44 +761,57 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b = .[i]
         cp = b
         clen = 1
-        if b < 0x80 {
-            cp = b
-            clen = 1
-        } elif b < 0xE0 {
-            cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
-            clen = 2
-        } elif b < 0xF0 {
-            cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
-            clen = 3
-        } else {
-            cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
-            clen = 4
+                {
+            b < 0x80 -> {
+                cp = b
+                            clen = 1
+            }
+            b < 0xE0 -> {
+                cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
+                            clen = 2
+            }
+            b < 0xF0 -> {
+                cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
+                            clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
+                            clen = 4
+            }
         }
-        if cp == old-ch {
-            if new-ch < 0x80 {
-                val[j] = new-ch
-                j = j + 1
-            } elif new-ch < 0x800 {
-                val[j] = 0xC0 | ((new-ch >> 6) & 0x1F)
-                val[j + 1] = 0x80 | (new-ch & 0x3F)
-                j = j + 2
-            } elif new-ch < 0x10000 {
-                val[j] = 0xE0 | ((new-ch >> 12) & 0x0F)
-                val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3F)
-                val[j + 2] = 0x80 | (new-ch & 0x3F)
-                j = j + 3
-            } else {
-                val[j] = 0xF0 | ((new-ch >> 18) & 0x07)
-                val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3F)
-                val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3F)
-                val[j + 3] = 0x80 | (new-ch & 0x3F)
-                j = j + 4
+                {
+            cp == old-ch -> {
+                                {
+                    new-ch < 0x80 -> {
+                        val[j] = new-ch
+                                                        j = j + 1
+                    }
+                    new-ch < 0x800 -> {
+                        val[j] = 0xC0 | ((new-ch >> 6) & 0x1F)
+                                                        val[j + 1] = 0x80 | (new-ch & 0x3F)
+                                                        j = j + 2
+                    }
+                    new-ch < 0x10000 -> {
+                        val[j] = 0xE0 | ((new-ch >> 12) & 0x0F)
+                                                        val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3F)
+                                                        val[j + 2] = 0x80 | (new-ch & 0x3F)
+                                                        j = j + 3
+                    }
+                    -> {
+                        val[j] = 0xF0 | ((new-ch >> 18) & 0x07)
+                                                        val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3F)
+                                                        val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3F)
+                                                        val[j + 3] = 0x80 | (new-ch & 0x3F)
+                                                        j = j + 4
+                    }
+                }
             }
-        } else {
-            k <- [0..clen): {
-                val[j + k] = .[i + k]
+            -> {
+                k <- [0..clen): {
+                                val[j + k] = .[i + k]
+                            }
+                            j = j + clen
             }
-            j = j + clen
         }
         i = i + clen
     }
@@ -838,22 +829,25 @@ str.trim-char = (ch char) (val str) {
         b = .[start]
         cp i64 = b
         clen = 1
-        if b < 0x80 {
-            cp = b
-            clen = 1
-        } elif b < 0xE0 {
-            cp = ((b & 0x1F) << 6) | (.[start + 1] & 0x3F)
-            clen = 2
-        } elif b < 0xF0 {
-            cp = ((b & 0x0F) << 12) | ((.[start + 1] & 0x3F) << 6) | (.[start + 2] & 0x3F)
-            clen = 3
-        } else {
-            cp = ((b & 0x07) << 18) | ((.[start + 1] & 0x3F) << 12) | ((.[start + 2] & 0x3F) << 6) | (.[start + 3] & 0x3F)
-            clen = 4
+                {
+            b < 0x80 -> {
+                cp = b
+                            clen = 1
+            }
+            b < 0xE0 -> {
+                cp = ((b & 0x1F) << 6) | (.[start + 1] & 0x3F)
+                            clen = 2
+            }
+            b < 0xF0 -> {
+                cp = ((b & 0x0F) << 12) | ((.[start + 1] & 0x3F) << 6) | (.[start + 2] & 0x3F)
+                            clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[start + 1] & 0x3F) << 12) | ((.[start + 2] & 0x3F) << 6) | (.[start + 3] & 0x3F)
+                            clen = 4
+            }
         }
-        if cp != ch {
-            break
-        }
+        cp != ch -> break
         start = start + clen
     }
 
@@ -864,28 +858,29 @@ str.trim-char = (ch char) (val str) {
         b = .[i]
         cp = b
         clen = 1
-        if b < 0x80 {
-            cp = b
-            clen = 1
-        } elif b < 0xE0 {
-            cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
-            clen = 2
-        } elif b < 0xF0 {
-            cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
-            clen = 3
-        } else {
-            cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
-            clen = 4
+                {
+            b < 0x80 -> {
+                cp = b
+                            clen = 1
+            }
+            b < 0xE0 -> {
+                cp = ((b & 0x1F) << 6) | (.[i + 1] & 0x3F)
+                            clen = 2
+            }
+            b < 0xF0 -> {
+                cp = ((b & 0x0F) << 12) | ((.[i + 1] & 0x3F) << 6) | (.[i + 2] & 0x3F)
+                            clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3F) << 12) | ((.[i + 2] & 0x3F) << 6) | (.[i + 3] & 0x3F)
+                            clen = 4
+            }
         }
-        if cp != ch {
-            end = i + clen
-        }
+        cp != ch -> end = i + clen
         i = i + clen
     }
     n = end - start
-    if n < 0 {
-        return
-    }
+    n < 0 -> return
     j <- [0..n): {
         val[j] = .[start + j]
     }
@@ -899,9 +894,7 @@ str.trim-char = (ch char) (val str) {
 // 返回 true=空, false=非空
 str.empty = () (yes bool) {
     yes = true
-    if .len != 0 {
-        yes = false
-    }
+    .len != 0 -> yes = false
 }
 
 // ═══════════════════════════════════════════════
@@ -912,17 +905,15 @@ str.empty = () (yes bool) {
 // 無效字元回傳 -1
 hex-val = (c i64) (v i64) {
     v = -1
-    if c >= 48 && c <= 57 {
-        v = c - 48
-        return
-    }
-    if c >= 65 && c <= 70 {
-        v = c - 65 + 10
-        return
-    }
-    if c >= 97 && c <= 102 {
-        v = c - 97 + 10
-    }
+    c >= 48 && c <= 57 -> {
+    v = c - 48
+            return
+}
+    c >= 65 && c <= 70 -> {
+    v = c - 65 + 10
+            return
+}
+    c >= 97 && c <= 102 -> v = c - 97 + 10
 }
 
 // str.from-hex: 將十六進制字串解碼為 []byte
@@ -931,19 +922,19 @@ hex-val = (c i64) (v i64) {
 //   nil        - 空字串
 //   err('msg') - 含無效十六進制字元
 str.from-hex = () (out ?[]byte) {
-    if .len == 0 {
-        out = nil
-        return
-    }
+    .len == 0 -> {
+    out = nil
+            return
+}
     n = .len / 2
     out.len = n
     i <- [0..n): {
         hi = hex-val(.[i * 2])
         lo = hex-val(.[i * 2 + 1])
-        if hi < 0 || lo < 0 {
-            out = err('invalid hex character')
-            return
-        }
+        hi < 0 || lo < 0 -> {
+    out = err('invalid hex character')
+                return
+}
         out[i] = (hi << 4) | lo
     }
 }
@@ -957,11 +948,11 @@ str.from-hex = () (out ?[]byte) {
 // 返回 out []str: 分割後的子字串切片
 // 空分隔符時返回整個字串作為唯一元素
 str.split = (sep str) (out []str) {
-    if sep.len == 0 {
-        out[0] = .slice(0, .len)
-        out.len = 1
-        return
-    }
+    sep.len == 0 -> {
+    out[0] = .slice(0, .len)
+            out.len = 1
+            return
+}
     count = 0
     start = 0
     pos = .index-from(sep, start)
@@ -981,17 +972,15 @@ str.split = (sep str) (out []str) {
 // 返回 out str: 連接後的字串
 []str.join = (sep str) (out str) {
     n = .len
-    if n == 0 {
-        return
-    }
+    n == 0 -> return
     pos = 0
     i <- [0..n): {
-        if i > 0 {
-            j <- [0..sep.len): {
-                out[pos] = sep[j]
-                pos = pos + 1
-            }
-        }
+        i > 0 -> {
+    j <- [0..sep.len): {
+                    out[pos] = sep[j]
+                    pos = pos + 1
+                }
+}
         s = .[i]
         j <- [0..s.len): {
             out[pos] = s[j]

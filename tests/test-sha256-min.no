@@ -8,7 +8,7 @@ msg[1] = 0x62
 msg[2] = 0x63
 print('before sha256')
 h [32]byte
-hash.sha256.sha256(msg)(h)
+sha256.sha256(msg)(h)
 print('after sha256')
 print(h[0])
 print('done')

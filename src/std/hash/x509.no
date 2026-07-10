@@ -29,18 +29,21 @@ der-tag = (data []byte, pos i64) (tag i64) {
 // len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
 der-len = (data []byte, pos i64) (len i64, adv i64) {
     b = data[pos] & 255
-    if b & 128 == 0 {
-        // 短格式：長度 = b (0-127)
-        len = b
-        adv = 1
-    } else {
-        // 長格式：後續 (b & 0x7F) 個位元組編碼長度
-        n = b & 127
-        len = 0
-        i <- [0..n): {
-            len = (len << 8) | (data[pos + 1 + i] & 255)
+        {
+        b & 128 == 0 -> {
+            // 短格式：長度 = b (0-127)
+                    len = b
+                    adv = 1
         }
-        adv = 1 + n
+        -> {
+            // 長格式：後續 (b & 0x7F) 個位元組編碼長度
+                    n = b & 127
+                    len = 0
+                    i <- [0..n): {
+                        len = (len << 8) | (data[pos + 1 + i] & 255)
+                    }
+                    adv = 1 + n
+        }
     }
 }
 
@@ -67,21 +70,21 @@ der-skip = (data []byte, pos i64) (next i64) {
 x509-tbs-range = (data []byte) (start i64, end i64) {
     // 驗證外層 SEQUENCE
     tag = data[0] & 255
-    if tag != 48 {
-        start = 0
-        end = 0
-        return
-    }
+    tag != 48 -> {
+    start = 0
+            end = 0
+            return
+}
     outer-len, adv = der-len(data, 1)
 
     // 內層 SEQUENCE（TBSCertificate）從標籤開始
     start = 1 + adv
     inner-tag = der-tag(data, start)
-    if inner-tag != 48 {
-        start = 0
-        end = 0
-        return
-    }
+    inner-tag != 48 -> {
+    start = 0
+            end = 0
+            return
+}
     end = der-skip(data, start)
 }
 
@@ -90,10 +93,10 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
 // serial: 輸出序號（0 表示無法提取）
 x509-serial = (data []byte, serial i64) {
     tbs-start, tbs-end = x509-tbs-range(data)
-    if tbs-start == 0 {
-        serial = 0
-        return
-    }
+    tbs-start == 0 -> {
+    serial = 0
+            return
+}
 
     // 跳過 TBS SEQUENCE 標籤 + 長度，進入內容
     p = tbs-start + 1
@@ -103,21 +106,21 @@ x509-serial = (data []byte, serial i64) {
     // 檢查是否為 [0] EXPLICIT（版本，v2/v3 才有）
     // 現在應該是 INTEGER（序號）
     t = der-tag(data, p)
-    if t == 160 {
-        // 跳過 [0] EXPLICIT 元素
-        p = der-skip(data, p)
-    }
+    t == 160 -> {
+    // 跳過 [0] EXPLICIT 元素
+            p = der-skip(data, p)
+}
     t = der-tag(data, p)
-    if t != 2 {
-        serial = 0
-        return
-    }
+    t != 2 -> {
+    serial = 0
+            return
+}
     int-len, adv = der-len(data, p + 1)
-    if int-len > 8 {
-        // 序號太大，無法放入 i64
-        serial = 0
-        return
-    }
+    int-len > 8 -> {
+    // 序號太大，無法放入 i64
+            serial = 0
+            return
+}
 
     // 讀取序號值
     val = 0
@@ -132,10 +135,10 @@ x509-serial = (data []byte, serial i64) {
 // e: 輸出指數值（0 表示非 RSA 或解析失敗）
 x509-rsa-e = (data []byte) (e i64) {
     tbs-start, tbs-end = x509-tbs-range(data)
-    if tbs-start == 0 {
-        e = 0
-        return
-    }
+    tbs-start == 0 -> {
+    e = 0
+            return
+}
 
     // 進入 TBS 內容（跳過 TBS SEQUENCE 標籤 + 長度）
     p = tbs-start + 1
@@ -144,9 +147,7 @@ x509-rsa-e = (data []byte) (e i64) {
 
     // 步驟 1：可選——跳過 [0] EXPLICIT（版本，tag 160，僅 v2/v3）
     t = der-tag(data, p)
-    if t == 160 {
-        p = der-skip(data, p)
-    }
+    t == 160 -> p = der-skip(data, p)
 
     // 步驟 2：跳過 INTEGER（serialNumber，tag 2）
     p = der-skip(data, p)
@@ -175,10 +176,10 @@ x509-rsa-e = (data []byte) (e i64) {
 
     // 步驟 9：讀取 BIT STRING（subjectPublicKey，tag 3）
     t = der-tag(data, p)
-    if t != 3 {
-        e = 0
-        return
-    }
+    t != 3 -> {
+    e = 0
+            return
+}
     bit-len, adv = der-len(data, p + 1)
 
     // BIT STRING 內容：跳過未使用位元組（1 位元組），然後是 RSAPublicKey
@@ -186,10 +187,10 @@ x509-rsa-e = (data []byte) (e i64) {
 
     // 步驟 10：RSAPublicKey（SEQUENCE，tag 48）
     t = der-tag(data, bit-pos)
-    if t != 48 {
-        e = 0
-        return
-    }
+    t != 48 -> {
+    e = 0
+            return
+}
     rsa-start = der-skip(data, bit-pos)
 
     // rsa-start 指向 RSAPublicKey 內容
@@ -203,15 +204,15 @@ x509-rsa-e = (data []byte) (e i64) {
 
     // 步驟 12：讀取 exponent INTEGER（tag 2）
     t = der-tag(data, rsa-start)
-    if t != 2 {
-        e = 0
-        return
-    }
+    t != 2 -> {
+    e = 0
+            return
+}
     exp-len, adv = der-len(data, rsa-start - p + 1)
-    if exp-len > 8 {
-        e = 0
-        return
-    }
+    exp-len > 8 -> {
+    e = 0
+            return
+}
     val = 0
     i <- [0..exp-len): {
         val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
@@ -224,9 +225,7 @@ x509-rsa-e = (data []byte) (e i64) {
 // 返回 out []byte: 模數位元組（big-endian，不含前導 0x00）
 x509-rsa-n = (data []byte) (out []byte) {
     tbs-start, tbs-end = x509-tbs-range(data)
-    if tbs-start == 0 {
-        return
-    }
+    tbs-start == 0 -> return
 
     // 進入 TBS 內容
     p = tbs-start + 1
@@ -235,9 +234,7 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     // 跳過版本、序號、簽章演算法、簽發者、有效期、主體
     t = der-tag(data, p)
-    if t == 160 {
-        p = der-skip(data, p)
-    }
+    t == 160 -> p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
@@ -254,25 +251,19 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     // 讀取 BIT STRING
     t = der-tag(data, p)
-    if t != 3 {
-        return
-    }
+    t != 3 -> return
     bit-len, adv = der-len(data, p + 1)
     bit-pos = p + 1 + adv + 1
 
     // RSAPublicKey SEQUENCE
     t = der-tag(data, bit-pos)
-    if t != 48 {
-        return
-    }
+    t != 48 -> return
     rsa-start = der-skip(data, bit-pos)
 
     // rsa-start 指向 RSAPublicKey 內容
     // 第一個 INTEGER 是模數
     t = der-tag(data, rsa-start)
-    if t != 2 {
-        return
-    }
+    t != 2 -> return
 
     // 讀取模數長度
     mod-len, len-adv = der-len(data, rsa-start + 1)
@@ -281,12 +272,12 @@ x509-rsa-n = (data []byte) (out []byte) {
     // 跳過前導 0x00（用於保持正號）
     actual-start = mod-val-start
     actual-len = mod-len
-    if mod-len > 0 {
-        if (data[mod-val-start] & 255) == 0 {
-            actual-start = mod-val-start + 1
-            actual-len = mod-len - 1
-        }
-    }
+    mod-len > 0 -> {
+    (data[mod-val-start] & 255) == 0 -> {
+    actual-start = mod-val-start + 1
+                    actual-len = mod-len - 1
+}
+}
 
     // 複製模數位元組
     i <- [0..actual-len): {
@@ -305,9 +296,7 @@ x509-rsa-n = (data []byte) (out []byte) {
 
 x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) {
     tbs-start, tbs-end = x509-tbs-range(data)
-    if tbs-start == 0 {
-        return
-    }
+    tbs-start == 0 -> return
     mask = 4294967295
 
     // TBS 長度（位元組）
@@ -321,9 +310,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
 
     // 無條件進位到 64 的倍數
     rem = pad-len % 64
-    if rem != 0 {
-        pad-len = pad-len + 64 - rem
-    }
+    rem != 0 -> pad-len = pad-len + 64 - rem
 
     // padded 訊息的總區塊數
     num-blocks = pad-len / 64
@@ -367,149 +354,108 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         b3 = 0
 
         // 位元組 0
-        if boff < tbs-len {
-            b0 = data[tbs-start + boff] & 255
-        } elif boff == tbs-len {
-            b0 = 128  // 0x80
-        } elif boff >= pad-len - 8 {
-            // 長度欄位（64-bit big-endian，在位元組偏移 pad-len-8 開始）
-            bit-len = tbs-len * 8
-            len-byte-idx = boff - (pad-len - 8)
-            if len-byte-idx == 0 {
-                b0 = (bit-len >> 56) & 255
-            } elif len-byte-idx == 1 {
-                b0 = (bit-len >> 48) & 255
-            } elif len-byte-idx == 2 {
-                b0 = (bit-len >> 40) & 255
-            } elif len-byte-idx == 3 {
-                b0 = (bit-len >> 32) & 255
-            } elif len-byte-idx == 4 {
-                b0 = (bit-len >> 24) & 255
-            } elif len-byte-idx == 5 {
-                b0 = (bit-len >> 16) & 255
-            } elif len-byte-idx == 6 {
-                b0 = (bit-len >> 8) & 255
-            } else {
-                b0 = bit-len & 255
+                {
+            boff < tbs-len -> b0 = data[tbs-start + boff] & 255
+            boff == tbs-len -> b0 = 128  // 0x80
+            boff >= pad-len - 8 -> {
+                // 長度欄位（64-bit big-endian，在位元組偏移 pad-len-8 開始）
+                            bit-len = tbs-len * 8
+                            len-byte-idx = boff - (pad-len - 8)
+                                                        {
+                                len-byte-idx == 0 -> b0 = (bit-len >> 56) & 255
+                                len-byte-idx == 1 -> b0 = (bit-len >> 48) & 255
+                                len-byte-idx == 2 -> b0 = (bit-len >> 40) & 255
+                                len-byte-idx == 3 -> b0 = (bit-len >> 32) & 255
+                                len-byte-idx == 4 -> b0 = (bit-len >> 24) & 255
+                                len-byte-idx == 5 -> b0 = (bit-len >> 16) & 255
+                                len-byte-idx == 6 -> b0 = (bit-len >> 8) & 255
+                                -> b0 = bit-len & 255
+                            }
             }
         }
 
         // 位元組 1
-        if boff + 1 < tbs-len {
-            b1 = data[tbs-start + boff + 1] & 255
-        } elif boff + 1 == tbs-len {
-            b1 = 128  // 0x80
-        } elif boff + 1 >= pad-len - 8 {
-            bit-len = tbs-len * 8
-            len-byte-idx = (boff + 1) - (pad-len - 8)
-            if len-byte-idx == 0 {
-                b1 = (bit-len >> 56) & 255
-            } elif len-byte-idx == 1 {
-                b1 = (bit-len >> 48) & 255
-            } elif len-byte-idx == 2 {
-                b1 = (bit-len >> 40) & 255
-            } elif len-byte-idx == 3 {
-                b1 = (bit-len >> 32) & 255
-            } elif len-byte-idx == 4 {
-                b1 = (bit-len >> 24) & 255
-            } elif len-byte-idx == 5 {
-                b1 = (bit-len >> 16) & 255
-            } elif len-byte-idx == 6 {
-                b1 = (bit-len >> 8) & 255
-            } else {
-                b1 = bit-len & 255
+                {
+            boff + 1 < tbs-len -> b1 = data[tbs-start + boff + 1] & 255
+            boff + 1 == tbs-len -> b1 = 128  // 0x80
+            boff + 1 >= pad-len - 8 -> {
+                bit-len = tbs-len * 8
+                            len-byte-idx = (boff + 1) - (pad-len - 8)
+                                                        {
+                                len-byte-idx == 0 -> b1 = (bit-len >> 56) & 255
+                                len-byte-idx == 1 -> b1 = (bit-len >> 48) & 255
+                                len-byte-idx == 2 -> b1 = (bit-len >> 40) & 255
+                                len-byte-idx == 3 -> b1 = (bit-len >> 32) & 255
+                                len-byte-idx == 4 -> b1 = (bit-len >> 24) & 255
+                                len-byte-idx == 5 -> b1 = (bit-len >> 16) & 255
+                                len-byte-idx == 6 -> b1 = (bit-len >> 8) & 255
+                                -> b1 = bit-len & 255
+                            }
             }
         }
 
         // 位元組 2
-        if boff + 2 < tbs-len {
-            b2 = data[tbs-start + boff + 2] & 255
-        } elif boff + 2 == tbs-len {
-            b2 = 0
-            // 實際上 0x80 只需要出現一次。如果 boff+2 == tbs-len，
-            // 表示 0x80 已經在前面的位元組放過了
-        } elif boff + 2 >= pad-len - 8 {
-            bit-len = tbs-len * 8
-            len-byte-idx = (boff + 2) - (pad-len - 8)
-            if len-byte-idx == 0 {
-                b2 = (bit-len >> 56) & 255
-            } elif len-byte-idx == 1 {
-                b2 = (bit-len >> 48) & 255
-            } elif len-byte-idx == 2 {
-                b2 = (bit-len >> 40) & 255
-            } elif len-byte-idx == 3 {
-                b2 = (bit-len >> 32) & 255
-            } elif len-byte-idx == 4 {
-                b2 = (bit-len >> 24) & 255
-            } elif len-byte-idx == 5 {
-                b2 = (bit-len >> 16) & 255
-            } elif len-byte-idx == 6 {
-                b2 = (bit-len >> 8) & 255
-            } else {
-                b2 = bit-len & 255
+                {
+            boff + 2 < tbs-len -> b2 = data[tbs-start + boff + 2] & 255
+            boff + 2 == tbs-len -> {
+                b2 = 0
+                            // 實際上 0x80 只需要出現一次。如果 boff+2 == tbs-len，
+                            // 表示 0x80 已經在前面的位元組放過了
+            }
+            boff + 2 >= pad-len - 8 -> {
+                bit-len = tbs-len * 8
+                            len-byte-idx = (boff + 2) - (pad-len - 8)
+                                                        {
+                                len-byte-idx == 0 -> b2 = (bit-len >> 56) & 255
+                                len-byte-idx == 1 -> b2 = (bit-len >> 48) & 255
+                                len-byte-idx == 2 -> b2 = (bit-len >> 40) & 255
+                                len-byte-idx == 3 -> b2 = (bit-len >> 32) & 255
+                                len-byte-idx == 4 -> b2 = (bit-len >> 24) & 255
+                                len-byte-idx == 5 -> b2 = (bit-len >> 16) & 255
+                                len-byte-idx == 6 -> b2 = (bit-len >> 8) & 255
+                                -> b2 = bit-len & 255
+                            }
             }
         }
 
         // 位元組 3
-        if boff + 3 < tbs-len {
-            b3 = data[tbs-start + boff + 3] & 255
-        } elif boff + 3 == tbs-len {
-            b3 = 128  // 只有當 0x80 剛好在這位置
-        } elif boff + 3 >= pad-len - 8 {
-            bit-len = tbs-len * 8
-            len-byte-idx = (boff + 3) - (pad-len - 8)
-            if len-byte-idx == 0 {
-                b3 = (bit-len >> 56) & 255
-            } elif len-byte-idx == 1 {
-                b3 = (bit-len >> 48) & 255
-            } elif len-byte-idx == 2 {
-                b3 = (bit-len >> 40) & 255
-            } elif len-byte-idx == 3 {
-                b3 = (bit-len >> 32) & 255
-            } elif len-byte-idx == 4 {
-                b3 = (bit-len >> 24) & 255
-            } elif len-byte-idx == 5 {
-                b3 = (bit-len >> 16) & 255
-            } elif len-byte-idx == 6 {
-                b3 = (bit-len >> 8) & 255
-            } else {
-                b3 = bit-len & 255
+                {
+            boff + 3 < tbs-len -> b3 = data[tbs-start + boff + 3] & 255
+            boff + 3 == tbs-len -> b3 = 128  // 只有當 0x80 剛好在這位置
+            boff + 3 >= pad-len - 8 -> {
+                bit-len = tbs-len * 8
+                            len-byte-idx = (boff + 3) - (pad-len - 8)
+                                                        {
+                                len-byte-idx == 0 -> b3 = (bit-len >> 56) & 255
+                                len-byte-idx == 1 -> b3 = (bit-len >> 48) & 255
+                                len-byte-idx == 2 -> b3 = (bit-len >> 40) & 255
+                                len-byte-idx == 3 -> b3 = (bit-len >> 32) & 255
+                                len-byte-idx == 4 -> b3 = (bit-len >> 24) & 255
+                                len-byte-idx == 5 -> b3 = (bit-len >> 16) & 255
+                                len-byte-idx == 6 -> b3 = (bit-len >> 8) & 255
+                                -> b3 = bit-len & 255
+                            }
             }
         }
         word = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
         word = word & mask
-        if wi == 0 {
-            w0 = word
-        } elif wi == 1 {
-            w1 = word
-        } elif wi == 2 {
-            w2 = word
-        } elif wi == 3 {
-            w3 = word
-        } elif wi == 4 {
-            w4 = word
-        } elif wi == 5 {
-            w5 = word
-        } elif wi == 6 {
-            w6 = word
-        } elif wi == 7 {
-            w7 = word
-        } elif wi == 8 {
-            w8 = word
-        } elif wi == 9 {
-            w9 = word
-        } elif wi == 10 {
-            w10 = word
-        } elif wi == 11 {
-            w11 = word
-        } elif wi == 12 {
-            w12 = word
-        } elif wi == 13 {
-            w13 = word
-        } elif wi == 14 {
-            w14 = word
-        } else {
-            w15 = word
+                {
+            wi == 0 -> w0 = word
+            wi == 1 -> w1 = word
+            wi == 2 -> w2 = word
+            wi == 3 -> w3 = word
+            wi == 4 -> w4 = word
+            wi == 5 -> w5 = word
+            wi == 6 -> w6 = word
+            wi == 7 -> w7 = word
+            wi == 8 -> w8 = word
+            wi == 9 -> w9 = word
+            wi == 10 -> w10 = word
+            wi == 11 -> w11 = word
+            wi == 12 -> w12 = word
+            wi == 13 -> w13 = word
+            wi == 14 -> w14 = word
+            -> w15 = word
         }
     }
     h0, h1, h2, h3, h4, h5, h6, h7 = sha256-compress(w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15)

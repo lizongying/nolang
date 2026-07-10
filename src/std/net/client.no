@@ -44,9 +44,7 @@ client.connect = (host str, port i64) (ok bool) {
     .port = port
     .connected = false
     ok = .c.dial(host, port)
-    if ok {
-        .connected = true
-    }
+    ok -> .connected = true
 }
 
 // reconnect: 使用已記錄的 host/port 重新連接
@@ -54,26 +52,20 @@ client.connect = (host str, port i64) (ok bool) {
 // 返回 ok=true=成功
 client.reconnect = () (ok bool) {
     ok = false
-    if .host.len == 0 {
-        return
-    }
-    if .connected {
-        .c.close()
-        .connected = false
-    }
+    .host.len == 0 -> return
+    .connected -> {
+    .c.close()
+            .connected = false
+}
     ok = .c.dial(.host, .port)
-    if ok {
-        .connected = true
-    }
+    ok -> .connected = true
 }
 
 // send: 發送字串資料
 // 返回 written=實際發送位元組數（-1=錯誤）
 client.send = (data str) (written i64) {
     written = -1
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
     written = .c.send(data)
 }
 
@@ -83,9 +75,7 @@ client.send = (data str) (written i64) {
 // 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
 client.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
     read-n = .c.recv(buf, n)
 }
 
@@ -93,9 +83,7 @@ client.recv = (buf str, n i64) (read-n i64) {
 // 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
 client.recv-line = () (line ?str) {
     line = nil
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
     line = .c.recv-line()
 }
 
@@ -104,13 +92,9 @@ client.recv-line = () (line ?str) {
 // 返回 response ?str: ok=回應內容, nil=失敗
 client.request = (data str) (response ?str) {
     response = nil
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
     written = .c.send(data)
-    if written < 0 {
-        return
-    }
+    written < 0 -> return
     s str = ' '.repeat(net.NET-BUF-SIZE)
     total = 0
     s, total = .c.recv-all()
@@ -121,9 +105,7 @@ client.request = (data str) (response ?str) {
 // 返回 written=實際發送位元組數（-1=錯誤）
 client.send-line = (line str) (written i64) {
     written = -1
-    if .connected == false {
-        return
-    }
+    .connected == false -> return
     // char-to-str(10) = 換行符 \n（ASCII 10）
     nl = char-to-str(10)
     written = .c.send(line - nl)
@@ -137,10 +119,10 @@ client.is-connected = () (yes bool) {
 
 // close: 關閉連接並重置狀態
 client.close = () {
-    if .connected {
-        .c.close()
-        .connected = false
-    }
+    .connected -> {
+    .c.close()
+            .connected = false
+}
 }
 
 // ═══════════════════════════════════════════════
@@ -154,7 +136,5 @@ net-client = (host str, port i64) (c ?client) {
     cl = client{}
     ok = false
     ok = cl.connect(host, port)
-    if ok {
-        c = cl
-    }
+    ok -> c = cl
 }

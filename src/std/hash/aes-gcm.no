@@ -14,7 +14,6 @@
 //   // 解密：返回明文或 nil（認證失敗）
 //   opened []byte = aes-128-gcm-open(key, iv, aad, sealed)
 
-# std/hash/aes
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -78,9 +77,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         v[0] = v[0] >> 1
 
         // 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
-        if v-lsb == 1 {
-            v[0] = v[0] ^ 225
-        }
+        v-lsb == 1 -> v[0] = v[0] ^ 225
 
     }
 
@@ -116,18 +113,18 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         pos = pos + 16
     }
     // AAD 最後不完整區塊
-    if pos < aad.len {
-        i <- [0..16): {
-            blk[i] = 0
-        }
-        i <- [0..aad.len - pos): {
-            blk[i] = aad[pos + i]
-        }
-        i <- [0..16): {
-            y[i] = y[i] ^ blk[i]
-        }
-        y = ghash-mul(y, h)
-    }
+    pos < aad.len -> {
+    i <- [0..16): {
+                blk[i] = 0
+            }
+            i <- [0..aad.len - pos): {
+                blk[i] = aad[pos + i]
+            }
+            i <- [0..16): {
+                y[i] = y[i] ^ blk[i]
+            }
+            y = ghash-mul(y, h)
+}
 
     // 處理密文
     pos = 0
@@ -141,18 +138,18 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
         pos = pos + 16
     }
-    if pos < cipher.len {
-        i <- [0..16): {
-            blk[i] = 0
-        }
-        i <- [0..cipher.len - pos): {
-            blk[i] = cipher[pos + i]
-        }
-        i <- [0..16): {
-            y[i] = y[i] ^ blk[i]
-        }
-        y = ghash-mul(y, h)
-    }
+    pos < cipher.len -> {
+    i <- [0..16): {
+                blk[i] = 0
+            }
+            i <- [0..cipher.len - pos): {
+                blk[i] = cipher[pos + i]
+            }
+            i <- [0..16): {
+                y[i] = y[i] ^ blk[i]
+            }
+            y = ghash-mul(y, h)
+}
 
     // 最後區塊: len(AAD)_64bit || len(cipher)_64bit（以位元為單位）
     len-blk [16]byte
@@ -209,13 +206,11 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     for pos < data.len {
         // 加密當前計數器區塊
 ks [16]byte
-ks = hash.aes.aes-128-enc(cb, key)
+ks = aes.aes-128-enc(cb, key)
 
         // XOR 16 位元組（或剩餘部分）
         n = 16
-        if pos + n > data.len {
-            n = data.len - pos
-        }
+        pos + n > data.len -> n = data.len - pos
         i <- [0..n): {
             out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
         }
@@ -224,22 +219,18 @@ ks = hash.aes.aes-128-enc(cb, key)
         j = 15
         for j >= 12 {
             cb[j] = (cb[j] + 1) & 255
-            if cb[j] != 0 {
-                break
-            }
+            cb[j] != 0 -> break
             j = j - 1
         }
         // 若進位傳播到 byte 11 之後，繼續進位
-        if cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 {
-            j = 11
-            for j >= 0 {
-                cb[j] = (cb[j] + 1) & 255
-                if cb[j] != 0 {
-                    break
+        cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
+    j = 11
+                for j >= 0 {
+                    cb[j] = (cb[j] + 1) & 255
+                    cb[j] != 0 -> break
+                    j = j - 1
                 }
-                j = j - 1
-            }
-        }
+}
 
         pos = pos + n
     }
@@ -262,7 +253,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         zero-block[i] = 0
     }
 h-bytes [16]byte
-h-bytes = hash.aes.aes-128-enc(zero-block, key)
+h-bytes = aes.aes-128-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -287,9 +278,7 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
     j = 15
     for j >= 12 {
         ctr[j] = (ctr[j] + 1) & 255
-        if ctr[j] != 0 {
-            break
-        }
+        ctr[j] != 0 -> break
         j = j - 1
     }
 
@@ -303,7 +292,7 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
 
     // 5. 計算 tag = AES-enc(key, J0) XOR GHASH
 j0-enc [16]byte
-j0-enc = hash.aes.aes-128-enc(j0, key)
+j0-enc = aes.aes-128-enc(j0, key)
     tag [16]byte
     i <- [0..16): {
         tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
@@ -325,9 +314,7 @@ j0-enc = hash.aes.aes-128-enc(j0, key)
 // sealed []byte: 密文 + 16 位元組 tag
 // 返回 plain []byte: 明文（認證失敗時長度為 0）
 aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    if sealed.len < 16 {
-        return
-    }
+    sealed.len < 16 -> return
     cipher-len = sealed.len - 16
 
     // 1. 計算 H
@@ -336,7 +323,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         zero-block[i] = 0
     }
 h-bytes [16]byte
-h-bytes = hash.aes.aes-128-enc(zero-block, key)
+h-bytes = aes.aes-128-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -367,7 +354,7 @@ h-bytes = hash.aes.aes-128-enc(zero-block, key)
     ghash-out [16]byte
     ghash-out = ghash(h, aad, cipher)
 j0-enc [16]byte
-j0-enc = hash.aes.aes-128-enc(j0, key)
+j0-enc = aes.aes-128-enc(j0, key)
     exp-tag [16]byte
     i <- [0..16): {
         exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
@@ -378,10 +365,10 @@ j0-enc = hash.aes.aes-128-enc(j0, key)
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
     }
-    if diff != 0 {
-        // 認證失敗
-        return
-    }
+    diff != 0 -> {
+    // 認證失敗
+            return
+}
 
     // 5. 解密
     ctr [16]byte
@@ -391,9 +378,7 @@ j0-enc = hash.aes.aes-128-enc(j0, key)
     j = 15
     for j >= 12 {
         ctr[j] = (ctr[j] + 1) & 255
-        if ctr[j] != 0 {
-            break
-        }
+        ctr[j] != 0 -> break
         j = j - 1
     }
 

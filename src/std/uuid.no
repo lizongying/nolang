@@ -35,17 +35,11 @@ new-v4 = (state i64) (out uuid) {
     // 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
     for i < 16 {
-        state, r = hash.rand.rand(state)
+        state, r = rand.rand(state)
         out.bytes[i] = r & 255
-        if i + 1 < 16 {
-            out.bytes[i + 1] = (r >> 8) & 255
-        }
-        if i + 2 < 16 {
-            out.bytes[i + 2] = (r >> 16) & 255
-        }
-        if i + 3 < 16 {
-            out.bytes[i + 3] = (r >> 24) & 255
-        }
+        i + 1 < 16 -> out.bytes[i + 1] = (r >> 8) & 255
+        i + 2 < 16 -> out.bytes[i + 2] = (r >> 16) & 255
+        i + 3 < 16 -> out.bytes[i + 3] = (r >> 24) & 255
         i = i + 4
     }
 
@@ -157,16 +151,13 @@ from-str = (s str, out uuid) (ok bool) {
     // 跳過空白
     pos <- [0..s.len): {
         c = s[pos] & 255
-        if c != 32 && c != 9 && c != 10 && c != 13 {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
 
     // 判斷格式（帶連字號 vs 不帶）
-    if s.len == 36 {
-        ok = parse-with-dashes(s, pos, out)
-    } elif s.len == 32 {
-        ok = parse-no-dashes(s, pos, out)
+    {
+        s.len == 36 -> ok = parse-with-dashes(s, pos, out)
+        s.len == 32 -> ok = parse-no-dashes(s, pos, out)
     }
 }
 
@@ -183,7 +174,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[3] = v3
 
     // 跳過連字號
-    if s[pos + 8] & 255 != 45 {
+    s[pos + 8] & 255 != 45 -> {
         ok = false
         return
     }
@@ -191,7 +182,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v5 = parse-hex-byte(s, pos + 11)
     out.bytes[4] = v4
     out.bytes[5] = v5
-    if s[pos + 13] & 255 != 45 {
+    s[pos + 13] & 255 != 45 -> {
         ok = false
         return
     }
@@ -199,7 +190,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v7 = parse-hex-byte(s, pos + 16)
     out.bytes[6] = v6
     out.bytes[7] = v7
-    if s[pos + 18] & 255 != 45 {
+    s[pos + 18] & 255 != 45 -> {
         ok = false
         return
     }
@@ -207,7 +198,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v9 = parse-hex-byte(s, pos + 21)
     out.bytes[8] = v8
     out.bytes[9] = v9
-    if s[pos + 23] & 255 != 45 {
+    s[pos + 23] & 255 != 45 -> {
         ok = false
         return
     }
@@ -230,7 +221,7 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
     ok = true
     i <- [0..16): {
         v = parse-hex-byte(s, pos + i * 2)
-        if v < 0 {
+        v < 0 -> {
             ok = false
             return
         }
@@ -244,7 +235,7 @@ parse-hex-byte = (s str, pos i64) (v i64) {
     c1 = s[pos + 1] & 255
     h0 = hex-val(c0)
     h1 = hex-val(c1)
-    if h0 < 0 || h1 < 0 {
+    h0 < 0 || h1 < 0 -> {
         v = -1
         return
     }
@@ -261,15 +252,13 @@ uuid.validate = () (ok bool) {
 
     // 檢查版本位（byte[6] 的 4-7 位應為 4）
     ver = (.bytes[6] >> 4) & 15
-    if ver != 4 {
+    ver != 4 -> {
         // 不強制版本，只檢查變體
     }
 
     // 檢查變體位（byte[8] 的 6-7 位應為 10）
     var = (.bytes[8] >> 6) & 3
-    if var != 2 {
-        ok = false
-    }
+    var != 2 -> ok = false
 }
 
 // version: 取得 UUID 版本
@@ -286,7 +275,7 @@ uuid.variant = () (v i64) {
 uuid.is-nil = () (yes bool) {
     yes = true
     i <- [0..16): {
-        if .bytes[i] != 0 {
+        .bytes[i] != 0 -> {
             yes = false
             return
         }
@@ -301,7 +290,7 @@ uuid.is-nil = () (yes bool) {
 uuid.eq = (b uuid) (yes bool) {
     yes = true
     i <- [0..16): {
-        if .bytes[i] != b.bytes[i] {
+        .bytes[i] != b.bytes[i] -> {
             yes = false
             return
         }
@@ -314,13 +303,15 @@ uuid.cmp = (b uuid) (r i64) {
     i <- [0..16): {
         ab = .bytes[i] & 255
         bb = b.bytes[i] & 255
-        if ab < bb {
-            r = -1
-            return
-        }
-        if ab > bb {
-            r = 1
-            return
+        {
+            ab < bb -> {
+                r = -1
+                return
+            }
+            ab > bb -> {
+                r = 1
+                return
+            }
         }
     }
 }
@@ -332,16 +323,16 @@ uuid.cmp = (b uuid) (r i64) {
 // hex-val: 單個 hex 字元轉數值
 hex-val = (c i64) (v i64) {
     v = -1
-    if c >= 48 && c <= 57 {
-        v = c - 48
-        return
-    }
-    if c >= 65 && c <= 70 {
-        v = c - 65 + 10
-        return
-    }
-    if c >= 97 && c <= 102 {
-        v = c - 97 + 10
+    {
+        c >= 48 && c <= 57 -> {
+            v = c - 48
+            return
+        }
+        c >= 65 && c <= 70 -> {
+            v = c - 65 + 10
+            return
+        }
+        c >= 97 && c <= 102 -> v = c - 97 + 10
     }
 }
 

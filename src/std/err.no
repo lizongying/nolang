@@ -81,9 +81,7 @@ err-from-errno = (errno i64) (e error) {
 // err-is: 檢查錯誤碼是否匹配
 err-is = (e error, code err-code) (yes bool) {
     yes = false
-    if e.code == code {
-        yes = true
-    }
+    e.code == code -> yes = true
 }
 
 // err-msg: 取得錯誤訊息

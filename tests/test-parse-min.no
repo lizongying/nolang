@@ -8,10 +8,9 @@ ok bool = false
 p = json-pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
-if ok {
-    print('ok: parse str')
-} else {
-    print('fail: parse str')
+{
+    ok -> print('ok: parse str')
+    -> print('fail: parse str')
 }
 print('next=')
 print(next)

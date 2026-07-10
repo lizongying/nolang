@@ -7,7 +7,6 @@
 //   conn = http2-connect(host, port)            // 返回 ?http2-conn
 //   resp = http2-do('GET', 'http://host/path', '')  // 返回 ?http-response
 
-# std/net/tls
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -77,9 +76,7 @@ http2-conn {
 // 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
 http2-frame.parse = (data str, pos i64) (next-pos ?i64) {
     next-pos = nil
-    if pos + HTTP2-FRAME-HEADER-SIZE > data.len {
-        return
-    }
+    pos + HTTP2-FRAME-HEADER-SIZE > data.len -> return
 
     // 24-bit length（big-endian）
     .length = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
@@ -125,9 +122,7 @@ http2-conn.init = () {
 // 返回 ok=true=成功
 http2-conn.send-frame = (frame http2-frame) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     // 序列化標頭
     space = ' '
@@ -136,40 +131,42 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
 
     // 發送標頭
     written = 0
-    if .use-tls {
-        w = .tls-c.send(hdr)
-        w: {
-            nil ->
-                return
-            err ->
-                return
-            ->
+        {
+        .use-tls -> {
+            w = .tls-c.send(hdr)
+                    w: {
+                        nil ->
+                            return
+                        err ->
+                            return
+                        ->
+                    }
         }
-    } else {
-        written = net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
-        if written != HTTP2-FRAME-HEADER-SIZE {
-            return
+        -> {
+            written = net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
+                    written != HTTP2-FRAME-HEADER-SIZE -> return
         }
     }
 
     // 發送 payload
-    if frame.payload.len > 0 {
-        if .use-tls {
+    frame.payload.len > 0 -> {
+        {
+        .use-tls -> {
             w = .tls-c.send(frame.payload)
-            w: {
-                nil ->
-                    return
-                err ->
-                    return
-                ->
-            }
-        } else {
+                            w: {
+                                nil ->
+                                    return
+                                err ->
+                                    return
+                                ->
+                            }
+        }
+        -> {
             written = net-send(.fd, frame.payload, frame.payload.len)
-            if written != frame.payload.len {
-                return
-            }
+                            written != frame.payload.len -> return
         }
     }
+}
     ok = true
 }
 
@@ -178,9 +175,7 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
 http2-conn.recv-frame = () (frame ?http2-frame) {
     frame = nil
     f http2-frame
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     space = ' '
 
     // 讀取 9-byte 影格標頭
@@ -188,24 +183,21 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     hdr-total = 0
     recv-n = 0
     !! {
-        if hdr-total >= HTTP2-FRAME-HEADER-SIZE {
-            *
-        }
-        if .use-tls {
-            rn = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
-            rn: {
-                nil ->
-                    return
-                err ->
-                    return
-                ok -> recv-n = it
+        hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
+                {
+            .use-tls -> {
+                rn = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+                            rn: {
+                                nil ->
+                                    return
+                                err ->
+                                    return
+                                ok -> recv-n = it
+                            }
             }
-        } else {
-            recv-n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+            -> recv-n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
-        if recv-n <= 0 {
-            return
-        }
+        recv-n <= 0 -> return
         // net-recv 覆寫 buf[0]，需要位移複製
         i <- [0..recv-n): {
             hdr-buf[hdr-total + i] = hdr-buf[i]
@@ -222,37 +214,32 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     }
 
     // 讀取 payload
-    if f.length > 0 {
-        if f.length > HTTP2-MAX-PAYLOAD {
-            return
-        }
-        f.payload = space.repeat(f.length)
-        payload-total = 0
-        !! {
-            if payload-total >= f.length {
-                *
-            }
-            if .use-tls {
-                rn = .tls-c.recv(f.payload, f.length - payload-total)
-                rn: {
-                    nil ->
-                        return
-                    err ->
-                        return
-                    ok -> recv-n = it
+    f.length > 0 -> {
+    f.length > HTTP2-MAX-PAYLOAD -> return
+            f.payload = space.repeat(f.length)
+            payload-total = 0
+            !! {
+                payload-total >= f.length -> *
+                                {
+                    .use-tls -> {
+                        rn = .tls-c.recv(f.payload, f.length - payload-total)
+                                            rn: {
+                                                nil ->
+                                                    return
+                                                err ->
+                                                    return
+                                                ok -> recv-n = it
+                                            }
+                    }
+                    -> recv-n = net-recv(.fd, f.payload, f.length - payload-total)
                 }
-            } else {
-                recv-n = net-recv(.fd, f.payload, f.length - payload-total)
+                recv-n <= 0 -> return
+                i <- [0..recv-n): {
+                    f.payload[payload-total + i] = f.payload[i]
+                }
+                payload-total = payload-total + recv-n
             }
-            if recv-n <= 0 {
-                return
-            }
-            i <- [0..recv-n): {
-                f.payload[payload-total + i] = f.payload[i]
-            }
-            payload-total = payload-total + recv-n
-        }
-    }
+}
     frame = f
 }
 
@@ -262,10 +249,9 @@ http2-conn.send-settings = (ack bool) (ok bool) {
     f http2-frame
     f.length = 0
     f.frame-type = FRAME-SETTINGS
-    if ack {
-        f.flags = FLAG-ACK
-    } else {
-        f.flags = 0
+        {
+        ack -> f.flags = FLAG-ACK
+        -> f.flags = 0
     }
     f.stream-id = 0
     ok = .send-frame(f)
@@ -301,9 +287,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     f.length = block-n
     f.frame-type = FRAME-HEADERS
     f.flags = FLAG-END-HEADERS
-    if end-stream {
-        f.flags = f.flags | FLAG-END-STREAM
-    }
+    end-stream -> f.flags = f.flags | FLAG-END-STREAM
     f.stream-id = stream-id
     f.payload = block
     f.payload.len = block-n
@@ -317,10 +301,9 @@ http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     f http2-frame
     f.length = n
     f.frame-type = FRAME-DATA
-    if end-stream {
-        f.flags = FLAG-END-STREAM
-    } else {
-        f.flags = 0
+        {
+        end-stream -> f.flags = FLAG-END-STREAM
+        -> f.flags = 0
     }
     f.stream-id = stream-id
     f.payload = data
@@ -337,9 +320,7 @@ http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
 http2-connect = (host str, port i64) (conn ?http2-conn) {
     conn = nil
     fd = net-dial(host, port)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     c http2-conn
     c.init()
     c.fd = fd
@@ -349,18 +330,18 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     lf = char-to-str(10)
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = net-send(fd, preface, preface.len)
-    if written != preface.len {
-        close(fd)
-        return
-    }
+    written != preface.len -> {
+    close(fd)
+            return
+}
 
     // 2. 送出空 SETTINGS
     send-ok = false
     send-ok = c.send-settings(false)
-    if send-ok == false {
-        close(fd)
-        return
-    }
+    send-ok == false -> {
+    close(fd)
+            return
+}
 
     // 3. 接收伺服器 SETTINGS 並 ACK
     recv-f = c.recv-frame()
@@ -375,10 +356,10 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
         }
         ok -> send-ok
         c.send-settings(true)
-        if send-ok == false {
-            close(fd)
-            return
-        }
+        send-ok == false -> {
+    close(fd)
+                return
+}
         conn = c
     }
 
@@ -392,9 +373,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
         tls-c tls-conn
         tls-c.init()
         ok2 = tls-c.connect(host, port)
-        if ok2 == false {
-            return
-        }
+        ok2 == false -> return
         c http2-conn
         c.init()
         c.use-tls = true
@@ -415,18 +394,18 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                 tls-c.close()
                 return
             }
-            ok -> if it != preface.len {
-                tls-c.close()
-                return
-            }
+            ok -> it != preface.len -> {
+    tls-c.close()
+                    return
+}
         }
 
         // 3. 送出空 SETTINGS
         send-ok = c.send-settings(false)
-        if send-ok == false {
-            tls-c.close()
-            return
-        }
+        send-ok == false -> {
+    tls-c.close()
+                return
+}
 
         // 4. 接收伺服器 SETTINGS 並 ACK
         recv-f = c.recv-frame()
@@ -441,19 +420,18 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             }
             ok -> send-ok
             c.send-settings(true)
-            if send-ok == false {
-                tls-c.close()
-                return
-            }
+            send-ok == false -> {
+    tls-c.close()
+                    return
+}
             conn = c
         }
 
         // http2-conn.close: 關閉連線（自動處理 TLS/明文）
         http2-conn.close = () {
-            if .use-tls {
-                .tls-c.close()
-            } elif .fd >= 0 {
-                close(.fd)
+                        {
+                .use-tls -> .tls-c.close()
+                .fd >= 0 -> close(.fd)
             }
             .fd = -1
         }
@@ -470,9 +448,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             resp-n = 0
             space = ' '
             resp-body = space.repeat(HTTP2-MAX-PAYLOAD)
-            if .fd < 0 {
-                return
-            }
+            .fd < 0 -> return
             stream-id = .next-stream-id
             .next-stream-id = .next-stream-id + 2
 
@@ -504,33 +480,27 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             // body 長度
             has-body = false
             body-len i64 = body.len
-            if body-len > 0 {
-                has-body = true
-                // content-length
-                hdr-names[4] = 'content-length'
-                blen-str = body-len.to-str()
-                hdr-values[4] = blen-str
-                hdr-count = 5
-            }
+            body-len > 0 -> {
+    has-body = true
+                    // content-length
+                    hdr-names[4] = 'content-length'
+                    blen-str = body-len.to-str()
+                    hdr-values[4] = blen-str
+                    hdr-count = 5
+}
 
             // 發送 HEADERS
             end-stream = false
-            if has-body == false {
-                end-stream = true
-            }
+            has-body == false -> end-stream = true
             send-ok = false
             send-ok = .send-headers(stream-id, hdr-names, hdr-values, hdr-count, end-stream)
-            if send-ok == false {
-                return
-            }
+            send-ok == false -> return
 
             // 發送 DATA（如果有主體）
-            if has-body {
-                send-ok = .send-data(stream-id, body, true)
-                if send-ok == false {
-                    return
-                }
-            }
+            has-body -> {
+    send-ok = .send-data(stream-id, body, true)
+                    send-ok == false -> return
+}
 
             // 接收回應影格
             !! {
@@ -543,52 +513,52 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
                         return
                     ok -> f = it
                 }
-                if f.frame-type == FRAME-HEADERS {
-                    // 用 HPACK 解碼標頭
-                    dec-names [128]str
-                    dec-values [128]str
-                    dec-count = 0
-                    dec-ok = false
-                    dec-names, dec-values, dec-count, dec-ok = .hpack.decode-headers(f.payload)
-                    if dec-ok == false {
-                        return
+                                {
+                    f.frame-type == FRAME-HEADERS -> {
+                        // 用 HPACK 解碼標頭
+                                            dec-names [128]str
+                                            dec-values [128]str
+                                            dec-count = 0
+                                            dec-ok = false
+                                            dec-names, dec-values, dec-count, dec-ok = .hpack.decode-headers(f.payload)
+                                            dec-ok == false -> return
+                                            // 複製到輸出（最多 32 項）
+                                            i <- [0..dec-count): {
+                                                i >= 32 -> break
+                                                nlen = dec-names[i].len
+                                                vlen = dec-values[i].len
+                                                names[i] = dec-names[i].slice(0, nlen)
+                                                values[i] = dec-values[i].slice(0, vlen)
+                                            }
+                                                                                        {
+                                                dec-count <= 32 -> header-count = dec-count
+                                                -> header-count = 32
+                                            }
+                                            // 檢查 END_STREAM
+                                            (f.flags & FLAG-END-STREAM) != 0 -> {
+    ok = true
+                                                    *
+}
                     }
-                    // 複製到輸出（最多 32 項）
-                    i <- [0..dec-count): {
-                        if i >= 32 {
-                            break
-                        }
-                        nlen = dec-names[i].len
-                        vlen = dec-values[i].len
-                        names[i] = dec-names[i].slice(0, nlen)
-                        values[i] = dec-values[i].slice(0, vlen)
+                    f.frame-type == FRAME-DATA -> {
+                        // 複製到 resp-body
+                                            i <- [0..f.payload.len): {
+                                                resp-body[resp-n + i] = f.payload[i]
+                                            }
+                                            resp-n = resp-n + f.payload.len
+                                            (f.flags & FLAG-END-STREAM) != 0 -> {
+    ok = true
+                                                    *
+}
                     }
-                    if dec-count <= 32 {
-                        header-count = dec-count
-                    } else {
-                        header-count = 32
+                    f.frame-type == FRAME-RST-STREAM -> {
+                        // 伺服器重設串流
+                                            return
                     }
-                    // 檢查 END_STREAM
-                    if (f.flags & FLAG-END-STREAM) != 0 {
-                        ok = true
-                        *
+                    f.frame-type == FRAME-GOAWAY -> {
+                        // 伺服器關閉連線
+                                            return
                     }
-                } elif f.frame-type == FRAME-DATA {
-                    // 複製到 resp-body
-                    i <- [0..f.payload.len): {
-                        resp-body[resp-n + i] = f.payload[i]
-                    }
-                    resp-n = resp-n + f.payload.len
-                    if (f.flags & FLAG-END-STREAM) != 0 {
-                        ok = true
-                        *
-                    }
-                } elif f.frame-type == FRAME-RST-STREAM {
-                    // 伺服器重設串流
-                    return
-                } elif f.frame-type == FRAME-GOAWAY {
-                    // 伺服器關閉連線
-                    return
                 }
                 // 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
             }
@@ -612,65 +582,65 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             u = url
 
             // 偵測 scheme 並去掉前綴
-            if u.len >= 8 {
-                prefix-https = 'https://'
-                matched-https = 1
-                i <- [0..8): {
-                    if u[i] != prefix-https[i] {
-                        matched-https = 0
-                        break
+            u.len >= 8 -> {
+    prefix-https = 'https://'
+                    matched-https = 1
+                    i <- [0..8): {
+                        u[i] != prefix-https[i] -> {
+    matched-https = 0
+                                break
+}
                     }
-                }
-                if matched-https == 1 {
-                    use-tls = true
-                    port = HTTP2-DEFAULT-TLS-PORT
-                    u = u.slice(8, u.len)
-                }
-            }
-            if use-tls == false {
-                if u.len >= 7 {
-                    prefix = 'http://'
-                    matched = 1
-                    i <- [0..7): {
-                        if u[i] != prefix[i] {
-                            matched = 0
-                            break
-                        }
-                    }
-                    if matched == 1 {
-                        u = u.slice(7, u.len)
-                    }
-                }
-            }
+                    matched-https == 1 -> {
+    use-tls = true
+                            port = HTTP2-DEFAULT-TLS-PORT
+                            u = u.slice(8, u.len)
+}
+}
+            use-tls == false -> {
+    u.len >= 7 -> {
+    prefix = 'http://'
+                            matched = 1
+                            i <- [0..7): {
+                                u[i] != prefix[i] -> {
+    matched = 0
+                                        break
+}
+                            }
+                            matched == 1 -> u = u.slice(7, u.len)
+}
+}
 
             // 分離 host:port 和 path
             slash-idx = u.index('/')
-            if slash-idx < 0 {
-                host = u
-                path = '/'
-            } else {
-                host = u.slice(0, slash-idx)
-                path = u.slice(slash-idx, u.len)
+                        {
+                slash-idx < 0 -> {
+                    host = u
+                                    path = '/'
+                }
+                -> {
+                    host = u.slice(0, slash-idx)
+                                    path = u.slice(slash-idx, u.len)
+                }
             }
 
             // 解析 port
             colon-idx = host.index(':')
-            if colon-idx >= 0 {
-                host-only = host.slice(0, colon-idx)
-                port-str = host.slice(colon-idx + 1, host.len)
-                port = 0
-                i <- [0..port-str.len): {
-                    port = port * 10 + (port-str[i] - 48)
-                }
-                host = host-only
-            }
+            colon-idx >= 0 -> {
+    host-only = host.slice(0, colon-idx)
+                    port-str = host.slice(colon-idx + 1, host.len)
+                    port = 0
+                    i <- [0..port-str.len): {
+                        port = port * 10 + (port-str[i] - 48)
+                    }
+                    host = host-only
+}
 
             // 建立連線
             conn ?http2-conn = nil
-            if use-tls {
-                conn = http2-connect-tls(host, port)
-            } else {
-                conn = http2-connect(host, port)
+                        {
+                use-tls -> conn = http2-connect-tls(host, port)
+                -> conn = http2-connect(host, port)
             }
             conn: {
                 nil || err ->
@@ -701,9 +671,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
         body-n = 0
         ok = false
         names, values, header-count, raw-body, body-n, ok = http2-do(method, url, body)
-        if ok == false {
-            return
-        }
+        ok == false -> return
 
         // 複製標頭到 r（用 slice 載入值）
         r.header-count = header-count
@@ -714,29 +682,27 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
             r.header-values[i] = values[i].slice(0, vlen)
 
             // 尋找 :status
-            if nlen == 7 {
-                is-status = 1
-                status-hdr = ':status'
-                j <- [0..7): {
-                    if names[i][j] != status-hdr[j] {
-                        is-status = 0
-                        break
+            nlen == 7 -> {
+    is-status = 1
+                    status-hdr = ':status'
+                    j <- [0..7): {
+                        names[i][j] != status-hdr[j] -> {
+    is-status = 0
+                                break
+}
                     }
-                }
-                if is-status == 1 {
-                    r.status-code = 0
-                    j <- [0..vlen): {
-                        r.status-code = r.status-code * 10 + (values[i][j] - 48)
-                    }
-                    r.status-text = values[i].slice(0, vlen)
-                }
-            }
+                    is-status == 1 -> {
+    r.status-code = 0
+                            j <- [0..vlen): {
+                                r.status-code = r.status-code * 10 + (values[i][j] - 48)
+                            }
+                            r.status-text = values[i].slice(0, vlen)
+}
+}
         }
 
         // 複製 body
-        if body-n > 0 {
-            r.body = raw-body.slice(0, body-n)
-        }
+        body-n > 0 -> r.body = raw-body.slice(0, body-n)
         resp = r
     }
 

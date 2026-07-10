@@ -19,9 +19,8 @@ apply-ret = (cb ret-cb) (out i64) {
 
 result i64 = 0
 result = apply-ret(get-42)
-if result == 42 {
-    print('ok: fn-type-return')
-} else {
-    print('fail: fn-type-return')
+{
+    result == 42 -> print('ok: fn-type-return')
+    -> print('fail: fn-type-return')
 }
 

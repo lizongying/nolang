@@ -1,12 +1,6 @@
 // test-http3 — HTTP/3 和 QUIC 模組測試
 // 驗證 QUIC 變長整數、影格解析、金鑰推導、HTTP/3 影格編解碼
 
-# std/net/quic
-# std/net/http3
-# std/hash/hkdf
-# std/hash/aes-gcm
-# std/hash/aes
-# std/hash/sha256
 
 // ═══════════════════════════════════════════════
 // QUIC 變長整數測試
@@ -16,31 +10,31 @@
 test-quic-varint-1byte = () {
     buf []byte
     n = 0
-    buf, n = net.quic.quic-varint-encode(37)
-    if n != 1 {
-        print('FAIL: quic-varint-encode(37) expected n=1, got ')
-        println(n.to-str())
-        return
-    }
-    if (buf[0] & 255) != 37 {
-        print('FAIL: quic-varint-encode(37) expected byte=37, got ')
-        println((buf[0] & 255).to-str())
-        return
-    }
+    buf, n = quic.quic-varint-encode(37)
+    n != 1 -> {
+    print('FAIL: quic-varint-encode(37) expected n=1, got ')
+            println(n.to-str())
+            return
+}
+    (buf[0] & 255) != 37 -> {
+    print('FAIL: quic-varint-encode(37) expected byte=37, got ')
+            println((buf[0] & 255).to-str())
+            return
+}
 
     val = 0
     np = 0
-    val, np = net.quic.quic-varint-decode(buf, 0)
-    if val != 37 {
-        print('FAIL: quic-varint-decode expected 37, got ')
-        println(val.to-str())
-        return
-    }
-    if np != 1 {
-        print('FAIL: quic-varint-decode expected np=1, got ')
-        println(np.to-str())
-        return
-    }
+    val, np = quic.quic-varint-decode(buf, 0)
+    val != 37 -> {
+    print('FAIL: quic-varint-decode expected 37, got ')
+            println(val.to-str())
+            return
+}
+    np != 1 -> {
+    print('FAIL: quic-varint-decode expected np=1, got ')
+            println(np.to-str())
+            return
+}
     print('PASS: quic-varint-1byte')
 }
 
@@ -48,26 +42,26 @@ test-quic-varint-1byte = () {
 test-quic-varint-2byte = () {
     buf []byte
     n = 0
-    buf, n = net.quic.quic-varint-encode(15293)
-    if n != 2 {
-        print('FAIL: quic-varint-encode(15293) expected n=2, got ')
-        println(n.to-str())
-        return
-    }
+    buf, n = quic.quic-varint-encode(15293)
+    n != 2 -> {
+    print('FAIL: quic-varint-encode(15293) expected n=2, got ')
+            println(n.to-str())
+            return
+}
 
     val = 0
     np = 0
-    val, np = net.quic.quic-varint-decode(buf, 0)
-    if val != 15293 {
-        print('FAIL: quic-varint-decode expected 15293, got ')
-        println(val.to-str())
-        return
-    }
-    if np != 2 {
-        print('FAIL: quic-varint-decode expected np=2, got ')
-        println(np.to-str())
-        return
-    }
+    val, np = quic.quic-varint-decode(buf, 0)
+    val != 15293 -> {
+    print('FAIL: quic-varint-decode expected 15293, got ')
+            println(val.to-str())
+            return
+}
+    np != 2 -> {
+    print('FAIL: quic-varint-decode expected np=2, got ')
+            println(np.to-str())
+            return
+}
     print('PASS: quic-varint-2byte')
 }
 
@@ -75,26 +69,26 @@ test-quic-varint-2byte = () {
 test-quic-varint-4byte = () {
     buf []byte
     n = 0
-    buf, n = net.quic.quic-varint-encode(494878333)
-    if n != 4 {
-        print('FAIL: quic-varint-encode expected n=4, got ')
-        println(n.to-str())
-        return
-    }
+    buf, n = quic.quic-varint-encode(494878333)
+    n != 4 -> {
+    print('FAIL: quic-varint-encode expected n=4, got ')
+            println(n.to-str())
+            return
+}
 
     val = 0
     np = 0
-    val, np = net.quic.quic-varint-decode(buf, 0)
-    if val != 494878333 {
-        print('FAIL: quic-varint-decode expected 494878333, got ')
-        println(val.to-str())
-        return
-    }
-    if np != 4 {
-        print('FAIL: quic-varint-decode expected np=4, got ')
-        println(np.to-str())
-        return
-    }
+    val, np = quic.quic-varint-decode(buf, 0)
+    val != 494878333 -> {
+    print('FAIL: quic-varint-decode expected 494878333, got ')
+            println(val.to-str())
+            return
+}
+    np != 4 -> {
+    print('FAIL: quic-varint-decode expected np=4, got ')
+            println(np.to-str())
+            return
+}
     print('PASS: quic-varint-4byte')
 }
 
@@ -102,21 +96,21 @@ test-quic-varint-4byte = () {
 test-quic-varint-8byte = () {
     buf []byte
     n = 0
-    buf, n = net.quic.quic-varint-encode(151288809941952652)
-    if n != 8 {
-        print('FAIL: quic-varint-encode expected n=8, got ')
-        println(n.to-str())
-        return
-    }
+    buf, n = quic.quic-varint-encode(151288809941952652)
+    n != 8 -> {
+    print('FAIL: quic-varint-encode expected n=8, got ')
+            println(n.to-str())
+            return
+}
 
     val = 0
     np = 0
-    val, np = net.quic.quic-varint-decode(buf, 0)
-    if val != 151288809941952652 {
-        print('FAIL: quic-varint-decode expected 151288809941952652, got ')
-        println(val.to-str())
-        return
-    }
+    val, np = quic.quic-varint-decode(buf, 0)
+    val != 151288809941952652 -> {
+    print('FAIL: quic-varint-decode expected 151288809941952652, got ')
+            println(val.to-str())
+            return
+}
     print('PASS: quic-varint-8byte')
 }
 
@@ -141,19 +135,17 @@ test-quic-derive-initial-keys = () {
     key [16]byte
     iv [12]byte
     hp [16]byte
-    key, iv, hp = net.quic.quic-derive-initial-keys(dst-cid, true)
+    key, iv, hp = quic.quic-derive-initial-keys(dst-cid, true)
 
     // 檢查金鑰不為全零
     has-nonzero = 0
     i <- [0..16): {
-        if key[i] != 0 {
-            has-nonzero = 1
-        }
+        key[i] != 0 -> has-nonzero = 1
     }
-    if has-nonzero == 0 {
-        print('FAIL: quic-derive-initial-keys client key all zeros')
-        return
-    }
+    has-nonzero == 0 -> {
+    print('FAIL: quic-derive-initial-keys client key all zeros')
+            return
+}
 
     // 驗證 RFC 9001 Appendix A 的金鑰
     // client_initial_key = 0xb99d6cd1c3d9c78c
@@ -178,18 +170,16 @@ test-quic-derive-initial-keys = () {
 
     match = 1
     i <- [0..16): {
-        if key[i] != expected-key[i] {
-            match = 0
-        }
+        key[i] != expected-key[i] -> match = 0
     }
-    if match == 0 {
-        print('FAIL: quic-derive-initial-keys client key mismatch')
-        i <- [0..16): {
-            print(key[i].to-hex())
-        }
-        println('')
-        return
-    }
+    match == 0 -> {
+    print('FAIL: quic-derive-initial-keys client key mismatch')
+            i <- [0..16): {
+                print(key[i].to-hex())
+            }
+            println('')
+            return
+}
 
     print('PASS: quic-derive-initial-keys')
 }
@@ -200,23 +190,21 @@ test-quic-derive-initial-keys = () {
 
 // test-quic-gen-cid: 測試 Connection ID 生成
 test-quic-gen-cid = () {
-    cid = net.quic.quic-gen-cid(8)
-    if cid.len != 8 {
-        print('FAIL: quic-gen-cid expected len=8, got ')
-        println(cid.len.to-str())
-        return
-    }
+    cid = quic.quic-gen-cid(8)
+    cid.len != 8 -> {
+    print('FAIL: quic-gen-cid expected len=8, got ')
+            println(cid.len.to-str())
+            return
+}
     // 檢查不為全零（機率極低）
     has-nonzero = 0
     i <- [0..8): {
-        if cid[i] != 0 {
-            has-nonzero = 1
-        }
+        cid[i] != 0 -> has-nonzero = 1
     }
-    if has-nonzero == 0 {
-        print('FAIL: quic-gen-cid all zeros')
-        return
-    }
+    has-nonzero == 0 -> {
+    print('FAIL: quic-gen-cid all zeros')
+            return
+}
     print('PASS: quic-gen-cid')
 }
 
@@ -233,28 +221,28 @@ test-http3-frame-encode-decode = () {
 
     buf []byte
     n = 0
-    buf, n = net.http3.http3-encode-frame(net.http3.HTTP3-FRAME-SETTINGS, payload)
-    if n != 4 {
-        print('FAIL: http3-encode-frame expected n=4, got ')
-        println(n.to-str())
-        return
-    }
+    buf, n = http3.http3-encode-frame(http3.HTTP3-FRAME-SETTINGS, payload)
+    n != 4 -> {
+    print('FAIL: http3-encode-frame expected n=4, got ')
+            println(n.to-str())
+            return
+}
 
     // 解碼
     ft = 0
     decoded-payload []byte
     np = 0
-    ft, decoded-payload, np = net.http3.http3-parse-frame(buf, 0)
-    if ft != net.http3.HTTP3-FRAME-SETTINGS {
-        print('FAIL: http3-parse-frame expected SETTINGS, got ')
-        println(ft.to-str())
-        return
-    }
-    if np != 4 {
-        print('FAIL: http3-parse-frame expected np=4, got ')
-        println(np.to-str())
-        return
-    }
+    ft, decoded-payload, np = http3.http3-parse-frame(buf, 0)
+    ft != http3.HTTP3-FRAME-SETTINGS -> {
+    print('FAIL: http3-parse-frame expected SETTINGS, got ')
+            println(ft.to-str())
+            return
+}
+    np != 4 -> {
+    print('FAIL: http3-parse-frame expected np=4, got ')
+            println(np.to-str())
+            return
+}
     print('PASS: http3-frame-encode-decode')
 }
 
@@ -267,31 +255,31 @@ test-qpack-encode-decode = () {
     // 編碼單個標頭
     buf []byte
     n = 0
-    buf, n = net.http3.qpack-encode-header('content-type', 'text/plain')
-    if n == 0 {
-        print('FAIL: qpack-encode-header returned n=0')
-        return
-    }
+    buf, n = http3.qpack-encode-header('content-type', 'text/plain')
+    n == 0 -> {
+    print('FAIL: qpack-encode-header returned n=0')
+            return
+}
 
     // 解碼
     name = ''
     value = ''
     np = 0
-    name, value, np = net.http3.qpack-decode-header(buf, 0)
-    if np < 0 {
-        print('FAIL: qpack-decode-header failed')
-        return
-    }
-    if name != 'content-type' {
-        print('FAIL: qpack-decode-header name mismatch: ')
-        println(name)
-        return
-    }
-    if value != 'text/plain' {
-        print('FAIL: qpack-decode-header value mismatch: ')
-        println(value)
-        return
-    }
+    name, value, np = http3.qpack-decode-header(buf, 0)
+    np < 0 -> {
+    print('FAIL: qpack-decode-header failed')
+            return
+}
+    name != 'content-type' -> {
+    print('FAIL: qpack-decode-header name mismatch: ')
+            println(name)
+            return
+}
+    value != 'text/plain' -> {
+    print('FAIL: qpack-decode-header value mismatch: ')
+            println(value)
+            return
+}
     print('PASS: qpack-encode-decode')
 }
 
@@ -302,11 +290,11 @@ test-qpack-encode-decode = () {
 // test-udp-open-close: 測試 UDP socket 建立和關閉
 test-udp-open-close = () {
     fd = net-udp-open()
-    if fd < 0 {
-        print('FAIL: net-udp-open returned ')
-        println(fd.to-str())
-        return
-    }
+    fd < 0 -> {
+    print('FAIL: net-udp-open returned ')
+            println(fd.to-str())
+            return
+}
     close(fd)
     print('PASS: udp-open-close')
 }
@@ -321,42 +309,42 @@ test-http3-parse-url = () {
     port i64 = 0
     path = ''
     ok = false
-    host, port, path, ok = net.http3.http3-parse-url('https://example.com:8443/api/v1')
-    if ok == false {
-        print('FAIL: http3-parse-url returned ok=false')
-        return
-    }
-    if host != 'example.com' {
-        print('FAIL: http3-parse-url host mismatch: ')
-        println(host)
-        return
-    }
-    if port != 8443 {
-        print('FAIL: http3-parse-url port mismatch: ')
-        println(port.to-str())
-        return
-    }
-    if path != '/api/v1' {
-        print('FAIL: http3-parse-url path mismatch: ')
-        println(path)
-        return
-    }
+    host, port, path, ok = http3.http3-parse-url('https://example.com:8443/api/v1')
+    ok == false -> {
+    print('FAIL: http3-parse-url returned ok=false')
+            return
+}
+    host != 'example.com' -> {
+    print('FAIL: http3-parse-url host mismatch: ')
+            println(host)
+            return
+}
+    port != 8443 -> {
+    print('FAIL: http3-parse-url port mismatch: ')
+            println(port.to-str())
+            return
+}
+    path != '/api/v1' -> {
+    print('FAIL: http3-parse-url path mismatch: ')
+            println(path)
+            return
+}
 
     // 測試無埠號的 URL
     host2 = ''
     port2 i64 = 0
     path2 = ''
     ok2 = false
-    host2, port2, path2, ok2 = net.http3.http3-parse-url('https://example.com/')
-    if ok2 == false {
-        print('FAIL: http3-parse-url (no port) returned ok=false')
-        return
-    }
-    if port2 != 443 {
-        print('FAIL: http3-parse-url expected default port 443, got ')
-        println(port2.to-str())
-        return
-    }
+    host2, port2, path2, ok2 = http3.http3-parse-url('https://example.com/')
+    ok2 == false -> {
+    print('FAIL: http3-parse-url (no port) returned ok=false')
+            return
+}
+    port2 != 443 -> {
+    print('FAIL: http3-parse-url expected default port 443, got ')
+            println(port2.to-str())
+            return
+}
     print('PASS: http3-parse-url')
 }
 

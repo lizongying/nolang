@@ -21,9 +21,7 @@ print('mod-val')
 print(mod-val)
 
 pad-len i64 = 0
-if mod-val != 0 {
-    pad-len = 64 - mod-val
-}
+mod-val != 0 -> pad-len = 64 - mod-val
 print('pad-len')
 print(pad-len)
 

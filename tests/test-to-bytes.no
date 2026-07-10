@@ -10,8 +10,8 @@ print(n)
 print('before to-bytes')
 b []byte = s.to-bytes()
 print('after to-bytes')
-if b[0] != 116 {
+b[0] != 116 -> {
     print('FAIL: expected t')
-    return
+        return
 }
 print('PASS: to-bytes')

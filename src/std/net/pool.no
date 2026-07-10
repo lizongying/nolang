@@ -15,7 +15,6 @@
 //   }
 //   p.close-all()                     // 關閉所有連接
 
-# std/net/net
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -58,12 +57,8 @@ pool {
 pool.init = (host str, port i64, max-size i64) {
     .host = host
     .port = port
-    if max-size > POOL-MAX-CONNS {
-        max-size = POOL-MAX-CONNS
-    }
-    if max-size <= 0 {
-        max-size = 1
-    }
+    max-size > POOL-MAX-CONNS -> max-size = POOL-MAX-CONNS
+    max-size <= 0 -> max-size = 1
     .max-size = max-size
     .count = 0
     i <- [0..POOL-MAX-CONNS): {
@@ -77,24 +72,24 @@ pool.get = () (c ?conn) {
     c = nil
     // 尋找空閒連接
     i <- [0...count): {
-        if .in-use[i] == false {
-            .in-use[i] = true
-            c = .conns[i]
-            return
-        }
+        .in-use[i] == false -> {
+    .in-use[i] = true
+                c = .conns[i]
+                return
+}
     }
     // 沒有空閒連接，嘗試新建
-    if .count < .max-size {
-        cn = conn{}
-        ok = false
-        ok = cn.dial(.host, .port)
-        if ok {
-            .conns[.count] = cn
-            .in-use[.count] = true
-            .count = .count + 1
-            c = cn
-        }
-    }
+    .count < .max-size -> {
+    cn = conn{}
+            ok = false
+            ok = cn.dial(.host, .port)
+            ok -> {
+    .conns[.count] = cn
+                    .in-use[.count] = true
+                    .count = .count + 1
+                    c = cn
+}
+}
 }
 
 // put: 歸還連接到池中（不關閉）
@@ -102,10 +97,10 @@ pool.get = () (c ?conn) {
 pool.put = (c conn) {
     // 尋找該連接在池中的位置
     i <- [0...count): {
-        if .conns[i].fd == c.fd {
-            .in-use[i] = false
-            return
-        }
+        .conns[i].fd == c.fd -> {
+    .in-use[i] = false
+                return
+}
     }
     // 不在池中，直接關閉
     c.close()
@@ -114,16 +109,14 @@ pool.put = (c conn) {
 // close-conn: 關閉並移除指定連接
 // idx i64: 連接索引
 pool.close-conn = (idx i64) {
-    if idx < 0 || idx >= .count {
-        return
-    }
+    idx < 0 || idx >= .count -> return
     .conns[idx].close()
     // 將最後一個移到當前位置
     last = .count - 1
-    if idx != last {
-        .conns[idx] = .conns[last]
-        .in-use[idx] = .in-use[last]
-    }
+    idx != last -> {
+    .conns[idx] = .conns[last]
+            .in-use[idx] = .in-use[last]
+}
     .count = .count - 1
 }
 
@@ -140,9 +133,7 @@ pool.close-all = () {
 pool.active-count = () (n i64) {
     n = 0
     i <- [0...count): {
-        if .in-use[i] {
-            n = n + 1
-        }
+        .in-use[i] -> n = n + 1
     }
 }
 
@@ -151,9 +142,7 @@ pool.active-count = () (n i64) {
 pool.idle-count = () (n i64) {
     n = 0
     i <- [0...count): {
-        if .in-use[i] == false {
-            n = n + 1
-        }
+        .in-use[i] == false -> n = n + 1
     }
 }
 

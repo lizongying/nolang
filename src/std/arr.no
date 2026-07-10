@@ -29,10 +29,10 @@ arr {
     yes = true
     i <- [0..n): {
         d = .[i] - b[i]
-        if d != 0 {
-            yes = false
-            return
-        }
+        d != 0 -> {
+    yes = false
+                return
+}
     }
 }
 
@@ -61,10 +61,10 @@ arr {
     found = 0
     i <- [0..n): {
         d = .[i] - val
-        if d == 0 {
-            found = 1
-            return
-        }
+        d == 0 -> {
+    found = 1
+                return
+}
     }
 }
 
@@ -80,9 +80,7 @@ arr {
     max = .[0]
     i <- [1..n): {
         d = .[i] - max
-        if d > 0 {
-            max = .[i]
-        }
+        d > 0 -> max = .[i]
     }
 }
 
@@ -91,9 +89,7 @@ arr {
     min = .[0]
     i <- [1..n): {
         d = .[i] - min
-        if d < 0 {
-            min = .[i]
-        }
+        d < 0 -> min = .[i]
     }
 }
 
@@ -110,10 +106,10 @@ arr {
     idx = -1
     i <- [0..n): {
         d = .[i] - val
-        if d == 0 {
-            idx = i
-            return
-        }
+        d == 0 -> {
+    idx = i
+                return
+}
     }
 }
 
@@ -134,9 +130,7 @@ arr {
         j = i - 1
         for j >= 0 {
             d = .[j] - key
-            if d <= 0 {
-                break
-            }
+            d <= 0 -> break
             .[j + 1] = .[j]
             j = j - 1
         }
@@ -151,9 +145,7 @@ arr {
         j = i - 1
         for j >= 0 {
             d = .[j] - key
-            if d >= 0 {
-                break
-            }
+            d >= 0 -> break
             .[j + 1] = .[j]
             j = j - 1
         }

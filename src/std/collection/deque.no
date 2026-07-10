@@ -27,14 +27,10 @@ deque {
 // push-front: 從前端推入元素
 deque.push-front = (val i64) {
     n = .tail - .head
-    if n >= .cap {
-        return
-    }
+    n >= .cap -> return
     new-head = .head - 1
     idx = new-head
-    if idx < 0 {
-        idx = idx + .cap
-    }
+    idx < 0 -> idx = idx + .cap
     .buf[idx] = val
     .head = new-head
 }
@@ -42,14 +38,11 @@ deque.push-front = (val i64) {
 // push-back: 從後端推入元素
 deque.push-back = (val i64) {
     n = .tail - .head
-    if n >= .cap {
-        return
-    }
+    n >= .cap -> return
     idx = .tail
-    if idx >= 0 {
-        idx = idx % .cap
-    } else {
-        idx = .cap - ((-idx) % .cap)
+        {
+        idx >= 0 -> idx = idx % .cap
+        -> idx = .cap - ((-idx) % .cap)
     }
     .buf[idx] = val
     .tail = .tail + 1
@@ -59,15 +52,14 @@ deque.push-back = (val i64) {
 // 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-front = () (val ?i64) {
     n = .tail - .head
-    if n <= 0 {
-        val = nil
-        return
-    }
+    n <= 0 -> {
+    val = nil
+            return
+}
     idx = .head
-    if idx >= 0 {
-        idx = idx % .cap
-    } else {
-        idx = .cap - ((-idx) % .cap)
+        {
+        idx >= 0 -> idx = idx % .cap
+        -> idx = .cap - ((-idx) % .cap)
     }
     val = .buf[idx]
     .head = .head + 1
@@ -77,16 +69,15 @@ deque.pop-front = () (val ?i64) {
 // 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-back = () (val ?i64) {
     n = .tail - .head
-    if n <= 0 {
-        val = nil
-        return
-    }
+    n <= 0 -> {
+    val = nil
+            return
+}
     new-tail = .tail - 1
     idx = new-tail
-    if idx >= 0 {
-        idx = idx % .cap
-    } else {
-        idx = .cap - ((-idx) % .cap)
+        {
+        idx >= 0 -> idx = idx % .cap
+        -> idx = .cap - ((-idx) % .cap)
     }
     val = .buf[idx]
     .tail = new-tail
@@ -96,15 +87,14 @@ deque.pop-back = () (val ?i64) {
 // 返回 val ?i64: ok=前端值, nil=佇列為空
 deque.peek-front = () (val ?i64) {
     n = .tail - .head
-    if n <= 0 {
-        val = nil
-        return
-    }
+    n <= 0 -> {
+    val = nil
+            return
+}
     idx = .head
-    if idx >= 0 {
-        idx = idx % .cap
-    } else {
-        idx = .cap - ((-idx) % .cap)
+        {
+        idx >= 0 -> idx = idx % .cap
+        -> idx = .cap - ((-idx) % .cap)
     }
     val = .buf[idx]
 }
@@ -113,15 +103,14 @@ deque.peek-front = () (val ?i64) {
 // 返回 val ?i64: ok=後端值, nil=佇列為空
 deque.peek-back = () (val ?i64) {
     n = .tail - .head
-    if n <= 0 {
-        val = nil
-        return
-    }
+    n <= 0 -> {
+    val = nil
+            return
+}
     idx = .tail - 1
-    if idx >= 0 {
-        idx = idx % .cap
-    } else {
-        idx = .cap - ((-idx) % .cap)
+        {
+        idx >= 0 -> idx = idx % .cap
+        -> idx = .cap - ((-idx) % .cap)
     }
     val = .buf[idx]
 }

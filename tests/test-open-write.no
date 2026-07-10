@@ -1,6 +1,5 @@
 // test-open-write.no — 驗證 open() 寫入
 
-# std/fs
 
 tmp = '/tmp/nolang-write-test.txt'
 remove(tmp)

@@ -10,7 +10,6 @@
 //   key-len = 32
 //   derived = pbkdf2-hmac-sha256(password, salt, iterations, key-len)
 
-# std/hash/hmac
 
 // ═══════════════════════════════════════════════
 // PBKDF2-HMAC-SHA256
@@ -46,7 +45,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         // U1 = HMAC(password, salt || INT_32_BE(block_idx))
         u [32]byte
-        u = hash.hmac.hmac-sha256(password, u-input)
+        u = hmac.hmac-sha256(password, u-input)
 
         // T = U1
         t [32]byte
@@ -57,7 +56,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         // U2..Uc
         iter <- [1..iterations): {
             // U_{iter+1} = HMAC(password, U_iter)
-            u = hash.hmac.hmac-sha256(password, u)
+            u = hmac.hmac-sha256(password, u)
 
             // T = T XOR U
             i <- [0..32): {
@@ -68,9 +67,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         // 輸出到 out（最後一個區塊可能截斷）
         copy-len = h-len
-        if out-pos + copy-len > key-len {
-            copy-len = key-len - out-pos
-        }
+        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }
@@ -109,7 +106,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         u-input[salt-len + 3] = block-idx & 255
 
         u [64]byte
-        u = hash.hmac.hmac-sha512(password, u-input)
+        u = hmac.hmac-sha512(password, u-input)
 
         t [64]byte
         i <- [0..64): {
@@ -117,16 +114,14 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         }
 
         iter <- [1..iterations): {
-            u = hash.hmac.hmac-sha512(password, u)
+            u = hmac.hmac-sha512(password, u)
             i <- [0..64): {
                 t[i] = t[i] ^ u[i]
             }
         }
 
         copy-len = h-len
-        if out-pos + copy-len > key-len {
-            copy-len = key-len - out-pos
-        }
+        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }
@@ -165,7 +160,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         u-input[salt-len + 3] = block-idx & 255
 
         u [20]byte
-        u = hash.hmac.hmac-sha1(password, u-input)
+        u = hmac.hmac-sha1(password, u-input)
 
         t [20]byte
         i <- [0..20): {
@@ -173,16 +168,14 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         }
 
         iter <- [1..iterations): {
-            u = hash.hmac.hmac-sha1(password, u)
+            u = hmac.hmac-sha1(password, u)
             i <- [0..20): {
                 t[i] = t[i] ^ u[i]
             }
         }
 
         copy-len = h-len
-        if out-pos + copy-len > key-len {
-            copy-len = key-len - out-pos
-        }
+        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }

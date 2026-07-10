@@ -66,9 +66,7 @@ io-reader.from-stdin = () (r io-reader) {
 // 返回實際讀取的位元組數，0 表示 EOF 或錯誤
 io-reader.read = (buf str, n i64) (read-n i64) {
     read-n = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     read-n = read(.fd, buf, n)
 }
 
@@ -76,37 +74,27 @@ io-reader.read = (buf str, n i64) (read-n i64) {
 // 返回 b ?i64: ok=位元組值, nil=EOF 或錯誤
 io-reader.read-byte = () (b ?i64) {
     b = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     buf = ' '
     n = read(.fd, buf, 1)
-    if n > 0 {
-        b = buf[0] & 255
-    }
+    n > 0 -> b = buf[0] & 255
 }
 
 // read-line: 讀取一行（最多 4096 位元組）
 // 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 io-reader.read-line = () (line ?str) {
     line = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     buf str = ' '.repeat(4096)
     n = read(.fd, buf, 4096)
-    if n > 0 {
-        line = buf
-    }
+    n > 0 -> line = buf
 }
 
 // read-all: 讀取全部內容到 buf（最多 size 位元組）
 // 需要呼叫者傳入大小
 io-reader.read-all = (buf str, size i64) (total i64) {
     total = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     total = read(.fd, buf, size)
 }
 
@@ -139,9 +127,7 @@ io-writer.from-stderr = () (w io-writer) {
 // 返回實際寫入的位元組數
 io-writer.write = (data str, n i64) (written i64) {
     written = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     written = write(.fd, data, n)
 }
 
@@ -149,9 +135,7 @@ io-writer.write = (data str, n i64) (written i64) {
 // 返回實際寫入的位元組數
 io-writer.write-str = (s str) (written i64) {
     written = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     written = write(.fd, s, s.len)
 }
 
@@ -159,9 +143,7 @@ io-writer.write-str = (s str) (written i64) {
 // 返回實際寫入的位元組數（0 或 1）
 io-writer.write-byte = (b i64) (written i64) {
     written = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     buf = ' '
     buf[0] = b & 255
     written = write(.fd, buf, 1)
@@ -171,9 +153,7 @@ io-writer.write-byte = (b i64) (written i64) {
 // 返回實際寫入的位元組數
 io-writer.write-line = (s str) (written i64) {
     written = 0
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     n = write(.fd, s, s.len)
     nl = '\n'
     written = write(.fd, nl, 1)
@@ -217,7 +197,5 @@ io-read-line = () (line ?str) {
     s = ''
     ok = false
     s, ok = get-line()
-    if ok {
-        line = s
-    }
+    ok -> line = s
 }

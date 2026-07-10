@@ -88,9 +88,7 @@ INV-SBOX [256]byte = [
 // gf-mul2: 在 GF(2^8) 中乘以 x
 gf-mul2 = (x i64) (r i64) {
     r = x << 1
-    if r & 256 != 0 {
-        r = r ^ 283
-    }
+    r & 256 != 0 -> r = r ^ 283
     r = r & 255
 }
 
@@ -317,20 +315,14 @@ inv-mix-columns = (state []byte) {
 
 // rcon-val: 輪常數（AES-256 需要 1-7）
 rcon-val = (round i64) (r i64) {
-    if round == 1 {
-        r = 1
-    } elif round == 2 {
-        r = 2
-    } elif round == 3 {
-        r = 4
-    } elif round == 4 {
-        r = 8
-    } elif round == 5 {
-        r = 16
-    } elif round == 6 {
-        r = 32
-    } else {
-        r = 64
+        {
+        round == 1 -> r = 1
+        round == 2 -> r = 2
+        round == 3 -> r = 4
+        round == 4 -> r = 8
+        round == 5 -> r = 16
+        round == 6 -> r = 32
+        -> r = 64
     }
 }
 
@@ -363,27 +355,31 @@ aes-256-key-expand = (key [32]byte) (ek [240]byte) {
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
 
-        if i % 8 == 0 {
-            // RotWord + SubWord + Rcon
-            rw = 0
-            sw = 0
-            rc = 0
-            rw = rot-word(w)
-            sw = sub-word(rw)
-            rc = rcon-val(i / 8)
-            // w = w[i-8] ^ temp
-            w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
-            w = (w ^ sw ^ (rc << 24)) & 4294967295
-        } elif i % 8 == 4 {
-            // SubWord only (AES-256 特有)
-            sw = 0
-            sw = sub-word(w)
-            w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
-            w = (w ^ sw) & 4294967295
-        } else {
-            // 簡單 XOR
-            w-prev8 = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
-            w = (w-prev8 ^ w) & 4294967295
+                {
+            i % 8 == 0 -> {
+                // RotWord + SubWord + Rcon
+                            rw = 0
+                            sw = 0
+                            rc = 0
+                            rw = rot-word(w)
+                            sw = sub-word(rw)
+                            rc = rcon-val(i / 8)
+                            // w = w[i-8] ^ temp
+                            w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                            w = (w ^ sw ^ (rc << 24)) & 4294967295
+            }
+            i % 8 == 4 -> {
+                // SubWord only (AES-256 特有)
+                            sw = 0
+                            sw = sub-word(w)
+                            w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                            w = (w ^ sw) & 4294967295
+            }
+            -> {
+                // 簡單 XOR
+                            w-prev8 = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                            w = (w-prev8 ^ w) & 4294967295
+            }
         }
 
         ek[i * 4] = (w >> 24) & 255

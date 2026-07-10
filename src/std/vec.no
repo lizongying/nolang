@@ -47,10 +47,10 @@ vec-create = (n i64, val i64) (out []i64) {
 []t.eq = (a []t, b []t, n i64) (eq bool) {
     eq = true
     i <- [0..n): {
-        if a[i] != b[i] {
-            eq = false
-            return
-        }
+        a[i] != b[i] -> {
+    eq = false
+                return
+}
     }
 }
 
@@ -114,11 +114,12 @@ vec-create = (n i64, val i64) (out []i64) {
 // []t.pop: 從末尾彈出元素
 []t.pop = () (val t, new-n i64) {
     n = .len
-    if n > 0 {
-        new-n = n - 1
-        val = .[new-n]
-    } else {
-        new-n = 0
+        {
+        n > 0 -> {
+            new-n = n - 1
+                    val = .[new-n]
+        }
+        -> new-n = 0
     }
 }
 
@@ -127,9 +128,7 @@ vec-create = (n i64, val i64) (out []i64) {
     found = 0
     i <- [0..n): {
         d = .[i] - val
-        if d == 0 {
-            found = 1
-        }
+        d == 0 -> found = 1
     }
 }
 

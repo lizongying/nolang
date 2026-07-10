@@ -5,7 +5,6 @@
 //   - mod  (a int, b int) (r int)  — 整數取模
 //   - clamp (lo num, hi num) (r num) — 數值限幅（方法）
 
-# std/number
 
 // ── div：整數除法 ──
 test-div = () {

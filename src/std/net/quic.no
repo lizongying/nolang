@@ -12,13 +12,6 @@
 //   # std/net/http3
 //   resp = http3-get('https://example.com/path')
 
-# std/net/net
-# std/hash/hkdf
-# std/hash/aes-gcm
-# std/hash/aes
-# std/hash/sha256
-# std/hash/hmac
-# std/hash/rand
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -124,9 +117,7 @@ quic-varint-encode = (val i64) (buf []byte, n i64) {
 quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
     val = 0
-    if pos >= buf.len {
-        return
-    }
+    pos >= buf.len -> return
     first = buf[pos] & 255
     prefix = first >> 6
     {
@@ -135,16 +126,12 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             next-pos = pos + 1
         }
         prefix == 1 -> {
-            if pos + 1 >= buf.len {
-                return
-            }
+            pos + 1 >= buf.len -> return
             val = ((first & 63) << 8) | (buf[pos + 1] & 255)
             next-pos = pos + 2
         }
         prefix == 2 -> {
-            if pos + 3 >= buf.len {
-                return
-            }
+            pos + 3 >= buf.len -> return
             val = ((first & 63) << 24)
             val = val | ((buf[pos + 1] & 255) << 16)
             val = val | ((buf[pos + 2] & 255) << 8)
@@ -152,9 +139,7 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             next-pos = pos + 4
         }
         -> {
-            if pos + 7 >= buf.len {
-                return
-            }
+            pos + 7 >= buf.len -> return
             val = ((first & 63) << 56)
             val = val | ((buf[pos + 1] & 255) << 48)
             val = val | ((buf[pos + 2] & 255) << 40)
@@ -176,9 +161,9 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 // len i64: CID 長度（通常 8）
 // 返回 cid []byte: 隨機 CID
 quic-gen-cid = (len i64) (cid []byte) {
-    state i64 = hash.rand.rand(0)
+    state i64 = rand.rand(0)
     i <- [0..len): {
-        state = hash.rand.rand(state)
+        state = rand.rand(state)
         cid[i] = state & 255
     }
 }
@@ -211,16 +196,14 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
     count = 0
     ft = 0
     for pos < end {
-        if count >= QUIC-MAX-FRAMES {
-            return
-        }
+        count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
         ft-val, ft-pos = quic-varint-decode(buf, pos)
-        if ft-pos < 0 {
-            count = -1
-            return
-        }
+        ft-pos < 0 -> {
+    count = -1
+                return
+}
         pos = ft-pos
 
         frames[count].frame-type = ft-val & 255
@@ -242,26 +225,26 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ec-val = 0
         ec-np = 0
         ec-val, ec-np = quic-varint-decode(buf, pos)
-        if ec-np < 0 {
-            count = -1
-            return
-        }
+        ec-np < 0 -> {
+    count = -1
+                return
+}
         pos = ec-np
         ft2-val = 0
         ft2-np = 0
         ft2-val, ft2-np = quic-varint-decode(buf, pos)
-        if ft2-np < 0 {
-            count = -1
-            return
-        }
+        ft2-np < 0 -> {
+    count = -1
+                return
+}
         pos = ft2-np
         rl-val = 0
         rl-np = 0
         rl-val, rl-np = quic-varint-decode(buf, pos)
-        if rl-np < 0 {
-            count = -1
-            return
-        }
+        rl-np < 0 -> {
+    count = -1
+                return
+}
         pos = rl-np + rl-val
         frames[count].length = 0
         count = count + 1
@@ -272,18 +255,18 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ec-val = 0
         ec-np = 0
         ec-val, ec-np = quic-varint-decode(buf, pos)
-        if ec-np < 0 {
-            count = -1
-            return
-        }
+        ec-np < 0 -> {
+    count = -1
+                return
+}
         pos = ec-np
         rl-val = 0
         rl-np = 0
         rl-val, rl-np = quic-varint-decode(buf, pos)
-        if rl-np < 0 {
-            count = -1
-            return
-        }
+        rl-np < 0 -> {
+    count = -1
+                return
+}
         pos = rl-np + rl-val
         frames[count].length = 0
         count = count + 1
@@ -300,10 +283,10 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         tl-val = 0
         tl-np = 0
         tl-val, tl-np = quic-varint-decode(buf, pos)
-        if tl-np < 0 {
-            count = -1
-            return
-        }
+        tl-np < 0 -> {
+    count = -1
+                return
+}
         pos = tl-np + tl-val
         frames[count].length = 0
         count = count + 1
@@ -314,10 +297,10 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         mv-val = 0
         mv-np = 0
         mv-val, mv-np = quic-varint-decode(buf, pos)
-        if mv-np < 0 {
-            count = -1
-            return
-        }
+        mv-np < 0 -> {
+    count = -1
+                return
+}
         pos = mv-np
         frames[count].length = 0
         count = count + 1
@@ -342,36 +325,34 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
         initial-salt[i] = QUIC-INITIAL-SALT[i]
     }
     initial-secret [32]byte
-    initial-secret = hash.hkdf.hkdf-extract(initial-salt, dst-cid)
+    initial-secret = hkdf.hkdf-extract(initial-salt, dst-cid)
 
     // 2. Label 選擇
     label = 'server in'
-    if is-client {
-        label = 'client in'
-    }
+    is-client -> label = 'client in'
 
     // 3. Secret = HKDF-Expand-Label(Initial_Secret, label, "", 32)
     empty-ctx []byte
     secret []byte
-    secret = hash.hkdf.hkdf-expand-label(initial-secret, label, empty-ctx, 32)
+    secret = hkdf.hkdf-expand-label(initial-secret, label, empty-ctx, 32)
 
     // 4. Key = HKDF-Expand-Label(Secret, "quic key", "", 16)
     key-tmp []byte
-    key-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
+    key-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
     i <- [0..QUIC-KEY-SIZE): {
         key[i] = key-tmp[i]
     }
 
     // 5. IV = HKDF-Expand-Label(Secret, "quic iv", "", 12)
     iv-tmp []byte
-    iv-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
+    iv-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
     i <- [0..QUIC-IV-SIZE): {
         iv[i] = iv-tmp[i]
     }
 
     // 6. HP = HKDF-Expand-Label(Secret, "quic hp", "", 16)
     hp-tmp []byte
-    hp-tmp = hash.hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
+    hp-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
     i <- [0..QUIC-HP-SIZE): {
         hp[i] = hp-tmp[i]
     }
@@ -387,9 +368,7 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
 // hp [16]byte: 標頭保護金鑰
 // is-long-header bool: 是否為 Long Header
 quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
-    if pn-offset + 4 > packet.len {
-        return
-    }
+    pn-offset + 4 > packet.len -> return
 
     // 取取 16 位元組樣本（從 pn-offset + 4 開始）
     sample [16]byte
@@ -398,23 +377,19 @@ quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-lo
     }
 
     // AES-128-ECB 加密樣本得到 mask
-    mask = hash.aes.aes-128-enc(sample, hp)
+    mask = aes.aes-128-enc(sample, hp)
 
     // Long Header: mask[0] 的低位 4 bits
     // Short Header: mask[0] 的低位 5 bits
     mask-offset = 1
     mask-bits = 0x1f
-    if is-long-header {
-        mask-bits = 0x0f
-    }
+    is-long-header -> mask-bits = 0x0f
     packet[pn-offset] = packet[pn-offset] ^ (mask[0] & mask-bits)
 
     // XOR 封包號碼的 4 位元組
     j = 0
     for j < 4 {
-        if pn-offset + j < packet.len {
-            packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
-        }
+        pn-offset + j < packet.len -> packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
         j = j + 1
     }
 }
@@ -438,17 +413,13 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
     pn = 0
     pn-len = 0
 
-    if pn-offset >= packet.len {
-        return
-    }
+    pn-offset >= packet.len -> return
 
     // 讀取前兩位元判斷 pn 長度
     first = packet[pn-offset] & 255
     pn-len = (first & 3) + 1
 
-    if pn-offset + pn-len > packet.len {
-        return
-    }
+    pn-offset + pn-len > packet.len -> return
 
     // 讀取 pn_len 位元組
     truncated-pn = 0
@@ -483,10 +454,9 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
 
     // 恢復完整封包號碼
     candidate-pn = (expected-pn & (-1 - pn-mask)) | truncated-pn
-    if candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win {
-        candidate-pn = candidate-pn + pn-win
-    } elif candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win {
-        candidate-pn = candidate-pn - pn-win
+        {
+        candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> candidate-pn = candidate-pn + pn-win
+        candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> candidate-pn = candidate-pn - pn-win
     }
 
     pn = candidate-pn
@@ -555,10 +525,10 @@ quic-conn.init = () {
 
 // quic-conn.close: 關閉連線
 quic-conn.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
     .connected = false
 }
 
@@ -700,7 +670,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     // Encrypt
     sealed []byte
-    sealed = hash.aes-gcm.aes-128-gcm-seal(.client-initial-key, nonce, aad, plain)
+    sealed = aes-gcm.aes-128-gcm-seal(.client-initial-key, nonce, aad, plain)
 
     // 組合: header + sealed
     final-pos = pn-offset
@@ -733,28 +703,20 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     // 接收 UDP 封包
     buf []byte
     n = net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
-    if n <= 0 {
-        return
-    }
+    n <= 0 -> return
 
     // 解析 Long Header（使用前 n 位元組）
     end = n
 
-    if end < 1 {
-        return
-    }
+    end < 1 -> return
     first = buf[0] & 255
 
     // 檢查是否為 Long Header
-    if (first & 0x80) == 0 {
-        return
-    }
+    (first & 0x80) == 0 -> return
 
     // 檢查是否為 Initial 封包
     pkt-type = first & 0x30
-    if pkt-type != QUIC-PACKET-INITIAL {
-        return
-    }
+    pkt-type != QUIC-PACKET-INITIAL -> return
 
     pos = 1
 
@@ -762,16 +724,12 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     pos = pos + 4
 
     // Destination CID
-    if pos >= end {
-        return
-    }
+    pos >= end -> return
     dcid-len = buf[pos] & 255
     pos = pos + 1 + dcid-len
 
     // Source CID
-    if pos >= end {
-        return
-    }
+    pos >= end -> return
     scid-len = buf[pos] & 255
     pos = pos + 1 + scid-len
 
@@ -779,18 +737,14 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     token-len = 0
     token-np = 0
     token-len, token-np = quic-varint-decode(buf, pos)
-    if token-np < 0 {
-        return
-    }
+    token-np < 0 -> return
     pos = token-np + token-len
 
     // Length (varint)
     length-val = 0
     length-np = 0
     length-val, length-np = quic-varint-decode(buf, pos)
-    if length-np < 0 {
-        return
-    }
+    length-np < 0 -> return
     pos = length-np
 
     // Packet Number offset
@@ -803,9 +757,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     pn = 0
     pn-len = 0
     pn, pn-len = quic-decode-packet-number(buf, pn-offset, .largest-initial-pn)
-    if pn-len <= 0 {
-        return
-    }
+    pn-len <= 0 -> return
     .largest-initial-pn = pn
 
     // AEAD 解密
@@ -832,14 +784,10 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 
     // 解密
     plain []byte
-    plain = hash.aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
-    if plain.len == 0 {
-        return
-    }
+    plain = aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
+    plain.len == 0 -> return
     frames, count = quic-parse-frames(plain, 0, plain.len)
-    if count < 0 {
-        return
-    }
+    count < 0 -> return
 
     ok = true
 }
@@ -868,9 +816,7 @@ quic-dial = (host str, port i64) (conn ?quic-conn) {
 
     // 1. 建立 UDP socket
     c.fd = net-udp-open()
-    if c.fd < 0 {
-        return
-    }
+    c.fd < 0 -> return
 
     // 設定接收逾時（5 秒）
     net-set-recv-timeout(c.fd, 5000)

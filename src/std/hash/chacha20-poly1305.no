@@ -121,9 +121,7 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         ks = chacha20-block(key, blk-counter, nonce)
 
         n = 64
-        if pos + n > data.len {
-            n = data.len - pos
-        }
+        pos + n > data.len -> n = data.len - pos
         i <- [0..n): {
             out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
         }
@@ -170,9 +168,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     for pos < data.len {
         // 載入區塊（小端序），末尾補零
         n = 16
-        if pos + n > data.len {
-            n = data.len - pos
-        }
+        pos + n > data.len -> n = data.len - pos
 
         t0 u32 = 0
         t1 u32 = 0
@@ -180,30 +176,31 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         t3 u32 = 0
         t4 u32 = 0
 
-        if n > 0 { t0 = data[pos] & 255 }
-        if n > 1 { t0 = t0 | ((data[pos + 1] & 255) << 8) }
-        if n > 2 { t0 = t0 | ((data[pos + 2] & 255) << 16) }
-        if n > 3 { t0 = t0 | ((data[pos + 3] & 255) << 24) }
-        if n > 4 { t1 = data[pos + 4] & 255 }
-        if n > 5 { t1 = t1 | ((data[pos + 5] & 255) << 8) }
-        if n > 6 { t1 = t1 | ((data[pos + 6] & 255) << 16) }
-        if n > 7 { t1 = t1 | ((data[pos + 7] & 255) << 24) }
-        if n > 8 { t2 = data[pos + 8] & 255 }
-        if n > 9 { t2 = t2 | ((data[pos + 9] & 255) << 8) }
-        if n > 10 { t2 = t2 | ((data[pos + 10] & 255) << 16) }
-        if n > 11 { t2 = t2 | ((data[pos + 11] & 255) << 24) }
-        if n > 12 { t3 = data[pos + 12] & 255 }
-        if n > 13 { t3 = t3 | ((data[pos + 13] & 255) << 8) }
-        if n > 14 { t3 = t3 | ((data[pos + 14] & 255) << 16) }
-        if n > 15 { t3 = t3 | ((data[pos + 15] & 255) << 24) }
+        n > 0 -> t0 = data[pos] & 255
+        n > 1 -> t0 = t0 | ((data[pos + 1] & 255) << 8)
+        n > 2 -> t0 = t0 | ((data[pos + 2] & 255) << 16)
+        n > 3 -> t0 = t0 | ((data[pos + 3] & 255) << 24)
+        n > 4 -> t1 = data[pos + 4] & 255
+        n > 5 -> t1 = t1 | ((data[pos + 5] & 255) << 8)
+        n > 6 -> t1 = t1 | ((data[pos + 6] & 255) << 16)
+        n > 7 -> t1 = t1 | ((data[pos + 7] & 255) << 24)
+        n > 8 -> t2 = data[pos + 8] & 255
+        n > 9 -> t2 = t2 | ((data[pos + 9] & 255) << 8)
+        n > 10 -> t2 = t2 | ((data[pos + 10] & 255) << 16)
+        n > 11 -> t2 = t2 | ((data[pos + 11] & 255) << 24)
+        n > 12 -> t3 = data[pos + 12] & 255
+        n > 13 -> t3 = t3 | ((data[pos + 13] & 255) << 8)
+        n > 14 -> t3 = t3 | ((data[pos + 14] & 255) << 16)
+        n > 15 -> t3 = t3 | ((data[pos + 15] & 255) << 24)
 
         // 高位 1（2^128 或 2^(n*8)）
         // 完整區塊添加 2^128，部分區塊添加 2^(n*8)
-        if n == 16 {
-            t4 = 1
-        } else {
-            // 部分區塊：設置對應位元
-            t0 = t0 | (1 << (n * 8))
+                {
+            n == 16 -> t4 = 1
+            -> {
+                // 部分區塊：設置對應位元
+                            t0 = t0 | (1 << (n * 8))
+            }
         }
 
         // h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
@@ -315,13 +312,13 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     g4 = g4 & 67108863
 
     // 選擇 h 或 g（如果 c != 0 則用 g）
-    if c != 0 {
-        h0 = g0
-        h1 = g1
-        h2 = g2
-        h3 = g3
-        h4 = g4
-    }
+    c != 0 -> {
+    h0 = g0
+            h1 = g1
+            h2 = g2
+            h3 = g3
+            h4 = g4
+}
 
     // 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
     f u64 = (h0 as u64) | ((h1 as u64) << 26)
@@ -417,9 +414,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 
     // pad16 for AAD
     pad-len = 16 - (aad.len % 16)
-    if pad-len == 16 {
-        pad-len = 0
-    }
+    pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
         mac-input[pos + i] = 0
     }
@@ -433,9 +428,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 
     // pad16 for cipher
     pad-len = 16 - (cipher.len % 16)
-    if pad-len == 16 {
-        pad-len = 0
-    }
+    pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
         mac-input[pos + i] = 0
     }
@@ -485,9 +478,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 // sealed []byte: 密文 + 16 位元組 tag
 // 返回 plain []byte: 明文（認證失敗時長度為 0）
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    if sealed.len < 16 {
-        return
-    }
+    sealed.len < 16 -> return
     cipher-len = sealed.len - 16
 
     // 1. 生成 Poly1305 金鑰
@@ -515,9 +506,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pos = pos + aad.len
 
     pad-len = 16 - (aad.len % 16)
-    if pad-len == 16 {
-        pad-len = 0
-    }
+    pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
         mac-input[pos + i] = 0
     }
@@ -529,9 +518,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pos = pos + cipher.len
 
     pad-len = 16 - (cipher.len % 16)
-    if pad-len == 16 {
-        pad-len = 0
-    }
+    pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
         mac-input[pos + i] = 0
     }
@@ -567,9 +554,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
     }
-    if diff != 0 {
-        return
-    }
+    diff != 0 -> return
 
     // 5. 解密
     plain = chacha20-xor(key, 1, nonce, cipher)

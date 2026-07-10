@@ -1,7 +1,2 @@
-# std/hash/sha256
-# std/hash/hmac
-# std/hash/aes
-# std/hash/aes-cbc
-# std/hash/rand
 
 print('hash deps ok')

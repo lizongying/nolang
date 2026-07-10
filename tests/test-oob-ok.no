@@ -1,18 +1,17 @@
-# std/fmt.println
 
 arr [3]i64 = [1, 2, 3]
-println(arr[0])
-println(arr[1])
-println(arr[2])
-println(arr[2-1])
-println(arr[1+1])
+fmt.println(arr[0])
+fmt.println(arr[1])
+fmt.println(arr[2])
+fmt.println(arr[2-1])
+fmt.println(arr[1+1])
 
 s = 'hello'
-println(s[0])
-println(s[4])
+fmt.println(s[0])
+fmt.println(s[4])
 
 v []i64 = [10, 20, 30]
-println(v[0])
-println(v[2])
+fmt.println(v[0])
+fmt.println(v[2])
 v[1] = 99
-println(v[1])
+fmt.println(v[1])

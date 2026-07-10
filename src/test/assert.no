@@ -6,7 +6,7 @@
 // 用法：
 //   use /test/assert
 //   ok = assert-eq(a, b, 'msg')
-//   if ok == false { return 1 }
+//   ok == false -> return 1
 
 // ═══════════════════════════════════════════════
 // 泛型斷言
@@ -15,7 +15,7 @@
 // assert-eq: a == b
 assert-eq = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a != b {
+    a != b -> {
         ok = false
         print('FAIL: assert-eq')
         print(msg)
@@ -25,7 +25,7 @@ assert-eq = (a t, b t, msg str) (ok bool) {
 // assert-ne: a != b
 assert-ne = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a == b {
+    a == b -> {
         ok = false
         print('FAIL: assert-ne')
         print(msg)
@@ -35,7 +35,7 @@ assert-ne = (a t, b t, msg str) (ok bool) {
 // assert-true: val == true
 assert-true = (val bool, msg str) (ok bool) {
     ok = true
-    if val == false {
+    val == false -> {
         ok = false
         print('FAIL: assert-true')
         print(msg)
@@ -45,7 +45,7 @@ assert-true = (val bool, msg str) (ok bool) {
 // assert-false: val == false
 assert-false = (val bool, msg str) (ok bool) {
     ok = true
-    if val == true {
+    val == true -> {
         ok = false
         print('FAIL: assert-false')
         print(msg)
@@ -55,7 +55,7 @@ assert-false = (val bool, msg str) (ok bool) {
 // assert-gt: a > b
 assert-gt = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a <= b {
+    a <= b -> {
         ok = false
         print('FAIL: assert-gt')
         print(msg)
@@ -65,7 +65,7 @@ assert-gt = (a t, b t, msg str) (ok bool) {
 // assert-ge: a >= b
 assert-ge = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a < b {
+    a < b -> {
         ok = false
         print('FAIL: assert-ge')
         print(msg)
@@ -75,7 +75,7 @@ assert-ge = (a t, b t, msg str) (ok bool) {
 // assert-lt: a < b
 assert-lt = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a >= b {
+    a >= b -> {
         ok = false
         print('FAIL: assert-lt')
         print(msg)
@@ -85,7 +85,7 @@ assert-lt = (a t, b t, msg str) (ok bool) {
 // assert-le: a <= b
 assert-le = (a t, b t, msg str) (ok bool) {
     ok = true
-    if a > b {
+    a > b -> {
         ok = false
         print('FAIL: assert-le')
         print(msg)
@@ -100,10 +100,8 @@ assert-le = (a t, b t, msg str) (ok bool) {
 assert-f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     ok = true
     diff = a - b
-    if diff < 0.0 {
-        diff = 0.0 - diff
-    }
-    if diff >= eps {
+    diff < 0.0 -> diff = 0.0 - diff
+    diff >= eps -> {
         ok = false
         print('FAIL: assert-f64-eq')
         print(msg)
@@ -114,10 +112,8 @@ assert-f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
 assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     ok = true
     diff = a - b
-    if diff < 0.0 {
-        diff = 0.0 - diff
-    }
-    if diff < eps {
+    diff < 0.0 -> diff = 0.0 - diff
+    diff < eps -> {
         ok = false
         print('FAIL: assert-f64-ne')
         print(msg)
@@ -132,7 +128,7 @@ assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
 assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
     eq = a.eq(b, n)
-    if eq == false {
+    eq == false -> {
         ok = false
         print('FAIL: assert-str-eq')
         print(msg)
@@ -143,7 +139,7 @@ assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
 assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
     eq = a.eq(b, n)
-    if eq == true {
+    eq == true -> {
         ok = false
         print('FAIL: assert-str-ne')
         print(msg)
@@ -153,7 +149,7 @@ assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
 // assert-str-empty: 字串為空（n == 0）
 assert-str-empty = (s str, n i64, msg str) (ok bool) {
     ok = true
-    if n != 0 {
+    n != 0 -> {
         ok = false
         print('FAIL: assert-str-empty')
         print(msg)
@@ -163,7 +159,7 @@ assert-str-empty = (s str, n i64, msg str) (ok bool) {
 // assert-str-not-empty: 字串非空
 assert-str-not-empty = (s str, n i64, msg str) (ok bool) {
     ok = true
-    if n == 0 {
+    n == 0 -> {
         ok = false
         print('FAIL: assert-str-not-empty')
         print(msg)
@@ -177,7 +173,7 @@ assert-str-not-empty = (s str, n i64, msg str) (ok bool) {
 // assert-nil: 指標為空
 assert-nil = (p i64, msg str) (ok bool) {
     ok = true
-    if p != 0 {
+    p != 0 -> {
         ok = false
         print('FAIL: assert-nil')
         print(msg)
@@ -187,7 +183,7 @@ assert-nil = (p i64, msg str) (ok bool) {
 // assert-not-nil: 指標非空
 assert-not-nil = (p i64, msg str) (ok bool) {
     ok = true
-    if p == 0 {
+    p == 0 -> {
         ok = false
         print('FAIL: assert-not-nil')
         print(msg)

@@ -12,7 +12,6 @@
 //   // 參數: time_cost=3, memory_cost=4096, parallelism=1, output_len=32
 //   derived = argon2id(password, salt, 3, 4096, 1, 32)
 
-# std/hash/blake2
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -69,60 +68,63 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
     len-bytes[2] = (out-len >> 16) & 255
     len-bytes[3] = (out-len >> 24) & 255
 
-    if out-len <= 64 {
-        // Blake2b 輸出，參數: out_len 作為 salt
-        // 構建輸入: len_bytes || input
-        combined []byte
-        combined[0] = len-bytes[0]
-        combined[1] = len-bytes[1]
-        combined[2] = len-bytes[2]
-        combined[3] = len-bytes[3]
-        i <- [0..input.len): {
-            combined[4 + i] = input[i]
-        }
+        {
+        out-len <= 64 -> {
+            // Blake2b 輸出，參數: out_len 作為 salt
+                    // 構建輸入: len_bytes || input
+                    combined []byte
+                    combined[0] = len-bytes[0]
+                    combined[1] = len-bytes[1]
+                    combined[2] = len-bytes[2]
+                    combined[3] = len-bytes[3]
+                    i <- [0..input.len): {
+                        combined[4 + i] = input[i]
+                    }
 
-        // 使用 Blake2b 自定義輸出長度
-        // 由於 blake2b 固定輸出 64 位元組，這裡截斷
-        hash [64]byte
-        hash = hash.blake2.blake2b(combined)
-        i <- [0..out-len): {
-            out[i] = hash[i]
+                    // 使用 Blake2b 自定義輸出長度
+                    // 由於 blake2b 固定輸出 64 位元組，這裡截斷
+                    hash [64]byte
+                    hash = blake2.blake2b(combined)
+                    i <- [0..out-len): {
+                        out[i] = hash[i]
+                    }
         }
-    } else {
-        // 輸出 > 64 位元組，需要多次 Blake2b
-        // V = Blake2b(len_bytes || input)
-        combined []byte
-        combined[0] = len-bytes[0]
-        combined[1] = len-bytes[1]
-        combined[2] = len-bytes[2]
-        combined[3] = len-bytes[3]
-        i <- [0..input.len): {
-            combined[4 + i] = input[i]
-        }
-        v [64]byte
-        v = hash.blake2.blake2b(combined)
+        -> {
+            // 輸出 > 64 位元組，需要多次 Blake2b
+                    // V = Blake2b(len_bytes || input)
+                    combined []byte
+                    combined[0] = len-bytes[0]
+                    combined[1] = len-bytes[1]
+                    combined[2] = len-bytes[2]
+                    combined[3] = len-bytes[3]
+                    i <- [0..input.len): {
+                        combined[4 + i] = input[i]
+                    }
+                    v [64]byte
+                    v = blake2.blake2b(combined)
 
-        // 輸出前 32 位元組
-        i <- [0..32): {
-            out[i] = v[i]
-        }
+                    // 輸出前 32 位元組
+                    i <- [0..32): {
+                        out[i] = v[i]
+                    }
 
-        remaining = out-len - 32
-        pos = 32
-        for remaining > 64 {
-            v = hash.blake2.blake2b(v)
-            i <- [0..32): {
-                out[pos + i] = v[i]
-            }
-            pos = pos + 32
-            remaining = remaining - 32
-        }
+                    remaining = out-len - 32
+                    pos = 32
+                    for remaining > 64 {
+                        v = blake2.blake2b(v)
+                        i <- [0..32): {
+                            out[pos + i] = v[i]
+                        }
+                        pos = pos + 32
+                        remaining = remaining - 32
+                    }
 
-        // 最後一個區塊
-        last-hash [64]byte
-        last-hash = hash.blake2.blake2b(v)
-        i <- [0..remaining): {
-            out[pos + i] = last-hash[i]
+                    // 最後一個區塊
+                    last-hash [64]byte
+                    last-hash = blake2.blake2b(v)
+                    i <- [0..remaining): {
+                        out[pos + i] = last-hash[i]
+                    }
         }
     }
 }
@@ -215,9 +217,7 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
 argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism i64, out-len i64) (out []byte) {
     // 計算記憶體區塊數
     m = memory-cost / (4 * parallelism) * 4 * parallelism
-    if m < 8 * parallelism {
-        m = 8 * parallelism
-    }
+    m < 8 * parallelism -> m = 8 * parallelism
     lanes = parallelism
     blocks = m
     blocks-per-lane = blocks / lanes
@@ -307,7 +307,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
 
     // H0 = Blake2b(h0-input)
     h0 [64]byte
-    h0 = hash.blake2.blake2b(h0-input)
+    h0 = blake2.blake2b(h0-input)
 
     // 初始化記憶體矩陣
     // 簡化：使用單個 lane（parallelism=1）
@@ -361,9 +361,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         // Argon2id: 第一 pass 的前半部分使用 data-independent 定址
         // 簡化：使用前一個區塊作為參考
         ref-idx = curr-idx - 1
-        if ref-idx < 0 {
-            ref-idx = 0
-        }
+        ref-idx < 0 -> ref-idx = 0
 
         // 計算新區塊 = G(mem[prev], mem[ref])
         new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
@@ -380,14 +378,10 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         curr-idx = 0
         for curr-idx < blocks-per-lane {
             prev-idx = curr-idx - 1
-            if prev-idx < 0 {
-                prev-idx = blocks-per-lane - 1
-            }
+            prev-idx < 0 -> prev-idx = blocks-per-lane - 1
 
             ref-idx = curr-idx
-            if ref-idx < 0 {
-                ref-idx = 0
-            }
+            ref-idx < 0 -> ref-idx = 0
 
             // 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
             new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])

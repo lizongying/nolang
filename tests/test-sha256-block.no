@@ -12,7 +12,7 @@ h5 u32 = 2600822924
 h6 u32 = 528734635
 h7 u32 = 1541459225
 print('before block')
-hash.sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 print('after block')
 print(h0)
 print('done')

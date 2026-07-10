@@ -2,10 +2,9 @@
 test1 = () {
     m ?i64 = nil
     m = -128
-    if m == -128 {
-        print('var == -128 ok')
-    } else {
-        print('var == -128 bad')
+        {
+        m == -128 -> print('var == -128 ok')
+        -> print('var == -128 bad')
     }
 }
 

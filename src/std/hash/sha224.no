@@ -8,7 +8,6 @@
 //   hash = sha224(data)       // hash = 28 位元組 [28]byte
 //   hex = sha224-hex(data)    // hex = 56 字元 hex 字串
 
-# std/hash/sha256
 
 // sha224: 計算 SHA-224 雜湊（含填充與多區塊處理）
 // data []byte: 輸入位元組陣列
@@ -31,9 +30,7 @@ sha224 = (data []byte) (hash [28]byte) {
     bit-len = dlen * 8
     mod-val = (dlen + 9) % 64
     pad-len = 0
-    if mod-val != 0 {
-        pad-len = 64 - mod-val
-    }
+    mod-val != 0 -> pad-len = 64 - mod-val
     total-len = dlen + 1 + pad-len + 8
 
     // 建立填充緩衝區
@@ -70,7 +67,7 @@ sha224 = (data []byte) (hash [28]byte) {
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
-        hash.sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 64
     }
 

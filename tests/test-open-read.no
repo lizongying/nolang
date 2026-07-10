@@ -1,6 +1,5 @@
 // test-open-read.no — 驗證 open() 讀取
 
-# std/fs
 
 tmp = '/tmp/nolang-read-test.txt'
 payload = 'hello nolang'

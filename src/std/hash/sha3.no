@@ -75,9 +75,7 @@ keccak-f1600 = (state []u64) {
                 rc = KECCAK-RC[x + 5 * y]
                 val = state[x + 5 * y]
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
-                if rc == 0 {
-                    rotated = val
-                }
+                rc == 0 -> rotated = val
                 // π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
                 ny = (2 * x + 3 * y) % 5
@@ -126,11 +124,11 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     for absorbed < dlen {
         // 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
-            if absorbed + i < dlen {
-                lane-idx = i / 8
-                byte-idx = i % 8
-                state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
-            }
+            absorbed + i < dlen -> {
+    lane-idx = i / 8
+                    byte-idx = i % 8
+                    state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
+}
         }
         keccak-f1600(state)
         absorbed = absorbed + rate
@@ -140,9 +138,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     // SHA-3: domain separation bit = 0x06 (011 in binary, padded to 0x06...0x80)
     // 最後一個區塊
     remaining = dlen % rate
-    if remaining == 0 {
-        remaining = rate
-    }
+    remaining == 0 -> remaining = rate
     // 在資料末尾添加填充
     pad-byte-idx = remaining
     // 對最後一個區塊的填充位元組進行 XOR
@@ -160,15 +156,13 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     squeezed = 0
     for squeezed < out-len {
         i <- [0..rate): {
-            if squeezed + i < out-len {
-                lane-idx = i / 8
-                byte-idx = i % 8
-                out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
-            }
+            squeezed + i < out-len -> {
+    lane-idx = i / 8
+                    byte-idx = i % 8
+                    out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
+}
         }
-        if squeezed + rate < out-len {
-            keccak-f1600(state)
-        }
+        squeezed + rate < out-len -> keccak-f1600(state)
         squeezed = squeezed + rate
     }
 }

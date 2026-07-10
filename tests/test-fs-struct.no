@@ -3,7 +3,6 @@
 // 目標語法：
 //   open('test.dat', { mode: write, perm: perm-644, excl: true })
 
-# std/fs
 
 tmp = '/tmp/nolang-fs-test.txt'
 payload = 'hello nolang file struct'
@@ -56,10 +55,9 @@ f-r: {
         buf [256]byte
         n = it.read(buf, 256)
         it.close()
-        if n == payload.len {
-            print('ok: read length matches')
-        } else {
-            print('fail: read length mismatch')
+                {
+            n == payload.len -> print('ok: read length matches')
+            -> print('fail: read length mismatch')
         }
     }
 }

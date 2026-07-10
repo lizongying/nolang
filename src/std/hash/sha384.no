@@ -8,7 +8,6 @@
 //   hash = sha384(data)       // hash = 48 位元組 [48]byte
 //   hex = sha384-hex(data)    // hex = 96 字元 hex 字串
 
-# std/hash/sha512
 
 // sha384: 計算 SHA-384 雜湊（含填充與多區塊處理）
 // data []byte: 輸入位元組陣列
@@ -70,7 +69,7 @@ sha384 = (data []byte) (hash [48]byte) {
         i <- [0..16): {
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
-        hash.sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 128
     }
 

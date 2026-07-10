@@ -7,24 +7,23 @@
 // 用法：
 //   srv = http-server{}
 //   ok = srv.listen('0.0.0.0', 8080)
-//   if ok {
-//       ! {
-//           req = srv.accept()           // 返回 ?http-server-conn
-//           req: {
-//               nil -> *
-//               ->
-//                   req.parse()
-//                   if req.method == 'GET' {
-//                       req.write-text(200, 'Hello, World!')
-//                   }
-//                   req.close()
-//           }
-//       }
-//   }
+//   ok -> {
+    //       ! {
+    //           req = srv.accept()           // 返回 ?http-server-conn
+    //           req: {
+    //               nil -> *
+    //               ->
+    //                   req.parse()
+    //                   req.method == 'GET' -> {
+    //                       req.write-text(200, 'Hello, World!')
+        //
+}
+    //                   req.close()
+    //           }
+    //       }
+    //
+}
 
-# std/net/net
-# std/net/cookie
-# std/encoding/base64
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -108,9 +107,7 @@ http-server.listen = (host str, port i64) (ok bool) {
     .host = host
     .port = port
     fd = net-listen(host, port)
-    if fd < 0 {
-        return
-    }
+    fd < 0 -> return
     .fd = fd
     ok = true
 }
@@ -119,13 +116,9 @@ http-server.listen = (host str, port i64) (ok bool) {
 // 返回 c ?http-server-conn: ok=連接, nil=失敗
 http-server.accept = () (c ?http-server-conn) {
     c = nil
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     client-fd = net-accept(.fd)
-    if client-fd < 0 {
-        return
-    }
+    client-fd < 0 -> return
     space = ' '
     buf = space.repeat(HTTP-SRV-BUF-SIZE)
     conn = http-server-conn{
@@ -147,10 +140,10 @@ http-server.accept = () (c ?http-server-conn) {
 
 // close: 關閉伺服器
 http-server.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
 }
 
 // fd-of: 取得監聽 socket fd
@@ -167,18 +160,16 @@ http-server.fd-of = () (fd i64) {
 // 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
 http-server-conn.recv-more = () (n i64) {
     n = -1
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     space = ' '
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
     n = net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
-    if n > 0 {
-        i <- [0..n): {
-            .recv-buf[.recv-buf-len + i] = tmp[i]
-        }
-        .recv-buf-len = .recv-buf-len + n
-    }
+    n > 0 -> {
+    i <- [0..n): {
+                .recv-buf[.recv-buf-len + i] = tmp[i]
+            }
+            .recv-buf-len = .recv-buf-len + n
+}
 }
 
 // parse: 解析 HTTP 請求
@@ -186,9 +177,7 @@ http-server-conn.recv-more = () (n i64) {
 // 返回 ok bool: true=解析成功
 http-server-conn.parse = () (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     cr = char-to-str(13)
     lf = char-to-str(10)
@@ -201,18 +190,12 @@ http-server-conn.parse = () (ok bool) {
         // 檢查緩衝區中是否已有分隔符
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
-        if sep-pos >= 0 {
-            *
-        }
+        sep-pos >= 0 -> *
         // 緩衝區已滿但未找到分隔符
-        if .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE {
-            return
-        }
+        .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
         // 接收更多資料
         n = .recv-more()
-        if n <= 0 {
-            return
-        }
+        n <= 0 -> return
     }
 
     // 解析請求行和標頭
@@ -221,33 +204,30 @@ http-server-conn.parse = () (ok bool) {
 
     // 請求行（第一行）
     first-line-end = head.index(crlf)
-    if first-line-end < 0 {
-        return
-    }
+    first-line-end < 0 -> return
     request-line = head.slice(0, first-line-end)
 
     // 解析方法、路徑、版本
     sp1 = request-line.index(' ')
-    if sp1 < 0 {
-        return
-    }
+    sp1 < 0 -> return
     .method = request-line.slice(0, sp1)
     after-method = request-line.slice(sp1 + 1, request-line.len)
     sp2 = after-method.index(' ')
-    if sp2 < 0 {
-        return
-    }
+    sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
     .version = after-method.slice(sp2 + 1, after-method.len)
 
     // 分離 path 和 query
     q-pos = full-path.index('?')
-    if q-pos >= 0 {
-        .path = full-path.slice(0, q-pos)
-        .query = full-path.slice(q-pos + 1, full-path.len)
-    } else {
-        .path = full-path
-        .query = ''
+        {
+        q-pos >= 0 -> {
+            .path = full-path.slice(0, q-pos)
+                    .query = full-path.slice(q-pos + 1, full-path.len)
+        }
+        -> {
+            .path = full-path
+                    .query = ''
+        }
     }
 
     // 標頭
@@ -264,57 +244,45 @@ http-server-conn.parse = () (ok bool) {
 
     hs = .headers
     hn = hs.len
-    if hn > 0 {
-        pos = 0
-        !! {
-            if pos >= hn {
-                *
+    hn > 0 -> {
+    pos = 0
+            !! {
+                pos >= hn -> *
+                next-crlf = hs.index-from(crlf, pos)
+                line-end = next-crlf
+                line-end < 0 -> line-end = hn
+                colon-pos = hs.index-from(': ', pos)
+                colon-pos >= 0 && colon-pos < line-end -> {
+    cnt = .header-count
+                        cnt < HTTP-SRV-MAX-HEADERS -> {
+    name-len = colon-pos - pos
+                                j <- [0..name-len): {
+                                    .header-names[cnt][j] = hs[pos + j]
+                                }
+                                .header-names[cnt].len = name-len
+                                val-start = colon-pos + 2
+                                val-len = line-end - val-start
+                                j <- [0..val-len): {
+                                    .header-values[cnt][j] = hs[val-start + j]
+                                }
+                                .header-values[cnt].len = val-len
+                                .header-count = cnt + 1
+}
+}
+                next-crlf < 0 -> *
+                pos = next-crlf + 2
             }
-            next-crlf = hs.index-from(crlf, pos)
-            line-end = next-crlf
-            if line-end < 0 {
-                line-end = hn
-            }
-            colon-pos = hs.index-from(': ', pos)
-            if colon-pos >= 0 && colon-pos < line-end {
-                cnt = .header-count
-                if cnt < HTTP-SRV-MAX-HEADERS {
-                    name-len = colon-pos - pos
-                    j <- [0..name-len): {
-                        .header-names[cnt][j] = hs[pos + j]
-                    }
-                    .header-names[cnt].len = name-len
-                    val-start = colon-pos + 2
-                    val-len = line-end - val-start
-                    j <- [0..val-len): {
-                        .header-values[cnt][j] = hs[val-start + j]
-                    }
-                    .header-values[cnt].len = val-len
-                    .header-count = cnt + 1
-                }
-            }
-            if next-crlf < 0 {
-                *
-            }
-            pos = next-crlf + 2
-        }
-    }
+}
 
     // 判斷 Keep-Alive
     .keep-alive = false
-    if .version == 'HTTP/1.1' {
-        .keep-alive = true
-    }
+    .version == 'HTTP/1.1' -> .keep-alive = true
     conn-val = .get-header('Connection')
     conn-val: {
         ok -> {
             cl = conn-val.to-lower()
-            if cl == 'close' {
-                .keep-alive = false
-            }
-            if cl == 'keep-alive' {
-                .keep-alive = true
-            }
+            cl == 'close' -> .keep-alive = false
+            cl == 'keep-alive' -> .keep-alive = true
         }
     }
 
@@ -326,23 +294,19 @@ http-server-conn.parse = () (ok bool) {
             content-len = 0
             j <- [0..cl-str.len): {
                 ch = cl-str[j]
-                if ch >= 48 && ch <= 57 {
-                    content-len = content-len * 10 + ch - 48
-                }
+                ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
-            if content-len > 0 && content-len <= HTTP-SRV-MAX-BODY {
-                // 標頭後已接收的資料
-                available = .recv-buf-len - body-start
-                // 如果不足，繼續接收
-                for available < content-len {
-                    n = .recv-more()
-                    if n <= 0 {
-                        return
-                    }
+            content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+    // 標頭後已接收的資料
                     available = .recv-buf-len - body-start
-                }
-                .body = .recv-buf.slice(body-start, body-start + content-len)
-            }
+                    // 如果不足，繼續接收
+                    for available < content-len {
+                        n = .recv-more()
+                        n <= 0 -> return
+                        available = .recv-buf-len - body-start
+                    }
+                    .body = .recv-buf.slice(body-start, body-start + content-len)
+}
         }
     }
 
@@ -357,33 +321,27 @@ http-server-conn.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
         matched = 1
-        if .header-names[i].len != name.len {
-            matched = 0
-        }
-        if matched == 1 {
-            j <- [0..name.len): {
-                c1 = .header-names[i][j]
-                c2 = name[j]
+        .header-names[i].len != name.len -> matched = 0
+        matched == 1 -> {
+    j <- [0..name.len): {
+                    c1 = .header-names[i][j]
+                    c2 = name[j]
 
-                // 大小寫不敏感比較
-                if c1 >= 65 && c1 <= 90 {
-                    c1 = c1 + 32
+                    // 大小寫不敏感比較
+                    c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
+                    c1 != c2 -> {
+    matched = 0
+                            break
+}
                 }
-                if c2 >= 65 && c2 <= 90 {
-                    c2 = c2 + 32
-                }
-                if c1 != c2 {
-                    matched = 0
-                    break
-                }
-            }
-        }
+}
 
-        if matched == 1 {
-            vlen = .header-values[i].len
-            val = .header-values[i].slice(0, vlen)
-            return
-        }
+        matched == 1 -> {
+    vlen = .header-values[i].len
+                val = .header-values[i].slice(0, vlen)
+                return
+}
     }
 }
 
@@ -392,9 +350,7 @@ http-server-conn.get-header = (name str) (val ?str) {
 // 返回 ok bool: true=成功
 http-server-conn.write-status = (code i64) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
@@ -426,9 +382,7 @@ http-server-conn.write-status = (code i64) (ok bool) {
 
     line = 'HTTP/1.1 ' - code-s - ' ' - status-text - crlf
     written = net-send(.fd, line, line.len)
-    if written < 0 {
-        return
-    }
+    written < 0 -> return
     ok = true
 }
 
@@ -438,17 +392,13 @@ http-server-conn.write-status = (code i64) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
     written = net-send(.fd, line, line.len)
-    if written < 0 {
-        return
-    }
+    written < 0 -> return
     ok = true
 }
 
@@ -456,16 +406,12 @@ http-server-conn.write-header = (name str, value str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-headers-done = () (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
     written = net-send(.fd, crlf, crlf.len)
-    if written < 0 {
-        return
-    }
+    written < 0 -> return
     ok = true
 }
 
@@ -474,15 +420,11 @@ http-server-conn.write-headers-done = () (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-body = (data str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
-    if data.len > 0 {
-        written = net-send(.fd, data, data.len)
-        if written < 0 {
-            return
-        }
-    }
+    .fd < 0 -> return
+    data.len > 0 -> {
+    written = net-send(.fd, data, data.len)
+            written < 0 -> return
+}
     ok = true
 }
 
@@ -493,28 +435,23 @@ http-server-conn.write-body = (data str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-text = (code i64, text str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
 
     // 狀態行
     ok = .write-status(code)
-    if ok == false {
-        return
-    }
+    ok == false -> return
 
     // 標頭
     text-len = text.len
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
-    if .keep-alive {
-        .write-header('Connection', 'keep-alive')
-    } else {
-        .write-header('Connection', 'close')
+        {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
     }
     .write-header('Server', 'nolang-http/1.0')
     .write-headers-done()
@@ -530,19 +467,16 @@ http-server-conn.write-text = (code i64, text str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-json = (code i64, json-str str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     .write-status(code)
     json-len = json-str.len
     len-s = json-len.to-str()
     .write-header('Content-Type', 'application/json; charset=utf-8')
     .write-header('Content-Length', len-s)
-    if .keep-alive {
-        .write-header('Connection', 'keep-alive')
-    } else {
-        .write-header('Connection', 'close')
+        {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
     }
     .write-header('Server', 'nolang-http/1.0')
     .write-headers-done()
@@ -556,19 +490,16 @@ http-server-conn.write-json = (code i64, json-str str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-html = (code i64, html str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     .write-status(code)
     html-len = html.len
     len-s = html-len.to-str()
     .write-header('Content-Type', 'text/html; charset=utf-8')
     .write-header('Content-Length', len-s)
-    if .keep-alive {
-        .write-header('Connection', 'keep-alive')
-    } else {
-        .write-header('Connection', 'close')
+        {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
     }
     .write-header('Server', 'nolang-http/1.0')
     .write-headers-done()
@@ -582,9 +513,7 @@ http-server-conn.write-html = (code i64, html str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-redirect = (code i64, location str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     .write-status(code)
     .write-header('Location', location)
@@ -600,9 +529,7 @@ http-server-conn.write-redirect = (code i64, location str) (ok bool) {
 // 返回 ok bool: true=成功
 http-server-conn.write-error = (code i64, message str) (ok bool) {
     ok = false
-    if .fd < 0 {
-        return
-    }
+    .fd < 0 -> return
 
     .write-status(code)
     msg-len = message.len
@@ -630,10 +557,10 @@ http-server-conn.reset = () {
 
 // close: 關閉連接
 http-server-conn.close = () {
-    if .fd >= 0 {
-        close(.fd)
-        .fd = -1
-    }
+    .fd >= 0 -> {
+    close(.fd)
+            .fd = -1
+}
 }
 
 // ═══════════════════════════════════════════════
@@ -649,9 +576,7 @@ http-listen-on = (host str, port i64) (s ?http-server) {
     srv = http-server{}
     ok = false
     ok = srv.listen(host, port)
-    if ok {
-        s = srv
-    }
+    ok -> s = srv
 }
 
 // ═══════════════════════════════════════════════
@@ -677,29 +602,23 @@ http-server-conn.get-cookie = (name str) (val ?str) {
                 for pos < hdr.len && hdr[pos] == 32 {
                     pos = pos + 1
                 }
-                if pos >= hdr.len {
-                    *
-                }
+                pos >= hdr.len -> *
                 // 找下一個分號
                 next-semi = hdr.index-from(';', pos)
                 pair-end = next-semi
-                if pair-end < 0 {
-                    pair-end = hdr.len
-                }
+                pair-end < 0 -> pair-end = hdr.len
                 pair = hdr.slice(pos, pair-end)
                 pair = pair.trim()
                 eq-pos = pair.index('=')
-                if eq-pos >= 0 {
-                    cname = pair.slice(0, eq-pos)
-                    cvalue = pair.slice(eq-pos + 1, pair.len)
-                    if cname == name {
-                        val = cvalue
-                        return
-                    }
-                }
-                if next-semi < 0 {
-                    *
-                }
+                eq-pos >= 0 -> {
+    cname = pair.slice(0, eq-pos)
+                        cvalue = pair.slice(eq-pos + 1, pair.len)
+                        cname == name -> {
+    val = cvalue
+                                return
+}
+}
+                next-semi < 0 -> *
                 pos = next-semi + 1
             }
         }
@@ -720,11 +639,10 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
             signed-val = it
             ok = false
             raw = ''
-            ok, raw = net.cookie.cookie-verify(name, signed-val, key)
-            if ok {
-                val = raw
-            } else {
-                val = nil
+            ok, raw = cookie.cookie-verify(name, signed-val, key)
+                        {
+                ok -> val = raw
+                -> val = nil
             }
         }
     }
@@ -744,14 +662,12 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
             hdr = it
             prefix = 'Basic '
             starts-ok = hdr.starts-with(prefix)
-            if starts-ok == false {
-                return
-            }
+            starts-ok == false -> return
 
             // Base64 解碼
             b64 = hdr.slice(prefix.len, hdr.len)
             raw []byte
-            dec = encoding.base64.decode(b64, encoding.base64.BASE64-STD)
+            dec = base64.decode(b64, base64.BASE64-STD)
             dec: {
                 ok -> raw = it
                 nil || err -> return
@@ -760,14 +676,12 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
             // 尋找冒號分隔符
             colon = -1
             i <- [0..raw.len): {
-                if raw[i] == 58 {
-                    colon = i
-                    break
-                }
+                raw[i] == 58 -> {
+    colon = i
+                        break
+}
             }
-            if colon < 0 {
-                return
-            }
+            colon < 0 -> return
 
             // 提取用戶名和密碼
             user-bytes []byte
@@ -786,9 +700,7 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
             // 比較（常數時間比較）
             user-ok = secure-compare(user, expected-user)
             pass-ok = secure-compare(pass, expected-pass)
-            if user-ok && pass-ok {
-                ok = true
-            }
+            user-ok && pass-ok -> ok = true
         }
     }
 }
@@ -799,16 +711,12 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
 // 返回 ok bool: true=相等
 secure-compare = (a str, b str) (ok bool) {
     ok = false
-    if a.len != b.len {
-        return
-    }
+    a.len != b.len -> return
     diff = 0
     i <- [0..a.len): {
         diff = diff | (a[i] ^ b[i])
     }
-    if diff == 0 {
-        ok = true
-    }
+    diff == 0 -> ok = true
 }
 
 // set-signed-cookie: 設定簽名 Cookie 到回應
@@ -816,7 +724,7 @@ secure-compare = (a str, b str) (ok bool) {
 // value str: Cookie 值
 // key []byte: HMAC-SHA256 簽名金鑰
 http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
-    signed-value = net.cookie.cookie-sign(name, value, key)
+    signed-value = cookie.cookie-sign(name, value, key)
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)
 }

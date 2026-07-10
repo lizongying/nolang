@@ -32,9 +32,7 @@ md5 = (data []byte) (out [16]byte) {
     blen = dlen * 8
     plen = dlen + 1 + 8
     rem = plen % 64
-    if rem != 0 {
-        plen = plen + 64 - rem
-    }
+    rem != 0 -> plen = plen + 64 - rem
     num-blocks = plen / 64
 
     // 對每個 64 位元組區塊進行壓縮
@@ -65,121 +63,78 @@ md5 = (data []byte) (out [16]byte) {
             b1 = 0
             b2 = 0
             b3 = 0
-            if boff < dlen {
-                len-byte-idx = boff - (plen - 8)
-                if len-byte-idx == 0 {
-                    b0 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b0 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b0 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b0 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b0 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b0 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b0 = (blen >> 8) & 255
-                } else {
-                    b0 = blen & 255
-                }
-            }
-            if boff + 1 < dlen {
-                len-byte-idx = (boff + 1) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b1 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b1 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b1 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b1 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b1 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b1 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b1 = (blen >> 8) & 255
-                } else {
-                    b1 = blen & 255
-                }
-            }
-            if boff + 2 < dlen {
-                len-byte-idx = (boff + 2) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b2 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b2 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b2 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b2 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b2 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b2 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b2 = (blen >> 8) & 255
-                } else {
-                    b2 = blen & 255
-                }
-            }
-            if boff + 3 < dlen {
-                len-byte-idx = (boff + 3) - (plen - 8)
-                if len-byte-idx == 0 {
-                    b3 = (blen >> 56) & 255
-                } elif len-byte-idx == 1 {
-                    b3 = (blen >> 48) & 255
-                } elif len-byte-idx == 2 {
-                    b3 = (blen >> 40) & 255
-                } elif len-byte-idx == 3 {
-                    b3 = (blen >> 32) & 255
-                } elif len-byte-idx == 4 {
-                    b3 = (blen >> 24) & 255
-                } elif len-byte-idx == 5 {
-                    b3 = (blen >> 16) & 255
-                } elif len-byte-idx == 6 {
-                    b3 = (blen >> 8) & 255
-                } else {
-                    b3 = blen & 255
-                }
-            }
+            boff < dlen -> {
+    len-byte-idx = boff - (plen - 8)
+                                        {
+                        len-byte-idx == 0 -> b0 = (blen >> 56) & 255
+                        len-byte-idx == 1 -> b0 = (blen >> 48) & 255
+                        len-byte-idx == 2 -> b0 = (blen >> 40) & 255
+                        len-byte-idx == 3 -> b0 = (blen >> 32) & 255
+                        len-byte-idx == 4 -> b0 = (blen >> 24) & 255
+                        len-byte-idx == 5 -> b0 = (blen >> 16) & 255
+                        len-byte-idx == 6 -> b0 = (blen >> 8) & 255
+                        -> b0 = blen & 255
+                    }
+}
+            boff + 1 < dlen -> {
+    len-byte-idx = (boff + 1) - (plen - 8)
+                                        {
+                        len-byte-idx == 0 -> b1 = (blen >> 56) & 255
+                        len-byte-idx == 1 -> b1 = (blen >> 48) & 255
+                        len-byte-idx == 2 -> b1 = (blen >> 40) & 255
+                        len-byte-idx == 3 -> b1 = (blen >> 32) & 255
+                        len-byte-idx == 4 -> b1 = (blen >> 24) & 255
+                        len-byte-idx == 5 -> b1 = (blen >> 16) & 255
+                        len-byte-idx == 6 -> b1 = (blen >> 8) & 255
+                        -> b1 = blen & 255
+                    }
+}
+            boff + 2 < dlen -> {
+    len-byte-idx = (boff + 2) - (plen - 8)
+                                        {
+                        len-byte-idx == 0 -> b2 = (blen >> 56) & 255
+                        len-byte-idx == 1 -> b2 = (blen >> 48) & 255
+                        len-byte-idx == 2 -> b2 = (blen >> 40) & 255
+                        len-byte-idx == 3 -> b2 = (blen >> 32) & 255
+                        len-byte-idx == 4 -> b2 = (blen >> 24) & 255
+                        len-byte-idx == 5 -> b2 = (blen >> 16) & 255
+                        len-byte-idx == 6 -> b2 = (blen >> 8) & 255
+                        -> b2 = blen & 255
+                    }
+}
+            boff + 3 < dlen -> {
+    len-byte-idx = (boff + 3) - (plen - 8)
+                                        {
+                        len-byte-idx == 0 -> b3 = (blen >> 56) & 255
+                        len-byte-idx == 1 -> b3 = (blen >> 48) & 255
+                        len-byte-idx == 2 -> b3 = (blen >> 40) & 255
+                        len-byte-idx == 3 -> b3 = (blen >> 32) & 255
+                        len-byte-idx == 4 -> b3 = (blen >> 24) & 255
+                        len-byte-idx == 5 -> b3 = (blen >> 16) & 255
+                        len-byte-idx == 6 -> b3 = (blen >> 8) & 255
+                        -> b3 = blen & 255
+                    }
+}
             word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
             // 暫存到 wi 變數
-            if wi == 0 {
-                w0 = word
-            } elif wi == 1 {
-                w1 = word
-            } elif wi == 2 {
-                w2 = word
-            } elif wi == 3 {
-                w3 = word
-            } elif wi == 4 {
-                w4 = word
-            } elif wi == 5 {
-                w5 = word
-            } elif wi == 6 {
-                w6 = word
-            } elif wi == 7 {
-                w7 = word
-            } elif wi == 8 {
-                w8 = word
-            } elif wi == 9 {
-                w9 = word
-            } elif wi == 10 {
-                w10 = word
-            } elif wi == 11 {
-                w11 = word
-            } elif wi == 12 {
-                w12 = word
-            } elif wi == 13 {
-                w13 = word
-            } elif wi == 14 {
-                w14 = word
-            } else {
-                w15 = word
+                        {
+                wi == 0 -> w0 = word
+                wi == 1 -> w1 = word
+                wi == 2 -> w2 = word
+                wi == 3 -> w3 = word
+                wi == 4 -> w4 = word
+                wi == 5 -> w5 = word
+                wi == 6 -> w6 = word
+                wi == 7 -> w7 = word
+                wi == 8 -> w8 = word
+                wi == 9 -> w9 = word
+                wi == 10 -> w10 = word
+                wi == 11 -> w11 = word
+                wi == 12 -> w12 = word
+                wi == 13 -> w13 = word
+                wi == 14 -> w14 = word
+                -> w15 = word
             }
         }
 

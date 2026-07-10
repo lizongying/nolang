@@ -10,8 +10,6 @@
 //   // AES-256-CTR
 //   cipher = aes-256-ctr(plain, key256, iv)
 
-# std/hash/aes
-# std/hash/aes-256
 
 // ═══════════════════════════════════════════════
 // AES-128-CTR
@@ -33,13 +31,11 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     for pos < in.len {
         // 加密當前計數器區塊
         ks [16]byte
-        ks = hash.aes.aes-128-enc(ctr, key)
+        ks = aes.aes-128-enc(ctr, key)
 
         // XOR
         n = 16
-        if pos + n > in.len {
-            n = in.len - pos
-        }
+        pos + n > in.len -> n = in.len - pos
         i <- [0..n): {
             out[pos + i] = (in[pos + i] & 255) ^ (ks[i] & 255)
         }
@@ -48,22 +44,18 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         j = 15
         for j >= 12 {
             ctr[j] = (ctr[j] + 1) & 255
-            if ctr[j] != 0 {
-                break
-            }
+            ctr[j] != 0 -> break
             j = j - 1
         }
         // 進位傳播
-        if ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 {
-            j = 11
-            for j >= 0 {
-                ctr[j] = (ctr[j] + 1) & 255
-                if ctr[j] != 0 {
-                    break
+        ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 -> {
+    j = 11
+                for j >= 0 {
+                    ctr[j] = (ctr[j] + 1) & 255
+                    ctr[j] != 0 -> break
+                    j = j - 1
                 }
-                j = j - 1
-            }
-        }
+}
 
         pos = pos + n
     }
@@ -87,12 +79,10 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     pos = 0
     for pos < in.len {
         ks [16]byte
-        ks = hash.aes-256.aes-256-enc(ctr, key)
+        ks = aes-256.aes-256-enc(ctr, key)
 
         n = 16
-        if pos + n > in.len {
-            n = in.len - pos
-        }
+        pos + n > in.len -> n = in.len - pos
         i <- [0..n): {
             out[pos + i] = (in[pos + i] & 255) ^ (ks[i] & 255)
         }
@@ -100,21 +90,17 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         j = 15
         for j >= 12 {
             ctr[j] = (ctr[j] + 1) & 255
-            if ctr[j] != 0 {
-                break
-            }
+            ctr[j] != 0 -> break
             j = j - 1
         }
-        if ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 {
-            j = 11
-            for j >= 0 {
-                ctr[j] = (ctr[j] + 1) & 255
-                if ctr[j] != 0 {
-                    break
+        ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 -> {
+    j = 11
+                for j >= 0 {
+                    ctr[j] = (ctr[j] + 1) & 255
+                    ctr[j] != 0 -> break
+                    j = j - 1
                 }
-                j = j - 1
-            }
-        }
+}
 
         pos = pos + n
     }

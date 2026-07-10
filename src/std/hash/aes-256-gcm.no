@@ -12,8 +12,6 @@
 //   sealed = aes-256-gcm-seal(key, iv, aad, plain)
 //   opened = aes-256-gcm-open(key, iv, aad, sealed)
 
-# std/hash/aes-256
-# std/hash/aes-gcm
 
 // aes-256-ctr-xor: 使用 AES-256-CTR 模式生成密鑰流並 XOR
 // key [32]byte: 金鑰
@@ -29,12 +27,10 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
     pos = 0
     for pos < data.len {
         ks [16]byte
-        ks = hash.aes-256.aes-256-enc(cb, key)
+        ks = aes-256.aes-256-enc(cb, key)
 
         n = 16
-        if pos + n > data.len {
-            n = data.len - pos
-        }
+        pos + n > data.len -> n = data.len - pos
         i <- [0..n): {
             out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
         }
@@ -43,21 +39,17 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
         j = 15
         for j >= 12 {
             cb[j] = (cb[j] + 1) & 255
-            if cb[j] != 0 {
-                break
-            }
+            cb[j] != 0 -> break
             j = j - 1
         }
-        if cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 {
-            j = 11
-            for j >= 0 {
-                cb[j] = (cb[j] + 1) & 255
-                if cb[j] != 0 {
-                    break
+        cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
+    j = 11
+                for j >= 0 {
+                    cb[j] = (cb[j] + 1) & 255
+                    cb[j] != 0 -> break
+                    j = j - 1
                 }
-                j = j - 1
-            }
-        }
+}
 
         pos = pos + n
     }
@@ -76,7 +68,7 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         zero-block[i] = 0
     }
     h-bytes [16]byte
-    h-bytes = hash.aes-256.aes-256-enc(zero-block, key)
+    h-bytes = aes-256.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -100,9 +92,7 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     j = 15
     for j >= 12 {
         ctr[j] = (ctr[j] + 1) & 255
-        if ctr[j] != 0 {
-            break
-        }
+        ctr[j] != 0 -> break
         j = j - 1
     }
 
@@ -111,11 +101,11 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 
     // 4. GHASH
     ghash-out [16]byte
-    ghash-out = hash.aes-gcm.ghash(h, aad, cipher)
+    ghash-out = aes-gcm.ghash(h, aad, cipher)
 
     // 5. tag = AES-256-enc(key, J0) XOR GHASH
     j0-enc [16]byte
-    j0-enc = hash.aes-256.aes-256-enc(j0, key)
+    j0-enc = aes-256.aes-256-enc(j0, key)
     tag [16]byte
     i <- [0..16): {
         tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
@@ -137,9 +127,7 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 // sealed []byte: 密文 + 16 位元組 tag
 // 返回 plain []byte: 明文（認證失敗時長度為 0）
 aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    if sealed.len < 16 {
-        return
-    }
+    sealed.len < 16 -> return
     cipher-len = sealed.len - 16
 
     // 1. H
@@ -148,7 +136,7 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         zero-block[i] = 0
     }
     h-bytes [16]byte
-    h-bytes = hash.aes-256.aes-256-enc(zero-block, key)
+    h-bytes = aes-256.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -177,9 +165,9 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
 
     // 4. 驗證 tag
     ghash-out [16]byte
-    ghash-out = hash.aes-gcm.ghash(h, aad, cipher)
+    ghash-out = aes-gcm.ghash(h, aad, cipher)
     j0-enc [16]byte
-    j0-enc = hash.aes-256.aes-256-enc(j0, key)
+    j0-enc = aes-256.aes-256-enc(j0, key)
     exp-tag [16]byte
     i <- [0..16): {
         exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
@@ -189,9 +177,7 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
     }
-    if diff != 0 {
-        return
-    }
+    diff != 0 -> return
 
     // 5. 解密
     ctr [16]byte
@@ -201,9 +187,7 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     j = 15
     for j >= 12 {
         ctr[j] = (ctr[j] + 1) & 255
-        if ctr[j] != 0 {
-            break
-        }
+        ctr[j] != 0 -> break
         j = j - 1
     }
 

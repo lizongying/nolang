@@ -4,33 +4,35 @@ sidebar_position: 6
 
 # 跨模組調用前綴
 
-Nolang 採用強制性的模組命名空間規範：在一個 `.no` 檔案中調用**其他模組**（其他 `.no` 檔案）定義的函數或常量時，必須使用 `ShortPath.` 前綴。這避免了跨模組的命名衝突。
+Nolang 採用強制性的模組命名空間規範：在一個 `.no` 檔案中調用**其他模組**（其他 `.no` 檔案）定義的函數或常量時，必須使用 `ShortName.` 前綴。這避免了跨模組的命名衝突。
 
-## ShortPath 定義
+標準庫模組由編譯器自動載入，**不需顯式導入**（無需 `# std/...` 註解），直接使用 `ShortName.` 前綴即可調用。
 
-ShortPath 是模組的簡短路徑，用作跨模組調用時的前綴。規則：**當目錄名與檔名相同時，省略重複的目錄名**。
+## ShortName 定義
 
-| 檔案路徑 | FullPath | ShortPath | 說明 |
+ShortName 是模組路徑的最後一段，用作跨模組調用時的前綴。
+
+| 檔案路徑 | FullPath | ShortName | 說明 |
 | --- | --- | --- | --- |
 | `std/math.no` | `math` | `math` | 頂層檔案 |
 | `std/fs.no` | `fs` | `fs` | 頂層檔案 |
-| `std/net/net.no` | `net/net` | `net` | 目錄名=檔名，省略目錄 |
-| `std/net/client.no` | `net/client` | `net.client` | 目錄名≠檔名，保留兩段 |
-| `std/hash/sha256.no` | `hash/sha256` | `hash.sha256` | 目錄名≠檔名，保留兩段 |
-| `std/archive/gzip.no` | `archive/gzip` | `archive.gzip` | 目錄名≠檔名，保留兩段 |
+| `std/net/net.no` | `net/net` | `net` | 路徑最後一段 |
+| `std/net/client.no` | `net/client` | `client` | 路徑最後一段 |
+| `std/hash/sha256.no` | `hash/sha256` | `sha256` | 路徑最後一段 |
+| `std/archive/gzip.no` | `archive/gzip` | `gzip` | 路徑最後一段 |
 
-ShortPath 在程式碼中以點分隔（`hash.sha256`），對應檔案系統路徑以斜線分隔（`hash/sha256`）。
+ShortName 即為 FullPath 以斜線分隔後的最後一段（如 `hash/sha256` → `sha256`）。
 
 ## 需要前綴
 
-調用其他模組定義的模組級函數或常量時，必須使用 `ShortPath.` 前綴。
+調用其他模組定義的模組級函數或常量時，必須使用 `ShortName.` 前綴。
 
 ```nolang
 // 模組級函數
-hash.sha256.sha256(data)
-hash.sha256.sha256-hex(data)
+sha256.sha256(data)
+sha256.sha256-hex(data)
 fs.open(path, opts)
-archive.gzip.gzip-decompress(data)
+gzip.gzip-decompress(data)
 math.degrees(rad)
 
 // 模組常量
@@ -97,9 +99,9 @@ p.exists()                 // path.exists 是結構體方法，不需前綴
 
 - **內置類型的方法**（`str.starts-with`、`i64.to-str` 等）—— 不需前綴
 - **結構體實例的方法**（`f.read`、`p.exists` 等）—— 不需前綴
-- **模組級函數**（`fs.open`、`hash.sha256.sha256` 等）—— **需要前綴**
+- **模組級函數**（`fs.open`、`sha256.sha256` 等）—— **需要前綴**
 
-`fs.fil()` 中 `fs` 是模組的 ShortPath，`fil` 是模組級函數名。`fs.` 前綴不可省略，因為 `fs` 在此處不是變數名，而是模組路徑。
+`fs.fil()` 中 `fs` 是模組的 ShortName，`fil` 是模組級函數名。`fs.` 前綴不可省略，因為 `fs` 在此處不是變數名，而是模組路徑。
 
 ## 完整範例
 

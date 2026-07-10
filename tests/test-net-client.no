@@ -5,47 +5,43 @@
 //
 // 可用 nc -l 8080 作為 echo server 手動測試。
 
-# std/net/client
 
 // 測試 1: connect
 c client = client{}
 ok = c.connect('127.0.0.1', 8080)
-if ok {
-    print('ok: connect')
-} else {
-    print('fail: connect')
-    return
+{
+    ok -> print('ok: connect')
+    -> {
+        print('fail: connect')
+            return
+    }
 }
 
 // 測試 2: is-connected
 yes = c.is-connected()
-if yes {
-    print('ok: is-connected')
-} else {
-    print('fail: is-connected')
+{
+    yes -> print('ok: is-connected')
+    -> print('fail: is-connected')
 }
 
 // 測試 3: send / recv
 buf str = ''
 written = c.send('hello')
-if written > 0 {
-    print('ok: send')
-} else {
-    print('fail: send')
+{
+    written > 0 -> print('ok: send')
+    -> print('fail: send')
 }
 read-n = c.recv(buf, 1024)
-if read-n > 0 {
-    print('ok: recv')
-} else {
-    print('fail: recv')
+{
+    read-n > 0 -> print('ok: recv')
+    -> print('fail: recv')
 }
 
 // 測試 4: send-line / recv-line
 written2 = c.send-line('world')
-if written2 > 0 {
-    print('ok: send-line')
-} else {
-    print('fail: send-line')
+{
+    written2 > 0 -> print('ok: send-line')
+    -> print('fail: send-line')
 }
 line = c.recv-line()
 line: {
@@ -56,22 +52,20 @@ line: {
 // 測試 5: close
 c.close()
 yes2 = c.is-connected()
-if yes2 == false {
-    print('ok: close')
-} else {
-    print('fail: close')
+{
+    yes2 == false -> print('ok: close')
+    -> print('fail: close')
 }
 
 // 測試 6: reconnect
 re-ok = c.reconnect()
-if re-ok {
-    print('ok: reconnect')
-} else {
-    print('fail: reconnect')
+{
+    re-ok -> print('ok: reconnect')
+    -> print('fail: reconnect')
 }
 
 // 測試 7: 便捷函數 net-client
-c2 = net.client.net-client('127.0.0.1', 8080)
+c2 = client.net-client('127.0.0.1', 8080)
 c2: {
     nil -> print('fail: net-client')
     -> {

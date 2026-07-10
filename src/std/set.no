@@ -15,9 +15,7 @@
 add = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i <- [0..n): {
-        if s[i] == val {
-            return
-        }
+        s[i] == val -> return
     }
     s[n] = val
     new-n = n + 1
@@ -28,7 +26,7 @@ add = (s []i64, n i64, val i64) (new-n i64) {
 set-remove = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i <- [0..n): {
-        if s[i] == val {
+        s[i] == val -> {
             // 將最後一個元素移到該位置
             s[i] = s[n - 1]
             new-n = n - 1
@@ -42,7 +40,7 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
 contains = (s []i64, n i64, val i64) (yes bool) {
     yes = false
     i <- [0..n): {
-        if s[i] == val {
+        s[i] == val -> {
             yes = true
             return
         }
@@ -58,12 +56,12 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
         v = b[i]
         found = false
         j <- [0..an): {
-            if a[j] == v {
+            a[j] == v -> {
                 found = true
                 break
             }
         }
-        if found == false {
+        found == false -> {
             a[new-an] = v
             new-an = new-an + 1
         }
@@ -78,7 +76,7 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     i <- [0..an): {
         v = a[i]
         j <- [0..bn): {
-            if b[j] == v {
+            b[j] == v -> {
                 out[out-n] = v
                 out-n = out-n + 1
                 break
@@ -95,12 +93,12 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
         v = a[i]
         found = false
         j <- [0..bn): {
-            if b[j] == v {
+            b[j] == v -> {
                 found = true
                 break
             }
         }
-        if found == false {
+        found == false -> {
             out[out-n] = v
             out-n = out-n + 1
         }

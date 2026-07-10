@@ -3,7 +3,6 @@
 // 本測試為 vet-only，需要實際 HTTP 伺服器才能執行。
 // 測試 http-do、http-get、http-post 及 URL 解析。
 
-# std/net/http
 
 // 測試 1: http-response 結構體
 r http-response = http-response{}
@@ -11,14 +10,13 @@ r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html'
 r.body = '<html></html>'
-if r.status-code == 200 {
-    print('ok: http-response struct')
-} else {
-    print('fail: http-response struct')
+{
+    r.status-code == 200 -> print('ok: http-response struct')
+    -> print('fail: http-response struct')
 }
 
 // 測試 2: http-get（需要網路連線，僅驗證語法）
-resp = net.http.http-get('http://example.com/')
+resp = http.http-get('http://example.com/')
 resp: {
     nil -> print('skip: http-get (no network)')
     -> {
@@ -30,21 +28,21 @@ resp: {
 }
 
 // 測試 3: http-post（需要網路連線，僅驗證語法）
-resp2 = net.http.http-post('http://example.com/api', '{"key":"value"}')
+resp2 = http.http-post('http://example.com/api', '{"key":"value"}')
 resp2: {
     nil -> print('skip: http-post (no network)')
     -> print('ok: http-post connected')
 }
 
 // 測試 4: http-do 一般請求
-resp3 = net.http.http-do('PUT', 'http://example.com/item', 'data')
+resp3 = http.http-do('PUT', 'http://example.com/item', 'data')
 resp3: {
     nil -> print('skip: http-do (no network)')
     -> print('ok: http-do connected')
 }
 
 // 測試 5: 帶埠號的 URL
-resp4 = net.http.http-get('http://localhost:8080/path')
+resp4 = http.http-get('http://localhost:8080/path')
 resp4: {
     nil -> print('skip: http-get with port (no server)')
     -> print('ok: http-get with port')

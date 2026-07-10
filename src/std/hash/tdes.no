@@ -12,7 +12,6 @@
 //   out = tdes-enc(plain, plain.len, key)   // 加密
 //   out = tdes-dec(cipher, cipher.len, key) // 解密
 
-# std/hash/des
 
 // tdes-enc: Triple DES 加密（ECB 模式）
 // in []byte: 輸入資料（長度需為 8 的倍數）
@@ -41,15 +40,15 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         // 步驟 1: E_K1
         tmp1 []byte
-        tmp1 = hash.des.des-enc(block, 8, k1)
+        tmp1 = des.des-enc(block, 8, k1)
 
         // 步驟 2: D_K2
         tmp2 []byte
-        tmp2 = hash.des.des-dec(tmp1, 8, k2)
+        tmp2 = des.des-dec(tmp1, 8, k2)
 
         // 步驟 3: E_K3
         tmp3 []byte
-        tmp3 = hash.des.des-enc(tmp2, 8, k3)
+        tmp3 = des.des-enc(tmp2, 8, k3)
 
         // 寫回輸出
         i <- [0..8): {
@@ -84,15 +83,15 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 
         // 步驟 1: D_K3
         tmp1 []byte
-        tmp1 = hash.des.des-dec(block, 8, k3)
+        tmp1 = des.des-dec(block, 8, k3)
 
         // 步驟 2: E_K2
         tmp2 []byte
-        tmp2 = hash.des.des-enc(tmp1, 8, k2)
+        tmp2 = des.des-enc(tmp1, 8, k2)
 
         // 步驟 3: D_K1
         tmp3 []byte
-        tmp3 = hash.des.des-dec(tmp2, 8, k1)
+        tmp3 = des.des-dec(tmp2, 8, k1)
 
         i <- [0..8): {
             out[blk + i] = tmp3[i]

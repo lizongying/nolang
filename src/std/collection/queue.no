@@ -61,9 +61,7 @@ queue {
 [n]t.queue-push = (q queue, val t) (ok bool) {
     ok = false
     sz = q.tail - q.head
-    if sz >= q.cap - 1 {
-        return
-    }
+    sz >= q.cap - 1 -> return
     idx = q.tail
     {
         idx >= 0 ->
@@ -81,10 +79,10 @@ queue {
 // 返回 val ?t: ok=彈出值, nil=佇列為空
 [n]t.queue-pop = (q queue) (val ?t) {
     sz = q.tail - q.head
-    if sz <= 0 {
-        val = nil
-        return
-    }
+    sz <= 0 -> {
+    val = nil
+            return
+}
     idx = q.head
     {
         idx >= 0 ->
@@ -101,10 +99,10 @@ queue {
 // 返回 val ?t: ok=隊首值, nil=佇列為空
 [n]t.queue-peek = (q queue) (val ?t) {
     sz = q.tail - q.head
-    if sz <= 0 {
-        val = nil
-        return
-    }
+    sz <= 0 -> {
+    val = nil
+            return
+}
     idx = q.head
     {
         idx >= 0 ->

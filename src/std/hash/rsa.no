@@ -15,24 +15,24 @@
 // bn-cmp: 比較兩個大數 a 和 b
 // 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
-    if an > bn {
-        cmp = 1
-        return
-    }
-    if an < bn {
-        cmp = -1
-        return
-    }
+    an > bn -> {
+    cmp = 1
+            return
+}
+    an < bn -> {
+    cmp = -1
+            return
+}
     i i64 = an - 1
     for i >= 0 {
-        if a[i] > b[i] {
-            cmp = 1
-            return
-        }
-        if a[i] < b[i] {
-            cmp = -1
-            return
-        }
+        a[i] > b[i] -> {
+    cmp = 1
+                return
+}
+        a[i] < b[i] -> {
+    cmp = -1
+                return
+}
         i = i - 1
     }
     cmp = 0
@@ -47,12 +47,8 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     i = 0
     for i < an || i < bn || carry != 0 {
         sum = carry
-        if i < an {
-            sum = sum + a[i]
-        }
-        if i < bn {
-            sum = sum + b[i]
-        }
+        i < an -> sum = sum + a[i]
+        i < bn -> sum = sum + b[i]
         c[i] = sum & 4294967295
         carry = sum >> 32
         i = i + 1
@@ -67,14 +63,13 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
     i <- [0..an): {
         diff = a[i] - borrow
-        if i < bn {
-            diff = diff - b[i]
-        }
-        if diff < 0 {
-            diff = diff + 4294967296
-            borrow = 1
-        } else {
-            borrow = 0
+        i < bn -> diff = diff - b[i]
+                {
+            diff < 0 -> {
+                diff = diff + 4294967296
+                            borrow = 1
+            }
+            -> borrow = 0
         }
         c[i] = diff & 4294967295
     }
@@ -95,9 +90,7 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i] = 0
     }
     i <- [0..an): {
-        if a[i] == 0 {
-            continue
-        }
+        a[i] == 0 -> continue
         carry = 0
         j <- [0..bn): {
             prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
@@ -124,11 +117,12 @@ bn-shl1 = (a []i64, an i64) (new-an i64) {
         carry = a[i] >> 31
         a[i] = new-val & 4294967295
     }
-    if carry != 0 {
-        a[an] = carry
-        new-an = an + 1
-    } else {
-        new-an = an
+        {
+        carry != 0 -> {
+            a[an] = carry
+                    new-an = an + 1
+        }
+        -> new-an = an
     }
 }
 
@@ -160,11 +154,11 @@ bn-shr1 = (a []i64, an i64) (new-an i64) {
 // r: 餘數（輸出）, rn: 餘長度
 bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
     // 處理 b = 0
-    if bn == 1 && b[0] == 0 {
-        qn = 0
-        rn = 0
-        return
-    }
+    bn == 1 && b[0] == 0 -> {
+    qn = 0
+            rn = 0
+            return
+}
 
     // 初始化 r = 0
     i <- [0..an): {
@@ -186,9 +180,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         tmp = tmp >> 1
         lead = lead + 1
     }
-    if an > 0 && top == 0 {
-        lead = 0
-    }
+    an > 0 && top == 0 -> lead = 0
     bits i64 = (an - 1) * 32 + lead
 
     // 二進位長除法：從最高位到最低位
@@ -206,12 +198,12 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         // 如果 r >= b: r = r - b; q 的第 i 位元設為 1
         cmp = 0
         cmp = bn-cmp(r, rn, b, bn)
-        if cmp >= 0 {
-            r, rn = bn-sub(r, rn, b, bn)
-            q-limb = i / 32
-            q-bit = i % 32
-            q[q-limb] = q[q-limb] | (1 << q-bit)
-        }
+        cmp >= 0 -> {
+    r, rn = bn-sub(r, rn, b, bn)
+                q-limb = i / 32
+                q-bit = i % 32
+                q[q-limb] = q[q-limb] | (1 << q-bit)
+}
         i = i - 1
     }
 
@@ -242,9 +234,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         tmp = tmp >> 1
         lead = lead + 1
     }
-    if en > 0 && top == 0 {
-        lead = 0
-    }
+    en > 0 && top == 0 -> lead = 0
     bits i64 = (en - 1) * 32 + lead
 
     // 暫存區
@@ -265,10 +255,10 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         // 如果 exp 第 i 位元為 1：乘 base
         e-limb = i / 32
         e-bit = i % 32
-        if (exp[e-limb] >> e-bit) & 1 == 1 {
-            t, prod-n = bn-mul(result, rn, base, bn)
-            q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
-        }
+        (exp[e-limb] >> e-bit) & 1 == 1 -> {
+    t, prod-n = bn-mul(result, rn, base, bn)
+                q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
+}
         i = i - 1
     }
 }

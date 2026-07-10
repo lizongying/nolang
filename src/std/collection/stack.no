@@ -31,10 +31,10 @@ stack.push = (val i64) {
 // pop: 從堆疊頂端彈出元素
 // 返回 val ?i64: ok=彈出值, nil=堆疊為空
 stack.pop = () (val ?i64) {
-    if .n == 0 {
-        val = nil
-        return
-    }
+    .n == 0 -> {
+    val = nil
+            return
+}
     .n = .n - 1
     val = .data[.n]
 }
@@ -42,10 +42,10 @@ stack.pop = () (val ?i64) {
 // peek: 查看堆疊頂端元素（不移除）
 // 返回 val ?i64: ok=頂端值, nil=堆疊為空
 stack.peek = () (val ?i64) {
-    if .n == 0 {
-        val = nil
-        return
-    }
+    .n == 0 -> {
+    val = nil
+            return
+}
     val = .data[.n - 1]
 }
 

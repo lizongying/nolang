@@ -1,6 +1,5 @@
 // test-open-perm.no — 驗證 open() 檔案權限
 
-# std/fs
 
 tmp = '/tmp/nolang-perm-test.txt'
 remove(tmp)

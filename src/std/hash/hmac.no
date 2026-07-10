@@ -16,11 +16,6 @@
 //   out = hmac-sha256(key, msg)
 //   // out 為 [32]byte 雜湊值
 
-# std/hash/sha256
-# std/hash/sha1
-# std/hash/sha512
-# std/hash/sha384
-# std/hash/md5
 
 // ─── 常量 ─────────────────────────────────────────
 
@@ -59,7 +54,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         }
         -> {
             // 金鑰太長，先雜湰
-            h = hash.sha256.sha256(key)
+            h = sha256.sha256(key)
             i <- [0..32): {
                 k[i] = h[i]
             }
@@ -86,7 +81,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
     }
-    inner-hash = hash.sha256.sha256(inner-data)
+    inner-hash = sha256.sha256(inner-data)
 
     // outer = H(opad-key || inner)
     outer-data []byte
@@ -96,7 +91,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     i <- [0..32): {
         outer-data[64 + i] = inner-hash[i]
     }
-    out = hash.sha256.sha256(outer-data)
+    out = sha256.sha256(outer-data)
 }
 
 // hmac-sha256-vec: 計算 HMAC-SHA256，返回 []byte（方便串接）
@@ -139,7 +134,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
             }
         }
         -> {
-            h = hash.sha1.sha1(key)
+            h = sha1.sha1(key)
             i <- [0..20): {
                 k[i] = h[i]
             }
@@ -163,7 +158,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
     }
-    inner-hash = hash.sha1.sha1(inner-data)
+    inner-hash = sha1.sha1(inner-data)
 
     outer-data []byte
     i <- [0..64): {
@@ -172,7 +167,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     i <- [0..20): {
         outer-data[64 + i] = inner-hash[i]
     }
-    out = hash.sha1.sha1(outer-data)
+    out = sha1.sha1(outer-data)
 }
 
 // hmac-sha1-vec: 計算 HMAC-SHA1，返回 []byte
@@ -216,7 +211,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
             }
         }
         -> {
-            h = hash.sha512.sha512(key)
+            h = sha512.sha512(key)
             i <- [0..64): {
                 k[i] = h[i]
             }
@@ -240,7 +235,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     i <- [0..msg-n): {
         inner-data[128 + i] = msg[i]
     }
-    inner-hash = hash.sha512.sha512(inner-data)
+    inner-hash = sha512.sha512(inner-data)
 
     outer-data []byte
     i <- [0..128): {
@@ -249,7 +244,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     i <- [0..64): {
         outer-data[128 + i] = inner-hash[i]
     }
-    out = hash.sha512.sha512(outer-data)
+    out = sha512.sha512(outer-data)
 }
 
 // hmac-sha512-vec: 計算 HMAC-SHA512，返回 []byte
@@ -286,7 +281,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
             }
         }
         -> {
-            h = hash.sha384.sha384(key)
+            h = sha384.sha384(key)
             i <- [0..48): {
                 k[i] = h[i]
             }
@@ -310,7 +305,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     i <- [0..msg-n): {
         inner-data[128 + i] = msg[i]
     }
-    inner-hash = hash.sha384.sha384(inner-data)
+    inner-hash = sha384.sha384(inner-data)
 
     outer-data []byte
     i <- [0..128): {
@@ -319,7 +314,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     i <- [0..48): {
         outer-data[128 + i] = inner-hash[i]
     }
-    out = hash.sha384.sha384(outer-data)
+    out = sha384.sha384(outer-data)
 }
 
 // hmac-sha384-vec: 計算 HMAC-SHA384，返回 []byte
@@ -356,7 +351,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
             }
         }
         -> {
-            h = hash.md5.md5(key)
+            h = md5.md5(key)
             i <- [0..16): {
                 k[i] = h[i]
             }
@@ -380,7 +375,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     i <- [0..msg-n): {
         inner-data[64 + i] = msg[i]
     }
-    inner-hash = hash.md5.md5(inner-data)
+    inner-hash = md5.md5(inner-data)
 
     outer-data []byte
     i <- [0..64): {
@@ -389,7 +384,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     i <- [0..16): {
         outer-data[64 + i] = inner-hash[i]
     }
-    out = hash.md5.md5(outer-data)
+    out = md5.md5(outer-data)
 }
 
 // hmac-md5-vec: 計算 HMAC-MD5，返回 []byte
