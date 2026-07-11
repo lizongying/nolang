@@ -12,7 +12,7 @@
     },
     {
       "name": "keyword.control.nolang",
-      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|as|chan|go|match|while)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
+      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|as|chan|awy|run|match|while)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
     },
     {
       "name": "keyword.control.import.nolang",
@@ -24,7 +24,7 @@
     },
     {
       "name": "support.type.nolang",
-      "match": "(?<=\\s)\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|str|byte|char|ptr|err|bigint)\\b"
+      "match": "(?<=\\s)\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|str|byte|char|nil|err|bigint)\\b"
     },
     {
       "name": "string.quoted.single.nolang",

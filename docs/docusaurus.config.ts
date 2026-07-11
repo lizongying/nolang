@@ -16,6 +16,8 @@ const config: Config = {
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
 
+  clientModules: [require.resolve('./src/nolang-prism.js')],
+
   i18n: {
     defaultLocale: 'zh-Hans',
     locales: ['zh-Hans', 'en'],
@@ -105,7 +107,6 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
-      additionalLanguages: ['go', 'llvm', 'rust'],
     },
   } satisfies Preset.ThemeConfig,
 };

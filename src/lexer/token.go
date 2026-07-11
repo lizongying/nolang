@@ -76,8 +76,8 @@ const (
 	OR      // |
 	AND_NOT // &^
 
-	STAR_STAR  // ** — used as `continue` shorthand (only at statement start)
-	BANG_BANG  // !! — used as infinite loop `!! { }` (at statement start) or `true` (expression)
+	STAR_STAR // ** — used as `continue` shorthand (only at statement start)
+	BANG_BANG // !! — used as infinite loop `!! { }` (at statement start) or `true` (expression)
 
 	ELLIPSIS // ..
 
@@ -229,7 +229,6 @@ var keywords = map[string]TokenType{
 	"ptr":   PTR,
 
 	"chan":    CHAN,
-	"go":      GO,
 	"use":     USE,
 	"switch":  SWITCH,
 	"case":    CASE,
