@@ -81,6 +81,7 @@ type Generator struct {
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
 	sliceViews            map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
 	taskResultTypes       map[string]string               // task variable name → result LLVM type (for awy type inference)
+	futureResultTypes     map[string]string               // future variable name → result LLVM type (for awy type inference)
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
 	debugCallCount        int                             // debug counter for tracing function generation calls
 }
@@ -424,6 +425,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// %task type for async/await (run/awy): { pthread_t (as i64), i8* result_ptr }
 	sb.WriteString("%task = type { i64, i8* }\n")
+	// %future type for lazy async futures: { wrapper_fn_ptr, args_ptr, result_ptr }
+	sb.WriteString("%future = type { i8* (i8*)*, i8*, i8* }\n")
 
 	g.writeDeclarations(&sb)
 

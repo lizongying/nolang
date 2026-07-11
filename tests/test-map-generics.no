@@ -1,9 +1,8 @@
 // test-map-generics.no — 測試 map 泛型特化
 
-
 // str → i64
 test-str-i64 = () {
-    m map[str]i64 = { 'a':0, 'b':1 }
+    m [str]i64 = { 'a': 0, 'b': 1 }
     m.put('c', 2)
 
     v = m.get('a')
@@ -26,7 +25,7 @@ test-str-i64 = () {
 
 // str → str
 test-str-str = () {
-    m map[str]str = { 'name':'Alice' }
+    m [str]str = { 'name': 'Alice' }
 
     v = m.get('name')
     v: {
@@ -36,7 +35,7 @@ test-str-str = () {
 
 // i64 → i64
 test-i64-i64 = () {
-    m map[i64]i64 = { 10:20 }
+    m [i64]i64 = { 10: 20 }
     m.put(42, 100)
 
     v = m.get(42)
@@ -52,7 +51,7 @@ test-i64-i64 = () {
 
 // i32 → str (非預設 int 鍵寬度)
 test-i32-str = () {
-    m map[i32]str = { 7:'seven' }
+    m [i32]str = { 7: 'seven' }
 
     v = m.get(7)
     v: {
@@ -62,7 +61,7 @@ test-i32-str = () {
 
 // bool → i64
 test-bool-i64 = () {
-    m map[bool]i64 = { }
+    m [bool]i64 = { }
     m.put(true, 1)
     m.put(false, 0)
 
@@ -79,7 +78,7 @@ test-bool-i64 = () {
 
 // 非預設組合: str → bool
 test-str-bool = () {
-    m map[str]bool = { 'yes':true }
+    m [str]bool = { 'yes': true }
 
     v = m.get('yes')
     v: {
@@ -89,7 +88,7 @@ test-str-bool = () {
 
 // 非預設組合: u8 → i64
 test-u8-i64 = () {
-    m map[u8]i64 = { 200:200 }
+    m [u8]i64 = { 200: 200 }
 
     v = m.get(200)
     v: {

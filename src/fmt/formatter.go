@@ -468,7 +468,26 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 	case *parser.AwaitExpression:
 		f.write("awy ")
 		f.formatExpression(e.Right)
+	case *parser.MapLiteral:
+		f.formatMapLiteral(e)
 	}
+}
+
+func (f *formatter) formatMapLiteral(ml *parser.MapLiteral) {
+	if len(ml.Pairs) == 0 {
+		f.write("{ }")
+		return
+	}
+	f.write("{ ")
+	for i, pair := range ml.Pairs {
+		if i > 0 {
+			f.write(", ")
+		}
+		f.formatExpression(pair.Key)
+		f.write(": ")
+		f.formatExpression(pair.Value)
+	}
+	f.write(" }")
 }
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
@@ -539,6 +558,10 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	} else if nt, ok := s.Type.(*parser.NullableType); ok && !isInferredNullableType(s) {
 		f.write(" ?")
 		f.write(nt.Type.String())
+	} else if mt, ok := s.Type.(*parser.MapType); ok {
+		// map 型別：輸出 " [K]V"（MapType.String() 已回傳 "[K]V" 形式）
+		f.write(" ")
+		f.write(mt.String())
 	}
 	if s.Value != nil {
 		f.write(" = ")

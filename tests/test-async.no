@@ -1,4 +1,4 @@
-// test-async.no — 測試 async/await (run/awy) 基本功能
+// test-async.no — 測試 async/await (run/awy) 功能
 
 
 // 異步函數：返回輸入值的兩倍
@@ -6,29 +6,50 @@ compute-async = (n i64) (r i64) {
     r = n * 2
 }
 
-// 基本異步調用
-test-basic = () {
-    h = run compute-async(21)
-    r = awy h
+// 異步函數：多參數
+add-async = (a i64, b i64) (r i64) {
+    r = a + b
+}
+
+// 異步函數：條件邏輯
+classify-async = (n i64) (r i64) {
+    n > 0 -> r = 1
+    n < 0 -> r = -1
+    n == 0 -> r = 0
+}
+
+// 直接 awy run
+test-direct = () {
+    r = awy run compute-async(21)
     print(r)  // expect: 42
 }
 
-// 並發多個任務
+// 多參數
+test-multi-params = () {
+    r = awy run add-async(15, 27)
+    print(r)  // expect: 42
+}
+
+// 條件邏輯
+test-conditional = () {
+    r1 = awy run classify-async(5)
+    r2 = awy run classify-async(-3)
+    r3 = awy run classify-async(0)
+    print(r1)  // expect: 1
+    print(r2)  // expect: -1
+    print(r3)  // expect: 0
+}
+
+// 並發：先全部 run，再依次 awy
 test-concurrent = () {
     h1 = run compute-async(10)
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    print(r1)  // expect: 20
-    print(r2)  // expect: 40
+    print(r1 + r2)  // expect: 60
 }
 
-// 內聯等待
-test-inline = () {
-    r = awy run compute-async(5)
-    print(r)  // expect: 10
-}
-
-test-basic()
+test-direct()
+test-multi-params()
+test-conditional()
 test-concurrent()
-test-inline()

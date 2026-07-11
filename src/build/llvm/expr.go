@@ -1130,6 +1130,10 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			return "%vec"
 		}
 	case *parser.CallExpression:
+		// -async 函数调用返回 %future（惰性，未执行）
+		if g.isAsyncCall(v) {
+			return "%future"
+		}
 		if g.ssaTypes != nil {
 			if ident, ok := v.Function.(*parser.Identifier); ok {
 				if g.funcRetTypes != nil {
@@ -5132,17 +5136,45 @@ func (g *Generator) resolveAsyncCallInfo(call *parser.CallExpression) (fnName st
 	return
 }
 
-// generateRunExpression generates LLVM IR for `run <call-expression>`.
-// It creates a wrapper function that unpacks arguments and calls the target
-// function in a new pthread, then returns a %task handle.
-func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunExpression) string {
-	call, ok := expr.Call.(*parser.CallExpression)
-	if !ok {
-		return "0"
+// isAsyncCall checks if a CallExpression calls an -async function.
+func (g *Generator) isAsyncCall(expr *parser.CallExpression) bool {
+	fnName := ""
+	if ident, ok := expr.Function.(*parser.Identifier); ok {
+		fnName = ident.Value
+	} else if dot, ok := expr.Function.(*parser.DotExpression); ok {
+		fnName = dot.Property
 	}
+	if fnName == "" {
+		return false
+	}
+	return strings.HasSuffix(fnName, "-async")
+}
+
+// isFutureVar checks if a variable holds a %future value.
+func (g *Generator) isFutureVar(varName string) bool {
+	if g.futureResultTypes == nil {
+		return false
+	}
+	_, ok := g.futureResultTypes[varName]
+	return ok
+}
+
+// isTaskVar checks if a variable holds a %task value.
+func (g *Generator) isTaskVar(varName string) bool {
+	if g.taskResultTypes == nil {
+		return false
+	}
+	_, ok := g.taskResultTypes[varName]
+	return ok
+}
+
+// prepareAsyncCall generates the wrapper function, allocates result buffer and args struct,
+// and packs arguments. Shared by generateFutureCreation and generateRunExpression.
+// Returns: (wrapperName, argsBitcast, resultPtrCast, resultType)
+func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpression) (string, string, string, string) {
 	fnName, argTypes, resultType := g.resolveAsyncCallInfo(call)
 	if fnName == "" {
-		return "0"
+		return "", "", "", ""
 	}
 
 	// Build the list of argument expressions (receiver + explicit args for methods)
@@ -5252,18 +5284,73 @@ func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunE
 		}
 	}
 
-	// alloca i64 for thread_id
-	g.tmpIdx++
-	tidAddr := fmt.Sprintf("%%async.tid.addr.%d", g.tmpIdx)
-	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tidAddr))
-	}
-
 	// Bitcast args struct to i8*
 	g.tmpIdx++
 	argsBitcast := fmt.Sprintf("%%async.args.bc.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), argsBitcast, argsTypeStr, argsAddr))
+	}
+
+	return wrapperName, argsBitcast, resultPtrCast, resultType
+}
+
+// generateFutureCreation constructs a %future value (lazy, not executed).
+// Called when an -async function is called directly (without run/awy).
+func (g *Generator) generateFutureCreation(sb *strings.Builder, call *parser.CallExpression) string {
+	wrapperName, argsBitcast, resultPtrCast, _ := g.prepareAsyncCall(sb, call)
+	if wrapperName == "" {
+		return "0"
+	}
+
+	// Build %future = { i8* (i8*)* @wrapper, i8* %args.bc, i8* %result.ptr }
+	g.tmpIdx++
+	futureAddr := fmt.Sprintf("%%async.future.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%future\n", g.indent(), futureAddr))
+	}
+	// Store wrapper_fn_ptr (field 0)
+	g.tmpIdx++
+	futF0GEP := fmt.Sprintf("%%async.fut.f0.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), futF0GEP, futureAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* (i8*)* @%s, i8* (i8*)** %s\n", g.indent(), wrapperName, futF0GEP))
+	}
+	// Store args_ptr (field 1)
+	g.tmpIdx++
+	futF1GEP := fmt.Sprintf("%%async.fut.f1.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), futF1GEP, futureAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), argsBitcast, futF1GEP))
+	}
+	// Store result_ptr (field 2)
+	g.tmpIdx++
+	futF2GEP := fmt.Sprintf("%%async.fut.f2.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 2\n", g.indent(), futF2GEP, futureAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), resultPtrCast, futF2GEP))
+	}
+	// Load %future value
+	g.tmpIdx++
+	futureVal := fmt.Sprintf("%%async.future.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %%future, %%future* %s\n", g.indent(), futureVal, futureAddr))
+	}
+
+	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[futureVal] = "%future"
+	}
+
+	return futureVal
+}
+
+// launchThread launches a pthread with the given wrapper/args/result and returns a %task value.
+func (g *Generator) launchThread(sb *strings.Builder, wrapperName, argsBitcast, resultPtrCast, resultType string) string {
+	// alloca i64 for thread_id
+	g.tmpIdx++
+	tidAddr := fmt.Sprintf("%%async.tid.addr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tidAddr))
 	}
 
 	// Call pthread_create
@@ -5293,7 +5380,7 @@ func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunE
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tidReg, taskF0GEP))
 	}
-	// Store result_ptr (field 1) — reuse resultPtrCast (the i8* bitcast of result.addr)
+	// Store result_ptr (field 1)
 	g.tmpIdx++
 	taskF1GEP := fmt.Sprintf("%%async.task.f1.%d", g.tmpIdx)
 	if sb != nil {
@@ -5315,25 +5402,248 @@ func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunE
 	return taskVal
 }
 
-// generateAwaitExpression generates LLVM IR for `awy <expression>`.
-// It waits for the task to complete via pthread_join and loads the result.
-func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.AwaitExpression) string {
-	// 1. Evaluate the Right expression to get a pointer to the %task value
-	var taskPtr string
-	if ident, ok := expr.Right.(*parser.Identifier); ok {
-		taskPtr = g.varAddr(ident.Value)
-	} else {
-		taskVal := g.generateExprWithSB(sb, expr.Right)
-		g.tmpIdx++
-		taskAlloca := fmt.Sprintf("%%awy.task.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAlloca))
-			sb.WriteString(fmt.Sprintf("%sstore %%task %s, %%task* %s\n", g.indent(), taskVal, taskAlloca))
-		}
-		taskPtr = taskAlloca
+// launchThreadFromFuture extracts data from a %future variable and launches a pthread.
+func (g *Generator) launchThreadFromFuture(sb *strings.Builder, varName string) string {
+	futurePtr := g.varAddr(varName)
+
+	// Extract wrapper_fn_ptr (field 0)
+	g.tmpIdx++
+	wfnGEP := fmt.Sprintf("%%run.fut.wfn.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), wfnGEP, futurePtr))
+	}
+	g.tmpIdx++
+	wfnReg := fmt.Sprintf("%%run.fut.wfn.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8* (i8*)*, i8* (i8*)** %s\n", g.indent(), wfnReg, wfnGEP))
 	}
 
-	// 2. Extract thread_id (field 0 of %task): GEP + load
+	// Extract args_ptr (field 1)
+	g.tmpIdx++
+	argsGEP := fmt.Sprintf("%%run.fut.args.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), argsGEP, futurePtr))
+	}
+	g.tmpIdx++
+	argsReg := fmt.Sprintf("%%run.fut.args.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), argsReg, argsGEP))
+	}
+
+	// Extract result_ptr (field 2)
+	g.tmpIdx++
+	rptrGEP := fmt.Sprintf("%%run.fut.rptr.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 2\n", g.indent(), rptrGEP, futurePtr))
+	}
+	g.tmpIdx++
+	rptrReg := fmt.Sprintf("%%run.fut.rptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), rptrReg, rptrGEP))
+	}
+
+	// Determine result type
+	resultType := "i64"
+	if g.futureResultTypes != nil {
+		if t, ok := g.futureResultTypes[varName]; ok {
+			resultType = t
+		}
+	}
+
+	// alloca i64 for thread_id
+	g.tmpIdx++
+	tidAddr := fmt.Sprintf("%%run.fut.tid.addr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tidAddr))
+	}
+
+	// Call pthread_create with extracted function pointer
+	g.tmpIdx++
+	pcReg := fmt.Sprintf("%%run.fut.pc.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @pthread_create(i64* %s, i8* null, i8* (i8*)* %s, i8* %s)\n", g.indent(), pcReg, tidAddr, wfnReg, argsReg))
+	}
+
+	// Load thread_id
+	g.tmpIdx++
+	tidReg := fmt.Sprintf("%%run.fut.tid.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tidReg, tidAddr))
+	}
+
+	// Build %task value
+	g.tmpIdx++
+	taskAddr := fmt.Sprintf("%%run.fut.task.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAddr))
+	}
+	g.tmpIdx++
+	taskF0GEP := fmt.Sprintf("%%run.fut.task.f0.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tidReg, taskF0GEP))
+	}
+	g.tmpIdx++
+	taskF1GEP := fmt.Sprintf("%%run.fut.task.f1.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), rptrReg, taskF1GEP))
+	}
+	g.tmpIdx++
+	taskVal := fmt.Sprintf("%%run.fut.task.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %%task, %%task* %s\n", g.indent(), taskVal, taskAddr))
+	}
+
+	// Track SSA type and result type
+	if g.ssaTypes != nil {
+		g.ssaTypes[taskVal] = "%task"
+	}
+	// Propagate result type to task variable
+	if g.taskResultTypes != nil {
+		g.taskResultTypes[varName] = resultType
+	}
+
+	return taskVal
+}
+
+// generateRunExpression generates LLVM IR for `run <expression>`.
+// Accepts: CallExpression (run f-async(args)) or Identifier (run future_var).
+// Creates a pthread and returns a %task handle.
+func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunExpression) string {
+	switch c := expr.Call.(type) {
+	case *parser.CallExpression:
+		// run f-async(args) or run non-async-func(args)
+		wrapperName, argsBitcast, resultPtrCast, resultType := g.prepareAsyncCall(sb, c)
+		if wrapperName == "" {
+			return "0"
+		}
+		return g.launchThread(sb, wrapperName, argsBitcast, resultPtrCast, resultType)
+	case *parser.Identifier:
+		// run future_var — launch thread from existing future
+		return g.launchThreadFromFuture(sb, c.Value)
+	}
+	return "0"
+}
+
+// awaitFutureCall creates a future and immediately executes it (synchronous, no thread).
+func (g *Generator) awaitFutureCall(sb *strings.Builder, call *parser.CallExpression) string {
+	wrapperName, argsBitcast, _, resultType := g.prepareAsyncCall(sb, call)
+	if wrapperName == "" {
+		return "0"
+	}
+
+	// Directly call wrapper_fn(args) — synchronous execution, no pthread needed
+	g.tmpIdx++
+	callReg := fmt.Sprintf("%%awy.fut.call.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @%s(i8* %s)\n", g.indent(), callReg, wrapperName, argsBitcast))
+	}
+
+	// Bitcast result_ptr to correct type
+	g.tmpIdx++
+	resultTyped := fmt.Sprintf("%%awy.fut.typed.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, callReg, resultType))
+	}
+
+	// Load the result value
+	g.tmpIdx++
+	resultVal := fmt.Sprintf("%%awy.fut.result.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
+	}
+
+	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[resultVal] = resultType
+	}
+
+	return resultVal
+}
+
+// awaitFutureVar executes a %future variable directly (synchronous, no thread).
+func (g *Generator) awaitFutureVar(sb *strings.Builder, varName string) string {
+	futurePtr := g.varAddr(varName)
+
+	// Extract wrapper_fn_ptr (field 0)
+	g.tmpIdx++
+	wfnGEP := fmt.Sprintf("%%awy.fv.wfn.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), wfnGEP, futurePtr))
+	}
+	g.tmpIdx++
+	wfnReg := fmt.Sprintf("%%awy.fv.wfn.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8* (i8*)*, i8* (i8*)** %s\n", g.indent(), wfnReg, wfnGEP))
+	}
+
+	// Extract args_ptr (field 1)
+	g.tmpIdx++
+	argsGEP := fmt.Sprintf("%%awy.fv.args.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), argsGEP, futurePtr))
+	}
+	g.tmpIdx++
+	argsReg := fmt.Sprintf("%%awy.fv.args.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), argsReg, argsGEP))
+	}
+
+	// Extract result_ptr (field 2)
+	g.tmpIdx++
+	rptrGEP := fmt.Sprintf("%%awy.fv.rptr.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 2\n", g.indent(), rptrGEP, futurePtr))
+	}
+	g.tmpIdx++
+	rptrReg := fmt.Sprintf("%%awy.fv.rptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), rptrReg, rptrGEP))
+	}
+
+	// Determine result type
+	resultType := "i64"
+	if g.futureResultTypes != nil {
+		if t, ok := g.futureResultTypes[varName]; ok {
+			resultType = t
+		}
+	}
+
+	// Directly call wrapper_fn(args)
+	g.tmpIdx++
+	callReg := fmt.Sprintf("%%awy.fv.call.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* %s(i8* %s)\n", g.indent(), callReg, wfnReg, argsReg))
+	}
+
+	// Bitcast result_ptr to correct type (use the result_ptr from the future)
+	g.tmpIdx++
+	resultTyped := fmt.Sprintf("%%awy.fv.typed.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, rptrReg, resultType))
+	}
+
+	// Load the result value
+	g.tmpIdx++
+	resultVal := fmt.Sprintf("%%awy.fv.result.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
+	}
+
+	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[resultVal] = resultType
+	}
+
+	return resultVal
+}
+
+// awaitTaskVar joins a %task variable via pthread_join and loads the result.
+func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
+	taskPtr := g.varAddr(varName)
+
+	// Extract thread_id (field 0 of %task)
 	g.tmpIdx++
 	tidGEP := fmt.Sprintf("%%awy.tid.gep.%d", g.tmpIdx)
 	if sb != nil {
@@ -5345,7 +5655,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tidReg, tidGEP))
 	}
 
-	// 3. Extract result_ptr (field 1 of %task): GEP + load
+	// Extract result_ptr (field 1 of %task)
 	g.tmpIdx++
 	rptrGEP := fmt.Sprintf("%%awy.rptr.gep.%d", g.tmpIdx)
 	if sb != nil {
@@ -5357,7 +5667,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), rptrReg, rptrGEP))
 	}
 
-	// 4. Call pthread_join(i64 %tid, i8** %ret.ptr)
+	// pthread_join
 	g.tmpIdx++
 	retPtr := fmt.Sprintf("%%awy.ret.%d", g.tmpIdx)
 	if sb != nil {
@@ -5369,24 +5679,22 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @pthread_join(i64 %s, i8** %s)\n", g.indent(), pjReg, tidReg, retPtr))
 	}
 
-	// 5. Determine result type from taskResultTypes
+	// Determine result type
 	resultType := "i64"
-	if ident, ok := expr.Right.(*parser.Identifier); ok {
-		if g.taskResultTypes != nil {
-			if t, ok := g.taskResultTypes[ident.Value]; ok {
-				resultType = t
-			}
+	if g.taskResultTypes != nil {
+		if t, ok := g.taskResultTypes[varName]; ok {
+			resultType = t
 		}
 	}
 
-	// 6. Bitcast result_ptr to correct type
+	// Bitcast result_ptr to correct type
 	g.tmpIdx++
 	resultTyped := fmt.Sprintf("%%awy.result.typed.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, rptrReg, resultType))
 	}
 
-	// 7. Load the result value
+	// Load the result value
 	g.tmpIdx++
 	resultVal := fmt.Sprintf("%%awy.result.%d", g.tmpIdx)
 	if sb != nil {
@@ -5394,6 +5702,92 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 
 	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[resultVal] = resultType
+	}
+
+	return resultVal
+}
+
+// generateAwaitExpression generates LLVM IR for `awy <expression>`.
+// Accepts: CallExpression (awy f-async(args)), future variable (awy f), or task variable (awy h).
+func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.AwaitExpression) string {
+	// Case 1: awy f-async(args) — create future + execute directly
+	if call, ok := expr.Right.(*parser.CallExpression); ok {
+		if g.isAsyncCall(call) {
+			return g.awaitFutureCall(sb, call)
+		}
+	}
+
+	// Case 2 & 3: awy <identifier> — check if future or task
+	if ident, ok := expr.Right.(*parser.Identifier); ok {
+		if g.isFutureVar(ident.Value) {
+			// awy <future_var> — execute directly
+			return g.awaitFutureVar(sb, ident.Value)
+		}
+		// awy <task_var> — pthread_join
+		return g.awaitTaskVar(sb, ident.Value)
+	}
+
+	// Fallback: evaluate expression, treat as task
+	taskVal := g.generateExprWithSB(sb, expr.Right)
+	g.tmpIdx++
+	taskAlloca := fmt.Sprintf("%%awy.task.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore %%task %s, %%task* %s\n", g.indent(), taskVal, taskAlloca))
+	}
+
+	// Extract thread_id and result_ptr, pthread_join, load result
+	g.tmpIdx++
+	tidGEP := fmt.Sprintf("%%awy.tid.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), tidGEP, taskAlloca))
+	}
+	g.tmpIdx++
+	tidReg := fmt.Sprintf("%%awy.tid.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tidReg, tidGEP))
+	}
+	g.tmpIdx++
+	rptrGEP := fmt.Sprintf("%%awy.rptr.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), rptrGEP, taskAlloca))
+	}
+	g.tmpIdx++
+	rptrReg := fmt.Sprintf("%%awy.rptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), rptrReg, rptrGEP))
+	}
+	g.tmpIdx++
+	retPtr := fmt.Sprintf("%%awy.ret.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), retPtr))
+	}
+	g.tmpIdx++
+	pjReg := fmt.Sprintf("%%awy.pj.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @pthread_join(i64 %s, i8** %s)\n", g.indent(), pjReg, tidReg, retPtr))
+	}
+
+	// Determine result type from SSA types
+	resultType := "i64"
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[taskVal]; ok {
+			resultType = t
+		}
+	}
+
+	g.tmpIdx++
+	resultTyped := fmt.Sprintf("%%awy.result.typed.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, rptrReg, resultType))
+	}
+	g.tmpIdx++
+	resultVal := fmt.Sprintf("%%awy.result.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
+	}
 	if g.ssaTypes != nil {
 		g.ssaTypes[resultVal] = resultType
 	}

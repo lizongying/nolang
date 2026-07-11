@@ -546,6 +546,10 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 }
 
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
+	// -async 函数调用：返回 %future（惰性，不执行）
+	if g.isAsyncCall(expr) {
+		return g.generateFutureCreation(sb, expr)
+	}
 	// Indirect call through a function-type variable (e.g. fn() where fn is a param of type fn (...)).
 	// Detect before any other dispatch: if the callee identifier is registered in
 	// g.varFnTypes, emit a call through a loaded function pointer.

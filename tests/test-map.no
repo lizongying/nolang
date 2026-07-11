@@ -1,8 +1,7 @@
-// test-map.no — 測試 map 關鍵字與 hashmap 實作
-
+// test-map.no — 測試 map 類型與 hashmap 實作
 
 test-map-str-i64 = () {
-    m map[str]i64 = { 'a':0, 'b':1 }
+    m [str]i64 = { 'a': 0, 'b': 1 }
     m.put('c', 2)
 
     v = m.get('a')

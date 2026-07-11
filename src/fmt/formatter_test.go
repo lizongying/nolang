@@ -1519,10 +1519,10 @@ func TestFormatLabeledFor(t *testing.T) {
 		},
 		{
 			name: "labeled infinite loop",
-		input: `#1!! {
+			input: `#1!! {
     x = 1
 }`,
-		expected: `#1!! {
+			expected: `#1!! {
     x = 1
 }`,
 		},
@@ -1657,21 +1657,21 @@ func TestFormatUnionType(t *testing.T) {
 		input    string
 		expected string
 	}{
-	{
-		name:     "single-type alias round-trips",
-		input:    "my-int = i64\n",
-		expected: "my-int = i64",
-	},
-	{
-		name:     "union type alias round-trips",
-		input:    "int = i8 | i16 | i32 | i64\n",
-		expected: "int = i8 | i16 | i32 | i64",
-	},
-	{
-		name:     "chained union type alias round-trips",
-		input:    "num = int | float\n",
-		expected: "num = int | float",
-	},
+		{
+			name:     "single-type alias round-trips",
+			input:    "my-int = i64\n",
+			expected: "my-int = i64",
+		},
+		{
+			name:     "union type alias round-trips",
+			input:    "int = i8 | i16 | i32 | i64\n",
+			expected: "int = i8 | i16 | i32 | i64",
+		},
+		{
+			name:     "chained union type alias round-trips",
+			input:    "num = int | float\n",
+			expected: "num = int | float",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1920,6 +1920,44 @@ func TestFormatCombinedOptionPatterns(t *testing.T) {
         err || nil -> log('failed')
         ok -> process(it)
     }
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatMapType(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "map type with literal and method call",
+			input: `test = () {
+    m [str]i64 = { 'a':0, 'b':1 }
+    m.put('c', 2)
+}`,
+			expected: `test = () {
+    m [str]i64 = { 'a': 0, 'b': 1 }
+    m.put('c', 2)
+}`,
+		},
+		{
+			name: "map type empty literal",
+			input: `test = () {
+    m [str]i64 = { }
+}`,
+			expected: `test = () {
+    m [str]i64 = { }
 }`,
 		},
 	}

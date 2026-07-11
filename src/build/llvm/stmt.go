@@ -101,6 +101,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
+	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -702,6 +703,15 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		return "i64"
 	case *parser.CallExpression:
+		// -async 函数调用返回 %future（惰性，未执行）
+		if g.isAsyncCall(v) {
+			if _, _, resultType := g.resolveAsyncCallInfo(v); resultType != "" {
+				if g.futureResultTypes != nil && stmt != nil && stmt.Name != nil {
+					g.futureResultTypes[stmt.Name.Value] = resultType
+				}
+			}
+			return "%future"
+		}
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
 			// FFI extern 函式：依 extern 宣告的 result 型別推斷 Nolang 儲存型別。
@@ -952,15 +962,37 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	case *parser.RunExpression:
 		// Track result type for awy type inference
-		if call, ok := v.Call.(*parser.CallExpression); ok {
-			_, _, resultType := g.resolveAsyncCallInfo(call)
-			if resultType != "" && g.taskResultTypes != nil {
+		switch c := v.Call.(type) {
+		case *parser.CallExpression:
+			_, _, resultType := g.resolveAsyncCallInfo(c)
+			if resultType != "" && g.taskResultTypes != nil && stmt != nil && stmt.Name != nil {
 				g.taskResultTypes[stmt.Name.Value] = resultType
+			}
+		case *parser.Identifier:
+			// run future_var — 从 futureResultTypes 传播到 taskResultTypes
+			if g.futureResultTypes != nil && g.taskResultTypes != nil && stmt != nil && stmt.Name != nil {
+				if t, ok := g.futureResultTypes[c.Value]; ok {
+					g.taskResultTypes[stmt.Name.Value] = t
+				}
 			}
 		}
 		return "%task"
 	case *parser.AwaitExpression:
+		// awy f-async(args) — 直接调用 -async 函数
+		if call, ok := v.Right.(*parser.CallExpression); ok {
+			if g.isAsyncCall(call) {
+				if _, _, resultType := g.resolveAsyncCallInfo(call); resultType != "" {
+					return resultType
+				}
+			}
+		}
+		// awy <identifier> — future 变量或 task 变量
 		if ident, ok := v.Right.(*parser.Identifier); ok {
+			if g.futureResultTypes != nil {
+				if t, ok := g.futureResultTypes[ident.Value]; ok {
+					return t
+				}
+			}
 			if g.taskResultTypes != nil {
 				if t, ok := g.taskResultTypes[ident.Value]; ok {
 					return t
