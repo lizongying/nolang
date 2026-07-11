@@ -27,4 +27,6 @@ src/no
 /no
 /nolang
 /nolang-lsp
+docs/build
+docs/.docusaurus
 *.log
