@@ -16,6 +16,15 @@
 // HTTP/3 常量
 // ═══════════════════════════════════════════════
 
+// HTTP 方法
+HTTP3-METHOD-GET = 'GET'
+HTTP3-METHOD-POST = 'POST'
+HTTP3-METHOD-PUT = 'PUT'
+HTTP3-METHOD-DELETE = 'DELETE'
+HTTP3-METHOD-PATCH = 'PATCH'
+HTTP3-METHOD-HEAD = 'HEAD'
+HTTP3-METHOD-OPTIONS = 'OPTIONS'
+
 // HTTP/3 影格類型
 HTTP3-FRAME-DATA = 0x00
 HTTP3-FRAME-HEADERS = 0x01
@@ -444,7 +453,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     // ── 編碼 DATA 影格（如有主體）──
     data-buf []byte
     data-n = 0
-    body.len > 0 -> data-buf; data-n = http3-encode-data-frame(body)
+    body.len > 0 -> data-buf, data-n = http3-encode-data-frame(body)
 
     // ── 合併為串流資料 ──
     stream-data []byte
@@ -607,7 +616,7 @@ http3-get = (url str) (resp ?http3-response) {
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, 'GET', path, host, '')
+        ok -> resp = http3-send-request(it, HTTP3-METHOD-GET, path, host, '')
     }
 }
 
@@ -629,7 +638,7 @@ http3-post = (url str, body str) (resp ?http3-response) {
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, 'POST', path, host, body)
+        ok -> resp = http3-send-request(it, HTTP3-METHOD-POST, path, host, body)
     }
 }
 

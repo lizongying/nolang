@@ -194,7 +194,6 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     // 移除末尾的點
     name.len > 0 -> name[name.len - 1] == 46 -> name = name.slice(0, name.len - 1)
-
     {
         jumped -> next-pos = end-pos
         -> next-pos = end-pos

@@ -583,6 +583,66 @@ c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
 ```
 
+### 異步編程（run / awy）
+
+Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須以 `-async` 結尾，但不使用 `async` 關鍵字。
+
+- `run` — 啟動異步線程，返回一個 task handle
+- `awy` — 等待異步線程完成並取得結果
+
+```nolang
+// 異步函數定義（名稱以 -async 結尾）
+compute-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+// 基本異步調用
+test-basic = () {
+    h = run compute-async(21)
+    r = awy h
+    print(r)  // 42
+}
+
+// 並發多個任務
+test-concurrent = () {
+    h1 = run compute-async(10)
+    h2 = run compute-async(20)
+    r1 = awy h1
+    r2 = awy h2
+    print(r1)  // 20
+    print(r2)  // 40
+}
+
+// 內聯等待
+test-inline = () {
+    r = awy run compute-async(5)
+    print(r)  // 10
+}
+```
+
+> **命名規則**：異步函數名必須以 `-async` 結尾（如 `compute-async`、`fetch-data-async`）。不使用 `async` 關鍵字聲明。
+
+### 多重賦值
+
+函數可以返回多個值，調用時使用多重賦值接收：
+
+```nolang
+// 函數定義返回多個結果參數
+swap = (a i64, b i64) (x i64, y i64) {
+    x = b
+    y = a
+}
+
+// 多重賦值
+a, b = swap(5, 3)
+
+// 也支援作為 match arm 的 body
+val: {
+    ok -> a, b = parse-pair(it)
+    -> return
+}
+```
+
 ## 數組與切片
 
 容器存儲數據副本，原變量與容器獨立，杜絕懸垂引用。

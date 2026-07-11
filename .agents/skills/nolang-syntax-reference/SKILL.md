@@ -17,7 +17,7 @@ This skill provides quick reference to Nolang language syntax. For full details,
 
 **Base types:** `byte`, `bool`, `char`, `str`, `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`
 
-**Container types:** `obj`, `map`, `arr` (fixed-length), `vec` (dynamic), `slice`
+**Container types:** `arr` (fixed-length `[n]t`), `vec` (dynamic `[]t`), `slice` (view into arr/vec/str), map types (via std lib structs like `linked-hash-map`, `str-map`, `tree-map`, `hash-set`, `str-set`, `tree-set`)
 
 **Special types:** `*` (pointer, FFI #c & std only), `any` (std only), `bigint`, `err`
 
@@ -494,6 +494,54 @@ val: {
 }
 ```
 
+### Async / Await（`run` / `awy`）
+
+Nolang uses `run` and `awy` for async concurrency. Async function names must end with `-async` (no `async` keyword).
+
+- `run` — start an async thread, returns a task handle
+- `awy` — wait for the async thread to complete and get the result
+
+```nolang
+// Async function definition (name ends with -async)
+compute-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+// Basic async call
+h = run compute-async(21)
+r = awy h          // r = 42
+
+// Concurrent tasks
+h1 = run compute-async(10)
+h2 = run compute-async(20)
+r1 = awy h1        // r1 = 20
+r2 = awy h2        // r2 = 40
+
+// Inline await
+r = awy run compute-async(5)   // r = 10
+```
+
+> **Naming rule**: async function names must end with `-async` (e.g. `compute-async`, `fetch-data-async`). Do not use the `async` keyword.
+
+### Multi-Assignment
+
+Functions can return multiple result parameters, received via multi-assignment:
+
+```nolang
+swap = (a i64, b i64) (x i64, y i64) {
+    x = b
+    y = a
+}
+
+a, b = swap(5, 3)
+
+// Also valid as a match arm body
+val: {
+    ok -> a, b = parse-pair(it)
+    -> return
+}
+```
+
 ### Structs & Methods
 
 Struct definitions and literals must always use multi-line form. Each field occupies its own line. Fields are not separated by commas, and there is no trailing comma.
@@ -657,13 +705,25 @@ The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reade
 
 ### Networking Modules
 
-The standard library includes HTTP and SSE client modules under `std/net/`:
+The standard library includes comprehensive networking modules under `std/net/`:
 
 - `std/net/http` — HTTP/1.1 client (GET, POST, PUT, DELETE, PATCH), supports TLS
-- `std/net/http2` — HTTP/2.0 client (h2c prior knowledge mode)
+- `std/net/http2` — HTTP/2.0 client (RFC 7540, h2c prior knowledge mode)
+- `std/net/http3` — HTTP/3.0 client (RFC 9114, over QUIC)
+- `std/net/ws` — WebSocket client and server (RFC 6455)
+- `std/net/quic` — QUIC protocol (RFC 9000)
+- `std/net/tls` — TLS 1.2/1.3 client connection (pure Nolang)
 - `std/net/sse` — Server-Sent Events client (W3C EventSource), supports TLS and auto-reconnect
-- `std/net/tls` — TLS 1.2 client connection
 - `std/net/client` — High-level TCP client with reconnect support
+- `std/net/server` — HTTP server
+- `std/net/dns` — DNS resolution
+- `std/net/url` — URL parsing
+- `std/net/cookie` — HTTP Cookie handling
+- `std/net/multipart` — Multipart form data
+- `std/net/hpack` — HPACK header compression (for HTTP/2)
+- `std/net/proxy` — Proxy support
+- `std/net/pool` — Connection pool
+- `std/net/unix` — Unix domain sockets
 - `std/net/ip` — IPv4 address parsing and classification
 
 ```nolang
@@ -836,6 +896,11 @@ math.PI
 - `*` — break（跳出循環）（規劃中，目前仍使用 `break`）
 - `...` — return/terminate（規劃中，目前仍使用 `return`）
 - `<-` — range iteration
+- `->` — match arm / if-else branch (`cond -> body`)
+- `:` — match expression (`x: { ... }`)
+- `?` — option type prefix (`?i64`, `?str`) / ternary operator
+- `run` — start async thread
+- `awy` — await async thread completion
 
 ### FFI (#c directive)
 
@@ -958,8 +1023,8 @@ For detailed documentation on each topic, see:
 | `for cond { }`                       | `for cond { }`                  |
 | `for i=0, i<n, i++ { }`              | `n * { }` or `i <- [0..n): { }` |
 | `for i <- [a..b] { }`                | `i <- [a..b]: { }`              |
-| `match x { 1 -> 1, _ -> 0 }`         | `x: { 1 -> 1; -> 0 }`           |
-| `if c { a } elif d { b } else { e }` | `{ c -> a; d -> b; -> e }`      |
+| `match x { 1 -> 1, _ -> 0 }`         | `x: { 1 -> 1\n    -> 0 }`       |
+| `if c { a } elif d { b } else { e }` | `{ c -> a\n    d -> b\n    -> e }` |
 | `break`（保留，暫不遷移）             | —                               |
 | `continue`（保留，暫不遷移）           | —                               |
 | `return`（保留，暫不遷移）            | —                               |

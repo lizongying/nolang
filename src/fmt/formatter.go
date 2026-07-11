@@ -910,7 +910,7 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 }
 
 // formatStandaloneBody formats the body of a standalone if-then (cond -> body).
-// If the body is a single expression or let-statement, it outputs inline.
+// If the body is a single expression, let-statement, or multi-assign, it outputs inline.
 // If the body contains multiple statements or non-expression statements (e.g. return),
 // it outputs `{ stmts }`.
 func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
@@ -920,6 +920,10 @@ func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 			return
 		}
 		if _, ok := body.Statements[0].(*parser.LetStatement); ok {
+			f.formatStatement(body.Statements[0])
+			return
+		}
+		if _, ok := body.Statements[0].(*parser.MultiAssignStatement); ok {
 			f.formatStatement(body.Statements[0])
 			return
 		}

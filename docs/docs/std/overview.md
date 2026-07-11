@@ -89,40 +89,6 @@ println-empty()         // 列印空行
 
 **其他：** `fmod`, `max`, `min`
 
-### strconv — 字串轉換
-
-```nolang
-// 字串 → 數值
-str.to-i8()
-str.to-i16()
-str.to-i32()
-str.to-i64()
-str.to-u8()
-str.to-u16()
-str.to-u32()
-str.to-u64()
-str.to-f32()
-str.to-f64()
-str.to-bool()
-str.to-byte()
-str.to-char()
-
-// 數值 → 字串
-i8.to-str()
-i16.to-str()
-i32.to-str()
-i64.to-str()
-u8.to-str()
-u16.to-str()
-u32.to-str()
-u64.to-str()
-f32.to-str()
-f64.to-str()
-bool.to-str()
-byte.to-str()
-char.to-str()
-```
-
 ### char — 字元操作
 
 char 本質為 i32（Unicode 碼點），所有操作以方法形式提供：
@@ -711,6 +677,259 @@ yes = client.is-connected()         // 檢查連線狀態
 ok = client.reconnect()             // 重新連線（使用 last-event-id）
 ```
 
+### net/http — HTTP/1.1 客戶端
+
+提供 HTTP/1.1 協議的客戶端，支援 GET、POST、PUT、DELETE、PATCH 等方法，可選 TLS：
+
+```nolang
+// 結構體
+http-request {
+    method str
+    url str
+    body str
+    headers [16]str
+    header-count i64
+}
+http-response {
+    status-code i64
+    status-text str
+    headers str
+    header-names [32]str
+    header-values [32]str
+    header-count i64
+    body str
+}
+
+// 便捷函數
+resp = http-get(url)                        // GET 請求（?http-response）
+resp = http-post(url, body)                  // POST 請求（?http-response）
+resp = http-do(method, url, body)            // 自訂方法（?http-response）
+
+// 使用 request 物件
+req = http-request{}
+req.init('POST', url, body)
+req.add-header('Content-Type', 'application/json')
+resp = http-do-req(req)                      // 發送請求（?http-response）
+
+// 解析回應標頭
+resp.parse-headers()
+```
+
+### net/http2 — HTTP/2.0 客戶端（RFC 7540）
+
+支援 HTTP/2 影格解析與連線管理，支援 h2c prior knowledge 模式：
+
+```nolang
+// 影格結構體
+http2-frame {
+    length i64
+    frame-type i64
+    flags i64
+    stream-id i64
+    payload str
+}
+
+// 連線結構體
+http2-conn {
+    fd i64
+    next-stream-id i64
+    send-window i64
+    recv-window i64
+    initialized bool
+    use-tls bool
+}
+
+// 連線與請求
+c = http2-connect(host, port)                // 建立連線（?http2-conn）
+resp = http2-do(method, url, body)           // 發送請求（?http-response）
+
+// 影格操作
+frame = http2-frame{}
+pos = frame.parse(data, pos)                 // 解析影格（?i64）
+pos = frame.serialize(buf, pos)              // 序列化影格
+ok = c.send-frame(frame)                     // 發送影格
+frame = c.recv-frame()                       // 接收影格（?http2-frame）
+```
+
+### net/http3 — HTTP/3.0 客戶端（RFC 9114）
+
+基於 QUIC 協議的 HTTP/3 客戶端：
+
+```nolang
+// 方法常量
+HTTP3-METHOD-GET = 'GET'
+HTTP3-METHOD-POST = 'POST'
+HTTP3-METHOD-PUT = 'PUT'
+HTTP3-METHOD-DELETE = 'DELETE'
+HTTP3-METHOD-PATCH = 'PATCH'
+HTTP3-METHOD-HEAD = 'HEAD'
+HTTP3-METHOD-OPTIONS = 'OPTIONS'
+
+// 便捷函數
+c = http3-connect(host, port)                // 建立 QUIC 連線（?http3-conn）
+resp = http3-send-request(c, method, path, headers, body) // 發送請求（?http-response）
+resp = http3-get(url)                        // GET 請求（?http-response）
+resp = http3-post(url, body)                 // POST 請求（?http-response）
+
+// QPACK 標頭編解碼
+buf, n = qpack-encode-header(name, value)
+buf, n = qpack-encode-headers(names, values, count)
+name, value, pos = qpack-decode-header(buf, pos)
+```
+
+### net/ws — WebSocket 客戶端與服務端（RFC 6455）
+
+支援 WebSocket 協議的全雙工通訊，可作為客戶端或服務端：
+
+```nolang
+// 訊息結構體
+ws-message {
+    opcode i64           // 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
+    data str
+    fin bool
+}
+
+// 服務端
+s = ws-listen-on(host, port)                 // 建立監聽（?ws-server）
+c = s.accept()                               // 接受連接（?ws-server-conn）
+msg = c.recv()                               // 接收訊息（?ws-message）
+ok = c.send-text(text)                       // 發送文字
+ok = c.send-binary(data)                     // 發送二進制
+c.close()
+
+// 客戶端
+c = ws-connect(url)                          // 連接服務端（?ws-client）
+msg = c.recv()                               // 接收訊息（?ws-message）
+ok = c.send-text(text)                       // 發送文字
+ok = c.send-binary(data)                     // 發送二進制
+c.close()
+```
+
+### net/tls — TLS 1.2/1.3 客戶端（純 Nolang 實現）
+
+提供 TLS 加密連接，支援 TLS 1.2 和 1.3：
+
+```nolang
+// 連接
+c = tls-dial(host, port)                     // 建立 TLS 連接（?tls-conn）
+n = c.send(data)                             // 發送加密資料（?i64）
+n = c.recv(buf, n)                           // 接收解密資料（?i64）
+c.close()
+```
+
+### net/client — 高階 TCP 客戶端
+
+封裝 `conn` 結構體，提供自動重連等功能：
+
+```nolang
+c = net-client(host, port)                   // 建立客戶端（?client）
+ok = c.connect(host, port)                   // 連接
+ok = c.reconnect()                           // 重連
+written = c.send(data)                       // 發送
+read-n = c.recv(buf, n)                      // 接收
+line = c.recv-line()                         // 接收一行（?str）
+response = c.request(data)                   // 請求-回應模式（?str）
+yes = c.is-connected()                       // 連接狀態
+c.close()
+```
+
+### net/quic — QUIC 協議（RFC 9000）
+
+提供 QUIC 傳輸協議實現，作為 HTTP/3 的底層傳輸層：
+
+```nolang
+c = quic-dial(host, port)                    // 建立 QUIC 連接（?quic-conn）
+n = c.send(data, n)                          // 發送資料
+n = c.recv(buf, n)                           // 接收資料
+c.close()
+```
+
+### net/server — HTTP 伺服器
+
+提供 HTTP 伺服器功能：
+
+```nolang
+s = server{}
+ok = s.listen(host, port)                    // 開始監聽
+ok = s.serve()                               // 處理請求
+s.close()
+```
+
+### net/dns — DNS 解析
+
+提供 DNS 查詢功能：
+
+```nolang
+ip = dns-resolve(host)                       // 解析主機名（?str）
+```
+
+### net/url — URL 解析
+
+提供 URL 解析與建構功能：
+
+```nolang
+u = url-parse(url)                           // 解析 URL
+s = u.to-str()                               // 轉為字串
+```
+
+### net/cookie — HTTP Cookie
+
+提供 HTTP Cookie 的解析與管理：
+
+```nolang
+c = cookie{}
+c.parse(set-cookie-header)
+s = c.to-str()
+```
+
+### net/multipart — Multipart 表單資料
+
+提供 multipart/form-data 的解析與建構：
+
+```nolang
+out = multipart-encode(fields, boundary)
+fields = multipart-parse(data, boundary)
+```
+
+### net/hpack — HPACK 標頭壓縮（HTTP/2）
+
+提供 HPACK 演算法的編解碼，用於 HTTP/2 標頭壓縮：
+
+```nolang
+buf, n = hpack-encode(headers)
+headers = hpack-decode(buf, n)
+```
+
+### net/proxy — 代理支援
+
+提供 HTTP/SOCKS 代理連接功能：
+
+```nolang
+c = proxy-dial(proxy-url, target-host, target-port)
+```
+
+### net/pool — 連接池
+
+提供網路連接的池化管理，重用連接以提升效能：
+
+```nolang
+p = pool{}
+p.init(capacity)
+c = p.get()                                  // 從池中取得連接
+p.put(c)                                     // 歸還連接
+p.close()
+```
+
+### net/unix — Unix 域套接字
+
+提供 Unix 域套接字通訊：
+
+```nolang
+fd = unix-listen(path)                       // 監聽
+fd = unix-dial(path)                         // 連接
+fd = unix-accept(listen-fd)                  // 接受連接
+```
+
 ---
 
 ## 時間與日期
@@ -913,6 +1132,142 @@ s.clear()
 n = s.len()
 empty = s.is-empty()
 s.for-each(val)
+```
+
+### map/tree-map — 有序映射表（AVL 樹）
+
+基於 AVL 自平衡二元搜尋樹實現的有序映射表（i64→i64），容量 64：
+
+```nolang
+m = tree-map{}
+m.clear()                           // 初始化
+ok = m.put(key, val)                // 插入或更新
+val = m.get(key)                    // 查找（?i64, nil=未找到）
+yes = m.contains(key)               // 檢查鍵是否存在
+ok = m.remove(key)                  // 刪除鍵
+key = m.first()                     // 最小鍵（?i64）
+key = m.last()                      // 最大鍵（?i64）
+key = m.lower-bound(target)         // 第一個 ≥ target 的鍵（?i64）
+key = m.upper-bound(target)         // 第一個 > target 的鍵（?i64）
+m.for-each(k, v)                    // 按鍵升序遍歷
+sz = m.size()
+yes = m.empty()
+yes = m.full()
+```
+
+### map/tree-set — 有序集合（AVL 樹）
+
+基於 AVL 自平衡二元搜尋樹實現的有序集合（i64），容量 64：
+
+```nolang
+s = tree-set{}
+s.clear()                           // 初始化
+ok = s.add(key)                     // 加入元素
+yes = s.contains(key)               // 檢查是否存在
+ok = s.remove(key)                  // 刪除元素
+val = s.first()                     // 最小值（?i64）
+val = s.last()                      // 最大值（?i64）
+val = s.lower-bound(target)         // 第一個 ≥ target 的元素（?i64）
+val = s.upper-bound(target)         // 第一個 > target 的元素（?i64）
+s.for-each(val)                     // 按升序遍歷
+sz = s.size()
+yes = s.empty()
+yes = s.full()
+```
+
+### collection/queue — 泛型佇列（環形緩衝區）
+
+基於定長陣列的環形緩衝區實現，緩衝區由 `[n]t` 接收者提供：
+
+```nolang
+buf [128]i64 = [0:128]
+q = buf.queue-init()
+ok = buf.queue-push(q, val)         // 推入尾端
+val = buf.queue-pop(q)              // 從前端彈出（?t）
+val = buf.queue-peek(q)             // 查看隊首（?t）
+sz = q.size()
+yes = q.empty()
+yes = q.full()
+q.clear()
+```
+
+### collection/arr-stack — 泛型堆疊（基於定長陣列）
+
+基於定長陣列的堆疊實現，緩衝區由 `[n]t` 接收者提供：
+
+```nolang
+buf [128]i64 = [0:128]
+s = buf.arr-stack-init()
+ok = buf.arr-stack-push(s, val)     // 推入
+val = buf.arr-stack-pop(s)          // 彈出（?t）
+val = buf.arr-stack-peek(s)         // 查看頂端（?t）
+sz = s.size()
+yes = s.empty()
+yes = s.full()
+s.clear()
+```
+
+### collection/link — 泛型雙向鏈結串列
+
+基於定長陣列節點池的雙向鏈結串列，值由 `[n]t` 接收者提供：
+
+```nolang
+buf [128]i64 = [0:128]
+nxt [128]i64 = [0:128]
+prv [128]i64 = [0:128]
+l = buf.link-init(nxt, prv)
+ok = buf.link-push-front(l, val)    // 插入頭部
+ok = buf.link-push-back(l, val)     // 插入尾部
+val = buf.link-pop-front(l)         // 彈出頭部（?t）
+val = buf.link-pop-back(l)          // 彈出尾部（?t）
+val = buf.link-peek-front(l)        // 查看頭部（?t）
+val = buf.link-peek-back(l)         // 查看尾部（?t）
+sz = l.size()
+yes = l.empty()
+yes = l.full()
+```
+
+---
+
+## 資料庫
+
+### database/sql — 資料庫存取介面
+
+定義資料庫連線、查詢、預編譯陳述式的標準介面，由具體驅動實現：
+
+```nolang
+// 執行結果
+result {
+    last-id i64
+    affected i64
+}
+
+// 連線介面（enter/leave 自動管理）
+db enter, leave {
+    close() (ok bool)
+    exec(sql str) (r result)
+    query(sql str) (rs rows)
+    prepare(sql str) (s stmt)
+}
+
+// 結果集介面
+rows enter, leave {
+    next() (ok bool)                    // 迭代下一行
+    scan-int(col i64) (v i64)           // 讀取整數
+    scan-str(col i64) (v str)           // 讀取字串
+    scan-float(col i64) (v f64)         // 讀取浮點數
+    close() (ok bool)
+}
+
+// 預編譯陳述式介面
+stmt enter, leave {
+    bind-int(idx i64, v i64) (ok bool)
+    bind-str(idx i64, v str) (ok bool)
+    bind-bool(idx i64, v bool) (ok bool)
+    exec() (r result)
+    query() (rs rows)
+    close() (ok bool)
+}
 ```
 
 ---
@@ -1119,6 +1474,184 @@ x509-fingerprint(cert, n, h0..h7)  // SHA-256 憑證指紋
 x509-rsa-e(cert, n, e)             // RSA 公鑰指數提取
 ```
 
+### hash/aes-256 — AES-256 加解密（ECB 模式）
+
+```nolang
+aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   // 加密
+aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   // 解密
+```
+
+### hash/aes-cbc — AES-CBC 模式（含 PKCS7 填充）
+
+```nolang
+out = aes-128-cbc-enc(in []byte, key [16]byte, iv [16]byte)
+out = aes-128-cbc-dec(in []byte, key [16]byte, iv [16]byte)
+out = pkcs7-pad(in []byte)
+n = pkcs7-unpad(in []byte)
+```
+
+### hash/aes-256-cbc — AES-256-CBC 加解密
+
+```nolang
+out = aes-256-cbc-enc(in []byte, key [32]byte, iv [16]byte)
+out = aes-256-cbc-dec(in []byte, key [32]byte, iv [16]byte)
+```
+
+### hash/aes-ctr — AES-CTR 計數器模式
+
+```nolang
+out = aes-128-ctr(in []byte, key [16]byte, iv [16]byte)
+out = aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
+```
+
+### hash/aes-gcm — AES-GCM AEAD
+
+```nolang
+// AES-128-GCM
+sealed = aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
+```
+
+### hash/aes-256-gcm — AES-256-GCM AEAD（NIST SP 800-38D）
+
+```nolang
+sealed = aes-256-gcm-seal(key [32]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-256-gcm-open(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
+```
+
+### hash/hmac — HMAC 訊息認證碼
+
+```nolang
+out = hmac(key []byte, key-n i64, msg []byte, msg-n i64, block-size i64) (out [32]byte)
+```
+
+### hash/hkdf — HKDF 金鑰推導（RFC 5869）
+
+```nolang
+ok = hkdf-extract(salt []byte, salt-n i64, ikm []byte, ikm-n i64, prk []byte)
+ok = hkdf-expand(prk []byte, prk-n i64, info []byte, info-n i64, out []byte, out-n i64)
+```
+
+### hash/pbkdf2 — PBKDF2 金鑰推導（RFC 2898）
+
+```nolang
+pbkdf2(password []byte, pw-n i64, salt []byte, salt-n i64, iter i64, out []byte, out-n i64)
+```
+
+### hash/argon2 — Argon2 記憶體硬金鑰推導
+
+```nolang
+argon2id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
+```
+
+### hash/scrypt — scrypt 金鑰推導
+
+```nolang
+scrypt(password []byte, pw-n i64, salt []byte, salt-n i64, n i64, r i64, p i64, out []byte, out-n i64)
+```
+
+### hash/sha224 — SHA-224（224-bit）
+
+```nolang
+hash = sha224(data []byte) (hash [28]byte)
+hex = sha224-hex(data []byte) (hex str)
+```
+
+### hash/sha384 — SHA-384（384-bit）
+
+```nolang
+hash = sha384(data []byte) (hash [48]byte)
+hex = sha384-hex(data []byte) (hex str)
+```
+
+### hash/sha3 — SHA-3（Keccak）
+
+```nolang
+hash = sha3-256(data []byte) (hash [32]byte)
+hash = sha3-512(data []byte) (hash [64]byte)
+```
+
+### hash/blake2 — BLAKE2 雜湊
+
+```nolang
+hash = blake2b-256(data []byte) (hash [32]byte)
+hash = blake2b-512(data []byte) (hash [64]byte)
+```
+
+### hash/crc-16 — CRC16 校驗
+
+```nolang
+crc = crc-16(data []byte, n i64) (crc i64)
+```
+
+### hash/crc-64 — CRC64 校驗
+
+```nolang
+crc = crc-64(data []byte, n i64) (crc i64)
+```
+
+### hash/fnv — FNV-1 雜湊
+
+```nolang
+h = fnv-1-32(data []byte, n i64) (h i64)
+h = fnv-1a-64(data []byte, n i64) (h i64)
+```
+
+### hash/base32 — Base32 編解碼（RFC 4648）
+
+```nolang
+out = base32-encode(data []byte, n i64) (out str)
+out = base32-decode(s str, n i64) (out []byte)
+```
+
+### hash/chacha20-poly1305 — ChaCha20-Poly1305 AEAD
+
+```nolang
+sealed = chacha20-poly1305-seal(key [32]byte, nonce [12]byte, aad []byte, plain []byte)
+plain = chacha20-poly1305-open(key [32]byte, nonce [12]byte, aad []byte, sealed []byte)
+```
+
+### hash/rc4 — RC4 串流加密
+
+```nolang
+out = rc4(key []byte, key-n i64, data []byte, data-n i64) (out []byte)
+```
+
+### hash/tdes — 三重 DES（3DES）
+
+```nolang
+tdes-enc(plain, 8, key [24]byte, out)
+tdes-dec(cipher, 8, key [24]byte, out)
+```
+
+### hash/ecdsa — ECDSA 數位簽章
+
+```nolang
+ok = ecdsa-sign(priv-key []byte, msg []byte, msg-n i64, r []byte, s []byte)
+ok = ecdsa-verify(pub-key []byte, msg []byte, msg-n i64, r []byte, s []byte) (ok bool)
+```
+
+### hash/ed25519 — Ed25519 數位簽章
+
+```nolang
+pub = ed25519-derive-public(priv [32]byte) (pub [32]byte)
+sig = ed25519-sign(priv [32]byte, msg []byte, msg-n i64) (sig [64]byte)
+ok = ed25519-verify(pub [32]byte, msg []byte, msg-n i64, sig [64]byte) (ok bool)
+```
+
+### hash/x25519 — X25519 金鑰交換
+
+```nolang
+pub = x25519-derive-public(priv [32]byte) (pub [32]byte)
+shared = x25519-derive-shared(priv [32]byte, peer-pub [32]byte) (shared [32]byte)
+```
+
+### hash/rand-str — 隨機字串產生
+
+```nolang
+rand-str(state i64, n i64, s str)   // 產生長度 n 的隨機字母數字字串
+```
+
 ---
 
 ## 資料交換
@@ -1294,7 +1827,6 @@ leave {
 | ------------------- | ------ | ---------------- |
 | fmt                 | 核心   | 格式化輸出       |
 | math                | 核心   | 數學函數         |
-| strconv             | 核心   | 字串/數值轉換    |
 | str                 | 核心   | 字串操作         |
 | vec                 | 核心   | 切片（[]t）操作  |
 | arr                 | 核心   | 陣列（[n]t）操作 |
@@ -1327,6 +1859,25 @@ leave {
 | err                 | 核心   | 錯誤處理         |
 | enter               | 核心   | 啟動鉤子         |
 | leave               | 核心   | 退出鉤子         |
+| net                 | 核心   | TCP 網路操作     |
+| net/http            | 子模組 | HTTP/1.1 客戶端  |
+| net/http2           | 子模組 | HTTP/2.0 客戶端  |
+| net/http3           | 子模組 | HTTP/3.0 客戶端  |
+| net/ws              | 子模組 | WebSocket        |
+| net/quic            | 子模組 | QUIC 協議        |
+| net/tls             | 子模組 | TLS 1.2/1.3     |
+| net/sse             | 子模組 | SSE 客戶端       |
+| net/client          | 子模組 | 高階 TCP 客戶端  |
+| net/server          | 子模組 | HTTP 伺服器      |
+| net/dns             | 子模組 | DNS 解析         |
+| net/url             | 子模組 | URL 解析         |
+| net/cookie          | 子模組 | HTTP Cookie      |
+| net/multipart       | 子模組 | Multipart 表單   |
+| net/hpack           | 子模組 | HPACK 標頭壓縮   |
+| net/proxy           | 子模組 | 代理支援         |
+| net/pool            | 子模組 | 連接池           |
+| net/unix            | 子模組 | Unix 域套接字    |
+| net/ip              | 子模組 | IP 地址操作      |
 | encoding/hex        | 子模組 | 十六進制編解碼   |
 | encoding/base64     | 子模組 | Base64 編解碼    |
 | encoding/csv        | 子模組 | CSV 解析         |
@@ -1337,19 +1888,50 @@ leave {
 | map/hash-set        | 子模組 | i64 哈希集合     |
 | map/str-map         | 子模組 | str→str 哈希映射 |
 | map/str-set         | 子模組 | str 哈希集合     |
+| map/tree-map        | 子模組 | AVL 有序映射     |
+| map/tree-set        | 子模組 | AVL 有序集合     |
+| collection/queue    | 子模組 | 泛型佇列         |
+| collection/arr-stack| 子模組 | 泛型堆疊         |
+| collection/link     | 子模組 | 泛型雙向鏈結串列 |
 | database/sql        | 子模組 | 資料庫存取介面   |
 | hash/aes            | 子模組 | AES-128 加解密   |
 | hash/aes-128-enc    | 子模組 | AES-128 加密     |
 | hash/aes-128-dec    | 子模組 | AES-128 解密     |
+| hash/aes-256        | 子模組 | AES-256 加解密   |
+| hash/aes-cbc        | 子模組 | AES-CBC 模式     |
+| hash/aes-256-cbc    | 子模組 | AES-256-CBC     |
+| hash/aes-ctr        | 子模組 | AES-CTR 模式     |
+| hash/aes-gcm        | 子模組 | AES-GCM AEAD    |
+| hash/aes-256-gcm    | 子模組 | AES-256-GCM     |
 | hash/des            | 子模組 | DES 加解密       |
 | hash/des-enc        | 子模組 | DES 加密         |
 | hash/des-dec        | 子模組 | DES 解密         |
+| hash/tdes           | 子模組 | 三重 DES         |
 | hash/rsa            | 子模組 | RSA 模冪         |
 | hash/md5            | 子模組 | MD5 雜湊         |
 | hash/sha1           | 子模組 | SHA-1 雜湊       |
+| hash/sha224         | 子模組 | SHA-224 雜湊     |
 | hash/sha256         | 子模組 | SHA-256 雜湊     |
+| hash/sha384         | 子模組 | SHA-384 雜湊     |
 | hash/sha512         | 子模組 | SHA-512 雜湊     |
+| hash/sha3           | 子模組 | SHA-3 雜湊       |
+| hash/blake2         | 子模組 | BLAKE2 雜湊      |
+| hash/crc-16         | 子模組 | CRC16 校驗       |
 | hash/crc-32         | 子模組 | CRC32 校驗       |
+| hash/crc-64         | 子模組 | CRC64 校驗       |
+| hash/fnv            | 子模組 | FNV-1 雜湊       |
 | hash/fnv-1a-32      | 子模組 | FNV-1a 雜湊      |
+| hash/hmac           | 子模組 | HMAC 認證碼      |
+| hash/hkdf           | 子模組 | HKDF 金鑰推導    |
+| hash/pbkdf2         | 子模組 | PBKDF2 金鑰推導  |
+| hash/argon2         | 子模組 | Argon2 金鑰推導  |
+| hash/scrypt         | 子模組 | scrypt 金鑰推導  |
+| hash/chacha20-poly1305 | 子模組 | ChaCha20-Poly1305 |
+| hash/rc4            | 子模組 | RC4 串流加密     |
+| hash/ecdsa          | 子模組 | ECDSA 簽章       |
+| hash/ed25519        | 子模組 | Ed25519 簽章     |
+| hash/x25519         | 子模組 | X25519 金鑰交換  |
+| hash/base32         | 子模組 | Base32 編解碼    |
 | hash/rand           | 子模組 | 隨機數產生器     |
+| hash/rand-str       | 子模組 | 隨機字串產生     |
 | hash/x509           | 子模組 | X.509 DER 解析   |

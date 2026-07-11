@@ -2658,9 +2658,19 @@ func (p *Parser) parseLetStatement() Statement {
 
 		case *CallExpression:
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
+			// 例外：option 型別（?type）必須始終更新，因為 match desugar 依賴它
+			// 來為 ok arm 生成正確的 it 型別窄化
 			if p.declaredVars == nil || !p.declaredVars[stmt.Name.Value] {
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
 					stmt.Type = buildType(inferred, nameToken)
+					if p.varDeclTypes == nil {
+						p.varDeclTypes = make(map[string]string)
+					}
+					p.varDeclTypes[stmt.Name.Value] = inferred
+				}
+			} else {
+				// 已宣告過，但仍需更新 option 型別以支援 match desugar 的型別窄化
+				if inferred := p.inferTypeFromCallExpr(v); inferred != "" && strings.HasPrefix(inferred, "?") {
 					if p.varDeclTypes == nil {
 						p.varDeclTypes = make(map[string]string)
 					}
@@ -3014,10 +3024,11 @@ func (p *Parser) parseExpressionStatement() Statement {
 			// Single-expression body: cond -> expr
 			// Also handle statement keywords: cond -> return, cond -> break, etc.
 			// Also handle let-statement body: cond -> x = value
+			// Also handle multi-assign body: cond -> a, b = func()
 			if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
 				p.currentToken.Type == lexer.STAR_STAR ||
-				(p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ASSIGN) {
+				(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
 				bodyStmt := p.parseStatement()
 				if bodyStmt != nil {
 					conseq = &BlockStatement{Statements: []Statement{bodyStmt}}
@@ -3042,7 +3053,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
 				p.currentToken.Type == lexer.STAR_STAR ||
-				(p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ASSIGN) {
+				(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
 				altStmt := p.parseStatement()
 				if altStmt != nil {
 					altBody = &BlockStatement{Statements: []Statement{altStmt}}
@@ -4704,6 +4715,9 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 				}
 			} else if _, ok := arm.condition.(*NilLiteral); ok {
 				armType = "nil"
+			} else if arm.isDotVal {
+				// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
+				armType = "ok"
 			}
 			if armType != "" {
 				// Use per-arm position so walker/index can distinguish synthetic bindings

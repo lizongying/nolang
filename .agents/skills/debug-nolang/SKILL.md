@@ -219,6 +219,8 @@ Both targets run `cd src && go build …`. The Go test suite (`go test ./...`) d
 - **LSP reports an error that the parser/formatter does not**: the diagnostic is coming from a `Validate…` function in `src/build/transpiler.go`. Run that `Validate…` directly from a `*_test.go` to reproduce.
 - **Test passes alone, fails in suite**: ordering or shared state. Check if your test mutates a global; otherwise re-run the failing test in isolation to confirm.
 - **File on disk differs from what the IDE shows**: the editor may hold a dirty buffer. Use `od -c file.no | head` or `sed -n 'Np' file.no` from the terminal to read the real bytes — never trust the IDE's view after a save race.
+- **RARROW body corruption (formatter replaces `=` with `;`)**: when a match arm body (`cond -> body`) contains a LetStatement (`x = value`) or MultiAssignStatement (`a, b = func()`), the formatter may incorrectly output `x;` or `a; b = func()` instead of the inline statement. Check `formatStandaloneBody` in `src/fmt/formatter.go` — it must handle `LetStatement` and `MultiAssignStatement` as inline bodies. Also check `parseStatement` / RARROW handling in `src/parser/parser.go` — the `IDENT && (peekToken == ASSIGN || peekToken == COMMA)` check must be present for both consequence and alternative bodies.
+- **Option type not narrowed in match `ok ->` arm**: when `?quic-conn` is matched but `it` in the `ok ->` arm has the wrong type, check `buildMatchDesugar` in `src/parser/parser.go` — dotVal wildcard arms (`ok ->`, `isDotVal=true`) must set `armType = "ok"` so that `buildItBindingForArm` generates the correct narrowed `it` binding. Also verify `varDeclTypes` is updated for option types (`?type`) even when `declaredVars` is already true.
 
 ## Minimal Repro Snippet (template)
 
