@@ -256,4 +256,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @freeaddrinfo(i8*)\n")
 
 	// TLS 已由純 Nolang 實現（std/net/tls.no），不需要 OpenSSL 宣告。
+
+	// pthread declarations for async/await (run/awy)
+	sb.WriteString("declare i32 @pthread_create(i64*, i8*, i8* (i8*)*, i8*)\n")
+	sb.WriteString("declare i32 @pthread_join(i64, i8**)\n")
 }

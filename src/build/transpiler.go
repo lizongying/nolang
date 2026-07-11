@@ -3541,6 +3541,84 @@ func checkNaming(stmt parser.Statement) []ValidateResult {
 	return results
 }
 
+// ValidateAsyncNaming 檢查所有由 'run' 調用的函數名稱是否以 '-async' 結尾
+func ValidateAsyncNaming(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	walkStatementsForAsync(program.Statements, &results)
+	return results
+}
+
+func walkStatementsForAsync(stmts []parser.Statement, results *[]ValidateResult) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			if s.Body != nil {
+				walkStatementsForAsync(s.Body.Statements, results)
+			}
+		case *parser.LetStatement:
+			if s.Value != nil {
+				checkRunAsyncNaming(s.Value, results)
+				if fnLit, ok := s.Value.(*parser.FunctionLiteral); ok {
+					if fnLit.Body != nil {
+						walkStatementsForAsync(fnLit.Body.Statements, results)
+					}
+				}
+			}
+		case *parser.BlockStatement:
+			walkStatementsForAsync(s.Statements, results)
+		case *parser.ExpressionStatement:
+			if s.Expression != nil {
+				checkRunAsyncNaming(s.Expression, results)
+				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+					if ifExpr.Consequence != nil {
+						walkStatementsForAsync(ifExpr.Consequence.Statements, results)
+					}
+					if ifExpr.Alternative != nil {
+						walkStatementsForAsync(ifExpr.Alternative.Statements, results)
+					}
+				}
+			}
+		case *parser.ForStatement:
+			if s.Body != nil {
+				walkStatementsForAsync(s.Body.Statements, results)
+			}
+		}
+	}
+}
+
+// checkRunAsyncNaming 檢查單個表達式是否為 RunExpression，並驗證其調用的函數名稱
+func checkRunAsyncNaming(expr parser.Expression, results *[]ValidateResult) {
+	runExpr, ok := expr.(*parser.RunExpression)
+	if !ok {
+		return
+	}
+	call, ok := runExpr.Call.(*parser.CallExpression)
+	if !ok {
+		return
+	}
+	fnName := asyncCallFunctionName(call)
+	if fnName == "" {
+		return
+	}
+	if !strings.HasSuffix(fnName, "-async") {
+		*results = append(*results, ValidateResult{
+			Line:    runExpr.Token.Line,
+			Column:  runExpr.Token.Column,
+			Message: fmt.Sprintf("function '%s' called by 'run' should end with '-async'", fnName),
+		})
+	}
+}
+
+func asyncCallFunctionName(call *parser.CallExpression) string {
+	if ident, ok := call.Function.(*parser.Identifier); ok {
+		return ident.Value
+	}
+	if dot, ok := call.Function.(*parser.DotExpression); ok {
+		return dot.Property
+	}
+	return ""
+}
+
 // ValidateUnusedVars detects top-level variables that are defined but never used.
 func ValidateUnusedVars(program *parser.Program) []ValidateResult {
 	var results []ValidateResult

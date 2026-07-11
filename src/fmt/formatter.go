@@ -161,6 +161,10 @@ func stmtExprEndLine(expr parser.Expression) int {
 		return e.Token.Line
 	case *parser.GroupedExpression:
 		return e.Token.Line
+	case *parser.RunExpression:
+		return stmtExprEndLine(e.Call)
+	case *parser.AwaitExpression:
+		return stmtExprEndLine(e.Right)
 	}
 	return 0
 }
@@ -458,6 +462,12 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.write("(")
 		f.formatExpression(e.Expression)
 		f.write(")")
+	case *parser.RunExpression:
+		f.write("run ")
+		f.formatExpression(e.Call)
+	case *parser.AwaitExpression:
+		f.write("awy ")
+		f.formatExpression(e.Right)
 	}
 }
 

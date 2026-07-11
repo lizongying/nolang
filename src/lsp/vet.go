@@ -92,6 +92,18 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 3.5. Async naming warnings
+	for _, w := range nbuild.ValidateAsyncNaming(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     w.Line,
+			Column:   w.Column,
+			Severity: "warning",
+			Source:   "nolang-lint",
+			Message:  w.Message,
+		})
+	}
+
 	// 4. Unused variables (hint)
 	for _, u := range nbuild.ValidateUnusedVars(prog) {
 		results = append(results, VetResult{

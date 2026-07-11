@@ -3325,6 +3325,25 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.IF:
 		leftExp = p.parseIfExpression()
 
+	case lexer.RUN:
+		tok := p.currentToken
+		p.nextToken() // consume 'run'
+		// Parse the following expression — should be a CallExpression
+		callExpr := p.parseExpression(LOWEST)
+		leftExp = &RunExpression{
+			Token: tok,
+			Call:  callExpr,
+		}
+
+	case lexer.AWY:
+		tok := p.currentToken
+		p.nextToken() // consume 'awy'
+		rightExpr := p.parseExpression(LOWEST)
+		leftExp = &AwaitExpression{
+			Token: tok,
+			Right: rightExpr,
+		}
+
 	// case lexer.FUNC:
 	// 	// 打印调试信息
 	// 	leftExp = p.parseFunctionLiteral()

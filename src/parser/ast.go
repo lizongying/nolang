@@ -894,6 +894,38 @@ func (ie *InfixExpression) EndPos() lexer.Position {
 	return ie.Right.EndPos()
 }
 
+// RunExpression: run <call-expression>
+// Starts an async function call in a new thread, returns a task handle.
+type RunExpression struct {
+	Token lexer.Token
+	Call  Expression // must be a *CallExpression
+}
+
+func (re *RunExpression) expressionNode()     {}
+func (re *RunExpression) Pos() lexer.Position { return posFromToken(re.Token) }
+func (re *RunExpression) EndPos() lexer.Position {
+	if re.Call == nil {
+		return posFromToken(re.Token)
+	}
+	return re.Call.EndPos()
+}
+
+// AwaitExpression: awy <expression>
+// Waits for an async task to complete and returns the result.
+type AwaitExpression struct {
+	Token lexer.Token
+	Right Expression // the task handle expression
+}
+
+func (ae *AwaitExpression) expressionNode()     {}
+func (ae *AwaitExpression) Pos() lexer.Position { return posFromToken(ae.Token) }
+func (ae *AwaitExpression) EndPos() lexer.Position {
+	if ae.Right == nil {
+		return posFromToken(ae.Token)
+	}
+	return ae.Right.EndPos()
+}
+
 // if
 type IfExpression struct {
 	Token       lexer.Token

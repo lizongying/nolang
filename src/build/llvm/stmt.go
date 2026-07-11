@@ -100,6 +100,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
+	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -946,6 +947,24 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			last := v.Alternative.Statements[len(v.Alternative.Statements)-1]
 			if es, ok := last.(*parser.ExpressionStatement); ok {
 				return g.varLLVMType(&parser.LetStatement{Value: es.Expression})
+			}
+		}
+		return "i64"
+	case *parser.RunExpression:
+		// Track result type for awy type inference
+		if call, ok := v.Call.(*parser.CallExpression); ok {
+			_, _, resultType := g.resolveAsyncCallInfo(call)
+			if resultType != "" && g.taskResultTypes != nil {
+				g.taskResultTypes[stmt.Name.Value] = resultType
+			}
+		}
+		return "%task"
+	case *parser.AwaitExpression:
+		if ident, ok := v.Right.(*parser.Identifier); ok {
+			if g.taskResultTypes != nil {
+				if t, ok := g.taskResultTypes[ident.Value]; ok {
+					return t
+				}
 			}
 		}
 		return "i64"

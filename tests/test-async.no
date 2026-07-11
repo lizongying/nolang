@@ -1,0 +1,34 @@
+// test-async.no — 測試 async/await (run/awy) 基本功能
+
+
+// 異步函數：返回輸入值的兩倍
+compute-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+// 基本異步調用
+test-basic = () {
+    h = run compute-async(21)
+    r = awy h
+    print(r)  // expect: 42
+}
+
+// 並發多個任務
+test-concurrent = () {
+    h1 = run compute-async(10)
+    h2 = run compute-async(20)
+    r1 = awy h1
+    r2 = awy h2
+    print(r1)  // expect: 20
+    print(r2)  // expect: 40
+}
+
+// 內聯等待
+test-inline = () {
+    r = awy run compute-async(5)
+    print(r)  // expect: 10
+}
+
+test-basic()
+test-concurrent()
+test-inline()

@@ -44,6 +44,8 @@ const (
 	DEFAULT
 	MATCH
 	MAP
+	RUN
+	AWY
 	EXTERN // deprecated: kept for backward compat, no longer a keyword
 
 	// 运算符
@@ -234,6 +236,8 @@ var keywords = map[string]TokenType{
 	"default": DEFAULT,
 	"match":   MATCH,
 	"map":     MAP,
+	"run":     RUN,
+	"awy":     AWY,
 }
 
 // Position represents a source position (line:col, 1-based).

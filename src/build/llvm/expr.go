@@ -308,6 +308,10 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateExprWithSB(sb, e.Expression)
 	case *parser.CastExpression:
 		return g.generateCastExpression(sb, e)
+	case *parser.RunExpression:
+		return g.generateRunExpression(sb, e)
+	case *parser.AwaitExpression:
+		return g.generateAwaitExpression(sb, e)
 	default:
 		return "0"
 	}
@@ -1166,6 +1170,18 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+	case *parser.RunExpression:
+		return "%task"
+	case *parser.AwaitExpression:
+		// Look up the result type from taskResultTypes
+		if ident, ok := v.Right.(*parser.Identifier); ok {
+			if g.taskResultTypes != nil {
+				if t, ok := g.taskResultTypes[ident.Value]; ok {
+					return t
+				}
+			}
+		}
+		return "i64"
 	}
 	return ""
 }
@@ -5068,4 +5084,319 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
 
 	return resultAlloca
+}
+
+// resolveAsyncCallInfo extracts the LLVM function name, argument LLVM types,
+// and result LLVM type from a CallExpression used in a `run` expression.
+func (g *Generator) resolveAsyncCallInfo(call *parser.CallExpression) (fnName string, argTypes []string, resultType string) {
+	// Direct function call: fetch-async(url)
+	if ident, ok := call.Function.(*parser.Identifier); ok {
+		fnName = ident.Value
+	}
+	// Method call: conn.query-async(sql) — resolve receiver type
+	if dot, ok := call.Function.(*parser.DotExpression); ok {
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			if recvType, ok := g.varTypes[recv.Value]; ok {
+				srcType := strings.TrimPrefix(recvType, "%")
+				candidates := []string{srcType}
+				if srcType == "str-short" || srcType == "str-long" {
+					candidates = append(candidates, "str")
+				}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						break
+					}
+				}
+			}
+		}
+	}
+	if fnName == "" {
+		return
+	}
+	// Get argument types (includes receiver for methods)
+	if types, ok := g.funcParamLLVMTypes[fnName]; ok {
+		argTypes = types
+	}
+	// Get result type (single-result functions)
+	if results, ok := g.funcResultLLVMType[fnName]; ok && len(results) >= 1 {
+		resultType = results[0]
+	}
+	if resultType == "" {
+		resultType = "i64"
+	}
+	return
+}
+
+// generateRunExpression generates LLVM IR for `run <call-expression>`.
+// It creates a wrapper function that unpacks arguments and calls the target
+// function in a new pthread, then returns a %task handle.
+func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunExpression) string {
+	call, ok := expr.Call.(*parser.CallExpression)
+	if !ok {
+		return "0"
+	}
+	fnName, argTypes, resultType := g.resolveAsyncCallInfo(call)
+	if fnName == "" {
+		return "0"
+	}
+
+	// Build the list of argument expressions (receiver + explicit args for methods)
+	var argExprs []parser.Expression
+	if dot, ok := call.Function.(*parser.DotExpression); ok {
+		argExprs = append(argExprs, dot.Receiver)
+	}
+	argExprs = append(argExprs, call.Arguments...)
+
+	// Build the args struct type string: { i8*, i8*, ... } (result_ptr + all arg ptrs)
+	numFields := len(argExprs) + 1
+	argsTypeStr := "{ i8*"
+	for i := 1; i < numFields; i++ {
+		argsTypeStr += ", i8*"
+	}
+	argsTypeStr += " }"
+
+	// Generate unique wrapper number
+	g.tmpIdx++
+	wrapperNum := g.tmpIdx
+	wrapperName := fmt.Sprintf("async_wrapper.%d", wrapperNum)
+
+	// Resolve LLVM function name (handle clib prefix)
+	llvmFnName := fnName
+	if clibFuncNames[fnName] {
+		llvmFnName = "n." + fnName
+	}
+	sanitizedFnName := sanitizeLLVMName(llvmFnName)
+
+	// === Generate wrapper function (to g.asyncWrappers) ===
+	w := &g.asyncWrappers
+	w.WriteString(fmt.Sprintf("define i8* @%s(i8* %%args) {\n", wrapperName))
+	w.WriteString("entry:\n")
+	w.WriteString(fmt.Sprintf("\t%%args.typed.%d = bitcast i8* %%args to %s*\n", wrapperNum, argsTypeStr))
+	// Load result_ptr (field 0) and bitcast to resultType*
+	w.WriteString(fmt.Sprintf("\t%%result.ptr.gep.%d = getelementptr inbounds %s, %s* %%args.typed.%d, i32 0, i32 0\n", wrapperNum, argsTypeStr, argsTypeStr, wrapperNum))
+	w.WriteString(fmt.Sprintf("\t%%result.ptr.%d = load i8*, i8** %%result.ptr.gep.%d\n", wrapperNum, wrapperNum))
+	w.WriteString(fmt.Sprintf("\t%%result.typed.%d = bitcast i8* %%result.ptr.%d to %s*\n", wrapperNum, wrapperNum, resultType))
+	// Load and bitcast each arg
+	callArgStrs := make([]string, 0, len(argTypes)+1)
+	for i, argType := range argTypes {
+		fieldIdx := i + 1
+		w.WriteString(fmt.Sprintf("\t%%warg.%d.gep.%d = getelementptr inbounds %s, %s* %%args.typed.%d, i32 0, i32 %d\n", i, wrapperNum, argsTypeStr, argsTypeStr, wrapperNum, fieldIdx))
+		w.WriteString(fmt.Sprintf("\t%%warg.%d.ptr.%d = load i8*, i8** %%warg.%d.gep.%d\n", i, wrapperNum, i, wrapperNum))
+		w.WriteString(fmt.Sprintf("\t%%warg.%d.typed.%d = bitcast i8* %%warg.%d.ptr.%d to %s*\n", i, wrapperNum, i, wrapperNum, argType))
+		callArgStrs = append(callArgStrs, fmt.Sprintf("%s* %%warg.%d.typed.%d", argType, i, wrapperNum))
+	}
+	// Add result as last argument
+	callArgStrs = append(callArgStrs, fmt.Sprintf("%s* %%result.typed.%d", resultType, wrapperNum))
+	// Call target function
+	w.WriteString(fmt.Sprintf("\tcall void @%s(%s)\n", sanitizedFnName, strings.Join(callArgStrs, ", ")))
+	w.WriteString(fmt.Sprintf("\tret i8* %%result.ptr.%d\n", wrapperNum))
+	w.WriteString("}\n\n")
+
+	// === Generate caller code (to sb) ===
+	// alloca result buffer
+	g.tmpIdx++
+	resultAddr := fmt.Sprintf("%%async.result.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), resultAddr, resultType))
+	}
+
+	// alloca args struct
+	g.tmpIdx++
+	argsAddr := fmt.Sprintf("%%async.args.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), argsAddr, argsTypeStr))
+	}
+
+	// Bitcast result.addr to i8* and store into field 0
+	g.tmpIdx++
+	resultPtrCast := fmt.Sprintf("%%async.rptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), resultPtrCast, resultType, resultAddr))
+	}
+	g.tmpIdx++
+	f0GEP := fmt.Sprintf("%%async.f0.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g.indent(), f0GEP, argsTypeStr, argsTypeStr, argsAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), resultPtrCast, f0GEP))
+	}
+
+	// For each argument: generateCallArg, extract pointer, bitcast to i8*, store into field
+	for i, argExpr := range argExprs {
+		argStr := g.generateCallArg(sb, argExpr)
+		// Parse argStr: "<type> <pointer>" — extract type and pointer via last space
+		argTypeStr := ""
+		argPtr := argStr
+		if idx := strings.LastIndex(argStr, " "); idx >= 0 {
+			argTypeStr = argStr[:idx]
+			argPtr = argStr[idx+1:]
+		}
+		g.tmpIdx++
+		argCast := fmt.Sprintf("%%async.arg.%d.cast.%d", i, g.tmpIdx)
+		if sb != nil {
+			if argTypeStr != "" {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s %s to i8*\n", g.indent(), argCast, argTypeStr, argPtr))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n", g.indent(), argCast, argPtr))
+			}
+		}
+		g.tmpIdx++
+		argGEP := fmt.Sprintf("%%async.arg.%d.gep.%d", i, g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g.indent(), argGEP, argsTypeStr, argsTypeStr, argsAddr, i+1))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), argCast, argGEP))
+		}
+	}
+
+	// alloca i64 for thread_id
+	g.tmpIdx++
+	tidAddr := fmt.Sprintf("%%async.tid.addr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tidAddr))
+	}
+
+	// Bitcast args struct to i8*
+	g.tmpIdx++
+	argsBitcast := fmt.Sprintf("%%async.args.bc.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), argsBitcast, argsTypeStr, argsAddr))
+	}
+
+	// Call pthread_create
+	g.tmpIdx++
+	pcReg := fmt.Sprintf("%%async.pc.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @pthread_create(i64* %s, i8* null, i8* (i8*)* @%s, i8* %s)\n", g.indent(), pcReg, tidAddr, wrapperName, argsBitcast))
+	}
+
+	// Load thread_id
+	g.tmpIdx++
+	tidReg := fmt.Sprintf("%%async.tid.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tidReg, tidAddr))
+	}
+
+	// Build %task value: alloca %task, store thread_id and result_ptr, load %task value
+	g.tmpIdx++
+	taskAddr := fmt.Sprintf("%%async.task.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAddr))
+	}
+	// Store thread_id (field 0)
+	g.tmpIdx++
+	taskF0GEP := fmt.Sprintf("%%async.task.f0.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tidReg, taskF0GEP))
+	}
+	// Store result_ptr (field 1) — reuse resultPtrCast (the i8* bitcast of result.addr)
+	g.tmpIdx++
+	taskF1GEP := fmt.Sprintf("%%async.task.f1.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), resultPtrCast, taskF1GEP))
+	}
+	// Load %task value
+	g.tmpIdx++
+	taskVal := fmt.Sprintf("%%async.task.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %%task, %%task* %s\n", g.indent(), taskVal, taskAddr))
+	}
+
+	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[taskVal] = "%task"
+	}
+
+	return taskVal
+}
+
+// generateAwaitExpression generates LLVM IR for `awy <expression>`.
+// It waits for the task to complete via pthread_join and loads the result.
+func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.AwaitExpression) string {
+	// 1. Evaluate the Right expression to get a pointer to the %task value
+	var taskPtr string
+	if ident, ok := expr.Right.(*parser.Identifier); ok {
+		taskPtr = g.varAddr(ident.Value)
+	} else {
+		taskVal := g.generateExprWithSB(sb, expr.Right)
+		g.tmpIdx++
+		taskAlloca := fmt.Sprintf("%%awy.task.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%task %s, %%task* %s\n", g.indent(), taskVal, taskAlloca))
+		}
+		taskPtr = taskAlloca
+	}
+
+	// 2. Extract thread_id (field 0 of %task): GEP + load
+	g.tmpIdx++
+	tidGEP := fmt.Sprintf("%%awy.tid.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), tidGEP, taskPtr))
+	}
+	g.tmpIdx++
+	tidReg := fmt.Sprintf("%%awy.tid.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tidReg, tidGEP))
+	}
+
+	// 3. Extract result_ptr (field 1 of %task): GEP + load
+	g.tmpIdx++
+	rptrGEP := fmt.Sprintf("%%awy.rptr.gep.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), rptrGEP, taskPtr))
+	}
+	g.tmpIdx++
+	rptrReg := fmt.Sprintf("%%awy.rptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), rptrReg, rptrGEP))
+	}
+
+	// 4. Call pthread_join(i64 %tid, i8** %ret.ptr)
+	g.tmpIdx++
+	retPtr := fmt.Sprintf("%%awy.ret.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), retPtr))
+	}
+	g.tmpIdx++
+	pjReg := fmt.Sprintf("%%awy.pj.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @pthread_join(i64 %s, i8** %s)\n", g.indent(), pjReg, tidReg, retPtr))
+	}
+
+	// 5. Determine result type from taskResultTypes
+	resultType := "i64"
+	if ident, ok := expr.Right.(*parser.Identifier); ok {
+		if g.taskResultTypes != nil {
+			if t, ok := g.taskResultTypes[ident.Value]; ok {
+				resultType = t
+			}
+		}
+	}
+
+	// 6. Bitcast result_ptr to correct type
+	g.tmpIdx++
+	resultTyped := fmt.Sprintf("%%awy.result.typed.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, rptrReg, resultType))
+	}
+
+	// 7. Load the result value
+	g.tmpIdx++
+	resultVal := fmt.Sprintf("%%awy.result.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
+	}
+
+	// Track SSA type
+	if g.ssaTypes != nil {
+		g.ssaTypes[resultVal] = resultType
+	}
+
+	return resultVal
 }
