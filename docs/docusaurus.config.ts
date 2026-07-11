@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Nolang',
-  tagline: 'A modern systems programming language',
+  tagline: 'A systems programming language',
   favicon: 'img/logo.svg',
 
   url: 'https://lizongying.github.io',
@@ -38,7 +38,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/docusaurus-social-card.jpg',
+    // image: 'img/logo.jpg',
     colorMode: {
       respectPrefersColorScheme: true,
     },
@@ -53,7 +53,7 @@ const config: Config = {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: '文档',
+          label: 'Docs',
         },
         {
           type: 'localeDropdown',
@@ -70,31 +70,31 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: '文档',
+          title: 'Docs',
           items: [
             {
-              label: '入门',
+              label: 'Intro',
               to: '/docs/intro',
             },
             {
-              label: '语言参考',
+              label: 'Language Reference',
               to: '/docs/lang/syntax',
             },
             {
-              label: '标准库',
+              label: 'Standard Library',
               to: '/docs/std/overview',
             },
           ],
         },
         {
-          title: '更多',
+          title: 'More',
           items: [
             {
               label: 'GitHub',
               href: 'https://github.com/lizongying/nolang',
             },
             {
-              label: '报告问题',
+              label: 'Report Issue',
               href: 'https://github.com/lizongying/nolang/issues',
             },
           ],

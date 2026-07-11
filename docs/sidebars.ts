@@ -6,17 +6,17 @@ const sidebars: SidebarsConfig = {
     "usage",
     {
       type: "category",
-      label: "語法",
+      label: "Language",
       items: ["lang/syntax", "lang/str", "lang/export"],
     },
     {
       type: "category",
-      label: "運算符",
+      label: "Operators",
       items: ["lang/symbol"],
     },
     {
       type: "category",
-      label: "標準庫",
+      label: "Standard Library",
       items: ["std/overview"],
     },
   ],

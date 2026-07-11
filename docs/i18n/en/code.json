@@ -1,0 +1,20 @@
+{
+  "無 GC": {
+    "message": "No GC"
+  },
+  "不依賴垃圾回收，自动安全內存管理": {
+    "message": "No garbage collection, automatic safe memory management"
+  },
+  "內存安全": {
+    "message": "Memory Safe"
+  },
+  "作用域離開自動釋放，杜絕懸垂引用、內存泄漏": {
+    "message": "Auto-release on scope exit, no dangling references or memory leaks"
+  },
+  "語法極簡": {
+    "message": "Minimal Syntax"
+  },
+  "減少關鍵字，無冗余語法": {
+    "message": "Fewer keywords, no redundant syntax"
+  }
+}
