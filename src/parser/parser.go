@@ -90,7 +90,7 @@ func (p *Parser) classifyBlock() blockType {
 
 	// Tokens that only appear in match arms, not struct/enum/iface
 	switch tok1.Type {
-	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON:
+	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
 		return blockMatch
@@ -234,7 +234,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	}
 
 	switch tok1.Type {
-	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON:
+	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
 		return blockMatch
@@ -3013,9 +3013,11 @@ func (p *Parser) parseExpressionStatement() Statement {
 		} else {
 			// Single-expression body: cond -> expr
 			// Also handle statement keywords: cond -> return, cond -> break, etc.
+			// Also handle let-statement body: cond -> x = value
 			if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
-				p.currentToken.Type == lexer.STAR_STAR {
+				p.currentToken.Type == lexer.STAR_STAR ||
+				(p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ASSIGN) {
 				bodyStmt := p.parseStatement()
 				if bodyStmt != nil {
 					conseq = &BlockStatement{Statements: []Statement{bodyStmt}}
@@ -3039,7 +3041,8 @@ func (p *Parser) parseExpressionStatement() Statement {
 				p.nextToken() // skip body's }
 			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
-				p.currentToken.Type == lexer.STAR_STAR {
+				p.currentToken.Type == lexer.STAR_STAR ||
+				(p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.ASSIGN) {
 				altStmt := p.parseStatement()
 				if altStmt != nil {
 					altBody = &BlockStatement{Statements: []Statement{altStmt}}

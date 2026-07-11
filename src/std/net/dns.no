@@ -169,37 +169,36 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         len-byte = data[pos] & 255
         len-byte == 0 -> {
             pos = pos + 1
-            jumped == false -> end-pos; pos
+            jumped == false -> end-pos = pos
             *
         }
         // 檢查是否為壓縮指標（前兩位為 11）
-
-        (len-byte & 0xC0) == 0xC0 -> {
-            jumped == false -> end-pos; pos + 2
-            pointer = ((len-byte & 0x3F) << 8) | (data[pos + 1] & 255)
-            pos = pointer
-            jumped = true
-        }
-        (len-byte & 0xC0) == 0 -> {
-            label-len = len-byte
-            pos = pos + 1
-            i <- [0..label-len): {
-                name[name.len] = data[pos + i]
+        {
+            (len-byte & 0xC0) == 0xC0 -> {
+                jumped == false -> end-pos = pos + 2
+                pointer = ((len-byte & 0x3F) << 8) | (data[pos + 1] & 255)
+                pos = pointer
+                jumped = true
             }
-            name[name.len] = 46
-            pos = pos + label-len
+            (len-byte & 0xC0) == 0 -> {
+                label-len = len-byte
+                pos = pos + 1
+                i <- [0..label-len): {
+                    name[name.len] = data[pos + i]
+                }
+                name[name.len] = 46
+                pos = pos + label-len
+            }
         }
     }
-}
 
-// 移除末尾的點
-name.len > 0 -> {
-    name[name.len - 1] == 46 -> name; name.slice(0, name.len - 1)
-}
+    // 移除末尾的點
+    name.len > 0 -> name[name.len - 1] == 46 -> name = name.slice(0, name.len - 1)
 
-{
-    jumped -> next-pos = end-pos
-    -> next-pos = end-pos
+    {
+        jumped -> next-pos = end-pos
+        -> next-pos = end-pos
+    }
 }
 
 // dns-parse-response: 解析 DNS 回應封包
