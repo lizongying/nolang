@@ -1,5 +1,4 @@
-// test-async.no — 測試 async/await (run/awy) 功能
-
+// test-async.no — 測試 async/await (run/awy) Future 模型
 
 // 異步函數：返回輸入值的兩倍
 compute-async = (n i64) (r i64) {
@@ -18,29 +17,29 @@ classify-async = (n i64) (r i64) {
     n == 0 -> r = 0
 }
 
-// 直接 awy run
-test-direct = () {
-    r = awy run compute-async(21)
+// 1. 串行等待（最簡）— awy f-async()
+test-serial = () {
+    r = awy compute-async(21)
     print(r)  // expect: 42
 }
 
-// 多參數
+// 2. 多參數串行等待
 test-multi-params = () {
-    r = awy run add-async(15, 27)
+    r = awy add-async(15, 27)
     print(r)  // expect: 42
 }
 
-// 條件邏輯
+// 3. 條件邏輯
 test-conditional = () {
-    r1 = awy run classify-async(5)
-    r2 = awy run classify-async(-3)
-    r3 = awy run classify-async(0)
+    r1 = awy classify-async(5)
+    r2 = awy classify-async(-3)
+    r3 = awy classify-async(0)
     print(r1)  // expect: 1
     print(r2)  // expect: -1
     print(r3)  // expect: 0
 }
 
-// 並發：先全部 run，再依次 awy
+// 4. 並發：先全部 run，再依次 awy
 test-concurrent = () {
     h1 = run compute-async(10)
     h2 = run compute-async(20)
@@ -49,7 +48,27 @@ test-concurrent = () {
     print(r1 + r2)  // expect: 60
 }
 
-test-direct()
+// 5. 預創建 Future，延遲執行
+test-lazy-future = () {
+    f1 = compute-async(10)
+    f2 = compute-async(20)
+    h1 = run f1
+    h2 = run f2
+    r1 = awy h1
+    r2 = awy h2
+    print(r1 + r2)  // expect: 60
+}
+
+// 6. awy future 變量（串行執行 future）
+test-await-future = () {
+    f = compute-async(25)
+    r = awy f
+    print(r)  // expect: 50
+}
+
+test-serial()
 test-multi-params()
 test-conditional()
 test-concurrent()
+test-lazy-future()
+test-await-future()

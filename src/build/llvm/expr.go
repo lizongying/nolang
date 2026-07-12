@@ -1177,8 +1177,21 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 	case *parser.RunExpression:
 		return "%task"
 	case *parser.AwaitExpression:
-		// Look up the result type from taskResultTypes
+		// awy f-async(args) — 直接调用 -async 函数
+		if call, ok := v.Right.(*parser.CallExpression); ok {
+			if g.isAsyncCall(call) {
+				if _, _, resultType := g.resolveAsyncCallInfo(call); resultType != "" {
+					return resultType
+				}
+			}
+		}
+		// awy <identifier> — future 变量或 task 变量
 		if ident, ok := v.Right.(*parser.Identifier); ok {
+			if g.futureResultTypes != nil {
+				if t, ok := g.futureResultTypes[ident.Value]; ok {
+					return t
+				}
+			}
 			if g.taskResultTypes != nil {
 				if t, ok := g.taskResultTypes[ident.Value]; ok {
 					return t
