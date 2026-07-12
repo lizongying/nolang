@@ -665,6 +665,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// builtin 方法（如 i64.to-str, net-dial, get-line）不走用戶函數的輸出參數慣例，
 		// 返回值透過 LLVM return register。用 generateCallExpression 分派 builtin，
 		// 並將返回值存入輸出變數。
+		// For module-prefixed calls (e.g. fs.get-line), strip the prefix to find the builtin.
+		if m := builtin.FindBuiltinMethod(innerFnName); m == nil && strings.Contains(innerFnName, ".") {
+			if idx := strings.Index(innerFnName, "."); idx >= 0 {
+				shortName := innerFnName[idx+1:]
+				if m2 := builtin.FindBuiltinMethod(shortName); m2 != nil {
+					m = m2
+					innerFnName = shortName
+				}
+			}
+		}
 		if m := builtin.FindBuiltinMethod(innerFnName); m != nil && innerMethodRecv == nil {
 			// 清空 lastBuiltinExtra（get-line 會設定它）
 			g.lastBuiltinExtra = ""
@@ -939,7 +949,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 	if !skipBuiltin {
-		if m := builtin.FindBuiltinMethod(fnName); m != nil {
+		m := builtin.FindBuiltinMethod(fnName)
+		if m == nil && strings.Contains(fnName, ".") {
+			// Try stripping module prefix (e.g. "fs.is-dir" → "is-dir").
+			// Safe because skipBuiltin already verified no user function exists with the full name.
+			if idx := strings.Index(fnName, "."); idx >= 0 {
+				shortName := fnName[idx+1:]
+				if m2 := builtin.FindBuiltinMethod(shortName); m2 != nil {
+					m = m2
+					fnName = shortName
+				}
+			}
+		}
+		if m != nil {
 			if m.LLVMIntrinsic != "" {
 				args := make([]string, len(expr.Arguments))
 				for i, arg := range expr.Arguments {
@@ -971,6 +993,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
 			if m.ForwardFunc != "" {
 				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, nil); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" {
+					return r
+				}
+				// If genForwardFunc didn't handle it, try callBuiltin with the
+				// ForwardFunc name (e.g. arg→args-get, args→args-count are
+				// implemented in callBuiltin, not genForwardFunc).
+				if r := g.callBuiltin(sb, m.ForwardFunc, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
 					return r
 				}
 			}

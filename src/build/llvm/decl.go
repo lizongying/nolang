@@ -51,6 +51,12 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @unlink(i8*)\n")
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
 	sb.WriteString("declare i32 @stat(i8*, i8*)\n")
+	// Directory operations (from <dirent.h>)
+	sb.WriteString("declare i8* @opendir(i8*)\n")
+	sb.WriteString("declare i8* @readdir(i8*)\n")
+	sb.WriteString("declare i32 @closedir(i8*)\n")
+	// File timestamp update (from <sys/stat.h>)
+	sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
 	sb.WriteString("declare i64 @time(i8*)\n")
 	sb.WriteString("declare i32 @sleep(i32)\n")
 	sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
@@ -162,8 +168,15 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("@.os-buf = private global [1024 x i8] zeroinitializer\n")
 	sb.WriteString("@.str.true = private unnamed_addr constant [5 x i8] c\"true\\00\"\n")
 	sb.WriteString("@.str.false = private unnamed_addr constant [6 x i8] c\"false\\00\"\n")
+	sb.WriteString("@.str.empty = private unnamed_addr constant [1 x i8] c\"\\00\"\n")
 	sb.WriteString("@.str.r = private unnamed_addr constant [2 x i8] c\"r\\00\"\n")
 	sb.WriteString("@.str.oob = private unnamed_addr constant [36 x i8] c\"runtime error: index out of bounds\\0A\\00\"\n\n")
+
+	// Global storage for argc/argv, set by @main and read by args-count/args-get builtins.
+	// These must be globals (not local allocas) because builtins are called from
+	// user functions, not from @main itself.
+	sb.WriteString("@.argc.addr = global i32 0\n")
+	sb.WriteString("@.argv.addr = global i8** null\n\n")
 
 	// nolang.bounds_check: runtime array/slice/string bounds check
 	// If idx < 0 || idx >= len, writes error to stderr and exits.

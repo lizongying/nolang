@@ -5284,6 +5284,17 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 		}
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			moduleConsts[ls.Name.Value] = true
+			// Also collect functions defined as LetStatement with FunctionLiteral
+			// value (e.g. `list-dir = (dirpath str) (entries []str) { ... }`).
+			// Without this, module.fn() calls to these functions are not rewritten
+			// to fn(), causing varLLVMType to fail type inference for the result
+			// (it doesn't handle DotExpression function calls for module-prefixed
+			// names, so variables assigned from them default to i64).
+			if _, isFn := ls.Value.(*parser.FunctionLiteral); isFn {
+				if !strings.Contains(ls.Name.Value, ".") {
+					moduleFns[ls.Name.Value] = true
+				}
+			}
 		}
 	}
 	for _, stmt := range program.Statements {

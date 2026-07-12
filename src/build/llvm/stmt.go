@@ -415,6 +415,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program) {
 	g.funcVars = nil
 	g.funcLocalNames = make(map[string]bool)
+	// Reset function-return context: main has no named result parameter.
+	// Without this, curFuncRetName leaks from the last processed function
+	// (e.g. "yes"), causing conditional expressions at module level to
+	// emit `load i64, i64* %yes` for a non-existent variable.
+	g.curFuncRetName = ""
+	g.curFuncRetType = "void"
 
 	// Restore module-level variable types (reset by generateFunctionDefinition)
 	if g.moduleVarTypes != nil {
@@ -451,16 +457,15 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		}
 	}
 
-	sb.WriteString("define i32 @main(i32 %argc, i8** %argv) {\n")
+	sb.WriteString("define i32 @main(i32 %c-argc, i8** %c-argv) {\n")
 	g.indentLevel++
 	g.emitLabel(sb, "entry")
 	g.indentLevel++
 
-	// Store argc/argv for use by args-count / args-get
-	sb.WriteString(fmt.Sprintf("%s%%argc.addr = alloca i32\n", g.indent()))
-	sb.WriteString(fmt.Sprintf("%sstore i32 %%argc, i32* %%argc.addr\n", g.indent()))
-	sb.WriteString(fmt.Sprintf("%s%%argv.addr = alloca i8**\n", g.indent()))
-	sb.WriteString(fmt.Sprintf("%sstore i8** %%argv, i8*** %%argv.addr\n", g.indent()))
+	// Store argc/argv into globals for use by args-count / args-get builtins.
+	// These globals are declared in decl.go and accessible from any function.
+	sb.WriteString(fmt.Sprintf("%sstore i32 %%c-argc, i32* @.argc.addr\n", g.indent()))
+	sb.WriteString(fmt.Sprintf("%sstore i8** %%c-argv, i8*** @.argv.addr\n", g.indent()))
 
 	g.emitLifetimeEnd(sb)
 
@@ -590,6 +595,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		// Look up the type of the source variable
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[v.Value]; ok {
+				// When the source is an %option (e.g. `it` from a match block),
+				// prefer the target variable's existing type, since the option's
+				// inner value has already been extracted by generateExprWithSB.
+				if t == "%option" && stmt.Name != nil {
+					if existingType, ok := g.varTypes[stmt.Name.Value]; ok {
+						return existingType
+					}
+				}
 				return t
 			}
 		}
@@ -768,6 +781,30 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		// DotExpression receiver call (e.g. s.contains, s.index): look up str.<method>
 		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			// Module-prefixed builtin call (e.g. fs.get-line, fs.is-file):
+			// if the receiver is an Identifier not in varTypes (i.e., a module name),
+			// look up the property as a builtin method for return type inference.
+			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+				_, isVar := g.varTypes[recvIdent.Value]
+				if !isVar {
+					// First check user-defined functions with module prefix
+					fullName := recvIdent.Value + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if t, ok := g.funcRetTypes[fullName]; ok && t != "void" {
+							return t
+						}
+					}
+					// Then check builtins (strip module prefix)
+					if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
+						if m.Return[0] == parser.TypeF64 {
+							return "double"
+						}
+						if m.Return[0] == parser.TypeStr {
+							return "%str-long"
+						}
+					}
+				}
+			}
 			recvExpr := dot.Receiver
 			// Unwrap GroupedExpression: (123).to-str() → 123.to-str()
 			if ge, ok := recvExpr.(*parser.GroupedExpression); ok {
@@ -1198,9 +1235,10 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 			}
-			// Infer array element type and size from function call return type
-			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte)
-			if vt == "%arr" && g.funcResultNolangTypes != nil {
+			// Infer array/slice element type and size from function call return type
+			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,
+			// or raw = list-dir(...) where list-dir returns []str)
+			if (vt == "%arr" || vt == "%vec") && g.funcResultNolangTypes != nil {
 				fnName := ""
 				if call, ok := s.Value.(*parser.CallExpression); ok {
 					if ident, ok := call.Function.(*parser.Identifier); ok {
@@ -1209,16 +1247,16 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				}
 				if fnName != "" {
 					if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
-						// Parse [N]T format
+						// Parse [N]T or []T format
 						nolangType := nolangRets[0]
 						if strings.HasPrefix(nolangType, "[") {
-							// Extract element type: [N]T → T
-							if rbracket := strings.Index(nolangType, "]"); rbracket > 1 {
+							// Extract element type: [N]T → T or []T → T
+							if rbracket := strings.Index(nolangType, "]"); rbracket > 0 {
 								elemType := nolangType[rbracket+1:]
 								if g.arrayElemTypes != nil {
 									g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(elemType)
 								}
-								// Extract size: [N]T → N
+								// Extract size: [N]T → N (empty for slices []T)
 								sizeStr := nolangType[1:rbracket]
 								if n, err := fmt.Sscanf(sizeStr, "%d", new(int64)); err == nil && n == 1 {
 									if g.arraySizes != nil {
@@ -2774,6 +2812,8 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%sprintf.val.",        // sprintf-based str returns (to-str etc.)
 		"%str-long.s2s.",       // duplicate, keep
 		"%idx.arr.elem.",       // generateStructFieldIndexRead: [N x %str-long] element GEP
+		"%getline.str.",        // get-line builtin in call_stdlib.go
+		"%readdir.str.",        // read-dir builtin in call_stdlib.go
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

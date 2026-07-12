@@ -100,6 +100,30 @@
 // get-line = () (line ?str) {  // LLVM: call i8* @fgets(buf, size, stdin)
 // }
 
+// ═══════════════════════════════════════════════
+// 目錄操作（內建函數）
+// ═══════════════════════════════════════════════
+
+// build-in (ForwardFunc: open-dir)
+// open-dir: 開啟目錄以讀取條目
+// open-dir = (p str) (dirp i64) {  // LLVM: call i8* @opendir → ptrtoint to i64
+// }
+
+// build-in (ForwardFunc: read-dir)
+// read-dir: 讀取下一個目錄條目名稱
+// read-dir = (dirp i64) (name str, ok bool) {  // LLVM: call i8* @readdir → extract d_name → strlen → %str-long
+// }
+
+// build-in (ForwardFunc: close-dir)
+// close-dir: 關閉目錄控制代碼
+// close-dir = (dirp i64) (ok bool) {  // LLVM: call i32 @closedir → icmp eq 0 → zext
+// }
+
+// build-in (ForwardFunc: touch-file)
+// touch-file: 更新檔案時間戳為當前時間
+// touch-file = (p str) (ok bool) {  // LLVM: call i32 @utimensat(AT_FDCWD, path, NULL, 0) → icmp eq 0 → zext
+// }
+
 // macOS open() 旗標常量
 O-RDONLY = 0
 O-WRONLY = 1
@@ -360,4 +384,37 @@ copy-file = (src str, dst str) (ok bool) {
     close(fd-r)
     close(fd-w)
     ok = true
+}
+
+// ═══════════════════════════════════════════════
+// 目錄列表
+// ═══════════════════════════════════════════════
+
+// list-dir: 列出目錄中的所有條目名稱
+// 包含 '.' 和 '..' 條目。失敗時返回空 slice。
+//
+// 用法：
+//   names = list-dir('/path/to/dir')
+//   i <- [0..names.len): {
+//       print(names[i])
+//   }
+list-dir = (dirpath str) (entries []str) {
+    dirp = open-dir(dirpath)
+
+    {
+        dirp == 0 -> return
+    }
+
+    !! {
+        name, ok = read-dir(dirp)
+
+        {
+            ok == false -> {
+                close-dir(dirp)
+                return
+            }
+        }
+
+        entries.push(name)
+    }
 }

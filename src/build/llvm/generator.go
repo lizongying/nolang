@@ -713,8 +713,14 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			llvmType := g.varLLVMType(ls)
 			if llvmType == "%str-long" || llvmType == "%str-short" {
-				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
-				g.globalVars[name] = true
+				// Only emit as global for string literal constants or uninitialized
+				// declarations. Runtime-computed strings (e.g. cmd = arg(1)) must be
+				// local variables allocated in generateMainFunction.
+				_, isStrLit := ls.Value.(*parser.StringLiteral)
+				if ls.Value == nil || isStrLit {
+					sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
+					g.globalVars[name] = true
+				}
 			} else if llvmType == "%arr" {
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true

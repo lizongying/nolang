@@ -314,4 +314,44 @@ func init() {
 		Doc:          "Read a line from standard input",
 		ForwardFunc:  "read-stdin-line",
 	})
+
+	// open-dir: open a directory for reading entries
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "open-dir",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Open a directory for reading entries, returns directory handle (0 on failure)",
+		ForwardFunc:  "open-dir",
+	})
+
+	// read-dir: read next directory entry name
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "read-dir",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
+		Doc:          "Read next directory entry name, returns (name, ok)",
+		ForwardFunc:  "read-dir",
+	})
+
+	// close-dir: close a directory handle
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "close-dir",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Close a directory handle",
+		ForwardFunc:  "close-dir",
+	})
+
+	// touch-file: update file timestamps to current time
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "touch-file",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Update file access and modification times to current time",
+		ForwardFunc:  "touch-file",
+	})
 }

@@ -611,7 +611,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%argc.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %%argc.addr\n", g.indent(), loadReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* @.argc.addr\n", g.indent(), loadReg))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), extReg, loadReg))
 		}
 		return extReg
@@ -623,8 +623,6 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		argvReg := fmt.Sprintf("%%argv.load.%d", g.tmpIdx)
 		g.tmpIdx++
-		idxExt := fmt.Sprintf("%%argv.idx.%d", g.tmpIdx)
-		g.tmpIdx++
 		gepReg := fmt.Sprintf("%%argv.gep.%d", g.tmpIdx)
 		g.tmpIdx++
 		ptrReg := fmt.Sprintf("%%argv.ptr.%d", g.tmpIdx)
@@ -635,11 +633,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		bufReg := fmt.Sprintf("%%argv.buf.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = load i8**, i8*** %%argv.addr\n", g.indent(), argvReg))
-			// Extend idx to i64 for GEP
-			sb.WriteString(fmt.Sprintf("%s%s = zext i64 %s to i64\n", g.indent(), idxExt, a[0]))
-			// GEP to get argv[idx] (i8*)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, argvReg, idxExt))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8**, i8*** @.argv.addr\n", g.indent(), argvReg))
+		// idx is already i64; use directly for GEP
+		// GEP to get argv[idx] (i8*)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, argvReg, a[0]))
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), ptrReg, gepReg))
 			// strlen to get length
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, ptrReg))
@@ -786,6 +783,120 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		// 記錄 ok 值（cmpReg）供 curried 呼叫使用
 		g.lastBuiltinExtra = cmpReg
 		return strReg
+	}
+
+	// ═══════════════════════════════════════════════
+	// directory — 目錄操作
+	// ═══════════════════════════════════════════════
+
+	// open-dir: open a directory for reading entries
+	// Returns: dirp i64 (0 on failure)
+	if fnName == "open-dir" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		g.tmpIdx++
+		dirpReg := fmt.Sprintf("%%opendir.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%opendir.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @opendir(i8* %s)\n", g.indent(), dirpReg, pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), extReg, dirpReg))
+		}
+		return extReg
+	}
+
+	// read-dir: read next directory entry name
+	// Args: dirp i64 (from open-dir)
+	// Returns: name str, ok bool (ok=false when no more entries)
+	// macOS struct dirent: d_name at offset 12
+	if fnName == "read-dir" && hasArgs {
+		a := evalArgs()
+		dirpVal := a[0]
+		g.tmpIdx++
+		dirpPtr := fmt.Sprintf("%%readdir.dirp.%d", g.tmpIdx)
+		g.tmpIdx++
+		entryReg := fmt.Sprintf("%%readdir.entry.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%readdir.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		nameGep := fmt.Sprintf("%%readdir.namegep.%d", g.tmpIdx)
+		g.tmpIdx++
+		safeName := fmt.Sprintf("%%readdir.safename.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenReg := fmt.Sprintf("%%readdir.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg := fmt.Sprintf("%%readdir.str.%d", g.tmpIdx)
+		if sb != nil {
+			// inttoptr i64 to i8* (DIR*)
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dirpPtr, dirpVal))
+			// readdir(dirp)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @readdir(i8* %s)\n", g.indent(), entryReg, dirpPtr))
+			// Check if NULL (no more entries)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), cmpReg, entryReg))
+			// d_name at offset 12 (macOS 64-bit struct dirent)
+			// GEP on NULL is safe in LLVM IR (just pointer arithmetic, no memory access)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 12\n", g.indent(), nameGep, entryReg))
+			// Select: if not NULL, use d_name pointer; otherwise use empty string global
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), safeName, cmpReg, nameGep))
+			// strlen on the safe pointer
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeName))
+			// Create %str-long struct { len, data }
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%readdir.lengep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%readdir.datagep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), safeName, dataGEP))
+		}
+		// Store ok flag for curried call
+		g.lastBuiltinExtra = cmpReg
+		return strReg
+	}
+
+	// close-dir: close a directory handle
+	// Returns: ok bool
+	if fnName == "close-dir" && hasArgs {
+		a := evalArgs()
+		dirpVal := a[0]
+		g.tmpIdx++
+		dirpPtr := fmt.Sprintf("%%closedir.dirp.%d", g.tmpIdx)
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%closedir.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%closedir.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%closedir.ext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dirpPtr, dirpVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @closedir(i8* %s)\n", g.indent(), retReg, dirpPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+		}
+		return extReg
+	}
+
+	// touch-file: update file access and modification times to current time
+	// Returns: ok bool
+	if fnName == "touch-file" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%touch.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%touch.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%touch.ext.%d", g.tmpIdx)
+		if sb != nil {
+			// utimensat(AT_FDCWD=-2, path, NULL, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @utimensat(i32 -2, i8* %s, i8* null, i32 0)\n", g.indent(), retReg, pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+		}
+		return extReg
 	}
 
 	if fnName == "gzip-compress" && hasArgs {
