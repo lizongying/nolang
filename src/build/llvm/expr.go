@@ -72,32 +72,9 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// if a function has a parameter or local named "ok"/"err"/"nil",
 		// it must be treated as the variable, not the option-enum variant.
 		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[e.Value]
-		if e.Value == "pos" {
-			fmt.Printf("DEBUG Identifier(pos): isLocalVar=%v curFunc=%s\n", isLocalVar, g.curFuncName)
-			if g.funcLocalNames != nil {
-				fmt.Printf("DEBUG funcLocalNames has pos: %v\n", g.funcLocalNames["pos"])
-			}
-			if g.varTypes != nil {
-				if t, ok := g.varTypes["pos"]; ok {
-					fmt.Printf("DEBUG varTypes[pos]=%s\n", t)
-				} else {
-					fmt.Printf("DEBUG pos NOT in varTypes\n")
-				}
-			}
-			if g.enumVariantIndex != nil {
-				if idx, ok := g.enumVariantIndex["pos"]; ok {
-					fmt.Printf("DEBUG pos in enumVariantIndex with value %d\n", idx)
-				} else {
-					fmt.Printf("DEBUG pos NOT in enumVariantIndex\n")
-				}
-			}
-		}
 		// Enum variant: return tag index as constant integer
 		if !isLocalVar && g.enumVariantIndex != nil {
 			if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
-				if e.Value == "pos" {
-					fmt.Printf("DEBUG returning enumVariantIndex value: %d\n", tagIdx)
-				}
 				return fmt.Sprintf("%d", tagIdx)
 			}
 		}
@@ -466,16 +443,6 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExpression) string {
 	g.tmpIdx++
 	labelId := g.tmpIdx
-
-	if g.curFuncName == "str.contains" {
-		fmt.Printf("DEBUG generateIfExpression in str.contains, condition type: %T\n", expr.Condition)
-		if infix, ok := expr.Condition.(*parser.InfixExpression); ok {
-			fmt.Printf("DEBUG  InfixExpression operator=%s left=%T right=%T\n", infix.Operator, infix.Left, infix.Right)
-			if ident, ok := infix.Left.(*parser.Identifier); ok {
-				fmt.Printf("DEBUG  left Identifier=%s\n", ident.Value)
-			}
-		}
-	}
 
 	// 若條件是 InfixExpression（比較運算），直接取 i1
 	cond := ""
@@ -3817,9 +3784,6 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 }
 
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {
-	if g.curFuncName == "str.contains" {
-		fmt.Printf("DEBUG generateInfixI1 in str.contains, operator=%s left=%T right=%T\n", expr.Operator, expr.Left, expr.Right)
-	}
 	// Option tag comparison: x == err/nil/ok or x != err/nil/ok for %option typed variables
 	// Also handles tagged enum variants: x == status1, x == status2, etc.
 	if expr.Operator == "==" || expr.Operator == "!=" {
@@ -3879,21 +3843,12 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
 		switch expr.Operator {
 		case "==", "!=", "<", ">", "<=", ">=":
-			if g.curFuncName == "str.contains" {
-				fmt.Printf("DEBUG str.contains: taking string cmp path, isStringExpr(left)=%v isStringExpr(right)=%v\n", g.isStringExpr(expr.Left), g.isStringExpr(expr.Right))
-			}
 			return g.generateStringCmpI1(sb, expr)
 		}
 	}
 
-	if g.curFuncName == "str.contains" {
-		fmt.Printf("DEBUG str.contains: calling generateExprWithSB for left and right\n")
-	}
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
-	if g.curFuncName == "str.contains" {
-		fmt.Printf("DEBUG str.contains: left=%s right=%s\n", left, right)
-	}
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
 	cmpOp := ""

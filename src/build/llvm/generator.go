@@ -366,9 +366,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 	for _, stmt := range program.Statements {
 		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
 			for i, v := range ted.Variants {
-				if v.Name == "pos" {
-					fmt.Printf("DEBUG enumVariantIndex: pos added from TaggedEnum %s, index %d\n", ted.Name, i)
-				}
 				g.enumVariantIndex[v.Name] = int64(i)
 				if g.varTypes != nil {
 					g.varTypes[v.Name] = "i64"
@@ -380,9 +377,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 				g.enumVariants[ed.Name] = make(map[string]int64)
 			}
 			for _, v := range ed.Values {
-				if v.Name == "pos" {
-					fmt.Printf("DEBUG enumVariantIndex: pos added from Enum %s, value %d\n", ed.Name, v.Value)
-				}
 				g.enumVariantIndex[v.Name] = v.Value
 				g.enumVariants[ed.Name][v.Name] = v.Value
 				if g.varTypes != nil {
@@ -396,9 +390,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
-				if ls.Name.Value == "pos" {
-					fmt.Printf("DEBUG enumVariantIndex: pos added from LetStatement, value %d\n", v)
-				}
 				g.enumVariantIndex[ls.Name.Value] = v
 			}
 		}

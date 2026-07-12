@@ -5746,57 +5746,112 @@ func resolveModuleConstants(program *parser.Program, constants map[string]parser
 		return
 	}
 	for _, stmt := range program.Statements {
-		resolveModuleConstantsInStmt(stmt, constants)
+		resolveModuleConstantsInStmt(stmt, constants, nil)
 	}
 }
 
-func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]parser.Expression) {
+func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]parser.Expression, locals map[string]bool) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveModuleConstantsInExpr(s.Expression, constants)
+			s.Expression = resolveModuleConstantsInExpr(s.Expression, constants, locals)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleConstantsInExpr(s.Value, constants)
+			s.Value = resolveModuleConstantsInExpr(s.Value, constants, locals)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleConstantsInExpr(s.Value, constants)
+			s.Value = resolveModuleConstantsInExpr(s.Value, constants, locals)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
+			funcLocals := make(map[string]bool)
+			if locals != nil {
+				for k, v := range locals {
+					funcLocals[k] = v
+				}
+			}
+			for _, p := range s.Parameters {
+				funcLocals[p.Name] = true
+			}
+			for _, r := range s.Results {
+				if r.Name != "" {
+					funcLocals[r.Name] = true
+				}
+			}
+			collectLocalNames(s.Body, funcLocals)
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants)
+				resolveModuleConstantsInStmt(bodyStmt, constants, funcLocals)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveModuleConstantsInStmt(bodyStmt, constants)
+			resolveModuleConstantsInStmt(bodyStmt, constants, locals)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			s.Condition = resolveModuleConstantsInExpr(s.Condition, constants)
+			s.Condition = resolveModuleConstantsInExpr(s.Condition, constants, locals)
 		}
 		if s.Init != nil {
-			resolveModuleConstantsInStmt(s.Init, constants)
+			resolveModuleConstantsInStmt(s.Init, constants, locals)
 		}
 		if s.Update != nil {
-			resolveModuleConstantsInStmt(s.Update, constants)
+			resolveModuleConstantsInStmt(s.Update, constants, locals)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants)
+				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			s.ReturnValue = resolveModuleConstantsInExpr(s.ReturnValue, constants)
+			s.ReturnValue = resolveModuleConstantsInExpr(s.ReturnValue, constants, locals)
 		}
 	}
 }
 
-func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]parser.Expression) parser.Expression {
+func collectLocalNames(block *parser.BlockStatement, locals map[string]bool) {
+	if block == nil {
+		return
+	}
+	for _, stmt := range block.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			locals[ls.Name.Value] = true
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if fd.Body != nil {
+				for _, p := range fd.Parameters {
+					locals[p.Name] = true
+				}
+				for _, r := range fd.Results {
+					if r.Name != "" {
+						locals[r.Name] = true
+					}
+				}
+				collectLocalNames(fd.Body, locals)
+			}
+		}
+		if fs, ok := stmt.(*parser.ForStatement); ok {
+			if fs.Init != nil {
+				if ls, ok := fs.Init.(*parser.LetStatement); ok && ls.Name != nil {
+					locals[ls.Name.Value] = true
+				}
+			}
+			if fs.Body != nil {
+				if fs.IterRange != nil && fs.IterRange.Variable != "" {
+					locals[fs.IterRange.Variable] = true
+				}
+				collectLocalNames(fs.Body, locals)
+			}
+		}
+		if bs, ok := stmt.(*parser.BlockStatement); ok {
+			collectLocalNames(bs, locals)
+		}
+	}
+}
+
+func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]parser.Expression, locals map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -5809,87 +5864,91 @@ func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]p
 		if e.Value == "ok" || e.Value == "nil" || e.Value == "err" {
 			return e
 		}
+		// Skip local variables — they shadow module constants
+		if locals != nil && locals[e.Value] {
+			return e
+		}
 		if lit, ok := constants[e.Value]; ok {
 			return lit
 		}
 		return e
 	case *parser.CallExpression:
-		e.Function = resolveModuleConstantsInExpr(e.Function, constants)
+		e.Function = resolveModuleConstantsInExpr(e.Function, constants, locals)
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleConstantsInExpr(arg, constants)
+			e.Arguments[i] = resolveModuleConstantsInExpr(arg, constants, locals)
 		}
 		return e
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
 		}
 		if e.Right != nil {
-			e.Right = resolveModuleConstantsInExpr(e.Right, constants)
+			e.Right = resolveModuleConstantsInExpr(e.Right, constants, locals)
 		}
 		return e
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveModuleConstantsInExpr(e.Right, constants)
+			e.Right = resolveModuleConstantsInExpr(e.Right, constants, locals)
 		}
 		return e
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants)
+			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants, locals)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveModuleConstantsInExpr(e.Consequence, constants)
+			e.Consequence = resolveModuleConstantsInExpr(e.Consequence, constants, locals)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveModuleConstantsInExpr(e.Alternative, constants)
+			e.Alternative = resolveModuleConstantsInExpr(e.Alternative, constants, locals)
 		}
 		return e
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants)
+			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants, locals)
 		}
 		if e.Consequence != nil {
 			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants)
+				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants)
+				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
 			}
 		}
 		return e
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			e.Expression = resolveModuleConstantsInExpr(e.Expression, constants)
+			e.Expression = resolveModuleConstantsInExpr(e.Expression, constants, locals)
 		}
 		return e
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
 		}
 		if e.Index != nil {
-			e.Index = resolveModuleConstantsInExpr(e.Index, constants)
+			e.Index = resolveModuleConstantsInExpr(e.Index, constants, locals)
 		}
 		return e
 	case *parser.SliceExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
 		}
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleConstantsInExpr(e.Range.Start, constants)
+				e.Range.Start = resolveModuleConstantsInExpr(e.Range.Start, constants, locals)
 			}
 			if e.Range.End != nil {
-				e.Range.End = resolveModuleConstantsInExpr(e.Range.End, constants)
+				e.Range.End = resolveModuleConstantsInExpr(e.Range.End, constants, locals)
 			}
 		}
 		return e
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants)
+			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
 		}
 		if e.Value != nil {
-			e.Value = resolveModuleConstantsInExpr(e.Value, constants)
+			e.Value = resolveModuleConstantsInExpr(e.Value, constants, locals)
 		}
 		return e
 	default:
