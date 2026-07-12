@@ -1216,14 +1216,33 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		if g.isAsyncCall(v) {
 			return "%future"
 		}
-		if g.ssaTypes != nil {
-			if ident, ok := v.Function.(*parser.Identifier); ok {
-				if g.funcRetTypes != nil {
-					if t, ok := g.funcRetTypes[ident.Value]; ok && t != "void" {
-						return t
-					}
+		// Look up function return type. This works regardless of ssaTypes
+		// because funcRetTypes/funcResultLLVMType are populated during
+		// function declaration processing (before code generation).
+		if ident, ok := v.Function.(*parser.Identifier); ok {
+			fnName := ident.Value
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[fnName]; ok && t != "void" {
+					return t
 				}
 			}
+			// For void functions with by-reference output parameters,
+			// check funcResultLLVMType for the actual result type.
+			if g.funcResultLLVMType != nil {
+				if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
+					return ts[0]
+				}
+			}
+			// ForwardFunc built-ins (e.g. arg, args, is-dir) are not in
+			// funcRetTypes/funcResultLLVMType. Check builtin package for
+			// their return type.
+			if m := builtin.FindBuiltinMethod(fnName); m != nil {
+				if len(m.Return) == 1 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+		}
+		if g.ssaTypes != nil {
 			// Method calls (e.g. base.slice(0, n)): resolve receiver type
 			// and look up method return type via funcRetTypes/funcResultLLVMType.
 			if dot, ok := v.Function.(*parser.DotExpression); ok {
@@ -5018,8 +5037,56 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		} else if et == "%str-short" {
 			return g.extractStrShortLen(sb, ptr)
 		}
+	case *parser.IndexExpression:
+		// String element from a []str slice (e.g. fields[i]).
+		// generateIndexExpression loads the %str-long value; materialize it
+		// into a temp alloca to obtain a %str-long* for length extraction.
+		if ident, ok := a.Left.(*parser.Identifier); ok {
+			if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
+				ptr := g.generateExprWithSB(sb, a)
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%strlen.idx.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+				return g.extractStrLen(sb, tmpAlloca)
+			}
+		}
 	}
 	return "0"
+}
+
+// byteToSingleCharStr converts a byte value expression (e.g. from str indexing
+// like line[i]) to a single-character %str-long* string. The byte value from
+// generateIndexExpression is i64 (zext'd from i8); we trunc it back, store it
+// into a 2-byte buffer (char + null), and build a %str-long struct {len=1, data}.
+func (g *Generator) byteToSingleCharStr(sb *strings.Builder, expr parser.Expression) string {
+	byteVal := g.generateExprWithSB(sb, expr)
+	// Truncate i64 (zext'd byte) back to i8.
+	g.tmpIdx++
+	byteI8 := fmt.Sprintf("%%concat.byte.i8.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), byteI8, byteVal))
+	// Allocate 2-byte buffer: char + null terminator.
+	g.tmpIdx++
+	bufPtr := fmt.Sprintf("%%concat.byte.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 2)\n", g.indent(), bufPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), byteI8, bufPtr))
+	g.tmpIdx++
+	nullPos := fmt.Sprintf("%%concat.byte.null.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), nullPos, bufPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
+	// Build %str-long struct: { len=1, data=buf }.
+	g.tmpIdx++
+	resultAlloca := fmt.Sprintf("%%concat.byte.str.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%concat.byte.len.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i64 1, i64* %s\n", g.indent(), lenGEP))
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%concat.byte.data.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufPtr, dataGEP))
+	return resultAlloca
 }
 
 // generateStrConcat generates LLVM IR for string concatenation using `-` operator.
@@ -5028,8 +5095,21 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 		return "%str-longconcat.null"
 	}
 
-	leftPtr := g.getStrPtr(sb, leftExpr)
-	rightPtr := g.getStrPtr(sb, rightExpr)
+	// Byte operands (e.g. from str indexing like line[i]) must be converted to
+	// single-character %str-long strings before concatenation, otherwise
+	// getStrPtr would return the raw i64 byte value which extractLen/extractData
+	// would mistakenly treat as a %str-long* pointer.
+	var leftPtr, rightPtr string
+	if g.isByteValueExpr(leftExpr) {
+		leftPtr = g.byteToSingleCharStr(sb, leftExpr)
+	} else {
+		leftPtr = g.getStrPtr(sb, leftExpr)
+	}
+	if g.isByteValueExpr(rightExpr) {
+		rightPtr = g.byteToSingleCharStr(sb, rightExpr)
+	} else {
+		rightPtr = g.getStrPtr(sb, rightExpr)
+	}
 
 	leftLen := g.extractLenFromExpr(sb, leftExpr, leftPtr)
 	rightLen := g.extractLenFromExpr(sb, rightExpr, rightPtr)

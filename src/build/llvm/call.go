@@ -409,11 +409,27 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		// String concat / string method call results: ev is a %str-long* SSA register.
 		// Detect via isStringExpr so InfixExpression (- for concat) and other string
 		// expressions are passed as %str-long* instead of being truncated to i64.
-		// But DotExpression loads a %str-long VALUE (not a pointer), so it must fall
-		// through to the alloca+store path below.
+		// But DotExpression and regular CallExpression load a %str-long VALUE
+		// (not a pointer), so they must fall through to the alloca+store path.
+		// ForwardFunc built-ins (like arg(i)) return %str-long* pointers directly,
+		// so they can use the direct return path.
 		if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
 			if _, isDot := arg.(*parser.DotExpression); !isDot {
-				return "%str-long* " + ev
+				isRegularCall := false
+				if call, ok := arg.(*parser.CallExpression); ok {
+					isForward := false
+					if ident, ok := call.Function.(*parser.Identifier); ok {
+						if m := builtin.FindBuiltinMethod(ident.Value); m != nil && m.ForwardFunc != "" {
+							isForward = true
+						}
+					}
+					if !isForward {
+						isRegularCall = true
+					}
+				}
+				if !isRegularCall {
+					return "%str-long* " + ev
+				}
 			}
 		}
 		if strings.HasPrefix(ev, "%") {
@@ -463,6 +479,14 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 							}
 						}
 					}
+				}
+			}
+			// CallExpression: the baseName (e.g. "call") is not a real variable,
+			// so varTypes lookup fails. Use exprResultLLVMType to determine the
+			// function's return type for correct alloca/store.
+			if call, ok := arg.(*parser.CallExpression); ok {
+				if et := g.exprResultLLVMType(call); et != "" {
+					ptrType = et + "*"
 				}
 			}
 			elemType := strings.TrimSuffix(ptrType, "*")
@@ -911,9 +935,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
 				skipBuiltin = true
 			} else if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				// receiver 為 "self" 時，根據 varTypes 取得實際型別前綴查找
-				if recv.Value == "self" && g.varTypes != nil {
-					if recvType, ok := g.varTypes["self"]; ok {
+				// 根據 varTypes 取得 receiver 的實際型別前綴查找方法
+				// 例如 archive.read(i) → archive 型別為 %tar → 查找 tar.read
+				if g.varTypes != nil {
+					recvVarName := recv.Value
+					if recvType, ok := g.varTypes[recvVarName]; ok {
 						srcType := strings.TrimPrefix(recvType, "%")
 						candidates := []string{srcType}
 						if srcType == "str-short" || srcType == "str-long" {
@@ -925,8 +951,17 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						for _, cand := range candidates {
 							candName := cand + "." + dot.Property
 							if _, hasNolang := g.funcRetTypes[candName]; hasNolang {
-								skipBuiltin = true
-								break
+								// ForwardFunc built-ins (如 fs.read) 的 Nolang 函數體為空，
+								// 真正實作在 LLVM intrinsic 中。struct 方法（如 tar.read）有
+								// 完整 Nolang 實作，不是 ForwardFunc，應跳過 builtin 路徑。
+								isForwardBuiltin := false
+								if m := builtin.FindBuiltinMethod(candName); m != nil && m.ForwardFunc != "" {
+									isForwardBuiltin = true
+								}
+								if !isForwardBuiltin {
+									skipBuiltin = true
+									break
+								}
 							}
 						}
 					}
@@ -937,7 +972,23 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// transpiler 已將 .method() 改寫為 method()，fnName 含 "." 時視為方法呼叫
 		if strings.Contains(fnName, ".") && g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
-				skipBuiltin = true
+				// ForwardFunc built-ins (e.g. gzip-decompress, gzip-compress) have
+				// special LLVM code generation in callBuiltin that must be used.
+				// The Nolang function definition has an empty body — the real
+				// implementation is the built-in LLVM intrinsic.
+				isForwardBuiltin := false
+				m := builtin.FindBuiltinMethod(fnName)
+				if m == nil {
+					if idx := strings.Index(fnName, "."); idx >= 0 {
+						m = builtin.FindBuiltinMethod(fnName[idx+1:])
+					}
+				}
+				if m != nil && m.ForwardFunc != "" {
+					isForwardBuiltin = true
+				}
+				if !isForwardBuiltin {
+					skipBuiltin = true
+				}
 			}
 		}
 		// 用戶自定義頂層函數（包含 std 模組內的 fs.open / fs.open-write 等）
@@ -945,7 +996,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 應優先使用，否則 fs 構造函數會被 clib 系統調用遮蔽。
 		if !skipBuiltin && g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
-				skipBuiltin = true
+				// Same ForwardFunc check as above for non-dotted names
+				isForwardBuiltin := false
+				m := builtin.FindBuiltinMethod(fnName)
+				if m != nil && m.ForwardFunc != "" {
+					isForwardBuiltin = true
+				}
+				if !isForwardBuiltin {
+					skipBuiltin = true
+				}
 			}
 		}
 	}
@@ -1866,11 +1925,29 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// String concat / string method call results: ev is a %str-long* SSA register.
 			// Detect via isStringExpr so InfixExpression (- for concat) and other string
 			// expressions are passed as %str-long* instead of being truncated to i64.
-			// But DotExpression loads a %str-long VALUE (not a pointer), so it must fall
-			// through to the alloca+store path below.
+			// But DotExpression and regular CallExpression load a %str-long VALUE
+			// (not a pointer), so they must fall through to the alloca+store path.
+			// ForwardFunc built-ins (like arg(i)) return %str-long* pointers directly,
+			// so they can use the direct return path.
 			if g.isStringExpr(arg) && strings.HasPrefix(ev, "%") {
 				if _, isDot := arg.(*parser.DotExpression); !isDot {
-					return "%str-long* " + ev
+					isRegularCall := false
+					if call, ok := arg.(*parser.CallExpression); ok {
+						// Check if this is a ForwardFunc built-in (returns pointer)
+						// vs a regular function call (returns value)
+						isForward := false
+						if ident, ok := call.Function.(*parser.Identifier); ok {
+							if m := builtin.FindBuiltinMethod(ident.Value); m != nil && m.ForwardFunc != "" {
+								isForward = true
+							}
+						}
+						if !isForward {
+							isRegularCall = true
+						}
+					}
+					if !isRegularCall {
+						return "%str-long* " + ev
+					}
 				}
 			}
 			if strings.HasPrefix(ev, "%") && strings.Contains(ev, ".") {
@@ -1917,6 +1994,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 									}
 								}
 							}
+						}
+					}
+					// CallExpression: the baseName (e.g. "call") is not a real variable,
+					// so varTypes lookup fails. Use exprResultLLVMType to determine the
+					// function's return type for correct alloca/store.
+					if call, ok := arg.(*parser.CallExpression); ok {
+						if et := g.exprResultLLVMType(call); et != "" && et != "i64" {
+							sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, et))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), et, ev, et, tmpName))
+							return et + "* " + tmpName
 						}
 					}
 					sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))

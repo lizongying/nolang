@@ -97,6 +97,20 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			} else if et == "%str-short" {
 				return g.extractStrShortDataPtr(sb, ptr)
 			}
+		case *parser.IndexExpression:
+			// String element from a []str slice (e.g. fields[i]).
+			// generateIndexExpression loads the %str-long value; materialize it
+			// into a temp alloca to obtain a %str-long* for data pointer extraction.
+			if ident, ok := a.Left.(*parser.Identifier); ok {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
+					ptr := g.generateExprWithSB(sb, a)
+					g.tmpIdx++
+					tmpAlloca := fmt.Sprintf("%%str-long.idx.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+					return g.extractStrDataPtr(sb, tmpAlloca)
+				}
+			}
 		}
 		return ""
 	}
@@ -513,14 +527,43 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 	if ptr := g.makeNullTerminatedStr(sb, expr); ptr != "" {
 		return ptr
 	}
-	// Fallback: manually null-terminate from the eval result
-	// Extract data pointer
-	dataPtr := g.extractStrFromEvalArg(sb, evalResult)
-	// Extract the %str-long* base pointer for length extraction
+	// Fallback: manually null-terminate from the eval result.
+	// Resolve evalResult to a stable %str-long* pointer for BOTH data and length
+	// extraction. When evalResult is a loaded value (contains ".val."), stripping
+	// ".val.N" only yields a valid pointer for simple variable loads (e.g.
+	// %x.val.N → %x). For complex expressions like IndexExpression results
+	// (e.g. %vec.idx.val.N), the stripped prefix (%vec.idx) is NOT a valid
+	// register, so we materialize the value into a temp alloca instead.
 	strPtr := evalResult
-	if idx := strings.Index(evalResult, ".val."); idx > 0 {
-		strPtr = evalResult[:idx]
+	if strings.HasPrefix(evalResult, "%") {
+		if idx := strings.Index(evalResult, ".val."); idx > 0 {
+			baseRef := evalResult[:idx]
+			// baseRef is a valid alloca pointer only if it is a simple variable
+			// reference (%varName with no extra dots). For complex expressions
+			// like %vec.idx.val.N, baseRef (%vec.idx) is NOT a valid register,
+			// so we materialize the value into a temp alloca instead.
+			simpleVar := !strings.Contains(strings.TrimPrefix(baseRef, "%"), ".")
+			known := false
+			if simpleVar && g.varTypes != nil {
+				varName := strings.TrimPrefix(baseRef, "%")
+				_, known = g.varTypes[varName]
+			}
+			if known {
+				// Simple variable load: %var.val.N → %var is the alloca pointer
+				strPtr = baseRef
+			} else {
+				// Complex expression result: materialize value into temp alloca
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%str-long.nt.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
+				}
+				strPtr = tmpAlloca
+			}
+		}
 	}
+	dataPtr := g.extractStrDataPtr(sb, strPtr)
 	strLen := g.extractStrLen(sb, strPtr)
 	// Allocate buffer of len+1
 	g.tmpIdx++
@@ -672,10 +715,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		bufReg := fmt.Sprintf("%%argv.buf.%d", g.tmpIdx)
 		if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = load i8**, i8*** @.argv.addr\n", g.indent(), argvReg))
-		// idx is already i64; use directly for GEP
-		// GEP to get argv[idx] (i8*)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, argvReg, a[0]))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8**, i8*** @.argv.addr\n", g.indent(), argvReg))
+			// idx is already i64; use directly for GEP
+			// GEP to get argv[idx] (i8*)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, argvReg, a[0]))
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), ptrReg, gepReg))
 			// strlen to get length
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, ptrReg))
@@ -737,9 +780,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), extReg, cmpReg, cmp2))
 			// zext to i64
 			g.tmpIdx++
-		zextReg := fmt.Sprintf("%%stat.zext.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
-		return zextReg
+			zextReg := fmt.Sprintf("%%stat.zext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
+			return zextReg
 		}
 	}
 
@@ -806,7 +849,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
 		}
-	return selReg
+		return selReg
 	}
 
 	// read-file: read entire file into a string
@@ -2495,6 +2538,20 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 			dataPtr = g.extractStrDataPtr(sb, tmpAlloca)
 		} else if et == "%str-short" {
 			dataPtr = g.extractStrShortDataPtr(sb, ptr)
+		}
+	case *parser.IndexExpression:
+		// String element from a []str slice (e.g. files[i]).
+		// generateIndexExpression loads the %str-long value; materialize it
+		// into a temp alloca to obtain a %str-long* for data pointer extraction.
+		if ident, ok := a.Left.(*parser.Identifier); ok {
+			if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
+				ptr := g.generateExprWithSB(sb, a)
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%str-long.idx.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+				dataPtr = g.extractStrDataPtr(sb, tmpAlloca)
+			}
 		}
 	}
 
