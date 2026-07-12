@@ -504,6 +504,45 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 	return ""
 }
 
+// nullTerminateStrArg ensures a string argument is null-terminated for C function calls.
+// Tries makeNullTerminatedStr first (handles Identifier, StringLiteral, InfixExpression, DotExpression).
+// Falls back to manual null-termination from the eval result for other expression types
+// (e.g. CallExpression like arg(i)).
+func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, expr parser.Expression) string {
+	// Try makeNullTerminatedStr for known expression types
+	if ptr := g.makeNullTerminatedStr(sb, expr); ptr != "" {
+		return ptr
+	}
+	// Fallback: manually null-terminate from the eval result
+	// Extract data pointer
+	dataPtr := g.extractStrFromEvalArg(sb, evalResult)
+	// Extract the %str-long* base pointer for length extraction
+	strPtr := evalResult
+	if idx := strings.Index(evalResult, ".val."); idx > 0 {
+		strPtr = evalResult[:idx]
+	}
+	strLen := g.extractStrLen(sb, strPtr)
+	// Allocate buffer of len+1
+	g.tmpIdx++
+	sizeReg := fmt.Sprintf("%%nt.size.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), sizeReg, strLen))
+	}
+	g.tmpIdx++
+	buf := fmt.Sprintf("%%nt.buf.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
+		// Null-terminate
+		g.tmpIdx++
+		nullEnd := fmt.Sprintf("%%nt.end.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullEnd))
+		// Copy string data
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), buf, dataPtr, strLen))
+	}
+	return buf
+}
+
 // callBuiltin — 內建函數（len, cap, args-count, args-get, is-dir, stat-size, get-line）
 func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
@@ -664,7 +703,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "is-dir" && hasArgs {
 		a := evalArgs()
 		// 從 %str-long 參數提取 i8* 資料指針
-		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		g.tmpIdx++
 		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -688,8 +727,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			// Check stat return == 0
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			// Load st_mode (offset 16 on macOS arm64)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 16\n", g.indent(), modeGEP, statBuf))
+			// Load st_mode (offset 4 on macOS arm64)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
 			// AND with S_IFDIR (0040000 = 0x4000)
 			sb.WriteString(fmt.Sprintf("%s%s = and i16 %s, 16384\n", g.indent(), andReg, modeLoad))
@@ -698,7 +737,45 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), extReg, cmpReg, cmp2))
 			// zext to i64
 			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%stat.zext.%d", g.tmpIdx)
+		zextReg := fmt.Sprintf("%%stat.zext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
+		return zextReg
+		}
+	}
+
+	// is-file: 判斷路徑是否為普通檔案
+	// Mirrors is-dir but masks with S_IFREG (0100000 = 0x8000 = 32768)
+	if (fnName == "is-file" || fnName == "stat-file") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%statbuf.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%stat.ret.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%stat.cmp.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		modeGEP := fmt.Sprintf("%%stat.mode.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		modeLoad := fmt.Sprintf("%%stat.mode.ld.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		andReg := fmt.Sprintf("%%stat.and.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmp2 := fmt.Sprintf("%%stat.cmp2.sf.%d", g.tmpIdx)
+		g.tmpIdx++
+		extReg := fmt.Sprintf("%%stat.ext.sf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
+			// S_IFREG = 0100000 = 0x8000 = 32768
+			sb.WriteString(fmt.Sprintf("%s%s = and i16 %s, 32768\n", g.indent(), andReg, modeLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i16 %s, 0\n", g.indent(), cmp2, andReg))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), extReg, cmpReg, cmp2))
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%stat.zext.sf.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
 			return zextReg
 		}
@@ -708,7 +785,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "stat-size" || fnName == "file-size") && hasArgs {
 		a := evalArgs()
 		// 從 %str-long 參數提取 i8* 資料指針
-		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		g.tmpIdx++
 		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -725,11 +802,73 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 48\n", g.indent(), sizeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 96\n", g.indent(), sizeGEP, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
 		}
-		return selReg
+	return selReg
+	}
+
+	// read-file: read entire file into a string
+	// Returns a %str-long* alloca; empty string on error.
+	if fnName == "read-file" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%rf.statbuf.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%rf.statret.%d", g.tmpIdx)
+		g.tmpIdx++
+		statCmp := fmt.Sprintf("%%rf.statcmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		sizeGEP := fmt.Sprintf("%%rf.sizegep.%d", g.tmpIdx)
+		g.tmpIdx++
+		sizeLoad := fmt.Sprintf("%%rf.sizeld.%d", g.tmpIdx)
+		g.tmpIdx++
+		sizeSel := fmt.Sprintf("%%rf.size.%d", g.tmpIdx)
+		g.tmpIdx++
+		openRet := fmt.Sprintf("%%rf.open.%d", g.tmpIdx)
+		g.tmpIdx++
+		openCmp := fmt.Sprintf("%%rf.opencmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%rf.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		readRet := fmt.Sprintf("%%rf.read.%d", g.tmpIdx)
+		g.tmpIdx++
+		readSel := fmt.Sprintf("%%rf.readsel.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg := fmt.Sprintf("%%rf.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%rf.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%rf.data.gep.%d", g.tmpIdx)
+		if sb != nil {
+			// stat(path) → file size (0 on failure)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), statCmp, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 96\n", g.indent(), sizeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), sizeSel, statCmp, sizeLoad))
+			// open(path, O_RDONLY=0, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @open(i8* %s, i32 0, i32 0)\n", g.indent(), openRet, pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), openCmp, openRet))
+			// malloc(size)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, sizeSel))
+			// read(fd, buf, size)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @read(i32 %s, i8* %s, i64 %s)\n", g.indent(), readRet, openRet, bufReg, sizeSel))
+			// close(fd)
+			sb.WriteString(fmt.Sprintf("%scall i32 @close(i32 %s)\n", g.indent(), openRet))
+			// If open failed, use 0 for read count
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, openCmp, readRet))
+			// Construct %str-long {len, data}
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, lenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
+		}
+		return strReg
 	}
 
 	// get-line: 從標準輸入讀取一行
@@ -780,8 +919,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// fclose
 			sb.WriteString(fmt.Sprintf("%scall i32 @fclose(i8* %s)\n", g.indent(), stdinReg))
 		}
-		// 記錄 ok 值（cmpReg）供 curried 呼叫使用
-		g.lastBuiltinExtra = cmpReg
+		// 記錄 ok 值（cmpReg）供 curried 呼叫使用 — zext i1 → i64 (Nolang bools are i64)
+		g.tmpIdx++
+		okZext := fmt.Sprintf("%%getline.ok.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
+		}
+		g.lastBuiltinExtra = okZext
 		return strReg
 	}
 
@@ -793,7 +937,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Returns: dirp i64 (0 on failure)
 	if fnName == "open-dir" && hasArgs {
 		a := evalArgs()
-		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		g.tmpIdx++
 		dirpReg := fmt.Sprintf("%%opendir.ret.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -833,15 +977,25 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @readdir(i8* %s)\n", g.indent(), entryReg, dirpPtr))
 			// Check if NULL (no more entries)
 			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), cmpReg, entryReg))
-			// d_name at offset 12 (macOS 64-bit struct dirent)
+			// d_name at offset 21 (macOS 64-bit struct dirent:
+			//   d_ino(8) + d_seekoff(8) + d_reclen(2) + d_namlen(2) + d_type(1) = 21)
 			// GEP on NULL is safe in LLVM IR (just pointer arithmetic, no memory access)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 12\n", g.indent(), nameGep, entryReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 21\n", g.indent(), nameGep, entryReg))
 			// Select: if not NULL, use d_name pointer; otherwise use empty string global
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
 				g.indent(), safeName, cmpReg, nameGep))
 			// strlen on the safe pointer
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeName))
-			// Create %str-long struct { len, data }
+			// Copy d_name into a heap buffer (readdir returns static memory that
+			// gets overwritten on the next call)
+			g.tmpIdx++
+			bufSize := fmt.Sprintf("%%readdir.bufsize.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSize, lenReg))
+			g.tmpIdx++
+			nameBuf := fmt.Sprintf("%%readdir.namebuf.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), nameBuf, bufSize))
+			sb.WriteString(fmt.Sprintf("%scall i8* @strcpy(i8* %s, i8* %s)\n", g.indent(), nameBuf, safeName))
+			// Create %str-long struct { len, data } pointing to the heap copy
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%readdir.lengep.%d", g.tmpIdx)
@@ -850,10 +1004,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%readdir.datagep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), safeName, dataGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), nameBuf, dataGEP))
 		}
-		// Store ok flag for curried call
-		g.lastBuiltinExtra = cmpReg
+		// Store ok flag for curried call — zext i1 → i64 (Nolang bools are i64)
+		g.tmpIdx++
+		okZext := fmt.Sprintf("%%readdir.ok.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
+		}
+		g.lastBuiltinExtra = okZext
 		return strReg
 	}
 
@@ -883,7 +1042,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Returns: ok bool
 	if fnName == "touch-file" && hasArgs {
 		a := evalArgs()
-		pathPtr := g.extractStrFromEvalArg(sb, a[0])
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		g.tmpIdx++
 		retReg := fmt.Sprintf("%%touch.ret.%d", g.tmpIdx)
 		g.tmpIdx++

@@ -82,7 +82,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a directory with the given mode",
-		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// remove: remove a file
@@ -92,7 +92,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Remove (unlink) a file",
-		CLibCall:     &CLibCall{FuncName: "unlink", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "unlink", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// rename: rename a file
@@ -102,7 +102,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Rename a file from old to new",
-		CLibCall:     &CLibCall{FuncName: "rename", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "rename", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// is-file: check if path is a regular file
@@ -112,7 +112,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Check if the path points to a regular file",
-		CLibCall:     &CLibCall{FuncName: "stat", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI8Ptr}, RetType: LLVMI32, CmpRet: true, FixedArgs: map[int]string{1: "null"}},
+		ForwardFunc:  "stat-file",
 	})
 
 	// open-read: open a file for reading
@@ -303,6 +303,16 @@ func init() {
 		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
 		Doc:          "Get the size of a file (returns size, ok)",
 		ForwardFunc:  "stat-size",
+	})
+
+	// read-file: read entire file into a string
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "read-file",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Read entire file contents into a string (empty on error)",
+		ForwardFunc:  "read-file",
 	})
 
 	// get-line: read a line from stdin

@@ -773,7 +773,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if n, ok := g.funcNumResults[name]; ok && n == 1 {
 					if g.funcResultLLVMType != nil {
 						if ts, ok := g.funcResultLLVMType[name]; ok && len(ts) == 1 {
-							return ts[0]
+							retType := ts[0]
+							if retType == "i1" {
+								retType = "i64"
+							}
+							return retType
 						}
 					}
 				}
@@ -854,12 +858,17 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 									return t
 								}
 								// void + 單輸出函數（如 str.empty 返回 i1）：
-								// 使用 funcResultLLVMType 中的輸出型別
-								if g.funcResultLLVMType != nil {
-									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-										return ts[0]
+							// 使用 funcResultLLVMType 中的輸出型別
+							// Nolang bools are stored as i64, not i1
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
 									}
+									return retType
 								}
+							}
 							}
 						}
 						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
@@ -915,9 +924,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							return t
 						}
 						// void + 單輸出函數（如 str.repeat 返回 str）：使用 funcResultLLVMType
+						// Nolang bools are stored as i64, not i1
 						if g.funcResultLLVMType != nil {
 							if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-								return ts[0]
+								retType := ts[0]
+								if retType == "i1" {
+									retType = "i64"
+								}
+								return retType
 							}
 						}
 					}
@@ -965,7 +979,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 							if g.funcResultLLVMType != nil {
 								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-									return ts[0]
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
+									}
+									return retType
 								}
 							}
 						}
@@ -1329,15 +1347,28 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			if fnName != "" {
 				if g.funcResultLLVMType != nil {
 					if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Targets) {
-						retTypes = rets
+						for _, t := range rets {
+							if t == "i1" {
+								t = "i64"
+							}
+							retTypes = append(retTypes, t)
+						}
 					} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
 						for _, r := range m.Return {
-							retTypes = append(retTypes, g.mapToLLVMType(r.String()))
+							t := g.mapToLLVMType(r.String())
+							if t == "i1" {
+								t = "i64"
+							}
+							retTypes = append(retTypes, t)
 						}
 					}
 				} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
 					for _, r := range m.Return {
-						retTypes = append(retTypes, g.mapToLLVMType(r.String()))
+						t := g.mapToLLVMType(r.String())
+						if t == "i1" {
+							t = "i64"
+						}
+						retTypes = append(retTypes, t)
 					}
 				}
 			}
@@ -2814,6 +2845,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%idx.arr.elem.",       // generateStructFieldIndexRead: [N x %str-long] element GEP
 		"%getline.str.",        // get-line builtin in call_stdlib.go
 		"%readdir.str.",        // read-dir builtin in call_stdlib.go
+		"%rf.str.",             // read-file builtin in call_stdlib.go
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

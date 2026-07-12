@@ -72,9 +72,32 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// if a function has a parameter or local named "ok"/"err"/"nil",
 		// it must be treated as the variable, not the option-enum variant.
 		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[e.Value]
+		if e.Value == "pos" {
+			fmt.Printf("DEBUG Identifier(pos): isLocalVar=%v curFunc=%s\n", isLocalVar, g.curFuncName)
+			if g.funcLocalNames != nil {
+				fmt.Printf("DEBUG funcLocalNames has pos: %v\n", g.funcLocalNames["pos"])
+			}
+			if g.varTypes != nil {
+				if t, ok := g.varTypes["pos"]; ok {
+					fmt.Printf("DEBUG varTypes[pos]=%s\n", t)
+				} else {
+					fmt.Printf("DEBUG pos NOT in varTypes\n")
+				}
+			}
+			if g.enumVariantIndex != nil {
+				if idx, ok := g.enumVariantIndex["pos"]; ok {
+					fmt.Printf("DEBUG pos in enumVariantIndex with value %d\n", idx)
+				} else {
+					fmt.Printf("DEBUG pos NOT in enumVariantIndex\n")
+				}
+			}
+		}
 		// Enum variant: return tag index as constant integer
 		if !isLocalVar && g.enumVariantIndex != nil {
 			if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
+				if e.Value == "pos" {
+					fmt.Printf("DEBUG returning enumVariantIndex value: %d\n", tagIdx)
+				}
 				return fmt.Sprintf("%d", tagIdx)
 			}
 		}
@@ -242,6 +265,49 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			return "-" + right
 		}
+		if e.Operator == "!" {
+			// Logical NOT: Nolang bools are i64 (0=false, non-zero=true)
+			// !x  =>  icmp eq i64 x, 0  =>  zext i1 result to i64
+			rc := right
+			if !strings.HasPrefix(right, "%") {
+				// Literal or constant — handle directly
+				if right == "0" {
+					return "1"
+				}
+				return "0"
+			}
+			// Ensure operand is i64
+			operandType := g.intExprLLVMType(e.Right)
+			if operandType == "" {
+				operandType = "i64"
+			}
+			if operandType == "i1" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%not.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, right))
+				}
+				rc = zextReg
+			} else if operandType != "i64" {
+				g.tmpIdx++
+				extReg := fmt.Sprintf("%%not.ext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, operandType, right))
+				}
+				rc = extReg
+			}
+			g.tmpIdx++
+			cmpReg := fmt.Sprintf("%%not.cmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), cmpReg, rc))
+			}
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%not.result.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
+			}
+			return reg
+		}
 		return right
 	case *parser.CallExpression:
 		result := g.generateCallExpression(sb, e)
@@ -276,7 +342,28 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 				return zextReg
 			}
+			// If call returns i1 (bool), zext to i64 (Nolang bools are i64)
+			if strings.Contains(result, "call i1 ") {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, reg))
+				}
+				return zextReg
+			}
 			return reg
+		}
+		// result is a register name (from voidSingleOutput or hasOutputParam path)
+		// If it's i1 (bool), zext to i64 (Nolang bools are i64)
+		if strings.HasPrefix(result, "%") && g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[result]; ok && t == "i1" {
+				g.tmpIdx++
+				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, result))
+				}
+				return zextReg
+			}
 		}
 		return result
 	case *parser.DotExpression:
@@ -379,6 +466,16 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExpression) string {
 	g.tmpIdx++
 	labelId := g.tmpIdx
+
+	if g.curFuncName == "str.contains" {
+		fmt.Printf("DEBUG generateIfExpression in str.contains, condition type: %T\n", expr.Condition)
+		if infix, ok := expr.Condition.(*parser.InfixExpression); ok {
+			fmt.Printf("DEBUG  InfixExpression operator=%s left=%T right=%T\n", infix.Operator, infix.Left, infix.Right)
+			if ident, ok := infix.Left.(*parser.Identifier); ok {
+				fmt.Printf("DEBUG  left Identifier=%s\n", ident.Value)
+			}
+		}
+	}
 
 	// 若條件是 InfixExpression（比較運算），直接取 i1
 	cond := ""
@@ -855,6 +952,10 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		}
 		return widerIntType(g.intExprLLVMType(v.Left), g.intExprLLVMType(v.Right))
 	case *parser.PrefixExpression:
+		// !x always returns i64 (Nolang bools are i64)
+		if v.Operator == "!" {
+			return "i64"
+		}
 		return g.intExprLLVMType(v.Right)
 	case *parser.GroupedExpression:
 		return g.intExprLLVMType(v.Expression)
@@ -875,9 +976,14 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 						return t
 					}
 					// void + 單輸出函數：使用 funcResultLLVMType 中的輸出型別
+					// Nolang bools are stored as i64 (CallExpression handler zexts i1→i64)
 					if g.funcResultLLVMType != nil {
 						if ts, ok := g.funcResultLLVMType[ident.Value]; ok && len(ts) == 1 {
-							return ts[0]
+							retType := ts[0]
+							if retType == "i1" {
+								retType = "i64"
+							}
+							return retType
 						}
 					}
 					return "i64"
@@ -895,14 +1001,18 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 							return t
 						}
 						if g.funcResultLLVMType != nil {
-							if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-								return ts[0]
+						if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+							retType := ts[0]
+							if retType == "i1" {
+								retType = "i64"
 							}
+							return retType
 						}
 					}
 				}
 			}
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+		}
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
 					candidates := []string{srcType}
@@ -921,12 +1031,17 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 									return t
 								}
 								// void + 單輸出函數（如 str.empty 返回 i1）：
-								// 使用 funcResultLLVMType 中的輸出型別
-								if g.funcResultLLVMType != nil {
-									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-										return ts[0]
+							// 使用 funcResultLLVMType 中的輸出型別
+							// Nolang bools are stored as i64 (CallExpression handler zexts i1→i64)
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
 									}
+									return retType
 								}
+							}
 							}
 						}
 					}
@@ -3702,6 +3817,9 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 }
 
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {
+	if g.curFuncName == "str.contains" {
+		fmt.Printf("DEBUG generateInfixI1 in str.contains, operator=%s left=%T right=%T\n", expr.Operator, expr.Left, expr.Right)
+	}
 	// Option tag comparison: x == err/nil/ok or x != err/nil/ok for %option typed variables
 	// Also handles tagged enum variants: x == status1, x == status2, etc.
 	if expr.Operator == "==" || expr.Operator == "!=" {
@@ -3761,12 +3879,21 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
 		switch expr.Operator {
 		case "==", "!=", "<", ">", "<=", ">=":
+			if g.curFuncName == "str.contains" {
+				fmt.Printf("DEBUG str.contains: taking string cmp path, isStringExpr(left)=%v isStringExpr(right)=%v\n", g.isStringExpr(expr.Left), g.isStringExpr(expr.Right))
+			}
 			return g.generateStringCmpI1(sb, expr)
 		}
 	}
 
+	if g.curFuncName == "str.contains" {
+		fmt.Printf("DEBUG str.contains: calling generateExprWithSB for left and right\n")
+	}
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
+	if g.curFuncName == "str.contains" {
+		fmt.Printf("DEBUG str.contains: left=%s right=%s\n", left, right)
+	}
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
 	cmpOp := ""

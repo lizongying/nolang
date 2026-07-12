@@ -52,6 +52,11 @@
 // stat-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
 // }
 
+// build-in (ForwardFunc: read-file)
+// read-file: 讀取整個檔案內容為字串
+// read-file = (p str) (content str) {  // LLVM: stat+open+malloc+read+close → %str-long
+// }
+
 // build-in (ForwardFunc: stat-size)
 // file-size: 取得檔案大小（同 stat-size）
 // file-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size

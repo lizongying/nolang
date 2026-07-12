@@ -1027,7 +1027,8 @@ func runCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	cmd := exec.Command(outPath)
+	cmd := exec.Command(outPath, fs.Args()[1:]...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

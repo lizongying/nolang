@@ -118,9 +118,8 @@ vec-create = (n i64, val i64) (out []i64) {
 // []t.push: 在末尾追加元素（需確保容量足夠）
 []t.push = (val t) {
     n = .len
-    n
-    val
-    new-n = n + 1
+    .len = n + 1
+    .[n] = val
 }
 
 // []t.pop: 從末尾彈出元素

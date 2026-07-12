@@ -713,8 +713,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					curStoreType := storeType
 					curVal := actualVal
 					// 多返回值 builtin: 第二個輸出使用 lastBuiltinExtra (如 get-line 的 ok)
+					// lastBuiltinExtra is already zext'd to i64 (Nolang bools are i64)
 					if outIdx == 1 && g.lastBuiltinExtra != "" {
-						curStoreType = "i1"
+						curStoreType = "i64"
 						curVal = g.lastBuiltinExtra
 					}
 					if _, exists := g.varTypes[varName]; !exists {
