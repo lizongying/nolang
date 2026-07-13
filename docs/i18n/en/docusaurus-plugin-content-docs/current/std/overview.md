@@ -463,11 +463,11 @@ written = w.write-byte(b)      // Write one byte
 written = w.write-line(s)      // Write string + newline
 
 // Convenience functions
-n = io.io-print(s)                // Write to stdout (no newline)
-n = io.io-println(s)              // Write to stdout (with newline)
-n = io.io-err(s)                  // Write to stderr (no newline)
-n = io.io-errln(s)                // Write to stderr (with newline)
-line = io.io-read-line()          // Read one line from stdin (?str, nil=EOF)
+n = io.out(s)                   // Write to stdout (no newline)
+n = io.outln(s)                 // Write to stdout (with newline)
+n = io.err(s)                   // Write to stderr (no newline)
+n = io.errln(s)                 // Write to stderr (with newline)
+line = io.read-line()           // Read one line from stdin (?str, nil=EOF)
 ```
 
 ### regexp — Regular Expressions

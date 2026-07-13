@@ -463,11 +463,11 @@ written = w.write-byte(b)      // 寫入一位元組
 written = w.write-line(s)      // 寫入字串+換行
 
 // 便捷函數
-n = io.io-print(s)                // 寫入 stdout（不換行）
-n = io.io-println(s)              // 寫入 stdout（換行）
-n = io.io-err(s)                  // 寫入 stderr（不換行）
-n = io.io-errln(s)                // 寫入 stderr（換行）
-line = io.io-read-line()          // 從 stdin 讀取一行（?str, nil=EOF）
+n = io.out(s)                   // 寫入 stdout（不換行）
+n = io.outln(s)                 // 寫入 stdout（換行）
+n = io.err(s)                   // 寫入 stderr（不換行）
+n = io.errln(s)                 // 寫入 stderr（換行）
+line = io.read-line()           // 從 stdin 讀取一行（?str, nil=EOF）
 ```
 
 ### regexp — 正規表示式

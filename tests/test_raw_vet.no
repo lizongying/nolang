@@ -1,0 +1,6 @@
+sql = `
+SELECT id,name
+FROM user
+WHERE id > 100
+`
+print(sql.len)

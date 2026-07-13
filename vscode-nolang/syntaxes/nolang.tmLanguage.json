@@ -38,6 +38,22 @@
       ]
     },
     {
+      "name": "string.quoted.double.nolang",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.nolang",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.other.nolang",
+      "begin": "`\\n",
+      "end": "^\\s*`"
+    },
+    {
       "name": "constant.numeric.float.nolang",
       "match": "(?<![\\w])\\d+\\.\\d+(?![\\w])"
     },
