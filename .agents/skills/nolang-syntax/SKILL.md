@@ -317,7 +317,7 @@ Configure mirror addresses in the `mirrors` array of `mod.jsonc` to accelerate r
 
 ### Data Types
 
-**Base types:** `byte`, `bool` (lowercase only), `char` (character type, one Chinese character = one char, no quotes), `str` (string type, single-quoted), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `u8`, `u16`, `u32`, `u64`, `usize` (ffi only), `f32`, `f64`
+**Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `u8`, `u16`, `u32`, `u64`, `usize` (ffi only), `f32`, `f64`
 
 **Container types:** `obj` (object), `map` (map), `arr` (fixed-length array `[n]t`), `vec` (variable-length array `[]t`), `slice` (slice/view, no independent data structure, must be attached to arr/vec/str)
 
@@ -373,9 +373,19 @@ b = 0x00
 name = 'nolang'
 flag = true
 
+// Char literal (double-quoted, single rune)
+c = "中"
+a = "A"
+
+// Raw string (backtick-delimited, multi-line, no escape processing)
+sql = `
+SELECT id,name
+FROM user
+WHERE id > 100
+`
+
 // Explicit type annotation
 a u64 = 10
-c char = 中
 
 // If variable name matches type, type annotation can be omitted
 i8 = 3
@@ -1788,6 +1798,40 @@ If an annotation is not followed by a declaration, it remains a standalone `Anno
 ## String Operations
 
 Nolang strings (`str`) are a union type (short ≤127 bytes stored on stack / long stored on heap), supporting multiple operators and methods.
+
+### String Literals
+
+Nolang supports three kinds of string/char literals:
+
+1. **Single-quoted strings** (`'...'`): Standard string literal with escape processing (`\n`, `\t`, `\\`, `\'`, `\0`, etc.). Type: `str`.
+
+2. **Double-quoted char** (`"x"`): Single Unicode character (rune). Type: `char` (i32). Only one character allowed.
+
+3. **Raw strings** (backtick-delimited): Multi-line, no escape processing. Type: `str`.
+
+```nolang
+// Standard string
+s = 'hello\nworld'
+
+// Char literal (rune)
+c = "中"
+
+// Raw string — backtick-delimited, multi-line, no escapes
+sql = `
+SELECT id, name
+FROM user
+WHERE id > 100
+`
+```
+
+**Raw string format constraints (core design):**
+
+1. Opening `` ` `` must be **immediately followed by a source newline**;
+2. Closing `` ` `` must be **on its own line** (only whitespace allowed before it);
+3. The backtick marker lines are **not part of the string content**;
+4. **No escape processing**: all `\`, `\n`, `\t`, `\'`, `\"` are preserved literally;
+5. **Newlines and indentation are preserved** exactly as in source;
+6. **Cannot embed backtick character** — use single-quoted string concatenation if needed.
 
 ### String Operators
 

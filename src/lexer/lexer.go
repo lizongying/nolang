@@ -159,6 +159,55 @@ func (l *Lexer) readString() string {
 	return string(buf)
 }
 
+// readRawString 读取反引号原始字符串。
+// 语法要求：
+//   - 开头 ` 后必须紧跟源码换行
+//   - 结尾 ` 必须单独占一行（该行仅允许空白 + `）
+//   - 首尾两行的反引号所在行不计入字符串内容
+//   - 内部所有字符原样保留，不做任何转义解析
+func (l *Lexer) readRawString() string {
+	l.readChar() // 跳过开头的 `
+
+	// 开头 ` 后必须紧跟换行
+	if l.ch != '\n' {
+		// 跳过到 EOF 或换行，避免后续解析混乱
+		for l.ch != 0 && l.ch != '\n' {
+			l.readChar()
+		}
+		return ""
+	}
+	l.readChar() // 跳过开头换行
+
+	var buf []byte
+	for {
+		if l.ch == 0 {
+			// 未终止的原始字符串
+			return string(buf)
+		}
+		if l.ch == '\n' {
+			// 检查下一行是否为「仅空白 + `」
+			savedState := l.SaveState()
+			l.readChar() // 跳过换行
+			// 跳过空白
+			for l.ch == ' ' || l.ch == '\t' {
+				l.readChar()
+			}
+			if l.ch == '`' {
+				// 找到结束标记
+				l.readChar() // 跳过结尾 `
+				return string(buf)
+			}
+			// 不是结束标记，恢复并继续
+			l.RestoreState(savedState)
+			buf = append(buf, '\n')
+			l.readChar()
+		} else {
+			buf = append(buf, l.ch)
+			l.readChar()
+		}
+	}
+}
+
 func (l *Lexer) NextToken() Token {
 	l.skipWhitespace()
 
@@ -429,6 +478,13 @@ func (l *Lexer) NextToken() Token {
 			tok.Type = STRING
 			tok.Literal = content
 		}
+		return tok
+	case '`':
+		// Raw string literal: `content`
+		// Opening ` must be followed by newline; closing ` must be alone on its line.
+		// No escape processing; all bytes preserved as-is.
+		tok.Type = STRING
+		tok.Literal = l.readRawString()
 		return tok
 	case 0:
 		tok.Type = EOF

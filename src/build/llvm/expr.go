@@ -1733,6 +1733,19 @@ func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 	return lenLoad
 }
 
+// extractStrCap extracts the i64 cap (field 1) from a %str-long* pointer.
+func (g *Generator) extractStrCap(sb *strings.Builder, strPtr string) string {
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%str-long.cap.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	capLoad := fmt.Sprintf("%%str-long.cap.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capLoad, capGEP))
+	}
+	return capLoad
+}
+
 // extractStrShortLen extracts the i64 len from a %str-short* pointer.
 // Loads field 0 (i8), ANDs with 0x7F to clear the SSO tag bit, then zero-extends to i64.
 func (g *Generator) extractStrShortLen(sb *strings.Builder, strPtr string) string {
@@ -2985,9 +2998,12 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// %str-long type: load data pointer (field 1), GEP, store
 				// Also auto-update len (field 0) to max(len, idx+1)
 
-				// Bounds check: load str len and verify idx
-				strLen := g.extractStrLen(sb, g.varAddr(varName))
-				g.emitBoundsCheck(sb, idx, strLen)
+				// Bounds check for writes: use cap (field 1), not len (field 0).
+				// This allows str[i] = val for i in [0..cap) even when len == 0,
+				// which is required for patterns like `out[i] = c` on str return
+				// values (e.g. []byte.to-str) that start with len=0 but cap>0.
+				strCap := g.extractStrCap(sb, g.varAddr(varName))
+				g.emitBoundsCheck(sb, idx, strCap)
 
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%str-long.set.data.gep.%d", g.tmpIdx)
@@ -3047,9 +3063,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// %str-short type: GEP to field 1 (data array), GEP into array, store
 				// Also auto-update len (field 0) to max(len, idx+1)
 
-				// Bounds check: load str len and verify idx
-				strLen := g.extractStrShortLen(sb, g.varAddr(varName))
-				g.emitBoundsCheck(sb, idx, strLen)
+				// Bounds check for writes: use fixed cap (127) instead of len.
+				// This allows str[i] = val for i in [0..127) even when len == 0.
+				g.emitBoundsCheck(sb, idx, "127")
 
 				g.tmpIdx++
 				fieldGEP := fmt.Sprintf("%%str-longsm.set.field.%d", g.tmpIdx)

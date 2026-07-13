@@ -1,0 +1,31 @@
+// test_raw_string — 原始字符串測試
+print('=== raw string test ===')
+
+sql = `
+SELECT id,name
+FROM user
+WHERE id > 100
+`
+print(sql.len)
+print(sql)
+
+// 原樣保留轉義字符
+raw = `
+line1\nline2
+\ttabbed
+`
+print(raw.len)
+print(raw)
+
+// 空行保留
+multi = `
+
+
+a
+
+
+b
+`
+print(multi.len)
+
+print('=== done ===')

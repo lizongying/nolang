@@ -77,36 +77,42 @@ tar.count = () (count i64) {
         }
         empty == 1 -> return
         count = count + 1
-        off = .entry-offset(count)
+        // 讀取 size 欄位（偏移 124，12 位元組八進制）
+        sz = 0
+        j <- [0..12): {
+            c = .data[off + 124 + j] & 255
+            c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
+        }
+        blocks = (sz + 511) / TAR-BLOCK
+        blocks < 0 -> blocks = 0
+        off = off + TAR-BLOCK + blocks * TAR-BLOCK
     }
 }
 
-// entry-offset: 計算第 idx 個條目的區塊偏移並跳到下個
-tar.entry-offset = (idx i64) (next i64) {
-    hdr = idx * TAR-BLOCK
-
-    // 讀取 size 欄位（偏移 124，12 位元組八進制）
-    sz = 0
-    i <- [0..12): {
-        c = .data[hdr + 124 + i] & 255
-        c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
+// offset: 計算第 idx 個條目的實際位元組偏移（遍歷前面所有條目）
+tar.offset = (idx i64) (off i64) {
+    off = 0
+    i <- [0..idx): {
+        sz = 0
+        j <- [0..12): {
+            c = .data[off + 124 + j] & 255
+            c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
+        }
+        blocks = (sz + 511) / TAR-BLOCK
+        blocks < 0 -> blocks = 0
+        off = off + TAR-BLOCK + blocks * TAR-BLOCK
     }
-
-    // data 區塊數 = (sz + 511) / 512
-    blocks = (sz + 511) / TAR-BLOCK
-    blocks < 0 -> blocks = 0
-    next = hdr + TAR-BLOCK + blocks * TAR-BLOCK
 }
 
 // entry: 取得第 idx 個條目
 tar.entry = (idx i64) (e tar-entry) {
     e.data = .data
-    e.idx = idx
+    e.idx = .offset(idx)
 }
 
 // name: 讀取第 idx 個條目的檔名
 tar.name = (idx i64) (name str) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     i <- [0..100): {
         c = .data[hdr + i] & 255
         c == 0 -> break
@@ -116,7 +122,7 @@ tar.name = (idx i64) (name str) {
 
 // size: 讀取第 idx 個條目的檔案大小（八進制）
 tar.size = (idx i64) (sz i64) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     sz = 0
     i <- [0..12): {
         c = .data[hdr + 124 + i] & 255
@@ -127,7 +133,7 @@ tar.size = (idx i64) (sz i64) {
 // type: 讀取第 idx 個條目的類型字串
 // 返回 "file"、"dir" 或 "unknown"
 tar.type = (idx i64) (typ str) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     c = .data[hdr + 156] & 255
     typ = 'unknown'
     {
@@ -138,14 +144,14 @@ tar.type = (idx i64) (typ str) {
 
 // is-dir: 判斷第 idx 個條目是否為目錄
 tar.is-dir = (idx i64) (yes bool) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     c = .data[hdr + 156] & 255
     yes = (c == 53)
 }
 
 // is-file: 判斷第 idx 個條目是否為普通檔案
 tar.is-file = (idx i64) (yes bool) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     c = .data[hdr + 156] & 255
     yes = (c == 48 || c == 0)
 }
@@ -153,7 +159,7 @@ tar.is-file = (idx i64) (yes bool) {
 // read: 提取第 idx 個條目的內容
 tar.read = (idx i64) (out []byte) {
     sz = .size(idx)
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     sz > 0 -> {
         i <- [0..sz): {
             out[i] = .data[hdr + TAR-BLOCK + i]
@@ -163,7 +169,7 @@ tar.read = (idx i64) (out []byte) {
 
 // mode: 讀取第 idx 個條目的權限（八進制）
 tar.mode = (idx i64) (mode i64) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     mode = 0
     i <- [0..8): {
         c = .data[hdr + 100 + i] & 255
@@ -173,7 +179,7 @@ tar.mode = (idx i64) (mode i64) {
 
 // mtime: 讀取第 idx 個條目的修改時間（八進制 Unix 時間戳）
 tar.mtime = (idx i64) (ts i64) {
-    hdr = idx * TAR-BLOCK
+    hdr = .offset(idx)
     ts = 0
     i <- [0..12): {
         c = .data[hdr + 136 + i] & 255
@@ -185,7 +191,7 @@ tar.mtime = (idx i64) (ts i64) {
 
 // name: 讀取條目檔名
 tar-entry.name = () (name str) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     i <- [0..100): {
         c = .data[hdr + i] & 255
         c == 0 -> break
@@ -195,7 +201,7 @@ tar-entry.name = () (name str) {
 
 // size: 讀取條目檔案大小
 tar-entry.size = () (sz i64) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     sz = 0
     i <- [0..12): {
         c = .data[hdr + 124 + i] & 255
@@ -205,7 +211,7 @@ tar-entry.size = () (sz i64) {
 
 // type: 讀取條目類型
 tar-entry.type = () (typ str) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     c = .data[hdr + 156] & 255
     typ = 'unknown'
     {
@@ -216,14 +222,14 @@ tar-entry.type = () (typ str) {
 
 // is-dir: 判斷是否為目錄
 tar-entry.is-dir = () (yes bool) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     c = .data[hdr + 156] & 255
     yes = (c == 53)
 }
 
 // is-file: 判斷是否為普通檔案
 tar-entry.is-file = () (yes bool) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     c = .data[hdr + 156] & 255
     yes = (c == 48 || c == 0)
 }
@@ -231,7 +237,7 @@ tar-entry.is-file = () (yes bool) {
 // read: 提取條目內容
 tar-entry.read = () (out []byte) {
     sz = .size()
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     sz > 0 -> {
         i <- [0..sz): {
             out[i] = .data[hdr + TAR-BLOCK + i]
@@ -241,7 +247,7 @@ tar-entry.read = () (out []byte) {
 
 // mode: 讀取條目權限
 tar-entry.mode = () (mode i64) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     mode = 0
     i <- [0..8): {
         c = .data[hdr + 100 + i] & 255
@@ -251,7 +257,7 @@ tar-entry.mode = () (mode i64) {
 
 // mtime: 讀取條目修改時間
 tar-entry.mtime = () (ts i64) {
-    hdr = .idx * TAR-BLOCK
+    hdr = .idx
     ts = 0
     i <- [0..12): {
         c = .data[hdr + 136 + i] & 255

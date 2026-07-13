@@ -1875,59 +1875,59 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), structTy, structTy, tmpName))
 			}
 			setFields := make(map[int]bool)
-		for _, f := range a.Fields {
-			fieldIdx, ok := fieldIndexByName[f.Name]
-			if !ok {
-				continue
-			}
-			setFields[fieldIdx] = true
-			fieldType := fields[fieldIdx].typ
-			fieldVal := g.generateExprWithSB(sb, f.Value)
-			fieldVal = g.stripLLVMType(fieldVal)
-			g.tmpIdx++
-			gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
-			}
-			if strings.HasPrefix(fieldType, "%") {
-				if !strings.HasPrefix(fieldVal, "%") {
-					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
+			for _, f := range a.Fields {
+				fieldIdx, ok := fieldIndexByName[f.Name]
+				if !ok {
+					continue
+				}
+				setFields[fieldIdx] = true
+				fieldType := fields[fieldIdx].typ
+				fieldVal := g.generateExprWithSB(sb, f.Value)
+				fieldVal = g.stripLLVMType(fieldVal)
+				g.tmpIdx++
+				gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
+				}
+				if strings.HasPrefix(fieldType, "%") {
+					if !strings.HasPrefix(fieldVal, "%") {
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
+						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 					}
 				} else if sb != nil {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 				}
-			} else if sb != nil {
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 			}
-		}
-		// 為未明確設定的 %vec 欄位分配 data 緩衝區
-		if sb != nil {
-			for i, f := range fields {
-				if setFields[i] {
-					continue
+			// 為未明確設定的 %vec 欄位分配 data 緩衝區
+			if sb != nil {
+				for i, f := range fields {
+					if setFields[i] {
+						continue
+					}
+					if f.typ != "%vec" {
+						continue
+					}
+					vecBufSize := 16384
+					g.tmpIdx++
+					dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+					g.tmpIdx++
+					capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
+						g.indent(), capGEP, structTy, structTy, tmpName, i))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+					g.tmpIdx++
+					dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
+						g.indent(), dataGEP, structTy, structTy, tmpName, i))
+					sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 				}
-				if f.typ != "%vec" {
-					continue
-				}
-				vecBufSize := 16384
-				g.tmpIdx++
-				dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
-				g.tmpIdx++
-				capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
-					g.indent(), capGEP, structTy, structTy, tmpName, i))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
-					g.indent(), dataGEP, structTy, structTy, tmpName, i))
-				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 			}
-		}
-		return structTy + "* " + tmpName
+			return structTy + "* " + tmpName
 		case *parser.SliceLiteral:
 			// Slice literal as function argument (e.g. bn-sub(m, [2, 0, ...]))
 			// Determine element type from the parameter's declared type.
@@ -2193,16 +2193,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				lenGEP := fmt.Sprintf("%%vso.len.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
 				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-			// 設置 cap = 256
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%vso.cap.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
-			sb.WriteString(fmt.Sprintf("%sstore i64 256, i64* %s\n", g.indent(), capGEP))
-			// 設置 data 指標指向緩衝區
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%vso.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+				// 設置 cap = 256
+				g.tmpIdx++
+				capGEP := fmt.Sprintf("%%vso.cap.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i64 256, i64* %s\n", g.indent(), capGEP))
+				// 設置 data 指標指向緩衝區
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%vso.data.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 			} else if voidSingleOutputType == "%vec" {
 				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
 				// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
@@ -2548,17 +2548,17 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
 		}
 		g.tmpIdx++
-	strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
-	g.tmpIdx++
-	strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
-	g.tmpIdx++
-	strReg3 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
-	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, selectReg))
-	}
-	return strReg3
+		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, selectReg))
+		}
+		return strReg3
 
 	case "ffi-cstr-at", "ffi-cstr-at-int", "ffi-cstr-at-float":
 		// ffi-cstr-at*(arr i64, idx i64): 從 char** 陣列讀取第 idx 個 C 字串
@@ -2602,20 +2602,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		case "ffi-cstr-at":
 			// 7. strlen → 8. insertvalue %str-long
 			g.tmpIdx++
-		lenReg := fmt.Sprintf("%%cstr.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%cstr.s1.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%cstr.s2.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%cstr.s3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, safeReg))
-		}
-		return strReg3
+			lenReg := fmt.Sprintf("%%cstr.len.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg1 := fmt.Sprintf("%%cstr.s1.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%cstr.s2.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg3 := fmt.Sprintf("%%cstr.s3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, safeReg))
+			}
+			return strReg3
 
 		case "ffi-cstr-at-int":
 			// 7. strtoll(safe, null, 10)
@@ -2771,6 +2771,29 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 					}
 				}
 				storeVal = convReg
+			}
+		}
+
+		// For struct element types (e.g. %str-long, %vec, user structs), ForwardFunc
+		// builtin call results (like arg(i)) are returned as *pointers* to the struct,
+		// while identifiers, index expressions, and regular method calls return struct
+		// *values* (already loaded). Load the struct value only for ForwardFunc calls.
+		if strings.HasPrefix(elemType, "%") {
+			needLoad := false
+			if call, ok := args[1].(*parser.CallExpression); ok {
+				if ident, ok := call.Function.(*parser.Identifier); ok {
+					if m := builtin.FindBuiltinMethod(ident.Value); m != nil && m.ForwardFunc != "" {
+						needLoad = true
+					}
+				}
+			}
+			if needLoad {
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%vp.sload.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, elemType, elemType, val))
+				}
+				storeVal = loadReg
 			}
 		}
 
@@ -3127,16 +3150,16 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 		g.tmpIdx++
 		lenReg := fmt.Sprintf("%%ext.strlen.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, callReg))
-	g.tmpIdx++
-	strReg1 := fmt.Sprintf("%%ext.str1.%d", g.tmpIdx)
-	g.tmpIdx++
-	strReg2 := fmt.Sprintf("%%ext.str2.%d", g.tmpIdx)
-	g.tmpIdx++
-	strReg3 := fmt.Sprintf("%%ext.str3.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, callReg))
-	return strReg3
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%ext.str1.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%ext.str2.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%ext.str3.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, callReg))
+		return strReg3
 	case "ptr", "pptr", "ppptr":
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%ext.ptrtoint.%d", g.tmpIdx)
