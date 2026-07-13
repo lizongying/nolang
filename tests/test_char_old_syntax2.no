@@ -1,0 +1,7 @@
+// test_char_old_syntax2
+print('start')
+
+c char = A
+print(c.is-upper())
+
+print('done')

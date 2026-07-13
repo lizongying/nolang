@@ -60,6 +60,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return fmt.Sprintf("%f", e.Value)
 	case *parser.ByteLiteral:
 		return fmt.Sprintf("%d", e.Value)
+	case *parser.CharLiteral:
+		// Char literal: emit Unicode codepoint as i32
+		runes := []rune(e.Value)
+		if len(runes) == 1 {
+			return fmt.Sprintf("%d", runes[0])
+		}
+		return "0"
 	case *parser.NilLiteral:
 		return "0" // placeholder; nil is handled at assignment level
 	case *parser.BooleanLiteral:

@@ -92,7 +92,7 @@ func (p *Parser) classifyBlock() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	}
 
@@ -236,7 +236,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	case lexer.DOT:
 		// Bare match arm starting with .field (self.field access),
@@ -3238,6 +3238,13 @@ func (p *Parser) parseExpression(precedence int) Expression {
 
 	case lexer.STRING:
 		leftExp = p.parseStringLiteral()
+
+	case lexer.CHAR:
+		leftExp = &CharLiteral{
+			Token: p.currentToken,
+			Value: p.currentToken.Literal,
+		}
+		p.nextToken()
 
 	case lexer.TRUE:
 		expr := &BooleanLiteral{

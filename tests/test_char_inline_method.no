@@ -1,0 +1,7 @@
+// test_char_inline_method
+print('start')
+
+s = "A".to-str()
+print(s)
+
+print('done')

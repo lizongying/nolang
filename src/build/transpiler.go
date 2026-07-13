@@ -1192,6 +1192,10 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 			for _, bodyStmt := range fl.Body.Statements {
 				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
 			}
+		} else if s.Value != nil {
+			// Regular variable assignment: scan the value expression
+			// for method calls that need resolution (e.g., s = "A".to-str())
+			scanExprForGenericCalls(s.Value, genericFns, varTypes, program, newStmts)
 		}
 	case *parser.ForStatement:
 		if s.Body != nil {

@@ -417,6 +417,19 @@ func (l *Lexer) NextToken() Token {
 		tok.Literal = l.readString()
 		// 字符串已经处理完毕，不需要再前进字符
 		return tok
+	case '"':
+		// Double-quoted: char literal (single rune) or string (multi-char fallback)
+		content := l.readString()
+		runes := []rune(content)
+		if len(runes) == 1 {
+			tok.Type = CHAR
+			tok.Literal = content
+		} else {
+			// Multi-char double-quoted: treat as string for robustness
+			tok.Type = STRING
+			tok.Literal = content
+		}
+		return tok
 	case 0:
 		tok.Type = EOF
 		tok.Literal = ""

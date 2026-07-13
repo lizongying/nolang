@@ -1,0 +1,7 @@
+// test_char_old_syntax
+print('start')
+
+c char = 65
+print(c.is-upper())
+
+print('done')

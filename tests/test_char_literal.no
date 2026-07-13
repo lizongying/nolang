@@ -1,0 +1,22 @@
+// test_char_literal — double-quoted char literal
+print('start')
+
+c = "中"
+print(c)
+
+a = "A"
+print(a)
+
+// char arithmetic: 'A' + 1 = 'B' (66)
+b = a + 1
+print(b)
+
+// newline char
+n = "\n"
+print(n)
+
+// null char
+z = "\0"
+print(z)
+
+print('done')

@@ -1,0 +1,23 @@
+// test_char_new_syntax3
+print('start')
+
+c = "中"
+print(c)
+
+a = "A"
+print(a)
+
+b = a + 1
+print(b)
+
+d = "5"
+print(d.is-digit())
+
+e = "a"
+print(e.is-letter())
+print(e.is-lower())
+
+up = e.to-upper()
+print(up)
+
+print('done')

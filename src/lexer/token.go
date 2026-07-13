@@ -12,8 +12,9 @@ const (
 	IDENT
 	INT
 	FLOAT
-	BYTE // x00 ~ xFF
+	BYTE   // x00 ~ xFF
 	STRING
+	CHAR   // "x" — double-quoted single Unicode character (rune)
 	TRUE
 	FALSE
 	NIL
@@ -127,6 +128,7 @@ var tokenNames = map[TokenType]string{
 	FLOAT:          "FLOAT",
 	BYTE:           "BYTE",
 	STRING:         "STRING",
+	CHAR:           "CHAR",
 	TRUE:           "TRUE",
 	FALSE:          "FALSE",
 	NIL:            "NIL",

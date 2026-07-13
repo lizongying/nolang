@@ -437,6 +437,12 @@ func TestCharByte(t *testing.T) {
 			wantType: "char",
 			wantChar: true,
 		},
+		{
+			name:     "char_dquote",
+			input:    "c = \"中\"",
+			wantType: "char",
+			wantChar: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -466,10 +472,13 @@ func TestCharByte(t *testing.T) {
 			}
 
 			if letStmt.Type == nil {
-				t.Fatalf("expected type annotation, got nil")
-			}
-			if letStmt.Type.String() != tt.wantType {
-				t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
+				if tt.wantType != "" {
+					t.Fatalf("expected type annotation %q, got nil", tt.wantType)
+				}
+			} else {
+				if letStmt.Type.String() != tt.wantType {
+					t.Errorf("expected type %q, got %q", tt.wantType, letStmt.Type.String())
+				}
 			}
 
 			if tt.wantChar {

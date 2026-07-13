@@ -1,0 +1,7 @@
+// test_char_new_method
+print('start')
+
+c = "A"
+print(c.is-upper())
+
+print('done')

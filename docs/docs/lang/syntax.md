@@ -40,8 +40,8 @@ sidebar_position: 2
 
 - byte
 - bool // 只允許小寫
-- char // 字符類型，一個中文一個字符，無引号包裹
-- str // 字符串類型，單引號包裹
+- char // 字符類型（rune），雙引號包裹單字符，如 "中"
+- str // 字符串類型，單引號包裹，如 'hello'
 - i8
 - i16
 - i32
@@ -171,8 +171,8 @@ greeting = 'hello, ' - name
 // 顯式類型標注
 a u64 = 10
 
-// 字符（不用引號）
-c char = 中
+// 字符（雙引號 = char/rune，單字符）
+c = "中"
 
 // byte類型
 b = x00

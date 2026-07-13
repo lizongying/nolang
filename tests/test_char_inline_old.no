@@ -1,0 +1,7 @@
+// test_char_inline_old
+print('start')
+
+s = char-to-str(65)
+print(s)
+
+print('done')
