@@ -197,6 +197,13 @@ func intConstValue(expr parser.Expression) (int64, bool) {
 			return -intLit.Value, true
 		}
 	}
+	// CharLiteral: convert Unicode codepoint to int64
+	if charLit, ok := expr.(*parser.CharLiteral); ok {
+		runes := []rune(charLit.Value)
+		if len(runes) == 1 {
+			return int64(runes[0]), true
+		}
+	}
 	return 0, false
 }
 
@@ -803,6 +810,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 				// Raw LLVM array type (e.g. [12 x [16 x i64]] for 2D array constants)
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
+			} else if llvmType == "i32" && ls.Value != nil {
+				// Char constant: emit as global i32
+				if v, ok := intConstValue(ls.Value); ok {
+					sb.WriteString(fmt.Sprintf("%s = global i32 %d\n", llvmGlobalRef(name), v))
+					g.globalVars[name] = true
+				}
 			} else if llvmType == "i64" && ls.Value != nil {
 				if v, ok := intConstValue(ls.Value); ok {
 					initVal := fmt.Sprintf("%d", v)

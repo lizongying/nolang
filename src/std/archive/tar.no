@@ -52,8 +52,8 @@ tar-builder {
 TAR-BLOCK = 512
 
 // 條目類型
-TAR-TYPE-FILE = 48     // '0'
-TAR-TYPE-DIR  = 53     // '5'
+TAR-TYPE-FILE = "0"
+TAR-TYPE-DIR  = "5"
 
 // ─── tar 方法 ─────────────────────────────────
 
