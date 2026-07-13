@@ -1,0 +1,8 @@
+s = 'hello world'
+print(s.len)
+
+s.clear()
+print(s.len)
+
+s = ''
+print(s.len)

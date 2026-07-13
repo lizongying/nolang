@@ -7,7 +7,7 @@
 // 用法：
 //   resp = http-get('http://example.com/path')   // 返回 ?http-response
 //   resp: {
-//       nil -> println('request failed')
+//       nil -> print('request failed')
 //       -> print(resp.status-code)
 //         print(resp.body)
 //         ct = resp.get-header('Content-Type')  // 返回 ?str

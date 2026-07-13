@@ -25,7 +25,7 @@
 //   // 解析 multipart 回應
 //   r = multipart-parse(boundary, body)
 //   r: {
-//       nil -> println('parse failed')
+//       nil -> print('parse failed')
 //       -> {
 //           r: {
 //               ok -> {

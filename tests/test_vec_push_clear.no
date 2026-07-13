@@ -1,0 +1,35 @@
+// test_vec_push_clear — vec.push and vec.clear
+print('start')
+
+data []i64
+print('vec declared')
+
+data.push(10)
+data.push(20)
+data.push(30)
+print('pushed 3 elements')
+
+n i64 = data.len
+print(n)
+
+print(data[0])
+print(data[1])
+print(data[2])
+
+data.clear()
+print('cleared')
+
+n = data.len
+print(n)
+
+data.push(40)
+data.push(50)
+print('pushed 2 after clear')
+
+n = data.len
+print(n)
+
+print(data[0])
+print(data[1])
+
+print('done')

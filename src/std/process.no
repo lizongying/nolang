@@ -7,7 +7,7 @@
 //   p = process{}
 //   p.start('ls', '-la')
 //   code = p.wait()
-//   println('exit code: ' - code.to-str())
+//   print('exit code: ' - code.to-str())
 //
 //   // 簡易命令執行
 //   code = process-run('echo hello')

@@ -323,14 +323,18 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if outType == "%str-long" {
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%out.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), dataBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 256)\n", g.indent(), dataBuf))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%out.len.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
 			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%out.cap.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 256, i64* %s\n", g.indent(), capGEP))
+			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%out.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(outName)))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 		} else if outType == "%vec" {
 			// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
@@ -503,9 +507,14 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// already calls the user's main. Otherwise we get infinite recursion.
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			// Skip LetStatements already emitted as globals
+			// Skip LetStatements already emitted as globals, EXCEPT for string
+			// types. String globals are emitted as zeroinitializer and still
+			// need runtime initialization (memcpy etc.) via generateLet.
 			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
-				continue
+				lt := g.varLLVMType(ls)
+				if lt != "%str-long" && lt != "%str-short" {
+					continue
+				}
 			}
 			// Skip function-typed LetStatements (already collected as functions)
 			if _, isFn := g.funcRetTypes[ls.Name.Value]; isFn {
@@ -1491,6 +1500,7 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 	var fields []structField
 	for _, f := range sd.Fields {
 		llvmType := "i64"
+		elemTy := "" // element type for %vec fields
 		if f.ArraySize > 0 {
 			elemType := "i64"
 			if f.Type != nil {
@@ -1500,10 +1510,17 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 		} else if f.IsSlice {
 			// 切片用 %vec 型別
 			llvmType = "%vec"
+			// 記錄元素型別（byte → i8, i64 → i64, 等）
+			if f.Type != nil {
+				elemTy = g.mapToLLVMType(f.Type.String())
+			}
+			if elemTy == "" {
+				elemTy = "i64"
+			}
 		} else if f.Type != nil {
 			llvmType = g.mapToLLVMType(f.Type.String())
 		}
-		fields = append(fields, structField{name: f.Name, typ: llvmType})
+		fields = append(fields, structField{name: f.Name, typ: llvmType, elemType: elemTy})
 	}
 	g.structTypes[sd.Name] = fields
 }
@@ -2452,6 +2469,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	val = g.stripLLVMType(val)
 	llvmType := g.varLLVMType(stmt)
 
+	// Empty string assignment optimization: s = "" → set len=0 in-place, no storage switch
+	// SSO (str-short): store i8 0x80 (0 | SSO tag) to field 0
+	// Long (str-long): store i64 0 to field 0, cap/ptr unchanged
+	if llvmType == "%str-long" || llvmType == "%str-short" {
+		if strLit, ok := stmt.Value.(*parser.StringLiteral); ok && len(strLit.Value) == 0 {
+			storeAddr := g.varAddr(name)
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%sc.len.gep.%d", g.tmpIdx)
+			if llvmType == "%str-short" {
+				// SSO: field 0 is i8 len with 0x80 tag bit
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), lenGEP, storeAddr))
+					sb.WriteString(fmt.Sprintf("%sstore i8 128, i8* %s\n", g.indent(), lenGEP))
+				}
+			} else {
+				// str-long: field 0 is i64 len
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, storeAddr))
+					sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				}
+			}
+			return
+		}
+	}
+
 	// Synthetic `it = matched` for `ok` arm of a match on ?T:
 	// matched is an option variable whose inner type is a struct
 	// (e.g. ?file), and the target `it` is the inner struct type.
@@ -2514,11 +2556,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), llvmVarRef(name)))
 			}
 		}
+		// 先將整個結構體初始化為 zeroinitializer，避免未指定的欄位帶有 stack 殘值
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), structTy, structTy, g.varAddr(name)))
 		// 建立欄位名稱 → 索引映射
 		fieldIndexByName := make(map[string]int)
 		for i, f := range fields {
 			fieldIndexByName[f.name] = i
 		}
+		// 記錄哪些欄位已由 literal 明確設定
+		setFields := make(map[int]bool)
 		// 逐欄位 store（按欄位名稱查找定義中的索引）
 		for _, f := range sl.Fields {
 			fieldIdx := -1
@@ -2530,6 +2576,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if fieldIdx < 0 {
 				continue
 			}
+			setFields[fieldIdx] = true
 			fieldVal := g.generateExprWithSB(sb, f.Value)
 			fieldVal = g.stripLLVMType(fieldVal)
 			g.tmpIdx++
@@ -2568,8 +2615,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					}
 				}
 			} else {
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+		}
+	}
+		// 為未明確設定的 %vec 欄位分配 data 緩衝區
+		for i, f := range fields {
+			if setFields[i] {
+				continue
 			}
+			if f.typ != "%vec" {
+				continue
+			}
+			vecBufSize := 16384
+			g.tmpIdx++
+			dataBuf := fmt.Sprintf("%%st.let.vecdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%st.let.veccap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
+				g.indent(), capGEP, structTy, structTy, g.varAddr(name), i))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%st.let.vecdataptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
+				g.indent(), dataGEP, structTy, structTy, g.varAddr(name), i))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 		}
 		return
 	}
@@ -2767,56 +2837,76 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// Function call results are already %%str-long values and can be stored directly.
 		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
 		if strings.HasPrefix(val, "%str-longlit.") {
-			// Extract len from str-short: load i8, mask 0x7F, zext to i64
-			g.tmpIdx++
-			s2sLenGEP := fmt.Sprintf("%%s2s.len.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			s2sLenRaw := fmt.Sprintf("%%s2s.len.raw.%d", g.tmpIdx)
-			g.tmpIdx++
-			s2sLenMask := fmt.Sprintf("%%s2s.len.mask.%d", g.tmpIdx)
-			g.tmpIdx++
-			s2sLenExt := fmt.Sprintf("%%s2s.len.ext.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), s2sLenGEP, val))
-			sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), s2sLenRaw, s2sLenGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), s2sLenMask, s2sLenRaw))
-			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), s2sLenExt, s2sLenMask))
+			// Check if this is a long string literal (>127 bytes).
+			// Long string literals are already %str-long* and don't need s2s conversion.
+			isLongLit := false
+			if strLit, ok := stmt.Value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
+				isLongLit = true
+			}
+			if isLongLit {
+				// Long string literal: already %str-long*, just load and store
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+				val = loadReg
+			} else {
+				// Short string literal: convert from %str-short to %str-long
+				// Extract len from str-short: load i8, mask 0x7F, zext to i64
+				g.tmpIdx++
+				s2sLenGEP := fmt.Sprintf("%%s2s.len.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				s2sLenRaw := fmt.Sprintf("%%s2s.len.raw.%d", g.tmpIdx)
+				g.tmpIdx++
+				s2sLenMask := fmt.Sprintf("%%s2s.len.mask.%d", g.tmpIdx)
+				g.tmpIdx++
+				s2sLenExt := fmt.Sprintf("%%s2s.len.ext.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 0\n", g.indent(), s2sLenGEP, val))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), s2sLenRaw, s2sLenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = and i8 %s, 127\n", g.indent(), s2sLenMask, s2sLenRaw))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), s2sLenExt, s2sLenMask))
 
-			// Extract data pointer from str-short inline buffer
-			g.tmpIdx++
-			s2sDataGEP := fmt.Sprintf("%%s2s.data.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			s2sDataCast := fmt.Sprintf("%%s2s.data.cast.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), s2sDataGEP, val))
-			sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), s2sDataCast, s2sDataGEP))
+				// Extract data pointer from str-short inline buffer
+				g.tmpIdx++
+				s2sDataGEP := fmt.Sprintf("%%s2s.data.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				s2sDataCast := fmt.Sprintf("%%s2s.data.cast.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-short, %%str-short* %s, i32 0, i32 1\n", g.indent(), s2sDataGEP, val))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast [127 x i8]* %s to i8*\n", g.indent(), s2sDataCast, s2sDataGEP))
 
-			// Allocate heap buffer (128 bytes covers max str-short capacity)
-			g.tmpIdx++
-			s2sBuf := fmt.Sprintf("%%s2s.buf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 128)\n", g.indent(), s2sBuf))
+				// Allocate heap buffer (128 bytes covers max str-short capacity)
+				g.tmpIdx++
+				s2sBuf := fmt.Sprintf("%%s2s.buf.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 128)\n", g.indent(), s2sBuf))
 
-			// Copy data from str-short inline buffer to heap
-			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), s2sBuf, s2sDataCast, s2sLenExt))
+				// Copy data from str-short inline buffer to heap
+				sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), s2sBuf, s2sDataCast, s2sLenExt))
 
-			// Create %str-long struct pointing to heap buffer
-			g.tmpIdx++
-			s2sResult := fmt.Sprintf("%%s2s.result.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), s2sResult))
+				// Create %str-long struct pointing to heap buffer
+				g.tmpIdx++
+				s2sResult := fmt.Sprintf("%%s2s.result.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), s2sResult))
 
-			g.tmpIdx++
-			s2sDstLenGEP := fmt.Sprintf("%%s2s.dst.len.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), s2sDstLenGEP, s2sResult))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), s2sLenExt, s2sDstLenGEP))
+				g.tmpIdx++
+				s2sDstLenGEP := fmt.Sprintf("%%s2s.dst.len.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), s2sDstLenGEP, s2sResult))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), s2sLenExt, s2sDstLenGEP))
 
-			g.tmpIdx++
-			s2sDstDataGEP := fmt.Sprintf("%%s2s.dst.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), s2sDstDataGEP, s2sResult))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), s2sBuf, s2sDstDataGEP))
+				g.tmpIdx++
+				s2sDstCapGEP := fmt.Sprintf("%%s2s.dst.cap.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), s2sDstCapGEP, s2sResult))
+				sb.WriteString(fmt.Sprintf("%sstore i64 128, i64* %s\n", g.indent(), s2sDstCapGEP))
 
-			// Load from %str-long alloca to get %str-long value for storing into target variable
-			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, s2sResult))
-			val = loadReg
+				g.tmpIdx++
+				s2sDstDataGEP := fmt.Sprintf("%%s2s.dst.data.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), s2sDstDataGEP, s2sResult))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), s2sBuf, s2sDstDataGEP))
+
+				// Load from %str-long alloca to get %str-long value for storing into target variable
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, s2sResult))
+				val = loadReg
+			}
 		} else if g.isStrPtrReg(val) {
 			// val is a %str-long* pointer (from generateStrConcat or convertShortToLong).
 			// Load the %str-long value from the pointer before storing.

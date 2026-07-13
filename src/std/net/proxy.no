@@ -6,14 +6,14 @@
 //   // 通過 HTTP 代理連接
 //   c = proxy-dial('proxy.example.com', 3128, 'target.example.com', 443)
 //   c: {
-//       nil -> println('proxy connection failed')
+//       nil -> print('proxy connection failed')
 //       -> c.send('hello')
 //   }
 //
 //   // 通過代理建立 TLS 連接
 //   tc = proxy-tls-dial('proxy.example.com', 3128, 'target.example.com', 443)
 //   tc: {
-//       nil -> println('proxy TLS connection failed')
+//       nil -> print('proxy TLS connection failed')
 //       -> w = tc.send('GET / HTTP/1.1\r\nHost: target.example.com\r\n\r\n')
 //   }
 

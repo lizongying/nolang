@@ -17,8 +17,9 @@ type varInfo struct {
 }
 
 type structField struct {
-	name string
-	typ  string // LLVM type string
+	name     string
+	typ      string // LLVM type string
+	elemType string // for %vec fields: LLVM element type (e.g. "i8" for []byte, "i64" for []i64)
 }
 
 // ExternFuncInfo 描述一個 FFI extern 宣告的型別資訊。
@@ -699,8 +700,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 
 	// Pre-register built-in str-long type (內部堆字串型別，對外仍為 str)
+	// { len, cap, data } — 3-field layout (len at 0, cap at 1, data ptr at 2)
 	g.structTypes["str-long"] = []structField{
 		{name: "len", typ: "i64"},
+		{name: "cap", typ: "i64"},
 		{name: "data", typ: "i8*"},
 	}
 
@@ -720,7 +723,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 發出 struct type 宣告
 	// Always emit built-in string types
 	sb.WriteString("%str-short = type { i8, [127 x i8] }\n")
-	sb.WriteString("%str-long = type { i64, i8* }\n")
+	sb.WriteString("%str-long = type { i64, i64, i8* }\n")
 	sb.WriteString("%option = type { i64, [16 x i8] }\n")
 	sb.WriteString("%arr = type { i64, i8* }\n")
 	sb.WriteString("%vec = type { i64, i64, i8* }\n")
@@ -1261,20 +1264,23 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
 			}
-			// 通过 insertvalue 构造 %str-long { len, data }，然后 alloca + store 取得 %str-long*
-			g.tmpIdx++
-			strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 1\n", g.indent(), strReg2, strReg1, bufPtr))
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg2, strAlloca))
-			}
-			return strAlloca
+			// 通过 insertvalue 构造 %str-long { len, cap, data }，然后 alloca + store 取得 %str-long*
+		g.tmpIdx++
+		strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, bufPtr))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
+		}
+		return strAlloca
 		}
 
 		// 非 str 返回类型：保持原逻辑（使用全局缓冲区）
@@ -1398,14 +1404,17 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(%s)\n", g.indent(), lenReg, buf))
 			}
 			g.tmpIdx++
-			strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 1\n", g.indent(), strReg2, strReg1, buf))
-			}
-			return strReg2
+		strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, buf))
+		}
+		return strReg3
 		}
 		return buf
 	}
@@ -1428,17 +1437,20 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
 		}
-		// 3) 構造 %str-long：先寫 len 到 field 0，再寫 ptr 到 field 1
+		// 3) 構造 %str-long：先寫 len 到 field 0，再寫 cap 到 field 1，再寫 ptr 到 field 2
 		//    每次 insertvalue 都必須產生新的 SSA 寄存器
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
 		g.tmpIdx++
 		strReg2 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, cstrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, cstrReg))
 		}
-		return strReg2
+		return strReg3
 	}
 
 	cRetType := llvmLLVMType(clib.RetType)

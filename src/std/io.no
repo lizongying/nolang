@@ -16,7 +16,7 @@
 //   n = w.write-str('hello')
 //
 //   io-print('hello')
-//   io-println('world')
+//   io-print('world')
 
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作，定義於 fs 模組）
@@ -169,8 +169,8 @@ io-print = (s str) (n i64) {
     n = write(STDOUT-FD, s, s.len)
 }
 
-// io-println: 寫入字串到標準輸出並換行
-io-println = (s str) (n i64) {
+// io-print: 寫入字串到標準輸出並換行
+io-print = (s str) (n i64) {
     n = write(STDOUT-FD, s, s.len)
     nl = '\n'
     m = write(STDOUT-FD, nl, 1)

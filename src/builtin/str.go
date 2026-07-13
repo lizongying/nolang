@@ -23,5 +23,15 @@ func init() {
 		ForwardFunc:  "str-len",
 	})
 
-
+	// str.clear: clear string in-place (set len=0, no storage switch)
+	// SSO: store 0x80 (0 | SSO tag) to len byte
+	// Long: store i64 0 to len field, cap/ptr unchanged
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str.clear",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{},
+		Doc:          "Clear string in-place (set len=0, no storage switch)",
+		ForwardFunc:  "str-clear",
+	})
 }

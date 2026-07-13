@@ -1,5 +1,5 @@
 ---
-name: debug-nolang
+name: nolang-debug
 description: Debugging guide for the Nolang compiler/toolchain. Use when fixing parser bugs, formatter bugs, LSP diagnostic issues, or any syntax/semantic error. Provides a test-first workflow: write a minimal failing test first, then fix, then verify by re-running tests. Covers locating tests, building artifacts, and isolating regressions.
 ---
 

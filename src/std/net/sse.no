@@ -6,15 +6,15 @@
 // 用法（客戶端）：
 //   client = sse-connect('http://localhost:3000/events')   // 返回 ?sse-client
 //   client: {
-//       nil -> println('SSE connection failed')
+//       nil -> print('SSE connection failed')
 //       ->
 //           ! {
 //               ev = client.next-event()       // 返回 ?sse-event
 //               ev: {
 //                   nil -> *
-//                   err -> println('error: ' - it)
+//                   err -> print('error: ' - it)
 //                         *
-//                   -> println(ev.event - ': ' - ev.data)
+//                   -> print(ev.event - ': ' - ev.data)
 //               }
 //           }
 //           client.close()

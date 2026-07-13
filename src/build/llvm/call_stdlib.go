@@ -44,12 +44,12 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		case *parser.Identifier:
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok {
-					if t == "%str-long" {
-						return g.extractStrDataPtr(sb, "%"+a.Value)
-					}
-					if t == "%str-short" {
-						return g.extractStrShortDataPtr(sb, "%"+a.Value)
-					}
+			if t == "%str-long" {
+					return g.extractStrDataPtr(sb, g.varAddr(a.Value))
+				}
+				if t == "%str-short" {
+					return g.extractStrShortDataPtr(sb, g.varAddr(a.Value))
+				}
 					// Option variable with string inner type (e.g. ?str):
 					// extract the inner %str-long*/%str-short* pointer from
 					// the option's data field, then get the string data pointer.
@@ -221,18 +221,21 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds [4096 x i8], [4096 x i8]* %s, i64 0, i64 0\n", g.indent(), bufDataPtr, bufAlloca))
 		}
-		// Construct %str-long { len, data_ptr } via insertvalue, then alloca + store
+		// Construct %str-long { len, cap, data } via insertvalue, then alloca + store
 		g.tmpIdx++
 		strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
 		g.tmpIdx++
 		strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, bufDataPtr))
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg2, strAlloca))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, bufDataPtr))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
 		}
 		return strAlloca
 	}
@@ -504,16 +507,19 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
 		}
-		// 构造 %str-long { len, data }
+		// 构造 %str-long { len, cap, data }
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
 		g.tmpIdx++
 		strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		g.tmpIdx++
+		strReg3 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 1\n", g.indent(), strReg2, strReg1, selectReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, selectReg))
 		}
-		return strReg2
+		return strReg3
 	}
 
 	return ""
@@ -723,21 +729,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), ptrReg, gepReg))
 			// strlen to get length
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, ptrReg))
-			// Allocate %str-long struct { i64 len, i8* data }
+			// Allocate %str-long struct { i64 len, i64 cap, i8* data }
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			// Store length (field 0)
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%str-long.len.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
+			// Store cap (field 1) = lenReg
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%str-long.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
 			// Allocate buffer and memcpy
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), bufReg))
 			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), bufReg, ptrReg, lenReg))
-			// Store data pointer (field 1)
+			// Store data pointer (field 2)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
 		}
 		return strReg
@@ -905,11 +916,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%scall i32 @close(i32 %s)\n", g.indent(), openRet))
 			// If open failed, use 0 for read count
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, openCmp, readRet))
-			// Construct %str-long {len, data}
+			// Construct %str-long {len, cap, data}
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, lenGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%readfile.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, capGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
 		}
 		return strReg
@@ -1007,8 +1022,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
 			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%getline.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
+			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
 			// fclose
 			sb.WriteString(fmt.Sprintf("%scall i32 @fclose(i8* %s)\n", g.indent(), stdinReg))
@@ -1089,15 +1108,19 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			nameBuf := fmt.Sprintf("%%readdir.namebuf.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), nameBuf, bufSize))
 			sb.WriteString(fmt.Sprintf("%scall i8* @strcpy(i8* %s, i8* %s)\n", g.indent(), nameBuf, safeName))
-			// Create %str-long struct { len, data } pointing to the heap copy
+			// Create %str-long struct { len, cap, data } pointing to the heap copy
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%readdir.lengep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
 			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%readdir.capgep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
+			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%readdir.datagep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), nameBuf, dataGEP))
 		}
 		// Store ok flag for curried call — zext i1 → i64 (Nolang bools are i64)
@@ -1170,8 +1193,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
 			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%archstr.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, allocaReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, capGEP))
+			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%archstr.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0), i8** %s\n",
 				g.indent(), strLen, strLen, idx, dataGEP))
 		}
@@ -1450,8 +1477,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			strLenGEP := fmt.Sprintf("%%regexp.f.strlen.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), strLenGEP, strReg))
 			g.tmpIdx++
+			strCapGEP := fmt.Sprintf("%%regexp.f.strcap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), strCapGEP, strReg))
+			g.tmpIdx++
 			strDataGEP := fmt.Sprintf("%%regexp.f.strdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), strDataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), strDataGEP, strReg))
 
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%regexp.f.match, label %%regexp.f.no_match\n", g.indent(), matchCmp))
 			g.emitLabel(sb, "regexp.f.match")
@@ -1465,6 +1495,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = sub nsw i32 %s, %s\n", g.indent(), lenI32, end, start))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, lenI32))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, strLenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, strCapGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 0, i8* %s)\n", g.indent(), bufReg))
 			g.tmpIdx++
@@ -1479,6 +1510,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 			g.emitLabel(sb, "regexp.f.no_match")
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), strLenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), strCapGEP))
 			sb.WriteString(fmt.Sprintf("%sstore i8* null, i8** %s\n", g.indent(), strDataGEP))
 			sb.WriteString(fmt.Sprintf("%sbr label %%regexp.f.end\n", g.indent()))
 
@@ -2570,11 +2602,11 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok {
-				if t == "%str-long" {
-					dataPtr = g.extractStrDataPtr(sb, "%"+a.Value)
-				} else if t == "%str-short" {
-					dataPtr = g.extractStrShortDataPtr(sb, "%"+a.Value)
-				} else if t == "%option" {
+			if t == "%str-long" {
+				dataPtr = g.extractStrDataPtr(sb, g.varAddr(a.Value))
+			} else if t == "%str-short" {
+				dataPtr = g.extractStrShortDataPtr(sb, g.varAddr(a.Value))
+			} else if t == "%option" {
 					// ?str variable: generateExprWithSB extracts the option data
 					// field as a %str-long* pointer (for struct inner types).
 					innerType := "i64"

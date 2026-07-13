@@ -1930,6 +1930,33 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		concreteName = hmName + "." + methodName
 	}
 
+	// Don't rewrite if this is a builtin method (e.g. vec.push, vec.clear).
+	// Builtins are registered with LLVM type prefixes (vec, arr, str, etc.),
+	// not Nolang type names ([]str, []i64, etc.). The LLVM code generator
+	// handles builtin method calls via DotExpression dispatch + ForwardFunc.
+	// Rewriting them to []str.push(out, ...) would create undefined function calls.
+	if strings.HasPrefix(recvType, "[]") {
+		// Slice types ([]str, []i64, []byte, etc.) map to "vec" builtins.
+		// Check both "vec.<method>" and the concrete type prefix.
+		if builtin.FindBuiltinMethod("vec."+methodName) != nil {
+			return false
+		}
+		// Also check the concrete name (e.g. []byte.slice is registered directly)
+		if builtin.FindBuiltinMethod(concreteName) != nil {
+			return false
+		}
+	}
+	if strings.HasPrefix(recvType, "[") && !strings.HasPrefix(recvType, "[]") {
+		// Array types ([N]T) map to "arr" builtins
+		if builtin.FindBuiltinMethod("arr."+methodName) != nil {
+			return false
+		}
+	}
+	// Check concrete name for other types (str, i64, etc.)
+	if builtin.FindBuiltinMethod(concreteName) != nil {
+		return false
+	}
+
 	// Check if recvType is a member of a union type alias
 	// If so, use the union alias prefix instead of the concrete type
 	if program != nil {

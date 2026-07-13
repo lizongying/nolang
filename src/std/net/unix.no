@@ -8,7 +8,7 @@
 //   // 服務端
 //   l = unix-listen-on('/tmp/myapp.sock')       // 返回 ?unix-listener
 //   l: {
-//       nil -> println('listen failed')
+//       nil -> print('listen failed')
 //       -> c = l.accept()                        // 返回 ?unix-conn
 //   }
 //   n = c.recv(buf, 1024)
@@ -19,7 +19,7 @@
 //   // 客戶端
 //   c = unix-dial-to('/tmp/myapp.sock')          // 返回 ?unix-conn
 //   c: {
-//       nil -> println('connect failed')
+//       nil -> print('connect failed')
 //       -> n = c.send('hello')
 //   }
 //   c.close()

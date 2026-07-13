@@ -10,8 +10,8 @@
 //   s.push(7)
 //   val = s.pop()    // val=ok（後入先出）
 //   val: {
-//       nil -> println('empty')
-//       -> println(it)
+//       nil -> print('empty')
+//       -> print(it)
 //   }
 
 // stack: 堆疊

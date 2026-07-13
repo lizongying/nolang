@@ -115,12 +115,24 @@ vec-create = (n i64, val i64) (out []i64) {
     n = .len
 }
 
-// []t.push: 在末尾追加元素（需確保容量足夠）
-[]t.push = (val t) {
-    n = .len
-    .len = n + 1
-    .[n] = val
-}
+// []t.push: 在末尾追加元素（自動擴容）
+// 擴容策略：
+//   cap == 0 → new-cap = 4
+//   cap < 1024 → new-cap = cap * 2
+//   cap >= 1024 → new-cap = cap * 5 / 4
+// build-in (ForwardFunc: vec-push)
+// []t.push = (val t) {
+//     n = .len
+//     .len = n + 1
+//     .[n] = val
+// }
+
+// []t.clear: 清空切片（原地修改長度為 0）
+// 不 free 堆、不縮 cap，data 指標完全不變
+// 只有寫入帶長度新內容時才走擴容邏輯
+// build-in (ForwardFunc: vec-clear)
+// []t.clear = () {
+// }
 
 // []t.pop: 從末尾彈出元素
 []t.pop = () (val t, new-n i64) {

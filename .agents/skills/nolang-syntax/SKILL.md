@@ -1,5 +1,5 @@
 ---
-name: nolang-syntax-reference
+name: nolang-syntax
 description: Reference for Nolang programming language syntax. Use when working with `.no` files, writing Nolang code, or when the user asks about Nolang syntax, grammar, types, operators, or language features.
 ---
 
@@ -425,16 +425,31 @@ Only single-line comments (`//`) are allowed.
 
 Variable names, function names, struct names, etc. can start with an underscore, followed by hyphens, letters, and digits; cannot start with a digit, cannot end with a hyphen, and cannot have consecutive hyphens.
 
-**Case conventions:**
-- **Global constants/variables**: uppercase (e.g. `NO-LANG`, `MAX-SIZE`)
+**Case rules (mandatory):**
+- **Global constants/variables**: **MUST** start with an uppercase letter (e.g. `NO-LANG`, `MAX-SIZE`, `HEX-CHARS`). Private globals use underscore prefix followed by uppercase (e.g. `_NO-LANG`, `_PRIVATE-CONST`). This is a mandatory rule, not a convention. Lowercase top-level variables will be treated as locals by the compiler, causing undefined reference errors.
 - **Local variables, function parameters**: lowercase (e.g. `hex-chars`, `data-len`)
 - **Function names, struct names**: lowercase (e.g. `sha1-block`, `db-mysql`)
 
 ```nolang
-NO-LANG = 'nolang'       // global constants uppercase
+// ✅ Correct: global data uses uppercase
+NO-LANG = 'nolang'       // global constant, uppercase
+MAX-SIZE = 1024          // global constant
+HEX-CHARS = '0123456789abcdef'
+
+// ✅ Private global: underscore prefix + uppercase
 _NOLANG = 'nolang'       // private global
-_x = 10                 // private
-foo-bar = 42            // hyphenated names
+_PRIVATE-CONST = 42      // private global constant
+
+// ❌ Wrong: global variables must NOT use lowercase
+// x = 10                 // lowercase global — will cause errors
+// foo-bar = 42           // lowercase global — will cause errors
+// hello-world = 'Hello World'  // lowercase global — will cause errors
+
+// ✅ Local variables (inside functions) use lowercase
+// example-fn = () {
+//     x = 10             // local variable, lowercase — correct
+//     foo-bar = 42       // local variable, lowercase — correct
+// }
 ```
 
 ### API Documentation Conventions

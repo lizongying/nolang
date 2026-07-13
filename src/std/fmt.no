@@ -16,7 +16,7 @@
 // }
 
 // print: print with newline
-// build-in (ForwardFunc: println)
+// build-in (ForwardFunc: print)
 // print = () {
 //     // LLVM: 依參數型別逐個打印，最後換行
 // }

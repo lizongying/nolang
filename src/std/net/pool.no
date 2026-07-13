@@ -8,7 +8,7 @@
 //   p.init('127.0.0.1', 8080, 10)    // 初始化：目標 127.0.0.1:8080，最大 10 連接
 //   c = p.get()                       // 取得連接（返回 ?conn）
 //   c: {
-//       nil -> println('no connection')
+//       nil -> print('no connection')
 //       ->
 //           c.send('hello')
 //           p.put(c)                   // 歸還連接（不是關閉）

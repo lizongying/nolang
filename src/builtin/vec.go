@@ -33,14 +33,25 @@ func init() {
 		ForwardFunc:  "vec-len",
 	})
 
-	// .push: append element to slice
+	// vec.push: append element to slice (with auto-grow)
+	// Expansion: cap==0→4, cap<1024→cap*2, cap>=1024→cap*5/4
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverVec,
-		MethodName:   "push",
+		MethodName:   "vec.push",
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
-		Doc:          "Push an element to the end of the slice",
+		Doc:          "Push an element to the end of the slice (auto-grow)",
 		ForwardFunc:  "vec-push",
+	})
+
+	// vec.clear: clear slice in-place (set len=0, no free/shrink)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "vec.clear",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{},
+		Doc:          "Clear slice in-place (set len=0, cap/data unchanged)",
+		ForwardFunc:  "vec-clear",
 	})
 
 	// .pop: remove and return last element

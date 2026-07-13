@@ -278,7 +278,7 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 	}
 
 	if view.isStr {
-		// Materialize as %str-long { len, data }
+		// Materialize as %str-long { len, cap, data }
 		g.tmpIdx++
 		resultReg := fmt.Sprintf("%%svmat.str.%d", g.tmpIdx)
 		if sb != nil {
@@ -288,11 +288,17 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 			lenGEP := fmt.Sprintf("%%svmat.str.len.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 				g.indent(), lenGEP, resultReg))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
-			// Store data (field 1)
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
+			// Store cap (field 1) = viewLen
+			g.tmpIdx++
+			capGEP := fmt.Sprintf("%%svmat.str.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+				g.indent(), capGEP, resultReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
+			// Store data (field 2)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 				g.indent(), dataGEP, resultReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), view.dataPtrReg, dataGEP))
 		}
@@ -374,7 +380,7 @@ func (g *Generator) cloneSliceView(sb *strings.Builder, varName string) string {
 	}
 
 	if view.isStr {
-		// Build %str-long { len, data }
+		// Build %str-long { len, cap, data }
 		g.tmpIdx++
 		resultReg := fmt.Sprintf("%%svclone.str.%d", g.tmpIdx)
 		if sb != nil {
@@ -385,8 +391,13 @@ func (g *Generator) cloneSliceView(sb *strings.Builder, varName string) string {
 				g.indent(), lenGEP, resultReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
 			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%svclone.str.data.%d", g.tmpIdx)
+			capGEP := fmt.Sprintf("%%svclone.str.cap.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+				g.indent(), capGEP, resultReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%svclone.str.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 				g.indent(), dataGEP, resultReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
 		}

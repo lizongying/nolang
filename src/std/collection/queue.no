@@ -27,8 +27,8 @@
 //   // option 解包
 //   val = buf.queue-pop(q)
 //   val: {
-//       nil -> println('empty')
-//       -> println(it)          // it = 彈出的值
+//       nil -> print('empty')
+//       -> print(it)          // it = 彈出的值
 //   }
 
 // queue: 佇列狀態（不含緩衝區，緩衝區由 [n]t receiver 提供）

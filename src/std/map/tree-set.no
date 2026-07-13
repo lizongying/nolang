@@ -27,8 +27,8 @@
 //   // option 解包
 //   val = s.lower-bound(42)
 //   val: {
-//       nil -> println('not found')
-//       -> println(it)
+//       nil -> print('not found')
+//       -> print(it)
 //   }
 
 TS-CAP = 64

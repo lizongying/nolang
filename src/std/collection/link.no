@@ -32,8 +32,8 @@
 //   // option 解包
 //   val = buf.link-pop-front(l)
 //   val: {
-//       nil -> println('empty')
-//       -> println(it)
+//       nil -> print('empty')
+//       -> print(it)
 //   }
 
 // link: 鏈結串列狀態（不含值緩衝區，值由 [n]t receiver 提供）

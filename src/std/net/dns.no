@@ -7,8 +7,8 @@
 //   // 解析域名
 //   ip = dns-resolve('example.com')           // 返回 ?str（IP 地址）
 //   ip: {
-//       nil -> println('解析失敗')
-//       -> println(ip)                         // 如 '93.184.216.34'
+//       nil -> print('解析失敗')
+//       -> print(ip)                         // 如 '93.184.216.34'
 //   }
 //
 //   // 指定 DNS 伺服器

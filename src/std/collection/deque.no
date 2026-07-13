@@ -12,8 +12,8 @@
 //   d.push-back(7)
 //   val = d.pop-front()
 //   val: {
-//       nil -> println('empty')
-//       -> println(it)
+//       nil -> print('empty')
+//       -> print(it)
 //   }
 
 // deque: 雙端佇列

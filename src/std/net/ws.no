@@ -27,14 +27,14 @@
 // 用法（客戶端 WS）：
 //   c = ws-connect('ws://127.0.0.1:8080/path')   // 返回 ?ws-client
 //   c: {
-//       nil -> println('connect failed')
+//       nil -> print('connect failed')
 //       ->
 //           c.send-text('hello')
 //           msg = c.recv()
 //           msg: {
-//               nil -> println('closed')
-//               err -> println('error')
-//               -> println(msg.data)
+//               nil -> print('closed')
+//               err -> print('error')
+//               -> print(msg.data)
 //           }
 //           c.close()
 //   }
@@ -42,14 +42,14 @@
 // 用法（客戶端 WSS）：
 //   c = ws-connect('wss://echo.websocket.org/path')   // 返回 ?ws-client
 //   c: {
-//       nil -> println('connect failed')
+//       nil -> print('connect failed')
 //       ->
 //           c.send-text('hello over TLS')
 //           msg = c.recv()
 //           msg: {
-//               nil -> println('closed')
-//               err -> println('error')
-//               -> println(msg.data)
+//               nil -> print('closed')
+//               err -> print('error')
+//               -> print(msg.data)
 //           }
 //           c.close()
 //   }
