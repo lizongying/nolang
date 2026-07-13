@@ -59,6 +59,11 @@
 // host-name = () (name str) {  // LLVM: call i32 @gethostname → @.os-buf
 // }
 
+// build-in (ForwardFunc: get-arch)
+// get-arch: 取得當前 CPU 架構（編譯期常數，如 arm64、amd64）
+// get-arch = () (arch str) {  // LLVM: compile-time constant string from runtime.GOARCH
+// }
+
 // build-in (CLibCall: strerror)
 // strerror: 將 errno 轉為錯誤訊息字串
 // strerror = (errnum i64) (msg str) {  // LLVM: call i8* @strerror

@@ -57,6 +57,11 @@
 // read-file = (p str) (content str) {  // LLVM: stat+open+malloc+read+close → %str-long
 // }
 
+// build-in (ForwardFunc: write-file)
+// write-file: 將 []byte 寫入檔案（覆寫）
+// write-file = (p str, data []byte) (ok bool) {  // LLVM: open+write+close → icmp
+// }
+
 // build-in (ForwardFunc: stat-size)
 // file-size: 取得檔案大小（同 stat-size）
 // file-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size

@@ -752,6 +752,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())
 	}
 
+	// Apply platform annotations (#{mac-arm64}, #{linux-amd64}, etc.)
+	// before validation so non-matching code is excluded from duplicate/type checks.
+	program.Statements = llvm.FilterByPlatform(program.Statements)
+
 	// 驗證：僅標準庫能使用的功能
 	isUserCode := true
 	if t.pkg != nil {

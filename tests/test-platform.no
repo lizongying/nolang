@@ -1,0 +1,57 @@
+// test-platform: flattened keys #{linux-amd64}, #{linux-arm64}, #{win-amd64}, #{win-arm64}, #{mac-amd64}, #{mac-arm64}
+
+print('running on macOS ARM64')
+
+print('running on macOS Intel')
+
+print('running on Linux x86_64')
+
+print('running on Linux ARM64')
+
+print('running on Windows x86_64')
+
+print('running on Windows ARM64')
+
+sep = '/'
+
+sep = '\\'
+
+greet = () {
+    print('hello from mac, sep is /')
+}
+
+greet = () {
+    print('hello from linux, sep is /')
+}
+
+greet = () {
+    print('hello from win, sep is \\')
+}
+
+greet()
+
+// OR semantics: multiple flattened keys
+
+// macOS any arch OR Linux any arch
+
+print('unix-like (mac or linux)')
+
+// Only Windows x86_64
+
+print('win/amd64 only')
+
+// Only macOS ARM64 (Apple Silicon)
+
+print('mac/arm64 (Apple Silicon)')
+
+// Only macOS Intel
+
+print('mac/amd64 (Intel)')
+
+// macOS ARM64 OR Linux ARM64
+
+print('arm64 unix (mac or linux)')
+
+// Should print current arch
+arch = os.get-arch()
+print('arch: ' - arch)

@@ -331,12 +331,17 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		tmpName := fmt.Sprintf("%%ref.st.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, structTy))
+			// 先將整個結構體初始化為 zeroinitializer，避免未指定的欄位帶有 stack 殘值
+			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), structTy, structTy, tmpName))
 		}
+		// 記錄哪些欄位已由 literal 明確設定
+		setFields := make(map[int]bool)
 		for _, f := range a.Fields {
 			fieldIdx, ok := fieldIndexByName[f.Name]
 			if !ok {
 				continue
 			}
+			setFields[fieldIdx] = true
 			fieldType := fields[fieldIdx].typ
 			fieldVal := g.generateExprWithSB(sb, f.Value)
 			fieldVal = g.stripLLVMType(fieldVal)
@@ -356,6 +361,32 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				}
 			} else if sb != nil {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			}
+		}
+		// 為未明確設定的 %vec 欄位分配 data 緩衝區（malloc 16384），設定 cap=16384
+		// 否則 vec[i] = val 會因 data=null 而 SIGBUS
+		if sb != nil {
+			for i, f := range fields {
+				if setFields[i] {
+					continue
+				}
+				if f.typ != "%vec" {
+					continue
+				}
+				vecBufSize := 16384
+				g.tmpIdx++
+				dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+				g.tmpIdx++
+				capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
+					g.indent(), capGEP, structTy, structTy, tmpName, i))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
+					g.indent(), dataGEP, structTy, structTy, tmpName, i))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 			}
 		}
 		return structTy + "* " + tmpName
@@ -960,6 +991,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								}
 								if !isForwardBuiltin {
 									skipBuiltin = true
+									// Update fnName and llvmFnName to the resolved method
+									// name (e.g. archive.type → tar.type) so the regular
+									// call path generates @tar.type, not @archive.type.
+									fnName = candName
+									llvmFnName = candName
 									break
 								}
 							}
@@ -1829,33 +1865,60 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// 先將整個結構體初始化為 zeroinitializer，避免未指定的欄位帶有 stack 殘值
 				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), structTy, structTy, tmpName))
 			}
-			for _, f := range a.Fields {
-				fieldIdx, ok := fieldIndexByName[f.Name]
-				if !ok {
-					continue
-				}
-				fieldType := fields[fieldIdx].typ
-				fieldVal := g.generateExprWithSB(sb, f.Value)
-				fieldVal = g.stripLLVMType(fieldVal)
-				g.tmpIdx++
-				gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-						g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
-				}
-				if strings.HasPrefix(fieldType, "%") {
-					if !strings.HasPrefix(fieldVal, "%") {
-						if sb != nil {
-							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
-						}
-					} else if sb != nil {
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			setFields := make(map[int]bool)
+		for _, f := range a.Fields {
+			fieldIdx, ok := fieldIndexByName[f.Name]
+			if !ok {
+				continue
+			}
+			setFields[fieldIdx] = true
+			fieldType := fields[fieldIdx].typ
+			fieldVal := g.generateExprWithSB(sb, f.Value)
+			fieldVal = g.stripLLVMType(fieldVal)
+			g.tmpIdx++
+			gepReg := fmt.Sprintf("%%ref.st.gep.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
+			}
+			if strings.HasPrefix(fieldType, "%") {
+				if !strings.HasPrefix(fieldVal, "%") {
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
 					}
 				} else if sb != nil {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 				}
+			} else if sb != nil {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 			}
-			return structTy + "* " + tmpName
+		}
+		// 為未明確設定的 %vec 欄位分配 data 緩衝區
+		if sb != nil {
+			for i, f := range fields {
+				if setFields[i] {
+					continue
+				}
+				if f.typ != "%vec" {
+					continue
+				}
+				vecBufSize := 16384
+				g.tmpIdx++
+				dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+				g.tmpIdx++
+				capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
+					g.indent(), capGEP, structTy, structTy, tmpName, i))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
+					g.indent(), dataGEP, structTy, structTy, tmpName, i))
+				sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
+			}
+		}
+		return structTy + "* " + tmpName
 		case *parser.SliceLiteral:
 			// Slice literal as function argument (e.g. bn-sub(m, [2, 0, ...]))
 			// Determine element type from the parameter's declared type.
@@ -2115,8 +2178,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if voidSingleOutputType == "%str-long" {
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%vso.data.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca [128 x i8]\n", g.indent(), dataBuf))
-				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 128, i8* %s)\n", g.indent(), dataBuf))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), dataBuf))
 				// 初始化 len = 0
 				g.tmpIdx++
 				lenGEP := fmt.Sprintf("%%vso.len.gep.%d", g.tmpIdx)

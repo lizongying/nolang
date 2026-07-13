@@ -209,6 +209,7 @@ var clibFuncNames = map[string]bool{
 	"write":       true,
 	"close":       true,
 	"mkdir":       true,
+	"chmod":       true,
 	"unlink":      true,
 	"rename":      true,
 	"stat":        true,

@@ -1226,3 +1226,85 @@ The `range` annotation is especially suited to the `num` type (`num = int | floa
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
+
+#### Platform Annotations
+
+Platform annotations are compile-time filters that include or exclude code based on the target platform. They use **flattened keys** that unambiguously specify both OS and architecture (e.g. `#{mac-arm64}`), and are attached to the declaration that follows. Non-matching code is excluded from the build entirely — no LLVM IR is generated, no type checking is performed.
+
+**Supported platform keys (6 flattened combinations):**
+
+| Key | Matches |
+| --- | --- |
+| `#{linux-amd64}` | Linux on x86_64 |
+| `#{linux-arm64}` | Linux on ARM64 |
+| `#{win-amd64}` | Windows on x86_64 |
+| `#{win-arm64}` | Windows on ARM64 |
+| `#{mac-amd64}` | macOS on x86_64 (Intel) |
+| `#{mac-arm64}` | macOS on ARM64 (Apple Silicon) |
+
+```nolang
+// Platform-specific print
+#{mac-arm64}
+print('running on macOS ARM64')
+
+#{linux-amd64}
+print('running on Linux x86_64')
+
+#{win-amd64}
+print('running on Windows x86_64')
+
+// Platform-specific variable
+#{mac-amd64}
+#{mac-arm64}
+sep = '/'
+
+#{win-amd64}
+#{win-arm64}
+sep = '\\'
+
+// Platform-specific function
+#{mac-arm64}
+#{mac-amd64}
+greet = () {
+    print('hello from mac')
+}
+
+#{linux-amd64}
+#{linux-arm64}
+greet = () {
+    print('hello from linux')
+}
+
+greet()
+```
+
+Multiple keys on the same declaration are **OR'd** together — any match includes the code. No AND logic is needed because each key already specifies both OS and arch.
+
+| Annotation | Meaning |
+| --- | --- |
+| `#{mac-arm64}` | macOS ARM64 only |
+| `#{mac-amd64, mac-arm64}` | macOS on any arch |
+| `#{linux-amd64, win-amd64}` | Linux x86_64 **or** Windows x86_64 |
+| `#{mac-arm64, linux-arm64}` | macOS ARM64 **or** Linux ARM64 |
+
+```nolang
+// Included on both macOS and Linux (all archs)
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
+shared = () {
+    print('unix-like')
+}
+
+// Only on Windows x86_64
+#{win-amd64}
+reg-key = () {
+    print('reading registry on win/x64')
+}
+
+// Only on macOS ARM64 (Apple Silicon)
+#{mac-arm64}
+neural = () {
+    print('Apple Neural Engine available')
+}
+```
+
+Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.

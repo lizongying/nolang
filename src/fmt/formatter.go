@@ -341,6 +341,20 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.newline() // indent for statement
 	}
 
+	// Output attached annotations (e.g. #{mac-arm64}, #{linux-amd64}) before the statement.
+	// These are platform annotations or generic annotations attached by the parser.
+	if anns := attachedAnnotations(stmt); len(anns) > 0 {
+		f.write("#{")
+		for i, e := range anns {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.write(e.String())
+		}
+		f.write("}")
+		f.newline()
+	}
+
 	switch s := stmt.(type) {
 	case *parser.UseStatement:
 		f.formatUseStatement(s)
@@ -1827,4 +1841,20 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) {
 		f.write(e.String())
 	}
 	f.write("}")
+}
+
+// attachedAnnotations returns annotations attached to a statement by the parser
+// (e.g. platform annotations #{mac-arm64}, #{linux-amd64} attached via attachAnnotations).
+func attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		return s.Annotations
+	case *parser.FunctionDefinition:
+		return s.Annotations
+	case *parser.StructDefinition:
+		return s.Annotations
+	case *parser.ExpressionStatement:
+		return s.Annotations
+	}
+	return nil
 }

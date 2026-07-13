@@ -75,6 +75,16 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "gethostname", ArgTypes: []LLVMArgType{LLVMI8Ptr, LLVMI64}, RetType: LLVMI32, RetBuf: true, BufGlobal: "@.os-buf", FixedArgs: map[int]string{1: "1024"}},
 	})
 
+	// get-arch: get current CPU architecture (compile-time constant)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-arch",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Get the current CPU architecture (e.g. arm64, amd64)",
+		ForwardFunc:  "get-arch",
+	})
+
 	// mkdir: create a directory
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
@@ -83,6 +93,16 @@ func init() {
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a directory with the given mode",
 		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true},
+	})
+
+	// ch-mod: change file permissions
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "ch-mod",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Change file permissions with the given mode",
+		CLibCall:     &CLibCall{FuncName: "chmod", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// remove: remove a file
@@ -313,6 +333,16 @@ func init() {
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Read entire file contents into a string (empty on error)",
 		ForwardFunc:  "read-file",
+	})
+
+	// write-file: write []byte data to a file (overwrite)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "write-file",
+		Params:       []parser.Type{parser.TypeStr, &parser.SliceType{Elem: parser.TypeByte}},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Write []byte data to a file (overwrite). Returns true on success",
+		ForwardFunc:  "write-file",
 	})
 
 	// get-line: read a line from stdin

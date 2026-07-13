@@ -1226,3 +1226,84 @@ person {
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
+
+#### 平台註解
+
+平台註解是編譯期過濾器，根據目標平台決定是否包含代碼。使用**扁平化鍵**（如 `#{mac-arm64}`）同時指定 OS 與架構，無歧義，附加到緊隨其後的宣告上。不匹配的代碼完全不參與編譯——不生成 LLVM IR，不進行類型檢查。
+
+**支援的平台鍵（6 種扁平組合）：**
+
+| 鍵 | 匹配 |
+| --- | --- |
+| `#{linux-amd64}` | Linux x86_64 |
+| `#{linux-arm64}` | Linux ARM64 |
+| `#{win-amd64}` | Windows x86_64 |
+| `#{win-arm64}` | Windows ARM64 |
+| `#{mac-amd64}` | macOS x86_64（Intel） |
+| `#{mac-arm64}` | macOS ARM64（Apple Silicon） |
+
+```nolang
+#{mac-arm64}
+print('running on macOS ARM64')
+
+#{linux-amd64}
+print('running on Linux x86_64')
+
+#{win-amd64}
+print('running on Windows x86_64')
+
+// 平台特定的變數
+#{mac-amd64}
+#{mac-arm64}
+sep = '/'
+
+#{win-amd64}
+#{win-arm64}
+sep = '\\'
+
+// 平台特定的函數
+#{mac-arm64}
+#{mac-amd64}
+greet = () {
+    print('hello from mac')
+}
+
+#{linux-amd64}
+#{linux-arm64}
+greet = () {
+    print('hello from linux')
+}
+
+greet()
+```
+
+同一宣告上的多個鍵為 **OR** 關係——任一匹配即包含。因每個鍵已同時指定 OS 與架構，無需 AND 邏輯。
+
+| 註解 | 含義 |
+| --- | --- |
+| `#{mac-arm64}` | 僅 macOS ARM64 |
+| `#{mac-amd64, mac-arm64}` | macOS 任意架構 |
+| `#{linux-amd64, win-amd64}` | Linux x86_64 **或** Windows x86_64 |
+| `#{mac-arm64, linux-arm64}` | macOS ARM64 **或** Linux ARM64 |
+
+```nolang
+// macOS 和 Linux（所有架構）都執行
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
+shared = () {
+    print('unix-like')
+}
+
+// 僅 Windows x86_64
+#{win-amd64}
+reg-key = () {
+    print('reading registry on win/x64')
+}
+
+// 僅 macOS ARM64（Apple Silicon）
+#{mac-arm64}
+neural = () {
+    print('Apple Neural Engine available')
+}
+```
+
+使用 `os.get-arch()` 可在執行期取得當前架構，使用平台註解則在編譯期包含或排除代碼。

@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -914,6 +915,56 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return strReg
 	}
 
+	// write-file: write []byte data to a file (overwrite)
+	// Returns i64 bool (0 or 1).
+	if fnName == "write-file" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		// Extract data pointer and length from []byte (%vec) argument
+		// %vec = { i64 len, i64 cap, i8* data }
+		vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+		g.tmpIdx++
+		wfLenGEP := fmt.Sprintf("%%wf.datalen.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfDataLen := fmt.Sprintf("%%wf.datalen.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfDataGEP := fmt.Sprintf("%%wf.dataptr.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfDataPtr := fmt.Sprintf("%%wf.dataptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfOpen := fmt.Sprintf("%%wf.open.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfOpenCmp := fmt.Sprintf("%%wf.opencmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfWrite := fmt.Sprintf("%%wf.write.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfWriteSel := fmt.Sprintf("%%wf.writesel.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfCmp := fmt.Sprintf("%%wf.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		wfZext := fmt.Sprintf("%%wf.zext.%d", g.tmpIdx)
+		if sb != nil {
+			// Extract len and data ptr from %vec
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), wfLenGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), wfDataLen, wfLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), wfDataGEP, vecPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), wfDataPtr, wfDataGEP))
+			// open(path, O_WRONLY|O_CREAT|O_TRUNC=1537, 0644=420)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @open(i8* %s, i32 1537, i32 420)\n", g.indent(), wfOpen, pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), wfOpenCmp, wfOpen))
+			// write(fd, data, len)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @write(i32 %s, i8* %s, i64 %s)\n", g.indent(), wfWrite, wfOpen, wfDataPtr, wfDataLen))
+			// If open failed, use -1 for write result
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), wfWriteSel, wfOpenCmp, wfWrite))
+			// close(fd)
+			sb.WriteString(fmt.Sprintf("%scall i32 @close(i32 %s)\n", g.indent(), wfOpen))
+			// ok = (written == len)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, %s\n", g.indent(), wfCmp, wfWriteSel, wfDataLen))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), wfZext, wfCmp))
+		}
+		return wfZext
+	}
+
 	// get-line: 從標準輸入讀取一行
 	if fnName == "get-line" {
 		g.tmpIdx++
@@ -1099,6 +1150,32 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 		}
 		return extReg
+	}
+
+	// get-arch: return compile-time architecture string (e.g. "arm64", "amd64")
+	if fnName == "get-arch" {
+		arch := runtime.GOARCH
+		idx := g.stringIdx
+		g.stringIdx++
+		escaped := g.escapeLLVMString(arch)
+		strLen := len(arch)
+		g.fmtGlobals = append(g.fmtGlobals,
+			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", idx, strLen, escaped))
+		g.tmpIdx++
+		allocaReg := fmt.Sprintf("%%archstr.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), allocaReg))
+			g.tmpIdx++
+			lenGEP := fmt.Sprintf("%%archstr.len.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%archstr.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), dataGEP, allocaReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0), i8** %s\n",
+				g.indent(), strLen, strLen, idx, dataGEP))
+		}
+		return allocaReg
 	}
 
 	if fnName == "gzip-compress" && hasArgs {

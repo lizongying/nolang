@@ -224,6 +224,7 @@ str.slice = (start i64, end i64) (val str) {
     end > .len -> end = .len
     start >= end -> return
     n = end - start
+    val.len = n
     i <- [0..n): {
         val[i] = .[start + i]
     }
@@ -949,22 +950,17 @@ str.from-hex = () (out ?[]byte) {
 // 空分隔符時返回整個字串作為唯一元素
 str.split = (sep str) (out []str) {
     sep.len == 0 -> {
-    out[0] = .slice(0, .len)
-            out.len = 1
-            return
-}
-    count = 0
+        out.push(.slice(0, .len))
+        return
+    }
     start = 0
     pos = .index-from(sep, start)
     for pos >= 0 {
-        out[count] = .slice(start, pos)
-        count = count + 1
+        out.push(.slice(start, pos))
         start = pos + sep.len
         pos = .index-from(sep, start)
     }
-    out[count] = .slice(start, .len)
-    count = count + 1
-    out.len = count
+    out.push(.slice(start, .len))
 }
 
 // []str.join: 用分隔符連接字串切片中的所有元素
@@ -973,6 +969,12 @@ str.split = (sep str) (out []str) {
 []str.join = (sep str) (out str) {
     n = .len
     n == 0 -> return
+    total = 0
+    i <- [0..n): {
+        i > 0 -> total = total + sep.len
+        total = total + .[i].len
+    }
+    out.len = total
     pos = 0
     i <- [0..n): {
         i > 0 -> {

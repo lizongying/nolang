@@ -1,0 +1,10 @@
+// test-arch: test get-arch() builtin
+arch = os.get-arch()
+print('arch: ' - arch)
+
+// check it matches one of the expected values
+{
+    arch == 'arm64' -> print('running on arm64')
+    arch == 'amd64' -> print('running on amd64')
+    -> print('unknown arch: ' - arch)
+}

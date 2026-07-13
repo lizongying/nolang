@@ -1242,10 +1242,40 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
-		if g.ssaTypes != nil {
-			// Method calls (e.g. base.slice(0, n)): resolve receiver type
-			// and look up method return type via funcRetTypes/funcResultLLVMType.
-			if dot, ok := v.Function.(*parser.DotExpression); ok {
+		// DotExpression calls: method calls (e.g. base.slice(0, n)) and
+		// module function calls (e.g. os.get-env('HOSTNAME')).
+		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			fullName := flattenDottedExpr(dot)
+			// Module function calls (e.g. os.get-env): the receiver is a
+			// module name, not a variable. Look up by full name first.
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[fullName]; ok && t != "void" {
+					return t
+				}
+			}
+			if g.funcResultLLVMType != nil {
+				if ts, ok := g.funcResultLLVMType[fullName]; ok && len(ts) == 1 {
+					return ts[0]
+				}
+			}
+			// Check builtin methods (CLibCall / ForwardFunc / etc.) by full
+			// name and by short name (stripping module prefix).
+			if m := builtin.FindBuiltinMethod(fullName); m != nil {
+				if len(m.Return) == 1 {
+					return g.mapToLLVMType(m.Return[0].String())
+				}
+			}
+			if idx := strings.Index(fullName, "."); idx >= 0 {
+				shortName := fullName[idx+1:]
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					if len(m.Return) == 1 {
+						return g.mapToLLVMType(m.Return[0].String())
+					}
+				}
+			}
+			// Method calls on variables (e.g. base.slice(0, n)): resolve
+			// receiver type and look up method return type.
+			if g.ssaTypes != nil {
 				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 					if g.varTypes != nil {
 						if recvType, ok := g.varTypes[recv.Value]; ok {
@@ -1747,6 +1777,20 @@ func (g *Generator) emitVecLenLoad(sb *strings.Builder, vecRef string) string {
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
 	}
 	return lenLoad
+}
+
+// emitVecCapLoad loads the i64 cap (field 1) from a %vec* pointer.
+func (g *Generator) emitVecCapLoad(sb *strings.Builder, vecRef string) string {
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	capLoad := fmt.Sprintf("%%vec.cap.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
+			g.indent(), capGEP, vecRef))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capLoad, capGEP))
+	}
+	return capLoad
 }
 
 // extractStrShortDataPtr extracts the i8* data pointer from a %str-short* pointer.
@@ -2756,9 +2800,12 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					llvmElemType = et
 				}
 
-				// Bounds check: load vec len and verify idx
-				vecLen := g.emitVecLenLoad(sb, llvmVarRef(varName))
-				g.emitBoundsCheck(sb, idx, vecLen)
+				// Bounds check for writes: use cap (field 1), not len (field 0).
+			// This allows vec[i] = val for i in [0..cap) even when len == 0,
+			// which is required for patterns like `data[next] = value` on
+			// freshly declared []byte locals and struct fields.
+			vecCap := g.emitVecCapLoad(sb, llvmVarRef(varName))
+			g.emitBoundsCheck(sb, idx, vecCap)
 
 				// Load data pointer from vec struct (field 2)
 				g.tmpIdx++
@@ -3544,11 +3591,42 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	rightPtr := g.getStrPtr(sb, expr.Right)
 	leftData := g.extractDataFromExpr(sb, expr.Left, leftPtr)
 	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
+	leftLen := g.extractLenFromExpr(sb, expr.Left, leftPtr)
+	rightLen := g.extractLenFromExpr(sb, expr.Right, rightPtr)
+
+	// Null-terminate both strings: alloca len+1, memcpy data, store 0 at end
+	g.tmpIdx++
+	leftBuf := fmt.Sprintf("%%strcmp.lbuf.%d", g.tmpIdx)
+	g.tmpIdx++
+	leftSize := fmt.Sprintf("%%strcmp.lsize.%d", g.tmpIdx)
+	g.tmpIdx++
+	leftEnd := fmt.Sprintf("%%strcmp.lend.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), leftBuf, leftData, leftLen))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), leftEnd, leftBuf, leftLen))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
+	}
+
+	g.tmpIdx++
+	rightBuf := fmt.Sprintf("%%strcmp.rbuf.%d", g.tmpIdx)
+	g.tmpIdx++
+	rightSize := fmt.Sprintf("%%strcmp.rsize.%d", g.tmpIdx)
+	g.tmpIdx++
+	rightEnd := fmt.Sprintf("%%strcmp.rend.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), rightBuf, rightData, rightLen))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), rightEnd, rightBuf, rightLen))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
+	}
 
 	g.tmpIdx++
 	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftBuf, rightBuf))
 	}
 
 	// strcmp 回傳 0=相等, <0=a<b, >0=a>b
@@ -3656,11 +3734,42 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	rightPtr := g.getStrPtr(sb, expr.Right)
 	leftData := g.extractDataFromExpr(sb, expr.Left, leftPtr)
 	rightData := g.extractDataFromExpr(sb, expr.Right, rightPtr)
+	leftLen := g.extractLenFromExpr(sb, expr.Left, leftPtr)
+	rightLen := g.extractLenFromExpr(sb, expr.Right, rightPtr)
+
+	// Null-terminate both strings: alloca len+1, memcpy data, store 0 at end
+	g.tmpIdx++
+	leftBuf := fmt.Sprintf("%%strcmp.lbuf.%d", g.tmpIdx)
+	g.tmpIdx++
+	leftSize := fmt.Sprintf("%%strcmp.lsize.%d", g.tmpIdx)
+	g.tmpIdx++
+	leftEnd := fmt.Sprintf("%%strcmp.lend.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), leftBuf, leftData, leftLen))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), leftEnd, leftBuf, leftLen))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
+	}
+
+	g.tmpIdx++
+	rightBuf := fmt.Sprintf("%%strcmp.rbuf.%d", g.tmpIdx)
+	g.tmpIdx++
+	rightSize := fmt.Sprintf("%%strcmp.rsize.%d", g.tmpIdx)
+	g.tmpIdx++
+	rightEnd := fmt.Sprintf("%%strcmp.rend.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
+		sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), rightBuf, rightData, rightLen))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), rightEnd, rightBuf, rightLen))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
+	}
 
 	g.tmpIdx++
 	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftData, rightData))
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftBuf, rightBuf))
 	}
 
 	var cmpOp string

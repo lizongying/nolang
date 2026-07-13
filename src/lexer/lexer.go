@@ -125,17 +125,38 @@ func (l *Lexer) readNumber() string {
 func (l *Lexer) readString() string {
 	quote := l.ch // 记录引号类型（单引号或双引号）
 	l.readChar()  // 跳过开始的引号
-	start := l.position
+	var buf []byte
 	for l.ch != quote && l.ch != 0 {
 		if l.ch == '\\' {
 			l.readChar()
+			switch l.ch {
+			case 'n':
+				buf = append(buf, '\n')
+			case 't':
+				buf = append(buf, '\t')
+			case 'r':
+				buf = append(buf, '\r')
+			case '\\':
+				buf = append(buf, '\\')
+			case '\'':
+				buf = append(buf, '\'')
+			case '"':
+				buf = append(buf, '"')
+			case '0':
+				buf = append(buf, 0)
+			default:
+				buf = append(buf, '\\', l.ch)
+			}
+			l.readChar()
+		} else {
+			buf = append(buf, l.ch)
+			l.readChar()
 		}
-		l.readChar()
 	}
 	if l.ch == quote {
 		l.readChar() // 跳过结束的引号
 	}
-	return l.input[start : l.position-1]
+	return string(buf)
 }
 
 func (l *Lexer) NextToken() Token {

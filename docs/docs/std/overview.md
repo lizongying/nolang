@@ -259,6 +259,7 @@ pid = os.get-pid()
 
 // 系統資訊
 name = os.host-name()
+arch = os.get-arch()
 msg = os.strerror(errnum)
 
 // 時間

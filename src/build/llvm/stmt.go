@@ -323,8 +323,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if outType == "%str-long" {
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%out.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca [128 x i8]\n", g.indent(), dataBuf))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 128, i8* %s)\n", g.indent(), dataBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), dataBuf))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%out.len.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
@@ -1254,13 +1253,34 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 			}
 			// Infer array/slice element type and size from function call return type
-			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,
-			// or raw = list-dir(...) where list-dir returns []str)
-			if (vt == "%arr" || vt == "%vec") && g.funcResultNolangTypes != nil {
+		// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,
+		// or raw = list-dir(...) where list-dir returns []str)
+		if (vt == "%arr" || vt == "%vec") && g.funcResultNolangTypes != nil {
 				fnName := ""
 				if call, ok := s.Value.(*parser.CallExpression); ok {
 					if ident, ok := call.Function.(*parser.Identifier); ok {
 						fnName = ident.Value
+					} else if dot, ok := call.Function.(*parser.DotExpression); ok {
+						// Resolve method name (e.g. content.split → str.split)
+						if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+							if recvType, ok := g.varTypes[recv.Value]; ok {
+								srcType := strings.TrimPrefix(recvType, "%")
+								candidates := []string{srcType}
+								if srcType == "str-short" || srcType == "str-long" {
+									candidates = append(candidates, "str")
+								}
+								if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+									candidates = append(candidates, primAliases...)
+								}
+								for _, cand := range candidates {
+									fullName := cand + "." + dot.Property
+									if _, ok := g.funcResultNolangTypes[fullName]; ok {
+										fnName = fullName
+										break
+									}
+								}
+							}
+						}
 					}
 				}
 				if fnName != "" {
@@ -1573,7 +1593,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 
 		g.loopExits = append(g.loopExits, loopExit{
 			name: stmt.Label,
-			cond: fmt.Sprintf("for.cond.%d", labelId),
+			cond: fmt.Sprintf("for.step.%d", labelId),
 			exit: fmt.Sprintf("for.end.%d", labelId),
 		})
 		defer func() {
@@ -1603,6 +1623,16 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 				g.generateStatement(sb, s)
 			}
 		}
+		// body 未終止時跳到 step 執行更新
+		if !g.blockTerminated {
+			sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
+		}
+		g.blockTerminated = false
+		g.indentLevel--
+
+		// step block: counter++（continue 跳轉目標）
+		g.emitLabel(sb, fmt.Sprintf("for.step.%d", labelId))
+		g.indentLevel++
 		// update: %val = load i64, %cnt; %inc = add i64 %val, 1; store i64 %inc, %cnt
 		updateLoad := fmt.Sprintf("%%%s.val2", counterVar)
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), updateLoad, counterVar))
@@ -1619,7 +1649,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 
 	g.loopExits = append(g.loopExits, loopExit{
 		name: stmt.Label,
-		cond: fmt.Sprintf("for.cond.%d", labelId),
+		cond: fmt.Sprintf("for.step.%d", labelId),
 		exit: fmt.Sprintf("for.end.%d", labelId),
 	})
 	defer func() {
@@ -1712,6 +1742,16 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 			g.generateStatement(sb, s)
 		}
 	}
+	// body 未終止時跳到 step 執行更新
+	if !g.blockTerminated {
+		sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
+	}
+	g.blockTerminated = false
+	g.indentLevel--
+
+	// step block: 執行 update（continue 跳轉目標）
+	g.emitLabel(sb, fmt.Sprintf("for.step.%d", labelId))
+	g.indentLevel++
 	// update
 	if stmt.Update != nil {
 		g.generateStatement(sb, stmt.Update)
@@ -1819,7 +1859,7 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			lbl := g.tmpIdx
 			g.loopExits = append(g.loopExits, loopExit{
 				name: stmt.Label,
-				cond: fmt.Sprintf("arr.cond.%d", lbl),
+				cond: fmt.Sprintf("arr.step.%d", lbl),
 				exit: fmt.Sprintf("arr.end.%d", lbl),
 			})
 			defer func() {
@@ -1871,20 +1911,26 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			for _, s := range stmt.Body.Statements {
 				g.generateStatement(sb, s)
 			}
-			g.indentLevel--
-
+			// body 未終止時跳到 step 執行更新
 			if !g.blockTerminated {
-				// Increment i
-				g.tmpIdx++
-				iLoad2 := fmt.Sprintf("%%arr.i2.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
-				g.tmpIdx++
-				iInc := fmt.Sprintf("%%arr.inc.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInc, iLoad2))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInc, varName))
-				sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+				sb.WriteString(fmt.Sprintf("%sbr label %%arr.step.%d\n", g.indent(), lbl))
 			}
 			g.blockTerminated = false
+			g.indentLevel--
+
+			// step block: i++（continue 跳轉目標）
+			g.emitLabel(sb, fmt.Sprintf("arr.step.%d", lbl))
+			g.indentLevel++
+			// Increment i
+			g.tmpIdx++
+			iLoad2 := fmt.Sprintf("%%arr.i2.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
+			g.tmpIdx++
+			iInc := fmt.Sprintf("%%arr.inc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInc, iLoad2))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInc, varName))
+			sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+			g.indentLevel--
 
 			// end block
 			g.emitLabel(sb, fmt.Sprintf("arr.end.%d", lbl))
@@ -1965,7 +2011,7 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	lbl := g.tmpIdx
 	g.loopExits = append(g.loopExits, loopExit{
 		name: stmt.Label,
-		cond: fmt.Sprintf("arr.cond.%d", lbl),
+		cond: fmt.Sprintf("arr.step.%d", lbl),
 		exit: fmt.Sprintf("arr.end.%d", lbl),
 	})
 	defer func() {
@@ -2044,7 +2090,16 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			g.generateStatement(sb, s)
 		}
 	}
+	// body 未終止時跳到 step 執行更新
+	if !g.blockTerminated {
+		sb.WriteString(fmt.Sprintf("%sbr label %%arr.step.%d\n", g.indent(), lbl))
+	}
+	g.blockTerminated = false
+	g.indentLevel--
 
+	// step block: i++（continue 跳轉目標）
+	g.emitLabel(sb, fmt.Sprintf("arr.step.%d", lbl))
+	g.indentLevel++
 	// Update: i++
 	g.tmpIdx++
 	iNext := fmt.Sprintf("%%arr.next.%d", g.tmpIdx)
@@ -2077,7 +2132,7 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	lbl := g.tmpIdx
 	g.loopExits = append(g.loopExits, loopExit{
 		name: stmt.Label,
-		cond: fmt.Sprintf("rng.cond.%d", lbl),
+		cond: fmt.Sprintf("rng.step.%d", lbl),
 		exit: fmt.Sprintf("rng.end.%d", lbl),
 	})
 	defer func() {
@@ -2145,7 +2200,16 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			g.generateStatement(sb, s)
 		}
 	}
-	// update: 依方向 i = i ± 1
+	// body 未終止時跳到 step 執行更新
+	if !g.blockTerminated {
+		sb.WriteString(fmt.Sprintf("%sbr label %%rng.step.%d\n", g.indent(), lbl))
+	}
+	g.blockTerminated = false
+	g.indentLevel--
+
+	// step block: 更新 i = i ± 1（continue 跳轉目標）
+	g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
+	g.indentLevel++
 	g.tmpIdx++
 	iUp := fmt.Sprintf("%%rng.up.%d", g.tmpIdx)
 	g.tmpIdx++
@@ -2276,8 +2340,36 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			return
 		}
 
-		// Non-literal slice assignment — not yet supported
-		sb.WriteString(fmt.Sprintf("%s; slice non-literal store not yet implemented\n", g.indent()))
+		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
+		// with a default data buffer so push() and index assignment work.
+		elemType := "i64"
+		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
+			elemType = g.mapToLLVMType(st.Elem.String())
+		}
+		elemSize := g.llvmTypeSize(elemType)
+		if elemSize == 0 {
+			elemSize = 8
+		}
+		defaultCap := int64(1024)
+		bufSize := defaultCap * elemSize
+		g.tmpIdx++
+		vecBuf := fmt.Sprintf("%%vec.init.buf.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), vecBuf, bufSize))
+		// store len = 0 (field 0)
+		g.tmpIdx++
+		vecLenGEP := fmt.Sprintf("%%vec.init.len.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, g.varAddr(name)))
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), vecLenGEP))
+		// store cap = defaultCap (field 1)
+		g.tmpIdx++
+		vecCapGEP := fmt.Sprintf("%%vec.init.cap.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, g.varAddr(name)))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), defaultCap, vecCapGEP))
+		// store data = buf (field 2)
+		g.tmpIdx++
+		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), vecBuf, vecDataGEP))
 		return
 	}
 
@@ -2846,6 +2938,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%getline.str.",        // get-line builtin in call_stdlib.go
 		"%readdir.str.",        // read-dir builtin in call_stdlib.go
 		"%rf.str.",             // read-file builtin in call_stdlib.go
+		"%archstr.",            // get-arch builtin in call_stdlib.go
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

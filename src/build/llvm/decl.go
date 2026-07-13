@@ -49,6 +49,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @getpid()\n")
 	sb.WriteString("declare i32 @gethostname(i8*, i64)\n")
 	sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
+	sb.WriteString("declare i32 @chmod(i8*, i32)\n")
 	sb.WriteString("declare i32 @unlink(i8*)\n")
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
 	sb.WriteString("declare i32 @stat(i8*, i8*)\n")

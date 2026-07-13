@@ -410,8 +410,9 @@ func (rs *ReturnStatement) EndPos() lexer.Position {
 }
 
 type ExpressionStatement struct {
-	Token      lexer.Token
-	Expression Expression
+	Token       lexer.Token
+	Expression  Expression
+	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
 	CommentedNode
 }
 
@@ -464,7 +465,8 @@ type FunctionDefinition struct {
 	Name  string
 	FuncSignature
 	Body        *BlockStatement
-	ColonSyntax bool // 是否為冒號語法 foo: (a int) { }
+	ColonSyntax bool               // 是否為冒號語法 foo: (a int) { }
+	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
 	CommentedNode
 }
 

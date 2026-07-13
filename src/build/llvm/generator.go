@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -311,7 +312,78 @@ func (g *Generator) sortedExternNames() []string {
 	return names
 }
 
+// platformKeys maps flattened platform annotation keys to (goos, goarch) pairs.
+// Each key unambiguously specifies both OS and architecture — no combination
+// logic (OR/AND) is needed. Multiple keys are simply OR'd together.
+var platformKeys = map[string]struct{ goos, goarch string }{
+	"linux-amd64": {"linux", "amd64"},
+	"linux-arm64": {"linux", "arm64"},
+	"win-amd64":   {"windows", "amd64"},
+	"win-arm64":   {"windows", "arm64"},
+	"mac-amd64":   {"darwin", "amd64"},
+	"mac-arm64":   {"darwin", "arm64"},
+}
+
+// stmtAnnotations extracts platform annotations from a statement.
+func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		return s.Annotations
+	case *parser.FunctionDefinition:
+		return s.Annotations
+	case *parser.StructDefinition:
+		return s.Annotations
+	case *parser.ExpressionStatement:
+		return s.Annotations
+	}
+	return nil
+}
+
+// matchesPlatform returns true if any platform annotation key matches the
+// current (GOOS, GOARCH). Multiple keys are OR'd — any match includes the code.
+//   #{mac-arm64}                     → macOS ARM64 only
+//   #{mac-amd64, mac-arm64}          → macOS on any arch
+//   #{linux-amd64, win-amd64}        → Linux x86_64 OR Windows x86_64
+// Non-platform annotations (e.g. #{debug}, #{range=...}) are ignored.
+// If there are no platform annotations, returns true (always include).
+func matchesPlatform(annotations []*parser.AnnotationEntry) bool {
+	if len(annotations) == 0 {
+		return true
+	}
+	hasPlatform := false
+	for _, entry := range annotations {
+		// Only boolean entries (no value) can be platform annotations
+		if entry.Value != nil {
+			continue
+		}
+		matcher, isPlatform := platformKeys[entry.Key]
+		if !isPlatform {
+			continue
+		}
+		hasPlatform = true
+		if runtime.GOOS == matcher.goos && runtime.GOARCH == matcher.goarch {
+			return true
+		}
+	}
+	return !hasPlatform
+}
+
+// FilterByPlatform removes statements whose platform annotations don't match.
+// Exported so the transpiler can apply the filter before validation.
+func FilterByPlatform(stmts []parser.Statement) []parser.Statement {
+	filtered := make([]parser.Statement, 0, len(stmts))
+	for _, stmt := range stmts {
+		if matchesPlatform(stmtAnnotations(stmt)) {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
 func (g *Generator) Generate(program *parser.Program) string {
+	// Filter out statements that don't match the current platform (#{mac-arm64}, #{linux-amd64}, etc.)
+	program.Statements = FilterByPlatform(program.Statements)
+
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
 	g.stringIdx = 0

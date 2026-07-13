@@ -8178,9 +8178,26 @@ func (p *Parser) parseAnnotationStatement() Statement {
 	}
 
 	// 非 FFI 註解：嘗試附加到後續宣告
-	// 跳過 NEWLINE，檢查後續是否為宣告
-	for p.currentToken.Type == lexer.NEWLINE {
-		p.nextToken()
+	// 收集連續的註解條目（以空行分隔的多個 #{...}），合併後附加到後續宣告
+	for {
+		for p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		if p.currentToken.Type != lexer.HASH_LBRACE {
+			break
+		}
+		// 解析下一個註解並合併條目
+		p.nextToken() // skip #{
+		moreEntries := p.parseAnnotationBody()
+		if p.currentToken.Type != lexer.RBRACE {
+			msg := fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			break
+		}
+		p.nextToken() // skip }
+		entries = append(entries, moreEntries...)
+		annotStmt.Entries = entries
 	}
 
 	// 若後續為 IDENT 開頭的宣告，附加註解
@@ -8212,9 +8229,12 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 		s.GenericParams = params
 	case *FunctionDefinition:
 		// 方法定義：從 #{generic=[K,V]} 註解提取泛型型別參數
+		s.Annotations = entries
 		for _, name := range params {
 			s.GenericParams = append(s.GenericParams, &Identifier{Value: name})
 		}
+	case *ExpressionStatement:
+		s.Annotations = entries
 	}
 }
 
