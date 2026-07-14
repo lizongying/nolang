@@ -2,7 +2,7 @@
 // # std/hash/sha256
 
 print('start')
-msg []byte
+msg []byte = with-cap(3)
 msg[0] = 0x61
 msg[1] = 0x62
 msg[2] = 0x63
@@ -30,7 +30,7 @@ print('total-len')
 print(total-len)
 
 // 測試 padded []byte
-padded []byte
+padded []byte = with-cap(total-len)
 i <- [0..total-len): {
     padded[i] = 0
 }

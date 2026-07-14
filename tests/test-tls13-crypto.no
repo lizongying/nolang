@@ -4,9 +4,9 @@
 
 // test-hkdf-extract: 測試 HKDF-Extract
 test-hkdf-extract = () {
-    salt []byte
+    salt []byte = with-cap(1)
     salt[0] = 0
-    ikm []byte
+    ikm []byte = with-cap(3)
     ikm[0] = 0x0b
     ikm[1] = 0x0b
     ikm[2] = 0x0b
@@ -30,7 +30,7 @@ test-hkdf-expand = () {
     i <- [0..32): {
         prk[i] = i + 1
     }
-    info []byte
+    info []byte = with-cap(2)
     info[0] = 0xAA
     info[1] = 0xBB
     okm []byte
@@ -53,7 +53,7 @@ test-hkdf-expand-label = () {
     i <- [0..32): {
         prk[i] = i + 1
     }
-    ctx []byte
+    ctx []byte = with-cap(2)
     ctx[0] = 0xDE
     ctx[1] = 0xAD
     okm []byte
@@ -83,12 +83,12 @@ test-aes-gcm-seal-open = () {
         iv[i] = i + 10
     }
     // AAD
-    aad []byte
+    aad []byte = with-cap(3)
     aad[0] = 0xAA
     aad[1] = 0xBB
     aad[2] = 0xCC
     // plaintext
-    plain []byte
+    plain []byte = with-cap(5)
     plain[0] = 72
     plain[1] = 101
     plain[2] = 108

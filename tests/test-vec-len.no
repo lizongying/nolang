@@ -1,6 +1,6 @@
 // test-vec-len — 測試 []byte 的 len 欄位
 print('start')
-msg []byte
+msg []byte = with-cap(2)
 print('before len')
 n i64 = msg.len
 print('after len')

@@ -855,7 +855,9 @@ func (g *Generator) Generate(program *parser.Program) string {
 				if fl, ok := ls.Value.(*parser.FloatLiteral); ok {
 					floatStr := fl.Raw
 					if floatStr == "" {
-						floatStr = fmt.Sprintf("%v", fl.Value)
+						// %v would produce "1" for 1.0, which is invalid LLVM IR;
+						// %f always includes a decimal point (e.g., "1.000000")
+						floatStr = fmt.Sprintf("%f", fl.Value)
 					}
 					sb.WriteString(fmt.Sprintf("%s = global double %s\n", llvmGlobalRef(name), floatStr))
 					g.globalVars[name] = true

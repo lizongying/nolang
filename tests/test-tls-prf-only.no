@@ -2,12 +2,12 @@
 // # std/net/tls
 
 print('before prf')
-secret []byte
+secret []byte = with-cap(4)
 secret[0] = 1
 secret[1] = 2
 secret[2] = 3
 secret[3] = 4
-seed []byte
+seed []byte = with-cap(3)
 seed[0] = 0xAA
 seed[1] = 0xBB
 seed[2] = 0xCC

@@ -9,7 +9,7 @@ print(base64.BASE64-STD)
 print('')
 
 // 測試函數調用：sha256.sha256(data)
-msg []byte
+msg []byte = with-cap(3)
 msg[0] = 0x61
 msg[1] = 0x62
 msg[2] = 0x63

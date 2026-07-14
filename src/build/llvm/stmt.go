@@ -659,7 +659,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "[") {
 					elemType := extractArrayElemType(t)
 					if elemType != "" {
-						return elemType + "*"
+						// Only return a pointer for nested array elements
+						// (e.g. arr2d[i] where arr2d is [12 x [16 x i64]] → [16 x i64]*).
+						// For scalar elements (e.g. [4 x i64] → i64), the value is
+						// loaded, not a pointer.
+						if strings.HasPrefix(elemType, "[") {
+							return elemType + "*"
+						}
+						return elemType
 					}
 				}
 				// 切片/陣列元素讀取（如 r = records[i] 其中 records []dns-record）：
@@ -1389,6 +1396,13 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		if s.IterRange != nil && s.IterRange.Variable != "" {
 			if _, ok := vars[s.IterRange.Variable]; !ok {
 				vars[s.IterRange.Variable] = "i64"
+				// Update g.varTypes immediately so that subsequent varLLVMType
+				// calls for variables referencing this range variable (e.g. nx = y)
+				// see the local i64 type, not a stale module-level type (e.g. y = 1.0
+				// at module level would leave g.varTypes["y"] = "double").
+				if g.varTypes != nil {
+					g.varTypes[s.IterRange.Variable] = "i64"
+				}
 			}
 		}
 		if s.Body != nil {

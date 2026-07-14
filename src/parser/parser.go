@@ -3704,6 +3704,7 @@ func (p *Parser) parseByteLiteral() Expression {
 
 func (p *Parser) parseFloatLiteral() Expression {
 	lit := &FloatLiteral{Token: p.currentToken}
+	lit.Raw = p.currentToken.Literal
 
 	value, err := strconv.ParseFloat(p.currentToken.Literal, 64)
 	if err != nil {

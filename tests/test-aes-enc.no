@@ -12,7 +12,7 @@ aes-plain [16]byte = [
 aes-out [16]byte
 aes-out = aes.aes-128-enc(aes-plain, aes-key)
 
-fmt.print('aes-enc=')
+print('aes-enc=')
 i <- [0..16): {
     fmt.print-hex8(aes-out[i] & 255)
 }

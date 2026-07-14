@@ -4,7 +4,7 @@
 data []byte = [0x61, 0x62, 0x63]
 hash [20]byte = sha1.sha1(data)
 
-fmt.print('sha1(abc)=')
+print('sha1(abc)=')
 i <- [0..20): {
     fmt.print-hex8(hash[i] & 255)
 }

@@ -63,6 +63,68 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
+// []byte.index: 在 []byte 中查找 target 子串
+// 返回首次出现的位置，未找到返回 -1
+[]byte.index = (target str) (pos i64) {
+    pos = -1
+    tn = target.len
+    tn == 0 -> {
+        pos = 0
+        return
+    }
+    n = .len()
+    limit = n - tn
+    i = 0
+    for i <= limit {
+        matched = 1
+        j <- [0..tn): {
+            sj = .[i + j]
+            tj = target[j]
+            sj != tj -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i + 1
+    }
+}
+
+// []byte.index-from: 在 []byte 中從 from 位置開始查找 target 子串
+// 返回首次出現的位置，未找到返回 -1
+[]byte.index-from = (target str, from i64) (pos i64) {
+    pos = -1
+    tn = target.len
+    tn == 0 -> {
+        n = .len()
+        from <= n -> pos = from
+        return
+    }
+    from < 0 -> from = 0
+    n = .len()
+    limit = n - tn
+    i = from
+    for i <= limit {
+        matched = 1
+        j <- [0..tn): {
+            sj = .[i + j]
+            tj = target[j]
+            sj != tj -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i + 1
+    }
+}
+
 // ─── 十六進制編碼 ─────────────────────────────
 
 // HEX-UPPER: 大寫十六進制字元表
@@ -90,7 +152,6 @@ HEX-LOWER = '0123456789abcdef'
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }
-
 // byte.to-str: 將 byte 轉為字串（"65" → "65"）
 // build-in (CLibCall: sprintf "%hhu")
 // byte.to-str = () (out str) {

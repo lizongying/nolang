@@ -18,7 +18,7 @@ test-tls-put-u16 = () {
 
 // test-tls-get-u16: 測試 16-bit 大端序讀取
 test-tls-get-u16 = () {
-    buf []byte
+    buf []byte = with-cap(2)
     buf[0] = 0xAB
     buf[1] = 0xCD
     val i64 = 0
@@ -51,7 +51,7 @@ test-tls-put-u24 = () {
 
 // test-tls-get-u24: 測試 24-bit 大端序讀取
 test-tls-get-u24 = () {
-    buf []byte
+    buf []byte = with-cap(3)
     buf[0] = 0x12
     buf[1] = 0x34
     buf[2] = 0x56
@@ -66,11 +66,11 @@ test-tls-get-u24 = () {
 
 // test-tls-bytes-cat: 測試位元組陣列串接
 test-tls-bytes-cat = () {
-    a []byte
+    a []byte = with-cap(3)
     a[0] = 1
     a[1] = 2
     a[2] = 3
-    b []byte
+    b []byte = with-cap(2)
     b[0] = 4
     b[1] = 5
     out []byte
@@ -92,7 +92,7 @@ test-tls-bytes-cat = () {
 
 // test-tls-bytes-to-bn: 測試 big-endian 位元組 → 大整數轉換
 test-tls-bytes-to-bn = () {
-    data []byte
+    data []byte = with-cap(4)
     data[0] = 0x01
     data[1] = 0x02
     data[2] = 0x03
@@ -114,7 +114,7 @@ test-tls-bytes-to-bn = () {
 
 // test-tls-bn-to-bytes: 測試大整數 → big-endian 位元組轉換
 test-tls-bn-to-bytes = () {
-    num []i64
+    num []i64 = with-cap(1)
     num[0] = 0x01020304
     out []byte
     out = tls.tls-bn-to-bytes(num)
@@ -151,12 +151,12 @@ test-tls-rand-bytes = () {
 
 // test-tls-prf: 測試 TLS PRF（P_SHA256）
 test-tls-prf = () {
-    secret []byte
+    secret []byte = with-cap(4)
     secret[0] = 1
     secret[1] = 2
     secret[2] = 3
     secret[3] = 4
-    seed []byte
+    seed []byte = with-cap(3)
     seed[0] = 0xAA
     seed[1] = 0xBB
     seed[2] = 0xCC
