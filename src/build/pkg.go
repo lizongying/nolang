@@ -31,7 +31,7 @@ type Package struct {
 	DevDependencies map[string]string `json:"dev-dependencies,omitempty"`
 	Ignore          []string          `json:"ignore,omitempty"`
 	Alias           map[string]string `json:"alias,omitempty"`
-	Workspace       string            `json:"workspace,omitempty"` // 工作區路徑（相對於 mod.jsonc）
+	Workspace       string            `json:"workspace,omitempty"` // 已廢棄：workspace 根目錄現由 workspace.jsonc 自動偵測
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
 	RootDir         string            // 套件根目錄（含 mod.jsonc）
@@ -174,12 +174,19 @@ func LoadPackage(dir string) (*Package, error) {
 			}
 			pkg.RootDir = root
 
-			// 解析 workspace 路徑
-			if pkg.Workspace != "" {
-				wsPath := filepath.Join(root, pkg.Workspace)
-				if absWS, err := filepath.Abs(wsPath); err == nil {
-					pkg.workspaceRoot = absWS
+			// 自動偵測 workspace 根目錄：向上搜尋 workspace.jsonc
+			wsRoot := root
+			for {
+				candidate := filepath.Join(wsRoot, "workspace.jsonc")
+				if _, err := os.Stat(candidate); err == nil {
+					pkg.workspaceRoot = wsRoot
+					break
 				}
+				parent := filepath.Dir(wsRoot)
+				if parent == wsRoot {
+					break
+				}
+				wsRoot = parent
 			}
 
 			// 警告：workspace 內的依賴不應有版本號
@@ -419,11 +426,35 @@ func (p *Package) GetDependencyGraph() *DependencyGraph {
 	return p.depGraph
 }
 
+// isWorkspaceLocalDep 判斷依賴鍵是否為 workspace 本地套件
+// 如果 workspace.jsonc 中存在與依賴短名稱匹配的條目，且本地路徑有效，則返回 true
+func (p *Package) isWorkspaceLocalDep(key string) bool {
+	if p == nil || p.workspaceRoot == "" {
+		return false
+	}
+	ws, err := p.LoadWorkspace()
+	if err != nil || ws == nil {
+		return false
+	}
+	shortName := PackageShortName(key)
+	localPath, exists := ws[shortName]
+	if !exists {
+		return false
+	}
+	localDir := filepath.Join(p.workspaceRoot, localPath)
+	info, err := os.Stat(localDir)
+	return err == nil && info.IsDir()
+}
+
 // resolveFromScratch 從頭解析所有依賴（無鎖檔案）
 func (p *Package) resolveFromScratch(graph *DependencyGraph, maxDepth int) (*DependencyGraph, error) {
 	for key, version := range p.Dependencies {
 		// 跳過標準庫依賴
 		if isStdDependency(key) {
+			continue
+		}
+		// 跳過 workspace 本地套件，由 transpiler 在編譯時解析
+		if p.isWorkspaceLocalDep(key) {
 			continue
 		}
 		if err := graph.ResolveAll(key, version, maxDepth); err != nil {
@@ -462,11 +493,15 @@ func (p *Package) resolveFromLock(graph *DependencyGraph, maxDepth int) (*Depend
 		if isStdDependency(key) {
 			continue
 		}
+		// 跳過 workspace 本地套件，由 transpiler 在編譯時解析
+		if p.isWorkspaceLocalDep(key) {
+			continue
+		}
 
 		keyWithVer := key + "@" + version
 		lockPkg, exists := p.lockFile.Packages[keyWithVer]
 		if !exists {
-			// 鎖檔案中沒有此依賴，回退到下載
+			// 鎖檔案中沒有此依賴，回退到從頭解析
 			return p.resolveFromScratch(graph, maxDepth)
 		}
 

@@ -3,12 +3,19 @@
   "name": "test-project",
   "version": "1.0.0",
   "description": "A new Nolang project",
-  "dependencies": {
-    "fmt": "*"
-  },
-  "main": "main.no",
+  "keywords": [
+    "nolang",
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
+  "organization": "nolang",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "https://lizongying.github.io/nolang",
+  "license": "MIT",
+  "dependencies": {},
   "compiler": {
-    "target": "go",
-    "output": "./dist"
-  }
+    "version": "0.1.0",
+  },
+  "output": "./dist",
+  "ignore": [],
 }

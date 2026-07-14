@@ -369,7 +369,6 @@ func createConfigFile(config ProjectConfig) {
   "repository": "",
   "homepage": "",
   "license": "MIT",
-  "workspace": "",
   "mirrors": [],
   "dependencies": %s,
   "compiler": {

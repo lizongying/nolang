@@ -29,6 +29,15 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							return "double " + v
 						}
 					}
+					// 非 i64 整數型別（i32/i16/i8）需 zext 至 i64 以匹配 printf %llx
+					if t == "i32" || t == "i16" || t == "i8" {
+						g.tmpIdx++
+						extReg := fmt.Sprintf("%%zext.tmp.%d", g.tmpIdx)
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, t, v))
+						}
+						return "i64 " + extReg
+					}
 				}
 			}
 			return "i64 " + v

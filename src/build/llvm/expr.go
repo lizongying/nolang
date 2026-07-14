@@ -80,9 +80,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// it must be treated as the variable, not the option-enum variant.
 		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[e.Value]
 		// Enum variant: return tag index as constant integer
+		// But reassigned variables (e.g. h0 in SHA tests) must generate a load,
+		// not use a stale constant from enumVariantIndex.
 		if !isLocalVar && g.enumVariantIndex != nil {
-			if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
-				return fmt.Sprintf("%d", tagIdx)
+			if g.reassignedVars == nil || !g.reassignedVars[e.Value] {
+				if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
+					return fmt.Sprintf("%d", tagIdx)
+				}
 			}
 		}
 		// Option type variable: extract data from data field (field 1)

@@ -116,6 +116,10 @@ func CheckLockFile(pkg *Package, lock *LockFile) (bool, error) {
 	}
 
 	for key, version := range pkg.Dependencies {
+		// 跳過 workspace 本地套件，不需要在鎖檔案中
+		if pkg.isWorkspaceLocalDep(key) {
+			continue
+		}
 		keyWithVer := key + "@" + version
 		if _, exists := lock.Packages[keyWithVer]; !exists {
 			// 鎖檔案中缺少此依賴
@@ -123,7 +127,7 @@ func CheckLockFile(pkg *Package, lock *LockFile) (bool, error) {
 		}
 	}
 
-	// 所有依賴都在鎖檔案中
+	// 所有非 workspace 本地依賴都在鎖檔案中
 	return false, nil
 }
 

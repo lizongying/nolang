@@ -507,21 +507,25 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// already calls the user's main. Otherwise we get infinite recursion.
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			// Skip LetStatements already emitted as globals, EXCEPT for string
-			// types and array types. String globals are emitted as zeroinitializer
-			// and still need runtime initialization (memcpy etc.) via generateLet.
-			// Array globals (%arr) also need generateLet for assignments
-			// (e.g. aes-out = aes-128-enc(...)).
+			// Skip LetStatements already emitted as globals, EXCEPT for:
+			// - string/array types (need runtime init via generateLet)
+			// - reassigned variables (need store instruction for new value)
 			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
-				lt := g.varLLVMType(ls)
-				// For assignments (Type=nil), also check the variable's declared type
-				if ls.Type == nil && g.varTypes != nil {
-					if t, ok := g.varTypes[ls.Name.Value]; ok {
-						lt = t
+				// Reassigned global variables (e.g. h0 in SHA tests) must generate
+				// a store instruction — don't skip them.
+				if g.reassignedVars != nil && g.reassignedVars[ls.Name.Value] {
+					// Fall through to generateLet
+				} else {
+					lt := g.varLLVMType(ls)
+					// For assignments (Type=nil), also check the variable's declared type
+					if ls.Type == nil && g.varTypes != nil {
+						if t, ok := g.varTypes[ls.Name.Value]; ok {
+							lt = t
+						}
 					}
-				}
-				if lt != "%str-long" && lt != "%str-short" && lt != "%arr" {
-					continue
+					if lt != "%str-long" && lt != "%str-short" && lt != "%arr" {
+						continue
+					}
 				}
 			}
 			// Skip function-typed LetStatements (already collected as functions)

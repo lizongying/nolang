@@ -1688,15 +1688,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// Enum variant: allocate temp i64 and store the constant tag index
 			// 局部變數/參數優先於枚舉變體（避免名稱遮蔽：如 json-kind 的 num 變體
 			// 與局部變數 num 衝突）
+			// 但被重新賦值的變數（如 SHA 測試中的 h0）必須作為變數載入，非常量
 			if g.enumVariantIndex != nil && (g.funcLocalNames == nil || !g.funcLocalNames[a.Value]) {
-				if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
-					g.tmpIdx++
-					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
-					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
-						sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+				if g.reassignedVars == nil || !g.reassignedVars[a.Value] {
+					if tagIdx, ok := g.enumVariantIndex[a.Value]; ok {
+						g.tmpIdx++
+						tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+							sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), tagIdx, tmpName))
+						}
+						return "i64* " + tmpName
 					}
-					return "i64* " + tmpName
 				}
 			}
 			// Function reference: when an Identifier refers to a known user-defined

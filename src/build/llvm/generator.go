@@ -67,6 +67,7 @@ type Generator struct {
 	curFuncRetName        string                          // 當前函數輸出參數名稱（為空表示 void）
 	curFuncName           string                          // 當前函數名稱（debug 用）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
+	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated       bool                            // true if current basic block ends with a terminator (ret/br)
@@ -350,9 +351,11 @@ func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 
 // matchesPlatform returns true if any platform annotation key matches the
 // current (GOOS, GOARCH). Multiple keys are OR'd — any match includes the code.
-//   #{mac-arm64}                     → macOS ARM64 only
-//   #{mac-amd64, mac-arm64}          → macOS on any arch
-//   #{linux-amd64, win-amd64}        → Linux x86_64 OR Windows x86_64
+//
+//	#{mac-arm64}                     → macOS ARM64 only
+//	#{mac-amd64, mac-arm64}          → macOS on any arch
+//	#{linux-amd64, win-amd64}        → Linux x86_64 OR Windows x86_64
+//
 // Non-platform annotations (e.g. #{debug}, #{range=...}) are ignored.
 // If there are no platform annotations, returns true (always include).
 func matchesPlatform(annotations []*parser.AnnotationEntry) bool {
@@ -422,6 +425,21 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.enumVariants = make(map[string]map[string]int64)
 	g.fnTypeAliases = make(map[string]*parser.FunctionType)
 	g.externFuncs = make(map[string]*ExternFuncInfo)
+	g.reassignedVars = make(map[string]bool)
+
+	// 掃描所有頂層 LetStatement，標記被重新賦值的變數（出現多次同名 LetStatement）
+	// 這些變數不應被常量摺疊（enumVariantIndex 機制），必須從全局變數載入實際值
+	letCount := make(map[string]int)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			letCount[ls.Name.Value]++
+		}
+	}
+	for name, count := range letCount {
+		if count > 1 {
+			g.reassignedVars[name] = true
+		}
+	}
 
 	// 收集聯合型別別名，用於解析 receiver method call
 	for _, stmt := range program.Statements {
@@ -1287,22 +1305,22 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
 			}
 			// 通过 insertvalue 构造 %str-long { len, cap, data }，然后 alloca + store 取得 %str-long*
-		g.tmpIdx++
-		strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, bufPtr))
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
-		}
-		return strAlloca
+			g.tmpIdx++
+			strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, bufPtr))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
+			}
+			return strAlloca
 		}
 
 		// 非 str 返回类型：保持原逻辑（使用全局缓冲区）
@@ -1426,17 +1444,17 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(%s)\n", g.indent(), lenReg, buf))
 			}
 			g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, buf))
-		}
-		return strReg3
+			strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg2 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			strReg3 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, buf))
+			}
+			return strReg3
 		}
 		return buf
 	}
