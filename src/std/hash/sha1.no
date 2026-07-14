@@ -21,7 +21,7 @@
 // sha1-block: 處理一個 512-bit 區塊
 // s []u32: 16 個 32-bit 字 (big-endian)
 // h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
-sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
+sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32) {
     mask u32 = 4294967295
 
     // 初始狀態
@@ -1007,11 +1007,11 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     a = temp
 
     // 累加回初始哈希值
-    h0 = (h0 + a) & mask
-    h1 = (h1 + b) & mask
-    h2 = (h2 + c) & mask
-    h3 = (h3 + d) & mask
-    h4 = (h4 + e) & mask
+    r0 = (h0 + a) & mask
+    r1 = (h1 + b) & mask
+    r2 = (h2 + c) & mask
+    r3 = (h3 + d) & mask
+    r4 = (h4 + e) & mask
 }
 
 // sha1: 計算 SHA-1 雜湊（含填充與多區塊處理）
@@ -1033,9 +1033,7 @@ sha1 = (data []byte) (hash [20]byte) {
     bit-len = dlen * 8
     mod-val = (dlen + 9) % 64
     pad-len = 0
-    mod-val != 0 -> {
-        pad-len = 64 - mod-val
-    }
+    mod-val != 0 -> pad-len = 64 - mod-val
     total-len = dlen + 1 + pad-len + 8
 
     // 建立填充緩衝區
@@ -1063,14 +1061,33 @@ sha1 = (data []byte) (hash [20]byte) {
     }
 
     // 處理每個 64 位元組區塊
-    block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    block []u32 = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+
     offset = 0
     for offset < total-len {
         // 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
-        sha1-block(block, h0, h1, h2, h3, h4)
+        h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
         offset = offset + 64
     }
 
@@ -1108,7 +1125,7 @@ sha1-hex = (data []byte) (hex str) {
     hex = space.repeat(40)
 
     i <- [0..20): {
-    hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
-    hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

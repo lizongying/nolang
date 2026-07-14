@@ -319,7 +319,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 與 call.go voidSingleOutput 路徑保持一致。
 	if len(fd.Results) == 1 && fd.Results[0].Name != "" {
 		outName := fd.Results[0].Name
-		outType := g.mapToLLVMType(fd.Results[0].Type.String())
+		outType := g.resolveParamLLVMType(fd.Results[0].Type)
 		if outType == "%str-long" {
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%out.data.%d", g.tmpIdx)
@@ -508,10 +508,18 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			// Skip LetStatements already emitted as globals, EXCEPT for string
-			// types. String globals are emitted as zeroinitializer and still
-			// need runtime initialization (memcpy etc.) via generateLet.
+			// types and array types. String globals are emitted as zeroinitializer
+			// and still need runtime initialization (memcpy etc.) via generateLet.
+			// Array globals (%arr) also need generateLet for assignments
+			// (e.g. aes-out = aes-128-enc(...)).
 			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
 				lt := g.varLLVMType(ls)
+				// For assignments (Type=nil), also check the variable's declared type
+				if ls.Type == nil && g.varTypes != nil {
+					if t, ok := g.varTypes[ls.Name.Value]; ok {
+						lt = t
+					}
+				}
 				if lt != "%str-long" && lt != "%str-short" && lt != "%arr" {
 					continue
 				}
@@ -1206,6 +1214,16 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 				t := g.varLLVMType(s)
 				vars[s.Name.Value] = t
 				g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
+				// Register array element type for module-level [N]T globals (e.g. SBOX [256]byte)
+				// so that IndexExpression codegen uses the correct element type instead of
+				// defaulting to i64.
+				if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil && at.Elem != nil && g.arrayElemTypes != nil {
+					g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
+				}
+				// Register slice element type for module-level []T globals
+				if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
+					g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+				}
 			}
 		case *parser.FunctionDefinition:
 		// Skip function bodies - variables inside functions are collected

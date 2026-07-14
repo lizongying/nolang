@@ -128,13 +128,15 @@ func printUsage() {
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("")
 	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
+	fmt.Println("    If no file/dir is given and workspace.jsonc exists,")
+	fmt.Println("    all projects in workspace.jsonc are built in parallel.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -o <file>     Output file path")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
 	fmt.Println("                      x86_64-windows-gnu")
-	fmt.Println("    Default: build current directory")
+	fmt.Println("    Default: build current directory or workspace.jsonc projects")
 	fmt.Println("    Examples:")
 	fmt.Println("      no build")
 	fmt.Println("      no build main.no")
@@ -939,12 +941,14 @@ func buildCommand(args []string) {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
 		fmt.Println("Build Nolang source files to an executable.")
+		fmt.Println("If no file/directory is specified and workspace.jsonc exists,")
+		fmt.Println("all projects in workspace.jsonc are built in parallel.")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  no build                  build current directory")
+		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
 		fmt.Println("  no build main.no")
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
@@ -963,6 +967,17 @@ func buildCommand(args []string) {
 		Target:  *target,
 		Verbose: verbose,
 		Output:  *outputFile,
+	}
+
+	// 無參數時，優先檢查 workspace.jsonc 並行編譯
+	if len(fs.Args()) == 0 {
+		if _, err := os.Stat("workspace.jsonc"); err == nil {
+			if err := nbuild.BuildWorkspace(".", opts); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {

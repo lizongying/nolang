@@ -7,11 +7,10 @@
   ],
   "author": "lizongying",
   "email": "lizongying@msn.com",
-  "organization": "lizongying",
+  "organization": "nolang",
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
   "license": "MIT",
-  "workspace": "../../",
   "dependencies": {
     "github.com/lizongying/nolang/test1": "v0.1.0",
     "github.com/lizongying/nolang/test2": "v0.1.0",

@@ -419,7 +419,17 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		// For patterns like `i % 4 == 0 -> ...` or `a + b > 10 -> ...`,
 		// scan forward to find RARROW at depth 0 (match arm condition).
 		if tok1.Type == lexer.IDENT {
+			// If tok2 is an opening bracket, start depth at 1 to account
+			// for it, since the scan starts AFTER tok2. Without this,
+			// patterns like `s[i] > 0 -> ...` are misclassified because
+			// the closing `]` is seen at depth 0, returning blockUnknown
+			// instead of blockMatch. This causes the bare match block to
+			// be parsed incorrectly, leaking subsequent statements to the
+			// top level.
 			depth := 0
+			if tok2.Type == lexer.LPAREN || tok2.Type == lexer.LBRACE || tok2.Type == lexer.LBRACKET {
+				depth = 1
+			}
 			for i := base + 2; i < base+40; i++ {
 				t := p.lexer.LookAhead(i)
 				switch t.Type {

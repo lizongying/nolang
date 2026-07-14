@@ -13,7 +13,6 @@
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
   "license": "MIT",
-  "workspace": "../../",
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",

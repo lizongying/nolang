@@ -1617,7 +1617,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				llvmElemType = et
 			}
 			arrRef := llvmVarRef(varName)
-			if g.globalVars != nil && g.globalVars[varName] {
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				arrRef = llvmGlobalRef(varName)
 			}
 			// Bounds check: load arr len and verify idx
@@ -1649,7 +1649,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				llvmElemType = et
 			}
 			vecRef := llvmVarRef(varName)
-			if g.globalVars != nil && g.globalVars[varName] {
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				vecRef = llvmGlobalRef(varName)
 			}
 			// Bounds check: load vec len and verify idx
@@ -1685,7 +1685,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				llvmElemType = "i64"
 			}
 			arrRef := llvmVarRef(varName)
-			if g.globalVars != nil && g.globalVars[varName] {
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				arrRef = llvmGlobalRef(varName)
 			}
 			g.tmpIdx++
@@ -3331,7 +3331,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 
 			// Determine the base reference: @name for globals, %name for local allocas.
 			arrRef := llvmVarRef(varName)
-			if g.globalVars != nil && g.globalVars[varName] {
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				arrRef = llvmGlobalRef(varName)
 			}
 
@@ -3395,7 +3395,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 
 			// Determine the base reference: @name for globals, %name for local allocas.
 			vecRef := llvmVarRef(varName)
-			if g.globalVars != nil && g.globalVars[varName] {
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				vecRef = llvmGlobalRef(varName)
 			}
 
@@ -3530,7 +3530,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 						g.tmpIdx++
 						gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
 						arrRef := llvmVarRef(varName)
-						if g.globalVars != nil && g.globalVars[varName] {
+						if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 							arrRef = llvmGlobalRef(varName)
 						}
 						if sb != nil {
@@ -3588,7 +3588,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
 	// Determine the base reference: @name for globals, %name for local allocas.
 	arrRef := llvmVarRef(varName)
-	if g.globalVars != nil && g.globalVars[varName] {
+	if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 		arrRef = llvmGlobalRef(varName)
 	}
 	if sb != nil {

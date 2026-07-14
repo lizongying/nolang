@@ -1,11 +1,13 @@
 package build
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // CheckToolchain verifies that LLVM toolchain (llvm-config) and the chosen
@@ -293,6 +295,175 @@ func BuildLLVM(code string, fileName string, outPath string, cc string, target s
 	}
 	if err = clangCmd.Run(); err != nil {
 		return fmt.Errorf("linking failed: %w", err)
+	}
+
+	return nil
+}
+
+// LoadWorkspaceFile reads and parses a standalone workspace.jsonc file from the given directory.
+// Returns a map of project name -> relative path.
+// Returns nil, nil if workspace.jsonc does not exist (it is optional).
+func LoadWorkspaceFile(dir string) (map[string]string, error) {
+	wsFile := filepath.Join(dir, "workspace.jsonc")
+	raw, err := os.ReadFile(wsFile)
+	if err != nil {
+		return nil, nil // workspace.jsonc is optional
+	}
+
+	cleaned := stripJSONC(raw)
+	var ws map[string]string
+	if err := json.Unmarshal(cleaned, &ws); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+	}
+	return ws, nil
+}
+
+// BuildWorkspace reads workspace.jsonc from workspaceDir and builds all listed
+// projects in parallel. Each project path is resolved relative to workspaceDir.
+// The -o (Output) option is ignored in workspace mode; each project outputs to
+// its own dist/ directory.
+func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
+	// Toolchain check once for all projects
+	if err := CheckToolchain(opts.CC); err != nil {
+		return err
+	}
+
+	ws, err := LoadWorkspaceFile(workspaceDir)
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		return fmt.Errorf("workspace.jsonc not found in %s", workspaceDir)
+	}
+	if len(ws) == 0 {
+		return fmt.Errorf("workspace.jsonc is empty")
+	}
+
+	type buildResult struct {
+		name string
+		path string
+		err  error
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan buildResult, len(ws))
+
+	for name, relPath := range ws {
+		wg.Add(1)
+		go func(name, relPath string) {
+			defer wg.Done()
+			projectDir := filepath.Join(workspaceDir, relPath)
+
+			// In workspace mode, use default per-project output
+			projectOpts := opts
+			projectOpts.Output = ""
+
+			fmt.Fprintf(os.Stderr, "Building %s (%s)...\n", name, projectDir)
+			err := buildFileInternal(projectDir, projectOpts)
+			results <- buildResult{name: name, path: projectDir, err: err}
+		}(name, relPath)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var hasError bool
+	for r := range results {
+		if r.err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s (%s): %v\n", r.name, r.path, r.err)
+			hasError = true
+		} else {
+			fmt.Fprintf(os.Stderr, "OK:   %s (%s)\n", r.name, r.path)
+		}
+	}
+
+	if hasError {
+		return fmt.Errorf("one or more workspace projects failed to build")
+	}
+	return nil
+}
+
+// buildFileInternal is BuildFile without the toolchain check, used by BuildWorkspace
+// to avoid redundant checks when building multiple projects in parallel.
+func buildFileInternal(inputPath string, opts BuildOptions) error {
+	// 若指定的是目錄，先找目錄內的 mod.jsonc
+	info, err := os.Stat(inputPath)
+	isDir := err == nil && info.IsDir()
+
+	var pkgDir string
+	if isDir {
+		pkgDir = inputPath
+	} else {
+		pkgDir = filepath.Dir(inputPath)
+	}
+
+	pkg, _ := LoadPackage(pkgDir)
+	if pkg != nil && isDir {
+		// 確保所有傳遞依賴已解析
+		if _, err := pkg.EnsureDependencies(10); err != nil {
+			return fmt.Errorf("dependency resolution failed: %w", err)
+		}
+
+		mainFile := pkg.Main
+		if mainFile == "" {
+			mainFile = "main.no"
+		}
+		inputPath = pkg.ResolvePath(mainFile)
+	}
+
+	// 如果仍然是指向目錄（無 package config 的情況），預設使用 main.no
+	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+		mainPath := filepath.Join(inputPath, "main.no")
+		if _, err := os.Stat(mainPath); err != nil {
+			return fmt.Errorf("main.no not found in %s", inputPath)
+		}
+		inputPath = mainPath
+	}
+
+	source, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("reading input file: %w", err)
+	}
+
+	compiler := NewTranspiler(pkg)
+	compiler.sourcePath = inputPath
+	code, err := compiler.Compile(string(source))
+	if err != nil {
+		return fmt.Errorf("compilation error: %w", err)
+	}
+
+	fileName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+
+	var outPath string
+	if opts.Output != "" {
+		outPath = opts.Output
+	} else {
+		rootDir := "."
+		if pkg != nil {
+			rootDir = pkg.RootDir
+		}
+		distDir := filepath.Join(rootDir, "dist")
+		if err = os.MkdirAll(distDir, 0755); err != nil {
+			return fmt.Errorf("creating dist directory: %w", err)
+		}
+		outPath = filepath.Join(distDir, fileName)
+	}
+
+	var linkLibs []string
+	if pkg != nil {
+		linkLibs = pkg.Compiler.LinkLibs
+	}
+	linkLibs = append(linkLibs, "z")
+	linkLibs = append(linkLibs, "pthread")
+	err = BuildLLVM(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs)
+	if err != nil {
+		return fmt.Errorf("build error: %w", err)
+	}
+
+	if opts.Verbose {
+		fmt.Printf("Build successful: %s\n", outPath)
 	}
 
 	return nil

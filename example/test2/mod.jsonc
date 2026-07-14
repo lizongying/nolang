@@ -5,11 +5,10 @@
   "keywords": [],
   "author": "",
   "email": "",
-  "organization": "",
+  "organization": "nolang",
   "repository": "",
   "homepage": "",
   "license": "MIT",
-  "workspace": "../../",
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",

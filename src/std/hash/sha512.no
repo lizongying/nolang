@@ -24,7 +24,7 @@
 // sha512-block: 處理一個 1024-bit 區塊
 // s []u64: 16 個 64-bit 字 (big-endian)
 // h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
-sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) {
+sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) (r0 u64, r1 u64, r2 u64, r3 u64, r4 u64, r5 u64, r6 u64, r7 u64) {
 
     // 64-bit 全 1 遮罩（用於位元 NOT）
     mask64 u64 = 18446744073709551615
@@ -2204,14 +2204,14 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     // 累加回初始哈希值
-    h0 = h0 + a
-    h1 = h1 + b
-    h2 = h2 + c
-    h3 = h3 + d
-    h4 = h4 + e
-    h5 = h5 + f
-    h6 = h6 + g
-    h7 = h7 + h
+    r0 = h0 + a
+    r1 = h1 + b
+    r2 = h2 + c
+    r3 = h3 + d
+    r4 = h4 + e
+    r5 = h5 + f
+    r6 = h6 + g
+    r7 = h7 + h
 }
 
 // sha512: 計算 SHA-512 雜湊（含填充與多區塊處理）
@@ -2236,9 +2236,7 @@ sha512 = (data []byte) (hash [64]byte) {
     bit-len = dlen * 8
     mod-val = (dlen + 17) % 128
     pad-len = 0
-    mod-val != 0 -> {
-        pad-len = 128 - mod-val
-    }
+    mod-val != 0 -> pad-len = 128 - mod-val
     total-len = dlen + 1 + pad-len + 16
 
     // 建立填充緩衝區
@@ -2265,20 +2263,40 @@ sha512 = (data []byte) (hash [64]byte) {
     i <- [0..8): {
         padded[total-len - 16 + i] = 0
     }
+
     // 低 64 位元
     i <- [0..8): {
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
     // 處理每個 128 位元組區塊
-    block []u64 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    block []u64 = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+
     offset = 0
     for offset < total-len {
         // 將 128 位元組轉為 16 個 64-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
-        sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 128
     }
 

@@ -53,7 +53,7 @@ print('')
 // MD5
 // ═══════════════════════════════════════════
 
-md5-out = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+md5-out [16]byte
 
 // md5("")=d41d8cd98f00b204e9800998ecf8427e
 md5-out = md5.md5('')
@@ -94,7 +94,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1, h0, h1, h2, h3, h4)
 print('sha1-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -118,7 +118,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
 print('sha1-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -143,7 +143,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1abc)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1abc, h0, h1, h2, h3, h4)
 print('sha1-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -161,7 +161,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
 print('sha1("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -187,7 +187,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1hello)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1hello, h0, h1, h2, h3, h4)
 print('sha1("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -222,7 +222,7 @@ h1 = 4023233417
 h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1fox)
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1fox, h0, h1, h2, h3, h4)
 print('sha1("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -249,7 +249,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -279,7 +279,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -310,7 +310,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256abc)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256abc, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -334,7 +334,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -366,7 +366,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256hello)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256hello, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -407,7 +407,7 @@ h4 = 1359893119
 h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
-h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256fox)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256fox, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha256("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
@@ -423,7 +423,7 @@ print('')
 // SHA-512（zero block 壓縮測試）
 // ═══════════════════════════════════════════
 
-block512 = make-str-16()
+block512 = make-u64-16()
 i <- [0..16): {
     block512[i] = 0
 }
@@ -437,7 +437,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512-zero-block=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -453,7 +453,7 @@ print('')
 // SHA-512（空字串填充區塊）
 // ═══════════════════════════════════════════
 
-block512empty = make-str-16()
+block512empty = make-u64-16()
 block512empty[0] = 1 << 63  // 0x8000000000000000 (signed i64 min)
 i <- [1..16): {
     block512empty[i] = 0
@@ -467,7 +467,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512-empty=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -483,7 +483,7 @@ print('')
 // SHA-512（"abc" 填充區塊）
 // ═══════════════════════════════════════════
 
-block512abc = make-str-16()
+block512abc = make-u64-16()
 block512abc[0] = 7020623177855533056  // 0x6162638000000000
 i <- [1..15): {
     block512abc[i] = 0
@@ -498,7 +498,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512-abc=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -522,7 +522,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512("")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -538,7 +538,7 @@ print('')
 // SHA-512（完整哈希："hello"）
 // ═══════════════════════════════════════════
 
-block512hello = make-str-16()
+block512hello = make-u64-16()
 block512hello[0] = 7522515962676838400  // 0x68656c6c6f800000 "hello" + 0x80
 i <- [1..15): {
     block512hello[i] = 0
@@ -553,7 +553,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512("hello")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -569,7 +569,7 @@ print('')
 // SHA-512（完整哈希："The quick brown fox..."）
 // ═══════════════════════════════════════════
 
-block512fox = make-str-16()
+block512fox = make-u64-16()
 block512fox[0] = 6081398959830894947  // 0x5468652071756963 "The qui"
 block512fox[1] = 7719395192565272096  // 0x6b2062726f776e20 "k brown "
 block512fox[2] = 7380969326568795504  // 0x666f78206a756d70 "fox jump"
@@ -589,7 +589,7 @@ h4 = 5840696475078001361
 h5 = 11170449401992604703
 h6 = 2270897969802886507
 h7 = 6620516959819538809
-h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox)
+h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox, h0, h1, h2, h3, h4, h5, h6, h7)
 print('sha512("fox")=')
 fmt.print-hex64(h0)
 fmt.print-hex64(h1)
@@ -661,6 +661,46 @@ print('')
 // 輔助函數
 // ═══════════════════════════════════════════
 
-make-str-16 = () (s str) {
-    s = '                '
+make-str-16 = () (s []u32) {
+    s [] = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+}
+
+make-u64-16 = () (s []u64) {
+    s [] = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
 }
