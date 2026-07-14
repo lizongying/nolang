@@ -319,8 +319,10 @@ func LoadWorkspaceFile(dir string) (map[string]string, error) {
 }
 
 // BuildWorkspace reads workspace.jsonc from workspaceDir and builds all listed
-// projects in parallel. Each project path is resolved relative to workspaceDir.
-// The -o (Output) option is ignored in workspace mode; each project outputs to
+// projects in parallel. For each project, it builds main.no (if exists), lib.no
+// (if exists), and all .no files in test/ (if exists).
+// At least one of main.no or lib.no must exist; otherwise the project is skipped.
+// The -o (Output) option is ignored in workspace mode; each target outputs to
 // its own dist/ directory.
 func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 	// Toolchain check once for all projects
@@ -339,29 +341,98 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		return fmt.Errorf("workspace.jsonc is empty")
 	}
 
-	type buildResult struct {
-		name string
-		path string
-		err  error
+	type buildTarget struct {
+		projectName string
+		filePath    string
 	}
 
-	var wg sync.WaitGroup
-	results := make(chan buildResult, len(ws))
+	type buildResult struct {
+		target buildTarget
+		err    error
+	}
+
+	var targets []buildTarget
 
 	for name, relPath := range ws {
+		projectDir := filepath.Join(workspaceDir, relPath)
+
+		// Load package to get main file name and resolve dependencies upfront
+		pkg, _ := LoadPackage(projectDir)
+		if pkg != nil {
+			if _, err := pkg.EnsureDependencies(10); err != nil {
+				fmt.Fprintf(os.Stderr, "SKIP: %s: dependency resolution failed: %v\n", name, err)
+				continue
+			}
+		}
+
+		mainFile := "main.no"
+		if pkg != nil && pkg.Main != "" {
+			mainFile = pkg.Main
+		}
+
+		mainPath := filepath.Join(projectDir, mainFile)
+		libPath := filepath.Join(projectDir, "lib.no")
+		testDir := filepath.Join(projectDir, "test")
+
+		hasMain := false
+		hasLib := false
+
+		// Check main.no
+		if _, err := os.Stat(mainPath); err == nil {
+			targets = append(targets, buildTarget{projectName: name, filePath: mainPath})
+			hasMain = true
+		}
+
+		// Check lib.no
+		if _, err := os.Stat(libPath); err == nil {
+			targets = append(targets, buildTarget{projectName: name, filePath: libPath})
+			hasLib = true
+		}
+
+		// At least one of main.no or lib.no must exist
+		if !hasMain && !hasLib {
+			fmt.Fprintf(os.Stderr, "SKIP: %s: no main.no or lib.no found in %s\n", name, projectDir)
+			continue
+		}
+
+		// Scan test/ directory for .no files (excluding main.no and lib.no)
+		if info, err := os.Stat(testDir); err == nil && info.IsDir() {
+			_ = filepath.WalkDir(testDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				fname := d.Name()
+				if !strings.HasSuffix(fname, ".no") {
+					return nil
+				}
+				if fname == "main.no" || fname == "lib.no" {
+					return nil
+				}
+				targets = append(targets, buildTarget{projectName: name, filePath: path})
+				return nil
+			})
+		}
+	}
+
+	if len(targets) == 0 {
+		return fmt.Errorf("no build targets found in workspace")
+	}
+
+	// Build all targets in parallel
+	var wg sync.WaitGroup
+	results := make(chan buildResult, len(targets))
+
+	for _, t := range targets {
 		wg.Add(1)
-		go func(name, relPath string) {
+		go func(t buildTarget) {
 			defer wg.Done()
-			projectDir := filepath.Join(workspaceDir, relPath)
-
-			// In workspace mode, use default per-project output
 			projectOpts := opts
-			projectOpts.Output = ""
+			projectOpts.Output = "" // use default per-project output
 
-			fmt.Fprintf(os.Stderr, "Building %s (%s)...\n", name, projectDir)
-			err := buildFileInternal(projectDir, projectOpts)
-			results <- buildResult{name: name, path: projectDir, err: err}
-		}(name, relPath)
+			fmt.Fprintf(os.Stderr, "Building %s: %s\n", t.projectName, t.filePath)
+			err := buildFileInternal(t.filePath, projectOpts)
+			results <- buildResult{target: t, err: err}
+		}(t)
 	}
 
 	go func() {
@@ -372,15 +443,15 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 	var hasError bool
 	for r := range results {
 		if r.err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL: %s (%s): %v\n", r.name, r.path, r.err)
+			fmt.Fprintf(os.Stderr, "FAIL: %s: %s: %v\n", r.target.projectName, r.target.filePath, r.err)
 			hasError = true
 		} else {
-			fmt.Fprintf(os.Stderr, "OK:   %s (%s)\n", r.name, r.path)
+			fmt.Fprintf(os.Stderr, "OK:   %s: %s\n", r.target.projectName, r.target.filePath)
 		}
 	}
 
 	if hasError {
-		return fmt.Errorf("one or more workspace projects failed to build")
+		return fmt.Errorf("one or more workspace targets failed to build")
 	}
 	return nil
 }
@@ -400,12 +471,14 @@ func buildFileInternal(inputPath string, opts BuildOptions) error {
 	}
 
 	pkg, _ := LoadPackage(pkgDir)
-	if pkg != nil && isDir {
-		// 確保所有傳遞依賴已解析
+	if pkg != nil {
+		// 確保所有傳遞依賴已解析（無論是檔案還是目錄模式）
 		if _, err := pkg.EnsureDependencies(10); err != nil {
 			return fmt.Errorf("dependency resolution failed: %w", err)
 		}
+	}
 
+	if pkg != nil && isDir {
 		mainFile := pkg.Main
 		if mainFile == "" {
 			mainFile = "main.no"

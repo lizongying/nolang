@@ -48,7 +48,7 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
-	case "version", "-V", "--version":
+	case "version":
 		versionCommand()
 		return
 	case "init":
@@ -112,7 +112,6 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("Global flags:")
 	fmt.Println("  -v    Verbose mode (apply to all commands)")
-	fmt.Println("  -V    Print version")
 	fmt.Println("")
 	fmt.Println("  no version           Print version information")
 	fmt.Println("")

@@ -259,6 +259,10 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
 				return "i1* " + g.varAddr(a.Value)
 			}
+			// i32 / i16 / i8 等純量型別 — 使用實際型別而非預設 i64*
+			if t, ok := g.varTypes[a.Value]; ok {
+				return t + "* " + g.varAddr(a.Value)
+			}
 		}
 		return "i64* " + g.varAddr(a.Value)
 	case *parser.FloatLiteral:
