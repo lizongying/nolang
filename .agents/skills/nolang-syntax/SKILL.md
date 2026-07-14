@@ -1008,7 +1008,7 @@ yes = err-is(e, io)
 
 // ✅ Correct: qualified form
 kind = json-kind.null
-yes = err-is(e, err-code.io)
+yes = err-is(e, code.io)
 ```
 
 > Enum types can be used as struct field types, function parameter types, and return value types. Both inside and outside the module that defines the enum, enum values should be referenced using the `enum-type.value` form.
@@ -3665,9 +3665,9 @@ Structured error type and utility functions:
 
 ```nolang
 // Error code enum
-err-code {
-    ok,
-    not-found,
+code {
+ok,
+not-found,
     permission,
     io,
     timeout,
@@ -3678,17 +3678,17 @@ err-code {
 
 // Struct
 error {
-    code err-code
-    msg str
+code code
+msg str
 }
 
 // Functions
-e = err.err-new(err-code.io, msg)      // Create error
+e = err.err-new(code.io, msg)      // Create error
 e = err.err-from-errno(errno)         // Create from C errno
-yes = err.err-is(e, err-code.io)      // Check error code
+yes = err.err-is(e, code.io)      // Check error code
 msg = err.err-msg(e)                  // Get error message
-code = err.err-code-of(e)             // Get error code
-s, n = err.err-format(e)              // Format as string
+c = err.fetch-code(e)             // Get error code
+s = e.format()              // Format as string
 ```
 
 ### bool — Boolean Type

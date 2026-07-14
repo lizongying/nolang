@@ -528,7 +528,7 @@ ws-server-conn.send-pong = (data str) (ok bool) {
 // code i64: 關閉狀態碼（如 1000）
 // reason str: 關閉原因
 // 返回 ok bool: true=成功
-ws-server-conn.send-close = (code i64, reason str) (ok bool) {
+ws-server-conn.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
     .connected == false -> {
         return
@@ -537,8 +537,8 @@ ws-server-conn.send-close = (code i64, reason str) (ok bool) {
     // payload: 2-byte big-endian code + reason
     space = ' '
     payload = space.repeat(2 + reason.len)
-    payload[0] = (code >> 8) & 255
-    payload[1] = code & 255
+payload[0] = (close-code >> 8) & 255
+payload[1] = close-code & 255
     i <- [0..reason.len): {
         payload[2 + i] = reason[i]
     }
@@ -819,15 +819,15 @@ ws-client.send-pong = (data str) (ok bool) {
 // code i64: 關閉狀態碼
 // reason str: 關閉原因
 // 返回 ok bool: true=成功
-ws-client.send-close = (code i64, reason str) (ok bool) {
+ws-client.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
     .connected == false -> {
         return
     }
     space = ' '
     payload = space.repeat(2 + reason.len)
-    payload[0] = (code >> 8) & 255
-    payload[1] = code & 255
+payload[0] = (close-code >> 8) & 255
+payload[1] = close-code & 255
     i <- [0..reason.len): {
         payload[2 + i] = reason[i]
     }
@@ -1300,7 +1300,7 @@ ws-connect = (url str) (c ?ws-client) {
     code-str = after-code
     sp2 >= 0 -> code-str; after-code.slice(0, sp2)
 
-    code = 0
+    status-code = 0
     i <- [0..code-str.len): {
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
@@ -1311,15 +1311,15 @@ ws-connect = (url str) (c ?ws-client) {
             c = err('invalid status code')
             return
         }
-        code = code * 10 + ch - 48
+        status-code = status-code * 10 + ch - 48
     }
 
-    code != 101 -> {
+    status-code != 101 -> {
         {
             use-tls -> tc.close()
             -> close(fd)
         }
-        code-s = code.to-str()
+        code-s = status-code.to-str()
         c = err('server returned status ' - code-s)
         return
     }

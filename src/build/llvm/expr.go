@@ -980,18 +980,18 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 							return t
 						}
 						if g.funcResultLLVMType != nil {
-						if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-							retType := ts[0]
-							if retType == "i1" {
-								retType = "i64"
+							if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+								retType := ts[0]
+								if retType == "i1" {
+									retType = "i64"
+								}
+								return retType
 							}
-							return retType
 						}
 					}
 				}
 			}
-		}
-		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
 					candidates := []string{srcType}
@@ -1010,17 +1010,17 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 									return t
 								}
 								// void + 單輸出函數（如 str.empty 返回 i1）：
-							// 使用 funcResultLLVMType 中的輸出型別
-							// Nolang bools are stored as i64 (CallExpression handler zexts i1→i64)
-							if g.funcResultLLVMType != nil {
-								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-									retType := ts[0]
-									if retType == "i1" {
-										retType = "i64"
+								// 使用 funcResultLLVMType 中的輸出型別
+								// Nolang bools are stored as i64 (CallExpression handler zexts i1→i64)
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
 									}
-									return retType
 								}
-							}
 							}
 						}
 					}
@@ -2137,19 +2137,19 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							storeVal = convReg
 						}
 					}
-				// s2s conversion: StringLiteral (%str-short* alloca) → %str-long value
-				// when assigning to a %str-long array element (e.g., keys[i] = 'foo')
-				if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
-					if strLit, ok := value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
-						// Long string literal: already %str-long*, just load
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
-						storeVal = loadReg
-					} else {
-						storeVal = g.convertStrLongLitToLongValue(sb, val)
+					// s2s conversion: StringLiteral (%str-short* alloca) → %str-long value
+					// when assigning to a %str-long array element (e.g., keys[i] = 'foo')
+					if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
+						if strLit, ok := value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
+							// Long string literal: already %str-long*, just load
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+							storeVal = loadReg
+						} else {
+							storeVal = g.convertStrLongLitToLongValue(sb, val)
+						}
 					}
-				}
 					// Struct element copy (e.g., .names[i] = .names[last]):
 					// generateExprWithSB returns a %str-long* pointer (from
 					// generateStructFieldIndexRead for IndexExpression, or alloca from
@@ -2911,11 +2911,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// Bounds check for writes: use cap (field 1), not len (field 0).
-			// This allows vec[i] = val for i in [0..cap) even when len == 0,
-			// which is required for patterns like `data[next] = value` on
-			// freshly declared []byte locals and struct fields.
-			vecCap := g.emitVecCapLoad(sb, llvmVarRef(varName))
-			g.emitBoundsCheck(sb, idx, vecCap)
+				// This allows vec[i] = val for i in [0..cap) even when len == 0,
+				// which is required for patterns like `data[next] = value` on
+				// freshly declared []byte locals and struct fields.
+				vecCap := g.emitVecCapLoad(sb, llvmVarRef(varName))
+				g.emitBoundsCheck(sb, idx, vecCap)
 
 				// Load data pointer from vec struct (field 2)
 				g.tmpIdx++
@@ -3157,6 +3157,18 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
 						storeVal = truncReg
 					}
+				}
+			}
+			// %str-long array element: string literals are %str-short* or %str-long*
+			// pointers (alloca results), need conversion to %str-long value.
+			if llvmElemType == "%str-long" {
+				if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) <= 127 {
+					storeVal = g.convertStrLongLitToLongValue(sb, val)
+				} else if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
+					g.tmpIdx++
+					loadReg := fmt.Sprintf("%%set.arr.strload.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+					storeVal = loadReg
 				}
 			}
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
@@ -4265,8 +4277,13 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			}
 		}
 	}
+	// Result parameters and locals with raw LLVM array type (e.g. [16 x i8])
+	// are not %arr structs — treat them like inline arrays for slicing.
+	if inlineArrayType == "" && strings.HasPrefix(recvType, "[") {
+		inlineArrayType = recvType
+	}
 
-	if !isVec && !isArr && !isStr && !isStrShort {
+	if !isVec && !isArr && !isStr && !isStrShort && inlineArrayType == "" {
 		sb.WriteString(fmt.Sprintf("%s; slice expression (non-vec/arr/str): %s\n", g.indent(), leftVal))
 		return "0"
 	}
@@ -5218,12 +5235,12 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok {
-			if t == "%str-long" {
-				return g.extractStrLen(sb, g.varAddr(a.Value))
-			}
-			if t == "%str-short" {
-				return g.extractStrShortLen(sb, g.varAddr(a.Value))
-			}
+				if t == "%str-long" {
+					return g.extractStrLen(sb, g.varAddr(a.Value))
+				}
+				if t == "%str-short" {
+					return g.extractStrShortLen(sb, g.varAddr(a.Value))
+				}
 				// Option variable with string inner type (e.g. ?str):
 				// extract the inner %str-long*/%str-short* pointer from
 				// the option's data field, then get the string length.

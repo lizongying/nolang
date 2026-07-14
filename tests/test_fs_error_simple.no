@@ -1,0 +1,13 @@
+// 简单测试文件操作错误信息
+print('测试: 打开不存在的文件')
+f ?fs.file = open('/nonexistent/file.txt', {
+    mode: 0
+})
+
+// 使用 match 匹配不同错误情况
+f: {
+    nil -> print('  结果: nil (未修改的版本)')
+    -> print('  结果: 文件已打开')
+}
+
+print('测试完成')

@@ -120,7 +120,9 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 // array type string. For [12][16]i64 it returns "[12 x [16 x i64]]".
 func (g *Generator) arrayTypeToLLVM(at *parser.ArrayType) string {
 	size := int64(0)
-	if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+	if v, ok := g.constFoldInt(at.Size); ok {
+		size = v
+	} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
 		size = intLit.Value
 	}
 	var elemLLVMType string
@@ -130,6 +132,34 @@ func (g *Generator) arrayTypeToLLVM(at *parser.ArrayType) string {
 		elemLLVMType = g.mapToLLVMType(at.Elem.String())
 	}
 	return fmt.Sprintf("[%d x %s]", size, elemLLVMType)
+}
+
+// constFoldInt evaluates a constant integer expression (IntegerLiteral,
+// negative IntegerLiteral, CharLiteral, or InfixExpression with +/-/* on
+// constants) and returns the folded value. Used for array sizes like [16 + 160].
+func (g *Generator) constFoldInt(expr parser.Expression) (int64, bool) {
+	if expr == nil {
+		return 0, false
+	}
+	if v, ok := intConstValue(expr); ok {
+		return v, true
+	}
+	if ie, ok := expr.(*parser.InfixExpression); ok {
+		left, ok1 := g.constFoldInt(ie.Left)
+		right, ok2 := g.constFoldInt(ie.Right)
+		if !ok1 || !ok2 {
+			return 0, false
+		}
+		switch ie.Operator {
+		case "+":
+			return left + right, true
+		case "-":
+			return left - right, true
+		case "*":
+			return left * right, true
+		}
+	}
+	return 0, false
 }
 
 // extractArrayElemType parses an LLVM array type string like "[12 x [16 x i64]]"

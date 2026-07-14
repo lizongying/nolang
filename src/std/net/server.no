@@ -348,39 +348,39 @@ http-server-conn.get-header = (name str) (val ?str) {
 // write-status: 寫入 HTTP 狀態行
 // code i64: 狀態碼（如 200, 404, 500）
 // 返回 ok bool: true=成功
-http-server-conn.write-status = (code i64) (ok bool) {
+http-server-conn.write-status = (status i64) (ok bool) {
     ok = false
     .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
 
-    code-s = code.to-str()
-    status-text = 'OK'
-    {
-        code == 200 -> status-text = 'OK'
-        code == 201 -> status-text = 'Created'
-        code == 204 -> status-text = 'No Content'
-        code == 301 -> status-text = 'Moved Permanently'
-        code == 302 -> status-text = 'Found'
-        code == 304 -> status-text = 'Not Modified'
-        code == 400 -> status-text = 'Bad Request'
-        code == 401 -> status-text = 'Unauthorized'
-        code == 403 -> status-text = 'Forbidden'
-        code == 404 -> status-text = 'Not Found'
-        code == 405 -> status-text = 'Method Not Allowed'
-        code == 408 -> status-text = 'Request Timeout'
-        code == 413 -> status-text = 'Payload Too Large'
-        code == 414 -> status-text = 'URI Too Long'
-        code == 500 -> status-text = 'Internal Server Error'
-        code == 501 -> status-text = 'Not Implemented'
-        code == 502 -> status-text = 'Bad Gateway'
-        code == 503 -> status-text = 'Service Unavailable'
-        code == 504 -> status-text = 'Gateway Timeout'
+status-s = status.to-str()
+status-text = 'OK'
+{
+status == 200 -> status-text = 'OK'
+status == 201 -> status-text = 'Created'
+status == 204 -> status-text = 'No Content'
+status == 301 -> status-text = 'Moved Permanently'
+status == 302 -> status-text = 'Found'
+status == 304 -> status-text = 'Not Modified'
+status == 400 -> status-text = 'Bad Request'
+status == 401 -> status-text = 'Unauthorized'
+status == 403 -> status-text = 'Forbidden'
+status == 404 -> status-text = 'Not Found'
+status == 405 -> status-text = 'Method Not Allowed'
+status == 408 -> status-text = 'Request Timeout'
+status == 413 -> status-text = 'Payload Too Large'
+status == 414 -> status-text = 'URI Too Long'
+status == 500 -> status-text = 'Internal Server Error'
+status == 501 -> status-text = 'Not Implemented'
+status == 502 -> status-text = 'Bad Gateway'
+status == 503 -> status-text = 'Service Unavailable'
+status == 504 -> status-text = 'Gateway Timeout'
         ->
     }
 
-    line = 'HTTP/1.1 ' - code-s - ' ' - status-text - crlf
+    line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     written = net-send(.fd, line, line.len)
     written < 0 -> return
     ok = true
@@ -433,7 +433,7 @@ http-server-conn.write-body = (data str) (ok bool) {
 // text str: 回應文字
 // content-type str: Content-Type 值（空字串=不寫）
 // 返回 ok bool: true=成功
-http-server-conn.write-text = (code i64, text str) (ok bool) {
+http-server-conn.write-text = (status i64, text str) (ok bool) {
     ok = false
     .fd < 0 -> return
     cr = char-to-str(13)
@@ -441,8 +441,8 @@ http-server-conn.write-text = (code i64, text str) (ok bool) {
     crlf = cr - lf
 
     // 狀態行
-    ok = .write-status(code)
-    ok == false -> return
+ok = .write-status(status)
+ok == false -> return
 
     // 標頭
     text-len = text.len
@@ -465,12 +465,12 @@ http-server-conn.write-text = (code i64, text str) (ok bool) {
 // code i64: 狀態碼
 // json-str str: JSON 字串
 // 返回 ok bool: true=成功
-http-server-conn.write-json = (code i64, json-str str) (ok bool) {
+http-server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
     .fd < 0 -> return
 
-    .write-status(code)
-    json-len = json-str.len
+.write-status(status)
+json-len = json-str.len
     len-s = json-len.to-str()
     .write-header('Content-Type', 'application/json; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -488,12 +488,12 @@ http-server-conn.write-json = (code i64, json-str str) (ok bool) {
 // code i64: 狀態碼
 // html str: HTML 內容
 // 返回 ok bool: true=成功
-http-server-conn.write-html = (code i64, html str) (ok bool) {
+http-server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
     .fd < 0 -> return
 
-    .write-status(code)
-    html-len = html.len
+.write-status(status)
+html-len = html.len
     len-s = html-len.to-str()
     .write-header('Content-Type', 'text/html; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -511,12 +511,12 @@ http-server-conn.write-html = (code i64, html str) (ok bool) {
 // code i64: 狀態碼（301 或 302）
 // location str: 重定向目標 URL
 // 返回 ok bool: true=成功
-http-server-conn.write-redirect = (code i64, location str) (ok bool) {
+http-server-conn.write-redirect = (status i64, location str) (ok bool) {
     ok = false
     .fd < 0 -> return
 
-    .write-status(code)
-    .write-header('Location', location)
+.write-status(status)
+.write-header('Location', location)
     .write-header('Content-Length', '0')
     .write-header('Connection', 'close')
     .write-headers-done()
@@ -527,12 +527,12 @@ http-server-conn.write-redirect = (code i64, location str) (ok bool) {
 // code i64: 狀態碼（如 404, 500）
 // message str: 錯誤訊息
 // 返回 ok bool: true=成功
-http-server-conn.write-error = (code i64, message str) (ok bool) {
+http-server-conn.write-error = (status i64, message str) (ok bool) {
     ok = false
     .fd < 0 -> return
 
-    .write-status(code)
-    msg-len = message.len
+.write-status(status)
+msg-len = message.len
     len-s = msg-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)

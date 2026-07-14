@@ -1,19 +1,19 @@
 // err — 錯誤處理
 //
 // 提供結構化的錯誤型別與工具函式。
-// error 結構體封裝錯誤碼與訊息，err-code 枚舉定義常見錯誤類別。
+// error 結構體封裝錯誤碼與訊息，code 枚舉定義常見錯誤類別。
 //
 // 用法：
-//   e = err-new(err-code.io, 'disk full')
-//   yes = err-is(e, err-code.io)
-//   s, n = err-format(e)
+//   e = err-new(code.io, 'disk full')
+//   yes = err-is(e, code.io)
+//   s = e.format()
 
 // ═══════════════════════════════════════════════
 // 錯誤碼枚舉
 // ═══════════════════════════════════════════════
 
-// err-code: 錯誤類別
-err-code {
+// code: 錯誤類別
+code {
     ok,
     not-found,
     permission,
@@ -29,10 +29,10 @@ err-code {
 // ═══════════════════════════════════════════════
 
 // error: 結構化錯誤
-// code: 錯誤碼（err-code 枚舉值）
+// code: 錯誤碼（code 枚舉值）
 // msg: 錯誤訊息
 error {
-    code err-code
+    code code
     msg str
 }
 
@@ -41,26 +41,26 @@ error {
 // ═══════════════════════════════════════════════
 
 // err-new: 建立錯誤
-// code: 錯誤碼（err-code 枚舉值，如 err-code.io）
+// c: 錯誤碼（code 枚舉值，如 code.io）
 // msg: 錯誤訊息
-err-new = (code err-code, msg str) (e error) {
+err-new = (ec code, msg str) (e error) {
     e = error{
-        code: code
+        code: ec
         msg: msg
     }
 }
 
-// errno-to-code: 將 C errno 對映為 err-code 列舉
-errno-to-code = (errno i64) (code err-code) {
-    code = err-code.invalid
+// errno-to-code: 將 C errno 對映為 code 列舉
+errno-to-code = (errno i64) (ec code) {
+    ec = code.invalid
     {
-        errno == 0 -> code = err-code.ok
-        errno == 2 -> code = err-code.not-found
-        errno == 1 || errno == 13 || errno == 30 || errno == 79 -> code = err-code.permission
-        errno == 5 || errno == 32 || errno == 100 || errno == 104 || errno == 112 || errno == 113 -> code = err-code.io
-        errno == 11 || errno == 35 || errno == 110 -> code = err-code.timeout
-        errno == 84 -> code = err-code.parse
-        errno == 12 || errno == 28 || errno == 34 || errno == 75 -> code = err-code.overflow
+        errno == 0 -> ec = code.ok
+        errno == 2 -> ec = code.not-found
+        errno == 1 || errno == 13 || errno == 30 || errno == 79 -> ec = code.permission
+        errno == 5 || errno == 32 || errno == 100 || errno == 104 || errno == 112 || errno == 113 -> ec = code.io
+        errno == 11 || errno == 35 || errno == 110 -> ec = code.timeout
+        errno == 84 -> ec = code.parse
+        errno == 12 || errno == 28 || errno == 34 || errno == 75 -> ec = code.overflow
     }
 }
 
@@ -79,9 +79,9 @@ err-from-errno = (errno i64) (e error) {
 // ═══════════════════════════════════════════════
 
 // err-is: 檢查錯誤碼是否匹配
-err-is = (e error, code err-code) (yes bool) {
+err-is = (e error, ec code) (yes bool) {
     yes = false
-    e.code == code -> yes = true
+    e.code == ec -> yes = true
 }
 
 // err-msg: 取得錯誤訊息
@@ -89,18 +89,17 @@ err-msg = (e error) (msg str) {
     msg = e.msg
 }
 
-// err-code-of: 取得錯誤碼
-err-code-of = (e error) (code err-code) {
-    code = e.code
+// fetch-code: 取得錯誤碼
+fetch-code = (e error) (ec code) {
+    ec = e.code
 }
 
 // ═══════════════════════════════════════════════
 // 格式化
 // ═══════════════════════════════════════════════
 
-// err-format: 格式化錯誤為字串
-// 輸出: s 為錯誤訊息，n 為字串長度
-err-format = (e error) (s str, n i64) {
-    s = e.msg
-    n = s.len
+// error.format: 格式化錯誤為字串
+// 返回 s: 錯誤訊息
+error.format = () (s str) {
+    s = .msg
 }

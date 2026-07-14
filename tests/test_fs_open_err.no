@@ -1,0 +1,13 @@
+// 测试 fs.open 错误信息 - 直接输出
+
+print('--- 测试 fs.open 错误 ---')
+print('')
+
+print('测试: 打开不存在的文件')
+f ?file = fs.open('/nonexistent/file-test-123.txt', {
+    mode: file-mode.read
+})
+print('  f 已获取')
+
+print('')
+print('--- 测试完成 ---')

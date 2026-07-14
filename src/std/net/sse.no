@@ -396,17 +396,17 @@ sse-client.reconnect = () (ok bool) {
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
 
-    code = 0
+    status-code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
         c < 48 || c > 57 -> {
     .close()
                 return
 }
-        code = code * 10 + c - 48
+        status-code = status-code * 10 + c - 48
     }
 
-    code != 200 -> {
+    status-code != 200 -> {
     .close()
             return
 }
@@ -612,7 +612,7 @@ sse-connect = (url str) (client ?sse-client) {
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
 
-    code = 0
+    status-code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
         c < 48 || c > 57 -> {
@@ -621,13 +621,13 @@ sse-connect = (url str) (client ?sse-client) {
                 client = err('invalid status code')
                 return
 }
-        code = code * 10 + c - 48
+        status-code = status-code * 10 + c - 48
     }
 
-    code != 200 -> {
+    status-code != 200 -> {
     use-tls -> tls-c.close()
             use-tls == false -> close(fd)
-            code-s = code.to-str()
+            code-s = status-code.to-str()
             client = err('server returned status ' - code-s)
             return
 }

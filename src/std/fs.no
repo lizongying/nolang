@@ -216,7 +216,7 @@ file-opts {
 // open: 開啟檔案（建構函式）
 // opts: file-opts 結構體
 // 成功：f = file{ fd, path }（自動轉為 ?file）
-// 失敗：f = nil
+// 失敗：f = err('錯誤訊息')
 open = (p str, opts file-opts) (f ?file) {
     flags = 0
 
@@ -248,9 +248,12 @@ open = (p str, opts file-opts) (f ?file) {
 
     fd = open-file(p, flags, perm-val)
     fd < 0 -> {
-    f = nil
-            return
-}
+        // 獲取 errno 並返回詳細錯誤信息
+        errno = get-errno()
+        err-msg = strerror(errno)
+        f = err(err-msg)
+        return
+    }
     f = file{
         fd: fd
         path: p

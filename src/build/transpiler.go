@@ -788,14 +788,19 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 
 	// 構建變數類型表
+	// globalVarTypes 僅包含頂層 LetStatement（全域變數），用於泛型呼叫掃描時的
+	// per-function varTypes 初始化，避免其他函數體內的同名局部變數污染型別查找。
 	varTypes := make(map[string]string)
+	globalVarTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
+				globalVarTypes[ls.Name.Value] = ls.Type.String()
 			} else if ls.Value != nil {
 				if t := inferTypeFromExpr(ls.Value); t != "" {
 					varTypes[ls.Name.Value] = t
+					globalVarTypes[ls.Name.Value] = t
 				}
 			}
 		}
@@ -1004,7 +1009,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	resolveSelfMethodCalls(merged)
 
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
-	monomorphizeGenerics(merged, varTypes)
+	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
+	monomorphizeGenerics(merged, globalVarTypes)
 
 	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
 	filtered := make([]parser.Statement, 0, len(merged.Statements))
@@ -2436,6 +2442,11 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 			} else if ls.Value != nil {
 				if t := inferTypeFromExpr(ls.Value); t != "" {
 					varTypes[ls.Name.Value] = t
+				} else {
+					// Can't infer type (e.g., method call result) — delete any
+					// stale entry inherited from another scope (e.g., a global
+					// variable with the same name) to prevent wrong method resolution.
+					delete(varTypes, ls.Name.Value)
 				}
 			}
 		}

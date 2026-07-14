@@ -145,7 +145,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			} else {
 				typeStr = r.Type.String()
 			}
-			g.varTypes[r.Name] = g.mapToLLVMType(typeStr)
+			g.varTypes[r.Name] = g.resolveParamLLVMType(r.Type)
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
 			}
@@ -203,7 +203,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	firstResult := true
 	for _, r := range fd.Results {
 		if r.Name != "" {
-			llvmType := g.mapToLLVMType(r.Type.String()) + "*"
+			llvmType := g.resolveParamLLVMType(r.Type) + "*"
 			sep := ", "
 			if firstResult && len(fd.Parameters) == 0 {
 				sep = "" // 第一個參數前不需逗號
@@ -236,7 +236,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 結果參數為 passed by reference（單結果與多結果皆同），不分配本地 alloca。
 	for _, r := range fd.Results {
 		if r.Name != "" {
-			g.varTypes[r.Name] = g.mapToLLVMType(r.Type.String())
+			g.varTypes[r.Name] = g.resolveParamLLVMType(r.Type)
 			g.funcLocalNames[r.Name] = true
 		}
 	}
@@ -512,7 +512,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			// need runtime initialization (memcpy etc.) via generateLet.
 			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
 				lt := g.varLLVMType(ls)
-				if lt != "%str-long" && lt != "%str-short" {
+				if lt != "%str-long" && lt != "%str-short" && lt != "%arr" {
 					continue
 				}
 			}
@@ -2579,6 +2579,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	val = g.stripLLVMType(val)
 	llvmType := g.varLLVMType(stmt)
 	g.currentTargetType = "" // clear after use
+	// For assignments (Type=nil) to %arr variables, varLLVMType may return
+	// the function's raw result type (e.g. [16 x i8]) instead of %arr.
+	// Override with the variable's declared type so the switch matches %arr.
+	if stmt.Type == nil && g.varTypes != nil {
+		if t, ok := g.varTypes[name]; ok && t == "%arr" {
+			llvmType = "%arr"
+		}
+	}
 
 	// Empty string assignment optimization: s = "" → set len=0 in-place, no storage switch
 	// SSO (str-short): store i8 0x80 (0 | SSO tag) to field 0
@@ -2786,10 +2794,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	if at, ok := stmt.Type.(*parser.ArrayType); ok {
 		// 註冊變數型別為 %arr，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%arr"
-		g.funcLocalNames[name] = true
+		// 區分全局變數和局部變數：全局變數的 varAddr 需返回 @name（透過 globalVars），
+		// 不能設 funcLocalNames（否則 varAddr 會返回未 alloca 的 %name）
+		if g.globalVars == nil || !g.globalVars[name] {
+			g.funcLocalNames[name] = true
+		}
 		var arraySize int64
 		if at.Size != nil {
-			if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+			if v, ok := g.constFoldInt(at.Size); ok {
+				arraySize = v
+			} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
 				arraySize = intLit.Value
 			}
 		} else if arrLit, ok := stmt.Value.(*parser.ArrayLiteral); ok {
@@ -2804,8 +2818,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		llvmElemType := g.mapToLLVMType(elemType)
 		elemSize := g.llvmTypeSize(llvmElemType)
 
-		// Register element type for later index resolution
+		// Register element type and size for later index resolution and
+		// %arr → [N x T]* argument conversion (genTypedArg / generateCallArg)
 		g.arrayElemTypes[name] = llvmElemType
+		if g.arraySizes != nil {
+			g.arraySizes[name] = arraySize
+		}
 
 		// Store len field
 		g.tmpIdx++
@@ -2844,6 +2862,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 					g.indent(), llvmElemType, ev, llvmElemType, elemGEP))
 			}
+		} else if stmt.Value != nil {
+			// Non-ArrayLiteral value (e.g., function call returning [N]T):
+			// val holds the raw LLVM array value (e.g., [20 x i8] %call.tmp.N).
+			// Store it into the data buffer via bitcast to [N x T]*.
+			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, llvmElemType)
+			g.tmpIdx++
+			dataCast := fmt.Sprintf("%%arr.data.cast.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataCast, dataReg, rawArrType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+				g.indent(), rawArrType, val, rawArrType, dataCast))
 		}
 		return
 	}
@@ -3089,6 +3118,38 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	case "i8*":
 		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), val, g.varAddr(name)))
+	case "%arr":
+		// Assignment to an [N]T variable (e.g., `out = func()` where out was
+		// declared as `out [16]byte`). val is a raw LLVM array value (e.g.,
+		// [16 x i8] %call.tmp.N from voidSingleOutput). Store it into the
+		// %arr struct's data buffer via bitcast.
+		if val == "0" || val == "" {
+			sb.WriteString(fmt.Sprintf("%sstore %%arr zeroinitializer, %%arr* %s\n", g.indent(), storeAddr))
+		} else {
+			arraySize := int64(0)
+			llvmElemType := "i64"
+			if s, ok := g.arraySizes[name]; ok {
+				arraySize = s
+			}
+			if et, ok := g.arrayElemTypes[name]; ok {
+				llvmElemType = et
+			}
+			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, llvmElemType)
+			// Get data pointer from %arr struct (field 1)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%arr.let.data.gep.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataLoad := fmt.Sprintf("%%arr.let.data.%d", g.tmpIdx)
+			g.tmpIdx++
+			dataCast := fmt.Sprintf("%%arr.let.cast.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+				g.indent(), dataGEP, storeAddr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataCast, dataLoad, rawArrType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+				g.indent(), rawArrType, val, rawArrType, dataCast))
+		}
 	case "float", "double":
 		// Convert integer literal to float format (e.g. "1" → "1.0")
 		// This is needed when monomorphized union-type functions substitute

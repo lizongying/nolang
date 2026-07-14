@@ -1,0 +1,28 @@
+// 测试文件操作错误信息 - 简化版
+// 验证基本错误获取功能
+
+print('--- 测试 get-errno ---')
+print('')
+
+// 测试 1: 手动获取 errno
+print('测试 1: 获取初始 errno')
+e1 i64 = get-errno()
+print('  errno: ' - e1.to-str())
+
+print('')
+
+// 测试 2: 触发一个错误并获取 errno
+print('测试 2: 打开不存在的文件')
+fd i64 = open-file('/nonexistent/file-xyz.txt', 0, 0)
+print('  fd: ' - fd.to-str())
+
+e2 i64 = get-errno()
+print('  errno: ' - e2.to-str())
+
+if fd < 0 {
+    msg = strerror(e2)
+    print('  错误信息: ' - msg)
+}
+
+print('')
+print('--- 测试完成 ---')

@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -224,7 +225,33 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if t, ok := g.varTypes[a.Value]; ok && t == "double" {
 				return "double* " + g.varAddr(a.Value)
 			}
-			// %vec / %arr / 任何 struct 指標型別 → 變數本身已是指標
+			// %arr (fixed-size array struct) → extract data pointer and bitcast to [N x T]*
+			// Function parameters with [N]T type use raw LLVM array [N x T], but local
+			// variables are stored as %arr struct { len, data* }. Need to extract data
+			// pointer and bitcast to match the expected parameter type.
+			if t, ok := g.varTypes[a.Value]; ok && t == "%arr" {
+				if elemType, ok := g.arrayElemTypes[a.Value]; ok {
+					if arrSize, ok := g.arraySizes[a.Value]; ok {
+						rawArrType := fmt.Sprintf("[%d x %s]", arrSize, elemType)
+						if sb != nil {
+							g.tmpIdx++
+							dataGEP := fmt.Sprintf("%%arr.arg.gep.%d", g.tmpIdx)
+							g.tmpIdx++
+							dataLoad := fmt.Sprintf("%%arr.arg.data.%d", g.tmpIdx)
+							g.tmpIdx++
+							dataCast := fmt.Sprintf("%%arr.arg.cast.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, g.varAddr(a.Value)))
+							sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), dataCast, dataLoad, rawArrType))
+							return rawArrType + "* " + dataCast
+						}
+						return rawArrType + "* " + g.varAddr(a.Value)
+					}
+				}
+				// Fallback: pass %arr* directly
+				return "%arr* " + g.varAddr(a.Value)
+			}
+			// %vec / 任何 struct 指標型別 → 變數本身已是指標
 			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "%") {
 				return t + "* " + g.varAddr(a.Value)
 			}
@@ -1721,6 +1748,32 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					return t + "* " + g.varAddr(a.Value)
 				}
 			}
+			// %arr (fixed-size array struct) → extract data pointer and bitcast to [N x T]*
+			// Function parameters with [N]T type use raw LLVM array [N x T], but local
+			// variables are stored as %arr struct { len, data* }. Need to extract data
+			// pointer and bitcast to match the expected parameter type.
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[a.Value]; ok && t == "%arr" {
+					if elemType, ok := g.arrayElemTypes[a.Value]; ok {
+						if arrSize, ok := g.arraySizes[a.Value]; ok {
+							rawArrType := fmt.Sprintf("[%d x %s]", arrSize, elemType)
+							if sb != nil {
+								g.tmpIdx++
+								dataGEP := fmt.Sprintf("%%arr.arg.gep.%d", g.tmpIdx)
+								g.tmpIdx++
+								dataLoad := fmt.Sprintf("%%arr.arg.data.%d", g.tmpIdx)
+								g.tmpIdx++
+								dataCast := fmt.Sprintf("%%arr.arg.cast.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, g.varAddr(a.Value)))
+								sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), dataLoad, dataGEP))
+								sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), dataCast, dataLoad, rawArrType))
+								return rawArrType + "* " + dataCast
+							}
+							return rawArrType + "* " + g.varAddr(a.Value)
+						}
+					}
+				}
+			}
 			// 使用實際型別（不再硬編碼為 i64*）
 			argType := "i64"
 			if g.varTypes != nil {
@@ -3031,7 +3084,30 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.ssaTypes[v3] = "%vec"
 			return v3
 		}
+
+	case "get-errno":
+		// get-errno() — get the last errno value from C library
+		// macOS: @__error(), Linux: @__errno_location()
+		g.tmpIdx++
+		errnoPtrReg := fmt.Sprintf("%%errno.ptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		errnoReg := fmt.Sprintf("%%errno.val.%d", g.tmpIdx)
+		if sb != nil {
+			// Get errno pointer
+			if runtime.GOOS == "darwin" {
+				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__error()\n", g.indent(), errnoPtrReg))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__errno_location()\n", g.indent(), errnoPtrReg))
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), errnoReg, errnoPtrReg))
+			g.tmpIdx++
+			sextReg := fmt.Sprintf("%%errno.sext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), sextReg, errnoReg))
+			return sextReg
+		}
+		return "0"
 	}
+
 	return ""
 }
 

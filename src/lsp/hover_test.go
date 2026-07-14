@@ -412,7 +412,7 @@ func TestGetHoverEnumType(t *testing.T) {
 }
 
 func TestGetHoverEnumVariant(t *testing.T) {
-	text := `err-code {
+	text := `code {
     ok,
     not-found,
     io,
@@ -436,13 +436,13 @@ func TestGetHoverEnumVariant(t *testing.T) {
 	if !strings.Contains(contents.Value, "io") {
 		t.Errorf("expected hover to contain 'io', got: %s", contents.Value)
 	}
-	if !strings.Contains(contents.Value, "err-code") {
-		t.Errorf("expected hover to contain enum type 'err-code', got: %s", contents.Value)
+	if !strings.Contains(contents.Value, "code") {
+		t.Errorf("expected hover to contain enum type 'code', got: %s", contents.Value)
 	}
 }
 
 func TestEnumVariantCompletion(t *testing.T) {
-	text := `err-code {
+	text := `code {
     ok,
     not-found,
     io,
@@ -476,7 +476,7 @@ e = err-new(`
 }
 
 func TestEnumVariantInSymbolIndex(t *testing.T) {
-	text := `err-code {
+	text := `code {
     ok,
     not-found,
     io,
@@ -496,8 +496,8 @@ func TestEnumVariantInSymbolIndex(t *testing.T) {
 		if entry.Kind != SymbolKindEnumMember {
 			t.Errorf("expected '%s' to have Kind SymbolKindEnumMember (%d), got %d", v, SymbolKindEnumMember, entry.Kind)
 		}
-		if entry.Type != "err-code" {
-			t.Errorf("expected '%s' to have Type 'err-code', got '%s'", v, entry.Type)
+		if entry.Type != "code" {
+			t.Errorf("expected '%s' to have Type 'code', got '%s'", v, entry.Type)
 		}
 	}
 }

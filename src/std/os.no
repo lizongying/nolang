@@ -69,6 +69,11 @@
 // strerror = (errnum i64) (msg str) {  // LLVM: call i8* @strerror
 // }
 
+// build-in (ForwardFunc: get-errno)
+// get-errno: 取得最後的 errno 值
+// get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
+// }
+
 // ═══════════════════════════════════════════════
 // 時間
 // ═══════════════════════════════════════════════

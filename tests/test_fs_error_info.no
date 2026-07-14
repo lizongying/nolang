@@ -1,0 +1,7 @@
+// 简单测试
+print('测试: 打开不存在的文件')
+f ?file = fs.open('/nonexistent/file-12345.txt', {
+    mode: file-mode.read
+})
+print('结果已获取')
+print('测试完成')

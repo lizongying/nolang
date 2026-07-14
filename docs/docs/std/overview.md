@@ -1776,7 +1776,7 @@ bigint.mul-i64(a, v, c)
 
 ```nolang
 // 錯誤碼枚舉
-err-code {
+code {
     ok,
     not-found,
     permission,
@@ -1789,17 +1789,17 @@ err-code {
 
 // 結構體
 error {
-    code err-code
+    code code
     msg str
 }
 
 // 函數
-e = err.err-new(err-code.io, msg)      // 建立錯誤
+e = err.err-new(code.io, msg)          // 建立錯誤
 e = err.err-from-errno(errno)         // 從 C errno 建立
-yes = err.err-is(e, err-code.io)      // 判斷錯誤碼
+yes = err.err-is(e, code.io)          // 判斷錯誤碼
 msg = err.err-msg(e)                  // 取得錯誤訊息
-code = err.err-code-of(e)             // 取得錯誤碼
-s, n = err.err-format(e)              // 格式化為字串
+c = err.fetch-code(e)                 // 取得錯誤碼
+s = e.format()                       // 格式化為字串
 ```
 
 ### bool — 布爾型別

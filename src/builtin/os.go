@@ -275,6 +275,16 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "strerror", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI8Ptr, RetCStrToStr: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
+	// get-errno: get the last errno value
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-errno",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the last errno value from C library",
+		ForwardFunc:  "get-errno",
+	})
+
 	// args: number of command-line arguments
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

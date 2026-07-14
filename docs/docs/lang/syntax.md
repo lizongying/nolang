@@ -971,7 +971,7 @@ yes = err-is(e, io)
 
 // ✅ 正確：使用限定方式
 kind = json-kind.null
-yes = err-is(e, err-code.io)
+yes = err-is(e, code.io)
 ```
 
 > 枚舉類型可用於結構體字段類型、函數參數類型和返回值類型。

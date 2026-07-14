@@ -917,7 +917,7 @@ yes = err-is(e, io)
 
 // ✅ Correct: using the qualified form
 kind = json-kind.null
-yes = err-is(e, err-code.io)
+yes = err-is(e, code.io)
 ```
 
 > Enum types can be used as struct field types, function parameter types, and return value types.

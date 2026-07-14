@@ -1,6 +1,9 @@
 package llvm
 
-import "strings"
+import (
+	"runtime"
+	"strings"
+)
 
 func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @printf(i8*, ...)\n")
@@ -70,6 +73,12 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i8* @localtime(i8*)\n")
 	sb.WriteString("declare i64 @strftime(i8*, i64, i8*, i8*)\n")
 	sb.WriteString("declare i8* @strerror(i32)\n")
+	// errno access: macOS uses __error(), Linux uses __errno_location()
+	if runtime.GOOS == "darwin" {
+		sb.WriteString("declare i32* @__error()\n")
+	} else {
+		sb.WriteString("declare i32* @__errno_location()\n")
+	}
 	sb.WriteString("declare i32 @dup2(i32, i32)\n")
 	sb.WriteString("declare i32 @kill(i32, i32)\n")
 	sb.WriteString("declare i32 @getppid()\n")

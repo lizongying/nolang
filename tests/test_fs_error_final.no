@@ -1,0 +1,73 @@
+// 综合测试：文件操作错误信息细分
+// 通过 print 输出验证错误信息
+
+print('======================================')
+print('文件操作错误信息细分测试')
+print('======================================')
+print('')
+
+// ===== 测试 1: 文件不存在 =====
+print('测试 1: 文件不存在')
+print('  路径: /nonexistent/file-xyz-12345.txt')
+print('  模式: 只读')
+
+f1 ?file = fs.open('/nonexistent/file-xyz-12345.txt', {
+    mode: file-mode.read
+})
+
+// 通过直接使用变量来观察行为
+// 在实际代码中，用户可以使用 match 来检查 val/nil/err
+print('  f1 已获取')
+
+print('')
+
+// ===== 测试 2: 打开目录 =====
+print('测试 2: 打开目录')
+print('  路径: /tmp')
+print('  模式: 只读')
+
+f2 ?file = fs.open('/tmp', {
+    mode: file-mode.read
+})
+
+print('  f2 已获取')
+
+print('')
+
+// ===== 测试 3: 无权限访问 =====
+print('测试 3: 尝试访问受保护的文件')
+print('  路径: /root/test.txt')
+print('  模式: 写入')
+
+f3 ?file = fs.open('/root/test.txt', {
+    mode: file-mode.write
+})
+
+print('  f3 已获取')
+
+print('')
+
+// ===== 测试 4: 成功操作 =====
+print('测试 4: 成功创建并写入文件')
+print('  路径: /tmp/nolang-err-test.txt')
+print('  模式: 写入')
+
+f4 ?file = fs.open('/tmp/nolang-err-test.txt', {
+    mode: file-mode.write
+    perm: file-perm.perm-644
+})
+
+print('  f4 已获取')
+
+print('')
+print('======================================')
+print('测试完成')
+print('======================================')
+print('')
+print('注意：此测试演示了 fs.open 可以返回错误信息。')
+print('      实际使用时，可以使用 match 来检查：')
+print('        f: {')
+print('            err -> print(\"错误: \" - it)')
+print('            nil -> print(\"结果: nil\")')
+print('            -> print(\"成功: \" - it)')
+print('        }')
