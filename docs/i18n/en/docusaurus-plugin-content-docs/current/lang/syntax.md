@@ -382,10 +382,19 @@ i <- [a..b): {     // left-closed right-open: a ≤ i < b
 }
 i <- (a..b): {     // open interval: a < i < b
 }
-i <- [5..0]: {   // decrement
+i <- [5..0]: {   // decrement — runtime direction detection: start > end → decrement
 }
 i <- 'abc': {   // iterate over each character in the string
 }
+
+// Runtime direction detection: when start > end, iteration automatically decrements (step -1).
+// All four bracket combinations support decrement:
+//   [5..1]  → 5 4 3 2 1   left-closed right-closed, descending
+//   (5..1]  → 4 3 2 1     left-open right-closed, descending
+//   [5..1)  → 5 4 3 2     left-closed right-open, descending
+//   (5..1)  → 4 3 2       left-open right-open, descending
+//   (3..0]  → 2 1 0       left-open right-closed, descending to zero
+// When start <= end, iteration increments as usual (step +1).
 
 // ❌ Explicitly rejected
 //   Range bounds must be integers; nested expressions are not supported

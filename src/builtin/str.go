@@ -34,4 +34,17 @@ func init() {
 		Doc:          "Clear string in-place (set len=0, no storage switch)",
 		ForwardFunc:  "str-clear",
 	})
+
+	// with-cap: create a new str or vec with specified capacity (len=0)
+	// Builtin syntax: with-cap(cap) — type inferred from assignment LHS
+	//   s str = with-cap(256)   → str-long with cap=256
+	//   v []i64 = with-cap(100) → vec with cap=100
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "with-cap",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new str or vec with specified capacity (type inferred from LHS)",
+		ForwardFunc:  "with-cap",
+	})
 }

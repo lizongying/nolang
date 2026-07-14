@@ -693,10 +693,19 @@ i <- [a..b): {     // left-closed right-open: a ≤ i < b
 }
 i <- (a..b): {     // open interval: a < i < b
 }
-i <- [5..0]: {     // decreasing
+i <- [5..0]: {     // decreasing — runtime direction detection: start > end → decrement
 }
 i <- 'abc': {      // iterate over each character in the string
 }
+
+// Runtime direction detection: when start > end, iteration automatically decrements (step -1).
+// All four bracket combinations support decrement:
+//   [5..1]  → 5 4 3 2 1   left-closed right-closed, descending
+//   (5..1]  → 4 3 2 1     left-open right-closed, descending
+//   [5..1)  → 5 4 3 2     left-closed right-open, descending
+//   (5..1)  → 4 3 2       left-open right-open, descending
+//   (3..0]  → 2 1 0       left-open right-closed, descending to zero
+// When start <= end, iteration increments as usual (step +1).
 
 // ❌ Explicitly rejected: interval bounds must be integers; nested expressions not supported
 //   for i <- [1.5..5.5] { }       // compile error
@@ -2024,6 +2033,8 @@ n = s.count()                 // Total code point count
 val = s.replace-char(old, new) // Replace character (returns result string)
 out = s.trim-char(c)          // Trim specified character
 ok = s.empty()                // Is empty
+s.clear()                     // Clear (len=0, in-place)
+out = s.with-cap(cap)         // Create new string with specified capacity (len=0)
 parts = s.split(sep)          // Split by separator (returns []str, method)
 out = ss.join(sep)            // Join []str with separator (method)
 ```
@@ -2080,7 +2091,9 @@ s = byte.to-str()               // byte to str (method)
 v = vec.vec-create(n, val)         // Create slice of length n, filled with val
 ok = []t.eq(a, b, n)           // Equality comparison
 n = []t.len()                  // Length
-[]t.push(val)                   // Append
+[]t.push(val)                   // Append (auto-grow)
+[]t.clear()                     // Clear (len=0, cap/data unchanged)
+v = []t.with-cap(cap)          // Create new slice with specified capacity (len=0)
 val, new-n = []t.pop()         // Pop
 found = []t.contains(n, val)   // Contains (n is length)
 []t.reverse(n)                  // Reverse first n elements

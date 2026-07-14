@@ -87,7 +87,8 @@ zip.cd-info = () (cd-off i64, total i64) {
 zip.entry-off = (idx i64) (off i64) {
     cd-off, total = .cd-info()
     off = cd-off
-    j <- [0..idx && j < total): {
+    j <- [0..idx): {
+        j >= total -> break
         off28 = off + 28
         off30 = off + 30
         off32 = off + 32
@@ -101,7 +102,8 @@ zip.entry-off = (idx i64) (off i64) {
 
 // count: 傳回 ZIP 中的條目數
 zip.count = () (count i64) {
-    cd-off, count = .cd-info()
+    cd-off, total = .cd-info()
+    count = total
 }
 
 // entry: 取得第 idx 個條目

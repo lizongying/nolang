@@ -142,7 +142,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Open a file for reading, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: "nolang.open3", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "0", 2: "0"}},
+		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "0", 2: "0"}},
 	})
 
 	// open-write: open a file for writing
@@ -152,7 +152,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Open a file for writing, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: "nolang.open3", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "1537", 2: "420"}},
+		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "1537", 2: "420"}},
 	})
 
 	// open-file: open a file with custom flags and mode
@@ -162,7 +162,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Open a file with given flags and mode, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: "nolang.open3", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
 	})
 
 	// close: close a file descriptor

@@ -1,9 +1,7 @@
 // test-for-recv — 測試 for 循環中的 str 變數
 n i64 = 5
-total i64 = 0
-for (total < n) {
-    tmp str = ' '
+i <- [0..n): {
+    tmp = ' '
     print('tmp created')
-    total = total + 1
 }
 print('done')

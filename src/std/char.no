@@ -125,7 +125,8 @@ char.to-bytes = () (out []byte) {
 
 // to-str: 轉為 UTF-8 編碼的字串
 char.to-str = () (s str) {
-        {
+    s = with-cap(4)
+    {
         . < 0x80 -> s[0] = .
         . < 0x800 -> {
             s[0] = 0xC0 | ((. >> 6) & 0x1F)

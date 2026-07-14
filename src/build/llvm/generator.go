@@ -81,6 +81,7 @@ type Generator struct {
 	fnTypeAliases         map[string]*parser.FunctionType // named function type alias name → FunctionType
 	externFuncs           map[string]*ExternFuncInfo      // extern function name → FFI type info
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
+	currentTargetType     string                          // target type for type-inferred builtins (e.g. with-cap)
 	sliceViews            map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
 	taskResultTypes       map[string]string               // task variable name → result LLVM type (for awy type inference)
 	futureResultTypes     map[string]string               // future variable name → result LLVM type (for awy type inference)
@@ -1239,6 +1240,12 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	a := evalArgs()
 	clib := m.CLibCall
 
+	// 變參函數需帶上完整函數類型簽名，否則變參部分可能傳遞錯誤
+	sigStr := ""
+	if sig := clibCallSig(clib.FuncName); sig != "" {
+		sigStr = " " + sig
+	}
+
 	// Sprintf pattern: sprintf(buf, fmt, args...)
 	if clib.SprintfFmt != "" {
 		fg := g.getFormatGlobal(clib.SprintfFmt)
@@ -1399,7 +1406,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		buf := "i8* " + bufExpr
 		cRetType := llvmLLVMType(clib.RetType)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall %s @%s(%s)\n", g.indent(), cRetType, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%scall %s%s @%s(%s)\n", g.indent(), cRetType, sigStr, clib.FuncName, argStr))
 		}
 		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str-long
 		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str-long 值
@@ -1442,7 +1449,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		g.tmpIdx++
 		cstrReg := fmt.Sprintf("%%cstr.ptr.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @%s(%s)\n", g.indent(), cstrReg, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8*%s @%s(%s)\n", g.indent(), cstrReg, sigStr, clib.FuncName, argStr))
 		}
 		// 2) strlen
 		g.tmpIdx++
@@ -1475,7 +1482,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		g.tmpIdx++
 		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), callReg, cRetType, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, clib.FuncName, argStr))
 		}
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%clib.ext.%d", g.tmpIdx)
@@ -1493,7 +1500,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		g.tmpIdx++
 		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), callReg, cRetType, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, clib.FuncName, argStr))
 		}
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%clib.cmp.%d", g.tmpIdx)
@@ -1508,7 +1515,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		return extReg
 	}
 
-	return fmt.Sprintf("call %s @%s(%s)", cRetType, clib.FuncName, argStr)
+	return fmt.Sprintf("call %s%s @%s(%s)", cRetType, sigStr, clib.FuncName, argStr)
 }
 
 func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {

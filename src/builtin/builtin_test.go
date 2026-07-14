@@ -154,8 +154,8 @@ func TestOSCLibCallMethods(t *testing.T) {
 		{"is-file", "stat"},
 		{"now", "time"},
 		{"sleep", "sleep"},
-		{"open-read", "nolang.open3"},
-		{"open-write", "nolang.open3"},
+		{"open-read", "open"},
+		{"open-write", "open"},
 		{"close", "close"},
 	}
 	for _, tt := range tests {

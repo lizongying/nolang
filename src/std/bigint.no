@@ -34,10 +34,10 @@ bigint {
 
 // from-i64: 從 i64 建立 bigint
 from-i64 = (v i64) (out bigint) {
-        {
+    {
         v < 0 -> {
             out.sign = -1
-                    v = 0 - v
+            v = 0 - v
         }
         -> out.sign = 1
     }
@@ -82,9 +82,9 @@ copy = (a bigint) (out bigint) {
 // cmp: 比較 a 和 b（1=正, 0=等, -1=負）
 cmp = (a bigint, b bigint) (r i64) {
     a.sign != b.sign -> {
-    r = a.sign
-            return
-}
+        r = a.sign
+        return
+    }
     result = abs-cmp(a, b)
     r = result * a.sign
 }
@@ -92,24 +92,22 @@ cmp = (a bigint, b bigint) (r i64) {
 // abs-cmp: 比較 |a| 和 |b|
 abs-cmp = (a bigint, b bigint) (r i64) {
     a.len > b.len -> {
-    r = 1
-            return
-}
+        r = 1
+        return
+    }
     a.len < b.len -> {
-    r = -1
-            return
-}
-    i = a.len - 1
-    for i >= 0 {
+        r = -1
+        return
+    }
+    i <- [a.len - 1..0]: {
         a.limbs[i] > b.limbs[i] -> {
-    r = 1
-                return
-}
+            r = 1
+            return
+        }
         a.limbs[i] < b.limbs[i] -> {
-    r = -1
-                return
-}
-        i = i - 1
+            r = -1
+            return
+        }
     }
     r = 0
 }
@@ -117,50 +115,48 @@ abs-cmp = (a bigint, b bigint) (r i64) {
 // is-zero: 檢查是否為零
 is-zero = (a bigint) (r i64) {
     a.len == 1 && a.limbs[0] == 0 -> {
-    r = 1
-            return
-}
+        r = 1
+        return
+    }
     r = 0
 }
 
 // is-neg: 檢查是否為負數
 is-neg = (a bigint) (r i64) {
     a.sign == -1 -> {
-    r = 1
-            return
-}
+        r = 1
+        return
+    }
     r = 0
 }
 
 // is-pos: 檢查是否為正數
 is-pos = (a bigint) (r i64) {
     a.sign == 1 -> {
-    az = is-zero(a)
-            az == 0 -> {
-    r = 1
-                    return
-}
-}
+        az = is-zero(a)
+        az == 0 -> {
+            r = 1
+            return
+        }
+    }
     r = 0
 }
 
 // eq: a == b ?
 eq = (a bigint, b bigint) (r i64) {
     a.sign != b.sign -> {
-    r = 0
-            return
-}
+        r = 0
+        return
+    }
     a.len != b.len -> {
-    r = 0
-            return
-}
-    i = a.len - 1
-    for i >= 0 {
+        r = 0
+        return
+    }
+    i <- [a.len - 1..0]: {
         a.limbs[i] & MASK != b.limbs[i] & MASK -> {
-    r = 0
-                return
-}
-        i = i - 1
+            r = 0
+            return
+        }
     }
     r = 1
 }
@@ -172,19 +168,19 @@ eq = (a bigint, b bigint) (r i64) {
 // add: a + b
 add = (a bigint, b bigint) (c bigint) {
     a.sign == b.sign -> {
-    abs-add(a, b, c)
-            c.sign = a.sign
-            return
-}
+        abs-add(a, b, c)
+        c.sign = a.sign
+        return
+    }
     cresult = abs-cmp(a, b)
-        {
+    {
         cresult >= 0 -> {
             abs-sub(a, b, c)
-                    c.sign = a.sign
+            c.sign = a.sign
         }
         -> {
             abs-sub(b, a, c)
-                    c.sign = b.sign
+            c.sign = b.sign
         }
     }
 }
@@ -213,19 +209,19 @@ abs-add = (a bigint, b bigint, c bigint) {
 // sub: a - b
 sub = (a bigint, b bigint, c bigint) {
     a.sign != b.sign -> {
-    abs-add(a, b, c)
-            c.sign = a.sign
-            return
-}
+        abs-add(a, b, c)
+        c.sign = a.sign
+        return
+    }
     cresult = abs-cmp(a, b)
-        {
+    {
         cresult >= 0 -> {
             abs-sub(a, b, c)
-                    c.sign = a.sign
+            c.sign = a.sign
         }
         -> {
             abs-sub(b, a, c)
-                    c.sign = -a.sign
+            c.sign = -a.sign
         }
     }
 }
@@ -241,10 +237,10 @@ abs-sub = (a bigint, b bigint, c bigint) {
         bv = 0
         i < bl -> bv = b.limbs[i]
         d = av - borrow - bv
-                {
+        {
             d < 0 -> {
                 d = d + BASE
-                            borrow = 1
+                borrow = 1
             }
             -> borrow = 0
         }
@@ -284,9 +280,9 @@ mul = (a bigint, b bigint) (c bigint) {
 mul-i64 = (a bigint, v i64, c bigint) {
     c.sign = a.sign
     v < 0 -> {
-    c.sign = -c.sign
-            v = 0 - v
-}
+        c.sign = -c.sign
+        v = 0 - v
+    }
     c.len = a.len + 1
     carry = 0
     i <- [0..a.len): {
@@ -305,22 +301,22 @@ mul-i64 = (a bigint, v i64, c bigint) {
 // div-mod: a / b, 同時傳回商和餘數
 div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     b.len == 1 && b.limbs[0] == 0 -> {
-    q = zero()
-            r = zero()
-            return
-}
+        q = zero()
+        r = zero()
+        return
+    }
     cresult = abs-cmp(a, b)
     cresult < 0 -> {
-    q = zero()
-            r = copy(a)
-            return
-}
+        q = zero()
+        r = copy(a)
+        return
+    }
     cresult == 0 -> {
-    q = one()
-            q.sign = a.sign * b.sign
-            r = zero()
-            return
-}
+        q = one()
+        q.sign = a.sign * b.sign
+        r = zero()
+        return
+    }
 
     q.len = a.len - b.len + 1
     i <- [0..q.len): {
@@ -336,7 +332,6 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         shift = shift + 1
     }
     shift > 0 -> bt = bt << shift
-
     norm-a-len = a.len + 1
     norm-a = bigint{}
     norm-a.len = norm-a-len
@@ -347,13 +342,13 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         norm-a.limbs[i] = av
     }
     shift > 0 -> {
-    carry = 0
-            i <- [0..norm-a-len): {
-                v = (norm-a.limbs[i] & MASK) << shift | carry
-                norm-a.limbs[i] = v & MASK
-                carry = v >> 32
-            }
-}
+        carry = 0
+        i <- [0..norm-a-len): {
+            v = (norm-a.limbs[i] & MASK) << shift | carry
+            norm-a.limbs[i] = v & MASK
+            carry = v >> 32
+        }
+    }
 
     qi = q.len - 1
     for qi >= 0 {
@@ -364,7 +359,6 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         bt != 0 -> qd = qd / bt
         qd = qd & 4294967295
         qd > BASE / 2 -> qd = BASE / 2
-
         carry = 0
         bj <- [0..bl): {
             bv = b.limbs[bj] & MASK
@@ -377,15 +371,15 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         norm-a.limbs[qi + bl] = subval & MASK
 
         subval < 0 -> {
-    qd = qd - 1
-                carry = 0
-                bj <- [0..bl): {
-                    s = (norm-a.limbs[qi + bj] & MASK) + (b.limbs[bj] & MASK) + carry
-                    norm-a.limbs[qi + bj] = s & MASK
-                    carry = s >> 32
-                }
-                norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry
-}
+            qd = qd - 1
+            carry = 0
+            bj <- [0..bl): {
+                s = (norm-a.limbs[qi + bj] & MASK) + (b.limbs[bj] & MASK) + carry
+                norm-a.limbs[qi + bj] = s & MASK
+                carry = s >> 32
+            }
+            norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry
+        }
 
         q.limbs[qi] = qd
         qi = qi - 1
@@ -412,12 +406,10 @@ div-i64 = (a bigint, v i64, q bigint) {
     v < 0 -> v = 0 - v
     q.sign = a.sign
     rem = 0
-    i = a.len - 1
-    for i >= 0 {
+    i <- [a.len - 1..0]: {
         cur = (rem << 32) | (a.limbs[i] & MASK)
         q.limbs[i] = cur / v
         rem = cur % v
-        i = i - 1
     }
     q.len = a.len
     normalize(q)
@@ -427,11 +419,9 @@ div-i64 = (a bigint, v i64, q bigint) {
 mod-i64 = (a bigint, v i64) (r i64) {
     v < 0 -> v = 0 - v
     rem = 0
-    i = a.len - 1
-    for i >= 0 {
+    i <- [a.len - 1..0]: {
         cur = (rem << 32) | (a.limbs[i] & MASK)
         rem = cur % v
-        i = i - 1
     }
     r = rem
 }
@@ -443,7 +433,9 @@ mod-i64 = (a bigint, v i64) (r i64) {
 // pow: c = a^n（n >= 0，非負整數冪）
 pow = (a bigint, n i64) (c bigint) {
     c = one()
-    n == 0 -> return
+    n == 0 -> {
+        return
+    }
     base = bigint{}
     base = copy(a)
     i = n
@@ -458,9 +450,9 @@ pow = (a bigint, n i64) (c bigint) {
 mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     mz = is-zero(modulus)
     mz == 1 -> {
-    r = zero()
-            return
-}
+        r = zero()
+        return
+    }
     r = one()
     b = bigint{}
     b = copy(base)
@@ -472,13 +464,14 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
         lead = lead + 1
     }
     bits = (exp.len - 1) * 32 + lead
-    i = bits - 1
-    for i >= 0 {
+    bits == 0 -> {
+        return
+    }
+    i <- [bits - 1..0]: {
         r = mul(r, r)
         elimb = i / 32
         ebit = i % 32
         (exp.limbs[elimb] >> ebit) & 1 == 1 -> r = mul(r, b)
-        i = i - 1
     }
 }
 
@@ -511,9 +504,9 @@ lcm = (a bigint, b bigint, l bigint) {
     az = is-zero(a)
     bz = is-zero(b)
     az == 1 || bz == 1 -> {
-    l = zero()
-            return
-}
+        l = zero()
+        return
+    }
     g = bigint{}
     gcd(a, b, g)
     q, r = div-mod(a, g)
@@ -533,19 +526,17 @@ shl1 = (a bigint) {
         a.limbs[i] = v & MASK
     }
     carry > 0 -> {
-    a.limbs[a.len] = carry
-            a.len = a.len + 1
-}
+        a.limbs[a.len] = carry
+        a.len = a.len + 1
+    }
 }
 
 // shr1: a = a >> 1
 shr1 = (a bigint) {
-    i = a.len - 1
-    for i >= 0 {
+    i <- [a.len - 1..0]: {
         carry = a.limbs[i] & 1
         a.limbs[i] = (a.limbs[i] >> 1) & MASK
         i > 0 && carry > 0 -> a.limbs[i - 1] = a.limbs[i - 1] | (1 << 31)
-        i = i - 1
     }
     normalize(a)
 }
@@ -583,14 +574,14 @@ normalize = (a bigint) {
 to-str = (a bigint) (out str) {
     z = is-zero(a)
     z == 1 -> {
-    out[0] = 48
-            return
-}
+        out[0] = 48
+        return
+    }
     out-n = 0
     a.sign == -1 -> {
-    out[0] = 45
-            out-n = 1
-}
+        out[0] = 45
+        out-n = 1
+    }
     tmp = bigint{}
     tmp = copy(a)
     tmp.sign = 1
@@ -598,7 +589,9 @@ to-str = (a bigint) (out str) {
     bufn = 0
     for true {
         tz = is-zero(tmp)
-        tz == 1 -> break
+        tz == 1 -> {
+            break
+        }
         d = mod-i64(tmp, 10)
         buf[bufn] = d + 48
         bufn = bufn + 1
@@ -622,31 +615,33 @@ from-str = (s str, out bigint) {
     pos = 0
     for pos < s.len {
         c = s[pos] & 255
-        c != 32 && c != 9 && c != 10 && c != 13 -> break
+        c != 32 && c != 9 && c != 10 && c != 13 -> {
+            break
+        }
         pos = pos + 1
     }
     pos < s.len -> {
-        {
+
         s[pos] == 45 -> {
             out.sign = -1
-                            pos = pos + 1
+            pos = pos + 1
         }
         s[pos] == 43 -> pos = pos + 1
     }
 }
-    for pos < s.len {
-        c = s[pos] & 255
-                {
-            c >= 48 && c <= 57 -> {
-                mul-i64(out, 10, out)
-                            add-i64(out, c - 48, out)
-                            pos = pos + 1
-            }
-            -> pos = pos + 1
+
+for pos < s.len {
+    c = s[pos] & 255
+    {
+        c >= 48 && c <= 57 -> {
+            mul-i64(out, 10, out)
+            add-i64(out, c - 48, out)
+            pos = pos + 1
         }
+        -> pos = pos + 1
     }
-    normalize(out)
 }
+normalize(out)
 
 // add-i64: c = a + v（小整數加法）
 add-i64 = (a bigint, v i64, c bigint) {
@@ -666,39 +661,34 @@ to-hex = (a bigint) (out str) {
     hex = '0123456789abcdef'
     out-n = 0
     a.sign == -1 -> {
-    out[0] = 45
-            out-n = 1
-}
-    i = a.len - 1
-    for i >= 0 {
+        out[0] = 45
+        out-n = 1
+    }
+    i <- [a.len - 1..0]: {
         limb = a.limbs[i] & MASK
-                {
+        {
             i == a.len - 1 -> {
                 limb != 0 -> {
-    done = 0
-                                    shift = 28
-                                    for shift >= 0 {
-                                        nibble = (limb >> shift) & 15
-                                        done == 1 || nibble != 0 -> {
-    done = 1
-                                                out[out-n] = hex[nibble]
-                                                out-n = out-n + 1
-}
-                                        shift = shift - 4
-                                    }
-}
-            }
-            -> {
-                shift = 28
-                            for shift >= 0 {
-                                nibble = (limb >> shift) & 15
-                                out[out-n] = hex[nibble]
-                                out-n = out-n + 1
-                                shift = shift - 4
-                            }
+                    done = 0
+                    shift = 28
+                    for shift >= 0 {
+                        nibble = (limb >> shift) & 15
+                        done == 1 || nibble != 0
+                        done = 1
+                        out[out-n] = hex[nibble]
+                        out-n = out-n + 1
+                    }
+                    shift = shift - 4
+                }
             }
         }
-        i = i - 1
+        shift = 28
+        for shift >= 0 {
+            nibble = (limb >> shift) & 15
+            out[out-n] = hex[nibble]
+            out-n = out-n + 1
+            shift = shift - 4
+        }
     }
 }
 
@@ -711,18 +701,18 @@ from-hex = (s str, out bigint) {
     out.len = 1
     i <- [0..s.len): {
         c = s[i] & 255
-                {
+        {
             c >= 48 && c <= 57 -> {
                 mul-i64(out, 16, out)
-                            add-i64(out, c - 48, out)
+                add-i64(out, c - 48, out)
             }
             c >= 97 && c <= 102 -> {
                 mul-i64(out, 16, out)
-                            add-i64(out, c - 87, out)
+                add-i64(out, c - 87, out)
             }
             c >= 65 && c <= 70 -> {
                 mul-i64(out, 16, out)
-                            add-i64(out, c - 55, out)
+                add-i64(out, c - 55, out)
             }
         }
     }

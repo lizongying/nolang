@@ -142,6 +142,8 @@ n = s.count()                 // code point 總數
 val = s.replace-char(old, new) // 取代字元（返回結果字串）
 out = s.trim-char(c)          // 去指定字元
 ok = s.empty()                // 是否為空
+s.clear()                     // 清空（len=0，原地修改）
+s = with-cap(cap)            // 內建語法：建立指定容量的新字串（len=0）
 parts = s.split(sep)          // 用分隔符分割（返回 []str，方法）
 out = ss.join(sep)            // []str 用分隔符連接（方法）
 ```
@@ -198,7 +200,9 @@ s = byte.to-str()               // byte 轉 str（方法）
 v = vec.vec-create(n, val)         // 建立長度 n 的切片，全部填充 val
 ok = []t.eq(a, b, n)           // 相等比較
 n = []t.len()                  // 長度
-[]t.push(val)                   // 追加
+[]t.push(val)                   // 追加（自動擴容）
+[]t.clear()                     // 清空（len=0，cap/data 不變）
+v = with-cap(cap)             // 內建語法：建立指定容量的新切片（len=0）
 val, new-n = []t.pop()         // 彈出
 found = []t.contains(n, val)   // 是否包含（n 為長度）
 []t.reverse(n)                  // 反轉前 n 個元素

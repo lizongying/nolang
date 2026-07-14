@@ -2,23 +2,18 @@
 
 // [n]t.fill: 全部填充為 val
 [n]t.fill = (val t) {
-    i = 0
-    i < n: {
+    i <- [0..n): {
         .[i] = val
-        i = i + 1
     }
 }
 
 // [n]t.reverse: 反轉陣列
 [n]t.reverse = () {
-    i = 0
-    j = n - 1
-    i < j: {
+    i <- [0..n / 2): {
+        j = n - 1 - i
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
-        i = i + 1
-        j = j - 1
     }
 }
 

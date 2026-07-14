@@ -66,21 +66,19 @@ P256-B [32]byte = [
 // bn-cmp: 比較兩個 256-bit 數（小端序）
 // 返回: -1 if a < b, 0 if a == b, 1 if a > b
 bn-cmp = (a []byte, b []byte) (r i64) {
-    i = 31
-    for i >= 0 {
+    i <- [31..0]: {
         ai = a[i] & 255
         bi = b[i] & 255
-                {
+        {
             ai > bi -> {
                 r = 1
-                            return
+                return
             }
             ai < bi -> {
                 r = -1
-                            return
+                return
             }
         }
-        i = i - 1
     }
     r = 0
 }

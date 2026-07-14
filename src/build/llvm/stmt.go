@@ -532,6 +532,9 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			}
 			g.generateExpressionStmt(sb, es)
 		}
+		if fs, ok := stmt.(*parser.ForStatement); ok {
+			g.generateForStatement(sb, fs)
+		}
 	}
 	sb.WriteString(g.indent() + "ret i32 0\n")
 	g.indentLevel--
@@ -748,6 +751,27 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if name == "val" || name == "err" || name == "ok" {
 				return "%option"
 			}
+			// with-cap: type inferred from LHS type annotation
+			if name == "with-cap" {
+				if stmt.Type != nil {
+					ts := stmt.Type.String()
+					if ts == "str" {
+						return "%str-long"
+					}
+					// Slice types ([]i64, []byte, etc.) → %vec
+					return "%vec"
+				}
+				// Reassignment: infer from existing var type
+				if g.varTypes != nil && stmt.Name != nil {
+					if t, ok := g.varTypes[stmt.Name.Value]; ok {
+						if t == "%str-long" || t == "%str-short" {
+							return "%str-long"
+						}
+						return t
+					}
+				}
+				return "%vec"
+			}
 			strFns := map[string]bool{
 				"i64.to-str": true, "i32.to-str": true, "i16.to-str": true, "i8.to-str": true,
 				"u64.to-str": true, "u32.to-str": true, "u16.to-str": true, "u8.to-str": true,
@@ -868,22 +892,55 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 									return t
 								}
 								// void + 單輸出函數（如 str.empty 返回 i1）：
-							// 使用 funcResultLLVMType 中的輸出型別
-							// Nolang bools are stored as i64, not i1
-							if g.funcResultLLVMType != nil {
-								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-									retType := ts[0]
-									if retType == "i1" {
-										retType = "i64"
+								// 使用 funcResultLLVMType 中的輸出型別
+								// Nolang bools are stored as i64, not i1
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
 									}
-									return retType
 								}
-							}
 							}
 						}
 						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
-						if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+						if m := builtin.FindBuiltinMethod(shortName); m != nil {
+							if len(m.Return) > 0 {
+								return g.mapToLLVMType(m.Return[0].String())
+							}
+							// ForwardFunc builtins with empty Return: infer from ForwardFunc name
+							if m.ForwardFunc != "" {
+								switch m.ForwardFunc {
+								case "with-cap":
+									return "%vec"
+								case "bool-to-str", "ffi-cstr-at":
+									return "%str-long"
+								}
+							}
+						}
+					}
+				} else {
+					// Module-prefixed function call (e.g., str.with-cap, vec.with-cap)
+					// where receiver is a module name, not a variable.
+					fullName := recv.Value + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if t, ok := g.funcRetTypes[fullName]; ok && t != "void" {
+							return t
+						}
+					}
+					if m := builtin.FindBuiltinMethod(fullName); m != nil {
+						if len(m.Return) > 0 {
 							return g.mapToLLVMType(m.Return[0].String())
+						}
+						if m.ForwardFunc != "" {
+							switch m.ForwardFunc {
+							case "with-cap":
+								return "%vec"
+							case "bool-to-str", "ffi-cstr-at":
+								return "%str-long"
+							}
 						}
 					}
 				}
@@ -1264,9 +1321,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 			}
 			// Infer array/slice element type and size from function call return type
-		// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,
-		// or raw = list-dir(...) where list-dir returns []str)
-		if (vt == "%arr" || vt == "%vec") && g.funcResultNolangTypes != nil {
+			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,
+			// or raw = list-dir(...) where list-dir returns []str)
+			if (vt == "%arr" || vt == "%vec") && g.funcResultNolangTypes != nil {
 				fnName := ""
 				if call, ok := s.Value.(*parser.CallExpression); ok {
 					if ident, ok := call.Function.(*parser.Identifier); ok {
@@ -2162,14 +2219,26 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	startVal := g.generateExprWithSB(sb, r.Start)
 	endVal := g.generateExprWithSB(sb, r.End)
 
-	// 計算初始值 i = start (或 start+1 若左開)
+	// 計算方向標誌：start <= end 為遞增 (true)，start > end 為遞減 (false)
+	// 在初始化之前計算，以便左開區間能根據方向選擇 start+1 或 start-1
+	g.tmpIdx++
+	dirCmp := fmt.Sprintf("%%rng.dircmp.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp sle i64 %s, %s\n", g.indent(), dirCmp, startVal, endVal))
+
+	// 計算初始值 i = start（左閉）或 start±1（左開，依方向）
 	g.tmpIdx++
 	iInit := fmt.Sprintf("%%rng.init.%d", g.tmpIdx)
 	if r.LeftInc {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 0\n", g.indent(), iInit, startVal))
 	} else {
+		// 左開：遞增時 start+1，遞減時 start-1
 		g.tmpIdx++
-		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInit, startVal))
+		iPlus := fmt.Sprintf("%%rng.init.plus.%d", g.tmpIdx)
+		g.tmpIdx++
+		iMinus := fmt.Sprintf("%%rng.init.minus.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iPlus, startVal))
+		sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iMinus, startVal))
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), iInit, dirCmp, iPlus, iMinus))
 	}
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInit, varName))
 
@@ -2179,8 +2248,6 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	// cond block: 判斷方向並比較
 	g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
 	g.indentLevel++
-	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%rng.cmp.%d", g.tmpIdx)
 	g.tmpIdx++
 	selReg := fmt.Sprintf("%%rng.sel.%d", g.tmpIdx)
 	// 先載入目前 i 值
@@ -2205,9 +2272,8 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 		descOp = "sgt"
 	}
 	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), descCmp, descOp, iLoad, endVal))
-	// 選擇 ascending vs descending
-	sb.WriteString(fmt.Sprintf("%s%s = icmp sle i64 %s, %s\n", g.indent(), cmpReg, startVal, endVal))
-	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i1 %s, i1 %s\n", g.indent(), selReg, cmpReg, ascCmp, descCmp))
+	// 選擇 ascending vs descending（使用預先計算的 dirCmp）
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i1 %s, i1 %s\n", g.indent(), selReg, dirCmp, ascCmp, descCmp))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), selReg, lbl, lbl))
 	g.indentLevel--
 
@@ -2237,7 +2303,7 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	iNext := fmt.Sprintf("%%rng.next.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iUp, iLoad))
 	sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iDown, iLoad))
-	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), iNext, cmpReg, iUp, iDown))
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), iNext, dirCmp, iUp, iDown))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
 	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
 	g.indentLevel--
@@ -2295,7 +2361,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
 	_, isSliceExpr2 := stmt.Value.(*parser.SliceExpression)
 	_, isSliceType := stmt.Type.(*parser.SliceType)
-	if (isSliceType || isSliceLit) && !isSliceExpr2 {
+	// Skip default slice init when using with-cap builtin (type-inferred allocation)
+	isWithCapCall := false
+	if call, ok := stmt.Value.(*parser.CallExpression); ok {
+		if ident, ok := call.Function.(*parser.Identifier); ok && ident.Value == "with-cap" {
+			isWithCapCall = true
+		}
+	}
+	if (isSliceType || isSliceLit) && !isSliceExpr2 && !isWithCapCall {
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
 		g.funcLocalNames[name] = true
@@ -2467,9 +2540,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		return
 	}
 
+	// Determine target type for type-inferred builtins (e.g. with-cap)
+	g.currentTargetType = ""
+	if stmt.Type != nil {
+		g.currentTargetType = g.mapToLLVMType(stmt.Type.String())
+	} else if g.varTypes != nil {
+		if t, ok := g.varTypes[name]; ok {
+			g.currentTargetType = t
+		}
+	}
+
+	// For with-cap with slice type: register element type
+	// (skipped the default slice init path, so need manual element type registration)
+	// Note: alloca is already done during variable declaration collection phase.
+	if isWithCapCall && isSliceType {
+		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
+			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+		} else {
+			g.arrayElemTypes[name] = "i64"
+		}
+	}
+
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
 	llvmType := g.varLLVMType(stmt)
+	g.currentTargetType = "" // clear after use
 
 	// Empty string assignment optimization: s = "" → set len=0 in-place, no storage switch
 	// SSO (str-short): store i8 0x80 (0 | SSO tag) to field 0
@@ -2617,9 +2712,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					}
 				}
 			} else {
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+			}
 		}
-	}
 		// 為未明確設定的 %vec 欄位分配 data 緩衝區
 		for i, f := range fields {
 			if setFields[i] {

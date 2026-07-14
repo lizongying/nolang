@@ -1,15 +1,11 @@
+// test-sha1-minimal.no — minimal test for std sha1
+// SHA-1("abc") = a9993e364706816aba3e25717850c26c9cd0d89d
 
-block1 = make-str-16()
-i = 0
-i < 16: {
-    block1[i] = 0
-    i = i + 1
+data []byte = [0x61, 0x62, 0x63]
+hash [20]byte = sha1.sha1(data)
+
+fmt.print('sha1(abc)=')
+i <- [0..20): {
+    fmt.print-hex8(hash[i] & 255)
 }
-
-h0 = 1732584193
-h1 = 4023233417
-h2 = 2562383102
-h3 = 271733878
-h4 = 3285377520
-h0, h1, h2, h3, h4 = sha1.sha1-block(block1)
-fmt.println('done')
+fmt.println('')

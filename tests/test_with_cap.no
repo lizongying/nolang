@@ -1,0 +1,28 @@
+// test with-cap builtin syntax (type inferred from LHS)
+
+// with-cap for str: s str = with-cap(256)
+s str = with-cap(256)
+print('str with-cap: len=', s.len, ' cap=', s.cap)
+
+// with-cap for vec: v []i64 = with-cap(100)
+v []i64 = with-cap(100)
+print('vec with-cap: len=', v.len, ' cap=', v.cap)
+
+// Push elements - should not need to expand since cap=100
+v.push(10)
+v.push(20)
+v.push(30)
+print('vec after push: len=', v.len, ' cap=', v.cap)
+print('elements: ', v[0], ' ', v[1], ' ', v[2])
+
+// Clear and reuse
+v.clear()
+print('vec after clear: len=', v.len, ' cap=', v.cap)
+
+// Push again after clear - should still use existing cap
+v.push(40)
+v.push(50)
+print('vec after re-push: len=', v.len, ' cap=', v.cap)
+print('elements: ', v[0], ' ', v[1])
+
+print('done')

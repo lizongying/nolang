@@ -25,6 +25,8 @@ PAD = 61
 // 返回 out str: Base64 編碼字串
 encode = (data []byte, table str) (out str) {
     n = data.len
+    out-cap = (n + 2) / 3 * 4
+    out = with-cap(out-cap)
     i = 0
     j = 0
     for i + 3 <= n {

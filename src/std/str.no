@@ -45,6 +45,7 @@
 
 // str.copy: 将 src 复制到 dst（整個字串）
 str.copy = () (dst str) {
+    dst = with-cap(.len)
     i <- [0...len): {
         dst[i] = .[i]
     }
@@ -170,6 +171,7 @@ str.ends-with = (target str) (yes bool) {
 // str.to-upper: 将字符串转为大写
 // 返回新字符串
 str.to-upper = () (val str) {
+    val = with-cap(.len)
     i <- [0...len): {
         c = .[i]
         {
@@ -182,6 +184,7 @@ str.to-upper = () (val str) {
 // str.to-lower: 将字符串转为小写
 // 返回新字符串
 str.to-lower = () (val str) {
+    val = with-cap(.len)
     i <- [0...len): {
         c = .[i]
         {
@@ -212,6 +215,7 @@ str.trim = () (val str) {
     n < 0 -> {
         return
     }
+    val = with-cap(n)
     i <- [0..n): {
         val[i] = .[start + i]
     }
@@ -224,6 +228,7 @@ str.trim = () (val str) {
 // str.repeat: 将字符串重复 times 次
 // 返回新字符串
 str.repeat = (times i64) (val str) {
+    val = with-cap(.len * times)
     i <- [0..times): {
         j <- [0...len): {
             val[i * .len + j] = .[j]
@@ -252,7 +257,7 @@ str.slice = (start i64, end i64) (val str) {
 
 // str.to-bytes: 将字符串转为字节数组
 str.to-bytes = () (val []byte) {
-    val.len = .len
+    val = with-cap(.len)
     i <- [0...len): {
         val[i] = .[i]
     }
@@ -670,6 +675,7 @@ str.to-bool = () (val ?bool) {
 // str.reverse: 反转字符串
 // 将 s 反转后写入 val
 str.reverse = () (val str) {
+    val = with-cap(.len)
     i <- [0...len): {
         val[i] = .[.len - 1 - i]
     }
@@ -767,6 +773,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     }
 
     // 第二遍：写入输出
+    val = with-cap(out-n)
     j = 0
     i = 0
     for i < .len {
@@ -919,6 +926,12 @@ str.empty = () (yes bool) {
 // build-in
 // str.clear = () { }
 
+// with-cap: 建立指定容量的新字串或切片（len=0）
+// 內建語法，不屬於任何模組，根據賦值左側型別推斷：
+//   s str = with-cap(256)     → 預分配 256 位元組的 str
+//   v []i64 = with-cap(100)   → 預分配 100 個元素的切片
+// build-in (ForwardFunc: with-cap)
+
 // ═══════════════════════════════════════════════
 // 十六進制解碼
 // ═══════════════════════════════════════════════
@@ -997,7 +1010,7 @@ str.split = (sep str) (out []str) {
         i > 0 -> total = total + sep.len
         total = total + .[i].len
     }
-    out.len = total
+    out = with-cap(total)
     pos = 0
     i <- [0..n): {
         i > 0 -> {

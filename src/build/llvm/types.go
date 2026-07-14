@@ -242,6 +242,24 @@ var clibFuncNames = map[string]bool{
 	"exit":        true,
 }
 
+// variadicFuncSigs 記錄變參 C 函數的完整 LLVM 函數類型簽名。
+// LLVM IR 中呼叫變參函數時必須帶上函數類型簽名，否則變參部分
+// 可能無法正確傳遞（macOS arm64 上會導致參數錯位，例如 @open
+// 的 mode 參數被路徑字串首字節覆蓋）。
+var variadicFuncSigs = map[string]string{
+	"open":    "(i8*, i32, ...)",
+	"printf":  "(i8*, ...)",
+	"sprintf": "(i8*, i8*, ...)",
+	"execlp":  "(i8*, ...)",
+}
+
+// clibCallSig 返回呼叫指定 C 函數時應使用的函數類型前綴。
+// 對於變參函數返回其完整簽名（如 "(i8*, i32, ...)"），
+// 對於非變參函數返回空字串（LLVM 可從 declare 推斷，無需顯式簽名）。
+func clibCallSig(fnName string) string {
+	return variadicFuncSigs[fnName]
+}
+
 // llvmTypeSize returns the size in bytes of a primitive LLVM type.
 func llvmTypeSize(llvmType string) int64 {
 	switch llvmType {

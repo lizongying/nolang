@@ -142,6 +142,8 @@ n = s.count()                 // Total number of code points
 val = s.replace-char(old, new) // Replace character (returns resulting string)
 out = s.trim-char(c)          // Trim specified character
 ok = s.empty()                // Whether it is empty
+s.clear()                     // Clear (len=0, in-place)
+s = with-cap(cap)            // Builtin: create new string with specified capacity (len=0)
 parts = s.split(sep)          // Split by separator (returns []str, method)
 out = ss.join(sep)            // Join []str with separator (method)
 ```
@@ -198,7 +200,9 @@ s = byte.to-str()               // byte to str (method)
 v = vec.vec-create(n, val)         // Create a slice of length n, filled with val
 ok = []t.eq(a, b, n)           // Equality comparison
 n = []t.len()                  // Length
-[]t.push(val)                   // Append
+[]t.push(val)                   // Append (auto-grow)
+[]t.clear()                     // Clear (len=0, cap/data unchanged)
+v = with-cap(cap)             // Builtin: create new slice with specified capacity (len=0)
 val, new-n = []t.pop()         // Pop
 found = []t.contains(n, val)   // Whether it contains (n is length)
 []t.reverse(n)                  // Reverse first n elements

@@ -81,9 +81,9 @@
 // open-write = (path str) (fd i64) {  // LLVM: call i32 @open → zext
 // }
 
-// build-in (CLibCall: nolang.open3)
+// build-in (CLibCall: open)
 // open-file: 以自訂旗標和權限開啟檔案
-// open-file = (path str, flags i64, mode i64) (fd i64) {  // LLVM: call i32 @nolang.open3 → zext
+// open-file = (path str, flags i64, mode i64) (fd i64) {  // LLVM: call i32 (i8*, i32, ...) @open → sext
 // }
 
 // build-in (ForwardFunc: read)

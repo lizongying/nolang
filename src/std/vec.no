@@ -134,6 +134,10 @@ vec-create = (n i64, val i64) (out []i64) {
 // []t.clear = () {
 // }
 
+// with-cap: see str.no for full documentation
+// Builtin syntax (not a method): v []i64 = with-cap(100)
+// build-in (ForwardFunc: with-cap)
+
 // []t.pop: 從末尾彈出元素
 []t.pop = () (val t, new-n i64) {
     n = .len
