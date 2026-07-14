@@ -967,11 +967,11 @@ struct-name {
 ```nolang
 // ❌ 錯誤：直接使用裸值
 kind = null
-yes = err-is(e, io)
+yes = e.is(io)
 
 // ✅ 正確：使用限定方式
 kind = json-kind.null
-yes = err-is(e, code.io)
+yes = e.is(code.io)
 ```
 
 > 枚舉類型可用於結構體字段類型、函數參數類型和返回值類型。

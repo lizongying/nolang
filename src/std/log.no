@@ -33,7 +33,7 @@ set-level = (l i64) {
 // ═══════════════════════════════════════════════
 
 // debug: 輸出 DEBUG 級別日誌
-debug = (msg str, msgn i64) {
+debug = (msg str) {
     level <= 0 -> {
     // 輸出前綴 [DEBUG] + msg
             prefix = '[DEBUG] '
@@ -42,7 +42,7 @@ debug = (msg str, msgn i64) {
 }
 
 // info: 輸出 INFO 級別日誌
-info = (msg str, msgn i64) {
+info = (msg str) {
     level <= 1 -> {
     // 輸出前綴 [INFO] + msg
             prefix = '[INFO] '
@@ -51,7 +51,7 @@ info = (msg str, msgn i64) {
 }
 
 // warn: 輸出 WARN 級別日誌
-warn = (msg str, msgn i64) {
+warn = (msg str) {
     level <= 2 -> {
     // 輸出前綴 [WARN] + msg
             prefix = '[WARN] '
@@ -60,7 +60,7 @@ warn = (msg str, msgn i64) {
 }
 
 // error: 輸出 ERROR 級別日誌
-error = (msg str, msgn i64) {
+error = (msg str) {
     level <= 3 -> {
     // 輸出前綴 [ERROR] + msg
             prefix = '[ERROR] '
@@ -69,7 +69,7 @@ error = (msg str, msgn i64) {
 }
 
 // fatal: 輸出 FATAL 級別日誌並退出
-fatal = (msg str, msgn i64, code i64) {
+fatal = (msg str, code i64) {
     // 無條件輸出
     prefix = '[FATAL] '
     // LLVM: call @printf

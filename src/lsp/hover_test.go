@@ -448,7 +448,7 @@ func TestEnumVariantCompletion(t *testing.T) {
     io,
 }
 
-e = err-new(`
+e = new(`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 	index := createTestIndex(doc, program)

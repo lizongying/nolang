@@ -4,8 +4,8 @@
 // error 結構體封裝錯誤碼與訊息，code 枚舉定義常見錯誤類別。
 //
 // 用法：
-//   e = err-new(code.io, 'disk full')
-//   yes = err-is(e, code.io)
+//   e = err.new(code.io, 'disk full')
+//   yes = e.is(code.io)
 //   s = e.format()
 
 // ═══════════════════════════════════════════════
@@ -40,10 +40,10 @@ error {
 // 建構函式
 // ═══════════════════════════════════════════════
 
-// err-new: 建立錯誤
-// c: 錯誤碼（code 枚舉值，如 code.io）
+// new: 建立錯誤
+// ec: 錯誤碼（code 枚舉值，如 code.io）
 // msg: 錯誤訊息
-err-new = (ec code, msg str) (e error) {
+new = (ec code, msg str) (e error) {
     e = error{
         code: ec
         msg: msg
@@ -78,20 +78,24 @@ err-from-errno = (errno i64) (e error) {
 // 查詢函式
 // ═══════════════════════════════════════════════
 
-// err-is: 檢查錯誤碼是否匹配
-err-is = (e error, ec code) (yes bool) {
+// error.is: 檢查錯誤碼是否匹配
+// ec: 要匹配的錯誤碼
+// 返回 yes: 是否匹配
+error.is = (ec code) (yes bool) {
     yes = false
-    e.code == ec -> yes = true
+    .code == ec -> yes = true
 }
 
-// err-msg: 取得錯誤訊息
-err-msg = (e error) (msg str) {
-    msg = e.msg
+// error.msg: 取得錯誤訊息
+// 返回 msg: 錯誤訊息
+error.msg = () (msg str) {
+    msg = .msg
 }
 
-// fetch-code: 取得錯誤碼
-fetch-code = (e error) (ec code) {
-    ec = e.code
+// error.code: 取得錯誤碼
+// 返回 ec: 錯誤碼
+error.code = () (ec code) {
+    ec = .code
 }
 
 // ═══════════════════════════════════════════════

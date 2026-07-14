@@ -1794,11 +1794,11 @@ error {
 }
 
 // Functions
-e = err.err-new(code.io, msg)          // Create error
+e = err.new(code.io, msg)            // Create error
 e = err.err-from-errno(errno)         // Create from C errno
-yes = err.err-is(e, code.io)          // Check error code
-msg = err.err-msg(e)                  // Get error message
-c = err.fetch-code(e)                 // Get error code
+yes = e.is(code.io)                  // Check error code
+msg = e.msg()                       // Get error message
+c = e.code()                        // Get error code
 s = e.format()                       // Format as string
 ```
 

@@ -1,52 +1,52 @@
 // test-err.no — err 模組測試
 //
-// 測試 err-new, err-is, err-msg, fetch-code, err-from-errno, error.format
+// 測試 new, error.is, error.msg, error.code, err-from-errno, error.format
 // 注意：str-long value type 跨函式邊界傳遞時長度不一致，
 // 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
 
 
-// ── 1. err-new 建立錯誤，檢查 code ──
-e = err.err-new(code.io, 'disk full')
+// ── 1. new 建立錯誤，檢查 code ──
+e = err.new(code.io, 'disk full')
 
-yes = err.err-is(e, code.io)
+yes = e.is(code.io)
 {
-    yes -> print('ok: err-new code')
-    -> print('fail: err-new code')
+    yes -> print('ok: new code')
+    -> print('fail: new code')
 }
 
-// ── 2. err-msg 取得訊息（只驗證呼叫完成）──
-msg = err.err-msg(e)
-print('ok: err-msg')
+// ── 2. error.msg 取得訊息（只驗證呼叫完成）──
+msg = e.msg()
+print('ok: error.msg')
 
-// ── 3. err-is 比對錯誤碼（true 和 false）──
-yes = err.err-is(e, code.io)
+// ── 3. error.is 比對錯誤碼（true 和 false）──
+yes = e.is(code.io)
 {
-    yes -> print('ok: err-is true')
-    -> print('fail: err-is true')
+yes -> print('ok: error.is true')
+-> print('fail: error.is true')
 }
 
-yes = err.err-is(e, code.not-found)
+yes = e.is(code.not-found)
 {
-    yes == false -> print('ok: err-is false')
-    -> print('fail: err-is false')
+yes == false -> print('ok: error.is false')
+-> print('fail: error.is false')
 }
 
-// ── 4. fetch-code 取得錯誤碼 ──
-mc = err.fetch-code(e)
+// ── 4. error.code 取得錯誤碼 ──
+mc = e.code()
 {
-    mc == code.io -> print('ok: fetch-code')
-    -> print('fail: fetch-code')
+mc == code.io -> print('ok: error.code')
+-> print('fail: error.code')
 }
 
 // ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──
 e2 = err.err-from-errno(2)
-yes2 = err.err-is(e2, code.not-found)
+yes2 = e2.is(code.not-found)
 {
     yes2 -> print('ok: err-from-errno code')
     -> print('fail: err-from-errno code')
 }
 
-errno-msg = err.err-msg(e2)
+errno-msg = e2.msg()
 print('ok: err-from-errno msg')
 
 // ── 6. error.format 格式化錯誤 ──

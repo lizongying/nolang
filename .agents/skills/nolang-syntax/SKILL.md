@@ -1004,11 +1004,11 @@ struct-name {
 ```nolang
 // ❌ Wrong: bare enum value
 kind = null
-yes = err-is(e, io)
+yes = e.is(io)
 
 // ✅ Correct: qualified form
 kind = json-kind.null
-yes = err-is(e, code.io)
+yes = e.is(code.io)
 ```
 
 > Enum types can be used as struct field types, function parameter types, and return value types. Both inside and outside the module that defines the enum, enum values should be referenced using the `enum-type.value` form.
@@ -3683,11 +3683,11 @@ msg str
 }
 
 // Functions
-e = err.err-new(code.io, msg)      // Create error
+e = err.new(code.io, msg)            // Create error
 e = err.err-from-errno(errno)         // Create from C errno
-yes = err.err-is(e, code.io)      // Check error code
-msg = err.err-msg(e)                  // Get error message
-c = err.fetch-code(e)             // Get error code
+yes = e.is(code.io)                  // Check error code
+msg = e.msg()                       // Get error message
+c = e.code()                        // Get error code
 s = e.format()              // Format as string
 ```
 

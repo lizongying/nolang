@@ -1794,11 +1794,11 @@ error {
 }
 
 // 函數
-e = err.err-new(code.io, msg)          // 建立錯誤
+e = err.new(code.io, msg)            // 建立錯誤
 e = err.err-from-errno(errno)         // 從 C errno 建立
-yes = err.err-is(e, code.io)          // 判斷錯誤碼
-msg = err.err-msg(e)                  // 取得錯誤訊息
-c = err.fetch-code(e)                 // 取得錯誤碼
+yes = e.is(code.io)                  // 判斷錯誤碼
+msg = e.msg()                       // 取得錯誤訊息
+c = e.code()                        // 取得錯誤碼
 s = e.format()                       // 格式化為字串
 ```
 
