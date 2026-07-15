@@ -18,11 +18,6 @@
   "compiler": {
     "version": "0.1.0",
     "anonymous-fn-type": false,
-    "link-libs": [
-      "sqlite3",
-      "z",
-      "pthread"
-    ],
   },
   "output": "./dist",
   "ignore": [],

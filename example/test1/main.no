@@ -12,11 +12,7 @@ greet1('World')
 greet2('World')
 print()
 
-// Both calling styles are valid:
-// 1. Direct function style (always works, builtin):
-b = sin(1.0)
-
-// 2. Module.function style (works even without explicit # std/math):
+// Module.function style (works even without explicit # std/math):
 b = math.sin(1.0)
 
 // Both produce identical LLVM IR
@@ -24,8 +20,8 @@ print('a:', b)
 print('b:', b)
 
 // Constants pi and e are also available:
-print('pi:', pi)
-print('e:', e)
+print('pi:', math.PI)
+print('e:', math.E)
 
 // Module functions like degrees/radians work too:
 c = math.degrees(3.141592653589793)
