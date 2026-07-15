@@ -9,7 +9,7 @@
   ],
   "author": "lizongying",
   "email": "lizongying@msn.com",
-  "organization": "lizongying",
+  "organization": "nolang",
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
   "license": "MIT",
@@ -17,7 +17,9 @@
   "compiler": {
     "version": "0.1.0",
     "link-libs": [
-      "sqlite3"
+      "sqlite3",
+      "z",
+      "pthread"
     ],
   },
   "output": "./dist",

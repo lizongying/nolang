@@ -36,6 +36,8 @@ type Package struct {
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
 	RootDir         string            // 套件根目錄（含 mod.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
+	wsMap           WorkspaceMap      // 快取的 workspace.jsonc 映射
+	warned          bool              // 是否已輸出過 workspace 版本警告
 	lockFile        *LockFile         // 已載入的鎖檔案（可選）
 	sumFile         *SumFile          // 已載入的總和檔案（可選）
 	depGraph        *DependencyGraph  // 已解析的依賴圖（可選）
@@ -189,8 +191,12 @@ func LoadPackage(dir string) (*Package, error) {
 				wsRoot = parent
 			}
 
-			// 警告：workspace 內的依賴不應有版本號
-			pkg.warnWorkspaceDepVersion()
+			// 快取 workspace.jsonc 映射，避免後續重複讀取磁碟
+			if pkg.workspaceRoot != "" {
+				pkg.wsMap, _ = loadWorkspaceMap(pkg.workspaceRoot)
+				// 警告：workspace 內的依賴不應有版本號（僅首次）
+				pkg.warnWorkspaceDepVersion()
+			}
 
 			// 補上預設 alias
 			if pkg.Alias == nil {
@@ -243,13 +249,9 @@ func (p *Package) ResolvePath(inputPath string) string {
 // key 為套件短名稱，value 為相對於 workspaceRoot 的本地路徑
 type WorkspaceMap map[string]string
 
-// LoadWorkspace 載入 workspace.jsonc
-func (p *Package) LoadWorkspace() (WorkspaceMap, error) {
-	if p == nil || p.workspaceRoot == "" {
-		return nil, nil
-	}
-
-	wsFile := filepath.Join(p.workspaceRoot, "workspace.jsonc")
+// loadWorkspaceMap 從磁碟讀取並解析 workspace.jsonc
+func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
+	wsFile := filepath.Join(workspaceRoot, "workspace.jsonc")
 	raw, err := os.ReadFile(wsFile)
 	if err != nil {
 		return nil, nil // workspace.jsonc 可選
@@ -261,6 +263,18 @@ func (p *Package) LoadWorkspace() (WorkspaceMap, error) {
 		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
 	}
 	return ws, nil
+}
+
+// LoadWorkspace 載入 workspace.jsonc（優先使用快取）
+func (p *Package) LoadWorkspace() (WorkspaceMap, error) {
+	if p == nil || p.workspaceRoot == "" {
+		return nil, nil
+	}
+	// 使用快取避免重複讀取磁碟
+	if p.wsMap != nil {
+		return p.wsMap, nil
+	}
+	return loadWorkspaceMap(p.workspaceRoot)
 }
 
 // matchDependency 在依賴中尋找最長前綴匹配
@@ -332,11 +346,12 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 	return pkgDir, err
 }
 
-// warnWorkspaceDepVersion 警告 workspace 內的依賴不應指定版本號
+// warnWorkspaceDepVersion 警告 workspace 內的依賴不應指定版本號（僅首次）
 func (p *Package) warnWorkspaceDepVersion() {
-	if p == nil || p.workspaceRoot == "" || len(p.Dependencies) == 0 {
+	if p == nil || p.warned || p.workspaceRoot == "" || len(p.Dependencies) == 0 {
 		return
 	}
+	p.warned = true
 	ws, err := p.LoadWorkspace()
 	if err != nil || ws == nil {
 		return

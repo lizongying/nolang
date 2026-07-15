@@ -12,6 +12,10 @@
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",
+    "link-libs": [
+      "z",
+      "pthread"
+    ],
   },
   "output": "./dist",
   "ignore": [],

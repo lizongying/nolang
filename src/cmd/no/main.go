@@ -151,7 +151,7 @@ func printUsage() {
 	fmt.Println("      no run -cc zig main.no     build and run with Zig compiler")
 	fmt.Println("")
 	fmt.Println("  no test [<file>]            Run tests")
-	fmt.Println("    Defaults to test/ directory.")
+	fmt.Println("    Defaults to tests/ directory.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
@@ -159,7 +159,7 @@ func printUsage() {
 	fmt.Println("                      x86_64-windows-gnu")
 	fmt.Println("    Examples:")
 	fmt.Println("      no test")
-	fmt.Println("      no test test/my-test.no")
+	fmt.Println("      no test tests/my-test.no")
 	fmt.Println("      no test -cc zig")
 	fmt.Println("      no test -target x86_64-linux-gnu")
 	fmt.Println("")
@@ -304,14 +304,12 @@ func initProject() {
 
 	createConfigFile(config)
 	createMainFile()
-	createGitIgnore()
 
 	fmt.Printf("Project initialized in %s\n", dir)
 	fmt.Println("")
 	fmt.Println("Files created:")
 	fmt.Println("  - mod.jsonc (project configuration)")
 	fmt.Println("  - main.no (main entry file)")
-	fmt.Println("  - .gitignore")
 }
 
 func newProject(name string) {
@@ -340,7 +338,6 @@ func newProject(name string) {
 
 	createConfigFile(config)
 	createMainFile()
-	createGitIgnore()
 	createSrcDirectory()
 	createLibFile()
 	createTestDirectory()
@@ -352,8 +349,7 @@ func newProject(name string) {
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - lib.no (library export file)")
 	fmt.Println("  - src/ (source directory)")
-	fmt.Println("  - test/ (test directory)")
-	fmt.Println("  - .gitignore")
+	fmt.Println("  - tests/ (test directory)")
 }
 
 func createConfigFile(config ProjectConfig) {
@@ -465,9 +461,9 @@ func createLibFile() {
 }
 
 func createTestDirectory() {
-	err := os.MkdirAll("test", 0755)
+	err := os.MkdirAll("tests", 0755)
 	if err != nil {
-		fmt.Printf("Error creating test directory: %v\n", err)
+		fmt.Printf("Error creating tests directory: %v\n", err)
 		return
 	}
 
@@ -478,7 +474,7 @@ func createTestDirectory() {
 //     print('test passed')
 // }
 `
-	err = os.WriteFile("test/test.no", []byte(content), 0644)
+	err = os.WriteFile("tests/test.no", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing test file: %v\n", err)
 	}
@@ -1058,7 +1054,7 @@ func testCommand(args []string) {
 		fmt.Println("Usage: no test [<file>]")
 		fmt.Println("")
 		fmt.Println("Run tests.")
-		fmt.Println("  no test                     run all .no files in test/ directory")
+		fmt.Println("  no test                     run all .no files in tests/ directory")
 		fmt.Println("  no test test/my-test.no     run a single test file")
 		fmt.Println("")
 		fmt.Println("Flags:")
@@ -1076,13 +1072,13 @@ func testCommand(args []string) {
 	if len(fs.Args()) > 0 {
 		inputPath = fs.Args()[0]
 	} else {
-		inputPath = filepath.Join(".", "test")
+		inputPath = filepath.Join(".", "tests")
 	}
 
 	info, err := os.Stat(inputPath)
 	if err != nil {
 		if len(fs.Args()) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: test/ directory not found\n")
+			fmt.Fprintf(os.Stderr, "Error: tests/ directory not found\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
