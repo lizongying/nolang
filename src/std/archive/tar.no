@@ -162,7 +162,7 @@ tar.read = (idx i64) (out []byte) {
     hdr = .offset(idx)
     sz > 0 -> {
         i <- [0..sz): {
-            out[i] = .data[hdr + TAR-BLOCK + i]
+            out.push(.data[hdr + TAR-BLOCK + i])
         }
     }
 }
@@ -240,7 +240,7 @@ tar-entry.read = () (out []byte) {
     hdr = .idx
     sz > 0 -> {
         i <- [0..sz): {
-            out[i] = .data[hdr + TAR-BLOCK + i]
+            out.push(.data[hdr + TAR-BLOCK + i])
         }
     }
 }
@@ -266,6 +266,15 @@ tar-entry.mtime = () (ts i64) {
 }
 
 // ─── tar-builder 方法 ─────────────────────────
+
+// pre-alloc: 預分配緩衝區（用局部變數 push，避免結構體欄位 push 限制）
+tar-builder.pre-alloc = (size i64) {
+    buf []byte
+    i <- [0..size): {
+        buf.push(0)
+    }
+    .buf = buf
+}
 
 // add-file: 新增檔案條目
 tar-builder.add-file = (name str, content []byte) {

@@ -88,7 +88,9 @@ zip.entry-off = (idx i64) (off i64) {
     cd-off, total = .cd-info()
     off = cd-off
     j <- [0..idx): {
-        j >= total -> break
+        j >= total -> {
+            break
+        }
         off28 = off + 28
         off30 = off + 30
         off32 = off + 32
@@ -168,15 +170,16 @@ zip.extract = (idx i64) (out []byte) {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
                 src-off = data-off + i
-                out[i] = .data[src-off]
+                out.push(.data[src-off])
             }
         }
         method == 8 && sz > 0 -> {
             // 提取壓縮資料
             compressed []byte
             i <- [0..csz): {
-                compressed[i] = .data[data-off + i]
+                compressed.push(.data[data-off + i])
             }
+
             // 解壓縮 DEFLATE
             out = gzip.inflate-decompress(compressed, sz)
         }
@@ -238,17 +241,240 @@ zip-entry.extract = () (out []byte) {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
                 src-off = data-off + i
-                out[i] = .data[src-off]
+                out.push(.data[src-off])
             }
         }
         method == 8 && sz > 0 -> {
             // 提取壓縮資料
             compressed []byte
             i <- [0..csz): {
-                compressed[i] = .data[data-off + i]
+                compressed.push(.data[data-off + i])
             }
+
             // 解壓縮 DEFLATE
             out = gzip.inflate-decompress(compressed, sz)
         }
     }
+}
+
+// ─── ZIP 寫入器 ───────────────────────────────
+
+// zip-writer: ZIP 歸檔寫入器
+//
+// 用法：
+//   w = zip-writer{}
+//   w.add-file('test.txt', content-bytes)
+//   w.add-dir('subdir/')
+//   data = w.finalize()
+//   fs.write-file('out.zip', data)
+
+zip-writer {
+    data []byte
+    cd-data []byte
+    count i64
+}
+
+// add-file: 添加檔案到歸檔（自動計算 CRC32）
+zip-writer.add-file = (name str, content []byte) {
+    crc = crc-32.crc-32(content, content.len)
+    off = .data.len
+    .write-local-file(name, content, crc)
+    .write-cd-entry(name, off, content.len, content.len, crc)
+    .count = .count + 1
+}
+
+// add-dir: 添加目錄條目
+zip-writer.add-dir = (name str) {
+    dname = name
+    ! dname.ends-with('/') -> dname = dname - '/'
+    empty []byte
+    off = .data.len
+    .write-local-file(dname, empty, 0)
+    .write-cd-entry(dname, off, 0, 0, 0)
+    .count = .count + 1
+}
+
+// put: 追加一個位元組到 data（透過局部變數支援 push）
+zip-writer.put = (b i64) {
+    d []byte
+    d = .data
+    d.push(b)
+    .data = d
+}
+
+// cd-put: 追加一個位元組到 cd-data
+zip-writer.cd-put = (b i64) {
+    d []byte
+    d = .cd-data
+    d.push(b)
+    .cd-data = d
+}
+
+// finalize: 寫入中央目錄和 EOCD，返回完整歸檔資料
+zip-writer.finalize = () (out []byte) {
+    cd-offset = .data.len
+    cd-size = .cd-data.len
+    i <- [0..cd-size): {
+        .put(.cd-data[i])
+    }
+    .write-eocd(cd-offset, cd-size)
+    out = .data
+}
+
+// write-u16: 寫入 2 位元組小端序整數
+zip-writer.write-u16 = (v i64) {
+    .put(v & 255)
+    .put((v >> 8) & 255)
+}
+
+// write-u32: 寫入 4 位元組小端序整數
+zip-writer.write-u32 = (v i64) {
+    .put(v & 255)
+    .put((v >> 8) & 255)
+    .put((v >> 16) & 255)
+    .put((v >> 24) & 255)
+}
+
+// write-local-file: 寫入本地檔案標頭和內容
+zip-writer.write-local-file = (name str, content []byte, crc i64) {
+    // 簽名 PK\x03\x04
+    .put(0x50); .put(0x4B); .put(0x03); .put(0x04)
+
+    // 版本 (20)
+    .write-u16(20)
+
+    // 旗標 (0)
+    .write-u16(0)
+
+    // 壓縮方式 (0=stored)
+    .write-u16(0)
+
+    // 修改時間、日期 (0)
+    .write-u16(0)
+    .write-u16(0)
+
+    // CRC32
+    .write-u32(crc)
+
+    // 壓縮後大小
+    .write-u32(content.len)
+
+    // 原始大小
+    .write-u32(content.len)
+
+    // 檔名長度
+    name-len = name.len
+    .write-u16(name-len)
+
+    // 額外欄位長度 (0)
+    .write-u16(0)
+
+    // 檔名
+    i <- [0..name-len): {
+        .put(name[i])
+    }
+
+    // 檔案內容
+    i <- [0..content.len): {
+        .put(content[i])
+    }
+}
+
+// cd-write-u16: 寫入 2 位元組小端序整數到中央目錄
+zip-writer.cd-write-u16 = (v i64) {
+    .cd-put(v & 255)
+    .cd-put((v >> 8) & 255)
+}
+
+// cd-write-u32: 寫入 4 位元組小端序整數到中央目錄
+zip-writer.cd-write-u32 = (v i64) {
+    .cd-put(v & 255)
+    .cd-put((v >> 8) & 255)
+    .cd-put((v >> 16) & 255)
+    .cd-put((v >> 24) & 255)
+}
+
+// write-cd-entry: 寫入中央目錄條目
+zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, crc i64) {
+    // 簽名 PK\x01\x02
+    .cd-put(0x50); .cd-put(0x4B); .cd-put(0x01); .cd-put(0x02)
+
+    // 版本 (20)
+    .cd-write-u16(20)
+
+    // 版本需要 (20)
+    .cd-write-u16(20)
+
+    // 旗標 (0)
+    .cd-write-u16(0)
+
+    // 壓縮方式 (0=stored)
+    .cd-write-u16(0)
+
+    // 修改時間、日期 (0)
+    .cd-write-u16(0)
+    .cd-write-u16(0)
+
+    // CRC32
+    .cd-write-u32(crc)
+
+    // 壓縮後大小
+    .cd-write-u32(compressed-size)
+
+    // 原始大小
+    .cd-write-u32(size)
+
+    // 檔名長度
+    name-len = name.len
+    .cd-write-u16(name-len)
+
+    // 額外欄位長度 (0)
+    .cd-write-u16(0)
+
+    // 註解長度 (0)
+    .cd-write-u16(0)
+
+    // 磁碟號 (0)
+    .cd-write-u16(0)
+
+    // 內部屬性 (0)
+    .cd-write-u16(0)
+
+    // 外部屬性 (0)
+    .cd-write-u32(0)
+
+    // 本地檔案標頭偏移
+    .cd-write-u32(offset)
+
+    // 檔名
+    i <- [0..name-len): {
+        .cd-put(name[i])
+    }
+}
+
+// write-eocd: 寫入結束記錄 (End of Central Directory)
+zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
+    // 簽名 PK\x05\x06
+    .put(0x50); .put(0x4B); .put(0x05); .put(0x06)
+
+    // 磁碟號 (0)
+    .write-u16(0)
+
+    // 中央目錄所在磁碟 (0)
+    .write-u16(0)
+
+    // 此磁碟上的條目數
+    .write-u16(.count)
+
+    // 總條目數
+    .write-u16(.count)
+
+    // 中央目錄大小
+    .write-u32(cd-size)
+
+    // 中央目錄偏移
+    .write-u32(cd-offset)
+
+    // 註解長度 (0)
+    .write-u16(0)
 }

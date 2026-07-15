@@ -1,37 +1,463 @@
-// gzip — GZIP 壓縮與解壓縮
+// gzip — GZIP 壓縮與解壓縮（純 Nolang 實現）
 //
-// 使用 DEFLATE 演算法實現資料的 gzip 格式壓縮與解壓縮。
-// 不依賴外部庫，透過 build-in 函數提供高效能的壓縮功能。
+// 完全使用 Nolang 實現 DEFLATE (RFC 1951) 和 GZIP (RFC 1952)，
+// 不依賴外部庫（不使用 zlib）。
+//
+// 支援：
+//   - DEFLATE 解壓：stored (0)、fixed Huffman (1)、dynamic Huffman (2)
+//   - DEFLATE 壓縮：stored blocks（無壓縮，相容所有解壓器）
+//   - GZIP 格式：標頭 + DEFLATE + CRC32 + ISIZE
 //
 // 用法：
 //   data = [104, 101, 108, 108, 111]  // []byte
 //   compressed = gzip-compress(data)
 //   decompressed = gzip-decompress(compressed)
+//   raw = inflate-decompress(deflate-data, expected-size)
 
-// ─── 壓縮 ─────────────────────────────────────
+// ─── 位元讀取器 ───────────────────────────────
 
-// build-in (ForwardFunc: gzip-compress)
-// gzip-compress: 使用 gzip 格式壓縮資料
-//   data: 原始資料 ([]byte)
-//   out: 壓縮後的資料 ([]byte)
-gzip-compress = (data []byte) (out []byte) {
+// bit-reader: DEFLATE 位元讀取器（LSB-first）
+bit-reader {
+    data []byte
+    pos i64       // 當前位元組位置
+    bit-buf i64   // 位元緩衝區
+    bit-cnt i64   // 緩衝區中剩餘位元數
 }
 
-// ─── 解壓縮 ───────────────────────────────────
-
-// build-in (ForwardFunc: gzip-decompress)
-// gzip-decompress: 解壓縮 gzip 格式的資料
-//   data: 壓縮資料 ([]byte)
-//   out: 解壓後的資料 ([]byte)
-gzip-decompress = (data []byte) (out []byte) {
+// read-bit: 讀取一個位元
+bit-reader.read-bit = () (bit i64) {
+    .bit-cnt == 0 -> {
+        .bit-buf = .data[.pos] & 255
+        .pos = .pos + 1
+        .bit-cnt = 8
+    }
+    bit = .bit-buf & 1
+    .bit-buf = .bit-buf >> 1
+    .bit-cnt = .bit-cnt - 1
 }
 
-// ─── 原始 DEFLATE 解壓縮 ──────────────────────
+// read-bits: 讀取 n 個位元（LSB-first）
+bit-reader.read-bits = (n i64) (v i64) {
+    v = 0
+    i <- [0..n): {
+        b = .read-bit()
+        v = v | (b << i)
+    }
+}
 
-// build-in (ForwardFunc: inflate-decompress)
+// skip-to-byte: 跳到下一個位元組邊界
+bit-reader.skip-to-byte = () {
+    .bit-cnt = 0
+}
+
+// read-u16-le: 讀取 2 位元組小端序整數（位元組對齊時）
+bit-reader.read-u16-le = () (v i64) {
+    lo = .data[.pos] & 255
+    .pos = .pos + 1
+    hi = .data[.pos] & 255
+    .pos = .pos + 1
+    v = lo | (hi << 8)
+}
+
+// ─── Huffman 解碼 ─────────────────────────────
+
+// huffman: 規範 Huffman 碼表
+huffman {
+    count []i64   // 各長度的碼數（0-15）
+    symbol []i64  // 按碼排序的符號
+}
+
+// build: 從碼長度陣列建構 Huffman 碼表
+huffman.build = (lengths []i64, n i64) {
+    // 初始化 count[0..16] = 0
+    c []i64
+    i <- [0..16): { c.push(0) }
+    .count = c
+
+    // 計算各長度的碼數
+    i <- [0..n): {
+        l = lengths[i]
+        .count[l] = .count[l] + 1
+    }
+    .count[0] = 0
+
+    // 計算各長度的起始偏移
+    offs []i64
+    i <- [0..17): { offs.push(0) }
+    i <- [1..16): { offs[i + 1] = offs[i] + .count[i] }
+
+    // 排序符號
+    s []i64
+    i <- [0..n): { s.push(0) }
+    .symbol = s
+
+    i <- [0..n): {
+        lengths[i] != 0 -> {
+            .symbol[offs[lengths[i]]] = i
+            offs[lengths[i]] = offs[lengths[i]] + 1
+        }
+    }
+}
+
+// decode: 解碼一個符號
+huffman.decode = (br bit-reader) (sym i64) {
+    code = 0
+    first = 0
+    index = 0
+    len = 1
+    for len <= 15 {
+        bit = br.read-bit()
+        code = code | bit
+        cnt = .count[len]
+        code - first < cnt -> {
+            sym = .symbol[index + (code - first)]
+            return
+        }
+        index = index + cnt
+        first = first + cnt
+        first = first << 1
+        code = code << 1
+        len = len + 1
+    }
+    sym = -1
+}
+
+// ─── 固定 Huffman 表建構 ──────────────────────
+
+// build-fixed: 建構固定 Huffman 表
+build-fixed = (lc huffman, dc huffman) {
+    // 字面/長度碼長度：
+    // 0-143: 8, 144-255: 9, 256-279: 7, 280-287: 8
+    lengths []i64
+    i <- [0..144): { lengths.push(8) }
+    i <- [0..112): { lengths.push(9) }
+    i <- [0..24): { lengths.push(7) }
+    i <- [0..8): { lengths.push(8) }
+    lc.build(lengths, 288)
+
+    // 距離碼長度：全部 5 位元
+    dlengths []i64
+    i <- [0..30): { dlengths.push(5) }
+    dc.build(dlengths, 30)
+}
+
+// ─── 動態 Huffman 表建構 ──────────────────────
+
+// build-dynamic: 從位元串流建構動態 Huffman 表
+build-dynamic = (br bit-reader, lc huffman, dc huffman) {
+    hlit = br.read-bits(5) + 257
+    hdist = br.read-bits(5) + 1
+    hclen = br.read-bits(4) + 4
+
+    // 讀取碼長度碼的碼長度
+    clens []i64
+    i <- [0..19): { clens.push(0) }
+    code-order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+    i <- [0..hclen): {
+        clens[code-order[i]] = br.read-bits(3)
+    }
+
+    // 建構碼長度 Huffman 表
+    clcodec = huffman{}
+    clcodec.build(clens, 19)
+
+    // 解碼字面/長度和距離碼長度
+    lengths []i64
+    total = hlit + hdist
+    i <- [0..total): { lengths.push(0) }
+
+    idx = 0
+    for idx < total {
+        sym = clcodec.decode(br)
+        sym < 16 -> {
+            lengths[idx] = sym
+            idx = idx + 1
+        }
+        sym == 16 -> {
+            // 複製前一個碼長度 3-6 次
+            cnt = br.read-bits(2) + 3
+            prev = lengths[idx - 1]
+            j <- [0..cnt): {
+                lengths[idx] = prev
+                idx = idx + 1
+            }
+        }
+        sym == 17 -> {
+            // 重複零 3-10 次
+            cnt = br.read-bits(3) + 3
+            j <- [0..cnt): {
+                lengths[idx] = 0
+                idx = idx + 1
+            }
+        }
+        sym == 18 -> {
+            // 重複零 11-138 次
+            cnt = br.read-bits(7) + 11
+            j <- [0..cnt): {
+                lengths[idx] = 0
+                idx = idx + 1
+            }
+        }
+    }
+
+    // 建構字面/長度 Huffman 表
+    lc.build(lengths, hlit)
+
+    // 建構距離 Huffman 表
+    dlengths []i64
+    i <- [0..hdist): { dlengths.push(0) }
+    i <- [0..hdist): { dlengths[i] = lengths[hlit + i] }
+    dc.build(dlengths, hdist)
+}
+
+// ─── DEFLATE 解壓縮 ───────────────────────────
+
 // inflate-decompress: 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
 //   data: 壓縮資料 ([]byte)
 //   out-size: 預期解壓後大小 (i64)
 //   out: 解壓後的資料 ([]byte)
 inflate-decompress = (data []byte, out-size i64) (out []byte) {
+    br = bit-reader{
+        data: data,
+        pos: 0,
+        bit-buf: 0,
+        bit-cnt: 0
+    }
+
+    result []byte
+
+    // 長度碼基底值 (257-285)
+    length-base = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+    // 長度碼額外位元數
+    length-extra = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+    // 距離碼基底值 (0-29)
+    dist-base = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+    // 距離碼額外位元數
+    dist-extra = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+
+    final = 0
+    for final == 0 {
+        final = br.read-bit()
+        btype = br.read-bits(2)
+
+        // Stored block (method 0)
+        btype == 0 -> {
+            br.skip-to-byte()
+            blen = br.read-u16-le()
+            br.read-u16-le()  // 跳過 NLEN
+            i <- [0..blen): {
+                result.push(data[br.pos] & 255)
+                br.pos = br.pos + 1
+            }
+        }
+
+        // Fixed Huffman (method 1)
+        btype == 1 -> {
+            lc = huffman{}
+            dc = huffman{}
+            build-fixed(lc, dc)
+
+            done = 0
+            for done == 0 {
+                sym = lc.decode(br)
+                sym == 256 -> done = 1
+                sym < 256 -> {
+                    // 字面值
+                    result.push(sym)
+                }
+                sym > 256 -> {
+                    // 長度/距離回參考
+                    code = sym - 257
+                    length = length-base[code]
+                    extra = length-extra[code]
+                    extra > 0 -> length = length + br.read-bits(extra)
+
+                    dsym = dc.decode(br)
+                    distance = dist-base[dsym]
+                    dextra = dist-extra[dsym]
+                    dextra > 0 -> distance = distance + br.read-bits(dextra)
+
+                    // 複製回參考
+                    src = result.len - distance
+                    i <- [0..length): {
+                        result.push(result[src + i] & 255)
+                    }
+                }
+            }
+        }
+
+        // Dynamic Huffman (method 2)
+        btype == 2 -> {
+            lc = huffman{}
+            dc = huffman{}
+            build-dynamic(br, lc, dc)
+
+            done = 0
+            for done == 0 {
+                sym = lc.decode(br)
+                sym == 256 -> done = 1
+                sym < 256 -> {
+                    // 字面值
+                    result.push(sym)
+                }
+                sym > 256 -> {
+                    // 長度/距離回參考
+                    code = sym - 257
+                    length = length-base[code]
+                    extra = length-extra[code]
+                    extra > 0 -> length = length + br.read-bits(extra)
+
+                    dsym = dc.decode(br)
+                    distance = dist-base[dsym]
+                    dextra = dist-extra[dsym]
+                    dextra > 0 -> distance = distance + br.read-bits(dextra)
+
+                    // 複製回參考
+                    src = result.len - distance
+                    i <- [0..length): {
+                        result.push(result[src + i] & 255)
+                    }
+                }
+            }
+        }
+    }
+
+    out = result
+}
+
+// ─── DEFLATE 壓縮（stored blocks）─────────────
+
+// deflate-stored: 使用 stored blocks 的 DEFLATE 壓縮
+//   data: 原始資料 ([]byte)
+//   out: 壓縮後的 DEFLATE 資料 ([]byte)
+deflate-stored = (data []byte) (out []byte) {
+    result []byte
+    pos = 0
+    n = data.len
+
+    for pos < n {
+        // 區塊大小（最大 65535）
+        blen = n - pos
+        blen > 65535 -> blen = 65535
+
+        // BFINAL: 1 = 最後區塊
+        final = 0
+        pos + blen >= n -> final = 1
+
+        // BFINAL (1 bit) + BTYPE=00 (2 bits)，填充到位元組邊界
+        // 由於 stored block 起始於位元組邊界，直接寫入一個位元組
+        result.push(final)
+
+        // LEN (2 bytes LE)
+        result.push(blen & 255)
+        result.push((blen >> 8) & 255)
+
+        // NLEN = ~LEN (2 bytes LE)
+        nlen = blen ^ 65535
+        result.push(nlen & 255)
+        result.push((nlen >> 8) & 255)
+
+        // 資料
+        i <- [0..blen): {
+            result.push(data[pos + i] & 255)
+        }
+
+        pos = pos + blen
+    }
+
+    out = result
+}
+
+// ─── GZIP 格式 ────────────────────────────────
+
+// gzip-compress: 使用 gzip 格式壓縮資料
+//   data: 原始資料 ([]byte)
+//   out: gzip 壓縮後的資料 ([]byte)
+gzip-compress = (data []byte) (out []byte) {
+    result []byte
+
+    // GZIP 標頭 (10 bytes)
+    result.push(0x1f)  // ID1
+    result.push(0x8b)  // ID2
+    result.push(0x08)  // CM = deflate
+    result.push(0x00)  // FLG = 0
+    result.push(0x00)  // MTIME
+    result.push(0x00)
+    result.push(0x00)
+    result.push(0x00)
+    result.push(0x00)  // XFL
+    result.push(0xff)  // OS = unknown
+
+    // DEFLATE 資料（stored blocks）
+    deflated = deflate-stored(data)
+    i <- [0..deflated.len): {
+        result.push(deflated[i] & 255)
+    }
+
+    // CRC32（原始資料的 CRC32，小端序）
+    crc = crc-32.crc-32(data, data.len)
+    result.push(crc & 255)
+    result.push((crc >> 8) & 255)
+    result.push((crc >> 16) & 255)
+    result.push((crc >> 24) & 255)
+
+    // ISIZE（原始資料大小 mod 2^32，小端序）
+    isize = data.len & 4294967295
+    result.push(isize & 255)
+    result.push((isize >> 8) & 255)
+    result.push((isize >> 16) & 255)
+    result.push((isize >> 24) & 255)
+
+    out = result
+}
+
+// gzip-decompress: 解壓縮 gzip 格式的資料
+//   data: gzip 壓縮資料 ([]byte)
+//   out: 解壓後的資料 ([]byte)
+gzip-decompress = (data []byte) (out []byte) {
+    // 跳過 GZIP 標頭（至少 10 bytes）
+    // ID1(1) + ID2(1) + CM(1) + FLG(1) + MTIME(4) + XFL(1) + OS(1) = 10
+    pos = 10
+
+    // 檢查 FLG 處理額外欄位
+    flg = data[3] & 255
+    // FEXTRA (bit 2)
+    flg & 4 != 0 -> {
+        xlen = data[pos] & 255
+        pos = pos + 1
+        xlen = xlen | ((data[pos] & 255) << 8)
+        pos = pos + xlen
+    }
+    // FNAME (bit 3) — 以 \0 結尾的字串
+    flg & 8 != 0 -> {
+        for data[pos] & 255 != 0 {
+            pos = pos + 1
+        }
+        pos = pos + 1
+    }
+    // FCOMMENT (bit 4) — 以 \0 結尾的字串
+    flg & 16 != 0 -> {
+        for data[pos] & 255 != 0 {
+            pos = pos + 1
+        }
+        pos = pos + 1
+    }
+    // FHCRC (bit 0) — 2 bytes CRC16
+    flg & 1 != 0 -> {
+        pos = pos + 2
+    }
+
+    // DEFLATE 資料從 pos 開始
+    // 複製 DEFLATE 資料到新切片（inflate 需要獨立的位元讀取器）
+    deflate-data []byte
+    // 尾部有 8 bytes（CRC32 + ISIZE）
+    deflate-end = data.len - 8
+    i <- [pos..deflate-end): {
+        deflate-data.push(data[i] & 255)
+    }
+
+    // 預期大小 = ISIZE（最後 4 bytes）
+    isize = (data[data.len - 8] & 255) | ((data[data.len - 7] & 255) << 8) | ((data[data.len - 6] & 255) << 16) | ((data[data.len - 5] & 255) << 24)
+
+    out = inflate-decompress(deflate-data, isize)
 }

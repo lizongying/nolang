@@ -1214,7 +1214,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return allocaReg
 	}
 
-	if fnName == "gzip-compress" && hasArgs {
+	// gzip-compress, gzip-decompress, inflate-decompress 已改為純 Nolang 實現，
+	// 不再使用 zlib 內置函數。移除 ForwardFunc LLVM 代碼生成，改由標準庫 gzip.no 處理。
+	if fnName == "gzip-compress" && hasArgs && false {
 		a := evalArgs()
 
 		// Extract data pointer and length from []byte (%vec) argument
@@ -1283,7 +1285,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return ""
 	}
 
-	if fnName == "gzip-decompress" && hasArgs {
+	if fnName == "gzip-decompress" && hasArgs && false {
 		a := evalArgs()
 
 		// Extract data pointer and length from []byte (%vec) argument
@@ -1352,7 +1354,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return ""
 	}
 
-	if fnName == "inflate-decompress" && hasArgs {
+	if fnName == "inflate-decompress" && hasArgs && false {
 		a := evalArgs()
 
 		// Extract data pointer and length from []byte (%vec) argument

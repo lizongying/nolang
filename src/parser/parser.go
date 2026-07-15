@@ -5568,6 +5568,32 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	return block
 }
 
+// parseLoopBody parses a loop body which can be either:
+//   - Block statement: { ... }
+//   - Single statement: print(i)
+func (p *Parser) parseLoopBody() *BlockStatement {
+	if p.currentToken.Type == lexer.LBRACE {
+		block := p.parseBlockStatement()
+		p.nextToken() // skip body's }
+		return block
+	}
+	// Skip leading newlines
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+	// Single-statement body
+	stmt := p.parseStatement()
+	if stmt == nil {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected loop body statement, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return &BlockStatement{Token: p.currentToken}
+	}
+	return &BlockStatement{
+		Token:      p.currentToken,
+		Statements: []Statement{stmt},
+	}
+}
+
 func (p *Parser) parseForStatement() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
 
@@ -5585,8 +5611,7 @@ func (p *Parser) parseForStatement() Statement {
 			p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
 				ir.Token.Line, ir.Token.Column))
 		}
-		stmt.Body = p.parseBlockStatement()
-		p.nextToken() // skip body's }
+		stmt.Body = p.parseLoopBody()
 		return stmt
 	}
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.IDENT {
@@ -5605,8 +5630,7 @@ func (p *Parser) parseForStatement() Statement {
 				p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
 					ir.Token.Line, ir.Token.Column))
 			}
-			stmt.Body = p.parseBlockStatement()
-			p.nextToken() // skip body's }
+			stmt.Body = p.parseLoopBody()
 			return stmt
 		}
 		p.restoreState(state)
@@ -5756,15 +5780,7 @@ parseBody:
 		}
 	}
 
-	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected left brace in for loop, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
-		return nil
-	}
-
-	stmt.Body = p.parseBlockStatement()
-	p.nextToken() // skip body's }
+	stmt.Body = p.parseLoopBody()
 	return stmt
 }
 

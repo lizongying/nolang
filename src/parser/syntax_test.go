@@ -75,6 +75,12 @@ func TestNewSyntax(t *testing.T) {
 		{name: "labeled_bare_range", input: "outer i <- (0..5]: {\n}", wantErr: false},
 		{name: "labeled_bare_range_bracket", input: "outer i <- [0..5]: {\n}", wantErr: false},
 		{name: "labeled_while_colon", input: "loop while x == 1: {\n    b = 2\n}", wantErr: false},
+		// 單語句體 (single-statement body)
+		{name: "for_range_single_stmt", input: "for i <- [0..5): print(i)", wantErr: false},
+		{name: "bare_range_single_stmt", input: "i <- [0..5): print(i)", wantErr: false},
+		{name: "for_range_str_single_stmt", input: "for i <- 'abc': print(i)", wantErr: false},
+		{name: "labeled_range_single_stmt", input: "outer i <- [0..5): print(i)", wantErr: false},
+		{name: "for_cond_single_stmt", input: "for i < 5: print(i)", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
