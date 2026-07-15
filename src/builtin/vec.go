@@ -3,16 +3,6 @@ package builtin
 import "github.com/lizongying/nolang/parser"
 
 func init() {
-	// vec-create: create a slice of length n filled with val
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "vec-create",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Create a slice of length n, fill all elements with val",
-		ForwardFunc:  "vec-create",
-	})
-
 	// vec-eq: compare two slices for equality
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

@@ -269,7 +269,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		return blockMatch
 	}
 
-	if tok1.Type != lexer.IDENT && tok1.Type != lexer.NIL {
+	if tok1.Type != lexer.IDENT && tok1.Type != lexer.NIL && tok1.Type != lexer.IN {
 		return blockUnknown
 	}
 
@@ -418,7 +418,9 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	default:
 		// For patterns like `i % 4 == 0 -> ...` or `a + b > 10 -> ...`,
 		// scan forward to find RARROW at depth 0 (match arm condition).
-		if tok1.Type == lexer.IDENT {
+		// Also handle `in[i] == ... -> ...` where `in` is the IN keyword
+		// used as a parameter name.
+		if tok1.Type == lexer.IDENT || tok1.Type == lexer.IN {
 			// If tok2 is an opening bracket, start depth at 1 to account
 			// for it, since the scan starts AFTER tok2. Without this,
 			// patterns like `s[i] > 0 -> ...` are misclassified because
@@ -3576,7 +3578,9 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	}
 
 	// 处理三元表达式（最低优先级）
-	if p.currentToken.Type == lexer.QUESTION {
+	// 只有当当前 precedence 允许时才处理 `?`，否则 `?` 属于外层表达式
+	// （如 `a > 5 ? b : c` 中 `?` 不应绑定到 `5`，而应绑定到 `a > 5`）
+	if p.currentToken.Type == lexer.QUESTION && precedence <= CONDITIONAL {
 		return p.parseConditionalExpression(leftExp)
 	}
 

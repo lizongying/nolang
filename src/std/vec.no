@@ -35,20 +35,13 @@
 // []t(n0..n1]
 // []t(n0..n1)
 
-// vec-create: 創建長度 n 的切片，全部填充 val
-vec-create = (n i64, val i64) (out []i64) {
-    i <- [0..n): {
-        out[i] = val
-    }
-}
-
-// vec-eq: 比較兩個切片的前 n 個元素是否相等
+// []t.eq: 比較兩個切片是否相等
 // 返回 true=相等, false=不相等
-[]t.eq = (a []t, b []t) (eq bool) {
+[]t.eq = (b []t) (eq bool) {
     eq = true
-    n = a.len()
+    n = .len
     i <- [0..n): {
-        a[i] != b[i] -> {
+        .[i] != b[i] -> {
             eq = false
             return
         }
@@ -100,7 +93,7 @@ vec-create = (n i64, val i64) (out []i64) {
 // }
 
 // []t.len: 回傳切片長度
-[]t.len = (n i64) {
+[]t.len = () (n i64) {
     n = .len
 }
 
@@ -128,29 +121,31 @@ vec-create = (n i64, val i64) (out []i64) {
 // build-in (ForwardFunc: with-cap)
 
 // []t.pop: 從末尾彈出元素
-[]t.pop = () (val t, new-n i64) {
+// 空切片返回 nil
+[]t.pop = () (val ?t) {
     n = .len
     {
         n > 0 -> {
-            new-n = n - 1
-            val = .[new-n]
+            val = .[n - 1]
+            .len = n - 1
         }
-        -> new-n = 0
+        -> val = nil
     }
 }
 
 // []t.contains: 是否包含值 val
-[]t.contains = (val t) (found i64) {
-    found = 0
+[]t.contains = (val t) (found bool) {
+    found = false
     n = .len
     i <- [0..n): {
-        d = .[i] - val
-        d == 0 -> found
-        1
+        .[i] == val -> {
+            found = true
+            return
+        }
     }
 }
 
-// []t.reverse: 反轉前 n 個元素
+// []t.reverse: 反轉
 []t.reverse = () {
     n = .len
     i = 0
@@ -165,14 +160,15 @@ vec-create = (n i64, val i64) (out []i64) {
     }
 }
 
-// []t.clone: 複製到 dst
-[]t.clone = (dst []t) {
-    i <- [0...len): {
+// []t.clone: 複製切片
+[]t.clone = () (dst []t) {
+    n = .len
+    i <- [0..n): {
         dst[i] = .[i]
     }
 }
 
-// []t.fill: 前 n 個元素填充為 val
+// []t.fill: 填充為 val
 []t.fill = (val t) {
     n = .len
     i <- [0..n): {

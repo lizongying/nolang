@@ -486,10 +486,14 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	// 同時收集模組級 i64 整數常量，支援命名空間風格存取（如 FileMode.WRITE）
 	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
+	// 只收集大寫命名的識別符（常量命名慣例），小寫命名為變數不應被常量摺疊
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
-				g.enumVariantIndex[ls.Name.Value] = v
+				name := ls.Name.Value
+				if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+					g.enumVariantIndex[name] = v
+				}
 			}
 		}
 	}
