@@ -81,6 +81,8 @@ func TestNewSyntax(t *testing.T) {
 		{name: "for_range_str_single_stmt", input: "for i <- 'abc': print(i)", wantErr: false},
 		{name: "labeled_range_single_stmt", input: "outer i <- [0..5): print(i)", wantErr: false},
 		{name: "for_cond_single_stmt", input: "for i < 5: print(i)", wantErr: false},
+		// 結構體欄位方法調用 (struct field method call)
+		{name: "struct_field_method_call", input: "inner-type {\n    value i64\n}\ninner-type.get-value = () (v i64) {\n    v = self.value\n}\ncontainer {\n    inner inner-type\n}\nc container\nc.inner = inner-type {\n    value: 42\n}\nv = c.inner.get-value()\nc.inner.set-value(100)", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

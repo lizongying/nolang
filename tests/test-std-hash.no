@@ -840,7 +840,7 @@ print('')
 des-key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
 des-plain = '\x01\x23\x45\x67\x89\xab\xcd\xef'
 
-des-out = '\x00\x00\x00\x00\x00\x00\x00\x00'
+des-out []byte
 des-out = des.des-enc(des-plain, 8, des-key)
 
 print('des-enc=')
@@ -849,7 +849,7 @@ i <- [0..8): {
 }
 print('')
 
-des-decrypted = '\x00\x00\x00\x00\x00\x00\x00\x00'
+des-decrypted []byte
 des-decrypted = des.des-dec(des-out, 8, des-key)
 
 print('des-dec=')

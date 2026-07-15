@@ -34,6 +34,7 @@ type Package struct {
 	Workspace       string            `json:"workspace,omitempty"` // 已廢棄：workspace 根目錄現由 workspace.jsonc 自動偵測
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
+	Output          string            `json:"output,omitempty"` // 輸出目錄（如 "./dist"）
 	RootDir         string            // 套件根目錄（含 mod.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
 	wsMap           WorkspaceMap      // 快取的 workspace.jsonc 映射

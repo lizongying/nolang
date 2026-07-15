@@ -290,17 +290,32 @@ func clibCallSig(fnName string) string {
 	return variadicFuncSigs[fnName]
 }
 
-// llvmTypeSize returns the size in bytes of a primitive LLVM type.
+// llvmTypeSize returns the size in bytes of a primitive or built-in struct LLVM type.
+// Used by vec-push / arr-zero to compute malloc and memcpy sizes — returning a
+// too-small value here causes heap buffer overflows (e.g. SIGSEGV when indexing
+// a []str slice past ~170 elements, because %str-long is 24 bytes, not 8).
 func llvmTypeSize(llvmType string) int64 {
 	switch llvmType {
-	case "i8", "u8":
+	case "i1", "i8", "u8":
 		return 1
 	case "i16", "u16":
 		return 2
 	case "i32", "u32", "float":
 		return 4
-	case "i64", "u64", "double":
+	case "i64", "u64", "double", "i8*", "i8**", "i8***":
 		return 8
+	case "%str-long", "%vec":
+		// { i64, i64, i8* } = 8 + 8 + 8 = 24 bytes
+		return 24
+	case "%option":
+		// { i64, [16 x i8] } = 8 + 16 = 24 bytes
+		return 24
+	case "%arr":
+		// { i64, i8* } = 8 + 8 = 16 bytes
+		return 16
+	case "%str-short":
+		// { i8, [127 x i8] } = 1 + 127 = 128 bytes
+		return 128
 	default:
 		return 8 // 預設 i64
 	}

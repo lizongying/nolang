@@ -190,10 +190,14 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		outPath = opts.Output
 	} else {
 		rootDir := "."
+		outDir := "dist" // 預設輸出目錄
 		if pkg != nil {
 			rootDir = pkg.RootDir
+			if pkg.Output != "" {
+				outDir = strings.TrimPrefix(pkg.Output, "./")
+			}
 		}
-		distDir := filepath.Join(rootDir, "dist")
+		distDir := filepath.Join(rootDir, outDir)
 		if err = os.MkdirAll(distDir, 0755); err != nil {
 			return fmt.Errorf("creating dist directory: %w", err)
 		}

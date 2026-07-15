@@ -2622,13 +2622,89 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			varName = ident.Value
 		}
 		fieldName := dot.Property
-		val := g.generateExprWithSB(sb, expr.Value)
 
 		// 判定 struct 名稱與基底指標
 		// - Identifier receiver: 使用變數名稱（%%%s）
 		// - 非 Identifier receiver: 使用 generateExprPtr 取得指標
 		structName := ""
 		basePtr := ""
+		if varName != "" {
+			if t, ok := g.varTypes[varName]; ok {
+				structName = strings.TrimPrefix(t, "%")
+			}
+		} else {
+			recvType := g.exprResultLLVMType(dot.Receiver)
+			if strings.HasPrefix(recvType, "%") {
+				structName = strings.TrimPrefix(recvType, "%")
+			}
+			if sb != nil {
+				basePtr = g.generateExprPtr(sb, dot.Receiver)
+				if basePtr == "" {
+					// Fallback: 生成值後存入臨時 alloca
+					val2 := g.generateExprWithSB(sb, dot.Receiver)
+					if val2 != "" && val2 != "0" && recvType != "" {
+						g.tmpIdx++
+						tmpAlloca := fmt.Sprintf("%%assign.tmp.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val2, recvType, tmpAlloca))
+						basePtr = tmpAlloca
+					}
+				}
+			}
+		}
+
+		// 當值為 StructLiteral 時，直接在目標欄位上設定每個子欄位，
+		// 因為 generateStructLiteral 只返回佔位符 "{ }"。
+		if structLit, ok := expr.Value.(*parser.StructLiteral); ok {
+			if fields, ok := g.structTypes[structName]; ok {
+				fieldIdx := -1
+				var fieldType string
+				for i, f := range fields {
+					if f.name == fieldName {
+						fieldIdx = i
+						fieldType = f.typ
+						break
+					}
+				}
+				if fieldIdx >= 0 && sb != nil {
+					structTy := "%" + structName
+					g.tmpIdx++
+					reg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
+					if basePtr != "" {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
+							g.indent(), reg, structTy, structTy, varName, fieldIdx))
+					}
+					// 先用 zeroinitializer 清零
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, reg))
+					// 逐欄位設定
+					if structLitFields, ok := g.structTypes[strings.TrimPrefix(fieldType, "%")]; ok {
+						fieldIdxMap := make(map[string]int)
+						for i, f := range structLitFields {
+							fieldIdxMap[f.name] = i
+						}
+						for _, sf := range structLit.Fields {
+							if sfi, ok := fieldIdxMap[sf.Name]; ok {
+								sfType := structLitFields[sfi].typ
+								sfVal := g.generateExprWithSB(sb, sf.Value)
+								g.tmpIdx++
+								sfGEP := fmt.Sprintf("%%set.st.fld.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+									g.indent(), sfGEP, fieldType, fieldType, reg, sfi))
+								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), sfType, sfVal, sfType, sfGEP))
+							}
+						}
+					}
+				}
+				return "0"
+			}
+		}
+
+		val := g.generateExprWithSB(sb, expr.Value)
+
+		// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
 		if varName != "" {
 			if t, ok := g.varTypes[varName]; ok {
 				structName = strings.TrimPrefix(t, "%")

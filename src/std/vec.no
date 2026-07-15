@@ -44,25 +44,14 @@ vec-create = (n i64, val i64) (out []i64) {
 
 // vec-eq: 比較兩個切片的前 n 個元素是否相等
 // 返回 true=相等, false=不相等
-[]t.eq = (a []t, b []t, n i64) (eq bool) {
+[]t.eq = (a []t, b []t) (eq bool) {
     eq = true
+    n = a.len()
     i <- [0..n): {
         a[i] != b[i] -> {
             eq = false
             return
         }
-    }
-}
-
-// []byte.slice: 截取子切片 [start, end)
-// 返回新切片
-[]byte.slice = (start i64, end i64) (val []byte) {
-    start < 0 -> start = 0
-    end > .len -> end = .len
-    start >= end -> return
-    n = end - start
-    i <- [0..n): {
-        val[i] = .[start + i]
     }
 }
 
@@ -151,8 +140,9 @@ vec-create = (n i64, val i64) (out []i64) {
 }
 
 // []t.contains: 是否包含值 val
-[]t.contains = (n i64, val t) (found i64) {
+[]t.contains = (val t) (found i64) {
     found = 0
+    n = .len
     i <- [0..n): {
         d = .[i] - val
         d == 0 -> found
@@ -161,7 +151,8 @@ vec-create = (n i64, val i64) (out []i64) {
 }
 
 // []t.reverse: 反轉前 n 個元素
-[]t.reverse = (n i64) {
+[]t.reverse = () {
+    n = .len
     i = 0
     j = n - 1
     for i < j {
@@ -182,7 +173,8 @@ vec-create = (n i64, val i64) (out []i64) {
 }
 
 // []t.fill: 前 n 個元素填充為 val
-[]t.fill = (n i64, val t) {
+[]t.fill = (val t) {
+    n = .len
     i <- [0..n): {
         .[i] = val
     }

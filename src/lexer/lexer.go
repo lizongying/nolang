@@ -144,6 +144,21 @@ func (l *Lexer) readString() string {
 				buf = append(buf, '"')
 			case '0':
 				buf = append(buf, 0)
+			case 'x':
+				// \xHH hex escape: read two hex digits
+				l.readChar()
+				hi := hexVal(l.ch)
+				if hi < 0 {
+					buf = append(buf, '\\', 'x')
+					continue
+				}
+				l.readChar()
+				lo := hexVal(l.ch)
+				if lo < 0 {
+					buf = append(buf, '\\', 'x')
+					continue
+				}
+				buf = append(buf, byte(hi<<4|lo))
 			default:
 				buf = append(buf, '\\', l.ch)
 			}
@@ -157,6 +172,19 @@ func (l *Lexer) readString() string {
 		l.readChar() // 跳过结束的引号
 	}
 	return string(buf)
+}
+
+// hexVal returns the numeric value of a hex digit (0-15), or -1 if not hex.
+func hexVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
 }
 
 // readRawString 读取反引号原始字符串。

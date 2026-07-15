@@ -45,7 +45,7 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 	case "i64", "i8*", "double":
 		return 8
 	case "%str-long":
-		return 16
+		return 24 // { i64, i64, i8* } = 24 bytes
 	case "%arr":
 		return 16
 	case "%vec":
@@ -86,6 +86,17 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 	// pointer), which is incompatible with [32 x i8] struct fields.
 	if at, ok := t.(*parser.ArrayType); ok && at.Size != nil {
 		return g.arrayTypeToLLVM(at)
+	}
+	// SliceType (e.g. []str, []byte) → %vec (built-in struct: vec { len, cap, data }).
+	// Without this, String() returns "[]str" which mapToLLVMType would route through
+	// its "[" prefix branch and correctly return "%vec" — but only when called
+	// directly. The dedicated handling here makes the intent explicit and ensures
+	// funcResultLLVMType registers "%vec" for slice-returning functions (e.g.
+	// list-dir returns []str), so downstream varLLVMType can infer %vec for
+	// `entries = fs.list-dir(dir)` instead of defaulting to i64.
+	if st, ok := t.(*parser.SliceType); ok {
+		_ = st
+		return "%vec"
 	}
 	return g.mapToLLVMType(t.String())
 }
@@ -264,7 +275,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
 		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
 		if varType == "%vec" {
-			vecBufSize := 16384
+			vecCap := int64(256)
+			elemSize := int64(8) // default i64
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[varName]; ok {
+					elemSize = llvmTypeSize(et)
+				}
+			}
+			vecBufSize := vecCap * elemSize
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%local.vecdata.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -275,7 +293,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%local.veccap.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(varName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
@@ -338,7 +356,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), dataBuf, dataGEP))
 		} else if outType == "%vec" {
 			// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
-			vecBufSize := 4096
+			// Compute element size from result parameter type so that malloc
+			// allocates cap * elemSize bytes (not just cap bytes).
+			// Bug: previously vecBufSize=4096 was used as BOTH byte count and
+			// element count, causing overflow for []str (24-byte elements) at
+			// ~170 entries (4096/24 ≈ 170).
+			vecCap := int64(256)
+			elemSize := int64(8) // default i64
+			if st, ok := fd.Results[0].Type.(*parser.SliceType); ok && st.Elem != nil {
+				elemSize = llvmTypeSize(g.mapToLLVMType(st.Elem.String()))
+			}
+			vecBufSize := vecCap * elemSize
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%out.vecdata.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -349,7 +377,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%out.veccap.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%out.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
@@ -837,8 +865,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		// DotExpression receiver call (e.g. s.contains, s.index): look up str.<method>
-		if dot, ok := v.Function.(*parser.DotExpression); ok {
-			// Module-prefixed builtin call (e.g. fs.get-line, fs.is-file):
+	if dot, ok := v.Function.(*parser.DotExpression); ok {
+		// Module-prefixed builtin call (e.g. fs.get-line, fs.is-file):
 			// if the receiver is an Identifier not in varTypes (i.e., a module name),
 			// look up the property as a builtin method for return type inference.
 			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
@@ -962,6 +990,29 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
+					// Fallback: user-defined functions are registered in the maps
+				// under their SIMPLE name (e.g. "list-dir"), not the module-prefixed
+				// name (e.g. "fs.list-dir"). When the receiver is a module name
+				// (not a variable), try looking up the property directly as a
+				// user-defined function name. This makes `entries = fs.list-dir(dir)`
+				// resolve to "%vec" (the LLVM type of list-dir's []str result)
+				// instead of defaulting to "i64", which is critical for downstream
+				// arrayElemTypes inference and correct slice indexing codegen.
+				if g.funcNumResults != nil {
+					if n, ok := g.funcNumResults[dot.Property]; ok {
+						if n == 1 {
+							if g.funcResultLLVMType != nil {
+								if ts, ok2 := g.funcResultLLVMType[dot.Property]; ok2 && len(ts) == 1 {
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
+									}
+									return retType
+								}
+							}
+						}
+					}
+				}
 				}
 			}
 			// IntegerLiteral receiver (e.g., (123).to-str())
@@ -1375,6 +1426,18 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 										fnName = fullName
 										break
 									}
+								}
+							} else {
+								// Fallback: receiver is a module name (e.g. "fs"),
+								// not a variable. User-defined functions are
+								// registered under their simple name (e.g.
+								// "list-dir"), so look up dot.Property directly.
+								// This makes `entries = fs.list-dir(dir)` infer
+								// the []str element type (%str-long) and register
+								// g.arrayElemTypes["entries"], fixing slice
+								// indexing codegen (24-byte stride vs 8-byte).
+								if _, ok := g.funcResultNolangTypes[dot.Property]; ok {
+									fnName = dot.Property
 								}
 							}
 						}
@@ -2767,7 +2830,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if f.typ != "%vec" {
 				continue
 			}
-			vecBufSize := 16384
+			vecCap := int64(256)
+			elemSize := int64(8)
+			if f.elemType != "" {
+				elemSize = llvmTypeSize(f.elemType)
+			}
+			vecBufSize := vecCap * elemSize
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%st.let.vecdata.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -2775,7 +2843,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			capGEP := fmt.Sprintf("%%st.let.veccap.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
 				g.indent(), capGEP, structTy, structTy, g.varAddr(name), i))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%st.let.vecdataptr.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",

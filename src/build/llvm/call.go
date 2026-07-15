@@ -403,7 +403,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 			}
 		}
-		// 為未明確設定的 %vec 欄位分配 data 緩衝區（malloc 16384），設定 cap=16384
+		// 為未明確設定的 %vec 欄位分配 data 緩衝區，設定 cap=256
 		// 否則 vec[i] = val 會因 data=null 而 SIGBUS
 		if sb != nil {
 			for i, f := range fields {
@@ -413,7 +413,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				if f.typ != "%vec" {
 					continue
 				}
-				vecBufSize := 16384
+				vecCap := int64(256)
+				elemSize := int64(8)
+				if f.elemType != "" {
+					elemSize = llvmTypeSize(f.elemType)
+				}
+				vecBufSize := vecCap * elemSize
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -421,7 +426,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
 					g.indent(), capGEP, structTy, structTy, tmpName, i))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
@@ -1683,6 +1688,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 
 	// genTypedArg generates a typed pointer argument for a single expression
 	genTypedArg := func(arg parser.Expression, argIdx int) string {
+		// DotExpression as method receiver (self): pass field pointer by-reference
+		// so the method can modify the struct field directly (e.g. c.inner.set-value(100))
+		if dot, ok := arg.(*parser.DotExpression); ok && argIdx == 0 && methodReceiver != nil {
+			ptr := g.generateExprPtr(sb, dot)
+			if ptr != "" {
+				recvType := g.exprResultLLVMType(dot)
+				if recvType != "" {
+					return recvType + "* " + ptr
+				}
+				return ptr
+			}
+			// Fallback: generate value and store in temp alloca
+		}
 		switch a := arg.(type) {
 		case *parser.Identifier:
 			// Enum variant: allocate temp i64 and store the constant tag index
@@ -1759,8 +1777,54 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// Function parameters with [N]T type use raw LLVM array [N x T], but local
 			// variables are stored as %arr struct { len, data* }. Need to extract data
 			// pointer and bitcast to match the expected parameter type.
+			// When the parameter expects %vec (slice), convert %arr { len, data* }
+			// to %vec { len, cap, data* } by setting cap = len.
 			if g.varTypes != nil {
 				if t, ok := g.varTypes[a.Value]; ok && t == "%arr" {
+					// Check if parameter expects %vec (slice)
+					paramLLVMType := ""
+					if g.funcParamLLVMTypes != nil {
+						if types, ok := g.funcParamLLVMTypes[fnName]; ok && argIdx < len(types) {
+							paramLLVMType = types[argIdx]
+						}
+					}
+					if paramLLVMType == "%vec" {
+						// Convert %arr { len, data* } → %vec { len, cap=len, data* }
+						if sb != nil {
+							g.tmpIdx++
+							vecTmp := fmt.Sprintf("%%arr.vec.tmp.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecTmp))
+							// vec.len = arr.len
+							g.tmpIdx++
+							arrLenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
+							g.tmpIdx++
+							arrLenLoad := fmt.Sprintf("%%arr.len.val.%d", g.tmpIdx)
+							g.tmpIdx++
+							vecLenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, g.varAddr(a.Value)))
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), arrLenLoad, arrLenGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, vecTmp))
+							sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), arrLenLoad, vecLenGEP))
+							// vec.cap = arr.len
+							g.tmpIdx++
+							vecCapGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, vecTmp))
+							sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), arrLenLoad, vecCapGEP))
+							// vec.data = arr.data
+							g.tmpIdx++
+							arrDataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
+							g.tmpIdx++
+							arrDataLoad := fmt.Sprintf("%%arr.data.val.%d", g.tmpIdx)
+							g.tmpIdx++
+							vecDataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, g.varAddr(a.Value)))
+							sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), arrDataLoad, arrDataGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, vecTmp))
+							sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), arrDataLoad, vecDataGEP))
+							return "%vec* " + vecTmp
+						}
+						return "%vec* " + g.varAddr(a.Value)
+					}
 					if elemType, ok := g.arrayElemTypes[a.Value]; ok {
 						if arrSize, ok := g.arraySizes[a.Value]; ok {
 							rawArrType := fmt.Sprintf("[%d x %s]", arrSize, elemType)
@@ -1971,7 +2035,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if f.typ != "%vec" {
 						continue
 					}
-					vecBufSize := 16384
+					vecCap := int64(256)
+					elemSize := int64(8)
+					if f.elemType != "" {
+						elemSize = llvmTypeSize(f.elemType)
+					}
+					vecBufSize := vecCap * elemSize
 					g.tmpIdx++
 					dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -1979,7 +2048,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
 						g.indent(), capGEP, structTy, structTy, tmpName, i))
-					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 					g.tmpIdx++
 					dataGEP := fmt.Sprintf("%%ref.st.vecdataptr.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
@@ -2266,7 +2335,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			} else if voidSingleOutputType == "%vec" {
 				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
 				// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
-				vecBufSize := 16384
+				// 計算元素大小：vecCap * elemSize 才是正確的 malloc 位元組數，
+				// 否則對 %str-long（24 bytes/elem）會以 16384 bytes 當 cap，
+				// 導致 16384/24 ≈ 682 個元素後溢出（或更小初始值 4096 → 170 個元素崩潰）
+				vecCap := int64(256)
+				elemSize := int64(8) // 預設 i64
+				if g.funcResultNolangTypes != nil {
+					if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
+						nt := nolangRets[0]
+						if strings.HasPrefix(nt, "[") {
+							if rb := strings.Index(nt, "]"); rb > 0 {
+								elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
+							}
+						}
+					}
+				}
+				vecBufSize := vecCap * elemSize
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%vso.vecdata.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
@@ -2275,11 +2359,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				lenGEP := fmt.Sprintf("%%vso.veclen.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
 				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-				// 設置 cap = vecBufSize（field 1）
+				// 設置 cap = vecCap（field 1，元素計數而非位元組數）
 				g.tmpIdx++
 				capGEP := fmt.Sprintf("%%vso.veccap.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecBufSize, capGEP))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
 				// 設置 data 指標指向緩衝區（field 2）
 				g.tmpIdx++
 				dataGEP := fmt.Sprintf("%%vso.vecdata.gep.%d", g.tmpIdx)

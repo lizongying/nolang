@@ -95,20 +95,18 @@ gf-mul2 = (x i64) (r i64) {
 
 // sub-bytes: 使用 S-box 取代狀態中每個位元組
 sub-bytes = (state []byte, n i64) {
-    i = 0
-    i < n
-    b = state[i] & 255
-    state[i] = SBOX[b]
-    i = i + 1
+    i <- [0..16): {
+        b = state[i] & 255
+        state[i] = SBOX[b]
+    }
 }
 
 // inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state []byte, n i64) {
-    i = 0
-    i < n
-    b = state[i] & 255
-    state[i] = INV-SBOX[b]
-    i = i + 1
+    i <- [0..16): {
+        b = state[i] & 255
+        state[i] = INV-SBOX[b]
+    }
 }
 
 // shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
@@ -265,7 +263,7 @@ add-round-key = (state []byte, rk []byte) {
 
 // rcon: 輪常數
 rcon-val = (round i64) (r i64) {
-        {
+    {
         round == 1 -> r = 1
         round == 2 -> r = 2
         round == 3 -> r = 4
@@ -302,20 +300,20 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
     i <- [4..44): {
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
-                {
+        {
             i % 4 == 0 -> {
                 rw = 0
-                            sw = 0
-                            rc = 0
-                    rw = rot-word(w)
-                    sw = sub-word(rw)
-                    rc = rcon-val(i / 4)
-                            w = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
-                            w = (w ^ sw ^ (rc << 24)) & 4294967295
+                sw = 0
+                rc = 0
+                rw = rot-word(w)
+                sw = sub-word(rw)
+                rc = rcon-val(i / 4)
+                w = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
+                w = (w ^ sw ^ (rc << 24)) & 4294967295
             }
             -> {
                 w-prev4 = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
-                            w = (w-prev4 ^ w) & 4294967295
+                w = (w-prev4 ^ w) & 4294967295
             }
         }
         ek[i * 4] = (w >> 24) & 255
@@ -329,7 +327,7 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
 
 // aes-128-enc: 加密一個 16-byte 區塊
 aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
-    ek [16 + 160]byte
+    ek [176]byte
     ek = aes-key-expand(key)
     i <- [0..16): {
         out[i] = in[i]
@@ -353,7 +351,7 @@ aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
 
 // aes-128-dec: 解密一個 16-byte 區塊
 aes-128-dec = (in [16]byte, key [16]byte) (out [16]byte) {
-    ek [16 + 160]byte
+    ek [176]byte
     ek = aes-key-expand(key)
     i <- [0..16): {
         out[i] = in[i]
@@ -372,6 +370,94 @@ aes-128-dec = (in [16]byte, key [16]byte) (out [16]byte) {
     }
 
     // 第 0 輪
+    inv-shift-rows(out[..])
+    inv-sub-bytes(out[..], 16)
+    add-round-key(out[..], ek[..])
+}
+
+// ─── AES-256（從 aes-256.no 合併）─────────────────
+
+// gf-mul3: 在 GF(2^8) 中乘以 (x+1)
+gf-mul3 = (x i64) (r i64) {
+    m2 = 0
+    m2 = gf-mul2(x)
+    r = (m2 ^ x) & 255
+}
+
+// aes-256-key-expand: 將 32-byte 金鑰展開為 240-byte 輪金鑰
+aes-256-key-expand = (key [32]byte) (ek [240]byte) {
+    i <- [0..32): {
+        ek[i] = key[i]
+    }
+    i <- [8..60): {
+        off = (i - 1) * 4
+        w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+        {
+            i % 8 == 0 -> {
+                rw = 0
+                sw = 0
+                rc = 0
+                rw = rot-word(w)
+                sw = sub-word(rw)
+                rc = rcon-val(i / 8)
+                w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                w = (w ^ sw ^ (rc << 24)) & 4294967295
+            }
+            i % 8 == 4 -> {
+                sw = 0
+                sw = sub-word(w)
+                w = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                w = (w ^ sw) & 4294967295
+            }
+            -> {
+                w-prev8 = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
+                w = (w-prev8 ^ w) & 4294967295
+            }
+        }
+        ek[i * 4] = (w >> 24) & 255
+        ek[i * 4 + 1] = (w >> 16) & 255
+        ek[i * 4 + 2] = (w >> 8) & 255
+        ek[i * 4 + 3] = w & 255
+    }
+}
+
+// aes-256-enc: 加密一個 16-byte 區塊（14 輪）
+aes-256-enc = (in [16]byte, key [32]byte) (out [16]byte) {
+    ek [240]byte
+    ek = aes-256-key-expand(key)
+    i <- [0..16): {
+        out[i] = in[i]
+    }
+    add-round-key(out[..], ek[..])
+    round <- [1..14): {
+        sub-bytes(out[..], 16)
+        shift-rows(out[..])
+        mix-columns(out[..])
+        rk-off = round * 16
+        add-round-key(out[..], ek[rk-off..])
+    }
+    sub-bytes(out[..], 16)
+    shift-rows(out[..])
+    add-round-key(out[..], ek[224..])
+}
+
+// aes-256-dec: 解密一個 16-byte 區塊（14 輪）
+aes-256-dec = (in [16]byte, key [32]byte) (out [16]byte) {
+    ek [240]byte
+    ek = aes-256-key-expand(key)
+    i <- [0..16): {
+        out[i] = in[i]
+    }
+    add-round-key(out[..], ek[224..])
+    round = 13
+    for round > 0 {
+        inv-shift-rows(out[..])
+        inv-sub-bytes(out[..], 16)
+        rk-off = round * 16
+        add-round-key(out[..], ek[rk-off..])
+        inv-mix-columns(out[..])
+        round = round - 1
+    }
     inv-shift-rows(out[..])
     inv-sub-bytes(out[..], 16)
     add-round-key(out[..], ek[..])
