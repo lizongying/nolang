@@ -318,7 +318,10 @@ zip-writer.finalize = () (out []byte) {
         .put(.cd-data[i])
     }
     .write-eocd(cd-offset, cd-size)
-    out = .data
+    dlen = .data.len
+    i <- [0..dlen): {
+        out[i] = .data[i]
+    }
 }
 
 // write-u16: 寫入 2 位元組小端序整數

@@ -192,9 +192,13 @@ conn.recv-line = () (line ?str) {
 conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
+    buf str = ' '.repeat(NET-BUF-SIZE)
     !! {
-        chunk-n = net-recv(.fd, content, NET-BUF-SIZE)
+        chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
+        i <- [0..chunk-n): {
+            content[total + i] = buf[i]
+        }
         total = total + chunk-n
     }
 }

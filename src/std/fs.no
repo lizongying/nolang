@@ -272,7 +272,7 @@ file.read = (buf str, n i64) (read-n i64) {
 file.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf str = ' '.repeat(4096)
+    buf str = with-cap(4096)
     n = read(.fd, buf, 4096)
     n > 0 -> line = buf
 }
@@ -316,7 +316,13 @@ file.read-all = () (content str, n i64) {
     n = 0
     .fd < 0 -> return
     size = stat-size(.path)
-    size > 0 -> n = read(.fd, content, size)
+    size > 0 -> {
+        buf str = ' '.repeat(size)
+        n = read(.fd, buf, size)
+        i <- [0..n): {
+            content[i] = buf[i]
+        }
+    }
 }
 
 // write-all: 將 data 的前 n 位元組寫入檔案（覆寫）

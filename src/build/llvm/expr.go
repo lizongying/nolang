@@ -5251,6 +5251,14 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	}
 	et := g.exprResultLLVMType(expr)
 	if et == "%str-long" {
+		// If val is a %str-long* pointer (from slice expression, concat, etc.),
+		// load the %str-long value before storing to temp alloca.
+		if g.isStrPtrReg(val) {
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+			val = loadReg
+		}
 		g.tmpIdx++
 		tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))

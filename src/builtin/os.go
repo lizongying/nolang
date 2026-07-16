@@ -92,7 +92,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a directory with the given mode",
-		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "mkdir", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// ch-mod: change file permissions

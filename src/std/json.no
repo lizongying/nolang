@@ -467,7 +467,7 @@ json-pool.get-str = (node-idx i64) (out str, ok bool) {
     ok = false
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != json-kind.str -> return
-    out = .nodes[node-idx].str-val
+    out = .nodes[node-idx].str-val.copy()
     ok = true
 }
 

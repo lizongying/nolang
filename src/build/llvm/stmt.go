@@ -84,21 +84,40 @@ g.tmpIdx++
 srcLoad := fmt.Sprintf("%%outmove.src.%d", g.tmpIdx)
 sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 g.indent(), srcLoad, binding.llvmType, binding.llvmType, binding.sourcePtr))
-// 型別轉換：源型別與參數型別可能不同（如 i64 → i8）
+// 型別轉換：源型別與參數型別可能不同（如 i64 → i8, i64 → float）
 storeVal := srcLoad
-if binding.llvmType != paramType && g.isIntegerLLVMType(binding.llvmType) && g.isIntegerLLVMType(paramType) {
+if binding.llvmType != paramType {
 g.tmpIdx++
 convReg := fmt.Sprintf("%%outmove.conv.%d", g.tmpIdx)
+converted := true
+switch {
+case g.isIntegerLLVMType(binding.llvmType) && g.isIntegerLLVMType(paramType):
+// 整數 → 整數：trunc 或 zext
 order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
 if order[binding.llvmType] > order[paramType] {
 sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
 } else {
 sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
 }
+case g.isIntegerLLVMType(binding.llvmType) && (paramType == "float" || paramType == "double"):
+// 整數 → 浮點：sitofp
+sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+case (binding.llvmType == "float" || binding.llvmType == "double") && g.isIntegerLLVMType(paramType):
+// 浮點 → 整數：fptosi
+sb.WriteString(fmt.Sprintf("%s%s = fptosi %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+case binding.llvmType == "float" && paramType == "double":
+// float → double：fpext
+sb.WriteString(fmt.Sprintf("%s%s = fpext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+case binding.llvmType == "double" && paramType == "float":
+// double → float：fptrunc
+sb.WriteString(fmt.Sprintf("%s%s = fptrunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+default:
+// 其他（如 struct 型別相同但名稱不同）：直接 store
+converted = false
+}
+if converted {
 storeVal = convReg
-} else if binding.llvmType != paramType {
-// 非整數型別：直接 store（如 struct 型別相同但名稱不同）
-storeVal = srcLoad
+}
 }
 sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 g.indent(), paramType, storeVal, paramType, paramPtr))
@@ -2537,6 +2556,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，標記源為 moved（不 free）。
+	// 必須在所有型別特定處理（如 option）的 early return 之前執行，
+	// 否則 option 型別的輸出參數賦值（如 line = buf）不會標記 moved。
+	if g.heapVars != nil && g.outputParamNames != nil && g.outputParamNames[name] && g.movedVars != nil && !stmt.IsSynthetic {
+		if ident, ok := stmt.Value.(*parser.Identifier); ok {
+			if _, isHeap := g.heapVars[ident.Value]; isHeap {
+				g.movedVars[ident.Value] = true
+			}
+		}
+	}
+
 	// 切片視圖賦值：view = arr[0..4]
 	// 註冊為 slice view alias，不創建獨立結構體，通過 offset 計算訪問原始數據
 	if _, isSliceExpr := stmt.Value.(*parser.SliceExpression); isSliceExpr {
@@ -3428,6 +3458,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%readdir.str.",        // read-dir builtin in call_stdlib.go
 		"%rf.str.",             // read-file builtin in call_stdlib.go
 		"%archstr.",            // get-arch builtin in call_stdlib.go
+		"%slic.",               // generateSliceExpression (string slice → %str-long*)
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

@@ -82,7 +82,7 @@ reader.read-byte = () (b ?i64) {
 reader.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf str = ' '.repeat(4096)
+    buf str = with-cap(4096)
     n = read(.fd, buf, 4096)
     n > 0 -> line = buf
 }
