@@ -363,7 +363,7 @@ func (p *Package) warnWorkspaceDepVersion() {
 		}
 		shortName := PackageShortName(key)
 		if _, exists := ws[shortName]; exists {
-			fmt.Printf("Warning: dependency %q specifies version %q but is a workspace-local package. Remove the version constraint (use \"*\").\n", key, version)
+			fmt.Fprintf(os.Stderr, "Warning: dependency %q specifies version %q but is a workspace-local package. Remove the version constraint (use \"*\").\n", key, version)
 		}
 	}
 }

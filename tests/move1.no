@@ -1,0 +1,30 @@
+
+
+foo = () (res i8) {
+    x = 1
+    res = x
+    print(x)
+}
+
+// 返回值延迟move，函数结束时move。
+// 所以a == 4
+// 这里由于b也=x  所以a、b实际是一个值
+bar = () (a i8, b i16) {
+    x = 1
+    a = x
+    print(x)
+    x = 4
+    b = x
+    print(x)
+}
+
+// 先定义res i8 i8初始0值
+// foo 赋值1 
+res = foo()
+
+// 第二次调用，res已经有值，是新赋值
+// foo 赋值1 
+res = foo()
+
+// res是赋值，res1是新建变量
+res, res1 = bar()

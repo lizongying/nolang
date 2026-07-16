@@ -62,10 +62,90 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 }
 
 func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
-	for _, v := range g.funcVars {
-		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.end.p0i8(i64 %d, i8* %s)\n", g.indent(), v.Size, llvmVarRef(v.Name)))
+for _, v := range g.funcVars {
+sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.end.p0i8(i64 %d, i8* %s)\n", g.indent(), v.Size, llvmVarRef(v.Name)))
+}
+}
+
+// flushOutputBindings 在函數返回前，將所有延遲綁定的輸出參數值實際寫入輸出參數指標。
+// 這實現了「延遲 move」語義：res = x 不立即複製 x 的值，
+// 而是在函數結束時才載入 x 的最終值並寫入 res。
+func (g *Generator) flushOutputBindings(sb *strings.Builder) {
+if g.outputBindings == nil || len(g.outputBindings) == 0 {
+return
+}
+for name, binding := range g.outputBindings {
+paramPtr := g.varAddr(name)
+paramType, ok := g.varTypes[name]
+if !ok {
+paramType = binding.llvmType
+}
+g.tmpIdx++
+srcLoad := fmt.Sprintf("%%outmove.src.%d", g.tmpIdx)
+sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+g.indent(), srcLoad, binding.llvmType, binding.llvmType, binding.sourcePtr))
+// 型別轉換：源型別與參數型別可能不同（如 i64 → i8）
+storeVal := srcLoad
+if binding.llvmType != paramType && g.isIntegerLLVMType(binding.llvmType) && g.isIntegerLLVMType(paramType) {
+g.tmpIdx++
+convReg := fmt.Sprintf("%%outmove.conv.%d", g.tmpIdx)
+order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
+if order[binding.llvmType] > order[paramType] {
+sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+} else {
+sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+}
+storeVal = convReg
+} else if binding.llvmType != paramType {
+// 非整數型別：直接 store（如 struct 型別相同但名稱不同）
+storeVal = srcLoad
+}
+sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+g.indent(), paramType, storeVal, paramType, paramPtr))
+}
+}
+
+// emitHeapFree 在函數返回前（move 之後），釋放未被 move 的局部堆變數的資料緩衝區。
+// heapVars 記錄所有有堆分配的局部變數，movedVars 記錄已 move 到輸出參數的變數（不應 free）。
+// 各型別的 data 指標欄位索引：
+//   %vec:       field 2 (i8* data)
+//   %str-long:  field 2 (i8* data)
+//   %arr:       field 1 (i8* data)
+func (g *Generator) emitHeapFree(sb *strings.Builder) {
+	if g.heapVars == nil || len(g.heapVars) == 0 {
+		return
+	}
+	for name, llvmType := range g.heapVars {
+		// 已 move 到輸出參數的變數不 free（所有權已轉移）
+		if g.movedVars != nil && g.movedVars[name] {
+			continue
+		}
+		// 輸出參數本身不 free（由呼叫者管理）
+		if g.outputParamNames != nil && g.outputParamNames[name] {
+			continue
+		}
+		var dataFieldIdx int
+		switch llvmType {
+		case "%vec", "%str-long":
+			dataFieldIdx = 2
+		case "%arr":
+			dataFieldIdx = 1
+		default:
+			continue
+		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%heapfree.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLoad := fmt.Sprintf("%%heapfree.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+			g.indent(), dataGEP, llvmType, llvmType, g.varAddr(name), dataFieldIdx))
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
+			g.indent(), dataLoad, dataGEP))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n",
+			g.indent(), dataLoad))
 	}
 }
+
 
 // resolveParamLLVMType 計算參數的 LLVM 型別字串。
 // 當參數型別為具名型別且對應至具名函式型別別名時，解析為函式指標型別 void (...)*。
@@ -111,6 +191,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
+	g.outputParamNames = make(map[string]bool)            // reset output param tracking
+	g.outputBindings = make(map[string]outputBinding)    // reset delayed move bindings
+	g.heapVars = make(map[string]string)                 // reset heap var tracking
+	g.movedVars = make(map[string]bool)                  // reset moved var tracking
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
 	// 恢復模組級變數的型別資訊
@@ -149,6 +233,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if r.Name != "" {
 			g.paramNames[r.Name] = true
 			g.funcLocalNames[r.Name] = true
+			g.outputParamNames[r.Name] = true
 			// MapType: use LLVMName() to avoid [K]V matching the array branch.
 			var typeStr string
 			if mt, ok := r.Type.(*parser.MapType); ok {
@@ -425,11 +510,15 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	}
 
 	// 若函數無 return 陳述句（void），自動銷毀 + return
-	if returnType == "void" {
-		g.emitLifetimeEnd(sb)
-		sb.WriteString(g.indent() + "ret void\n")
+if returnType == "void" {
+g.flushOutputBindings(sb)
+g.emitHeapFree(sb)
+g.emitLifetimeEnd(sb)
+sb.WriteString(g.indent() + "ret void\n")
 	} else if len(fd.Results) > 0 && fd.Results[0].Name != "" {
 		// 有輸出參數但無顯式 return：載入輸出參數並返回
+		g.flushOutputBindings(sb)
+		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		resultName := fd.Results[0].Name
 		resultLLVMType := g.mapToLLVMType(fd.Results[0].Type.String())
@@ -1726,6 +1815,8 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		}
 
 	case *parser.ReturnStatement:
+		g.flushOutputBindings(sb)
+		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		if s.ReturnValue != nil {
 			val := g.generateExprWithSB(sb, s.ReturnValue)
@@ -3052,6 +3143,52 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// Update varTypes so reads of `it` in this arm use the correct type
 		if g.varTypes != nil {
 			g.varTypes[name] = llvmType
+		}
+	}
+
+	// 延遲 move：若目標是輸出參數且源是簡單變數，不立即 store，而是綁定到源變數。
+	// 在函數結束時（flushOutputBindings）才載入源變數的最終值並寫入輸出參數。
+	// 這實現了「返回值延遲 move」語義：函數結束時 move。
+	// 僅對整數型別的輸出參數 + 簡單變數賦值應用延遲 move。
+	// 複雜表達式（字面量、運算、函數呼叫）立即求值，值不會變化，無需延遲。
+	if g.outputParamNames != nil && g.outputParamNames[name] && !stmt.IsSynthetic {
+		if paramType, ptOk := g.varTypes[name]; ptOk && g.isIntegerLLVMType(paramType) {
+			if ident, ok := stmt.Value.(*parser.Identifier); ok {
+				// 簡單變數賦值：res = x → 綁定到 x 的地址
+				if srcType, srcOk := g.varTypes[ident.Value]; srcOk {
+					g.outputBindings[name] = outputBinding{
+						sourcePtr: g.varAddr(ident.Value),
+						llvmType:  srcType,
+					}
+					return
+				}
+			}
+			// 複雜表達式：不延遲，正常 store（值不會變化）
+		}
+	}
+
+	// 堆變數追蹤：記錄有堆分配資料的局部變數，用於函數結束時 free。
+	// 同時，若輸出參數從局部變數接收堆資料（淺拷貝），標記源變數為 moved（不 free）。
+	if g.heapVars != nil {
+		// 僅追蹤局部變數（非參數、非輸出參數）
+		if _, isLocal := g.funcLocalNames[name]; isLocal {
+			if _, isParam := g.paramNames[name]; !isParam {
+				if g.outputParamNames == nil || !g.outputParamNames[name] {
+					switch llvmType {
+					case "%vec", "%str-long", "%arr":
+						g.heapVars[name] = llvmType
+					}
+				}
+			}
+		}
+		// 若目標是輸出參數，且源是局部堆變數，標記源為 moved
+		if g.outputParamNames != nil && g.outputParamNames[name] && g.movedVars != nil {
+			if ident, ok := stmt.Value.(*parser.Identifier); ok {
+				if _, isHeap := g.heapVars[ident.Value]; isHeap {
+					g.movedVars[ident.Value] = true
+				}
+				// 也檢查參數（參數的堆資料不應 free，但也不應標記為 moved）
+			}
 		}
 	}
 

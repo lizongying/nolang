@@ -873,6 +873,123 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return selReg
 	}
 
+	// stat-mode: 獲取文件模式 (st_mode)
+	if (fnName == "stat-mode") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%statbuf.sm.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%stat.ret.sm.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%stat.cmp.sm.%d", g.tmpIdx)
+		g.tmpIdx++
+		modeGEP := fmt.Sprintf("%%stat.mode.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		modeLoad := fmt.Sprintf("%%stat.mode.ld.%d", g.tmpIdx)
+		g.tmpIdx++
+		modeZext := fmt.Sprintf("%%stat.mode.zext.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%stat.mode.sel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i16 %s to i64\n", g.indent(), modeZext, modeLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, modeZext))
+		}
+		return selReg
+	}
+
+	// stat-uid: 獲取文件 owner uid
+	if (fnName == "stat-uid") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%statbuf.su.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%stat.ret.su.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%stat.cmp.su.%d", g.tmpIdx)
+		g.tmpIdx++
+		uidGEP := fmt.Sprintf("%%stat.uid.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		uidLoad := fmt.Sprintf("%%stat.uid.ld.%d", g.tmpIdx)
+		g.tmpIdx++
+		uidZext := fmt.Sprintf("%%stat.uid.zext.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%stat.uid.sel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 16\n", g.indent(), uidGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), uidLoad, uidGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), uidZext, uidLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, uidZext))
+		}
+		return selReg
+	}
+
+	// stat-gid: 獲取文件 group gid
+	if (fnName == "stat-gid") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%statbuf.sg.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%stat.ret.sg.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%stat.cmp.sg.%d", g.tmpIdx)
+		g.tmpIdx++
+		gidGEP := fmt.Sprintf("%%stat.gid.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		gidLoad := fmt.Sprintf("%%stat.gid.ld.%d", g.tmpIdx)
+		g.tmpIdx++
+		gidZext := fmt.Sprintf("%%stat.gid.zext.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%stat.gid.sel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 20\n", g.indent(), gidGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), gidLoad, gidGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), gidZext, gidLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, gidZext))
+		}
+		return selReg
+	}
+
+	// stat-mtime: 獲取文件修改時間 (st_mtimespec.tv_sec)
+	if (fnName == "stat-mtime") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		statBuf := fmt.Sprintf("%%statbuf.smt.%d", g.tmpIdx)
+		g.tmpIdx++
+		statRet := fmt.Sprintf("%%stat.ret.smt.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%stat.cmp.smt.%d", g.tmpIdx)
+		g.tmpIdx++
+		mtimeGEP := fmt.Sprintf("%%stat.mtime.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		mtimeLoad := fmt.Sprintf("%%stat.mtime.ld.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%stat.mtime.sel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 48\n", g.indent(), mtimeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), mtimeLoad, mtimeGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, mtimeLoad))
+		}
+		return selReg
+	}
+
 	// read-file: read entire file into a string
 	// Returns a %str-long* alloca; empty string on error.
 	if fnName == "read-file" && hasArgs {

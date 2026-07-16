@@ -66,6 +66,10 @@ type Generator struct {
 	curFuncRetType        string                          // 當前函數回傳型別（void/i64/...）
 	curFuncRetName        string                          // 當前函數輸出參數名稱（為空表示 void）
 	curFuncName           string                          // 當前函數名稱（debug 用）
+	outputParamNames      map[string]bool                 // 當前函數的輸出參數名稱集合（用於延遲 move）
+	outputBindings        map[string]outputBinding        // 輸出參數名 → 延遲綁定（源指標 + 型別）
+	heapVars              map[string]string               // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
+	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
@@ -102,6 +106,14 @@ type sliceViewInfo struct {
 	dataPtrReg string // LLVM i8* register for adjusted data pointer (base_data + start * elemSize)
 	elemType   string // element LLVM type (e.g. "i64", "i8")
 	isStr      bool   // is this a string slice?
+}
+
+// outputBinding 記錄輸出參數的延遲綁定資訊。
+// 當 res = x 時，不立即 store 到輸出參數指標，
+// 而是記錄源變數的指標和型別，在函數結束時才載入最終值並 store。
+type outputBinding struct {
+	sourcePtr string // 源變數的 LLVM 指標（如 %x）
+	llvmType  string // 源變數的 LLVM 型別（如 i64, i8）
 }
 
 func NewGenerator() *Generator {

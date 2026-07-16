@@ -421,7 +421,7 @@ pow = (a bigint, n i64) (c bigint) {
         return
     }
     base = bigint{}
-    base = copy(a)
+    base = a.copy()
     i = n
     for i > 0 {
         i & 1 == 1 -> c = mul(c, base)
@@ -439,7 +439,7 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     }
     r = one()
     b = bigint{}
-    b = copy(base)
+    b = base.copy()
     top = exp.limbs[exp.len - 1] & MASK
     lead = 0
     tmp = top
@@ -620,7 +620,7 @@ from-str = (s str) (out bigint) {
             -> pos = pos + 1
         }
     }
-    normalize(out)
+    out.normalize()
 }
 
 // bigint.add-i64: c = self + v（小整數加法）
@@ -695,5 +695,5 @@ from-hex = (s str) (out bigint) {
             }
         }
     }
-    normalize(out)
+    out.normalize()
 }

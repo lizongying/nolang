@@ -305,6 +305,36 @@ func init() {
 		ForwardFunc:  "args-get",
 	})
 
+	// chown: change file owner and group
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "chown",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Change file owner and group (uid, gid)",
+		CLibCall:     &CLibCall{FuncName: "chown", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
+	})
+
+	// getuid: get current user ID
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getuid",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the current user ID",
+		CLibCall:     &CLibCall{FuncName: "getuid", ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
+	// getgid: get current group ID
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getgid",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the current group ID",
+		CLibCall:     &CLibCall{FuncName: "getgid", ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
 	// is-dir: check if path is a directory
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
@@ -333,6 +363,46 @@ func init() {
 		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
 		Doc:          "Get the size of a file (returns size, ok)",
 		ForwardFunc:  "stat-size",
+	})
+
+	// stat-mode: get file mode (st_mode) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-mode",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get file mode (st_mode) including permission and type bits (returns mode, ok)",
+		ForwardFunc:  "stat-mode",
+	})
+
+	// stat-uid: get file owner uid via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-uid",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get file owner uid (returns uid, ok)",
+		ForwardFunc:  "stat-uid",
+	})
+
+	// stat-gid: get file group gid via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-gid",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get file group gid (returns gid, ok)",
+		ForwardFunc:  "stat-gid",
+	})
+
+	// stat-mtime: get file modification time via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-mtime",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get file modification time in Unix seconds (returns mtime, ok)",
+		ForwardFunc:  "stat-mtime",
 	})
 
 	// read-file: read entire file into a string
