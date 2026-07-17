@@ -360,6 +360,7 @@ func (l *Lexer) NextToken() Token {
 			}
 			tok.Type = COMMENT
 			tok.Literal = l.input[start:l.position]
+			tok.Marker = "//"
 			return tok
 		} else if l.peekChar() == '=' {
 			l.readChar()
@@ -423,8 +424,16 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = COMMA
 		tok.Literal = string(l.ch)
 	case ';':
-		tok.Type = SEMICOLON
-		tok.Literal = string(l.ch)
+		// 單行註釋（與 // 語義相同：註釋到行尾）
+		l.readChar() // 跳過 ;
+		start := l.position
+		for l.ch != '\n' && l.ch != 0 {
+			l.readChar()
+		}
+		tok.Type = COMMENT
+		tok.Literal = l.input[start:l.position]
+		tok.Marker = ";"
+		return tok
 	case ':':
 		tok.Type = COLON
 		tok.Literal = string(l.ch)

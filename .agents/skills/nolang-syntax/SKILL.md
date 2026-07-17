@@ -408,29 +408,34 @@ greeting = 'hello, ' - name
 
 ### Comments
 
-Only single-line comments (`//`) are allowed.
+Nolang supports two single-line comment markers with **identical semantics** — both comment to end-of-line:
 
-**Rule: one statement per line — never use semicolons `;` or commas `,` to combine multiple statements on one line.** This applies to comments too, including code examples inside comments.
+- `//` — traditional marker
+- `;` — alternative marker (**implemented 2026-07-17**)
 
 ```nolang
-// ❌ Wrong: semicolons in comment
-// h0 = 1732584193; h1 = 4023233417; h2 = 2562383102
-
-// ❌ Wrong: commas combining multiple statements
-// out = from-i64(v), out = from-u64(v)
-// debug(msg), info(msg), warn(msg)
-
-// ✅ Correct: each statement on its own line
-// h0 = 1732584193
-// h1 = 4023233417
-// h2 = 2562383102
-//
-// out = from-i64(v)
-// out = from-u64(v)
-// debug(msg)
-// info(msg)
-// warn(msg)
+// this is a comment
+; this is also a comment, same semantics
+x = 1 ; trailing comment, runs to end of line
 ```
+
+**One statement per line** is still a hard rule — never use commas `,` to combine multiple statements on one line (semicolons are now comments, so `;` can no longer join statements). This applies inside comments too.
+
+```nolang
+; ❌ Wrong: commas combining multiple statements (inside a comment example)
+; h0 = 1732584193, h1 = 4023233417
+
+; ❌ Wrong: comma joining statements in real code
+; out = from-i64(v), out = from-u64(v)
+
+; ✅ Correct: each statement on its own line
+; h0 = 1732584193
+; h1 = 4023233417
+```
+
+**Marker preservation:** the formatter never converts `;` ↔ `//`. It records the original marker (`Comment.Marker`) and emits it verbatim, so `;` comments stay `;` after `no fmt`.
+
+**Safety:** `;` inside string literals (e.g. `'text/plain; charset=utf-8'`, `index-from(';', pos)`) and inside `//` comments is consumed by the lexer's string/comment scanners and never treated as a comment marker.
 
 ### Naming Rules
 
@@ -554,36 +559,30 @@ Implementation lives in `src/fmt/formatter.go`:
   appends a single `\n`. Empty or unparseable input is returned unchanged so
   the formatter never mangles a file it cannot understand.
 
-#### `;` is reserved — never emitted, treat `cond -> X; Y` as corruption
+#### `;` is a line-comment marker (implemented 2026-07-17)
 
-`;` is on track to become a **comment marker** (not yet implemented). The
-formatter never outputs `;` — when two statements would land on the same line
-it splits them onto separate lines instead of joining with `; `.
+`;` is now a **line-comment marker** — semantically identical to `//`, it
+comments to end-of-line. The lexer turns `;` into a `COMMENT` token (with
+`Marker=";"`), the parser records `Comment.Marker`, and the formatter emits the
+original marker verbatim. See [Comments](#comments) for the full rules.
 
-Gotcha: in a standalone if-then `cond -> X; Y`, the `;` does **not** mean
-assignment. `parseStandaloneBody` only parses `IDENT` followed by `=`/`COMMA`
-as an assignment body; `cond -> X; Y` actually parses as "evaluate `X` (discard)
-then evaluate `Y`" — i.e. **`X` is never assigned**. The correct form is
-`cond -> X = Y` (established stdlib pattern in `arr.no`, `uuid.no`, `path.no`,
-`err.no`, `assert.no`). If you find `cond -> X; Y` in source, it is a corrupted
-`cond -> X = Y` — fix it by replacing `;` with `=`.
+Gotcha: `cond -> X; Y` no longer parses as assignment. With `;` a comment, it
+means "evaluate `X` (discard) then a trailing comment `; Y`" — **`X` is never
+assigned**. The correct form is `cond -> X = Y` (established stdlib pattern in
+`arr.no`, `uuid.no`, `path.no`, `err.no`, `assert.no`). If you find
+`cond -> X; Y` in source, replace `;` with `=`; do not leave it as a comment.
 
 `;` inside string literals (e.g. `'text/plain; charset=utf-8'`,
 `index-from(';', pos)`) and inside `//` comments is safe — the lexer's string
 and comment scanners consume it, so it never reaches the `;` token.
 
-Note: the formatter does **not** introduce `;` — it only preserves `;` already
-present in source. Verify with `no fmt <file>` (exit 0, no `;` in output).
+**Migration note:** before `;` became a comment, the repo's `.no` sources were
+made `;`-free at the grammar level (`zip.no` → `[]byte` literals; `ws.no` 14×
+`cond -> X; Y` → `cond -> X = Y`; `test-tls-part1/2/3.no` 15×
+`cond -> print('…'); return` → `cond -> { print('…') \n return }`). With the
+lexer now treating `;` as a comment, no real grammatical `;` remains, and the
+formatter preserves `;` comments as `;`. Verify with `no fmt <file>`.
 
-**Status (2026-07-17):** the entire repo's `.no` sources are now `;`-free at the
-grammar level — every real `;` has been migrated (`zip.no` → `[]byte` literals;
-`ws.no` 14× `cond -> X; Y` → `cond -> X = Y`; `test-tls-part1/2/3.no` 15×
-`cond -> print('…'); return` → `cond -> { print('…') \n return }`). A full-repo
-scan (excluding `dist/`, `vscode-nolang/`, `node_modules/`, string literals, and
-`//` comments) returns **no** `;`. The only remaining `;` are inside string
-literals and `//` comments. This means the prerequisite for making `;` a comment
-marker is fully satisfied: implementing it now only needs lexer `case ';'` →
-line-comment + disabling `SEMICOLON` handling in the parser.
 - `Format(code)` is the pure fragment formatter (no trailing newline) used by
   unit tests; prefer `FormatFile` whenever you write a real source file.
 
@@ -1968,7 +1967,7 @@ Usage: `# std/xxx` (core modules do not need to be imported).
 
 > **The old-style `use std/xxx` still works but is deprecated; using the new-style `# std/xxx` syntax is recommended.**
 
-> **Note: All code examples follow the "one statement per line" rule — using semicolons `;` or commas `,` to combine multiple statements on one line is prohibited.**
+> **Note: All code examples follow the "one statement per line" rule — `;` and `//` are both comment markers; commas `,` must not join multiple statements on one line.**
 
 ### Base Types
 

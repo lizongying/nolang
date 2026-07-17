@@ -50,14 +50,13 @@ RE-OP-MATCH = 9
 RE-OP-START = 10
 RE-OP-END = 11
 
-// 最大指令數
-RE-MAX-INSTR = 128
+// 量詞字元常量
+RE-QUANT-STAR = 42
+RE-QUANT-PLUS = 43
+RE-QUANT-QUESTION = 63
 
 // 每個字元類別 bitmap 大小（32 bytes = 256 bits）
 RE-CLS-SIZE = 32
-
-// 最大字元類別數
-RE-MAX-CLS = 16
 
 // ═══════════════════════════════════════════════
 // 結構體
@@ -89,6 +88,8 @@ regexp {
     tmp-atom-type i64
     tmp-atom-char i64
     tmp-atom-cls i64
+    tmp-quant i64
+    tmp-next-i i64
 }
 
 // ═══════════════════════════════════════════════
@@ -111,11 +112,9 @@ regexp.emit = (op i64, arg1 i64, arg2 i64) {
 // atom-char i64: atom 字元值
 // atom-cls i64: atom 類別索引
 regexp.emit-atom = (atom-type i64, atom-char i64, atom-cls i64) {
-    {
-        atom-type == RE-OP-CHAR -> .emit(RE-OP-CHAR, atom-char, 0)
-        atom-type == RE-OP-ANY -> .emit(RE-OP-ANY, 0, 0)
-        atom-type == RE-OP-CLASS -> .emit(RE-OP-CLASS, atom-cls, 0)
-    }
+    atom-type == RE-OP-CHAR -> .emit(RE-OP-CHAR, atom-char, 0)
+    atom-type == RE-OP-ANY -> .emit(RE-OP-ANY, 0, 0)
+    atom-type == RE-OP-CLASS -> .emit(RE-OP-CLASS, atom-cls, 0)
 }
 
 // ═══════════════════════════════════════════════
@@ -274,58 +273,56 @@ regexp.make-class-nonspace = () (cls-idx i64) {
 // cls-idx i64: 類別索引
 // c i64: 跳脫字元（如 'd' 'w' 's' 等）
 regexp.set-class-escape = (cls-idx i64, c i64) {
-    {
-        c == 100 -> {
-            // \d — 數字
-            k <- [48..58): {
-                .set-class-bit(cls-idx, k)
-            }
+    c == 100 -> {
+        // \d — 數字
+        k <- [48..58): {
+            .set-class-bit(cls-idx, k)
         }
-        c == 68 -> {
-            // \D — 非數字（加入所有非數字位元）
-            k <- [0..256): {
-                k < 48 || k >= 58 -> .set-class-bit(cls-idx, k)
-            }
-        }
-        c == 119 -> {
-            // \w — 文字字元
-            k <- [65..91): {
-                .set-class-bit(cls-idx, k)
-            }
-            k <- [97..123): {
-                .set-class-bit(cls-idx, k)
-            }
-            k <- [48..58): {
-                .set-class-bit(cls-idx, k)
-            }
-            .set-class-bit(cls-idx, 95)
-        }
-        c == 87 -> {
-            // \W — 非文字字元
-            k <- [0..256): {
-                (k < 48 || k >= 58) && (k < 65 || k >= 91) && (k < 97 || k >= 123) && k != 95 -> .set-class-bit(cls-idx, k)
-            }
-        }
-        c == 115 -> {
-            // \s — 空白字元
-            .set-class-bit(cls-idx, 32)
-            .set-class-bit(cls-idx, 9)
-            .set-class-bit(cls-idx, 10)
-            .set-class-bit(cls-idx, 13)
-            .set-class-bit(cls-idx, 11)
-            .set-class-bit(cls-idx, 12)
-        }
-        c == 83 -> {
-            // \S — 非空白字元
-            k <- [0..256): {
-                k != 32 && k != 9 && k != 10 && k != 13 && k != 11 && k != 12 -> .set-class-bit(cls-idx, k)
-            }
-        }
-        c == 110 -> .set-class-bit(cls-idx, 10)
-        c == 116 -> .set-class-bit(cls-idx, 9)
-        c == 114 -> .set-class-bit(cls-idx, 13)
-        -> .set-class-bit(cls-idx, c)
     }
+    c == 68 -> {
+        // \D — 非數字
+        k <- [0..256): {
+            k < 48 || k >= 58 -> .set-class-bit(cls-idx, k)
+        }
+    }
+    c == 119 -> {
+        // \w — 文字字元
+        k <- [65..91): {
+            .set-class-bit(cls-idx, k)
+        }
+        k <- [97..123): {
+            .set-class-bit(cls-idx, k)
+        }
+        k <- [48..58): {
+            .set-class-bit(cls-idx, k)
+        }
+        .set-class-bit(cls-idx, 95)
+    }
+    c == 87 -> {
+        // \W — 非文字字元
+        k <- [0..256): {
+            (k < 48 || k >= 58) && (k < 65 || k >= 91) && (k < 97 || k >= 123) && k != 95 -> .set-class-bit(cls-idx, k)
+        }
+    }
+    c == 115 -> {
+        // \s — 空白字元
+        .set-class-bit(cls-idx, 32)
+        .set-class-bit(cls-idx, 9)
+        .set-class-bit(cls-idx, 10)
+        .set-class-bit(cls-idx, 13)
+        .set-class-bit(cls-idx, 11)
+        .set-class-bit(cls-idx, 12)
+    }
+    c == 83 -> {
+        // \S — 非空白字元
+        k <- [0..256): {
+            k != 32 && k != 9 && k != 10 && k != 13 && k != 11 && k != 12 -> .set-class-bit(cls-idx, k)
+        }
+    }
+    c == 110 -> .set-class-bit(cls-idx, 10)
+    c == 116 -> .set-class-bit(cls-idx, 9)
+    c == 114 -> .set-class-bit(cls-idx, 13)
+    c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> .set-class-bit(cls-idx, c)
 }
 
 // ═══════════════════════════════════════════════
@@ -338,39 +335,43 @@ regexp.set-class-escape = (cls-idx i64, c i64) {
 // i i64: 當前位置
 // 返回 new-i i64: 解析後的新位置
 regexp.parse-atom = (pattern str, i i64) (new-i i64) {
-    new-i = i
+    // 使用局部變數，最後再賦值給輸出參數
+    result-i = i
+
     .tmp-atom-type = RE-OP-CHAR
     .tmp-atom-char = 0
     .tmp-atom-cls = 0
 
     n = pattern.len
-    i >= n -> return
+    i >= n -> {
+        new-i = result-i
+        return
+    }
 
     c = pattern[i] & 255
 
-    {
-        c == 46 -> {
-            // . — 任意字元
-            .tmp-atom-type = RE-OP-ANY
-            new-i = i + 1
-        }
-        c == 91 -> {
-            // [ — 字元類別
-            .tmp-atom-type = RE-OP-CLASS
-            new-i = .parse-class(pattern, i)
-            .tmp-atom-cls = .tmp-atom-cls
-        }
-        c == 92 -> {
-            // \ — 跳脫序列
-            new-i = .parse-escape(pattern, i)
-        }
-        -> {
-            // 常字元（包括 *, +, ? 等在非量詞位置時視為常字元）
-            .tmp-atom-type = RE-OP-CHAR
-            .tmp-atom-char = c
-            new-i = i + 1
-        }
+    c == 46 -> {
+        // . — 任意字元
+        .tmp-atom-type = RE-OP-ANY
+        result-i = i + 1
     }
+    c == 91 -> {
+        // [ — 字元類別
+        .tmp-atom-type = RE-OP-CLASS
+        result-i = .parse-class(pattern, i)
+    }
+    c == 92 -> {
+        // \ — 跳脫序列
+        result-i = .parse-escape(pattern, i)
+    }
+    c != 46 && c != 91 && c != 92 -> {
+        // 常字元
+        .tmp-atom-type = RE-OP-CHAR
+        .tmp-atom-char = c
+        result-i = i + 1
+    }
+
+    new-i = result-i
 }
 
 // parse-class: 解析 [...] 字元類別
@@ -379,7 +380,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
 // 返回 new-i i64: 解析後的新位置（']' 之後）
 // 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
 regexp.parse-class = (pattern str, i i64) (new-i i64) {
-    new-i = i
+    result-i = i
 
     // 分配類別
     cls-idx = .alloc-class()
@@ -411,6 +412,9 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         }
         first = 0
 
+        // 預設前進 1
+        next-i = i + 1
+
         // 檢查範圍 c-end
         is-range = 0
         i + 2 < n -> {
@@ -424,7 +428,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                         .set-class-bit(cls-idx, k)
                         k = k + 1
                     }
-                    i = i + 3
+                    next-i = i + 3
                 }
             }
         }
@@ -432,18 +436,19 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         is-range == 0 -> {
             // 跳脫序列
             c == 92 -> {
-                i = i + 1
+                next-i = i + 1
                 i < n -> {
-                    esc-c = pattern[i] & 255
+                    esc-c = pattern[i + 1] & 255
                     .set-class-escape(cls-idx, esc-c)
-                    i = i + 1
+                    next-i = i + 2
                 }
             }
-            -> {
+            c != 92 -> {
                 .set-class-bit(cls-idx, c)
-                i = i + 1
             }
         }
+
+        i = next-i
     }
 
     // 反向
@@ -454,7 +459,8 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         }
     }
 
-    new-i = i
+    result-i = i
+    new-i = result-i
 }
 
 // parse-escape: 解析 \x 跳脫序列
@@ -463,75 +469,79 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 // 返回 new-i i64: 解析後的新位置
 // 副作用：設置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
 regexp.parse-escape = (pattern str, i i64) (new-i i64) {
-    new-i = i
+    result-i = i
+
     .tmp-atom-type = RE-OP-CHAR
     .tmp-atom-char = 0
     .tmp-atom-cls = 0
 
     n = pattern.len
     i = i + 1
-    i >= n -> return
+    i >= n -> {
+        new-i = result-i
+        return
+    }
 
     c = pattern[i] & 255
 
-    {
-        c == 100 -> {
-            // \d — 數字
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-digits()
-            new-i = i + 1
-        }
-        c == 68 -> {
-            // \D — 非數字
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-nondigits()
-            new-i = i + 1
-        }
-        c == 119 -> {
-            // \w — 文字字元
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-word()
-            new-i = i + 1
-        }
-        c == 87 -> {
-            // \W — 非文字字元
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-nonword()
-            new-i = i + 1
-        }
-        c == 115 -> {
-            // \s — 空白字元
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-space()
-            new-i = i + 1
-        }
-        c == 83 -> {
-            // \S — 非空白字元
-            .tmp-atom-type = RE-OP-CLASS
-            .tmp-atom-cls = .make-class-nonspace()
-            new-i = i + 1
-        }
-        c == 110 -> {
-            // \n
-            .tmp-atom-char = 10
-            new-i = i + 1
-        }
-        c == 116 -> {
-            // \t
-            .tmp-atom-char = 9
-            new-i = i + 1
-        }
-        c == 114 -> {
-            // \r
-            .tmp-atom-char = 13
-            new-i = i + 1
-        }
-        -> {
-            // 跳脫特殊字元或常字元
-            .tmp-atom-char = c
-            new-i = i + 1
-        }
+    c == 100 -> {
+        // \d — 數字
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-digits()
+        result-i = i + 1
     }
+    c == 68 -> {
+        // \D — 非數字
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-nondigits()
+        result-i = i + 1
+    }
+    c == 119 -> {
+        // \w — 文字字元
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-word()
+        result-i = i + 1
+    }
+    c == 87 -> {
+        // \W — 非文字字元
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-nonword()
+        result-i = i + 1
+    }
+    c == 115 -> {
+        // \s — 空白字元
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-space()
+        result-i = i + 1
+    }
+    c == 83 -> {
+        // \S — 非空白字元
+        .tmp-atom-type = RE-OP-CLASS
+        .tmp-atom-cls = .make-class-nonspace()
+        result-i = i + 1
+    }
+    c == 110 -> {
+        // \n
+        .tmp-atom-char = 10
+        result-i = i + 1
+    }
+    c == 116 -> {
+        // \t
+        .tmp-atom-char = 9
+        result-i = i + 1
+    }
+    c == 114 -> {
+        // \r
+        .tmp-atom-char = 13
+        result-i = i + 1
+    }
+    c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
+        // 跳脫特殊字元或常字元
+        .tmp-atom-char = c
+        result-i = i + 1
+    }
+
+    new-i = result-i
 }
 
 // ═══════════════════════════════════════════════
@@ -544,101 +554,93 @@ regexp.compile = () {
     .ncls = 0
     .compiled = true
 
-    pattern = .pattern
-    n = pattern.len
+    n = .pattern.len
     i = 0
 
     for i < n {
-        c = pattern[i] & 255
+        c = .pattern[i] & 255
 
-        {
-            // ^ — 行首錨點（不適用量詞）
-            c == 94 -> {
-                .emit(RE-OP-START, 0, 0)
-                i = i + 1
+        // 預設前進 1（使用結構體欄位以跨條件傳播）
+        .tmp-next-i = i + 1
+
+        // ^ — 行首錨點
+        c == 94 -> {
+            .emit(RE-OP-START, 0, 0)
+            .tmp-next-i = i + 1
+        }
+        // $ — 行尾錨點
+        c == 36 -> {
+            .emit(RE-OP-END, 0, 0)
+            .tmp-next-i = i + 1
+        }
+        // 其他 atom
+        c != 94 && c != 36 -> {
+            // 解析 atom
+            atom-i = .parse-atom(.pattern, i)
+            .tmp-next-i = atom-i
+
+            // 暫存 atom 資訊（已在 .tmp-atom-* 中）
+            atom-type = .tmp-atom-type
+            atom-char = .tmp-atom-char
+            atom-cls = .tmp-atom-cls
+
+            // 檢查量詞
+            .tmp-quant = 0
+            atom-i < n -> {
+                .tmp-quant = .pattern[atom-i] & 255
             }
-            // $ — 行尾錨點（不適用量詞）
-            c == 36 -> {
-                .emit(RE-OP-END, 0, 0)
-                i = i + 1
-            }
-            -> {
-                // 解析 atom
-                i = .parse-atom(pattern, i)
 
-                // 暫存 atom 資訊
-                atom-type = .tmp-atom-type
-                atom-char = .tmp-atom-char
-                atom-cls = .tmp-atom-cls
+            // 複製到局部變數以確保在分支選擇塊中正確讀取
+            quant = .tmp-quant
 
-                // 檢查量詞
-                has-q = 0
-                quant = 0
-                i < n -> {
-                    q = pattern[i] & 255
-                    {
-                        q == 42 -> {
-                            has-q = 1
-                            quant = 42
-                            i = i + 1
-                        }
-                        q == 43 -> {
-                            has-q = 1
-                            quant = 43
-                            i = i + 1
-                        }
-                        q == 63 -> {
-                            has-q = 1
-                            quant = 63
-                            i = i + 1
-                        }
-                    }
+            // DEBUG
+            println('quant=', quant, ' star=', RE-QUANT-STAR, ' eq=', quant == RE-QUANT-STAR, ' eq42=', quant == 42)
+
+            // 根據量詞發射指令（使用分支選擇塊）
+            {
+                quant == 0 -> {
+                    // 無量詞：直接發射 atom
+                    .emit-atom(atom-type, atom-char, atom-cls)
+                    .tmp-next-i = atom-i
                 }
-
-                // 根據量詞發射指令
-                {
-                    has-q == 0 -> {
-                        // 無量詞：直接發射 atom
-                        .emit-atom(atom-type, atom-char, atom-cls)
-                    }
-                    quant == 42 -> {
-                        // * — 零次或多次（貪婪）
-                        // SPLIT L1, L2
-                        // L1: <atom>
-                        //     JUMP SPLIT
-                        // L2: <next>
-                        split-pc = .n
-                        .emit(RE-OP-SPLIT, 0, 0)
-                        l1 = .n
-                        .emit-atom(atom-type, atom-char, atom-cls)
-                        .emit(RE-OP-JUMP, split-pc)
-                        .arg1[split-pc] = l1
-                        .arg2[split-pc] = .n
-                    }
-                    quant == 43 -> {
-                        // + — 一次或多次（貪婪）
-                        // L1: <atom>
-                        //     SPLIT L1, L2
-                        // L2: <next>
-                        l1 = .n
-                        .emit-atom(atom-type, atom-char, atom-cls)
-                        .emit(RE-OP-SPLIT, l1, .n + 1)
-                    }
-                    quant == 63 -> {
-                        // ? — 零次或一次（貪婪）
-                        // SPLIT L1, L2
-                        // L1: <atom>
-                        // L2: <next>
-                        split-pc = .n
-                        .emit(RE-OP-SPLIT, 0, 0)
-                        l1 = .n
-                        .emit-atom(atom-type, atom-char, atom-cls)
-                        .arg1[split-pc] = l1
-                        .arg2[split-pc] = .n
-                    }
+                quant == 6 * 7 -> {
+                    // * — 零次或多次（貪婪）
+                    split-pc = .n
+                    .emit(RE-OP-SPLIT, 0, 0)
+                    l1 = .n
+                    .emit-atom(atom-type, atom-char, atom-cls)
+                    .emit(RE-OP-JUMP, split-pc)
+                    .arg1[split-pc] = l1
+                    .arg2[split-pc] = .n
+                    .tmp-next-i = atom-i + 1
+                }
+                quant == RE-QUANT-PLUS -> {
+                    // + — 一次或多次（貪婪）
+                    l1 = .n
+                    .emit-atom(atom-type, atom-char, atom-cls)
+                    .emit(RE-OP-SPLIT, l1, .n + 1)
+                    .tmp-next-i = atom-i + 1
+                }
+                quant == RE-QUANT-QUESTION -> {
+                    // ? — 零次或一次（貪婪）
+                    split-pc = .n
+                    .emit(RE-OP-SPLIT, 0, 0)
+                    l1 = .n
+                    .emit-atom(atom-type, atom-char, atom-cls)
+                    .arg1[split-pc] = l1
+                    .arg2[split-pc] = .n
+                    .tmp-next-i = atom-i + 1
+                }
+                -> {
+                    // 不是量詞，直接發射 atom
+                    println('DEFAULT BRANCH quant=', quant, ' eq42=', quant == 42)
+                    .emit-atom(atom-type, atom-char, atom-cls)
+                    .tmp-next-i = atom-i
                 }
             }
         }
+
+        i = .tmp-next-i
     }
 
     .emit(RE-OP-MATCH, 0, 0)
@@ -655,52 +657,61 @@ regexp.compile = () {
 // 返回 ok bool: true=匹配成功
 // 副作用：成功時設置 .match-end = sp
 regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
-    ok = false
+    // 使用局部變數，最後賦值給輸出參數
+    result-ok = false
 
-    pc >= .n -> return
+    pc < .n -> {
+        op = .op[pc]
 
-    op = .op[pc]
-
-    {
         op == RE-OP-CHAR -> {
-            sp >= text.len -> return
-            (text[sp] & 255) != .arg1[pc] -> return
-            ok = .match-at(pc + 1, sp + 1, text)
+            sp < text.len -> {
+                (text[sp] & 255) == .arg1[pc] -> {
+                    result-ok = .match-at(pc + 1, sp + 1, text)
+                }
+            }
         }
         op == RE-OP-ANY -> {
-            sp >= text.len -> return
-            (text[sp] & 255) == 10 -> return
-            ok = .match-at(pc + 1, sp + 1, text)
+            sp < text.len -> {
+                (text[sp] & 255) != 10 -> {
+                    result-ok = .match-at(pc + 1, sp + 1, text)
+                }
+            }
         }
         op == RE-OP-CLASS -> {
-            sp >= text.len -> return
-            ch = text[sp] & 255
-            yes = .in-class(.arg1[pc], ch)
-            yes -> ok = .match-at(pc + 1, sp + 1, text)
+            sp < text.len -> {
+                ch = text[sp] & 255
+                yes = .in-class(.arg1[pc], ch)
+                yes -> result-ok = .match-at(pc + 1, sp + 1, text)
+            }
         }
         op == RE-OP-SPLIT -> {
             // 貪婪：先嘗試第一分支
-            ok = .match-at(.arg1[pc], sp, text)
-            ok -> return
-            // 回溯：嘗試第二分支
-            ok = .match-at(.arg2[pc], sp, text)
+            result-ok = .match-at(.arg1[pc], sp, text)
+            // 第一分支失敗時回溯到第二分支
+            !result-ok -> {
+                result-ok = .match-at(.arg2[pc], sp, text)
+            }
         }
         op == RE-OP-JUMP -> {
-            ok = .match-at(.arg1[pc], sp, text)
+            result-ok = .match-at(.arg1[pc], sp, text)
         }
         op == RE-OP-MATCH -> {
-            ok = true
+            result-ok = true
             .match-end = sp
         }
         op == RE-OP-START -> {
-            sp != 0 -> return
-            ok = .match-at(pc + 1, sp, text)
+            sp == 0 -> {
+                result-ok = .match-at(pc + 1, sp, text)
+            }
         }
         op == RE-OP-END -> {
-            sp != text.len -> return
-            ok = .match-at(pc + 1, sp, text)
+            sp == text.len -> {
+                result-ok = .match-at(pc + 1, sp, text)
+            }
         }
     }
+
+    ok = result-ok
 }
 
 // ═══════════════════════════════════════════════
@@ -711,7 +722,7 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
 // text str: 待匹配文字
 // 返回 matched bool: true=匹配
 regexp.matches = (text str) (matched bool) {
-    matched = false
+    result-matched = false
     .compiled == false -> .compile()
 
     // 從每個位置嘗試匹配
@@ -720,11 +731,13 @@ regexp.matches = (text str) (matched bool) {
         .match-end = -1
         ok = .match-at(0, sp, text)
         ok -> {
-            matched = true
-            return
+            result-matched = true
+            break
         }
         sp = sp + 1
     }
+
+    matched = result-matched
 }
 
 // find: 在 text 中查找第一個匹配 .pattern 的子串

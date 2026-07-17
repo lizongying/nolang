@@ -93,74 +93,74 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "hypot", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
 	})
 
-	// asin: arc sine via libm
+	// asin: arc sine via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "asin",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the arc sine of a float",
-		CLibCall:     &CLibCall{FuncName: "asin", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "asin",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the arc sine of a float",
+		LLVMIntrinsic: "llvm.asin.f64",
 	})
 
-	// acos: arc cosine via libm
+	// acos: arc cosine via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "acos",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the arc cosine of a float",
-		CLibCall:     &CLibCall{FuncName: "acos", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "acos",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the arc cosine of a float",
+		LLVMIntrinsic: "llvm.acos.f64",
 	})
 
-	// atan: arc tangent via libm
+	// atan: arc tangent via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "atan",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the arc tangent of a float",
-		CLibCall:     &CLibCall{FuncName: "atan", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "atan",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the arc tangent of a float",
+		LLVMIntrinsic: "llvm.atan.f64",
 	})
 
-	// atan2: arc tangent of y/x via libm
+	// atan2: arc tangent of y/x via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "atan2",
-		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the arc tangent of y/x",
-		CLibCall:     &CLibCall{FuncName: "atan2", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "atan2",
+		Params:        []parser.Type{parser.TypeF64, parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the arc tangent of y/x",
+		LLVMIntrinsic: "llvm.atan2.f64",
 	})
 
-	// sinh: hyperbolic sine via libm
+	// sinh: hyperbolic sine via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "sinh",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the hyperbolic sine of a float",
-		CLibCall:     &CLibCall{FuncName: "sinh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "sinh",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the hyperbolic sine of a float",
+		LLVMIntrinsic: "llvm.sinh.f64",
 	})
 
-	// cosh: hyperbolic cosine via libm
+	// cosh: hyperbolic cosine via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "cosh",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the hyperbolic cosine of a float",
-		CLibCall:     &CLibCall{FuncName: "cosh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "cosh",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the hyperbolic cosine of a float",
+		LLVMIntrinsic: "llvm.cosh.f64",
 	})
 
-	// tanh: hyperbolic tangent via libm
+	// tanh: hyperbolic tangent via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "tanh",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the hyperbolic tangent of a float",
-		CLibCall:     &CLibCall{FuncName: "tanh", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
+		ReceiverType:  ReceiverGlobal,
+		MethodName:    "tanh",
+		Params:        []parser.Type{parser.TypeF64},
+		Return:        []parser.Type{parser.TypeF64},
+		Doc:           "Compute the hyperbolic tangent of a float",
+		LLVMIntrinsic: "llvm.tanh.f64",
 	})
 
 	// ceil: round up via LLVM intrinsic

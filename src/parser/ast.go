@@ -266,7 +266,9 @@ type Comment struct {
 	Pos  lexer.Position
 	End  lexer.Position
 	Kind CommentKind
-	Text string // content without // prefix
+	Text string // content without marker prefix (e.g. without '//' or ';')
+	// Marker is the comment start symbol: "//" or ";". Empty means "//" (default).
+	Marker string
 }
 
 // CommentGroup represents a sequence of consecutive comment lines.

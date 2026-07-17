@@ -167,7 +167,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		return "double* " + tmpName
 	case *parser.StringLiteral:
 		ev := g.generateExprWithSB(sb, arg)
-		
+
 		return "%str-long* " + ev
 	case *parser.IntegerLiteral:
 		g.tmpIdx++
@@ -605,8 +605,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				if innerFnName == "" {
 					if recvType, ok := g.varTypes[recv.Value]; ok {
 						srcType := strings.TrimPrefix(recvType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates := []string{srcType}
+						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 							candidates = append(candidates, primAliases...)
 						}
 						for _, cand := range candidates {
@@ -629,8 +629,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
 				elemType := g.exprResultLLVMType(dot.Receiver)
 				srcType := strings.TrimPrefix(elemType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates := []string{srcType}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 					candidates = append(candidates, primAliases...)
 				}
 				for _, cand := range candidates {
@@ -897,8 +897,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 					recvVarName := recv.Value
 					if recvType, ok := g.varTypes[recvVarName]; ok {
 						srcType := strings.TrimPrefix(recvType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates := []string{srcType}
+						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 							candidates = append(candidates, primAliases...)
 						}
 						for _, cand := range candidates {
@@ -1236,8 +1236,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 			// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
 			srcType := strings.TrimPrefix(elemType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
 			for _, cand := range candidates {
@@ -1262,8 +1262,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 			// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
 			srcType := strings.TrimPrefix(elemType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
 			for _, cand := range candidates {
@@ -1288,8 +1288,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 			// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
 			srcType := strings.TrimPrefix(elemType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
 			// vec/arr 切片：依元素型別構造 []T 候選（如 []byte.to-str）
@@ -1330,8 +1330,8 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 			// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
 			srcType := strings.TrimPrefix(elemType, "%")
-candidates := []string{srcType}
-if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
 			for _, cand := range candidates {
@@ -1731,7 +1731,7 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 			return "double* " + tmpName
 		case *parser.StringLiteral:
 			ev := g.generateExprWithSB(sb, arg)
-			
+
 			return "%str-long* " + ev
 		case *parser.IntegerLiteral:
 			g.tmpIdx++
@@ -2317,8 +2317,8 @@ func (g *Generator) strExprDataPtr(sb *strings.Builder, arg parser.Expression) s
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[a.Value]; ok {
-ptr := g.varAddr(a.Value)
-					if t == "%str-long" {
+				ptr := g.varAddr(a.Value)
+				if t == "%str-long" {
 					return g.extractStrDataPtr(sb, ptr)
 				}
 			}
@@ -2448,7 +2448,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 	switch forwardFunc {
 	case "memcpy":
-		// str.copy(dst, n) [method] or str-copy(src, dst, n) [global] → memcpy(dst_data, src_data, n)
+		// str.copy(dst, n) [method] or str-copy(src, dst, n) [global] → llvm.memcpy(dst_data, src_data, n, false)
 		if len(args) < 3 {
 			return ""
 		}
@@ -2456,12 +2456,12 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		dstPtr := g.strExprDataPtr(sb, args[1])
 		nVal := g.evalI64Arg(sb, args[2])
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), dstPtr, srcPtr, nVal))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), dstPtr, srcPtr, nVal))
 		}
 		return ""
 
 	case "eq-raw":
-		// str.eq(b, n) [method] or str-eq(a, b, n) [global] → memcmp(a_data, b_data, n) == 0 → zext to i64
+		// str.eq(b, n) [method] or str-eq(a, b, n) [global] → llvm.memcmp(a_data, b_data, n) == 0 → zext to i64
 		if len(args) < 3 {
 			return "0"
 		}
@@ -2475,15 +2475,15 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		g.tmpIdx++
 		zextReg := fmt.Sprintf("%%eqzext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @memcmp(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @llvm.memcmp.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
 		}
 		return zextReg
 
 	case "memset":
-		// str-fill(s, n, val) → memset(s_data, val, n)
-		// Note: C memset signature is void* memset(void*, int, size_t)
+		// str-fill(s, n, val) → llvm.memset(s_data, val, n, false)
+		// llvm.memset signature: void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)
 		if len(args) < 3 {
 			return ""
 		}
@@ -2491,7 +2491,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		nVal := g.evalI64Arg(sb, args[1])
 		valVal := g.evalI64Arg(sb, args[2])
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall i8* @memset(i8* %s, i32 %s, i64 %s)\n", g.indent(), sPtr, valVal, nVal))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 %s, i64 %s, i1 false)\n", g.indent(), sPtr, valVal, nVal))
 		}
 		return ""
 
@@ -2897,7 +2897,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			copyBytes := fmt.Sprintf("%%vp.cb.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), copyBytes, curLen, elemSize))
-			sb.WriteString(fmt.Sprintf("%scall void @memcpy(i8* %s, i8* %s, i64 %s)\n", g.indent(), newBuf, oldData, copyBytes))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), newBuf, oldData, copyBytes))
 
 			// Store val at newBuf[len]
 			g.tmpIdx++
@@ -2987,7 +2987,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 0, 0\n", g.indent(), s1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), s2, s1, capVal))
 				_p2i_s3 := g.ptrToIntVal(sb, bufReg)
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), s3, s2, _p2i_s3))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), s3, s2, _p2i_s3))
 			}
 			g.ssaTypes[s3] = "%str-long"
 			return s3
@@ -3013,7 +3013,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 0, 0\n", g.indent(), v1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
 				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 2\n", g.indent(), v3, v2, _p2i_v3))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 2\n", g.indent(), v3, v2, _p2i_v3))
 			}
 			g.ssaTypes[v3] = "%vec"
 			return v3

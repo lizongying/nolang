@@ -635,6 +635,7 @@ func (p *Parser) collectDocComments() *CommentGroup {
 			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
 			Kind: NormalComment,
 			Text: c.Literal,
+			Marker: c.Marker,
 		}
 		group.List = append(group.List, comment)
 	}
@@ -695,6 +696,7 @@ func (p *Parser) attachInlineComment(stmt Statement) {
 			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
 			Kind: NormalComment,
 			Text: c.Literal,
+			Marker: c.Marker,
 		}
 		group := &CommentGroup{
 			List:  []*Comment{comment},
@@ -915,14 +917,15 @@ func (p *Parser) ParseProgram() *Program {
 		if stmt == nil {
 			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
 			if doc != nil {
-				for _, c := range doc.List {
-					p.comments = append(p.comments, lexer.Token{
-						Type:    lexer.COMMENT,
-						Literal: c.Text,
-						Line:    c.Pos.Line,
-						Column:  c.Pos.Column,
-					})
-				}
+			for _, c := range doc.List {
+				p.comments = append(p.comments, lexer.Token{
+					Type:    lexer.COMMENT,
+					Literal: c.Text,
+					Marker:  c.Marker,
+					Line:    c.Pos.Line,
+					Column:  c.Pos.Column,
+				})
+			}
 			}
 			p.nextToken()
 		}
@@ -4213,6 +4216,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
 				Kind: NormalComment,
 				Text: c.Literal,
+				Marker: c.Marker,
 			}
 			group.List = append(group.List, comment)
 			i++
@@ -5728,6 +5732,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
 				Kind: NormalComment,
 				Text: c.Literal,
+				Marker: c.Marker,
 			}
 			group.List = append(group.List, comment)
 			i++
@@ -5751,14 +5756,15 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		} else {
 			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
 			if doc != nil {
-				for _, c := range doc.List {
-					p.comments = append(p.comments, lexer.Token{
-						Type:    lexer.COMMENT,
-						Literal: c.Text,
-						Line:    c.Pos.Line,
-						Column:  c.Pos.Column,
-					})
-				}
+			for _, c := range doc.List {
+				p.comments = append(p.comments, lexer.Token{
+					Type:    lexer.COMMENT,
+					Literal: c.Text,
+					Marker:  c.Marker,
+					Line:    c.Pos.Line,
+					Column:  c.Pos.Column,
+				})
+			}
 			}
 			p.nextToken()
 		}

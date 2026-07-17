@@ -15,7 +15,7 @@ func TestOldSyntax(t *testing.T) {
 		// 舊式寫法 - 不需要冒號
 		{name: "for_infinite", input: "for {\n    break\n}", wantErr: false},
 		{name: "for_condition", input: "for i < 5 {\n    continue\n}", wantErr: false},
-		{name: "for_cstyle", input: "for i = 0; i < 5; i++ {\n}", wantErr: false},
+		{name: "for_cstyle", input: "for i = 0, i < 5, i++ {\n}", wantErr: false},
 		{name: "for_range_bracket", input: "for i <- [0..5) {\n}", wantErr: false},
 		{name: "for_range_paren", input: "for i <- (0..5] {\n}", wantErr: false},
 		{name: "for_range_closed", input: "for i <- [0..5] {\n}", wantErr: false},
@@ -401,7 +401,6 @@ func TestDeprecationWarnings(t *testing.T) {
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},
 		{name: "for_infinite_no_warning", input: "for {\n    break\n}", wantWarnings: 0},
 		{name: "for_cstyle_no_warning", input: "for i = 0, i < 5, i++ {\n}", wantWarnings: 0},
-		{name: "for_cstyle_semicolon_warn", input: "for i = 0; i < 5; i++ {\n}", wantWarnings: 1},
 		{name: "new_match_no_warning", input: "x: {\n    1-> 10\n    -> 0\n}", wantWarnings: 0},
 	}
 	for _, tt := range tests {

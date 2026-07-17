@@ -66,6 +66,13 @@ func TestLLVMIntrinsicMethods(t *testing.T) {
 		{"log", "llvm.log.f64", "f64"},
 		{"log10", "llvm.log10.f64", "f64"},
 		{"log2", "llvm.log2.f64", "f64"},
+		{"asin", "llvm.asin.f64", "f64"},
+		{"acos", "llvm.acos.f64", "f64"},
+		{"atan", "llvm.atan.f64", "f64"},
+		{"atan2", "llvm.atan2.f64", "f64f64"},
+		{"sinh", "llvm.sinh.f64", "f64"},
+		{"cosh", "llvm.cosh.f64", "f64"},
+		{"tanh", "llvm.tanh.f64", "f64"},
 	}
 	for _, tt := range intrinsicMethods {
 		found := false
@@ -90,13 +97,6 @@ func TestCLibCallMethods(t *testing.T) {
 	}{
 		{"cbrt", "cbrt", 1},
 		{"hypot", "hypot", 2},
-		{"asin", "asin", 1},
-		{"acos", "acos", 1},
-		{"atan", "atan", 1},
-		{"atan2", "atan2", 2},
-		{"sinh", "sinh", 1},
-		{"cosh", "cosh", 1},
-		{"tanh", "tanh", 1},
 		{"fmod", "fmod", 2},
 	}
 	for _, tt := range clibMethods {
@@ -151,7 +151,6 @@ func TestOSCLibCallMethods(t *testing.T) {
 		{"remove", "unlink"},
 		{"rename", "rename"},
 		{"get-pid", "getpid"},
-		{"is-file", "stat"},
 		{"now", "time"},
 		{"sleep", "sleep"},
 		{"open-read", "open"},

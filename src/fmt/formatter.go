@@ -188,18 +188,27 @@ func (f *formatter) formatDocComments(doc *parser.CommentGroup) {
 			}
 		}
 		text := c.Text
+		m := f.commentMarker(c)
 		if strings.TrimSpace(text) == "" {
-			f.write("//")
+			f.write(m)
 		} else if text[0] != ' ' {
-			// Missing space after // — add one
-			f.write("// ")
+			// Missing space after marker — add one
+			f.write(m + " ")
 			f.write(text)
 		} else {
 			// Already has space — preserve as-is
-			f.write("//")
+			f.write(m)
 			f.write(text)
 		}
 	}
+}
+
+// commentMarker returns the comment start symbol for a comment, defaulting to "//".
+func (f *formatter) commentMarker(c *parser.Comment) string {
+	if c.Marker == "" {
+		return "//"
+	}
+	return c.Marker
 }
 
 // formatInlineComment outputs a comment that appears on the same line as code.
@@ -208,7 +217,12 @@ func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
 		return
 	}
 	c := comment.List[0]
-	f.write("  // ")
+	if c.Marker == ";" {
+		// `;` 註釋緊貼代碼：a = 1; comment
+		f.write("; ")
+	} else {
+		f.write("  // ")
+	}
 	f.write(strings.TrimSpace(c.Text))
 }
 
@@ -219,7 +233,7 @@ func (f *formatter) formatTrailingComments(tc *parser.CommentGroup) {
 	}
 	for _, c := range tc.List {
 		f.newline()
-		f.write("//")
+		f.write(f.commentMarker(c))
 		f.write(c.Text)
 	}
 }
@@ -273,7 +287,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	if p.TrailingComments != nil {
 		f.newline()
 		for _, c := range p.TrailingComments.List {
-			f.write("//")
+			f.write(f.commentMarker(c))
 			f.write(c.Text)
 			f.newline()
 		}
@@ -478,10 +492,15 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.formatConditionalExpression(e)
 	case *parser.NullableType:
 		f.write("?")
-		f.write(e.Type.String())
+		if e.Type != nil {
+			f.write(e.Type.String())
+		}
 	case *parser.PointerType:
-		f.write("ptr ")
-		f.write(e.Type.String())
+		f.write("ptr")
+		if e.Type != nil {
+			f.write(" ")
+			f.write(e.Type.String())
+		}
 	case *parser.GroupedExpression:
 		f.write("(")
 		f.formatExpression(e.Expression)

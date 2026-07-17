@@ -1110,36 +1110,63 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     MASK = 4294967295
 
     // 初始狀態
-    a = h0; b = h1; c = h2; d = h3; e = h4
+    a = h0
+    b = h1
+    c = h2
+    d = h3
+    e = h4
 
     // ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
     // f = (b & c) | (~b & d)
 
     f = (b & c) | ((MASK ^ b) & d)
-    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + s[0])  & MASK
-    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+    temp = ((a << 5) | (a >> 27)) & MASK
+    temp = (temp + f + e + 1518500249 + s[0])  & MASK
+    e = d
+    d = c
+    c = ((b << 30) | (b >> 2)) & MASK
+    b = a
+    a = temp
 
 
 
     // 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
 
     // w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
-    w = s[13] ^ s[8] ^ s[2] ^ s[0]; w = ((w << 1) | (w >> 31)) & MASK
+    w = s[13] ^ s[8] ^ s[2] ^ s[0]
+    w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
-    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
-    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+    temp = ((a << 5) | (a >> 27)) & MASK
+    temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d
+    d = c
+    c = ((b << 30) | (b >> 2)) & MASK
+    b = a
+    a = temp
 
     // w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
-    w = s[14] ^ s[9] ^ s[3] ^ s[1]; w = ((w << 1) | (w >> 31)) & MASK
+    w = s[14] ^ s[9] ^ s[3] ^ s[1]
+    w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
-    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
-    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+    temp = ((a << 5) | (a >> 27)) & MASK
+    temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d
+    d = c
+    c = ((b << 30) | (b >> 2)) & MASK
+    b = a
+    a = temp
 
     // w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
-    w = s[15] ^ s[10] ^ s[4] ^ s[2]; w = ((w << 1) | (w >> 31)) & MASK
+    w = s[15] ^ s[10] ^ s[4] ^ s[2]
+    w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
-    temp = ((a << 5) | (a >> 27)) & MASK; temp = (temp + f + e + 1518500249 + w) & MASK
-    e = d; d = c; c = ((b << 30) | (b >> 2)) & MASK; b = a; a = temp
+    temp = ((a << 5) | (a >> 27)) & MASK
+    temp = (temp + f + e + 1518500249 + w) & MASK
+    e = d
+    d = c
+    c = ((b << 30) | (b >> 2)) & MASK
+    b = a
+    a = temp
 
 
 
@@ -1268,26 +1295,49 @@ sha512-block=(s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 
     MASK64 = -1
 
     // 初始狀態
-    a = h0; b = h1; c = h2; d = h3; e = h4; f = h5; g = h6; h = h7
+    a = h0
+    b = h1
+    c = h2
+    d = h3
+    e = h4
+    f = h5
+    g = h6
+    h = h7
 
     // 第 0 輪 (K0 = 0x428A2F98D728AE22)
-    S1 = ((e >> 14) | (e << 50)); S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
+    S1 = ((e >> 14) | (e << 50))
+    S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
     Ch = (e & f) ^ ((MASK64 ^ e) & g)
-    S0 = ((a >> 28) | (a << 36)); S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
+    S0 = ((a >> 28) | (a << 36))
+    S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     Maj = (a & b) ^ (a & c) ^ (b & c)
     T1 = h + S1 + Ch + 4794697086780616226 + s[0]
     T2 = S0 + Maj
-    h = g; g = f; f = e; e = d + T1
-    d = c; c = b; b = a; a = T1 + T2
+    h = g
+    g = f
+    f = e
+    e = d + T1
+    d = c
+    c = b
+    b = a
+    a = T1 + T2
     // 第 1 輪 (K1 = 0x7137449123EF65CD)
-    S1 = ((e >> 14) | (e << 50)); S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
+    S1 = ((e >> 14) | (e << 50))
+    S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
     Ch = (e & f) ^ ((MASK64 ^ e) & g)
-    S0 = ((a >> 28) | (a << 36)); S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
+    S0 = ((a >> 28) | (a << 36))
+    S0 = S0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     Maj = (a & b) ^ (a & c) ^ (b & c)
     T1 = h + S1 + Ch + 8158064640168781261 + s[1]
     T2 = S0 + Maj
-    h = g; g = f; f = e; e = d + T1
-    d = c; c = b; b = a; a = T1 + T2
+    h = g
+    g = f
+    f = e
+    e = d + T1
+    d = c
+    c = b
+    b = a
+    a = T1 + T2
 
 }
 			`),
@@ -2310,5 +2360,33 @@ func TestFormatFileIdempotent(t *testing.T) {
 	twice := FormatFile(once)
 	if once != twice {
 		t.Errorf("FormatFile not idempotent:\nfirst:  %q\nsecond: %q", once, twice)
+	}
+}
+
+// TestFormatSemicolonComment verifies that ';' line comments are preserved as
+// ';' (not normalized to '//') and that '//' comments stay '//'. ';' is a
+// reserved comment marker in nolang.
+func TestFormatSemicolonComment(t *testing.T) {
+	// ';' line comments must be preserved as ';' (not normalized to '//').
+	input := "; 行首註釋\nx = 1; 行尾註釋\ny = 2\n; 另一行註釋\n"
+	got := Format(input)
+	want := "; 行首註釋\nx = 1; 行尾註釋\ny = 2\n; 另一行註釋"
+	if got != want {
+		t.Errorf("Format semicolon comment:\n got:  %q\n want: %q", got, want)
+	}
+	// idempotent via FormatFile (adds exactly one trailing newline, preserves ';')
+	file := FormatFile(input)
+	if FormatFile(file) != file {
+		t.Errorf("FormatFile not idempotent: %q", file)
+	}
+	if !strings.HasSuffix(file, "; 另一行註釋\n") {
+		t.Errorf("trailing ';' comment not preserved: %q", file)
+	}
+
+	// '//' comments must remain '//' (formatter uses two-space indent before //).
+	input2 := "// line comment\nx = 1 // trailing\n"
+	want2 := "// line comment\nx = 1  // trailing"
+	if got2 := Format(input2); got2 != want2 {
+		t.Errorf("Format // comment:\n got:  %q\n want: %q", got2, want2)
 	}
 }

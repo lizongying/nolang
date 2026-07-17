@@ -808,7 +808,7 @@ func TestForLoop(t *testing.T) {
 		},
 		{
 			name: "for_cstyle",
-			input: `for i = 0; i < 5; i++ {
+			input: `for i = 0, i < 5, i++ {
     i = i
 }`,
 			wantErr:   false,

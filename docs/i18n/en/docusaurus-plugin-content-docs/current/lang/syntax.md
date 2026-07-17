@@ -6,32 +6,36 @@ sidebar_position: 2
 
 ## Comments
 
+Nolang supports two single-line comment markers with **identical semantics** — both comment to end-of-line:
+
+- `//` — traditional marker
+- `;` — alternative marker (**implemented 2026-07-17**)
+
 ```nolang
-// Only single-line comments are allowed
-// Multiple statements on a single line are not allowed; use separate lines
+// this is a comment
+; this is also a comment, same semantics
+x = 1 ; trailing comment, runs to end of line
 ```
 
-> **Rule: One statement per line; using semicolons `;` or commas `,` to combine multiple statements on the same line is forbidden.**
-> This rule also applies to code examples within comments. Even in comments, multiple statements should not be placed on the same line using semicolons or commas, to avoid confusing readers.
+> **Rule: One statement per line; using commas `,` to combine multiple statements on the same line is forbidden.** (The semicolon `;` is now a comment marker and can no longer join statements.)
+> This rule also applies to code examples within comments. Even in comments, multiple statements should not be placed on the same line using commas, to avoid confusing readers.
 >
 > ```nolang
-// ❌ Wrong: combining multiple statements with semicolons in comments
-// h0 = 1732584193; h1 = 4023233417; h2 = 2562383102
+; ❌ Wrong: combining multiple statements with commas in comments
+; h0 = 1732584193, h1 = 4023233417
 
-// ❌ Wrong: combining multiple statements with commas
-// out = from-i64(v), out = from-u64(v)
-// debug(msg), info(msg), warn(msg)
+; ❌ Wrong: combining multiple statements with commas
+; out = from-i64(v), out = from-u64(v)
+; debug(msg), info(msg), warn(msg)
 
-// ✅ Correct: one statement per line
-// h0 = 1732584193
-// h1 = 4023233417
-// h2 = 2562383102
-//
-// out = from-i64(v)
-// out = from-u64(v)
-// debug(msg)
-// info(msg)
-// warn(msg)
+; ✅ Correct: one statement per line
+; h0 = 1732584193
+; h1 = 4023233417
+; out = from-i64(v)
+; out = from-u64(v)
+; debug(msg)
+; info(msg)
+; warn(msg)
 ```
 
 ## Data Types
