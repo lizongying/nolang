@@ -2898,22 +2898,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					// 純量值，無法轉為 struct：使用 zeroinitializer
 					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
 				} else {
-					// 決定實際的 source str 型別
-					sourceStrType := g.inferSourceStrType(f.Value)
-					if sourceStrType == "" {
-						// 非 str 值，直接 store（已是 struct 值）
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
-					} else if sourceStrType == fieldType {
-						// 同型別，直接 store
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
-					} else {
-						// 不同型別：先取得 source 指標，轉換為目標型別的指標，再 load + store
-						sourcePtr := g.materializeStrPtr(sb, f.Value, sourceStrType, fieldVal)
-						convertedPtr := sourcePtr
+					// String literals and str pointer regs are %str-long* pointers (alloca),
+					// need to load the %str-long value before storing.
+					if _, isStrLit := f.Value.(*parser.StringLiteral); isStrLit || g.isStrPtrReg(fieldVal) {
 						g.tmpIdx++
 						loadReg := fmt.Sprintf("%%st.fload.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, convertedPtr))
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, fieldVal))
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+					} else {
+						// 決定實際的 source str 型別
+						sourceStrType := g.inferSourceStrType(f.Value)
+						if sourceStrType == "" {
+							// 非 str 值，直接 store（已是 struct 值）
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+						} else if sourceStrType == fieldType {
+							// 同型別，直接 store
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+						} else {
+							// 不同型別：先取得 source 指標，轉換為目標型別的指標，再 load + store
+							sourcePtr := g.materializeStrPtr(sb, f.Value, sourceStrType, fieldVal)
+							convertedPtr := sourcePtr
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%st.fload.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, convertedPtr))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+						}
 					}
 				}
 			} else {
@@ -3343,6 +3352,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 	}
 	// Known alloca patterns that produce a %str-long* pointer
 	ptrPatterns := []string{
+		"%str-longlit.",        // string literal alloca
 		"%str-long.s2s.",       // str conversion alloca
 		"%s2s.result.",         // s2s conversion in stmt.go
 		"%concat.result.",      // generateStrConcat
@@ -3644,17 +3654,21 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				// 重組方法名稱：依 varTypes/內建別名表推導型別前綴
 				recv := dot.Receiver
 				if recvIdent, ok := recv.(*parser.Identifier); ok {
-					if recvType, ok := g.varTypes[recvIdent.Value]; ok {
-						srcType := strings.TrimPrefix(recvType, "%")
+			if recvType, ok := g.varTypes[recvIdent.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
 					candidates := []string{srcType}
+					// Map LLVM struct names to Nolang type names for function lookup
+					if srcType == "str-long" {
+						candidates = append(candidates, "str")
+					}
 					for _, cand := range candidates {
-							candName := cand + "." + dot.Property
-							if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
-								isNolangOptionCall = true
-								break
-							}
+						candName := cand + "." + dot.Property
+						if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
+							isNolangOptionCall = true
+							break
 						}
 					}
+				}
 				} else if _, isStrLit := recv.(*parser.StringLiteral); isStrLit {
 					candName := "str." + dot.Property
 					if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {

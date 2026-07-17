@@ -1689,10 +1689,12 @@ func (g *Generator) loadDataPtrField(sb *strings.Builder, fieldGEP string) strin
 
 // ptrToIntVal converts an i8* value to i64 for use in insertvalue.
 // Returns the i64 value (register name or "0" for null).
+// Strips any leading "i8* " prefix from ptrVal to avoid duplicate type annotations.
 func (g *Generator) ptrToIntVal(sb *strings.Builder, ptrVal string) string {
 	if ptrVal == "null" {
 		return "0"
 	}
+	ptrVal = strings.TrimPrefix(ptrVal, "i8* ")
 	g.tmpIdx++
 	intReg := fmt.Sprintf("%%p2i.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, ptrVal))

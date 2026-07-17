@@ -286,6 +286,15 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
 					}
+				} else if _, isStrLit := f.Value.(*parser.StringLiteral); isStrLit || g.isStrPtrReg(fieldVal) {
+					// String literals and str pointer regs are %str-long* pointers (alloca),
+					// need to load the value before storing.
+					if sb != nil {
+						g.tmpIdx++
+						loadReg := fmt.Sprintf("%%ref.st.fload.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, fieldVal))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+					}
 				} else if sb != nil {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 				}
@@ -1861,6 +1870,15 @@ if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 						if sb != nil {
 							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
 						}
+					} else if _, isStrLit := f.Value.(*parser.StringLiteral); isStrLit || g.isStrPtrReg(fieldVal) {
+						// String literals and str pointer regs are %str-long* pointers (alloca),
+						// need to load the value before storing.
+						if sb != nil {
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%ref.st.fload.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, fieldVal))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+						}
 					} else if sb != nil {
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 					}
@@ -2307,9 +2325,6 @@ ptr := g.varAddr(a.Value)
 		}
 	case *parser.StringLiteral:
 		ptr := g.generateExprWithSB(sb, arg)
-		if len(a.Value) <= 127 {
-			return g.extractStrDataPtr(sb, ptr)
-		}
 		return g.extractStrDataPtr(sb, ptr)
 	}
 	// Fallback: generate expression and hope it's a usable pointer
@@ -2540,7 +2555,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 			_p2i_strReg3 := g.ptrToIntVal(sb, selectReg)
-		sb.WriteString(fmt.Sprintf("%sstrReg3 = insertvalue %%str-long strReg2, i64 %s, 2\n", g.indent(), _p2i_strReg3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3
 
@@ -2598,7 +2613,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 				_p2i_strReg3 := g.ptrToIntVal(sb, safeReg)
-		sb.WriteString(fmt.Sprintf("%sstrReg3 = insertvalue %%str-long strReg2, i64 %s, 2\n", g.indent(), _p2i_strReg3))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 			}
 			return strReg3
 
@@ -2972,7 +2987,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 0, 0\n", g.indent(), s1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), s2, s1, capVal))
 				_p2i_s3 := g.ptrToIntVal(sb, bufReg)
-		sb.WriteString(fmt.Sprintf("%ss3 = insertvalue %%str-long s2, i64 %s, 2\n", g.indent(), _p2i_s3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), s3, s2, _p2i_s3))
 			}
 			g.ssaTypes[s3] = "%str-long"
 			return s3
@@ -2998,7 +3013,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 0, 0\n", g.indent(), v1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
 				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
-		sb.WriteString(fmt.Sprintf("%sv3 = insertvalue %%vec v2, i64 %s, 2\n", g.indent(), _p2i_v3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 2\n", g.indent(), v3, v2, _p2i_v3))
 			}
 			g.ssaTypes[v3] = "%vec"
 			return v3
@@ -3212,7 +3227,7 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 		_p2i_strReg3 := g.ptrToIntVal(sb, callReg)
-		sb.WriteString(fmt.Sprintf("%sstrReg3 = insertvalue %%str-long strReg2, i64 %s, 2\n", g.indent(), _p2i_strReg3))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		return strReg3
 	case "ptr", "pptr", "ppptr":
 		g.tmpIdx++

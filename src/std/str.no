@@ -244,7 +244,7 @@ str.slice = (start i64, end i64) (val str) {
         return
     }
     n = end - start
-    val.len = n
+    val = with-cap(n)
     i <- [0..n): {
         val[i] = .[start + i]
     }

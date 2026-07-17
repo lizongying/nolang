@@ -2010,15 +2010,13 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					}
 					// s2s conversion: StringLiteral → %str-long value
 					// when assigning to a %str-long array element (e.g., keys[i] = 'foo')
+					// All string literals are %str-long* pointers (alloca), need to load the value.
 					if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
-						if strLit, ok := value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
-							// Long string literal: already %str-long*, just load
+						if _, ok := value.(*parser.StringLiteral); ok {
 							g.tmpIdx++
 							loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
 							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 							storeVal = loadReg
-						} else {
-							storeVal = val
 						}
 					}
 					// Struct element copy (e.g., .names[i] = .names[last]):
@@ -2566,19 +2564,15 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 			}
 			if fieldIdx >= 0 && sb != nil {
-				// 當欄位型別為 %str-long 但值是字串字面量時，
-				// 需用 malloc 配置 heap buffer 並轉換為 %str-long value。
-				if fieldType == "%str-long" {
-					if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) <= 127 {
-						val = val
-					} else if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
-						// Long string literal: already %str-long*, load the value
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%set.fld.strload.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
-						val = loadReg
-					}
+			// String literal is %str-long* pointer (alloca), load the value.
+			if fieldType == "%str-long" {
+				if _, ok := expr.Value.(*parser.StringLiteral); ok {
+					g.tmpIdx++
+					loadReg := fmt.Sprintf("%%set.fld.strload.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+					val = loadReg
 				}
+			}
 				// Struct field assignment from a pointer-producing expression (e.g.,
 				// rec.value = a - b, rec.field = .names[i]): generateExprWithSB returns
 				// a %str-long* pointer (alloca from concat/repeat, or GEP from array
@@ -2988,11 +2982,9 @@ if t == "%str-long" {
 				}
 			}
 			// %str-long array element: string literals are %str-long*
-			// pointers (alloca results), need conversion to %str-long value.
+			// pointers (alloca results), need to load the %str-long value.
 			if llvmElemType == "%str-long" {
-				if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) <= 127 {
-					storeVal = val
-				} else if strLit, ok := expr.Value.(*parser.StringLiteral); ok && len(strLit.Value) > 127 {
+				if _, ok := expr.Value.(*parser.StringLiteral); ok {
 					g.tmpIdx++
 					loadReg := fmt.Sprintf("%%set.arr.strload.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))

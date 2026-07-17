@@ -71,9 +71,6 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			}
 		case *parser.StringLiteral:
 			ptr := g.generateExprWithSB(sb, a)
-			if len(a.Value) <= 127 {
-				return g.extractStrDataPtr(sb, ptr)
-			}
 			return g.extractStrDataPtr(sb, ptr)
 		case *parser.InfixExpression:
 			if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
@@ -231,7 +228,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 			_p2i_strReg3 := g.ptrToIntVal(sb, bufDataPtr)
-		sb.WriteString(fmt.Sprintf("%sstrReg3 = insertvalue %%str-long strReg2, i64 %s, 2\n", g.indent(), _p2i_strReg3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
 		}
 		return strAlloca
@@ -515,7 +512,7 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 			_p2i_strReg3 := g.ptrToIntVal(sb, selectReg)
-		sb.WriteString(fmt.Sprintf("%sstrReg3 = insertvalue %%str-long strReg2, i64 %s, 2\n", g.indent(), _p2i_strReg3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3
 	}
@@ -2741,11 +2738,7 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 		}
 	case *parser.StringLiteral:
 		ptr := g.generateExprWithSB(sb, a)
-		if len(a.Value) <= 127 {
-			dataPtr = g.extractStrDataPtr(sb, ptr)
-		} else {
-			dataPtr = g.extractStrDataPtr(sb, ptr)
-		}
+		dataPtr = g.extractStrDataPtr(sb, ptr)
 	case *parser.InfixExpression:
 		if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
 			ptr := g.generateStrConcat(sb, a.Left, a.Right)
