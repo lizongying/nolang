@@ -21,16 +21,28 @@ has-nonzero = 0
 i <- [0..32): {
     prf-out[i] != 0 -> has-nonzero = 1
 }
-has-nonzero == 0 -> print('FAIL: prf all zeros'); return
+has-nonzero == 0 -> {
+    print('FAIL: prf all zeros')
+    return
+}
 print('PASS: prf')
 
 // test-tls-conn-init
 print('before conn-init')
 c tls-conn
 c.init()
-c.connected != false -> print('FAIL: conn-init connected'); return
-c.fd != 0 -> print('FAIL: conn-init fd'); return
-c.write-seq != 0 -> print('FAIL: conn-init write-seq'); return
+c.connected != false -> {
+    print('FAIL: conn-init connected')
+    return
+}
+c.fd != 0 -> {
+    print('FAIL: conn-init fd')
+    return
+}
+c.write-seq != 0 -> {
+    print('FAIL: conn-init write-seq')
+    return
+}
 print('PASS: conn-init')
 
 print('=== Done ===')

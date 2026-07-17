@@ -553,6 +553,37 @@ Implementation lives in `src/fmt/formatter.go`:
   which strips all trailing `\r`/`\n` (CRLF-safe, multi-blank-line-safe) and
   appends a single `\n`. Empty or unparseable input is returned unchanged so
   the formatter never mangles a file it cannot understand.
+
+#### `;` is reserved — never emitted, treat `cond -> X; Y` as corruption
+
+`;` is on track to become a **comment marker** (not yet implemented). The
+formatter never outputs `;` — when two statements would land on the same line
+it splits them onto separate lines instead of joining with `; `.
+
+Gotcha: in a standalone if-then `cond -> X; Y`, the `;` does **not** mean
+assignment. `parseStandaloneBody` only parses `IDENT` followed by `=`/`COMMA`
+as an assignment body; `cond -> X; Y` actually parses as "evaluate `X` (discard)
+then evaluate `Y`" — i.e. **`X` is never assigned**. The correct form is
+`cond -> X = Y` (established stdlib pattern in `arr.no`, `uuid.no`, `path.no`,
+`err.no`, `assert.no`). If you find `cond -> X; Y` in source, it is a corrupted
+`cond -> X = Y` — fix it by replacing `;` with `=`.
+
+`;` inside string literals (e.g. `'text/plain; charset=utf-8'`,
+`index-from(';', pos)`) and inside `//` comments is safe — the lexer's string
+and comment scanners consume it, so it never reaches the `;` token.
+
+Note: the formatter does **not** introduce `;` — it only preserves `;` already
+present in source. Verify with `no fmt <file>` (exit 0, no `;` in output).
+
+**Status (2026-07-17):** the entire repo's `.no` sources are now `;`-free at the
+grammar level — every real `;` has been migrated (`zip.no` → `[]byte` literals;
+`ws.no` 14× `cond -> X; Y` → `cond -> X = Y`; `test-tls-part1/2/3.no` 15×
+`cond -> print('…'); return` → `cond -> { print('…') \n return }`). A full-repo
+scan (excluding `dist/`, `vscode-nolang/`, `node_modules/`, string literals, and
+`//` comments) returns **no** `;`. The only remaining `;` are inside string
+literals and `//` comments. This means the prerequisite for making `;` a comment
+marker is fully satisfied: implementing it now only needs lexer `case ';'` →
+line-comment + disabling `SEMICOLON` handling in the parser.
 - `Format(code)` is the pure fragment formatter (no trailing newline) used by
   unit tests; prefer `FormatFile` whenever you write a real source file.
 

@@ -13,9 +13,18 @@ b[0] = 4
 b[1] = 5
 out []byte
 out = tls.tls-bytes-cat(a, b)
-out.len != 5 -> print('FAIL: bytes-cat len'); return
-out[0] != 1 -> print('FAIL: bytes-cat out[0]'); return
-out[3] != 4 -> print('FAIL: bytes-cat out[3]'); return
+out.len != 5 -> {
+    print('FAIL: bytes-cat len')
+    return
+}
+out[0] != 1 -> {
+    print('FAIL: bytes-cat out[0]')
+    return
+}
+out[3] != 4 -> {
+    print('FAIL: bytes-cat out[3]')
+    return
+}
 print('PASS: bytes-cat')
 
 // test-tls-bytes-to-bn
@@ -26,8 +35,14 @@ data[2] = 0x03
 data[3] = 0x04
 bn-out []i64
 bn-out = tls.tls-bytes-to-bn(data)
-bn-out.len != 1 -> print('FAIL: bytes-to-bn n'); return
-bn-out[0] != 0x01020304 -> print('FAIL: bytes-to-bn val'); return
+bn-out.len != 1 -> {
+    print('FAIL: bytes-to-bn n')
+    return
+}
+bn-out[0] != 0x01020304 -> {
+    print('FAIL: bytes-to-bn val')
+    return
+}
 print('PASS: bytes-to-bn')
 
 // test-tls-bn-to-bytes
@@ -35,8 +50,14 @@ num []i64 = with-cap(1)
 num[0] = 0x01020304
 bb-out []byte
 bb-out = tls.tls-bn-to-bytes(num)
-bb-out.len != 4 -> print('FAIL: bn-to-bytes n'); return
-bb-out[0] != 0x01 -> print('FAIL: bn-to-bytes out[0]'); return
+bb-out.len != 4 -> {
+    print('FAIL: bn-to-bytes n')
+    return
+}
+bb-out[0] != 0x01 -> {
+    print('FAIL: bn-to-bytes out[0]')
+    return
+}
 print('PASS: bn-to-bytes')
 
 // test-tls-rand-bytes

@@ -232,9 +232,9 @@ ws-gen-client-key = (seed i64) (key str) {
 ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     dlen = data.len
     header-len = 2
-    dlen > 125 && dlen <= 65535 -> header-len; 4
-    dlen > 65535 -> header-len; 10
-    mask -> header-len; header-len + 4
+    dlen > 125 && dlen <= 65535 -> header-len = 4
+    dlen > 65535 -> header-len = 10
+    mask -> header-len = header-len + 4
     total = header-len + dlen
 
     space = ' '
@@ -245,7 +245,7 @@ ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     // byte 1: mask | len
     mask-bit = 0
-    mask -> mask-bit; 128
+    mask -> mask-bit = 128
 
     dlen <= 125 -> frame[1] = mask-bit | dlen
     dlen > 125 && dlen <= 65535 -> {
@@ -262,8 +262,8 @@ ws-build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     // mask key
     mk-start = 2
-    dlen > 125 && dlen <= 65535 -> mk-start; 4
-    dlen > 65535 -> mk-start; 10
+    dlen > 125 && dlen <= 65535 -> mk-start = 4
+    dlen > 65535 -> mk-start = 10
 
     mask -> {
         i <- [0..4): {
@@ -375,7 +375,7 @@ ws-server-conn.handshake = () {
     // 解析請求行，驗證方法為 GET
     first-line-end = head.index(crlf)
     request-line = head
-    first-line-end >= 0 -> request-line; head.slice(0, first-line-end)
+    first-line-end >= 0 -> request-line = head.slice(0, first-line-end)
     sp1 = request-line.index(' ')
     sp1 < 0 -> return
     method = request-line.slice(0, sp1)
@@ -404,7 +404,7 @@ ws-server-conn.handshake = () {
         ->
     }
     val-end = head.index-from(crlf, val-start)
-    val-end < 0 -> val-end; head.len
+    val-end < 0 -> val-end = head.len
     client-key = head.slice(val-start, val-end)
 
     // 驗證 Upgrade: websocket
@@ -421,7 +421,7 @@ ws-server-conn.handshake = () {
         ->
     }
     up-val-end = head.index-from(crlf, up-val-start)
-    up-val-end < 0 -> up-val-end; head.len
+    up-val-end < 0 -> up-val-end = head.len
     up-val = head.slice(up-val-start, up-val-end)
     up-low = up-val.to-lower()
     up-low != 'websocket' -> return
@@ -1051,7 +1051,7 @@ ws-listen-on = (host str, port i64) (s ?ws-server) {
     srv = ws-server{}
     ok = false
     ok = srv.listen(host, port)
-    ok -> s; srv
+    ok -> s = srv
 }
 
 // ws-connect: 連接到 WebSocket 端點
@@ -1085,7 +1085,7 @@ ws-connect = (url str) (c ?ws-client) {
     rest = url.slice(scheme.len, url.len)
 
     slash-pos = rest.index('/')
-    slash-pos < 0 -> host; rest
+    slash-pos < 0 -> host = rest
     slash-pos >= 0 -> {
         host = rest.slice(0, slash-pos)
         path = rest.slice(slash-pos, rest.len)
@@ -1245,7 +1245,7 @@ ws-connect = (url str) (c ?ws-client) {
     head = raw.slice(0, sep-pos)
     first-line-end = head.index(crlf)
     status-line = head
-    first-line-end >= 0 -> status-line; head.slice(0, first-line-end)
+    first-line-end >= 0 -> status-line = head.slice(0, first-line-end)
 
     sp1 = status-line.index(' ')
     sp1 < 0 -> {
@@ -1259,7 +1259,7 @@ ws-connect = (url str) (c ?ws-client) {
     after-code = status-line.slice(sp1 + 1, status-line.len)
     sp2 = after-code.index(' ')
     code-str = after-code
-    sp2 >= 0 -> code-str; after-code.slice(0, sp2)
+    sp2 >= 0 -> code-str = after-code.slice(0, sp2)
 
     status-code = 0
     i <- [0..code-str.len): {
@@ -1307,7 +1307,7 @@ ws-connect = (url str) (c ?ws-client) {
         ->
     }
     val-end = head.index-from(crlf, val-start)
-    val-end < 0 -> val-end; head.len
+    val-end < 0 -> val-end = head.len
     server-accept = head.slice(val-start, val-end)
     expected-accept = ws-compute-accept(client-key)
     server-accept != expected-accept -> {

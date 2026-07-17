@@ -796,10 +796,10 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
 			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// Same line: use semicolon separator
-				f.write("; ")
-			} else {
+		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+			// Same line: never emit ';' (reserved for comments); split onto a new line.
+			f.newline()
+		} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
 				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
@@ -897,10 +897,10 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
 			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// Same line: use semicolon separator
-				f.write("; ")
-			} else {
+		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+			// Same line: never emit ';' (reserved for comments); split onto a new line.
+			f.newline()
+		} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
 				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
@@ -1277,10 +1277,10 @@ writeBody:
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
 			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// Same line: use semicolon separator
-				f.write("; ")
-			} else {
+		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+			// Same line: never emit ';' (reserved for comments); split onto a new line.
+			f.newline()
+		} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
 				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
@@ -1546,10 +1546,10 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
 			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// Same line: use semicolon separator
-				f.write("; ")
-			} else {
+		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+			// Same line: never emit ';' (reserved for comments); split onto a new line.
+			f.newline()
+		} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
 				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {

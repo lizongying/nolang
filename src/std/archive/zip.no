@@ -339,7 +339,10 @@ zip-writer.write-u32 = (v i64) {
 // write-local-file: 寫入本地檔案標頭和內容
 zip-writer.write-local-file = (name str, content []byte, crc i64) {
     // 簽名 PK\x03\x04
-    .put(0x50); .put(0x4B); .put(0x03); .put(0x04)
+    sig []byte = [0x50, 0x4B, 0x03, 0x04]
+    i <- [0..4): {
+        .put(sig[i])
+    }
 
     // 版本 (20)
     .write-u16(20)
@@ -398,7 +401,10 @@ zip-writer.cd-write-u32 = (v i64) {
 // write-cd-entry: 寫入中央目錄條目
 zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, crc i64) {
     // 簽名 PK\x01\x02
-    .cd-put(0x50); .cd-put(0x4B); .cd-put(0x01); .cd-put(0x02)
+    sig []byte = [0x50, 0x4B, 0x01, 0x02]
+    i <- [0..4): {
+        .cd-put(sig[i])
+    }
 
     // 版本 (20)
     .cd-write-u16(20)
@@ -456,7 +462,10 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
 // write-eocd: 寫入結束記錄 (End of Central Directory)
 zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
     // 簽名 PK\x05\x06
-    .put(0x50); .put(0x4B); .put(0x05); .put(0x06)
+    sig []byte = [0x50, 0x4B, 0x05, 0x06]
+    i <- [0..4): {
+        .put(sig[i])
+    }
 
     // 磁碟號 (0)
     .write-u16(0)
