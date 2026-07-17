@@ -520,10 +520,15 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                     *
                 }
             }
-            f.frame-type == FRAME-RST-STREAM -> // 伺服器重設串流
-            return
-            f.frame-type == FRAME-GOAWAY -> // 伺服器關閉連線
-            return
+            f.frame-type == FRAME-RST-STREAM -> {
+                // 伺服器重設串流
+                return
+            }
+            f.frame-type == FRAME-GOAWAY -> {
+                // 伺服器關閉連線
+                return
+            }
+            -> return
         }
         // 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
     }

@@ -365,8 +365,10 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
     }
-    diff != 0 -> // 認證失敗
-    return
+    diff != 0 -> {
+        // 認證失敗
+        return
+    }
 
     // 5. 解密
     ctr [16]byte

@@ -113,8 +113,8 @@ http-request.add-header = (name str, value str) (ok bool) {
     }
 
     // 加 ': '
-    .headers[idx][name.len] = ':'
-    .headers[idx][name.len + 1] = ' '
+    .headers[idx][name.len] = ":"
+    .headers[idx][name.len + 1] = " "
 
     // 複製 value
     j <- [0..value.len): {

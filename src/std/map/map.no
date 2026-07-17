@@ -134,7 +134,6 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 hashmap-str-tmpl.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -277,7 +276,6 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
 hashmap-int-tmpl.remove = (key k) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -412,7 +410,6 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
 hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     .occ[idx] == 1 -> {

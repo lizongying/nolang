@@ -7,14 +7,12 @@
 // 共享 arr 的底層記憶體，不複製資料。
 // 因此 vec 的所有方法（len、push、pop、contains、reverse、clone、fill、to-arr 等）
 // 均適用於 arr 的切片視圖。通過切片修改元素會影響原始 arr。
-
+// 只存固定大小
+// <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+// >8 字节存指针指針
 // arr {
 //     len i64 read-only
-
-//     // 只存固定大小
-//     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
-//     // >8 字节存指针指針
-//     data *any sealed
+//     data i64 sealed
 // }
 
 // [n]t.clone: 將陣列複製到 dst

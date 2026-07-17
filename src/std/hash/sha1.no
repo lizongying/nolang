@@ -1062,7 +1062,6 @@ sha1 = (data []byte) (hash [20]byte) {
 
     // 處理每個 64 位元組區塊
     block []u32 = [
-
         0,
         0,
         0,

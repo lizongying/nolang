@@ -265,6 +265,7 @@ multipart-reader.parse-header-line = (line str, part multipart-part) {
             file-end >= 0 -> part.filename = line.slice(file-start, file-end)
         }
     }
+
     line.starts-with('Content-Type:') -> {
         ct-start = 13
         part.content-type = line.slice(ct-start, line.len)

@@ -52,3 +52,14 @@ func (s *contextStack) copy() contextStack {
 	copy(cp, *s)
 	return cp
 }
+
+// filterOut returns a new stack with all instances of ctx removed.
+func (s contextStack) filterOut(ctx ParseContext) contextStack {
+	filtered := make(contextStack, 0, len(s))
+	for _, c := range s {
+		if c != ctx {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}

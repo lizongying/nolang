@@ -320,6 +320,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             c == 114 -> c = 13
             // c == 34, 92, 47 保留原樣
         }
+
         .nodes[node-idx].str-val[j] = c
         j = j + 1
         i = i + 1

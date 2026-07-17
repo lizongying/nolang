@@ -159,8 +159,10 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
                         }
                         valid -> c.max-age = ma
                     }
-                    attr-name-lower == 'expires' -> // 簡化：不解析日期格式，記錄為已設定
-                    c.expires = -1
+                    attr-name-lower == 'expires' -> {
+                        // 簡化：不解析日期格式，記錄為已設定
+                        c.expires = -1
+                    }
                     attr-name-lower == 'samesite' -> c.same-site = attr-val
                     ->
                 }

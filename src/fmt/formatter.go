@@ -165,6 +165,8 @@ func stmtExprEndLine(expr parser.Expression) int {
 		return stmtExprEndLine(e.Call)
 	case *parser.AwaitExpression:
 		return stmtExprEndLine(e.Right)
+	case *parser.CastExpression:
+		return stmtExprEndLine(e.Expr)
 	}
 	return 0
 }
@@ -423,13 +425,21 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 	case *parser.FloatLiteral:
 		f.write(e.Token.Literal)
 	case *parser.StringLiteral:
-		f.write("'")
-		f.write(e.Value)
-		f.write("'")
+		if e.Token.Raw != "" {
+			f.write(e.Token.Raw)
+		} else {
+			f.write("'")
+			f.write(e.Value)
+			f.write("'")
+		}
 	case *parser.CharLiteral:
-		f.write("'")
-		f.write(e.Value)
-		f.write("'")
+		if e.Token.Raw != "" {
+			f.write(e.Token.Raw)
+		} else {
+			f.write("'")
+			f.write(e.Value)
+			f.write("'")
+		}
 	case *parser.BooleanLiteral:
 		if e.Value {
 			f.write("true")
@@ -482,6 +492,14 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 	case *parser.AwaitExpression:
 		f.write("awy ")
 		f.formatExpression(e.Right)
+	case *parser.CastExpression:
+		f.formatExpression(e.Expr)
+		f.write(" as ")
+		if e.Type != nil {
+			f.write(e.Type.String())
+		} else {
+			f.write("?")
+		}
 	case *parser.MapLiteral:
 		f.formatMapLiteral(e)
 	}
@@ -541,7 +559,41 @@ func (f *formatter) formatTypeAlias(s *parser.TypeAlias) {
 			f.write(t.String())
 		}
 	} else if s.Type != nil {
-		f.write(s.Type.String())
+		if ft, ok := s.Type.(*parser.FunctionType); ok {
+			f.formatFunctionTypeAlias(ft)
+		} else {
+			f.write(s.Type.String())
+		}
+	}
+}
+
+// formatFunctionTypeAlias outputs a function type in alias syntax: (params)(results)?
+func (f *formatter) formatFunctionTypeAlias(ft *parser.FunctionType) {
+	f.write("(")
+	for i, p := range ft.Params {
+		if i > 0 {
+			f.write(", ")
+		}
+		if p.Name != "" {
+			f.write(p.Name)
+			f.write(" ")
+		}
+		f.write(p.Type.String())
+	}
+	f.write(")")
+	if len(ft.Results) > 0 {
+		f.write(" (")
+		for i, r := range ft.Results {
+			if i > 0 {
+				f.write(", ")
+			}
+			if r.Name != "" {
+				f.write(r.Name)
+				f.write(" ")
+			}
+			f.write(r.Type.String())
+		}
+		f.write(")")
 	}
 }
 
@@ -953,7 +1005,8 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 	if len(body.Statements) == 1 &&
 		body.TrailingComments == nil &&
-		body.ClosingBraceComment == nil {
+		body.ClosingBraceComment == nil &&
+		!f.hasDocComment(body.Statements[0]) {
 		switch body.Statements[0].(type) {
 		case *parser.ExpressionStatement:
 			f.formatExpression(body.Statements[0].(*parser.ExpressionStatement).Expression)
@@ -970,8 +1023,18 @@ func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 	// Standalone if-then: `cond -> body` (without enclosing { })
 	if e.IsStandalone {
-		f.formatExpression(e.Condition)
-		f.write(" -> ")
+		// Wildcard standalone: -> body (Condition is IntegerLiteral(1) marker)
+		if intLit, ok := e.Condition.(*parser.IntegerLiteral); ok && intLit.Value == 1 {
+			// Empty body: just output -> (no trailing space)
+			if e.Consequence == nil || len(e.Consequence.Statements) == 0 {
+				f.write("->")
+				return
+			}
+			f.write("-> ")
+		} else {
+			f.formatExpression(e.Condition)
+			f.write(" -> ")
+		}
 		f.formatStandaloneBody(e.Consequence)
 		if e.Alternative != nil {
 			f.write(" -> ")
@@ -1173,7 +1236,8 @@ writeBody:
 	// 內聯簡單 body：只一個語句且無註釋時，輸出在同一行
 	if len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
-		e.Consequence.ClosingBraceComment == nil {
+		e.Consequence.ClosingBraceComment == nil &&
+		!f.hasDocComment(statements[0]) {
 		stmt := statements[0]
 		switch stmt.(type) {
 		case *parser.ExpressionStatement, *parser.LetStatement,
@@ -1604,7 +1668,7 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 	// Use multi-line formatting for arrays with many elements
 	if len(e.Elements) > 8 {
-		f.write("[\n")
+		f.write("[")
 		f.indent++
 		for i, el := range e.Elements {
 			f.newline()

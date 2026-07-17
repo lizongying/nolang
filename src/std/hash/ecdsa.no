@@ -191,6 +191,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             // 由於位元級移位複雜，使用更簡單的方法
             // 直接從高 32 位元組開始減法
         }
+
         bit = bit - 1
     }
 
@@ -271,8 +272,10 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
     // 如果有進位或 sum >= m，需要規約
     {
-        carry != 0 -> // sum + 2^256 mod m，簡化處理
-        out = bn-mod(sum, m)
+        carry != 0 -> {
+            // sum + 2^256 mod m，簡化處理
+            out = bn-mod(sum, m)
+        }
         -> out = bn-mod(sum, m)
     }
 }
@@ -321,7 +324,6 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     exp [32]byte
     borrow = 0
     exp, borrow = bn-sub(m, [
-
         0x02,
         0x00,
         0x00,
@@ -662,8 +664,10 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     i <- [0..32): {
         pz[i] != 0 -> z-is-zero = 0
     }
-    z-is-zero == 1 -> // 返回全零
-    return
+    z-is-zero == 1 -> {
+        // 返回全零
+        return
+    }
 
     // Z²
     z2 [32]byte

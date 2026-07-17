@@ -1456,8 +1456,9 @@ tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
     .hs-read-seq = .hs-read-seq + 1
     ct < 0 -> return
-    ct != TLS-CT-HANDSHAKE -> // 可能是 alert 或其他
-    return
+
+    // 可能是 alert 或其他
+    ct != TLS-CT-HANDSHAKE -> return
 
     // 解析 handshake message
     msg-type = plain[0] & 255
@@ -1516,6 +1517,7 @@ tls-conn.connect-13 = () (ok bool) {
             ok = true
             return
         }
+
         return
     }
 

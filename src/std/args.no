@@ -118,6 +118,7 @@ get-positional = (idx i64) (val str, ok bool) {
             }
             continue
         }
+
         pos == idx -> {
             // 複製 arg 到 val
             k = 0

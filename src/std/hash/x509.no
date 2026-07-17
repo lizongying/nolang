@@ -106,9 +106,11 @@ x509-serial = (data []byte, serial i64) {
     // 檢查是否為 [0] EXPLICIT（版本，v2/v3 才有）
     // 現在應該是 INTEGER（序號）
     t = der-tag(data, p)
-    t == 160 -> // 跳過 [0] EXPLICIT 元素
-    p = der-skip(data, p)
-    t = der-tag(data, p)
+    t == 160 -> {
+        // 跳過 [0] EXPLICIT 元素
+        p = der-skip(data, p)
+        t = der-tag(data, p)
+    }
     t != 2 -> {
         serial = 0
         return

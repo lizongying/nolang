@@ -371,8 +371,7 @@ url-decode = (s str) (out str) {
                     i = i + 2
                 }
             }
-            c == 43 -> // + 號轉空格
-            out[out.len] = 32
+            c == 43 -> out[out.len] = 32   // + 號轉空格
             -> out[out.len] = c
         }
         i = i + 1
@@ -435,8 +434,7 @@ url-join = (base str, path-str str) (out str) {
         i = i - 1
     }
     {
-        slash-pos >= 0 -> // 確保不是 protocol:// 中的 //
-        {
+        slash-pos >= 0 -> { // 確保不是 protocol:// 中的 //
             slash-pos > 0 && base[slash-pos - 1] == 58 -> out = base - '/' - path-str
             -> out = base.slice(0, slash-pos + 1) - path-str
         }

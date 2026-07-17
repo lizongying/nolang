@@ -133,9 +133,143 @@ func TestFormatBasic(t *testing.T) {
 			expected: "foo = () {\n    {\n        x == 2 || x == 3 -> a = 1\n        -> a = 0\n    }\n}",
 		},
 		{
+			// regression: standalone if-then (cond -> return / cond -> x = val)
+			// inside a bare match arm block body that is itself classified as
+			// blockMatch. Leaked CTX_MATCH_ARM context used to prevent the
+			// standalone if-then from being recognized, producing `; ;` instead
+			// of `->`.
+			name: "standalone_if_then_in_nested_bare_match_arm_body",
+			input: `foo = () {
+    bpos = foo.index(marker)
+    bpos < 0 -> return
+    bstart = bpos + marker.len
+
+    {
+        bstart < foo.len -> {
+            foo[bstart] == 34 -> {
+                bstart = bstart + 1
+                bend = foo.index-from('"', bstart)
+                bend < 0 -> return
+                boundary = foo.slice(bstart, bend)
+            }
+            -> {
+                bend = foo.index-from(';', bstart)
+                bend < 0 -> bend = foo.len
+                boundary = foo.slice(bstart, bend)
+                boundary = boundary.trim()
+            }
+        }
+        -> return
+    }
+}`,
+			expected: `foo = () {
+    bpos = foo.index(marker)
+    bpos < 0 -> return
+    bstart = bpos + marker.len
+
+    {
+        bstart < foo.len -> {
+            foo[bstart] == 34 -> {
+                bstart = bstart + 1
+                bend = foo.index-from('"', bstart)
+                bend < 0 -> return
+                boundary = foo.slice(bstart, bend)
+            }
+            -> {
+                bend = foo.index-from(';', bstart)
+                bend < 0 -> bend = foo.len
+                boundary = foo.slice(bstart, bend)
+                boundary = boundary.trim()
+            }
+        }
+        -> return
+    }
+}`,
+		},
+		{
 			name:     "c-style for loop with comma",
 			input:    "for i=0,i<5,i++{i=i}",
 			expected: "for i = 0, i < 5, i ++  {\n    i = i\n}",
+		},
+		{
+			// regression: comment-only block body (-> { // comment }) was
+			// being stripped to just -> because TrailingComments from the
+			// parsed block were not transferred to the arm body.
+			name: "bare_match_comment_only_block_body",
+			input: `foo = () {
+    {
+        c == 46 -> {
+            // 小數點 - 允許
+        }
+        c == 101 || c == 69 -> {
+            // 科學記號 e/E - 允許
+        }
+        -> {
+            val = err('invalid float')
+            return
+        }
+    }
+}`,
+			expected: `foo = () {
+    {
+        c == 46 -> {
+            // 小數點 - 允許
+        }
+        c == 101 || c == 69 -> {
+            // 科學記號 e/E - 允許
+        }
+        -> {
+            val = err('invalid float')
+            return
+        }
+    }
+}`,
+		},
+		{
+			// regression: cond -> // comment\n return — the -> was followed
+			// by a comment and then a newline. parseExpression would skip the
+			// NEWLINE and consume `return` as the body expression, causing the
+			// return statement to be silently lost.
+			name: "standalone_if_then_arrow_comment_then_newline",
+			input: `foo = () {
+    diff != 0 -> // comment
+    return
+
+    x = 1
+}`,
+			expected: `foo = () {
+    diff != 0 -> {
+    }
+
+    // comment
+    return
+
+    x = 1
+}`,
+		},
+		{
+			// regression: bare match wildcard arm with a doc comment on the
+			// body statement. The formatter used to output `-> // comment\nstmt`
+			// (inline form) instead of `-> { // comment\n stmt }` (braces form).
+			name: "bare_match_arm_body_with_doc_comment",
+			input: `foo = () {
+    {
+        n == 16 -> t4 = 1
+        -> {
+            // 部分區塊：設置對應位元
+            t0 = t0 | (1 << (n * 8))
+        }
+    }
+}`,
+			expected: `foo = () {
+    {
+        n == 16 -> t4 = 1
+        -> {
+            // 部分區塊：設置對應位元
+            t0 = t0 | (1 << (n * 8))
+        }
+    }
+}`,
 		},
 		{
 			name:     "return statement",
@@ -1226,6 +1360,41 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
           '\xa0\xe0\x3b\x4d\xae\x2a\xf5\xb0\xc8\xeb\xbb\x3c\x83\x53\x99\x61' +
           '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'
 			`),
+		},
+		{
+			name:     "str2",
+			input:    `x = '\n'`,
+			expected: `x = '\n'`,
+		},
+		{
+			name:     "str3",
+			input:    `x = '\t'`,
+			expected: `x = '\t'`,
+		},
+		{
+			name:     "str4",
+			input:    `x = '\\'`,
+			expected: `x = '\\'`,
+		},
+		{
+			name:     "str5",
+			input:    `x = '\x41'`,
+			expected: `x = '\x41'`,
+		},
+		{
+			name:     "str6",
+			input:    `x = 'hello\nworld'`,
+			expected: `x = 'hello\nworld'`,
+		},
+		{
+			name:     "str7",
+			input:    `x = 'a\tb\nc\x41'`,
+			expected: `x = 'a\tb\nc\x41'`,
+		},
+		{
+			name:     "str8",
+			input:    "x = 'line1\\nline2'",
+			expected: "x = 'line1\\nline2'",
 		},
 	}
 

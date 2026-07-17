@@ -152,8 +152,7 @@ writer.write-line = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
     n = write(.fd, s, s.len)
-    nl = '
-'
+    nl = '\n'
     written = write(.fd, nl, 1)
     written = written + n
 }
@@ -170,8 +169,7 @@ out = (s str) (n i64) {
 // outln: 寫入字串到標準輸出並換行
 outln = (s str) (n i64) {
     n = write(STDOUT-FD, s, s.len)
-    nl = '
-'
+    nl = '\n'
     m = write(STDOUT-FD, nl, 1)
     n = n + m
 }
@@ -184,8 +182,7 @@ err = (s str) (n i64) {
 // errln: 寫入字串到標準錯誤並換行
 errln = (s str) (n i64) {
     n = write(STDERR-FD, s, s.len)
-    nl = '
-'
+    nl = '\n'
     m = write(STDERR-FD, nl, 1)
     n = n + m
 }

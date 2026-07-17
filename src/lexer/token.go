@@ -250,6 +250,7 @@ type Position struct {
 type Token struct {
 	Type    TokenType
 	Literal string
+	Raw     string // 原始源碼文字（含轉義序列），僅 STRING/CHAR 使用
 	Line    int
 	Column  int
 }

@@ -178,7 +178,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         clens.push(0)
     }
     code-order [] = [
-
         16,
         17,
         18,
@@ -199,6 +198,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         1,
         15,
     ]
+
     i <- [0..hclen): {
         clens[code-order[i]] = br.read-bits(3)
     }
@@ -280,7 +280,6 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
     // 長度碼基底值 (257-285)
     length-base [] = [
-
         3,
         4,
         5,
@@ -314,7 +313,6 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
     // 長度碼額外位元數
     length-extra [] = [
-
         0,
         0,
         0,
@@ -348,7 +346,6 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
     // 距離碼基底值 (0-29)
     dist-base [] = [
-
         1,
         2,
         3,
@@ -383,7 +380,6 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
     // 距離碼額外位元數
     dist-extra [] = [
-
         0,
         0,
         0,

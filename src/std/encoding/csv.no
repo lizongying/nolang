@@ -55,6 +55,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 new-pos = pos
                 return
             }
+
             c == 10 || c == 13 -> {
                 // 換行在引號內視為換行字元
                 field[fn] = c
@@ -66,6 +67,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             fn = fn + 1
             pos = pos + 1
         }
+
         new-pos = pos
         return
     }

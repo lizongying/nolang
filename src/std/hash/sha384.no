@@ -61,7 +61,6 @@ sha384 = (data []byte) (hash [48]byte) {
 
     // 處理每個 128 位元組區塊
     block []u64 = [
-
         0,
         0,
         0,
@@ -79,6 +78,7 @@ sha384 = (data []byte) (hash [48]byte) {
         0,
         0,
     ]
+
     offset = 0
     for offset < total-len {
         i <- [0..16): {

@@ -154,8 +154,10 @@ qpack-decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) 
     pos = pos + 1
 
     // 檢查是否為字面標頭（001x xxxx）
-    (prefix & 0xe0) != 0x20 -> // 不是字面標頭格式，回傳錯誤
-    return
+    (prefix & 0xe0) != 0x20 -> {
+        // 不是字面標頭格式，回傳錯誤
+        return
+    }
 
     // 名稱長度
     name-len = buf[pos] & 63

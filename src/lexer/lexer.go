@@ -122,8 +122,9 @@ func (l *Lexer) readNumber() string {
 	return l.input[start:l.position]
 }
 
-func (l *Lexer) readString() string {
+func (l *Lexer) readString() (string, string) {
 	quote := l.ch // 记录引号类型（单引号或双引号）
+	rawStart := l.position // 記錄開始引號位置
 	l.readChar()  // 跳过开始的引号
 	var buf []byte
 	for l.ch != quote && l.ch != 0 {
@@ -168,10 +169,12 @@ func (l *Lexer) readString() string {
 			l.readChar()
 		}
 	}
+	// 捕獲原始源碼文字（含轉義序列）
 	if l.ch == quote {
 		l.readChar() // 跳过结束的引号
 	}
-	return string(buf)
+	raw := l.input[rawStart:l.position]
+	return string(buf), raw
 }
 
 // hexVal returns the numeric value of a hex digit (0-15), or -1 if not hex.
@@ -491,20 +494,22 @@ func (l *Lexer) NextToken() Token {
 		tok.Literal = string(l.ch)
 	case '\'':
 		tok.Type = STRING
-		tok.Literal = l.readString()
+		tok.Literal, tok.Raw = l.readString()
 		// 字符串已经处理完毕，不需要再前进字符
 		return tok
 	case '"':
 		// Double-quoted: char literal (single rune) or string (multi-char fallback)
-		content := l.readString()
+		content, raw := l.readString()
 		runes := []rune(content)
 		if len(runes) == 1 {
 			tok.Type = CHAR
 			tok.Literal = content
+			tok.Raw = raw
 		} else {
 			// Multi-char double-quoted: treat as string for robustness
 			tok.Type = STRING
 			tok.Literal = content
+			tok.Raw = raw
 		}
 		return tok
 	case '`':

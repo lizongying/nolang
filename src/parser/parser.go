@@ -1238,7 +1238,17 @@ func (p *Parser) parseStatement() Statement {
 		bt := p.classifyBlockAtCurrent()
 		if bt == blockMatch {
 			tok := p.currentToken
+			// parseBareMatchExpr manages its own CTX_MATCH_ARM context (pushing
+			// it for arm conditions and inline bodies, but NOT for block bodies).
+			// If CTX_MATCH_ARM is already on the stack — leaked from an outer
+			// bare match's arm-body parsing — it would prevent standalone
+			// if-then (cond -> body) inside arm block bodies, causing
+			// `bend < 0 -> return` to be mis-parsed as separate statements.
+			// Temporarily strip CTX_MATCH_ARM so the inner bare match starts clean.
+			savedCtx := p.ctx.copy()
+			p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
 			expr := p.parseBareMatchExpr()
+			p.ctx = savedCtx
 			if expr != nil {
 				return &ExpressionStatement{Token: tok, Expression: expr}
 			}
@@ -2954,6 +2964,73 @@ func (p *Parser) parseBreakStatement() Statement {
 
 func (p *Parser) parseExpressionStatement() Statement {
 	tok := p.currentToken
+
+	// Standalone wildcard if-then: -> body (without preceding condition)
+	// Must check before parseExpression, which would consume -> via its default case.
+	if tok.Type == lexer.RARROW && !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+		p.nextToken() // skip ->
+
+		var conseq *BlockStatement
+		if p.currentToken.Type == lexer.LBRACE {
+			conseq = p.parseBlockStatement()
+			p.nextToken() // skip body's }
+		} else if p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.RBRACE ||
+			p.currentToken.Type == lexer.EOF || p.currentToken.Type == lexer.SEMICOLON {
+			// Empty body: -> with no body (wildcard no-op)
+			conseq = &BlockStatement{}
+		} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
+			p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
+			p.currentToken.Type == lexer.STAR_STAR ||
+			(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
+			bodyStmt := p.parseStatement()
+			if bodyStmt != nil {
+				conseq = &BlockStatement{Statements: []Statement{bodyStmt}}
+			} else {
+				conseq = &BlockStatement{}
+			}
+		} else {
+			body := p.parseExpression(LOWEST)
+			conseq = &BlockStatement{
+				Statements: []Statement{&ExpressionStatement{Expression: body}},
+			}
+		}
+
+		var altBody *BlockStatement
+		if p.currentToken.Type == lexer.RARROW && p.prevToken.Type != lexer.NEWLINE {
+			p.nextToken() // skip ->
+			if p.currentToken.Type == lexer.LBRACE {
+				altBody = p.parseBlockStatement()
+				p.nextToken() // skip body's }
+			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
+				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
+				p.currentToken.Type == lexer.STAR_STAR ||
+				(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
+				altStmt := p.parseStatement()
+				if altStmt != nil {
+					altBody = &BlockStatement{Statements: []Statement{altStmt}}
+				} else {
+					altBody = &BlockStatement{}
+				}
+			} else {
+				altExpr := p.parseExpression(LOWEST)
+				altBody = &BlockStatement{
+					Statements: []Statement{&ExpressionStatement{Expression: altExpr}},
+				}
+			}
+		}
+
+		return &ExpressionStatement{
+			Token: tok,
+			Expression: &IfExpression{
+				Token:        tok,
+				Condition:    &IntegerLiteral{Token: tok, Value: 1}, // wildcard marker
+				Consequence:  conseq,
+				Alternative:  altBody,
+				IsStandalone: true,
+			},
+		}
+	}
+
 	firstExpr := p.parseExpression(LOWEST)
 	stmt := &ExpressionStatement{
 		Token:      tok,
@@ -3033,14 +3110,20 @@ func (p *Parser) parseExpressionStatement() Statement {
 			conseq = p.parseBlockStatement()
 			p.nextToken() // skip body's }
 		} else {
-			// Single-expression body: cond -> expr
-			// Also handle statement keywords: cond -> return, cond -> break, etc.
-			// Also handle let-statement body: cond -> x = value
-			// Also handle multi-assign body: cond -> a, b = func()
-			if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
+			// Empty body: cond -> (possibly after a comment, currentToken is NEWLINE)
+			// Without this check, parseExpression would skip the NEWLINE and
+			// consume the next statement (e.g. `return`) as the body expression.
+			if p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.RBRACE ||
+				p.currentToken.Type == lexer.EOF || p.currentToken.Type == lexer.SEMICOLON {
+				conseq = &BlockStatement{}
+			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
 				p.currentToken.Type == lexer.STAR_STAR ||
 				(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
+				// Single-expression body: cond -> expr
+				// Also handle statement keywords: cond -> return, cond -> break, etc.
+				// Also handle let-statement body: cond -> x = value
+				// Also handle multi-assign body: cond -> a, b = func()
 				bodyStmt := p.parseStatement()
 				if bodyStmt != nil {
 					conseq = &BlockStatement{Statements: []Statement{bodyStmt}}
@@ -3055,13 +3138,16 @@ func (p *Parser) parseExpressionStatement() Statement {
 			}
 		}
 
-		// Check for else: -> elseBody
+		// Check for else: -> elseBody (only if -> immediately follows body, not on a new line)
 		var altBody *BlockStatement
-		if p.currentToken.Type == lexer.RARROW {
+		if p.currentToken.Type == lexer.RARROW && p.prevToken.Type != lexer.NEWLINE {
 			p.nextToken() // skip ->
 			if p.currentToken.Type == lexer.LBRACE {
 				altBody = p.parseBlockStatement()
 				p.nextToken() // skip body's }
+			} else if p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.RBRACE ||
+				p.currentToken.Type == lexer.EOF || p.currentToken.Type == lexer.SEMICOLON {
+				altBody = &BlockStatement{}
 			} else if p.currentToken.Type == lexer.RETURN || p.currentToken.Type == lexer.BREAK ||
 				p.currentToken.Type == lexer.CONTINUE || p.currentToken.Type == lexer.MUL ||
 				p.currentToken.Type == lexer.STAR_STAR ||
@@ -3647,7 +3733,9 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
 		// preceding `break`/`continue`/`return`).
-		lexer.MUL, lexer.STAR_STAR, lexer.BANG_BANG, lexer.LABEL:
+		lexer.MUL, lexer.STAR_STAR, lexer.BANG_BANG, lexer.LABEL,
+		// -> can begin a standalone wildcard if-then (-> body)
+		lexer.RARROW:
 		return true
 	}
 	return false
@@ -3972,15 +4060,16 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
+		var parsedBlock *BlockStatement // tracks block from parseBlockStatement for comment preservation
 		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() != blockMatch {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
 			// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> body` 應視為 standalone if-then，
 			// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
 			ma.isBlockBody = true
-			block := p.parseBlockStatement()
-			if block != nil {
-				bodyStmts = block.Statements
+			parsedBlock = p.parseBlockStatement()
+			if parsedBlock != nil {
+				bodyStmts = parsedBlock.Statements
 			}
 			if p.currentToken.Type == lexer.RBRACE {
 				p.nextToken()
@@ -4032,6 +4121,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 
 		bodyBlock.Statements = bodyStmts
+		// Preserve comments (TrailingComments) from the parsed block so that
+		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
+		if parsedBlock != nil {
+			bodyBlock.TrailingComments = parsedBlock.TrailingComments
+			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
+			bodyBlock.RBrace = parsedBlock.RBrace
+		}
 		ma.body = bodyBlock
 		arms = append(arms, ma)
 	}
@@ -4152,6 +4248,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// Statement or expression body
 		var bodyStmts []Statement
 		bodyBlock := &BlockStatement{Token: tok}
+		var parsedBlock *BlockStatement // tracks block from parseBlockStatement for comment preservation
 		if p.currentToken.Type == lexer.LBRACE {
 			// Explicit block form: -> { ... }
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
@@ -4162,19 +4259,21 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				ma.isBlockBody = true
 				// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> return` 應視為 standalone if-then，
 				// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
-				block := p.parseBlockStatement()
-				if block != nil {
-					bodyStmts = block.Statements
+				parsedBlock = p.parseBlockStatement()
+				if parsedBlock != nil {
+					bodyStmts = parsedBlock.Statements
 				}
 				if p.currentToken.Type == lexer.RBRACE {
 					p.nextToken()
 				}
 			} else {
-				// Try inline bare match first; fall back to block on failure
+				// Try inline bare match first; fall back to block on failure.
+				// Don't push CTX_MATCH_ARM here: parseStatement will see LBRACE
+				// and call parseBareMatchExpr, which manages its own context.
+				// Pushing CTX_MATCH_ARM here would leak into nested bare match
+				// arm block bodies, breaking standalone if-then (cond -> body).
 				armState := p.saveState()
-				p.ctx.push(CTX_MATCH_ARM)
 				stmt := p.parseStatement()
-				p.ctx.pop()
 				if stmt != nil {
 					ma.isBlockBody = true
 					bodyStmts = append(bodyStmts, stmt)
@@ -4186,9 +4285,9 @@ func (p *Parser) parseBareMatchExpr() Expression {
 					p.restoreState(armState)
 					ma.isBlockBody = true
 					// 不推送 CTX_MATCH_ARM：fallback 為普通 block，允許 standalone if-then
-					block := p.parseBlockStatement()
-					if block != nil {
-						bodyStmts = block.Statements
+					parsedBlock = p.parseBlockStatement()
+					if parsedBlock != nil {
+						bodyStmts = parsedBlock.Statements
 					}
 					if p.currentToken.Type == lexer.RBRACE {
 						p.nextToken()
@@ -4226,6 +4325,13 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 
 		bodyBlock.Statements = bodyStmts
+		// Preserve comments (TrailingComments) from the parsed block so that
+		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
+		if parsedBlock != nil {
+			bodyBlock.TrailingComments = parsedBlock.TrailingComments
+			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
+			bodyBlock.RBrace = parsedBlock.RBrace
+		}
 		ma.body = bodyBlock
 		arms = append(arms, ma)
 	}
@@ -4346,6 +4452,14 @@ func (p *Parser) isArmStart() bool {
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
 			return true
 		}
+		// Complex boolean condition: e.g. dot-count == 1 ->, x > 0 ->
+		// Scan forward to find -> at depth 0 before NEWLINE/RBRACE
+		if p.peekToken.Type == lexer.EQUALS || p.peekToken.Type == lexer.NOT_EQUALS ||
+			p.peekToken.Type == lexer.LESS || p.peekToken.Type == lexer.GREATER ||
+			p.peekToken.Type == lexer.LESS_EQUALS || p.peekToken.Type == lexer.GREATER_EQUALS ||
+			p.peekToken.Type == lexer.LAND || p.peekToken.Type == lexer.LOR {
+			return p.scanForArrowAtDepth0()
+		}
 		return false
 	case lexer.NIL:
 		if p.peekToken.Type == lexer.COLON || p.peekToken.Type == lexer.RARROW {
@@ -4364,6 +4478,33 @@ func (p *Parser) isArmStart() bool {
 		return p.peekToken.Type == lexer.RARROW
 	}
 	return false
+}
+
+// scanForArrowAtDepth0 scans forward from the current position to find -> (RARROW)
+// at parenthesis/bracket depth 0, before encountering NEWLINE or RBRACE.
+// Returns true if such an arrow is found, false otherwise.
+func (p *Parser) scanForArrowAtDepth0() bool {
+	depth := 0
+	skip := 0
+	for {
+		tok := p.lexer.LookAhead(skip)
+		switch tok.Type {
+		case lexer.NEWLINE, lexer.SEMICOLON, lexer.RBRACE, lexer.EOF:
+			return false
+		case lexer.LPAREN, lexer.LBRACKET:
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET:
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case lexer.RARROW:
+			if depth == 0 {
+				return true
+			}
+		}
+		skip++
+	}
 }
 
 // matchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）

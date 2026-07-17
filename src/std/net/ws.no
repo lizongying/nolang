@@ -159,7 +159,6 @@ ws-compute-accept = (key str) (accept str) {
 
     // 將 [20]byte 複製到 []byte 供 base64 使用
     hash-vec []byte = [
-
         0,
         0,
         0,

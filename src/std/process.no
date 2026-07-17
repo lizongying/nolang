@@ -123,6 +123,7 @@ process.start = (program str, arg str) (ok bool) {
         // exec 失敗，退出
         exit(1)
     }
+
     pid < 0 -> {
         // fork 失敗
         close(stdout-read)
