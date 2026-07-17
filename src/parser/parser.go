@@ -860,7 +860,7 @@ func isTypeName(literal string) bool {
 	case "i8", "i16", "i32", "i64",
 		"u8", "u16", "u32", "u64",
 		"f32", "f64",
-		"byte", "bool", "str", "str-short":
+		"byte", "bool", "str":
 		return true
 	}
 	return false

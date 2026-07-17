@@ -2752,7 +2752,7 @@ func buildStringSizeMap(program *parser.Program) map[string]int64 {
 func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-short") {
+		if s.Type != nil && (s.Type.String() == "str") {
 			if sl, ok := s.Value.(*parser.StringLiteral); ok {
 				strSizes[s.Name.Value] = int64(len(sl.Value))
 			} else {
@@ -2770,12 +2770,12 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 	case *parser.FunctionDefinition:
 		// Add str parameters and results to stringSizes so they're recognized as strings
 		for _, p := range s.Parameters {
-			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+			if p.Type != nil && (p.Type.String() == "str") {
 				strSizes[p.Name] = 0
 			}
 		}
 		for _, p := range s.Results {
-			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+			if p.Type != nil && (p.Type.String() == "str") {
 				strSizes[p.Name] = 0
 			}
 		}
@@ -2989,7 +2989,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				// Inferred string variables (from StringLiteral, etc.) may later be
 				// assigned from struct field access or cross-module calls whose
 				// return type is unknown at vet time; deferring to LLVM is safer.
-				isExplicitStr := s.Type != nil && (s.Type.String() == "str" || s.Type.String() == "str-short")
+				isExplicitStr := s.Type != nil && (s.Type.String() == "str")
 				if isExplicitStr {
 					if !isStringExpr(s.Value, stringSizes) {
 						return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
@@ -3005,12 +3005,12 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		// and local variables — not global constants or other functions' variables.
 		funcStringSizes := make(map[string]int64)
 		for _, p := range s.Parameters {
-			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+			if p.Type != nil && (p.Type.String() == "str") {
 				funcStringSizes[p.Name] = 0
 			}
 		}
 		for _, p := range s.Results {
-			if p.Type != nil && (p.Type.String() == "str" || p.Type.String() == "str-short") {
+			if p.Type != nil && (p.Type.String() == "str") {
 				funcStringSizes[p.Name] = 0
 			}
 		}

@@ -37,7 +37,7 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 		return g.generateChainedSliceView(sb, name, baseView, sliceExpr)
 	}
 
-	isStr := baseType == "%str-long" || baseType == "%str-short"
+	isStr := baseType == "%str-long"
 
 	// Determine element type and size
 	elemType := "i64"
@@ -60,10 +60,7 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 	// Get source data pointer and length from the base struct
 	var srcData, srcLen string
 
-	if baseType == "%str-short" {
-		srcLen = g.extractStrShortLen(sb, basePtr)
-		srcData = g.extractStrShortDataPtr(sb, basePtr)
-	} else {
+	{
 		structType := "%arr"
 		dataField := uint32(1)
 		if baseType == "%vec" {
@@ -94,8 +91,7 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 				g.indent(), srcDataGEP, structType, structType, basePtr, dataField))
-			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n",
-				g.indent(), srcData, srcDataGEP))
+			srcData = g.loadDataPtrField(sb, srcDataGEP)
 		}
 	}
 
@@ -300,7 +296,7 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 			dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 				g.indent(), dataGEP, resultReg))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), view.dataPtrReg, dataGEP))
+			g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
 		}
 		return resultReg
 	}
@@ -328,7 +324,7 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 		dataGEP := fmt.Sprintf("%%svmat.vec.data.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, resultReg))
-		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), view.dataPtrReg, dataGEP))
+		g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
 	}
 	return resultReg
 }
@@ -399,7 +395,7 @@ func (g *Generator) cloneSliceView(sb *strings.Builder, varName string) string {
 			dataGEP := fmt.Sprintf("%%svclone.str.data.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 				g.indent(), dataGEP, resultReg))
-			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
+			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
 		return resultReg
 	}
@@ -423,7 +419,7 @@ func (g *Generator) cloneSliceView(sb *strings.Builder, varName string) string {
 		dataGEP := fmt.Sprintf("%%svclone.vec.data.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, resultReg))
-		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), bufReg, dataGEP))
+		g.storeDataPtrField(sb, bufReg, dataGEP)
 	}
 	return resultReg
 }

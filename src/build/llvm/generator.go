@@ -100,7 +100,7 @@ type Generator struct {
 // enabling zero-copy, zero-allocation slicing.
 type sliceViewInfo struct {
 	baseVar    string // original variable name (e.g. "arr")
-	baseType   string // %arr, %vec, %str-long, %str-short
+	baseType   string // %arr, %vec, %str-long
 	startOff   string // LLVM i64 value for start offset (constant or register)
 	viewLen    string // LLVM i64 value for computed view length
 	dataPtrReg string // LLVM i8* register for adjusted data pointer (base_data + start * elemSize)
@@ -729,30 +729,25 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.detectOutputParamsFromBody(program, funcNames)
 
 	// Pre-register built-in arr type (used for all fixed-size arrays)
+	// data is i64 (address value) instead of i8* to keep IR type-uniform.
 	g.structTypes["arr"] = []structField{
 		{name: "len", typ: "i64"},
-		{name: "data", typ: "i8*"},
+		{name: "data", typ: "i64"},
 	}
 
 	// Pre-register built-in vec type (used for all slices)
 	g.structTypes["vec"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
-		{name: "data", typ: "i8*"},
+		{name: "data", typ: "i64"},
 	}
 
-	// Pre-register built-in str-long type (內部堆字串型別，對外仍為 str)
-	// { len, cap, data } — 3-field layout (len at 0, cap at 1, data ptr at 2)
+	// Pre-register built-in str-long type (heap-only string type)
+	// { len, cap, data } — data is i64 (address value) for type-uniform IR.
 	g.structTypes["str-long"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
-		{name: "data", typ: "i8*"},
-	}
-
-	// Pre-register built-in str-short type
-	g.structTypes["str-short"] = []structField{
-		{name: "len", typ: "i8"},
-		{name: "data", typ: "[127 x i8]"},
+		{name: "data", typ: "i64"},
 	}
 
 	// 收集結構體定義並生成 LLVM struct type
@@ -764,13 +759,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 發出 struct type 宣告
 	// Always emit built-in string types
-	sb.WriteString("%str-short = type { i8, [127 x i8] }\n")
-	sb.WriteString("%str-long = type { i64, i64, i8* }\n")
-	sb.WriteString("%option = type { i64, [16 x i8] }\n")
-	sb.WriteString("%arr = type { i64, i8* }\n")
-	sb.WriteString("%vec = type { i64, i64, i8* }\n")
+	sb.WriteString("%str-long = type { i64, i64, i64 }\n")
+	sb.WriteString("%option = type { i64, i64 }\n")
+	sb.WriteString("%arr = type { i64, i64 }\n")
+	sb.WriteString("%vec = type { i64, i64, i64 }\n")
 	for name, fields := range g.structTypes {
-		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "arr" || name == "vec" {
 			continue // built-in, already emitted
 		}
 		sb.WriteString(fmt.Sprintf("%%%s = type { ", name))
@@ -787,7 +781,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 註冊結構體型別名稱到 varTypes，使得 bigint{} 等結構體字面量能正確識別型別
 	// 必須在 collectVarDecls 之前執行
 	for name := range g.structTypes {
-		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "arr" || name == "vec" {
 			continue
 		}
 		if g.varTypes == nil {
@@ -805,7 +799,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 發出模組級全局變數定義（在函數定義之前，以便所有函數都能訪問）
 	// 只對以下類型的變數發出全局定義：
 	// 1. i64 整數常量（如 MASK = 4294967295）
-	// 2. %str-long / %str-short 字串變數（如 SBOX 表）
+	// 2. %str-long 字串變數（如 SBOX 表）
 	// 先收集所有 i64 整數常量的值，以便別名（如 o-append = FileMode.APPEND）能解析
 	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
 	moduleIntConsts := make(map[string]int64)
@@ -829,7 +823,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			llvmType := g.varLLVMType(ls)
-			if llvmType == "%str-long" || llvmType == "%str-short" {
+			if llvmType == "%str-long" {
 				// Only emit as global for string literal constants or uninitialized
 				// declarations. Runtime-computed strings (e.g. cmd = arg(1)) must be
 				// local variables allocated in generateMainFunction.
@@ -908,7 +902,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	// 保存結構體型別到 moduleVarTypes（確保函數內也能識別 struct literal 型別）
 	for name := range g.structTypes {
-		if name == "str-long" || name == "str-short" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "arr" || name == "vec" {
 			continue
 		}
 		g.moduleVarTypes[name] = "%" + name
@@ -1333,7 +1327,10 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, bufPtr))
+				// Convert i8* bufPtr to i64 for data field
+				g.tmpIdx++
+				bufPtrReg := g.ptrToIntVal(sb, bufPtr)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, bufPtrReg))
 				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
 			}
 			return strAlloca
@@ -1468,7 +1465,10 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, %s, 2\n", g.indent(), strReg3, strReg2, buf))
+				// Convert i8* buf to i64 for data field
+				g.tmpIdx++
+				bufPtrReg := g.ptrToIntVal(sb, buf)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, bufPtrReg))
 			}
 			return strReg3
 		}
@@ -1504,7 +1504,8 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i8* %s, 2\n", g.indent(), strReg3, strReg2, cstrReg))
+			_p2i_strReg3 := g.ptrToIntVal(sb, cstrReg)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3
 	}
@@ -1590,10 +1591,7 @@ func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string
 			}
 		}
 		if g.varTypes != nil {
-			if t, ok := g.varTypes[varName]; ok {
-				if t == "%str-short" {
-					return g.extractStrShortDataPtr(sb, baseRef)
-				}
+			if _, ok := g.varTypes[varName]; ok {
 				return g.extractStrDataPtr(sb, baseRef)
 			}
 		}
@@ -1659,6 +1657,46 @@ func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		return reg
 	}
 	return ""
+}
+
+// storeDataPtrField stores an i8* value into a struct's data field (which is i64).
+// Emits ptrtoint i8* → i64, then store i64.
+// ptrVal may include an "i8* " type prefix (e.g. from GEP expressions), which is stripped.
+func (g *Generator) storeDataPtrField(sb *strings.Builder, ptrVal string, fieldGEP string) {
+	if ptrVal == "null" {
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), fieldGEP))
+		return
+	}
+	// Strip "i8* " prefix if present (e.g. "i8* getelementptr ...")
+	ptrVal = strings.TrimPrefix(ptrVal, "i8* ")
+	g.tmpIdx++
+	intReg := fmt.Sprintf("%%d2i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, ptrVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), intReg, fieldGEP))
+}
+
+// loadDataPtrField loads an i8* value from a struct's data field (which is i64).
+// Emits load i64, then inttoptr i64 → i8*. Returns the i8* register name.
+func (g *Generator) loadDataPtrField(sb *strings.Builder, fieldGEP string) string {
+	g.tmpIdx++
+	intReg := fmt.Sprintf("%%i2d.%d", g.tmpIdx)
+	g.tmpIdx++
+	ptrReg := fmt.Sprintf("%%dptr.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), intReg, fieldGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), ptrReg, intReg))
+	return ptrReg
+}
+
+// ptrToIntVal converts an i8* value to i64 for use in insertvalue.
+// Returns the i64 value (register name or "0" for null).
+func (g *Generator) ptrToIntVal(sb *strings.Builder, ptrVal string) string {
+	if ptrVal == "null" {
+		return "0"
+	}
+	g.tmpIdx++
+	intReg := fmt.Sprintf("%%p2i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, ptrVal))
+	return intReg
 }
 
 func (g *Generator) findLoopTarget(label string, isBreak bool) string {

@@ -103,8 +103,6 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		return "i1"
 	case "str":
 		return "%str-long"
-	case "str-short":
-		return "%str-short"
 	case "ptr":
 		return "i8*"
 	case "byte":
@@ -305,17 +303,14 @@ func llvmTypeSize(llvmType string) int64 {
 	case "i64", "u64", "double", "i8*", "i8**", "i8***":
 		return 8
 	case "%str-long", "%vec":
-		// { i64, i64, i8* } = 8 + 8 + 8 = 24 bytes
+		// { i64, i64, i64 } = 8 + 8 + 8 = 24 bytes
 		return 24
 	case "%option":
-		// { i64, [16 x i8] } = 8 + 16 = 24 bytes
-		return 24
-	case "%arr":
-		// { i64, i8* } = 8 + 8 = 16 bytes
+		// { i64, i64 } = 8 + 8 = 16 bytes
 		return 16
-	case "%str-short":
-		// { i8, [127 x i8] } = 1 + 127 = 128 bytes
-		return 128
+	case "%arr":
+		// { i64, i64 } = 8 + 8 = 16 bytes
+		return 16
 	default:
 		return 8 // 預設 i64
 	}

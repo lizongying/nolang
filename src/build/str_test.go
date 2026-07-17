@@ -9,31 +9,27 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// TestStrTypeLayout verifies that str and str-short types have the correct layout
+// TestStrTypeLayout verifies that str type has the correct layout
 // as documented in str.no:
-//
-//	str-short {
-//	    len byte read-only      // i8
-//	    data [127]byte sealed   // [127 x i8]
-//	}
 //
 //	str {
 //	    len i64 read-only       // i64
-//	    data *byte sealed       // i8*
+//	    cap i64 sealed           // i64
+//	    data *byte sealed       // i64 (opaque pointer)
 //	}
 //
-// Compiler auto-selects: len <= 127 → str-short (stack), len > 127 → str (heap)
+// All strings are heap-allocated (no SSO).
 func TestStrTypeLayout(t *testing.T) {
 	// 128 bytes → str (heap)
 	longStr := strings.Repeat("a", 128)
 	src := fmt.Sprintf(`
-// Test str-short: small string on stack (len <= 127)
+// Test str: small string on heap
 test-smal = () {
 	s = 'hello'
 	n = s.len
 }
 
-// Test str: long string on heap (len > 127)
+// Test str: long string on heap
 test-str = () {
 	s = '%s'
 	n = s.len
@@ -76,35 +72,6 @@ test = () {
 	err := validateArrayBounds(prog, arraySizes, sliceSizes, stringSizes, varTypes)
 	if err == nil {
 		t.Fatal("expected read-only error for str.len assignment, but got none")
-	}
-	if !strings.Contains(err.Error(), "read-only") {
-		t.Errorf("expected read-only error, got: %v", err)
-	}
-}
-
-// TestStrShortLenReadOnly verifies that str-short.len cannot be modified
-func TestStrShortLenReadOnly(t *testing.T) {
-	src := `
-test = () {
-	s = 'short'
-	s.len = 20
-}
-`
-	l := lexer.New(src)
-	p := parser.New(l)
-	prog := p.ParseProgram()
-	if errs := p.Errors(); len(errs) > 0 {
-		t.Fatalf("parse errors: %v", errs)
-	}
-
-	// read-only check is in validateArrayBounds
-	arraySizes := buildArraySizeMap(prog)
-	sliceSizes := buildSliceSizeMap(prog)
-	stringSizes := buildStringSizeMap(prog)
-	varTypes := map[string]string{}
-	err := validateArrayBounds(prog, arraySizes, sliceSizes, stringSizes, varTypes)
-	if err == nil {
-		t.Fatal("expected read-only error for str-short.len assignment, but got none")
 	}
 	if !strings.Contains(err.Error(), "read-only") {
 		t.Errorf("expected read-only error, got: %v", err)
