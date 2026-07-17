@@ -1,72 +1,72 @@
 // 最小化測試：to-u8
 test-u8-ok = () {
     n = '255'.to-u8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }
 
 test-u8-fail = () {
     n = '256'.to-u8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }
 
 test-u8-zero = () {
     n = '0'.to-u8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }
 
 test-u8-bool-true = () {
     b = 'true'.to-bool()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> {
             print('val=')
-                    print(b)
+            print(b)
         }
     }
 }
 
 test-u8-u32 = () {
     n = '4294967295'.to-u32()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }
 
 test-u8-u32-overflow = () {
     n = '4294967296'.to-u32()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }

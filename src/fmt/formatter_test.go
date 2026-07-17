@@ -230,6 +230,8 @@ func TestFormatBasic(t *testing.T) {
 			// by a comment and then a newline. parseExpression would skip the
 			// NEWLINE and consume `return` as the body expression, causing the
 			// return statement to be silently lost.
+			// The comment is on the same line as `diff != 0 ->`, so it is
+			// correctly attached as an inline comment on the empty block body.
 			name: "standalone_if_then_arrow_comment_then_newline",
 			input: `foo = () {
     diff != 0 -> // comment
@@ -239,9 +241,7 @@ func TestFormatBasic(t *testing.T) {
 }`,
 			expected: `foo = () {
     diff != 0 -> {
-    }
-
-    // comment
+    }  // comment
     return
 
     x = 1

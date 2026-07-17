@@ -432,6 +432,7 @@ type BlockStatement struct {
 	CommentedNode
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself
+	OpeningBraceComment *CommentGroup   // comment on the { line itself
 	BetweenComments     []*CommentGroup // free-standing comment lines between statements
 }
 

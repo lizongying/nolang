@@ -116,14 +116,18 @@ func printUsage() {
 	fmt.Println("  no version           Print version information")
 	fmt.Println("")
 	fmt.Println("  no fmt [flags] <file|dir>  Format source files")
+	fmt.Println("    Directories are processed recursively automatically.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -w    write result to source file (in-place)")
-	fmt.Println("      -d    process directory mode (recursive)")
+	fmt.Println("      -d    output colored diff instead of formatted result")
 	fmt.Println("    Examples:")
 	fmt.Println("      no fmt")
 	fmt.Println("      no fmt main.no              format and print to stdout")
 	fmt.Println("      no fmt -w main.no           format file in-place")
-	fmt.Println("      no fmt -w -d src/           format all .no files in src/ recursively")
+	fmt.Println("      no fmt -d main.no           show colored diff")
+	fmt.Println("      no fmt src/                 format all .no files in src/ recursively")
+	fmt.Println("      no fmt -w src/              format all .no files in src/ in-place")
+	fmt.Println("      no fmt -d src/              show diff for all .no files in src/")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("")
 	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
@@ -842,21 +846,25 @@ func uninstallCommand(args []string) {
 func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
-	dirMode := fs.Bool("d", false, "process directory mode")
+	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
 		fmt.Println("")
 		fmt.Println("Format Nolang source files.")
 		fmt.Println("When no file is given, reads from stdin.")
+		fmt.Println("Directories are processed recursively automatically.")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  no fmt main.no")
-		fmt.Println("  no fmt -w main.no")
-		fmt.Println("  no fmt -w -d src/")
-		fmt.Println("  echo 'x=1' | no fmt")
+		fmt.Println("  no fmt main.no              format and print to stdout")
+		fmt.Println("  no fmt -w main.no           format file in-place")
+		fmt.Println("  no fmt -d main.no           show colored diff")
+		fmt.Println("  no fmt src/                 format all .no files in src/")
+		fmt.Println("  no fmt -w src/              format all .no files in src/ in-place")
+		fmt.Println("  no fmt -d src/              show diff for all .no files in src/")
+		fmt.Println("  echo 'x=1' | no fmt         format from stdin")
 	}
 	_ = fs.Parse(args)
 
@@ -868,8 +876,13 @@ func fmtCommand(args []string) {
 			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
 			os.Exit(1)
 		}
-		result := nfmt.Format(string(data))
-		fmt.Print(result)
+		original := string(data)
+		result := nfmt.Format(original)
+		if *diffMode {
+			fmt.Print(generateDiff("stdin", original, result))
+		} else {
+			fmt.Print(result)
+		}
 		return
 	}
 
@@ -881,28 +894,33 @@ func fmtCommand(args []string) {
 		}
 
 		if info.IsDir() {
-			if *dirMode {
-				if err := fmtProcessDirectory(arg, *writeInPlace); err != nil {
-					fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "Skipping directory %s (use -d flag)\n", arg)
+			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode); err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
 			}
 		} else {
-			if err := fmtProcessFile(arg, *writeInPlace); err != nil {
+			if err := fmtProcessFile(arg, *writeInPlace, *diffMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
 			}
 		}
 	}
 }
 
-func fmtProcessFile(filename string, writeInPlace bool) error {
+func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
 
-	result := nfmt.Format(string(data))
+	original := string(data)
+	result := nfmt.Format(original)
+
+	if diffMode {
+		diff := generateDiff(filename, original, result)
+		if diff != "" {
+			fmt.Print(diff)
+		}
+		return nil
+	}
 
 	if writeInPlace {
 		return os.WriteFile(filename, []byte(result), 0644)
@@ -911,7 +929,7 @@ func fmtProcessFile(filename string, writeInPlace bool) error {
 	return nil
 }
 
-func fmtProcessDirectory(dirname string, writeInPlace bool) error {
+func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error {
 	return filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -920,7 +938,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool) error {
 			return nil
 		}
 		if strings.HasSuffix(path, ".no") {
-			return fmtProcessFile(path, writeInPlace)
+			return fmtProcessFile(path, writeInPlace, diffMode)
 		}
 		return nil
 	})
