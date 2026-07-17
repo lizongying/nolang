@@ -31,12 +31,12 @@ func TestBuiltinMethodListEntries(t *testing.T) {
 }
 
 func TestFindBuiltinMethod(t *testing.T) {
-	m := FindBuiltinMethod("cbrt")
+	m := FindBuiltinMethod("get-pid")
 	if m == nil {
-		t.Fatal("FindBuiltinMethod(cbrt) returned nil")
+		t.Fatal("FindBuiltinMethod(get-pid) returned nil")
 	}
-	if m.CLibCall == nil || m.CLibCall.FuncName != "cbrt" {
-		t.Errorf("cbrt CLibCall = %v, want cbrt", m.CLibCall)
+	if m.CLibCall == nil || m.CLibCall.FuncName != "getpid" {
+		t.Errorf("get-pid CLibCall = %v, want getpid", m.CLibCall)
 	}
 
 	m = FindBuiltinMethod("nonexistent")
@@ -85,35 +85,6 @@ func TestLLVMIntrinsicMethods(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("no BuiltinMethod with name=%s and LLVMIntrinsic=%s", tt.name, tt.intrinsic)
-		}
-	}
-}
-
-func TestCLibCallMethods(t *testing.T) {
-	clibMethods := []struct {
-		name     string
-		funcName string
-		argCount int
-	}{
-		{"cbrt", "cbrt", 1},
-		{"hypot", "hypot", 2},
-		{"fmod", "fmod", 2},
-	}
-	for _, tt := range clibMethods {
-		m := FindBuiltinMethod(tt.name)
-		if m == nil {
-			t.Errorf("FindBuiltinMethod(%s) returned nil", tt.name)
-			continue
-		}
-		if m.CLibCall == nil {
-			t.Errorf("%s CLibCall is nil", tt.name)
-			continue
-		}
-		if m.CLibCall.FuncName != tt.funcName {
-			t.Errorf("%s CLibCall.FuncName = %q, want %q", tt.name, m.CLibCall.FuncName, tt.funcName)
-		}
-		if len(m.CLibCall.ArgTypes) != tt.argCount {
-			t.Errorf("%s CLibCall.ArgTypes len = %d, want %d", tt.name, len(m.CLibCall.ArgTypes), tt.argCount)
 		}
 	}
 }
@@ -177,10 +148,8 @@ func TestStrconvCLibCallMethods(t *testing.T) {
 		name     string
 		funcName string
 	}{
-		{"str.to-i64", "atoi"},
 		{"str.parse-f64-raw", "strtod"},
 		{"str.to-f32", "strtod"},
-		{"str.to-u64", "strtoull"},
 	}
 	for _, tt := range tests {
 		found := false

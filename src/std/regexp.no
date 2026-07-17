@@ -548,6 +548,53 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 // 編譯
 // ═══════════════════════════════════════════════
 
+// emit-quantized: 根據量詞發射指令
+// atom-type i64: atom 類型
+// atom-char i64: atom 字元值
+// atom-cls i64: atom 類別索引
+// quant i64: 量詞字元（0=無, 42=*, 43=+, 63=?）
+// atom-i i64: atom 後的位置
+regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, atom-i i64) {
+    quant == 0 -> {
+        // 無量詞：直接發射 atom
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .tmp-next-i = atom-i
+    }
+    quant == RE-QUANT-STAR -> {
+        // * — 零次或多次（貪婪）
+        split-pc = .n
+        .emit(RE-OP-SPLIT, 0, 0)
+        l1 = .n
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .emit(RE-OP-JUMP, split-pc)
+        .arg1[split-pc] = l1
+        .arg2[split-pc] = .n
+        .tmp-next-i = atom-i + 1
+    }
+    quant == RE-QUANT-PLUS -> {
+        // + — 一次或多次（貪婪）
+        l1 = .n
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .emit(RE-OP-SPLIT, l1, .n + 1)
+        .tmp-next-i = atom-i + 1
+    }
+    quant == RE-QUANT-QUESTION -> {
+        // ? — 零次或一次（貪婪）
+        split-pc = .n
+        .emit(RE-OP-SPLIT, 0, 0)
+        l1 = .n
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .arg1[split-pc] = l1
+        .arg2[split-pc] = .n
+        .tmp-next-i = atom-i + 1
+    }
+    quant != 0 && quant != RE-QUANT-STAR && quant != RE-QUANT-PLUS && quant != RE-QUANT-QUESTION -> {
+        // 不是量詞，直接發射 atom
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .tmp-next-i = atom-i
+    }
+}
+
 // compile: 將 pattern 字串編譯為指令序列
 regexp.compile = () {
     .n = 0
@@ -560,7 +607,7 @@ regexp.compile = () {
     for i < n {
         c = .pattern[i] & 255
 
-        // 預設前進 1（使用結構體欄位以跨條件傳播）
+        // 預設前進 1
         .tmp-next-i = i + 1
 
         // ^ — 行首錨點
@@ -577,67 +624,20 @@ regexp.compile = () {
         c != 94 && c != 36 -> {
             // 解析 atom
             atom-i = .parse-atom(.pattern, i)
-            .tmp-next-i = atom-i
 
-            // 暫存 atom 資訊（已在 .tmp-atom-* 中）
+            // 暫存 atom 資訊
             atom-type = .tmp-atom-type
             atom-char = .tmp-atom-char
             atom-cls = .tmp-atom-cls
 
             // 檢查量詞
-            .tmp-quant = 0
+            quant = 0
             atom-i < n -> {
-                .tmp-quant = .pattern[atom-i] & 255
+                quant = .pattern[atom-i] & 255
             }
 
-            // 複製到局部變數以確保在分支選擇塊中正確讀取
-            quant = .tmp-quant
-
-            // DEBUG
-            println('quant=', quant, ' star=', RE-QUANT-STAR, ' eq=', quant == RE-QUANT-STAR, ' eq42=', quant == 42)
-
-            // 根據量詞發射指令（使用分支選擇塊）
-            {
-                quant == 0 -> {
-                    // 無量詞：直接發射 atom
-                    .emit-atom(atom-type, atom-char, atom-cls)
-                    .tmp-next-i = atom-i
-                }
-                quant == 6 * 7 -> {
-                    // * — 零次或多次（貪婪）
-                    split-pc = .n
-                    .emit(RE-OP-SPLIT, 0, 0)
-                    l1 = .n
-                    .emit-atom(atom-type, atom-char, atom-cls)
-                    .emit(RE-OP-JUMP, split-pc)
-                    .arg1[split-pc] = l1
-                    .arg2[split-pc] = .n
-                    .tmp-next-i = atom-i + 1
-                }
-                quant == RE-QUANT-PLUS -> {
-                    // + — 一次或多次（貪婪）
-                    l1 = .n
-                    .emit-atom(atom-type, atom-char, atom-cls)
-                    .emit(RE-OP-SPLIT, l1, .n + 1)
-                    .tmp-next-i = atom-i + 1
-                }
-                quant == RE-QUANT-QUESTION -> {
-                    // ? — 零次或一次（貪婪）
-                    split-pc = .n
-                    .emit(RE-OP-SPLIT, 0, 0)
-                    l1 = .n
-                    .emit-atom(atom-type, atom-char, atom-cls)
-                    .arg1[split-pc] = l1
-                    .arg2[split-pc] = .n
-                    .tmp-next-i = atom-i + 1
-                }
-                -> {
-                    // 不是量詞，直接發射 atom
-                    println('DEFAULT BRANCH quant=', quant, ' eq42=', quant == 42)
-                    .emit-atom(atom-type, atom-char, atom-cls)
-                    .tmp-next-i = atom-i
-                }
-            }
+            // 委派給獨立方法處理量詞分派
+            .emit-quantized(atom-type, atom-char, atom-cls, quant, atom-i)
         }
 
         i = .tmp-next-i

@@ -73,26 +73,6 @@ func init() {
 		LLVMIntrinsic: "llvm.pow.f64",
 	})
 
-	// cbrt: cube root via libm
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "cbrt",
-		Params:       []parser.Type{parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the cube root of a float",
-		CLibCall:     &CLibCall{FuncName: "cbrt", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMF64},
-	})
-
-	// hypot: sqrt(x*x + y*y) via libm
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "hypot",
-		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute sqrt(x*x + y*y) without undue overflow or underflow",
-		CLibCall:     &CLibCall{FuncName: "hypot", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
-	})
-
 	// asin: arc sine via LLVM intrinsic
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType:  ReceiverGlobal,
@@ -241,16 +221,6 @@ func init() {
 		Return:        []parser.Type{parser.TypeF64},
 		Doc:           "Compute the base-2 logarithm of a float",
 		LLVMIntrinsic: "llvm.log2.f64",
-	})
-
-	// fmod: floating-point remainder via libm
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "fmod",
-		Params:       []parser.Type{parser.TypeF64, parser.TypeF64},
-		Return:       []parser.Type{parser.TypeF64},
-		Doc:          "Compute the floating-point remainder of x/y",
-		CLibCall:     &CLibCall{FuncName: "fmod", ArgTypes: []LLVMArgType{LLVMF64, LLVMF64}, RetType: LLVMF64},
 	})
 
 	// degrees: convert radians to degrees

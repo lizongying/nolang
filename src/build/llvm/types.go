@@ -261,8 +261,6 @@ var clibFuncNames = map[string]bool{
 	"fopen":       true,
 	"fgets":       true,
 	"fclose":      true,
-	"atoi":        true,
-	"strtoull":    true,
 	"strtod":      true,
 	"fmod":        true,
 	"hypot":       true,

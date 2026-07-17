@@ -3,17 +3,9 @@ package builtin
 import "github.com/lizongying/nolang/parser"
 
 func init() {
-	i64Type := LLVMI64
-
-	// str.to-i64: string to i64 (method: s.to-i64())
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverStr,
-		MethodName:   "str.to-i64",
-		Params:       []parser.Type{},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Parse a string to i64 (method)",
-		CLibCall:     &CLibCall{FuncName: "atoi", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
-	})
+	// str.to-i64 / str.to-u64 are implemented in Nolang (src/std/str.no) and
+	// return ?i64 / ?u64 Option types. The old CLibCall (atoi / strtoull)
+	// builtins have been removed in favour of the Nolang implementation.
 
 	// str.parse-f64-raw: internal string to f64 via strtod (used by str.to-f64 wrapper)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
@@ -33,16 +25,6 @@ func init() {
 		Return:       []parser.Type{parser.TypeF32},
 		Doc:          "Parse a string to f32 (method)",
 		CLibCall:     &CLibCall{FuncName: "strtod", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI8Ptr}, RetType: LLVMF64, FixedArgs: map[int]string{1: "null"}},
-	})
-
-	// str.to-u64: string to u64 (method: s.to-u64())
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverStr,
-		MethodName:   "str.to-u64",
-		Params:       []parser.Type{},
-		Return:       []parser.Type{parser.TypeU64},
-		Doc:          "Parse a string to u64 (method)",
-		CLibCall:     &CLibCall{FuncName: "strtoull", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI8Ptr, LLVMI32}, RetType: LLVMI64, FixedArgs: map[int]string{1: "null", 2: "10"}},
 	})
 
 	// str.to-bool: string to bool (method: s.to-bool())

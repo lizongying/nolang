@@ -187,19 +187,7 @@ func (f *formatter) formatDocComments(doc *parser.CommentGroup) {
 				f.newline()
 			}
 		}
-		text := c.Text
-		m := f.commentMarker(c)
-		if strings.TrimSpace(text) == "" {
-			f.write(m)
-		} else if text[0] != ' ' {
-			// Missing space after marker — add one
-			f.write(m + " ")
-			f.write(text)
-		} else {
-			// Already has space — preserve as-is
-			f.write(m)
-			f.write(text)
-		}
+		f.writeCommentBody(c)
 	}
 }
 
@@ -211,12 +199,44 @@ func (f *formatter) commentMarker(c *parser.Comment) string {
 	return c.Marker
 }
 
+// writeCommentBody writes a single comment with its marker(s).
+// Block comments (Marker ";;") emit ";;" + Text + ";;" verbatim (Text may contain
+// newlines). Line comments (Marker "//" or ";") normalize the space after the marker.
+func (f *formatter) writeCommentBody(c *parser.Comment) {
+	if c.Marker == ";;" {
+		f.write(";;")
+		f.write(c.Text)
+		f.write(";;")
+		return
+	}
+	m := f.commentMarker(c)
+	text := c.Text
+	if strings.TrimSpace(text) == "" {
+		f.write(m)
+	} else if len(text) > 0 && text[0] != ' ' {
+		// Missing space after marker — add one
+		f.write(m + " ")
+		f.write(text)
+	} else {
+		// Already has space — preserve as-is
+		f.write(m)
+		f.write(text)
+	}
+}
+
 // formatInlineComment outputs a comment that appears on the same line as code.
 func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
 	if comment == nil || len(comment.List) == 0 {
 		return
 	}
 	c := comment.List[0]
+	if c.Marker == ";;" {
+		// 塊註釋緊貼代碼：a = 1 ;; block ;;
+		f.write(" ;;")
+		f.write(c.Text)
+		f.write(";;")
+		return
+	}
 	if c.Marker == ";" {
 		// `;` 註釋緊貼代碼：a = 1; comment
 		f.write("; ")
@@ -233,8 +253,7 @@ func (f *formatter) formatTrailingComments(tc *parser.CommentGroup) {
 	}
 	for _, c := range tc.List {
 		f.newline()
-		f.write(f.commentMarker(c))
-		f.write(c.Text)
+		f.writeCommentBody(c)
 	}
 }
 
@@ -287,8 +306,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	if p.TrailingComments != nil {
 		f.newline()
 		for _, c := range p.TrailingComments.List {
-			f.write(f.commentMarker(c))
-			f.write(c.Text)
+			f.writeCommentBody(c)
 			f.newline()
 		}
 	}

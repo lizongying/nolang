@@ -424,6 +424,30 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = COMMA
 		tok.Literal = string(l.ch)
 	case ';':
+		// 多行(塊)註釋：;; ... ;;（對稱定界，未閉合則註釋到文件尾）
+		if l.peekChar() == ';' {
+			l.readChar() // 跳過第一個 ;
+			l.readChar() // 跳過第二個 ;
+			start := l.position
+			for {
+				if l.ch == 0 {
+					break // EOF，未閉合
+				}
+				if l.ch == ';' && l.peekChar() == ';' {
+					break // 找到結尾 ;;
+				}
+				l.readChar()
+			}
+			tok.Type = COMMENT
+			tok.Literal = l.input[start:l.position]
+			tok.Marker = ";;"
+			// 跳過結尾 ;;
+			if l.ch == ';' && l.peekChar() == ';' {
+				l.readChar()
+				l.readChar()
+			}
+			return tok
+		}
 		// 單行註釋（與 // 語義相同：註釋到行尾）
 		l.readChar() // 跳過 ;
 		start := l.position

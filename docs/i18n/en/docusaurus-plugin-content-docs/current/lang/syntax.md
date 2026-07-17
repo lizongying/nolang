@@ -6,15 +6,20 @@ sidebar_position: 2
 
 ## Comments
 
-Nolang supports two single-line comment markers with **identical semantics** — both comment to end-of-line:
+Nolang supports two single-line comment markers and one multi-line (block) comment marker:
 
-- `//` — traditional marker
-- `;` — alternative marker (**implemented 2026-07-17**)
+- `//` — traditional single-line marker (comments to end-of-line)
+- `;` — alternative single-line marker (**implemented 2026-07-17**, comments to end-of-line)
+- `;; ... ;;` — multi-line (block) comment (**implemented 2026-07-18**, symmetric delimiters; unterminated `;;` comments to end of file)
 
 ```nolang
 // this is a comment
 ; this is also a comment, same semantics
 x = 1 ; trailing comment, runs to end of line
+
+;; multi-line (block) comment
+   spans lines, closed with ;;
+y = 2 ;; inline block comment ;;
 ```
 
 > **Rule: One statement per line; using commas `,` to combine multiple statements on the same line is forbidden.** (The semicolon `;` is now a comment marker and can no longer join statements.)

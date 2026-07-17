@@ -20,17 +20,34 @@ E = 2.718281828459045
 // sqrt = (x f64) (res f64) {  // LLVM: @llvm.sqrt.f64
 // }
 
-// build-in (ForwardFunc: cbrt)
-// cbrt = (x f64) (res f64) {  // LLVM: @llvm.pow.f64(x, 1/3)
-// }
+// cbrt: 立方根
+// 使用 exp(log(|x|) / 3) 實現，避開與 number.no / bigint.no 中整數 pow 的名稱衝突
+cbrt = (x f64) (res f64) {
+    x == 0.0 -> {
+        res = 0.0
+        return
+    }
+    {
+        x < 0.0 -> {
+            ax f64 = 0.0 - x
+            l f64 = log(ax)
+            res = 0.0 - exp(l / 3.0)
+        }
+        -> {
+            l f64 = log(x)
+            res = exp(l / 3.0)
+        }
+    }
+}
 
 // build-in (LLVMIntrinsic: llvm.pow.f64)
 // pow = (x f64, y f64) (res f64) {  // LLVM: @llvm.pow.f64
 // }
 
-// build-in (ForwardFunc: hypot)
-// hypot = (x f64, y f64) (res f64) {  // sqrt(x*x + y*y)
-// }
+// hypot: 歐幾里得範數 sqrt(x*x + y*y)
+hypot = (x f64, y f64) (res f64) {
+    res = sqrt(x * x + y * y)
+}
 
 // 三角函数（弧度）
 // build-in (LLVMIntrinsic: llvm.sin.f64)
@@ -110,9 +127,15 @@ tan = (x f64) (res f64) {
 // }
 
 // 杂项
-// build-in (ForwardFunc: fmod)
-// fmod = (x f64, y f64) (res f64) {  // LLVM: @fmod (libm)
-// }
+// fmod: 浮點取餘
+fmod = (x f64, y f64) (res f64) {
+    y == 0.0 -> {
+        res = 0.0 / 0.0
+        return
+    }
+    q f64 = x / y
+    res = x - trunc(q) * y
+}
 
 // degrees: 弧度转角度
 degrees = (r f64) (res f64) {

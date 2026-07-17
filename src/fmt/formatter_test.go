@@ -2390,3 +2390,35 @@ func TestFormatSemicolonComment(t *testing.T) {
 		t.Errorf("Format // comment:\n got:  %q\n want: %q", got2, want2)
 	}
 }
+
+// TestFormatSemicolonBlockComment verifies the `;; ... ;;` multi-line (block) comment:
+// the lexer captures it as a single COMMENT token, the parser attaches it with
+// Marker ";;", and the formatter preserves the `;;` delimiters verbatim (idempotent).
+func TestFormatSemicolonBlockComment(t *testing.T) {
+	cases := []string{
+		// inline block comment
+		"x = 1 ;; inline block ;;\n",
+		// trailing (EOF) block comment
+		"x = 1\n;; trailing\n   multi-line block ;;\n",
+		// doc block comment
+		";; doc\n   block ;;\nx = 1\n",
+		// multi-line block comment (newlines between ;; delimiters)
+		";; first line\nsecond line\nthird line ;;\nx = 1\n",
+		// mixed: ;; block + ; line + // line
+		";; block ;;\n; line comment\n// another line\nx = 1\n",
+		// empty block comment ;;;;
+		"x = 1 ;;;;\n",
+	}
+	for _, in := range cases {
+		file := FormatFile(in)
+		if FormatFile(file) != file {
+			t.Errorf("FormatFile not idempotent for %q:\n first:  %q\n second: %q", in, file, FormatFile(file))
+		}
+		if !strings.Contains(file, ";;") {
+			t.Errorf("block comment markers lost for %q -> %q", in, file)
+		}
+		if strings.Contains(file, "//") && !strings.Contains(in, "//") {
+			t.Errorf("unexpected // introduced for %q -> %q", in, file)
+		}
+	}
+}

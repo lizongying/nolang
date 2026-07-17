@@ -408,15 +408,20 @@ greeting = 'hello, ' - name
 
 ### Comments
 
-Nolang supports two single-line comment markers with **identical semantics** — both comment to end-of-line:
+Nolang supports two single-line comment markers and one multi-line (block) comment marker:
 
-- `//` — traditional marker
-- `;` — alternative marker (**implemented 2026-07-17**)
+- `//` — traditional single-line marker (comments to end-of-line)
+- `;` — alternative single-line marker (**implemented 2026-07-17**, comments to end-of-line)
+- `;; ... ;;` — multi-line (block) comment (**implemented 2026-07-18**, symmetric delimiters; unterminated `;;` comments to end of file)
 
 ```nolang
 // this is a comment
 ; this is also a comment, same semantics
 x = 1 ; trailing comment, runs to end of line
+
+;; multi-line (block) comment
+   spans lines, closed with ;;
+y = 2 ;; inline block comment ;;
 ```
 
 **One statement per line** is still a hard rule — never use commas `,` to combine multiple statements on one line (semicolons are now comments, so `;` can no longer join statements). This applies inside comments too.
@@ -433,9 +438,11 @@ x = 1 ; trailing comment, runs to end of line
 ; h1 = 4023233417
 ```
 
-**Marker preservation:** the formatter never converts `;` ↔ `//`. It records the original marker (`Comment.Marker`) and emits it verbatim, so `;` comments stay `;` after `no fmt`.
+**Block comment delimiters:** `;;` opens, `;;` closes; everything between (including newlines) is comment content. A single `;` inside the content does NOT close the block — only `;;` does. If no closing `;;` is found, the comment runs to EOF.
 
-**Safety:** `;` inside string literals (e.g. `'text/plain; charset=utf-8'`, `index-from(';', pos)`) and inside `//` comments is consumed by the lexer's string/comment scanners and never treated as a comment marker.
+**Marker preservation:** the formatter never converts between markers (`;` ↔ `//` ↔ `;;`). It records the original marker (`Comment.Marker`) and emits it verbatim, so `;` comments stay `;`, `//` stay `//`, and `;; ... ;;` blocks stay intact (content, including internal newlines, preserved verbatim). `no fmt` is idempotent for all three.
+
+**Safety:** `;` / `;;` inside string literals (e.g. `'text/plain; charset=utf-8'`, `index-from(';', pos)`) and inside `//` comments is consumed by the lexer's string/comment scanners and never treated as a comment marker.
 
 ### Naming Rules
 
@@ -559,12 +566,19 @@ Implementation lives in `src/fmt/formatter.go`:
   appends a single `\n`. Empty or unparseable input is returned unchanged so
   the formatter never mangles a file it cannot understand.
 
-#### `;` is a line-comment marker (implemented 2026-07-17)
+#### `;` / `;;` are comment markers (implemented 2026-07-17 / 2026-07-18)
 
-`;` is now a **line-comment marker** — semantically identical to `//`, it
-comments to end-of-line. The lexer turns `;` into a `COMMENT` token (with
-`Marker=";"`), the parser records `Comment.Marker`, and the formatter emits the
-original marker verbatim. See [Comments](#comments) for the full rules.
+`;` is a **line-comment marker** — semantically identical to `//`, it comments
+to end-of-line. The lexer turns `;` into a `COMMENT` token (with `Marker=";"`),
+the parser records `Comment.Marker`, and the formatter emits the original marker
+verbatim.
+
+`;; ... ;;` is a **multi-line (block) comment** — `;;` opens, `;;` closes, and
+everything between (including newlines) is comment content. A single `;` inside
+the content does NOT close the block; only `;;` does. If no closing `;;` is found,
+the comment runs to EOF. The lexer emits one `COMMENT` token with `Marker=";;"`
+whose `Literal` is the raw content; the formatter writes `;;` + content + `;;`
+verbatim (idempotent). See [Comments](#comments) for the full rules.
 
 Gotcha: `cond -> X; Y` no longer parses as assignment. With `;` a comment, it
 means "evaluate `X` (discard) then a trailing comment `; Y`" — **`X` is never
@@ -572,16 +586,17 @@ assigned**. The correct form is `cond -> X = Y` (established stdlib pattern in
 `arr.no`, `uuid.no`, `path.no`, `err.no`, `assert.no`). If you find
 `cond -> X; Y` in source, replace `;` with `=`; do not leave it as a comment.
 
-`;` inside string literals (e.g. `'text/plain; charset=utf-8'`,
+`;` / `;;` inside string literals (e.g. `'text/plain; charset=utf-8'`,
 `index-from(';', pos)`) and inside `//` comments is safe — the lexer's string
-and comment scanners consume it, so it never reaches the `;` token.
+and comment scanners consume it, so it never reaches the comment token.
 
 **Migration note:** before `;` became a comment, the repo's `.no` sources were
 made `;`-free at the grammar level (`zip.no` → `[]byte` literals; `ws.no` 14×
 `cond -> X; Y` → `cond -> X = Y`; `test-tls-part1/2/3.no` 15×
 `cond -> print('…'); return` → `cond -> { print('…') \n return }`). With the
-lexer now treating `;` as a comment, no real grammatical `;` remains, and the
-formatter preserves `;` comments as `;`. Verify with `no fmt <file>`.
+lexer now treating `;` as a comment and `;;` as a block comment, no real
+grammatical `;` remains, and the formatter preserves both `;` and `;; … ;;`
+verbatim. Verify with `no fmt <file>`.
 
 - `Format(code)` is the pure fragment formatter (no trailing newline) used by
   unit tests; prefer `FormatFile` whenever you write a real source file.
