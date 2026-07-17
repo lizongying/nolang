@@ -872,6 +872,13 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 
 func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	f.write("{")
+	// Output opening brace comment on the same line as {
+	if s.OpeningBraceComment != nil && len(s.OpeningBraceComment.List) > 0 {
+		f.write("  //")
+		for _, c := range s.OpeningBraceComment.List {
+			f.write(c.Text)
+		}
+	}
 	f.indent++
 
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
@@ -1006,6 +1013,7 @@ func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 	if len(body.Statements) == 1 &&
 		body.TrailingComments == nil &&
 		body.ClosingBraceComment == nil &&
+		body.OpeningBraceComment == nil &&
 		!f.hasDocComment(body.Statements[0]) {
 		switch body.Statements[0].(type) {
 		case *parser.ExpressionStatement:
@@ -1109,6 +1117,13 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 		f.write(": {")
 	} else {
 		f.write("{")
+	}
+	// Output opening brace comment on the same line as {
+	if e.OpeningBraceComment != nil && len(e.OpeningBraceComment.List) > 0 {
+		f.write("  //")
+		for _, c := range e.OpeningBraceComment.List {
+			f.write(c.Text)
+		}
 	}
 	f.indent++
 	// 輸出當前 arm
@@ -1237,6 +1252,7 @@ writeBody:
 	if len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil &&
+		e.Consequence.OpeningBraceComment == nil &&
 		!f.hasDocComment(statements[0]) {
 		stmt := statements[0]
 		switch stmt.(type) {
@@ -1249,6 +1265,13 @@ writeBody:
 	}
 	// 多語句 body：用 { } 大括號包裹
 	f.write(" {")
+	// Output opening brace comment on the same line as {
+	if e.Consequence.OpeningBraceComment != nil && len(e.Consequence.OpeningBraceComment.List) > 0 {
+		f.write("  //")
+		for _, c := range e.Consequence.OpeningBraceComment.List {
+			f.write(c.Text)
+		}
+	}
 	f.indent++
 	for i, stmt := range statements {
 		if i > 0 {
@@ -1836,9 +1859,13 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write("}")
 }
 
-func Format(code string) string {
+// formatProgram parses and formats the given code, returning the formatted
+// output (without any guarantee about a trailing newline) and a bool
+// indicating success. On parse error or empty/whitespace-only input the bool
+// is false and out is empty.
+func formatProgram(code string) (out string, ok bool) {
 	if strings.TrimSpace(code) == "" {
-		return ""
+		return "", false
 	}
 
 	l := lexer.New(code)
@@ -1847,11 +1874,11 @@ func Format(code string) string {
 
 	// 如果解析失敗，返回原始碼，不修改
 	if len(p.Errors()) > 0 {
-		return code
+		return "", false
 	}
 
 	if program == nil || len(program.Statements) == 0 {
-		return code
+		return "", false
 	}
 
 	sourceLines := strings.Split(code, "\n")
@@ -1860,11 +1887,50 @@ func Format(code string) string {
 	}
 	f.formatProgram(program)
 
-	return strings.TrimRight(f.buf.String(), "\n")
+	return f.buf.String(), true
+}
+
+// Format reformats a code fragment. It does NOT add a trailing newline; callers
+// that format a complete source file should use FormatFile instead. This keeps
+// the fragment-level contract stable for unit tests and inline formatting.
+func Format(code string) string {
+	out, ok := formatProgram(code)
+	if !ok {
+		return code
+	}
+	return strings.TrimRight(out, "\n")
+}
+
+// ensureTrailingNewline guarantees s ends with exactly one newline.
+// Multiple trailing newlines are collapsed to one; a missing trailing newline
+// is appended. Empty input is returned unchanged.
+func ensureTrailingNewline(s string) string {
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return ""
+	}
+	return s + "\n"
+}
+
+// FormatFile formats a complete source file and guarantees the output ends
+// with exactly one trailing newline (an empty line at EOF). Missing trailing
+// newlines are appended; multiple trailing blank lines are collapsed to one.
+// Unparseable or empty input is returned unchanged so the formatter never
+// mangles a file it cannot understand.
+func FormatFile(code string) string {
+	out, ok := formatProgram(code)
+	if !ok {
+		return code
+	}
+	return ensureTrailingNewline(out)
 }
 
 func (f *Formatter) Format(code string) string {
 	return Format(code)
+}
+
+func (f *Formatter) FormatFile(code string) string {
+	return FormatFile(code)
 }
 
 func (f *formatter) formatExternStatement(s *parser.ExternStatement) {

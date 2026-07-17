@@ -38,4 +38,3 @@ result = apply(41, add-one)
     result == 42 -> print('ok: apply')
     -> print('fail: apply')
 }
-

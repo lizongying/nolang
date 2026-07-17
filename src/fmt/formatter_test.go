@@ -272,6 +272,60 @@ func TestFormatBasic(t *testing.T) {
 }`,
 		},
 		{
+			// regression: chained -> (guard chain) a -> b -> c -> d -> e
+			// was being parsed as if-then-else (only 3 elements) with the
+			// rest becoming a separate wildcard statement, causing the
+			// formatter to insert `;` between the 3rd and 4th elements.
+			name:     "standalone_if_then_guard_chain",
+			input:    "foo = () {\n    yes = false\n    .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true\n}",
+			expected: "foo = () {\n    yes = false\n    .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true\n}",
+		},
+		{
+			// regression: chained -> with 3 elements (shorter chain)
+			name:     "standalone_if_then_short_chain",
+			input:    "foo = () {\n    .a >= 224 -> .a <= 239 -> yes = true\n}",
+			expected: "foo = () {\n    .a >= 224 -> .a <= 239 -> yes = true\n}",
+		},
+		{
+			// regression: inline comment on bare match arm body was being
+			// detached and moved outside the block.
+			name: "bare_match_arm_inline_comment",
+			input: `foo = () {
+    {
+        c == 43 -> out[out.len] = 32  // + comment
+        -> out[out.len] = c
+    }
+}`,
+			expected: `foo = () {
+    {
+        c == 43 -> out[out.len] = 32  // + comment
+        -> out[out.len] = c
+    }
+}`,
+		},
+		{
+			// regression: comment on the { line of a bare match arm block
+			// body was being moved inside as a doc comment, changing the
+			// code structure.
+			name: "bare_match_arm_block_opening_comment",
+			input: `foo = () {
+    {
+        cond -> { // comment
+            x = 1
+        }
+        -> y = 0
+    }
+}`,
+			expected: `foo = () {
+    {
+        cond -> {  // comment
+            x = 1
+        }
+        -> y = 0
+    }
+}`,
+		},
+		{
 			name:     "return statement",
 			input:    "foo: (a int){return}",
 			expected: "foo: (a int) {\n    return\n}",
@@ -2138,5 +2192,77 @@ func TestFormatMapType(t *testing.T) {
 				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+// TestFormatFile verifies that FormatFile enforces exactly one trailing
+// newline at EOF: missing newlines are appended, multiple trailing newlines
+// are collapsed to one. The result is also idempotent. Unparseable or
+// empty/whitespace input is returned unchanged.
+func TestFormatFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "missing trailing newline is appended",
+			input:    "add = (a i64, b i64) { a + b }",
+			expected: "add = (a i64, b i64) {\n    a + b\n}\n",
+		},
+		{
+			name:     "single trailing newline preserved",
+			input:    "x = 1\n",
+			expected: "x = 1\n",
+		},
+		{
+			name:     "multiple trailing newlines collapsed to one",
+			input:    "x = 1\n\n\n",
+			expected: "x = 1\n",
+		},
+		{
+			name:     "existing file with trailing newline stays stable",
+			input:    "foo = () {\n    return\n}\n",
+			expected: "foo = () {\n    return\n}\n",
+		},
+		{
+			name:     "empty input returned unchanged",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "whitespace-only input returned unchanged",
+			input:    "   \n  \n",
+			expected: "   \n  \n",
+		},
+		{
+			name:     "parse error returned unchanged",
+			input:    "fn = (a i64 {",
+			expected: "fn = (a i64 {",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatFile(tt.input)
+			if got != tt.expected {
+				t.Errorf("FormatFile(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+			// FormatFile must be idempotent for every input.
+			if FormatFile(got) != got {
+				t.Errorf("FormatFile not idempotent for %q: FormatFile(%q) = %q", tt.input, got, FormatFile(got))
+			}
+		})
+	}
+}
+
+// TestFormatFileIdempotent confirms FormatFile(FormatFile(x)) == FormatFile(x)
+// for a realistic multi-statement source with extra trailing blank lines.
+func TestFormatFileIdempotent(t *testing.T) {
+	input := "add = (a i64, b i64) {\n  a + b\n}\n\n\n"
+	once := FormatFile(input)
+	twice := FormatFile(once)
+	if once != twice {
+		t.Errorf("FormatFile not idempotent:\nfirst:  %q\nsecond: %q", once, twice)
 	}
 }

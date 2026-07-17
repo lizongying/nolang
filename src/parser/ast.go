@@ -947,6 +947,9 @@ type IfExpression struct {
 	// IsStandalone marks a bare if-then expression written as `cond -> body`
 	// without the enclosing `{ }` block. The formatter outputs `cond -> body`.
 	IsStandalone bool
+	// OpeningBraceComment holds comments on the same line as the opening `{`
+	// of a bare match expression. The formatter outputs them inline after `{`.
+	OpeningBraceComment *CommentGroup
 }
 
 func (ie *IfExpression) expressionNode()     {}

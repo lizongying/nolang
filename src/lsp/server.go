@@ -665,8 +665,14 @@ func getWordBeforePosition(text string, position Position) string {
 	return line[start : end+1]
 }
 
+// formatNolangCode formats Nolang source. The underlying formatter
+// (fmt.FormatFile) guarantees the result ends with exactly one trailing
+// newline (EOF blank line), so both explicit formatting and format-on-save
+// enforce the project's trailing-newline rule. Callers
+// (handleTextDocumentFormatting / handleTextDocumentWillSaveWaitUntil) already
+// bail out on parse errors, so unparseable input is never rewritten here.
 func formatNolangCode(content string) string {
-	return nolangfmt.Format(content)
+	return nolangfmt.FormatFile(content)
 }
 
 func computeTextEdits(original, formatted string) []TextEdit {

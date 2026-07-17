@@ -1764,7 +1764,15 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	def.Body = p.parseBlockStatement()
 	p.ctx.pop()
 
-	// Move inline comment on the same line as { from trailing to inline
+	// Move inline comment on the same line as { from OpeningBraceComment to
+	// the function definition's Comment field, so the formatter outputs it
+	// after the { on the same line.
+	if def.Body.OpeningBraceComment != nil && len(def.Body.OpeningBraceComment.List) > 0 {
+		setComment(def, def.Body.OpeningBraceComment)
+		def.Body.OpeningBraceComment = nil
+	}
+	// Also check TrailingComments (fallback for empty blocks where the comment
+	// was collected as a trailing comment before the OpeningBraceComment fix)
 	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&
 		def.Body.TrailingComments.List[0].Pos.Line == def.Body.Token.Line {
 		setComment(def, def.Body.TrailingComments)
@@ -4105,9 +4113,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		// Preserve comments (TrailingComments) from the parsed block so that
 		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
 		if parsedBlock != nil {
-			bodyBlock.TrailingComments = parsedBlock.TrailingComments
-			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
-			bodyBlock.RBrace = parsedBlock.RBrace
+bodyBlock.TrailingComments = parsedBlock.TrailingComments
+bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
+bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
+bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock
 		arms = append(arms, ma)
@@ -4188,7 +4197,33 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 // parseBareMatchExpr 解析裸 `{ cond-> body }` match（無 matched expression）
 func (p *Parser) parseBareMatchExpr() Expression {
 	tok := p.currentToken // LBRACE
+	openBraceLine := tok.Line
 	p.nextToken()         // skip {
+
+	// Separate comments on the same line as { (opening brace comments)
+	// from doc comments for arm bodies.
+	var openingComments *CommentGroup
+	if len(p.comments) > 0 && p.comments[0].Line == openBraceLine {
+		group := &CommentGroup{}
+		i := 0
+		for i < len(p.comments) && p.comments[i].Line == openBraceLine {
+			c := p.comments[i]
+			comment := &Comment{
+				Pos:  posFromToken(c),
+				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+				Kind: NormalComment,
+				Text: c.Literal,
+			}
+			group.List = append(group.List, comment)
+			i++
+		}
+		if len(group.List) > 0 {
+			group.Start = group.List[0].Pos
+			group.End = group.List[len(group.List)-1].End
+		}
+		openingComments = group
+		p.comments = p.comments[i:]
+	}
 
 	var arms []matchArm
 
@@ -4317,6 +4352,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		if parsedBlock != nil {
 			bodyBlock.TrailingComments = parsedBlock.TrailingComments
 			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
+			bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
 			bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock
@@ -4379,7 +4415,13 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 	}
 
-	return p.buildBareMatchDesugar(tok, arms)
+	result := p.buildBareMatchDesugar(tok, arms)
+	if result != nil {
+		if ifExpr, ok := result.(*IfExpression); ok {
+			ifExpr.OpeningBraceComment = openingComments
+		}
+	}
+	return result
 }
 
 // buildBareMatchDesugar 建立 if/elif/else 鏈（無 matched expression，條件直接使用）
@@ -5669,8 +5711,35 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 
 func (p *Parser) parseBlockStatement() *BlockStatement {
 	block := &BlockStatement{Token: p.currentToken, Statements: []Statement{}}
+	openBraceLine := p.currentToken.Line
 
 	p.nextToken()
+
+	// Separate comments on the same line as { (opening brace comments)
+	// from doc comments for the first statement.
+	var openingComments *CommentGroup
+	if len(p.comments) > 0 && p.comments[0].Line == openBraceLine {
+		group := &CommentGroup{}
+		i := 0
+		for i < len(p.comments) && p.comments[i].Line == openBraceLine {
+			c := p.comments[i]
+			comment := &Comment{
+				Pos:  posFromToken(c),
+				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+				Kind: NormalComment,
+				Text: c.Literal,
+			}
+			group.List = append(group.List, comment)
+			i++
+		}
+		if len(group.List) > 0 {
+			group.Start = group.List[0].Pos
+			group.End = group.List[len(group.List)-1].End
+		}
+		openingComments = group
+		p.comments = p.comments[i:]
+	}
+	block.OpeningBraceComment = openingComments
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		doc := p.collectDocComments()
@@ -7781,7 +7850,15 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	def.Body = p.parseBlockStatement()
 	p.ctx.pop()
 
-	// Move inline comment on the same line as { from trailing to inline
+	// Move inline comment on the same line as { from OpeningBraceComment to
+	// the function definition's Comment field, so the formatter outputs it
+	// after the { on the same line.
+	if def.Body.OpeningBraceComment != nil && len(def.Body.OpeningBraceComment.List) > 0 {
+		setComment(def, def.Body.OpeningBraceComment)
+		def.Body.OpeningBraceComment = nil
+	}
+	// Also check TrailingComments (fallback for empty blocks where the comment
+	// was collected as a trailing comment before the OpeningBraceComment fix)
 	if def.Body.TrailingComments != nil && len(def.Body.TrailingComments.List) > 0 &&
 		def.Body.TrailingComments.List[0].Pos.Line == def.Body.Token.Line {
 		setComment(def, def.Body.TrailingComments)

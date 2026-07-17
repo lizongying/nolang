@@ -62,4 +62,3 @@ t-ms = t.elapsed-ms()
 // ── 7. format-duration(3661) 輸出 '1h1m1s' ──
 time.format-duration(3661)
 print('ok: format-duration')
-

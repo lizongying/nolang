@@ -19,6 +19,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [API Documentation Conventions](#api-documentation-conventions)
   - [Prefer Standard Library](#prefer-standard-library)
   - [File Naming](#file-naming)
+  - [Code Style](#code-style)
   - [Functions](#functions)
   - [Methods on Union Types](#methods-on-union-types)
   - [Control Flow](#control-flow)
@@ -521,6 +522,39 @@ This is consistent with the naming style of Nolang identifiers such as variable 
 
 ✅ `string-helper.no`, `hash-table.no`, `http-client.no`
 ❌ `string_helper.no`, `hash_table.no`, `http_client.no`
+
+### Code Style
+
+#### Trailing newline (EOF)
+
+Every non-empty `.no` source file **must end with exactly one trailing newline** (i.e. one blank line at the end of the file).
+
+- Files that do **not** end with a newline: a trailing newline is appended.
+- Files that end with **multiple** blank lines: they are collapsed into a single trailing newline.
+- Empty files (0 bytes) are left untouched.
+
+Excluded directories: `dist/`, `vscode-nolang/`, `node_modules/`.
+
+Rationale: a single, consistent EOF newline keeps `git diff` clean, avoids "no newline at end of file" warnings, and makes concatenation/tooling predictable.
+
+The rule is enforced automatically by the toolchain — **there is no separate
+normalization script**:
+
+- **`no fmt`** (`src/cmd/no/main.go`, the `fmt` subcommand) formats files in
+  place and calls `fmt.FormatFile`, which guarantees exactly one trailing
+  newline.
+- **LSP format-on-save / `textDocument/formatting`** (`src/lsp/server.go`,
+  `formatNolangCode` → `fmt.FormatFile`) appends/collapses the EOF newline
+  automatically when you save or format a `.no` file in the editor.
+
+Implementation lives in `src/fmt/formatter.go`:
+
+- `FormatFile(code)` formats a complete file and calls `ensureTrailingNewline`,
+  which strips all trailing `\r`/`\n` (CRLF-safe, multi-blank-line-safe) and
+  appends a single `\n`. Empty or unparseable input is returned unchanged so
+  the formatter never mangles a file it cannot understand.
+- `Format(code)` is the pure fragment formatter (no trailing newline) used by
+  unit tests; prefer `FormatFile` whenever you write a real source file.
 
 ### Functions
 

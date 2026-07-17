@@ -877,7 +877,7 @@ func fmtCommand(args []string) {
 			os.Exit(1)
 		}
 		original := string(data)
-		result := nfmt.Format(original)
+		result := nfmt.FormatFile(original)
 		if *diffMode {
 			fmt.Print(generateDiff("stdin", original, result))
 		} else {
@@ -912,7 +912,7 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 	}
 
 	original := string(data)
-	result := nfmt.Format(original)
+	result := nfmt.FormatFile(original)
 
 	if diffMode {
 		diff := generateDiff(filename, original, result)

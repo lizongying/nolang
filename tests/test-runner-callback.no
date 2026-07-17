@@ -33,4 +33,3 @@ p2, f2 = test-run('test1', test1)
     p2 == 1 -> print('ok: test-run test1 passed')
     -> print('fail: test-run test1 passed')
 }
-

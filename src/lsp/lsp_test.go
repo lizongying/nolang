@@ -494,11 +494,8 @@ x    =   5
 y = x + 1
 z = 3
 	`)
-	expected := strings.TrimSpace(`
-x = 5
-y = x + 1
-z = 3
-	`)
+	// FormatFile guarantees exactly one trailing newline at EOF.
+	expected := "x = 5\ny = x + 1\nz = 3\n"
 
 	uri := "file:///test_format.no"
 

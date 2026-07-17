@@ -20,4 +20,3 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 a = 2
 
 // a.full(8)
-

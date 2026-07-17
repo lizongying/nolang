@@ -75,4 +75,3 @@ d32 = gen-sub-i32(100, 100)
     d32 == 0 -> print('ok: gen-eq i32')
     -> print('fail: gen-eq i32')
 }
-

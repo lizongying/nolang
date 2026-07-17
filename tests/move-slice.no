@@ -16,6 +16,3 @@ res = foo('abc')
 // foo 赋值
 x = 'def' 
 res = foo(x)
-
-
-

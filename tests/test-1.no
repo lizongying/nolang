@@ -31,5 +31,3 @@ add2 = (a i64, b i64)(c i64, d i64) {
     result = a + b
     print('result:', result)
 }
-
-

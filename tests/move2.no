@@ -13,6 +13,3 @@ res = foo('')
 // foo 赋值
 x = 'a' 
 res = foo(x)
-
-
-

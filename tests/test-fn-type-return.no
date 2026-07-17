@@ -23,4 +23,3 @@ result = apply-ret(get-42)
     result == 42 -> print('ok: fn-type-return')
     -> print('fail: fn-type-return')
 }
-

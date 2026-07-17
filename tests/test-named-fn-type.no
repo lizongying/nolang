@@ -44,4 +44,3 @@ result = apply-compute(my-compute)
     result == 42 -> print('ok: named-fn-type')
     -> print('fail: named-fn-type')
 }
-
