@@ -25,11 +25,11 @@
 // json-kind: JSON 值的類型
 json-kind {
     null,
-    bool = 1,
-    num = 2,
-    str = 3,
-    arr = 4,
-    obj = 5,
+    bool,
+    num,
+    str,
+    arr,
+    obj,
 }
 
 // 池最大節點數

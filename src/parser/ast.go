@@ -1177,6 +1177,11 @@ type EnumValue struct {
 	Token lexer.Token
 	Name  string
 	Value int64
+	// Explicit marks whether the value was written with `= <int>` in source.
+	// When false (auto-assigned sequential value), the formatter must NOT emit
+	// `= <int>` so the bare `red, green, blue` form is preserved. Codegen still
+	// uses Value (the sequential index) regardless of Explicit.
+	Explicit bool
 }
 
 type EnumDefinition struct {

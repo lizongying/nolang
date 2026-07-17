@@ -184,19 +184,19 @@ stderr = file{
 // file-mode: 檔案開啟模式（預組合）
 file-mode {
     read,
-    write = 1,
-    append = 2,
-    read-write = 3,
+    write,
+    append,
+    read-write,
 }
 
 // file-perm: 檔案權限（預組合）
 file-perm {
     perm-600,
-    perm-644 = 1,
-    perm-664 = 2,
-    perm-666 = 3,
-    perm-755 = 4,
-    perm-777 = 5,
+    perm-644,
+    perm-664,
+    perm-666,
+    perm-755,
+    perm-777,
 }
 
 // file-opts: open() 選項

@@ -50,10 +50,10 @@ RE-OP-MATCH = 9
 RE-OP-START = 10
 RE-OP-END = 11
 
-// 量詞字元常量
-RE-QUANT-STAR = 42
-RE-QUANT-PLUS = 43
-RE-QUANT-QUESTION = 63
+// 量詞字元常量（_ 開頭表私有，避免被編譯器當作枚舉變異體）
+_RE-QUANT-STAR = 42
+_RE-QUANT-PLUS = 43
+_RE-QUANT-QUESTION = 63
 
 // 每個字元類別 bitmap 大小（32 bytes = 256 bits）
 RE-CLS-SIZE = 32
@@ -555,12 +555,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 // quant i64: 量詞字元（0=無, 42=*, 43=+, 63=?）
 // atom-i i64: atom 後的位置
 regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, atom-i i64) {
+    println('emit-q: quant=', quant, ' star=', _RE-QUANT-STAR, ' plus=', _RE-QUANT-PLUS, ' q=', _RE-QUANT-QUESTION, ' eqStar=', quant == _RE-QUANT-STAR, ' eqPlus=', quant == _RE-QUANT-PLUS)
     quant == 0 -> {
         // 無量詞：直接發射 atom
         .emit-atom(atom-type, atom-char, atom-cls)
         .tmp-next-i = atom-i
     }
-    quant == RE-QUANT-STAR -> {
+    quant == _RE-QUANT-STAR -> {
         // * — 零次或多次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
@@ -571,14 +572,14 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .arg2[split-pc] = .n
         .tmp-next-i = atom-i + 1
     }
-    quant == RE-QUANT-PLUS -> {
+    quant == _RE-QUANT-PLUS -> {
         // + — 一次或多次（貪婪）
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-SPLIT, l1, .n + 1)
         .tmp-next-i = atom-i + 1
     }
-    quant == RE-QUANT-QUESTION -> {
+    quant == _RE-QUANT-QUESTION -> {
         // ? — 零次或一次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
@@ -588,7 +589,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .arg2[split-pc] = .n
         .tmp-next-i = atom-i + 1
     }
-    quant != 0 && quant != RE-QUANT-STAR && quant != RE-QUANT-PLUS && quant != RE-QUANT-QUESTION -> {
+    quant != 0 && quant != _RE-QUANT-STAR && quant != _RE-QUANT-PLUS && quant != _RE-QUANT-QUESTION -> {
         // 不是量詞，直接發射 atom
         .emit-atom(atom-type, atom-char, atom-cls)
         .tmp-next-i = atom-i

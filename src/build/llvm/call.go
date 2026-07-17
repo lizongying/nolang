@@ -826,7 +826,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /
 	// @unlink / @rename / @stat / @chdir / @getcwd / @getenv / @getpid / @gethostname
 	// / @malloc / @free / @memcpy / @memset / @printf / @sprintf / @strcmp / @strlen
-	// / @time / @sleep / @fopen / @fgets / @fclose / @strtod / @fmod / @hypot / @cbrt
+	// / @time / @sleep / @fopen / @fgets / @fclose / @strtod
 	// / @exit）衝突時，才加 "n." 前綴以避免 redefinition。
 	// 其他情況不前綴，保留與 builtin 的 dispatch 優先級。
 	// 註：@atoi / @strtoull 已移除，str.to-i64 / str.to-u64 由 str.no 中的

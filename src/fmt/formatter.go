@@ -1822,7 +1822,9 @@ func (f *formatter) formatEnumDefinition(s *parser.EnumDefinition) {
 	for _, v := range s.Values {
 		f.newline()
 		f.write(v.Name)
-		if v.Value != 0 {
+		// 只在源碼確實寫了 `= <int>` 時輸出值；自動編號（red, green, blue）不輸出，
+		// 以免 formatter 把簡單枚舉篡改成 red, green = 1, blue = 2。
+		if v.Explicit {
 			f.write(" = ")
 			f.write(strconv.FormatInt(v.Value, 10))
 		}

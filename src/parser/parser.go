@@ -6533,7 +6533,9 @@ func (p *Parser) parseEnumDefinition() Statement {
 
 		// 支援顯式賦值：VARIANT = <int>
 		var variantValue int64 = nextVal
+		explicit := false
 		if p.currentToken.Type == lexer.ASSIGN {
+			explicit = true
 			p.nextToken() // skip =
 			intExpr := p.parseIntegerLiteral()
 			if intLit, ok := intExpr.(*IntegerLiteral); ok {
@@ -6549,9 +6551,10 @@ func (p *Parser) parseEnumDefinition() Statement {
 		}
 
 		ev := &EnumValue{
-			Token: p.currentToken,
-			Name:  variantName,
-			Value: variantValue,
+			Token:    p.currentToken,
+			Name:     variantName,
+			Value:    variantValue,
+			Explicit: explicit,
 		}
 
 		ed.Values = append(ed.Values, ev)

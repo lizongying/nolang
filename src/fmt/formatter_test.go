@@ -2422,3 +2422,41 @@ func TestFormatSemicolonBlockComment(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatEnumPreservesBare verifies that a simple enum written without
+// explicit `= <int>` values (e.g. `color { red, green, blue }`) is preserved
+// verbatim by the formatter — the formatter must NOT inject sequential values
+// like `red, green = 1, blue = 2`. Explicitly written values are still kept.
+func TestFormatEnumPreservesBare(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "bare enum preserved",
+			in:   "color {\n    red,\n    green,\n    blue,\n}\n",
+			want: "color {\n    red,\n    green,\n    blue,\n}\n",
+		},
+		{
+			name: "explicit values kept",
+			in:   "priority {\n    low = 1,\n    high = 5,\n    critical = 9,\n}\n",
+			want: "priority {\n    low = 1,\n    high = 5,\n    critical = 9,\n}\n",
+		},
+		{
+			name: "mixed: explicit first, rest bare",
+			in:   "mode {\n    a = 3,\n    b,\n    c,\n}\n",
+			want: "mode {\n    a = 3,\n    b,\n    c,\n}\n",
+		},
+	}
+	for _, c := range cases {
+		got := FormatFile(c.in)
+		if got != c.want {
+			t.Errorf("%s:\n got:  %q\n want: %q", c.name, got, c.want)
+		}
+		// Idempotency: re-formatting must not change anything.
+		if FormatFile(got) != got {
+			t.Errorf("%s: not idempotent: %q -> %q", c.name, got, FormatFile(got))
+		}
+	}
+}

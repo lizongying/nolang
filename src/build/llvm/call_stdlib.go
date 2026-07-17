@@ -738,7 +738,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
 			// Allocate heap buffer and memcpy (must be heap-allocated so emitHeapFree can safely free it)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, lenReg))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s)\n", g.indent(), bufReg, ptrReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), bufReg, ptrReg, lenReg))
 			// Store data pointer (field 2)
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
@@ -1313,7 +1313,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.tmpIdx++
 			archBuf := fmt.Sprintf("%%archstr.buf.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), archBuf, strLen+1))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0), i64 %d)\n",
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0), i64 %d, i1 false)\n",
 				g.indent(), archBuf, strLen, strLen, idx, strLen+1))
 			g.storeDataPtrField(sb, archBuf, dataGEP)
 		}
@@ -1960,7 +1960,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), aiAddrCast, aiAddrGep))
 			aiAddr = g.loadDataPtrField(sb, aiAddrCast)
 			// copy 16 bytes from ai_addr to our sockaddr_in
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 16)\n", g.indent(), addrPtr, aiAddr))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 16, i1 false)\n", g.indent(), addrPtr, aiAddr))
 			// freeaddrinfo
 			sb.WriteString(fmt.Sprintf("%scall void @freeaddrinfo(i8* %s)\n", g.indent(), resVal))
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doSocket))
@@ -2483,7 +2483,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), pathGep, addrPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, 103\n", g.indent(), capCmp, pathLen))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 103, i64 %s\n", g.indent(), cappedLen, capCmp, pathLen))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s)\n", g.indent(), pathGep, pathPtr, cappedLen))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), pathGep, pathPtr, cappedLen))
 
 			// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 1, i32 1, i32 0)\n", g.indent(), sockFd))
@@ -2574,7 +2574,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 2\n", g.indent(), pathGep, addrPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, 103\n", g.indent(), capCmp, pathLen))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 103, i64 %s\n", g.indent(), cappedLen, capCmp, pathLen))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s)\n", g.indent(), pathGep, pathPtr, cappedLen))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), pathGep, pathPtr, cappedLen))
 
 			// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 1, i32 1, i32 0)\n", g.indent(), sockFd))
