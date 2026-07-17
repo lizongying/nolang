@@ -112,21 +112,23 @@ process.start = (program str, arg str) (ok bool) {
     // fork
     pid = process-fork()
     pid == 0 -> {
-    // 子進程：重定向 stdout 到管道寫端
-            process-dup2(stdout-write, 1)
-            close(stdout-read)
-            close(stdout-write)
-            // exec
-            process-exec(program, arg)
-            // exec 失敗，退出
-            exit(1)
-}
+        // 子進程：重定向 stdout 到管道寫端
+        process-dup2(stdout-write, 1)
+        close(stdout-read)
+        close(stdout-write)
+
+        // exec
+        process-exec(program, arg)
+
+        // exec 失敗，退出
+        exit(1)
+    }
     pid < 0 -> {
-    // fork 失敗
-            close(stdout-read)
-            close(stdout-write)
-            return
-}
+        // fork 失敗
+        close(stdout-read)
+        close(stdout-write)
+        return
+    }
 
     // 父進程
     .pid = pid
@@ -164,23 +166,23 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
 
     pid = process-fork()
     pid == 0 -> {
-    // 子進程
-            process-dup2(in-read, 0)
-            process-dup2(out-write, 1)
-            close(in-read)
-            close(in-write)
-            close(out-read)
-            close(out-write)
-            process-exec(program, arg)
-            exit(1)
-}
+        // 子進程
+        process-dup2(in-read, 0)
+        process-dup2(out-write, 1)
+        close(in-read)
+        close(in-write)
+        close(out-read)
+        close(out-write)
+        process-exec(program, arg)
+        exit(1)
+    }
     pid < 0 -> {
-    close(in-read)
-            close(in-write)
-            close(out-read)
-            close(out-write)
-            return
-}
+        close(in-read)
+        close(in-write)
+        close(out-read)
+        close(out-write)
+        return
+    }
 
     // 父進程
     .pid = pid
@@ -203,9 +205,9 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
 process.wait = () (ok bool) {
     ok = false
     .running == 0 -> {
-    ok = true
-            return
-}
+        ok = true
+        return
+    }
     code = process-waitpid(.pid, 0)
     .exit-code = code
     .running = 0
@@ -217,10 +219,11 @@ process.wait = () (ok bool) {
 process.wait-nohang = () (ok bool) {
     ok = false
     .running == 0 -> {
-    ok = true
-            return
-}
+        ok = true
+        return
+    }
     code = process-waitpid(.pid, WNOHANG)
+
     // waitpid with WNOHANG returns 0 if child still running
     // but our builtin returns exit code, so we check if code changed
     // Actually WNOHANG returns 0 if no child exited, non-zero exit code if exited
@@ -304,25 +307,25 @@ process.write = (data str, n i64) (written i64) {
 // close-stdin: 關閉子進程的 stdin 管道
 process.close-stdin = () {
     .stdin-fd >= 0 -> {
-    close(.stdin-fd)
-            .stdin-fd = -1
-}
+        close(.stdin-fd)
+        .stdin-fd = -1
+    }
 }
 
 // close-stdout: 關閉子進程的 stdout 管道
 process.close-stdout = () {
     .stdout-fd >= 0 -> {
-    close(.stdout-fd)
-            .stdout-fd = -1
-}
+        close(.stdout-fd)
+        .stdout-fd = -1
+    }
 }
 
 // close-stderr: 關閉子進程的 stderr 管道
 process.close-stderr = () {
     .stderr-fd >= 0 -> {
-    close(.stderr-fd)
-            .stderr-fd = -1
-}
+        close(.stderr-fd)
+        .stderr-fd = -1
+    }
 }
 
 // ═══════════════════════════════════════════════

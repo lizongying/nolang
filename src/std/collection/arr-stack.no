@@ -67,9 +67,9 @@ arr-stack {
 // 返回 val ?t: ok=彈出值, nil=堆疊為空
 [n]t.arr-stack-pop = (s arr-stack) (val ?t) {
     s.top <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     s.top = s.top - 1
     val = .[s.top]
 }
@@ -79,9 +79,9 @@ arr-stack {
 // 返回 val ?t: ok=頂端值, nil=堆疊為空
 [n]t.arr-stack-peek = (s arr-stack) (val ?t) {
     s.top <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     val = .[s.top - 1]
 }
 

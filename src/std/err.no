@@ -15,13 +15,13 @@
 // code: 錯誤類別
 code {
     ok,
-    not-found,
-    permission,
-    io,
-    timeout,
-    parse,
-    invalid,
-    overflow,
+    not-found = 1,
+    permission = 2,
+    io = 3,
+    timeout = 4,
+    parse = 5,
+    invalid = 6,
+    overflow = 7,
 }
 
 // ═══════════════════════════════════════════════

@@ -29,7 +29,6 @@
 //   ec.send-encrypted('sensitive data')
 //   msg = ec.recv-encrypted()  // 返回 ?str
 
-
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作）
 // ═══════════════════════════════════════════════
@@ -125,9 +124,9 @@ listener.accept = () (c ?conn) {
 // close: 關閉監聽 socket
 listener.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得監聽 socket 的檔案描述符
@@ -206,9 +205,9 @@ conn.recv-all = () (content str, total i64) {
 // close: 關閉連接
 conn.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得連接 socket 的檔案描述符
@@ -340,9 +339,9 @@ udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
 // close: 關閉 UDP socket
 udp-conn.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得 socket 檔案描述符
@@ -402,6 +401,7 @@ conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     ret = net-set-recv-timeout(.fd, timeout-ms)
     ret != 0 -> return
     read-n = net-recv(.fd, buf, n)
+
     // 恢復為阻塞模式
     net-set-recv-timeout(.fd, 0)
 }
@@ -413,6 +413,7 @@ conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
 conn.send-with-timeout = (data str, timeout-ms i64) (written i64) {
     written = -1
     .fd < 0 -> return
+
     // 設定 recv 逾時（send 逾時在底層共享）
     net-set-recv-timeout(.fd, timeout-ms)
     written = net-send(.fd, data, data.len)
@@ -503,11 +504,13 @@ enc-conn.init = (c conn, key [32]byte) {
 enc-conn.gen-iv = () (iv [12]byte) {
     .send-seq = .send-seq + 1
     seq = .send-seq
+
     // IV = seq (4 bytes) || random (8 bytes)
     iv[0] = (seq >> 24) & 255
     iv[1] = (seq >> 16) & 255
     iv[2] = (seq >> 8) & 255
     iv[3] = seq & 255
+
     // 用 rand 生成剩餘 8 bytes
     i <- [4..12): {
         s, r = rand.rand(.rand-seed)
@@ -522,13 +525,16 @@ enc-conn.gen-iv = () (iv [12]byte) {
 enc-conn.send-encrypted = (data str) (ok bool) {
     ok = false
     .underlying.fd < 0 -> return
+
     // 生成 IV
     iv [12]byte = .gen-iv()
+
     // 加密
     plain []byte = data.to-bytes()
     aad []byte
     sealed []byte = aes-256-gcm.aes-256-gcm-seal(.key, iv, aad, plain)
     sealed-n = sealed.len
+
     // 封包格式: [4-byte length][12-byte IV][sealed]
     // length = 12 + sealed-n
     payload-len = 12 + sealed-n
@@ -537,10 +543,12 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     packet[1] = (payload-len >> 16) & 255
     packet[2] = (payload-len >> 8) & 255
     packet[3] = payload-len & 255
+
     // 複製 IV
     i <- [0..12): {
         packet[4 + i] = iv[i]
     }
+
     // 複製密文
     i <- [0..sealed-n): {
         packet[16 + i] = sealed[i]
@@ -556,34 +564,39 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 enc-conn.recv-encrypted = () (data ?str) {
     data = nil
     .underlying.fd < 0 -> return
+
     // 讀取 4-byte length
     len-buf = ' '.repeat(4)
     n = net-recv(.underlying.fd, len-buf, 4)
     n != 4 -> return
     payload-len = ((len-buf[0] & 255) << 24) | ((len-buf[1] & 255) << 16) | ((len-buf[2] & 255) << 8) | (len-buf[3] & 255)
     payload-len < 12 || payload-len > 65536 -> return
+
     // 讀取 payload (IV + sealed)
     payload-buf = ' '.repeat(payload-len)
     n = net-recv(.underlying.fd, payload-buf, payload-len)
     n != payload-len -> return
+
     // 提取 IV
     iv [12]byte
     i <- [0..12): {
         iv[i] = payload-buf[i]
     }
+
     // 提取密文
     sealed-n = payload-len - 12
     sealed []byte
     i <- [0..sealed-n): {
         sealed[i] = payload-buf[12 + i]
     }
+
     // 解密
     aad []byte
     opened []byte = aes-256-gcm.aes-256-gcm-open(.key, iv, aad, sealed)
     opened.len == 0 -> {
-    data = err('decryption failed')
-            return
-}
+        data = err('decryption failed')
+        return
+    }
     data = opened.to-str()
 }
 

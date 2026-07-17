@@ -12,7 +12,6 @@
 //   out = tdes-enc(plain, plain.len, key)   // 加密
 //   out = tdes-dec(cipher, cipher.len, key) // 解密
 
-
 // tdes-enc: Triple DES 加密（ECB 模式）
 // in []byte: 輸入資料（長度需為 8 的倍數）
 // n i64: 資料長度

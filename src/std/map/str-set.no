@@ -12,13 +12,13 @@
 
 // FNV-1a 常量
 SS-FNV-OFFSET = -3750763034362895579
-SS-FNV-PRIME  = 1099511628211
+SS-FNV-PRIME = 1099511628211
 
 str-set {
-    cap   i64
-    keys  [256]str
-    occ   [256]i64
-    size  i64
+    cap i64
+    keys [256]str
+    occ [256]i64
+    size i64
 }
 
 // init: 初始化
@@ -32,7 +32,7 @@ str-set.init = () {
 }
 
 // hash: FNV-1a 字串雜湊
-str-set.hash = (key str)(idx i64) {
+str-set.hash = (key str) (idx i64) {
     h = SS-FNV-OFFSET
     i <- [0..key.len): {
         h = h ^ (key[i] & 255)
@@ -42,7 +42,7 @@ str-set.hash = (key str)(idx i64) {
 }
 
 // str-eq: 比較兩個 str 是否相等
-str-set.str-eq = (a str, b str)(eq bool) {
+str-set.str-eq = (a str, b str) (eq bool) {
     eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
@@ -52,7 +52,7 @@ str-set.str-eq = (a str, b str)(eq bool) {
 }
 
 // add: 加入元素，回傳是否新增
-str-set.add = (key str)(is-new bool) {
+str-set.add = (key str) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -76,10 +76,9 @@ str-set.add = (key str)(is-new bool) {
 }
 
 // contains: 檢查元素是否存在
-str-set.contains = (key str)(found bool) {
+str-set.contains = (key str) (found bool) {
     found = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -94,10 +93,9 @@ str-set.contains = (key str)(found bool) {
 }
 
 // remove: 刪除元素
-str-set.remove = (key str)(removed bool) {
+str-set.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -135,9 +133,7 @@ str-set.is-empty = () (empty bool) {
 
 // for-each: 遍歷所有元素
 str-set.for-each = (val str) {
-i <- [0...cap): {
-.occ[i] == 1 -> {
-val = .keys[i]
-}
-}
+    i <- [0...cap): {
+        .occ[i] == 1 -> val = .keys[i]
+    }
 }

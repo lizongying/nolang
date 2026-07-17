@@ -8,13 +8,13 @@
 //   // 解析 Set-Cookie 標頭
 //   c = cookie-parse-set('sessionid=abc123; Path=/; HttpOnly; Secure')
 //   c.valid -> {
-    //       print(c.name)        // 'sessionid'
-    //       print(c.value)       // 'abc123'
-    //       print(c.path)        // '/'
-    //       print(c.http-only)   // true
-    //       print(c.secure)      // true
-    //
-}
+//       print(c.name)        // 'sessionid'
+//       print(c.value)       // 'abc123'
+//       print(c.path)        // '/'
+//       print(c.http-only)   // true
+//       print(c.secure)      // true
+//
+
 //
 //   // 建構 Cookie 標頭
 //   jar = cookie-jar{}
@@ -26,7 +26,6 @@
 //   // signed = 'sessionid=abc123.hmac-hex-signature'
 //   ok = cookie-verify(signed, secret-key)
 //   // ok = true 表示簽名驗證通過
-
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -103,21 +102,21 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
     first-pair = set-cookie-str
     rest = ''
     semi-pos >= 0 -> {
-    first-pair = set-cookie-str.slice(0, semi-pos)
-            rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len)
-}
+        first-pair = set-cookie-str.slice(0, semi-pos)
+        rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len)
+    }
 
     // 解析 name=value
     eq-pos = first-pair.index('=')
     eq-pos < 0 -> return
     c.name = first-pair.slice(0, eq-pos)
+
     // 去除前後空格
     c.name = c.name.trim()
     c.value = first-pair.slice(eq-pos + 1, first-pair.len)
     c.value = c.value.trim()
 
     c.name.len == 0 -> return
-
     c.valid = true
 
     // 解析屬性
@@ -134,51 +133,47 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
         attr-end < 0 -> attr-end = rest.len
         attr = rest.slice(pos, attr-end)
         attr = attr.trim()
-
         // 解析屬性
         attr-eq = attr.index('=')
-                {
+        {
             attr-eq >= 0 -> {
                 attr-name = attr.slice(0, attr-eq)
-                            attr-name = attr-name.trim()
-                            attr-name-lower = attr-name.to-lower()
-                            attr-val = attr.slice(attr-eq + 1, attr.len)
-                            attr-val = attr-val.trim()
+                attr-name = attr-name.trim()
+                attr-name-lower = attr-name.to-lower()
+                attr-val = attr.slice(attr-eq + 1, attr.len)
+                attr-val = attr-val.trim()
 
-                            {
-                                attr-name-lower == 'path' -> c.path = attr-val
-                                attr-name-lower == 'domain' -> c.domain = attr-val
-                                attr-name-lower == 'max-age' -> {
-                                    ma = 0
-                                    valid = true
-                                    j <- [0..attr-val.len): {
-                                        ch = attr-val[j]
-                                        ch < 48 || ch > 57 -> {
-    valid = false
-                                                break
-}
-                                        ma = ma * 10 + ch - 48
-                                    }
-                                    valid -> c.max-age = ma
-                                }
-                                attr-name-lower == 'expires' -> {
-                                    // 簡化：不解析日期格式，記錄為已設定
-                                    c.expires = -1
-                                }
-                                attr-name-lower == 'samesite' -> c.same-site = attr-val
-                                ->
+                {
+                    attr-name-lower == 'path' -> c.path = attr-val
+                    attr-name-lower == 'domain' -> c.domain = attr-val
+                    attr-name-lower == 'max-age' -> {
+                        ma = 0
+                        valid = true
+                        j <- [0..attr-val.len): {
+                            ch = attr-val[j]
+                            ch < 48 || ch > 57 -> {
+                                valid = false
+                                break
                             }
+                            ma = ma * 10 + ch - 48
+                        }
+                        valid -> c.max-age = ma
+                    }
+                    attr-name-lower == 'expires' -> // 簡化：不解析日期格式，記錄為已設定
+                    c.expires = -1
+                    attr-name-lower == 'samesite' -> c.same-site = attr-val
+                    ->
+                }
             }
             -> {
                 attr-lower = attr.to-lower()
-                            {
-                                attr-lower == 'secure' -> c.secure = true
-                                attr-lower == 'httponly' -> c.http-only = true
-                                ->
-                            }
+                {
+                    attr-lower == 'secure' -> c.secure = true
+                    attr-lower == 'httponly' -> c.http-only = true
+                    ->
+                }
             }
         }
-
         next-semi < 0 -> *
         pos = next-semi + 1
     }
@@ -207,10 +202,10 @@ cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count 
         pair = pair.trim()
         eq-pos = pair.index('=')
         eq-pos >= 0 && count < 16 -> {
-    names[count] = pair.slice(0, eq-pos)
-                values[count] = pair.slice(eq-pos + 1, pair.len)
-                count = count + 1
-}
+            names[count] = pair.slice(0, eq-pos)
+            values[count] = pair.slice(eq-pos + 1, pair.len)
+            count = count + 1
+        }
         next-semi < 0 -> *
         pos = next-semi + 1
     }
@@ -228,9 +223,9 @@ cookie-build-set = (c cookie) (out str) {
     c.path.len > 0 -> out = out - '; Path=' - c.path
     c.domain.len > 0 -> out = out - '; Domain=' - c.domain
     c.max-age >= 0 -> {
-    ma-s = c.max-age.to-str()
-            out = out - '; Max-Age=' - ma-s
-}
+        ma-s = c.max-age.to-str()
+        out = out - '; Max-Age=' - ma-s
+    }
     c.secure -> out = out - '; Secure'
     c.http-only -> out = out - '; HttpOnly'
     c.same-site.len > 0 -> out = out - '; SameSite=' - c.same-site
@@ -263,18 +258,19 @@ cookie-jar.set = (name str, value str, domain str, path str, max-age i64) {
     // 檢查是否已存在同名 Cookie
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
-    .values[i] = value
-                return
-}
+            .values[i] = value
+            return
+        }
     }
+
     // 新增 Cookie
     .count < COOKIE-JAR-MAX -> {
-    .names[.count] = name
-            .values[.count] = value
-            .domains[.count] = domain
-            .paths[.count] = path
-            .count = .count + 1
-}
+        .names[.count] = name
+        .values[.count] = value
+        .domains[.count] = domain
+        .paths[.count] = path
+        .count = .count + 1
+    }
 }
 
 // get: 取得 Cookie 值
@@ -286,26 +282,27 @@ cookie-jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
     i <- [0...count): {
         .names[i] == name -> {
-    // 域名匹配（簡化：精確匹配或子域名匹配）
-                domain-match = false
-                                {
-                    .domains[i] == domain -> domain-match = true
-                    .domains[i].len > 0 -> {
-                        domain.ends-with('.' - .domains[i]) -> domain-match = true
-                    }
-                    .domains[i].len == 0 -> domain-match = true
+            // 域名匹配（簡化：精確匹配或子域名匹配）
+            domain-match = false
+            {
+                .domains[i] == domain -> domain-match = true
+                .domains[i].len > 0 -> {
+                    domain.ends-with('.' - .domains[i]) -> domain-match = true
                 }
-                // 路徑匹配（簡化：前綴匹配）
-                path-match = false
-                                {
-                    .paths[i] == '/' -> path-match = true
-                    path.starts-with(.paths[i]) -> path-match = true
-                }
-                domain-match && path-match -> {
-    val = .values[i]
-                        return
-}
-}
+                .domains[i].len == 0 -> domain-match = true
+            }
+
+            // 路徑匹配（簡化：前綴匹配）
+            path-match = false
+            {
+                .paths[i] == '/' -> path-match = true
+                path.starts-with(.paths[i]) -> path-match = true
+            }
+            domain-match && path-match -> {
+                val = .values[i]
+                return
+            }
+        }
     }
 }
 
@@ -316,17 +313,17 @@ cookie-jar.get = (name str, domain str, path str) (val ?str) {
 cookie-jar.delete = (name str, domain str, path str) {
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
-    // 將最後一個移到當前位置
-                last = .count - 1
-                i != last -> {
-    .names[i] = .names[last]
-                        .values[i] = .values[last]
-                        .domains[i] = .domains[last]
-                        .paths[i] = .paths[last]
-}
-                .count = .count - 1
-                return
-}
+            // 將最後一個移到當前位置
+            last = .count - 1
+            i != last -> {
+                .names[i] = .names[last]
+                .values[i] = .values[last]
+                .domains[i] = .domains[last]
+                .paths[i] = .paths[last]
+            }
+            .count = .count - 1
+            return
+        }
     }
 }
 
@@ -339,21 +336,21 @@ cookie-jar.build-header = (domain str, path str) (out str) {
     i <- [0...count): {
         // 域名匹配
         domain-match = false
-                {
+        {
             .domains[i].len == 0 -> domain-match = true
             .domains[i] == domain -> domain-match = true
             domain.ends-with('.' - .domains[i]) -> domain-match = true
         }
         // 路徑匹配
         path-match = false
-                {
+        {
             .paths[i] == '/' -> path-match = true
             path.starts-with(.paths[i]) -> path-match = true
         }
         domain-match && path-match -> {
-    out.len > 0 -> out = out - '; '
-                out = out - .names[i] - '=' - .values[i]
-}
+            out.len > 0 -> out = out - '; '
+            out = out - .names[i] - '=' - .values[i]
+        }
     }
 }
 
@@ -365,24 +362,26 @@ cookie-jar.parse-response = (set-cookie-str str, domain str, path str) {
     c cookie
     c = cookie-parse-set(set-cookie-str)
     c.valid == false -> return
+
     // 如果 Cookie 未指定 domain，使用回應的 domain
     c.domain.len == 0 -> c.domain = domain
+
     // 如果 Cookie 未指定 path，使用回應的 path 的目錄
     c.path.len == 0 -> {
-    slash-pos = -1
-            i = path.len - 1
-            for i >= 0 {
-                path[i] == 47 -> {
-    slash-pos = i
-                        break
-}
-                i = i - 1
+        slash-pos = -1
+        i = path.len - 1
+        for i >= 0 {
+            path[i] == 47 -> {
+                slash-pos = i
+                break
             }
-                        {
-                slash-pos >= 0 -> c.path = path.slice(0, slash-pos + 1)
-                -> c.path = '/'
-            }
-}
+            i = i - 1
+        }
+        {
+            slash-pos >= 0 -> c.path = path.slice(0, slash-pos + 1)
+            -> c.path = '/'
+        }
+    }
     .set(c.name, c.value, c.domain, c.path, c.max-age)
 }
 
@@ -411,6 +410,7 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()
     mac [32]byte = hmac.hmac-sha256(key, msg)
+
     // 轉為 hex 字串
     hex-chars = '0123456789abcdef'
     space = ' '
@@ -431,34 +431,39 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     ok = false
     value = ''
+
     // 尋找最後一個 '.'
     dot-pos = -1
     i = signed-value.len - 1
     for i >= 0 {
         signed-value[i] == 46 -> {
-    dot-pos = i
-                break
-}
+            dot-pos = i
+            break
+        }
         i = i - 1
     }
     dot-pos < 0 -> return
+
     // 提取原始值和簽名
     value = signed-value.slice(0, dot-pos)
     provided-hex = signed-value.slice(dot-pos + 1, signed-value.len)
+
     // 計算期望的簽名
     expected-signed = cookie-sign(name, value, key)
+
     // 提取期望的 hex 部分
     expected-hex = expected-signed.slice(value.len + 1, expected-signed.len)
+
     // 比較簽名（常數時間比較）
     provided-hex.len != expected-hex.len -> {
-    value = ''
-            return
-}
+        value = ''
+        return
+    }
     diff = 0
     i <- [0..provided-hex.len): {
         diff = diff | (provided-hex[i] ^ expected-hex[i])
     }
-        {
+    {
         diff == 0 -> ok = true
         -> value = ''
     }
@@ -492,7 +497,7 @@ cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str
             verified-ok = false
             verified-val = ''
             verified-ok, verified-val = cookie-verify(name, it, key)
-                        {
+            {
                 verified-ok -> val = verified-val
                 -> val = nil
             }

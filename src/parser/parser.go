@@ -7185,8 +7185,22 @@ func (p *Parser) parseStructDefinition() Statement {
 				field.Type = buildType(p.currentToken.Literal, p.currentToken)
 				p.nextToken()
 			} else {
-				// Complex expression after colon → treat as value assignment
-				field.Value = p.parseExpression(LOWEST)
+			// Complex expression after colon → treat as value assignment
+			field.Value = p.parseExpression(LOWEST)
+		}
+	}
+
+		// Parse field modifiers: read-only, sealed
+		for p.currentToken.Type == lexer.IDENT {
+			mod := p.currentToken.Literal
+			if mod == "read-only" {
+				field.ReadOnly = true
+				p.nextToken()
+			} else if mod == "sealed" {
+				field.Sealed = true
+				p.nextToken()
+			} else {
+				break
 			}
 		}
 

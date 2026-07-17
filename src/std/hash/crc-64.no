@@ -14,13 +14,14 @@
 // 返回 crc u64: 64-bit 校驗和
 crc-64 = (data []byte) (crc u64) {
     mask u64 = 18446744073709551615
+
     // 反射多項式: 0xC96C5795D7870F42
     poly u64 = 14180682008813511362
     crc = 0
     i <- [0..data.len): {
         crc = crc ^ (data[i] & 255)
         j <- [0..8): {
-                        {
+            {
                 crc & 1 != 0 -> crc = ((crc >> 1) ^ poly) & mask
                 -> crc = (crc >> 1) & mask
             }

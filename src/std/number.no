@@ -66,7 +66,7 @@ min = (a ..num) (r num) {
 }
 
 abs = (a num) (r num) {
-        {
+    {
         a < 0 -> r = 0 - a
         -> r = a
     }
@@ -75,7 +75,7 @@ abs = (a num) (r num) {
 // clamp: 限制在 [lo, hi] 範圍內
 // 用法：x.clamp(lo, hi, r)
 num.clamp = (lo num, hi num) (r num) {
-        {
+    {
         . < lo -> r = lo
         . > hi -> r = hi
         -> r = .
@@ -84,7 +84,7 @@ num.clamp = (lo num, hi num) (r num) {
 
 // sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
 num.sign = () (r num) {
-        {
+    {
         . > 0 -> r = 1
         . < 0 -> r = 0 - 1
         -> r = 0
@@ -118,9 +118,9 @@ gcd = (a int, b int) (r int) {
 // lcm: 最小公倍數
 lcm = (a int, b int) (r int) {
     a == 0 || b == 0 -> {
-    r = 0
-            return
-}
+        r = 0
+        return
+    }
     g = gcd(a, b)
     r = a / g * b
 }
@@ -188,7 +188,6 @@ float.is-nan = () (yes bool) {
 float.is-inf = () (yes bool) {
     yes = . + . == .
 }
-
 // [n]num.zero / []num.zero — 使用 llvm.memset 置零
 // build-in (ForwardFunc: arr-zero → @llvm.memset.p0i8.i64)
 // 定長陣列：總位元組 = n * sizeof(num) 編譯期常量

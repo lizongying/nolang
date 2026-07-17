@@ -25,7 +25,6 @@
 //   req.add-header('Authorization', 'Bearer token123')
 //   resp = http-do-req(req)
 
-
 // ═══════════════════════════════════════════════
 // 常量
 // ═══════════════════════════════════════════════
@@ -114,8 +113,8 @@ http-request.add-header = (name str, value str) (ok bool) {
     }
 
     // 加 ': '
-    .headers[idx][name.len] = ":"
-    .headers[idx][name.len + 1] = " "
+    .headers[idx][name.len] = ':'
+    .headers[idx][name.len + 1] = ' '
 
     // 複製 value
     j <- [0..value.len): {
@@ -146,7 +145,6 @@ http-response.parse-headers = () {
     hs = .headers
     n = hs.len
     n == 0 -> return
-
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
@@ -161,24 +159,25 @@ http-response.parse-headers = () {
         // 在 [pos, line-end) 中找 ': '
         colon-pos = hs.index-from(': ', pos)
         colon-pos >= 0 && colon-pos < line-end -> {
-    cnt = .header-count
-                cnt < HTTP-MAX-RESP-HEADERS -> {
-    // 複製 name: [pos, colon-pos)
-                        name-len = colon-pos - pos
-                        j <- [0..name-len): {
-                            .header-names[cnt][j] = hs[pos + j]
-                        }
-                        .header-names[cnt].len = name-len
-                        // 複製 value: [colon-pos+2, line-end)
-                        val-start = colon-pos + 2
-                        val-len = line-end - val-start
-                        j <- [0..val-len): {
-                            .header-values[cnt][j] = hs[val-start + j]
-                        }
-                        .header-values[cnt].len = val-len
-                        .header-count = cnt + 1
-}
-}
+            cnt = .header-count
+            cnt < HTTP-MAX-RESP-HEADERS -> {
+                // 複製 name: [pos, colon-pos)
+                name-len = colon-pos - pos
+                j <- [0..name-len): {
+                    .header-names[cnt][j] = hs[pos + j]
+                }
+                .header-names[cnt].len = name-len
+
+                // 複製 value: [colon-pos+2, line-end)
+                val-start = colon-pos + 2
+                val-len = line-end - val-start
+                j <- [0..val-len): {
+                    .header-values[cnt][j] = hs[val-start + j]
+                }
+                .header-values[cnt].len = val-len
+                .header-count = cnt + 1
+            }
+        }
         next-crlf < 0 -> *
         pos = next-crlf + 2
     }
@@ -195,19 +194,19 @@ http-response.get-header = (name str) (val ?str) {
         matched = 1
         .header-names[i].len != name.len -> matched = 0
         matched == 1 -> {
-    j <- [0..name.len): {
-                    .header-names[i][j] != name[j] -> {
-    matched = 0
-                            break
-}
+            j <- [0..name.len): {
+                .header-names[i][j] != name[j] -> {
+                    matched = 0
+                    break
                 }
-}
+            }
+        }
         matched == 1 -> {
-    // 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
-                vlen = .header-values[i].len
-                val = .header-values[i].slice(0, vlen)
-                return
-}
+            // 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+            vlen = .header-values[i].len
+            val = .header-values[i].slice(0, vlen)
+            return
+        }
     }
 }
 
@@ -254,11 +253,11 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     n = 0
 
     // ── 解析 URL ──
-        {
+    {
         url.starts-with('https://') -> {
             use-tls = true
-                    scheme = 'https://'
-                    port = HTTPS-DEFAULT-PORT
+            scheme = 'https://'
+            port = HTTPS-DEFAULT-PORT
         }
         url.starts-with('http://') == false -> return
     }
@@ -266,41 +265,41 @@ http-do = (method str, url str, body str) (resp ?http-response) {
 
     // 分離 host[:port] 與 path（找到第一個 /）
     slash-pos = rest.index('/')
-        {
+    {
         slash-pos < 0 -> host = rest
         -> {
             host = rest.slice(0, slash-pos)
-                    path = rest.slice(slash-pos, rest.len)
+            path = rest.slice(slash-pos, rest.len)
         }
     }
 
     // 檢查 host 是否含 :port
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
-    host-only = host.slice(0, colon-pos)
-            port-str = host.slice(colon-pos + 1, host.len)
-            p = 0
-            i <- [0..port-str.len): {
-                c = port-str[i]
-                c < 48 || c > 57 -> return
-                p = p * 10 + c - 48
-            }
-            port = p
-            host = host-only
-}
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p = 0
+        i <- [0..port-str.len): {
+            c = port-str[i]
+            c < 48 || c > 57 -> return
+            p = p * 10 + c - 48
+        }
+        port = p
+        host = host-only
+    }
 
     host.len == 0 -> return
 
     // ── 建立連接 ──
-        {
+    {
         use-tls -> {
             tls-c.init()
-                    ok2 = tls-c.connect(host, port)
-                    ok2 == false -> return
+            ok2 = tls-c.connect(host, port)
+            ok2 == false -> return
         }
         -> {
             fd = net-dial(host, port)
-                    fd < 0 -> return
+            fd < 0 -> return
         }
     }
 
@@ -319,49 +318,47 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     req = req - crlf
 
     body.len > 0 -> {
-    body-len i64 = body.len
-            len-str = body-len.to-str()
-            req = req - 'Content-Length: '
-            req = req - len-str
-            req = req - crlf
-}
+        body-len i64 = body.len
+        len-str = body-len.to-str()
+        req = req - 'Content-Length: '
+        req = req - len-str
+        req = req - crlf
+    }
     req = req - crlf
     body.len > 0 -> req = req - body
 
     // ── 發送請求 ──
-        {
+    {
         use-tls -> {
             w = tls-c.send(req)
-                    w: {
-                        ok ->
-                        -> {
-                            tls-c.close()
-                            return
-                        }
-                    }
+            w: {
+                ok ->
+                -> {
+                    tls-c.close()
+                    return
+                }
+            }
         }
         -> {
             written = net-send(fd, req, req.len)
-                    written < 0 -> {
-    close(fd)
-                            return
-}
+            written < 0 -> {
+                close(fd)
+                return
+            }
         }
     }
 
     // ── 接收回應 ──
     // net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     !! {
-                {
+        {
             use-tls -> {
                 rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
-                            rn: {
-                                nil ->
-                                    *
-                                err ->
-                                    *
-                                ok -> n = it
-                            }
+                rn: {
+                    nil -> *
+                    err -> *
+                    ok -> n = it
+                }
             }
             -> n = net-recv(fd, buf, HTTP-BUF-SIZE)
         }
@@ -373,7 +370,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
         total = total + n
     }
-        {
+    {
         use-tls -> tls-c.close()
         -> close(fd)
     }
@@ -386,20 +383,19 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     // ── 解析回應 ──
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
-
     head = recv-raw.slice(0, sep-pos)
     r.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
 
     // 解析狀態行（第一行）
     first-line-end = head.index(crlf)
-        {
+    {
         first-line-end < 0 -> {
             status-line = head
-                    r.headers = ''
+            r.headers = ''
         }
         -> {
             status-line = head.slice(0, first-line-end)
-                    r.headers = head.slice(first-line-end + crlf.len, head.len)
+            r.headers = head.slice(first-line-end + crlf.len, head.len)
         }
     }
 
@@ -467,51 +463,51 @@ http-do-req = (req http-request) (resp ?http-response) {
     n = 0
 
     // ── 解析 URL ──
-        {
+    {
         url.starts-with('https://') -> {
             use-tls = true
-                    scheme = 'https://'
-                    port = HTTPS-DEFAULT-PORT
+            scheme = 'https://'
+            port = HTTPS-DEFAULT-PORT
         }
         url.starts-with('http://') == false -> return
     }
     rest = url.slice(scheme.len, url.len)
 
     slash-pos = rest.index('/')
-        {
+    {
         slash-pos < 0 -> host = rest
         -> {
             host = rest.slice(0, slash-pos)
-                    path = rest.slice(slash-pos, rest.len)
+            path = rest.slice(slash-pos, rest.len)
         }
     }
 
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
-    host-only = host.slice(0, colon-pos)
-            port-str = host.slice(colon-pos + 1, host.len)
-            p = 0
-            i <- [0..port-str.len): {
-                c = port-str[i]
-                c < 48 || c > 57 -> return
-                p = p * 10 + c - 48
-            }
-            port = p
-            host = host-only
-}
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len)
+        p = 0
+        i <- [0..port-str.len): {
+            c = port-str[i]
+            c < 48 || c > 57 -> return
+            p = p * 10 + c - 48
+        }
+        port = p
+        host = host-only
+    }
 
     host.len == 0 -> return
 
     // ── 建立連接 ──
-        {
+    {
         use-tls -> {
             tls-c.init()
-                    ok2 = tls-c.connect(host, port)
-                    ok2 == false -> return
+            ok2 = tls-c.connect(host, port)
+            ok2 == false -> return
         }
         -> {
             fd = net-dial(host, port)
-                    fd < 0 -> return
+            fd < 0 -> return
         }
     }
 
@@ -536,48 +532,46 @@ http-do-req = (req http-request) (resp ?http-response) {
     }
 
     body.len > 0 -> {
-    body-len i64 = body.len
-            len-str = body-len.to-str()
-            req-str = req-str - 'Content-Length: '
-            req-str = req-str - len-str
-            req-str = req-str - crlf
-}
+        body-len i64 = body.len
+        len-str = body-len.to-str()
+        req-str = req-str - 'Content-Length: '
+        req-str = req-str - len-str
+        req-str = req-str - crlf
+    }
     req-str = req-str - crlf
     body.len > 0 -> req-str = req-str - body
 
     // ── 發送請求 ──
-        {
+    {
         use-tls -> {
             w = tls-c.send(req-str)
-                    w: {
-                        ok ->
-                        -> {
-                            tls-c.close()
-                            return
-                        }
-                    }
+            w: {
+                ok ->
+                -> {
+                    tls-c.close()
+                    return
+                }
+            }
         }
         -> {
             written = net-send(fd, req-str, req-str.len)
-                    written < 0 -> {
-    close(fd)
-                            return
-}
+            written < 0 -> {
+                close(fd)
+                return
+            }
         }
     }
 
     // ── 接收回應 ──
     !! {
-                {
+        {
             use-tls -> {
                 rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
-                            rn: {
-                                nil ->
-                                    *
-                                err ->
-                                    *
-                                ok -> n = it
-                            }
+                rn: {
+                    nil -> *
+                    err -> *
+                    ok -> n = it
+                }
             }
             -> n = net-recv(fd, buf, HTTP-BUF-SIZE)
         }
@@ -588,31 +582,29 @@ http-do-req = (req http-request) (resp ?http-response) {
         }
         total = total + n
     }
-        {
+    {
         use-tls -> tls-c.close()
         -> close(fd)
     }
 
     total == 0 -> return
-
     recv-raw = raw.slice(0, total)
 
     // ── 解析回應 ──
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
-
     head = recv-raw.slice(0, sep-pos)
     r.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
 
     first-line-end = head.index(crlf)
-        {
+    {
         first-line-end < 0 -> {
             status-line = head
-                    r.headers = ''
+            r.headers = ''
         }
         -> {
             status-line = head.slice(0, first-line-end)
-                    r.headers = head.slice(first-line-end + crlf.len, head.len)
+            r.headers = head.slice(first-line-end + crlf.len, head.len)
         }
     }
 

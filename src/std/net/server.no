@@ -8,22 +8,20 @@
 //   srv = http-server{}
 //   ok = srv.listen('0.0.0.0', 8080)
 //   ok -> {
-    //       ! {
-    //           req = srv.accept()           // 返回 ?http-server-conn
-    //           req: {
-    //               nil -> *
-    //               ->
-    //                   req.parse()
-    //                   req.method == 'GET' -> {
-    //                       req.write-text(200, 'Hello, World!')
-        //
-}
-    //                   req.close()
-    //           }
-    //       }
-    //
-}
+//       ! {
+//           req = srv.accept()           // 返回 ?http-server-conn
+//           req: {
+//               nil -> *
+//               ->
+//                   req.parse()
+//                   req.method == 'GET' -> {
+//                       req.write-text(200, 'Hello, World!')
+//
 
+//                   req.close()
+//           }
+//       }
+//
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -141,9 +139,9 @@ http-server.accept = () (c ?http-server-conn) {
 // close: 關閉伺服器
 http-server.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得監聽 socket fd
@@ -165,11 +163,11 @@ http-server-conn.recv-more = () (n i64) {
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
     n = net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
-    i <- [0..n): {
-                .recv-buf[.recv-buf-len + i] = tmp[i]
-            }
-            .recv-buf-len = .recv-buf-len + n
-}
+        i <- [0..n): {
+            .recv-buf[.recv-buf-len + i] = tmp[i]
+        }
+        .recv-buf-len = .recv-buf-len + n
+    }
 }
 
 // parse: 解析 HTTP 請求
@@ -178,7 +176,6 @@ http-server-conn.recv-more = () (n i64) {
 http-server-conn.parse = () (ok bool) {
     ok = false
     .fd < 0 -> return
-
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
@@ -219,14 +216,14 @@ http-server-conn.parse = () (ok bool) {
 
     // 分離 path 和 query
     q-pos = full-path.index('?')
-        {
+    {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
-                    .query = full-path.slice(q-pos + 1, full-path.len)
+            .query = full-path.slice(q-pos + 1, full-path.len)
         }
         -> {
             .path = full-path
-                    .query = ''
+            .query = ''
         }
     }
 
@@ -245,34 +242,34 @@ http-server-conn.parse = () (ok bool) {
     hs = .headers
     hn = hs.len
     hn > 0 -> {
-    pos = 0
-            !! {
-                pos >= hn -> *
-                next-crlf = hs.index-from(crlf, pos)
-                line-end = next-crlf
-                line-end < 0 -> line-end = hn
-                colon-pos = hs.index-from(': ', pos)
-                colon-pos >= 0 && colon-pos < line-end -> {
-    cnt = .header-count
-                        cnt < HTTP-SRV-MAX-HEADERS -> {
-    name-len = colon-pos - pos
-                                j <- [0..name-len): {
-                                    .header-names[cnt][j] = hs[pos + j]
-                                }
-                                .header-names[cnt].len = name-len
-                                val-start = colon-pos + 2
-                                val-len = line-end - val-start
-                                j <- [0..val-len): {
-                                    .header-values[cnt][j] = hs[val-start + j]
-                                }
-                                .header-values[cnt].len = val-len
-                                .header-count = cnt + 1
-}
-}
-                next-crlf < 0 -> *
-                pos = next-crlf + 2
+        pos = 0
+        !! {
+            pos >= hn -> *
+            next-crlf = hs.index-from(crlf, pos)
+            line-end = next-crlf
+            line-end < 0 -> line-end = hn
+            colon-pos = hs.index-from(': ', pos)
+            colon-pos >= 0 && colon-pos < line-end -> {
+                cnt = .header-count
+                cnt < HTTP-SRV-MAX-HEADERS -> {
+                    name-len = colon-pos - pos
+                    j <- [0..name-len): {
+                        .header-names[cnt][j] = hs[pos + j]
+                    }
+                    .header-names[cnt].len = name-len
+                    val-start = colon-pos + 2
+                    val-len = line-end - val-start
+                    j <- [0..val-len): {
+                        .header-values[cnt][j] = hs[val-start + j]
+                    }
+                    .header-values[cnt].len = val-len
+                    .header-count = cnt + 1
+                }
             }
-}
+            next-crlf < 0 -> *
+            pos = next-crlf + 2
+        }
+    }
 
     // 判斷 Keep-Alive
     .keep-alive = false
@@ -297,16 +294,17 @@ http-server-conn.parse = () (ok bool) {
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
-    // 標頭後已接收的資料
+                // 標頭後已接收的資料
+                available = .recv-buf-len - body-start
+
+                // 如果不足，繼續接收
+                for available < content-len {
+                    n = .recv-more()
+                    n <= 0 -> return
                     available = .recv-buf-len - body-start
-                    // 如果不足，繼續接收
-                    for available < content-len {
-                        n = .recv-more()
-                        n <= 0 -> return
-                        available = .recv-buf-len - body-start
-                    }
-                    .body = .recv-buf.slice(body-start, body-start + content-len)
-}
+                }
+                .body = .recv-buf.slice(body-start, body-start + content-len)
+            }
         }
     }
 
@@ -323,25 +321,23 @@ http-server-conn.get-header = (name str) (val ?str) {
         matched = 1
         .header-names[i].len != name.len -> matched = 0
         matched == 1 -> {
-    j <- [0..name.len): {
-                    c1 = .header-names[i][j]
-                    c2 = name[j]
-
-                    // 大小寫不敏感比較
-                    c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
-                    c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
-                    c1 != c2 -> {
-    matched = 0
-                            break
-}
+            j <- [0..name.len): {
+                c1 = .header-names[i][j]
+                c2 = name[j]
+                // 大小寫不敏感比較
+                c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
+                c1 != c2 -> {
+                    matched = 0
+                    break
                 }
-}
-
+            }
+        }
         matched == 1 -> {
-    vlen = .header-values[i].len
-                val = .header-values[i].slice(0, vlen)
-                return
-}
+            vlen = .header-values[i].len
+            val = .header-values[i].slice(0, vlen)
+            return
+        }
     }
 }
 
@@ -355,28 +351,28 @@ http-server-conn.write-status = (status i64) (ok bool) {
     lf = char-to-str(10)
     crlf = cr - lf
 
-status-s = status.to-str()
-status-text = 'OK'
-{
-status == 200 -> status-text = 'OK'
-status == 201 -> status-text = 'Created'
-status == 204 -> status-text = 'No Content'
-status == 301 -> status-text = 'Moved Permanently'
-status == 302 -> status-text = 'Found'
-status == 304 -> status-text = 'Not Modified'
-status == 400 -> status-text = 'Bad Request'
-status == 401 -> status-text = 'Unauthorized'
-status == 403 -> status-text = 'Forbidden'
-status == 404 -> status-text = 'Not Found'
-status == 405 -> status-text = 'Method Not Allowed'
-status == 408 -> status-text = 'Request Timeout'
-status == 413 -> status-text = 'Payload Too Large'
-status == 414 -> status-text = 'URI Too Long'
-status == 500 -> status-text = 'Internal Server Error'
-status == 501 -> status-text = 'Not Implemented'
-status == 502 -> status-text = 'Bad Gateway'
-status == 503 -> status-text = 'Service Unavailable'
-status == 504 -> status-text = 'Gateway Timeout'
+    status-s = status.to-str()
+    status-text = 'OK'
+    {
+        status == 200 -> status-text = 'OK'
+        status == 201 -> status-text = 'Created'
+        status == 204 -> status-text = 'No Content'
+        status == 301 -> status-text = 'Moved Permanently'
+        status == 302 -> status-text = 'Found'
+        status == 304 -> status-text = 'Not Modified'
+        status == 400 -> status-text = 'Bad Request'
+        status == 401 -> status-text = 'Unauthorized'
+        status == 403 -> status-text = 'Forbidden'
+        status == 404 -> status-text = 'Not Found'
+        status == 405 -> status-text = 'Method Not Allowed'
+        status == 408 -> status-text = 'Request Timeout'
+        status == 413 -> status-text = 'Payload Too Large'
+        status == 414 -> status-text = 'URI Too Long'
+        status == 500 -> status-text = 'Internal Server Error'
+        status == 501 -> status-text = 'Not Implemented'
+        status == 502 -> status-text = 'Bad Gateway'
+        status == 503 -> status-text = 'Service Unavailable'
+        status == 504 -> status-text = 'Gateway Timeout'
         ->
     }
 
@@ -422,9 +418,9 @@ http-server-conn.write-body = (data str) (ok bool) {
     ok = false
     .fd < 0 -> return
     data.len > 0 -> {
-    written = net-send(.fd, data, data.len)
-            written < 0 -> return
-}
+        written = net-send(.fd, data, data.len)
+        written < 0 -> return
+    }
     ok = true
 }
 
@@ -441,15 +437,15 @@ http-server-conn.write-text = (status i64, text str) (ok bool) {
     crlf = cr - lf
 
     // 狀態行
-ok = .write-status(status)
-ok == false -> return
+    ok = .write-status(status)
+    ok == false -> return
 
     // 標頭
     text-len = text.len
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
-        {
+    {
         .keep-alive -> .write-header('Connection', 'keep-alive')
         -> .write-header('Connection', 'close')
     }
@@ -468,13 +464,12 @@ ok == false -> return
 http-server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
     .fd < 0 -> return
-
-.write-status(status)
-json-len = json-str.len
+    .write-status(status)
+    json-len = json-str.len
     len-s = json-len.to-str()
     .write-header('Content-Type', 'application/json; charset=utf-8')
     .write-header('Content-Length', len-s)
-        {
+    {
         .keep-alive -> .write-header('Connection', 'keep-alive')
         -> .write-header('Connection', 'close')
     }
@@ -491,13 +486,12 @@ json-len = json-str.len
 http-server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
     .fd < 0 -> return
-
-.write-status(status)
-html-len = html.len
+    .write-status(status)
+    html-len = html.len
     len-s = html-len.to-str()
     .write-header('Content-Type', 'text/html; charset=utf-8')
     .write-header('Content-Length', len-s)
-        {
+    {
         .keep-alive -> .write-header('Connection', 'keep-alive')
         -> .write-header('Connection', 'close')
     }
@@ -514,9 +508,8 @@ html-len = html.len
 http-server-conn.write-redirect = (status i64, location str) (ok bool) {
     ok = false
     .fd < 0 -> return
-
-.write-status(status)
-.write-header('Location', location)
+    .write-status(status)
+    .write-header('Location', location)
     .write-header('Content-Length', '0')
     .write-header('Connection', 'close')
     .write-headers-done()
@@ -530,9 +523,8 @@ http-server-conn.write-redirect = (status i64, location str) (ok bool) {
 http-server-conn.write-error = (status i64, message str) (ok bool) {
     ok = false
     .fd < 0 -> return
-
-.write-status(status)
-msg-len = message.len
+    .write-status(status)
+    msg-len = message.len
     len-s = msg-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -558,9 +550,9 @@ http-server-conn.reset = () {
 // close: 關閉連接
 http-server-conn.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -611,13 +603,13 @@ http-server-conn.get-cookie = (name str) (val ?str) {
                 pair = pair.trim()
                 eq-pos = pair.index('=')
                 eq-pos >= 0 -> {
-    cname = pair.slice(0, eq-pos)
-                        cvalue = pair.slice(eq-pos + 1, pair.len)
-                        cname == name -> {
-    val = cvalue
-                                return
-}
-}
+                    cname = pair.slice(0, eq-pos)
+                    cvalue = pair.slice(eq-pos + 1, pair.len)
+                    cname == name -> {
+                        val = cvalue
+                        return
+                    }
+                }
                 next-semi < 0 -> *
                 pos = next-semi + 1
             }
@@ -640,7 +632,7 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
             ok = false
             raw = ''
             ok, raw = cookie.cookie-verify(name, signed-val, key)
-                        {
+            {
                 ok -> val = raw
                 -> val = nil
             }
@@ -677,9 +669,9 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
             colon = -1
             i <- [0..raw.len): {
                 raw[i] == 58 -> {
-    colon = i
-                        break
-}
+                    colon = i
+                    break
+                }
             }
             colon < 0 -> return
 

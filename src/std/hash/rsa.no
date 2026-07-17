@@ -16,23 +16,23 @@
 // 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     an > bn -> {
-    cmp = 1
-            return
-}
+        cmp = 1
+        return
+    }
     an < bn -> {
-    cmp = -1
-            return
-}
+        cmp = -1
+        return
+    }
     i i64 = an - 1
     for i >= 0 {
         a[i] > b[i] -> {
-    cmp = 1
-                return
-}
+            cmp = 1
+            return
+        }
         a[i] < b[i] -> {
-    cmp = -1
-                return
-}
+            cmp = -1
+            return
+        }
         i = i - 1
     }
     cmp = 0
@@ -64,10 +64,10 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     i <- [0..an): {
         diff = a[i] - borrow
         i < bn -> diff = diff - b[i]
-                {
+        {
             diff < 0 -> {
                 diff = diff + 4294967296
-                            borrow = 1
+                borrow = 1
             }
             -> borrow = 0
         }
@@ -117,10 +117,10 @@ bn-shl1 = (a []i64, an i64) (new-an i64) {
         carry = a[i] >> 31
         a[i] = new-val & 4294967295
     }
-        {
+    {
         carry != 0 -> {
             a[an] = carry
-                    new-an = an + 1
+            new-an = an + 1
         }
         -> new-an = an
     }
@@ -155,10 +155,10 @@ bn-shr1 = (a []i64, an i64) (new-an i64) {
 bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
     // 處理 b = 0
     bn == 1 && b[0] == 0 -> {
-    qn = 0
-            rn = 0
-            return
-}
+        qn = 0
+        rn = 0
+        return
+    }
 
     // 初始化 r = 0
     i <- [0..an): {
@@ -199,11 +199,11 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         cmp = 0
         cmp = bn-cmp(r, rn, b, bn)
         cmp >= 0 -> {
-    r, rn = bn-sub(r, rn, b, bn)
-                q-limb = i / 32
-                q-bit = i % 32
-                q[q-limb] = q[q-limb] | (1 << q-bit)
-}
+            r, rn = bn-sub(r, rn, b, bn)
+            q-limb = i / 32
+            q-bit = i % 32
+            q[q-limb] = q[q-limb] | (1 << q-bit)
+        }
         i = i - 1
     }
 
@@ -248,7 +248,6 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     // 從最高位到最低位
     i = bits - 1
     for i >= 0 {
-        // 平方：result = result^2 mod modulus
         t, prod-n = bn-mul(result, rn, result, rn)
         q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
@@ -256,9 +255,9 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         e-limb = i / 32
         e-bit = i % 32
         (exp[e-limb] >> e-bit) & 1 == 1 -> {
-    t, prod-n = bn-mul(result, rn, base, bn)
-                q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
-}
+            t, prod-n = bn-mul(result, rn, base, bn)
+            q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
+        }
         i = i - 1
     }
 }

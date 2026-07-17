@@ -130,16 +130,10 @@ bigint.is-pos = () (r bool) {
 // bigint.eq: self == b ?
 bigint.eq = (b bigint) (r bool) {
     r = false
-    .sign != b.sign -> {
-        return
-    }
-    .len != b.len -> {
-        return
-    }
+    .sign != b.sign -> return
+    .len != b.len -> return
     i <- [.len - 1..0]: {
-        .limbs[i] & MASK != b.limbs[i] & MASK -> {
-            return
-        }
+        .limbs[i] & MASK != b.limbs[i] & MASK -> return
     }
     r = true
 }
@@ -417,9 +411,7 @@ mod-i64 = (a bigint, v i64) (r i64) {
 // pow: c = a^n（n >= 0，非負整數冪）
 pow = (a bigint, n i64) (c bigint) {
     c = one()
-    n == 0 -> {
-        return
-    }
+    n == 0 -> return
     base = bigint{}
     base = a.copy()
     i = n
@@ -448,9 +440,7 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
         lead = lead + 1
     }
     bits = (exp.len - 1) * 32 + lead
-    bits == 0 -> {
-        return
-    }
+    bits == 0 -> return
     i <- [bits - 1..0]: {
         r = mul(r, r)
         elimb = i / 32
@@ -571,9 +561,7 @@ bigint.to-str = () (out str) {
     bufn = 0
     for true {
         tz = tmp.is-zero()
-        tz -> {
-            break
-        }
+        tz -> break
         d = mod-i64(tmp, 10)
         buf[bufn] = d + 48
         bufn = bufn + 1
@@ -597,9 +585,7 @@ from-str = (s str) (out bigint) {
     pos = 0
     for pos < s.len {
         c = s[pos] & 255
-        c != 32 && c != 9 && c != 10 && c != 13 -> {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
         pos = pos + 1
     }
     pos < s.len -> {

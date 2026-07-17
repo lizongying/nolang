@@ -15,7 +15,6 @@
 //   }
 //   p.close-all()                     // 關閉所有連接
 
-
 // ═══════════════════════════════════════════════
 // 常量
 // ═══════════════════════════════════════════════
@@ -70,26 +69,28 @@ pool.init = (host str, port i64, max-size i64) {
 // 返回 c ?conn: ok=連接, nil=失敗
 pool.get = () (c ?conn) {
     c = nil
+
     // 尋找空閒連接
     i <- [0...count): {
         .in-use[i] == false -> {
-    .in-use[i] = true
-                c = .conns[i]
-                return
-}
+            .in-use[i] = true
+            c = .conns[i]
+            return
+        }
     }
+
     // 沒有空閒連接，嘗試新建
     .count < .max-size -> {
-    cn = conn{}
-            ok = false
-            ok = cn.dial(.host, .port)
-            ok -> {
-    .conns[.count] = cn
-                    .in-use[.count] = true
-                    .count = .count + 1
-                    c = cn
-}
-}
+        cn = conn{}
+        ok = false
+        ok = cn.dial(.host, .port)
+        ok -> {
+            .conns[.count] = cn
+            .in-use[.count] = true
+            .count = .count + 1
+            c = cn
+        }
+    }
 }
 
 // put: 歸還連接到池中（不關閉）
@@ -98,10 +99,11 @@ pool.put = (c conn) {
     // 尋找該連接在池中的位置
     i <- [0...count): {
         .conns[i].fd == c.fd -> {
-    .in-use[i] = false
-                return
-}
+            .in-use[i] = false
+            return
+        }
     }
+
     // 不在池中，直接關閉
     c.close()
 }
@@ -111,12 +113,13 @@ pool.put = (c conn) {
 pool.close-conn = (idx i64) {
     idx < 0 || idx >= .count -> return
     .conns[idx].close()
+
     // 將最後一個移到當前位置
     last = .count - 1
     idx != last -> {
-    .conns[idx] = .conns[last]
-            .in-use[idx] = .in-use[last]
-}
+        .conns[idx] = .conns[last]
+        .in-use[idx] = .in-use[last]
+    }
     .count = .count - 1
 }
 

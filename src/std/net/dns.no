@@ -163,9 +163,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     end-pos = 0
 
     !! {
-        pos >= data.len -> {
-            *
-        }
+        pos >= data.len -> *
         len-byte = data[pos] & 255
         len-byte == 0 -> {
             pos = pos + 1
@@ -206,26 +204,20 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 // 返回 ok bool: true=成功
 dns-parse-response = (data []byte) (records []dns-record, ok bool) {
     ok = false
-    data.len < 12 -> {
-        return
-    }
+    data.len < 12 -> return
 
     // 檢查回應碼
     flags-hi = data[2] & 255
     flags-lo = data[3] & 255
     rcode = flags-lo & 0x0F
-    rcode != DNS-RCODE-NO-ERROR -> {
-        return
-    }
+    rcode != DNS-RCODE-NO-ERROR -> return
 
     // 問題數
     qdcount = ((data[4] & 255) << 8) | (data[5] & 255)
 
     // 回答數
     ancount = ((data[6] & 255) << 8) | (data[7] & 255)
-    ancount == 0 -> {
-        return
-    }
+    ancount == 0 -> return
     pos = 12
 
     // 跳過問題部分
@@ -240,9 +232,7 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
     i <- [0..ancount): {
         rname = ''
         rname, pos = dns-parse-name(data, pos)
-        pos + 10 > data.len -> {
-            return
-        }
+        pos + 10 > data.len -> return
         rtype = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
         pos = pos + 2
         // CLASS (2 bytes)
@@ -256,9 +246,7 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
         // RDLENGTH (2 bytes)
         rdlength = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
         pos = pos + 2
-        pos + rdlength > data.len -> {
-            return
-        }
+        pos + rdlength > data.len -> return
         rec dns-record
         rec.name = rname
         rec.ttl = ttl
@@ -302,15 +290,11 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     // 構建查詢封包
     query []byte
     query = dns-build-query(domain, DNS-TYPE-A)
-    query.len == 0 -> {
-        return
-    }
+    query.len == 0 -> return
 
     // 建立 UDP socket
     fd = net-udp-open()
-    fd < 0 -> {
-        return
-    }
+    fd < 0 -> return
 
     // 設定逾時
     net-set-recv-timeout(fd, DNS-TIMEOUT)
@@ -328,9 +312,7 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     resp-str = space.repeat(DNS-MAX-PACKET)
     n = net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     close(fd)
-    n <= 0 -> {
-        return
-    }
+    n <= 0 -> return
 
     // 解析回應
     resp []byte
@@ -342,9 +324,7 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     records []dns-record
     ok = false
     records, ok = dns-parse-response(resp)
-    ok == false -> {
-        return
-    }
+    ok == false -> return
 
     // 尋找 A 記錄
     i <- [0..records.len): {
@@ -376,13 +356,9 @@ dns-resolve-all = (domain str) (records []dns-record, ok bool) {
 
     query []byte
     query = dns-build-query(domain, DNS-TYPE-A)
-    query.len == 0 -> {
-        return
-    }
+    query.len == 0 -> return
     fd = net-udp-open()
-    fd < 0 -> {
-        return
-    }
+    fd < 0 -> return
     net-set-recv-timeout(fd, DNS-TIMEOUT)
 
     query-str = query.to-str()
@@ -396,9 +372,7 @@ dns-resolve-all = (domain str) (records []dns-record, ok bool) {
     resp-str = space.repeat(DNS-MAX-PACKET)
     n = net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     close(fd)
-    n <= 0 -> {
-        return
-    }
+    n <= 0 -> return
     resp []byte
     i <- [0..n): {
         resp[i] = resp-str[i]
@@ -416,9 +390,7 @@ dns-dial = (domain str, port i64) (fd i64) {
 
     // 先嘗試直接連接（net-dial 內建已支援 hostname 解析）
     fd = net-dial(domain, port)
-    fd >= 0 -> {
-        return
-    }
+    fd >= 0 -> return
 
     // 如果直接連接失敗，使用 DNS 解析
     ip = dns-resolve(domain)

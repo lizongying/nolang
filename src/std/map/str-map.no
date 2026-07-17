@@ -12,14 +12,14 @@
 
 // FNV-1a 常量
 FNV-OFFSET = -3750763034362895579
-FNV-PRIME  = 1099511628211
+FNV-PRIME = 1099511628211
 
 str-map {
-    cap   i64
-    keys  [256]str
-    vals  [256]str
-    occ   [256]i64
-    size  i64
+    cap i64
+    keys [256]str
+    vals [256]str
+    occ [256]i64
+    size i64
 }
 
 // init: 初始化
@@ -34,7 +34,7 @@ str-map.init = () {
 }
 
 // hash: FNV-1a 字串雜湊
-str-map.hash = (key str)(idx i64) {
+str-map.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
         h = h ^ (key[i] & 255)
@@ -44,7 +44,7 @@ str-map.hash = (key str)(idx i64) {
 }
 
 // str-eq: 比較兩個 str 是否相等
-str-map.str-eq = (a str, b str)(eq bool) {
+str-map.str-eq = (a str, b str) (eq bool) {
     eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
@@ -54,7 +54,7 @@ str-map.str-eq = (a str, b str)(eq bool) {
 }
 
 // put: 插入或更新 key→value，回傳是否新增
-str-map.put = (key str, val str)(is-new bool) {
+str-map.put = (key str, val str) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -77,6 +77,7 @@ str-map.put = (key str, val str)(is-new bool) {
     i <- [0..key.len): {
         .keys[idx][i] = key[i]
     }
+
     // 複製 val
     .vals[idx].len = val.len
     i <- [0..val.len): {
@@ -88,7 +89,7 @@ str-map.put = (key str, val str)(is-new bool) {
 }
 
 // get: 查找 key，返回 ?str（nil=未找到）
-str-map.get = (key str)(result ?str) {
+str-map.get = (key str) (result ?str) {
     .size == 0 -> {
         result = nil
         return
@@ -109,7 +110,7 @@ str-map.get = (key str)(result ?str) {
 }
 
 // contains: 檢查 key 是否存在
-str-map.contains = (key str)(found bool) {
+str-map.contains = (key str) (found bool) {
     found = false
     val = .get(key)
     val: {
@@ -118,10 +119,9 @@ str-map.contains = (key str)(found bool) {
 }
 
 // remove: 刪除 key
-str-map.remove = (key str)(removed bool) {
+str-map.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {

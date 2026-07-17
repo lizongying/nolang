@@ -13,7 +13,6 @@
 //   sig [64]byte = ecdsa-sign(priv, msg)
 //   ok = ecdsa-verify(pub, msg, sig)
 
-
 // ═══════════════════════════════════════════════
 // 曲線參數（P-256）
 // ═══════════════════════════════════════════════
@@ -100,10 +99,10 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
         val = (a[i] & 255) - (b[i] & 255) - borrow
-                {
+        {
             val < 0 -> {
                 val = val + 256
-                            borrow = 1
+                borrow = 1
             }
             -> borrow = 0
         }
@@ -179,18 +178,19 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         byte-idx = bit / 8
         bit-idx = bit % 8
         (work[byte-idx] >> bit-idx) & 1 == 1 -> {
-    // 減去 m << (bit - 256)
-                shift = bit - 256
-                shifted [64]byte
-                // m << shift
-                i <- [0..32): {
-                    src-byte = i
-                    dst-byte-start = (i * 8 + shift) / 8
-                    // 簡化：只在 byte 邊界對齊時處理
-                }
-                // 由於位元級移位複雜，使用更簡單的方法
-                // 直接從高 32 位元組開始減法
-}
+            // 減去 m << (bit - 256)
+            shift = bit - 256
+            shifted [64]byte
+
+            // m << shift
+            i <- [0..32): {
+                src-byte = i
+                dst-byte-start = (i * 8 + shift) / 8
+                // 簡化：只在 byte 邊界對齊時處理
+            }
+            // 由於位元級移位複雜，使用更簡單的方法
+            // 直接從高 32 位元組開始減法
+        }
         bit = bit - 1
     }
 
@@ -204,6 +204,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     shift-byte = 32
     for shift-byte > 0 {
         shift-byte = shift-byte - 1
+
         // 嘗試減去 m << (shift_byte * 8)
         // 即在 work[shift_byte..shift_byte+32] 處減去 m
         can-sub = 1
@@ -211,49 +212,50 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             wi = 0
             shift-byte + i < 64 -> wi = work[shift-byte + i] & 255
             mi = m[i] & 255
-                        {
+            {
                 wi > mi -> break
                 wi < mi -> {
                     can-sub = 0
-                                    break
+                    break
                 }
             }
         }
 
         can-sub == 1 -> {
-    borrow = 0
-                i <- [0..32): {
-                    idx = shift-byte + i
-                                        {
-                        idx < 64 -> {
-                            val = (work[idx] & 255) - (m[i] & 255) - borrow
-                                                                                                        {
-                                                        val < 0 -> {
-                                                            val = val + 256
-                                                                                                                    borrow = 1
-                                                        }
-                                                        -> borrow = 0
-                                                    }
-                                                    work[idx] = val
+            borrow = 0
+            i <- [0..32): {
+                idx = shift-byte + i
+                {
+                    idx < 64 -> {
+                        val = (work[idx] & 255) - (m[i] & 255) - borrow
+                        {
+                            val < 0 -> {
+                                val = val + 256
+                                borrow = 1
+                            }
+                            -> borrow = 0
                         }
-                        -> {
-                            borrow != 0 -> {
-    val = (work[idx] & 255) - borrow
-                                                                                                                        {
-                                                                val < 0 -> {
-                                                                    val = val + 256
-                                                                                                                                    borrow = 1
-                                                                }
-                                                                -> borrow = 0
-                                                            }
-                                                            work[idx] = val
-}
+                        work[idx] = val
+                    }
+                    -> {
+                        borrow != 0 -> {
+                            val = (work[idx] & 255) - borrow
+                            {
+                                val < 0 -> {
+                                    val = val + 256
+                                    borrow = 1
+                                }
+                                -> borrow = 0
+                            }
+                            work[idx] = val
                         }
                     }
                 }
-                // 如果還能減，再減一次
-                shift-byte = shift-byte + 1
-}
+            }
+
+            // 如果還能減，再減一次
+            shift-byte = shift-byte + 1
+        }
     }
 
     i <- [0..32): {
@@ -266,12 +268,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     sum [32]byte
     carry = 0
     sum, carry = bn-add(a, b)
+
     // 如果有進位或 sum >= m，需要規約
-        {
-        carry != 0 -> {
-            // sum + 2^256 mod m，簡化處理
-                    out = bn-mod(sum, m)
-        }
+    {
+        carry != 0 -> // sum + 2^256 mod m，簡化處理
+        out = bn-mod(sum, m)
         -> out = bn-mod(sum, m)
     }
 }
@@ -280,33 +281,34 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
     cmp = 0
     cmp = bn-cmp(a, b)
-        {
+    {
         cmp >= 0 -> {
             diff [32]byte
-                    borrow = 0
-                    diff, borrow = bn-sub(a, b)
-                    i <- [0..32): {
-                        out[i] = diff[i]
-                    }
+            borrow = 0
+            diff, borrow = bn-sub(a, b)
+            i <- [0..32): {
+                out[i] = diff[i]
+            }
         }
         -> {
             // a < b, result = m - (b - a)
-                    diff [32]byte
-                    borrow = 0
-                    diff, borrow = bn-sub(b, a)
-                    out = bn-sub(P256-N, diff)
-                    // 簡化：使用 m 作為模數
-                    // result = m + a - b
-                    tmp [32]byte
-                    carry = 0
-                    tmp, carry = bn-add(m, a)
-                    out.zero()
-                    diff2 [32]byte
-                    borrow2 = 0
-                    diff2, borrow2 = bn-sub(tmp, b)
-                    i <- [0..32): {
-                        out[i] = diff2[i]
-                    }
+            diff [32]byte
+            borrow = 0
+            diff, borrow = bn-sub(b, a)
+            out = bn-sub(P256-N, diff)
+
+            // 簡化：使用 m 作為模數
+            // result = m + a - b
+            tmp [32]byte
+            carry = 0
+            tmp, carry = bn-add(m, a)
+            out.zero()
+            diff2 [32]byte
+            borrow2 = 0
+            diff2, borrow2 = bn-sub(tmp, b)
+            i <- [0..32): {
+                out[i] = diff2[i]
+            }
         }
     }
 }
@@ -318,7 +320,41 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     // m-2
     exp [32]byte
     borrow = 0
-    exp, borrow = bn-sub(m, [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    exp, borrow = bn-sub(m, [
+
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    ])
 
     // result = 1
     result [32]byte
@@ -360,11 +396,11 @@ ec-point-double = (p []byte) (r []byte) {
         p[32 + i] != 0 -> is-zero = 0
     }
     is-zero == 1 -> {
-    i <- [0..96): {
-                r[i] = 0
-            }
-            return
-}
+        i <- [0..96): {
+            r[i] = 0
+        }
+        return
+    }
 
     // a = -3 for P-256
     // 使用公式: 對 a=-3 的曲線優化
@@ -422,6 +458,7 @@ ec-point-double = (p []byte) (r []byte) {
     s-mx3 = bn-submod(s, x3, P256-P)
     y3 [32]byte
     y3 = bn-mulmod(m, s-mx3, P256-P)
+
     // 8 * Y⁴
     y4-8 [32]byte
     y4-8 = bn-addmod(y4, y4, P256-P)
@@ -458,11 +495,11 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         p[i] != 0 -> p-inf = 0
     }
     p-inf == 1 -> {
-    i <- [0..96): {
-                r[i] = q[i]
-            }
-            return
-}
+        i <- [0..96): {
+            r[i] = q[i]
+        }
+        return
+    }
 
     // 檢查 Q 是否為無窮遠點
     q-inf = 1
@@ -470,11 +507,11 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         q[i] != 0 -> q-inf = 0
     }
     q-inf == 1 -> {
-    i <- [0..96): {
-                r[i] = p[i]
-            }
-            return
-}
+        i <- [0..96): {
+            r[i] = p[i]
+        }
+        return
+    }
 
     // Z1², Z2²
     z1-2 [32]byte
@@ -520,23 +557,23 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         h[i] != 0 -> h-is-zero = 0
     }
     h-is-zero == 1 -> {
-    r-is-zero = 1
-            i <- [0..32): {
-                rr[i] != 0 -> r-is-zero = 0
+        r-is-zero = 1
+        i <- [0..32): {
+            rr[i] != 0 -> r-is-zero = 0
+        }
+        {
+            r-is-zero == 1 -> {
+                r = ec-point-double(p)
+                return
             }
-                        {
-                r-is-zero == 1 -> {
-                    r = ec-point-double(p)
-                                    return
+            -> {
+                i <- [0..96): {
+                    r[i] = 0
                 }
-                -> {
-                    i <- [0..96): {
-                                        r[i] = 0
-                                    }
-                                    return
-                }
+                return
             }
-}
+        }
+    }
 
     // H²
     h2 [32]byte
@@ -602,11 +639,11 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         byte-idx = bit / 8
         bit-idx = bit % 8
         (k[byte-idx] >> bit-idx) & 1 == 1 -> {
-    tmp = ec-point-add(r, p)
-                i <- [0..96): {
-                    r[i] = tmp[i]
-                }
-}
+            tmp = ec-point-add(r, p)
+            i <- [0..96): {
+                r[i] = tmp[i]
+            }
+        }
 
         bit = bit - 1
     }
@@ -625,10 +662,8 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     i <- [0..32): {
         pz[i] != 0 -> z-is-zero = 0
     }
-    z-is-zero == 1 -> {
-    // 返回全零
-            return
-}
+    z-is-zero == 1 -> // 返回全零
+    return
 
     // Z²
     z2 [32]byte
@@ -696,6 +731,7 @@ ec-get-basepoint = () (g []byte) {
         g[i] = P256-GX[31 - i]
         g[32 + i] = P256-GY[31 - i]
     }
+
     // Z = 1
     g[64] = 1
     i <- [1..32): {
@@ -757,15 +793,16 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         state = rand.rand(state + d[i] + h-le[i] + i)
         k[i] = state & 255
     }
+
     // 確保 k 在 [1, n-1] 範圍內
     k = bn-mod(k, P256-N)
     k[0] == 0 -> {
-    all-zero = 1
-            i <- [1..32): {
-                k[i] != 0 -> all-zero = 0
-            }
-            all-zero == 1 -> k[0] = 1
-}
+        all-zero = 1
+        i <- [1..32): {
+            k[i] != 0 -> all-zero = 0
+        }
+        all-zero == 1 -> k[0] = 1
+    }
 
     // R = k * G
     g []byte
@@ -776,6 +813,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     // r = R.x mod n
     r-point-bytes [65]byte
     r-point-bytes = ec-point-to-bytes(r-point)
+
     // 提取 x（大端序 → 小端序）
     rx [32]byte
     i <- [0..32): {
@@ -825,28 +863,31 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         r-val[i] != 0 -> r-zero = 0
     }
     r-zero == 1 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
+
     // s != 0
     s-zero = 1
     i <- [0..32): {
         s-val[i] != 0 -> s-zero = 0
     }
     s-zero == 1 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
+
     // r < n
     bn-cmp(r-val, P256-N) >= 0 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
+
     // s < n
     bn-cmp(s-val, P256-N) >= 0 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
 
     // h = SHA-256(msg)
     h [32]byte
@@ -892,9 +933,9 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         r-point[i] != 0 -> r-inf = 0
     }
     r-inf == 1 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
 
     // v = R.x mod n
     r-point-bytes [65]byte

@@ -23,9 +23,9 @@ char.is-digit = () (result bool) {
 char.is-letter = () (result bool) {
     result = false
     . >= 65 && . <= 90 -> {
-    result = true
-            return
-}
+        result = true
+        return
+    }
     . >= 97 && . <= 122 -> result = true
 }
 
@@ -34,9 +34,9 @@ char.is-letter = () (result bool) {
 char.is-alpha = () (result bool) {
     result = false
     . >= 65 && . <= 90 -> {
-    result = true
-            return
-}
+        result = true
+        return
+    }
     . >= 97 && . <= 122 -> result = true
 }
 
@@ -70,7 +70,7 @@ char.is-lower = () (result bool) {
 
 // to-upper: 轉為大寫（僅 ASCII）
 char.to-upper = () (result char) {
-        {
+    {
         . >= 97 && . <= 122 -> result = . - 32
         -> result = .
     }
@@ -78,7 +78,7 @@ char.to-upper = () (result char) {
 
 // to-lower: 轉為小寫（僅 ASCII）
 char.to-lower = () (result char) {
-        {
+    {
         . >= 65 && . <= 90 -> result = . + 32
         -> result = .
     }
@@ -93,28 +93,28 @@ char.to-bytes = () (out []byte) {
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
     len = 0
 
-        {
+    {
         . < 0x80 -> {
             buf[0] = .
-                    len = 1
+            len = 1
         }
         . < 0x800 -> {
             buf[0] = 0xC0 | ((. >> 6) & 0x1F)
-                    buf[1] = 0x80 | (. & 0x3F)
-                    len = 2
+            buf[1] = 0x80 | (. & 0x3F)
+            len = 2
         }
         . < 0x10000 -> {
             buf[0] = 0xE0 | ((. >> 12) & 0x0F)
-                    buf[1] = 0x80 | ((. >> 6) & 0x3F)
-                    buf[2] = 0x80 | (. & 0x3F)
-                    len = 3
+            buf[1] = 0x80 | ((. >> 6) & 0x3F)
+            buf[2] = 0x80 | (. & 0x3F)
+            len = 3
         }
         -> {
             buf[0] = 0xF0 | ((. >> 18) & 0x07)
-                    buf[1] = 0x80 | ((. >> 12) & 0x3F)
-                    buf[2] = 0x80 | ((. >> 6) & 0x3F)
-                    buf[3] = 0x80 | (. & 0x3F)
-                    len = 4
+            buf[1] = 0x80 | ((. >> 12) & 0x3F)
+            buf[2] = 0x80 | ((. >> 6) & 0x3F)
+            buf[3] = 0x80 | (. & 0x3F)
+            len = 4
         }
     }
 
@@ -130,21 +130,18 @@ char.to-str = () (s str) {
         . < 0x80 -> s[0] = .
         . < 0x800 -> {
             s[0] = 0xC0 | ((. >> 6) & 0x1F)
-                    s[1] = 0x80 | (. & 0x3F)
+            s[1] = 0x80 | (. & 0x3F)
         }
         . < 0x10000 -> {
             s[0] = 0xE0 | ((. >> 12) & 0x0F)
-                    s[1] = 0x80 | ((. >> 6) & 0x3F)
-                    s[2] = 0x80 | (. & 0x3F)
+            s[1] = 0x80 | ((. >> 6) & 0x3F)
+            s[2] = 0x80 | (. & 0x3F)
         }
         -> {
             s[0] = 0xF0 | ((. >> 18) & 0x07)
-                    s[1] = 0x80 | ((. >> 12) & 0x3F)
-                    s[2] = 0x80 | ((. >> 6) & 0x3F)
-                            s[3] = 0x80 | (. & 0x3F)
+            s[1] = 0x80 | ((. >> 12) & 0x3F)
+            s[2] = 0x80 | ((. >> 6) & 0x3F)
+            s[3] = 0x80 | (. & 0x3F)
         }
     }
 }
-
-
-

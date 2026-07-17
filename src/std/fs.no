@@ -184,19 +184,19 @@ stderr = file{
 // file-mode: 檔案開啟模式（預組合）
 file-mode {
     read,
-    write,
-    append,
-    read-write,
+    write = 1,
+    append = 2,
+    read-write = 3,
 }
 
 // file-perm: 檔案權限（預組合）
 file-perm {
     perm-600,
-    perm-644,
-    perm-664,
-    perm-666,
-    perm-755,
-    perm-777,
+    perm-644 = 1,
+    perm-664 = 2,
+    perm-666 = 3,
+    perm-755 = 4,
+    perm-777 = 5,
 }
 
 // file-opts: open() 選項
@@ -289,13 +289,13 @@ file.write = (data str, n i64) (written i64) {
 // 標準檔案（stdin/stdout/stderr）不會被關閉
 file.close = () (ok bool) {
     .fd < 0 -> {
-    ok = false
-            return
-}
+        ok = false
+        return
+    }
     .fd <= 2 -> {
-    ok = true
-            return
-}
+        ok = true
+        return
+    }
     rc = close(.fd)
     .fd = -1
     ok = rc == 0
@@ -348,11 +348,9 @@ file.append = (data str, n i64) (ok bool) {
     exist-n = 0
     size = stat-size(save-path)
     size > 0 -> {
-        {
         size > 4096 -> exist-n = read(rd-fd, existing, 4096)
         -> exist-n = read(rd-fd, existing, size)
     }
-}
     close(rd-fd)
 
     wr-fd = open-file(save-path, 1537, 420)
@@ -391,9 +389,9 @@ copy-file = (src str, dst str) (ok bool) {
     fd-r < 0 -> return
     fd-w = open-write(dst)
     fd-w < 0 -> {
-    close(fd-r)
-            return
-}
+        close(fd-r)
+        return
+    }
     buf [4096]byte
     for true {
         n = read(fd-r, buf, 4096)
@@ -426,14 +424,12 @@ list-dir = (dirpath str) (entries []str) {
 
     !! {
         name, ok = read-dir(dirp)
-
         {
             ok == false -> {
                 close-dir(dirp)
                 return
             }
         }
-
         entries.push(name)
     }
 }

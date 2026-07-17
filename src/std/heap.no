@@ -41,9 +41,9 @@ heap.push = (val i64) {
 // 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
     .n == 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     val = .data[0]
     .n = .n - 1
     .data[0] = .data[.n]
@@ -66,9 +66,9 @@ heap.pop = () (val ?i64) {
 // 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.peek = () (val ?i64) {
     .n == 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     val = .data[0]
 }
 

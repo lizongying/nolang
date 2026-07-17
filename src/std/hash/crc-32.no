@@ -13,7 +13,7 @@ crc-32 = (s []byte, n i64) (crc i64) {
     i <- [0..n): {
         crc = crc ^ s[i]
         j <- [0..8): {
-                        {
+            {
                 crc & 1 == 1 -> crc = (crc >> 1) ^ 3988292384
                 -> crc = crc >> 1
             }

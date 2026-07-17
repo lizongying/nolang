@@ -54,6 +54,7 @@ hpack-tables.init = () {
     }
     .static-init -> return
     .static-init = true
+
     // RFC 7541 Appendix A 靜態表（61 項）
     // 索引 0 保留，1-61 為靜態表項
     .static-names[0] = ':authority'
@@ -187,17 +188,20 @@ hpack-tables.init = () {
 // dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
 hpack-tables.dyn-add = (name str, value str) {
     .dyn-count >= HPACK-DYN-MAX -> return
+
     // 向後移動（從尾部開始避免覆蓋）
     i = .dyn-count
     for i > 0 {
         // 用 slice 複製（CallExpression 正確載入 str-long value）
         prev-name-len = .dyn-names[i - 1].len
         prev-val-len = .dyn-values[i - 1].len
+
         // 逐 byte 複製 name
         .dyn-names[i].len = prev-name-len
         j <- [0..prev-name-len): {
             .dyn-names[i][j] = .dyn-names[i - 1][j]
         }
+
         // 逐 byte 複製 value
         .dyn-values[i].len = prev-val-len
         j <- [0..prev-val-len): {
@@ -205,6 +209,7 @@ hpack-tables.dyn-add = (name str, value str) {
         }
         i = i - 1
     }
+
     // 新項放索引 0
     .dyn-names[0].len = name.len
     j <- [0..name.len): {
@@ -226,60 +231,57 @@ hpack-tables.dyn-add = (name str, value str) {
 // 返回 idx=0=未找到，idx>0=索引
 hpack-tables.find = (name str, value str) (idx i64) {
     idx = 0
+
     // 查靜態表（1-61，靜態表內部從 0 開始存）
     i <- [0..HPACK-STATIC-COUNT): {
         .static-names[i].len == name.len -> {
-    matched = 1
-                j <- [0..name.len): {
-                    .static-names[i][j] != name[j] -> {
-    matched = 0
-                            break
-}
+            matched = 1
+            j <- [0..name.len): {
+                .static-names[i][j] != name[j] -> {
+                    matched = 0
+                    break
                 }
-                matched == 1 -> {
-    // name 匹配，檢查 value
-                        .static-values[i].len == value.len -> {
-    v-matched = 1
-                                j <- [0..value.len): {
-                                    .static-values[i][j] != value[j] -> {
-    v-matched = 0
-                                            break
-}
-                                }
-                                v-matched == 1 -> {
-    idx = i + 1
-                                        return
-}
-}
-}
-}
+            }
+            matched == 1 -> .static-values[i].len == value.len -> {
+                v-matched = 1
+                j <- [0..value.len): {
+                    .static-values[i][j] != value[j] -> {
+                        v-matched = 0
+                        break
+                    }
+                }
+                v-matched == 1 -> {
+                    idx = i + 1
+                    return
+                }
+            }
+        }
     }
+
     // 查動態表（索引從 62 開始）
     i <- [0...dyn-count): {
         .dyn-names[i].len == name.len -> {
-    matched = 1
-                j <- [0..name.len): {
-                    .dyn-names[i][j] != name[j] -> {
-    matched = 0
-                            break
-}
+            matched = 1
+            j <- [0..name.len): {
+                .dyn-names[i][j] != name[j] -> {
+                    matched = 0
+                    break
                 }
-                matched == 1 -> {
-    .dyn-values[i].len == value.len -> {
-    v-matched = 1
-                                j <- [0..value.len): {
-                                    .dyn-values[i][j] != value[j] -> {
-    v-matched = 0
-                                            break
-}
-                                }
-                                v-matched == 1 -> {
-    idx = HPACK-STATIC-COUNT + i + 1
-                                        return
-}
-}
-}
-}
+            }
+            matched == 1 -> .dyn-values[i].len == value.len -> {
+                v-matched = 1
+                j <- [0..value.len): {
+                    .dyn-values[i][j] != value[j] -> {
+                        v-matched = 0
+                        break
+                    }
+                }
+                v-matched == 1 -> {
+                    idx = HPACK-STATIC-COUNT + i + 1
+                    return
+                }
+            }
+        }
     }
 }
 
@@ -289,33 +291,33 @@ hpack-tables.find-name = (name str) (idx i64) {
     idx = 0
     i <- [0..HPACK-STATIC-COUNT): {
         .static-names[i].len == name.len -> {
-    matched = 1
-                j <- [0..name.len): {
-                    .static-names[i][j] != name[j] -> {
-    matched = 0
-                            break
-}
+            matched = 1
+            j <- [0..name.len): {
+                .static-names[i][j] != name[j] -> {
+                    matched = 0
+                    break
                 }
-                matched == 1 -> {
-    idx = i + 1
-                        return
-}
-}
+            }
+            matched == 1 -> {
+                idx = i + 1
+                return
+            }
+        }
     }
     i <- [0...dyn-count): {
         .dyn-names[i].len == name.len -> {
-    matched = 1
-                j <- [0..name.len): {
-                    .dyn-names[i][j] != name[j] -> {
-    matched = 0
-                            break
-}
+            matched = 1
+            j <- [0..name.len): {
+                .dyn-names[i][j] != name[j] -> {
+                    matched = 0
+                    break
                 }
-                matched == 1 -> {
-    idx = HPACK-STATIC-COUNT + i + 1
-                        return
-}
-}
+            }
+            matched == 1 -> {
+                idx = HPACK-STATIC-COUNT + i + 1
+                return
+            }
+        }
     }
 }
 
@@ -326,24 +328,24 @@ hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
     ok = false
     idx <= 0 -> return
     idx <= HPACK-STATIC-COUNT -> {
-    // 靜態表（內部從 0 開始）
-            arr-idx = idx - 1
-            n-len = .static-names[arr-idx].len
-            v-len = .static-values[arr-idx].len
-            name = .static-names[arr-idx].slice(0, n-len)
-            v-len > 0 -> value = .static-values[arr-idx].slice(0, v-len)
-            ok = true
-            return
-}
+        // 靜態表（內部從 0 開始）
+        arr-idx = idx - 1
+        n-len = .static-names[arr-idx].len
+        v-len = .static-values[arr-idx].len
+        name = .static-names[arr-idx].slice(0, n-len)
+        v-len > 0 -> value = .static-values[arr-idx].slice(0, v-len)
+        ok = true
+        return
+    }
     dyn-idx = idx - HPACK-STATIC-COUNT - 1
     dyn-idx < .dyn-count -> {
-    n-len = .dyn-names[dyn-idx].len
-            v-len = .dyn-values[dyn-idx].len
-            name = .dyn-names[dyn-idx].slice(0, n-len)
-            v-len > 0 -> value = .dyn-values[dyn-idx].slice(0, v-len)
-            ok = true
-            return
-}
+        n-len = .dyn-names[dyn-idx].len
+        v-len = .dyn-values[dyn-idx].len
+        name = .dyn-names[dyn-idx].slice(0, n-len)
+        v-len > 0 -> value = .dyn-values[dyn-idx].slice(0, v-len)
+        ok = true
+        return
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -358,9 +360,10 @@ hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
 hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
-    out[0] = prefix-byte | val
-            return
-}
+        out[0] = prefix-byte | val
+        return
+    }
+
     // 第一個 byte: prefix 全 1
     out[0] = prefix-byte | max-prefix
     n = 1
@@ -380,30 +383,31 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
     val = 0
     next-pos = pos
     pos >= data.len -> {
-    next-pos = -1
-            return
-}
+        next-pos = -1
+        return
+    }
     max-prefix = (1 << prefix-bits) - 1
     first = data[pos] & max-prefix
     val = first
     next-pos = pos + 1
     first < max-prefix -> return
+
     // 多 byte 編碼
     m = 0
     !! {
         next-pos >= data.len -> {
-    next-pos = -1
-                *
-}
+            next-pos = -1
+            *
+        }
         b = data[next-pos]
         next-pos = next-pos + 1
         val = val + ((b & 127) << m)
         m = m + 7
         (b & 128) == 0 -> *
         m >= 35 -> {
-    next-pos = -1
-                *
-}
+            next-pos = -1
+            *
+        }
     }
 }
 
@@ -417,11 +421,13 @@ hpack-encode-str = (s str) (out str) {
     // H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
     len-out = hpack-encode-int(s.len, 7, 0)
+
     // 複製長度編碼到 out
     i <- [0..len-out.len): {
         out[i] = len-out[i]
     }
     out-n = len-out.len
+
     // 複製字串內容
     i <- [0..s.len): {
         out[out-n + i] = s[i]
@@ -432,23 +438,25 @@ hpack-encode-str = (s str) (out str) {
 // 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
 hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
     pos >= data.len -> {
-    next-pos = -1
-            return
-}
+        next-pos = -1
+        return
+    }
     first = data[pos]
+
     // H bit = first & 128，本實作不支援 Huffman
     // 長度用 7-bit prefix
     len = 0
     p = 0
     len, p = hpack-decode-int(data, pos, 7)
     p < 0 -> {
-    next-pos = -1
-            return
-}
+        next-pos = -1
+        return
+    }
     p + len > data.len -> {
-    next-pos = -1
-            return
-}
+        next-pos = -1
+        return
+    }
+
     // 複製字串內容
     i <- [0..len): {
         out[i] = data[p + i]
@@ -469,36 +477,42 @@ hpack-tables.encode-header = (name str, value str) (out str) {
     full-idx = 0
     full-idx = .find(name, value)
     full-idx > 0 -> {
-    // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
-            out = hpack-encode-int(full-idx, 7, 128)
-            return
-}
+        // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
+        out = hpack-encode-int(full-idx, 7, 128)
+        return
+    }
+
     // 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
     name-idx = .find-name(name)
     name-idx > 0 -> {
-    // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
-            idx-out = ' '
-            idx-out = hpack-encode-int(name-idx, 6, 64)
-            // 複製到 out
-            i <- [0..idx-out.len): {
-                out[i] = idx-out[i]
-            }
-            out-n = idx-out.len
-            // 編碼 value
-            val-out = ' '
-            val-out = hpack-encode-str(value)
-            i <- [0..val-out.len): {
-                out[out-n + i] = val-out[i]
-            }
+        // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
+        idx-out = ' '
+        idx-out = hpack-encode-int(name-idx, 6, 64)
+
+        // 複製到 out
+        i <- [0..idx-out.len): {
+            out[i] = idx-out[i]
+        }
+        out-n = idx-out.len
+
+        // 編碼 value
+        val-out = ' '
+        val-out = hpack-encode-str(value)
+        i <- [0..val-out.len): {
+            out[out-n + i] = val-out[i]
+        }
+
         // 加入動態表
         .dyn-add(name, value)
         return
-}
+    }
+
     // 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
     // 格式：01000000（索引 0 = 新 name）
     out[0] = 64
     out-n = 1
+
     // 編碼 name
     name-out = ' '
     name-out = hpack-encode-str(name)
@@ -506,12 +520,14 @@ hpack-tables.encode-header = (name str, value str) (out str) {
         out[out-n + i] = name-out[i]
     }
     out-n = out-n + name-out.len
+
     // 編碼 value
     val-out = ' '
     val-out = hpack-encode-str(value)
     i <- [0..val-out.len): {
         out[out-n + i] = val-out[i]
     }
+
     // 加入動態表
     .dyn-add(name, value)
 }
@@ -522,6 +538,7 @@ hpack-tables.encode-header = (name str, value str) (out str) {
 hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, ok bool) {
     ok = false
     count = 0
+
     // 初始化輸出陣列
     i <- [0..128): {
         names[i] = ' '
@@ -551,6 +568,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 found = false
                 lk-name, lk-val, found = .lookup(idx)
                 found == false -> return
+
                 // 複製到輸出
                 j <- [0..lk-name.len): {
                     names[count][j] = lk-name[j]
@@ -563,8 +581,9 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 count = count + 1
                 pos = next
             }
-            // Literal with Incremental Indexing（6.2.1）：01xxxxxx
             (b & 192) == 64 -> {
+                // Literal with Incremental Indexing（6.2.1）：01xxxxxx
+
                 name-idx = 0
                 next = 0
                 name-idx, next = hpack-decode-int(data, pos, 6)
@@ -574,7 +593,6 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 value = ''
                 {
                     name-idx == 0 -> {
-                        // 新 name
                         name, pos = hpack-decode-str(data, pos)
                         pos < 0 -> return
                     }
@@ -589,6 +607,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 }
                 value, pos = hpack-decode-str(data, pos)
                 pos < 0 -> return
+
                 // 複製到輸出
                 j <- [0..name.len): {
                     names[count][j] = name[j]
@@ -599,11 +618,13 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 }
                 values[count].len = value.len
                 count = count + 1
+
                 // 加入動態表
                 .dyn-add(name, value)
             }
-            // Literal without Indexing（6.2.2）：0000xxxx
             (b & 240) == 0 -> {
+                // Literal without Indexing（6.2.2）：0000xxxx
+
                 name-idx = 0
                 next = 0
                 name-idx, next = hpack-decode-int(data, pos, 4)
@@ -637,8 +658,9 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 values[count].len = value.len
                 count = count + 1
             }
-            // Literal Never Indexed（6.2.3）：0001xxxx
             (b & 240) == 16 -> {
+                // Literal Never Indexed（6.2.3）：0001xxxx
+
                 name-idx = 0
                 next = 0
                 name-idx, next = hpack-decode-int(data, pos, 4)
@@ -672,9 +694,9 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 values[count].len = value.len
                 count = count + 1
             }
-            // 未知表示類型
             -> return
         }
+        // 未知表示類型
     }
     ok = true
 }

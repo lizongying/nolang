@@ -1161,6 +1161,8 @@ type StructField struct {
 	Type        Type
 	ArraySize   int64 // >0 = 定長陣列 [N]type
 	IsSlice     bool  // true = 切片 []type
+	ReadOnly    bool  // true = read-only field modifier
+	Sealed      bool  // true = sealed field modifier
 	Value       Expression
 	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目
 }

@@ -10,7 +10,6 @@
 //   // AES-256-CTR
 //   cipher = aes-256-ctr(plain, key256, iv)
 
-
 // ═══════════════════════════════════════════════
 // AES-128-CTR
 // ═══════════════════════════════════════════════
@@ -47,15 +46,16 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
             ctr[j] != 0 -> break
             j = j - 1
         }
+
         // 進位傳播
         ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 -> {
-    j = 11
-                for j >= 0 {
-                    ctr[j] = (ctr[j] + 1) & 255
-                    ctr[j] != 0 -> break
-                    j = j - 1
-                }
-}
+            j = 11
+            for j >= 0 {
+                ctr[j] = (ctr[j] + 1) & 255
+                ctr[j] != 0 -> break
+                j = j - 1
+            }
+        }
 
         pos = pos + n
     }
@@ -94,13 +94,13 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             j = j - 1
         }
         ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 -> {
-    j = 11
-                for j >= 0 {
-                    ctr[j] = (ctr[j] + 1) & 255
-                    ctr[j] != 0 -> break
-                    j = j - 1
-                }
-}
+            j = 11
+            for j >= 0 {
+                ctr[j] = (ctr[j] + 1) & 255
+                ctr[j] != 0 -> break
+                j = j - 1
+            }
+        }
 
         pos = pos + n
     }

@@ -13,14 +13,16 @@
 //   sig [64]byte = ed25519-sign(priv, msg)
 //   ok = ed25519-verify(pub, msg, sig)
 
-
 // ═══════════════════════════════════════════════
 // 常量
 // ═══════════════════════════════════════════════
 
 // 曲線參數 d = -121665/121666 mod p
 // 預計算為 10-limb 表示
-ED-D [10]i64 = [-10913610, 13857, 107136, -17686, -25275, -4158, -9706, 17147, 4404, 0]
+ED-D [10]i64 = [
+    -10913610, 13857, 107136, -17686, -25275, -4158, -9706, 17147,
+    4404, 0,
+]
 
 // 基點 B 的 y 座標 = 4/5 mod p（小端 32 位元組）
 // 0x6666666666666666666666666666666666666666666666666666666666666658
@@ -114,10 +116,13 @@ ge-add = (r []i64, p []i64, q []i64) {
 
     // X3 = E*F
     x25519.fe-mul(r, e, f)
+
     // Y3 = G*H
     x25519.fe-mul(r[10..], g, hh)
+
     // T3 = E*H
     x25519.fe-mul(r[30..], e, hh)
+
     // Z3 = F*G
     x25519.fe-mul(r[20..], f, g)
 }
@@ -158,10 +163,13 @@ ge-double = (r []i64, p []i64) {
 
     // X3 = E*F
     x25519.fe-mul(r, e, f)
+
     // Y3 = G*H
     x25519.fe-mul(r[10..], g, hh)
+
     // T3 = E*H
     x25519.fe-mul(r[30..], e, hh)
+
     // Z3 = F*G
     x25519.fe-mul(r[20..], f, g)
 }
@@ -195,12 +203,12 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         bit = (scalar[byte-idx] >> bit-idx) & 1
 
         bit == 1 -> {
-    ge-add(tmp, r, p)
-                x25519.fe-copy(r, tmp)
-                x25519.fe-copy(r[10..], tmp[10..])
-                x25519.fe-copy(r[20..], tmp[20..])
-                x25519.fe-copy(r[30..], tmp[30..])
-}
+            ge-add(tmp, r, p)
+            x25519.fe-copy(r, tmp)
+            x25519.fe-copy(r[10..], tmp[10..])
+            x25519.fe-copy(r[20..], tmp[20..])
+            x25519.fe-copy(r[30..], tmp[30..])
+        }
 
         t = t - 1
     }
@@ -288,6 +296,7 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     // 使用簡化的冪計算
     pow-uv7 []i64
     x25519.fe-sq(pow-uv7, uv7)
+
     // 需要計算 uv7^(2^252 - 2)
     i <- [0..251): {
         x25519.fe-sq(pow-uv7, pow-uv7)
@@ -322,29 +331,32 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     }
 
     is-zero == 0 -> {
-    // 嘗試 x = x * sqrt(-1)
-            // sqrt(-1) mod p = 2^((p-1)/4)
-            // 預計算值
-            sqrt-m1 [10]i64 = [-32595792, -7943725, 9377950, -3500415, 27508682, 7555289, -2773299, -2996918, -13890057, 0]
-            x25519.fe-mul(x, x, sqrt-m1)
+        // 嘗試 x = x * sqrt(-1)
+        // sqrt(-1) mod p = 2^((p-1)/4)
+        // 預計算值
+        sqrt-m1 [10]i64 = [
+            -32595792, -7943725, 9377950, -3500415, 27508682, 7555289, -2773299, -2996918,
+            -13890057, 0,
+        ]
+        x25519.fe-mul(x, x, sqrt-m1)
 
-            // 再次驗證
-            x25519.fe-sq(x2, x)
-            x25519.fe-mul(check, v, x2)
-            fe-neg(check-neg, u)
-            x25519.fe-add(diff, check, check-neg)
-            x25519.fe-tobytes(diff-bytes, diff)
+        // 再次驗證
+        x25519.fe-sq(x2, x)
+        x25519.fe-mul(check, v, x2)
+        fe-neg(check-neg, u)
+        x25519.fe-add(diff, check, check-neg)
+        x25519.fe-tobytes(diff-bytes, diff)
 
-            is-zero = 1
-            i <- [0..32): {
-                diff-bytes[i] != 0 -> is-zero = 0
-            }
+        is-zero = 1
+        i <- [0..32): {
+            diff-bytes[i] != 0 -> is-zero = 0
+        }
 
-            is-zero == 0 -> {
-    ok = 0
-                    return
-}
-}
+        is-zero == 0 -> {
+            ok = 0
+            return
+        }
+    }
 
     // 檢查符號：如果 x 的最低位元 != sign，取負
     x-bytes [32]byte
@@ -428,7 +440,11 @@ sc-reduce = (s []byte) (out [32]byte) {
     limbs [8]u64
     i <- [0..8): {
         off = i * 8
-        limbs[i] = (s[off] & 255) | ((s[off + 1] & 255) << 8) | ((s[off + 2] & 255) << 16) | ((s[off + 3] & 255) << 24) | ((s[off + 4] & 255) as u64 << 32) | ((s[off + 5] & 255) as u64 << 40) | ((s[off + 6] & 255) as u64 << 48) | ((s[off + 7] & 255) as u64 << 56)
+        limbs[i] = (s[off] & 255) | ((s[off + 1] & 255) << 8) | ((s[off + 2] & 255) << 16) | ((s[off + 3] & 255) << 24) | ( <<
+32) | ( <<
+40) | ( <<
+48) | ( <<
+56)
     }
 
     // L 的 limb 表示
@@ -477,33 +493,31 @@ sc-reduce = (s []byte) (out [32]byte) {
         i <- [32..64): {
             work[i] != 0 -> has-high = 1
         }
-
         has-high == 0 -> {
-    // 比較低 32 位元組與 L
-                ge = 1
-                i = 31
-                for i >= 0 {
-                                        {
-                        work[i] > ED-L[i] -> break
-                        work[i] < ED-L[i] -> {
-                            ge = 0
-                                                    break
-                        }
+            // 比較低 32 位元組與 L
+            ge = 1
+            i = 31
+            for i >= 0 {
+                {
+                    work[i] > ED-L[i] -> break
+                    work[i] < ED-L[i] -> {
+                        ge = 0
+                        break
                     }
-                    i = i - 1
                 }
+                i = i - 1
+            }
 
-                ge == 0 -> break
-}
-
+            ge == 0 -> break
+        }
         // 減去 L（從低位開始）
         borrow = 0
         i <- [0..32): {
             diff-val = (work[i] & 255) - (ED-L[i] & 255) - borrow
-                        {
+            {
                 diff-val < 0 -> {
                     diff-val = diff-val + 256
-                                    borrow = 1
+                    borrow = 1
                 }
                 -> borrow = 0
             }
@@ -512,16 +526,15 @@ sc-reduce = (s []byte) (out [32]byte) {
         // 處理高位借位
         i <- [32..64 && borrow != 0): {
             diff-val = (work[i] & 255) - borrow
-                        {
+            {
                 diff-val < 0 -> {
                     diff-val = diff-val + 256
-                                    borrow = 1
+                    borrow = 1
                 }
                 -> borrow = 0
             }
             work[i] = diff-val
         }
-
     }
 
     i <- [0..32): {
@@ -704,10 +717,10 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     // 檢查 S < L
     i = 31
     for i >= 0 {
-                {
+        {
             s[i] > ED-L[i] -> {
                 ok = 0
-                            return
+                return
             }
             s[i] < ED-L[i] -> break
         }
@@ -719,18 +732,18 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     A []i64
     a-ok, A = ge-unpack(pub)
     a-ok == 0 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
 
     // 解壓縮 R
     r-ok = 0
     R-point []i64
     r-ok, R-point = ge-unpack(R)
     r-ok == 0 -> {
-    ok = 0
-            return
-}
+        ok = 0
+        return
+    }
 
     // k = SHA-512(R || A || msg) mod L
     k-input []byte

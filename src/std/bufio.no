@@ -22,15 +22,15 @@ reader.init = (fd i64, buf []byte) (r reader) {
 reader.fill = () (ok bool) {
     .pos < 0 -> return
     .avail > 0 -> {
-    ok = true
-            return
-}
+        ok = true
+        return
+    }
     n = read(.fd, .buf, .buf.len)
     n > 0 -> {
-    .pos = 0
-            .avail = n
-            ok = true
-}
+        .pos = 0
+        .avail = n
+        ok = true
+    }
 }
 
 // read-byte: 讀取一個位元組
@@ -38,9 +38,9 @@ reader.fill = () (ok bool) {
 reader.read-byte = () (b ?byte) {
     ok = .fill()
     ok == false -> {
-    b = nil
-            return
-}
+        b = nil
+        return
+    }
     b = .buf[.pos]
     .pos = .pos + 1
 }
@@ -51,16 +51,16 @@ reader.read-line = (line str) (ok bool) {
     !! {
         ok = .fill()
         ok == false -> {
-    n > 0 -> ok = true
-                return
-}
+            n > 0 -> ok = true
+            return
+        }
         for .pos < .avail {
             c = .buf[.pos]
             .pos = .pos + 1
             c == 10 -> {
-    ok = true
-                    return
-}
+                ok = true
+                return
+            }
             line[n] = c
             n = n + 1
         }

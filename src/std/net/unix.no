@@ -24,7 +24,6 @@
 //   }
 //   c.close()
 
-
 // ═══════════════════════════════════════════════
 // 內建函數（底層實作）
 // ═══════════════════════════════════════════════
@@ -120,9 +119,9 @@ unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
 // close: 關閉監聽 socket（不自動刪除 socket 檔案）
 unix-listener.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得監聽 socket 的檔案描述符
@@ -222,6 +221,7 @@ unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     ret = net-set-recv-timeout(.fd, timeout-ms)
     ret != 0 -> return
     read-n = net-recv(.fd, buf, n)
+
     // 恢復為阻塞模式
     net-set-recv-timeout(.fd, 0)
 }
@@ -229,9 +229,9 @@ unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
 // close: 關閉連接
 unix-conn.close = () {
     .fd >= 0 -> {
-    close(.fd)
-            .fd = -1
-}
+        close(.fd)
+        .fd = -1
+    }
 }
 
 // fd-of: 取得連接 socket 的檔案描述符

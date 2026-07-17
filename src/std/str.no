@@ -198,22 +198,16 @@ str.to-lower = () (val str) {
 str.trim = () (val str) {
     start <- [0...len): {
         c = .[start]
-        c != 32 && c != 9 && c != 10 && c != 13 -> {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
     end = .len - 1
     for end >= start {
         c = .[end]
-        c != 32 && c != 9 && c != 10 && c != 13 -> {
-            break
-        }
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
         end = end - 1
     }
     n = end - start + 1
-    n < 0 -> {
-        return
-    }
+    n < 0 -> return
     val = with-cap(n)
     i <- [0..n): {
         val[i] = .[start + i]
@@ -240,9 +234,7 @@ str.repeat = (times i64) (val str) {
 str.slice = (start i64, end i64) (val str) {
     start < 0 -> start = 0
     end > .len -> end = .len
-    start >= end -> {
-        return
-    }
+    start >= end -> return
     n = end - start
     val = with-cap(n)
     i <- [0..n): {
@@ -623,7 +615,6 @@ str.to-f64 = () (val ?f64) {
         {
             c >= 48 && c <= 57 -> has-digit = 1
             c == 46 -> c == 101 || c == 69
-            ->
             -> {
                 // 小數點 - 允許
                 // 科學記號 e/E - 允許
@@ -631,6 +622,7 @@ str.to-f64 = () (val ?f64) {
                 val = err('invalid float')
                 return
             }
+            ->
         }
     }
 
@@ -863,9 +855,7 @@ str.trim-char = (ch char) (val str) {
                 clen = 4
             }
         }
-        cp != ch -> {
-            break
-        }
+        cp != ch -> break
         start = start + clen
     }
 
@@ -898,9 +888,7 @@ str.trim-char = (ch char) (val str) {
         i = i + clen
     }
     n = end - start
-    n < 0 -> {
-        return
-    }
+    n < 0 -> return
     j <- [0..n): {
         val[j] = .[start + j]
     }
@@ -999,9 +987,7 @@ str.split = (sep str) (out []str) {
 // 返回 out str: 連接後的字串
 []str.join = (sep str) (out str) {
     n = .len
-    n == 0 -> {
-        return
-    }
+    n == 0 -> return
     total = 0
     i <- [0..n): {
         i > 0 -> total = total + sep.len

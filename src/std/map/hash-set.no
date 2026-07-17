@@ -12,10 +12,10 @@
 //   s.for-each(val)
 
 hash-set {
-    cap   i64
-    keys  [64]i64
-    occ   [64]i64
-    size  i64
+    cap i64
+    keys [64]i64
+    occ [64]i64
+    size i64
 }
 
 // init: 初始化
@@ -28,12 +28,12 @@ hash-set.init = () {
 }
 
 // hash: 計算索引
-hash-set.hash = (key i64)(idx i64) {
+hash-set.hash = (key i64) (idx i64) {
     idx = key & (.cap - 1)
 }
 
 // add: 加入元素，回傳是否新增
-hash-set.add = (key i64)(is-new bool) {
+hash-set.add = (key i64) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -52,10 +52,9 @@ hash-set.add = (key i64)(is-new bool) {
 }
 
 // contains: 檢查元素是否存在
-hash-set.contains = (key i64)(found bool) {
+hash-set.contains = (key i64) (found bool) {
     found = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {
@@ -69,10 +68,9 @@ hash-set.contains = (key i64)(found bool) {
 }
 
 // remove: 刪除元素，回傳是否刪除
-hash-set.remove = (key i64)(removed bool) {
+hash-set.remove = (key i64) (removed bool) {
     removed = false
     .size == 0 -> return
-
     idx = .hash(key)
 
     for .occ[idx] == 1 {

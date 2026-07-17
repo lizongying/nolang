@@ -40,7 +40,7 @@ deque.push-back = (val i64) {
     n = .tail - .head
     n >= .cap -> return
     idx = .tail
-        {
+    {
         idx >= 0 -> idx = idx % .cap
         -> idx = .cap - ((-idx) % .cap)
     }
@@ -53,11 +53,11 @@ deque.push-back = (val i64) {
 deque.pop-front = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     idx = .head
-        {
+    {
         idx >= 0 -> idx = idx % .cap
         -> idx = .cap - ((-idx) % .cap)
     }
@@ -70,12 +70,12 @@ deque.pop-front = () (val ?i64) {
 deque.pop-back = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     new-tail = .tail - 1
     idx = new-tail
-        {
+    {
         idx >= 0 -> idx = idx % .cap
         -> idx = .cap - ((-idx) % .cap)
     }
@@ -88,11 +88,11 @@ deque.pop-back = () (val ?i64) {
 deque.peek-front = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     idx = .head
-        {
+    {
         idx >= 0 -> idx = idx % .cap
         -> idx = .cap - ((-idx) % .cap)
     }
@@ -104,11 +104,11 @@ deque.peek-front = () (val ?i64) {
 deque.peek-back = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     idx = .tail - 1
-        {
+    {
         idx >= 0 -> idx = idx % .cap
         -> idx = .cap - ((-idx) % .cap)
     }

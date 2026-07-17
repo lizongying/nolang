@@ -70,13 +70,9 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
 // str-eq: 比較兩個 str 是否相等
 hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     eq = false
-    a.len != b.len -> {
-        return
-    }
+    a.len != b.len -> return
     i <- [0..a.len): {
-        a[i] != b[i] -> {
-            return
-        }
+        a[i] != b[i] -> return
     }
     eq = true
 }
@@ -93,9 +89,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
 
     // 複製 key（全結構賦值，包含 data 指標）
@@ -122,9 +116,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
     result = nil
 }
@@ -141,9 +133,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 // remove: 刪除 key
 hashmap-str-tmpl.remove = (key str) (removed bool) {
     removed = false
-    .size == 0 -> {
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -158,9 +148,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
 }
 
@@ -246,9 +234,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
 
     .keys[idx] = key
@@ -273,9 +259,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
     result = nil
 }
@@ -292,9 +276,7 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
 // remove: 刪除 key
 hashmap-int-tmpl.remove = (key k) (removed bool) {
     removed = false
-    .size == 0 -> {
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -308,9 +290,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
             return
         }
         idx = idx + 1
-        idx >= .cap -> {
-            idx = 0
-        }
+        idx >= .cap -> idx = 0
     }
 }
 
@@ -431,9 +411,7 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
 // remove: 刪除 key
 hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     removed = false
-    .size == 0 -> {
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 

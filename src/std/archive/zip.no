@@ -88,9 +88,7 @@ zip.entry-off = (idx i64) (off i64) {
     cd-off, total = .cd-info()
     off = cd-off
     j <- [0..idx): {
-        j >= total -> {
-            break
-        }
+        j >= total -> break
         off28 = off + 28
         off30 = off + 30
         off32 = off + 32

@@ -9,7 +9,6 @@
 //   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
 //   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用
 
-
 // ═══════════════════════════════════════════════
 // HKDF-Extract
 // ═══════════════════════════════════════════════
@@ -22,16 +21,16 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     // PRK = HMAC-SHA256(salt, IKM)
     // 若 salt 為空，使用 32 個零位元組
     k []byte
-        {
+    {
         salt.len == 0 -> {
             i <- [0..32): {
-                        k[i] = 0
-                    }
+                k[i] = 0
+            }
         }
         -> {
             i <- [0..salt.len): {
-                        k[i] = salt[i]
-                    }
+                k[i] = salt[i]
+            }
         }
     }
     prk = hmac.hmac-sha256(k, ikm)

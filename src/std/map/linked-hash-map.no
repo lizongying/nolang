@@ -35,20 +35,20 @@ linked-hash-map.init = () {
 }
 
 // hash: 計算索引
-linked-hash-map.hash = (key i64)(idx i64) {
+linked-hash-map.hash = (key i64) (idx i64) {
     idx = key & (.cap - 1)
 }
 
 // put: 插入或更新 key→value
-linked-hash-map.put = (key i64, val i64)(is-new bool) {
+linked-hash-map.put = (key i64, val i64) (is-new bool) {
     idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
-    .vals[idx] = val
-                is-new = false
-                return
-}
+            .vals[idx] = val
+            is-new = false
+            return
+        }
         idx = idx + 1
         idx >= .cap -> idx = 0
     }
@@ -59,14 +59,14 @@ linked-hash-map.put = (key i64, val i64)(is-new bool) {
     .nxt[idx] = -1
     .prv[idx] = .tail
 
-        {
+    {
         .head == -1 -> {
             .head = idx
-                    .tail = idx
+            .tail = idx
         }
         -> {
             .nxt[.tail] = idx
-                    .tail = idx
+            .tail = idx
         }
     }
 
@@ -75,19 +75,19 @@ linked-hash-map.put = (key i64, val i64)(is-new bool) {
 }
 
 // get: 查找 key，返回 ?i64（nil=未找到）
-linked-hash-map.get = (key i64)(result ?i64) {
+linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> {
-    result = nil
-            return
-}
+        result = nil
+        return
+    }
 
     idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
-    result = .vals[idx]
-                return
-}
+            result = .vals[idx]
+            return
+        }
         idx = idx + 1
         idx >= .cap -> idx = 0
     }
@@ -95,7 +95,7 @@ linked-hash-map.get = (key i64)(result ?i64) {
 }
 
 // contains: 檢查 key 是否存在
-linked-hash-map.contains = (key i64)(found bool) {
+linked-hash-map.contains = (key i64) (found bool) {
     found = false
     val = .get(key)
     val: {
@@ -104,27 +104,27 @@ linked-hash-map.contains = (key i64)(found bool) {
 }
 
 // remove: 刪除 key
-linked-hash-map.remove = (key i64)(removed bool) {
+linked-hash-map.remove = (key i64) (removed bool) {
     removed = false
     idx = .hash(key)
 
     for .occ[idx] == 1 {
         .keys[idx] == key -> {
-    .occ[idx] = 0
-                .size = .size - 1
-                prev = .prv[idx]
-                next = .nxt[idx]
-                                {
-                    prev == -1 -> .head = next
-                    -> .nxt[prev] = next
-                }
-                                {
-                    next == -1 -> .tail = prev
-                    -> .prv[next] = prev
-                }
-                removed = true
-                return
-}
+            .occ[idx] = 0
+            .size = .size - 1
+            prev = .prv[idx]
+            next = .nxt[idx]
+            {
+                prev == -1 -> .head = next
+                -> .nxt[prev] = next
+            }
+            {
+                next == -1 -> .tail = prev
+                -> .prv[next] = prev
+            }
+            removed = true
+            return
+        }
 
         idx = idx + 1
         idx >= .cap -> idx = 0
@@ -156,9 +156,9 @@ linked-hash-map.for-each = (k i64, v i64) {
     idx = .head
     for idx != -1 {
         .occ[idx] == 1 -> {
-    k = .keys[idx]
-                v = .vals[idx]
-}
+            k = .keys[idx]
+            v = .vals[idx]
+        }
         idx = .nxt[idx]
     }
 }

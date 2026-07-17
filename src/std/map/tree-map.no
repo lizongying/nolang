@@ -140,13 +140,11 @@ tree-map.rot-left = (x i64) {
     .left[y] = x
     .parent[y] = .parent[x]
     p = .parent[x]
-        {
+    {
         p < 0 -> .root = y
         -> {
-                        {
-                .left[p] == x -> .left[p] = y
-                -> .right[p] = y
-            }
+            .left[p] == x -> .left[p] = y
+            -> .right[p] = y
         }
     }
     .parent[x] = y
@@ -169,13 +167,11 @@ tree-map.rot-right = (x i64) {
     .right[y] = x
     .parent[y] = .parent[x]
     p = .parent[x]
-        {
+    {
         p < 0 -> .root = y
         -> {
-                        {
-                .left[p] == x -> .left[p] = y
-                -> .right[p] = y
-            }
+            .left[p] == x -> .left[p] = y
+            -> .right[p] = y
         }
     }
     .parent[x] = y
@@ -193,22 +189,24 @@ tree-map.rot-right = (x i64) {
 tree-map.rebalance = (idx i64) (nr i64) {
     nr = idx
     b = .bf(idx)
+
     // 左重（b > 1）
     b > 1 -> {
-    lb = .bf(.left[idx])
-            lb < 0 -> .rot-left(.left[idx])
-            .rot-right(idx)
-            nr = .parent[idx]
-            return
-}
+        lb = .bf(.left[idx])
+        lb < 0 -> .rot-left(.left[idx])
+        .rot-right(idx)
+        nr = .parent[idx]
+        return
+    }
+
     // 右重（b < -1）
     b < -1 -> {
-    rb = .bf(.right[idx])
-            rb > 0 -> .rot-right(.right[idx])
-            .rot-left(idx)
-            nr = .parent[idx]
-            return
-}
+        rb = .bf(.right[idx])
+        rb > 0 -> .rot-right(.right[idx])
+        .rot-left(idx)
+        nr = .parent[idx]
+        return
+    }
     .update-ht(idx)
 }
 
@@ -227,12 +225,12 @@ tree-map.rebalance-up = (idx i64) {
 tree-map.successor = (idx i64) (succ i64) {
     succ = -1
     .right[idx] >= 0 -> {
-    succ = .right[idx]
-            for .left[succ] >= 0 {
-                succ = .left[succ]
-            }
-            return
-}
+        succ = .right[idx]
+        for .left[succ] >= 0 {
+            succ = .left[succ]
+        }
+        return
+    }
     p = .parent[idx]
     for p >= 0 {
         idx != .right[p] -> break
@@ -252,54 +250,56 @@ tree-map.successor = (idx i64) (succ i64) {
 // 返回 ok bool: true=新增, false=更新已存在鍵或池已滿
 tree-map.put = (key i64, val i64) (ok bool) {
     ok = false
+
     // 空樹
     .root < 0 -> {
-    idx = .alloc-node()
-            idx < 0 -> return
-            .keys[idx] = key
-            .vals[idx] = val
-            .root = idx
-            .size = 1
-            ok = true
-            return
-}
+        idx = .alloc-node()
+        idx < 0 -> return
+        .keys[idx] = key
+        .vals[idx] = val
+        .root = idx
+        .size = 1
+        ok = true
+        return
+    }
+
     // BST 搜尋插入點
     cur = .root
     !! {
         key == .keys[cur] -> {
-    .vals[cur] = val
-                return
-}
-                {
+            .vals[cur] = val
+            return
+        }
+        {
             key < .keys[cur] -> {
                 .left[cur] < 0 -> {
-    idx = .alloc-node()
-                                    idx < 0 -> return
-                                    .keys[idx] = key
-                                    .vals[idx] = val
-                                    .left[cur] = idx
-                                    .parent[idx] = cur
-                                    .size = .size + 1
-                                    ok = true
-                                    .rebalance-up(cur)
-                                    return
-}
-                            cur = .left[cur]
+                    idx = .alloc-node()
+                    idx < 0 -> return
+                    .keys[idx] = key
+                    .vals[idx] = val
+                    .left[cur] = idx
+                    .parent[idx] = cur
+                    .size = .size + 1
+                    ok = true
+                    .rebalance-up(cur)
+                    return
+                }
+                cur = .left[cur]
             }
             -> {
                 .right[cur] < 0 -> {
-    idx = .alloc-node()
-                                    idx < 0 -> return
-                                    .keys[idx] = key
-                                    .vals[idx] = val
-                                    .right[cur] = idx
-                                    .parent[idx] = cur
-                                    .size = .size + 1
-                                    ok = true
-                                    .rebalance-up(cur)
-                                    return
-}
-                            cur = .right[cur]
+                    idx = .alloc-node()
+                    idx < 0 -> return
+                    .keys[idx] = key
+                    .vals[idx] = val
+                    .right[cur] = idx
+                    .parent[idx] = cur
+                    .size = .size + 1
+                    ok = true
+                    .rebalance-up(cur)
+                    return
+                }
+                cur = .right[cur]
             }
         }
     }
@@ -312,10 +312,10 @@ tree-map.get = (key i64) (val ?i64) {
     idx = .root
     for idx >= 0 {
         key == .keys[idx] -> {
-    val = .vals[idx]
-                return
-}
-                {
+            val = .vals[idx]
+            return
+        }
+        {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
@@ -331,10 +331,10 @@ tree-map.contains = (key i64) (yes bool) {
     idx = .root
     for idx >= 0 {
         key == .keys[idx] -> {
-    yes = true
-                return
-}
-                {
+            yes = true
+            return
+        }
+        {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
@@ -346,11 +346,12 @@ tree-map.contains = (key i64) (yes bool) {
 // 返回 ok bool: true=已刪除, false=未找到
 tree-map.remove = (key i64) (ok bool) {
     ok = false
+
     // BST 搜尋
     idx = .root
     for idx >= 0 {
         key == .keys[idx] -> break
-                {
+        {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
@@ -358,31 +359,32 @@ tree-map.remove = (key i64) (ok bool) {
     idx < 0 -> return
     ok = true
     .size = .size - 1
+
     // 雙子節點：用後繼替換後刪除後繼
     .left[idx] >= 0 && .right[idx] >= 0 -> {
-    succ = .right[idx]
-            for .left[succ] >= 0 {
-                succ = .left[succ]
-            }
-            .keys[idx] = .keys[succ]
-            .vals[idx] = .vals[succ]
-            idx = succ
-}
+        succ = .right[idx]
+        for .left[succ] >= 0 {
+            succ = .left[succ]
+        }
+        .keys[idx] = .keys[succ]
+        .vals[idx] = .vals[succ]
+        idx = succ
+    }
+
     // 此時 idx 最多一個子節點
     child = .left[idx]
     child < 0 -> child = .right[idx]
     p = .parent[idx]
     child >= 0 -> .parent[child] = p
-        {
+    {
         p < 0 -> .root = child
         -> {
-                        {
-                .left[p] == idx -> .left[p] = child
-                -> .right[p] = child
-            }
+            .left[p] == idx -> .left[p] = child
+            -> .right[p] = child
         }
     }
     .free-node(idx)
+
     // 從父節點向上再平衡
     p >= 0 -> .rebalance-up(p)
 }
@@ -396,9 +398,9 @@ tree-map.remove = (key i64) (ok bool) {
 tree-map.first = () (key ?i64) {
     idx = .root
     idx < 0 -> {
-    key = nil
-            return
-}
+        key = nil
+        return
+    }
     for .left[idx] >= 0 {
         idx = .left[idx]
     }
@@ -410,9 +412,9 @@ tree-map.first = () (key ?i64) {
 tree-map.last = () (key ?i64) {
     idx = .root
     idx < 0 -> {
-    key = nil
-            return
-}
+        key = nil
+        return
+    }
     for .right[idx] >= 0 {
         idx = .right[idx]
     }
@@ -426,18 +428,18 @@ tree-map.lower-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
     for idx >= 0 {
-                {
+        {
             .keys[idx] >= target -> {
                 result = idx
-                            idx = .left[idx]
+                idx = .left[idx]
             }
             -> idx = .right[idx]
         }
     }
     result < 0 -> {
-    key = nil
-            return
-}
+        key = nil
+        return
+    }
     key = .keys[result]
 }
 
@@ -448,18 +450,18 @@ tree-map.upper-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
     for idx >= 0 {
-                {
+        {
             .keys[idx] > target -> {
                 result = idx
-                            idx = .left[idx]
+                idx = .left[idx]
             }
             -> idx = .right[idx]
         }
     }
     result < 0 -> {
-    key = nil
-            return
-}
+        key = nil
+        return
+    }
     key = .keys[result]
 }
 
@@ -469,10 +471,12 @@ tree-map.upper-bound = (target i64) (key ?i64) {
 tree-map.for-each = (k i64, v i64) {
     idx = .root
     idx < 0 -> return
+
     // 定位到最小鍵
     for .left[idx] >= 0 {
         idx = .left[idx]
     }
+
     // 逐個後繼遍歷
     for idx >= 0 {
         k = .keys[idx]

@@ -32,7 +32,6 @@ has-flag = (flag str, flagn i64) (yes bool) {
     n = count()
     i <- [1..n): {
         arg = get(i)
-
         // 精確比對 arg 與 flag
         matched = true
         flagn == 0 -> matched = false
@@ -40,14 +39,14 @@ has-flag = (flag str, flagn i64) (yes bool) {
             ac = arg[j] & 255
             fc = flag[j] & 255
             ac != fc -> {
-    matched = false
-                    break
-}
+                matched = false
+                break
+            }
         }
         matched == true -> {
-    yes = true
-                return
-}
+            yes = true
+            return
+        }
     }
 }
 
@@ -61,35 +60,34 @@ get-option = (key str, keyn i64, val str) (ok bool) {
     n = count()
     i <- [1..n): {
         arg = get(i)
-
         // 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j <- [0..keyn): {
             ac = arg[j] & 255
             kc = key[j] & 255
             ac != kc -> {
-    matched-prefix = 0
-                    break
-}
+                matched-prefix = 0
+                break
+            }
         }
         matched-prefix == 1 -> {
-    // 檢查 key 後是 '='
-                eq = arg[keyn] & 255
-                eq == 61 -> {
-    // 複製 '=' 後的內容到 val
-                        k = keyn + 1
-                        vn = 0
-                        for true {
-                            c = arg[k] & 255
-                            c == 0 -> break
-                            val[vn] = c
-                            vn = vn + 1
-                            k = k + 1
-                        }
-                        ok = true
-                        return
-}
-}
+            // 檢查 key 後是 '='
+            eq = arg[keyn] & 255
+            eq == 61 -> {
+                // 複製 '=' 後的內容到 val
+                k = keyn + 1
+                vn = 0
+                for true {
+                    c = arg[k] & 255
+                    c == 0 -> break
+                    val[vn] = c
+                    vn = vn + 1
+                    k = k + 1
+                }
+                ok = true
+                return
+            }
+        }
     }
 }
 
@@ -109,31 +107,29 @@ get-positional = (idx i64) (val str, ok bool) {
         // 跳過以 '-' 開頭的參數
         c0 = arg[0] & 255
         c0 == 45 -> {
-    j = j + 1
-                // 如果是 --key value 形式，也跳過下一個
-                c1 = arg[1] & 255
-                c1 != 45 -> {
-    // -k value: 跳過值（如果不是另一個標記）
-                        j < n -> {
-    next = get(j)
-                                nc = next[0] & 255
-                                nc != 45 -> j = j + 1
-}
-}
-                continue
-}
+            j = j + 1
+
+            // 如果是 --key value 形式，也跳過下一個
+            c1 = arg[1] & 255
+            c1 != 45 -> j < n -> {
+                next = get(j)
+                nc = next[0] & 255
+                nc != 45 -> j = j + 1
+            }
+            continue
+        }
         pos == idx -> {
-    // 複製 arg 到 val
-                k = 0
-                for true {
-                    c = arg[k] & 255
-                    c == 0 -> break
-                    val[k] = c
-                    k = k + 1
-                }
-                ok = true
-                return
-}
+            // 複製 arg 到 val
+            k = 0
+            for true {
+                c = arg[k] & 255
+                c == 0 -> break
+                val[k] = c
+                k = k + 1
+            }
+            ok = true
+            return
+        }
         pos = pos + 1
         j = j + 1
     }

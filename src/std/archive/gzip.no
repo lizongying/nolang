@@ -19,10 +19,13 @@
 // bit-reader: DEFLATE 位元讀取器（LSB-first）
 bit-reader {
     data []byte
-    pos i64       // 當前位元組位置
-    bit-buf i64   // 位元緩衝區
-    bit-cnt i64   // 緩衝區中剩餘位元數
+    pos i64
+    bit-buf i64
+    bit-cnt i64
 }
+// 當前位元組位置
+// 位元緩衝區
+// 緩衝區中剩餘位元數
 
 // read-bit: 讀取一個位元
 bit-reader.read-bit = () (bit i64) {
@@ -63,15 +66,19 @@ bit-reader.read-u16-le = () (v i64) {
 
 // huffman: 規範 Huffman 碼表
 huffman {
-    count []i64   // 各長度的碼數（0-15）
-    symbol []i64  // 按碼排序的符號
+    count []i64
+    symbol []i64
 }
+// 各長度的碼數（0-15）
+// 按碼排序的符號
 
 // build: 從碼長度陣列建構 Huffman 碼表
 huffman.build = (lengths []i64, n i64) {
     // 初始化 count[0..16] = 0
     c []i64
-    i <- [0..16): { c.push(0) }
+    i <- [0..16): {
+        c.push(0)
+    }
     .count = c
 
     // 計算各長度的碼數
@@ -83,12 +90,18 @@ huffman.build = (lengths []i64, n i64) {
 
     // 計算各長度的起始偏移
     offs []i64
-    i <- [0..17): { offs.push(0) }
-    i <- [1..16): { offs[i + 1] = offs[i] + .count[i] }
+    i <- [0..17): {
+        offs.push(0)
+    }
+    i <- [1..16): {
+        offs[i + 1] = offs[i] + .count[i]
+    }
 
     // 排序符號
     s []i64
-    i <- [0..n): { s.push(0) }
+    i <- [0..n): {
+        s.push(0)
+    }
     .symbol = s
 
     i <- [0..n): {
@@ -129,15 +142,25 @@ build-fixed = (lc huffman, dc huffman) {
     // 字面/長度碼長度：
     // 0-143: 8, 144-255: 9, 256-279: 7, 280-287: 8
     lengths []i64
-    i <- [0..144): { lengths.push(8) }
-    i <- [0..112): { lengths.push(9) }
-    i <- [0..24): { lengths.push(7) }
-    i <- [0..8): { lengths.push(8) }
+    i <- [0..144): {
+        lengths.push(8)
+    }
+    i <- [0..112): {
+        lengths.push(9)
+    }
+    i <- [0..24): {
+        lengths.push(7)
+    }
+    i <- [0..8): {
+        lengths.push(8)
+    }
     lc.build(lengths, 288)
 
     // 距離碼長度：全部 5 位元
     dlengths []i64
-    i <- [0..30): { dlengths.push(5) }
+    i <- [0..30): {
+        dlengths.push(5)
+    }
     dc.build(dlengths, 30)
 }
 
@@ -151,8 +174,31 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     // 讀取碼長度碼的碼長度
     clens []i64
-    i <- [0..19): { clens.push(0) }
-    code-order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+    i <- [0..19): {
+        clens.push(0)
+    }
+    code-order [] = [
+
+        16,
+        17,
+        18,
+        0,
+        8,
+        7,
+        9,
+        6,
+        10,
+        5,
+        11,
+        4,
+        12,
+        3,
+        13,
+        2,
+        14,
+        1,
+        15,
+    ]
     i <- [0..hclen): {
         clens[code-order[i]] = br.read-bits(3)
     }
@@ -164,7 +210,9 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     // 解碼字面/長度和距離碼長度
     lengths []i64
     total = hlit + hdist
-    i <- [0..total): { lengths.push(0) }
+    i <- [0..total): {
+        lengths.push(0)
+    }
 
     idx = 0
     for idx < total {
@@ -205,8 +253,12 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     // 建構距離 Huffman 表
     dlengths []i64
-    i <- [0..hdist): { dlengths.push(0) }
-    i <- [0..hdist): { dlengths[i] = lengths[hlit + i] }
+    i <- [0..hdist): {
+        dlengths.push(0)
+    }
+    i <- [0..hdist): {
+        dlengths[i] = lengths[hlit + i]
+    }
     dc.build(dlengths, hdist)
 }
 
@@ -218,22 +270,151 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 //   out: 解壓後的資料 ([]byte)
 inflate-decompress = (data []byte, out-size i64) (out []byte) {
     br = bit-reader{
-        data: data,
-        pos: 0,
-        bit-buf: 0,
+        data: data
+        pos: 0
+        bit-buf: 0
         bit-cnt: 0
     }
 
     result []byte
 
     // 長度碼基底值 (257-285)
-    length-base = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+    length-base [] = [
+
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        15,
+        17,
+        19,
+        23,
+        27,
+        31,
+        35,
+        43,
+        51,
+        59,
+        67,
+        83,
+        99,
+        115,
+        131,
+        163,
+        195,
+        227,
+        258,
+    ]
+
     // 長度碼額外位元數
-    length-extra = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+    length-extra [] = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5,
+        0,
+    ]
+
     // 距離碼基底值 (0-29)
-    dist-base = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+    dist-base [] = [
+
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        9,
+        13,
+        17,
+        25,
+        33,
+        49,
+        65,
+        97,
+        129,
+        193,
+        257,
+        385,
+        513,
+        769,
+        1025,
+        1537,
+        2049,
+        3073,
+        4097,
+        6145,
+        8193,
+        12289,
+        16385,
+        24577,
+    ]
+
     // 距離碼額外位元數
-    dist-extra = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+    dist-extra [] = [
+
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        5,
+        5,
+        6,
+        6,
+        7,
+        7,
+        8,
+        8,
+        9,
+        9,
+        10,
+        10,
+        11,
+        11,
+        12,
+        12,
+        13,
+        13,
+    ]
 
     final = 0
     for final == 0 {
@@ -261,17 +442,13 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
             for done == 0 {
                 sym = lc.decode(br)
                 sym == 256 -> done = 1
-                sym < 256 -> {
-                    // 字面值
-                    result.push(sym)
-                }
+                sym < 256 -> result.push(sym)
                 sym > 256 -> {
                     // 長度/距離回參考
                     code = sym - 257
                     length = length-base[code]
                     extra = length-extra[code]
                     extra > 0 -> length = length + br.read-bits(extra)
-
                     dsym = dc.decode(br)
                     distance = dist-base[dsym]
                     dextra = dist-extra[dsym]
@@ -296,17 +473,13 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
             for done == 0 {
                 sym = lc.decode(br)
                 sym == 256 -> done = 1
-                sym < 256 -> {
-                    // 字面值
-                    result.push(sym)
-                }
+                sym < 256 -> result.push(sym)
                 sym > 256 -> {
                     // 長度/距離回參考
                     code = sym - 257
                     length = length-base[code]
                     extra = length-extra[code]
                     extra > 0 -> length = length + br.read-bits(extra)
-
                     dsym = dc.decode(br)
                     distance = dist-base[dsym]
                     dextra = dist-extra[dsym]
@@ -421,6 +594,7 @@ gzip-decompress = (data []byte) (out []byte) {
 
     // 檢查 FLG 處理額外欄位
     flg = data[3] & 255
+
     // FEXTRA (bit 2)
     flg & 4 != 0 -> {
         xlen = data[pos] & 255
@@ -428,6 +602,7 @@ gzip-decompress = (data []byte) (out []byte) {
         xlen = xlen | ((data[pos] & 255) << 8)
         pos = pos + xlen
     }
+
     // FNAME (bit 3) — 以 \0 結尾的字串
     flg & 8 != 0 -> {
         for data[pos] & 255 != 0 {
@@ -435,6 +610,7 @@ gzip-decompress = (data []byte) (out []byte) {
         }
         pos = pos + 1
     }
+
     // FCOMMENT (bit 4) — 以 \0 結尾的字串
     flg & 16 != 0 -> {
         for data[pos] & 255 != 0 {
@@ -442,14 +618,14 @@ gzip-decompress = (data []byte) (out []byte) {
         }
         pos = pos + 1
     }
+
     // FHCRC (bit 0) — 2 bytes CRC16
-    flg & 1 != 0 -> {
-        pos = pos + 2
-    }
+    flg & 1 != 0 -> pos = pos + 2
 
     // DEFLATE 資料從 pos 開始
     // 複製 DEFLATE 資料到新切片（inflate 需要獨立的位元讀取器）
     deflate-data []byte
+
     // 尾部有 8 bytes（CRC32 + ISIZE）
     deflate-end = data.len - 8
     i <- [pos..deflate-end): {

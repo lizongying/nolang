@@ -54,9 +54,9 @@ client.reconnect = () (ok bool) {
     ok = false
     .host.len == 0 -> return
     .connected -> {
-    .c.close()
-            .connected = false
-}
+        .c.close()
+        .connected = false
+    }
     ok = .c.dial(.host, .port)
     ok -> .connected = true
 }
@@ -106,6 +106,7 @@ client.request = (data str) (response ?str) {
 client.send-line = (line str) (written i64) {
     written = -1
     .connected == false -> return
+
     // char-to-str(10) = 換行符 \n（ASCII 10）
     nl = char-to-str(10)
     written = .c.send(line - nl)
@@ -120,9 +121,9 @@ client.is-connected = () (yes bool) {
 // close: 關閉連接並重置狀態
 client.close = () {
     .connected -> {
-    .c.close()
-            .connected = false
-}
+        .c.close()
+        .connected = false
+    }
 }
 
 // ═══════════════════════════════════════════════

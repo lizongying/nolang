@@ -8,14 +8,14 @@
 // 因此 vec 的所有方法（len、push、pop、contains、reverse、clone、fill、to-arr 等）
 // 均適用於 arr 的切片視圖。通過切片修改元素會影響原始 arr。
 
-arr {
-    len i64 read-only
+// arr {
+//     len i64 read-only
 
-    // 只存固定大小
-    // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
-    // >8 字节存指针指針
-    data *any sealed
-}
+//     // 只存固定大小
+//     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+//     // >8 字节存指针指針
+//     data *any sealed
+// }
 
 // [n]t.clone: 將陣列複製到 dst
 [n]t.clone = () (dst [n]t) {
@@ -30,9 +30,9 @@ arr {
     i <- [0..n): {
         d = .[i] - b[i]
         d != 0 -> {
-    yes = false
-                return
-}
+            yes = false
+            return
+        }
     }
 }
 
@@ -62,9 +62,9 @@ arr {
     i <- [0..n): {
         d = .[i] - val
         d == 0 -> {
-    found = 1
-                return
-}
+            found = 1
+            return
+        }
     }
 }
 
@@ -107,9 +107,9 @@ arr {
     i <- [0..n): {
         d = .[i] - val
         d == 0 -> {
-    idx = i
-                return
-}
+            idx = i
+            return
+        }
     }
 }
 

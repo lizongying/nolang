@@ -299,9 +299,7 @@ ws-server.listen = (host str, port i64) (ok bool) {
     .host = host
     .port = port
     fd = net-listen(host, port)
-    fd < 0 -> {
-        return
-    }
+    fd < 0 -> return
     .fd = fd
     ok = true
 }
@@ -310,13 +308,9 @@ ws-server.listen = (host str, port i64) (ok bool) {
 // 返回 c ?ws-server-conn: ok=已交握的客戶端, nil=失敗
 ws-server.accept = () (c ?ws-server-conn) {
     c = nil
-    .fd < 0 -> {
-        return
-    }
+    .fd < 0 -> return
     client-fd = net-accept(.fd)
-    client-fd < 0 -> {
-        return
-    }
+    client-fd < 0 -> return
     space = ' '
     buf = space.repeat(WS-BUF-SIZE)
     conn = ws-server-conn{
@@ -351,9 +345,7 @@ ws-server.close = () {
 // 讀取客戶端 HTTP 升級請求，驗證必要標頭，發送 101 回應。
 // 成功時設置 .connected = true。
 ws-server-conn.handshake = () {
-    .fd < 0 -> {
-        return
-    }
+    .fd < 0 -> return
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
@@ -366,23 +358,17 @@ ws-server-conn.handshake = () {
     sep-pos i64 = -1
 
     !! {
-        total + WS-RECV-SIZE > WS-BUF-SIZE -> {
-            return
-        }
+        total + WS-RECV-SIZE > WS-BUF-SIZE -> return
         tmp str = space.repeat(WS-RECV-SIZE)
         n = net-recv(.fd, tmp, WS-RECV-SIZE)
-        n <= 0 -> {
-            return
-        }
+        n <= 0 -> return
         i <- [0..n): {
             raw[total + i] = tmp[i]
         }
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> {
-            *
-        }
+        sep-pos >= 0 -> *
     }
 
     head = raw.slice(0, sep-pos)
@@ -392,9 +378,7 @@ ws-server-conn.handshake = () {
     request-line = head
     first-line-end >= 0 -> request-line; head.slice(0, first-line-end)
     sp1 = request-line.index(' ')
-    sp1 < 0 -> {
-        return
-    }
+    sp1 < 0 -> return
     method = request-line.slice(0, sp1)
     method != 'GET' -> {
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
@@ -412,9 +396,7 @@ ws-server-conn.handshake = () {
         key-marker = 'sec-websocket-key:'
         key-pos = head.index(key-marker)
     }
-    key-pos < 0 -> {
-        return
-    }
+    key-pos < 0 -> return
     val-start = key-pos + key-marker.len
 
     // 跳過空白
@@ -433,9 +415,7 @@ ws-server-conn.handshake = () {
         up-marker = 'upgrade:'
         up-pos = head.index(up-marker)
     }
-    up-pos < 0 -> {
-        return
-    }
+    up-pos < 0 -> return
     up-val-start = up-pos + up-marker.len
     {
         up-val-start < head.len && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
@@ -445,9 +425,7 @@ ws-server-conn.handshake = () {
     up-val-end < 0 -> up-val-end; head.len
     up-val = head.slice(up-val-start, up-val-end)
     up-low = up-val.to-lower()
-    up-low != 'websocket' -> {
-        return
-    }
+    up-low != 'websocket' -> return
 
     // 計算 Sec-WebSocket-Accept
     accept-val = ws-compute-accept(client-key)
@@ -459,9 +437,7 @@ ws-server-conn.handshake = () {
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
     resp = resp - crlf
     written = net-send(.fd, resp, resp.len)
-    written < 0 -> {
-        return
-    }
+    written < 0 -> return
 
     // 儲存標頭後的剩餘資料（可能包含第一個 frame）
     body-start = sep-pos + separator.len
@@ -482,9 +458,7 @@ ws-server-conn.handshake = () {
 // 返回 ok bool: true=成功
 ws-server-conn.send = (opcode i64, data str) (ok bool) {
     ok = false
-    .connected == false -> {
-        return
-    }
+    .connected == false -> return
     empty-key = ''
     frame = ws-build-frame(opcode, data, false, empty-key)
     written = net-send(.fd, frame, frame.len)
@@ -530,15 +504,13 @@ ws-server-conn.send-pong = (data str) (ok bool) {
 // 返回 ok bool: true=成功
 ws-server-conn.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
-    .connected == false -> {
-        return
-    }
+    .connected == false -> return
 
     // payload: 2-byte big-endian code + reason
     space = ' '
     payload = space.repeat(2 + reason.len)
-payload[0] = (close-code >> 8) & 255
-payload[1] = close-code & 255
+    payload[0] = (close-code >> 8) & 255
+    payload[1] = close-code & 255
     i <- [0..reason.len): {
         payload[2 + i] = reason[i]
     }
@@ -651,9 +623,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             need = frame-total - .recv-buf-len
             tmp str = ' '.repeat(WS-RECV-SIZE)
             !! {
-                need <= 0 -> {
-                    *
-                }
+                need <= 0 -> *
                 n = net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
@@ -761,9 +731,7 @@ ws-server-conn.close = () {
 // 返回 ok bool: true=成功
 ws-client.send = (opcode i64, data str) (ok bool) {
     ok = false
-    .connected == false -> {
-        return
-    }
+    .connected == false -> return
     .send-counter = .send-counter + 1
     seed = ws-next-rand() + .send-counter
     mask-key = ws-gen-mask-key(seed)
@@ -821,13 +789,11 @@ ws-client.send-pong = (data str) (ok bool) {
 // 返回 ok bool: true=成功
 ws-client.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
-    .connected == false -> {
-        return
-    }
+    .connected == false -> return
     space = ' '
     payload = space.repeat(2 + reason.len)
-payload[0] = (close-code >> 8) & 255
-payload[1] = close-code & 255
+    payload[0] = (close-code >> 8) & 255
+    payload[1] = close-code & 255
     i <- [0..reason.len): {
         payload[2 + i] = reason[i]
     }
@@ -965,9 +931,7 @@ ws-client.recv = () (msg ?ws-message) {
             need = frame-total - .recv-buf-len
             tmp str = ' '.repeat(WS-RECV-SIZE)
             !! {
-                need <= 0 -> {
-                    *
-                }
+                need <= 0 -> *
                 n = 0
                 {
                     .use-tls -> {
@@ -1275,9 +1239,7 @@ ws-connect = (url str) (c ?ws-client) {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> {
-            *
-        }
+        sep-pos >= 0 -> *
     }
 
     // 驗證狀態碼為 101

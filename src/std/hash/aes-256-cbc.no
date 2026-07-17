@@ -11,7 +11,6 @@
 //   cipher = aes-256-cbc-enc(plain, key, iv)
 //   plain = aes-256-cbc-dec(cipher, key, iv)
 
-
 // aes-256-cbc-enc: AES-256-CBC 加密
 // in []byte: 輸入資料（長度需為 16 的倍數）
 // key [32]byte: 256-bit 金鑰

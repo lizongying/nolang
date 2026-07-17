@@ -947,20 +947,19 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 }
 
 // formatStandaloneBody formats the body of a standalone if-then (cond -> body).
-// If the body is a single expression, let-statement, or multi-assign, it outputs inline.
-// If the body contains multiple statements or non-expression statements (e.g. return),
-// it outputs `{ stmts }`.
+// If the body is a single simple statement (expression, let, multi-assign,
+// return, break, continue), it outputs inline without braces.
+// If the body contains multiple statements, it outputs `{ stmts }`.
 func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
-	if len(body.Statements) == 1 {
-		if es, ok := body.Statements[0].(*parser.ExpressionStatement); ok {
-			f.formatExpression(es.Expression)
+	if len(body.Statements) == 1 &&
+		body.TrailingComments == nil &&
+		body.ClosingBraceComment == nil {
+		switch body.Statements[0].(type) {
+		case *parser.ExpressionStatement:
+			f.formatExpression(body.Statements[0].(*parser.ExpressionStatement).Expression)
 			return
-		}
-		if _, ok := body.Statements[0].(*parser.LetStatement); ok {
-			f.formatStatement(body.Statements[0])
-			return
-		}
-		if _, ok := body.Statements[0].(*parser.MultiAssignStatement); ok {
+		case *parser.LetStatement, *parser.MultiAssignStatement,
+			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
 			f.formatStatement(body.Statements[0])
 			return
 		}
@@ -1667,12 +1666,24 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 		f.write(" ")
 		if field.IsSlice {
 			f.write("[]")
-			f.write(field.Type.String())
+			if field.Type != nil {
+				f.write(field.Type.String())
+			}
 		} else if field.ArraySize > 0 {
 			f.writef("[%d]", field.ArraySize)
-			f.write(field.Type.String())
+			if field.Type != nil {
+				f.write(field.Type.String())
+			}
 		} else {
-			f.write(field.Type.String())
+			if field.Type != nil {
+				f.write(field.Type.String())
+			}
+		}
+		if field.ReadOnly {
+			f.write(" read-only")
+		}
+		if field.Sealed {
+			f.write(" sealed")
 		}
 	}
 	f.indent--

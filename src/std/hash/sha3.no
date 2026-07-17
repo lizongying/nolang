@@ -20,21 +20,17 @@
 // 旋轉偏移表（rho），25 個 lane 的旋轉量
 // 排列: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
 KECCAK-RC [25]u64 = [
-    0, 1, 62, 28, 27,
-    36, 44, 6, 55, 20,
-    3, 10, 43, 25, 39,
-    41, 45, 15, 21, 8,
-    18, 2, 61, 56, 14,
+    0, 1, 62, 28, 27, 36, 44, 6,
+    55, 20, 3, 10, 43, 25, 39, 41,
+    45, 15, 21, 8, 18, 2, 61, 56,
+    14,
 ]
 
 // 輪常量（iota），24 輪
 KECCAK-RC-FINAL [24]u64 = [
-    1, 32898, 3416954152, 2772599054,
-    14509999238, 3278471570, 9380296890, 3715929624,
-    376424198, 1613126308, 266236955, 14559940080,
-    3098900490, 4858091956, 1613126308, 376424198,
-    14509999238, 2772599054, 3612105106, 3416954152,
-    32898, 1, 4293707772, 4294893224,
+    1, 32898, 3416954152, 2772599054, 14509999238, 3278471570, 9380296890, 3715929624,
+    376424198, 1613126308, 266236955, 14559940080, 3098900490, 4858091956, 1613126308, 376424198,
+    14509999238, 2772599054, 3612105106, 3416954152, 32898, 1, 4293707772, 4294893224,
 ]
 
 // 64-bit 全 1 遮罩
@@ -53,7 +49,6 @@ keccak-f1600 = (state []u64) {
         x <- [0..5): {
             c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
         }
-
         d [5]u64
         x <- [0..5): {
             x1 = (x + 1) % 5
@@ -61,13 +56,11 @@ keccak-f1600 = (state []u64) {
             d[x] = c[x1] ^ ((c[x4] << 1) | (c[x4] >> 63))
             d[x] = d[x] & SHA3-MASK64
         }
-
         x <- [0..5): {
             y <- [0..5): {
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
             }
         }
-
         // ρ (rho) + π (pi) 合併
         b [25]u64
         x <- [0..5): {
@@ -82,7 +75,6 @@ keccak-f1600 = (state []u64) {
                 b[nx + 5 * ny] = rotated
             }
         }
-
         // χ (chi)
         x <- [0..5): {
             y <- [0..5): {
@@ -91,10 +83,8 @@ keccak-f1600 = (state []u64) {
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
             }
         }
-
         // ι (iota)
         state[0] = state[0] ^ KECCAK-RC-FINAL[round]
-
     }
 }
 
@@ -125,10 +115,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         // 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
             absorbed + i < dlen -> {
-    lane-idx = i / 8
-                    byte-idx = i % 8
-                    state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
-}
+                lane-idx = i / 8
+                byte-idx = i % 8
+                state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
+            }
         }
         keccak-f1600(state)
         absorbed = absorbed + rate
@@ -139,13 +129,17 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     // 最後一個區塊
     remaining = dlen % rate
     remaining == 0 -> remaining = rate
+
     // 在資料末尾添加填充
     pad-byte-idx = remaining
+
     // 對最後一個區塊的填充位元組進行 XOR
     lane-idx = pad-byte-idx / 8
     byte-idx = pad-byte-idx % 8
+
     // 添加 suffix
     state[lane-idx] = state[lane-idx] ^ (suffix << (byte-idx * 8))
+
     // 在 rate 末尾添加 0x80
     last-lane-idx = (rate - 1) / 8
     last-byte-idx = (rate - 1) % 8
@@ -157,10 +151,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     for squeezed < out-len {
         i <- [0..rate): {
             squeezed + i < out-len -> {
-    lane-idx = i / 8
-                    byte-idx = i % 8
-                    out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
-}
+                lane-idx = i / 8
+                byte-idx = i % 8
+                out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
+            }
         }
         squeezed + rate < out-len -> keccak-f1600(state)
         squeezed = squeezed + rate

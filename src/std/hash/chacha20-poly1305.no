@@ -18,10 +18,10 @@
 
 // ChaCha20 常量 "expand 32-byte k"
 // 各 32-bit 小端值
-CC-SIGMA0 u32 = 1634760805   // "expa"
-CC-SIGMA1 u32 = 857760878    // "nd 3"
-CC-SIGMA2 u32 = 2036477234   // "2-by"
-CC-SIGMA3 u32 = 1797285236   // "te k"
+CC-SIGMA0 u32 = 1634760805  // "expa"
+CC-SIGMA1 u32 = 857760878  // "nd 3"
+CC-SIGMA2 u32 = 2036477234  // "2-by"
+CC-SIGMA3 u32 = 1797285236  // "te k"
 
 // 32-bit 全 1 遮罩
 CC-MASK32 u32 = 4294967295
@@ -147,6 +147,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     r[1] = ((key[4] & 255) | ((key[5] & 255) << 8) | ((key[6] & 255) << 16) | ((key[7] & 255) << 24)) & 134217726
     r[2] = ((key[8] & 255) | ((key[9] & 255) << 8) | ((key[10] & 255) << 16) | ((key[11] & 255) << 24)) & 134217726
     r[3] = ((key[12] & 255) | ((key[13] & 255) << 8) | ((key[14] & 255) << 16) | ((key[15] & 255) << 24)) & 134217726
+
     // r[4] 高位部分（r 是 128-bit，分 5 個 26-bit limb 更好，但這裡用 32-bit 分割）
     // 簡化：使用 4×32-bit + 進位的方式處理 130-bit
 
@@ -169,7 +170,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         // 載入區塊（小端序），末尾補零
         n = 16
         pos + n > data.len -> n = data.len - pos
-
         t0 u32 = 0
         t1 u32 = 0
         t2 u32 = 0
@@ -195,12 +195,10 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
         // 高位 1（2^128 或 2^(n*8)）
         // 完整區塊添加 2^128，部分區塊添加 2^(n*8)
-                {
+        {
             n == 16 -> t4 = 1
-            -> {
-                // 部分區塊：設置對應位元
-                            t0 = t0 | (1 << (n * 8))
-            }
+            -> // 部分區塊：設置對應位元
+            t0 = t0 | (1 << (n * 8))
         }
 
         // h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
@@ -222,55 +220,55 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         // 但 32-bit 乘法會溢出，所以需要更小心
 
         // 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
-        d0 u64 = (h0 as u64) * (r[0] as u64)
-        d0 = d0 + (h1 as u64) * ((r[4] * 5) as u64)
-        d0 = d0 + (h2 as u64) * ((r[3] * 5) as u64)
-        d0 = d0 + (h3 as u64) * ((r[2] * 5) as u64)
-        d0 = d0 + (h4 as u64) * ((r[1] * 5) as u64)
+        d0 u64 = () * ()
+        d0 = d0 + () * ()
+        d0 = d0 + () * ()
+        d0 = d0 + () * ()
+        d0 = d0 + () * ()
 
-        d1 u64 = (h0 as u64) * (r[1] as u64)
-        d1 = d1 + (h1 as u64) * (r[0] as u64)
-        d1 = d1 + (h2 as u64) * ((r[4] * 5) as u64)
-        d1 = d1 + (h3 as u64) * ((r[3] * 5) as u64)
-        d1 = d1 + (h4 as u64) * ((r[2] * 5) as u64)
+        d1 u64 = () * ()
+        d1 = d1 + () * ()
+        d1 = d1 + () * ()
+        d1 = d1 + () * ()
+        d1 = d1 + () * ()
 
-        d2 u64 = (h0 as u64) * (r[2] as u64)
-        d2 = d2 + (h1 as u64) * (r[1] as u64)
-        d2 = d2 + (h2 as u64) * (r[0] as u64)
-        d2 = d2 + (h3 as u64) * ((r[4] * 5) as u64)
-        d2 = d2 + (h4 as u64) * ((r[3] * 5) as u64)
+        d2 u64 = () * ()
+        d2 = d2 + () * ()
+        d2 = d2 + () * ()
+        d2 = d2 + () * ()
+        d2 = d2 + () * ()
 
-        d3 u64 = (h0 as u64) * (r[3] as u64)
-        d3 = d3 + (h1 as u64) * (r[2] as u64)
-        d3 = d3 + (h2 as u64) * (r[1] as u64)
-        d3 = d3 + (h3 as u64) * (r[0] as u64)
-        d3 = d3 + (h4 as u64) * ((r[4] * 5) as u64)
+        d3 u64 = () * ()
+        d3 = d3 + () * ()
+        d3 = d3 + () * ()
+        d3 = d3 + () * ()
+        d3 = d3 + () * ()
 
-        d4 u64 = (h0 as u64) * (r[4] as u64)
-        d4 = d4 + (h1 as u64) * (r[3] as u64)
-        d4 = d4 + (h2 as u64) * (r[2] as u64)
-        d4 = d4 + (h3 as u64) * (r[1] as u64)
-        d4 = d4 + (h4 as u64) * (r[0] as u64)
+        d4 u64 = () * ()
+        d4 = d4 + () * ()
+        d4 = d4 + () * ()
+        d4 = d4 + () * ()
+        d4 = d4 + () * ()
 
         // 進位處理 + 模約簡（2^130 - 5）
         c u64 = d0 >> 26
-        h0 = (d0 & 67108863) as u32
+        h0 = 
         d1 = d1 + c
         c = d1 >> 26
-        h1 = (d1 & 67108863) as u32
+        h1 = 
         d2 = d2 + c
         c = d2 >> 26
-        h2 = (d2 & 67108863) as u32
+        h2 = 
         d3 = d3 + c
         c = d3 >> 26
-        h3 = (d3 & 67108863) as u32
+        h3 = 
         d4 = d4 + c
         c = d4 >> 26
-        h4 = (d4 & 67108863) as u32
-        h0 = (h0 + (c as u32) * 5) & CC-MASK32
+        h4 = 
+        h0 = (h0 + () * 5) & CC-MASK32
         c = h0 >> 26
         h0 = h0 & 67108863
-        h1 = (h1 + c as u32) & CC-MASK32
+        h1 = () & CC-MASK32
 
         pos = pos + 16
     }
@@ -313,41 +311,42 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     // 選擇 h 或 g（如果 c != 0 則用 g）
     c != 0 -> {
-    h0 = g0
-            h1 = g1
-            h2 = g2
-            h3 = g3
-            h4 = g4
-}
+        h0 = g0
+        h1 = g1
+        h2 = g2
+        h3 = g3
+        h4 = g4
+    }
 
     // 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
-    f u64 = (h0 as u64) | ((h1 as u64) << 26)
+    f u64 = () | (() << 26)
     f-lo u32 = f & CC-MASK32
-    f-hi u32 = (f >> 32) as u32
-    f = (f-hi as u64) | ((h2 as u64) << 20)
+    f-hi u32 = 
+    f = () | (() << 20)
     f0 = f & CC-MASK32
-    f-hi2 = (f >> 32) as u32
-    f = (f-hi2 as u64) | ((h3 as u64) << 14)
+    f-hi2 = 
+    f = () | (() << 14)
     f1 = f & CC-MASK32
-    f-hi3 = (f >> 32) as u32
-    f = (f-hi3 as u64) | ((h4 as u64) << 8)
+    f-hi3 = 
+    f = () | (() << 8)
     f2 = f & CC-MASK32
-    f3 = (f >> 32) as u32
+    f3 = 
 
     // h += s
     f0 = (f0 + s0) & CC-MASK32
     carry = f0 >> 16
+
     // 對於 32-bit 加法，進位只影響高位
     // 簡化：直接逐字相加並處理進位
-    f = (f0 as u64) + (s0 as u64)
+    f = () + ()
     f0 = f & CC-MASK32
-    c = (f >> 32) as u32
-    f = (f1 as u64) + (s1 as u64) + (c as u64)
+    c = 
+    f = () + () + ()
     f1 = f & CC-MASK32
-    c = (f >> 32) as u32
-    f = (f2 as u64) + (s2 as u64) + (c as u64)
+    c = 
+    f = () + () + ()
     f2 = f & CC-MASK32
-    c = (f >> 32) as u32
+    c = 
     f3 = (f3 + s3 + c) & CC-MASK32
 
     // 輸出 tag（小端序）

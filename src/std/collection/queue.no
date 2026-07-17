@@ -64,10 +64,8 @@ queue {
     sz >= q.cap - 1 -> return
     idx = q.tail
     {
-        idx >= 0 ->
-            idx = idx % q.cap
-        ->
-            idx = q.cap - ((-idx) % q.cap)
+        idx >= 0 -> idx = idx % q.cap
+        -> idx = q.cap - ((-idx) % q.cap)
     }
     .[idx] = val
     q.tail = q.tail + 1
@@ -80,15 +78,13 @@ queue {
 [n]t.queue-pop = (q queue) (val ?t) {
     sz = q.tail - q.head
     sz <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     idx = q.head
     {
-        idx >= 0 ->
-            idx = idx % q.cap
-        ->
-            idx = q.cap - ((-idx) % q.cap)
+        idx >= 0 -> idx = idx % q.cap
+        -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
     q.head = q.head + 1
@@ -100,15 +96,13 @@ queue {
 [n]t.queue-peek = (q queue) (val ?t) {
     sz = q.tail - q.head
     sz <= 0 -> {
-    val = nil
-            return
-}
+        val = nil
+        return
+    }
     idx = q.head
     {
-        idx >= 0 ->
-            idx = idx % q.cap
-        ->
-            idx = q.cap - ((-idx) % q.cap)
+        idx >= 0 -> idx = idx % q.cap
+        -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
 }

@@ -13,7 +13,7 @@ crc-16 = (data []byte) (crc i64) {
     i <- [0..data.len): {
         crc = crc ^ ((data[i] & 255) << 8)
         j <- [0..8): {
-                        {
+            {
                 crc & 32768 != 0 -> crc = ((crc << 1) ^ 4129) & 65535
                 -> crc = (crc << 1) & 65535
             }

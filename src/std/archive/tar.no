@@ -37,13 +37,13 @@ tar {
 // tar-entry: TAR 條目（指向 archive.data 中的某個 header）
 tar-entry {
     data []byte
-    idx  i64
+    idx i64
 }
 
 // tar-builder: TAR 歸檔建構器
 tar-builder {
-    buf  []byte
-    pos  i64
+    buf []byte
+    pos i64
 }
 
 // ─── 常量 ─────────────────────────────────────
@@ -52,8 +52,8 @@ tar-builder {
 TAR-BLOCK = 512
 
 // 條目類型
-TAR-TYPE-FILE = "0"
-TAR-TYPE-DIR  = "5"
+TAR-TYPE-FILE = '0'
+TAR-TYPE-DIR = '5'
 
 // ─── tar 方法 ─────────────────────────────────
 
@@ -77,6 +77,7 @@ tar.count = () (count i64) {
         }
         empty == 1 -> return
         count = count + 1
+
         // 讀取 size 欄位（偏移 124，12 位元組八進制）
         sz = 0
         j <- [0..12): {
@@ -279,12 +280,14 @@ tar-builder.pre-alloc = (size i64) {
 // add-file: 新增檔案條目
 tar-builder.add-file = (name str, content []byte) {
     .write-header(name, TAR-TYPE-FILE, len(content))
+
     // 寫入檔案內容
     sz = len(content)
     i <- [0..sz): {
         .buf[.pos + i] = content[i]
     }
     .pos = .pos + sz
+
     // 補齊到 512 邊界
     rem = sz % TAR-BLOCK
     rem > 0 -> {
@@ -309,6 +312,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
         .buf[.pos + i] = content[i]
     }
     .pos = .pos + sz
+
     // 補齊到 512 邊界
     rem = sz % TAR-BLOCK
     rem > 0 -> {
@@ -355,7 +359,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     .buf[.pos + 257] = 117  // u
     .buf[.pos + 258] = 115  // s
     .buf[.pos + 259] = 116  // t
-    .buf[.pos + 260] = 97   // a
+    .buf[.pos + 260] = 97  // a
     .buf[.pos + 261] = 114  // r
     .buf[.pos + 262] = 0
 
@@ -384,10 +388,12 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 // write-octal: 在指定偏移寫入八進制數字（內部方法）
 tar-builder.write-octal = (offset i64, width i64, val i64) {
     base = .pos + offset
+
     // 先填空白
     i <- [0..width): {
         .buf[base + i] = 32
     }
+
     // 從右往左填數字
     v = val
     pos = width - 1
@@ -405,6 +411,7 @@ tar-builder.finish = () (archive tar) {
     i <- [0..TAR-BLOCK * 2): {
         .buf[.pos + i] = 0
     }
+
     // 構建 tar 結構體
     archive.data = .buf
 }

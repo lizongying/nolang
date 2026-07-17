@@ -8,11 +8,11 @@
 //   ip = ip-addr{}
 //   ok = ip.parse('192.168.1.1')
 //   ok -> {
-    //       s = ip.to-str()       // s = '192.168.1.1'
-    //       yes = ip.is-loopback() // yes = false
-    //       yes = ip.is-private()  // yes = true
-    //
-}
+//       s = ip.to-str()       // s = '192.168.1.1'
+//       yes = ip.is-loopback() // yes = false
+//       yes = ip.is-private()  // yes = true
+//
+
 //
 //   // 從 4 個 octet 建立
 //   ip = ip-addr{
@@ -99,25 +99,26 @@ ip-addr.parse = (s str) (ok bool) {
     has-digit = 0
     i <- [0..n): {
         c = s[i] & 255
-                {
+        {
             c >= 48 && c <= 57 -> {
                 octet = octet * 10 + (c - 48)
-                            has-digit = 1
-                            octet > 255 -> return
+                has-digit = 1
+                octet > 255 -> return
             }
             c == 46 -> {
                 // 點分隔符
-                            has-digit == 0 -> return
-                            dot-count = dot-count + 1
-                            dot-count > 3 -> return
-                            // 存入對應欄位
-                            {
-                                dot-count == 1 -> .a = octet
-                                dot-count == 2 -> .b = octet
-                                dot-count == 3 -> .c = octet
-                            }
-                            octet = 0
-                            has-digit = 0
+                has-digit == 0 -> return
+                dot-count = dot-count + 1
+                dot-count > 3 -> return
+
+                // 存入對應欄位
+                {
+                    dot-count == 1 -> .a = octet
+                    dot-count == 2 -> .b = octet
+                    dot-count == 3 -> .c = octet
+                }
+                octet = 0
+                has-digit = 0
             }
             -> return
         }
@@ -193,17 +194,17 @@ ip-addr.from-u32 = (v i64) {
 ip-addr.is-valid = () (yes bool) {
     yes = true
     .a < 0 || .a > 255 -> {
-    yes = false
-            return
-}
+        yes = false
+        return
+    }
     .b < 0 || .b > 255 -> {
-    yes = false
-            return
-}
+        yes = false
+        return
+    }
     .c < 0 || .c > 255 -> {
-    yes = false
-            return
-}
+        yes = false
+        return
+    }
     .d < 0 || .d > 255 -> yes = false
 }
 
@@ -220,89 +221,66 @@ ip-addr.is-loopback = () (yes bool) {
 // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 ip-addr.is-private = () (yes bool) {
     yes = false
+
     // 10.0.0.0/8
     .a == 10 -> {
-    yes = true
-            return
-}
+        yes = true
+        return
+    }
+
     // 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
-    .a == 172 -> {
-    .b >= 16 && .b <= 31 -> {
-    yes = true
-                    return
-}
-}
+    .a == 172 -> .b >= 16 && .b <= 31 -> {
+        yes = true
+        return
+    }
+
     // 192.168.0.0/16
-    .a == 192 -> {
-    .b == 168 -> {
-    yes = true
-                    return
-}
-}
+    .a == 192 -> .b == 168 -> {
+        yes = true
+        return
+    }
 }
 
 // is-zero: 是否為全零地址（0.0.0.0）
 ip-addr.is-zero = () (yes bool) {
     yes = false
-    .a == 0 -> {
-    .b == 0 -> {
-    .c == 0 -> {
-    .d == 0 -> yes = true
-}
-}
-}
+    .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true
 }
 
 // is-broadcast: 是否為廣播地址（255.255.255.255）
 ip-addr.is-broadcast = () (yes bool) {
     yes = false
-    .a == 255 -> {
-    .b == 255 -> {
-    .c == 255 -> {
-    .d == 255 -> yes = true
-}
-}
-}
+    .a == 255 -> .b == 255 -> .c == 255 -> .d == 255 -> yes = true
 }
 
 // is-multicast: 是否為多播地址（224.0.0.0/4）
 ip-addr.is-multicast = () (yes bool) {
     yes = false
-    .a >= 224 -> {
-    .a <= 239 -> yes = true
-}
+    .a >= 224 -> .a <= 239 -> yes = true
 }
 
 // is-link-local: 是否為鏈路本地地址（169.254.0.0/16）
 ip-addr.is-link-local = () (yes bool) {
     yes = false
-    .a == 169 -> {
-    .b == 254 -> yes = true
-}
+    .a == 169 -> .b == 254 -> yes = true
 }
 
 // is-class-a: 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
 ip-addr.is-class-a = () (yes bool) {
     yes = false
-    .a >= 1 -> {
-    .a <= 126 -> yes = true
-}
+    .a >= 1 -> .a <= 126 -> yes = true
 }
 
 // is-class-b: 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
 ip-addr.is-class-b = () (yes bool) {
     yes = false
-    .a >= 128 -> {
-    .a <= 191 -> yes = true
-}
+    .a >= 128 -> .a <= 191 -> yes = true
 }
 
 // is-class-c: 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
 ip-addr.is-class-c = () (yes bool) {
     yes = false
-    .a >= 192 -> {
-    .a <= 223 -> yes = true
-}
+    .a >= 192 -> .a <= 223 -> yes = true
 }
 
 // ═══════════════════════════════════════════════
@@ -312,13 +290,7 @@ ip-addr.is-class-c = () (yes bool) {
 // equal: 比較兩個 IP 地址是否相等
 ip-addr.equal = (other ip-addr) (yes bool) {
     yes = false
-    .a == other.a -> {
-    .b == other.b -> {
-    .c == other.c -> {
-    .d == other.d -> yes = true
-}
-}
-}
+    .a == other.a -> .b == other.b -> .c == other.c -> .d == other.d -> yes = true
 }
 
 // ═══════════════════════════════════════════════
@@ -332,13 +304,13 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     yes = false
     prefix-len <= 0 -> {
-    yes = true
-            return
-}
+        yes = true
+        return
+    }
     prefix-len >= 32 -> {
-    yes = .equal(base)
-            return
-}
+        yes = .equal(base)
+        return
+    }
 
     // 計算子網遮罩
     self-v = .to-u32()
@@ -346,11 +318,11 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 
     // 建立遮罩：高位 prefix-len 個 1
     mask = 0
-        {
+    {
         prefix-len == 32 -> mask = 0 - 1
         -> {
             mask = (0 - 1) << (32 - prefix-len)
-                    mask = mask & 0xFFFFFFFF
+            mask = mask & 0xFFFFFFFF
         }
     }
 

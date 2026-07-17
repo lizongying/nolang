@@ -8,7 +8,6 @@
 //   hash = sha384(data)       // hash = 48 位元組 [48]byte
 //   hex = sha384-hex(data)    // hex = 96 字元 hex 字串
 
-
 // sha384: 計算 SHA-384 雜湊（含填充與多區塊處理）
 // data []byte: 輸入位元組陣列
 // 返回 hash [48]byte: 48 位元組雜湊值
@@ -30,9 +29,7 @@ sha384 = (data []byte) (hash [48]byte) {
     bit-len = dlen * 8
     mod-val = (dlen + 17) % 128
     pad-len = 0
-    mod-val != 0 -> {
-        pad-len = 128 - mod-val
-    }
+    mod-val != 0 -> pad-len = 128 - mod-val
     total-len = dlen + 1 + pad-len + 16
 
     // 建立填充緩衝區
@@ -63,7 +60,25 @@ sha384 = (data []byte) (hash [48]byte) {
     }
 
     // 處理每個 128 位元組區塊
-    block []u64 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    block []u64 = [
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
     offset = 0
     for offset < total-len {
         i <- [0..16): {

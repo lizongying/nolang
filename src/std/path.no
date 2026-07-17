@@ -3,10 +3,10 @@
 // 純字串操作，不涉及檔案系統存取。
 
 // 路徑分隔符
-SEP = "/"
+SEP = '/'
 
 // 當前目錄
-DOT = "."
+DOT = '.'
 
 // ═══════════════════════════════════════════════
 // path 結構體：封裝路徑字串
@@ -107,7 +107,6 @@ path.join = (b str) {
         .p[out-n] = b[j]
         out-n = out-n + 1
     }
-
 }
 
 // ═══════════════════════════════════════════════
@@ -178,13 +177,11 @@ path.ext = () (out str) {
 
     // 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
     last-dot == .p.len - 1 -> return
-
     start = last-dot
     out-n = .p.len - start
     i <- [0..out-n): {
         out[i] = .p[start + i]
     }
-
 }
 
 // ═══════════════════════════════════════════════
@@ -216,9 +213,7 @@ path.clean = () {
             c == SEP -> {
                 // 處理上一段
                 {
-                    dot-count == 1 -> {
-                        // 忽略 './'
-                    }
+                    dot-count == 1 ->
                     dot-count == 2 -> {
                         // 回退 '..'
                         // 找 .p 中前一個 '/'
@@ -262,9 +257,7 @@ path.clean = () {
 
     // 處理末尾段
     {
-        dot-count == 1 -> {
-            // 忽略末尾 '.'
-        }
+        dot-count == 1 ->
         dot-count == 2 -> {
             j = out-n - 1
             for j >= 0 {
@@ -302,12 +295,14 @@ path.split = () (f str) {
         c = .p[i] & 255
         c == SEP -> last-sep = i
     }
+
     // 提取檔名
     start = last-sep + 1
     out-n = .p.len - start
     i <- [0..out-n): {
         f[i] = .p[start + i]
     }
+
     // 原地修改 .p 為目錄部分
     {
         last-sep < 0 -> {

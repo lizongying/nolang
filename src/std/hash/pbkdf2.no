@@ -10,7 +10,6 @@
 //   key-len = 32
 //   derived = pbkdf2-hmac-sha256(password, salt, iterations, key-len)
 
-
 // ═══════════════════════════════════════════════
 // PBKDF2-HMAC-SHA256
 // ═══════════════════════════════════════════════
@@ -37,6 +36,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         i <- [0..salt-len): {
             u-input[i] = salt[i]
         }
+
         // INT_32_BE(block_idx)
         u-input[salt-len] = (block-idx >> 24) & 255
         u-input[salt-len + 1] = (block-idx >> 16) & 255
@@ -57,12 +57,10 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         iter <- [1..iterations): {
             // U_{iter+1} = HMAC(password, U_iter)
             u = hmac.hmac-sha256(password, u)
-
             // T = T XOR U
             i <- [0..32): {
                 t[i] = t[i] ^ u[i]
             }
-
         }
 
         // 輸出到 out（最後一個區塊可能截斷）

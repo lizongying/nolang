@@ -14,7 +14,6 @@
 //   aes-128-cbc-enc(plain, key, iv, cipher)
 //   aes-128-cbc-dec(cipher, key, iv, plain)
 
-
 // AES 區塊大小
 AES-BLOCK-SIZE = 16
 
@@ -102,7 +101,6 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 pkcs7-pad = (in []byte) (out []byte) {
     pad-len = 16 - (in.len % 16)
     pad-len == 0 -> pad-len = 16
-
     i <- [0..in.len): {
         out[i] = in[i]
     }
@@ -116,20 +114,21 @@ pkcs7-pad = (in []byte) (out []byte) {
 // 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
 pkcs7-unpad = (in []byte) (out-n i64) {
     in.len == 0 -> {
-    out-n = -1
-            return
-}
+        out-n = -1
+        return
+    }
     pad-len = in[in.len - 1] & 255
     pad-len == 0 || pad-len > 16 -> {
-    out-n = -1
-            return
-}
+        out-n = -1
+        return
+    }
+
     // 驗證填充
     i <- [0..pad-len): {
         (in[in.len - 1 - i] & 255) != pad-len -> {
-    out-n = -1
-                return
-}
+            out-n = -1
+            return
+        }
     }
     out-n = in.len - pad-len
 }
