@@ -202,12 +202,23 @@ func (f *formatter) commentMarker(c *parser.Comment) string {
 }
 
 // writeCommentBody writes a single comment with its marker(s).
-// Block comments (Marker ";;") emit ";;" + Text + ";;" verbatim (Text may contain
-// newlines). Line comments (Marker "//" or ";") normalize the space after the marker.
+// Block comments (Marker ";;block") use strict format: opening ";;" and closing ";;"
+// each on their own line (opening ;; must be followed by a newline to trigger
+// multiline mode). Line comments (Marker "//", ";", or ";;" without newline)
+// normalize the space after the marker.
 func (f *formatter) writeCommentBody(c *parser.Comment) {
-	if c.Marker == ";;" {
+	if c.Marker == ";;block" {
 		f.write(";;")
-		f.write(c.Text)
+		// Ensure text starts on a new line
+		text := c.Text
+		if len(text) == 0 || text[0] != '\n' {
+			f.write("\n")
+		}
+		f.write(text)
+		// Ensure closing ;; is on its own line
+		if len(text) == 0 || text[len(text)-1] != '\n' {
+			f.write("\n")
+		}
 		f.write(";;")
 		return
 	}
@@ -232,16 +243,20 @@ func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
 		return
 	}
 	c := comment.List[0]
-	if c.Marker == ";;" {
-		// 塊註釋緊貼代碼：a = 1 ;; block ;;
+	if c.Marker == ";;block" {
+		// 塊註釋不應出現在行內（行內 ;; 必為單行）；
+		// 但防禦性處理：按塊格式輸出
 		f.write(" ;;")
 		f.write(c.Text)
 		f.write(";;")
 		return
 	}
 	if c.Marker == ";" {
-		// `;` 註釋緊貼代碼：a = 1; comment
+		// `;` 單行註釋緊貼代碼：a = 1; comment
 		f.write("; ")
+	} else if c.Marker == ";;" {
+		// `;;` 單行註釋緊貼代碼：a = 1;; comment
+		f.write(";; ")
 	} else {
 		f.write("  // ")
 	}
@@ -656,7 +671,7 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 		if at.Elem != nil && !typeTokenInferred(at.Token, at.Elem) {
 			f.write(at.Elem.String())
 		}
-	} else if st, ok := s.Type.(*parser.SliceType); ok {
+	} else if st, ok := s.Type.(*parser.SliceType); ok && !isInferredSliceType(s) {
 		f.write(" []")
 		// Only output element type if explicitly written (not inferred default i64)
 		if st.Elem != nil && !typeTokenInferred(st.Token, st.Elem) {
@@ -761,6 +776,20 @@ func isInferredType(s *parser.LetStatement) bool {
 	}
 	return nt.Token.Line == s.Name.Token.Line &&
 		nt.Token.Column == s.Name.Token.Column
+}
+
+// isInferredSliceType 判斷 SliceType 是否為 parser 推斷（非源碼顯式標注）。
+// 推斷型別的 token 位置會等於變數名位置（如 `SUBST = [...]` 推斷為 []str）。
+func isInferredSliceType(s *parser.LetStatement) bool {
+	if s.Type == nil || s.Name == nil {
+		return false
+	}
+	st, ok := s.Type.(*parser.SliceType)
+	if !ok {
+		return false
+	}
+	return st.Token.Line == s.Name.Token.Line &&
+		st.Token.Column == s.Name.Token.Column
 }
 
 // isInferredNullableType 判斷 NullableType 是否為從推斷型別（如 i8.MIN）而來
@@ -1397,9 +1426,13 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		}
 	}
 
-	// !! { } 無限循環
-	if s.Token.Type == lexer.BANG_BANG {
-		f.write("!!")
+	// ! { } 或 !! { } 無限循環（NOT 為舊式單驚嘆號，BANG_BANG 為新式雙驚嘆號）
+	if s.Token.Type == lexer.BANG_BANG || s.Token.Type == lexer.NOT {
+		if s.Token.Type == lexer.NOT {
+			f.write("!")
+		} else {
+			f.write("!!")
+		}
 		f.write(" {")
 		f.indent++
 		for _, stmt := range s.Body.Statements {

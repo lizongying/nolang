@@ -393,6 +393,12 @@ FROM user
 WHERE id > 100
 `
 
+// Regex literal (JS-style /pattern/flags)
+re = /\d+/
+re = /hello/gi
+re = /[a-z]+/
+re = /a\/b/
+
 // Explicit type annotation
 a u64 = 10
 
@@ -414,22 +420,64 @@ typed []u8 = [1, 2, 3]
 greeting = 'hello, ' - name
 ```
 
+### Regex Literals
+
+Nolang supports JavaScript-style regex literals `/pattern/flags`, which create a compiled `regexp` instance. The `/` is disambiguated from division by **context-sensitive lexing** (same as JavaScript):
+
+- After expression-starting tokens (statement beginning, `=` / `(` / `[` / `{` / `,` / `:` / `;` / keywords like `return` / `if`) → `/` starts a regex
+- After value-producing tokens (`IDENT`, `INT`, `STRING`, `)` / `]` / `}` etc.) → `/` is division
+- `//` is always a line comment (highest priority)
+- After `#` (use) / `@` (export) directives → `/` is a path separator
+
+```nolang
+// Regex literal (expression-start position after '=')
+re = /\d+/
+re2 = /hello/gi
+result = match-text(/[a-z]+/, text)
+
+// Division (value-producing position after identifier/literal)
+ratio = 100 / 4
+x = a / b
+```
+
+Regex literals **desugar** at codegen into a call to the standard library `regexp-compile` function (defined in `std/regexp.no`):
+
+```nolang
+// source
+re = /\d+/
+// desugars to
+re = regexp-compile('\\d+')
+```
+
+Flags (optional, after closing `/`): `g` (global), `i` (case-insensitive), `m` (multiline), `s` (dot matches newline). Empty pattern `//` collides with line comments — use `/(?:)/` for an empty match.
+
 ### Comments
 
-Nolang supports two single-line comment markers and one multi-line (block) comment marker:
+Nolang supports three single-line comment markers and one multi-line (block) comment marker:
 
 - `//` — traditional single-line marker (comments to end-of-line)
-- `;` — alternative single-line marker (**implemented 2026-07-17**, comments to end-of-line)
-- `;; ... ;;` — multi-line (block) comment (**implemented 2026-07-18**, symmetric delimiters; unterminated `;;` comments to end of file)
+- `;` — single-line marker (comments to end-of-line)
+- `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
+- `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered
 
 ```nolang
 // this is a comment
 ; this is also a comment, same semantics
+;; this is still a single-line comment (no newline after ;;)
 x = 1 ; trailing comment, runs to end of line
+x = 2 ;; inline single-line comment, same semantics
 
-;; multi-line (block) comment
-   spans lines, closed with ;;
-y = 2 ;; inline block comment ;;
+;;
+this is a multi-line (block) comment
+it can span multiple lines
+until a standalone ;; is encountered
+;;
+
+y = 3
+;;
+the closing ;; must be followed by a newline or EOF
+to be recognized as the ending delimiter
+;;
 ```
 
 **One statement per line** is still a hard rule — never use commas `,` to combine multiple statements on one line (semicolons are now comments, so `;` can no longer join statements). This applies inside comments too.
@@ -446,9 +494,9 @@ y = 2 ;; inline block comment ;;
 ; h1 = 4023233417
 ```
 
-**Block comment delimiters:** `;;` opens, `;;` closes; everything between (including newlines) is comment content. A single `;` inside the content does NOT close the block — only `;;` does. If no closing `;;` is found, the comment runs to EOF.
+**Multi-line trigger rule:** `;;` must be followed by **only whitespace** (spaces/tabs) up to a newline or EOF to enter multi-line mode. If `;;` is followed by any non-whitespace character on the same line, it is treated as a single-line comment (to end-of-line). The closing `;;` must likewise be followed by a newline or EOF (only whitespace allowed in between). An unterminated multi-line comment runs to EOF.
 
-**Marker preservation:** the formatter never converts between markers (`;` ↔ `//` ↔ `;;`). It records the original marker (`Comment.Marker`) and emits it verbatim, so `;` comments stay `;`, `//` stay `//`, and `;; ... ;;` blocks stay intact (content, including internal newlines, preserved verbatim). `no fmt` is idempotent for all three.
+**Marker preservation:** the formatter never converts between markers (`;` ↔ `//` ↔ `;;`). It records the original marker (`Comment.Marker`) and emits it verbatim, so `;` comments stay `;`, `//` stay `//`, `;;\n ... ;;` blocks stay intact (content, including internal newlines, preserved verbatim), and `;; single-line` comments stay `;;`. `no fmt` is idempotent for all forms.
 
 **Safety:** `;` / `;;` inside string literals (e.g. `'text/plain; charset=utf-8'`, `index-from(';', pos)`) and inside `//` comments is consumed by the lexer's string/comment scanners and never treated as a comment marker.
 
@@ -581,12 +629,16 @@ to end-of-line. The lexer turns `;` into a `COMMENT` token (with `Marker=";"`),
 the parser records `Comment.Marker`, and the formatter emits the original marker
 verbatim.
 
-`;; ... ;;` is a **multi-line (block) comment** — `;;` opens, `;;` closes, and
-everything between (including newlines) is comment content. A single `;` inside
-the content does NOT close the block; only `;;` does. If no closing `;;` is found,
-the comment runs to EOF. The lexer emits one `COMMENT` token with `Marker=";;"`
-whose `Literal` is the raw content; the formatter writes `;;` + content + `;;`
-verbatim (idempotent). See [Comments](#comments) for the full rules.
+`;;\n ... ;;` is a **multi-line (block) comment** — when `;;` is immediately
+followed by a newline (only whitespace allowed in between), it enters multi-line
+mode. The closing `;;` must likewise be followed by a newline or EOF. Everything
+between (including newlines) is comment content. A single `;` inside the content
+does NOT close the block; only a `;;` followed by newline/EOF does. If no closing
+`;;` is found, the comment runs to EOF. If `;;` is followed by non-whitespace on
+the **same line**, it is a single-line comment (to end-of-line), semantically
+identical to `;`. The lexer emits one `COMMENT` token with `Marker=";;block"`
+(multi-line) or `Marker=";;"` (single-line `;;`); the formatter writes the
+delimiters verbatim (idempotent). See [Comments](#comments) for the full rules.
 
 Gotcha: `cond -> X; Y` no longer parses as assignment. With `;` a comment, it
 means "evaluate `X` (discard) then a trailing comment `; Y`" — **`X` is never

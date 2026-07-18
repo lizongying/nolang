@@ -64,10 +64,62 @@
 ; get-arch = () (arch str) {  // LLVM: compile-time constant string from runtime.GOARCH
 ; }
 
-; build-in (CLibCall: strerror)
-; strerror: 將 errno 轉為錯誤訊息字串
-; strerror = (errnum i64) (msg str) {  // LLVM: call i8* @strerror
-; }
+; strerror: 將 POSIX errno 轉為人類可讀的錯誤訊息
+; 以 Nolang 查表實現，取代 libc @strerror CLibCall
+; 涵蓋 POSIX 標準 errno (1-40)，未知值返回 "Unknown error: N"
+strerror = (errnum i64) (msg str) {
+    {
+        errnum == 1 -> msg = 'Operation not permitted'
+        errnum == 2 -> msg = 'No such file or directory'
+        errnum == 3 -> msg = 'No such process'
+        errnum == 4 -> msg = 'Interrupted system call'
+        errnum == 5 -> msg = 'Input/output error'
+        errnum == 6 -> msg = 'No such device or address'
+        errnum == 7 -> msg = 'Argument list too long'
+        errnum == 8 -> msg = 'Exec format error'
+        errnum == 9 -> msg = 'Bad file descriptor'
+        errnum == 10 -> msg = 'No child processes'
+        errnum == 11 -> msg = 'Resource temporarily unavailable'
+        errnum == 12 -> msg = 'Cannot allocate memory'
+        errnum == 13 -> msg = 'Permission denied'
+        errnum == 14 -> msg = 'Bad address'
+        errnum == 15 -> msg = 'Block device required'
+        errnum == 16 -> msg = 'Device or resource busy'
+        errnum == 17 -> msg = 'File exists'
+        errnum == 18 -> msg = 'Invalid cross-device link'
+        errnum == 19 -> msg = 'No such device'
+        errnum == 20 -> msg = 'Not a directory'
+        errnum == 21 -> msg = 'Is a directory'
+        errnum == 22 -> msg = 'Invalid argument'
+        errnum == 23 -> msg = 'Too many open files in system'
+        errnum == 24 -> msg = 'Too many open files'
+        errnum == 25 -> msg = 'Inappropriate ioctl for device'
+        errnum == 26 -> msg = 'Text file busy'
+        errnum == 27 -> msg = 'File too large'
+        errnum == 28 -> msg = 'No space left on device'
+        errnum == 29 -> msg = 'Illegal seek'
+        errnum == 30 -> msg = 'Read-only file system'
+        errnum == 31 -> msg = 'Too many links'
+        errnum == 32 -> msg = 'Broken pipe'
+        errnum == 33 -> msg = 'Numerical argument out of domain'
+        errnum == 34 -> msg = 'Numerical result out of range'
+        errnum == 35 -> msg = 'Resource deadlock avoided'
+        errnum == 36 -> msg = 'Operation now in progress'
+        errnum == 37 -> msg = 'Operation already in progress'
+        errnum == 38 -> msg = 'Socket operation on non-socket'
+        errnum == 39 -> msg = 'Destination address required'
+        errnum == 40 -> msg = 'Message too long'
+        errnum == 98 -> msg = 'Address already in use'
+        errnum == 99 -> msg = 'Cannot assign requested address'
+        errnum == 100 -> msg = 'Network is down'
+        errnum == 101 -> msg = 'Network is unreachable'
+        errnum == 104 -> msg = 'Connection reset by peer'
+        errnum == 110 -> msg = 'Connection timed out'
+        errnum == 111 -> msg = 'Connection refused'
+        errnum == 113 -> msg = 'No route to host'
+        -> msg = 'Unknown error: ' + errnum.to-str()
+    }
+}
 
 ; build-in (ForwardFunc: get-errno)
 ; get-errno: 取得最後的 errno 值

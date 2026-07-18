@@ -10,6 +10,7 @@ main = () {
     }
 
     println('')
+
     ; 測試減法比較
     {
         q == 0 -> println('sub: q == 0')
@@ -19,6 +20,7 @@ main = () {
     }
 
     println('')
+
     ; 測試用變量
     q2 = 43
     println('q2=', q2)
@@ -30,6 +32,7 @@ main = () {
     }
 
     println('')
+
     ; 測試不等於
     {
         q != 0 && q != 43 && q != 63 -> println('neq: q is not 0/43/63, so q=42')

@@ -312,6 +312,94 @@ func (l *Lexer) readRegex() (pattern string, flags string, ok bool) {
 	return string(buf), string(flagsBuf), true
 }
 
+// isBlockCommentStart 報告當前位置是否為多行註釋開始。
+// 前提：l.ch == ';' 且 peekChar() == ';'。
+// 多行觸發條件：;; 後面只有空白（空格/制表符）直到換行或 EOF。
+// 若 ;; 後在同一行還有其他非空白字符，則視為單行註釋。
+func (l *Lexer) isBlockCommentStart() bool {
+	// l.ch 是第一個 ;，l.readPosition 指向第二個 ;
+	// 第二個 ; 之後的位置是 readPosition+1
+	i := l.readPosition + 1
+	for i < len(l.input) {
+		c := l.input[i]
+		if c == '\n' {
+			return true
+		}
+		if c == ' ' || c == '\t' || c == '\r' {
+			i++
+			continue
+		}
+		return false
+	}
+	return true // ;; 後直接 EOF
+}
+
+// readBlockComment 讀取多行註釋 ;; ... ;;。
+// 調用前已確認 isBlockCommentStart() 為 true（;; 後換行/EOF）。
+//
+// 語義：
+//   - 開始 ;; 後必須換行（或 EOF），才觸發多行模式
+//   - 結束 ;; 後同樣必須換行（或 EOF），才作為結束定界符
+//   - 結束 ;; 可以出現在任意行的開頭或行內，只要其後僅有空白+換行
+//
+// 返回註釋內容（不含定界符）和是否正常關閉。
+func (l *Lexer) readBlockComment() (text string, closed bool) {
+	// 跳過開始 ;;
+	l.readChar() // skip first ;
+	l.readChar() // skip second ;
+	// 跳過 ;; 後的空白到換行
+	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+		l.readChar()
+	}
+	// 跳過換行（開始定界符後的換行不計入內容）
+	if l.ch == '\n' {
+		l.readChar()
+	}
+
+	start := l.position
+
+	for {
+		if l.ch == 0 {
+			// EOF，未閉合
+			return l.input[start:l.position], false
+		}
+		// 檢查結束定界符 ;;
+		if l.ch == ';' && l.peekChar() == ';' {
+			if l.isBlockCommentEnd() {
+				text = l.input[start:l.position]
+				l.readChar() // skip first ;
+				l.readChar() // skip second ;
+				// 跳過結束 ;; 後的空白到換行/EOF
+				for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+					l.readChar()
+				}
+				// l.ch 現在是 '\n' 或 0，留給後續 token 處理
+				return text, true
+			}
+		}
+		l.readChar()
+	}
+}
+
+// isBlockCommentEnd 報告當前 ;; 是否可作為多行註釋結束定界符。
+// 前提：l.ch == ';' 且 peekChar() == ';'。
+// 條件：;; 後面只有空白直到換行或 EOF。
+func (l *Lexer) isBlockCommentEnd() bool {
+	i := l.readPosition + 1
+	for i < len(l.input) {
+		c := l.input[i]
+		if c == '\n' {
+			return true
+		}
+		if c == ' ' || c == '\t' || c == '\r' {
+			i++
+			continue
+		}
+		return false
+	}
+	return true // ;; 後直接 EOF
+}
+
 // isRegexStart reports whether a '/' at the current position should begin a
 // regex literal rather than a division operator. This mirrors JavaScript's
 // context-sensitive lexing: after value-producing tokens '/' is division;
@@ -333,10 +421,10 @@ func (l *Lexer) isRegexStart() bool {
 		SELF, IT, SUPER, UNDERSCORE:
 		return false
 	}
-	// After '#'-family tokens (USE, FFI, LABEL, HASH_LBRACE) a '/' is a path
-	// separator in a use/import statement, not a regex.
+	// After import/export directive tokens (USE, FFI, LABEL, HASH_LBRACE, AT)
+	// a '/' is a path separator in a use/import/export statement, not a regex.
 	switch prev {
-	case USE, FFI, LABEL, HASH_LBRACE:
+	case USE, FFI, LABEL, HASH_LBRACE, AT:
 		return false
 	}
 	// After all other tokens (operators, keywords like return/if/for,
@@ -559,31 +647,28 @@ func (l *Lexer) NextToken() (tok Token) {
 		tok.Type = COMMA
 		tok.Literal = string(l.ch)
 	case ';':
-		// 多行(塊)註釋：;; ... ;;（對稱定界，未閉合則註釋到文件尾）
 		if l.peekChar() == ';' {
+			// ;; 後換行/EOF → 多行註釋 ;; ... ;;
+			if l.isBlockCommentStart() {
+				text, _ := l.readBlockComment()
+				tok.Type = COMMENT
+				tok.Literal = text
+				tok.Marker = ";;block"
+				return tok
+			}
+			// ;; 後同一行還有內容 → 單行註釋（註釋到行尾）
 			l.readChar() // 跳過第一個 ;
 			l.readChar() // 跳過第二個 ;
 			start := l.position
-			for {
-				if l.ch == 0 {
-					break // EOF，未閉合
-				}
-				if l.ch == ';' && l.peekChar() == ';' {
-					break // 找到結尾 ;;
-				}
+			for l.ch != '\n' && l.ch != 0 {
 				l.readChar()
 			}
 			tok.Type = COMMENT
 			tok.Literal = l.input[start:l.position]
 			tok.Marker = ";;"
-			// 跳過結尾 ;;
-			if l.ch == ';' && l.peekChar() == ';' {
-				l.readChar()
-				l.readChar()
-			}
 			return tok
 		}
-		// 單行註釋（與 // 語義相同：註釋到行尾）
+		// ; 單行註釋（註釋到行尾）
 		l.readChar() // 跳過 ;
 		start := l.position
 		for l.ch != '\n' && l.ch != 0 {

@@ -3152,7 +3152,43 @@ func (p *Parser) parseExpressionStatement() Statement {
 		}
 		p.restoreState(matchState)
 
-		// If neither struct nor match succeeded, restore and fall through
+		// struct/match 都失敗，嘗試解析為 while-loop: cond: { body }
+		// 或 if-else: cond: { body } else: { else_body }（舊式語法向後相容）
+		// 此時 currentToken 應為 LBRACE（matchState 保存時的位置）
+		if p.currentToken.Type == lexer.LBRACE {
+			body := p.parseBlockStatement()
+			p.nextToken() // skip body's }
+			// 檢查 else: { } 分支（跳過可能的 NEWLINE）
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.ELSE {
+				p.nextToken() // skip else
+				if p.currentToken.Type == lexer.COLON {
+					p.nextToken() // skip :
+				}
+				if p.currentToken.Type == lexer.LBRACE {
+					elseBody := p.parseBlockStatement()
+					p.nextToken() // skip else body's }
+					return &ExpressionStatement{
+						Token: tok,
+						Expression: &IfExpression{
+							Token:       tok,
+							Condition:   stmt.Expression,
+							Consequence: body,
+							Alternative: elseBody,
+						},
+					}
+				}
+			}
+			// while-loop: cond: { body }
+			forStmt := &ForStatement{Token: tok}
+			forStmt.Condition = stmt.Expression
+			forStmt.Body = body
+			return forStmt
+		}
+
+		// If all attempts failed, restore and fall through
 		p.restoreState(state)
 	}
 

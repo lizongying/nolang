@@ -13,14 +13,15 @@
 
 ; 64 字節 padded block（字串佔位）
 block = '(64 words)'
-block[0] = 0x61  ; 'a'
-block[1] = 0x62  ; 'b'
-block[2] = 0x63  ; 'c'
-block[3] = 0x80  ; padding
-block[14] =  24   ; bit length
+block[0] = 0x61; 'a'
+block[1] = 0x62; 'b'
+block[2] = 0x63; 'c'
+block[3] = 0x80; padding
+block[14] = 24; bit length
 
 i <- [0..1000000): {
-    block =
-    res = [16]byte
+    block = res
+    [16]
+    byte
     md5(block, res)
 }

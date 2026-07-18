@@ -476,7 +476,7 @@ line = io.read-line()           // 從 stdin 讀取一行（?str, nil=EOF）
 
 ### regexp — 正規表示式
 
-以 `regexp` 結構體封裝 pattern，底層使用 C 標準庫 `regex.h`：
+以 `regexp` 結構體封裝 pattern，完全使用 Nolang 實作正規表示式引擎（指令式 VM + 回溯匹配），不依賴 C 標準庫 regex.h：
 
 ```nolang
 // 結構體
@@ -490,6 +490,20 @@ re = regexp{
 }
 matched = re.matches(text)        // 判斷是否匹配
 result = re.find(text)           // 查找第一個匹配子串
+```
+
+支援 **正則字面量語法** `/pattern/flags`（JavaScript 風格），在代碼生成階段脫糖為 `regexp-compile` 函數調用：
+
+```nolang
+; 正則字面量（推薦寫法）
+re = /\d+/
+matched = re.matches('hello 123 world')  ; true
+
+; 帶旗標
+re = /[a-z]+/gi
+
+; 等價的顯式調用
+re = regexp-compile('\\d+')
 ```
 
 ### process — 進程操作

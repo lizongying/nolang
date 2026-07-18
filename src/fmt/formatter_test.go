@@ -2391,23 +2391,25 @@ func TestFormatSemicolonComment(t *testing.T) {
 	}
 }
 
-// TestFormatSemicolonBlockComment verifies the `;; ... ;;` multi-line (block) comment:
-// the lexer captures it as a single COMMENT token, the parser attaches it with
-// Marker ";;", and the formatter preserves the `;;` delimiters verbatim (idempotent).
+// TestFormatSemicolonBlockComment verifies the comment semantics:
+//   - ";" and ";; xxx" are single-line comments (to end of line)
+//   - ";;\n" triggers a multi-line (block) comment, terminated by a ";;" that
+//     is followed by a newline/EOF. The formatter preserves delimiters verbatim
+//     (idempotent).
 func TestFormatSemicolonBlockComment(t *testing.T) {
 	cases := []string{
-		// inline block comment
-		"x = 1 ;; inline block ;;\n",
-		// trailing (EOF) block comment
-		"x = 1\n;; trailing\n   multi-line block ;;\n",
-		// doc block comment
-		";; doc\n   block ;;\nx = 1\n",
-		// multi-line block comment (newlines between ;; delimiters)
-		";; first line\nsecond line\nthird line ;;\nx = 1\n",
-		// mixed: ;; block + ; line + // line
-		";; block ;;\n; line comment\n// another line\nx = 1\n",
-		// empty block comment ;;;;
-		"x = 1 ;;;;\n",
+		// multi-line block comment as doc
+		";;\ndoc block\n;;\nx = 1\n",
+		// multi-line block comment with multiple content lines
+		";;\nfirst line\nsecond line\nthird line\n;;\nx = 1\n",
+		// trailing (EOF) multi-line block comment
+		"x = 1\n;;\ntrailing\nmulti-line block\n;;\n",
+		// inline single-line ;; comment (no newline after ;; → single-line)
+		"x = 1 ;; inline single-line\n",
+		// standalone single-line ;; comment
+		";; single line\nx = 1\n",
+		// mixed: ;; multi-line block + ; line + // line
+		";;\nblock\n;;\n; line comment\n// another line\nx = 1\n",
 	}
 	for _, in := range cases {
 		file := FormatFile(in)

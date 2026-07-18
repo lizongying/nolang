@@ -6,21 +6,36 @@ sidebar_position: 2
 
 ## Comments
 
-Nolang supports two single-line comment markers and one multi-line (block) comment marker:
+Nolang supports three single-line comment markers and one multi-line (block) comment marker:
 
 - `//` — traditional single-line marker (comments to end-of-line)
-- `;` — alternative single-line marker (**implemented 2026-07-17**, comments to end-of-line)
-- `;; ... ;;` — multi-line (block) comment (**implemented 2026-07-18**, symmetric delimiters; unterminated `;;` comments to end of file)
+- `;` — single-line marker (comments to end-of-line)
+- `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
+- `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered
 
 ```nolang
 // this is a comment
 ; this is also a comment, same semantics
+;; this is still a single-line comment (no newline after ;;)
 x = 1 ; trailing comment, runs to end of line
+x = 2 ;; inline single-line comment, same semantics
 
-;; multi-line (block) comment
-   spans lines, closed with ;;
-y = 2 ;; inline block comment ;;
+;;
+this is a multi-line (block) comment
+it can span multiple lines
+until a standalone ;; is encountered
+;;
+
+y = 3
+;;
+the closing ;; must be followed by a newline or EOF
+to be recognized as the ending delimiter
+;;
 ```
+
+> **Multi-line trigger rule:** `;;` must be followed by **only whitespace** (spaces/tabs) up to a newline or EOF to enter multi-line mode. If `;;` is followed by any non-whitespace character on the same line, it is treated as a single-line comment (to end-of-line).
+>
+> **Multi-line closing rule:** The closing `;;` must likewise be followed by a newline or EOF (only whitespace allowed in between). An unterminated multi-line comment runs to the end of the file.
 
 > **Rule: One statement per line; using commas `,` to combine multiple statements on the same line is forbidden.** (The semicolon `;` is now a comment marker and can no longer join statements.)
 > This rule also applies to code examples within comments. Even in comments, multiple statements should not be placed on the same line using commas, to avoid confusing readers.
@@ -198,6 +213,71 @@ typed []u8 = [1, 2, 3]
 // Array
 typed [3]u16 = [1, 2, 3]
 ```
+
+## Regex Literals
+
+Nolang supports JavaScript-style regex literals `/pattern/flags`, which create a compiled `regexp` instance.
+
+### Syntax
+
+```nolang
+// Basic regex literal
+re = /\d+/
+
+// With flags
+re = /hello/gi
+
+// Character classes, anchors, quantifiers
+re = /[a-z]+/
+re = /^hello.*world$/
+
+// Escaped slash
+re = /a\/b/
+```
+
+### Flags
+
+| Flag | Meaning |
+| ---- | ------- |
+| `g` | Global match |
+| `i` | Case-insensitive |
+| `m` | Multiline mode |
+| `s` | `.` matches newline |
+
+Flags are optional, following the closing `/`, consisting of ASCII letters.
+
+### Context-Sensitive Lexing
+
+`/` is both the division operator and the regex literal delimiter. Nolang uses **context-sensitive lexing** (same as JavaScript) to disambiguate:
+
+- **Expression-start positions** (statement beginning, after `=` / `(` / `[` / `{` / `,` / `:` / `;` etc.) → `/` starts a regex literal
+- **Value-producing positions** (after identifiers, literals, `)` / `]` / `}` etc.) → `/` is division
+- `//` is always a line comment (highest priority)
+
+```nolang
+// Regex literal (expression-start position after '=')
+re = /\d+/
+result = match-text(/[a-z]+/, text)
+
+// Division (value-producing position after identifier)
+ratio = 100 / 4
+x = a / b
+```
+
+### Desugaring
+
+Regex literals desugar at codegen into a call to the standard library `regexp-compile` function:
+
+```nolang
+// source
+re = /\d+/
+// desugars to
+re = regexp-compile('\\d+')
+```
+
+`regexp-compile` is defined in `std/regexp.no`; it creates a `regexp` struct and calls `.compile()`.
+
+> **Note:** Empty pattern `//` collides with line comments (same as JavaScript). Use `/(?:)/` for an empty match.
 
 ## Naming Rules
 

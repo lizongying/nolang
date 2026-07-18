@@ -116,16 +116,21 @@ func printUsage() {
 	fmt.Println("  no version           Print version information")
 	fmt.Println("")
 	fmt.Println("  no fmt [flags] <file|dir>  Format source files")
+	fmt.Println("    With no args in a terminal:")
+	fmt.Println("      - if workspace.jsonc exists, format all its project dirs;")
+	fmt.Println("      - otherwise, default to the current directory.")
+	fmt.Println("    With piped stdin, reads from stdin (e.g. echo 'x=1' | no fmt).")
 	fmt.Println("    Directories are processed recursively automatically.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -w    write result to source file (in-place)")
 	fmt.Println("      -d    output colored diff instead of formatted result")
 	fmt.Println("    Examples:")
-	fmt.Println("      no fmt")
+	fmt.Println("      no fmt                      list files in current dir needing formatting")
+	fmt.Println("      no fmt -w                   format all .no files in current dir in-place")
 	fmt.Println("      no fmt main.no              format and print to stdout")
 	fmt.Println("      no fmt -w main.no           format file in-place")
 	fmt.Println("      no fmt -d main.no           show colored diff")
-	fmt.Println("      no fmt src/                 format all .no files in src/ recursively")
+	fmt.Println("      no fmt src/                 list .no files in src/ needing formatting")
 	fmt.Println("      no fmt -w src/              format all .no files in src/ in-place")
 	fmt.Println("      no fmt -d src/              show diff for all .no files in src/")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
@@ -843,6 +848,17 @@ func uninstallCommand(args []string) {
 	}
 }
 
+// stdinIsPiped 報告 stdin 是否為管道或重定向（非交互式終端）。
+// 用於區分 `echo 'x=1' | no fmt`（管道）和直接運行 `no fmt`（終端）。
+func stdinIsPiped() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	// char device = 交互式終端；管道/重定向不是 char device
+	return (stat.Mode() & os.ModeCharDevice) == 0
+}
+
 func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
@@ -851,17 +867,23 @@ func fmtCommand(args []string) {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
 		fmt.Println("")
 		fmt.Println("Format Nolang source files.")
-		fmt.Println("When no file is given, reads from stdin.")
+		fmt.Println("When no file/dir is given and stdin is a terminal:")
+		fmt.Println("  - if workspace.jsonc exists, format all its project dirs;")
+		fmt.Println("  - otherwise, default to the current directory.")
+		fmt.Println("When stdin is piped (e.g. echo 'x=1' | no fmt), reads from stdin.")
 		fmt.Println("Directories are processed recursively automatically.")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Examples:")
+		fmt.Println("  no fmt                      format current dir (list files needing formatting)")
+		fmt.Println("  no fmt -w                   format all .no files in current dir in-place")
+		fmt.Println("  no fmt -d                   show diff for all .no files in current dir")
 		fmt.Println("  no fmt main.no              format and print to stdout")
 		fmt.Println("  no fmt -w main.no           format file in-place")
 		fmt.Println("  no fmt -d main.no           show colored diff")
-		fmt.Println("  no fmt src/                 format all .no files in src/")
+		fmt.Println("  no fmt src/                 list .no files in src/ needing formatting")
 		fmt.Println("  no fmt -w src/              format all .no files in src/ in-place")
 		fmt.Println("  no fmt -d src/              show diff for all .no files in src/")
 		fmt.Println("  echo 'x=1' | no fmt         format from stdin")
@@ -871,25 +893,38 @@ func fmtCommand(args []string) {
 	remaining := fs.Args()
 
 	if len(remaining) == 0 {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-			os.Exit(1)
-		}
-		original := string(data)
-		result, perrs := nfmt.FormatFileWithErrors(original)
-		if len(perrs) > 0 {
-			for _, e := range perrs {
-				fmt.Fprintf(os.Stderr, "format error: %s\n", e)
+		if stdinIsPiped() {
+			// stdin 是管道/重定向（如 echo 'x=1' | no fmt），從 stdin 讀取
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+				os.Exit(1)
 			}
-			os.Exit(1)
+			original := string(data)
+			result, perrs := nfmt.FormatFileWithErrors(original)
+			if len(perrs) > 0 {
+				for _, e := range perrs {
+					fmt.Fprintf(os.Stderr, "format error: %s\n", e)
+				}
+				os.Exit(1)
+			}
+			if *diffMode {
+				fmt.Print(generateDiff("stdin", original, result))
+			} else {
+				fmt.Print(result)
+			}
+			return
 		}
-		if *diffMode {
-			fmt.Print(generateDiff("stdin", original, result))
+		// 交互式終端：先檢查 workspace.jsonc，有則按其中目錄找，否則用 ./
+		// （與 build 命令的 workspace 模式行為一致）
+		if ws, _ := nbuild.LoadWorkspaceFile("."); ws != nil && len(ws) > 0 {
+			fmt.Fprintf(os.Stderr, "fmt: workspace.jsonc found, formatting %d project(s)\n", len(ws))
+			for _, relPath := range ws {
+				remaining = append(remaining, relPath)
+			}
 		} else {
-			fmt.Print(result)
+			remaining = []string{"."}
 		}
-		return
 	}
 
 	hadError := false
@@ -950,6 +985,11 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 
 func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error {
 	var firstErr error
+	checked := 0
+	needFormat := 0
+	// 無 -w 且無 -d 時為「檢查模式」：只列出需要格式化的文件名，
+	// 不把所有文件內容拼接到 stdout（多文件拼接沒有意義）。
+	checkMode := !writeInPlace && !diffMode
 	_ = filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if firstErr == nil {
@@ -960,13 +1000,46 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 		if info.IsDir() {
 			return nil
 		}
-		if strings.HasSuffix(path, ".no") {
-			if ferr := fmtProcessFile(path, writeInPlace, diffMode); ferr != nil && firstErr == nil {
-				firstErr = ferr
+		if !strings.HasSuffix(path, ".no") {
+			return nil
+		}
+		checked++
+		if checkMode {
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				if firstErr == nil {
+					firstErr = rerr
+				}
+				return nil
 			}
+			result, perrs := nfmt.FormatFileWithErrors(string(data))
+			if len(perrs) > 0 {
+				for _, e := range perrs {
+					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
+				}
+				if firstErr == nil {
+					firstErr = fmt.Errorf("format failed: %d parse error(s) in %s", len(perrs), path)
+				}
+				return nil
+			}
+			if result != string(data) {
+				fmt.Println(path)
+				needFormat++
+			}
+			return nil
+		}
+		if ferr := fmtProcessFile(path, writeInPlace, diffMode); ferr != nil && firstErr == nil {
+			firstErr = ferr
 		}
 		return nil
 	})
+	if checkMode && checked > 0 {
+		if needFormat == 0 {
+			fmt.Fprintf(os.Stderr, "all %d file(s) already formatted\n", checked)
+		} else {
+			fmt.Fprintf(os.Stderr, "%d/%d file(s) need formatting\n", needFormat, checked)
+		}
+	}
 	return firstErr
 }
 

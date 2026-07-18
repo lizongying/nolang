@@ -297,3 +297,38 @@ func TestLexerRegexAfterPunctuation(t *testing.T) {
 		i++
 	}
 }
+
+func TestLexerRegexVsImportExportPath(t *testing.T) {
+	// After '@' (export) and '#' (use) directives, a '/' is a path separator,
+	// not a regex literal.
+	tests := []struct {
+		name   string
+		input  string
+		tokens []TokenType
+	}{
+		{name: "export with leading slash", input: "@ /src/utils.greet a", tokens: []TokenType{AT, QUO, IDENT, QUO, IDENT, DOT, IDENT, IDENT, EOF}},
+		{name: "use with leading slash", input: "# /utils/math.add", tokens: []TokenType{USE, QUO, IDENT, QUO, IDENT, DOT, IDENT, EOF}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := New(tt.input)
+			i := 0
+			for tok := lex.NextToken(); ; tok = lex.NextToken() {
+				if i >= len(tt.tokens) {
+					t.Fatalf("%s: unexpected extra token: %s", tt.name, tok.Type.String())
+				}
+				if tok.Type != tt.tokens[i] {
+					t.Fatalf("%s: token %d: expected %s, got %s (literal=%q)", tt.name, i, tt.tokens[i].String(), tok.Type.String(), tok.Literal)
+				}
+				// No REGEX tokens should appear in these inputs
+				if tok.Type == REGEX {
+					t.Errorf("%s: unexpected REGEX token at position %d (literal=%q)", tt.name, i, tok.Literal)
+				}
+				if tok.Type == EOF {
+					break
+				}
+				i++
+			}
+		})
+	}
+}

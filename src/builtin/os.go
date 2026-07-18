@@ -265,15 +265,8 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "nolang.sleep_ns", ArgTypes: []LLVMArgType{LLVMI64}, RetType: LLVMI32},
 	})
 
-	// strerror: convert errno to error message
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "strerror",
-		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeStr},
-		Doc:          "Convert errno to error message string",
-		CLibCall:     &CLibCall{FuncName: "strerror", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI8Ptr, RetCStrToStr: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
-	})
+	// strerror: convert errno to error message string
+	// Implemented in Nolang (src/std/os.no) with a POSIX errno lookup table.
 
 	// get-errno: get the last errno value
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{

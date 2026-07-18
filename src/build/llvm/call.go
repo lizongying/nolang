@@ -2649,7 +2649,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 	case "ffi-cstr-at", "ffi-cstr-at-int", "ffi-cstr-at-float":
 		// ffi-cstr-at*(arr i64, idx i64): 從 char** 陣列讀取第 idx 個 C 字串
-		// NULL 安全：以 alloca i8 + store 0 建立空字串，select 避免 NULL 傳入 strlen/strtoll/strtod
+		// NULL 安全：以 alloca i8 + store 0 建立空字串，select 避免 NULL 傳入 nolang.strlen/nolang.strtoll/nolang.strtod
 		if len(args) < 2 {
 			return ""
 		}
@@ -2706,20 +2706,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			return strReg3
 
 		case "ffi-cstr-at-int":
-			// 7. strtoll(safe, null, 10)
+			// 7. nolang.strtoll(safe) — internal base-10 parser replacing libc @strtoll
 			g.tmpIdx++
 			valReg := fmt.Sprintf("%%cstr.ival.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strtoll(i8* %s, i8* null, i32 10)\n", g.indent(), valReg, safeReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strtoll(i8* %s)\n", g.indent(), valReg, safeReg))
 			}
 			return valReg
 
 		case "ffi-cstr-at-float":
-			// 7. strtod(safe, null)
+			// 7. nolang.strtod(safe) — internal parser replacing libc @strtod
 			g.tmpIdx++
 			valReg := fmt.Sprintf("%%cstr.fval.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call double @strtod(i8* %s, i8* null)\n", g.indent(), valReg, safeReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call double @nolang.strtod(i8* %s)\n", g.indent(), valReg, safeReg))
 			}
 			return valReg
 		}
