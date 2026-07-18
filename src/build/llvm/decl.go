@@ -35,10 +35,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// they are implemented in Nolang via str-to-f64 (src/std/str.no).
 	sb.WriteString("declare double @strtod(i8*, i8**)\n")
 	sb.WriteString("declare i32 @sprintf(i8*, i8*, ...)\n")
-	sb.WriteString("declare i64 @strlen(i8*)\n")
 	sb.WriteString("declare i8* @malloc(i64)\n")
 	sb.WriteString("declare void @free(i8*)\n")
-	sb.WriteString("declare i8* @realloc(i8*, i64)\n")
 	sb.WriteString("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)\n")
 	sb.WriteString("declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
@@ -69,8 +67,6 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @usleep(i32)\n")
 	sb.WriteString("declare i32 @nanosleep(i8*, i8*)\n")
 	sb.WriteString("declare i32 @clock_gettime(i32, i8*)\n")
-	sb.WriteString("declare i8* @localtime(i8*)\n")
-	sb.WriteString("declare i64 @strftime(i8*, i64, i8*, i8*)\n")
 	sb.WriteString("declare i8* @strerror(i32)\n")
 	// errno access: macOS uses __error(), Linux uses __errno_location()
 	if runtime.GOOS == "darwin" {
@@ -88,6 +84,42 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
 	sb.WriteString("declare i32 @compress2(i8*, i8*, i8*, i64, i32)\n")
 	sb.WriteString("declare i32 @uncompress(i8*, i8*, i8*, i64)\n")
+
+	// sincos: provide an implementation for platforms where libm does not
+	// export sincos (e.g. macOS). llc's DAG combiner merges sin(x)+cos(x)
+	// with the same argument into a single sincos call; without this
+	// definition the linker fails with "undefined symbol: _sincos".
+	// Marked optnone+noinline to prevent llc from re-combining sin/cos
+	// inside this very function into another sincos call (infinite recursion).
+	sb.WriteString("define void @sincos(double %x, double* %sin_out, double* %cos_out) #0 {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%s = call double @llvm.sin.f64(double %x)\n")
+	sb.WriteString("\t%c = call double @llvm.cos.f64(double %x)\n")
+	sb.WriteString("\tstore double %s, double* %sin_out\n")
+	sb.WriteString("\tstore double %c, double* %cos_out\n")
+	sb.WriteString("\tret void\n")
+	sb.WriteString("}\n")
+	sb.WriteString("attributes #0 = { optnone noinline }\n\n")
+
+	// nolang.strlen: runtime C-string length (replaces libc @strlen).
+	// Loops over i8* until null terminator. Used when converting C strings
+	// from libc functions (getenv, readdir, fgets, strerror, etc.) to %str-long.
+	// Handles NULL input by returning 0 (avoids UB from libc strlen(NULL)).
+	sb.WriteString("define internal i64 @nolang.strlen(i8* %s) {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%null.cond = icmp eq i8* %s, null\n")
+	sb.WriteString("\tbr i1 %null.cond, label %done, label %loop\n")
+	sb.WriteString("loop:\n")
+	sb.WriteString("\t%i = phi i64 [0, %entry], [%i.next, %loop]\n")
+	sb.WriteString("\t%ptr = getelementptr i8, i8* %s, i64 %i\n")
+	sb.WriteString("\t%c = load i8, i8* %ptr\n")
+	sb.WriteString("\t%cond = icmp eq i8 %c, 0\n")
+	sb.WriteString("\t%i.next = add i64 %i, 1\n")
+	sb.WriteString("\tbr i1 %cond, label %done, label %loop\n")
+	sb.WriteString("done:\n")
+	sb.WriteString("\t%len = phi i64 [0, %entry], [%i, %loop]\n")
+	sb.WriteString("\tret i64 %len\n")
+	sb.WriteString("}\n\n")
 
 	// nolang.now_ms: gettimeofday → sec*1000 + usec/1000
 	sb.WriteString("define internal i64 @nolang.now_ms() {\n")

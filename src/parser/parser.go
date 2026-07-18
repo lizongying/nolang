@@ -92,7 +92,7 @@ func (p *Parser) classifyBlock() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	}
 
@@ -236,7 +236,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	case lexer.DOT:
 		// Bare match arm starting with .field (self.field access),
@@ -3342,6 +3342,14 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 		p.nextToken()
 
+	case lexer.REGEX:
+		leftExp = &RegexLiteral{
+			Token:   p.currentToken,
+			Pattern: p.currentToken.Literal,
+			Flags:   p.currentToken.Raw,
+		}
+		p.nextToken()
+
 	case lexer.TRUE:
 		expr := &BooleanLiteral{
 			Token: p.currentToken,
@@ -3737,6 +3745,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
 		lexer.LBRACKET, lexer.FFI, lexer.HASH_LBRACE,
+		lexer.REGEX,
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
 		// preceding `break`/`continue`/`return`).

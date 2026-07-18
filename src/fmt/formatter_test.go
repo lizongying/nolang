@@ -2460,3 +2460,54 @@ func TestFormatEnumPreservesBare(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatRegexLiteral verifies that /pattern/flags regex literals
+// are preserved through formatting (idempotent round-trip).
+func TestFormatRegexLiteral(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple regex assignment",
+			input:    "re = /abc/",
+			expected: "re = /abc/\n",
+		},
+		{
+			name:     "regex with flags",
+			input:    "re = /abc/gi",
+			expected: "re = /abc/gi\n",
+		},
+		{
+			name:     "regex with digit class",
+			input:    "re = /\\d+/",
+			expected: "re = /\\d+/\n",
+		},
+		{
+			name:     "regex with escaped slash",
+			input:    "re = /a\\/b/",
+			expected: "re = /a\\/b/\n",
+		},
+		{
+			name:     "regex in function call",
+			input:    "result = match-text(/\\d+/, text)",
+			expected: "result = match-text(/\\d+/, text)\n",
+		},
+		{
+			name:     "regex with char class",
+			input:    "re = /[a-z]+/",
+			expected: "re = /[a-z]+/\n",
+		},
+	}
+	for _, tt := range tests {
+		got := FormatFile(tt.input)
+		if got != tt.expected {
+			t.Errorf("%s:\n got:  %q\n want: %q", tt.name, got, tt.expected)
+		}
+		// Idempotency: re-formatting must not change anything.
+		if FormatFile(got) != got {
+			t.Errorf("%s: not idempotent: %q -> %q", tt.name, got, FormatFile(got))
+		}
+	}
+}

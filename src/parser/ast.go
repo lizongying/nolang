@@ -851,6 +851,26 @@ func (cl *CharLiteral) expressionNode()        {}
 func (cl *CharLiteral) Pos() lexer.Position    { return posFromToken(cl.Token) }
 func (cl *CharLiteral) EndPos() lexer.Position { return posFromToken(cl.Token) }
 
+// RegexLiteral represents a JS-style regex literal: /pattern/flags
+// The opening delimiter is a single '/', disambiguated from division by
+// context (see lexer.isRegexStart). The pattern ends at the next unescaped /,
+// followed by optional ASCII flag letters (g, i, m, s, ...).
+//
+// Examples:
+//
+//	/abc/        → Pattern="abc", Flags=""
+//	/\d+/        → Pattern="\\d+", Flags=""
+//	/hello/gi    → Pattern="hello", Flags="gi"
+type RegexLiteral struct {
+	Token   lexer.Token
+	Pattern string // regex pattern content (without delimiters)
+	Flags   string // optional flags (e.g. "g", "i", "gi", "m", "s")
+}
+
+func (rl *RegexLiteral) expressionNode()        {}
+func (rl *RegexLiteral) Pos() lexer.Position    { return posFromToken(rl.Token) }
+func (rl *RegexLiteral) EndPos() lexer.Position { return posFromToken(rl.Token) }
+
 type BooleanLiteral struct {
 	Token lexer.Token
 	Value bool

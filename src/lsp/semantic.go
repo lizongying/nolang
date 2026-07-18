@@ -302,6 +302,8 @@ func (sp *SemanticTokensProvider) mapTokenType(tok lexer.Token, identTypes map[[
 		return SemTokenTypeNumber
 	case lexer.STRING:
 		return SemTokenTypeString
+	case lexer.REGEX:
+		return SemTokenTypeString
 	case lexer.TRUE, lexer.FALSE, lexer.NIL:
 		return SemTokenTypeKeyword
 	case lexer.IF, lexer.ELIF, lexer.ELSE, lexer.RETURN,

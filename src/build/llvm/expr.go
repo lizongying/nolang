@@ -367,6 +367,26 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		return g.generateRunExpression(sb, e)
 	case *parser.AwaitExpression:
 		return g.generateAwaitExpression(sb, e)
+	case *parser.RegexLiteral:
+		// Desugar /pattern/flags into regexp-compile('pattern') call.
+		// The regexp-compile function (defined in std/regexp.no) creates a
+		// regexp struct, sets the pattern, and calls .compile() in one step.
+		// Flags are currently stored on the node but not yet used by the
+		// regexp engine; they are preserved for future flag support.
+		callExpr := &parser.CallExpression{
+			Token: e.Token,
+			Function: &parser.Identifier{
+				Token: e.Token,
+				Value: "regexp-compile",
+			},
+			Arguments: []parser.Expression{
+				&parser.StringLiteral{
+					Token: e.Token,
+					Value: e.Pattern,
+				},
+			},
+		}
+		return g.generateExprWithSB(sb, callExpr)
 	default:
 		return "0"
 	}
@@ -1315,6 +1335,9 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			}
 		}
 		return "i64"
+	case *parser.RegexLiteral:
+		// /pattern/ desugars to regexp-compile('pattern') which returns %regexp
+		return "%regexp"
 	}
 	return ""
 }
@@ -3868,6 +3891,27 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 					}
 					return cmpReg
 				}
+				// str-long == nil: compare data pointer (field 2) to 0 (null).
+				// A %str-long with data == 0 is considered "nil" (e.g. getenv
+				// returning NULL, or an uninitialized string).
+				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {
+					g.tmpIdx++
+					dataGEP := fmt.Sprintf("%%strnil.data.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					dataLoad := fmt.Sprintf("%%strnil.data.load.%d", g.tmpIdx)
+					g.tmpIdx++
+					cmpReg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+					cmpOp := "eq"
+					if expr.Operator == "!=" {
+						cmpOp = "ne"
+					}
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, g.varAddr(leftIdent.Value)))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, 0\n", g.indent(), cmpReg, cmpOp, dataLoad))
+					}
+					return cmpReg
+				}
 			}
 		}
 	}
@@ -3882,7 +3926,9 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 	}
 
 	// 字串比較：使用 strcmp 直接回傳 i1
-	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+	// 注意：str == nil 已在前面處理，不會走到這裡
+	if (g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right)) &&
+		!isNilLiteral(expr.Left) && !isNilLiteral(expr.Right) {
 		switch expr.Operator {
 		case "==", "!=", "<", ">", "<=", ">=":
 			return g.generateStringCmpI1(sb, expr)
@@ -4379,6 +4425,17 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 					i1Result := g.generateInfixI1(sb, expr)
 					g.tmpIdx++
 					reg := fmt.Sprintf("%%optcmp.zext.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
+					}
+					return reg
+				}
+				// str-long == nil: delegate to generateInfixI1 and zext to i64
+				// (needed when comparison appears inside && or ||, not just as if condition)
+				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {
+					i1Result := g.generateInfixI1(sb, expr)
+					g.tmpIdx++
+					reg := fmt.Sprintf("%%strnilcmp.zext.%d", g.tmpIdx)
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
 					}
@@ -4921,6 +4978,12 @@ func isSingleCharStringLit(expr parser.Expression) bool {
 		return len(lit.Value) == 1
 	}
 	return false
+}
+
+// isNilLiteral reports whether expr is a *parser.NilLiteral.
+func isNilLiteral(expr parser.Expression) bool {
+	_, ok := expr.(*parser.NilLiteral)
+	return ok
 }
 
 // getStrPtr returns the %str-long* pointer for a string expression.

@@ -821,3 +821,14 @@ regexp-find = (pattern str, text str) (result str) {
     re.compile()
     result = re.find(text)
 }
+
+// regexp-compile: 編譯正規表示式 pattern，返回已編譯的 regexp 實例。
+// 供正則字面量 /pattern/ 使用：字面量在 codegen 階段脫糖為此函數調用。
+// pattern str: 正規表示式
+// 返回 re regexp: 已編譯的正規表示式實例
+regexp-compile = (pattern str) (re regexp) {
+    re = regexp{
+        pattern: pattern
+    }
+    re.compile()
+}

@@ -1,0 +1,12 @@
+// test-regex-literal.no — 端到端測試 /pattern/flags 正則字面量語法
+
+// 使用正則字面量創建已編譯的正規表示式
+re = /\d+/
+matched = re.matches('hello 123 world')
+// matched 應為 true (1)
+
+print('matched = ', matched)
+
+// 帶旗標的正則字面量
+re2 = /hello/gi
+print('re2.pattern = ', re2.pattern)

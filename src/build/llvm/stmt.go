@@ -821,6 +821,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "%str-long"
 	case *parser.CharLiteral:
 		return "i32"
+	case *parser.RegexLiteral:
+		return "%regexp"
 	case *parser.InfixExpression:
 		// 位元組算術（單字元 StringLiteral 配非字串運算元，如 c - 'A'）應推導為整數
 		// 型別，而非 %str-long。需在字串相接檢查之前判斷。

@@ -7,6 +7,17 @@
   ],
   "patterns": [
     {
+      "name": "string.regexp.nolang",
+      "begin": "/(?=[^/\\s*])",
+      "end": "/[a-zA-Z]*",
+      "patterns": [
+        {
+          "name": "constant.character.escape.nolang",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
       "name": "comment.line.double-slash.nolang",
       "match": "//.*$"
     },

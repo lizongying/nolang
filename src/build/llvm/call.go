@@ -832,8 +832,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 
 	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /
 	// @unlink / @rename / @stat / @chdir / @getcwd / @getenv / @getpid / @gethostname
-	// / @malloc / @free / @memcpy / @memset / @printf / @sprintf / @strcmp / @strlen
-	// / @time / @sleep / @fopen / @fgets / @fclose / @strtod
+	// / @malloc / @free / @memcpy / @memset / @printf / @sprintf / @strcmp
+	// / @nolang.strlen / @time / @sleep / @fopen / @fgets / @fclose / @strtod
 	// / @exit）衝突時，才加 "n." 前綴以避免 redefinition。
 	// 其他情況不前綴，保留與 builtin 的 dispatch 優先級。
 	// 註：@atoi / @strtoull 已移除，str.to-i64 / str.to-u64 由 str.no 中的
@@ -2697,7 +2697,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			strReg3 := fmt.Sprintf("%%cstr.s3.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, safeReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, safeReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 				_p2i_strReg3 := g.ptrToIntVal(sb, safeReg)
@@ -3305,7 +3305,7 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 	case "str":
 		g.tmpIdx++
 		lenReg := fmt.Sprintf("%%ext.strlen.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, callReg))
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, callReg))
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%ext.str1.%d", g.tmpIdx)
 		g.tmpIdx++

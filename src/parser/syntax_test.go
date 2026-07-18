@@ -490,3 +490,84 @@ func TestFFIDeclarationSyntax(t *testing.T) {
 		})
 	}
 }
+
+// TestParserRegexLiteral verifies that the /pattern/flags regex literal
+// syntax is parsed into a *RegexLiteral AST node with correct Pattern and Flags.
+func TestParserRegexLiteral(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantPat   string
+		wantFlags string
+	}{
+		{name: "simple", input: "re = /abc/", wantPat: "abc", wantFlags: ""},
+		{name: "flags", input: "re = /abc/gi", wantPat: "abc", wantFlags: "gi"},
+		{name: "digit", input: "re = /\\d+/", wantPat: "\\d+", wantFlags: ""},
+		{name: "escaped_slash", input: "re = /a\\/b/", wantPat: "a\\/b", wantFlags: ""},
+		{name: "charclass", input: "re = /[a-z]+/", wantPat: "[a-z]+", wantFlags: ""},
+		{name: "anchors", input: "re = /^test$/", wantPat: "^test$", wantFlags: ""},
+		{name: "global_flag", input: "re = /hello/g", wantPat: "hello", wantFlags: "g"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			program := p.ParseProgram()
+			if len(p.Errors()) != 0 {
+				t.Fatalf("parser errors: %v", p.Errors())
+			}
+			if program == nil || len(program.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+			// re = /pattern/ → LetStatement with Value = *RegexLiteral
+			letStmt, ok := program.Statements[0].(*LetStatement)
+			if !ok {
+				t.Fatalf("expected *LetStatement, got %T", program.Statements[0])
+			}
+			regexLit, ok := letStmt.Value.(*RegexLiteral)
+			if !ok {
+				t.Fatalf("expected *RegexLiteral, got %T", letStmt.Value)
+			}
+			if regexLit.Pattern != tt.wantPat {
+				t.Errorf("pattern: expected %q, got %q", tt.wantPat, regexLit.Pattern)
+			}
+			if regexLit.Flags != tt.wantFlags {
+				t.Errorf("flags: expected %q, got %q", tt.wantFlags, regexLit.Flags)
+			}
+		})
+	}
+}
+
+// TestParserRegexLiteralInCall verifies that a regex literal can be used
+// as a function argument and in other expression contexts.
+func TestParserRegexLiteralInCall(t *testing.T) {
+	input := "result = match-text(/\\d+/, text)"
+	lex := lexer.New(input)
+	p := New(lex)
+	program := p.ParseProgram()
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser errors: %v", p.Errors())
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+	letStmt, ok := program.Statements[0].(*LetStatement)
+	if !ok {
+		t.Fatalf("expected *LetStatement, got %T", program.Statements[0])
+	}
+	call, ok := letStmt.Value.(*CallExpression)
+	if !ok {
+		t.Fatalf("expected *CallExpression, got %T", letStmt.Value)
+	}
+	if len(call.Arguments) != 2 {
+		t.Fatalf("expected 2 arguments, got %d", len(call.Arguments))
+	}
+	regexLit, ok := call.Arguments[0].(*RegexLiteral)
+	if !ok {
+		t.Fatalf("expected first arg *RegexLiteral, got %T", call.Arguments[0])
+	}
+	if regexLit.Pattern != "\\d+" {
+		t.Errorf("pattern: expected %q, got %q", "\\d+", regexLit.Pattern)
+	}
+}

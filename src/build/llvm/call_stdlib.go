@@ -739,7 +739,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8*, i8** %s, i64 %s\n", g.indent(), gepReg, argvReg, a[0]))
 			ptrReg = g.loadDataPtrField(sb, gepReg)
 			// strlen to get length
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, ptrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, ptrReg))
 			// Allocate %str-long struct { i64 len, i64 cap, i8* data }
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			// Store length (field 0)

@@ -251,7 +251,6 @@ var clibFuncNames = map[string]bool{
 	"free":        true,
 	"printf":      true,
 	"sprintf":     true,
-	"strlen":      true,
 	"time":        true,
 	"sleep":       true,
 	"fopen":       true,

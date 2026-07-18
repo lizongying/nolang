@@ -192,6 +192,8 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		return "char"
 	case *parser.ByteLiteral:
 		return "byte"
+	case *parser.RegexLiteral:
+		return "regexp"
 	case *parser.Identifier:
 		if t, ok := varTypes[e.Value]; ok {
 			// Function-type variable: return simplified "fn" marker
@@ -1601,6 +1603,8 @@ func inferTypeFromExpr(expr parser.Expression) string {
 		return "f64"
 	case *parser.StringLiteral:
 		return "str"
+	case *parser.RegexLiteral:
+		return "regexp"
 	case *parser.BooleanLiteral:
 		return "bool"
 	case *parser.StructLiteral:
@@ -2143,6 +2147,8 @@ func inferArgType(expr parser.Expression, program *parser.Program) string {
 		return "f64"
 	case *parser.StringLiteral:
 		return "str"
+	case *parser.RegexLiteral:
+		return "regexp"
 	case *parser.BooleanLiteral:
 		return "bool"
 	case *parser.GroupedExpression:

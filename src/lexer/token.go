@@ -15,6 +15,7 @@ const (
 	BYTE   // x00 ~ xFF
 	STRING
 	CHAR   // "x" — double-quoted single Unicode character (rune)
+	REGEX  // /pattern/flags — regex literal (JS-style, context-sensitive)
 	TRUE
 	FALSE
 	NIL
@@ -129,6 +130,7 @@ var tokenNames = map[TokenType]string{
 	BYTE:           "BYTE",
 	STRING:         "STRING",
 	CHAR:           "CHAR",
+	REGEX:          "REGEX",
 	TRUE:           "TRUE",
 	FALSE:          "FALSE",
 	NIL:            "NIL",

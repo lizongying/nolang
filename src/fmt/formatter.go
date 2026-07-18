@@ -126,6 +126,8 @@ func stmtExprEndLine(expr parser.Expression) int {
 		return e.Token.Line
 	case *parser.CharLiteral:
 		return e.Token.Line
+	case *parser.RegexLiteral:
+		return e.Token.Line
 	case *parser.NilLiteral:
 		return e.Token.Line
 	case *parser.PrefixExpression:
@@ -472,6 +474,11 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 			f.write(e.Value)
 			f.write("'")
 		}
+	case *parser.RegexLiteral:
+		f.write("/")
+		f.write(e.Pattern)
+		f.write("/")
+		f.write(e.Flags)
 	case *parser.BooleanLiteral:
 		if e.Value {
 			f.write("true")

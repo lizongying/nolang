@@ -5,20 +5,22 @@ import (
 )
 
 type Lexer struct {
-	input        string
-	position     int
-	readPosition int
-	ch           byte
-	line         int
-	column       int
+	input         string
+	position      int
+	readPosition  int
+	ch            byte
+	line          int
+	column        int
+	prevTokenType TokenType // type of the last token returned by NextToken
 }
 
 type LexerState struct {
-	position     int
-	readPosition int
-	ch           byte
-	line         int
-	column       int
+	position      int
+	readPosition  int
+	ch            byte
+	line          int
+	column        int
+	prevTokenType TokenType
 }
 
 func New(input string) *Lexer {
@@ -33,11 +35,12 @@ func New(input string) *Lexer {
 
 func (l *Lexer) SaveState() LexerState {
 	return LexerState{
-		position:     l.position,
-		readPosition: l.readPosition,
-		ch:           l.ch,
-		line:         l.line,
-		column:       l.column,
+		position:      l.position,
+		readPosition:  l.readPosition,
+		ch:            l.ch,
+		line:          l.line,
+		column:        l.column,
+		prevTokenType: l.prevTokenType,
 	}
 }
 
@@ -47,6 +50,7 @@ func (l *Lexer) RestoreState(state LexerState) {
 	l.ch = state.ch
 	l.line = state.line
 	l.column = state.column
+	l.prevTokenType = state.prevTokenType
 }
 
 func (l *Lexer) readChar() {
@@ -239,10 +243,115 @@ func (l *Lexer) readRawString() string {
 	}
 }
 
-func (l *Lexer) NextToken() Token {
+// readRegex reads a JS-style regex literal starting from the opening '/'.
+// The caller has confirmed via isRegexStart() that l.ch == '/' begins a regex.
+//
+// Syntax: /pattern/flags
+//   - Opening delimiter: /
+//   - Pattern: any chars except unescaped / and newline; \/ preserves the escape
+//   - Closing delimiter: /
+//   - Flags: ASCII letters (g, i, m, s, ...)
+//
+// Returns (pattern, flags, ok). ok=false means the '/' did not actually open
+// a well-formed regex (e.g. unterminated); the caller should then treat '/' as
+// division.
+func (l *Lexer) readRegex() (pattern string, flags string, ok bool) {
+	// l.ch == '/'
+	l.readChar() // skip opening /
+
+	var buf []byte
+	for l.ch != '/' && l.ch != 0 {
+		if l.ch == '\\' {
+			// Escape: keep backslash and the next char (e.g. \/ \d \.)
+			buf = append(buf, l.ch)
+			l.readChar()
+			if l.ch != 0 {
+				buf = append(buf, l.ch)
+				l.readChar()
+			}
+		} else if l.ch == '\n' {
+			// Regex literals cannot span newlines — this '/' was not a regex
+			return string(buf), "", false
+		} else if l.ch == '[' {
+			// Character class: copy verbatim until ']' (newlines not allowed)
+			buf = append(buf, l.ch)
+			l.readChar()
+			for l.ch != ']' && l.ch != 0 && l.ch != '\n' {
+				if l.ch == '\\' {
+					buf = append(buf, l.ch)
+					l.readChar()
+					if l.ch != 0 {
+						buf = append(buf, l.ch)
+						l.readChar()
+					}
+				} else {
+					buf = append(buf, l.ch)
+					l.readChar()
+				}
+			}
+			if l.ch == ']' {
+				buf = append(buf, l.ch)
+				l.readChar()
+			}
+		} else {
+			buf = append(buf, l.ch)
+			l.readChar()
+		}
+	}
+	// Must find closing /
+	if l.ch != '/' {
+		return string(buf), "", false
+	}
+	l.readChar() // skip closing /
+	// Read flags: ASCII letters only (g, i, m, s, ...)
+	var flagsBuf []byte
+	for (l.ch >= 'a' && l.ch <= 'z') || (l.ch >= 'A' && l.ch <= 'Z') {
+		flagsBuf = append(flagsBuf, l.ch)
+		l.readChar()
+	}
+	return string(buf), string(flagsBuf), true
+}
+
+// isRegexStart reports whether a '/' at the current position should begin a
+// regex literal rather than a division operator. This mirrors JavaScript's
+// context-sensitive lexing: after value-producing tokens '/' is division;
+// after operators, punctuation, keywords, or at the start of input, '/' begins
+// a regex.
+func (l *Lexer) isRegexStart() bool {
+	prev := l.prevTokenType
+	// Start of input, or after a newline / comment: a new statement begins,
+	// so '/' starts a regex.
+	if prev == 0 || prev == NEWLINE || prev == COMMENT {
+		return true
+	}
+	switch prev {
+	// After these value-producing tokens, '/' is division.
+	case IDENT, INT, FLOAT, STRING, CHAR, BYTE, REGEX,
+		TRUE, FALSE, NIL,
+		RPAREN, RBRACKET, RBRACE,
+		INC, DEC,
+		SELF, IT, SUPER, UNDERSCORE:
+		return false
+	}
+	// After '#'-family tokens (USE, FFI, LABEL, HASH_LBRACE) a '/' is a path
+	// separator in a use/import statement, not a regex.
+	switch prev {
+	case USE, FFI, LABEL, HASH_LBRACE:
+		return false
+	}
+	// After all other tokens (operators, keywords like return/if/for,
+	// punctuation like ( [ { , : ; = etc.), '/' starts a regex.
+	return true
+}
+
+func (l *Lexer) NextToken() (tok Token) {
 	l.skipWhitespace()
 
-	tok := Token{}
+	// Track the previous token type so context-sensitive lexing (e.g. '/' for
+	// regex vs division) can disambiguate. This runs on every return path.
+	defer func() { l.prevTokenType = tok.Type }()
+
+	tok = Token{}
 	tok.Line = l.line
 	tok.Column = l.column
 
@@ -350,6 +459,11 @@ func (l *Lexer) NextToken() Token {
 		}
 
 	case '/':
+		// Context-sensitive regex literal: /pattern/flags
+		// A '/' begins a regex when the previous significant token expects an
+		// expression (operators, keywords, punctuation, start of input); after
+		// value-producing tokens (IDENT, INT, ), ], } etc.) it is division.
+		// '//' is always a line comment and takes precedence.
 		if l.peekChar() == '/' {
 			// 单行注释
 			l.readChar() // skip first /
@@ -362,6 +476,27 @@ func (l *Lexer) NextToken() Token {
 			tok.Literal = l.input[start:l.position]
 			tok.Marker = "//"
 			return tok
+		}
+		if l.isRegexStart() {
+			pattern, flags, ok := l.readRegex()
+			if ok {
+				tok.Type = REGEX
+				tok.Literal = pattern
+				tok.Raw = flags
+				return tok
+			}
+			// Not a well-formed regex (e.g. unterminated): fall through to
+			// treat '/' as division. readRegex already consumed input; we
+			// cannot easily rewind, so emit the appropriate '/' operator.
+			// In practice, unterminated regex on a single line is rare.
+			if l.peekChar() == '=' {
+				l.readChar()
+				tok.Type = QUO_ASSIGN
+				tok.Literal = "/="
+			} else {
+				tok.Type = QUO
+				tok.Literal = "/"
+			}
 		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = QUO_ASSIGN
@@ -594,12 +729,13 @@ func (l *Lexer) NextToken() Token {
 
 // PeekToken 预览下一个令牌
 func (l *Lexer) PeekToken() (tok Token) {
-	// 保存当前状态
+	// 保存当前状态（包括 prevTokenType，否则窥视会污染上下文敏感的 '/' 判定）
 	position := l.position
 	readPosition := l.readPosition
 	ch := l.ch
 	line := l.line
 	column := l.column
+	prevTokenType := l.prevTokenType
 
 	// 生成下一个令牌
 	tok = l.NextToken()
@@ -613,6 +749,7 @@ func (l *Lexer) PeekToken() (tok Token) {
 	l.ch = ch
 	l.line = line
 	l.column = column
+	l.prevTokenType = prevTokenType
 
 	return
 }
