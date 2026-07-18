@@ -1176,25 +1176,49 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 整數字面量接收者（如 123.to-str()）
 			// 整數字面量預設為 i64 型別
 			shortName := "i64." + dot.Property
-			if m := builtin.FindBuiltinMethod(shortName); m != nil {
-				fnName = shortName
-				methodReceiver = receiverExpr
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
 			}
 		} else if _, ok := receiverExpr.(*parser.FloatLiteral); ok {
 			// 浮點字面量接收者（如 3.14.to-str()）
 			// 浮點字面量預設為 f64 型別
 			shortName := "f64." + dot.Property
-			if m := builtin.FindBuiltinMethod(shortName); m != nil {
-				fnName = shortName
-				methodReceiver = receiverExpr
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
 			}
 		} else if _, ok := receiverExpr.(*parser.BooleanLiteral); ok {
 			// 布爾字面量接收者（如 true.to-str()）
 			// 布爾字面量預設為 bool 型別
 			shortName := "bool." + dot.Property
-			if m := builtin.FindBuiltinMethod(shortName); m != nil {
-				fnName = shortName
-				methodReceiver = receiverExpr
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
 			}
 		} else if group, ok := receiverExpr.(*parser.GroupedExpression); ok {
 			// 帶括號的表達式接收者（如 (-42).to-str()、(-9223372036854775807 - 1).to-str()）
@@ -1202,16 +1226,32 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if infix, ok := group.Expression.(*parser.InfixExpression); ok {
 				// 算術表達式視為 i64
 				shortName := "i64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+					}
 				}
 				_ = infix
 			} else if _, ok := group.Expression.(*parser.IntegerLiteral); ok {
 				shortName := "i64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+					}
 				}
 			}
 		} else if infix, ok := receiverExpr.(*parser.InfixExpression); ok {
@@ -1220,18 +1260,34 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 算術表達式視為 i64。
 			_ = infix
 			shortName := "i64." + dot.Property
-			if m := builtin.FindBuiltinMethod(shortName); m != nil {
-				fnName = shortName
-				methodReceiver = receiverExpr
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
 			}
 		} else if _, ok := receiverExpr.(*parser.PrefixExpression); ok {
 			// 前綴表達式接收者（如 -42.to-str()，無括號）
 			// 負整數字面量被解析為 PrefixExpression(-, IntegerLiteral)
 			// 視為 i64 型別
 			shortName := "i64." + dot.Property
-			if m := builtin.FindBuiltinMethod(shortName); m != nil {
-				fnName = shortName
-				methodReceiver = receiverExpr
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
 			}
 		} else if _, ok := receiverExpr.(*parser.IndexExpression); ok {
 			// 陣列元素接收者（如 names[i].slice(0, nlen)）
@@ -2477,7 +2533,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		g.tmpIdx++
 		zextReg := fmt.Sprintf("%%eqzext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @llvm.memcmp.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
 		}
@@ -2498,7 +2554,8 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		return ""
 
 	case "str-to-bool":
-		// str.to-bool: strcmp + cmp + zext
+		// str.to-bool: memcmp("true", 5 bytes incl null) + cmp + zext
+		// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
 		if len(args) < 1 {
 			return ""
 		}
@@ -2506,7 +2563,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%boolcmp.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0))\n",
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i64 5)\n",
 				g.indent(), cmpReg, sPtr))
 		}
 		g.tmpIdx++
@@ -2522,7 +2579,9 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		return zextReg
 
 	case "bool-to-str":
-		// bool.to-str: select + strlen + 构造 %str-long
+		// bool.to-str: select + malloc + memcpy + 构造 %str-long
+		// Must heap-allocate the data buffer so emitHeapFree can safely free it.
+		// Using global constant pointers directly would cause abort when freed.
 		if len(args) < 1 {
 			return ""
 		}
@@ -2542,11 +2601,27 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
 				g.indent(), selectReg, bVal))
 		}
+		// "true" = 4, "false" = 5; use select directly
 		g.tmpIdx++
 		lenReg := fmt.Sprintf("%%boolstr.len.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 4, i64 5\n", g.indent(), lenReg, bVal))
 		}
+		// Allocate heap buffer (6 bytes, enough for "false\0")
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%boolstr.buf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 6)\n", g.indent(), bufReg))
+		}
+		// Copy length including null terminator: "true\0" = 5, "false\0" = 6
+		g.tmpIdx++
+		copyLenReg := fmt.Sprintf("%%boolstr.copylen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 5, i64 6\n", g.indent(), copyLenReg, bVal))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), bufReg, selectReg, copyLenReg))
+		}
+		// Construct %str-long { len, cap, data } with heap-allocated data
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -2556,7 +2631,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			_p2i_strReg3 := g.ptrToIntVal(sb, selectReg)
+			_p2i_strReg3 := g.ptrToIntVal(sb, bufReg)
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3

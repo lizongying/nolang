@@ -146,19 +146,373 @@ pow = (a int, n int) (r int) {
 //     r = a
 // }
 
-// float.to-str: 浮點數轉字串（方法）
-// 使用 strconv 中的 build-in 實現
-// build-in (ForwardFunc: sprintf-f64)
-// float.to-str = () (out str) {
-//     // LLVM: fpext float to double → sprintf(buf, "%g", .)
-// }
+// ═══════════════════════════════════════════════
+// 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
+// ═══════════════════════════════════════════════
 
-// int.to-str: 整数转字串（方法）
-// 使用 strconv 中的 build-in 實現
-// build-in (ForwardFunc: sprintf-i64)
-// int.to-str = () (out str) {
-//     // LLVM: sprintf(buf, "%lld", .)
-// }
+// i64-to-str: 將 i64 轉為字串
+// 處理 0、正數、負數。不取絕對值（避免 i64.MIN 溢出），
+// 直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+i64-to-str = (n i64) (out str) {
+    n == 0 -> {
+        out = with-cap(1)
+        out[0] = 48
+        return
+    }
+    neg = 0
+    n < 0 -> neg = 1
+    digits = 0
+    tmp = n
+    for tmp != 0 {
+        digits = digits + 1
+        tmp = tmp / 10
+    }
+    total = digits
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = digits - 1
+    neg == 1 -> pos = digits
+    for n != 0 {
+        d = n % 10
+        neg == 1 -> d = 0 - d
+        out[pos] = d + 48
+        n = n / 10
+        pos = pos - 1
+    }
+    neg == 1 -> out[0] = 45
+}
+
+// u64-to-str: 將 u64 轉為字串
+u64-to-str = (u u64) (out str) {
+    u == 0 -> {
+        out = with-cap(1)
+        out[0] = 48
+        return
+    }
+    tmp u64 = u
+    digits = 0
+    for tmp > 0 {
+        digits = digits + 1
+        tmp = tmp / 10
+    }
+    out = with-cap(digits)
+    pos = digits - 1
+    for u > 0 {
+        d = u % 10
+        out[pos] = d + 48
+        u = u / 10
+        pos = pos - 1
+    }
+}
+
+// char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
+// 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
+char-to-str = (c i64) (out str) {
+    out = with-cap(4)
+    {
+        c < 0x80 -> out[0] = c
+        c < 0x800 -> {
+            out[0] = 0xC0 | ((c >> 6) & 0x1F)
+            out[1] = 0x80 | (c & 0x3F)
+        }
+        c < 0x10000 -> {
+            out[0] = 0xE0 | ((c >> 12) & 0x0F)
+            out[1] = 0x80 | ((c >> 6) & 0x3F)
+            out[2] = 0x80 | (c & 0x3F)
+        }
+        -> {
+            out[0] = 0xF0 | ((c >> 18) & 0x07)
+            out[1] = 0x80 | ((c >> 12) & 0x3F)
+            out[2] = 0x80 | ((c >> 6) & 0x3F)
+            out[3] = 0x80 | (c & 0x3F)
+        }
+    }
+}
+
+// int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
+// transpiler 會將 i64.to-str() 等解析為 int.to-str()
+// 直接使用算術運算，避免 int → u64 的類型轉換問題
+// 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
+// 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+int.to-str = () (out str) {
+    . == 0 -> {
+        out = with-cap(1)
+        out[0] = 48
+        return
+    }
+    neg = 0
+    n = .
+    n < 0 -> neg = 1
+    digits = 0
+    tmp = n
+    for tmp != 0 {
+        digits = digits + 1
+        tmp = tmp / 10
+    }
+    total = digits
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = digits - 1
+    neg == 1 -> pos = digits
+    for n != 0 {
+        d = n % 10
+        neg == 1 -> d = 0 - d
+        out[pos] = d + 48
+        n = n / 10
+        pos = pos - 1
+    }
+    neg == 1 -> out[0] = 45
+}
+
+// i64.to-str: i64 轉字串
+i64.to-str = () (out str) {
+    out = i64-to-str(.)
+}
+
+// i32.to-str: i32 轉字串（隱式拓寬至 i64）
+i32.to-str = () (out str) {
+    out = i64-to-str(.)
+}
+
+// i16.to-str: i16 轉字串
+i16.to-str = () (out str) {
+    out = i64-to-str(.)
+}
+
+// i8.to-str: i8 轉字串
+i8.to-str = () (out str) {
+    out = i64-to-str(.)
+}
+
+// u64.to-str: u64 轉字串
+u64.to-str = () (out str) {
+    out = u64-to-str(.)
+}
+
+// u32.to-str: u32 轉字串（隱式拓寬至 u64）
+u32.to-str = () (out str) {
+    out = u64-to-str(.)
+}
+
+// u16.to-str: u16 轉字串
+u16.to-str = () (out str) {
+    out = u64-to-str(.)
+}
+
+// u8.to-str: u8 轉字串
+u8.to-str = () (out str) {
+    out = u64-to-str(.)
+}
+
+// byte.to-str: byte 轉字串（無號，等同 u8）
+byte.to-str = () (out str) {
+    out = u64-to-str(.)
+}
+
+// ═══════════════════════════════════════════════
+// 浮點轉字串（Nolang 實現，取代 sprintf %g CLibCall）
+// ═══════════════════════════════════════════════
+
+LN10 = 2.302585092994046
+
+// f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
+// 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
+f64-to-str = (x f64) (out str) {
+    // 特殊值處理
+    // 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
+    x != x -> {
+        out = 'nan'.copy()
+        return
+    }
+    x == 0.0 -> {
+        out = '0'.copy()
+        return
+    }
+    x + x == x -> {
+        x < 0.0 -> {
+            out = '-inf'.copy()
+            return
+        }
+        out = 'inf'.copy()
+        return
+    }
+
+    // 符號處理
+    neg = 0
+    ax f64 = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    // 計算指數 e = floor(log10(ax))
+    e i64 = f64-to-i64(floor(log10(ax)))
+
+    // 邊界調整：若 ax >= 10^(e+1)，則 e++
+    upper f64 = exp(i64-to-f64(e + 1) * LN10)
+    ax >= upper -> e = e + 1
+
+    // 計算 6 位有效數字的整數尾數
+    // m = round(ax / 10^e * 100000)
+    base f64 = exp(i64-to-f64(e) * LN10)
+    ax < base -> {
+        e = e - 1
+        base = exp(i64-to-f64(e) * LN10)
+    }
+    m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
+
+    // 四捨五入溢出處理
+    m >= 1000000 -> {
+        m = m / 10
+        e = e + 1
+    }
+
+    // 將 m 轉為 6 位數字字串（補前導零）
+    digits = with-cap(6)
+    tmp = m
+    i = 5
+    for i >= 0 {
+        digits[i] = (tmp % 10) + 48
+        tmp = tmp / 10
+        i = i - 1
+    }
+
+    // 找最後一個非零位（用於去尾隨零）
+    last-nz = 0
+    i = 5
+    for i >= 0 {
+        digits[i] != 48 -> {
+            last-nz = i
+            i = -1
+        }
+        i = i - 1
+    }
+
+    // 決定格式
+    use-sci = 0
+    e < -4 -> use-sci = 1
+    e >= 6 -> use-sci = 1
+
+    use-sci == 1 -> {
+        // 科學記號：d.ddddde±NN
+        out = with-cap(20)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        out[pos] = digits[0]
+        pos = pos + 1
+        last-nz >= 1 -> {
+            out[pos] = 46
+            pos = pos + 1
+            j = 1
+            for j <= last-nz {
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+        out[pos] = 101
+        pos = pos + 1
+        ae i64 = e
+        {
+            ae < 0 -> {
+                out[pos] = 45
+                pos = pos + 1
+                ae = 0 - ae
+            }
+            -> {
+                out[pos] = 43
+                pos = pos + 1
+            }
+        }
+        estr = i64-to-str(ae)
+        estr.len == 1 -> {
+            out[pos] = 48
+            pos = pos + 1
+        }
+        j = 0
+        for j < estr.len {
+            out[pos] = estr[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        return
+    }
+
+    // 固定記號
+    e >= 0 -> {
+        int-digits = e + 1
+        total = int-digits
+        neg == 1 -> total = total + 1
+        last-nz >= int-digits -> {
+            total = total + 1
+            total = total + (last-nz - int-digits + 1)
+        }
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        j = 0
+        for j < int-digits {
+            out[pos] = digits[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        last-nz >= int-digits -> {
+            out[pos] = 46
+            pos = pos + 1
+            j = int-digits
+            for j <= last-nz {
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+        return
+    }
+
+    // e < 0: 0.00dddd
+    lead-zeros = 0 - e - 1
+    total = 2 + lead-zeros + last-nz + 1
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+    out[pos] = 48
+    pos = pos + 1
+    out[pos] = 46
+    pos = pos + 1
+    j = 0
+    for j < lead-zeros {
+        out[pos] = 48
+        pos = pos + 1
+        j = j + 1
+    }
+    j = 0
+    for j <= last-nz {
+        out[pos] = digits[j]
+        pos = pos + 1
+        j = j + 1
+    }
+}
+
+// f64.to-str: f64 轉字串（方法）
+f64.to-str = () (out str) {
+    out = f64-to-str(.)
+}
+
+// 注意：不定義 float.to-str 聯合方法。原因：
+// union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
+// 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
+// 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str。
+// f32.to-str 暫時保留 CLibCall (sprintf %g)，因為 f32→f64 轉換尚未實現
 
 // div: 整數除法，回傳商（a ÷ b）
 // b 為 0 時行為未定義（執行時期錯誤）

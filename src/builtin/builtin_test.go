@@ -96,6 +96,7 @@ func TestLLVMConvMethods(t *testing.T) {
 	}{
 		{"i64-to-f64", LLVMConvI64ToFP},
 		{"f64-to-i64", LLVMConvFPToI64},
+		{"f64-to-f32", LLVMConvF64ToF32},
 	}
 	for _, tt := range tests {
 		found := false
@@ -143,46 +144,17 @@ func TestOSCLibCallMethods(t *testing.T) {
 	}
 }
 
-func TestStrconvCLibCallMethods(t *testing.T) {
-	tests := []struct {
-		name     string
-		funcName string
-	}{
-		{"str.parse-f64-raw", "strtod"},
-		{"str.to-f32", "strtod"},
-	}
-	for _, tt := range tests {
-		found := false
-		for i := range BuiltinMethodList {
-			m := &BuiltinMethodList[i]
-			if m.MethodName == tt.name && m.CLibCall != nil && m.CLibCall.FuncName == tt.funcName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("no BuiltinMethod with name=%s and CLibCall.FuncName=%s", tt.name, tt.funcName)
-		}
-	}
-}
-
 func TestStrconvSprintfMethods(t *testing.T) {
+	// Only f32.to-str remains as a sprintf CLibCall builtin.
+	// Integer to-str (i8/i16/i32/i64/u8/u16/u32/u64/byte.to-str),
+	// char-to-str, and f64.to-str are now implemented in Nolang
+	// (src/std/number.no). str.to-f64 / str.to-f32 are implemented in
+	// Nolang (src/std/str.no) using str-to-f64 + f64-to-f32.
 	tests := []struct {
 		name string
 		fmt  string
 	}{
-		{"i8.to-str", "%hhd"},
-		{"i16.to-str", "%hd"},
-		{"i32.to-str", "%d"},
-		{"i64.to-str", "%lld"},
-		{"u8.to-str", "%hhu"},
-		{"u16.to-str", "%hu"},
-		{"u32.to-str", "%u"},
-		{"u64.to-str", "%llu"},
 		{"f32.to-str", "%g"},
-		{"f64.to-str", "%g"},
-		{"byte.to-str", "%hhu"},
-		{"char-to-str", "%c"},
 	}
 	for _, tt := range tests {
 		found := false

@@ -549,20 +549,16 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 // ═══════════════════════════════════════════════
 
 // emit-quantized: 根據量詞發射指令
+// 使用減法比較 (quant - CONST == 0) 替代直接相等 (quant == CONST)，
+// 因為編譯器在 guard 條件中對 == 42 有 codegen bug（比較值正確但分支不執行）。
 // atom-type i64: atom 類型
 // atom-char i64: atom 字元值
 // atom-cls i64: atom 類別索引
 // quant i64: 量詞字元（0=無, 42=*, 43=+, 63=?）
 // atom-i i64: atom 後的位置
 regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, atom-i i64) {
-    println('emit-q: quant=', quant, ' star=', _RE-QUANT-STAR, ' plus=', _RE-QUANT-PLUS, ' q=', _RE-QUANT-QUESTION, ' eqStar=', quant == _RE-QUANT-STAR, ' eqPlus=', quant == _RE-QUANT-PLUS)
-    quant == 0 -> {
-        // 無量詞：直接發射 atom
-        .emit-atom(atom-type, atom-char, atom-cls)
-        .tmp-next-i = atom-i
-    }
+    // STAR 放在最前面測試
     quant == _RE-QUANT-STAR -> {
-        // * — 零次或多次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -571,16 +567,21 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .arg1[split-pc] = l1
         .arg2[split-pc] = .n
         .tmp-next-i = atom-i + 1
+        return
+    }
+    quant == 0 -> {
+        .emit-atom(atom-type, atom-char, atom-cls)
+        .tmp-next-i = atom-i
+        return
     }
     quant == _RE-QUANT-PLUS -> {
-        // + — 一次或多次（貪婪）
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-SPLIT, l1, .n + 1)
         .tmp-next-i = atom-i + 1
+        return
     }
     quant == _RE-QUANT-QUESTION -> {
-        // ? — 零次或一次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -588,12 +589,10 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .arg1[split-pc] = l1
         .arg2[split-pc] = .n
         .tmp-next-i = atom-i + 1
+        return
     }
-    quant != 0 && quant != _RE-QUANT-STAR && quant != _RE-QUANT-PLUS && quant != _RE-QUANT-QUESTION -> {
-        // 不是量詞，直接發射 atom
-        .emit-atom(atom-type, atom-char, atom-cls)
-        .tmp-next-i = atom-i
-    }
+    .emit-atom(atom-type, atom-char, atom-cls)
+    .tmp-next-i = atom-i
 }
 
 // compile: 將 pattern 字串編譯為指令序列
@@ -631,14 +630,46 @@ regexp.compile = () {
             atom-char = .tmp-atom-char
             atom-cls = .tmp-atom-cls
 
-            // 檢查量詞
-            quant = 0
-            atom-i < n -> {
-                quant = .pattern[atom-i] & 255
-            }
+            // 檢查量詞（用三元運算符避免條件塊賦值不傳播的 bug）
+            quant = (atom-i < n) ? (.pattern[atom-i] & 255) : 0
 
-            // 委派給獨立方法處理量詞分派
-            .emit-quantized(atom-type, atom-char, atom-cls, quant, atom-i)
+            // 量詞分派：STAR 用減法比較 (star-delta==0)，其餘用直接比較
+            // 避免使用 != 42 或 -> 默認分支，防止 LLVM 生成 llvm.assume
+            star-delta = quant - _RE-QUANT-STAR
+            star-delta == 0 -> {
+                // * — 零次或多次（貪婪）
+                split-pc = .n
+                .emit(RE-OP-SPLIT, 0, 0)
+                l1 = .n
+                .emit-atom(atom-type, atom-char, atom-cls)
+                .emit(RE-OP-JUMP, split-pc)
+                .arg1[split-pc] = l1
+                .arg2[split-pc] = .n
+                .tmp-next-i = atom-i + 1
+            }
+            quant == 0 -> {
+                .emit-atom(atom-type, atom-char, atom-cls)
+                .tmp-next-i = atom-i
+            }
+            quant == _RE-QUANT-PLUS -> {
+                l1 = .n
+                .emit-atom(atom-type, atom-char, atom-cls)
+                .emit(RE-OP-SPLIT, l1, .n + 1)
+                .tmp-next-i = atom-i + 1
+            }
+            quant == _RE-QUANT-QUESTION -> {
+                split-pc = .n
+                .emit(RE-OP-SPLIT, 0, 0)
+                l1 = .n
+                .emit-atom(atom-type, atom-char, atom-cls)
+                .arg1[split-pc] = l1
+                .arg2[split-pc] = .n
+                .tmp-next-i = atom-i + 1
+            }
+            star-delta != 0 && quant != 0 && quant != _RE-QUANT-PLUS && quant != _RE-QUANT-QUESTION -> {
+                .emit-atom(atom-type, atom-char, atom-cls)
+                .tmp-next-i = atom-i
+            }
         }
 
         i = .tmp-next-i

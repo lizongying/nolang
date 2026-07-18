@@ -1391,62 +1391,66 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 	}
 
 	// 遍歷所有語句，重寫呼叫
-	var walk func(stmts []parser.Statement, vt map[string]string)
-	walk = func(stmts []parser.Statement, vt map[string]string) {
-		for _, stmt := range stmts {
-			switch s := stmt.(type) {
-			case *parser.ExpressionStatement:
-				rewriteUnionCallExpr(s.Expression, templates, vt)
-			case *parser.LetStatement:
-				if s.Value != nil {
-					rewriteUnionCallExpr(s.Value, templates, vt)
+	rewriteUnionCallStmts(program.Statements, templates, varTypes)
+}
+
+// rewriteUnionCallStmts 遍歷語句列表，對每個語句中的聯合型別泛型呼叫進行重寫。
+// 此函數與 rewriteUnionCallExpr 互相遞迴：rewriteUnionCallExpr 處理 IfExpression
+// 的 Consequence/Alternative 時會呼叫本函數，以正確走訪所有語句類型
+// （包括 LetStatement、ReturnStatement 等，而不僅是 ExpressionStatement）。
+func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*unionTemplateInfo, vt map[string]string) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *parser.ExpressionStatement:
+			rewriteUnionCallExpr(s.Expression, templates, vt)
+		case *parser.LetStatement:
+			if s.Value != nil {
+				rewriteUnionCallExpr(s.Value, templates, vt)
+			}
+		case *parser.FunctionDefinition:
+			if os.Getenv("NOLANG_UNION_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[union-debug] walk FunctionDefinition: %s, body=%d stmts\n", s.Name, len(s.Body.Statements))
+			}
+			if s.Body != nil {
+				// Augment varTypes with the function's parameter types to
+				// correctly infer argument types for identifier expressions.
+				// This prevents cross-module template matching (e.g. bigint.gcd
+				// should not be rewritten by the number.gcd template).
+				localVt := make(map[string]string)
+				for k, v := range vt {
+					localVt[k] = v
 				}
-			case *parser.FunctionDefinition:
-				if os.Getenv("NOLANG_UNION_DEBUG") != "" {
-					fmt.Fprintf(os.Stderr, "[union-debug] walk FunctionDefinition: %s, body=%d stmts\n", s.Name, len(s.Body.Statements))
-				}
-				if s.Body != nil {
-					// Augment varTypes with the function's parameter types to
-					// correctly infer argument types for identifier expressions.
-					// This prevents cross-module template matching (e.g. bigint.gcd
-					// should not be rewritten by the number.gcd template).
-					localVt := make(map[string]string)
-					for k, v := range vt {
-						localVt[k] = v
+				for _, param := range s.Parameters {
+					if nt, ok := param.Type.(*parser.NamedType); ok {
+						localVt[param.Name] = nt.Value
 					}
-					for _, param := range s.Parameters {
-						if nt, ok := param.Type.(*parser.NamedType); ok {
-							localVt[param.Name] = nt.Value
-						}
+				}
+				for _, result := range s.Results {
+					if nt, ok := result.Type.(*parser.NamedType); ok {
+						localVt[result.Name] = nt.Value
 					}
-					for _, result := range s.Results {
-						if nt, ok := result.Type.(*parser.NamedType); ok {
-							localVt[result.Name] = nt.Value
-						}
-					}
-					walk(s.Body.Statements, localVt)
 				}
-			case *parser.BlockStatement:
-				walk(s.Statements, vt)
-			case *parser.ForStatement:
-				if s.Condition != nil {
-					rewriteUnionCallExpr(s.Condition, templates, vt)
-				}
-				if s.Body != nil {
-					walk(s.Body.Statements, vt)
-				}
-			case *parser.MultiAssignStatement:
-				if s.Value != nil {
-					rewriteUnionCallExpr(s.Value, templates, vt)
-				}
-			case *parser.ReturnStatement:
-				if s.ReturnValue != nil {
-					rewriteUnionCallExpr(s.ReturnValue, templates, vt)
-				}
+				rewriteUnionCallStmts(s.Body.Statements, templates, localVt)
+			}
+		case *parser.BlockStatement:
+			rewriteUnionCallStmts(s.Statements, templates, vt)
+		case *parser.ForStatement:
+			if s.Condition != nil {
+				rewriteUnionCallExpr(s.Condition, templates, vt)
+			}
+			if s.Body != nil {
+				rewriteUnionCallStmts(s.Body.Statements, templates, vt)
+			}
+		case *parser.MultiAssignStatement:
+			if s.Value != nil {
+				rewriteUnionCallExpr(s.Value, templates, vt)
+			}
+		case *parser.ReturnStatement:
+			if s.ReturnValue != nil {
+				rewriteUnionCallExpr(s.ReturnValue, templates, vt)
 			}
 		}
 	}
-	walk(program.Statements, varTypes)
 }
 
 // unionTemplateInfo 記錄聯合型別模板函數的資訊
@@ -1534,19 +1538,15 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 		if e.Condition != nil {
 			rewriteUnionCallExpr(e.Condition, templates, varTypes)
 		}
+		// 走訪 Consequence/Alternative 中的所有語句類型（不僅 ExpressionStatement），
+		// 以正確重寫 LetStatement（如 `blen-str = body-len.to-str()`）等內部的呼叫。
+		// 僅走 ExpressionStatement 會導致 standalone if-then (`cond -> { let = call() }`)
+		// 內的聯合型別呼叫未被重寫，產生 undefined `@int.to-str` 錯誤。
 		if e.Consequence != nil {
-			for _, s := range e.Consequence.Statements {
-				if es, ok := s.(*parser.ExpressionStatement); ok {
-					rewriteUnionCallExpr(es.Expression, templates, varTypes)
-				}
-			}
+			rewriteUnionCallStmts(e.Consequence.Statements, templates, varTypes)
 		}
 		if e.Alternative != nil {
-			for _, s := range e.Alternative.Statements {
-				if es, ok := s.(*parser.ExpressionStatement); ok {
-					rewriteUnionCallExpr(es.Expression, templates, varTypes)
-				}
-			}
+			rewriteUnionCallStmts(e.Alternative.Statements, templates, varTypes)
 		}
 	case *parser.AssignExpression:
 		rewriteUnionCallExpr(e.Value, templates, varTypes)
@@ -1878,6 +1878,22 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 	}
 }
 
+// fnExistsInProgram checks if a function or method with the given name exists
+// in the program's top-level statements. Method definitions (e.g. f64.to-str,
+// int.to-str) are stored as *parser.FunctionDefinition with the full dotted
+// name, so a simple Name match suffices.
+func fnExistsInProgram(program *parser.Program, name string) bool {
+	if program == nil {
+		return false
+	}
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveMethodCall resolves a DotExpression-based method call.
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
@@ -1968,7 +1984,10 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	}
 
 	// Check if recvType is a member of a union type alias
-	// If so, use the union alias prefix instead of the concrete type
+	// If so, use the union alias prefix instead of the concrete type —
+	// BUT only when the union method actually exists. When the union method
+	// is not defined (e.g. float.to-str was removed in favor of f64.to-str),
+	// keep the concrete type name so codegen can dispatch correctly.
 	if program != nil {
 		for _, stmt := range program.Statements {
 			ta, ok := stmt.(*parser.TypeAlias)
@@ -1977,7 +1996,10 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 			}
 			for _, member := range ta.Union.Types {
 				if nt, ok := member.(*parser.NamedType); ok && nt.Value == recvType {
-					concreteName = ta.Name + "." + methodName
+					unionMethodName := ta.Name + "." + methodName
+					if fnExistsInProgram(program, unionMethodName) {
+						concreteName = unionMethodName
+					}
 					break
 				}
 			}

@@ -66,6 +66,7 @@ type Generator struct {
 	curFuncRetType        string                          // 當前函數回傳型別（void/i64/...）
 	curFuncRetName        string                          // 當前函數輸出參數名稱（為空表示 void）
 	curFuncName           string                          // 當前函數名稱（debug 用）
+	inMainFunction        bool                            // true when generating the synthetic @main wrapper
 	outputParamNames      map[string]bool                 // 當前函數的輸出參數名稱集合（用於延遲 move）
 	outputBindings        map[string]outputBinding        // 輸出參數名 → 延遲綁定（源指標 + 型別）
 	heapVars              map[string]string               // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
@@ -1505,7 +1506,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
 			_p2i_strReg3 := g.ptrToIntVal(sb, cstrReg)
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
+			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3
 	}
@@ -1653,6 +1654,13 @@ func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		reg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = fptosi double %s to i64\n", g.indent(), reg, a[0]))
+		}
+		return reg
+	case builtin.LLVMConvF64ToF32:
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = fptrunc double %s to float\n", g.indent(), reg, a[0]))
 		}
 		return reg
 	}

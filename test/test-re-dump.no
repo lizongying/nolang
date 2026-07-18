@@ -1,0 +1,44 @@
+main = () {
+    // 編譯 a* 並 dump 指令
+    re = regexp{
+        pattern: 'a*'
+    }
+    re.compile()
+    println('=== a* compiled, n =', re.n, '===')
+    i <- [0..re.n): {
+        op = re.op[i]
+        a1 = re.arg1[i]
+        a2 = re.arg2[i]
+        op == 1 -> println(i, ': CHAR', a1)
+        op == 2 -> println(i, ': ANY')
+        op == 3 -> println(i, ': CLASS', a1)
+        op == 7 -> println(i, ': JUMP', a1)
+        op == 8 -> println(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> println(i, ': MATCH')
+        op == 10 -> println(i, ': START')
+        op == 11 -> println(i, ': END')
+    }
+
+    println('')
+    println('=== a+ compiled ===')
+    re2 = regexp{
+        pattern: 'a+'
+    }
+    re2.compile()
+    println('n =', re2.n)
+    i <- [0..re2.n): {
+        op = re2.op[i]
+        a1 = re2.arg1[i]
+        a2 = re2.arg2[i]
+        op == 1 -> println(i, ': CHAR', a1)
+        op == 2 -> println(i, ': ANY')
+        op == 3 -> println(i, ': CLASS', a1)
+        op == 7 -> println(i, ': JUMP', a1)
+        op == 8 -> println(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> println(i, ': MATCH')
+        op == 10 -> println(i, ': START')
+        op == 11 -> println(i, ': END')
+    }
+}
+
+main()

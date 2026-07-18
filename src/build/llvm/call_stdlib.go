@@ -464,13 +464,14 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string) string {
 
-	// str.to-bool: strcmp + cmp + zext
+	// str.to-bool: memcmp("true", 5 bytes incl null) + cmp + zext
+	// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
 	if fnName == "str.to-bool" && hasArgs {
 		a := evalArgs()
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%boolcmp.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(%s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0))\n",
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i64 5)\n",
 				g.indent(), cmpReg, a[0]))
 		}
 		g.tmpIdx++
@@ -486,7 +487,8 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 		return zextReg
 	}
 
-	// bool.to-str: select + 构造 %str-long
+	// bool.to-str: select + malloc + memcpy + 构造 %str-long
+	// Must heap-allocate the data buffer so emitHeapFree can safely free it.
 	if fnName == "bool.to-str" && hasArgs {
 		a := evalArgs()
 		g.tmpIdx++
@@ -495,13 +497,27 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
 				g.indent(), selectReg, a[0]))
 		}
-		// strlen 计算长度（"true" = 4, "false" = 5）
+		// "true" = 4, "false" = 5; use select directly
 		g.tmpIdx++
 		lenReg := fmt.Sprintf("%%boolstr.len.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, selectReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 4, i64 5\n", g.indent(), lenReg, a[0]))
 		}
-		// 构造 %str-long { len, cap, data }
+		// Allocate heap buffer (6 bytes, enough for "false\0")
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%boolstr.buf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 6)\n", g.indent(), bufReg))
+		}
+		// Copy length including null terminator: "true\0" = 5, "false\0" = 6
+		g.tmpIdx++
+		copyLenReg := fmt.Sprintf("%%boolstr.copylen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 5, i64 6\n", g.indent(), copyLenReg, a[0]))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), bufReg, selectReg, copyLenReg))
+		}
+		// Construct %str-long { len, cap, data } with heap-allocated data
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -511,7 +527,7 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			_p2i_strReg3 := g.ptrToIntVal(sb, selectReg)
+			_p2i_strReg3 := g.ptrToIntVal(sb, bufReg)
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3
@@ -1217,7 +1233,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.tmpIdx++
 			nameBuf := fmt.Sprintf("%%readdir.namebuf.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), nameBuf, bufSize))
-			sb.WriteString(fmt.Sprintf("%scall i8* @strcpy(i8* %s, i8* %s)\n", g.indent(), nameBuf, safeName))
+			// 使用 @llvm.memcpy 替代 @strcpy（避免 libc 依賴），bufSize = len + 1 包含 null terminator
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), nameBuf, safeName, bufSize))
 			// Create %str-long struct { len, cap, data } pointing to the heap copy
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			g.tmpIdx++

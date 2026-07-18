@@ -60,74 +60,75 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 }
 
 func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
-for _, v := range g.funcVars {
-sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.end.p0i8(i64 %d, i8* %s)\n", g.indent(), v.Size, llvmVarRef(v.Name)))
-}
+	for _, v := range g.funcVars {
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.end.p0i8(i64 %d, i8* %s)\n", g.indent(), v.Size, llvmVarRef(v.Name)))
+	}
 }
 
 // flushOutputBindings 在函數返回前，將所有延遲綁定的輸出參數值實際寫入輸出參數指標。
 // 這實現了「延遲 move」語義：res = x 不立即複製 x 的值，
 // 而是在函數結束時才載入 x 的最終值並寫入 res。
 func (g *Generator) flushOutputBindings(sb *strings.Builder) {
-if g.outputBindings == nil || len(g.outputBindings) == 0 {
-return
-}
-for name, binding := range g.outputBindings {
-paramPtr := g.varAddr(name)
-paramType, ok := g.varTypes[name]
-if !ok {
-paramType = binding.llvmType
-}
-g.tmpIdx++
-srcLoad := fmt.Sprintf("%%outmove.src.%d", g.tmpIdx)
-sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-g.indent(), srcLoad, binding.llvmType, binding.llvmType, binding.sourcePtr))
-// 型別轉換：源型別與參數型別可能不同（如 i64 → i8, i64 → float）
-storeVal := srcLoad
-if binding.llvmType != paramType {
-g.tmpIdx++
-convReg := fmt.Sprintf("%%outmove.conv.%d", g.tmpIdx)
-converted := true
-switch {
-case g.isIntegerLLVMType(binding.llvmType) && g.isIntegerLLVMType(paramType):
-// 整數 → 整數：trunc 或 zext
-order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
-if order[binding.llvmType] > order[paramType] {
-sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-} else {
-sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-}
-case g.isIntegerLLVMType(binding.llvmType) && (paramType == "float" || paramType == "double"):
-// 整數 → 浮點：sitofp
-sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-case (binding.llvmType == "float" || binding.llvmType == "double") && g.isIntegerLLVMType(paramType):
-// 浮點 → 整數：fptosi
-sb.WriteString(fmt.Sprintf("%s%s = fptosi %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-case binding.llvmType == "float" && paramType == "double":
-// float → double：fpext
-sb.WriteString(fmt.Sprintf("%s%s = fpext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-case binding.llvmType == "double" && paramType == "float":
-// double → float：fptrunc
-sb.WriteString(fmt.Sprintf("%s%s = fptrunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
-default:
-// 其他（如 struct 型別相同但名稱不同）：直接 store
-converted = false
-}
-if converted {
-storeVal = convReg
-}
-}
-sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-g.indent(), paramType, storeVal, paramType, paramPtr))
-}
+	if g.outputBindings == nil || len(g.outputBindings) == 0 {
+		return
+	}
+	for name, binding := range g.outputBindings {
+		paramPtr := g.varAddr(name)
+		paramType, ok := g.varTypes[name]
+		if !ok {
+			paramType = binding.llvmType
+		}
+		g.tmpIdx++
+		srcLoad := fmt.Sprintf("%%outmove.src.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+			g.indent(), srcLoad, binding.llvmType, binding.llvmType, binding.sourcePtr))
+		// 型別轉換：源型別與參數型別可能不同（如 i64 → i8, i64 → float）
+		storeVal := srcLoad
+		if binding.llvmType != paramType {
+			g.tmpIdx++
+			convReg := fmt.Sprintf("%%outmove.conv.%d", g.tmpIdx)
+			converted := true
+			switch {
+			case g.isIntegerLLVMType(binding.llvmType) && g.isIntegerLLVMType(paramType):
+				// 整數 → 整數：trunc 或 zext
+				order := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}
+				if order[binding.llvmType] > order[paramType] {
+					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+				} else {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+				}
+			case g.isIntegerLLVMType(binding.llvmType) && (paramType == "float" || paramType == "double"):
+				// 整數 → 浮點：sitofp
+				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+			case (binding.llvmType == "float" || binding.llvmType == "double") && g.isIntegerLLVMType(paramType):
+				// 浮點 → 整數：fptosi
+				sb.WriteString(fmt.Sprintf("%s%s = fptosi %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+			case binding.llvmType == "float" && paramType == "double":
+				// float → double：fpext
+				sb.WriteString(fmt.Sprintf("%s%s = fpext %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+			case binding.llvmType == "double" && paramType == "float":
+				// double → float：fptrunc
+				sb.WriteString(fmt.Sprintf("%s%s = fptrunc %s %s to %s\n", g.indent(), convReg, binding.llvmType, srcLoad, paramType))
+			default:
+				// 其他（如 struct 型別相同但名稱不同）：直接 store
+				converted = false
+			}
+			if converted {
+				storeVal = convReg
+			}
+		}
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+			g.indent(), paramType, storeVal, paramType, paramPtr))
+	}
 }
 
 // emitHeapFree 在函數返回前（move 之後），釋放未被 move 的局部堆變數的資料緩衝區。
 // heapVars 記錄所有有堆分配的局部變數，movedVars 記錄已 move 到輸出參數的變數（不應 free）。
 // 各型別的 data 欄位索引（data 為 i64 地址值）：
-//   %vec:       field 2 (i64 data)
-//   %str-long:  field 2 (i64 data)
-//   %arr:       field 1 (i64 data)
+//
+//	%vec:       field 2 (i64 data)
+//	%str-long:  field 2 (i64 data)
+//	%arr:       field 1 (i64 data)
 func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	if g.heapVars == nil || len(g.heapVars) == 0 {
 		return
@@ -174,7 +175,6 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	}
 }
 
-
 // resolveParamLLVMType 計算參數的 LLVM 型別字串。
 // 當參數型別為具名型別且對應至具名函式型別別名時，解析為函式指標型別 void (...)*。
 func (g *Generator) resolveParamLLVMType(t parser.Type) string {
@@ -212,6 +212,7 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	g.funcVars = nil
 	g.curFuncName = fd.Name
+	g.inMainFunction = false
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
 	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
@@ -219,7 +220,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
-	g.outputParamNames = make(map[string]bool)            // reset output param tracking
+	g.outputParamNames = make(map[string]bool)           // reset output param tracking
 	g.outputBindings = make(map[string]outputBinding)    // reset delayed move bindings
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
@@ -543,11 +544,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	}
 
 	// 若函數無 return 陳述句（void），自動銷毀 + return
-if returnType == "void" {
-g.flushOutputBindings(sb)
-g.emitHeapFree(sb)
-g.emitLifetimeEnd(sb)
-sb.WriteString(g.indent() + "ret void\n")
+	if returnType == "void" {
+		g.flushOutputBindings(sb)
+		g.emitHeapFree(sb)
+		g.emitLifetimeEnd(sb)
+		sb.WriteString(g.indent() + "ret void\n")
 	} else if len(fd.Results) > 0 && fd.Results[0].Name != "" {
 		// 有輸出參數但無顯式 return：載入輸出參數並返回
 		g.flushOutputBindings(sb)
@@ -568,10 +569,14 @@ sb.WriteString(g.indent() + "ret void\n")
 func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program) {
 	g.funcVars = nil
 	g.funcLocalNames = make(map[string]bool)
-	// Reset function-return context: main has no named result parameter.
-	// Without this, curFuncRetName leaks from the last processed function
-	// (e.g. "yes"), causing conditional expressions at module level to
-	// emit `load i64, i64* %yes` for a non-existent variable.
+	// main returns i32 but has no named result parameter. We keep
+	// curFuncRetType = "void" so if-expression PHI nodes default to i64
+	// (the standard integer type). The inMainFunction flag lets the
+	// ReturnStatement handler emit `ret i32 0` for bare returns in main.
+	// Without resetting curFuncRetName, it leaks from the last processed
+	// function (e.g. "yes"), causing conditional expressions at module
+	// level to emit `load i64, i64* %yes` for a non-existent variable.
+	g.inMainFunction = true
 	g.curFuncRetName = ""
 	g.curFuncRetType = "void"
 
@@ -702,6 +707,39 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	g.indentLevel--
 	g.indentLevel--
 	sb.WriteString("}\n\n")
+}
+
+// lookupMethodReturnType returns the LLVM return type for a method call,
+// looking up both user-defined methods (g.funcRetTypes + g.funcResultLLVMType
+// for void + by-reference output) and builtin methods. Returns "" if the
+// method is not found or has no determinable return type.
+//
+// This is used for literal receivers (IntegerLiteral/FloatLiteral/etc.) where
+// the method may be either a user-defined Nolang function (e.g. i64.to-str
+// implemented in number.no) or a builtin (e.g. f64.to-str).
+func (g *Generator) lookupMethodReturnType(shortName string) string {
+	if g.funcRetTypes != nil {
+		if t, ok := g.funcRetTypes[shortName]; ok {
+			if t != "void" {
+				return t
+			}
+			// void + 單輸出函數（如 i64.to-str = () (out str)）：
+			// 使用 funcResultLLVMType 中的輸出型別
+			if g.funcResultLLVMType != nil {
+				if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+					retType := ts[0]
+					if retType == "i1" {
+						retType = "i64"
+					}
+					return retType
+				}
+			}
+		}
+	}
+	if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+		return g.mapToLLVMType(m.Return[0].String())
+	}
+	return ""
 }
 
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
@@ -938,6 +976,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				return "%vec"
 			}
 			strFns := map[string]bool{
+				"int.to-str": true,
 				"i64.to-str": true, "i32.to-str": true, "i16.to-str": true, "i8.to-str": true,
 				"u64.to-str": true, "u32.to-str": true, "u16.to-str": true, "u8.to-str": true,
 				"f64.to-str": true, "f32.to-str": true,
@@ -983,8 +1022,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		// DotExpression receiver call (e.g. s.contains, s.index): look up str.<method>
-	if dot, ok := v.Function.(*parser.DotExpression); ok {
-		// Module-prefixed builtin call (e.g. fs.get-line, fs.is-file):
+		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			// Module-prefixed builtin call (e.g. fs.get-line, fs.is-file):
 			// if the receiver is an Identifier not in varTypes (i.e., a module name),
 			// look up the property as a builtin method for return type inference.
 			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
@@ -1103,56 +1142,56 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						}
 					}
 					// Fallback: user-defined functions are registered in the maps
-				// under their SIMPLE name (e.g. "list-dir"), not the module-prefixed
-				// name (e.g. "fs.list-dir"). When the receiver is a module name
-				// (not a variable), try looking up the property directly as a
-				// user-defined function name. This makes `entries = fs.list-dir(dir)`
-				// resolve to "%vec" (the LLVM type of list-dir's []str result)
-				// instead of defaulting to "i64", which is critical for downstream
-				// arrayElemTypes inference and correct slice indexing codegen.
-				if g.funcNumResults != nil {
-					if n, ok := g.funcNumResults[dot.Property]; ok {
-						if n == 1 {
-							if g.funcResultLLVMType != nil {
-								if ts, ok2 := g.funcResultLLVMType[dot.Property]; ok2 && len(ts) == 1 {
-									retType := ts[0]
-									if retType == "i1" {
-										retType = "i64"
+					// under their SIMPLE name (e.g. "list-dir"), not the module-prefixed
+					// name (e.g. "fs.list-dir"). When the receiver is a module name
+					// (not a variable), try looking up the property directly as a
+					// user-defined function name. This makes `entries = fs.list-dir(dir)`
+					// resolve to "%vec" (the LLVM type of list-dir's []str result)
+					// instead of defaulting to "i64", which is critical for downstream
+					// arrayElemTypes inference and correct slice indexing codegen.
+					if g.funcNumResults != nil {
+						if n, ok := g.funcNumResults[dot.Property]; ok {
+							if n == 1 {
+								if g.funcResultLLVMType != nil {
+									if ts, ok2 := g.funcResultLLVMType[dot.Property]; ok2 && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
 									}
-									return retType
 								}
 							}
 						}
 					}
 				}
-				}
 			}
 			// IntegerLiteral receiver (e.g., (123).to-str())
 			if _, ok := recvExpr.(*parser.IntegerLiteral); ok {
 				shortName := "i64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
+				if t := g.lookupMethodReturnType(shortName); t != "" {
+					return t
 				}
 			}
 			// FloatLiteral receiver (e.g., (3.14).to-str())
 			if _, ok := recvExpr.(*parser.FloatLiteral); ok {
 				shortName := "f64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
+				if t := g.lookupMethodReturnType(shortName); t != "" {
+					return t
 				}
 			}
 			// BooleanLiteral receiver (e.g., true.to-str())
 			if _, ok := recvExpr.(*parser.BooleanLiteral); ok {
 				shortName := "bool." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
+				if t := g.lookupMethodReturnType(shortName); t != "" {
+					return t
 				}
 			}
 			// PrefixExpression receiver (e.g., (-42).to-str())
 			if _, ok := recvExpr.(*parser.PrefixExpression); ok {
 				shortName := "i64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
+				if t := g.lookupMethodReturnType(shortName); t != "" {
+					return t
 				}
 			}
 			// InfixExpression receiver (e.g., (-9223372036854775807 - 1).to-str()，
@@ -1160,8 +1199,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			// 算術表達式視為 i64
 			if _, ok := recvExpr.(*parser.InfixExpression); ok {
 				shortName := "i64." + dot.Property
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
+				if t := g.lookupMethodReturnType(shortName); t != "" {
+					return t
 				}
 			}
 			// StringLiteral receiver (e.g., 'hello'.eq(b, n))
@@ -1243,6 +1282,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		return "i64"
 	case *parser.FloatLiteral:
 		return "double"
+	case *parser.PrefixExpression:
+		// 負號前置運算：根據運算元型別推導
+		// -1.0 → double, -1 → i64, -x → 視 x 型別而定
+		if v.Operator == "-" {
+			return g.varLLVMType(&parser.LetStatement{Value: v.Right})
+		}
+		return "i64"
 	case *parser.GroupedExpression:
 		return g.varLLVMType(&parser.LetStatement{Value: v.Expression})
 	case *parser.IfExpression:
@@ -1846,6 +1892,12 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n",
 				g.indent(), resultLoad, g.curFuncRetType, g.curFuncRetType, g.curFuncRetName))
 			sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), g.curFuncRetType, resultLoad))
+		} else if g.curFuncRetType != "void" && g.curFuncRetType != "" {
+			// 無輸出參數但有回傳型別：回傳零值
+			sb.WriteString(fmt.Sprintf("%sret %s 0\n", g.indent(), g.curFuncRetType))
+		} else if g.inMainFunction {
+			// main 函數的裸 return：回傳 i32 0（C 入口點慣例）
+			sb.WriteString(g.indent() + "ret i32 0\n")
 		} else {
 			sb.WriteString(g.indent() + "ret void\n")
 		}
@@ -2830,7 +2882,6 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-
 	// 若變數已有整數型別（如函數輸出參數 yes bool 為 i1），
 	// 但值是字面常量（如 true → "1"），使用變數的型別以避免型別不匹配
 	// （例如 store i64 1, i64* %yes 但 %yes 是 alloca i1）。
@@ -3224,14 +3275,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// String literal produces %str-long* pointer (alloca).
 		// Function call results are already %%str-long values and can be stored directly.
 		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
-	if strings.HasPrefix(val, "%str-longlit.") {
-		// All string literals are now %str-long* alloca pointers.
-		// Load the %str-long value for storing into the target variable.
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
-		val = loadReg
-	} else if g.isStrPtrReg(val) {
+		if strings.HasPrefix(val, "%str-longlit.") {
+			// All string literals are now %str-long* alloca pointers.
+			// Load the %str-long value for storing into the target variable.
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+			val = loadReg
+		} else if g.isStrPtrReg(val) {
 			// val is a %str-long* pointer (from generateStrConcat or convertShortToLong).
 			// Load the %str-long value from the pointer before storing.
 			g.tmpIdx++
@@ -3538,9 +3589,17 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), val, dataGEP))
 	}
 
+	// Helper: store a float (f32) value directly into data field (fits in 8 bytes)
+	copyF32ToData := func(val string) {
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%opt.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
+		sb.WriteString(fmt.Sprintf("%sstore float %s, float* %s\n", g.indent(), val, dataGEP))
+	}
+
 	// copyToData dispatches to the correct copy function based on the option's inner type.
 	// For struct types: malloc on heap, store struct, ptrtoint pointer to i64, store i64.
-	// For i64/double: store directly in the i64 data field (8 bytes, no malloc needed).
+	// For i64/double/float: store directly in the data field (8 bytes, no malloc needed).
 	copyToData := func(val string) {
 		innerType := "i64"
 		if g.optionInnerTypes != nil {
@@ -3550,6 +3609,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		}
 		if innerType == "double" {
 			copyF64ToData(val)
+		} else if innerType == "float" {
+			copyF32ToData(val)
 		} else if strings.HasPrefix(innerType, "%") {
 			// Struct types (e.g. %str-long, %client, %conn):
 			// malloc heap, store struct value, ptrtoint pointer to i64, store i64
@@ -3598,10 +3659,10 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						// For %str-long, copy directly
 						if t == "%str-long" {
 							copyStrToData("%" + argIdent.Value)
-					} else {
-						// Unknown type: store as i64 placeholder
-						zeroData()
-					}
+						} else {
+							// Unknown type: store as i64 placeholder
+							zeroData()
+						}
 					} else {
 						// i64/f64 variable
 						val := g.generateExprWithSB(sb, arg)
@@ -3654,21 +3715,21 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				// 重組方法名稱：依 varTypes/內建別名表推導型別前綴
 				recv := dot.Receiver
 				if recvIdent, ok := recv.(*parser.Identifier); ok {
-			if recvType, ok := g.varTypes[recvIdent.Value]; ok {
-					srcType := strings.TrimPrefix(recvType, "%")
-					candidates := []string{srcType}
-					// Map LLVM struct names to Nolang type names for function lookup
-					if srcType == "str-long" {
-						candidates = append(candidates, "str")
-					}
-					for _, cand := range candidates {
-						candName := cand + "." + dot.Property
-						if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
-							isNolangOptionCall = true
-							break
+					if recvType, ok := g.varTypes[recvIdent.Value]; ok {
+						srcType := strings.TrimPrefix(recvType, "%")
+						candidates := []string{srcType}
+						// Map LLVM struct names to Nolang type names for function lookup
+						if srcType == "str-long" {
+							candidates = append(candidates, "str")
+						}
+						for _, cand := range candidates {
+							candName := cand + "." + dot.Property
+							if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
+								isNolangOptionCall = true
+								break
+							}
 						}
 					}
-				}
 				} else if _, isStrLit := recv.(*parser.StringLiteral); isStrLit {
 					candName := "str." + dot.Property
 					if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {

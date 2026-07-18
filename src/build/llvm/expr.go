@@ -3514,10 +3514,24 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	g.tmpIdx++
 	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftBuf, rightBuf))
+		// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
+		// 兩個 buffer 都已 null-terminated，比較 min(leftLen, rightLen) + 1 bytes
+		// （+1 包含 null terminator，等同 strcmp 的行為）
+		g.tmpIdx++
+		lenLt := fmt.Sprintf("%%strcmp.lenlt.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp ult i64 %s, %s\n", g.indent(), lenLt, leftLen, rightLen))
+		g.tmpIdx++
+		minLen := fmt.Sprintf("%%strcmp.min.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n",
+			g.indent(), minLen, lenLt, leftLen, rightLen))
+		g.tmpIdx++
+		cmpLen := fmt.Sprintf("%%strcmp.cmplen.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), cmpLen, minLen))
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n",
+			g.indent(), cmpReg, leftBuf, rightBuf, cmpLen))
 	}
 
-	// strcmp 回傳 0=相等, <0=a<b, >0=a>b
+	// memcmp 回傳 0=相等, <0=a<b, >0=a>b（與 strcmp 相同）
 	var cmpOp string
 	switch expr.Operator {
 	case "==":
@@ -3657,7 +3671,19 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	g.tmpIdx++
 	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = call i32 @strcmp(i8* %s, i8* %s)\n", g.indent(), cmpReg, leftBuf, rightBuf))
+		// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
+		g.tmpIdx++
+		lenLt := fmt.Sprintf("%%strcmp.lenlt.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp ult i64 %s, %s\n", g.indent(), lenLt, leftLen, rightLen))
+		g.tmpIdx++
+		minLen := fmt.Sprintf("%%strcmp.min.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n",
+			g.indent(), minLen, lenLt, leftLen, rightLen))
+		g.tmpIdx++
+		cmpLen := fmt.Sprintf("%%strcmp.cmplen.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), cmpLen, minLen))
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n",
+			g.indent(), cmpReg, leftBuf, rightBuf, cmpLen))
 	}
 
 	var cmpOp string

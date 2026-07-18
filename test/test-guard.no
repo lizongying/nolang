@@ -1,0 +1,40 @@
+main = () {
+    // 測試 guard 條件中不同值的比較
+    q = 42
+    println('q=', q)
+    {
+        q == 0 -> println('matched: q == 0')
+        q == 42 -> println('matched: q == 42 (literal)')
+        q == 43 -> println('matched: q == 43')
+        -> println('matched: default')
+    }
+
+    println('')
+    // 測試減法比較
+    {
+        q == 0 -> println('sub: q == 0')
+        (q - 42) == 0 -> println('sub: (q-42)==0')
+        (q - 43) == 0 -> println('sub: (q-43)==0')
+        -> println('sub: default')
+    }
+
+    println('')
+    // 測試用變量
+    q2 = 43
+    println('q2=', q2)
+    {
+        q2 == 0 -> println('q2: == 0')
+        q2 == 42 -> println('q2: == 42')
+        q2 == 43 -> println('q2: == 43')
+        -> println('q2: default')
+    }
+
+    println('')
+    // 測試不等於
+    {
+        q != 0 && q != 43 && q != 63 -> println('neq: q is not 0/43/63, so q=42')
+        -> println('neq: default')
+    }
+}
+
+main()

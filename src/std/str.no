@@ -587,10 +587,150 @@ str.to-u64 = () (val ?u64) {
 //   nil    - 空字串
 //   err('msg') - 含非數字字元、負號或超出範圍
 str.to-byte = () (val ?byte) {
-    n ?i64 = .to-i64()
-    n: {
-        -> n
+    .len == 0 -> {
+        val = nil
+        return
     }
+    n = 0
+    start = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            val = err('invalid byte: negative sign not allowed')
+            return
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    i <- [start...len): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    {
+        n >= 0 && n <= 255 -> val = n
+        -> val = err('out of range for byte')
+    }
+}
+
+// str-to-f64: 將字串解析為 f64（底層實作）
+// 支援格式：[空白][+-][數字][.數字][eE[+-]數字]
+// 空字串或無數字回傳 0.0
+str-to-f64 = (s str) (result f64) {
+    n i64 = s.len
+    n == 0 -> return
+
+    i i64 = 0
+    sign f64 = 1.0
+    int-part f64 = 0.0
+    frac-part f64 = 0.0
+    frac-div f64 = 1.0
+    exp i64 = 0
+    exp-sign i64 = 1
+    has-digit i64 = 0
+    c i64 = 0
+
+    // 跳過前導空白
+    for i < n {
+        c = s[i] & 255
+        {
+            c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
+            -> break
+        }
+    }
+    i >= n -> return
+
+    // 處理正負號
+    c = s[i] & 255
+    c == 45 -> {
+        sign = -1.0
+        i = i + 1
+    }
+    c == 43 -> i = i + 1
+
+    // 解析整數部分
+    for i < n {
+        c = s[i] & 255
+        {
+            c >= 48 && c <= 57 -> {
+                int-part = int-part * 10.0 + i64-to-f64(c - 48)
+                has-digit = 1
+                i = i + 1
+            }
+            -> break
+        }
+    }
+
+    // 解析小數部分
+    i < n -> {
+        c = s[i] & 255
+        c == 46 -> {
+            i = i + 1
+            for i < n {
+                c = s[i] & 255
+                {
+                    c >= 48 && c <= 57 -> {
+                        frac-part = frac-part * 10.0 + i64-to-f64(c - 48)
+                        frac-div = frac-div * 10.0
+                        has-digit = 1
+                        i = i + 1
+                    }
+                    -> break
+                }
+            }
+        }
+    }
+
+    has-digit == 0 -> return
+
+    // 解析指數部分
+    i < n -> {
+        c = s[i] & 255
+        c == 101 || c == 69 -> {
+            i = i + 1
+            i < n -> {
+                c = s[i] & 255
+                c == 45 -> {
+                    exp-sign = -1
+                    i = i + 1
+                }
+                c == 43 -> i = i + 1
+            }
+            for i < n {
+                c = s[i] & 255
+                {
+                    c >= 48 && c <= 57 -> {
+                        exp = exp * 10 + (c - 48)
+                        i = i + 1
+                    }
+                    -> break
+                }
+            }
+        }
+    }
+
+    // 合併結果：result = sign * (int-part + frac-part / frac-div) * 10^(exp-sign * exp)
+    result = int-part + frac-part / frac-div
+    exp != 0 -> {
+        // 以迴圈計算 10^exp，避免與 number.no / bigint.no 的整數 pow 名稱衝突
+        p f64 = 1.0
+        ei i64 = exp
+        for ei > 0 {
+            p = p * 10.0
+            ei = ei - 1
+        }
+        exp-sign == 1 -> result = result * p
+        exp-sign == -1 -> result = result / p
+    }
+    result = result * sign
 }
 
 // str.to-f64: 將字串解析為 f64
@@ -598,7 +738,7 @@ str.to-byte = () (val ?byte) {
 //   val(f) - 成功
 //   nil    - 空字串
 //   err('msg') - 含非數字字元
-// 使用內建 strtod 進行實際解析，此處負責驗證與 Option 包裝
+// 使用 Nolang 實作 str-to-f64 進行解析（已移除 strtod CLibCall 依賴）
 str.to-f64 = () (val ?f64) {
     .len == 0 -> {
         val = nil
@@ -632,9 +772,21 @@ str.to-f64 = () (val ?f64) {
         return
     }
 
-    // 呼叫內建 strtod 進行解析
-    f = .parse-f64-raw()
+    // 呼叫 Nolang 實作 str-to-f64 進行解析
+    f = str-to-f64(.)
     val = f
+}
+
+// str.to-f32: 將字串解析為 f32
+// 返回 Option：
+//   val(f) - 成功
+//   nil    - 空字串
+//   err('msg') - 含非數字字元
+// 使用 Nolang 實作 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依賴）
+str.to-f32 = () (val ?f32) {
+    f ?f64 = .to-f64()
+    f
+    val = f64-to-f32(f)
 }
 
 // str.to-bool: 將字串 "true" / "false" 解析為 bool
