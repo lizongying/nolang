@@ -81,7 +81,11 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		// Function names may also appear in g.varTypes as "i64" (a placeholder from
 		// collectVarDecls), so we check funcRetTypes first to distinguish functions
 		// from real variables.
-		if g.funcRetTypes != nil {
+		// But local variables/parameters (in funcLocalNames) shadow global function
+		// names — e.g. test-f32-to-str has local `f f32` which must not be confused
+		// with the global `f` function from des.no.
+		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[a.Value]
+		if !isLocalVar && g.funcRetTypes != nil && g.funcRetTypes[a.Value] != "" {
 			if _, isFn := g.funcRetTypes[a.Value]; isFn {
 				g.tmpIdx++
 				tmpName := fmt.Sprintf("%%fnptr.arg.%d", g.tmpIdx)
@@ -116,6 +120,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			}
 			if t, ok := g.varTypes[a.Value]; ok && t == "double" {
 				return "double* " + g.varAddr(a.Value)
+			}
+			if t, ok := g.varTypes[a.Value]; ok && t == "float" {
+				return "float* " + g.varAddr(a.Value)
 			}
 			// %arr (fixed-size array struct) → extract data pointer and bitcast to [N x T]*
 			// Function parameters with [N]T type use raw LLVM array [N x T], but local
@@ -1642,7 +1649,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// Function names may also appear in g.varTypes as "i64" (a placeholder from
 			// collectVarDecls), so we check funcRetTypes first to distinguish functions
 			// from real variables.
-			if g.funcRetTypes != nil {
+			// But local variables/parameters (in funcLocalNames) shadow global function
+			// names — e.g. test-f32-to-str has local `f f32` which must not be confused
+			// with the global `f` function from des.no.
+			isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[a.Value]
+			if !isLocalVar && g.funcRetTypes != nil {
 				if _, isFn := g.funcRetTypes[a.Value]; isFn {
 					g.tmpIdx++
 					tmpName := fmt.Sprintf("%%fnptr.arg.%d", g.tmpIdx)

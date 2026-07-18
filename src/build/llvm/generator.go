@@ -1663,6 +1663,13 @@ func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			sb.WriteString(fmt.Sprintf("%s%s = fptrunc double %s to float\n", g.indent(), reg, a[0]))
 		}
 		return reg
+	case builtin.LLVMConvF32ToF64:
+		g.tmpIdx++
+		reg := fmt.Sprintf("%%conv.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = fpext float %s to double\n", g.indent(), reg, a[0]))
+		}
+		return reg
 	}
 	return ""
 }

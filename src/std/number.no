@@ -508,11 +508,17 @@ f64.to-str = () (out str) {
     out = f64-to-str(.)
 }
 
+// f32.to-str: f32 轉字串（方法）
+// 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
+f32.to-str = () (out str) {
+    d f64 = f32-to-f64(.)
+    out = f64-to-str(d)
+}
+
 // 注意：不定義 float.to-str 聯合方法。原因：
 // union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
 // 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
 // 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str。
-// f32.to-str 暫時保留 CLibCall (sprintf %g)，因為 f32→f64 轉換尚未實現
 
 // div: 整數除法，回傳商（a ÷ b）
 // b 為 0 時行為未定義（執行時期錯誤）

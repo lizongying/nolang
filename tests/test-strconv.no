@@ -16,21 +16,21 @@
 // ===== str → i64 =====
 test-str-to-i64 = () {
     n = '12345'.to-i64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 12345
     }
 
     n = '-42'.to-i64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: -42
     }
 
     n = '0'.to-i64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 0
@@ -40,14 +40,14 @@ test-str-to-i64 = () {
 // ===== str → i32 =====
 test-str-to-i32 = () {
     n = '32767'.to-i32()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 32767
     }
 
     n = '-32768'.to-i32()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: -32768
@@ -57,14 +57,14 @@ test-str-to-i32 = () {
 // ===== str → i16 =====
 test-str-to-i16 = () {
     n = '100'.to-i16()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 100
     }
 
     n = '-1'.to-i16()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: -1
@@ -74,14 +74,14 @@ test-str-to-i16 = () {
 // ===== str → i8 =====
 test-str-to-i8 = () {
     n = '127'.to-i8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 127
     }
 
     n = '-128'.to-i8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: -128
@@ -91,7 +91,7 @@ test-str-to-i8 = () {
 // ===== str → u64 =====
 test-str-to-u64 = () {
     n = '99999'.to-u64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 99999
@@ -101,21 +101,21 @@ test-str-to-u64 = () {
 // ===== str → f64 =====
 test-str-to-f64 = () {
     f = '3.14'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)  // 期望: 3.14
     }
 
     f = '-2.5'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)  // 期望: -2.5
     }
 
     f = '0.0'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)  // 期望: 0
@@ -125,14 +125,14 @@ test-str-to-f64 = () {
 // ===== str → bool =====
 test-str-to-bool = () {
     b = 'true'.to-bool()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> print(b)  // 期望: 1
     }
 
     b = 'false'.to-bool()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> print(b)  // 期望: 0
@@ -142,7 +142,7 @@ test-str-to-bool = () {
 // ===== str → byte =====
 test-str-to-byte = () {
     b = '65'.to-byte()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> print(b)  // 期望: 65 (ASCII 'A')
@@ -182,6 +182,17 @@ test-f64-to-str = () {
     print(s)  // 期望: 0
 }
 
+// ===== f32 → str =====
+test-f32-to-str = () {
+    f f32 = f64-to-f32(3.14)
+    s = f.to-str()
+    print(s)  // 期望: 3.14
+
+    z f32 = f64-to-f32(0.0)
+    s = z.to-str()
+    print(s)  // 期望: 0
+}
+
 // ===== bool → str =====
 test-bool-to-str = () {
     s = true.to-str()
@@ -204,7 +215,7 @@ test-byte-to-str = () {
 test-roundtrip-i64 = () {
     s = (12345).to-str()
     n = s.to-i64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n)  // 期望: 12345
@@ -214,7 +225,7 @@ test-roundtrip-i64 = () {
 // ===== 往返: f64 → str → f64 =====
 test-roundtrip-f64 = () {
     f = '3.14'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)  // 期望: 3.14
@@ -243,6 +254,7 @@ test-i64-to-str()
 test-i32-to-str()
 test-u64-to-str()
 test-f64-to-str()
+test-f32-to-str()
 test-bool-to-str()
 test-byte-to-str()
 test-roundtrip-i64()

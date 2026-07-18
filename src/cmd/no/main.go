@@ -877,7 +877,13 @@ func fmtCommand(args []string) {
 			os.Exit(1)
 		}
 		original := string(data)
-		result := nfmt.FormatFile(original)
+		result, perrs := nfmt.FormatFileWithErrors(original)
+		if len(perrs) > 0 {
+			for _, e := range perrs {
+				fmt.Fprintf(os.Stderr, "format error: %s\n", e)
+			}
+			os.Exit(1)
+		}
 		if *diffMode {
 			fmt.Print(generateDiff("stdin", original, result))
 		} else {
@@ -886,22 +892,29 @@ func fmtCommand(args []string) {
 		return
 	}
 
+	hadError := false
 	for _, arg := range remaining {
 		info, err := os.Stat(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error accessing %s: %v\n", arg, err)
+			hadError = true
 			continue
 		}
 
 		if info.IsDir() {
 			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
+				hadError = true
 			}
 		} else {
 			if err := fmtProcessFile(arg, *writeInPlace, *diffMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
+				hadError = true
 			}
 		}
+	}
+	if hadError {
+		os.Exit(1)
 	}
 }
 
@@ -912,7 +925,13 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 	}
 
 	original := string(data)
-	result := nfmt.FormatFile(original)
+	result, perrs := nfmt.FormatFileWithErrors(original)
+	if len(perrs) > 0 {
+		for _, e := range perrs {
+			fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+		}
+		return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
+	}
 
 	if diffMode {
 		diff := generateDiff(filename, original, result)
@@ -930,18 +949,25 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 }
 
 func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error {
-	return filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
+	var firstErr error
+	_ = filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil
 		}
 		if info.IsDir() {
 			return nil
 		}
 		if strings.HasSuffix(path, ".no") {
-			return fmtProcessFile(path, writeInPlace, diffMode)
+			if ferr := fmtProcessFile(path, writeInPlace, diffMode); ferr != nil && firstErr == nil {
+				firstErr = ferr
+			}
 		}
 		return nil
 	})
+	return firstErr
 }
 
 func buildCommand(args []string) {
@@ -974,9 +1000,15 @@ func buildCommand(args []string) {
 	} else {
 		inputPath = fs.Args()[0]
 	}
+	// 未指定 target 時自動檢測當前平台
+	targetStr := *target
+	if targetStr == "" {
+		targetStr = nbuild.DetectTarget()
+	}
+
 	opts := nbuild.BuildOptions{
 		CC:      *cc,
-		Target:  *target,
+		Target:  targetStr,
 		Verbose: verbose,
 		Output:  *outputFile,
 	}
@@ -1044,9 +1076,16 @@ func runCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "[debug] keep run tmp dir: %s\n", tmpDir)
 	}
 	outPath := filepath.Join(tmpDir, "out")
+
+	// 未指定 target 時自動檢測當前平台
+	targetStr := *target
+	if targetStr == "" {
+		targetStr = nbuild.DetectTarget()
+	}
+
 	opts := nbuild.BuildOptions{
 		CC:      *cc,
-		Target:  *target,
+		Target:  targetStr,
 		Output:  outPath,
 		Verbose: verbose,
 	}
@@ -1136,6 +1175,12 @@ func testCommand(args []string) {
 		testFiles = append(testFiles, inputPath)
 	}
 
+	// 未指定 target 時自動檢測當前平台
+	targetStr := *target
+	if targetStr == "" {
+		targetStr = nbuild.DetectTarget()
+	}
+
 	hadFailure := false
 	for _, tf := range testFiles {
 		if verbose {
@@ -1149,7 +1194,7 @@ func testCommand(args []string) {
 		outPath := filepath.Join(tmpDir, "out")
 		opts := nbuild.BuildOptions{
 			CC:      *cc,
-			Target:  *target,
+			Target:  targetStr,
 			Output:  outPath,
 			Verbose: false,
 		}

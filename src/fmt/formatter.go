@@ -1899,25 +1899,26 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 }
 
 // formatProgram parses and formats the given code, returning the formatted
-// output (without any guarantee about a trailing newline) and a bool
-// indicating success. On parse error or empty/whitespace-only input the bool
-// is false and out is empty.
-func formatProgram(code string) (out string, ok bool) {
+// output (without any guarantee about a trailing newline), a bool indicating
+// success, and any parser error messages. On parse error or
+// empty/whitespace-only input the bool is false, out is empty, and errs holds
+// the parser errors (nil for the empty-input case).
+func formatProgram(code string) (out string, ok bool, errs []string) {
 	if strings.TrimSpace(code) == "" {
-		return "", false
+		return "", false, nil
 	}
 
 	l := lexer.New(code)
 	p := parser.New(l)
 	program := p.ParseProgram()
 
-	// 如果解析失敗，返回原始碼，不修改
+	// 如果解析失敗，返回原始碼，不修改；並透出錯誤訊息讓上層（如 `no fmt`）回報
 	if len(p.Errors()) > 0 {
-		return "", false
+		return "", false, p.Errors()
 	}
 
 	if program == nil || len(program.Statements) == 0 {
-		return "", false
+		return "", false, nil
 	}
 
 	sourceLines := strings.Split(code, "\n")
@@ -1926,14 +1927,16 @@ func formatProgram(code string) (out string, ok bool) {
 	}
 	f.formatProgram(program)
 
-	return f.buf.String(), true
+	return f.buf.String(), true, nil
 }
 
 // Format reformats a code fragment. It does NOT add a trailing newline; callers
 // that format a complete source file should use FormatFile instead. This keeps
 // the fragment-level contract stable for unit tests and inline formatting.
+// Parse errors are silently ignored (the original code is returned) — callers
+// that need to surface errors should use FormatFileWithErrors.
 func Format(code string) string {
-	out, ok := formatProgram(code)
+	out, ok, _ := formatProgram(code)
 	if !ok {
 		return code
 	}
@@ -1955,13 +1958,28 @@ func ensureTrailingNewline(s string) string {
 // with exactly one trailing newline (an empty line at EOF). Missing trailing
 // newlines are appended; multiple trailing blank lines are collapsed to one.
 // Unparseable or empty input is returned unchanged so the formatter never
-// mangles a file it cannot understand.
+// mangles a file it cannot understand. Parse errors are silently ignored
+// (the original code is returned) — callers that need to surface errors should
+// use FormatFileWithErrors.
 func FormatFile(code string) string {
-	out, ok := formatProgram(code)
+	out, ok, _ := formatProgram(code)
 	if !ok {
 		return code
 	}
 	return ensureTrailingNewline(out)
+}
+
+// FormatFileWithErrors behaves like FormatFile but also returns any parser
+// error messages encountered while parsing the source. When parsing fails, out
+// is the original (unchanged) code and errs holds the parser errors so callers
+// such as `no fmt` can report them to the user instead of silently leaving the
+// file untouched. errs is nil when formatting succeeded.
+func FormatFileWithErrors(code string) (out string, errs []string) {
+	o, ok, perrs := formatProgram(code)
+	if !ok {
+		return code, perrs
+	}
+	return ensureTrailingNewline(o), nil
 }
 
 func (f *Formatter) Format(code string) string {

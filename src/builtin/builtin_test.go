@@ -97,6 +97,7 @@ func TestLLVMConvMethods(t *testing.T) {
 		{"i64-to-f64", LLVMConvI64ToFP},
 		{"f64-to-i64", LLVMConvFPToI64},
 		{"f64-to-f32", LLVMConvF64ToF32},
+		{"f32-to-f64", LLVMConvF32ToF64},
 	}
 	for _, tt := range tests {
 		found := false
@@ -145,28 +146,16 @@ func TestOSCLibCallMethods(t *testing.T) {
 }
 
 func TestStrconvSprintfMethods(t *testing.T) {
-	// Only f32.to-str remains as a sprintf CLibCall builtin.
-	// Integer to-str (i8/i16/i32/i64/u8/u16/u32/u64/byte.to-str),
-	// char-to-str, and f64.to-str are now implemented in Nolang
+	// All to-str methods (i8/i16/i32/i64/u8/u16/u32/u64/byte.to-str,
+	// char-to-str, f64.to-str, f32.to-str) are now implemented in Nolang
 	// (src/std/number.no). str.to-f64 / str.to-f32 are implemented in
 	// Nolang (src/std/str.no) using str-to-f64 + f64-to-f32.
-	tests := []struct {
-		name string
-		fmt  string
-	}{
-		{"f32.to-str", "%g"},
-	}
-	for _, tt := range tests {
-		found := false
-		for i := range BuiltinMethodList {
-			m := &BuiltinMethodList[i]
-			if m.MethodName == tt.name && m.CLibCall != nil && m.CLibCall.SprintfFmt == tt.fmt {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("no BuiltinMethod with name=%s and SprintfFmt=%s", tt.name, tt.fmt)
+	// No sprintf CLibCall builtins remain for strconv.
+	for i := range BuiltinMethodList {
+		m := &BuiltinMethodList[i]
+		if m.CLibCall != nil && m.CLibCall.FuncName == "sprintf" && m.CLibCall.SprintfFmt != "" {
+			t.Errorf("builtin %s still uses sprintf CLibCall with fmt %q (should be Nolang impl)",
+				m.MethodName, m.CLibCall.SprintfFmt)
 		}
 	}
 }

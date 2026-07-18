@@ -167,7 +167,6 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @llvm.lifetime.start.p0i8(i64, i8* nocapture)\n")
 	sb.WriteString("declare void @llvm.lifetime.end.p0i8(i64, i8* nocapture)\n\n")
 
-	sb.WriteString("@.strconv_buf = private global [64 x i8] zeroinitializer\n")
 	sb.WriteString("@.os-buf = private global [1024 x i8] zeroinitializer\n")
 	sb.WriteString("@.str.true = private unnamed_addr constant [5 x i8] c\"true\\00\"\n")
 	sb.WriteString("@.str.false = private unnamed_addr constant [6 x i8] c\"false\\00\"\n")

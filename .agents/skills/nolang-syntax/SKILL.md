@@ -192,6 +192,14 @@ The `-target` parameter format is `<arch>-<os>-<abi>`, supporting the following 
 | `aarch64-macos-gnu`  | macOS ARM64    |
 | `x86_64-windows-gnu` | Windows x86_64 |
 
+**Automatic platform detection**: `no build`, `no run`, and `no test` automatically detect the current host platform and compile for the native target when `-target` is not specified. No manual target specification needed for daily development:
+
+```bash
+no run hello.no          # Run directly on host
+no test                  # Run tests on host
+no build -target aarch64-linux-gnu   # Only specify when cross-compiling
+```
+
 ### Compiler Selection
 
 The `-cc` parameter specifies the C compiler backend:

@@ -2735,7 +2735,13 @@ func (p *Parser) parseReturnStatement() Statement {
 	p.nextToken()
 
 	// return 后面不跟返回值，仅用于终止函数
-	// 函数通过修改入参来传递结果
+	// 函数通过修改入参（具名结果参数 / out-param）来传递结果
+	// 禁止 `return <value>`：RETURN 之后若紧跟表达式起始符（非语句结束符），
+	// 说明写了「带返回值的 return」，而 Nolang 不允许返回值，必须报错。
+	if !isReturnTerminator(p.currentToken.Type) {
+		p.saveError(fmt.Sprintf("line %d, column %d: `return` 後不能跟返回值；Nolang 函數結果通過具名結果參數（out-param）傳出，請用裸 `return` 提前返回並在函數體內給結果參數賦值",
+			p.currentToken.Line, p.currentToken.Column))
+	}
 	stmt.ReturnValue = nil
 
 	return stmt
@@ -3710,6 +3716,15 @@ func (p *Parser) skipToStatementEnd() {
 	for p.currentToken.Type != lexer.EOF && !isStatementBoundary(p.currentToken.Type) {
 		p.nextToken()
 	}
+}
+
+// isReturnTerminator reports whether t is a valid token to immediately follow a
+// bare `return` statement (end-of-line, end-of-file, closing brace, or semicolon).
+// Anything else (e.g. INT, IDENT, LPAREN) means the source wrote
+// `return <value>`, which Nolang forbids — results must be communicated through
+// named result parameters (out-params), not a value return.
+func isReturnTerminator(t lexer.TokenType) bool {
+	return t == lexer.NEWLINE || t == lexer.EOF || t == lexer.RBRACE || t == lexer.SEMICOLON
 }
 
 // isStatementBoundary returns true if the token type marks the start of a new statement.

@@ -7,9 +7,45 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
+
+// DetectTarget 根据当前运行平台返回对应的 target triple。
+// 用于 no build/run/test 未指定 -target 时的默认值。
+func DetectTarget() string {
+	arch := runtime.GOARCH
+	osName := runtime.GOOS
+
+	// 映射 GOARCH到LLVM架构名
+	var llvmArch string
+	switch arch {
+	case "amd64":
+		llvmArch = "x86_64"
+	case "arm64":
+		llvmArch = "aarch64"
+	default:
+		// 不支持的架构返回空字符串，让llc使用默认值
+		return ""
+	}
+
+	// 映射GOOS到LLVM系统名
+	var llvmOS string
+	switch osName {
+	case "linux":
+		llvmOS = "linux-gnu"
+	case "darwin":
+		llvmOS = "macos-gnu"
+	case "windows":
+		llvmOS = "windows-gnu"
+	default:
+		// 不支持的系统返回空字符串
+		return ""
+	}
+
+	return llvmArch + "-" + llvmOS
+}
 
 // CheckToolchain verifies that LLVM toolchain (llvm-config) and the chosen
 // C compiler (clang or zig) are available.

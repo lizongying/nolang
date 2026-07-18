@@ -37,6 +37,7 @@ const (
 	LLVMConvI64ToFP LLVMConvKind = iota
 	LLVMConvFPToI64
 	LLVMConvF64ToF32
+	LLVMConvF32ToF64
 )
 
 type BuiltinMethod struct {

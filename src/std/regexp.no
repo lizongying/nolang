@@ -50,10 +50,12 @@ RE-OP-MATCH = 9
 RE-OP-START = 10
 RE-OP-END = 11
 
-// 量詞字元常量（_ 開頭表私有，避免被編譯器當作枚舉變異體）
-_RE-QUANT-STAR = 42
-_RE-QUANT-PLUS = 43
-_RE-QUANT-QUESTION = 63
+// 量詞內部代碼（避免使用 42/43/63 等原始字元值作為比較常量，
+// 因為 LLVM 對 == 42 有優化 bug。改用 1/2/3 這些安全值。）
+_RE-QUANT-NONE = 0
+_RE-QUANT-STAR = 1
+_RE-QUANT-PLUS = 2
+_RE-QUANT-QUESTION = 3
 
 // 每個字元類別 bitmap 大小（32 bytes = 256 bits）
 RE-CLS-SIZE = 32
@@ -549,16 +551,16 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 // ═══════════════════════════════════════════════
 
 // emit-quantized: 根據量詞發射指令
-// 使用減法比較 (quant - CONST == 0) 替代直接相等 (quant == CONST)，
-// 因為編譯器在 guard 條件中對 == 42 有 codegen bug（比較值正確但分支不執行）。
+// 從結構體字段 .tmp-quant 讀取量詞內部代碼（1=*, 2=+, 3=?）
+// 使用 1/2/3 作為比較值，避免 LLVM 對 == 42 的優化 bug
 // atom-type i64: atom 類型
 // atom-char i64: atom 字元值
 // atom-cls i64: atom 類別索引
-// quant i64: 量詞字元（0=無, 42=*, 43=+, 63=?）
 // atom-i i64: atom 後的位置
-regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, atom-i i64) {
-    // STAR 放在最前面測試
-    quant == _RE-QUANT-STAR -> {
+regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64) {
+    q = .tmp-quant
+    q == _RE-QUANT-STAR -> {
+        // * — 零次或多次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -569,19 +571,16 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .tmp-next-i = atom-i + 1
         return
     }
-    quant == 0 -> {
-        .emit-atom(atom-type, atom-char, atom-cls)
-        .tmp-next-i = atom-i
-        return
-    }
-    quant == _RE-QUANT-PLUS -> {
+    q == _RE-QUANT-PLUS -> {
+        // + — 一次或多次（貪婪）
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-SPLIT, l1, .n + 1)
         .tmp-next-i = atom-i + 1
         return
     }
-    quant == _RE-QUANT-QUESTION -> {
+    q == _RE-QUANT-QUESTION -> {
+        // ? — 零次或一次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -591,6 +590,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, quant i64, 
         .tmp-next-i = atom-i + 1
         return
     }
+    // 默認（q == _RE-QUANT-NONE）：不是量詞，直接發射 atom
     .emit-atom(atom-type, atom-char, atom-cls)
     .tmp-next-i = atom-i
 }
@@ -600,6 +600,22 @@ regexp.compile = () {
     .n = 0
     .ncls = 0
     .compiled = true
+
+    // 偵測量詞使用 bitmap 位元測試，避免與常量 42 直接比較
+    // 分配三個字元類別，分別只有一個位元被設定
+    // set-class-bit 使用陣列 STORE（byte-idx = c>>3, bit-idx = c&7）
+    // in-class 使用 LOAD + AND + != 0，不涉及 == 42 比較
+    star-cls = .alloc-class()
+    .init-class-zero(star-cls)
+    .set-class-bit(star-cls, 42)   // '*' — ASCII 42
+
+    plus-cls = .alloc-class()
+    .init-class-zero(plus-cls)
+    .set-class-bit(plus-cls, 43)   // '+' — ASCII 43
+
+    quest-cls = .alloc-class()
+    .init-class-zero(quest-cls)
+    .set-class-bit(quest-cls, 63)  // '?' — ASCII 63
 
     n = .pattern.len
     i = 0
@@ -630,46 +646,22 @@ regexp.compile = () {
             atom-char = .tmp-atom-char
             atom-cls = .tmp-atom-cls
 
-            // 檢查量詞（用三元運算符避免條件塊賦值不傳播的 bug）
-            quant = (atom-i < n) ? (.pattern[atom-i] & 255) : 0
+            // 偵測量詞：使用 bitmap 位元測試
+            // in-class 執行: load byte → and mask → icmp ne 0
+            // 完全不涉及 == 42 的比較，繞過 LLVM 優化 bug
+            .tmp-quant = _RE-QUANT-NONE
+            atom-i < n -> {
+                qc = .pattern[atom-i] & 255
+                is-star = .in-class(star-cls, qc)
+                is-star -> .tmp-quant = _RE-QUANT-STAR
+                is-plus = .in-class(plus-cls, qc)
+                is-plus -> .tmp-quant = _RE-QUANT-PLUS
+                is-quest = .in-class(quest-cls, qc)
+                is-quest -> .tmp-quant = _RE-QUANT-QUESTION
+            }
 
-            // 量詞分派：STAR 用減法比較 (star-delta==0)，其餘用直接比較
-            // 避免使用 != 42 或 -> 默認分支，防止 LLVM 生成 llvm.assume
-            star-delta = quant - _RE-QUANT-STAR
-            star-delta == 0 -> {
-                // * — 零次或多次（貪婪）
-                split-pc = .n
-                .emit(RE-OP-SPLIT, 0, 0)
-                l1 = .n
-                .emit-atom(atom-type, atom-char, atom-cls)
-                .emit(RE-OP-JUMP, split-pc)
-                .arg1[split-pc] = l1
-                .arg2[split-pc] = .n
-                .tmp-next-i = atom-i + 1
-            }
-            quant == 0 -> {
-                .emit-atom(atom-type, atom-char, atom-cls)
-                .tmp-next-i = atom-i
-            }
-            quant == _RE-QUANT-PLUS -> {
-                l1 = .n
-                .emit-atom(atom-type, atom-char, atom-cls)
-                .emit(RE-OP-SPLIT, l1, .n + 1)
-                .tmp-next-i = atom-i + 1
-            }
-            quant == _RE-QUANT-QUESTION -> {
-                split-pc = .n
-                .emit(RE-OP-SPLIT, 0, 0)
-                l1 = .n
-                .emit-atom(atom-type, atom-char, atom-cls)
-                .arg1[split-pc] = l1
-                .arg2[split-pc] = .n
-                .tmp-next-i = atom-i + 1
-            }
-            star-delta != 0 && quant != 0 && quant != _RE-QUANT-PLUS && quant != _RE-QUANT-QUESTION -> {
-                .emit-atom(atom-type, atom-char, atom-cls)
-                .tmp-next-i = atom-i
-            }
+            // 委派給獨立方法處理量詞分派
+            .emit-quantized(atom-type, atom-char, atom-cls, atom-i)
         }
 
         i = .tmp-next-i

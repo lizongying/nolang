@@ -92,6 +92,14 @@ no run -target aarch64-macos-gnu
 | `aarch64-macos-gnu`  | macOS ARM64    |
 | `x86_64-windows-gnu` | Windows x86_64 |
 
+**自動檢測當前平台**：`no build`、`no run`、`no test` 在未指定 `-target` 時，會自動檢測當前宿主平台並編譯為本機代碼。日常開發無需手動指定 target：
+
+```bash
+no run hello.no          # 本機直接跑
+no test                  # 本機跑測試
+no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
+```
+
 ### 編譯器選擇
 
 `-cc` 參數指定 C 編譯器後端：

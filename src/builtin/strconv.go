@@ -23,18 +23,19 @@ func init() {
 
 	// Integer to-str methods (i8/i16/i32/i64/u8/u16/u32/u64/byte.to-str) and
 	// the char-to-str global are now implemented in Nolang (src/std/number.no),
-	// replacing the previous sprintf CLibCall builtins. f64.to-str is also
-	// implemented in Nolang (f64-to-str function in number.no). Only f32.to-str
-	// remains as a builtin (f32→f64 conversion not yet available in Nolang).
+	// replacing the previous sprintf CLibCall builtins. f64.to-str and f32.to-str
+	// are also implemented in Nolang (f64-to-str function in number.no via
+	// f32-to-f64 conversion).
 
-	// f32.to-str: f32 to string (method: v.to-str())
+	// f32-to-f64: f32 to f64 conversion (fpext)
+	convF32ToF64 := LLVMConvF32ToF64
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverF32,
-		MethodName:   "f32.to-str",
-		Params:       []parser.Type{},
-		Return:       []parser.Type{parser.TypeStr},
-		Doc:          "Format a f32 as a string (method)",
-		CLibCall:     &CLibCall{FuncName: "sprintf", SprintfFmt: "%g", BufGlobal: "@.strconv_buf", ArgTypes: []LLVMArgType{LLVMF64}, RetType: LLVMI32},
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "f32-to-f64",
+		Params:       []parser.Type{parser.TypeF32},
+		Return:       []parser.Type{parser.TypeF64},
+		Doc:          "Convert f32 to f64",
+		LLVMConv:     &convF32ToF64,
 	})
 
 	// bool.to-str: bool to string (method: v.to-str())
