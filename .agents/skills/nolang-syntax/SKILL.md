@@ -805,7 +805,7 @@ int.to-str = () (out str) {
 | ---------------- | ------------------------------ | ----------------------- |
 | Infinite loop    | `!! { }`                       | `for { }`               |
 | Conditional loop | `for cond { }`                 | `while cond { }`        |
-| Counted loop     | `n * { }` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }` |
+| Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }` |
 | Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }`   |
 | Conditional match| `x: { ... }`                   | `match x { ... }`       |
 | Branch selection | `{ cond -> body }`             | `if/elif/else { }`      |
@@ -821,7 +821,11 @@ int.to-str = () (out str) {
 for i < 5 { }
 
 // Five iterations
-5 * { }
+{ } * 5
+
+// When N <= 0 the loop body is skipped (zero or negative count does not execute)
+{ } * 0    // skipped
+{ } * -3   // skipped
 
 // Range for — interval syntax supports four bracket combinations
 i <- [a..b]: {     // closed interval: a ≤ i ≤ b

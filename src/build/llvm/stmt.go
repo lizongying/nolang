@@ -1918,8 +1918,12 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	g.tmpIdx++
 	labelId := g.tmpIdx
 
-	// 次數循環：N * { }
+	// 次數循環：{ } * N
 	if stmt.CountExpr != nil {
+		// 編譯期優化：若 N 為常數且 ≤ 0，循環體不執行，直接跳過
+		if intLit, ok := stmt.CountExpr.(*parser.IntegerLiteral); ok && intLit.Value <= 0 {
+			return
+		}
 		counterVar := fmt.Sprintf("__lc_%d", labelId)
 		// init: %__lc_N = alloca i64, store 0
 		sb.WriteString(fmt.Sprintf("%s%%%s = alloca i64\n", g.indent(), counterVar))

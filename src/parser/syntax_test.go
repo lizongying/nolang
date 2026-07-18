@@ -27,7 +27,7 @@ func TestOldSyntax(t *testing.T) {
 		{name: "labeled_for", input: "outer for i < 5 {\n    break\n}", wantErr: false},
 		{name: "labeled_for_range", input: "outer for i <- [0..5) {\n}", wantErr: false},
 		{name: "bang_loop", input: "!! {\n    break\n}", wantErr: false},
-		{name: "counted_loop", input: "10 * {\n    break\n}", wantErr: false},
+		{name: "counted_loop", input: "{\n    break\n} * 10", wantErr: false},
 		{name: "for_string", input: "for i <- 'abc' {\n}", wantErr: false},
 	}
 	for _, tt := range tests {

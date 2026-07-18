@@ -91,10 +91,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: "!! {\n    break\n}",
 		},
 		{
-			// 新式 N * { } 計數循環
+			// 新式 { } * N 計數循環
 			name:     "counted_loop",
-			input:    "5*{print(1)}",
-			expected: "5 * {\n    print(1)\n}",
+			input:    "{print(1)}*5",
+			expected: "{\n    print(1)\n} * 5",
 		},
 		{
 			// 新式 i <- (a..b]: { } 範圍循環

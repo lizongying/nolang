@@ -10,7 +10,7 @@ import (
 // the various for-style loops that support break/continue:
 //   - bare range-for:       #1 i <- [0..256): { ... }
 //   - infinite loop:        #1!! { ... }
-//   - multiplicative count: #1 n * { ... }
+//   - multiplicative count: #1 { ... } * N
 //   - conditional:          #1 x == 1: { ... }
 func TestParseLabeledFor(t *testing.T) {
 	tests := []struct {
@@ -31,9 +31,9 @@ func TestParseLabeledFor(t *testing.T) {
 		},
 		{
 			name: "labeled multiplicative count",
-			input: `#1 n * {
+			input: `#1 {
     break #1
-}`,
+} * 10`,
 		},
 		{
 			name: "labeled conditional",

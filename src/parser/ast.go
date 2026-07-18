@@ -1094,7 +1094,7 @@ type ForStatement struct {
 	Update    Statement
 	Body      *BlockStatement
 	IterRange *IterationExpr // unified iteration (range/str/ident/slice)
-	CountExpr Expression     // ! { } 或 N * { } 語法
+	CountExpr Expression     // ! { } 或 { } * N 語法
 	CommentedNode
 }
 

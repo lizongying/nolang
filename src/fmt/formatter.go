@@ -1129,9 +1129,18 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		f.formatBareMatchExpression(e)
 		return
 	}
-	f.write("if ")
+	// 區分 `if cond { } else { }`（deprecated，Token 為 IF 關鍵字）
+	// 與 `cond: { } else: { }`（向後相容舊式，Token 為條件首 token，非 IF）
+	isDeprecatedIf := e.Token.Type == lexer.IF
+	if isDeprecatedIf {
+		f.write("if ")
+	}
 	f.formatExpression(e.Condition)
-	f.write(" {")
+	if isDeprecatedIf {
+		f.write(" {")
+	} else {
+		f.write(": {")
+	}
 	f.indent++
 	for _, stmt := range e.Consequence.Statements {
 		f.newline()
@@ -1163,7 +1172,11 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 				f.formatElifChain(ifExpr.Alternative)
 			}
 		} else {
-			f.write(" else {")
+			if isDeprecatedIf {
+				f.write(" else {")
+			} else {
+				f.write(" else: {")
+			}
 			f.indent++
 			for _, stmt := range e.Alternative.Statements {
 				f.newline()
@@ -1484,11 +1497,10 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// Bare counted loop: N * { body } — when token type is INT and CountExpr set
-	if s.Token.Type != lexer.FOR && s.CountExpr != nil {
-		f.formatExpression(s.CountExpr)
-		f.write(" *")
-		f.write(" {")
+	// Bare/labeled counted loop: { body } * N — Token is LBRACE (new syntax)
+	// or INT (legacy, normalized to new form). CountExpr is set.
+	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
+		f.write("{")
 		f.indent++
 		for _, stmt := range s.Body.Statements {
 			f.newline()
@@ -1497,7 +1509,8 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.formatTrailingComments(s.Body.TrailingComments)
 		f.indent--
 		f.newline()
-		f.write("}")
+		f.write("} * ")
+		f.formatExpression(s.CountExpr)
 		return
 	}
 
@@ -1569,7 +1582,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 
 	f.write(s.Token.Literal)
 
-	// N * { } 次數循環
+	// { } * N 次數循環（for 關鍵字 + CountExpr 的防禦性輸出，當前解析器不會產生）
 	if s.CountExpr != nil {
 		f.write(" ")
 		f.formatExpression(s.CountExpr)
@@ -1768,16 +1781,35 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 	// Use multi-line formatting for arrays with many elements
 	if len(e.Elements) > 8 {
+		// 偵測源碼是否已跨多行；若是，保留原始分行結構（例如 SHAPES 每行 8 個值）
+		sourceMultiLine := false
+		if len(e.Elements) >= 2 {
+			firstLine := e.Elements[0].Pos().Line
+			for i := 1; i < len(e.Elements); i++ {
+				if e.Elements[i].Pos().Line != firstLine {
+					sourceMultiLine = true
+					break
+				}
+			}
+		}
+
 		f.write("[")
 		f.indent++
+		prevLine := 0
 		for i, el := range e.Elements {
-			f.newline()
-			f.formatExpression(el)
-			if i < len(e.Elements)-1 {
-				f.write(",")
+			curLine := el.Pos().Line
+			if i == 0 {
+				f.newline()
+			} else if sourceMultiLine && curLine != prevLine {
+				f.newline()
+			} else if !sourceMultiLine {
+				f.newline()
 			} else {
-				f.write(",") // trailing comma
+				f.write(" ")
 			}
+			f.formatExpression(el)
+			f.write(",")
+			prevLine = curLine
 		}
 		f.indent--
 		f.newline()

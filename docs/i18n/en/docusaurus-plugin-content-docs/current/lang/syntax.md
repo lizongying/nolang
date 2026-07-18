@@ -441,7 +441,7 @@ a, b = swap(5, 3)
 | ---------------------------- | -------------------------------------------------- |
 | `for { }` infinite loop      | `!! { }`                                           |
 | `for cond { }` conditional loop | `for cond { }` (retained; for non-1 steps or complex conditions) |
-| `for i=0, i<n, i++ { }` counting | `n * { }` (constant count) or `i <- [0..n): { }` (variable) |
+| `for i=0, i<n, i++ { }` counting | `{ } * n` (constant count) or `i <- [0..n): { }` (variable) |
 | `for i <- [a..b] { }` range  | `i <- [a..b]: { }`                                 |
 | `for i in [a..b) { }` range  | `i <- [a..b): { }`                                 |
 | `match x { ... }` matching   | `x: { ... }`                                       |
@@ -459,8 +459,17 @@ a, b = swap(5, 3)
 }
 
 // Limited execution count
-10 * {
-}
+{
+} * 10
+
+// When N <= 0 the loop body does not execute (zero or negative count is skipped)
+{
+    print('will not execute')
+} * 0
+
+{
+    print('will not execute either')
+} * -3
 
 // Range syntax (will support map, arr, vec in the future)
 i <- [a..b]: {     // closed interval: a ≤ i ≤ b

@@ -1244,6 +1244,10 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseReturnStatement()
 
 	case lexer.LBRACE:
+		// { body } * N 計數循環（新式語法，取代舊的 N * { }）
+		if p.isCountedLoopBlockFirst() {
+			return p.parseCountedLoopBlockFirst()
+		}
 		bt := p.classifyBlockAtCurrent()
 		if bt == blockMatch {
 			tok := p.currentToken
@@ -1294,20 +1298,6 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.STAR_STAR:
 		// `**` 是 continue 簡寫。形如 `** #1` 或 `**` 後接換行。
 		return p.parseStarStarContinue()
-
-	case lexer.INT:
-		// 次數循環 N * { }
-		if p.peekToken.Type == lexer.MUL {
-			state := p.saveState()
-			p.nextToken() // skip INT
-			p.nextToken() // skip MUL
-			if p.currentToken.Type == lexer.LBRACE {
-				p.restoreState(state)
-				return p.parseCountedLoop()
-			}
-			p.restoreState(state)
-		}
-		return p.parseExpressionStatement()
 
 	case lexer.LBRACKET:
 		// [n]t.method-name(…) { — 陣列型別方法定義
@@ -3128,7 +3118,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 	}
 
 	// cond: {} → 只解析為 struct literal 或 match expression，不再作為 for-loop
-	// 條件循環必須使用 for 關鍵字；新式寫法僅保留 ! {}（無限循環）和 n * {}（次數循環）
+	// 條件循環必須使用 for 關鍵字；新式寫法僅保留 ! {}（無限循環）和 {} * n（次數循環）
 	state := p.saveState()
 	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
 		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
@@ -4406,10 +4396,16 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		} else {
 			// Inline statement form（單行 body）
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
-			p.ctx.push(CTX_MATCH_ARM)
+			// 對 catch-all arm（wildcard，如 `-> cond -> body`），不推送 CTX_MATCH_ARM，
+			// 允許 body 中的 -> 被解析為 standalone if-then，而非 match arm 分隔符。
+			if !ma.isWildcard {
+				p.ctx.push(CTX_MATCH_ARM)
+			}
 			doc := p.collectDocComments()
 			stmt := p.parseStatement()
-			p.ctx.pop()
+			if !ma.isWildcard {
+				p.ctx.pop()
+			}
 			if stmt != nil {
 				setDoc(stmt, doc)
 				p.attachInlineComment(stmt)
@@ -6265,7 +6261,7 @@ func (p *Parser) parseStarStarContinue() Statement {
 //
 //	#1 i <- [0..256): { ... }   bare range-for
 //	#1!! { ... }                infinite loop
-//	#1 n * { ... }              counted loop (n 為常數計數)
+//	#1 { ... } * N              counted loop (N 為常數計數)
 //	#1 x == 1: { ... }          conditional
 //
 // 標籤名存到 ForStatement.Label，可被 break/continue 引用。
@@ -6277,9 +6273,15 @@ func (p *Parser) parseLabeledStatement() Statement {
 	switch p.currentToken.Type {
 	case lexer.BANG_BANG:
 		stmt = p.parseBangLoop()
-	case lexer.INT:
-		// Counted loop: #1 10 * { ... }
-		stmt = p.parseCountedLoop()
+	case lexer.LBRACE:
+		// Counted loop: #1 { ... } * N
+		if p.isCountedLoopBlockFirst() {
+			stmt = p.parseCountedLoopBlockFirst()
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected counted loop body after label #%s, got { without '* N'",
+				p.currentToken.Line, p.currentToken.Column, label))
+			return nil
+		}
 	case lexer.IDENT, lexer.UNDERSCORE:
 		// Two possibilities:
 		//   bare range-for:  #1 i <- [0..256): { ... }
@@ -6348,14 +6350,82 @@ func (p *Parser) parseLabeledStatement() Statement {
 	return fs
 }
 
-// parseCountedLoop 解析 N * { } 次數循環
-func (p *Parser) parseCountedLoop() Statement {
-	stmt := &ForStatement{Token: p.currentToken}
-	// currentToken = INT (N)
+// isCountedLoopBlockFirst 報告當前位置是否為 `{ ... } * N` 計數循環。
+// 前提：p.currentToken.Type == LBRACE。
+// 掃描匹配的大括號後，檢查是否跟著 MUL INT（INT 後須為 NEWLINE/EOF/SEMICOLON，
+// 確保是語句級計數而非乘法延續）。
+func (p *Parser) isCountedLoopBlockFirst() bool {
+	depth := 1
+	// token 索引：1 = peekToken，k >= 2 => LookAhead(k-2)
+	i := 1
+	for {
+		var tok lexer.Token
+		if i == 1 {
+			tok = p.peekToken
+		} else {
+			tok = p.lexer.LookAhead(i - 2)
+		}
+		if tok.Type == lexer.EOF {
+			return false
+		}
+		if tok.Type == lexer.LBRACE {
+			depth++
+		} else if tok.Type == lexer.RBRACE {
+			depth--
+			if depth == 0 {
+				// 找到匹配的 }，檢查後續 * [(-)? INT] <stmt-end>
+				mulTok := p.lexer.LookAhead(i - 1)
+				if mulTok.Type != lexer.MUL {
+					return false
+				}
+				// 可選負號
+				signTok := p.lexer.LookAhead(i)
+				intIdx := i
+				if signTok.Type == lexer.SUB {
+					intIdx = i + 1
+				}
+				intTok := p.lexer.LookAhead(intIdx)
+				if intTok.Type != lexer.INT {
+					return false
+				}
+				// INT 後必須是語句結束，避免與 `} * n`（n 為變數的乘法）等歧義
+				afterInt := p.lexer.LookAhead(intIdx + 1)
+				switch afterInt.Type {
+				case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON, lexer.RBRACE:
+					return true
+				}
+				return false
+			}
+		}
+		i++
+	}
+}
+
+// parseCountedLoopBlockFirst 解析 `{ body } * N` 計數循環。
+// 前提：p.currentToken.Type == LBRACE，且 isCountedLoopBlockFirst() 為 true。
+func (p *Parser) parseCountedLoopBlockFirst() Statement {
+	stmt := &ForStatement{Token: p.currentToken} // LBRACE
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	// 期望 * INT
+	if p.currentToken.Type != lexer.MUL {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '*' after block in counted loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	p.nextToken() // skip *
+	// 可選負號
+	negative := false
+	if p.currentToken.Type == lexer.SUB {
+		negative = true
+		p.nextToken() // skip -
+	}
+	if p.currentToken.Type != lexer.INT {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected integer count after '*' in counted loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
 	intToken := p.currentToken
-	p.nextToken() // skip INT
-	p.nextToken() // skip MUL
-	// 計數表達式
 	value, err := strconv.ParseInt(intToken.Literal, 10, 64)
 	if err != nil {
 		msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
@@ -6363,12 +6433,15 @@ func (p *Parser) parseCountedLoop() Statement {
 		p.saveError(msg)
 		return nil
 	}
+	if negative {
+		value = -value
+		intToken.Literal = "-" + intToken.Literal
+	}
 	stmt.CountExpr = &IntegerLiteral{
 		Token: intToken,
 		Value: value,
 	}
-	stmt.Body = p.parseBlockStatement()
-	p.nextToken() // skip body's }
+	p.nextToken() // skip INT
 	return stmt
 }
 

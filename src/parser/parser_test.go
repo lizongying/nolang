@@ -889,7 +889,7 @@ func TestNewSyntaxNoWarnings(t *testing.T) {
 		input string
 	}{
 		{name: "bang_loop", input: "!!\n{\n    break\n}"},
-		{name: "counted_loop", input: "5 *\n{\n    print(1)\n}"},
+		{name: "counted_loop", input: "{\n    print(1)\n} * 5"},
 		{name: "range_for_with_colon", input: "i <- [0..10): {\n    print(i)\n}"},
 		{name: "for_cond_keyword", input: "for i < 5 {\n    i = i + 1\n}"},
 		{name: "match_with_subject", input: "x: {\n    1 -> 1\n    -> 0\n}"},
@@ -965,7 +965,7 @@ func TestNewSyntaxInFunctionBody(t *testing.T) {
 		input   string
 		wantErr bool
 	}{
-		{name: "counted_loop_in_function", input: "foo = () {\n    10 * {\n        a = a + 1\n    }\n}", wantErr: false},
+		{name: "counted_loop_in_function", input: "foo = () {\n    {\n        a = a + 1\n    } * 10\n}", wantErr: false},
 		{name: "bang_loop_in_function", input: "foo = () {\n    !! {\n        *\n    }\n}", wantErr: false},
 		{name: "for_cond_in_function", input: "foo = () {\n    for x < 5 && y > 0 {\n        a = a + 1\n    }\n}", wantErr: false},
 		{name: "range_for_in_function", input: "foo = () {\n    i <- [0..10): {\n        print(i)\n    }\n}", wantErr: false},
