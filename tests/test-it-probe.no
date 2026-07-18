@@ -2,10 +2,10 @@
 test-str-i64-match = () {
     s = '42'
     n = s.to-i64()
-        {
+    {
         n == err -> {
             print('err:')
-                    print(n)
+            print(n)
         }
         n == nil -> print('nil')
         -> print(n)

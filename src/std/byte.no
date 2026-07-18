@@ -75,7 +75,7 @@ i64.to-bytes-le = () (out [?]byte) {
     n = .len()
     limit = n - tn
     i = 0
-    for i <= limit {
+    {
         matched = 1
         j <- [0..tn): {
             sj = .[i + j]
@@ -90,7 +90,7 @@ i64.to-bytes-le = () (out [?]byte) {
             return
         }
         i = i + 1
-    }
+    } (i <= limit)
 }
 
 ; []byte.index-from: 在 []byte 中從 from 位置開始查找 target 子串
@@ -107,7 +107,7 @@ i64.to-bytes-le = () (out [?]byte) {
     n = .len()
     limit = n - tn
     i = from
-    for i <= limit {
+    {
         matched = 1
         j <- [0..tn): {
             sj = .[i + j]
@@ -122,7 +122,7 @@ i64.to-bytes-le = () (out [?]byte) {
             return
         }
         i = i + 1
-    }
+    } (i <= limit)
 }
 
 ; []byte.slice: 截取子切片 [start, end)

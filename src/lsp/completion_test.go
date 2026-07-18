@@ -666,7 +666,7 @@ func TestGetKeywordCompletionsNewSyntax(t *testing.T) {
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
 
-	expected := []string{"!!", "*", "**", "..."}
+	expected := []string{"*", "**", "..."}
 	found := make(map[string]bool)
 	for _, item := range items {
 		found[item.Label] = true
@@ -685,7 +685,7 @@ func TestGetKeywordCompletionsDeprecatedMarked(t *testing.T) {
 
 	for _, item := range items {
 		// 舊式語法關鍵字 detail 應包含 (deprecated)
-		if item.Label == "if" || item.Label == "for" || item.Label == "match" || item.Label == "elif" || item.Label == "else" {
+		if item.Label == "if" || item.Label == "for" || item.Label == "match" || item.Label == "elif" || item.Label == "else" || item.Label == "!!" {
 			if !strings.Contains(item.Detail, "deprecated") {
 				t.Errorf("expected detail of %q to contain 'deprecated', got %q", item.Label, item.Detail)
 			}

@@ -1248,6 +1248,10 @@ func (p *Parser) parseStatement() Statement {
 		if p.isCountedLoopBlockFirst() {
 			return p.parseCountedLoopBlockFirst()
 		}
+		// { body } (cond) 條件循環 或 { body } () 無限循環（新式語法，取代 !! { } 與 for cond { }）
+		if p.isCondLoopBlockFirst() {
+			return p.parseCondLoopBlockFirst()
+		}
 		bt := p.classifyBlockAtCurrent()
 		if bt == blockMatch {
 			tok := p.currentToken
@@ -5928,6 +5932,8 @@ func (p *Parser) parseForStatement() Statement {
 		stmt.Condition = nil
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
+		p.saveWarning(fmt.Sprintf("line %d, column %d: 'for { }' is deprecated, use '{ } ()' infinite loop instead",
+			stmt.Token.Line, stmt.Token.Column))
 		return stmt
 	}
 
@@ -6023,12 +6029,16 @@ parseBody:
 		if es, ok := init.(*ExpressionStatement); ok {
 			stmt.Condition = es.Expression
 			// Warn only for 'while' (deprecated); 'for cond { }' is a valid form
-			// for conditional loops where range-for (i <- [a..b): {}) doesn't apply
+			// for conditional loops where range-for (i <- [a..b]: {}) doesn't apply
 			// (e.g. non-unit step or complex conditions).
 			if stmt.IterRange == nil && !hasColon && stmt.Token.Literal == "while" {
 				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
 					stmt.Token.Line, stmt.Token.Column))
 			}
+		}
+		if stmt.Token.Literal == "for" && stmt.IterRange == nil {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
+				stmt.Token.Line, stmt.Token.Column))
 		}
 	} else {
 		// for condition (NL) { } — condition 是完整表達式，後面有換行
@@ -6042,6 +6052,11 @@ parseBody:
 		if stmt.Condition != nil && stmt.IterRange == nil &&
 			stmt.Token.Literal == "while" && !hasColon {
 			p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+				stmt.Token.Line, stmt.Token.Column))
+		}
+		if stmt.Condition != nil && stmt.IterRange == nil &&
+			stmt.Token.Literal == "for" && !hasColon {
+			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
 				stmt.Token.Line, stmt.Token.Column))
 		}
 		// Skip newlines before {
@@ -6217,10 +6232,13 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 // parseBangLoop 解析 !! { } 無限循環
 func (p *Parser) parseBangLoop() Statement {
 	stmt := &ForStatement{Token: p.currentToken}
-	// !! 後直接接 {
-	p.nextToken() // skip !!
+	// !! / ! 後直接接 {
+	bangTok := p.currentToken
+	p.nextToken() // skip !! / !
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
+	p.saveWarning(fmt.Sprintf("line %d, column %d: '%s { }' is deprecated, use '{ } ()' infinite loop instead",
+		bangTok.Line, bangTok.Column, bangTok.Literal))
 	return stmt
 }
 
@@ -6277,8 +6295,11 @@ func (p *Parser) parseLabeledStatement() Statement {
 		// Counted loop: #1 { ... } * N
 		if p.isCountedLoopBlockFirst() {
 			stmt = p.parseCountedLoopBlockFirst()
+		} else if p.isCondLoopBlockFirst() {
+			// Conditional/infinite loop: #1 { ... } (cond) / #1 { ... } ()
+			stmt = p.parseCondLoopBlockFirst()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected counted loop body after label #%s, got { without '* N'",
+			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got { without '* N' or '(cond)'",
 				p.currentToken.Line, p.currentToken.Column, label))
 			return nil
 		}
@@ -6442,6 +6463,98 @@ func (p *Parser) parseCountedLoopBlockFirst() Statement {
 		Value: value,
 	}
 	p.nextToken() // skip INT
+	return stmt
+}
+
+// isCondLoopBlockFirst 報告當前位置是否為 `{ ... } (cond)` 條件循環或 `{ ... } ()` 無限循環。
+// 前提：p.currentToken.Type == LBRACE。
+// 掃描匹配的大括號後，檢查是否跟著匹配的括號，且括號後為語句結束。
+// `()` 空括號 → 無限循環；`(cond)` → 條件循環。
+func (p *Parser) isCondLoopBlockFirst() bool {
+	// token at index k: k==1 → peekToken; k>=2 → LookAhead(k-2)
+	tokAt := func(k int) lexer.Token {
+		if k == 1 {
+			return p.peekToken
+		}
+		return p.lexer.LookAhead(k - 2)
+	}
+	// 掃描匹配的大括號（當前 token 是開頭的 {）
+	depth := 1
+	k := 1
+	for {
+		t := tokAt(k)
+		if t.Type == lexer.EOF {
+			return false
+		}
+		if t.Type == lexer.LBRACE {
+			depth++
+		} else if t.Type == lexer.RBRACE {
+			depth--
+			if depth == 0 {
+				break
+			}
+		}
+		k++
+	}
+	// k 在匹配的 } 處；下一個 token (k+1) 應為 LPAREN
+	if tokAt(k + 1).Type != lexer.LPAREN {
+		return false
+	}
+	// 掃描匹配的括號，從 k+2 開始
+	pdepth := 1
+	m := k + 2
+	for {
+		t := tokAt(m)
+		if t.Type == lexer.EOF {
+			return false
+		}
+		if t.Type == lexer.LPAREN {
+			pdepth++
+		} else if t.Type == lexer.RPAREN {
+			pdepth--
+			if pdepth == 0 {
+				break
+			}
+		}
+		m++
+	}
+	// m 在匹配的 ) 處；下一個 token (m+1) 必須是語句結束
+	switch tokAt(m + 1).Type {
+	case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON, lexer.RBRACE:
+		return true
+	}
+	return false
+}
+
+// parseCondLoopBlockFirst 解析 `{ body } (cond)` 條件循環或 `{ body } ()` 無限循環。
+// 前提：p.currentToken.Type == LBRACE，且 isCondLoopBlockFirst() 為 true。
+// `()` → 無限循環（Condition 為 nil）；`(cond)` → 條件循環（Condition 已設置）。
+func (p *Parser) parseCondLoopBlockFirst() Statement {
+	stmt := &ForStatement{Token: p.currentToken} // LBRACE
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	// 期望 (
+	if p.currentToken.Type != lexer.LPAREN {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '(' after block in loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	p.nextToken() // skip (
+	// 空括號 () → 無限循環（Condition 保持 nil）
+	if p.currentToken.Type == lexer.RPAREN {
+		p.nextToken() // skip )
+		return stmt
+	}
+	// 解析條件表達式
+	p.ctx.push(CTX_FOR_COND)
+	stmt.Condition = p.parseExpression(LOWEST)
+	p.ctx.pop()
+	if p.currentToken.Type != lexer.RPAREN {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected ')' to close loop condition, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	p.nextToken() // skip )
 	return stmt
 }
 

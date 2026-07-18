@@ -320,11 +320,11 @@ blake2b = (data []byte) (hash [64]byte) {
 
     ; 處理完整區塊
     offset = 0
-    for offset + 128 < dlen {
+    {
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
         offset = offset + 128
-    }
+    } (offset + 128 < dlen)
 
     ; 處理最後一個區塊（可能不完整）
     last-block []byte
@@ -370,11 +370,11 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     t u64 = 0
 
     offset = 0
-    for offset + 128 < dlen {
+    {
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
         offset = offset + 128
-    }
+    } (offset + 128 < dlen)
 
     last-block []byte
     remaining = dlen - offset
@@ -667,11 +667,11 @@ blake2s = (data []byte) (hash [32]byte) {
     t u32 = 0
 
     offset = 0
-    for offset + 64 < dlen {
+    {
         t = (t + 64) & BLAKE2S-MASK
         blake2s-compress(h, data[offset..], t, 0)
         offset = offset + 64
-    }
+    } (offset + 64 < dlen)
 
     last-block []byte
     remaining = dlen - offset

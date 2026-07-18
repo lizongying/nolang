@@ -2,7 +2,6 @@
 ;
 ; 測試 now-s, now-ms, duration-between, sleep-ms, since-ms, timer, format-duration
 
-
 ; ── 1. now-s 回傳正值 ──
 ts i64 = 0
 ts = time.now-s()
@@ -45,7 +44,7 @@ elapsed = time.since-ms(before)
 }
 
 ; ── 6. timer 計時器（需明確宣告型別 t timer 才能正確解析方法）──
-t timer = timer {
+t timer = timer{
     start-ts: 0
     end-ts: 0
 }

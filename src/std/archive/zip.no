@@ -57,14 +57,14 @@ zip.find-eocd = () (off i64) {
     off = -1
     n = len(.data)
     i = n - 22
-    for i >= 0 {
+    {
         sig = u32le(.data, i)
         sig == 101010256 -> {
             off = i
             return
         }
         i = i - 1
-    }
+    } (i >= 0)
 }
 
 ; cd-info: 讀取中央目錄偏移和條目數

@@ -411,10 +411,10 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 str-to-bytes = (s str) (out []byte) {
     n = s.len
     i = 0
-    for i < n {
+    {
         out[i] = s[i]
         i = i + 1
-    }
+    } (i < n)
 }
 
 // ✅ 正確：使用標準庫 str.to-bytes() 方法
@@ -524,14 +524,14 @@ a, b = swap(5, 3)
 
 ## 流程控制
 
-> **Deprecated 語法（n 版本後移除）**：`for { }` / `for init, cond, update { }` / `for i in [..) { }` / `match x { }` / `if/elif/else { }` 仍可解析但會輸出 deprecation warning。請改用下方「**新式語法**」。
+> **Deprecated 語法（n 版本後移除）**：`for { }` / `for cond { }` / `for init, cond, update { }` / `for i in [..) { }` / `!! { }` / `match x { }` / `if/elif/else { }` 仍可解析但會輸出 deprecation warning。請改用下方「**新式語法**」。
 
 ### 新舊對照
 
 | 舊式                         | 新式                                               |
 | ---------------------------- | -------------------------------------------------- |
-| `for { }` 無限循環           | `!! { }`                                           |
-| `for cond { }` 條件循環      | `for cond { }`（保留，適用步進非 1 或複雜條件）    |
+| `for { }` / `!! { }` 無限循環 | `{ } ()`                                          |
+| `for cond { }` 條件循環      | `{ } (cond)`                                      |
 | `for i=0, i<n, i++ { }` 計數 | `{ } * n`（常數計數）或 `i <- [0..n): { }`（變數） |
 | `for i <- [a..b] { }` 範圍   | `i <- [a..b]: { }`                                 |
 | `for i in [a..b) { }` 範圍   | `i <- [a..b): { }`                                 |
@@ -544,10 +544,15 @@ a, b = swap(5, 3)
 ### Loop / While / for-in
 
 ```nolang
-// 无限循环
-!! {
+// 无限循环（空括號代表條件恆真）
+{
     ...
-}
+} ()
+
+// 條件循環（檢查 cond，為真時執行主體）
+{
+    do-something()
+} (x == 1)
 
 // 限定執行次數
 {
@@ -590,11 +595,11 @@ i <- 'abc': {   // 遍历字符串中的每个字符
 //   for i <- [1.5..5.5] { }   // 編譯錯誤
 //   for i <- [0..[1..5][0]] { } // 語法錯誤
 
-// 條件循環（保留 for 關鍵字形式，適用步進非 1 或複雜條件）
+// 條件循環（新式 { } (cond) 取代舊式 for cond { }）
 // 大多數情況可改用 range-for：i <- [0..n): { }
-for x == 1 {
+{
     do-something()
-}
+} (x == 1)
 ```
 
 ### 跳出 / 跳過 / 提前返回
@@ -1016,14 +1021,14 @@ type.method-name = (params) (results) {
 str.to-upper = () (out str) {
     out.len = .len
     i = 0
-    for i < .len {
+    {
         c = .[i]
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
             -> out[i] = c
         }
         i = i + 1
-    }
+    } (i < .len)
 }
 
 // char 方法
@@ -1266,7 +1271,7 @@ val: {
 
 ```nolang
 arr_to_vec = (arr [n]t) (out []t) {
-    for i in [0..n) {
+    i <- [0..n): {
         out[i] = arr[i]
     }
 }

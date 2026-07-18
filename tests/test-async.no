@@ -20,13 +20,13 @@ classify-async = (n i64) (r i64) {
 ; 1. 串行等待（最簡）— awy f-async()
 test-serial = () {
     r = awy compute-async(21)
-    print(r)  ; expect: 42
+    print(r); expect: 42
 }
 
 ; 2. 多參數串行等待
 test-multi-params = () {
     r = awy add-async(15, 27)
-    print(r)  ; expect: 42
+    print(r); expect: 42
 }
 
 ; 3. 條件邏輯
@@ -34,9 +34,9 @@ test-conditional = () {
     r1 = awy classify-async(5)
     r2 = awy classify-async(-3)
     r3 = awy classify-async(0)
-    print(r1)  ; expect: 1
-    print(r2)  ; expect: -1
-    print(r3)  ; expect: 0
+    print(r1); expect: 1
+    print(r2); expect: -1
+    print(r3); expect: 0
 }
 
 ; 4. 並發：先全部 run，再依次 awy
@@ -45,7 +45,7 @@ test-concurrent = () {
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    print(r1 + r2)  ; expect: 60
+    print(r1 + r2); expect: 60
 }
 
 ; 5. 預創建 Future，延遲執行
@@ -56,14 +56,14 @@ test-lazy-future = () {
     h2 = run f2
     r1 = awy h1
     r2 = awy h2
-    print(r1 + r2)  ; expect: 60
+    print(r1 + r2); expect: 60
 }
 
 ; 6. awy future 變量（串行執行 future）
 test-await-future = () {
     f = compute-async(25)
     r = awy f
-    print(r)  ; expect: 50
+    print(r); expect: 50
 }
 
 test-serial()

@@ -43,7 +43,7 @@ linked-hash-map.hash = (key i64) (idx i64) {
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             .vals[idx] = val
             is-new = false
@@ -51,7 +51,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     .keys[idx] = key
     .vals[idx] = val
@@ -83,14 +83,14 @@ linked-hash-map.get = (key i64) (result ?i64) {
 
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             result = .vals[idx]
             return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
     result = nil
 }
 
@@ -108,7 +108,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
     removed = false
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             .occ[idx] = 0
             .size = .size - 1
@@ -128,7 +128,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
 
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空
@@ -154,11 +154,11 @@ linked-hash-map.is-empty = () (empty bool) {
 ; for-each: 按插入順序遍歷所有 (key, value)
 linked-hash-map.for-each = (k i64, v i64) {
     idx = .head
-    for idx != -1 {
+    {
         .occ[idx] == 1 -> {
             k = .keys[idx]
             v = .vals[idx]
         }
         idx = .nxt[idx]
-    }
+    } (idx != -1)
 }

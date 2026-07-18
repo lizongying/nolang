@@ -6,12 +6,12 @@ test-map-str-i64 = () {
 
     v = m.get('a')
     v: {
-        ok -> print(it)  ; expect: 0
+        ok -> print(); expect: 0
     }
 
     v = m.get('c')
     v: {
-        ok -> print(it)  ; expect: 2
+        ok -> print(); expect: 2
     }
 }
 

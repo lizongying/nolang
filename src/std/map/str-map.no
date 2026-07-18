@@ -57,7 +57,7 @@ str-map.str-eq = (a str, b str) (eq bool) {
 str-map.put = (key str, val str) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .vals[idx] = val
@@ -70,7 +70,7 @@ str-map.put = (key str, val str) (is-new bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     ; 複製 key
     .keys[idx].len = key.len
@@ -97,7 +97,7 @@ str-map.get = (key str) (result ?str) {
 
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             result = .vals[idx]
@@ -105,7 +105,7 @@ str-map.get = (key str) (result ?str) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
     result = nil
 }
 
@@ -124,7 +124,7 @@ str-map.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .occ[idx] = 0
@@ -136,7 +136,7 @@ str-map.remove = (key str) (removed bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空

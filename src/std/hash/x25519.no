@@ -546,7 +546,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
     ; 從最高位元到最低位元迭代（bit 254 到 bit 0）
     t = 254
-    for t >= 0 {
+    {
         ; 提取純量的第 t 位元
         byte-idx = t / 8
         bit-idx = t % 8
@@ -605,7 +605,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
         ; 結束 Montgomery ladder step
         t = t - 1
-    }
+    } (t >= 0)
 
     ; 最後一次交換
     fe-cswap(x2, x3, swap)

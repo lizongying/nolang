@@ -2,7 +2,7 @@
 test-simple = () {
     s = '12345'
     n = s.to-i64()
-    print(n)  ; 期望 12345
+    print(n); 期望 12345
 }
 
 test-simple()

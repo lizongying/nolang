@@ -1,16 +1,14 @@
 ; test-i8-debug2.no — 調試 i8.MIN/MAX 直接訪問
 test1 = () {
-    ; 直接使用 -128 和 127
-        {
-        -128 == -128 -> print('-128 == -128 ok')
-        -> print('-128 == -128 bad')
-    }
+
+    -128 == -128 -> print('-128 == -128 ok')
+    -> print('-128 == -128 bad')
 }
 
 test2 = () {
     ; 嘗試訪問 i8.MIN
     m = i8.MIN
-        {
+    {
         m == -128 -> print('i8.MIN access ok')
         -> print('i8.MIN access bad')
     }
@@ -20,7 +18,7 @@ test2 = () {
 test3 = () {
     ; 嘗試訪問 i8.MAX
     m = i8.MAX
-        {
+    {
         m == 127 -> print('i8.MAX access ok')
         -> print('i8.MAX access bad')
     }

@@ -58,18 +58,18 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         xi = (x[byte-idx] >> bit-idx) & 1
         ; z = z XOR (xi * v)
         j = 0
-        for xi == 1 && j < 16 {
+        {
             z[j] = z[j] ^ v[j]
             j = j + 1
-        }
+        } (xi == 1 && j < 16)
         ; 判斷 v 的最低位元
         v-lsb = v[15] & 1
         ; v = v >> 1
         j = 15
-        for j > 0 {
+        {
             v[j] = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
             j = j - 1
-        }
+        } (j > 0)
         v[0] = v[0] >> 1
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> v[0] = v[0] ^ 225
@@ -95,7 +95,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 處理 AAD（每 16 位元組一區塊）
     pos = 0
-    for pos + 16 <= aad.len {
+    {
         i <- [0..16): {
             blk[i] = aad[pos + i]
         }
@@ -106,7 +106,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         y = ghash-mul(y, h)
         pos = pos + 16
-    }
+    } (pos + 16 <= aad.len)
 
     ; AAD 最後不完整區塊
     pos < aad.len -> {
@@ -124,7 +124,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 處理密文
     pos = 0
-    for pos + 16 <= cipher.len {
+    {
         i <- [0..16): {
             blk[i] = cipher[pos + i]
         }
@@ -133,7 +133,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         y = ghash-mul(y, h)
         pos = pos + 16
-    }
+    } (pos + 16 <= cipher.len)
     pos < cipher.len -> {
         i <- [0..16): {
             blk[i] = 0
@@ -201,7 +201,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     }
 
     pos = 0
-    for pos < data.len {
+    {
         ; 加密當前計數器區塊
         ks [16]byte
         ks = aes.aes-128-enc(cb, key)
@@ -215,24 +215,24 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 
         ; 遞增計數器（大端序，最低 32 位元）
         j = 15
-        for j >= 12 {
+        {
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> break
             j = j - 1
-        }
+        } (j >= 12)
 
         ; 若進位傳播到 byte 11 之後，繼續進位
         cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
             j = 11
-            for j >= 0 {
+            {
                 cb[j] = (cb[j] + 1) & 255
                 cb[j] != 0 -> break
                 j = j - 1
-            }
+            } (j >= 0)
         }
 
         pos = pos + n
-    }
+    } (pos < data.len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -276,11 +276,11 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 
     ; 遞增 J0 → J0+1
     j = 15
-    for j >= 12 {
+    {
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
         j = j - 1
-    }
+    } (j >= 12)
 
     ; 密文 = AES-CTR(key, J0+1, plain)
     cipher []byte
@@ -376,11 +376,11 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         ctr[i] = j0[i]
     }
     j = 15
-    for j >= 12 {
+    {
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
         j = j - 1
-    }
+    } (j >= 12)
 
     plain = aes-128-ctr-xor(key, ctr, cipher)
 }

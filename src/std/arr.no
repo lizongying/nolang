@@ -45,13 +45,13 @@
 [n]t.reverse = () {
     i = 0
     j = n - 1
-    for i < j {
+    {
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
         i = i + 1
         j = j - 1
-    }
+    } (i < j)
 }
 
 ; [n]t.contains: 是否包含值 val
@@ -126,12 +126,12 @@
     i <- [1..n): {
         key = .[i]
         j = i - 1
-        for j >= 0 {
+        {
             d = .[j] - key
             d <= 0 -> break
             .[j + 1] = .[j]
             j = j - 1
-        }
+        } (j >= 0)
         .[j + 1] = key
     }
 }
@@ -141,12 +141,12 @@
     i <- [1..n): {
         key = .[i]
         j = i - 1
-        for j >= 0 {
+        {
             d = .[j] - key
             d >= 0 -> break
             .[j + 1] = .[j]
             j = j - 1
-        }
+        } (j >= 0)
         .[j + 1] = key
     }
 }

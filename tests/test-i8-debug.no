@@ -2,23 +2,23 @@
 test-to-i8-127 = () {
     s = '127'
     n = s.to-i8()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }
 
 test-to-i8-minmax = () {
     ; 直接測試 i8.MIN 和 i8.MAX 常數
-        {
+    {
         i8.MIN == -128 -> print('i8.MIN ok')
         -> print('i8.MIN bad')
     }
-        {
+    {
         i8.MAX == 127 -> print('i8.MAX ok')
         -> print('i8.MAX bad')
     }
@@ -26,7 +26,7 @@ test-to-i8-minmax = () {
 
 test-to-i8-range = () {
     n = 127
-        {
+    {
         n >= i8.MIN && n <= i8.MAX -> print('127 in range')
         -> print('127 not in range')
     }

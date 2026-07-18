@@ -213,10 +213,10 @@ tree-map.rebalance = (idx i64) (nr i64) {
 ; rebalance-up: 從 idx 向上逐層再平衡
 ; idx i64: 起始節點索引
 tree-map.rebalance-up = (idx i64) {
-    for idx >= 0 {
+    {
         nr = .rebalance(idx)
         idx = .parent[nr]
-    }
+    } (idx >= 0)
 }
 
 ; successor: 求節點的中序後繼
@@ -226,17 +226,17 @@ tree-map.successor = (idx i64) (succ i64) {
     succ = -1
     .right[idx] >= 0 -> {
         succ = .right[idx]
-        for .left[succ] >= 0 {
+        {
             succ = .left[succ]
-        }
+        } (.left[succ] >= 0)
         return
     }
     p = .parent[idx]
-    for p >= 0 {
+    {
         idx != .right[p] -> break
         idx = p
         p = .parent[p]
-    }
+    } (p >= 0)
     succ = p
 }
 
@@ -265,7 +265,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
 
     ; BST 搜尋插入點
     cur = .root
-    !! {
+    {
         key == .keys[cur] -> {
             .vals[cur] = val
             return
@@ -302,7 +302,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
                 cur = .right[cur]
             }
         }
-    }
+    } ()
 }
 
 ; get: 查找鍵對應的值
@@ -310,7 +310,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
 ; 返回 val ?i64: ok=找到, nil=未找到
 tree-map.get = (key i64) (val ?i64) {
     idx = .root
-    for idx >= 0 {
+    {
         key == .keys[idx] -> {
             val = .vals[idx]
             return
@@ -319,7 +319,7 @@ tree-map.get = (key i64) (val ?i64) {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     val = nil
 }
 
@@ -329,7 +329,7 @@ tree-map.get = (key i64) (val ?i64) {
 tree-map.contains = (key i64) (yes bool) {
     yes = false
     idx = .root
-    for idx >= 0 {
+    {
         key == .keys[idx] -> {
             yes = true
             return
@@ -338,7 +338,7 @@ tree-map.contains = (key i64) (yes bool) {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
 }
 
 ; remove: 刪除鍵
@@ -349,13 +349,13 @@ tree-map.remove = (key i64) (ok bool) {
 
     ; BST 搜尋
     idx = .root
-    for idx >= 0 {
+    {
         key == .keys[idx] -> break
         {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     idx < 0 -> return
     ok = true
     .size = .size - 1
@@ -363,9 +363,9 @@ tree-map.remove = (key i64) (ok bool) {
     ; 雙子節點：用後繼替換後刪除後繼
     .left[idx] >= 0 && .right[idx] >= 0 -> {
         succ = .right[idx]
-        for .left[succ] >= 0 {
+        {
             succ = .left[succ]
-        }
+        } (.left[succ] >= 0)
         .keys[idx] = .keys[succ]
         .vals[idx] = .vals[succ]
         idx = succ
@@ -401,9 +401,9 @@ tree-map.first = () (key ?i64) {
         key = nil
         return
     }
-    for .left[idx] >= 0 {
+    {
         idx = .left[idx]
-    }
+    } (.left[idx] >= 0)
     key = .keys[idx]
 }
 
@@ -415,9 +415,9 @@ tree-map.last = () (key ?i64) {
         key = nil
         return
     }
-    for .right[idx] >= 0 {
+    {
         idx = .right[idx]
-    }
+    } (.right[idx] >= 0)
     key = .keys[idx]
 }
 
@@ -427,7 +427,7 @@ tree-map.last = () (key ?i64) {
 tree-map.lower-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
-    for idx >= 0 {
+    {
         {
             .keys[idx] >= target -> {
                 result = idx
@@ -435,7 +435,7 @@ tree-map.lower-bound = (target i64) (key ?i64) {
             }
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     result < 0 -> {
         key = nil
         return
@@ -449,7 +449,7 @@ tree-map.lower-bound = (target i64) (key ?i64) {
 tree-map.upper-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
-    for idx >= 0 {
+    {
         {
             .keys[idx] > target -> {
                 result = idx
@@ -457,7 +457,7 @@ tree-map.upper-bound = (target i64) (key ?i64) {
             }
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     result < 0 -> {
         key = nil
         return
@@ -473,16 +473,16 @@ tree-map.for-each = (k i64, v i64) {
     idx < 0 -> return
 
     ; 定位到最小鍵
-    for .left[idx] >= 0 {
+    {
         idx = .left[idx]
-    }
+    } (.left[idx] >= 0)
 
     ; 逐個後繼遍歷
-    for idx >= 0 {
+    {
         k = .keys[idx]
         v = .vals[idx]
         idx = .successor(idx)
-    }
+    } (idx >= 0)
 }
 
 ; ═══════════════════════════════════════════════

@@ -212,12 +212,12 @@ tls-bn-to-bytes = (num []i64) (out []byte) {
     }
 
     ; 移除前導零
-    for out-n > 1 && out[0] == 0 {
+    {
         i <- [0..out-n - 1): {
             out[i] = out[i + 1]
         }
         out-n = out-n - 1
-    }
+    } (out-n > 1 && out[0] == 0)
     out.len = out-n
 }
 
@@ -251,7 +251,7 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     }
 
     out-off = 0
-    for out-off < out-len {
+    {
         ; P_i = HMAC(secret, A(i) || label-seed)
         a-and-ls []byte
         a-and-ls = tls-bytes-cat(a, ls)
@@ -276,7 +276,7 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         i <- [0..32): {
             a[i] = a-tmp[i]
         }
-    }
+    } (out-off < out-len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -291,7 +291,7 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
-    for total < n {
+    {
         tmp []byte
         r = net-recv(fd, tmp, n - total)
         r <= 0 -> return
@@ -299,7 +299,7 @@ tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
             buf[total + i] = tmp[i]
         }
         total = total + r
-    }
+    } (total < n)
     ok = true
 }
 
@@ -577,10 +577,10 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         ; 左移補零
         shift = mod-n - out.len
         i = out.len - 1
-        for i >= 0 {
+        {
             out[i + shift] = out[i]
             i = i - 1
-        }
+        } (i >= 0)
         i <- [0..shift): {
             out[i] = 0
         }
@@ -674,7 +674,7 @@ tls-conn.read-server-hello = () (ok bool) {
     msg-len i64 = tls-get-u24(buf, 1)
 
     ; version
-    tls-put-u16(buf, pos, 0)  ; placeholder
+    tls-put-u16(buf, pos, 0); placeholder
     pos = pos + 2
 
     ; random (32 bytes)
@@ -1150,7 +1150,7 @@ tls-conn.read-server-hello-13 = () (ok bool) {
 
     ; 掃描擴展尋找 supported_versions 和 key_share
     is-tls13 = false
-    for pos < ext-end {
+    {
         ext-type i64 = tls-get-u16(buf, pos)
         pos = pos + 2
         ext-data-len i64 = tls-get-u16(buf, pos)
@@ -1177,7 +1177,7 @@ tls-conn.read-server-hello-13 = () (ok bool) {
         }
 
         pos = pos + ext-data-len
-    }
+    } (pos < ext-end)
 
     {
         is-tls13 -> {

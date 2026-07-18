@@ -12,6 +12,6 @@ b []byte = s.to-bytes()
 print('after to-bytes')
 b[0] != 116 -> {
     print('FAIL: expected t')
-        return
+    return
 }
 print('PASS: to-bytes')

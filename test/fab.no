@@ -5,11 +5,11 @@ fib = () {
     a = 0
     b = 1
     i = 2
-    i <= n: {
+    {
         c = a + b
         a = b
         b = c
         i = i + 1
-    }
+    } (i <= n)
     print(b)
 }

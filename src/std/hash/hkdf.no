@@ -61,7 +61,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
     off = 0
     counter = 1
-    for off < out-len {
+    {
         ; T(counter) = HMAC-SHA256(PRK, T(counter-1) || info || counter)
         msg []byte
         i <- [0..t-len): {
@@ -90,7 +90,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
         }
         off = off + copy-n
         counter = counter + 1
-    }
+    } (off < out-len)
 }
 
 ; ═══════════════════════════════════════════════

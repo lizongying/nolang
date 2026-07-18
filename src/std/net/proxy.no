@@ -94,7 +94,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    !! {
+    {
         total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE -> {
             close(fd)
             fd = -1
@@ -113,7 +113,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
-    }
+    } ()
 
     ; 解析狀態行
     head = raw.slice(0, sep-pos)

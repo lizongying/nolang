@@ -69,7 +69,7 @@ tar.count = () (count i64) {
     count = 0
     off = 0
     n = len(.data)
-    for off + TAR-BLOCK <= n {
+    {
         ; 檢查是否為結束標記（全零區塊）
         empty = 1
         i <- [0..TAR-BLOCK): {
@@ -87,7 +87,7 @@ tar.count = () (count i64) {
         blocks = (sz + 511) / TAR-BLOCK
         blocks < 0 -> blocks = 0
         off = off + TAR-BLOCK + blocks * TAR-BLOCK
-    }
+    } (off + TAR-BLOCK <= n)
 }
 
 ; offset: 計算第 idx 個條目的實際位元組偏移（遍歷前面所有條目）
@@ -356,11 +356,11 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     .buf[.pos + 156] = typ
 
     ; ustar magic（偏移 257，6 位元組 "ustar\0"）
-    .buf[.pos + 257] = 117  ; u
-    .buf[.pos + 258] = 115  ; s
-    .buf[.pos + 259] = 116  ; t
-    .buf[.pos + 260] = 97  ; a
-    .buf[.pos + 261] = 114  ; r
+    .buf[.pos + 257] = 117; u
+    .buf[.pos + 258] = 115; s
+    .buf[.pos + 259] = 116; t
+    .buf[.pos + 260] = 97; a
+    .buf[.pos + 261] = 114; r
     .buf[.pos + 262] = 0
 
     ; 計算校驗和（偏移 148，8 位元組）
@@ -397,11 +397,11 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
     ; 從右往左填數字
     v = val
     pos = width - 1
-    for v > 0 {
+    {
         .buf[base + pos] = 48 + (v % 8)
         v = v / 8
         pos = pos - 1
-    }
+    } (v > 0)
     .buf[base + width] = 0
 }
 

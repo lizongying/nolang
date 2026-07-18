@@ -183,7 +183,7 @@ x509-rsa-e = (data []byte) (e i64) {
     bit-len, adv = der-len(data, p + 1)
 
     ; BIT STRING 內容：跳過未使用位元組（1 位元組），然後是 RSAPublicKey
-    bit-pos = p + 1 + adv + 1  ; 跳過標籤+長度+未使用位元數位元組
+    bit-pos = p + 1 + adv + 1; 跳過標籤+長度+未使用位元數位元組
 
     ; 步驟 10：RSAPublicKey（SEQUENCE，tag 48）
     t = der-tag(data, bit-pos)
@@ -341,11 +341,11 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
     ;   [pad-len-8, pad-len)：64-bit 位元長度（大端序）
 
     wi <- [0..16): {
-        boff = off + wi * 4  ; 此字在 padded 訊息中的位元組偏移
+        boff = off + wi * 4; 此字在 padded 訊息中的位元組偏移
         ; 組裝 4 個位元組 → 32-bit 大端字
         b0 = 0
         b1 = 0
-        b2 = 0  ; 0x80 已放在 b0 或 b1
+        b2 = 0; 0x80 已放在 b0 或 b1
         b3 = 0
         ; 位元組 0
         {

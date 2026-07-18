@@ -1,6 +1,5 @@
 ; test-open-perm.no — 驗證 open() 檔案權限
 
-
 tmp = '/tmp/nolang-perm-test.txt'
 remove(tmp)
 
@@ -16,8 +15,10 @@ f: {
     err -> print('fail')
     nil -> print('fail')
     -> {
-        it.write('x', 1)
-        it.close()
+        
+        .write('x', 1)
+        
+        .close()
         print('ok')
     }
 }

@@ -109,14 +109,14 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 
             remaining = out-len - 32
             pos = 32
-            for remaining > 64 {
+            {
                 v = blake2.blake2b(v)
                 i <- [0..32): {
                     out[pos + i] = v[i]
                 }
                 pos = pos + 32
                 remaining = remaining - 32
-            }
+            } (remaining > 64)
 
             ; 最後一個區塊
             last-hash [64]byte
@@ -354,7 +354,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
 
     ; 填充剩餘區塊
     curr-idx = 2
-    for curr-idx < blocks-per-lane {
+    {
         ; 參考區塊（前一個）
         prev-idx = curr-idx - 1
 
@@ -371,12 +371,12 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         }
 
         curr-idx = curr-idx + 1
-    }
+    } (curr-idx < blocks-per-lane)
 
     ; 迭代 passes
     pass <- [1..time-cost): {
         curr-idx = 0
-        for curr-idx < blocks-per-lane {
+        {
             prev-idx = curr-idx - 1
             prev-idx < 0 -> prev-idx = blocks-per-lane - 1
             ref-idx = curr-idx
@@ -390,7 +390,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
             }
 
             curr-idx = curr-idx + 1
-        }
+        } (curr-idx < blocks-per-lane)
     }
 
     ; 最終區塊 = XOR 所有 lane 的最後區塊

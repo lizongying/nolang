@@ -194,7 +194,7 @@ quic-frame {
 quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count i64) {
     count = 0
     ft = 0
-    for pos < end {
+    {
         count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
@@ -216,7 +216,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         }
         pos = pos + frames[count].length
         count = count + 1
-    }
+    } (pos < end)
 
     ; CONNECTION_CLOSE (0x1c)
     ft == QUIC-FRAME-CONNECTION-CLOSE -> {
@@ -387,10 +387,10 @@ quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-lo
 
     ; XOR 封包號碼的 4 位元組
     j = 0
-    for j < 4 {
+    {
         pn-offset + j < packet.len -> packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
         j = j + 1
-    }
+    } (j < 4)
 }
 
 ; quic-remove-header-protection: 移除標頭保護（同 apply，XOR 對稱）
@@ -635,10 +635,10 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     pos = pos + crypto-data.len
 
     ; PADDING to reach 1200 bytes
-    for pos < QUIC-MAX-PACKET-SIZE - 16 {
+    {
         packet[pos] = 0
         pos = pos + 1
-    }
+    } (pos < QUIC-MAX-PACKET-SIZE - 16)
 
     ; ── AEAD 加密 ──
     ; Nonce = IV XOR packet_number (right-aligned)

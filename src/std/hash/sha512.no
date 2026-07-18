@@ -2290,14 +2290,14 @@ sha512 = (data []byte) (hash [64]byte) {
     ]
 
     offset = 0
-    for offset < total-len {
+    {
         ; 將 128 位元組轉為 16 個 64-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 128
-    }
+    } (offset < total-len)
 
     ; 輸出 64 位元組雜湊值（big-endian）
     hash[0] = (h0 >> 56) & 255

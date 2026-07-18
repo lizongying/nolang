@@ -356,7 +356,7 @@ ws-server-conn.handshake = () {
     total = 0
     sep-pos i64 = -1
 
-    !! {
+    {
         total + WS-RECV-SIZE > WS-BUF-SIZE -> return
         tmp str = space.repeat(WS-RECV-SIZE)
         n = net-recv(.fd, tmp, WS-RECV-SIZE)
@@ -368,7 +368,7 @@ ws-server-conn.handshake = () {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    }
+    } ()
 
     head = raw.slice(0, sep-pos)
 
@@ -539,7 +539,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
     acc-opcode i64 = 0
     has-acc = false
 
-    !! {
+    {
         ; 確保 recv-buf 至少有 2 bytes（frame header）
         .recv-buf-len: {
             -> return
@@ -621,7 +621,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
         .recv-buf-len < frame-total -> {
             need = frame-total - .recv-buf-len
             tmp str = ' '.repeat(WS-RECV-SIZE)
-            !! {
+            {
                 need <= 0 -> *
                 n = net-recv(.fd, tmp, need)
                 n <= 0 -> {
@@ -634,7 +634,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
                 }
                 .recv-buf-len = .recv-buf-len + n
                 need = frame-total - .recv-buf-len
-            }
+            } ()
         }
         ; 提取 mask key（如有）
         actual-extra = 0
@@ -702,7 +702,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             }
             return
         }
-    }
+    } ()
 }
 
 ; is-connected: 檢查連線狀態
@@ -816,7 +816,7 @@ ws-client.recv = () (msg ?ws-message) {
     acc-opcode i64 = 0
     has-acc = false
 
-    !! {
+    {
         ; 確保 recv-buf 至少有 2 bytes
         .recv-buf-len < 2 -> {
             tmp str = ' '.repeat(WS-RECV-SIZE)
@@ -929,7 +929,7 @@ ws-client.recv = () (msg ?ws-message) {
         .recv-buf-len < frame-total -> {
             need = frame-total - .recv-buf-len
             tmp str = ' '.repeat(WS-RECV-SIZE)
-            !! {
+            {
                 need <= 0 -> *
                 n = 0
                 {
@@ -956,7 +956,7 @@ ws-client.recv = () (msg ?ws-message) {
                 }
                 .recv-buf-len = .recv-buf-len + n
                 need = frame-total - .recv-buf-len
-            }
+            } ()
         }
         mask-key = ''
         mask-start = 2
@@ -1017,7 +1017,7 @@ ws-client.recv = () (msg ?ws-message) {
             }
             return
         }
-    }
+    } ()
 }
 
 ; is-connected: 檢查連線狀態
@@ -1189,7 +1189,7 @@ ws-connect = (url str) (c ?ws-client) {
     sep-pos i64 = -1
     separator = crlf - crlf
 
-    !! {
+    {
         total + WS-RECV-SIZE > WS-BUF-SIZE -> {
             {
                 use-tls -> tc.close()
@@ -1239,7 +1239,7 @@ ws-connect = (url str) (c ?ws-client) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    }
+    } ()
 
     ; 驗證狀態碼為 101
     head = raw.slice(0, sep-pos)

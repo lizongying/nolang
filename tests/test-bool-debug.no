@@ -2,12 +2,12 @@
 test-bool-true = () {
     s = 'true'
     b = s.to-bool()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> {
             print('val=')
-                    print(b)
+            print(b)
         }
     }
 }
@@ -15,12 +15,12 @@ test-bool-true = () {
 test-bool-false = () {
     s = 'false'
     b = s.to-bool()
-        {
+    {
         b == nil -> print('nil')
         b == err -> print('err')
         -> {
             print('val=')
-                    print(b)
+            print(b)
         }
     }
 }

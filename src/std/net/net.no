@@ -192,14 +192,14 @@ conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
     buf str = ' '.repeat(NET-BUF-SIZE)
-    !! {
+    {
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
         i <- [0..chunk-n): {
             content[total + i] = buf[i]
         }
         total = total + chunk-n
-    }
+    } ()
 }
 
 ; close: 關閉連接
@@ -618,7 +618,7 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
         err -> return
         ok -> {
             e enc-conn
-            e.init(it, key)
+            e.init(key)
             ec = e
         }
     }

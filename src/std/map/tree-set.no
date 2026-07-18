@@ -211,10 +211,10 @@ tree-set.rebalance = (idx i64) (nr i64) {
 ; rebalance-up: 從 idx 向上逐層再平衡
 ; idx i64: 起始節點索引
 tree-set.rebalance-up = (idx i64) {
-    for idx >= 0 {
+    {
         nr = .rebalance(idx)
         idx = .parent[nr]
-    }
+    } (idx >= 0)
 }
 
 ; successor: 求節點的中序後繼
@@ -224,17 +224,17 @@ tree-set.successor = (idx i64) (succ i64) {
     succ = -1
     .right[idx] >= 0 -> {
         succ = .right[idx]
-        for .left[succ] >= 0 {
+        {
             succ = .left[succ]
-        }
+        } (.left[succ] >= 0)
         return
     }
     p = .parent[idx]
-    for p >= 0 {
+    {
         idx != .right[p] -> break
         idx = p
         p = .parent[p]
-    }
+    } (p >= 0)
     succ = p
 }
 
@@ -261,7 +261,7 @@ tree-set.add = (key i64) (ok bool) {
 
     ; BST 搜尋插入點
     cur = .root
-    !! {
+    {
         key == .keys[cur] -> return
         {
             key < .keys[cur] -> {
@@ -293,7 +293,7 @@ tree-set.add = (key i64) (ok bool) {
                 cur = .right[cur]
             }
         }
-    }
+    } ()
 }
 
 ; contains: 檢查元素是否存在
@@ -302,7 +302,7 @@ tree-set.add = (key i64) (ok bool) {
 tree-set.contains = (key i64) (yes bool) {
     yes = false
     idx = .root
-    for idx >= 0 {
+    {
         key == .keys[idx] -> {
             yes = true
             return
@@ -311,7 +311,7 @@ tree-set.contains = (key i64) (yes bool) {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
 }
 
 ; remove: 刪除元素
@@ -322,13 +322,13 @@ tree-set.remove = (key i64) (ok bool) {
 
     ; BST 搜尋
     idx = .root
-    for idx >= 0 {
+    {
         key == .keys[idx] -> break
         {
             key < .keys[idx] -> idx = .left[idx]
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     idx < 0 -> return
     ok = true
     .size = .size - 1
@@ -336,9 +336,9 @@ tree-set.remove = (key i64) (ok bool) {
     ; 雙子節點：用後繼替換後刪除後繼
     .left[idx] >= 0 && .right[idx] >= 0 -> {
         succ = .right[idx]
-        for .left[succ] >= 0 {
+        {
             succ = .left[succ]
-        }
+        } (.left[succ] >= 0)
         .keys[idx] = .keys[succ]
         idx = succ
     }
@@ -373,9 +373,9 @@ tree-set.first = () (val ?i64) {
         val = nil
         return
     }
-    for .left[idx] >= 0 {
+    {
         idx = .left[idx]
-    }
+    } (.left[idx] >= 0)
     val = .keys[idx]
 }
 
@@ -387,9 +387,9 @@ tree-set.last = () (val ?i64) {
         val = nil
         return
     }
-    for .right[idx] >= 0 {
+    {
         idx = .right[idx]
-    }
+    } (.right[idx] >= 0)
     val = .keys[idx]
 }
 
@@ -399,7 +399,7 @@ tree-set.last = () (val ?i64) {
 tree-set.lower-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root
-    for idx >= 0 {
+    {
         {
             .keys[idx] >= target -> {
                 result = idx
@@ -407,7 +407,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
             }
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     result < 0 -> {
         val = nil
         return
@@ -421,7 +421,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
 tree-set.upper-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root
-    for idx >= 0 {
+    {
         {
             .keys[idx] > target -> {
                 result = idx
@@ -429,7 +429,7 @@ tree-set.upper-bound = (target i64) (val ?i64) {
             }
             -> idx = .right[idx]
         }
-    }
+    } (idx >= 0)
     result < 0 -> {
         val = nil
         return
@@ -444,15 +444,15 @@ tree-set.for-each = (val i64) {
     idx < 0 -> return
 
     ; 定位到最小值
-    for .left[idx] >= 0 {
+    {
         idx = .left[idx]
-    }
+    } (.left[idx] >= 0)
 
     ; 逐個後繼遍歷
-    for idx >= 0 {
+    {
         val = .keys[idx]
         idx = .successor(idx)
-    }
+    } (idx >= 0)
 }
 
 ; ═══════════════════════════════════════════════

@@ -11,7 +11,7 @@ f1 ?file = fs.open('/nonexistent/file-12345.txt', {
     mode: file-mode.read
 })
 f1: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: ' - )
     nil -> print('  结果: nil')
     -> print('  结果: 文件已打开')
 }
@@ -25,7 +25,7 @@ f2 ?file = fs.open('/tmp', {
     mode: file-mode.read
 })
 f2: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: ' - )
     nil -> print('  结果: nil')
     -> print('  结果: 文件已打开')
 }
@@ -40,12 +40,14 @@ f3 ?file = fs.open('/tmp/nolang-test-err.txt', {
     perm: file-perm.perm-644
 })
 f3: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: ' - )
     nil -> print('  结果: nil')
     -> {
         print('  结果: 文件已打开成功')
-        it.write('hello', 5)
-        it.close()
+        
+        .write('hello', 5)
+        
+        .close()
     }
 }
 

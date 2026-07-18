@@ -29,7 +29,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
     block-idx = 1
     out-pos = 0
-    for block-idx <= blocks {
+    {
         ; 構建 U1 的輸入: salt || INT_32_BE(block_idx)
         salt-len = salt.len
         u-input []byte
@@ -72,7 +72,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
-    }
+    } (block-idx <= blocks)
 }
 
 ; ═══════════════════════════════════════════════
@@ -92,7 +92,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
 
     block-idx = 1
     out-pos = 0
-    for block-idx <= blocks {
+    {
         u-input []byte
         salt-len = salt.len
         i <- [0..salt-len): {
@@ -126,7 +126,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
-    }
+    } (block-idx <= blocks)
 }
 
 ; ═══════════════════════════════════════════════
@@ -146,7 +146,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
 
     block-idx = 1
     out-pos = 0
-    for block-idx <= blocks {
+    {
         u-input []byte
         salt-len = salt.len
         i <- [0..salt-len): {
@@ -180,5 +180,5 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
 
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
-    }
+    } (block-idx <= blocks)
 }

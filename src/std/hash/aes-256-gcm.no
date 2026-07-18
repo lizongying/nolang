@@ -24,7 +24,7 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
     }
 
     pos = 0
-    for pos < data.len {
+    {
         ks [16]byte
         ks = aes-256.aes-256-enc(cb, key)
 
@@ -36,22 +36,22 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
 
         ; 遞增計數器（大端序，最低 32 位元）
         j = 15
-        for j >= 12 {
+        {
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> break
             j = j - 1
-        }
+        } (j >= 12)
         cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
             j = 11
-            for j >= 0 {
+            {
                 cb[j] = (cb[j] + 1) & 255
                 cb[j] != 0 -> break
                 j = j - 1
-            }
+            } (j >= 0)
         }
 
         pos = pos + n
-    }
+    } (pos < data.len)
 }
 
 ; aes-256-gcm-seal: AES-256-GCM 加密
@@ -89,11 +89,11 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         ctr[i] = j0[i]
     }
     j = 15
-    for j >= 12 {
+    {
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
         j = j - 1
-    }
+    } (j >= 12)
 
     cipher []byte
     cipher = aes-256-ctr-xor(key, ctr, plain)
@@ -184,11 +184,11 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         ctr[i] = j0[i]
     }
     j = 15
-    for j >= 12 {
+    {
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
         j = j - 1
-    }
+    } (j >= 12)
 
     plain = aes-256-ctr-xor(key, ctr, cipher)
 }

@@ -116,7 +116,7 @@ sse-client.next-event = () (ev ?sse-event) {
     lf-lf = lf - lf
     crlf-crlf = crlf - crlf
 
-    !! {
+    {
         ; 建立緩衝區視圖（slice 會複製，安全）
         data = .recv-buf.slice(0, .recv-buf-len)
         ; 搜尋事件分隔符（\n\n 或 \r\n\r\n）
@@ -164,7 +164,7 @@ sse-client.next-event = () (ev ?sse-event) {
             e-retry i64 = -1
             has-data = false
             pos = 0
-            for pos < event-block.len {
+            {
                 nl = event-block.index-from(lf, pos)
                 line-end = nl
                 line-end < 0 -> line-end = event-block.len
@@ -210,7 +210,7 @@ sse-client.next-event = () (ev ?sse-event) {
                 }
 
                 pos = line-end + 1
-            }
+            } (pos < event-block.len)
 
             ; 只有包含 data 的事件才回傳
             has-data -> {
@@ -257,7 +257,7 @@ sse-client.next-event = () (ev ?sse-event) {
             }
             .recv-buf-len = .recv-buf-len + n
         }
-    }
+    } ()
 }
 
 ; close: 關閉 SSE 連線
@@ -355,7 +355,7 @@ sse-client.reconnect = () (ok bool) {
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    !! {
+    {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             .close()
             return
@@ -382,7 +382,7 @@ sse-client.reconnect = () (ok bool) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    }
+    } ()
 
     ; 驗證狀態碼
     head = raw.slice(0, sep-pos)
@@ -560,7 +560,7 @@ sse-connect = (url str) (client ?sse-client) {
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    !! {
+    {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             use-tls -> tls-c.close()
             use-tls == false -> close(fd)
@@ -592,7 +592,7 @@ sse-connect = (url str) (client ?sse-client) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    }
+    } ()
 
     ; ── 驗證狀態碼 ──
     head = raw.slice(0, sep-pos)
@@ -746,7 +746,7 @@ sse-server-conn.handshake = () (ok bool) {
     total = 0
     sep-pos i64 = -1
 
-    !! {
+    {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> return
         tmp = space.repeat(SSE-RECV-SIZE)
         n = net-recv(.fd, tmp, SSE-RECV-SIZE)
@@ -758,7 +758,7 @@ sse-server-conn.handshake = () (ok bool) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    }
+    } ()
 
     ; 解析請求行
     head = raw.slice(0, sep-pos)
@@ -811,7 +811,7 @@ sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) 
     {
         data.len > 0 -> {
             pos = 0
-            !! {
+            {
                 nl = data.index-from(lf, pos)
                 line-end = nl
                 nl < 0 -> line-end = data.len
@@ -819,7 +819,7 @@ sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) 
                 msg = msg - 'data: ' - line - lf
                 nl < 0 -> *
                 pos = nl + 1
-            }
+            } ()
         }
         -> msg = msg - 'data: ' - lf
     }

@@ -36,14 +36,14 @@ hash-set.hash = (key i64) (idx i64) {
 hash-set.add = (key i64) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             is-new = false
             return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     .keys[idx] = key
     .occ[idx] = 1
@@ -57,14 +57,14 @@ hash-set.contains = (key i64) (found bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             found = true
             return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; remove: 刪除元素，回傳是否刪除
@@ -73,7 +73,7 @@ hash-set.remove = (key i64) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             .occ[idx] = 0
             .size = .size - 1
@@ -82,7 +82,7 @@ hash-set.remove = (key i64) (removed bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空

@@ -1,12 +1,12 @@
 ; 測試 使用方法返回
 test-method = () {
     n = 'abc'.to-i64()
-        {
+    {
         n == nil -> print('nil')
         n == err -> print('err')
         -> {
             print('val=')
-                    print(n)
+            print(n)
         }
     }
 }

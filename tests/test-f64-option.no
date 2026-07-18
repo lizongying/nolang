@@ -1,7 +1,7 @@
 ; 測試 str.to-f64 的 Option 化實現
 test-f64-ok = () {
     f = '3.14'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -10,7 +10,7 @@ test-f64-ok = () {
 
 test-f64-neg = () {
     f = '-2.5'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -19,7 +19,7 @@ test-f64-neg = () {
 
 test-f64-zero = () {
     f = '0.0'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -28,7 +28,7 @@ test-f64-zero = () {
 
 test-f64-empty = () {
     f = ''.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -37,7 +37,7 @@ test-f64-empty = () {
 
 test-f64-invalid = () {
     f = 'abc'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -46,7 +46,7 @@ test-f64-invalid = () {
 
 test-f64-int = () {
     f = '42'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)
@@ -55,7 +55,7 @@ test-f64-int = () {
 
 test-f64-sci = () {
     f = '1.5e3'.to-f64()
-        {
+    {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f)

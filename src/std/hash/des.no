@@ -183,12 +183,12 @@ SHIFT-TBL [16]byte = [
 permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
-    for i < n {
+    {
         pos = width - (tbl[i] & 255)
         bit = (input >> pos) & 1
         r = r | (bit << (n - 1 - i))
         i = i + 1
-    }
+    } (i < n)
 }
 
 ; sbox-lookup: 查詢 S-box

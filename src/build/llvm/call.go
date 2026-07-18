@@ -833,11 +833,13 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /
 	// @unlink / @rename / @stat / @chdir / @getcwd / @getenv / @getpid / @gethostname
 	// / @malloc / @free / @memcpy / @memset / @printf / @sprintf / @strcmp
-	// / @nolang.strlen / @time / @sleep / @fopen / @fgets / @fclose / @strtod
-	// / @exit）衝突時，才加 "n." 前綴以避免 redefinition。
-	// 其他情況不前綴，保留與 builtin 的 dispatch 優先級。
-	// 註：@atoi / @strtoull 已移除，str.to-i64 / str.to-u64 由 str.no 中的
-	// Nolang 實作提供（返回 ?i64 / ?u64 Option 類型）。
+	// / @nolang.strlen / @fopen / @fgets / @fclose / @exit）衝突時，才加 "n."
+	// 前綴以避免 redefinition。其他情況不前綴，保留與 builtin 的 dispatch 優先級。
+	// 註：@atoi / @strtoull / @strtod / @time / @sleep 已移除——
+	//   - str.to-i64 / str.to-u64 由 str.no Nolang 實作提供（返回 ?i64 / ?u64）
+	//   - ffi-cstr-at-float / ffi-cstr-at-int 改用內部 @nolang.strtod / @nolang.strtoll
+	//   - now 內建改用內部 @nolang.now_s（gettimeofday）
+	//   - sleep 內建改用內部 @nolang.sleep_s（nanosleep）
 	llvmFnName := fnName
 	maybeRenableLLVMName := func() {
 		if g.funcRetTypes != nil {

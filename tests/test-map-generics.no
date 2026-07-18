@@ -7,20 +7,20 @@ test-str-i64 = () {
 
     v = m.get('a')
     v: {
-        ok -> print(it)  ; expect: 0
+        ok -> print(); expect: 0
     }
 
     v = m.get('c')
     v: {
-        ok -> print(it)  ; expect: 2
+        ok -> print(); expect: 2
     }
 
     found = m.contains('b')
-    print(found)  ; expect: 1
+    print(found); expect: 1
 
     removed = m.remove('b')
     found = m.contains('b')
-    print(found)  ; expect: 0
+    print(found); expect: 0
 }
 
 ; str → str
@@ -29,7 +29,7 @@ test-str-str = () {
 
     v = m.get('name')
     v: {
-        ok -> print(it)  ; expect: Alice
+        ok -> print(); expect: Alice
     }
 }
 
@@ -40,12 +40,12 @@ test-i64-i64 = () {
 
     v = m.get(42)
     v: {
-        ok -> print(it)  ; expect: 100
+        ok -> print(); expect: 100
     }
 
     v = m.get(10)
     v: {
-        ok -> print(it)  ; expect: 20
+        ok -> print(); expect: 20
     }
 }
 
@@ -55,7 +55,7 @@ test-i32-str = () {
 
     v = m.get(7)
     v: {
-        ok -> print(it)  ; expect: seven
+        ok -> print(); expect: seven
     }
 }
 
@@ -67,12 +67,12 @@ test-bool-i64 = () {
 
     v = m.get(true)
     v: {
-        ok -> print(it)  ; expect: 1
+        ok -> print(); expect: 1
     }
 
     v = m.get(false)
     v: {
-        ok -> print(it)  ; expect: 0
+        ok -> print(); expect: 0
     }
 }
 
@@ -82,7 +82,7 @@ test-str-bool = () {
 
     v = m.get('yes')
     v: {
-        ok -> print(it)  ; expect: 1
+        ok -> print(); expect: 1
     }
 }
 
@@ -92,7 +92,7 @@ test-u8-i64 = () {
 
     v = m.get(200)
     v: {
-        ok -> print(it)  ; expect: 200
+        ok -> print(); expect: 200
     }
 }
 

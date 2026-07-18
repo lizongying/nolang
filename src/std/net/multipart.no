@@ -225,7 +225,7 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
     crlf = cr - lf
 
     pos = 0
-    !! {
+    {
         ; 找到下一個 CRLF
         next-crlf = header-block.index-from(crlf, pos)
         next-crlf < 0 -> {
@@ -238,7 +238,7 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
         .parse-header-line(line, part)
         pos = next-crlf + 2
         pos >= header-block.len -> break
-    }
+    } ()
 }
 
 ; parse-header-line: 解析單個標頭行

@@ -107,11 +107,11 @@ odd = (a int) (yes bool) {
 gcd = (a int, b int) (r int) {
     a < 0 -> a = 0 - a
     b < 0 -> b = 0 - b
-    for b != 0 {
+    {
         t = b
         b = a % b
         a = t
-    }
+    } (b != 0)
     r = a
 }
 
@@ -128,10 +128,10 @@ lcm = (a int, b int) (r int) {
 ; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
 pow = (a int, n int) (r int) {
     r = 1
-    for n > 0 {
+    {
         r = r * a
         n = n - 1
-    }
+    } (n > 0)
 }
 
 ; i64-to-f64: 整數轉浮點
@@ -163,22 +163,22 @@ i64-to-str = (n i64) (out str) {
     n < 0 -> neg = 1
     digits = 0
     tmp = n
-    for tmp != 0 {
+    {
         digits = digits + 1
         tmp = tmp / 10
-    }
+    } (tmp != 0)
     total = digits
     neg == 1 -> total = total + 1
     out = with-cap(total)
     pos = digits - 1
     neg == 1 -> pos = digits
-    for n != 0 {
+    {
         d = n % 10
         neg == 1 -> d = 0 - d
         out[pos] = d + 48
         n = n / 10
         pos = pos - 1
-    }
+    } (n != 0)
     neg == 1 -> out[0] = 45
 }
 
@@ -191,18 +191,18 @@ u64-to-str = (u u64) (out str) {
     }
     tmp u64 = u
     digits = 0
-    for tmp > 0 {
+    {
         digits = digits + 1
         tmp = tmp / 10
-    }
+    } (tmp > 0)
     out = with-cap(digits)
     pos = digits - 1
-    for u > 0 {
+    {
         d = u % 10
         out[pos] = d + 48
         u = u / 10
         pos = pos - 1
-    }
+    } (u > 0)
 }
 
 ; char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
@@ -245,22 +245,22 @@ int.to-str = () (out str) {
     n < 0 -> neg = 1
     digits = 0
     tmp = n
-    for tmp != 0 {
+    {
         digits = digits + 1
         tmp = tmp / 10
-    }
+    } (tmp != 0)
     total = digits
     neg == 1 -> total = total + 1
     out = with-cap(total)
     pos = digits - 1
     neg == 1 -> pos = digits
-    for n != 0 {
+    {
         d = n % 10
         neg == 1 -> d = 0 - d
         out[pos] = d + 48
         n = n / 10
         pos = pos - 1
-    }
+    } (n != 0)
     neg == 1 -> out[0] = 45
 }
 
@@ -371,22 +371,22 @@ f64-to-str = (x f64) (out str) {
     digits = with-cap(6)
     tmp = m
     i = 5
-    for i >= 0 {
+    {
         digits[i] = (tmp % 10) + 48
         tmp = tmp / 10
         i = i - 1
-    }
+    } (i >= 0)
 
     ; 找最後一個非零位（用於去尾隨零）
     last-nz = 0
     i = 5
-    for i >= 0 {
+    {
         digits[i] != 48 -> {
             last-nz = i
             i = -1
         }
         i = i - 1
-    }
+    } (i >= 0)
 
     ; 決定格式
     use-sci = 0
@@ -407,11 +407,11 @@ f64-to-str = (x f64) (out str) {
             out[pos] = 46
             pos = pos + 1
             j = 1
-            for j <= last-nz {
+            {
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
-            }
+            } (j <= last-nz)
         }
         out[pos] = 101
         pos = pos + 1
@@ -433,11 +433,11 @@ f64-to-str = (x f64) (out str) {
             pos = pos + 1
         }
         j = 0
-        for j < estr.len {
+        {
             out[pos] = estr[j]
             pos = pos + 1
             j = j + 1
-        }
+        } (j < estr.len)
         return
     }
 
@@ -457,20 +457,20 @@ f64-to-str = (x f64) (out str) {
             pos = pos + 1
         }
         j = 0
-        for j < int-digits {
+        {
             out[pos] = digits[j]
             pos = pos + 1
             j = j + 1
-        }
+        } (j < int-digits)
         last-nz >= int-digits -> {
             out[pos] = 46
             pos = pos + 1
             j = int-digits
-            for j <= last-nz {
+            {
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
-            }
+            } (j <= last-nz)
         }
         return
     }
@@ -490,17 +490,17 @@ f64-to-str = (x f64) (out str) {
     out[pos] = 46
     pos = pos + 1
     j = 0
-    for j < lead-zeros {
+    {
         out[pos] = 48
         pos = pos + 1
         j = j + 1
-    }
+    } (j < lead-zeros)
     j = 0
-    for j <= last-nz {
+    {
         out[pos] = digits[j]
         pos = pos + 1
         j = j + 1
-    }
+    } (j <= last-nz)
 }
 
 ; f64.to-str: f64 轉字串（方法）

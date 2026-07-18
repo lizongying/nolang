@@ -55,7 +55,7 @@ str-set.str-eq = (a str, b str) (eq bool) {
 str-set.add = (key str) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             is-new = false
@@ -63,7 +63,7 @@ str-set.add = (key str) (is-new bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     ; 複製 key
     .keys[idx].len = key.len
@@ -81,7 +81,7 @@ str-set.contains = (key str) (found bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             found = true
@@ -89,7 +89,7 @@ str-set.contains = (key str) (found bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; remove: 刪除元素
@@ -98,7 +98,7 @@ str-set.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .occ[idx] = 0
@@ -109,7 +109,7 @@ str-set.remove = (key str) (removed bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空

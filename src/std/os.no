@@ -120,61 +120,49 @@ strerror = (errnum i64) (msg str) {
         -> msg = 'Unknown error: ' + errnum.to-str()
     }
 }
-
 ; build-in (ForwardFunc: get-errno)
 ; get-errno: 取得最後的 errno 值
 ; get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
 ; }
-
 ; ═══════════════════════════════════════════════
 ; 時間
 ; ═══════════════════════════════════════════════
-
-; build-in (ForwardFunc: time)
+; build-in (CLibCall: nolang.now_s)
 ; now: 取得當前 Unix 時間戳（秒）
-; now = () (ts i64) {  // LLVM: call i64 @time(i8* null)
+; now = () (ts i64) {  // LLVM: call i64 @nolang.now_s（gettimeofday → tv_sec）
 ; }
-
 ; build-in (CLibCall: nolang.now_ms)
 ; now-ms: 取得當前 Unix 時間戳（毫秒）
 ; now-ms = () (ts i64) {  // LLVM: call i64 @nolang.now_ms
 ; }
-
 ; build-in (CLibCall: nolang.now_us)
 ; now-us: 取得當前 Unix 時間戳（微秒）
 ; now-us = () (ts i64) {  // LLVM: call i64 @nolang.now_us
 ; }
-
 ; build-in (CLibCall: nolang.now_ns)
 ; now-ns: 取得當前時間戳（奈秒）
 ; now-ns = () (ts i64) {  // LLVM: call i64 @nolang.now_ns
 ; }
-
-; build-in (ForwardFunc: sleep)
+; build-in (CLibCall: nolang.sleep_s)
 ; sleep: 睡眠 n 秒
-; sleep = (s i64) (ok i64) {  // LLVM: call i32 @sleep(i32) → zext
+; sleep = (s i64) (ok i64) {  // LLVM: call i64 @nolang.sleep_s（nanosleep）→ 0
 ; }
-
 ; build-in (CLibCall: nolang.sleep_us)
 ; sleep-us: 睡眠 n 微秒
 ; sleep-us = (us i64) {  // LLVM: call i32 @nolang.sleep_us
 ; }
-
 ; build-in (CLibCall: nolang.sleep_ns)
 ; sleep-ns: 睡眠 n 奈秒
 ; sleep-ns = (ns i64) {  // LLVM: call i32 @nolang.sleep_ns
 ; }
-
 ; ═══════════════════════════════════════════════
 ; 命令列參數
 ; ═══════════════════════════════════════════════
-
 ; build-in (ForwardFunc: args-count)
 ; args: 命令列參數數量（含程式名）
 ; args = () (count i64) {
 ;     // LLVM: access argc from main
 ; }
-
 ; build-in (ForwardFunc: args-get)
 ; arg: 取得第 i 個命令列參數
 ; arg = (idx i64) (val str) {

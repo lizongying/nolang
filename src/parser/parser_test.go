@@ -888,10 +888,10 @@ func TestNewSyntaxNoWarnings(t *testing.T) {
 		name  string
 		input string
 	}{
-		{name: "bang_loop", input: "!!\n{\n    break\n}"},
+		{name: "infinite_loop", input: "{\n    break\n} ()"},
 		{name: "counted_loop", input: "{\n    print(1)\n} * 5"},
 		{name: "range_for_with_colon", input: "i <- [0..10): {\n    print(i)\n}"},
-		{name: "for_cond_keyword", input: "for i < 5 {\n    i = i + 1\n}"},
+		{name: "cond_loop", input: "{\n    i = i + 1\n} (i < 5)"},
 		{name: "match_with_subject", input: "x: {\n    1 -> 1\n    -> 0\n}"},
 		{name: "bare_match_if_else", input: "{\n    x > 0 -> a = 1\n    -> a = 0\n}"},
 	}

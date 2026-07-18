@@ -30,7 +30,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     c == 34 -> {
         ; 雙引號包圍的欄位
         pos = pos + 1
-        for pos < s.len {
+        {
             c = s[pos] & 255
             c == 34 -> {
                 ; 檢查是否為跳脫的雙引號
@@ -66,14 +66,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             field[fn] = c
             fn = fn + 1
             pos = pos + 1
-        }
+        } (pos < s.len)
 
         new-pos = pos
         return
     }
 
     ; 普通欄位（無引號）
-    for pos < s.len {
+    {
         c = s[pos] & 255
         c == 44 -> {
             pos = pos + 1
@@ -88,7 +88,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         field[fn] = c
         fn = fn + 1
         pos = pos + 1
-    }
+    } (pos < s.len)
     new-pos = pos
 }
 
@@ -99,10 +99,10 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
-    for pos < s.len && n < max-fields {
+    {
         fields[n], pos = parse-field(s, pos)
         n = n + 1
-    }
+    } (pos < s.len && n < max-fields)
     fields.len = n
 }
 

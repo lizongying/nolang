@@ -77,13 +77,13 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                 ; 複製 '=' 後的內容到 val
                 k = keyn + 1
                 vn = 0
-                for true {
+                {
                     c = arg[k] & 255
                     c == 0 -> break
                     val[vn] = c
                     vn = vn + 1
                     k = k + 1
-                }
+                } (true)
                 ok = true
                 return
             }
@@ -101,7 +101,7 @@ get-positional = (idx i64) (val str, ok bool) {
     n = count()
     pos = 0
     j = 1
-    for j < n {
+    {
         arg = get(j)
 
         ; 跳過以 '-' 開頭的參數
@@ -122,16 +122,16 @@ get-positional = (idx i64) (val str, ok bool) {
         pos == idx -> {
             ; 複製 arg 到 val
             k = 0
-            for true {
+            {
                 c = arg[k] & 255
                 c == 0 -> break
                 val[k] = c
                 k = k + 1
-            }
+            } (true)
             ok = true
             return
         }
         pos = pos + 1
         j = j + 1
-    }
+    } (j < n)
 }

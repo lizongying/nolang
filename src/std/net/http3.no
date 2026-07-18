@@ -515,7 +515,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     r.status-code = 0
 
     pos = 0
-    for pos < n {
+    {
         ft = 0
         payload []byte
         np = 0
@@ -526,7 +526,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
         ; HEADERS 影格: 解析 QPACK 標頭區塊
         ft == HTTP3-FRAME-HEADERS -> {
             qpack-pos = 0
-            for qpack-pos < payload.len {
+            {
                 name = ''
                 value = ''
                 qpack-np = 0
@@ -538,7 +538,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
                 name == ':status' -> {
                     status-val ?i64 = value.to-i64()
                     status-val: {
-                        ok -> r.status-code = it
+                        ok -> r.status-code = 
                         -> r.status-code = 0
                     }
                 }
@@ -547,7 +547,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
                     r.header-values[r.header-count] = value
                     r.header-count = r.header-count + 1
                 }
-            }
+            } (qpack-pos < payload.len)
         }
 
         ; DATA 影格: 追加到 body
@@ -557,7 +557,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
             }
         }
         ; 忽略其他影格類型
-    }
+    } (pos < n)
 
     r.status-code == 0 -> return
     resp = r
@@ -582,7 +582,7 @@ http3-get = (url str) (resp ?http3-response) {
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, HTTP3-METHOD-GET, path, host, '')
+        ok -> resp = http3-send-request(HTTP3-METHOD-GET, path, host, '')
     }
 }
 
@@ -602,7 +602,7 @@ http3-post = (url str, body str) (resp ?http3-response) {
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, HTTP3-METHOD-POST, path, host, body)
+        ok -> resp = http3-send-request(HTTP3-METHOD-POST, path, host, body)
     }
 }
 
@@ -623,6 +623,6 @@ http3-do = (method str, url str, body str) (resp ?http3-response) {
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, method, path, host, body)
+        ok -> resp = http3-send-request(method, path, host, body)
     }
 }

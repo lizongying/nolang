@@ -18,10 +18,10 @@
 
 ; ChaCha20 常量 "expand 32-byte k"
 ; 各 32-bit 小端值
-CC-SIGMA0 u32 = 1634760805  ; "expa"
-CC-SIGMA1 u32 = 857760878  ; "nd 3"
-CC-SIGMA2 u32 = 2036477234  ; "2-by"
-CC-SIGMA3 u32 = 1797285236  ; "te k"
+CC-SIGMA0 u32 = 1634760805; "expa"
+CC-SIGMA1 u32 = 857760878; "nd 3"
+CC-SIGMA2 u32 = 2036477234; "2-by"
+CC-SIGMA3 u32 = 1797285236; "te k"
 
 ; 32-bit 全 1 遮罩
 CC-MASK32 u32 = 4294967295
@@ -116,7 +116,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
     pos = 0
     blk-counter = counter
-    for pos < data.len {
+    {
         ks [64]byte
         ks = chacha20-block(key, blk-counter, nonce)
 
@@ -128,7 +128,7 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 
         pos = pos + n
         blk-counter = (blk-counter + 1) & CC-MASK32
-    }
+    } (pos < data.len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -166,7 +166,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; 逐 16 位元組區塊處理
     pos = 0
-    for pos < data.len {
+    {
         ; 載入區塊（小端序），末尾補零
         n = 16
         pos + n > data.len -> n = data.len - pos
@@ -273,7 +273,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         h1 = (h1 + c as u32) & CC-MASK32
 
         pos = pos + 16
-    }
+    } (pos < data.len)
 
     ; 最終約簡
     c = h1 >> 26

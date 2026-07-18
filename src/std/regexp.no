@@ -394,17 +394,15 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     ; 檢查反向 ^
     negated = 0
-    i < n -> {
-        pattern[i] & 255 == 94 -> {
-            negated = 1
-            i = i + 1
-        }
+    i < n -> pattern[i] & 255 == 94 -> {
+        negated = 1
+        i = i + 1
     }
 
     ; ']' 在第一個位置視為常字元
     first = 1
 
-    for i < n {
+    {
         c = pattern[i] & 255
 
         ; 結束（非首字元）
@@ -426,10 +424,10 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                 end-c != 93 -> {
                     is-range = 1
                     k = c
-                    for k <= end-c {
+                    {
                         .set-class-bit(cls-idx, k)
                         k = k + 1
-                    }
+                    } (k <= end-c)
                     next-i = i + 3
                 }
             }
@@ -445,13 +443,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                     next-i = i + 2
                 }
             }
-            c != 92 -> {
-                .set-class-bit(cls-idx, c)
-            }
+            c != 92 -> .set-class-bit(cls-idx, c)
         }
 
         i = next-i
-    }
+    } (i < n)
 
     ; 反向
     negated == 1 -> {
@@ -590,6 +586,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .tmp-next-i = atom-i + 1
         return
     }
+
     ; 默認（q == _RE-QUANT-NONE）：不是量詞，直接發射 atom
     .emit-atom(atom-type, atom-char, atom-cls)
     .tmp-next-i = atom-i
@@ -607,20 +604,20 @@ regexp.compile = () {
     ; in-class 使用 LOAD + AND + != 0，不涉及 == 42 比較
     star-cls = .alloc-class()
     .init-class-zero(star-cls)
-    .set-class-bit(star-cls, 42)   ; '*' — ASCII 42
+    .set-class-bit(star-cls, 42); '*' — ASCII 42
 
     plus-cls = .alloc-class()
     .init-class-zero(plus-cls)
-    .set-class-bit(plus-cls, 43)   ; '+' — ASCII 43
+    .set-class-bit(plus-cls, 43); '+' — ASCII 43
 
     quest-cls = .alloc-class()
     .init-class-zero(quest-cls)
-    .set-class-bit(quest-cls, 63)  ; '?' — ASCII 63
+    .set-class-bit(quest-cls, 63); '?' — ASCII 63
 
     n = .pattern.len
     i = 0
 
-    for i < n {
+    {
         c = .pattern[i] & 255
 
         ; 預設前進 1
@@ -631,11 +628,13 @@ regexp.compile = () {
             .emit(RE-OP-START, 0, 0)
             .tmp-next-i = i + 1
         }
+
         ; $ — 行尾錨點
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
             .tmp-next-i = i + 1
         }
+
         ; 其他 atom
         c != 94 && c != 36 -> {
             ; 解析 atom
@@ -665,7 +664,7 @@ regexp.compile = () {
         }
 
         i = .tmp-next-i
-    }
+    } (i < n)
 
     .emit(RE-OP-MATCH, 0, 0)
 }
@@ -687,52 +686,27 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     pc < .n -> {
         op = .op[pc]
 
-        op == RE-OP-CHAR -> {
-            sp < text.len -> {
-                (text[sp] & 255) == .arg1[pc] -> {
-                    result-ok = .match-at(pc + 1, sp + 1, text)
-                }
-            }
-        }
-        op == RE-OP-ANY -> {
-            sp < text.len -> {
-                (text[sp] & 255) != 10 -> {
-                    result-ok = .match-at(pc + 1, sp + 1, text)
-                }
-            }
-        }
-        op == RE-OP-CLASS -> {
-            sp < text.len -> {
-                ch = text[sp] & 255
-                yes = .in-class(.arg1[pc], ch)
-                yes -> result-ok = .match-at(pc + 1, sp + 1, text)
-            }
+        op == RE-OP-CHAR -> sp < text.len -> (text[sp] & 255) == .arg1[pc] -> result-ok = .match-at(pc + 1, sp + 1, text)
+        op == RE-OP-ANY -> sp < text.len -> (text[sp] & 255) != 10 -> result-ok = .match-at(pc + 1, sp + 1, text)
+        op == RE-OP-CLASS -> sp < text.len -> {
+            ch = text[sp] & 255
+            yes = .in-class(.arg1[pc], ch)
+            yes -> result-ok = .match-at(pc + 1, sp + 1, text)
         }
         op == RE-OP-SPLIT -> {
             ; 貪婪：先嘗試第一分支
             result-ok = .match-at(.arg1[pc], sp, text)
+
             ; 第一分支失敗時回溯到第二分支
-            !result-ok -> {
-                result-ok = .match-at(.arg2[pc], sp, text)
-            }
+            ! result-ok -> result-ok = .match-at(.arg2[pc], sp, text)
         }
-        op == RE-OP-JUMP -> {
-            result-ok = .match-at(.arg1[pc], sp, text)
-        }
+        op == RE-OP-JUMP -> result-ok = .match-at(.arg1[pc], sp, text)
         op == RE-OP-MATCH -> {
             result-ok = true
             .match-end = sp
         }
-        op == RE-OP-START -> {
-            sp == 0 -> {
-                result-ok = .match-at(pc + 1, sp, text)
-            }
-        }
-        op == RE-OP-END -> {
-            sp == text.len -> {
-                result-ok = .match-at(pc + 1, sp, text)
-            }
-        }
+        op == RE-OP-START -> sp == 0 -> result-ok = .match-at(pc + 1, sp, text)
+        op == RE-OP-END -> sp == text.len -> result-ok = .match-at(pc + 1, sp, text)
     }
 
     ok = result-ok
@@ -751,7 +725,7 @@ regexp.matches = (text str) (matched bool) {
 
     ; 從每個位置嘗試匹配
     sp = 0
-    for sp <= text.len {
+    {
         .match-end = -1
         ok = .match-at(0, sp, text)
         ok -> {
@@ -759,7 +733,7 @@ regexp.matches = (text str) (matched bool) {
             break
         }
         sp = sp + 1
-    }
+    } (sp <= text.len)
 
     matched = result-matched
 }
@@ -773,7 +747,7 @@ regexp.find = (text str) (result str) {
 
     ; 從每個位置嘗試匹配
     sp = 0
-    for sp <= text.len {
+    {
         .match-end = -1
         ok = .match-at(0, sp, text)
         ok -> {
@@ -789,7 +763,7 @@ regexp.find = (text str) (result str) {
             return
         }
         sp = sp + 1
-    }
+    } (sp <= text.len)
 }
 
 ; ═══════════════════════════════════════════════

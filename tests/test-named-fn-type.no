@@ -7,7 +7,7 @@
 test-cb = ()
 
 ; 具名函式型別：帶參帶返回
-compute = (n i64)(r i64)
+compute = (n i64) (r i64)
 
 ; 使用具名函式型別作為參數型別
 run-suite = (setup test-cb, teardown test-cb) {

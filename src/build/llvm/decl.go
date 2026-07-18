@@ -57,8 +57,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @closedir(i8*)\n")
 	// File timestamp update (from <sys/stat.h>)
 	sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
-	sb.WriteString("declare i64 @time(i8*)\n")
-	sb.WriteString("declare i32 @sleep(i32)\n")
+	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
+	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）
 	sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
 	sb.WriteString("declare i32 @gettimeofday(i8*, i8*)\n")
 	sb.WriteString("declare i32 @usleep(i32)\n")
@@ -78,8 +78,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @fork()\n")
 	sb.WriteString("declare i32 @pipe(i32*)\n")
 	sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
-	sb.WriteString("declare i32 @compress2(i8*, i8*, i8*, i64, i32)\n")
-	sb.WriteString("declare i32 @uncompress(i8*, i8*, i8*, i64)\n")
+	// zlib @compress2 / @uncompress 已移除：archive/gzip.no 以純 Nolang 實現
+	// gzip-compress / gzip-decompress，不再使用 zlib 高階 API。
 
 	// sincos: provide an implementation for platforms where libm does not
 	// export sincos (e.g. macOS). llc's DAG combiner merges sin(x)+cos(x)
@@ -374,6 +374,19 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tret i64 %result\n")
 	sb.WriteString("}\n\n")
 
+	// nolang.now_s: gettimeofday → sec（取代 libc @time(NULL)）
+	// 使用 gettimeofday 取得 struct timeval { tv_sec, tv_usec }，直接回傳 tv_sec。
+	// 與 @time(NULL) 等價，但避免依賴 libc @time。
+	sb.WriteString("define internal i64 @nolang.now_s() {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%tv = alloca [16 x i8]\n")
+	sb.WriteString("\t%tv.ptr = bitcast [16 x i8]* %tv to i8*\n")
+	sb.WriteString("\tcall i32 @gettimeofday(i8* %tv.ptr, i8* null)\n")
+	sb.WriteString("\t%sec.ptr = bitcast [16 x i8]* %tv to i64*\n")
+	sb.WriteString("\t%sec = load i64, i64* %sec.ptr\n")
+	sb.WriteString("\tret i64 %sec\n")
+	sb.WriteString("}\n\n")
+
 	// nolang.now_us: gettimeofday → sec*1000000 + usec
 	sb.WriteString("define internal i64 @nolang.now_us() {\n")
 	sb.WriteString("entry:\n")
@@ -410,6 +423,23 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\t%us.trunc = trunc i64 %us to i32\n")
 	sb.WriteString("\tcall i32 @usleep(i32 %us.trunc)\n")
 	sb.WriteString("\tret void\n")
+	sb.WriteString("}\n\n")
+
+	// nolang.sleep_s: nanosleep(sec, 0)（取代 libc @sleep(i32)）
+	// 使用 nanosleep 系統呼叫，避免依賴 libc @sleep。
+	// 與 @sleep(sec) 等價，不關心剩餘時間（被中斷時不重試）。
+	// 返回 i64 0（成功）以符合 CLibCall LLVMI64 返回型別；
+	// Nolang time.sleep-s 丟棄返回值，固定 0 不影響行為。
+	sb.WriteString("define internal i64 @nolang.sleep_s(i64 %sec) {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%req = alloca [16 x i8]\n")
+	sb.WriteString("\t%sec.ptr = bitcast [16 x i8]* %req to i64*\n")
+	sb.WriteString("\tstore i64 %sec, i64* %sec.ptr\n")
+	sb.WriteString("\t%nsec.ptr = getelementptr i64, i64* %sec.ptr, i64 1\n")
+	sb.WriteString("\tstore i64 0, i64* %nsec.ptr\n")
+	sb.WriteString("\t%req.ptr = bitcast [16 x i8]* %req to i8*\n")
+	sb.WriteString("\tcall i32 @nanosleep(i8* %req.ptr, i8* null)\n")
+	sb.WriteString("\tret i64 0\n")
 	sb.WriteString("}\n\n")
 
 	// nolang.sleep_ns: nanosleep
@@ -492,62 +522,9 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tret i32 0\n")
 	sb.WriteString("}\n\n")
 
-	// zlib functions for raw DEFLATE decompression (ZIP method 8)
-	sb.WriteString("declare i32 @inflateInit2_(i8*, i32, i8*, i32)\n")
-	sb.WriteString("declare i32 @inflate(i8*, i32)\n")
-	sb.WriteString("declare i32 @inflateEnd(i8*)\n")
-	sb.WriteString("@.zlib_ver = private unnamed_addr constant [7 x i8] c\"1.2.11\\00\"\n\n")
-
-	// nolang.inflate_raw: decompress raw DEFLATE data (RFC 1951) using zlib streaming API.
-	// z_stream layout on 64-bit (112 bytes total):
-	//   off 0:  next_in   (i8*)
-	//   off 8:  avail_in  (i32)
-	//   off 16: total_in  (i64)
-	//   off 24: next_out  (i8*)
-	//   off 32: avail_out (i32)
-	//   off 40: total_out (i64)
-	sb.WriteString("define internal i32 @nolang.inflate_raw(i8* %in, i64 %in_len, i8* %out, i64 %out_len, i64* %written) {\n")
-	sb.WriteString("entry:\n")
-	sb.WriteString("\t%z = alloca [112 x i8]\n")
-	sb.WriteString("\t%z.ptr = bitcast [112 x i8]* %z to i8*\n")
-	sb.WriteString("\tcall void @llvm.memset.p0i8.i64(i8* %z.ptr, i8 0, i64 112, i1 false)\n")
-	// next_in = in (offset 0)
-	sb.WriteString("\t%p.next_in = getelementptr i8, i8* %z.ptr, i64 0\n")
-	sb.WriteString("\t%p.next_in.c = bitcast i8* %p.next_in to i8**\n")
-	sb.WriteString("\tstore i8* %in, i8** %p.next_in.c\n")
-	// avail_in = in_len (offset 8)
-	sb.WriteString("\t%p.avail_in = getelementptr i8, i8* %z.ptr, i64 8\n")
-	sb.WriteString("\t%p.avail_in.c = bitcast i8* %p.avail_in to i32*\n")
-	sb.WriteString("\t%in_len.32 = trunc i64 %in_len to i32\n")
-	sb.WriteString("\tstore i32 %in_len.32, i32* %p.avail_in.c\n")
-	// next_out = out (offset 24)
-	sb.WriteString("\t%p.next_out = getelementptr i8, i8* %z.ptr, i64 24\n")
-	sb.WriteString("\t%p.next_out.c = bitcast i8* %p.next_out to i8**\n")
-	sb.WriteString("\tstore i8* %out, i8** %p.next_out.c\n")
-	// avail_out = out_len (offset 32)
-	sb.WriteString("\t%p.avail_out = getelementptr i8, i8* %z.ptr, i64 32\n")
-	sb.WriteString("\t%p.avail_out.c = bitcast i8* %p.avail_out to i32*\n")
-	sb.WriteString("\t%out_len.32 = trunc i64 %out_len to i32\n")
-	sb.WriteString("\tstore i32 %out_len.32, i32* %p.avail_out.c\n")
-	// inflateInit2_(z, -15, "1.2.11", 112)  -- windowBits=-15 for raw DEFLATE
-	sb.WriteString("\t%ret.init = call i32 @inflateInit2_(i8* %z.ptr, i32 -15, i8* getelementptr inbounds ([7 x i8], [7 x i8]* @.zlib_ver, i64 0, i64 0), i32 112)\n")
-	sb.WriteString("\t%ok.init = icmp eq i32 %ret.init, 0\n")
-	sb.WriteString("\tbr i1 %ok.init, label %do_inflate, label %fail\n")
-	sb.WriteString("do_inflate:\n")
-	// inflate(z, Z_FINISH=4)
-	sb.WriteString("\t%ret.inf = call i32 @inflate(i8* %z.ptr, i32 4)\n")
-	// inflateEnd(z)
-	sb.WriteString("\t%ret.end = call i32 @inflateEnd(i8* %z.ptr)\n")
-	// total_out (offset 40)
-	sb.WriteString("\t%p.total_out = getelementptr i8, i8* %z.ptr, i64 40\n")
-	sb.WriteString("\t%p.total_out.c = bitcast i8* %p.total_out to i64*\n")
-	sb.WriteString("\t%total_out = load i64, i64* %p.total_out.c\n")
-	sb.WriteString("\tstore i64 %total_out, i64* %written\n")
-	sb.WriteString("\tret i32 %ret.inf\n")
-	sb.WriteString("fail:\n")
-	sb.WriteString("\tstore i64 0, i64* %written\n")
-	sb.WriteString("\tret i32 %ret.init\n")
-	sb.WriteString("}\n\n")
+	// zlib @inflateInit2_ / @inflate / @inflateEnd / @.zlib_ver / @nolang.inflate_raw
+	// 已全部移除：archive/gzip.no 的 inflate-decompress 改為純 Nolang 實現
+	// （RFC 1951 DEFLATE 解壓縮），不再依賴 zlib 串流 API。
 
 	// POSIX socket functions for net module
 	sb.WriteString("declare i32 @socket(i32, i32, i32)\n")

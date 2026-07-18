@@ -155,12 +155,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
         ; 傳播進位
         idx = i + 32
-        for idx < 64 && carry != 0 {
+        {
             val = (product[idx] & 255) + carry
             product[idx] = val & 255
             carry = val >> 8
             idx = idx + 1
-        }
+        } (idx < 64 && carry != 0)
     }
 
     ; 規約 mod m（處理 512-bit → 256-bit）
@@ -173,7 +173,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
     ; 從高位開始，每次減去 m << (bit_pos)
     bit = 511
-    for bit >= 256 {
+    {
         ; 檢查 work 的第 bit 位元
         byte-idx = bit / 8
         bit-idx = bit % 8
@@ -193,7 +193,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
 
         bit = bit - 1
-    }
+    } (bit >= 256)
 
     ; 更簡單的方法：將 64 位元組分為高低兩半
     ; result = low + high * 2^256 mod m
@@ -203,7 +203,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 從最高位元組開始減
     ; 每次嘗試減去 m * 2^(shift)
     shift-byte = 32
-    for shift-byte > 0 {
+    {
         shift-byte = shift-byte - 1
 
         ; 嘗試減去 m << (shift_byte * 8)
@@ -257,7 +257,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             ; 如果還能減，再減一次
             shift-byte = shift-byte + 1
         }
-    }
+    } (shift-byte > 0)
 
     i <- [0..32): {
         out[i] = work[i]
@@ -629,7 +629,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 
     ; 從高位到低位進行 double-and-add
     bit = 255
-    for bit >= 0 {
+    {
         ; R = 2*R
         tmp []byte
         tmp = ec-point-double(r)
@@ -648,7 +648,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         }
 
         bit = bit - 1
-    }
+    } (bit >= 0)
 }
 
 ; ec-point-to-bytes: 將 Jacobian 座標轉為未壓縮編碼

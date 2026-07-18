@@ -128,11 +128,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     val-ok = false
 
     ; 跳過空白
-    for p < sn {
+    {
         c = s[p] & 255
         c != 32 && c != 9 && c != 10 && c != 13 -> break
         p = p + 1
-    }
+    } (p < sn)
     p >= sn -> return
     c = s[p] & 255
 
@@ -201,7 +201,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         }
 
         ; parse elements
-        !! {
+        {
             p = .skip-ws(s, p)
             p >= sn -> return
             child-idx, child-next, child-ok = .parse(s, p)
@@ -223,7 +223,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2 == 44 -> p = p + 1
                 -> return
             }
-        }
+        } ()
     }
 
     ; object
@@ -242,9 +242,10 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         }
 
         ; parse key-value pairs
-        !! {
+        {
             p = .skip-ws(s, p)
             p >= sn -> return
+
             ; key must be string
             s[p] & 255 != 34 -> return
             key-idx, key-next, key-ok = .parse(s, p)
@@ -252,14 +253,17 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             p = key-next
             p = .skip-ws(s, p)
             p >= sn -> return
+
             ; expect ':'
             s[p] & 255 != 58 -> return
             p = p + 1
             val-idx, val-next, val-ok = .parse(s, p)
             val-ok == false -> return
+
             ; add to object
             cnt = .nodes[node-idx].count
             cnt >= JSON-MAX-CHILDREN -> return
+
             ; copy key string to keys[cnt]
             key-len = .nodes[key-idx].str-val.len
             .nodes[node-idx].keys[cnt].len = key-len
@@ -281,7 +285,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2 == 44 -> p = p + 1
                 -> return
             }
-        }
+        } ()
     }
 }
 
@@ -299,7 +303,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     i = pos + 1
     j = 0
     c = 0
-    for i < s.len {
+    {
         c = s[i] & 255
         c == 34 -> {
             .nodes[node-idx].str-val.len = j
@@ -324,7 +328,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         .nodes[node-idx].str-val[j] = c
         j = j + 1
         i = i + 1
-    }
+    } (i < s.len)
 }
 
 ; parse-num: 解析 JSON 數字
@@ -342,12 +346,12 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     }
 
     ; 整數部分
-    for i < s.len {
+    {
         c = s[i] & 255
         c < 48 || c > 57 -> break
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
         i = i + 1
-    }
+    } (i < s.len)
 
     ; 小數部分
     i < s.len -> {
@@ -355,13 +359,13 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         c == 46 -> {
             i = i + 1
             frac = 0.1
-            for i < s.len {
+            {
                 c = s[i] & 255
                 c < 48 || c > 57 -> break
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val + frac * (c - 48)
                 frac = frac * 0.1
                 i = i + 1
-            }
+            } (i < s.len)
         }
     }
 

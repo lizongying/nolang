@@ -387,8 +387,7 @@ func TestDeprecationWarnings(t *testing.T) {
 		wantWarnings int
 	}{
 		// Old syntax — should warn
-		// 'for cond { }' is now a valid form (for loops where range-for doesn't apply)
-		{name: "for_condition_no_warning", input: "for i < 5 {\n    break\n}", wantWarnings: 0},
+		{name: "for_condition_deprecated", input: "for i < 5 {\n    break\n}", wantWarnings: 1},
 		{name: "for_in_deprecated", input: "for i in [0..10) {\n    break\n}", wantWarnings: 1},
 		{name: "switch_deprecated", input: "switch x {\n    case 1: a = 1\n    default: c = 0\n}", wantWarnings: 1},
 		{name: "while_no_colon_deprecated", input: "while i < 5 {\n    break\n}", wantWarnings: 1},
@@ -399,7 +398,7 @@ func TestDeprecationWarnings(t *testing.T) {
 		// New syntax — no warnings
 		{name: "while_with_colon_no_warning", input: "while i < 5: {\n    break\n}", wantWarnings: 0},
 		{name: "bare_range_with_colon_no_warning", input: "i <- [0..10): {\n    break\n}", wantWarnings: 0},
-		{name: "for_infinite_no_warning", input: "for {\n    break\n}", wantWarnings: 0},
+		{name: "for_infinite_deprecated", input: "for {\n    break\n}", wantWarnings: 1},
 		{name: "for_cstyle_no_warning", input: "for i = 0, i < 5, i++ {\n}", wantWarnings: 0},
 		{name: "new_match_no_warning", input: "x: {\n    1-> 10\n    -> 0\n}", wantWarnings: 0},
 	}

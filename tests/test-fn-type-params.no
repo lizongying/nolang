@@ -9,7 +9,7 @@
 
 ; 具名函式型別定義
 greet-cb = ()
-compute-cb = (n i64)(r i64)
+compute-cb = (n i64) (r i64)
 
 greet = () {
     print('hi')

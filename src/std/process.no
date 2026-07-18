@@ -287,14 +287,14 @@ process.read-all = () (content str, n i64) {
     n = 0
     .stdout-fd < 0 -> return
     buf str = ' '.repeat(4096)
-    !! {
+    {
         chunk-n = read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
         i <- [0..chunk-n): {
             content[n + i] = buf[i]
         }
         n = n + chunk-n
-    }
+    } ()
 }
 
 ; write: 寫入資料到子進程的 stdin

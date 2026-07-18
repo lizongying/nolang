@@ -218,10 +218,10 @@ path.clean = () {
                         ; 回退 '..'
                         ; 找 .p 中前一個 '/'
                         j = out-n - 1
-                        for j >= 0 {
+                        {
                             .p[j] == SEP -> break
                             j = j - 1
-                        }
+                        } (j >= 0)
                         {
                             j < 0 -> out-n = 0
                             -> out-n = j
@@ -260,10 +260,10 @@ path.clean = () {
         dot-count == 1 ->
         dot-count == 2 -> {
             j = out-n - 1
-            for j >= 0 {
+            {
                 .p[j] == SEP -> break
                 j = j - 1
-            }
+            } (j >= 0)
             {
                 j < 0 -> out-n = 0
                 -> out-n = j

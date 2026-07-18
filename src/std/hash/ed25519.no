@@ -188,7 +188,7 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 
     ; 從高位到低位進行 double-and-add
     t = 254
-    for t >= 0 {
+    {
         ; R = 2*R
         tmp []i64
         ge-double(tmp, r)
@@ -211,7 +211,7 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         }
 
         t = t - 1
-    }
+    } (t >= 0)
 }
 
 ; ═══════════════════════════════════════════════
@@ -493,7 +493,7 @@ sc-reduce = (s []byte) (out [32]byte) {
             ; 比較低 32 位元組與 L
             ge = 1
             i = 31
-            for i >= 0 {
+            {
                 {
                     work[i] > ED-L[i] -> break
                     work[i] < ED-L[i] -> {
@@ -502,7 +502,7 @@ sc-reduce = (s []byte) (out [32]byte) {
                     }
                 }
                 i = i - 1
-            }
+            } (i >= 0)
 
             ge == 0 -> break
         }
@@ -561,12 +561,12 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         }
         ; 傳播進位
         idx = i + 32
-        for idx < 64 && carry != 0 {
+        {
             val = (product[idx] & 255) + carry
             product[idx] = val & 255
             carry = val >> 8
             idx = idx + 1
-        }
+        } (idx < 64 && carry != 0)
     }
 
     ; 加上 c
@@ -712,7 +712,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; 檢查 S < L
     i = 31
-    for i >= 0 {
+    {
         {
             s[i] > ED-L[i] -> {
                 ok = 0
@@ -721,7 +721,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
             s[i] < ED-L[i] -> break
         }
         i = i - 1
-    }
+    } (i >= 0)
 
     ; 解壓縮 A（公鑰）
     a-ok = 0

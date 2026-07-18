@@ -1,6 +1,23 @@
 ; test-vec-assign2 — 只有 []u32 賦值
 print('start')
-block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+block []u32 = [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+]
 print('block init done')
 print(block[0])
 

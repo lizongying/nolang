@@ -2,7 +2,7 @@
 test1 = () {
     m ?i64 = nil
     m = -128
-        {
+    {
         m == -128 -> print('var == -128 ok')
         -> print('var == -128 bad')
     }

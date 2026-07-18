@@ -12,10 +12,10 @@ const (
 	IDENT
 	INT
 	FLOAT
-	BYTE   // x00 ~ xFF
+	BYTE // x00 ~ xFF
 	STRING
-	CHAR   // "x" — double-quoted single Unicode character (rune)
-	REGEX  // /pattern/flags — regex literal (JS-style, context-sensitive)
+	CHAR  // "x" — double-quoted single Unicode character (rune)
+	REGEX // /pattern/flags — regex literal (JS-style, context-sensitive)
 	TRUE
 	FALSE
 	NIL
@@ -215,32 +215,33 @@ var tokenNames = map[TokenType]string{
 }
 
 var keywords = map[string]TokenType{
-	"if":   IF,
-	"elif": ELIF,
-	"else": ELSE,
+	"if":      IF,
+	"elif":    ELIF,
+	"else":    ELSE,
+	"switch":  SWITCH,
+	"case":    CASE,
+	"default": DEFAULT,
+	"match":   MATCH,
+	"for":     FOR,
+	"while":   FOR,
+	"in":      IN,
 
 	"return":   RETURN,
-	"for":      FOR,
-	"while":    FOR,
-	"in":       IN,
 	"break":    BREAK,
 	"continue": CONTINUE,
 
 	"true":  TRUE,
 	"false": FALSE,
 	"nil":   NIL,
-	"as":    AS,
-	"ptr":   PTR,
 
-	"chan":    CHAN,
-	"use":     USE,
-	"switch":  SWITCH,
-	"case":    CASE,
-	"default": DEFAULT,
-	"match":   MATCH,
-	"map":     MAP,
-	"run":     RUN,
-	"awy":     AWY,
+	"as":   AS,
+	"ptr":  PTR,
+	"chan": CHAN,
+	"use":  USE,
+
+	"map":   MAP,
+	"run":   RUN,
+	"awy":   AWY,
 }
 
 // Position represents a source position (line:col, 1-based).

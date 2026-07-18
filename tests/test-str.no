@@ -9,11 +9,11 @@
 test-str-len = () {
     s = 'hello'
     n = s.len
-    print(n)  ; expect: 5
+    print(n); expect: 5
 
     empty = ''
     m = empty.len
-    print(m)  ; expect: 0
+    print(m); expect: 0
 }
 
 test-str-len()
@@ -25,11 +25,11 @@ print(0)
 test-str-at = () {
     s = 'abc'
     c0 = s[0]
-    print(c0)  ; expect: 97 (a)
+    print(c0); expect: 97 (a)
     c1 = s[1]
-    print(c1)  ; expect: 98 (b)
+    print(c1); expect: 98 (b)
     c2 = s[2]
-    print(c2)  ; expect: 99 (c)
+    print(c2); expect: 99 (c)
 }
 test-str-at()
 print(1)
@@ -41,18 +41,18 @@ test-str-eq = () {
     a = 'hello'
     b = 'hello'
     eq1 = a.eq(b, 5)
-    print(eq1)  ; expect: 1
+    print(eq1); expect: 1
 
     c = 'world'
     eq2 = a.eq(c, 5)
-    print(eq2)  ; expect: 0
+    print(eq2); expect: 0
 
     eq3 = a.eq(b, 3)
-    print(eq3)  ; expect: 1
+    print(eq3); expect: 1
 
     d = 'hell'
     eq4 = a.eq(d, 5)
-    print(eq4)  ; expect: 0
+    print(eq4); expect: 0
 }
 
 test-str-eq()
@@ -68,9 +68,9 @@ test-str-copy = () {
     c0 = dst[0] & 255
     c1 = dst[1] & 255
     c2 = dst[2] & 255
-    print(c0)  ; expect: 97 (a)
-    print(c1)  ; expect: 98 (b)
-    print(c2)  ; expect: 99 (c)
+    print(c0); expect: 97 (a)
+    print(c1); expect: 98 (b)
+    print(c2); expect: 99 (c)
 }
 test-str-copy()
 print(3)
@@ -83,8 +83,8 @@ test-str-fill = () {
     s.fill(120)
     c0 = s[0] & 255
     c3 = s[3] & 255
-    print(c0)  ; expect: 120 (x)
-    print(c3)  ; expect: 120 (x, filled)
+    print(c0); expect: 120 (x)
+    print(c3); expect: 120 (x, filled)
 }
 test-str-fill()
 print(4)
@@ -95,16 +95,16 @@ print(4)
 test-str-index = () {
     s = 'hello world'
     pos1 = s.index('world')
-    print(pos1)  ; expect: 6
+    print(pos1); expect: 6
 
     pos2 = s.index('xyz')
-    print(pos2)  ; expect: -1
+    print(pos2); expect: -1
 
     pos3 = s.index('hello')
-    print(pos3)  ; expect: 0
+    print(pos3); expect: 0
 
     pos4 = s.index('')
-    print(pos4)  ; expect: 0
+    print(pos4); expect: 0
 }
 
 test-str-index()
@@ -116,13 +116,13 @@ print(5)
 test-str-contains = () {
     s = 'hello world'
     c1 = s.contains('world')
-    print(c1)  ; expect: 1
+    print(c1); expect: 1
 
     c2 = s.contains('xyz')
-    print(c2)  ; expect: 0
+    print(c2); expect: 0
 
     c3 = s.contains('lo wo')
-    print(c3)  ; expect: 1
+    print(c3); expect: 1
 }
 
 test-str-contains()
@@ -134,19 +134,19 @@ print(6)
 test-str-starts-with = () {
     s = 'hello world'
     sw1 = s.starts-with('hello')
-    print(sw1)  ; expect: 1
+    print(sw1); expect: 1
 
     sw2 = s.starts-with('world')
-    print(sw2)  ; expect: 0
+    print(sw2); expect: 0
 
     sw3 = s.starts-with('hell')
-    print(sw3)  ; expect: 1
+    print(sw3); expect: 1
 
     sw4 = s.starts-with('hello world')
-    print(sw4)  ; expect: 1
+    print(sw4); expect: 1
 
     sw5 = s.starts-with('hello world!')
-    print(sw5)  ; expect: 0
+    print(sw5); expect: 0
 }
 
 test-str-starts-with()
@@ -158,19 +158,19 @@ print(7)
 test-str-ends-with = () {
     s = 'hello world'
     ew1 = s.ends-with('world')
-    print(ew1)  ; expect: 1
+    print(ew1); expect: 1
 
     ew2 = s.ends-with('hello')
-    print(ew2)  ; expect: 0
+    print(ew2); expect: 0
 
     ew3 = s.ends-with('orld')
-    print(ew3)  ; expect: 1
+    print(ew3); expect: 1
 
     ew4 = s.ends-with('hello world')
-    print(ew4)  ; expect: 1
+    print(ew4); expect: 1
 
     ew5 = s.ends-with('!hello world')
-    print(ew5)  ; expect: 0
+    print(ew5); expect: 0
 }
 
 test-str-ends-with()
@@ -182,19 +182,19 @@ print(8)
 test-str-trim = () {
     s1 = '  hello  '
     t1 = s1.trim()
-    print(t1.len)  ; expect: 5
+    print(t1.len); expect: 5
 
     s2 = 'hello'
     t2 = s2.trim()
-    print(t2.len)  ; expect: 5
+    print(t2.len); expect: 5
 
     s3 = '   '
     t3 = s3.trim()
-    print(t3.len)  ; expect: 0
+    print(t3.len); expect: 0
 
     s4 = '\thello\n'
     t4 = s4.trim()
-    print(t4.len)  ; expect: 5
+    print(t4.len); expect: 5
 }
 
 test-str-trim()
@@ -208,21 +208,21 @@ test-str-case = () {
     u1 = s1.to-upper()
     c0 = u1[0]
     c4 = u1[4]
-    print(c0)  ; expect: 72 (H)
-    print(c4)  ; expect: 79 (O)
+    print(c0); expect: 72 (H)
+    print(c4); expect: 79 (O)
 
     s2 = 'WORLD'
     l1 = s2.to-lower()
     c5 = l1[0]
     c9 = l1[4]
-    print(c5)  ; expect: 119 (w)
-    print(c9)  ; expect: 100 (d)
+    print(c5); expect: 119 (w)
+    print(c9); expect: 100 (d)
 
     s3 = 'Hello123'
     u2 = s3.to-upper()
-    print(u2.len)  ; expect: 8
+    print(u2.len); expect: 8
     c10 = u2[5]
-    print(c10)  ; expect: 49 (1, unchanged)
+    print(c10); expect: 49 (1, unchanged)
 }
 
 test-str-case()
@@ -234,7 +234,7 @@ print(10)
 test-str-repeat = () {
     s = 'ab'
     r1 = s.repeat(3)
-    print(r1.len)  ; expect: 6
+    print(r1.len); expect: 6
 
     c0 = r1[0]
     c1 = r1[1]
@@ -242,12 +242,12 @@ test-str-repeat = () {
     c3 = r1[3]
     c4 = r1[4]
     c5 = r1[5]
-    print(c0)  ; expect: 97 (a)
-    print(c1)  ; expect: 98 (b)
-    print(c2)  ; expect: 97 (a)
-    print(c3)  ; expect: 98 (b)
-    print(c4)  ; expect: 97 (a)
-    print(c5)  ; expect: 98 (b)
+    print(c0); expect: 97 (a)
+    print(c1); expect: 98 (b)
+    print(c2); expect: 97 (a)
+    print(c3); expect: 98 (b)
+    print(c4); expect: 97 (a)
+    print(c5); expect: 98 (b)
 }
 
 test-str-repeat()
@@ -259,17 +259,17 @@ print(11)
 test-str-slice = () {
     s = 'hello world'
     sl1 = s.slice(0, 5)
-    print(sl1.len)  ; expect: 5
+    print(sl1.len); expect: 5
     sl2 = s.slice(6, 11)
-    print(sl2.len)  ; expect: 5
+    print(sl2.len); expect: 5
     sl3 = s.slice(3, 8)
-    print(sl3.len)  ; expect: 5
+    print(sl3.len); expect: 5
     sl4 = s.slice(0, 11)
-    print(sl4.len)  ; expect: 11
+    print(sl4.len); expect: 11
     sl5 = s.slice(5, 5)
-    print(sl5.len)  ; expect: 0
+    print(sl5.len); expect: 0
     sl6 = s.slice(10, 11)
-    print(sl6.len)  ; expect: 1
+    print(sl6.len); expect: 1
 }
 
 test-str-slice()
@@ -281,19 +281,19 @@ print(12)
 test-str-to-i64 = () {
     s1 = '123'
     v1 = s1.to-i64()
-    print(v1)  ; expect: 123
+    print(v1); expect: 123
 
     s2 = '0'
     v2 = s2.to-i64()
-    print(v2)  ; expect: 0
+    print(v2); expect: 0
 
     s3 = '-42'
     v3 = s3.to-i64()
-    print(v3)  ; expect: -42
+    print(v3); expect: -42
 
     s4 = '999'
     v4 = s4.to-i64()
-    print(v4)  ; expect: 999
+    print(v4); expect: 999
 }
 
 test-str-to-i64()
@@ -304,13 +304,13 @@ print(13)
 ; ═══════════════════════════════════════════════
 test-i64-to-str = () {
     s1 = (123).to-str()
-    print(s1.len)  ; expect: 3
+    print(s1.len); expect: 3
     s2 = (0).to-str()
-    print(s2.len)  ; expect: 1
+    print(s2.len); expect: 1
     s3 = (-42).to-str()
-    print(s3.len)  ; expect: 3
+    print(s3.len); expect: 3
     s4 = (9999).to-str()
-    print(s4.len)  ; expect: 4
+    print(s4.len); expect: 4
 }
 
 test-i64-to-str()
@@ -322,14 +322,14 @@ print(14)
 test-str-bytes = () {
     s = 'abc'
     out = s.to-bytes()
-    print(out.len)  ; expect: 3
+    print(out.len); expect: 3
 
     b0 = out[0]
     b1 = out[1]
     b2 = out[2]
-    print(b0)  ; expect: 97 (a)
-    print(b1)  ; expect: 98 (b)
-    print(b2)  ; expect: 99 (c)
+    print(b0); expect: 97 (a)
+    print(b1); expect: 98 (b)
+    print(b2); expect: 99 (c)
 }
 
 test-str-bytes()
@@ -341,26 +341,26 @@ print(15)
 test-str-reverse = () {
     s1 = 'abc'
     r1 = s1.reverse()
-    print(r1.len)  ; expect: 3
+    print(r1.len); expect: 3
     c0 = r1[0]
     c1 = r1[1]
     c2 = r1[2]
-    print(c0)  ; expect: 99 (c)
-    print(c1)  ; expect: 98 (b)
-    print(c2)  ; expect: 97 (a)
+    print(c0); expect: 99 (c)
+    print(c1); expect: 98 (b)
+    print(c2); expect: 97 (a)
 
     s2 = 'a'
     r2 = s2.reverse()
-    print(r2.len)  ; expect: 1
+    print(r2.len); expect: 1
     c3 = r2[0]
-    print(c3)  ; expect: 97 (a)
+    print(c3); expect: 97 (a)
 
     s3 = 'abcd'
     r3 = s3.reverse()
     c4 = r3[0]
     c5 = r3[3]
-    print(c4)  ; expect: 100 (d)
-    print(c5)  ; expect: 97 (a)
+    print(c4); expect: 100 (d)
+    print(c5); expect: 97 (a)
 }
 
 test-str-reverse()
@@ -371,22 +371,22 @@ print(16)
 ; ═══════════════════════════════════════════════
 test-str-compare = () {
     r1 = 'abc'.compare('abc')
-    print(r1)  ; expect: 0
+    print(r1); expect: 0
 
     r2 = 'abc'.compare('abd')
-    print(r2)  ; expect: -1
+    print(r2); expect: -1
 
     r3 = 'abd'.compare('abc')
-    print(r3)  ; expect: 1
+    print(r3); expect: 1
 
     r4 = 'ab'.compare('abc')
-    print(r4)  ; expect: -1
+    print(r4); expect: -1
 
     r5 = 'abc'.compare('ab')
-    print(r5)  ; expect: 1
+    print(r5); expect: 1
 
     r6 = 'a'.compare('b')
-    print(r6)  ; expect: -1
+    print(r6); expect: -1
 }
 
 test-str-compare()
@@ -398,15 +398,15 @@ print(17)
 test-str-count = () {
     s1 = 'hello'
     cnt1 = s1.count()
-    print(cnt1)  ; expect: 5
+    print(cnt1); expect: 5
 
     s2 = 'aaa'
     cnt2 = s2.count()
-    print(cnt2)  ; expect: 3
+    print(cnt2); expect: 3
 
     s3 = ''
     cnt3 = s3.count()
-    print(cnt3)  ; expect: 0
+    print(cnt3); expect: 0
 }
 
 test-str-count()
@@ -418,22 +418,22 @@ print(18)
 test-str-replace-char = () {
     s = 'hello'
     r1 = s.replace-char(101, 120)
-    print(r1.len)  ; expect: 5
+    print(r1.len); expect: 5
     c0 = r1[0]
     c1 = r1[1]
     c2 = r1[2]
     c3 = r1[3]
     c4 = r1[4]
-    print(c0)  ; expect: 104 (h)
-    print(c1)  ; expect: 120 (x, replaced)
-    print(c2)  ; expect: 108 (l)
-    print(c3)  ; expect: 108 (l)
-    print(c4)  ; expect: 111 (o)
+    print(c0); expect: 104 (h)
+    print(c1); expect: 120 (x, replaced)
+    print(c2); expect: 108 (l)
+    print(c3); expect: 108 (l)
+    print(c4); expect: 111 (o)
 
     ; 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
     s2 = 'aTa'
     r2 = s2.replace-char(0x61, 0x4E2D)
-    print(r2.len)  ; expect: 7 (3+1+3)
+    print(r2.len); expect: 7 (3+1+3)
 }
 
 test-str-replace-char()
@@ -445,24 +445,24 @@ print(19)
 test-str-trim-char = () {
     s1 = '///hello///'
     tc1 = s1.trim-char(47)
-    print(tc1.len)  ; expect: 5
+    print(tc1.len); expect: 5
 
     s2 = 'hello'
     tc2 = s2.trim-char(47)
-    print(tc2.len)  ; expect: 5
+    print(tc2.len); expect: 5
 
     s3 = '//////'
     tc3 = s3.trim-char(47)
-    print(tc3.len)  ; expect: 0
+    print(tc3.len); expect: 0
 
     s4 = '-hello-'
     tc4 = s4.trim-char(45)
-    print(tc4.len)  ; expect: 5
+    print(tc4.len); expect: 5
 
     ; 多字節 UTF-8：trim '中' (0x4E2D)
     s5 = '中hello中'
     tc5 = s5.trim-char(0x4E2D)
-    print(tc5.len)  ; expect: 5 (hello)
+    print(tc5.len); expect: 5 (hello)
 }
 
 test-str-trim-char()
@@ -474,15 +474,15 @@ print(20)
 test-str-empty = () {
     s1 = ''
     e1 = s1.empty()
-    print(e1)  ; expect: 1
+    print(e1); expect: 1
 
     s2 = 'a'
     e2 = s2.empty()
-    print(e2)  ; expect: 0
+    print(e2); expect: 0
 
     s3 = 'hello'
     e3 = s3.empty()
-    print(e3)  ; expect: 0
+    print(e3); expect: 0
 }
 
 test-str-empty()
@@ -494,25 +494,25 @@ print(21)
 test-integration = () {
     s = 'Hello' - ' ' - 'World'
     n = s.len
-    print(n)  ; expect: 11
+    print(n); expect: 11
 
     contains = s.contains('World')
-    print(contains)  ; expect: 1
+    print(contains); expect: 1
 
     starts = s.starts-with('Hello')
-    print(starts)  ; expect: 1
+    print(starts); expect: 1
 
     ends = s.ends-with('World')
-    print(ends)  ; expect: 1
+    print(ends); expect: 1
 
     idx = s.index('lo Wo')
-    print(idx)  ; expect: 3
+    print(idx); expect: 3
     upper = s.to-upper()
     c0 = upper[0]
-    print(c0)  ; expect: 72 (H)
+    print(c0); expect: 72 (H)
     lower = s.to-lower()
     c11 = lower[0]
-    print(c11)  ; expect: 104 (h)
+    print(c11); expect: 104 (h)
 }
 
 test-integration()

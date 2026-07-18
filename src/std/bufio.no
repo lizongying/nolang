@@ -48,13 +48,13 @@ reader.read-byte = () (b ?byte) {
 ; read-line: 讀取一行
 reader.read-line = (line str) (ok bool) {
     n = 0
-    !! {
+    {
         ok = .fill()
         ok == false -> {
             n > 0 -> ok = true
             return
         }
-        for .pos < .avail {
+        {
             c = .buf[.pos]
             .pos = .pos + 1
             c == 10 -> {
@@ -63,8 +63,8 @@ reader.read-line = (line str) (ok bool) {
             }
             line[n] = c
             n = n + 1
-        }
-    }
+        } (.pos < .avail)
+    } ()
 }
 
 ; close: 關閉

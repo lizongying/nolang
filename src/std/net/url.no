@@ -165,7 +165,7 @@ url-info.get-query = (key str) (val ?str) {
     .query.len == 0 -> return
     q = .query
     pos = 0
-    !! {
+    {
         pos >= q.len -> *
         ; 找下一個 &
         next-amp = q.index-from('&', pos)
@@ -191,7 +191,7 @@ url-info.get-query = (key str) (val ?str) {
         }
         next-amp < 0 -> *
         pos = next-amp + 1
-    }
+    } ()
 }
 
 ; url-info.set-query: 設定查詢參數值
@@ -208,7 +208,7 @@ url-info.set-query = (key str, value str) {
     q = .query
     new-query = ''
     pos = 0
-    !! {
+    {
         pos >= q.len -> *
         next-amp = q.index-from('&', pos)
         pair-end = next-amp
@@ -228,7 +228,7 @@ url-info.set-query = (key str, value str) {
         }
         next-amp < 0 -> *
         pos = next-amp + 1
-    }
+    } ()
     found == false -> {
         new-query.len > 0 -> new-query = new-query - '&' - key - '=' - value
         -> new-query = key - '=' - value
@@ -343,7 +343,7 @@ url-encode-component = (s str) (out str) {
 url-decode = (s str) (out str) {
     out = ''
     i = 0
-    for i < s.len {
+    {
         c = s[i] & 255
         {
             c == 37 -> {
@@ -375,7 +375,7 @@ url-decode = (s str) (out str) {
             -> out[out.len] = c
         }
         i = i + 1
-    }
+    } (i < s.len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -426,13 +426,13 @@ url-join = (base str, path-str str) (out str) {
     ; 相對路徑：找到最後一個 / 並替換
     slash-pos = -1
     i = base.len - 1
-    for i >= 0 {
+    {
         base[i] == 47 -> {
             slash-pos = i
             break
         }
         i = i - 1
-    }
+    } (i >= 0)
     {
         slash-pos >= 0 -> { ; 確保不是 protocol:// 中的 //
             slash-pos > 0 && base[slash-pos - 1] == 58 -> out = base - '/' - path-str

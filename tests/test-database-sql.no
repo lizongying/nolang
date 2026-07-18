@@ -3,12 +3,11 @@
 ; 測試 open/exec/query/scan/prepare/bind 完整流程。
 ; 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
 
-
 ; 測試 1: 開啟記憶體資料庫
 d db = fs.open(':memory:')
 d.handle == 0 -> {
     print('fail: open database')
-        return
+    return
 }
 print('ok: open database')
 
@@ -22,7 +21,7 @@ r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
     r.affected == 1 -> print('ok: insert')
     -> {
         print('fail: insert affected=')
-            print(r.affected)
+        print(r.affected)
     }
 }
 
@@ -30,44 +29,38 @@ r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
 rs rows = d.query('SELECT id, name, age FROM users')
 rs.stmt == 0 -> {
     print('fail: query')
-        d.close()
-        return
+    d.close()
+    return
 }
 
 count i64 = 0
-for rs.next() {
+{
     id i64 = rs.scan-int(0)
     name = rs.scan-str(1)
     age = rs.scan-float(2)
-        {
+    {
         id == 1 -> {
-                        {
-                name == 'Alice' -> {
-                                        {
-                        age > 30.0 -> {
-                                                        {
-                                age < 31.0 -> print('ok: query scan')
-                                -> print('fail: age too high')
-                            }
-                        }
-                        -> print('fail: age too low')
-                    }
+            name == 'Alice' -> {
+                age > 30.0 -> {
+                    age < 31.0 -> print('ok: query scan')
+                    -> print('fail: age too high')
                 }
-                -> print('fail: name mismatch')
+                -> print('fail: age too low')
             }
+            -> print('fail: name mismatch')
         }
         -> print('fail: id mismatch')
     }
     count = count + 1
-}
+} (rs.next())
 rs.close()
 
 ; 測試 5: 預編譯陳述式（插入）
 s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
 s.handle == 0 -> {
     print('fail: prepare insert')
-        d.close()
-        return
+    d.close()
+    return
 }
 s.bind-str(1, 'Bob')
 s.bind-int(2, 25)
@@ -82,24 +75,24 @@ s.close()
 s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
 s2.handle == 0 -> {
     print('fail: prepare select')
-        d.close()
-        return
+    d.close()
+    return
 }
 s2.bind-int(1, 2)
 rs2 rows = s2.query()
 rs2.stmt == 0 -> {
     print('fail: prepared query')
-        s2.close()
-        d.close()
-        return
+    s2.close()
+    d.close()
+    return
 }
-for rs2.next() {
+{
     name2 = rs2.scan-str(0)
-        {
+    {
         name2 == 'Bob' -> print('ok: prepared query scan')
         -> print('fail: prepared query name mismatch')
     }
-}
+} (rs2.next())
 rs2.close()
 s2.close()
 
@@ -107,17 +100,17 @@ s2.close()
 rs3 rows = d.query('SELECT id FROM users')
 rs3.stmt != 0 -> {
     total i64 = 0
-        for rs3.next() {
-            total = total + 1
+    {
+        total = total + 1
+    } (rs3.next())
+    {
+        total == 2 -> print('ok: total rows')
+        -> {
+            print('fail: total rows=')
+            print(total)
         }
-                {
-            total == 2 -> print('ok: total rows')
-            -> {
-                print('fail: total rows=')
-                            print(total)
-            }
-        }
-        rs3.close()
+    }
+    rs3.close()
 }
 
 d.close()

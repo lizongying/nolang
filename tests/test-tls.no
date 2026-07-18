@@ -6,13 +6,13 @@ test-tls-put-u16 = () {
     buf []byte
     tls.tls-put-u16(buf, 0, 0x1234)
     buf[0] != 0x12 -> {
-    print('FAIL: expected 0x12')
-            return
-}
+        print('FAIL: expected 0x12')
+        return
+    }
     buf[1] != 0x34 -> {
-    print('FAIL: expected 0x34')
-            return
-}
+        print('FAIL: expected 0x34')
+        return
+    }
     print('PASS: tls-put-u16')
 }
 
@@ -24,9 +24,9 @@ test-tls-get-u16 = () {
     val i64 = 0
     val = tls.tls-get-u16(buf, 0)
     val != 0xABCD -> {
-    print('FAIL: expected 0xABCD')
-            return
-}
+        print('FAIL: expected 0xABCD')
+        return
+    }
     print('PASS: tls-get-u16')
 }
 
@@ -35,17 +35,17 @@ test-tls-put-u24 = () {
     buf []byte
     tls.tls-put-u24(buf, 0, 0x123456)
     buf[0] != 0x12 -> {
-    print('FAIL: expected 0x12')
-            return
-}
+        print('FAIL: expected 0x12')
+        return
+    }
     buf[1] != 0x34 -> {
-    print('FAIL: expected 0x34')
-            return
-}
+        print('FAIL: expected 0x34')
+        return
+    }
     buf[2] != 0x56 -> {
-    print('FAIL: expected 0x56')
-            return
-}
+        print('FAIL: expected 0x56')
+        return
+    }
     print('PASS: tls-put-u24')
 }
 
@@ -58,9 +58,9 @@ test-tls-get-u24 = () {
     val i64 = 0
     val = tls.tls-get-u24(buf, 0)
     val != 0x123456 -> {
-    print('FAIL: expected 0x123456')
-            return
-}
+        print('FAIL: expected 0x123456')
+        return
+    }
     print('PASS: tls-get-u24')
 }
 
@@ -76,17 +76,17 @@ test-tls-bytes-cat = () {
     out []byte
     out = tls.tls-bytes-cat(a, b)
     out.len != 5 -> {
-    print('FAIL: expected out.len=5')
-            return
-}
+        print('FAIL: expected out.len=5')
+        return
+    }
     out[0] != 1 -> {
-    print('FAIL: expected out[0]=1')
-            return
-}
+        print('FAIL: expected out[0]=1')
+        return
+    }
     out[3] != 4 -> {
-    print('FAIL: expected out[3]=4')
-            return
-}
+        print('FAIL: expected out[3]=4')
+        return
+    }
     print('PASS: tls-bytes-cat')
 }
 
@@ -99,16 +99,18 @@ test-tls-bytes-to-bn = () {
     data[3] = 0x04
     out []i64
     out = tls.tls-bytes-to-bn(data)
+
     ; 4 bytes → 1 limb
     out.len != 1 -> {
-    print('FAIL: expected out.len=1')
-            return
-}
+        print('FAIL: expected out.len=1')
+        return
+    }
+
     ; little-endian base 2^32: 0x01020304
     out[0] != 0x01020304 -> {
-    print('FAIL: expected 0x01020304')
-            return
-}
+        print('FAIL: expected 0x01020304')
+        return
+    }
     print('PASS: tls-bytes-to-bn')
 }
 
@@ -118,19 +120,20 @@ test-tls-bn-to-bytes = () {
     num[0] = 0x01020304
     out []byte
     out = tls.tls-bn-to-bytes(num)
+
     ; 1 limb → 4 bytes, then strip leading zeros (0x01 is not zero)
     out.len != 4 -> {
-    print('FAIL: expected out.len=4')
-            return
-}
+        print('FAIL: expected out.len=4')
+        return
+    }
     out[0] != 0x01 -> {
-    print('FAIL: expected out[0]=0x01')
-            return
-}
+        print('FAIL: expected out[0]=0x01')
+        return
+    }
     out[3] != 0x04 -> {
-    print('FAIL: expected out[3]=0x04')
-            return
-}
+        print('FAIL: expected out[3]=0x04')
+        return
+    }
     print('PASS: tls-bn-to-bytes')
 }
 
@@ -139,12 +142,13 @@ test-tls-rand-bytes = () {
     state i64 = 12345
     out []byte
     out = tls.tls-rand-bytes(state, 16)
+
     ; 驗證長度（透過檢查不崩潰即可）
     i <- [0..16): {
         out[i] < 0 -> {
-    print('FAIL: negative byte')
-                return
-}
+            print('FAIL: negative byte')
+            return
+        }
     }
     print('PASS: tls-rand-bytes')
 }
@@ -162,15 +166,16 @@ test-tls-prf = () {
     seed[2] = 0xCC
     out []byte
     out = tls.tls-prf(secret, 'test label', seed, 32)
+
     ; PRF 輸出應為 32 bytes，驗證不為全零
     has-nonzero = 0
     i <- [0..32): {
         out[i] != 0 -> has-nonzero = 1
     }
     has-nonzero == 0 -> {
-    print('FAIL: PRF output all zeros')
-            return
-}
+        print('FAIL: PRF output all zeros')
+        return
+    }
     print('PASS: tls-prf')
 }
 
@@ -179,21 +184,21 @@ test-tls-conn-init = () {
     c tls-conn
     c.init()
     c.connected != false -> {
-    print('FAIL: expected connected=false')
-            return
-}
+        print('FAIL: expected connected=false')
+        return
+    }
     c.encrypted != false -> {
-    print('FAIL: expected encrypted=false')
-            return
-}
+        print('FAIL: expected encrypted=false')
+        return
+    }
     c.fd != -1 -> {
-    print('FAIL: expected fd=-1')
-            return
-}
+        print('FAIL: expected fd=-1')
+        return
+    }
     c.write-seq != 0 -> {
-    print('FAIL: expected write-seq=0')
-            return
-}
+        print('FAIL: expected write-seq=0')
+        return
+    }
     print('PASS: tls-conn-init')
 }
 
@@ -204,9 +209,9 @@ test-https-url-detection = () {
     ; 不實際呼叫，僅驗證型別檢查通過
     resp = http.http-do('GET', 'https://example.com/', '')
     resp != nil -> {
-    print('FAIL: expected nil')
-            return
-}
+        print('FAIL: expected nil')
+        return
+    }
     print('PASS: https-url-detection')
 }
 

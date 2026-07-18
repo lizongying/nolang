@@ -124,8 +124,8 @@ func TestOSCLibCallMethods(t *testing.T) {
 		{"remove", "unlink"},
 		{"rename", "rename"},
 		{"get-pid", "getpid"},
-		{"now", "time"},
-		{"sleep", "sleep"},
+		{"now", "nolang.now_s"}, // @time replaced by internal @nolang.now_s (gettimeofday)
+		{"sleep", "nolang.sleep_s"}, // @sleep replaced by internal @nolang.sleep_s (nanosleep)
 		{"open-read", "open"},
 		{"open-write", "open"},
 		{"close", "close"},

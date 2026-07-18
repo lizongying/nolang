@@ -62,13 +62,13 @@ sha224 = (data []byte) (hash [28]byte) {
         block[i] = 0
     }
     offset = 0
-    for offset < total-len {
+    {
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
         sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
         offset = offset + 64
-    }
+    } (offset < total-len)
 
     ; 輸出 28 位元組雜湊值（big-endian，截斷 h0..h6 的前 28 位元組）
     hash[0] = (h0 >> 24) & 255

@@ -23,7 +23,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     }
 
     blk = 0
-    for blk < in.len {
+    {
         xored [16]byte
         i <- [0..16): {
             xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
@@ -37,7 +37,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             prev[i] = enc-block[i]
         }
         blk = blk + 16
-    }
+    } (blk < in.len)
 }
 
 ; aes-256-cbc-dec: AES-256-CBC 解密
@@ -52,7 +52,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     }
 
     blk = 0
-    for blk < in.len {
+    {
         cipher-block [16]byte
         i <- [0..16): {
             cipher-block[i] = in[blk + i]
@@ -66,5 +66,5 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             prev[i] = cipher-block[i]
         }
         blk = blk + 16
-    }
+    } (blk < in.len)
 }

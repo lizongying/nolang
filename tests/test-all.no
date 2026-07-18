@@ -1,13 +1,13 @@
 ; Nolang 综合测试
 
 ; 变量声明（隐式类型推断）
-x = 1  ; int64
-y = 1.0  ; float64
-name = 'hello'  ; string
-flag = true  ; bool
+x = 1; int64
+y = 1.0; float64
+name = 'hello'; string
+flag = true; bool
 
 ; 显式类型标注
-a i8 = 2  ; int8 类型
+a i8 = 2; int8 类型
 
 ; 中连接符变量名
 foo-bar = 42

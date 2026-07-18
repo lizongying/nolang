@@ -175,7 +175,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     hdr-buf = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     hdr-total = 0
     recv-n = 0
-    !! {
+    {
         hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
         {
             .use-tls -> {
@@ -194,7 +194,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
             hdr-buf[hdr-total + i] = hdr-buf[i]
         }
         hdr-total = hdr-total + recv-n
-    }
+    } ()
 
     ; 解析標頭
     np = f.parse(hdr-buf, 0)
@@ -208,7 +208,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
         f.length > HTTP2-MAX-PAYLOAD -> return
         f.payload = space.repeat(f.length)
         payload-total = 0
-        !! {
+        {
             payload-total >= f.length -> *
             {
                 .use-tls -> {
@@ -226,7 +226,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
                 f.payload[payload-total + i] = f.payload[i]
             }
             payload-total = payload-total + recv-n
-        }
+        } ()
     }
     frame = f
 }
@@ -472,7 +472,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     }
 
     ; 接收回應影格
-    !! {
+    {
         f http2-frame
         recv-f = .recv-frame()
         recv-f: {
@@ -531,7 +531,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
             -> return
         }
         ; 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
-    }
+    } ()
 }
 
 ; http2-do: HTTP/2 h2c 便捷函數

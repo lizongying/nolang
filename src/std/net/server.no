@@ -183,7 +183,7 @@ http-server-conn.parse = () (ok bool) {
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
-    !! {
+    {
         ; 檢查緩衝區中是否已有分隔符
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
@@ -193,7 +193,7 @@ http-server-conn.parse = () (ok bool) {
         ; 接收更多資料
         n = .recv-more()
         n <= 0 -> return
-    }
+    } ()
 
     ; 解析請求行和標頭
     head = .recv-buf.slice(0, sep-pos)
@@ -243,7 +243,7 @@ http-server-conn.parse = () (ok bool) {
     hn = hs.len
     hn > 0 -> {
         pos = 0
-        !! {
+        {
             pos >= hn -> *
             next-crlf = hs.index-from(crlf, pos)
             line-end = next-crlf
@@ -268,7 +268,7 @@ http-server-conn.parse = () (ok bool) {
             }
             next-crlf < 0 -> *
             pos = next-crlf + 2
-        }
+        } ()
     }
 
     ; 判斷 Keep-Alive
@@ -298,11 +298,11 @@ http-server-conn.parse = () (ok bool) {
                 available = .recv-buf-len - body-start
 
                 ; 如果不足，繼續接收
-                for available < content-len {
+                {
                     n = .recv-more()
                     n <= 0 -> return
                     available = .recv-buf-len - body-start
-                }
+                } (available < content-len)
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
@@ -589,11 +589,11 @@ http-server-conn.get-cookie = (name str) (val ?str) {
             ; 解析 Cookie 標頭
             hdr = it
             pos = 0
-            !! {
+            {
                 ; 跳過空格
-                for pos < hdr.len && hdr[pos] == 32 {
+                {
                     pos = pos + 1
-                }
+                } (pos < hdr.len && hdr[pos] == 32)
                 pos >= hdr.len -> *
                 ; 找下一個分號
                 next-semi = hdr.index-from(';', pos)
@@ -612,7 +612,7 @@ http-server-conn.get-cookie = (name str) (val ?str) {
                 }
                 next-semi < 0 -> *
                 pos = next-semi + 1
-            }
+            } ()
         }
     }
 }

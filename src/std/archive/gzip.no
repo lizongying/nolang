@@ -118,7 +118,7 @@ huffman.decode = (br bit-reader) (sym i64) {
     first = 0
     index = 0
     len = 1
-    for len <= 15 {
+    {
         bit = br.read-bit()
         code = code | bit
         cnt = .count[len]
@@ -131,7 +131,7 @@ huffman.decode = (br bit-reader) (sym i64) {
         first = first << 1
         code = code << 1
         len = len + 1
-    }
+    } (len <= 15)
     sym = -1
 }
 
@@ -215,7 +215,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     }
 
     idx = 0
-    for idx < total {
+    {
         sym = clcodec.decode(br)
         sym < 16 -> {
             lengths[idx] = sym
@@ -246,7 +246,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 idx = idx + 1
             }
         }
-    }
+    } (idx < total)
 
     ; 建構字面/長度 Huffman 表
     lc.build(lengths, hlit)
@@ -413,7 +413,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
     ]
 
     final = 0
-    for final == 0 {
+    {
         final = br.read-bit()
         btype = br.read-bits(2)
 
@@ -421,7 +421,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
         btype == 0 -> {
             br.skip-to-byte()
             blen = br.read-u16-le()
-            br.read-u16-le()  ; 跳過 NLEN
+            br.read-u16-le(); 跳過 NLEN
             i <- [0..blen): {
                 result.push(data[br.pos] & 255)
                 br.pos = br.pos + 1
@@ -435,7 +435,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
             build-fixed(lc, dc)
 
             done = 0
-            for done == 0 {
+            {
                 sym = lc.decode(br)
                 sym == 256 -> done = 1
                 sym < 256 -> result.push(sym)
@@ -456,7 +456,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         result.push(result[src + i] & 255)
                     }
                 }
-            }
+            } (done == 0)
         }
 
         ; Dynamic Huffman (method 2)
@@ -466,7 +466,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
             build-dynamic(br, lc, dc)
 
             done = 0
-            for done == 0 {
+            {
                 sym = lc.decode(br)
                 sym == 256 -> done = 1
                 sym < 256 -> result.push(sym)
@@ -487,9 +487,9 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         result.push(result[src + i] & 255)
                     }
                 }
-            }
+            } (done == 0)
         }
-    }
+    } (final == 0)
 
     out = result
 }
@@ -504,7 +504,7 @@ deflate-stored = (data []byte) (out []byte) {
     pos = 0
     n = data.len
 
-    for pos < n {
+    {
         ; 區塊大小（最大 65535）
         blen = n - pos
         blen > 65535 -> blen = 65535
@@ -532,7 +532,7 @@ deflate-stored = (data []byte) (out []byte) {
         }
 
         pos = pos + blen
-    }
+    } (pos < n)
 
     out = result
 }
@@ -546,16 +546,16 @@ gzip-compress = (data []byte) (out []byte) {
     result []byte
 
     ; GZIP 標頭 (10 bytes)
-    result.push(0x1f)  ; ID1
-    result.push(0x8b)  ; ID2
-    result.push(0x08)  ; CM = deflate
-    result.push(0x00)  ; FLG = 0
-    result.push(0x00)  ; MTIME
+    result.push(0x1f); ID1
+    result.push(0x8b); ID2
+    result.push(0x08); CM = deflate
+    result.push(0x00); FLG = 0
+    result.push(0x00); MTIME
     result.push(0x00)
     result.push(0x00)
     result.push(0x00)
-    result.push(0x00)  ; XFL
-    result.push(0xff)  ; OS = unknown
+    result.push(0x00); XFL
+    result.push(0xff); OS = unknown
 
     ; DEFLATE 資料（stored blocks）
     deflated = deflate-stored(data)
@@ -601,17 +601,17 @@ gzip-decompress = (data []byte) (out []byte) {
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
     flg & 8 != 0 -> {
-        for data[pos] & 255 != 0 {
+        {
             pos = pos + 1
-        }
+        } (data[pos] & 255 != 0)
         pos = pos + 1
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
     flg & 16 != 0 -> {
-        for data[pos] & 255 != 0 {
+        {
             pos = pos + 1
-        }
+        } (data[pos] & 255 != 0)
         pos = pos + 1
     }
 

@@ -150,14 +150,14 @@
     n = .len
     i = 0
     j = n - 1
-    for i < j {
+    {
         tmp = .[i]
         i
         .[j]
         .[j] = tmp
         i = i + 1
         j = j - 1
-    }
+    } (i < j)
 }
 
 ; []t.clone: 複製切片

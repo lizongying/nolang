@@ -168,7 +168,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     }
 
     n-idx = 1
-    for n-idx < n {
+    {
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
@@ -176,11 +176,11 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             v[n-idx * block-bytes + i] = mixed[i]
         }
         n-idx = n-idx + 1
-    }
+    } (n-idx < n)
 
     ; 第二階段：偽隨機存取
     n-idx = 0
-    for n-idx < n {
+    {
         ; j = Integerify(X) mod N
         ; Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數
         j = 0
@@ -199,7 +199,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         n-idx = n-idx + 1
-    }
+    } (n-idx < n)
 
     ; 輸出 X
     i <- [0..block-bytes): {

@@ -369,11 +369,11 @@ file.copy-to = (dst-path str) (ok bool) {
     fd-w = open-file(dst-path, 1537, 420)
     fd-w < 0 -> return
     buf [4096]byte
-    !! {
+    {
         n = read(.fd, buf, 4096)
         n <= 0 -> *
         write(fd-w, buf, n)
-    }
+    } ()
     close(fd-w)
     ok = true
 }
@@ -393,11 +393,11 @@ copy-file = (src str, dst str) (ok bool) {
         return
     }
     buf [4096]byte
-    for true {
+    {
         n = read(fd-r, buf, 4096)
         n <= 0 -> break
         write(fd-w, buf, n)
-    }
+    } (true)
     close(fd-r)
     close(fd-w)
     ok = true
@@ -422,7 +422,7 @@ list-dir = (dirpath str) (entries []str) {
         dirp == 0 -> return
     }
 
-    !! {
+    {
         name, ok = read-dir(dirp)
         {
             ok == false -> {
@@ -431,5 +431,5 @@ list-dir = (dirpath str) (entries []str) {
             }
         }
         entries.push(name)
-    }
+    } ()
 }

@@ -1429,37 +1429,58 @@ func isElifBlock(bs *parser.BlockStatement) bool {
 	return ok
 }
 
+// writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
+func (f *formatter) writeLoopBodyBlock(s *parser.ForStatement) {
+	f.write("{")
+	f.indent++
+	// 過濾掉 ; 分隔符產生的空表達式語句
+	statements := make([]parser.Statement, 0, len(s.Body.Statements))
+	for _, stmt := range s.Body.Statements {
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
+	for i, stmt := range statements {
+		if i > 0 {
+			prevTokenLine := stmtTokenLine(statements[i-1])
+			currTokenLine := stmtTokenLine(stmt)
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// 同一行：不輸出 ';'（保留給註釋），直接換行。
+				f.newline()
+			} else {
+				prevEndLine := stmtTokenEndLine(statements[i-1])
+				currStartLine := stmtFirstLine(stmt)
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
+					f.write("\n") // 空行（無縮進）
+				}
+				f.newline()
+			}
+		} else {
+			// 檢查 '{' 與首條語句之間是否有空行
+			openBraceLine := s.Body.Token.Line
+			firstDocStartLine := stmtFirstLine(stmt)
+			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+				f.write("\n") // 空行（無縮進）
+			}
+			f.newline()
+		}
+		f.formatStatement(stmt)
+	}
+	f.formatTrailingComments(s.Body.TrailingComments)
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
 func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.Label != "" {
 		f.write("#")
 		f.write(s.Label)
-		// !!: no space between #N and !! (e.g. #1!! { ... })
-		if s.Token.Type != lexer.BANG_BANG {
-			f.write(" ")
-		}
+		f.write(" ")
 	}
 
-	// ! { } 或 !! { } 無限循環（NOT 為舊式單驚嘆號，BANG_BANG 為新式雙驚嘆號）
-	if s.Token.Type == lexer.BANG_BANG || s.Token.Type == lexer.NOT {
-		if s.Token.Type == lexer.NOT {
-			f.write("!")
-		} else {
-			f.write("!!")
-		}
-		f.write(" {")
-		f.indent++
-		for _, stmt := range s.Body.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
-		f.indent--
-		f.newline()
-		f.write("}")
-		return
-	}
-
-	// Bare range-for: i <- [a..b]: { body } — when token type is IDENT and IterRange set
+	// Bare range-for: i <- [a..b]: { body } — when token type is not FOR and IterRange set
 	if s.Token.Type != lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
 		f.write(s.IterRange.Variable)
 		f.write(" <- ")
@@ -1497,8 +1518,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// Bare/labeled counted loop: { body } * N — Token is LBRACE (new syntax)
-	// or INT (legacy, normalized to new form). CountExpr is set.
+	// Counted loop: { body } * N（新式語法；Token 非 FOR）
 	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
 		f.write("{")
 		f.indent++
@@ -1514,82 +1534,9 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// 裸條件 for-loop：condition: { body }（不包含 for 關鍵字）
-	if s.Token.Type != lexer.FOR {
-		// Labeled-conditional wrapper: `#2 val: { ... }` is encoded by
-		// parseLabeledStatement as ForStatement{Condition: *IfExpression,
-		// Body: Consequence}. Unwrap the synthetic IfExpression so we render
-		// the original `cond: { body }` shape and the body, not a nested
-		// `if cond { ... }: { ... }`.
-		if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
-			if ifExpr.Condition != nil {
-				f.formatExpression(ifExpr.Condition)
-			}
-			f.write(": {")
-			f.indent++
-			for _, stmt := range s.Body.Statements {
-				f.newline()
-				f.formatStatement(stmt)
-			}
-			f.formatTrailingComments(s.Body.TrailingComments)
-			f.indent--
-			f.newline()
-			f.write("}")
-			return
-		}
-		if s.Condition != nil {
-			f.formatExpression(s.Condition)
-		}
-		f.write(": {")
-		f.indent++
-		statements := make([]parser.Statement, 0, len(s.Body.Statements))
-		for _, stmt := range s.Body.Statements {
-			if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
-				continue
-			}
-			statements = append(statements, stmt)
-		}
-		for i, stmt := range statements {
-			if i > 0 {
-				prevTokenLine := stmtTokenLine(statements[i-1])
-				currTokenLine := stmtTokenLine(stmt)
-				if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-					f.write("; ")
-				} else {
-					prevEndLine := stmtTokenEndLine(statements[i-1])
-					currStartLine := stmtFirstLine(stmt)
-					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
-						f.write("\n")
-					}
-					f.newline()
-				}
-			} else {
-				openBraceLine := s.Body.Token.Line
-				firstDocStartLine := stmtFirstLine(stmt)
-				if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
-					f.write("\n")
-				}
-				f.newline()
-			}
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
-		f.indent--
-		f.newline()
-		f.write("}")
-		return
-	}
-
-	f.write(s.Token.Literal)
-
-	// { } * N 次數循環（for 關鍵字 + CountExpr 的防禦性輸出，當前解析器不會產生）
-	if s.CountExpr != nil {
-		f.write(" ")
-		f.formatExpression(s.CountExpr)
-		f.write(" *")
-	} else if s.IterRange != nil && s.IterRange.Variable != "" {
-		// range for: for i <- [a..b]
-		f.write(" ")
+	// for 關鍵字形式的 range-for（已廢棄，向後相容輸出）：for i <- [a..b]: { body }
+	if s.Token.Type == lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
+		f.write("for ")
 		f.write(s.IterRange.Variable)
 		f.write(" <- ")
 		if s.IterRange.RangeStr != "" {
@@ -1603,65 +1550,60 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		} else {
 			f.formatRangeBrackets(s.IterRange.Range)
 		}
-	} else if s.Init != nil {
-		// C-style for: for init, cond, update { }
-		f.write(" ")
+		f.write(": {")
+		f.indent++
+		for _, stmt := range s.Body.Statements {
+			f.newline()
+			f.formatStatement(stmt)
+		}
+		f.formatTrailingComments(s.Body.TrailingComments)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
+	// C-style for（已廢棄，向後相容輸出）：for init, cond, update { body }
+	if s.Token.Type == lexer.FOR && s.Init != nil {
+		f.write("for ")
 		f.formatStatement(s.Init)
 		f.write(", ")
 		f.formatExpression(s.Condition)
 		f.write(", ")
 		f.formatStatement(s.Update)
-	} else if s.Condition != nil {
-		// while-style: for cond { }
-		f.write(" ")
-		f.formatExpression(s.Condition)
-	}
-	// else: infinite loop: for { }
-
-	if s.IterRange != nil {
-		f.write(": {")
-	} else {
 		f.write(" {")
-	}
-	f.indent++
-	// 過濾掉 ; 分隔符產生的空表達式語句
-	statements := make([]parser.Statement, 0, len(s.Body.Statements))
-	for _, stmt := range s.Body.Statements {
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
-			continue
-		}
-		statements = append(statements, stmt)
-	}
-	for i, stmt := range statements {
-		if i > 0 {
-			prevTokenLine := stmtTokenLine(statements[i-1])
-			currTokenLine := stmtTokenLine(stmt)
-		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-			// Same line: never emit ';' (reserved for comments); split onto a new line.
+		f.indent++
+		for _, stmt := range s.Body.Statements {
 			f.newline()
-		} else {
-				prevEndLine := stmtTokenEndLine(statements[i-1])
-				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
-					f.write("\n") // blank line (no indent)
-				}
-				f.newline()
-			}
-		} else {
-			// Check for blank line between '{' and first statement
-			openBraceLine := s.Body.Token.Line
-			firstDocStartLine := stmtFirstLine(stmt)
-			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
-				f.write("\n") // blank line (no indent)
-			}
-			f.newline()
+			f.formatStatement(stmt)
 		}
-		f.formatStatement(stmt)
+		f.formatTrailingComments(s.Body.TrailingComments)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
 	}
-	f.formatTrailingComments(s.Body.TrailingComments)
-	f.indent--
-	f.newline()
-	f.write("}")
+
+	// 條件循環（while-style）：{ body } (cond)
+	// 涵蓋新式 { } (cond)、舊式 for cond { }、以及標籤條件包裝器
+	// (#N cond: { } → ForStatement{Condition: *IfExpression, Body: Consequence})。
+	// 解開合成的 IfExpression 以輸出原始條件。
+	cond := s.Condition
+	if ifExpr, ok := cond.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
+		cond = ifExpr.Condition
+	}
+	if cond != nil {
+		f.writeLoopBodyBlock(s)
+		f.write(" (")
+		f.formatExpression(cond)
+		f.write(")")
+		return
+	}
+
+	// 無限循環：{ body } ()
+	// 涵蓋新式 { } ()、舊式 !! { } / for { }。
+	f.writeLoopBodyBlock(s)
+	f.write(" ()")
 }
 
 func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {

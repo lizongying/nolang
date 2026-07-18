@@ -34,14 +34,14 @@ uuid {
 new-v4 = (state i64) (out uuid) {
     ; 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
-    for i < 16 {
+    {
         state, r = rand.rand(state)
         out.bytes[i] = r & 255
         i + 1 < 16 -> out.bytes[i + 1] = (r >> 8) & 255
         i + 2 < 16 -> out.bytes[i + 2] = (r >> 16) & 255
         i + 3 < 16 -> out.bytes[i + 3] = (r >> 24) & 255
         i = i + 4
-    }
+    } (i < 16)
 
     ; 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
     out.bytes[6] = (out.bytes[6] & 15) | 64

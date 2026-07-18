@@ -195,24 +195,24 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "write", ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 
-	// now: get current Unix timestamp
+	// now: get current Unix timestamp (uses internal @nolang.now_s, replaces libc @time)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "now",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the current Unix timestamp in seconds",
-		CLibCall:     &CLibCall{FuncName: "time", ArgTypes: []LLVMArgType{LLVMI8Ptr}, RetType: LLVMI64, FixedArgs: map[int]string{0: "null"}},
+		CLibCall:     &CLibCall{FuncName: "nolang.now_s", ArgTypes: []LLVMArgType{}, RetType: LLVMI64},
 	})
 
-	// sleep: sleep for n seconds
+	// sleep: sleep for n seconds (uses internal @nolang.sleep_s, replaces libc @sleep)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "sleep",
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Sleep for the given number of seconds",
-		CLibCall:     &CLibCall{FuncName: "sleep", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "nolang.sleep_s", ArgTypes: []LLVMArgType{LLVMI64}, RetType: LLVMI64},
 	})
 
 	// now-ms: current Unix timestamp in milliseconds

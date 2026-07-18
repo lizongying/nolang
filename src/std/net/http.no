@@ -150,7 +150,7 @@ http-response.parse-headers = () {
     crlf = cr - lf
 
     pos = 0
-    !! {
+    {
         pos >= n -> *
         ; 找下一個 CRLF
         next-crlf = hs.index-from(crlf, pos)
@@ -180,7 +180,7 @@ http-response.parse-headers = () {
         }
         next-crlf < 0 -> *
         pos = next-crlf + 2
-    }
+    } ()
 }
 
 ; get-header: 取得指定標頭值（線性搜尋）
@@ -350,7 +350,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
 
     ; ── 接收回應 ──
     ; net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
-    !! {
+    {
         {
             use-tls -> {
                 rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
@@ -369,7 +369,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
             raw[total + i] = buf[i]
         }
         total = total + n
-    }
+    } ()
     {
         use-tls -> tls-c.close()
         -> close(fd)
@@ -563,7 +563,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     }
 
     ; ── 接收回應 ──
-    !! {
+    {
         {
             use-tls -> {
                 rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
@@ -581,7 +581,7 @@ http-do-req = (req http-request) (resp ?http-response) {
             raw[total + i] = buf[i]
         }
         total = total + n
-    }
+    } ()
     {
         use-tls -> tls-c.close()
         -> close(fd)

@@ -191,7 +191,7 @@ hpack-tables.dyn-add = (name str, value str) {
 
     ; 向後移動（從尾部開始避免覆蓋）
     i = .dyn-count
-    for i > 0 {
+    {
         ; 用 slice 複製（CallExpression 正確載入 str-long value）
         prev-name-len = .dyn-names[i - 1].len
         prev-val-len = .dyn-values[i - 1].len
@@ -208,7 +208,7 @@ hpack-tables.dyn-add = (name str, value str) {
             .dyn-values[i][j] = .dyn-values[i - 1][j]
         }
         i = i - 1
-    }
+    } (i > 0)
 
     ; 新項放索引 0
     .dyn-names[0].len = name.len
@@ -368,11 +368,11 @@ hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out[0] = prefix-byte | max-prefix
     n = 1
     val = val - max-prefix
-    for val >= 128 {
+    {
         out[n] = (val & 127) | 128
         n = n + 1
         val = val >> 7
-    }
+    } (val >= 128)
     out[n] = val
 }
 
@@ -394,7 +394,7 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
 
     ; 多 byte 編碼
     m = 0
-    !! {
+    {
         next-pos >= data.len -> {
             next-pos = -1
             *
@@ -408,7 +408,7 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
             next-pos = -1
             *
         }
-    }
+    } ()
 }
 
 ; ═══════════════════════════════════════════════
@@ -552,10 +552,11 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
         return
     }
     pos = 0
-    !! {
+    {
         pos >= n -> *
         count >= 128 -> *
         b = data[pos]
+
         ; Indexed Header Field（6.1）：1xxxxxxx
         {
             (b & 128) != 0 -> {
@@ -697,7 +698,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
             -> return
         }
         ; 未知表示類型
-    }
+    } ()
 
     ok = true
 }

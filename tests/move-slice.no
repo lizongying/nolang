@@ -1,5 +1,3 @@
-
-
 foo = (x str) (res str) {
 
     ; 字符串切片截取属于生成独立副本，必须分配新堆、拷贝字符：
@@ -14,5 +12,5 @@ res = foo('abc')
 
 ; 第二次调用，res已经有值，是新赋值
 ; foo 赋值
-x = 'def' 
+x = 'def'
 res = foo(x)

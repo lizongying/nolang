@@ -76,19 +76,19 @@ func TestFormatBasic(t *testing.T) {
 		},
 		{
 			name:     "for loop",
-			input:    "for x<10{x=x+1}",
-			expected: "for x < 10 {\n    x = x + 1\n}",
+			input:    "{x=x+1}(x<10)",
+			expected: "{\n    x = x + 1\n} (x < 10)",
 		},
 		{
 			name:     "infinite for loop with break",
-			input:    "for{break}",
-			expected: "for {\n    break\n}",
+			input:    "{break}()",
+			expected: "{\n    break\n} ()",
 		},
 		{
-			// 新式 !! { } 無限循環
+			// 新式 { } () 無限循環（由舊式 !! { } 遷移）
 			name:     "bang_loop",
 			input:    "!!{break}",
-			expected: "!! {\n    break\n}",
+			expected: "{\n    break\n} ()",
 		},
 		{
 			// 新式 { } * N 計數循環
@@ -103,10 +103,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: "i <- [0..10): {\n    print(i)\n}",
 		},
 		{
-			// for cond { } 條件循環（保留 for 關鍵字形式）
+			// 新式 { } (cond) 條件循環（由舊式 for cond { } 遷移）
 			name:     "for_cond_keyword",
 			input:    "for i<5 {i=i+1}",
-			expected: "for i < 5 {\n    i = i + 1\n}",
+			expected: "{\n    i = i + 1\n} (i < 5)",
 		},
 		{
 			// 新式 { cond -> body } if/else（包在函數內）
@@ -496,38 +496,38 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     idx = 0
     n = len(data)
     off = 0
-    for off + 512 <= n {
+    {
         empty = 1
         i = 0
-        for i < 512 {
+        {
             if data[off + i] & 255 != 0 {
                 empty = 0
                 break
             }
             i = i + 1
-        }
+        } (i < 512)
         if empty == 1 {
             return
         }
         name = ''
         i = 0
-        for i < 100 {
+        {
             c = data[off + i] & 255
             if c == 0 {
                 break
             }
             name[i] = c
             i = i + 1
-        }
+        } (i < 100)
         sz = 0
         i = 0
-        for i < 12 {
+        {
             c = data[off + 124 + i] & 255
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + c - 48
             }
             i = i + 1
-        }
+        } (i < 12)
         c = data[off + 156] & 255
         if c == 48 || c == 0 {
             typ = 'file'
@@ -536,13 +536,13 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         } else {
             typ = 'unknown'
         }
-    }
+    } (off + 512 <= n)
     if sz > 0 {
         i = 0
-        for i < sz {
+        {
             data-out[i] = data[off + 512 + i]
             i = i + 1
-        }
+        } (i < sz)
     }
     blocks = sz + 511 / 512
     if blocks < 0 {
@@ -557,38 +557,38 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     idx = 0
     n = len(data)
     off = 0
-    for off + 512 <= n {
+    {
         empty = 1
         i = 0
-        for i < 512 {
+        {
             if data[off + i] & 255 != 0 {
                 empty = 0
                 break
             }
             i = i + 1
-        }
+        } (i < 512)
         if empty == 1 {
             return
         }
         name = ''
         i = 0
-        for i < 100 {
+        {
             c = data[off + i] & 255
             if c == 0 {
                 break
             }
             name[i] = c
             i = i + 1
-        }
+        } (i < 100)
         sz = 0
         i = 0
-        for i < 12 {
+        {
             c = data[off + 124 + i] & 255
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + c - 48
             }
             i = i + 1
-        }
+        } (i < 12)
         c = data[off + 156] & 255
         if c == 48 || c == 0 {
             typ = 'file'
@@ -597,13 +597,13 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         } else {
             typ = 'unknown'
         }
-    }
+    } (off + 512 <= n)
     if sz > 0 {
         i = 0
-        for i < sz {
+        {
             data-out[i] = data[off + 512 + i]
             i = i + 1
-        }
+        } (i < sz)
     }
     blocks = sz + 511 / 512
     if blocks < 0 {
@@ -618,7 +618,6 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
 		{
 			name: "func6",
 			input: strings.TrimSpace(`
-
 // ─── 迭代器 ───────────────────────────────────
 
 // tar-for-each: 遍歷所有條目
@@ -628,86 +627,17 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     idx = 0
     n = len(data)
     off = 0
-    for off + 512 <= n {
+    {
         // 檢查結束
         empty = 1
         i = 0
-        for i < 512 {
+        {
             if data[off + i] & 255 != 0 {
                 empty = 0
                 break
             }
             i = i + 1
-        }
-        if empty == 1 { return }
-
-        // 讀取名稱
-        name = ''
-        i = 0
-        for i < 100 {
-            c = data[off + i] & 255
-            if c == 0 { break }
-            name[i] = c
-            i = i + 1
-        }
-
-        // 大小
-        sz = 0
-        i = 0
-        for i < 12 {
-            c = data[off + 124 + i] & 255
-            if c >= 48 && c <= 57 {
-                sz = sz * 8 + (c - 48)
-            }
-            i = i + 1
-        }
-
-        // 類型
-        c = data[off + 156] & 255
-        if c == 48 || c == 0 { typ = 'file' }
-        elif c == 53 { typ = 'dir' }
-        else { typ = 'unknown' }
-
-        // 資料
-        if sz > 0 {
-            i = 0
-            for i < sz {
-                data-out[i] = data[off + 512 + i]
-                i = i + 1
-            }
-        }
-
-        // 前進到下個條目
-        blocks = (sz + 511) / 512
-        if blocks < 0 { blocks = 0 }
-        off = off + 512 + blocks * 512
-        idx = idx + 1
-    }
-}
-
-			`),
-			expected: strings.TrimSpace(`
-
-// ─── 迭代器 ───────────────────────────────────
-
-// tar-for-each: 遍歷所有條目
-// 每次回呼傳入 (idx, name, sz, typ, data)
-// 返回 0 繼續，非 0 停止
-tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
-    idx = 0
-    n = len(data)
-    off = 0
-    for off + 512 <= n {
-        // 檢查結束
-        empty = 1
-        i = 0
-        for i < 512 {
-            if data[off + i] & 255 != 0 {
-                empty = 0
-                break
-            }
-            i = i + 1
-        }
+        } (i < 512)
         if empty == 1 {
             return
         }
@@ -715,25 +645,25 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         // 讀取名稱
         name = ''
         i = 0
-        for i < 100 {
+        {
             c = data[off + i] & 255
             if c == 0 {
                 break
             }
             name[i] = c
             i = i + 1
-        }
+        } (i < 100)
 
         // 大小
         sz = 0
         i = 0
-        for i < 12 {
+        {
             c = data[off + 124 + i] & 255
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + (c - 48)
             }
             i = i + 1
-        }
+        } (i < 12)
 
         // 類型
         c = data[off + 156] & 255
@@ -748,10 +678,10 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         // 資料
         if sz > 0 {
             i = 0
-            for i < sz {
+            {
                 data-out[i] = data[off + 512 + i]
                 i = i + 1
-            }
+            } (i < sz)
         }
 
         // 前進到下個條目
@@ -761,7 +691,85 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         }
         off = off + 512 + blocks * 512
         idx = idx + 1
-    }
+    } (off + 512 <= n)
+}
+
+			`),
+			expected: strings.TrimSpace(`
+// ─── 迭代器 ───────────────────────────────────
+
+// tar-for-each: 遍歷所有條目
+// 每次回呼傳入 (idx, name, sz, typ, data)
+// 返回 0 繼續，非 0 停止
+tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+    idx = 0
+    n = len(data)
+    off = 0
+    {
+        // 檢查結束
+        empty = 1
+        i = 0
+        {
+            if data[off + i] & 255 != 0 {
+                empty = 0
+                break
+            }
+            i = i + 1
+        } (i < 512)
+        if empty == 1 {
+            return
+        }
+
+        // 讀取名稱
+        name = ''
+        i = 0
+        {
+            c = data[off + i] & 255
+            if c == 0 {
+                break
+            }
+            name[i] = c
+            i = i + 1
+        } (i < 100)
+
+        // 大小
+        sz = 0
+        i = 0
+        {
+            c = data[off + 124 + i] & 255
+            if c >= 48 && c <= 57 {
+                sz = sz * 8 + (c - 48)
+            }
+            i = i + 1
+        } (i < 12)
+
+        // 類型
+        c = data[off + 156] & 255
+        if c == 48 || c == 0 {
+            typ = 'file'
+        } elif c == 53 {
+            typ = 'dir'
+        } else {
+            typ = 'unknown'
+        }
+
+        // 資料
+        if sz > 0 {
+            i = 0
+            {
+                data-out[i] = data[off + 512 + i]
+                i = i + 1
+            } (i < sz)
+        }
+
+        // 前進到下個條目
+        blocks = (sz + 511) / 512
+        if blocks < 0 {
+            blocks = 0
+        }
+        off = off + 512 + blocks * 512
+        idx = idx + 1
+    } (off + 512 <= n)
 }
 
 			`),
@@ -775,14 +783,14 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
 aes-key-expand = (key str, ek str) {
     // 複製原始金鑰（前 16 位元組）
     i = 0
-    for i < 16 {
+    {
         ek[i] = key[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
-    for i < 44 {
+    {
         // 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
@@ -796,7 +804,7 @@ aes-key-expand = (key str, ek str) {
             w-prev4 = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
             w = (w-prev4 ^ w) & 4294967295
         }
-    }
+    } (i < 44)
     ek[i * 4] = (w >> 24) & 255
     ek[i * 4 + 1] = (w >> 16) & 255
     ek[i * 4 + 2] = (w >> 8) & 255
@@ -810,14 +818,14 @@ aes-key-expand = (key str, ek str) {
 aes-key-expand = (key str, ek str) {
     // 複製原始金鑰（前 16 位元組）
     i = 0
-    for i < 16 {
+    {
         ek[i] = key[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
-    for i < 44 {
+    {
         // 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
@@ -831,7 +839,7 @@ aes-key-expand = (key str, ek str) {
             w-prev4 = (ek[(i-4) * 4] << 24) | (ek[(i-4) * 4 + 1] << 16) | (ek[(i-4) * 4 + 2] << 8) | ek[(i-4) * 4 + 3]
             w = (w-prev4 ^ w) & 4294967295
         }
-    }
+    } (i < 44)
     ek[i * 4] = (w >> 24) & 255
     ek[i * 4 + 1] = (w >> 16) & 255
     ek[i * 4 + 2] = (w >> 8) & 255
@@ -927,24 +935,24 @@ aes-128-dec= (in str, n i64, key str, out str) {
 
     // 複製輸入到狀態
     i = 0
-    for i < 16 {
+    {
         out[i] = in[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
     // 第 9-1 輪
     round = 9
-    for round > 0 {
+    {
         inv-shift-rows(out)
         inv-sub-bytes(out, 16)
         rk-off = round * 16
         add-round-key(out, ek + rk-off)
         inv-mix-columns(out)
         round = round - 1
-    }
+    } (round > 0)
 
     // 第 0 輪
     inv-shift-rows(out)
@@ -966,24 +974,24 @@ aes-128-dec = (in str, n i64, key str, out str) {
 
     // 複製輸入到狀態
     i = 0
-    for i < 16 {
+    {
         out[i] = in[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
     // 第 9-1 輪
     round = 9
-    for round > 0 {
+    {
         inv-shift-rows(out)
         inv-sub-bytes(out, 16)
         rk-off = round * 16
         add-round-key(out, ek + rk-off)
         inv-mix-columns(out)
         round = round - 1
-    }
+    } (round > 0)
 
     // 第 0 輪
     inv-shift-rows(out)
@@ -996,51 +1004,6 @@ aes-128-dec = (in str, n i64, key str, out str) {
 		{
 			name: "comment3",
 			input: strings.TrimSpace(`
-
-// ─── 單區塊加密/解密 ──────────────────────────────
-
-// aes-128-enc: 加密一個 16-byte 區塊
-// in: 輸入明文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出密文（16 位元組）
-aes-128-enc= (in str, n i64, key str, out str) {
-    // 展開金鑰
-    ek = '(16+160 bytes)'
-    aes-key-expand(key, ek)
-
-    // 複製輸入到狀態
-    i = 0
-    for i < 16 {
-        out[i] = in[i]
-        i = i + 1
-    }
-
-    // 初始 AddRoundKey（輪 0）
-    // 輪金鑰 0：ek[0..15]
-    add-round-key(out, ek)
-
-    // 第 1-9 輪
-    round = 1
-    for round < 10 {
-        sub-bytes(out, 16)
-        shift-rows(out)
-        mix-columns(out)
-        // 輪金鑰 round：ek[round*16..round*16+15]
-        rk-off = round * 16
-        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
-        round = round + 1
-    }
-
-    // 第 10 輪（無 MixColumns）
-    sub-bytes(out, 16)
-    shift-rows(out)
-    add-round-key(out, ek + 160)
-}
-			`),
-			expected: strings.TrimSpace(`
-
-
 // ─── 單區塊加密/解密 ──────────────────────────────
 
 // aes-128-enc: 加密一個 16-byte 區塊
@@ -1055,10 +1018,10 @@ aes-128-enc = (in str, n i64, key str, out str) {
 
     // 複製輸入到狀態
     i = 0
-    for i < 16 {
+    {
         out[i] = in[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 初始 AddRoundKey（輪 0）
     // 輪金鑰 0：ek[0..15]
@@ -1066,7 +1029,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
 
     // 第 1-9 輪
     round = 1
-    for round < 10 {
+    {
         sub-bytes(out, 16)
         shift-rows(out)
         mix-columns(out)
@@ -1075,7 +1038,50 @@ aes-128-enc = (in str, n i64, key str, out str) {
         rk-off = round * 16
         add-round-key(out, ek + rk-off)  // 需要 ek 子字串
         round = round + 1
-    }
+    } (round < 10)
+
+    // 第 10 輪（無 MixColumns）
+    sub-bytes(out, 16)
+    shift-rows(out)
+    add-round-key(out, ek + 160)
+}
+			`),
+			expected: strings.TrimSpace(`
+// ─── 單區塊加密/解密 ──────────────────────────────
+
+// aes-128-enc: 加密一個 16-byte 區塊
+// in: 輸入明文（16 位元組）
+// n: 固定 16
+// key: 16-byte 金鑰
+// out: 輸出密文（16 位元組）
+aes-128-enc = (in str, n i64, key str, out str) {
+    // 展開金鑰
+    ek = '(16+160 bytes)'
+    aes-key-expand(key, ek)
+
+    // 複製輸入到狀態
+    i = 0
+    {
+        out[i] = in[i]
+        i = i + 1
+    } (i < 16)
+
+    // 初始 AddRoundKey（輪 0）
+    // 輪金鑰 0：ek[0..15]
+    add-round-key(out, ek)
+
+    // 第 1-9 輪
+    round = 1
+    {
+        sub-bytes(out, 16)
+        shift-rows(out)
+        mix-columns(out)
+
+        // 輪金鑰 round：ek[round*16..round*16+15]
+        rk-off = round * 16
+        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
+        round = round + 1
+    } (round < 10)
 
     // 第 10 輪（無 MixColumns）
     sub-bytes(out, 16)
@@ -1646,8 +1652,8 @@ func TestFormatMultiAssign(t *testing.T) {
 			// — must NOT drop the leading '.' (regression: skipToStatementEnd
 			// used to skip over the DOT, producing 'hash(key, idx)' instead).
 			name:     "dot method call after let before for",
-			input:    "foo = () {\n    idx = 0\n    .hash(key, idx)\n    for x < 10 {\n        print(x)\n    }\n}",
-			expected: "foo = () {\n    idx = 0\n    .hash(key, idx)\n    for x < 10 {\n        print(x)\n    }\n}",
+			input:    "foo = () {\n    idx = 0\n    .hash(key, idx)\n    {\n        print(x)\n    } (x < 10)\n}",
+			expected: "foo = () {\n    idx = 0\n    .hash(key, idx)\n    {\n        print(x)\n    } (x < 10)\n}",
 		},
 		{
 			// . method call whose return is used as a statement (no assignment)
@@ -1658,8 +1664,8 @@ func TestFormatMultiAssign(t *testing.T) {
 		{
 			// . method call followed by for loop whose condition also uses '.'
 			name:     "dot method call then dot for condition",
-			input:    "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
-			expected: "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    for .occ[idx] == 1 {\n        print(idx)\n    }\n}",
+			input:    "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    {\n        print(idx)\n    } (.occ[idx] == 1)\n}",
+			expected: "linked-hash-map.put = (key i64, val i64) (is-new bool) {\n    idx = .hash(key)\n    {\n        print(idx)\n    } (.occ[idx] == 1)\n}",
 		},
 	}
 
@@ -1740,24 +1746,24 @@ aes-128-dec = (in str, n i64, key str, out str) {
 
     // 複製輸入到狀態
     i = 0
-    for i < 16 {
+    {
         out[i] = in[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
     // 第 9-1 輪
     round = 9
-    for round > 0 {
+    {
         inv-shift-rows(out)
         inv-sub-bytes(out, 16)
         rk-off = round * 16
         add-round-key(out, ek + rk-off)
         inv-mix-columns(out)
         round = round - 1
-    }
+    } (round > 0)
 
     // 第 0 輪
     inv-shift-rows(out)
@@ -1779,24 +1785,24 @@ aes-128-dec = (in str, n i64, key str, out str) {
 
     // 複製輸入到狀態
     i = 0
-    for i < 16 {
+    {
         out[i] = in[i]
         i = i + 1
-    }
+    } (i < 16)
 
     // 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
     // 第 9-1 輪
     round = 9
-    for round > 0 {
+    {
         inv-shift-rows(out)
         inv-sub-bytes(out, 16)
         rk-off = round * 16
         add-round-key(out, ek + rk-off)
         inv-mix-columns(out)
         round = round - 1
-    }
+    } (round > 0)
 
     // 第 0 輪
     inv-shift-rows(out)
@@ -1838,23 +1844,23 @@ func TestFormatLabeledFor(t *testing.T) {
 		},
 		{
 			name: "labeled infinite loop",
-			input: `#1!! {
+			input: `#1 {
     x = 1
-}`,
-			expected: `#1!! {
+} ()`,
+			expected: `#1 {
     x = 1
-}`,
+} ()`,
 		},
 		{
 			name: "labeled conditional",
-			input: `#1 val: {
+			input: `#1 {
     val == 1
     x = 1
-}`,
-			expected: `#1 val: {
+} (val)`,
+			expected: `#1 {
     val == 1
     x = 1
-}`,
+} (val)`,
 		},
 		{
 			name: "nested labeled for inside function",

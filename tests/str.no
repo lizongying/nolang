@@ -18,5 +18,4 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 
 ; compilation error: cannot assign non-string value to string variable 'a'
 a = 2
-
 ; a.full(8)

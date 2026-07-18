@@ -719,11 +719,11 @@ type keywordDef struct {
 
 var keywords = []keywordDef{
 	// 新式語法
-	{"!!", CompletionItemKindKeyword, "infinite loop", "!! {\n\t$0\n}"},
 	{"*", CompletionItemKindKeyword, "break shorthand", "*"},
 	{"**", CompletionItemKindKeyword, "continue shorthand", "**"},
 	{"...", CompletionItemKindKeyword, "return/terminate", "..."},
 	// 舊式語法（deprecated，n 版本後移除）
+	{"!!", CompletionItemKindKeyword, "infinite loop (deprecated, use '{ } ()')", "!! {\n\t$0\n}"},
 	{"if", CompletionItemKindKeyword, "if statement (deprecated)", "if ${1:condition} {\n\t$0\n}"},
 	{"else", CompletionItemKindKeyword, "else statement (deprecated)", "else {\n\t$0\n}"},
 	{"elif", CompletionItemKindKeyword, "else if statement (deprecated)", "elif ${1:condition} {\n\t$0\n}"},

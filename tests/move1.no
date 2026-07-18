@@ -1,5 +1,3 @@
-
-
 foo = () (res i8) {
     x = 1
     res = x
@@ -25,6 +23,4 @@ res = foo()
 ; 第二次调用，res已经有值，是新赋值
 ; foo 赋值1 
 res = foo()
-
-; res是赋值，res1是新建变量
 res, res1 = bar()

@@ -1081,14 +1081,14 @@ sha1 = (data []byte) (hash [20]byte) {
     ]
 
     offset = 0
-    for offset < total-len {
+    {
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
         offset = offset + 64
-    }
+    } (offset < total-len)
 
     ; 輸出 20 位元組雜湊值（big-endian）
     hash[0] = (h0 >> 24) & 255

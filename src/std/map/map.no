@@ -81,7 +81,7 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .vals[idx] = val
@@ -90,7 +90,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     ; 複製 key（全結構賦值，包含 data 指標）
     .keys[idx] = key
@@ -109,7 +109,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             result = .vals[idx]
@@ -117,7 +117,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
     result = nil
 }
 
@@ -136,7 +136,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .occ[idx] = 0
@@ -148,7 +148,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空
@@ -226,7 +226,7 @@ hashmap-int-tmpl.hash = (key k) (idx i64) {
 hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             .vals[idx] = val
             is-new = false
@@ -234,7 +234,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 
     .keys[idx] = key
     .vals[idx] = val
@@ -252,14 +252,14 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             result = .vals[idx]
             return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
     result = nil
 }
 
@@ -278,7 +278,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    for .occ[idx] == 1 {
+    {
         .keys[idx] == key -> {
             .occ[idx] = 0
             .keys[idx] = 0
@@ -289,7 +289,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
-    }
+    } (.occ[idx] == 1)
 }
 
 ; clear: 清空

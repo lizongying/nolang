@@ -27,14 +27,14 @@ heap.push = (val i64) {
     .data[.n] = val
     .n = .n + 1
     i = .n - 1
-    for i > 0 {
+    {
         parent = (i - 1) / 2
         .data[i] >= .data[parent] -> break
         tmp = .data[i]
         .data[i] = .data[parent]
         .data[parent] = tmp
         i = parent
-    }
+    } (i > 0)
 }
 
 ; pop: 從堆積彈出最小元素
@@ -48,7 +48,7 @@ heap.pop = () (val ?i64) {
     .n = .n - 1
     .data[0] = .data[.n]
     i = 0
-    for true {
+    {
         smallest = i
         left = 2 * i + 1
         right = 2 * i + 2
@@ -59,7 +59,7 @@ heap.pop = () (val ?i64) {
         .data[i] = .data[smallest]
         .data[smallest] = tmp
         i = smallest
-    }
+    } (true)
 }
 
 ; peek: 查看最小元素（不移除）

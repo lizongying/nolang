@@ -360,14 +360,14 @@ aes-128-dec = (in [16]byte, key [16]byte) (out [16]byte) {
 
     ; 第 9-1 輪
     round = 9
-    for round > 0 {
+    {
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])
         round = round - 1
-    }
+    } (round > 0)
 
     ; 第 0 輪
     inv-shift-rows(out[..])
@@ -450,14 +450,14 @@ aes-256-dec = (in [16]byte, key [32]byte) (out [16]byte) {
     }
     add-round-key(out[..], ek[224..])
     round = 13
-    for round > 0 {
+    {
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])
         round = round - 1
-    }
+    } (round > 0)
     inv-shift-rows(out[..])
     inv-sub-bytes(out[..], 16)
     add-round-key(out[..], ek[..])

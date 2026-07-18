@@ -1,10 +1,9 @@
-
 arr [3]i64 = [1, 2, 3]
 fmt.println(arr[0])
 fmt.println(arr[1])
 fmt.println(arr[2])
-fmt.println(arr[2-1])
-fmt.println(arr[1+1])
+fmt.println(arr[2 - 1])
+fmt.println(arr[1 + 1])
 
 s = 'hello'
 fmt.println(s[0])

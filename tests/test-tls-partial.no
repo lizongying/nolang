@@ -9,7 +9,7 @@ buf str = space.repeat(8)
 tls.tls-put-u16(buf, 0, 0x1234)
 buf[0] != 0x12 -> {
     print('FAIL: put-u16 expected 0x12')
-        return
+    return
 }
 print('PASS: tls-put-u16')
 
@@ -21,7 +21,7 @@ val i64 = 0
 val = tls.tls-get-u16(buf2, 0)
 val != 0xABCD -> {
     print('FAIL: get-u16 expected 0xABCD')
-        return
+    return
 }
 print('PASS: tls-get-u16')
 
@@ -30,7 +30,7 @@ buf3 str = space.repeat(8)
 tls.tls-put-u24(buf3, 0, 0x123456)
 buf3[0] != 0x12 -> {
     print('FAIL: put-u24 expected 0x12')
-        return
+    return
 }
 print('PASS: tls-put-u24')
 
@@ -43,7 +43,7 @@ val2 i64 = 0
 val2 = tls.tls-get-u24(buf4, 0)
 val2 != 0x123456 -> {
     print('FAIL: get-u24 expected 0x123456')
-        return
+    return
 }
 print('PASS: tls-get-u24')
 

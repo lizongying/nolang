@@ -30,7 +30,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
     ; 逐區塊處理（每區塊 8 位元組）
     blk = 0
-    for blk < n {
+    {
         ; 提取當前區塊
         block []byte
         i <- [0..8): {
@@ -55,7 +55,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         blk = blk + 8
-    }
+    } (blk < n)
 }
 
 ; tdes-dec: Triple DES 解密（ECB 模式）
@@ -74,7 +74,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 
     blk = 0
-    for blk < n {
+    {
         block []byte
         i <- [0..8): {
             block[i] = in[blk + i]
@@ -97,7 +97,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         blk = blk + 8
-    }
+    } (blk < n)
 }
 
 ; ═══════════════════════════════════════════════
@@ -116,7 +116,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 
     blk = 0
-    for blk < in.len {
+    {
         ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
@@ -133,7 +133,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             prev[i] = enc-block[i]
         }
         blk = blk + 8
-    }
+    } (blk < in.len)
 }
 
 ; tdes-cbc-dec: Triple DES-CBC 解密
@@ -148,7 +148,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 
     blk = 0
-    for blk < in.len {
+    {
         cipher-block [8]byte
         i <- [0..8): {
             cipher-block[i] = in[blk + i]
@@ -162,5 +162,5 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             prev[i] = cipher-block[i]
         }
         blk = blk + 8
-    }
+    } (blk < in.len)
 }

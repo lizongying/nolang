@@ -3,7 +3,6 @@
 ; 測試 json-pool 的剖析、存取、序列化功能。
 ; 本測試為純計算，不需網路，可實際執行。
 
-
 print('start')
 ; ── 所有變數頂層宣告（遵循 http-no 慣例）──
 json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
@@ -30,89 +29,76 @@ root, next, ok = p.parse(json-str, 0)
     ok -> print('ok: parse object')
     -> {
         print('fail: parse object')
-            return
+        return
     }
 }
-
-; ── 測試 2: get-key "name" → 字串 ──
 val-idx, found = p.get-key(root, 'name')
 {
     found -> {
         str-val, ok = p.get-str(val-idx)
-                        {
-                ok -> print('ok: name=' - str-val)
-                -> print('fail: get-str name')
-            }
+        {
+            ok -> print('ok: name=' - str-val)
+            -> print('fail: get-str name')
+        }
     }
     -> print('fail: get-key name')
 }
-
-; ── 測試 3: get-key "age" → 數字 30 ──
 val-idx, found = p.get-key(root, 'age')
 {
     found -> {
         num-val, ok = p.get-num(val-idx)
-                        {
-                ok -> {
-                    ; 用比較驗證，避免 f64.to-str 的 codegen bug
-                                                                        {
-                                        num-val == 30.0 -> print('ok: age=30')
-                                        -> print('fail: age should be 30')
-                                    }
+        {
+            ok -> {
+                ; 用比較驗證，避免 f64.to-str 的 codegen bug
+                {
+                    num-val == 30.0 -> print('ok: age=30')
+                    -> print('fail: age should be 30')
                 }
-                -> print('fail: get-num age')
             }
+            -> print('fail: get-num age')
+        }
     }
     -> print('fail: get-key age')
 }
-
-; ── 測試 4: get-key "items" → 陣列 [1,2,3] ──
 arr-idx, found = p.get-key(root, 'items')
 {
     found -> {
         n = p.arr-len(arr-idx)
-                        {
-                n == 3 -> print('ok: items len=3')
-                -> {
-                    print('fail: items len')
-                                    print(n)
+        {
+            n == 3 -> print('ok: items len=3')
+            -> {
+                print('fail: items len')
+                print(n)
+            }
+        }
+        elem-idx, ok = p.arr-get(arr-idx, 0)
+        {
+            ok -> {
+                num-val, ok = p.get-num(elem-idx)
+                {
+                    ok -> {
+                        num-val == 1.0 -> print('ok: items[0]=1')
+                        -> print('fail: items[0] should be 1')
+                    }
+                    -> print('fail: get-num items[0]')
                 }
             }
-            ; arr-get items[0] → 1
-            elem-idx, ok = p.arr-get(arr-idx, 0)
-                        {
-                ok -> {
-                    num-val, ok = p.get-num(elem-idx)
-                                                                        {
-                                        ok -> {
-                                                                                        {
-                                                num-val == 1.0 -> print('ok: items[0]=1')
-                                                -> print('fail: items[0] should be 1')
-                                            }
-                                        }
-                                        -> print('fail: get-num items[0]')
-                                    }
-                }
-                -> print('fail: arr-get items[0]')
-            }
+            -> print('fail: arr-get items[0]')
+        }
     }
     -> print('fail: get-key items')
 }
-
-; ── 測試 5: get-key "active" → true ──
 val-idx, found = p.get-key(root, 'active')
 {
     found -> {
         bool-val, ok = p.get-bool(val-idx)
-                        {
-                ok -> {
-                                        {
-                        bool-val -> print('ok: active=true')
-                        -> print('fail: active should be true')
-                    }
-                }
-                -> print('fail: get-bool active')
+        {
+            ok -> {
+                bool-val -> print('ok: active=true')
+                -> print('fail: active should be true')
             }
+            -> print('fail: get-bool active')
+        }
     }
     -> print('fail: get-key active')
 }
@@ -122,12 +108,10 @@ out-n = p.stringify(root, out-buf, 0)
 {
     out-n > 0 -> {
         result = out-buf.slice(0, out-n)
-            print('ok: stringify=' - result)
+        print('ok: stringify=' - result)
     }
     -> print('fail: stringify')
 }
-
-; ── 測試 7: get-key 不存在的鍵 ──
 val-idx, found = p.get-key(root, 'nonexistent')
 {
     found == false -> print('ok: nonexistent key not found')

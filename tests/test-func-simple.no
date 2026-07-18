@@ -1,4 +1,3 @@
-
 s = 'hello'
 n = s.len
 print(n)

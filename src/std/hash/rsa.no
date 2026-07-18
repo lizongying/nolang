@@ -24,7 +24,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
         return
     }
     i i64 = an - 1
-    for i >= 0 {
+    {
         a[i] > b[i] -> {
             cmp = 1
             return
@@ -34,7 +34,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
             return
         }
         i = i - 1
-    }
+    } (i >= 0)
     cmp = 0
 }
 
@@ -45,14 +45,14 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
     i = 0
-    for i < an || i < bn || carry != 0 {
+    {
         sum = carry
         i < an -> sum = sum + a[i]
         i < bn -> sum = sum + b[i]
         c[i] = sum & 4294967295
         carry = sum >> 32
         i = i + 1
-    }
+    } (i < an || i < bn || carry != 0)
     cn = i
 }
 
@@ -76,9 +76,9 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 移除前導零
     cn = an
-    for cn > 1 && c[cn - 1] == 0 {
+    {
         cn = cn - 1
-    }
+    } (cn > 1 && c[cn - 1] == 0)
 }
 
 ; ─── 大數乘法 ─────────────────────────────────────
@@ -102,9 +102,9 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 計算實際長度
     cn = an + bn
-    for cn > 1 && c[cn - 1] == 0 {
+    {
         cn = cn - 1
-    }
+    } (cn > 1 && c[cn - 1] == 0)
 }
 
 ; ─── 大數左移 1 位元 ─────────────────────────────
@@ -132,16 +132,16 @@ bn-shl1 = (a []i64, an i64) (new-an i64) {
 bn-shr1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i i64 = an - 1
-    for i >= 0 {
+    {
         new-val = (carry << 31) | (a[i] >> 1)
         carry = a[i] & 1
         a[i] = new-val & 4294967295
         i = i - 1
-    }
+    } (i >= 0)
     new-an = an
-    for new-an > 1 && a[new-an - 1] == 0 {
+    {
         new-an = new-an - 1
-    }
+    } (new-an > 1 && a[new-an - 1] == 0)
 }
 
 ; ─── 大數除法（二進位長除法）────────────────────
@@ -176,16 +176,16 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     top = a[an - 1]
     lead = 0
     tmp i64 = top
-    for tmp != 0 {
+    {
         tmp = tmp >> 1
         lead = lead + 1
-    }
+    } (tmp != 0)
     an > 0 && top == 0 -> lead = 0
     bits i64 = (an - 1) * 32 + lead
 
     ; 二進位長除法：從最高位到最低位
     i = bits - 1
-    for i >= 0 {
+    {
         ; r = r << 1
         rn = bn-shl1(r, rn)
 
@@ -205,13 +205,13 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
             q[q-limb] = q[q-limb] | (1 << q-bit)
         }
         i = i - 1
-    }
+    } (i >= 0)
 
     ; 計算 q 的長度
     qn = (bits / 32) + 1
-    for qn > 1 && q[qn - 1] == 0 {
+    {
         qn = qn - 1
-    }
+    } (qn > 1 && q[qn - 1] == 0)
 }
 
 ; ─── 模冪運算 ─────────────────────────────────────
@@ -230,16 +230,16 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     top i64 = exp[en - 1]
     lead = 0
     tmp i64 = top
-    for tmp != 0 {
+    {
         tmp = tmp >> 1
         lead = lead + 1
-    }
+    } (tmp != 0)
     en > 0 && top == 0 -> lead = 0
     bits i64 = (en - 1) * 32 + lead
 
     ; 暫存區
     t-len = mn * 2 + 2
-    t = result  ; 注意：實際可能需要獨立的暫存空間
+    t = result; 注意：實際可能需要獨立的暫存空間
     prod-n = 0
     q-n = 0
     q []i64 = []
@@ -247,7 +247,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
     ; 從最高位到最低位
     i = bits - 1
-    for i >= 0 {
+    {
         t, prod-n = bn-mul(result, rn, result, rn)
         q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
@@ -259,7 +259,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
             q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
         }
         i = i - 1
-    }
+    } (i >= 0)
 }
 
 ; ─── RSA 加密/解密（高階介面）────────────────────

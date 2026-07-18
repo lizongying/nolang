@@ -564,10 +564,10 @@ The Nolang standard library provides a rich set of common functionality, includi
 str-to-bytes = (s str) (out []byte) {
     n = s.len
     i = 0
-    for i < n {
+    {
         out[i] = s[i]
         i = i + 1
-    }
+    } (i < n)
 }
 
 // ✅ Correct: use standard library str.to-bytes() method
@@ -799,26 +799,40 @@ int.to-str = () (out str) {
 
 ### Control Flow
 
-> **Old syntax (deprecated, will be removed after version n)**: `for { }` / `for cond { }` / `for i=0,i<n,i++ { }` / `for i <- [...] { }` / `for i in [...] { }` / `match x { }` / `if/elif/else { }` can still be parsed but will output a deprecation warning. Please use the "new style" syntax in the table below.
+> **Old syntax (deprecated, will be removed after version n)**: `!! { }` / `! { }` / `for { }` / `for cond { }` / `while cond { }` / `for i=0,i<n,i++ { }` / `for i <- [...] { }` / `for i in [...] { }` / `match x { }` / `if/elif/else { }` can still be parsed but will output a deprecation warning. Please use the "new style" syntax in the table below.
 
-| Purpose          | New syntax                     | Old (deprecated)       |
-| ---------------- | ------------------------------ | ----------------------- |
-| Infinite loop    | `!! { }`                       | `for { }`               |
-| Conditional loop | `for cond { }`                 | `while cond { }`        |
-| Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }` |
-| Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }`   |
-| Conditional match| `x: { ... }`                   | `match x { ... }`       |
-| Branch selection | `{ cond -> body }`             | `if/elif/else { }`      |
-| Skip iteration   | `continue` (temporarily retained) | `**` (planned, not yet replaced) |
-| Break loop       | `break` (temporarily retained) | `*` (planned, not yet replaced) |
-| Early return     | `return` (temporarily retained) | `...` (planned, not yet replaced) |
+| Purpose          | New syntax                     | Old (deprecated)                         |
+| ---------------- | ------------------------------ | ---------------------------------------- |
+| Infinite loop    | `{ } ()`                       | `!! { }` / `! { }` / `for { }`           |
+| Conditional loop | `{ } (cond)`                   | `for cond { }` / `while cond { }`        |
+| Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }`                  |
+| Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }` / `for i in [...]` |
+| Conditional match| `x: { ... }`                   | `match x { ... }`                        |
+| Branch selection | `{ cond -> body }`             | `if/elif/else { }`                       |
+| Skip iteration   | `continue` (temporarily retained) | `**` (planned, not yet replaced)      |
+| Break loop       | `break` (temporarily retained) | `*` (planned, not yet replaced)          |
+| Early return     | `return` (temporarily retained) | `...` (planned, not yet replaced)       |
+
+The new loop syntax puts the body block **first**, followed by the loop kind suffix:
+
+- `{ body } ()` — infinite loop (empty parens)
+- `{ body } (cond)` — conditional loop (condition in parens, checked before each iteration)
+- `{ body } * N` — counted loop (body repeats `N` times)
+
+This "body-first" ordering is intentional: it mirrors how you read the block, and the suffix
+unambiguously declares the loop variant. The empty `()` reads as "loop forever"; `(cond)` reads
+as "loop while condition holds".
 
 ```nolang
 // Infinite loop (new style)
-!! { }
+{
+    // body
+} ()
 
-// Conditional loop (for keyword retained, for non-1 step or complex conditions)
-for i < 5 { }
+// Conditional loop (new style) — condition checked before each iteration
+{
+    i = i + 1
+} (i < 5)
 
 // Five iterations
 { } * 5
@@ -851,8 +865,8 @@ i <- 'abc': {      // iterate over each character in the string
 // When start <= end, iteration increments as usual (step +1).
 
 // ❌ Explicitly rejected: interval bounds must be integers; nested expressions not supported
-//   for i <- [1.5..5.5] { }       // compile error
-//   for i <- [0..[1..5][0]] { }   // syntax error
+//   i <- [1.5..5.5]: { }       // compile error
+//   i <- [0..[1..5][0]]: { }   // syntax error
 
 // Single if (retained)
 x == 1 -> do-something()
@@ -1175,14 +1189,14 @@ Methods are defined on types, using `.` to reference the receiver. The receiver 
 str.to-upper = () (out str) {
     out.len = .len
     i = 0
-    for i < .len {
+    {
         c = .[i]
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
             -> out[i] = c
         }
         i = i + 1
-    }
+    } (i < .len)
 }
 
 // char method
@@ -1329,14 +1343,14 @@ client = sse.sse-connect('http://localhost:3000/events')  // returns ?sse-client
 client: {
     nil -> print('connection failed')
     -> {
-        !! {
+        {
             ev = client.next-event()     // returns ?sse-event
             ev: {
                 nil -> *                  // EOF
                 err -> print(it)        // error
                 -> print(ev.data)       // event data
             }
-        }
+        } ()
         client.close()
     }
 }
@@ -1420,7 +1434,7 @@ read-file = () {
 
 ```nolang
 arr_to_vec = (arr [n]t) (out []t) {
-    for i in [0..n) {
+    i <- [0..n): {
         out[i] = arr[i]
     }
 }
@@ -1669,7 +1683,9 @@ External packages can only access exports declared in `lib.no` when importing vi
 - `.` — self
 - `!` — false (planned, currently still uses `false`)
 - `!!` — true (planned, currently still uses `true`)
-- `!! { }` — infinite loop
+- `{ } ()` — infinite loop (new style; `!! { }` is deprecated)
+- `{ } (cond)` — conditional loop (new style; `for cond { }` is deprecated)
+- `{ } * N` — counted loop (body repeats N times; N ≤ 0 skips the body)
 - `**` — continue (skip current iteration) (planned, currently still uses `continue`)
 - `*` — break (exit loop) (planned, currently still uses `break`)
 - `...` — return/terminate (planned, currently still uses `return`)

@@ -19,21 +19,21 @@ test-str-to-i64 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 12345
+        -> print(n); 期望: 12345
     }
 
     n = '-42'.to-i64()
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: -42
+        -> print(n); 期望: -42
     }
 
     n = '0'.to-i64()
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 0
+        -> print(n); 期望: 0
     }
 }
 
@@ -43,14 +43,14 @@ test-str-to-i32 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 32767
+        -> print(n); 期望: 32767
     }
 
     n = '-32768'.to-i32()
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: -32768
+        -> print(n); 期望: -32768
     }
 }
 
@@ -60,14 +60,14 @@ test-str-to-i16 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 100
+        -> print(n); 期望: 100
     }
 
     n = '-1'.to-i16()
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: -1
+        -> print(n); 期望: -1
     }
 }
 
@@ -77,14 +77,14 @@ test-str-to-i8 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 127
+        -> print(n); 期望: 127
     }
 
     n = '-128'.to-i8()
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: -128
+        -> print(n); 期望: -128
     }
 }
 
@@ -94,7 +94,7 @@ test-str-to-u64 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 99999
+        -> print(n); 期望: 99999
     }
 }
 
@@ -104,21 +104,21 @@ test-str-to-f64 = () {
     {
         f == nil -> print('nil')
         f == err -> print('err')
-        -> print(f)  ; 期望: 3.14
+        -> print(f); 期望: 3.14
     }
 
     f = '-2.5'.to-f64()
     {
         f == nil -> print('nil')
         f == err -> print('err')
-        -> print(f)  ; 期望: -2.5
+        -> print(f); 期望: -2.5
     }
 
     f = '0.0'.to-f64()
     {
         f == nil -> print('nil')
         f == err -> print('err')
-        -> print(f)  ; 期望: 0
+        -> print(f); 期望: 0
     }
 }
 
@@ -128,14 +128,14 @@ test-str-to-bool = () {
     {
         b == nil -> print('nil')
         b == err -> print('err')
-        -> print(b)  ; 期望: 1
+        -> print(b); 期望: 1
     }
 
     b = 'false'.to-bool()
     {
         b == nil -> print('nil')
         b == err -> print('err')
-        -> print(b)  ; 期望: 0
+        -> print(b); 期望: 0
     }
 }
 
@@ -145,70 +145,70 @@ test-str-to-byte = () {
     {
         b == nil -> print('nil')
         b == err -> print('err')
-        -> print(b)  ; 期望: 65 (ASCII 'A')
+        -> print(b); 期望: 65 (ASCII 'A')
     }
 }
 
 ; ===== i64 → str =====
 test-i64-to-str = () {
     s = (42).to-str()
-    print(s)  ; 期望: 42
+    print(s); 期望: 42
 
     s = (-100).to-str()
-    print(s)  ; 期望: -100
+    print(s); 期望: -100
 
     s = (0).to-str()
-    print(s)  ; 期望: 0
+    print(s); 期望: 0
 }
 
 ; ===== i32 → str =====
 test-i32-to-str = () {
     s = (999).to-str()
-    print(s)  ; 期望: 999
+    print(s); 期望: 999
 }
 
 ; ===== u64 → str =====
 test-u64-to-str = () {
     s = (12345).to-str()
-    print(s)  ; 期望: 12345
+    print(s); 期望: 12345
 }
 
 ; ===== f64 → str =====
 test-f64-to-str = () {
     s = (3.14).to-str()
-    print(s)  ; 期望: 3.14
+    print(s); 期望: 3.14
 
     s = (0.0).to-str()
-    print(s)  ; 期望: 0
+    print(s); 期望: 0
 }
 
 ; ===== f32 → str =====
 test-f32-to-str = () {
     f f32 = f64-to-f32(3.14)
     s = f.to-str()
-    print(s)  ; 期望: 3.14
+    print(s); 期望: 3.14
 
     z f32 = f64-to-f32(0.0)
     s = z.to-str()
-    print(s)  ; 期望: 0
+    print(s); 期望: 0
 }
 
 ; ===== bool → str =====
 test-bool-to-str = () {
     s = true.to-str()
-    print(s)  ; 期望: true
+    print(s); 期望: true
 
     s = false.to-str()
-    print(s)  ; 期望: false
+    print(s); 期望: false
 }
 
 ; ===== byte → str =====
 test-byte-to-str = () {
     s = (65).to-str()
-    print(s)  ; 期望: 65
+    print(s); 期望: 65
 
     s = (0).to-str()
-    print(s)  ; 期望: 0
+    print(s); 期望: 0
 }
 
 ; ===== 往返: i64 → str → i64 =====
@@ -218,7 +218,7 @@ test-roundtrip-i64 = () {
     {
         n == nil -> print('nil')
         n == err -> print('err')
-        -> print(n)  ; 期望: 12345
+        -> print(n); 期望: 12345
     }
 }
 
@@ -228,17 +228,17 @@ test-roundtrip-f64 = () {
     {
         f == nil -> print('nil')
         f == err -> print('err')
-        -> print(f)  ; 期望: 3.14
+        -> print(f); 期望: 3.14
     }
 }
 
 ; ===== 边界: i64 极值 =====
 test-edge-i64 = () {
     s = (9223372036854775807).to-str()
-    print(s)  ; 期望: 9223372036854775807
+    print(s); 期望: 9223372036854775807
 
     s = (-9223372036854775807 - 1).to-str()
-    print(s)  ; 期望: -9223372036854775808
+    print(s); 期望: -9223372036854775808
 }
 
 ; ===== 运行测试 =====

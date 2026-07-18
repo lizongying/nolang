@@ -4,7 +4,6 @@
 ; 注意：str-long value type 跨函式邊界傳遞時長度不一致，
 ; 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
 
-
 ; ── 1. new 建立錯誤，檢查 code ──
 e = err.new(code.io, 'disk full')
 
@@ -21,21 +20,21 @@ print('ok: error.msg')
 ; ── 3. error.is 比對錯誤碼（true 和 false）──
 yes = e.is(code.io)
 {
-yes -> print('ok: error.is true')
--> print('fail: error.is true')
+    yes -> print('ok: error.is true')
+    -> print('fail: error.is true')
 }
 
 yes = e.is(code.not-found)
 {
-yes == false -> print('ok: error.is false')
--> print('fail: error.is false')
+    yes == false -> print('ok: error.is false')
+    -> print('fail: error.is false')
 }
 
 ; ── 4. error.code 取得錯誤碼 ──
 mc = e.code()
 {
-mc == code.io -> print('ok: error.code')
--> print('fail: error.code')
+    mc == code.io -> print('ok: error.code')
+    -> print('fail: error.code')
 }
 
 ; ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──

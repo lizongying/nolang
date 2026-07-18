@@ -71,7 +71,7 @@ str.index = (target str) (pos i64) {
     }
     limit = .len - target.len
     i = 0
-    for i <= limit {
+    {
         matched = 1
         j <- [0..target.len): {
             sj = .[i + j]
@@ -86,7 +86,7 @@ str.index = (target str) (pos i64) {
             return
         }
         i = i + 1
-    }
+    } (i <= limit)
 }
 
 ; str.index-from: 在 s 中從 from 位置開始查找 target 子串
@@ -100,7 +100,7 @@ str.index-from = (target str, from i64) (pos i64) {
     from < 0 -> from = 0
     limit = .len - target.len
     i = from
-    for i <= limit {
+    {
         matched = 1
         j <- [0..target.len): {
             sj = .[i + j]
@@ -115,7 +115,7 @@ str.index-from = (target str, from i64) (pos i64) {
             return
         }
         i = i + 1
-    }
+    } (i <= limit)
 }
 
 ; str.contains: 判断 s 是否包含 target 子串
@@ -201,11 +201,11 @@ str.trim = () (val str) {
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
     end = .len - 1
-    for end >= start {
+    {
         c = .[end]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
         end = end - 1
-    }
+    } (end >= start)
     n = end - start + 1
     n < 0 -> return
     val = with-cap(n)
@@ -639,13 +639,13 @@ str-to-f64 = (s str) (result f64) {
     c i64 = 0
 
     ; 跳過前導空白
-    for i < n {
+    {
         c = s[i] & 255
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
             -> break
         }
-    }
+    } (i < n)
     i >= n -> return
 
     ; 處理正負號
@@ -657,7 +657,7 @@ str-to-f64 = (s str) (result f64) {
     c == 43 -> i = i + 1
 
     ; 解析整數部分
-    for i < n {
+    {
         c = s[i] & 255
         {
             c >= 48 && c <= 57 -> {
@@ -667,14 +667,14 @@ str-to-f64 = (s str) (result f64) {
             }
             -> break
         }
-    }
+    } (i < n)
 
     ; 解析小數部分
     i < n -> {
         c = s[i] & 255
         c == 46 -> {
             i = i + 1
-            for i < n {
+            {
                 c = s[i] & 255
                 {
                     c >= 48 && c <= 57 -> {
@@ -685,7 +685,7 @@ str-to-f64 = (s str) (result f64) {
                     }
                     -> break
                 }
-            }
+            } (i < n)
         }
     }
 
@@ -704,7 +704,7 @@ str-to-f64 = (s str) (result f64) {
                 }
                 c == 43 -> i = i + 1
             }
-            for i < n {
+            {
                 c = s[i] & 255
                 {
                     c >= 48 && c <= 57 -> {
@@ -713,7 +713,7 @@ str-to-f64 = (s str) (result f64) {
                     }
                     -> break
                 }
-            }
+            } (i < n)
         }
     }
 
@@ -723,10 +723,10 @@ str-to-f64 = (s str) (result f64) {
         ; 以迴圈計算 10^exp，避免與 number.no / bigint.no 的整數 pow 名稱衝突
         p f64 = 1.0
         ei i64 = exp
-        for ei > 0 {
+        {
             p = p * 10.0
             ei = ei - 1
-        }
+        } (ei > 0)
         exp-sign == 1 -> result = result * p
         exp-sign == -1 -> result = result / p
     }
@@ -860,7 +860,7 @@ str.compare = (b str) (r i64) {
 str.count = () (cnt i64) {
     cnt = 0
     i = 0
-    for i < .len {
+    {
         b = .[i]
         {
             b < 0x80 -> i = i + 1
@@ -869,7 +869,7 @@ str.count = () (cnt i64) {
             -> i = i + 4
         }
         cnt = cnt + 1
-    }
+    } (i < .len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -882,7 +882,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     ; 第一遍：計算輸出長度
     out-n = 0
     i = 0
-    for i < .len {
+    {
         b = .[i]
         cp i64 = b
         clen = 1
@@ -914,13 +914,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             -> out-n = out-n + clen
         }
         i = i + clen
-    }
+    } (i < .len)
 
     ; 第二遍：写入输出
     val = with-cap(out-n)
     j = 0
     i = 0
-    for i < .len {
+    {
         b = .[i]
         cp = b
         clen = 1
@@ -975,7 +975,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             }
         }
         i = i + clen
-    }
+    } (i < .len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -986,7 +986,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 str.trim-char = (ch char) (val str) {
     ; 前向裁剪：跳过所有等于 ch 的 code point
     start = 0
-    for start < .len {
+    {
         b = .[start]
         cp i64 = b
         clen = 1
@@ -1010,12 +1010,12 @@ str.trim-char = (ch char) (val str) {
         }
         cp != ch -> break
         start = start + clen
-    }
+    } (start < .len)
 
     ; 後向裁剪：從 start 開始掃描，找到最後一個不等於 ch 的 code point 的結束位置
     end = start
     i = start
-    for i < .len {
+    {
         b = .[i]
         cp = b
         clen = 1
@@ -1039,7 +1039,7 @@ str.trim-char = (ch char) (val str) {
         }
         cp != ch -> end = i + clen
         i = i + clen
-    }
+    } (i < .len)
     n = end - start
     n < 0 -> return
     j <- [0..n): {
@@ -1127,11 +1127,11 @@ str.split = (sep str) (out []str) {
     }
     start = 0
     pos = .index-from(sep, start)
-    for pos >= 0 {
+    {
         out.push(.slice(start, pos))
         start = pos + sep.len
         pos = .index-from(sep, start)
-    }
+    } (pos >= 0)
     out.push(.slice(start, .len))
 }
 

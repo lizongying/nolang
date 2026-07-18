@@ -2,7 +2,24 @@
 ; # std/hash/sha256
 
 print('start')
-block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+block []u32 = [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+]
 print('block init done')
 print(block[0])
 print(block[15])

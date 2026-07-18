@@ -9,7 +9,7 @@ buf []byte
 tls.tls-put-u16(buf, 0, 0x1234)
 buf[0] != 0x12 -> {
     print('FAIL: expected 0x12')
-        return
+    return
 }
 print('PASS: tls-put-u16')
 
@@ -19,7 +19,7 @@ val i64 = 0
 val = tls.tls-get-u16(buf, 0)
 val != 0x1234 -> {
     print('FAIL: expected 0x1234')
-        return
+    return
 }
 print('PASS: tls-get-u16')
 
@@ -35,7 +35,7 @@ out []byte
 out = tls.tls-bytes-cat(a, b)
 out.len != 4 -> {
     print('FAIL: expected out.len=4')
-        return
+    return
 }
 print('PASS: tls-bytes-cat')
 

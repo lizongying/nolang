@@ -11,17 +11,16 @@
 ;   - gcd  (a int, b int) (r int) — 整型泛型
 ;   - lcm  (a int, b int) (r int) — 整型泛型
 
-
 ; ── max：變參泛型，回傳最大值 ──
 test-max = () {
     r = number.max(10, 20)
-    print(r)  ; expect: 20
+    print(r); expect: 20
 
     r = number.max(3, 1, 4, 1, 5)
-    print(r)  ; expect: 5
+    print(r); expect: 5
 
     r = number.max(100, 50)
-    print(r)  ; expect: 100
+    print(r); expect: 100
 }
 
 test-max()
@@ -30,10 +29,10 @@ print(0)
 ; ── min：變參泛型，回傳最小值 ──
 test-min = () {
     r = number.min(10, 20)
-    print(r)  ; expect: 10
+    print(r); expect: 10
 
     r = number.min(3, 1, 4, 1, 5)
-    print(r)  ; expect: 1
+    print(r); expect: 1
 }
 
 test-min()
@@ -42,13 +41,13 @@ print(1)
 ; ── abs：非變參泛型，回傳絕對值 ──
 test-abs = () {
     r = number.abs(-42)
-    print(r)  ; expect: 42
+    print(r); expect: 42
 
     r = number.abs(7)
-    print(r)  ; expect: 7
+    print(r); expect: 7
 
     r = number.abs(0)
-    print(r)  ; expect: 0
+    print(r); expect: 0
 }
 
 test-abs()
@@ -57,13 +56,13 @@ print(2)
 ; ── sign：方法泛型，回傳符號（-1, 0, 1）──
 test-sign = () {
     r = sign(5)
-    print(r)  ; expect: 1
+    print(r); expect: 1
 
     r = sign(0 - 3)
-    print(r)  ; expect: -1
+    print(r); expect: -1
 
     r = sign(0)
-    print(r)  ; expect: 0
+    print(r); expect: 0
 }
 
 test-sign()
@@ -72,16 +71,16 @@ print(3)
 ; ── even / odd：整型泛型，回傳 bool ──
 test-even-odd = () {
     yes = number.even(4)
-    print(yes)  ; expect: true
+    print(yes); expect: true
 
     yes = number.even(7)
-    print(yes)  ; expect: false
+    print(yes); expect: false
 
     yes = number.odd(4)
-    print(yes)  ; expect: false
+    print(yes); expect: false
 
     yes = number.odd(7)
-    print(yes)  ; expect: true
+    print(yes); expect: true
 }
 
 test-even-odd()
@@ -90,16 +89,16 @@ print(4)
 ; ── pow：整型冪 ──
 test-pow = () {
     r = number.pow(2, 10)
-    print(r)  ; expect: 1024
+    print(r); expect: 1024
 
     r = number.pow(3, 4)
-    print(r)  ; expect: 81
+    print(r); expect: 81
 
     r = number.pow(5, 0)
-    print(r)  ; expect: 1
+    print(r); expect: 1
 
     r = number.pow(7, 1)
-    print(r)  ; expect: 7
+    print(r); expect: 7
 }
 
 test-pow()
@@ -108,19 +107,19 @@ print(5)
 ; ── gcd：最大公因數 ──
 test-gcd = () {
     r = number.gcd(48, 18)
-    print(r)  ; expect: 6
+    print(r); expect: 6
 
     r = number.gcd(42, 21)
-    print(r)  ; expect: 21
+    print(r); expect: 21
 
     r = number.gcd(17, 23)
-    print(r)  ; expect: 1
+    print(r); expect: 1
 
     r = number.gcd(0, 12)
-    print(r)  ; expect: 12
+    print(r); expect: 12
 
     r = number.gcd(0 - 12, 8)
-    print(r)  ; expect: 4
+    print(r); expect: 4
 }
 
 test-gcd()
@@ -129,19 +128,19 @@ print(6)
 ; ── lcm：最小公倍數 ──
 test-lcm = () {
     r = number.lcm(4, 6)
-    print(r)  ; expect: 12
+    print(r); expect: 12
 
     r = number.lcm(12, 63)
-    print(r)  ; expect: 252
+    print(r); expect: 252
 
     r = number.lcm(0, 5)
-    print(r)  ; expect: 0
+    print(r); expect: 0
 
     r = number.lcm(7, 7)
-    print(r)  ; expect: 7
+    print(r); expect: 7
 
     r = number.lcm(2, 5)
-    print(r)  ; expect: 10
+    print(r); expect: 10
 }
 
 test-lcm()

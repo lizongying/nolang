@@ -31,7 +31,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
     ; 逐區塊加密
     blk = 0
-    for blk < in.len {
+    {
         ; XOR 當前區塊與 prev
         xored [16]byte
         i <- [0..16): {
@@ -53,7 +53,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         }
 
         blk = blk + 16
-    }
+    } (blk < in.len)
 }
 
 ; aes-128-cbc-dec: AES-128-CBC 解密
@@ -70,7 +70,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
     ; 逐區塊解密
     blk = 0
-    for blk < in.len {
+    {
         ; 保存當前密文區塊（解密前）
         cur-cipher [16]byte
         i <- [0..16): {
@@ -92,7 +92,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         }
 
         blk = blk + 16
-    }
+    } (blk < in.len)
 }
 
 ; pkcs7-pad: PKCS#7 填充

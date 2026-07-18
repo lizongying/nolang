@@ -1,6 +1,5 @@
 ; test-ok-shadow.no — minimal test for ok variable shadowing
 
-
 ok bool = false
 print('start')
 ok = true

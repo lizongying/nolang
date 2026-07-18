@@ -10,17 +10,17 @@ test-match = () {
 
     ; 直接->是else
     x: {
-        err -> log(it)  ; it的型態是err
-        nil -> log(it)  ; it的型態是nil
-        ok -> log(it)  ; it的型態是i64
-        -> log(it)
+        err -> log(); it的型態是err
+        nil -> log(); it的型態是nil
+        ok -> log(); it的型態是i64
+        -> log()
     }
 
     ; 全部列舉
     x: {
-        err -> log(it)
-        nil -> log(it)
-        ok -> log(it)
+        err -> log()
+        nil -> log()
+        ok -> log()
     }
 
     ; it的型態是err
@@ -29,43 +29,43 @@ test-match = () {
 
     ; 這裡-> 有else的意思
     x: {
-        ok -> log(it)
-        -> log(it)
+        ok -> log()
+        -> log()
     }
 
     x: {
-        ok -> log(it)
-        nil -> log(it)
-        -> log(it)
+        ok -> log()
+        nil -> log()
+        -> log()
     }
 
     x: {
-        -> log(it)
+        -> log()
     }
 
     a i64
 
     x: {
-        err -> log(it)
+        err -> log()
         ok -> {
-            a == 1 -> log(it)
+            a == 1 -> log()
             -> log('else')
         }
-        -> log(it)
+        -> log()
     }
 
     x: {
-        err -> log(it)
-        -> log(it)
+        err -> log()
+        -> log()
     }
 
     s status
     s: {
-        status1 -> log(it)
-        status2 -> log(it)
-        status3 -> log(it)
-        status4 -> log(it)
-        -> log(it)
+        status1 -> log()
+        status2 -> log()
+        status3 -> log()
+        status4 -> log()
+        -> log()
     }
 
     ; 這是if/else

@@ -304,10 +304,10 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     bt = b.limbs[bl - 1] & MASK
     shift = 0
     tmp = bt
-    for tmp < 4294967296 / 2 {
+    {
         tmp = tmp << 1
         shift = shift + 1
-    }
+    } (tmp < 4294967296 / 2)
     shift > 0 -> bt = bt << shift
     norm-a-len = a.len + 1
     norm-a = bigint{}
@@ -328,7 +328,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     }
 
     qi = q.len - 1
-    for qi >= 0 {
+    {
         an = norm-a.limbs[qi + bl] & MASK
         an1 = norm-a.limbs[qi + bl - 1] & MASK
         an2 = norm-a.limbs[qi + bl - 2] & MASK
@@ -360,7 +360,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
 
         q.limbs[qi] = qd
         qi = qi - 1
-    }
+    } (qi >= 0)
 
     q.sign = a.sign * b.sign
     q.normalize()
@@ -415,11 +415,11 @@ pow = (a bigint, n i64) (c bigint) {
     base = bigint{}
     base = a.copy()
     i = n
-    for i > 0 {
+    {
         i & 1 == 1 -> c = mul(c, base)
         base = mul(base, base)
         i = i >> 1
-    }
+    } (i > 0)
 }
 
 ; mod-pow: r = base^exp mod modulus
@@ -435,10 +435,10 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     top = exp.limbs[exp.len - 1] & MASK
     lead = 0
     tmp = top
-    while tmp != 0 {
+    {
         tmp = tmp >> 1
         lead = lead + 1
-    }
+    } (tmp != 0)
     bits = (exp.len - 1) * 32 + lead
     bits == 0 -> return
     i <- [bits - 1..0]: {
@@ -462,14 +462,14 @@ gcd = (a bigint, b bigint) (g bigint) {
     x.sign = 1
     y.sign = 1
     yz = y.is-zero()
-    for ! yz {
+    {
         x = mod(x, y)
         tmp = bigint{}
         tmp = y.copy()
         y = x.copy()
         x = tmp.copy()
         yz = y.is-zero()
-    }
+    } (! yz)
     g = x.copy()
 }
 
@@ -536,9 +536,9 @@ shr = (a bigint, n i64) (c bigint) {
 
 ; bigint.normalize: 移除前導零，確保 len >= 1
 bigint.normalize = () {
-    for .len > 1 && .limbs[.len - 1] == 0 {
+    {
         .len = .len - 1
-    }
+    } (.len > 1 && .limbs[.len - 1] == 0)
 }
 
 ; bigint.to-str: 將 bigint 轉為十進制字串
@@ -559,20 +559,20 @@ bigint.to-str = () (out str) {
     tmp.sign = 1
     buf [256]byte
     bufn = 0
-    for true {
+    {
         tz = tmp.is-zero()
         tz -> break
         d = mod-i64(tmp, 10)
         buf[bufn] = d + 48
         bufn = bufn + 1
         tmp = div-i64(tmp, 10)
-    }
+    } (true)
     j = bufn - 1
-    for j >= 0 {
+    {
         out[out-n] = buf[j]
         out-n = out-n + 1
         j = j - 1
-    }
+    } (j >= 0)
 }
 
 ; from-str: 從十進制字串建立 bigint
@@ -583,11 +583,11 @@ from-str = (s str) (out bigint) {
     out.limbs[0] = 0
     out.len = 1
     pos = 0
-    for pos < s.len {
+    {
         c = s[pos] & 255
         c != 32 && c != 9 && c != 10 && c != 13 -> break
         pos = pos + 1
-    }
+    } (pos < s.len)
     pos < s.len -> {
         s[pos] == 45 -> {
             out.sign = -1
@@ -595,7 +595,7 @@ from-str = (s str) (out bigint) {
         }
         s[pos] == 43 -> pos = pos + 1
     }
-    for pos < s.len {
+    {
         c = s[pos] & 255
         {
             c >= 48 && c <= 57 -> {
@@ -605,7 +605,7 @@ from-str = (s str) (out bigint) {
             }
             -> pos = pos + 1
         }
-    }
+    } (pos < s.len)
     out.normalize()
 }
 
@@ -636,24 +636,24 @@ bigint.to-hex = () (out str) {
                 limb != 0 -> {
                     done = 0
                     shift = 28
-                    for shift >= 0 {
+                    {
                         nibble = (limb >> shift) & 15
                         done == 1 || nibble != 0
                         done = 1
                         out[out-n] = hex[nibble]
                         out-n = out-n + 1
-                    }
+                    } (shift >= 0)
                     shift = shift - 4
                 }
             }
         }
         shift = 28
-        for shift >= 0 {
+        {
             nibble = (limb >> shift) & 15
             out[out-n] = hex[nibble]
             out-n = out-n + 1
             shift = shift - 4
-        }
+        } (shift >= 0)
     }
 }
 

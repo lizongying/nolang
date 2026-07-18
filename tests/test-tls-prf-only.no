@@ -20,6 +20,6 @@ i <- [0..32): {
 }
 has-nonzero == 0 -> {
     print('FAIL: prf all zeros')
-        return
+    return
 }
 print('PASS: prf')

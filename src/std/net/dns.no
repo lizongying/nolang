@@ -112,7 +112,7 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
     ; QNAME: 將域名編碼為長度前綴標籤
     label-start = 0
     i = 0
-    for i <= domain.len {
+    {
         is-dot = false
         {
             i == domain.len -> is-dot = true
@@ -131,7 +131,7 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
             label-start = i + 1
         }
         i = i + 1
-    }
+    } (i <= domain.len)
 
     ; 終止零標籤
     query[pos] = 0
@@ -162,7 +162,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     jump-pos = 0
     end-pos = 0
 
-    !! {
+    {
         pos >= data.len -> *
         len-byte = data[pos] & 255
         len-byte == 0 -> {
@@ -170,6 +170,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             jumped == false -> end-pos = pos
             *
         }
+
         ; 檢查是否為壓縮指標（前兩位為 11）
         {
             (len-byte & 0xC0) == 0xC0 -> {
@@ -188,7 +189,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 pos = pos + label-len
             }
         }
-    }
+    } ()
 
     ; 移除末尾的點
     name.len > 0 -> name[name.len - 1] == 46 -> name = name.slice(0, name.len - 1)

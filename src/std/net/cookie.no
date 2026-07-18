@@ -121,18 +121,20 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
 
     ; 解析屬性
     pos = 0
-    !! {
+    {
         ; 跳過前導空格
-        for pos < rest.len && rest[pos] == 32 {
+        {
             pos = pos + 1
-        }
+        } (pos < rest.len && rest[pos] == 32)
         pos >= rest.len -> *
+
         ; 找下一個分號
         next-semi = rest.index-from(';', pos)
         attr-end = next-semi
         attr-end < 0 -> attr-end = rest.len
         attr = rest.slice(pos, attr-end)
         attr = attr.trim()
+
         ; 解析屬性
         attr-eq = attr.index('=')
         {
@@ -176,9 +178,10 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
                 }
             }
         }
+
         next-semi < 0 -> *
         pos = next-semi + 1
-    }
+    } ()
 }
 
 ; cookie-parse-header: 解析 Cookie 請求標頭
@@ -190,12 +193,13 @@ cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count 
     count = 0
     cookie-header.len == 0 -> return
     pos = 0
-    !! {
+    {
         ; 跳過空格
-        for pos < cookie-header.len && cookie-header[pos] == 32 {
+        {
             pos = pos + 1
-        }
+        } (pos < cookie-header.len && cookie-header[pos] == 32)
         pos >= cookie-header.len -> *
+
         ; 找下一個分號
         next-semi = cookie-header.index-from(';', pos)
         pair-end = next-semi
@@ -210,7 +214,7 @@ cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count 
         }
         next-semi < 0 -> *
         pos = next-semi + 1
-    }
+    } ()
 }
 
 ; ═══════════════════════════════════════════════
@@ -372,13 +376,13 @@ cookie-jar.parse-response = (set-cookie-str str, domain str, path str) {
     c.path.len == 0 -> {
         slash-pos = -1
         i = path.len - 1
-        for i >= 0 {
+        {
             path[i] == 47 -> {
                 slash-pos = i
                 break
             }
             i = i - 1
-        }
+        } (i >= 0)
         {
             slash-pos >= 0 -> c.path = path.slice(0, slash-pos + 1)
             -> c.path = '/'
@@ -437,13 +441,13 @@ cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     ; 尋找最後一個 '.'
     dot-pos = -1
     i = signed-value.len - 1
-    for i >= 0 {
+    {
         signed-value[i] == 46 -> {
             dot-pos = i
             break
         }
         i = i - 1
-    }
+    } (i >= 0)
     dot-pos < 0 -> return
 
     ; 提取原始值和簽名
@@ -498,7 +502,7 @@ cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str
         ok -> {
             verified-ok = false
             verified-val = ''
-            verified-ok, verified-val = cookie-verify(name, it, key)
+            verified-ok, verified-val = cookie-verify(name, key)
             {
                 verified-ok -> val = verified-val
                 -> val = nil

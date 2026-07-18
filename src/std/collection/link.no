@@ -353,12 +353,12 @@ link {
 ; l link: 鏈結串列狀態
 [n]t.link-reverse = (l link) {
     idx = l.head
-    for idx >= 0 {
+    {
         nx = l.next[idx]
         l.next[idx] = l.prev[idx]
         l.prev[idx] = nx
         idx = nx
-    }
+    } (idx >= 0)
     tmp = l.head
     l.head = l.tail
     l.tail = tmp
@@ -368,12 +368,12 @@ link {
 ; l link: 鏈結串列狀態
 [n]t.link-clear = (l link) {
     idx = l.head
-    for idx >= 0 {
+    {
         nx = l.next[idx]
         l.next[idx] = l.free-head
         l.free-head = idx
         idx = nx
-    }
+    } (idx >= 0)
     l.head = -1
     l.tail = -1
     l.size = 0
