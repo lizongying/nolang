@@ -1,4 +1,4 @@
-// test-basic.no — 核心編譯驗證
+; test-basic.no — 核心編譯驗證
 
 i64-max = (a i64, b i64, r i64) {
     d = a - b

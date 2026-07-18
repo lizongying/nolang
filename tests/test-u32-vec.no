@@ -1,4 +1,4 @@
-// test-u32-vec — 測試 []u32 數組字面量
+; test-u32-vec — 測試 []u32 數組字面量
 print('start')
 block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 print('after init')

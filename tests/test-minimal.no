@@ -1,2 +1,2 @@
-// test-minimal — 最小測試
+; test-minimal — 最小測試
 print('hello')

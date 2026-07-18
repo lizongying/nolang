@@ -1,4 +1,4 @@
-// test-aes-enc.no — AES-128 加密簡單測試
+; test-aes-enc.no — AES-128 加密簡單測試
 
 aes-key [16]byte = [
     0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,

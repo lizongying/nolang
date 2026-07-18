@@ -1,73 +1,73 @@
-// unix — Unix Domain Socket 支援
-//
-// 提供 Unix Domain Socket (AF_UNIX) 的服務端監聽與客戶端連接能力。
-// 底層使用 POSIX socket API（socket/unlink/bind/listen/accept/connect）。
-// 資料收發複用 net.no 的 built-in 函數（net-accept、net-send、net-recv、close）。
-//
-// 用法：
-//   // 服務端
-//   l = unix-listen-on('/tmp/myapp.sock')       // 返回 ?unix-listener
-//   l: {
-//       nil -> print('listen failed')
-//       -> c = l.accept()                        // 返回 ?unix-conn
-//   }
-//   n = c.recv(buf, 1024)
-//   n = c.send('hello')
-//   c.close()
-//   l.close()
-//
-//   // 客戶端
-//   c = unix-dial-to('/tmp/myapp.sock')          // 返回 ?unix-conn
-//   c: {
-//       nil -> print('connect failed')
-//       -> n = c.send('hello')
-//   }
-//   c.close()
+; unix — Unix Domain Socket 支援
+;
+; 提供 Unix Domain Socket (AF_UNIX) 的服務端監聽與客戶端連接能力。
+; 底層使用 POSIX socket API（socket/unlink/bind/listen/accept/connect）。
+; 資料收發複用 net.no 的 built-in 函數（net-accept、net-send、net-recv、close）。
+;
+; 用法：
+;   // 服務端
+;   l = unix-listen-on('/tmp/myapp.sock')       // 返回 ?unix-listener
+;   l: {
+;       nil -> print('listen failed')
+;       -> c = l.accept()                        // 返回 ?unix-conn
+;   }
+;   n = c.recv(buf, 1024)
+;   n = c.send('hello')
+;   c.close()
+;   l.close()
+;
+;   // 客戶端
+;   c = unix-dial-to('/tmp/myapp.sock')          // 返回 ?unix-conn
+;   c: {
+;       nil -> print('connect failed')
+;       -> n = c.send('hello')
+;   }
+;   c.close()
 
-// ═══════════════════════════════════════════════
-// 內建函數（底層實作）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 內建函數（底層實作）
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: unix-listen)
-// unix-listen: 建立 Unix Domain Socket 監聽
-// 執行 unlink + socket(AF_UNIX) + bind + listen
-// 返回 fd（-1=失敗）
-// unix-listen = (path str) (fd i64) { }
+; build-in (ForwardFunc: unix-listen)
+; unix-listen: 建立 Unix Domain Socket 監聽
+; 執行 unlink + socket(AF_UNIX) + bind + listen
+; 返回 fd（-1=失敗）
+; unix-listen = (path str) (fd i64) { }
 
-// build-in (ForwardFunc: unix-dial)
-// unix-dial: 連接到 Unix Domain Socket
-// 執行 socket(AF_UNIX) + connect
-// 返回 fd（-1=失敗）
-// unix-dial = (path str) (fd i64) { }
+; build-in (ForwardFunc: unix-dial)
+; unix-dial: 連接到 Unix Domain Socket
+; 執行 socket(AF_UNIX) + connect
+; 返回 fd（-1=失敗）
+; unix-dial = (path str) (fd i64) { }
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// Unix Domain Socket 路徑最大長度
+; Unix Domain Socket 路徑最大長度
 UNIX-MAX-PATH = 103
 
-// 預設緩衝區大小
+; 預設緩衝區大小
 UNIX-BUF-SIZE = 4096
 
-// 監聽佇列長度
+; 監聽佇列長度
 UNIX-BACKLOG = 128
 
-// ═══════════════════════════════════════════════
-// unix-listener 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; unix-listener 結構體
+; ═══════════════════════════════════════════════
 
-// unix-listener: Unix Domain Socket 監聽器
-// fd: 監聽 socket 的檔案描述符（-1=未開啟）
-// path: socket 檔案路徑
+; unix-listener: Unix Domain Socket 監聽器
+; fd: 監聽 socket 的檔案描述符（-1=未開啟）
+; path: socket 檔案路徑
 unix-listener {
     fd i64
     path str
 }
 
-// listen: 開始監聽 Unix Domain Socket
-// path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-// 返回 ok=true=成功
+; listen: 開始監聽 Unix Domain Socket
+; path: socket 檔案路徑（如 '/tmp/myapp.sock'）
+; 返回 ok=true=成功
 unix-listener.listen = (path str) (ok bool) {
     ok = false
     .fd = -1
@@ -78,8 +78,8 @@ unix-listener.listen = (path str) (ok bool) {
     ok = true
 }
 
-// accept: 接受新的 Unix Domain Socket 連接
-// 返回 c ?unix-conn: ok=連接結構體, nil=失敗
+; accept: 接受新的 Unix Domain Socket 連接
+; 返回 c ?unix-conn: ok=連接結構體, nil=失敗
 unix-listener.accept = () (c ?unix-conn) {
     c = nil
     .fd < 0 -> return
@@ -90,9 +90,9 @@ unix-listener.accept = () (c ?unix-conn) {
     }
 }
 
-// set-timeout: 設定 accept 逾時
-// timeout-ms i64: 逾時毫秒數
-// 返回 ok bool: true=成功
+; set-timeout: 設定 accept 逾時
+; timeout-ms i64: 逾時毫秒數
+; 返回 ok bool: true=成功
 unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
     .fd < 0 -> return
@@ -100,9 +100,9 @@ unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
     ret == 0 -> ok = true
 }
 
-// accept-with-timeout: 帶逾時的 accept
-// timeout-ms i64: 逾時毫秒數
-// 返回 c ?unix-conn: ok=連接, nil=逾時或失敗
+; accept-with-timeout: 帶逾時的 accept
+; timeout-ms i64: 逾時毫秒數
+; 返回 c ?unix-conn: ok=連接, nil=逾時或失敗
 unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     c = nil
     .fd < 0 -> return
@@ -116,7 +116,7 @@ unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     }
 }
 
-// close: 關閉監聽 socket（不自動刪除 socket 檔案）
+; close: 關閉監聽 socket（不自動刪除 socket 檔案）
 unix-listener.close = () {
     .fd >= 0 -> {
         close(.fd)
@@ -124,31 +124,31 @@ unix-listener.close = () {
     }
 }
 
-// fd-of: 取得監聽 socket 的檔案描述符
-// 返回 fd i64
+; fd-of: 取得監聽 socket 的檔案描述符
+; 返回 fd i64
 unix-listener.fd-of = () (fd i64) {
     fd = .fd
 }
 
-// path-of: 取得 socket 檔案路徑
-// 返回 path str
+; path-of: 取得 socket 檔案路徑
+; 返回 path str
 unix-listener.path-of = () (path str) {
     path = .path
 }
 
-// ═══════════════════════════════════════════════
-// unix-conn 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; unix-conn 結構體
+; ═══════════════════════════════════════════════
 
-// unix-conn: Unix Domain Socket 連接
-// fd: 連接 socket 的檔案描述符（-1=未連接）
+; unix-conn: Unix Domain Socket 連接
+; fd: 連接 socket 的檔案描述符（-1=未連接）
 unix-conn {
     fd i64
 }
 
-// dial: 連接到 Unix Domain Socket 服務端
-// path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-// 返回 ok=true=成功
+; dial: 連接到 Unix Domain Socket 服務端
+; path: socket 檔案路徑（如 '/tmp/myapp.sock'）
+; 返回 ok=true=成功
 unix-conn.dial = (path str) (ok bool) {
     ok = false
     .fd = -1
@@ -158,27 +158,27 @@ unix-conn.dial = (path str) (ok bool) {
     ok = true
 }
 
-// send: 發送字串資料
-// data str: 要發送的字串
-// 返回 written i64: 實際發送位元組數（-1=錯誤）
+; send: 發送字串資料
+; data str: 要發送的字串
+; 返回 written i64: 實際發送位元組數（-1=錯誤）
 unix-conn.send = (data str) (written i64) {
     written = -1
     .fd < 0 -> return
     written = net-send(.fd, data, data.len)
 }
 
-// recv: 接收資料到緩衝區
-// buf str: 接收緩衝區
-// n i64: 最多接收的位元組數
-// 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=連接關閉）
+; recv: 接收資料到緩衝區
+; buf str: 接收緩衝區
+; n i64: 最多接收的位元組數
+; 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=連接關閉）
 unix-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .fd < 0 -> return
     read-n = net-recv(.fd, buf, n)
 }
 
-// recv-all: 接收全部資料直到連接關閉
-// 返回 content str: 接收的內容, total i64: 總位元組數
+; recv-all: 接收全部資料直到連接關閉
+; 返回 content str: 接收的內容, total i64: 總位元組數
 unix-conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
@@ -193,9 +193,9 @@ unix-conn.recv-all = () (content str, total i64) {
     }
 }
 
-// set-recv-timeout: 設定接收逾時
-// timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
-// 返回 ok bool: true=成功
+; set-recv-timeout: 設定接收逾時
+; timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
+; 返回 ok bool: true=成功
 unix-conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
     ok = false
     .fd < 0 -> return
@@ -203,18 +203,18 @@ unix-conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
     ret == 0 -> ok = true
 }
 
-// set-timeout: 設定接收逾時（別名，語義同 set-recv-timeout）
-// timeout-ms i64: 逾時毫秒數
-// 返回 ok bool: true=成功
+; set-timeout: 設定接收逾時（別名，語義同 set-recv-timeout）
+; timeout-ms i64: 逾時毫秒數
+; 返回 ok bool: true=成功
 unix-conn.set-timeout = (timeout-ms i64) (ok bool) {
     ok = .set-recv-timeout(timeout-ms)
 }
 
-// recv-with-timeout: 帶逾時的接收
-// buf str: 接收緩衝區
-// n i64: 最多接收的位元組數
-// timeout-ms i64: 逾時毫秒數
-// 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
+; recv-with-timeout: 帶逾時的接收
+; buf str: 接收緩衝區
+; n i64: 最多接收的位元組數
+; timeout-ms i64: 逾時毫秒數
+; 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
 unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     read-n = -1
     .fd < 0 -> return
@@ -222,11 +222,11 @@ unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     ret != 0 -> return
     read-n = net-recv(.fd, buf, n)
 
-    // 恢復為阻塞模式
+    ; 恢復為阻塞模式
     net-set-recv-timeout(.fd, 0)
 }
 
-// close: 關閉連接
+; close: 關閉連接
 unix-conn.close = () {
     .fd >= 0 -> {
         close(.fd)
@@ -234,19 +234,19 @@ unix-conn.close = () {
     }
 }
 
-// fd-of: 取得連接 socket 的檔案描述符
-// 返回 fd i64
+; fd-of: 取得連接 socket 的檔案描述符
+; 返回 fd i64
 unix-conn.fd-of = () (fd i64) {
     fd = .fd
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// unix-listen-on: 建立 Unix Domain Socket 監聽器並開始監聽
-// path str: socket 檔案路徑
-// 返回 l ?unix-listener: ok=監聽器, nil=失敗
+; unix-listen-on: 建立 Unix Domain Socket 監聽器並開始監聽
+; path str: socket 檔案路徑
+; 返回 l ?unix-listener: ok=監聽器, nil=失敗
 unix-listen-on = (path str) (l ?unix-listener) {
     l = nil
     lst = unix-listener{}
@@ -255,9 +255,9 @@ unix-listen-on = (path str) (l ?unix-listener) {
     ok -> l = lst
 }
 
-// unix-dial-to: 建立 Unix Domain Socket 連接並撥號
-// path str: socket 檔案路徑
-// 返回 c ?unix-conn: ok=連接, nil=失敗
+; unix-dial-to: 建立 Unix Domain Socket 連接並撥號
+; path str: socket 檔案路徑
+; 返回 c ?unix-conn: ok=連接, nil=失敗
 unix-dial-to = (path str) (c ?unix-conn) {
     c = nil
     cn = unix-conn{}
@@ -266,10 +266,10 @@ unix-dial-to = (path str) (c ?unix-conn) {
     ok -> c = cn
 }
 
-// unix-dial-timeout: 帶逾時的 Unix Domain Socket 撥號
-// path str: socket 檔案路徑
-// timeout-ms i64: 連接後的接收逾時
-// 返回 c ?unix-conn: ok=連接, nil=失敗
+; unix-dial-timeout: 帶逾時的 Unix Domain Socket 撥號
+; path str: socket 檔案路徑
+; timeout-ms i64: 連接後的接收逾時
+; 返回 c ?unix-conn: ok=連接, nil=失敗
 unix-dial-timeout = (path str, timeout-ms i64) (c ?unix-conn) {
     c = nil
     fd = unix-dial(path)

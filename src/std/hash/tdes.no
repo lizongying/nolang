@@ -1,24 +1,24 @@
-// tdes — Triple DES (3DES) 加密/解密（ECB 模式）
-//
-// Triple DES 使用三個 8-byte 金鑰（K1, K2, K3），對 DES 進行三次操作。
-// 加密: C = E_K3(D_K2(E_K1(P)))
-// 解密: P = D_K1(E_K2(D_K3(C)))
-//
-// 支援 2-key 模式（K1=K3）和 3-key 模式。
-//
-// 用法：
-//   # std/hash/tdes
-//   key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
-//   out = tdes-enc(plain, plain.len, key)   // 加密
-//   out = tdes-dec(cipher, cipher.len, key) // 解密
+; tdes — Triple DES (3DES) 加密/解密（ECB 模式）
+;
+; Triple DES 使用三個 8-byte 金鑰（K1, K2, K3），對 DES 進行三次操作。
+; 加密: C = E_K3(D_K2(E_K1(P)))
+; 解密: P = D_K1(E_K2(D_K3(C)))
+;
+; 支援 2-key 模式（K1=K3）和 3-key 模式。
+;
+; 用法：
+;   # std/hash/tdes
+;   key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
+;   out = tdes-enc(plain, plain.len, key)   // 加密
+;   out = tdes-dec(cipher, cipher.len, key) // 解密
 
-// tdes-enc: Triple DES 加密（ECB 模式）
-// in []byte: 輸入資料（長度需為 8 的倍數）
-// n i64: 資料長度
-// key [24]byte: 金鑰（K1 || K2 || K3）
-// 返回 out []byte: 加密後的資料
+; tdes-enc: Triple DES 加密（ECB 模式）
+; in []byte: 輸入資料（長度需為 8 的倍數）
+; n i64: 資料長度
+; key [24]byte: 金鑰（K1 || K2 || K3）
+; 返回 out []byte: 加密後的資料
 tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
-    // 提取三個金鑰
+    ; 提取三個金鑰
     k1 [8]byte
     k2 [8]byte
     k3 [8]byte
@@ -28,28 +28,28 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         k3[i] = key[16 + i]
     }
 
-    // 逐區塊處理（每區塊 8 位元組）
+    ; 逐區塊處理（每區塊 8 位元組）
     blk = 0
     for blk < n {
-        // 提取當前區塊
+        ; 提取當前區塊
         block []byte
         i <- [0..8): {
             block[i] = in[blk + i]
         }
 
-        // 步驟 1: E_K1
+        ; 步驟 1: E_K1
         tmp1 []byte
         tmp1 = des.des-enc(block, 8, k1)
 
-        // 步驟 2: D_K2
+        ; 步驟 2: D_K2
         tmp2 []byte
         tmp2 = des.des-dec(tmp1, 8, k2)
 
-        // 步驟 3: E_K3
+        ; 步驟 3: E_K3
         tmp3 []byte
         tmp3 = des.des-enc(tmp2, 8, k3)
 
-        // 寫回輸出
+        ; 寫回輸出
         i <- [0..8): {
             out[blk + i] = tmp3[i]
         }
@@ -58,11 +58,11 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 }
 
-// tdes-dec: Triple DES 解密（ECB 模式）
-// in []byte: 輸入密文（長度需為 8 的倍數）
-// n i64: 資料長度
-// key [24]byte: 金鑰（K1 || K2 || K3）
-// 返回 out []byte: 解密後的資料
+; tdes-dec: Triple DES 解密（ECB 模式）
+; in []byte: 輸入密文（長度需為 8 的倍數）
+; n i64: 資料長度
+; key [24]byte: 金鑰（K1 || K2 || K3）
+; 返回 out []byte: 解密後的資料
 tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     k1 [8]byte
     k2 [8]byte
@@ -80,15 +80,15 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
             block[i] = in[blk + i]
         }
 
-        // 步驟 1: D_K3
+        ; 步驟 1: D_K3
         tmp1 []byte
         tmp1 = des.des-dec(block, 8, k3)
 
-        // 步驟 2: E_K2
+        ; 步驟 2: E_K2
         tmp2 []byte
         tmp2 = des.des-enc(tmp1, 8, k2)
 
-        // 步驟 3: D_K1
+        ; 步驟 3: D_K1
         tmp3 []byte
         tmp3 = des.des-dec(tmp2, 8, k1)
 
@@ -100,15 +100,15 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 3DES-CBC 模式
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 3DES-CBC 模式
+; ═══════════════════════════════════════════════
 
-// tdes-cbc-enc: Triple DES-CBC 加密
-// in []byte: 輸入資料（長度需為 8 的倍數）
-// key [24]byte: 金鑰
-// iv [8]byte: 初始向量
-// 返回 out []byte: 加密後的資料
+; tdes-cbc-enc: Triple DES-CBC 加密
+; in []byte: 輸入資料（長度需為 8 的倍數）
+; key [24]byte: 金鑰
+; iv [8]byte: 初始向量
+; 返回 out []byte: 加密後的資料
 tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {
@@ -117,17 +117,17 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
     blk = 0
     for blk < in.len {
-        // XOR 當前區塊與 prev
+        ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
             xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
         }
 
-        // 3DES 加密
+        ; 3DES 加密
         enc-block []byte
         enc-block = tdes-enc(xored, 8, key)
 
-        // 寫回輸出並更新 prev
+        ; 寫回輸出並更新 prev
         i <- [0..8): {
             out[blk + i] = enc-block[i]
             prev[i] = enc-block[i]
@@ -136,11 +136,11 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 }
 
-// tdes-cbc-dec: Triple DES-CBC 解密
-// in []byte: 輸入密文（長度需為 8 的倍數）
-// key [24]byte: 金鑰
-// iv [8]byte: 初始向量
-// 返回 out []byte: 解密後的資料
+; tdes-cbc-dec: Triple DES-CBC 解密
+; in []byte: 輸入密文（長度需為 8 的倍數）
+; key [24]byte: 金鑰
+; iv [8]byte: 初始向量
+; 返回 out []byte: 解密後的資料
 tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {

@@ -1,5 +1,5 @@
-// test-tls-prf-only — 只測試 prf
-// # std/net/tls
+; test-tls-prf-only — 只測試 prf
+; # std/net/tls
 
 print('before prf')
 secret []byte = with-cap(4)

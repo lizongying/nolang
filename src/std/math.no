@@ -1,27 +1,27 @@
-// math - 数学函数标准库
+; math - 数学函数标准库
 PI = 3.141592653589793
 E = 2.718281828459045
 
-// 基础
-// build-in (LLVMIntrinsic: llvm.fabs.f64)
-// abs = (x f64) (res f64) {  // LLVM: @llvm.fabs.f64
-// }
+; 基础
+; build-in (LLVMIntrinsic: llvm.fabs.f64)
+; abs = (x f64) (res f64) {  // LLVM: @llvm.fabs.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.maxnum.f64)
-// max = (a f64, b f64) (res f64) {  // LLVM: @llvm.maxnum.f64
-// }
+; build-in (LLVMIntrinsic: llvm.maxnum.f64)
+; max = (a f64, b f64) (res f64) {  // LLVM: @llvm.maxnum.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.minnum.f64)
-// min = (a f64, b f64) (res f64) {  // LLVM: @llvm.minnum.f64
-// }
+; build-in (LLVMIntrinsic: llvm.minnum.f64)
+; min = (a f64, b f64) (res f64) {  // LLVM: @llvm.minnum.f64
+; }
 
-// 幂与根
-// build-in (LLVMIntrinsic: llvm.sqrt.f64)
-// sqrt = (x f64) (res f64) {  // LLVM: @llvm.sqrt.f64
-// }
+; 幂与根
+; build-in (LLVMIntrinsic: llvm.sqrt.f64)
+; sqrt = (x f64) (res f64) {  // LLVM: @llvm.sqrt.f64
+; }
 
-// cbrt: 立方根
-// 使用 exp(log(|x|) / 3) 實現，避開與 number.no / bigint.no 中整數 pow 的名稱衝突
+; cbrt: 立方根
+; 使用 exp(log(|x|) / 3) 實現，避開與 number.no / bigint.no 中整數 pow 的名稱衝突
 cbrt = (x f64) (res f64) {
     x == 0.0 -> {
         res = 0.0
@@ -40,94 +40,94 @@ cbrt = (x f64) (res f64) {
     }
 }
 
-// build-in (LLVMIntrinsic: llvm.pow.f64)
-// pow = (x f64, y f64) (res f64) {  // LLVM: @llvm.pow.f64
-// }
+; build-in (LLVMIntrinsic: llvm.pow.f64)
+; pow = (x f64, y f64) (res f64) {  // LLVM: @llvm.pow.f64
+; }
 
-// hypot: 歐幾里得範數 sqrt(x*x + y*y)
+; hypot: 歐幾里得範數 sqrt(x*x + y*y)
 hypot = (x f64, y f64) (res f64) {
     res = sqrt(x * x + y * y)
 }
 
-// 三角函数（弧度）
-// build-in (LLVMIntrinsic: llvm.sin.f64)
-// sin = (x f64) (res f64) {  // LLVM: @llvm.sin.f64
-// }
+; 三角函数（弧度）
+; build-in (LLVMIntrinsic: llvm.sin.f64)
+; sin = (x f64) (res f64) {  // LLVM: @llvm.sin.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.cos.f64)
-// cos = (x f64) (res f64) {  // LLVM: @llvm.cos.f64
-// }
+; build-in (LLVMIntrinsic: llvm.cos.f64)
+; cos = (x f64) (res f64) {  // LLVM: @llvm.cos.f64
+; }
 
-// tan: tangent = sin/cos
+; tan: tangent = sin/cos
 tan = (x f64) (res f64) {
     res = sin(x) / cos(x)
 }
 
-// build-in (ForwardFunc: asin)
-// asin = (x f64) (res f64) {  // LLVM: @llvm.asin.f64
-// }
+; build-in (ForwardFunc: asin)
+; asin = (x f64) (res f64) {  // LLVM: @llvm.asin.f64
+; }
 
-// build-in (ForwardFunc: acos)
-// acos = (x f64) (res f64) {  // LLVM: @llvm.acos.f64
-// }
+; build-in (ForwardFunc: acos)
+; acos = (x f64) (res f64) {  // LLVM: @llvm.acos.f64
+; }
 
-// build-in (ForwardFunc: atan)
-// atan = (x f64) (res f64) {  // LLVM: @llvm.atan.f64
-// }
+; build-in (ForwardFunc: atan)
+; atan = (x f64) (res f64) {  // LLVM: @llvm.atan.f64
+; }
 
-// build-in (ForwardFunc: atan2)
-// atan2 = (y f64, x f64) (res f64) {  // LLVM: @llvm.atan2.f64
-// }
+; build-in (ForwardFunc: atan2)
+; atan2 = (y f64, x f64) (res f64) {  // LLVM: @llvm.atan2.f64
+; }
 
-// 双曲函数
-// build-in (ForwardFunc: sinh)
-// sinh = (x f64) (res f64) {  // LLVM: @llvm.sinh.f64
-// }
+; 双曲函数
+; build-in (ForwardFunc: sinh)
+; sinh = (x f64) (res f64) {  // LLVM: @llvm.sinh.f64
+; }
 
-// build-in (ForwardFunc: cosh)
-// cosh = (x f64) (res f64) {  // LLVM: @llvm.cosh.f64
-// }
+; build-in (ForwardFunc: cosh)
+; cosh = (x f64) (res f64) {  // LLVM: @llvm.cosh.f64
+; }
 
-// build-in (ForwardFunc: tanh)
-// tanh = (x f64) (res f64) {  // LLVM: @llvm.tanh.f64
-// }
+; build-in (ForwardFunc: tanh)
+; tanh = (x f64) (res f64) {  // LLVM: @llvm.tanh.f64
+; }
 
-// 取整
-// build-in (LLVMIntrinsic: llvm.ceil.f64)
-// ceil = (x f64) (res f64) {  // LLVM: @llvm.ceil.f64
-// }
+; 取整
+; build-in (LLVMIntrinsic: llvm.ceil.f64)
+; ceil = (x f64) (res f64) {  // LLVM: @llvm.ceil.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.floor.f64)
-// floor = (x f64) (res f64) {  // LLVM: @llvm.floor.f64
-// }
+; build-in (LLVMIntrinsic: llvm.floor.f64)
+; floor = (x f64) (res f64) {  // LLVM: @llvm.floor.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.round.f64)
-// round = (x f64) (res f64) {  // LLVM: @llvm.round.f64
-// }
+; build-in (LLVMIntrinsic: llvm.round.f64)
+; round = (x f64) (res f64) {  // LLVM: @llvm.round.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.trunc.f64)
-// trunc = (x f64) (res f64) {  // LLVM: @llvm.trunc.f64
-// }
+; build-in (LLVMIntrinsic: llvm.trunc.f64)
+; trunc = (x f64) (res f64) {  // LLVM: @llvm.trunc.f64
+; }
 
-// 指数对数
-// build-in (LLVMIntrinsic: llvm.exp.f64)
-// exp = (x f64) (res f64) {  // LLVM: @llvm.exp.f64
-// }
+; 指数对数
+; build-in (LLVMIntrinsic: llvm.exp.f64)
+; exp = (x f64) (res f64) {  // LLVM: @llvm.exp.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.log.f64)
-// log = (x f64) (res f64) {  // LLVM: @llvm.log.f64
-// }
+; build-in (LLVMIntrinsic: llvm.log.f64)
+; log = (x f64) (res f64) {  // LLVM: @llvm.log.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.log10.f64)
-// log10 = (x f64) (res f64) {  // LLVM: @llvm.log10.f64
-// }
+; build-in (LLVMIntrinsic: llvm.log10.f64)
+; log10 = (x f64) (res f64) {  // LLVM: @llvm.log10.f64
+; }
 
-// build-in (LLVMIntrinsic: llvm.log2.f64)
-// log2 = (x f64) (res f64) {  // LLVM: @llvm.log2.f64
-// }
+; build-in (LLVMIntrinsic: llvm.log2.f64)
+; log2 = (x f64) (res f64) {  // LLVM: @llvm.log2.f64
+; }
 
-// 杂项
-// fmod: 浮點取餘
+; 杂项
+; fmod: 浮點取餘
 fmod = (x f64, y f64) (res f64) {
     y == 0.0 -> {
         res = 0.0 / 0.0
@@ -137,12 +137,12 @@ fmod = (x f64, y f64) (res f64) {
     res = x - trunc(q) * y
 }
 
-// degrees: 弧度转角度
+; degrees: 弧度转角度
 degrees = (r f64) (res f64) {
     res = r * 180.0 / PI
 }
 
-// radians: 角度转弧度
+; radians: 角度转弧度
 radians = (d f64) (res f64) {
     res = d * PI / 180.0
 }

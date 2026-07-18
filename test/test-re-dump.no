@@ -1,5 +1,5 @@
 main = () {
-    // 編譯 a* 並 dump 指令
+    ; 編譯 a* 並 dump 指令
     re = regexp{
         pattern: 'a*'
     }

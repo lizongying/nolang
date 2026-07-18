@@ -1,3 +1,3 @@
-// test-hash-crc.no
+; test-hash-crc.no
 
 fmt.println('hello')

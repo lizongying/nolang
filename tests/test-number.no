@@ -1,4 +1,4 @@
-// test-number.no — 數字操作測試
+; test-number.no — 數字操作測試
 
 demo-number = () {
     r = 0

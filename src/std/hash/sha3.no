@@ -1,24 +1,24 @@
-// sha3 — SHA-3 (Keccak) 安全哈希算法
-//
-// 實作 NIST FIPS 202 定義的 SHA-3 系列，基於 Keccak 海綿結構。
-// 提供 SHA3-224、SHA3-256、SHA3-384、SHA3-512 四種輸出長度。
-//
-// 內部狀態為 1600-bit（25 × 64-bit lanes），Keccak-f[1600] 含 24 輪。
-//
-// 用法：
-//   # std/hash/sha3
-//   hash28 = sha3-224(data)     // [28]byte
-//   hash32 = sha3-256(data)     // [32]byte
-//   hash48 = sha3-384(data)     // [48]byte
-//   hash64 = sha3-512(data)     // [64]byte
-//   hex = sha3-256-hex(data)    // 64 字元 hex
+; sha3 — SHA-3 (Keccak) 安全哈希算法
+;
+; 實作 NIST FIPS 202 定義的 SHA-3 系列，基於 Keccak 海綿結構。
+; 提供 SHA3-224、SHA3-256、SHA3-384、SHA3-512 四種輸出長度。
+;
+; 內部狀態為 1600-bit（25 × 64-bit lanes），Keccak-f[1600] 含 24 輪。
+;
+; 用法：
+;   # std/hash/sha3
+;   hash28 = sha3-224(data)     // [28]byte
+;   hash32 = sha3-256(data)     // [32]byte
+;   hash48 = sha3-384(data)     // [48]byte
+;   hash64 = sha3-512(data)     // [64]byte
+;   hex = sha3-256-hex(data)    // 64 字元 hex
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// 旋轉偏移表（rho），25 個 lane 的旋轉量
-// 排列: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
+; 旋轉偏移表（rho），25 個 lane 的旋轉量
+; 排列: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
 KECCAK-RC [25]u64 = [
     0, 1, 62, 28, 27, 36, 44, 6,
     55, 20, 3, 10, 43, 25, 39, 41,
@@ -26,25 +26,25 @@ KECCAK-RC [25]u64 = [
     14,
 ]
 
-// 輪常量（iota），24 輪
+; 輪常量（iota），24 輪
 KECCAK-RC-FINAL [24]u64 = [
     1, 32898, 3416954152, 2772599054, 14509999238, 3278471570, 9380296890, 3715929624,
     376424198, 1613126308, 266236955, 14559940080, 3098900490, 4858091956, 1613126308, 376424198,
     14509999238, 2772599054, 3612105106, 3416954152, 32898, 1, 4293707772, 4294893224,
 ]
 
-// 64-bit 全 1 遮罩
+; 64-bit 全 1 遮罩
 SHA3-MASK64 u64 = 18446744073709551615
 
-// ═══════════════════════════════════════════════
-// Keccak-f[1600] 置換
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Keccak-f[1600] 置換
+; ═══════════════════════════════════════════════
 
-// keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
-// state []u64: 25 個 64-bit lane（輸入/輸出）
+; keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
+; state []u64: 25 個 64-bit lane（輸入/輸出）
 keccak-f1600 = (state []u64) {
     round <- [0..24): {
-        // θ (theta)
+        ; θ (theta)
         c [5]u64
         x <- [0..5): {
             c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
@@ -61,7 +61,7 @@ keccak-f1600 = (state []u64) {
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
             }
         }
-        // ρ (rho) + π (pi) 合併
+        ; ρ (rho) + π (pi) 合併
         b [25]u64
         x <- [0..5): {
             y <- [0..5): {
@@ -69,13 +69,13 @@ keccak-f1600 = (state []u64) {
                 val = state[x + 5 * y]
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
                 rc == 0 -> rotated = val
-                // π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
+                ; π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
                 ny = (2 * x + 3 * y) % 5
                 b[nx + 5 * ny] = rotated
             }
         }
-        // χ (chi)
+        ; χ (chi)
         x <- [0..5): {
             y <- [0..5): {
                 x1 = (x + 1) % 5
@@ -83,24 +83,24 @@ keccak-f1600 = (state []u64) {
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
             }
         }
-        // ι (iota)
+        ; ι (iota)
         state[0] = state[0] ^ KECCAK-RC-FINAL[round]
     }
 }
 
-// ═══════════════════════════════════════════════
-// 海綿函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 海綿函數
+; ═══════════════════════════════════════════════
 
-// keccak-sponge: Keccak 海綿函數
-// data []byte: 輸入資料
-// rate i64: 位元率（以位元組為單位，必須是 8 的倍數）
-// capacity i64: 容量（以位元組為單位）
-// out-len i64: 輸出長度（位元組）
-// suffix byte: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
-// 返回 out []byte: 輸出雜湊值
+; keccak-sponge: Keccak 海綿函數
+; data []byte: 輸入資料
+; rate i64: 位元率（以位元組為單位，必須是 8 的倍數）
+; capacity i64: 容量（以位元組為單位）
+; out-len i64: 輸出長度（位元組）
+; suffix byte: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
+; 返回 out []byte: 輸出雜湊值
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
-    // 初始化狀態（25 個 64-bit lane，全零）
+    ; 初始化狀態（25 個 64-bit lane，全零）
     state []u64
     i <- [0..25): {
         state[i] = 0
@@ -108,11 +108,11 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 
     dlen = data.len
 
-    // 吸收階段（absorbing）
-    // 按 rate 位元組分塊處理
+    ; 吸收階段（absorbing）
+    ; 按 rate 位元組分塊處理
     absorbed = 0
     for absorbed < dlen {
-        // 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
+        ; 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
             absorbed + i < dlen -> {
                 lane-idx = i / 8
@@ -124,29 +124,29 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         absorbed = absorbed + rate
     }
 
-    // 填充：suffix || 0x00... || 0x80（在 rate 邊界內）
-    // SHA-3: domain separation bit = 0x06 (011 in binary, padded to 0x06...0x80)
-    // 最後一個區塊
+    ; 填充：suffix || 0x00... || 0x80（在 rate 邊界內）
+    ; SHA-3: domain separation bit = 0x06 (011 in binary, padded to 0x06...0x80)
+    ; 最後一個區塊
     remaining = dlen % rate
     remaining == 0 -> remaining = rate
 
-    // 在資料末尾添加填充
+    ; 在資料末尾添加填充
     pad-byte-idx = remaining
 
-    // 對最後一個區塊的填充位元組進行 XOR
+    ; 對最後一個區塊的填充位元組進行 XOR
     lane-idx = pad-byte-idx / 8
     byte-idx = pad-byte-idx % 8
 
-    // 添加 suffix
+    ; 添加 suffix
     state[lane-idx] = state[lane-idx] ^ (suffix << (byte-idx * 8))
 
-    // 在 rate 末尾添加 0x80
+    ; 在 rate 末尾添加 0x80
     last-lane-idx = (rate - 1) / 8
     last-byte-idx = (rate - 1) % 8
     state[last-lane-idx] = state[last-lane-idx] ^ (128 << (last-byte-idx * 8))
     keccak-f1600(state)
 
-    // 擠出階段（squeezing）
+    ; 擠出階段（squeezing）
     squeezed = 0
     for squeezed < out-len {
         i <- [0..rate): {
@@ -161,13 +161,13 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     }
 }
 
-// ═══════════════════════════════════════════════
-// SHA-3 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; SHA-3 公開 API
+; ═══════════════════════════════════════════════
 
-// sha3-224: 計算 SHA3-224 雜湊
-// data []byte: 輸入資料
-// 返回 hash [28]byte: 28 位元組雜湊值
+; sha3-224: 計算 SHA3-224 雜湊
+; data []byte: 輸入資料
+; 返回 hash [28]byte: 28 位元組雜湊值
 sha3-224 = (data []byte) (hash [28]byte) {
     out []byte = keccak-sponge(data, 144, 56, 28, 0x06)
     i <- [0..28): {
@@ -175,9 +175,9 @@ sha3-224 = (data []byte) (hash [28]byte) {
     }
 }
 
-// sha3-256: 計算 SHA3-256 雜湊
-// data []byte: 輸入資料
-// 返回 hash [32]byte: 32 位元組雜湊值
+; sha3-256: 計算 SHA3-256 雜湊
+; data []byte: 輸入資料
+; 返回 hash [32]byte: 32 位元組雜湊值
 sha3-256 = (data []byte) (hash [32]byte) {
     out []byte = keccak-sponge(data, 136, 64, 32, 0x06)
     i <- [0..32): {
@@ -185,9 +185,9 @@ sha3-256 = (data []byte) (hash [32]byte) {
     }
 }
 
-// sha3-384: 計算 SHA3-384 雜湊
-// data []byte: 輸入資料
-// 返回 hash [48]byte: 48 位元組雜湊值
+; sha3-384: 計算 SHA3-384 雜湊
+; data []byte: 輸入資料
+; 返回 hash [48]byte: 48 位元組雜湊值
 sha3-384 = (data []byte) (hash [48]byte) {
     out []byte = keccak-sponge(data, 104, 96, 48, 0x06)
     i <- [0..48): {
@@ -195,9 +195,9 @@ sha3-384 = (data []byte) (hash [48]byte) {
     }
 }
 
-// sha3-512: 計算 SHA3-512 雜湊
-// data []byte: 輸入資料
-// 返回 hash [64]byte: 64 位元組雜湊值
+; sha3-512: 計算 SHA3-512 雜湊
+; data []byte: 輸入資料
+; 返回 hash [64]byte: 64 位元組雜湊值
 sha3-512 = (data []byte) (hash [64]byte) {
     out []byte = keccak-sponge(data, 72, 128, 64, 0x06)
     i <- [0..64): {
@@ -205,13 +205,13 @@ sha3-512 = (data []byte) (hash [64]byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// Hex 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Hex 便捷函數
+; ═══════════════════════════════════════════════
 
-// sha3-224-hex: 計算 SHA3-224 並返回 hex 字串
-// data []byte: 輸入資料
-// 返回 hex str: 56 字元 hex 字串
+; sha3-224-hex: 計算 SHA3-224 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 56 字元 hex 字串
 sha3-224-hex = (data []byte) (hex str) {
     hash = sha3-224(data)
     hex-chars = '0123456789abcdef'
@@ -223,9 +223,9 @@ sha3-224-hex = (data []byte) (hex str) {
     }
 }
 
-// sha3-256-hex: 計算 SHA3-256 並返回 hex 字串
-// data []byte: 輸入資料
-// 返回 hex str: 64 字元 hex 字串
+; sha3-256-hex: 計算 SHA3-256 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 64 字元 hex 字串
 sha3-256-hex = (data []byte) (hex str) {
     hash = sha3-256(data)
     hex-chars = '0123456789abcdef'
@@ -237,9 +237,9 @@ sha3-256-hex = (data []byte) (hex str) {
     }
 }
 
-// sha3-384-hex: 計算 SHA3-384 並返回 hex 字串
-// data []byte: 輸入資料
-// 返回 hex str: 96 字元 hex 字串
+; sha3-384-hex: 計算 SHA3-384 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 96 字元 hex 字串
 sha3-384-hex = (data []byte) (hex str) {
     hash = sha3-384(data)
     hex-chars = '0123456789abcdef'
@@ -251,9 +251,9 @@ sha3-384-hex = (data []byte) (hex str) {
     }
 }
 
-// sha3-512-hex: 計算 SHA3-512 並返回 hex 字串
-// data []byte: 輸入資料
-// 返回 hex str: 128 字元 hex 字串
+; sha3-512-hex: 計算 SHA3-512 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 128 字元 hex 字串
 sha3-512-hex = (data []byte) (hex str) {
     hash = sha3-512(data)
     hex-chars = '0123456789abcdef'

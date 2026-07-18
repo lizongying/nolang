@@ -1,43 +1,43 @@
-// test_char_new_syntax — 新的 char 雙引號語法測試
+; test_char_new_syntax — 新的 char 雙引號語法測試
 print('=== char literal test ===')
 
-// 基本賦值：雙引號 = char (rune)
+; 基本賦值：雙引號 = char (rune)
 c = "中"
-print(c)                    // 20013
+print(c)                    ; 20013
 
-// ASCII char
+; ASCII char
 a = "A"
-print(a)                    // 65
+print(a)                    ; 65
 
-// char 算術
+; char 算術
 b = a + 1
-print(b)                    // 66
+print(b)                    ; 66
 
-// 特殊字符
+; 特殊字符
 n = "\n"
-print(n)                    // 10
+print(n)                    ; 10
 t = "\t"
-print(t)                    // 9
+print(t)                    ; 9
 z = "\0"
-print(z)                    // 0
+print(z)                    ; 0
 
-// char 方法
+; char 方法
 d = "5"
-print(d.is-digit())         // true
+print(d.is-digit())         ; true
 
 e = "a"
-print(e.is-letter())        // true
-print(e.is-lower())         // true
+print(e.is-letter())        ; true
+print(e.is-lower())         ; true
 
 up = e.to-upper()
-print(up)                   // 65 (A)
+print(up)                   ; 65 (A)
 
 lo = "Z".to-lower()
-print(lo)                   // 122 (z)
+print(lo)                   ; 122 (z)
 
-// char.to-str()
+; char.to-str()
 s = "中".to-str()
-print(s.len)                // 3 (UTF-8 bytes)
-print(s)                    // 中
+print(s.len)                ; 3 (UTF-8 bytes)
+print(s)                    ; 中
 
 print('=== done ===')

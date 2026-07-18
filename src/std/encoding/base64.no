@@ -1,28 +1,28 @@
-// encoding/base64 — Base64 編解碼（RFC 4648）
-//
-// 提供標準與 URL 安全兩種字母表的編解碼。
+; encoding/base64 — Base64 編解碼（RFC 4648）
+;
+; 提供標準與 URL 安全兩種字母表的編解碼。
 
-// ═══════════════════════════════════════════════
-// 字母表
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字母表
+; ═══════════════════════════════════════════════
 
-// BASE64-STD: 標準 Base64 字母表
+; BASE64-STD: 標準 Base64 字母表
 BASE64-STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
-// BASE64-URL: URL 安全 Base64 字母表
+; BASE64-URL: URL 安全 Base64 字母表
 BASE64-URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
-// PAD: 填充字元 '='
+; PAD: 填充字元 '='
 PAD = 61
 
-// ═══════════════════════════════════════════════
-// 編碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 編碼
+; ═══════════════════════════════════════════════
 
-// encode: 使用指定字母表進行 Base64 編碼
-// data []byte: 輸入資料
-// table str: Base64 字母表
-// 返回 out str: Base64 編碼字串
+; encode: 使用指定字母表進行 Base64 編碼
+; data []byte: 輸入資料
+; table str: Base64 字母表
+; 返回 out str: Base64 編碼字串
 encode = (data []byte, table str) (out str) {
     n = data.len
     out-cap = (n + 2) / 3 * 4
@@ -41,7 +41,7 @@ encode = (data []byte, table str) (out str) {
         j = j + 4
     }
 
-    // 處理剩餘 1 或 2 位元組
+    ; 處理剩餘 1 或 2 位元組
     rem = n - i
     rem == 1 -> {
         b0 = data[i] & 255
@@ -60,33 +60,33 @@ encode = (data []byte, table str) (out str) {
     }
 }
 
-// encode-std: 使用標準字母表編碼
-// data []byte: 輸入資料
-// 返回 out str: Base64 編碼字串
+; encode-std: 使用標準字母表編碼
+; data []byte: 輸入資料
+; 返回 out str: Base64 編碼字串
 encode-std = (data []byte) (out str) {
     out = encode(data, BASE64-STD, out)
 }
 
-// encode-url: 使用 URL 安全字母表編碼
-// data []byte: 輸入資料
-// 返回 out str: Base64 編碼字串
+; encode-url: 使用 URL 安全字母表編碼
+; data []byte: 輸入資料
+; 返回 out str: Base64 編碼字串
 encode-url = (data []byte) (out str) {
     out = encode(data, BASE64-URL, out)
 }
 
-// ═══════════════════════════════════════════════
-// 解碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 解碼
+; ═══════════════════════════════════════════════
 
-// decode: 使用指定字母表進行 Base64 解碼
-// s str: Base64 字串
-// table str: Base64 字母表
-// 返回 out ?[]byte: ok=解碼後資料, err=無效字元
+; decode: 使用指定字母表進行 Base64 解碼
+; s str: Base64 字串
+; table str: Base64 字母表
+; 返回 out ?[]byte: ok=解碼後資料, err=無效字元
 decode = (s str, table str) (out ?[]byte) {
     out = nil
     n = s.len
 
-    // 計算填充數
+    ; 計算填充數
     pad-count = 0
     n > 0 -> {
         last = s[n - 1] & 255
@@ -129,12 +129,12 @@ decode = (s str, table str) (out ?[]byte) {
     out.len < 0 -> out.len = 0
 }
 
-// ═══════════════════════════════════════════════
-// 輔助
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 輔助
+; ═══════════════════════════════════════════════
 
-// b64-val: 單個 Base64 字元轉數值
-// 填充字元回傳 0，無效字元回傳 -1
+; b64-val: 單個 Base64 字元轉數值
+; 填充字元回傳 0，無效字元回傳 -1
 b64-val = (c i64, table str) (v i64) {
     v = -1
     c == 61 -> {

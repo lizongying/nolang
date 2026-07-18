@@ -1,18 +1,18 @@
-// sha224 — SHA-224 安全哈希算法（224-bit）
-//
-// SHA-224 使用與 SHA-256 相同的壓縮函數，但使用不同的初始值並截斷輸出為 28 位元組。
-// 底層呼叫 sha256-block 處理 512-bit 區塊。
-//
-// 用法：
-//   # std/hash/sha224
-//   hash = sha224(data)       // hash = 28 位元組 [28]byte
-//   hex = sha224-hex(data)    // hex = 56 字元 hex 字串
+; sha224 — SHA-224 安全哈希算法（224-bit）
+;
+; SHA-224 使用與 SHA-256 相同的壓縮函數，但使用不同的初始值並截斷輸出為 28 位元組。
+; 底層呼叫 sha256-block 處理 512-bit 區塊。
+;
+; 用法：
+;   # std/hash/sha224
+;   hash = sha224(data)       // hash = 28 位元組 [28]byte
+;   hex = sha224-hex(data)    // hex = 56 字元 hex 字串
 
-// sha224: 計算 SHA-224 雜湊（含填充與多區塊處理）
-// data []byte: 輸入位元組陣列
-// 返回 hash [28]byte: 28 位元組雜湊值
+; sha224: 計算 SHA-224 雜湊（含填充與多區塊處理）
+; data []byte: 輸入位元組陣列
+; 返回 hash [28]byte: 28 位元組雜湊值
 sha224 = (data []byte) (hash [28]byte) {
-    // SHA-224 初始狀態（不同於 SHA-256）
+    ; SHA-224 初始狀態（不同於 SHA-256）
     h0 u32 = 3238371032
     h1 u32 = 914150663
     h2 u32 = 812702999
@@ -24,39 +24,39 @@ sha224 = (data []byte) (hash [28]byte) {
 
     dlen = data.len
 
-    // 填充：0x80 + 0x00*pad + 8-byte big-endian bit length
-    // 總長度需為 64 的倍數
+    ; 填充：0x80 + 0x00*pad + 8-byte big-endian bit length
+    ; 總長度需為 64 的倍數
     bit-len = dlen * 8
     mod-val = (dlen + 9) % 64
     pad-len = 0
     mod-val != 0 -> pad-len = 64 - mod-val
     total-len = dlen + 1 + pad-len + 8
 
-    // 建立填充緩衝區
+    ; 建立填充緩衝區
     padded []byte
     i <- [0..total-len): {
         padded[i] = 0
     }
 
-    // 複製原始資料
+    ; 複製原始資料
     i <- [0..dlen): {
         padded[i] = data[i]
     }
 
-    // 填充 0x80
+    ; 填充 0x80
     padded[dlen] = 128
 
-    // 填充 0x00
+    ; 填充 0x00
     i <- [dlen + 1..total-len - 8): {
         padded[i] = 0
     }
 
-    // 填充 bit-len（big-endian 64-bit）
+    ; 填充 bit-len（big-endian 64-bit）
     i <- [0..8): {
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
-    // 處理每個 64 位元組區塊
+    ; 處理每個 64 位元組區塊
     block []u32
     i <- [0..16): {
         block[i] = 0
@@ -70,7 +70,7 @@ sha224 = (data []byte) (hash [28]byte) {
         offset = offset + 64
     }
 
-    // 輸出 28 位元組雜湊值（big-endian，截斷 h0..h6 的前 28 位元組）
+    ; 輸出 28 位元組雜湊值（big-endian，截斷 h0..h6 的前 28 位元組）
     hash[0] = (h0 >> 24) & 255
     hash[1] = (h0 >> 16) & 255
     hash[2] = (h0 >> 8) & 255
@@ -101,9 +101,9 @@ sha224 = (data []byte) (hash [28]byte) {
     hash[27] = h6 & 255
 }
 
-// sha224-hex: 計算 SHA-224 雜湊並返回 hex 字串
-// data []byte: 輸入位元組陣列
-// 返回 hex str: 56 字元小寫 hex 字串
+; sha224-hex: 計算 SHA-224 雜湊並返回 hex 字串
+; data []byte: 輸入位元組陣列
+; 返回 hex str: 56 字元小寫 hex 字串
 sha224-hex = (data []byte) (hex str) {
     hash = sha224(data)
 

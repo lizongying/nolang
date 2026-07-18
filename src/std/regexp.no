@@ -1,46 +1,46 @@
-// regexp — 正規表示式標準庫（純 Nolang 實作）
-//
-// 完全使用 Nolang 實作正規表示式引擎，不依賴 C 標準庫 regex.h。
-// 採用指令式 VM + 回溯匹配（backtracking）架構。
-//
-// 支援的語法：
-//   .          任意字元（不含換行）
-//   *          零次或多次（貪婪）
-//   +          一次或多次（貪婪）
-//   ?          零次或一次（貪婪）
-//   [abc]      字元類別
-//   [^abc]     反向字元類別
-//   [a-z]      字元範圍
-//   ^          行首錨點
-//   $          行尾錨點
-//   \d \D      數字 / 非數字
-//   \w \W      文字字元 / 非文字字元
-//   \s \S      空白字元 / 非空白字元
-//   \n \t \r   換行 / 定位 / 歸位
-//   \. \* \+   跳脫特殊字元
-//
-// 用法示例：
-//   re = regexp{
-//       pattern: '^hello'
-//   }
-//   matched = re.matches('hello world')
-//   // matched = true
-//
-//   re = regexp{
-//       pattern: '\\d+'
-//   }
-//   match = re.find('price: 123')
-//   // match = '123'
-//
-//   // 便捷函數
-//   matched = regexp-match('hello.*world', 'hello nolang world')
-//   result = regexp-find('[0-9]+', 'abc123def456')
+; regexp — 正規表示式標準庫（純 Nolang 實作）
+;
+; 完全使用 Nolang 實作正規表示式引擎，不依賴 C 標準庫 regex.h。
+; 採用指令式 VM + 回溯匹配（backtracking）架構。
+;
+; 支援的語法：
+;   .          任意字元（不含換行）
+;   *          零次或多次（貪婪）
+;   +          一次或多次（貪婪）
+;   ?          零次或一次（貪婪）
+;   [abc]      字元類別
+;   [^abc]     反向字元類別
+;   [a-z]      字元範圍
+;   ^          行首錨點
+;   $          行尾錨點
+;   \d \D      數字 / 非數字
+;   \w \W      文字字元 / 非文字字元
+;   \s \S      空白字元 / 非空白字元
+;   \n \t \r   換行 / 定位 / 歸位
+;   \. \* \+   跳脫特殊字元
+;
+; 用法示例：
+;   re = regexp{
+;       pattern: '^hello'
+;   }
+;   matched = re.matches('hello world')
+;   // matched = true
+;
+;   re = regexp{
+;       pattern: '\\d+'
+;   }
+;   match = re.find('price: 123')
+;   // match = '123'
+;
+;   // 便捷函數
+;   matched = regexp-match('hello.*world', 'hello nolang world')
+;   result = regexp-find('[0-9]+', 'abc123def456')
 
-// ═══════════════════════════════════════════════
-// 常量：指令類型
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量：指令類型
+; ═══════════════════════════════════════════════
 
-// 指令類型常量
+; 指令類型常量
 RE-OP-CHAR = 1
 RE-OP-ANY = 2
 RE-OP-CLASS = 3
@@ -50,33 +50,33 @@ RE-OP-MATCH = 9
 RE-OP-START = 10
 RE-OP-END = 11
 
-// 量詞內部代碼（避免使用 42/43/63 等原始字元值作為比較常量，
-// 因為 LLVM 對 == 42 有優化 bug。改用 1/2/3 這些安全值。）
+; 量詞內部代碼（避免使用 42/43/63 等原始字元值作為比較常量，
+; 因為 LLVM 對 == 42 有優化 bug。改用 1/2/3 這些安全值。）
 _RE-QUANT-NONE = 0
 _RE-QUANT-STAR = 1
 _RE-QUANT-PLUS = 2
 _RE-QUANT-QUESTION = 3
 
-// 每個字元類別 bitmap 大小（32 bytes = 256 bits）
+; 每個字元類別 bitmap 大小（32 bytes = 256 bits）
 RE-CLS-SIZE = 32
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// regexp: 正規表示式
-// pattern: 原始 pattern 字串
-// compiled: 是否已編譯
-// n: 編譯後指令數量
-// op: 指令類型陣列
-// arg1: 指令參數1（字元值 / 跳轉目標 / 類別索引）
-// arg2: 指令參數2（SPLIT 的第二分支）
-// cls: 字元類別 bitmap（每個 RE-CLS-SIZE bytes）
-// ncls: 字元類別數量
-// match-end: 匹配結束位置（find 使用）
-// tmp-atom-type: 解析暫存 — atom 類型
-// tmp-atom-char: 解析暫存 — atom 字元值
-// tmp-atom-cls: 解析暫存 — atom 類別索引
+; regexp: 正規表示式
+; pattern: 原始 pattern 字串
+; compiled: 是否已編譯
+; n: 編譯後指令數量
+; op: 指令類型陣列
+; arg1: 指令參數1（字元值 / 跳轉目標 / 類別索引）
+; arg2: 指令參數2（SPLIT 的第二分支）
+; cls: 字元類別 bitmap（每個 RE-CLS-SIZE bytes）
+; ncls: 字元類別數量
+; match-end: 匹配結束位置（find 使用）
+; tmp-atom-type: 解析暫存 — atom 類型
+; tmp-atom-char: 解析暫存 — atom 字元值
+; tmp-atom-cls: 解析暫存 — atom 類別索引
 regexp {
     pattern str
     compiled bool
@@ -94,14 +94,14 @@ regexp {
     tmp-next-i i64
 }
 
-// ═══════════════════════════════════════════════
-// 指令發射
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 指令發射
+; ═══════════════════════════════════════════════
 
-// emit: 發射一條指令
-// op i64: 指令類型
-// arg1 i64: 參數1
-// arg2 i64: 參數2
+; emit: 發射一條指令
+; op i64: 指令類型
+; arg1 i64: 參數1
+; arg2 i64: 參數2
 regexp.emit = (op i64, arg1 i64, arg2 i64) {
     .op[.n] = op
     .arg1[.n] = arg1
@@ -109,23 +109,23 @@ regexp.emit = (op i64, arg1 i64, arg2 i64) {
     .n = .n + 1
 }
 
-// emit-atom: 發射一個 atom 指令
-// atom-type i64: atom 類型
-// atom-char i64: atom 字元值
-// atom-cls i64: atom 類別索引
+; emit-atom: 發射一個 atom 指令
+; atom-type i64: atom 類型
+; atom-char i64: atom 字元值
+; atom-cls i64: atom 類別索引
 regexp.emit-atom = (atom-type i64, atom-char i64, atom-cls i64) {
     atom-type == RE-OP-CHAR -> .emit(RE-OP-CHAR, atom-char, 0)
     atom-type == RE-OP-ANY -> .emit(RE-OP-ANY, 0, 0)
     atom-type == RE-OP-CLASS -> .emit(RE-OP-CLASS, atom-cls, 0)
 }
 
-// ═══════════════════════════════════════════════
-// 字元類別 bitmap 操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字元類別 bitmap 操作
+; ═══════════════════════════════════════════════
 
-// set-class-bit: 設定位元
-// cls-idx i64: 類別索引
-// c i64: 字元值（0~255）
+; set-class-bit: 設定位元
+; cls-idx i64: 類別索引
+; c i64: 字元值（0~255）
 regexp.set-class-bit = (cls-idx i64, c i64) {
     base = cls-idx * RE-CLS-SIZE
     byte-idx = c >> 3
@@ -134,9 +134,9 @@ regexp.set-class-bit = (cls-idx i64, c i64) {
     .cls[base + byte-idx] = .cls[base + byte-idx] | mask
 }
 
-// clear-class-bit: 清除位元
-// cls-idx i64: 類別索引
-// c i64: 字元值（0~255）
+; clear-class-bit: 清除位元
+; cls-idx i64: 類別索引
+; c i64: 字元值（0~255）
 regexp.clear-class-bit = (cls-idx i64, c i64) {
     base = cls-idx * RE-CLS-SIZE
     byte-idx = c >> 3
@@ -145,10 +145,10 @@ regexp.clear-class-bit = (cls-idx i64, c i64) {
     .cls[base + byte-idx] = .cls[base + byte-idx] & mask
 }
 
-// in-class: 判斷字元是否在類別中
-// cls-idx i64: 類別索引
-// c i64: 字元值（0~255）
-// 返回 yes bool: true=在類別中
+; in-class: 判斷字元是否在類別中
+; cls-idx i64: 類別索引
+; c i64: 字元值（0~255）
+; 返回 yes bool: true=在類別中
 regexp.in-class = (cls-idx i64, c i64) (yes bool) {
     yes = false
     base = cls-idx * RE-CLS-SIZE
@@ -158,8 +158,8 @@ regexp.in-class = (cls-idx i64, c i64) (yes bool) {
     (.cls[base + byte-idx] & mask) != 0 -> yes = true
 }
 
-// init-class-zero: 將類別 bitmap 初始化為全零
-// cls-idx i64: 類別索引
+; init-class-zero: 將類別 bitmap 初始化為全零
+; cls-idx i64: 類別索引
 regexp.init-class-zero = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
@@ -167,8 +167,8 @@ regexp.init-class-zero = (cls-idx i64) {
     }
 }
 
-// init-class-all: 將類別 bitmap 初始化為全一
-// cls-idx i64: 類別索引
+; init-class-all: 將類別 bitmap 初始化為全一
+; cls-idx i64: 類別索引
 regexp.init-class-all = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
@@ -176,19 +176,19 @@ regexp.init-class-all = (cls-idx i64) {
     }
 }
 
-// alloc-class: 分配一個新的字元類別，返回索引
-// 返回 cls-idx i64: 類別索引
+; alloc-class: 分配一個新的字元類別，返回索引
+; 返回 cls-idx i64: 類別索引
 regexp.alloc-class = () (cls-idx i64) {
     cls-idx = .ncls
     .ncls = .ncls + 1
 }
 
-// ═══════════════════════════════════════════════
-// 預定義字元類別（\d \D \w \W \s \S）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 預定義字元類別（\d \D \w \W \s \S）
+; ═══════════════════════════════════════════════
 
-// make-class-digits: 建立數字類別 \d [0-9]
-// 返回 cls-idx i64: 類別索引
+; make-class-digits: 建立數字類別 \d [0-9]
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-digits = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-zero(cls-idx)
@@ -197,8 +197,8 @@ regexp.make-class-digits = () (cls-idx i64) {
     }
 }
 
-// make-class-nondigits: 建立非數字類別 \D
-// 返回 cls-idx i64: 類別索引
+; make-class-nondigits: 建立非數字類別 \D
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-nondigits = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-all(cls-idx)
@@ -207,8 +207,8 @@ regexp.make-class-nondigits = () (cls-idx i64) {
     }
 }
 
-// make-class-word: 建立文字字元類別 \w [a-zA-Z0-9_]
-// 返回 cls-idx i64: 類別索引
+; make-class-word: 建立文字字元類別 \w [a-zA-Z0-9_]
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-word = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-zero(cls-idx)
@@ -224,8 +224,8 @@ regexp.make-class-word = () (cls-idx i64) {
     .set-class-bit(cls-idx, 95)
 }
 
-// make-class-nonword: 建立非文字字元類別 \W
-// 返回 cls-idx i64: 類別索引
+; make-class-nonword: 建立非文字字元類別 \W
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-nonword = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-all(cls-idx)
@@ -241,8 +241,8 @@ regexp.make-class-nonword = () (cls-idx i64) {
     .clear-class-bit(cls-idx, 95)
 }
 
-// make-class-space: 建立空白字元類別 \s
-// 返回 cls-idx i64: 類別索引
+; make-class-space: 建立空白字元類別 \s
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-space = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-zero(cls-idx)
@@ -254,8 +254,8 @@ regexp.make-class-space = () (cls-idx i64) {
     .set-class-bit(cls-idx, 12)
 }
 
-// make-class-nonspace: 建立非空白字元類別 \S
-// 返回 cls-idx i64: 類別索引
+; make-class-nonspace: 建立非空白字元類別 \S
+; 返回 cls-idx i64: 類別索引
 regexp.make-class-nonspace = () (cls-idx i64) {
     cls-idx = .alloc-class()
     .init-class-all(cls-idx)
@@ -267,28 +267,28 @@ regexp.make-class-nonspace = () (cls-idx i64) {
     .clear-class-bit(cls-idx, 12)
 }
 
-// ═══════════════════════════════════════════════
-// 字元類別內跳脫（用於 [...] 內部的 \d \w \s 等）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字元類別內跳脫（用於 [...] 內部的 \d \w \s 等）
+; ═══════════════════════════════════════════════
 
-// set-class-escape: 在字元類別中處理跳脫序列
-// cls-idx i64: 類別索引
-// c i64: 跳脫字元（如 'd' 'w' 's' 等）
+; set-class-escape: 在字元類別中處理跳脫序列
+; cls-idx i64: 類別索引
+; c i64: 跳脫字元（如 'd' 'w' 's' 等）
 regexp.set-class-escape = (cls-idx i64, c i64) {
     c == 100 -> {
-        // \d — 數字
+        ; \d — 數字
         k <- [48..58): {
             .set-class-bit(cls-idx, k)
         }
     }
     c == 68 -> {
-        // \D — 非數字
+        ; \D — 非數字
         k <- [0..256): {
             k < 48 || k >= 58 -> .set-class-bit(cls-idx, k)
         }
     }
     c == 119 -> {
-        // \w — 文字字元
+        ; \w — 文字字元
         k <- [65..91): {
             .set-class-bit(cls-idx, k)
         }
@@ -301,13 +301,13 @@ regexp.set-class-escape = (cls-idx i64, c i64) {
         .set-class-bit(cls-idx, 95)
     }
     c == 87 -> {
-        // \W — 非文字字元
+        ; \W — 非文字字元
         k <- [0..256): {
             (k < 48 || k >= 58) && (k < 65 || k >= 91) && (k < 97 || k >= 123) && k != 95 -> .set-class-bit(cls-idx, k)
         }
     }
     c == 115 -> {
-        // \s — 空白字元
+        ; \s — 空白字元
         .set-class-bit(cls-idx, 32)
         .set-class-bit(cls-idx, 9)
         .set-class-bit(cls-idx, 10)
@@ -316,7 +316,7 @@ regexp.set-class-escape = (cls-idx i64, c i64) {
         .set-class-bit(cls-idx, 12)
     }
     c == 83 -> {
-        // \S — 非空白字元
+        ; \S — 非空白字元
         k <- [0..256): {
             k != 32 && k != 9 && k != 10 && k != 13 && k != 11 && k != 12 -> .set-class-bit(cls-idx, k)
         }
@@ -327,17 +327,17 @@ regexp.set-class-escape = (cls-idx i64, c i64) {
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> .set-class-bit(cls-idx, c)
 }
 
-// ═══════════════════════════════════════════════
-// Pattern 解析
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Pattern 解析
+; ═══════════════════════════════════════════════
 
-// parse-atom: 解析單個 regex atom（不發射指令）
-// 將結果存入 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
-// pattern str: pattern 字串
-// i i64: 當前位置
-// 返回 new-i i64: 解析後的新位置
+; parse-atom: 解析單個 regex atom（不發射指令）
+; 將結果存入 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
+; pattern str: pattern 字串
+; i i64: 當前位置
+; 返回 new-i i64: 解析後的新位置
 regexp.parse-atom = (pattern str, i i64) (new-i i64) {
-    // 使用局部變數，最後再賦值給輸出參數
+    ; 使用局部變數，最後再賦值給輸出參數
     result-i = i
 
     .tmp-atom-type = RE-OP-CHAR
@@ -353,21 +353,21 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
     c = pattern[i] & 255
 
     c == 46 -> {
-        // . — 任意字元
+        ; . — 任意字元
         .tmp-atom-type = RE-OP-ANY
         result-i = i + 1
     }
     c == 91 -> {
-        // [ — 字元類別
+        ; [ — 字元類別
         .tmp-atom-type = RE-OP-CLASS
         result-i = .parse-class(pattern, i)
     }
     c == 92 -> {
-        // \ — 跳脫序列
+        ; \ — 跳脫序列
         result-i = .parse-escape(pattern, i)
     }
     c != 46 && c != 91 && c != 92 -> {
-        // 常字元
+        ; 常字元
         .tmp-atom-type = RE-OP-CHAR
         .tmp-atom-char = c
         result-i = i + 1
@@ -376,15 +376,15 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
     new-i = result-i
 }
 
-// parse-class: 解析 [...] 字元類別
-// pattern str: pattern 字串
-// i i64: 當前位置（指向 '['）
-// 返回 new-i i64: 解析後的新位置（']' 之後）
-// 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
+; parse-class: 解析 [...] 字元類別
+; pattern str: pattern 字串
+; i i64: 當前位置（指向 '['）
+; 返回 new-i i64: 解析後的新位置（']' 之後）
+; 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
 regexp.parse-class = (pattern str, i i64) (new-i i64) {
     result-i = i
 
-    // 分配類別
+    ; 分配類別
     cls-idx = .alloc-class()
     .init-class-zero(cls-idx)
     .tmp-atom-cls = cls-idx
@@ -392,7 +392,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     n = pattern.len
     i = i + 1
 
-    // 檢查反向 ^
+    ; 檢查反向 ^
     negated = 0
     i < n -> {
         pattern[i] & 255 == 94 -> {
@@ -401,23 +401,23 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         }
     }
 
-    // ']' 在第一個位置視為常字元
+    ; ']' 在第一個位置視為常字元
     first = 1
 
     for i < n {
         c = pattern[i] & 255
 
-        // 結束（非首字元）
+        ; 結束（非首字元）
         c == 93 && first == 0 -> {
             i = i + 1
             break
         }
         first = 0
 
-        // 預設前進 1
+        ; 預設前進 1
         next-i = i + 1
 
-        // 檢查範圍 c-end
+        ; 檢查範圍 c-end
         is-range = 0
         i + 2 < n -> {
             next-c = pattern[i + 1] & 255
@@ -436,7 +436,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         }
 
         is-range == 0 -> {
-            // 跳脫序列
+            ; 跳脫序列
             c == 92 -> {
                 next-i = i + 1
                 i < n -> {
@@ -453,7 +453,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         i = next-i
     }
 
-    // 反向
+    ; 反向
     negated == 1 -> {
         base = cls-idx * RE-CLS-SIZE
         j <- [0..RE-CLS-SIZE): {
@@ -465,11 +465,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     new-i = result-i
 }
 
-// parse-escape: 解析 \x 跳脫序列
-// pattern str: pattern 字串
-// i i64: 當前位置（指向 '\'）
-// 返回 new-i i64: 解析後的新位置
-// 副作用：設置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
+; parse-escape: 解析 \x 跳脫序列
+; pattern str: pattern 字串
+; i i64: 當前位置（指向 '\'）
+; 返回 new-i i64: 解析後的新位置
+; 副作用：設置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
 regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     result-i = i
 
@@ -487,58 +487,58 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c = pattern[i] & 255
 
     c == 100 -> {
-        // \d — 數字
+        ; \d — 數字
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
         result-i = i + 1
     }
     c == 68 -> {
-        // \D — 非數字
+        ; \D — 非數字
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
         result-i = i + 1
     }
     c == 119 -> {
-        // \w — 文字字元
+        ; \w — 文字字元
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
         result-i = i + 1
     }
     c == 87 -> {
-        // \W — 非文字字元
+        ; \W — 非文字字元
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
         result-i = i + 1
     }
     c == 115 -> {
-        // \s — 空白字元
+        ; \s — 空白字元
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
         result-i = i + 1
     }
     c == 83 -> {
-        // \S — 非空白字元
+        ; \S — 非空白字元
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
         result-i = i + 1
     }
     c == 110 -> {
-        // \n
+        ; \n
         .tmp-atom-char = 10
         result-i = i + 1
     }
     c == 116 -> {
-        // \t
+        ; \t
         .tmp-atom-char = 9
         result-i = i + 1
     }
     c == 114 -> {
-        // \r
+        ; \r
         .tmp-atom-char = 13
         result-i = i + 1
     }
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
-        // 跳脫特殊字元或常字元
+        ; 跳脫特殊字元或常字元
         .tmp-atom-char = c
         result-i = i + 1
     }
@@ -546,21 +546,21 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     new-i = result-i
 }
 
-// ═══════════════════════════════════════════════
-// 編譯
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 編譯
+; ═══════════════════════════════════════════════
 
-// emit-quantized: 根據量詞發射指令
-// 從結構體字段 .tmp-quant 讀取量詞內部代碼（1=*, 2=+, 3=?）
-// 使用 1/2/3 作為比較值，避免 LLVM 對 == 42 的優化 bug
-// atom-type i64: atom 類型
-// atom-char i64: atom 字元值
-// atom-cls i64: atom 類別索引
-// atom-i i64: atom 後的位置
+; emit-quantized: 根據量詞發射指令
+; 從結構體字段 .tmp-quant 讀取量詞內部代碼（1=*, 2=+, 3=?）
+; 使用 1/2/3 作為比較值，避免 LLVM 對 == 42 的優化 bug
+; atom-type i64: atom 類型
+; atom-char i64: atom 字元值
+; atom-cls i64: atom 類別索引
+; atom-i i64: atom 後的位置
 regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64) {
     q = .tmp-quant
     q == _RE-QUANT-STAR -> {
-        // * — 零次或多次（貪婪）
+        ; * — 零次或多次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -572,7 +572,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         return
     }
     q == _RE-QUANT-PLUS -> {
-        // + — 一次或多次（貪婪）
+        ; + — 一次或多次（貪婪）
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-SPLIT, l1, .n + 1)
@@ -580,7 +580,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         return
     }
     q == _RE-QUANT-QUESTION -> {
-        // ? — 零次或一次（貪婪）
+        ; ? — 零次或一次（貪婪）
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -590,32 +590,32 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .tmp-next-i = atom-i + 1
         return
     }
-    // 默認（q == _RE-QUANT-NONE）：不是量詞，直接發射 atom
+    ; 默認（q == _RE-QUANT-NONE）：不是量詞，直接發射 atom
     .emit-atom(atom-type, atom-char, atom-cls)
     .tmp-next-i = atom-i
 }
 
-// compile: 將 pattern 字串編譯為指令序列
+; compile: 將 pattern 字串編譯為指令序列
 regexp.compile = () {
     .n = 0
     .ncls = 0
     .compiled = true
 
-    // 偵測量詞使用 bitmap 位元測試，避免與常量 42 直接比較
-    // 分配三個字元類別，分別只有一個位元被設定
-    // set-class-bit 使用陣列 STORE（byte-idx = c>>3, bit-idx = c&7）
-    // in-class 使用 LOAD + AND + != 0，不涉及 == 42 比較
+    ; 偵測量詞使用 bitmap 位元測試，避免與常量 42 直接比較
+    ; 分配三個字元類別，分別只有一個位元被設定
+    ; set-class-bit 使用陣列 STORE（byte-idx = c>>3, bit-idx = c&7）
+    ; in-class 使用 LOAD + AND + != 0，不涉及 == 42 比較
     star-cls = .alloc-class()
     .init-class-zero(star-cls)
-    .set-class-bit(star-cls, 42)   // '*' — ASCII 42
+    .set-class-bit(star-cls, 42)   ; '*' — ASCII 42
 
     plus-cls = .alloc-class()
     .init-class-zero(plus-cls)
-    .set-class-bit(plus-cls, 43)   // '+' — ASCII 43
+    .set-class-bit(plus-cls, 43)   ; '+' — ASCII 43
 
     quest-cls = .alloc-class()
     .init-class-zero(quest-cls)
-    .set-class-bit(quest-cls, 63)  // '?' — ASCII 63
+    .set-class-bit(quest-cls, 63)  ; '?' — ASCII 63
 
     n = .pattern.len
     i = 0
@@ -623,32 +623,32 @@ regexp.compile = () {
     for i < n {
         c = .pattern[i] & 255
 
-        // 預設前進 1
+        ; 預設前進 1
         .tmp-next-i = i + 1
 
-        // ^ — 行首錨點
+        ; ^ — 行首錨點
         c == 94 -> {
             .emit(RE-OP-START, 0, 0)
             .tmp-next-i = i + 1
         }
-        // $ — 行尾錨點
+        ; $ — 行尾錨點
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
             .tmp-next-i = i + 1
         }
-        // 其他 atom
+        ; 其他 atom
         c != 94 && c != 36 -> {
-            // 解析 atom
+            ; 解析 atom
             atom-i = .parse-atom(.pattern, i)
 
-            // 暫存 atom 資訊
+            ; 暫存 atom 資訊
             atom-type = .tmp-atom-type
             atom-char = .tmp-atom-char
             atom-cls = .tmp-atom-cls
 
-            // 偵測量詞：使用 bitmap 位元測試
-            // in-class 執行: load byte → and mask → icmp ne 0
-            // 完全不涉及 == 42 的比較，繞過 LLVM 優化 bug
+            ; 偵測量詞：使用 bitmap 位元測試
+            ; in-class 執行: load byte → and mask → icmp ne 0
+            ; 完全不涉及 == 42 的比較，繞過 LLVM 優化 bug
             .tmp-quant = _RE-QUANT-NONE
             atom-i < n -> {
                 qc = .pattern[atom-i] & 255
@@ -660,7 +660,7 @@ regexp.compile = () {
                 is-quest -> .tmp-quant = _RE-QUANT-QUESTION
             }
 
-            // 委派給獨立方法處理量詞分派
+            ; 委派給獨立方法處理量詞分派
             .emit-quantized(atom-type, atom-char, atom-cls, atom-i)
         }
 
@@ -670,18 +670,18 @@ regexp.compile = () {
     .emit(RE-OP-MATCH, 0, 0)
 }
 
-// ═══════════════════════════════════════════════
-// 匹配
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 匹配
+; ═══════════════════════════════════════════════
 
-// match-at: 遞迴回溯匹配
-// pc i64: 指令計數器
-// sp i64: 文字位置
-// text str: 待匹配文字
-// 返回 ok bool: true=匹配成功
-// 副作用：成功時設置 .match-end = sp
+; match-at: 遞迴回溯匹配
+; pc i64: 指令計數器
+; sp i64: 文字位置
+; text str: 待匹配文字
+; 返回 ok bool: true=匹配成功
+; 副作用：成功時設置 .match-end = sp
 regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
-    // 使用局部變數，最後賦值給輸出參數
+    ; 使用局部變數，最後賦值給輸出參數
     result-ok = false
 
     pc < .n -> {
@@ -709,9 +709,9 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
             }
         }
         op == RE-OP-SPLIT -> {
-            // 貪婪：先嘗試第一分支
+            ; 貪婪：先嘗試第一分支
             result-ok = .match-at(.arg1[pc], sp, text)
-            // 第一分支失敗時回溯到第二分支
+            ; 第一分支失敗時回溯到第二分支
             !result-ok -> {
                 result-ok = .match-at(.arg2[pc], sp, text)
             }
@@ -738,18 +738,18 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     ok = result-ok
 }
 
-// ═══════════════════════════════════════════════
-// 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 公開 API
+; ═══════════════════════════════════════════════
 
-// matches: 判斷 text 是否匹配 .pattern（任意位置）
-// text str: 待匹配文字
-// 返回 matched bool: true=匹配
+; matches: 判斷 text 是否匹配 .pattern（任意位置）
+; text str: 待匹配文字
+; 返回 matched bool: true=匹配
 regexp.matches = (text str) (matched bool) {
     result-matched = false
     .compiled == false -> .compile()
 
-    // 從每個位置嘗試匹配
+    ; 從每個位置嘗試匹配
     sp = 0
     for sp <= text.len {
         .match-end = -1
@@ -764,20 +764,20 @@ regexp.matches = (text str) (matched bool) {
     matched = result-matched
 }
 
-// find: 在 text 中查找第一個匹配 .pattern 的子串
-// text str: 待匹配文字
-// 返回 result str: 匹配的子串，未找到返回空字串
+; find: 在 text 中查找第一個匹配 .pattern 的子串
+; text str: 待匹配文字
+; 返回 result str: 匹配的子串，未找到返回空字串
 regexp.find = (text str) (result str) {
     result = ''
     .compiled == false -> .compile()
 
-    // 從每個位置嘗試匹配
+    ; 從每個位置嘗試匹配
     sp = 0
     for sp <= text.len {
         .match-end = -1
         ok = .match-at(0, sp, text)
         ok -> {
-            // 提取匹配子串
+            ; 提取匹配子串
             end = .match-end
             end < sp -> return
             mlen = end - sp
@@ -792,14 +792,14 @@ regexp.find = (text str) (result str) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// regexp-match: 判斷 text 是否匹配 pattern（任意位置）
-// pattern str: 正規表示式
-// text str: 待匹配文字
-// 返回 matched bool: true=匹配
+; regexp-match: 判斷 text 是否匹配 pattern（任意位置）
+; pattern str: 正規表示式
+; text str: 待匹配文字
+; 返回 matched bool: true=匹配
 regexp-match = (pattern str, text str) (matched bool) {
     matched = false
     re = regexp{
@@ -809,10 +809,10 @@ regexp-match = (pattern str, text str) (matched bool) {
     matched = re.matches(text)
 }
 
-// regexp-find: 在 text 中查找第一個匹配 pattern 的子串
-// pattern str: 正規表示式
-// text str: 待匹配文字
-// 返回 result str: 匹配的子串，未找到返回空字串
+; regexp-find: 在 text 中查找第一個匹配 pattern 的子串
+; pattern str: 正規表示式
+; text str: 待匹配文字
+; 返回 result str: 匹配的子串，未找到返回空字串
 regexp-find = (pattern str, text str) (result str) {
     result = ''
     re = regexp{
@@ -822,10 +822,10 @@ regexp-find = (pattern str, text str) (result str) {
     result = re.find(text)
 }
 
-// regexp-compile: 編譯正規表示式 pattern，返回已編譯的 regexp 實例。
-// 供正則字面量 /pattern/ 使用：字面量在 codegen 階段脫糖為此函數調用。
-// pattern str: 正規表示式
-// 返回 re regexp: 已編譯的正規表示式實例
+; regexp-compile: 編譯正規表示式 pattern，返回已編譯的 regexp 實例。
+; 供正則字面量 /pattern/ 使用：字面量在 codegen 階段脫糖為此函數調用。
+; pattern str: 正規表示式
+; 返回 re regexp: 已編譯的正規表示式實例
 regexp-compile = (pattern str) (re regexp) {
     re = regexp{
         pattern: pattern

@@ -1,4 +1,4 @@
-// test-platform: flattened keys #{linux-amd64}, #{linux-arm64}, #{win-amd64}, #{win-arm64}, #{mac-amd64}, #{mac-arm64}
+; test-platform: flattened keys #{linux-amd64}, #{linux-arm64}, #{win-amd64}, #{win-arm64}, #{mac-amd64}, #{mac-arm64}
 
 print('running on macOS ARM64')
 
@@ -30,28 +30,28 @@ greet = () {
 
 greet()
 
-// OR semantics: multiple flattened keys
+; OR semantics: multiple flattened keys
 
-// macOS any arch OR Linux any arch
+; macOS any arch OR Linux any arch
 
 print('unix-like (mac or linux)')
 
-// Only Windows x86_64
+; Only Windows x86_64
 
 print('win/amd64 only')
 
-// Only macOS ARM64 (Apple Silicon)
+; Only macOS ARM64 (Apple Silicon)
 
 print('mac/arm64 (Apple Silicon)')
 
-// Only macOS Intel
+; Only macOS Intel
 
 print('mac/amd64 (Intel)')
 
-// macOS ARM64 OR Linux ARM64
+; macOS ARM64 OR Linux ARM64
 
 print('arm64 unix (mac or linux)')
 
-// Should print current arch
+; Should print current arch
 arch = os.get-arch()
 print('arch: ' - arch)

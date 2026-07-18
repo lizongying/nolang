@@ -1,5 +1,5 @@
-// test-sha256-block — 測試 sha256-block
-// # std/hash/sha256
+; test-sha256-block — 測試 sha256-block
+; # std/hash/sha256
 
 print('start')
 block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

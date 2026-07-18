@@ -1,19 +1,19 @@
-// byte — 位元組操作
-//
-// 提供 int64 與 []byte 之間的轉換。
-//
-// 用法：
-//   v = 0x1234
-//   out = v.to-bytes-be()       // out = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34]
-//   out = v.to-bytes-le()       // out = [0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-//
-//   data = [0x12, 0x34]
-//   v = data.to-i64-be()        // v = 0x1234
-//   v = data.to-i64-le()        // v = 0x3412
-//
-//   [n]byte 與 []byte 互轉請使用 arr.to-vec() / []byte.to-arr()
+; byte — 位元組操作
+;
+; 提供 int64 與 []byte 之間的轉換。
+;
+; 用法：
+;   v = 0x1234
+;   out = v.to-bytes-be()       // out = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34]
+;   out = v.to-bytes-le()       // out = [0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+;
+;   data = [0x12, 0x34]
+;   v = data.to-i64-be()        // v = 0x1234
+;   v = data.to-i64-le()        // v = 0x3412
+;
+;   [n]byte 與 []byte 互轉請使用 arr.to-vec() / []byte.to-arr()
 
-// i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
+; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
 i64.to-bytes-be = () (out [?]byte) {
     out[0] = (. >> 56) & 255
     out[1] = (. >> 48) & 255
@@ -25,7 +25,7 @@ i64.to-bytes-be = () (out [?]byte) {
     out[7] = . & 255
 }
 
-// i64.to-bytes-le: 將 int64 轉為小端序 8 位元組
+; i64.to-bytes-le: 將 int64 轉為小端序 8 位元組
 i64.to-bytes-le = () (out [?]byte) {
     out[0] = . & 255
     out[1] = (. >> 8) & 255
@@ -37,7 +37,7 @@ i64.to-bytes-le = () (out [?]byte) {
     out[7] = (. >> 56) & 255
 }
 
-// []byte.to-i64-be: 將大端序位元組轉為 int64（1~8 位元組）
+; []byte.to-i64-be: 將大端序位元組轉為 int64（1~8 位元組）
 []byte.to-i64-be = () (v i64) {
     v = 0
     n = .len()
@@ -46,7 +46,7 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// []byte.to-i64-le: 將小端序位元組轉為 int64（1~8 位元組）
+; []byte.to-i64-le: 將小端序位元組轉為 int64（1~8 位元組）
 []byte.to-i64-le = () (v i64) {
     v = 0
     n = .len()
@@ -55,7 +55,7 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// []byte.to-str: 将字节切片转为字符串
+; []byte.to-str: 将字节切片转为字符串
 []byte.to-str = () (out str) {
     n = .len()
     i <- [0..n): {
@@ -63,8 +63,8 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// []byte.index: 在 []byte 中查找 target 子串
-// 返回首次出现的位置，未找到返回 -1
+; []byte.index: 在 []byte 中查找 target 子串
+; 返回首次出现的位置，未找到返回 -1
 []byte.index = (target str) (pos i64) {
     pos = -1
     tn = target.len
@@ -93,8 +93,8 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// []byte.index-from: 在 []byte 中從 from 位置開始查找 target 子串
-// 返回首次出現的位置，未找到返回 -1
+; []byte.index-from: 在 []byte 中從 from 位置開始查找 target 子串
+; 返回首次出現的位置，未找到返回 -1
 []byte.index-from = (target str, from i64) (pos i64) {
     pos = -1
     tn = target.len
@@ -125,8 +125,8 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// []byte.slice: 截取子切片 [start, end)
-// 返回新切片
+; []byte.slice: 截取子切片 [start, end)
+; 返回新切片
 []byte.slice = (start i64, end i64) (val []byte) {
     start < 0 -> start = 0
     end > .len -> end = .len
@@ -137,15 +137,15 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-// ─── 十六進制編碼 ─────────────────────────────
+; ─── 十六進制編碼 ─────────────────────────────
 
-// HEX-UPPER: 大寫十六進制字元表
+; HEX-UPPER: 大寫十六進制字元表
 HEX-UPPER = '0123456789ABCDEF'
 
-// HEX-LOWER: 小寫十六進制字元表
+; HEX-LOWER: 小寫十六進制字元表
 HEX-LOWER = '0123456789abcdef'
 
-// []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
+; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 []byte.to-hex = () (out str) {
     n = .len()
     i <- [0..n): {
@@ -155,7 +155,7 @@ HEX-LOWER = '0123456789abcdef'
     }
 }
 
-// []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
+; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 []byte.to-hex-lower = () (out str) {
     n = .len()
     i <- [0..n): {
@@ -164,8 +164,8 @@ HEX-LOWER = '0123456789abcdef'
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }
-// byte.to-str: 將 byte 轉為字串（"65" → "65"）
-// build-in (CLibCall: sprintf "%hhu")
-// byte.to-str = () (out str) {
-//     // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
-// }
+; byte.to-str: 將 byte 轉為字串（"65" → "65"）
+; build-in (CLibCall: sprintf "%hhu")
+; byte.to-str = () (out str) {
+;     // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
+; }

@@ -1,5 +1,5 @@
-// cd src && go run ./cmd/cli/. build ../tests/arr-range.no
-// ../dist/arr-range
+; cd src && go run ./cmd/cli/. build ../tests/arr-range.no
+; ../dist/arr-range
 
 a [3] = [1, 2, 3]
 

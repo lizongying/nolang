@@ -1,20 +1,20 @@
-// csv — CSV 檔案解析
-//
-// 提供 CSV 格式的讀取與產生功能。
-// 支援標準 CSV 格式（RFC 4180）：逗號分隔、雙引號跳脫。
-//
-// 用法：
-//   use std/encoding/csv
-//   line = 'a,b,c'
-//   fields = csv.parse-line(line)           // max-fields 默認 1024
-//   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
+; csv — CSV 檔案解析
+;
+; 提供 CSV 格式的讀取與產生功能。
+; 支援標準 CSV 格式（RFC 4180）：逗號分隔、雙引號跳脫。
+;
+; 用法：
+;   use std/encoding/csv
+;   line = 'a,b,c'
+;   fields = csv.parse-line(line)           // max-fields 默認 1024
+;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
-// parse-field: 解析 CSV 中的一個欄位
-// 從 s[pos] 開始解析，處理雙引號和逗號
-// s str: CSV 文字
-// pos i64: 開始位置
-// 返回 field str: 解析出的欄位內容
-// 返回 new-pos i64: 解析後的新位置
+; parse-field: 解析 CSV 中的一個欄位
+; 從 s[pos] 開始解析，處理雙引號和逗號
+; s str: CSV 文字
+; pos i64: 開始位置
+; 返回 field str: 解析出的欄位內容
+; 返回 new-pos i64: 解析後的新位置
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     fn = 0
     pos >= s.len -> {
@@ -23,17 +23,17 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     }
     c = s[pos] & 255
     c == 44 -> {
-        // 空欄位（逗號開頭）
+        ; 空欄位（逗號開頭）
         new-pos = pos + 1
         return
     }
     c == 34 -> {
-        // 雙引號包圍的欄位
+        ; 雙引號包圍的欄位
         pos = pos + 1
         for pos < s.len {
             c = s[pos] & 255
             c == 34 -> {
-                // 檢查是否為跳脫的雙引號
+                ; 檢查是否為跳脫的雙引號
                 pos + 1 < s.len -> {
                     nc = s[pos + 1] & 255
                     nc == 34 -> {
@@ -44,10 +44,10 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
                 }
 
-                // 結束雙引號
+                ; 結束雙引號
                 pos = pos + 1
 
-                // 跳過後續逗號
+                ; 跳過後續逗號
                 pos < s.len -> {
                     nc = s[pos] & 255
                     nc == 44 -> pos = pos + 1
@@ -57,7 +57,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             }
 
             c == 10 || c == 13 -> {
-                // 換行在引號內視為換行字元
+                ; 換行在引號內視為換行字元
                 field[fn] = c
                 fn = fn + 1
                 pos = pos + 1
@@ -72,7 +72,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         return
     }
 
-    // 普通欄位（無引號）
+    ; 普通欄位（無引號）
     for pos < s.len {
         c = s[pos] & 255
         c == 44 -> {
@@ -81,7 +81,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             return
         }
         c == 10 || c == 13 -> {
-            // 換行結束欄位（不消耗換行）
+            ; 換行結束欄位（不消耗換行）
             new-pos = pos
             return
         }
@@ -92,10 +92,10 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     new-pos = pos
 }
 
-// parse-line: 解析一行 CSV 文字
-// s str: CSV 文字
-// max-fields i64: 最大欄位數
-// 返回 fields []str: 解析出的欄位陣列
+; parse-line: 解析一行 CSV 文字
+; s str: CSV 文字
+; max-fields i64: 最大欄位數
+; 返回 fields []str: 解析出的欄位陣列
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
@@ -106,10 +106,10 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     fields.len = n
 }
 
-// encode-field: 將一個欄位編碼為 CSV 格式
-// 若包含逗號、雙引號或換行，則用雙引號包圍並跳脫
-// field str: 要編碼的欄位
-// 返回 out str: CSV 編碼後的字串
+; encode-field: 將一個欄位編碼為 CSV 格式
+; 若包含逗號、雙引號或換行，則用雙引號包圍並跳脫
+; field str: 要編碼的欄位
+; 返回 out str: CSV 編碼後的字串
 encode-field = (field str) (out str) {
     need-quote = false
     i <- [0..field.len): {

@@ -6,12 +6,12 @@ test-fix = () {
     tc1 = s.trim-char(108)
     print(tc1.len)
 
-    // 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
+    ; 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
     s2 = 'aTa'
     r2 = s2.replace-char(0x61, 0x4E2D)
     print(r2.len)
 
-    // 多字節 UTF-8：trim '中' (0x4E2D)
+    ; 多字節 UTF-8：trim '中' (0x4E2D)
     s3 = '中hello中'
     tc3 = s3.trim-char(0x4E2D)
     print(tc3.len)

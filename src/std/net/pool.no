@@ -1,41 +1,41 @@
-// pool — TCP 連接池
-//
-// 提供 TCP 連接的池化管理，避免頻繁建立和關閉連接。
-// 支援連接复用、最大連接數限制、空閒逾時回收。
-//
-// 用法：
-//   p = pool{}
-//   p.init('127.0.0.1', 8080, 10)    // 初始化：目標 127.0.0.1:8080，最大 10 連接
-//   c = p.get()                       // 取得連接（返回 ?conn）
-//   c: {
-//       nil -> print('no connection')
-//       ->
-//           c.send('hello')
-//           p.put(c)                   // 歸還連接（不是關閉）
-//   }
-//   p.close-all()                     // 關閉所有連接
+; pool — TCP 連接池
+;
+; 提供 TCP 連接的池化管理，避免頻繁建立和關閉連接。
+; 支援連接复用、最大連接數限制、空閒逾時回收。
+;
+; 用法：
+;   p = pool{}
+;   p.init('127.0.0.1', 8080, 10)    // 初始化：目標 127.0.0.1:8080，最大 10 連接
+;   c = p.get()                       // 取得連接（返回 ?conn）
+;   c: {
+;       nil -> print('no connection')
+;       ->
+;           c.send('hello')
+;           p.put(c)                   // 歸還連接（不是關閉）
+;   }
+;   p.close-all()                     // 關閉所有連接
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// 連接池最大容量
+; 連接池最大容量
 POOL-MAX-CONNS = 32
 
-// 空閒逾時（毫秒）
+; 空閒逾時（毫秒）
 POOL-IDLE-TIMEOUT = 30000
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// pool: TCP 連接池
-// host str: 目標主機
-// port i64: 目標埠號
-// max-size i64: 最大連接數
-// conns [32]conn: 連接陣列
-// in-use [32]bool: 連接是否在使用中
-// count i64: 當前連接數
+; pool: TCP 連接池
+; host str: 目標主機
+; port i64: 目標埠號
+; max-size i64: 最大連接數
+; conns [32]conn: 連接陣列
+; in-use [32]bool: 連接是否在使用中
+; count i64: 當前連接數
 pool {
     host str
     port i64
@@ -45,14 +45,14 @@ pool {
     count i64
 }
 
-// ═══════════════════════════════════════════════
-// pool 方法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; pool 方法
+; ═══════════════════════════════════════════════
 
-// init: 初始化連接池
-// host str: 目標主機
-// port i64: 目標埠號
-// max-size i64: 最大連接數
+; init: 初始化連接池
+; host str: 目標主機
+; port i64: 目標埠號
+; max-size i64: 最大連接數
 pool.init = (host str, port i64, max-size i64) {
     .host = host
     .port = port
@@ -65,12 +65,12 @@ pool.init = (host str, port i64, max-size i64) {
     }
 }
 
-// get: 取得連接（優先复用空閒連接，否則新建）
-// 返回 c ?conn: ok=連接, nil=失敗
+; get: 取得連接（優先复用空閒連接，否則新建）
+; 返回 c ?conn: ok=連接, nil=失敗
 pool.get = () (c ?conn) {
     c = nil
 
-    // 尋找空閒連接
+    ; 尋找空閒連接
     i <- [0...count): {
         .in-use[i] == false -> {
             .in-use[i] = true
@@ -79,7 +79,7 @@ pool.get = () (c ?conn) {
         }
     }
 
-    // 沒有空閒連接，嘗試新建
+    ; 沒有空閒連接，嘗試新建
     .count < .max-size -> {
         cn = conn{}
         ok = false
@@ -93,10 +93,10 @@ pool.get = () (c ?conn) {
     }
 }
 
-// put: 歸還連接到池中（不關閉）
-// c conn: 要歸還的連接
+; put: 歸還連接到池中（不關閉）
+; c conn: 要歸還的連接
 pool.put = (c conn) {
-    // 尋找該連接在池中的位置
+    ; 尋找該連接在池中的位置
     i <- [0...count): {
         .conns[i].fd == c.fd -> {
             .in-use[i] = false
@@ -104,17 +104,17 @@ pool.put = (c conn) {
         }
     }
 
-    // 不在池中，直接關閉
+    ; 不在池中，直接關閉
     c.close()
 }
 
-// close-conn: 關閉並移除指定連接
-// idx i64: 連接索引
+; close-conn: 關閉並移除指定連接
+; idx i64: 連接索引
 pool.close-conn = (idx i64) {
     idx < 0 || idx >= .count -> return
     .conns[idx].close()
 
-    // 將最後一個移到當前位置
+    ; 將最後一個移到當前位置
     last = .count - 1
     idx != last -> {
         .conns[idx] = .conns[last]
@@ -123,7 +123,7 @@ pool.close-conn = (idx i64) {
     .count = .count - 1
 }
 
-// close-all: 關閉所有連接
+; close-all: 關閉所有連接
 pool.close-all = () {
     i <- [0...count): {
         .conns[i].close()
@@ -131,8 +131,8 @@ pool.close-all = () {
     .count = 0
 }
 
-// active-count: 取得活躍連接數
-// 返回 n i64: 活躍連接數
+; active-count: 取得活躍連接數
+; 返回 n i64: 活躍連接數
 pool.active-count = () (n i64) {
     n = 0
     i <- [0...count): {
@@ -140,8 +140,8 @@ pool.active-count = () (n i64) {
     }
 }
 
-// idle-count: 取得空閒連接數
-// 返回 n i64: 空閒連接數
+; idle-count: 取得空閒連接數
+; 返回 n i64: 空閒連接數
 pool.idle-count = () (n i64) {
     n = 0
     i <- [0...count): {
@@ -149,29 +149,29 @@ pool.idle-count = () (n i64) {
     }
 }
 
-// total-count: 取得總連接數
-// 返回 n i64: 總連接數
+; total-count: 取得總連接數
+; 返回 n i64: 總連接數
 pool.total-count = () (n i64) {
     n = .count
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// pool-create: 建立並初始化連接池
-// host str: 目標主機
-// port i64: 目標埠號
-// max-size i64: 最大連接數
-// 返回 p pool: 連接池
+; pool-create: 建立並初始化連接池
+; host str: 目標主機
+; port i64: 目標埠號
+; max-size i64: 最大連接數
+; 返回 p pool: 連接池
 pool-create = (host str, port i64, max-size i64) (p pool) {
     p.init(host, port, max-size)
 }
 
-// pool-with-size: 使用預設大小建立連接池
-// host str: 目標主機
-// port i64: 目標埠號
-// 返回 p pool: 連接池
+; pool-with-size: 使用預設大小建立連接池
+; host str: 目標主機
+; port i64: 目標埠號
+; 返回 p pool: 連接池
 pool-with-size = (host str, port i64) (p pool) {
     p.init(host, port, 8)
 }

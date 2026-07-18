@@ -1,5 +1,5 @@
-// cd src && go run ./cmd/cli/. build ../tests/vec-range.no
-// ../dist/vec-range
+; cd src && go run ./cmd/cli/. build ../tests/vec-range.no
+; ../dist/vec-range
 
 a = [1, 2, 3]
 

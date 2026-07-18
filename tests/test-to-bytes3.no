@@ -1,5 +1,5 @@
-// test-to-bytes3 — 測試不同調用方式
-// # std/net/tls
+; test-to-bytes3 — 測試不同調用方式
+; # std/net/tls
 
 print('start')
 s str = 'test label'

@@ -1,4 +1,4 @@
-// test-repeat3 — str.repeat 測試
+; test-repeat3 — str.repeat 測試
 print('start')
 space str = ' '
 print('space created')

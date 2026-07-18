@@ -1,4 +1,4 @@
-// test malloc
+; test malloc
 
 print('start')
 p i64 = malloc(256)

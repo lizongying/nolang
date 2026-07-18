@@ -1,4 +1,4 @@
-// test_char_old_syntax
+; test_char_old_syntax
 print('start')
 
 c char = 65

@@ -1,19 +1,19 @@
-// rsa — RSA 加解密（多精度整數模冪）
-//
-// 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
-//   result = base^exp mod modulus
-//
-// 不包含金鑰生成；呼叫者需自行提供 n、e、d。
-// 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
-//
-// 用法：
-//   // base, exp, mod 為 []i64 切片
-//   result, result-n = rsa-modpow(base, base-n, exp, exp-n, mod, mod-n)
+; rsa — RSA 加解密（多精度整數模冪）
+;
+; 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
+;   result = base^exp mod modulus
+;
+; 不包含金鑰生成；呼叫者需自行提供 n、e、d。
+; 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
+;
+; 用法：
+;   // base, exp, mod 為 []i64 切片
+;   result, result-n = rsa-modpow(base, base-n, exp, exp-n, mod, mod-n)
 
-// ─── 大數比較 ─────────────────────────────────────
+; ─── 大數比較 ─────────────────────────────────────
 
-// bn-cmp: 比較兩個大數 a 和 b
-// 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
+; bn-cmp: 比較兩個大數 a 和 b
+; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     an > bn -> {
         cmp = 1
@@ -38,10 +38,10 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     cmp = 0
 }
 
-// ─── 大數加法 ─────────────────────────────────────
+; ─── 大數加法 ─────────────────────────────────────
 
-// bn-add: c = a + b
-// 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
+; bn-add: c = a + b
+; 呼叫者需確保 c 的容量 ≥ max(an, bn) + 1
 bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     carry = 0
     i = 0
@@ -56,9 +56,9 @@ bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     cn = i
 }
 
-// ─── 大數減法 ─────────────────────────────────────
+; ─── 大數減法 ─────────────────────────────────────
 
-// bn-sub: c = a - b（需 a ≥ b）
+; bn-sub: c = a - b（需 a ≥ b）
 bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
     i <- [0..an): {
@@ -74,17 +74,17 @@ bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i] = diff & 4294967295
     }
 
-    // 移除前導零
+    ; 移除前導零
     cn = an
     for cn > 1 && c[cn - 1] == 0 {
         cn = cn - 1
     }
 }
 
-// ─── 大數乘法 ─────────────────────────────────────
+; ─── 大數乘法 ─────────────────────────────────────
 
-// bn-mul: c = a × b
-// 呼叫者需確保 c 的容量 ≥ an + bn
+; bn-mul: c = a × b
+; 呼叫者需確保 c 的容量 ≥ an + bn
 bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     i <- [0..an + bn): {
         c[i] = 0
@@ -100,16 +100,16 @@ bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i + bn] = carry & 4294967295
     }
 
-    // 計算實際長度
+    ; 計算實際長度
     cn = an + bn
     for cn > 1 && c[cn - 1] == 0 {
         cn = cn - 1
     }
 }
 
-// ─── 大數左移 1 位元 ─────────────────────────────
+; ─── 大數左移 1 位元 ─────────────────────────────
 
-// bn-shl1: a = a << 1（原地左移 1 位元）
+; bn-shl1: a = a << 1（原地左移 1 位元）
 bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i <- [0..an): {
@@ -126,9 +126,9 @@ bn-shl1 = (a []i64, an i64) (new-an i64) {
     }
 }
 
-// ─── 大數右移 1 位元 ─────────────────────────────
+; ─── 大數右移 1 位元 ─────────────────────────────
 
-// bn-shr1: a = a >> 1（原地右移 1 位元）
+; bn-shr1: a = a >> 1（原地右移 1 位元）
 bn-shr1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i i64 = an - 1
@@ -144,35 +144,35 @@ bn-shr1 = (a []i64, an i64) (new-an i64) {
     }
 }
 
-// ─── 大數除法（二進位長除法）────────────────────
+; ─── 大數除法（二進位長除法）────────────────────
 
-// bn-div-mod: q = a / b, r = a % b
-// q 和 r 的容量需 ≥ a 的長度
-// a: 被除數, an: 長度
-// b: 除數, bn: 長度
-// q: 商數（輸出）, qn: 商長度
-// r: 餘數（輸出）, rn: 餘長度
+; bn-div-mod: q = a / b, r = a % b
+; q 和 r 的容量需 ≥ a 的長度
+; a: 被除數, an: 長度
+; b: 除數, bn: 長度
+; q: 商數（輸出）, qn: 商長度
+; r: 餘數（輸出）, rn: 餘長度
 bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
-    // 處理 b = 0
+    ; 處理 b = 0
     bn == 1 && b[0] == 0 -> {
         qn = 0
         rn = 0
         return
     }
 
-    // 初始化 r = 0
+    ; 初始化 r = 0
     i <- [0..an): {
         r[i] = 0
     }
     rn = 1
 
-    // 初始化 q = 0
+    ; 初始化 q = 0
     i <- [0..an): {
         q[i] = 0
     }
     qn = 1
 
-    // 計算 a 的最高有效位元數
+    ; 計算 a 的最高有效位元數
     top = a[an - 1]
     lead = 0
     tmp i64 = top
@@ -183,19 +183,19 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
     an > 0 && top == 0 -> lead = 0
     bits i64 = (an - 1) * 32 + lead
 
-    // 二進位長除法：從最高位到最低位
+    ; 二進位長除法：從最高位到最低位
     i = bits - 1
     for i >= 0 {
-        // r = r << 1
+        ; r = r << 1
         rn = bn-shl1(r, rn)
 
-        // r[0] 設為 a 的第 i 位元
+        ; r[0] 設為 a 的第 i 位元
         limb = i / 32
         bit-pos = i % 32
         a-bit = (a[limb] >> bit-pos) & 1
         r[0] = r[0] | a-bit
 
-        // 如果 r >= b: r = r - b; q 的第 i 位元設為 1
+        ; 如果 r >= b: r = r - b; q 的第 i 位元設為 1
         cmp = 0
         cmp = bn-cmp(r, rn, b, bn)
         cmp >= 0 -> {
@@ -207,26 +207,26 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
         i = i - 1
     }
 
-    // 計算 q 的長度
+    ; 計算 q 的長度
     qn = (bits / 32) + 1
     for qn > 1 && q[qn - 1] == 0 {
         qn = qn - 1
     }
 }
 
-// ─── 模冪運算 ─────────────────────────────────────
+; ─── 模冪運算 ─────────────────────────────────────
 
-// rsa-modpow: result = base^exp mod modulus
-// 使用左右掃描平方乘（square-and-multiply）
+; rsa-modpow: result = base^exp mod modulus
+; 使用左右掃描平方乘（square-and-multiply）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
-    // 初始化 result = 1
+    ; 初始化 result = 1
     i <- [0..mn): {
         result[i] = 0
     }
     result[0] = 1
     rn = 1
 
-    // 計算 exp 的位元數
+    ; 計算 exp 的位元數
     top i64 = exp[en - 1]
     lead = 0
     tmp i64 = top
@@ -237,21 +237,21 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     en > 0 && top == 0 -> lead = 0
     bits i64 = (en - 1) * 32 + lead
 
-    // 暫存區
+    ; 暫存區
     t-len = mn * 2 + 2
-    t = result  // 注意：實際可能需要獨立的暫存空間
+    t = result  ; 注意：實際可能需要獨立的暫存空間
     prod-n = 0
     q-n = 0
     q []i64 = []
     qn = 0
 
-    // 從最高位到最低位
+    ; 從最高位到最低位
     i = bits - 1
     for i >= 0 {
         t, prod-n = bn-mul(result, rn, result, rn)
         q, qn, result, rn = bn-div-mod(t, prod-n, modulus, mn)
 
-        // 如果 exp 第 i 位元為 1：乘 base
+        ; 如果 exp 第 i 位元為 1：乘 base
         e-limb = i / 32
         e-bit = i % 32
         (exp[e-limb] >> e-bit) & 1 == 1 -> {
@@ -262,14 +262,14 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     }
 }
 
-// ─── RSA 加密/解密（高階介面）────────────────────
+; ─── RSA 加密/解密（高階介面）────────────────────
 
-// rsa-encrypt: RSA 加密（c = m^e mod n）
+; rsa-encrypt: RSA 加密（c = m^e mod n）
 rsa-encrypt = (msg []i64, msgn i64, pub-exp []i64, pubn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(msg, msgn, pub-exp, pubn, mod, modn)
 }
 
-// rsa-decrypt: RSA 解密（m = c^d mod n）
+; rsa-decrypt: RSA 解密（m = c^d mod n）
 rsa-decrypt = (ct []i64, ctn i64, priv-exp []i64, privn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(ct, ctn, priv-exp, privn, mod, modn)
 }

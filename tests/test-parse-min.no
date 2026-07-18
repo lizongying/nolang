@@ -1,4 +1,4 @@
-// test parse min
+; test parse min
 
 print('start')
 json-str str = '"hello"'

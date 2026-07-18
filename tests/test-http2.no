@@ -1,13 +1,13 @@
-// test-http2 — HTTP/2 影格與連線測試（vet-only，需伺服器才能執行）
-// # std/net/http2
+; test-http2 — HTTP/2 影格與連線測試（vet-only，需伺服器才能執行）
+; # std/net/http2
 
-// test-frame-parse: 影格標頭解析
+; test-frame-parse: 影格標頭解析
 test-frame-parse = () {
     space str = ' '
     data str = space.repeat(16)
-    // 構建一個 HEADERS 影格標頭
-    // length = 10 (0x00000a), type = 1 (HEADERS), flags = 4 (END_HEADERS)
-    // stream-id = 1
+    ; 構建一個 HEADERS 影格標頭
+    ; length = 10 (0x00000a), type = 1 (HEADERS), flags = 4 (END_HEADERS)
+    ; stream-id = 1
     data[0] = 0
     data[1] = 0
     data[2] = 10
@@ -42,7 +42,7 @@ test-frame-parse = () {
     print('PASS: frame-parse')
 }
 
-// test-frame-serialize: 影格標頭序列化
+; test-frame-serialize: 影格標頭序列化
 test-frame-serialize = () {
     space str = ' '
     f http2-frame
@@ -84,7 +84,7 @@ test-frame-serialize = () {
     print('PASS: frame-serialize')
 }
 
-// test-conn-init: 連線初始化
+; test-conn-init: 連線初始化
 test-conn-init = () {
     conn http2-conn
     conn.init()
@@ -107,12 +107,12 @@ test-conn-init = () {
     print('PASS: conn-init')
 }
 
-// test-http2-do-req-signature: http2-do-req 函數簽名驗證（vet-only）
+; test-http2-do-req-signature: http2-do-req 函數簽名驗證（vet-only）
 test-http2-do-req-signature = () {
-    // 此測試只驗證函數可被正確呼叫，不實際連線
-    // 這行會嘗試連線並失敗，但驗證了函數簽名正確
+    ; 此測試只驗證函數可被正確呼叫，不實際連線
+    ; 這行會嘗試連線並失敗，但驗證了函數簽名正確
     resp = http2-do-req('GET', 'http://127.0.0.1:1/test', '')
-    // 預期 nil（連線失敗）
+    ; 預期 nil（連線失敗）
     resp != nil -> {
     print('FAIL: expected connection failure')
             return
@@ -120,7 +120,7 @@ test-http2-do-req-signature = () {
     print('PASS: http2-do-req-signature')
 }
 
-// test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
+; test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
     resp = http2-get('http://127.0.0.1:1/test')
     resp != nil -> {
@@ -130,7 +130,7 @@ test-http2-get-signature = () {
     print('PASS: http2-get-signature')
 }
 
-// test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
+; test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
     resp = http2-post('http://127.0.0.1:1/test', 'body')
     resp != nil -> {
@@ -140,7 +140,7 @@ test-http2-post-signature = () {
     print('PASS: http2-post-signature')
 }
 
-// test-run-all: 執行所有測試
+; test-run-all: 執行所有測試
 test-run-all = () {
     print('=== HTTP/2 Tests ===')
     test-frame-parse()

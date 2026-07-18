@@ -1,4 +1,4 @@
-// test_char_new_syntax2 — 簡化測試
+; test_char_new_syntax2 — 簡化測試
 print('start')
 
 c = "中"

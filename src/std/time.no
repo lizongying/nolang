@@ -1,103 +1,103 @@
-// time — 時間操作
-//
-// 提供 Unix 時間戳、格式化、睡眠、時長計算、計時器。
-// 底層依賴 os 模組的系統調用（now、now-ms、now-us、now-ns、sleep、sleep-us、sleep-ns）。
-//
-// 注意：now-ms、now-us、now-ns、sleep-us、sleep-ns 已由 builtin 提供，
-// 此處不再重新定義（用戶函式會遮蔽同名 builtin 造成遞迴），
-// 直接以 builtin 形式供使用者呼叫。
+; time — 時間操作
+;
+; 提供 Unix 時間戳、格式化、睡眠、時長計算、計時器。
+; 底層依賴 os 模組的系統調用（now、now-ms、now-us、now-ns、sleep、sleep-us、sleep-ns）。
+;
+; 注意：now-ms、now-us、now-ns、sleep-us、sleep-ns 已由 builtin 提供，
+; 此處不再重新定義（用戶函式會遮蔽同名 builtin 造成遞迴），
+; 直接以 builtin 形式供使用者呼叫。
 
-// ═══════════════════════════════════════════════
-// 時間戳
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 時間戳
+; ═══════════════════════════════════════════════
 
-// now-s: 當前 Unix 時間戳（秒）
-// 包裝 builtin now()
+; now-s: 當前 Unix 時間戳（秒）
+; 包裝 builtin now()
 now-s = () (ts i64) {
     ts = now()
 }
 
-// now-ms: 當前 Unix 時間戳（毫秒）
-// build-in (ForwardFunc: nolang.now_ms)
-// now-ms = () (ts i64) { }
+; now-ms: 當前 Unix 時間戳（毫秒）
+; build-in (ForwardFunc: nolang.now_ms)
+; now-ms = () (ts i64) { }
 
-// now-us: 當前 Unix 時間戳（微秒）
-// build-in (ForwardFunc: nolang.now_us)
-// now-us = () (ts i64) { }
+; now-us: 當前 Unix 時間戳（微秒）
+; build-in (ForwardFunc: nolang.now_us)
+; now-us = () (ts i64) { }
 
-// now-ns: 當前時間戳（奈秒）
-// build-in (ForwardFunc: nolang.now_ns)
-// now-ns = () (ts i64) { }
+; now-ns: 當前時間戳（奈秒）
+; build-in (ForwardFunc: nolang.now_ns)
+; now-ns = () (ts i64) { }
 
-// ═══════════════════════════════════════════════
-// 睡眠
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 睡眠
+; ═══════════════════════════════════════════════
 
-// sleep-s: 睡眠指定秒數
-// 包裝 builtin sleep()
+; sleep-s: 睡眠指定秒數
+; 包裝 builtin sleep()
 sleep-s = (s i64) {
     sleep(s)
 }
 
-// sleep-ms: 睡眠指定毫秒數
-// sleep-ms 無對應 builtin，以 sleep-us(ms * 1000) 實作
+; sleep-ms: 睡眠指定毫秒數
+; sleep-ms 無對應 builtin，以 sleep-us(ms * 1000) 實作
 sleep-ms = (ms i64) {
     us i64 = ms * 1000
     sleep-us(us)
 }
 
-// sleep-us: 睡眠指定微秒數
-// build-in (ForwardFunc: nolang.sleep_us)
-// sleep-us = (us i64) { }
+; sleep-us: 睡眠指定微秒數
+; build-in (ForwardFunc: nolang.sleep_us)
+; sleep-us = (us i64) { }
 
-// sleep-ns: 睡眠指定奈秒數
-// build-in (ForwardFunc: nolang.sleep_ns)
-// sleep-ns = (ns i64) { }
+; sleep-ns: 睡眠指定奈秒數
+; build-in (ForwardFunc: nolang.sleep_ns)
+; sleep-ns = (ns i64) { }
 
-// ═══════════════════════════════════════════════
-// 時長計算
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 時長計算
+; ═══════════════════════════════════════════════
 
-// duration-between: 計算兩個時間戳的差（秒）
+; duration-between: 計算兩個時間戳的差（秒）
 duration-between = (start i64, end i64) (diff i64) {
     diff = end - start
 }
 
-// duration-ms-between: 計算兩個時間戳的差（毫秒）
+; duration-ms-between: 計算兩個時間戳的差（毫秒）
 duration-ms-between = (start i64, end i64) (diff i64) {
     diff = end - start
 }
 
-// duration-us-between: 計算兩個時間戳的差（微秒）
+; duration-us-between: 計算兩個時間戳的差（微秒）
 duration-us-between = (start i64, end i64) (diff i64) {
     diff = end - start
 }
 
-// since-s: 從 start 到現在的經過秒數
+; since-s: 從 start 到現在的經過秒數
 since-s = (start i64) (diff i64) {
     end i64 = now()
     diff = end - start
 }
 
-// since-ms: 從 start 到現在的經過毫秒數
+; since-ms: 從 start 到現在的經過毫秒數
 since-ms = (start i64) (diff i64) {
     end i64 = now-ms()
     diff = end - start
 }
 
-// since-us: 從 start 到現在的經過微秒數
+; since-us: 從 start 到現在的經過微秒數
 since-us = (start i64) (diff i64) {
     end i64 = now-us()
     diff = end - start
 }
 
-// ═══════════════════════════════════════════════
-// 格式化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 格式化
+; ═══════════════════════════════════════════════
 
-// format-duration: 將秒數格式化為人類可讀輸出
-// 例：3661 → '1h1m1s'（輸出至 stdout）
-// 因 sprintf builtin 未註冊，改以 print 輸出各部分
+; format-duration: 將秒數格式化為人類可讀輸出
+; 例：3661 → '1h1m1s'（輸出至 stdout）
+; 因 sprintf builtin 未註冊，改以 print 輸出各部分
 format-duration = (seconds i64) {
     h i64 = seconds / 3600
     rem i64 = seconds % 3600
@@ -106,40 +106,40 @@ format-duration = (seconds i64) {
     print(h, 'h', m, 'm', sec, 's')
 }
 
-// ═══════════════════════════════════════════════
-// 計時器
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 計時器
+; ═══════════════════════════════════════════════
 
-// timer: 計時器結構體
-// start-ts: 起始時間戳（毫秒）
-// end-ts: 結束時間戳（毫秒）
+; timer: 計時器結構體
+; start-ts: 起始時間戳（毫秒）
+; end-ts: 結束時間戳（毫秒）
 timer {
     start-ts i64
     end-ts i64
 }
 
-// timer.start: 開始計時
+; timer.start: 開始計時
 timer.start = () {
     .start-ts = now-ms()
 }
 
-// timer.stop: 停止計時
+; timer.stop: 停止計時
 timer.stop = () {
     .end-ts = now-ms()
 }
 
-// timer.elapsed-ms: 經過毫秒數
+; timer.elapsed-ms: 經過毫秒數
 timer.elapsed-ms = () (ms i64) {
     ms = .end-ts - .start-ts
 }
 
-// timer.elapsed-s: 經過秒數
+; timer.elapsed-s: 經過秒數
 timer.elapsed-s = () (s i64) {
     ms i64 = .end-ts - .start-ts
     s = ms / 1000
 }
 
-// timer.elapsed-us: 經過微秒數
+; timer.elapsed-us: 經過微秒數
 timer.elapsed-us = () (us i64) {
     ms i64 = .end-ts - .start-ts
     us = ms * 1000

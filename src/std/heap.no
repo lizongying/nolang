@@ -1,28 +1,28 @@
-// heap — 二元堆積 / 優先權佇列
-//
-// 實作最小堆積（Min-Heap），以小根堆方式儲存 i64 整數。
-//
-// 用法：
-//   use std/heap
-//   data [128]i64 = [0:128]
-//   h = heap-init(data)
-//   h.push(42)
-//   h.push(7)
-//   val = h.pop()
+; heap — 二元堆積 / 優先權佇列
+;
+; 實作最小堆積（Min-Heap），以小根堆方式儲存 i64 整數。
+;
+; 用法：
+;   use std/heap
+;   data [128]i64 = [0:128]
+;   h = heap-init(data)
+;   h.push(42)
+;   h.push(7)
+;   val = h.pop()
 
-// heap: 二元堆積
+; heap: 二元堆積
 heap {
     data []i64
     n i64
 }
 
-// init: 建立堆積
+; init: 建立堆積
 heap.init = (data []i64) (h heap) {
     h.data = data
     h.n = 0
 }
 
-// push: 向堆積推入一個元素
+; push: 向堆積推入一個元素
 heap.push = (val i64) {
     .data[.n] = val
     .n = .n + 1
@@ -37,8 +37,8 @@ heap.push = (val i64) {
     }
 }
 
-// pop: 從堆積彈出最小元素
-// 返回 val ?i64: ok=最小值, nil=堆積為空
+; pop: 從堆積彈出最小元素
+; 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
     .n == 0 -> {
         val = nil
@@ -62,8 +62,8 @@ heap.pop = () (val ?i64) {
     }
 }
 
-// peek: 查看最小元素（不移除）
-// 返回 val ?i64: ok=最小值, nil=堆積為空
+; peek: 查看最小元素（不移除）
+; 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.peek = () (val ?i64) {
     .n == 0 -> {
         val = nil
@@ -72,12 +72,12 @@ heap.peek = () (val ?i64) {
     val = .data[0]
 }
 
-// size: 返回堆積大小
+; size: 返回堆積大小
 heap.size = () (sz i64) {
     sz = .n
 }
 
-// empty: 判斷堆積是否為空
+; empty: 判斷堆積是否為空
 heap.empty = () (yes bool) {
     yes = .n == 0
 }

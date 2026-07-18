@@ -1,4 +1,4 @@
-// 測試 str.to-f64 的 Option 化實現
+; 測試 str.to-f64 的 Option 化實現
 test-f64-ok = () {
     f = '3.14'.to-f64()
         {

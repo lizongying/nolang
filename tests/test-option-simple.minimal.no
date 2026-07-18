@@ -1,4 +1,4 @@
-// 最小化 val/err 測試
+; 最小化 val/err 測試
 test-simple = () {
     n ?i64 = val(42)
         {

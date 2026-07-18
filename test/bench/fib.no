@@ -1,4 +1,4 @@
-// Fibonacci — 無 I/O 純計算
+; Fibonacci — 無 I/O 純計算
 fib = (n i64, o i64) {
     a = 0
     b = 1

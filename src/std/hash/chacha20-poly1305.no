@@ -1,41 +1,41 @@
-// chacha20-poly1305 — ChaCha20-Poly1305 AEAD 加密（RFC 8439）
-//
-// ChaCha20 是一個 256-bit 金鑰的串流加密器，Poly1305 是一個 128-bit MAC。
-// 組合成 ChaCha20-Poly1305 AEAD，提供機密性與完整性。
-//
-// 用法：
-//   # std/hash/chacha20-poly1305
-//   key [32]byte: 256-bit 金鑰
-//   nonce [12]byte: 96-bit nonce
-//   aad []byte: 額外認證資料
-//   plain []byte: 明文
-//   sealed = chacha20-poly1305-seal(key, nonce, aad, plain)
-//   opened = chacha20-poly1305-open(key, nonce, aad, sealed)
+; chacha20-poly1305 — ChaCha20-Poly1305 AEAD 加密（RFC 8439）
+;
+; ChaCha20 是一個 256-bit 金鑰的串流加密器，Poly1305 是一個 128-bit MAC。
+; 組合成 ChaCha20-Poly1305 AEAD，提供機密性與完整性。
+;
+; 用法：
+;   # std/hash/chacha20-poly1305
+;   key [32]byte: 256-bit 金鑰
+;   nonce [12]byte: 96-bit nonce
+;   aad []byte: 額外認證資料
+;   plain []byte: 明文
+;   sealed = chacha20-poly1305-seal(key, nonce, aad, plain)
+;   opened = chacha20-poly1305-open(key, nonce, aad, sealed)
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// ChaCha20 常量 "expand 32-byte k"
-// 各 32-bit 小端值
-CC-SIGMA0 u32 = 1634760805  // "expa"
-CC-SIGMA1 u32 = 857760878  // "nd 3"
-CC-SIGMA2 u32 = 2036477234  // "2-by"
-CC-SIGMA3 u32 = 1797285236  // "te k"
+; ChaCha20 常量 "expand 32-byte k"
+; 各 32-bit 小端值
+CC-SIGMA0 u32 = 1634760805  ; "expa"
+CC-SIGMA1 u32 = 857760878  ; "nd 3"
+CC-SIGMA2 u32 = 2036477234  ; "2-by"
+CC-SIGMA3 u32 = 1797285236  ; "te k"
 
-// 32-bit 全 1 遮罩
+; 32-bit 全 1 遮罩
 CC-MASK32 u32 = 4294967295
 
-// ═══════════════════════════════════════════════
-// 輔助函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 輔助函數
+; ═══════════════════════════════════════════════
 
-// rotl32: 32-bit 循環左移
+; rotl32: 32-bit 循環左移
 rotl32 = (x u32, n i64) (r u32) {
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
-// quarter-round: ChaCha20 四分之一輪
+; quarter-round: ChaCha20 四分之一輪
 qr = (state []u32, a i64, b i64, c i64, d i64) {
     state[a] = (state[a] + state[b]) & CC-MASK32
     state[d] = rotl32(state[d] ^ state[a], 16)
@@ -47,57 +47,57 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
     state[d] = rotl32(state[d] ^ state[c], 7)
 }
 
-// ═══════════════════════════════════════════════
-// ChaCha20 核心函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; ChaCha20 核心函數
+; ═══════════════════════════════════════════════
 
-// chacha20-block: 生成一個 64-byte 密鑰流區塊
-// key [32]byte: 256-bit 金鑰
-// counter u32: 區塊計數器
-// nonce [12]byte: 96-bit nonce
-// 返回 out [64]byte: 密鑰流
+; chacha20-block: 生成一個 64-byte 密鑰流區塊
+; key [32]byte: 256-bit 金鑰
+; counter u32: 區塊計數器
+; nonce [12]byte: 96-bit nonce
+; 返回 out [64]byte: 密鑰流
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
-    // 初始化狀態（16 個 32-bit 字）
+    ; 初始化狀態（16 個 32-bit 字）
     state []u32
     state[0] = CC-SIGMA0
     state[1] = CC-SIGMA1
     state[2] = CC-SIGMA2
     state[3] = CC-SIGMA3
 
-    // 金鑰（8 個 32-bit 小端字）
+    ; 金鑰（8 個 32-bit 小端字）
     i <- [0..8): {
         state[4 + i] = (key[i * 4] & 255) | ((key[i * 4 + 1] & 255) << 8) | ((key[i * 4 + 2] & 255) << 16) | ((key[i * 4 + 3] & 255) << 24)
     }
 
-    // 計數器
+    ; 計數器
     state[12] = counter
 
-    // Nonce（3 個 32-bit 小端字）
+    ; Nonce（3 個 32-bit 小端字）
     i <- [0..3): {
         state[13 + i] = (nonce[i * 4] & 255) | ((nonce[i * 4 + 1] & 255) << 8) | ((nonce[i * 4 + 2] & 255) << 16) | ((nonce[i * 4 + 3] & 255) << 24)
     }
 
-    // 複製初始狀態
+    ; 複製初始狀態
     init []u32
     i <- [0..16): {
         init[i] = state[i]
     }
 
-    // 20 輪（10 次雙輪）
+    ; 20 輪（10 次雙輪）
     round <- [0..10): {
-        // 列輪
+        ; 列輪
         qr(state, 0, 4, 8, 12)
         qr(state, 1, 5, 9, 13)
         qr(state, 2, 6, 10, 14)
         qr(state, 3, 7, 11, 15)
-        // 對角輪
+        ; 對角輪
         qr(state, 0, 5, 10, 15)
         qr(state, 1, 6, 11, 12)
         qr(state, 2, 7, 8, 13)
         qr(state, 3, 4, 9, 14)
     }
 
-    // state += init（序列化為小端位元組）
+    ; state += init（序列化為小端位元組）
     i <- [0..16): {
         val = (state[i] + init[i]) & CC-MASK32
         out[i * 4] = val & 255
@@ -107,12 +107,12 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     }
 }
 
-// chacha20-xor: ChaCha20 串流加密/解密
-// key [32]byte: 金鑰
-// counter u32: 初始計數器
-// nonce [12]byte: nonce
-// data []byte: 輸入資料
-// 返回 out []byte: XOR 後的資料
+; chacha20-xor: ChaCha20 串流加密/解密
+; key [32]byte: 金鑰
+; counter u32: 初始計數器
+; nonce [12]byte: nonce
+; data []byte: 輸入資料
+; 返回 out []byte: XOR 後的資料
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
     pos = 0
     blk-counter = counter
@@ -131,43 +131,43 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
     }
 }
 
-// ═══════════════════════════════════════════════
-// Poly1305 MAC
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Poly1305 MAC
+; ═══════════════════════════════════════════════
 
-// poly1305: 計算 Poly1305 MAC
-// key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
-// data []byte: 輸入資料
-// 返回 tag [16]byte: 16 位元組認證標籤
+; poly1305: 計算 Poly1305 MAC
+; key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
+; data []byte: 輸入資料
+; 返回 tag [16]byte: 16 位元組認證標籤
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
-    // r = key[0..16]，清除高位（clamping）
-    // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
+    ; r = key[0..16]，清除高位（clamping）
+    ; r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
     r [5]u32
     r[0] = ((key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[3] & 255) << 24)) & 67108863
     r[1] = ((key[4] & 255) | ((key[5] & 255) << 8) | ((key[6] & 255) << 16) | ((key[7] & 255) << 24)) & 134217726
     r[2] = ((key[8] & 255) | ((key[9] & 255) << 8) | ((key[10] & 255) << 16) | ((key[11] & 255) << 24)) & 134217726
     r[3] = ((key[12] & 255) | ((key[13] & 255) << 8) | ((key[14] & 255) << 16) | ((key[15] & 255) << 24)) & 134217726
 
-    // r[4] 高位部分（r 是 128-bit，分 5 個 26-bit limb 更好，但這裡用 32-bit 分割）
-    // 簡化：使用 4×32-bit + 進位的方式處理 130-bit
+    ; r[4] 高位部分（r 是 128-bit，分 5 個 26-bit limb 更好，但這裡用 32-bit 分割）
+    ; 簡化：使用 4×32-bit + 進位的方式處理 130-bit
 
-    // s = key[16..32]
+    ; s = key[16..32]
     s0 u32 = (key[16] & 255) | ((key[17] & 255) << 8) | ((key[18] & 255) << 16) | ((key[19] & 255) << 24)
     s1 u32 = (key[20] & 255) | ((key[21] & 255) << 8) | ((key[22] & 255) << 16) | ((key[23] & 255) << 24)
     s2 u32 = (key[24] & 255) | ((key[25] & 255) << 8) | ((key[26] & 255) << 16) | ((key[27] & 255) << 24)
     s3 u32 = (key[28] & 255) | ((key[29] & 255) << 8) | ((key[30] & 255) << 16) | ((key[31] & 255) << 24)
 
-    // 累加器 h = 0（使用 5 個 26-bit limb 表示 130-bit 數）
+    ; 累加器 h = 0（使用 5 個 26-bit limb 表示 130-bit 數）
     h0 u32 = 0
     h1 u32 = 0
     h2 u32 = 0
     h3 u32 = 0
     h4 u32 = 0
 
-    // 逐 16 位元組區塊處理
+    ; 逐 16 位元組區塊處理
     pos = 0
     for pos < data.len {
-        // 載入區塊（小端序），末尾補零
+        ; 載入區塊（小端序），末尾補零
         n = 16
         pos + n > data.len -> n = data.len - pos
         t0 u32 = 0
@@ -193,35 +193,35 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         n > 14 -> t3 = t3 | ((data[pos + 14] & 255) << 16)
         n > 15 -> t3 = t3 | ((data[pos + 15] & 255) << 24)
 
-        // 高位 1（2^128 或 2^(n*8)）
-        // 完整區塊添加 2^128，部分區塊添加 2^(n*8)
+        ; 高位 1（2^128 或 2^(n*8)）
+        ; 完整區塊添加 2^128，部分區塊添加 2^(n*8)
         {
             n == 16 -> t4 = 1
             -> {
-                // 部分區塊：設置對應位元
+                ; 部分區塊：設置對應位元
                 t0 = t0 | (1 << (n * 8))
             }
         }
 
-        // h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
+        ; h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
         h0 = (h0 + t0) & CC-MASK32
         h1 = (h1 + t1) & CC-MASK32
         h2 = (h2 + t2) & CC-MASK32
         h3 = (h3 + t3) & CC-MASK32
         h4 = (h4 + t4) & CC-MASK32
 
-        // h = h * r mod (2^130 - 5)
-        // 使用簡化的 32-bit 乘法 + 進位處理
-        // 展開乘法: h = h * r
-        // r 已 clamp，r[3] 只有低 2 位有效
+        ; h = h * r mod (2^130 - 5)
+        ; 使用簡化的 32-bit 乘法 + 進位處理
+        ; 展開乘法: h = h * r
+        ; r 已 clamp，r[3] 只有低 2 位有效
 
-        // 乘積（130-bit × 130-bit → 需要截斷 mod 2^130-5）
-        // 簡化方法：使用 schoolbook 乘法 + 模約簡
+        ; 乘積（130-bit × 130-bit → 需要截斷 mod 2^130-5）
+        ; 簡化方法：使用 schoolbook 乘法 + 模約簡
 
-        // d0 = h0*r0 + h1*r4*5 + h2*r3*5 + h3*r2*5 + h4*r1*5
-        // 但 32-bit 乘法會溢出，所以需要更小心
+        ; d0 = h0*r0 + h1*r4*5 + h2*r3*5 + h3*r2*5 + h4*r1*5
+        ; 但 32-bit 乘法會溢出，所以需要更小心
 
-        // 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
+        ; 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
         d0 u64 = (h0 as u64) * (r[0] as u64)
         d0 = d0 + (h1 as u64) * ((r[4] * 5) as u64)
         d0 = d0 + (h2 as u64) * ((r[3] * 5) as u64)
@@ -252,7 +252,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         d4 = d4 + (h3 as u64) * (r[1] as u64)
         d4 = d4 + (h4 as u64) * (r[0] as u64)
 
-        // 進位處理 + 模約簡（2^130 - 5）
+        ; 進位處理 + 模約簡（2^130 - 5）
         c u64 = d0 >> 26
         h0 = (d0 & 67108863) as u32
         d1 = d1 + c
@@ -275,7 +275,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         pos = pos + 16
     }
 
-    // 最終約簡
+    ; 最終約簡
     c = h1 >> 26
     h1 = h1 & 67108863
     h2 = (h2 + c) & CC-MASK32
@@ -292,8 +292,8 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     h0 = h0 & 67108863
     h1 = (h1 + c) & CC-MASK32
 
-    // h -= 2^130 - 5（如果 h >= 2^130 - 5）
-    // 簡化：h += 5，如果進位則取低 130 位
+    ; h -= 2^130 - 5（如果 h >= 2^130 - 5）
+    ; 簡化：h += 5，如果進位則取低 130 位
     g0 = h0 + 5
     g0-32 = g0 & CC-MASK32
     c = g0 >> 26
@@ -311,7 +311,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     c = g4 >> 26
     g4 = g4 & 67108863
 
-    // 選擇 h 或 g（如果 c != 0 則用 g）
+    ; 選擇 h 或 g（如果 c != 0 則用 g）
     c != 0 -> {
         h0 = g0
         h1 = g1
@@ -320,7 +320,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         h4 = g4
     }
 
-    // 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
+    ; 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
     f u64 = (h0 as u64) | ((h1 as u64) << 26)
     f-lo u32 = f & CC-MASK32
     f-hi u32 = (f >> 32) as u32
@@ -334,12 +334,12 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     f2 = f & CC-MASK32
     f3 = (f >> 32) as u32
 
-    // h += s
+    ; h += s
     f0 = (f0 + s0) & CC-MASK32
     carry = f0 >> 16
 
-    // 對於 32-bit 加法，進位只影響高位
-    // 簡化：直接逐字相加並處理進位
+    ; 對於 32-bit 加法，進位只影響高位
+    ; 簡化：直接逐字相加並處理進位
     f = (f0 as u64) + (s0 as u64)
     f0 = f & CC-MASK32
     c = (f >> 32) as u32
@@ -351,7 +351,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     c = (f >> 32) as u32
     f3 = (f3 + s3 + c) & CC-MASK32
 
-    // 輸出 tag（小端序）
+    ; 輸出 tag（小端序）
     tag[0] = f0 & 255
     tag[1] = (f0 >> 8) & 255
     tag[2] = (f0 >> 16) & 255
@@ -370,17 +370,17 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     tag[15] = (f3 >> 24) & 255
 }
 
-// ═══════════════════════════════════════════════
-// ChaCha20-Poly1305 AEAD
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; ChaCha20-Poly1305 AEAD
+; ═══════════════════════════════════════════════
 
-// poly1305-key-gen: 生成 Poly1305 一次性金鑰
-// key [32]byte: ChaCha20 金鑰
-// nonce [12]byte: nonce
-// 返回 otk [32]byte: 一次性 Poly1305 金鑰
+; poly1305-key-gen: 生成 Poly1305 一次性金鑰
+; key [32]byte: ChaCha20 金鑰
+; nonce [12]byte: nonce
+; 返回 otk [32]byte: 一次性 Poly1305 金鑰
 poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
-    // 使用 ChaCha20(block_counter=0) 生成 64 位元組
-    // 前 32 位元組作為 Poly1305 金鑰
+    ; 使用 ChaCha20(block_counter=0) 生成 64 位元組
+    ; 前 32 位元組作為 Poly1305 金鑰
     block [64]byte
     block = chacha20-block(key, 0, nonce)
     i <- [0..32): {
@@ -388,32 +388,32 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
     }
 }
 
-// chacha20-poly1305-seal: ChaCha20-Poly1305 加密
-// key [32]byte: 金鑰
-// nonce [12]byte: nonce
-// aad []byte: 額外認證資料
-// plain []byte: 明文
-// 返回 sealed []byte: 密文 + 16 位元組 tag
+; chacha20-poly1305-seal: ChaCha20-Poly1305 加密
+; key [32]byte: 金鑰
+; nonce [12]byte: nonce
+; aad []byte: 額外認證資料
+; plain []byte: 明文
+; 返回 sealed []byte: 密文 + 16 位元組 tag
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
-    // 1. 生成 Poly1305 金鑰
+    ; 1. 生成 Poly1305 金鑰
     otk [32]byte
     otk = poly1305-key-gen(key, nonce)
 
-    // 2. 加密（計數器從 1 開始）
+    ; 2. 加密（計數器從 1 開始）
     cipher []byte
     cipher = chacha20-xor(key, 1, nonce, plain)
 
-    // 3. 構建 Poly1305 輸入: aad || pad16 || cipher || pad16 || aad_len || cipher_len
+    ; 3. 構建 Poly1305 輸入: aad || pad16 || cipher || pad16 || aad_len || cipher_len
     mac-input []byte
     pos = 0
 
-    // AAD
+    ; AAD
     i <- [0..aad.len): {
         mac-input[pos + i] = aad[i]
     }
     pos = pos + aad.len
 
-    // pad16 for AAD
+    ; pad16 for AAD
     pad-len = 16 - (aad.len % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
@@ -421,13 +421,13 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
     pos = pos + pad-len
 
-    // Cipher
+    ; Cipher
     i <- [0..cipher.len): {
         mac-input[pos + i] = cipher[i]
     }
     pos = pos + cipher.len
 
-    // pad16 for cipher
+    ; pad16 for cipher
     pad-len = 16 - (cipher.len % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
@@ -435,7 +435,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
     pos = pos + pad-len
 
-    // aad_len (64-bit LE)
+    ; aad_len (64-bit LE)
     aad-len = aad.len
     mac-input[pos + 0] = aad-len & 255
     mac-input[pos + 1] = (aad-len >> 8) & 255
@@ -447,7 +447,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     mac-input[pos + 7] = 0
     pos = pos + 8
 
-    // cipher_len (64-bit LE)
+    ; cipher_len (64-bit LE)
     cipher-len = cipher.len
     mac-input[pos + 0] = cipher-len & 255
     mac-input[pos + 1] = (cipher-len >> 8) & 255
@@ -459,11 +459,11 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     mac-input[pos + 7] = 0
     pos = pos + 8
 
-    // 4. 計算 tag
+    ; 4. 計算 tag
     tag [16]byte
     tag = poly1305(otk, mac-input)
 
-    // 5. 輸出密文 + tag
+    ; 5. 輸出密文 + tag
     i <- [0..cipher.len): {
         sealed[i] = cipher[i]
     }
@@ -472,21 +472,21 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 }
 
-// chacha20-poly1305-open: ChaCha20-Poly1305 解密
-// key [32]byte: 金鑰
-// nonce [12]byte: nonce
-// aad []byte: 額外認證資料
-// sealed []byte: 密文 + 16 位元組 tag
-// 返回 plain []byte: 明文（認證失敗時長度為 0）
+; chacha20-poly1305-open: ChaCha20-Poly1305 解密
+; key [32]byte: 金鑰
+; nonce [12]byte: nonce
+; aad []byte: 額外認證資料
+; sealed []byte: 密文 + 16 位元組 tag
+; 返回 plain []byte: 明文（認證失敗時長度為 0）
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
     sealed.len < 16 -> return
     cipher-len = sealed.len - 16
 
-    // 1. 生成 Poly1305 金鑰
+    ; 1. 生成 Poly1305 金鑰
     otk [32]byte
     otk = poly1305-key-gen(key, nonce)
 
-    // 2. 提取密文和 tag
+    ; 2. 提取密文和 tag
     cipher []byte
     i <- [0..cipher-len): {
         cipher[i] = sealed[i]
@@ -497,7 +497,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
         tag[i] = sealed[cipher-len + i]
     }
 
-    // 3. 構建 Poly1305 輸入並計算期望 tag
+    ; 3. 構建 Poly1305 輸入並計算期望 tag
     mac-input []byte
     pos = 0
 
@@ -550,13 +550,13 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     exp-tag [16]byte
     exp-tag = poly1305(otk, mac-input)
 
-    // 4. 常數時間比較
+    ; 4. 常數時間比較
     diff = 0
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> return
 
-    // 5. 解密
+    ; 5. 解密
     plain = chacha20-xor(key, 1, nonce, cipher)
 }

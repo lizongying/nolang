@@ -1,4 +1,4 @@
-// test-bare-match — isolate bare match classification bug
+; test-bare-match — isolate bare match classification bug
 
 TS-CAP = 4
 

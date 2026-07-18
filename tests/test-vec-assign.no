@@ -1,5 +1,5 @@
-// test-vec-assign — 測試 []u32 賦值
-// # std/hash/sha256
+; test-vec-assign — 測試 []u32 賦值
+; # std/hash/sha256
 
 print('start')
 block []u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -7,7 +7,7 @@ print('block init done')
 print(block[0])
 print(block[15])
 
-// 賦值
+; 賦值
 block[0] = 1
 block[1] = 2
 print('assign done')

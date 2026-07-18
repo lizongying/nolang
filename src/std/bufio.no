@@ -1,8 +1,8 @@
-// bufio — 緩衝 I/O
-//
-// 為 os.read / os.write 提供緩衝讀寫和行讀取功能。
+; bufio — 緩衝 I/O
+;
+; 為 os.read / os.write 提供緩衝讀寫和行讀取功能。
 
-// reader: 緩衝讀取器
+; reader: 緩衝讀取器
 reader {
     fd i64
     buf []byte
@@ -10,7 +10,7 @@ reader {
     avail i64
 }
 
-// init: 建立緩衝讀取器
+; init: 建立緩衝讀取器
 reader.init = (fd i64, buf []byte) (r reader) {
     r.fd = fd
     r.buf = buf
@@ -18,7 +18,7 @@ reader.init = (fd i64, buf []byte) (r reader) {
     r.avail = 0
 }
 
-// fill: 填充緩衝區
+; fill: 填充緩衝區
 reader.fill = () (ok bool) {
     .pos < 0 -> return
     .avail > 0 -> {
@@ -33,8 +33,8 @@ reader.fill = () (ok bool) {
     }
 }
 
-// read-byte: 讀取一個位元組
-// 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
+; read-byte: 讀取一個位元組
+; 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
 reader.read-byte = () (b ?byte) {
     ok = .fill()
     ok == false -> {
@@ -45,7 +45,7 @@ reader.read-byte = () (b ?byte) {
     .pos = .pos + 1
 }
 
-// read-line: 讀取一行
+; read-line: 讀取一行
 reader.read-line = (line str) (ok bool) {
     n = 0
     !! {
@@ -67,7 +67,7 @@ reader.read-line = (line str) (ok bool) {
     }
 }
 
-// close: 關閉
+; close: 關閉
 reader.close = () {
     close(.fd)
 }

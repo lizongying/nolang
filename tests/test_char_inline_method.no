@@ -1,4 +1,4 @@
-// test_char_inline_method
+; test_char_inline_method
 print('start')
 
 s = "A".to-str()

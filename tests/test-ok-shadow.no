@@ -1,4 +1,4 @@
-// test-ok-shadow.no — minimal test for ok variable shadowing
+; test-ok-shadow.no — minimal test for ok variable shadowing
 
 
 ok bool = false

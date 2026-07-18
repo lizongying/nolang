@@ -1,4 +1,4 @@
-// Simple test to dump parser AST
+; Simple test to dump parser AST
 str.to-i64 = () (val i64) {
     val = 0
 }

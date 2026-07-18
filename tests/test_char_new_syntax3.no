@@ -1,4 +1,4 @@
-// test_char_new_syntax3
+; test_char_new_syntax3
 print('start')
 
 c = "中"

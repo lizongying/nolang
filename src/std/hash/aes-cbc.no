@@ -1,53 +1,53 @@
-// aes-cbc — AES-128-CBC 加密/解密模式
-//
-// 在 AES-128-ECB 的基礎上實作 CBC（Cipher Block Chaining）模式。
-// CBC 加密: C_i = AES_enc(P_i ⊕ C_{i-1}), C_0 = IV
-// CBC 解密: P_i = AES_dec(C_i) ⊕ C_{i-1}, C_0 = IV
-//
-// 不含填充（PKCS#7 填充由呼叫者處理），每個區塊 16 位元組。
-//
-// 用法：
-//   # std/hash/aes
-//   # std/hash/aes-cbc
-//   iv [16]byte
-//   key [16]byte
-//   aes-128-cbc-enc(plain, key, iv, cipher)
-//   aes-128-cbc-dec(cipher, key, iv, plain)
+; aes-cbc — AES-128-CBC 加密/解密模式
+;
+; 在 AES-128-ECB 的基礎上實作 CBC（Cipher Block Chaining）模式。
+; CBC 加密: C_i = AES_enc(P_i ⊕ C_{i-1}), C_0 = IV
+; CBC 解密: P_i = AES_dec(C_i) ⊕ C_{i-1}, C_0 = IV
+;
+; 不含填充（PKCS#7 填充由呼叫者處理），每個區塊 16 位元組。
+;
+; 用法：
+;   # std/hash/aes
+;   # std/hash/aes-cbc
+;   iv [16]byte
+;   key [16]byte
+;   aes-128-cbc-enc(plain, key, iv, cipher)
+;   aes-128-cbc-dec(cipher, key, iv, plain)
 
-// AES 區塊大小
+; AES 區塊大小
 AES-BLOCK-SIZE = 16
 
-// aes-128-cbc-enc: AES-128-CBC 加密
-// in []byte: 輸入資料（長度需為 16 的倍數）
-// key [16]byte: 金鑰
-// iv [16]byte: 初始向量
-// 返回 out []byte: 加密後的資料
+; aes-128-cbc-enc: AES-128-CBC 加密
+; in []byte: 輸入資料（長度需為 16 的倍數）
+; key [16]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 加密後的資料
 aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    // 上一個密文區塊（初始為 IV）
+    ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
         prev[i] = iv[i]
     }
 
-    // 逐區塊加密
+    ; 逐區塊加密
     blk = 0
     for blk < in.len {
-        // XOR 當前區塊與 prev
+        ; XOR 當前區塊與 prev
         xored [16]byte
         i <- [0..16): {
             xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
         }
 
-        // AES 加密
+        ; AES 加密
         enc-block [16]byte
         enc-block = aes.aes-128-enc(xored, key)
 
-        // 輸出密文
+        ; 輸出密文
         i <- [0..16): {
             out[blk + i] = enc-block[i]
         }
 
-        // 更新 prev 為當前密文區塊
+        ; 更新 prev 為當前密文區塊
         i <- [0..16): {
             prev[i] = out[blk + i]
         }
@@ -56,37 +56,37 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     }
 }
 
-// aes-128-cbc-dec: AES-128-CBC 解密
-// in []byte: 輸入密文（長度需為 16 的倍數）
-// key [16]byte: 金鑰
-// iv [16]byte: 初始向量
-// 返回 out []byte: 解密後的資料
+; aes-128-cbc-dec: AES-128-CBC 解密
+; in []byte: 輸入密文（長度需為 16 的倍數）
+; key [16]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 解密後的資料
 aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    // 上一個密文區塊（初始為 IV）
+    ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
         prev[i] = iv[i]
     }
 
-    // 逐區塊解密
+    ; 逐區塊解密
     blk = 0
     for blk < in.len {
-        // 保存當前密文區塊（解密前）
+        ; 保存當前密文區塊（解密前）
         cur-cipher [16]byte
         i <- [0..16): {
             cur-cipher[i] = in[blk + i]
         }
 
-        // AES 解密
+        ; AES 解密
         dec-block [16]byte
         dec-block = aes.aes-128-dec(cur-cipher, key)
 
-        // XOR 與 prev 得到明文
+        ; XOR 與 prev 得到明文
         i <- [0..16): {
             out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)
         }
 
-        // 更新 prev 為當前密文區塊
+        ; 更新 prev 為當前密文區塊
         i <- [0..16): {
             prev[i] = cur-cipher[i]
         }
@@ -95,9 +95,9 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     }
 }
 
-// pkcs7-pad: PKCS#7 填充
-// in []byte: 輸入資料
-// 返回 out []byte: 填充後的資料
+; pkcs7-pad: PKCS#7 填充
+; in []byte: 輸入資料
+; 返回 out []byte: 填充後的資料
 pkcs7-pad = (in []byte) (out []byte) {
     pad-len = 16 - (in.len % 16)
     pad-len == 0 -> pad-len = 16
@@ -109,9 +109,9 @@ pkcs7-pad = (in []byte) (out []byte) {
     }
 }
 
-// pkcs7-unpad: PKCS#7 去填充
-// in []byte: 輸入資料（含填充）
-// 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
+; pkcs7-unpad: PKCS#7 去填充
+; in []byte: 輸入資料（含填充）
+; 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
 pkcs7-unpad = (in []byte) (out-n i64) {
     in.len == 0 -> {
         out-n = -1
@@ -123,7 +123,7 @@ pkcs7-unpad = (in []byte) (out-n i64) {
         return
     }
 
-    // 驗證填充
+    ; 驗證填充
     i <- [0..pad-len): {
         (in[in.len - 1 - i] & 255) != pad-len -> {
             out-n = -1

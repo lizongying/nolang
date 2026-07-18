@@ -1,15 +1,15 @@
-// hash-set — i64 哈希集合
-//
-// 固定容量（64 槽），線性探測，O(1) 查找/插入/刪除。
-// 容量為 2 的冪，建議裝載因子 ≤ 0.75（即最多 ~48 條）。
-//
-// 用法：
-//   s = hash-set{}
-//   s.init()
-//   s.add(42)
-//   yes = s.contains(42)    // yes = true
-//   s.remove(42)
-//   s.for-each(val)
+; hash-set — i64 哈希集合
+;
+; 固定容量（64 槽），線性探測，O(1) 查找/插入/刪除。
+; 容量為 2 的冪，建議裝載因子 ≤ 0.75（即最多 ~48 條）。
+;
+; 用法：
+;   s = hash-set{}
+;   s.init()
+;   s.add(42)
+;   yes = s.contains(42)    // yes = true
+;   s.remove(42)
+;   s.for-each(val)
 
 hash-set {
     cap i64
@@ -18,7 +18,7 @@ hash-set {
     size i64
 }
 
-// init: 初始化
+; init: 初始化
 hash-set.init = () {
     .cap = 64
     .size = 0
@@ -27,12 +27,12 @@ hash-set.init = () {
     }
 }
 
-// hash: 計算索引
+; hash: 計算索引
 hash-set.hash = (key i64) (idx i64) {
     idx = key & (.cap - 1)
 }
 
-// add: 加入元素，回傳是否新增
+; add: 加入元素，回傳是否新增
 hash-set.add = (key i64) (is-new bool) {
     idx = .hash(key)
 
@@ -51,7 +51,7 @@ hash-set.add = (key i64) (is-new bool) {
     is-new = true
 }
 
-// contains: 檢查元素是否存在
+; contains: 檢查元素是否存在
 hash-set.contains = (key i64) (found bool) {
     found = false
     .size == 0 -> return
@@ -67,7 +67,7 @@ hash-set.contains = (key i64) (found bool) {
     }
 }
 
-// remove: 刪除元素，回傳是否刪除
+; remove: 刪除元素，回傳是否刪除
 hash-set.remove = (key i64) (removed bool) {
     removed = false
     .size == 0 -> return
@@ -85,7 +85,7 @@ hash-set.remove = (key i64) (removed bool) {
     }
 }
 
-// clear: 清空
+; clear: 清空
 hash-set.clear = () {
     i <- [0...cap): {
         .occ[i] = 0
@@ -93,17 +93,17 @@ hash-set.clear = () {
     .size = 0
 }
 
-// len: 返回元素數量
+; len: 返回元素數量
 hash-set.len = () (n i64) {
     n = .size
 }
 
-// is-empty: 是否為空
+; is-empty: 是否為空
 hash-set.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-// for-each: 遍歷所有元素
+; for-each: 遍歷所有元素
 hash-set.for-each = (val i64) {
     i <- [0...cap): {
         .occ[i] == 1 -> val = .keys[i]

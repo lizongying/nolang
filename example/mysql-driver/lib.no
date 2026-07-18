@@ -1,4 +1,4 @@
-// Export declarations
+; Export declarations
 @ /src/mysql.db-mysql
 @ /src/mysql.rows-mysql
 @ /src/mysql.stmt-mysql

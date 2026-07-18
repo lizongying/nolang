@@ -1,4 +1,4 @@
-// aes-128-dec — AES-128 解密（ECB 模式）
-//
-// 實現已合併至 aes.no，此檔案僅保留模組名稱佔位。
-// 使用方式：aes.aes-128-dec(cipher, key)
+; aes-128-dec — AES-128 解密（ECB 模式）
+;
+; 實現已合併至 aes.no，此檔案僅保留模組名稱佔位。
+; 使用方式：aes.aes-128-dec(cipher, key)

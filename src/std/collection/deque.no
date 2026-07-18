@@ -1,22 +1,22 @@
-// deque — 雙端佇列
-//
-// 使用 []i64 實作雙端佇列（Double-Ended Queue）。
-// 支援從前後兩端推入和彈出元素。
-// 內部使用循環緩衝區實作。
-//
-// 用法：
-//   use std/deque
-//   buf [128]i64 = [0:128]
-//   d = deque { buf: buf, cap: 128, head: 0, tail: 0 }
-//   d.push-back(42)
-//   d.push-back(7)
-//   val = d.pop-front()
-//   val: {
-//       nil -> print('empty')
-//       -> print(it)
-//   }
+; deque — 雙端佇列
+;
+; 使用 []i64 實作雙端佇列（Double-Ended Queue）。
+; 支援從前後兩端推入和彈出元素。
+; 內部使用循環緩衝區實作。
+;
+; 用法：
+;   use std/deque
+;   buf [128]i64 = [0:128]
+;   d = deque { buf: buf, cap: 128, head: 0, tail: 0 }
+;   d.push-back(42)
+;   d.push-back(7)
+;   val = d.pop-front()
+;   val: {
+;       nil -> print('empty')
+;       -> print(it)
+;   }
 
-// deque: 雙端佇列
+; deque: 雙端佇列
 deque {
     buf []i64
     cap i64
@@ -24,7 +24,7 @@ deque {
     tail i64
 }
 
-// push-front: 從前端推入元素
+; push-front: 從前端推入元素
 deque.push-front = (val i64) {
     n = .tail - .head
     n >= .cap -> return
@@ -35,7 +35,7 @@ deque.push-front = (val i64) {
     .head = new-head
 }
 
-// push-back: 從後端推入元素
+; push-back: 從後端推入元素
 deque.push-back = (val i64) {
     n = .tail - .head
     n >= .cap -> return
@@ -48,8 +48,8 @@ deque.push-back = (val i64) {
     .tail = .tail + 1
 }
 
-// pop-front: 從前端彈出元素
-// 返回 val ?i64: ok=彈出值, nil=佇列為空
+; pop-front: 從前端彈出元素
+; 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-front = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
@@ -65,8 +65,8 @@ deque.pop-front = () (val ?i64) {
     .head = .head + 1
 }
 
-// pop-back: 從後端彈出元素
-// 返回 val ?i64: ok=彈出值, nil=佇列為空
+; pop-back: 從後端彈出元素
+; 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-back = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
@@ -83,8 +83,8 @@ deque.pop-back = () (val ?i64) {
     .tail = new-tail
 }
 
-// peek-front: 查看前端元素（不移除）
-// 返回 val ?i64: ok=前端值, nil=佇列為空
+; peek-front: 查看前端元素（不移除）
+; 返回 val ?i64: ok=前端值, nil=佇列為空
 deque.peek-front = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
@@ -99,8 +99,8 @@ deque.peek-front = () (val ?i64) {
     val = .buf[idx]
 }
 
-// peek-back: 查看後端元素（不移除）
-// 返回 val ?i64: ok=後端值, nil=佇列為空
+; peek-back: 查看後端元素（不移除）
+; 返回 val ?i64: ok=後端值, nil=佇列為空
 deque.peek-back = () (val ?i64) {
     n = .tail - .head
     n <= 0 -> {
@@ -115,18 +115,18 @@ deque.peek-back = () (val ?i64) {
     val = .buf[idx]
 }
 
-// size: 返回雙端佇列大小
+; size: 返回雙端佇列大小
 deque.size = () (sz i64) {
     sz = .tail - .head
 }
 
-// empty: 判斷雙端佇列是否為空
-// 返回 true=空, false=非空
+; empty: 判斷雙端佇列是否為空
+; 返回 true=空, false=非空
 deque.empty = () (yes bool) {
     yes = .tail <= .head
 }
 
-// clear: 清空雙端佇列
+; clear: 清空雙端佇列
 deque.clear = () {
     .tail = .head
 }

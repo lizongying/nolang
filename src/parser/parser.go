@@ -1271,6 +1271,13 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.RBRACE:
 		return nil
 
+	case lexer.NOT:
+		// ! { } → 無限循環（!! 的單驚嘆號變體，向後相容舊語法）
+		if p.peekToken.Type == lexer.LBRACE {
+			return p.parseBangLoop()
+		}
+		return p.parseExpressionStatement()
+
 	case lexer.BANG_BANG:
 		// 無限循環 !! { }
 		if p.peekToken.Type == lexer.LBRACE {

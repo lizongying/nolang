@@ -1,16 +1,16 @@
-// str-map — str→str 哈希映射表
-//
-// 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
-// 適合小型鍵值對場景（建議 ≤ 192 條）。
-//
-// 用法：
-//   m = str-map{}
-//   m.init()
-//   m.put('name', 'Alice')
-//   val = m.get('name')   // val = ok('Alice') 或 nil
-//   m.for-each(k, v)
+; str-map — str→str 哈希映射表
+;
+; 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
+; 適合小型鍵值對場景（建議 ≤ 192 條）。
+;
+; 用法：
+;   m = str-map{}
+;   m.init()
+;   m.put('name', 'Alice')
+;   val = m.get('name')   // val = ok('Alice') 或 nil
+;   m.for-each(k, v)
 
-// FNV-1a 常量
+; FNV-1a 常量
 FNV-OFFSET = -3750763034362895579
 FNV-PRIME = 1099511628211
 
@@ -22,7 +22,7 @@ str-map {
     size i64
 }
 
-// init: 初始化
+; init: 初始化
 str-map.init = () {
     .cap = 256
     .size = 0
@@ -33,7 +33,7 @@ str-map.init = () {
     }
 }
 
-// hash: FNV-1a 字串雜湊
+; hash: FNV-1a 字串雜湊
 str-map.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
@@ -43,7 +43,7 @@ str-map.hash = (key str) (idx i64) {
     idx = h & (.cap - 1)
 }
 
-// str-eq: 比較兩個 str 是否相等
+; str-eq: 比較兩個 str 是否相等
 str-map.str-eq = (a str, b str) (eq bool) {
     eq = false
     a.len != b.len -> return
@@ -53,7 +53,7 @@ str-map.str-eq = (a str, b str) (eq bool) {
     eq = true
 }
 
-// put: 插入或更新 key→value，回傳是否新增
+; put: 插入或更新 key→value，回傳是否新增
 str-map.put = (key str, val str) (is-new bool) {
     idx = .hash(key)
 
@@ -72,13 +72,13 @@ str-map.put = (key str, val str) (is-new bool) {
         idx >= .cap -> idx = 0
     }
 
-    // 複製 key
+    ; 複製 key
     .keys[idx].len = key.len
     i <- [0..key.len): {
         .keys[idx][i] = key[i]
     }
 
-    // 複製 val
+    ; 複製 val
     .vals[idx].len = val.len
     i <- [0..val.len): {
         .vals[idx][i] = val[i]
@@ -88,7 +88,7 @@ str-map.put = (key str, val str) (is-new bool) {
     is-new = true
 }
 
-// get: 查找 key，返回 ?str（nil=未找到）
+; get: 查找 key，返回 ?str（nil=未找到）
 str-map.get = (key str) (result ?str) {
     .size == 0 -> {
         result = nil
@@ -109,7 +109,7 @@ str-map.get = (key str) (result ?str) {
     result = nil
 }
 
-// contains: 檢查 key 是否存在
+; contains: 檢查 key 是否存在
 str-map.contains = (key str) (found bool) {
     found = false
     val = .get(key)
@@ -118,7 +118,7 @@ str-map.contains = (key str) (found bool) {
     }
 }
 
-// remove: 刪除 key
+; remove: 刪除 key
 str-map.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> return
@@ -139,7 +139,7 @@ str-map.remove = (key str) (removed bool) {
     }
 }
 
-// clear: 清空
+; clear: 清空
 str-map.clear = () {
     i <- [0...cap): {
         .occ[i] = 0
@@ -149,17 +149,17 @@ str-map.clear = () {
     .size = 0
 }
 
-// len: 返回元素數量
+; len: 返回元素數量
 str-map.len = () (n i64) {
     n = .size
 }
 
-// is-empty: 是否為空
+; is-empty: 是否為空
 str-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-// for-each: 遍歷所有 (key, value)
+; for-each: 遍歷所有 (key, value)
 str-map.for-each = (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {

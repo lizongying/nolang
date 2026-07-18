@@ -1,17 +1,17 @@
-// test-ffi-mysql.no — MySQL FFI 驅動完整流程測試
-//
-// 測試 open/exec/query/scan/prepare/bind 完整流程。
-// 需系統安裝 libmysqlclient 且 MySQL 伺服器正在運行。
-// macOS: brew install mysql-connector-c
-// Linux: sudo apt install libmysqlclient-dev
-// 驅動包 example/mysql-driver 使用純 Nolang 實作 MySQL 協議（不使用 FFI）。
-//
-// 注意：本測試為 vet-only（語法驗證），不執行，因需 live MySQL server。
-// 執行前需建立資料庫 testdb 並設定 root/secret 帳密。
+; test-ffi-mysql.no — MySQL FFI 驅動完整流程測試
+;
+; 測試 open/exec/query/scan/prepare/bind 完整流程。
+; 需系統安裝 libmysqlclient 且 MySQL 伺服器正在運行。
+; macOS: brew install mysql-connector-c
+; Linux: sudo apt install libmysqlclient-dev
+; 驅動包 example/mysql-driver 使用純 Nolang 實作 MySQL 協議（不使用 FFI）。
+;
+; 注意：本測試為 vet-only（語法驗證），不執行，因需 live MySQL server。
+; 執行前需建立資料庫 testdb 並設定 root/secret 帳密。
 
 # /example/mysql-driver/mysql
 
-// 測試 1: 以 DSN 連線
+; 測試 1: 以 DSN 連線
 d db = fs.open('root:secret@localhost/testdb')
 d.handle == 0 -> {
     print('fail: open database')
@@ -19,11 +19,11 @@ d.handle == 0 -> {
 }
 print('ok: open database')
 
-// 測試 2: 建表
+; 測試 2: 建表
 r result = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
 print('ok: create table')
 
-// 測試 3: 插入資料
+; 測試 3: 插入資料
 d.exec('DELETE FROM users')
 r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
 {
@@ -34,7 +34,7 @@ r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
     }
 }
 
-// 測試 4: 查詢並掃描
+; 測試 4: 查詢並掃描
 rs rows = d.query('SELECT id, name, age FROM users')
 rs.res == 0 -> {
     print('fail: query')
@@ -70,7 +70,7 @@ for rs.next() {
 }
 rs.close()
 
-// 測試 5: 預編譯陳述式（插入，字串替換模式）
+; 測試 5: 預編譯陳述式（插入，字串替換模式）
 s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
 s.bind-str(1, 'Bob')
 s.bind-int(2, 25)
@@ -81,7 +81,7 @@ r2 result = s.exec()
 }
 s.close()
 
-// 測試 6: 預編譯陳述式（查詢，字串替換模式）
+; 測試 6: 預編譯陳述式（查詢，字串替換模式）
 s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
 s2.bind-int(1, 2)
 rs2 rows = s2.query()
@@ -101,7 +101,7 @@ for rs2.next() {
 rs2.close()
 s2.close()
 
-// 測試 7: 驗證總列數
+; 測試 7: 驗證總列數
 rs3 rows = d.query('SELECT id FROM users')
 rs3.res != 0 -> {
     total i64 = 0

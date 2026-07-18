@@ -1,11 +1,11 @@
-// test-err.no — err 模組測試
-//
-// 測試 new, error.is, error.msg, error.code, err-from-errno, error.format
-// 注意：str-long value type 跨函式邊界傳遞時長度不一致，
-// 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
+; test-err.no — err 模組測試
+;
+; 測試 new, error.is, error.msg, error.code, err-from-errno, error.format
+; 注意：str-long value type 跨函式邊界傳遞時長度不一致，
+; 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
 
 
-// ── 1. new 建立錯誤，檢查 code ──
+; ── 1. new 建立錯誤，檢查 code ──
 e = err.new(code.io, 'disk full')
 
 yes = e.is(code.io)
@@ -14,11 +14,11 @@ yes = e.is(code.io)
     -> print('fail: new code')
 }
 
-// ── 2. error.msg 取得訊息（只驗證呼叫完成）──
+; ── 2. error.msg 取得訊息（只驗證呼叫完成）──
 msg = e.msg()
 print('ok: error.msg')
 
-// ── 3. error.is 比對錯誤碼（true 和 false）──
+; ── 3. error.is 比對錯誤碼（true 和 false）──
 yes = e.is(code.io)
 {
 yes -> print('ok: error.is true')
@@ -31,14 +31,14 @@ yes == false -> print('ok: error.is false')
 -> print('fail: error.is false')
 }
 
-// ── 4. error.code 取得錯誤碼 ──
+; ── 4. error.code 取得錯誤碼 ──
 mc = e.code()
 {
 mc == code.io -> print('ok: error.code')
 -> print('fail: error.code')
 }
 
-// ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──
+; ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──
 e2 = err.err-from-errno(2)
 yes2 = e2.is(code.not-found)
 {
@@ -49,7 +49,7 @@ yes2 = e2.is(code.not-found)
 errno-msg = e2.msg()
 print('ok: err-from-errno msg')
 
-// ── 6. error.format 格式化錯誤 ──
+; ── 6. error.format 格式化錯誤 ──
 s = e.format()
 {
     s.len > 0 -> print('ok: error.format')

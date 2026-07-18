@@ -1,31 +1,31 @@
-// hpack — HPACK 標頭壓縮（RFC 7541）
-//
-// HTTP/2.0 使用的標頭壓縮格式。本實作為純 Nolang，不依賴 FFI。
-// 簡化策略：
-//   - 字串編碼用 literal（H bit=0），不支援 Huffman 壓縮
-//   - 靜態表 61 項（RFC 7541 Appendix A）
-//   - 動態表最多 64 項
-//   - 編碼優先使用 indexed 表示（完全匹配），其次 literal with incremental indexing
-//
-// 用法：
-//   t = hpack-tables{}
-//   t.init()
-//   out, n = t.encode-header(':method', 'GET')
-//   names, values, cnt = t.decode-headers(data)  // cnt=-1 表示失敗
+; hpack — HPACK 標頭壓縮（RFC 7541）
+;
+; HTTP/2.0 使用的標頭壓縮格式。本實作為純 Nolang，不依賴 FFI。
+; 簡化策略：
+;   - 字串編碼用 literal（H bit=0），不支援 Huffman 壓縮
+;   - 靜態表 61 項（RFC 7541 Appendix A）
+;   - 動態表最多 64 項
+;   - 編碼優先使用 indexed 表示（完全匹配），其次 literal with incremental indexing
+;
+; 用法：
+;   t = hpack-tables{}
+;   t.init()
+;   out, n = t.encode-header(':method', 'GET')
+;   names, values, cnt = t.decode-headers(data)  // cnt=-1 表示失敗
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
 HPACK-STATIC-COUNT = 61
 HPACK-DYN-MAX = 64
 HPACK-OUT-BUF = 4096
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// hpack-tables: HPACK 編解碼狀態（含靜態表 + 動態表）
+; hpack-tables: HPACK 編解碼狀態（含靜態表 + 動態表）
 hpack-tables {
     static-names [61]str
     static-values [61]str
@@ -37,11 +37,11 @@ hpack-tables {
     dyn-max i64
 }
 
-// ═══════════════════════════════════════════════
-// 初始化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 初始化
+; ═══════════════════════════════════════════════
 
-// init: 初始化 HPACK 表（靜態表 + 動態表）
+; init: 初始化 HPACK 表（靜態表 + 動態表）
 hpack-tables.init = () {
     .dyn-count = 0
     .dyn-size = 0
@@ -55,8 +55,8 @@ hpack-tables.init = () {
     .static-init -> return
     .static-init = true
 
-    // RFC 7541 Appendix A 靜態表（61 項）
-    // 索引 0 保留，1-61 為靜態表項
+    ; RFC 7541 Appendix A 靜態表（61 項）
+    ; 索引 0 保留，1-61 為靜態表項
     .static-names[0] = ':authority'
     .static-values[0] = ''
     .static-names[1] = ':method'
@@ -181,28 +181,28 @@ hpack-tables.init = () {
     .static-values[60] = ''
 }
 
-// ═══════════════════════════════════════════════
-// 動態表操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 動態表操作
+; ═══════════════════════════════════════════════
 
-// dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
+; dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
 hpack-tables.dyn-add = (name str, value str) {
     .dyn-count >= HPACK-DYN-MAX -> return
 
-    // 向後移動（從尾部開始避免覆蓋）
+    ; 向後移動（從尾部開始避免覆蓋）
     i = .dyn-count
     for i > 0 {
-        // 用 slice 複製（CallExpression 正確載入 str-long value）
+        ; 用 slice 複製（CallExpression 正確載入 str-long value）
         prev-name-len = .dyn-names[i - 1].len
         prev-val-len = .dyn-values[i - 1].len
 
-        // 逐 byte 複製 name
+        ; 逐 byte 複製 name
         .dyn-names[i].len = prev-name-len
         j <- [0..prev-name-len): {
             .dyn-names[i][j] = .dyn-names[i - 1][j]
         }
 
-        // 逐 byte 複製 value
+        ; 逐 byte 複製 value
         .dyn-values[i].len = prev-val-len
         j <- [0..prev-val-len): {
             .dyn-values[i][j] = .dyn-values[i - 1][j]
@@ -210,7 +210,7 @@ hpack-tables.dyn-add = (name str, value str) {
         i = i - 1
     }
 
-    // 新項放索引 0
+    ; 新項放索引 0
     .dyn-names[0].len = name.len
     j <- [0..name.len): {
         .dyn-names[0][j] = name[j]
@@ -223,16 +223,16 @@ hpack-tables.dyn-add = (name str, value str) {
     .dyn-size = .dyn-size + name.len + value.len + 32
 }
 
-// ═══════════════════════════════════════════════
-// 查詢
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 查詢
+; ═══════════════════════════════════════════════
 
-// find: 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
-// 返回 idx=0=未找到，idx>0=索引
+; find: 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
+; 返回 idx=0=未找到，idx>0=索引
 hpack-tables.find = (name str, value str) (idx i64) {
     idx = 0
 
-    // 查靜態表（1-61，靜態表內部從 0 開始存）
+    ; 查靜態表（1-61，靜態表內部從 0 開始存）
     i <- [0..HPACK-STATIC-COUNT): {
         .static-names[i].len == name.len -> {
             matched = 1
@@ -258,7 +258,7 @@ hpack-tables.find = (name str, value str) (idx i64) {
         }
     }
 
-    // 查動態表（索引從 62 開始）
+    ; 查動態表（索引從 62 開始）
     i <- [0...dyn-count): {
         .dyn-names[i].len == name.len -> {
             matched = 1
@@ -285,8 +285,8 @@ hpack-tables.find = (name str, value str) (idx i64) {
     }
 }
 
-// find-name: 只匹配 name，返回全局索引
-// 返回 idx=0=未找到，idx>0=索引
+; find-name: 只匹配 name，返回全局索引
+; 返回 idx=0=未找到，idx>0=索引
 hpack-tables.find-name = (name str) (idx i64) {
     idx = 0
     i <- [0..HPACK-STATIC-COUNT): {
@@ -321,14 +321,14 @@ hpack-tables.find-name = (name str) (idx i64) {
     }
 }
 
-// lookup: 根據索引取得 name/value
-// idx 1-61=靜態表，62+=動態表
-// 返回 name, value, ok=true=找到
+; lookup: 根據索引取得 name/value
+; idx 1-61=靜態表，62+=動態表
+; 返回 name, value, ok=true=找到
 hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
     ok = false
     idx <= 0 -> return
     idx <= HPACK-STATIC-COUNT -> {
-        // 靜態表（內部從 0 開始）
+        ; 靜態表（內部從 0 開始）
         arr-idx = idx - 1
         n-len = .static-names[arr-idx].len
         v-len = .static-values[arr-idx].len
@@ -348,15 +348,15 @@ hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 變長整數編解碼（RFC 7541 §5.1）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 變長整數編解碼（RFC 7541 §5.1）
+; ═══════════════════════════════════════════════
 
-// hpack-encode-int: 編碼變長整數到 out
-// val: 要編碼的值
-// prefix-bits: 前綴位數（1-8）
-// prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
-// 返回 out=編碼後的字串
+; hpack-encode-int: 編碼變長整數到 out
+; val: 要編碼的值
+; prefix-bits: 前綴位數（1-8）
+; prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
+; 返回 out=編碼後的字串
 hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
@@ -364,7 +364,7 @@ hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         return
     }
 
-    // 第一個 byte: prefix 全 1
+    ; 第一個 byte: prefix 全 1
     out[0] = prefix-byte | max-prefix
     n = 1
     val = val - max-prefix
@@ -376,9 +376,9 @@ hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out[n] = val
 }
 
-// hpack-decode-int: 從 data 的 pos 位置解碼變長整數
-// prefix-bits: 前綴位數
-// 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
+; hpack-decode-int: 從 data 的 pos 位置解碼變長整數
+; prefix-bits: 前綴位數
+; 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
 hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     val = 0
     next-pos = pos
@@ -392,7 +392,7 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
     next-pos = pos + 1
     first < max-prefix -> return
 
-    // 多 byte 編碼
+    ; 多 byte 編碼
     m = 0
     !! {
         next-pos >= data.len -> {
@@ -411,31 +411,31 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
     }
 }
 
-// ═══════════════════════════════════════════════
-// 字串編解碼（RFC 7541 §5.2，不支援 Huffman）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字串編解碼（RFC 7541 §5.2，不支援 Huffman）
+; ═══════════════════════════════════════════════
 
-// hpack-encode-str: 編碼字串（literal，H=0）
-// 返回 out=編碼後字串
+; hpack-encode-str: 編碼字串（literal，H=0）
+; 返回 out=編碼後字串
 hpack-encode-str = (s str) (out str) {
-    // H bit=0, 長度用 7-bit prefix 編碼
+    ; H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
     len-out = hpack-encode-int(s.len, 7, 0)
 
-    // 複製長度編碼到 out
+    ; 複製長度編碼到 out
     i <- [0..len-out.len): {
         out[i] = len-out[i]
     }
     out-n = len-out.len
 
-    // 複製字串內容
+    ; 複製字串內容
     i <- [0..s.len): {
         out[out-n + i] = s[i]
     }
 }
 
-// hpack-decode-str: 從 data 的 pos 位置解碼字串
-// 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
+; hpack-decode-str: 從 data 的 pos 位置解碼字串
+; 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
 hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
     pos >= data.len -> {
         next-pos = -1
@@ -443,8 +443,8 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
     first = data[pos]
 
-    // H bit = first & 128，本實作不支援 Huffman
-    // 長度用 7-bit prefix
+    ; H bit = first & 128，本實作不支援 Huffman
+    ; 長度用 7-bit prefix
     len = 0
     p = 0
     len, p = hpack-decode-int(data, pos, 7)
@@ -457,63 +457,63 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
         return
     }
 
-    // 複製字串內容
+    ; 複製字串內容
     i <- [0..len): {
         out[i] = data[p + i]
     }
     next-pos = p + len
 }
 
-// ═══════════════════════════════════════════════
-// 標頭編解碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 標頭編解碼
+; ═══════════════════════════════════════════════
 
-// encode-header: 編碼單個標頭
-// 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
-//       否則→literal with indexing（新 name）
-// 返回 out=編碼字串
+; encode-header: 編碼單個標頭
+; 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
+;       否則→literal with indexing（新 name）
+; 返回 out=編碼字串
 hpack-tables.encode-header = (name str, value str) (out str) {
-    // 1. 完全匹配 → Indexed Header Field（6.1）
+    ; 1. 完全匹配 → Indexed Header Field（6.1）
     full-idx = 0
     full-idx = .find(name, value)
     full-idx > 0 -> {
-        // 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
+        ; 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
         out = hpack-encode-int(full-idx, 7, 128)
         return
     }
 
-    // 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
+    ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
     name-idx = .find-name(name)
     name-idx > 0 -> {
-        // 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
+        ; 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
         idx-out = ' '
         idx-out = hpack-encode-int(name-idx, 6, 64)
 
-        // 複製到 out
+        ; 複製到 out
         i <- [0..idx-out.len): {
             out[i] = idx-out[i]
         }
         out-n = idx-out.len
 
-        // 編碼 value
+        ; 編碼 value
         val-out = ' '
         val-out = hpack-encode-str(value)
         i <- [0..val-out.len): {
             out[out-n + i] = val-out[i]
         }
 
-        // 加入動態表
+        ; 加入動態表
         .dyn-add(name, value)
         return
     }
 
-    // 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
-    // 格式：01000000（索引 0 = 新 name）
+    ; 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
+    ; 格式：01000000（索引 0 = 新 name）
     out[0] = 64
     out-n = 1
 
-    // 編碼 name
+    ; 編碼 name
     name-out = ' '
     name-out = hpack-encode-str(name)
     i <- [0..name-out.len): {
@@ -521,25 +521,25 @@ hpack-tables.encode-header = (name str, value str) (out str) {
     }
     out-n = out-n + name-out.len
 
-    // 編碼 value
+    ; 編碼 value
     val-out = ' '
     val-out = hpack-encode-str(value)
     i <- [0..val-out.len): {
         out[out-n + i] = val-out[i]
     }
 
-    // 加入動態表
+    ; 加入動態表
     .dyn-add(name, value)
 }
 
-// decode-headers: 解碼標頭塊
-// data: 二進位資料
-// 返回 names/values 陣列, count=標頭數, ok=true=成功
+; decode-headers: 解碼標頭塊
+; data: 二進位資料
+; 返回 names/values 陣列, count=標頭數, ok=true=成功
 hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, ok bool) {
     ok = false
     count = 0
 
-    // 初始化輸出陣列
+    ; 初始化輸出陣列
     i <- [0..128): {
         names[i] = ' '
         names[i].len = 0
@@ -556,7 +556,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
         pos >= n -> *
         count >= 128 -> *
         b = data[pos]
-        // Indexed Header Field（6.1）：1xxxxxxx
+        ; Indexed Header Field（6.1）：1xxxxxxx
         {
             (b & 128) != 0 -> {
                 idx = 0
@@ -569,7 +569,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 lk-name, lk-val, found = .lookup(idx)
                 found == false -> return
 
-                // 複製到輸出
+                ; 複製到輸出
                 j <- [0..lk-name.len): {
                     names[count][j] = lk-name[j]
                 }
@@ -582,7 +582,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 pos = next
             }
             (b & 192) == 64 -> {
-                // Literal with Incremental Indexing（6.2.1）：01xxxxxx
+                ; Literal with Incremental Indexing（6.2.1）：01xxxxxx
 
                 name-idx = 0
                 next = 0
@@ -608,7 +608,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 value, pos = hpack-decode-str(data, pos)
                 pos < 0 -> return
 
-                // 複製到輸出
+                ; 複製到輸出
                 j <- [0..name.len): {
                     names[count][j] = name[j]
                 }
@@ -619,11 +619,11 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 values[count].len = value.len
                 count = count + 1
 
-                // 加入動態表
+                ; 加入動態表
                 .dyn-add(name, value)
             }
             (b & 240) == 0 -> {
-                // Literal without Indexing（6.2.2）：0000xxxx
+                ; Literal without Indexing（6.2.2）：0000xxxx
 
                 name-idx = 0
                 next = 0
@@ -659,7 +659,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
                 count = count + 1
             }
             (b & 240) == 16 -> {
-                // Literal Never Indexed（6.2.3）：0001xxxx
+                ; Literal Never Indexed（6.2.3）：0001xxxx
 
                 name-idx = 0
                 next = 0
@@ -696,7 +696,7 @@ hpack-tables.decode-headers = (data str) (names [128]str, values [128]str, count
             }
             -> return
         }
-        // 未知表示類型
+        ; 未知表示類型
     }
 
     ok = true

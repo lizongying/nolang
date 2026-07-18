@@ -1,4 +1,4 @@
-// test-minimal-it.no — 最小化 it 測試
+; test-minimal-it.no — 最小化 it 測試
 test-it = () {
     n ?i64 = 42
     r = n: {

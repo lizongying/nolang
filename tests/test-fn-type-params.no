@@ -1,13 +1,13 @@
-// test-fn-type-params.no — 函式型別參數測試
-//
-// 測試函式型別作為參數：無參數回呼與帶參數回呼
-// 驗證 Phase 1 核心功能：具名函式作為參數傳遞與間接呼叫
-//
-// 注意：匿名函式型別語法 `cb ()()` 需在 mod.jsonc 設定
-// `"anonymous-fn-type": true` 才能使用。此測試改用具名函式型別定義，
-// 在預設開關關閉下亦可運作。
+; test-fn-type-params.no — 函式型別參數測試
+;
+; 測試函式型別作為參數：無參數回呼與帶參數回呼
+; 驗證 Phase 1 核心功能：具名函式作為參數傳遞與間接呼叫
+;
+; 注意：匿名函式型別語法 `cb ()()` 需在 mod.jsonc 設定
+; `"anonymous-fn-type": true` 才能使用。此測試改用具名函式型別定義，
+; 在預設開關關閉下亦可運作。
 
-// 具名函式型別定義
+; 具名函式型別定義
 greet-cb = ()
 compute-cb = (n i64)(r i64)
 
@@ -27,11 +27,11 @@ apply = (n i64, cb compute-cb) (out i64) {
     out = cb(n)
 }
 
-// 測試 1: 無參數回呼
+; 測試 1: 無參數回呼
 test-run('hello', greet)
 print('ok: greet')
 
-// 測試 2: 帶參數回呼
+; 測試 2: 帶參數回呼
 result i64 = 0
 result = apply(41, add-one)
 {

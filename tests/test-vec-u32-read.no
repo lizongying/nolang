@@ -1,5 +1,5 @@
-// test-vec-u32-read — verify []u32 element read returns correct value
-// # std/hash/sha256
+; test-vec-u32-read — verify []u32 element read returns correct value
+; # std/hash/sha256
 
 print('start')
 block []u32 = [1633837952, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24]

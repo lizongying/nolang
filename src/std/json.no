@@ -1,28 +1,28 @@
-// json — JSON 序列化/反序列化
-//
-// 基於節點池（pool）的 JSON 樹狀結構，支援巢狀陣列與物件。
-//
-// 用法：
-//   p = json-pool{}
-//   p.init()
-//   root, next = p.parse('{"name":"Alice","age":30}', 0)  // next=-1 表示失敗
-//   ok -> {
-//       val-idx, found = p.get-key(root, 'name')
-//       found -> {
-//           buf, ok2 = p.get-str(val-idx)
-//           ok2 -> {
-//               print(buf)
-//
+; json — JSON 序列化/反序列化
+;
+; 基於節點池（pool）的 JSON 樹狀結構，支援巢狀陣列與物件。
+;
+; 用法：
+;   p = json-pool{}
+;   p.init()
+;   root, next = p.parse('{"name":"Alice","age":30}', 0)  // next=-1 表示失敗
+;   ok -> {
+;       val-idx, found = p.get-key(root, 'name')
+;       found -> {
+;           buf, ok2 = p.get-str(val-idx)
+;           ok2 -> {
+;               print(buf)
+;
 
-//
+;
 
-//
+;
 
-// ═══════════════════════════════════════════════
-// JSON 值類型枚舉
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; JSON 值類型枚舉
+; ═══════════════════════════════════════════════
 
-// json-kind: JSON 值的類型
+; json-kind: JSON 值的類型
 json-kind {
     null,
     bool,
@@ -32,16 +32,16 @@ json-kind {
     obj,
 }
 
-// 池最大節點數
+; 池最大節點數
 JSON-MAX-NODES = 64
-// 每節點最大子元素數
+; 每節點最大子元素數
 JSON-MAX-CHILDREN = 16
 
-// ═══════════════════════════════════════════════
-// 結構
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構
+; ═══════════════════════════════════════════════
 
-// json-value: JSON 節點
+; json-value: JSON 節點
 json-value {
     kind json-kind
     str-val str
@@ -52,37 +52,37 @@ json-value {
     count i64
 }
 
-// json-pool: JSON 節點池
+; json-pool: JSON 節點池
 json-pool {
     nodes [64]json-value
     count i64
 }
 
-// ═══════════════════════════════════════════════
-// 初始化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 初始化
+; ═══════════════════════════════════════════════
 
-// init: 初始化節點池
+; init: 初始化節點池
 json-pool.init = () {
     .count = 0
     i <- [0..JSON-MAX-NODES): {
         .nodes[i].count = 0
         .nodes[i].kind = json-kind.null
-        // 用空格字串初始化 str-val，使 data buffer 非 null
+        ; 用空格字串初始化 str-val，使 data buffer 非 null
         .nodes[i].str-val = ' '
         .nodes[i].str-val.len = 0
         .nodes[i].num-val = 0.0
         .nodes[i].bool-val = false
         j <- [0..JSON-MAX-CHILDREN): {
             .nodes[i].children[j] = -1
-            // 用空格字串初始化 keys[j]，使 data buffer 非 null
+            ; 用空格字串初始化 keys[j]，使 data buffer 非 null
             .nodes[i].keys[j] = ' '
             .nodes[i].keys[j].len = 0
         }
     }
 }
 
-// alloc: 分配新節點，返回索引（-1=池滿）
+; alloc: 分配新節點，返回索引（-1=池滿）
 json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= JSON-MAX-NODES -> return
@@ -91,7 +91,7 @@ json-pool.alloc = () (idx i64) {
     .nodes[idx].count = 0
     .nodes[idx].kind = json-kind.null
 
-    // 用空格字串初始化 str-val，使 data buffer 非 null
+    ; 用空格字串初始化 str-val，使 data buffer 非 null
     .nodes[idx].str-val = ' '
     .nodes[idx].str-val.len = 0
     .nodes[idx].num-val = 0.0
@@ -103,12 +103,12 @@ json-pool.alloc = () (idx i64) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 剖析
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 剖析
+; ═══════════════════════════════════════════════
 
-// parse: 從字串位置 pos 剖析 JSON 值
-// 返回 node-idx=根節點索引, next-pos=下一位置, ok=成功
+; parse: 從字串位置 pos 剖析 JSON 值
+; 返回 node-idx=根節點索引, next-pos=下一位置, ok=成功
 json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     ok = false
     node-idx = -1
@@ -127,7 +127,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     val-next = 0
     val-ok = false
 
-    // 跳過空白
+    ; 跳過空白
     for p < sn {
         c = s[p] & 255
         c != 32 && c != 9 && c != 10 && c != 13 -> break
@@ -136,11 +136,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     p >= sn -> return
     c = s[p] & 255
 
-    // 分配節點
+    ; 分配節點
     node-idx = .alloc()
     node-idx < 0 -> return
 
-    // null
+    ; null
     c == 110 -> {
         .nodes[node-idx].kind = json-kind.null
         next-pos = p + 4
@@ -148,7 +148,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         return
     }
 
-    // true
+    ; true
     c == 116 -> {
         .nodes[node-idx].kind = json-kind.bool
         .nodes[node-idx].bool-val = true
@@ -157,7 +157,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         return
     }
 
-    // false
+    ; false
     c == 102 -> {
         .nodes[node-idx].kind = json-kind.bool
         .nodes[node-idx].bool-val = false
@@ -166,14 +166,14 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         return
     }
 
-    // string
+    ; string
     c == 34 -> {
         .nodes[node-idx].kind = json-kind.str
         next-pos, ok = .parse-str(node-idx, s, p)
         return
     }
 
-    // number
+    ; number
     c == 45 -> {
         .nodes[node-idx].kind = json-kind.num
         next-pos, ok = .parse-num(node-idx, s, p)
@@ -185,7 +185,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         return
     }
 
-    // array
+    ; array
     c == 91 -> {
         .nodes[node-idx].kind = json-kind.arr
         .nodes[node-idx].count = 0
@@ -193,14 +193,14 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         p = .skip-ws(s, p)
         p >= sn -> return
 
-        // empty array
+        ; empty array
         s[p] & 255 == 93 -> {
             next-pos = p + 1
             ok = true
             return
         }
 
-        // parse elements
+        ; parse elements
         !! {
             p = .skip-ws(s, p)
             p >= sn -> return
@@ -226,7 +226,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         }
     }
 
-    // object
+    ; object
     c == 123 -> {
         .nodes[node-idx].kind = json-kind.obj
         .nodes[node-idx].count = 0
@@ -234,33 +234,33 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         p = .skip-ws(s, p)
         p >= sn -> return
 
-        // empty object
+        ; empty object
         s[p] & 255 == 125 -> {
             next-pos = p + 1
             ok = true
             return
         }
 
-        // parse key-value pairs
+        ; parse key-value pairs
         !! {
             p = .skip-ws(s, p)
             p >= sn -> return
-            // key must be string
+            ; key must be string
             s[p] & 255 != 34 -> return
             key-idx, key-next, key-ok = .parse(s, p)
             key-ok == false -> return
             p = key-next
             p = .skip-ws(s, p)
             p >= sn -> return
-            // expect ':'
+            ; expect ':'
             s[p] & 255 != 58 -> return
             p = p + 1
             val-idx, val-next, val-ok = .parse(s, p)
             val-ok == false -> return
-            // add to object
+            ; add to object
             cnt = .nodes[node-idx].count
             cnt >= JSON-MAX-CHILDREN -> return
-            // copy key string to keys[cnt]
+            ; copy key string to keys[cnt]
             key-len = .nodes[key-idx].str-val.len
             .nodes[node-idx].keys[cnt].len = key-len
             j <- [0..key-len): {
@@ -285,7 +285,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     }
 }
 
-// skip-ws: 跳過空白字元
+; skip-ws: 跳過空白字元
 json-pool.skip-ws = (s str, pos i64) (p i64) {
     p <- [pos..s.len): {
         c = s[p] & 255
@@ -293,7 +293,7 @@ json-pool.skip-ws = (s str, pos i64) (p i64) {
     }
 }
 
-// parse-str: 解析 JSON 字串（從開引號開始）
+; parse-str: 解析 JSON 字串（從開引號開始）
 json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     ok = false
     i = pos + 1
@@ -308,17 +308,17 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             return
         }
 
-        // 跳過轉義字元
+        ; 跳過轉義字元
         c == 92 -> {
             i = i + 1
             i >= s.len -> return
             c = s[i] & 255
 
-            // 處理常見轉義
+            ; 處理常見轉義
             c == 110 -> c = 10
             c == 116 -> c = 9
             c == 114 -> c = 13
-            // c == 34, 92, 47 保留原樣
+            ; c == 34, 92, 47 保留原樣
         }
 
         .nodes[node-idx].str-val[j] = c
@@ -327,7 +327,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     }
 }
 
-// parse-num: 解析 JSON 數字
+; parse-num: 解析 JSON 數字
 json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     ok = true
     i = pos
@@ -335,13 +335,13 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     negative = 0
     .nodes[node-idx].num-val = 0.0
 
-    // 負號
+    ; 負號
     s[i] & 255 == 45 -> {
         negative = 1
         i = i + 1
     }
 
-    // 整數部分
+    ; 整數部分
     for i < s.len {
         c = s[i] & 255
         c < 48 || c > 57 -> break
@@ -349,7 +349,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         i = i + 1
     }
 
-    // 小數部分
+    ; 小數部分
     i < s.len -> {
         c = s[i] & 255
         c == 46 -> {
@@ -365,16 +365,16 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         }
     }
 
-    // 處理負數
+    ; 處理負數
     negative == 1 -> .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     next-pos = i
 }
 
-// ═══════════════════════════════════════════════
-// 物件存取
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 物件存取
+; ═══════════════════════════════════════════════
 
-// str-eq: 比較兩個 str 是否相等
+; str-eq: 比較兩個 str 是否相等
 json-pool.str-eq = (a str, b str) (eq i64) {
     eq = 0
     a.len != b.len -> return
@@ -384,8 +384,8 @@ json-pool.str-eq = (a str, b str) (eq i64) {
     eq = 1
 }
 
-// get-key: 從物件節點取得鍵對應的子節點索引
-// 返回 val-idx=子節點索引, ok=找到
+; get-key: 從物件節點取得鍵對應的子節點索引
+; 返回 val-idx=子節點索引, ok=找到
 json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
     ok = false
     val-idx = -1
@@ -403,14 +403,14 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
     }
 }
 
-// set-key: 在物件節點設定鍵值
-// 返回 ok=成功
+; set-key: 在物件節點設定鍵值
+; 返回 ok=成功
 json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = false
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != json-kind.obj -> return
 
-    // 檢查鍵是否存在（更新）
+    ; 檢查鍵是否存在（更新）
     cnt = .nodes[obj-idx].count
     i <- [0..cnt): {
         found-eq = 0
@@ -422,10 +422,10 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
         }
     }
 
-    // 新增鍵
+    ; 新增鍵
     cnt >= JSON-MAX-CHILDREN -> return
 
-    // 复制键字符串到 keys[cnt]
+    ; 复制键字符串到 keys[cnt]
     .nodes[obj-idx].keys[cnt].len = key.len
     j <- [0..key.len): {
         .nodes[obj-idx].keys[cnt][j] = key[j]
@@ -435,12 +435,12 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = true
 }
 
-// ═══════════════════════════════════════════════
-// 陣列存取
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 陣列存取
+; ═══════════════════════════════════════════════
 
-// arr-get: 從陣列節點取得指定索引的子節點
-// 返回 val-idx=子節點索引, ok=成功
+; arr-get: 從陣列節點取得指定索引的子節點
+; 返回 val-idx=子節點索引, ok=成功
 json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
     ok = false
     val-idx = -1
@@ -451,7 +451,7 @@ json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
     ok = true
 }
 
-// arr-len: 取得陣列長度
+; arr-len: 取得陣列長度
 json-pool.arr-len = (arr-idx i64) (n i64) {
     n = 0
     arr-idx < 0 || arr-idx >= .count -> return
@@ -459,19 +459,19 @@ json-pool.arr-len = (arr-idx i64) (n i64) {
     n = .nodes[arr-idx].count
 }
 
-// ═══════════════════════════════════════════════
-// 標量存取
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 標量存取
+; ═══════════════════════════════════════════════
 
-// get-kind: 取得節點類型
+; get-kind: 取得節點類型
 json-pool.get-kind = (node-idx i64) (kind json-kind) {
     kind = json-kind.null
     node-idx < 0 || node-idx >= .count -> return
     kind = .nodes[node-idx].kind
 }
 
-// get-str: 取得字串值
-// 返回 out=字串副本, ok=成功
+; get-str: 取得字串值
+; 返回 out=字串副本, ok=成功
 json-pool.get-str = (node-idx i64) (out str, ok bool) {
     ok = false
     node-idx < 0 || node-idx >= .count -> return
@@ -480,7 +480,7 @@ json-pool.get-str = (node-idx i64) (out str, ok bool) {
     ok = true
 }
 
-// get-num: 取得數值
+; get-num: 取得數值
 json-pool.get-num = (node-idx i64) (val f64, ok bool) {
     ok = false
     val = 0.0
@@ -490,8 +490,8 @@ json-pool.get-num = (node-idx i64) (val f64, ok bool) {
     ok = true
 }
 
-// get-bool: 取得布林值
-// 返回 val=布林值, ok=成功
+; get-bool: 取得布林值
+; 返回 val=布林值, ok=成功
 json-pool.get-bool = (node-idx i64) (val bool, ok bool) {
     ok = false
     val = false
@@ -501,12 +501,12 @@ json-pool.get-bool = (node-idx i64) (val bool, ok bool) {
     ok = true
 }
 
-// ═══════════════════════════════════════════════
-// 序列化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 序列化
+; ═══════════════════════════════════════════════
 
-// stringify: 將節點序列化為字串
-// start=開始寫入位置, 返回 out-n=寫入後位置
+; stringify: 將節點序列化為字串
+; start=開始寫入位置, 返回 out-n=寫入後位置
 json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
     out-n = start
     node-idx < 0 || node-idx >= .count -> return
@@ -561,7 +561,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
         out-n = out-n + 1
         j <- [0...nodes[node-idx].str-val.len): {
             c = .nodes[node-idx].str-val[j] & 255
-            // 跳脫特殊字元
+            ; 跳脫特殊字元
             {
                 c == 34 -> {
                     out[out-n] = 92
@@ -632,7 +632,7 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
                 out[out-n] = 44
                 out-n = out-n + 1
             }
-            // key
+            ; key
             out[out-n] = 34
             out-n = out-n + 1
             j <- [0...nodes[node-idx].keys[i].len): {
@@ -641,10 +641,10 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
             }
             out[out-n] = 34
             out-n = out-n + 1
-            // ':'
+            ; ':'
             out[out-n] = 58
             out-n = out-n + 1
-            // value
+            ; value
             child-n = 0
             child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
             out-n = child-n

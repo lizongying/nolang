@@ -1,4 +1,4 @@
-// 簡單測試 str == 比較
+; 簡單測試 str == 比較
 test-str-eq = () {
     s = 'true'
         {

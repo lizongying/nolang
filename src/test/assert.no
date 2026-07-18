@@ -1,18 +1,18 @@
-// assert — 測試斷言庫
-//
-// 提供常用的斷言函數，用於測試 .no 檔案。
-// 每個斷言返回 ok bool（true=通過, false=失敗）。
-//
-// 用法：
-//   use /test/assert
-//   ok = assert-eq(a, b, 'msg')
-//   ok == false -> return 1
+; assert — 測試斷言庫
+;
+; 提供常用的斷言函數，用於測試 .no 檔案。
+; 每個斷言返回 ok bool（true=通過, false=失敗）。
+;
+; 用法：
+;   use /test/assert
+;   ok = assert-eq(a, b, 'msg')
+;   ok == false -> return 1
 
-// ═══════════════════════════════════════════════
-// 泛型斷言
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 泛型斷言
+; ═══════════════════════════════════════════════
 
-// assert-eq: a == b
+; assert-eq: a == b
 assert-eq = (a t, b t, msg str) (ok bool) {
     ok = true
     a != b -> {
@@ -22,7 +22,7 @@ assert-eq = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// assert-ne: a != b
+; assert-ne: a != b
 assert-ne = (a t, b t, msg str) (ok bool) {
     ok = true
     a == b -> {
@@ -32,7 +32,7 @@ assert-ne = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// assert-true: val == true
+; assert-true: val == true
 assert-true = (val bool, msg str) (ok bool) {
     ok = true
     val == false -> {
@@ -42,7 +42,7 @@ assert-true = (val bool, msg str) (ok bool) {
     }
 }
 
-// assert-false: val == false
+; assert-false: val == false
 assert-false = (val bool, msg str) (ok bool) {
     ok = true
     val == true -> {
@@ -52,7 +52,7 @@ assert-false = (val bool, msg str) (ok bool) {
     }
 }
 
-// assert-gt: a > b
+; assert-gt: a > b
 assert-gt = (a t, b t, msg str) (ok bool) {
     ok = true
     a <= b -> {
@@ -62,7 +62,7 @@ assert-gt = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// assert-ge: a >= b
+; assert-ge: a >= b
 assert-ge = (a t, b t, msg str) (ok bool) {
     ok = true
     a < b -> {
@@ -72,7 +72,7 @@ assert-ge = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// assert-lt: a < b
+; assert-lt: a < b
 assert-lt = (a t, b t, msg str) (ok bool) {
     ok = true
     a >= b -> {
@@ -82,7 +82,7 @@ assert-lt = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// assert-le: a <= b
+; assert-le: a <= b
 assert-le = (a t, b t, msg str) (ok bool) {
     ok = true
     a > b -> {
@@ -92,11 +92,11 @@ assert-le = (a t, b t, msg str) (ok bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 浮點斷言
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 浮點斷言
+; ═══════════════════════════════════════════════
 
-// assert-f64-eq: |a - b| < eps
+; assert-f64-eq: |a - b| < eps
 assert-f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     ok = true
     diff = a - b
@@ -108,7 +108,7 @@ assert-f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     }
 }
 
-// assert-f64-ne: 浮點不相等
+; assert-f64-ne: 浮點不相等
 assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     ok = true
     diff = a - b
@@ -120,11 +120,11 @@ assert-f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 字串斷言
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字串斷言
+; ═══════════════════════════════════════════════
 
-// assert-str-eq: 字串相等（比較前 n 個字節）
+; assert-str-eq: 字串相等（比較前 n 個字節）
 assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
     eq = a.eq(b, n)
@@ -135,7 +135,7 @@ assert-str-eq = (a str, b str, n i64, msg str) (ok bool) {
     }
 }
 
-// assert-str-ne: 字串不相等
+; assert-str-ne: 字串不相等
 assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
     ok = true
     eq = a.eq(b, n)
@@ -146,7 +146,7 @@ assert-str-ne = (a str, b str, n i64, msg str) (ok bool) {
     }
 }
 
-// assert-str-empty: 字串為空（n == 0）
+; assert-str-empty: 字串為空（n == 0）
 assert-str-empty = (s str, n i64, msg str) (ok bool) {
     ok = true
     n != 0 -> {
@@ -156,7 +156,7 @@ assert-str-empty = (s str, n i64, msg str) (ok bool) {
     }
 }
 
-// assert-str-not-empty: 字串非空
+; assert-str-not-empty: 字串非空
 assert-str-not-empty = (s str, n i64, msg str) (ok bool) {
     ok = true
     n == 0 -> {
@@ -166,11 +166,11 @@ assert-str-not-empty = (s str, n i64, msg str) (ok bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 指標斷言
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 指標斷言
+; ═══════════════════════════════════════════════
 
-// assert-nil: 指標為空
+; assert-nil: 指標為空
 assert-nil = (p i64, msg str) (ok bool) {
     ok = true
     p != 0 -> {
@@ -180,7 +180,7 @@ assert-nil = (p i64, msg str) (ok bool) {
     }
 }
 
-// assert-not-nil: 指標非空
+; assert-not-nil: 指標非空
 assert-not-nil = (p i64, msg str) (ok bool) {
     ok = true
     p == 0 -> {

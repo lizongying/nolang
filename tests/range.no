@@ -1,5 +1,5 @@
-// cd src && go run ./cmd/cli/. build ../tests/range.no
-// ../dist/range
+; cd src && go run ./cmd/cli/. build ../tests/range.no
+; ../dist/range
 
 i <- [1, 2, 3]: {
     print(i)

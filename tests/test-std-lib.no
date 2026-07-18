@@ -1,13 +1,13 @@
-// test-std-lib.no — 方法調用測試
+; test-std-lib.no — 方法調用測試
 
-// [n]t.fill: 全部填充為 val
+; [n]t.fill: 全部填充為 val
 [n]t.fill = (val t) {
     i <- [0..n): {
         .[i] = val
     }
 }
 
-// [n]t.reverse: 反轉陣列
+; [n]t.reverse: 反轉陣列
 [n]t.reverse = () {
     i <- [0..n / 2): {
         j = n - 1 - i

@@ -1,9 +1,9 @@
-// test-tls-part2 — bytes 相關測試
-// # std/net/tls
+; test-tls-part2 — bytes 相關測試
+; # std/net/tls
 
 print('=== TLS Part 2 ===')
 
-// test-tls-bytes-cat
+; test-tls-bytes-cat
 a []byte = with-cap(3)
 a[0] = 1
 a[1] = 2
@@ -27,7 +27,7 @@ out[3] != 4 -> {
 }
 print('PASS: bytes-cat')
 
-// test-tls-bytes-to-bn
+; test-tls-bytes-to-bn
 data []byte = with-cap(4)
 data[0] = 0x01
 data[1] = 0x02
@@ -45,7 +45,7 @@ bn-out[0] != 0x01020304 -> {
 }
 print('PASS: bytes-to-bn')
 
-// test-tls-bn-to-bytes
+; test-tls-bn-to-bytes
 num []i64 = with-cap(1)
 num[0] = 0x01020304
 bb-out []byte
@@ -60,7 +60,7 @@ bb-out[0] != 0x01 -> {
 }
 print('PASS: bn-to-bytes')
 
-// test-tls-rand-bytes
+; test-tls-rand-bytes
 state i64 = 12345
 r-out []byte
 r-out = tls.tls-rand-bytes(state, 16)

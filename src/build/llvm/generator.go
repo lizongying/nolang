@@ -1455,7 +1455,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			g.tmpIdx++
 			lenReg := fmt.Sprintf("%%retbuf.len.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(%s)\n", g.indent(), lenReg, buf))
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(%s)\n", g.indent(), lenReg, buf))
 			}
 			g.tmpIdx++
 			strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
@@ -1477,10 +1477,11 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	}
 
 	// RetCStrToStr: C 函數返回 i8* (C 字串)，需包裝為 Nolang %str-long
-	// 1) 調用 C 函數取得 i8* 指針
-	// 2) 調用 strlen 取得長度
-	// 3) 構造 %str-long 並通過 insertvalue 設定 (len, ptr)
-	// 4) 返回 %str-long 結構體值（不是 i8*）
+	// 1) 調用 C 函數取得 i8* 指針（可能指向 libc 靜態記憶體，如 getenv）
+	// 2) 調用 nolang.strlen 取得長度（NULL-safe，返回 0）
+	// 3) 將 C 字串資料複製到 malloc'd 緩衝區（避免 emitHeapFree 釋放 libc 靜態記憶體導致 abort）
+	// 4) 構造 %str-long 並通過 insertvalue 設定 (len, len, ptr)
+	// 5) 返回 %str-long 結構體值（不是 i8*）
 	if clib.RetCStrToStr {
 		// 1) 調用 C 函數取得 i8*
 		g.tmpIdx++
@@ -1488,13 +1489,30 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i8*%s @%s(%s)\n", g.indent(), cstrReg, sigStr, clib.FuncName, argStr))
 		}
-		// 2) strlen
+		// 2) nolang.strlen (NULL-safe)
 		g.tmpIdx++
 		lenReg := fmt.Sprintf("%%cstr.len.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
 		}
-		// 3) 構造 %str-long：先寫 len 到 field 0，再寫 cap 到 field 1，再寫 ptr 到 field 2
+		// 3) 複製 C 字串到 malloc'd 緩衝區（len+1 bytes，含 null terminator）
+		//    這樣 emitHeapFree 可以安全地 free 此緩衝區，不會 abort
+		g.tmpIdx++
+		bufSizeReg := fmt.Sprintf("%%cstr.bufsize.%d", g.tmpIdx)
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%cstr.buf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSizeReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bufSizeReg))
+			// memcpy(cstrReg → bufReg, lenReg)
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), bufReg, cstrReg, lenReg))
+			// null-terminate
+			g.tmpIdx++
+			nullPosReg := fmt.Sprintf("%%cstr.nullpos.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullPosReg, bufReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPosReg))
+		}
+		// 4) 構造 %str-long：先寫 len 到 field 0，再寫 cap 到 field 1，再寫 ptr 到 field 2
 		//    每次 insertvalue 都必須產生新的 SSA 寄存器
 		g.tmpIdx++
 		strReg1 := fmt.Sprintf("%%cstr.val.%d", g.tmpIdx)
@@ -1505,7 +1523,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			_p2i_strReg3 := g.ptrToIntVal(sb, cstrReg)
+			_p2i_strReg3 := g.ptrToIntVal(sb, bufReg)
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
 		}
 		return strReg3

@@ -8,26 +8,26 @@ status {
 test-match = () {
     x ?i64
 
-    // 直接->是else
+    ; 直接->是else
     x: {
-        err -> log(it)  // it的型態是err
-        nil -> log(it)  // it的型態是nil
-        ok -> log(it)  // it的型態是i64
+        err -> log(it)  ; it的型態是err
+        nil -> log(it)  ; it的型態是nil
+        ok -> log(it)  ; it的型態是i64
         -> log(it)
     }
 
-    // 全部列舉
+    ; 全部列舉
     x: {
         err -> log(it)
         nil -> log(it)
         ok -> log(it)
     }
 
-    // it的型態是err
-    // it的型態是nil
-    // it的型態是i64
+    ; it的型態是err
+    ; it的型態是nil
+    ; it的型態是i64
 
-    // 這裡-> 有else的意思
+    ; 這裡-> 有else的意思
     x: {
         ok -> log(it)
         -> log(it)
@@ -68,7 +68,7 @@ test-match = () {
         -> log(it)
     }
 
-    // 這是if/else
+    ; 這是if/else
     {
         a == 1 -> log('1')
         -> log('else')

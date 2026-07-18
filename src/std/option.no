@@ -1,20 +1,20 @@
-// option — 選項型別（標籤列舉/union）
-//
-// 底層為 tagged enum：option { val t, nil bool, err str }
-// tag: 0=val, 1=nil, 2=err
-//
-// 用法：
-//   x ?t                       // 宣告 option<t>
-//   x = 42                     // 設為有值
-//   x = nil                    // 設為空
-//   x = err('msg')             // 設為錯誤
-//
-//   match
-//   x: {
-//       nil -> log(it)
-//       err -> log(it)
-//       -> log(it)
-//   }
+; option — 選項型別（標籤列舉/union）
+;
+; 底層為 tagged enum：option { val t, nil bool, err str }
+; tag: 0=val, 1=nil, 2=err
+;
+; 用法：
+;   x ?t                       // 宣告 option<t>
+;   x = 42                     // 設為有值
+;   x = nil                    // 設為空
+;   x = err('msg')             // 設為錯誤
+;
+;   match
+;   x: {
+;       nil -> log(it)
+;       err -> log(it)
+;       -> log(it)
+;   }
 option {
     ok t,
     nil bool,

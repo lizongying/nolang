@@ -1,9 +1,9 @@
-// test-tls-debug — 逐個測試 TLS 功能
-// # std/net/tls
+; test-tls-debug — 逐個測試 TLS 功能
+; # std/net/tls
 
 print('=== TLS Debug Test ===')
 
-// 測試 1: tls-put-u16
+; 測試 1: tls-put-u16
 print('test 1: tls-put-u16')
 buf []byte
 tls.tls-put-u16(buf, 0, 0x1234)
@@ -13,7 +13,7 @@ buf[0] != 0x12 -> {
 }
 print('PASS: tls-put-u16')
 
-// 測試 2: tls-get-u16
+; 測試 2: tls-get-u16
 print('test 2: tls-get-u16')
 val i64 = 0
 val = tls.tls-get-u16(buf, 0)
@@ -23,7 +23,7 @@ val != 0x1234 -> {
 }
 print('PASS: tls-get-u16')
 
-// 測試 3: tls-bytes-cat
+; 測試 3: tls-bytes-cat
 print('test 3: tls-bytes-cat')
 a []byte
 a[0] = 1
@@ -39,7 +39,7 @@ out.len != 4 -> {
 }
 print('PASS: tls-bytes-cat')
 
-// 測試 4: tls-rand-bytes
+; 測試 4: tls-rand-bytes
 print('test 4: tls-rand-bytes')
 state i64 = 12345
 r-out []byte

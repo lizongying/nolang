@@ -1,4 +1,4 @@
-// test-strconv.no 简化版
+; test-strconv.no 简化版
 test-str-to-i64 = () {
     n = '12345'.to-i64()
     print(n)

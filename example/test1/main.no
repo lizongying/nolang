@@ -1,28 +1,28 @@
-// This is optional — if there's no ambiguity, explicit import is not needed
-// # std/math
+; This is optional — if there's no ambiguity, explicit import is not needed
+; # std/math
 
-// # /src/utils.greet
+; # /src/utils.greet
 
-// 導入線上模塊
+; 導入線上模塊
 # github.com/lizongying/nolang/test1/utils.greet greet1
 # github.com/lizongying/nolang/test2/utils.greet greet2
 
-// print('greet:', greet())
+; print('greet:', greet())
 greet1('World')
 greet2('World')
 print()
 
-// Module.function style (works even without explicit # std/math):
+; Module.function style (works even without explicit # std/math):
 b = math.sin(1.0)
 
-// Both produce identical LLVM IR
+; Both produce identical LLVM IR
 print('a:', b)
 print('b:', b)
 
-// Constants pi and e are also available:
+; Constants pi and e are also available:
 print('pi:', math.PI)
 print('e:', math.E)
 
-// Module functions like degrees/radians work too:
+; Module functions like degrees/radians work too:
 c = math.degrees(3.141592653589793)
 print('degrees(pi):', c)

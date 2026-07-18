@@ -1,13 +1,13 @@
-// crc16 — CRC-16 循環冗餘校驗（CCITT 變體）
-//
-// 使用 CRC-16-CCITT 多項式 0x1021，初始值 0xFFFF。
-//
-// 用法：
-//   h = crc-16(data)
+; crc16 — CRC-16 循環冗餘校驗（CCITT 變體）
+;
+; 使用 CRC-16-CCITT 多項式 0x1021，初始值 0xFFFF。
+;
+; 用法：
+;   h = crc-16(data)
 
-// crc-16: 計算 CRC-16-CCITT 校驗和
-// data []byte: 輸入資料
-// 返回 crc i64: 16-bit 校驗和
+; crc-16: 計算 CRC-16-CCITT 校驗和
+; data []byte: 輸入資料
+; 返回 crc i64: 16-bit 校驗和
 crc-16 = (data []byte) (crc i64) {
     crc = 65535
     i <- [0..data.len): {
@@ -21,9 +21,9 @@ crc-16 = (data []byte) (crc i64) {
     }
 }
 
-// crc-16-hex: 計算 CRC-16 並返回 hex 字串
-// data []byte: 輸入資料
-// 返回 hex str: 4 字元 hex 字串
+; crc-16-hex: 計算 CRC-16 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 4 字元 hex 字串
 crc-16-hex = (data []byte) (hex str) {
     crc = crc-16(data)
     hex-chars = '0123456789abcdef'

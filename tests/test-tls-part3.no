@@ -1,9 +1,9 @@
-// test-tls-part3 — prf 和 conn-init
-// # std/net/tls
+; test-tls-part3 — prf 和 conn-init
+; # std/net/tls
 
 print('=== TLS Part 3 ===')
 
-// test-tls-prf
+; test-tls-prf
 print('before prf')
 secret []byte = with-cap(4)
 secret[0] = 1
@@ -27,7 +27,7 @@ has-nonzero == 0 -> {
 }
 print('PASS: prf')
 
-// test-tls-conn-init
+; test-tls-conn-init
 print('before conn-init')
 c tls-conn
 c.init()

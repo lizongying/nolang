@@ -1,15 +1,15 @@
-// test-bytes.no — 簡單的字節轉換測試
+; test-bytes.no — 簡單的字節轉換測試
 
 test-str-bytes = () {
     s = 'abc'
     out = s.to-bytes()
-    print(out.len)  // expect: 3
+    print(out.len)  ; expect: 3
     b0 = out[0]
     b1 = out[1]
     b2 = out[2]
-    print(b0)  // expect: 97
-    print(b1)  // expect: 98
-    print(b2)  // expect: 99
+    print(b0)  ; expect: 97
+    print(b1)  ; expect: 98
+    print(b2)  ; expect: 99
 }
 
 test-str-bytes()

@@ -1,13 +1,13 @@
-// linked-hash-map — i64→i64 有序哈希表
-//
-// 固定容量（64 條），線性探測，雙向鏈表保持插入順序。
-// 容量為 2 的冪，建議裝載因子 ≤ 0.75（即最多 ~48 條）。
-//
-// 用法：
-//   m = linked-hash-map{}
-//   m.put(42, 100)
-//   val = m.get(42)   // val = ok(100) 或 nil
-//   m.for-each(key, val)
+; linked-hash-map — i64→i64 有序哈希表
+;
+; 固定容量（64 條），線性探測，雙向鏈表保持插入順序。
+; 容量為 2 的冪，建議裝載因子 ≤ 0.75（即最多 ~48 條）。
+;
+; 用法：
+;   m = linked-hash-map{}
+;   m.put(42, 100)
+;   val = m.get(42)   // val = ok(100) 或 nil
+;   m.for-each(key, val)
 
 linked-hash-map {
     cap i64
@@ -21,7 +21,7 @@ linked-hash-map {
     size i64
 }
 
-// init: 初始化哈希表
+; init: 初始化哈希表
 linked-hash-map.init = () {
     .cap = 64
     .head = -1
@@ -34,12 +34,12 @@ linked-hash-map.init = () {
     }
 }
 
-// hash: 計算索引
+; hash: 計算索引
 linked-hash-map.hash = (key i64) (idx i64) {
     idx = key & (.cap - 1)
 }
 
-// put: 插入或更新 key→value
+; put: 插入或更新 key→value
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
     idx = .hash(key)
 
@@ -74,7 +74,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
     is-new = true
 }
 
-// get: 查找 key，返回 ?i64（nil=未找到）
+; get: 查找 key，返回 ?i64（nil=未找到）
 linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> {
         result = nil
@@ -94,7 +94,7 @@ linked-hash-map.get = (key i64) (result ?i64) {
     result = nil
 }
 
-// contains: 檢查 key 是否存在
+; contains: 檢查 key 是否存在
 linked-hash-map.contains = (key i64) (found bool) {
     found = false
     val = .get(key)
@@ -103,7 +103,7 @@ linked-hash-map.contains = (key i64) (found bool) {
     }
 }
 
-// remove: 刪除 key
+; remove: 刪除 key
 linked-hash-map.remove = (key i64) (removed bool) {
     removed = false
     idx = .hash(key)
@@ -131,7 +131,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
     }
 }
 
-// clear: 清空
+; clear: 清空
 linked-hash-map.clear = () {
     i <- [0...cap): {
         .occ[i] = 0
@@ -141,17 +141,17 @@ linked-hash-map.clear = () {
     .size = 0
 }
 
-// len: 返回元素數量
+; len: 返回元素數量
 linked-hash-map.len = () (n i64) {
     n = .size
 }
 
-// is-empty: 是否為空
+; is-empty: 是否為空
 linked-hash-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-// for-each: 按插入順序遍歷所有 (key, value)
+; for-each: 按插入順序遍歷所有 (key, value)
 linked-hash-map.for-each = (k i64, v i64) {
     idx = .head
     for idx != -1 {

@@ -1,25 +1,25 @@
-// hkdf — HMAC-based Key Derivation Function（RFC 5869）
-//
-// 實作 HKDF-Extract 和 HKDF-Expand，以及 TLS 1.3 專用的 HKDF-Expand-Label。
-// 基於 HMAC-SHA256（32 位元組輸出）。
-//
-// 用法：
-//   # std/hash/hkdf
-//   prk = hkdf-extract(salt, ikm)           // 返回 [32]byte
-//   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
-//   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用
+; hkdf — HMAC-based Key Derivation Function（RFC 5869）
+;
+; 實作 HKDF-Extract 和 HKDF-Expand，以及 TLS 1.3 專用的 HKDF-Expand-Label。
+; 基於 HMAC-SHA256（32 位元組輸出）。
+;
+; 用法：
+;   # std/hash/hkdf
+;   prk = hkdf-extract(salt, ikm)           // 返回 [32]byte
+;   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
+;   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用
 
-// ═══════════════════════════════════════════════
-// HKDF-Extract
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; HKDF-Extract
+; ═══════════════════════════════════════════════
 
-// hkdf-extract: HKDF-Extract（RFC 5869 §2.2）
-// salt []byte: 鹽值（可為空）
-// ikm []byte: 輸入金鑰材料
-// 返回 prk [32]byte: 偽隨機金鑰
+; hkdf-extract: HKDF-Extract（RFC 5869 §2.2）
+; salt []byte: 鹽值（可為空）
+; ikm []byte: 輸入金鑰材料
+; 返回 prk [32]byte: 偽隨機金鑰
 hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
-    // PRK = HMAC-SHA256(salt, IKM)
-    // 若 salt 為空，使用 32 個零位元組
+    ; PRK = HMAC-SHA256(salt, IKM)
+    ; 若 salt 為空，使用 32 個零位元組
     k []byte
     {
         salt.len == 0 -> {
@@ -36,17 +36,17 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     prk = hmac.hmac-sha256(k, ikm)
 }
 
-// ═══════════════════════════════════════════════
-// HKDF-Expand
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; HKDF-Expand
+; ═══════════════════════════════════════════════
 
-// hkdf-expand: HKDF-Expand（RFC 5869 §2.3）
-// prk [32]byte: 偽隨機金鑰
-// info []byte: 上下文資訊（可為空）
-// out-len i64: 需要的輸出長度（最大 255*32 = 8160）
-// 返回 okm []byte: 展開後的金鑰材料
+; hkdf-expand: HKDF-Expand（RFC 5869 §2.3）
+; prk [32]byte: 偽隨機金鑰
+; info []byte: 上下文資訊（可為空）
+; out-len i64: 需要的輸出長度（最大 255*32 = 8160）
+; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
-    // 將 prk 轉為 []byte
+    ; 將 prk 轉為 []byte
     prk-vec []byte
     i <- [0..32): {
         prk-vec[i] = prk[i]
@@ -55,14 +55,14 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     n = (out-len + 31) / 32
     n > 255 -> n = 255
 
-    // T(0) = 空字串
+    ; T(0) = 空字串
     t []byte
     t-len = 0
 
     off = 0
     counter = 1
     for off < out-len {
-        // T(counter) = HMAC-SHA256(PRK, T(counter-1) || info || counter)
+        ; T(counter) = HMAC-SHA256(PRK, T(counter-1) || info || counter)
         msg []byte
         i <- [0..t-len): {
             msg[i] = t[i]
@@ -82,7 +82,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
             t[i] = t-tmp[i]
         }
 
-        // 複製到輸出
+        ; 複製到輸出
         copy-n = 32
         off + copy-n > out-len -> copy-n = out-len - off
         i <- [0..copy-n): {
@@ -93,49 +93,49 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// HKDF-Expand-Label（TLS 1.3 專用）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; HKDF-Expand-Label（TLS 1.3 專用）
+; ═══════════════════════════════════════════════
 
-// hkdf-expand-label: TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
-// prk [32]byte: 偽隨機金鑰
-// label str: 標籤（不含 "tls13 " 前綴）
-// context []byte: 上下文（可為空）
-// out-len i64: 需要的輸出長度
-// 返回 okm []byte: 展開後的金鑰材料
+; hkdf-expand-label: TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
+; prk [32]byte: 偽隨機金鑰
+; label str: 標籤（不含 "tls13 " 前綴）
+; context []byte: 上下文（可為空）
+; out-len i64: 需要的輸出長度
+; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm []byte) {
-    // HkdfLabel struct:
-    //   uint16 length = out-len
-    //   opaque label<7..255> = "tls13 " + label
-    //   opaque context<0..255> = context
+    ; HkdfLabel struct:
+    ;   uint16 length = out-len
+    ;   opaque label<7..255> = "tls13 " + label
+    ;   opaque context<0..255> = context
 
     full-label = 'tls13 ' - label
     label-bytes []byte = full-label.to-bytes()
 
-    // 構建 info
+    ; 構建 info
     info []byte
     pos = 0
 
-    // length (2 bytes, big-endian)
+    ; length (2 bytes, big-endian)
     info[0] = (out-len >> 8) & 255
     info[1] = out-len & 255
     pos = 2
 
-    // label length (1 byte)
+    ; label length (1 byte)
     info[2] = label-bytes.len & 255
     pos = 3
 
-    // label bytes
+    ; label bytes
     i <- [0..label-bytes.len): {
         info[pos + i] = label-bytes[i]
     }
     pos = pos + label-bytes.len
 
-    // context length (1 byte)
+    ; context length (1 byte)
     info[pos] = context.len & 255
     pos = pos + 1
 
-    // context bytes
+    ; context bytes
     i <- [0..context.len): {
         info[pos + i] = context[i]
     }
@@ -144,12 +144,12 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     okm = hkdf-expand(prk, info, out-len)
 }
 
-// hkdf-expand-label-vec: 與 hkdf-expand-label 相同，但 prk 以 []byte 接收
-// prk []byte: 偽隨機金鑰（32 位元組）
-// label str: 標籤
-// context []byte: 上下文
-// out-len i64: 輸出長度
-// 返回 okm []byte: 展開後的金鑰材料
+; hkdf-expand-label-vec: 與 hkdf-expand-label 相同，但 prk 以 []byte 接收
+; prk []byte: 偽隨機金鑰（32 位元組）
+; label str: 標籤
+; context []byte: 上下文
+; out-len i64: 輸出長度
+; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (okm []byte) {
     prk-arr [32]byte
     i <- [0..32): {
@@ -158,15 +158,15 @@ hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (ok
     okm = hkdf-expand-label(prk-arr, label, context, out-len)
 }
 
-// ═══════════════════════════════════════════════
-// 輔助：Derive-Secret（TLS 1.3 §7.1）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 輔助：Derive-Secret（TLS 1.3 §7.1）
+; ═══════════════════════════════════════════════
 
-// hkdf-derive-secret: Derive-Secret(Secret, Label, Messages)
-// secret []byte: 32 位元組金鑰
-// label str: 標籤
-// messages []byte: 交握訊息雜湊（SHA-256 的輸出）
-// 返回 out []byte: 32 位元組推導金鑰
+; hkdf-derive-secret: Derive-Secret(Secret, Label, Messages)
+; secret []byte: 32 位元組金鑰
+; label str: 標籤
+; messages []byte: 交握訊息雜湊（SHA-256 的輸出）
+; 返回 out []byte: 32 位元組推導金鑰
 hkdf-derive-secret = (secret []byte, label str, messages []byte) (out []byte) {
     out = hkdf-expand-label-vec(secret, label, messages, 32)
 }

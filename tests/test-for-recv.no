@@ -1,4 +1,4 @@
-// test-for-recv — 測試 for 循環中的 str 變數
+; test-for-recv — 測試 for 循環中的 str 變數
 n i64 = 5
 i <- [0..n): {
     tmp = ' '

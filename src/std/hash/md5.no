@@ -1,13 +1,13 @@
-// md5 — MD5 訊息摘要算法（128-bit）
-//
-// 計算位元組陣列的 MD5 哈希值。
-//
-// 用法：
-//   data = [0x61, 0x62, 0x63]  // "abc"
-//   hash = md5(data)
-//   // hash == [0x90, 0x01, 0x50, 0x98, ...]
+; md5 — MD5 訊息摘要算法（128-bit）
+;
+; 計算位元組陣列的 MD5 哈希值。
+;
+; 用法：
+;   data = [0x61, 0x62, 0x63]  // "abc"
+;   hash = md5(data)
+;   // hash == [0x90, 0x01, 0x50, 0x98, ...]
 
-// rot-left: 32-bit 循環左移
+; rot-left: 32-bit 循環左移
 rot-left = (x i64, n i64) (r i64) {
     s = 32 - n
     l = x << n
@@ -16,18 +16,18 @@ rot-left = (x i64, n i64) (r i64) {
     r = r & 4294967295
 }
 
-// md5: 計算 MD5 哈希
-// in: 輸入位元組陣列
-// out: 輸出 16 位元組哈希值
+; md5: 計算 MD5 哈希
+; in: 輸入位元組陣列
+; out: 輸出 16 位元組哈希值
 md5 = (data []byte) (out [16]byte) {
-    // MD5 初始值
+    ; MD5 初始值
     mask = 4294967295
-    h0 = 1732584193  // 0x67452301
-    h1 = 4023233417  // 0xEFCDAB89
-    h2 = 2562383102  // 0x98BADCFE
-    h3 = 271733878  // 0x10325476
+    h0 = 1732584193  ; 0x67452301
+    h1 = 4023233417  ; 0xEFCDAB89
+    h2 = 2562383102  ; 0x98BADCFE
+    h3 = 271733878  ; 0x10325476
 
-    // 計算填充後的總長度
+    ; 計算填充後的總長度
     dlen = len(data)
     blen = dlen * 8
     plen = dlen + 1 + 8
@@ -35,9 +35,9 @@ md5 = (data []byte) (out [16]byte) {
     rem != 0 -> plen = plen + 64 - rem
     num-blocks = plen / 64
 
-    // 對每個 64 位元組區塊進行壓縮
+    ; 對每個 64 位元組區塊進行壓縮
     bidx <- [0..num-blocks): {
-        // 將 64 位元組組裝為 16 個 32-bit 小端字
+        ; 將 64 位元組組裝為 16 個 32-bit 小端字
         off = bidx * 64
         w0 = 0
         w1 = 0
@@ -61,7 +61,7 @@ md5 = (data []byte) (out [16]byte) {
             b1 = 0
             b2 = 0
             b3 = 0
-            // b0: byte at position boff
+            ; b0: byte at position boff
             {
                 boff < dlen -> b0 = data[boff]
                 boff == dlen -> b0 = 128
@@ -79,7 +79,7 @@ md5 = (data []byte) (out [16]byte) {
                     }
                 }
             }
-            // b1: byte at position boff+1
+            ; b1: byte at position boff+1
             pos1 = boff + 1
             {
                 pos1 < dlen -> b1 = data[pos1]
@@ -98,7 +98,7 @@ md5 = (data []byte) (out [16]byte) {
                     }
                 }
             }
-            // b2: byte at position boff+2
+            ; b2: byte at position boff+2
             pos2 = boff + 2
             {
                 pos2 < dlen -> b2 = data[pos2]
@@ -117,7 +117,7 @@ md5 = (data []byte) (out [16]byte) {
                     }
                 }
             }
-            // b3: byte at position boff+3
+            ; b3: byte at position boff+3
             pos3 = boff + 3
             {
                 pos3 < dlen -> b3 = data[pos3]
@@ -137,7 +137,7 @@ md5 = (data []byte) (out [16]byte) {
                 }
             }
             word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-            // 暫存到 wi 變數
+            ; 暫存到 wi 變數
             {
                 wi == 0 -> w0 = word
                 wi == 1 -> w1 = word
@@ -157,14 +157,14 @@ md5 = (data []byte) (out [16]byte) {
                 -> w15 = word
             }
         }
-        // MD5 壓縮函數（64 輪）
+        ; MD5 壓縮函數（64 輪）
         a = h0
         b = h1
         c = h2
         d = h3
         r = 0
         t = 0
-        // 第 1 輪 (F)
+        ; 第 1 輪 (F)
         f = (b & c) | ((mask ^ b) & d)
         t = (a + f + w0 + 3614090360) & mask
         r = rot-left(t, 7)
@@ -229,7 +229,7 @@ md5 = (data []byte) (out [16]byte) {
         t = (b + f + w15 + 1236535329) & mask
         r = rot-left(t, 22)
         b = (c + r) & mask
-        // 第 2 輪 (G) — T[17..32]
+        ; 第 2 輪 (G) — T[17..32]
         f = (b & d) | (c & (mask ^ d))
         t = (a + f + w1 + 4129170786) & mask
         r = rot-left(t, 5)
@@ -294,7 +294,7 @@ md5 = (data []byte) (out [16]byte) {
         t = (b + f + w12 + 2368359562) & mask
         r = rot-left(t, 20)
         b = (c + r) & mask
-        // 第 3 輪 (H) — T[33..48]
+        ; 第 3 輪 (H) — T[33..48]
         f = b ^ c ^ d
         t = (a + f + w5 + 4294588738) & mask
         r = rot-left(t, 4)
@@ -359,7 +359,7 @@ md5 = (data []byte) (out [16]byte) {
         t = (b + f + w2 + 3299628645) & mask
         r = rot-left(t, 23)
         b = (c + r) & mask
-        // 第 4 輪 (I) — T[49..64]
+        ; 第 4 輪 (I) — T[49..64]
         f = c ^ (b | (mask ^ d))
         t = (a + f + w0 + 4096336452) & mask
         r = rot-left(t, 6)
@@ -424,14 +424,14 @@ md5 = (data []byte) (out [16]byte) {
         t = (b + f + w9 + 3951481745) & mask
         r = rot-left(t, 21)
         b = (c + r) & mask
-        // 累加回初始值
+        ; 累加回初始值
         h0 = (h0 + a) & mask
         h1 = (h1 + b) & mask
         h2 = (h2 + c) & mask
         h3 = (h3 + d) & mask
     }
 
-    // 輸出 16 位元組（小端序 32-bit 字）
+    ; 輸出 16 位元組（小端序 32-bit 字）
     out[0] = h0 & 255
     out[1] = (h0 >> 8) & 255
     out[2] = (h0 >> 16) & 255

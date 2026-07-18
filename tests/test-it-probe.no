@@ -1,4 +1,4 @@
-// Test: build a real test using str.to-i64 and match
+; Test: build a real test using str.to-i64 and match
 test-str-i64-match = () {
     s = '42'
     n = s.to-i64()

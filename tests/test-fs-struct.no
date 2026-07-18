@@ -1,7 +1,7 @@
-// test-fs-struct.no — 驗證 file-opts 結構體 + open() 自由組合旗標
-//
-// 目標語法：
-//   open('test.dat', { mode: write, perm: perm-644, excl: true })
+; test-fs-struct.no — 驗證 file-opts 結構體 + open() 自由組合旗標
+;
+; 目標語法：
+;   open('test.dat', { mode: write, perm: perm-644, excl: true })
 
 
 tmp = '/tmp/nolang-fs-test.txt'

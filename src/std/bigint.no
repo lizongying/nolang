@@ -1,38 +1,38 @@
-// bigint — 任意精度整數
-//
-// 使用 base 2^32 little-endian []i64 切片表示。
-// 每個 i64 元素儲存一個 32-bit limb，高位在前導位置。
-// 負數以 sign 欄位標記（符號-絕對值表示）。
-//
-// 與 hash/rsa.no 共用相同的底層 []i64 表示，
-// 本模組提供完整的大數運算庫。
+; bigint — 任意精度整數
+;
+; 使用 base 2^32 little-endian []i64 切片表示。
+; 每個 i64 元素儲存一個 32-bit limb，高位在前導位置。
+; 負數以 sign 欄位標記（符號-絕對值表示）。
+;
+; 與 hash/rsa.no 共用相同的底層 []i64 表示，
+; 本模組提供完整的大數運算庫。
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// MASK: 32-bit 遮罩
+; MASK: 32-bit 遮罩
 MASK = 4294967295
 
-// BASE: 2^32
+; BASE: 2^32
 BASE = 4294967296
 
-// ═══════════════════════════════════════════════
-// 型別定義
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 型別定義
+; ═══════════════════════════════════════════════
 
-// bigint: 任意精度整數
+; bigint: 任意精度整數
 bigint {
     sign i64
     limbs []i64
     len i64
 }
 
-// ═══════════════════════════════════════════════
-// 建構與初始化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 建構與初始化
+; ═══════════════════════════════════════════════
 
-// from-i64: 從 i64 建立 bigint
+; from-i64: 從 i64 建立 bigint
 from-i64 = (v i64) (out bigint) {
     {
         v < 0 -> {
@@ -45,28 +45,28 @@ from-i64 = (v i64) (out bigint) {
     out.len = 1
 }
 
-// from-u64: 從無號 i64 建立 bigint（永遠正數）
+; from-u64: 從無號 i64 建立 bigint（永遠正數）
 from-u64 = (v i64) (out bigint) {
     out.sign = 1
     out.limbs[0] = v
     out.len = 1
 }
 
-// zero: 建立零值 bigint
+; zero: 建立零值 bigint
 zero = () (out bigint) {
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
 }
 
-// one: 建立壹值 bigint
+; one: 建立壹值 bigint
 one = () (out bigint) {
     out.sign = 1
     out.limbs[0] = 1
     out.len = 1
 }
 
-// bigint.copy: 深度複製 bigint
+; bigint.copy: 深度複製 bigint
 bigint.copy = () (out bigint) {
     out.sign = .sign
     out.len = .len
@@ -75,11 +75,11 @@ bigint.copy = () (out bigint) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 比較運算
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 比較運算
+; ═══════════════════════════════════════════════
 
-// bigint.cmp: 比較 self 和 b（1=大, 0=等, -1=小）
+; bigint.cmp: 比較 self 和 b（1=大, 0=等, -1=小）
 bigint.cmp = (b bigint) (r i64) {
     .sign != b.sign -> {
         r = .sign
@@ -89,7 +89,7 @@ bigint.cmp = (b bigint) (r i64) {
     r = result * .sign
 }
 
-// bigint.abs-cmp: 比較 |self| 和 |b|（1=大, 0=等, -1=小）
+; bigint.abs-cmp: 比較 |self| 和 |b|（1=大, 0=等, -1=小）
 bigint.abs-cmp = (b bigint) (r i64) {
     .len > b.len -> {
         r = 1
@@ -112,22 +112,22 @@ bigint.abs-cmp = (b bigint) (r i64) {
     r = 0
 }
 
-// bigint.is-zero: 是否為零
+; bigint.is-zero: 是否為零
 bigint.is-zero = () (r bool) {
     r = .len == 1 && .limbs[0] == 0
 }
 
-// bigint.is-neg: 是否為負數
+; bigint.is-neg: 是否為負數
 bigint.is-neg = () (r bool) {
     r = .sign == -1
 }
 
-// bigint.is-pos: 是否為正數
+; bigint.is-pos: 是否為正數
 bigint.is-pos = () (r bool) {
     r = .sign == 1 && ! .is-zero()
 }
 
-// bigint.eq: self == b ?
+; bigint.eq: self == b ?
 bigint.eq = (b bigint) (r bool) {
     r = false
     .sign != b.sign -> return
@@ -138,11 +138,11 @@ bigint.eq = (b bigint) (r bool) {
     r = true
 }
 
-// ═══════════════════════════════════════════════
-// 加法與減法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 加法與減法
+; ═══════════════════════════════════════════════
 
-// add: a + b
+; add: a + b
 add = (a bigint, b bigint) (c bigint) {
     a.sign == b.sign -> {
         c = abs-add(a, b)
@@ -162,7 +162,7 @@ add = (a bigint, b bigint) (c bigint) {
     }
 }
 
-// abs-add: |a| + |b|（忽略正負號）
+; abs-add: |a| + |b|（忽略正負號）
 abs-add = (a bigint, b bigint) (c bigint) {
     carry = 0
     al = a.len
@@ -183,7 +183,7 @@ abs-add = (a bigint, b bigint) (c bigint) {
     c.normalize()
 }
 
-// sub: a - b
+; sub: a - b
 sub = (a bigint, b bigint) (c bigint) {
     a.sign != b.sign -> {
         c = abs-add(a, b)
@@ -203,7 +203,7 @@ sub = (a bigint, b bigint) (c bigint) {
     }
 }
 
-// abs-sub: |a| - |b|（假設 |a| >= |b|）
+; abs-sub: |a| - |b|（假設 |a| >= |b|）
 abs-sub = (a bigint, b bigint) (c bigint) {
     borrow = 0
     al = a.len
@@ -226,11 +226,11 @@ abs-sub = (a bigint, b bigint) (c bigint) {
     c.normalize()
 }
 
-// ═══════════════════════════════════════════════
-// 乘法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 乘法
+; ═══════════════════════════════════════════════
 
-// mul: a * b
+; mul: a * b
 mul = (a bigint, b bigint) (c bigint) {
     al = a.len
     bl = b.len
@@ -253,7 +253,7 @@ mul = (a bigint, b bigint) (c bigint) {
     c.normalize()
 }
 
-// mul-i64: a * v（小整數乘法）
+; mul-i64: a * v（小整數乘法）
 mul-i64 = (a bigint, v i64, c bigint) {
     c.sign = a.sign
     v < 0 -> {
@@ -271,11 +271,11 @@ mul-i64 = (a bigint, v i64, c bigint) {
     c.normalize()
 }
 
-// ═══════════════════════════════════════════════
-// 除法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 除法
+; ═══════════════════════════════════════════════
 
-// div-mod: a / b, 同時傳回商和餘數
+; div-mod: a / b, 同時傳回商和餘數
 div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     b.len == 1 && b.limbs[0] == 0 -> {
         q = zero()
@@ -373,13 +373,13 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     r.normalize()
 }
 
-// mod: r = a % b
-// mod: r = a % b
+; mod: r = a % b
+; mod: r = a % b
 mod = (a bigint, b bigint) (r bigint) {
     r = div-mod(a, b)
 }
 
-// div-i64: q = a / v（小整數除法）
+; div-i64: q = a / v（小整數除法）
 div-i64 = (a bigint, v i64) (q bigint) {
     v < 0 -> v = 0 - v
     q.sign = a.sign
@@ -393,7 +393,7 @@ div-i64 = (a bigint, v i64) (q bigint) {
     q.normalize()
 }
 
-// mod-i64: r = a % v（小整數取模）
+; mod-i64: r = a % v（小整數取模）
 mod-i64 = (a bigint, v i64) (r i64) {
     v < 0 -> v = 0 - v
     rem = 0
@@ -404,11 +404,11 @@ mod-i64 = (a bigint, v i64) (r i64) {
     r = rem
 }
 
-// ═══════════════════════════════════════════════
-// 冪運算
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 冪運算
+; ═══════════════════════════════════════════════
 
-// pow: c = a^n（n >= 0，非負整數冪）
+; pow: c = a^n（n >= 0，非負整數冪）
 pow = (a bigint, n i64) (c bigint) {
     c = one()
     n == 0 -> return
@@ -422,7 +422,7 @@ pow = (a bigint, n i64) (c bigint) {
     }
 }
 
-// mod-pow: r = base^exp mod modulus
+; mod-pow: r = base^exp mod modulus
 mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     mz = modulus.is-zero()
     mz -> {
@@ -449,11 +449,11 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 最大公因數與最小公倍數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 最大公因數與最小公倍數
+; ═══════════════════════════════════════════════
 
-// gcd: g = gcd(a, b)（歐幾里得演算法）
+; gcd: g = gcd(a, b)（歐幾里得演算法）
 gcd = (a bigint, b bigint) (g bigint) {
     x = bigint{}
     x = a.copy()
@@ -473,7 +473,7 @@ gcd = (a bigint, b bigint) (g bigint) {
     g = x.copy()
 }
 
-// lcm: l = lcm(a, b)
+; lcm: l = lcm(a, b)
 lcm = (a bigint, b bigint) (l bigint) {
     az = a.is-zero()
     bz = b.is-zero()
@@ -486,11 +486,11 @@ lcm = (a bigint, b bigint) (l bigint) {
     l = mul(q, b)
 }
 
-// ═══════════════════════════════════════════════
-// 移位運算
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 移位運算
+; ═══════════════════════════════════════════════
 
-// bigint.shl1: self = self << 1
+; bigint.shl1: self = self << 1
 bigint.shl1 = () {
     carry = 0
     i <- [0...len): {
@@ -504,7 +504,7 @@ bigint.shl1 = () {
     }
 }
 
-// bigint.shr1: self = self >> 1
+; bigint.shr1: self = self >> 1
 bigint.shr1 = () {
     i <- [.len - 1..0]: {
         carry = .limbs[i] & 1
@@ -514,7 +514,7 @@ bigint.shr1 = () {
     .normalize()
 }
 
-// shl: c = a << n
+; shl: c = a << n
 shl = (a bigint, n i64) (c bigint) {
     c = a.copy()
     i <- [0..n): {
@@ -522,7 +522,7 @@ shl = (a bigint, n i64) (c bigint) {
     }
 }
 
-// shr: c = a >> n
+; shr: c = a >> n
 shr = (a bigint, n i64) (c bigint) {
     c = a.copy()
     i <- [0..n): {
@@ -530,19 +530,19 @@ shr = (a bigint, n i64) (c bigint) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 雜項
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 雜項
+; ═══════════════════════════════════════════════
 
-// bigint.normalize: 移除前導零，確保 len >= 1
+; bigint.normalize: 移除前導零，確保 len >= 1
 bigint.normalize = () {
     for .len > 1 && .limbs[.len - 1] == 0 {
         .len = .len - 1
     }
 }
 
-// bigint.to-str: 將 bigint 轉為十進制字串
-// 返回 out str: 十進制字串
+; bigint.to-str: 將 bigint 轉為十進制字串
+; 返回 out str: 十進制字串
 bigint.to-str = () (out str) {
     z = .is-zero()
     z -> {
@@ -575,9 +575,9 @@ bigint.to-str = () (out str) {
     }
 }
 
-// from-str: 從十進制字串建立 bigint
-// s str: 十進制字串
-// out bigint: 輸出
+; from-str: 從十進制字串建立 bigint
+; s str: 十進制字串
+; out bigint: 輸出
 from-str = (s str) (out bigint) {
     out.sign = 1
     out.limbs[0] = 0
@@ -609,19 +609,19 @@ from-str = (s str) (out bigint) {
     out.normalize()
 }
 
-// bigint.add-i64: c = self + v（小整數加法）
+; bigint.add-i64: c = self + v（小整數加法）
 bigint.add-i64 = (v i64) (c bigint) {
     tmp = bigint{}
     tmp = from-i64(v)
     c = add(., tmp)
 }
 
-// ═══════════════════════════════════════════════
-// 十六進制轉換
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 十六進制轉換
+; ═══════════════════════════════════════════════
 
-// bigint.to-hex: 將 bigint 轉為十六進制字串（小寫）
-// 返回 out str: 十六進制字串
+; bigint.to-hex: 將 bigint 轉為十六進制字串（小寫）
+; 返回 out str: 十六進制字串
 bigint.to-hex = () (out str) {
     hex = '0123456789abcdef'
     out-n = 0
@@ -657,9 +657,9 @@ bigint.to-hex = () (out str) {
     }
 }
 
-// from-hex: 從十六進制字串建立 bigint
-// s str: 十六進制字串
-// out bigint: 輸出
+; from-hex: 從十六進制字串建立 bigint
+; s str: 十六進制字串
+; out bigint: 輸出
 from-hex = (s str) (out bigint) {
     out.sign = 1
     out.limbs[0] = 0

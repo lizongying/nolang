@@ -1,12 +1,12 @@
-// test-http3 — HTTP/3 和 QUIC 模組測試
-// 驗證 QUIC 變長整數、影格解析、金鑰推導、HTTP/3 影格編解碼
+; test-http3 — HTTP/3 和 QUIC 模組測試
+; 驗證 QUIC 變長整數、影格解析、金鑰推導、HTTP/3 影格編解碼
 
 
-// ═══════════════════════════════════════════════
-// QUIC 變長整數測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; QUIC 變長整數測試
+; ═══════════════════════════════════════════════
 
-// test-quic-varint-1byte: 測試 1 位元組變長整數
+; test-quic-varint-1byte: 測試 1 位元組變長整數
 test-quic-varint-1byte = () {
     buf []byte
     n = 0
@@ -38,7 +38,7 @@ test-quic-varint-1byte = () {
     print('PASS: quic-varint-1byte')
 }
 
-// test-quic-varint-2byte: 測試 2 位元組變長整數
+; test-quic-varint-2byte: 測試 2 位元組變長整數
 test-quic-varint-2byte = () {
     buf []byte
     n = 0
@@ -65,7 +65,7 @@ test-quic-varint-2byte = () {
     print('PASS: quic-varint-2byte')
 }
 
-// test-quic-varint-4byte: 測試 4 位元組變長整數
+; test-quic-varint-4byte: 測試 4 位元組變長整數
 test-quic-varint-4byte = () {
     buf []byte
     n = 0
@@ -92,7 +92,7 @@ test-quic-varint-4byte = () {
     print('PASS: quic-varint-4byte')
 }
 
-// test-quic-varint-8byte: 測試 8 位元組變長整數
+; test-quic-varint-8byte: 測試 8 位元組變長整數
 test-quic-varint-8byte = () {
     buf []byte
     n = 0
@@ -114,14 +114,14 @@ test-quic-varint-8byte = () {
     print('PASS: quic-varint-8byte')
 }
 
-// ═══════════════════════════════════════════════
-// QUIC 金鑰推導測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; QUIC 金鑰推導測試
+; ═══════════════════════════════════════════════
 
-// test-quic-derive-initial-keys: 測試 Initial 金鑰推導
+; test-quic-derive-initial-keys: 測試 Initial 金鑰推導
 test-quic-derive-initial-keys = () {
-    // 使用 RFC 9001 Appendix A 的測試向量
-    // dst_cid = 0x8394c8f03e515708
+    ; 使用 RFC 9001 Appendix A 的測試向量
+    ; dst_cid = 0x8394c8f03e515708
     dst-cid []byte
     dst-cid[0] = 0x83
     dst-cid[1] = 0x94
@@ -137,7 +137,7 @@ test-quic-derive-initial-keys = () {
     hp [16]byte
     key, iv, hp = quic.quic-derive-initial-keys(dst-cid, true)
 
-    // 檢查金鑰不為全零
+    ; 檢查金鑰不為全零
     has-nonzero = 0
     i <- [0..16): {
         key[i] != 0 -> has-nonzero = 1
@@ -147,9 +147,9 @@ test-quic-derive-initial-keys = () {
             return
 }
 
-    // 驗證 RFC 9001 Appendix A 的金鑰
-    // client_initial_key = 0xb99d6cd1c3d9c78c
-    //                     0c3f8d37c09d68a1
+    ; 驗證 RFC 9001 Appendix A 的金鑰
+    ; client_initial_key = 0xb99d6cd1c3d9c78c
+    ;                     0c3f8d37c09d68a1
     expected-key []byte
     expected-key[0] = 0xb9
     expected-key[1] = 0x9d
@@ -184,11 +184,11 @@ test-quic-derive-initial-keys = () {
     print('PASS: quic-derive-initial-keys')
 }
 
-// ═══════════════════════════════════════════════
-// QUIC CID 生成測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; QUIC CID 生成測試
+; ═══════════════════════════════════════════════
 
-// test-quic-gen-cid: 測試 Connection ID 生成
+; test-quic-gen-cid: 測試 Connection ID 生成
 test-quic-gen-cid = () {
     cid = quic.quic-gen-cid(8)
     cid.len != 8 -> {
@@ -196,7 +196,7 @@ test-quic-gen-cid = () {
             println(cid.len.to-str())
             return
 }
-    // 檢查不為全零（機率極低）
+    ; 檢查不為全零（機率極低）
     has-nonzero = 0
     i <- [0..8): {
         cid[i] != 0 -> has-nonzero = 1
@@ -208,13 +208,13 @@ test-quic-gen-cid = () {
     print('PASS: quic-gen-cid')
 }
 
-// ═══════════════════════════════════════════════
-// HTTP/3 影格編解碼測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; HTTP/3 影格編解碼測試
+; ═══════════════════════════════════════════════
 
-// test-http3-frame-encode-decode: 測試 HTTP/3 影格編解碼
+; test-http3-frame-encode-decode: 測試 HTTP/3 影格編解碼
 test-http3-frame-encode-decode = () {
-    // 編碼一個 SETTINGS 影格
+    ; 編碼一個 SETTINGS 影格
     payload []byte
     payload[0] = 0x42
     payload[1] = 0x43
@@ -228,7 +228,7 @@ test-http3-frame-encode-decode = () {
             return
 }
 
-    // 解碼
+    ; 解碼
     ft = 0
     decoded-payload []byte
     np = 0
@@ -246,13 +246,13 @@ test-http3-frame-encode-decode = () {
     print('PASS: http3-frame-encode-decode')
 }
 
-// ═══════════════════════════════════════════════
-// QPACK 編解碼測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; QPACK 編解碼測試
+; ═══════════════════════════════════════════════
 
-// test-qpack-encode-decode: 測試 QPACK 標頭編解碼
+; test-qpack-encode-decode: 測試 QPACK 標頭編解碼
 test-qpack-encode-decode = () {
-    // 編碼單個標頭
+    ; 編碼單個標頭
     buf []byte
     n = 0
     buf, n = http3.qpack-encode-header('content-type', 'text/plain')
@@ -261,7 +261,7 @@ test-qpack-encode-decode = () {
             return
 }
 
-    // 解碼
+    ; 解碼
     name = ''
     value = ''
     np = 0
@@ -283,11 +283,11 @@ test-qpack-encode-decode = () {
     print('PASS: qpack-encode-decode')
 }
 
-// ═══════════════════════════════════════════════
-// UDP 連接測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; UDP 連接測試
+; ═══════════════════════════════════════════════
 
-// test-udp-open-close: 測試 UDP socket 建立和關閉
+; test-udp-open-close: 測試 UDP socket 建立和關閉
 test-udp-open-close = () {
     fd = net-udp-open()
     fd < 0 -> {
@@ -299,11 +299,11 @@ test-udp-open-close = () {
     print('PASS: udp-open-close')
 }
 
-// ═══════════════════════════════════════════════
-// URL 解析測試
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; URL 解析測試
+; ═══════════════════════════════════════════════
 
-// test-http3-parse-url: 測試 URL 解析
+; test-http3-parse-url: 測試 URL 解析
 test-http3-parse-url = () {
     host = ''
     port i64 = 0
@@ -330,7 +330,7 @@ test-http3-parse-url = () {
             return
 }
 
-    // 測試無埠號的 URL
+    ; 測試無埠號的 URL
     host2 = ''
     port2 i64 = 0
     path2 = ''
@@ -348,9 +348,9 @@ test-http3-parse-url = () {
     print('PASS: http3-parse-url')
 }
 
-// ═══════════════════════════════════════════════
-// 主函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 主函數
+; ═══════════════════════════════════════════════
 
 println('=== HTTP/3 Test Suite ===')
 println('')

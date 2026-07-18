@@ -1,4 +1,4 @@
-// Fibonacci — Nolang 版本，純計算無 I/O
+; Fibonacci — Nolang 版本，純計算無 I/O
 
 fib = (n i64, o i64) {
     a = 0

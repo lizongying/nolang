@@ -1,4 +1,4 @@
-// test-str-minimal.no
+; test-str-minimal.no
 test-str-len = () {
     s = 'hello'
     n = s.len

@@ -1,4 +1,4 @@
-// test-arr-byte — 測試 [32]byte 數組分配
+; test-arr-byte — 測試 [32]byte 數組分配
 print('start')
 a [32]byte
 print('before assign')

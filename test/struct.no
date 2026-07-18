@@ -1,4 +1,4 @@
-// struct test
+; struct test
 user {
     name str
     age i64
@@ -13,5 +13,5 @@ print('struct:')
 u.name = 'def'
 u.age = 25
 
-// Can't print struct fields directly yet
+; Can't print struct fields directly yet
 print('struct test ok')

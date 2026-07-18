@@ -1,8 +1,8 @@
-// test-str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
-//
-// 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
+; test-str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
+;
+; 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
 
-// ===== str.to-i64 =====
+; ===== str.to-i64 =====
 test-to-i64-ok = () {
     n = '12345'.to-i64()
         {
@@ -51,7 +51,7 @@ test-to-i64-invalid = () {
     }
 }
 
-// ===== str.to-i8 =====
+; ===== str.to-i8 =====
 test-to-i8-ok = () {
     n = '127'.to-i8()
         {
@@ -100,7 +100,7 @@ test-to-i8-invalid = () {
     }
 }
 
-// ===== str.to-i16 =====
+; ===== str.to-i16 =====
 test-to-i16-ok = () {
     n = '32767'.to-i16()
         {
@@ -125,7 +125,7 @@ test-to-i16-overflow = () {
     }
 }
 
-// ===== str.to-i32 =====
+; ===== str.to-i32 =====
 test-to-i32-ok = () {
     n = '2147483647'.to-i32()
         {
@@ -150,7 +150,7 @@ test-to-i32-overflow = () {
     }
 }
 
-// ===== str.to-u8 =====
+; ===== str.to-u8 =====
 test-to-u8-ok = () {
     n = '255'.to-u8()
         {
@@ -187,7 +187,7 @@ test-to-u8-negative = () {
     }
 }
 
-// ===== str.to-u16 =====
+; ===== str.to-u16 =====
 test-to-u16-ok = () {
     n = '65535'.to-u16()
         {
@@ -212,7 +212,7 @@ test-to-u16-overflow = () {
     }
 }
 
-// ===== str.to-u32 =====
+; ===== str.to-u32 =====
 test-to-u32-ok = () {
     n = '4294967295'.to-u32()
         {
@@ -237,7 +237,7 @@ test-to-u32-overflow = () {
     }
 }
 
-// ===== str.to-u64 =====
+; ===== str.to-u64 =====
 test-to-u64-ok = () {
     n = '99999'.to-u64()
         {
@@ -262,7 +262,7 @@ test-to-u64-negative = () {
     }
 }
 
-// ===== str.to-bool =====
+; ===== str.to-bool =====
 test-to-bool-true = () {
     b = 'true'.to-bool()
         {
@@ -311,7 +311,7 @@ test-to-bool-invalid = () {
     }
 }
 
-// 執行
+; 執行
 test-to-i64-ok()
 test-to-i64-neg()
 test-to-i64-empty()

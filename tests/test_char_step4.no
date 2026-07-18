@@ -1,4 +1,4 @@
-// test_char_step4
+; test_char_step4
 print('start')
 
 c = "中"

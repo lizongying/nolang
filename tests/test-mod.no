@@ -1,4 +1,4 @@
-// test-mod.no — 測試取模運算
+; test-mod.no — 測試取模運算
 test = () {
     a = 12
     b = 18

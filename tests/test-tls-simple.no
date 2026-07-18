@@ -1,5 +1,5 @@
-// test-tls-simple — 最簡單 TLS 測試
-// # std/net/tls
+; test-tls-simple — 最簡單 TLS 測試
+; # std/net/tls
 
 print('=== TLS Simple Test ===')
 print('=== Done ===')

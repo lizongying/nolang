@@ -1,4 +1,4 @@
-// test standalone slice
+; test standalone slice
 print('test')
 x = [1, 2, 3]
 print('ok')

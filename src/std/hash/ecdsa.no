@@ -1,24 +1,24 @@
-// ecdsa — ECDSA 數位簽章（NIST P-256 / secp256r1）
-//
-// 實作基於 NIST P-256 橢圓曲線的 ECDSA 簽章算法。
-// 曲線: y² = x³ - 3x + b (mod p)
-//
-// 使用 8×32-bit limb 表示 256-bit 大整數。
-// Jacobian 座標進行點運算。
-//
-// 用法：
-//   # std/hash/ecdsa
-//   priv [32]byte = ecdsa-generate(seed)
-//   pub [65]byte = ecdsa-publickey(priv)
-//   sig [64]byte = ecdsa-sign(priv, msg)
-//   ok = ecdsa-verify(pub, msg, sig)
+; ecdsa — ECDSA 數位簽章（NIST P-256 / secp256r1）
+;
+; 實作基於 NIST P-256 橢圓曲線的 ECDSA 簽章算法。
+; 曲線: y² = x³ - 3x + b (mod p)
+;
+; 使用 8×32-bit limb 表示 256-bit 大整數。
+; Jacobian 座標進行點運算。
+;
+; 用法：
+;   # std/hash/ecdsa
+;   priv [32]byte = ecdsa-generate(seed)
+;   pub [65]byte = ecdsa-publickey(priv)
+;   sig [64]byte = ecdsa-sign(priv, msg)
+;   ok = ecdsa-verify(pub, msg, sig)
 
-// ═══════════════════════════════════════════════
-// 曲線參數（P-256）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 曲線參數（P-256）
+; ═══════════════════════════════════════════════
 
-// 素數 p = 2^256 - 2^224 + 2^192 + 2^96 - 1
-// 小端 32 位元組
+; 素數 p = 2^256 - 2^224 + 2^192 + 2^96 - 1
+; 小端 32 位元組
 P256-P [32]byte = [
     0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -26,7 +26,7 @@ P256-P [32]byte = [
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ]
 
-// 群階 n
+; 群階 n
 P256-N [32]byte = [
     0x51, 0x25, 0x63, 0xFC, 0xC2, 0xCA, 0xB9, 0xF3,
     0x84, 0x9E, 0x17, 0xA7, 0xAD, 0xFA, 0xE6, 0xBC,
@@ -34,7 +34,7 @@ P256-N [32]byte = [
     0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
 ]
 
-// 基點 Gx（小端）
+; 基點 Gx（小端）
 P256-GX [32]byte = [
     0x96, 0xC2, 0x98, 0xD8, 0x45, 0x39, 0xA1, 0xF4,
     0xA0, 0x33, 0xEB, 0xBD, 0x3A, 0x93, 0xAA, 0x8D,
@@ -42,7 +42,7 @@ P256-GX [32]byte = [
     0xF2, 0xD1, 0x17, 0x6B, 0x17, 0xD1, 0x6B, 0x6B,
 ]
 
-// 基點 Gy（小端）
+; 基點 Gy（小端）
 P256-GY [32]byte = [
     0xF5, 0x51, 0xBF, 0x37, 0x68, 0x40, 0xB6, 0xCB,
     0xCE, 0x5E, 0x31, 0x6B, 0x57, 0x33, 0xCE, 0x2B,
@@ -50,7 +50,7 @@ P256-GY [32]byte = [
     0xE2, 0x42, 0xE3, 0x4F, 0xFE, 0x34, 0xE2, 0x4F,
 ]
 
-// 曲線參數 b
+; 曲線參數 b
 P256-B [32]byte = [
     0x4B, 0x60, 0xD2, 0x27, 0x3E, 0x3C, 0xCE, 0x3B,
     0xF6, 0xB0, 0x53, 0xCC, 0xB0, 0x06, 0x1D, 0x65,
@@ -58,12 +58,12 @@ P256-B [32]byte = [
     0xE7, 0x93, 0x3A, 0xAA, 0xD8, 0x35, 0xC6, 0x5A,
 ]
 
-// ═══════════════════════════════════════════════
-// 256-bit 大整數運算（byte 陣列，小端序）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 256-bit 大整數運算（byte 陣列，小端序）
+; ═══════════════════════════════════════════════
 
-// bn-cmp: 比較兩個 256-bit 數（小端序）
-// 返回: -1 if a < b, 0 if a == b, 1 if a > b
+; bn-cmp: 比較兩個 256-bit 數（小端序）
+; 返回: -1 if a < b, 0 if a == b, 1 if a > b
 bn-cmp = (a []byte, b []byte) (r i64) {
     i <- [31..0]: {
         ai = a[i] & 255
@@ -82,8 +82,8 @@ bn-cmp = (a []byte, b []byte) (r i64) {
     r = 0
 }
 
-// bn-add: 256-bit 加法（不帶模約簡）
-// 返回 sum [32]byte 和 carry i64
+; bn-add: 256-bit 加法（不帶模約簡）
+; 返回 sum [32]byte 和 carry i64
 bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
@@ -93,8 +93,8 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     }
 }
 
-// bn-sub: 256-bit 減法 a - b（不帶模約簡）
-// 返回 diff [32]byte 和 borrow i64
+; bn-sub: 256-bit 減法 a - b（不帶模約簡）
+; 返回 diff [32]byte 和 borrow i64
 bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
@@ -110,7 +110,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     }
 }
 
-// bn-mod: 模約簡 a mod m（重複減法）
+; bn-mod: 模約簡 a mod m（重複減法）
 bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
@@ -118,7 +118,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         work[i] = a[i]
     }
 
-    // 重複減去 m 直到 work < m
+    ; 重複減去 m 直到 work < m
     round <- [0..512): {
         cmp = 0
         cmp = bn-cmp(work, m)
@@ -136,15 +136,15 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     }
 }
 
-// bn-mulmod: 模乘 (a * b) mod m，使用 schoolbook 乘法
+; bn-mulmod: 模乘 (a * b) mod m，使用 schoolbook 乘法
 bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
-    // 512-bit 乘積（64 位元組）
+    ; 512-bit 乘積（64 位元組）
     product [64]byte
     i <- [0..64): {
         product[i] = 0
     }
 
-    // Schoolbook 乘法
+    ; Schoolbook 乘法
     i <- [0..32): {
         carry = 0
         j <- [0..32): {
@@ -153,7 +153,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             product[idx] = val & 255
             carry = val >> 8
         }
-        // 傳播進位
+        ; 傳播進位
         idx = i + 32
         for idx < 64 && carry != 0 {
             val = (product[idx] & 255) + carry
@@ -163,51 +163,51 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     }
 
-    // 規約 mod m（處理 512-bit → 256-bit）
-    // 將高 256 位逐次減去 m 的適當倍數
-    // 簡化方法：重複減法（高位部分）
+    ; 規約 mod m（處理 512-bit → 256-bit）
+    ; 將高 256 位逐次減去 m 的適當倍數
+    ; 簡化方法：重複減法（高位部分）
     work [64]byte
     i <- [0..64): {
         work[i] = product[i]
     }
 
-    // 從高位開始，每次減去 m << (bit_pos)
+    ; 從高位開始，每次減去 m << (bit_pos)
     bit = 511
     for bit >= 256 {
-        // 檢查 work 的第 bit 位元
+        ; 檢查 work 的第 bit 位元
         byte-idx = bit / 8
         bit-idx = bit % 8
         (work[byte-idx] >> bit-idx) & 1 == 1 -> {
-            // 減去 m << (bit - 256)
+            ; 減去 m << (bit - 256)
             shift = bit - 256
             shifted [64]byte
 
-            // m << shift
+            ; m << shift
             i <- [0..32): {
                 src-byte = i
                 dst-byte-start = (i * 8 + shift) / 8
-                // 簡化：只在 byte 邊界對齊時處理
+                ; 簡化：只在 byte 邊界對齊時處理
             }
-            // 由於位元級移位複雜，使用更簡單的方法
-            // 直接從高 32 位元組開始減法
+            ; 由於位元級移位複雜，使用更簡單的方法
+            ; 直接從高 32 位元組開始減法
         }
 
         bit = bit - 1
     }
 
-    // 更簡單的方法：將 64 位元組分為高低兩半
-    // result = low + high * 2^256 mod m
-    // 由於 2^256 mod m 可以預計算，這裡用簡化方法
-    // 直接使用重複減法處理整個 64 位元組
+    ; 更簡單的方法：將 64 位元組分為高低兩半
+    ; result = low + high * 2^256 mod m
+    ; 由於 2^256 mod m 可以預計算，這裡用簡化方法
+    ; 直接使用重複減法處理整個 64 位元組
 
-    // 從最高位元組開始減
-    // 每次嘗試減去 m * 2^(shift)
+    ; 從最高位元組開始減
+    ; 每次嘗試減去 m * 2^(shift)
     shift-byte = 32
     for shift-byte > 0 {
         shift-byte = shift-byte - 1
 
-        // 嘗試減去 m << (shift_byte * 8)
-        // 即在 work[shift_byte..shift_byte+32] 處減去 m
+        ; 嘗試減去 m << (shift_byte * 8)
+        ; 即在 work[shift_byte..shift_byte+32] 處減去 m
         can-sub = 1
         i <- [0..32): {
             wi = 0
@@ -254,7 +254,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 }
             }
 
-            // 如果還能減，再減一次
+            ; 如果還能減，再減一次
             shift-byte = shift-byte + 1
         }
     }
@@ -264,23 +264,23 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
 }
 
-// bn-addmod: 模加 (a + b) mod m
+; bn-addmod: 模加 (a + b) mod m
 bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     sum [32]byte
     carry = 0
     sum, carry = bn-add(a, b)
 
-    // 如果有進位或 sum >= m，需要規約
+    ; 如果有進位或 sum >= m，需要規約
     {
         carry != 0 -> {
-            // sum + 2^256 mod m，簡化處理
+            ; sum + 2^256 mod m，簡化處理
             out = bn-mod(sum, m)
         }
         -> out = bn-mod(sum, m)
     }
 }
 
-// bn-submod: 模減 (a - b) mod m
+; bn-submod: 模減 (a - b) mod m
 bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
     cmp = 0
     cmp = bn-cmp(a, b)
@@ -294,14 +294,14 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             }
         }
         -> {
-            // a < b, result = m - (b - a)
+            ; a < b, result = m - (b - a)
             diff [32]byte
             borrow = 0
             diff, borrow = bn-sub(b, a)
             out = bn-sub(P256-N, diff)
 
-            // 簡化：使用 m 作為模數
-            // result = m + a - b
+            ; 簡化：使用 m 作為模數
+            ; result = m + a - b
             tmp [32]byte
             carry = 0
             tmp, carry = bn-add(m, a)
@@ -316,11 +316,11 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
 }
 
-// bn-invmod: 模逆 a^(-1) mod m，使用擴展歐幾里得算法
-// 簡化版本：使用費馬小定理 a^(m-2) mod m（僅當 m 為素數時）
+; bn-invmod: 模逆 a^(-1) mod m，使用擴展歐幾里得算法
+; 簡化版本：使用費馬小定理 a^(m-2) mod m（僅當 m 為素數時）
 bn-invmod = (a []byte, m []byte) (out [32]byte) {
-    // 計算 a^(m-2) mod m 使用平方-乘法
-    // m-2
+    ; 計算 a^(m-2) mod m 使用平方-乘法
+    ; m-2
     exp [32]byte
     borrow = 0
     exp, borrow = bn-sub(m, [
@@ -358,18 +358,18 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         0x00,
     ])
 
-    // result = 1
+    ; result = 1
     result [32]byte
     result[0] = 1
     i <- [1..32): {
         result[i] = 0
     }
 
-    // base = a mod m
+    ; base = a mod m
     base [32]byte
     base = bn-mod(a, m)
 
-    // 平方-乘法（從低位到高位）
+    ; 平方-乘法（從低位到高位）
     bit <- [0..256): {
         byte-idx = bit / 8
         bit-idx = bit % 8
@@ -382,17 +382,17 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 橢圓曲線點運算（Jacobian 座標）
-// 點表示: (X, Y, Z) 其中 x = X/Z², y = Y/Z³
-// 使用 3×32 = 96 位元組陣列
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 橢圓曲線點運算（Jacobian 座標）
+; 點表示: (X, Y, Z) 其中 x = X/Z², y = Y/Z³
+; 使用 3×32 = 96 位元組陣列
+; ═══════════════════════════════════════════════
 
-// ec-point-double: 點倍乘 R = 2*P（Jacobian 座標）
-// p []byte: 輸入點 (X, Y, Z)，各 32 位元組
-// 返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
+; ec-point-double: 點倍乘 R = 2*P（Jacobian 座標）
+; p []byte: 輸入點 (X, Y, Z)，各 32 位元組
+; 返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
 ec-point-double = (p []byte) (r []byte) {
-    // 如果 Y == 0，返回無窮遠點
+    ; 如果 Y == 0，返回無窮遠點
     is-zero = 1
     i <- [0..32): {
         p[32 + i] != 0 -> is-zero = 0
@@ -404,76 +404,76 @@ ec-point-double = (p []byte) (r []byte) {
         return
     }
 
-    // a = -3 for P-256
-    // 使用公式: 對 a=-3 的曲線優化
-    // S = 4 * X * Y²
-    // M = 3 * (X - Z²) * (X + Z²)
-    // X' = M² - 2*S
-    // Y' = M * (S - X') - 8 * Y⁴
-    // Z' = 2 * Y * Z
+    ; a = -3 for P-256
+    ; 使用公式: 對 a=-3 的曲線優化
+    ; S = 4 * X * Y²
+    ; M = 3 * (X - Z²) * (X + Z²)
+    ; X' = M² - 2*S
+    ; Y' = M * (S - X') - 8 * Y⁴
+    ; Z' = 2 * Y * Z
 
     x []byte = p[0..32]
     y []byte = p[32..64]
     z []byte = p[64..96]
 
-    // Z²
+    ; Z²
     z2 [32]byte
     z2 = bn-mulmod(z, z, P256-P)
 
-    // X - Z²
+    ; X - Z²
     x-mz2 [32]byte
     x-mz2 = bn-submod(x, z2, P256-P)
 
-    // X + Z²
+    ; X + Z²
     x-pz2 [32]byte
     x-pz2 = bn-addmod(x, z2, P256-P)
 
-    // M = 3 * (X-Z²) * (X+Z²)
+    ; M = 3 * (X-Z²) * (X+Z²)
     m [32]byte
     m = bn-mulmod(x-mz2, x-pz2, P256-P)
     m = bn-addmod(m, m, P256-P)
     m = bn-addmod(m, m, P256-P)
 
-    // Y²
+    ; Y²
     y2 [32]byte
     y2 = bn-mulmod(y, y, P256-P)
 
-    // S = 4 * X * Y²
+    ; S = 4 * X * Y²
     s [32]byte
     s = bn-mulmod(x, y2, P256-P)
     s = bn-addmod(s, s, P256-P)
     s = bn-addmod(s, s, P256-P)
 
-    // Y⁴
+    ; Y⁴
     y4 [32]byte
     y4 = bn-mulmod(y2, y2, P256-P)
 
-    // X' = M² - 2*S
+    ; X' = M² - 2*S
     m2 [32]byte
     m2 = bn-mulmod(m, m, P256-P)
     x3 [32]byte
     x3 = bn-submod(m2, s, P256-P)
     x3 = bn-submod(x3, s, P256-P)
 
-    // Y' = M * (S - X') - 8 * Y⁴
+    ; Y' = M * (S - X') - 8 * Y⁴
     s-mx3 [32]byte
     s-mx3 = bn-submod(s, x3, P256-P)
     y3 [32]byte
     y3 = bn-mulmod(m, s-mx3, P256-P)
 
-    // 8 * Y⁴
+    ; 8 * Y⁴
     y4-8 [32]byte
     y4-8 = bn-addmod(y4, y4, P256-P)
     y4-8 = bn-addmod(y4-8, y4-8, P256-P)
     y4-8 = bn-addmod(y4-8, y4-8, P256-P)
     y3 = bn-submod(y3, y4-8, P256-P)
 
-    // Z' = 2 * Y * Z
+    ; Z' = 2 * Y * Z
     z3 [32]byte
     z3 = bn-mulmod(y, z, P256-P)
     z3 = bn-addmod(z3, z3, P256-P)
 
-    // 輸出
+    ; 輸出
     i <- [0..32): {
         r[i] = x3[i]
         r[32 + i] = y3[i]
@@ -481,8 +481,8 @@ ec-point-double = (p []byte) (r []byte) {
     }
 }
 
-// ec-point-add: 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
-// 返回 r []byte: 96 位元組
+; ec-point-add: 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
+; 返回 r []byte: 96 位元組
 ec-point-add = (p []byte, q []byte) (r []byte) {
     x1 []byte = p[0..32]
     y1 []byte = p[32..64]
@@ -491,7 +491,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     y2 []byte = q[32..64]
     z2 []byte = q[64..96]
 
-    // 檢查 P 是否為無窮遠點
+    ; 檢查 P 是否為無窮遠點
     p-inf = 1
     i <- [0..96): {
         p[i] != 0 -> p-inf = 0
@@ -503,7 +503,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         return
     }
 
-    // 檢查 Q 是否為無窮遠點
+    ; 檢查 Q 是否為無窮遠點
     q-inf = 1
     i <- [0..96): {
         q[i] != 0 -> q-inf = 0
@@ -515,45 +515,45 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         return
     }
 
-    // Z1², Z2²
+    ; Z1², Z2²
     z1-2 [32]byte
     z1-2 = bn-mulmod(z1, z1, P256-P)
     z2-2 [32]byte
     z2-2 = bn-mulmod(z2, z2, P256-P)
 
-    // Z1³, Z2³
+    ; Z1³, Z2³
     z1-3 [32]byte
     z1-3 = bn-mulmod(z1-2, z1, P256-P)
     z2-3 [32]byte
     z2-3 = bn-mulmod(z2-2, z2, P256-P)
 
-    // U2 = X2 * Z1²
+    ; U2 = X2 * Z1²
     u2 [32]byte
     u2 = bn-mulmod(x2, z1-2, P256-P)
 
-    // S2 = Y2 * Z1³
+    ; S2 = Y2 * Z1³
     s2 [32]byte
     s2 = bn-mulmod(y2, z1-3, P256-P)
 
-    // U1 = X1 * Z2²
+    ; U1 = X1 * Z2²
     u1 [32]byte
     u1 = bn-mulmod(x1, z2-2, P256-P)
 
-    // S1 = Y1 * Z2³
+    ; S1 = Y1 * Z2³
     s1 [32]byte
     s1 = bn-mulmod(y1, z2-3, P256-P)
 
-    // H = U2 - U1
+    ; H = U2 - U1
     h [32]byte
     h = bn-submod(u2, u1, P256-P)
 
-    // R = S2 - S1
+    ; R = S2 - S1
     rr [32]byte
     rr = bn-submod(s2, s1, P256-P)
 
-    // 如果 H == 0:
-    //   如果 R == 0: return 2*P
-    //   否則: return infinity
+    ; 如果 H == 0:
+    ;   如果 R == 0: return 2*P
+    ;   否則: return infinity
     h-is-zero = 1
     i <- [0..32): {
         h[i] != 0 -> h-is-zero = 0
@@ -577,19 +577,19 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         }
     }
 
-    // H²
+    ; H²
     h2 [32]byte
     h2 = bn-mulmod(h, h, P256-P)
 
-    // H³
+    ; H³
     h3 [32]byte
     h3 = bn-mulmod(h2, h, P256-P)
 
-    // U1 * H²
+    ; U1 * H²
     u1h2 [32]byte
     u1h2 = bn-mulmod(u1, h2, P256-P)
 
-    // X3 = R² - H³ - 2 * U1 * H²
+    ; X3 = R² - H³ - 2 * U1 * H²
     r2 [32]byte
     r2 = bn-mulmod(rr, rr, P256-P)
     x3 [32]byte
@@ -597,7 +597,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     x3 = bn-submod(x3, u1h2, P256-P)
     x3 = bn-submod(x3, u1h2, P256-P)
 
-    // Y3 = R * (U1*H² - X3) - S1 * H³
+    ; Y3 = R * (U1*H² - X3) - S1 * H³
     y3 [32]byte
     y3 = bn-submod(u1h2, x3, P256-P)
     y3 = bn-mulmod(rr, y3, P256-P)
@@ -605,7 +605,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     s1h3 = bn-mulmod(s1, h3, P256-P)
     y3 = bn-submod(y3, s1h3, P256-P)
 
-    // Z3 = H * Z1 * Z2
+    ; Z3 = H * Z1 * Z2
     z3 [32]byte
     z3 = bn-mulmod(h, z1, P256-P)
     z3 = bn-mulmod(z3, z2, P256-P)
@@ -617,27 +617,27 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
 }
 
-// ec-scalar-mult: 純量乘法 R = k * P
-// k [32]byte: 純量
-// p []byte: 點 (96 位元組)
-// 返回 r []byte: 96 位元組
+; ec-scalar-mult: 純量乘法 R = k * P
+; k [32]byte: 純量
+; p []byte: 點 (96 位元組)
+; 返回 r []byte: 96 位元組
 ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
-    // R = 無窮遠點
+    ; R = 無窮遠點
     i <- [0..96): {
         r[i] = 0
     }
 
-    // 從高位到低位進行 double-and-add
+    ; 從高位到低位進行 double-and-add
     bit = 255
     for bit >= 0 {
-        // R = 2*R
+        ; R = 2*R
         tmp []byte
         tmp = ec-point-double(r)
         i <- [0..96): {
             r[i] = tmp[i]
         }
 
-        // 如果 bit 為 1，R = R + P
+        ; 如果 bit 為 1，R = R + P
         byte-idx = bit / 8
         bit-idx = bit % 8
         (k[byte-idx] >> bit-idx) & 1 == 1 -> {
@@ -651,49 +651,49 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     }
 }
 
-// ec-point-to-bytes: 將 Jacobian 座標轉為未壓縮編碼
-// p []byte: Jacobian 點 (96 位元組)
-// 返回 out [65]byte: 04 || x || y
+; ec-point-to-bytes: 將 Jacobian 座標轉為未壓縮編碼
+; p []byte: Jacobian 點 (96 位元組)
+; 返回 out [65]byte: 04 || x || y
 ec-point-to-bytes = (p []byte) (out [65]byte) {
     px []byte = p[0..32]
     py []byte = p[32..64]
     pz []byte = p[64..96]
 
-    // 檢查無窮遠點
+    ; 檢查無窮遠點
     z-is-zero = 1
     i <- [0..32): {
         pz[i] != 0 -> z-is-zero = 0
     }
     z-is-zero == 1 -> {
-        // 返回全零
+        ; 返回全零
         return
     }
 
-    // Z²
+    ; Z²
     z2 [32]byte
     z2 = bn-mulmod(pz, pz, P256-P)
 
-    // Z³
+    ; Z³
     z3 [32]byte
     z3 = bn-mulmod(z2, pz, P256-P)
 
-    // Z²的逆
+    ; Z²的逆
     z2-inv [32]byte
     z2-inv = bn-invmod(z2, P256-P)
 
-    // Z³的逆
+    ; Z³的逆
     z3-inv [32]byte
     z3-inv = bn-invmod(z3, P256-P)
 
-    // x = X * (Z²)^(-1)
+    ; x = X * (Z²)^(-1)
     x [32]byte
     x = bn-mulmod(px, z2-inv, P256-P)
 
-    // y = Y * (Z³)^(-1)
+    ; y = Y * (Z³)^(-1)
     y [32]byte
     y = bn-mulmod(py, z3-inv, P256-P)
 
-    // 輸出: 04 || x || y（大端序）
+    ; 輸出: 04 || x || y（大端序）
     out[0] = 4
     i <- [0..32): {
         out[1 + i] = x[31 - i]
@@ -701,11 +701,11 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     }
 }
 
-// ec-bytes-to-point: 將未壓縮編碼轉為 Jacobian 座標
-// in [65]byte: 04 || x || y（大端序）
-// 返回 out []byte: 96 位元組
+; ec-bytes-to-point: 將未壓縮編碼轉為 Jacobian 座標
+; in [65]byte: 04 || x || y（大端序）
+; 返回 out []byte: 96 位元組
 ec-bytes-to-point = (in [65]byte) (out []byte) {
-    // 提取 x, y（轉為小端序）
+    ; 提取 x, y（轉為小端序）
     x [32]byte
     y [32]byte
     i <- [0..32): {
@@ -713,7 +713,7 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
         y[i] = in[33 + 31 - i]
     }
 
-    // Jacobian: (X, Y, Z) = (x, y, 1)
+    ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
         out[i] = x[i]
         out[32 + i] = y[i]
@@ -724,73 +724,73 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 基點
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 基點
+; ═══════════════════════════════════════════════
 
-// ec-get-basepoint: 獲取基點 G 的 Jacobian 座標
+; ec-get-basepoint: 獲取基點 G 的 Jacobian 座標
 ec-get-basepoint = () (g []byte) {
-    // Gx, Gy 轉為小端序
+    ; Gx, Gy 轉為小端序
     i <- [0..32): {
         g[i] = P256-GX[31 - i]
         g[32 + i] = P256-GY[31 - i]
     }
 
-    // Z = 1
+    ; Z = 1
     g[64] = 1
     i <- [1..32): {
         g[64 + i] = 0
     }
 }
 
-// ═══════════════════════════════════════════════
-// ECDSA 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; ECDSA 公開 API
+; ═══════════════════════════════════════════════
 
-// ecdsa-publickey: 從私鑰計算公鑰
-// priv [32]byte: 私鑰（大端序）
-// 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
+; ecdsa-publickey: 從私鑰計算公鑰
+; priv [32]byte: 私鑰（大端序）
+; 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
 ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
-    // 將私鑰轉為小端序
+    ; 將私鑰轉為小端序
     k [32]byte
     i <- [0..32): {
         k[i] = priv[31 - i]
     }
 
-    // G = 基點
+    ; G = 基點
     g []byte
     g = ec-get-basepoint()
 
-    // Q = k * G
+    ; Q = k * G
     q []byte
     q = ec-scalar-mult(k, g)
 
-    // 編碼為未壓縮格式
+    ; 編碼為未壓縮格式
     pub = ec-point-to-bytes(q)
 }
 
-// ecdsa-sign: ECDSA 簽名
-// priv [32]byte: 私鑰（大端序）
-// msg []byte: 訊息
-// 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
+; ecdsa-sign: ECDSA 簽名
+; priv [32]byte: 私鑰（大端序）
+; msg []byte: 訊息
+; 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
-    // 計算哈希 h = SHA-256(msg)
+    ; 計算哈希 h = SHA-256(msg)
     h [32]byte
     h = sha256.sha256(msg)
 
-    // 將哈希轉為小端序
+    ; 將哈希轉為小端序
     h-le [32]byte
     i <- [0..32): {
         h-le[i] = h[31 - i]
     }
 
-    // 私鑰轉小端序
+    ; 私鑰轉小端序
     d [32]byte
     i <- [0..32): {
         d[i] = priv[31 - i]
     }
 
-    // 使用私鑰作為隨機數種子生成 k（簡化，生產環境應使用 RFC 6979）
+    ; 使用私鑰作為隨機數種子生成 k（簡化，生產環境應使用 RFC 6979）
     k [32]byte
     state = 0
     i <- [0..32): {
@@ -798,7 +798,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         k[i] = state & 255
     }
 
-    // 確保 k 在 [1, n-1] 範圍內
+    ; 確保 k 在 [1, n-1] 範圍內
     k = bn-mod(k, P256-N)
     k[0] == 0 -> {
         all-zero = 1
@@ -808,17 +808,17 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         all-zero == 1 -> k[0] = 1
     }
 
-    // R = k * G
+    ; R = k * G
     g []byte
     g = ec-get-basepoint()
     r-point []byte
     r-point = ec-scalar-mult(k, g)
 
-    // r = R.x mod n
+    ; r = R.x mod n
     r-point-bytes [65]byte
     r-point-bytes = ec-point-to-bytes(r-point)
 
-    // 提取 x（大端序 → 小端序）
+    ; 提取 x（大端序 → 小端序）
     rx [32]byte
     i <- [0..32): {
         rx[i] = r-point-bytes[1 + 31 - i]
@@ -826,7 +826,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     r-val [32]byte
     r-val = bn-mod(rx, P256-N)
 
-    // s = k^(-1) * (h + r * d) mod n
+    ; s = k^(-1) * (h + r * d) mod n
     k-inv [32]byte
     k-inv = bn-invmod(k, P256-N)
 
@@ -839,20 +839,20 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     s-val [32]byte
     s-val = bn-mulmod(k-inv, h-rd, P256-N)
 
-    // 輸出（大端序）
+    ; 輸出（大端序）
     i <- [0..32): {
         sig[i] = r-val[31 - i]
         sig[32 + i] = s-val[31 - i]
     }
 }
 
-// ecdsa-verify: ECDSA 驗簽
-// pub [65]byte: 公鑰
-// msg []byte: 訊息
-// sig [64]byte: 簽名（r || s）
-// 返回 ok i64: 1=有效, 0=無效
+; ecdsa-verify: ECDSA 驗簽
+; pub [65]byte: 公鑰
+; msg []byte: 訊息
+; sig [64]byte: 簽名（r || s）
+; 返回 ok i64: 1=有效, 0=無效
 ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
-    // 提取 r, s（大端序 → 小端序）
+    ; 提取 r, s（大端序 → 小端序）
     r-val [32]byte
     s-val [32]byte
     i <- [0..32): {
@@ -860,8 +860,8 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         s-val[i] = sig[32 + 31 - i]
     }
 
-    // 檢查 r, s ∈ [1, n-1]
-    // r != 0
+    ; 檢查 r, s ∈ [1, n-1]
+    ; r != 0
     r-zero = 1
     i <- [0..32): {
         r-val[i] != 0 -> r-zero = 0
@@ -871,7 +871,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         return
     }
 
-    // s != 0
+    ; s != 0
     s-zero = 1
     i <- [0..32): {
         s-val[i] != 0 -> s-zero = 0
@@ -881,19 +881,19 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         return
     }
 
-    // r < n
+    ; r < n
     bn-cmp(r-val, P256-N) >= 0 -> {
         ok = 0
         return
     }
 
-    // s < n
+    ; s < n
     bn-cmp(s-val, P256-N) >= 0 -> {
         ok = 0
         return
     }
 
-    // h = SHA-256(msg)
+    ; h = SHA-256(msg)
     h [32]byte
     h = sha256.sha256(msg)
     h-le [32]byte
@@ -901,37 +901,37 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         h-le[i] = h[31 - i]
     }
 
-    // w = s^(-1) mod n
+    ; w = s^(-1) mod n
     w [32]byte
     w = bn-invmod(s-val, P256-N)
 
-    // u1 = h * w mod n
+    ; u1 = h * w mod n
     u1 [32]byte
     u1 = bn-mulmod(h-le, w, P256-N)
 
-    // u2 = r * w mod n
+    ; u2 = r * w mod n
     u2 [32]byte
     u2 = bn-mulmod(r-val, w, P256-N)
 
-    // Q = 公鑰點
+    ; Q = 公鑰點
     q []byte
     q = ec-bytes-to-point(pub)
 
-    // R1 = u1 * G
+    ; R1 = u1 * G
     g []byte
     g = ec-get-basepoint()
     r1 []byte
     r1 = ec-scalar-mult(u1, g)
 
-    // R2 = u2 * Q
+    ; R2 = u2 * Q
     r2 []byte
     r2 = ec-scalar-mult(u2, q)
 
-    // R = R1 + R2
+    ; R = R1 + R2
     r-point []byte
     r-point = ec-point-add(r1, r2)
 
-    // 檢查 R 是否為無窮遠點
+    ; 檢查 R 是否為無窮遠點
     r-inf = 1
     i <- [0..96): {
         r-point[i] != 0 -> r-inf = 0
@@ -941,7 +941,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         return
     }
 
-    // v = R.x mod n
+    ; v = R.x mod n
     r-point-bytes [65]byte
     r-point-bytes = ec-point-to-bytes(r-point)
     rx [32]byte
@@ -951,7 +951,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     v [32]byte
     v = bn-mod(rx, P256-N)
 
-    // 驗證 v == r
+    ; 驗證 v == r
     ok = 1
     i <- [0..32): {
         v[i] != r-val[i] -> ok = 0

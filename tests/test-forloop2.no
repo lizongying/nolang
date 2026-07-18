@@ -1,4 +1,4 @@
-// test-forloop2 — 測試 for 循環變數 (顯式型別)
+; test-forloop2 — 測試 for 循環變數 (顯式型別)
 print('start')
 n <- [0..3): {
     print('n=')

@@ -1,26 +1,26 @@
-// aes-ctr — AES-CTR 計數器模式（AES-128 與 AES-256）
-//
-// CTR 模式將區塊加密器轉為串流加密器。
-// 計數器遞增並加密，產生的密鑰流與明文 XOR。
-//
-// 用法：
-//   # std/hash/aes-ctr
-//   // AES-128-CTR
-//   cipher = aes-128-ctr(plain, key128, iv)
-//   // AES-256-CTR
-//   cipher = aes-256-ctr(plain, key256, iv)
+; aes-ctr — AES-CTR 計數器模式（AES-128 與 AES-256）
+;
+; CTR 模式將區塊加密器轉為串流加密器。
+; 計數器遞增並加密，產生的密鑰流與明文 XOR。
+;
+; 用法：
+;   # std/hash/aes-ctr
+;   // AES-128-CTR
+;   cipher = aes-128-ctr(plain, key128, iv)
+;   // AES-256-CTR
+;   cipher = aes-256-ctr(plain, key256, iv)
 
-// ═══════════════════════════════════════════════
-// AES-128-CTR
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; AES-128-CTR
+; ═══════════════════════════════════════════════
 
-// aes-128-ctr: AES-128-CTR 加密/解密（對稱操作）
-// in []byte: 輸入資料
-// key [16]byte: 金鑰
-// iv [16]byte: 初始計數器值（nonce + counter）
-// 返回 out []byte: 輸出資料
+; aes-128-ctr: AES-128-CTR 加密/解密（對稱操作）
+; in []byte: 輸入資料
+; key [16]byte: 金鑰
+; iv [16]byte: 初始計數器值（nonce + counter）
+; 返回 out []byte: 輸出資料
 aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    // 計數器（初始為 IV）
+    ; 計數器（初始為 IV）
     ctr [16]byte
     i <- [0..16): {
         ctr[i] = iv[i]
@@ -28,18 +28,18 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
     pos = 0
     for pos < in.len {
-        // 加密當前計數器區塊
+        ; 加密當前計數器區塊
         ks [16]byte
         ks = aes.aes-128-enc(ctr, key)
 
-        // XOR
+        ; XOR
         n = 16
         pos + n > in.len -> n = in.len - pos
         i <- [0..n): {
             out[pos + i] = (in[pos + i] & 255) ^ (ks[i] & 255)
         }
 
-        // 遞增計數器（大端序，最低 32 位元）
+        ; 遞增計數器（大端序，最低 32 位元）
         j = 15
         for j >= 12 {
             ctr[j] = (ctr[j] + 1) & 255
@@ -47,7 +47,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
             j = j - 1
         }
 
-        // 進位傳播
+        ; 進位傳播
         ctr[12] == 0 && ctr[13] == 0 && ctr[14] == 0 && ctr[15] == 0 -> {
             j = 11
             for j >= 0 {
@@ -61,15 +61,15 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// AES-256-CTR
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; AES-256-CTR
+; ═══════════════════════════════════════════════
 
-// aes-256-ctr: AES-256-CTR 加密/解密（對稱操作）
-// in []byte: 輸入資料
-// key [32]byte: 金鑰
-// iv [16]byte: 初始計數器值
-// 返回 out []byte: 輸出資料
+; aes-256-ctr: AES-256-CTR 加密/解密（對稱操作）
+; in []byte: 輸入資料
+; key [32]byte: 金鑰
+; iv [16]byte: 初始計數器值
+; 返回 out []byte: 輸出資料
 aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ctr [16]byte
     i <- [0..16): {

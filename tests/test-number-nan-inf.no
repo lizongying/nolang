@@ -1,8 +1,8 @@
-// test-number-nan-inf.no — 測試 float.is-nan 和 float.is-inf
+; test-number-nan-inf.no — 測試 float.is-nan 和 float.is-inf
 
 
 test-nan-inf = () {
-    // 正常數值
+    ; 正常數值
     a = 1.0
     yes = 0
     a.is-nan(yes)
@@ -11,8 +11,8 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 0 (not printed)
-    // expect: 0
+    ; expect: 0 (not printed)
+    ; expect: 0
 
     a.is-inf(yes)
     {
@@ -20,10 +20,10 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 0 (not printed)
-    // expect: 0
+    ; expect: 0 (not printed)
+    ; expect: 0
 
-    // NaN = 0.0 / 0.0
+    ; NaN = 0.0 / 0.0
     b = 0.0 / 0.0
     b.is-nan(yes)
     {
@@ -31,8 +31,8 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 1
-    // expect: 0 (not printed)
+    ; expect: 1
+    ; expect: 0 (not printed)
 
     b.is-inf(yes)
     {
@@ -40,10 +40,10 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 0 (not printed)
-    // expect: 0
+    ; expect: 0 (not printed)
+    ; expect: 0
 
-    // +Inf = 1.0 / 0.0
+    ; +Inf = 1.0 / 0.0
     c = 1.0 / 0.0
     c.is-nan(yes)
     {
@@ -51,8 +51,8 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 0 (not printed)
-    // expect: 0
+    ; expect: 0 (not printed)
+    ; expect: 0
 
     c.is-inf(yes)
     {
@@ -60,10 +60,10 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 1
-    // expect: 0 (not printed)
+    ; expect: 1
+    ; expect: 0 (not printed)
 
-    // -Inf = -1.0 / 0.0
+    ; -Inf = -1.0 / 0.0
     d = -1.0 / 0.0
     d.is-nan(yes)
     {
@@ -71,16 +71,16 @@ test-nan-inf = () {
         -> print(0)
     }
 
-    // expect: 0 (not printed)
-    // expect: 0
+    ; expect: 0 (not printed)
+    ; expect: 0
 
     d.is-inf(yes)
     {
         yes -> print(1)
         -> print(0)
     }
-    // expect: 1
-    // expect: 0 (not printed)
+    ; expect: 1
+    ; expect: 0 (not printed)
 }
 
 test-nan-inf()

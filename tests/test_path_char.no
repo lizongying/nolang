@@ -1,4 +1,4 @@
-// test_path_char — 驗證 path.no 使用 char 字面量常量後正常工作
+; test_path_char — 驗證 path.no 使用 char 字面量常量後正常工作
 print('=== path char test ===')
 
 p = path.new('/usr/local/bin')

@@ -1,43 +1,43 @@
-// test-sse.no — SSE (Server-Sent Events) 客戶端測試
-//
-// 測試 sse-client 的 connect/next-event/close/reconnect。
-// 需 live SSE server 才能執行（vet-only，不執行）。
-//
-// 可用以下 Node.js 腳本作為 SSE server 手動測試：
-//   const http = require('http');
-//   http.createServer((req, res) => {
-//     res.writeHead(200, {
-//       'Content-Type': 'text/event-stream',
-//       'Cache-Control': 'no-cache',
-//       'Connection': 'keep-alive'
-//     });
-//     let id = 0;
-//     setInterval(() => {
-//       res.write('id: ' + id + '\n');
-//       res.write('event: message\n');
-//       res.write('data: hello ' + id + '\n\n');
-//       id++;
-//     }, 1000);
-//   }).listen(3000);
-//
-// 或用 Python：
-//   import http.server, time
-//   class SSE(http.server.BaseHTTPRequestHandler):
-//     def do_GET(self):
-//       self.send_response(200)
-//       self.send_header('Content-Type','text/event-stream')
-//       self.send_header('Cache-Control','no-cache')
-//       self.end_headers()
-//       i = 0
-//       while True:
-//         self.wfile.write(b'data: hello %d\n\n' % i)
-//         self.wfile.flush()
-//         time.sleep(1)
-//         i += 1
-//   http.server.HTTPServer(('',3000), SSE).serve_forever()
+; test-sse.no — SSE (Server-Sent Events) 客戶端測試
+;
+; 測試 sse-client 的 connect/next-event/close/reconnect。
+; 需 live SSE server 才能執行（vet-only，不執行）。
+;
+; 可用以下 Node.js 腳本作為 SSE server 手動測試：
+;   const http = require('http');
+;   http.createServer((req, res) => {
+;     res.writeHead(200, {
+;       'Content-Type': 'text/event-stream',
+;       'Cache-Control': 'no-cache',
+;       'Connection': 'keep-alive'
+;     });
+;     let id = 0;
+;     setInterval(() => {
+;       res.write('id: ' + id + '\n');
+;       res.write('event: message\n');
+;       res.write('data: hello ' + id + '\n\n');
+;       id++;
+;     }, 1000);
+;   }).listen(3000);
+;
+; 或用 Python：
+;   import http.server, time
+;   class SSE(http.server.BaseHTTPRequestHandler):
+;     def do_GET(self):
+;       self.send_response(200)
+;       self.send_header('Content-Type','text/event-stream')
+;       self.send_header('Cache-Control','no-cache')
+;       self.end_headers()
+;       i = 0
+;       while True:
+;         self.wfile.write(b'data: hello %d\n\n' % i)
+;         self.wfile.flush()
+;         time.sleep(1)
+;         i += 1
+;   http.server.HTTPServer(('',3000), SSE).serve_forever()
 
 
-// 測試 1: connect（明文 HTTP）
+; 測試 1: connect（明文 HTTP）
 client = sse.sse-connect('http://127.0.0.1:3000/events')
 client: {
     nil -> println('fail: connect')
@@ -45,7 +45,7 @@ client: {
         println('ok: connect')
 }
 
-// 測試 2: is-connected
+; 測試 2: is-connected
 client: {
     nil -> return
     -> {
@@ -57,7 +57,7 @@ client: {
     }
 }
 
-// 測試 3: next-event（讀取 3 個事件）
+; 測試 3: next-event（讀取 3 個事件）
 client: {
     nil -> return
     -> {
@@ -91,7 +91,7 @@ client: {
     }
 }
 
-// 測試 4: close
+; 測試 4: close
 client: {
     nil -> return
     -> {
@@ -104,7 +104,7 @@ client: {
     }
 }
 
-// 測試 5: HTTPS SSE 連線
+; 測試 5: HTTPS SSE 連線
 https-client = sse.sse-connect('https://example.com/events')
 https-client: {
     nil -> println('skip: HTTPS SSE (expected without live server)')
@@ -114,7 +114,7 @@ https-client: {
     }
 }
 
-// 測試 6: 無效 URL
+; 測試 6: 無效 URL
 bad = sse.sse-connect('ftp://invalid')
 bad: {
     nil -> println('fail: expected err for invalid URL')

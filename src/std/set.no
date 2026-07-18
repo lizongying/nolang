@@ -1,17 +1,17 @@
-// set — 集合資料結構
-//
-// 使用 []i64 實作整數集合，提供基本集合操作。
-//
-// 用法：
-//   use std/set
-//   a [128]i64 = [0:128]
-//   an = 0
-//   an = set.add(a, an, 1)
-//   an = set.add(a, an, 2)
-//   yes = set.contains(a, an, 1)   // yes = true
+; set — 集合資料結構
+;
+; 使用 []i64 實作整數集合，提供基本集合操作。
+;
+; 用法：
+;   use std/set
+;   a [128]i64 = [0:128]
+;   an = 0
+;   an = set.add(a, an, 1)
+;   an = set.add(a, an, 2)
+;   yes = set.contains(a, an, 1)   // yes = true
 
-// add: 加入元素到集合（若不存在）
-// 返回新的大小
+; add: 加入元素到集合（若不存在）
+; 返回新的大小
 add = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i <- [0..n): {
@@ -21,13 +21,13 @@ add = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n + 1
 }
 
-// remove: 從集合移除元素
-// 返回新的大小
+; remove: 從集合移除元素
+; 返回新的大小
 set-remove = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i <- [0..n): {
         s[i] == val -> {
-            // 將最後一個元素移到該位置
+            ; 將最後一個元素移到該位置
             s[i] = s[n - 1]
             new-n = n - 1
             return
@@ -35,8 +35,8 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
     }
 }
 
-// contains: 檢查元素是否存在於集合中
-// 返回 true=存在, false=不存在
+; contains: 檢查元素是否存在於集合中
+; 返回 true=存在, false=不存在
 contains = (s []i64, n i64, val i64) (yes bool) {
     yes = false
     i <- [0..n): {
@@ -47,9 +47,9 @@ contains = (s []i64, n i64, val i64) (yes bool) {
     }
 }
 
-// union: 計算兩個集合的聯集
-// 將 b（含 bn 個元素）中不在 a 的元素加入 a
-// 返回新的大小
+; union: 計算兩個集合的聯集
+; 將 b（含 bn 個元素）中不在 a 的元素加入 a
+; 返回新的大小
 union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
     new-an = an
     i <- [0..bn): {
@@ -68,9 +68,9 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
     }
 }
 
-// intersection: 計算兩個集合的交集
-// 將 a 和 b 的共同元素寫入 out
-// 返回交集中的元素數量
+; intersection: 計算兩個集合的交集
+; 將 a 和 b 的共同元素寫入 out
+; 返回交集中的元素數量
 intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
     i <- [0..an): {
@@ -85,8 +85,8 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     }
 }
 
-// difference: 計算兩個集合的差集（在 a 中但不在 b 中）
-// 返回差集中的元素數量
+; difference: 計算兩個集合的差集（在 a 中但不在 b 中）
+; 返回差集中的元素數量
 difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
     i <- [0..an): {
@@ -105,20 +105,20 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     }
 }
 
-// to-vec: 將集合轉為切片（無序）
+; to-vec: 將集合轉為切片（無序）
 to-vec = (s []i64, n i64) (out []i64) {
     i <- [0..n): {
         out[i] = s[i]
     }
 }
 
-// size: 返回集合大小
+; size: 返回集合大小
 set-size = (s []i64, n i64) (sz i64) {
     sz = n
 }
 
-// empty: 判斷集合是否為空
-// 返回 true=空, false=非空
+; empty: 判斷集合是否為空
+; 返回 true=空, false=非空
 set-empty = (s []i64, n i64) (yes bool) {
     yes = n == 0
 }

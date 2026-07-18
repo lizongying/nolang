@@ -1,23 +1,23 @@
-// base32 — Base32 編碼/解碼（RFC 4648）
-//
-// 將位元組資料編碼為 Base32 字串（A-Z, 2-7）。
-// 每 5 位元組編碼為 8 個字元，不足部分以 '=' 填充。
-//
-// 用法：
-//   encoded = base32-encode(data)
-//   decoded = base32-decode(encoded)
+; base32 — Base32 編碼/解碼（RFC 4648）
+;
+; 將位元組資料編碼為 Base32 字串（A-Z, 2-7）。
+; 每 5 位元組編碼為 8 個字元，不足部分以 '=' 填充。
+;
+; 用法：
+;   encoded = base32-encode(data)
+;   decoded = base32-decode(encoded)
 
-// Base32 字母表
+; Base32 字母表
 BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
-// base32-encode: Base32 編碼
-// data []byte: 輸入資料
-// 返回 out str: Base32 編碼字串
+; base32-encode: Base32 編碼
+; data []byte: 輸入資料
+; 返回 out str: Base32 編碼字串
 base32-encode = (data []byte) (out str) {
     dlen = data.len
 
-    // 計算輸出長度
-    // 每 5 位元組 → 8 字元，不足部分加填充
+    ; 計算輸出長度
+    ; 每 5 位元組 → 8 字元，不足部分加填充
     full-groups = dlen / 5
     remainder = dlen % 5
     out-len = full-groups * 8
@@ -28,7 +28,7 @@ base32-encode = (data []byte) (out str) {
 
     pos = 0
     for pos + 5 <= dlen {
-        // 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
+        ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
         b0 = data[pos] & 255
         b1 = data[pos + 1] & 255
         b2 = data[pos + 2] & 255
@@ -48,9 +48,9 @@ base32-encode = (data []byte) (out str) {
         out-pos = out-pos + 8
     }
 
-    // 處理剩餘位元組
+    ; 處理剩餘位元組
     remainder != 0 -> {
-        // 補零到 5 位元組
+        ; 補零到 5 位元組
         b0 = 0
         b1 = 0
         b2 = 0
@@ -61,13 +61,13 @@ base32-encode = (data []byte) (out str) {
         remainder >= 3 -> b2 = data[pos + 2] & 255
         remainder >= 4 -> b3 = data[pos + 3] & 255
 
-        // 根據剩餘位元組數決定輸出字元和填充
+        ; 根據剩餘位元組數決定輸出字元和填充
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]
         out[out-pos + 1] = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
 
         {
             remainder == 1 -> {
-                // 1 byte → 2 chars + 6 padding
+                ; 1 byte → 2 chars + 6 padding
                 out[out-pos + 2] = '='
                 out[out-pos + 3] = '='
                 out[out-pos + 4] = '='
@@ -103,13 +103,13 @@ base32-encode = (data []byte) (out str) {
     }
 }
 
-// base32-decode: Base32 解碼
-// in str: Base32 編碼字串
-// 返回 out []byte: 解碼後的資料
+; base32-decode: Base32 解碼
+; in str: Base32 編碼字串
+; 返回 out []byte: 解碼後的資料
 base32-decode = (in str) (out []byte) {
     in-len = in.len
 
-    // 計算填充數
+    ; 計算填充數
     pad-count = 0
     i = in-len - 1
     for i >= 0 {
@@ -123,7 +123,7 @@ base32-decode = (in str) (out []byte) {
     out-pos = 0
     pos = 0
     for pos + 8 <= in-len {
-        // 解碼 8 個字元 → 5 位元組
+        ; 解碼 8 個字元 → 5 位元組
         v0 = 0
         v1 = 0
         v2 = 0
@@ -133,7 +133,7 @@ base32-decode = (in str) (out []byte) {
         v6 = 0
         v7 = 0
 
-        // 將字元映射回 5-bit 值
+        ; 將字元映射回 5-bit 值
         i <- [0..8): {
             c = in[pos + i]
             val = 0
@@ -155,7 +155,7 @@ base32-decode = (in str) (out []byte) {
             }
         }
 
-        // 組合為 5 位元組
+        ; 組合為 5 位元組
         out[out-pos] = ((v0 << 3) | (v1 >> 2)) & 255
         out[out-pos + 1] = (((v1 & 3) << 6) | (v2 << 1) | (v3 >> 4)) & 255
         out[out-pos + 2] = (((v3 & 15) << 4) | (v4 >> 1)) & 255
@@ -166,8 +166,8 @@ base32-decode = (in str) (out []byte) {
         out-pos = out-pos + 5
     }
 
-    // 根據填充數調整輸出長度
-    // 6 padding → 1 byte, 4 padding → 2 bytes, 3 padding → 3 bytes, 1 padding → 4 bytes
+    ; 根據填充數調整輸出長度
+    ; 6 padding → 1 byte, 4 padding → 2 bytes, 3 padding → 3 bytes, 1 padding → 4 bytes
     {
         pad-count == 6 -> out-pos = out-pos - 4
         pad-count == 4 -> out-pos = out-pos - 3

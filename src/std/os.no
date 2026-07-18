@@ -1,130 +1,130 @@
-// os — 作業系統介面標準庫
-//
-// 提供環境變數、目錄操作、行程管理、系統資訊、時間等 OS 層級功能。
-// 檔案讀寫相關功能請見 fs 模組。
+; os — 作業系統介面標準庫
+;
+; 提供環境變數、目錄操作、行程管理、系統資訊、時間等 OS 層級功能。
+; 檔案讀寫相關功能請見 fs 模組。
 
-// ═══════════════════════════════════════════════
-// 環境變數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 環境變數
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: getenv)
-// get-env: 取得環境變數
-// get-env = (key str) (val str) {  // LLVM: call i8* @getenv
-// }
+; build-in (ForwardFunc: getenv)
+; get-env: 取得環境變數
+; get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+; }
 
-// build-in (ForwardFunc: setenv)
-// set-env: 設定環境變數
-// set-env = (k str, v str) (ok bool) {  // LLVM: call i32 @setenv
-// }
+; build-in (ForwardFunc: setenv)
+; set-env: 設定環境變數
+; set-env = (k str, v str) (ok bool) {  // LLVM: call i32 @setenv
+; }
 
-// ═══════════════════════════════════════════════
-// 目錄與路徑
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 目錄與路徑
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: getcwd)
-// get-wd: 取得當前工作目錄
-// get-wd = () (dir str) {  // LLVM: call i8* @getcwd → @.os-buf
-// }
+; build-in (ForwardFunc: getcwd)
+; get-wd: 取得當前工作目錄
+; get-wd = () (dir str) {  // LLVM: call i8* @getcwd → @.os-buf
+; }
 
-// build-in (ForwardFunc: chdir)
-// ch-dir: 切換工作目錄
-// ch-dir = (d str) (ok bool) {  // LLVM: call i32 @chdir
-// }
+; build-in (ForwardFunc: chdir)
+; ch-dir: 切換工作目錄
+; ch-dir = (d str) (ok bool) {  // LLVM: call i32 @chdir
+; }
 
-// build-in (ForwardFunc: mkdir)
-// mkdir: 建立目錄
-// mkdir = (p str, mode i64) (ok bool) {  // LLVM: call i32 @mkdir → zext
-// }
+; build-in (ForwardFunc: mkdir)
+; mkdir: 建立目錄
+; mkdir = (p str, mode i64) (ok bool) {  // LLVM: call i32 @mkdir → zext
+; }
 
-// ═══════════════════════════════════════════════
-// 行程
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 行程
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: exit)
-// exit: 結束行程
-// exit = (c i64) {  // LLVM: call void @exit(i32)
-// }
+; build-in (ForwardFunc: exit)
+; exit: 結束行程
+; exit = (c i64) {  // LLVM: call void @exit(i32)
+; }
 
-// build-in (ForwardFunc: getpid)
-// get-pid: 取得行程 ID
-// get-pid = () (pid i64) {  // LLVM: call i32 @getpid → zext
-// }
+; build-in (ForwardFunc: getpid)
+; get-pid: 取得行程 ID
+; get-pid = () (pid i64) {  // LLVM: call i32 @getpid → zext
+; }
 
-// ═══════════════════════════════════════════════
-// 系統資訊
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 系統資訊
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: gethostname)
-// host-name: 取得主機名稱
-// host-name = () (name str) {  // LLVM: call i32 @gethostname → @.os-buf
-// }
+; build-in (ForwardFunc: gethostname)
+; host-name: 取得主機名稱
+; host-name = () (name str) {  // LLVM: call i32 @gethostname → @.os-buf
+; }
 
-// build-in (ForwardFunc: get-arch)
-// get-arch: 取得當前 CPU 架構（編譯期常數，如 arm64、amd64）
-// get-arch = () (arch str) {  // LLVM: compile-time constant string from runtime.GOARCH
-// }
+; build-in (ForwardFunc: get-arch)
+; get-arch: 取得當前 CPU 架構（編譯期常數，如 arm64、amd64）
+; get-arch = () (arch str) {  // LLVM: compile-time constant string from runtime.GOARCH
+; }
 
-// build-in (CLibCall: strerror)
-// strerror: 將 errno 轉為錯誤訊息字串
-// strerror = (errnum i64) (msg str) {  // LLVM: call i8* @strerror
-// }
+; build-in (CLibCall: strerror)
+; strerror: 將 errno 轉為錯誤訊息字串
+; strerror = (errnum i64) (msg str) {  // LLVM: call i8* @strerror
+; }
 
-// build-in (ForwardFunc: get-errno)
-// get-errno: 取得最後的 errno 值
-// get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
-// }
+; build-in (ForwardFunc: get-errno)
+; get-errno: 取得最後的 errno 值
+; get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
+; }
 
-// ═══════════════════════════════════════════════
-// 時間
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 時間
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: time)
-// now: 取得當前 Unix 時間戳（秒）
-// now = () (ts i64) {  // LLVM: call i64 @time(i8* null)
-// }
+; build-in (ForwardFunc: time)
+; now: 取得當前 Unix 時間戳（秒）
+; now = () (ts i64) {  // LLVM: call i64 @time(i8* null)
+; }
 
-// build-in (CLibCall: nolang.now_ms)
-// now-ms: 取得當前 Unix 時間戳（毫秒）
-// now-ms = () (ts i64) {  // LLVM: call i64 @nolang.now_ms
-// }
+; build-in (CLibCall: nolang.now_ms)
+; now-ms: 取得當前 Unix 時間戳（毫秒）
+; now-ms = () (ts i64) {  // LLVM: call i64 @nolang.now_ms
+; }
 
-// build-in (CLibCall: nolang.now_us)
-// now-us: 取得當前 Unix 時間戳（微秒）
-// now-us = () (ts i64) {  // LLVM: call i64 @nolang.now_us
-// }
+; build-in (CLibCall: nolang.now_us)
+; now-us: 取得當前 Unix 時間戳（微秒）
+; now-us = () (ts i64) {  // LLVM: call i64 @nolang.now_us
+; }
 
-// build-in (CLibCall: nolang.now_ns)
-// now-ns: 取得當前時間戳（奈秒）
-// now-ns = () (ts i64) {  // LLVM: call i64 @nolang.now_ns
-// }
+; build-in (CLibCall: nolang.now_ns)
+; now-ns: 取得當前時間戳（奈秒）
+; now-ns = () (ts i64) {  // LLVM: call i64 @nolang.now_ns
+; }
 
-// build-in (ForwardFunc: sleep)
-// sleep: 睡眠 n 秒
-// sleep = (s i64) (ok i64) {  // LLVM: call i32 @sleep(i32) → zext
-// }
+; build-in (ForwardFunc: sleep)
+; sleep: 睡眠 n 秒
+; sleep = (s i64) (ok i64) {  // LLVM: call i32 @sleep(i32) → zext
+; }
 
-// build-in (CLibCall: nolang.sleep_us)
-// sleep-us: 睡眠 n 微秒
-// sleep-us = (us i64) {  // LLVM: call i32 @nolang.sleep_us
-// }
+; build-in (CLibCall: nolang.sleep_us)
+; sleep-us: 睡眠 n 微秒
+; sleep-us = (us i64) {  // LLVM: call i32 @nolang.sleep_us
+; }
 
-// build-in (CLibCall: nolang.sleep_ns)
-// sleep-ns: 睡眠 n 奈秒
-// sleep-ns = (ns i64) {  // LLVM: call i32 @nolang.sleep_ns
-// }
+; build-in (CLibCall: nolang.sleep_ns)
+; sleep-ns: 睡眠 n 奈秒
+; sleep-ns = (ns i64) {  // LLVM: call i32 @nolang.sleep_ns
+; }
 
-// ═══════════════════════════════════════════════
-// 命令列參數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 命令列參數
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: args-count)
-// args: 命令列參數數量（含程式名）
-// args = () (count i64) {
-//     // LLVM: access argc from main
-// }
+; build-in (ForwardFunc: args-count)
+; args: 命令列參數數量（含程式名）
+; args = () (count i64) {
+;     // LLVM: access argc from main
+; }
 
-// build-in (ForwardFunc: args-get)
-// arg: 取得第 i 個命令列參數
-// arg = (idx i64) (val str) {
-//     // LLVM: access argv[idx]
-// }
+; build-in (ForwardFunc: args-get)
+; arg: 取得第 i 個命令列參數
+; arg = (idx i64) (val str) {
+;     // LLVM: access argv[idx]
+; }

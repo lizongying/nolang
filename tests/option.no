@@ -1,7 +1,7 @@
-// cd src && go run ./cmd/cli/. build ../tests/match.no
-// ../dist/match
+; cd src && go run ./cmd/cli/. build ../tests/match.no
+; ../dist/match
 
-// ✅ match 语句：分支是代码块
+; ✅ match 语句：分支是代码块
 
 x = 3
 x: {
@@ -21,22 +21,22 @@ x: {
 }
 
 
-// ✅ match 表达式：分支体是单一表达式
+; ✅ match 表达式：分支体是单一表达式
 a = 100
 b = 101
 result = x: {
-    1 -> 1       // 单一值
-    2 -> 2+1     //簡單表達式
+    1 -> 1       ; 单一值
+    2 -> 2+1     ;簡單表達式
     -> a+b
 }
 print(result)
 
-// todo 特殊match 現在有問題
+; todo 特殊match 現在有問題
 {
     a == 99 -> {
         a = 1
         b = 2
-        // todo      print(a+b)
+        ; todo      print(a+b)
         print(b)
     }
     a == 2 ->

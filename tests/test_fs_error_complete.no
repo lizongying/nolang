@@ -1,10 +1,10 @@
-// 测试文件操作错误信息细分
-// 验证 fs.open 失败时返回详细的错误信息
+; 测试文件操作错误信息细分
+; 验证 fs.open 失败时返回详细的错误信息
 
 print('--- 测试 fs.open 错误信息 ---')
 print('')
 
-// 测试 1: 文件不存在 (ENOENT = 2)
+; 测试 1: 文件不存在 (ENOENT = 2)
 print('测试 1: 文件不存在')
 print('  路径: /nonexistent/file-12345.txt')
 f1 ?file = fs.open('/nonexistent/file-12345.txt', {
@@ -18,7 +18,7 @@ f1: {
 
 print('')
 
-// 测试 2: 尝试打开目录作为文件
+; 测试 2: 尝试打开目录作为文件
 print('测试 2: 尝试打开目录')
 print('  路径: /tmp')
 f2 ?file = fs.open('/tmp', {
@@ -32,7 +32,7 @@ f2: {
 
 print('')
 
-// 测试 3: 成功创建并打开文件
+; 测试 3: 成功创建并打开文件
 print('测试 3: 成功打开文件')
 print('  路径: /tmp/nolang-test-err.txt')
 f3 ?file = fs.open('/tmp/nolang-test-err.txt', {

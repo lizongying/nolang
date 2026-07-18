@@ -1,45 +1,45 @@
-// argon2 — Argon2id 記憶體困難金鑰推導函數（RFC 9106）
-//
-// Argon2 是 Password Hashing Competition 的優勝者。
-// Argon2id 是混合模式，同時抵抗時間和空間攻擊。
-//
-// 使用 Blake2b 作為底層哈希函數。
-//
-// 用法：
-//   # std/hash/argon2
-//   password []byte = 'password'
-//   salt []byte = 'somesalt'
-//   // 參數: time_cost=3, memory_cost=4096, parallelism=1, output_len=32
-//   derived = argon2id(password, salt, 3, 4096, 1, 32)
+; argon2 — Argon2id 記憶體困難金鑰推導函數（RFC 9106）
+;
+; Argon2 是 Password Hashing Competition 的優勝者。
+; Argon2id 是混合模式，同時抵抗時間和空間攻擊。
+;
+; 使用 Blake2b 作為底層哈希函數。
+;
+; 用法：
+;   # std/hash/argon2
+;   password []byte = 'password'
+;   salt []byte = 'somesalt'
+;   // 參數: time_cost=3, memory_cost=4096, parallelism=1, output_len=32
+;   derived = argon2id(password, salt, 3, 4096, 1, 32)
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// Argon2 版本
+; Argon2 版本
 ARGON2-VERSION = 19
 
-// Argon2 類型
+; Argon2 類型
 ARGON2-ID = 2
 
-// 區塊大小（1024 位元組 = 128 × 8 位元組）
+; 區塊大小（1024 位元組 = 128 × 8 位元組）
 ARGON2-BLOCK-SIZE = 1024
 ARGON2-BLOCK-QWORDS = 128
 
-// 64-bit 全 1 遮罩
+; 64-bit 全 1 遮罩
 ARGON2-MASK u64 = 18446744073709551615
 
-// ═══════════════════════════════════════════════
-// 輔助函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 輔助函數
+; ═══════════════════════════════════════════════
 
-// rotr64: 64-bit 循環右移
+; rotr64: 64-bit 循環右移
 argon2-rotr = (x u64, n i64) (r u64) {
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
 }
 
-// Blake2b G 函數（用於 Argon2 壓縮函數）
-// 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
+; Blake2b G 函數（用於 Argon2 壓縮函數）
+; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
 argon2-blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
     v[d] = argon2-rotr(v[d] ^ v[a], 32)
@@ -51,16 +51,16 @@ argon2-blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
     v[b] = argon2-rotr(v[b] ^ v[c], 63)
 }
 
-// ═══════════════════════════════════════════════
-// 可變長度 Blake2b（H'）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 可變長度 Blake2b（H'）
+; ═══════════════════════════════════════════════
 
-// argon2-h-prime: 可變長度 Blake2b
-// input []byte: 輸入資料
-// out-len i64: 輸出長度
-// 返回 out []byte: 輸出雜湊
+; argon2-h-prime: 可變長度 Blake2b
+; input []byte: 輸入資料
+; out-len i64: 輸出長度
+; 返回 out []byte: 輸出雜湊
 argon2-h-prime = (input []byte, out-len i64) (out []byte) {
-    // 輸出長度的 32-bit 小端表示
+    ; 輸出長度的 32-bit 小端表示
     len-bytes [4]byte
     len-bytes[0] = out-len & 255
     len-bytes[1] = (out-len >> 8) & 255
@@ -69,8 +69,8 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 
     {
         out-len <= 64 -> {
-            // Blake2b 輸出，參數: out_len 作為 salt
-            // 構建輸入: len_bytes || input
+            ; Blake2b 輸出，參數: out_len 作為 salt
+            ; 構建輸入: len_bytes || input
             combined []byte
             combined[0] = len-bytes[0]
             combined[1] = len-bytes[1]
@@ -80,8 +80,8 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
                 combined[4 + i] = input[i]
             }
 
-            // 使用 Blake2b 自定義輸出長度
-            // 由於 blake2b 固定輸出 64 位元組，這裡截斷
+            ; 使用 Blake2b 自定義輸出長度
+            ; 由於 blake2b 固定輸出 64 位元組，這裡截斷
             hash [64]byte
             hash = blake2.blake2b(combined)
             i <- [0..out-len): {
@@ -89,8 +89,8 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
             }
         }
         -> {
-            // 輸出 > 64 位元組，需要多次 Blake2b
-            // V = Blake2b(len_bytes || input)
+            ; 輸出 > 64 位元組，需要多次 Blake2b
+            ; V = Blake2b(len_bytes || input)
             combined []byte
             combined[0] = len-bytes[0]
             combined[1] = len-bytes[1]
@@ -102,7 +102,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
             v [64]byte
             v = blake2.blake2b(combined)
 
-            // 輸出前 32 位元組
+            ; 輸出前 32 位元組
             i <- [0..32): {
                 out[i] = v[i]
             }
@@ -118,7 +118,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
                 remaining = remaining - 32
             }
 
-            // 最後一個區塊
+            ; 最後一個區塊
             last-hash [64]byte
             last-hash = blake2.blake2b(v)
             i <- [0..remaining): {
@@ -128,33 +128,33 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 壓縮函數 G
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 壓縮函數 G
+; ═══════════════════════════════════════════════
 
-// argon2-compress: Argon2 壓縮函數 G(X, Y)
-// x []byte: 1024 位元組區塊 X
-// y []byte: 1024 位元組區塊 Y
-// 返回 out []byte: 1024 位元組結果
+; argon2-compress: Argon2 壓縮函數 G(X, Y)
+; x []byte: 1024 位元組區塊 X
+; y []byte: 1024 位元組區塊 Y
+; 返回 out []byte: 1024 位元組結果
 argon2-compress = (x []byte, y []byte) (out []byte) {
-    // R = X XOR Y
+    ; R = X XOR Y
     r []byte
     i <- [0..1024): {
         r[i] = (x[i] & 255) ^ (y[i] & 255)
     }
 
-    // 載入為 128 個 u64（16×8 矩陣）
+    ; 載入為 128 個 u64（16×8 矩陣）
     v [128]u64
     i <- [0..128): {
         off = i * 8
         v[i] = (r[off] & 255) | ((r[off + 1] & 255) << 8) | ((r[off + 2] & 255) << 16) | ((r[off + 3] & 255) << 24) | ((r[off + 4] & 255) as u64 << 32) | ((r[off + 5] & 255) as u64 << 40) | ((r[off + 6] & 255) as u64 << 48) | ((r[off + 7] & 255) as u64 << 56)
     }
 
-    // 應用 P 函數（Blake2b 排列）到每行
+    ; 應用 P 函數（Blake2b 排列）到每行
     i <- [0..8): {
-        // 行 i: v[16*i .. 16*i+15]
+        ; 行 i: v[16*i .. 16*i+15]
         base = i * 16
-        // 兩輪 G
+        ; 兩輪 G
         argon2-blake-g(v, base + 0, base + 4, base + 8, base + 12, 0, 0)
         argon2-blake-g(v, base + 1, base + 5, base + 9, base + 13, 0, 0)
         argon2-blake-g(v, base + 2, base + 6, base + 10, base + 14, 0, 0)
@@ -165,7 +165,7 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
         argon2-blake-g(v, base + 3, base + 4, base + 9, base + 14, 0, 0)
     }
 
-    // 應用 P 函數到每列
+    ; 應用 P 函數到每列
     i <- [0..8): {
         base = i
         argon2-blake-g(v, base + 0, base + 32, base + 64, base + 96, 0, 0)
@@ -186,7 +186,7 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
         argon2-blake-g(v, base + 23, base + 55, base + 87, base + 119, 0, 0)
     }
 
-    // 輸出 = (X XOR Y) XOR Z（即 R XOR P(R)）
+    ; 輸出 = (X XOR Y) XOR Z（即 R XOR P(R)）
     i <- [0..128): {
         off = i * 8
         val = v[i]
@@ -201,74 +201,74 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// Argon2id 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Argon2id 公開 API
+; ═══════════════════════════════════════════════
 
-// argon2id: Argon2id 金鑰推導
-// password []byte: 密碼
-// salt []byte: 鹽值
-// time-cost i64: 時間成本（迭代次數，如 3）
-// memory-cost i64: 記憶體成本（KB，如 4096 = 4MB）
-// parallelism i64: 並行度（如 1）
-// out-len i64: 輸出長度（位元組）
-// 返回 out []byte: 推導出的金鑰
+; argon2id: Argon2id 金鑰推導
+; password []byte: 密碼
+; salt []byte: 鹽值
+; time-cost i64: 時間成本（迭代次數，如 3）
+; memory-cost i64: 記憶體成本（KB，如 4096 = 4MB）
+; parallelism i64: 並行度（如 1）
+; out-len i64: 輸出長度（位元組）
+; 返回 out []byte: 推導出的金鑰
 argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism i64, out-len i64) (out []byte) {
-    // 計算記憶體區塊數
+    ; 計算記憶體區塊數
     m = memory-cost / (4 * parallelism) * 4 * parallelism
     m < 8 * parallelism -> m = 8 * parallelism
     lanes = parallelism
     blocks = m
     blocks-per-lane = blocks / lanes
 
-    // 構建 H0 輸入
-    // H0 = Blake2b(p || tau || m || t || v || y || len(P) || P || len(S) || S || len(K) || K || len(X) || X)
+    ; 構建 H0 輸入
+    ; H0 = Blake2b(p || tau || m || t || v || y || len(P) || P || len(S) || S || len(K) || K || len(X) || X)
     h0-input []byte
     pos = 0
 
-    // parallelism (32-bit LE)
+    ; parallelism (32-bit LE)
     h0-input[pos + 0] = parallelism & 255
     h0-input[pos + 1] = (parallelism >> 8) & 255
     h0-input[pos + 2] = (parallelism >> 16) & 255
     h0-input[pos + 3] = (parallelism >> 24) & 255
     pos = pos + 4
 
-    // out-len (32-bit LE)
+    ; out-len (32-bit LE)
     h0-input[pos + 0] = out-len & 255
     h0-input[pos + 1] = (out-len >> 8) & 255
     h0-input[pos + 2] = (out-len >> 16) & 255
     h0-input[pos + 3] = (out-len >> 24) & 255
     pos = pos + 4
 
-    // memory-cost m (32-bit LE)
+    ; memory-cost m (32-bit LE)
     h0-input[pos + 0] = m & 255
     h0-input[pos + 1] = (m >> 8) & 255
     h0-input[pos + 2] = (m >> 16) & 255
     h0-input[pos + 3] = (m >> 24) & 255
     pos = pos + 4
 
-    // time-cost t (32-bit LE)
+    ; time-cost t (32-bit LE)
     h0-input[pos + 0] = time-cost & 255
     h0-input[pos + 1] = (time-cost >> 8) & 255
     h0-input[pos + 2] = (time-cost >> 16) & 255
     h0-input[pos + 3] = (time-cost >> 24) & 255
     pos = pos + 4
 
-    // version v (32-bit LE) = 0x13
+    ; version v (32-bit LE) = 0x13
     h0-input[pos + 0] = ARGON2-VERSION & 255
     h0-input[pos + 1] = (ARGON2-VERSION >> 8) & 255
     h0-input[pos + 2] = 0
     h0-input[pos + 3] = 0
     pos = pos + 4
 
-    // type y (32-bit LE) = 2 (Argon2id)
+    ; type y (32-bit LE) = 2 (Argon2id)
     h0-input[pos + 0] = ARGON2-ID & 255
     h0-input[pos + 1] = 0
     h0-input[pos + 2] = 0
     h0-input[pos + 3] = 0
     pos = pos + 4
 
-    // len(P) (32-bit LE) || P
+    ; len(P) (32-bit LE) || P
     pw-len = password.len
     h0-input[pos + 0] = pw-len & 255
     h0-input[pos + 1] = (pw-len >> 8) & 255
@@ -280,7 +280,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     }
     pos = pos + pw-len
 
-    // len(S) (32-bit LE) || S
+    ; len(S) (32-bit LE) || S
     salt-len = salt.len
     h0-input[pos + 0] = salt-len & 255
     h0-input[pos + 1] = (salt-len >> 8) & 255
@@ -292,7 +292,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     }
     pos = pos + salt-len
 
-    // len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
+    ; len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
     h0-input[pos + 0] = 0
     h0-input[pos + 1] = 0
     h0-input[pos + 2] = 0
@@ -304,31 +304,31 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     h0-input[pos + 3] = 0
     pos = pos + 4
 
-    // H0 = Blake2b(h0-input)
+    ; H0 = Blake2b(h0-input)
     h0 [64]byte
     h0 = blake2.blake2b(h0-input)
 
-    // 初始化記憶體矩陣
-    // 簡化：使用單個 lane（parallelism=1）
-    // 對於 parallelism > 1，需要更複雜的處理
+    ; 初始化記憶體矩陣
+    ; 簡化：使用單個 lane（parallelism=1）
+    ; 對於 parallelism > 1，需要更複雜的處理
 
-    // 計算每個區塊的初始值
-    // B[0] = H'(H0 || 0 || lane || 0)
-    // B[1] = H'(H0 || 1 || lane || 0)
-    // ...
+    ; 計算每個區塊的初始值
+    ; B[0] = H'(H0 || 0 || lane || 0)
+    ; B[1] = H'(H0 || 1 || lane || 0)
+    ; ...
 
-    // 記憶體矩陣（簡化為單 lane）
+    ; 記憶體矩陣（簡化為單 lane）
     mem []byte
 
-    // 由於記憶體限制，使用 blocks-per-lane 個 1024-byte 區塊
+    ; 由於記憶體限制，使用 blocks-per-lane 個 1024-byte 區塊
 
-    // 初始化前兩個區塊
+    ; 初始化前兩個區塊
     init-input []byte
     i <- [0..64): {
         init-input[i] = h0[i]
     }
 
-    // B[0]: H0 || 0 (32-bit LE) || 0 (32-bit LE)
+    ; B[0]: H0 || 0 (32-bit LE) || 0 (32-bit LE)
     init-input[64] = 0
     init-input[65] = 0
     init-input[66] = 0
@@ -341,29 +341,29 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     block0 []byte
     block0 = argon2-h-prime(init-input, 1024)
 
-    // B[1]: H0 || 1 (32-bit LE) || 0 (32-bit LE)
+    ; B[1]: H0 || 1 (32-bit LE) || 0 (32-bit LE)
     init-input[68] = 1
     block1 []byte
     block1 = argon2-h-prime(init-input, 1024)
 
-    // 複製到記憶體
+    ; 複製到記憶體
     i <- [0..1024): {
         mem[i] = block0[i]
         mem[1024 + i] = block1[i]
     }
 
-    // 填充剩餘區塊
+    ; 填充剩餘區塊
     curr-idx = 2
     for curr-idx < blocks-per-lane {
-        // 參考區塊（前一個）
+        ; 參考區塊（前一個）
         prev-idx = curr-idx - 1
 
-        // Argon2id: 第一 pass 的前半部分使用 data-independent 定址
-        // 簡化：使用前一個區塊作為參考
+        ; Argon2id: 第一 pass 的前半部分使用 data-independent 定址
+        ; 簡化：使用前一個區塊作為參考
         ref-idx = curr-idx - 1
         ref-idx < 0 -> ref-idx = 0
 
-        // 計算新區塊 = G(mem[prev], mem[ref])
+        ; 計算新區塊 = G(mem[prev], mem[ref])
         new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
@@ -373,7 +373,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         curr-idx = curr-idx + 1
     }
 
-    // 迭代 passes
+    ; 迭代 passes
     pass <- [1..time-cost): {
         curr-idx = 0
         for curr-idx < blocks-per-lane {
@@ -382,7 +382,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
             ref-idx = curr-idx
             ref-idx < 0 -> ref-idx = 0
 
-            // 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
+            ; 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
             new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {
@@ -393,14 +393,14 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
         }
     }
 
-    // 最終區塊 = XOR 所有 lane 的最後區塊
-    // 簡化（單 lane）：最終區塊 = 最後一個區塊
+    ; 最終區塊 = XOR 所有 lane 的最後區塊
+    ; 簡化（單 lane）：最終區塊 = 最後一個區塊
     final-block []byte
     last-idx = blocks-per-lane - 1
     i <- [0..1024): {
         final-block[i] = mem[last-idx * 1024 + i]
     }
 
-    // 輸出 = H'(final_block, out_len)
+    ; 輸出 = H'(final_block, out_len)
     out = argon2-h-prime(final-block, out-len)
 }

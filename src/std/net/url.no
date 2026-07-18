@@ -1,44 +1,44 @@
-// url — URL 解析與建構
-//
-// 提供 URL 的解析、建構、編碼與解碼功能。
-// 支援 scheme://host:port/path?query#fragment 格式。
-//
-// 用法：
-//   u = url-parse('https://example.com:8080/api/v1?key=value#section')
-//   u.ok -> {
-//       print(u.scheme)    // 'https'
-//       print(u.host)      // 'example.com'
-//       print(u.port)      // 8080
-//       print(u.path)      // '/api/v1'
-//       print(u.query)     // 'key=value'
-//       print(u.fragment)  // 'section'
-//
+; url — URL 解析與建構
+;
+; 提供 URL 的解析、建構、編碼與解碼功能。
+; 支援 scheme://host:port/path?query#fragment 格式。
+;
+; 用法：
+;   u = url-parse('https://example.com:8080/api/v1?key=value#section')
+;   u.ok -> {
+;       print(u.scheme)    // 'https'
+;       print(u.host)      // 'example.com'
+;       print(u.port)      // 8080
+;       print(u.path)      // '/api/v1'
+;       print(u.query)     // 'key=value'
+;       print(u.fragment)  // 'section'
+;
 
-//
-//   // 查詢參數
-//   q = u.get-query('key')  // 返回 ?str
-//
-//   // URL 編碼
-//   enc = url-encode('hello world!')  // 'hello%20world%21'
-//   dec = url-decode('hello%20world') // 'hello world'
-//
-//   // HTTP Basic 認證
-//   auth = url-basic-auth('user', 'pass')  // 'Basic dXNlcjpwYXNz'
+;
+;   // 查詢參數
+;   q = u.get-query('key')  // 返回 ?str
+;
+;   // URL 編碼
+;   enc = url-encode('hello world!')  // 'hello%20world%21'
+;   dec = url-decode('hello%20world') // 'hello world'
+;
+;   // HTTP Basic 認證
+;   auth = url-basic-auth('user', 'pass')  // 'Basic dXNlcjpwYXNz'
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// url-info: URL 解析結果
-// ok bool: 解析是否成功
-// scheme str: 協議（如 http, https）
-// host str: 主機名
-// port i64: 埠號（-1=未指定）
-// path str: 路徑（如 /api/v1）
-// query str: 查詢字串（不含 ?）
-// fragment str: 片段（不含 #）
-// user str: 用戶名（如 user:pass@host 中的 user）
-// password str: 密碼
+; url-info: URL 解析結果
+; ok bool: 解析是否成功
+; scheme str: 協議（如 http, https）
+; host str: 主機名
+; port i64: 埠號（-1=未指定）
+; path str: 路徑（如 /api/v1）
+; query str: 查詢字串（不含 ?）
+; fragment str: 片段（不含 #）
+; user str: 用戶名（如 user:pass@host 中的 user）
+; password str: 密碼
 url-info {
     ok bool
     scheme str
@@ -51,13 +51,13 @@ url-info {
     password str
 }
 
-// ═══════════════════════════════════════════════
-// URL 解析
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; URL 解析
+; ═══════════════════════════════════════════════
 
-// url-parse: 解析 URL 字串
-// url-str str: 完整 URL
-// 返回 u url-info: 解析結果（u.ok=true=成功）
+; url-parse: 解析 URL 字串
+; url-str str: 完整 URL
+; 返回 u url-info: 解析結果（u.ok=true=成功）
 url-parse = (url-str str) (u url-info) {
     u.ok = false
     u.scheme = ''
@@ -73,10 +73,10 @@ url-parse = (url-str str) (u url-info) {
     n == 0 -> return
     pos = 0
 
-    // 解析 scheme（尋找 ://）
+    ; 解析 scheme（尋找 ://）
     scheme-end = url-str.index('://')
     scheme-end < 0 -> {
-        // 無 scheme，視為相對路徑
+        ; 無 scheme，視為相對路徑
         u.path = url-str
         u.ok = true
         return
@@ -84,31 +84,31 @@ url-parse = (url-str str) (u url-info) {
     u.scheme = url-str.slice(0, scheme-end)
     pos = scheme-end + 3
 
-    // 解析 fragment（#）
+    ; 解析 fragment（#）
     frag-pos = url-str.index-from('#', pos)
     frag-pos >= 0 -> {
         u.fragment = url-str.slice(frag-pos + 1, n)
         n = frag-pos
     }
 
-    // 解析 query（?）
+    ; 解析 query（?）
     query-pos = url-str.index-from('?', pos)
     query-pos >= 0 && query-pos < n -> {
         u.query = url-str.slice(query-pos + 1, n)
         n = query-pos
     }
 
-    // 解析 path（/）
+    ; 解析 path（/）
     path-pos = url-str.index-from('/', pos)
     path-pos >= 0 && path-pos < n -> {
         u.path = url-str.slice(path-pos, n)
         n = path-pos
     }
 
-    // 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
+    ; 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
     authority = url-str.slice(pos, n)
 
-    // 解析 user:pass@
+    ; 解析 user:pass@
     at-pos = authority.index('@')
     at-pos >= 0 -> {
         userinfo = authority.slice(0, at-pos)
@@ -123,7 +123,7 @@ url-parse = (url-str str) (u url-info) {
         }
     }
 
-    // 解析 host:port
+    ; 解析 host:port
     colon-pos = authority.index(':')
     {
         colon-pos >= 0 -> {
@@ -144,7 +144,7 @@ url-parse = (url-str str) (u url-info) {
         -> u.host = authority
     }
 
-    // 設定預設埠號
+    ; 設定預設埠號
     u.port < 0 -> {
         u.scheme == 'http' -> u.port = 80
         u.scheme == 'https' -> u.port = 443
@@ -157,9 +157,9 @@ url-parse = (url-str str) (u url-info) {
     u.ok = true
 }
 
-// url-info.get-query: 取得查詢參數值
-// key str: 參數名
-// 返回 val ?str: ok=參數值, nil=未找到
+; url-info.get-query: 取得查詢參數值
+; key str: 參數名
+; 返回 val ?str: ok=參數值, nil=未找到
 url-info.get-query = (key str) (val ?str) {
     val = nil
     .query.len == 0 -> return
@@ -167,7 +167,7 @@ url-info.get-query = (key str) (val ?str) {
     pos = 0
     !! {
         pos >= q.len -> *
-        // 找下一個 &
+        ; 找下一個 &
         next-amp = q.index-from('&', pos)
         pair-end = next-amp
         pair-end < 0 -> pair-end = q.len
@@ -194,16 +194,16 @@ url-info.get-query = (key str) (val ?str) {
     }
 }
 
-// url-info.set-query: 設定查詢參數值
-// key str: 參數名
-// value str: 參數值
+; url-info.set-query: 設定查詢參數值
+; key str: 參數名
+; value str: 參數值
 url-info.set-query = (key str, value str) {
     .query.len == 0 -> {
         .query = key - '=' - value
         return
     }
 
-    // 檢查是否已存在
+    ; 檢查是否已存在
     found = false
     q = .query
     new-query = ''
@@ -236,8 +236,8 @@ url-info.set-query = (key str, value str) {
     .query = new-query
 }
 
-// url-info.to-str: 將 URL 重新組裝為字串
-// 返回 out str: 完整 URL
+; url-info.to-str: 將 URL 重新組裝為字串
+; 返回 out str: 完整 URL
 url-info.to-str = () (out str) {
     out = ''
     .scheme.len > 0 -> out = out - .scheme - '://'
@@ -248,7 +248,7 @@ url-info.to-str = () (out str) {
     }
     out = out - .host
 
-    // 只在埠號非預設值時輸出
+    ; 只在埠號非預設值時輸出
     show-port = false
     {
         .scheme == 'http' && .port != 80 -> show-port = true
@@ -271,19 +271,19 @@ url-info.to-str = () (out str) {
     .fragment.len > 0 -> out = out - '#' - .fragment
 }
 
-// ═══════════════════════════════════════════════
-// URL 編碼/解碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; URL 編碼/解碼
+; ═══════════════════════════════════════════════
 
-// url-encode: URL 編碼（百分號編碼）
-// s str: 原始字串
-// 返回 out str: 編碼後字串
+; url-encode: URL 編碼（百分號編碼）
+; s str: 原始字串
+; 返回 out str: 編碼後字串
 url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len): {
         c = s[i] & 255
-        // 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
+        ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
             c >= 65 && c <= 90 -> keep = true
@@ -306,15 +306,15 @@ url-encode = (s str) (out str) {
     }
 }
 
-// url-encode-component: URL 編碼（元件模式，也編碼 / 和 ?）
-// s str: 原始字串
-// 返回 out str: 編碼後字串
+; url-encode-component: URL 編碼（元件模式，也編碼 / 和 ?）
+; s str: 原始字串
+; 返回 out str: 編碼後字串
 url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len): {
         c = s[i] & 255
-        // 只保留 A-Z, a-z, 0-9, -, _, ., ~
+        ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
             c >= 65 && c <= 90 -> keep = true
@@ -337,9 +337,9 @@ url-encode-component = (s str) (out str) {
     }
 }
 
-// url-decode: URL 解碼（百分號解碼）
-// s str: 編碼字串
-// 返回 out str: 解碼後字串
+; url-decode: URL 解碼（百分號解碼）
+; s str: 編碼字串
+; 返回 out str: 解碼後字串
 url-decode = (s str) (out str) {
     out = ''
     i = 0
@@ -348,13 +348,13 @@ url-decode = (s str) (out str) {
         {
             c == 37 -> {
                 i + 2 < s.len -> {
-                    // %XX
+                    ; %XX
 
                     h1 = s[i + 1]
                     h2 = s[i + 2]
                     val = 0
 
-                    // 解析十六進制
+                    ; 解析十六進制
                     {
                         h1 >= 48 && h1 <= 57 -> val = (h1 - 48) << 4
                         h1 >= 65 && h1 <= 70 -> val = (h1 - 55) << 4
@@ -371,22 +371,22 @@ url-decode = (s str) (out str) {
                     i = i + 2
                 }
             }
-            c == 43 -> out[out.len] = 32   // + 號轉空格
+            c == 43 -> out[out.len] = 32   ; + 號轉空格
             -> out[out.len] = c
         }
         i = i + 1
     }
 }
 
-// ═══════════════════════════════════════════════
-// 查詢字串建構
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 查詢字串建構
+; ═══════════════════════════════════════════════
 
-// url-build-query: 從鍵值對建構查詢字串
-// keys [16]str: 鍵陣列
-// values [16]str: 值陣列
-// count i64: 鍵值對數量
-// 返回 out str: 查詢字串（如 key1=val1&key2=val2）
+; url-build-query: 從鍵值對建構查詢字串
+; keys [16]str: 鍵陣列
+; values [16]str: 值陣列
+; count i64: 鍵值對數量
+; 返回 out str: 查詢字串（如 key1=val1&key2=val2）
 url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
@@ -397,18 +397,18 @@ url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     }
 }
 
-// url-join: 連接基礎 URL 和路徑
-// base str: 基礎 URL
-// path-str str: 要附加的路徑
-// 返回 out str: 完整 URL
+; url-join: 連接基礎 URL 和路徑
+; base str: 基礎 URL
+; path-str str: 要附加的路徑
+; 返回 out str: 完整 URL
 url-join = (base str, path-str str) (out str) {
-    // 如果 path-str 是完整 URL，直接返回
+    ; 如果 path-str 是完整 URL，直接返回
     path-str.starts-with('http://') || path-str.starts-with('https://') -> {
         out = path-str
         return
     }
 
-    // 如果以 / 開頭，替換基礎路徑
+    ; 如果以 / 開頭，替換基礎路徑
     path-str.len > 0 && path-str[0] == 47 -> {
         u url-info
         u = url-parse(base)
@@ -423,7 +423,7 @@ url-join = (base str, path-str str) (out str) {
         }
     }
 
-    // 相對路徑：找到最後一個 / 並替換
+    ; 相對路徑：找到最後一個 / 並替換
     slash-pos = -1
     i = base.len - 1
     for i >= 0 {
@@ -434,7 +434,7 @@ url-join = (base str, path-str str) (out str) {
         i = i - 1
     }
     {
-        slash-pos >= 0 -> { // 確保不是 protocol:// 中的 //
+        slash-pos >= 0 -> { ; 確保不是 protocol:// 中的 //
             slash-pos > 0 && base[slash-pos - 1] == 58 -> out = base - '/' - path-str
             -> out = base.slice(0, slash-pos + 1) - path-str
         }
@@ -442,31 +442,31 @@ url-join = (base str, path-str str) (out str) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// HTTP Basic 認證
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; HTTP Basic 認證
+; ═══════════════════════════════════════════════
 
-// url-basic-auth: 產生 HTTP Basic 認證標頭值
-// user str: 用戶名
-// password str: 密碼
-// 返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
+; url-basic-auth: 產生 HTTP Basic 認證標頭值
+; user str: 用戶名
+; password str: 密碼
+; 返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
 url-basic-auth = (user str, password str) (out str) {
-    // 拼接 user:password
+    ; 拼接 user:password
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
     out = 'Basic ' - enc-str
 }
 
-// url-parse-basic-auth: 解析 HTTP Basic 認證標頭
-// header str: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
-// 返回 user str: 用戶名（空=解析失敗）
-// 返回 password str: 密碼
+; url-parse-basic-auth: 解析 HTTP Basic 認證標頭
+; header str: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
+; 返回 user str: 用戶名（空=解析失敗）
+; 返回 password str: 密碼
 url-parse-basic-auth = (header str) (user str, password str) {
     user = ''
     password = ''
 
-    // 檢查 'Basic ' 前綴
+    ; 檢查 'Basic ' 前綴
     prefix = 'Basic '
     header.starts-with(prefix) == false -> return
     b64 = header.slice(prefix.len, header.len)
@@ -478,7 +478,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
         err -> return
     }
 
-    // 尋找冒號分隔符
+    ; 尋找冒號分隔符
     colon = -1
     i <- [0..raw.len): {
         raw[i] == 58 -> {
@@ -488,7 +488,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
     }
     colon < 0 -> return
 
-    // 提取 user 和 password
+    ; 提取 user 和 password
     user-bytes []byte
     j <- [0..colon): {
         user-bytes[j] = raw[j]

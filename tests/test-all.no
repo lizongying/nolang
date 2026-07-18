@@ -1,19 +1,19 @@
-// Nolang 综合测试
+; Nolang 综合测试
 
-// 变量声明（隐式类型推断）
-x = 1  // int64
-y = 1.0  // float64
-name = 'hello'  // string
-flag = true  // bool
+; 变量声明（隐式类型推断）
+x = 1  ; int64
+y = 1.0  ; float64
+name = 'hello'  ; string
+flag = true  ; bool
 
-// 显式类型标注
-a i8 = 2  // int8 类型
+; 显式类型标注
+a i8 = 2  ; int8 类型
 
-// 中连接符变量名
+; 中连接符变量名
 foo-bar = 42
 hello-world = 'Hello World'
 
-// 函数定义
+; 函数定义
 add = (a i64, b i64) {
     result = a + b
     print('result:', result)
@@ -24,12 +24,12 @@ add1 = (a i64, b i64) (c i64, d i64) {
     print('result:', result)
 }
 
-// 匿名函数赋值
+; 匿名函数赋值
 f = (x i64, out i64) {
     print('doubled:', out)
 }
 
-// 条件循环
+; 条件循环
 sum = 0
 j <- [0..5): {
     sum = sum + j
@@ -37,22 +37,22 @@ j <- [0..5): {
 i = 5
 print('sum:', sum)
 
-// 数组和切片
+; 数组和切片
 arr [3] = [1, 2, 3]
 slice [] = [4, 5, 6]
 print('array:', arr)
 print('slice[0]:', slice[0])
 
-// 三元表达式
+; 三元表达式
 max = sum > 10 ? sum : 10
 print('max:', max)
 
-// 调用函数
+; 调用函数
 add(10, 20)
 f(5, 0)
 f(a, 10)
 
-// 5 次循環
+; 5 次循環
 5 * {
     sum = sum + i
     i = i + 1

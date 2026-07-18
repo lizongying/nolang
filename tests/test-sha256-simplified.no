@@ -1,5 +1,5 @@
-// test-sha256-simplified — 簡化版 sha256 測試
-// # std/hash/sha256
+; test-sha256-simplified — 簡化版 sha256 測試
+; # std/hash/sha256
 
 print('start')
 msg []byte = with-cap(3)
@@ -7,7 +7,7 @@ msg[0] = 0x61
 msg[1] = 0x62
 msg[2] = 0x63
 
-// 模擬 sha256 的前幾步
+; 模擬 sha256 的前幾步
 dlen i64 = 3
 print('dlen')
 print(dlen)
@@ -29,20 +29,20 @@ total-len i64 = dlen + 1 + pad-len + 8
 print('total-len')
 print(total-len)
 
-// 測試 padded []byte
+; 測試 padded []byte
 padded []byte = with-cap(total-len)
 i <- [0..total-len): {
     padded[i] = 0
 }
 print('padded init done')
 
-// 複製原始資料
+; 複製原始資料
 i <- [0..dlen): {
     padded[i] = msg[i]
 }
 print('copy done')
 
-// 填充 0x80
+; 填充 0x80
 padded[dlen] = 128
 print('0x80 done')
 

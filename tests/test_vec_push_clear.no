@@ -1,4 +1,4 @@
-// test_vec_push_clear — vec.push and vec.clear
+; test_vec_push_clear — vec.push and vec.clear
 print('start')
 
 data []i64

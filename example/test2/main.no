@@ -1,2 +1,2 @@
-// Main entry point
+; Main entry point
 print('Hello, Nolang!')

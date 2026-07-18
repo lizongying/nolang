@@ -1,51 +1,51 @@
-// number — 數字操作
-//
-// 泛型數字函數，支援 i64、f64 等數值型別。
-// 包含：max, min, abs, clamp, sign, even, odd,
-// gcd, lcm, pow, div, mod, swap, is-nan, is-inf
-// 範圍常數：i8/i16/i32/i64/u8/u16/u32/u64 的 MIN/MAX
+; number — 數字操作
+;
+; 泛型數字函數，支援 i64、f64 等數值型別。
+; 包含：max, min, abs, clamp, sign, even, odd,
+; gcd, lcm, pow, div, mod, swap, is-nan, is-inf
+; 範圍常數：i8/i16/i32/i64/u8/u16/u32/u64 的 MIN/MAX
 
-// max: 回傳最大值（variadic，支援 num 所有成員）
+; max: 回傳最大值（variadic，支援 num 所有成員）
 
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
 num = int | float
 
-// ═══════════════════════════════════════════════
-// 數值範圍常數（用於範圍檢查，如 str.to-i8 等）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 數值範圍常數（用於範圍檢查，如 str.to-i8 等）
+; ═══════════════════════════════════════════════
 
-// i8: -128 ~ 127
+; i8: -128 ~ 127
 i8.MIN = -128
 i8.MAX = 127
 
-// i16: -32768 ~ 32767
+; i16: -32768 ~ 32767
 i16.MIN = -32768
 i16.MAX = 32767
 
-// i32: -2147483648 ~ 2147483647
+; i32: -2147483648 ~ 2147483647
 i32.MIN = -2147483648
 i32.MAX = 2147483647
 
-// i64: -9223372036854775808 ~ 9223372036854775807
-// MIN 不可直接寫為字面量（解析器不支援），用 -MAX - 1 表達
+; i64: -9223372036854775808 ~ 9223372036854775807
+; MIN 不可直接寫為字面量（解析器不支援），用 -MAX - 1 表達
 i64.MAX = 9223372036854775807
 i64.MIN = 0 - 9223372036854775807 - 1
 
-// u8: 0 ~ 255
+; u8: 0 ~ 255
 u8.MIN = 0
 u8.MAX = 255
 
-// u16: 0 ~ 65535
+; u16: 0 ~ 65535
 u16.MIN = 0
 u16.MAX = 65535
 
-// u32: 0 ~ 4294967295
+; u32: 0 ~ 4294967295
 u32.MIN = 0
 u32.MAX = 4294967295
 
-// u64: 0 ~ 18446744073709551615
-// MAX 無法用整數字面量表示（超過 i64 上限），可透過 0 - 1 間接取得
+; u64: 0 ~ 18446744073709551615
+; MAX 無法用整數字面量表示（超過 i64 上限），可透過 0 - 1 間接取得
 u64.MIN = 0
 u64.MAX = 0 - 1
 
@@ -72,8 +72,8 @@ abs = (a num) (r num) {
     }
 }
 
-// clamp: 限制在 [lo, hi] 範圍內
-// 用法：x.clamp(lo, hi, r)
+; clamp: 限制在 [lo, hi] 範圍內
+; 用法：x.clamp(lo, hi, r)
 num.clamp = (lo num, hi num) (r num) {
     {
         . < lo -> r = lo
@@ -82,7 +82,7 @@ num.clamp = (lo num, hi num) (r num) {
     }
 }
 
-// sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
+; sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
@@ -91,19 +91,19 @@ num.sign = () (r num) {
     }
 }
 
-// even: 是否為偶數 — 對所有整數型別（含無符號）通用
+; even: 是否為偶數 — 對所有整數型別（含無符號）通用
 even = (a int) (yes bool) {
     r = a % 2
     yes = (r == 0)
 }
 
-// odd: 是否為奇數 — 對所有整數型別（含無符號）通用
+; odd: 是否為奇數 — 對所有整數型別（含無符號）通用
 odd = (a int) (yes bool) {
     r = a % 2
     yes = (r != 0)
 }
 
-// gcd: 最大公因數（輾轉相除法）
+; gcd: 最大公因數（輾轉相除法）
 gcd = (a int, b int) (r int) {
     a < 0 -> a = 0 - a
     b < 0 -> b = 0 - b
@@ -115,7 +115,7 @@ gcd = (a int, b int) (r int) {
     r = a
 }
 
-// lcm: 最小公倍數
+; lcm: 最小公倍數
 lcm = (a int, b int) (r int) {
     a == 0 || b == 0 -> {
         r = 0
@@ -125,7 +125,7 @@ lcm = (a int, b int) (r int) {
     r = a / g * b
 }
 
-// pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
+; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
 pow = (a int, n int) (r int) {
     r = 1
     for n > 0 {
@@ -134,25 +134,25 @@ pow = (a int, n int) (r int) {
     }
 }
 
-// i64-to-f64: 整數轉浮點
-// build-in (sitofp)
-// i64-to-f64 = (a i64) (r f64) {
-//     r = a
-// }
+; i64-to-f64: 整數轉浮點
+; build-in (sitofp)
+; i64-to-f64 = (a i64) (r f64) {
+;     r = a
+; }
 
-// f64-to-i64: 浮點轉整數（截斷）
-// build-in (fptosi)
-// f64-to-i64 = (a f64) (r i64) {
-//     r = a
-// }
+; f64-to-i64: 浮點轉整數（截斷）
+; build-in (fptosi)
+; f64-to-i64 = (a f64) (r i64) {
+;     r = a
+; }
 
-// ═══════════════════════════════════════════════
-// 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
+; ═══════════════════════════════════════════════
 
-// i64-to-str: 將 i64 轉為字串
-// 處理 0、正數、負數。不取絕對值（避免 i64.MIN 溢出），
-// 直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+; i64-to-str: 將 i64 轉為字串
+; 處理 0、正數、負數。不取絕對值（避免 i64.MIN 溢出），
+; 直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
 i64-to-str = (n i64) (out str) {
     n == 0 -> {
         out = with-cap(1)
@@ -182,7 +182,7 @@ i64-to-str = (n i64) (out str) {
     neg == 1 -> out[0] = 45
 }
 
-// u64-to-str: 將 u64 轉為字串
+; u64-to-str: 將 u64 轉為字串
 u64-to-str = (u u64) (out str) {
     u == 0 -> {
         out = with-cap(1)
@@ -205,8 +205,8 @@ u64-to-str = (u u64) (out str) {
     }
 }
 
-// char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
-// 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
+; char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
+; 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
 char-to-str = (c i64) (out str) {
     out = with-cap(4)
     {
@@ -229,11 +229,11 @@ char-to-str = (c i64) (out str) {
     }
 }
 
-// int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
-// transpiler 會將 i64.to-str() 等解析為 int.to-str()
-// 直接使用算術運算，避免 int → u64 的類型轉換問題
-// 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
-// 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+; int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
+; transpiler 會將 i64.to-str() 等解析為 int.to-str()
+; 直接使用算術運算，避免 int → u64 的類型轉換問題
+; 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
+; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
 int.to-str = () (out str) {
     . == 0 -> {
         out = with-cap(1)
@@ -264,62 +264,62 @@ int.to-str = () (out str) {
     neg == 1 -> out[0] = 45
 }
 
-// i64.to-str: i64 轉字串
+; i64.to-str: i64 轉字串
 i64.to-str = () (out str) {
     out = i64-to-str(.)
 }
 
-// i32.to-str: i32 轉字串（隱式拓寬至 i64）
+; i32.to-str: i32 轉字串（隱式拓寬至 i64）
 i32.to-str = () (out str) {
     out = i64-to-str(.)
 }
 
-// i16.to-str: i16 轉字串
+; i16.to-str: i16 轉字串
 i16.to-str = () (out str) {
     out = i64-to-str(.)
 }
 
-// i8.to-str: i8 轉字串
+; i8.to-str: i8 轉字串
 i8.to-str = () (out str) {
     out = i64-to-str(.)
 }
 
-// u64.to-str: u64 轉字串
+; u64.to-str: u64 轉字串
 u64.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-// u32.to-str: u32 轉字串（隱式拓寬至 u64）
+; u32.to-str: u32 轉字串（隱式拓寬至 u64）
 u32.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-// u16.to-str: u16 轉字串
+; u16.to-str: u16 轉字串
 u16.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-// u8.to-str: u8 轉字串
+; u8.to-str: u8 轉字串
 u8.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-// byte.to-str: byte 轉字串（無號，等同 u8）
+; byte.to-str: byte 轉字串（無號，等同 u8）
 byte.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-// ═══════════════════════════════════════════════
-// 浮點轉字串（Nolang 實現，取代 sprintf %g CLibCall）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 浮點轉字串（Nolang 實現，取代 sprintf %g CLibCall）
+; ═══════════════════════════════════════════════
 
 LN10 = 2.302585092994046
 
-// f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
-// 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
+; f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
+; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
 f64-to-str = (x f64) (out str) {
-    // 特殊值處理
-    // 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
+    ; 特殊值處理
+    ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
     x != x -> {
         out = 'nan'.copy()
         return
@@ -337,7 +337,7 @@ f64-to-str = (x f64) (out str) {
         return
     }
 
-    // 符號處理
+    ; 符號處理
     neg = 0
     ax f64 = x
     x < 0.0 -> {
@@ -345,15 +345,15 @@ f64-to-str = (x f64) (out str) {
         ax = 0.0 - x
     }
 
-    // 計算指數 e = floor(log10(ax))
+    ; 計算指數 e = floor(log10(ax))
     e i64 = f64-to-i64(floor(log10(ax)))
 
-    // 邊界調整：若 ax >= 10^(e+1)，則 e++
+    ; 邊界調整：若 ax >= 10^(e+1)，則 e++
     upper f64 = exp(i64-to-f64(e + 1) * LN10)
     ax >= upper -> e = e + 1
 
-    // 計算 6 位有效數字的整數尾數
-    // m = round(ax / 10^e * 100000)
+    ; 計算 6 位有效數字的整數尾數
+    ; m = round(ax / 10^e * 100000)
     base f64 = exp(i64-to-f64(e) * LN10)
     ax < base -> {
         e = e - 1
@@ -361,13 +361,13 @@ f64-to-str = (x f64) (out str) {
     }
     m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
 
-    // 四捨五入溢出處理
+    ; 四捨五入溢出處理
     m >= 1000000 -> {
         m = m / 10
         e = e + 1
     }
 
-    // 將 m 轉為 6 位數字字串（補前導零）
+    ; 將 m 轉為 6 位數字字串（補前導零）
     digits = with-cap(6)
     tmp = m
     i = 5
@@ -377,7 +377,7 @@ f64-to-str = (x f64) (out str) {
         i = i - 1
     }
 
-    // 找最後一個非零位（用於去尾隨零）
+    ; 找最後一個非零位（用於去尾隨零）
     last-nz = 0
     i = 5
     for i >= 0 {
@@ -388,13 +388,13 @@ f64-to-str = (x f64) (out str) {
         i = i - 1
     }
 
-    // 決定格式
+    ; 決定格式
     use-sci = 0
     e < -4 -> use-sci = 1
     e >= 6 -> use-sci = 1
 
     use-sci == 1 -> {
-        // 科學記號：d.ddddde±NN
+        ; 科學記號：d.ddddde±NN
         out = with-cap(20)
         pos = 0
         neg == 1 -> {
@@ -441,7 +441,7 @@ f64-to-str = (x f64) (out str) {
         return
     }
 
-    // 固定記號
+    ; 固定記號
     e >= 0 -> {
         int-digits = e + 1
         total = int-digits
@@ -475,7 +475,7 @@ f64-to-str = (x f64) (out str) {
         return
     }
 
-    // e < 0: 0.00dddd
+    ; e < 0: 0.00dddd
     lead-zeros = 0 - e - 1
     total = 2 + lead-zeros + last-nz + 1
     neg == 1 -> total = total + 1
@@ -503,67 +503,67 @@ f64-to-str = (x f64) (out str) {
     }
 }
 
-// f64.to-str: f64 轉字串（方法）
+; f64.to-str: f64 轉字串（方法）
 f64.to-str = () (out str) {
     out = f64-to-str(.)
 }
 
-// f32.to-str: f32 轉字串（方法）
-// 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
+; f32.to-str: f32 轉字串（方法）
+; 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
 f32.to-str = () (out str) {
     d f64 = f32-to-f64(.)
     out = f64-to-str(d)
 }
 
-// 注意：不定義 float.to-str 聯合方法。原因：
-// union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
-// 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
-// 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str。
+; 注意：不定義 float.to-str 聯合方法。原因：
+; union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
+; 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
+; 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str。
 
-// div: 整數除法，回傳商（a ÷ b）
-// b 為 0 時行為未定義（執行時期錯誤）
+; div: 整數除法，回傳商（a ÷ b）
+; b 為 0 時行為未定義（執行時期錯誤）
 div = (a int, b int) (q int) {
     q = a / b
 }
 
-// mod: 整數取模，回傳餘數（a % b）
-// b 為 0 時行為未定義（執行時期錯誤）
+; mod: 整數取模，回傳餘數（a % b）
+; b 為 0 時行為未定義（執行時期錯誤）
 mod = (a int, b int) (r int) {
     r = a % b
 }
 
-// swap: 交換兩個值
+; swap: 交換兩個值
 swap = (a t, b t) {
     tmp = a
     a = b
     b = tmp
 }
 
-// is-nan: 判斷是否為 NaN
+; is-nan: 判斷是否為 NaN
 float.is-nan = () (yes bool) {
     yes = . != .
 }
 
-// is-inf: 判斷是否為無窮大
+; is-inf: 判斷是否為無窮大
 float.is-inf = () (yes bool) {
     yes = . + . == .
 }
-// [n]num.zero / []num.zero — 使用 llvm.memset 置零
-// build-in (ForwardFunc: arr-zero → @llvm.memset.p0i8.i64)
-// 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
-// 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
-// [n]num.zero = () {
-//     i = 0
-//     for i < n {
-//         .[i] = 0
-//         i = i + 1
-//     }
-// }
-//
-// []num.zero = () {
-//     i = 0
-//     for i < .len() {
-//         .[i] = 0
-//         i = i + 1
-//     }
-// }
+; [n]num.zero / []num.zero — 使用 llvm.memset 置零
+; build-in (ForwardFunc: arr-zero → @llvm.memset.p0i8.i64)
+; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
+; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
+; [n]num.zero = () {
+;     i = 0
+;     for i < n {
+;         .[i] = 0
+;         i = i + 1
+;     }
+; }
+;
+; []num.zero = () {
+;     i = 0
+;     for i < .len() {
+;         .[i] = 0
+;         i = i + 1
+;     }
+; }

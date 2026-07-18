@@ -1,4 +1,4 @@
-// test-str-repeat-only — 測試 str.repeat 是否正常
+; test-str-repeat-only — 測試 str.repeat 是否正常
 print('start')
 space str = ' '
 print('before repeat')

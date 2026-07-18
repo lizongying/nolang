@@ -1,36 +1,36 @@
-// ip — IP 地址操作
-//
-// 提供 IPv4 地址的解析、驗證、轉換與分類功能。
-// 純 Nolang 實作，不依賴 C 庫函數。
-//
-// 用法：
-//   // 解析 IP 字串
-//   ip = ip-addr{}
-//   ok = ip.parse('192.168.1.1')
-//   ok -> {
-//       s = ip.to-str()       // s = '192.168.1.1'
-//       yes = ip.is-loopback() // yes = false
-//       yes = ip.is-private()  // yes = true
-//
+; ip — IP 地址操作
+;
+; 提供 IPv4 地址的解析、驗證、轉換與分類功能。
+; 純 Nolang 實作，不依賴 C 庫函數。
+;
+; 用法：
+;   // 解析 IP 字串
+;   ip = ip-addr{}
+;   ok = ip.parse('192.168.1.1')
+;   ok -> {
+;       s = ip.to-str()       // s = '192.168.1.1'
+;       yes = ip.is-loopback() // yes = false
+;       yes = ip.is-private()  // yes = true
+;
 
-//
-//   // 從 4 個 octet 建立
-//   ip = ip-addr{
-//       a: 192
-//       b: 168
-//       c: 1
-//       d: 1
-//   }
-//
-//   // 特殊地址常量
-//   ip = IP-ZERO      // 0.0.0.0
-//   ip = IP-LOOPBACK  // 127.0.0.1
+;
+;   // 從 4 個 octet 建立
+;   ip = ip-addr{
+;       a: 192
+;       b: 168
+;       c: 1
+;       d: 1
+;   }
+;
+;   // 特殊地址常量
+;   ip = IP-ZERO      // 0.0.0.0
+;   ip = IP-LOOPBACK  // 127.0.0.1
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// IP-ZERO: 0.0.0.0
+; IP-ZERO: 0.0.0.0
 IP-ZERO = ip-addr{
     a: 0
     b: 0
@@ -38,7 +38,7 @@ IP-ZERO = ip-addr{
     d: 0
 }
 
-// IP-LOOPBACK: 127.0.0.1
+; IP-LOOPBACK: 127.0.0.1
 IP-LOOPBACK = ip-addr{
     a: 127
     b: 0
@@ -46,7 +46,7 @@ IP-LOOPBACK = ip-addr{
     d: 1
 }
 
-// IP-ANY: 0.0.0.0（同 IP-ZERO，語義化命名）
+; IP-ANY: 0.0.0.0（同 IP-ZERO，語義化命名）
 IP-ANY = ip-addr{
     a: 0
     b: 0
@@ -54,7 +54,7 @@ IP-ANY = ip-addr{
     d: 0
 }
 
-// IP-BROADCAST: 255.255.255.255
+; IP-BROADCAST: 255.255.255.255
 IP-BROADCAST = ip-addr{
     a: 255
     b: 255
@@ -62,12 +62,12 @@ IP-BROADCAST = ip-addr{
     d: 255
 }
 
-// ═══════════════════════════════════════════════
-// ip-addr 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; ip-addr 結構體
+; ═══════════════════════════════════════════════
 
-// ip-addr: IPv4 地址
-// a, b, c, d: 四個 octet（0~255）
+; ip-addr: IPv4 地址
+; a, b, c, d: 四個 octet（0~255）
 ip-addr {
     a i64
     b i64
@@ -75,13 +75,13 @@ ip-addr {
     d i64
 }
 
-// ═══════════════════════════════════════════════
-// 解析
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 解析
+; ═══════════════════════════════════════════════
 
-// parse: 從字串解析 IPv4 地址
-// 格式：A.B.C.D，每段 0~255
-// 返回 ok=true=成功
+; parse: 從字串解析 IPv4 地址
+; 格式：A.B.C.D，每段 0~255
+; 返回 ok=true=成功
 ip-addr.parse = (s str) (ok bool) {
     ok = false
     .a = 0
@@ -91,7 +91,7 @@ ip-addr.parse = (s str) (ok bool) {
     n = s.len
     n == 0 -> return
 
-    // 解析第一個 octet
+    ; 解析第一個 octet
     s = s.slice(0, n)
     dot-count = 0
     octet = 0
@@ -106,12 +106,12 @@ ip-addr.parse = (s str) (ok bool) {
                 octet > 255 -> return
             }
             c == 46 -> {
-                // 點分隔符
+                ; 點分隔符
                 has-digit == 0 -> return
                 dot-count = dot-count + 1
                 dot-count > 3 -> return
 
-                // 存入對應欄位
+                ; 存入對應欄位
                 {
                     dot-count == 1 -> .a = octet
                     dot-count == 2 -> .b = octet
@@ -124,15 +124,15 @@ ip-addr.parse = (s str) (ok bool) {
         }
     }
 
-    // 最後一個 octet
+    ; 最後一個 octet
     has-digit == 0 || dot-count != 3 -> return
     .d = octet
 
     ok = true
 }
 
-// from-str: 從字串建立 ip-addr（靜態函數）
-// 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+; from-str: 從字串建立 ip-addr（靜態函數）
+; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
 ip-addr.from-str = (s str) (addr ?ip-addr) {
     addr = nil
     a = ip-addr{}
@@ -141,11 +141,11 @@ ip-addr.from-str = (s str) (addr ?ip-addr) {
     ok -> addr = a
 }
 
-// ═══════════════════════════════════════════════
-// 轉換
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 轉換
+; ═══════════════════════════════════════════════
 
-// to-str: 轉為字串表示（如 '192.168.1.1'）
+; to-str: 轉為字串表示（如 '192.168.1.1'）
 ip-addr.to-str = () (out str) {
     sa = .a.to-str()
     out = sa.copy()
@@ -172,13 +172,13 @@ ip-addr.to-str = () (out str) {
     }
 }
 
-// to-u32: 轉為 32 位無號整數（大端序）
-// 返回 v: (a<<24)|(b<<16)|(c<<8)|d
+; to-u32: 轉為 32 位無號整數（大端序）
+; 返回 v: (a<<24)|(b<<16)|(c<<8)|d
 ip-addr.to-u32 = () (v i64) {
     v = (.a << 24) | (.b << 16) | (.c << 8) | .d
 }
 
-// from-u32: 從 32 位無號整數建立
+; from-u32: 從 32 位無號整數建立
 ip-addr.from-u32 = (v i64) {
     .a = (v >> 24) & 255
     .b = (v >> 16) & 255
@@ -186,11 +186,11 @@ ip-addr.from-u32 = (v i64) {
     .d = v & 255
 }
 
-// ═══════════════════════════════════════════════
-// 驗證
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 驗證
+; ═══════════════════════════════════════════════
 
-// is-valid: 檢查所有 octet 是否在有效範圍（0~255）
+; is-valid: 檢查所有 octet 是否在有效範圍（0~255）
 ip-addr.is-valid = () (yes bool) {
     yes = true
     .a < 0 || .a > 255 -> {
@@ -208,99 +208,99 @@ ip-addr.is-valid = () (yes bool) {
     .d < 0 || .d > 255 -> yes = false
 }
 
-// ═══════════════════════════════════════════════
-// 地址分類
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 地址分類
+; ═══════════════════════════════════════════════
 
-// is-loopback: 是否為環回地址（127.0.0.0/8）
+; is-loopback: 是否為環回地址（127.0.0.0/8）
 ip-addr.is-loopback = () (yes bool) {
     yes = .a == 127
 }
 
-// is-private: 是否為私有地址
-// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+; is-private: 是否為私有地址
+; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 ip-addr.is-private = () (yes bool) {
     yes = false
 
-    // 10.0.0.0/8
+    ; 10.0.0.0/8
     .a == 10 -> {
         yes = true
         return
     }
 
-    // 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
+    ; 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
     .a == 172 -> .b >= 16 && .b <= 31 -> {
         yes = true
         return
     }
 
-    // 192.168.0.0/16
+    ; 192.168.0.0/16
     .a == 192 -> .b == 168 -> {
         yes = true
         return
     }
 }
 
-// is-zero: 是否為全零地址（0.0.0.0）
+; is-zero: 是否為全零地址（0.0.0.0）
 ip-addr.is-zero = () (yes bool) {
     yes = false
     .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true
 }
 
-// is-broadcast: 是否為廣播地址（255.255.255.255）
+; is-broadcast: 是否為廣播地址（255.255.255.255）
 ip-addr.is-broadcast = () (yes bool) {
     yes = false
     .a == 255 -> .b == 255 -> .c == 255 -> .d == 255 -> yes = true
 }
 
-// is-multicast: 是否為多播地址（224.0.0.0/4）
+; is-multicast: 是否為多播地址（224.0.0.0/4）
 ip-addr.is-multicast = () (yes bool) {
     yes = false
     .a >= 224 -> .a <= 239 -> yes = true
 }
 
-// is-link-local: 是否為鏈路本地地址（169.254.0.0/16）
+; is-link-local: 是否為鏈路本地地址（169.254.0.0/16）
 ip-addr.is-link-local = () (yes bool) {
     yes = false
     .a == 169 -> .b == 254 -> yes = true
 }
 
-// is-class-a: 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
+; is-class-a: 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
 ip-addr.is-class-a = () (yes bool) {
     yes = false
     .a >= 1 -> .a <= 126 -> yes = true
 }
 
-// is-class-b: 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
+; is-class-b: 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
 ip-addr.is-class-b = () (yes bool) {
     yes = false
     .a >= 128 -> .a <= 191 -> yes = true
 }
 
-// is-class-c: 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
+; is-class-c: 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
 ip-addr.is-class-c = () (yes bool) {
     yes = false
     .a >= 192 -> .a <= 223 -> yes = true
 }
 
-// ═══════════════════════════════════════════════
-// 比較
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 比較
+; ═══════════════════════════════════════════════
 
-// equal: 比較兩個 IP 地址是否相等
+; equal: 比較兩個 IP 地址是否相等
 ip-addr.equal = (other ip-addr) (yes bool) {
     yes = false
     .a == other.a -> .b == other.b -> .c == other.c -> .d == other.d -> yes = true
 }
 
-// ═══════════════════════════════════════════════
-// 子網操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 子網操作
+; ═══════════════════════════════════════════════
 
-// in-subnet: 檢查是否在指定子網內
-// base: 子網基地址
-// prefix-len: 前綴長度（0~32）
-// 返回 yes=true=在子網內
+; in-subnet: 檢查是否在指定子網內
+; base: 子網基地址
+; prefix-len: 前綴長度（0~32）
+; 返回 yes=true=在子網內
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     yes = false
     prefix-len <= 0 -> {
@@ -312,11 +312,11 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
         return
     }
 
-    // 計算子網遮罩
+    ; 計算子網遮罩
     self-v = .to-u32()
     base-v = base.to-u32()
 
-    // 建立遮罩：高位 prefix-len 個 1
+    ; 建立遮罩：高位 prefix-len 個 1
     mask = 0
     {
         prefix-len == 32 -> mask = 0 - 1
@@ -326,18 +326,18 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
         }
     }
 
-    // 比較遮罩後的值
+    ; 比較遮罩後的值
     self-masked = self-v & mask
     base-masked = base-v & mask
     yes = self-masked == base-masked
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// ip-parse: 快速解析 IP 字串
-// 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+; ip-parse: 快速解析 IP 字串
+; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
 ip-parse = (s str) (addr ?ip-addr) {
     addr = nil
     a = ip-addr{}
@@ -346,7 +346,7 @@ ip-parse = (s str) (addr ?ip-addr) {
     ok -> addr = a
 }
 
-// ip-is-loopback: 快速判斷字串是否為環回地址
+; ip-is-loopback: 快速判斷字串是否為環回地址
 ip-is-loopback = (s str) (yes bool) {
     yes = false
     addr = ip-addr{}
@@ -354,7 +354,7 @@ ip-is-loopback = (s str) (yes bool) {
     ok -> yes = addr.is-loopback()
 }
 
-// ip-is-private: 快速判斷字串是否為私有地址
+; ip-is-private: 快速判斷字串是否為私有地址
 ip-is-private = (s str) (yes bool) {
     yes = false
     addr = ip-addr{}

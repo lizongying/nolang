@@ -9,13 +9,13 @@ bar = () (a i8, b i16) {
     b = 3
 }
 
-// 先定义res i8 i8初始0值
-// foo 赋值1 
+; 先定义res i8 i8初始0值
+; foo 赋值1 
 res = foo()
 
-// 第二次调用，res已经有值，是新赋值
-// foo 赋值1 
+; 第二次调用，res已经有值，是新赋值
+; foo 赋值1 
 res = foo()
 
-// res是赋值，res1是新建变量
+; res是赋值，res1是新建变量
 res, res1 = bar()

@@ -1,25 +1,25 @@
-// Test 1: Declare and set nil
+; Test 1: Declare and set nil
 test-option-1 = () {
     x1 ?str
     x1 = nil
     print(x1)
 }
 
-// Test 2: Set value via val()
+; Test 2: Set value via val()
 test-option-2 = () {
     x2 ?str
     x2 = 'hello'
     print(x2)
 }
 
-// Test 3: Set error
+; Test 3: Set error
 test-option-3 = () {
     x3 ?str
     x3 = err('error msg')
     print(x3)
 }
 
-// Test 4: Match on option with err-> nil-> -> patterns
+; Test 4: Match on option with err-> nil-> -> patterns
 test-option-4 = () {
     x4 ?str
     x4 = err('error msg')
@@ -30,7 +30,7 @@ test-option-4 = () {
     }
 }
 
-// Test 5: Match on nil
+; Test 5: Match on nil
 test-option-5 = () {
     x5 ?str
     x5 = nil
@@ -41,7 +41,7 @@ test-option-5 = () {
     }
 }
 
-// Test 6: Match on val
+; Test 6: Match on val
 test-option-6 = () {
     x6 ?str
     x6 = 'test'

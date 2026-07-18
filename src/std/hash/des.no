@@ -1,18 +1,18 @@
-// des — DES 加密/解密（ECB 模式）
-//
-// 使用 DES 對 8-byte 區塊進行加解密。
-// 56-bit 金鑰儲存在 8 bytes 中（第 8 位元為奇偶校驗位，被忽略）。
-//
-// 用法：
-//   key [8]byte
-//   out  = des-enc(plain, 8, key)   // 加密
-//   out  = des-dec(cipher, 8, key)  // 解密
+; des — DES 加密/解密（ECB 模式）
+;
+; 使用 DES 對 8-byte 區塊進行加解密。
+; 56-bit 金鑰儲存在 8 bytes 中（第 8 位元為奇偶校驗位，被忽略）。
+;
+; 用法：
+;   key [8]byte
+;   out  = des-enc(plain, 8, key)   // 加密
+;   out  = des-dec(cipher, 8, key)  // 解密
 
-// ─── 排列表 ─────────────────────────────────────
-// 所有表使用標準 DES 1-indexed MSB 位元編號。
-// permute 函數會將 1-indexed MSB 轉換為 0-indexed LSB。
+; ─── 排列表 ─────────────────────────────────────
+; 所有表使用標準 DES 1-indexed MSB 位元編號。
+; permute 函數會將 1-indexed MSB 轉換為 0-indexed LSB。
 
-// IP: 初始排列（64 位元）
+; IP: 初始排列（64 位元）
 IP-TBL [64]byte = [
     0x3a, 0x32, 0x2a, 0x22, 0x1a, 0x12, 0x0a, 0x02,
     0x3c, 0x34, 0x2c, 0x24, 0x1c, 0x14, 0x0c, 0x04,
@@ -24,7 +24,7 @@ IP-TBL [64]byte = [
     0x3f, 0x37, 0x2f, 0x27, 0x1f, 0x17, 0x0f, 0x07,
 ]
 
-// FP: 最終排列（IP 的逆）
+; FP: 最終排列（IP 的逆）
 FP-TBL [64]byte = [
     0x28, 0x08, 0x30, 0x10, 0x38, 0x18, 0x40, 0x20,
     0x27, 0x07, 0x2f, 0x0f, 0x37, 0x17, 0x3f, 0x1f,
@@ -36,7 +36,7 @@ FP-TBL [64]byte = [
     0x21, 0x01, 0x29, 0x09, 0x31, 0x11, 0x39, 0x19,
 ]
 
-// E: 擴展排列（32→48 位元）
+; E: 擴展排列（32→48 位元）
 E-TBL [48]byte = [
     0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x04, 0x05,
     0x06, 0x07, 0x08, 0x09, 0x08, 0x09, 0x0a, 0x0b,
@@ -46,7 +46,7 @@ E-TBL [48]byte = [
     0x1c, 0x1d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x01,
 ]
 
-// P: 排列（32 位元）
+; P: 排列（32 位元）
 P-TBL [32]byte = [
     0x10, 0x07, 0x14, 0x15, 0x1d, 0x0c, 0x1c, 0x11,
     0x01, 0x0f, 0x17, 0x1a, 0x05, 0x12, 0x1f, 0x0a,
@@ -54,7 +54,7 @@ P-TBL [32]byte = [
     0x13, 0x0d, 0x1e, 0x06, 0x16, 0x0b, 0x04, 0x19,
 ]
 
-// ─── S-box（8 個，每個 4×16 = 64 位元組）───
+; ─── S-box（8 個，每個 4×16 = 64 位元組）───
 SBOX1 [64]byte = [
     0x0e, 0x04, 0x0d, 0x01, 0x02, 0x0f, 0x0b, 0x08,
     0x03, 0x0a, 0x06, 0x0c, 0x05, 0x09, 0x00, 0x07,
@@ -143,15 +143,15 @@ SBOX8 [64]byte = [
     0x0f, 0x0c, 0x09, 0x00, 0x03, 0x05, 0x06, 0x0b,
 ]
 
-// PC1: 金鑰初始排列（64→56 位元）
-// C 部分（28 位元）
+; PC1: 金鑰初始排列（64→56 位元）
+; C 部分（28 位元）
 PC1-C [28]byte = [
     0x39, 0x31, 0x29, 0x21, 0x19, 0x11, 0x09, 0x01,
     0x3a, 0x32, 0x2a, 0x22, 0x1a, 0x12, 0x0a, 0x02,
     0x3b, 0x33, 0x2b, 0x23, 0x1b, 0x13, 0x0b, 0x03,
     0x3c, 0x34, 0x2c, 0x24,
 ]
-// D 部分（28 位元）
+; D 部分（28 位元）
 PC1-D [28]byte = [
     0x3f, 0x37, 0x2f, 0x27, 0x1f, 0x17, 0x0f, 0x07,
     0x3e, 0x36, 0x2e, 0x26, 0x1e, 0x16, 0x0e, 0x06,
@@ -159,7 +159,7 @@ PC1-D [28]byte = [
     0x1c, 0x14, 0x0c, 0x04,
 ]
 
-// PC2: 金鑰壓縮排列（56→48 位元）
+; PC2: 金鑰壓縮排列（56→48 位元）
 PC2-TBL [48]byte = [
     0x0e, 0x11, 0x0b, 0x18, 0x01, 0x05, 0x03, 0x1c,
     0x0f, 0x06, 0x15, 0x0a, 0x17, 0x13, 0x0c, 0x04,
@@ -169,17 +169,17 @@ PC2-TBL [48]byte = [
     0x22, 0x35, 0x2e, 0x2a, 0x32, 0x24, 0x1d, 0x20,
 ]
 
-// 左移表（16 輪）
+; 左移表（16 輪）
 SHIFT-TBL [16]byte = [
     0x01, 0x01, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
     0x01, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01,
 ]
 
-// ─── 位元排列輔助 ──────────────────────────────
+; ─── 位元排列輔助 ──────────────────────────────
 
-// permute: 根據排列表提取位元
-// tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）。
-// width 為輸入位元寬度。輸出為 MSB-first（第 0 個表項 → 最高位）。
+; permute: 根據排列表提取位元
+; tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）。
+; width 為輸入位元寬度。輸出為 MSB-first（第 0 個表項 → 最高位）。
 permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
@@ -191,9 +191,9 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     }
 }
 
-// sbox-lookup: 查詢 S-box
-// input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6。
-// row = b1*2 + b6，col = b2 b3 b4 b5。
+; sbox-lookup: 查詢 S-box
+; input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6。
+; row = b1*2 + b6，col = b2 b3 b4 b5。
 sbox-lookup = (input i64, box []byte) (r i64) {
     v = input & 63
     row = ((v >> 5) & 1) * 2 + (v & 1)
@@ -201,9 +201,9 @@ sbox-lookup = (input i64, box []byte) (r i64) {
     r = box[row * 16 + col] & 15
 }
 
-// ─── Feistel 輪函數 ──────────────────────────────
+; ─── Feistel 輪函數 ──────────────────────────────
 
-// f: DES 輪函數
+; f: DES 輪函數
 f = (r i64, k i64) (out i64) {
     er = 0
     s0 = 0
@@ -236,9 +236,9 @@ f = (r i64, k i64) (out i64) {
     out = permute(sb, P-TBL, 32, 32)
 }
 
-// ─── 金鑰排程 ──────────────────────────────────────
+; ─── 金鑰排程 ──────────────────────────────────────
 
-// des-key-schedule: 產生 16 個 48-bit 子金鑰
+; des-key-schedule: 產生 16 個 48-bit 子金鑰
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
@@ -274,9 +274,9 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     }
 }
 
-// ─── 單區塊加密/解密 ──────────────────────────────
+; ─── 單區塊加密/解密 ──────────────────────────────
 
-// des-block: DES 單區塊處理（通用）
+; des-block: DES 單區塊處理（通用）
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
@@ -315,14 +315,14 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     }
 }
 
-// des-enc: 加密一個 8-byte 區塊
+; des-enc: 加密一個 8-byte 區塊
 des-enc = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)
     out = des-block(in, n, ks, 1)
 }
 
-// des-dec: 解密一個 8-byte 區塊
+; des-dec: 解密一個 8-byte 區塊
 des-dec = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)

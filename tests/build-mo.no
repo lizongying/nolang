@@ -1,4 +1,4 @@
-// Auto-generated main entry
+; Auto-generated main entry
 x i64 = 0
 result = {
     x == 0 -> 1

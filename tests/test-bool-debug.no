@@ -1,4 +1,4 @@
-// test-bool-debug.no — 調試 str.to-bool
+; test-bool-debug.no — 調試 str.to-bool
 test-bool-true = () {
     s = 'true'
     b = s.to-bool()

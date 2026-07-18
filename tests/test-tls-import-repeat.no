@@ -1,5 +1,5 @@
-// test-tls-import-repeat — 測試 import tls 後 str.repeat 是否正常
-// # std/net/tls
+; test-tls-import-repeat — 測試 import tls 後 str.repeat 是否正常
+; # std/net/tls
 
 print('start')
 space str = ' '

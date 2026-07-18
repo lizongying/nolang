@@ -1,5 +1,5 @@
-// test-opt-match-all.no — 測試 option match 的所有分支
-// err -> ... / nil -> ... / -> ... (val)
+; test-opt-match-all.no — 測試 option match 的所有分支
+; err -> ... / nil -> ... / -> ... (val)
 
 test-err = () {
     n ?i64 = err('boom')

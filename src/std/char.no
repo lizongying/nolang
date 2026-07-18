@@ -1,25 +1,25 @@
-// char — 字元操作
-//
-// char 本質為 i32（Unicode 碼點/rune）。
-// 提供字元分類、大小寫轉換、UTF-8 編碼等方法。
-//
-// 用法：
-//   c = "A"                  // 雙引號 = char 字面量（單字符 rune）
-//   yes = c.is-upper()       // true
-//   u = c.to-lower()         // "a"
-//   s = c.to-str()           // s = 'A'（單引號 = str）
+; char — 字元操作
+;
+; char 本質為 i32（Unicode 碼點/rune）。
+; 提供字元分類、大小寫轉換、UTF-8 編碼等方法。
+;
+; 用法：
+;   c = "A"                  // 雙引號 = char 字面量（單字符 rune）
+;   yes = c.is-upper()       // true
+;   u = c.to-lower()         // "a"
+;   s = c.to-str()           // s = 'A'（單引號 = str）
 
-// ═══════════════════════════════════════════════
-// 字元分類
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 字元分類
+; ═══════════════════════════════════════════════
 
-// is-digit: 判斷是否為數字（0-9）
+; is-digit: 判斷是否為數字（0-9）
 char.is-digit = () (result bool) {
     result = false
     . >= 48 && . <= 57 -> result = true
 }
 
-// is-letter: 判斷是否為字母（A-Z a-z）
+; is-letter: 判斷是否為字母（A-Z a-z）
 char.is-letter = () (result bool) {
     result = false
     . >= 65 && . <= 90 -> {
@@ -29,8 +29,8 @@ char.is-letter = () (result bool) {
     . >= 97 && . <= 122 -> result = true
 }
 
-// is-alpha: 判斷是否為字母（A-Z a-z）
-// is-letter 的別名
+; is-alpha: 判斷是否為字母（A-Z a-z）
+; is-letter 的別名
 char.is-alpha = () (result bool) {
     result = false
     . >= 65 && . <= 90 -> {
@@ -40,35 +40,35 @@ char.is-alpha = () (result bool) {
     . >= 97 && . <= 122 -> result = true
 }
 
-// is-alnum: 判斷是否為字母或數字
+; is-alnum: 判斷是否為字母或數字
 char.is-alnum = () (result bool) {
     result = false
     .is-digit() || .is-alpha() -> result = true
 }
 
-// is-space: 判斷是否為空白字元（space tab newline cr）
+; is-space: 判斷是否為空白字元（space tab newline cr）
 char.is-space = () (result bool) {
     result = false
     . == 32 || . == 9 || . == 10 || . == 13 -> result = true
 }
 
-// is-upper: 判斷是否為大寫字母（A-Z）
+; is-upper: 判斷是否為大寫字母（A-Z）
 char.is-upper = () (result bool) {
     result = false
     . >= 65 && . <= 90 -> result = true
 }
 
-// is-lower: 判斷是否為小寫字母（a-z）
+; is-lower: 判斷是否為小寫字母（a-z）
 char.is-lower = () (result bool) {
     result = false
     . >= 97 && . <= 122 -> result = true
 }
 
-// ═══════════════════════════════════════════════
-// 大小寫轉換
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 大小寫轉換
+; ═══════════════════════════════════════════════
 
-// to-upper: 轉為大寫（僅 ASCII）
+; to-upper: 轉為大寫（僅 ASCII）
 char.to-upper = () (result char) {
     {
         . >= 97 && . <= 122 -> result = . - 32
@@ -76,7 +76,7 @@ char.to-upper = () (result char) {
     }
 }
 
-// to-lower: 轉為小寫（僅 ASCII）
+; to-lower: 轉為小寫（僅 ASCII）
 char.to-lower = () (result char) {
     {
         . >= 65 && . <= 90 -> result = . + 32
@@ -84,11 +84,11 @@ char.to-lower = () (result char) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// UTF-8 編碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; UTF-8 編碼
+; ═══════════════════════════════════════════════
 
-// to-bytes: 轉為 UTF-8 編碼的位元組陣列
+; to-bytes: 轉為 UTF-8 編碼的位元組陣列
 char.to-bytes = () (out []byte) {
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
     len = 0
@@ -123,7 +123,7 @@ char.to-bytes = () (out []byte) {
     }
 }
 
-// to-str: 轉為 UTF-8 編碼的字串
+; to-str: 轉為 UTF-8 編碼的字串
 char.to-str = () (s str) {
     s = with-cap(4)
     {

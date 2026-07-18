@@ -1,4 +1,4 @@
-// des-enc — DES 加密（ECB 模式）
-//
-// 實現已合併至 des.no，此檔案僅保留模組名稱佔位。
-// 使用方式：des.des-enc(plain, 8, key)
+; des-enc — DES 加密（ECB 模式）
+;
+; 實現已合併至 des.no，此檔案僅保留模組名稱佔位。
+; 使用方式：des.des-enc(plain, 8, key)

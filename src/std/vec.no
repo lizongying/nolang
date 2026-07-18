@@ -1,42 +1,42 @@
-// vec — 切片操作
-//
-// 動態切片的創建、克隆、比較。
-//
-// 切片是視圖，非獨立類型：vec 的方法同時適用於以下切片視圖：
-// - arr 切片（a[1..3] → []t 視圖，共享 arr 底層記憶體）
-// - vec 切片（v[1..3] → []t 視圖，共享 vec 底層記憶體）
-// 切片不複製資料，只記錄指標+長度+容量，指向原始緩衝區。
-// 通過切片修改元素會影響原始資料，反之亦然。
-//
-// 用法：
-//   use std/vec.vec-create
-//   data [16]i64 = [0:16]
-//   data = vec-create(10, 42)
-//
-// vec-slice
-//
-// []t[..]
-// []t[..)
-// []t(..]
-// []t(..)
-//
-// []t[n0..]
-// []t[n0..)
-// []t(n0..]
-// []t(n0..)
-//
-// []t[..n1]
-// []t[..n1)
-// []t(..n1]
-// []t(..n1)
-//
-// []t[n0..n1]
-// []t[n0..n1)
-// []t(n0..n1]
-// []t(n0..n1)
+; vec — 切片操作
+;
+; 動態切片的創建、克隆、比較。
+;
+; 切片是視圖，非獨立類型：vec 的方法同時適用於以下切片視圖：
+; - arr 切片（a[1..3] → []t 視圖，共享 arr 底層記憶體）
+; - vec 切片（v[1..3] → []t 視圖，共享 vec 底層記憶體）
+; 切片不複製資料，只記錄指標+長度+容量，指向原始緩衝區。
+; 通過切片修改元素會影響原始資料，反之亦然。
+;
+; 用法：
+;   use std/vec.vec-create
+;   data [16]i64 = [0:16]
+;   data = vec-create(10, 42)
+;
+; vec-slice
+;
+; []t[..]
+; []t[..)
+; []t(..]
+; []t(..)
+;
+; []t[n0..]
+; []t[n0..)
+; []t(n0..]
+; []t(n0..)
+;
+; []t[..n1]
+; []t[..n1)
+; []t(..n1]
+; []t(..n1)
+;
+; []t[n0..n1]
+; []t[n0..n1)
+; []t(n0..n1]
+; []t(n0..n1)
 
-// []t.eq: 比較兩個切片是否相等
-// 返回 true=相等, false=不相等
+; []t.eq: 比較兩個切片是否相等
+; 返回 true=相等, false=不相等
 []t.eq = (b []t) (eq bool) {
     eq = true
     n = .len
@@ -48,80 +48,80 @@
     }
 }
 
-// vec/sort — 切片排序
-//
-// 對 i64 切片進行原地排序。
-// 使用插入排序（穩定、無堆分配、適合小數據量）。
-// 實現在 LLVM/Go generator 中（Nolang 尚無陣列索引語法）。
-//
-// 用法：
-//   data = [3, 1, 4, 1, 5]
-//   sort-asc(data, 5)
-//   // data == [1, 1, 3, 4, 5]
+; vec/sort — 切片排序
+;
+; 對 i64 切片進行原地排序。
+; 使用插入排序（穩定、無堆分配、適合小數據量）。
+; 實現在 LLVM/Go generator 中（Nolang 尚無陣列索引語法）。
+;
+; 用法：
+;   data = [3, 1, 4, 1, 5]
+;   sort-asc(data, 5)
+;   // data == [1, 1, 3, 4, 5]
 
-// sort-asc: 升序排序 data[0..n)
-// build-in (ForwardFunc: vec-sort-asc)
-// []t.sort-asc = () {
-// }
+; sort-asc: 升序排序 data[0..n)
+; build-in (ForwardFunc: vec-sort-asc)
+; []t.sort-asc = () {
+; }
 
-// sort-desc: 降序排序 data[0..n)
-// build-in (ForwardFunc: vec-sort-desc)
-// []t.sort-desc = () {
-// }
+; sort-desc: 降序排序 data[0..n)
+; build-in (ForwardFunc: vec-sort-desc)
+; []t.sort-desc = () {
+; }
 
-// vec — 切片操作
-//
-// 泛型參數 n(大小) t(型別) 自動推斷。
+; vec — 切片操作
+;
+; 泛型參數 n(大小) t(型別) 自動推斷。
 
-// new-cap = old-cap
+; new-cap = old-cap
 
-// if old-cap == 0:
-//     new-cap = 4   # 初始
-// elif old-cap < 1024:
-//     new-cap = old-cap * 2   # 小容量：翻倍
-// else:
-//     new-cap = old-cap * 5 / 4  # 大容量：1.25 倍
+; if old-cap == 0:
+;     new-cap = 4   # 初始
+; elif old-cap < 1024:
+;     new-cap = old-cap * 2   # 小容量：翻倍
+; else:
+;     new-cap = old-cap * 5 / 4  # 大容量：1.25 倍
 
-// vec {
-//     len i64 read-only
-//     cap i64 read-only
+; vec {
+;     len i64 read-only
+;     cap i64 read-only
 
-//     // 只存固定大小
-//     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
-//     // >8 字节存指针指針
-//     data *any sealed
-// }
+;     // 只存固定大小
+;     // <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
+;     // >8 字节存指针指針
+;     data *any sealed
+; }
 
-// []t.len: 回傳切片長度
+; []t.len: 回傳切片長度
 []t.len = () (n i64) {
     n = .len
 }
 
-// []t.push: 在末尾追加元素（自動擴容）
-// 擴容策略：
-//   cap == 0 → new-cap = 4
-//   cap < 1024 → new-cap = cap * 2
-//   cap >= 1024 → new-cap = cap * 5 / 4
-// build-in (ForwardFunc: vec-push)
-// []t.push = (val t) {
-//     n = .len
-//     .len = n + 1
-//     .[n] = val
-// }
+; []t.push: 在末尾追加元素（自動擴容）
+; 擴容策略：
+;   cap == 0 → new-cap = 4
+;   cap < 1024 → new-cap = cap * 2
+;   cap >= 1024 → new-cap = cap * 5 / 4
+; build-in (ForwardFunc: vec-push)
+; []t.push = (val t) {
+;     n = .len
+;     .len = n + 1
+;     .[n] = val
+; }
 
-// []t.clear: 清空切片（原地修改長度為 0）
-// 不 free 堆、不縮 cap，data 指標完全不變
-// 只有寫入帶長度新內容時才走擴容邏輯
-// build-in (ForwardFunc: vec-clear)
-// []t.clear = () {
-// }
+; []t.clear: 清空切片（原地修改長度為 0）
+; 不 free 堆、不縮 cap，data 指標完全不變
+; 只有寫入帶長度新內容時才走擴容邏輯
+; build-in (ForwardFunc: vec-clear)
+; []t.clear = () {
+; }
 
-// with-cap: see str.no for full documentation
-// Builtin syntax (not a method): v []i64 = with-cap(100)
-// build-in (ForwardFunc: with-cap)
+; with-cap: see str.no for full documentation
+; Builtin syntax (not a method): v []i64 = with-cap(100)
+; build-in (ForwardFunc: with-cap)
 
-// []t.pop: 從末尾彈出元素
-// 空切片返回 nil
+; []t.pop: 從末尾彈出元素
+; 空切片返回 nil
 []t.pop = () (val ?t) {
     n = .len
     {
@@ -133,7 +133,7 @@
     }
 }
 
-// []t.contains: 是否包含值 val
+; []t.contains: 是否包含值 val
 []t.contains = (val t) (found bool) {
     found = false
     n = .len
@@ -145,7 +145,7 @@
     }
 }
 
-// []t.reverse: 反轉
+; []t.reverse: 反轉
 []t.reverse = () {
     n = .len
     i = 0
@@ -160,7 +160,7 @@
     }
 }
 
-// []t.clone: 複製切片
+; []t.clone: 複製切片
 []t.clone = () (dst []t) {
     n = .len
     i <- [0..n): {
@@ -168,7 +168,7 @@
     }
 }
 
-// []t.fill: 填充為 val
+; []t.fill: 填充為 val
 []t.fill = (val t) {
     n = .len
     i <- [0..n): {
@@ -176,7 +176,7 @@
     }
 }
 
-// []t.to-arr: 切片方法，轉為 [n]t 陣列
+; []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
     i <- [0...len): {
         out[i] = .[i]

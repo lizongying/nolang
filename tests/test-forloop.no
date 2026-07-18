@@ -1,4 +1,4 @@
-// test-forloop — 測試 for 循環變數
+; test-forloop — 測試 for 循環變數
 print('start')
 i <- [0..3): {
     print('i=')

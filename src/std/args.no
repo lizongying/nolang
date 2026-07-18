@@ -1,38 +1,38 @@
-// args — 命令行參數解析
-//
-// 依賴 os.args() / os.arg() 提供底層存取。
-// 提供標記偵測、選項讀取、位置參數等高階介面。
+; args — 命令行參數解析
+;
+; 依賴 os.args() / os.arg() 提供底層存取。
+; 提供標記偵測、選項讀取、位置參數等高階介面。
 
-// ═══════════════════════════════════════════════
-// 基礎
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 基礎
+; ═══════════════════════════════════════════════
 
-// count: 參數數量（含程式名）
+; count: 參數數量（含程式名）
 count = () (n i64) {
-    // LLVM: call os.args
+    ; LLVM: call os.args
 }
 
-// get: 獲取第 i 個參數
+; get: 獲取第 i 個參數
 get = (i i64) (val str) {
-    // LLVM: call os.arg(i)
+    ; LLVM: call os.arg(i)
 }
 
-// program: 程式名（第 0 個參數）
+; program: 程式名（第 0 個參數）
 program = () (name str) {
-    // LLVM: call os.arg(0)
+    ; LLVM: call os.arg(0)
 }
 
-// ═══════════════════════════════════════════════
-// 標記偵測
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 標記偵測
+; ═══════════════════════════════════════════════
 
-// has-flag: 判斷標記是否存在（如 --verbose, -v）
+; has-flag: 判斷標記是否存在（如 --verbose, -v）
 has-flag = (flag str, flagn i64) (yes bool) {
     yes = false
     n = count()
     i <- [1..n): {
         arg = get(i)
-        // 精確比對 arg 與 flag
+        ; 精確比對 arg 與 flag
         matched = true
         flagn == 0 -> matched = false
         j <- [0..flagn): {
@@ -50,17 +50,17 @@ has-flag = (flag str, flagn i64) (yes bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 選項讀取
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 選項讀取
+; ═══════════════════════════════════════════════
 
-// get-option: 獲取選項值（如 --output=xxx 或 --output xxx）
+; get-option: 獲取選項值（如 --output=xxx 或 --output xxx）
 get-option = (key str, keyn i64, val str) (ok bool) {
     ok = false
     n = count()
     i <- [1..n): {
         arg = get(i)
-        // 檢查 arg 是否以 key + '=' 開頭
+        ; 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j <- [0..keyn): {
             ac = arg[j] & 255
@@ -71,10 +71,10 @@ get-option = (key str, keyn i64, val str) (ok bool) {
             }
         }
         matched-prefix == 1 -> {
-            // 檢查 key 後是 '='
+            ; 檢查 key 後是 '='
             eq = arg[keyn] & 255
             eq == 61 -> {
-                // 複製 '=' 後的內容到 val
+                ; 複製 '=' 後的內容到 val
                 k = keyn + 1
                 vn = 0
                 for true {
@@ -91,11 +91,11 @@ get-option = (key str, keyn i64, val str) (ok bool) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 位置參數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 位置參數
+; ═══════════════════════════════════════════════
 
-// get-positional: 獲取第 i 個位置參數（跳過標記）
+; get-positional: 獲取第 i 個位置參數（跳過標記）
 get-positional = (idx i64) (val str, ok bool) {
     ok = false
     n = count()
@@ -104,12 +104,12 @@ get-positional = (idx i64) (val str, ok bool) {
     for j < n {
         arg = get(j)
 
-        // 跳過以 '-' 開頭的參數
+        ; 跳過以 '-' 開頭的參數
         c0 = arg[0] & 255
         c0 == 45 -> {
             j = j + 1
 
-            // 如果是 --key value 形式，也跳過下一個
+            ; 如果是 --key value 形式，也跳過下一個
             c1 = arg[1] & 255
             c1 != 45 -> j < n -> {
                 next = get(j)
@@ -120,7 +120,7 @@ get-positional = (idx i64) (val str, ok bool) {
         }
 
         pos == idx -> {
-            // 複製 arg 到 val
+            ; 複製 arg 到 val
             k = 0
             for true {
                 c = arg[k] & 255

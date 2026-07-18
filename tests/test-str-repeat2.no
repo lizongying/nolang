@@ -1,4 +1,4 @@
-// test-str-repeat2 — 測試 str.repeat (無 tls 依賴)
+; test-str-repeat2 — 測試 str.repeat (無 tls 依賴)
 print('=== str.repeat Test 2 ===')
 space str = ' '
 print('space created')

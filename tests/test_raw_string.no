@@ -1,4 +1,4 @@
-// test_raw_string — 原始字符串測試
+; test_raw_string — 原始字符串測試
 print('=== raw string test ===')
 
 sql = `
@@ -9,7 +9,7 @@ WHERE id > 100
 print(sql.len)
 print(sql)
 
-// 原樣保留轉義字符
+; 原樣保留轉義字符
 raw = `
 line1\nline2
 \ttabbed
@@ -17,7 +17,7 @@ line1\nline2
 print(raw.len)
 print(raw)
 
-// 空行保留
+; 空行保留
 multi = `
 
 

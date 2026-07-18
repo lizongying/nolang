@@ -1,3 +1,3 @@
-// test-tls-minimal — 隔離 TLS 測試崩潰
+; test-tls-minimal — 隔離 TLS 測試崩潰
 print('start')
 print('done')

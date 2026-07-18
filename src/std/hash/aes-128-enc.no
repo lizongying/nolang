@@ -1,4 +1,4 @@
-// aes-128-enc — AES-128 加密（ECB 模式）
-//
-// 實現已合併至 aes.no，此檔案僅保留模組名稱佔位。
-// 使用方式：aes.aes-128-enc(plain, key)
+; aes-128-enc — AES-128 加密（ECB 模式）
+;
+; 實現已合併至 aes.no，此檔案僅保留模組名稱佔位。
+; 使用方式：aes.aes-128-enc(plain, key)

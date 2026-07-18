@@ -1,15 +1,15 @@
-// http2 — HTTP/2.0 影格與連線管理（RFC 7540）
-//
-// 純 Nolang 實作，h2c（cleartext）prior knowledge 模式。
-// 不支援 Upgrade 協商，直接送出 preface。
-//
-// 用法：
-//   conn = http2-connect(host, port)            // 返回 ?http2-conn
-//   resp = http2-do('GET', 'http://host/path', '')  // 返回 ?http-response
+; http2 — HTTP/2.0 影格與連線管理（RFC 7540）
+;
+; 純 Nolang 實作，h2c（cleartext）prior knowledge 模式。
+; 不支援 Upgrade 協商，直接送出 preface。
+;
+; 用法：
+;   conn = http2-connect(host, port)            // 返回 ?http2-conn
+;   resp = http2-do('GET', 'http://host/path', '')  // 返回 ?http-response
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
 HTTP2-FRAME-HEADER-SIZE = 9
 HTTP2-MAX-PAYLOAD = 16384
@@ -18,7 +18,7 @@ HTTP2-INITIAL-STREAM-ID = 1
 HTTP2-DEFAULT-PORT = 80
 HTTP2-DEFAULT-TLS-PORT = 443
 
-// 影格類型
+; 影格類型
 FRAME-DATA = 0
 FRAME-HEADERS = 1
 FRAME-PRIORITY = 2
@@ -30,18 +30,18 @@ FRAME-GOAWAY = 7
 FRAME-WINDOW-UPDATE = 8
 FRAME-CONTINUATION = 9
 
-// 旗標
+; 旗標
 FLAG-END-STREAM = 1
 FLAG-ACK = 1
 FLAG-END-HEADERS = 4
 FLAG-PADDED = 8
 FLAG-PRIORITY = 32
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// http2-frame: HTTP/2 影格
+; http2-frame: HTTP/2 影格
 http2-frame {
     length i64
     frame-type i64
@@ -49,13 +49,13 @@ http2-frame {
     stream-id i64
     payload str
 }
-// 影格長度（24-bit）
-// 影格類型（8-bit）
-// 旗標（8-bit）
-// 串流 ID（31-bit）
-// 影格資料
+; 影格長度（24-bit）
+; 影格類型（8-bit）
+; 旗標（8-bit）
+; 串流 ID（31-bit）
+; 影格資料
 
-// http2-conn: HTTP/2 連線
+; http2-conn: HTTP/2 連線
 http2-conn {
     fd i64
     hpack hpack-tables
@@ -67,28 +67,28 @@ http2-conn {
     tls-c tls-conn
 }
 
-// ═══════════════════════════════════════════════
-// 影格解析/序列化
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 影格解析/序列化
+; ═══════════════════════════════════════════════
 
-// http2-frame.parse: 從 data 的 pos 位置解析 9-byte 影格標頭
-// 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
+; http2-frame.parse: 從 data 的 pos 位置解析 9-byte 影格標頭
+; 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
 http2-frame.parse = (data str, pos i64) (next-pos ?i64) {
     next-pos = nil
     pos + HTTP2-FRAME-HEADER-SIZE > data.len -> return
 
-    // 24-bit length（big-endian）
+    ; 24-bit length（big-endian）
     .length = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
     .frame-type = data[pos + 3]
     .flags = data[pos + 4]
 
-    // 31-bit stream-id（big-endian，高位保留）
+    ; 31-bit stream-id（big-endian，高位保留）
     .stream-id = ((data[pos + 5] & 127) << 24) | (data[pos + 6] << 16) | (data[pos + 7] << 8) | data[pos + 8]
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
-// http2-frame.serialize: 將影格標頭序列化到 buf 的 pos 位置
-// 返回 next-pos=下一個位置
+; http2-frame.serialize: 將影格標頭序列化到 buf 的 pos 位置
+; 返回 next-pos=下一個位置
 http2-frame.serialize = (buf str, pos i64) (next-pos i64) {
     buf[pos] = (.length >> 16) & 255
     buf[pos + 1] = (.length >> 8) & 255
@@ -102,11 +102,11 @@ http2-frame.serialize = (buf str, pos i64) (next-pos i64) {
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
-// ═══════════════════════════════════════════════
-// 連線管理
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 連線管理
+; ═══════════════════════════════════════════════
 
-// http2-conn.init: 初始化連線狀態
+; http2-conn.init: 初始化連線狀態
 http2-conn.init = () {
     .fd = -1
     .next-stream-id = HTTP2-INITIAL-STREAM-ID
@@ -117,18 +117,18 @@ http2-conn.init = () {
     .initialized = true
 }
 
-// http2-conn.send-frame: 發送影格到 socket
-// 返回 ok=true=成功
+; http2-conn.send-frame: 發送影格到 socket
+; 返回 ok=true=成功
 http2-conn.send-frame = (frame http2-frame) (ok bool) {
     ok = false
     .fd < 0 -> return
 
-    // 序列化標頭
+    ; 序列化標頭
     space = ' '
     hdr = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     frame.serialize(hdr, 0)
 
-    // 發送標頭
+    ; 發送標頭
     written = 0
     {
         .use-tls -> {
@@ -145,7 +145,7 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
         }
     }
 
-    // 發送 payload
+    ; 發送 payload
     frame.payload.len > 0 -> {
         .use-tls -> {
             w = .tls-c.send(frame.payload)
@@ -163,15 +163,15 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
     ok = true
 }
 
-// http2-conn.recv-frame: 從 socket 接收影格
-// 返回 frame ?http2-frame: ok=接收到的影格, nil=失敗
+; http2-conn.recv-frame: 從 socket 接收影格
+; 返回 frame ?http2-frame: ok=接收到的影格, nil=失敗
 http2-conn.recv-frame = () (frame ?http2-frame) {
     frame = nil
     f http2-frame
     .fd < 0 -> return
     space = ' '
 
-    // 讀取 9-byte 影格標頭
+    ; 讀取 9-byte 影格標頭
     hdr-buf = space.repeat(HTTP2-FRAME-HEADER-SIZE)
     hdr-total = 0
     recv-n = 0
@@ -189,21 +189,21 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
             -> recv-n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
         recv-n <= 0 -> return
-        // net-recv 覆寫 buf[0]，需要位移複製
+        ; net-recv 覆寫 buf[0]，需要位移複製
         i <- [0..recv-n): {
             hdr-buf[hdr-total + i] = hdr-buf[i]
         }
         hdr-total = hdr-total + recv-n
     }
 
-    // 解析標頭
+    ; 解析標頭
     np = f.parse(hdr-buf, 0)
     np: {
         nil -> return
         ->
     }
 
-    // 讀取 payload
+    ; 讀取 payload
     f.length > 0 -> {
         f.length > HTTP2-MAX-PAYLOAD -> return
         f.payload = space.repeat(f.length)
@@ -231,7 +231,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     frame = f
 }
 
-// http2-conn.send-settings: 發送空 SETTINGS 影格
+; http2-conn.send-settings: 發送空 SETTINGS 影格
 http2-conn.send-settings = (ack bool) (ok bool) {
     ok = false
     f http2-frame
@@ -245,31 +245,31 @@ http2-conn.send-settings = (ack bool) (ok bool) {
     ok = .send-frame(f)
 }
 
-// http2-conn.send-headers: 發送 HEADERS 影格
-// names/values: 標頭陣列, count: 標頭數, end-stream=是否結束串流
+; http2-conn.send-headers: 發送 HEADERS 影格
+; names/values: 標頭陣列, count: 標頭數, end-stream=是否結束串流
 http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, end-stream bool) (ok bool) {
     ok = false
 
-    // 用 HPACK 編碼標頭
+    ; 用 HPACK 編碼標頭
     space = ' '
     block = space.repeat(HTTP2-MAX-PAYLOAD)
     block-n = 0
     i <- [0..count): {
-        // 用 slice 載入值（避開 IndexExpression codegen 問題）
+        ; 用 slice 載入值（避開 IndexExpression codegen 問題）
         nlen = names[i].len
         vlen = values[i].len
         n str = names[i].slice(0, nlen)
         v str = values[i].slice(0, vlen)
         hdr-out = ' '
         hdr-out = .hpack.encode-header(n, v)
-        // 複製到 block
+        ; 複製到 block
         j <- [0..hdr-out.len): {
             block[block-n + j] = hdr-out[j]
         }
         block-n = block-n + hdr-out.len
     }
 
-    // 構建 HEADERS 影格
+    ; 構建 HEADERS 影格
     f http2-frame
     f.length = block-n
     f.frame-type = FRAME-HEADERS
@@ -281,7 +281,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     ok = .send-frame(f)
 }
 
-// http2-conn.send-data: 發送 DATA 影格
+; http2-conn.send-data: 發送 DATA 影格
 http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     ok = false
     n = data.len
@@ -297,13 +297,13 @@ http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     ok = .send-frame(f)
 }
 
-// ═══════════════════════════════════════════════
-// 高層 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 高層 API
+; ═══════════════════════════════════════════════
 
-// http2-connect: 建立 HTTP/2 h2c 連線
-// 送出 preface + SETTINGS，接收並 ACK 伺服器 SETTINGS
-// 返回 conn ?http2-conn: ok=連線, nil=失敗
+; http2-connect: 建立 HTTP/2 h2c 連線
+; 送出 preface + SETTINGS，接收並 ACK 伺服器 SETTINGS
+; 返回 conn ?http2-conn: ok=連線, nil=失敗
 http2-connect = (host str, port i64) (conn ?http2-conn) {
     conn = nil
     fd = net-dial(host, port)
@@ -312,7 +312,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     c.init()
     c.fd = fd
 
-    // 1. 送出連線 preface
+    ; 1. 送出連線 preface
     cr = char-to-str(13)
     lf = char-to-str(10)
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
@@ -322,7 +322,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
         return
     }
 
-    // 2. 送出空 SETTINGS
+    ; 2. 送出空 SETTINGS
     send-ok = false
     send-ok = c.send-settings(false)
     send-ok == false -> {
@@ -330,7 +330,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
         return
     }
 
-    // 3. 接收伺服器 SETTINGS 並 ACK
+    ; 3. 接收伺服器 SETTINGS 並 ACK
     recv-f = c.recv-frame()
     recv-f
     send-ok == false -> {
@@ -340,13 +340,13 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     conn = c
 }
 
-// http2-connect-tls: 建立 HTTP/2 over TLS 連線
-// 先建立 TLS 連線，再送出 HTTP/2 preface + SETTINGS
-// 返回 conn ?http2-conn: ok=連線, nil=失敗
+; http2-connect-tls: 建立 HTTP/2 over TLS 連線
+; 先建立 TLS 連線，再送出 HTTP/2 preface + SETTINGS
+; 返回 conn ?http2-conn: ok=連線, nil=失敗
 http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
     conn = nil
 
-    // 1. 建立 TLS 連線
+    ; 1. 建立 TLS 連線
     tls-c tls-conn
     tls-c.init()
     ok2 = tls-c.connect(host, port)
@@ -357,7 +357,7 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
     c.tls-c = tls-c
     c.fd = tls-c.fd
 
-    // 2. 送出連線 preface（透過 TLS）
+    ; 2. 送出連線 preface（透過 TLS）
     cr = char-to-str(13)
     lf = char-to-str(10)
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
@@ -378,14 +378,14 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
         }
     }
 
-    // 3. 送出空 SETTINGS
+    ; 3. 送出空 SETTINGS
     send-ok = c.send-settings(false)
     send-ok == false -> {
         tls-c.close()
         return
     }
 
-    // 4. 接收伺服器 SETTINGS 並 ACK
+    ; 4. 接收伺服器 SETTINGS 並 ACK
     recv-f = c.recv-frame()
     recv-f
     send-ok == false -> {
@@ -395,7 +395,7 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
     conn = c
 }
 
-// http2-conn.close: 關閉連線（自動處理 TLS/明文）
+; http2-conn.close: 關閉連線（自動處理 TLS/明文）
 http2-conn.close = () {
     {
         .use-tls -> .tls-c.close()
@@ -404,12 +404,12 @@ http2-conn.close = () {
     .fd = -1
 }
 
-// http2-conn.request: 執行 HTTP/2 請求
-// method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
-// path: 請求路徑
-// host: 主機名（用於 :authority 標頭）
-// body: 請求主體（空字串=無主體）
-// 返回 resp=回應, ok=true=成功
+; http2-conn.request: 執行 HTTP/2 請求
+; method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
+; path: 請求路徑
+; host: 主機名（用於 :authority 標頭）
+; body: 請求主體（空字串=無主體）
+; 返回 resp=回應, ok=true=成功
 http2-conn.request = (method str, path str, host str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
@@ -420,58 +420,58 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
     stream-id = .next-stream-id
     .next-stream-id = .next-stream-id + 2
 
-    // 構建標頭
+    ; 構建標頭
     hdr-names [64]str
     hdr-values [64]str
     hdr-count = 0
 
-    // :method
+    ; :method
     hdr-names[0] = ':method'
     hdr-values[0] = method
     hdr-count = 1
 
-    // :path
+    ; :path
     hdr-names[1] = ':path'
     hdr-values[1] = path
     hdr-count = 2
 
-    // :scheme
+    ; :scheme
     hdr-names[2] = ':scheme'
     hdr-values[2] = 'http'
     hdr-count = 3
 
-    // :authority
+    ; :authority
     hdr-names[3] = ':authority'
     hdr-values[3] = host
     hdr-count = 4
 
-    // body 長度
+    ; body 長度
     has-body = false
     body-len i64 = body.len
     body-len > 0 -> {
         has-body = true
 
-        // content-length
+        ; content-length
         hdr-names[4] = 'content-length'
         blen-str = body-len.to-str()
         hdr-values[4] = blen-str
         hdr-count = 5
     }
 
-    // 發送 HEADERS
+    ; 發送 HEADERS
     end-stream = false
     has-body == false -> end-stream = true
     send-ok = false
     send-ok = .send-headers(stream-id, hdr-names, hdr-values, hdr-count, end-stream)
     send-ok == false -> return
 
-    // 發送 DATA（如果有主體）
+    ; 發送 DATA（如果有主體）
     has-body -> {
         send-ok = .send-data(stream-id, body, true)
         send-ok == false -> return
     }
 
-    // 接收回應影格
+    ; 接收回應影格
     !! {
         f http2-frame
         recv-f = .recv-frame()
@@ -482,7 +482,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
         }
         {
             f.frame-type == FRAME-HEADERS -> {
-                // 用 HPACK 解碼標頭
+                ; 用 HPACK 解碼標頭
                 dec-names [128]str
                 dec-values [128]str
                 dec-count = 0
@@ -490,7 +490,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                 dec-names, dec-values, dec-count, dec-ok = .hpack.decode-headers(f.payload)
                 dec-ok == false -> return
 
-                // 複製到輸出（最多 32 項）
+                ; 複製到輸出（最多 32 項）
                 i <- [0..dec-count): {
                     i >= 32 -> break
                     nlen = dec-names[i].len
@@ -503,14 +503,14 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                     -> header-count = 32
                 }
 
-                // 檢查 END_STREAM
+                ; 檢查 END_STREAM
                 (f.flags & FLAG-END-STREAM) != 0 -> {
                     ok = true
                     *
                 }
             }
             f.frame-type == FRAME-DATA -> {
-                // 複製到 resp-body
+                ; 複製到 resp-body
                 i <- [0..f.payload.len): {
                     resp-body[resp-n + i] = f.payload[i]
                 }
@@ -521,37 +521,37 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                 }
             }
             f.frame-type == FRAME-RST-STREAM -> {
-                // 伺服器重設串流
+                ; 伺服器重設串流
                 return
             }
             f.frame-type == FRAME-GOAWAY -> {
-                // 伺服器關閉連線
+                ; 伺服器關閉連線
                 return
             }
             -> return
         }
-        // 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
+        ; 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
     }
 }
 
-// http2-do: HTTP/2 h2c 便捷函數
-// method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
-// url: 'http://host:port/path'（port 可選，預設 80）
-// body: 請求主體（空字串=無主體）
-// 返回 names/values/header-count=回應標頭, resp-body/resp-n=回應主體, ok=true=成功
+; http2-do: HTTP/2 h2c 便捷函數
+; method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
+; url: 'http://host:port/path'（port 可選，預設 80）
+; body: 請求主體（空字串=無主體）
+; 返回 names/values/header-count=回應標頭, resp-body/resp-n=回應主體, ok=true=成功
 http2-do = (method str, url str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
     resp-n = 0
 
-    // 解析 URL
+    ; 解析 URL
     host = ''
     port i64 = HTTP2-DEFAULT-PORT
     path = '/'
     use-tls = false
     u = url
 
-    // 偵測 scheme 並去掉前綴
+    ; 偵測 scheme 並去掉前綴
     u.len >= 8 -> {
         prefix-https = 'https://'
         matched-https = 1
@@ -579,7 +579,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
         matched == 1 -> u = u.slice(7, u.len)
     }
 
-    // 分離 host:port 和 path
+    ; 分離 host:port 和 path
     slash-idx = u.index('/')
     {
         slash-idx < 0 -> {
@@ -592,7 +592,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
         }
     }
 
-    // 解析 port
+    ; 解析 port
     colon-idx = host.index(':')
     colon-idx >= 0 -> {
         host-only = host.slice(0, colon-idx)
@@ -604,7 +604,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
         host = host-only
     }
 
-    // 建立連線
+    ; 建立連線
     conn ?http2-conn = nil
     {
         use-tls -> conn = http2-connect-tls(host, port)
@@ -619,15 +619,15 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     }
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數（返回 http-response）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數（返回 http-response）
+; ═══════════════════════════════════════════════
 
-// http2-do-req: HTTP/2 請求，返回 ?http-response
-// method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
-// url: 'http://host:port/path'
-// body: 請求主體（空字串=無主體）
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-do-req: HTTP/2 請求，返回 ?http-response
+; method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
+; url: 'http://host:port/path'
+; body: 請求主體（空字串=無主體）
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-do-req = (method str, url str, body str) (resp ?http-response) {
     resp = nil
     r http-response
@@ -640,14 +640,14 @@ http2-do-req = (method str, url str, body str) (resp ?http-response) {
     names, values, header-count, raw-body, body-n, ok = http2-do(method, url, body)
     ok == false -> return
 
-    // 複製標頭到 r（用 slice 載入值）
+    ; 複製標頭到 r（用 slice 載入值）
     r.header-count = header-count
     i <- [0..header-count): {
         nlen = names[i].len
         vlen = values[i].len
         r.header-names[i] = names[i].slice(0, nlen)
         r.header-values[i] = values[i].slice(0, vlen)
-        // 尋找 :status
+        ; 尋找 :status
         nlen == 7 -> {
             is-status = 1
             status-hdr = ':status'
@@ -667,37 +667,37 @@ http2-do-req = (method str, url str, body str) (resp ?http-response) {
         }
     }
 
-    // 複製 body
+    ; 複製 body
     body-n > 0 -> r.body = raw-body.slice(0, body-n)
     resp = r
 }
 
-// http2-get: HTTP/2 GET 請求
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-get: HTTP/2 GET 請求
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-get = (url str) (resp ?http-response) {
     resp = http2-do-req('GET', url, '')
 }
 
-// http2-post: HTTP/2 POST 請求
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-post: HTTP/2 POST 請求
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-post = (url str, body str) (resp ?http-response) {
     resp = http2-do-req('POST', url, body)
 }
 
-// http2-put: HTTP/2 PUT 請求
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-put: HTTP/2 PUT 請求
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-put = (url str, body str) (resp ?http-response) {
     resp = http2-do-req('PUT', url, body)
 }
 
-// http2-delete: HTTP/2 DELETE 請求
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-delete: HTTP/2 DELETE 請求
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-delete = (url str) (resp ?http-response) {
     resp = http2-do-req('DELETE', url, '')
 }
 
-// http2-patch: HTTP/2 PATCH 請求
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http2-patch: HTTP/2 PATCH 請求
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http2-patch = (url str, body str) (resp ?http-response) {
     resp = http2-do-req('PATCH', url, body)
 }

@@ -1,4 +1,4 @@
-// test_char_old_syntax2
+; test_char_old_syntax2
 print('start')
 
 c char = A

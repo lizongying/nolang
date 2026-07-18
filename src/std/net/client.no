@@ -1,33 +1,33 @@
-// client — 高階 TCP 客戶端
-//
-// 封裝 conn，對稱於 listener，提供連接狀態追蹤、重連、請求-回應模式等便利功能。
-// 底層使用 net.no 的 conn 結構體與 net-* built-in 函數。
-//
-// 用法：
-//   c = client{}
-//   ok = c.connect('127.0.0.1', 8080)
-//   n = c.send('hello')
-//   n = c.recv(buf, 1024)
-//   c.close()
-//
-//   // 請求-回應模式
-//   response = c.request('PING')              // 返回 ?str
-//
-//   // 重連
-//   ok = c.reconnect()
-//
-//   // 便捷函數
-//   c = net-client('127.0.0.1', 8080)          // 返回 ?client
+; client — 高階 TCP 客戶端
+;
+; 封裝 conn，對稱於 listener，提供連接狀態追蹤、重連、請求-回應模式等便利功能。
+; 底層使用 net.no 的 conn 結構體與 net-* built-in 函數。
+;
+; 用法：
+;   c = client{}
+;   ok = c.connect('127.0.0.1', 8080)
+;   n = c.send('hello')
+;   n = c.recv(buf, 1024)
+;   c.close()
+;
+;   // 請求-回應模式
+;   response = c.request('PING')              // 返回 ?str
+;
+;   // 重連
+;   ok = c.reconnect()
+;
+;   // 便捷函數
+;   c = net-client('127.0.0.1', 8080)          // 返回 ?client
 
-// ═══════════════════════════════════════════════
-// client 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; client 結構體
+; ═══════════════════════════════════════════════
 
-// client: 高階 TCP 客戶端
-// c: 底層 TCP 連接（conn 結構體）
-// host: 目標主機（記錄供 reconnect 使用）
-// port: 目標埠號
-// connected: 連接狀態
+; client: 高階 TCP 客戶端
+; c: 底層 TCP 連接（conn 結構體）
+; host: 目標主機（記錄供 reconnect 使用）
+; port: 目標埠號
+; connected: 連接狀態
 client {
     c conn
     host str
@@ -35,9 +35,9 @@ client {
     connected bool
 }
 
-// connect: 連接到指定主機與埠號
-// 記錄 host/port 供後續 reconnect 使用
-// 返回 ok=true=成功
+; connect: 連接到指定主機與埠號
+; 記錄 host/port 供後續 reconnect 使用
+; 返回 ok=true=成功
 client.connect = (host str, port i64) (ok bool) {
     ok = false
     .host = host
@@ -47,9 +47,9 @@ client.connect = (host str, port i64) (ok bool) {
     ok -> .connected = true
 }
 
-// reconnect: 使用已記錄的 host/port 重新連接
-// 先關閉舊連接（避免 fd 洩漏），再重新 dial
-// 返回 ok=true=成功
+; reconnect: 使用已記錄的 host/port 重新連接
+; 先關閉舊連接（避免 fd 洩漏），再重新 dial
+; 返回 ok=true=成功
 client.reconnect = () (ok bool) {
     ok = false
     .host.len == 0 -> return
@@ -61,35 +61,35 @@ client.reconnect = () (ok bool) {
     ok -> .connected = true
 }
 
-// send: 發送字串資料
-// 返回 written=實際發送位元組數（-1=錯誤）
+; send: 發送字串資料
+; 返回 written=實際發送位元組數（-1=錯誤）
 client.send = (data str) (written i64) {
     written = -1
     .connected == false -> return
     written = .c.send(data)
 }
 
-// recv: 接收資料到緩衝區
-// buf: 接收緩衝區（str）
-// n: 最多接收的位元組數
-// 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
+; recv: 接收資料到緩衝區
+; buf: 接收緩衝區（str）
+; n: 最多接收的位元組數
+; 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
 client.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .connected == false -> return
     read-n = .c.recv(buf, n)
 }
 
-// recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
-// 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
+; recv-line: 接收一行資料（最多 NET-BUF-SIZE 位元組）
+; 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
 client.recv-line = () (line ?str) {
     line = nil
     .connected == false -> return
     line = .c.recv-line()
 }
 
-// request: 請求-回應模式
-// 發送資料後接收全部回應直到連接關閉
-// 返回 response ?str: ok=回應內容, nil=失敗
+; request: 請求-回應模式
+; 發送資料後接收全部回應直到連接關閉
+; 返回 response ?str: ok=回應內容, nil=失敗
 client.request = (data str) (response ?str) {
     response = nil
     .connected == false -> return
@@ -101,24 +101,24 @@ client.request = (data str) (response ?str) {
     response = s
 }
 
-// send-line: 發送一行（附加換行符 \n）
-// 返回 written=實際發送位元組數（-1=錯誤）
+; send-line: 發送一行（附加換行符 \n）
+; 返回 written=實際發送位元組數（-1=錯誤）
 client.send-line = (line str) (written i64) {
     written = -1
     .connected == false -> return
 
-    // char-to-str(10) = 換行符 \n（ASCII 10）
+    ; char-to-str(10) = 換行符 \n（ASCII 10）
     nl = char-to-str(10)
     written = .c.send(line - nl)
 }
 
-// is-connected: 檢查連接狀態
-// 返回 yes=true=已連接
+; is-connected: 檢查連接狀態
+; 返回 yes=true=已連接
 client.is-connected = () (yes bool) {
     yes = .connected
 }
 
-// close: 關閉連接並重置狀態
+; close: 關閉連接並重置狀態
 client.close = () {
     .connected -> {
         .c.close()
@@ -126,12 +126,12 @@ client.close = () {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// net-client: 建立客戶端並連接
-// 返回 c ?client: ok=客戶端, nil=失敗
+; net-client: 建立客戶端並連接
+; 返回 c ?client: ok=客戶端, nil=失敗
 net-client = (host str, port i64) (c ?client) {
     c = nil
     cl = client{}

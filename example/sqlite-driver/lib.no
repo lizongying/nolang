@@ -1,4 +1,4 @@
-// Export declarations
+; Export declarations
 @ /src/sqlite.db-sqlite
 @ /src/sqlite.rows-sqlite
 @ /src/sqlite.stmt-sqlite

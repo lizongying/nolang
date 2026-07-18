@@ -1,61 +1,61 @@
-// process — 進程操作
-//
-// 提供進程創建、標準流獲取、進程等待、進程信息查詢等功能。
-// 底層使用 POSIX fork/exec/pipe/waitpid 實作。
-//
-// 用法：
-//   p = process{}
-//   p.start('ls', '-la')
-//   code = p.wait()
-//   print('exit code: ' - code.to-str())
-//
-//   // 簡易命令執行
-//   code = process-run('echo hello')
+; process — 進程操作
+;
+; 提供進程創建、標準流獲取、進程等待、進程信息查詢等功能。
+; 底層使用 POSIX fork/exec/pipe/waitpid 實作。
+;
+; 用法：
+;   p = process{}
+;   p.start('ls', '-la')
+;   code = p.wait()
+;   print('exit code: ' - code.to-str())
+;
+;   // 簡易命令執行
+;   code = process-run('echo hello')
 
-// ═══════════════════════════════════════════════
-// 內建函數（底層實作）
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 內建函數（底層實作）
+; ═══════════════════════════════════════════════
 
-// build-in (ForwardFunc: process-fork)
-// process-fork: fork 當前進程
-// 返回 0=子進程, >0=父進程(子PID), -1=錯誤
-// process-fork = () (pid i64) { }
+; build-in (ForwardFunc: process-fork)
+; process-fork: fork 當前進程
+; 返回 0=子進程, >0=父進程(子PID), -1=錯誤
+; process-fork = () (pid i64) { }
 
-// build-in (ForwardFunc: process-pipe)
-// process-pipe: 建立管道
-// 返回打包值 (read_fd << 32) | write_fd
-// process-pipe = () (fds i64) { }
+; build-in (ForwardFunc: process-pipe)
+; process-pipe: 建立管道
+; 返回打包值 (read_fd << 32) | write_fd
+; process-pipe = () (fds i64) { }
 
-// build-in (ForwardFunc: process-waitpid)
-// process-waitpid: 等待子進程
-// 返回退出碼 (WEXITSTATUS)
-// process-waitpid = (pid i64, options i64) (code i64) { }
+; build-in (ForwardFunc: process-waitpid)
+; process-waitpid: 等待子進程
+; 返回退出碼 (WEXITSTATUS)
+; process-waitpid = (pid i64, options i64) (code i64) { }
 
-// build-in (ForwardFunc: process-exec)
-// process-exec: 替換當前進程
-// 呼叫 execlp(program, program, arg, NULL)
-// 僅在失敗時返回
-// process-exec = (program str, arg str) (err i64) { }
+; build-in (ForwardFunc: process-exec)
+; process-exec: 替換當前進程
+; 呼叫 execlp(program, program, arg, NULL)
+; 僅在失敗時返回
+; process-exec = (program str, arg str) (err i64) { }
 
-// build-in (CLibCall: kill)
-// process-kill: 發送信號給進程
-// process-kill = (pid i64, sig i64) (ok bool) { }
+; build-in (CLibCall: kill)
+; process-kill: 發送信號給進程
+; process-kill = (pid i64, sig i64) (ok bool) { }
 
-// build-in (CLibCall: dup2)
-// process-dup2: 複製檔案描述符
-// process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
+; build-in (CLibCall: dup2)
+; process-dup2: 複製檔案描述符
+; process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
 
-// build-in (CLibCall: getppid)
-// process-getppid: 取得父進程 ID
-// process-getppid = () (pid i64) { }
+; build-in (CLibCall: getppid)
+; process-getppid: 取得父進程 ID
+; process-getppid = () (pid i64) { }
 
-// build-in (CLibCall: system)
-// process-system: 執行 shell 命令
-// process-system = (cmd str) (status i64) { }
+; build-in (CLibCall: system)
+; process-system: 執行 shell 命令
+; process-system = (cmd str) (status i64) { }
 
-// ═══════════════════════════════════════════════
-// 信號常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 信號常量
+; ═══════════════════════════════════════════════
 
 SIG-TERM = 15
 SIG-KILL = 9
@@ -64,20 +64,20 @@ SIG-STOP = 19
 SIG-CONT = 18
 SIG-CHLD = 17
 
-// waitpid options
+; waitpid options
 WNOHANG = 1
 
-// ═══════════════════════════════════════════════
-// process 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; process 結構體
+; ═══════════════════════════════════════════════
 
-// process: 子進程
-// pid: 子進程 ID
-// stdin-fd: 寫入子進程標準輸入的 fd（-1=未連接）
-// stdout-fd: 讀取子進程標準輸出的 fd（-1=未連接）
-// stderr-fd: 讀取子進程標準錯誤的 fd（-1=未連接）
-// exit-code: 子進程退出碼
-// running: 是否仍在執行（0=否, 1=是）
+; process: 子進程
+; pid: 子進程 ID
+; stdin-fd: 寫入子進程標準輸入的 fd（-1=未連接）
+; stdout-fd: 讀取子進程標準輸出的 fd（-1=未連接）
+; stderr-fd: 讀取子進程標準錯誤的 fd（-1=未連接）
+; exit-code: 子進程退出碼
+; running: 是否仍在執行（0=否, 1=是）
 process {
     pid i64
     stdin-fd i64
@@ -87,14 +87,14 @@ process {
     running i64
 }
 
-// ═══════════════════════════════════════════════
-// 進程創建
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 進程創建
+; ═══════════════════════════════════════════════
 
-// start: 創建子進程並執行命令
-// program: 要執行的程式名（PATH 搜尋）
-// arg: 傳給程式的參數
-// 返回 ok=true=成功
+; start: 創建子進程並執行命令
+; program: 要執行的程式名（PATH 搜尋）
+; arg: 傳給程式的參數
+; 返回 ok=true=成功
 process.start = (program str, arg str) (ok bool) {
     ok = false
     .pid = 0
@@ -104,34 +104,34 @@ process.start = (program str, arg str) (ok bool) {
     .exit-code = 0
     .running = 0
 
-    // 建立 stdout 管道
+    ; 建立 stdout 管道
     fds = process-pipe()
     stdout-read = fds >> 32
     stdout-write = fds & 0xFFFFFFFF
 
-    // fork
+    ; fork
     pid = process-fork()
     pid == 0 -> {
-        // 子進程：重定向 stdout 到管道寫端
+        ; 子進程：重定向 stdout 到管道寫端
         process-dup2(stdout-write, 1)
         close(stdout-read)
         close(stdout-write)
 
-        // exec
+        ; exec
         process-exec(program, arg)
 
-        // exec 失敗，退出
+        ; exec 失敗，退出
         exit(1)
     }
 
     pid < 0 -> {
-        // fork 失敗
+        ; fork 失敗
         close(stdout-read)
         close(stdout-write)
         return
     }
 
-    // 父進程
+    ; 父進程
     .pid = pid
     .stdout-fd = stdout-read
     .stdin-fd = -1
@@ -140,12 +140,12 @@ process.start = (program str, arg str) (ok bool) {
     .running = 1
     ok = true
 
-    // 關閉不需要的寫端
+    ; 關閉不需要的寫端
     close(stdout-write)
 }
 
-// start-with-stdin: 創建子進程，同時建立 stdin 管道
-// 返回 ok=true=成功
+; start-with-stdin: 創建子進程，同時建立 stdin 管道
+; 返回 ok=true=成功
 process.start-with-stdin = (program str, arg str) (ok bool) {
     ok = false
     .pid = 0
@@ -155,19 +155,19 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
     .exit-code = 0
     .running = 0
 
-    // 建立 stdin 管道
+    ; 建立 stdin 管道
     in-fds = process-pipe()
     in-read = in-fds >> 32
     in-write = in-fds & 0xFFFFFFFF
 
-    // 建立 stdout 管道
+    ; 建立 stdout 管道
     out-fds = process-pipe()
     out-read = out-fds >> 32
     out-write = out-fds & 0xFFFFFFFF
 
     pid = process-fork()
     pid == 0 -> {
-        // 子進程
+        ; 子進程
         process-dup2(in-read, 0)
         process-dup2(out-write, 1)
         close(in-read)
@@ -185,7 +185,7 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
         return
     }
 
-    // 父進程
+    ; 父進程
     .pid = pid
     .stdin-fd = in-write
     .stdout-fd = out-read
@@ -197,12 +197,12 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
     close(out-write)
 }
 
-// ═══════════════════════════════════════════════
-// 進程等待
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 進程等待
+; ═══════════════════════════════════════════════
 
-// wait: 等待子進程結束
-// 返回 exit-code=退出碼, ok=true=成功
+; wait: 等待子進程結束
+; 返回 exit-code=退出碼, ok=true=成功
 process.wait = () (ok bool) {
     ok = false
     .running == 0 -> {
@@ -215,8 +215,8 @@ process.wait = () (ok bool) {
     ok = true
 }
 
-// wait-nohang: 非阻塞等待（輪詢）
-// 返回 ok=true=子進程已結束, false=仍在執行
+; wait-nohang: 非阻塞等待（輪詢）
+; 返回 ok=true=子進程已結束, false=仍在執行
 process.wait-nohang = () (ok bool) {
     ok = false
     .running == 0 -> {
@@ -225,54 +225,54 @@ process.wait-nohang = () (ok bool) {
     }
     code = process-waitpid(.pid, WNOHANG)
 
-    // waitpid with WNOHANG returns 0 if child still running
-    // but our builtin returns exit code, so we check if code changed
-    // Actually WNOHANG returns 0 if no child exited, non-zero exit code if exited
-    // This is a limitation - we can't distinguish "still running" from "exit code 0"
-    // For now, assume WNOHANG returns 0 means still running
+    ; waitpid with WNOHANG returns 0 if child still running
+    ; but our builtin returns exit code, so we check if code changed
+    ; Actually WNOHANG returns 0 if no child exited, non-zero exit code if exited
+    ; This is a limitation - we can't distinguish "still running" from "exit code 0"
+    ; For now, assume WNOHANG returns 0 means still running
     code == 0 -> return
     .exit-code = code
     .running = 0
     ok = true
 }
 
-// ═══════════════════════════════════════════════
-// 進程控制
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 進程控制
+; ═══════════════════════════════════════════════
 
-// kill: 發送信號給子進程
-// sig: 信號編號（如 SIG-TERM=15, SIG-KILL=9）
-// 返回 ok=true=成功
+; kill: 發送信號給子進程
+; sig: 信號編號（如 SIG-TERM=15, SIG-KILL=9）
+; 返回 ok=true=成功
 process.kill = (sig i64) (ok bool) {
     ok = process-kill(.pid, sig)
 }
 
-// terminate: 發送 SIG-TERM 信號
-// 返回 ok=true=成功
+; terminate: 發送 SIG-TERM 信號
+; 返回 ok=true=成功
 process.terminate = () (ok bool) {
     ok = .kill(SIG-TERM)
 }
 
-// force-kill: 發送 SIG-KILL 信號
-// 返回 ok=true=成功
+; force-kill: 發送 SIG-KILL 信號
+; 返回 ok=true=成功
 process.force-kill = () (ok bool) {
     ok = .kill(SIG-KILL)
 }
 
-// ═══════════════════════════════════════════════
-// 標準流操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 標準流操作
+; ═══════════════════════════════════════════════
 
-// read: 從子進程的 stdout 讀取資料
-// 返回 read-n=實際讀取位元組數
+; read: 從子進程的 stdout 讀取資料
+; 返回 read-n=實際讀取位元組數
 process.read = (buf str, n i64) (read-n i64) {
     read-n = 0
     .stdout-fd < 0 -> return
     read-n = read(.stdout-fd, buf, n)
 }
 
-// read-line: 從子進程的 stdout 讀取一行
-// 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; read-line: 從子進程的 stdout 讀取一行
+; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
 process.read-line = () (line ?str) {
     line = nil
     .stdout-fd < 0 -> return
@@ -281,8 +281,8 @@ process.read-line = () (line ?str) {
     n > 0 -> line = buf
 }
 
-// read-all: 讀取子進程的所有 stdout 輸出
-// 返回 content=讀取內容, n=讀取位元組數
+; read-all: 讀取子進程的所有 stdout 輸出
+; 返回 content=讀取內容, n=讀取位元組數
 process.read-all = () (content str, n i64) {
     n = 0
     .stdout-fd < 0 -> return
@@ -297,15 +297,15 @@ process.read-all = () (content str, n i64) {
     }
 }
 
-// write: 寫入資料到子進程的 stdin
-// 返回 written=實際寫入位元組數
+; write: 寫入資料到子進程的 stdin
+; 返回 written=實際寫入位元組數
 process.write = (data str, n i64) (written i64) {
     written = 0
     .stdin-fd < 0 -> return
     written = write(.stdin-fd, data, n)
 }
 
-// close-stdin: 關閉子進程的 stdin 管道
+; close-stdin: 關閉子進程的 stdin 管道
 process.close-stdin = () {
     .stdin-fd >= 0 -> {
         close(.stdin-fd)
@@ -313,7 +313,7 @@ process.close-stdin = () {
     }
 }
 
-// close-stdout: 關閉子進程的 stdout 管道
+; close-stdout: 關閉子進程的 stdout 管道
 process.close-stdout = () {
     .stdout-fd >= 0 -> {
         close(.stdout-fd)
@@ -321,7 +321,7 @@ process.close-stdout = () {
     }
 }
 
-// close-stderr: 關閉子進程的 stderr 管道
+; close-stderr: 關閉子進程的 stderr 管道
 process.close-stderr = () {
     .stderr-fd >= 0 -> {
         close(.stderr-fd)
@@ -329,35 +329,35 @@ process.close-stderr = () {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 進程信息
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 進程信息
+; ═══════════════════════════════════════════════
 
-// pid: 取得子進程 ID
+; pid: 取得子進程 ID
 process.pid-of = () (pid i64) {
     pid = .pid
 }
 
-// exit-code: 取得退出碼
+; exit-code: 取得退出碼
 process.exit-code-of = () (code i64) {
     code = .exit-code
 }
 
-// is-running: 判斷子進程是否仍在執行
+; is-running: 判斷子進程是否仍在執行
 process.is-running = () (yes bool) {
     yes = .running == 1
 }
 
-// parent-pid: 取得父進程 ID（靜態方法）
+; parent-pid: 取得父進程 ID（靜態方法）
 process.parent-pid = () (pid i64) {
     pid = process-getppid()
 }
 
-// ═══════════════════════════════════════════════
-// 生命週期管理
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 生命週期管理
+; ═══════════════════════════════════════════════
 
-// close: 關閉所有管道並等待子進程
+; close: 關閉所有管道並等待子進程
 process.close = () {
     .close-stdin()
     .close-stdout()
@@ -365,18 +365,18 @@ process.close = () {
     .running == 1 -> .wait()
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// process-run: 執行 shell 命令並等待完成
-// 返回 status=退出狀態
+; process-run: 執行 shell 命令並等待完成
+; 返回 status=退出狀態
 process-run = (cmd str) (status i64) {
     status = process-system(cmd)
 }
 
-// process-output: 執行命令並捕獲 stdout 輸出
-// 返回 content=輸出內容, code=退出碼
+; process-output: 執行命令並捕獲 stdout 輸出
+; 返回 content=輸出內容, code=退出碼
 process-output = (program str, arg str) (content str, code i64) {
     p = process{}
     p.start(program, arg)

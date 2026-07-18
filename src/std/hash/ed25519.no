@@ -1,31 +1,31 @@
-// ed25519 — Ed25519 簽名算法（RFC 8032）
-//
-// 基於 twisted Edwards 曲線的 EdDSA 簽名方案。
-// 曲線: -x² + y² = 1 + d*x²*y² (mod 2^255-19)
-// 基點 B，群階 L = 2^252 + 27742317777372353535851937790883648493
-//
-// 複用 x25519.no 的 GF(2^255-19) 域元素操作。
-//
-// 用法：
-//   # std/hash/ed25519
-//   priv [32]byte = ed25519-generate-seed(seed)
-//   pub [32]byte = ed25519-publickey(priv)
-//   sig [64]byte = ed25519-sign(priv, msg)
-//   ok = ed25519-verify(pub, msg, sig)
+; ed25519 — Ed25519 簽名算法（RFC 8032）
+;
+; 基於 twisted Edwards 曲線的 EdDSA 簽名方案。
+; 曲線: -x² + y² = 1 + d*x²*y² (mod 2^255-19)
+; 基點 B，群階 L = 2^252 + 27742317777372353535851937790883648493
+;
+; 複用 x25519.no 的 GF(2^255-19) 域元素操作。
+;
+; 用法：
+;   # std/hash/ed25519
+;   priv [32]byte = ed25519-generate-seed(seed)
+;   pub [32]byte = ed25519-publickey(priv)
+;   sig [64]byte = ed25519-sign(priv, msg)
+;   ok = ed25519-verify(pub, msg, sig)
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// 曲線參數 d = -121665/121666 mod p
-// 預計算為 10-limb 表示
+; 曲線參數 d = -121665/121666 mod p
+; 預計算為 10-limb 表示
 ED-D [10]i64 = [
     -10913610, 13857, 107136, -17686, -25275, -4158, -9706, 17147,
     4404, 0,
 ]
 
-// 基點 B 的 y 座標 = 4/5 mod p（小端 32 位元組）
-// 0x6666666666666666666666666666666666666666666666666666666666666658
+; 基點 B 的 y 座標 = 4/5 mod p（小端 32 位元組）
+; 0x6666666666666666666666666666666666666666666666666666666666666658
 ED-BYTES [32]byte = [
     0x1a, 0xd5, 0x25, 0x5f, 0x48, 0x06, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -33,8 +33,8 @@ ED-BYTES [32]byte = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]
 
-// 群階 L = 2^252 + 27742317777372353535851937790883648493
-// 小端 32 位元組
+; 群階 L = 2^252 + 27742317777372353535851937790883648493
+; 小端 32 位元組
 ED-L [32]byte = [
     0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
     0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
@@ -42,17 +42,17 @@ ED-L [32]byte = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
 ]
 
-// ═══════════════════════════════════════════════
-// 額外域元素操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 額外域元素操作
+; ═══════════════════════════════════════════════
 
-// fe-neg: 域元素取負 h = -f mod p
-// p = 2^255 - 19，所以 -f = p - f
+; fe-neg: 域元素取負 h = -f mod p
+; p = 2^255 - 19，所以 -f = p - f
 fe-neg = (h []i64, f []i64) {
-    // 使用 p 的 10-limb 表示
-    // p = 2^255 - 19
-    // limb: [MASK-26-19, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25-1]
-    // 但簡化：先減 f，再加上 p 的倍數使結果為正
+    ; 使用 p 的 10-limb 表示
+    ; p = 2^255 - 19
+    ; limb: [MASK-26-19, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25-1]
+    ; 但簡化：先減 f，再加上 p 的倍數使結果為正
     h[0] = 67108844 - f[0]
     h[1] = 33554431 - f[1]
     h[2] = 67108863 - f[2]
@@ -65,15 +65,15 @@ fe-neg = (h []i64, f []i64) {
     h[9] = 33554431 - f[9]
 }
 
-// ═══════════════════════════════════════════════
-// Extended Twisted Edwards 座標點操作
-// 點表示: (X, Y, Z, T) 其中 x=X/Z, y=Y/Z, T=XY/Z
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Extended Twisted Edwards 座標點操作
+; 點表示: (X, Y, Z, T) 其中 x=X/Z, y=Y/Z, T=XY/Z
+; ═══════════════════════════════════════════════
 
-// ge-add: 點加法 R = P + Q（統一加法公式）
-// 每個點是 4 個域元素 [X, Y, Z, T]
+; ge-add: 點加法 R = P + Q（統一加法公式）
+; 每個點是 4 個域元素 [X, Y, Z, T]
 ge-add = (r []i64, p []i64, q []i64) {
-    // A = (Y1-X1)*(Y2-X2)
+    ; A = (Y1-X1)*(Y2-X2)
     a []i64
     t1 []i64
     t2 []i64
@@ -81,115 +81,115 @@ ge-add = (r []i64, p []i64, q []i64) {
     x25519.fe-sub(t2, q[30..], q)
     x25519.fe-mul(a, t1, t2)
 
-    // B = (Y1+X1)*(Y2+X2)
+    ; B = (Y1+X1)*(Y2+X2)
     b []i64
     x25519.fe-add(t1, p[10..], p)
     x25519.fe-add(t2, q[30..], q)
     x25519.fe-mul(b, t1, t2)
 
-    // C = T1*2*d*T2
+    ; C = T1*2*d*T2
     c []i64
     x25519.fe-mul(t1, p[30..], q[30..])
     x25519.fe-mul(t2, t1, ED-D)
     x25519.fe-add(c, t2, t2)
 
-    // D = Z1*2*Z2
+    ; D = Z1*2*Z2
     d []i64
     x25519.fe-mul(t1, p[20..], q[20..])
     x25519.fe-add(d, t1, t1)
 
-    // E = B-A
+    ; E = B-A
     e []i64
     x25519.fe-sub(e, b, a)
 
-    // F = D-C
+    ; F = D-C
     f []i64
     x25519.fe-sub(f, d, c)
 
-    // G = D+C
+    ; G = D+C
     g []i64
     x25519.fe-add(g, d, c)
 
-    // H = B+A
+    ; H = B+A
     hh []i64
     x25519.fe-add(hh, b, a)
 
-    // X3 = E*F
+    ; X3 = E*F
     x25519.fe-mul(r, e, f)
 
-    // Y3 = G*H
+    ; Y3 = G*H
     x25519.fe-mul(r[10..], g, hh)
 
-    // T3 = E*H
+    ; T3 = E*H
     x25519.fe-mul(r[30..], e, hh)
 
-    // Z3 = F*G
+    ; Z3 = F*G
     x25519.fe-mul(r[20..], f, g)
 }
 
-// ge-double: 點倍乘 R = 2*P
+; ge-double: 點倍乘 R = 2*P
 ge-double = (r []i64, p []i64) {
-    // A = X1^2
+    ; A = X1^2
     a []i64
     x25519.fe-sq(a, p)
 
-    // B = Y1^2
+    ; B = Y1^2
     b []i64
     x25519.fe-sq(b, p[10..])
 
-    // C = 2*Z1^2
+    ; C = 2*Z1^2
     c []i64
     x25519.fe-sq(c, p[20..])
     x25519.fe-add(c, c, c)
 
-    // H = A+B
+    ; H = A+B
     hh []i64
     x25519.fe-add(hh, a, b)
 
-    // E = H - (X1+Y1)^2
+    ; E = H - (X1+Y1)^2
     e []i64
     t []i64
     x25519.fe-add(t, p, p[10..])
     x25519.fe-sq(e, t)
     x25519.fe-sub(e, hh, e)
 
-    // G = A-B
+    ; G = A-B
     g []i64
     x25519.fe-sub(g, a, b)
 
-    // F = C+G
+    ; F = C+G
     f []i64
     x25519.fe-add(f, c, g)
 
-    // X3 = E*F
+    ; X3 = E*F
     x25519.fe-mul(r, e, f)
 
-    // Y3 = G*H
+    ; Y3 = G*H
     x25519.fe-mul(r[10..], g, hh)
 
-    // T3 = E*H
+    ; T3 = E*H
     x25519.fe-mul(r[30..], e, hh)
 
-    // Z3 = F*G
+    ; Z3 = F*G
     x25519.fe-mul(r[20..], f, g)
 }
 
-// ge-scalar-mult: 純量乘法 R = scalar * P（double-and-add）
-// 使用常數時間方法
-// r []i64: 輸出點（4×10 = 40 個 i64）
-// scalar []byte: 純量（32 位元組）
-// p []i64: 輸入點（4×10 = 40 個 i64）
+; ge-scalar-mult: 純量乘法 R = scalar * P（double-and-add）
+; 使用常數時間方法
+; r []i64: 輸出點（4×10 = 40 個 i64）
+; scalar []byte: 純量（32 位元組）
+; p []i64: 輸入點（4×10 = 40 個 i64）
 ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
-    // 初始化 R 為單位元 (0, 1, 1, 0)
+    ; 初始化 R 為單位元 (0, 1, 1, 0)
     x25519.fe-zero(r)
     x25519.fe-one(r[10..])
     x25519.fe-one(r[20..])
     x25519.fe-zero(r[30..])
 
-    // 從高位到低位進行 double-and-add
+    ; 從高位到低位進行 double-and-add
     t = 254
     for t >= 0 {
-        // R = 2*R
+        ; R = 2*R
         tmp []i64
         ge-double(tmp, r)
         x25519.fe-copy(r, tmp)
@@ -197,7 +197,7 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         x25519.fe-copy(r[20..], tmp[20..])
         x25519.fe-copy(r[30..], tmp[30..])
 
-        // 如果 bit t 為 1，R = R + P
+        ; 如果 bit t 為 1，R = R + P
         byte-idx = t / 8
         bit-idx = t % 8
         bit = (scalar[byte-idx] >> bit-idx) & 1
@@ -214,15 +214,15 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 點編碼/解碼
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 點編碼/解碼
+; ═══════════════════════════════════════════════
 
-// ge-pack: 將點壓縮為 32 位元組
-// p []i64: 點 (X, Y, Z, T)
-// 返回 out [32]byte: 壓縮編碼
+; ge-pack: 將點壓縮為 32 位元組
+; p []i64: 點 (X, Y, Z, T)
+; 返回 out [32]byte: 壓縮編碼
 ge-pack = (p []i64) (out [32]byte) {
-    // 計算 x = X/Z, y = Y/Z
+    ; 計算 x = X/Z, y = Y/Z
     z-inv []i64
     x25519.fe-invert(z-inv, p[20..])
 
@@ -232,15 +232,15 @@ ge-pack = (p []i64) (out [32]byte) {
     y []i64
     x25519.fe-mul(y, p[10..], z-inv)
 
-    // 序列化 y
+    ; 序列化 y
     y-bytes [32]byte
     x25519.fe-tobytes(y-bytes, y)
 
-    // x 的最低位元作為符號位
+    ; x 的最低位元作為符號位
     x-bytes [32]byte
     x25519.fe-tobytes(x-bytes, x)
 
-    // 設置最高位元為 x 的最低位元
+    ; 設置最高位元為 x 的最低位元
     y-bytes[31] = y-bytes[31] | ((x-bytes[0] & 1) << 7)
 
     i <- [0..32): {
@@ -248,10 +248,10 @@ ge-pack = (p []i64) (out [32]byte) {
     }
 }
 
-// ge-unpack: 從 32 位元組解壓縮點
-// 返回 ok i64 (1=成功, 0=失敗), p []i64 點座標
+; ge-unpack: 從 32 位元組解壓縮點
+; 返回 ok i64 (1=成功, 0=失敗), p []i64 點座標
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
-    // 提取符號位
+    ; 提取符號位
     sign = (s[31] >> 7) & 1
     s-copy [32]byte
     i <- [0..32): {
@@ -259,26 +259,26 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     }
     s-copy[31] = s-copy[31] & 127
 
-    // 載入 y
+    ; 載入 y
     y []i64
     x25519.fe-frombytes(y, s-copy)
 
-    // 計算 u = y^2 - 1
+    ; 計算 u = y^2 - 1
     y2 []i64
     x25519.fe-sq(y2, y)
     u []i64
     x25519.fe-one(u)
     x25519.fe-sub(u, y2, u)
 
-    // 計算 v = d*y^2 + 1
+    ; 計算 v = d*y^2 + 1
     v []i64
     x25519.fe-mul(v, y2, ED-D)
     x25519.fe-one(v[10..])
     x25519.fe-add(v, v, v[10..])
 
-    // 計算 x = u * v^(-1) 的平方根
-    // x^2 = u/v = u * v^(-1)
-    // 使用 x = u * v^3 * (u * v^7)^((p-5)/8)
+    ; 計算 x = u * v^(-1) 的平方根
+    ; x^2 = u/v = u * v^(-1)
+    ; 使用 x = u * v^3 * (u * v^7)^((p-5)/8)
     v3 []i64
     x25519.fe-sq(v3, v)
     x25519.fe-mul(v3, v3, v)
@@ -287,41 +287,41 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     x25519.fe-sq(v7, v3)
     x25519.fe-mul(v7, v7, v)
 
-    // uv7 = u * v^7
+    ; uv7 = u * v^7
     uv7 []i64
     x25519.fe-mul(uv7, u, v7)
 
-    // pow = (uv7)^((p-5)/8)
-    // p-5 = 2^255 - 24
-    // 使用簡化的冪計算
+    ; pow = (uv7)^((p-5)/8)
+    ; p-5 = 2^255 - 24
+    ; 使用簡化的冪計算
     pow-uv7 []i64
     x25519.fe-sq(pow-uv7, uv7)
 
-    // 需要計算 uv7^(2^252 - 2)
+    ; 需要計算 uv7^(2^252 - 2)
     i <- [0..251): {
         x25519.fe-sq(pow-uv7, pow-uv7)
     }
     x25519.fe-mul(pow-uv7, pow-uv7, uv7)
 
-    // x = u * v^3 * pow
+    ; x = u * v^3 * pow
     x []i64
     x25519.fe-mul(x, u, v3)
     x25519.fe-mul(x, x, pow-uv7)
 
-    // 驗證: v * x^2 == u ?
+    ; 驗證: v * x^2 == u ?
     x2 []i64
     x25519.fe-sq(x2, x)
     check []i64
     x25519.fe-mul(check, v, x2)
 
-    // 比較 check 和 u
+    ; 比較 check 和 u
     check-neg []i64
     fe-neg(check-neg, u)
     diff []i64
     x25519.fe-add(diff, check, check-neg)
 
-    // 規約化 diff 並檢查是否為 0
-    // 簡化：如果 diff != 0，嘗試 x = x * sqrt(-1)
+    ; 規約化 diff 並檢查是否為 0
+    ; 簡化：如果 diff != 0，嘗試 x = x * sqrt(-1)
     diff-bytes [32]byte
     x25519.fe-tobytes(diff-bytes, diff)
 
@@ -331,16 +331,16 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     }
 
     is-zero == 0 -> {
-        // 嘗試 x = x * sqrt(-1)
-        // sqrt(-1) mod p = 2^((p-1)/4)
-        // 預計算值
+        ; 嘗試 x = x * sqrt(-1)
+        ; sqrt(-1) mod p = 2^((p-1)/4)
+        ; 預計算值
         sqrt-m1 [10]i64 = [
             -32595792, -7943725, 9377950, -3500415, 27508682, 7555289, -2773299, -2996918,
             -13890057, 0,
         ]
         x25519.fe-mul(x, x, sqrt-m1)
 
-        // 再次驗證
+        ; 再次驗證
         x25519.fe-sq(x2, x)
         x25519.fe-mul(check, v, x2)
         fe-neg(check-neg, u)
@@ -358,12 +358,12 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
         }
     }
 
-    // 檢查符號：如果 x 的最低位元 != sign，取負
+    ; 檢查符號：如果 x 的最低位元 != sign，取負
     x-bytes [32]byte
     x25519.fe-tobytes(x-bytes, x)
     (x-bytes[0] & 1) != sign -> fe-neg(x, x)
 
-    // 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
+    ; 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
     x25519.fe-copy(p, x)
     x25519.fe-copy(p[10..], y)
     x25519.fe-one(p[20..])
@@ -372,25 +372,25 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     ok = 1
 }
 
-// ═══════════════════════════════════════════════
-// 基點操作
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 基點操作
+; ═══════════════════════════════════════════════
 
-// ge-frombytes-no-check: 從位元組載入域元素（不清除高位）
-// 用於載入基點
+; ge-frombytes-no-check: 從位元組載入域元素（不清除高位）
+; 用於載入基點
 fe-frombytes-raw = (h []i64, s [32]byte) {
     x25519.fe-frombytes(h, s)
 }
 
-// 獲取基點 B 的 extended 座標
+; 獲取基點 B 的 extended 座標
 ge-basepoint = () (bp []i64) {
-    // y = 4/5 mod p
-    // 載入預計算的 y 值
+    ; y = 4/5 mod p
+    ; 載入預計算的 y 值
     y []i64
     x25519.fe-frombytes(y, ED-BYTES)
 
-    // x 為基點的正根（預計算）
-    // x = 15112221349535400772501151409588531511454012693041857206046113283949847762202
+    ; x 為基點的正根（預計算）
+    ; x = 15112221349535400772501151409588531511454012693041857206046113283949847762202
     x-bytes [32]byte = [
         0x1a, 0xd5, 0x25, 0x5f, 0x48, 0x06, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -400,8 +400,8 @@ ge-basepoint = () (bp []i64) {
     x []i64
     x25519.fe-frombytes(x, x-bytes)
 
-    // 實際上需要正確的 x 座標
-    // 基點 x 的小端編碼:
+    ; 實際上需要正確的 x 座標
+    ; 基點 x 的小端編碼:
     x-correct [32]byte = [
         0x1a, 0xd5, 0x25, 0x5f, 0x48, 0x06, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -416,81 +416,81 @@ ge-basepoint = () (bp []i64) {
     x25519.fe-mul(bp[30..], x, y)
 }
 
-// ge-scalar-mult-base: 基點純量乘法 R = scalar * B
+; ge-scalar-mult-base: 基點純量乘法 R = scalar * B
 ge-scalar-mult-base = (r []i64, scalar []byte) {
     bp []i64
     bp = ge-basepoint()
     ge-scalar-mult(r, scalar, bp)
 }
 
-// ═══════════════════════════════════════════════
-// 純量算術 mod L
-// L = 2^252 + 27742317777372353535851937790883648493
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 純量算術 mod L
+; L = 2^252 + 27742317777372353535851937790883648493
+; ═══════════════════════════════════════════════
 
-// sc-reduce: 將 64 位元組的整數規約 mod L
-// s []byte: 輸入 64 位元組（小端序）
-// 返回 out [32]byte: 規約後的 32 位元組
+; sc-reduce: 將 64 位元組的整數規約 mod L
+; s []byte: 輸入 64 位元組（小端序）
+; 返回 out [32]byte: 規約後的 32 位元組
 sc-reduce = (s []byte) (out [32]byte) {
-    // 簡化方法：將 64 位元組視為大整數，逐位元組減去 L
-    // 由於 Nolang 沒有 bignum，使用 8 個 64-bit limb
-    // 但 64 位元組 = 512 bits = 8 × 64 bits
+    ; 簡化方法：將 64 位元組視為大整數，逐位元組減去 L
+    ; 由於 Nolang 沒有 bignum，使用 8 個 64-bit limb
+    ; 但 64 位元組 = 512 bits = 8 × 64 bits
 
-    // 載入為 8 個 u64（小端序）
+    ; 載入為 8 個 u64（小端序）
     limbs [8]u64
     i <- [0..8): {
         off = i * 8
         limbs[i] = (s[off] & 255) | ((s[off + 1] & 255) << 8) | ((s[off + 2] & 255) << 16) | ((s[off + 3] & 255) << 24) | ((s[off + 4] & 255) as u64 << 32) | ((s[off + 5] & 255) as u64 << 40) | ((s[off + 6] & 255) as u64 << 48) | ((s[off + 7] & 255) as u64 << 56)
     }
 
-    // L 的 limb 表示
-    // L = 2^252 + 27742317777372353535851937790883648493
-    // 小端: limbs[0..3] = L 的低 256 位, limbs[4..7] = L 的高位
-    // L in 8×64-bit:
-    // limbs[0] = 0x000e14def9dea2f7
-    // limbs[1] = 0x9c6d125812631a5c
-    // limbs[2] = 0xf5d3ed0000000000 (實際需精確)
-    // 簡化：使用逐位元組比較和減法
+    ; L 的 limb 表示
+    ; L = 2^252 + 27742317777372353535851937790883648493
+    ; 小端: limbs[0..3] = L 的低 256 位, limbs[4..7] = L 的高位
+    ; L in 8×64-bit:
+    ; limbs[0] = 0x000e14def9dea2f7
+    ; limbs[1] = 0x9c6d125812631a5c
+    ; limbs[2] = 0xf5d3ed0000000000 (實際需精確)
+    ; 簡化：使用逐位元組比較和減法
 
-    // 簡化方法：重複減去 L 直到結果 < L
-    // 但這太慢。使用 Barrett 或直接的方法。
+    ; 簡化方法：重複減去 L 直到結果 < L
+    ; 但這太慢。使用 Barrett 或直接的方法。
 
-    // 更實際的方法：使用 32 位元組比較和減法
-    // 將 64 位元組分為高低兩半
-    // high = s[32:64], low = s[0:32]
-    // result = low + high * 2^256 mod L
-    // 由於 L ≈ 2^252，2^256 mod L = 2^256 - 4*L = ... (複雜)
+    ; 更實際的方法：使用 32 位元組比較和減法
+    ; 將 64 位元組分為高低兩半
+    ; high = s[32:64], low = s[0:32]
+    ; result = low + high * 2^256 mod L
+    ; 由於 L ≈ 2^252，2^256 mod L = 2^256 - 4*L = ... (複雜)
 
-    // 最簡方法：直接輸出低 32 位元組（適用於 SHA-512 輸出已足夠小的情況）
-    // 正確做法需要完整的模約簡，這裡用簡化版本
+    ; 最簡方法：直接輸出低 32 位元組（適用於 SHA-512 輸出已足夠小的情況）
+    ; 正確做法需要完整的模約簡，這裡用簡化版本
 
-    // 逐位元組減法（最多 8 次，因為輸入最多 2^512，L ≈ 2^252）
+    ; 逐位元組減法（最多 8 次，因為輸入最多 2^512，L ≈ 2^252）
     work [64]byte
     i <- [0..64): {
         work[i] = s[i]
     }
 
-    // 重複減去 L（在高 32 位元組的基礎上）
-    // 2^256 mod L = 2^256 - 4*L (因為 4*L ≈ 2^254)
-    // 需要精確計算...
+    ; 重複減去 L（在高 32 位元組的基礎上）
+    ; 2^256 mod L = 2^256 - 4*L (因為 4*L ≈ 2^254)
+    ; 需要精確計算...
 
-    // 簡化：直接截斷並做有限次減法
-    // 這在密碼學上不完全正確，但作為初步實作先這樣
+    ; 簡化：直接截斷並做有限次減法
+    ; 這在密碼學上不完全正確，但作為初步實作先這樣
 
-    // 計算 high * (2^256 mod L) + low mod L
-    // 2^256 mod L = 2^256 - 4*L
-    // 4*L = 2^254 + 4*27742317777372353535851937790883648493
+    ; 計算 high * (2^256 mod L) + low mod L
+    ; 2^256 mod L = 2^256 - 4*L
+    ; 4*L = 2^254 + 4*27742317777372353535851937790883648493
 
-    // 由於複雜性，使用簡單的位元組級減法
+    ; 由於複雜性，使用簡單的位元組級減法
     round <- [0..16): {
-        // 檢查 work 是否 >= L（比較 32 位元組，忽略高位）
-        // 如果高位不為零，需要處理
+        ; 檢查 work 是否 >= L（比較 32 位元組，忽略高位）
+        ; 如果高位不為零，需要處理
         has-high = 0
         i <- [32..64): {
             work[i] != 0 -> has-high = 1
         }
         has-high == 0 -> {
-            // 比較低 32 位元組與 L
+            ; 比較低 32 位元組與 L
             ge = 1
             i = 31
             for i >= 0 {
@@ -506,7 +506,7 @@ sc-reduce = (s []byte) (out [32]byte) {
 
             ge == 0 -> break
         }
-        // 減去 L（從低位開始）
+        ; 減去 L（從低位開始）
         borrow = 0
         i <- [0..32): {
             diff-val = (work[i] & 255) - (ED-L[i] & 255) - borrow
@@ -519,7 +519,7 @@ sc-reduce = (s []byte) (out [32]byte) {
             }
             work[i] = diff-val
         }
-        // 處理高位借位
+        ; 處理高位借位
         i <- [32..64 && borrow != 0): {
             diff-val = (work[i] & 255) - borrow
             {
@@ -538,14 +538,14 @@ sc-reduce = (s []byte) (out [32]byte) {
     }
 }
 
-// sc-muladd: 計算 s = (a * b + c) mod L
-// a [32]byte, b [32]byte, c [32]byte
-// 返回 s [32]byte
+; sc-muladd: 計算 s = (a * b + c) mod L
+; a [32]byte, b [32]byte, c [32]byte
+; 返回 s [32]byte
 sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
-    // 簡化實作：計算 a*b + c mod L
-    // a*b 最大 512 bits，加上 c 後仍 512 bits
+    ; 簡化實作：計算 a*b + c mod L
+    ; a*b 最大 512 bits，加上 c 後仍 512 bits
 
-    // 使用 32 位元組乘法（schoolbook）
+    ; 使用 32 位元組乘法（schoolbook）
     product [64]byte
     i <- [0..64): {
         product[i] = 0
@@ -559,7 +559,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             product[idx] = val & 255
             carry = val >> 8
         }
-        // 傳播進位
+        ; 傳播進位
         idx = i + 32
         for idx < 64 && carry != 0 {
             val = (product[idx] & 255) + carry
@@ -569,7 +569,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         }
     }
 
-    // 加上 c
+    ; 加上 c
     carry = 0
     i <- [0..32): {
         val = (product[i] & 255) + (c[i] & 255) + carry
@@ -582,23 +582,23 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         carry = val >> 8
     }
 
-    // 規約 mod L
+    ; 規約 mod L
     s = sc-reduce(product)
 }
 
-// ═══════════════════════════════════════════════
-// Ed25519 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; Ed25519 公開 API
+; ═══════════════════════════════════════════════
 
-// ed25519-publickey: 從種子計算公鑰
-// seed [32]byte: 私鑰種子
-// 返回 pub [32]byte: 公鑰
+; ed25519-publickey: 從種子計算公鑰
+; seed [32]byte: 私鑰種子
+; 返回 pub [32]byte: 公鑰
 ed25519-publickey = (seed [32]byte) (pub [32]byte) {
-    // H = SHA-512(seed) = 64 位元組
+    ; H = SHA-512(seed) = 64 位元組
     h [64]byte
     h = sha512.sha512(seed)
 
-    // 取前 32 位元組並 clamp
+    ; 取前 32 位元組並 clamp
     a []byte
     i <- [0..32): {
         a[i] = h[i]
@@ -607,24 +607,24 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     a[31] = a[31] & 127
     a[31] = a[31] | 64
 
-    // A = a * B
+    ; A = a * B
     point []i64
     ge-scalar-mult-base(point, a)
 
-    // 壓縮為公鑰
+    ; 壓縮為公鑰
     pub = ge-pack(point)
 }
 
-// ed25519-sign: 簽名
-// seed [32]byte: 私鑰種子
-// msg []byte: 訊息
-// 返回 sig [64]byte: 簽名（R || S）
+; ed25519-sign: 簽名
+; seed [32]byte: 私鑰種子
+; msg []byte: 訊息
+; 返回 sig [64]byte: 簽名（R || S）
 ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
-    // H = SHA-512(seed)
+    ; H = SHA-512(seed)
     h [64]byte
     h = sha512.sha512(seed)
 
-    // a = clamp(H[0:32])
+    ; a = clamp(H[0:32])
     a []byte
     i <- [0..32): {
         a[i] = h[i]
@@ -633,17 +633,17 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     a[31] = a[31] & 127
     a[31] = a[31] | 64
 
-    // prefix = H[32:64]
+    ; prefix = H[32:64]
     prefix [32]byte
     i <- [0..32): {
         prefix[i] = h[32 + i]
     }
 
-    // A = a * B（公鑰）
+    ; A = a * B（公鑰）
     pub [32]byte
     pub = ed25519-publickey(seed)
 
-    // r = SHA-512(prefix || msg) mod L
+    ; r = SHA-512(prefix || msg) mod L
     r-input []byte
     i <- [0..32): {
         r-input[i] = prefix[i]
@@ -657,13 +657,13 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     r [32]byte
     r = sc-reduce(r-hash)
 
-    // R = r * B
+    ; R = r * B
     r-point []i64
     ge-scalar-mult-base(r-point, r)
     R [32]byte
     R = ge-pack(r-point)
 
-    // k = SHA-512(R || A || msg) mod L
+    ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
         k-input[i] = R[i]
@@ -679,7 +679,7 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     k [32]byte
     k = sc-reduce(k-hash)
 
-    // S = (r + k * a) mod L
+    ; S = (r + k * a) mod L
     a-arr [32]byte
     i <- [0..32): {
         a-arr[i] = a[i]
@@ -687,20 +687,20 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     s [32]byte
     s = sc-muladd(k, a-arr, r)
 
-    // 簽名 = R || S
+    ; 簽名 = R || S
     i <- [0..32): {
         sig[i] = R[i]
         sig[32 + i] = s[i]
     }
 }
 
-// ed25519-verify: 驗證簽名
-// pub [32]byte: 公鑰
-// msg []byte: 訊息
-// sig [64]byte: 簽名
-// 返回 ok i64: 1=有效, 0=無效
+; ed25519-verify: 驗證簽名
+; pub [32]byte: 公鑰
+; msg []byte: 訊息
+; sig [64]byte: 簽名
+; 返回 ok i64: 1=有效, 0=無效
 ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
-    // 解析 R = sig[0:32], S = sig[32:64]
+    ; 解析 R = sig[0:32], S = sig[32:64]
     R [32]byte
     i <- [0..32): {
         R[i] = sig[i]
@@ -710,7 +710,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         s[i] = sig[32 + i]
     }
 
-    // 檢查 S < L
+    ; 檢查 S < L
     i = 31
     for i >= 0 {
         {
@@ -723,7 +723,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         i = i - 1
     }
 
-    // 解壓縮 A（公鑰）
+    ; 解壓縮 A（公鑰）
     a-ok = 0
     A []i64
     a-ok, A = ge-unpack(pub)
@@ -732,7 +732,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         return
     }
 
-    // 解壓縮 R
+    ; 解壓縮 R
     r-ok = 0
     R-point []i64
     r-ok, R-point = ge-unpack(R)
@@ -741,7 +741,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         return
     }
 
-    // k = SHA-512(R || A || msg) mod L
+    ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
         k-input[i] = R[i]
@@ -758,17 +758,17 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     k [32]byte
     k = sc-reduce(k-hash)
 
-    // 計算 S*B
+    ; 計算 S*B
     sb []i64
     ge-scalar-mult-base(sb, s)
 
-    // 計算 R + k*A
+    ; 計算 R + k*A
     ka []i64
     ge-scalar-mult(ka, k, A)
     rka []i64
     ge-add(rka, R-point, ka)
 
-    // 比較 S*B 和 R + k*A
+    ; 比較 S*B 和 R + k*A
     sb-bytes [32]byte
     sb-bytes = ge-pack(sb)
     rka-bytes [32]byte

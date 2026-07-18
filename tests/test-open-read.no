@@ -1,11 +1,11 @@
-// test-open-read.no — 驗證 open() 讀取
+; test-open-read.no — 驗證 open() 讀取
 
 
 tmp = '/tmp/nolang-read-test.txt'
 payload = 'hello nolang'
 remove(tmp)
 
-// 先寫入
+; 先寫入
 f-w ?file
 f-w = fs.open(tmp, {
     mode: file-mode.write
@@ -24,7 +24,7 @@ f-w: {
     }
 }
 
-// 再讀取
+; 再讀取
 f-r ?file
 f-r = fs.open(tmp, {
     mode: file-mode.read

@@ -5,11 +5,11 @@ foo = (x str) (res str) {
     print(x)
 }
 
-// 先定义res 
-// foo 赋值''
+; 先定义res 
+; foo 赋值''
 res = foo('')
 
-// 第二次调用，res已经有值，是新赋值
-// foo 赋值
+; 第二次调用，res已经有值，是新赋值
+; foo 赋值
 x = 'a' 
 res = foo(x)

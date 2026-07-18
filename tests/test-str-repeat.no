@@ -1,5 +1,5 @@
-// test-str-repeat — 測試 str.repeat
-// # std/net/tls
+; test-str-repeat — 測試 str.repeat
+; # std/net/tls
 
 print('=== str.repeat Test ===')
 space str = ' '

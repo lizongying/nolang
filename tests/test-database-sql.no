@@ -1,10 +1,10 @@
-// test-database-sql.no — SQLite 資料庫存取測試
-//
-// 測試 open/exec/query/scan/prepare/bind 完整流程。
-// 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
+; test-database-sql.no — SQLite 資料庫存取測試
+;
+; 測試 open/exec/query/scan/prepare/bind 完整流程。
+; 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
 
 
-// 測試 1: 開啟記憶體資料庫
+; 測試 1: 開啟記憶體資料庫
 d db = fs.open(':memory:')
 d.handle == 0 -> {
     print('fail: open database')
@@ -12,11 +12,11 @@ d.handle == 0 -> {
 }
 print('ok: open database')
 
-// 測試 2: 建表
+; 測試 2: 建表
 r result = d.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age REAL)')
 print('ok: create table')
 
-// 測試 3: 插入資料
+; 測試 3: 插入資料
 r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
 {
     r.affected == 1 -> print('ok: insert')
@@ -26,7 +26,7 @@ r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
     }
 }
 
-// 測試 4: 查詢並掃描
+; 測試 4: 查詢並掃描
 rs rows = d.query('SELECT id, name, age FROM users')
 rs.stmt == 0 -> {
     print('fail: query')
@@ -62,7 +62,7 @@ for rs.next() {
 }
 rs.close()
 
-// 測試 5: 預編譯陳述式（插入）
+; 測試 5: 預編譯陳述式（插入）
 s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
 s.handle == 0 -> {
     print('fail: prepare insert')
@@ -78,7 +78,7 @@ r2 result = s.exec()
 }
 s.close()
 
-// 測試 6: 預編譯陳述式（查詢）
+; 測試 6: 預編譯陳述式（查詢）
 s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
 s2.handle == 0 -> {
     print('fail: prepare select')
@@ -103,7 +103,7 @@ for rs2.next() {
 rs2.close()
 s2.close()
 
-// 測試 7: 驗證總列數
+; 測試 7: 驗證總列數
 rs3 rows = d.query('SELECT id FROM users')
 rs3.stmt != 0 -> {
     total i64 = 0

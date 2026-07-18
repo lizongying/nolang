@@ -1,59 +1,59 @@
-// http — HTTP/1.1 客戶端（含 REST 支援）
-//
-// 提供簡易的 HTTP/1.1 用戶端，支援 GET、POST、PUT、DELETE、PATCH 等方法。
-// 支援自訂標頭、回應標頭解析。
-// 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
-//
-// 用法：
-//   resp = http-get('http://example.com/path')   // 返回 ?http-response
-//   resp: {
-//       nil -> print('request failed')
-//       -> print(resp.status-code)
-//         print(resp.body)
-//         ct = resp.get-header('Content-Type')  // 返回 ?str
-//   }
-//
-//   resp = http-post('http://example.com/api', '{"key":"value"}')
-//
-//   // 一般請求
-//   resp = http-do('PUT', 'http://example.com/item', 'data')
-//
-//   // 自訂請求（含標頭）
-//   req = http-request{}
-//   req.init('PUT', 'http://example.com/item', 'data')
-//   req.add-header('Content-Type', 'application/json')
-//   req.add-header('Authorization', 'Bearer token123')
-//   resp = http-do-req(req)
+; http — HTTP/1.1 客戶端（含 REST 支援）
+;
+; 提供簡易的 HTTP/1.1 用戶端，支援 GET、POST、PUT、DELETE、PATCH 等方法。
+; 支援自訂標頭、回應標頭解析。
+; 底層使用 net.no 的 built-in 函數（net-dial、net-send、net-recv、close）。
+;
+; 用法：
+;   resp = http-get('http://example.com/path')   // 返回 ?http-response
+;   resp: {
+;       nil -> print('request failed')
+;       -> print(resp.status-code)
+;         print(resp.body)
+;         ct = resp.get-header('Content-Type')  // 返回 ?str
+;   }
+;
+;   resp = http-post('http://example.com/api', '{"key":"value"}')
+;
+;   // 一般請求
+;   resp = http-do('PUT', 'http://example.com/item', 'data')
+;
+;   // 自訂請求（含標頭）
+;   req = http-request{}
+;   req.init('PUT', 'http://example.com/item', 'data')
+;   req.add-header('Content-Type', 'application/json')
+;   req.add-header('Authorization', 'Bearer token123')
+;   resp = http-do-req(req)
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// 接收緩衝區大小
+; 接收緩衝區大小
 HTTP-BUF-SIZE = 4096
 
-// 最大回應大小
+; 最大回應大小
 HTTP-MAX-RESPONSE = 16384
 
-// 預設 HTTP 埠號
+; 預設 HTTP 埠號
 HTTP-DEFAULT-PORT = 80
 
-// 預設 HTTPS 埠號
+; 預設 HTTPS 埠號
 HTTPS-DEFAULT-PORT = 443
 
-// 請求最大自訂標頭數
+; 請求最大自訂標頭數
 HTTP-MAX-REQ-HEADERS = 16
 
-// 回應最大解析標頭數
+; 回應最大解析標頭數
 HTTP-MAX-RESP-HEADERS = 32
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// http-request: HTTP 請求（支援自訂標頭）
-// headers: 標頭行陣列，每行格式 'Name: Value'
-// header-count: 已加入的標頭數
+; http-request: HTTP 請求（支援自訂標頭）
+; headers: 標頭行陣列，每行格式 'Name: Value'
+; header-count: 已加入的標頭數
 http-request {
     method str
     url str
@@ -62,13 +62,13 @@ http-request {
     header-count i64
 }
 
-// http-response: HTTP 回應
-// status-code: 狀態碼（如 200、404）
-// status-text: 狀態文字（如 OK、Not Found）
-// headers: 回應標頭（原始字串，含多行，向後相容）
-// header-names/header-values: 解析後的標頭名/值（parse-headers 填入）
-// header-count: 解析後的標頭數
-// body: 回應主體
+; http-response: HTTP 回應
+; status-code: 狀態碼（如 200、404）
+; status-text: 狀態文字（如 OK、Not Found）
+; headers: 回應標頭（原始字串，含多行，向後相容）
+; header-names/header-values: 解析後的標頭名/值（parse-headers 填入）
+; header-count: 解析後的標頭數
+; body: 回應主體
 http-response {
     status-code i64
     status-text str
@@ -79,44 +79,44 @@ http-response {
     body str
 }
 
-// ═══════════════════════════════════════════════
-// http-request 方法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; http-request 方法
+; ═══════════════════════════════════════════════
 
-// init: 初始化請求
-// method: HTTP 方法（GET、POST、PUT、DELETE、PATCH 等）
-// url: 完整 URL
-// body: 請求主體（GET/DELETE 可傳空字串）
+; init: 初始化請求
+; method: HTTP 方法（GET、POST、PUT、DELETE、PATCH 等）
+; url: 完整 URL
+; body: 請求主體（GET/DELETE 可傳空字串）
 http-request.init = (method str, url str, body str) {
     .method = method
     .url = url
     .body = body
     .header-count = 0
     i <- [0..HTTP-MAX-REQ-HEADERS): {
-        // 用空格字串初始化 headers[i]，使 data buffer 非 null
+        ; 用空格字串初始化 headers[i]，使 data buffer 非 null
         .headers[i] = ' '
         .headers[i].len = 0
     }
 }
 
-// add-header: 新增自訂標頭
-// 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
-// 返回 ok=true=成功, false=標頭數已滿
+; add-header: 新增自訂標頭
+; 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
+; 返回 ok=true=成功, false=標頭數已滿
 http-request.add-header = (name str, value str) (ok bool) {
     ok = false
     .header-count >= HTTP-MAX-REQ-HEADERS -> return
     idx = .header-count
 
-    // 複製 name 到 headers[idx]
+    ; 複製 name 到 headers[idx]
     i <- [0..name.len): {
         .headers[idx][i] = name[i]
     }
 
-    // 加 ': '
+    ; 加 ': '
     .headers[idx][name.len] = ":"
     .headers[idx][name.len + 1] = " "
 
-    // 複製 value
+    ; 複製 value
     j <- [0..value.len): {
         .headers[idx][name.len + 2 + j] = value[j]
     }
@@ -125,16 +125,16 @@ http-request.add-header = (name str, value str) (ok bool) {
     ok = true
 }
 
-// ═══════════════════════════════════════════════
-// http-response 方法
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; http-response 方法
+; ═══════════════════════════════════════════════
 
-// parse-headers: 將 headers 字串拆分到 header-names / header-values
-// 必須在 headers 欄位被填入後呼叫（http-do / http-do-req 內部會自動呼叫）
+; parse-headers: 將 headers 字串拆分到 header-names / header-values
+; 必須在 headers 欄位被填入後呼叫（http-do / http-do-req 內部會自動呼叫）
 http-response.parse-headers = () {
     .header-count = 0
 
-    // 初始化標頭陣列（用空格字串使 data buffer 非 null）
+    ; 初始化標頭陣列（用空格字串使 data buffer 非 null）
     i <- [0..HTTP-MAX-RESP-HEADERS): {
         .header-names[i] = ' '
         .header-names[i].len = 0
@@ -152,23 +152,23 @@ http-response.parse-headers = () {
     pos = 0
     !! {
         pos >= n -> *
-        // 找下一個 CRLF
+        ; 找下一個 CRLF
         next-crlf = hs.index-from(crlf, pos)
         line-end = next-crlf
         line-end < 0 -> line-end = n
-        // 在 [pos, line-end) 中找 ': '
+        ; 在 [pos, line-end) 中找 ': '
         colon-pos = hs.index-from(': ', pos)
         colon-pos >= 0 && colon-pos < line-end -> {
             cnt = .header-count
             cnt < HTTP-MAX-RESP-HEADERS -> {
-                // 複製 name: [pos, colon-pos)
+                ; 複製 name: [pos, colon-pos)
                 name-len = colon-pos - pos
                 j <- [0..name-len): {
                     .header-names[cnt][j] = hs[pos + j]
                 }
                 .header-names[cnt].len = name-len
 
-                // 複製 value: [colon-pos+2, line-end)
+                ; 複製 value: [colon-pos+2, line-end)
                 val-start = colon-pos + 2
                 val-len = line-end - val-start
                 j <- [0..val-len): {
@@ -183,14 +183,14 @@ http-response.parse-headers = () {
     }
 }
 
-// get-header: 取得指定標頭值（線性搜尋）
-// name: 標頭名（如 'Content-Type'）
-// 返回 val ?str: ok=標頭值, nil=未找到
+; get-header: 取得指定標頭值（線性搜尋）
+; name: 標頭名（如 'Content-Type'）
+; 返回 val ?str: ok=標頭值, nil=未找到
 http-response.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
     i <- [0..cnt): {
-        // 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
+        ; 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
         matched = 1
         .header-names[i].len != name.len -> matched = 0
         matched == 1 -> {
@@ -202,7 +202,7 @@ http-response.get-header = (name str) (val ?str) {
             }
         }
         matched == 1 -> {
-            // 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+            ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
             vlen = .header-values[i].len
             val = .header-values[i].slice(0, vlen)
             return
@@ -210,20 +210,20 @@ http-response.get-header = (name str) (val ?str) {
     }
 }
 
-// ═══════════════════════════════════════════════
-// 主要 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 主要 API
+; ═══════════════════════════════════════════════
 
-// http-do: 執行 HTTP 請求
-// method: HTTP 方法（GET、POST、PUT、DELETE 等）
-// url: 完整 URL（如 http://host:port/path）
-// body: 請求主體（GET 應傳空字串）
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-do: 執行 HTTP 請求
+; method: HTTP 方法（GET、POST、PUT、DELETE 等）
+; url: 完整 URL（如 http://host:port/path）
+; body: 請求主體（GET 應傳空字串）
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-do = (method str, url str, body str) (resp ?http-response) {
     resp = nil
     r http-response
 
-    // ── 字串變數（頂層宣告，供 if 區塊內使用）──
+    ; ── 字串變數（頂層宣告，供 if 區塊內使用）──
     scheme = 'http://'
     rest = ''
     host = ''
@@ -252,7 +252,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     written = 0
     n = 0
 
-    // ── 解析 URL ──
+    ; ── 解析 URL ──
     {
         url.starts-with('https://') -> {
             use-tls = true
@@ -263,7 +263,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     }
     rest = url.slice(scheme.len, url.len)
 
-    // 分離 host[:port] 與 path（找到第一個 /）
+    ; 分離 host[:port] 與 path（找到第一個 /）
     slash-pos = rest.index('/')
     {
         slash-pos < 0 -> host = rest
@@ -273,7 +273,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
     }
 
-    // 檢查 host 是否含 :port
+    ; 檢查 host 是否含 :port
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
@@ -290,7 +290,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
 
     host.len == 0 -> return
 
-    // ── 建立連接 ──
+    ; ── 建立連接 ──
     {
         use-tls -> {
             tls-c.init()
@@ -303,7 +303,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
     }
 
-    // ── 建構請求 ──
+    ; ── 建構請求 ──
     req = method
     req = req - ' '
     req = req - path
@@ -327,7 +327,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     req = req - crlf
     body.len > 0 -> req = req - body
 
-    // ── 發送請求 ──
+    ; ── 發送請求 ──
     {
         use-tls -> {
             w = tls-c.send(req)
@@ -348,8 +348,8 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
     }
 
-    // ── 接收回應 ──
-    // net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
+    ; ── 接收回應 ──
+    ; net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     !! {
         {
             use-tls -> {
@@ -364,7 +364,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
         n <= 0 -> *
         total + n > HTTP-MAX-RESPONSE -> *
-        // 將接收的位元組複製到 raw
+        ; 將接收的位元組複製到 raw
         i <- [0..n): {
             raw[total + i] = buf[i]
         }
@@ -377,16 +377,16 @@ http-do = (method str, url str, body str) (resp ?http-response) {
 
     total == 0 -> return
 
-    // 取得實際接收的資料（raw.len 仍為 HTTP-MAX-RESPONSE，用 slice 擷取）
+    ; 取得實際接收的資料（raw.len 仍為 HTTP-MAX-RESPONSE，用 slice 擷取）
     recv-raw = raw.slice(0, total)
 
-    // ── 解析回應 ──
+    ; ── 解析回應 ──
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
     head = recv-raw.slice(0, sep-pos)
     r.body = recv-raw.slice(sep-pos + separator.len, recv-raw.len)
 
-    // 解析狀態行（第一行）
+    ; 解析狀態行（第一行）
     first-line-end = head.index(crlf)
     {
         first-line-end < 0 -> {
@@ -399,7 +399,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
         }
     }
 
-    // 狀態行格式：HTTP/1.1 200 OK
+    ; 狀態行格式：HTTP/1.1 200 OK
     sp1 = status-line.index(' ')
     sp1 < 0 -> return
     after-code = status-line.slice(sp1 + 1, status-line.len)
@@ -408,7 +408,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     code-str = after-code.slice(0, sp2)
     r.status-text = after-code.slice(sp2 + 1, after-code.len)
 
-    // 解析狀態碼
+    ; 解析狀態碼
     code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
@@ -417,20 +417,20 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     }
     r.status-code = code
 
-    // 解析回應標頭到 header-names / header-values
+    ; 解析回應標頭到 header-names / header-values
     r.parse-headers()
 
     resp = r
 }
 
-// http-do-req: 用 http-request 發送請求（支援自訂標頭）
-// req: 已初始化的 http-request（含自訂標頭）
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-do-req: 用 http-request 發送請求（支援自訂標頭）
+; req: 已初始化的 http-request（含自訂標頭）
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-do-req = (req http-request) (resp ?http-response) {
     resp = nil
     r http-response
 
-    // ── 字串變數 ──
+    ; ── 字串變數 ──
     scheme = 'http://'
     rest = ''
     host = ''
@@ -462,7 +462,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     written = 0
     n = 0
 
-    // ── 解析 URL ──
+    ; ── 解析 URL ──
     {
         url.starts-with('https://') -> {
             use-tls = true
@@ -498,7 +498,7 @@ http-do-req = (req http-request) (resp ?http-response) {
 
     host.len == 0 -> return
 
-    // ── 建立連接 ──
+    ; ── 建立連接 ──
     {
         use-tls -> {
             tls-c.init()
@@ -511,7 +511,7 @@ http-do-req = (req http-request) (resp ?http-response) {
         }
     }
 
-    // ── 建構請求（含自訂標頭）──
+    ; ── 建構請求（含自訂標頭）──
     req-str = method
     req-str = req-str - ' '
     req-str = req-str - path
@@ -525,7 +525,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     req-str = req-str - 'User-Agent: nolang-http/1.0'
     req-str = req-str - crlf
 
-    // 附加自訂標頭
+    ; 附加自訂標頭
     hi <- [0..req.header-count): {
         req-str = req-str - req.headers[hi]
         req-str = req-str - crlf
@@ -541,7 +541,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     req-str = req-str - crlf
     body.len > 0 -> req-str = req-str - body
 
-    // ── 發送請求 ──
+    ; ── 發送請求 ──
     {
         use-tls -> {
             w = tls-c.send(req-str)
@@ -562,7 +562,7 @@ http-do-req = (req http-request) (resp ?http-response) {
         }
     }
 
-    // ── 接收回應 ──
+    ; ── 接收回應 ──
     !! {
         {
             use-tls -> {
@@ -590,7 +590,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     total == 0 -> return
     recv-raw = raw.slice(0, total)
 
-    // ── 解析回應 ──
+    ; ── 解析回應 ──
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
     head = recv-raw.slice(0, sep-pos)
@@ -624,65 +624,65 @@ http-do-req = (req http-request) (resp ?http-response) {
     }
     r.status-code = code
 
-    // 解析回應標頭
+    ; 解析回應標頭
     r.parse-headers()
 
     resp = r
 }
 
-// ═══════════════════════════════════════════════
-// 便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 便捷函數
+; ═══════════════════════════════════════════════
 
-// http-get: 執行 HTTP GET 請求
-// url: 完整 URL
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-get: 執行 HTTP GET 請求
+; url: 完整 URL
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-get = (url str) (resp ?http-response) {
     resp = http-do('GET', url, '')
 }
 
-// http-post: 執行 HTTP POST 請求
-// url: 完整 URL
-// body: 請求主體
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-post: 執行 HTTP POST 請求
+; url: 完整 URL
+; body: 請求主體
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-post = (url str, body str) (resp ?http-response) {
     resp = http-do('POST', url, body)
 }
 
-// http-put: 執行 HTTP PUT 請求
-// url: 完整 URL
-// body: 請求主體
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-put: 執行 HTTP PUT 請求
+; url: 完整 URL
+; body: 請求主體
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-put = (url str, body str) (resp ?http-response) {
     resp = http-do('PUT', url, body)
 }
 
-// http-delete: 執行 HTTP DELETE 請求
-// url: 完整 URL
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-delete: 執行 HTTP DELETE 請求
+; url: 完整 URL
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-delete = (url str) (resp ?http-response) {
     resp = http-do('DELETE', url, '')
 }
 
-// http-patch: 執行 HTTP PATCH 請求
-// url: 完整 URL
-// body: 請求主體
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-patch: 執行 HTTP PATCH 請求
+; url: 完整 URL
+; body: 請求主體
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-patch = (url str, body str) (resp ?http-response) {
     resp = http-do('PATCH', url, body)
 }
 
-// ═══════════════════════════════════════════════
-// 認證便捷函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 認證便捷函數
+; ═══════════════════════════════════════════════
 
-// http-set-basic-auth: 為請求加入 HTTP Basic 認證標頭
-// req http-request: 請求結構體
-// user str: 用戶名
-// password str: 密碼
-// 返回 ok=true=成功
+; http-set-basic-auth: 為請求加入 HTTP Basic 認證標頭
+; req http-request: 請求結構體
+; user str: 用戶名
+; password str: 密碼
+; 返回 ok=true=成功
 http-set-basic-auth = (req http-request, user str, password str) (ok bool) {
-    // 拼接 user:password 並 Base64 編碼
+    ; 拼接 user:password 並 Base64 編碼
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
@@ -690,29 +690,29 @@ http-set-basic-auth = (req http-request, user str, password str) (ok bool) {
     ok = req.add-header('Authorization', auth-val)
 }
 
-// http-set-bearer-auth: 為請求加入 Bearer Token 認證標頭
-// req http-request: 請求結構體
-// token str: Bearer token
-// 返回 ok=true=成功
+; http-set-bearer-auth: 為請求加入 Bearer Token 認證標頭
+; req http-request: 請求結構體
+; token str: Bearer token
+; 返回 ok=true=成功
 http-set-bearer-auth = (req http-request, token str) (ok bool) {
     auth-val = 'Bearer ' - token
     ok = req.add-header('Authorization', auth-val)
 }
 
-// http-set-api-key: 為請求加入 API Key 標頭
-// req http-request: 請求結構體
-// header-name str: 標頭名稱（如 'X-API-Key'）
-// api-key str: API 金鑰
-// 返回 ok=true=成功
+; http-set-api-key: 為請求加入 API Key 標頭
+; req http-request: 請求結構體
+; header-name str: 標頭名稱（如 'X-API-Key'）
+; api-key str: API 金鑰
+; 返回 ok=true=成功
 http-set-api-key = (req http-request, header-name str, api-key str) (ok bool) {
     ok = req.add-header(header-name, api-key)
 }
 
-// http-get-auth: 執行帶 Basic 認證的 HTTP GET 請求
-// url str: 完整 URL
-// user str: 用戶名
-// password str: 密碼
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-get-auth: 執行帶 Basic 認證的 HTTP GET 請求
+; url str: 完整 URL
+; user str: 用戶名
+; password str: 密碼
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-get-auth = (url str, user str, password str) (resp ?http-response) {
     resp = nil
     r http-request
@@ -721,12 +721,12 @@ http-get-auth = (url str, user str, password str) (resp ?http-response) {
     resp = http-do-req(r)
 }
 
-// http-post-auth: 執行帶 Basic 認證的 HTTP POST 請求
-// url str: 完整 URL
-// body str: 請求主體
-// user str: 用戶名
-// password str: 密碼
-// 返回 resp ?http-response: ok=回應, nil=失敗
+; http-post-auth: 執行帶 Basic 認證的 HTTP POST 請求
+; url str: 完整 URL
+; body str: 請求主體
+; user str: 用戶名
+; password str: 密碼
+; 返回 resp ?http-response: ok=回應, nil=失敗
 http-post-auth = (url str, body str, user str, password str) (resp ?http-response) {
     resp = nil
     r http-request

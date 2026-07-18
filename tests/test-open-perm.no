@@ -1,4 +1,4 @@
-// test-open-perm.no — 驗證 open() 檔案權限
+; test-open-perm.no — 驗證 open() 檔案權限
 
 
 tmp = '/tmp/nolang-perm-test.txt'

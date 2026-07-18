@@ -1,4 +1,4 @@
-// test-bool-direct.no — 調試 str.to-bool 直接調用
+; test-bool-direct.no — 調試 str.to-bool 直接調用
 test1 = () {
     b = 'true'.to-bool()
         {

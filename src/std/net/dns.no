@@ -1,39 +1,39 @@
-// dns — DNS 解析器（純 Nolang 實作）
-//
-// 使用 UDP 協定（埠 53）實作 DNS 查詢，支援 A 記錄（IPv4）解析。
-// 不依賴 C 庫的 getaddrinfo，直接構造和解析 DNS 封包。
-//
-// 用法：
-//   // 解析域名
-//   ip = dns-resolve('example.com')           // 返回 ?str（IP 地址）
-//   ip: {
-//       nil -> print('解析失敗')
-//       -> print(ip)                         // 如 '93.184.216.34'
-//   }
-//
-//   // 指定 DNS 伺服器
-//   ip = dns-resolve-from('8.8.8.8', 'example.com')  // 返回 ?str
+; dns — DNS 解析器（純 Nolang 實作）
+;
+; 使用 UDP 協定（埠 53）實作 DNS 查詢，支援 A 記錄（IPv4）解析。
+; 不依賴 C 庫的 getaddrinfo，直接構造和解析 DNS 封包。
+;
+; 用法：
+;   // 解析域名
+;   ip = dns-resolve('example.com')           // 返回 ?str（IP 地址）
+;   ip: {
+;       nil -> print('解析失敗')
+;       -> print(ip)                         // 如 '93.184.216.34'
+;   }
+;
+;   // 指定 DNS 伺服器
+;   ip = dns-resolve-from('8.8.8.8', 'example.com')  // 返回 ?str
 
-// ═══════════════════════════════════════════════
-// 常量
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
 
-// DNS 埠號
+; DNS 埠號
 DNS-PORT = 53
 
-// 預設 DNS 伺服器（Google Public DNS）
+; 預設 DNS 伺服器（Google Public DNS）
 DNS-DEFAULT-SERVER = '8.8.8.8'
 
-// 備用 DNS 伺服器（Cloudflare）
+; 備用 DNS 伺服器（Cloudflare）
 DNS-BACKUP-SERVER = '1.1.1.1'
 
-// DNS 查詢逾時（毫秒）
+; DNS 查詢逾時（毫秒）
 DNS-TIMEOUT = 3000
 
-// 最大 DNS 封包大小
+; 最大 DNS 封包大小
 DNS-MAX-PACKET = 512
 
-// DNS 記錄類型
+; DNS 記錄類型
 DNS-TYPE-A = 1
 DNS-TYPE-AAAA = 28
 DNS-TYPE-CNAME = 5
@@ -41,10 +41,10 @@ DNS-TYPE-MX = 15
 DNS-TYPE-TXT = 16
 DNS-TYPE-NS = 2
 
-// DNS 類別
+; DNS 類別
 DNS-CLASS-IN = 1
 
-// DNS 回應碼
+; DNS 回應碼
 DNS-RCODE-NO-ERROR = 0
 DNS-RCODE-FORMAT-ERROR = 1
 DNS-RCODE-SERVER-FAILURE = 2
@@ -52,15 +52,15 @@ DNS-RCODE-NAME-ERROR = 3
 DNS-RCODE-NOT-IMPLEMENTED = 4
 DNS-RCODE-REFUSED = 5
 
-// ═══════════════════════════════════════════════
-// 結構體
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
 
-// dns-record: DNS 記錄
-// rtype i64: 記錄類型（1=A, 5=CNAME, 28=AAAA）
-// name str: 域名
-// value str: 記錄值（A 記錄為 IP 地址）
-// ttl i64: 存活時間
+; dns-record: DNS 記錄
+; rtype i64: 記錄類型（1=A, 5=CNAME, 28=AAAA）
+; name str: 域名
+; value str: 記錄值（A 記錄為 IP 地址）
+; ttl i64: 存活時間
 dns-record {
     rtype i64
     name str
@@ -68,48 +68,48 @@ dns-record {
     ttl i64
 }
 
-// ═══════════════════════════════════════════════
-// 內部工具函數
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 內部工具函數
+; ═══════════════════════════════════════════════
 
-// dns-build-query: 構建 DNS 查詢封包
-// domain str: 要查詢的域名
-// qtype i64: 查詢類型（1=A）
-// 返回 query []byte: DNS 查詢封包
+; dns-build-query: 構建 DNS 查詢封包
+; domain str: 要查詢的域名
+; qtype i64: 查詢類型（1=A）
+; 返回 query []byte: DNS 查詢封包
 dns-build-query = (domain str, qtype i64) (query []byte) {
     pos = 0
 
-    // Transaction ID（固定為 1，簡化實作）
+    ; Transaction ID（固定為 1，簡化實作）
     query[pos] = 0
     query[pos + 1] = 1
     pos = pos + 2
 
-    // Flags: 標準查詢（RD=1）
+    ; Flags: 標準查詢（RD=1）
     query[pos] = 0x01
     query[pos + 1] = 0x00
     pos = pos + 2
 
-    // QDCOUNT = 1
+    ; QDCOUNT = 1
     query[pos] = 0
     query[pos + 1] = 1
     pos = pos + 2
 
-    // ANCOUNT = 0
+    ; ANCOUNT = 0
     query[pos] = 0
     query[pos + 1] = 0
     pos = pos + 2
 
-    // NSCOUNT = 0
+    ; NSCOUNT = 0
     query[pos] = 0
     query[pos + 1] = 0
     pos = pos + 2
 
-    // ARCOUNT = 0
+    ; ARCOUNT = 0
     query[pos] = 0
     query[pos + 1] = 0
     pos = pos + 2
 
-    // QNAME: 將域名編碼為長度前綴標籤
+    ; QNAME: 將域名編碼為長度前綴標籤
     label-start = 0
     i = 0
     for i <= domain.len {
@@ -133,16 +133,16 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
         i = i + 1
     }
 
-    // 終止零標籤
+    ; 終止零標籤
     query[pos] = 0
     pos = pos + 1
 
-    // QTYPE
+    ; QTYPE
     query[pos] = (qtype >> 8) & 255
     query[pos + 1] = qtype & 255
     pos = pos + 2
 
-    // QCLASS = IN (1)
+    ; QCLASS = IN (1)
     query[pos] = 0
     query[pos + 1] = 1
     pos = pos + 2
@@ -150,11 +150,11 @@ dns-build-query = (domain str, qtype i64) (query []byte) {
     query = query.slice(0, pos)
 }
 
-// dns-parse-name: 從回應封包中解析域名（支援壓縮指標）
-// data []byte: DNS 封包
-// offset i64: 起始位置
-// 返回 name str: 解析出的域名
-// 返回 next-pos i64: 解析後的下一個位置
+; dns-parse-name: 從回應封包中解析域名（支援壓縮指標）
+; data []byte: DNS 封包
+; offset i64: 起始位置
+; 返回 name str: 解析出的域名
+; 返回 next-pos i64: 解析後的下一個位置
 dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     name = ''
     pos = offset
@@ -170,7 +170,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             jumped == false -> end-pos = pos
             *
         }
-        // 檢查是否為壓縮指標（前兩位為 11）
+        ; 檢查是否為壓縮指標（前兩位為 11）
         {
             (len-byte & 0xC0) == 0xC0 -> {
                 jumped == false -> end-pos = pos + 2
@@ -190,7 +190,7 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         }
     }
 
-    // 移除末尾的點
+    ; 移除末尾的點
     name.len > 0 -> name[name.len - 1] == 46 -> name = name.slice(0, name.len - 1)
     {
         jumped -> next-pos = end-pos
@@ -198,52 +198,52 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     }
 }
 
-// dns-parse-response: 解析 DNS 回應封包
-// data []byte: DNS 回應封包
-// 返回 records []dns-record: 解析出的記錄
-// 返回 ok bool: true=成功
+; dns-parse-response: 解析 DNS 回應封包
+; data []byte: DNS 回應封包
+; 返回 records []dns-record: 解析出的記錄
+; 返回 ok bool: true=成功
 dns-parse-response = (data []byte) (records []dns-record, ok bool) {
     ok = false
     data.len < 12 -> return
 
-    // 檢查回應碼
+    ; 檢查回應碼
     flags-hi = data[2] & 255
     flags-lo = data[3] & 255
     rcode = flags-lo & 0x0F
     rcode != DNS-RCODE-NO-ERROR -> return
 
-    // 問題數
+    ; 問題數
     qdcount = ((data[4] & 255) << 8) | (data[5] & 255)
 
-    // 回答數
+    ; 回答數
     ancount = ((data[6] & 255) << 8) | (data[7] & 255)
     ancount == 0 -> return
     pos = 12
 
-    // 跳過問題部分
+    ; 跳過問題部分
     i <- [0..qdcount): {
         qname = ''
         qname, pos = dns-parse-name(data, pos)
-        // 跳過 QTYPE(2) + QCLASS(2)
+        ; 跳過 QTYPE(2) + QCLASS(2)
         pos = pos + 4
     }
 
-    // 解析回答部分
+    ; 解析回答部分
     i <- [0..ancount): {
         rname = ''
         rname, pos = dns-parse-name(data, pos)
         pos + 10 > data.len -> return
         rtype = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
         pos = pos + 2
-        // CLASS (2 bytes)
+        ; CLASS (2 bytes)
         pos = pos + 2
-        // TTL (4 bytes)
+        ; TTL (4 bytes)
         ttl = 0
         j <- [0..4): {
             ttl = (ttl << 8) | (data[pos + j] & 255)
         }
         pos = pos + 4
-        // RDLENGTH (2 bytes)
+        ; RDLENGTH (2 bytes)
         rdlength = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
         pos = pos + 2
         pos + rdlength > data.len -> return
@@ -251,7 +251,7 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
         rec.name = rname
         rec.ttl = ttl
         rec.rtype = rtype
-        // A 記錄（4 bytes IPv4）
+        ; A 記錄（4 bytes IPv4）
         rtype == DNS-TYPE-A && rdlength == 4 -> {
             a = data[pos] & 255
             b = data[pos + 1] & 255
@@ -263,7 +263,7 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
             sd = d.to-str()
             rec.value = sa - '.' - sb - '.' - sc - '.' - sd
         }
-        // CNAME 記錄
+        ; CNAME 記錄
         rtype == DNS-TYPE-CNAME -> {
             cname = ''
             cname, tmp-pos = dns-parse-name(data, pos)
@@ -276,30 +276,30 @@ dns-parse-response = (data []byte) (records []dns-record, ok bool) {
     ok = true
 }
 
-// ═══════════════════════════════════════════════
-// 公開 API
-// ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 公開 API
+; ═══════════════════════════════════════════════
 
-// dns-resolve-from: 使用指定 DNS 伺服器解析域名
-// server str: DNS 伺服器 IP（如 '8.8.8.8'）
-// domain str: 要解析的域名
-// 返回 ip ?str: ok=IP 地址, nil=解析失敗
+; dns-resolve-from: 使用指定 DNS 伺服器解析域名
+; server str: DNS 伺服器 IP（如 '8.8.8.8'）
+; domain str: 要解析的域名
+; 返回 ip ?str: ok=IP 地址, nil=解析失敗
 dns-resolve-from = (server str, domain str) (ip ?str) {
     ip = nil
 
-    // 構建查詢封包
+    ; 構建查詢封包
     query []byte
     query = dns-build-query(domain, DNS-TYPE-A)
     query.len == 0 -> return
 
-    // 建立 UDP socket
+    ; 建立 UDP socket
     fd = net-udp-open()
     fd < 0 -> return
 
-    // 設定逾時
+    ; 設定逾時
     net-set-recv-timeout(fd, DNS-TIMEOUT)
 
-    // 發送查詢
+    ; 發送查詢
     query-str = query.to-str()
     written = net-udp-sendto(fd, query-str, query.len, server, DNS-PORT)
     written < 0 -> {
@@ -307,14 +307,14 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
         return
     }
 
-    // 接收回應
+    ; 接收回應
     space = ' '
     resp-str = space.repeat(DNS-MAX-PACKET)
     n = net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     close(fd)
     n <= 0 -> return
 
-    // 解析回應
+    ; 解析回應
     resp []byte
     i <- [0..n): {
         resp[i] = resp-str[i]
@@ -326,7 +326,7 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     records, ok = dns-parse-response(resp)
     ok == false -> return
 
-    // 尋找 A 記錄
+    ; 尋找 A 記錄
     i <- [0..records.len): {
         r = records[i]
         r.rtype == DNS-TYPE-A -> {
@@ -336,9 +336,9 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     }
 }
 
-// dns-resolve: 使用預設 DNS 伺服器解析域名
-// domain str: 要解析的域名
-// 返回 ip ?str: ok=IP 地址, nil=解析失敗
+; dns-resolve: 使用預設 DNS 伺服器解析域名
+; domain str: 要解析的域名
+; 返回 ip ?str: ok=IP 地址, nil=解析失敗
 dns-resolve = (domain str) (ip ?str) {
     ip = dns-resolve-from(DNS-DEFAULT-SERVER, domain)
     ip: {
@@ -347,10 +347,10 @@ dns-resolve = (domain str) (ip ?str) {
     }
 }
 
-// dns-resolve-all: 解析域名，返回所有 A 記錄
-// domain str: 要解析的域名
-// 返回 records []dns-record: 所有記錄
-// 返回 ok bool: true=成功
+; dns-resolve-all: 解析域名，返回所有 A 記錄
+; domain str: 要解析的域名
+; 返回 records []dns-record: 所有記錄
+; 返回 ok bool: true=成功
 dns-resolve-all = (domain str) (records []dns-record, ok bool) {
     ok = false
 
@@ -381,18 +381,18 @@ dns-resolve-all = (domain str) (records []dns-record, ok bool) {
     records, ok = dns-parse-response(resp)
 }
 
-// dns-dial: 解析域名並建立 TCP 連接
-// domain str: 域名
-// port i64: 埠號
-// 返回 fd i64: socket fd（-1=失敗）
+; dns-dial: 解析域名並建立 TCP 連接
+; domain str: 域名
+; port i64: 埠號
+; 返回 fd i64: socket fd（-1=失敗）
 dns-dial = (domain str, port i64) (fd i64) {
     fd = -1
 
-    // 先嘗試直接連接（net-dial 內建已支援 hostname 解析）
+    ; 先嘗試直接連接（net-dial 內建已支援 hostname 解析）
     fd = net-dial(domain, port)
     fd >= 0 -> return
 
-    // 如果直接連接失敗，使用 DNS 解析
+    ; 如果直接連接失敗，使用 DNS 解析
     ip = dns-resolve(domain)
     ip: {
         nil ->
