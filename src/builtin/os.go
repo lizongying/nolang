@@ -1,6 +1,10 @@
 package builtin
 
-import "github.com/lizongying/nolang/parser"
+import (
+	"runtime"
+
+	"github.com/lizongying/nolang/parser"
+)
 
 func init() {
 	i64Type := LLVMI64
@@ -146,13 +150,17 @@ func init() {
 	})
 
 	// open-write: open a file for writing
+	openWriteFlagVal := "1537" // macOS default: O_WRONLY|O_CREAT|O_TRUNC
+	if runtime.GOOS == "linux" {
+		openWriteFlagVal = "577"
+	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-write",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Open a file for writing, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "1537", 2: "420"}},
+		CLibCall:     &CLibCall{FuncName: "open", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: openWriteFlagVal, 2: "420"}},
 	})
 
 	// open-file: open a file with custom flags and mode

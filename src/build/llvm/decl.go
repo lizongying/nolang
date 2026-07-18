@@ -549,3 +549,64 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @pthread_create(i64*, i8*, i8* (i8*)*, i8*)\n")
 	sb.WriteString("declare i32 @pthread_join(i64, i8**)\n")
 }
+
+// StatLayout 描述各平台的 struct stat 佈局（大小與欄位位移）。
+// 用於取代硬編碼的 macOS arm64 位移，使 is-dir/is-file/stat-* 等內建跨平台相容。
+//
+// 佈局來源：
+//   macOS (arm64/amd64): <sys/stat.h> struct stat (st_mtimespec)
+//   Linux x86_64:        glibc <bits/struct_stat.h> struct stat (st_mtim)
+//   Linux arm64:         glibc aarch64 struct stat (st_mtim)
+type StatLayout struct {
+	Size      int64 // struct stat 總大小（bytes）
+	ModeOff   int64 // st_mode 位移
+	UidOff    int64 // st_uid 位移
+	GidOff    int64 // st_gid 位移
+	MtimeOff  int64 // st_mtime.tv_sec 位移
+	SizeOff   int64 // st_size 位移
+}
+
+// statLayout 返回當前編譯目標平台的 struct stat 佈局。
+// 若平台未知，回退到 macOS arm64 佈局（既有行為）。
+func statLayout() StatLayout {
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS arm64/amd64: struct stat (st_mtimespec at offset 48)
+		// dev_t st_dev@0, mode_t st_mode@4, nlink_t st_nlink@6, ino_t st_ino@8,
+		// uid_t st_uid@16, gid_t st_gid@20, dev_t st_rdev@24,
+		// st_atimespec@32, st_mtimespec@48, st_ctimespec@64, st_birthtimespec@80,
+		// off_t st_size@96
+		return StatLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96}
+	case "linux":
+		if runtime.GOARCH == "arm64" {
+			// Linux arm64 (aarch64): glibc struct stat
+			// dev_t st_dev@0, ino_t st_ino@8, mode_t st_mode@16, nlink_t st_nlink@20,
+			// uid_t st_uid@24, gid_t st_gid@28, dev_t st_rdev@32, __pad1@40,
+			// off_t st_size@48, st_atim@72, st_mtim@88, st_ctim@104
+			return StatLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48}
+		}
+		// Linux x86_64/amd64: glibc struct stat
+		// dev_t st_dev@0, ino_t st_ino@8, nlink_t st_nlink@16,
+		// mode_t st_mode@24, uid_t st_uid@28, gid_t st_gid@32, __pad0@36,
+		// dev_t st_rdev@40, off_t st_size@48, st_atim@72, st_mtim@88, st_ctim@104
+		return StatLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48}
+	default:
+		// 未知平台：回退到 macOS arm64 佈局
+		return StatLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96}
+	}
+}
+
+// openWriteFlags 返回當前平台的 O_WRONLY|O_CREAT|O_TRUNC 組合值。
+//   macOS: 1 | 512 | 1024 = 1537
+//   Linux: 1 | 64  | 512  = 577
+// 用於 open-write 與 write-file 內建，取代硬編碼的 1537。
+func openWriteFlags() int {
+	switch runtime.GOOS {
+	case "darwin":
+		return 1537 // O_WRONLY(1) | O_CREAT(0x200) | O_TRUNC(0x400)
+	case "linux":
+		return 577 // O_WRONLY(1) | O_CREAT(0x40) | O_TRUNC(0x200)
+	default:
+		return 1537 // 回退到 macOS 值
+	}
+}

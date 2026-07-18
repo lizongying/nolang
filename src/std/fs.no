@@ -134,14 +134,51 @@
 ; touch-file = (p str) (ok bool) {  // LLVM: call i32 @utimensat(AT_FDCWD, path, NULL, 0) → icmp eq 0 → zext
 ; }
 
-; macOS open() 旗標常量
+; open() 旗標常數（平台特定）
+; O_RDONLY/O_WRONLY/O_RDWR 跨平台通用（0/1/2）
 O-RDONLY = 0
 O-WRONLY = 1
 O-RDWR = 2
+
+; O_CREAT: macOS=512, Linux=64
+#{mac-amd64}
 O-CREAT = 512
+#{mac-arm64}
+O-CREAT = 512
+#{linux-amd64}
+O-CREAT = 64
+#{linux-arm64}
+O-CREAT = 64
+
+; O_TRUNC: macOS=1024, Linux=512
+#{mac-amd64}
 O-TRUNC = 1024
+#{mac-arm64}
+O-TRUNC = 1024
+#{linux-amd64}
+O-TRUNC = 512
+#{linux-arm64}
+O-TRUNC = 512
+
+; O_APPEND: macOS=8, Linux=1024
+#{mac-amd64}
 O-APPEND = 8
+#{mac-arm64}
+O-APPEND = 8
+#{linux-amd64}
+O-APPEND = 1024
+#{linux-arm64}
+O-APPEND = 1024
+
+; O_EXCL: macOS=2048, Linux=128
+#{mac-amd64}
 O-EXCL = 2048
+#{mac-arm64}
+O-EXCL = 2048
+#{linux-amd64}
+O-EXCL = 128
+#{linux-arm64}
+O-EXCL = 128
 
 ; 標準檔案描述符
 STDIN-FD = 0

@@ -785,15 +785,16 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		cmp2 := fmt.Sprintf("%%stat.cmp2.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%stat.ext.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			// Allocate stat buffer (144 bytes on macOS arm64)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			// Allocate stat buffer
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			// stat(path, &statbuf)
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			// Check stat return == 0
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			// Load st_mode (offset 4 on macOS arm64)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
+			// Load st_mode
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), modeGEP, statBuf, statL.ModeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
 			// AND with S_IFDIR (0040000 = 0x4000)
 			sb.WriteString(fmt.Sprintf("%s%s = and i16 %s, 16384\n", g.indent(), andReg, modeLoad))
@@ -829,11 +830,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		cmp2 := fmt.Sprintf("%%stat.cmp2.sf.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%stat.ext.sf.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), modeGEP, statBuf, statL.ModeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
 			// S_IFREG = 0100000 = 0x8000 = 32768
 			sb.WriteString(fmt.Sprintf("%s%s = and i16 %s, 32768\n", g.indent(), andReg, modeLoad))
@@ -863,11 +865,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		sizeLoad := fmt.Sprintf("%%stat.size.ld.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.sel.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 96\n", g.indent(), sizeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
 		}
@@ -892,11 +895,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		modeZext := fmt.Sprintf("%%stat.mode.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.mode.sel.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), modeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), modeGEP, statBuf, statL.ModeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i16 %s to i64\n", g.indent(), modeZext, modeLoad))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, modeZext))
@@ -922,11 +926,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		uidZext := fmt.Sprintf("%%stat.uid.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.uid.sel.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 16\n", g.indent(), uidGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), uidGEP, statBuf, statL.UidOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), uidLoad, uidGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), uidZext, uidLoad))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, uidZext))
@@ -952,11 +957,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		gidZext := fmt.Sprintf("%%stat.gid.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.gid.sel.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 20\n", g.indent(), gidGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), gidGEP, statBuf, statL.GidOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), gidLoad, gidGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), gidZext, gidLoad))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, gidZext))
@@ -980,11 +986,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		mtimeLoad := fmt.Sprintf("%%stat.mtime.ld.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.mtime.sel.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 48\n", g.indent(), mtimeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), mtimeGEP, statBuf, statL.MtimeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), mtimeLoad, mtimeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, mtimeLoad))
 		}
@@ -1024,12 +1031,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		lenGEP := fmt.Sprintf("%%rf.len.gep.%d", g.tmpIdx)
 		g.tmpIdx++
 		dataGEP := fmt.Sprintf("%%rf.data.gep.%d", g.tmpIdx)
+		statL := statLayout()
 		if sb != nil {
 			// stat(path) → file size (0 on failure)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 144\n", g.indent(), statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @stat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), statCmp, statRet))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 96\n", g.indent(), sizeGEP, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), sizeSel, statCmp, sizeLoad))
 			// open(path, O_RDONLY=0, 0)
@@ -1085,14 +1093,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		wfCmp := fmt.Sprintf("%%wf.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		wfZext := fmt.Sprintf("%%wf.zext.%d", g.tmpIdx)
+		openFlags := openWriteFlags()
 		if sb != nil {
 			// Extract len and data ptr from %vec
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), wfLenGEP, vecPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), wfDataLen, wfLenGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), wfDataGEP, vecPtr))
 			wfDataPtr = g.loadDataPtrField(sb, wfDataGEP)
-			// open(path, O_WRONLY|O_CREAT|O_TRUNC=1537, 0644=420)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @open(i8* %s, i32 1537, i32 420)\n", g.indent(), wfOpen, pathPtr))
+			// open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644=420)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @open(i8* %s, i32 %d, i32 420)\n", g.indent(), wfOpen, pathPtr, openFlags))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), wfOpenCmp, wfOpen))
 			// write(fd, data, len)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @write(i32 %s, i8* %s, i64 %s)\n", g.indent(), wfWrite, wfOpen, wfDataPtr, wfDataLen))
