@@ -1468,8 +1468,8 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
 			} else {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-					g.indent(), reg, structTy, structTy, varName, fieldIdx))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
 			}
 			// 一律 load 欄位值。對 struct 型別的鏈式存取由 generateExprPtr 處理（需指標的情況）。
 			g.tmpIdx++
@@ -2538,8 +2538,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 							g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
 					} else {
-						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-							g.indent(), reg, structTy, structTy, varName, fieldIdx))
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
 					}
 					// 先用 zeroinitializer 清零
 					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, reg))
@@ -2652,8 +2652,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
 				} else {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-						g.indent(), reg, structTy, structTy, varName, fieldIdx))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
 				}
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, val, fieldType, reg))
 			}
@@ -3008,8 +3008,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		g.tmpIdx++
 		gepReg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i64 0, i64 %s\n",
-				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, varName, idx))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, g.varAddr(varName), idx))
 			storeVal := val
 			if llvmElemType == "i8" {
 				if newVal, ok := g.coerceStrLitToByte(sb, val, expr.Value); ok {
@@ -3406,7 +3406,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
 			if sb != nil {
 				// 載入 slice 的資料指標（%T** → %T*）
-				sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %%%s\n", g.indent(), dataLoad, elemType, elemType, varName))
+				sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %s\n", g.indent(), dataLoad, elemType, elemType, g.varAddr(varName)))
 				// GEP 到第 idx 個元素（%T*，不 load）
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), gepReg, elemType, elemType, dataLoad, idx))

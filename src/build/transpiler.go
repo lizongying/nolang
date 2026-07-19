@@ -154,7 +154,8 @@ func sanitizeTypeForName(s string) string {
 // isConcreteType 檢查型別名稱是否為已知具體型別
 func isConcreteType(typeName string) bool {
 	switch typeName {
-	case "i64", "f64", "str", "bool", "char", "byte", "void":
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+		"byte", "f64", "str", "bool", "char", "void":
 		return true
 	}
 	// 複合型別：切片、陣列、可空、指針
@@ -4553,341 +4554,6 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 	return results
 }
 
-// ValidateRedundantCasts detects integer casts that are provably unnecessary
-// because the operand's effective bit width already fits within the target
-// type. Currently detects two patterns:
-//
-//  1. (x & mask) as T   — when mask is an integer literal (or named constant
-//     whose value is an integer literal) that fits in T's range.
-//  2. (x >> N) as T     — when N is an integer literal and the source type is
-//     an unsigned integer whose bit width minus N ≤ T's bit width.
-//
-// Results are emitted as hints (not errors): the cast is valid, just redundant.
-func ValidateRedundantCasts(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// Build a map of named integer constants from top-level let statements
-	// (e.g. "CC-MASK32 u32 = 4294967295" → constMap["CC-MASK32"] = 4294967295).
-	constMap := make(map[string]int64)
-	for _, stmt := range program.Statements {
-		let, ok := stmt.(*parser.LetStatement)
-		if !ok || let.Value == nil {
-			continue
-		}
-		if v, ok := integerLiteralValue(let.Value); ok {
-			constMap[let.Name.Value] = v
-		}
-	}
-
-	// Build function return type map for inferExprType.
-	funcTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				funcTypes[fd.Name] = fd.Results[0].Type.String()
-			}
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok {
-			if len(es.Results) > 0 && es.Results[0].Type != nil {
-				funcTypes[es.Name.Value] = es.Results[0].Type.String()
-			}
-		}
-	}
-
-	for _, stmt := range program.Statements {
-		results = append(results, checkRedundantCastsInStmt(stmt, make(map[string]string), funcTypes, constMap, "")...)
-	}
-	return results
-}
-
-// checkRedundantCastsInStmt walks statements, tracking variable types so that
-// inferExprType can resolve the source type of >> operands.
-func checkRedundantCastsInStmt(stmt parser.Statement, varTypes map[string]string, funcTypes map[string]string, constMap map[string]int64, selfType string) []ValidateResult {
-	var results []ValidateResult
-	switch s := stmt.(type) {
-	case *parser.FunctionDefinition:
-		localTypes := make(map[string]string)
-		for k, v := range varTypes {
-			localTypes[k] = v
-		}
-		for _, p := range s.Parameters {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		for _, p := range s.Results {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		methodSelfType := selfType
-		if len(s.Parameters) > 0 && s.Parameters[0].Name == "self" {
-			methodSelfType = s.Parameters[0].Type.String()
-		}
-		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				results = append(results, checkRedundantCastsInStmt(bStmt, localTypes, funcTypes, constMap, methodSelfType)...)
-			}
-		}
-
-	case *parser.LetStatement:
-		// Record declared type so later expressions can resolve variable types.
-		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
-			if _, exists := varTypes[s.Name.Value]; !exists {
-				varTypes[s.Name.Value] = s.Type.String()
-			}
-		}
-		if s.Value != nil {
-			// If no explicit type, infer from the value.
-			if s.Type == nil || s.Type.String() == "" || s.Type.String() == s.Name.Value {
-				inferred := inferExprType(s.Value, varTypes, funcTypes, selfType)
-				if inferred != "" {
-					if _, exists := varTypes[s.Name.Value]; !exists {
-						varTypes[s.Name.Value] = inferred
-					}
-				}
-			}
-			results = append(results, checkRedundantCastsInExpr(s.Value, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			results = append(results, checkRedundantCastsInExpr(s.Expression, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			results = append(results, checkRedundantCastsInExpr(s.Value, varTypes, funcTypes, constMap, selfType)...)
-		}
-		for _, target := range s.Targets {
-			results = append(results, checkRedundantCastsInExpr(target, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			results = append(results, checkRedundantCastsInExpr(s.ReturnValue, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.BlockStatement:
-		for _, bStmt := range s.Statements {
-			results = append(results, checkRedundantCastsInStmt(bStmt, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.ForStatement:
-		if s.Init != nil {
-			results = append(results, checkRedundantCastsInStmt(s.Init, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkRedundantCastsInExpr(s.Condition, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkRedundantCastsInStmt(s.Update, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				results = append(results, checkRedundantCastsInStmt(bStmt, varTypes, funcTypes, constMap, selfType)...)
-			}
-		}
-	}
-	return results
-}
-
-// checkRedundantCastsInExpr walks expressions looking for CastExpression nodes
-// whose cast is provably unnecessary.
-func checkRedundantCastsInExpr(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, constMap map[string]int64, selfType string) []ValidateResult {
-	var results []ValidateResult
-	switch e := expr.(type) {
-	case *parser.CastExpression:
-		// Check this cast for redundancy first, then recurse into the inner expr.
-		if msg := checkCastRedundancy(e, varTypes, funcTypes, constMap, selfType); msg != "" {
-			results = append(results, ValidateResult{
-				Line:    e.Token.Line,
-				Column:  e.Token.Column,
-				Message: msg,
-			})
-		}
-		if e.Expr != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Expr, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Left, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if e.Right != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Right, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Right, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Expression, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.CallExpression:
-		if e.Function != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Function, varTypes, funcTypes, constMap, selfType)...)
-		}
-		for _, arg := range e.Arguments {
-			results = append(results, checkRedundantCastsInExpr(arg, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.DotExpression:
-		if e.Receiver != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Receiver, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Left, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if e.Index != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Index, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.SliceExpression:
-		if e.Left != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Left, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Condition, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if e.Consequence != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Consequence, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if e.Alternative != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Alternative, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Condition, varTypes, funcTypes, constMap, selfType)...)
-		}
-		if e.Consequence != nil {
-			for _, bStmt := range e.Consequence.Statements {
-				results = append(results, checkRedundantCastsInStmt(bStmt, varTypes, funcTypes, constMap, selfType)...)
-			}
-		}
-		if e.Alternative != nil {
-			for _, bStmt := range e.Alternative.Statements {
-				results = append(results, checkRedundantCastsInStmt(bStmt, varTypes, funcTypes, constMap, selfType)...)
-			}
-		}
-
-	case *parser.AssignExpression:
-		if e.Value != nil {
-			results = append(results, checkRedundantCastsInExpr(e.Value, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.ArrayLiteral:
-		for _, el := range e.Elements {
-			results = append(results, checkRedundantCastsInExpr(el, varTypes, funcTypes, constMap, selfType)...)
-		}
-
-	case *parser.SliceLiteral:
-		for _, el := range e.Elements {
-			results = append(results, checkRedundantCastsInExpr(el, varTypes, funcTypes, constMap, selfType)...)
-		}
-	}
-	return results
-}
-
-// unwrapGrouped peels off GroupedExpression wrappers to reveal the core
-// expression inside parentheses.
-func unwrapGrouped(expr parser.Expression) parser.Expression {
-	for g, ok := expr.(*parser.GroupedExpression); ok; g, ok = expr.(*parser.GroupedExpression) {
-		expr = g.Expression
-	}
-	return expr
-}
-
-// checkCastRedundancy returns a non-empty hint message when the cast is
-// provably unnecessary, or "" when the cast might be needed.
-func checkCastRedundancy(cast *parser.CastExpression, varTypes map[string]string, funcTypes map[string]string, constMap map[string]int64, selfType string) string {
-	if cast.Type == nil {
-		return ""
-	}
-	targetType := cast.Type.String()
-	// Only reason about integer target types.
-	if intTypeBits(targetType) == 0 {
-		return ""
-	}
-
-	inner := unwrapGrouped(cast.Expr)
-	infix, ok := inner.(*parser.InfixExpression)
-	if !ok {
-		return ""
-	}
-
-	switch infix.Operator {
-	case "&":
-		// (x & mask) as T  — redundant when mask fits in T's range.
-		maskVal, ok := resolveIntValue(infix.Right, constMap)
-		if !ok {
-			return ""
-		}
-		tMin, tMax, tOk := intTypeRange(targetType)
-		if !tOk {
-			return ""
-		}
-		if maskVal >= tMin && maskVal <= tMax {
-			return fmt.Sprintf("redundant cast: mask %d fits in %s, 'as %s' can be removed", maskVal, targetType, targetType)
-		}
-
-	case ">>":
-		// (x >> N) as T  — redundant when the source type is unsigned and
-		// source_bits - N ≤ target_bits.
-		shiftVal, ok := resolveIntValue(infix.Right, constMap)
-		if !ok || shiftVal < 0 {
-			return ""
-		}
-		sourceType := inferExprType(infix.Left, varTypes, funcTypes, selfType)
-		if sourceType == "" {
-			return ""
-		}
-		sourceBits := intTypeBits(sourceType)
-		targetBits := intTypeBits(targetType)
-		if sourceBits == 0 || targetBits == 0 {
-			return ""
-		}
-		// Only safe for unsigned source types: arithmetic right shift on
-		// signed types can leave the sign bit set, so the result may not
-		// fit in a narrower unsigned target.
-		isUnsigned := strings.HasPrefix(sourceType, "u") || sourceType == "byte"
-		if !isUnsigned {
-			return ""
-		}
-		remaining := sourceBits - int(shiftVal)
-		if remaining < 0 {
-			remaining = 0
-		}
-		if remaining <= targetBits {
-			return fmt.Sprintf("redundant cast: right shift by %d on %s leaves %d bits, fits in %s, 'as %s' can be removed", shiftVal, sourceType, remaining, targetType, targetType)
-		}
-	}
-	return ""
-}
-
-// resolveIntValue resolves an expression to an int64 value, supporting
-// integer literals, negative literals, and named constants from constMap.
-func resolveIntValue(expr parser.Expression, constMap map[string]int64) (int64, bool) {
-	if v, ok := integerLiteralValue(expr); ok {
-		return v, true
-	}
-	if ident, ok := expr.(*parser.Identifier); ok {
-		if v, exists := constMap[ident.Value]; exists {
-			return v, true
-		}
-	}
-	return 0, false
-}
-
 // collectModuleNames returns all known module ShortNames (from #use + auto-imported std modules).
 func collectModuleNames(program *parser.Program) []string {
 	seen := make(map[string]bool)
@@ -4923,64 +4589,88 @@ type ModuleExport struct {
 	Type  string
 }
 
+// Per-module export cache: parsing a module's .no file to extract its exports
+// is expensive, and the std modules are identical across all vet calls in a
+// process. Cache the parsed exports keyed by module name.
+var (
+	moduleExportsCacheMu sync.Mutex
+	moduleExportsCache   = make(map[string][]ModuleExport)
+)
+
 // GetModuleExports resolves module .no files and extracts their top-level
 // LetStatement names with values (for hover) and function names.
+// Results are cached per-module-name for the lifetime of the process.
 func GetModuleExports(moduleNames []string) []ModuleExport {
 	seen := make(map[string]bool)
 	var exports []ModuleExport
 
 	for _, m := range moduleNames {
-		filePath := resolveModulePath(m)
-		if filePath == "" {
-			continue
+		// Fast path: use cached exports for this module name.
+		moduleExportsCacheMu.Lock()
+		cached, ok := moduleExportsCache[m]
+		moduleExportsCacheMu.Unlock()
+
+		if !ok {
+			// Parse the module once and cache its exports.
+			cached = parseModuleExports(m)
+			moduleExportsCacheMu.Lock()
+			moduleExportsCache[m] = cached
+			moduleExportsCacheMu.Unlock()
 		}
 
-		source, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		l := lexer.New(string(source))
-		p := parser.New(l)
-		modProg := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			continue
-		}
-
-		for _, stmt := range modProg.Statements {
-			if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-				if seen[ls.Name.Value] {
-					continue
-				}
-				seen[ls.Name.Value] = true
-				val := moduleExprValue(ls.Value)
-				typeStr := ""
-				if ls.Type != nil {
-					typeStr = ls.Type.String()
-				}
-				exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val, Type: typeStr})
+		for _, e := range cached {
+			if seen[e.Name] {
+				continue
 			}
-			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				if seen[fd.Name] {
-					continue
-				}
-				seen[fd.Name] = true
-				exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
-			}
-			if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
-				// Skip private FFI declarations (underscore-prefixed)
-				if strings.HasPrefix(es.Name.Value, "_") {
-					continue
-				}
-				if seen[es.Name.Value] {
-					continue
-				}
-				seen[es.Name.Value] = true
-				exports = append(exports, ModuleExport{Name: es.Name.Value, Value: ""})
-			}
+			seen[e.Name] = true
+			exports = append(exports, e)
 		}
 	}
 
+	return exports
+}
+
+// parseModuleExports resolves a single module's .no file and extracts its
+// top-level exports (constants, functions, externs).
+func parseModuleExports(moduleName string) []ModuleExport {
+	filePath := resolveModulePath(moduleName)
+	if filePath == "" {
+		return nil
+	}
+
+	source, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	modProg := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil
+	}
+
+	var exports []ModuleExport
+	for _, stmt := range modProg.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			val := moduleExprValue(ls.Value)
+			typeStr := ""
+			if ls.Type != nil {
+				typeStr = ls.Type.String()
+			}
+			exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val, Type: typeStr})
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
+			// Skip private FFI declarations (underscore-prefixed)
+			if strings.HasPrefix(es.Name.Value, "_") {
+				continue
+			}
+			exports = append(exports, ModuleExport{Name: es.Name.Value, Value: ""})
+		}
+	}
 	return exports
 }
 
@@ -5432,14 +5122,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							isOptionCtor = true
 						}
 					}
-					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, inferredType, s.Value) {
-						results = append(results, ValidateResult{
-							Line:    s.Token.Line,
-							Column:  s.Token.Column,
-							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value),
-						})
-					}
+				if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+					!isArgTypeCompatible(existingType, inferredType, s.Value) {
+					results = append(results, ValidateResult{
+						Line:    s.Token.Line,
+						Column:  s.Token.Column,
+						Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
+					})
+				}
 				} else {
 					// 首次賦值，記錄推斷型別
 					varTypes[s.Name.Value] = inferredType
@@ -5508,7 +5198,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							results = append(results, ValidateResult{
 								Line:    assign.Token.Line,
 								Column:  assign.Token.Column,
-								Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value),
+								Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
 							})
 						}
 					}
@@ -6885,9 +6575,9 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		return 0, 4294967295, true
 	case "u64":
 		// u64 max (2^64-1) cannot be represented in int64.
-		// We use int64 max as the upper bound; values > i64 max
-		// are extremely rare in practice and would already be
-		// stored as a different representation by the parser.
+		// We use int64 max as the upper bound for range comparisons
+		// involving int64 values. Large unsigned literals (> int64 max)
+		// are handled separately in isArgTypeCompatible via uint64FromLiteral.
 		return 0, 9223372036854775807, true
 	}
 	return 0, 0, false
@@ -6909,6 +6599,75 @@ func intTypeBits(t string) int {
 	return 0
 }
 
+// isSafeBitwiseNarrowing 報告一個表達式賦值給更窄的無號整數型別時是否安全。
+//
+// 當賦值的右側表達式僅由位元運算（& | ^ << >>）和整數字面量/byte 值構成，
+// 且目標型別為無號整數（u8/u16/u32/u64/byte）時，截斷高位是位元操作的標準語義，
+// 不會造成資料遺失（mask/位移已保證結果落在目標範圍內或刻意截斷高位）。
+//
+// 對有號目標型別從不適用，因為符號位元的截斷語義不明確。
+func isSafeBitwiseNarrowing(expr parser.Expression, targetType string) bool {
+	// 僅對無號整數目標型別放行
+	switch targetType {
+	case "u8", "u16", "u32", "u64", "byte":
+	default:
+		return false
+	}
+	return isBitwiseConstructExpr(expr)
+}
+
+// narrowingHint 回傳一個可操作的窄化修復提示。當 fromType 的值需要賦值給
+// 更窄的 toType 時，提示使用者如何用位元運算安全窄化。
+//
+// 對無號目標型別：建議使用 mask（如 `& 4294967295`）或位移（如 `>> 32`）。
+// 對有號目標型別：提示位元窄化不適用（符號位元截斷語義不明確）。
+// 非整數型別或非窄化場景回傳空字串。
+func narrowingHint(fromType, toType string) string {
+	fromBits := intTypeBits(fromType)
+	toBits := intTypeBits(toType)
+	if fromBits == 0 || toBits == 0 || fromBits <= toBits {
+		return ""
+	}
+	shift := fromBits - toBits
+	switch toType {
+	case "u8", "u16", "u32", "u64", "byte":
+		mask := (uint64(1) << toBits) - 1
+		return fmt.Sprintf("; hint: narrow safely with a bitwise mask (e.g. `& %d`) or right shift (e.g. `>> %d`)", mask, shift)
+	default:
+		// 有號目標型別：位元窄化不適用
+		return fmt.Sprintf("; hint: bitwise narrowing is not safe for signed target %s (sign-bit truncation is ambiguous); use an explicit range check instead", toType)
+	}
+}
+
+// isBitwiseConstructExpr 判斷表達式的頂層是否為位元運算（& | ^ << >>）。
+//
+// 當一個賦值的右側以位元運算為頂層運算子時，其語義是構造一個位元模式，
+// 賦值給更窄的無號整數型別只是截斷高位，是位元操作的標準安全模式
+// （常見於 ChaCha20/Poly1305 等密碼學/編解碼代碼）。
+//
+// 葉節點可以是任意子表達式（變數、陣列索引、字面量等）——只要頂層是位元運算即可，
+// 因為截斷發生在賦值那一刻，與值的來源無關。但單純的直接賦值（如 u64_var → u32）
+// 頂層不是位元運算，不會被此規則放行。
+func isBitwiseConstructExpr(expr parser.Expression) bool {
+	if expr == nil {
+		return false
+	}
+	// 括號包裹：穿透到內層
+	if g, ok := expr.(*parser.GroupedExpression); ok {
+		return isBitwiseConstructExpr(g.Expression)
+	}
+	// 頂層必須是位元運算 InfixExpression
+	ie, ok := expr.(*parser.InfixExpression)
+	if !ok {
+		return false
+	}
+	switch ie.Operator {
+	case "&", "|", "^", "<<", ">>":
+		return true
+	}
+	return false
+}
+
 // isArgTypeCompatible checks whether argType can be used where expectedType
 // is required. This handles implicit coercions that the compiler allows:
 //   - [N]T → []T  (fixed array passed where slice is expected)
@@ -6917,8 +6676,20 @@ func intTypeBits(t string) int {
 //   - Implicit widening: a narrower integer type (e.g. byte/u8) can be
 //     passed where a wider type (e.g. i64) is expected, as long as every
 //     value of the narrower type fits within the wider type's range.
+//   - Safe bitwise narrowing: an expression composed solely of bitwise
+//     operators (& | ^ << >>) and integer literals may be assigned to a
+//     narrower unsigned integer type, since the high-bit truncation is the
+//     intended bit-pattern construction (common in crypto/codec code).
 func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
 	if argType == expectedType {
+		return true
+	}
+	// Safe bitwise narrowing (checked early so it takes precedence over
+	// the widening range check below): an expression built solely from
+	// bitwise operators may be assigned to a narrower unsigned integer
+	// type — the high-bit truncation is the intended bit-pattern
+	// construction (common in crypto/codec code like ChaCha20/Poly1305).
+	if isSafeBitwiseNarrowing(arg, expectedType) {
 		return true
 	}
 	// [N]T is compatible with []T (array-to-slice coercion)
@@ -6935,7 +6706,24 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	if val, ok := integerLiteralValue(arg); ok {
 		if argType == "i64" || argType == "byte" {
 			if min, max, ok := intTypeRange(expectedType); ok {
-				return val >= min && val <= max
+				// Fast path: the int64 value fits within the target range.
+				if val >= min && val <= max {
+					return true
+				}
+				// Fallback for large unsigned literals (e.g. 18446744073709551615
+				// = 2^64-1) that overflow int64 and become negative. When the
+				// target is an unsigned type and the literal's source text
+				// represents a valid uint64 within the target's range, allow it.
+				if val < 0 && min == 0 {
+					if uval, ok := uint64FromLiteral(arg); ok {
+						// For u64, any uint64 value is in range.
+						if expectedType == "u64" {
+							return true
+						}
+						return uval <= uint64(max)
+					}
+				}
+				return false
 			}
 		}
 	}
@@ -6961,6 +6749,27 @@ func integerLiteralValue(expr parser.Expression) (int64, bool) {
 		if lit, ok := prefix.Right.(*parser.IntegerLiteral); ok {
 			return -lit.Value, true
 		}
+	}
+	return 0, false
+}
+
+// uint64FromLiteral extracts the uint64 value from an integer literal's Raw
+// or Token.Literal string. This is needed for large unsigned literals (e.g.
+// 18446744073709551615 = 2^64-1) whose int64 Value overflows to a negative
+// number. The Raw/Token.Literal fields preserve the original source text.
+func uint64FromLiteral(expr parser.Expression) (uint64, bool) {
+	if lit, ok := expr.(*parser.IntegerLiteral); ok {
+		raw := lit.Raw
+		if raw == "" {
+			raw = lit.Token.Literal
+		}
+		if raw != "" {
+			if uval, err := strconv.ParseUint(raw, 10, 64); err == nil {
+				return uval, true
+			}
+		}
+		// Fall back to the int64 value reinterpreted as uint64.
+		return uint64(lit.Value), true
 	}
 	return 0, false
 }

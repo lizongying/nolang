@@ -221,18 +221,6 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
-	// 15. Redundant cast hints (e.g. (x & mask) as u32 when mask fits in u32)
-	for _, u := range nbuild.ValidateRedundantCasts(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
 	// 13. Function argument type checking
 	for _, u := range nbuild.ValidateFuncArgs(prog, docDir) {
 		results = append(results, VetResult{

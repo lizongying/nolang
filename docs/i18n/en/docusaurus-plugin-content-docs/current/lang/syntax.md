@@ -1164,6 +1164,84 @@ a = typeof(x)
 y = x as *byte
 ```
 
+### Integer Assignment Type Checking
+
+The compiler type-checks integer assignments to prevent unsafe narrowing that could cause data loss.
+
+#### Implicit Widening (safe, auto-allowed)
+
+A narrower integer type's value can be auto-assigned to a wider type, since the target range fully contains the source range:
+
+```nolang
+b byte = 200
+i i64 = b        // ✓ byte range [0,255] ⊆ i64 range
+u u32 = b        // ✓ byte range ⊆ u32 range
+```
+
+#### Integer Literal Assignment
+
+Integer literals (default inferred as `i64`) can be assigned to any integer type whose range includes the literal value:
+
+```nolang
+n u8 = 200       // ✓ 200 ∈ [0,255]
+m u8 = 300       // ✗ 300 > 255, compile error
+big u64 = 18446744073709551615  // ✓ 2^64-1, u64 max
+```
+
+#### Unsafe Narrowing (compile error)
+
+Assigning a wider-typed variable directly to a narrower type causes a compile error, as it may cause data loss. The error message includes an **actionable fix hint** suggesting how to narrow safely with bitwise operations:
+
+```nolang
+d u64 = 42
+h u32 = d        // ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
+h u16 = d        // ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
+h u8 = d         // ✗ cannot assign u64 value to u8 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 255`) or right shift (e.g. `>> 56`)
+x u32 = d + 1    // ✗ addition result is still u64, unsafe
+y u32 = foo()    // ✗ function call result type mismatch
+```
+
+> **Fix hint**: The compiler auto-computes the exact mask value and shift amount for the target type. Apply the suggested mask or shift to narrow safely (see next section).
+>
+> **Signed target types**: For `i8`/`i16`/`i32`/`i64`, the hint explains that bitwise narrowing is not safe (sign-bit truncation is ambiguous) and suggests an explicit range check instead.
+
+#### Safe Bitwise Narrowing (auto-allowed)
+
+When the right-hand side of an assignment is a **bitwise expression** (`&`, `|`, `^`, `<<`, `>>`) and the target type is an **unsigned integer** (`u8`/`u16`/`u32`/`u64`/`byte`), the compiler allows implicit narrowing — because high-bit truncation is the standard semantics of bitwise operations and does not cause unexpected data loss:
+
+```nolang
+d u64 = 42
+
+// ✓ mask operation: result ≤ mask value, safely fits u32
+h u32 = d & 67108863          // mask = 2^26-1 < 2^32
+h u32 = d & 4294967295        // mask = 2^32-1, exactly u32 range
+
+// ✓ shift operation: high bits are 0 after right shift
+hi u32 = d >> 32              // u64 >> 32 leaves 32 bits
+
+// ✓ XOR / OR combinations
+c u32 = a ^ b                 // bitwise operation result
+b byte = v & 255              // mask to byte range
+
+// ✓ composite bitwise (common in crypto/codec)
+s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[3] & 255) << 24)
+```
+
+> **Why allowed?** Bitwise operations (mask, shift, XOR, OR) semantically construct a bit pattern. Assigning to a narrower unsigned type truncates the high bits intentionally — the developer has already ensured the result's range via mask or shift, or deliberately discards high bits. This is a standard pattern in cryptography (e.g. ChaCha20, Poly1305, Blake2) and codec code.
+
+> **Unsigned target types only.** For signed integer targets (`i8`/`i16`/`i32`/`i64`), even with a bitwise RHS, an error is still reported because sign-bit truncation semantics are ambiguous:
+> ```nolang
+> d u64 = 42
+> h i32 = d & 4294967295   // ✗ still errors: signed target not eligible
+> ```
+
+> **Top-level must be a bitwise op.** Only when the expression's top-level operator is `&`/`|`/`^`/`<<`/`>>` is it allowed. Addition, subtraction, function calls, direct variable references, etc. are not covered:
+> ```nolang
+> d u64 = 42
+> h u32 = d              // ✗ top-level is Identifier, not bitwise
+> h u32 = d + 1          // ✗ top-level is +, not bitwise
+> ```
+
 ### Module System
 
 - Each file is a module

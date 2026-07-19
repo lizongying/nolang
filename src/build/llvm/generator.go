@@ -74,6 +74,7 @@ type Generator struct {
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
 	rangeLoopVars        map[string]bool                 // top-level vars used as range loop variables (must be locals)
+	multiAssignVars      map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated       bool                            // true if current basic block ends with a terminator (ret/br)
@@ -444,6 +445,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 掃描所有頂層 LetStatement，標記被重新賦值的變數（出現多次同名 LetStatement）
 	// 這些變數不應被常量摺疊（enumVariantIndex 機制），必須從全局變數載入實際值
 	letCount := make(map[string]int)
+	g.multiAssignVars = make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			letCount[ls.Name.Value]++
@@ -452,6 +454,22 @@ func (g *Generator) Generate(program *parser.Program) string {
 			for _, t := range mas.Targets {
 				if ident, ok := t.(*parser.Identifier); ok {
 					letCount[ident.Value]++
+					g.multiAssignVars[ident.Value] = true
+				}
+			}
+		}
+		// The transpiler converts MultiAssignStatement to a nested CallExpression:
+		//   innerCall(targets...)  =>  ExpressionStatement{CallExpression{Function: innerCall, Arguments: targets}}
+		// Detect this converted form so multi-assign targets are still recognized.
+		if es, ok := stmt.(*parser.ExpressionStatement); ok {
+			if ce, ok := es.Expression.(*parser.CallExpression); ok {
+				if _, ok := ce.Function.(*parser.CallExpression); ok {
+					for _, arg := range ce.Arguments {
+						if ident, ok := arg.(*parser.Identifier); ok {
+							letCount[ident.Value]++
+							g.multiAssignVars[ident.Value] = true
+						}
+					}
 				}
 			}
 		}
@@ -461,7 +479,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 			g.reassignedVars[name] = true
 		}
 	}
-
 	// 掃描所有 ForStatement (含巢狀)，標記 range loop 變數
 	// 這些變數不應被視為常量全局變數，必須是局部變數以便 range loop 寫入
 	g.rangeLoopVars = make(map[string]bool)
@@ -860,11 +877,15 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if funcNames[name] {
 				continue
 			}
-			// Skip if variable is used as a range loop variable. These must be
-			// local variables so the range loop codegen (which uses %var refs)
-			// can write to them. Constants defined in multiple modules (like
-			// FNV-OFFSET) are NOT skipped — they remain globals.
+			// Skip if variable is used as a range loop variable or multi-assign
+			// target. These must be local variables so the codegen (which uses
+			// %var refs) can write to them. Constants defined in multiple modules
+			// (like FNV-OFFSET, which only appears in LetStatements) are NOT
+			// skipped — they remain globals.
 			if g.rangeLoopVars != nil && g.rangeLoopVars[name] {
+				continue
+			}
+			if g.multiAssignVars != nil && g.multiAssignVars[name] {
 				continue
 			}
 			llvmType := g.varLLVMType(ls)
