@@ -1284,7 +1284,9 @@ arr_to_vec = (arr [n]t) (out []t) {
 // 返回類型名稱字符串
 a = typeof(x)
 
-y = x as i64
+// `as` 僅允許用於 FFI 指標型別轉換（如 *byte、**byte、*i64）
+// 整數內部皆為 i64，無需顯式轉換
+y = x as *byte
 ```
 
 ### 模块系统

@@ -140,7 +140,8 @@ O-RDONLY = 0
 O-WRONLY = 1
 O-RDWR = 2
 
-; O_CREAT: macOS=512, Linux=64
+; O_CREAT: macOS=512, Linux=64, Windows=256
+
 #{mac-amd64}
 O-CREAT = 512
 #{mac-arm64}
@@ -149,8 +150,13 @@ O-CREAT = 512
 O-CREAT = 64
 #{linux-arm64}
 O-CREAT = 64
+#{win-amd64}
+O-CREAT = 256
+#{win-arm64}
+O-CREAT = 256
 
-; O_TRUNC: macOS=1024, Linux=512
+; O_TRUNC: macOS=1024, Linux=512, Windows=512
+
 #{mac-amd64}
 O-TRUNC = 1024
 #{mac-arm64}
@@ -159,8 +165,13 @@ O-TRUNC = 1024
 O-TRUNC = 512
 #{linux-arm64}
 O-TRUNC = 512
+#{win-amd64}
+O-TRUNC = 512
+#{win-arm64}
+O-TRUNC = 512
 
-; O_APPEND: macOS=8, Linux=1024
+; O_APPEND: macOS=8, Linux=1024, Windows=8
+
 #{mac-amd64}
 O-APPEND = 8
 #{mac-arm64}
@@ -169,8 +180,13 @@ O-APPEND = 8
 O-APPEND = 1024
 #{linux-arm64}
 O-APPEND = 1024
+#{win-amd64}
+O-APPEND = 8
+#{win-arm64}
+O-APPEND = 8
 
-; O_EXCL: macOS=2048, Linux=128
+; O_EXCL: macOS=2048, Linux=128, Windows=1024
+
 #{mac-amd64}
 O-EXCL = 2048
 #{mac-arm64}
@@ -179,6 +195,10 @@ O-EXCL = 2048
 O-EXCL = 128
 #{linux-arm64}
 O-EXCL = 128
+#{win-amd64}
+O-EXCL = 1024
+#{win-arm64}
+O-EXCL = 1024
 
 ; 標準檔案描述符
 STDIN-FD = 0
@@ -452,6 +472,8 @@ copy-file = (src str, dst str) (ok bool) {
 ;   i <- [0..names.len): {
 ;       print(names[i])
 ;   }
+
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 list-dir = (dirpath str) (entries []str) {
     dirp = open-dir(dirpath)
 
@@ -464,6 +486,30 @@ list-dir = (dirpath str) (entries []str) {
         {
             ok == false -> {
                 close-dir(dirp)
+                return
+            }
+        }
+        entries.push(name)
+    } ()
+}
+
+; Windows 版本：使用 FindFirstFileA/FindNextFileA/FindClose
+; FindFirstFileA 需要路徑附加 '\*' 萬用字元
+
+#{win-amd64, win-arm64}
+list-dir = (dirpath str) (entries []str) {
+    winpath = dirpath - '\\*'
+    bufptr = win-find-first-file(winpath)
+
+    {
+        bufptr == 0 -> return
+    }
+
+    {
+        name, ok = win-find-next-file(bufptr)
+        {
+            ok == false -> {
+                win-find-close(bufptr)
                 return
             }
         }

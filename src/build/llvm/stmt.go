@@ -382,9 +382,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// bitcasts can be generated when the actual type differs (e.g.
 		// allocated as %http2-frame but storing/loading i64).
 		if varName == "it" && g.itAllocTypes != nil {
-			g.itAllocTypes[varName] = varType
-		}
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
+		g.itAllocTypes[varName] = varType
+	}
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
 		// %str-long 局部變數零初始化：確保 data 指標為 NULL。
 		// 若變數在循環/條件塊內賦值但運行時未執行，emitHeapFree 的 NULL 檢查能安全跳過 free。
@@ -1121,6 +1121,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
+					// Fallback: ReceiverGlobal builtins (sqrt, abs, ...) not prefixed by type;
+					// look up by method name alone. e.g. r2.sqrt() -> sqrt -> double.
+					if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
+						return g.mapToLLVMType(m.Return[0].String())
+					}
 				} else {
 					// Module-prefixed function call (e.g., str.with-cap, vec.with-cap)
 					// where receiver is a module name, not a variable.
@@ -1484,7 +1489,7 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// `it` 變數跨多個 match 共用：每個 match 的 ok arm 可能有不同的元素型別
 			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
-			vt := g.varLLVMType(s)
+		vt := g.varLLVMType(s)
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
 				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
 				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
@@ -2836,6 +2841,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
+	// 在清除 currentTargetType 前保存值的實際型別，
+	// 供後續賦值時的型別轉換使用（zext/trunc）。
+	valActualType := ""
+	if strings.HasPrefix(val, "%") {
+		valActualType = g.intExprLLVMType(stmt.Value)
+	}
 	llvmType := g.varLLVMType(stmt)
 	g.currentTargetType = "" // clear after use
 	// For assignments (Type=nil) to %arr variables, varLLVMType may return
@@ -3185,6 +3196,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			truncReg := fmt.Sprintf("%%trunc.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmType))
 			val = truncReg
+		}
+	}
+	// 寬變數賦值窄整數值（如 u64 = u32 | u32, u64 = u32 + u32）：
+	// 兩個窄型別運算的結果仍是窄型別，需要 zext 到變數的寬型別。
+	// 使用 valActualType（在 currentTargetType 清除前保存），因為
+	// 目標型別傳播可能已使值成為 i64，此時不需要再 zext。
+	if !alreadyCoerced && llvmType == "i64" && valActualType != "" {
+		if g.isIntegerLLVMType(valActualType) && valActualType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%zext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, valActualType, val))
+			val = zextReg
 		}
 	}
 
@@ -3740,6 +3763,22 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					candName := "str." + dot.Property
 					if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
 						isNolangOptionCall = true
+					}
+				} else {
+					// Receiver is CallExpression / DotExpression / etc. (e.g. arg(1).to-i64()):
+					// derive receiver type via exprResultLLVMType and look up method.
+					recvType := g.exprResultLLVMType(recv)
+					srcType := strings.TrimPrefix(recvType, "%")
+					candidates := []string{srcType}
+					if srcType == "str-long" {
+						candidates = append(candidates, "str")
+					}
+					for _, cand := range candidates {
+						candName := cand + "." + dot.Property
+						if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
+							isNolangOptionCall = true
+							break
+						}
 					}
 				}
 			} else if ident, isIdent := v.Function.(*parser.Identifier); isIdent {

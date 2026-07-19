@@ -509,6 +509,14 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		if t, ok := p.varDeclTypes[ident.Value]; ok {
 			return strings.TrimPrefix(t, "?")
 		}
+		// self in method body: resolve via methodStructStack.
+		// self is added to def.Parameters after parseFunctionBody,
+		// so varDeclTypes does not have it during body parsing.
+		// This allows inferTypeFromCallExpr to resolve self.method() calls
+		// (e.g., val = .get(key) in str-map.contains -> val inferred as ?str).
+		if ident.Value == "self" && len(p.methodStructStack) > 0 {
+			return p.methodStructStack[len(p.methodStructStack)-1]
+		}
 	}
 	if dot, ok := receiver.(*DotExpression); ok {
 		// self.field → 查詢 struct 欄位型別
@@ -631,10 +639,10 @@ func (p *Parser) collectDocComments() *CommentGroup {
 	group := &CommentGroup{}
 	for _, c := range p.comments {
 		comment := &Comment{
-			Pos:  posFromToken(c),
-			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
-			Kind: NormalComment,
-			Text: c.Literal,
+			Pos:    posFromToken(c),
+			End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+			Kind:   NormalComment,
+			Text:   c.Literal,
 			Marker: c.Marker,
 		}
 		group.List = append(group.List, comment)
@@ -692,10 +700,10 @@ func (p *Parser) attachInlineComment(stmt Statement) {
 	if stmtLastLine > 0 && p.comments[0].Line == stmtLastLine {
 		c := p.comments[0]
 		comment := &Comment{
-			Pos:  posFromToken(c),
-			End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
-			Kind: NormalComment,
-			Text: c.Literal,
+			Pos:    posFromToken(c),
+			End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+			Kind:   NormalComment,
+			Text:   c.Literal,
 			Marker: c.Marker,
 		}
 		group := &CommentGroup{
@@ -917,15 +925,15 @@ func (p *Parser) ParseProgram() *Program {
 		if stmt == nil {
 			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
 			if doc != nil {
-			for _, c := range doc.List {
-				p.comments = append(p.comments, lexer.Token{
-					Type:    lexer.COMMENT,
-					Literal: c.Text,
-					Marker:  c.Marker,
-					Line:    c.Pos.Line,
-					Column:  c.Pos.Column,
-				})
-			}
+				for _, c := range doc.List {
+					p.comments = append(p.comments, lexer.Token{
+						Type:    lexer.COMMENT,
+						Literal: c.Text,
+						Marker:  c.Marker,
+						Line:    c.Pos.Line,
+						Column:  c.Pos.Column,
+					})
+				}
 			}
 			p.nextToken()
 		}
@@ -3667,22 +3675,32 @@ func (p *Parser) parseExpression(precedence int) Expression {
 
 	// 处理中缀运算符与 `as` 类型转换（不包括三元表达式）
 	// `as` 的优先级低于算术（PRODUCT/SUM/...），高于赋值；
-	// 循环允许 (expr as Type) op expr 形式，例如 (r[4]*5) as u64 后跟 +
+	// 循环允许 (expr as Type) op expr 形式，例如 (r[4]*5) as *byte 后跟 +
+	// （`as` 僅允許用於 FFI 指標型別轉換，非指標型別會報錯）
 	for p.currentToken.Type != lexer.EOF &&
 		!(p.ctx.contains(CTX_MATCH_ARM) && p.currentToken.Type == lexer.RARROW) &&
 		p.currentPrecedence() > precedence {
 
 		// `as` 类型转换：expr as Type
+		// 限制：`as` 僅允許用於 FFI 指標型別轉換（如 *byte、**byte、*i64），
+		// 不允許整數型別轉換（如 u32、i64）— 整數內部皆為 i64，無需顯式轉換。
 		if p.currentToken.Type == lexer.AS {
 			asTok := p.currentToken
 			p.nextToken() // skip as
-			// 解析目标类型（NamedType / NullableType / PointerType 等）
-			typ, ok := p.parseTypeExpression()
+			// 解析目標型別 — 使用 parseExternType 以支援 *T / **T 等 FFI 指標型別語法
+			typ, ok := p.parseExternType()
 			if !ok || typ == nil {
 				msg := fmt.Sprintf("line %d, column %d: expected type after 'as', got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				p.saveError(msg)
 				return nil
+			}
+			// 檢查目標型別是否為指標型別（PointerType）
+			if _, isPtr := typ.(*PointerType); !isPtr {
+				msg := fmt.Sprintf("line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
+					asTok.Line, asTok.Column, typ.String())
+				p.saveError(msg)
+				// 仍建立 CastExpression 以維持後續解析流程，但已記錄錯誤
 			}
 			leftExp = &CastExpression{
 				Token: asTok,
@@ -4177,10 +4195,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		// Preserve comments (TrailingComments) from the parsed block so that
 		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
 		if parsedBlock != nil {
-bodyBlock.TrailingComments = parsedBlock.TrailingComments
-bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
-bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
-bodyBlock.RBrace = parsedBlock.RBrace
+			bodyBlock.TrailingComments = parsedBlock.TrailingComments
+			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
+			bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
+			bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock
 		arms = append(arms, ma)
@@ -4262,7 +4280,7 @@ bodyBlock.RBrace = parsedBlock.RBrace
 func (p *Parser) parseBareMatchExpr() Expression {
 	tok := p.currentToken // LBRACE
 	openBraceLine := tok.Line
-	p.nextToken()         // skip {
+	p.nextToken() // skip {
 
 	// Separate comments on the same line as { (opening brace comments)
 	// from doc comments for arm bodies.
@@ -4273,10 +4291,10 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		for i < len(p.comments) && p.comments[i].Line == openBraceLine {
 			c := p.comments[i]
 			comment := &Comment{
-				Pos:  posFromToken(c),
-				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
-				Kind: NormalComment,
-				Text: c.Literal,
+				Pos:    posFromToken(c),
+				End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+				Kind:   NormalComment,
+				Text:   c.Literal,
 				Marker: c.Marker,
 			}
 			group.List = append(group.List, comment)
@@ -5795,10 +5813,10 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		for i < len(p.comments) && p.comments[i].Line == openBraceLine {
 			c := p.comments[i]
 			comment := &Comment{
-				Pos:  posFromToken(c),
-				End:  lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
-				Kind: NormalComment,
-				Text: c.Literal,
+				Pos:    posFromToken(c),
+				End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
+				Kind:   NormalComment,
+				Text:   c.Literal,
 				Marker: c.Marker,
 			}
 			group.List = append(group.List, comment)
@@ -5823,15 +5841,15 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		} else {
 			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
 			if doc != nil {
-			for _, c := range doc.List {
-				p.comments = append(p.comments, lexer.Token{
-					Type:    lexer.COMMENT,
-					Literal: c.Text,
-					Marker:  c.Marker,
-					Line:    c.Pos.Line,
-					Column:  c.Pos.Column,
-				})
-			}
+				for _, c := range doc.List {
+					p.comments = append(p.comments, lexer.Token{
+						Type:    lexer.COMMENT,
+						Literal: c.Text,
+						Marker:  c.Marker,
+						Line:    c.Pos.Line,
+						Column:  c.Pos.Column,
+					})
+				}
 			}
 			p.nextToken()
 		}
@@ -6497,7 +6515,7 @@ func (p *Parser) isCondLoopBlockFirst() bool {
 		k++
 	}
 	// k 在匹配的 } 處；下一個 token (k+1) 應為 LPAREN
-	if tokAt(k + 1).Type != lexer.LPAREN {
+	if tokAt(k+1).Type != lexer.LPAREN {
 		return false
 	}
 	// 掃描匹配的括號，從 k+2 開始
@@ -7644,10 +7662,10 @@ func (p *Parser) parseStructDefinition() Statement {
 				field.Type = buildType(p.currentToken.Literal, p.currentToken)
 				p.nextToken()
 			} else {
-			// Complex expression after colon → treat as value assignment
-			field.Value = p.parseExpression(LOWEST)
+				// Complex expression after colon → treat as value assignment
+				field.Value = p.parseExpression(LOWEST)
+			}
 		}
-	}
 
 		// Parse field modifiers: read-only, sealed
 		for p.currentToken.Type == lexer.IDENT {
@@ -8383,6 +8401,9 @@ func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
 	}
 	p.nextToken() // skip COLON
 
+	// 推入方法上下文，供 resolveReceiverType 解析 self
+	p.methodStructStack = append(p.methodStructStack, structToken.Literal)
+
 	def := &FunctionDefinition{
 		Token: structToken,
 		Name:  fullName,
@@ -8395,6 +8416,11 @@ func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
 	}
 
 	p.parseFunctionBody(def)
+
+	// 彈出方法上下文
+	if len(p.methodStructStack) > 0 {
+		p.methodStructStack = p.methodStructStack[:len(p.methodStructStack)-1]
+	}
 
 	// Insert self parameter
 	selfParam := &Parameter{

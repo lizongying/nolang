@@ -278,7 +278,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     m [16]u64
     i <- [0..16): {
         off = i * 8
-        m[i] = (block[off] & 255) | ((block[off + 1] & 255) << 8) | ((block[off + 2] & 255) << 16) | ((block[off + 3] & 255) << 24) | ((block[off + 4] & 255) as u64 << 32) | ((block[off + 5] & 255) as u64 << 40) | ((block[off + 6] & 255) as u64 << 48) | ((block[off + 7] & 255) as u64 << 56)
+        m[i] = (block[off] & 255) | ((block[off + 1] & 255) << 8) | ((block[off + 2] & 255) << 16) | ((block[off + 3] & 255) << 24) | ((block[off + 4] & 255) << 32) | ((block[off + 5] & 255) << 40) | ((block[off + 6] & 255) << 48) | ((block[off + 7] & 255) << 56)
     }
 
     ; 12 輪

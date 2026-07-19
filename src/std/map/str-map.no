@@ -115,6 +115,8 @@ str-map.contains = (key str) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+        err -> {}
+        nil -> {}
     }
 }
 

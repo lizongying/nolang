@@ -1446,7 +1446,9 @@ arr_to_vec = (arr [n]t) (out []t) {
 // Returns the type name string
 a = typeof(x)
 
-y = x as i64
+// `as` is only allowed for FFI pointer type casts (e.g. *byte, **byte, *i64)
+// Integers are internally i64, no explicit cast needed
+y = x as *byte
 ```
 
 ### Import System
@@ -1744,7 +1746,7 @@ External packages can only access exports declared in `lib.no` when importing vi
 #### Others
 
 - `?` // ternary operator (e.g. `c = flag ? 1 : 2`)
-- `as` // type conversion (e.g. `y = x as i64`)
+- `as` // FFI pointer type conversion (e.g. `y = x as *byte`)
 - `..` // slice range (e.g. `arr[1..3]`, `arr[1..]`, `arr[..3]`)
 
 ### FFI (`#{c}` annotation)

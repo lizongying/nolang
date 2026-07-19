@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -67,6 +69,13 @@ func VetFile(filePath string) []VetResult {
 	if prog == nil {
 		return results
 	}
+
+	// Apply platform annotations (#{mac-arm64}, #{linux-amd64}, etc.)
+	// before validation so non-matching code is excluded from duplicate/type
+	// checks. This mirrors the transpiler's behavior (transpiler.go:759) and
+	// allows platform-split function definitions (e.g. POSIX vs Windows
+	// list-dir) to coexist without false "duplicate function" errors.
+	prog.Statements = llvm.FilterByPlatform(prog.Statements)
 
 	// 2. Type errors
 	for _, e := range nbuild.ValidateTypes(prog) {
@@ -212,6 +221,18 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 15. Redundant cast hints (e.g. (x & mask) as u32 when mask fits in u32)
+	for _, u := range nbuild.ValidateRedundantCasts(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     u.Line,
+			Column:   u.Column,
+			Severity: "hint",
+			Source:   "nolang-lint",
+			Message:  u.Message,
+		})
+	}
+
 	// 13. Function argument type checking
 	for _, u := range nbuild.ValidateFuncArgs(prog, docDir) {
 		results = append(results, VetResult{
@@ -243,6 +264,16 @@ func VetFile(filePath string) []VetResult {
 
 // VetDir runs VetFile on every .no file in a directory (recursively).
 func VetDir(dirPath string) []VetResult {
+	return VetDirVerbose(dirPath, nil)
+}
+
+// VetDirVerbose is like VetDir but reports per-file progress to the given
+// logger. If progress is nil, no progress is reported. Each callback receives
+// the file path, the number of diagnostics found in that file, and the elapsed
+// duration — allowing callers to spot slow files.
+type VetProgressFunc func(path string, diagCount int, elapsed time.Duration)
+
+func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
 	var results []VetResult
 	_ = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -254,7 +285,12 @@ func VetDir(dirPath string) []VetResult {
 		if !strings.HasSuffix(path, ".no") {
 			return nil
 		}
-		results = append(results, VetFile(path)...)
+		start := time.Now()
+		fileRes := VetFile(path)
+		if progress != nil {
+			progress(path, len(fileRes), time.Since(start))
+		}
+		results = append(results, fileRes...)
 		return nil
 	})
 	return results
@@ -263,6 +299,12 @@ func VetDir(dirPath string) []VetResult {
 // VetPath dispatches to VetFile or VetDir based on whether the path
 // is a file or directory.
 func VetPath(path string) []VetResult {
+	return VetPathVerbose(path, nil)
+}
+
+// VetPathVerbose is like VetPath but accepts a progress callback for
+// directory walks.
+func VetPathVerbose(path string, progress VetProgressFunc) []VetResult {
 	info, err := os.Stat(path)
 	if err != nil {
 		return []VetResult{{
@@ -273,7 +315,7 @@ func VetPath(path string) []VetResult {
 		}}
 	}
 	if info.IsDir() {
-		return VetDir(path)
+		return VetDirVerbose(path, progress)
 	}
 	return VetFile(path)
 }
@@ -294,7 +336,7 @@ func FormatVetResults(results []VetResult) int {
 
 	errorCount := 0
 	for _, r := range results {
-	 sev := strings.ToUpper(r.Severity)
+		sev := strings.ToUpper(r.Severity)
 		if r.Severity == "error" {
 			errorCount++
 		}

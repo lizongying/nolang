@@ -72,5 +72,5 @@ sidebar_position: 4
 ## Others
 
 - `?` // Ternary operator (e.g., `c = flag ? 1 : 2`)
-- `as` // Type conversion (e.g., `y = x as i64`)
+- `as` // FFI pointer type conversion (e.g., `y = x as *byte`)
 - `..` // Slice range (e.g., `arr[1..3]`, `arr[1..]`, `arr[..3]`)

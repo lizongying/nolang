@@ -281,6 +281,8 @@ http-server-conn.parse = () (ok bool) {
             cl == 'close' -> .keep-alive = false
             cl == 'keep-alive' -> .keep-alive = true
         }
+        err -> {}
+        nil -> {}
     }
 
     ; 讀取請求體（如有 Content-Length）
@@ -306,6 +308,8 @@ http-server-conn.parse = () (ok bool) {
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
+        err -> {}
+        nil -> {}
     }
 
     ok = true

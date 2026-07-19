@@ -100,6 +100,8 @@ linked-hash-map.contains = (key i64) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+        err -> {}
+        nil -> {}
     }
 }
 

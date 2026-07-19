@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
@@ -2092,9 +2093,9 @@ config = (host str = 'localhost', port i64 = 8080, debug bool = true) {
 // struct definition populates StructDefinition.GenericParams.
 func TestGenericAnnotationStruct(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		want    []string
+		name  string
+		input string
+		want  []string
 	}{
 		{
 			name: "generic_two_params",
@@ -2150,9 +2151,9 @@ vec {
 // method definition populates FunctionDefinition.GenericParams.
 func TestGenericAnnotationMethod(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		want    []string
+		name  string
+		input string
+		want  []string
 	}{
 		{
 			name: "method_generic_two_params",
@@ -2215,4 +2216,77 @@ func collectGenericParamNames(params []*Identifier) []string {
 		names = append(names, gp.Value)
 	}
 	return names
+}
+
+// TestAsCastRestriction verifies that `as` type cast is only allowed for
+// FFI pointer types (e.g., *byte, **byte). Non-pointer casts like `as u32`
+// and `as i64` must produce a parse error.
+func TestAsCastRestriction(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantErr       bool
+		wantErrSubstr string
+	}{
+		{
+			name: "as_pointer_byte_allowed",
+			input: `test-fn = (n i64) {
+    x = n as *byte
+}`,
+			wantErr: false,
+		},
+		{
+			name: "as_double_pointer_byte_allowed",
+			input: `test-fn = (n i64) {
+    x = n as **byte
+}`,
+			wantErr: false,
+		},
+		{
+			name: "as_u32_forbidden",
+			input: `test-fn = (n i64) {
+    x = n as u32
+}`,
+			wantErr:       true,
+			wantErrSubstr: "'as' cast is only allowed for FFI pointer types",
+		},
+		{
+			name: "as_i64_forbidden",
+			input: `test-fn = (n i64) {
+    x = n as i64
+}`,
+			wantErr:       true,
+			wantErrSubstr: "'as' cast is only allowed for FFI pointer types",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			p.ParseProgram()
+			errs := p.Errors()
+			if tt.wantErr {
+				if len(errs) == 0 {
+					t.Errorf("expected error for %q, got none", tt.input)
+					return
+				}
+				if tt.wantErrSubstr != "" {
+					found := false
+					for _, e := range errs {
+						if strings.Contains(e, tt.wantErrSubstr) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("expected error containing %q, got: %v", tt.wantErrSubstr, errs)
+					}
+				}
+			} else {
+				if len(errs) > 0 {
+					t.Errorf("unexpected error for %q: %v", tt.input, errs)
+				}
+			}
+		})
+	}
 }

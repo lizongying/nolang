@@ -139,4 +139,16 @@ func init() {
 		Doc:          "Connect to Unix domain socket. Returns fd (-1 on error)",
 		ForwardFunc:  "unix-dial",
 	})
+
+	// win-wsa-startup: initialize Winsock 2.2 on Windows (WSAStartup)
+	// Args: none
+	// Returns: ok bool (true on success)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-wsa-startup",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Initialize Winsock 2.2 on Windows (WSAStartup). Returns true on success",
+		ForwardFunc:  "win-wsa-startup",
+	})
 }

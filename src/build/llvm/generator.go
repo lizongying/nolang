@@ -73,6 +73,7 @@ type Generator struct {
 	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
+	rangeLoopVars        map[string]bool                 // top-level vars used as range loop variables (must be locals)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated       bool                            // true if current basic block ends with a terminator (ret/br)
@@ -447,12 +448,48 @@ func (g *Generator) Generate(program *parser.Program) string {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			letCount[ls.Name.Value]++
 		}
+		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
+			for _, t := range mas.Targets {
+				if ident, ok := t.(*parser.Identifier); ok {
+					letCount[ident.Value]++
+				}
+			}
+		}
 	}
 	for name, count := range letCount {
 		if count > 1 {
 			g.reassignedVars[name] = true
 		}
 	}
+
+	// 掃描所有 ForStatement (含巢狀)，標記 range loop 變數
+	// 這些變數不應被視為常量全局變數，必須是局部變數以便 range loop 寫入
+	g.rangeLoopVars = make(map[string]bool)
+	var collectRangeVars func(stmts []parser.Statement)
+	collectRangeVars = func(stmts []parser.Statement) {
+		for _, s := range stmts {
+			switch st := s.(type) {
+			case *parser.ForStatement:
+				if st.IterRange != nil && st.IterRange.Variable != "" {
+					g.rangeLoopVars[st.IterRange.Variable] = true
+				}
+				if st.Body != nil {
+					collectRangeVars(st.Body.Statements)
+				}
+			case *parser.ExpressionStatement:
+				// ExpressionStatement may wrap an IfExpression (match arm desugar).
+				if ie, ok := st.Expression.(*parser.IfExpression); ok {
+					if ie.Consequence != nil {
+						collectRangeVars(ie.Consequence.Statements)
+					}
+					if ie.Alternative != nil {
+						collectRangeVars(ie.Alternative.Statements)
+					}
+				}
+			}
+		}
+	}
+	collectRangeVars(program.Statements)
 
 	// 收集聯合型別別名，用於解析 receiver method call
 	for _, stmt := range program.Statements {
@@ -821,6 +858,13 @@ func (g *Generator) Generate(program *parser.Program) string {
 			// Skip if name conflicts with a function definition (e.g., module function
 			// with same name as a top-level variable in the test file)
 			if funcNames[name] {
+				continue
+			}
+			// Skip if variable is used as a range loop variable. These must be
+			// local variables so the range loop codegen (which uses %var refs)
+			// can write to them. Constants defined in multiple modules (like
+			// FNV-OFFSET) are NOT skipped — they remain globals.
+			if g.rangeLoopVars != nil && g.rangeLoopVars[name] {
 				continue
 			}
 			llvmType := g.varLLVMType(ls)

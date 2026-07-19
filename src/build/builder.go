@@ -371,6 +371,12 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	for _, lib := range linkLibs {
 		clangArgs = append(clangArgs, "-l"+lib)
 	}
+	// Windows 平台需要連結 ws2_32（Winsock，供 net-* 內建使用）與
+	// winpthread（pthread，供 run/awy async 使用）。涵蓋原生 Windows 編譯
+	// 與從其他平台交叉編譯到 Windows 兩種情境。
+	if runtime.GOOS == "windows" || strings.Contains(target, "windows") {
+		clangArgs = append(clangArgs, "-lws2_32", "-lwinpthread")
+	}
 	var clangCmd *exec.Cmd
 	if cc == "zig" {
 		clangArgs = append([]string{"cc"}, clangArgs...)

@@ -992,8 +992,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 		if m != nil {
 			if m.LLVMIntrinsic != "" {
-				args := make([]string, len(expr.Arguments))
-				for i, arg := range expr.Arguments {
+				// 對 method call（如 r2.sqrt()），receiver 是第一個參數
+				// expr.Arguments 不含 receiver，需從 DotExpression 補上
+				methodArgs := expr.Arguments
+				if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+					methodArgs = append([]parser.Expression{dot.Receiver}, expr.Arguments...)
+				}
+				args := make([]string, len(methodArgs))
+				for i, arg := range methodArgs {
 					v := g.generateExprWithSB(sb, arg)
 					// Only coerce integer types to double; leave non-integer (string, etc.) as 0.0
 					if g.intExprLLVMType(arg) != "" && !g.isStringExpr(arg) {
@@ -1122,7 +1128,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						candidates = append(candidates, primAliases...)
 					}
 					// vec/arr 變數：依元素型別構造 []T 候選（如 opened.to-str → []byte.to-str）
-					if srcType == "vec" || srcType == "arr" {
+					// Also handle raw LLVM array types like "[32 x i8]" (fixed-size array
+					// result parameters typed directly as [N x T] rather than %arr struct).
+					if srcType == "vec" || srcType == "arr" || strings.HasPrefix(srcType, "[") {
 						if g.arrayElemTypes != nil {
 							if et, ok := g.arrayElemTypes[recv.Value]; ok {
 								if elemAliases, ok := llvmTypeToNolang[et]; ok {
@@ -2877,6 +2885,10 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 					}
 				}
 			}
+			// StringLiteral returns a %str-longlit.N alloca pointer; load the value.
+			if _, ok := args[1].(*parser.StringLiteral); ok {
+				needLoad = true
+			}
 			if needLoad {
 				g.tmpIdx++
 				loadReg := fmt.Sprintf("%%vp.sload.%d", g.tmpIdx)
@@ -3111,7 +3123,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 	case "get-errno":
 		// get-errno() — get the last errno value from C library
-		// macOS: @__error(), Linux: @__errno_location()
+		// macOS: @__error(), Linux: @__errno_location(), Windows: @_errno()
 		g.tmpIdx++
 		errnoPtrReg := fmt.Sprintf("%%errno.ptr.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -3120,6 +3132,8 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			// Get errno pointer
 			if runtime.GOOS == "darwin" {
 				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__error()\n", g.indent(), errnoPtrReg))
+			} else if runtime.GOOS == "windows" {
+				sb.WriteString(fmt.Sprintf("%s%s = call i32* @_errno()\n", g.indent(), errnoPtrReg))
 			} else {
 				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__errno_location()\n", g.indent(), errnoPtrReg))
 			}

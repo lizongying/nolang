@@ -38,46 +38,93 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
-	sb.WriteString("declare i8* @getcwd(i8*, i64)\n")
-	sb.WriteString("declare i32 @chdir(i8*)\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i8* @_getcwd(i8*, i64)\n")
+		sb.WriteString("declare i32 @_chdir(i8*)\n")
+	} else {
+		sb.WriteString("declare i8* @getcwd(i8*, i64)\n")
+		sb.WriteString("declare i32 @chdir(i8*)\n")
+	}
 	sb.WriteString("declare void @exit(i32)\n")
 	sb.WriteString("declare i32 @getpid()\n")
 	sb.WriteString("declare i32 @gethostname(i8*, i64)\n")
-	sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
-	sb.WriteString("declare i32 @chmod(i8*, i32)\n")
-	sb.WriteString("declare i32 @chown(i8*, i32, i32)\n")
-	sb.WriteString("declare i32 @getuid()\n")
-	sb.WriteString("declare i32 @getgid()\n")
-	sb.WriteString("declare i32 @unlink(i8*)\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i32 @_mkdir(i8*, i32)\n")
+		sb.WriteString("declare i32 @_chmod(i8*, i32)\n")
+		// chown/getuid/getgid/getppid/kill/utimensat not declared on Windows:
+		// routed to nolang.win_* stubs (see writeWindowsStubs).
+		sb.WriteString("declare i32 @_unlink(i8*)\n")
+		sb.WriteString("declare i32 @_stat64(i8*, i8*)\n")
+	} else {
+		sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
+		sb.WriteString("declare i32 @chmod(i8*, i32)\n")
+		sb.WriteString("declare i32 @chown(i8*, i32, i32)\n")
+		sb.WriteString("declare i32 @getuid()\n")
+		sb.WriteString("declare i32 @getgid()\n")
+		sb.WriteString("declare i32 @unlink(i8*)\n")
+		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
+	}
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
-	sb.WriteString("declare i32 @stat(i8*, i8*)\n")
-	// Directory operations (from <dirent.h>)
-	sb.WriteString("declare i8* @opendir(i8*)\n")
-	sb.WriteString("declare i8* @readdir(i8*)\n")
-	sb.WriteString("declare i32 @closedir(i8*)\n")
+	// Directory operations: POSIX uses <dirent.h>, Windows uses FindFirstFileA/FindNextFileA/FindClose.
+	// WIN32_FIND_DATAA layout (320 bytes):
+	//   dwFileAttributes@0(i32,4) ftCreationTime@4(8) ftLastAccessTime@12(8)
+	//   ftLastWriteTime@20(8) nFileSizeHigh@28(4) nFileSizeLow@32(4)
+	//   dwReserved0@36(4) dwReserved1@40(4) cFileName@44(char[260])
+	//   cAlternateFileName@304(char[14]) — total 320 bytes.
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i8* @FindFirstFileA(i8*, i8*)\n")
+		sb.WriteString("declare i32 @FindNextFileA(i8*, i8*)\n")
+		sb.WriteString("declare i32 @FindClose(i8*)\n")
+	} else {
+		sb.WriteString("declare i8* @opendir(i8*)\n")
+		sb.WriteString("declare i8* @readdir(i8*)\n")
+		sb.WriteString("declare i32 @closedir(i8*)\n")
+	}
 	// File timestamp update (from <sys/stat.h>)
-	sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
+	if runtime.GOOS != "windows" {
+		// Windows: routed to @nolang.win_utimensat stub
+		sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
+	}
 	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
 	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）
-	sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i32 @_open(i8*, i32, ...)\n")
+	} else {
+		sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
+	}
 	sb.WriteString("declare i32 @gettimeofday(i8*, i8*)\n")
 	sb.WriteString("declare i32 @usleep(i32)\n")
 	sb.WriteString("declare i32 @nanosleep(i8*, i8*)\n")
 	sb.WriteString("declare i32 @clock_gettime(i32, i8*)\n")
-	// errno access: macOS uses __error(), Linux uses __errno_location()
+	// errno access: macOS uses __error(), Linux uses __errno_location(),
+	// Windows (MinGW-w64) uses _errno().
 	if runtime.GOOS == "darwin" {
 		sb.WriteString("declare i32* @__error()\n")
+	} else if runtime.GOOS == "windows" {
+		sb.WriteString("declare i32* @_errno()\n")
 	} else {
 		sb.WriteString("declare i32* @__errno_location()\n")
 	}
-	sb.WriteString("declare i32 @dup2(i32, i32)\n")
-	sb.WriteString("declare i32 @kill(i32, i32)\n")
-	sb.WriteString("declare i32 @getppid()\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i32 @_dup2(i32, i32)\n")
+		// kill/getppid not declared on Windows: routed to nolang.win_* stubs.
+		// fork not declared on Windows: POSIX-only (process module needs win path).
+		sb.WriteString("declare i32 @_execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @_pipe(i32*)\n")
+		// _cwait actual signature: int _cwait(int* termstat, int procid, int action).
+		// Parameter order differs from POSIX waitpid(pid, status*, options);
+		// process-waitpid routes to @nolang.win_waitpid wrapper (see below).
+		sb.WriteString("declare i32 @_cwait(i32*, i32, i32)\n")
+	} else {
+		sb.WriteString("declare i32 @dup2(i32, i32)\n")
+		sb.WriteString("declare i32 @kill(i32, i32)\n")
+		sb.WriteString("declare i32 @getppid()\n")
+		sb.WriteString("declare i32 @execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @fork()\n")
+		sb.WriteString("declare i32 @pipe(i32*)\n")
+		sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
+	}
 	sb.WriteString("declare i32 @system(i8*)\n")
-	sb.WriteString("declare i32 @execlp(i8*, ...)\n")
-	sb.WriteString("declare i32 @fork()\n")
-	sb.WriteString("declare i32 @pipe(i32*)\n")
-	sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
 	// zlib @compress2 / @uncompress 已移除：archive/gzip.no 以純 Nolang 實現
 	// gzip-compress / gzip-decompress，不再使用 zlib 高階 API。
 
@@ -457,9 +504,15 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tret void\n")
 	sb.WriteString("}\n\n")
 
-	sb.WriteString("declare i64 @read(i32, i8*, i64)\n")
-	sb.WriteString("declare i64 @write(i32, i8*, i64)\n")
-	sb.WriteString("declare i32 @close(i32)\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i64 @_read(i32, i8*, i64)\n")
+		sb.WriteString("declare i64 @_write(i32, i8*, i64)\n")
+		sb.WriteString("declare i32 @_close(i32)\n")
+	} else {
+		sb.WriteString("declare i64 @read(i32, i8*, i64)\n")
+		sb.WriteString("declare i64 @write(i32, i8*, i64)\n")
+		sb.WriteString("declare i32 @close(i32)\n")
+	}
 	sb.WriteString("declare i8* @fopen(i8*, i8*)\n")
 	sb.WriteString("declare i8* @fgets(i8*, i32, i8*)\n")
 	sb.WriteString("declare i32 @fclose(i8*)\n")
@@ -488,7 +541,11 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\t%oob = or i1 %lo, %hi\n")
 	sb.WriteString("\tbr i1 %oob, label %err, label %ok\n")
 	sb.WriteString("err:\n")
-	sb.WriteString("\tcall i64 @write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+	if runtime.GOOS == "windows" {
+		sb.WriteString("\tcall i64 @_write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+	} else {
+		sb.WriteString("\tcall i64 @write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+	}
 	sb.WriteString("\tcall void @exit(i32 1)\n")
 	sb.WriteString("\tunreachable\n")
 	sb.WriteString("ok:\n")
@@ -527,6 +584,12 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// （RFC 1951 DEFLATE 解壓縮），不再依賴 zlib 串流 API。
 
 	// POSIX socket functions for net module
+	// Windows (MinGW-w64) also provides these via winsock2, but requires
+	// WSAStartup initialization before any socket call.
+	if runtime.GOOS == "windows" {
+		sb.WriteString("declare i32 @WSAStartup(i16, i8*)\n")
+		sb.WriteString("declare i32 @WSACleanup()\n")
+	}
 	sb.WriteString("declare i32 @socket(i32, i32, i32)\n")
 	sb.WriteString("declare i32 @setsockopt(i32, i32, i32, i8*, i32)\n")
 	sb.WriteString("declare i32 @bind(i32, i8*, i32)\n")
@@ -548,28 +611,90 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// pthread declarations for async/await (run/awy)
 	sb.WriteString("declare i32 @pthread_create(i64*, i8*, i8* (i8*)*, i8*)\n")
 	sb.WriteString("declare i32 @pthread_join(i64, i8**)\n")
+
+	// Windows stub functions: POSIX functions that have no direct Windows
+	// equivalent are routed to these no-op/internal stubs on Windows.
+	// Return types align with the CLibCall RetType declared in os.go/process.go
+	// (i32 for all of these; RetExt sexts to i64 at the call site where needed).
+	if runtime.GOOS == "windows" {
+		sb.WriteString("define internal i32 @nolang.win_getuid() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_getgid() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_getppid() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_chown(i8* %path, i32 %uid, i32 %gid) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_utimensat(i32 %dirfd, i8* %path, i8* %times, i32 %flag) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_kill(i32 %pid, i32 %sig) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_waitpid: POSIX waitpid-compatible wrapper around Windows _cwait.
+		// waitpid(pid, int* status, int options) → returns pid or -1.
+		// _cwait(int* termstat, int procid, int action) → returns handle or -1.
+		// Two differences are normalized here:
+		//  1. Parameter order: _cwait takes (status*, pid, action) — swapped vs waitpid.
+		//  2. Status encoding: _cwait stores the exit code in the low byte of termstat,
+		//     whereas POSIX waitpid encodes it in bits 8-15 (WEXITSTATUS = (status>>8)&0xFF).
+		//     Shift left by 8 so the existing WEXITSTATUS extraction yields the exit code.
+		sb.WriteString("define internal i32 @nolang.win_waitpid(i32 %pid, i32* %status, i32 %options) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%ret = call i32 @_cwait(i32* %status, i32 %pid, i32 0)\n")
+		sb.WriteString("\t%ld = load i32, i32* %status\n")
+		sb.WriteString("\t%shl = shl i32 %ld, 8\n")
+		sb.WriteString("\tstore i32 %shl, i32* %status\n")
+		sb.WriteString("\t%iserr = icmp eq i32 %ret, -1\n")
+		sb.WriteString("\t%result = select i1 %iserr, i32 -1, i32 %pid\n")
+		sb.WriteString("\tret i32 %result\n")
+		sb.WriteString("}\n\n")
+	}
 }
 
 // StatLayout 描述各平台的 struct stat 佈局（大小與欄位位移）。
 // 用於取代硬編碼的 macOS arm64 位移，使 is-dir/is-file/stat-* 等內建跨平台相容。
 //
 // 佈局來源：
-//   macOS (arm64/amd64): <sys/stat.h> struct stat (st_mtimespec)
-//   Linux x86_64:        glibc <bits/struct_stat.h> struct stat (st_mtim)
-//   Linux arm64:         glibc aarch64 struct stat (st_mtim)
+//
+//	macOS (arm64/amd64): <sys/stat.h> struct stat (st_mtimespec)
+//	Linux x86_64:        glibc <bits/struct_stat.h> struct stat (st_mtim)
+//	Linux arm64:         glibc aarch64 struct stat (st_mtim)
 type StatLayout struct {
-	Size      int64 // struct stat 總大小（bytes）
-	ModeOff   int64 // st_mode 位移
-	UidOff    int64 // st_uid 位移
-	GidOff    int64 // st_gid 位移
-	MtimeOff  int64 // st_mtime.tv_sec 位移
-	SizeOff   int64 // st_size 位移
+	Size     int64 // struct stat 總大小（bytes）
+	ModeOff  int64 // st_mode 位移
+	UidOff   int64 // st_uid 位移
+	GidOff   int64 // st_gid 位移
+	MtimeOff int64 // st_mtime.tv_sec 位移
+	SizeOff  int64 // st_size 位移
 }
 
 // statLayout 返回當前編譯目標平台的 struct stat 佈局。
 // 若平台未知，回退到 macOS arm64 佈局（既有行為）。
 func statLayout() StatLayout {
-	switch runtime.GOOS {
+	return statLayoutFor(runtime.GOOS, runtime.GOARCH)
+}
+
+// statLayoutFor 返回指定平台的 struct stat 佈局。
+// 接受 goos/goarch 參數以方便測試注入，驗證所有平台分支。
+func statLayoutFor(goos, goarch string) StatLayout {
+	switch goos {
 	case "darwin":
 		// macOS arm64/amd64: struct stat (st_mtimespec at offset 48)
 		// dev_t st_dev@0, mode_t st_mode@4, nlink_t st_nlink@6, ino_t st_ino@8,
@@ -578,7 +703,7 @@ func statLayout() StatLayout {
 		// off_t st_size@96
 		return StatLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96}
 	case "linux":
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			// Linux arm64 (aarch64): glibc struct stat
 			// dev_t st_dev@0, ino_t st_ino@8, mode_t st_mode@16, nlink_t st_nlink@20,
 			// uid_t st_uid@24, gid_t st_gid@28, dev_t st_rdev@32, __pad1@40,
@@ -590,6 +715,11 @@ func statLayout() StatLayout {
 		// mode_t st_mode@24, uid_t st_uid@28, gid_t st_gid@32, __pad0@36,
 		// dev_t st_rdev@40, off_t st_size@48, st_atim@72, st_mtim@88, st_ctim@104
 		return StatLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48}
+	case "windows":
+		// Windows (MinGW-w64) _stat64: struct _stat64
+		// 注意：st_uid@20/st_gid@22 在 Windows 上恆為 0（Windows _stat64 結構中
+		// 這些欄位存在但恆 0），但位移仍需正確以對齊既有 stat-* 內建欄位讀取。
+		return StatLayout{Size: 64, ModeOff: 16, UidOff: 20, GidOff: 22, MtimeOff: 48, SizeOff: 32}
 	default:
 		// 未知平台：回退到 macOS arm64 佈局
 		return StatLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96}
@@ -597,16 +727,52 @@ func statLayout() StatLayout {
 }
 
 // openWriteFlags 返回當前平台的 O_WRONLY|O_CREAT|O_TRUNC 組合值。
-//   macOS: 1 | 512 | 1024 = 1537
-//   Linux: 1 | 64  | 512  = 577
+//
+//	macOS:   1 | 512 | 1024 = 1537
+//	Linux:   1 | 64  | 512  = 577
+//	Windows: 1 | 256 | 512  = 769  (_O_WRONLY | _O_CREAT | _O_TRUNC)
+//
 // 用於 open-write 與 write-file 內建，取代硬編碼的 1537。
 func openWriteFlags() int {
-	switch runtime.GOOS {
+	return openWriteFlagsFor(runtime.GOOS)
+}
+
+// openWriteFlagsFor 返回指定平台的 O_WRONLY|O_CREAT|O_TRUNC 組合值。
+// 接受 goos 參數以方便測試注入，驗證所有平台分支。
+func openWriteFlagsFor(goos string) int {
+	switch goos {
 	case "darwin":
 		return 1537 // O_WRONLY(1) | O_CREAT(0x200) | O_TRUNC(0x400)
 	case "linux":
 		return 577 // O_WRONLY(1) | O_CREAT(0x40) | O_TRUNC(0x200)
+	case "windows":
+		return 769 // _O_WRONLY(1) | _O_CREAT(0x100) | _O_TRUNC(0x200)
 	default:
 		return 1537 // 回退到 macOS 值
 	}
+}
+
+// libcFn 返回當前編譯目標平台的 libc 函式名稱。
+// 在 Windows (MinGW-w64) 上，多数 POSIX 函式加上底線前綴；
+// stat 以 _stat64 取代，waitpid 以 _cwait 取代。
+// utimensat 不在此處處理（在 Windows 路由到 @nolang.win_utimensat stub）。
+func libcFn(posixName string) string {
+	return libcFnFor(runtime.GOOS, posixName)
+}
+
+// libcFnFor 返回指定平台的 libc 函式名稱。
+// 接受 goos 參數以方便測試注入。
+func libcFnFor(goos, posixName string) string {
+	if goos == "windows" {
+		switch posixName {
+		case "stat":
+			return "_stat64"
+		case "waitpid":
+			return "_cwait"
+		case "open", "read", "write", "close", "mkdir", "chmod", "unlink",
+			"getcwd", "chdir", "dup2", "pipe", "execlp":
+			return "_" + posixName
+		}
+	}
+	return posixName
 }

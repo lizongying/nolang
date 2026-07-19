@@ -103,16 +103,21 @@ func printUsage() {
 // vetCommand runs the full LSP validation pipeline on the given file or directory.
 func vetCommand(args []string) {
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
+	verbose := fs.Bool("v", false, "verbose: print per-file progress with timing to stderr")
 	fs.Usage = func() {
-		fmt.Println("Usage: nolang-lsp vet <file|dir>")
+		fmt.Println("Usage: nolang-lsp vet [-v] <file|dir>")
 		fmt.Println()
 		fmt.Println("Validate Nolang source files using the full LSP diagnostic pipeline.")
 		fmt.Println("Includes parse errors, type checking, naming, undefined vars,")
 		fmt.Println("function argument types, and more.")
 		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  -v  verbose: print each file being vetted with elapsed time (to stderr)")
+		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  nolang-lsp vet main.no              Validate a single file")
 		fmt.Println("  nolang-lsp vet src/std/             Validate all .no files recursively")
+		fmt.Println("  nolang-lsp vet -v src/std/          Validate with per-file progress")
 	}
 	_ = fs.Parse(args)
 
@@ -121,7 +126,14 @@ func vetCommand(args []string) {
 		inputPath = fs.Args()[0]
 	}
 
-	results := lsp.VetPath(inputPath)
+	var progress lsp.VetProgressFunc
+	if *verbose {
+		progress = func(path string, diagCount int, elapsed time.Duration) {
+			fmt.Fprintf(os.Stderr, "vet %s  (%d diag, %v)\n", path, diagCount, elapsed)
+		}
+	}
+
+	results := lsp.VetPathVerbose(inputPath, progress)
 	errorCount := lsp.FormatVetResults(results)
 
 	if errorCount > 0 {

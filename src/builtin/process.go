@@ -1,6 +1,10 @@
 package builtin
 
-import "github.com/lizongying/nolang/parser"
+import (
+	"runtime"
+
+	"github.com/lizongying/nolang/parser"
+)
 
 func init() {
 	i64Type := LLVMI64
@@ -51,33 +55,45 @@ func init() {
 	})
 
 	// process-kill: send signal to process
+	killFn := "kill"
+	if runtime.GOOS == "windows" {
+		killFn = "nolang.win_kill"
+	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "process-kill",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Send signal to process. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: "kill", ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: killFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
 	})
 
 	// process-dup2: duplicate file descriptor
+	dup2Fn := "dup2"
+	if runtime.GOOS == "windows" {
+		dup2Fn = "_dup2"
+	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "process-dup2",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Duplicate file descriptor oldfd to newfd. Returns newfd on success, -1 on error",
-		CLibCall:     &CLibCall{FuncName: "dup2", ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: dup2Fn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
 	})
 
 	// process-getppid: get parent process ID
+	getppidFn := "getppid"
+	if runtime.GOOS == "windows" {
+		getppidFn = "nolang.win_getppid"
+	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "process-getppid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get parent process ID",
-		CLibCall:     &CLibCall{FuncName: "getppid", ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: getppidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// process-system: execute shell command

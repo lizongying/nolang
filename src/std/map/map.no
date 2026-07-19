@@ -127,6 +127,8 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+        err -> {}
+        nil -> {}
     }
 }
 
@@ -269,6 +271,8 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+        err -> {}
+        nil -> {}
     }
 }
 
@@ -403,6 +407,8 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+        err -> {}
+        nil -> {}
     }
 }
 

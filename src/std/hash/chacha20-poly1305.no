@@ -222,55 +222,55 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         ; 但 32-bit 乘法會溢出，所以需要更小心
 
         ; 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
-        d0 u64 = (h0 as u64) * (r[0] as u64)
-        d0 = d0 + (h1 as u64) * ((r[4] * 5) as u64)
-        d0 = d0 + (h2 as u64) * ((r[3] * 5) as u64)
-        d0 = d0 + (h3 as u64) * ((r[2] * 5) as u64)
-        d0 = d0 + (h4 as u64) * ((r[1] * 5) as u64)
+        d0 u64 = h0 * r[0]
+        d0 = d0 + h1 * (r[4] * 5)
+        d0 = d0 + h2 * (r[3] * 5)
+        d0 = d0 + h3 * (r[2] * 5)
+        d0 = d0 + h4 * (r[1] * 5)
 
-        d1 u64 = (h0 as u64) * (r[1] as u64)
-        d1 = d1 + (h1 as u64) * (r[0] as u64)
-        d1 = d1 + (h2 as u64) * ((r[4] * 5) as u64)
-        d1 = d1 + (h3 as u64) * ((r[3] * 5) as u64)
-        d1 = d1 + (h4 as u64) * ((r[2] * 5) as u64)
+        d1 u64 = h0 * r[1]
+        d1 = d1 + h1 * r[0]
+        d1 = d1 + h2 * (r[4] * 5)
+        d1 = d1 + h3 * (r[3] * 5)
+        d1 = d1 + h4 * (r[2] * 5)
 
-        d2 u64 = (h0 as u64) * (r[2] as u64)
-        d2 = d2 + (h1 as u64) * (r[1] as u64)
-        d2 = d2 + (h2 as u64) * (r[0] as u64)
-        d2 = d2 + (h3 as u64) * ((r[4] * 5) as u64)
-        d2 = d2 + (h4 as u64) * ((r[3] * 5) as u64)
+        d2 u64 = h0 * r[2]
+        d2 = d2 + h1 * r[1]
+        d2 = d2 + h2 * r[0]
+        d2 = d2 + h3 * (r[4] * 5)
+        d2 = d2 + h4 * (r[3] * 5)
 
-        d3 u64 = (h0 as u64) * (r[3] as u64)
-        d3 = d3 + (h1 as u64) * (r[2] as u64)
-        d3 = d3 + (h2 as u64) * (r[1] as u64)
-        d3 = d3 + (h3 as u64) * (r[0] as u64)
-        d3 = d3 + (h4 as u64) * ((r[4] * 5) as u64)
+        d3 u64 = h0 * r[3]
+        d3 = d3 + h1 * r[2]
+        d3 = d3 + h2 * r[1]
+        d3 = d3 + h3 * r[0]
+        d3 = d3 + h4 * (r[4] * 5)
 
-        d4 u64 = (h0 as u64) * (r[4] as u64)
-        d4 = d4 + (h1 as u64) * (r[3] as u64)
-        d4 = d4 + (h2 as u64) * (r[2] as u64)
-        d4 = d4 + (h3 as u64) * (r[1] as u64)
-        d4 = d4 + (h4 as u64) * (r[0] as u64)
+        d4 u64 = h0 * r[4]
+        d4 = d4 + h1 * r[3]
+        d4 = d4 + h2 * r[2]
+        d4 = d4 + h3 * r[1]
+        d4 = d4 + h4 * r[0]
 
         ; 進位處理 + 模約簡（2^130 - 5）
         c u64 = d0 >> 26
-        h0 = (d0 & 67108863) as u32
+        h0 = (d0 & 67108863)
         d1 = d1 + c
         c = d1 >> 26
-        h1 = (d1 & 67108863) as u32
+        h1 = (d1 & 67108863)
         d2 = d2 + c
         c = d2 >> 26
-        h2 = (d2 & 67108863) as u32
+        h2 = (d2 & 67108863)
         d3 = d3 + c
         c = d3 >> 26
-        h3 = (d3 & 67108863) as u32
+        h3 = (d3 & 67108863)
         d4 = d4 + c
         c = d4 >> 26
-        h4 = (d4 & 67108863) as u32
-        h0 = (h0 + (c as u32) * 5) & CC-MASK32
+        h4 = (d4 & 67108863)
+        h0 = (h0 + c * 5) & CC-MASK32
         c = h0 >> 26
         h0 = h0 & 67108863
-        h1 = (h1 + c as u32) & CC-MASK32
+        h1 = (h1 + c) & CC-MASK32
 
         pos = pos + 16
     } (pos < data.len)
@@ -321,18 +321,18 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     }
 
     ; 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
-    f u64 = (h0 as u64) | ((h1 as u64) << 26)
+    f u64 = h0 | (h1 << 26)
     f-lo u32 = f & CC-MASK32
-    f-hi u32 = (f >> 32) as u32
-    f = (f-hi as u64) | ((h2 as u64) << 20)
+    f-hi u32 = (f >> 32)
+    f = f-hi | (h2 << 20)
     f0 = f & CC-MASK32
-    f-hi2 = (f >> 32) as u32
-    f = (f-hi2 as u64) | ((h3 as u64) << 14)
+    f-hi2 = (f >> 32)
+    f = f-hi2 | (h3 << 14)
     f1 = f & CC-MASK32
-    f-hi3 = (f >> 32) as u32
-    f = (f-hi3 as u64) | ((h4 as u64) << 8)
+    f-hi3 = (f >> 32)
+    f = f-hi3 | (h4 << 8)
     f2 = f & CC-MASK32
-    f3 = (f >> 32) as u32
+    f3 = (f >> 32)
 
     ; h += s
     f0 = (f0 + s0) & CC-MASK32
@@ -340,15 +340,15 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; 對於 32-bit 加法，進位只影響高位
     ; 簡化：直接逐字相加並處理進位
-    f = (f0 as u64) + (s0 as u64)
+    f = f0 + s0
     f0 = f & CC-MASK32
-    c = (f >> 32) as u32
-    f = (f1 as u64) + (s1 as u64) + (c as u64)
+    c = (f >> 32)
+    f = f1 + s1 + c
     f1 = f & CC-MASK32
-    c = (f >> 32) as u32
-    f = (f2 as u64) + (s2 as u64) + (c as u64)
+    c = (f >> 32)
+    f = f2 + s2 + c
     f2 = f & CC-MASK32
-    c = (f >> 32) as u32
+    c = (f >> 32)
     f3 = (f3 + s3 + c) & CC-MASK32
 
     ; 輸出 tag（小端序）

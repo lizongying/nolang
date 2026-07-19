@@ -848,6 +848,18 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+		// method call（如 r2.sqrt()）：用方法名查 builtin 推導返回型別
+		if dot, ok := v.Function.(*parser.DotExpression); ok {
+			m := builtin.FindBuiltinMethod(dot.Property)
+			if m != nil && len(m.Return) > 0 {
+				switch m.Return[0] {
+				case parser.TypeF32:
+					return "float"
+				case parser.TypeF64:
+					return "double"
+				}
+			}
+		}
 	}
 	return ""
 }
@@ -915,20 +927,23 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
 			return "i64"
 		}
-		// 與 arithLLVMType 相同的策略：偏好非字面量運算元的型別
+		// 與 arithLLVMType 相同的策略：混合字面量與變數時偏好變數型別，
+		// 兩者皆為變數時使用較寬型別（自動寬化），目標型別傳播
 		_, leftIsLit := v.Left.(*parser.IntegerLiteral)
 		_, rightIsLit := v.Right.(*parser.IntegerLiteral)
-		if !leftIsLit {
-			if t := g.intExprLLVMType(v.Left); t != "i64" {
-				return t
-			}
+		lt := g.intExprLLVMType(v.Left)
+		rt := g.intExprLLVMType(v.Right)
+		if leftIsLit && !rightIsLit && rt != "i64" {
+			return rt
 		}
-		if !rightIsLit {
-			if t := g.intExprLLVMType(v.Right); t != "i64" {
-				return t
-			}
+		if rightIsLit && !leftIsLit && lt != "i64" {
+			return lt
 		}
-		return widerIntType(g.intExprLLVMType(v.Left), g.intExprLLVMType(v.Right))
+		resultType := widerIntType(lt, rt)
+		if g.currentTargetType == "i64" && g.isIntegerLLVMType(resultType) && resultType != "i64" {
+			return "i64"
+		}
+		return resultType
 	case *parser.PrefixExpression:
 		// !x always returns i64 (Nolang bools are i64)
 		if v.Operator == "!" {
@@ -1040,27 +1055,35 @@ func widerIntType(a, b string) string {
 // arithLLVMType 推斷算術/比較運算的 LLVM 整數型別。
 // 當一個運算元是整數字面常量（預設為 i64）而另一個是變數時，
 // 優先使用變數的型別，避免字面常量的預設型別主導型別推斷。
+// 當兩個運算元都是非字面量變數時，使用較寬的型別（自動寬化）。
+// 目標型別傳播：若賦值目標是 i64（如 u64 = u32 | u32），
+// 自動使用 i64 作為運算型別，避免窄型別溢出。
 func (g *Generator) arithLLVMType(left, right parser.Expression) string {
 	_, leftIsLit := left.(*parser.IntegerLiteral)
 	_, rightIsLit := right.(*parser.IntegerLiteral)
-	if !leftIsLit {
-		if t := g.intExprLLVMType(left); t != "i64" {
-			return t
-		}
+	leftType := g.intExprLLVMType(left)
+	rightType := g.intExprLLVMType(right)
+	// 混合字面量與變數：優先使用變數的型別
+	if leftIsLit && !rightIsLit && rightType != "i64" {
+		return rightType
 	}
-	if !rightIsLit {
-		if t := g.intExprLLVMType(right); t != "i64" {
-			return t
-		}
+	if rightIsLit && !leftIsLit && leftType != "i64" {
+		return leftType
 	}
-	return widerIntType(g.intExprLLVMType(left), g.intExprLLVMType(right))
+	// 其他情況：使用較寬型別（自動寬化）
+	resultType := widerIntType(leftType, rightType)
+	// 目標型別傳播：若賦值目標是 i64 且運算元都是窄整數，使用 i64
+	if g.currentTargetType == "i64" && g.isIntegerLLVMType(resultType) && resultType != "i64" {
+		return "i64"
+	}
+	return resultType
 }
 
 // coerceToInt 將 SSA 值轉換為目標整數型別。
 // 當值是較窄的整數型別時，進行 zext 擴展；當值是 i64 而目標較窄時，進行 trunc。
 // 當值是整數字面常量時保持原樣（LLVM 會自動處理）。
 func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parser.Expression, targetType string) string {
-	if v == "" || targetType == "i64" {
+	if v == "" {
 		return v
 	}
 	// 整數字面常量：直接使用，LLVM 會自動處理

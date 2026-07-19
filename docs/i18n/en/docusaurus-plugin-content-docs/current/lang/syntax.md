@@ -1159,7 +1159,9 @@ arr_to_vec = (arr [n]t) (out []t) {
 // Return the type name string
 a = typeof(x)
 
-y = x as i64
+// `as` is only allowed for FFI pointer type casts (e.g. *byte, **byte, *i64)
+// Integers are internally i64, no explicit cast needed
+y = x as *byte
 ```
 
 ### Module System
