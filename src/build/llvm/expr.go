@@ -205,10 +205,22 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-longlit.data.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, allocaReg))
-			// dataPtr includes "i8*" prefix; extract the pointer value and ptrtoint to i64
+			// Copy string data to writable heap memory so that index assignment
+			// (e.g. input[2] = 99) does not write to read-only global constant.
+			mallocSize := strLen
+			if mallocSize == 0 {
+				mallocSize = 1 // avoid implementation-defined malloc(0)
+			}
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%str-longlit.buf.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), bufReg, mallocSize))
+			if strLen > 0 {
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, %s, i64 %d, i1 false)\n",
+					g.indent(), bufReg, dataPtr, strLen))
+			}
 			g.tmpIdx++
 			dataIntReg := fmt.Sprintf("%%str-longlit.data2int.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s to i64\n", g.indent(), dataIntReg, dataPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), dataIntReg, bufReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), dataIntReg, dataGEP))
 			return allocaReg
 		}

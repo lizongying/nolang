@@ -226,6 +226,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
+	// 重置 arrayElemTypes 並恢復模組級元素型別，避免函數參數（如 rsa.no bn-add 的 c []i64）
+	// 覆蓋模組級同名變數（如 main.no 的 c []str）導致後續 push 索引型別錯誤
+	g.arrayElemTypes = make(map[string]string)
+	for k, v := range g.moduleArrayElemTypes {
+		g.arrayElemTypes[k] = v
+	}
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.varTypes[k] = v
@@ -382,9 +388,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// bitcasts can be generated when the actual type differs (e.g.
 		// allocated as %http2-frame but storing/loading i64).
 		if varName == "it" && g.itAllocTypes != nil {
-		g.itAllocTypes[varName] = varType
-	}
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
+			g.itAllocTypes[varName] = varType
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(varName), varType))
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
 		// %str-long 局部變數零初始化：確保 data 指標為 NULL。
 		// 若變數在循環/條件塊內賦值但運行時未執行，emitHeapFree 的 NULL 檢查能安全跳過 free。
@@ -587,6 +593,13 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			g.varTypes[k] = v
 		}
 	}
+	// 同樣恢復模組級陣列/切片元素型別
+	if g.moduleArrayElemTypes != nil {
+		g.arrayElemTypes = make(map[string]string)
+		for k, v := range g.moduleArrayElemTypes {
+			g.arrayElemTypes[k] = v
+		}
+	}
 
 	hasTopLevel := false
 	for _, stmt := range program.Statements {
@@ -635,7 +648,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			if g.globalVars != nil && g.globalVars[name] {
 				continue
 			}
-			if _, isFn := g.funcRetTypes[name]; isFn {
+			if g.funcRefVars != nil && g.funcRefVars[name] {
 				continue
 			}
 			if varType == "" || strings.HasPrefix(varType, "%") == false && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" {
@@ -678,13 +691,13 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 							lt = t
 						}
 					}
-					if lt != "%str-long" && lt != "%arr" {
+					if lt != "%str-long" && lt != "%arr" && lt != "%vec" {
 						continue
 					}
 				}
 			}
 			// Skip function-typed LetStatements (already collected as functions)
-			if _, isFn := g.funcRetTypes[ls.Name.Value]; isFn {
+			if g.funcRefVars != nil && g.funcRefVars[ls.Name.Value] {
 				continue
 			}
 			g.generateLet(sb, ls)
@@ -1489,7 +1502,7 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// `it` 變數跨多個 match 共用：每個 match 的 ok arm 可能有不同的元素型別
 			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
-		vt := g.varLLVMType(s)
+			vt := g.varLLVMType(s)
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
 				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
 				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
@@ -2649,7 +2662,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	if (isSliceType || isSliceLit) && !isSliceExpr2 && !isWithCapCall {
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
-		g.funcLocalNames[name] = true
+		// Only mark as local if not already a global variable
+		if g.globalVars == nil || !g.globalVars[name] {
+			g.funcLocalNames[name] = true
+		}
 		// 記錄切片元素型別，供 IndexExpression 使用正確型別讀取
 		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
 			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())

@@ -208,3 +208,79 @@ func TestGenericNotAffected(t *testing.T) {
 		t.Errorf("unexpected type error L%d:C%d: %s", e.Line, e.Column, e.Message)
 	}
 }
+
+// TestCharArrayLiteralToByteArray verifies that char literals (double-quoted
+// single characters like "a") can be assigned to []byte / [N]byte arrays when
+// their Unicode code point fits within the byte range (0–255).
+func TestCharArrayLiteralToByteArray(t *testing.T) {
+	tests := []struct {
+		name      string
+		src       string
+		wantErrs  int
+		wantError bool
+	}{
+		// --- ASCII chars in byte range: should pass ---
+		{
+			name:     "ascii_chars_to_byte_slice",
+			src:      `input []byte = ["a", "b", "c"]`,
+			wantErrs: 0,
+		},
+		{
+			name:     "ascii_chars_to_fixed_byte_array",
+			src:      `data [3]byte = ["a", "b", "c"]`,
+			wantErrs: 0,
+		},
+		{
+			name:     "digit_chars_to_byte_slice",
+			src:      `digits []byte = ["0", "1", "2", "3"]`,
+			wantErrs: 0,
+		},
+		{
+			name:     "high_ascii_char_to_byte",
+			src:      "data []byte = [\"ÿ\"]",
+			wantErrs: 0,
+		},
+		// --- Non-ASCII chars outside byte range: should fail ---
+		{
+			name:      "unicode_char_outside_byte_range",
+			src:       `data []byte = ["€"]`,
+			wantError: true,
+		},
+		{
+			name:      "cjk_char_outside_byte_range",
+			src:       `data []byte = ["a", "中", "c"]`,
+			wantError: true,
+		},
+		// --- Mixed valid array literals still work ---
+		{
+			name:     "int_literals_to_byte_slice",
+			src:      `data []byte = [0x61, 0x62, 0x63]`,
+			wantErrs: 0,
+		},
+		{
+			name:     "int_literals_to_i64_array",
+			src:      `nums [4] = [1, 2, 3, 4]`,
+			wantErrs: 0,
+		},
+		// --- Out-of-range integer literal should still fail ---
+		{
+			name:      "int_too_large_for_byte",
+			src:       `data []byte = [256]`,
+			wantError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := countTypeErrors(t, tt.src)
+			if tt.wantError {
+				if len(errs) == 0 {
+					t.Errorf("expected at least one type error, got none")
+				}
+			} else {
+				for _, e := range errs {
+					t.Errorf("unexpected type error L%d:C%d: %s", e.Line, e.Column, e.Message)
+				}
+			}
+		})
+	}
+}

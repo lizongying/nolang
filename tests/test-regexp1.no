@@ -1,0 +1,8 @@
+matched = regexp-match('hello.*world', 'hello nolang world')
+print('regexp-match test 1:', matched)
+
+not-matched = regexp-match('foo.*bar', 'hello world')
+print('regexp-match test 2:', not-matched)
+
+match-str = regexp-find('[0-9]+', 'abc123def456')
+print('regexp-find test:', match-str)

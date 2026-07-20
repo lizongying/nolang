@@ -8,4 +8,4 @@ print('sha1(abc)=')
 i <- [0..20): {
     fmt.print-hex8(hash[i] & 255)
 }
-fmt.println('')
+print('')

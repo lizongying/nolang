@@ -1,0 +1,24 @@
+print('start')
+m1 = regexp-match('hello', 'hello')
+print('hello vs hello:', m1)
+
+m2 = regexp-match('a*', 'aaa')
+print('a* vs aaa:', m2)
+
+m3 = regexp-match('a*', 'bbb')
+print('a* vs bbb (empty match):', m3)
+
+m4 = regexp-match('.*', 'anything')
+print('.* vs anything:', m4)
+
+m5 = regexp-match('hello.*world', 'hello nolang world')
+print('hello.*world vs hello nolang world:', m5)
+
+m6 = regexp-match('hello.world', 'helloXworld')
+print('hello.world vs helloXworld:', m6)
+
+m7 = regexp-match('a+', 'aaa')
+print('a+ vs aaa:', m7)
+
+f8 = regexp-find('[0-9]+', 'abc123def456')
+print('find [0-9]+ in abc123def456:', f8)

@@ -674,7 +674,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 						g.tmpIdx++
 						lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
 						if sb != nil {
-							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 0\n", g.indent(), lenGEP, t, t, ident.Value))
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g.indent(), lenGEP, t, t, g.varAddr(ident.Value)))
 							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
 						}
 						return lenReg
@@ -1173,17 +1173,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if sb != nil {
 			// Allocate 4096 byte heap buffer (must be heap-allocated so emitHeapFree can safely free it)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), bufReg))
-			// Get stdin (fopen with "r" on /dev/stdin or use stdin global)
-			// On macOS, use fopen("/dev/stdin", "r")
-			g.tmpIdx++
-			stdinPath := fmt.Sprintf("%%getline.path.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = alloca [11 x i8]\n", g.indent(), stdinPath))
-			g.tmpIdx++
-			pathGEP := fmt.Sprintf("%%getline.path.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [11 x i8], [11 x i8]* %s, i32 0, i32 0\n", g.indent(), pathGEP, stdinPath))
-			// Store "/dev/stdin\0"
-			sb.WriteString(fmt.Sprintf("%sstore [11 x i8] c\"/dev/stdin\\00\", [11 x i8]* %s\n", g.indent(), stdinPath))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @fopen(i8* %s, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.str.r, i64 0, i64 0))\n", g.indent(), stdinReg, pathGEP))
+			// 使用 C 的 stdin 全域變數（macOS: __stdinp, Linux: stdin）
+			// 避免在 macOS 上 fopen("/dev/stdin") 對 pipe/重定向不穩定的問題
+			stdinSym := "@stdin"
+			if runtime.GOOS == "darwin" {
+				stdinSym = "@__stdinp"
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), stdinReg, stdinSym))
 			// fgets(buf, 4096, stdin)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @fgets(i8* %s, i32 4096, i8* %s)\n", g.indent(), fgetsReg, bufReg, stdinReg))
 			// Check if fgets returned NULL
@@ -1204,8 +1200,6 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
-			// fclose
-			sb.WriteString(fmt.Sprintf("%scall i32 @fclose(i8* %s)\n", g.indent(), stdinReg))
 		}
 		// 記錄 ok 值（cmpReg）供 curried 呼叫使用 — zext i1 → i64 (Nolang bools are i64)
 		g.tmpIdx++

@@ -1,4 +1,7 @@
-x = 1
-y = 2
-z = x + y
-print(z)
+input []byte = ["a", "b", "c"]
+print(len(input))
+print(input[0])
+print(input[1])
+print(input[2])
+input[2] = 99
+print(input[2])

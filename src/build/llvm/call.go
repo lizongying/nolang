@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 
@@ -526,6 +525,12 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 	// One or more results: allocate temp output slots and append as by-reference args
 	resultTypes := make([]string, numResults)
 	resultTemps := make([]string, numResults)
+	// Save stack pointer to prevent stack growth when called inside loops
+	g.tmpIdx++
+	fncallSp := fmt.Sprintf("%%fncall.sp.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), fncallSp))
+	}
 	for i, r := range ft.Results {
 		llvmType := g.mapToLLVMType(r.Type.String())
 		resultTypes[i] = llvmType
@@ -546,6 +551,8 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 		loadReg := fmt.Sprintf("%%fncall.ret.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, resultTypes[0], resultTypes[0], resultTemps[0]))
+			// Restore stack pointer to prevent stack growth when called inside loops
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), fncallSp))
 		}
 		return loadReg
 	}
@@ -2246,10 +2253,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 
 	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
 	voidSingleTmp := ""
+	voidSingleSp := ""
 	if voidSingleOutput {
 		g.tmpIdx++
 		voidSingleTmp = fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
 		if sb != nil {
+			// Save stack pointer to prevent stack growth when called inside loops
+			g.tmpIdx++
+			voidSingleSp = fmt.Sprintf("%%vso.sp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), voidSingleSp))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), voidSingleTmp, voidSingleOutputType))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), g.llvmTypeSize(voidSingleOutputType), voidSingleTmp))
 			// %str-long 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
@@ -2345,6 +2357,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			g.tmpIdx++
 			loadReg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, voidSingleOutputType, voidSingleOutputType, voidSingleTmp))
+			// Restore stack pointer to prevent stack growth when called inside loops
+			if voidSingleSp != "" {
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), voidSingleSp))
+			}
 			// 記錄 SSA 型別，供 inferSSAType 查詢（如 if 表達式 phi 節點推斷）
 			if g.ssaTypes != nil {
 				g.ssaTypes[loadReg] = voidSingleOutputType
@@ -2844,7 +2860,6 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				elemType = et
 			}
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG vec-push: recv=%q elemType=%q valExpr=%T\n", recvName, elemType, args[1])
 		elemSize := llvmTypeSize(elemType)
 
 		// Load current len (field 0) and cap (field 1)
@@ -3352,4 +3367,3 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 	}
 	return callReg
 }
-

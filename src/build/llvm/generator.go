@@ -73,9 +73,11 @@ type Generator struct {
 	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
-	rangeLoopVars        map[string]bool                 // top-level vars used as range loop variables (must be locals)
-	multiAssignVars      map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
+rangeLoopVars         map[string]bool                 // top-level vars used as range loop variables (must be locals)
+multiAssignVars       map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
+funcRefVars           map[string]bool                 // top-level vars that are function references (value is an Identifier referring to a function)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
+	moduleArrayElemTypes  map[string]string               // module-level array/slice element types (preserved across functions)
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated       bool                            // true if current basic block ends with a terminator (ret/br)
 	funcLocalNames        map[string]bool                 // local variable names in current function (params + allocas)
@@ -510,8 +512,18 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	// 掃描所有 ForStatement (含巢狀)，標記 range loop 變數
 	// 這些變數不應被視為常量全局變數，必須是局部變數以便 range loop 寫入
-	g.rangeLoopVars = make(map[string]bool)
-	var collectRangeVars func(stmts []parser.Statement)
+g.funcRefVars = make(map[string]bool)
+for _, stmt := range program.Statements {
+if ls, ok := stmt.(*parser.LetStatement); ok {
+if ident, ok := ls.Value.(*parser.Identifier); ok {
+if _, isFn := g.funcRetTypes[ident.Value]; isFn {
+g.funcRefVars[ls.Name.Value] = true
+}
+}
+}
+}
+g.rangeLoopVars = make(map[string]bool)
+var collectRangeVars func(stmts []parser.Statement)
 	collectRangeVars = func(stmts []parser.Statement) {
 		for _, s := range stmts {
 			switch st := s.(type) {
@@ -999,6 +1011,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.moduleVarTypes = make(map[string]string)
 	for k, v := range varDecls {
 		g.moduleVarTypes[k] = v
+	}
+	// 保存模組級陣列/切片元素型別備份，防止 generateFunctionDefinition 中
+	// 函數參數（如 rsa.no bn-add 的 c []i64）覆蓋模組級同名變數（如 main.no 的 c []str）
+	g.moduleArrayElemTypes = make(map[string]string)
+	for k, v := range g.arrayElemTypes {
+		g.moduleArrayElemTypes[k] = v
 	}
 	// 保存結構體型別到 moduleVarTypes（確保函數內也能識別 struct literal 型別）
 	for name := range g.structTypes {

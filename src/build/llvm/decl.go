@@ -36,6 +36,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @free(i8*)\n")
 	sb.WriteString("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)\n")
 	sb.WriteString("declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)\n")
+	sb.WriteString("declare ptr @llvm.stacksave.p0()\n")
+	sb.WriteString("declare void @llvm.stackrestore.p0(ptr)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
 	if runtime.GOOS == "windows" {
@@ -516,6 +518,12 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i8* @fopen(i8*, i8*)\n")
 	sb.WriteString("declare i8* @fgets(i8*, i32, i8*)\n")
 	sb.WriteString("declare i32 @fclose(i8*)\n")
+	// stdin 全域變數：macOS 為 __stdinp，Linux/Windows 為 stdin
+	if runtime.GOOS == "darwin" {
+		sb.WriteString("@__stdinp = external global i8*\n")
+	} else {
+		sb.WriteString("@stdin = external global i8*\n")
+	}
 	sb.WriteString("declare void @llvm.lifetime.start.p0i8(i64, i8* nocapture)\n")
 	sb.WriteString("declare void @llvm.lifetime.end.p0i8(i64, i8* nocapture)\n\n")
 

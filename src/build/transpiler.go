@@ -166,6 +166,17 @@ func isConcreteType(typeName string) bool {
 	return false
 }
 
+// extractArrayElemType extracts the element type from an array/slice type string.
+// e.g. "[]byte" → "byte", "[16]byte" → "byte", "[4]i64" → "i64".
+// Returns "" if the type has no element type (e.g. "[4]").
+func extractArrayElemType(typeStr string) string {
+	idx := strings.Index(typeStr, "]")
+	if idx >= 0 && idx+1 < len(typeStr) {
+		return typeStr[idx+1:]
+	}
+	return ""
+}
+
 // validationStructFields holds struct name → field name → field type string,
 // populated by ValidateTypes for use in inferExprType when resolving
 // self.field method calls (e.g. .recv-buf.slice()).
@@ -3909,10 +3920,38 @@ func markReferencesInStatement(stmt parser.Statement, varSet map[string]struct{ 
 		if s.Update != nil {
 			markReferencesInStatement(s.Update, varSet, usedVars)
 		}
+		// Walk IterRange (e.g., `i <- [0..N)` — the range expression may reference vars)
+		if s.IterRange != nil {
+			if s.IterRange.Range != nil {
+				if s.IterRange.Range.Start != nil {
+					markReferencesInExpr(s.IterRange.Range.Start, varSet, usedVars)
+				}
+				if s.IterRange.Range.End != nil {
+					markReferencesInExpr(s.IterRange.Range.End, varSet, usedVars)
+				}
+			}
+			if s.IterRange.RangeExpr != nil {
+				markReferencesInExpr(s.IterRange.RangeExpr, varSet, usedVars)
+			}
+		}
+		// Walk CountExpr (for `{ } * N` counted loops)
+		if s.CountExpr != nil {
+			markReferencesInExpr(s.CountExpr, varSet, usedVars)
+		}
 		if s.Body != nil {
 			for _, inner := range s.Body.Statements {
 				markReferencesInStatement(inner, varSet, usedVars)
 			}
+		}
+
+	case *parser.MultiAssignStatement:
+		// Multi-assignment: targets, value = func(args)
+		// Walk targets (they may reference vars via index expressions)
+		for _, target := range s.Targets {
+			markReferencesInExpr(target, varSet, usedVars)
+		}
+		if s.Value != nil {
+			markReferencesInExpr(s.Value, varSet, usedVars)
 		}
 	}
 }
@@ -5178,6 +5217,31 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					_, isSlice := s.Value.(*parser.SliceLiteral)
 					_, isArrayLit := s.Value.(*parser.ArrayLiteral)
 					isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
+					// Per-element type checking for array/slice literals:
+					// Instead of only skipping the overall type check, verify each
+					// element is compatible with the declared element type.
+					if isArrayAssign {
+						elemType := extractArrayElemType(existingType)
+						if elemType != "" {
+							var elements []parser.Expression
+							if isSlice {
+								elements = s.Value.(*parser.SliceLiteral).Elements
+							} else {
+								elements = s.Value.(*parser.ArrayLiteral).Elements
+							}
+							for _, elem := range elements {
+								elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
+								if elemInferred != "" && elemInferred != elemType &&
+									!isArgTypeCompatible(elemType, elemInferred, elem) {
+									results = append(results, ValidateResult{
+										Line:    s.Token.Line,
+										Column:  s.Token.Column,
+										Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
+									})
+								}
+							}
+						}
+					}
 					// Option 建構子：err(x) / val(x) / nil 可指派給 ?T 變數
 					isOptionCtor := false
 					if _, isNil := s.Value.(*parser.NilLiteral); isNil {
@@ -5275,11 +5339,38 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						}
 						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
 							!isArgTypeCompatible(existingType, valType, assign.Value) {
-							results = append(results, ValidateResult{
-								Line:    assign.Token.Line,
-								Column:  assign.Token.Column,
-								Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
-							})
+							// Check if this is an array/slice literal assignment to a typed array variable
+							_, isSlice := assign.Value.(*parser.SliceLiteral)
+							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
+							isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
+							if isArrayAssign {
+								elemType := extractArrayElemType(existingType)
+								if elemType != "" {
+									var elements []parser.Expression
+									if isSlice {
+										elements = assign.Value.(*parser.SliceLiteral).Elements
+									} else {
+										elements = assign.Value.(*parser.ArrayLiteral).Elements
+									}
+									for _, elem := range elements {
+										elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
+										if elemInferred != "" && elemInferred != elemType &&
+											!isArgTypeCompatible(elemType, elemInferred, elem) {
+											results = append(results, ValidateResult{
+												Line:    assign.Token.Line,
+												Column:  assign.Token.Column,
+												Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
+											})
+										}
+									}
+								}
+							} else {
+								results = append(results, ValidateResult{
+									Line:    assign.Token.Line,
+									Column:  assign.Token.Column,
+									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
+								})
+							}
 						}
 					}
 				}
@@ -6679,6 +6770,7 @@ func isNumericType(t string) bool {
 
 // intTypeRange returns the (min, max) range for a given integer type.
 // byte is treated as u8 (0–255).
+// char is treated as a Unicode code point (0–0x10FFFF).
 func intTypeRange(t string) (min, max int64, ok bool) {
 	switch t {
 	case "i8":
@@ -6691,6 +6783,8 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		return -9223372036854775808, 9223372036854775807, true
 	case "u8", "byte":
 		return 0, 255, true
+	case "char":
+		return 0, 1114111, true // Unicode code points: 0 to 0x10FFFF
 	case "u16":
 		return 0, 65535, true
 	case "u32":
@@ -6823,10 +6917,10 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			}
 		}
 	}
-	// Integer literals (inferred as i64 or byte) are compatible with integer types
+	// Integer/char literals (inferred as i64, byte, or char) are compatible with integer types
 	// whose range includes the literal value.
 	if val, ok := integerLiteralValue(arg); ok {
-		if argType == "i64" || argType == "byte" {
+		if argType == "i64" || argType == "byte" || argType == "char" {
 			if min, max, ok := intTypeRange(expectedType); ok {
 				// Fast path: the int64 value fits within the target range.
 				if val >= min && val <= max {
@@ -6862,6 +6956,7 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 
 // integerLiteralValue extracts the int64 value from an integer literal,
 // including negative literals expressed as PrefixExpression("-", IntegerLiteral).
+// CharLiteral values are converted to their Unicode code point.
 func integerLiteralValue(expr parser.Expression) (int64, bool) {
 	if lit, ok := expr.(*parser.IntegerLiteral); ok {
 		return lit.Value, true
@@ -6870,6 +6965,13 @@ func integerLiteralValue(expr parser.Expression) (int64, bool) {
 	if prefix, ok := expr.(*parser.PrefixExpression); ok && prefix.Operator == "-" {
 		if lit, ok := prefix.Right.(*parser.IntegerLiteral); ok {
 			return -lit.Value, true
+		}
+	}
+	// CharLiteral: convert Unicode code point to int64
+	if charLit, ok := expr.(*parser.CharLiteral); ok {
+		runes := []rune(charLit.Value)
+		if len(runes) == 1 {
+			return int64(runes[0]), true
 		}
 	}
 	return 0, false

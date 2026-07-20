@@ -1,0 +1,39 @@
+; 測試 guard 條件中不同值的比較
+q = 42
+print('q=', q)
+{
+    q == 0 -> print('matched: q == 0')
+    q == 42 -> print('matched: q == 42 (literal)')
+    q == 43 -> print('matched: q == 43')
+    -> print('matched: default')
+}
+
+print('')
+
+; 測試減法比較
+{
+    q == 0 -> print('sub: q == 0')
+    (q - 42) == 0 -> print('sub: (q-42)==0')
+    (q - 43) == 0 -> print('sub: (q-43)==0')
+    -> print('sub: default')
+}
+
+print('')
+
+; 測試用變量
+q2 = 43
+print('q2=', q2)
+{
+    q2 == 0 -> print('q2: == 0')
+    q2 == 42 -> print('q2: == 42')
+    q2 == 43 -> print('q2: == 43')
+    -> print('q2: default')
+}
+
+print('')
+
+; 測試不等於
+{
+    q != 0 && q != 43 && q != 63 -> print('neq: q is not 0/43/63, so q=42')
+    -> print('neq: default')
+}

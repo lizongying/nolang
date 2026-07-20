@@ -1,0 +1,27 @@
+test-struct {
+    result i64
+}
+
+test-struct.dispatch = (quant i64) {
+    quant == 0 -> .result = 0
+    quant == 42 -> .result = 42
+    quant == 43 -> .result = 43
+    quant == 63 -> .result = 63
+    -> .result = 99
+}
+
+t = test-struct{
+    result: 0
+}
+
+t.dispatch(0)
+print('dispatch(0) =>', t.result)
+
+t.dispatch(42)
+print('dispatch(42) =>', t.result)
+
+t.dispatch(43)
+print('dispatch(43) =>', t.result)
+
+t.dispatch(99)
+print('dispatch(99) =>', t.result)

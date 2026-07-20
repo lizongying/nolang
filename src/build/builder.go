@@ -358,12 +358,12 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		}
 	}
 
-	// opt -O2 最佳化
+	// opt -O3 最佳化
 	if verbose {
 		vprintf(sink, "Generated LLVM IR: %s\n", llPath)
 	}
 	optPath := filepath.Join(tempDir, fileName+"_opt.ll")
-	optCmd := exec.Command("opt", "-O2", llPath, "-S", "-o", optPath)
+	optCmd := exec.Command("opt", "-O3", llPath, "-S", "-o", optPath)
 	if sink != nil {
 		optCmd.Stdout = sink
 		optCmd.Stderr = sink
@@ -372,7 +372,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		optCmd.Stderr = os.Stderr
 	}
 	if verbose {
-		vprintf(sink, "Running: opt -O2 %s -o %s\n", llPath, optPath)
+		vprintf(sink, "Running: opt -O3 %s -o %s\n", llPath, optPath)
 	}
 	if err := optCmd.Run(); err != nil {
 		// 區分 "opt 不存在" 和 "IR 錯誤"

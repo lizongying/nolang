@@ -15,6 +15,11 @@
 ;     data i64 sealed
 ; }
 
+; [n]t.len: 回傳陣列長度
+[n]t.len = () (n i64) {
+    n = .len
+}
+
 ; [n]t.clone: 將陣列複製到 dst
 [n]t.clone = () (dst [n]t) {
     i <- [0..n): {
