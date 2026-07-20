@@ -18,8 +18,13 @@
       ]
     },
     {
-      "name": "comment.line.double-slash.nolang",
-      "match": "//.*$"
+      "name": "comment.block.semicolon.nolang",
+      "begin": ";;[ \\t]*$",
+      "end": ";;[ \\t]*$"
+    },
+    {
+      "name": "comment.line.semicolon.nolang",
+      "match": "(;|//).*$"
     },
     {
       "name": "keyword.control.nolang",
