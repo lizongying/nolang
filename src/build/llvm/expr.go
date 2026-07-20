@@ -5151,6 +5151,19 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 				return g.extractStrLen(sb, tmpAlloca)
 			}
 		}
+	case *parser.CallExpression:
+		// Function/method call returning %str-long (e.g. n.to-str()).
+		// exprResultLLVMType determines the return type; if it's %str-long,
+		// materialize the call result into a temp alloca and extract len.
+		et := g.exprResultLLVMType(a)
+		if et == "%str-long" {
+			ptr := g.generateExprWithSB(sb, a)
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%strlen.call.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
+			return g.extractStrLen(sb, tmpAlloca)
+		}
 	}
 	return "0"
 }

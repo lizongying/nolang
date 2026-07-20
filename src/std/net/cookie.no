@@ -502,7 +502,7 @@ cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str
         ok -> {
             verified-ok = false
             verified-val = ''
-            verified-ok, verified-val = cookie-verify(name, key)
+            verified-ok, verified-val = cookie-verify(name, it, key)
             {
                 verified-ok -> val = verified-val
                 -> val = nil

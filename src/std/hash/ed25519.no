@@ -654,19 +654,19 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     }
     r-hash [64]byte
     r-hash = sha512.sha512(r-input)
-    r [32]byte
-    r = sc-reduce(r-hash)
+    r-scalar [32]byte
+    r-scalar = sc-reduce(r-hash)
 
     ; R = r * B
     r-point []i64
-    ge-scalar-mult-base(r-point, r)
-    R [32]byte
-    R = ge-pack(r-point)
+    ge-scalar-mult-base(r-point, r-scalar)
+    r [32]byte
+    r = ge-pack(r-point)
 
     ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
-        k-input[i] = R[i]
+        k-input[i] = r[i]
     }
     i <- [0..32): {
         k-input[32 + i] = pub[i]
@@ -685,11 +685,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         a-arr[i] = a[i]
     }
     s [32]byte
-    s = sc-muladd(k, a-arr, r)
+    s = sc-muladd(k, a-arr, r-scalar)
 
     ; 簽名 = R || S
     i <- [0..32): {
-        sig[i] = R[i]
+        sig[i] = r[i]
         sig[32 + i] = s[i]
     }
 }
@@ -701,9 +701,9 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 ; 返回 ok i64: 1=有效, 0=無效
 ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     ; 解析 R = sig[0:32], S = sig[32:64]
-    R [32]byte
+    r [32]byte
     i <- [0..32): {
-        R[i] = sig[i]
+        r[i] = sig[i]
     }
     s [32]byte
     i <- [0..32): {
@@ -735,7 +735,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     ; 解壓縮 R
     r-ok = 0
     R-point []i64
-    r-ok, R-point = ge-unpack(R)
+    r-ok, R-point = ge-unpack(r)
     r-ok == 0 -> {
         ok = 0
         return
@@ -744,7 +744,7 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
-        k-input[i] = R[i]
+        k-input[i] = r[i]
     }
     i <- [0..32): {
         k-input[32 + i] = pub[i]

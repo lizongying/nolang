@@ -235,7 +235,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				return retType
 			}
 			// 跨模組函數呼叫（定義在 std 模組中，vet 階段尚未 merge），
-			// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
+			// 對已知回傳 str 的函數直接推斷，避免變數型別缺失
+			switch ident.Value {
+			case "char-to-str", "i64-to-str", "f64-to-str", "bool-to-str", "byte-to-str":
+				return "str"
+			}
 			return ""
 		}
 		// 4. 檢查 struct 方法調用（DotExpression）
@@ -1704,6 +1708,21 @@ func inferTypeFromExpr(expr parser.Expression) string {
 			}
 		}
 		return ""
+	case *parser.CallExpression:
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			switch ident.Value {
+			case "char-to-str":
+				return "str"
+			case "i64-to-str":
+				return "str"
+			case "f64-to-str":
+				return "str"
+			case "bool-to-str":
+				return "str"
+			case "byte-to-str":
+				return "str"
+			}
+		}
 	}
 	return ""
 }
@@ -5371,6 +5390,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
 								})
 							}
+						}
+					} else if !exists {
+						// 首次賦值，記錄推斷型別
+						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+						if valType != "" {
+							varTypes[ident.Value] = valType
 						}
 					}
 				}
