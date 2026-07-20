@@ -3357,30 +3357,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				}
 				return zextReg
 			}
-			// float（32-bit）→ i64：先 bitcast 至 i32 再 zext 至 i64
-			if llvmElemType == "float" {
-				g.tmpIdx++
-				bcReg := fmt.Sprintf("%%vec.idx.bc.%d", g.tmpIdx)
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%vec.idx.zext.%d", g.tmpIdx)
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = bitcast float %s to i32\n",
-						g.indent(), bcReg, elemLoad))
-					sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n",
-						g.indent(), zextReg, bcReg))
-				}
-				return zextReg
-			}
-			// double（64-bit）→ i64：直接 bitcast
-			if llvmElemType == "double" {
-				g.tmpIdx++
-				bcReg := fmt.Sprintf("%%vec.idx.bc.%d", g.tmpIdx)
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = bitcast double %s to i64\n",
-						g.indent(), bcReg, elemLoad))
-				}
-				return bcReg
-			}
+			// float/double：直接返回元素值（與 %arr 路徑一致）。
+			// 下游 varLLVMType 會正確推導為 float/double，避免 bitcast 至 i64
+			// 後造成 store float <i64-val>, float* %r 的型別不匹配。
 			return elemLoad
 		}
 

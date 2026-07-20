@@ -3363,6 +3363,69 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			return zextReg
 		}
 		return loadReg
+
+	case "store-le-u32":
+		// store-le-u32(arr, offset, value): store u32 value to byte array at offset in little-endian.
+		// Replaces: buf[off]=v&255; buf[off+1]=(v>>8)&255; ... → single store i32.
+		if len(args) < 3 {
+			return "0"
+		}
+		// Get the data pointer - handle both %arr struct and raw [N x i8]* output params
+		var dataPtr string
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			varName := ident.Value
+			// Check if this is an output parameter with raw array type (e.g. [16]byte)
+			if g.outputParamNames != nil && g.outputParamNames[varName] {
+				// Output params of [N]byte type are passed as [N x i8]* directly
+				dataPtr = g.varAddr(varName)
+				g.tmpIdx++
+				castReg := fmt.Sprintf("%%lestore.cast.%d", g.tmpIdx)
+				// Determine array size from arraySizes
+				arrSize := int64(16)
+				if g.arraySizes != nil {
+					if sz, ok := g.arraySizes[varName]; ok {
+						arrSize = sz
+					}
+				}
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast [%d x i8]* %s to i8*\n",
+						g.indent(), castReg, arrSize, dataPtr))
+				}
+				dataPtr = castReg
+			} else {
+				dataPtr = g.byteArrDataPtr(sb, args[0])
+			}
+		} else {
+			dataPtr = g.byteArrDataPtr(sb, args[0])
+		}
+		offsetVal := g.evalI64Arg(sb, args[1])
+		// Get the value as i32 (truncate from i64 if needed)
+		valI64 := g.evalI64Arg(sb, args[2])
+		g.tmpIdx++
+		valI32 := fmt.Sprintf("%%lestore.trunc.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), valI32, valI64))
+		}
+		// GEP to offset
+		g.tmpIdx++
+		gepReg := fmt.Sprintf("%%lestore.gep.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
+				g.indent(), gepReg, dataPtr, offsetVal))
+		}
+		// Bitcast to i32*
+		g.tmpIdx++
+		typedPtr := fmt.Sprintf("%%lestore.typed.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i32*\n",
+				g.indent(), typedPtr, gepReg))
+		}
+		// Store i32
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%sstore i32 %s, i32* %s\n",
+				g.indent(), valI32, typedPtr))
+		}
+		return "0"
 	}
 
 	return ""

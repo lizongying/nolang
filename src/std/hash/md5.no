@@ -28,20 +28,23 @@ md5 = (data []byte) (out [16]byte) {
 
     ; 預建填充緩衝區（一次分配，循環重用）
     buf [64]byte
-    plen8 = plen - 8
 
     ; 對每個 64 位元組區塊進行壓縮
     bidx <- [0..num-blocks): {
         off = bidx * 64
-        ; 填充 64 位元組緩衝區：data + 0x80 + zeros + length
-        j <- [0..64): {
-            pos = off + j
-            {
-                pos < dlen -> buf[j] = data[pos]
-                pos == dlen -> buf[j] = 128
-                pos >= plen8 -> buf[j] = (blen >> ((pos - plen8) * 8)) & 255
-                -> buf[j] = 0
-            }
+        ; 計算本區塊的資料位元組數
+        dremain = dlen - off
+        copylen = dremain
+        dremain >= 64 -> copylen = 64
+        ; 零填充緩衝區（無分支，LLVM 可向量化為 memset）
+        j <- [0..64): buf[j] = 0
+        ; 複製資料位元組（無分支，LLVM 可向量化為 memcpy）
+        j <- [0..copylen): buf[j] = data[off + j]
+        ; 最後區塊添加 0x80 填充和長度
+        copylen < 64 -> {
+            buf[copylen] = 128
+            store-le-u32(buf, 56, blen & 4294967295)
+            store-le-u32(buf, 60, blen >> 32)
         }
         ; 從緩衝區直接載入 16 個 32-bit 字（load-le-u32 內建，單條 load 指令）
         w0 u32 = load-le-u32(buf, 0)
@@ -269,21 +272,9 @@ md5 = (data []byte) (out [16]byte) {
         h3 = h3 + d
     }
 
-    ; 輸出 16 位元組（小端序 32-bit 字）
-    out[0] = h0 & 255
-    out[1] = (h0 >> 8) & 255
-    out[2] = (h0 >> 16) & 255
-    out[3] = (h0 >> 24) & 255
-    out[4] = h1 & 255
-    out[5] = (h1 >> 8) & 255
-    out[6] = (h1 >> 16) & 255
-    out[7] = (h1 >> 24) & 255
-    out[8] = h2 & 255
-    out[9] = (h2 >> 8) & 255
-    out[10] = (h2 >> 16) & 255
-    out[11] = (h2 >> 24) & 255
-    out[12] = h3 & 255
-    out[13] = (h3 >> 8) & 255
-    out[14] = (h3 >> 16) & 255
-    out[15] = (h3 >> 24) & 255
+    ; 輸出 16 位元組（小端序 32-bit 字，使用 store-le-u32 單條 store 指令）
+    store-le-u32(out, 0, h0)
+    store-le-u32(out, 4, h1)
+    store-le-u32(out, 8, h2)
+    store-le-u32(out, 12, h3)
 }

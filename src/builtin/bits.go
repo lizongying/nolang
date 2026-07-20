@@ -27,8 +27,6 @@ func init() {
 	})
 
 	// load-le-u16: load little-endian u16 from byte slice at offset.
-	// Replaces: buf[0] | (buf[1] << 8) → single load instruction.
-	// Returns u16 type so the vet type checker allows assignment to u16 variables.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "load-le-u16",
@@ -39,8 +37,6 @@ func init() {
 	})
 
 	// load-le-u32: load little-endian u32 from byte slice at offset.
-	// Replaces: buf[0] | (buf[1]<<8) | (buf[2]<<16) | (buf[3]<<24) → single load.
-	// Returns u32 type so the vet type checker allows assignment to u32 variables.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "load-le-u32",
@@ -51,7 +47,6 @@ func init() {
 	})
 
 	// load-le-u64: load little-endian u64 from byte slice at offset.
-	// Returns u64 type so the vet type checker allows assignment to u64 variables.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "load-le-u64",
@@ -59,5 +54,17 @@ func init() {
 		Return:       []parser.Type{parser.TypeU64},
 		Doc:          "Load little-endian u64 from byte array at given offset",
 		ForwardFunc:  "load-le-u64",
+	})
+
+	// store-le-u32: store a u32 value to byte array at offset in little-endian format.
+	// Replaces: buf[0]=v&255; buf[1]=(v>>8)&255; buf[2]=(v>>16)&255; buf[3]=(v>>24)&255 → single store.
+	// Returns void (no return value).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "store-le-u32",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeU32},
+		Return:       []parser.Type{},
+		Doc:          "Store u32 value to byte array at given offset in little-endian format",
+		ForwardFunc:  "store-le-u32",
 	})
 }
