@@ -536,22 +536,22 @@ x: {
 }
 
 user: {
-    User{id=1} -> print("admin")
-    User{name=n} -> print("user: ", n)
-    -> print("anonymous")
+    User{id=1} -> print('admin')
+    User{name=n} -> print('user: ', n)
+    -> print('anonymous')
 }
 
 score: {
-    [0..59] -> print("fail")
-    [60..89] -> print("good")
-    [90..=100] -> print("excellent")
-    -> print("invalid score")
+    [0..59] -> print('fail')
+    [60..89] -> print('good')
+    [90..=100] -> print('excellent')
+    -> print('invalid score')
 }
 
 num: {
-    1 || 3 || 5 || 7 -> print("small odd number")
-    2 || 4 || 6 -> print("small even number")
-    -> print("larger number")
+    1 || 3 || 5 || 7 -> print('small odd number')
+    2 || 4 || 6 -> print('small even number')
+    -> print('larger number')
 }
 
 // Has a return value; the last statement/value

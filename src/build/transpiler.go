@@ -925,6 +925,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
 	moduleConstants := make(map[string]parser.Expression)
+	// typeOwner 記錄跨模組型別定義的歸屬（bareName → moduleShortName），
+	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
+	// （如 result → sql.result），避免與主檔案變數或型別衝突。
+	typeOwner := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
 			modProg, err := t.resolveUse(use)
@@ -934,6 +938,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
 				explicitStdModules[use.Path] = true
 			}
+			// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
+			prefixModuleStatements(modProg.Statements, moduleShortName(use.Path), typeOwner)
 			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 			for _, ms := range modProg.Statements {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
@@ -1022,6 +1028,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
 		}
+		// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
+		prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
 		for _, ms := range modProg.Statements {
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
 				merged.Statements = append(merged.Statements, fd)
@@ -1052,6 +1060,16 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 		}
 	}
+
+	// 第一階段型別參考改寫：將導入模組語句中的裸型別名改寫為 module.type 形式。
+	// 必須在 resolveSelfMethodCalls 之前執行，因為 resolveSelfMethodCalls 透過
+	// collectStructFields 以 struct 名稱為 key 查找，若型別定義已重命名為
+	// module.name 但參考仍為裸名，會無法匹配。
+	// 但先要完成跨模組方法名稱重命名：一個方法可能定義在 B 模組但接收者型別
+	// 定義在 A 模組（如 bufio.no 的 reader.fill，reader 定義在 io.no）。
+	// 此時 typeOwner 已包含所有模組的型別歸屬，可以正確重命名。
+	prefixMethodNames(merged.Statements, typeOwner)
+	rewriteTypeRefs(merged.Statements, typeOwner)
 
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
 	resolveModuleConstants(merged, moduleConstants)
@@ -1111,6 +1129,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		merged.Statements = append(merged.Statements, stmt)
 	}
+
+	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
+	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
+	// 已改寫過的型別名（含 "."）會被 prefixTypeName 自動跳過，安全無副作用。
+	rewriteTypeRefs(merged.Statements, typeOwner)
 
 	// 解析頂層代碼中的 module.fn() 呼叫
 	resolveModuleCalls(merged, importedModules)
