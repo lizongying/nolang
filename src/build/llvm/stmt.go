@@ -1549,7 +1549,10 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
 			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
 			// 否則每次呼叫都從未初始化的本地 LAST 開始，破壞 RNG 狀態。
-			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] {
+			// 但僅限主檔案函數：導入模組的函數（如 bigint.cmp、abs-add）
+			// 若有名為 result 的局部變數，不應誤寫到主檔案的全域 @result。
+			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
+				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] {
 				if g.funcLocalNames != nil {
 					delete(g.funcLocalNames, s.Name.Value)
 				}

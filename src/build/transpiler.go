@@ -1135,6 +1135,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
 	// 而非編譯主機平台（支援交叉編譯）。
 	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
+	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
+	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
+	t.llvmGenerator.SetMainFileNames(mainVarNames)
 	return t.llvmGenerator.Generate(merged), nil
 }
 

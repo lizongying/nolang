@@ -698,7 +698,7 @@ x: {
         do-cleanup()
         return
     }
-    ok -> println(it)
+    ok -> print(it)
 }
 ```
 
@@ -748,8 +748,8 @@ val: {
 ```nolang
 // 單語句 — 不加大括號
 val: {
-    ok -> println(it)
-    -> println('empty or error')
+    ok -> print(it)
+    -> print('empty or error')
 }
 
 // 多語句 — 必須加大括號
@@ -1250,9 +1250,9 @@ file.read = () (data ?str) {
 ```nolang
 val = s.pop()
 val: {
-    nil -> println('empty')
-    err -> println(it)          // it = 錯誤訊息
-    -> println(it)              // it = 彈出的值
+    nil -> print('empty')
+    err -> print(it)          // it = 錯誤訊息
+    -> print(it)              // it = 彈出的值
 }
 ```
 

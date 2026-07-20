@@ -573,7 +573,7 @@ x: {
         do-cleanup()
         return
     }
-    ok -> println(it)
+    ok -> print(it)
 }
 ```
 
@@ -623,8 +623,8 @@ val: {
 ```nolang
 // Single statement — no braces
 val: {
-    ok -> println(it)
-    -> println('empty or error')
+    ok -> print(it)
+    -> print('empty or error')
 }
 
 // Multiple statements — braces required
@@ -1125,9 +1125,9 @@ Use match to unwrap an option:
 ```nolang
 val = s.pop()
 val: {
-    nil -> println('empty')
-    err -> println(it)          // it = error message
-    -> println(it)              // it = popped value
+    nil -> print('empty')
+    err -> print(it)          // it = error message
+    -> print(it)              // it = popped value
 }
 ```
 

@@ -1,3 +1,4 @@
+llvm-config version: 21.1.5
 crc32("")=00000000
 crc32("hello")=3610a686
 crc32("fox")=414fa339

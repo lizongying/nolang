@@ -7,11 +7,11 @@
 ;   ./dist/md5-bench
 
 input []byte = ["a", "b", "c"]
-md5result [16]byte
+result [16]byte
 
 i <- [0..100000): {
     input[2] = i & 255
-    md5result = md5.md5(input)
+    result = md5.md5(input)
 }
 
-print(md5result[0])
+print(result[0])
