@@ -1138,6 +1138,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 解析頂層代碼中的 module.fn() 呼叫
 	resolveModuleCalls(merged, importedModules)
 
+	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
+	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
+	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴
+	// 生成 Type.method(self, args)），並在所有頂層代碼加入 merged 之後執行。
+	resolveMethodCalls(merged, typeOwner)
+
 	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
 	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
 	monomorphizeGenericStructs(merged)
@@ -5311,14 +5317,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							isOptionCtor = true
 						}
 					}
-				if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-					!isArgTypeCompatible(existingType, inferredType, s.Value) {
-					results = append(results, ValidateResult{
-						Line:    s.Token.Line,
-						Column:  s.Token.Column,
-						Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
-					})
-				}
+					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+						!isArgTypeCompatible(existingType, inferredType, s.Value) {
+						results = append(results, ValidateResult{
+							Line:    s.Token.Line,
+							Column:  s.Token.Column,
+							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
+						})
+					}
 				} else {
 					// 首次賦值，記錄推斷型別
 					varTypes[s.Name.Value] = inferredType
@@ -5521,8 +5527,8 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce   sync.Once
-	stdSigsCache  map[string][]string
+	stdSigsOnce    sync.Once
+	stdSigsCache   map[string][]string
 	stdFieldsCache map[string]map[string]string
 )
 
@@ -5938,6 +5944,178 @@ func resolveSelfMethodCalls(program *parser.Program) {
 			}
 		}
 	}
+}
+
+// resolveMethodCalls rewrites user-written `Type.method(args)` static method
+// calls to `module.Type.method(args)` using the typeOwner registry.
+//
+// prefixMethodNames() renames method definitions from `Type.method` to
+// `module.Type.method` (e.g. bigint.cmp → bigint.bigint.cmp).  However,
+// resolveModuleCalls() only rewrites simple `module.fn()` calls — it does
+// NOT touch `Type.method()` calls because the method name contains a dot
+// and is not collected into moduleFns.
+//
+// As a result, user-written `bigint.cmp(d, d2)` would keep fnName="bigint.cmp"
+// at codegen time, but funcRetTypes has key "bigint.bigint.cmp", causing the
+// call to generate undefined `@bigint.cmp`.
+//
+// This pass is the symmetric counterpart to prefixMethodNames: it rewrites
+// call sites so they match the renamed definitions.  Only CallExpressions
+// whose receiver is a bare Identifier matching a typeOwner key are rewritten;
+// instance method calls (var.method()) and already-prefixed calls are left
+// untouched.
+func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
+	if len(typeOwner) == 0 {
+		return
+	}
+	// Collect all defined method names (with dots) so we only rewrite calls
+	// that actually target a known method.  This avoids rewriting field-access
+	// patterns that happen to share a name with a type.
+	definedMethods := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if strings.Contains(fd.Name, ".") {
+				definedMethods[fd.Name] = true
+			}
+		}
+	}
+	for _, stmt := range program.Statements {
+		resolveMethodCallsInStmt(stmt, typeOwner, definedMethods)
+	}
+}
+
+func resolveMethodCallsInStmt(stmt parser.Statement, typeOwner map[string]string, definedMethods map[string]bool) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			s.Expression = resolveMethodCallsInExpr(s.Expression, typeOwner, definedMethods)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+		}
+	case *parser.ForStatement:
+		if s.Condition != nil {
+			s.Condition = resolveMethodCallsInExpr(s.Condition, typeOwner, definedMethods)
+		}
+		if s.Init != nil {
+			resolveMethodCallsInStmt(s.Init, typeOwner, definedMethods)
+		}
+		if s.Update != nil {
+			resolveMethodCallsInStmt(s.Update, typeOwner, definedMethods)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+			}
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, typeOwner, definedMethods)
+		}
+	}
+}
+
+func resolveMethodCallsInExpr(expr parser.Expression, typeOwner map[string]string, definedMethods map[string]bool) parser.Expression {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		// Rewrite Type.method(args) → module.Type.method(args) when Type is
+		// a known user-defined struct type (in typeOwner) and the method
+		// exists (module.Type.method is in definedMethods).
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				typeName := recv.Value
+				if mod, ok := typeOwner[typeName]; ok && mod != "" {
+					fullName := mod + "." + typeName + "." + dot.Property
+					if definedMethods[fullName] {
+						e.Function = &parser.Identifier{
+							Token: lexer.Token{Type: lexer.IDENT, Literal: fullName},
+							Value: fullName,
+						}
+					}
+				}
+			}
+		}
+		// Recurse into arguments and nested calls
+		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
+			e.Function = resolveMethodCallsInExpr(innerCall, typeOwner, definedMethods)
+		}
+		for i, arg := range e.Arguments {
+			e.Arguments[i] = resolveMethodCallsInExpr(arg, typeOwner, definedMethods)
+		}
+		return e
+	case *parser.DotExpression:
+		e.Receiver = resolveMethodCallsInExpr(e.Receiver, typeOwner, definedMethods)
+		return e
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
+		}
+		if e.Right != nil {
+			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
+		}
+		return e
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
+		}
+		return e
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
+		}
+		if e.Index != nil {
+			e.Index = resolveMethodCallsInExpr(e.Index, typeOwner, definedMethods)
+		}
+		return e
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
+		}
+		if e.Consequence != nil {
+			for _, bs := range e.Consequence.Statements {
+				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bs := range e.Alternative.Statements {
+				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
+			}
+		}
+		return e
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
+		}
+		if e.Consequence != nil {
+			e.Consequence = resolveMethodCallsInExpr(e.Consequence, typeOwner, definedMethods)
+		}
+		if e.Alternative != nil {
+			e.Alternative = resolveMethodCallsInExpr(e.Alternative, typeOwner, definedMethods)
+		}
+		return e
+	}
+	return expr
 }
 
 // collectStructFields builds a map from struct name to field name → field type

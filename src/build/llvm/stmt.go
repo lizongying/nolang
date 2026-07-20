@@ -228,6 +228,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.inMainFunction = false
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
+	g.funcParams = make(map[string]bool)
 	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
 	g.ssaTypes = make(map[string]string)                 // reset SSA type tracking for each function
 	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
@@ -236,7 +237,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.outputParamNames = make(map[string]bool)           // reset output param tracking
 	g.outputBindings = make(map[string]outputBinding)    // reset delayed move bindings
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
-	g.stackArrVars = make(map[string]bool)                // reset stack-allocated array tracking
+	g.stackArrVars = make(map[string]bool)               // reset stack-allocated array tracking
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
@@ -256,6 +257,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	for _, p := range fd.Parameters {
 		g.paramNames[p.Name] = true
 		g.funcLocalNames[p.Name] = true
+		g.funcParams[p.Name] = true
 		g.varTypes[p.Name] = g.resolveParamLLVMType(p.Type)
 		// Track FunctionType parameters for indirect call codegen
 		if ft, ok := p.Type.(*parser.FunctionType); ok {
@@ -282,6 +284,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if r.Name != "" {
 			g.paramNames[r.Name] = true
 			g.funcLocalNames[r.Name] = true
+			g.funcParams[r.Name] = true
 			g.outputParamNames[r.Name] = true
 			// MapType: use LLVMName() to avoid [K]V matching the array branch.
 			var typeStr string
@@ -598,6 +601,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program) {
 	g.funcVars = nil
 	g.funcLocalNames = make(map[string]bool)
+	g.funcParams = make(map[string]bool)
 	// main returns i32 but has no named result parameter. We keep
 	// curFuncRetType = "void" so if-expression PHI nodes default to i64
 	// (the standard integer type). The inMainFunction flag lets the
@@ -907,6 +911,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				// 依 arrayElemTypes 推導元素型別。struct 元素返回值型別
 				// （generateIndexExpression 對 vec/arr 載入元素值而非指標）；
 				// 基本型別（i8 等）保持 i64（generateIndexExpression 會 zext i8 → i64）。
+				// 注意：必須先檢查變數實際型別是否為 str-long（字串），避免被
+				// moduleArrayElemTypes 中同名變數（如 spectral-norm 的 u []f64）污染。
+				// 例如 http2-do 中 u = url 使 u 成為 str-long 區域變數，但
+				// moduleArrayElemTypes["u"] 可能是 "double"（來自 spectral-norm main），
+				// 導致 u[i] 被誤判為 double 比較，實際應為 i64（字串索引 zext 結果）。
+				if actualType, ok := g.varTypes[ident.Value]; ok && actualType == "%str-long" {
+					return "i64"
+				}
 				if g.arrayElemTypes != nil {
 					if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
 						if strings.HasPrefix(elemType, "%") {
@@ -1551,8 +1563,12 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 否則每次呼叫都從未初始化的本地 LAST 開始，破壞 RNG 狀態。
 			// 但僅限主檔案函數：導入模組的函數（如 bigint.cmp、abs-add）
 			// 若有名為 result 的局部變數，不應誤寫到主檔案的全域 @result。
+			// 例外：若同名變數是當前函數的參數（如 make-repeat-fasta 的參數 n
+			// 與模組級 n i64 = 1000 同名），參數應遮蔽全域變數，不可刪除
+			// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
 			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
-				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] {
+				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] &&
+				(g.funcParams == nil || !g.funcParams[s.Name.Value]) {
 				if g.funcLocalNames != nil {
 					delete(g.funcLocalNames, s.Name.Value)
 				}

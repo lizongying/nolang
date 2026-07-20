@@ -822,6 +822,17 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 		// 陣列/切片元素：依 arrayElemTypes 推導浮點型別
 		// （如 IUBP[k] 其中 IUBP 為 [15]f64 → double）
 		if ident, ok := v.Left.(*parser.Identifier); ok {
+			// 必須先檢查變數實際型別是否為 str-long（字串），避免被
+			// moduleArrayElemTypes 中同名變數（如 spectral-norm 的 u []f64）污染。
+			// 例如 http2-do 中 u = url 使 u 成為 str-long 區域變數，但
+			// moduleArrayElemTypes["u"] 可能是 "double"（來自 spectral-norm main），
+			// 導致 u[i] 被誤判為 double 比較。字串索引結果為 i64（zext i8），
+			// 不是浮點數，應返回 ""。
+			if g.varTypes != nil {
+				if actualType, ok := g.varTypes[ident.Value]; ok && actualType == "%str-long" {
+					return ""
+				}
+			}
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[ident.Value]; ok {
 					if os.Getenv("NOLANG_FLOAT_DEBUG") != "" && (et == "float" || et == "double" || g.curFuncName == "max__f32") {
@@ -1258,6 +1269,16 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		}
 		// %vec / %arr: element type tracked separately
 		if ident, ok := v.Left.(*parser.Identifier); ok {
+			// 必須先檢查變數實際型別是否為 str-long（字串），避免被
+			// moduleArrayElemTypes 中同名變數（如 spectral-norm 的 u []f64）污染。
+			// 例如 http2-do 中 u = url 使 u 成為 str-long 區域變數，但
+			// moduleArrayElemTypes["u"] 可能是 "double"（來自 spectral-norm main），
+			// 導致 u[i] 被誤判為 double。字串索引結果為 i64（zext i8）。
+			if g.varTypes != nil {
+				if actualType, ok := g.varTypes[ident.Value]; ok && actualType == "%str-long" {
+					return "i64"
+				}
+			}
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[ident.Value]; ok {
 					return et
@@ -5104,6 +5125,14 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 		return val
 	}
 	et := g.exprResultLLVMType(expr)
+	// 若 exprResultLLVMType 無法推導型別（如 counts[i].to-str() 這類
+	// receiver 為 IndexExpression 的方法呼叫，flattenDottedExpr 返回 ""），
+	// 改查 ssaTypes — call.go 的 voidSingleOutput 路徑會記錄返回型別。
+	if et == "" && g.ssaTypes != nil {
+		if ssaType, ok := g.ssaTypes[val]; ok {
+			et = ssaType
+		}
+	}
 	if et == "%str-long" {
 		// If val is a %str-long* pointer (from slice expression, concat, etc.),
 		// load the %str-long value before storing to temp alloca.

@@ -84,6 +84,7 @@ type Generator struct {
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
 	blockTerminated       bool                            // true if current basic block ends with a terminator (ret/br)
 	funcLocalNames        map[string]bool                 // local variable names in current function (params + allocas)
+	funcParams            map[string]bool                 // current function's parameter names (to distinguish from globals with same name)
 	unionAliases          map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	optionInnerTypes      map[string]string               // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
 	itAllocTypes          map[string]string               // synthetic `it` variable name → allocated LLVM type (for bitcast when shared across matches with different types)
