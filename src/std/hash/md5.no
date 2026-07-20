@@ -7,7 +7,7 @@
 ;   hash = md5(data)
 ;   // hash == [0x90, 0x01, 0x50, 0x98, ...]
 
-; rot-left: 32-bit 循環左移（內聯展開，避免函數呼叫開銷）
+; rot-left: 32-bit 循環左移
 rot-left = (x i64, n i64) (r i64) {
     s = 32 - n
     l = x << n
@@ -35,292 +35,242 @@ md5 = (data []byte) (out [16]byte) {
     rem != 0 -> plen = plen + 64 - rem
     num-blocks = plen / 64
 
+    ; 預建填充緩衝區（一次分配，循環重用）
+    buf [64]byte
+    plen8 = plen - 8
+
     ; 對每個 64 位元組區塊進行壓縮
     bidx <- [0..num-blocks): {
-        ; 將 64 位元組組裝為 16 個 32-bit 小端字
         off = bidx * 64
-        w0 = 0
-        w1 = 0
-        w2 = 0
-        w3 = 0
-        w4 = 0
-        w5 = 0
-        w6 = 0
-        w7 = 0
-        w8 = 0
-        w9 = 0
-        w10 = 0
-        w11 = 0
-        w12 = 0
-        w13 = 0
-        w14 = 0
-        w15 = 0
-        wi <- [0..16): {
-            boff = off + wi * 4
-            b0 = 0
-            b1 = 0
-            b2 = 0
-            b3 = 0
-            ; b0: byte at position boff
+        ; 填充 64 位元組緩衝區：data + 0x80 + zeros + length
+        j <- [0..64): {
+            pos = off + j
             {
-                boff < dlen -> b0 = data[boff]
-                boff == dlen -> b0 = 128
-                boff >= plen - 8 -> {
-                    lbidx = boff - (plen - 8)
-                    b0 = (blen >> (lbidx * 8)) & 255
-                }
-            }
-            ; b1: byte at position boff+1
-            pos1 = boff + 1
-            {
-                pos1 < dlen -> b1 = data[pos1]
-                pos1 == dlen -> b1 = 128
-                pos1 >= plen - 8 -> {
-                    lbidx = pos1 - (plen - 8)
-                    b1 = (blen >> (lbidx * 8)) & 255
-                }
-            }
-            ; b2: byte at position boff+2
-            pos2 = boff + 2
-            {
-                pos2 < dlen -> b2 = data[pos2]
-                pos2 == dlen -> b2 = 128
-                pos2 >= plen - 8 -> {
-                    lbidx = pos2 - (plen - 8)
-                    b2 = (blen >> (lbidx * 8)) & 255
-                }
-            }
-            ; b3: byte at position boff+3
-            pos3 = boff + 3
-            {
-                pos3 < dlen -> b3 = data[pos3]
-                pos3 == dlen -> b3 = 128
-                pos3 >= plen - 8 -> {
-                    lbidx = pos3 - (plen - 8)
-                    b3 = (blen >> (lbidx * 8)) & 255
-                }
-            }
-            word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-            {
-                wi == 0 -> w0 = word
-                wi == 1 -> w1 = word
-                wi == 2 -> w2 = word
-                wi == 3 -> w3 = word
-                wi == 4 -> w4 = word
-                wi == 5 -> w5 = word
-                wi == 6 -> w6 = word
-                wi == 7 -> w7 = word
-                wi == 8 -> w8 = word
-                wi == 9 -> w9 = word
-                wi == 10 -> w10 = word
-                wi == 11 -> w11 = word
-                wi == 12 -> w12 = word
-                wi == 13 -> w13 = word
-                wi == 14 -> w14 = word
-                -> w15 = word
+                pos < dlen -> buf[j] = data[pos]
+                pos == dlen -> buf[j] = 128
+                pos >= plen8 -> buf[j] = (blen >> ((pos - plen8) * 8)) & 255
+                -> buf[j] = 0
             }
         }
-        ; MD5 壓縮函數（64 輪，rot-left 內聯展開）
+        ; 從緩衝區直接載入 16 個 32-bit 字（無分支！）
+        w0 = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24)
+        w1 = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24)
+        w2 = buf[8] | (buf[9] << 8) | (buf[10] << 16) | (buf[11] << 24)
+        w3 = buf[12] | (buf[13] << 8) | (buf[14] << 16) | (buf[15] << 24)
+        w4 = buf[16] | (buf[17] << 8) | (buf[18] << 16) | (buf[19] << 24)
+        w5 = buf[20] | (buf[21] << 8) | (buf[22] << 16) | (buf[23] << 24)
+        w6 = buf[24] | (buf[25] << 8) | (buf[26] << 16) | (buf[27] << 24)
+        w7 = buf[28] | (buf[29] << 8) | (buf[30] << 16) | (buf[31] << 24)
+        w8 = buf[32] | (buf[33] << 8) | (buf[34] << 16) | (buf[35] << 24)
+        w9 = buf[36] | (buf[37] << 8) | (buf[38] << 16) | (buf[39] << 24)
+        w10 = buf[40] | (buf[41] << 8) | (buf[42] << 16) | (buf[43] << 24)
+        w11 = buf[44] | (buf[45] << 8) | (buf[46] << 16) | (buf[47] << 24)
+        w12 = buf[48] | (buf[49] << 8) | (buf[50] << 16) | (buf[51] << 24)
+        w13 = buf[52] | (buf[53] << 8) | (buf[54] << 16) | (buf[55] << 24)
+        w14 = buf[56] | (buf[57] << 8) | (buf[58] << 16) | (buf[59] << 24)
+        w15 = buf[60] | (buf[61] << 8) | (buf[62] << 16) | (buf[63] << 24)
+
+        ; MD5 壓縮函數（64 輪）
         a = h0
         b = h1
         c = h2
         d = h3
-        ; 第 1 輪 (F)
-        f = (b & c) | ((mask ^ b) & d)
+        ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
+        f = d ^ (b & (c ^ d))
         t = (a + f + w0 + 3614090360) & mask
-        a = (b + (((t << 7) | (t >> 25)) & mask)) & mask
-        f = (a & b) | ((mask ^ a) & c)
+        a = (b + ((t << 7) | (t >> 25))) & mask
+        f = c ^ (a & (b ^ c))
         t = (d + f + w1 + 3905402710) & mask
-        d = (a + (((t << 12) | (t >> 20)) & mask)) & mask
-        f = (d & a) | ((mask ^ d) & b)
+        d = (a + ((t << 12) | (t >> 20))) & mask
+        f = b ^ (d & (a ^ b))
         t = (c + f + w2 + 606105819) & mask
-        c = (d + (((t << 17) | (t >> 15)) & mask)) & mask
-        f = (c & d) | ((mask ^ c) & a)
+        c = (d + ((t << 17) | (t >> 15))) & mask
+        f = a ^ (c & (d ^ a))
         t = (b + f + w3 + 3250441966) & mask
-        b = (c + (((t << 22) | (t >> 10)) & mask)) & mask
-        f = (b & c) | ((mask ^ b) & d)
+        b = (c + ((t << 22) | (t >> 10))) & mask
+        f = d ^ (b & (c ^ d))
         t = (a + f + w4 + 4118548399) & mask
-        a = (b + (((t << 7) | (t >> 25)) & mask)) & mask
-        f = (a & b) | ((mask ^ a) & c)
+        a = (b + ((t << 7) | (t >> 25))) & mask
+        f = c ^ (a & (b ^ c))
         t = (d + f + w5 + 1200080426) & mask
-        d = (a + (((t << 12) | (t >> 20)) & mask)) & mask
-        f = (d & a) | ((mask ^ d) & b)
+        d = (a + ((t << 12) | (t >> 20))) & mask
+        f = b ^ (d & (a ^ b))
         t = (c + f + w6 + 2821735955) & mask
-        c = (d + (((t << 17) | (t >> 15)) & mask)) & mask
-        f = (c & d) | ((mask ^ c) & a)
+        c = (d + ((t << 17) | (t >> 15))) & mask
+        f = a ^ (c & (d ^ a))
         t = (b + f + w7 + 4249261313) & mask
-        b = (c + (((t << 22) | (t >> 10)) & mask)) & mask
-        f = (b & c) | ((mask ^ b) & d)
+        b = (c + ((t << 22) | (t >> 10))) & mask
+        f = d ^ (b & (c ^ d))
         t = (a + f + w8 + 1770035416) & mask
-        a = (b + (((t << 7) | (t >> 25)) & mask)) & mask
-        f = (a & b) | ((mask ^ a) & c)
+        a = (b + ((t << 7) | (t >> 25))) & mask
+        f = c ^ (a & (b ^ c))
         t = (d + f + w9 + 2336552879) & mask
-        d = (a + (((t << 12) | (t >> 20)) & mask)) & mask
-        f = (d & a) | ((mask ^ d) & b)
+        d = (a + ((t << 12) | (t >> 20))) & mask
+        f = b ^ (d & (a ^ b))
         t = (c + f + w10 + 4294925233) & mask
-        c = (d + (((t << 17) | (t >> 15)) & mask)) & mask
-        f = (c & d) | ((mask ^ c) & a)
+        c = (d + ((t << 17) | (t >> 15))) & mask
+        f = a ^ (c & (d ^ a))
         t = (b + f + w11 + 2304563134) & mask
-        b = (c + (((t << 22) | (t >> 10)) & mask)) & mask
-        f = (b & c) | ((mask ^ b) & d)
+        b = (c + ((t << 22) | (t >> 10))) & mask
+        f = d ^ (b & (c ^ d))
         t = (a + f + w12 + 1804603682) & mask
-        a = (b + (((t << 7) | (t >> 25)) & mask)) & mask
-        f = (a & b) | ((mask ^ a) & c)
+        a = (b + ((t << 7) | (t >> 25))) & mask
+        f = c ^ (a & (b ^ c))
         t = (d + f + w13 + 4254626195) & mask
-        d = (a + (((t << 12) | (t >> 20)) & mask)) & mask
-        f = (d & a) | ((mask ^ d) & b)
+        d = (a + ((t << 12) | (t >> 20))) & mask
+        f = b ^ (d & (a ^ b))
         t = (c + f + w14 + 2792965006) & mask
-        c = (d + (((t << 17) | (t >> 15)) & mask)) & mask
-        f = (c & d) | ((mask ^ c) & a)
+        c = (d + ((t << 17) | (t >> 15))) & mask
+        f = a ^ (c & (d ^ a))
         t = (b + f + w15 + 1236535329) & mask
-        b = (c + (((t << 22) | (t >> 10)) & mask)) & mask
-        ; 第 2 輪 (G) — T[17..32]
-        f = (b & d) | (c & (mask ^ d))
+        b = (c + ((t << 22) | (t >> 10))) & mask
+        ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
+        f = c ^ (d & (b ^ c))
         t = (a + f + w1 + 4129170786) & mask
-        a = (b + (((t << 5) | (t >> 27)) & mask)) & mask
-        f = (a & c) | (b & (mask ^ c))
+        a = (b + ((t << 5) | (t >> 27))) & mask
+        f = b ^ (c & (a ^ b))
         t = (d + f + w6 + 3225465664) & mask
-        d = (a + (((t << 9) | (t >> 23)) & mask)) & mask
-        f = (d & b) | (a & (mask ^ b))
+        d = (a + ((t << 9) | (t >> 23))) & mask
+        f = a ^ (b & (d ^ a))
         t = (c + f + w11 + 643717713) & mask
-        c = (d + (((t << 14) | (t >> 18)) & mask)) & mask
-        f = (c & a) | (d & (mask ^ a))
+        c = (d + ((t << 14) | (t >> 18))) & mask
+        f = d ^ (a & (c ^ d))
         t = (b + f + w0 + 3921069994) & mask
-        b = (c + (((t << 20) | (t >> 12)) & mask)) & mask
-        f = (b & d) | (c & (mask ^ d))
+        b = (c + ((t << 20) | (t >> 12))) & mask
+        f = c ^ (d & (b ^ c))
         t = (a + f + w5 + 3593408605) & mask
-        a = (b + (((t << 5) | (t >> 27)) & mask)) & mask
-        f = (a & c) | (b & (mask ^ c))
+        a = (b + ((t << 5) | (t >> 27))) & mask
+        f = b ^ (c & (a ^ b))
         t = (d + f + w10 + 38016083) & mask
-        d = (a + (((t << 9) | (t >> 23)) & mask)) & mask
-        f = (d & b) | (a & (mask ^ b))
+        d = (a + ((t << 9) | (t >> 23))) & mask
+        f = a ^ (b & (d ^ a))
         t = (c + f + w15 + 3634488961) & mask
-        c = (d + (((t << 14) | (t >> 18)) & mask)) & mask
-        f = (c & a) | (d & (mask ^ a))
+        c = (d + ((t << 14) | (t >> 18))) & mask
+        f = d ^ (a & (c ^ d))
         t = (b + f + w4 + 3889429448) & mask
-        b = (c + (((t << 20) | (t >> 12)) & mask)) & mask
-        f = (b & d) | (c & (mask ^ d))
+        b = (c + ((t << 20) | (t >> 12))) & mask
+        f = c ^ (d & (b ^ c))
         t = (a + f + w9 + 568446438) & mask
-        a = (b + (((t << 5) | (t >> 27)) & mask)) & mask
-        f = (a & c) | (b & (mask ^ c))
+        a = (b + ((t << 5) | (t >> 27))) & mask
+        f = b ^ (c & (a ^ b))
         t = (d + f + w14 + 3275163606) & mask
-        d = (a + (((t << 9) | (t >> 23)) & mask)) & mask
-        f = (d & b) | (a & (mask ^ b))
+        d = (a + ((t << 9) | (t >> 23))) & mask
+        f = a ^ (b & (d ^ a))
         t = (c + f + w3 + 4107603335) & mask
-        c = (d + (((t << 14) | (t >> 18)) & mask)) & mask
-        f = (c & a) | (d & (mask ^ a))
+        c = (d + ((t << 14) | (t >> 18))) & mask
+        f = d ^ (a & (c ^ d))
         t = (b + f + w8 + 1163531501) & mask
-        b = (c + (((t << 20) | (t >> 12)) & mask)) & mask
-        f = (b & d) | (c & (mask ^ d))
+        b = (c + ((t << 20) | (t >> 12))) & mask
+        f = c ^ (d & (b ^ c))
         t = (a + f + w13 + 2850285829) & mask
-        a = (b + (((t << 5) | (t >> 27)) & mask)) & mask
-        f = (a & c) | (b & (mask ^ c))
+        a = (b + ((t << 5) | (t >> 27))) & mask
+        f = b ^ (c & (a ^ b))
         t = (d + f + w2 + 4243563512) & mask
-        d = (a + (((t << 9) | (t >> 23)) & mask)) & mask
-        f = (d & b) | (a & (mask ^ b))
+        d = (a + ((t << 9) | (t >> 23))) & mask
+        f = a ^ (b & (d ^ a))
         t = (c + f + w7 + 1735328473) & mask
-        c = (d + (((t << 14) | (t >> 18)) & mask)) & mask
-        f = (c & a) | (d & (mask ^ a))
+        c = (d + ((t << 14) | (t >> 18))) & mask
+        f = d ^ (a & (c ^ d))
         t = (b + f + w12 + 2368359562) & mask
-        b = (c + (((t << 20) | (t >> 12)) & mask)) & mask
-        ; 第 3 輪 (H) — T[33..48]
+        b = (c + ((t << 20) | (t >> 12))) & mask
+        ; 第 3 輪 (H): f = x ^ y ^ z
         f = b ^ c ^ d
         t = (a + f + w5 + 4294588738) & mask
-        a = (b + (((t << 4) | (t >> 28)) & mask)) & mask
+        a = (b + ((t << 4) | (t >> 28))) & mask
         f = a ^ b ^ c
         t = (d + f + w8 + 2272392833) & mask
-        d = (a + (((t << 11) | (t >> 21)) & mask)) & mask
+        d = (a + ((t << 11) | (t >> 21))) & mask
         f = d ^ a ^ b
         t = (c + f + w11 + 1839030562) & mask
-        c = (d + (((t << 16) | (t >> 16)) & mask)) & mask
+        c = (d + ((t << 16) | (t >> 16))) & mask
         f = c ^ d ^ a
         t = (b + f + w14 + 4259657740) & mask
-        b = (c + (((t << 23) | (t >> 9)) & mask)) & mask
+        b = (c + ((t << 23) | (t >> 9))) & mask
         f = b ^ c ^ d
         t = (a + f + w1 + 2763975236) & mask
-        a = (b + (((t << 4) | (t >> 28)) & mask)) & mask
+        a = (b + ((t << 4) | (t >> 28))) & mask
         f = a ^ b ^ c
         t = (d + f + w4 + 1272893353) & mask
-        d = (a + (((t << 11) | (t >> 21)) & mask)) & mask
+        d = (a + ((t << 11) | (t >> 21))) & mask
         f = d ^ a ^ b
         t = (c + f + w7 + 4139469664) & mask
-        c = (d + (((t << 16) | (t >> 16)) & mask)) & mask
+        c = (d + ((t << 16) | (t >> 16))) & mask
         f = c ^ d ^ a
         t = (b + f + w10 + 3200236656) & mask
-        b = (c + (((t << 23) | (t >> 9)) & mask)) & mask
+        b = (c + ((t << 23) | (t >> 9))) & mask
         f = b ^ c ^ d
         t = (a + f + w13 + 681279174) & mask
-        a = (b + (((t << 4) | (t >> 28)) & mask)) & mask
+        a = (b + ((t << 4) | (t >> 28))) & mask
         f = a ^ b ^ c
         t = (d + f + w0 + 3936430074) & mask
-        d = (a + (((t << 11) | (t >> 21)) & mask)) & mask
+        d = (a + ((t << 11) | (t >> 21))) & mask
         f = d ^ a ^ b
         t = (c + f + w3 + 3572445317) & mask
-        c = (d + (((t << 16) | (t >> 16)) & mask)) & mask
+        c = (d + ((t << 16) | (t >> 16))) & mask
         f = c ^ d ^ a
         t = (b + f + w6 + 76029189) & mask
-        b = (c + (((t << 23) | (t >> 9)) & mask)) & mask
+        b = (c + ((t << 23) | (t >> 9))) & mask
         f = b ^ c ^ d
         t = (a + f + w9 + 3654602809) & mask
-        a = (b + (((t << 4) | (t >> 28)) & mask)) & mask
+        a = (b + ((t << 4) | (t >> 28))) & mask
         f = a ^ b ^ c
         t = (d + f + w12 + 3873151461) & mask
-        d = (a + (((t << 11) | (t >> 21)) & mask)) & mask
+        d = (a + ((t << 11) | (t >> 21))) & mask
         f = d ^ a ^ b
         t = (c + f + w15 + 530742520) & mask
-        c = (d + (((t << 16) | (t >> 16)) & mask)) & mask
+        c = (d + ((t << 16) | (t >> 16))) & mask
         f = c ^ d ^ a
         t = (b + f + w2 + 3299628645) & mask
-        b = (c + (((t << 23) | (t >> 9)) & mask)) & mask
-        ; 第 4 輪 (I) — T[49..64]
+        b = (c + ((t << 23) | (t >> 9))) & mask
+        ; 第 4 輪 (I): f = y ^ (x | ~z)
         f = c ^ (b | (mask ^ d))
         t = (a + f + w0 + 4096336452) & mask
-        a = (b + (((t << 6) | (t >> 26)) & mask)) & mask
+        a = (b + ((t << 6) | (t >> 26))) & mask
         f = b ^ (a | (mask ^ c))
         t = (d + f + w7 + 1126891415) & mask
-        d = (a + (((t << 10) | (t >> 22)) & mask)) & mask
+        d = (a + ((t << 10) | (t >> 22))) & mask
         f = a ^ (d | (mask ^ b))
         t = (c + f + w14 + 2878612391) & mask
-        c = (d + (((t << 15) | (t >> 17)) & mask)) & mask
+        c = (d + ((t << 15) | (t >> 17))) & mask
         f = d ^ (c | (mask ^ a))
         t = (b + f + w5 + 4237533241) & mask
-        b = (c + (((t << 21) | (t >> 11)) & mask)) & mask
+        b = (c + ((t << 21) | (t >> 11))) & mask
         f = c ^ (b | (mask ^ d))
         t = (a + f + w12 + 1700485571) & mask
-        a = (b + (((t << 6) | (t >> 26)) & mask)) & mask
+        a = (b + ((t << 6) | (t >> 26))) & mask
         f = b ^ (a | (mask ^ c))
         t = (d + f + w3 + 2399980690) & mask
-        d = (a + (((t << 10) | (t >> 22)) & mask)) & mask
+        d = (a + ((t << 10) | (t >> 22))) & mask
         f = a ^ (d | (mask ^ b))
         t = (c + f + w10 + 4293915773) & mask
-        c = (d + (((t << 15) | (t >> 17)) & mask)) & mask
+        c = (d + ((t << 15) | (t >> 17))) & mask
         f = d ^ (c | (mask ^ a))
         t = (b + f + w1 + 2240044497) & mask
-        b = (c + (((t << 21) | (t >> 11)) & mask)) & mask
+        b = (c + ((t << 21) | (t >> 11))) & mask
         f = c ^ (b | (mask ^ d))
         t = (a + f + w8 + 1873313359) & mask
-        a = (b + (((t << 6) | (t >> 26)) & mask)) & mask
+        a = (b + ((t << 6) | (t >> 26))) & mask
         f = b ^ (a | (mask ^ c))
         t = (d + f + w15 + 4264355552) & mask
-        d = (a + (((t << 10) | (t >> 22)) & mask)) & mask
+        d = (a + ((t << 10) | (t >> 22))) & mask
         f = a ^ (d | (mask ^ b))
         t = (c + f + w6 + 2734768916) & mask
-        c = (d + (((t << 15) | (t >> 17)) & mask)) & mask
+        c = (d + ((t << 15) | (t >> 17))) & mask
         f = d ^ (c | (mask ^ a))
         t = (b + f + w13 + 1309151649) & mask
-        b = (c + (((t << 21) | (t >> 11)) & mask)) & mask
+        b = (c + ((t << 21) | (t >> 11))) & mask
         f = c ^ (b | (mask ^ d))
         t = (a + f + w4 + 4149444226) & mask
-        a = (b + (((t << 6) | (t >> 26)) & mask)) & mask
+        a = (b + ((t << 6) | (t >> 26))) & mask
         f = b ^ (a | (mask ^ c))
         t = (d + f + w11 + 3174756917) & mask
-        d = (a + (((t << 10) | (t >> 22)) & mask)) & mask
+        d = (a + ((t << 10) | (t >> 22))) & mask
         f = a ^ (d | (mask ^ b))
         t = (c + f + w2 + 718787259) & mask
-        c = (d + (((t << 15) | (t >> 17)) & mask)) & mask
+        c = (d + ((t << 15) | (t >> 17))) & mask
         f = d ^ (c | (mask ^ a))
         t = (b + f + w9 + 3951481745) & mask
-        b = (c + (((t << 21) | (t >> 11)) & mask)) & mask
+        b = (c + ((t << 21) | (t >> 11))) & mask
         ; 累加回初始值
         h0 = (h0 + a) & mask
         h1 = (h1 + b) & mask

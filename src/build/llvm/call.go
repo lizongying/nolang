@@ -732,6 +732,17 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: curStoreType, Size: 8})
 						sb.WriteString(fmt.Sprintf("%s%%%s = alloca %s\n", g.indent(), varName, curStoreType))
 						sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), varName))
+					} else if existingType, ok := g.varTypes[varName]; ok && existingType != curStoreType {
+						// 變數已存在但型別不同（如 ok 已宣告為 i1 但 builtin 回傳 i64）
+						// 需將值轉換為變數的型別以避免 LLVM IR 型別不匹配（UB）
+						if existingType == "i1" && curStoreType == "i64" {
+							// i64 → i1: trunc
+							g.tmpIdx++
+							truncReg := fmt.Sprintf("%%builtin.trunc.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, curVal))
+							curVal = truncReg
+							curStoreType = "i1"
+						}
 					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
 				}

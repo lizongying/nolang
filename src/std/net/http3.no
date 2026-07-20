@@ -538,8 +538,9 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
                 name == ':status' -> {
                     status-val ?i64 = value.to-i64()
                     status-val: {
-                        ok -> r.status-code = 
-                        -> r.status-code = 0
+                        nil -> r.status-code = 0
+                        err -> r.status-code = 0
+                        ok -> r.status-code = it
                     }
                 }
                 r.header-count < 32 -> {
