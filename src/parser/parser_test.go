@@ -2290,3 +2290,117 @@ func TestAsCastRestriction(t *testing.T) {
 		})
 	}
 }
+
+// TestPlatformSuffixRegistration 驗證 Parser 對平台後綴名註解的解析，
+// 以及 ExtractPlatformKeys / RegisteredName 的行為。
+func TestPlatformSuffixRegistration(t *testing.T) {
+	// 情境 1: 單平台註解
+	t.Run("single_platform", func(t *testing.T) {
+		src := `#{win-arm64}
+O-EXCL = 1024
+`
+		l := lexer.New(src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		if len(prog.Statements) != 1 {
+			t.Fatalf("expected 1 statement, got %d", len(prog.Statements))
+		}
+		letStmt, ok := prog.Statements[0].(*LetStatement)
+		if !ok {
+			t.Fatalf("expected *LetStatement, got %T", prog.Statements[0])
+		}
+		if len(letStmt.PlatformKeys) != 1 || letStmt.PlatformKeys[0] != "win-arm64" {
+			t.Errorf("expected PlatformKeys=[\"win-arm64\"], got %v", letStmt.PlatformKeys)
+		}
+		// 驗證 Name.Value 保持原始名稱（不帶後綴）
+		if letStmt.Name.Value != "O-EXCL" {
+			t.Errorf("expected Name.Value=\"O-EXCL\", got %q", letStmt.Name.Value)
+		}
+		// 驗證 RegisteredName 計算
+		if got := RegisteredName("O-EXCL", "win-arm64"); got != "O-EXCL-win-arm64" {
+			t.Errorf("RegisteredName: expected \"O-EXCL-win-arm64\", got %q", got)
+		}
+	})
+
+	// 情境 2: 多平台註解（單行）
+	t.Run("multi_platform", func(t *testing.T) {
+		src := `#{mac-amd64, mac-arm64}
+O-EXCL = 2048
+`
+		l := lexer.New(src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		letStmt, ok := prog.Statements[0].(*LetStatement)
+		if !ok {
+			t.Fatalf("expected *LetStatement, got %T", prog.Statements[0])
+		}
+		if len(letStmt.PlatformKeys) != 2 {
+			t.Fatalf("expected 2 PlatformKeys, got %d", len(letStmt.PlatformKeys))
+		}
+		// 驗證兩個 key 都存在（順序可能不保證，用 map 檢查）
+		keys := map[string]bool{}
+		for _, k := range letStmt.PlatformKeys {
+			keys[k] = true
+		}
+		if !keys["mac-amd64"] || !keys["mac-arm64"] {
+			t.Errorf("expected PlatformKeys to contain mac-amd64 and mac-arm64, got %v", letStmt.PlatformKeys)
+		}
+	})
+
+	// 情境 3: 無平台註解（平台通用）
+	t.Run("no_platform", func(t *testing.T) {
+		src := `O-RDONLY = 0
+`
+		l := lexer.New(src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		letStmt, ok := prog.Statements[0].(*LetStatement)
+		if !ok {
+			t.Fatalf("expected *LetStatement, got %T", prog.Statements[0])
+		}
+		if len(letStmt.PlatformKeys) != 0 {
+			t.Errorf("expected empty PlatformKeys, got %v", letStmt.PlatformKeys)
+		}
+		// 驗證 RegisteredName 在無 platformKey 時回傳原始名稱
+		if got := RegisteredName("O-RDONLY", ""); got != "O-RDONLY" {
+			t.Errorf("RegisteredName: expected \"O-RDONLY\", got %q", got)
+		}
+	})
+
+	// 情境 4: 函式定義的平台變體
+	t.Run("function_definition", func(t *testing.T) {
+		src := `#{win-amd64}
+open-dir = (p str) (dirp i64) {
+    dirp = 0
+}
+`
+		l := lexer.New(src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		if len(prog.Statements) != 1 {
+			t.Fatalf("expected 1 statement, got %d", len(prog.Statements))
+		}
+		fd, ok := prog.Statements[0].(*FunctionDefinition)
+		if !ok {
+			t.Fatalf("expected *FunctionDefinition, got %T", prog.Statements[0])
+		}
+		if len(fd.PlatformKeys) != 1 || fd.PlatformKeys[0] != "win-amd64" {
+			t.Errorf("expected PlatformKeys=[\"win-amd64\"], got %v", fd.PlatformKeys)
+		}
+		if fd.Name != "open-dir" {
+			t.Errorf("expected Name=\"open-dir\", got %q", fd.Name)
+		}
+	})
+}

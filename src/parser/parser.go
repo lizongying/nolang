@@ -8765,21 +8765,26 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // attachAnnotations 將註解條目附加到宣告語句上。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	params := extractGenericParams(entries)
+	platformKeys := ExtractPlatformKeys(entries)
 	switch s := stmt.(type) {
 	case *LetStatement:
 		s.Annotations = entries
 		s.GenericParams = params
+		s.PlatformKeys = platformKeys
 	case *StructDefinition:
 		s.Annotations = entries
 		s.GenericParams = params
+		s.PlatformKeys = platformKeys
 	case *FunctionDefinition:
 		// 方法定義：從 #{generic=[K,V]} 註解提取泛型型別參數
 		s.Annotations = entries
 		for _, name := range params {
 			s.GenericParams = append(s.GenericParams, &Identifier{Value: name})
 		}
+		s.PlatformKeys = platformKeys
 	case *ExpressionStatement:
 		s.Annotations = entries
+		s.PlatformKeys = platformKeys
 	}
 }
 

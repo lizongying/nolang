@@ -92,6 +92,55 @@ type BuildOptions struct {
 	Output  string // optional output path ("" = auto)
 }
 
+// parseTargetPlatform extracts (goos, goarch) from a target triple.
+// Returns ("", "") when target is empty, signaling the caller to fall back
+// to the host runtime platform.
+//
+// Recognized architectures (first hyphen-separated component):
+//   - x86_64    → amd64
+//   - aarch64   → arm64
+//
+// Recognized operating systems (any subsequent component):
+//   - linux     → linux
+//   - windows   → windows
+//   - macos     → darwin
+//   - darwin    → darwin
+//
+// Examples:
+//   - "x86_64-linux-gnu"      → ("linux", "amd64")
+//   - "aarch64-linux-gnu"     → ("linux", "arm64")
+//   - "x86_64-windows-gnu"    → ("windows", "amd64")
+//   - "aarch64-darwin"        → ("darwin", "arm64")
+//   - "x86_64-apple-macos"    → ("darwin", "amd64")
+//   - ""                      → ("", "")
+func parseTargetPlatform(target string) (goos, goarch string) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", ""
+	}
+	parts := strings.Split(target, "-")
+	if len(parts) == 0 {
+		return "", ""
+	}
+	switch parts[0] {
+	case "x86_64":
+		goarch = "amd64"
+	case "aarch64":
+		goarch = "arm64"
+	}
+	for _, p := range parts[1:] {
+		switch p {
+		case "linux":
+			goos = "linux"
+		case "windows":
+			goos = "windows"
+		case "macos", "darwin", "apple":
+			goos = "darwin"
+		}
+	}
+	return goos, goarch
+}
+
 // BuildFile compiles a .no source file and produces the output binary/file.
 func BuildFile(inputPath string, opts BuildOptions) error {
 	// 工具鏈檢查
@@ -183,6 +232,8 @@ func VetFile(inputPath string, opts BuildOptions) error {
 
 	compiler := NewTranspiler(pkg)
 	compiler.sourcePath = inputPath
+	goos, goarch := parseTargetPlatform(opts.Target)
+	compiler.SetTargetPlatform(goos, goarch)
 	_, err = compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("validation error: %w", err)
@@ -201,6 +252,8 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 
 	compiler := NewTranspiler(pkg)
 	compiler.sourcePath = inputPath
+	goos, goarch := parseTargetPlatform(opts.Target)
+	compiler.SetTargetPlatform(goos, goarch)
 	code, err := compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)

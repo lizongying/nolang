@@ -512,6 +512,11 @@ type Transpiler struct {
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
 	externStructFields map[string]map[string]string
+
+	// targetGoos/targetGoarch: 編譯目標平台，用於平台變體過濾。
+	// 空字串表示 fallback 到 runtime.GOOS/GOARCH（編譯主機平台）。
+	targetGoos   string
+	targetGoarch string
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -523,6 +528,14 @@ func NewTranspiler(pkg *Package) *Transpiler {
 		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
 	}
 	return t
+}
+
+// SetTargetPlatform sets the target (GOOS, GOARCH) for platform-variant filtering
+// during code generation. Empty strings fall back to the host runtime platform.
+// This is propagated to the underlying LLVM generator before Generate is called.
+func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
+	t.targetGoos = goos
+	t.targetGoarch = goarch
 }
 
 type Target int
@@ -770,10 +783,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())
 	}
 
-	// Apply platform annotations (#{mac-arm64}, #{linux-amd64}, etc.)
-	// before validation so non-matching code is excluded from duplicate/type checks.
-	program.Statements = llvm.FilterByPlatform(program.Statements)
-
 	// 驗證：僅標準庫能使用的功能
 	isUserCode := true
 	if t.pkg != nil {
@@ -933,7 +942,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 							}
 							if !mainVarNames[ls.Name.Value] {
 								merged.Statements = append(merged.Statements, ls)
-								if isConstantExpr(ls.Value) {
+								if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
 									moduleConstants[ls.Name.Value] = ls.Value
 								}
 							}
@@ -943,7 +952,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						// 如果主程序已有同名變量，跳過以避免衝突
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							if isConstantExpr(ls.Value) {
+							if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
 								moduleConstants[ls.Name.Value] = ls.Value
 							}
 						}
@@ -1006,7 +1015,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
 					merged.Statements = append(merged.Statements, ls)
-					if isConstantExpr(ls.Value) {
+					if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
 				}
@@ -1108,6 +1117,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
 	mangleOverloads(merged, nil)
 
+	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
+	// 而非編譯主機平台（支援交叉編譯）。
+	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
 	return t.llvmGenerator.Generate(merged), nil
 }
 
@@ -3013,27 +3025,47 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		// In nolang, first assignment is definition, subsequent are reassignments
-		// Only check for duplicates when there's an explicit type annotation in source
-		// Parser-inferred types (where Type.Token position == Name.Token position) should be ignored
-		if s.Type == nil {
-			return nil
-		}
-		// Check if type was inferred by parser (same position as name)
-		if nt, ok := s.Type.(*parser.NamedType); ok {
-			if nt.Token.Line == s.Name.Token.Line && nt.Token.Column == s.Name.Token.Column {
-				// Parser-inferred type, not explicit annotation
-				return nil
+		// Check for duplicates when:
+		//   1. There's an explicit type annotation in source (e.g., `i i64 = 0`), OR
+		//   2. The name follows uppercase constant convention (e.g., `A = 0`, `SBOX = 1`)
+		// Parser-inferred types (Type.Token position == Name.Token position) are treated as
+		// "no explicit annotation" — but uppercase constants still trigger duplicate detection.
+		hasExplicitType := s.Type != nil
+		if hasExplicitType {
+			if nt, ok := s.Type.(*parser.NamedType); ok {
+				if nt.Token.Line == s.Name.Token.Line && nt.Token.Column == s.Name.Token.Column {
+					// Parser-inferred type, not explicit annotation
+					hasExplicitType = false
+				}
+			}
+			if s.Type.String() == s.Name.Value {
+				// Parser artifact: Type.String() == Name.Value
+				hasExplicitType = false
 			}
 		}
-		// Check if Type.String() == Name.Value (another parser artifact)
-		if s.Type.String() == s.Name.Value {
+		isConst := isConstantName(s.Name.Value)
+		if !hasExplicitType && !isConst {
 			return nil
 		}
-		// Explicit type annotation (e.g., i i64 = 0)
-		if seen[s.Name.Value] {
-			return fmt.Errorf("duplicate variable '%s'", s.Name.Value)
+		// 使用複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
+		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+		var dupKeys []string
+		if len(s.PlatformKeys) == 0 {
+			dupKeys = []string{s.Name.Value + "\x00"}
+		} else {
+			dupKeys = make([]string, 0, len(s.PlatformKeys))
+			for _, pk := range s.PlatformKeys {
+				dupKeys = append(dupKeys, s.Name.Value+"\x00"+pk)
+			}
 		}
-		seen[s.Name.Value] = true
+		for _, k := range dupKeys {
+			if seen[k] {
+				return fmt.Errorf("duplicate variable '%s'", s.Name.Value)
+			}
+		}
+		for _, k := range dupKeys {
+			seen[k] = true
+		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			bodySeen := make(map[string]bool)
@@ -3411,14 +3443,34 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 				paramTypes = append(paramTypes, p.Type.String())
 			}
 			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
-			if firstLine, exists := sigSeen[sig]; exists {
+			// 使用複合 key：sig + "\x00" + platformKey（無平台註解則 suffix 為空）
+			// 同簽名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+			var sigKeys []string
+			if len(fd.PlatformKeys) == 0 {
+				sigKeys = []string{sig + "\x00"}
+			} else {
+				sigKeys = make([]string, 0, len(fd.PlatformKeys))
+				for _, pk := range fd.PlatformKeys {
+					sigKeys = append(sigKeys, sig+"\x00"+pk)
+				}
+			}
+			firstConflictLine := -1
+			for _, k := range sigKeys {
+				if firstLine, exists := sigSeen[k]; exists {
+					firstConflictLine = firstLine
+					break
+				}
+			}
+			if firstConflictLine >= 0 {
 				results = append(results, ValidateResult{
 					Line:    fd.Token.Line,
 					Column:  fd.Token.Column,
-					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstLine),
+					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstConflictLine),
 				})
 			} else {
-				sigSeen[sig] = fd.Token.Line
+				for _, k := range sigKeys {
+					sigSeen[k] = fd.Token.Line
+				}
 			}
 		}
 	}
@@ -4293,22 +4345,50 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 				nt.Token.Column == s.Name.Token.Column
 		}
 
-		// Check for duplicate only if this is a real type annotation (not parser artifact where Type == Name, and not inferred)
-		if s.Type != nil && s.Type.String() != s.Name.Value && !isInferred {
-			if _, exists := seen[s.Name.Value]; exists {
-				return []ValidateResult{{
-					Line:    s.Token.Line,
-					Column:  s.Token.Column,
-					Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
-				}}
+		// 計算複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
+		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+		var compositeKeys []string
+		if len(s.PlatformKeys) == 0 {
+			compositeKeys = []string{s.Name.Value + "\x00"}
+		} else {
+			compositeKeys = make([]string, 0, len(s.PlatformKeys))
+			for _, pk := range s.PlatformKeys {
+				compositeKeys = append(compositeKeys, s.Name.Value+"\x00"+pk)
 			}
-			// Real type annotation — always register
-			seen[s.Name.Value] = struct{}{}
+		}
+		// Check for duplicate when:
+		//   1. Real type annotation (not parser artifact where Type == Name, and not inferred), OR
+		//   2. Uppercase constant name (e.g., `A = 0`, `SBOX = 1`) — even without type annotation
+		hasRealTypeAnnotation := s.Type != nil && s.Type.String() != s.Name.Value && !isInferred
+		isConst := isConstantName(s.Name.Value)
+		if hasRealTypeAnnotation || isConst {
+			for _, k := range compositeKeys {
+				if _, exists := seen[k]; exists {
+					return []ValidateResult{{
+						Line:    s.Token.Line,
+						Column:  s.Token.Column,
+						Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
+					}}
+				}
+			}
+			// Real type annotation or uppercase constant — always register
+			for _, k := range compositeKeys {
+				seen[k] = struct{}{}
+			}
 		} else if isInferred {
 			// Inferred type (e.g. `i = 0`): register only the first declaration,
 			// allow subsequent re-assignments like `i = 4`
-			if _, exists := seen[s.Name.Value]; !exists {
-				seen[s.Name.Value] = struct{}{}
+			anyExists := false
+			for _, k := range compositeKeys {
+				if _, exists := seen[k]; exists {
+					anyExists = true
+					break
+				}
+			}
+			if !anyExists {
+				for _, k := range compositeKeys {
+					seen[k] = struct{}{}
+				}
 			}
 		}
 	case *parser.FunctionDefinition:
@@ -5920,6 +6000,48 @@ func isConstantExpr(expr parser.Expression) bool {
 		return true
 	case *parser.StringLiteral:
 		return true
+	}
+	return false
+}
+
+// isConstantName 判斷名稱是否符合 Nolang 大寫常數命名規範。
+// 規則：首字元為大寫 ASCII 字母（A-Z），且名稱中不含小寫 ASCII 字母（a-z）。
+// 例：SBOX, FNV-OFFSET, O-EXCL, A, MAX-LEN 為常數；sum, i, myVar, Foo 不為常數。
+// 用於重複定義偵測——大寫常數即使無顯式型別註記也應禁止重複賦值。
+func isConstantName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if name[0] < 'A' || name[0] > 'Z' {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c >= 'a' && c <= 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesTargetPlatform 檢查宣告的 PlatformKeys 是否符合目標平台。
+// 無 PlatformKeys（平台通用宣告）永遠回傳 true。
+// goos/goarch 為空時（未設定目標平台），也回傳 true（向後相容）。
+func matchesTargetPlatform(platformKeys []string, goos, goarch string) bool {
+	if len(platformKeys) == 0 {
+		return true
+	}
+	if goos == "" || goarch == "" {
+		return true // 未設定目標平台，接受所有（向後相容）
+	}
+	targetKey := llvm.PlatformKeyFor(goos, goarch)
+	if targetKey == "" {
+		return true // 不支援的平台，接受所有
+	}
+	for _, pk := range platformKeys {
+		if pk == targetKey {
+			return true
+		}
 	}
 	return false
 }

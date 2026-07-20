@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -80,8 +81,11 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					ResultParams: resultParams,
 					Doc:          extractDocComment(&s.CommentedNode),
 				}
-				w.index.functions[s.Name.Value] = entry
-				w.index.definitions[s.Name.Value] = entry
+				// 平台變體偏好：當前開發平台變體覆蓋其他變體；平台通用宣告僅在無變體時儲存
+				if existing, exists := w.index.functions[s.Name.Value]; !exists || existing.Location.URI == "" || matchesDevPlatform(s.PlatformKeys) {
+					w.index.functions[s.Name.Value] = entry
+					w.index.definitions[s.Name.Value] = entry
+				}
 				if funcLit.Body != nil {
 					for _, inner := range funcLit.Body.Statements {
 						w.walkStatement(inner, s.Name.Value)
@@ -113,11 +117,22 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				// Current file definitions always take precedence over auto-imported
 				// module export entries (which lack proper Location info). This ensures
 				// go-to-definition and hover use the correct type and location.
-				if existing, exists := w.index.symbols[s.Name.Value]; !exists || existing.Location.URI == "" {
+				// 平台變體偏好：當前開發平台變體覆蓋其他變體；平台通用宣告僅在無變體時儲存
+				existing, exists := w.index.symbols[s.Name.Value]
+				shouldStore := false
+				if !exists {
+					shouldStore = true
+				} else if existing.Location.URI == "" {
+					shouldStore = true // 覆蓋 auto-imported 條目
+				} else if matchesDevPlatform(s.PlatformKeys) {
+					shouldStore = true // 當前開發平台變體優先
+				}
+
+				if shouldStore {
 					w.index.symbols[s.Name.Value] = entry
 					w.index.definitions[s.Name.Value] = entry
 				}
-				// Store all declarations for AST-range based lookup
+				// Store all declarations for AST-range based lookup（保留所有變體）
 				w.index.declarations[s.Name.Value] = append(w.index.declarations[s.Name.Value], entry)
 			}
 
@@ -580,4 +595,44 @@ func rangeFromNode(n parser.Node) Range {
 			Character: uint32(ep.Column - 1),
 		},
 	}
+}
+
+// devPlatformKey 回傳當前開發平台的 platform key（如 "mac-arm64"、"linux-amd64"、"win-amd64"）。
+// 用於 LSP 符號索引偏好當前開發平台的變體。
+func devPlatformKey() string {
+	var key string
+	switch runtime.GOOS {
+	case "linux":
+		key = "linux"
+	case "windows":
+		key = "win"
+	case "darwin":
+		key = "mac"
+	default:
+		return ""
+	}
+	switch runtime.GOARCH {
+	case "amd64":
+		key += "-amd64"
+	case "arm64":
+		key += "-arm64"
+	default:
+		return ""
+	}
+	return key
+}
+
+// matchesDevPlatform 檢查宣告的 PlatformKeys 是否包含當前開發平台。
+// 無 PlatformKeys（平台通用宣告）也回傳 true。
+func matchesDevPlatform(platformKeys []string) bool {
+	if len(platformKeys) == 0 {
+		return true
+	}
+	devKey := devPlatformKey()
+	for _, pk := range platformKeys {
+		if pk == devKey {
+			return true
+		}
+	}
+	return false
 }

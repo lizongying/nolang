@@ -369,6 +369,7 @@ type LetStatement struct {
 	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
 	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
 	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
+	PlatformKeys  []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 
@@ -412,9 +413,10 @@ func (rs *ReturnStatement) EndPos() lexer.Position {
 }
 
 type ExpressionStatement struct {
-	Token       lexer.Token
-	Expression  Expression
-	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
+	Token        lexer.Token
+	Expression   Expression
+	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
+	PlatformKeys []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 
@@ -467,9 +469,10 @@ type FunctionDefinition struct {
 	Token lexer.Token
 	Name  string
 	FuncSignature
-	Body        *BlockStatement
-	ColonSyntax bool               // 是否為冒號語法 foo: (a int) { }
-	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
+	Body         *BlockStatement
+	ColonSyntax  bool               // 是否為冒號語法 foo: (a int) { }
+	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
+	PlatformKeys []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 
@@ -674,6 +677,42 @@ func (e *AnnotationEntry) String() string {
 
 // IsBool 報告此 entry 是否為獨立布爾鍵（無值）。
 func (e *AnnotationEntry) IsBool() bool { return e.Value == nil }
+
+// ValidPlatformKeys 是合法的平台註解 key 集合。
+// 與 build/llvm.platformKeys 同步。
+var ValidPlatformKeys = map[string]bool{
+	"linux-amd64": true,
+	"linux-arm64": true,
+	"win-amd64":   true,
+	"win-arm64":   true,
+	"mac-amd64":   true,
+	"mac-arm64":   true,
+}
+
+// ExtractPlatformKeys 從註解條目中抽取平台 key。
+// 僅收集 Value == nil（布爾獨立鍵）且 Key 屬於 ValidPlatformKeys 的條目。
+func ExtractPlatformKeys(entries []*AnnotationEntry) []string {
+	var keys []string
+	for _, e := range entries {
+		if e.Value != nil {
+			continue
+		}
+		if ValidPlatformKeys[e.Key] {
+			keys = append(keys, e.Key)
+		}
+	}
+	return keys
+}
+
+// RegisteredName 回傳宣告在指定平台下的內部註冊名。
+// 例如 name="O-EXCL", platformKey="win-arm64" → "O-EXCL-win-arm64"。
+// 若 platformKey 為空，回傳原始 name（平台通用宣告）。
+func RegisteredName(name string, platformKey string) string {
+	if platformKey == "" {
+		return name
+	}
+	return name + "-" + platformKey
+}
 
 // AnnotationStatement — #{...} 註解語句。
 // 當註解包含 FFI 語言鍵（如 c、cpp、rust）且後續為函式宣告時，
@@ -1305,6 +1344,7 @@ type StructDefinition struct {
 	Fields        []*StructField
 	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
 	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
+	PlatformKeys  []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 

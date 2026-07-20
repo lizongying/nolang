@@ -9,7 +9,6 @@ import (
 	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
-	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -69,13 +68,6 @@ func VetFile(filePath string) []VetResult {
 	if prog == nil {
 		return results
 	}
-
-	// Apply platform annotations (#{mac-arm64}, #{linux-amd64}, etc.)
-	// before validation so non-matching code is excluded from duplicate/type
-	// checks. This mirrors the transpiler's behavior (transpiler.go:759) and
-	// allows platform-split function definitions (e.g. POSIX vs Windows
-	// list-dir) to coexist without false "duplicate function" errors.
-	prog.Statements = llvm.FilterByPlatform(prog.Statements)
 
 	// 2. Type errors
 	for _, e := range nbuild.ValidateTypes(prog) {

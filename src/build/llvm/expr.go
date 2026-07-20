@@ -1525,8 +1525,8 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 								g.indent(), reg, structTy, structTy, basePtr, i))
 						} else {
-							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-								g.indent(), reg, structTy, structTy, recvName, i))
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+								g.indent(), reg, structTy, structTy, g.varAddr(recvName), i))
 						}
 					}
 					return reg
@@ -1883,8 +1883,8 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), fieldGEP, structTy, structTy, basePtr, fieldIdx))
 			} else {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-					g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, g.varAddr(recvName), fieldIdx))
 			}
 
 			if fieldType == "%vec" {
@@ -2162,8 +2162,8 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), fieldGEP, structTy, structTy, basePtr, fieldIdx))
 			} else {
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-					g.indent(), fieldGEP, structTy, structTy, recvName, fieldIdx))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structTy, structTy, g.varAddr(recvName), fieldIdx))
 			}
 
 			if fieldType == "%vec" {
@@ -2449,8 +2449,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.tmpIdx++
 						outerGEP := fmt.Sprintf("%%set.nested.outer.gep.%d", g.tmpIdx)
 						structTy := "%" + structName
-						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %%%s, i32 0, i32 %d\n",
-							g.indent(), outerGEP, structTy, structTy, recvName, outerIdx))
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), outerGEP, structTy, structTy, g.varAddr(recvName), outerIdx))
 						// Now GEP into the sub-struct (e.g., str-long has len at 0, data at 1)
 						subFields, ok2 := g.structTypes[strings.TrimPrefix(outerType, "%")]
 						if ok2 {
@@ -2841,7 +2841,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// This allows vec[i] = val for i in [0..cap) even when len == 0,
 				// which is required for patterns like `data[next] = value` on
 				// freshly declared []byte locals and struct fields.
-				vecCap := g.emitVecCapLoad(sb, llvmVarRef(varName))
+				vecCap := g.emitVecCapLoad(sb, g.varAddr(varName))
 				g.emitBoundsCheck(sb, idx, vecCap)
 
 				// Load data pointer from vec struct (field 2)
@@ -2850,8 +2850,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.tmpIdx++
 				dataLoad := fmt.Sprintf("%%vec.set.data.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 2\n",
-						g.indent(), dataGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+						g.indent(), dataGEP, g.varAddr(varName)))
 					dataLoad = g.loadDataPtrField(sb, dataGEP)
 				}
 
@@ -2909,8 +2909,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					cmpReg := fmt.Sprintf("%%vec.set.cmp.%d", g.tmpIdx)
 					g.tmpIdx++
 					finalLen := fmt.Sprintf("%%vec.set.final-len.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %%%s, i32 0, i32 0\n",
-						g.indent(), lenGEP, varName))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+						g.indent(), lenGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
 					sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
 					sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))

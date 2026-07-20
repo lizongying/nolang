@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -2843,6 +2844,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				elemType = et
 			}
 		}
+		fmt.Fprintf(os.Stderr, "DEBUG vec-push: recv=%q elemType=%q valExpr=%T\n", recvName, elemType, args[1])
 		elemSize := llvmTypeSize(elemType)
 
 		// Load current len (field 0) and cap (field 1)
@@ -3350,3 +3352,4 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 	}
 	return callReg
 }
+

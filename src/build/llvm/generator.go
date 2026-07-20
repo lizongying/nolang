@@ -95,6 +95,8 @@ type Generator struct {
 	futureResultTypes     map[string]string               // future variable name → result LLVM type (for awy type inference)
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
 	debugCallCount        int                             // debug counter for tracing function generation calls
+	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
+	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
 }
 
 // sliceViewInfo tracks a slice view alias: a variable that references a portion
@@ -365,7 +367,7 @@ func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 }
 
 // matchesPlatform returns true if any platform annotation key matches the
-// current (GOOS, GOARCH). Multiple keys are OR'd — any match includes the code.
+// target (goos, goarch). Multiple keys are OR'd — any match includes the code.
 //
 //	#{mac-arm64}                     → macOS ARM64 only
 //	#{mac-amd64, mac-arm64}          → macOS on any arch
@@ -373,7 +375,7 @@ func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 //
 // Non-platform annotations (e.g. #{debug}, #{range=...}) are ignored.
 // If there are no platform annotations, returns true (always include).
-func matchesPlatform(annotations []*parser.AnnotationEntry) bool {
+func matchesPlatform(annotations []*parser.AnnotationEntry, goos, goarch string) bool {
 	if len(annotations) == 0 {
 		return true
 	}
@@ -388,28 +390,55 @@ func matchesPlatform(annotations []*parser.AnnotationEntry) bool {
 			continue
 		}
 		hasPlatform = true
-		if runtime.GOOS == matcher.goos && runtime.GOARCH == matcher.goarch {
+		if goos == matcher.goos && goarch == matcher.goarch {
 			return true
 		}
 	}
 	return !hasPlatform
 }
 
-// FilterByPlatform removes statements whose platform annotations don't match.
-// Exported so the transpiler can apply the filter before validation.
-func FilterByPlatform(stmts []parser.Statement) []parser.Statement {
+// FilterByPlatform removes statements whose platform annotations don't match
+// the target (goos, goarch). Exported so the transpiler can apply the filter
+// before code generation.
+func FilterByPlatform(stmts []parser.Statement, goos, goarch string) []parser.Statement {
 	filtered := make([]parser.Statement, 0, len(stmts))
 	for _, stmt := range stmts {
-		if matchesPlatform(stmtAnnotations(stmt)) {
+		if matchesPlatform(stmtAnnotations(stmt), goos, goarch) {
 			filtered = append(filtered, stmt)
 		}
 	}
 	return filtered
 }
 
+// PlatformKeyFor performs a reverse lookup on platformKeys: given a (goos, goarch)
+// pair, it returns the corresponding platform annotation key (e.g. ("darwin","arm64")
+// → "mac-arm64"). Returns "" if no key matches.
+func PlatformKeyFor(goos, goarch string) string {
+	for key, matcher := range platformKeys {
+		if matcher.goos == goos && matcher.goarch == goarch {
+			return key
+		}
+	}
+	return ""
+}
+
+// SetTargetPlatform configures the target (GOOS, GOARCH) used by Generate's
+// platform filter. Empty strings cause Generate to fall back to the host
+// runtime's GOOS/GOARCH (backward-compatible behavior).
+func (g *Generator) SetTargetPlatform(goos, goarch string) {
+	g.targetGoos = goos
+	g.targetGoarch = goarch
+}
+
 func (g *Generator) Generate(program *parser.Program) string {
-	// Filter out statements that don't match the current platform (#{mac-arm64}, #{linux-amd64}, etc.)
-	program.Statements = FilterByPlatform(program.Statements)
+	// Filter out statements that don't match the target platform
+	// (#{mac-arm64}, #{linux-amd64}, etc.). If SetTargetPlatform was not
+	// called (empty fields), fall back to the host runtime platform.
+	goos, goarch := g.targetGoos, g.targetGoarch
+	if goos == "" || goarch == "" {
+		goos, goarch = runtime.GOOS, runtime.GOARCH
+	}
+	program.Statements = FilterByPlatform(program.Statements, goos, goarch)
 
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -899,6 +928,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 					g.globalVars[name] = true
 				}
 			} else if llvmType == "%arr" {
+				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
+				g.globalVars[name] = true
+			} else if llvmType == "%vec" {
+				// Top-level slice (vec) variables are emitted as globals so that
+				// functions can reference them via @name (e.g. binary-trees arena).
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
 			} else if strings.HasPrefix(llvmType, "[") {

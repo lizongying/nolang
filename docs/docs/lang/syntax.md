@@ -1299,8 +1299,8 @@ y = x as *byte
 
 ```nolang
 b byte = 200
-i i64 = b        // ✓ byte 範圍 [0,255] ⊆ i64 範圍
-u u32 = b        // ✓ byte 範圍 ⊆ u32 範圍
+i i64 = b        ; ✓ byte 範圍 [0,255] ⊆ i64 範圍
+u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
 ```
 
 #### 整數字面量賦值
@@ -1308,9 +1308,9 @@ u u32 = b        // ✓ byte 範圍 ⊆ u32 範圍
 整數字面量（預設推斷為 `i64`）可以賦值給任何範圍包含該值的整數型別：
 
 ```nolang
-n u8 = 200       // ✓ 200 ∈ [0,255]
-m u8 = 300       // ✗ 300 > 255，編譯錯誤
-big u64 = 18446744073709551615  // ✓ 2^64-1，u64 最大值
+n u8 = 200       ; ✓ 200 ∈ [0,255]
+m u8 = 300       ; ✗ 300 > 255，編譯錯誤
+big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
 ```
 
 #### 不安全的窄化（編譯錯誤）
@@ -1319,11 +1319,11 @@ big u64 = 18446744073709551615  // ✓ 2^64-1，u64 最大值
 
 ```nolang
 d u64 = 42
-h u32 = d        // ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
-h u16 = d        // ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
-h u8 = d         // ✗ cannot assign u64 value to u8 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 255`) or right shift (e.g. `>> 56`)
-x u32 = d + 1    // ✗ 加法結果仍為 u64，不安全
-y u32 = foo()    // ✗ 函式呼叫結果型別不匹配
+h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
+h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
+h u8 = d         ; ✗ cannot assign u64 value to u8 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 255`) or right shift (e.g. `>> 56`)
+x u32 = d + 1    ; ✗ 加法結果仍為 u64，不安全
+y u32 = foo()    ; ✗ 函式呼叫結果型別不匹配
 ```
 
 > **修復提示**：編譯器會根據目標型別自動計算精確的 mask 值和位移量。按照提示套用 mask 或位移後，即可安全窄化（見下節）。
@@ -1337,18 +1337,18 @@ y u32 = foo()    // ✗ 函式呼叫結果型別不匹配
 ```nolang
 d u64 = 42
 
-// ✓ mask 運算：結果必 ≤ mask 值，安全落入 u32
-h u32 = d & 67108863          // mask = 2^26-1 < 2^32
-h u32 = d & 4294967295        // mask = 2^32-1，正好 u32 範圍
+; ✓ mask 運算：結果必 ≤ mask 值，安全落入 u32
+h u32 = d & 67108863          ; mask = 2^26-1 < 2^32
+h u32 = d & 4294967295        ; mask = 2^32-1，正好 u32 範圍
 
-// ✓ 位移運算：右移後高位為 0，安全
-hi u32 = d >> 32              // u64 >> 32 留 32 bits
+; ✓ 位移運算：右移後高位為 0，安全
+hi u32 = d >> 32              ; u64 >> 32 留 32 bits
 
-// ✓ XOR / OR 組合
-c u32 = a ^ b                 // 位元運算結果
-b byte = v & 255              // mask 到 byte 範圍
+; ✓ XOR / OR 組合
+c u32 = a ^ b                 ; 位元運算結果
+b byte = v & 255              ; mask 到 byte 範圍
 
-// ✓ 複合位元運算（常見於密碼學/編解碼）
+; ✓ 複合位元運算（常見於密碼學/編解碼）
 s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[3] & 255) << 24)
 ```
 
@@ -1357,14 +1357,14 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 > **僅限無號目標型別。** 對有號整數目標（`i8`/`i16`/`i32`/`i64`），即使右側是位元運算也會報錯，因為符號位元的截斷語義不明確：
 > ```nolang
 > d u64 = 42
-> h i32 = d & 4294967295   // ✗ 仍報錯：有號目標不適用安全窄化
+> h i32 = d & 4294967295   ; ✗ 仍報錯：有號目標不適用安全窄化
 > ```
 
 > **頂層必須是位元運算。** 只有當表達式的頂層運算子是 `&`/`|`/`^`/`<<`/`>>` 時才放行。加法、減法、函式呼叫、直接變數引用等不在此列：
 > ```nolang
 > d u64 = 42
-> h u32 = d              // ✗ 頂層是 Identifier，不是位元運算
-> h u32 = d + 1          // ✗ 頂層是 +，不是位元運算
+> h u32 = d              ; ✗ 頂層是 Identifier，不是位元運算
+> h u32 = d + 1          ; ✗ 頂層是 +，不是位元運算
 > ```
 
 ### 模块系统
