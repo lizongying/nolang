@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -1652,8 +1653,11 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				arrRef = llvmGlobalRef(varName)
 			}
 			// Bounds check: load arr len and verify idx
-			arrLen := g.emitArrLenLoad(sb, arrRef)
-			g.emitBoundsCheck(sb, idx, arrLen)
+			// Skip if the array size is known at compile time and the index is provably in bounds.
+			if !g.canSkipBoundsCheck(varName, v.Index) {
+				arrLen := g.emitArrLenLoad(sb, arrRef)
+				g.emitBoundsCheck(sb, idx, arrLen)
+			}
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%arr.ptr.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -1683,8 +1687,11 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				vecRef = llvmGlobalRef(varName)
 			}
 			// Bounds check: load vec len and verify idx
-			vecLen := g.emitVecLenLoad(sb, vecRef)
-			g.emitBoundsCheck(sb, idx, vecLen)
+			// Skip if the array size is known at compile time and the index is provably in bounds.
+			if !g.canSkipBoundsCheck(varName, v.Index) {
+				vecLen := g.emitVecLenLoad(sb, vecRef)
+				g.emitBoundsCheck(sb, idx, vecLen)
+			}
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%vec.ptr.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -1783,6 +1790,57 @@ func (g *Generator) emitBoundsCheck(sb *strings.Builder, idx string, lenExpr str
 	}
 	sb.WriteString(fmt.Sprintf("%scall void @nolang.bounds_check(i64 %s, i64 %s)\n",
 		g.indent(), idx, lenExpr))
+}
+
+// canSkipBoundsCheck returns true if the bounds check can be provably eliminated.
+// This is possible when:
+//  1. The array variable has a compile-time known size (via g.arraySizes).
+//  2. The index expression is a compile-time constant within bounds, OR
+//     the index is a range-loop variable whose range upper bound is within the array size.
+//
+// Known limitations: only handles the common hot-loop patterns:
+//   - Constant index: arr[5] where size >= 6
+//   - Range loop variable: `for j in [0..N)` where N <= arraySize
+func (g *Generator) canSkipBoundsCheck(varName string, indexExpr parser.Expression) bool {
+	if g.arraySizes == nil || varName == "" || indexExpr == nil {
+		return false
+	}
+	arrSize, ok := g.arraySizes[varName]
+	if !ok || arrSize <= 0 {
+		if os.Getenv("NOLANG_DEBUG_BC") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-bc] SKIP: varName=%s not in arraySizes\n", varName)
+		}
+		return false
+	}
+
+	// Case 1: Constant integer index
+	if intLit, ok := indexExpr.(*parser.IntegerLiteral); ok {
+		result := intLit.Value >= 0 && intLit.Value < arrSize
+		if os.Getenv("NOLANG_DEBUG_BC") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-bc] const: varName=%s arrSize=%d idx=%d -> %v\n", varName, arrSize, intLit.Value, result)
+		}
+		return result
+	}
+
+	// Case 2: Range loop variable — check if it's tracked as a range loop var
+	// with a known upper bound <= arraySize.
+	if ident, ok := indexExpr.(*parser.Identifier); ok {
+		// Check if this identifier is a range loop variable with a known bound.
+		if g.rangeLoopBounds != nil {
+			if bound, ok := g.rangeLoopBounds[ident.Value]; ok {
+				result := bound >= 0 && bound <= arrSize
+				if os.Getenv("NOLANG_DEBUG_BC") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-bc] loop: varName=%s arrSize=%d idxVar=%s bound=%d -> %v\n", varName, arrSize, ident.Value, bound, result)
+				}
+				return result
+			}
+			if os.Getenv("NOLANG_DEBUG_BC") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-bc] loop: varName=%s arrSize=%d idxVar=%s NOT in rangeLoopBounds\n", varName, arrSize, ident.Value)
+			}
+		}
+	}
+
+	return false
 }
 
 // emitArrLenLoad loads the i64 len (field 0) from a %arr* pointer.
@@ -3184,10 +3242,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 
 			// Bounds check: load arr len and verify idx
-			arrLen := g.emitArrLenLoad(sb, arrRef)
-			g.emitBoundsCheck(sb, idx, arrLen)
-
-			// Load data pointer from arr struct
+			// Skip if the array size is known at compile time and the index is provably in bounds.
+			if !g.canSkipBoundsCheck(varName, expr.Index) {
+				arrLen := g.emitArrLenLoad(sb, arrRef)
+				g.emitBoundsCheck(sb, idx, arrLen)
+			}
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%arr.idx.data.gep.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -3247,8 +3306,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 
 			// Bounds check: load vec len and verify idx
-			vecLen := g.emitVecLenLoad(sb, vecRef)
-			g.emitBoundsCheck(sb, idx, vecLen)
+			// Skip if the array size is known at compile time and the index is provably in bounds.
+			if !g.canSkipBoundsCheck(varName, expr.Index) {
+				vecLen := g.emitVecLenLoad(sb, vecRef)
+				g.emitBoundsCheck(sb, idx, vecLen)
+			}
 
 			// Load data pointer from vec struct (field 2)
 			g.tmpIdx++

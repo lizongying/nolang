@@ -2438,6 +2438,57 @@ func (g *Generator) strExprDataPtr(sb *strings.Builder, arg parser.Expression) s
 	return g.generateExprWithSB(sb, arg)
 }
 
+// byteArrDataPtr extracts the i8* data pointer from a []byte / [N]byte array argument.
+// For %arr: load field 1 (data pointer).
+// For %vec: load field 2 (data pointer).
+// For %str-long: load field 2 (data pointer).
+// For slice views: use the view's dataPtrReg directly.
+func (g *Generator) byteArrDataPtr(sb *strings.Builder, arg parser.Expression) string {
+	ident, ok := arg.(*parser.Identifier)
+	if !ok {
+		// Fallback: evaluate the expression and try to use it as i8*
+		return g.generateExprWithSB(sb, arg)
+	}
+	varName := ident.Value
+	// Slice view: use the pre-computed data pointer
+	if g.isSliceViewVar(varName) {
+		view := g.sliceViews[varName]
+		return view.dataPtrReg
+	}
+	if g.varTypes != nil {
+		if t, ok := g.varTypes[varName]; ok {
+			arrRef := g.varAddr(varName)
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
+				arrRef = llvmGlobalRef(varName)
+			}
+			switch t {
+			case "%arr":
+				// %arr = { i64, i8* } — field 1 is data pointer
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%bp.arr.gep.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+						g.indent(), dataGEP, arrRef))
+				}
+				return g.loadDataPtrField(sb, dataGEP)
+			case "%vec":
+				// %vec = { i64, i64, i8* } — field 2 is data pointer
+				g.tmpIdx++
+				dataGEP := fmt.Sprintf("%%bp.vec.gep.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+						g.indent(), dataGEP, arrRef))
+				}
+				return g.loadDataPtrField(sb, dataGEP)
+			case "%str-long":
+				return g.extractStrDataPtr(sb, arrRef)
+			}
+		}
+	}
+	// Fallback
+	return g.generateExprWithSB(sb, arg)
+}
+
 // evalI64Arg evaluates an expression to an i64 value string (for use as LLVM argument).
 func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) string {
 	if il, ok := arg.(*parser.IntegerLiteral); ok {
@@ -3172,6 +3223,146 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			return sextReg
 		}
 		return "0"
+
+	case "rotate-left", "rotate-right":
+		// rotate-left(x, n): llvm.fshl(x, x, n) → (x << n) | (x >> (bits-n))
+		// rotate-right(x, n): llvm.fshr(x, x, n) → (x >> n) | (x << (bits-n))
+		// LLVM lowers these to ARM64 ROR / x86 ROL/ROR instructions.
+		if len(args) < 2 {
+			return "0"
+		}
+		xVal := g.evalI64Arg(sb, args[0])
+		nVal := g.evalI64Arg(sb, args[1])
+		// Determine the integer width from the first argument's type
+		argType := g.intExprLLVMType(args[0])
+		if argType == "" {
+			argType = "i64"
+		}
+		intrinsic := "llvm.fshl.i64"
+		retType := "i64"
+		if argType == "i32" {
+			intrinsic = "llvm.fshl.i32"
+			retType = "i32"
+			// For i32 operands, truncate x and n to i32
+			if strings.HasPrefix(xVal, "%") {
+				g.tmpIdx++
+				truncX := fmt.Sprintf("%%rotl.truncx.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), truncX, xVal))
+				}
+				xVal = truncX
+			} else {
+				xVal = fmt.Sprintf("i32 %s", xVal)
+			}
+			if strings.HasPrefix(nVal, "%") {
+				g.tmpIdx++
+				truncN := fmt.Sprintf("%%rotl.truncn.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), truncN, nVal))
+				}
+				nVal = truncN
+			} else {
+				nVal = fmt.Sprintf("i32 %s", nVal)
+			}
+			if forwardFunc == "rotate-right" {
+				intrinsic = "llvm.fshr.i32"
+			}
+		} else {
+			// i64 path
+			if !strings.HasPrefix(xVal, "%") {
+				xVal = fmt.Sprintf("i64 %s", xVal)
+			}
+			if !strings.HasPrefix(nVal, "%") {
+				nVal = fmt.Sprintf("i64 %s", nVal)
+			}
+			if forwardFunc == "rotate-right" {
+				intrinsic = "llvm.fshr.i64"
+			}
+		}
+		g.tmpIdx++
+		rotReg := fmt.Sprintf("%%rotl.res.%d", g.tmpIdx)
+		if sb != nil {
+			// llvm.fshl(retType, retType, retType) — pass x twice (concatenated funnel)
+			xArg := xVal
+			if !strings.HasPrefix(xVal, retType+" ") && !strings.HasPrefix(xVal, "%") {
+				xArg = retType + " " + xVal
+			}
+			if strings.HasPrefix(xVal, "%") {
+				xArg = retType + " " + xVal
+			}
+			nArg := nVal
+			if !strings.HasPrefix(nVal, retType+" ") && !strings.HasPrefix(nVal, "%") {
+				nArg = retType + " " + nVal
+			}
+			if strings.HasPrefix(nVal, "%") {
+				nArg = retType + " " + nVal
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s, %s, %s)\n",
+				g.indent(), rotReg, retType, intrinsic, xArg, xArg, nArg))
+		}
+		// For i32 result, zext to i64 for Nolang's i64-based value flow
+		if retType == "i32" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%rotl.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), zextReg, rotReg))
+			}
+			return zextReg
+		}
+		return rotReg
+
+	case "load-le-u16", "load-le-u32", "load-le-u64":
+		// load-le-uXX(arr, offset): load little-endian uXX from byte array data.
+		// Replaces: buf[off] | (buf[off+1] << 8) | ... → single load instruction.
+		// Args: arr ([]byte or [N]byte), offset (i64)
+		if len(args) < 2 {
+			return "0"
+		}
+		// Get the data pointer from the array/slice argument
+		dataPtr := g.byteArrDataPtr(sb, args[0])
+		offsetVal := g.evalI64Arg(sb, args[1])
+		// Determine the load type
+		loadType := "i64"
+		switch forwardFunc {
+		case "load-le-u16":
+			loadType = "i16"
+		case "load-le-u32":
+			loadType = "i32"
+		case "load-le-u64":
+			loadType = "i64"
+		}
+		// GEP to offset: getelementptr i8, i8* dataPtr, i64 offset
+		g.tmpIdx++
+		gepReg := fmt.Sprintf("%%leload.gep.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
+				g.indent(), gepReg, dataPtr, offsetVal))
+		}
+		// Bitcast to loadType*
+		g.tmpIdx++
+		typedPtr := fmt.Sprintf("%%leload.typed.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), typedPtr, gepReg, loadType))
+		}
+		// Load the value
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%leload.val.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+				g.indent(), loadReg, loadType, loadType, typedPtr))
+		}
+		// ZExt to i64 for Nolang's value flow
+		if loadType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%leload.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
+					g.indent(), zextReg, loadType, loadReg))
+			}
+			return zextReg
+		}
+		return loadReg
 	}
 
 	return ""

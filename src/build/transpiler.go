@@ -6942,6 +6942,18 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			}
 		}
 	}
+	// []T is compatible with [N]T (slice-to-array coercion): a SliceLiteral
+	// can be assigned to a fixed-size array variable, following the left-hand
+	// side type. e.g. BLAKE2B-SIGMA [12][16]i64 = [[0,1,...,15], ...]
+	// where each inner [0,1,...,15] is a SliceLiteral inferred as []i64.
+	if strings.HasPrefix(argType, "[]") && strings.HasPrefix(expectedType, "[") && !strings.HasPrefix(expectedType, "[]") {
+		if idx := strings.Index(expectedType, "]"); idx >= 0 {
+			expectedElemType := expectedType[idx+1:]
+			if "[]"+expectedElemType == argType {
+				return true
+			}
+		}
+	}
 	// Integer/char literals (inferred as i64, byte, or char) are compatible with integer types
 	// whose range includes the literal value.
 	if val, ok := integerLiteralValue(arg); ok {

@@ -1723,6 +1723,28 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 	// Use multi-line formatting for arrays with many elements
 	if len(e.Elements) > 8 {
+		// 純量字面量（num/byte/char/bool 等）一律每行 8 個，避免過長
+		if allScalarLiterals(e.Elements) {
+			f.write("[")
+			f.indent++
+			for i, el := range e.Elements {
+				if i > 0 && i%8 != 0 {
+					f.write(", ")
+				}
+				if i%8 == 0 {
+					f.newline()
+				}
+				f.formatExpression(el)
+				if i%8 == 7 || i == len(e.Elements)-1 {
+					f.write(",")
+				}
+			}
+			f.indent--
+			f.newline()
+			f.write("]")
+			return
+		}
+
 		// 偵測源碼是否已跨多行；若是，保留原始分行結構（例如 SHAPES 每行 8 個值）
 		sourceMultiLine := false
 		if len(e.Elements) >= 2 {
@@ -1767,6 +1789,28 @@ func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 		f.formatExpression(el)
 	}
 	f.write("]")
+}
+
+// allScalarLiterals 判斷所有元素是否為純量字面量（num/byte/char/bool 等），
+// 包含整數、浮點數、字元、布林字面量，以及其前綴運算（如負號）。
+// 用於決定是否套用每行 8 個的緊湊格式。
+func allScalarLiterals(elements []parser.Expression) bool {
+	for _, el := range elements {
+		if !isScalarLiteral(el) {
+			return false
+		}
+	}
+	return true
+}
+
+func isScalarLiteral(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral, *parser.FloatLiteral, *parser.CharLiteral, *parser.BooleanLiteral:
+		return true
+	case *parser.PrefixExpression:
+		return isScalarLiteral(v.Right)
+	}
+	return false
 }
 
 func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {

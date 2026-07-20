@@ -73,9 +73,10 @@ type Generator struct {
 	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
-rangeLoopVars         map[string]bool                 // top-level vars used as range loop variables (must be locals)
-multiAssignVars       map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
-funcRefVars           map[string]bool                 // top-level vars that are function references (value is an Identifier referring to a function)
+	rangeLoopVars         map[string]bool                 // top-level vars used as range loop variables (must be locals)
+	rangeLoopBounds       map[string]int64                // range loop variable name → upper bound (for bounds check elimination)
+	multiAssignVars       map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
+	funcRefVars           map[string]bool                 // top-level vars that are function references (value is an Identifier referring to a function)
 	moduleVarTypes        map[string]string               // module-level variable types (preserved across functions)
 	moduleArrayElemTypes  map[string]string               // module-level array/slice element types (preserved across functions)
 	ssaTypes              map[string]string               // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
@@ -523,13 +524,32 @@ g.funcRefVars[ls.Name.Value] = true
 }
 }
 g.rangeLoopVars = make(map[string]bool)
+g.rangeLoopBounds = make(map[string]int64)
 var collectRangeVars func(stmts []parser.Statement)
 	collectRangeVars = func(stmts []parser.Statement) {
 		for _, s := range stmts {
 			switch st := s.(type) {
+			case *parser.FunctionDefinition:
+				// Recurse into function bodies to find range loop variables
+				if st.Body != nil {
+					collectRangeVars(st.Body.Statements)
+				}
 			case *parser.ForStatement:
 				if st.IterRange != nil && st.IterRange.Variable != "" {
 					g.rangeLoopVars[st.IterRange.Variable] = true
+					// Track the upper bound for bounds check elimination.
+					// For `for i in [0..N)` where N is a constant, record N.
+					if st.IterRange.Range != nil {
+						if endLit, ok := st.IterRange.Range.End.(*parser.IntegerLiteral); ok {
+							if st.IterRange.Range.RightInc {
+								// [0..N] (inclusive): bound = N+1
+								g.rangeLoopBounds[st.IterRange.Variable] = endLit.Value + 1
+							} else {
+								// [0..N) (exclusive): bound = N
+								g.rangeLoopBounds[st.IterRange.Variable] = endLit.Value
+							}
+						}
+					}
 				}
 				if st.Body != nil {
 					collectRangeVars(st.Body.Statements)

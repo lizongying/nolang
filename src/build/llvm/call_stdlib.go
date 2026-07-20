@@ -1186,16 +1186,49 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), cmpReg, fgetsReg))
 			// strlen of buffer
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, bufReg))
-			// Create %str-long struct
+			// Strip trailing newline: if last byte is '\n' (10), replace with '\0' and decrement len
+			nlIdx := g.tmpIdx
+			g.tmpIdx++
+			nlCheckLab := fmt.Sprintf("getline.nlcheck.%d", nlIdx)
+			nlStripLab := fmt.Sprintf("getline.nlstrip.%d", nlIdx)
+			nlEndLab := fmt.Sprintf("getline.nlend.%d", nlIdx)
+			nlCmpReg := fmt.Sprintf("%%getline.nlcmp.%d", nlIdx)
+			nlLastIdxReg := fmt.Sprintf("%%getline.nlidx.%d", nlIdx)
+			nlPtrReg := fmt.Sprintf("%%getline.nlptr.%d", nlIdx)
+			nlByteReg := fmt.Sprintf("%%getline.nlbyte.%d", nlIdx)
+			nlIsNlReg := fmt.Sprintf("%%getline.nlisnl.%d", nlIdx)
+			nlSubReg := fmt.Sprintf("%%getline.nlsub.%d", nlIdx)
+			nlLenReg := fmt.Sprintf("%%getline.nllen.%d", nlIdx)
+			// 記錄分支前的基本塊（用於 PHI predecessor）
+			prevBlock := g.currentBlock
+			// 只有當 len > 0 時才檢查
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, 0\n", g.indent(), nlCmpReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nlCmpReg, nlCheckLab, nlEndLab))
+			// nlcheck: 檢查最後一個字節是否為 '\n'
+			g.emitLabel(sb, nlCheckLab)
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), nlLastIdxReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nlPtrReg, bufReg, nlLastIdxReg))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), nlByteReg, nlPtrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8 %s, 10\n", g.indent(), nlIsNlReg, nlByteReg))
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nlIsNlReg, nlStripLab, nlEndLab))
+			// nlstrip: 替換 '\n' 為 '\0' 並 len--
+			g.emitLabel(sb, nlStripLab)
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nlPtrReg))
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), nlSubReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), nlEndLab))
+			// nlend: PHI 合併 len
+			g.emitLabel(sb, nlEndLab)
+			sb.WriteString(fmt.Sprintf("%s%s = phi i64 [ %s, %%%s ], [ %s, %%%s ], [ %s, %%%s ]\n", g.indent(), nlLenReg, lenReg, prevBlock, lenReg, nlCheckLab, nlSubReg, nlStripLab))
+			// Create %str-long struct（使用已 strip 的長度）
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%str-long.len.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), nlLenReg, lenGEP))
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%getline.cap.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), nlLenReg, capGEP))
 			g.tmpIdx++
 			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))

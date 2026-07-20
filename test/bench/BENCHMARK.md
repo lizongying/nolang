@@ -233,3 +233,4 @@ go build -ldflags="-s -w" -o test/bench/fib_go test/bench/fib.go
 # 或使用自動化腳本
 bash test/bench/run.sh
 ```
+

@@ -2491,8 +2491,38 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 		cond: fmt.Sprintf("rng.step.%d", lbl),
 		exit: fmt.Sprintf("rng.end.%d", lbl),
 	})
+	// Track the loop variable's upper bound for bounds check elimination.
+	// Save the old bound and restore it after the loop body (handles nested loops
+	// and variable name reuse across functions).
+	oldBound, hadOldBound := int64(0), false
+	if g.rangeLoopBounds != nil {
+		if old, ok := g.rangeLoopBounds[varName]; ok {
+			oldBound = old
+			hadOldBound = true
+		}
+		// Record the new bound if the end is a constant.
+		if endLit, ok := r.End.(*parser.IntegerLiteral); ok {
+			if r.RightInc {
+				g.rangeLoopBounds[varName] = endLit.Value + 1
+			} else {
+				g.rangeLoopBounds[varName] = endLit.Value
+			}
+		} else {
+			// Non-constant end: remove any stale bound so we don't make
+			// incorrect assumptions.
+			delete(g.rangeLoopBounds, varName)
+		}
+	}
 	defer func() {
 		g.loopExits = g.loopExits[:len(g.loopExits)-1]
+		// Restore the old bound
+		if g.rangeLoopBounds != nil {
+			if hadOldBound {
+				g.rangeLoopBounds[varName] = oldBound
+			} else {
+				delete(g.rangeLoopBounds, varName)
+			}
+		}
 	}()
 
 	// 計算 start 和 end 值

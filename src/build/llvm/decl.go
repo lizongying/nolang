@@ -29,6 +29,11 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare double @llvm.sinh.f64(double)\n")
 	sb.WriteString("declare double @llvm.cosh.f64(double)\n")
 	sb.WriteString("declare double @llvm.tanh.f64(double)\n")
+	// Funnel shift intrinsics for rotate_left/rotate_right.
+	// llvm.fshl rotates LEFT, llvm.fshr rotates RIGHT.
+	// On ARM64, LLVM backend lowers these to the ROR instruction.
+	sb.WriteString("declare i32 @llvm.fshl.i32(i32, i32, i32)\n")
+	sb.WriteString("declare i64 @llvm.fshl.i64(i64, i64, i64)\n")
 	// strtod/strtoll replaced by internal @nolang.strtod/@nolang.strtoll
 	// (FFI ffi-cstr-at-float/ffi-cstr-at-int use these internal implementations).
 	sb.WriteString("declare i32 @sprintf(i8*, i8*, ...)\n")

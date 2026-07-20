@@ -1,4 +1,4 @@
-; Fibonacci — Nolang 版本，純計算無 I/O
+; Fibonacci — Nolang 版本，純計算無 I/O（附編譯屏障）
 
 fib = (n i64, o i64) {
     a = 0
@@ -13,9 +13,12 @@ fib = (n i64, o i64) {
     o = b
 }
 
-dummy = 0
+sink = 0
 iter <- [0..10000000): {
     result = 0
-    fib(40, result)
-    dummy = result
+    n = iter
+    iter < 5000000 -> n = 40
+    iter >= 5000000 -> n = 41
+    fib(n, result)
+    sink = result
 }

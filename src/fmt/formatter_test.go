@@ -2519,3 +2519,58 @@ func TestFormatRegexLiteral(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatScalarSlicePerLine8 verifies that slice literals with >8 scalar
+// literal elements (num/byte/char/bool etc.) are formatted with 8 elements per
+// line, instead of 1-per-line. Compound elements (nested arrays, structs) keep
+// the existing source-preserving behavior.
+func TestFormatScalarSlicePerLine8(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "scalar slice literal 16 ints uses 8-per-line",
+			input: "v []i64 = [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9,\n    10,\n    11,\n    12,\n    13,\n    14,\n    15,\n]\n",
+			expected: "v []i64 = [\n    0, 1, 2, 3, 4, 5, 6, 7,\n    8, 9, 10, 11, 12, 13, 14, 15,\n]\n",
+		},
+		{
+			name:  "scalar slice literal 9 ints single source line becomes 8+1",
+			input: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7, 8]\n",
+			expected: "v []i64 = [\n    0, 1, 2, 3, 4, 5, 6, 7,\n    8,\n]\n",
+		},
+		{
+			name: "scalar slice literal 20 bytes uses 8-per-line",
+			input: "v []byte = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13]\n",
+			expected: "v []byte = [\n    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,\n    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,\n    0x10, 0x11, 0x12, 0x13,\n]\n",
+		},
+		{
+			name: "negative scalar literals also use 8-per-line",
+			input: "v []i64 = [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]\n",
+			expected: "v []i64 = [\n    -1, -2, -3, -4, -5, -6, -7, -8,\n    -9, -10,\n]\n",
+		},
+		{
+			name: "scalar slice with <=8 elements stays single line",
+			input: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7]\n",
+			expected: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7]\n",
+		},
+		{
+			name: "char scalar slice uses 8-per-line",
+			input: "v []char = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\"]\n",
+			expected: "v []char = [\n    \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\",\n    \"i\", \"j\",\n]\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatFile(tt.input)
+			if got != tt.expected {
+				t.Errorf("Format mismatch:\ninput:\n%s\ngot:\n%s\nwant:\n%s", tt.input, got, tt.expected)
+			}
+			// Idempotency: re-formatting must not change anything.
+			if FormatFile(got) != got {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", got, FormatFile(got))
+			}
+		})
+	}
+}
