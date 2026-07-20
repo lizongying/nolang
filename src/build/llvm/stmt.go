@@ -59,6 +59,19 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 	}
 }
 
+// shouldStackAllocArray 判定局部固定陣列是否適合用 alloca（棧分配）而非 malloc（堆分配）。
+// 條件：元素為基礎定寬型別（i1/i8/i16/i32/i64/double/float）且總尺寸 ≤ 閾值。
+// 超大陣列、vec、含動態類型元素（struct/指標）的陣列仍用堆分配。
+func shouldStackAllocArray(llvmElemType string, totalSize int64) bool {
+	const maxStackArrayBytes = int64(256) // 64 * i8 = 64B, 足夠 buf[64]byte 等常見小陣列
+	switch llvmElemType {
+	case "i1", "i8", "i16", "i32", "i64", "double", "float":
+		return totalSize > 0 && totalSize <= maxStackArrayBytes
+	default:
+		return false
+	}
+}
+
 func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 	for _, v := range g.funcVars {
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.end.p0i8(i64 %d, i8* %s)\n", g.indent(), v.Size, llvmVarRef(v.Name)))
@@ -223,6 +236,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.outputParamNames = make(map[string]bool)           // reset output param tracking
 	g.outputBindings = make(map[string]outputBinding)    // reset delayed move bindings
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
+	g.stackArrVars = make(map[string]bool)                // reset stack-allocated array tracking
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
@@ -424,8 +438,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, dataBuf, dataGEP)
 		}
-		// [N]T 局部陣列需 malloc 資料緩衝區並初始化 len/data，否則 arr[i] = val
+		// [N]T 局部陣列需分配資料緩衝區並初始化 len/data，否則 arr[i] = val
 		// 會因 data 為未初始化（stack 殘值）而寫入垃圾地址，造成堆損壞。
+		// 小尺寸/定寬元素陣列用 alloca（棧分配），避免 malloc/free 開銷與記憶體洩漏。
 		if varType == "%arr" {
 			arrSize := int64(0)
 			if g.arraySizes != nil {
@@ -434,9 +449,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				}
 			}
 			elemSize := int64(8)
+			llvmElemType := "i64"
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[varName]; ok {
 					elemSize = g.llvmTypeSize(et)
+					llvmElemType = et
 				}
 			}
 			totalSize := arrSize * elemSize
@@ -445,7 +462,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			}
 			g.tmpIdx++
 			arrDataBuf := fmt.Sprintf("%%local.arrdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+			if shouldStackAllocArray(llvmElemType, totalSize) {
+				// 棧分配：entry block 中的 alloca 不會隨迴圈增長棧，且無需 free
+				sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), arrDataBuf, totalSize))
+				g.stackArrVars[varName] = true
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+			}
 			g.tmpIdx++
 			arrLenGEP := fmt.Sprintf("%%local.arrlen.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, llvmVarRef(varName)))
@@ -887,6 +910,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if g.arrayElemTypes != nil {
 					if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
 						if strings.HasPrefix(elemType, "%") {
+							return elemType
+						}
+						// 浮點數陣列元素（如 [15]f64 → double）必須返回 double/float，
+						// 否則 generateLet 會誤判為 i64 並套用 sitofp 於已是 double 的值
+						if elemType == "double" || elemType == "float" {
 							return elemType
 						}
 						// 基本型別仍回 i64（byte 讀取在 codegen 中 zext 為 i64）
@@ -1517,25 +1545,42 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
 		if _, exists := vars[s.Name.Value]; !exists {
+			// 對模組級全域變數的重新賦值（Type==nil 表示賦值而非宣告），
+			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
+			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
+			// 否則每次呼叫都從未初始化的本地 LAST 開始，破壞 RNG 狀態。
+			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] {
+				if g.funcLocalNames != nil {
+					delete(g.funcLocalNames, s.Name.Value)
+				}
+				if s.Value != nil {
+					g.collectVarDeclsFromExpr(s.Value, vars)
+				}
+				return
+			}
 			// Slice view variables (view = arr[0..4]) don't need alloca:
 			// they are registered as aliases with adjusted data pointers.
 			// Skip collection to avoid wasting stack space + malloc.
-			if _, isSliceExpr := s.Value.(*parser.SliceExpression); isSliceExpr {
-				if ident, ok := s.Value.(*parser.SliceExpression).Left.(*parser.Identifier); ok {
-					if _, isVar := g.varTypes[ident.Value]; isVar {
-						// Register the type for method resolution, but don't alloca
-						vt := g.varLLVMType(s)
-						vars[s.Name.Value] = vt
-						if g.varTypes != nil {
-							g.varTypes[s.Name.Value] = vt
-						}
-						// Propagate element type from base variable
-						if g.arrayElemTypes != nil {
-							if et, ok := g.arrayElemTypes[ident.Value]; ok {
-								g.arrayElemTypes[s.Name.Value] = et
+			// 例外：當顯式標註為 SliceType ([]T，即 vec) 時，需要完全克隆
+			// （malloc + memcpy），變量必須有獨立的 alloca 存儲空間。
+			if _, isSliceType := s.Type.(*parser.SliceType); !isSliceType {
+				if _, isSliceExpr := s.Value.(*parser.SliceExpression); isSliceExpr {
+					if ident, ok := s.Value.(*parser.SliceExpression).Left.(*parser.Identifier); ok {
+						if _, isVar := g.varTypes[ident.Value]; isVar {
+							// Register the type for method resolution, but don't alloca
+							vt := g.varLLVMType(s)
+							vars[s.Name.Value] = vt
+							if g.varTypes != nil {
+								g.varTypes[s.Name.Value] = vt
 							}
+							// Propagate element type from base variable
+							if g.arrayElemTypes != nil {
+								if et, ok := g.arrayElemTypes[ident.Value]; ok {
+									g.arrayElemTypes[s.Name.Value] = et
+								}
+							}
+							return
 						}
-						return
 					}
 				}
 			}
@@ -3145,16 +3190,26 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 		// Allocate data buffer: arraySize * elemSize
 		totalSize := arraySize * elemSize
-		g.tmpIdx++
-		dataReg := fmt.Sprintf("%%arr.data.malloc.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataReg, totalSize))
+		var dataReg string
+		if g.stackArrVars != nil && g.stackArrVars[name] {
+			// 棧分配陣列：prologue 已用 alloca 分配並存入 data 欄位，直接載入重用
+			g.tmpIdx++
+			reuseGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+				g.indent(), reuseGEP, g.varAddr(name)))
+			dataReg = g.loadDataPtrField(sb, reuseGEP)
+		} else {
+			g.tmpIdx++
+			dataReg = fmt.Sprintf("%%arr.data.malloc.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataReg, totalSize))
 
-		// Store data pointer in struct
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
-			g.indent(), dataGEP, g.varAddr(name)))
-		g.storeDataPtrField(sb, dataReg, dataGEP)
+			// Store data pointer in struct
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%arr.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+				g.indent(), dataGEP, g.varAddr(name)))
+			g.storeDataPtrField(sb, dataReg, dataGEP)
+		}
 
 		// Store elements from array literal (if any)
 		if arrLit, ok := stmt.Value.(*parser.ArrayLiteral); ok && len(arrLit.Elements) > 0 {

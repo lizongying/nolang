@@ -818,6 +818,26 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 		return g.floatLLVMType(v.Right)
 	case *parser.GroupedExpression:
 		return g.floatLLVMType(v.Expression)
+	case *parser.IndexExpression:
+		// 陣列/切片元素：依 arrayElemTypes 推導浮點型別
+		// （如 IUBP[k] 其中 IUBP 為 [15]f64 → double）
+		if ident, ok := v.Left.(*parser.Identifier); ok {
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok {
+					if os.Getenv("NOLANG_FLOAT_DEBUG") != "" && (et == "float" || et == "double" || g.curFuncName == "max__f32") {
+						fmt.Fprintf(os.Stderr, "[float-debug] IndexExpr ident=%s elemType=%s curFunc=%s\n", ident.Value, et, g.curFuncName)
+					}
+					switch et {
+					case "float":
+						return "float"
+					case "double":
+						return "double"
+					}
+				} else if os.Getenv("NOLANG_FLOAT_DEBUG") != "" && g.curFuncName == "max__f32" {
+					fmt.Fprintf(os.Stderr, "[float-debug] IndexExpr ident=%s NOT in arrayElemTypes curFunc=%s\n", ident.Value, g.curFuncName)
+				}
+			}
+		}
 	case *parser.Identifier:
 		if g.varTypes != nil {
 			if t, ok := g.varTypes[v.Value]; ok {

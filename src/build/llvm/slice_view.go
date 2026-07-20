@@ -10,6 +10,10 @@ import (
 // generateSliceViewAssignment handles `view = base[start..end]` by registering
 // a slice view alias instead of creating an independent struct.
 // Returns true if handled, false if fallback to generateSliceExpression is needed.
+//
+// 當目標是輸出參數（會逃逸函數作用域）或顯式標註為 SliceType（[]T，即 vec 類型）時，
+// 執行完全克隆（malloc + memcpy），因為切片是視圖，不能脫離函數作用域；
+// vec 需要獨立擁有數據。
 func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parser.LetStatement, name string) bool {
 	sliceExpr, ok := stmt.Value.(*parser.SliceExpression)
 	if !ok {
@@ -32,8 +36,22 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 		return false
 	}
 
+	// 判斷是否需要完全克隆：
+	// - 目標是輸出參數（會逃逸出函數作用域）
+	// - 目標顯式標註為 SliceType（[]T，即 vec 類型）
+	needClone := false
+	if g.outputParamNames != nil && g.outputParamNames[name] {
+		needClone = true
+	}
+	if _, isSliceType := stmt.Type.(*parser.SliceType); isSliceType {
+		needClone = true
+	}
+
 	// Check if base is itself a slice view (chained slicing)
 	if baseView, isView := g.sliceViews[baseVar]; isView {
+		if needClone {
+			return g.generateChainedSliceViewClone(sb, name, baseView, sliceExpr)
+		}
 		return g.generateChainedSliceView(sb, name, baseView, sliceExpr)
 	}
 
@@ -100,6 +118,12 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 
 	// Compute adjusted data pointer: srcData + start * elemSize
 	dataPtrReg := g.computeAdjustedDataPtr(sb, srcData, startReg, elemSize)
+
+	// 需要完全克隆：malloc 新緩衝區 + memcpy，寫入目標變量地址
+	if needClone {
+		g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, elemType, elemSize, isStr)
+		return true
+	}
 
 	// Register the slice view
 	resultType := baseType
@@ -172,6 +196,97 @@ func (g *Generator) generateChainedSliceView(sb *strings.Builder, name string, b
 	g.funcLocalNames[name] = true
 
 	return true
+}
+
+// generateChainedSliceViewClone 處理 `out = view[2..5]`，其中 view 已是切片視圖，
+// 且目標需要完全克隆（輸出參數或顯式 vec 類型）。
+// 計算相對偏移後，從原始 base 的數據指針執行 malloc + memcpy 克隆到目標變量。
+func (g *Generator) generateChainedSliceViewClone(sb *strings.Builder, name string, baseView *sliceViewInfo, sliceExpr *parser.SliceExpression) bool {
+	// 計算相對於 base view 的起始偏移和視圖長度
+	startReg, viewLenReg := g.computeSliceBounds(sb, sliceExpr.Range, baseView.viewLen)
+
+	// 計算從 base view 數據指針出發的調整後指針
+	elemSize := int64(8)
+	if baseView.isStr {
+		elemSize = 1
+	} else {
+		if s := g.llvmTypeSize(baseView.elemType); s > 0 {
+			elemSize = s
+		}
+	}
+	dataPtrReg := g.computeAdjustedDataPtr(sb, baseView.dataPtrReg, startReg, elemSize)
+
+	// 執行完全克隆到目標變量
+	g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, baseView.elemType, elemSize, baseView.isStr)
+	return true
+}
+
+// emitSliceClone 將切片數據完全克隆到目標變量：malloc 新緩衝區 + memcpy。
+// 用於切片視圖逃逸函數作用域（輸出參數）或顯式 vec 類型賦值。
+// 切片是視圖，不能脫離函數作用域；vec 需要獨立擁有數據。
+func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, viewLenReg, elemType string, elemSize int64, isStr bool) {
+	if sb == nil {
+		// 類型註冊仍需執行（即使 sb 為 nil，例如類型推導階段）
+		resultType := "%vec"
+		if isStr {
+			resultType = "%str-long"
+		}
+		g.varTypes[destVar] = resultType
+		g.arrayElemTypes[destVar] = elemType
+		g.funcLocalNames[destVar] = true
+		return
+	}
+
+	// 計算字節長度：byteLen = viewLen * elemSize
+	g.tmpIdx++
+	byteLenReg := fmt.Sprintf("%%svclone.bytelen.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n",
+		g.indent(), byteLenReg, viewLenReg, elemSize))
+
+	// malloc 新緩衝區
+	g.tmpIdx++
+	bufReg := fmt.Sprintf("%%svclone.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n",
+		g.indent(), bufReg, byteLenReg))
+
+	// memcpy 從源數據指針到新緩衝區
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), bufReg, srcDataPtr, byteLenReg))
+
+	// 將 len/cap/data 寫入目標變量地址
+	destPtr := g.varAddr(destVar)
+	resultType := "%vec"
+	dataFieldIdx := uint32(2)
+	if isStr {
+		resultType = "%str-long"
+		dataFieldIdx = 2 // %str-long 也是 field 2 存 data
+	}
+
+	// store len (field 0)
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%svclone.len.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), lenGEP, resultType, resultType, destPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), viewLenReg, lenGEP))
+
+	// store cap (field 1) = viewLen
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%svclone.cap.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+		g.indent(), capGEP, resultType, resultType, destPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), viewLenReg, capGEP))
+
+	// store data (field 2)
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%svclone.data.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, resultType, resultType, destPtr, dataFieldIdx))
+	g.storeDataPtrField(sb, bufReg, dataGEP)
+
+	// 註冊變量類型
+	g.varTypes[destVar] = resultType
+	g.arrayElemTypes[destVar] = elemType
+	g.funcLocalNames[destVar] = true
 }
 
 // computeSliceBounds computes the start offset and view length from a RangeExpression.

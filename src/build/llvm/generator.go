@@ -70,6 +70,7 @@ type Generator struct {
 	outputParamNames      map[string]bool                 // 當前函數的輸出參數名稱集合（用於延遲 move）
 	outputBindings        map[string]outputBinding        // 輸出參數名 → 延遲綁定（源指標 + 型別）
 	heapVars              map[string]string               // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
+	stackArrVars          map[string]bool                 // 棧分配的局部固定陣列名（小尺寸/定寬元素），用於 generateLet 跳過 malloc
 	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
@@ -513,19 +514,19 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	// 掃描所有 ForStatement (含巢狀)，標記 range loop 變數
 	// 這些變數不應被視為常量全局變數，必須是局部變數以便 range loop 寫入
-g.funcRefVars = make(map[string]bool)
-for _, stmt := range program.Statements {
-if ls, ok := stmt.(*parser.LetStatement); ok {
-if ident, ok := ls.Value.(*parser.Identifier); ok {
-if _, isFn := g.funcRetTypes[ident.Value]; isFn {
-g.funcRefVars[ls.Name.Value] = true
-}
-}
-}
-}
-g.rangeLoopVars = make(map[string]bool)
-g.rangeLoopBounds = make(map[string]int64)
-var collectRangeVars func(stmts []parser.Statement)
+	g.funcRefVars = make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ident, ok := ls.Value.(*parser.Identifier); ok {
+				if _, isFn := g.funcRetTypes[ident.Value]; isFn {
+					g.funcRefVars[ls.Name.Value] = true
+				}
+			}
+		}
+	}
+	g.rangeLoopVars = make(map[string]bool)
+	g.rangeLoopBounds = make(map[string]int64)
+	var collectRangeVars func(stmts []parser.Statement)
 	collectRangeVars = func(stmts []parser.Statement) {
 		for _, s := range stmts {
 			switch st := s.(type) {
@@ -1046,6 +1047,47 @@ var collectRangeVars func(stmts []parser.Statement)
 		g.moduleVarTypes[name] = "%" + name
 	}
 
+	// 掃描所有函數體，找出對模組級全域變數的重新賦值（Type==nil 的 LetStatement），
+	// 將這些變數加入 reassignedVars 以避免被常量摺疊。
+	// 例：fasta 的 `LAST i64 = 42` 在 gen-random 中被 `LAST = (LAST * IA + IC) % IM`
+	// 重新賦值；若不標記為 reassigned，generateExprWithSB 會從 enumVariantIndex
+	// 摺疊為常量 42，破壞 RNG 狀態。
+	var scanGlobalReassigns func(stmts []parser.Statement)
+	scanGlobalReassigns = func(stmts []parser.Statement) {
+		for _, st := range stmts {
+			switch s := st.(type) {
+			case *parser.LetStatement:
+				// Type==nil 表示賦值（非宣告），若目標是全域變數則標記為 reassigned
+				if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] {
+					g.reassignedVars[s.Name.Value] = true
+				}
+				// 遞迴走訪 RHS 表達式中的內嵌語句（如 IfExpression、區塊表達式）
+				if s.Value != nil {
+					scanGlobalReassignsExpr(s.Value, scanGlobalReassigns)
+				}
+			case *parser.FunctionDefinition:
+				if s.Body != nil {
+					scanGlobalReassigns(s.Body.Statements)
+				}
+			case *parser.ForStatement:
+				if s.Body != nil {
+					scanGlobalReassigns(s.Body.Statements)
+				}
+			case *parser.ExpressionStatement:
+				scanGlobalReassignsExpr(s.Expression, scanGlobalReassigns)
+			case *parser.MultiAssignStatement:
+				for _, t := range s.Targets {
+					if ident, ok := t.(*parser.Identifier); ok {
+						if g.globalVars != nil && g.globalVars[ident.Value] {
+							g.reassignedVars[ident.Value] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	scanGlobalReassigns(program.Statements)
+
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *parser.EnumDefinition:
@@ -1095,6 +1137,36 @@ var collectRangeVars func(stmts []parser.Statement)
 	sb.WriteString(g.asyncWrappers.String())
 
 	return sb.String()
+}
+
+// scanGlobalReassignsExpr 遞迴走訪表達式中內嵌的語句區塊（如 IfExpression 的
+// Consequence/Alternative），用於偵測函數體內對模組級全域變數的重新賦值。
+func scanGlobalReassignsExpr(expr parser.Expression, scan func([]parser.Statement)) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			scan(e.Consequence.Statements)
+		}
+		if e.Alternative != nil {
+			scan(e.Alternative.Statements)
+		}
+		if e.DotValBody != nil {
+			scan(e.DotValBody.Statements)
+		}
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			scanGlobalReassignsExpr(arg, scan)
+		}
+		scanGlobalReassignsExpr(e.Function, scan)
+	case *parser.InfixExpression:
+		scanGlobalReassignsExpr(e.Left, scan)
+		scanGlobalReassignsExpr(e.Right, scan)
+	case *parser.PrefixExpression:
+		scanGlobalReassignsExpr(e.Right, scan)
+	}
 }
 
 func llvmLLVMType(t builtin.LLVMArgType) string {
