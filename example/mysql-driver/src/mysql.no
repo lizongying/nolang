@@ -9,9 +9,9 @@
 ; host 可以是 IP 地址或 'localhost'（自動轉為 127.0.0.1）
 ;
 ; 用法：
-;   d db-mysql = open('root:secret@127.0.0.1:3306/testdb')
-;   r result = d.exec('CREATE TABLE ...')
-;   rs rows-mysql = d.query('SELECT ...')
+;   d = open('root:secret@127.0.0.1:3306/testdb')
+;   r = d.exec('CREATE TABLE ...')
+;   rs = d.query('SELECT ...')
 ;   rs.next()
 ;   v = rs.scan-int(0)
 ;   // rs、d 離開作用域時自動關閉，無需手動呼叫 close()
@@ -54,25 +54,27 @@ MYSQL-RECV-BUF = 65536
 ; 返回 data=讀取的資料, ok=true=成功
 mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
     ok = false
-    if n <= 0 {
-        ok = true
-        return
+    {
+        n <= 0 -> {
+            ok = true
+            return
+        }
     }
 
     ; 預分配緩衝區
-    space str = ' '
+    space = ' '
     data = space.repeat(n)
-    tmp str = space.repeat(MYSQL-RECV-BUF)
+    tmp = space.repeat(MYSQL-RECV-BUF)
 
     total = 0
     {
         remaining = n - total
-        if remaining > MYSQL-RECV-BUF {
-            remaining = MYSQL-RECV-BUF
+        {
+            remaining > MYSQL-RECV-BUF -> remaining = MYSQL-RECV-BUF
         }
         read-n = net-recv(fd, tmp, remaining)
-        if read-n <= 0 {
-            return
+        {
+            read-n <= 0 -> return
         }
 
         ; 複製到位據
@@ -93,17 +95,19 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
 mysql-pkt-recv = (fd i64) (payload str, payload-len i64, seq i64, ok bool) {
     ok = false
     hdr, hdr-ok = mysql-read-exact(fd, 4)
-    if hdr-ok == false {
-        return
+    {
+        hdr-ok == false -> return
     }
 
     ; 解析標頭：3 位元組 LE 長度 + 1 位元組序號
     payload-len = hdr[0] | (hdr[1] << 8) | (hdr[2] << 16)
     seq = hdr[3]
 
-    if payload-len == 0 {
-        ok = true
-        return
+    {
+        payload-len == 0 -> {
+            ok = true
+            return
+        }
     }
     payload, ok = mysql-read-exact(fd, payload-len)
 }
@@ -118,7 +122,7 @@ mysql-pkt-send = (fd i64, seq i64, payload str, payload-len i64) (ok bool) {
     ok = false
 
     ; 建構標頭：3 位元組 LE 長度 + 1 位元組序號
-    hdr str = '    '
+    hdr = '    '
     hdr[0] = payload-len & 255
     hdr[1] = (payload-len >> 8) & 255
     hdr[2] = (payload-len >> 16) & 255
@@ -126,15 +130,17 @@ mysql-pkt-send = (fd i64, seq i64, payload str, payload-len i64) (ok bool) {
 
     ; 發送標頭
     written = net-send(fd, hdr, 4)
-    if written != 4 {
-        return
+    {
+        written != 4 -> return
     }
 
     ; 發送載荷
-    if payload-len > 0 {
-        written = net-send(fd, payload, payload-len)
-        if written != payload-len {
-            return
+    {
+        payload-len > 0 -> {
+            written = net-send(fd, payload, payload-len)
+            {
+                written != payload-len -> return
+            }
         }
     }
 
@@ -212,7 +218,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 ; 結構體定義 — 實作 std/database/sql 介面
 ; ============================================================================
 
-; db-mysql: 資料庫連線，實作 db 介面
+; db-mysql: 資料庫連線，實作 sql.db 介面
 ; fd: TCP socket 檔案描述符
 ; seq: MySQL 封包序號
 ; connected: 連接狀態
@@ -222,7 +228,7 @@ db-mysql sql.db {
     connected bool
 }
 
-; rows-mysql: 查詢結果集，實作 rows 介面
+; rows-mysql: 查詢結果集，實作 sql.rows 介面
 ; fd: TCP socket fd（與 db-mysql 共享同一連接）
 ; seq: MySQL 封包序號
 ; n-cols: 欄位數
@@ -240,7 +246,7 @@ rows-mysql sql.rows {
     eof bool
 }
 
-; stmt-mysql: 預編譯陳述式（字串替換模式），實作 stmt 介面
+; stmt-mysql: 預編譯陳述式（字串替換模式），實作 sql.stmt 介面
 ; fd: TCP socket fd
 ; seq: MySQL 封包序號
 ; sql: SQL 模板
@@ -265,95 +271,101 @@ open = (dsn str) (d db-mysql) {
     d.connected = false
 
     ; ── 解析 DSN ──
-    at-pos i64 = dsn.index('@')
-    if at-pos < 0 {
-        return
+    at-pos = dsn.index('@')
+    {
+        at-pos < 0 -> return
     }
-    colon-pos i64 = dsn.index(':')
-    if colon-pos < 0 {
-        return
+    colon-pos = dsn.index(':')
+    {
+        colon-pos < 0 -> return
     }
-    if colon-pos > at-pos {
-        return
+    {
+        colon-pos > at-pos -> return
     }
 
-    user str = dsn.slice(0, colon-pos)
-    password str = dsn.slice(colon-pos + 1, at-pos)
+    user = dsn.slice(0, colon-pos)
+    password = dsn.slice(colon-pos + 1, at-pos)
 
     ; 解析 host:port/dbname
-    rest str = dsn.slice(at-pos + 1, dsn.len)
-    slash-pos i64 = rest.index('/')
-    if slash-pos < 0 {
-        return
+    rest = dsn.slice(at-pos + 1, dsn.len)
+    slash-pos = rest.index('/')
+    {
+        slash-pos < 0 -> return
     }
 
-    host-port str = rest.slice(0, slash-pos)
-    dbname str = rest.slice(slash-pos + 1, rest.len)
+    host-port = rest.slice(0, slash-pos)
+    dbname = rest.slice(slash-pos + 1, rest.len)
 
     ; 解析 host:port
-    port i64 = MYSQL-DEFAULT-PORT
-    host str = host-port
-    hp-colon i64 = host-port.index(':')
-    if hp-colon >= 0 {
-        host = host-port.slice(0, hp-colon)
-        port-str str = host-port.slice(hp-colon + 1, host-port.len)
-        p i64 = 0
-        i = 0
-        {
-            c = port-str[i]
-            if c < 48 || c > 57 {
-                return
-            }
-            p = p * 10 + c - 48
-            i = i + 1
-        } (i < port-str.len)
-        port = p
+    port = MYSQL-DEFAULT-PORT
+    host = host-port
+    hp-colon = host-port.index(':')
+    {
+        hp-colon >= 0 -> {
+            host = host-port.slice(0, hp-colon)
+            port-str = host-port.slice(hp-colon + 1, host-port.len)
+            p = 0
+            i = 0
+            {
+                c = port-str[i]
+                {
+                    c < 48 || c > 57 -> return
+                }
+                p = p * 10 + c - 48
+                i = i + 1
+            } (i < port-str.len)
+            port = p
+        }
     }
 
     ; localhost → 127.0.0.1
-    if host.len == 9 {
-        is-localhost = true
-        if host[0] != 108 {
-            is-localhost = false
-        }
-        if host[1] != 111 {
-            is-localhost = false
-        }
-        if host[2] != 99 {
-            is-localhost = false
-        }
-        if host[3] != 97 {
-            is-localhost = false
-        }
-        if host[4] != 108 {
-            is-localhost = false
-        }
-        if host[5] != 104 {
-            is-localhost = false
-        }
-        if host[6] != 111 {
-            is-localhost = false
-        }
-        if host[7] != 115 {
-            is-localhost = false
-        }
-        if host[8] != 116 {
-            is-localhost = false
-        }
-        if is-localhost {
-            host = '127.0.0.1'
+    {
+        host.len == 9 -> {
+            is-localhost = true
+            {
+                host[0] != 108 -> is-localhost = false
+            }
+            {
+                host[1] != 111 -> is-localhost = false
+            }
+            {
+                host[2] != 99 -> is-localhost = false
+            }
+            {
+                host[3] != 97 -> is-localhost = false
+            }
+            {
+                host[4] != 108 -> is-localhost = false
+            }
+            {
+                host[5] != 104 -> is-localhost = false
+            }
+            {
+                host[6] != 111 -> is-localhost = false
+            }
+            {
+                host[7] != 115 -> is-localhost = false
+            }
+            {
+                host[8] != 116 -> is-localhost = false
+            }
+            {
+                is-localhost -> host = '127.0.0.1'
+            }
         }
     }
 
     ; ── TCP 連接 ──
     fd = net-dial(host, port)
-    if fd < 0 {
-        return
+    {
+        fd < 0 -> return
     }
     handshake, hs-len, hs-seq, hs-ok = mysql-pkt-recv(fd)
-    if hs-ok == false {
-        close(fd)
-        return
+    {
+        hs-ok == false -> {
+            close(fd)
+            return
+        }
     }
 
     ; 解析握手封包
@@ -364,12 +376,12 @@ open = (dsn str) (d db-mysql) {
     ;   auth_plugin_data_len(1) + reserved(10) + auth_seed_part2(12+null) +
     ;   auth_plugin_name(null-terminated)
 
-    pos i64 = 1
+    pos = 1
 
     ; 跳過 server version（null-terminated）
     {
-        if handshake[pos] == 0 {
-            break
+        {
+            handshake[pos] == 0 -> break
         }
         pos = pos + 1
     } (pos < hs-len)
@@ -411,8 +423,8 @@ open = (dsn str) (d db-mysql) {
 
     ; auth_seed_part2（max(13, auth_plugin_data_len - 8) bytes + null）
     seed2-len = 12
-    if auth-plugin-data-len > 8 {
-        seed2-len = auth-plugin-data-len - 8
+    {
+        auth-plugin-data-len > 8 -> seed2-len = auth-plugin-data-len - 8
     }
     i = 0
     {
@@ -422,9 +434,9 @@ open = (dsn str) (d db-mysql) {
     pos = pos + seed2-len
 
     ; 跳過 seed2 後的 null
-    if pos < hs-len {
-        if handshake[pos] == 0 {
-            pos = pos + 1
+    {
+        pos < hs-len -> {
+            handshake[pos] == 0 -> pos = pos + 1
         }
     }
 
@@ -439,9 +451,9 @@ open = (dsn str) (d db-mysql) {
     max-packet = MYSQL-RECV-BUF
     charset = 255; utf8mb4
 
-    space str = ' '
-    resp str = space.repeat(512)
-    wpos i64 = 0
+    space = ' '
+    resp = space.repeat(512)
+    wpos = 0
 
     ; Capabilities (4 bytes LE)
     resp[0] = client-caps & 255
@@ -500,7 +512,7 @@ open = (dsn str) (d db-mysql) {
     wpos = wpos + 1
 
     ; Auth plugin name (null-terminated)
-    plugin-name str = 'mysql_native_password'
+    plugin-name = 'mysql_native_password'
     i = 0
     {
         resp[wpos] = plugin-name[i]
@@ -512,21 +524,27 @@ open = (dsn str) (d db-mysql) {
 
     ; 發送握手回應
     send-ok = mysql-pkt-send(fd, hs-seq + 1, resp, wpos)
-    if send-ok == false {
-        close(fd)
-        return
+    {
+        send-ok == false -> {
+            close(fd)
+            return
+        }
     }
     auth-resp, ar-len, ar-seq, ar-ok = mysql-pkt-recv(fd)
-    if ar-ok == false {
-        close(fd)
-        return
+    {
+        ar-ok == false -> {
+            close(fd)
+            return
+        }
     }
 
     ; 檢查認證結果（OK=0x00, ERR=0xFF）
-    if ar-len > 0 {
-        if auth-resp[0] == PKT-ERR {
-            close(fd)
-            return
+    {
+        ar-len > 0 -> {
+            auth-resp[0] == PKT-ERR -> {
+                close(fd)
+                return
+            }
         }
     }
 
@@ -536,7 +554,7 @@ open = (dsn str) (d db-mysql) {
 }
 
 ; ============================================================================
-; 方法：db-mysql — 實作 db 介面
+; 方法：db-mysql — 實作 sql.db 介面
 ; ============================================================================
 
 db-mysql.enter = () {
@@ -548,25 +566,27 @@ db-mysql.leave = () {
 
 db-mysql.close = () (ok bool) {
     ok = true
-    if .connected {
-        ; 發送 COM_QUIT 封包
-        quit-payload str = ' '
-        quit-payload[0] = COM-QUIT
-        send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
-        close(.fd)
-        .fd = -1
-        .connected = false
+    {
+        .connected -> {
+            ; 發送 COM_QUIT 封包
+            quit-payload = ' '
+            quit-payload[0] = COM-QUIT
+            send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
+            close(.fd)
+            .fd = -1
+            .connected = false
+        }
     }
 }
 
 db-mysql.exec = (sql str) (r sql.result) {
-    if .connected == false {
-        return
+    {
+        .connected == false -> return
     }
 
     ; 建構 COM_QUERY 封包：0x03 + SQL
-    space str = ' '
-    payload str = space.repeat(sql.len + 1)
+    space = ' '
+    payload = space.repeat(sql.len + 1)
     payload[0] = COM-QUERY
     i = 0
     {
@@ -577,37 +597,45 @@ db-mysql.exec = (sql str) (r sql.result) {
 
     ; 發送（每個新命令 seq 從 0 開始）
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
-    if send-ok == false {
-        .connected = false
-        return
+    {
+        send-ok == false -> {
+            .connected = false
+            return
+        }
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
-    if recv-ok == false {
-        .connected = false
-        return
+    {
+        recv-ok == false -> {
+            .connected = false
+            return
+        }
     }
 
     ; 解析回應
-    if resp-len > 0 {
-        first = resp[0]
-        if first == PKT-OK {
-            affected, aff-null, p2 = mysql-read-lenenc(resp, 1)
-            last-id, lid-null, p3 = mysql-read-lenenc(resp, p2)
-            r.affected = affected
-            r.last-id = last-id
+    {
+        resp-len > 0 -> {
+            first = resp[0]
+            {
+                first == PKT-OK -> {
+                    affected, aff-null, p2 = mysql-read-lenenc(resp, 1)
+                    last-id, lid-null, p3 = mysql-read-lenenc(resp, p2)
+                    r.affected = affected
+                    r.last-id = last-id
+                }
+            }
+            ; ERR 封包：忽略，返回預設值（0）
         }
-        ; ERR 封包：忽略，返回預設值（0）
     }
 }
 
 db-mysql.query = (sql str) (rs rows-mysql) {
-    if .connected == false {
-        return
+    {
+        .connected == false -> return
     }
 
     ; 建構 COM_QUERY 封包
-    space str = ' '
-    payload str = space.repeat(sql.len + 1)
+    space = ' '
+    payload = space.repeat(sql.len + 1)
     payload[0] = COM-QUERY
     i = 0
     {
@@ -618,30 +646,34 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
-    if send-ok == false {
-        .connected = false
-        return
+    {
+        send-ok == false -> {
+            .connected = false
+            return
+        }
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
-    if recv-ok == false {
-        .connected = false
-        return
+    {
+        recv-ok == false -> {
+            .connected = false
+            return
+        }
     }
 
     ; 檢查回應類型
-    if resp-len == 0 {
-        return
+    {
+        resp-len == 0 -> return
     }
     first = resp[0]
 
     ; OK 或 ERR → 不是結果集
-    if first == PKT-OK || first == PKT-ERR {
-        return
+    {
+        first == PKT-OK || first == PKT-ERR -> return
     }
 
     ; EOF 封包（payload < 9 且首位元組 0xFE）
-    if first == PKT-EOF && resp-len < 9 {
-        return
+    {
+        first == PKT-EOF && resp-len < 9 -> return
     }
     n-cols, cols-null, p2 = mysql-read-lenenc(resp, 0)
     rs.n-cols = n-cols
@@ -652,16 +684,20 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     i = 0
     {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
-        if cd-ok == false {
-            rs.eof = true
-            return
+        {
+            cd-ok == false -> {
+                rs.eof = true
+                return
+            }
         }
         i = i + 1
     } (i < n-cols)
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
-    if eof-ok == false {
-        rs.eof = true
-        return
+    {
+        eof-ok == false -> {
+            rs.eof = true
+            return
+        }
     }
 }
 
@@ -673,7 +709,7 @@ db-mysql.prepare = (sql str) (s stmt-mysql) {
 }
 
 ; ============================================================================
-; 方法：rows-mysql — 實作 rows 介面
+; 方法：rows-mysql — 實作 sql.rows 介面
 ; ============================================================================
 
 rows-mysql.enter = () {
@@ -685,33 +721,39 @@ rows-mysql.leave = () {
 
 rows-mysql.next = () (ok bool) {
     ok = false
-    if .eof {
-        return
+    {
+        .eof -> return
     }
-    if .fd < 0 {
-        return
+    {
+        .fd < 0 -> return
     }
     pkt, pkt-len, pkt-seq, recv-ok = mysql-pkt-recv(.fd)
-    if recv-ok == false {
-        .eof = true
-        return
+    {
+        recv-ok == false -> {
+            .eof = true
+            return
+        }
     }
 
     ; 檢查是否為 EOF 封包（首位元組 0xFE 且載荷長度 < 9）
-    if pkt-len < 9 {
-        if pkt-len > 0 {
-            if pkt[0] == PKT-EOF {
-                .eof = true
-                return
+    {
+        pkt-len < 9 -> {
+            pkt-len > 0 -> {
+                pkt[0] == PKT-EOF -> {
+                    .eof = true
+                    return
+                }
             }
         }
     }
 
     ; 檢查是否為 ERR 封包
-    if pkt-len > 0 {
-        if pkt[0] == PKT-ERR {
-            .eof = true
-            return
+    {
+        pkt-len > 0 -> {
+            pkt[0] == PKT-ERR -> {
+                .eof = true
+                return
+            }
         }
     }
 
@@ -730,36 +772,38 @@ rows-mysql.scan-int = (col i64) (v i64) {
     {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
-        if fn == false {
-            .row-pos = .row-pos + fl
+        {
+            fn == false -> .row-pos = .row-pos + fl
         }
         c = c + 1
     } (c < col)
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
-    if is-null {
-        return
+    {
+        is-null -> return
     }
 
     ; 將欄位資料解析為 i64
     neg = 0
     end = .row-pos + field-len
     i = .row-pos
-    if i < end {
-        if .row-data[i] == 45 {
-            neg = 1
-            i = i + 1
+    {
+        i < end -> {
+            .row-data[i] == 45 -> {
+                neg = 1
+                i = i + 1
+            }
         }
     }
     {
         ch = .row-data[i]
-        if ch >= 48 && ch <= 57 {
-            v = v * 10 + ch - 48
+        {
+            ch >= 48 && ch <= 57 -> v = v * 10 + ch - 48
         }
         i = i + 1
     } (i < end)
-    if neg == 1 {
-        v = 0 - v
+    {
+        neg == 1 -> v = 0 - v
     }
     .row-pos = .row-pos + field-len
 }
@@ -770,19 +814,19 @@ rows-mysql.scan-str = (col i64) (v str) {
     {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
-        if fn == false {
-            .row-pos = .row-pos + fl
+        {
+            fn == false -> .row-pos = .row-pos + fl
         }
         c = c + 1
     } (c < col)
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
-    if is-null {
-        return
+    {
+        is-null -> return
     }
 
     ; 複製欄位資料到 v（使用 slice 一次截取）
-    row-str str = .row-data
+    row-str = .row-data
     v = row-str.slice(.row-pos, .row-pos + field-len)
     .row-pos = .row-pos + field-len
 }
@@ -795,15 +839,15 @@ rows-mysql.scan-float = (col i64) (v f64) {
     {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
-        if fn == false {
-            .row-pos = .row-pos + fl
+        {
+            fn == false -> .row-pos = .row-pos + fl
         }
         c = c + 1
     } (c < col)
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
-    if is-null {
-        return
+    {
+        is-null -> return
     }
 
     ; 解析浮點數：[-]digits[.digits]
@@ -814,30 +858,32 @@ rows-mysql.scan-float = (col i64) (v f64) {
     has-dot = 0
     i = 0
     base = .row-pos
-    if i < field-len {
-        if .row-data[base] == 45 {
-            neg = 1
-            i = 1
+    {
+        i < field-len -> {
+            .row-data[base] == 45 -> {
+                neg = 1
+                i = 1
+            }
         }
     }
     {
         ch = .row-data[base + i]
-        if ch >= 48 && ch <= 57 {
-            if has-dot == 0 {
-                int-part = int-part * 10.0 + (ch - 48)
-            } else {
-                frac-part = frac-part * 10.0 + (ch - 48)
-                frac-div = frac-div * 10.0
+        {
+            ch >= 48 && ch <= 57 -> {
+                has-dot == 0 -> int-part = int-part * 10.0 + (ch - 48)
+                -> {
+                    frac-part = frac-part * 10.0 + (ch - 48)
+                    frac-div = frac-div * 10.0
+                }
             }
-        } elif ch == 46 {
-            has-dot = 1
+            ch == 46 -> has-dot = 1
         }
         i = i + 1
     } (i < field-len)
 
     v = int-part + frac-part / frac-div
-    if neg == 1 {
-        v = 0.0 - v
+    {
+        neg == 1 -> v = 0.0 - v
     }
     .row-pos = .row-pos + field-len
 }
@@ -846,14 +892,14 @@ rows-mysql.close = () (ok bool) {
     ok = true
 
     ; 讀取並丟棄剩餘的行直到 EOF（如果還沒到 EOF）
-    if .eof == false {
-        .eof = true
+    {
+        .eof == false -> .eof = true
     }
     ; rows 不關閉 fd，fd 由 db-mysql 擁有
 }
 
 ; ============================================================================
-; 方法：stmt-mysql — 實作 stmt 介面（字串替換模式）
+; 方法：stmt-mysql — 實作 sql.stmt 介面（字串替換模式）
 ; bind-* 按順序替換第一個 ? 佔位符
 ; ============================================================================
 
@@ -865,15 +911,17 @@ stmt-mysql.leave = () {
 }
 
 stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
-    cur str = .bound
-    pos i64 = cur.index('?')
-    if pos < 0 {
-        ok = false
-        return
+    cur = .bound
+    pos = cur.index('?')
+    {
+        pos < 0 -> {
+            ok = false
+            return
+        }
     }
-    vstr str = v.to-str()
-    before str = cur.slice(0, pos)
-    after str = cur.slice(pos + 1, cur.len)
+    vstr = v.to-str()
+    before = cur.slice(0, pos)
+    after = cur.slice(pos + 1, cur.len)
     .bound = before - vstr - after
     ok = true
 }
@@ -881,47 +929,51 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
 ; stmt-mysql.bind-str: 綁定字串參數（替換第一個 ?，以單引號包圍）
 ; 注意：不做 SQL 跳脫，MVP 限制
 stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
-    cur str = .bound
-    pos i64 = cur.index('?')
-    if pos < 0 {
-        ok = false
-        return
+    cur = .bound
+    pos = cur.index('?')
+    {
+        pos < 0 -> {
+            ok = false
+            return
+        }
     }
 
     ; char-to-str(39) = 單引號 '（ASCII 39）
-    q str = char-to-str(39)
-    before str = cur.slice(0, pos)
-    after str = cur.slice(pos + 1, cur.len)
+    q = char-to-str(39)
+    before = cur.slice(0, pos)
+    after = cur.slice(pos + 1, cur.len)
     .bound = before - q - sval - q - after
     ok = true
 }
 
 ; stmt-mysql.bind-bool: 綁定布林參數（替換第一個 ?，true=1, false=0）
 stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
-    cur str = .bound
-    pos i64 = cur.index('?')
-    if pos < 0 {
-        ok = false
-        return
+    cur = .bound
+    pos = cur.index('?')
+    {
+        pos < 0 -> {
+            ok = false
+            return
+        }
     }
-    bstr str = '0'
-    if v {
-        bstr = '1'
+    bstr = '0'
+    {
+        v -> bstr = '1'
     }
-    before str = cur.slice(0, pos)
-    after str = cur.slice(pos + 1, cur.len)
+    before = cur.slice(0, pos)
+    after = cur.slice(pos + 1, cur.len)
     .bound = before - bstr - after
     ok = true
 }
 
 stmt-mysql.exec = () (r sql.result) {
-    if .fd < 0 {
-        return
+    {
+        .fd < 0 -> return
     }
 
     ; 建構 COM_QUERY 封包
-    space str = ' '
-    payload str = space.repeat(.bound.len + 1)
+    space = ' '
+    payload = space.repeat(.bound.len + 1)
     payload[0] = COM-QUERY
     i = 0
     {
@@ -932,34 +984,38 @@ stmt-mysql.exec = () (r sql.result) {
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
-    if send-ok == false {
-        return
+    {
+        send-ok == false -> return
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
-    if recv-ok == false {
-        return
+    {
+        recv-ok == false -> return
     }
 
     ; 解析回應
-    if resp-len > 0 {
-        first = resp[0]
-        if first == PKT-OK {
-            affected, aff-null, p2 = mysql-read-lenenc(resp, 1)
-            last-id, lid-null, p3 = mysql-read-lenenc(resp, p2)
-            r.affected = affected
-            r.last-id = last-id
+    {
+        resp-len > 0 -> {
+            first = resp[0]
+            {
+                first == PKT-OK -> {
+                    affected, aff-null, p2 = mysql-read-lenenc(resp, 1)
+                    last-id, lid-null, p3 = mysql-read-lenenc(resp, p2)
+                    r.affected = affected
+                    r.last-id = last-id
+                }
+            }
         }
     }
 }
 
 stmt-mysql.query = () (rs rows-mysql) {
-    if .fd < 0 {
-        return
+    {
+        .fd < 0 -> return
     }
 
     ; 建構 COM_QUERY 封包
-    space str = ' '
-    payload str = space.repeat(.bound.len + 1)
+    space = ' '
+    payload = space.repeat(.bound.len + 1)
     payload[0] = COM-QUERY
     i = 0
     {
@@ -970,24 +1026,24 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
-    if send-ok == false {
-        return
+    {
+        send-ok == false -> return
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
-    if recv-ok == false {
-        return
+    {
+        recv-ok == false -> return
     }
 
     ; 檢查回應類型
-    if resp-len == 0 {
-        return
+    {
+        resp-len == 0 -> return
     }
     first = resp[0]
-    if first == PKT-OK || first == PKT-ERR {
-        return
+    {
+        first == PKT-OK || first == PKT-ERR -> return
     }
-    if first == PKT-EOF && resp-len < 9 {
-        return
+    {
+        first == PKT-EOF && resp-len < 9 -> return
     }
     n-cols, cols-null, p2 = mysql-read-lenenc(resp, 0)
     rs.n-cols = n-cols
@@ -998,16 +1054,20 @@ stmt-mysql.query = () (rs rows-mysql) {
     i = 0
     {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
-        if cd-ok == false {
-            rs.eof = true
-            return
+        {
+            cd-ok == false -> {
+                rs.eof = true
+                return
+            }
         }
         i = i + 1
     } (i < n-cols)
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
-    if eof-ok == false {
-        rs.eof = true
-        return
+    {
+        eof-ok == false -> {
+            rs.eof = true
+            return
+        }
     }
 }
 

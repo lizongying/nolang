@@ -1,0 +1,11 @@
+; 測試邊界場景：slice view 先賦值給局部變數 y，再賦值給輸出參數 x
+; 這裡 y 是 view（指向 a 的數據），x = y 應該觸發 clone
+slice-f = () (x []i64) {
+    a [2] = [1, 2]
+    y = a[0..1]
+    x = y
+    a[0] = 99
+}
+
+v = slice-f()
+print(v[0])
