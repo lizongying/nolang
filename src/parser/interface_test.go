@@ -209,6 +209,106 @@ func TestParseStructWithImplementsStillWorks(t *testing.T) {
 	}
 }
 
+// TestParseStructWithDottedImplements verifies that struct-with-implements
+// syntax supports dotted/qualified interface names from other modules,
+// e.g. `stmt-mysql sql.stmt { ... }` or `db-mysql sql.db, sql.rows { ... }`.
+func TestParseStructWithDottedImplements(t *testing.T) {
+	src := `stmt-mysql sql.stmt {
+    fd i64
+    sql str
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	sd, ok := prog.Statements[0].(*StructDefinition)
+	if !ok {
+		t.Fatalf("expected *StructDefinition, got %T", prog.Statements[0])
+	}
+	if sd.Name != "stmt-mysql" {
+		t.Errorf("expected struct name 'stmt-mysql', got %q", sd.Name)
+	}
+	if len(sd.Implements) != 1 {
+		t.Fatalf("expected 1 implemented interface, got %d", len(sd.Implements))
+	}
+	if sd.Implements[0] != "sql.stmt" {
+		t.Errorf("expected implements [sql.stmt], got %v", sd.Implements)
+	}
+	if len(sd.Fields) != 2 {
+		t.Fatalf("expected 2 fields, got %d", len(sd.Fields))
+	}
+}
+
+// TestParseStructWithMultipleDottedImplements verifies that struct-with-implements
+// syntax supports multiple dotted/qualified interface names separated by commas,
+// e.g. `db-mysql sql.db, sql.rows { ... }`.
+func TestParseStructWithMultipleDottedImplements(t *testing.T) {
+	src := `db-mysql sql.db, sql.rows {
+    fd i64
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	sd, ok := prog.Statements[0].(*StructDefinition)
+	if !ok {
+		t.Fatalf("expected *StructDefinition, got %T", prog.Statements[0])
+	}
+	if sd.Name != "db-mysql" {
+		t.Errorf("expected struct name 'db-mysql', got %q", sd.Name)
+	}
+	if len(sd.Implements) != 2 {
+		t.Fatalf("expected 2 implemented interfaces, got %d", len(sd.Implements))
+	}
+	if sd.Implements[0] != "sql.db" || sd.Implements[1] != "sql.rows" {
+		t.Errorf("expected implements [sql.db, sql.rows], got %v", sd.Implements)
+	}
+}
+
+// TestParseStructWithMixedImplements verifies that struct-with-implements
+// syntax supports a mix of dotted and bare interface names,
+// e.g. `file sql.db, enter, leave { ... }`.
+func TestParseStructWithMixedImplements(t *testing.T) {
+	src := `file sql.db, enter, leave {
+    path str
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 top-level statement, got %d", len(prog.Statements))
+	}
+	sd, ok := prog.Statements[0].(*StructDefinition)
+	if !ok {
+		t.Fatalf("expected *StructDefinition, got %T", prog.Statements[0])
+	}
+	if len(sd.Implements) != 3 {
+		t.Fatalf("expected 3 implemented interfaces, got %d", len(sd.Implements))
+	}
+	expected := []string{"sql.db", "enter", "leave"}
+	for i, exp := range expected {
+		if sd.Implements[i] != exp {
+			t.Errorf("expected implements[%d] = %q, got %q", i, exp, sd.Implements[i])
+		}
+	}
+}
+
 // TestParseInterfaceMethodWithResult verifies that interface methods
 // can declare a return type using `(res type)` after the parameter
 // list, e.g.:

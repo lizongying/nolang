@@ -40,6 +40,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [Integer Assignment Type Checking](#integer-assignment-type-checking)
   - [Import System](#import-system)
   - [Module Prefix Rules](#module-prefix-rules)
+    - [Cross-Module Type References](#cross-module-type-references)
   - [Export System](#export-system)
   - [Special Symbols & Operators](#special-symbols--operators)
   - [FFI (`#{c}` annotation)](#ffi-c-annotation)
@@ -1111,10 +1112,24 @@ val: {
 
 Struct definitions and literals must both use multi-line form, with each field on its own line, fields not separated by commas, and no trailing comma.
 
+A struct can implement one or more interfaces by listing them after the struct name. When implementing interfaces from **other modules**, the interface name must include the module prefix (e.g. `sql.db`, not `db`). See [Cross-Module Type References](#cross-module-type-references).
+
 ```nolang
-user {
+; Same-module interface: no prefix needed
+user json {
     name str
     age i64
+}
+
+; Multiple interfaces
+file enter, leave {
+    path str
+}
+
+; Cross-module interface: prefix required
+; db, rows, stmt are defined in the sql module
+db-mysql sql.db {
+    fd i64
 }
 
 u = user {
@@ -1655,6 +1670,70 @@ Whether a method call requires a prefix depends on the **method owner**:
 
 In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level function name. The `fs.` prefix cannot be omitted because `fs` here is not a variable name but a module path.
 
+#### Cross-Module Type References
+
+When referencing **types** (structs, interfaces, enums) defined in **other modules**, you must use the `ShortName.` prefix. This applies to:
+
+**1. Struct interface implementation** — when a struct implements interfaces from another module, the interface name must be prefixed:
+
+```nolang
+// ❌ Wrong: db, rows, stmt are interfaces defined in the sql module
+db-mysql db {
+    fd i64
+}
+
+// ✅ Correct: use sql.db, sql.rows, sql.stmt
+db-mysql sql.db {
+    fd i64
+}
+
+rows-mysql sql.rows {
+    fd i64
+}
+
+stmt-mysql sql.stmt {
+    fd i64
+}
+```
+
+**2. Function parameter and return types** — cross-module types in function signatures need the prefix:
+
+```nolang
+// ✅ Correct: return type uses sql.result
+db-mysql.exec = (sql str) (r sql.result) {
+    ...
+}
+```
+
+**3. Struct field types** — cross-module types as field types need the prefix:
+
+```nolang
+// ✅ Correct: field type uses sql.connection
+conn-mysql sql.db {
+    handle sql.connection
+}
+```
+
+**No prefix needed for:**
+- Same-module types (defined in the same `.no` file)
+- Built-in types (`str`, `i64`, `bool`, `byte`, etc.)
+- Built-in interfaces (`enter`, `leave`)
+
+```nolang
+// Same-file defined types, no prefix needed
+result {
+    last-id i64
+    affected i64
+}
+
+// enter/leave are built-in interfaces, no prefix needed
+// result is same-file struct, no prefix needed
+db enter, leave {
+    close() (ok bool)
+    exec(sql str) (r result)
+}
+```
+
 #### Complete Example
 
 ```nolang
@@ -1691,6 +1770,13 @@ math.degrees(rad)
 // Module constants
 net.NET-BUF-SIZE
 math.PI
+
+// Cross-module type references (interface implementation, param types, return types, field types)
+db-mysql sql.db {
+    fd i64
+}
+
+r sql.result = d.exec('CREATE TABLE ...')
 ```
 
 ### Export System

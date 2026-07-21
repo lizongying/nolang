@@ -69,14 +69,14 @@ _sqlite3-errmsg = (db *byte) (s str)
 
 ; db-sqlite: 資料庫連線，實作 db 介面
 ; handle i64: SQLite 資料庫控制代碼
-db-sqlite db {
+db-sqlite sql.db {
     handle i64
 }
 
 ; rows-sqlite: 查詢結果集，實作 rows 介面
 ; stmt i64: 預編譯陳述式控制代碼
 ; n-cols i64: 欄位數量
-rows-sqlite rows {
+rows-sqlite sql.rows {
     stmt i64
     n-cols i64
 }
@@ -84,7 +84,7 @@ rows-sqlite rows {
 ; stmt-sqlite: 預編譯陳述式，實作 stmt 介面
 ; handle i64: 預編譯陳述式控制代碼
 ; db-handle i64: 所屬資料庫控制代碼
-stmt-sqlite stmt {
+stmt-sqlite sql.stmt {
     handle i64
     db-handle i64
 }

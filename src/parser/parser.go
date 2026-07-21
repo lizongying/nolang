@@ -984,11 +984,22 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseExportStatement()
 	case lexer.IDENT:
 		// 檢查介面實作/繼承：user json, fmt { name str } 或 db enter, leave { close() }
+		// 也支援跨模組限定名：stmt-mysql sql.stmt { ... }
 		if p.peekToken.Type == lexer.IDENT {
 			// 用 LookAhead 掃過介面名列表，找到 { 後分類區塊型別
+			// 支援 dotted 型別名（sql.stmt）和逗號分隔列表（json, fmt）
 			skip := 0
 			for {
 				tok := p.lexer.LookAhead(skip)
+				// dotted 型別名：sql.stmt, http.request 等
+				if tok.Type == lexer.DOT {
+					skip++
+					if p.lexer.LookAhead(skip).Type != lexer.IDENT {
+						break
+					}
+					skip++
+					continue
+				}
 				if tok.Type == lexer.COMMA {
 					skip++
 					if p.lexer.LookAhead(skip).Type != lexer.IDENT {
@@ -1606,6 +1617,15 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 			} else if p.currentToken.Type == lexer.IDENT {
 				paramType = p.currentToken.Literal
 				p.nextToken()
+				// Support dotted/qualified type names: sql.result, etc.
+				for p.currentToken.Type == lexer.DOT {
+					paramType += "."
+					p.nextToken()
+					if p.currentToken.Type == lexer.IDENT {
+						paramType += p.currentToken.Literal
+						p.nextToken()
+					}
+				}
 			} else if !isOption {
 				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
@@ -1719,6 +1739,15 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				} else if p.currentToken.Type == lexer.IDENT {
 					paramType = p.currentToken.Literal
 					p.nextToken()
+					// Support dotted/qualified type names: sql.result, etc.
+					for p.currentToken.Type == lexer.DOT {
+						paramType += "."
+						p.nextToken()
+						if p.currentToken.Type == lexer.IDENT {
+							paramType += p.currentToken.Literal
+							p.nextToken()
+						}
+					}
 				} else if !isOption {
 					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
@@ -7476,6 +7505,21 @@ func (p *Parser) parseFunctionTypeEntry() (*Parameter, bool) {
 		return &Parameter{Token: firstTok, Name: firstLit, Type: paramType}, true
 	}
 
+	// If next token is DOT, firstLit was the start of a dotted type name
+	// (e.g. sql.result as a name-less type).
+	if p.currentToken.Type == lexer.DOT {
+		paramType := firstLit
+		for p.currentToken.Type == lexer.DOT {
+			paramType += "."
+			p.nextToken()
+			if p.currentToken.Type == lexer.IDENT {
+				paramType += p.currentToken.Literal
+				p.nextToken()
+			}
+		}
+		return &Parameter{Token: firstTok, Name: "", Type: &NamedType{Token: firstTok, Value: paramType}}, true
+	}
+
 	// Otherwise firstLit is a name-less simple type (NamedType).
 	return &Parameter{Token: firstTok, Name: "", Type: &NamedType{Token: firstTok, Value: firstLit}}, true
 }
@@ -7525,10 +7569,28 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		if p.currentToken.Type == lexer.IDENT {
 			paramType = paramType + p.currentToken.Literal
 			p.nextToken()
+			// Support dotted element type: []sql.result
+			for p.currentToken.Type == lexer.DOT {
+				paramType += "."
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					paramType += p.currentToken.Literal
+					p.nextToken()
+				}
+			}
 		}
 	} else if p.currentToken.Type == lexer.IDENT {
 		paramType = p.currentToken.Literal
 		p.nextToken()
+		// Support dotted/qualified type names: sql.result, http.request, etc.
+		for p.currentToken.Type == lexer.DOT {
+			paramType += "."
+			p.nextToken()
+			if p.currentToken.Type == lexer.IDENT {
+				paramType += p.currentToken.Literal
+				p.nextToken()
+			}
+		}
 	} else if !isOption {
 		msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
@@ -7552,10 +7614,19 @@ func (p *Parser) parseStructDefinition() Statement {
 
 	p.nextToken() // 跳过 struct name
 
-	// 檢查介面實作：user json, fmt { ... }
+	// 檢查介面實作：user json, fmt { ... } 或 stmt-mysql sql.stmt { ... }
 	for p.currentToken.Type == lexer.IDENT {
-		sd.Implements = append(sd.Implements, p.currentToken.Literal)
+		implName := p.currentToken.Literal
 		p.nextToken() // 跳过 interface name
+		// 支援 dotted/qualified 介面名：sql.stmt, sql.db 等
+		for p.currentToken.Type == lexer.DOT {
+			p.nextToken() // skip DOT
+			if p.currentToken.Type == lexer.IDENT {
+				implName += "." + p.currentToken.Literal
+				p.nextToken() // skip IDENT after DOT
+			}
+		}
+		sd.Implements = append(sd.Implements, implName)
 		if p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // 跳过逗號
 		}
@@ -7632,8 +7703,18 @@ func (p *Parser) parseStructDefinition() Statement {
 				p.nextToken() // skip ]
 			}
 			if p.currentToken.Type == lexer.IDENT {
-				field.Type = buildType(p.currentToken.Literal, p.currentToken)
+				elemType := p.currentToken.Literal
 				p.nextToken() // skip element type
+				// Support dotted/qualified element type: []sql.result
+				for p.currentToken.Type == lexer.DOT {
+					elemType += "."
+					p.nextToken()
+					if p.currentToken.Type == lexer.IDENT {
+						elemType += p.currentToken.Literal
+						p.nextToken()
+					}
+				}
+				field.Type = buildType(elemType, p.currentToken)
 			}
 		} else if p.currentToken.Type == lexer.MUL {
 			// Pointer type syntax: *byte, *i64, etc.
@@ -7644,8 +7725,19 @@ func (p *Parser) parseStructDefinition() Statement {
 			}
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR {
 			// 普通类型定义 (including ptr keyword)
-			field.Type = buildType(p.currentToken.Literal, p.currentToken)
+			typeStr := p.currentToken.Literal
+			typeTok := p.currentToken
 			p.nextToken() // 跳过 type
+			// Support dotted/qualified type names: sql.result, etc.
+			for p.currentToken.Type == lexer.DOT {
+				typeStr += "."
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					typeStr += p.currentToken.Literal
+					p.nextToken()
+				}
+			}
+			field.Type = buildType(typeStr, typeTok)
 		} else if p.currentToken.Type == lexer.COLON {
 			// colon syntax: "field : type" or "field : value" (struct literal)
 			p.nextToken() // 跳过 COLON
@@ -8086,13 +8178,24 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 
 	// 解析回傳型別：fib(n i64) i64 {  → 在 { 前的 IDENT 為回傳型別
 	if p.currentToken.Type == lexer.IDENT {
+		retTypeStr := p.currentToken.Literal
+		retTypeTok := p.currentToken
+		p.nextToken()
+		// Support dotted/qualified type names: sql.result, etc.
+		for p.currentToken.Type == lexer.DOT {
+			retTypeStr += "."
+			p.nextToken()
+			if p.currentToken.Type == lexer.IDENT {
+				retTypeStr += p.currentToken.Literal
+				p.nextToken()
+			}
+		}
 		result := &Parameter{
-			Token: p.currentToken,
+			Token: retTypeTok,
 			Name:  "",
-			Type:  buildType(p.currentToken.Literal, p.currentToken),
+			Type:  buildType(retTypeStr, retTypeTok),
 		}
 		def.Results = append(def.Results, result)
-		p.nextToken()
 	}
 
 	// 從參數型別中推斷隱式泛型參數（單字母 a-z 做為陣列大小）

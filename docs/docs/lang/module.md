@@ -103,6 +103,75 @@ p.exists()                 // path.exists 是結構體方法，不需前綴
 
 `fs.fil()` 中 `fs` 是模組的 ShortName，`fil` 是模組級函數名。`fs.` 前綴不可省略，因為 `fs` 在此處不是變數名，而是模組路徑。
 
+## 跨模組型別引用
+
+引用**其他模組**定義的型別（結構體、介面、列舉等）時，必須使用 `ShortName.` 前綴。這適用於：
+
+### 結構體實作介面
+
+當一個結構體實作其他模組定義的介面時，介面名必須帶模組前綴：
+
+```nolang
+// ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
+db-mysql db {
+    fd i64
+}
+
+// ✅ 正確：使用 sql.db、sql.rows、sql.stmt
+db-mysql sql.db {
+    fd i64
+}
+
+rows-mysql sql.rows {
+    fd i64
+}
+
+stmt-mysql sql.stmt {
+    fd i64
+}
+```
+
+### 函數參數與返回型別
+
+函數簽名中的跨模組型別同樣需要前綴：
+
+```nolang
+// ✅ 正確：返回型別使用 sql.result
+db-mysql.exec = (sql str) (r sql.result) {
+    ...
+}
+```
+
+### 結構體欄位型別
+
+```nolang
+// ✅ 正確：欄位型別使用 sql.connection
+conn-mysql sql.db {
+    handle sql.connection
+}
+```
+
+### 不需前綴的情況
+
+- **同模組定義的型別**：在同一 `.no` 檔案中定義的結構體、介面、列舉，直接使用型別名
+- **內置型別**：`str`、`i64`、`bool`、`byte` 等內置型別不需前綴
+- **內置介面**：`enter`、`leave` 等語言內置介面不需前綴
+
+```nolang
+// 同檔案定義的型別，不需前綴
+result {
+    last-id i64
+    affected i64
+}
+
+// enter/leave 是內置介面，不需前綴
+// result 是同檔案定義的結構體，不需前綴
+db enter, leave {
+    close() (ok bool)
+    exec(sql str) (r result)
+}
+```
+
 ## 完整範例
 
 ```nolang
@@ -139,4 +208,11 @@ math.degrees(rad)
 // 模組常量
 net.NET-BUF-SIZE
 math.PI
+
+// 跨模組型別引用（介面實作、參數型別、返回型別、欄位型別）
+db-mysql sql.db {
+    fd i64
+}
+
+r sql.result = d.exec('CREATE TABLE ...')
 ```

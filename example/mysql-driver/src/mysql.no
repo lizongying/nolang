@@ -216,7 +216,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 ; fd: TCP socket 檔案描述符
 ; seq: MySQL 封包序號
 ; connected: 連接狀態
-db-mysql db {
+db-mysql sql.db {
     fd i64
     seq i64
     connected bool
@@ -230,7 +230,7 @@ db-mysql db {
 ; row-len: 當前行資料長度
 ; row-pos: 當前解析位置
 ; eof: 是否已到結尾
-rows-mysql rows {
+rows-mysql sql.rows {
     fd i64
     seq i64
     n-cols i64
@@ -245,7 +245,7 @@ rows-mysql rows {
 ; seq: MySQL 封包序號
 ; sql: SQL 模板
 ; bound: 已綁定的 SQL
-stmt-mysql stmt {
+stmt-mysql sql.stmt {
     fd i64
     seq i64
     sql str

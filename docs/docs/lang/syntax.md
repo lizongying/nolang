@@ -1000,6 +1000,50 @@ u.age = 25
 print(u.name)
 ```
 
+### 結構體實作介面
+
+結構體可以實作一個或多個介面，介面名寫在結構體名後面，以逗號分隔。
+
+```nolang
+// 實作單個介面
+user json {
+    name str
+    age i64
+}
+
+// 實作多個介面
+file enter, leave {
+    path str
+    fd i64
+}
+```
+
+#### 跨模組介面實作
+
+當實作**其他模組**定義的介面時，介面名必須帶模組前綴（`ShortName.`）。參見[跨模組調用前綴](module.md)。
+
+```nolang
+// ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
+db-mysql db {
+    fd i64
+}
+
+// ✅ 正確：使用 sql.db、sql.rows、sql.stmt
+db-mysql sql.db {
+    fd i64
+}
+
+rows-mysql sql.rows {
+    fd i64
+}
+
+stmt-mysql sql.stmt {
+    fd i64
+}
+```
+
+> 內置介面（`enter`、`leave`）和同檔案定義的介面不需模組前綴。
+
 ## 方法
 
 方法定義在類型上，使用 `.` 引用接收者（receiver）。
