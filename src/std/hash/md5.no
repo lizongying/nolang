@@ -18,51 +18,31 @@ md5 = (data []byte) (out [16]byte) {
     h2 u32 = 2562383102
     h3 u32 = 271733878
 
-    ; 計算填充後的總長度
     dlen = data.len
     blen = dlen * 8
-    plen = dlen + 1 + 8
-    rem = plen % 64
-    rem != 0 -> plen = plen + 64 - rem
-    num-blocks = plen / 64
 
-    ; 預建填充緩衝區（一次分配，循環重用）
-    buf [64]byte
+    ; 全塊數量（這些區塊直接從 data 載入，無需拷貝，無邊界檢查）
+    num-full = dlen / 64
 
-    ; 對每個 64 位元組區塊進行壓縮
-    bidx <- [0..num-blocks): {
+    ; 處理全塊：直接從 data 載入 16 個 32-bit 字（load-le-u32 使用指標運算，無邊界檢查）
+    bidx <- [0..num-full): {
         off = bidx * 64
-        ; 計算本區塊的資料位元組數
-        dremain = dlen - off
-        copylen = dremain
-        dremain >= 64 -> copylen = 64
-        ; 零填充緩衝區（無分支，LLVM 可向量化為 memset）
-        j <- [0..64): buf[j] = 0
-        ; 複製資料位元組（無分支，LLVM 可向量化為 memcpy）
-        j <- [0..copylen): buf[j] = data[off + j]
-        ; 最後區塊添加 0x80 填充和長度
-        copylen < 64 -> {
-            buf[copylen] = 128
-            store-le-u32(buf, 56, blen & 4294967295)
-            store-le-u32(buf, 60, blen >> 32)
-        }
-        ; 從緩衝區直接載入 16 個 32-bit 字（load-le-u32 內建，單條 load 指令）
-        w0 u32 = load-le-u32(buf, 0)
-        w1 u32 = load-le-u32(buf, 4)
-        w2 u32 = load-le-u32(buf, 8)
-        w3 u32 = load-le-u32(buf, 12)
-        w4 u32 = load-le-u32(buf, 16)
-        w5 u32 = load-le-u32(buf, 20)
-        w6 u32 = load-le-u32(buf, 24)
-        w7 u32 = load-le-u32(buf, 28)
-        w8 u32 = load-le-u32(buf, 32)
-        w9 u32 = load-le-u32(buf, 36)
-        w10 u32 = load-le-u32(buf, 40)
-        w11 u32 = load-le-u32(buf, 44)
-        w12 u32 = load-le-u32(buf, 48)
-        w13 u32 = load-le-u32(buf, 52)
-        w14 u32 = load-le-u32(buf, 56)
-        w15 u32 = load-le-u32(buf, 60)
+        w0 u32 = load-le-u32(data, off)
+        w1 u32 = load-le-u32(data, off + 4)
+        w2 u32 = load-le-u32(data, off + 8)
+        w3 u32 = load-le-u32(data, off + 12)
+        w4 u32 = load-le-u32(data, off + 16)
+        w5 u32 = load-le-u32(data, off + 20)
+        w6 u32 = load-le-u32(data, off + 24)
+        w7 u32 = load-le-u32(data, off + 28)
+        w8 u32 = load-le-u32(data, off + 32)
+        w9 u32 = load-le-u32(data, off + 36)
+        w10 u32 = load-le-u32(data, off + 40)
+        w11 u32 = load-le-u32(data, off + 44)
+        w12 u32 = load-le-u32(data, off + 48)
+        w13 u32 = load-le-u32(data, off + 52)
+        w14 u32 = load-le-u32(data, off + 56)
+        w15 u32 = load-le-u32(data, off + 60)
 
         ; MD5 壓縮函數（64 輪）— u32 算術自然 32-bit 溢出
         a u32 = h0
@@ -271,6 +251,256 @@ md5 = (data []byte) (out [16]byte) {
         h2 = h2 + c
         h3 = h3 + d
     }
+
+    ; 處理末塊（含填充）
+    buf [64]byte
+    off = num-full * 64
+    dremain = dlen - off
+
+    ; 零填充緩衝區（LLVM 優化為 memset）
+    j <- [0..64): buf[j] = 0
+
+    ; 以 4 位元組為單位拷貝資料（load-le-u32/store-le-u32 使用指標運算，無邊界檢查）
+    num-copy-words = dremain / 4
+    j <- [0..num-copy-words): {
+        store-le-u32(buf, j * 4, load-le-u32(data, off + j * 4))
+    }
+    ; 處理剩餘 0-3 位元組
+    copy-rem = dremain % 4
+    copy-rem > 0 -> {
+        base = num-copy-words * 4
+        k <- [0..copy-rem): buf[base + k] = data[off + base + k]
+    }
+
+    ; 添加 0x80 填充和長度
+    buf[dremain] = 128
+    store-le-u32(buf, 56, blen & 4294967295)
+    store-le-u32(buf, 60, blen >> 32)
+
+    ; 從緩衝區載入 16 個 32-bit 字
+    w0 u32 = load-le-u32(buf, 0)
+    w1 u32 = load-le-u32(buf, 4)
+    w2 u32 = load-le-u32(buf, 8)
+    w3 u32 = load-le-u32(buf, 12)
+    w4 u32 = load-le-u32(buf, 16)
+    w5 u32 = load-le-u32(buf, 20)
+    w6 u32 = load-le-u32(buf, 24)
+    w7 u32 = load-le-u32(buf, 28)
+    w8 u32 = load-le-u32(buf, 32)
+    w9 u32 = load-le-u32(buf, 36)
+    w10 u32 = load-le-u32(buf, 40)
+    w11 u32 = load-le-u32(buf, 44)
+    w12 u32 = load-le-u32(buf, 48)
+    w13 u32 = load-le-u32(buf, 52)
+    w14 u32 = load-le-u32(buf, 56)
+    w15 u32 = load-le-u32(buf, 60)
+
+    ; MD5 壓縮函數（64 輪）
+    a u32 = h0
+    b u32 = h1
+    c u32 = h2
+    d u32 = h3
+    ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
+    f u32 = d ^ (b & (c ^ d))
+    t u32 = a + f + w0 + 3614090360
+    a = b + rotate-left(t, 7)
+    f = c ^ (a & (b ^ c))
+    t = d + f + w1 + 3905402710
+    d = a + rotate-left(t, 12)
+    f = b ^ (d & (a ^ b))
+    t = c + f + w2 + 606105819
+    c = d + rotate-left(t, 17)
+    f = a ^ (c & (d ^ a))
+    t = b + f + w3 + 3250441966
+    b = c + rotate-left(t, 22)
+    f = d ^ (b & (c ^ d))
+    t = a + f + w4 + 4118548399
+    a = b + rotate-left(t, 7)
+    f = c ^ (a & (b ^ c))
+    t = d + f + w5 + 1200080426
+    d = a + rotate-left(t, 12)
+    f = b ^ (d & (a ^ b))
+    t = c + f + w6 + 2821735955
+    c = d + rotate-left(t, 17)
+    f = a ^ (c & (d ^ a))
+    t = b + f + w7 + 4249261313
+    b = c + rotate-left(t, 22)
+    f = d ^ (b & (c ^ d))
+    t = a + f + w8 + 1770035416
+    a = b + rotate-left(t, 7)
+    f = c ^ (a & (b ^ c))
+    t = d + f + w9 + 2336552879
+    d = a + rotate-left(t, 12)
+    f = b ^ (d & (a ^ b))
+    t = c + f + w10 + 4294925233
+    c = d + rotate-left(t, 17)
+    f = a ^ (c & (d ^ a))
+    t = b + f + w11 + 2304563134
+    b = c + rotate-left(t, 22)
+    f = d ^ (b & (c ^ d))
+    t = a + f + w12 + 1804603682
+    a = b + rotate-left(t, 7)
+    f = c ^ (a & (b ^ c))
+    t = d + f + w13 + 4254626195
+    d = a + rotate-left(t, 12)
+    f = b ^ (d & (a ^ b))
+    t = c + f + w14 + 2792965006
+    c = d + rotate-left(t, 17)
+    f = a ^ (c & (d ^ a))
+    t = b + f + w15 + 1236535329
+    b = c + rotate-left(t, 22)
+    ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
+    f = c ^ (d & (b ^ c))
+    t = a + f + w1 + 4129170786
+    a = b + rotate-left(t, 5)
+    f = b ^ (c & (a ^ b))
+    t = d + f + w6 + 3225465664
+    d = a + rotate-left(t, 9)
+    f = a ^ (b & (d ^ a))
+    t = c + f + w11 + 643717713
+    c = d + rotate-left(t, 14)
+    f = d ^ (a & (c ^ d))
+    t = b + f + w0 + 3921069994
+    b = c + rotate-left(t, 20)
+    f = c ^ (d & (b ^ c))
+    t = a + f + w5 + 3593408605
+    a = b + rotate-left(t, 5)
+    f = b ^ (c & (a ^ b))
+    t = d + f + w10 + 38016083
+    d = a + rotate-left(t, 9)
+    f = a ^ (b & (d ^ a))
+    t = c + f + w15 + 3634488961
+    c = d + rotate-left(t, 14)
+    f = d ^ (a & (c ^ d))
+    t = b + f + w4 + 3889429448
+    b = c + rotate-left(t, 20)
+    f = c ^ (d & (b ^ c))
+    t = a + f + w9 + 568446438
+    a = b + rotate-left(t, 5)
+    f = b ^ (c & (a ^ b))
+    t = d + f + w14 + 3275163606
+    d = a + rotate-left(t, 9)
+    f = a ^ (b & (d ^ a))
+    t = c + f + w3 + 4107603335
+    c = d + rotate-left(t, 14)
+    f = d ^ (a & (c ^ d))
+    t = b + f + w8 + 1163531501
+    b = c + rotate-left(t, 20)
+    f = c ^ (d & (b ^ c))
+    t = a + f + w13 + 2850285829
+    a = b + rotate-left(t, 5)
+    f = b ^ (c & (a ^ b))
+    t = d + f + w2 + 4243563512
+    d = a + rotate-left(t, 9)
+    f = a ^ (b & (d ^ a))
+    t = c + f + w7 + 1735328473
+    c = d + rotate-left(t, 14)
+    f = d ^ (a & (c ^ d))
+    t = b + f + w12 + 2368359562
+    b = c + rotate-left(t, 20)
+    ; 第 3 輪 (H): f = x ^ y ^ z
+    f = b ^ c ^ d
+    t = a + f + w5 + 4294588738
+    a = b + rotate-left(t, 4)
+    f = a ^ b ^ c
+    t = d + f + w8 + 2272392833
+    d = a + rotate-left(t, 11)
+    f = d ^ a ^ b
+    t = c + f + w11 + 1839030562
+    c = d + rotate-left(t, 16)
+    f = c ^ d ^ a
+    t = b + f + w14 + 4259657740
+    b = c + rotate-left(t, 23)
+    f = b ^ c ^ d
+    t = a + f + w1 + 2763975236
+    a = b + rotate-left(t, 4)
+    f = a ^ b ^ c
+    t = d + f + w4 + 1272893353
+    d = a + rotate-left(t, 11)
+    f = d ^ a ^ b
+    t = c + f + w7 + 4139469664
+    c = d + rotate-left(t, 16)
+    f = c ^ d ^ a
+    t = b + f + w10 + 3200236656
+    b = c + rotate-left(t, 23)
+    f = b ^ c ^ d
+    t = a + f + w13 + 681279174
+    a = b + rotate-left(t, 4)
+    f = a ^ b ^ c
+    t = d + f + w0 + 3936430074
+    d = a + rotate-left(t, 11)
+    f = d ^ a ^ b
+    t = c + f + w3 + 3572445317
+    c = d + rotate-left(t, 16)
+    f = c ^ d ^ a
+    t = b + f + w6 + 76029189
+    b = c + rotate-left(t, 23)
+    f = b ^ c ^ d
+    t = a + f + w9 + 3654602809
+    a = b + rotate-left(t, 4)
+    f = a ^ b ^ c
+    t = d + f + w12 + 3873151461
+    d = a + rotate-left(t, 11)
+    f = d ^ a ^ b
+    t = c + f + w15 + 530742520
+    c = d + rotate-left(t, 16)
+    f = c ^ d ^ a
+    t = b + f + w2 + 3299628645
+    b = c + rotate-left(t, 23)
+    ; 第 4 輪 (I): f = y ^ (x | ~z)  — mask ^ d 即 ~d
+    f = c ^ (b | (mask ^ d))
+    t = a + f + w0 + 4096336452
+    a = b + rotate-left(t, 6)
+    f = b ^ (a | (mask ^ c))
+    t = d + f + w7 + 1126891415
+    d = a + rotate-left(t, 10)
+    f = a ^ (d | (mask ^ b))
+    t = c + f + w14 + 2878612391
+    c = d + rotate-left(t, 15)
+    f = d ^ (c | (mask ^ a))
+    t = b + f + w5 + 4237533241
+    b = c + rotate-left(t, 21)
+    f = c ^ (b | (mask ^ d))
+    t = a + f + w12 + 1700485571
+    a = b + rotate-left(t, 6)
+    f = b ^ (a | (mask ^ c))
+    t = d + f + w3 + 2399980690
+    d = a + rotate-left(t, 10)
+    f = a ^ (d | (mask ^ b))
+    t = c + f + w10 + 4293915773
+    c = d + rotate-left(t, 15)
+    f = d ^ (c | (mask ^ a))
+    t = b + f + w1 + 2240044497
+    b = c + rotate-left(t, 21)
+    f = c ^ (b | (mask ^ d))
+    t = a + f + w8 + 1873313359
+    a = b + rotate-left(t, 6)
+    f = b ^ (a | (mask ^ c))
+    t = d + f + w15 + 4264355552
+    d = a + rotate-left(t, 10)
+    f = a ^ (d | (mask ^ b))
+    t = c + f + w6 + 2734768916
+    c = d + rotate-left(t, 15)
+    f = d ^ (c | (mask ^ a))
+    t = b + f + w13 + 1309151649
+    b = c + rotate-left(t, 21)
+    f = c ^ (b | (mask ^ d))
+    t = a + f + w4 + 4149444226
+    a = b + rotate-left(t, 6)
+    f = b ^ (a | (mask ^ c))
+    t = d + f + w11 + 3174756917
+    d = a + rotate-left(t, 10)
+    f = a ^ (d | (mask ^ b))
+    t = c + f + w2 + 718787259
+    c = d + rotate-left(t, 15)
+    f = d ^ (c | (mask ^ a))
+    t = b + f + w9 + 3951481745
+    b = c + rotate-left(t, 21)
+    ; 累加回初始值（u32 自然溢出）
+    h0 = h0 + a
+    h1 = h1 + b
+    h2 = h2 + c
+    h3 = h3 + d
 
     ; 輸出 16 位元組（小端序 32-bit 字，使用 store-le-u32 單條 store 指令）
     store-le-u32(out, 0, h0)

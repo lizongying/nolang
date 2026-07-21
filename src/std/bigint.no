@@ -34,6 +34,7 @@ bigint {
 
 ; from-i64: 從 i64 建立 bigint
 from-i64 = (v i64) (out bigint) {
+    out.limbs = with-len(1)
     {
         v < 0 -> {
             out.sign = -1
@@ -47,6 +48,7 @@ from-i64 = (v i64) (out bigint) {
 
 ; from-u64: 從無號 i64 建立 bigint（永遠正數）
 from-u64 = (v i64) (out bigint) {
+    out.limbs = with-len(1)
     out.sign = 1
     out.limbs[0] = v
     out.len = 1
@@ -54,6 +56,7 @@ from-u64 = (v i64) (out bigint) {
 
 ; zero: 建立零值 bigint
 zero = () (out bigint) {
+    out.limbs = with-len(1)
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
@@ -61,6 +64,7 @@ zero = () (out bigint) {
 
 ; one: 建立壹值 bigint
 one = () (out bigint) {
+    out.limbs = with-len(1)
     out.sign = 1
     out.limbs[0] = 1
     out.len = 1
@@ -68,6 +72,7 @@ one = () (out bigint) {
 
 ; bigint.copy: 深度複製 bigint
 bigint.copy = () (out bigint) {
+    out.limbs = with-len(.len)
     out.sign = .sign
     out.len = .len
     i <- [0...len): {
@@ -169,6 +174,7 @@ abs-add = (a bigint, b bigint) (c bigint) {
     bl = b.len
     cl = al
     bl > al -> cl = bl
+    c.limbs = with-len(cl + 1)
     c.len = cl + 1
     i <- [0..cl): {
         av = 0
@@ -208,6 +214,7 @@ abs-sub = (a bigint, b bigint) (c bigint) {
     borrow = 0
     al = a.len
     bl = b.len
+    c.limbs = with-len(al)
     c.len = al
     i <- [0..al): {
         av = a.limbs[i]
@@ -234,6 +241,7 @@ abs-sub = (a bigint, b bigint) (c bigint) {
 mul = (a bigint, b bigint) (c bigint) {
     al = a.len
     bl = b.len
+    c.limbs = with-len(al + bl)
     c.len = al + bl
     i <- [0..al + bl): {
         c.limbs[i] = 0
@@ -260,6 +268,7 @@ mul-i64 = (a bigint, v i64, c bigint) {
         c.sign = -c.sign
         v = 0 - v
     }
+    c.limbs = with-len(a.len + 1)
     c.len = a.len + 1
     carry = 0
     i <- [0..a.len): {
@@ -295,7 +304,20 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         return
     }
 
+    ; 單 limb 除數：使用簡單的 div-i64/mod-i64
+    b.len == 1 -> {
+        v = b.limbs[0] & MASK
+        q = div-i64(a, v)
+        r.limbs = with-len(1)
+        r.limbs[0] = mod-i64(a, v)
+        r.len = 1
+        q.sign = a.sign * b.sign
+        r.sign = a.sign
+        return
+    }
+
     q.len = a.len - b.len + 1
+    q.limbs = with-len(q.len)
     i <- [0..q.len): {
         q.limbs[i] = 0
     }
@@ -311,6 +333,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     shift > 0 -> bt = bt << shift
     norm-a-len = a.len + 1
     norm-a = bigint{}
+    norm-a.limbs = with-len(norm-a-len)
     norm-a.len = norm-a-len
     norm-a.sign = 1
     i <- [0..norm-a-len): {
@@ -365,6 +388,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     q.sign = a.sign * b.sign
     q.normalize()
 
+    r.limbs = with-len(b.len)
     r.len = b.len
     r.sign = a.sign
     i <- [0..b.len): {
@@ -373,23 +397,30 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     r.normalize()
 }
 
-; mod: r = a % b
+; div: q = a / b（整數除法，只返回商）
+div = (a bigint, b bigint) (q bigint) {
+    r = bigint{}
+    q, r = div-mod(a, b)
+}
+
 ; mod: r = a % b
 mod = (a bigint, b bigint) (r bigint) {
-    r = div-mod(a, b)
+    q = bigint{}
+    q, r = div-mod(a, b)
 }
 
 ; div-i64: q = a / v（小整數除法）
 div-i64 = (a bigint, v i64) (q bigint) {
     v < 0 -> v = 0 - v
     q.sign = a.sign
+    q.limbs = with-len(a.len)
+    q.len = a.len
     rem = 0
     i <- [a.len - 1..0]: {
         cur = (rem << 32) | (a.limbs[i] & MASK)
         q.limbs[i] = cur / v
         rem = cur % v
     }
-    q.len = a.len
     q.normalize()
 }
 
@@ -544,6 +575,7 @@ bigint.normalize = () {
 ; bigint.to-str: 將 bigint 轉為十進制字串
 ; 返回 out str: 十進制字串
 bigint.to-str = () (out str) {
+    out = with-cap(256)
     z = .is-zero()
     z -> {
         out[0] = 48
@@ -579,10 +611,12 @@ bigint.to-str = () (out str) {
 ; s str: 十進制字串
 ; out bigint: 輸出
 from-str = (s str) (out bigint) {
+    out.limbs = with-len(1)
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
     pos = 0
+    tmp-bigint = bigint{}
     {
         c = s[pos] & 255
         c != 32 && c != 9 && c != 10 && c != 13 -> break
@@ -599,7 +633,8 @@ from-str = (s str) (out bigint) {
         c = s[pos] & 255
         {
             c >= 48 && c <= 57 -> {
-                mul-i64(out, 10, out)
+                mul-i64(out, 10, tmp-bigint)
+                out = tmp-bigint
                 out = out.add-i64(c - 48)
                 pos = pos + 1
             }
@@ -623,6 +658,7 @@ bigint.add-i64 = (v i64) (c bigint) {
 ; bigint.to-hex: 將 bigint 轉為十六進制字串（小寫）
 ; 返回 out str: 十六進制字串
 bigint.to-hex = () (out str) {
+    out = with-cap(256)
     hex = '0123456789abcdef'
     out-n = 0
     .sign == -1 -> {
@@ -661,22 +697,27 @@ bigint.to-hex = () (out str) {
 ; s str: 十六進制字串
 ; out bigint: 輸出
 from-hex = (s str) (out bigint) {
+    out.limbs = with-len(1)
     out.sign = 1
     out.limbs[0] = 0
     out.len = 1
+    tmp-bigint = bigint{}
     i <- [0..s.len): {
         c = s[i] & 255
         {
             c >= 48 && c <= 57 -> {
-                mul-i64(out, 16, out)
+                mul-i64(out, 16, tmp-bigint)
+                out = tmp-bigint
                 out = out.add-i64(c - 48)
             }
             c >= 97 && c <= 102 -> {
-                mul-i64(out, 16, out)
+                mul-i64(out, 16, tmp-bigint)
+                out = tmp-bigint
                 out = out.add-i64(c - 87)
             }
             c >= 65 && c <= 70 -> {
-                mul-i64(out, 16, out)
+                mul-i64(out, 16, tmp-bigint)
+                out = tmp-bigint
                 out = out.add-i64(c - 55)
             }
         }

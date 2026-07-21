@@ -114,3 +114,27 @@ s[1] = 105                     // len 自動變為 2
 // 手動設置 .len 僅用於截斷（縮短）
 s.len = 5
 ```
+
+## 預分配（內建語法）
+
+透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` / `s[i]=` 觸發反覆擴容：
+
+```nolang
+// with-cap(cap)：配置 cap 容量，len=0（需 push 後才能索引）
+s = with-cap(256)               // str，len=0, cap=256
+
+// with-len(len)：配置 len 容量，len=cap（可直接索引讀寫）
+s = with-len(128)               // str，len=128, cap=128
+
+// with-cap-len(cap, len)：同時指定容量與長度，適合「預留成長空間」場景
+s = with-cap-len(512, 64)       // str，len=64, cap=512
+```
+
+| 內建語法 | 參數 | len | cap | 適用場景 |
+|---|---|---|---|---|
+| `with-cap(cap)` | 1 | 0 | cap | 只知道上限，長度由 push 增長 |
+| `with-len(len)` | 1 | len | len | 固定長度，直接索引讀寫 |
+| `with-cap-len(cap, len)` | 2 | len | cap | 已知初始長度且需預留擴容空間 |
+
+> **型別推導**：三個內建語法的結果型別由賦值左側推導，可用於 `str` 或 `[]T` 切片。
+

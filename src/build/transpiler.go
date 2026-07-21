@@ -5697,7 +5697,14 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 			}
 		}
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			moduleConsts[ls.Name.Value] = true
+			// 僅收集符合大寫常數命名規範的名稱（如 SEP、DOT、BASE64-STD、FNV-OFFSET）。
+			// 小寫變數（如 len、i、result、path）不應視為模組常量，否則會造成
+			// `path.len`（path 為函數參數）被錯誤改寫為 `len`（Identifier），
+			// 導致 cookie.no 的 parse-response 在與其他模組連結時 IR 出現 `%len undefined`。
+			// 函數定義（FunctionLiteral 值）另由 moduleFns 收集，不受此篩選影響。
+			if isConstantName(ls.Name.Value) {
+				moduleConsts[ls.Name.Value] = true
+			}
 			// Also collect functions defined as LetStatement with FunctionLiteral
 			// value (e.g. `list-dir = (dirpath str) (entries []str) { ... }`).
 			// Without this, module.fn() calls to these functions are not rewritten

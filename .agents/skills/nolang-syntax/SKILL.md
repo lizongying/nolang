@@ -2275,6 +2275,8 @@ out = s.trim-char(c)          // Trim specified character
 ok = s.empty()                // Is empty
 s.clear()                     // Clear (len=0, in-place)
 out = s.with-cap(cap)         // Create new string with specified capacity (len=0)
+out = s.with-len(len)         // Create new string with specified length (len=cap)
+out = s.with-cap-len(cap, len) // Create new string with specified capacity and length
 parts = s.split(sep)          // Split by separator (returns []str, method)
 out = ss.join(sep)            // Join []str with separator (method)
 ```
@@ -2334,6 +2336,8 @@ n = []t.len()                  // Length
 []t.push(val)                   // Append (auto-grow)
 []t.clear()                     // Clear (len=0, cap/data unchanged)
 v = []t.with-cap(cap)          // Create new slice with specified capacity (len=0)
+v = []t.with-len(len)          // Create new slice with specified length (len=cap)
+v = []t.with-cap-len(cap, len) // Create new slice with specified capacity and length
 val, new-n = []t.pop()         // Pop
 found = []t.contains(n, val)   // Contains (n is length)
 []t.reverse(n)                  // Reverse first n elements

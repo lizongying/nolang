@@ -114,3 +114,27 @@ s[1] = 105                     // len automatically becomes 2
 // Manually setting .len is only for truncation (shortening)
 s.len = 5
 ```
+
+## Pre-allocation (Builtin Syntax)
+
+The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:
+
+```nolang
+// with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
+s = with-cap(256)               // str, len=0, cap=256
+
+// with-len(len): allocate len capacity, len=cap (direct indexing allowed)
+s = with-len(128)               // str, len=128, cap=128
+
+// with-cap-len(cap, len): specify both capacity and length — ideal when you
+// know the initial length but need room to grow
+s = with-cap-len(512, 64)       // str, len=64, cap=512
+```
+
+| Builtin | Args | len | cap | Use case |
+|---|---|---|---|---|
+| `with-cap(cap)` | 1 | 0 | cap | Only capacity known; length grows via push |
+| `with-len(len)` | 1 | len | len | Fixed length; direct index read/write |
+| `with-cap-len(cap, len)` | 2 | len | cap | Known initial length + reserved growth space |
+
+> **Type inference**: All three builtins infer the result type from the assignment LHS, usable for `str` or `[]T` slices.

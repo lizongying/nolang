@@ -47,4 +47,32 @@ func init() {
 		Doc:          "Create a new str or vec with specified capacity (type inferred from LHS)",
 		ForwardFunc:  "with-cap",
 	})
+
+	// with-len: create a new str or vec with specified length (len=cap=n)
+	// Builtin syntax: with-len(len) — type inferred from assignment LHS
+	//   v []i64 = with-len(100) → vec with len=100, cap=100
+	// Unlike with-cap (len=0), with-len sets len=cap so direct index
+	// reads/writes pass bounds checks without needing push() first.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "with-len",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new str or vec with specified length (type inferred from LHS)",
+		ForwardFunc:  "with-len",
+	})
+
+	// with-cap-len: create a new str or vec with specified capacity and length
+	// Builtin syntax: with-cap-len(cap, len) — type inferred from assignment LHS
+	//   v []i64 = with-cap-len(200, 100) → vec with cap=200, len=100
+	// Combines with-cap (reserve capacity) and with-len (set length) in one call.
+	// Useful when you need more capacity than the current length (pre-allocation).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "with-cap-len",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new str or vec with specified capacity and length (type inferred from LHS)",
+		ForwardFunc:  "with-cap-len",
+	})
 }

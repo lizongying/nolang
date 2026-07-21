@@ -120,6 +120,14 @@
 ; Builtin syntax (not a method): v []i64 = with-cap(100)
 ; build-in (ForwardFunc: with-cap)
 
+; with-len: see str.no for full documentation
+; Builtin syntax (not a method): v []i64 = with-len(100)
+; build-in (ForwardFunc: with-len)
+
+; with-cap-len: see str.no for full documentation
+; Builtin syntax (not a method): v []i64 = with-cap-len(200, 100)
+; build-in (ForwardFunc: with-cap-len)
+
 ; []t.pop: 從末尾彈出元素
 ; 空切片返回 nil
 []t.pop = () (val ?t) {

@@ -771,6 +771,11 @@ a [?]u16 = [1, 2, 3] // length automatically inferred
 v = [1, 2, 3]     // variable-length array of i64
 bs = [0x11, 0x22, 0x33]
 v []u8 = [1, 2, 3] // variable-length array with explicit type
+
+// Pre-allocation (avoid repeated reallocation)
+v = with-cap(100)          // len=0, cap=100 (push before indexing)
+v = with-len(100)          // len=100, cap=100 (direct indexing)
+v = with-cap-len(200, 100) // len=100, cap=200 (reserved growth space)
 ```
 
 **Slice (view, not an independent type):**

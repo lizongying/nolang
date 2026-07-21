@@ -3200,6 +3200,126 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			return v3
 		}
 
+	case "with-len":
+		// with-len(len) — builtin syntax, type inferred from assignment LHS
+		//   v []i64 = with-len(100) → %vec { len=100, cap=100, data=malloc(100*8) }
+		// Like with-cap, but also sets len=cap so that direct index reads/writes
+		// pass bounds checks without needing push() to grow the length.
+		if len(args) < 1 {
+			return ""
+		}
+		lenVal := g.evalI64Arg(sb, args[0])
+		targetType := g.currentTargetType
+		switch targetType {
+		case "%str-long", "str":
+			// malloc(len)
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%wl.sbuf.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, lenVal))
+			}
+			// Build %str-long { len=len, cap=len, data=buf }
+			g.tmpIdx++
+			s1 := fmt.Sprintf("%%wl.s1.%d", g.tmpIdx)
+			g.tmpIdx++
+			s2 := fmt.Sprintf("%%wl.s2.%d", g.tmpIdx)
+			g.tmpIdx++
+			s3 := fmt.Sprintf("%%wl.s3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), s1, lenVal))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), s2, s1, lenVal))
+				_p2i_s3 := g.ptrToIntVal(sb, bufReg)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), s3, s2, _p2i_s3))
+			}
+			g.ssaTypes[s3] = "%str-long"
+			return s3
+
+		default: // %vec, []i64, etc.
+			elemSize := int64(8) // default i64
+			g.tmpIdx++
+			bytesReg := fmt.Sprintf("%%wl.vbytes.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%wl.vbuf.%d", g.tmpIdx)
+			g.tmpIdx++
+			v1 := fmt.Sprintf("%%wl.v1.%d", g.tmpIdx)
+			g.tmpIdx++
+			v2 := fmt.Sprintf("%%wl.v2.%d", g.tmpIdx)
+			g.tmpIdx++
+			v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				// len=len, cap=len (both set to the argument value)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, lenVal))
+				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 2\n", g.indent(), v3, v2, _p2i_v3))
+			}
+			g.ssaTypes[v3] = "%vec"
+			return v3
+		}
+
+	case "with-cap-len":
+		// with-cap-len(cap, len) — builtin syntax, type inferred from assignment LHS
+		//   v []i64 = with-cap-len(200, 100) → %vec { len=100, cap=200, data=malloc(200*8) }
+		// Combines with-cap and with-len: allocates cap elements, sets len to the
+		// given length (len <= cap), enabling direct index access within [0,len)
+		// while reserving extra capacity for future growth.
+		if len(args) < 2 {
+			return ""
+		}
+		capVal := g.evalI64Arg(sb, args[0])
+		lenVal := g.evalI64Arg(sb, args[1])
+		targetType := g.currentTargetType
+		switch targetType {
+		case "%str-long", "str":
+			// malloc(cap)
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%wcl.sbuf.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+			}
+			// Build %str-long { len=len, cap=cap, data=buf }
+			g.tmpIdx++
+			s1 := fmt.Sprintf("%%wcl.s1.%d", g.tmpIdx)
+			g.tmpIdx++
+			s2 := fmt.Sprintf("%%wcl.s2.%d", g.tmpIdx)
+			g.tmpIdx++
+			s3 := fmt.Sprintf("%%wcl.s3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), s1, lenVal))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), s2, s1, capVal))
+				_p2i_s3 := g.ptrToIntVal(sb, bufReg)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), s3, s2, _p2i_s3))
+			}
+			g.ssaTypes[s3] = "%str-long"
+			return s3
+
+		default: // %vec, []i64, etc.
+			elemSize := int64(8) // default i64
+			g.tmpIdx++
+			bytesReg := fmt.Sprintf("%%wcl.vbytes.%d", g.tmpIdx)
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%wcl.vbuf.%d", g.tmpIdx)
+			g.tmpIdx++
+			v1 := fmt.Sprintf("%%wcl.v1.%d", g.tmpIdx)
+			g.tmpIdx++
+			v2 := fmt.Sprintf("%%wcl.v2.%d", g.tmpIdx)
+			g.tmpIdx++
+			v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				// len=len, cap=cap (independent values)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
+				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 2\n", g.indent(), v3, v2, _p2i_v3))
+			}
+			g.ssaTypes[v3] = "%vec"
+			return v3
+		}
+
 	case "get-errno":
 		// get-errno() — get the last errno value from C library
 		// macOS: @__error(), Linux: @__errno_location(), Windows: @_errno()

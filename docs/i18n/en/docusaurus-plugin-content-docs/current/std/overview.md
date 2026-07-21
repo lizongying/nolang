@@ -144,6 +144,8 @@ out = s.trim-char(c)          // Trim specified character
 ok = s.empty()                // Whether it is empty
 s.clear()                     // Clear (len=0, in-place)
 s = with-cap(cap)            // Builtin: create new string with specified capacity (len=0)
+s = with-len(len)            // Builtin: create new string with specified length (len=cap)
+s = with-cap-len(cap, len)   // Builtin: create new string with specified capacity and length
 parts = s.split(sep)          // Split by separator (returns []str, method)
 out = ss.join(sep)            // Join []str with separator (method)
 ```
@@ -203,6 +205,8 @@ n = []t.len()                  // Length
 []t.push(val)                   // Append (auto-grow)
 []t.clear()                     // Clear (len=0, cap/data unchanged)
 v = with-cap(cap)             // Builtin: create new slice with specified capacity (len=0)
+v = with-len(len)             // Builtin: create new slice with specified length (len=cap)
+v = with-cap-len(cap, len)    // Builtin: create new slice with specified capacity and length
 val, new-n = []t.pop()         // Pop
 found = []t.contains(n, val)   // Whether it contains (n is length)
 []t.reverse(n)                  // Reverse first n elements

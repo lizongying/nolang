@@ -1009,8 +1009,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if name == "val" || name == "err" || name == "ok" {
 				return "%option"
 			}
-			// with-cap: type inferred from LHS type annotation
-			if name == "with-cap" {
+			// with-cap / with-len / with-cap-len: type inferred from LHS type annotation
+			if name == "with-cap" || name == "with-len" || name == "with-cap-len" {
 				if stmt.Type != nil {
 					ts := stmt.Type.String()
 					if ts == "str" {
@@ -1165,9 +1165,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 							// ForwardFunc builtins with empty Return: infer from ForwardFunc name
 							if m.ForwardFunc != "" {
-								switch m.ForwardFunc {
-								case "with-cap":
-									return "%vec"
+						switch m.ForwardFunc {
+						case "with-cap", "with-len", "with-cap-len":
+							return "%vec"
 								case "bool-to-str", "ffi-cstr-at":
 									return "%str-long"
 								}
@@ -1193,9 +1193,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							return g.mapToLLVMType(m.Return[0].String())
 						}
 						if m.ForwardFunc != "" {
-							switch m.ForwardFunc {
-							case "with-cap":
-								return "%vec"
+						switch m.ForwardFunc {
+						case "with-cap", "with-len", "with-cap-len":
+							return "%vec"
 							case "bool-to-str", "ffi-cstr-at":
 								return "%str-long"
 							}
@@ -2746,10 +2746,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
 	_, isSliceExpr2 := stmt.Value.(*parser.SliceExpression)
 	_, isSliceType := stmt.Type.(*parser.SliceType)
-	// Skip default slice init when using with-cap builtin (type-inferred allocation)
+	// Skip default slice init when using with-cap/with-len/with-cap-len builtin (type-inferred allocation)
 	isWithCapCall := false
 	if call, ok := stmt.Value.(*parser.CallExpression); ok {
-		if ident, ok := call.Function.(*parser.Identifier); ok && ident.Value == "with-cap" {
+		if ident, ok := call.Function.(*parser.Identifier); ok && (ident.Value == "with-cap" || ident.Value == "with-len" || ident.Value == "with-cap-len") {
 			isWithCapCall = true
 		}
 	}
@@ -2938,7 +2938,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// For with-cap with slice type: register element type
+	// For with-cap/with-len/with-cap-len with slice type: register element type
 	// (skipped the default slice init path, so need manual element type registration)
 	// Note: alloca is already done during variable declaration collection phase.
 	if isWithCapCall && isSliceType {
