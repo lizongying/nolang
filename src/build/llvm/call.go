@@ -1001,11 +1001,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if m == nil && strings.Contains(fnName, ".") {
 			// Try stripping module prefix (e.g. "fs.is-dir" → "is-dir").
 			// Safe because skipBuiltin already verified no user function exists with the full name.
+			// BUT: if the first segment is a variable name (e.g. "data.load-le-u32"),
+			// this is a method call, not a module-qualified call. Don't strip —
+			// let the method resolution code at line ~1094 handle it.
 			if idx := strings.Index(fnName, "."); idx >= 0 {
-				shortName := fnName[idx+1:]
-				if m2 := builtin.FindBuiltinMethod(shortName); m2 != nil {
-					m = m2
-					fnName = shortName
+				firstSegment := fnName[:idx]
+				_, isVar := g.varTypes[firstSegment]
+				if !isVar {
+					shortName := fnName[idx+1:]
+					if m2 := builtin.FindBuiltinMethod(shortName); m2 != nil {
+						m = m2
+						fnName = shortName
+					}
 				}
 			}
 		}

@@ -2593,65 +2593,167 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	startVal := g.generateExprWithSB(sb, r.Start)
 	endVal := g.generateExprWithSB(sb, r.End)
 
+	// Check if both start and end are compile-time constants.
+	// If so, the loop direction is known at compile time and we can
+	// generate a simple loop with NO per-iteration select instructions.
+	startLit, startIsLit := r.Start.(*parser.IntegerLiteral)
+	endLit, endIsLit := r.End.(*parser.IntegerLiteral)
+
+	if startIsLit && endIsLit {
+		// ================================================================
+		// Fast path: both bounds are constants — direction known at compile time.
+		// Generates a simple loop with NO select instructions:
+		//   cond: single icmp (no select)
+		//   step: single add/sub (no select)
+		// ================================================================
+		ascending := startLit.Value <= endLit.Value
+
+		// Compute initial value: start (left-closed) or start±1 (left-open)
+		var iInitVal string
+		if r.LeftInc {
+			iInitVal = startVal
+		} else {
+			g.tmpIdx++
+			iInitReg := fmt.Sprintf("%%rng.init.%d", g.tmpIdx)
+			if ascending {
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInitReg, startVal))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iInitReg, startVal))
+			}
+			iInitVal = iInitReg
+		}
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInitVal, varName))
+		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+
+		// cond block: single comparison (no select!)
+		g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
+		g.indentLevel++
+		g.tmpIdx++
+		iLoad := fmt.Sprintf("%%rng.i.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%rng.cmp.%d", g.tmpIdx)
+		if ascending {
+			cmpOp := "sle"
+			if !r.RightInc {
+				cmpOp = "slt"
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, iLoad, endVal))
+		} else {
+			cmpOp := "sge"
+			if !r.RightInc {
+				cmpOp = "sgt"
+			}
+			sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, iLoad, endVal))
+		}
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+		g.indentLevel--
+
+		// body block
+		g.emitLabel(sb, fmt.Sprintf("rng.body.%d", lbl))
+		g.indentLevel++
+		if stmt.Body != nil {
+			for _, s := range stmt.Body.Statements {
+				g.generateStatement(sb, s)
+			}
+		}
+		if !g.blockTerminated {
+			sb.WriteString(fmt.Sprintf("%sbr label %%rng.step.%d\n", g.indent(), lbl))
+		}
+		g.blockTerminated = false
+		g.indentLevel--
+
+		// step block: simple increment or decrement (no select!)
+		g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
+		g.indentLevel++
+		g.tmpIdx++
+		iLoad2 := fmt.Sprintf("%%rng.i2.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
+		g.tmpIdx++
+		iNext := fmt.Sprintf("%%rng.next.%d", g.tmpIdx)
+		if ascending {
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad2))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iNext, iLoad2))
+		}
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
+		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+		g.indentLevel--
+
+		// end block
+		g.emitLabel(sb, fmt.Sprintf("rng.end.%d", lbl))
+		return
+	}
+
+	// ================================================================
+	// General path: at least one bound is non-constant.
+	// Check direction ONCE before the loop, then split into separate
+	// ascending/descending condition blocks. The body is shared.
+	// The back-edge uses `br dirCmp` which is perfectly predicted by
+	// the branch predictor since dirCmp is loop-invariant.
+	//
+	// This eliminates per-iteration `select` instructions:
+	//   cond: 2 icmp + 1 select → 1 icmp (in the active path)
+	//   step: 2 add/sub + 1 select → 1 add (using pre-computed step)
+	// ================================================================
+
 	// 計算方向標誌：start <= end 為遞增 (true)，start > end 為遞減 (false)
-	// 在初始化之前計算，以便左開區間能根據方向選擇 start+1 或 start-1
 	g.tmpIdx++
 	dirCmp := fmt.Sprintf("%%rng.dircmp.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp sle i64 %s, %s\n", g.indent(), dirCmp, startVal, endVal))
 
-	// 計算初始值 i = start（左閉）或 start±1（左開，依方向）
+	// Pre-compute step: 1 for ascending, -1 for descending (computed once)
+	g.tmpIdx++
+	stepReg := fmt.Sprintf("%%rng.stepval.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 1, i64 -1\n", g.indent(), stepReg, dirCmp))
+
+	// 計算初始值 i = start（左閉）或 start+step（左開）
 	g.tmpIdx++
 	iInit := fmt.Sprintf("%%rng.init.%d", g.tmpIdx)
 	if r.LeftInc {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 0\n", g.indent(), iInit, startVal))
 	} else {
-		// 左開：遞增時 start+1，遞減時 start-1
-		g.tmpIdx++
-		iPlus := fmt.Sprintf("%%rng.init.plus.%d", g.tmpIdx)
-		g.tmpIdx++
-		iMinus := fmt.Sprintf("%%rng.init.minus.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iPlus, startVal))
-		sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iMinus, startVal))
-		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), iInit, dirCmp, iPlus, iMinus))
+		// 左開：i = start + step (step is 1 for ascending, -1 for descending)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), iInit, startVal, stepReg))
 	}
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInit, varName))
 
-	// br → cond
-	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+	// Branch to the appropriate condition block based on direction (checked once)
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.asc.cond.%d, label %%rng.desc.cond.%d\n", g.indent(), dirCmp, lbl, lbl))
 
-	// cond block: 判斷方向並比較
-	g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
+	// Ascending condition block: i < end (or i <= end if right-inclusive)
+	g.emitLabel(sb, fmt.Sprintf("rng.asc.cond.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
-	selReg := fmt.Sprintf("%%rng.sel.%d", g.tmpIdx)
-	// 先載入目前 i 值
+	ascILoad := fmt.Sprintf("%%rng.asc.i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), ascILoad, varName))
 	g.tmpIdx++
-	iLoad := fmt.Sprintf("%%rng.i.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
-	// 判斷方向並選擇比較結果
-	// 若 a <= b 則用 i <= b (ascending)，否則 i >= b (descending)
-	g.tmpIdx++
-	ascCmp := fmt.Sprintf("%%rng.asc.%d", g.tmpIdx)
-	g.tmpIdx++
-	descCmp := fmt.Sprintf("%%rng.desc.%d", g.tmpIdx)
-	cmpOp := "sle"
+	ascCmp := fmt.Sprintf("%%rng.asc.cmp.%d", g.tmpIdx)
+	ascOp := "sle"
 	if !r.RightInc {
-		cmpOp = "slt"
+		ascOp = "slt"
 	}
-	// ascending: i <= end
-	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), ascCmp, cmpOp, iLoad, endVal))
-	// descending: i >= end
+	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), ascCmp, ascOp, ascILoad, endVal))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), ascCmp, lbl, lbl))
+	g.indentLevel--
+
+	// Descending condition block: i > end (or i >= end if right-inclusive)
+	g.emitLabel(sb, fmt.Sprintf("rng.desc.cond.%d", lbl))
+	g.indentLevel++
+	g.tmpIdx++
+	descILoad := fmt.Sprintf("%%rng.desc.i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), descILoad, varName))
+	g.tmpIdx++
+	descCmp := fmt.Sprintf("%%rng.desc.cmp.%d", g.tmpIdx)
 	descOp := "sge"
 	if !r.RightInc {
 		descOp = "sgt"
 	}
-	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), descCmp, descOp, iLoad, endVal))
-	// 選擇 ascending vs descending（使用預先計算的 dirCmp）
-	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i1 %s, i1 %s\n", g.indent(), selReg, dirCmp, ascCmp, descCmp))
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), selReg, lbl, lbl))
+	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), descCmp, descOp, descILoad, endVal))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), descCmp, lbl, lbl))
 	g.indentLevel--
 
-	// body block
+	// body block (shared between ascending and descending paths)
 	g.emitLabel(sb, fmt.Sprintf("rng.body.%d", lbl))
 	g.indentLevel++
 	if stmt.Body != nil {
@@ -2666,20 +2768,20 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	g.blockTerminated = false
 	g.indentLevel--
 
-	// step block: 更新 i = i ± 1（continue 跳轉目標）
+	// step block: i = i + step (single add, no select!)
+	// continue 跳轉目標
 	g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
 	g.indentLevel++
 	g.tmpIdx++
-	iUp := fmt.Sprintf("%%rng.up.%d", g.tmpIdx)
-	g.tmpIdx++
-	iDown := fmt.Sprintf("%%rng.down.%d", g.tmpIdx)
+	stepILoad := fmt.Sprintf("%%rng.step.i.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), stepILoad, varName))
 	g.tmpIdx++
 	iNext := fmt.Sprintf("%%rng.next.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iUp, iLoad))
-	sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), iDown, iLoad))
-	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), iNext, dirCmp, iUp, iDown))
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), iNext, stepILoad, stepReg))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
-	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+	// Back-edge: branch to the appropriate cond block based on direction.
+	// dirCmp is loop-invariant, so this branch is perfectly predicted.
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.asc.cond.%d, label %%rng.desc.cond.%d\n", g.indent(), dirCmp, lbl, lbl))
 	g.indentLevel--
 
 	// end block

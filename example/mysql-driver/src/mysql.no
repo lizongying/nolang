@@ -19,11 +19,6 @@
 ; 預編譯陳述式採字串替換（無 MYSQL_BIND），bind-* 按順序替換 ? 佔位符。
 ; bind-str 不做 SQL 跳脫（MVP 限制），請勿直接綁定含 ' 的使用者輸入。
 
-; 導入 std/database/sql 介面與共用結構體
-# std/database/sql
-; 導入 SHA-1 區塊處理函數
-# std/hash/sha1
-
 ; ============================================================================
 ; 常量
 ; ============================================================================
@@ -88,6 +83,7 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
         } (i < read-n)
         total = total + read-n
     } (total < n)
+
     ok = true
 }
 
@@ -183,10 +179,10 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 ; 返回 token [20]byte: 20 位元組認證權杖
 mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     ; stage1 = SHA1(password)
-    stage1 [20]byte = hash.sha1.sha1(password.to-bytes())
+    stage1 [20]byte = sha1.sha1(password.to-bytes())
 
     ; stage2 = SHA1(stage1)
-    stage2 [20]byte = hash.sha1.sha1(stage1.to-vec())
+    stage2 [20]byte = sha1.sha1(stage1.to-vec())
 
     ; combined = seed + stage2 (40 bytes)
     combined [40]byte
@@ -202,7 +198,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     } (i < 20)
 
     ; stage3 = SHA1(combined)
-    stage3 [20]byte = hash.sha1.sha1(combined.to-vec())
+    stage3 [20]byte = sha1.sha1(combined.to-vec())
 
     ; token = stage1 XOR stage3
     i = 0
@@ -563,7 +559,7 @@ db-mysql.close = () (ok bool) {
     }
 }
 
-db-mysql.exec = (sql str) (r result) {
+db-mysql.exec = (sql str) (r sql.result) {
     if .connected == false {
         return
     }
@@ -918,7 +914,7 @@ stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
     ok = true
 }
 
-stmt-mysql.exec = () (r result) {
+stmt-mysql.exec = () (r sql.result) {
     if .fd < 0 {
         return
     }

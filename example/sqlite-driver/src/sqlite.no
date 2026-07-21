@@ -17,8 +17,6 @@
 ;   v = rs.scan-int(0)
 ;   // rs、d 離開作用域時自動關閉，無需手動呼叫 close()
 
-; 導入 std/database/sql 介面與共用結構體
-# std/database/sql
 
 #{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
@@ -137,7 +135,7 @@ db-sqlite.close = () (ok bool) {
 ; db-sqlite.exec: 執行 SQL（無結果集）
 ; sql str: SQL 語句
 ; 返回 r result: 執行結果（affected=受影響列數, last-id=最後插入 ID）
-db-sqlite.exec = (sql str) (r result) {
+db-sqlite.exec = (sql str) (r sql.result) {
     rc i32 = _sqlite3-exec(.handle, sql, 0, 0, 0)
     r.affected = _sqlite3-changes(.handle)
     r.last-id = _sqlite3-last-insert-rowid(.handle)
@@ -258,7 +256,7 @@ stmt-sqlite.bind-bool = (idx i64, v bool) (ok bool) {
 
 ; stmt-sqlite.exec: 執行預編譯陳述式（無結果集）
 ; 返回 r result: 執行結果（affected=受影響列數, last-id=最後插入 ID）
-stmt-sqlite.exec = () (r result) {
+stmt-sqlite.exec = () (r sql.result) {
     rc i32 = _sqlite3-step(.handle)
     rc == SQLITE-DONE -> {
         r.affected = _sqlite3-changes(.db-handle)

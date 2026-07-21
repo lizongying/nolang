@@ -27,22 +27,22 @@ md5 = (data []byte) (out [16]byte) {
     ; 處理全塊：直接從 data 載入 16 個 32-bit 字（load-le-u32 使用指標運算，無邊界檢查）
     bidx <- [0..num-full): {
         off = bidx * 64
-        w0 u32 = load-le-u32(data, off)
-        w1 u32 = load-le-u32(data, off + 4)
-        w2 u32 = load-le-u32(data, off + 8)
-        w3 u32 = load-le-u32(data, off + 12)
-        w4 u32 = load-le-u32(data, off + 16)
-        w5 u32 = load-le-u32(data, off + 20)
-        w6 u32 = load-le-u32(data, off + 24)
-        w7 u32 = load-le-u32(data, off + 28)
-        w8 u32 = load-le-u32(data, off + 32)
-        w9 u32 = load-le-u32(data, off + 36)
-        w10 u32 = load-le-u32(data, off + 40)
-        w11 u32 = load-le-u32(data, off + 44)
-        w12 u32 = load-le-u32(data, off + 48)
-        w13 u32 = load-le-u32(data, off + 52)
-        w14 u32 = load-le-u32(data, off + 56)
-        w15 u32 = load-le-u32(data, off + 60)
+        w0 = data.load-le-u32(off)
+        w1 = data.load-le-u32(off + 4)
+        w2 = data.load-le-u32(off + 8)
+        w3 = data.load-le-u32(off + 12)
+        w4 = data.load-le-u32(off + 16)
+        w5 = data.load-le-u32(off + 20)
+        w6 = data.load-le-u32(off + 24)
+        w7 = data.load-le-u32(off + 28)
+        w8 = data.load-le-u32(off + 32)
+        w9 = data.load-le-u32(off + 36)
+        w10 = data.load-le-u32(off + 40)
+        w11 = data.load-le-u32(off + 44)
+        w12 = data.load-le-u32(off + 48)
+        w13 = data.load-le-u32(off + 52)
+        w14 = data.load-le-u32(off + 56)
+        w15 = data.load-le-u32(off + 60)
 
         ; MD5 壓縮函數（64 輪）— u32 算術自然 32-bit 溢出
         a u32 = h0
@@ -257,13 +257,13 @@ md5 = (data []byte) (out [16]byte) {
     off = num-full * 64
     dremain = dlen - off
 
-    ; 零填充緩衝區（LLVM 優化為 memset）
-    j <- [0..64): buf[j] = 0
+    ; 零填充緩衝區（生成 llvm.memset）
+    buf.clear()
 
     ; 以 4 位元組為單位拷貝資料（load-le-u32/store-le-u32 使用指標運算，無邊界檢查）
     num-copy-words = dremain / 4
     j <- [0..num-copy-words): {
-        store-le-u32(buf, j * 4, load-le-u32(data, off + j * 4))
+        buf.store-le-u32(j * 4, data.load-le-u32(off + j * 4))
     }
     ; 處理剩餘 0-3 位元組
     copy-rem = dremain % 4
@@ -274,26 +274,26 @@ md5 = (data []byte) (out [16]byte) {
 
     ; 添加 0x80 填充和長度
     buf[dremain] = 128
-    store-le-u32(buf, 56, blen & 4294967295)
-    store-le-u32(buf, 60, blen >> 32)
+    buf.store-le-u32(56, blen & 4294967295)
+    buf.store-le-u32(60, blen >> 32)
 
     ; 從緩衝區載入 16 個 32-bit 字
-    w0 u32 = load-le-u32(buf, 0)
-    w1 u32 = load-le-u32(buf, 4)
-    w2 u32 = load-le-u32(buf, 8)
-    w3 u32 = load-le-u32(buf, 12)
-    w4 u32 = load-le-u32(buf, 16)
-    w5 u32 = load-le-u32(buf, 20)
-    w6 u32 = load-le-u32(buf, 24)
-    w7 u32 = load-le-u32(buf, 28)
-    w8 u32 = load-le-u32(buf, 32)
-    w9 u32 = load-le-u32(buf, 36)
-    w10 u32 = load-le-u32(buf, 40)
-    w11 u32 = load-le-u32(buf, 44)
-    w12 u32 = load-le-u32(buf, 48)
-    w13 u32 = load-le-u32(buf, 52)
-    w14 u32 = load-le-u32(buf, 56)
-    w15 u32 = load-le-u32(buf, 60)
+    w0 = buf.load-le-u32(0)
+    w1 = buf.load-le-u32(4)
+    w2 = buf.load-le-u32(8)
+    w3 = buf.load-le-u32(12)
+    w4 = buf.load-le-u32(16)
+    w5 = buf.load-le-u32(20)
+    w6 = buf.load-le-u32(24)
+    w7 = buf.load-le-u32(28)
+    w8 = buf.load-le-u32(32)
+    w9 = buf.load-le-u32(36)
+    w10 = buf.load-le-u32(40)
+    w11 = buf.load-le-u32(44)
+    w12 = buf.load-le-u32(48)
+    w13 = buf.load-le-u32(52)
+    w14 = buf.load-le-u32(56)
+    w15 = buf.load-le-u32(60)
 
     ; MD5 壓縮函數（64 輪）
     a u32 = h0
@@ -503,8 +503,8 @@ md5 = (data []byte) (out [16]byte) {
     h3 = h3 + d
 
     ; 輸出 16 位元組（小端序 32-bit 字，使用 store-le-u32 單條 store 指令）
-    store-le-u32(out, 0, h0)
-    store-le-u32(out, 4, h1)
-    store-le-u32(out, 8, h2)
-    store-le-u32(out, 12, h3)
+    out.store-le-u32(0, h0)
+    out.store-le-u32(4, h1)
+    out.store-le-u32(8, h2)
+    out.store-le-u32(12, h3)
 }

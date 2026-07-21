@@ -1753,6 +1753,23 @@ func inferTypeFromExpr(expr parser.Expression) string {
 				return "str"
 			case "byte-to-str":
 				return "str"
+			case "load-le-u16":
+				return "u16"
+			case "load-le-u32":
+				return "u32"
+			case "load-le-u64":
+				return "u64"
+			}
+		}
+		// Method call: receiver.load-le-u32(off) → DotExpression
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			switch dot.Property {
+			case "load-le-u16":
+				return "u16"
+			case "load-le-u32":
+				return "u32"
+			case "load-le-u64":
+				return "u64"
 			}
 		}
 	}
