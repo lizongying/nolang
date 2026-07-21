@@ -1161,6 +1161,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
 	mangleOverloads(merged, nil)
 
+	// 編譯期未初始化變數檢查：循環體內聲明的變數在循環外使用
+	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
+	if err := validateLoopScopedVars(merged); err != nil {
+		return "", err
+	}
+
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
 	// 而非編譯主機平台（支援交叉編譯）。
 	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
@@ -3183,6 +3189,255 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 		}
 	}
 	return nil
+}
+
+// validateLoopScopedVars detects variables that are first declared inside a
+// ForStatement body and then used after the loop exits. Because the loop might
+// execute zero iterations, such variables would be undef at the point of use,
+// leading to undefined behavior (e.g. infinite loops after LLVM optimization).
+func validateLoopScopedVars(program *parser.Program) error {
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.Body != nil {
+			// Pre-populate definedBeforeLoop with all function parameters and
+			// result parameters, since they are always initialized by the caller
+			// or at function entry.
+			preDefined := make(map[string]bool)
+			for _, p := range fd.Parameters {
+				preDefined[p.Name] = true
+			}
+			for _, r := range fd.Results {
+				if r.Name != "" {
+					preDefined[r.Name] = true
+				}
+			}
+			if err := validateLoopScopedStmts(fd.Body.Statements, preDefined); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateLoopScopedStmts walks a statement list sequentially, tracking which
+// variables are first declared inside a ForStatement body. After a ForStatement,
+// it checks ALL subsequent statements for uses of those loop-only variables.
+func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]bool) error {
+	// definedBeforeLoop: variables defined at top level before any loop
+	definedBeforeLoop := make(map[string]bool)
+	// Pre-populate with function parameters and results
+	for k, v := range preDefined {
+		definedBeforeLoop[k] = v
+	}
+	// loopOnlyVars: variables first declared inside a preceding loop body.
+	// These might be undef if the loop executed zero iterations.
+	loopOnlyVars := make(map[string]bool)
+
+	for _, stmt := range stmts {
+		// Check if this statement reads a loop-only variable in an expression
+		usedNames := collectExprIdentifiers(stmt)
+		for name := range usedNames {
+			if loopOnlyVars[name] && !definedBeforeLoop[name] {
+				return fmt.Errorf("line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)",
+					stmtPosLine(stmt), name)
+			}
+		}
+		// Check if a ForStatement's loop variable reuses a loop-only variable name.
+		// This is the exact pattern that caused the md5 hang: a variable declared
+		// inside a loop body (c u32 = h2) was reused as a range-for loop variable
+		// (c <- (dremain..56)), causing LLVM to generate undef PHI nodes.
+		if fs, ok := stmt.(*parser.ForStatement); ok {
+			if fs.IterRange != nil && fs.IterRange.Variable != "" {
+				v := fs.IterRange.Variable
+				if loopOnlyVars[v] && !definedBeforeLoop[v] {
+					return fmt.Errorf("line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)",
+						fs.Token.Line, v)
+				}
+			}
+		}
+
+		// Track top-level variable declarations
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			definedBeforeLoop[ls.Name.Value] = true
+			// Once re-declared at top level, it's no longer "loop-only"
+			delete(loopOnlyVars, ls.Name.Value)
+		}
+		// ForStatement: loop variable is always initialized
+		if fs, ok := stmt.(*parser.ForStatement); ok {
+			if fs.IterRange != nil && fs.IterRange.Variable != "" {
+				definedBeforeLoop[fs.IterRange.Variable] = true
+				delete(loopOnlyVars, fs.IterRange.Variable)
+			}
+			// Collect variables declared inside the loop body
+			bodyVars := collectLoopBodyVarDecls(fs)
+			for v := range bodyVars {
+				if !definedBeforeLoop[v] {
+					loopOnlyVars[v] = true
+				}
+			}
+			// Recursively validate nested statements inside the loop body.
+			// Pass current definedBeforeLoop as preDefined so that variables
+			// defined before this loop are still recognized inside the body.
+			if fs.Body != nil {
+				if err := validateLoopScopedStmts(fs.Body.Statements, definedBeforeLoop); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func collectLoopBodyVarDecls(fs *parser.ForStatement) map[string]bool {
+	vars := make(map[string]bool)
+	if fs.Body == nil {
+		return vars
+	}
+	collectVarDeclsFromStmts(fs.Body.Statements, vars)
+	if fs.IterRange != nil && fs.IterRange.Variable != "" {
+		delete(vars, fs.IterRange.Variable)
+	}
+	return vars
+}
+
+func collectVarDeclsFromStmts(stmts []parser.Statement, vars map[string]bool) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Name != nil {
+				vars[s.Name.Value] = true
+			}
+		case *parser.BlockStatement:
+			collectVarDeclsFromStmts(s.Statements, vars)
+		case *parser.ForStatement:
+			if s.Body != nil {
+				collectVarDeclsFromStmts(s.Body.Statements, vars)
+			}
+		}
+	}
+}
+
+func collectExprIdentifiers(stmt parser.Statement) map[string]bool {
+	idents := make(map[string]bool)
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Value != nil {
+			collectIdentsFromExpr(s.Value, idents)
+		}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			collectIdentsFromExpr(s.Expression, idents)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			collectIdentsFromExpr(s.ReturnValue, idents)
+		}
+	case *parser.ForStatement:
+		if s.IterRange != nil {
+			if s.IterRange.Range != nil {
+				if s.IterRange.Range.Start != nil {
+					collectIdentsFromExpr(s.IterRange.Range.Start, idents)
+				}
+				if s.IterRange.Range.End != nil {
+					collectIdentsFromExpr(s.IterRange.Range.End, idents)
+				}
+			}
+			if s.IterRange.RangeExpr != nil {
+				collectIdentsFromExpr(s.IterRange.RangeExpr, idents)
+			}
+		}
+		if s.Condition != nil {
+			collectIdentsFromExpr(s.Condition, idents)
+		}
+		if s.CountExpr != nil {
+			collectIdentsFromExpr(s.CountExpr, idents)
+		}
+	case *parser.MultiAssignStatement:
+		for _, target := range s.Targets {
+			collectIdentsFromExpr(target, idents)
+		}
+		if s.Value != nil {
+			collectIdentsFromExpr(s.Value, idents)
+		}
+	}
+	return idents
+}
+
+func collectIdentsFromExpr(expr parser.Expression, idents map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		idents[e.Value] = true
+	case *parser.PrefixExpression:
+		collectIdentsFromExpr(e.Right, idents)
+	case *parser.InfixExpression:
+		collectIdentsFromExpr(e.Left, idents)
+		collectIdentsFromExpr(e.Right, idents)
+	case *parser.CallExpression:
+		collectIdentsFromExpr(e.Function, idents)
+		for _, arg := range e.Arguments {
+			collectIdentsFromExpr(arg, idents)
+		}
+		for _, ga := range e.GenericArgs {
+			collectIdentsFromExpr(ga, idents)
+		}
+	case *parser.DotExpression:
+		collectIdentsFromExpr(e.Receiver, idents)
+	case *parser.IndexExpression:
+		collectIdentsFromExpr(e.Left, idents)
+		collectIdentsFromExpr(e.Index, idents)
+	case *parser.SliceExpression:
+		collectIdentsFromExpr(e.Left, idents)
+		if e.Range != nil {
+			collectIdentsFromExpr(e.Range.Start, idents)
+			collectIdentsFromExpr(e.Range.End, idents)
+		}
+	case *parser.AssignExpression:
+		collectIdentsFromExpr(e.Left, idents)
+		collectIdentsFromExpr(e.Value, idents)
+	case *parser.ConditionalExpression:
+		collectIdentsFromExpr(e.Condition, idents)
+		collectIdentsFromExpr(e.Consequence, idents)
+		collectIdentsFromExpr(e.Alternative, idents)
+	case *parser.IfExpression:
+		collectIdentsFromExpr(e.Condition, idents)
+	case *parser.CastExpression:
+		collectIdentsFromExpr(e.Expr, idents)
+	case *parser.GroupedExpression:
+		collectIdentsFromExpr(e.Expression, idents)
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			collectIdentsFromExpr(elem, idents)
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			collectIdentsFromExpr(elem, idents)
+		}
+	case *parser.MapLiteral:
+		for _, pair := range e.Pairs {
+			collectIdentsFromExpr(pair.Key, idents)
+			collectIdentsFromExpr(pair.Value, idents)
+		}
+	case *parser.StructLiteral:
+		for _, field := range e.Fields {
+			collectIdentsFromExpr(field.Value, idents)
+		}
+	case *parser.RunExpression:
+		collectIdentsFromExpr(e.Call, idents)
+	case *parser.AwaitExpression:
+		collectIdentsFromExpr(e.Right, idents)
+	case *parser.RangeExpression:
+		collectIdentsFromExpr(e.Start, idents)
+		collectIdentsFromExpr(e.End, idents)
+	}
+}
+
+func stmtPosLine(stmt parser.Statement) int {
+	if stmt == nil {
+		return 0
+	}
+	return stmt.Pos().Line
 }
 
 // validateArrayBounds 編譯期陣列邊界檢查

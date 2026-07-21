@@ -255,9 +255,6 @@ md5 = (data []byte) (out [16]byte) {
     off = num-full * 64
     dremain = dlen - off
 
-    ; 零填充緩衝區（生成 llvm.memset）
-    buf.clear()
-
     ; 以 4 位元組為單位拷貝資料（load-le-u32/store-le-u32 使用指標運算，無邊界檢查）
     num-copy-words = dremain / 4
     j <- [0..num-copy-words): {
@@ -275,10 +272,9 @@ md5 = (data []byte) (out [16]byte) {
     buf[dremain] = 128
 
     ; 僅清零 dremain+1 ~ 55 這一段，是MD5規範要求補0的區間
-    ; dremain < 56 -> {
-    ;     c <- (dremain..56): buf[c] = 0
-    ; }
-    c <- (dremain..56): buf[c] = 0
+    dremain < 56 -> {
+        pad-idx <- (dremain..56): buf[pad-idx] = 0
+    }
     buf.store-le-u32(56, blen & 4294967295)
     buf.store-le-u32(60, blen >> 32)
 

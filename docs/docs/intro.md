@@ -23,22 +23,22 @@ Nolang 是一門實驗性的系統編程語言，採用引用傳遞模型、安�
 ## 快速開始
 
 ```nolang
-// 你好，世界！
-// 不需要main入口
+; 你好，世界！
+; 不需要main入口
 print('Hello, Nolang!')
 
-// 變量聲明
+; 變量聲明
 i64
 
-// 函數定義
+; 函數定義
 add = (a i64, b i64) (result i64) {
     result = a + b
 }
 
-// 標準庫方法，可以直接調用
+; 標準庫方法，可以直接調用
 c = math.max(a, b)
 
-// 結構體
+; 結構體
 user {
     name str
     age i64
@@ -49,7 +49,7 @@ u = user {
     age: 30
 }
 
-// 方法
+; 方法
 user.greet = () {
     print('Hello, ' - .name)
 }

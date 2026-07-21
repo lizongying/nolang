@@ -902,10 +902,17 @@ func (g *Generator) Generate(program *parser.Program) string {
 	sb.WriteString("%option = type { i64, i64 }\n")
 	sb.WriteString("%arr = type { i64, i64 }\n")
 	sb.WriteString("%vec = type { i64, i64, i64 }\n")
-	for name, fields := range g.structTypes {
+	// Sort struct type names for deterministic IR output (Go map iteration is randomized).
+	sortedStructs := make([]string, 0, len(g.structTypes))
+	for name := range g.structTypes {
 		if name == "str-long" || name == "arr" || name == "vec" {
-			continue // built-in, already emitted
+			continue
 		}
+		sortedStructs = append(sortedStructs, name)
+	}
+	sort.Strings(sortedStructs)
+	for _, name := range sortedStructs {
+		fields := g.structTypes[name]
 		sb.WriteString(fmt.Sprintf("%%%s = type { ", name))
 		for i, f := range fields {
 			if i > 0 {

@@ -1,11 +1,12 @@
 package llvm
 
 import (
-	"fmt"
-	"strings"
+"fmt"
+"sort"
+"strings"
 
-	"github.com/lizongying/nolang/builtin"
-	"github.com/lizongying/nolang/parser"
+"github.com/lizongying/nolang/builtin"
+"github.com/lizongying/nolang/parser"
 )
 
 func (g *Generator) llvmTypeSize(llvmType string) int64 {
@@ -680,7 +681,16 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// This is needed because CallExpression values use the variable's address
 	// as an output parameter before generateLet would allocate it.
 	if g.moduleVarTypes != nil {
-		for name, varType := range g.moduleVarTypes {
+		// Sort keys for deterministic alloca ordering (Go map iteration is randomized).
+		// Non-deterministic alloca order causes LLVM opt -O3 to make different
+		// optimization decisions across builds, leading to intermittent issues.
+		sortedNames := make([]string, 0, len(g.moduleVarTypes))
+		for name := range g.moduleVarTypes {
+			sortedNames = append(sortedNames, name)
+		}
+		sort.Strings(sortedNames)
+		for _, name := range sortedNames {
+			varType := g.moduleVarTypes[name]
 			if g.globalVars != nil && g.globalVars[name] {
 				continue
 			}
