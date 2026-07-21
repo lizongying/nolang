@@ -13,10 +13,10 @@ Nolang strings (`str`) are a union type (short ≤127 bytes stored on stack / lo
 Use the `-` operator to concatenate strings:
 
 ```nolang
-// Literal concatenation
+; Literal concatenation
 s = 'Hello' - ' ' - 'World'
 
-// Concatenation with variable
+; Concatenation with variable
 greeting = 'Hello, ' - name
 ```
 
@@ -33,73 +33,73 @@ s = 'Hello' * 3
 ```nolang
 s = 'Hello World'
 
-// Index returns char (character, not byte)
-c = s[0]           // c = code point of 'H'
+; Index returns char (character, not byte)
+c = s[0]           ; c = code point of 'H'
 
-// Slice (view, shares underlying memory)
-sub = s[6..]       // 'World'
-sub = s[6..11]     // 'World'
-sub = s[0..5)      // 'Hello'
+; Slice (view, shares underlying memory)
+sub = s[6..]       ; 'World'
+sub = s[6..11]     ; 'World'
+sub = s[0..5)      ; 'Hello'
 
-// Length
-n = s.len          // byte length
-n = s.count()      // code point count (Unicode character count)
+; Length
+n = s.len          ; byte length
+n = s.count()      ; code point count (Unicode character count)
 ```
 
 ## String Methods
 
 ```nolang
-// Comparison
-ok = a.eq(b, n)               // Equality comparison (method)
-c = s.compare(b)              // Lexicographic comparison
+; Comparison
+ok = a.eq(b, n)               ; Equality comparison (method)
+c = s.compare(b)              ; Lexicographic comparison
 
-// Search
-pos = s.index(sub)             // Substring position
-ok = s.contains(sub)           // Contains substring
-ok = s.starts-with(sub)        // Prefix check
-ok = s.ends-with(sub)          // Suffix check
-ok = s.empty()                 // Is empty
+; Search
+pos = s.index(sub)             ; Substring position
+ok = s.contains(sub)           ; Contains substring
+ok = s.starts-with(sub)        ; Prefix check
+ok = s.ends-with(sub)          ; Suffix check
+ok = s.empty()                 ; Is empty
 
-// Conversion
-out = s.to-upper()             // Convert to uppercase
-out = s.to-lower()             // Convert to lowercase
-out = s.trim()                 // Trim leading/trailing whitespace
-out = s.trim-char(c)           // Trim specified character
-out = s.repeat(n)              // Repeat
-out = s.reverse()              // Reverse
-out = s.slice(start, end)      // Slice
-val = s.replace-char(old, new) // Replace character
+; Conversion
+out = s.to-upper()             ; Convert to uppercase
+out = s.to-lower()             ; Convert to lowercase
+out = s.trim()                 ; Trim leading/trailing whitespace
+out = s.trim-char(c)           ; Trim specified character
+out = s.repeat(n)              ; Repeat
+out = s.reverse()              ; Reverse
+out = s.slice(start, end)      ; Slice
+val = s.replace-char(old, new) ; Replace character
 
-// Convert to other types
-b = s.to-bytes()               // Convert to []byte
-v = s.to-i64()                 // Convert to ?i64
-v = s.to-f64()                 // Convert to ?f64
-v = s.to-bool()                // Convert to ?bool
+; Convert to other types
+b = s.to-bytes()               ; Convert to []byte
+v = s.to-i64()                 ; Convert to ?i64
+v = s.to-f64()                 ; Convert to ?f64
+v = s.to-bool()                ; Convert to ?bool
 
-// Split & Join
-parts = s.split(sep)           // Split (returns []str)
-out = ss.join(sep)             // Join []str with separator
+; Split & Join
+parts = s.split(sep)           ; Split (returns []str)
+out = ss.join(sep)             ; Join []str with separator
 
-// Copy & Fill
-dst = s.copy()                 // String copy
-s.fill(val byte)               // Fill with byte value
+; Copy & Fill
+dst = s.copy()                 ; String copy
+s.fill(val byte)               ; Fill with byte value
 ```
 
 ## String & Number Conversion
 
 ```nolang
-// Number to string (method)
-s = i64.to-str()               // i64 to string
-s = f64.to-str()               // f64 to string
-s = bool.to-str()              // bool to "true"/"false"
-s = byte.to-str()              // byte to string
-s = char.to-str()              // char to string
+; Number to string (method)
+s = i64.to-str()               ; i64 to string
+s = f64.to-str()               ; f64 to string
+s = bool.to-str()              ; bool to "true"/"false"
+s = byte.to-str()              ; byte to string
+s = char.to-str()              ; char to string
 
-// String to number (returns option)
-v = s.to-i64()                 // Returns ?i64
-v = s.to-i32()                 // Returns ?i32
-v = s.to-u64()                 // Returns ?u64
-v = s.to-f64()                 // Returns ?f64
+; String to number (returns option)
+v = s.to-i64()                 ; Returns ?i64
+v = s.to-i32()                 ; Returns ?i32
+v = s.to-u64()                 ; Returns ?u64
+v = s.to-f64()                 ; Returns ?f64
 ```
 
 ## Automatic Length Tracking
@@ -108,10 +108,10 @@ When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to
 
 ```nolang
 s = ''
-s[0] = 72                      // len automatically becomes 1
-s[1] = 105                     // len automatically becomes 2
+s[0] = 72                      ; len automatically becomes 1
+s[1] = 105                     ; len automatically becomes 2
 
-// Manually setting .len is only for truncation (shortening)
+; Manually setting .len is only for truncation (shortening)
 s.len = 5
 ```
 
@@ -120,15 +120,15 @@ s.len = 5
 The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:
 
 ```nolang
-// with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
-s = with-cap(256)               // str, len=0, cap=256
+; with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
+s = with-cap(256)               ; str, len=0, cap=256
 
-// with-len(len): allocate len capacity, len=cap (direct indexing allowed)
-s = with-len(128)               // str, len=128, cap=128
+; with-len(len): allocate len capacity, len=cap (direct indexing allowed)
+s = with-len(128)               ; str, len=128, cap=128
 
-// with-cap-len(cap, len): specify both capacity and length — ideal when you
-// know the initial length but need room to grow
-s = with-cap-len(512, 64)       // str, len=64, cap=512
+; with-cap-len(cap, len): specify both capacity and length — ideal when you
+; know the initial length but need room to grow
+s = with-cap-len(512, 64)       ; str, len=64, cap=512
 ```
 
 | Builtin | Args | len | cap | Use case |

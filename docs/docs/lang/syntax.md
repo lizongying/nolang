@@ -14,7 +14,7 @@ Nolang 支援三種**單行註釋**標記與一種**多行（塊）註釋**標�
 - `;;\n` —— 多行（塊）註釋：`;;` 後**緊跟換行**（僅允許空白）時觸發多行模式，直到遇到同樣後跟換行/EOF 的 `;;` 結束
 
 ```nolang
-// 這是註釋
+; 這是註釋
 ; 這也是註釋，語義相同
 ;; 這還是單行註釋（;; 後沒有換行）
 x = 1 ; 行內註釋，註釋到行尾
@@ -63,13 +63,13 @@ y = 3
 基礎類型
 
 - byte
-- bool // 只允許小寫
-- char // 字符類型（rune），雙引號包裹單字符，如 "中"
-- str // 字符串類型，單引號包裹 'hello'，或反引號原始字符串 `多行內容`
+- bool ; 只允許小寫
+- char ; 字符類型（rune），雙引號包裹單字符，如 "中"
+- str ; 字符串類型，單引號包裹 'hello'，或反引號原始字符串 `多行內容`
 - i8
 - i16
 - i32
-- i64 // 數字默認類型，不區分架構
+- i64 ; 數字默認類型，不區分架構
 - u8
 - u16
 - u32
@@ -80,14 +80,14 @@ y = 3
 
 容器類型
 
-- obj // 對象
-- map // 映射
-- arr // 定長數組
-- vec // 變長數組
-- slice // 切片（視圖）沒有獨立數據結構，必須依附於arr/vec
+- obj ; 對象
+- map ; 映射
+- arr ; 定長數組
+- vec ; 變長數組
+- slice ; 切片（視圖）沒有獨立數據結構，必須依附於arr/vec
 
-- \* // 指針 僅限 FFI `#{c}` 宣告與標準庫
-- any // 任意類型 僅限標準庫
+- \* ; 指針 僅限 FFI `#{c}` 宣告與標準庫
+- any ; 任意類型 僅限標準庫
 
 高級類型
 
@@ -101,12 +101,12 @@ y = 3
 ### 語法
 
 ```nolang
-// 聯合類型：多個類型用 | 分隔
+; 聯合類型：多個類型用 | 分隔
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
 num = int | float
 
-// 單一類型別名
+; 單一類型別名
 bytes = []byte
 buf = [16]u8
 ```
@@ -118,7 +118,7 @@ buf = [16]u8
 ```nolang
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
-num = int | float     // num 是 int 和 float 的聯合
+num = int | float     ; num 是 int 和 float 的聯合
 ```
 
 ### 在函數中使用
@@ -126,7 +126,7 @@ num = int | float     // num 是 int 和 float 的聯合
 聯合類型可用於函數參數和返回值，編譯器會自動進行單態化（monomorphization），為每個成員類型生成獨立的函數版本：
 
 ```nolang
-// 參數類型為 num 聯合
+; 參數類型為 num 聯合
 max = (a ..num) (r num) {
     r = a[0]
     n = len(a)
@@ -135,7 +135,7 @@ max = (a ..num) (r num) {
     }
 }
 
-// 方法定義在聯合類型上
+; 方法定義在聯合類型上
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
@@ -159,65 +159,65 @@ num.sign = () (r num) {
 
 ```nolang
 
-// 變量沒有關鍵字
-// i64、f64、byte、bool、byte、str可以省略類型標注
+; 變量沒有關鍵字
+; i64、f64、byte、bool、byte、str可以省略類型標注
 i = 1
 
-// f64 中間有.
+; f64 中間有.
 f = 1.0
 
-// byte
+; byte
 b = x00
 
 
-// i8 如果變量名和類型一致，可以忽略類型標注
+; i8 如果變量名和類型一致，可以忽略類型標注
 i8 = 3
 
-// 默認0值
-// 變量定義不需要提前聲明
+; 默認0值
+; 變量定義不需要提前聲明
 u16
 
-// str 單引號包裹
+; str 單引號包裹
 name = 'nolang'
 
-// bool true/false 全小寫
+; bool true/false 全小寫
 flag = true
 flag = false
 
-// 變量賦值
-// 不允許同名，如果同名則視為修改變量
+; 變量賦值
+; 不允許同名，如果同名則視為修改變量
 name = 'hello'
 name = 'world'
 
-// 字符串拼接
+; 字符串拼接
 greeting = 'hello, ' - name
 
-// 原始字符串（反引號包裹，多行，不轉義）
+; 原始字符串（反引號包裹，多行，不轉義）
 sql = `
 SELECT id,name
 FROM user
 WHERE id > 100
 `
 
-// 顯式類型標注
+; 顯式類型標注
 a u64 = 10
 
-// 字符（雙引號 = char/rune，單字符）
+; 字符（雙引號 = char/rune，單字符）
 c = "中"
 
-// byte類型
+; byte類型
 b = x00
 
-// arr 定長數組
+; arr 定長數組
 arr [3] = [1, 2, 3]
 
-// vec 動態數組（切片）
+; vec 動態數組（切片）
 vec = [4, 5, 6]
 
-// 顯式類型（切片）
+; 顯式類型（切片）
 typed []u8 = [1, 2, 3]
 
-// 數組
+; 數組
 typed [3]u16 = [1, 2, 3]
 ```
 
@@ -247,8 +247,8 @@ WHERE id > 100
 ### 示例
 
 ```
-// 內容為 "SELECT id,name\nFROM user\nWHERE id > 100\n"
-// 轉義字符 \n \t 原樣保留，不解釋
+; 內容為 "SELECT id,name\nFROM user\nWHERE id > 100\n"
+; 轉義字符 \n \t 原樣保留，不解釋
 raw = `
 line1\nline2
 \ttabbed
@@ -262,17 +262,17 @@ Nolang 支援 JavaScript 風格的正則字面量語法 `/pattern/flags`，用�
 ### 語法
 
 ```nolang
-// 基本正則字面量
+; 基本正則字面量
 re = /\d+/
 
-// 帶旗標（flags）
+; 帶旗標（flags）
 re = /hello/gi
 
-// 字符類、錨點、量詞
+; 字符類、錨點、量詞
 re = /[a-z]+/
 re = /^hello.*world$/
 
-// 轉義斜線
+; 轉義斜線
 re = /a\/b/
 ```
 
@@ -296,11 +296,11 @@ re = /a\/b/
 - `//` 永遠是行註釋（優先級最高）
 
 ```nolang
-// 正則字面量（= 後是表達式起始位置）
+; 正則字面量（= 後是表達式起始位置）
 re = /\d+/
 result = match-text(/[a-z]+/, text)
 
-// 除法運算符（標識符後是值產生位置）
+; 除法運算符（標識符後是值產生位置）
 ratio = 100 / 4
 x = a / b
 ```
@@ -310,10 +310,10 @@ x = a / b
 正則字面量在代碼生成階段脫糖為對標準庫 `regexp-compile` 函數的調用：
 
 ```nolang
-// 源碼
+; 源碼
 re = /\d+/
 
-// 脫糖後等價於
+; 脫糖後等價於
 re = regexp-compile('\\d+')
 ```
 
@@ -350,28 +350,28 @@ result = match-text(/\d+/, text)
 > **全局變量必須大寫字母開頭**，這是強制規則，不是慣例。小寫開頭的頂層變量會被編譯器視為局部變量，可能導致未定義引用等錯誤。
 
 ```nolang
-// ✅ 正確：全局數據使用大寫字母
+; ✅ 正確：全局數據使用大寫字母
 NOLANG = 'nolang'
 MAX-SIZE = 1024
 HEX-CHARS = '0123456789abcdef'
 
-// ✅ 私有全局變量：下劃線開頭，其後仍需大寫
+; ✅ 私有全局變量：下劃線開頭，其後仍需大寫
 _NOLANG = 'nolang'
 _PRIVATE-CONST = 42
 
-// ❌ 錯誤：全局變量不能使用小寫字母開頭
-// x1 = 10
-// x = 10
-// foo-bar = 42
-// hello-world = 'Hello World'
+; ❌ 錯誤：全局變量不能使用小寫字母開頭
+; x1 = 10
+; x = 10
+; foo-bar = 42
+; hello-world = 'Hello World'
 
-// ✅ 局部變量（函數內）使用小寫字母
-// fn-example = () {
-//     x1 = 10
-//     x = 10
-//     foo-bar = 42
-//     hello-world = 'Hello World'
-// }
+; ✅ 局部變量（函數內）使用小寫字母
+; fn-example = () {
+;     x1 = 10
+;     x = 10
+;     foo-bar = 42
+;     hello-world = 'Hello World'
+; }
 ```
 
 ## API 文檔規範
@@ -383,18 +383,18 @@ _PRIVATE-CONST = 42
 - 模組頂部的 API 摘要也應使用完整簽名（含參數名、型別、返回名、型別），不要使用省略寫法
 
 ```nolang
-// ❌ 錯誤：缺少型別，缺少返回參數名
-// sha1(data) (hash)
-// sha1-block(s, h0..h4)
+; ❌ 錯誤：缺少型別，缺少返回參數名
+; sha1(data) (hash)
+; sha1-block(s, h0..h4)
 
-// ✅ 正確：包含參數名、型別、返回參數名、型別
-// sha1(data []byte) (hash [20]byte) — 完整雜湊
-// sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 處理單一區塊
+; ✅ 正確：包含參數名、型別、返回參數名、型別
+; sha1(data []byte) (hash [20]byte) — 完整雜湊
+; sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 處理單一區塊
 
-// 函數定義上方的文檔註釋也應遵守同樣規範：
-// sha1: 計算 SHA-1 雜湊
-// data []byte: 輸入位元組陣列
-// 返回 hash [20]byte: 20 位元組雜湊值
+; 函數定義上方的文檔註釋也應遵守同樣規範：
+; sha1: 計算 SHA-1 雜湊
+; data []byte: 輸入位元組陣列
+; 返回 hash [20]byte: 20 位元組雜湊值
 sha1 = (data []byte) (hash [20]byte) {
     ...
 }
@@ -407,7 +407,7 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 **規則：如果標準庫中已有對應功能，不建議自行重新實現。** 開發者應仔細查看標準庫文檔（`docs/docs/std/overview.md`），避免重複造輪子。
 
 ```nolang
-// ❌ 錯誤：自行實現 str → []byte 轉換
+; ❌ 錯誤：自行實現 str → []byte 轉換
 str-to-bytes = (s str) (out []byte) {
     n = s.len
     i = 0
@@ -417,7 +417,7 @@ str-to-bytes = (s str) (out []byte) {
     } (i < n)
 }
 
-// ✅ 正確：使用標準庫 str.to-bytes() 方法
+; ✅ 正確：使用標準庫 str.to-bytes() 方法
 data []byte = s.to-bytes()
 ```
 
@@ -463,14 +463,14 @@ Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第
 
 ```nolang
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
-    ...            // 函數體內對 fields 賦值
+    ...            ; 函數體內對 fields 賦值
 }
 
-// 調用處定義接收變數（LHS 綁定，型別由簽名推斷）
+; 調用處定義接收變數（LHS 綁定，型別由簽名推斷）
 fields = parse-line(line)
-// 多結果按順序綁定
+; 多結果按順序綁定
 a, b = swap(x, y)
-// 或尾隨引數形式：res 作為額外的輸出引數傳入
+; 或尾隨引數形式：res 作為額外的輸出引數傳入
 add1(5, 3, res)
 ```
 
@@ -488,37 +488,37 @@ Nolang 的函數有以下特點：
 函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
 
 ```nolang
-// 帶默認值的函數定義
+; 帶默認值的函數定義
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
 }
 
-// 以下兩種調用方式都合法：
-fields = csv.parse-line(line)              // max-fields 默認為 1024
-fields = csv.parse-line(line, 256)         // max-fields = 256
+; 以下兩種調用方式都合法：
+fields = csv.parse-line(line)              ; max-fields 默認為 1024
+fields = csv.parse-line(line, 256)         ; max-fields = 256
 ```
 
 ```nolang
 
 add = (a i64, b i64) (result i64) {
-    result = a + b             // 通過參數返回結果
-    ...                        // 提前終止（可選）
+    result = a + b             ; 通過參數返回結果
+    ...                        ; 提前終止（可選）
 }
 
-// 可變參數
+; 可變參數
 add3 = (a ..i64) {
 }
 
-// 函數調用
-sum = add(1, 2)                 // sum == 3
+; 函數調用
+sum = add(1, 2)                 ; sum == 3
 
-// 匿名函數 和for？ 有傳參？
+; 匿名函數 和for？ 有傳參？
 (a i64) { print(a) }(10)
 
-// 函数调用
+; 函数调用
 add(a, b)
 
-// 也可能有多个返回值
+; 也可能有多个返回值
 a, b = swap(5, 3)
 ```
 
@@ -544,21 +544,21 @@ a, b = swap(5, 3)
 ### Loop / While / for-in
 
 ```nolang
-// 无限循环（空括號代表條件恆真）
+; 无限循环（空括號代表條件恆真）
 {
     ...
 } ()
 
-// 條件循環（檢查 cond，為真時執行主體）
+; 條件循環（檢查 cond，為真時執行主體）
 {
     do-something()
 } (x == 1)
 
-// 限定執行次數
+; 限定執行次數
 {
 } * 10
 
-// N ≤ 0 時循環體不執行（0 次或負數次均跳過）
+; N ≤ 0 時循環體不執行（0 次或負數次均跳過）
 {
     print('不會執行')
 } * 0
@@ -567,36 +567,36 @@ a, b = swap(5, 3)
     print('也不會執行')
 } * -3
 
-// 區間語法（未來會支持 map, arr, vec）
-i <- [a..b]: {     // 闭区间：a ≤ i ≤ b
+; 區間語法（未來會支持 map, arr, vec）
+i <- [a..b]: {     ; 闭区间：a ≤ i ≤ b
 }
-i <- (a..b]: {     // 左开右闭：a < i ≤ b
+i <- (a..b]: {     ; 左开右闭：a < i ≤ b
 }
-i <- [a..b): {     // 左闭右开：a ≤ i < b
+i <- [a..b): {     ; 左闭右开：a ≤ i < b
 }
-i <- (a..b): {     // 开区间：a < i < b
+i <- (a..b): {     ; 开区间：a < i < b
 }
-i <- [5..0]: {   // 递减 — 运行时方向检测：start > end 时自动递减
+i <- [5..0]: {   ; 递减 — 运行时方向检测：start > end 时自动递减
 }
-i <- 'abc': {   // 遍历字符串中的每个字符
+i <- 'abc': {   ; 遍历字符串中的每个字符
 }
 
-// 运行时方向检测：当 start > end 时，迭代自动递减（步长 -1）。
-// 四种括号组合均支持递减：
-//   [5..1]  → 5 4 3 2 1   左闭右闭，递减
-//   (5..1]  → 4 3 2 1     左开右闭，递减
-//   [5..1)  → 5 4 3 2     左闭右开，递减
-//   (5..1)  → 4 3 2       左开右开，递减
-//   (3..0]  → 2 1 0       左开右闭，递减到 0
-// 当 start <= end 时，按递增方向迭代（步长 +1）。
+; 运行时方向检测：当 start > end 时，迭代自动递减（步长 -1）。
+; 四种括号组合均支持递减：
+;   [5..1]  → 5 4 3 2 1   左闭右闭，递减
+;   (5..1]  → 4 3 2 1     左开右闭，递减
+;   [5..1)  → 5 4 3 2     左闭右开，递减
+;   (5..1)  → 4 3 2       左开右开，递减
+;   (3..0]  → 2 1 0       左开右闭，递减到 0
+; 当 start <= end 时，按递增方向迭代（步长 +1）。
 
-// ❌ 明確拒絕
-//   區間邊界必須是整數；不支持嵌套表達式
-//   for i <- [1.5..5.5] { }   // 編譯錯誤
-//   for i <- [0..[1..5][0]] { } // 語法錯誤
+; ❌ 明確拒絕
+;   區間邊界必須是整數；不支持嵌套表達式
+;   for i <- [1.5..5.5] { }   ; 編譯錯誤
+;   for i <- [0..[1..5][0]] { } ; 語法錯誤
 
-// 條件循環（新式 { } (cond) 取代舊式 for cond { }）
-// 大多數情況可改用 range-for：i <- [0..n): { }
+; 條件循環（新式 { } (cond) 取代舊式 for cond { }）
+; 大多數情況可改用 range-for：i <- [0..n): { }
 {
     do-something()
 } (x == 1)
@@ -606,16 +606,16 @@ i <- 'abc': {   // 遍历字符串中的每个字符
 
 ```nolang
 i <- [0..10): {
-    *      // break
-    **     // continue
-    ...    // return/terminate（提前返回，僅終止函數）
+    *      ; break
+    **     ; continue
+    ...    ; return/terminate（提前返回，僅終止函數）
 }
 
-// 也可使用英文關鍵字（與 C/Rust 一致，便於移植、且能正常編譯執行）：
+; 也可使用英文關鍵字（與 C/Rust 一致，便於移植、且能正常編譯執行）：
 i <- [0..10): {
-    break     // 等價 *
-    continue  // 等價 **
-    return    // 等價 ...，僅提前終止函數
+    break     ; 等價 *
+    continue  ; 等價 **
+    return    ; 等價 ...，僅提前終止函數
 }
 ```
 
@@ -629,14 +629,14 @@ i <- [0..10): {
 > 錯誤寫法：
 > ```nolang
 > has = (n i64) (r i64) {
->     n == 0 -> return 0        // ❌ 編譯 / formatter / LSP 均報錯
+>     n == 0 -> return 0        ; ❌ 編譯 / formatter / LSP 均報錯
 >     r = n
 > }
 > ```
 > 正確寫法（先給結果參數賦值，再裸 `return` 提前終止）：
 > ```nolang
 > has = (n i64) (r i64) {
->     n == 0 -> { r = 0; return }   // ✓
+>     n == 0 -> { r = 0; return }   ; ✓
 >     r = n
 > }
 > ```
@@ -644,7 +644,7 @@ i <- [0..10): {
 ### Match
 
 ```nolang
-// 簡單寫法，it 用於取參數
+; 簡單寫法，it 用於取參數
 x: {
     err -> log(it)
     nil -> log('nil')
@@ -652,7 +652,7 @@ x: {
         do-right-thing(it)
 }
 
-// 析構寫法
+; 析構寫法
 x: {
     err(e) -> log(e)
     nil -> log('nil')
@@ -679,14 +679,14 @@ num: {
     -> print('更大數字')
 }
 
-// 有返回值，最後一個語句/值
+; 有返回值，最後一個語句/值
 result = x: {
     1 -> 1
     2 -> 2 + 1
     -> a + b
 }
 
-// 多行 arm body 必須使用大括號 -> { ... }
+; 多行 arm body 必須使用大括號 -> { ... }
 x: {
     nil -> {
         log('nil')
@@ -709,7 +709,7 @@ x: {
 #### Match 風格指引
 
 ```nolang
-// ❌ 避免重複分支體
+; ❌ 避免重複分支體
 w = tls-c.send(req)
 w: {
     nil -> {
@@ -723,7 +723,7 @@ w: {
     ok -> n = it
 }
 
-// ✅ 公共邏輯放 -> catch-all
+; ✅ 公共邏輯放 -> catch-all
 w = tls-c.send(req)
 w: {
     ok -> n = it
@@ -733,7 +733,7 @@ w: {
     }
 }
 
-// ✅ 反之亦然：簡單分支命名，複雜邏輯放 ->
+; ✅ 反之亦然：簡單分支命名，複雜邏輯放 ->
 val: {
     nil -> return
     err -> log(it)
@@ -746,13 +746,13 @@ val: {
 ```
 
 ```nolang
-// 單語句 — 不加大括號
+; 單語句 — 不加大括號
 val: {
     ok -> print(it)
     -> print('empty or error')
 }
 
-// 多語句 — 必須加大括號
+; 多語句 — 必須加大括號
 val: {
     ok -> {
         n = it
@@ -766,17 +766,17 @@ val: {
 ```
 
 ```nolang
-// it 隱式綁定
+; it 隱式綁定
 val: {
-    ok -> process(it)       // it = 解包後的值
-    err -> log(it)          // it = 錯誤訊息字串
-    -> log('empty')         // catch-all，此處為 nil
+    ok -> process(it)       ; it = 解包後的值
+    err -> log(it)          ; it = 錯誤訊息字串
+    -> log('empty')         ; catch-all，此處為 nil
 }
 ```
 
 ```nolang
-// ✅ 組合 option 模式：nil || err -> body
-// 當 option 為 nil 或 err 時共用同一個分支
+; ✅ 組合 option 模式：nil || err -> body
+; 當 option 為 nil 或 err 時共用同一個分支
 val: {
     nil || err -> {
         cleanup()
@@ -785,7 +785,7 @@ val: {
     ok -> process(it)
 }
 
-// ✅ 也可與 -> catch-all 混用
+; ✅ 也可與 -> catch-all 混用
 val: {
     nil || err -> log('failed')
     ok -> process(it)
@@ -795,7 +795,7 @@ val: {
 ### If / Else
 
 ```nolang
-// 多分支（推薦新式）
+; 多分支（推薦新式）
 {
     a == 1 -> {
         a = 1
@@ -807,10 +807,10 @@ val: {
     }
 }
 
-// 單 if（保留）
+; 單 if（保留）
 x == 1 -> do-something()
 
-// 三元表達式 condition ? true-value : false-value
+; 三元表達式 condition ? true-value : false-value
 c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
 ```
@@ -823,32 +823,32 @@ Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須�
 - `awy` — 等待異步線程完成並取得結果
 
 ```nolang
-// 異步函數定義（名稱以 -async 結尾）
+; 異步函數定義（名稱以 -async 結尾）
 compute-async = (n i64) (r i64) {
     r = n * 2
 }
 
-// 基本異步調用
+; 基本異步調用
 test-basic = () {
     h = run compute-async(21)
     r = awy h
-    print(r)  // 42
+    print(r)  ; 42
 }
 
-// 並發多個任務
+; 並發多個任務
 test-concurrent = () {
     h1 = run compute-async(10)
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    print(r1)  // 20
-    print(r2)  // 40
+    print(r1)  ; 20
+    print(r2)  ; 40
 }
 
-// 內聯等待
+; 內聯等待
 test-inline = () {
     r = awy run compute-async(5)
-    print(r)  // 10
+    print(r)  ; 10
 }
 ```
 
@@ -859,16 +859,16 @@ test-inline = () {
 函數可以返回多個值，調用時使用多重賦值接收：
 
 ```nolang
-// 函數定義返回多個結果參數
+; 函數定義返回多個結果參數
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
     y = a
 }
 
-// 多重賦值
+; 多重賦值
 a, b = swap(5, 3)
 
-// 也支援作為 match arm 的 body
+; 也支援作為 match arm 的 body
 val: {
     ok -> a, b = parse-pair(it)
     -> return
@@ -883,24 +883,24 @@ val: {
 
 ```nolang
 
-// 使用定長数组
-a [3] = [1, 2, 3]    // 长度为 3 的定長数组 i64
-a [3]u16 = [1, 2, 3] // 指定类型的定長数组
+; 使用定長数组
+a [3] = [1, 2, 3]    ; 长度为 3 的定長数组 i64
+a [3]u16 = [1, 2, 3] ; 指定类型的定長数组
 
-a [?]u16 = [1, 2, 3] // 自動推斷長度
+a [?]u16 = [1, 2, 3] ; 自動推斷長度
 ```
 
 **變長數組vec：**
 
 ```nolang
-v = [1, 2, 3]     // 變長數組 i64
+v = [1, 2, 3]     ; 變長數組 i64
 bs = [0x11, 0x22, 0x33]
-v []u8 = [1, 2, 3] // 指定类型的變長數組
+v []u8 = [1, 2, 3] ; 指定类型的變長數組
 
-// 預分配（避免反覆擴容）
-v = with-cap(100)          // len=0, cap=100（需 push 後索引）
-v = with-len(100)          // len=100, cap=100（可直接索引）
-v = with-cap-len(200, 100) // len=100, cap=200（預留擴容空間）
+; 預分配（避免反覆擴容）
+v = with-cap(100)          ; len=0, cap=100（需 push 後索引）
+v = with-len(100)          ; len=100, cap=100（可直接索引）
+v = with-cap-len(200, 100) ; len=100, cap=200（預留擴容空間）
 ```
 
 **切片slice（視圖，非獨立類型）：**
@@ -913,22 +913,22 @@ v = with-cap-len(200, 100) // len=100, cap=200（預留擴容空間）
 - 切片的類型由原始類型決定，方法自然適用，無需「繼承」機制
 
 ```nolang
-// 支持arr/vec/str
-// 支持範圍 和for <- 的表示一致
+; 支持arr/vec/str
+; 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
 
-nums[..] //  [0 1 2 3 4]
-nums[1..] // [1 2 3 4]
-nums[..4] // [0 1 2 3 4]
-nums[2..3] // [2 3]
-nums[1..3] // [1 2 3]
-nums[1..3) // [1 2]
-nums(1..3) // [2]
+nums[..] ;  [0 1 2 3 4]
+nums[1..] ; [1 2 3 4]
+nums[..4] ; [0 1 2 3 4]
+nums[2..3] ; [2 3]
+nums[1..3] ; [1 2 3]
+nums[1..3) ; [1 2]
+nums(1..3) ; [2]
 
-// 字符串
+; 字符串
 s = 'abc'
-s[1..]   // 'bc'
-s[1..s.len) // 'bc'
+s[1..]   ; 'bc'
+s[1..s.len) ; 'bc'
 ```
 
 **切片的類型與方法：**
@@ -943,40 +943,40 @@ s[1..s.len) // 'bc'
 | `str` | `str<range>` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等） |
 
 ```nolang
-// arr 切片 → vec 視圖，共享 arr 的底層記憶體
+; arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
-s = a[1..4]    // s 是 []u8 視圖，指向 a 的記憶體
-n = s.len      // slice.len
+s = a[1..4]    ; s 是 []u8 視圖，指向 a 的記憶體
+n = s.len      ; slice.len
 
-// vec 切片 → vec 視圖，共享 vec 的底層記憶體
+; vec 切片 → vec 視圖，共享 vec 的底層記憶體
 v = [10, 20, 30, 40, 50]
-s = v[2..]     // s 是 []i64 視圖
-s.reverse(s.len)  // slice.reverse
+s = v[2..]     ; s 是 []i64 視圖
+s.reverse(s.len)  ; slice.reverse
 
-// str 切片 → str 視圖，共享 str 的底層記憶體
+; str 切片 → str 視圖，共享 str 的底層記憶體
 s = 'Hello World'
-sub = s[6..]   // sub 是 'World' 視圖
-upper = sub.to-upper()  // str.to-upper
+sub = s[6..]   ; sub 是 'World' 視圖
+upper = sub.to-upper()  ; str.to-upper
 
-// 通過切片修改元素會影響原始資料
+; 通過切片修改元素會影響原始資料
 data = [10, 20, 30, 40, 50]
-view = data[1..4]    // view = [20, 30, 40]
-view[0] = 99         // 修改 view 的元素
-// data[1] 現在也是 99，因為 view 共享 data 的記憶體
+view = data[1..4]    ; view = [20, 30, 40]
+view[0] = 99         ; 修改 view 的元素
+; data[1] 現在也是 99，因為 view 共享 data 的記憶體
 ```
 
 ### 索引
 
 ```nolang
 
-// 字符串獲取char （字符，不是字節）
+; 字符串獲取char （字符，不是字節）
 str[i]
 
- // arr、vec獲取元素
+ ; arr、vec獲取元素
 arr[i]
 vec[i]
 
- // map 獲取 value
+ ; map 獲取 value
 map[str]
 
 ```
@@ -1005,13 +1005,13 @@ print(u.name)
 結構體可以實作一個或多個介面，介面名寫在結構體名後面，以逗號分隔。
 
 ```nolang
-// 實作單個介面
+; 實作單個介面
 user json {
     name str
     age i64
 }
 
-// 實作多個介面
+; 實作多個介面
 file enter, leave {
     path str
     fd i64
@@ -1023,12 +1023,12 @@ file enter, leave {
 當實作**其他模組**定義的介面時，介面名必須帶模組前綴（`ShortName.`）。參見[跨模組調用前綴](module.md)。
 
 ```nolang
-// ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
+; ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
 db-mysql db {
     fd i64
 }
 
-// ✅ 正確：使用 sql.db、sql.rows、sql.stmt
+; ✅ 正確：使用 sql.db、sql.rows、sql.stmt
 db-mysql sql.db {
     fd i64
 }
@@ -1052,7 +1052,7 @@ stmt-mysql sql.stmt {
 
 ```nolang
 type.method-name = (params) (results) {
-    // . 是接收者
+    ; . 是接收者
 }
 ```
 
@@ -1066,7 +1066,7 @@ type.method-name = (params) (results) {
 ### 示例
 
 ```nolang
-// str 方法
+; str 方法
 str.to-upper = () (out str) {
     out.len = .len
     i = 0
@@ -1080,13 +1080,13 @@ str.to-upper = () (out str) {
     } (i < .len)
 }
 
-// char 方法
+; char 方法
 char.is-digit = () (result bool) {
     result = false
     . >= 48 && . <= 57 -> result = true
 }
 
-// struct 方法
+; struct 方法
 user {
     name str
     age i64
@@ -1096,11 +1096,11 @@ user.greet = () {
     print('Hello, ' - .name)
 }
 
-// 調用
+; 調用
 s = 'hello'
-u = s.to-upper()     // receiver.method()
+u = s.to-upper()     ; receiver.method()
 c char = 5
-d = c.is-digit()     // receiver.method()
+d = c.is-digit()     ; receiver.method()
 u = user{
     name: 'Alice'
     age: 30
@@ -1111,32 +1111,32 @@ u.greet()
 ## 接口
 
 ```nolang
-// 定義接口
+; 定義接口
 json {
     to-json()
 }
 
-// 接口默認實現
+; 接口默認實現
 json.to-json = () {
 }
 
-// 接口實現
+; 接口實現
 user json {
     name str
     age i64
 }
 
-// 重寫 + 調用父實現
+; 重寫 + 調用父實現
 user.to-json = () {
-    // 父實現
+    ; 父實現
     ..to-json()
 }
 
 user.other = () {
-    // 當前實現
+    ; 當前實現
     .to-json()
 
-    // 父實現
+    ; 父實現
     ..to-json()
 }
 ```
@@ -1152,24 +1152,24 @@ file enter, leave {
 
 ```nolang
 
-// red=0, green=1, blue=2
+; red=0, green=1, blue=2
 color {
     red,
     green,
     blue,
 }
 
-// 在普通方法中，a,b,c 實際是定義的a=0，b=1, c=2... 這是和其他語言不一致的地方。
-// 所以正常不能用逗號的方式定義多個變量
+; 在普通方法中，a,b,c 實際是定義的a=0，b=1, c=2... 這是和其他語言不一致的地方。
+; 所以正常不能用逗號的方式定義多個變量
 
-// 這是一個特殊枚舉, 可以有類型，有逗號， 有別名
+; 這是一個特殊枚舉, 可以有類型，有逗號， 有別名
 enum-name {
     a t,
     b u,
     c v,
 }
 
-// 注意這是一個普通的struct，多個字段沒有逗號
+; 注意這是一個普通的struct，多個字段沒有逗號
 struct-name {
     a t
     b u
@@ -1183,11 +1183,11 @@ struct-name {
 這樣可以防止命名衝突，也使外部包無法直接使用具體值。
 
 ```nolang
-// ❌ 錯誤：直接使用裸值
+; ❌ 錯誤：直接使用裸值
 kind = null
 yes = e.is(io)
 
-// ✅ 正確：使用限定方式
+; ✅ 正確：使用限定方式
 kind = json-kind.null
 yes = e.is(code.io)
 ```
@@ -1214,13 +1214,13 @@ file.leave = () {
 
 read-file = () {
 
-    // 自動 f.enter()
+    ; 自動 f.enter()
     f = file{
         path: 'data.txt',
     }
 
-    // 使用 f
-    // 自動 f.leave()
+    ; 使用 f
+    ; 自動 f.leave()
     read(f)
 }
 ```
@@ -1234,20 +1234,20 @@ read-file = () {
 ```nolang
 
 o ?i64
-o = nil          // 設為空
-o = 42           // 設為有值
-o = err('msg')   // 設為錯誤
+o = nil          ; 設為空
+o = 42           ; 設為有值
+o = err('msg')   ; 設為錯誤
 
 nullableValue ?[]str
 nullableString ?str
 
-// 修改可空類型
+; 修改可空類型
 nullableString = 'test'
 
-// 設置錯誤
+; 設置錯誤
 nullableString = err('some error')
 
-// 可通過match判斷
+; 可通過match判斷
 x: {
     err -> log(it)
     nil -> log(it)
@@ -1255,8 +1255,8 @@ x: {
         do-right-thing(it)
 }
 
-// 強制解包
-// 取消實現
+; 強制解包
+; 取消實現
 //!x.say()
 ```
 
@@ -1267,14 +1267,14 @@ x: {
 `?t` 是標籤列舉，有三種狀態：`ok`（有值）、`nil`（空值）、`err`（錯誤）。正常值會隱性綁定，當操作只是找不到值時用 `nil`，當操作遇到實際錯誤時用 `err(...)`。
 
 ```nolang
-// ❌ 不推薦：雙返回值模式
+; ❌ 不推薦：雙返回值模式
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
     val = .data[.n]
     ok = true
 }
 
-// ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
+; ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
 stack.pop = () (val ?i64) {
     .n == 0 -> {
         val = nil
@@ -1283,13 +1283,13 @@ stack.pop = () (val ?i64) {
     val = .data[.n]
 }
 
-// ✅ 返回錯誤
+; ✅ 返回錯誤
 file.read = () (data ?str) {
     .fd < 0 -> {
         data = err('file not open')
         return
     }
-    // ... 讀取資料
+    ; ... 讀取資料
     data = buf
 }
 ```
@@ -1300,8 +1300,8 @@ file.read = () (data ?str) {
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it)          // it = 錯誤訊息
-    -> print(it)              // it = 彈出的值
+    err -> print(it)          ; it = 錯誤訊息
+    -> print(it)              ; it = 彈出的值
 }
 ```
 
@@ -1330,11 +1330,11 @@ arr_to_vec = (arr [n]t) (out []t) {
 
 ```nolang
 
-// 返回類型名稱字符串
+; 返回類型名稱字符串
 a = typeof(x)
 
-// `as` 僅允許用於 FFI 指標型別轉換（如 *byte、**byte、*i64）
-// 整數內部皆為 i64，無需顯式轉換
+; `as` 僅允許用於 FFI 指標型別轉換（如 *byte、**byte、*i64）
+; 整數內部皆為 i64，無需顯式轉換
 y = x as *byte
 ```
 
@@ -1423,7 +1423,7 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 
 ```shell
 utils/
-└── helper.no    // 模块名为 utils/helper
+└── helper.no    ; 模块名为 utils/helper
 ```
 
 ### 導入模塊
@@ -1431,23 +1431,23 @@ utils/
 > **新式語法使用 `#` 導入。舊式 `use` 關鍵字仍可使用，但已廢棄（deprecated），建議改用 `#`。**
 
 ```nolang
-// 標準庫（新式語法，推薦）
+; 標準庫（新式語法，推薦）
 # std/math.add
 
-// 遠程模塊（非std/開頭）
+; 遠程模塊（非std/開頭）
 # github.com/utils/math.add
 
-// 本地模塊，必須/開頭
+; 本地模塊，必須/開頭
 # /utils/math.add
 
-// 別名
+; 別名
 # std/math.add a
 
-// ── 以下為舊式語法（deprecated，仍可使用但不推薦）──
-// use std/math.add
-// use github.com/utils/math.add
-// use /utils/math.add
-// use std/math.add a
+; ── 以下為舊式語法（deprecated，仍可使用但不推薦）──
+; use std/math.add
+; use github.com/utils/math.add
+; use /utils/math.add
+; use std/math.add a
 ```
 
 ### 導出模塊
@@ -1477,29 +1477,29 @@ utils/
 | `***byte` | 三重指針          | `i8***`  | 極少見的三重間接           |
 
 ```nolang
-// sqlite.no — FFI 綁定與安全包裝在同一檔案
-// 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號
-// 以 _ 開頭的名稱為私有，C ABI 符號自動去除前綴 _
+; sqlite.no — FFI 綁定與安全包裝在同一檔案
+; 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號
+; 以 _ 開頭的名稱為私有，C ABI 符號自動去除前綴 _
 
-// 基本型別參數
+; 基本型別參數
 #{c}
 c-strlen = (s str) (n i64)
 
-// 指針參數（*byte = 不透明指標），私有宣告
+; 指針參數（*byte = 不透明指標），私有宣告
 #{c}
 _sqlite3-close = (db *byte) (rc i32)
 
-// 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數），私有宣告
+; 雙重指針（**byte = 輸出參數，呼叫後值自動存回變數），私有宣告
 #{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 
-// 多個指針參數，私有宣告
+; 多個指針參數，私有宣告
 #{c}
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
 ```nolang
-// 同一檔案中的安全包裝
+; 同一檔案中的安全包裝
 
 open = (dsn str) (d db-sqlite) {
     handle i64 = 0
@@ -1549,7 +1549,7 @@ open = (dsn str) (d db-sqlite) {
 FFI 註解 `#{c}` 是註解系統的特殊形式，當註解包含 FFI 語言鍵（`c`、`cpp`、`rust` 等）且後續為函式宣告時，編譯器將其識別為 FFI 綁定：
 
 ```nolang
-// #{c} 帶額外註解
+; #{c} 帶額外註解
 #{c, debug}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 ```
@@ -1559,18 +1559,18 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 非 FFI 註解會自動附加到緊隨其後的宣告（變數宣告、結構體定義），可用於為數值型別（如 `num`、`i64` 等）標記範圍限制等元數據：
 
 ```nolang
-// 變數宣告帶 range 註解
+; 變數宣告帶 range 註解
 #{range=[0..256)}
 x num = 42
 
-// 結構體定義帶註解
+; 結構體定義帶註解
 #{derive=[Serialize, Deserialize]}
 point {
     x i64
     y i64
 }
 
-// 結構體欄位帶 range 註解（可用於 num 等數值型別）
+; 結構體欄位帶 range 註解（可用於 num 等數值型別）
 person {
     #{range=[0..150]}
     age num
@@ -1583,7 +1583,7 @@ person {
 `range` 註解特別適用於 `num` 型別（`num = int | float`），用於標記數值的有效範圍。範圍值可以是整數或識別字：
 
 ```nolang
-// 使用常量識別字作為範圍邊界
+; 使用常量識別字作為範圍邊界
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
@@ -1613,7 +1613,7 @@ print('running on Linux x86_64')
 #{win-amd64}
 print('running on Windows x86_64')
 
-// 平台特定的變數
+; 平台特定的變數
 #{mac-amd64}
 #{mac-arm64}
 sep = '/'
@@ -1622,7 +1622,7 @@ sep = '/'
 #{win-arm64}
 sep = '\\'
 
-// 平台特定的函數
+; 平台特定的函數
 #{mac-arm64}
 #{mac-amd64}
 greet = () {
@@ -1648,19 +1648,19 @@ greet()
 | `#{mac-arm64, linux-arm64}` | macOS ARM64 **或** Linux ARM64 |
 
 ```nolang
-// macOS 和 Linux（所有架構）都執行
+; macOS 和 Linux（所有架構）都執行
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 shared = () {
     print('unix-like')
 }
 
-// 僅 Windows x86_64
+; 僅 Windows x86_64
 #{win-amd64}
 reg-key = () {
     print('reading registry on win/x64')
 }
 
-// 僅 macOS ARM64（Apple Silicon）
+; 僅 macOS ARM64（Apple Silicon）
 #{mac-arm64}
 neural = () {
     print('Apple Neural Engine available')

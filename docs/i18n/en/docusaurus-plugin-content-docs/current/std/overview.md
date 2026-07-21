@@ -46,12 +46,12 @@ Mapping of Nolang types to LLVM:
 `option<t>` tagged enum (tag=0=val, 1=nil, 2=err):
 
 ```nolang
-x ?t                // Declare option<t>
-x = 42              // Set to a value
-x = nil             // Set to nil
-x = err('msg')      // Set to an error
+x ?t                ; Declare option<t>
+x = 42              ; Set to a value
+x = nil             ; Set to nil
+x = err('msg')      ; Set to an error
 
-// match
+; match
 x: {
     val -> f(it)
     nil ->
@@ -68,8 +68,8 @@ x: {
 ### fmt — Formatted Output
 
 ```nolang
-printf(fmt str, ...)    // Formatted output, no trailing newline
-print(...)              // Print with newline
+printf(fmt str, ...)    ; Formatted output, no trailing newline
+print(...)              ; Print with newline
 ```
 
 ### math — Math Functions
@@ -94,153 +94,153 @@ char is essentially i32 (a Unicode code point); all operations are provided as m
 
 ```nolang
 c char = 'A'
-c.is-digit()       // Whether it is a digit (0-9) (method)
-c.is-letter()      // Whether it is a letter (a-z, A-Z) (method)
-c.is-alpha()       // Alias for is-letter (method)
-c.is-alnum()       // Whether it is a letter or digit (method)
-c.is-space()       // Whether it is a whitespace character (method)
-c.is-upper()       // Whether it is an uppercase letter (method)
-c.is-lower()       // Whether it is a lowercase letter (method)
-c.to-upper()       // Convert to uppercase (ASCII) (method)
-c.to-lower()       // Convert to lowercase (ASCII) (method)
-c.to-bytes()       // Unicode -> UTF-8 bytes (method)
-c.to-str()         // Unicode -> string (UTF-8, method)
+c.is-digit()       ; Whether it is a digit (0-9) (method)
+c.is-letter()      ; Whether it is a letter (a-z, A-Z) (method)
+c.is-alpha()       ; Alias for is-letter (method)
+c.is-alnum()       ; Whether it is a letter or digit (method)
+c.is-space()       ; Whether it is a whitespace character (method)
+c.is-upper()       ; Whether it is an uppercase letter (method)
+c.is-lower()       ; Whether it is a lowercase letter (method)
+c.to-upper()       ; Convert to uppercase (ASCII) (method)
+c.to-lower()       ; Convert to lowercase (ASCII) (method)
+c.to-bytes()       ; Unicode -> UTF-8 bytes (method)
+c.to-str()         ; Unicode -> string (UTF-8, method)
 ```
 
 ### str — String Operations
 
 ```nolang
-ok = a.eq(b, n)               // Equality comparison (method)
-dst = s.copy()                // String copy (method)
-s.fill(val byte)              // Fill with byte value (method)
-pos = s.index(sub)            // Substring position
-ok = s.contains(sub)          // Whether it contains substring
-ok = s.starts-with(sub)       // Prefix check
-ok = s.ends-with(sub)         // Suffix check
-s.to-upper()                  // Convert to uppercase
-s.to-lower()                  // Convert to lowercase
-out = s.trim()                // Trim leading/trailing whitespace
-out = s.repeat(n)             // Repeat
-out = s.slice(start, end)     // Slice
-b = s.to-bytes()              // Convert to []byte
-s = b.to-str()                // []byte to str (method)
-v = s.to-i64()                // String to i64 (returns ?i64)
-v = s.to-i8()                 // String to i8 (returns ?i8)
-v = s.to-i16()                // String to i16 (returns ?i16)
-v = s.to-i32()                // String to i32 (returns ?i32)
-v = s.to-u8()                 // String to u8 (returns ?u8)
-v = s.to-u16()                // String to u16 (returns ?u16)
-v = s.to-u32()                // String to u32 (returns ?u32)
-v = s.to-u64()                // String to u64 (returns ?u64)
-v = s.to-byte()               // String to byte (returns ?byte)
-v = s.to-f64()                // String to f64 (returns ?f64)
-v = s.to-bool()               // String "true"/"false" to bool (returns ?bool)
-s = v.to-str()                // i64 to string (method)
-out = s.reverse()             // Reverse
-c = s.compare(b)              // Lexicographic comparison
-n = s.count()                 // Total number of code points
-val = s.replace-char(old, new) // Replace character (returns resulting string)
-out = s.trim-char(c)          // Trim specified character
-ok = s.empty()                // Whether it is empty
-s.clear()                     // Clear (len=0, in-place)
-s = with-cap(cap)            // Builtin: create new string with specified capacity (len=0)
-s = with-len(len)            // Builtin: create new string with specified length (len=cap)
-s = with-cap-len(cap, len)   // Builtin: create new string with specified capacity and length
-parts = s.split(sep)          // Split by separator (returns []str, method)
-out = ss.join(sep)            // Join []str with separator (method)
+ok = a.eq(b, n)               ; Equality comparison (method)
+dst = s.copy()                ; String copy (method)
+s.fill(val byte)              ; Fill with byte value (method)
+pos = s.index(sub)            ; Substring position
+ok = s.contains(sub)          ; Whether it contains substring
+ok = s.starts-with(sub)       ; Prefix check
+ok = s.ends-with(sub)         ; Suffix check
+s.to-upper()                  ; Convert to uppercase
+s.to-lower()                  ; Convert to lowercase
+out = s.trim()                ; Trim leading/trailing whitespace
+out = s.repeat(n)             ; Repeat
+out = s.slice(start, end)     ; Slice
+b = s.to-bytes()              ; Convert to []byte
+s = b.to-str()                ; []byte to str (method)
+v = s.to-i64()                ; String to i64 (returns ?i64)
+v = s.to-i8()                 ; String to i8 (returns ?i8)
+v = s.to-i16()                ; String to i16 (returns ?i16)
+v = s.to-i32()                ; String to i32 (returns ?i32)
+v = s.to-u8()                 ; String to u8 (returns ?u8)
+v = s.to-u16()                ; String to u16 (returns ?u16)
+v = s.to-u32()                ; String to u32 (returns ?u32)
+v = s.to-u64()                ; String to u64 (returns ?u64)
+v = s.to-byte()               ; String to byte (returns ?byte)
+v = s.to-f64()                ; String to f64 (returns ?f64)
+v = s.to-bool()               ; String "true"/"false" to bool (returns ?bool)
+s = v.to-str()                ; i64 to string (method)
+out = s.reverse()             ; Reverse
+c = s.compare(b)              ; Lexicographic comparison
+n = s.count()                 ; Total number of code points
+val = s.replace-char(old, new) ; Replace character (returns resulting string)
+out = s.trim-char(c)          ; Trim specified character
+ok = s.empty()                ; Whether it is empty
+s.clear()                     ; Clear (len=0, in-place)
+s = with-cap(cap)            ; Builtin: create new string with specified capacity (len=0)
+s = with-len(len)            ; Builtin: create new string with specified length (len=cap)
+s = with-cap-len(cap, len)   ; Builtin: create new string with specified capacity and length
+parts = s.split(sep)          ; Split by separator (returns []str, method)
+out = ss.join(sep)            ; Join []str with separator (method)
 ```
 
 ### number — Numeric Operations
 
 ```nolang
-number.max(a, b)                     // Maximum
-number.min(a, b)                     // Minimum
-r = num.clamp(lo, hi)         // Clamp to range (method)
-r = number.abs(a)                    // Absolute value (number generic)
-r = num.sign()                // Sign (-1/0/1, method)
-number.even(v)                       // Even/odd check
+number.max(a, b)                     ; Maximum
+number.min(a, b)                     ; Minimum
+r = num.clamp(lo, hi)         ; Clamp to range (method)
+r = number.abs(a)                    ; Absolute value (number generic)
+r = num.sign()                ; Sign (-1/0/1, method)
+number.even(v)                       ; Even/odd check
 number.odd(v)
-number.gcd(a, b)                     // Greatest common divisor
-number.lcm(a, b)                     // Least common multiple
-r = number.pow(a, n)                 // Integer power
-number.i64-to-f64(v)                 // Numeric conversion
+number.gcd(a, b)                     ; Greatest common divisor
+number.lcm(a, b)                     ; Least common multiple
+r = number.pow(a, n)                 ; Integer power
+number.i64-to-f64(v)                 ; Numeric conversion
 number.f64-to-i64(v)
-s = int.to-str()              // i64 to string (method)
-q = number.div(a, b)                 // Integer division quotient
-r = number.mod(a, b)                 // Modulo
-number.swap(a, b)                    // Swap
-yes = float.is-nan()          // NaN check (method)
-yes = float.is-inf()          // Inf check (method)
+s = int.to-str()              ; i64 to string (method)
+q = number.div(a, b)                 ; Integer division quotient
+r = number.mod(a, b)                 ; Modulo
+number.swap(a, b)                    ; Swap
+yes = float.is-nan()          ; NaN check (method)
+yes = float.is-inf()          ; Inf check (method)
 
-// Range constants
-i8.MIN / MAX                  // -128 / 127
-i16.MIN / MAX                 // -32768 / 32767
-i32.MIN / MAX                 // -2147483648 / 2147483647
-i64.MIN / MAX                 // -2^63 / 2^63-1
-u8.MIN / MAX                  // 0 / 255
-u16.MIN / MAX                 // 0 / 65535
-u32.MIN / MAX                 // 0 / 4294967295
-u64.MIN / MAX                 // 0 / 2^64-1
+; Range constants
+i8.MIN / MAX                  ; -128 / 127
+i16.MIN / MAX                 ; -32768 / 32767
+i32.MIN / MAX                 ; -2147483648 / 2147483647
+i64.MIN / MAX                 ; -2^63 / 2^63-1
+u8.MIN / MAX                  ; 0 / 255
+u16.MIN / MAX                 ; 0 / 65535
+u32.MIN / MAX                 ; 0 / 4294967295
+u64.MIN / MAX                 ; 0 / 2^64-1
 ```
 
 ### byte — Byte Operations
 
 ```nolang
-out = i64.to-bytes-be()         // i64 -> big-endian [8]byte
-out = i64.to-bytes-le()         // i64 -> little-endian [8]byte
-v = []byte.to-i64-be()          // big-endian []byte -> i64 (1~8 bytes)
-v = []byte.to-i64-le()          // little-endian []byte -> i64 (1~8 bytes)
-s = []byte.to-str()             // []byte to str (method)
-s = []byte.to-hex()             // []byte -> uppercase hex string
-s = []byte.to-hex-lower()       // []byte -> lowercase hex string
-s = byte.to-str()               // byte to str (method)
+out = i64.to-bytes-be()         ; i64 -> big-endian [8]byte
+out = i64.to-bytes-le()         ; i64 -> little-endian [8]byte
+v = []byte.to-i64-be()          ; big-endian []byte -> i64 (1~8 bytes)
+v = []byte.to-i64-le()          ; little-endian []byte -> i64 (1~8 bytes)
+s = []byte.to-str()             ; []byte to str (method)
+s = []byte.to-hex()             ; []byte -> uppercase hex string
+s = []byte.to-hex-lower()       ; []byte -> lowercase hex string
+s = byte.to-str()               ; byte to str (method)
 ```
 
 ### vec — Slice Operations
 
 ```nolang
-v = vec.vec-create(n, val)         // Create a slice of length n, filled with val
-ok = []t.eq(a, b, n)           // Equality comparison
-n = []t.len()                  // Length
-[]t.push(val)                   // Append (auto-grow)
-[]t.clear()                     // Clear (len=0, cap/data unchanged)
-v = with-cap(cap)             // Builtin: create new slice with specified capacity (len=0)
-v = with-len(len)             // Builtin: create new slice with specified length (len=cap)
-v = with-cap-len(cap, len)    // Builtin: create new slice with specified capacity and length
-val, new-n = []t.pop()         // Pop
-found = []t.contains(n, val)   // Whether it contains (n is length)
-[]t.reverse(n)                  // Reverse first n elements
-[]t.clone(dst)                  // Copy to dst
-[]t.fill(n, val)                // Fill first n elements
-arr = []t.to-arr()             // Convert to array
-[]t.sort-asc()                  // Sort ascending (method)
-[]t.sort-desc()                 // Sort descending (method)
+v = vec.vec-create(n, val)         ; Create a slice of length n, filled with val
+ok = []t.eq(a, b, n)           ; Equality comparison
+n = []t.len()                  ; Length
+[]t.push(val)                   ; Append (auto-grow)
+[]t.clear()                     ; Clear (len=0, cap/data unchanged)
+v = with-cap(cap)             ; Builtin: create new slice with specified capacity (len=0)
+v = with-len(len)             ; Builtin: create new slice with specified length (len=cap)
+v = with-cap-len(cap, len)    ; Builtin: create new slice with specified capacity and length
+val, new-n = []t.pop()         ; Pop
+found = []t.contains(n, val)   ; Whether it contains (n is length)
+[]t.reverse(n)                  ; Reverse first n elements
+[]t.clone(dst)                  ; Copy to dst
+[]t.fill(n, val)                ; Fill first n elements
+arr = []t.to-arr()             ; Convert to array
+[]t.sort-asc()                  ; Sort ascending (method)
+[]t.sort-desc()                 ; Sort descending (method)
 ```
 
 ### arr — Array Operations
 
 ```nolang
-out = [n]t.clone()             // Copy
-ok = [n]t.eq(b)                // Equality comparison
-[n]t.fill(val)                  // Fill
-[n]t.reverse()                  // Reverse
-ok = [n]t.contains(val)        // Whether it contains
-v = [n]t.to-vec()              // Convert to slice
-v = [n]t.max()                 // Maximum
-v = [n]t.min()                 // Minimum
-v = [n]t.sum()                 // Sum
-i = [n]t.index-of(val)          // Index
-v = [n]t.last()                // Last element
-v = [n]t.first()               // First element
-[n]t.sort-asc()                 // Sort ascending
-[n]t.sort-desc()                // Sort descending
+out = [n]t.clone()             ; Copy
+ok = [n]t.eq(b)                ; Equality comparison
+[n]t.fill(val)                  ; Fill
+[n]t.reverse()                  ; Reverse
+ok = [n]t.contains(val)        ; Whether it contains
+v = [n]t.to-vec()              ; Convert to slice
+v = [n]t.max()                 ; Maximum
+v = [n]t.min()                 ; Minimum
+v = [n]t.sum()                 ; Sum
+i = [n]t.index-of(val)          ; Index
+v = [n]t.last()                ; Last element
+v = [n]t.first()               ; First element
+[n]t.sort-asc()                 ; Sort ascending
+[n]t.sort-desc()                ; Sort descending
 ```
 
 ### sort — Sort Constants
 
 ```nolang
-sort.ast                         // Ascending
-sort.desc                        // Descending
+sort.ast                         ; Ascending
+sort.desc                        ; Descending
 ```
 
 ---
@@ -252,25 +252,25 @@ sort.desc                        // Descending
 Provides environment variables, directory operations, process management, system information, time, and more. For file read/write functionality, see the `fs` module.
 
 ```nolang
-// Environment variables
+; Environment variables
 val = os.get-env(key)
 os.set-env(key, val)
 
-// Directory
+; Directory
 dir = os.get-wd()
 os.ch-dir(dir)
 os.mkdir(path, mode)
 
-// Process
+; Process
 os.exit(code)
 pid = os.get-pid()
 
-// System information
+; System information
 name = os.host-name()
 arch = os.get-arch()
 msg = os.strerror(errnum)
 
-// Time
+; Time
 sec = os.now()
 ms = os.now-ms()
 us = os.now-us()
@@ -279,7 +279,7 @@ os.sleep(sec)
 os.sleep-us(us)
 os.sleep-ns(ns)
 
-// Command-line arguments
+; Command-line arguments
 count = os.args()
 val = os.arg(idx)
 ```
@@ -289,13 +289,13 @@ val = os.arg(idx)
 Wraps an open file with the `file` struct and a path with the `path` struct.
 
 ```nolang
-// File struct
+; File struct
 file {
     fd i64
     path str
 }
 
-// Standard files
+; Standard files
 stdin = file{
     fd: 0
     path: '<stdin>'
@@ -309,7 +309,7 @@ stderr = file{
     path: '<stderr>'
 }
 
-// Open file (with options)
+; Open file (with options)
 file-mode {
     read,
     write,
@@ -331,37 +331,37 @@ file-opts {
     truncate bool
     append bool
 }
-f = fs.open(path, opts)             // Open file, returns nil on failure
+f = fs.open(path, opts)             ; Open file, returns nil on failure
 
-// file methods
-read-n = f.read(buf, n)          // Read up to n bytes
-line = f.read-line()              // Read one line (?str, nil=EOF)
-content, n = f.read-all()        // Read entire file
-written = f.write(data, n)       // Write n bytes
-ok = f.write-all(data, n)        // Write all (overwrite)
-ok = f.append(data, n)           // Append data
-ok = f.copy-to(dst-path)         // Copy to target path
-ok = f.close()                   // Close (standard files are not auto-closed)
-yes = f.is-open()                // Whether it is open
-sz = f.size()                    // File size
+; file methods
+read-n = f.read(buf, n)          ; Read up to n bytes
+line = f.read-line()              ; Read one line (?str, nil=EOF)
+content, n = f.read-all()        ; Read entire file
+written = f.write(data, n)       ; Write n bytes
+ok = f.write-all(data, n)        ; Write all (overwrite)
+ok = f.append(data, n)           ; Append data
+ok = f.copy-to(dst-path)         ; Copy to target path
+ok = f.close()                   ; Close (standard files are not auto-closed)
+yes = f.is-open()                ; Whether it is open
+sz = f.size()                    ; File size
 
-// Built-in functions
-fd = fs.open-read(path)             // Open read-only
-fd = fs.open-write(path)            // Open for writing (O_CREAT|O_TRUNC, 0644)
-fd = fs.open-file(path, flags, mode) // Open with custom flags
-n = fs.read(fd, buf, n)             // Low-level read
-written = fs.write(fd, data, n)     // Low-level write
-ok = fs.close(fd)                   // Low-level close
-ok = fs.remove(path)                // Delete file
-ok = fs.rename(old, new)            // Rename
-ok = fs.is-file(path)               // Check if it is a file
-ok = fs.is-dir(path)                // Check if it is a directory
-sz = fs.stat-size(path)             // Get file size
-sz = fs.file-size(path)             // Same as stat-size
-line = fs.get-line()                // Read a line from standard input (?str, nil=EOF)
-ok = fs.copy-file(src, dst)         // Copy file
+; Built-in functions
+fd = fs.open-read(path)             ; Open read-only
+fd = fs.open-write(path)            ; Open for writing (O_CREAT|O_TRUNC, 0644)
+fd = fs.open-file(path, flags, mode) ; Open with custom flags
+n = fs.read(fd, buf, n)             ; Low-level read
+written = fs.write(fd, data, n)     ; Low-level write
+ok = fs.close(fd)                   ; Low-level close
+ok = fs.remove(path)                ; Delete file
+ok = fs.rename(old, new)            ; Rename
+ok = fs.is-file(path)               ; Check if it is a file
+ok = fs.is-dir(path)                ; Check if it is a directory
+sz = fs.stat-size(path)             ; Get file size
+sz = fs.file-size(path)             ; Same as stat-size
+line = fs.get-line()                ; Read a line from standard input (?str, nil=EOF)
+ok = fs.copy-file(src, dst)         ; Copy file
 
-// macOS open() flag constants
+; macOS open() flag constants
 O-RDONLY = 0, O-WRONLY = 1, O-RDWR = 2
 O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
 ```
@@ -370,7 +370,7 @@ O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
 
 ```nolang
 val = env.get(key)
-val = env.lookup(key)               // Returns ?str (nil=not found)
+val = env.lookup(key)               ; Returns ?str (nil=not found)
 env.set(key, val)
 env.unset(key)
 val = env.get-with-default(key, default)
@@ -393,50 +393,50 @@ arg = args.get-positional(i)
 Wraps a path string with the `path` struct; all operations are provided as methods:
 
 ```nolang
-SEP = 47     // '/' (ASCII)
-DOT = 46     // '.'
+SEP = 47     ; '/' (ASCII)
+DOT = 46     ; '.'
 
-// Struct
+; Struct
 path {
     p str
 }
 
-// Path join and split (modifies .p in place)
+; Path join and split (modifies .p in place)
 p = path{
     p: '/a/b/c.txt'
 }
-p.join(b str)           // Join two paths (modifies in place)
-p.base() (out)           // Get filename
-p.dir()                  // Get directory (modifies .p in place)
-p.ext() (out)            // Get extension
-p.clean()                // Normalize (modifies .p in place)
-p.split() (f str)        // Split into directory + filename (.p becomes directory, returns filename)
+p.join(b str)           ; Join two paths (modifies in place)
+p.base() (out)           ; Get filename
+p.dir()                  ; Get directory (modifies .p in place)
+p.ext() (out)            ; Get extension
+p.clean()                ; Normalize (modifies .p in place)
+p.split() (f str)        ; Split into directory + filename (.p becomes directory, returns filename)
 
-// Path checks
-p.is-abs() (yes bool)    // Whether it is an absolute path
+; Path checks
+p.is-abs() (yes bool)    ; Whether it is an absolute path
 
-// File system operations (delegated to fs built-in functions)
-p.exists() (yes bool)        // Whether it exists
-p.is-dir() (yes bool)        // Whether it is a directory
-p.is-file() (yes bool)       // Whether it is a file
-p.size() (sz i64)            // File size
-p.make-dir() (ok bool)       // Create directory
-p.remove() (ok bool)         // Delete
-p.rename(new-p str) (ok bool)    // Rename
-p.change-dir() (ok bool)     // Change working directory
+; File system operations (delegated to fs built-in functions)
+p.exists() (yes bool)        ; Whether it exists
+p.is-dir() (yes bool)        ; Whether it is a directory
+p.is-file() (yes bool)       ; Whether it is a file
+p.size() (sz i64)            ; File size
+p.make-dir() (ok bool)       ; Create directory
+p.remove() (ok bool)         ; Delete
+p.rename(new-p str) (ok bool)    ; Rename
+p.change-dir() (ok bool)     ; Change working directory
 
-// Constructor methods
-path.current() (out path)    // Get current working directory
+; Constructor methods
+path.current() (out path)    ; Get current working directory
 ```
 
 ### bufio — Buffered Reading
 
 ```nolang
-r = reader.init(fd, buf)       // Initialize buffered reader (returns reader)
-ok = reader.fill()              // Fill buffer
-b = reader.read-byte()          // Read one byte (?byte, nil=EOF)
-ok = reader.read-line(line)     // Read one line into line
-reader.close()                  // Close
+r = reader.init(fd, buf)       ; Initialize buffered reader (returns reader)
+ok = reader.fill()              ; Fill buffer
+b = reader.read-byte()          ; Read one byte (?byte, nil=EOF)
+ok = reader.read-line(line)     ; Read one line into line
+reader.close()                  ; Close
 ```
 
 ### io — Input/Output Abstraction
@@ -444,38 +444,38 @@ reader.close()                  // Close
 Provides `io-reader` and `io-writer` structs to unify read/write operations across files, standard input/output, and other streams:
 
 ```nolang
-// Standard file descriptors
+; Standard file descriptors
 STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
 
-// io-reader struct
+; io-reader struct
 io-reader {
     fd i64
 }
-r = io-reader.from-fd(fd)      // Create from fd
-r = io-reader.from-stdin()     // Create from standard input
-read-n = r.read(buf, n)        // Read n bytes
-b = r.read-byte()              // Read one byte (?byte, nil=EOF)
-line = r.read-line()           // Read one line (?str, nil=EOF)
-total = r.read-all(buf, size)  // Read all
+r = io-reader.from-fd(fd)      ; Create from fd
+r = io-reader.from-stdin()     ; Create from standard input
+read-n = r.read(buf, n)        ; Read n bytes
+b = r.read-byte()              ; Read one byte (?byte, nil=EOF)
+line = r.read-line()           ; Read one line (?str, nil=EOF)
+total = r.read-all(buf, size)  ; Read all
 
-// io-writer struct
+; io-writer struct
 io-writer {
     fd i64
 }
-w = io-writer.from-fd(fd)      // Create from fd
-w = io-writer.from-stdout()    // Create from standard output
-w = io-writer.from-stderr()    // Create from standard error
-written = w.write(data, n)     // Write n bytes
-written = w.write-str(s)       // Write entire string
-written = w.write-byte(b)      // Write one byte
-written = w.write-line(s)      // Write string + newline
+w = io-writer.from-fd(fd)      ; Create from fd
+w = io-writer.from-stdout()    ; Create from standard output
+w = io-writer.from-stderr()    ; Create from standard error
+written = w.write(data, n)     ; Write n bytes
+written = w.write-str(s)       ; Write entire string
+written = w.write-byte(b)      ; Write one byte
+written = w.write-line(s)      ; Write string + newline
 
-// Convenience functions
-n = io.out(s)                   // Write to stdout (no newline)
-n = io.outln(s)                 // Write to stdout (with newline)
-n = io.err(s)                   // Write to stderr (no newline)
-n = io.errln(s)                 // Write to stderr (with newline)
-line = io.read-line()           // Read one line from stdin (?str, nil=EOF)
+; Convenience functions
+n = io.out(s)                   ; Write to stdout (no newline)
+n = io.outln(s)                 ; Write to stdout (with newline)
+n = io.err(s)                   ; Write to stderr (no newline)
+n = io.errln(s)                 ; Write to stderr (with newline)
+line = io.read-line()           ; Read one line from stdin (?str, nil=EOF)
 ```
 
 ### regexp — Regular Expressions
@@ -483,17 +483,17 @@ line = io.read-line()           // Read one line from stdin (?str, nil=EOF)
 Wraps a pattern with the `regexp` struct, backed by the C standard library `regex.h`:
 
 ```nolang
-// Struct
+; Struct
 regexp {
     pattern str
 }
 
-// Methods
+; Methods
 re = regexp{
     pattern: '^hello'
 }
-matched = re.matches(text)        // Check whether it matches
-result = re.find(text)           // Find the first matching substring
+matched = re.matches(text)        ; Check whether it matches
+result = re.find(text)           ; Find the first matching substring
 ```
 
 ### process — Process Operations
@@ -501,11 +501,11 @@ result = re.find(text)           // Find the first matching substring
 Provides process creation, standard stream access, process waiting, and process information querying. Backed by POSIX fork/exec/pipe/waitpid:
 
 ```nolang
-// Signal constants
+; Signal constants
 SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD = 17
 WNOHANG = 1
 
-// Struct
+; Struct
 process {
     pid i64
     stdin-fd i64
@@ -515,41 +515,41 @@ process {
     running i64
 }
 
-// Process creation
+; Process creation
 p = process{}
-ok = p.start(program, arg)          // fork + exec, captures stdout
-ok = p.start-with-stdin(program, arg) // fork + exec, captures stdin + stdout
+ok = p.start(program, arg)          ; fork + exec, captures stdout
+ok = p.start-with-stdin(program, arg) ; fork + exec, captures stdin + stdout
 
-// Process waiting
-ok = p.wait()                       // Block waiting for child process to end
-ok = p.wait-nohang()                // Non-blocking poll
+; Process waiting
+ok = p.wait()                       ; Block waiting for child process to end
+ok = p.wait-nohang()                ; Non-blocking poll
 
-// Process control
-ok = p.kill(sig)                    // Send signal
-ok = p.terminate()                  // SIG-TERM
-ok = p.force-kill()                 // SIG-KILL
+; Process control
+ok = p.kill(sig)                    ; Send signal
+ok = p.terminate()                  ; SIG-TERM
+ok = p.force-kill()                 ; SIG-KILL
 
-// Standard stream operations
-read-n = p.read(buf, n)             // Read from stdout
-line = p.read-line()               // Read one line (?str, nil=EOF)
-content, n = p.read-all()           // Read all stdout
-written = p.write(data, n)          // Write to stdin
-p.close-stdin()                    // Close stdin pipe
-p.close-stdout()                   // Close stdout pipe
-p.close-stderr()                   // Close stderr pipe
+; Standard stream operations
+read-n = p.read(buf, n)             ; Read from stdout
+line = p.read-line()               ; Read one line (?str, nil=EOF)
+content, n = p.read-all()           ; Read all stdout
+written = p.write(data, n)          ; Write to stdin
+p.close-stdin()                    ; Close stdin pipe
+p.close-stdout()                   ; Close stdout pipe
+p.close-stderr()                   ; Close stderr pipe
 
-// Process information
-pid = p.pid-of()                    // Child process ID
-code = p.exit-code-of()             // Exit code
-yes = p.is-running()                // Whether it is still running
-pid = process.parent-pid()          // Parent process ID
+; Process information
+pid = p.pid-of()                    ; Child process ID
+code = p.exit-code-of()             ; Exit code
+yes = p.is-running()                ; Whether it is still running
+pid = process.parent-pid()          ; Parent process ID
 
-// Lifecycle
-p.close()                          // Close all pipes and wait
+; Lifecycle
+p.close()                          ; Close all pipes and wait
 
-// Convenience functions
-status = process.process-run(cmd)           // Execute shell command
-content, code = process.process-output(program, arg) // Execute and capture output
+; Convenience functions
+status = process.process-run(cmd)           ; Execute shell command
+content, code = process.process-output(program, arg) ; Execute and capture output
 ```
 
 ### net — Network Operations
@@ -557,39 +557,39 @@ content, code = process.process-output(program, arg) // Execute and capture outp
 Provides TCP networking capabilities, including server listening, client connections, and data sending/receiving. Backed by the POSIX socket API:
 
 ```nolang
-// Network constants
+; Network constants
 AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
 
-// listener struct
+; listener struct
 listener {
     fd i64
 }
 
-// Listen operations
+; Listen operations
 l = listener{}
-ok = l.listen(host, port)            // Create TCP listener (socket+setsockopt+bind+listen)
-c = l.accept()                       // Accept connection (?conn, nil=no connection)
-l.close()                           // Close listening socket
-fd = l.fd-of()                       // Get fd
+ok = l.listen(host, port)            ; Create TCP listener (socket+setsockopt+bind+listen)
+c = l.accept()                       ; Accept connection (?conn, nil=no connection)
+l.close()                           ; Close listening socket
+fd = l.fd-of()                       ; Get fd
 
-// conn struct
+; conn struct
 conn {
     fd i64
 }
 
-// Connection operations
+; Connection operations
 c = conn{}
-ok = c.dial(host, port)              // Establish TCP connection (socket+connect)
-written = c.send(data)               // Send string
-read-n = c.recv(buf, n)              // Receive data into buf
-line = c.recv-line()                 // Receive one line (?str, nil=EOF, up to 4096 bytes)
-content, total = c.recv-all()        // Receive all until connection closed
-c.close()                           // Close connection
-fd = c.fd-of()                       // Get fd
+ok = c.dial(host, port)              ; Establish TCP connection (socket+connect)
+written = c.send(data)               ; Send string
+read-n = c.recv(buf, n)              ; Receive data into buf
+line = c.recv-line()                 ; Receive one line (?str, nil=EOF, up to 4096 bytes)
+content, total = c.recv-all()        ; Receive all until connection closed
+c.close()                           ; Close connection
+fd = c.fd-of()                       ; Get fd
 
-// Convenience functions
-l = net.net-listen-on(host, port)        // Create listener and start listening (?listener)
-c = net.net-dial-to(host, port)          // Create connection and dial (?conn)
+; Convenience functions
+l = net.net-listen-on(host, port)        ; Create listener and start listening (?listener)
+c = net.net-dial-to(host, port)          ; Create connection and dial (?conn)
 ```
 
 ### net/ip — IP Address Operations
@@ -597,13 +597,13 @@ c = net.net-dial-to(host, port)          // Create connection and dial (?conn)
 Provides parsing, validation, conversion, and classification of IPv4 addresses. Pure Nolang implementation:
 
 ```nolang
-// Default address constants
-IP-ZERO       // 0.0.0.0
-IP-LOOPBACK   // 127.0.0.1
-IP-ANY        // 0.0.0.0
-IP-BROADCAST  // 255.255.255.255
+; Default address constants
+IP-ZERO       ; 0.0.0.0
+IP-LOOPBACK   ; 127.0.0.1
+IP-ANY        ; 0.0.0.0
+IP-BROADCAST  ; 255.255.255.255
 
-// ip-addr struct
+; ip-addr struct
 ip-addr {
     a i64
     b i64
@@ -611,32 +611,32 @@ ip-addr {
     d i64
 }
 
-// Parsing and conversion
+; Parsing and conversion
 ip = ip-addr{}
-ok = ip.parse('192.168.1.1')         // Parse from string
-s = ip.to-str()                      // Convert to string '192.168.1.1'
-v = ip.to-u32()                      // Convert to u32 (big-endian)
-ip.from-u32(v)                      // Create from u32
+ok = ip.parse('192.168.1.1')         ; Parse from string
+s = ip.to-str()                      ; Convert to string '192.168.1.1'
+v = ip.to-u32()                      ; Convert to u32 (big-endian)
+ip.from-u32(v)                      ; Create from u32
 
-// Address classification
-yes = ip.is-loopback()               // 127.0.0.0/8
-yes = ip.is-private()                // 10/8, 172.16/12, 192.168/16
-yes = ip.is-zero()                   // 0.0.0.0
-yes = ip.is-broadcast()              // 255.255.255.255
-yes = ip.is-multicast()              // 224.0.0.0/4
-yes = ip.is-link-local()             // 169.254.0.0/16
-yes = ip.is-class-a()                // Class A (1~126)
-yes = ip.is-class-b()                // Class B (128~191)
-yes = ip.is-class-c()                // Class C (192~223)
+; Address classification
+yes = ip.is-loopback()               ; 127.0.0.0/8
+yes = ip.is-private()                ; 10/8, 172.16/12, 192.168/16
+yes = ip.is-zero()                   ; 0.0.0.0
+yes = ip.is-broadcast()              ; 255.255.255.255
+yes = ip.is-multicast()              ; 224.0.0.0/4
+yes = ip.is-link-local()             ; 169.254.0.0/16
+yes = ip.is-class-a()                ; Class A (1~126)
+yes = ip.is-class-b()                ; Class B (128~191)
+yes = ip.is-class-c()                ; Class C (192~223)
 
-// Comparison and subnet
-yes = ip.equal(other)                // Address equality comparison
-yes = ip.in-subnet(base, prefix-len) // Subnet containment check
+; Comparison and subnet
+yes = ip.equal(other)                ; Address equality comparison
+yes = ip.in-subnet(base, prefix-len) ; Subnet containment check
 
-// Convenience functions
-addr = ip.ip-parse(s)                   // Quick parse (?ip-addr, nil=invalid)
-yes = ip.ip-is-loopback(s)              // Quick loopback check
-yes = ip.ip-is-private(s)               // Quick private check
+; Convenience functions
+addr = ip.ip-parse(s)                   ; Quick parse (?ip-addr, nil=invalid)
+yes = ip.ip-is-loopback(s)              ; Quick loopback check
+yes = ip.ip-is-private(s)               ; Quick private check
 ```
 
 ### net/sse — Server-Sent Events Client
@@ -644,34 +644,34 @@ yes = ip.ip-is-private(s)               // Quick private check
 Supports SSE streaming reception compliant with the W3C EventSource specification. Backed by HTTP/1.1 long connections, supporting both plaintext HTTP and HTTPS (TLS):
 
 ```nolang
-// sse-event struct
+; sse-event struct
 sse-event {
-    event str       // Event type (default 'message')
-    data str        // Event data (multiple data lines joined with \n)
-    id str          // Event ID
-    retry i64       // Reconnect wait milliseconds (-1=not set)
+    event str       ; Event type (default 'message')
+    data str        ; Event data (multiple data lines joined with \n)
+    id str          ; Event ID
+    retry i64       ; Reconnect wait milliseconds (-1=not set)
 }
 
-// sse-client struct
+; sse-client struct
 sse-client {
-    fd i64              // TCP socket fd
-    tls-c tls-conn      // TLS connection
-    use-tls bool        // Whether TLS is used
-    connected bool      // Connection state
-    host str            // Server hostname
-    port i64            // Port number
-    path str            // Request path
-    last-event-id str   // Last received event ID
-    recv-buf str        // Receive buffer
-    recv-buf-len i64    // Buffer data length
+    fd i64              ; TCP socket fd
+    tls-c tls-conn      ; TLS connection
+    use-tls bool        ; Whether TLS is used
+    connected bool      ; Connection state
+    host str            ; Server hostname
+    port i64            ; Port number
+    path str            ; Request path
+    last-event-id str   ; Last received event ID
+    recv-buf str        ; Receive buffer
+    recv-buf-len i64    ; Buffer data length
 }
 
-// Connection and event reception
-client = sse.sse-connect('http://host:3000/events')  // Returns ?sse-client
+; Connection and event reception
+client = sse.sse-connect('http://host:3000/events')  ; Returns ?sse-client
 client: {
     nil -> print('connect failed')
     ->
-        ev = client.next-event()     // Returns ?sse-event (nil=EOF, err=error)
+        ev = client.next-event()     ; Returns ?sse-event (nil=EOF, err=error)
         ev: {
             nil -> print('connection closed')
             err -> print('error: ' - it)
@@ -680,9 +680,9 @@ client: {
         client.close()
 }
 
-// Other methods
-yes = client.is-connected()         // Check connection state
-ok = client.reconnect()             // Reconnect (using last-event-id)
+; Other methods
+yes = client.is-connected()         ; Check connection state
+ok = client.reconnect()             ; Reconnect (using last-event-id)
 ```
 
 ### net/http — HTTP/1.1 Client
@@ -690,7 +690,7 @@ ok = client.reconnect()             // Reconnect (using last-event-id)
 Provides an HTTP/1.1 protocol client supporting GET, POST, PUT, DELETE, PATCH and other methods, with optional TLS:
 
 ```nolang
-// Structs
+; Structs
 http-request {
     method str
     url str
@@ -708,18 +708,18 @@ http-response {
     body str
 }
 
-// Convenience functions
-resp = http.http-get(url)                        // GET request (?http-response)
-resp = http.http-post(url, body)                  // POST request (?http-response)
-resp = http.http-do(method, url, body)            // Custom method (?http-response)
+; Convenience functions
+resp = http.http-get(url)                        ; GET request (?http-response)
+resp = http.http-post(url, body)                  ; POST request (?http-response)
+resp = http.http-do(method, url, body)            ; Custom method (?http-response)
 
-// Using a request object
+; Using a request object
 req = http-request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
-resp = http.http-do-req(req)                      // Send request (?http-response)
+resp = http.http-do-req(req)                      ; Send request (?http-response)
 
-// Parse response headers
+; Parse response headers
 resp.parse-headers()
 ```
 
@@ -728,7 +728,7 @@ resp.parse-headers()
 Supports HTTP/2 frame parsing and connection management, supporting h2c prior knowledge mode:
 
 ```nolang
-// Frame struct
+; Frame struct
 http2-frame {
     length i64
     frame-type i64
@@ -737,7 +737,7 @@ http2-frame {
     payload str
 }
 
-// Connection struct
+; Connection struct
 http2-conn {
     fd i64
     next-stream-id i64
@@ -747,16 +747,16 @@ http2-conn {
     use-tls bool
 }
 
-// Connection and request
-c = http2.http2-connect(host, port)                // Establish connection (?http2-conn)
-resp = http2.http2-do(method, url, body)           // Send request (?http-response)
+; Connection and request
+c = http2.http2-connect(host, port)                ; Establish connection (?http2-conn)
+resp = http2.http2-do(method, url, body)           ; Send request (?http-response)
 
-// Frame operations
+; Frame operations
 frame = http2-frame{}
-pos = frame.parse(data, pos)                 // Parse frame (?i64)
-pos = frame.serialize(buf, pos)              // Serialize frame
-ok = c.send-frame(frame)                     // Send frame
-frame = c.recv-frame()                       // Receive frame (?http2-frame)
+pos = frame.parse(data, pos)                 ; Parse frame (?i64)
+pos = frame.serialize(buf, pos)              ; Serialize frame
+ok = c.send-frame(frame)                     ; Send frame
+frame = c.recv-frame()                       ; Receive frame (?http2-frame)
 ```
 
 ### net/http3 — HTTP/3.0 Client (RFC 9114)
@@ -764,7 +764,7 @@ frame = c.recv-frame()                       // Receive frame (?http2-frame)
 HTTP/3 client based on the QUIC protocol:
 
 ```nolang
-// Method constants
+; Method constants
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
 HTTP3-METHOD-PUT = 'PUT'
@@ -773,13 +773,13 @@ HTTP3-METHOD-PATCH = 'PATCH'
 HTTP3-METHOD-HEAD = 'HEAD'
 HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
-// Convenience functions
-c = http3.http3-connect(host, port)                // Establish QUIC connection (?http3-conn)
-resp = http3.http3-send-request(c, method, path, headers, body) // Send request (?http-response)
-resp = http3.http3-get(url)                        // GET request (?http-response)
-resp = http3.http3-post(url, body)                 // POST request (?http-response)
+; Convenience functions
+c = http3.http3-connect(host, port)                ; Establish QUIC connection (?http3-conn)
+resp = http3.http3-send-request(c, method, path, headers, body) ; Send request (?http-response)
+resp = http3.http3-get(url)                        ; GET request (?http-response)
+resp = http3.http3-post(url, body)                 ; POST request (?http-response)
 
-// QPACK header encoding/decoding
+; QPACK header encoding/decoding
 buf, n = http3.qpack-encode-header(name, value)
 buf, n = http3.qpack-encode-headers(names, values, count)
 name, value, pos = http3.qpack-decode-header(buf, pos)
@@ -790,26 +790,26 @@ name, value, pos = http3.qpack-decode-header(buf, pos)
 Supports full-duplex communication over the WebSocket protocol, usable as either client or server:
 
 ```nolang
-// Message struct
+; Message struct
 ws-message {
-    opcode i64           // 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
+    opcode i64           ; 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
     data str
     fin bool
 }
 
-// Server
-s = ws.ws-listen-on(host, port)                 // Create listener (?ws-server)
-c = s.accept()                               // Accept connection (?ws-server-conn)
-msg = c.recv()                               // Receive message (?ws-message)
-ok = c.send-text(text)                       // Send text
-ok = c.send-binary(data)                     // Send binary
+; Server
+s = ws.ws-listen-on(host, port)                 ; Create listener (?ws-server)
+c = s.accept()                               ; Accept connection (?ws-server-conn)
+msg = c.recv()                               ; Receive message (?ws-message)
+ok = c.send-text(text)                       ; Send text
+ok = c.send-binary(data)                     ; Send binary
 c.close()
 
-// Client
-c = ws.ws-connect(url)                          // Connect to server (?ws-client)
-msg = c.recv()                               // Receive message (?ws-message)
-ok = c.send-text(text)                       // Send text
-ok = c.send-binary(data)                     // Send binary
+; Client
+c = ws.ws-connect(url)                          ; Connect to server (?ws-client)
+msg = c.recv()                               ; Receive message (?ws-message)
+ok = c.send-text(text)                       ; Send text
+ok = c.send-binary(data)                     ; Send binary
 c.close()
 ```
 
@@ -818,10 +818,10 @@ c.close()
 Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```nolang
-// Connection
-c = tls.tls-dial(host, port)                     // Establish TLS connection (?tls-conn)
-n = c.send(data)                             // Send encrypted data (?i64)
-n = c.recv(buf, n)                           // Receive decrypted data (?i64)
+; Connection
+c = tls.tls-dial(host, port)                     ; Establish TLS connection (?tls-conn)
+n = c.send(data)                             ; Send encrypted data (?i64)
+n = c.recv(buf, n)                           ; Receive decrypted data (?i64)
 c.close()
 ```
 
@@ -830,14 +830,14 @@ c.close()
 Wraps the `conn` struct, providing features such as automatic reconnection:
 
 ```nolang
-c = client.net-client(host, port)                   // Create client (?client)
-ok = c.connect(host, port)                   // Connect
-ok = c.reconnect()                           // Reconnect
-written = c.send(data)                       // Send
-read-n = c.recv(buf, n)                      // Receive
-line = c.recv-line()                         // Receive one line (?str)
-response = c.request(data)                   // Request-response pattern (?str)
-yes = c.is-connected()                       // Connection state
+c = client.net-client(host, port)                   ; Create client (?client)
+ok = c.connect(host, port)                   ; Connect
+ok = c.reconnect()                           ; Reconnect
+written = c.send(data)                       ; Send
+read-n = c.recv(buf, n)                      ; Receive
+line = c.recv-line()                         ; Receive one line (?str)
+response = c.request(data)                   ; Request-response pattern (?str)
+yes = c.is-connected()                       ; Connection state
 c.close()
 ```
 
@@ -846,9 +846,9 @@ c.close()
 Provides an implementation of the QUIC transport protocol, serving as the underlying transport layer for HTTP/3:
 
 ```nolang
-c = quic.quic-dial(host, port)                    // Establish QUIC connection (?quic-conn)
-n = c.send(data, n)                          // Send data
-n = c.recv(buf, n)                           // Receive data
+c = quic.quic-dial(host, port)                    ; Establish QUIC connection (?quic-conn)
+n = c.send(data, n)                          ; Send data
+n = c.recv(buf, n)                           ; Receive data
 c.close()
 ```
 
@@ -858,8 +858,8 @@ Provides HTTP server functionality:
 
 ```nolang
 s = server{}
-ok = s.listen(host, port)                    // Start listening
-ok = s.serve()                               // Handle requests
+ok = s.listen(host, port)                    ; Start listening
+ok = s.serve()                               ; Handle requests
 s.close()
 ```
 
@@ -868,7 +868,7 @@ s.close()
 Provides DNS query functionality:
 
 ```nolang
-ip = dns.dns-resolve(host)                       // Resolve hostname (?str)
+ip = dns.dns-resolve(host)                       ; Resolve hostname (?str)
 ```
 
 ### net/url — URL Parsing
@@ -876,8 +876,8 @@ ip = dns.dns-resolve(host)                       // Resolve hostname (?str)
 Provides URL parsing and construction functionality:
 
 ```nolang
-u = url.url-parse(url)                           // Parse URL
-s = u.to-str()                               // Convert to string
+u = url.url-parse(url)                           ; Parse URL
+s = u.to-str()                               ; Convert to string
 ```
 
 ### net/cookie — HTTP Cookie
@@ -923,8 +923,8 @@ Provides pooled management of network connections, reusing connections to improv
 ```nolang
 p = pool{}
 p.init(capacity)
-c = p.get()                                  // Get connection from pool
-p.put(c)                                     // Return connection to pool
+c = p.get()                                  ; Get connection from pool
+p.put(c)                                     ; Return connection to pool
 p.close()
 ```
 
@@ -933,9 +933,9 @@ p.close()
 Provides Unix domain socket communication:
 
 ```nolang
-fd = unix.unix-listen(path)                       // Listen
-fd = unix.unix-dial(path)                         // Connect
-fd = unix.unix-accept(listen-fd)                  // Accept connection
+fd = unix.unix-listen(path)                       ; Listen
+fd = unix.unix-dial(path)                         ; Connect
+fd = unix.unix-accept(listen-fd)                  ; Accept connection
 ```
 
 ---
@@ -945,14 +945,14 @@ fd = unix.unix-accept(listen-fd)                  // Accept connection
 ### time — Time Operations
 
 ```nolang
-sec = time.now-s()                   // Current Unix timestamp (seconds)
-ms = time.now-ms()                   // Current timestamp (milliseconds)
-us = time.now-us()                   // Current timestamp (microseconds)
-out = time.format-time(t, fmt)        // Format time
-time.sleep-ms(ms)                    // Sleep (milliseconds)
-time.sleep-us(us)                    // Sleep (microseconds)
-d = time.duration-between(start, end) // Elapsed time (seconds)
-d = time.duration-ms-between(s, e)    // Elapsed time (milliseconds)
+sec = time.now-s()                   ; Current Unix timestamp (seconds)
+ms = time.now-ms()                   ; Current timestamp (milliseconds)
+us = time.now-us()                   ; Current timestamp (microseconds)
+out = time.format-time(t, fmt)        ; Format time
+time.sleep-ms(ms)                    ; Sleep (milliseconds)
+time.sleep-us(us)                    ; Sleep (microseconds)
+d = time.duration-between(start, end) ; Elapsed time (seconds)
+d = time.duration-ms-between(s, e)    ; Elapsed time (milliseconds)
 ```
 
 ---
@@ -983,15 +983,15 @@ log.fatal(msg)
 ### set — Set (Array-based)
 
 ```nolang
-new-n = set.add(s, n, val)           // Add element
-new-n = set.set-remove(s, n, val)        // Remove element
-ok = set.contains(s, n, val)         // Whether it contains
-new-an = set.union(a, an, b, bn)     // Union
-out, n = set.intersection(a, an, b, bn)// Intersection
-out, n = set.difference(a, an, b, bn)  // Difference
-v = set.to-vec(s, n)                 // Convert to slice
-sz = set.set-size(s, n)                   // Number of elements
-yes = set.set-empty(s, n)                    // Whether it is empty
+new-n = set.add(s, n, val)           ; Add element
+new-n = set.set-remove(s, n, val)        ; Remove element
+ok = set.contains(s, n, val)         ; Whether it contains
+new-an = set.union(a, an, b, bn)     ; Union
+out, n = set.intersection(a, an, b, bn); Intersection
+out, n = set.difference(a, an, b, bn)  ; Difference
+v = set.to-vec(s, n)                 ; Convert to slice
+sz = set.set-size(s, n)                   ; Number of elements
+yes = set.set-empty(s, n)                    ; Whether it is empty
 ```
 
 ### deque — Double-Ended Queue
@@ -999,7 +999,7 @@ yes = set.set-empty(s, n)                    // Whether it is empty
 A double-ended queue implemented with a circular buffer, wrapped in the `deque` struct:
 
 ```nolang
-// Struct
+; Struct
 deque {
     buf []i64
     cap i64
@@ -1007,7 +1007,7 @@ deque {
     tail i64
 }
 
-// Initialization
+; Initialization
 d = deque{
     buf: buf
     cap: 128
@@ -1015,16 +1015,16 @@ d = deque{
     tail: 0
 }
 
-// Methods
-d.push-front(val)              // Push from front
-d.push-back(val)               // Push from back
-val = d.pop-front()             // Pop from front
-val = d.pop-back()              // Pop from back
-val = d.peek-front()            // Peek front element (?i64, nil=empty)
-val = d.peek-back()             // Peek back element (?i64, nil=empty)
-sz = d.size()                   // Size
-yes = d.empty()                 // Whether it is empty
-d.clear()                      // Clear
+; Methods
+d.push-front(val)              ; Push from front
+d.push-back(val)               ; Push from back
+val = d.pop-front()             ; Pop from front
+val = d.pop-back()              ; Pop from back
+val = d.peek-front()            ; Peek front element (?i64, nil=empty)
+val = d.peek-back()             ; Peek back element (?i64, nil=empty)
+sz = d.size()                   ; Size
+yes = d.empty()                 ; Whether it is empty
+d.clear()                      ; Clear
 ```
 
 ### heap — Min Heap
@@ -1032,21 +1032,21 @@ d.clear()                      // Clear
 A binary min heap wrapped in the `heap` struct:
 
 ```nolang
-// Struct
+; Struct
 heap {
     data []i64
     n i64
 }
 
-// Initialization
-h = heap.init(data)            // Create heap
+; Initialization
+h = heap.init(data)            ; Create heap
 
-// Methods
-h.push(val)                    // Push element
-val = h.pop()                  // Pop minimum element (?i64, nil=empty)
-val = h.peek()                 // Peek minimum element (?i64, nil=empty)
-sz = h.size()                  // Size
-yes = h.empty()                // Whether it is empty
+; Methods
+h.push(val)                    ; Push element
+val = h.pop()                  ; Pop minimum element (?i64, nil=empty)
+val = h.peek()                 ; Peek minimum element (?i64, nil=empty)
+sz = h.size()                  ; Size
+yes = h.empty()                ; Whether it is empty
 ```
 
 ### stack — Stack
@@ -1054,26 +1054,26 @@ yes = h.empty()                // Whether it is empty
 A last-in-first-out (LIFO) data structure, wrapped in the `stack` struct:
 
 ```nolang
-// Struct
+; Struct
 stack {
     data []i64
     n i64
 }
 
-// Initialization
+; Initialization
 buf [128]i64 = [0:128]
 s = stack{
     data: buf
     n: 0
 }
 
-// Methods
-s.push(val)                    // Push element
-val = s.pop()                  // Pop top element (?i64, nil=empty)
-val = s.peek()                 // Peek top element (?i64, nil=empty)
-sz = s.size()                  // Size
-yes = s.empty()                // Whether it is empty
-s.clear()                      // Clear
+; Methods
+s.push(val)                    ; Push element
+val = s.pop()                  ; Pop top element (?i64, nil=empty)
+val = s.peek()                 ; Peek top element (?i64, nil=empty)
+sz = s.size()                  ; Size
+yes = s.empty()                ; Whether it is empty
+s.clear()                      ; Clear
 ```
 
 ### map/linked-hash-map — Ordered Hash Map
@@ -1084,7 +1084,7 @@ Fixed capacity 64 (i64→i64), linear probing, doubly-linked list preserves inse
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
-result = m.get(key)   // ?i64, nil=not found
+result = m.get(key)   ; ?i64, nil=not found
 found = m.contains(key)
 removed = m.remove(key)
 m.clear()
@@ -1117,7 +1117,7 @@ Fixed capacity 256, FNV-1a hash, linear probing:
 m = str-map{}
 m.init()
 m.put('key', 'val')
-result = m.get('key')   // ?str, nil=not found
+result = m.get('key')   ; ?str, nil=not found
 found = m.contains('key')
 removed = m.remove('key')
 m.clear()
@@ -1148,16 +1148,16 @@ An ordered map (i64→i64) implemented on a self-balancing AVL binary search tre
 
 ```nolang
 m = tree-map{}
-m.clear()                           // Initialize
-ok = m.put(key, val)                // Insert or update
-val = m.get(key)                    // Lookup (?i64, nil=not found)
-yes = m.contains(key)               // Check whether key exists
-ok = m.remove(key)                  // Delete key
-key = m.first()                     // Minimum key (?i64)
-key = m.last()                      // Maximum key (?i64)
-key = m.lower-bound(target)         // First key >= target (?i64)
-key = m.upper-bound(target)         // First key > target (?i64)
-m.for-each(k, v)                    // Traverse in ascending key order
+m.clear()                           ; Initialize
+ok = m.put(key, val)                ; Insert or update
+val = m.get(key)                    ; Lookup (?i64, nil=not found)
+yes = m.contains(key)               ; Check whether key exists
+ok = m.remove(key)                  ; Delete key
+key = m.first()                     ; Minimum key (?i64)
+key = m.last()                      ; Maximum key (?i64)
+key = m.lower-bound(target)         ; First key >= target (?i64)
+key = m.upper-bound(target)         ; First key > target (?i64)
+m.for-each(k, v)                    ; Traverse in ascending key order
 sz = m.size()
 yes = m.empty()
 yes = m.full()
@@ -1169,15 +1169,15 @@ An ordered set (i64) implemented on a self-balancing AVL binary search tree, cap
 
 ```nolang
 s = tree-set{}
-s.clear()                           // Initialize
-ok = s.add(key)                     // Add element
-yes = s.contains(key)               // Check whether it exists
-ok = s.remove(key)                  // Delete element
-val = s.first()                     // Minimum value (?i64)
-val = s.last()                      // Maximum value (?i64)
-val = s.lower-bound(target)         // First element >= target (?i64)
-val = s.upper-bound(target)         // First element > target (?i64)
-s.for-each(val)                     // Traverse in ascending order
+s.clear()                           ; Initialize
+ok = s.add(key)                     ; Add element
+yes = s.contains(key)               ; Check whether it exists
+ok = s.remove(key)                  ; Delete element
+val = s.first()                     ; Minimum value (?i64)
+val = s.last()                      ; Maximum value (?i64)
+val = s.lower-bound(target)         ; First element >= target (?i64)
+val = s.upper-bound(target)         ; First element > target (?i64)
+s.for-each(val)                     ; Traverse in ascending order
 sz = s.size()
 yes = s.empty()
 yes = s.full()
@@ -1190,9 +1190,9 @@ Implemented on a fixed-length array ring buffer; the buffer is provided by the `
 ```nolang
 buf [128]i64 = [0:128]
 q = buf.queue-init()
-ok = buf.queue-push(q, val)         // Push to tail
-val = buf.queue-pop(q)              // Pop from front (?t)
-val = buf.queue-peek(q)             // Peek front (?t)
+ok = buf.queue-push(q, val)         ; Push to tail
+val = buf.queue-pop(q)              ; Pop from front (?t)
+val = buf.queue-peek(q)             ; Peek front (?t)
 sz = q.size()
 yes = q.empty()
 yes = q.full()
@@ -1206,9 +1206,9 @@ A stack implementation based on a fixed-length array; the buffer is provided by 
 ```nolang
 buf [128]i64 = [0:128]
 s = buf.arr-stack-init()
-ok = buf.arr-stack-push(s, val)     // Push
-val = buf.arr-stack-pop(s)          // Pop (?t)
-val = buf.arr-stack-peek(s)         // Peek top (?t)
+ok = buf.arr-stack-push(s, val)     ; Push
+val = buf.arr-stack-pop(s)          ; Pop (?t)
+val = buf.arr-stack-peek(s)         ; Peek top (?t)
 sz = s.size()
 yes = s.empty()
 yes = s.full()
@@ -1224,12 +1224,12 @@ buf [128]i64 = [0:128]
 nxt [128]i64 = [0:128]
 prv [128]i64 = [0:128]
 l = buf.link-init(nxt, prv)
-ok = buf.link-push-front(l, val)    // Insert at head
-ok = buf.link-push-back(l, val)     // Insert at tail
-val = buf.link-pop-front(l)         // Pop head (?t)
-val = buf.link-pop-back(l)          // Pop tail (?t)
-val = buf.link-peek-front(l)        // Peek head (?t)
-val = buf.link-peek-back(l)         // Peek tail (?t)
+ok = buf.link-push-front(l, val)    ; Insert at head
+ok = buf.link-push-back(l, val)     ; Insert at tail
+val = buf.link-pop-front(l)         ; Pop head (?t)
+val = buf.link-pop-back(l)          ; Pop tail (?t)
+val = buf.link-peek-front(l)        ; Peek head (?t)
+val = buf.link-peek-back(l)         ; Peek tail (?t)
 sz = l.size()
 yes = l.empty()
 yes = l.full()
@@ -1244,13 +1244,13 @@ yes = l.full()
 Defines standard interfaces for database connections, queries, and prepared statements, implemented by concrete drivers:
 
 ```nolang
-// Execution result
+; Execution result
 result {
     last-id i64
     affected i64
 }
 
-// Connection interface (enter/leave auto-managed)
+; Connection interface (enter/leave auto-managed)
 db enter, leave {
     close() (ok bool)
     exec(sql str) (r result)
@@ -1258,16 +1258,16 @@ db enter, leave {
     prepare(sql str) (s stmt)
 }
 
-// Result set interface
+; Result set interface
 rows enter, leave {
-    next() (ok bool)                    // Iterate to next row
-    scan-int(col i64) (v i64)           // Read integer
-    scan-str(col i64) (v str)           // Read string
-    scan-float(col i64) (v f64)         // Read float
+    next() (ok bool)                    ; Iterate to next row
+    scan-int(col i64) (v i64)           ; Read integer
+    scan-str(col i64) (v str)           ; Read string
+    scan-float(col i64) (v f64)         ; Read float
     close() (ok bool)
 }
 
-// Prepared statement interface
+; Prepared statement interface
 stmt enter, leave {
     bind-int(idx i64, v i64) (ok bool)
     bind-str(idx i64, v str) (ok bool)
@@ -1285,12 +1285,12 @@ stmt enter, leave {
 ### encoding/hex — Hexadecimal
 
 ```nolang
-// Encoding (defined in the byte module)
-out = data.to-hex()                  // []byte -> uppercase hex str
-out = data.to-hex-lower()            // []byte -> lowercase hex str
+; Encoding (defined in the byte module)
+out = data.to-hex()                  ; []byte -> uppercase hex str
+out = data.to-hex-lower()            ; []byte -> lowercase hex str
 
-// Decoding (defined in the str module)
-out = s.from-hex()                   // hex str -> ?[]byte (nil=empty, err=invalid character)
+; Decoding (defined in the str module)
+out = s.from-hex()                   ; hex str -> ?[]byte (nil=empty, err=invalid character)
 ```
 
 ### encoding/base64 — Base64 (RFC 4648)
@@ -1298,20 +1298,20 @@ out = s.from-hex()                   // hex str -> ?[]byte (nil=empty, err=inval
 ```nolang
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
-PAD = 61  // '='
+PAD = 61  ; '='
 
-out-n = base64.encode(data, n, table, out)    // Base64 encoding
-out-n = base64.encode-std(data, n, out)       // Standard encoding
-out-n = base64.encode-url(data, n, out)       // URL-safe encoding
-out-n = base64.decode(s, n, table, out)   // Base64 decoding (?i64, nil=invalid input)
+out-n = base64.encode(data, n, table, out)    ; Base64 encoding
+out-n = base64.encode-std(data, n, out)       ; Standard encoding
+out-n = base64.encode-url(data, n, out)       ; URL-safe encoding
+out-n = base64.decode(s, n, table, out)   ; Base64 decoding (?i64, nil=invalid input)
 ```
 
 ### encoding/csv — CSV Parsing (RFC 4180)
 
 ```nolang
-fn, new-pos = csv.parse-field(s, sn, pos, field)  // Parse a single field
-n = csv.parse-line(s, sn, fields, max)             // Parse one line
-out-n = csv.encode-field(field, fn, out)           // Encode field
+fn, new-pos = csv.parse-field(s, sn, pos, field)  ; Parse a single field
+n = csv.parse-line(s, sn, fields, max)             ; Parse one line
+out-n = csv.encode-field(field, fn, out)           ; Encode field
 ```
 
 ---
@@ -1321,7 +1321,7 @@ out-n = csv.encode-field(field, fn, out)           // Encode field
 ### archive/tar — TAR Archive (POSIX ustar)
 
 ```nolang
-// Read a regular tar
+; Read a regular tar
 archive = tar{
     data: raw-bytes
 }
@@ -1329,23 +1329,23 @@ count = archive.count()
 e = archive.entry(idx)
 name = archive.name(idx)
 sz = archive.size(idx)
-typ = archive.type(idx)              // "file" / "dir" / "unknown"
+typ = archive.type(idx)              ; "file" / "dir" / "unknown"
 yes = archive.is-dir(idx)
 yes = archive.is-file(idx)
 out = archive.read(idx)
 mode = archive.mode(idx)
 ts = archive.mtime(idx)
 
-// Read .tar.gz (auto-decompress)
+; Read .tar.gz (auto-decompress)
 archive = tar.tar-open-gz(gz-data)
 
-// tar-entry methods
+; tar-entry methods
 name = e.name()
 sz = e.size()
 typ = e.type()
 out = e.read()
 
-// Write tar
+; Write tar
 builder = tar-builder{}
 builder.add-file(name, content)
 builder.add-dir(name)
@@ -1358,15 +1358,15 @@ archive = builder.finish()
 archive = zip{
     data: raw-bytes
 }
-count = archive.count()                        // Number of entries
-e = archive.entry(idx)                         // Get zip-entry
-name = archive.name(idx)                       // Filename
-sz = archive.size(idx)                         // Original size
-csz = archive.compressed-size(idx)             // Compressed size
-method = archive.method(idx)                   // 0=stored, 8=deflate
-out = archive.extract(idx)                     // stored and deflate modes
+count = archive.count()                        ; Number of entries
+e = archive.entry(idx)                         ; Get zip-entry
+name = archive.name(idx)                       ; Filename
+sz = archive.size(idx)                         ; Original size
+csz = archive.compressed-size(idx)             ; Compressed size
+method = archive.method(idx)                   ; 0=stored, 8=deflate
+out = archive.extract(idx)                     ; stored and deflate modes
 
-// zip-entry methods
+; zip-entry methods
 name = e.name()
 sz = e.size()
 csz = e.compressed-size()
@@ -1377,9 +1377,9 @@ out = e.extract()
 ### archive/gzip — GZIP Compression and Raw DEFLATE
 
 ```nolang
-out = gzip.gzip-compress(data)                      // zlib compression
-out = gzip.gzip-decompress(data)                    // zlib decompression
-out = gzip.inflate-decompress(data, out-size)       // Raw DEFLATE decompression (ZIP method 8)
+out = gzip.gzip-compress(data)                      ; zlib compression
+out = gzip.gzip-decompress(data)                    ; zlib decompression
+out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
 ```
 
 ---
@@ -1389,8 +1389,8 @@ out = gzip.inflate-decompress(data, out-size)       // Raw DEFLATE decompression
 ### hash/aes — AES-128 Encryption/Decryption (ECB Mode)
 
 ```nolang
-aes.aes-128-enc(plain, 16, key, out)   // Encrypt 16-byte block
-aes.aes-128-dec(cipher, 16, key, out)  // Decrypt 16-byte block
+aes.aes-128-enc(plain, 16, key, out)   ; Encrypt 16-byte block
+aes.aes-128-dec(cipher, 16, key, out)  ; Decrypt 16-byte block
 ```
 
 Also includes standalone modules `hash/aes-128-enc` and `hash/aes-128-dec`.
@@ -1398,8 +1398,8 @@ Also includes standalone modules `hash/aes-128-enc` and `hash/aes-128-dec`.
 ### hash/des — DES Encryption/Decryption (ECB Mode)
 
 ```nolang
-des.des-enc(plain, 8, key, out)        // Encrypt 8-byte block
-des.des-dec(cipher, 8, key, out)       // Decrypt 8-byte block
+des.des-enc(plain, 8, key, out)        ; Encrypt 8-byte block
+des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 ```
 
 Also includes standalone modules `hash/des-enc` and `hash/des-dec`.
@@ -1469,8 +1469,8 @@ fnv-1a-32.fnv-1a-32(s []byte, n, h)
 ### hash/rand — Random Number Generator (xorshift32)
 
 ```nolang
-r = rand.rand(state)                     // 32-bit pseudo-random number
-rand.rand-str(state, n, s)              // Random alphanumeric string
+r = rand.rand(state)                     ; 32-bit pseudo-random number
+rand.rand-str(state, n, s)              ; Random alphanumeric string
 ```
 
 ### hash/x509 — X.509 Certificate DER Parsing
@@ -1478,15 +1478,15 @@ rand.rand-str(state, n, s)              // Random alphanumeric string
 ```nolang
 tag = x509.der-tag(data, pos)
 len, adv = x509.der-len(data, pos)
-x509.x509-fingerprint(cert, n, h0..h7)  // SHA-256 certificate fingerprint
-x509.x509-rsa-e(cert, n, e)             // RSA public key exponent extraction
+x509.x509-fingerprint(cert, n, h0..h7)  ; SHA-256 certificate fingerprint
+x509.x509-rsa-e(cert, n, e)             ; RSA public key exponent extraction
 ```
 
 ### hash/aes-256 — AES-256 Encryption/Decryption (ECB Mode)
 
 ```nolang
-aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   // Encrypt
-aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   // Decrypt
+aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   ; Encrypt
+aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   ; Decrypt
 ```
 
 ### hash/aes-cbc — AES-CBC Mode (with PKCS7 Padding)
@@ -1515,7 +1515,7 @@ out = aes-ctr.aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
 ### hash/aes-gcm — AES-GCM AEAD
 
 ```nolang
-// AES-128-GCM
+; AES-128-GCM
 sealed = aes-gcm.aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
 ```
@@ -1657,7 +1657,7 @@ shared = x25519.x25519-derive-shared(priv [32]byte, peer-pub [32]byte) (shared [
 ### hash/rand-str — Random String Generation
 
 ```nolang
-rand-str.rand-str(state i64, n i64, s str)   // Generate a random alphanumeric string of length n
+rand-str.rand-str(state i64, n i64, s str)   ; Generate a random alphanumeric string of length n
 ```
 
 ---
@@ -1667,7 +1667,7 @@ rand-str.rand-str(state i64, n i64, s str)   // Generate a random alphanumeric s
 ### json — JSON Parsing and Generation
 
 ```nolang
-// Type enum
+; Type enum
 json-kind {
     null,
     bool,
@@ -1677,17 +1677,17 @@ json-kind {
     obj,
 }
 
-// Parsing
-v = json.parse(s, n)          // Full parse
-v = json.parse-str(s, n)                 // Parse string value
-v = json.parse-num(s, n)                 // Parse numeric value
+; Parsing
+v = json.parse(s, n)          ; Full parse
+v = json.parse-str(s, n)                 ; Parse string value
+v = json.parse-num(s, n)                 ; Parse numeric value
 
-// Generation
-n = json.stringify(v, out)    // Serialize
+; Generation
+n = json.stringify(v, out)    ; Serialize
 
-// Access
-val = json.get-key(v, key)    // Get object property
-json.set-key(v json-value, key, val)    // Set object property
+; Access
+val = json.get-key(v, key)    ; Get object property
+json.set-key(v json-value, key, val)    ; Set object property
 ```
 
 ---
@@ -1705,46 +1705,46 @@ Unicode-related functionality is distributed across the `char` and `str` modules
 ### uuid — UUID v4 Generation and Parsing
 
 ```nolang
-out = uuid.new-v4(state)                  // Generate UUID v4
-out-n = uuid.to-str(out)             // Convert to lowercase string (method)
-out-n = uuid.to-str-upper(out)       // Convert to uppercase string (method)
-ok = uuid.from-str(s, sn, out)            // Parse from string (with/without hyphens)
-ok = uuid.parse-with-dashes(s, pos, out)  // Parse with hyphens
-ok = uuid.parse-no-dashes(s, pos, out)    // Parse without hyphens
-ok = uuid.validate()                 // Validate UUID format (method)
-v = uuid.version()                   // Get version (method)
-v = uuid.variant()                   // Get variant (method)
-yes = uuid.is-nil()                  // Whether it is nil (method)
-yes = uuid.eq(b)                     // Equality comparison (method)
-r = uuid.cmp(b)                      // Compare (method)
-uuid.nil-uuid(out)                        // Return nil UUID
+out = uuid.new-v4(state)                  ; Generate UUID v4
+out-n = uuid.to-str(out)             ; Convert to lowercase string (method)
+out-n = uuid.to-str-upper(out)       ; Convert to uppercase string (method)
+ok = uuid.from-str(s, sn, out)            ; Parse from string (with/without hyphens)
+ok = uuid.parse-with-dashes(s, pos, out)  ; Parse with hyphens
+ok = uuid.parse-no-dashes(s, pos, out)    ; Parse without hyphens
+ok = uuid.validate()                 ; Validate UUID format (method)
+v = uuid.version()                   ; Get version (method)
+v = uuid.variant()                   ; Get variant (method)
+yes = uuid.is-nil()                  ; Whether it is nil (method)
+yes = uuid.eq(b)                     ; Equality comparison (method)
+r = uuid.cmp(b)                      ; Compare (method)
+uuid.nil-uuid(out)                        ; Return nil UUID
 ```
 
 ### bigint — Arbitrary Precision Integer
 
 ```nolang
-// Type
+; Type
 bigint {
     sign i64
     limbs []i64
     len i64
 }
 
-// Construction
+; Construction
 out = bigint.from-i64(v)
 out = bigint.from-u64(v)
 out = bigint.zero()
 out = bigint.one()
 out = bigint.copy(a)
 
-// Comparison
+; Comparison
 r = bigint.cmp(a, b)
 r = bigint.eq(a, b)
 r = bigint.is-zero(a)
 r = bigint.is-neg(a)
 r = bigint.is-pos(a)
 
-// Operations
+; Operations
 c = bigint.add(a, b)
 c = bigint.sub(a, b)
 c = bigint.mul(a, b)
@@ -1755,21 +1755,21 @@ r = bigint.mod-i64(a, v)
 c = bigint.pow(a, n)
 r = bigint.mod-pow(base, exp, mod, r)
 
-// Number theory
+; Number theory
 bigint.gcd(a, b, g)
 bigint.lcm(a, b, l)
 
-// Shifting
+; Shifting
 bigint.shl(a, n, c)
 bigint.shr(a, n, c)
 
-// String conversion
+; String conversion
 n = bigint.to-str(a, out)
 out = bigint.from-str(s, sn)
 n = bigint.to-hex(a, out)
 out = bigint.from-hex(s, sn)
 
-// Small integer helpers
+; Small integer helpers
 bigint.add-i64(a, v, c)
 bigint.mul-i64(a, v, c)
 ```
@@ -1779,7 +1779,7 @@ bigint.mul-i64(a, v, c)
 Structured error type and utility functions:
 
 ```nolang
-// Error code enum
+; Error code enum
 code {
     ok,
     not-found,
@@ -1791,37 +1791,37 @@ code {
     overflow,
 }
 
-// Struct
+; Struct
 error {
     code code
     msg str
 }
 
-// Functions
-e = err.new(code.io, msg)            // Create error
-e = err.err-from-errno(errno)         // Create from C errno
-yes = e.is(code.io)                  // Check error code
-msg = e.msg()                       // Get error message
-c = e.code()                        // Get error code
-s = e.format()                       // Format as string
+; Functions
+e = err.new(code.io, msg)            ; Create error
+e = err.err-from-errno(errno)         ; Create from C errno
+yes = e.is(code.io)                  ; Check error code
+msg = e.msg()                       ; Get error message
+c = e.code()                        ; Get error code
+s = e.format()                       ; Format as string
 ```
 
 ### bool — Boolean Type
 
 ```nolang
-bool.to-str() (out str)     // true->"true", false->"false" (method)
+bool.to-str() (out str)     ; true->"true", false->"false" (method)
 ```
 
 ### enter / leave — Lifecycle Hooks
 
 ```nolang
 
-// Run on startup
+; Run on startup
 enter { 
     enter()
 }     
 
-// Run on exit
+; Run on exit
 leave {
     leave()
 }     

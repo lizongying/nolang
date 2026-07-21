@@ -27,15 +27,15 @@ Nolang uses the `@` keyword in the package root `lib.no` file to declare exporte
 ## Example
 
 ```nolang
-// lib.no - package root export file
+; lib.no - package root export file
 @ /src/utils.greet a
 @ /src/utils.hello b
 @ /src/math.pi
 ```
 
 ```nolang
-// src/utils.no
-// Define exported functions
+; src/utils.no
+; Define exported functions
 greet = (name str) {
     print('Hello, ' - name)
 }
@@ -50,10 +50,10 @@ hello = () {
 External packages can only access exported items declared in `lib.no` when importing via `#`:
 
 ```nolang
-// Import alias a (corresponds to package-name.utils.greet)
+; Import alias a (corresponds to package-name.utils.greet)
 # package-name.utils.greet a
 
-// Or use the function name directly
+; Or use the function name directly
 # package-name.utils.greet
 ```
 

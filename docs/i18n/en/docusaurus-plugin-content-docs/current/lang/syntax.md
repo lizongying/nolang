@@ -63,31 +63,31 @@ to be recognized as the ending delimiter
 Basic types
 
 - byte
-- bool // lowercase only
-- char // character type; one Chinese character counts as one char, no quotes
-- str // string type, wrapped in single quotes
+- bool ; lowercase only
+- char ; character type; one Chinese character counts as one char, no quotes
+- str ; string type, wrapped in single quotes
 - i8
 - i16
 - i32
-- i64 // default numeric type, architecture-independent
+- i64 ; default numeric type, architecture-independent
 - u8
 - u16
 - u32
 - u64
-- usize // FFI only
+- usize ; FFI only
 - f32
 - f64
 
 Container types
 
-- obj // object
-- map // map
-- arr // fixed-length array
-- vec // variable-length array
-- slice // slice (view); has no independent data structure and must be backed by an arr/vec
+- obj ; object
+- map ; map
+- arr ; fixed-length array
+- vec ; variable-length array
+- slice ; slice (view); has no independent data structure and must be backed by an arr/vec
 
-- \* // pointer; FFI `#{c}` declarations and standard library only
-- any // any type; standard library only
+- \* ; pointer; FFI `#{c}` declarations and standard library only
+- any ; any type; standard library only
 
 Advanced types
 
@@ -101,12 +101,12 @@ A type alias creates a new name for an existing type. It uses the equals syntax 
 ### Syntax
 
 ```nolang
-// Union type: multiple types separated by |
+; Union type: multiple types separated by |
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
 num = int | float
 
-// Single type alias
+; Single type alias
 bytes = []byte
 buf = [16]u8
 ```
@@ -118,7 +118,7 @@ Union types can reference other union types to form a hierarchy:
 ```nolang
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
-num = int | float     // num is a union of int and float
+num = int | float     ; num is a union of int and float
 ```
 
 ### Using in Functions
@@ -126,7 +126,7 @@ num = int | float     // num is a union of int and float
 Union types can be used for function parameters and return values. The compiler automatically performs monomorphization, generating a separate function version for each member type:
 
 ```nolang
-// Parameter type is the num union
+; Parameter type is the num union
 max = (a ..num) (r num) {
     r = a[0]
     n = len(a)
@@ -135,7 +135,7 @@ max = (a ..num) (r num) {
     }
 }
 
-// Method defined on the union type
+; Method defined on the union type
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
@@ -159,58 +159,58 @@ The equals syntax is recognized as a type alias (rather than a variable assignme
 
 ```nolang
 
-// Variables have no keyword
-// i64, f64, byte, bool, byte, str can omit the type annotation
+; Variables have no keyword
+; i64, f64, byte, bool, byte, str can omit the type annotation
 i = 1
 
-// f64 has a . in the middle
+; f64 has a . in the middle
 f = 1.0
 
-// byte
+; byte
 b = x00
 
 
-// i8 — if the variable name matches the type name, the type annotation can be omitted
+; i8 — if the variable name matches the type name, the type annotation can be omitted
 i8 = 3
 
-// Default zero value
-// Variable definitions do not need to be declared in advance
+; Default zero value
+; Variable definitions do not need to be declared in advance
 u16
 
-// str wrapped in single quotes
+; str wrapped in single quotes
 name = 'nolang'
 
-// bool true/false all lowercase
+; bool true/false all lowercase
 flag = true
 flag = false
 
-// Variable assignment
-// Same names are not allowed; if a name already exists, it is treated as modifying the variable
+; Variable assignment
+; Same names are not allowed; if a name already exists, it is treated as modifying the variable
 name = 'hello'
 name = 'world'
 
-// String concatenation
+; String concatenation
 greeting = 'hello, ' - name
 
-// Explicit type annotation
+; Explicit type annotation
 a u64 = 10
 
-// Character (no quotes)
+; Character (no quotes)
 c char = 中
 
-// byte type
+; byte type
 b = x00
 
-// arr fixed-length array
+; arr fixed-length array
 arr [3] = [1, 2, 3]
 
-// vec dynamic array (slice)
+; vec dynamic array (slice)
 vec = [4, 5, 6]
 
-// Explicit type (slice)
+; Explicit type (slice)
 typed []u8 = [1, 2, 3]
 
-// Array
+; Array
 typed [3]u16 = [1, 2, 3]
 ```
 
@@ -221,17 +221,17 @@ Nolang supports JavaScript-style regex literals `/pattern/flags`, which create a
 ### Syntax
 
 ```nolang
-// Basic regex literal
+; Basic regex literal
 re = /\d+/
 
-// With flags
+; With flags
 re = /hello/gi
 
-// Character classes, anchors, quantifiers
+; Character classes, anchors, quantifiers
 re = /[a-z]+/
 re = /^hello.*world$/
 
-// Escaped slash
+; Escaped slash
 re = /a\/b/
 ```
 
@@ -255,11 +255,11 @@ Flags are optional, following the closing `/`, consisting of ASCII letters.
 - `//` is always a line comment (highest priority)
 
 ```nolang
-// Regex literal (expression-start position after '=')
+; Regex literal (expression-start position after '=')
 re = /\d+/
 result = match-text(/[a-z]+/, text)
 
-// Division (value-producing position after identifier)
+; Division (value-producing position after identifier)
 ratio = 100 / 4
 x = a / b
 ```
@@ -269,9 +269,9 @@ x = a / b
 Regex literals desugar at codegen into a call to the standard library `regexp-compile` function:
 
 ```nolang
-// source
+; source
 re = /\d+/
-// desugars to
+; desugars to
 re = regexp-compile('\\d+')
 ```
 
@@ -289,10 +289,10 @@ Variable names, function names, struct names, etc. can start with an underscore,
 - **Function names, struct names**: use lowercase letters (e.g., `sha1-block`, `db-mysql`)
 
 ```nolang
-// Global data uses uppercase letters, including global constants, global variables, etc.
+; Global data uses uppercase letters, including global constants, global variables, etc.
 NOLANG = 'nolang'
 
-// Private
+; Private
 _NOLANG = 'nolang'
 
 x1 = 10
@@ -311,18 +311,18 @@ A function's documentation comment should include the complete parameter names a
 - The API summary at the top of a module should also use full signatures (parameter names, types, return names, types), without abbreviated forms
 
 ```nolang
-// ❌ Wrong: missing types, missing return parameter name
-// sha1(data) (hash)
-// sha1-block(s, h0..h4)
+; ❌ Wrong: missing types, missing return parameter name
+; sha1(data) (hash)
+; sha1-block(s, h0..h4)
 
-// ✅ Correct: includes parameter names, types, return parameter names, types
-// sha1(data []byte) (hash [20]byte) — full hash
-// sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — process a single block
+; ✅ Correct: includes parameter names, types, return parameter names, types
+; sha1(data []byte) (hash [20]byte) — full hash
+; sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — process a single block
 
-// The documentation comment above a function definition should follow the same convention:
-// sha1: compute the SHA-1 hash
-// data []byte: input byte array
-// returns hash [20]byte: 20-byte hash value
+; The documentation comment above a function definition should follow the same convention:
+; sha1: compute the SHA-1 hash
+; data []byte: input byte array
+; returns hash [20]byte: 20-byte hash value
 sha1 = (data []byte) (hash [20]byte) {
     ...
 }
@@ -335,7 +335,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 **Rule: If the standard library already provides the corresponding functionality, re-implementing it yourself is discouraged.** Developers should carefully review the standard library documentation (`docs/docs/std/overview.md`) to avoid reinventing the wheel.
 
 ```nolang
-// ❌ Wrong: re-implementing str → []byte conversion
+; ❌ Wrong: re-implementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
     n = s.len
     i = 0
@@ -345,7 +345,7 @@ str-to-bytes = (s str) (out []byte) {
     }
 }
 
-// ✅ Correct: use the standard library str.to-bytes() method
+; ✅ Correct: use the standard library str.to-bytes() method
 data []byte = s.to-bytes()
 ```
 
@@ -397,37 +397,37 @@ System functions allow a syntactic-sugar form of return values for user convenie
 Function parameters can specify default values using the `name type = expr` syntax. Parameters with default values can be omitted when called; the compiler will automatically fill in the default value. Parameters with default values must be placed at the end of the parameter list.
 
 ```nolang
-// Function definition with default values
+; Function definition with default values
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
 }
 
-// Both of the following calls are valid:
-fields = csv.parse-line(line)              // max-fields defaults to 1024
-fields = csv.parse-line(line, 256)         // max-fields = 256
+; Both of the following calls are valid:
+fields = csv.parse-line(line)              ; max-fields defaults to 1024
+fields = csv.parse-line(line, 256)         ; max-fields = 256
 ```
 
 ```nolang
 
 add = (a i64, b i64) (result i64) {
-    result = a + b             // Return the result through the parameter
-    ...                        // Early termination (optional)
+    result = a + b             ; Return the result through the parameter
+    ...                        ; Early termination (optional)
 }
 
-// Variadic parameters
+; Variadic parameters
 add3 = (a ..i64) {
 }
 
-// Function call
-sum = add(1, 2)                 // sum == 3
+; Function call
+sum = add(1, 2)                 ; sum == 3
 
-// Anonymous function — and for? With parameters?
+; Anonymous function — and for? With parameters?
 (a i64) { print(a) }(10)
 
-// Function call
+; Function call
 add(a, b)
 
-// Multiple return values are also possible
+; Multiple return values are also possible
 a, b = swap(5, 3)
 ```
 
@@ -453,16 +453,16 @@ a, b = swap(5, 3)
 ### Loop / While / for-in
 
 ```nolang
-// Infinite loop
+; Infinite loop
 !! {
     ...
 }
 
-// Limited execution count
+; Limited execution count
 {
 } * 10
 
-// When N <= 0 the loop body does not execute (zero or negative count is skipped)
+; When N <= 0 the loop body does not execute (zero or negative count is skipped)
 {
     print('will not execute')
 } * 0
@@ -471,36 +471,36 @@ a, b = swap(5, 3)
     print('will not execute either')
 } * -3
 
-// Range syntax (will support map, arr, vec in the future)
-i <- [a..b]: {     // closed interval: a ≤ i ≤ b
+; Range syntax (will support map, arr, vec in the future)
+i <- [a..b]: {     ; closed interval: a ≤ i ≤ b
 }
-i <- (a..b]: {     // left-open right-closed: a < i ≤ b
+i <- (a..b]: {     ; left-open right-closed: a < i ≤ b
 }
-i <- [a..b): {     // left-closed right-open: a ≤ i < b
+i <- [a..b): {     ; left-closed right-open: a ≤ i < b
 }
-i <- (a..b): {     // open interval: a < i < b
+i <- (a..b): {     ; open interval: a < i < b
 }
-i <- [5..0]: {   // decrement — runtime direction detection: start > end → decrement
+i <- [5..0]: {   ; decrement — runtime direction detection: start > end → decrement
 }
-i <- 'abc': {   // iterate over each character in the string
+i <- 'abc': {   ; iterate over each character in the string
 }
 
-// Runtime direction detection: when start > end, iteration automatically decrements (step -1).
-// All four bracket combinations support decrement:
-//   [5..1]  → 5 4 3 2 1   left-closed right-closed, descending
-//   (5..1]  → 4 3 2 1     left-open right-closed, descending
-//   [5..1)  → 5 4 3 2     left-closed right-open, descending
-//   (5..1)  → 4 3 2       left-open right-open, descending
-//   (3..0]  → 2 1 0       left-open right-closed, descending to zero
-// When start <= end, iteration increments as usual (step +1).
+; Runtime direction detection: when start > end, iteration automatically decrements (step -1).
+; All four bracket combinations support decrement:
+;   [5..1]  → 5 4 3 2 1   left-closed right-closed, descending
+;   (5..1]  → 4 3 2 1     left-open right-closed, descending
+;   [5..1)  → 5 4 3 2     left-closed right-open, descending
+;   (5..1)  → 4 3 2       left-open right-open, descending
+;   (3..0]  → 2 1 0       left-open right-closed, descending to zero
+; When start <= end, iteration increments as usual (step +1).
 
-// ❌ Explicitly rejected
-//   Range bounds must be integers; nested expressions are not supported
-//   for i <- [1.5..5.5] { }   // compile error
-//   for i <- [0..[1..5][0]] { } // syntax error
+; ❌ Explicitly rejected
+;   Range bounds must be integers; nested expressions are not supported
+;   for i <- [1.5..5.5] { }   ; compile error
+;   for i <- [0..[1..5][0]] { } ; syntax error
 
-// Conditional loop (the for keyword form is retained for non-1 steps or complex conditions)
-// In most cases, range-for can be used instead: i <- [0..n): { }
+; Conditional loop (the for keyword form is retained for non-1 steps or complex conditions)
+; In most cases, range-for can be used instead: i <- [0..n): { }
 for x == 1 {
     do-something()
 }
@@ -510,16 +510,16 @@ for x == 1 {
 
 ```nolang
 i <- [0..10): {
-    *      // break
-    **     // continue
-    ...    // return/terminate
+    *      ; break
+    **     ; continue
+    ...    ; return/terminate
 }
 ```
 
 ### Match
 
 ```nolang
-// Simple form; it is used to access the argument
+; Simple form; it is used to access the argument
 x: {
     err -> log(it)
     nil -> log('nil')
@@ -527,7 +527,7 @@ x: {
         do-right-thing(it)
 }
 
-// Destructuring form
+; Destructuring form
 x: {
     err(e) -> log(e)
     nil -> log('nil')
@@ -554,14 +554,14 @@ num: {
     -> print('larger number')
 }
 
-// Has a return value; the last statement/value
+; Has a return value; the last statement/value
 result = x: {
     1 -> 1
     2 -> 2 + 1
     -> a + b
 }
 
-// Multi-line arm bodies must use braces: -> { ... }
+; Multi-line arm bodies must use braces: -> { ... }
 x: {
     nil -> {
         log('nil')
@@ -584,7 +584,7 @@ x: {
 #### Match Style Guide
 
 ```nolang
-// ❌ Avoid duplicated branch bodies
+; ❌ Avoid duplicated branch bodies
 w = tls-c.send(req)
 w: {
     nil -> {
@@ -598,7 +598,7 @@ w: {
     ok -> n = it
 }
 
-// ✅ Put common logic in the -> catch-all
+; ✅ Put common logic in the -> catch-all
 w = tls-c.send(req)
 w: {
     ok -> n = it
@@ -608,7 +608,7 @@ w: {
     }
 }
 
-// ✅ Or vice versa: name the simple branches, put complex logic in ->
+; ✅ Or vice versa: name the simple branches, put complex logic in ->
 val: {
     nil -> return
     err -> log(it)
@@ -621,13 +621,13 @@ val: {
 ```
 
 ```nolang
-// Single statement — no braces
+; Single statement — no braces
 val: {
     ok -> print(it)
     -> print('empty or error')
 }
 
-// Multiple statements — braces required
+; Multiple statements — braces required
 val: {
     ok -> {
         n = it
@@ -641,17 +641,17 @@ val: {
 ```
 
 ```nolang
-// Implicit it binding
+; Implicit it binding
 val: {
-    ok -> process(it)       // it = unwrapped value
-    err -> log(it)          // it = error message string
-    -> log('empty')         // catch-all; here it is nil
+    ok -> process(it)       ; it = unwrapped value
+    err -> log(it)          ; it = error message string
+    -> log('empty')         ; catch-all; here it is nil
 }
 ```
 
 ```nolang
-// ✅ Combined option pattern: nil || err -> body
-// When the option is nil or err, share the same branch
+; ✅ Combined option pattern: nil || err -> body
+; When the option is nil or err, share the same branch
 val: {
     nil || err -> {
         cleanup()
@@ -660,7 +660,7 @@ val: {
     ok -> process(it)
 }
 
-// ✅ Can also be mixed with a -> catch-all
+; ✅ Can also be mixed with a -> catch-all
 val: {
     nil || err -> log('failed')
     ok -> process(it)
@@ -670,7 +670,7 @@ val: {
 ### If / Else
 
 ```nolang
-// Multiple branches (new style recommended)
+; Multiple branches (new style recommended)
 {
     a == 1 -> {
         a = 1
@@ -682,10 +682,10 @@ val: {
     }
 }
 
-// Single if (retained)
+; Single if (retained)
 x == 1 -> do-something()
 
-// Ternary expression: condition ? true-value : false-value
+; Ternary expression: condition ? true-value : false-value
 c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
 ```
@@ -698,32 +698,32 @@ Nolang uses `run` and `awy` to implement async concurrency. Async function names
 - `awy` — waits for the async thread to finish and obtains the result
 
 ```nolang
-// Async function definition (name ends with -async)
+; Async function definition (name ends with -async)
 compute-async = (n i64) (r i64) {
     r = n * 2
 }
 
-// Basic async call
+; Basic async call
 test-basic = () {
     h = run compute-async(21)
     r = awy h
-    print(r)  // 42
+    print(r)  ; 42
 }
 
-// Concurrent multiple tasks
+; Concurrent multiple tasks
 test-concurrent = () {
     h1 = run compute-async(10)
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    print(r1)  // 20
-    print(r2)  // 40
+    print(r1)  ; 20
+    print(r2)  ; 40
 }
 
-// Inline await
+; Inline await
 test-inline = () {
     r = awy run compute-async(5)
-    print(r)  // 10
+    print(r)  ; 10
 }
 ```
 
@@ -734,16 +734,16 @@ test-inline = () {
 Functions can return multiple values; use multiple assignment to receive them when calling:
 
 ```nolang
-// Function definition returning multiple result parameters
+; Function definition returning multiple result parameters
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
     y = a
 }
 
-// Multiple assignment
+; Multiple assignment
 a, b = swap(5, 3)
 
-// Also supported as the body of a match arm
+; Also supported as the body of a match arm
 val: {
     ok -> a, b = parse-pair(it)
     -> return
@@ -758,24 +758,24 @@ Containers store copies of data; the original variable and the container are ind
 
 ```nolang
 
-// Using a fixed-length array
-a [3] = [1, 2, 3]    // fixed-length array of i64 with length 3
-a [3]u16 = [1, 2, 3] // fixed-length array with explicit type
+; Using a fixed-length array
+a [3] = [1, 2, 3]    ; fixed-length array of i64 with length 3
+a [3]u16 = [1, 2, 3] ; fixed-length array with explicit type
 
-a [?]u16 = [1, 2, 3] // length automatically inferred
+a [?]u16 = [1, 2, 3] ; length automatically inferred
 ```
 
 **Variable-length array vec:**
 
 ```nolang
-v = [1, 2, 3]     // variable-length array of i64
+v = [1, 2, 3]     ; variable-length array of i64
 bs = [0x11, 0x22, 0x33]
-v []u8 = [1, 2, 3] // variable-length array with explicit type
+v []u8 = [1, 2, 3] ; variable-length array with explicit type
 
-// Pre-allocation (avoid repeated reallocation)
-v = with-cap(100)          // len=0, cap=100 (push before indexing)
-v = with-len(100)          // len=100, cap=100 (direct indexing)
-v = with-cap-len(200, 100) // len=100, cap=200 (reserved growth space)
+; Pre-allocation (avoid repeated reallocation)
+v = with-cap(100)          ; len=0, cap=100 (push before indexing)
+v = with-len(100)          ; len=100, cap=100 (direct indexing)
+v = with-cap-len(200, 100) ; len=100, cap=200 (reserved growth space)
 ```
 
 **Slice (view, not an independent type):**
@@ -788,22 +788,22 @@ Internally, a slice only records a pointer to the original buffer, a length, and
 - The slice's type is determined by the original type, and methods apply naturally without an "inheritance" mechanism
 
 ```nolang
-// Supports arr/vec/str
-// Supports ranges, consistent with for <- notation
+; Supports arr/vec/str
+; Supports ranges, consistent with for <- notation
 nums [5]u8 = [0, 1, 2, 3, 4]
 
-nums[..] //  [0 1 2 3 4]
-nums[1..] // [1 2 3 4]
-nums[..4] // [0 1 2 3 4]
-nums[2..3] // [2 3]
-nums[1..3] // [1 2 3]
-nums[1..3) // [1 2]
-nums(1..3) // [2]
+nums[..] ;  [0 1 2 3 4]
+nums[1..] ; [1 2 3 4]
+nums[..4] ; [0 1 2 3 4]
+nums[2..3] ; [2 3]
+nums[1..3] ; [1 2 3]
+nums[1..3) ; [1 2]
+nums(1..3) ; [2]
 
-// String
+; String
 s = 'abc'
-s[1..]   // 'bc'
-s[1..s.len) // 'bc'
+s[1..]   ; 'bc'
+s[1..s.len) ; 'bc'
 ```
 
 **Types and methods of slices:**
@@ -818,40 +818,40 @@ Therefore, the methods of the original type are directly available:
 | `str` | `str<range>` | All methods of `str` (e.g., `to-upper`, `to-lower`, `index`, `contains`, `slice`, `copy`, `fill`, etc.) |
 
 ```nolang
-// arr slice → vec view, sharing arr's underlying memory
+; arr slice → vec view, sharing arr's underlying memory
 a [5]u8 = [0, 1, 2, 3, 4]
-s = a[1..4]    // s is a []u8 view pointing into a's memory
-n = s.len      // slice.len
+s = a[1..4]    ; s is a []u8 view pointing into a's memory
+n = s.len      ; slice.len
 
-// vec slice → vec view, sharing vec's underlying memory
+; vec slice → vec view, sharing vec's underlying memory
 v = [10, 20, 30, 40, 50]
-s = v[2..]     // s is a []i64 view
-s.reverse(s.len)  // slice.reverse
+s = v[2..]     ; s is a []i64 view
+s.reverse(s.len)  ; slice.reverse
 
-// str slice → str view, sharing str's underlying memory
+; str slice → str view, sharing str's underlying memory
 s = 'Hello World'
-sub = s[6..]   // sub is a 'World' view
-upper = sub.to-upper()  // str.to-upper
+sub = s[6..]   ; sub is a 'World' view
+upper = sub.to-upper()  ; str.to-upper
 
-// Modifying elements through a slice affects the original data
+; Modifying elements through a slice affects the original data
 data = [10, 20, 30, 40, 50]
-view = data[1..4]    // view = [20, 30, 40]
-view[0] = 99         // modify an element of view
-// data[1] is now also 99, because view shares data's memory
+view = data[1..4]    ; view = [20, 30, 40]
+view[0] = 99         ; modify an element of view
+; data[1] is now also 99, because view shares data's memory
 ```
 
 ### Indexing
 
 ```nolang
 
-// Get a char from a string (character, not byte)
+; Get a char from a string (character, not byte)
 str[i]
 
- // Get an element from arr or vec
+ ; Get an element from arr or vec
 arr[i]
 vec[i]
 
- // Get a value from a map
+ ; Get a value from a map
 map[str]
 
 ```
@@ -883,7 +883,7 @@ Methods are defined on types and use `.` to reference the receiver.
 
 ```nolang
 type.method-name = (params) (results) {
-    // . is the receiver
+    ; . is the receiver
 }
 ```
 
@@ -897,7 +897,7 @@ type.method-name = (params) (results) {
 ### Example
 
 ```nolang
-// str method
+; str method
 str.to-upper = () (out str) {
     out.len = .len
     i = 0
@@ -911,13 +911,13 @@ str.to-upper = () (out str) {
     }
 }
 
-// char method
+; char method
 char.is-digit = () (result bool) {
     result = false
     . >= 48 && . <= 57 -> result = true
 }
 
-// struct method
+; struct method
 user {
     name str
     age i64
@@ -927,11 +927,11 @@ user.greet = () {
     print('Hello, ' - .name)
 }
 
-// Call
+; Call
 s = 'hello'
-u = s.to-upper()     // receiver.method()
+u = s.to-upper()     ; receiver.method()
 c char = 5
-d = c.is-digit()     // receiver.method()
+d = c.is-digit()     ; receiver.method()
 u = user{
     name: 'Alice'
     age: 30
@@ -942,32 +942,32 @@ u.greet()
 ## Interfaces
 
 ```nolang
-// Define an interface
+; Define an interface
 json {
     to-json()
 }
 
-// Default interface implementation
+; Default interface implementation
 json.to-json = () {
 }
 
-// Interface implementation
+; Interface implementation
 user json {
     name str
     age i64
 }
 
-// Override + call parent implementation
+; Override + call parent implementation
 user.to-json = () {
-    // Parent implementation
+    ; Parent implementation
     ..to-json()
 }
 
 user.other = () {
-    // Current implementation
+    ; Current implementation
     .to-json()
 
-    // Parent implementation
+    ; Parent implementation
     ..to-json()
 }
 ```
@@ -983,24 +983,24 @@ file enter, leave {
 
 ```nolang
 
-// red=0, green=1, blue=2
+; red=0, green=1, blue=2
 color {
     red,
     green,
     blue,
 }
 
-// In ordinary methods, a, b, c are actually defined as a=0, b=1, c=2... This is inconsistent with other languages.
-// So normally you cannot use commas to define multiple variables
+; In ordinary methods, a, b, c are actually defined as a=0, b=1, c=2... This is inconsistent with other languages.
+; So normally you cannot use commas to define multiple variables
 
-// This is a special enum; it can have types, commas, and aliases
+; This is a special enum; it can have types, commas, and aliases
 enum-name {
     a t,
     b u,
     c v,
 }
 
-// Note: this is an ordinary struct; multiple fields have no commas
+; Note: this is an ordinary struct; multiple fields have no commas
 struct-name {
     a t
     b u
@@ -1014,11 +1014,11 @@ struct-name {
 This prevents naming conflicts and also prevents external packages from using the concrete values directly.
 
 ```nolang
-// ❌ Wrong: using a bare value directly
+; ❌ Wrong: using a bare value directly
 kind = null
 yes = e.is(io)
 
-// ✅ Correct: using the qualified form
+; ✅ Correct: using the qualified form
 kind = json-kind.null
 yes = e.is(code.io)
 ```
@@ -1045,13 +1045,13 @@ file.leave = () {
 
 read-file = () {
 
-    // Automatically f.enter()
+    ; Automatically f.enter()
     f = file{
         path: 'data.txt',
     }
 
-    // Use f
-    // Automatically f.leave()
+    ; Use f
+    ; Automatically f.leave()
     read(f)
 }
 ```
@@ -1065,20 +1065,20 @@ A nullable type variable can legitimately hold a null value or an error value; t
 ```nolang
 
 o ?i64
-o = nil          // set to null
-o = 42           // set to a value
-o = err('msg')   // set to an error
+o = nil          ; set to null
+o = 42           ; set to a value
+o = err('msg')   ; set to an error
 
 nullableValue ?[]str
 nullableString ?str
 
-// Modify a nullable type
+; Modify a nullable type
 nullableString = 'test'
 
-// Set an error
+; Set an error
 nullableString = err('some error')
 
-// Can be checked via match
+; Can be checked via match
 x: {
     err -> log(it)
     nil -> log(it)
@@ -1086,8 +1086,8 @@ x: {
         do-right-thing(it)
 }
 
-// Force unwrap
-// Cancel implementation
+; Force unwrap
+; Cancel implementation
 //!x.say()
 ```
 
@@ -1098,14 +1098,14 @@ When a function may fail or return a null value, **prefer the `?t` option type**
 `?t` is a tagged enum with three states: `ok` (has a value), `nil` (null value), and `err` (error). Normal values are bound implicitly; use `nil` when an operation simply cannot find a value, and use `err(...)` when an operation encounters an actual error.
 
 ```nolang
-// ❌ Not recommended: dual-return-value pattern
+; ❌ Not recommended: dual-return-value pattern
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
     val = .data[.n]
     ok = true
 }
 
-// ✅ Recommended: option type (nil for empty, err for error)
+; ✅ Recommended: option type (nil for empty, err for error)
 stack.pop = () (val ?i64) {
     .n == 0 -> {
         val = nil
@@ -1114,13 +1114,13 @@ stack.pop = () (val ?i64) {
     val = .data[.n]
 }
 
-// ✅ Return an error
+; ✅ Return an error
 file.read = () (data ?str) {
     .fd < 0 -> {
         data = err('file not open')
         return
     }
-    // ... read data
+    ; ... read data
     data = buf
 }
 ```
@@ -1131,8 +1131,8 @@ Use match to unwrap an option:
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it)          // it = error message
-    -> print(it)              // it = popped value
+    err -> print(it)          ; it = error message
+    -> print(it)              ; it = popped value
 }
 ```
 
@@ -1161,11 +1161,11 @@ arr_to_vec = (arr [n]t) (out []t) {
 
 ```nolang
 
-// Return the type name string
+; Return the type name string
 a = typeof(x)
 
-// `as` is only allowed for FFI pointer type casts (e.g. *byte, **byte, *i64)
-// Integers are internally i64, no explicit cast needed
+; `as` is only allowed for FFI pointer type casts (e.g. *byte, **byte, *i64)
+; Integers are internally i64, no explicit cast needed
 y = x as *byte
 ```
 
@@ -1254,7 +1254,7 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 
 ```shell
 utils/
-└── helper.no    // module name is utils/helper
+└── helper.no    ; module name is utils/helper
 ```
 
 ### Importing Modules
@@ -1262,23 +1262,23 @@ utils/
 > **The new syntax uses `#` for imports. The old `use` keyword is still available but deprecated; switching to `#` is recommended.**
 
 ```nolang
-// Standard library (new syntax, recommended)
+; Standard library (new syntax, recommended)
 # std/math.add
 
-// Remote module (does not start with std/)
+; Remote module (does not start with std/)
 # github.com/utils/math.add
 
-// Local module; must start with /
+; Local module; must start with /
 # /utils/math.add
 
-// Alias
+; Alias
 # std/math.add a
 
-// ── The following is the old syntax (deprecated, still usable but not recommended) ──
-// use std/math.add
-// use github.com/utils/math.add
-// use /utils/math.add
-// use std/math.add a
+; ── The following is the old syntax (deprecated, still usable but not recommended) ──
+; use std/math.add
+; use github.com/utils/math.add
+; use /utils/math.add
+; use std/math.add a
 ```
 
 ### Exporting Modules
@@ -1308,29 +1308,29 @@ Declare external C functions via the `#{c}` annotation to implement FFI (Foreign
 | `***byte` | triple pointer    | `i8***`  | rare triple indirection   |
 
 ```nolang
-// sqlite.no — FFI bindings and safe wrappers in the same file
-// The compiler automatically converts hyphens (-) to underscores (_) to match C ABI symbols
-// Names starting with _ are private; the C ABI symbol automatically drops the _ prefix
+; sqlite.no — FFI bindings and safe wrappers in the same file
+; The compiler automatically converts hyphens (-) to underscores (_) to match C ABI symbols
+; Names starting with _ are private; the C ABI symbol automatically drops the _ prefix
 
-// Basic type parameters
+; Basic type parameters
 #{c}
 c-strlen = (s str) (n i64)
 
-// Pointer parameter (*byte = opaque pointer), private declaration
+; Pointer parameter (*byte = opaque pointer), private declaration
 #{c}
 _sqlite3-close = (db *byte) (rc i32)
 
-// Double pointer (**byte = output parameter; after the call, the value is automatically stored back into the variable), private declaration
+; Double pointer (**byte = output parameter; after the call, the value is automatically stored back into the variable), private declaration
 #{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 
-// Multiple pointer parameters, private declaration
+; Multiple pointer parameters, private declaration
 #{c}
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
 ```nolang
-// Safe wrapper in the same file
+; Safe wrapper in the same file
 
 open = (dsn str) (d db-sqlite) {
     handle i64 = 0
@@ -1380,7 +1380,7 @@ Range syntax supports four bracket combinations:
 The FFI annotation `#{c}` is a special form of the annotation system. When an annotation contains an FFI language key (`c`, `cpp`, `rust`, etc.) and is followed by a function declaration, the compiler identifies it as an FFI binding:
 
 ```nolang
-// #{c} with additional annotations
+; #{c} with additional annotations
 #{c, debug}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 ```
@@ -1390,18 +1390,18 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 Non-FFI annotations are automatically attached to the declaration that immediately follows (variable declarations, struct definitions) and can be used to tag metadata such as range limits for numeric types (e.g., `num`, `i64`, etc.):
 
 ```nolang
-// Variable declaration with a range annotation
+; Variable declaration with a range annotation
 #{range=[0..256)}
 x num = 42
 
-// Struct definition with annotations
+; Struct definition with annotations
 #{derive=[Serialize, Deserialize]}
 point {
     x i64
     y i64
 }
 
-// Struct field with a range annotation (can be used for numeric types such as num)
+; Struct field with a range annotation (can be used for numeric types such as num)
 person {
     #{range=[0..150]}
     age num
@@ -1414,7 +1414,7 @@ person {
 The `range` annotation is especially suited to the `num` type (`num = int | float`) for marking the valid range of a numeric value. Range values can be integers or identifiers:
 
 ```nolang
-// Use constant identifiers as range bounds
+; Use constant identifiers as range bounds
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
@@ -1435,7 +1435,7 @@ Platform annotations are compile-time filters that include or exclude code based
 | `#{mac-arm64}` | macOS on ARM64 (Apple Silicon) |
 
 ```nolang
-// Platform-specific print
+; Platform-specific print
 #{mac-arm64}
 print('running on macOS ARM64')
 
@@ -1445,7 +1445,7 @@ print('running on Linux x86_64')
 #{win-amd64}
 print('running on Windows x86_64')
 
-// Platform-specific variable
+; Platform-specific variable
 #{mac-amd64}
 #{mac-arm64}
 sep = '/'
@@ -1454,7 +1454,7 @@ sep = '/'
 #{win-arm64}
 sep = '\\'
 
-// Platform-specific function
+; Platform-specific function
 #{mac-arm64}
 #{mac-amd64}
 greet = () {
@@ -1480,19 +1480,19 @@ Multiple keys on the same declaration are **OR'd** together — any match includ
 | `#{mac-arm64, linux-arm64}` | macOS ARM64 **or** Linux ARM64 |
 
 ```nolang
-// Included on both macOS and Linux (all archs)
+; Included on both macOS and Linux (all archs)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 shared = () {
     print('unix-like')
 }
 
-// Only on Windows x86_64
+; Only on Windows x86_64
 #{win-amd64}
 reg-key = () {
     print('reading registry on win/x64')
 }
 
-// Only on macOS ARM64 (Apple Silicon)
+; Only on macOS ARM64 (Apple Silicon)
 #{mac-arm64}
 neural = () {
     print('Apple Neural Engine available')

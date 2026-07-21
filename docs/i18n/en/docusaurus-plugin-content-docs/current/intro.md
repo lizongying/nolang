@@ -23,22 +23,22 @@ Small strings have no heap allocation; variables can be allocated once and freed
 ## Quick Start
 
 ```nolang
-// Hello, World!
-// No main entry point needed
+; Hello, World!
+; No main entry point needed
 print('Hello, Nolang!')
 
-// Variable declaration
+; Variable declaration
 i64
 
-// Function definition
+; Function definition
 add = (a i64, b i64) (result i64) {
     result = a + b
 }
 
-// Standard library method, can be called directly
+; Standard library method, can be called directly
 c = math.max(a, b)
 
-// Struct
+; Struct
 user {
     name str
     age i64
@@ -49,7 +49,7 @@ u = user {
     age: 30
 }
 
-// Method
+; Method
 user.greet = () {
     print('Hello, ' - .name)
 }

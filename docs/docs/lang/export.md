@@ -27,15 +27,15 @@ Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項�
 ## 範例
 
 ```nolang
-// lib.no - 包根目錄導出文件
+; lib.no - 包根目錄導出文件
 @ /src/utils.greet a
 @ /src/utils.hello b
 @ /src/math.pi
 ```
 
 ```nolang
-// src/utils.no
-// 定義被導出的函數
+; src/utils.no
+; 定義被導出的函數
 greet = (name str) {
     print('Hello, ' - name)
 }
@@ -50,10 +50,10 @@ hello = () {
 外部包通過 `#` 導入時，只能訪問 `lib.no` 中聲明的導出項：
 
 ```nolang
-// 导入別名 a（對應 package-name.utils.greet）
+; 导入別名 a（對應 package-name.utils.greet）
 # package-name.utils.greet a
 
-// 或者直接使用函數名
+; 或者直接使用函數名
 # package-name.utils.greet
 ```
 
