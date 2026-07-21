@@ -1,0 +1,8 @@
+foo = () {
+    buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    data [4]i64 = [10, 20, 30, 40]
+    base = 2
+    off = 0
+    copy-rem = 2
+    k <- [0..copy-rem): buf[base + k] = data[off + base + k]
+}

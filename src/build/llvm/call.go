@@ -168,7 +168,8 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+			// alloca 提升至 entry block，避免循環體內每次迭代增長棧
+			g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
 			sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
 		}
 		return "double* " + tmpName
@@ -180,7 +181,8 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
+			// alloca 提升至 entry block，避免循環體內每次迭代增長棧
+			g.emitEntryAlloca(sb, "%s = alloca i64\n", tmpName)
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))
 		}
 		return "i64* " + tmpName
@@ -1004,12 +1006,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// BUT: if the first segment is a variable name (e.g. "data.load-le-u32"),
 			// this is a method call, not a module-qualified call. Don't strip —
 			// let the method resolution code at line ~1094 handle it.
+			//
+			// 例外：若 stripped shortName 是 ReceiverGlobal builtin（如 sqrt、abs、sin），
+			// 此類「全域方法」不依賴接收者型別，receiver 會從 DotExpression 補上作為
+			// 第一個參數。即使 first segment 是變數（如 r2.sqrt() → sqrt(r2)），
+			// 仍可安全剝離前綴，交由 LLVMIntrinsic 路徑處理。
 			if idx := strings.Index(fnName, "."); idx >= 0 {
 				firstSegment := fnName[:idx]
 				_, isVar := g.varTypes[firstSegment]
-				if !isVar {
-					shortName := fnName[idx+1:]
-					if m2 := builtin.FindBuiltinMethod(shortName); m2 != nil {
+				shortName := fnName[idx+1:]
+				m2 := builtin.FindBuiltinMethod(shortName)
+				if m2 != nil {
+					if !isVar || m2.ReceiverType == builtin.ReceiverGlobal {
 						m = m2
 						fnName = shortName
 					}
@@ -1830,7 +1838,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), tmpName))
+				// alloca 提升至 entry block，避免循環體內每次迭代增長棧
+				g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
 				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
 			}
 			return "double* " + tmpName
@@ -1850,7 +1859,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemType))
+				// alloca 提升至 entry block，避免循環體內每次迭代增長棧
+				g.emitEntryAlloca(sb, "%s = alloca %s\n", tmpName, elemType)
 				sb.WriteString(fmt.Sprintf("%sstore %s %d, %s* %s\n", g.indent(), elemType, a.Value, elemType, tmpName))
 			}
 			return elemType + "* " + tmpName

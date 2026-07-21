@@ -3117,6 +3117,19 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 					hasExplicitType = false
 				}
 			}
+			// SliceType/ArrayType：parser 自動推導時 Token 與 nameToken 相同（同行同列），
+			// 用戶顯式標註時 Token 是 '[' 位置。比較 Token 來區分推導 vs 顯式標註。
+			// 這允許 slice/array 重新賦值（如 `local = [1, 2, 3]` 在已宣告後）。
+			if st, ok := s.Type.(*parser.SliceType); ok {
+				if st.Token.Line == s.Name.Token.Line && st.Token.Column == s.Name.Token.Column {
+					hasExplicitType = false
+				}
+			}
+			if at, ok := s.Type.(*parser.ArrayType); ok {
+				if at.Token.Line == s.Name.Token.Line && at.Token.Column == s.Name.Token.Column {
+					hasExplicitType = false
+				}
+			}
 			if s.Type.String() == s.Name.Value {
 				// Parser artifact: Type.String() == Name.Value
 				hasExplicitType = false
@@ -4450,6 +4463,18 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 		if nt, ok := s.Type.(*parser.NamedType); ok && s.Name != nil {
 			isInferred = nt.Token.Line == s.Name.Token.Line &&
 				nt.Token.Column == s.Name.Token.Column
+		}
+		// SliceType/ArrayType：parser 自動推導時 Token 與 nameToken 相同（同行同列），
+		// 用戶顯式標註時 Token 是 '[' 位置。允許 slice/array 重新賦值。
+		if st, ok := s.Type.(*parser.SliceType); ok && s.Name != nil {
+			if st.Token.Line == s.Name.Token.Line && st.Token.Column == s.Name.Token.Column {
+				isInferred = true
+			}
+		}
+		if at, ok := s.Type.(*parser.ArrayType); ok && s.Name != nil {
+			if at.Token.Line == s.Name.Token.Line && at.Token.Column == s.Name.Token.Column {
+				isInferred = true
+			}
 		}
 
 		// 計算複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）

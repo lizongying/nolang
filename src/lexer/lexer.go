@@ -706,6 +706,9 @@ func (l *Lexer) NextToken() (tok Token) {
 	case '@':
 		tok.Type = AT
 		tok.Literal = string(l.ch)
+	case '~':
+		tok.Type = TILDE
+		tok.Literal = string(l.ch)
 	case '#':
 		// Distinguish four forms:
 		//   #{   — annotation directive (e.g. `#{c}`, `#{derive=[Serialize, Deserialize]}`)

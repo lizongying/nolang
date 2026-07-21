@@ -1473,6 +1473,27 @@ func (f *formatter) writeLoopBodyBlock(s *parser.ForStatement) {
 	f.write("}")
 }
 
+// writeLoopBodyAfterColon 輸出循環主體（冒號之後的部分）。
+// 當 body 是單條 inline 語句（IsInline=true，無 trailing comments）時，
+// 輸出 " stmt"（單行，不加 {}）；否則輸出 " {\n  stmts\n}"（block 形式）。
+func (f *formatter) writeLoopBodyAfterColon(s *parser.ForStatement) {
+	if s.Body != nil && s.Body.IsInline && len(s.Body.Statements) == 1 && s.Body.TrailingComments == nil {
+		f.write(" ")
+		f.formatStatement(s.Body.Statements[0])
+		return
+	}
+	f.write(" {")
+	f.indent++
+	for _, stmt := range s.Body.Statements {
+		f.newline()
+		f.formatStatement(stmt)
+	}
+	f.formatTrailingComments(s.Body.TrailingComments)
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
 func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.Label != "" {
 		f.write("#")
@@ -1502,23 +1523,15 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			}
 		} else if s.IterRange.RangeExpr != nil {
 			f.formatExpression(s.IterRange.RangeExpr)
-		} else {
-			f.write("?")
-		}
-		f.write(": {")
-		f.indent++
-		for _, stmt := range s.Body.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
-		f.indent--
-		f.newline()
-		f.write("}")
-		return
+	} else {
+		f.write("?")
 	}
+	f.write(":")
+	f.writeLoopBodyAfterColon(s)
+	return
+}
 
-	// Counted loop: { body } * N（新式語法；Token 非 FOR）
+// Counted loop: { body } * N（新式語法；Token 非 FOR）
 	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
 		f.write("{")
 		f.indent++
@@ -1547,23 +1560,15 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			f.write(ident.Value)
 		} else if sliceLit, ok := s.IterRange.RangeExpr.(*parser.SliceLiteral); ok {
 			f.formatSliceLiteral(sliceLit)
-		} else {
-			f.formatRangeBrackets(s.IterRange.Range)
-		}
-		f.write(": {")
-		f.indent++
-		for _, stmt := range s.Body.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
-		f.indent--
-		f.newline()
-		f.write("}")
-		return
+	} else {
+		f.formatRangeBrackets(s.IterRange.Range)
 	}
+	f.write(":")
+	f.writeLoopBodyAfterColon(s)
+	return
+}
 
-	// C-style for（已廢棄，向後相容輸出）：for init, cond, update { body }
+// C-style for（已廢棄，向後相容輸出）：for init, cond, update { body }
 	if s.Token.Type == lexer.FOR && s.Init != nil {
 		f.write("for ")
 		f.formatStatement(s.Init)

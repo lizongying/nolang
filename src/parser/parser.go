@@ -3498,6 +3498,12 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.SUB:
 		leftExp = p.parsePrefixExpression()
 
+	case lexer.TILDE:
+		// ~expr = bitwise NOT (prefix operator)
+		// Note: at statement level, ~match is handled separately in parseStatement.
+		// Here we are in expression context, so ~ is always bitwise NOT.
+		leftExp = p.parsePrefixExpression()
+
 	case lexer.NOT:
 		// ! = false (standalone), !expr = prefix NOT
 		switch p.peekToken.Type {
@@ -5912,6 +5918,7 @@ func (p *Parser) parseLoopBody() *BlockStatement {
 	return &BlockStatement{
 		Token:      p.currentToken,
 		Statements: []Statement{stmt},
+		IsInline:   true, // single-statement inline body (no braces)
 	}
 }
 

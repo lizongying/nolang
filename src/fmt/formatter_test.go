@@ -103,6 +103,30 @@ func TestFormatBasic(t *testing.T) {
 			expected: "i <- [0..10): {\n    print(i)\n}",
 		},
 		{
+			// range-for 單條語句 inline body（不用大括號）
+			name:     "range_for_inline_body",
+			input:    "k<-[0..n):buf[k]=data[k]",
+			expected: "k <- [0..n): buf[k] = data[k]",
+		},
+		{
+			// range-for 單條語句 inline body（賦值表達式）
+			name:     "range_for_inline_body_assign",
+			input:    "i <- [0..10): x = x + i",
+			expected: "i <- [0..10): x = x + i",
+		},
+		{
+			// 按位取反前綴運算子 ~
+			name:     "bitwise_not_prefix",
+			input:    "x = ~y",
+			expected: "x = ~y",
+		},
+		{
+			// ~ 用於表達式內
+			name:     "bitwise_not_in_expr",
+			input:    "f = c ^ (b | ~d)",
+			expected: "f = c ^ (b | ~d)",
+		},
+		{
 			// 新式 { } (cond) 條件循環（由舊式 for cond { } 遷移）
 			name:     "for_cond_keyword",
 			input:    "for i<5 {i=i+1}",

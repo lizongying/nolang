@@ -2404,3 +2404,27 @@ open-dir = (p str) (dirp i64) {
 		}
 	})
 }
+
+func TestParserBitwiseNot(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"simple", "x = ~y"},
+		{"in_parens", "f = c ^ (b | ~d)"},
+		{"double", "z = ~~y"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			prog := p.ParseProgram()
+			if errs := p.Errors(); len(errs) > 0 {
+				t.Fatalf("parse errors for %q: %v", tt.input, errs)
+			}
+			if len(prog.Statements) != 1 {
+				t.Fatalf("expected 1 statement, got %d", len(prog.Statements))
+			}
+		})
+	}
+}

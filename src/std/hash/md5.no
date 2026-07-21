@@ -11,8 +11,7 @@
 ; in: 輸入位元組陣列
 ; out: 輸出 16 位元組哈希值
 md5 = (data []byte) (out [16]byte) {
-    ; MD5 初始值（u32 自然 32-bit 溢出，無需 & mask）
-    mask u32 = 4294967295
+    ; MD5 初始值（u32 自然 32-bit 溢出）
     h0 u32 = 1732584193
     h1 u32 = 4023233417
     h2 u32 = 2562383102
@@ -43,7 +42,6 @@ md5 = (data []byte) (out [16]byte) {
         w13 = data.load-le-u32(off + 52)
         w14 = data.load-le-u32(off + 56)
         w15 = data.load-le-u32(off + 60)
-
         ; MD5 壓縮函數（64 輪）— u32 算術自然 32-bit 溢出
         a u32 = h0
         b u32 = h1
@@ -196,53 +194,53 @@ md5 = (data []byte) (out [16]byte) {
         f = c ^ d ^ a
         t = b + f + w2 + 3299628645
         b = c + rotate-left(t, 23)
-        ; 第 4 輪 (I): f = y ^ (x | ~z)  — mask ^ d 即 ~d
-        f = c ^ (b | (mask ^ d))
+        ; 第 4 輪 (I): f = y ^ (x | ~z)  — ~d 即按位取反
+        f = c ^ (b | ~d)
         t = a + f + w0 + 4096336452
         a = b + rotate-left(t, 6)
-        f = b ^ (a | (mask ^ c))
+        f = b ^ (a | ~c)
         t = d + f + w7 + 1126891415
         d = a + rotate-left(t, 10)
-        f = a ^ (d | (mask ^ b))
+        f = a ^ (d | ~b)
         t = c + f + w14 + 2878612391
         c = d + rotate-left(t, 15)
-        f = d ^ (c | (mask ^ a))
+        f = d ^ (c | ~a)
         t = b + f + w5 + 4237533241
         b = c + rotate-left(t, 21)
-        f = c ^ (b | (mask ^ d))
+        f = c ^ (b | ~d)
         t = a + f + w12 + 1700485571
         a = b + rotate-left(t, 6)
-        f = b ^ (a | (mask ^ c))
+        f = b ^ (a | ~c)
         t = d + f + w3 + 2399980690
         d = a + rotate-left(t, 10)
-        f = a ^ (d | (mask ^ b))
+        f = a ^ (d | ~b)
         t = c + f + w10 + 4293915773
         c = d + rotate-left(t, 15)
-        f = d ^ (c | (mask ^ a))
+        f = d ^ (c | ~a)
         t = b + f + w1 + 2240044497
         b = c + rotate-left(t, 21)
-        f = c ^ (b | (mask ^ d))
+        f = c ^ (b | ~d)
         t = a + f + w8 + 1873313359
         a = b + rotate-left(t, 6)
-        f = b ^ (a | (mask ^ c))
+        f = b ^ (a | ~c)
         t = d + f + w15 + 4264355552
         d = a + rotate-left(t, 10)
-        f = a ^ (d | (mask ^ b))
+        f = a ^ (d | ~b)
         t = c + f + w6 + 2734768916
         c = d + rotate-left(t, 15)
-        f = d ^ (c | (mask ^ a))
+        f = d ^ (c | ~a)
         t = b + f + w13 + 1309151649
         b = c + rotate-left(t, 21)
-        f = c ^ (b | (mask ^ d))
+        f = c ^ (b | ~d)
         t = a + f + w4 + 4149444226
         a = b + rotate-left(t, 6)
-        f = b ^ (a | (mask ^ c))
+        f = b ^ (a | ~c)
         t = d + f + w11 + 3174756917
         d = a + rotate-left(t, 10)
-        f = a ^ (d | (mask ^ b))
+        f = a ^ (d | ~b)
         t = c + f + w2 + 718787259
         c = d + rotate-left(t, 15)
-        f = d ^ (c | (mask ^ a))
+        f = d ^ (c | ~a)
         t = b + f + w9 + 3951481745
         b = c + rotate-left(t, 21)
         ; 累加回初始值（u32 自然溢出）
@@ -265,6 +263,7 @@ md5 = (data []byte) (out [16]byte) {
     j <- [0..num-copy-words): {
         buf.store-le-u32(j * 4, data.load-le-u32(off + j * 4))
     }
+
     ; 處理剩餘 0-3 位元組
     copy-rem = dremain % 4
     copy-rem > 0 -> {
@@ -274,6 +273,12 @@ md5 = (data []byte) (out [16]byte) {
 
     ; 添加 0x80 填充和長度
     buf[dremain] = 128
+
+    ; 僅清零 dremain+1 ~ 55 這一段，是MD5規範要求補0的區間
+    ; dremain < 56 -> {
+    ;     c <- (dremain..56): buf[c] = 0
+    ; }
+    c <- (dremain..56): buf[c] = 0
     buf.store-le-u32(56, blen & 4294967295)
     buf.store-le-u32(60, blen >> 32)
 
@@ -300,6 +305,7 @@ md5 = (data []byte) (out [16]byte) {
     b u32 = h1
     c u32 = h2
     d u32 = h3
+
     ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
     f u32 = d ^ (b & (c ^ d))
     t u32 = a + f + w0 + 3614090360
@@ -349,6 +355,7 @@ md5 = (data []byte) (out [16]byte) {
     f = a ^ (c & (d ^ a))
     t = b + f + w15 + 1236535329
     b = c + rotate-left(t, 22)
+
     ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
     f = c ^ (d & (b ^ c))
     t = a + f + w1 + 4129170786
@@ -398,6 +405,7 @@ md5 = (data []byte) (out [16]byte) {
     f = d ^ (a & (c ^ d))
     t = b + f + w12 + 2368359562
     b = c + rotate-left(t, 20)
+
     ; 第 3 輪 (H): f = x ^ y ^ z
     f = b ^ c ^ d
     t = a + f + w5 + 4294588738
@@ -447,55 +455,57 @@ md5 = (data []byte) (out [16]byte) {
     f = c ^ d ^ a
     t = b + f + w2 + 3299628645
     b = c + rotate-left(t, 23)
-    ; 第 4 輪 (I): f = y ^ (x | ~z)  — mask ^ d 即 ~d
-    f = c ^ (b | (mask ^ d))
+
+    ; 第 4 輪 (I): f = y ^ (x | ~z)  — ~d 即按位取反
+    f = c ^ (b | ~d)
     t = a + f + w0 + 4096336452
     a = b + rotate-left(t, 6)
-    f = b ^ (a | (mask ^ c))
+    f = b ^ (a | ~c)
     t = d + f + w7 + 1126891415
     d = a + rotate-left(t, 10)
-    f = a ^ (d | (mask ^ b))
+    f = a ^ (d | ~b)
     t = c + f + w14 + 2878612391
     c = d + rotate-left(t, 15)
-    f = d ^ (c | (mask ^ a))
+    f = d ^ (c | ~a)
     t = b + f + w5 + 4237533241
     b = c + rotate-left(t, 21)
-    f = c ^ (b | (mask ^ d))
+    f = c ^ (b | ~d)
     t = a + f + w12 + 1700485571
     a = b + rotate-left(t, 6)
-    f = b ^ (a | (mask ^ c))
+    f = b ^ (a | ~c)
     t = d + f + w3 + 2399980690
     d = a + rotate-left(t, 10)
-    f = a ^ (d | (mask ^ b))
+    f = a ^ (d | ~b)
     t = c + f + w10 + 4293915773
     c = d + rotate-left(t, 15)
-    f = d ^ (c | (mask ^ a))
+    f = d ^ (c | ~a)
     t = b + f + w1 + 2240044497
     b = c + rotate-left(t, 21)
-    f = c ^ (b | (mask ^ d))
+    f = c ^ (b | ~d)
     t = a + f + w8 + 1873313359
     a = b + rotate-left(t, 6)
-    f = b ^ (a | (mask ^ c))
+    f = b ^ (a | ~c)
     t = d + f + w15 + 4264355552
     d = a + rotate-left(t, 10)
-    f = a ^ (d | (mask ^ b))
+    f = a ^ (d | ~b)
     t = c + f + w6 + 2734768916
     c = d + rotate-left(t, 15)
-    f = d ^ (c | (mask ^ a))
+    f = d ^ (c | ~a)
     t = b + f + w13 + 1309151649
     b = c + rotate-left(t, 21)
-    f = c ^ (b | (mask ^ d))
+    f = c ^ (b | ~d)
     t = a + f + w4 + 4149444226
     a = b + rotate-left(t, 6)
-    f = b ^ (a | (mask ^ c))
+    f = b ^ (a | ~c)
     t = d + f + w11 + 3174756917
     d = a + rotate-left(t, 10)
-    f = a ^ (d | (mask ^ b))
+    f = a ^ (d | ~b)
     t = c + f + w2 + 718787259
     c = d + rotate-left(t, 15)
-    f = d ^ (c | (mask ^ a))
+    f = d ^ (c | ~a)
     t = b + f + w9 + 3951481745
     b = c + rotate-left(t, 21)
+
     ; 累加回初始值（u32 自然溢出）
     h0 = h0 + a
     h1 = h1 + b

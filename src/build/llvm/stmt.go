@@ -569,11 +569,20 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		_ = llvmType
 	}
 
+	// 生成函數體到獨立緩衝區，同時收集 entry-block alloca（來自字面量參數的臨時變量）。
+	// 將 alloca 提升至 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
+	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
+	g.entryAllocaBuf = &strings.Builder{}
+	bodyBuf := &strings.Builder{}
 	if fd.Body != nil {
 		for _, stmt := range fd.Body.Statements {
-			g.generateStatement(sb, stmt)
+			g.generateStatement(bodyBuf, stmt)
 		}
 	}
+	// 先寫入 entry-block alloca（在所有局部變量 alloca 之後、函數體之前）
+	sb.WriteString(g.entryAllocaBuf.String())
+	// 再寫入函數體
+	sb.WriteString(bodyBuf.String())
 
 	// 若函數無 return 陳述句（void），自動銷毀 + return
 	if returnType == "void" {
@@ -697,6 +706,10 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	if hasUserMain {
 		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
 	}
+	// 生成 top-level 語句到獨立緩衝區，同時收集 entry-block alloca。
+	// 與 generateFunctionDefinition 相同的修復：避免循環體內 call 參數的 alloca 每次迭代增長棧。
+	g.entryAllocaBuf = &strings.Builder{}
+	bodyBuf := &strings.Builder{}
 	// Generate top-level statements (e.g. h = crc-32('', 0), test-str-len(), print(0))
 	// Skip calls to user-defined main() when hasUserMain is true, since _nolang_main()
 	// already calls the user's main. Otherwise we get infinite recursion.
@@ -727,7 +740,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			if g.funcRefVars != nil && g.funcRefVars[ls.Name.Value] {
 				continue
 			}
-			g.generateLet(sb, ls)
+			g.generateLet(bodyBuf, ls)
 		}
 		if es, ok := stmt.(*parser.ExpressionStatement); ok {
 			if hasUserMain {
@@ -737,12 +750,15 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 					}
 				}
 			}
-			g.generateExpressionStmt(sb, es)
+			g.generateExpressionStmt(bodyBuf, es)
 		}
 		if fs, ok := stmt.(*parser.ForStatement); ok {
-			g.generateForStatement(sb, fs)
+			g.generateForStatement(bodyBuf, fs)
 		}
 	}
+	// 先寫入 entry-block alloca，再寫入函數體
+	sb.WriteString(g.entryAllocaBuf.String())
+	sb.WriteString(bodyBuf.String())
 	sb.WriteString(g.indent() + "ret i32 0\n")
 	g.indentLevel--
 	g.indentLevel--
@@ -1165,9 +1181,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 							// ForwardFunc builtins with empty Return: infer from ForwardFunc name
 							if m.ForwardFunc != "" {
-						switch m.ForwardFunc {
-						case "with-cap", "with-len", "with-cap-len":
-							return "%vec"
+								switch m.ForwardFunc {
+								case "with-cap", "with-len", "with-cap-len":
+									return "%vec"
 								case "bool-to-str", "ffi-cstr-at":
 									return "%str-long"
 								}
@@ -1193,9 +1209,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							return g.mapToLLVMType(m.Return[0].String())
 						}
 						if m.ForwardFunc != "" {
-						switch m.ForwardFunc {
-						case "with-cap", "with-len", "with-cap-len":
-							return "%vec"
+							switch m.ForwardFunc {
+							case "with-cap", "with-len", "with-cap-len":
+								return "%vec"
 							case "bool-to-str", "ffi-cstr-at":
 								return "%str-long"
 							}

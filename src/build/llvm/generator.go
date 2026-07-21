@@ -101,8 +101,20 @@ type Generator struct {
 	futureResultTypes     map[string]string               // future variable name → result LLVM type (for awy type inference)
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
 	debugCallCount        int                             // debug counter for tracing function generation calls
+	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
+}
+
+// emitEntryAlloca writes an alloca instruction to the entry-block buffer if available,
+// otherwise to sb. This hoists literal-argument allocas out of loop bodies to prevent
+// stack overflow when a call inside a loop would otherwise allocate new stack on each iteration.
+func (g *Generator) emitEntryAlloca(sb *strings.Builder, format string, args ...interface{}) {
+	if g.entryAllocaBuf != nil {
+		g.entryAllocaBuf.WriteString(fmt.Sprintf(format, args...))
+	} else {
+		sb.WriteString(fmt.Sprintf(format, args...))
+	}
 }
 
 // sliceViewInfo tracks a slice view alias: a variable that references a portion

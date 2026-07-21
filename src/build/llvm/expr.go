@@ -3,6 +3,7 @@ package llvm
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -286,6 +287,37 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			reg := fmt.Sprintf("%%not.result.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
+			}
+			return reg
+		}
+		if e.Operator == "~" {
+			// Bitwise NOT: ~x  =>  xor type, -1, x
+			// -1 is all-ones in two's complement, so XOR flips all bits.
+			notType := g.intExprLLVMType(e.Right)
+			if notType == "" {
+				// Fallback: derive from expression result type
+				notType = g.exprResultLLVMType(e.Right)
+				if notType == "" || notType == "i64" {
+					notType = "i64"
+				}
+			}
+			rc := g.coerceToInt(sb, right, e.Right, notType)
+			if strings.HasPrefix(rc, "%") {
+				g.tmpIdx++
+				reg := fmt.Sprintf("%%bnot.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, notType, rc))
+				}
+				return reg
+			}
+			// Literal/constant operand — compute at compile time
+			if v, err := strconv.ParseInt(rc, 10, 64); err == nil {
+				return fmt.Sprintf("%d", ^v)
+			}
+			g.tmpIdx++
+			reg := fmt.Sprintf("%%bnot.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, notType, rc))
 			}
 			return reg
 		}

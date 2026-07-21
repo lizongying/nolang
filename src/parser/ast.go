@@ -433,6 +433,7 @@ type BlockStatement struct {
 	Token      lexer.Token    // the {
 	RBrace     lexer.Position // position of }
 	Statements []Statement
+	IsInline   bool // true = body was a single inline statement (no braces); false = block form { ... }
 	CommentedNode
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself
