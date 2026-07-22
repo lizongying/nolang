@@ -272,7 +272,7 @@ md5 = (data []byte) (out [16]byte) {
     buf[dremain] = 128
 
     ; 僅清零 dremain+1 ~ 55 這一段，是MD5規範要求補0的區間
-    dremain < 56 -> {
+    dremain < 55 -> {
         pad-idx <- (dremain..56): buf[pad-idx] = 0
     }
     buf.store-le-u32(56, blen & 4294967295)

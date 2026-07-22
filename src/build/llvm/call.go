@@ -1061,7 +1061,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
 			if m.ForwardFunc != "" {
-				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, nil); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" {
+				// When a method call (e.g. buf.load-le-u32(0)) is dispatched via
+				// the global builtin form (prefix stripped at line ~1014), the
+				// receiver must be extracted from the DotExpression and passed to
+				// genForwardFunc so it can be prepended to the args list.
+				var fwdReceiver parser.Expression = nil
+				if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+					fwdReceiver = dot.Receiver
+				}
+				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" {
 					return r
 				}
 				// If genForwardFunc didn't handle it, try callBuiltin with the
