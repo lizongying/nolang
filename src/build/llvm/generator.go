@@ -104,6 +104,7 @@ type Generator struct {
 	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
+	noBoundsCheck         bool                            // true = skip emitting bounds checks (unsafe mode)
 }
 
 // emitEntryAlloca writes an alloca instruction to the entry-block buffer if available,
@@ -446,6 +447,13 @@ func PlatformKeyFor(goos, goarch string) string {
 func (g *Generator) SetTargetPlatform(goos, goarch string) {
 	g.targetGoos = goos
 	g.targetGoarch = goarch
+}
+
+// SetNoBoundsCheck configures whether bounds checks are emitted for array/slice/string
+// indexing. When true (unsafe mode), no bounds check calls are generated, trading safety
+// for performance. This is propagated from BuildOptions via the Transpiler.
+func (g *Generator) SetNoBoundsCheck(skip bool) {
+	g.noBoundsCheck = skip
 }
 
 // SetMainFileNames 設定主檔案（正在編譯的檔案，非導入模組）的變數和函數名稱集合。

@@ -2,7 +2,7 @@
 //
 // 100,000 iterations of MD5("abc", modifying input[2] each iteration)
 //
-// Build: clang -O3 -o md5-bench_c md5-bench.c -lcrypto
+// Build: clang -O3 -o md5-bench_c md5-bench.c
 // Run:   ./md5-bench_c
 
 #include <stdio.h>

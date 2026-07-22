@@ -86,10 +86,11 @@ func CheckToolchain(cc string) error {
 
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
-	CC      string // C compiler: "clang" or "zig"
-	Target  string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
-	Verbose bool
-	Output  string // optional output path ("" = auto)
+	CC            string // C compiler: "clang" or "zig"
+	Target        string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
+	Verbose       bool
+	Output        string // optional output path ("" = auto)
+	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
 }
 
 // parseTargetPlatform extracts (goos, goarch) from a target triple.
@@ -254,6 +255,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	compiler.sourcePath = inputPath
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
+	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
 	code, err := compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)

@@ -1048,6 +1048,7 @@ func buildCommand(args []string) {
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -1064,6 +1065,7 @@ func buildCommand(args []string) {
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
 		fmt.Println("  no build -target x86_64-linux-gnu main.no")
+		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
 	}
 	_ = fs.Parse(args)
 
@@ -1080,10 +1082,11 @@ func buildCommand(args []string) {
 	}
 
 	opts := nbuild.BuildOptions{
-		CC:      *cc,
-		Target:  targetStr,
-		Verbose: verbose,
-		Output:  *outputFile,
+		CC:            *cc,
+		Target:        targetStr,
+		Verbose:       verbose,
+		Output:        *outputFile,
+		NoBoundsCheck: *unsafe,
 	}
 
 	// 無參數時，優先檢查 workspace.jsonc 並行編譯
@@ -1107,6 +1110,7 @@ func runCommand(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<file|dir>]")
 		fmt.Println("")
@@ -1157,10 +1161,11 @@ func runCommand(args []string) {
 	}
 
 	opts := nbuild.BuildOptions{
-		CC:      *cc,
-		Target:  targetStr,
-		Output:  outPath,
-		Verbose: verbose,
+		CC:            *cc,
+		Target:        targetStr,
+		Output:        outPath,
+		Verbose:       verbose,
+		NoBoundsCheck: *unsafe,
 	}
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

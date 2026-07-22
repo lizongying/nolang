@@ -547,7 +547,9 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 
 	// nolang.bounds_check: runtime array/slice/string bounds check
 	// If idx < 0 || idx >= len, writes error to stderr and exits.
-	sb.WriteString("define internal void @nolang.bounds_check(i64 %idx, i64 %len) {\n")
+	// Marked alwaysinline so opt -O3 inlines at every call site, enabling
+	// dead-branch elimination when the index is provably in range.
+	sb.WriteString("define internal void @nolang.bounds_check(i64 %idx, i64 %len) alwaysinline {\n")
 	sb.WriteString("entry:\n")
 	sb.WriteString("\t%lo = icmp slt i64 %idx, 0\n")
 	sb.WriteString("\t%hi = icmp sge i64 %idx, %len\n")

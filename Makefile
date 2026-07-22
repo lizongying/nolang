@@ -6,6 +6,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u '+%s' 2>/dev/null || echo "0")
 LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_COMMIT) -X main.buildDate=$(BUILD_DATE)"
 SRCMOD     = src/go.mod
+GO_SOURCES := $(shell find src -name '*.go' -type f)
 NO_BIN    = $(BINDIR)/no
 LSP_BIN    = vscode-nolang/server/lsp
 
@@ -21,7 +22,7 @@ $(BINDIR):
 	mkdir -p $(BINDIR)
 
 # ── NO ────────────────────────────────
-$(NO_BIN): FORCE
+$(NO_BIN): $(GO_SOURCES) src/go.mod src/go.sum | $(BINDIR)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 
 # ── LSP ────────────────────────────

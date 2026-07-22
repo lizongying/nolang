@@ -338,7 +338,21 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		llvmFnName = "_nolang_main"
 	}
 
-	sb.WriteString(fmt.Sprintf("define %s @%s(", returnType, sanitizeLLVMName(llvmFnName)))
+	// Use internal linkage + alwaysinline for user-defined functions so LLVM
+	// can inline them at -O2/-O3. This is critical for performance: without
+	// inlining, every function call has overhead and prevents cross-function
+	// optimizations (e.g., constant propagation, DCE).
+	// Skip for main (renamed to _nolang_main, called from C wrapper).
+	isMain := fd.Name == "main"
+	linkage := "internal"
+	if isMain {
+		linkage = ""
+	}
+	if linkage != "" {
+		sb.WriteString(fmt.Sprintf("define %s %s @%s(", linkage, returnType, sanitizeLLVMName(llvmFnName)))
+	} else {
+		sb.WriteString(fmt.Sprintf("define %s @%s(", returnType, sanitizeLLVMName(llvmFnName)))
+	}
 
 	for i, param := range fd.Parameters {
 		if i > 0 {

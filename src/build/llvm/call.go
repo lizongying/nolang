@@ -551,11 +551,11 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 	if numResults >= 1 {
 		g.tmpIdx++
 		loadReg := fmt.Sprintf("%%fncall.ret.%d", g.tmpIdx)
-		if sb != nil {
+if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, resultTypes[0], resultTypes[0], resultTemps[0]))
-			// Restore stack pointer to prevent stack growth when called inside loops
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), fncallSp))
-		}
+		// Restore stack pointer to prevent stack growth when called inside loops
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), fncallSp))
+	}
 		return loadReg
 	}
 	return ""
@@ -2288,7 +2288,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
-	voidSingleTmp := ""
+    voidSingleTmp := ""
 	voidSingleSp := ""
 	if voidSingleOutput {
 		g.tmpIdx++

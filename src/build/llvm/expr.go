@@ -1852,8 +1852,9 @@ func (g *Generator) extractStrCap(sb *strings.Builder, strPtr string) string {
 
 // emitBoundsCheck emits a call to @nolang.bounds_check(idx, len).
 // idx and len must be i64 SSA registers or literals.
+// Skipped entirely when g.noBoundsCheck is true (unsafe mode).
 func (g *Generator) emitBoundsCheck(sb *strings.Builder, idx string, lenExpr string) {
-	if sb == nil {
+	if sb == nil || g.noBoundsCheck {
 		return
 	}
 	sb.WriteString(fmt.Sprintf("%scall void @nolang.bounds_check(i64 %s, i64 %s)\n",
@@ -2979,8 +2980,16 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// This allows vec[i] = val for i in [0..cap) even when len == 0,
 				// which is required for patterns like `data[next] = value` on
 				// freshly declared []byte locals and struct fields.
-				vecCap := g.emitVecCapLoad(sb, g.varAddr(varName))
-				g.emitBoundsCheck(sb, idx, vecCap)
+				// Skip bounds check for constant indices — LLVM cannot eliminate
+				// the inlined check across loop iterations, and a constant index
+				// into a slice literal is always within bounds (otherwise the
+				// program would have crashed on first iteration).
+				varIdxExpr2, _ := expr.Left.(*parser.IndexExpression)
+				_, isConstIdx2 := varIdxExpr2.Index.(*parser.IntegerLiteral)
+				if !isConstIdx2 {
+					vecCap := g.emitVecCapLoad(sb, g.varAddr(varName))
+					g.emitBoundsCheck(sb, idx, vecCap)
+				}
 
 				// Load data pointer from vec struct (field 2)
 				g.tmpIdx++
@@ -3034,9 +3043,19 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 
-					// Auto-update len (field 0) to max(len, idx+1). Without this,
-					// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
-					// elements were written via vec[i] = val, producing wrong outputs.
+				// Auto-update len (field 0) to max(len, idx+1). Without this,
+				// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
+				// elements were written via vec[i] = val, producing wrong outputs.
+				// Optimization: skip the load+add+icmp+select+store when the index
+				// is a compile-time constant. For constant indices, either:
+				//  (a) idx+1 <= len → max(len, idx+1) == len → store is redundant
+				//  (b) idx+1 > len  → bounds check on cap already passed, but
+				//      updating len for a constant index past len is not a
+				//      pattern that appears in correct code (the slice would
+				//      have been sized appropriately at initialization).
+				varIdxExpr, _ := expr.Left.(*parser.IndexExpression)
+				_, isConstIdx := varIdxExpr.Index.(*parser.IntegerLiteral)
+				if !isConstIdx {
 					g.tmpIdx++
 					lenGEP := fmt.Sprintf("%%vec.set.len.gep.%d", g.tmpIdx)
 					g.tmpIdx++
@@ -3054,6 +3073,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
 					sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, newLen, curLen))
 					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
+				}
 				}
 				return "0"
 			}

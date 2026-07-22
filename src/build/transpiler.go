@@ -530,8 +530,9 @@ type Transpiler struct {
 
 	// targetGoos/targetGoarch: 編譯目標平台，用於平台變體過濾。
 	// 空字串表示 fallback 到 runtime.GOOS/GOARCH（編譯主機平台）。
-	targetGoos   string
-	targetGoarch string
+	targetGoos    string
+	targetGoarch  string
+	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -551,6 +552,12 @@ func NewTranspiler(pkg *Package) *Transpiler {
 func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 	t.targetGoos = goos
 	t.targetGoarch = goarch
+}
+
+// SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
+// When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
+func (t *Transpiler) SetNoBoundsCheck(skip bool) {
+	t.noBoundsCheck = skip
 }
 
 type Target int
@@ -1170,6 +1177,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
 	// 而非編譯主機平台（支援交叉編譯）。
 	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
+	t.llvmGenerator.SetNoBoundsCheck(t.noBoundsCheck)
 	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
 	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
