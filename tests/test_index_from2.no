@@ -1,0 +1,8 @@
+; Test str.index-from with from=6 (should return -1 for 'hello,world' and ',')
+main = () () {
+    s = 'hello,world'
+    pos1 = s.index-from(',', 0)
+    println('pos from 0: ' + pos1.to-str())
+    pos2 = s.index-from(',', 6)
+    println('pos from 6: ' + pos2.to-str())
+}

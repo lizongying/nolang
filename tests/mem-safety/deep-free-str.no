@@ -1,0 +1,14 @@
+; 深層 free 測試 1：[]str（vec of string）— 局部變數版本
+; 驗證 vec 元素為 %str-long 時的深層釋放
+
+test-local-str-vec = () {
+    s []str
+    s.push('hello')
+    s.push('world')
+    s.push('nolang')
+    print(s.len)
+    ; s 離開作用域時應深層 free 每個 string 的 data
+}
+
+test-local-str-vec()
+print('done')

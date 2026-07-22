@@ -1,0 +1,29 @@
+; ═════════════════════════════════════════════════════════════════
+; 深層 free 測試 2：[][]i64（vec of vec）
+; ═════════════════════════════════════════════════════════════════
+;
+; 驗證場景：
+;   - vec 的元素型別為 %vec（堆擁有型別）
+;   - 函數結束時應遍歷每個內部 vec 元素釋放其 data，再 free 外部 vec 的 data
+;   - 淺層 free 只會 free 外部 vec.data，導致每個內部 vec 的 data 洩漏
+;
+; ═════════════════════════════════════════════════════════════════
+
+make-nested-vec = () {
+    outer [][]i64
+    inner1 []i64
+    inner1.push(10)
+    inner1.push(20)
+    outer.push(inner1)
+    inner2 []i64
+    inner2.push(30)
+    inner2.push(40)
+    inner2.push(50)
+    outer.push(inner2)
+    print(outer.len)
+    ; outer 離開作用域時：
+    ;   深層 free → 遍歷 2 個內部 vec 各 free 其 data，再 free outer.data ✓
+}
+
+make-nested-vec()
+print('done')

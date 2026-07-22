@@ -1,10 +1,10 @@
 ; Test str.split fix - previously caused segfault
 main = () () {
-    s = "hello,world,foo,bar"
-    parts = s.split(",")
+    s = 'hello,world,foo,bar'
+    parts = s.split(',')
     n = parts.len
-    println("split count: " + n.to-str())
+    println('split count: ' + n.to-str())
     i <- [0..n): {
-        println("  [" + i.to-str() + "] " + parts[i])
+        println('  [' + i.to-str() + '] ' + parts[i])
     }
 }

@@ -97,6 +97,7 @@ type Generator struct {
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
 	currentTargetType     string                          // target type for type-inferred builtins (e.g. with-cap)
 	sliceViews            map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
+	varAlias              map[string]string               // variable name → actual LLVM variable name (用於 %arr 重新賦值為 %vec 時重定向)
 	taskResultTypes       map[string]string               // task variable name → result LLVM type (for awy type inference)
 	futureResultTypes     map[string]string               // future variable name → result LLVM type (for awy type inference)
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
@@ -203,6 +204,12 @@ func llvmGlobalRef(name string) string {
 // Local variables (parameters and allocas in the current function) take precedence
 // over globals with the same name.
 func (g *Generator) varAddr(name string) string {
+	// 檢查別名（變數從 %arr 重新賦值為 %vec 時，alloca 新的 %vec 並重定向）
+	if g.varAlias != nil {
+		if alias, ok := g.varAlias[name]; ok {
+			name = alias
+		}
+	}
 	if g.funcLocalNames != nil && g.funcLocalNames[name] {
 		return llvmVarRef(name)
 	}
@@ -2022,6 +2029,17 @@ func (g *Generator) isUserStructType(llvmType string) bool {
 	}
 	_, ok := g.structTypes[structName]
 	return ok
+}
+
+// isHeapOwningType 判斷 LLVM 型別是否擁有堆數據（需要深層 free）。
+// %vec、%str-long、%arr 以及含堆欄位的用戶結構體都屬於此類。
+func (g *Generator) isHeapOwningType(llvmType string) bool {
+	switch llvmType {
+	case "%vec", "%str-long", "%arr":
+		return true
+	default:
+		return g.isUserStructType(llvmType)
+	}
 }
 
 func (g *Generator) findLoopTarget(label string, isBreak bool) string {

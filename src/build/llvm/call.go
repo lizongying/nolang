@@ -1835,7 +1835,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				g.tmpIdx++
 				tmpVal := fmt.Sprintf("%%arg.val.%d", g.tmpIdx)
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, argType))
+					// alloca 提升至 entry block，避免循環體內每次迭代增長棧（與 FloatLiteral 相同策略）
+					g.emitEntryAlloca(sb, "%s = alloca %s\n", tmpName, argType)
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), tmpVal, argType, argType, g.varAddr(a.Value)))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), argType, tmpVal, argType, tmpName))
 				}
@@ -3139,12 +3140,21 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 
 		// End label
-		if sb != nil {
-			g.emitLabel(sb, endLabel)
+	if sb != nil {
+		g.emitLabel(sb, endLabel)
+	}
+	// 當 push 的元素是堆擁有型別（%vec/%str-long/%arr/用戶結構體）且參數是 Identifier 時，
+	// 標記源變數為 moved，避免函數結束時 double-free（源變數和外部 vec 共享同一 data 指標）。
+	if g.isHeapOwningType(elemType) && g.movedVars != nil {
+		if srcIdent, ok := args[1].(*parser.Identifier); ok {
+			if srcIdent.Value != recvName {
+				g.movedVars[srcIdent.Value] = true
+			}
 		}
-		return ""
+	}
+	return ""
 
-	case "str-clear":
+case "str-clear":
 		// str.clear() — set len=0 in-place, no storage switch
 		// str-long: store i64 0 to field 0, cap/ptr unchanged
 		if len(args) < 1 {

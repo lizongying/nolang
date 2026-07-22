@@ -143,6 +143,25 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 //	%vec:       field 2 (i64 data)
 //	%str-long:  field 2 (i64 data)
 //	%arr:       field 1 (i64 data)
+
+// trackLocalHeapVar 將局部變數加入 heapVars 追蹤，用於函數結束時深層 free。
+// 跳過參數（paramNames）和輸出參數（outputParamNames，由呼叫者管理）。
+func (g *Generator) trackLocalHeapVar(name, llvmType string) {
+	if g.heapVars == nil {
+		return
+	}
+	if _, isLocal := g.funcLocalNames[name]; !isLocal {
+		return
+	}
+	if _, isParam := g.paramNames[name]; isParam {
+		return
+	}
+	if g.outputParamNames != nil && g.outputParamNames[name] {
+		return
+	}
+	g.heapVars[name] = llvmType
+}
+
 func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	if g.heapVars == nil || len(g.heapVars) == 0 {
 		return
@@ -156,14 +175,18 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		if g.outputParamNames != nil && g.outputParamNames[name] {
 			continue
 		}
-		g.emitVarHeapFree(sb, g.varAddr(name), llvmType)
+		elemType := ""
+		if g.arrayElemTypes != nil {
+			elemType = g.arrayElemTypes[name]
+		}
+		g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
 	}
 }
 
 // emitVarHeapFree 釋放單一變數的堆數據。
 // 內建型別（%vec/%str-long/%arr）透過 data 欄位索引找到 i8* 並 free；
 // 用戶結構體則遞迴釋放所有含堆數據的欄位。
-func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType string) {
+func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemType string) {
 	var dataFieldIdx int
 	switch llvmType {
 	case "%vec", "%str-long":
@@ -176,27 +199,112 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType string
 		}
 		return
 	}
+	if llvmType == "%str-long" {
+		g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+		return
+	}
+	if g.isHeapOwningType(elemType) {
+		g.emitDeepContainerFree(sb, varPtr, llvmType, dataFieldIdx, elemType)
+		return
+	}
+	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+}
+
+// emitShallowDataFree releases a container's data buffer without iterating elements.
+func (g *Generator) emitShallowDataFree(sb *strings.Builder, containerPtr, containerType string, dataFieldIdx int) {
 	g.tmpIdx++
 	dataGEP := fmt.Sprintf("%%heapfree.gep.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-		g.indent(), dataGEP, llvmType, llvmType, varPtr, dataFieldIdx))
-	// data is i64 (address value): load i64, inttoptr to i8*, then free
+		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
 	dataLoad := g.loadDataPtrField(sb, dataGEP)
-	// 檢查 data 指標是否為 NULL：若變數從未賦值（如循環體內的賦值未執行），
-	// alloca 的內容為未初始化垃圾值。零初始化保證 data=NULL，free(NULL) 是 no-op。
-	// 但為防禵未零初始化的情況，仍加入 NULL 檢查。
+	g.emitNullCheckFree(sb, dataLoad)
+}
+
+// emitNullCheckFree frees an i8* pointer with NULL check.
+func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr string) {
 	g.tmpIdx++
 	nullCmp := fmt.Sprintf("%%heapfree.null.%d", g.tmpIdx)
 	g.tmpIdx++
 	freeLabel := fmt.Sprintf("heapfree.free.%d", g.tmpIdx)
 	g.tmpIdx++
 	skipLabel := fmt.Sprintf("heapfree.skip.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataPtr))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
 	g.emitLabel(sb, freeLabel)
+	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.emitLabel(sb, skipLabel)
+}
+
+// emitDeepContainerFree deep-frees a %vec/%arr: iterates elements to free their heap data, then frees the data buffer.
+func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, containerType string, dataFieldIdx int, elemType string) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+	lenGEP := fmt.Sprintf("%%df.len.gep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), lenGEP, containerType, containerType, containerPtr))
+	lenReg := fmt.Sprintf("%%df.len.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+	dataGEP := fmt.Sprintf("%%df.data.gep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
+	dataLoad := g.loadDataPtrField(sb, dataGEP)
+	nullCmp := fmt.Sprintf("%%df.null.%d", tid)
+	skipLabel := fmt.Sprintf("df.skip.%d", tid)
+	loopStartLabel := fmt.Sprintf("df.loop.start.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, loopStartLabel))
+	g.emitLabel(sb, loopStartLabel)
+	iPtr := fmt.Sprintf("%%df.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+	loopCondLabel := fmt.Sprintf("df.loop.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopCondLabel)
+	iVal := fmt.Sprintf("%%df.i.val.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	loopCmp := fmt.Sprintf("%%df.loop.cmp.%d", tid)
+	loopBodyLabel := fmt.Sprintf("df.loop.body.%d", tid)
+	loopEndLabel := fmt.Sprintf("df.loop.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), loopCmp, iVal, lenReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), loopCmp, loopBodyLabel, loopEndLabel))
+	g.emitLabel(sb, loopBodyLabel)
+	elemArr := fmt.Sprintf("%%df.elemarr.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), elemArr, dataLoad, elemType))
+	elemGEP := fmt.Sprintf("%%df.elem.gep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+		g.indent(), elemGEP, elemType, elemType, elemArr, iVal))
+	g.emitElementFree(sb, elemGEP, elemType)
+	iNext := fmt.Sprintf("%%df.i.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopEndLabel)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
 	g.emitLabel(sb, skipLabel)
+}
+
+// emitElementFree frees heap data of a single container element.
+func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType string) {
+	var dataFieldIdx int
+	switch elemType {
+	case "%vec", "%str-long":
+		dataFieldIdx = 2
+	case "%arr":
+		dataFieldIdx = 1
+	default:
+		if g.isUserStructType(elemType) {
+			g.emitStructFieldsFree(sb, elemPtr, elemType)
+		}
+		return
+	}
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%df.elem.data.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, elemType, elemType, elemPtr, dataFieldIdx))
+	dataLoad := g.loadDataPtrField(sb, dataGEP)
+	g.emitNullCheckFree(sb, dataLoad)
 }
 
 // freeOldHeapValue 釋放重新賦值變數的舊堆數據。
@@ -215,7 +323,11 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	if g.outputParamNames != nil && g.outputParamNames[name] {
 		return
 	}
-	g.emitVarHeapFree(sb, g.varAddr(name), oldType)
+	elemType := ""
+	if g.arrayElemTypes != nil {
+		elemType = g.arrayElemTypes[name]
+	}
+	g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
 }
 
 // emitStructFieldsFree 遞迴釋放用戶結構體中所有含堆數據的欄位。
@@ -231,9 +343,9 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 	for i, f := range fields {
 		switch f.typ {
 		case "%vec", "%str-long":
-			g.emitStructFieldDataFree(sb, structPtr, structType, i, 2, f.typ)
+			g.emitStructFieldFree(sb, structPtr, structType, i, 2, f.typ, f.elemType)
 		case "%arr":
-			g.emitStructFieldDataFree(sb, structPtr, structType, i, 1, f.typ)
+			g.emitStructFieldFree(sb, structPtr, structType, i, 1, f.typ, f.elemType)
 		default:
 			if g.isUserStructType(f.typ) {
 				g.tmpIdx++
@@ -246,32 +358,21 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 	}
 }
 
-// emitStructFieldDataFree 釋放結構體中第 fieldIdx 個欄位的 data 子欄位。
-// 該欄位型別為 fieldType（%vec/%str-long/%arr），其 data 位於子結構的第 dataSubIdx 個欄位。
-// GEP 鏈：struct → field（fieldIdx）→ data sub-field（dataSubIdx）→ load → inttoptr → free。
-func (g *Generator) emitStructFieldDataFree(sb *strings.Builder, structPtr, structType string, fieldIdx, dataSubIdx int, fieldType string) {
+// emitStructFieldFree frees heap data of struct field (deep free for vec/arr with heap-owning elements).
+func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType string) {
 	g.tmpIdx++
 	fieldGEP := fmt.Sprintf("%%structfield.fgep.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), fieldGEP, structType, structType, structPtr, fieldIdx))
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%structfield.dgep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-		g.indent(), dataGEP, fieldType, fieldType, fieldGEP, dataSubIdx))
-	dataLoad := g.loadDataPtrField(sb, dataGEP)
-	// NULL 檢查後 free：防禦未初始化的 data 欄位
-	g.tmpIdx++
-	nullCmp := fmt.Sprintf("%%structfield.null.%d", g.tmpIdx)
-	g.tmpIdx++
-	freeLabel := fmt.Sprintf("structfield.free.%d", g.tmpIdx)
-	g.tmpIdx++
-	skipLabel := fmt.Sprintf("structfield.skip.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
-	g.emitLabel(sb, freeLabel)
-	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
-	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
-	g.emitLabel(sb, skipLabel)
+	if fieldType == "%str-long" {
+		g.emitShallowDataFree(sb, fieldGEP, fieldType, dataFieldIdx)
+		return
+	}
+	if g.isHeapOwningType(fieldElemType) {
+		g.emitDeepContainerFree(sb, fieldGEP, fieldType, dataFieldIdx, fieldElemType)
+		return
+	}
+	g.emitShallowDataFree(sb, fieldGEP, fieldType, dataFieldIdx)
 }
 
 // initVecFieldFromSliceLiteral 在 struct literal 中將 SliceLiteral 初始化到 %vec 欄位。
@@ -386,6 +487,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
 	g.stackArrVars = make(map[string]bool)               // reset stack-allocated array tracking
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
+	g.varAlias = make(map[string]string)                 // reset var alias tracking (用於 %arr → %vec 重定向)
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
 	// 重置 arrayElemTypes 並恢復模組級元素型別，避免函數參數（如 rsa.no bn-add 的 c []i64）
@@ -2117,7 +2219,10 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	case *parser.ForStatement:
 		g.generateForStatement(sb, s)
 	case *parser.BreakStatement:
-		g.emitLifetimeEnd(sb)
+		// Do NOT emit lifetime.end here — break only exits the innermost loop,
+		// not the function. Calling emitLifetimeEnd would mark all function
+		// locals as dead, causing -O3 to treat subsequent accesses (e.g. outer
+		// loop's `i`, `matched`, `limit`) as undefined behavior.
 		target := g.findLoopTarget(s.Label, true)
 		if target != "" {
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), target))
@@ -3060,6 +3165,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.freeOldHeapValue(sb, stmt, name)
 			oldValFreed = true
 		}
+		// 若變數原本宣告為 %arr（固定大小陣列，alloca 16 字節），但被 SliceLiteral
+		// 重新賦值為 %vec（24 字節，3 個欄位），原本的 alloca 空間不足，寫入 field 2
+		// 會越界。此時 alloca 一個新的 %vec 變數並通過 varAlias 重定向所有後續存取。
+		if g.varTypes != nil && g.varTypes[name] == "%arr" {
+			g.tmpIdx++
+			vecVarName := fmt.Sprintf("%s.vec.%d", name, g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), llvmVarRef(vecVarName)))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %s)\n", g.indent(), llvmVarRef(vecVarName)))
+			g.varAlias[name] = vecVarName
+			g.funcLocalNames[vecVarName] = true
+			// 從 stackArrVars 移除（不再使用棧陣列路徑）
+			if g.stackArrVars != nil {
+				delete(g.stackArrVars, name)
+			}
+		}
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
 		// Only mark as local if not already a global variable
@@ -3084,8 +3204,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			tmpArr := fmt.Sprintf("%%slice.tmp.%d", tid)
 			arrType := fmt.Sprintf("[%d x %s]", n, elemType)
 
-			// alloca temp array on stack
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+			// malloc temp array on heap（而非 alloca 棧分配），
+			// 因為 %vec 擁有 data 並在函數結束時 free，棧指標會導致 crash。
+			elemSize := g.llvmTypeSize(elemType)
+			if elemSize == 0 {
+				elemSize = 8
+			}
+			bufSize := n * elemSize
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
+
+			// bitcast i8* to array type pointer for element GEP
+			g.tmpIdx++
+			arrPtr := fmt.Sprintf("%%slice.arrptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), arrPtr, tmpArr, arrType))
 
 			// store each element via GEP
 			for i, elem := range slice.Elements {
@@ -3094,14 +3225,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				g.tmpIdx++
 				gepReg := fmt.Sprintf("%%slice.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), gepReg, arrType, arrType, tmpArr, i))
+					g.indent(), gepReg, arrType, arrType, arrPtr, i))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
 			}
 
-			// bitcast array pointer to i8* (matches %vec.data field type)
-			g.tmpIdx++
-			ptrReg := fmt.Sprintf("%%slice.ptr.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
+			// tmpArr is already i8* (from malloc), use directly as vec data
+			ptrReg := tmpArr
 
 			// store len (field 0)
 			g.tmpIdx++
@@ -3118,13 +3247,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
 			// store data (field 2)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-				g.indent(), dataGEP, g.varAddr(name)))
-			g.storeDataPtrField(sb, ptrReg, dataGEP)
-			return
-		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+			g.indent(), dataGEP, g.varAddr(name)))
+		g.storeDataPtrField(sb, ptrReg, dataGEP)
+		// 追蹤局部 vec 變數，用於函數結束時深層 free
+		g.trackLocalHeapVar(name, "%vec")
+		return
+	}
 
 		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
 		// with a default data buffer so push() and index assignment work.
@@ -3156,6 +3287,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
 		g.storeDataPtrField(sb, vecBuf, vecDataGEP)
+		// 追蹤局部 vec 變數，用於函數結束時深層 free
+		g.trackLocalHeapVar(name, "%vec")
 		return
 	}
 

@@ -1,0 +1,6 @@
+; Simple test - just call split and check length
+main = () () {
+    s = 'hello,world'
+    parts = s.split(',')
+    println('count: ' + parts.len.to-str())
+}
