@@ -1,0 +1,11 @@
+; test-ifelse: test if-else pattern
+
+# std/str
+
+x i64 = 5
+
+x == 5 -> print('five')
+-> print('not five')
+
+x == 10 -> print('ten')
+-> print('not ten')

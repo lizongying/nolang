@@ -1,0 +1,19 @@
+; test-ifelse2: test if-else with block
+
+# std/str
+
+x i64 = 5
+
+{
+    x == 5 -> print('five')
+    ->
+        print('not five')
+}
+
+x = 10
+
+{
+    x == 5 -> print('five')
+    ->
+        print('not five')
+}

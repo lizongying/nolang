@@ -1,0 +1,9 @@
+; test-replace2: simpler str.replace-str test
+
+# std/str
+
+; 簡單替換
+s str = 'abc'
+r str
+r = s.replace-str('b', 'X')
+print('result: ' - r)

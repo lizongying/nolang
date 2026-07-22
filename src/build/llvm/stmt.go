@@ -193,10 +193,29 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType string
 	skipLabel := fmt.Sprintf("heapfree.skip.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
-	sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+	g.emitLabel(sb, freeLabel)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
-	sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+	g.emitLabel(sb, skipLabel)
+}
+
+// freeOldHeapValue 釋放重新賦值變數的舊堆數據。
+// 跳過合成 let（IsSynthetic）、已 move 的變數（所有權已轉移）、輸出參數（由呼叫者管理）。
+func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
+	if g.heapVars == nil || stmt.IsSynthetic {
+		return
+	}
+	oldType, isHeap := g.heapVars[name]
+	if !isHeap {
+		return
+	}
+	if g.movedVars != nil && g.movedVars[name] {
+		return
+	}
+	if g.outputParamNames != nil && g.outputParamNames[name] {
+		return
+	}
+	g.emitVarHeapFree(sb, g.varAddr(name), oldType)
 }
 
 // emitStructFieldsFree 遞迴釋放用戶結構體中所有含堆數據的欄位。
@@ -249,10 +268,71 @@ func (g *Generator) emitStructFieldDataFree(sb *strings.Builder, structPtr, stru
 	skipLabel := fmt.Sprintf("structfield.skip.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
-	sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+	g.emitLabel(sb, freeLabel)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
-	sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+	g.emitLabel(sb, skipLabel)
+}
+
+// initVecFieldFromSliceLiteral 在 struct literal 中將 SliceLiteral 初始化到 %vec 欄位。
+// 使用 malloc 分配堆內存（而非 alloca），確保 struct 通過 out 參數返回後 data 仍有效。
+func (g *Generator) initVecFieldFromSliceLiteral(sb *strings.Builder, structVar, structTy string, fieldIdx int, slice *parser.SliceLiteral, fieldElemType string) {
+	elemType := fieldElemType
+	if elemType == "" {
+		elemType = "i64"
+	}
+	n := int64(len(slice.Elements))
+	g.tmpIdx++
+	tid := g.tmpIdx
+	tmpArr := fmt.Sprintf("%%st.slice.tmp.%d", tid)
+	arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+	elemSize := g.llvmTypeSize(elemType)
+	if elemSize == 0 {
+		elemSize = 8
+	}
+	bufSize := n * elemSize
+
+	// malloc 分配堆內存（避免函數返回後棧幀銷毀導致懸垂指針）
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
+	// bitcast to element array pointer for GEP store
+	g.tmpIdx++
+	arrPtrReg := fmt.Sprintf("%%st.slice.arrptr.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), arrPtrReg, tmpArr, arrType))
+
+	// 逐元素 store
+	for i, elem := range slice.Elements {
+		ev := g.generateExprWithSB(sb, elem)
+		ev = g.stripLLVMType(ev)
+		g.tmpIdx++
+		gepReg := fmt.Sprintf("%%st.slice.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+			g.indent(), gepReg, arrType, arrType, arrPtrReg, i))
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
+	}
+
+	// data 指針即 malloc 返回的 i8*
+	ptrReg := tmpArr
+
+	// store len（欄位的 field 0）
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%st.slice.len.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 0\n",
+		g.indent(), lenGEP, structTy, structTy, g.varAddr(structVar), fieldIdx))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+
+	// store cap（欄位的 field 1）
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%st.slice.cap.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
+		g.indent(), capGEP, structTy, structTy, g.varAddr(structVar), fieldIdx))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
+
+	// store data（欄位的 field 2）
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%st.slice.data.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
+		g.indent(), dataGEP, structTy, structTy, g.varAddr(structVar), fieldIdx))
+	g.storeDataPtrField(sb, ptrReg, dataGEP)
 }
 
 // resolveParamLLVMType 計算參數的 LLVM 型別字串。
@@ -467,6 +547,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if r.Name != "" {
 			g.varTypes[r.Name] = g.resolveParamLLVMType(r.Type)
 			g.funcLocalNames[r.Name] = true
+			// Register slice element type for []T result params (e.g. []str → "%str-long").
+			// Without this, vec-push defaults to i64 (8 bytes) instead of %str-long (24 bytes),
+			// causing heap corruption and segfaults in functions like str.split that push to []str results.
+			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
+				g.arrayElemTypes[r.Name] = g.mapToLLVMType(st.Elem.String())
+			}
 		}
 	}
 
@@ -2929,21 +3015,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// 重新賦值時立即釋放舊值：若變數已追蹤在 heapVars 中（有舊的堆數據），
-	// 在新值寫入前立即 free 舊的 data buffer，避免重新賦值導致內存洩漏。
-	// 注意：此處在新值表達式計算前執行，對 `x = f(x)` 這類 RHS 引用舊值的場景
-	// 可能造成 use-after-free。該邊界情況需使用者以臨時變數因應。
-	if g.heapVars != nil && !stmt.IsSynthetic {
-		if oldType, isHeap := g.heapVars[name]; isHeap {
-			// 已 move 到輸出參數的變數不 free（所有權已轉移）
-			if g.movedVars == nil || !g.movedVars[name] {
-				// 輸出參數本身不 free（由呼叫者管理）
-				if g.outputParamNames == nil || !g.outputParamNames[name] {
-					g.emitVarHeapFree(sb, g.varAddr(name), oldType)
-				}
-			}
-		}
-	}
+	// oldValFreed 標記舊值是否已釋放。
+	// 對於 RHS 安全（不引用舊值）的型別特定分支（SliceLiteral），在進入分支前立即釋放舊值。
+	// 對於一般情況，在 RHS 求值後釋放舊值，避免 `x = f(x)` 造成 use-after-free。
+	oldValFreed := false
 
 	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，標記源為 moved（不 free）。
 	// 必須在所有型別特定處理（如 option）的 early return 之前執行，
@@ -2958,6 +3033,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// 切片視圖賦值：view = arr[0..4]
 	// 註冊為 slice view alias，不創建獨立結構體，通過 offset 計算訪問原始數據
+	// 注意：不自動釋放舊值，因為 generateSliceViewAssignment 可能建立引用舊值的視圖（自切片）。
+	// 若 generateSliceViewAssignment 未處理則回退到一般路徑，在那裡釋放舊值。
 	if _, isSliceExpr := stmt.Value.(*parser.SliceExpression); isSliceExpr {
 		if g.generateSliceViewAssignment(sb, stmt, name) {
 			return
@@ -2978,6 +3055,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 	if (isSliceType || isSliceLit) && !isSliceExpr2 && !isWithCapCall {
+		// SliceLiteral 的 RHS 是字面量，不引用舊值，可安全在求值前釋放舊值
+		if !oldValFreed && isSliceLit {
+			g.freeOldHeapValue(sb, stmt, name)
+			oldValFreed = true
+		}
 		// 註冊變數型別為 %vec，供後續索引賦值/讀取/指標取得使用
 		g.varTypes[name] = "%vec"
 		// Only mark as local if not already a global variable
@@ -3175,6 +3257,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
+
+	// 一般情況：在 RHS 求值後釋放舊值，避免 `x = f(x)` 造成 use-after-free。
+	// 型別特定分支（SliceLiteral）已在進入分支前釋放並設置 oldValFreed。
+	if !oldValFreed {
+		g.freeOldHeapValue(sb, stmt, name)
+	}
 	// 在清除 currentTargetType 前保存值的實際型別，
 	// 供後續賦值時的型別轉換使用（zext/trunc）。
 	valActualType := ""
@@ -3284,6 +3372,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				continue
 			}
 			setFields[fieldIdx] = true
+			// %vec 欄位且值為 SliceLiteral：執行完整切片初始化
+			//（alloca 臨時數組 + 逐元素 store + 構造 %vec {len, cap, data}）
+			if fieldType == "%vec" {
+				if sliceLit, ok := f.Value.(*parser.SliceLiteral); ok {
+					g.initVecFieldFromSliceLiteral(sb, name, structTy, fieldIdx, sliceLit, fields[fieldIdx].elemType)
+					continue
+				}
+			}
 			fieldVal := g.generateExprWithSB(sb, f.Value)
 			fieldVal = g.stripLLVMType(fieldVal)
 			g.tmpIdx++

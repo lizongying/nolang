@@ -1,0 +1,19 @@
+; test-fields: 验证 str.fields
+
+# std/str
+
+print('=== str.fields ===')
+
+fstr str = '  hello   world  nolang  '
+fields []str
+fields = fstr.fields()
+n = fields.len
+print('field count:' - n.to-str())
+i <- [0..n): {
+    print('  [' - i.to-str() - '] ' - fields[i])
+}
+
+; 空字串
+fstr = ''
+fields = fstr.fields()
+print('empty fields:' - fields.len.to-str())

@@ -1,0 +1,10 @@
+; test-replace: 验证 str.replace-str
+
+# std/str
+
+print('=== str.replace-str ===')
+
+s str = 'hello world, hello nolang'
+replaced str
+replaced = s.replace-str('hello', 'HI')
+print(replaced)

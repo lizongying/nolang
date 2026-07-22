@@ -1173,50 +1173,21 @@ str.split = (sep str) (out []str) {
 ; 若 old 為空字串，直接返回原字串的副本
 str.replace-str = (old str, new str) (val str) {
     old.len == 0 -> {
-        val = with-cap(.len)
-        i <- [0...len): {
-            val[i] = .[i]
-        }
+        val = .slice(0, .len)
         return
     }
-
-    ; 第一遍：計算替換後的總長度
-    out-len = 0
-    start = 0
-    pos = .index-from(old, start)
-    {
-        pos < 0 -> break
-        out-len = out-len + pos - start
-        out-len = out-len + new.len
-        start = pos + old.len
-        pos = .index-from(old, start)
-    } (true)
-    out-len = out-len + .len - start
-
-    ; 第二遍：構建結果字串
-    val = with-cap(out-len)
-    dst = 0
-    start = 0
-    pos = .index-from(old, start)
-    {
-        pos < 0 -> break
-        ; 複製匹配前的部分
-        i <- [start..pos): {
-            val[dst] = .[i]
-            dst = dst + 1
-        }
-        ; 複製新子串
-        j <- [0..new.len): {
-            val[dst] = new[j]
-            dst = dst + 1
-        }
-        start = pos + old.len
-        pos = .index-from(old, start)
-    } (true)
-    ; 複製剩餘部分
-    i <- [start...len): {
-        val[dst] = .[i]
-        dst = dst + 1
+    ; 使用 split 分割，再用 - 連接
+    parts []str
+    parts = .split(old)
+    np = parts.len
+    np == 0 -> return
+    np == 1 -> {
+        val = parts[0]
+        return
+    }
+    val = parts[0]
+    i <- [1..np): {
+        val = val - new - parts[i]
     }
 }
 
@@ -1235,15 +1206,15 @@ str.fields = () (out []str) {
     start = -1
     i <- [0..n): {
         b = .[i]
-        is-ws = b == 32 || b == 9 || b == 10 || b == 13
-        is-ws -> {
-            start >= 0 -> {
-                out.push(.slice(start, i))
-                start = -1
+        {
+            b != 32 && b != 9 && b != 10 && b != 13 -> {
+                start < 0 -> start = i
             }
-        }
-        -> {
-            start < 0 -> start = i
+            ->
+                start >= 0 -> {
+                    out.push(.slice(start, i))
+                    start = -1
+                }
         }
     }
     ; 處理最後一個欄位

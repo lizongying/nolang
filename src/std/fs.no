@@ -536,9 +536,10 @@ dir-entries = (dirpath str) (entries []str) {
     n = all.len
     i <- [0..n): {
         name = all[i]
-        name.len == 1 && name[0] == 46 -> continue
-        name.len == 2 && name[0] == 46 && name[1] == 46 -> continue
-        entries.push(name)
+        skip = false
+        name.len == 1 && name[0] == 46 -> skip = true
+        name.len == 2 && name[0] == 46 && name[1] == 46 -> skip = true
+        skip == false -> entries.push(name)
     }
 }
 
@@ -546,23 +547,23 @@ dir-entries = (dirpath str) (entries []str) {
 ; 遞迴遍歷目錄樹
 ; ═══════════════════════════════════════════════
 
-; walk: 遞迴遍歷目錄樹，對每個條目呼叫回調函數
+; walk: 遞迴遍歷目錄樹，返回所有檔案路徑
 ; root str: 根目錄路徑
-; callback: 函數，接收 (fullpath str, name str, is-dir bool)
+; 返回 paths []str: 所有檔案的完整路徑（不含目錄本身）
 ;
 ; 用法：
-;   walk('/path/to/dir', my-callback)
-;   my-callback = (fullpath str, name str, is-dir bool) {
-;       is-dir -> print('DIR: ' - fullpath)
-;       -> print('FILE: ' - fullpath)
+;   paths = walk('/path/to/dir')
+;   i <- [0..paths.len): {
+;       print(paths[i])
 ;   }
 
-walk = (root str, callback str) {
-    _walk-internal(root, root, callback)
+walk = (root str) (paths []str) {
+    paths = _walk-collect(root, paths)
 }
 
-; _walk-internal: walk 的內部遞迴實作
-_walk-internal = (root str, dirpath str, callback str) {
+; _walk-collect: walk 的內部遞迴實作
+_walk-collect = (dirpath str, paths []str) (out []str) {
+    out = paths
     names []str
     names = dir-entries(dirpath)
 
@@ -578,14 +579,13 @@ _walk-internal = (root str, dirpath str, callback str) {
         dirpath.len > 0 -> {
             last = dirpath[dirpath.len - 1]
             last == SEP -> fullpath = dirpath - name
-            -> fullpath = dirpath - '/' - name
+            last != SEP -> fullpath = dirpath - '/' - name
         }
-        -> fullpath = name
+        dirpath.len == 0 -> fullpath = name
 
         is-d = is-dir(fullpath)
 
-        callback(fullpath, name, is-d)
-
-        is-d -> _walk-internal(root, fullpath, callback)
+        is-d -> out = _walk-collect(fullpath, out)
+        is-d == false -> out.push(fullpath)
     }
 }

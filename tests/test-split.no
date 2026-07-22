@@ -1,0 +1,12 @@
+; test-split: test str.split
+
+# std/str
+
+s str = 'hello world hello'
+parts []str
+parts = s.split(' ')
+n = parts.len
+print('parts:' - n.to-str())
+i <- [0..n): {
+    print('  [' - i.to-str() - '] ' - parts[i])
+}

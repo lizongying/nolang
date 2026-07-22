@@ -49,17 +49,15 @@ pem-encode = (label str, data []byte) (out str) {
     b64 str
     b64 = base64.encode-std(data)
 
-    ; 計算輸出長度
-    ; '-----BEGIN ' + label + '-----\n' + base64(每64字元一行) + '-----END ' + label + '-----\n'
+    ; 構建頭尾
     header = '-----BEGIN ' - label - '-----'
     footer = '-----END ' - label - '-----'
 
-    ; Base64 行數
+    ; 計算輸出長度
     b64-len = b64.len
     num-lines = b64-len / PEM-LINE-LEN
     b64-len % PEM-LINE-LEN != 0 -> num-lines = num-lines + 1
 
-    ; 總長度 = header + \n + base64 + \n*lines + footer + \n
     total = header.len + 1
     total = total + b64-len
     total = total + num-lines
@@ -146,16 +144,26 @@ pem-decode = (pem-str str) (result ?pem-block) {
     i <- [b64-start..end-pos): {
         c = pem-str[i]
         ; 跳過換行符和空白
-        c == 10 || c == 13 || c == 32 -> continue
-        b64-data[dst] = c
-        dst = dst + 1
+        skip = false
+        c == 10 -> skip = true
+        c == 13 -> skip = true
+        c == 32 -> skip = true
+        skip == false -> {
+            b64-data[dst] = c
+            dst = dst + 1
+        }
     }
 
-    ; Base64 解碼 (patched: result-match syntax unsupported by current compiler)
-    raw-result []byte
-    raw-result = with-cap(0)
-    blk pem-block
-    blk.label = label
-    blk.data = raw-result
-    result = blk
+    ; Base64 解碼
+    decoded = base64.decode(b64-data, base64.BASE64-STD)
+    decoded: {
+        ok -> {
+            blk pem-block
+            blk.label = label
+            blk.data = it
+            result = blk
+        }
+        nil -> return
+        err -> return
+    }
 }

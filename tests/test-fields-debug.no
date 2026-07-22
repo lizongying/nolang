@@ -1,0 +1,13 @@
+; test-fields-debug: debug str.fields
+
+# std/str
+
+fstr str = '  hello   world  nolang  '
+n = fstr.len
+print('len:' - n.to-str())
+
+; 打印每個 byte
+i <- [0..n): {
+    b = fstr[i]
+    print('byte[' - i.to-str() - ']=' - b.to-str())
+}
