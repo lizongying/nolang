@@ -1,0 +1,32 @@
+; 測試模組級堆變數在 main 入口退出時正確釋放
+; 修復前：模組級 vec/str/arr 的 data 永不釋放，依賴進程退出
+; 修復後：main ret 前調用 emitGlobalHeapFree 釋放
+
+; 模組級堆變數（LLVM globals）
+GLOBAL-STR = 'hello from global'
+GLOBAL-VEC = [100, 200, 300]
+GLOBAL-ARR [3]i64 = [10, 20, 30]
+
+; 測試 1：模組級字串可讀取
+print('GLOBAL-STR: ', GLOBAL-STR)
+GLOBAL-STR == 'hello from global' -> print('test-global-str: ok')
+
+; 測試 2：模組級 vec 可讀取
+print('GLOBAL-VEC.len: ', GLOBAL-VEC.len)
+print('GLOBAL-VEC[0]: ', GLOBAL-VEC[0])
+GLOBAL-VEC[0] == 100 -> print('test-global-vec: ok')
+
+; 測試 3：模組級 arr 可讀取
+print('GLOBAL-ARR[0]: ', GLOBAL-ARR[0])
+GLOBAL-ARR[0] == 10 -> print('test-global-arr: ok')
+
+; 測試 4：top-level 局部堆變數（非 global）
+local-str = 'local string'
+print('local-str: ', local-str)
+local-str == 'local string' -> print('test-local-str: ok')
+
+local-vec = [1, 2, 3]
+print('local-vec.len: ', local-vec.len)
+local-vec.len == 3 -> print('test-local-vec: ok')
+
+print('done')

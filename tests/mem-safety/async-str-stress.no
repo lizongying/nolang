@@ -1,0 +1,16 @@
+; 壓力測試：循環中重複 awy，驗證是否有累積泄漏或 UAF
+
+str-producer-async = () (s str) {
+    s = 'value'
+}
+
+stress = () {
+    i <- [0..100): {
+        task = run str-producer-async()
+        s = awy task
+        s.len == 5 -> print('ok ', i)
+    }
+}
+
+stress()
+print('done')

@@ -2015,6 +2015,60 @@ func (g *Generator) ptrToIntVal(sb *strings.Builder, ptrVal string) string {
 	return intReg
 }
 
+// emitFFIExternStrClone 將 FFI extern 函數返回的 C 字串指標（i8*）複製到
+// malloc'd 緩衝區，構造為獨立擁有的 %str-long。
+// 與 RetCStrToStr 路徑（generator.go:1763）邏輯一致，避免 emitHeapFree
+// 釋放 C 靜態字串（getenv/strerror 等）導致未定義行為。
+//
+// 流程：
+//  1. NULL 檢查：若 C 返回 NULL，構造 nil %str-long（data=0）
+//  2. 非 NULL：strlen + malloc + memcpy + null 終止
+//  3. PHI 合併兩條路徑，構造 %str-long 返回
+func (g *Generator) emitFFIExternStrClone(sb *strings.Builder, cstrPtr string) string {
+	g.tmpIdx++
+	id := g.tmpIdx
+	nullCmpReg := fmt.Sprintf("%%fstr.null.%d", id)
+	nilLabel := fmt.Sprintf("fstr.nil.%d", id)
+	copyLabel := fmt.Sprintf("fstr.copy.%d", id)
+	mergeLabel := fmt.Sprintf("fstr.merge.%d", id)
+	lenReg := fmt.Sprintf("%%fstr.len.%d", id)
+	bufSizeReg := fmt.Sprintf("%%fstr.bufsize.%d", id)
+	bufReg := fmt.Sprintf("%%fstr.buf.%d", id)
+	nullPosReg := fmt.Sprintf("%%fstr.nullpos.%d", id)
+	mergeLenReg := fmt.Sprintf("%%fstr.mlen.%d", id)
+	mergeDataReg := fmt.Sprintf("%%fstr.mdata.%d", id)
+	mergeStr1 := fmt.Sprintf("%%fstr.mval1.%d", id)
+	mergeStr2 := fmt.Sprintf("%%fstr.mval2.%d", id)
+	mergeStr3 := fmt.Sprintf("%%fstr.mval3.%d", id)
+
+	if sb != nil {
+		// NULL 檢查
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmpReg, cstrPtr))
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmpReg, nilLabel, copyLabel))
+		// nil block: data=null, len=0（使 `s == nil` 成立）
+		g.emitLabel(sb, nilLabel)
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+		// copy block: strlen + malloc + memcpy + null 終止
+		g.emitLabel(sb, copyLabel)
+		sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, cstrPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSizeReg, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bufSizeReg))
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), bufReg, cstrPtr, lenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullPosReg, bufReg, lenReg))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPosReg))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+		// merge block: PHI 合併
+		g.emitLabel(sb, mergeLabel)
+		sb.WriteString(fmt.Sprintf("%s%s = phi i64 [0, %%%s], [%s, %%%s]\n", g.indent(), mergeLenReg, nilLabel, lenReg, copyLabel))
+		sb.WriteString(fmt.Sprintf("%s%s = phi i8* [null, %%%s], [%s, %%%s]\n", g.indent(), mergeDataReg, nilLabel, bufReg, copyLabel))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), mergeStr1, mergeLenReg))
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), mergeStr2, mergeStr1, mergeLenReg))
+		_p2i_mergeStr3 := g.ptrToIntVal(sb, mergeDataReg)
+		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), mergeStr3, mergeStr2, _p2i_mergeStr3))
+	}
+	return mergeStr3
+}
+
 // isUserStructType 判斷 LLVM 型別字串是否為用戶自定義結構體。
 // 用戶結構體以 '%' 開頭，但排除內建型別（%vec, %str-long, %arr, %option, %task, %future）。
 // 且該名稱必須存在於 g.structTypes 中。

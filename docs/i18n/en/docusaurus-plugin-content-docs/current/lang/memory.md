@@ -128,6 +128,46 @@ Decision rules for `b = a`:
 3. Otherwise, if a is a heap-owning type and deep-cloneable → deep clone
 4. Otherwise value copy
 
+## FFI extern str Return Values
+
+FFI extern functions (marked with `#{c}`) return C string pointers (`i8*`) that may point to static memory (e.g. `getenv`, `strerror`) or external buffers (e.g. `strchr` returns a pointer into its argument). Wrapping them directly into `%str-long` would cause `emitHeapFree` to `free()` non-heap memory → UB.
+
+The compiler inserts a safe copy on the FFI extern `str` return path:
+
+1. **NULL check**: if C returns NULL, construct a nil `%str-long` (data=0), making `s == nil` true
+2. **Non-NULL**: `strlen` + `malloc` + `memcpy` + null-terminate, copying into an independent heap buffer
+3. **PHI merge**: merge both paths and construct the `%str-long` return value
+
+```nolang
+#{c}
+strchr = (s str, c i64) (r str)
+
+find = () (r str) {
+    r = strchr('hello', 108)   ; C returns a pointer into 'hello'
+    ; compiler auto malloc+memcpy copies, r independently owns data
+    ; emitHeapFree safely frees r.data at function exit
+}
+```
+
+This mechanism is consistent with the clib `RetCStrToStr` path (used by built-in functions like `get-env`, `get-wd`), ensuring all C string return values have independent ownership.
+
+## Module-Level Variable Free
+
+Module-level heap variables (`vec`/`str`/`arr`/structs) are compiled as LLVM globals (`@name`); their `data` buffers are malloc-initialized by top-level statements in the `main` entry.
+
+The compiler calls the following before `ret i32 0` in the C entry `main`:
+1. `emitHeapFree` — frees top-level local heap variables (not in globalVars)
+2. `emitGlobalHeapFree` — iterates `moduleVarTypes`, frees all heap-owning types in `globalVars`
+
+```nolang
+GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
+GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
+; top-level statements malloc data and store into global
+; emitGlobalHeapFree frees data before main ret
+```
+
+This prevents memory accumulation leaks in long-running services (e.g. daemons with loops). No impact on one-shot CLI tools (process exit reclaims via OS).
+
 ## Slice Views
 
 A slice expression `arr[1..3]` produces a view (zero-copy) that shares the original array's data. Three fates of a view:
@@ -191,6 +231,8 @@ Tests are in `tests/mem-safety/`:
 | `slice-view-escape.no` | slice view assigned to output param clone |
 | `reassign-leak.no` | reassignment old value free |
 | `vec-push-leak.no` | vec.push moved marking |
+| `ffi-str-return.no` | FFI extern str return value safe copy |
+| `global-heap-free.no` | module-level heap variables freed at main exit |
 
 ## Known Limitations
 
@@ -212,6 +254,3 @@ arr = [9, 8, 7]    ; free old arr.data → view dangling
 
 ### async Shared Data
 When async threads share heap data with the main thread, free order is nondeterministic.
-
-### Global Variables
-Module-level variable heap data relies on process exit; long-running services may leak.

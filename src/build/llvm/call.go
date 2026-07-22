@@ -3756,20 +3756,10 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 	case "f64":
 		return callReg
 	case "str":
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%ext.strlen.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, callReg))
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%ext.str1.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%ext.str2.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%ext.str3.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-		_p2i_strReg3 := g.ptrToIntVal(sb, callReg)
-		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
-		return strReg3
+		// FFI extern 返回的 C 字串指標可能指向靜態記憶體（getenv/strerror 等），
+		// 直接包裝進 %str-long 會在 emitHeapFree 時 free 非堆記憶體 → UB。
+		// 改為 malloc + memcpy 複製到獨立緩衝區，與 RetCStrToStr 路徑一致。
+		return g.emitFFIExternStrClone(sb, callReg)
 	case "ptr", "pptr", "ppptr":
 		g.tmpIdx++
 		reg := fmt.Sprintf("%%ext.ptrtoint.%d", g.tmpIdx)

@@ -1,42 +1,38 @@
-; ═════════════════════════════════════════════════════════════════
-; 問題 3：awy 取回的 %str-long 結果可能是懸空指針
-; 嚴重等級：嚴重（Use-After-Free，會崩潰）
-; ═════════════════════════════════════════════════════════════════
-;
-; 觸發條件：
-;   task = run str-producer-async()
-;   s = awy task   ; s 是 %str-long，data 指向任務函數內部的堆
-;
-; 根本原因：
-;   - expr.go:6137 中，awy 從 result_ptr load 出結果值
-;   - 對 %str-long 結果，data 指針被淺拷貝
-;   - 任務函數返回前調用 emitHeapFree 釋放其本地 %str-long 的 data
-;   - 調用端拿到的 data 指向已釋放記憶體 → 懸垂指針
-;
-; 相關文件：
-;   src/build/llvm/expr.go:6137（awy load 結果，淺拷貝 data）
-;   src/build/llvm/stmt.go:605,611,2003（任務函數 emitHeapFree）
-;
-; 預期行為：
-;   awy 取回的 str 應該是獨立副本，可安全訪問
-;
-; 實際行為（bug）：
-;   s 的 data 指向任務函數已釋放的堆 → 訪問 s 崩潰或垃圾值
-;
-; 修復方向：
-;   - 任務函數對即將通過 result 返回的 %str-long 不 emitHeapFree
-;   - 或 awy 時對 %str-long 結果做深拷貝
-;
-; ═════════════════════════════════════════════════════════════════
+; 測試 awy 取回 %str-long 結果的懸空指針問題
+; 場景 1：簡單字串返回
 
 str-producer-async = () (s str) {
-    s = "hello from async"
+    s = 'hello from async'
 }
 
-consumer = () (out str) {
-    task = run str-producer-async()
-    out = awy task   ; out 的 data 指向任務函數已釋放的堆
+; 場景 2：局部變數 move 到輸出參數
+str-producer2-async = () (s str) {
+    local = 'world from local'
+    s = local
 }
 
-s = consumer()
-print(s)   ; 預期 "hello from async"，實際崩潰或垃圾值
+; 場景 3：vec 返回
+vec-producer-async = () (v []i64) {
+    v = [10, 20, 30]
+}
+
+; 場景 4：多個 awy 連續調用
+consumer = () {
+    task1 = run str-producer-async()
+    s1 = awy task1
+    print(s1)
+
+    task2 = run str-producer2-async()
+    s2 = awy task2
+    print(s2)
+
+    task3 = run vec-producer-async()
+    v = awy task3
+    print(v.len)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+consumer()
+print('done')

@@ -198,6 +198,36 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	}
 }
 
+// emitGlobalHeapFree 釋放模組級堆變數（LLVM globals，如 @vec、@str）。
+// 這些變數由 generateMainFunction 的 top-level 語句初始化（malloc data），
+// 但不在 heapVars 中（因 trackLocalHeapVar 跳過 globalVars），
+// 需單獨釋放以避免長期運行服務的記憶體泄漏。
+func (g *Generator) emitGlobalHeapFree(sb *strings.Builder) {
+	if g.globalVars == nil || g.moduleVarTypes == nil {
+		return
+	}
+	// 排序確保輸出順序確定
+	sortedNames := make([]string, 0, len(g.moduleVarTypes))
+	for name := range g.moduleVarTypes {
+		if g.globalVars[name] {
+			sortedNames = append(sortedNames, name)
+		}
+	}
+	sort.Strings(sortedNames)
+	for _, name := range sortedNames {
+		llvmType := g.moduleVarTypes[name]
+		var elemType string
+		if g.moduleArrayElemTypes != nil {
+			elemType = g.moduleArrayElemTypes[name]
+		}
+		// 只釋放堆擁有型別（%vec/%str-long/%arr/用戶結構體）
+		if llvmType != "%vec" && llvmType != "%str-long" && llvmType != "%arr" && !g.isUserStructType(llvmType) {
+			continue
+		}
+		g.emitVarHeapFree(sb, llvmGlobalRef(name), llvmType, elemType)
+	}
+}
+
 // emitVarHeapFree 釋放單一變數的堆數據。
 // 內建型別（%vec/%str-long/%arr）透過 data 欄位索引找到 i8* 並 free；
 // 用戶結構體則遞迴釋放所有含堆數據的欄位。
@@ -1256,6 +1286,16 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	g.curFuncRetName = ""
 	g.curFuncRetType = "void"
 
+	// 初始化 main 入口的追蹤映射（與 generateFunctionDefinition 一致），
+	// 用於追蹤 top-level 堆變數並在 ret 前釋放。
+	g.heapVars = make(map[string]string)
+	g.movedVars = make(map[string]bool)
+	g.varAlias = make(map[string]string)
+	g.sliceViews = make(map[string]*sliceViewInfo)
+	g.outputParamNames = make(map[string]bool)
+	g.outputBindings = make(map[string]map[int]outputBinding)
+	g.stackArrVars = make(map[string]bool)
+
 	// Restore module-level variable types (reset by generateFunctionDefinition)
 	if g.moduleVarTypes != nil {
 		g.varTypes = make(map[string]string)
@@ -1402,6 +1442,10 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// 先寫入 entry-block alloca，再寫入函數體
 	sb.WriteString(g.entryAllocaBuf.String())
 	sb.WriteString(bodyBuf.String())
+	// 釋放 top-level 堆變數（模組級 vec/str/arr 等），避免長期運行服務的記憶體泄漏。
+	// 同時釋放 top-level 局部堆變數（非 globalVars 的局部）。
+	g.emitHeapFree(sb)
+	g.emitGlobalHeapFree(sb)
 	sb.WriteString(g.indent() + "ret i32 0\n")
 	g.indentLevel--
 	g.indentLevel--

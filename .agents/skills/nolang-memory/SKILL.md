@@ -31,6 +31,7 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 
 ### 1.3 编译器插入 free
 - 函数结束时：`emitHeapFree` 释放所有未 moved 的局部堆变量
+- main 入口 ret 前：`emitHeapFree` 释放 top-level 局部堆变量 + `emitGlobalHeapFree` 释放模組級堆變數（globalVars 中的 vec/str/arr/结构体）
 - 重新赋值前：`freeOldHeapValue` 释放旧值
 - 结构体字段：`emitStructFieldsFree` 递归释放
 
@@ -99,6 +100,9 @@ emitHeapFree (函数结束)
        │         └─ emitStructFieldsFree (递归结构体)
        └─ emitStructFieldsFree (递归结构体字段)
             └─ emitStructFieldFree (依 fieldElemType 深层/浅层)
+
+emitGlobalHeapFree (main 入口 ret i32 0 前，釋放模組級堆變數)
+  └─ emitVarHeapFree (遍歷 moduleVarTypes 中的 globalVars 堆擁有型別)
 
 freeOldHeapValue (重新赋值前释放旧值)
   └─ emitVarHeapFree
@@ -248,7 +252,32 @@ if g.varTypes[name] == "%arr" {
 }
 ```
 
-## 8. 已验证的测试案例
+## 8. FFI extern str 返回值安全複製
+
+FFI extern 函數（`#{c}` 標記）返回的 C 字串指標（`i8*`）可能指向：
+- **靜態記憶體**：`getenv`、`strerror`、`sqlite3_errmsg` 等
+- **外部 buffer**：`strchr`/`strstr` 返回的指標指向參數內部
+- **NULL**：如 `getenv` 找不到變數時
+
+直接包裝進 `%str-long` 會在 `emitHeapFree` 時 `free()` 非堆記憶體 → UB。
+
+### 8.1 修復機制
+編譯器在 `call.go` 的 FFI extern `str` 返回路徑呼叫 `emitFFIExternStrClone`：
+
+1. **NULL 檢查**：`icmp eq i8* %callReg, null`
+   - NULL → 構造 nil `%str-long`（data=0），使 `s == nil` 成立
+   - 非 NULL → 進入 copy block
+2. **copy block**：`strlen` + `malloc(len+1)` + `memcpy` + null 終止
+3. **PHI 合併**：`phi i64 [0, nil], [len, copy]` + `phi i8* [null, nil], [buf, copy]`
+4. 構造 `%str-long` 返回
+
+### 8.2 對比：clib RetCStrToStr 路徑
+clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、`host-name`），邏輯與 `emitFFIExternStrClone` 完全一致。兩條路徑現在都確保 C 字串返回值擁有獨立所有權。
+
+### 8.3 標籤唯一性
+`emitFFIExternStrClone` 使用單一 `tmpIdx` 作為所有暫存器與標籤（`fstr.nil.N`/`fstr.copy.N`/`fstr.merge.N`）的後綴，確保同函數內多次呼叫時 LLVM 基本塊標籤唯一。
+
+## 9. 已验证的测试案例
 
 位于 `tests/mem-safety/`：
 
@@ -263,32 +292,31 @@ if g.varTypes[name] == "%arr" {
 | `reassign-leak.no` | 重新赋值旧值释放 |
 | `vec-push-leak.no` | vec.push 的 moved 标记 |
 | `if-branch-move-leak.no` | 条件分支中的 move |
+| `ffi-str-return.no` | FFI extern str 返回值安全複製（strchr NULL/非 NULL/重複/傳遞） |
+| `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
 
-## 9. 已知未修复的问题
+## 10. 已知未修复的问题
 
-### 9.1 map 容器未实现深层 free
+### 10.1 map 容器未实现深层 free
 hashmap 模板（`hashmap-str-tmpl` 等）未实现 key/value 的堆数据释放。
 
-### 9.2 循环临时变量泄漏
+### 10.2 循环临时变量泄漏
 ```nolang
 loop {
     s = 'temp'   ; 每次迭代 malloc 新 data，旧 data 未释放
 }
 ```
 
-### 9.3 slice 视图 + 原数组 move
+### 10.3 slice 视图 + 原数组 move
 ```nolang
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 ```
 
-### 9.4 async 共享数据竞态
+### 10.4 async 共享数据竞态
 异步线程与主线程共享堆数据时，free 顺序不确定。
 
-### 9.5 全局变量堆数据
-模块级变量的堆数据依赖进程退出，长期运行的服务可能泄漏。
-
-## 10. 修改堆释放逻辑的检查清单
+## 11. 修改堆释放逻辑的检查清单
 
 修改 `stmt.go`/`call.go`/`generator.go` 中的堆释放逻辑后：
 
@@ -314,17 +342,20 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 
 5. **新增 mem-safety 测试**：新场景的测试放在 `tests/mem-safety/`，文件名用中連字符。
 
-## 11. 核心文件位置
+## 12. 核心文件位置
 
 | 功能 | 文件 | 关键函数 |
 |------|------|---------|
 | 堆变量追踪 | `src/build/llvm/stmt.go` | `trackLocalHeapVar`, `emitHeapFree` |
+| **模組級堆變數釋放** | `src/build/llvm/stmt.go` | `emitGlobalHeapFree` |
 | 释放路由 | `src/build/llvm/stmt.go` | `emitVarHeapFree` |
 | 深层 free | `src/build/llvm/stmt.go` | `emitDeepContainerFree`, `emitElementFree` |
 | 结构体释放 | `src/build/llvm/stmt.go` | `emitStructFieldsFree`, `emitStructFieldFree` |
 | 重新赋值释放 | `src/build/llvm/stmt.go` | `freeOldHeapValue` |
 | **深層 clone** | `src/build/llvm/stmt.go` | `emitDeepClone`, `emitContainerClone`, `emitDeepElementClone`, `emitStructElementsClone`, `emitStructClone`, `emitStructFieldClone`, `canDeepCloneStruct` |
 | **`b = a` clone 路徑** | `src/build/llvm/stmt.go` | `generateLet` 中的 Identifier + heapVars 深層 clone 路徑 |
+| **FFI extern str 安全複製** | `src/build/llvm/generator.go` | `emitFFIExternStrClone` |
+| **FFI extern str 路徑入口** | `src/build/llvm/call.go` | `callExtern` 中的 `case "str"` |
 | vec.push moved | `src/build/llvm/call.go` | vec-push case |
 | varAlias | `src/build/llvm/generator.go` | `varAddr` |
 | SliceLiteral 初始化 | `src/build/llvm/stmt.go` | SliceLiteral 路径 |

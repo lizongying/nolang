@@ -128,6 +128,46 @@ b[0] = 99
 3. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
 4. 否則值拷貝
 
+## FFI extern str 返回值
+
+FFI extern 函數（`#{c}` 標記）返回的 C 字串指標（`i8*`）可能指向靜態記憶體（如 `getenv`、`strerror`）或外部 buffer（如 `strchr` 返回的指標指向參數內部）。直接包裝進 `%str-long` 會在 `emitHeapFree` 時 `free()` 非堆記憶體 → UB。
+
+編譯器在 FFI extern `str` 返回路徑插入安全複製：
+
+1. **NULL 檢查**：若 C 返回 NULL，構造 nil `%str-long`（data=0），使 `s == nil` 成立
+2. **非 NULL**：`strlen` + `malloc` + `memcpy` + null 終止，複製到獨立堆緩衝區
+3. **PHI 合併**：兩條路徑合併，構造 `%str-long` 返回
+
+```nolang
+#{c}
+strchr = (s str, c i64) (r str)
+
+find = () (r str) {
+    r = strchr('hello', 108)   ; C 返回指向 'hello' 內部的指標
+    ; 編譯器自動 malloc+memcpy 複製，r 獨立擁有 data
+    ; 函數結束時 emitHeapFree 安全釋放 r.data
+}
+```
+
+此機制與 clib `RetCStrToStr` 路徑（用於 `get-env`、`get-wd` 等內建函數）邏輯一致，確保所有 C 字串返回值都擁有獨立所有權。
+
+## 模組級變數釋放
+
+模組級堆變數（`vec`/`str`/`arr`/結構體）編譯為 LLVM global（`@name`），其 `data` 緩衝區在 `main` 入口的 top-level 語句中 malloc 初始化。
+
+編譯器在 C 入口 `main` 的 `ret i32 0` 前調用：
+1. `emitHeapFree` — 釋放 top-level 局部堆變數（非 globalVars）
+2. `emitGlobalHeapFree` — 遍歷 `moduleVarTypes`，釋放所有 `globalVars` 中的堆擁有型別
+
+```nolang
+GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
+GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
+; top-level 語句 malloc data 並存入 global
+; main ret 前 emitGlobalHeapFree 釋放 data
+```
+
+這避免了長期運行服務（如帶循環的 daemon）的記憶體累積泄漏。對一次性 CLI 工具無影響（進程退出由 OS 回收）。
+
 ## 切片視圖
 
 切片表達式 `arr[1..3]` 產生視圖（零拷貝），共享原數組 data。視圖的三種命運：
@@ -191,6 +231,8 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 | `slice-view-escape.no` | 切片視圖賦值輸出參數的 clone |
 | `reassign-leak.no` | 重新賦值舊值釋放 |
 | `vec-push-leak.no` | vec.push 的 moved 標記 |
+| `ffi-str-return.no` | FFI extern str 返回值安全複製 |
+| `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
 
 ## 已知限制
 
@@ -212,6 +254,3 @@ arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 
 ### async 共享數據
 異步線程與主線程共享堆數據時，free 順序不確定。
-
-### 全局變數
-模組級變數的堆數據依賴進程退出，長期運行的服務可能泄漏。
