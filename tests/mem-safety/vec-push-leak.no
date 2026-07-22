@@ -1,0 +1,44 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 7：vec.push 擴容時舊 buffer 從未 free
+; 嚴重等級：嚴重（內存洩漏，每次擴容都洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   v []i64 = []
+;   i <- [0..100): v.push(i)   ; 多次觸發擴容，舊 buffer 全部洩漏
+;
+; 根本原因：
+;   - call.go:3080-3138 中，push 容量不足時：
+;     1. malloc 新 buffer
+;     2. memcpy 舊資料到新 buffer
+;     3. 更新 vec 指向新 buffer
+;     4. 舊 buffer 從未被 free
+;   - 全代碼庫中 call void @free 僅出現在 emitHeapFree 一處
+;
+; 相關文件：
+;   src/build/llvm/call.go:3080-3138（push 擴容，不 free 舊 buffer）
+;   src/build/llvm/stmt.go:186（emitHeapFree 是唯一 free 調用點）
+;
+; 預期行為：
+;   擴容後舊 buffer 應被 free
+;
+; 實際行為（bug）：
+;   每次擴容都洩漏舊 buffer
+;
+; 修復方向：
+;   - push 擴容後 free 舊 buffer
+;   - 或引入 vec 的 move 語義，自動管理 buffer
+;
+; ═════════════════════════════════════════════════════════════════
+
+grow-vec = () (out []i64) {
+    out = []
+    i <- [0..100): out.push(i)
+    ; 100 次 push 會多次觸發擴容
+    ; 每次擴容的舊 buffer 全部洩漏
+}
+
+v = grow-vec()
+print(v.len)
+print(v[0])
+print(v[99])

@@ -5,7 +5,7 @@
 # 結果輸出至 BENCHMARK_RESULT.md
 
 set -e
-BENCH="test/bench"
+BENCH="bench/fib"
 RESULT_FILE="$BENCH/BENCHMARK_RESULT.md"
 
 echo "=== 編譯所有版本 ==="

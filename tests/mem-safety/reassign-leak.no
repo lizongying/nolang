@@ -1,0 +1,40 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 8：堆變數重新賦值時舊 buffer 不釋放
+; 嚴重等級：嚴重（內存洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   s = "old"
+;   s = "new"   ; "old" 的 buffer 洩漏
+;
+; 根本原因：
+;   - stmt.go:3532-3561 中，重新賦值時只 delete(g.movedVars, name)
+;   - 不 free 舊 buffer
+;   - 舊 data 指針被新 store 覆蓋丟失
+;   - 全代碼庫中 call void @free 僅出現在 emitHeapFree 一處
+;
+; 相關文件：
+;   src/build/llvm/stmt.go:3532-3561（重新賦值，不 free 舊值）
+;   src/build/llvm/stmt.go:186（emitHeapFree 是唯一 free 調用點）
+;
+; 預期行為：
+;   重新賦值前應 free 舊 buffer
+;
+; 實際行為（bug）：
+;   舊 buffer 洩漏
+;
+; 修復方向：
+;   - 賦值前檢查目標是否已有堆數據，若有則 free
+;   - 或引入顯式 move 語義，編譯器追蹤所有權
+;
+; ═════════════════════════════════════════════════════════════════
+
+reassign-str = () (out str) {
+    s = "old value"
+    s = "new value"   ; "old value" 的 buffer 洩漏
+    s = "another"     ; "new value" 的 buffer 洩漏
+    out = s
+}
+
+r = reassign-str()
+print(r)

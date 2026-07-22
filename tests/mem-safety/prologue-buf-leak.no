@@ -1,0 +1,42 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 10：prologue 預分配 buffer 在首次賦值時被覆蓋丟失
+; 嚴重等級：中（內存洩漏，每個 vec 局部變數洩漏一次）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   v []i64 = [1, 2, 3]   ; prologue 已 malloc(256*8)，賦值時覆蓋丟失
+;
+; 根本原因：
+;   - stmt.go:434-498 中，每個 %vec 局部變數在 prologue malloc(256*elemSize)
+;   - 這是為了 buf[i] = val 不會因 data 為 null 而崩潰
+;   - 但若隨後被賦值為切片字面量或函數呼叫結果
+;   - prologue 的預分配 buffer 被直接覆蓋丟失
+;   - 無任何代碼在覆蓋前 free 預分配 buffer
+;
+; 相關文件：
+;   src/build/llvm/stmt.go:434-498（prologue vec/arr 預分配）
+;   src/build/llvm/stmt.go:3595（generateLet 的 store 覆蓋整個 struct）
+;
+; 預期行為：
+;   首次賦值時應釋放 prologue 預分配的 buffer
+;
+; 實際行為（bug）：
+;   prologue 預分配的 buffer 洩漏
+;
+; 修復方向：
+;   - 首次賦值時檢查並 free prologue 預分配的 buffer
+;   - 或延遲預分配到真正需要時（如 buf[i] = val 前）
+;
+; ═════════════════════════════════════════════════════════════════
+
+make-vec = () (out []i64) {
+    ; prologue 已為 out malloc(256*8) 的 buffer
+    out = [1, 2, 3, 4, 5]   ; 覆蓋 out，prologue buffer 洩漏
+    ; out 的 data 現在指向字面量分配的新 buffer
+    ; prologue 的 buffer 永遠丟失
+}
+
+v = make-vec()
+print(v.len)
+print(v[0])
+print(v[4])

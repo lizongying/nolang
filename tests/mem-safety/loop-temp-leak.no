@@ -1,0 +1,44 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 9：循環內每次迭代的臨時堆對象不釋放
+; 嚴重等級：嚴重（內存洩漏，循環次數越多洩漏越多）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   i <- [0..1000): {
+;       s = "item " + i.to-str()   ; 每次迭代的拼接結果洩漏
+;   }
+;
+; 根本原因：
+;   - heapVars 是以變數名為 key 的 map
+;   - 循環體內對同一變數名的重複 let 只會覆蓋 map 條目
+;   - 不釋放前一輪迭代的 buffer
+;   - generateForStatement 的 step/end block 中沒有 emitHeapFree
+;
+; 相關文件：
+;   src/build/llvm/stmt.go:2032-2151（generateForStatement 無 emitHeapFree）
+;   src/build/llvm/stmt.go:146-190（emitHeapFree 只在函數返回時調用）
+;
+; 預期行為：
+;   每次迭代結束時應釋放循環作用域的臨時堆對象
+;
+; 實際行為（bug）：
+;   前面所有迭代的 buffer 全部洩漏，只有最後一次被 free
+;
+; 修復方向：
+;   - 迭代結束時釋放循環作用域堆對象
+;   - 或引入塊作用域 RAII（類似 C++ scope_exit）
+;
+; ═════════════════════════════════════════════════════════════════
+
+loop-concat = () (out str) {
+    out = ""
+    i <- [0..100): {
+        ; 每次迭代的字串拼接結果 malloc 新 buffer
+        ; 但前一輪的 buffer 不被釋放 → 洩漏 99 次
+        tmp = "item" + i.to-str()
+        out = out + tmp
+    }
+}
+
+s = loop-concat()
+print(s.len)

@@ -1,0 +1,46 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 6：map 無 free/deinit，鍵的 data 全部洩漏
+; 嚴重等級：嚴重（系統性內存洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   m [str]i64 = { 'a': 1, 'b': 2, 'c': 3 }
+;   ; m 離開作用域時，256 個鍵槽位的 data 指針全部洩漏
+;
+; 根本原因：
+;   - std/collection/map.no 的 hashmap-str-tmpl 包含 keys [256]str
+;   - 256 個 %str-long 內聯在 map 結構體內
+;   - emitHeapFree 因型別是 %hashmap-str-i64 直接跳過
+;   - map 無 free/deinit/destroy 方法
+;   - clear/remove 方法只置 occ[i]=0，不釋放 keys[i].data
+;   - put 是淺拷貝（map.no:96），map 內鍵與調用端共享 data 指針
+;   - map 重新賦值時舊 map 的 256 個鍵 data 全部洩漏
+;
+; 相關文件：
+;   src/std/collection/map.no（整個檔案無釋放方法）
+;   src/build/llvm/stmt.go:159-167（emitHeapFree 跳過 map 型別）
+;   src/build/llvm/stmt.go:3543-3546（heapVars 不追蹤 map）
+;
+; 預期行為：
+;   map 作用域結束時應釋放所有鍵的 data
+;
+; 實際行為（bug）：
+;   256 個鍵槽位的 data 全部洩漏
+;
+; 修復方向：
+;   - 實作 map deinit 方法，遍歷 occ[i] 釋放 keys[i].data
+;   - emitHeapFree 對 map 型別調用 deinit
+;   - put 時深拷貝 key（避免與調用端共享 data）
+;
+; ═════════════════════════════════════════════════════════════════
+
+make-map = () (out [str]i64) {
+    out = { 'apple': 1, 'banana': 2, 'cherry': 3 }
+    ; out 離開作用域時，三個鍵的 data 應被釋放
+    ; 但 map 無 deinit → 洩漏
+}
+
+m = make-map()
+print(m['apple'])
+print(m['banana'])
+print(m['cherry'])

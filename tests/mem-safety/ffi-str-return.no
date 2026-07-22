@@ -1,0 +1,53 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 4：FFI extern str 返回值被錯誤 free（C 所有權未區分）
+; 嚴重等級：嚴重（釋放非堆記憶體，未定義行為）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   s = ffi-getenv("PATH")   ; C 返回靜態字串指針
+;   ; s 離開作用域時 emitHeapFree 會 free 它
+;
+; 根本原因：
+;   - call.go:3748-3762 中，C 函數返回的 i8* 直接包裝進 %str-long
+;   - 沒有複製到 malloc'd buffer
+;   - 該 %str-long 進入 heapVars，函數返回時 emitHeapFree 調用 free()
+;   - 若 C 返回靜態字串（getenv/strerror/sqlite3_column_text）
+;     → 釋放非堆記憶體，未定義行為
+;
+; 相關文件：
+;   src/build/llvm/call.go:3748-3762（FFI str 返回直接包裝，無複製）
+;   src/build/llvm/generator.go:1747-1780（clib RetCStrToStr 有複製，對比）
+;   src/build/llvm/stmt.go:186（emitHeapFree 調用 free）
+;
+; 預期行為：
+;   FFI str 返回值應複製到 malloc'd buffer，或標註所有權歸屬
+;
+; 實際行為（bug）：
+;   C 靜態字串被 free → 未定義行為（可能崩潰或數據損壞）
+;
+; 對比：clib RetCStrToStr 路徑會複製，FFI extern 路徑沒有這層防護
+;
+; 修復方向：
+;   - FFI extern str 返回值也複製到 malloc'd buffer
+;   - 或引入 FFI 所有權標註（如 extern("owned") vs extern("borrowed")）
+;
+; ═════════════════════════════════════════════════════════════════
+; 注意：此測試需要 FFI 環境，可能無法直接運行
+; 僅作為問題記錄與未來修復驗證用
+; ═════════════════════════════════════════════════════════════════
+
+; 以下為概念示例（實際 FFI 語法可能不同）：
+;
+; extern getenv = (name str) (r str)
+;
+; leak-ffi-str = () (out str) {
+;     out = getenv("PATH")   ; C 返回靜態字串，被包裝進 %str-long
+;     ; 函數返回時 emitHeapFree 會 free(out.data)
+;     ; 但 out.data 指向 libc 靜態區 → 未定義行為
+; }
+;
+; s = leak-ffi-str()
+; print(s)
+
+print("FFI str 返回值問題 — 需 FFI 環境驗證")
+print("詳見註釋：call.go:3748-3762 直接包裝 C 指針，無複製")

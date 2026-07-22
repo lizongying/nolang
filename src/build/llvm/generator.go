@@ -989,11 +989,21 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			llvmType := g.varLLVMType(ls)
 			if llvmType == "%str-long" {
-				// Only emit as global for string literal constants or uninitialized
-				// declarations. Runtime-computed strings (e.g. cmd = arg(1)) must be
+				// Only emit as global for string literal constants, uninitialized
+				// declarations, or with-cap/with-len allocations (which need runtime
+				// init in main but must be accessible from functions).
+				// Other runtime-computed strings (e.g. cmd = arg(1)) must be
 				// local variables allocated in generateMainFunction.
 				_, isStrLit := ls.Value.(*parser.StringLiteral)
-				if ls.Value == nil || isStrLit {
+				isWithAlloc := false
+				if call, ok := ls.Value.(*parser.CallExpression); ok {
+					if ident, ok := call.Function.(*parser.Identifier); ok {
+						if ident.Value == "with-cap" || ident.Value == "with-len" {
+							isWithAlloc = true
+						}
+					}
+				}
+				if ls.Value == nil || isStrLit || isWithAlloc {
 					sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 					g.globalVars[name] = true
 				}
@@ -1993,6 +2003,25 @@ func (g *Generator) ptrToIntVal(sb *strings.Builder, ptrVal string) string {
 	intReg := fmt.Sprintf("%%p2i.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), intReg, ptrVal))
 	return intReg
+}
+
+// isUserStructType 判斷 LLVM 型別字串是否為用戶自定義結構體。
+// 用戶結構體以 '%' 開頭，但排除內建型別（%vec, %str-long, %arr, %option, %task, %future）。
+// 且該名稱必須存在於 g.structTypes 中。
+func (g *Generator) isUserStructType(llvmType string) bool {
+	if !strings.HasPrefix(llvmType, "%") {
+		return false
+	}
+	switch llvmType {
+	case "%vec", "%str-long", "%arr", "%option", "%task", "%future":
+		return false
+	}
+	structName := strings.TrimPrefix(llvmType, "%")
+	if g.structTypes == nil {
+		return false
+	}
+	_, ok := g.structTypes[structName]
+	return ok
 }
 
 func (g *Generator) findLoopTarget(label string, isBreak bool) string {

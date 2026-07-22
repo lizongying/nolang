@@ -1,0 +1,51 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 1：切片視圖逃逸到輸出參數 → 懸垂指針
+; 嚴重等級：嚴重（Use-After-Free，會崩潰）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   local []i64 = [100, 200, 300, 400]   ; vec，堆分配
+;   view = local[1..3]                    ; view 是切片視圖，指向 local 的堆數據
+;   out = view                            ; 視圖賦值給輸出參數
+;
+; 根本原因：
+;   - out = view 中，stmt.Value 是 Identifier(view)，不進入
+;     generateSliceViewAssignment（只處理 SliceExpression）
+;   - 走 expr.go:133-149 的 materializeSliceView（共享數據，無克隆）
+;   - view 不在 heapVars 中（視圖是別名），stmt.go:3552-3560 不標記 moved
+;   - 函數結束時 emitHeapFree 釋放 local 的 data（local 是 vec，堆分配）
+;   - out 仍指向已釋放的 data → 懸垂指針
+;
+; 相關文件：
+;   src/build/llvm/expr.go:133-149（materializeSliceView 共享數據）
+;   src/build/llvm/slice_view.go:385-445（materializeSliceView 實現）
+;   src/build/llvm/slice_view.go:450（cloneSliceView 死代碼，從未調用）
+;   src/build/llvm/stmt.go:3552-3560（moved 追蹤不覆蓋切片視圖）
+;
+; 預期行為：
+;   out 應該是 local[1..3] 的獨立克隆，輸出 200 300
+;
+; 實際行為（bug）：
+;   out 指向已釋放的 local 數據，運行時崩潰或輸出垃圾值
+;
+; 對比：
+;   - out = local[1..3]（直接 SliceExpression）有 emitSliceClone 保護 ✓
+;   - out = view（Identifier）走完全不同路徑，保護缺失 ✗
+;   - 注意：若 local 是固定陣列 [N]T（棧分配），emitHeapFree 不釋放它
+;     所以棧陣列的視圖逃逸「恰好工作」（UB 但數據未立即被覆蓋）
+;   - 真正崩潰場景：local 是 vec（堆分配），emitHeapFree 釋放其 data
+;
+; 修復方向：
+;   在 generateLet 中，當目標是輸出參數且源是切片視圖時，觸發克隆
+;
+; ═════════════════════════════════════════════════════════════════
+
+get-view = () (out []i64) {
+    local []i64 = [100, 200, 300, 400]   ; vec，堆分配
+    view = local[1..3]                    ; view 是切片視圖，指向 local 的堆數據
+    out = view                            ; 視圖賦值給輸出參數 — 應克隆但未克隆
+}
+
+v = get-view()
+print(v[0])   ; 預期 200，實際可能是垃圾值或崩潰（local 已被 free）
+print(v[1])   ; 預期 300

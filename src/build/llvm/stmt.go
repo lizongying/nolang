@@ -1,12 +1,12 @@
 package llvm
 
 import (
-"fmt"
-"sort"
-"strings"
+	"fmt"
+	"sort"
+	"strings"
 
-"github.com/lizongying/nolang/builtin"
-"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/parser"
 )
 
 func (g *Generator) llvmTypeSize(llvmType string) int64 {
@@ -156,37 +156,103 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		if g.outputParamNames != nil && g.outputParamNames[name] {
 			continue
 		}
-		var dataFieldIdx int
-		switch llvmType {
-		case "%vec", "%str-long":
-			dataFieldIdx = 2
-		case "%arr":
-			dataFieldIdx = 1
-		default:
-			continue
-		}
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%heapfree.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-			g.indent(), dataGEP, llvmType, llvmType, g.varAddr(name), dataFieldIdx))
-		// data is i64 (address value): load i64, inttoptr to i8*, then free
-		dataLoad := g.loadDataPtrField(sb, dataGEP)
-		// 檢查 data 指標是否為 NULL：若變數從未賦值（如循環體內的賦值未執行），
-		// alloca 的內容為未初始化垃圾值。零初始化保證 data=NULL，free(NULL) 是 no-op。
-		// 但為防禵未零初始化的情況，仍加入 NULL 檢查。
-		g.tmpIdx++
-		nullCmp := fmt.Sprintf("%%heapfree.null.%d", g.tmpIdx)
-		g.tmpIdx++
-		freeLabel := fmt.Sprintf("heapfree.free.%d", g.tmpIdx)
-		g.tmpIdx++
-		skipLabel := fmt.Sprintf("heapfree.skip.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
-		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
-		sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
-		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
-		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
-		sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+		g.emitVarHeapFree(sb, g.varAddr(name), llvmType)
 	}
+}
+
+// emitVarHeapFree 釋放單一變數的堆數據。
+// 內建型別（%vec/%str-long/%arr）透過 data 欄位索引找到 i8* 並 free；
+// 用戶結構體則遞迴釋放所有含堆數據的欄位。
+func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType string) {
+	var dataFieldIdx int
+	switch llvmType {
+	case "%vec", "%str-long":
+		dataFieldIdx = 2
+	case "%arr":
+		dataFieldIdx = 1
+	default:
+		if g.isUserStructType(llvmType) {
+			g.emitStructFieldsFree(sb, varPtr, llvmType)
+		}
+		return
+	}
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%heapfree.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, llvmType, llvmType, varPtr, dataFieldIdx))
+	// data is i64 (address value): load i64, inttoptr to i8*, then free
+	dataLoad := g.loadDataPtrField(sb, dataGEP)
+	// 檢查 data 指標是否為 NULL：若變數從未賦值（如循環體內的賦值未執行），
+	// alloca 的內容為未初始化垃圾值。零初始化保證 data=NULL，free(NULL) 是 no-op。
+	// 但為防禵未零初始化的情況，仍加入 NULL 檢查。
+	g.tmpIdx++
+	nullCmp := fmt.Sprintf("%%heapfree.null.%d", g.tmpIdx)
+	g.tmpIdx++
+	freeLabel := fmt.Sprintf("heapfree.free.%d", g.tmpIdx)
+	g.tmpIdx++
+	skipLabel := fmt.Sprintf("heapfree.skip.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+	sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+}
+
+// emitStructFieldsFree 遞迴釋放用戶結構體中所有含堆數據的欄位。
+// 對 %vec/%str-long/%arr 欄位，呼叫 emitStructFieldDataFree 釋放其 data；
+// 對嵌套用戶結構體欄位，GEP 取得欄位指標後遞迴呼叫本函數。
+// 純量欄位（i64/i8/...）不持有堆數據，直接跳過。
+func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structType string) {
+	structName := strings.TrimPrefix(structType, "%")
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return
+	}
+	for i, f := range fields {
+		switch f.typ {
+		case "%vec", "%str-long":
+			g.emitStructFieldDataFree(sb, structPtr, structType, i, 2, f.typ)
+		case "%arr":
+			g.emitStructFieldDataFree(sb, structPtr, structType, i, 1, f.typ)
+		default:
+			if g.isUserStructType(f.typ) {
+				g.tmpIdx++
+				fieldGEP := fmt.Sprintf("%%structfield.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), fieldGEP, structType, structType, structPtr, i))
+				g.emitStructFieldsFree(sb, fieldGEP, f.typ)
+			}
+		}
+	}
+}
+
+// emitStructFieldDataFree 釋放結構體中第 fieldIdx 個欄位的 data 子欄位。
+// 該欄位型別為 fieldType（%vec/%str-long/%arr），其 data 位於子結構的第 dataSubIdx 個欄位。
+// GEP 鏈：struct → field（fieldIdx）→ data sub-field（dataSubIdx）→ load → inttoptr → free。
+func (g *Generator) emitStructFieldDataFree(sb *strings.Builder, structPtr, structType string, fieldIdx, dataSubIdx int, fieldType string) {
+	g.tmpIdx++
+	fieldGEP := fmt.Sprintf("%%structfield.fgep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), fieldGEP, structType, structType, structPtr, fieldIdx))
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%structfield.dgep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, fieldType, fieldType, fieldGEP, dataSubIdx))
+	dataLoad := g.loadDataPtrField(sb, dataGEP)
+	// NULL 檢查後 free：防禦未初始化的 data 欄位
+	g.tmpIdx++
+	nullCmp := fmt.Sprintf("%%structfield.null.%d", g.tmpIdx)
+	g.tmpIdx++
+	freeLabel := fmt.Sprintf("structfield.free.%d", g.tmpIdx)
+	g.tmpIdx++
+	skipLabel := fmt.Sprintf("structfield.skip.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+	sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
 }
 
 // resolveParamLLVMType 計算參數的 LLVM 型別字串。
@@ -2863,6 +2929,22 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// 重新賦值時立即釋放舊值：若變數已追蹤在 heapVars 中（有舊的堆數據），
+	// 在新值寫入前立即 free 舊的 data buffer，避免重新賦值導致內存洩漏。
+	// 注意：此處在新值表達式計算前執行，對 `x = f(x)` 這類 RHS 引用舊值的場景
+	// 可能造成 use-after-free。該邊界情況需使用者以臨時變數因應。
+	if g.heapVars != nil && !stmt.IsSynthetic {
+		if oldType, isHeap := g.heapVars[name]; isHeap {
+			// 已 move 到輸出參數的變數不 free（所有權已轉移）
+			if g.movedVars == nil || !g.movedVars[name] {
+				// 輸出參數本身不 free（由呼叫者管理）
+				if g.outputParamNames == nil || !g.outputParamNames[name] {
+					g.emitVarHeapFree(sb, g.varAddr(name), oldType)
+				}
+			}
+		}
+	}
+
 	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，標記源為 moved（不 free）。
 	// 必須在所有型別特定處理（如 option）的 early return 之前執行，
 	// 否則 option 型別的輸出參數賦值（如 line = buf）不會標記 moved。
@@ -3543,6 +3625,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					switch llvmType {
 					case "%vec", "%str-long", "%arr":
 						g.heapVars[name] = llvmType
+					default:
+						// 用戶自定義結構體：若含堆數據欄位（%vec/%str-long/%arr 或嵌套結構體），
+						// 加入追蹤以便函數結束時遞迴釋放。
+						if g.isUserStructType(llvmType) {
+							g.heapVars[name] = llvmType
+						}
 					}
 				}
 			}

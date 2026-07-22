@@ -1,0 +1,45 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 2：異步 args/result 用 alloca，未 awy 即返回 → use-after-free
+; 嚴重等級：嚴重（Use-After-Free 讀寫，會崩潰）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   task = run some-async(args)   ; 啟動線程，args/result 在棧上
+;   ; 未 awy task 即返回
+;
+; 根本原因：
+;   - expr.go:5671-5680 中，result 和 args 都用 alloca（棧分配）
+;   - pthread_create 把棧指針傳給子線程
+;   - 調用端棧幀銷毀後，子線程仍讀寫已失效記憶體
+;   - 無 pthread_detach，未 join 的 task 無清理機制
+;
+; 相關文件：
+;   src/build/llvm/expr.go:5671-5680（alloca 分配 args/result）
+;   src/build/llvm/expr.go:5796（pthread_create 傳棧指針）
+;   src/build/llvm/decl.go（無 pthread_detach 宣告）
+;
+; 預期行為：
+;   未 awy 的 task 應安全清理（detach 或 heap 分配 args/result）
+;
+; 實際行為（bug）：
+;   子線程讀寫已失效棧記憶體 → use-after-free
+;
+; 修復方向：
+;   - args/result 改用 heap 分配（malloc）
+;   - awy 時 free；未 awy 則 pthread_detach 自動回收
+;
+; ═════════════════════════════════════════════════════════════════
+
+work-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+leak-task = () (out i64) {
+    task = run work-async(42)
+    ; 未 awy task 即返回 — task 的 args/result 在本函數棧上
+    ; 返回後棧幀銷毀，子線程仍訪問已失效記憶體
+    out = 0
+}
+
+r = leak-task()
+print(r)

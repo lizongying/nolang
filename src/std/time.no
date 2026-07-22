@@ -144,3 +144,230 @@ timer.elapsed-us = () (us i64) {
     ms i64 = .end-ts - .start-ts
     us = ms * 1000
 }
+
+; ═══════════════════════════════════════════════
+; 日期與時間
+; ═══════════════════════════════════════════════
+
+; date: 日期時間結構體（UTC）
+date {
+    year i64
+    month i64
+    day i64
+    hour i64
+    min i64
+    sec i64
+    wday i64
+}
+
+; 月份天數表（非閏年）
+_days-in-month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+; _is-leap: 判斷閏年
+_is-leap = (y i64) (leap bool) {
+    leap = false
+    y % 4 != 0 -> return
+    y % 100 == 0 -> {
+        y % 400 == 0 -> leap = true
+        return
+    }
+    leap = true
+}
+
+; _days-in-month: 取得指定年月的天數
+_days-in-month-fn = (y i64, m i64) (d i64) {
+    d = 31
+    m < 1 -> return
+    m > 12 -> return
+    d = _days-in-month[m - 1]
+    m == 2 -> {
+        leap bool
+        leap = _is-leap(y)
+        leap -> d = 29
+    }
+}
+
+; unix-to-date: 將 Unix 時間戳（秒）轉換為 date 結構體（UTC）
+; 使用經典的 civil-from-days 演算法（Howard Hinnant）
+unix-to-date = (ts i64) (d date) {
+    ; 分離天數和秒數
+    days = ts / 86400
+    rem = ts % 86400
+    rem < 0 -> {
+        days = days - 1
+        rem = rem + 86400
+    }
+
+    ; 時、分、秒
+    d.hour = rem / 3600
+    d.min = (rem % 3600) / 60
+    d.sec = rem % 60
+
+    ; 將 1970-01-01 起的天數轉為日期
+    ; days = z - 719468（z 是從 0000-03-01 起的天數）
+    z = days + 719468
+    era = z / 146097
+    z < 0 && z % 146097 != 0 -> era = era - 1
+    doe = z - era * 146097
+    yoe = doe / 36524
+    doe2 = doe % 36524
+    yoe2 = doe2 / 1461
+    doe3 = doe2 % 1461
+    yoe3 = doe3 / 365
+    yoe3 == 4 -> yoe3 = 3
+    y = era * 400 + yoe * 100 + yoe2 * 4 + yoe3
+    doy = doe - yoe * 36524 - yoe2 * 1461 - yoe3 * 365
+    mp = (5 * doy + 2) / 153
+    d.day = doy - (153 * mp + 2) / 5 + 1
+    d.month = mp + 3
+    mp >= 10 -> d.month = mp - 9
+    d.month <= 2 -> d.year = y + 1
+    -> d.year = y
+
+    ; 星期幾（1970-01-01 是星期四 = 4）
+    w = days % 7
+    w < 0 -> w = w + 7
+    d.wday = (w + 4) % 7
+}
+
+; date-to-unix: 將 date 結構體（UTC）轉換為 Unix 時間戳（秒）
+; 使用 days-from-civil 演算法（Howard Hinnant）
+date-to-unix = (d date) (ts i64) {
+    y = d.year
+    m = d.month
+    ; 調整：3月為年初
+    m <= 2 -> {
+        y = y - 1
+    }
+    era = y / 400
+    y < 0 && y % 400 != 0 -> era = era - 1
+    yoe = y - era * 400
+    m2 = m
+    m2 > 2 -> m2 = m2 - 3
+    -> m2 = m2 + 9
+    doy = (153 * m2 + 2) / 5 + d.day - 1
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    days = era * 146097 + doe - 719468
+    ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec
+}
+
+; format-date: 將 date 結構體格式化為字串
+; 格式：YYYY-MM-DD HH:MM:SS
+format-date = (d date) (out str) {
+    out = with-cap(19)
+    ; 年
+    yr = d.year
+    yr < 0 -> {
+        out[0] = 45
+        yr = 0 - yr
+    }
+    out[0] = (yr / 1000) % 10 + 48
+    out[1] = (yr / 100) % 10 + 48
+    out[2] = (yr / 10) % 10 + 48
+    out[3] = yr % 10 + 48
+    out[4] = 45
+    ; 月
+    out[5] = d.month / 10 + 48
+    out[6] = d.month % 10 + 48
+    out[7] = 45
+    ; 日
+    out[8] = d.day / 10 + 48
+    out[9] = d.day % 10 + 48
+    out[10] = 32
+    ; 時
+    out[11] = d.hour / 10 + 48
+    out[12] = d.hour % 10 + 48
+    out[13] = 58
+    ; 分
+    out[14] = d.min / 10 + 48
+    out[15] = d.min % 10 + 48
+    out[16] = 58
+    ; 秒
+    out[17] = d.sec / 10 + 48
+    out[18] = d.sec % 10 + 48
+}
+
+; format-time-str: 將 Unix 時間戳格式化為可讀字串
+; 格式：YYYY-MM-DD HH:MM:SS（UTC）
+format-time-str = (ts i64) (out str) {
+    d date
+    d = unix-to-date(ts)
+    out = format-date(d)
+}
+
+; parse-date: 解析日期字串為 Unix 時間戳
+; 支援格式：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
+; 返回 ?i64：ok=時間戳, nil=解析失敗
+parse-date = (s str) (ts ?i64) {
+    ts = nil
+    n = s.len
+    n < 10 -> return
+
+    d date
+    d.year = 0
+    d.month = 0
+    d.day = 0
+    d.hour = 0
+    d.min = 0
+    d.sec = 0
+
+    ; 解析 YYYY-MM-DD
+    i <- [0..4): {
+        c = s[i]
+        c < 48 || c > 57 -> return
+        d.year = d.year * 10 + (c - 48)
+    }
+    s[4] != 45 -> return
+
+    i <- [5..7): {
+        c = s[i]
+        c < 48 || c > 57 -> return
+        d.month = d.month * 10 + (c - 48)
+    }
+    s[7] != 45 -> return
+
+    i <- [8..10): {
+        c = s[i]
+        c < 48 || c > 57 -> return
+        d.day = d.day * 10 + (c - 48)
+    }
+
+    ; 驗證日期範圍
+    d.month < 1 -> return
+    d.month > 12 -> return
+    d.day < 1 -> return
+    d.day > 31 -> return
+
+    ; 可選的時間部分 HH:MM:SS
+    n >= 19 -> {
+        s[10] != 32 -> return
+        i <- [11..13): {
+            c = s[i]
+            c < 48 || c > 57 -> return
+            d.hour = d.hour * 10 + (c - 48)
+        }
+        s[13] != 58 -> return
+        i <- [14..16): {
+            c = s[i]
+            c < 48 || c > 57 -> return
+            d.min = d.min * 10 + (c - 48)
+        }
+        s[16] != 58 -> return
+        i <- [17..19): {
+            c = s[i]
+            c < 48 || c > 57 -> return
+            d.sec = d.sec * 10 + (c - 48)
+        }
+        d.hour > 23 -> return
+        d.min > 59 -> return
+        d.sec > 59 -> return
+    }
+
+    ts = date-to-unix(d)
+}
+
+; now-date: 取得當前日期時間結構體（UTC）
+now-date = () (d date) {
+    ts = now()
+    d = unix-to-date(ts)
+}

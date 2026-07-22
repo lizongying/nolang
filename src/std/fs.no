@@ -516,3 +516,76 @@ list-dir = (dirpath str) (entries []str) {
         entries.push(name)
     } ()
 }
+
+; ═══════════════════════════════════════════════
+; 目錄條目（不含 '.' 和 '..'）
+; ═══════════════════════════════════════════════
+
+; dir-entries: 列出目錄中的條目名稱，自動過濾 '.' 和 '..'
+; 失敗時返回空 slice。
+;
+; 用法：
+;   names = dir-entries('/path/to/dir')
+;   i <- [0..names.len): {
+;       print(names[i])
+;   }
+
+dir-entries = (dirpath str) (entries []str) {
+    all []str
+    all = list-dir(dirpath)
+    n = all.len
+    i <- [0..n): {
+        name = all[i]
+        name.len == 1 && name[0] == 46 -> continue
+        name.len == 2 && name[0] == 46 && name[1] == 46 -> continue
+        entries.push(name)
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 遞迴遍歷目錄樹
+; ═══════════════════════════════════════════════
+
+; walk: 遞迴遍歷目錄樹，對每個條目呼叫回調函數
+; root str: 根目錄路徑
+; callback: 函數，接收 (fullpath str, name str, is-dir bool)
+;
+; 用法：
+;   walk('/path/to/dir', my-callback)
+;   my-callback = (fullpath str, name str, is-dir bool) {
+;       is-dir -> print('DIR: ' - fullpath)
+;       -> print('FILE: ' - fullpath)
+;   }
+
+walk = (root str, callback str) {
+    _walk-internal(root, root, callback)
+}
+
+; _walk-internal: walk 的內部遞迴實作
+_walk-internal = (root str, dirpath str, callback str) {
+    names []str
+    names = dir-entries(dirpath)
+
+    n = names.len
+    n == 0 -> return
+
+    SEP = 47
+
+    i <- [0..n): {
+        name = names[i]
+
+        fullpath str
+        dirpath.len > 0 -> {
+            last = dirpath[dirpath.len - 1]
+            last == SEP -> fullpath = dirpath - name
+            -> fullpath = dirpath - '/' - name
+        }
+        -> fullpath = name
+
+        is-d = is-dir(fullpath)
+
+        callback(fullpath, name, is-d)
+
+        is-d -> _walk-internal(root, fullpath, callback)
+    }
+}

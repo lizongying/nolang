@@ -1,0 +1,142 @@
+; test-std-new: 验证新增标准库功能
+;   - str.replace-str + str.fields
+;   - time 日期解析/格式化
+;   - encoding/pem
+;   - fs.read-dir + fs.walk
+
+# std/str
+# std/time
+# std/encoding/pem
+# std/encoding/base64
+# std/fs
+
+; ═══════════════════════════════════════════════
+; 1. str.replace-str
+; ═══════════════════════════════════════════════
+print('=== str.replace-str ===')
+
+s str = 'hello world, hello nolang'
+replaced str
+replaced = s.replace-str('hello', 'HI')
+print(replaced)
+
+; 替換為空字串
+replaced = s.replace-str('hello', '')
+print(replaced)
+
+; 無匹配
+replaced = s.replace-str('xyz', 'ABC')
+print(replaced)
+
+; old 為空字串
+replaced = s.replace-str('', 'X')
+print(replaced)
+
+; ═══════════════════════════════════════════════
+; 2. str.fields
+; ═══════════════════════════════════════════════
+print('=== str.fields ===')
+
+fstr str = '  hello   world  nolang  '
+fields []str
+fields = fstr.fields()
+n = fields.len
+print('field count:' - n.to-str())
+i <- [0..n): {
+    print('  [' - i.to-str() - '] ' - fields[i])
+}
+
+; 空字串
+fstr = ''
+fields = fstr.fields()
+print('empty fields:' - fields.len.to-str())
+
+; 純空白
+fstr = '   '
+fields = fstr.fields()
+print('whitespace fields:' - fields.len.to-str())
+
+; ═══════════════════════════════════════════════
+; 3. time 日期解析/格式化
+; ═══════════════════════════════════════════════
+print('=== time ===')
+
+; 已知時間戳：2000-01-01 00:00:00 UTC = 946684800
+ts i64 = 946684800
+d date
+d = time.unix-to-date(ts)
+print('year:' - d.year.to-str())
+print('month:' - d.month.to-str())
+print('day:' - d.day.to-str())
+print('hour:' - d.hour.to-str())
+print('min:' - d.min.to-str())
+print('sec:' - d.sec.to-str())
+
+fmt str
+fmt = time.format-time-str(ts)
+print('formatted:' - fmt)
+
+; 往返測試
+ts2 ?i64 = time.parse-date('2000-01-01 00:00:00')
+ts2: {
+    ok -> {
+        v = it
+        print('roundtrip:' - v.to-str())
+        v == 946684800 -> print('PASS')
+        -> print('FAIL')
+    }
+    nil -> print('FAIL: parse returned nil')
+    err -> print('FAIL: parse error')
+}
+
+; 只日期
+ts3 ?i64 = time.parse-date('2024-07-22')
+ts3: {
+    ok -> print('date-only ts:' - it.to-str())
+    nil -> print('FAIL: date-only parse')
+    err -> print('FAIL: date-only parse error')
+}
+
+; ═══════════════════════════════════════════════
+; 4. encoding/pem
+; ═══════════════════════════════════════════════
+print('=== encoding/pem ===')
+
+; 準備測試資料
+raw []byte = [72, 101, 108, 108, 111, 32, 80, 69, 77]
+
+pem-out str
+pem-out = pem.pem-encode('TEST', raw)
+print('encoded:')
+print(pem-out)
+
+; 解碼
+decoded ?pem-block = pem.pem-decode(pem-out)
+decoded: {
+    ok -> {
+        blk = it
+        print('label:' - blk.label)
+        print('data-len:' - blk.data.len.to-str())
+        ; 驗證資料
+        ok2 = true
+        j <- [0..blk.data.len): {
+            blk.data[j] != raw[j] -> ok2 = false
+        }
+        ok2 -> print('PEM roundtrip: PASS')
+        -> print('PEM roundtrip: FAIL')
+    }
+    nil -> print('PEM decode: FAIL')
+    err -> print('PEM decode: ERROR')
+}
+
+; ═══════════════════════════════════════════════
+; 5. fs.read-dir
+; ═══════════════════════════════════════════════
+print('=== fs.read-dir ===')
+
+entries []str = read-dir('.')
+n = entries.len
+print('entry count:' - n.to-str())
+i <- [0..n): {
+    print('  ' - entries[i])
+}

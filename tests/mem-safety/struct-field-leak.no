@@ -1,0 +1,53 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 5：用戶自定義結構體字段堆數據永不釋放
+; 嚴重等級：嚴重（系統性內存洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   MyType {
+;       name str
+;       items []i64
+;   }
+;   m = MyType{ name: "hello", items: [1, 2, 3] }
+;   ; m 離開作用域時，name.data 和 items.data 永不釋放
+;
+; 根本原因：
+;   - stmt.go:159-167 的 emitHeapFree 只處理 %vec/%str-long/%arr
+;   - 用戶自定義結構體型別（如 %MyType）直接 continue 跳過
+;   - heapVars 也只追蹤三種內建型別（stmt.go:3543-3546）
+;   - emitHeapFree 是扁平設計，不遞迴遍歷結構體字段
+;
+; 相關文件：
+;   src/build/llvm/stmt.go:159-167（emitHeapFree switch，結構體跳過）
+;   src/build/llvm/stmt.go:3543-3546（heapVars 只追蹤三種型別）
+;   src/build/llvm/stmt.go:3171-3280（結構體字面量，淺拷貝字段）
+;
+; 預期行為：
+;   結構體釋放時應遞迴釋放所有堆字段（name.data, items.data）
+;
+; 實際行為（bug）：
+;   結構體字段的堆數據全部洩漏
+;
+; 修復方向：
+;   - 為結構體生成遞迴 destructor
+;   - emitHeapFree 對結構體型別遞迴遍歷字段釋放
+;   - 類似 Rust Drop trait 或 C++ RAII
+;
+; ═════════════════════════════════════════════════════════════════
+
+MyType {
+    name str
+    items []i64
+}
+
+make-struct = () (out MyType) {
+    out = MyType{ name: "hello", items: [1, 2, 3] }
+    ; out 離開作用域時，name.data 和 items.data 應被釋放
+    ; 但 emitHeapFree 跳過結構體 → 洩漏
+}
+
+m = make-struct()
+print(m.name)
+print(m.items[0])
+print(m.items[1])
+print(m.items[2])

@@ -1,0 +1,50 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 11：if/else 單分支 move 導致未走分支的數據洩漏
+; 嚴重等級：中（內存洩漏，取決於運行時分支）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   cond -> out = x   ; then 分支 move x
+;   -> out = y        ; else 分支 move y
+;   ; 若運行時走 else，x 不被釋放（編譯時已標記 moved）
+;
+; 根本原因：
+;   - movedVars 是編譯時的 map，不區分運行時分支
+;   - generateIfExpression 中兩個分支共享同一個 movedVars
+;   - 若 then 分支 out = x（標記 x 為 moved）
+;   - 編譯後 movedVars[x] = true（來自 then 分支的代碼生成）
+;   - emitHeapFree 跳過 x
+;   - 若運行時走 else 分支：x 的數據仍在 x 中，但 x 不被釋放 → 洩漏
+;
+; 相關文件：
+;   src/build/llvm/expr.go:499-682（generateIfExpression）
+;   src/build/llvm/stmt.go:146-190（emitHeapFree 跳過 movedVars）
+;
+; 預期行為：
+;   未走分支的數據應在函數結束時被釋放
+;
+; 實際行為（bug）：
+;   未走分支的數據洩漏（這是「寧可洩漏也不雙重 free」的設計取捨）
+;
+; 修復方向：
+;   - 為每個分支維護獨立的 movedVars 集合
+;   - 或在分支合併時正確處理 moved 狀態
+;
+; ═════════════════════════════════════════════════════════════════
+
+branch-move = (cond bool) (out str) {
+    x = "from x"
+    y = "from y"
+    {
+        cond -> out = x   ; then 分支 move x
+        -> out = y        ; else 分支 move y
+    }
+    ; 若 cond=false，x 標記為 moved（編譯時），但運行時未走 then
+    ; x 的 "from x" buffer 洩漏
+}
+
+s1 = branch-move(true)
+print(s1)   ; "from x"
+
+s2 = branch-move(false)
+print(s2)   ; "from y"，但 "from x" 的 buffer 洩漏

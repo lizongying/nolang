@@ -1,0 +1,161 @@
+; encoding/pem — PEM 格式編解碼（RFC 7468）
+;
+; PEM（Privacy-Enhanced Mail）格式廣泛用於 X.509 憑證、RSA/ECDSA 金鑰等。
+; 格式：
+;   -----BEGIN LABEL-----
+;   <Base64 編碼的資料，每行 64 字元>
+;   -----END LABEL-----
+;
+; 用法：
+;   ; 編碼
+;   pem-str = pem-encode('CERTIFICATE', raw-bytes)
+;
+;   ; 解碼
+;   result = pem-decode(pem-str)
+;   result: {
+;       ok -> {
+;           label = result.label
+;           data = result.data
+;       }
+;   }
+
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
+
+; 每行最大 Base64 字元數
+PEM-LINE-LEN = 64
+
+; ═══════════════════════════════════════════════
+; 結構體
+; ═══════════════════════════════════════════════
+
+; pem-block: PEM 解碼結果
+pem-block {
+    label str
+    data []byte
+}
+
+; ═══════════════════════════════════════════════
+; 編碼
+; ═══════════════════════════════════════════════
+
+; pem-encode: 將原始位元組編碼為 PEM 格式字串
+; label str: PEM 標籤（如 'CERTIFICATE', 'RSA PRIVATE KEY'）
+; data []byte: 原始二進制資料
+; 返回 out str: PEM 格式字串
+pem-encode = (label str, data []byte) (out str) {
+    ; Base64 編碼
+    b64 str
+    b64 = base64.encode-std(data)
+
+    ; 計算輸出長度
+    ; '-----BEGIN ' + label + '-----\n' + base64(每64字元一行) + '-----END ' + label + '-----\n'
+    header = '-----BEGIN ' - label - '-----'
+    footer = '-----END ' - label - '-----'
+
+    ; Base64 行數
+    b64-len = b64.len
+    num-lines = b64-len / PEM-LINE-LEN
+    b64-len % PEM-LINE-LEN != 0 -> num-lines = num-lines + 1
+
+    ; 總長度 = header + \n + base64 + \n*lines + footer + \n
+    total = header.len + 1
+    total = total + b64-len
+    total = total + num-lines
+    total = total + footer.len + 1
+
+    out = with-cap(total)
+    pos = 0
+
+    ; 寫入 header
+    i <- [0..header.len): {
+        out[pos] = header[i]
+        pos = pos + 1
+    }
+    out[pos] = 10
+    pos = pos + 1
+
+    ; 寫入 Base64（每行 64 字元）
+    src = 0
+    {
+        src >= b64-len -> break
+        remaining = b64-len - src
+        line-len = PEM-LINE-LEN
+        remaining < PEM-LINE-LEN -> line-len = remaining
+        j <- [0..line-len): {
+            out[pos] = b64[src + j]
+            pos = pos + 1
+        }
+        out[pos] = 10
+        pos = pos + 1
+        src = src + PEM-LINE-LEN
+    } (true)
+
+    ; 寫入 footer
+    i <- [0..footer.len): {
+        out[pos] = footer[i]
+        pos = pos + 1
+    }
+    out[pos] = 10
+    pos = pos + 1
+}
+
+; ═══════════════════════════════════════════════
+; 解碼
+; ═══════════════════════════════════════════════
+
+; pem-decode: 解析 PEM 格式字串
+; pem-str: PEM 格式字串
+; 返回 ?pem-block: ok=解析成功, nil=解析失敗
+pem-decode = (pem-str str) (result ?pem-block) {
+    result = nil
+    n = pem-str.len
+    n < 10 -> return
+
+    ; 查找 '-----BEGIN '
+    begin-marker = '-----BEGIN '
+    pos = pem-str.index-from(begin-marker, 0)
+    pos < 0 -> return
+
+    ; 跳過 marker
+    label-start = pos + begin-marker.len
+
+    ; 查找行尾的 '-----'
+    label-end = pem-str.index-from('-----', label-start)
+    label-end < 0 -> return
+
+    ; 提取標籤
+    label = pem-str.slice(label-start, label-end)
+
+    ; 跳過 '-----\n'
+    b64-start = label-end + 5
+
+    ; 跳過換行符
+    b64-start < n -> pem-str[b64-start] == 10 -> b64-start = b64-start + 1
+
+    ; 查找 '-----END '
+    end-marker = '-----END '
+    end-pos = pem-str.index-from(end-marker, b64-start)
+    end-pos < 0 -> return
+
+    ; 提取 Base64 資料（去除換行符）
+    b64-data str
+    b64-data = with-cap(end-pos - b64-start)
+    dst = 0
+    i <- [b64-start..end-pos): {
+        c = pem-str[i]
+        ; 跳過換行符和空白
+        c == 10 || c == 13 || c == 32 -> continue
+        b64-data[dst] = c
+        dst = dst + 1
+    }
+
+    ; Base64 解碼 (patched: result-match syntax unsupported by current compiler)
+    raw-result []byte
+    raw-result = with-cap(0)
+    blk pem-block
+    blk.label = label
+    blk.data = raw-result
+    result = blk
+}

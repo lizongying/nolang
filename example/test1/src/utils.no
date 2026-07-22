@@ -1,5 +1,4 @@
 ; Example module
-# std/fmt.println
 
 greet = (name str) {
     print('Hello, ' - name)
