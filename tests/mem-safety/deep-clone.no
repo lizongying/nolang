@@ -1,0 +1,61 @@
+; 深層 clone 測試：b = a 後 a 和 b 各自獨立
+
+; 測試 1：[]i64 深層 clone
+test-clone-vec = () (ok bool) {
+    a []i64 = [10, 20, 30]
+    b = a
+    b[0] = 99
+    a[0] == 10 -> ok = true
+    b[0] == 99 -> ok = true
+}
+
+; 測試 2：[]str 深層 clone
+test-clone-str-vec = () (ok bool) {
+    s []str
+    s.push('hello')
+    s.push('world')
+    c = s
+    s[0] == 'hello' -> ok = true
+    c[0] == 'hello' -> ok = true
+    s[1] == 'world' -> ok = true
+    c[1] == 'world' -> ok = true
+    s.len == 2 -> ok = true
+    c.len == 2 -> ok = true
+}
+
+; 測試 3：str 深層 clone
+test-clone-str = () (ok bool) {
+    s = 'hello'
+    c = s
+    s.len == 5 -> ok = true
+    c.len == 5 -> ok = true
+}
+
+; 測試 4：用戶結構體深層 clone
+MyData {
+    name str
+    value i64
+}
+
+test-clone-struct = () (ok bool) {
+    d = MyData{name: 'test', value: 42}
+    c = d
+    d.value == 42 -> ok = true
+    c.value == 42 -> ok = true
+    d.name == 'test' -> ok = true
+    c.name == 'test' -> ok = true
+}
+
+main = () {
+    ok1 = test-clone-vec()
+    print('test-clone-vec: ', ok1)
+
+    ok2 = test-clone-str-vec()
+    print('test-clone-str-vec: ', ok2)
+
+    ok3 = test-clone-str()
+    print('test-clone-str: ', ok3)
+
+    ok4 = test-clone-struct()
+    print('test-clone-struct: ', ok4)
+}

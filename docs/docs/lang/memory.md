@@ -9,10 +9,16 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 ## 核心原則
 
 ### 單一所有權
-每個堆 `data` 緩衝區**只有一個所有者**。所有權可透過 move 轉移，轉移後原所有者放棄 free 責任。
+每個堆 `data` 緩衝區**只有一個所有者**。所有權可透過 move 轉移，轉移後原所有者放棄 free 責任。局部變數間的 `=` 則透過深層 clone 使兩個變數各自獨立擁有 data。
 
-### 淺拷貝語義
-賦值即淺拷貝結構體欄位（len/cap/data），**不克隆 data 緩衝區**。因此賦值後兩個變數共享同一 data，必須透過 move/clone 機制明確所有權。
+### 三種賦值語義
+`b = a` 根據上下文選擇三種語義之一：
+
+| 語義 | 觸發條件 | 行為 |
+|------|---------|------|
+| **值拷貝** | 基本型別（i64/f64/bool 等） | 直接拷貝數值，無堆數據 |
+| **深層 clone** | 局部變數間 `b = a`，a 為堆擁有型別（vec/arr/str/可克隆結構體） | malloc 新 data + memcpy + 遞迴 clone 元素；a 和 b 各自獨立擁有 data，函數結束各自 free |
+| **move** | 輸出參數 `out = x`、`vec.push(x)` | 淺拷貝結構體 + 標記源為 moved；源跳過 free |
 
 ### 編譯器插入 free
 - 函數結束時：釋放所有未 moved 的局部堆變數
@@ -82,6 +88,46 @@ outer.push(inner)
 
 push 只淺拷貝 inner 的結構體到 outer 元素位置，**不克隆 data**。因此源變數和外部 vec 共享同一 data 指標，必須標記源為 moved 避免 double-free。
 
+## 深層 clone（局部變數間賦值）
+
+```nolang
+a []i64 = [10, 20, 30]
+b = a          ; 深層 clone：malloc 新 data + memcpy + 遞迴 clone 元素
+b[0] = 99
+; a[0] == 10（a 不受影響）
+; b[0] == 99（b 獨立修改）
+```
+
+### 深層 clone 流程
+1. 釋放目標變數的舊值（若已有堆數據）
+2. `malloc` 新 data 緩衝區，`memcpy` 源 data 到新 data
+3. 遞迴 clone 每個堆擁有元素：
+   - `%str-long` 元素：malloc + memcpy 字串 data
+   - 用戶結構體元素：memcpy 結構體 + 遞迴 clone 含堆數據的欄位
+4. 將新 data 指標、len、cap 寫入目標變數
+5. 追蹤目標為堆變數（函數結束時 free）
+
+### 可克隆的型別
+| 型別 | 可深層 clone | 說明 |
+|------|-------------|------|
+| `%vec` / `%arr`（元素為基本型別） | ✅ | memcpy data 即可 |
+| `%vec` / `%arr`（元素為 %str-long） | ✅ | 逐元素 malloc+memcpy 字串 data |
+| `%vec` / `%arr`（元素為可克隆結構體） | ✅ | 逐元素遞迴 clone 結構體欄位 |
+| `%vec` / `%arr`（元素為 %vec / %arr） | ❌ | 巢狀容器元素型別未知，回退為 move |
+| `%str-long` | ✅ | malloc + memcpy 字串 data |
+| 用戶結構體（無巢狀容器欄位） | ✅ | memcpy 結構體 + 遞迴 clone 堆欄位 |
+| 用戶結構體（含巢狀容器欄位） | ❌ | 回退為 move |
+
+### 與 move 的區別
+- **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free
+- **move**：源放棄所有權（標記 moved），目標接管 data，源跳過 free
+
+`b = a` 的判斷規則：
+1. 若 a 是輸出參數的源 → move
+2. 若 a 是 vec.push 的源 → move
+3. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
+4. 否則值拷貝
+
 ## 切片視圖
 
 切片表達式 `arr[1..3]` 產生視圖（零拷貝），共享原數組 data。視圖的三種命運：
@@ -137,6 +183,7 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 
 | 測試 | 驗證內容 |
 |------|---------|
+| `deep-clone.no` | `b = a` 深層 clone（[]i64/[]str/str/結構體）獨立性 |
 | `deep-free-str.no` | `[]str` 深層 free |
 | `deep-free-nested-vec.no` | `[][]i64` 深層 free + push moved |
 | `deep-free-struct-vec.no` | `[]MyType` 深層 free（遞迴結構體） |

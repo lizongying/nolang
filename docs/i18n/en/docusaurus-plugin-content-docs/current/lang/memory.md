@@ -9,10 +9,16 @@ Nolang is a **GC-free** language. Memory safety is guaranteed by compiler-insert
 ## Core Principles
 
 ### Single Ownership
-Each heap `data` buffer has **exactly one owner**. Ownership can be transferred via move; after transfer, the original owner relinquishes free responsibility.
+Each heap `data` buffer has **exactly one owner**. Ownership can be transferred via move; after transfer, the original owner relinquishes free responsibility. For `=` between local variables, a deep clone makes both variables independently own their data.
 
-### Shallow Copy Semantics
-Assignment performs a shallow copy of the struct fields (len/cap/data) **without cloning the data buffer**. Thus after assignment two variables share the same data; ownership must be clarified through move/clone mechanisms.
+### Three Assignment Semantics
+`b = a` selects one of three semantics based on context:
+
+| Semantic | Trigger | Behavior |
+|----------|---------|----------|
+| **Value copy** | Primitive types (i64/f64/bool, etc.) | Direct value copy, no heap data |
+| **Deep clone** | `b = a` between locals, a is heap-owning (vec/arr/str/cloneable struct) | malloc new data + memcpy + recursively clone elements; a and b independently own data, each freed at function exit |
+| **move** | Output param `out = x`, `vec.push(x)` | Shallow copy struct + mark source as moved; source skips free |
 
 ### Compiler-Inserted Free
 - Function exit: free all non-moved local heap variables
@@ -82,6 +88,46 @@ outer.push(inner)
 
 push only shallow-copies inner's struct into outer's element slot **without cloning data**. Thus the source variable and the outer vec share the same data pointer; the source must be marked as moved to avoid double-free.
 
+## Deep Clone (Assignment Between Locals)
+
+```nolang
+a []i64 = [10, 20, 30]
+b = a          ; deep clone: malloc new data + memcpy + recursively clone elements
+b[0] = 99
+; a[0] == 10 (a unaffected)
+; b[0] == 99 (b modified independently)
+```
+
+### Deep Clone Flow
+1. Free the target variable's old value (if it already has heap data)
+2. `malloc` a new data buffer, `memcpy` source data to new data
+3. Recursively clone each heap-owning element:
+   - `%str-long` element: malloc + memcpy string data
+   - User struct element: memcpy struct + recursively clone heap-owning fields
+4. Write new data pointer, len, cap into the target variable
+5. Track target as a heap variable (freed at function exit)
+
+### Cloneable Types
+| Type | Deep cloneable | Notes |
+|------|----------------|-------|
+| `%vec` / `%arr` (primitive elements) | Yes | memcpy data suffices |
+| `%vec` / `%arr` (elements are %str-long) | Yes | per-element malloc+memcpy of string data |
+| `%vec` / `%arr` (elements are cloneable structs) | Yes | per-element recursive clone of struct fields |
+| `%vec` / `%arr` (elements are %vec / %arr) | No | nested container element type unknown, falls back to move |
+| `%str-long` | Yes | malloc + memcpy string data |
+| User struct (no nested container fields) | Yes | memcpy struct + recursive clone of heap fields |
+| User struct (with nested container fields) | No | falls back to move |
+
+### Difference from move
+- **Deep clone**: source and target each independently own data; each freed at function exit
+- **move**: source relinquishes ownership (marked moved), target takes over data, source skips free
+
+Decision rules for `b = a`:
+1. If a is the source of an output param → move
+2. If a is the source of vec.push → move
+3. Otherwise, if a is a heap-owning type and deep-cloneable → deep clone
+4. Otherwise value copy
+
 ## Slice Views
 
 A slice expression `arr[1..3]` produces a view (zero-copy) that shares the original array's data. Three fates of a view:
@@ -137,6 +183,7 @@ Tests are in `tests/mem-safety/`:
 
 | Test | Verifies |
 |------|----------|
+| `deep-clone.no` | `b = a` deep clone ([]i64/[]str/str/struct) independence |
 | `deep-free-str.no` | `[]str` deep free |
 | `deep-free-nested-vec.no` | `[][]i64` deep free + push moved |
 | `deep-free-struct-vec.no` | `[]MyType` deep free (recursive struct) |

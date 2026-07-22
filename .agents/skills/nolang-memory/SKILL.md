@@ -1,6 +1,6 @@
 ---
 name: nolang-memory
-description: Nolang 内存设计与所有权模型参考。用于修改编译器堆释放逻辑（emitHeapFree/emitDeepContainerFree/emitStructFieldsFree）、调整 move/clone 语义、修复 double-free 或内存泄漏、编写 mem-safety 测试时参考。涵盖 heapVars/movedVars/outputParamNames/arrayElemTypes/structTypes/varAlias 等追踪机制。
+description: Nolang 内存设计与所有权模型参考。用于修改编译器堆释放逻辑（emitHeapFree/emitDeepContainerFree/emitStructFieldsFree/emitDeepClone/emitContainerClone/emitStructClone）、调整 move/clone 语义、修复 double-free 或内存泄漏、编写 mem-safety 测试时参考。涵盖 heapVars/movedVars/outputParamNames/arrayElemTypes/structTypes/varAlias 等追踪机制。
 ---
 
 # Nolang Memory Design
@@ -12,10 +12,22 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 ## 1. 核心原则
 
 ### 1.1 单一所有权
-每个堆 `data` 缓冲区**只有一个所有者**。所有权可通过 move 转移，转移后原所有者放弃 free 责任。
+每个堆 `data` 缓冲区**只有一个所有者**。所有权可通过 move 转移，转移后原所有者放弃 free 责任。局部变量间的 `=` 则通过深層 clone 使两个变量各自独立拥有 data。
 
-### 1.2 浅拷贝语义
-赋值即浅拷贝结构体（len/cap/data 三个字段），**不克隆 data 缓冲区**。因此赋值后两个变量共享同一 data，必须通过 move/clone 机制明确所有权。
+### 1.2 三种赋值语义
+`b = a` 根据上下文选择三种语义之一：
+
+| 语义 | 触发条件 | 行为 |
+|------|---------|------|
+| **值拷贝** | 基本型别（i64/f64/bool 等） | 直接拷贝数值，无堆数据 |
+| **深層 clone** | 局部变量间 `b = a`，a 为堆拥有型别（vec/arr/str/可克隆结构体） | malloc 新 data + memcpy + 递回 clone 元素；a 和 b 各自独立拥有 data，函数结束各自 free |
+| **move** | 输出参数 `out = x`、`vec.push(x)` | 浅拷贝结构体 + 标记源为 moved；源跳过 free |
+
+**`b = a` 判断规则**（在 `generateLet` 中）：
+1. 若 a 是输出参数的源（`outputParamNames[a]` 为 true）→ move
+2. 若 a 是 vec.push 的源（在 vec.push codegen 路径中）→ move
+3. 否则若 a 是堆拥有型别且 `canClone` 为 true → 深層 clone
+4. 否则值拷贝
 
 ### 1.3 编译器插入 free
 - 函数结束时：`emitHeapFree` 释放所有未 moved 的局部堆变量
@@ -152,7 +164,67 @@ outer.push(inner)
 
 **原因**：输出参数逃逸到调用者，原数组可能在函数结束前被 free，视图必须 clone 为独立 data。
 
-## 6. %arr → %vec 转换（varAlias）
+## 6. 深層 clone（局部變數間賦值）
+
+### 6.1 觸發條件
+`b = a` 在 `generateLet` 中，當滿足以下所有條件時走深層 clone 路徑：
+- `g.heapVars != nil` 且 `!stmt.IsSynthetic`
+- RHS 是 `*parser.Identifier`（源變數 a）
+- `g.heapVars[a]` 存在（a 是堆擁有變數）
+- `a != b`（不是自賦值）
+- `g.funcLocalNames[b]` 為 true（b 是局部變數）
+- `!g.outputParamNames[b]`（b 不是輸出參數，輸出參數走 move）
+- `canClone` 為 true（見 §6.3）
+
+### 6.2 深層 clone 流程
+1. `freeOldHeapValue(sb, stmt, b)`：釋放目標變數 b 的舊值
+2. `emitDeepClone(sb, varAddr(a), varAddr(b), srcHeapType, srcElemType)`：
+   - 容器型別（`%vec`/`%arr`/`%str-long`）：呼叫 `emitContainerClone`
+   - 用戶結構體：呼叫 `emitStructClone`
+3. `trackLocalHeapVar(b, srcHeapType)`：追蹤 b 為堆變數
+4. 傳播 `arrayElemTypes[b] = srcElemType`（保持元素型別資訊）
+5. `return`（不走後續的 `generateExprWithSB` 路徑）
+
+### 6.3 canClone 判斷
+```go
+canClone := true
+// 巢狀容器（vec/arr 元素為 vec/arr）不可深層 clone
+if (srcHeapType == "%vec" || srcHeapType == "%arr") &&
+    (srcElemType == "%vec" || srcElemType == "%arr") {
+    canClone = false
+}
+// 用戶結構體需遞迴檢查無巢狀容器欄位
+if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" {
+    if !g.canDeepCloneStruct(srcHeapType) {
+        canClone = false
+    }
+}
+```
+
+`canDeepCloneStruct` 遞迴檢查結構體欄位：若任一欄位是「容器元素為容器」的巢狀結構，返回 false。
+
+### 6.4 emitContainerClone 流程
+1. store zeros 到 dst（清空舊值）
+2. load src 的 len/cap/data
+3. NULL check src.data（若為 null，dst 保持 zeros）
+4. `malloc` 新 data 緩衝區（cap * elemSize）
+5. `memcpy` src.data → 新 data
+6. 遞迴 clone 元素：`emitDeepElementClone`
+   - `%str-long` 元素：逐元素 malloc+memcpy 字串 data
+   - 用戶結構體元素：`emitStructElementsClone`（memcpy 結構體 + 遞迴 clone 堆欄位）
+7. 將新 data、len、cap 寫入 dst
+
+### 6.5 emitStructClone 流程
+1. `memcpy` 整個結構體從 src 到 dst
+2. 遍歷欄位，對含堆數據的欄位呼叫 `emitStructFieldClone`：
+   - `%vec`/`%arr`/`%str-long` 欄位：malloc+memcpy data
+   - 用戶結構體欄位：遞迴 `emitStructClone`
+
+### 6.6 與 move 的區別
+- **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free
+- **move**：源放棄所有權（標記 moved），目標接管 data，源跳過 free
+
+## 7. %arr → %vec 轉换（varAlias）
 
 ### 问题
 ```nolang
@@ -176,12 +248,13 @@ if g.varTypes[name] == "%arr" {
 }
 ```
 
-## 7. 已验证的测试案例
+## 8. 已验证的测试案例
 
 位于 `tests/mem-safety/`：
 
 | 测试文件 | 验证内容 |
 |---------|---------|
+| `deep-clone.no` | `b = a` 深層 clone（[]i64/[]str/str/结构体）独立性 |
 | `deep-free-str.no` | `[]str` 深层 free（vec 元素为 %str-long） |
 | `deep-free-nested-vec.no` | `[][]i64` 深层 free（vec 元素为 %vec，push moved 标记） |
 | `deep-free-struct-vec.no` | `[]MyType` 深层 free（vec 元素为用户结构体，递归释放 name.data + items.data） |
@@ -191,31 +264,31 @@ if g.varTypes[name] == "%arr" {
 | `vec-push-leak.no` | vec.push 的 moved 标记 |
 | `if-branch-move-leak.no` | 条件分支中的 move |
 
-## 8. 已知未修复的问题
+## 9. 已知未修复的问题
 
-### 8.1 map 容器未实现深层 free
+### 9.1 map 容器未实现深层 free
 hashmap 模板（`hashmap-str-tmpl` 等）未实现 key/value 的堆数据释放。
 
-### 8.2 循环临时变量泄漏
+### 9.2 循环临时变量泄漏
 ```nolang
 loop {
     s = 'temp'   ; 每次迭代 malloc 新 data，旧 data 未释放
 }
 ```
 
-### 8.3 slice 视图 + 原数组 move
+### 9.3 slice 视图 + 原数组 move
 ```nolang
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 ```
 
-### 8.4 async 共享数据竞态
+### 9.4 async 共享数据竞态
 异步线程与主线程共享堆数据时，free 顺序不确定。
 
-### 8.5 全局变量堆数据
+### 9.5 全局变量堆数据
 模块级变量的堆数据依赖进程退出，长期运行的服务可能泄漏。
 
-## 9. 修改堆释放逻辑的检查清单
+## 10. 修改堆释放逻辑的检查清单
 
 修改 `stmt.go`/`call.go`/`generator.go` 中的堆释放逻辑后：
 
@@ -241,7 +314,7 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 
 5. **新增 mem-safety 测试**：新场景的测试放在 `tests/mem-safety/`，文件名用中連字符。
 
-## 10. 核心文件位置
+## 11. 核心文件位置
 
 | 功能 | 文件 | 关键函数 |
 |------|------|---------|
@@ -250,6 +323,8 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 | 深层 free | `src/build/llvm/stmt.go` | `emitDeepContainerFree`, `emitElementFree` |
 | 结构体释放 | `src/build/llvm/stmt.go` | `emitStructFieldsFree`, `emitStructFieldFree` |
 | 重新赋值释放 | `src/build/llvm/stmt.go` | `freeOldHeapValue` |
+| **深層 clone** | `src/build/llvm/stmt.go` | `emitDeepClone`, `emitContainerClone`, `emitDeepElementClone`, `emitStructElementsClone`, `emitStructClone`, `emitStructFieldClone`, `canDeepCloneStruct` |
+| **`b = a` clone 路徑** | `src/build/llvm/stmt.go` | `generateLet` 中的 Identifier + heapVars 深層 clone 路徑 |
 | vec.push moved | `src/build/llvm/call.go` | vec-push case |
 | varAlias | `src/build/llvm/generator.go` | `varAddr` |
 | SliceLiteral 初始化 | `src/build/llvm/stmt.go` | SliceLiteral 路径 |

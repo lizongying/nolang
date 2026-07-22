@@ -1,5 +1,6 @@
 ; Test str.split fix - previously caused segfault
 main = () () {
+    ; Test 1: Basic split
     s = 'hello,world,foo,bar'
     parts = s.split(',')
     n = parts.len
@@ -7,4 +8,40 @@ main = () () {
     i <- [0..n): {
         println('  [' + i.to-str() + '] ' + parts[i])
     }
+
+    ; Test 2: Split with no match
+    s2 = 'no-separator-here'
+    parts2 = s2.split(',')
+    n2 = parts2.len
+    println('no-match count: ' + n2.to-str())
+
+    ; Test 3: Split with empty separator
+    s3 = 'test'
+    parts3 = s3.split('')
+    n3 = parts3.len
+    println('empty-sep count: ' + n3.to-str())
+
+    ; Test 4: Multiple consecutive separators
+    s4 = 'a,,b,,,c'
+    parts4 = s4.split(',')
+    n4 = parts4.len
+    println('multi-sep count: ' + n4.to-str())
+    i4 <- [0..n4): {
+        println('  [' + i4.to-str() + '] ' + parts4[i4])
+    }
+
+    ; Test 5: str.replace-str (depends on str.split)
+    s5 = 'hello world foo'
+    replaced = s5.replace-str('world', 'WORLD')
+    println('replace result: ' + replaced)
+
+    ; Test 6: Stress test - many elements
+    s6 = '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20'
+    parts6 = s6.split(',')
+    n6 = parts6.len
+    println('stress count: ' + n6.to-str())
+    i6 <- [0..n6): {
+        print(parts6[i6] + ' ')
+    }
+    println('')
 }

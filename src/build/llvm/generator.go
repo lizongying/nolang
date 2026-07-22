@@ -103,6 +103,7 @@ type Generator struct {
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
 	debugCallCount        int                             // debug counter for tracing function generation calls
 	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
+	condDepth             int                             // conditional branch nesting depth (0 = function body level); prevents deferred output bindings inside branches
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
 	noBoundsCheck         bool                            // true = skip emitting bounds checks (unsafe mode)

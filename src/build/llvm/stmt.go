@@ -375,6 +375,355 @@ func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structTy
 	g.emitShallowDataFree(sb, fieldGEP, fieldType, dataFieldIdx)
 }
 
+// canDeepCloneStruct 遞迴檢查用戶結構體是否可以安全深層 clone。
+// 若任何 %vec/%arr 欄位的 elemType 是 %vec/%arr（巢狀容器），則無法安全 clone
+// （子元素型別未知，無法正確計算 memcpy 大小）。
+func (g *Generator) canDeepCloneStruct(structType string) bool {
+	structName := strings.TrimPrefix(structType, "%")
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return true
+	}
+	for _, f := range fields {
+		if f.typ == "%vec" || f.typ == "%arr" {
+			if f.elemType == "%vec" || f.elemType == "%arr" {
+				return false
+			}
+		}
+		if g.isUserStructType(f.typ) {
+			if !g.canDeepCloneStruct(f.typ) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// emitDeepClone 生成深層 clone 代碼：從 srcPtr 深層複製到 dstPtr。
+// 對於 %vec/%arr：malloc 新 data 緩衝區，memcpy，遞迴 clone 元素。
+// 對於 %str-long：malloc 新 data 緩衝區，memcpy（元素為 i8，無需遞迴）。
+// 對於用戶結構體：memcpy 整個結構體，遞迴 clone 含堆數據的欄位。
+func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType, elemType string) {
+	switch llvmType {
+	case "%vec":
+		g.emitContainerClone(sb, srcPtr, dstPtr, "%vec", 2, elemType)
+	case "%arr":
+		g.emitContainerClone(sb, srcPtr, dstPtr, "%arr", 1, elemType)
+	case "%str-long":
+		g.emitContainerClone(sb, srcPtr, dstPtr, "%str-long", 2, "i8")
+	default:
+		if g.isUserStructType(llvmType) {
+			g.emitStructClone(sb, srcPtr, dstPtr, llvmType)
+		}
+	}
+}
+
+// emitContainerClone 深層 clone %vec/%arr/%str-long：
+// 先 store zeros 到 dst（處理 NULL 源資料），再 malloc+memcpy+遞迴 clone 元素。
+func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, containerType string, dataFieldIdx int, elemType string) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+
+	// 先 store zeros 到 dst（處理源 data 為 NULL 的情況）
+	dstLenGEP := fmt.Sprintf("%%clone.dst.len.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), dstLenGEP, containerType, containerType, dstPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dstLenGEP))
+	if containerType == "%vec" || containerType == "%str-long" {
+		dstCapGEP := fmt.Sprintf("%%clone.dst.cap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+			g.indent(), dstCapGEP, containerType, containerType, dstPtr))
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dstCapGEP))
+	}
+	dstDataGEP := fmt.Sprintf("%%clone.dst.data.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dstDataGEP, containerType, containerType, dstPtr, dataFieldIdx))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dstDataGEP))
+
+	// load source len
+	srcLenGEP := fmt.Sprintf("%%clone.src.len.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), srcLenGEP, containerType, containerType, srcPtr))
+	srcLenReg := fmt.Sprintf("%%clone.len.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcLenReg, srcLenGEP))
+
+	// load source cap（%vec/%str-long 有 cap 欄位；%arr 用 len 作為 cap）
+	var srcCapReg string
+	if containerType == "%vec" || containerType == "%str-long" {
+		srcCapGEP := fmt.Sprintf("%%clone.src.cap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+			g.indent(), srcCapGEP, containerType, containerType, srcPtr))
+		srcCapReg = fmt.Sprintf("%%clone.cap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcCapReg, srcCapGEP))
+	} else {
+		srcCapReg = srcLenReg
+	}
+
+	// load source data
+	srcDataGEP := fmt.Sprintf("%%clone.src.data.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), srcDataGEP, containerType, containerType, srcPtr, dataFieldIdx))
+	srcDataLoad := g.loadDataPtrField(sb, srcDataGEP)
+
+	// NULL check
+	nullCmp := fmt.Sprintf("%%clone.null.%d", tid)
+	skipLabel := fmt.Sprintf("clone.skip.%d", tid)
+	doLabel := fmt.Sprintf("clone.do.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, srcDataLoad))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, doLabel))
+
+	// clone.do: malloc + memcpy + deep clone elements + overwrite dst
+	g.emitLabel(sb, doLabel)
+	elemSize := g.llvmTypeSize(elemType)
+	if elemSize == 0 {
+		elemSize = 8
+	}
+	bufSizeReg := fmt.Sprintf("%%clone.bufsize.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bufSizeReg, srcCapReg, elemSize))
+	cloneBuf := fmt.Sprintf("%%clone.buf.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), cloneBuf, bufSizeReg))
+	copySizeReg := fmt.Sprintf("%%clone.copysize.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), copySizeReg, srcLenReg, elemSize))
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), cloneBuf, srcDataLoad, copySizeReg))
+
+	// 若元素是堆擁有型別，遞迴 clone 每個元素的 data
+	if g.isHeapOwningType(elemType) {
+		g.emitDeepElementClone(sb, cloneBuf, srcDataLoad, srcLenReg, elemType)
+	}
+
+	// overwrite dst with actual values
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcLenReg, dstLenGEP))
+	if containerType == "%vec" || containerType == "%str-long" {
+		dstCapGEP := fmt.Sprintf("%%clone.dst.cap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcCapReg, dstCapGEP))
+	}
+	g.storeDataPtrField(sb, cloneBuf, dstDataGEP)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+
+	// clone.skip: dst 已有 zeros，無需操作
+	g.emitLabel(sb, skipLabel)
+}
+
+// emitDeepElementClone 遍歷容器元素，clone 每個元素的堆 data。
+// 用於 %str-long 元素（clone 每個字串的 data）和用戶結構體元素（遞迴 clone 欄位）。
+// %vec/%arr 元素不應到達此處（canClone 檢查已排除巢狀容器）。
+func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, lenReg, elemType string) {
+	// 用戶結構體元素：遞迴 clone 每個元素的欄位
+	if g.isUserStructType(elemType) {
+		g.emitStructElementsClone(sb, dstBuf, srcBuf, lenReg, elemType)
+		return
+	}
+
+	// %str-long 元素：clone 每個字串的 data 緩衝區
+	var dataFieldIdx int
+	switch elemType {
+	case "%vec", "%str-long":
+		dataFieldIdx = 2
+	case "%arr":
+		dataFieldIdx = 1
+	default:
+		return // 純量元素，已由 memcpy 複製
+	}
+
+	g.tmpIdx++
+	tid := g.tmpIdx
+	elemSize := g.llvmTypeSize(elemType)
+	if elemSize == 0 {
+		elemSize = 8
+	}
+
+	// 迴圈: for i = 0; i < len; i++
+	iPtr := fmt.Sprintf("%%clonec.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+	loopCondLabel := fmt.Sprintf("clonec.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopCondLabel)
+	iVal := fmt.Sprintf("%%clonec.i.val.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	loopCmp := fmt.Sprintf("%%clonec.cmp.%d", tid)
+	loopBodyLabel := fmt.Sprintf("clonec.body.%d", tid)
+	loopEndLabel := fmt.Sprintf("clonec.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), loopCmp, iVal, lenReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), loopCmp, loopBodyLabel, loopEndLabel))
+	g.emitLabel(sb, loopBodyLabel)
+
+	// 取得 src 和 dst 元素指標
+	srcElemArr := fmt.Sprintf("%%clonec.srcarr.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), srcElemArr, srcBuf, elemType))
+	srcElemGEP := fmt.Sprintf("%%clonec.srcgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+		g.indent(), srcElemGEP, elemType, elemType, srcElemArr, iVal))
+	dstElemArr := fmt.Sprintf("%%clonec.dstarr.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), dstElemArr, dstBuf, elemType))
+	dstElemGEP := fmt.Sprintf("%%clonec.dstgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+		g.indent(), dstElemGEP, elemType, elemType, dstElemArr, iVal))
+
+	// load src 元素的 data
+	srcElemDataGEP := fmt.Sprintf("%%clonec.srcdata.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), srcElemDataGEP, elemType, elemType, srcElemGEP, dataFieldIdx))
+	srcElemData := g.loadDataPtrField(sb, srcElemDataGEP)
+
+	// NULL check
+	elemNullCmp := fmt.Sprintf("%%clonec.null.%d", tid)
+	elemSkipLabel := fmt.Sprintf("clonec.skip.%d", tid)
+	elemDoLabel := fmt.Sprintf("clonec.do.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), elemNullCmp, srcElemData))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), elemNullCmp, elemSkipLabel, elemDoLabel))
+
+	// clonec.do: malloc + memcpy + store to dst
+	g.emitLabel(sb, elemDoLabel)
+	// load src 元素的 len（用於 memcpy 大小）
+	srcElemLenGEP := fmt.Sprintf("%%clonec.srclen.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+		g.indent(), srcElemLenGEP, elemType, elemType, srcElemGEP))
+	srcElemLen := fmt.Sprintf("%%clonec.len.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcElemLen, srcElemLenGEP))
+	// load src 元素的 cap（用於 malloc 大小）
+	var srcElemCap string
+	if elemType == "%vec" || elemType == "%str-long" {
+		srcElemCapGEP := fmt.Sprintf("%%clonec.srccap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+			g.indent(), srcElemCapGEP, elemType, elemType, srcElemGEP))
+		srcElemCap = fmt.Sprintf("%%clonec.cap.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcElemCap, srcElemCapGEP))
+	} else {
+		srcElemCap = srcElemLen
+	}
+	// 子元素大小（%str-long=1 byte；其他容器不應到達此處）
+	subElemSize := int64(1)
+	if elemType == "%vec" || elemType == "%arr" {
+		subElemSize = 8 // fallback（不應到達此處，canClone 已排除）
+	}
+	elemBufSize := fmt.Sprintf("%%clonec.bufsize.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemBufSize, srcElemCap, subElemSize))
+	elemCloneBuf := fmt.Sprintf("%%clonec.buf.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), elemCloneBuf, elemBufSize))
+	elemCopySize := fmt.Sprintf("%%clonec.copysize.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemCopySize, srcElemLen, subElemSize))
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), elemCloneBuf, srcElemData, elemCopySize))
+	// store new data to dst 元素
+	dstElemDataGEP := fmt.Sprintf("%%clonec.dstdata.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dstElemDataGEP, elemType, elemType, dstElemGEP, dataFieldIdx))
+	g.storeDataPtrField(sb, elemCloneBuf, dstElemDataGEP)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), elemSkipLabel))
+
+	// clonec.skip: 繼續下一個元素
+	g.emitLabel(sb, elemSkipLabel)
+	iNext := fmt.Sprintf("%%clonec.i.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopEndLabel)
+}
+
+// emitStructElementsClone 遍歷用戶結構體元素陣列，遞迴 clone 每個元素的欄位。
+func (g *Generator) emitStructElementsClone(sb *strings.Builder, dstBuf, srcBuf, lenReg, structType string) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+	elemSize := g.llvmTypeSize(structType)
+	if elemSize == 0 {
+		elemSize = 8
+	}
+	iPtr := fmt.Sprintf("%%clones.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+	loopCondLabel := fmt.Sprintf("clones.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopCondLabel)
+	iVal := fmt.Sprintf("%%clones.i.val.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	loopCmp := fmt.Sprintf("%%clones.cmp.%d", tid)
+	loopBodyLabel := fmt.Sprintf("clones.body.%d", tid)
+	loopEndLabel := fmt.Sprintf("clones.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), loopCmp, iVal, lenReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), loopCmp, loopBodyLabel, loopEndLabel))
+	g.emitLabel(sb, loopBodyLabel)
+	srcElemArr := fmt.Sprintf("%%clones.srcarr.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), srcElemArr, srcBuf, structType))
+	srcElemGEP := fmt.Sprintf("%%clones.srcgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+		g.indent(), srcElemGEP, structType, structType, srcElemArr, iVal))
+	dstElemArr := fmt.Sprintf("%%clones.dstarr.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), dstElemArr, dstBuf, structType))
+	dstElemGEP := fmt.Sprintf("%%clones.dstgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+		g.indent(), dstElemGEP, structType, structType, dstElemArr, iVal))
+	// 遞迴 clone 結構體欄位
+	g.emitStructClone(sb, srcElemGEP, dstElemGEP, structType)
+	iNext := fmt.Sprintf("%%clones.i.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.emitLabel(sb, loopEndLabel)
+}
+
+// emitStructClone 深層 clone 用戶結構體：先 memcpy 整個結構體，再遞迴 clone 含堆數據的欄位。
+func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structType string) {
+	// 先 memcpy 整個結構體（複製所有欄位，包括 data 指標）
+	structSize := g.llvmTypeSize(structType)
+	if structSize == 0 {
+		structSize = 8
+	}
+	g.tmpIdx++
+	srcI8 := fmt.Sprintf("%%structclone.src.i8.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), srcI8, structType, srcPtr))
+	g.tmpIdx++
+	dstI8 := fmt.Sprintf("%%structclone.dst.i8.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), dstI8, structType, dstPtr))
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
+		g.indent(), dstI8, srcI8, structSize))
+
+	// 遞迴 clone 含堆數據的欄位（覆寫 data 指標為獨立的 clone）
+	structName := strings.TrimPrefix(structType, "%")
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return
+	}
+	for i, f := range fields {
+		switch f.typ {
+		case "%vec", "%str-long":
+			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, 2, f.typ, f.elemType)
+		case "%arr":
+			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, 1, f.typ, f.elemType)
+		default:
+			if g.isUserStructType(f.typ) {
+				g.tmpIdx++
+				srcFieldGEP := fmt.Sprintf("%%structclone.src.fgep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), srcFieldGEP, structType, structType, srcPtr, i))
+				g.tmpIdx++
+				dstFieldGEP := fmt.Sprintf("%%structclone.dst.fgep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), dstFieldGEP, structType, structType, dstPtr, i))
+				g.emitStructClone(sb, srcFieldGEP, dstFieldGEP, f.typ)
+			}
+		}
+	}
+}
+
+// emitStructFieldClone clone 結構體欄位的堆 data。
+func (g *Generator) emitStructFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType string) {
+	g.tmpIdx++
+	srcFieldGEP := fmt.Sprintf("%%structclone.src.flg.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), srcFieldGEP, structType, structType, srcPtr, fieldIdx))
+	g.tmpIdx++
+	dstFieldGEP := fmt.Sprintf("%%structclone.dst.flg.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dstFieldGEP, structType, structType, dstPtr, fieldIdx))
+	if fieldType == "%str-long" {
+		g.emitContainerClone(sb, srcFieldGEP, dstFieldGEP, "%str-long", 2, "i8")
+		return
+	}
+	g.emitContainerClone(sb, srcFieldGEP, dstFieldGEP, fieldType, dataFieldIdx, fieldElemType)
+}
+
 // initVecFieldFromSliceLiteral 在 struct literal 中將 SliceLiteral 初始化到 %vec 欄位。
 // 使用 malloc 分配堆內存（而非 alloca），確保 struct 通過 out 參數返回後 data 仍有效。
 func (g *Generator) initVecFieldFromSliceLiteral(sb *strings.Builder, structVar, structTy string, fieldIdx int, slice *parser.SliceLiteral, fieldElemType string) {
@@ -842,6 +1191,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 將 alloca 提升至 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
 	g.entryAllocaBuf = &strings.Builder{}
+	g.condDepth = 0
 	bodyBuf := &strings.Builder{}
 	if fd.Body != nil {
 		for _, stmt := range fd.Body.Statements {
@@ -3247,15 +3597,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
 			// store data (field 2)
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-			g.indent(), dataGEP, g.varAddr(name)))
-		g.storeDataPtrField(sb, ptrReg, dataGEP)
-		// 追蹤局部 vec 變數，用於函數結束時深層 free
-		g.trackLocalHeapVar(name, "%vec")
-		return
-	}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, g.varAddr(name)))
+			g.storeDataPtrField(sb, ptrReg, dataGEP)
+			// 追蹤局部 vec 變數，用於函數結束時深層 free
+			g.trackLocalHeapVar(name, "%vec")
+			return
+		}
 
 		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
 		// with a default data buffer so push() and index assignment work.
@@ -3385,6 +3735,51 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
 		} else {
 			g.arrayElemTypes[name] = "i64"
+		}
+	}
+
+	// 深層 clone 路徑：b = a，其中 a 是堆擁有型別的局部變數。
+	// 不使用淺拷貝 + move（會泄漏或 double-free），而是深層 clone a 的堆數據到 b，
+	// 使 a 和 b 各自獨立擁有 data，函數結束時各自 free。
+	// 巢狀容器（%vec/%arr 元素為 %vec/%arr）因子元素型別未知，使用 move 代替。
+	if g.heapVars != nil && !stmt.IsSynthetic {
+		if ident, ok := stmt.Value.(*parser.Identifier); ok {
+			if srcHeapType, isHeap := g.heapVars[ident.Value]; isHeap {
+				if ident.Value != name {
+					_, isLocal := g.funcLocalNames[name]
+					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+					if isLocal && !isOutput {
+						srcElemType := ""
+						if g.arrayElemTypes != nil {
+							srcElemType = g.arrayElemTypes[ident.Value]
+						}
+						// 檢查是否可以安全深層 clone
+						canClone := true
+						if (srcHeapType == "%vec" || srcHeapType == "%arr") &&
+							(srcElemType == "%vec" || srcElemType == "%arr") {
+							canClone = false // 巢狀容器，子元素型別未知
+						}
+						if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" {
+							if !g.canDeepCloneStruct(srcHeapType) {
+								canClone = false
+							}
+						}
+						if canClone {
+							// 釋放目標變數的舊堆值（如有）
+							g.freeOldHeapValue(sb, stmt, name)
+							// 深層 clone
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcHeapType, srcElemType)
+							// 追蹤目標變數為堆變數
+							g.trackLocalHeapVar(name, srcHeapType)
+							// 傳播 elemType
+							if srcElemType != "" && g.arrayElemTypes != nil {
+								g.arrayElemTypes[name] = srcElemType
+							}
+							return
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -3815,25 +4210,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// 延遲 move：若目標是輸出參數且源是簡單變數，不立即 store，而是綁定到源變數。
-	// 在函數結束時（flushOutputBindings）才載入源變數的最終值並寫入輸出參數。
-	// 這實現了「返回值延遲 move」語義：函數結束時 move。
-	// 僅對整數型別的輸出參數 + 簡單變數賦值應用延遲 move。
-	// 複雜表達式（字面量、運算、函數呼叫）立即求值，值不會變化，無需延遲。
-	if g.outputParamNames != nil && g.outputParamNames[name] && !stmt.IsSynthetic {
-		if paramType, ptOk := g.varTypes[name]; ptOk && g.isIntegerLLVMType(paramType) {
-			if ident, ok := stmt.Value.(*parser.Identifier); ok {
-				// 簡單變數賦值：res = x → 綁定到 x 的地址
-				if srcType, srcOk := g.varTypes[ident.Value]; srcOk {
-					g.outputBindings[name] = outputBinding{
-						sourcePtr: g.varAddr(ident.Value),
-						llvmType:  srcType,
-					}
-					return
-				}
-			}
-			// 複雜表達式：不延遲，正常 store（值不會變化）
-		}
+	// 延遲 move 已停用：先前的實作會延遲 `r = x` 的 store 到函數結束時，
+	// 但這與條件分支內的後續賦值衝突。例如：
+	//   r = n              ; 延遲綁定 r → &n（不 store）
+	//   n > 0 -> r = f()   ; 立即 store（清除綁定）
+	// 若 if 分支未執行，r 從未被 store，導致未初始化垃圾值。
+	// 正確語義：r = x 應立即 store 當前值，而非延遲到函數結束。
+	// 延遲綁定保留以向後相容 flushOutputBindings，但不再新增綁定。
+
+	// 若對輸出參數進行立即 store（非延遲 move），清除先前的延遲綁定，
+	// 避免函數結束時 flushOutputBindings 用舊源值覆蓋新的 store 結果。
+	if g.outputBindings != nil && g.outputParamNames != nil && g.outputParamNames[name] {
+		delete(g.outputBindings, name)
 	}
 
 	// 堆變數追蹤：記錄有堆分配資料的局部變數，用於函數結束時 free。

@@ -524,6 +524,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	thenLabel := fmt.Sprintf("if.then.%d", labelId)
 	g.emitLabel(sb, thenLabel)
 	g.indentLevel++
+	g.condDepth++
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
@@ -566,12 +567,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !thenTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
+	g.condDepth--
 	g.indentLevel--
 
 	// else
 	elseLabel := fmt.Sprintf("if.else.%d", labelId)
 	g.emitLabel(sb, elseLabel)
 	g.indentLevel++
+	g.condDepth++
 	elseVal := defaultZero
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
 		for i := 0; i < len(expr.Alternative.Statements)-1; i++ {
@@ -602,6 +605,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !elseTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
+	g.condDepth--
 	g.indentLevel--
 
 	// end
