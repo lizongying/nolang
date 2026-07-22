@@ -1180,9 +1180,9 @@ str.replace-str = (old str, new str) (val str) {
     parts []str
     parts = .split(old)
     np = parts.len
-    np == 0 -> return
-    np == 1 -> {
-        val = parts[0]
+    np <= 1 -> {
+        ; 没有匹配：拷贝原字符串，避免与 parts 共享数据指针
+        val = .slice(0, .len)
         return
     }
     val = parts[0]

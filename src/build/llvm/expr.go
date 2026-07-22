@@ -524,7 +524,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	thenLabel := fmt.Sprintf("if.then.%d", labelId)
 	g.emitLabel(sb, thenLabel)
 	g.indentLevel++
-	g.condDepth++
+	// Save SSA versions before entering branch: branch內的賦值遞增版本，
+	// 分支結束後恢復，確保隱式返回不會命中分支內的延遲綁定。
+	savedSSA := make(map[string]int)
+	if g.ssaVersion != nil {
+		for k, v := range g.ssaVersion {
+			savedSSA[k] = v
+		}
+	}
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
@@ -567,14 +574,18 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !thenTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
-	g.condDepth--
-	g.indentLevel--
+		g.indentLevel--
 
 	// else
 	elseLabel := fmt.Sprintf("if.else.%d", labelId)
 	g.emitLabel(sb, elseLabel)
 	g.indentLevel++
-	g.condDepth++
+	// Restore SSA versions: else branch starts from pre-then state.
+	if g.ssaVersion != nil {
+		for k, v := range savedSSA {
+			g.ssaVersion[k] = v
+		}
+	}
 	elseVal := defaultZero
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
 		for i := 0; i < len(expr.Alternative.Statements)-1; i++ {
@@ -605,10 +616,15 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !elseTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
-	g.condDepth--
-	g.indentLevel--
+		g.indentLevel--
 
 	// end
+	// Restore SSA versions after else branch: subsequent code uses pre-branch state.
+	if g.ssaVersion != nil {
+		for k, v := range savedSSA {
+			g.ssaVersion[k] = v
+		}
+	}
 	endLabel := fmt.Sprintf("if.end.%d", labelId)
 	g.emitLabel(sb, endLabel)
 	g.tmpIdx++

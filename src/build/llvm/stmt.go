@@ -79,14 +79,28 @@ func (g *Generator) emitLifetimeEnd(sb *strings.Builder) {
 	}
 }
 
-// flushOutputBindings 在函數返回前，將所有延遲綁定的輸出參數值實際寫入輸出參數指標。
-// 這實現了「延遲 move」語義：res = x 不立即複製 x 的值，
-// 而是在函數結束時才載入 x 的最終值並寫入 res。
+// flushOutputBindings 在函數返回前，按當前 SSA 版本查表，
+// 將延遲綁定的輸出參數值實際寫入輸出參數指標。
+// SSA 版本由 if 分支前後的 save/restore 隔離：
+// - 分支內的賦值遞增版本，return 時 flush 用遞增後的版本查表 → 正確
+// - 分支後版本恢復，隱式返回 flush 用恢復後的版本查表 → 不會命中分支內的綁定
+// - 無綁定的版本（如常量賦值的立即 store）跳過 flush
 func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 	if g.outputBindings == nil || len(g.outputBindings) == 0 {
 		return
 	}
-	for name, binding := range g.outputBindings {
+	for name, versions := range g.outputBindings {
+		if len(versions) == 0 {
+			continue
+		}
+		version := 0
+		if g.ssaVersion != nil {
+			version = g.ssaVersion[name]
+		}
+		binding, ok := versions[version]
+		if !ok {
+			continue // 該版本無延遲綁定，立即 store 已處理
+		}
 		paramPtr := g.varAddr(name)
 		paramType, ok := g.varTypes[name]
 		if !ok {
@@ -94,8 +108,9 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 		}
 		g.tmpIdx++
 		srcLoad := fmt.Sprintf("%%outmove.src.%d", g.tmpIdx)
+		srcPtr := g.varAddr(binding.sourceVar)
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-			g.indent(), srcLoad, binding.llvmType, binding.llvmType, binding.sourcePtr))
+			g.indent(), srcLoad, binding.llvmType, binding.llvmType, srcPtr))
 		// 型別轉換：源型別與參數型別可能不同（如 i64 → i8, i64 → float）
 		storeVal := srcLoad
 		if binding.llvmType != paramType {
@@ -832,7 +847,8 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
 	g.outputParamNames = make(map[string]bool)           // reset output param tracking
-	g.outputBindings = make(map[string]outputBinding)    // reset delayed move bindings
+	g.outputBindings = make(map[string]map[int]outputBinding) // reset delayed move bindings (SSA versioned)
+	g.ssaVersion = make(map[string]int)                  // reset SSA version counters
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
 	g.stackArrVars = make(map[string]bool)               // reset stack-allocated array tracking
 	g.movedVars = make(map[string]bool)                  // reset moved var tracking
@@ -1191,7 +1207,6 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 將 alloca 提升至 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
 	g.entryAllocaBuf = &strings.Builder{}
-	g.condDepth = 0
 	bodyBuf := &strings.Builder{}
 	if fd.Body != nil {
 		for _, stmt := range fd.Body.Statements {
@@ -4210,18 +4225,34 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// 延遲 move 已停用：先前的實作會延遲 `r = x` 的 store 到函數結束時，
-	// 但這與條件分支內的後續賦值衝突。例如：
-	//   r = n              ; 延遲綁定 r → &n（不 store）
-	//   n > 0 -> r = f()   ; 立即 store（清除綁定）
-	// 若 if 分支未執行，r 從未被 store，導致未初始化垃圾值。
-	// 正確語義：r = x 應立即 store 當前值，而非延遲到函數結束。
-	// 延遲綁定保留以向後相容 flushOutputBindings，但不再新增綁定。
-
-	// 若對輸出參數進行立即 store（非延遲 move），清除先前的延遲綁定，
-	// 避免函數結束時 flushOutputBindings 用舊源值覆蓋新的 store 結果。
-	if g.outputBindings != nil && g.outputParamNames != nil && g.outputParamNames[name] {
-		delete(g.outputBindings, name)
+	// 延遲綁定（SSA 版本化）：若目標是輸出參數且源是簡單變數，
+	// 不立即 store，而是遞增 SSA 版本並記錄綁定（源變數名 + 型別）。
+	// flushOutputBindings 時按當前 SSA 版本查表：
+	// - 找到綁定 → load 源變數並 store 到輸出參數
+	// - 找不到 → 跳過（立即 store 已處理，如常量賦值）
+	// SSA 版本由 if 分支前後的 save/restore 隔離，不同分支的綁定互不覆蓋。
+	if g.outputParamNames != nil && g.outputParamNames[name] && !stmt.IsSynthetic {
+		// 每次賦值都遞增 SSA 版本（無論是否延遲綁定）
+		g.ssaVersion[name]++
+		ver := g.ssaVersion[name]
+		if paramType, ptOk := g.varTypes[name]; ptOk && g.isIntegerLLVMType(paramType) {
+			if ident, ok := stmt.Value.(*parser.Identifier); ok {
+				if srcType, srcOk := g.varTypes[ident.Value]; srcOk {
+					// 簡單變數賦值：res = x → 記錄綁定，不 store
+					if g.outputBindings[name] == nil {
+						g.outputBindings[name] = make(map[int]outputBinding)
+					}
+					g.outputBindings[name][ver] = outputBinding{
+						sourceVar: ident.Value,
+						llvmType:  srcType,
+					}
+					return
+				}
+			}
+			// 複雜表達式：不延遲，正常 store（值不會變化）
+			// 版本已遞增但無綁定，flush 時查不到 → 跳過
+		}
+		// 非整數型別：版本已遞增但無綁定，正常 store
 	}
 
 	// 堆變數追蹤：記錄有堆分配資料的局部變數，用於函數結束時 free。

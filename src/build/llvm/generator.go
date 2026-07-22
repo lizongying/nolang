@@ -67,8 +67,9 @@ type Generator struct {
 	curFuncRetName        string                          // 當前函數輸出參數名稱（為空表示 void）
 	curFuncName           string                          // 當前函數名稱（debug 用）
 	inMainFunction        bool                            // true when generating the synthetic @main wrapper
-	outputParamNames      map[string]bool                 // 當前函數的輸出參數名稱集合（用於延遲 move）
-	outputBindings        map[string]outputBinding        // 輸出參數名 → 延遲綁定（源指標 + 型別）
+	outputParamNames      map[string]bool                 // 當前函數的輸出參數名稱集合
+	outputBindings        map[string]map[int]outputBinding // 輸出參數名 → {SSA版本 → 延遲綁定}
+	ssaVersion            map[string]int                   // 輸出參數的 SSA 版本計數器（每次賦值遞增）
 	heapVars              map[string]string               // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
 	stackArrVars          map[string]bool                 // 棧分配的局部固定陣列名（小尺寸/定寬元素），用於 generateLet 跳過 malloc
 	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
@@ -103,7 +104,6 @@ type Generator struct {
 	asyncWrappers         strings.Builder                 // wrapper functions for run expressions
 	debugCallCount        int                             // debug counter for tracing function generation calls
 	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
-	condDepth             int                             // conditional branch nesting depth (0 = function body level); prevents deferred output bindings inside branches
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
 	noBoundsCheck         bool                            // true = skip emitting bounds checks (unsafe mode)
@@ -135,10 +135,12 @@ type sliceViewInfo struct {
 }
 
 // outputBinding 記錄輸出參數的延遲綁定資訊。
-// 當 res = x 時，不立即 store 到輸出參數指標，
-// 而是記錄源變數的指標和型別，在函數結束時才載入最終值並 store。
+// 當 res = x 時，不立即 store 到輸出參數指標，也不 load 源值，
+// 僅記錄源變數名稱和型別。在 flushOutputBindings 時按 SSA 版本查表，
+// 找到綁定則 load 源變數並 store 到輸出參數；找不到則跳過（立即 store 已處理）。
+// SSA 版本由 if 分支前後的 save/restore 隔離，不同分支的綁定互不覆蓋。
 type outputBinding struct {
-	sourcePtr string // 源變數的 LLVM 指標（如 %x）
+	sourceVar string // 源變數名稱（如 "i", "from"）
 	llvmType  string // 源變數的 LLVM 型別（如 i64, i8）
 }
 

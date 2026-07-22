@@ -465,6 +465,10 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 					}
 				}
 			}
+		} else {
+			// 方法調用 (receiver.method(args))：e.Function 是 DotExpression
+			// 遞迴處理 receiver 中的嵌套調用（如 count(0).to-str()）
+			updateCallNames(e.Function, overloads, mangled, varTypes)
 		}
 		// 遞迴處理參數中的嵌套調用
 		for _, arg := range e.Arguments {
@@ -477,6 +481,21 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 
 	case *parser.PrefixExpression:
 		updateCallNames(e.Right, overloads, mangled, varTypes)
+
+	case *parser.DotExpression:
+		// receiver.property：遞迴處理 receiver 中的嵌套調用
+		updateCallNames(e.Receiver, overloads, mangled, varTypes)
+
+	case *parser.IndexExpression:
+		// arr[idx]：遞迴處理索引表達式中的嵌套調用
+		updateCallNames(e.Left, overloads, mangled, varTypes)
+		updateCallNames(e.Index, overloads, mangled, varTypes)
+
+	case *parser.ConditionalExpression:
+		// cond ? a : b：遞迴處理所有子表達式
+		updateCallNames(e.Condition, overloads, mangled, varTypes)
+		updateCallNames(e.Consequence, overloads, mangled, varTypes)
+		updateCallNames(e.Alternative, overloads, mangled, varTypes)
 
 	case *parser.IfExpression:
 		if e.Condition != nil {
