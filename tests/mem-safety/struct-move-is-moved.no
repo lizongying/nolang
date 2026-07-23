@@ -1,0 +1,29 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題：用戶結構體 move 後跳過 free（無 is_moved 雙重校驗）
+; 嚴重等級：低（條件 move 場景下洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 測試用戶結構體的 is_moved 雙重校驗機制：
+;   1. move 場景：結構體 move 到輸出參數，is_moved=true → skip free
+;   2. 不 move 場景：結構體正常釋放，is_moved=false → free
+;
+; ═════════════════════════════════════════════════════════════════
+
+Holder {
+    name str
+    data []i64
+}
+
+; move 場景：直接構造並 move 到 out
+move-holder = () (out Holder) {
+    out = Holder{ name: "test", data: [10, 20, 30] }
+}
+
+; 測試 1：move 場景
+h1 = move-holder()
+print(h1.name)
+print(h1.data[0])
+print(h1.data[1])
+print(h1.data[2])
+
+print("done")

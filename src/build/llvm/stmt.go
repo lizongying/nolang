@@ -243,7 +243,11 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 				g.emitVarHeapFreeDualCheck(sb, name, llvmType, elemType)
 				continue
 			}
-			// 用戶結構體無 is_moved 欄位，保留舊行為：跳過 free（寧可洩漏）
+			// 用戶結構體：透過函數級位圖變數雙重校驗（emitCheckMovedBit）
+			if g.isUserStructType(llvmType) {
+				g.emitStructDualCheckFree(sb, name, llvmType, elemType)
+				continue
+			}
 			continue
 		}
 		g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
@@ -310,6 +314,7 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 // emitSetIsMoved 設定堆容器的運行時 move 標記。
 // %vec/%str-long: field 3 (is_moved)
 // %arr: field 2 (is_moved)
+// 用戶結構體：透過函數級 u64 位圖變數追蹤（見 emitSetMovedBit/emitCheckMovedBit）
 // val=true 表示所有權已轉移（move 發生），val=false 表示仍擁有數據。
 func (g *Generator) emitSetIsMoved(sb *strings.Builder, varName string, val bool) {
 	if g.varTypes == nil {
@@ -489,11 +494,10 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	}
 	if g.movedVars != nil && g.movedVars[name] {
 		// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
-		if oldType == "%vec" || oldType == "%str-long" || oldType == "%arr" {
+		if oldType == "%vec" || oldType == "%str-long" || oldType == "%arr" || g.isUserStructType(oldType) {
 			g.emitVarHeapFreeDualCheck(sb, name, oldType, elemType)
 			return
 		}
-		// 用戶結構體無 is_moved 欄位，保留舊行為：跳過 free
 		return
 	}
 	g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)

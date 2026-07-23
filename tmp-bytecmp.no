@@ -1,0 +1,26 @@
+words []str = with-cap(256)
+tmp-word str = with-cap(64)
+tmp-word[0] = 104
+tmp-word[1] = 101
+words.push(tmp-word)
+
+tmp-word = with-cap(64)
+tmp-word[0] = 119
+tmp-word[1] = 111
+
+w0 str = words[0]
+l1 i64 = tmp-word.len
+l2 i64 = w0.len
+print('tmp-word.len=' + l1.to-str())
+print('words[0].len=' + l2.to-str())
+
+match i64 = 0
+l1 == l2 -> {
+    match = 1
+    m <- [0..l1): {
+        a i64 = tmp-word[m]
+        b i64 = w0[m]
+        a != b -> match = 0
+    }
+}
+print('match=' + match.to-str())

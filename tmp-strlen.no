@@ -1,0 +1,9 @@
+s str = with-cap(64)
+print('before assign, len=' + s.len.to-str())
+s[0] = 104
+s[1] = 101
+s[2] = 108
+print('after assign 3 bytes, len=' + s.len.to-str())
+print('s[0]=' + s[0].to-str())
+print('s[1]=' + s[1].to-str())
+print('s[2]=' + s[2].to-str())
