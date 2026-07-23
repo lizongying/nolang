@@ -855,46 +855,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.writef("  // %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
-
-	// 過濾掉 ; 分隔符產生的空表達式語句
-	statements := make([]parser.Statement, 0, len(s.Body.Statements))
-	for _, stmt := range s.Body.Statements {
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
-			continue
-		}
-		statements = append(statements, stmt)
-	}
-
-	for i, stmt := range statements {
-		if i > 0 {
-			prevTokenLine := stmtTokenLine(statements[i-1])
-			currTokenLine := stmtTokenLine(stmt)
-		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-			// Same line: never emit ';' (reserved for comments); split onto a new line.
-			f.newline()
-		} else {
-				prevEndLine := stmtTokenEndLine(statements[i-1])
-				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
-					f.write("\n") // blank line (no indent)
-				}
-				f.newline()
-			}
-		} else {
-			// Check for blank line between '{' and first statement
-			openBraceLine := s.Body.Token.Line
-			firstDocStartLine := stmtFirstLine(stmt)
-			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
-				f.write("\n") // blank line (no indent)
-			}
-			f.newline()
-		}
-		f.formatStatement(stmt)
-	}
-
-	// 輸出函數體內的尾隨註釋
-	f.formatTrailingComments(s.Body.TrailingComments)
-
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -946,8 +907,8 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 // formatBlockInner formats the statements inside a block body (without writing
 // the enclosing braces). It handles statement filtering, blank-line preservation,
 // and doc-comment spacing. The caller is responsible for writing braces and
-// managing indent.
-func (f *formatter) formatBlockInner(body *parser.BlockStatement) {
+// managing indent. openBraceLine is the source line of '{' (0 if unknown).
+func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine int) {
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
 	statements := make([]parser.Statement, 0, len(body.Statements))
 	for _, stmt := range body.Statements {
@@ -960,7 +921,6 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement) {
 		statements = append(statements, stmt)
 	}
 
-	openBraceLine := body.Token.Line
 	for i, stmt := range statements {
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
@@ -979,7 +939,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement) {
 		} else {
 			// Check for blank line between '{' and first statement
 			firstDocStartLine := stmtFirstLine(stmt)
-			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
+			if (openBraceLine > 0 && firstDocStartLine > openBraceLine+1) || f.hasDocComment(stmt) {
 				f.write("\n") // blank line (no indent)
 			}
 			f.newline()
@@ -1001,7 +961,7 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 		}
 	}
 	f.indent++
-	f.formatBlockInner(s)
+	f.formatBlockInner(s, s.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1148,7 +1108,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		f.write(": {")
 	}
 	f.indent++
-	f.formatBlockInner(e.Consequence)
+	f.formatBlockInner(e.Consequence, e.Consequence.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1161,7 +1121,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 			f.formatExpression(ifExpr.Condition)
 			f.write(" {")
 			f.indent++
-			f.formatBlockInner(ifExpr.Consequence)
+			f.formatBlockInner(ifExpr.Consequence, ifExpr.Consequence.Token.Line)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -1176,7 +1136,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 				f.write(" else: {")
 			}
 			f.indent++
-			f.formatBlockInner(e.Alternative)
+			f.formatBlockInner(e.Alternative, e.Alternative.Token.Line)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -1353,27 +1313,7 @@ writeBody:
 		}
 	}
 	f.indent++
-	for i, stmt := range statements {
-		if i > 0 {
-			prevTokenLine := stmtTokenLine(statements[i-1])
-			currTokenLine := stmtTokenLine(stmt)
-		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-			// Same line: never emit ';' (reserved for comments); split onto a new line.
-			f.newline()
-		} else {
-				prevEndLine := stmtTokenEndLine(statements[i-1])
-				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
-					f.write("\n") // blank line (no indent)
-				}
-				f.newline()
-			}
-		} else {
-			f.newline()
-		}
-		f.formatStatement(stmt)
-	}
-	f.formatTrailingComments(e.Consequence.TrailingComments)
+	f.formatBlockInner(e.Consequence, 0)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1386,7 +1326,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 		f.formatExpression(ifExpr.Condition)
 		f.write(" {")
 		f.indent++
-		f.formatBlockInner(ifExpr.Consequence)
+		f.formatBlockInner(ifExpr.Consequence, ifExpr.Consequence.Token.Line)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1396,7 +1336,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 	} else {
 		f.write(" else {")
 		f.indent++
-		f.formatBlockInner(alt)
+		f.formatBlockInner(alt, alt.Token.Line)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1419,41 +1359,7 @@ func isElifBlock(bs *parser.BlockStatement) bool {
 func (f *formatter) writeLoopBodyBlock(s *parser.ForStatement) {
 	f.write("{")
 	f.indent++
-	// 過濾掉 ; 分隔符產生的空表達式語句
-	statements := make([]parser.Statement, 0, len(s.Body.Statements))
-	for _, stmt := range s.Body.Statements {
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
-			continue
-		}
-		statements = append(statements, stmt)
-	}
-	for i, stmt := range statements {
-		if i > 0 {
-			prevTokenLine := stmtTokenLine(statements[i-1])
-			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// 同一行：不輸出 ';'（保留給註釋），直接換行。
-				f.newline()
-			} else {
-				prevEndLine := stmtTokenEndLine(statements[i-1])
-				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
-					f.write("\n") // 空行（無縮進）
-				}
-				f.newline()
-			}
-		} else {
-			// 檢查 '{' 與首條語句之間是否有空行
-			openBraceLine := s.Body.Token.Line
-			firstDocStartLine := stmtFirstLine(stmt)
-			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
-				f.write("\n") // 空行（無縮進）
-			}
-			f.newline()
-		}
-		f.formatStatement(stmt)
-	}
-	f.formatTrailingComments(s.Body.TrailingComments)
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1470,7 +1376,7 @@ func (f *formatter) writeLoopBodyAfterColon(s *parser.ForStatement) {
 	}
 	f.write(" {")
 	f.indent++
-	f.formatBlockInner(s.Body)
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1517,7 +1423,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
 		f.write("{")
 		f.indent++
-		f.formatBlockInner(s.Body)
+		f.formatBlockInner(s.Body, s.Body.Token.Line)
 		f.indent--
 		f.newline()
 		f.write("} * ")
@@ -1556,7 +1462,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.formatStatement(s.Update)
 		f.write(" {")
 		f.indent++
-		f.formatBlockInner(s.Body)
+		f.formatBlockInner(s.Body, s.Body.Token.Line)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1925,7 +1831,7 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write(")")
 	f.write(" {")
 	f.indent++
-	f.formatBlockInner(e.Body)
+	f.formatBlockInner(e.Body, e.Body.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")

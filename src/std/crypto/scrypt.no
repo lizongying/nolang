@@ -20,6 +20,7 @@
 ; Salsa20/8 核心：對 64 位元組區塊進行 8 輪混合
 ; block []byte: 64 位元組輸入/輸出（原地修改）
 salsa20-8-core = (block []byte) {
+
     ; 載入 16 個 32-bit 字（小端序）
     x [16]u32
     i <- [0..16): {
@@ -36,6 +37,7 @@ salsa20-8-core = (block []byte) {
     ; 8 輪（4 次雙輪）
     mask u32 = 4294967295
     round <- [0..4): {
+
         ; 列輪
         ; QR(x[0], x[4], x[8], x[12])
         x[4] = (x[4] ^ (((x[0] + x[12]) & mask) << 7)) & mask
@@ -122,6 +124,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
     ; 逐區塊處理
     i <- [0..total): {
+
         ; X = B[i] XOR X
         j <- [0..64): {
             x[j] = (b[i * 64 + j] & 255) ^ (x[j] & 255)
@@ -180,6 +183,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     n-idx = 1
     {
+
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
@@ -192,6 +196,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; 第二階段：偽隨機存取
     n-idx = 0
     {
+
         ; j = Integerify(X) mod N
         ; Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數
         j = 0
@@ -231,6 +236,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 ; key-len i64: 期望金鑰長度
 ; 返回 out []byte: 推導出的金鑰
 scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out []byte) {
+
     ; 1. B = PBKDF2-HMAC-SHA256(password, salt, 1, p * 128 * r)
     b-len = p * 128 * r
     b []byte
@@ -239,6 +245,7 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
     ; 2. For i = 0 to p-1: B_i = ROMix(B_i, N, r)
     block-bytes = 128 * r
     i <- [0..p): {
+
         ; 提取 B_i
         b-i []byte
         j <- [0..block-bytes): {

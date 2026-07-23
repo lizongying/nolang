@@ -1,0 +1,11 @@
+// Test: read large input and count bytes
+n i64 = 0
+{
+    line str = ''
+    ok = false
+    line, ok = get-line()
+    ok == false -> break
+    bs []byte = line.to-bytes()
+    n = n + bs.len
+} ()
+print('total bytes: ' + n.to-str())

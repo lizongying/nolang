@@ -289,6 +289,7 @@ func TestFormatBasic(t *testing.T) {
     {
         n == 16 -> t4 = 1
         -> {
+
             // 部分區塊：設置對應位元
             t0 = t0 | (1 << (n * 8))
         }
@@ -641,8 +642,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
 
 		{
 			name: "func6",
-			input: strings.TrimSpace(`
-// ─── 迭代器 ───────────────────────────────────
+			input: strings.TrimSpace(`// ─── 迭代器 ───────────────────────────────────
 
 // tar-for-each: 遍歷所有條目
 // 每次回呼傳入 (idx, name, sz, typ, data)
@@ -652,6 +652,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     n = len(data)
     off = 0
     {
+
         // 檢查結束
         empty = 1
         i = 0
@@ -716,11 +717,8 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         off = off + 512 + blocks * 512
         idx = idx + 1
     } (off + 512 <= n)
-}
-
-			`),
-			expected: strings.TrimSpace(`
-// ─── 迭代器 ───────────────────────────────────
+}`),
+			expected: strings.TrimSpace(`// ─── 迭代器 ───────────────────────────────────
 
 // tar-for-each: 遍歷所有條目
 // 每次回呼傳入 (idx, name, sz, typ, data)
@@ -730,6 +728,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     n = len(data)
     off = 0
     {
+
         // 檢查結束
         empty = 1
         i = 0
@@ -794,17 +793,15 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         off = off + 512 + blocks * 512
         idx = idx + 1
     } (off + 512 <= n)
-}
-
-			`),
+}`),
 		},
 
 		{
 			name: "func7",
-			input: strings.TrimSpace(`
-// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
+			input: strings.TrimSpace(`// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
 // ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
+
     // 複製原始金鑰（前 16 位元組）
     i = 0
     {
@@ -815,6 +812,7 @@ aes-key-expand = (key str, ek str) {
     // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
     {
+
         // 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
@@ -834,12 +832,11 @@ aes-key-expand = (key str, ek str) {
     ek[i * 4 + 2] = (w >> 8) & 255
     ek[i * 4 + 3] = w & 255
     i = i + 1
-}
-			`),
-			expected: strings.TrimSpace(`
-// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
+}`),
+			expected: strings.TrimSpace(`// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
 // ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
+
     // 複製原始金鑰（前 16 位元組）
     i = 0
     {
@@ -850,6 +847,7 @@ aes-key-expand = (key str, ek str) {
     // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
     {
+
         // 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
@@ -864,13 +862,13 @@ aes-key-expand = (key str, ek str) {
             w = (w-prev4 ^ w) & 4294967295
         }
     } (i < 44)
+
     ek[i * 4] = (w >> 24) & 255
     ek[i * 4 + 1] = (w >> 16) & 255
     ek[i * 4 + 2] = (w >> 8) & 255
     ek[i * 4 + 3] = w & 255
     i = i + 1
-}
-			`),
+}`),
 		},
 
 		{
@@ -984,14 +982,13 @@ aes-128-dec= (in str, n i64, key str, out str) {
     add-round-key(out, ek)
 }
 			`),
-			expected: strings.TrimSpace(`
-
-// aes-128-dec: 解密一個 16-byte 區塊
+			expected: strings.TrimSpace(`// aes-128-dec: 解密一個 16-byte 區塊
 // in: 輸入密文（16 位元組）
 // n: 固定 16
 // key: 16-byte 金鑰
 // out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
+
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1021,14 +1018,12 @@ aes-128-dec = (in str, n i64, key str, out str) {
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
-}
-			`),
+}`),
 		},
 
 		{
 			name: "comment3",
-			input: strings.TrimSpace(`
-// ─── 單區塊加密/解密 ──────────────────────────────
+			input: strings.TrimSpace(`// ─── 單區塊加密/解密 ──────────────────────────────
 
 // aes-128-enc: 加密一個 16-byte 區塊
 // in: 輸入明文（16 位元組）
@@ -1036,6 +1031,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
 // key: 16-byte 金鑰
 // out: 輸出密文（16 位元組）
 aes-128-enc = (in str, n i64, key str, out str) {
+
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1068,10 +1064,8 @@ aes-128-enc = (in str, n i64, key str, out str) {
     sub-bytes(out, 16)
     shift-rows(out)
     add-round-key(out, ek + 160)
-}
-			`),
-			expected: strings.TrimSpace(`
-// ─── 單區塊加密/解密 ──────────────────────────────
+}`),
+			expected: strings.TrimSpace(`// ─── 單區塊加密/解密 ──────────────────────────────
 
 // aes-128-enc: 加密一個 16-byte 區塊
 // in: 輸入明文（16 位元組）
@@ -1079,6 +1073,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
 // key: 16-byte 金鑰
 // out: 輸出密文（16 位元組）
 aes-128-enc = (in str, n i64, key str, out str) {
+
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1111,8 +1106,7 @@ aes-128-enc = (in str, n i64, key str, out str) {
     sub-bytes(out, 16)
     shift-rows(out)
     add-round-key(out, ek + 160)
-}
-			`),
+}`),
 		},
 
 		{
@@ -1393,6 +1387,7 @@ sha512-block=(s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 
 // s []u64: 16 個 64-bit 字 (big-endian)
 // h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
 sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) {
+
     // 64-bit 全 1 遮罩（用於位元 NOT）
     MASK64 = -1
 
@@ -1756,14 +1751,13 @@ func TestFormatComment(t *testing.T) {
 		},
 		{
 			name: "1",
-			input: strings.TrimSpace(`
-
-// aes-128-dec: 解密一個 16-byte 區塊
+			input: strings.TrimSpace(`// aes-128-dec: 解密一個 16-byte 區塊
 // in: 輸入密文（16 位元組）
 // n: 固定 16
 // key: 16-byte 金鑰
 // out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
+
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1793,16 +1787,14 @@ aes-128-dec = (in str, n i64, key str, out str) {
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
-}
-            `),
-			expected: strings.TrimSpace(`
-
-// aes-128-dec: 解密一個 16-byte 區塊
+}`),
+			expected: strings.TrimSpace(`// aes-128-dec: 解密一個 16-byte 區塊
 // in: 輸入密文（16 位元組）
 // n: 固定 16
 // key: 16-byte 金鑰
 // out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
+
     // 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1832,8 +1824,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
-}
-            `),
+}`),
 		},
 	}
 
