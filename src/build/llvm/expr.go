@@ -59,7 +59,12 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 	case *parser.IntegerLiteral:
 		return fmt.Sprintf("%d", e.Value)
 	case *parser.FloatLiteral:
-		return fmt.Sprintf("%f", e.Value)
+		s := strconv.FormatFloat(e.Value, 'g', -1, 64)
+		// Ensure LLVM treats it as double: must contain '.', 'e', or 'E'
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		return s
 	case *parser.ByteLiteral:
 		return fmt.Sprintf("%d", e.Value)
 	case *parser.CharLiteral:
@@ -574,7 +579,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !thenTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
-		g.indentLevel--
+	g.indentLevel--
 
 	// else
 	elseLabel := fmt.Sprintf("if.else.%d", labelId)
@@ -616,7 +621,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if !elseTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
-		g.indentLevel--
+	g.indentLevel--
 
 	// end
 	// Restore SSA versions after else branch: subsequent code uses pre-branch state.
@@ -3063,37 +3068,37 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 
-				// Auto-update len (field 0) to max(len, idx+1). Without this,
-				// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
-				// elements were written via vec[i] = val, producing wrong outputs.
-				// Optimization: skip the load+add+icmp+select+store when the index
-				// is a compile-time constant. For constant indices, either:
-				//  (a) idx+1 <= len → max(len, idx+1) == len → store is redundant
-				//  (b) idx+1 > len  → bounds check on cap already passed, but
-				//      updating len for a constant index past len is not a
-				//      pattern that appears in correct code (the slice would
-				//      have been sized appropriately at initialization).
-				varIdxExpr, _ := expr.Left.(*parser.IndexExpression)
-				_, isConstIdx := varIdxExpr.Index.(*parser.IntegerLiteral)
-				if !isConstIdx {
-					g.tmpIdx++
-					lenGEP := fmt.Sprintf("%%vec.set.len.gep.%d", g.tmpIdx)
-					g.tmpIdx++
-					curLen := fmt.Sprintf("%%vec.set.cur-len.%d", g.tmpIdx)
-					g.tmpIdx++
-					newLen := fmt.Sprintf("%%vec.set.new-len.%d", g.tmpIdx)
-					g.tmpIdx++
-					cmpReg := fmt.Sprintf("%%vec.set.cmp.%d", g.tmpIdx)
-					g.tmpIdx++
-					finalLen := fmt.Sprintf("%%vec.set.final-len.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
-						g.indent(), lenGEP, g.varAddr(varName)))
-					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
-					sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
-					sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
-					sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, newLen, curLen))
-					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
-				}
+					// Auto-update len (field 0) to max(len, idx+1). Without this,
+					// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
+					// elements were written via vec[i] = val, producing wrong outputs.
+					// Optimization: skip the load+add+icmp+select+store when the index
+					// is a compile-time constant. For constant indices, either:
+					//  (a) idx+1 <= len → max(len, idx+1) == len → store is redundant
+					//  (b) idx+1 > len  → bounds check on cap already passed, but
+					//      updating len for a constant index past len is not a
+					//      pattern that appears in correct code (the slice would
+					//      have been sized appropriately at initialization).
+					varIdxExpr, _ := expr.Left.(*parser.IndexExpression)
+					_, isConstIdx := varIdxExpr.Index.(*parser.IntegerLiteral)
+					if !isConstIdx {
+						g.tmpIdx++
+						lenGEP := fmt.Sprintf("%%vec.set.len.gep.%d", g.tmpIdx)
+						g.tmpIdx++
+						curLen := fmt.Sprintf("%%vec.set.cur-len.%d", g.tmpIdx)
+						g.tmpIdx++
+						newLen := fmt.Sprintf("%%vec.set.new-len.%d", g.tmpIdx)
+						g.tmpIdx++
+						cmpReg := fmt.Sprintf("%%vec.set.cmp.%d", g.tmpIdx)
+						g.tmpIdx++
+						finalLen := fmt.Sprintf("%%vec.set.final-len.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+							g.indent(), lenGEP, g.varAddr(varName)))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
+						sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, newLen, curLen))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
+					}
 				}
 				return "0"
 			}

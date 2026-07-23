@@ -64,7 +64,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Exit the process with the given status code",
-		CLibCall:     &CLibCall{FuncName: "exit", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32},
+		CLibCall:     &CLibCall{FuncName: "exit", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// get-pid: get process ID

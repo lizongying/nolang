@@ -1,0 +1,17 @@
+word [64]byte
+word[0] = 104
+word[1] = 101
+word[2] = 108
+word[3] = 108
+word[4] = 111
+wlen i64 = 5
+
+tmp-word str = ''
+tmp-word = with-cap(64)
+print('tmp-word type test')
+k = 0
+k <- [0..wlen): {
+    tmp-word[k] = word[k]
+}
+print('after assign')
+print(tmp-word)

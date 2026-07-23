@@ -1,0 +1,16 @@
+line str = ''
+ok = false
+line, ok = get-line()
+ok == false -> {
+    print('no input')
+    return
+}
+bs []byte = with-cap(4096)
+bs = line.to-bytes()
+printf('bs.len = %d\n', bs.len)
+j = 0
+c i64 = 0
+j <- [0..bs.len): {
+    c = bs[j]
+    printf('byte[%d] = %d\n', j, c)
+}

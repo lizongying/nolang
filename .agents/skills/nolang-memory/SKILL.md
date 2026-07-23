@@ -158,15 +158,71 @@ outer.push(inner)
 ; 函数结束时 inner 跳过 free，outer 深层 free 释放 inner 的 data
 ```
 
-### 5.4 slice 视图的三种命运
+### 5.4 slice 表達式賦值（總是 clone）
 
-| 目标 | 行为 | 所有权 |
+**設計變更（2026-07）**：放棄 slice view 零拷貝機制，所有 `v = arr[1..3]` 切片表達式賦值都執行完全 clone（malloc + memcpy），使目標獨立擁有 data。
+
+| 目標 | 行為 | 所有权 |
 |------|------|--------|
-| 局部变量 `v = arr[1..3]` | 零拷贝视图 | 共享原数组 data |
-| 输出参数 `out = arr[1..3]` | clone（malloc+memcpy） | 独立拥有 |
+| 局部变量 `v = arr[1..3]` | clone（malloc+memcpy） | 独立拥有 |
+| 输出参数 `out = arr[1..3]` | clone | 独立拥有 |
 | 显式 `[]T` 类型 `v []i64 = arr[1..3]` | clone | 独立拥有 |
 
-**原因**：输出参数逃逸到调用者，原数组可能在函数结束前被 free，视图必须 clone 为独立 data。
+**原因**：slice 是視圖，共享原數組 data。若後續原數組被修改或釋放，視圖會懸空（use-after-free）。總是 clone 確保目標獨立擁有 data。
+
+**實現要點**：
+- `slice_view.go: generateSliceViewAssignment` 中 `needClone := true`（始終）
+- `parser.go` 不再為 `SliceExpression` RHS 自動推斷 `SliceType`（避免與總是 clone 的語義衝突）
+- `stmt.go: collectVarDeclsFromStmtInner` 不再為 slice view 跳過 alloca（變量需要獨立存儲空間）
+- `sliceViews map` 不再被填充，舊的 `materializeSliceView` / `isSliceViewVar` 成為死代碼（保留以維持向後相容性，未來可清理）
+
+### 5.5 slice view Identifier 路徑（保留但實際不觸發）
+
+`out = view`（view 是切片視圖別名）的 RHS 是 Identifier 而非 SliceExpression，繞過 `generateSliceViewAssignment` 的 clone 保護。修復在 `generateLet` 中新增 Identifier 路徑檢測：
+
+```go
+if ident, ok := stmt.Value.(*parser.Identifier); ok {
+    if g.isSliceViewVar(ident.Value) {
+        needClone := false
+        if g.outputParamNames != nil && g.outputParamNames[name] {
+            needClone = true
+        }
+        if _, isSliceType := stmt.Type.(*parser.SliceType); isSliceType {
+            needClone = true
+        }
+        if needClone {
+            // clone view data 到目標變數
+            g.emitSliceClone(sb, name, view.dataPtrReg, view.viewLen, ...)
+            g.trackLocalHeapVar(name, resultType)  // 僅局部變數
+            return
+        }
+    }
+}
+```
+
+**注意**：由於 §5.4 設計變更，`sliceViews` map 不再被填充，`isSliceViewVar` 永遠返回 false，此分支實際不會觸發。保留代碼以維持向後相容性。
+
+### 5.6 needClone 路徑的 heapVars 追蹤
+
+`emitSliceClone` 僅寫入 len/cap/data，但不會自動追蹤為 heapVars。在 `generateSliceViewAssignment` 和 `generateChainedSliceViewClone` 的 needClone 路徑（現在始終觸發）中呼叫 `trackLocalHeapVar`，使後續 `v []i64 = view` 賦值能走深層 clone 路徑，並在函數結束時正確 free。
+
+### 5.7 SliceType + 非 SliceLiteral RHS 的 fall-through
+
+`v []i64 = view`（顯式 []T 型別 + Identifier RHS） formerly 走入 SliceType 預設初始化路徑（malloc cap=1024 buf, len=0），**完全忽略 RHS**，導致 v.len=0 → index out of bounds。修復：僅當 `stmt.Value == nil`（純宣告如 `v []i64`）才執行預設初始化；有 RHS 值時 fall through 到深層 clone / 一般賦值路徑。
+
+### 5.8 generateArrayRange varAddr 全局變數修復
+
+`for i <- a: { ... }` 中，當 `a` 是全局變數（如 `a = [1, 2, 3]` 模組級聲明）時，`generateArrayRange` 原本硬編碼 `structPtr = fmt.Sprintf("%%%s", identName)`，產生 `%a` 而非 `@a`，導致 LLVM「use of undefined value '%a'」錯誤。
+
+**修復**：改用 `g.varAddr(identName)` 正確處理全局（`@name`）vs 局部（`%name`）變數。
+
+```go
+// 使用 varAddr 以正確處理全域變數（@name）vs 局部變數（%name）。
+// 直接拼 "%%%s" 會把全域變數誤當作局部，導致 LLVM「undefined value」錯誤。
+structPtr = g.varAddr(identName)
+```
+
+**測試**：`tests/vec-range.no`、`tests/arr-range.no`（全局變數 range 迭代）。
 
 ## 6. 深層 clone（局部變數間賦值）
 
@@ -288,7 +344,8 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `deep-free-nested-vec.no` | `[][]i64` 深层 free（vec 元素为 %vec，push moved 标记） |
 | `deep-free-struct-vec.no` | `[]MyType` 深层 free（vec 元素为用户结构体，递归释放 name.data + items.data） |
 | `struct-field-leak.no` | 结构体字段堆数据释放 |
-| `slice-view-escape.no` | slice 视图赋值输出参数的 clone |
+| `slice-view-escape.no` | slice 视图逃逸（out=view 输出参数 / v []i64=view 显式型别 / 多次调用不 double-free / 固定陣列视图） |
+| `vec-range.no` / `arr-range.no` | 全局變數 range 迭代（`for i <- a:`，驗證 varAddr 正確用 `@a`） |
 | `reassign-leak.no` | 重新赋值旧值释放 |
 | `vec-push-leak.no` | vec.push 的 moved 标记 |
 | `if-branch-move-leak.no` | 条件分支中的 move |
@@ -307,13 +364,35 @@ loop {
 }
 ```
 
-### 10.3 slice 视图 + 原数组 move
+### 10.3 ~~slice 视图 + 原数组 move~~（已解決）
+
+**原問題**：
 ```nolang
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 ```
 
-### 10.4 async 共享数据竞态
+**已解決（2026-07 設計變更）**：`view = arr[1..3]` 現在總是 clone（malloc+memcpy），view 獨立擁有 data，原數組釋放不影響 view。`sliceViews` map 不再被填充，`freeOldHeapValue` 無需檢查視圖映射。測試見 `slice-view-escape.no` 測試 5。
+
+### 10.4 ~~prologue buffer 洩漏~~（已解決）
+
+**原問題**：每個 `%vec`/`%arr` 局部變數和 `%vec`/`%arr`/`%str-long` 輸出參數在函數 prologue 階段 `malloc(256*elemSize)` 預分配 buffer，使 `buf[i] = val` 不會因 data 為 null 而崩潰。但若變數隨後被 SliceLiteral 賦值（如 `v = [1,2,3]` 或 `out = [1,2,3]`），prologue buffer 被新 buffer 覆蓋丟失，每次函數調用洩漏 256*elemSize 字節。
+
+**根因（設計層面）**：
+1. **越權替調用方處理緩衝區**：`out` 是調用方傳入的參數，緩衝區有沒有分配、是否有效應全部由調用方負責。函數 prologue 主動 malloc 兜底等於編譯器擅自接管參數生命週期。
+2. **無視 out 可能已攜帶有效緩衝區**：調用方（call.go `voidSingleOutput` 路徑）已為單輸出參數 malloc 緩衝區，prologue 無腦覆蓋分配新 buffer，直接丟棄調用方傳入的原有緩衝區指針，立刻觸發洩漏。
+3. **單/多輸出邏輯割裂**：舊邏輯僅對 `len(fd.Results) == 1 && fd.Results[0].Name != ""` 的單命名輸出參數預分配，多輸出參數不處理，憑空多出特殊分支。
+
+**已解決（2026-07 設計變更）**：徹底刪除 prologue 對輸出參數的預分配邏輯，緩衝區合法性責任完全上移給調用方。
+1. **刪除 stmt.go prologue 預分配分支**：移除 `if len(fd.Results) == 1 && fd.Results[0].Name != ""` 整個分支（原 `%str-long`/`%vec`/`%arr` 三條 malloc 路徑），所有輸出參數（單/多）一視同仁，prologue 不再自動 malloc 任何兜底緩衝區。
+2. **call.go `voidSingleOutput` 路徑補充 `%arr` 分配**：原路徑已處理 `%str-long`/`%vec`，補充 `%arr` 分支（解析 Nolang 類型 `[N]T` 得到 arrSize 和 elemSize，`malloc(arrSize*elemSize)` 並設置 len/data），使所有容器類型輸出參數的緩衝區都由調用方統一分配。
+3. **刪除 `freeOutputParamPrologueBuf` 函數及調用點**：不再有 prologue buffer 需要釋放，該函數成為死代碼已移除。
+
+局部變數的 prologue 預分配保留（局部變數沒有「調用方」概念，prologue 分配是合理的），並在 malloc 後呼叫 `trackLocalHeapVar` 追蹤，使 `freeOldHeapValue`/`emitHeapFree` 能正確釋放。
+
+測試見 `prologue-buf-leak.no`（涵蓋輸出參數和局部變數兩個場景，多次調用驗證不洩漏）。`leaks` 工具確認 prologue buffer（2048 字節）被正確釋放，僅剩 16 字節基線噪聲。
+
+### 10.5 async 共享数据竞态
 异步线程与主线程共享堆数据时，free 顺序不确定。
 
 ## 11. 修改堆释放逻辑的检查清单
@@ -354,6 +433,11 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 | 重新赋值释放 | `src/build/llvm/stmt.go` | `freeOldHeapValue` |
 | **深層 clone** | `src/build/llvm/stmt.go` | `emitDeepClone`, `emitContainerClone`, `emitDeepElementClone`, `emitStructElementsClone`, `emitStructClone`, `emitStructFieldClone`, `canDeepCloneStruct` |
 | **`b = a` clone 路徑** | `src/build/llvm/stmt.go` | `generateLet` 中的 Identifier + heapVars 深層 clone 路徑 |
+| **slice view Identifier clone** | `src/build/llvm/stmt.go` | `generateLet` 中的 `isSliceViewVar` + needClone 路徑（§5.5，保留但不觸發） |
+| **slice 總是 clone** | `src/build/llvm/slice_view.go` | `generateSliceViewAssignment` needClone 始終 true；`emitSliceClone`、`generateChainedSliceViewClone` 的 `trackLocalHeapVar`（§5.4, §5.6） |
+| **SliceType fall-through** | `src/build/llvm/stmt.go` | SliceType 區塊僅 `stmt.Value == nil` 時預設初始化（§5.7） |
+| **range 迭代全局變數** | `src/build/llvm/stmt.go` | `generateArrayRange` 中 `structPtr = g.varAddr(identName)`（§5.8） |
+| slice 視圖註冊/克隆 | `src/build/llvm/slice_view.go` | `generateSliceViewAssignment`, `emitSliceClone`, `materializeSliceView`（部分為死代碼） |
 | **FFI extern str 安全複製** | `src/build/llvm/generator.go` | `emitFFIExternStrClone` |
 | **FFI extern str 路徑入口** | `src/build/llvm/call.go` | `callExtern` 中的 `case "str"` |
 | vec.push moved | `src/build/llvm/call.go` | vec-push case |

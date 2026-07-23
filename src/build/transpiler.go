@@ -3852,6 +3852,18 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	// 3. 遍歷頂層語句做型別檢查
 	// 收集 struct 定義的欄位型別，供 inferExprType 解析 self.field.method() 接收者型別
 	validationStructFields = collectStructFields(program)
+	// 先收集所有頂層變數的顯式型別，供跨語句型別推斷使用
+	// （如 `z f64 = 2.0` 之後 `a = z * z` 需知道 z 是 f64）
+	topLevelVarTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
+				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
+					topLevelVarTypes[ls.Name.Value] = ls.Type.String()
+				}
+			}
+		}
+	}
 	for _, stmt := range program.Statements {
 		// 判斷是否為 struct 方法
 		selfType := ""
@@ -3860,7 +3872,12 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 				selfType = fd.Parameters[0].Type.String()
 			}
 		}
-		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, make(map[string]string))
+		// 使用預填的頂層變數型別，避免跨語句型別推斷失敗
+		localVarTypes := make(map[string]string)
+		for k, v := range topLevelVarTypes {
+			localVarTypes[k] = v
+		}
+		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes)
 		results = append(results, errs...)
 	}
 

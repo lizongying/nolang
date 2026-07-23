@@ -3,6 +3,7 @@ package llvm
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -2358,9 +2359,40 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				dataGEP := fmt.Sprintf("%%vso.vecdata.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
 				g.storeDataPtrField(sb, dataBuf, dataGEP)
+		} else if voidSingleOutputType == "%arr" {
+			// %arr 類型（如 [8]u8）需初始化 len 與 data 指標，否則方法體 out[i] = val 會崩潰。
+			// 緩衝區由調用方負責分配，被調用函數 prologue 不再預分配。
+			arrSize := int64(0)
+			elemSize := int64(1)
+			if g.funcResultNolangTypes != nil {
+				if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
+					nt := nolangRets[0]
+					if strings.HasPrefix(nt, "[") {
+						if rb := strings.Index(nt, "]"); rb > 0 {
+							sizeStr := nt[1:rb]
+							if v, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+								arrSize = v
+							}
+							elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
+						}
+					}
+				}
 			}
+			totalSize := arrSize * elemSize
+			g.tmpIdx++
+			arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+			g.tmpIdx++
+			arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, voidSingleTmp))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
+			g.tmpIdx++
+			arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
+			g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
 		}
-		typedArgs = append(typedArgs, voidSingleOutputType+"* "+voidSingleTmp)
+	}
+	typedArgs = append(typedArgs, voidSingleOutputType+"* "+voidSingleTmp)
 	}
 
 	// Make the call

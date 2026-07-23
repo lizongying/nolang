@@ -36,23 +36,16 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 		return false
 	}
 
-	// 判斷是否需要完全克隆：
-	// - 目標是輸出參數（會逃逸出函數作用域）
-	// - 目標顯式標註為 SliceType（[]T，即 vec 類型）
-	needClone := false
-	if g.outputParamNames != nil && g.outputParamNames[name] {
-		needClone = true
-	}
-	if _, isSliceType := stmt.Type.(*parser.SliceType); isSliceType {
-		needClone = true
-	}
+	// 切片表達式總是克隆：slice 是視圖，共享原數組 data。
+	// 若後續原數組被修改或釋放，視圖會懸空（use-after-free）。
+	// 因此所有 slice 賦值都執行 malloc + memcpy，使目標獨立擁有 data。
+	needClone := true
 
 	// Check if base is itself a slice view (chained slicing)
+	// 注意：由於總是 clone，sliceViews map 不再被填充，此分支實際上不會觸發。
+	// 保留以維持向後相容性。
 	if baseView, isView := g.sliceViews[baseVar]; isView {
-		if needClone {
-			return g.generateChainedSliceViewClone(sb, name, baseView, sliceExpr)
-		}
-		return g.generateChainedSliceView(sb, name, baseView, sliceExpr)
+		return g.generateChainedSliceViewClone(sb, name, baseView, sliceExpr)
 	}
 
 	isStr := baseType == "%str-long"
@@ -120,8 +113,19 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 	dataPtrReg := g.computeAdjustedDataPtr(sb, srcData, startReg, elemSize)
 
 	// 需要完全克隆：malloc 新緩衝區 + memcpy，寫入目標變量地址
+	// 注意：克隆後的變量獨立擁有 data，不再是切片視圖。
+	// 必須追蹤為 heapVars，使後續 b = view 賦值走深層 clone 路徑，
+	// 並在函數結束時正確 free。
 	if needClone {
 		g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, elemType, elemSize, isStr)
+		// 追蹤為堆變數（僅局部變數，非輸出參數；輸出參數由呼叫者管理）
+		if g.outputParamNames == nil || !g.outputParamNames[name] {
+			resultType := "%vec"
+			if isStr {
+				resultType = "%str-long"
+			}
+			g.trackLocalHeapVar(name, resultType)
+		}
 		return true
 	}
 
@@ -217,7 +221,17 @@ func (g *Generator) generateChainedSliceViewClone(sb *strings.Builder, name stri
 	dataPtrReg := g.computeAdjustedDataPtr(sb, baseView.dataPtrReg, startReg, elemSize)
 
 	// 執行完全克隆到目標變量
+	// 注意：克隆後的變量獨立擁有 data，不再是切片視圖。
+	// 必須追蹤為 heapVars，使後續 b = view 賦值走深層 clone 路徑，
+	// 並在函數結束時正確 free。
 	g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, baseView.elemType, elemSize, baseView.isStr)
+	if g.outputParamNames == nil || !g.outputParamNames[name] {
+		resultType := "%vec"
+		if baseView.isStr {
+			resultType = "%str-long"
+		}
+		g.trackLocalHeapVar(name, resultType)
+	}
 	return true
 }
 
@@ -286,7 +300,10 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 	// 註冊變量類型
 	g.varTypes[destVar] = resultType
 	g.arrayElemTypes[destVar] = elemType
-	g.funcLocalNames[destVar] = true
+	// 全域變數不應標記為 funcLocalNames，否則後續存取會用 %name 而非 @name
+	if g.globalVars == nil || !g.globalVars[destVar] {
+		g.funcLocalNames[destVar] = true
+	}
 }
 
 // computeSliceBounds computes the start offset and view length from a RangeExpression.
@@ -440,101 +457,6 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, resultReg))
 		g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
-	}
-	return resultReg
-}
-
-// cloneSliceView creates an independent copy of a slice view's data.
-// Used when a slice view escapes (return value, non-temp assignment, function argument).
-// Returns a %vec* or %str-long* pointer to the cloned struct.
-func (g *Generator) cloneSliceView(sb *strings.Builder, varName string) string {
-	view, ok := g.sliceViews[varName]
-	if !ok {
-		return ""
-	}
-
-	// Compute byte length to copy: viewLen * elemSize
-	elemSize := int64(8)
-	if view.isStr {
-		elemSize = 1
-	} else {
-		if s := g.llvmTypeSize(view.elemType); s > 0 {
-			elemSize = s
-		}
-	}
-
-	// malloc new buffer
-	g.tmpIdx++
-	bufReg := fmt.Sprintf("%%svclone.buf.%d", g.tmpIdx)
-	if sb != nil {
-		if view.viewLen == "0" {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 1\n", g.indent(), bufReg))
-		} else {
-			// byteLen = viewLen * elemSize
-			g.tmpIdx++
-			byteLenReg := fmt.Sprintf("%%svclone.bytelen.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n",
-				g.indent(), byteLenReg, view.viewLen, elemSize))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n",
-				g.indent(), bufReg, byteLenReg))
-		}
-	}
-
-	// memcpy from view data to new buffer
-	if sb != nil && view.viewLen != "0" {
-		g.tmpIdx++
-		byteLenReg := fmt.Sprintf("%%svclone.bytelen2.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n",
-			g.indent(), byteLenReg, view.viewLen, elemSize))
-		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
-			g.indent(), bufReg, view.dataPtrReg, byteLenReg))
-	}
-
-	if view.isStr {
-		// Build %str-long { len, cap, data }
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%svclone.str.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultReg))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%svclone.str.len.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
-				g.indent(), lenGEP, resultReg))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%svclone.str.cap.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
-				g.indent(), capGEP, resultReg))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%svclone.str.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
-				g.indent(), dataGEP, resultReg))
-			g.storeDataPtrField(sb, bufReg, dataGEP)
-		}
-		return resultReg
-	}
-
-	// Build %vec { len, cap, data }
-	g.tmpIdx++
-	resultReg := fmt.Sprintf("%%svclone.vec.%d", g.tmpIdx)
-	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), resultReg))
-		g.tmpIdx++
-		lenGEP := fmt.Sprintf("%%svclone.vec.len.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
-			g.indent(), lenGEP, resultReg))
-		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
-		g.tmpIdx++
-		capGEP := fmt.Sprintf("%%svclone.vec.cap.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
-			g.indent(), capGEP, resultReg))
-		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%svclone.vec.data.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-			g.indent(), dataGEP, resultReg))
-		g.storeDataPtrField(sb, bufReg, dataGEP)
 	}
 	return resultReg
 }

@@ -1104,6 +1104,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, dataBuf, dataGEP)
+			// 追蹤 prologue buffer 為堆變數，使首次賦值（如 v = [1,2,3]）時
+			// freeOldHeapValue 能釋放 prologue buffer，避免每次函數調用洩漏 256*elemSize 字節。
+			// 若變數從未被賦值，emitHeapFree 會在函數結束時釋放 prologue buffer。
+			// trackLocalHeapVar 跳過參數和輸出參數，所以這裡只追蹤真正的局部變數。
+			g.trackLocalHeapVar(varName, "%vec")
 		}
 		// [N]T 局部陣列需分配資料緩衝區並初始化 len/data，否則 arr[i] = val
 		// 會因 data 為未初始化（stack 殘值）而寫入垃圾地址，造成堆損壞。
@@ -1135,6 +1140,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				g.stackArrVars[varName] = true
 			} else {
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+				// 僅 malloc 路徑需要追蹤；棧分配的 arr 無需 free。
+				// 追蹤目的同 %vec：使首次賦值時 freeOldHeapValue 能釋放 prologue buffer。
+				g.trackLocalHeapVar(varName, "%arr")
 			}
 			g.tmpIdx++
 			arrLenGEP := fmt.Sprintf("%%local.arrlen.gep.%d", g.tmpIdx)
@@ -1147,83 +1155,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		}
 	}
 
-	// 單結果輸出參數（新語法 () (out str)）需初始化 data 指標，
-	// 否則方法體 out[i] = val 會因 data 為未初始化而崩潰。
-	// 與 call.go voidSingleOutput 路徑保持一致。
-	if len(fd.Results) == 1 && fd.Results[0].Name != "" {
-		outName := fd.Results[0].Name
-		outType := g.resolveParamLLVMType(fd.Results[0].Type)
-		if outType == "%str-long" {
-			g.tmpIdx++
-			dataBuf := fmt.Sprintf("%%out.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 256)\n", g.indent(), dataBuf))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%out.len.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%out.cap.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 256, i64* %s\n", g.indent(), capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%out.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
-			g.storeDataPtrField(sb, dataBuf, dataGEP)
-		} else if outType == "%vec" {
-			// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
-			// Compute element size from result parameter type so that malloc
-			// allocates cap * elemSize bytes (not just cap bytes).
-			// Bug: previously vecBufSize=4096 was used as BOTH byte count and
-			// element count, causing overflow for []str (24-byte elements) at
-			// ~170 entries (4096/24 ≈ 170).
-			vecCap := int64(256)
-			elemSize := int64(8) // default i64
-			if st, ok := fd.Results[0].Type.(*parser.SliceType); ok && st.Elem != nil {
-				elemSize = llvmTypeSize(g.mapToLLVMType(st.Elem.String()))
-			}
-			vecBufSize := vecCap * elemSize
-			g.tmpIdx++
-			dataBuf := fmt.Sprintf("%%out.vecdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%out.veclen.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%out.veccap.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%out.vecdata.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(outName)))
-			g.storeDataPtrField(sb, dataBuf, dataGEP)
-		} else if outType == "%arr" {
-			// [N]byte 輸出參數需初始化 len 與 data 指標，否則 hash[i] = val 會因 data 為 null 而崩潰。
-			// 使用 malloc 使得資料在函數返回後仍然有效（呼叫者會 load 輸出參數）。
-			var arrSize int64 = 0
-			if at, ok := fd.Results[0].Type.(*parser.ArrayType); ok && at.Size != nil {
-				if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
-					arrSize = intLit.Value
-				}
-			}
-			elemSize := int64(1)
-			if at, ok := fd.Results[0].Type.(*parser.ArrayType); ok && at.Elem != nil {
-				elemSize = g.llvmTypeSize(g.mapToLLVMType(at.Elem.String()))
-			}
-			totalSize := arrSize * elemSize
-			g.tmpIdx++
-			arrDataBuf := fmt.Sprintf("%%out.arrdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
-			g.tmpIdx++
-			arrLenGEP := fmt.Sprintf("%%out.arrlen.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, llvmVarRef(outName)))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
-			g.tmpIdx++
-			arrDataGEP := fmt.Sprintf("%%out.arrdata.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, llvmVarRef(outName)))
-			g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
-		}
-	}
+	// 輸出參數（單結果或多結果）的緩衝區合法性由調用方負責。
+	// 函數 prologue 不再自動 malloc 兜底緩衝區，避免：
+	//   1. 越權替調用方處理參數生命週期
+	//   2. 覆蓋調用方傳入的有效緩衝區指標（導致洩漏）
+	//   3. 單/多輸出參數邏輯割裂
+	// 調用方在 call.go voidSingleOutput 路徑中分配緩衝區。
 
 	// 參數化為指標（引用傳遞模型）
 	for _, param := range fd.Parameters {
@@ -2280,32 +2217,8 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				}
 				return
 			}
-			// Slice view variables (view = arr[0..4]) don't need alloca:
-			// they are registered as aliases with adjusted data pointers.
-			// Skip collection to avoid wasting stack space + malloc.
-			// 例外：當顯式標註為 SliceType ([]T，即 vec) 時，需要完全克隆
-			// （malloc + memcpy），變量必須有獨立的 alloca 存儲空間。
-			if _, isSliceType := s.Type.(*parser.SliceType); !isSliceType {
-				if _, isSliceExpr := s.Value.(*parser.SliceExpression); isSliceExpr {
-					if ident, ok := s.Value.(*parser.SliceExpression).Left.(*parser.Identifier); ok {
-						if _, isVar := g.varTypes[ident.Value]; isVar {
-							// Register the type for method resolution, but don't alloca
-							vt := g.varLLVMType(s)
-							vars[s.Name.Value] = vt
-							if g.varTypes != nil {
-								g.varTypes[s.Name.Value] = vt
-							}
-							// Propagate element type from base variable
-							if g.arrayElemTypes != nil {
-								if et, ok := g.arrayElemTypes[ident.Value]; ok {
-									g.arrayElemTypes[s.Name.Value] = et
-								}
-							}
-							return
-						}
-					}
-				}
-			}
+			// 切片表達式（view = arr[0..4]）總是走 clone 路徑（malloc + memcpy），
+			// 變量需要獨立的 alloca 存儲空間。不再跳過 alloca。
 			vt := g.varLLVMType(s)
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
@@ -3068,7 +2981,9 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 		if structType == "" {
 			structType = "%arr"
 		}
-		structPtr = fmt.Sprintf("%%%s", identName)
+		// 使用 varAddr 以正確處理全域變數（@name）vs 局部變數（%name）。
+		// 直接拼 "%%%s" 會把全域變數誤當作局部，導致 LLVM「undefined value」錯誤。
+		structPtr = g.varAddr(identName)
 
 		// Get element type
 		elemType = "i64"
@@ -3557,6 +3472,48 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// 則回退到原本的 generateSliceExpression 路徑
 	}
 
+	// 切片視圖變數賦值給輸出參數或顯式 []T 型別：out = view
+	// view 是 slice view alias（RHS 是 Identifier 而非 SliceExpression），
+	// 繞過 generateSliceViewAssignment 的 clone 保護（該函數只處理 SliceExpression RHS）。
+	// 若目標會逃逸函數作用域，必須 clone view 的 data，
+	// 避免共享原數組 data 導致原數組 free 後 out 懸空（use-after-free）。
+	if ident, ok := stmt.Value.(*parser.Identifier); ok {
+		if g.isSliceViewVar(ident.Value) {
+			needClone := false
+			if g.outputParamNames != nil && g.outputParamNames[name] {
+				needClone = true
+			}
+			if _, isSliceType := stmt.Type.(*parser.SliceType); isSliceType {
+				needClone = true
+			}
+			if needClone {
+				view := g.sliceViews[ident.Value]
+				// 釋放目標變數的舊堆值（如有）
+				g.freeOldHeapValue(sb, stmt, name)
+				// 計算 elemSize
+				elemSize := int64(8)
+				if view.isStr {
+					elemSize = 1
+				} else {
+					if s := g.llvmTypeSize(view.elemType); s > 0 {
+						elemSize = s
+					}
+				}
+				// clone view data 到目標變數（malloc + memcpy + store len/cap/data）
+				g.emitSliceClone(sb, name, view.dataPtrReg, view.viewLen, view.elemType, elemSize, view.isStr)
+				// 追蹤目標為堆變數（僅局部變數，非輸出參數；輸出參數由呼叫者管理）
+				resultType := "%vec"
+				if view.isStr {
+					resultType = "%str-long"
+				}
+				if g.outputParamNames == nil || !g.outputParamNames[name] {
+					g.trackLocalHeapVar(name, resultType)
+				}
+				return
+			}
+		}
+	}
+
 	// 切片儲存：使用 %vec 結構體
 	_, isSliceLit := stmt.Value.(*parser.SliceLiteral)
 	_, isSliceExpr2 := stmt.Value.(*parser.SliceExpression)
@@ -3668,37 +3625,43 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
 		// with a default data buffer so push() and index assignment work.
-		elemType := "i64"
-		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
-			elemType = g.mapToLLVMType(st.Elem.String())
+		// 僅當沒有 RHS 值時才執行預設初始化。若有 RHS 值（如 `v []i64 = view`），
+		// 必須 fall through 到深層 clone / 一般賦值路徑，避免忽略 RHS 導致 len=0。
+		if stmt.Value == nil {
+			elemType := "i64"
+			if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
+				elemType = g.mapToLLVMType(st.Elem.String())
+			}
+			elemSize := g.llvmTypeSize(elemType)
+			if elemSize == 0 {
+				elemSize = 8
+			}
+			defaultCap := int64(1024)
+			bufSize := defaultCap * elemSize
+			g.tmpIdx++
+			vecBuf := fmt.Sprintf("%%vec.init.buf.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), vecBuf, bufSize))
+			// store len = 0 (field 0)
+			g.tmpIdx++
+			vecLenGEP := fmt.Sprintf("%%vec.init.len.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, g.varAddr(name)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), vecLenGEP))
+			// store cap = defaultCap (field 1)
+			g.tmpIdx++
+			vecCapGEP := fmt.Sprintf("%%vec.init.cap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, g.varAddr(name)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), defaultCap, vecCapGEP))
+			// store data = buf (field 2)
+			g.tmpIdx++
+			vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
+			g.storeDataPtrField(sb, vecBuf, vecDataGEP)
+			// 追蹤局部 vec 變數，用於函數結束時深層 free
+			g.trackLocalHeapVar(name, "%vec")
+			return
 		}
-		elemSize := g.llvmTypeSize(elemType)
-		if elemSize == 0 {
-			elemSize = 8
-		}
-		defaultCap := int64(1024)
-		bufSize := defaultCap * elemSize
-		g.tmpIdx++
-		vecBuf := fmt.Sprintf("%%vec.init.buf.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), vecBuf, bufSize))
-		// store len = 0 (field 0)
-		g.tmpIdx++
-		vecLenGEP := fmt.Sprintf("%%vec.init.len.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), vecLenGEP, g.varAddr(name)))
-		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), vecLenGEP))
-		// store cap = defaultCap (field 1)
-		g.tmpIdx++
-		vecCapGEP := fmt.Sprintf("%%vec.init.cap.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, g.varAddr(name)))
-		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), defaultCap, vecCapGEP))
-		// store data = buf (field 2)
-		g.tmpIdx++
-		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
-		g.storeDataPtrField(sb, vecBuf, vecDataGEP)
-		// 追蹤局部 vec 變數，用於函數結束時深層 free
-		g.trackLocalHeapVar(name, "%vec")
-		return
+		// 有 RHS 值但非 SliceLiteral：型別註冊已在上方完成，
+		// fall through 到深層 clone / 一般賦值路徑評估 RHS。
 	}
 
 	// Option type assignment: handle nil, val(), err(), and implicit values
@@ -3902,6 +3865,31 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						loadReg := fmt.Sprintf("%%it.syn.load.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, val))
 						val = loadReg
+					}
+				}
+			}
+		}
+	}
+
+	// Synthetic `it = matched` where `it` was pre-allocated as i64 (from a
+	// nil/err arm) but the matched value is a struct pointer extracted from
+	// an option (generateExprWithSB returns %var.data.ptr.N via inttoptr).
+	// The pointer must be converted back to i64 via ptrtoint before storing
+	// into the i64 alloca. Without this, LLVM reports:
+	//   '%var.data.ptr.N' defined with type 'ptr' but expected 'i64'
+	if stmt.IsSynthetic && llvmType == "i64" {
+		if ident, ok := stmt.Value.(*parser.Identifier); ok {
+			if g.varTypes != nil {
+				if srcType, ok := g.varTypes[ident.Value]; ok && srcType == "%option" {
+					if g.optionInnerTypes != nil {
+						if innerType, ok := g.optionInnerTypes[ident.Value]; ok && strings.HasPrefix(innerType, "%") {
+							if strings.HasPrefix(val, "%") && strings.Contains(val, ".data.ptr.") {
+								g.tmpIdx++
+								ptrToIntReg := fmt.Sprintf("%%it.p2i.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s* %s to i64\n", g.indent(), ptrToIntReg, innerType, val))
+								val = ptrToIntReg
+							}
+						}
 					}
 				}
 			}

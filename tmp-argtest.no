@@ -1,8 +1,0 @@
-n-val ?i64 = arg(1).to-i64()
-n i64 = 999
-n-val: {
-    ok -> n = it
-    err -> n = 999
-    nil -> n = 999
-}
-print(n.to-str())

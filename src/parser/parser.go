@@ -2724,11 +2724,8 @@ func (p *Parser) parseLetStatement() Statement {
 			}
 
 		case *SliceExpression:
-			// 切片表達式結果的型別推斷
-			stmt.Type = &SliceType{
-				Token: nameToken,
-				Elem:  &NamedType{Token: nameToken, Value: "i64"},
-			}
+			// 切片表達式總是走 clone 路徑（generateSliceViewAssignment needClone=true），
+			// 不再推斷 SliceType。型別由 varLLVMType 從 RHS 推導（%vec 或 %str-long）。
 
 		case *ArrayLiteral:
 		case *StructLiteral:
