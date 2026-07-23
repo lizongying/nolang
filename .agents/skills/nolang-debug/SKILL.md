@@ -250,7 +250,7 @@ func TestXxx(t *testing.T) {
 
 Functions returning a boolean result must use `bool` type, not `i64`:
 
-```nolang
+```no
 // ✅ Correct — bool type
 uuid.is-nil = () (yes bool) {
     yes = 1
@@ -268,7 +268,7 @@ uuid.is-nil = () (yes i64) { ... }
 
 Functions operating on a primary data type should be expressed as type-bound methods with explicit parameter types:
 
-```nolang
+```no
 // ✅ Correct — method form with typed parameters
 str.path-join(b str, bn i64) (out str, out-n i64)
 
@@ -296,7 +296,7 @@ In the old syntax, `for {}` and `if x {}` and `match x {}` all use the same `{}`
 
 **Always prefer the new syntax** to avoid this:
 
-```nolang
+```no
 // ❌ Old syntax — empty body
 for { }
 
@@ -308,7 +308,7 @@ for { }
 
 The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
 
-```nolang
+```no
 // ✅ Recommended (single-line body)
 {
     a == 1 -> x = 1

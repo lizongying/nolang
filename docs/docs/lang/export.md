@@ -8,7 +8,7 @@ Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項�
 
 ## 語法
 
-```nolang
+```no
 @ path.func [alias]
 ```
 
@@ -26,14 +26,14 @@ Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項�
 
 ## 範例
 
-```nolang
+```no
 ; lib.no - 包根目錄導出文件
 @ /src/utils.greet a
 @ /src/utils.hello b
 @ /src/math.pi
 ```
 
-```nolang
+```no
 ; src/utils.no
 ; 定義被導出的函數
 greet = (name str) {
@@ -49,7 +49,7 @@ hello = () {
 
 外部包通過 `#` 導入時，只能訪問 `lib.no` 中聲明的導出項：
 
-```nolang
+```no
 ; 导入別名 a（對應 package-name.utils.greet）
 # package-name.utils.greet a
 

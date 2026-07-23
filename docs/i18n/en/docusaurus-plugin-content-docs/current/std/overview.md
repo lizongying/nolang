@@ -45,7 +45,7 @@ Mapping of Nolang types to LLVM:
 
 `option<t>` tagged enum (tag=0=val, 1=nil, 2=err):
 
-```nolang
+```no
 x ?t                ; Declare option<t>
 x = 42              ; Set to a value
 x = nil             ; Set to nil
@@ -67,7 +67,7 @@ x: {
 
 ### fmt — Formatted Output
 
-```nolang
+```no
 printf(fmt str, ...)    ; Formatted output, no trailing newline
 print(...)              ; Print with newline
 ```
@@ -92,7 +92,7 @@ print(...)              ; Print with newline
 
 char is essentially i32 (a Unicode code point); all operations are provided as methods:
 
-```nolang
+```no
 c char = 'A'
 c.is-digit()       ; Whether it is a digit (0-9) (method)
 c.is-letter()      ; Whether it is a letter (a-z, A-Z) (method)
@@ -109,7 +109,7 @@ c.to-str()         ; Unicode -> string (UTF-8, method)
 
 ### str — String Operations
 
-```nolang
+```no
 ok = a.eq(b, n)               ; Equality comparison (method)
 dst = s.copy()                ; String copy (method)
 s.fill(val byte)              ; Fill with byte value (method)
@@ -152,7 +152,7 @@ out = ss.join(sep)            ; Join []str with separator (method)
 
 ### number — Numeric Operations
 
-```nolang
+```no
 number.max(a, b)                     ; Maximum
 number.min(a, b)                     ; Minimum
 r = num.clamp(lo, hi)         ; Clamp to range (method)
@@ -185,7 +185,7 @@ u64.MIN / MAX                 ; 0 / 2^64-1
 
 ### byte — Byte Operations
 
-```nolang
+```no
 out = i64.to-bytes-be()         ; i64 -> big-endian [8]byte
 out = i64.to-bytes-le()         ; i64 -> little-endian [8]byte
 v = []byte.to-i64-be()          ; big-endian []byte -> i64 (1~8 bytes)
@@ -198,7 +198,7 @@ s = byte.to-str()               ; byte to str (method)
 
 ### vec — Slice Operations
 
-```nolang
+```no
 v = vec.vec-create(n, val)         ; Create a slice of length n, filled with val
 ok = []t.eq(a, b, n)           ; Equality comparison
 n = []t.len()                  ; Length
@@ -219,7 +219,7 @@ arr = []t.to-arr()             ; Convert to array
 
 ### arr — Array Operations
 
-```nolang
+```no
 out = [n]t.clone()             ; Copy
 ok = [n]t.eq(b)                ; Equality comparison
 [n]t.fill(val)                  ; Fill
@@ -238,7 +238,7 @@ v = [n]t.first()               ; First element
 
 ### sort — Sort Constants
 
-```nolang
+```no
 sort.ast                         ; Ascending
 sort.desc                        ; Descending
 ```
@@ -251,7 +251,7 @@ sort.desc                        ; Descending
 
 Provides environment variables, directory operations, process management, system information, time, and more. For file read/write functionality, see the `fs` module.
 
-```nolang
+```no
 ; Environment variables
 val = os.get-env(key)
 os.set-env(key, val)
@@ -288,7 +288,7 @@ val = os.arg(idx)
 
 Wraps an open file with the `file` struct and a path with the `path` struct.
 
-```nolang
+```no
 ; File struct
 file {
     fd i64
@@ -368,7 +368,7 @@ O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
 
 ### env — Environment Variables (Simplified Wrapper)
 
-```nolang
+```no
 val = env.get(key)
 val = env.lookup(key)               ; Returns ?str (nil=not found)
 env.set(key, val)
@@ -379,7 +379,7 @@ ok = env.is-set(key)
 
 ### args — Command-Line Arguments
 
-```nolang
+```no
 n = args.count()
 arg = args.get(i)
 name = args.program()
@@ -392,7 +392,7 @@ arg = args.get-positional(i)
 
 Wraps a path string with the `path` struct; all operations are provided as methods:
 
-```nolang
+```no
 SEP = 47     ; '/' (ASCII)
 DOT = 46     ; '.'
 
@@ -431,7 +431,7 @@ path.current() (out path)    ; Get current working directory
 
 ### bufio — Buffered Reading
 
-```nolang
+```no
 r = reader.init(fd, buf)       ; Initialize buffered reader (returns reader)
 ok = reader.fill()              ; Fill buffer
 b = reader.read-byte()          ; Read one byte (?byte, nil=EOF)
@@ -443,7 +443,7 @@ reader.close()                  ; Close
 
 Provides `io-reader` and `io-writer` structs to unify read/write operations across files, standard input/output, and other streams:
 
-```nolang
+```no
 ; Standard file descriptors
 STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
 
@@ -482,7 +482,7 @@ line = io.read-line()           ; Read one line from stdin (?str, nil=EOF)
 
 Wraps a pattern with the `regexp` struct, backed by the C standard library `regex.h`:
 
-```nolang
+```no
 ; Struct
 regexp {
     pattern str
@@ -500,7 +500,7 @@ result = re.find(text)           ; Find the first matching substring
 
 Provides process creation, standard stream access, process waiting, and process information querying. Backed by POSIX fork/exec/pipe/waitpid:
 
-```nolang
+```no
 ; Signal constants
 SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD = 17
 WNOHANG = 1
@@ -556,7 +556,7 @@ content, code = process.process-output(program, arg) ; Execute and capture outpu
 
 Provides TCP networking capabilities, including server listening, client connections, and data sending/receiving. Backed by the POSIX socket API:
 
-```nolang
+```no
 ; Network constants
 AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
 
@@ -596,7 +596,7 @@ c = net.net-dial-to(host, port)          ; Create connection and dial (?conn)
 
 Provides parsing, validation, conversion, and classification of IPv4 addresses. Pure Nolang implementation:
 
-```nolang
+```no
 ; Default address constants
 IP-ZERO       ; 0.0.0.0
 IP-LOOPBACK   ; 127.0.0.1
@@ -643,7 +643,7 @@ yes = ip.ip-is-private(s)               ; Quick private check
 
 Supports SSE streaming reception compliant with the W3C EventSource specification. Backed by HTTP/1.1 long connections, supporting both plaintext HTTP and HTTPS (TLS):
 
-```nolang
+```no
 ; sse-event struct
 sse-event {
     event str       ; Event type (default 'message')
@@ -689,7 +689,7 @@ ok = client.reconnect()             ; Reconnect (using last-event-id)
 
 Provides an HTTP/1.1 protocol client supporting GET, POST, PUT, DELETE, PATCH and other methods, with optional TLS:
 
-```nolang
+```no
 ; Structs
 http-request {
     method str
@@ -727,7 +727,7 @@ resp.parse-headers()
 
 Supports HTTP/2 frame parsing and connection management, supporting h2c prior knowledge mode:
 
-```nolang
+```no
 ; Frame struct
 http2-frame {
     length i64
@@ -763,7 +763,7 @@ frame = c.recv-frame()                       ; Receive frame (?http2-frame)
 
 HTTP/3 client based on the QUIC protocol:
 
-```nolang
+```no
 ; Method constants
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
@@ -789,7 +789,7 @@ name, value, pos = http3.qpack-decode-header(buf, pos)
 
 Supports full-duplex communication over the WebSocket protocol, usable as either client or server:
 
-```nolang
+```no
 ; Message struct
 ws-message {
     opcode i64           ; 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
@@ -817,7 +817,7 @@ c.close()
 
 Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
-```nolang
+```no
 ; Connection
 c = tls.tls-dial(host, port)                     ; Establish TLS connection (?tls-conn)
 n = c.send(data)                             ; Send encrypted data (?i64)
@@ -829,7 +829,7 @@ c.close()
 
 Wraps the `conn` struct, providing features such as automatic reconnection:
 
-```nolang
+```no
 c = client.net-client(host, port)                   ; Create client (?client)
 ok = c.connect(host, port)                   ; Connect
 ok = c.reconnect()                           ; Reconnect
@@ -845,7 +845,7 @@ c.close()
 
 Provides an implementation of the QUIC transport protocol, serving as the underlying transport layer for HTTP/3:
 
-```nolang
+```no
 c = quic.quic-dial(host, port)                    ; Establish QUIC connection (?quic-conn)
 n = c.send(data, n)                          ; Send data
 n = c.recv(buf, n)                           ; Receive data
@@ -856,7 +856,7 @@ c.close()
 
 Provides HTTP server functionality:
 
-```nolang
+```no
 s = server{}
 ok = s.listen(host, port)                    ; Start listening
 ok = s.serve()                               ; Handle requests
@@ -867,7 +867,7 @@ s.close()
 
 Provides DNS query functionality:
 
-```nolang
+```no
 ip = dns.dns-resolve(host)                       ; Resolve hostname (?str)
 ```
 
@@ -875,7 +875,7 @@ ip = dns.dns-resolve(host)                       ; Resolve hostname (?str)
 
 Provides URL parsing and construction functionality:
 
-```nolang
+```no
 u = url.url-parse(url)                           ; Parse URL
 s = u.to-str()                               ; Convert to string
 ```
@@ -884,7 +884,7 @@ s = u.to-str()                               ; Convert to string
 
 Provides parsing and management of HTTP cookies:
 
-```nolang
+```no
 c = cookie{}
 c.parse(set-cookie-header)
 s = c.to-str()
@@ -894,7 +894,7 @@ s = c.to-str()
 
 Provides parsing and construction of multipart/form-data:
 
-```nolang
+```no
 out = multipart.multipart-encode(fields, boundary)
 fields = multipart.multipart-parse(data, boundary)
 ```
@@ -903,7 +903,7 @@ fields = multipart.multipart-parse(data, boundary)
 
 Provides encoding/decoding of the HPACK algorithm, used for HTTP/2 header compression:
 
-```nolang
+```no
 buf, n = hpack.hpack-encode(headers)
 headers = hpack.hpack-decode(buf, n)
 ```
@@ -912,7 +912,7 @@ headers = hpack.hpack-decode(buf, n)
 
 Provides HTTP/SOCKS proxy connection functionality:
 
-```nolang
+```no
 c = proxy.proxy-dial(proxy-url, target-host, target-port)
 ```
 
@@ -920,7 +920,7 @@ c = proxy.proxy-dial(proxy-url, target-host, target-port)
 
 Provides pooled management of network connections, reusing connections to improve performance:
 
-```nolang
+```no
 p = pool{}
 p.init(capacity)
 c = p.get()                                  ; Get connection from pool
@@ -932,7 +932,7 @@ p.close()
 
 Provides Unix domain socket communication:
 
-```nolang
+```no
 fd = unix.unix-listen(path)                       ; Listen
 fd = unix.unix-dial(path)                         ; Connect
 fd = unix.unix-accept(listen-fd)                  ; Accept connection
@@ -944,7 +944,7 @@ fd = unix.unix-accept(listen-fd)                  ; Accept connection
 
 ### time — Time Operations
 
-```nolang
+```no
 sec = time.now-s()                   ; Current Unix timestamp (seconds)
 ms = time.now-ms()                   ; Current timestamp (milliseconds)
 us = time.now-us()                   ; Current timestamp (microseconds)
@@ -961,7 +961,7 @@ d = time.duration-ms-between(s, e)    ; Elapsed time (milliseconds)
 
 ### log — Leveled Logging
 
-```nolang
+```no
 LEVEL-DEBUG = 0
 LEVEL-INFO  = 1
 LEVEL-WARN  = 2
@@ -982,7 +982,7 @@ log.fatal(msg)
 
 ### set — Set (Array-based)
 
-```nolang
+```no
 new-n = set.add(s, n, val)           ; Add element
 new-n = set.set-remove(s, n, val)        ; Remove element
 ok = set.contains(s, n, val)         ; Whether it contains
@@ -998,7 +998,7 @@ yes = set.set-empty(s, n)                    ; Whether it is empty
 
 A double-ended queue implemented with a circular buffer, wrapped in the `deque` struct:
 
-```nolang
+```no
 ; Struct
 deque {
     buf []i64
@@ -1031,7 +1031,7 @@ d.clear()                      ; Clear
 
 A binary min heap wrapped in the `heap` struct:
 
-```nolang
+```no
 ; Struct
 heap {
     data []i64
@@ -1053,7 +1053,7 @@ yes = h.empty()                ; Whether it is empty
 
 A last-in-first-out (LIFO) data structure, wrapped in the `stack` struct:
 
-```nolang
+```no
 ; Struct
 stack {
     data []i64
@@ -1080,7 +1080,7 @@ s.clear()                      ; Clear
 
 Fixed capacity 64 (i64→i64), linear probing, doubly-linked list preserves insertion order:
 
-```nolang
+```no
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
@@ -1097,7 +1097,7 @@ m.for-each(key, val)
 
 Fixed capacity 64, linear probing, O(1) lookup/insert/delete:
 
-```nolang
+```no
 s = hash-set{}
 s.init()
 is-new = s.add(val)
@@ -1113,7 +1113,7 @@ s.for-each(val)
 
 Fixed capacity 256, FNV-1a hash, linear probing:
 
-```nolang
+```no
 m = str-map{}
 m.init()
 m.put('key', 'val')
@@ -1130,7 +1130,7 @@ m.for-each(k, v)
 
 Fixed capacity 256, FNV-1a hash, string deduplication:
 
-```nolang
+```no
 s = str-set{}
 s.init()
 is-new = s.add('hello')
@@ -1146,7 +1146,7 @@ s.for-each(val)
 
 An ordered map (i64→i64) implemented on a self-balancing AVL binary search tree, capacity 64:
 
-```nolang
+```no
 m = tree-map{}
 m.clear()                           ; Initialize
 ok = m.put(key, val)                ; Insert or update
@@ -1167,7 +1167,7 @@ yes = m.full()
 
 An ordered set (i64) implemented on a self-balancing AVL binary search tree, capacity 64:
 
-```nolang
+```no
 s = tree-set{}
 s.clear()                           ; Initialize
 ok = s.add(key)                     ; Add element
@@ -1187,7 +1187,7 @@ yes = s.full()
 
 Implemented on a fixed-length array ring buffer; the buffer is provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 q = buf.queue-init()
 ok = buf.queue-push(q, val)         ; Push to tail
@@ -1203,7 +1203,7 @@ q.clear()
 
 A stack implementation based on a fixed-length array; the buffer is provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 s = buf.arr-stack-init()
 ok = buf.arr-stack-push(s, val)     ; Push
@@ -1219,7 +1219,7 @@ s.clear()
 
 A doubly linked list based on a fixed-length array node pool; values are provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 nxt [128]i64 = [0:128]
 prv [128]i64 = [0:128]
@@ -1243,7 +1243,7 @@ yes = l.full()
 
 Defines standard interfaces for database connections, queries, and prepared statements, implemented by concrete drivers:
 
-```nolang
+```no
 ; Execution result
 result {
     last-id i64
@@ -1284,7 +1284,7 @@ stmt enter, leave {
 
 ### encoding/hex — Hexadecimal
 
-```nolang
+```no
 ; Encoding (defined in the byte module)
 out = data.to-hex()                  ; []byte -> uppercase hex str
 out = data.to-hex-lower()            ; []byte -> lowercase hex str
@@ -1295,7 +1295,7 @@ out = s.from-hex()                   ; hex str -> ?[]byte (nil=empty, err=invali
 
 ### encoding/base64 — Base64 (RFC 4648)
 
-```nolang
+```no
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  ; '='
@@ -1308,7 +1308,7 @@ out-n = base64.decode(s, n, table, out)   ; Base64 decoding (?i64, nil=invalid i
 
 ### encoding/csv — CSV Parsing (RFC 4180)
 
-```nolang
+```no
 fn, new-pos = csv.parse-field(s, sn, pos, field)  ; Parse a single field
 n = csv.parse-line(s, sn, fields, max)             ; Parse one line
 out-n = csv.encode-field(field, fn, out)           ; Encode field
@@ -1320,7 +1320,7 @@ out-n = csv.encode-field(field, fn, out)           ; Encode field
 
 ### archive/tar — TAR Archive (POSIX ustar)
 
-```nolang
+```no
 ; Read a regular tar
 archive = tar{
     data: raw-bytes
@@ -1354,7 +1354,7 @@ archive = builder.finish()
 
 ### archive/zip — ZIP Archive Parsing
 
-```nolang
+```no
 archive = zip{
     data: raw-bytes
 }
@@ -1376,7 +1376,7 @@ out = e.extract()
 
 ### archive/gzip — GZIP Compression and Raw DEFLATE
 
-```nolang
+```no
 out = gzip.gzip-compress(data)                      ; zlib compression
 out = gzip.gzip-decompress(data)                    ; zlib decompression
 out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
@@ -1388,7 +1388,7 @@ out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression 
 
 ### hash/aes — AES-128 Encryption/Decryption (ECB Mode)
 
-```nolang
+```no
 aes.aes-128-enc(plain, 16, key, out)   ; Encrypt 16-byte block
 aes.aes-128-dec(cipher, 16, key, out)  ; Decrypt 16-byte block
 ```
@@ -1397,7 +1397,7 @@ Also includes standalone modules `hash/aes-128-enc` and `hash/aes-128-dec`.
 
 ### hash/des — DES Encryption/Decryption (ECB Mode)
 
-```nolang
+```no
 des.des-enc(plain, 8, key, out)        ; Encrypt 8-byte block
 des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 ```
@@ -1406,7 +1406,7 @@ Also includes standalone modules `hash/des-enc` and `hash/des-dec`.
 
 ### hash/rsa — RSA Modular Exponentiation
 
-```nolang
+```no
 rsa.rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
 ```
 
@@ -1414,13 +1414,13 @@ Does not include key generation; supports 1024~4096-bit.
 
 ### hash/md5 — MD5 (128-bit)
 
-```nolang
+```no
 out [16]byte = md5.md5(data)
 ```
 
 ### hash/sha1 — SHA-1 (160-bit)
 
-```nolang
+```no
 hash = sha1.sha1(data []byte) (hash [20]byte)
 hex = sha1.sha1-hex(data []byte) (hex str)
 sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
@@ -1432,7 +1432,7 @@ sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
 
 ### hash/sha256 — SHA-256 (256-bit)
 
-```nolang
+```no
 sha256.sha256(data []byte) (hash [32]byte)
 sha256.sha256-hex(data []byte) (hex str)
 sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32)
@@ -1444,7 +1444,7 @@ sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 
 
 ### hash/sha512 — SHA-512 (512-bit)
 
-```nolang
+```no
 sha512.sha512(data []byte) (hash [64]byte)
 sha512.sha512-hex(data []byte) (hex str)
 sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64)
@@ -1456,26 +1456,26 @@ sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 
 
 ### hash/crc-32 — CRC32 Checksum
 
-```nolang
+```no
 crc-32.crc-32(s []byte, n, crc)
 ```
 
 ### hash/fnv-1a-32 — FNV-1a Non-Cryptographic Hash
 
-```nolang
+```no
 fnv-1a-32.fnv-1a-32(s []byte, n, h)
 ```
 
 ### hash/rand — Random Number Generator (xorshift32)
 
-```nolang
+```no
 r = rand.rand(state)                     ; 32-bit pseudo-random number
 rand.rand-str(state, n, s)              ; Random alphanumeric string
 ```
 
 ### hash/x509 — X.509 Certificate DER Parsing
 
-```nolang
+```no
 tag = x509.der-tag(data, pos)
 len, adv = x509.der-len(data, pos)
 x509.x509-fingerprint(cert, n, h0..h7)  ; SHA-256 certificate fingerprint
@@ -1484,14 +1484,14 @@ x509.x509-rsa-e(cert, n, e)             ; RSA public key exponent extraction
 
 ### hash/aes-256 — AES-256 Encryption/Decryption (ECB Mode)
 
-```nolang
+```no
 aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   ; Encrypt
 aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   ; Decrypt
 ```
 
 ### hash/aes-cbc — AES-CBC Mode (with PKCS7 Padding)
 
-```nolang
+```no
 out = aes-cbc.aes-128-cbc-enc(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.aes-128-cbc-dec(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.pkcs7-pad(in []byte)
@@ -1500,21 +1500,21 @@ n = aes-cbc.pkcs7-unpad(in []byte)
 
 ### hash/aes-256-cbc — AES-256-CBC Encryption/Decryption
 
-```nolang
+```no
 out = aes-256-cbc.aes-256-cbc-enc(in []byte, key [32]byte, iv [16]byte)
 out = aes-256-cbc.aes-256-cbc-dec(in []byte, key [32]byte, iv [16]byte)
 ```
 
 ### hash/aes-ctr — AES-CTR Counter Mode
 
-```nolang
+```no
 out = aes-ctr.aes-128-ctr(in []byte, key [16]byte, iv [16]byte)
 out = aes-ctr.aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
 ```
 
 ### hash/aes-gcm — AES-GCM AEAD
 
-```nolang
+```no
 ; AES-128-GCM
 sealed = aes-gcm.aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
@@ -1522,126 +1522,126 @@ plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed [
 
 ### hash/aes-256-gcm — AES-256-GCM AEAD (NIST SP 800-38D)
 
-```nolang
+```no
 sealed = aes-256-gcm.aes-256-gcm-seal(key [32]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-256-gcm.aes-256-gcm-open(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
 ```
 
 ### hash/hmac — HMAC Message Authentication Code
 
-```nolang
+```no
 out = hmac.hmac(key []byte, key-n i64, msg []byte, msg-n i64, block-size i64) (out [32]byte)
 ```
 
 ### hash/hkdf — HKDF Key Derivation (RFC 5869)
 
-```nolang
+```no
 ok = hkdf.hkdf-extract(salt []byte, salt-n i64, ikm []byte, ikm-n i64, prk []byte)
 ok = hkdf.hkdf-expand(prk []byte, prk-n i64, info []byte, info-n i64, out []byte, out-n i64)
 ```
 
 ### hash/pbkdf2 — PBKDF2 Key Derivation (RFC 2898)
 
-```nolang
+```no
 pbkdf2.pbkdf2(password []byte, pw-n i64, salt []byte, salt-n i64, iter i64, out []byte, out-n i64)
 ```
 
 ### hash/argon2 — Argon2 Memory-Hard Key Derivation
 
-```nolang
+```no
 argon2.argon2id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
 ```
 
 ### hash/scrypt — scrypt Key Derivation
 
-```nolang
+```no
 scrypt.scrypt(password []byte, pw-n i64, salt []byte, salt-n i64, n i64, r i64, p i64, out []byte, out-n i64)
 ```
 
 ### hash/sha224 — SHA-224 (224-bit)
 
-```nolang
+```no
 hash = sha224.sha224(data []byte) (hash [28]byte)
 hex = sha224.sha224-hex(data []byte) (hex str)
 ```
 
 ### hash/sha384 — SHA-384 (384-bit)
 
-```nolang
+```no
 hash = sha384.sha384(data []byte) (hash [48]byte)
 hex = sha384.sha384-hex(data []byte) (hex str)
 ```
 
 ### hash/sha3 — SHA-3 (Keccak)
 
-```nolang
+```no
 hash = sha3.sha3-256(data []byte) (hash [32]byte)
 hash = sha3.sha3-512(data []byte) (hash [64]byte)
 ```
 
 ### hash/blake2 — BLAKE2 Hash
 
-```nolang
+```no
 hash = blake2.blake2b-256(data []byte) (hash [32]byte)
 hash = blake2.blake2b-512(data []byte) (hash [64]byte)
 ```
 
 ### hash/crc-16 — CRC16 Checksum
 
-```nolang
+```no
 crc = crc-16.crc-16(data []byte, n i64) (crc i64)
 ```
 
 ### hash/crc-64 — CRC64 Checksum
 
-```nolang
+```no
 crc = crc-64.crc-64(data []byte, n i64) (crc i64)
 ```
 
 ### hash/fnv — FNV-1 Hash
 
-```nolang
+```no
 h = fnv.fnv-1-32(data []byte, n i64) (h i64)
 h = fnv.fnv-1a-64(data []byte, n i64) (h i64)
 ```
 
 ### hash/base32 — Base32 Encoding/Decoding (RFC 4648)
 
-```nolang
+```no
 out = base32.base32-encode(data []byte, n i64) (out str)
 out = base32.base32-decode(s str, n i64) (out []byte)
 ```
 
 ### hash/chacha20-poly1305 — ChaCha20-Poly1305 AEAD
 
-```nolang
+```no
 sealed = chacha20-poly1305.chacha20-poly1305-seal(key [32]byte, nonce [12]byte, aad []byte, plain []byte)
 plain = chacha20-poly1305.chacha20-poly1305-open(key [32]byte, nonce [12]byte, aad []byte, sealed []byte)
 ```
 
 ### hash/rc4 — RC4 Stream Cipher
 
-```nolang
+```no
 out = rc4.rc4(key []byte, key-n i64, data []byte, data-n i64) (out []byte)
 ```
 
 ### hash/tdes — Triple DES (3DES)
 
-```nolang
+```no
 tdes.tdes-enc(plain, 8, key [24]byte, out)
 tdes.tdes-dec(cipher, 8, key [24]byte, out)
 ```
 
 ### hash/ecdsa — ECDSA Digital Signature
 
-```nolang
+```no
 ok = ecdsa.ecdsa-sign(priv-key []byte, msg []byte, msg-n i64, r []byte, s []byte)
 ok = ecdsa.ecdsa-verify(pub-key []byte, msg []byte, msg-n i64, r []byte, s []byte) (ok bool)
 ```
 
 ### hash/ed25519 — Ed25519 Digital Signature
 
-```nolang
+```no
 pub = ed25519.ed25519-derive-public(priv [32]byte) (pub [32]byte)
 sig = ed25519.ed25519-sign(priv [32]byte, msg []byte, msg-n i64) (sig [64]byte)
 ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, msg-n i64, sig [64]byte) (ok bool)
@@ -1649,14 +1649,14 @@ ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, msg-n i64, sig [64]byte) (
 
 ### hash/x25519 — X25519 Key Exchange
 
-```nolang
+```no
 pub = x25519.x25519-derive-public(priv [32]byte) (pub [32]byte)
 shared = x25519.x25519-derive-shared(priv [32]byte, peer-pub [32]byte) (shared [32]byte)
 ```
 
 ### hash/rand-str — Random String Generation
 
-```nolang
+```no
 rand-str.rand-str(state i64, n i64, s str)   ; Generate a random alphanumeric string of length n
 ```
 
@@ -1666,7 +1666,7 @@ rand-str.rand-str(state i64, n i64, s str)   ; Generate a random alphanumeric st
 
 ### json — JSON Parsing and Generation
 
-```nolang
+```no
 ; Type enum
 json-kind {
     null,
@@ -1704,7 +1704,7 @@ Unicode-related functionality is distributed across the `char` and `str` modules
 
 ### uuid — UUID v4 Generation and Parsing
 
-```nolang
+```no
 out = uuid.new-v4(state)                  ; Generate UUID v4
 out-n = uuid.to-str(out)             ; Convert to lowercase string (method)
 out-n = uuid.to-str-upper(out)       ; Convert to uppercase string (method)
@@ -1722,7 +1722,7 @@ uuid.nil-uuid(out)                        ; Return nil UUID
 
 ### bigint — Arbitrary Precision Integer
 
-```nolang
+```no
 ; Type
 bigint {
     sign i64
@@ -1778,7 +1778,7 @@ bigint.mul-i64(a, v, c)
 
 Structured error type and utility functions:
 
-```nolang
+```no
 ; Error code enum
 code {
     ok,
@@ -1808,13 +1808,13 @@ s = e.format()                       ; Format as string
 
 ### bool — Boolean Type
 
-```nolang
+```no
 bool.to-str() (out str)     ; true->"true", false->"false" (method)
 ```
 
 ### enter / leave — Lifecycle Hooks
 
-```nolang
+```no
 
 ; Run on startup
 enter { 

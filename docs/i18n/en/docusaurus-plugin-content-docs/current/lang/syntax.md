@@ -13,7 +13,7 @@ Nolang supports three single-line comment markers and one multi-line (block) com
 - `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
 - `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered
 
-```nolang
+```no
 // this is a comment
 ; this is also a comment, same semantics
 ;; this is still a single-line comment (no newline after ;;)
@@ -40,7 +40,7 @@ to be recognized as the ending delimiter
 > **Rule: One statement per line; using commas `,` to combine multiple statements on the same line is forbidden.** (The semicolon `;` is now a comment marker and can no longer join statements.)
 > This rule also applies to code examples within comments. Even in comments, multiple statements should not be placed on the same line using commas, to avoid confusing readers.
 >
-> ```nolang
+> ```no
 ; ❌ Wrong: combining multiple statements with commas in comments
 ; h0 = 1732584193, h1 = 4023233417
 
@@ -100,7 +100,7 @@ A type alias creates a new name for an existing type. It uses the equals syntax 
 
 ### Syntax
 
-```nolang
+```no
 ; Union type: multiple types separated by |
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
@@ -115,7 +115,7 @@ buf = [16]u8
 
 Union types can reference other union types to form a hierarchy:
 
-```nolang
+```no
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
 num = int | float     ; num is a union of int and float
@@ -125,7 +125,7 @@ num = int | float     ; num is a union of int and float
 
 Union types can be used for function parameters and return values. The compiler automatically performs monomorphization, generating a separate function version for each member type:
 
-```nolang
+```no
 ; Parameter type is the num union
 max = (a ..num) (r num) {
     r = a[0]
@@ -157,7 +157,7 @@ The equals syntax is recognized as a type alias (rather than a variable assignme
 
 ## Variable Declaration
 
-```nolang
+```no
 
 ; Variables have no keyword
 ; i64, f64, byte, bool, byte, str can omit the type annotation
@@ -220,7 +220,7 @@ Nolang supports JavaScript-style regex literals `/pattern/flags`, which create a
 
 ### Syntax
 
-```nolang
+```no
 ; Basic regex literal
 re = /\d+/
 
@@ -254,7 +254,7 @@ Flags are optional, following the closing `/`, consisting of ASCII letters.
 - **Value-producing positions** (after identifiers, literals, `)` / `]` / `}` etc.) → `/` is division
 - `//` is always a line comment (highest priority)
 
-```nolang
+```no
 ; Regex literal (expression-start position after '=')
 re = /\d+/
 result = match-text(/[a-z]+/, text)
@@ -268,7 +268,7 @@ x = a / b
 
 Regex literals desugar at codegen into a call to the standard library `regexp-compile` function:
 
-```nolang
+```no
 ; source
 re = /\d+/
 ; desugars to
@@ -288,7 +288,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 - **Local variables, function parameters**: use lowercase letters (e.g., `hex-chars`, `data-len`)
 - **Function names, struct names**: use lowercase letters (e.g., `sha1-block`, `db-mysql`)
 
-```nolang
+```no
 ; Global data uses uppercase letters, including global constants, global variables, etc.
 NOLANG = 'nolang'
 
@@ -310,7 +310,7 @@ A function's documentation comment should include the complete parameter names a
 - The documentation comment above a function definition must list the name and type of each parameter, and the name and type of the return parameters
 - The API summary at the top of a module should also use full signatures (parameter names, types, return names, types), without abbreviated forms
 
-```nolang
+```no
 ; ❌ Wrong: missing types, missing return parameter name
 ; sha1(data) (hash)
 ; sha1-block(s, h0..h4)
@@ -334,7 +334,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 
 **Rule: If the standard library already provides the corresponding functionality, re-implementing it yourself is discouraged.** Developers should carefully review the standard library documentation (`docs/docs/std/overview.md`) to avoid reinventing the wheel.
 
-```nolang
+```no
 ; ❌ Wrong: re-implementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
     n = s.len
@@ -396,7 +396,7 @@ System functions allow a syntactic-sugar form of return values for user convenie
 
 Function parameters can specify default values using the `name type = expr` syntax. Parameters with default values can be omitted when called; the compiler will automatically fill in the default value. Parameters with default values must be placed at the end of the parameter list.
 
-```nolang
+```no
 ; Function definition with default values
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
@@ -407,7 +407,7 @@ fields = csv.parse-line(line)              ; max-fields defaults to 1024
 fields = csv.parse-line(line, 256)         ; max-fields = 256
 ```
 
-```nolang
+```no
 
 add = (a i64, b i64) (result i64) {
     result = a + b             ; Return the result through the parameter
@@ -452,7 +452,7 @@ a, b = swap(5, 3)
 
 ### Loop / While / for-in
 
-```nolang
+```no
 ; Infinite loop
 !! {
     ...
@@ -508,7 +508,7 @@ for x == 1 {
 
 ### Break / Skip / Early Return
 
-```nolang
+```no
 i <- [0..10): {
     *      ; break
     **     ; continue
@@ -518,7 +518,7 @@ i <- [0..10): {
 
 ### Match
 
-```nolang
+```no
 ; Simple form; it is used to access the argument
 x: {
     err -> log(it)
@@ -583,7 +583,7 @@ x: {
 
 #### Match Style Guide
 
-```nolang
+```no
 ; ❌ Avoid duplicated branch bodies
 w = tls-c.send(req)
 w: {
@@ -620,7 +620,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; Single statement — no braces
 val: {
     ok -> print(it)
@@ -640,7 +640,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; Implicit it binding
 val: {
     ok -> process(it)       ; it = unwrapped value
@@ -649,7 +649,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; ✅ Combined option pattern: nil || err -> body
 ; When the option is nil or err, share the same branch
 val: {
@@ -669,7 +669,7 @@ val: {
 
 ### If / Else
 
-```nolang
+```no
 ; Multiple branches (new style recommended)
 {
     a == 1 -> {
@@ -697,7 +697,7 @@ Nolang uses `run` and `awy` to implement async concurrency. Async function names
 - `run` — starts an async thread and returns a task handle
 - `awy` — waits for the async thread to finish and obtains the result
 
-```nolang
+```no
 ; Async function definition (name ends with -async)
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -733,7 +733,7 @@ test-inline = () {
 
 Functions can return multiple values; use multiple assignment to receive them when calling:
 
-```nolang
+```no
 ; Function definition returning multiple result parameters
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
@@ -756,7 +756,7 @@ Containers store copies of data; the original variable and the container are ind
 
 **Fixed-length array arr:**
 
-```nolang
+```no
 
 ; Using a fixed-length array
 a [3] = [1, 2, 3]    ; fixed-length array of i64 with length 3
@@ -767,7 +767,7 @@ a [?]u16 = [1, 2, 3] ; length automatically inferred
 
 **Variable-length array vec:**
 
-```nolang
+```no
 v = [1, 2, 3]     ; variable-length array of i64
 bs = [0x11, 0x22, 0x33]
 v []u8 = [1, 2, 3] ; variable-length array with explicit type
@@ -787,7 +787,7 @@ Internally, a slice only records a pointer to the original buffer, a length, and
 - A slice does not own data; once the original variable is released, the slice becomes invalid
 - The slice's type is determined by the original type, and methods apply naturally without an "inheritance" mechanism
 
-```nolang
+```no
 ; Supports arr/vec/str
 ; Supports ranges, consistent with for <- notation
 nums [5]u8 = [0, 1, 2, 3, 4]
@@ -817,7 +817,7 @@ Therefore, the methods of the original type are directly available:
 | `vec` (`[]t`) | `[]<range>` | Same as above |
 | `str` | `str<range>` | All methods of `str` (e.g., `to-upper`, `to-lower`, `index`, `contains`, `slice`, `copy`, `fill`, etc.) |
 
-```nolang
+```no
 ; arr slice → vec view, sharing arr's underlying memory
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]    ; s is a []u8 view pointing into a's memory
@@ -842,7 +842,7 @@ view[0] = 99         ; modify an element of view
 
 ### Indexing
 
-```nolang
+```no
 
 ; Get a char from a string (character, not byte)
 str[i]
@@ -860,7 +860,7 @@ map[str]
 
 Struct definitions and literals must both use the multi-line form, with each field on its own line. Fields are not separated by commas, and there is no trailing comma.
 
-```nolang
+```no
 user {
     name str
     age i64
@@ -881,7 +881,7 @@ Methods are defined on types and use `.` to reference the receiver.
 
 ### Syntax
 
-```nolang
+```no
 type.method-name = (params) (results) {
     ; . is the receiver
 }
@@ -896,7 +896,7 @@ type.method-name = (params) (results) {
 
 ### Example
 
-```nolang
+```no
 ; str method
 str.to-upper = () (out str) {
     out.len = .len
@@ -941,7 +941,7 @@ u.greet()
 
 ## Interfaces
 
-```nolang
+```no
 ; Define an interface
 json {
     to-json()
@@ -974,14 +974,14 @@ user.other = () {
 
 ### Special Interfaces
 
-```nolang
+```no
 file enter, leave {
 }
 ```
 
 ## Enums
 
-```nolang
+```no
 
 ; red=0, green=1, blue=2
 color {
@@ -1013,7 +1013,7 @@ struct-name {
 **Rule: Enum values must be referenced using the qualified `EnumType.value` form; bare values cannot be used directly.**
 This prevents naming conflicts and also prevents external packages from using the concrete values directly.
 
-```nolang
+```no
 ; ❌ Wrong: using a bare value directly
 kind = null
 yes = e.is(io)
@@ -1030,7 +1030,7 @@ yes = e.is(code.io)
 
 Types that implement the `enter` / `leave` interfaces are automatically called when the scope is entered and left:
 
-```nolang
+```no
 file enter, leave {
     path str
 }
@@ -1062,7 +1062,7 @@ Adding `?` before a type indicates a nullable type:
 
 A nullable type variable can legitimately hold a null value or an error value; the compiler will perform the corresponding null checks.
 
-```nolang
+```no
 
 o ?i64
 o = nil          ; set to null
@@ -1097,7 +1097,7 @@ When a function may fail or return a null value, **prefer the `?t` option type**
 
 `?t` is a tagged enum with three states: `ok` (has a value), `nil` (null value), and `err` (error). Normal values are bound implicitly; use `nil` when an operation simply cannot find a value, and use `err(...)` when an operation encounters an actual error.
 
-```nolang
+```no
 ; ❌ Not recommended: dual-return-value pattern
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
@@ -1127,7 +1127,7 @@ file.read = () (data ?str) {
 
 Use match to unwrap an option:
 
-```nolang
+```no
 val = s.pop()
 val: {
     nil -> print('empty')
@@ -1149,7 +1149,7 @@ val: {
 
 ### Generics
 
-```nolang
+```no
 arr_to_vec = (arr [n]t) (out []t) {
     for i in [0..n) {
         out[i] = arr[i]
@@ -1159,7 +1159,7 @@ arr_to_vec = (arr [n]t) (out []t) {
 
 ### Type Casting
 
-```nolang
+```no
 
 ; Return the type name string
 a = typeof(x)
@@ -1177,7 +1177,7 @@ The compiler type-checks integer assignments to prevent unsafe narrowing that co
 
 A narrower integer type's value can be auto-assigned to a wider type, since the target range fully contains the source range:
 
-```nolang
+```no
 b byte = 200
 i i64 = b        ; ✓ byte range [0,255] ⊆ i64 range
 u u32 = b        ; ✓ byte range ⊆ u32 range
@@ -1187,7 +1187,7 @@ u u32 = b        ; ✓ byte range ⊆ u32 range
 
 Integer literals (default inferred as `i64`) can be assigned to any integer type whose range includes the literal value:
 
-```nolang
+```no
 n u8 = 200       ; ✓ 200 ∈ [0,255]
 m u8 = 300       ; ✗ 300 > 255, compile error
 big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
@@ -1197,7 +1197,7 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
 
 Assigning a wider-typed variable directly to a narrower type causes a compile error, as it may cause data loss. The error message includes an **actionable fix hint** suggesting how to narrow safely with bitwise operations:
 
-```nolang
+```no
 d u64 = 42
 h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
 h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
@@ -1214,7 +1214,7 @@ y u32 = foo()    ; ✗ function call result type mismatch
 
 When the right-hand side of an assignment is a **bitwise expression** (`&`, `|`, `^`, `<<`, `>>`) and the target type is an **unsigned integer** (`u8`/`u16`/`u32`/`u64`/`byte`), the compiler allows implicit narrowing — because high-bit truncation is the standard semantics of bitwise operations and does not cause unexpected data loss:
 
-```nolang
+```no
 d u64 = 42
 
 ; ✓ mask operation: result ≤ mask value, safely fits u32
@@ -1235,13 +1235,13 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 > **Why allowed?** Bitwise operations (mask, shift, XOR, OR) semantically construct a bit pattern. Assigning to a narrower unsigned type truncates the high bits intentionally — the developer has already ensured the result's range via mask or shift, or deliberately discards high bits. This is a standard pattern in cryptography (e.g. ChaCha20, Poly1305, Blake2) and codec code.
 
 > **Unsigned target types only.** For signed integer targets (`i8`/`i16`/`i32`/`i64`), even with a bitwise RHS, an error is still reported because sign-bit truncation semantics are ambiguous:
-> ```nolang
+> ```no
 > d u64 = 42
 > h i32 = d & 4294967295   ; ✗ still errors: signed target not eligible
 > ```
 
 > **Top-level must be a bitwise op.** Only when the expression's top-level operator is `&`/`|`/`^`/`<<`/`>>` is it allowed. Addition, subtraction, function calls, direct variable references, etc. are not covered:
-> ```nolang
+> ```no
 > d u64 = 42
 > h u32 = d              ; ✗ top-level is Identifier, not bitwise
 > h u32 = d + 1          ; ✗ top-level is +, not bitwise
@@ -1261,7 +1261,7 @@ utils/
 
 > **The new syntax uses `#` for imports. The old `use` keyword is still available but deprecated; switching to `#` is recommended.**
 
-```nolang
+```no
 ; Standard library (new syntax, recommended)
 # std/math.add
 
@@ -1285,7 +1285,7 @@ utils/
 
 Only applies to lib.no
 
-```nolang
+```no
 @ std/math.add a
 ```
 
@@ -1307,7 +1307,7 @@ Declare external C functions via the `#{c}` annotation to implement FFI (Foreign
 | `**byte`  | double pointer    | `i8**`   | output parameter (e.g., `sqlite3**`) |
 | `***byte` | triple pointer    | `i8***`  | rare triple indirection   |
 
-```nolang
+```no
 ; sqlite.no — FFI bindings and safe wrappers in the same file
 ; The compiler automatically converts hyphens (-) to underscores (_) to match C ABI symbols
 ; Names starting with _ are private; the C ABI symbol automatically drops the _ prefix
@@ -1329,7 +1329,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
-```nolang
+```no
 ; Safe wrapper in the same file
 
 open = (dsn str) (d db-sqlite) {
@@ -1367,7 +1367,7 @@ open = (dsn str) (d db-sqlite) {
 
 Multiple key-value pairs are separated by commas:
 
-```nolang
+```no
 #{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
 ```
 
@@ -1379,7 +1379,7 @@ Range syntax supports four bracket combinations:
 
 The FFI annotation `#{c}` is a special form of the annotation system. When an annotation contains an FFI language key (`c`, `cpp`, `rust`, etc.) and is followed by a function declaration, the compiler identifies it as an FFI binding:
 
-```nolang
+```no
 ; #{c} with additional annotations
 #{c, debug}
 _sqlite3-open = (filename str, db **byte) (rc i32)
@@ -1389,7 +1389,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 
 Non-FFI annotations are automatically attached to the declaration that immediately follows (variable declarations, struct definitions) and can be used to tag metadata such as range limits for numeric types (e.g., `num`, `i64`, etc.):
 
-```nolang
+```no
 ; Variable declaration with a range annotation
 #{range=[0..256)}
 x num = 42
@@ -1413,7 +1413,7 @@ person {
 
 The `range` annotation is especially suited to the `num` type (`num = int | float`) for marking the valid range of a numeric value. Range values can be integers or identifiers:
 
-```nolang
+```no
 ; Use constant identifiers as range bounds
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
@@ -1434,7 +1434,7 @@ Platform annotations are compile-time filters that include or exclude code based
 | `#{mac-amd64}` | macOS on x86_64 (Intel) |
 | `#{mac-arm64}` | macOS on ARM64 (Apple Silicon) |
 
-```nolang
+```no
 ; Platform-specific print
 #{mac-arm64}
 print('running on macOS ARM64')
@@ -1479,7 +1479,7 @@ Multiple keys on the same declaration are **OR'd** together — any match includ
 | `#{linux-amd64, win-amd64}` | Linux x86_64 **or** Windows x86_64 |
 | `#{mac-arm64, linux-arm64}` | macOS ARM64 **or** Linux ARM64 |
 
-```nolang
+```no
 ; Included on both macOS and Linux (all archs)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 shared = () {

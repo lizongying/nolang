@@ -13,7 +13,7 @@ Nolang 支援三種**單行註釋**標記與一種**多行（塊）註釋**標�
 - `;; <內容>` —— 單行標記（`;;` 後**同一行**還有內容時，註釋到行尾，語義等同 `;`）
 - `;;\n` —— 多行（塊）註釋：`;;` 後**緊跟換行**（僅允許空白）時觸發多行模式，直到遇到同樣後跟換行/EOF 的 `;;` 結束
 
-```nolang
+```no
 ; 這是註釋
 ; 這也是註釋，語義相同
 ;; 這還是單行註釋（;; 後沒有換行）
@@ -40,7 +40,7 @@ y = 3
 > **規則：每行一條語句，禁止使用逗號 `,` 將多條語句寫在同一行。**（分號 `;` 現在是註釋標記，不再能連接語句。）
 > 這條規則同樣適用於註釋中的程式碼範例。即使在註釋裡，也不應該用逗號把多條語句放在同一行，以免給讀者造成困惑。
 >
-> ```nolang
+> ```no
 ; ❌ 錯誤：註釋中使用逗號合併多條語句
 ; h0 = 1732584193, h1 = 4023233417
 
@@ -100,7 +100,7 @@ y = 3
 
 ### 語法
 
-```nolang
+```no
 ; 聯合類型：多個類型用 | 分隔
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
@@ -115,7 +115,7 @@ buf = [16]u8
 
 聯合類型可以引用其他聯合類型，形成層次結構：
 
-```nolang
+```no
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
 num = int | float     ; num 是 int 和 float 的聯合
@@ -125,7 +125,7 @@ num = int | float     ; num 是 int 和 float 的聯合
 
 聯合類型可用於函數參數和返回值，編譯器會自動進行單態化（monomorphization），為每個成員類型生成獨立的函數版本：
 
-```nolang
+```no
 ; 參數類型為 num 聯合
 max = (a ..num) (r num) {
     r = a[0]
@@ -157,7 +157,7 @@ num.sign = () (r num) {
 
 ## 變量聲明
 
-```nolang
+```no
 
 ; 變量沒有關鍵字
 ; i64、f64、byte、bool、byte、str可以省略類型標注
@@ -261,7 +261,7 @@ Nolang 支援 JavaScript 風格的正則字面量語法 `/pattern/flags`，用�
 
 ### 語法
 
-```nolang
+```no
 ; 基本正則字面量
 re = /\d+/
 
@@ -295,7 +295,7 @@ re = /a\/b/
 - **值產生位置**（標識符、字面量、`)` / `]` / `}` 等之後）→ `/` 是除法運算符
 - `//` 永遠是行註釋（優先級最高）
 
-```nolang
+```no
 ; 正則字面量（= 後是表達式起始位置）
 re = /\d+/
 result = match-text(/[a-z]+/, text)
@@ -309,7 +309,7 @@ x = a / b
 
 正則字面量在代碼生成階段脫糖為對標準庫 `regexp-compile` 函數的調用：
 
-```nolang
+```no
 ; 源碼
 re = /\d+/
 
@@ -321,7 +321,7 @@ re = regexp-compile('\\d+')
 
 ### 使用示例
 
-```nolang
+```no
 ; 創建正則並匹配
 re = /\d+/
 matched = re.matches('hello 123 world')
@@ -349,7 +349,7 @@ result = match-text(/\d+/, text)
 
 > **全局變量必須大寫字母開頭**，這是強制規則，不是慣例。小寫開頭的頂層變量會被編譯器視為局部變量，可能導致未定義引用等錯誤。
 
-```nolang
+```no
 ; ✅ 正確：全局數據使用大寫字母
 NOLANG = 'nolang'
 MAX-SIZE = 1024
@@ -382,7 +382,7 @@ _PRIVATE-CONST = 42
 - 函數定義上方的文檔註釋，必須列出每個參數的名稱和型別，以及返回參數的名稱和型別
 - 模組頂部的 API 摘要也應使用完整簽名（含參數名、型別、返回名、型別），不要使用省略寫法
 
-```nolang
+```no
 ; ❌ 錯誤：缺少型別，缺少返回參數名
 ; sha1(data) (hash)
 ; sha1-block(s, h0..h4)
@@ -406,7 +406,7 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 
 **規則：如果標準庫中已有對應功能，不建議自行重新實現。** 開發者應仔細查看標準庫文檔（`docs/docs/std/overview.md`），避免重複造輪子。
 
-```nolang
+```no
 ; ❌ 錯誤：自行實現 str → []byte 轉換
 str-to-bytes = (s str) (out []byte) {
     n = s.len
@@ -461,7 +461,7 @@ Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第
 定義裡的結果參數名只是佔位符，調用方的 LHS（或尾隨引數）決定結果落在哪個
 變數：
 
-```nolang
+```no
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...            ; 函數體內對 fields 賦值
 }
@@ -487,7 +487,7 @@ Nolang 的函數有以下特點：
 
 函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
 
-```nolang
+```no
 ; 帶默認值的函數定義
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
@@ -498,7 +498,7 @@ fields = csv.parse-line(line)              ; max-fields 默認為 1024
 fields = csv.parse-line(line, 256)         ; max-fields = 256
 ```
 
-```nolang
+```no
 
 add = (a i64, b i64) (result i64) {
     result = a + b             ; 通過參數返回結果
@@ -543,7 +543,7 @@ a, b = swap(5, 3)
 
 ### Loop / While / for-in
 
-```nolang
+```no
 ; 无限循环（空括號代表條件恆真）
 {
     ...
@@ -604,7 +604,7 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 
 ### 跳出 / 跳過 / 提前返回
 
-```nolang
+```no
 i <- [0..10): {
     *      ; break
     **     ; continue
@@ -627,14 +627,14 @@ i <- [0..10): {
 > - LSP：在對應行顯示紅色錯誤診斷
 >
 > 錯誤寫法：
-> ```nolang
+> ```no
 > has = (n i64) (r i64) {
 >     n == 0 -> return 0        ; ❌ 編譯 / formatter / LSP 均報錯
 >     r = n
 > }
 > ```
 > 正確寫法（先給結果參數賦值，再裸 `return` 提前終止）：
-> ```nolang
+> ```no
 > has = (n i64) (r i64) {
 >     n == 0 -> { r = 0; return }   ; ✓
 >     r = n
@@ -643,7 +643,7 @@ i <- [0..10): {
 
 ### Match
 
-```nolang
+```no
 ; 簡單寫法，it 用於取參數
 x: {
     err -> log(it)
@@ -708,7 +708,7 @@ x: {
 
 #### Match 風格指引
 
-```nolang
+```no
 ; ❌ 避免重複分支體
 w = tls-c.send(req)
 w: {
@@ -745,7 +745,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; 單語句 — 不加大括號
 val: {
     ok -> print(it)
@@ -765,7 +765,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; it 隱式綁定
 val: {
     ok -> process(it)       ; it = 解包後的值
@@ -774,7 +774,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 ; ✅ 組合 option 模式：nil || err -> body
 ; 當 option 為 nil 或 err 時共用同一個分支
 val: {
@@ -794,7 +794,7 @@ val: {
 
 ### If / Else
 
-```nolang
+```no
 ; 多分支（推薦新式）
 {
     a == 1 -> {
@@ -822,7 +822,7 @@ Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須�
 - `run` — 啟動異步線程，返回一個 task handle
 - `awy` — 等待異步線程完成並取得結果
 
-```nolang
+```no
 ; 異步函數定義（名稱以 -async 結尾）
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -858,7 +858,7 @@ test-inline = () {
 
 函數可以返回多個值，調用時使用多重賦值接收：
 
-```nolang
+```no
 ; 函數定義返回多個結果參數
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
@@ -881,7 +881,7 @@ val: {
 
 **定長数组arr：**
 
-```nolang
+```no
 
 ; 使用定長数组
 a [3] = [1, 2, 3]    ; 长度为 3 的定長数组 i64
@@ -892,7 +892,7 @@ a [?]u16 = [1, 2, 3] ; 自動推斷長度
 
 **變長數組vec：**
 
-```nolang
+```no
 v = [1, 2, 3]     ; 變長數組 i64
 bs = [0x11, 0x22, 0x33]
 v []u8 = [1, 2, 3] ; 指定类型的變長數組
@@ -912,7 +912,7 @@ v = with-cap-len(200, 100) ; len=100, cap=200（預留擴容空間）
 - 切片不擁有資料，原始變數釋放後切片即失效
 - 切片的類型由原始類型決定，方法自然適用，無需「繼承」機制
 
-```nolang
+```no
 ; 支持arr/vec/str
 ; 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
@@ -942,7 +942,7 @@ s[1..s.len) ; 'bc'
 | `vec` (`[]t`) | `[]<range>` | 同上 |
 | `str` | `str<range>` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等） |
 
-```nolang
+```no
 ; arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]    ; s 是 []u8 視圖，指向 a 的記憶體
@@ -967,7 +967,7 @@ view[0] = 99         ; 修改 view 的元素
 
 ### 索引
 
-```nolang
+```no
 
 ; 字符串獲取char （字符，不是字節）
 str[i]
@@ -985,7 +985,7 @@ map[str]
 
 結構體定義和字面量都必須使用多行形式，每個字段獨佔一行，字段之間不以逗號分隔，末尾也不跟逗號。
 
-```nolang
+```no
 user {
     name str
     age i64
@@ -1004,7 +1004,7 @@ print(u.name)
 
 結構體可以實作一個或多個介面，介面名寫在結構體名後面，以逗號分隔。
 
-```nolang
+```no
 ; 實作單個介面
 user json {
     name str
@@ -1022,7 +1022,7 @@ file enter, leave {
 
 當實作**其他模組**定義的介面時，介面名必須帶模組前綴（`ShortName.`）。參見[跨模組調用前綴](module.md)。
 
-```nolang
+```no
 ; ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
 db-mysql db {
     fd i64
@@ -1050,7 +1050,7 @@ stmt-mysql sql.stmt {
 
 ### 語法
 
-```nolang
+```no
 type.method-name = (params) (results) {
     ; . 是接收者
 }
@@ -1065,7 +1065,7 @@ type.method-name = (params) (results) {
 
 ### 示例
 
-```nolang
+```no
 ; str 方法
 str.to-upper = () (out str) {
     out.len = .len
@@ -1110,7 +1110,7 @@ u.greet()
 
 ## 接口
 
-```nolang
+```no
 ; 定義接口
 json {
     to-json()
@@ -1143,14 +1143,14 @@ user.other = () {
 
 ### 特殊接口
 
-```nolang
+```no
 file enter, leave {
 }
 ```
 
 ## 枚舉
 
-```nolang
+```no
 
 ; red=0, green=1, blue=2
 color {
@@ -1182,7 +1182,7 @@ struct-name {
 **規則：枚舉值必須使用 `枚舉類型.值` 的限定方式引用，不能直接使用裸值。**
 這樣可以防止命名衝突，也使外部包無法直接使用具體值。
 
-```nolang
+```no
 ; ❌ 錯誤：直接使用裸值
 kind = null
 yes = e.is(io)
@@ -1199,7 +1199,7 @@ yes = e.is(code.io)
 
 實現了 `enter` / `leave` 接口的類型，在作用域進入和離開的時候自動調用：
 
-```nolang
+```no
 file enter, leave {
     path str
 }
@@ -1231,7 +1231,7 @@ read-file = () {
 
 可空類型變量可以合法持有空值/错误值，編譯器會進行相應的空值檢查。
 
-```nolang
+```no
 
 o ?i64
 o = nil          ; 設為空
@@ -1266,7 +1266,7 @@ x: {
 
 `?t` 是標籤列舉，有三種狀態：`ok`（有值）、`nil`（空值）、`err`（錯誤）。正常值會隱性綁定，當操作只是找不到值時用 `nil`，當操作遇到實際錯誤時用 `err(...)`。
 
-```nolang
+```no
 ; ❌ 不推薦：雙返回值模式
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
@@ -1296,7 +1296,7 @@ file.read = () (data ?str) {
 
 使用 match 解包 option：
 
-```nolang
+```no
 val = s.pop()
 val: {
     nil -> print('empty')
@@ -1318,7 +1318,7 @@ val: {
 
 ### 泛形
 
-```nolang
+```no
 arr_to_vec = (arr [n]t) (out []t) {
     i <- [0..n): {
         out[i] = arr[i]
@@ -1328,7 +1328,7 @@ arr_to_vec = (arr [n]t) (out []t) {
 
 ### 類型強制轉換
 
-```nolang
+```no
 
 ; 返回類型名稱字符串
 a = typeof(x)
@@ -1346,7 +1346,7 @@ y = x as *byte
 
 窄整數型別的值可以自動賦值給更寬的型別，因為目標型別的範圍完全包含來源型別：
 
-```nolang
+```no
 b byte = 200
 i i64 = b        ; ✓ byte 範圍 [0,255] ⊆ i64 範圍
 u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
@@ -1356,7 +1356,7 @@ u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
 
 整數字面量（預設推斷為 `i64`）可以賦值給任何範圍包含該值的整數型別：
 
-```nolang
+```no
 n u8 = 200       ; ✓ 200 ∈ [0,255]
 m u8 = 300       ; ✗ 300 > 255，編譯錯誤
 big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
@@ -1366,7 +1366,7 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
 
 將寬型別的變數直接賦值給窄型別會導致編譯錯誤，因為可能造成資料遺失。錯誤訊息會附帶**可操作的修復提示**，建議如何用位元運算安全窄化：
 
-```nolang
+```no
 d u64 = 42
 h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
 h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
@@ -1383,7 +1383,7 @@ y u32 = foo()    ; ✗ 函式呼叫結果型別不匹配
 
 當賦值的右側是**位元運算表達式**（`&`、`|`、`^`、`<<`、`>>`）且目標型別為**無號整數**（`u8`/`u16`/`u32`/`u64`/`byte`）時，編譯器允許隱式窄化——因為截斷高位是位元操作的標準語義，不會造成非預期的資料遺失：
 
-```nolang
+```no
 d u64 = 42
 
 ; ✓ mask 運算：結果必 ≤ mask 值，安全落入 u32
@@ -1404,13 +1404,13 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 > **為什麼允許？** 位元運算（mask、位移、XOR、OR）的語義就是構造一個位元模式。賦值給窄的無號型別時，截斷高位是刻意的操作——開發者已透過 mask 或位移保證了結果的範圍，或刻意丟棄高位。這是密碼學（如 ChaCha20、Poly1305、Blake2）和編解碼代碼中的標準模式。
 
 > **僅限無號目標型別。** 對有號整數目標（`i8`/`i16`/`i32`/`i64`），即使右側是位元運算也會報錯，因為符號位元的截斷語義不明確：
-> ```nolang
+> ```no
 > d u64 = 42
 > h i32 = d & 4294967295   ; ✗ 仍報錯：有號目標不適用安全窄化
 > ```
 
 > **頂層必須是位元運算。** 只有當表達式的頂層運算子是 `&`/`|`/`^`/`<<`/`>>` 時才放行。加法、減法、函式呼叫、直接變數引用等不在此列：
-> ```nolang
+> ```no
 > d u64 = 42
 > h u32 = d              ; ✗ 頂層是 Identifier，不是位元運算
 > h u32 = d + 1          ; ✗ 頂層是 +，不是位元運算
@@ -1430,7 +1430,7 @@ utils/
 
 > **新式語法使用 `#` 導入。舊式 `use` 關鍵字仍可使用，但已廢棄（deprecated），建議改用 `#`。**
 
-```nolang
+```no
 ; 標準庫（新式語法，推薦）
 # std/math.add
 
@@ -1454,7 +1454,7 @@ utils/
 
 僅適用於lib.no
 
-```nolang
+```no
 @ std/math.add a
 ```
 
@@ -1476,7 +1476,7 @@ utils/
 | `**byte`  | 雙重指針          | `i8**`   | 輸出參數（如 `sqlite3**`） |
 | `***byte` | 三重指針          | `i8***`  | 極少見的三重間接           |
 
-```nolang
+```no
 ; sqlite.no — FFI 綁定與安全包裝在同一檔案
 ; 編譯器自動將連字號 (-) 轉為底線 (_) 以匹配 C ABI 符號
 ; 以 _ 開頭的名稱為私有，C ABI 符號自動去除前綴 _
@@ -1498,7 +1498,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
-```nolang
+```no
 ; 同一檔案中的安全包裝
 
 open = (dsn str) (d db-sqlite) {
@@ -1536,7 +1536,7 @@ open = (dsn str) (d db-sqlite) {
 
 多個鍵值對以逗號分隔：
 
-```nolang
+```no
 #{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
 ```
 
@@ -1548,7 +1548,7 @@ open = (dsn str) (d db-sqlite) {
 
 FFI 註解 `#{c}` 是註解系統的特殊形式，當註解包含 FFI 語言鍵（`c`、`cpp`、`rust` 等）且後續為函式宣告時，編譯器將其識別為 FFI 綁定：
 
-```nolang
+```no
 ; #{c} 帶額外註解
 #{c, debug}
 _sqlite3-open = (filename str, db **byte) (rc i32)
@@ -1558,7 +1558,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 
 非 FFI 註解會自動附加到緊隨其後的宣告（變數宣告、結構體定義），可用於為數值型別（如 `num`、`i64` 等）標記範圍限制等元數據：
 
-```nolang
+```no
 ; 變數宣告帶 range 註解
 #{range=[0..256)}
 x num = 42
@@ -1582,7 +1582,7 @@ person {
 
 `range` 註解特別適用於 `num` 型別（`num = int | float`），用於標記數值的有效範圍。範圍值可以是整數或識別字：
 
-```nolang
+```no
 ; 使用常量識別字作為範圍邊界
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
@@ -1603,7 +1603,7 @@ val i8 = 100
 | `#{mac-amd64}` | macOS x86_64（Intel） |
 | `#{mac-arm64}` | macOS ARM64（Apple Silicon） |
 
-```nolang
+```no
 #{mac-arm64}
 print('running on macOS ARM64')
 
@@ -1647,7 +1647,7 @@ greet()
 | `#{linux-amd64, win-amd64}` | Linux x86_64 **或** Windows x86_64 |
 | `#{mac-arm64, linux-arm64}` | macOS ARM64 **或** Linux ARM64 |
 
-```nolang
+```no
 ; macOS 和 Linux（所有架構）都執行
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 shared = () {

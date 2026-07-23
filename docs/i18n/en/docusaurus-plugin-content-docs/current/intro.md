@@ -22,7 +22,7 @@ Small strings have no heap allocation; variables can be allocated once and freed
 
 ## Quick Start
 
-```nolang
+```no
 ; Hello, World!
 ; No main entry point needed
 print('Hello, Nolang!')

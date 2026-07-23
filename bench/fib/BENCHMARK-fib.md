@@ -92,7 +92,7 @@ Nolang 透過 LLVM 後端生成與 C 完全相同品質的機器碼，指令數�
 
 
 no
-```nolang
+```no
 ; Fibonacci — 無 I/O 純計算
 fib = (n i64) (o i64) {
     a = 0

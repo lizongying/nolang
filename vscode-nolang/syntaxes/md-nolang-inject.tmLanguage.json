@@ -4,7 +4,7 @@
   "injectionSelector": "L:text.html.markdown - markup.raw.inline",
   "patterns": [
     {
-      "begin": "(^|\\G)(\\s*)(```|~~~)\\s*nolang\\s*$",
+      "begin": "(^|\\G)(\\s*)(```|~~~)\\s*(nolang|no)\\s*$",
       "end": "^\\s*(\\3)\\s*$",
       "name": "meta.embedded.block.nolang",
       "contentName": "source.nolang",

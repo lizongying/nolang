@@ -80,7 +80,7 @@ Nolang is an experimental systems programming language that adopts a pass-by-ref
 
 ### Quick Start
 
-```nolang
+```no
 // Hello, World!
 // No main entry needed
 print('Hello, Nolang!')
@@ -342,7 +342,7 @@ Configure mirror addresses in the `mirrors` array of `mod.jsonc` to accelerate r
 
 Type aliases create a new name for an existing type. Use the equals syntax `name = type`, supporting single type aliases and multi-type unions.
 
-```nolang
+```no
 // Union type: multiple types separated by |
 int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
 float = f32 | f64
@@ -355,7 +355,7 @@ buf = [16]u8
 
 Union types can reference other union types, forming a hierarchy. They can be used for function parameters and return values; the compiler automatically performs monomorphization, generating a separate function version for each member type.
 
-```nolang
+```no
 // Parameter type is num union
 max = (a ..num) (r num) {
     r = a[0]
@@ -376,7 +376,7 @@ max = (a ..num) (r num) {
 
 ### Variables
 
-```nolang
+```no
 // i64 (default), f64, byte, bool, str can omit type annotation
 i = 1
 f = 1.0
@@ -431,7 +431,7 @@ Nolang supports JavaScript-style regex literals `/pattern/flags`, which create a
 - `//` is always a line comment (highest priority)
 - After `#` (use) / `@` (export) directives → `/` is a path separator
 
-```nolang
+```no
 // Regex literal (expression-start position after '=')
 re = /\d+/
 re2 = /hello/gi
@@ -444,7 +444,7 @@ x = a / b
 
 Regex literals **desugar** at codegen into a call to the standard library `regexp-compile` function (defined in `std/regexp.no`):
 
-```nolang
+```no
 // source
 re = /\d+/
 // desugars to
@@ -462,7 +462,7 @@ Nolang supports three single-line comment markers and one multi-line (block) com
 - `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
 - `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered
 
-```nolang
+```no
 // this is a comment
 ; this is also a comment, same semantics
 ;; this is still a single-line comment (no newline after ;;)
@@ -484,7 +484,7 @@ to be recognized as the ending delimiter
 
 **One statement per line** is still a hard rule — never use commas `,` to combine multiple statements on one line (semicolons are now comments, so `;` can no longer join statements). This applies inside comments too.
 
-```nolang
+```no
 ; ❌ Wrong: commas combining multiple statements (inside a comment example)
 ; h0 = 1732584193, h1 = 4023233417
 
@@ -511,7 +511,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 - **Local variables, function parameters**: lowercase (e.g. `hex-chars`, `data-len`)
 - **Function names, struct names**: lowercase (e.g. `sha1-block`, `db-mysql`)
 
-```nolang
+```no
 // ✅ Correct: global data uses uppercase
 NO-LANG = 'nolang'       // global constant, uppercase
 MAX-SIZE = 1024          // global constant
@@ -537,7 +537,7 @@ _PRIVATE-CONST = 42      // private global constant
 
 Function documentation comments should include full parameter names and types, return parameter names and types. The API summary at the top of a module should also use full signatures (including parameter names, types, return names, types), not abbreviated forms.
 
-```nolang
+```no
 // ❌ Wrong: missing types, missing return names
 // sha1(data) (hash)
 // sha1-block(s, h0..h4)
@@ -561,7 +561,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 
 **Rule: If the standard library already provides corresponding functionality, reimplementing it yourself is not recommended.** Developers should carefully review the standard library documentation (see [Standard Library Overview](#standard-library-overview) below) to avoid reinventing the wheel.
 
-```nolang
+```no
 // ❌ Wrong: reimplementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
     n = s.len
@@ -677,7 +677,7 @@ Functions pass results by **modifying input parameters**. Nolang functions have 
 
 System functions allow syntactic sugar return values for user convenience. Since the underlying mechanism still works through input parameters, no new variables are returned, making it internally safe.
 
-```nolang
+```no
 add = (a i64, b i64) (result i64) {
     result = a + b
 }
@@ -708,7 +708,7 @@ When a function may fail or return an empty value, **prefer the `?t` option type
 
 `?t` is a tagged enum with three states: `ok` (has value, implicitly bound), `nil` (empty), `err` (error). Normal values are implicitly bound. Use `nil` when the operation simply cannot find a value, and `err(...)` when the operation encounters an actual error.
 
-```nolang
+```no
 // ❌ Wrong: dual-return pattern
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
@@ -737,7 +737,7 @@ file.read = () (data ?str) {
 ```
 
 Unwrap with match:
-```nolang
+```no
 val = s.pop()
 val: {
     nil -> print('empty')
@@ -765,7 +765,7 @@ The parser automatically adds a hidden `self` parameter with the receiver type, 
 
 **Definition:**
 
-```nolang
+```no
 // type aliases & union types — equals syntax
 // name = type1 | type2 | ...  — union of multiple types
 // name = type               — single type alias
@@ -826,7 +826,7 @@ This "body-first" ordering is intentional: it mirrors how you read the block, an
 unambiguously declares the loop variant. The empty `()` reads as "loop forever"; `(cond)` reads
 as "loop while condition holds".
 
-```nolang
+```no
 // Infinite loop (new style)
 {
     // body
@@ -881,7 +881,7 @@ max = sum > 10 ? sum : 10
 
 ### Break / Skip / Early Return
 
-```nolang
+```no
 i <- [0..10): {
     *      // break
     **     // continue
@@ -891,7 +891,7 @@ i <- [0..10): {
 
 ### Match (new style `x: { ... }`)
 
-```nolang
+```no
 // Simple form, it is used to get the parameter
 x: {
     err -> log(it)
@@ -963,7 +963,7 @@ x: {
 
 #### Match Style Guide
 
-```nolang
+```no
 // ❌ Avoid: duplicate branch bodies
 w = tls-c.send(req)
 w: {
@@ -1000,7 +1000,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 // Single statement — no braces
 val: {
     ok -> print(it)
@@ -1020,7 +1020,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 // it implicit binding
 val: {
     ok -> process(it)       // it = unwrapped value
@@ -1029,7 +1029,7 @@ val: {
 }
 ```
 
-```nolang
+```no
 // ✅ Combined option patterns: nil || err -> body
 // Matches when the option is nil OR err, sharing the same body.
 val: {
@@ -1049,7 +1049,7 @@ val: {
 
 ### If/Else (new style `{ cond -> body }`)
 
-```nolang
+```no
 {
     a == 1 -> {
         a = 1
@@ -1068,7 +1068,7 @@ Nolang uses `run` and `awy` for async concurrency. Async function names must end
 - `run` — start an async thread, returns a task handle
 - `awy` — wait for the async thread to complete and get the result
 
-```nolang
+```no
 // Async function definition (name ends with -async)
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -1094,7 +1094,7 @@ r = awy run compute-async(5)   // r = 10
 
 Functions can return multiple values, received using multi-assignment at the call site:
 
-```nolang
+```no
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
     y = a
@@ -1115,7 +1115,7 @@ Struct definitions and literals must both use multi-line form, with each field o
 
 A struct can implement one or more interfaces by listing them after the struct name. When implementing interfaces from **other modules**, the interface name must include the module prefix (e.g. `sql.db`, not `db`). See [Cross-Module Type References](#cross-module-type-references).
 
-```nolang
+```no
 ; Same-module interface: no prefix needed
 user json {
     name str
@@ -1150,7 +1150,7 @@ user.greet = () {
 
 Enum definitions use the same syntax as structs, but with commas between values. Values auto-increment from 0.
 
-```nolang
+```no
 // red=0, green=1, blue=2
 color {
     red,
@@ -1175,7 +1175,7 @@ struct-name {
 
 **Rule: enum values must always be referenced using qualified form `enum-type.value`, never as bare names.** This prevents naming conflicts and ensures external packages cannot use values directly without qualification.
 
-```nolang
+```no
 // ❌ Wrong: bare enum value
 kind = null
 yes = e.is(io)
@@ -1201,7 +1201,7 @@ Methods are defined on types, using `.` to reference the receiver. The receiver 
 
 **Examples:**
 
-```nolang
+```no
 // str method
 str.to-upper = () (out str) {
     out.len = .len
@@ -1258,7 +1258,7 @@ Slicing (`arr[1..3]`, `vec[1..3]`, `str[1..3]`) produces a **view** into the ori
 | `vec` (`[]t`) | `[]t` (`vec`) | Same as above |
 | `str` | `str` | All `str` methods (`to-upper`, `to-lower`, `index`, `contains`, `slice`, `copy`, `fill`, etc.) |
 
-```nolang
+```no
 // arr slice → vec view, shares arr's memory
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]       // s is []u8 view into a's buffer
@@ -1282,7 +1282,7 @@ view[0] = 99       // modifies data[1] too — shared memory
 
 ### Indexing
 
-```nolang
+```no
 // Get char from string (character, not byte)
 str[i]
 
@@ -1298,7 +1298,7 @@ map[str]
 
 The standard library uses a consistent pattern for data structures and I/O abstractions: define a struct, then attach methods to it. The receiver is accessed via `.` inside the method body, and nested fields via `self.field` (or `.field` for single-level).
 
-```nolang
+```no
 // Data structure: stack (LIFO)
 stack {
     data []i64
@@ -1354,7 +1354,7 @@ The standard library includes comprehensive networking modules under `std/net/`:
 - `std/net/unix` — Unix domain sockets
 - `std/net/ip` — IPv4 address parsing and classification
 
-```nolang
+```no
 // SSE client usage
 client = sse.sse-connect('http://localhost:3000/events')  // returns ?sse-client
 client: {
@@ -1377,7 +1377,7 @@ client: {
 
 Method calls on struct fields via `self.field` (abbreviated `.field`) are fully supported. The type checker resolves the field type from the struct definition, so return types are correctly inferred:
 
-```nolang
+```no
 // .recv-buf is a str field → .recv-buf.slice() returns str
 data = .recv-buf.slice(0, .recv-buf-len)   // correctly inferred as str
 
@@ -1387,7 +1387,7 @@ written = .tls-c.send(req, req.len)
 
 ### Interfaces
 
-```nolang
+```no
 // Define interface
 json {
     to-json()
@@ -1422,7 +1422,7 @@ user.other = () {
 
 Types that implement the `enter` / `leave` interfaces are automatically called when entering and leaving a scope:
 
-```nolang
+```no
 file enter, leave {
     path str
 }
@@ -1449,7 +1449,7 @@ read-file = () {
 
 ### Generics
 
-```nolang
+```no
 arr_to_vec = (arr [n]t) (out []t) {
     i <- [0..n): {
         out[i] = arr[i]
@@ -1459,7 +1459,7 @@ arr_to_vec = (arr [n]t) (out []t) {
 
 ### Type Casting
 
-```nolang
+```no
 // Returns the type name string
 a = typeof(x)
 
@@ -1476,7 +1476,7 @@ The compiler type-checks integer assignments to prevent unsafe narrowing that co
 
 A narrower integer type's value can be auto-assigned to a wider type, since the target range fully contains the source range:
 
-```nolang
+```no
 b byte = 200
 i i64 = b        ; ✓ byte range [0,255] ⊆ i64 range
 u u32 = b        ; ✓ byte range ⊆ u32 range
@@ -1486,7 +1486,7 @@ u u32 = b        ; ✓ byte range ⊆ u32 range
 
 Integer literals (default inferred as `i64`) can be assigned to any integer type whose range includes the literal value:
 
-```nolang
+```no
 n u8 = 200       ; ✓ 200 ∈ [0,255]
 m u8 = 300       ; ✗ 300 > 255, compile error
 big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
@@ -1496,7 +1496,7 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
 
 Assigning a wider-typed variable directly to a narrower type causes a compile error, as it may cause data loss. The error message includes an **actionable fix hint** suggesting how to narrow safely with bitwise operations:
 
-```nolang
+```no
 d u64 = 42
 h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
 h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
@@ -1513,7 +1513,7 @@ y u32 = foo()    ; ✗ function call result type mismatch
 
 When the right-hand side of an assignment is a **bitwise expression** (`&`, `|`, `^`, `<<`, `>>`) and the target type is an **unsigned integer** (`u8`/`u16`/`u32`/`u64`/`byte`), the compiler allows implicit narrowing — because high-bit truncation is the standard semantics of bitwise operations and does not cause unexpected data loss:
 
-```nolang
+```no
 d u64 = 42
 
 ; ✓ mask operation: result ≤ mask value, safely fits u32
@@ -1534,13 +1534,13 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 > **Why allowed?** Bitwise operations (mask, shift, XOR, OR) semantically construct a bit pattern. Assigning to a narrower unsigned type truncates the high bits intentionally — the developer has already ensured the result's range via mask or shift, or deliberately discards high bits. This is a standard pattern in cryptography (e.g. ChaCha20, Poly1305, Blake2) and codec code.
 
 > **Unsigned target types only.** For signed integer targets (`i8`/`i16`/`i32`/`i64`), even with a bitwise RHS, an error is still reported because sign-bit truncation semantics are ambiguous:
-> ```nolang
+> ```no
 > d u64 = 42
 > h i32 = d & 4294967295   ; ✗ still errors: signed target not eligible
 > ```
 
 > **Top-level must be a bitwise op.** Only when the expression's top-level operator is `&`/`|`/`^`/`<<`/`>>` is it allowed. Addition, subtraction, function calls, direct variable references, etc. are not covered:
-> ```nolang
+> ```no
 > d u64 = 42
 > h u32 = d              ; ✗ top-level is Identifier, not bitwise
 > h u32 = d + 1          ; ✗ top-level is +, not bitwise
@@ -1550,7 +1550,7 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 
 > **New syntax: `# path` (recommended). The old `use path` keyword is deprecated but still supported. Always prefer `#` in new code.**
 
-```nolang
+```no
 // Std modules
 # std/math.add
 
@@ -1595,7 +1595,7 @@ ShortName is the last segment of FullPath when split by slashes (e.g. `hash/sha2
 
 When calling module-level functions or constants defined in other modules, you must use the `ShortName.` prefix.
 
-```nolang
+```no
 // Module-level functions
 sha256.sha256(data)
 sha256.sha256-hex(data)
@@ -1616,7 +1616,7 @@ The following cases do not require a prefix:
 
 These three functions are exempt from the prefix rule by convention. **This is a special case for these three functions only**, not because they are builtins — other builtin functions (such as `open`, `close`, `read`, `write`, etc.) still require the module prefix.
 
-```nolang
+```no
 printf('hello %d', n)        // ✅ no prefix
 s = sprintf('x=%d', x)       // ✅ no prefix
 print('hello')               // ✅ no prefix
@@ -1628,7 +1628,7 @@ fs.open(path, opts)          // ✅ with prefix (builtins need it too)
 
 Functions, constants, and methods defined in the same `.no` file are used directly without a prefix.
 
-```nolang
+```no
 // In sha256.no:
 sha256(data)              // sha256 is defined in this file
 HMAC-BLOCK-SIZE           // constant defined in this file
@@ -1638,7 +1638,7 @@ HMAC-BLOCK-SIZE           // constant defined in this file
 
 Method calls on built-in types (`str`, `i64`, `vec`, `arr`, `byte`, `char`, `bool`, etc.) do not require a prefix. Methods are built into the type and resolved directly through the receiver type.
 
-```nolang
+```no
 'hello'.starts-with('he')  // str method
 n.to-str()                 // int method
 v.push(42)                 // vec method
@@ -1650,7 +1650,7 @@ c.is-digit()               // char method
 
 Calling methods on an already-created struct instance does not require a module prefix. Methods are resolved through the instance's type; the compiler automatically finds the corresponding `struct.method` definition.
 
-```nolang
+```no
 f = fs.open(path, opts)    // fs.open is a module-level function, needs prefix
 f.read(buf, n)             // file.read is a struct method, no prefix needed
 f.close()                  // file.close is a struct method, no prefix needed
@@ -1677,7 +1677,7 @@ When referencing **types** (structs, interfaces, enums) defined in **other modul
 
 **1. Struct interface implementation** — when a struct implements interfaces from another module, the interface name must be prefixed:
 
-```nolang
+```no
 // ❌ Wrong: db, rows, stmt are interfaces defined in the sql module
 db-mysql db {
     fd i64
@@ -1699,7 +1699,7 @@ stmt-mysql sql.stmt {
 
 **2. Function parameter and return types** — cross-module types in function signatures need the prefix:
 
-```nolang
+```no
 // ✅ Correct: return type uses sql.result
 db-mysql.exec = (sql str) (r sql.result) {
     ...
@@ -1708,7 +1708,7 @@ db-mysql.exec = (sql str) (r sql.result) {
 
 **3. Struct field types** — cross-module types as field types need the prefix:
 
-```nolang
+```no
 // ✅ Correct: field type uses sql.connection
 conn-mysql sql.db {
     handle sql.connection
@@ -1720,7 +1720,7 @@ conn-mysql sql.db {
 - Built-in types (`str`, `i64`, `bool`, `byte`, etc.)
 - Built-in interfaces (`enter`, `leave`)
 
-```nolang
+```no
 // Same-file defined types, no prefix needed
 result {
     last-id i64
@@ -1737,7 +1737,7 @@ db enter, leave {
 
 #### Complete Example
 
-```nolang
+```no
 // Standard library modules are auto-loaded, no explicit import needed
 
 // ─── No prefix needed ───
@@ -1786,7 +1786,7 @@ Nolang uses the `@` keyword to declare exports in the package root `lib.no` file
 
 #### Syntax
 
-```nolang
+```no
 @ path.func [alias]
 ```
 
@@ -1804,14 +1804,14 @@ Nolang uses the `@` keyword to declare exports in the package root `lib.no` file
 
 #### Example
 
-```nolang
+```no
 // lib.no - package root export file
 @ /src/utils.greet a
 @ /src/utils.hello b
 @ /src/math.pi
 ```
 
-```nolang
+```no
 // src/utils.no
 // Define exported functions
 greet = (name str) {
@@ -1827,7 +1827,7 @@ hello = () {
 
 External packages can only access exports declared in `lib.no` when importing via `#`:
 
-```nolang
+```no
 // Import alias a (corresponds to package-name.utils.greet)
 # package-name.utils.greet a
 
@@ -1931,7 +1931,7 @@ Declare external C functions through the `#{c}` annotation to implement FFI (For
 | `**byte` | double pointer           | `i8**`   | output parameter (e.g. `sqlite3**`) |
 | `***byte`| triple pointer           | `i8***`  | rare triple indirection      |
 
-```nolang
+```no
 // sqlite.no — FFI bindings and safe wrappers in the same file
 // Compiler automatically converts hyphens (-) to underscores (_) to match C ABI symbols
 // Names starting with _ are private; C ABI symbol automatically strips leading _
@@ -1953,7 +1953,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
 ```
 
-```nolang
+```no
 // Safe wrapper in the same file
 
 open = (dsn str) (d db-sqlite) {
@@ -1995,7 +1995,7 @@ open = (dsn str) (d db-sqlite) {
 
 Multiple key-value pairs are separated by commas:
 
-```nolang
+```no
 #{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
 ```
 
@@ -2007,7 +2007,7 @@ Multiple key-value pairs are separated by commas:
 
 The FFI annotation `#{c}` is a special form of the annotation system. When an annotation contains an FFI language key (`c`, `cpp`, `rust`, etc.) and is followed by a function declaration, the compiler identifies it as an FFI binding:
 
-```nolang
+```no
 // #{c} with additional annotations
 #{c, debug}
 _sqlite3-open = (filename str, db **byte) (rc i32)
@@ -2017,7 +2017,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 
 Non-FFI annotations are automatically attached to the declaration that follows. This is useful for tagging numeric types (like `num`) with range constraints:
 
-```nolang
+```no
 // Variable declaration with range annotation
 #{range=[0..256)}
 x num = 42
@@ -2054,7 +2054,7 @@ Platform annotations are compile-time filters that include or exclude code based
 | `#{mac-amd64}` | macOS on x86_64 (Intel) |
 | `#{mac-arm64}` | macOS on ARM64 (Apple Silicon) |
 
-```nolang
+```no
 // Platform-specific print
 #{mac-arm64}
 print('running on macOS ARM64')
@@ -2099,7 +2099,7 @@ Multiple keys on the same declaration are **OR'd** together — any match includ
 | `#{linux-amd64, win-amd64}` | Linux x86_64 **or** Windows x86_64 |
 | `#{mac-arm64, linux-arm64}` | macOS ARM64 **or** Linux ARM64 |
 
-```nolang
+```no
 // Included on both macOS and Linux (all archs)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
 shared = () {
@@ -2124,7 +2124,7 @@ Use `os.get-arch()` to get the current architecture at runtime, and platform ann
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 
-```nolang
+```no
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
@@ -2145,7 +2145,7 @@ Nolang supports three kinds of string/char literals:
 
 3. **Raw strings** (backtick-delimited): Multi-line, no escape processing. Type: `str`.
 
-```nolang
+```no
 // Standard string
 s = 'hello\nworld'
 
@@ -2173,7 +2173,7 @@ WHERE id > 100
 
 **Concatenation (`-`)**
 
-```nolang
+```no
 // Literal concatenation
 s = 'Hello' - ' ' - 'World'
 
@@ -2183,13 +2183,13 @@ greeting = 'Hello, ' - name
 
 **Repetition (`*`)**
 
-```nolang
+```no
 s = 'Hello' * 3
 ```
 
 ### Indexing & Slicing
 
-```nolang
+```no
 s = 'Hello World'
 
 // Index to get char (character, not byte)
@@ -2213,7 +2213,7 @@ For the complete list of string methods, see [Standard Library Overview — str 
 
 When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to `max(len, idx+1)`, no need to manually set `.len`:
 
-```nolang
+```no
 s = ''
 s[0] = 72                      // len automatically becomes 1
 s[1] = 105                     // len automatically becomes 2
@@ -2263,7 +2263,7 @@ Nolang type to LLVM mapping:
 
 `option<t>` tagged enum (tag=0=val, 1=nil, 2=err):
 
-```nolang
+```no
 x ?t                // Declare option<t>
 x = 42              // Set to has-value
 x = nil             // Set to empty
@@ -2285,7 +2285,7 @@ x: {
 
 #### fmt — Formatted Output
 
-```nolang
+```no
 printf(fmt str, ...)    // Formatted output, no trailing newline
 print(...)              // Print with newline
 ```
@@ -2310,7 +2310,7 @@ print(...)              // Print with newline
 
 char is essentially i32 (Unicode code point), all operations are provided as methods:
 
-```nolang
+```no
 c char = 'A'
 c.is-digit()       // Is digit (0-9) (method)
 c.is-letter()      // Is letter (a-z, A-Z) (method)
@@ -2327,7 +2327,7 @@ c.to-str()         // Unicode → string (UTF-8, method)
 
 #### str — String Operations
 
-```nolang
+```no
 ok = a.eq(b, n)               // Equality comparison (method)
 dst = s.copy()                // String copy (method)
 s.fill(val byte)              // Fill with byte value (method)
@@ -2370,7 +2370,7 @@ out = ss.join(sep)            // Join []str with separator (method)
 
 #### number — Numeric Operations
 
-```nolang
+```no
 number.max(a, b)                     // Maximum
 number.min(a, b)                     // Minimum
 r = num.clamp(lo, hi)         // Clamp to range (method)
@@ -2403,7 +2403,7 @@ u64.MIN / MAX                 // 0 / 2^64-1
 
 #### byte — Byte Operations
 
-```nolang
+```no
 out = i64.to-bytes-be()         // i64 → big-endian [8]byte
 out = i64.to-bytes-le()         // i64 → little-endian [8]byte
 v = []byte.to-i64-be()          // big-endian []byte → i64 (1~8 bytes)
@@ -2416,7 +2416,7 @@ s = byte.to-str()               // byte to str (method)
 
 #### vec — Slice Operations
 
-```nolang
+```no
 v = vec.vec-create(n, val)         // Create slice of length n, filled with val
 ok = []t.eq(a, b, n)           // Equality comparison
 n = []t.len()                  // Length
@@ -2437,7 +2437,7 @@ arr = []t.to-arr()             // Convert to array
 
 #### arr — Array Operations
 
-```nolang
+```no
 out = [n]t.clone()             // Copy
 ok = [n]t.eq(b)                // Equality comparison
 [n]t.fill(val)                  // Fill
@@ -2456,7 +2456,7 @@ v = [n]t.first()               // First element
 
 #### sort — Sort Constants
 
-```nolang
+```no
 sort.asc                         // Ascending
 sort.desc                        // Descending
 ```
@@ -2469,7 +2469,7 @@ sort.desc                        // Descending
 
 Provides environment variables, directory operations, process management, system information, time, etc. For file read/write functionality, see the `fs` module.
 
-```nolang
+```no
 // Environment variables
 val = os.get-env(key)
 os.set-env(key, val)
@@ -2506,7 +2506,7 @@ val = os.arg(idx)
 
 Wraps open files with the `file` struct and paths with the `path` struct.
 
-```nolang
+```no
 // File struct
 file {
     fd i64
@@ -2591,7 +2591,7 @@ O-EXCL = 2048
 
 #### env — Environment Variables (simplified wrapper)
 
-```nolang
+```no
 val = env.get(key)
 val = env.lookup(key)               // Returns ?str (nil=not found)
 env.set(key, val)
@@ -2602,7 +2602,7 @@ ok = env.is-set(key)
 
 #### args — Command-line Arguments
 
-```nolang
+```no
 n = args.count()
 arg = args.get(i)
 name = args.program()
@@ -2615,7 +2615,7 @@ arg = args.get-positional(i)
 
 Wraps path strings with the `path` struct; all operations are provided as methods:
 
-```nolang
+```no
 SEP = 47     // '/' (ASCII)
 DOT = 46     // '.'
 
@@ -2654,7 +2654,7 @@ path.current() (out path)    // Get current working directory
 
 #### bufio — Buffered Reading
 
-```nolang
+```no
 r = reader.init(fd, buf)       // Initialize buffered reader (returns reader)
 ok = reader.fill()              // Fill buffer
 b = reader.read-byte()          // Read one byte (?byte, nil=EOF)
@@ -2666,7 +2666,7 @@ reader.close()                  // Close
 
 Provides `io-reader` and `io-writer` structs to unify read/write operations across files, standard I/O, and other streams:
 
-```nolang
+```no
 // Standard file descriptors
 STDIN-FD = 0
 STDOUT-FD = 1
@@ -2707,7 +2707,7 @@ line = io.read-line()           // Read one line from stdin (?str, nil=EOF)
 
 Wraps pattern with the `regexp` struct; underlying implementation uses C standard library `regex.h`:
 
-```nolang
+```no
 // Struct
 regexp {
     pattern str
@@ -2725,7 +2725,7 @@ result = re.find(text)           // Find first matching substring
 
 Provides process creation, standard stream access, process waiting, and process information query. Underlying implementation uses POSIX fork/exec/pipe/waitpid:
 
-```nolang
+```no
 // Signal constants
 SIG-TERM = 15
 SIG-KILL = 9
@@ -2786,7 +2786,7 @@ content, code = process.process-output(program, arg) // Execute and capture outp
 
 Provides TCP networking capabilities, including server listening, client connections, and data send/receive. Underlying implementation uses POSIX socket API:
 
-```nolang
+```no
 // Network constants
 AF-INET = 2
 SOCK-STREAM = 1
@@ -2830,7 +2830,7 @@ c = net.net-dial-to(host, port)          // Create connection and dial (?conn)
 
 Provides IPv4 address parsing, validation, conversion, and classification. Pure Nolang implementation:
 
-```nolang
+```no
 // Default address constants
 IP-ZERO       // 0.0.0.0
 IP-LOOPBACK   // 127.0.0.1
@@ -2877,7 +2877,7 @@ yes = ip.ip-is-private(s)               // Quick private check
 
 Supports SSE streaming reception conforming to W3C EventSource spec. Underlying implementation uses HTTP/1.1 long connections, supporting both plain HTTP and HTTPS (TLS):
 
-```nolang
+```no
 // sse-event struct
 sse-event {
     event str       // Event type (default 'message')
@@ -2923,7 +2923,7 @@ ok = client.reconnect()             // Reconnect (uses last-event-id)
 
 Provides an HTTP/1.1 protocol client, supporting GET, POST, PUT, DELETE, PATCH and other methods, with optional TLS:
 
-```nolang
+```no
 // Structs
 http-request {
     method str
@@ -2961,7 +2961,7 @@ resp.parse-headers()
 
 Supports HTTP/2 frame parsing and connection management, supports h2c prior knowledge mode:
 
-```nolang
+```no
 // Frame struct
 http2-frame {
     length i64
@@ -2997,7 +2997,7 @@ frame = c.recv-frame()                       // Receive frame (?http2-frame)
 
 HTTP/3 client based on QUIC protocol:
 
-```nolang
+```no
 // Method constants
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
@@ -3023,7 +3023,7 @@ name, value, pos = http3.qpack-decode-header(buf, pos)
 
 Supports full-duplex communication over WebSocket protocol, can act as client or server:
 
-```nolang
+```no
 // Message struct
 ws-message {
     opcode i64           // 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
@@ -3051,7 +3051,7 @@ c.close()
 
 Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
-```nolang
+```no
 // Connection
 c = tls.tls-dial(host, port)                     // Establish TLS connection (?tls-conn)
 n = c.send(data)                             // Send encrypted data (?i64)
@@ -3063,7 +3063,7 @@ c.close()
 
 Wraps the `conn` struct, providing auto-reconnect and other features:
 
-```nolang
+```no
 c = client.net-client(host, port)                   // Create client (?client)
 ok = c.connect(host, port)                   // Connect
 ok = c.reconnect()                           // Reconnect
@@ -3079,7 +3079,7 @@ c.close()
 
 Provides QUIC transport protocol implementation, serving as the underlying transport layer for HTTP/3:
 
-```nolang
+```no
 c = quic.quic-dial(host, port)                    // Establish QUIC connection (?quic-conn)
 n = c.send(data, n)                          // Send data
 n = c.recv(buf, n)                           // Receive data
@@ -3088,7 +3088,7 @@ c.close()
 
 #### net/server — HTTP Server
 
-```nolang
+```no
 s = server{}
 ok = s.listen(host, port)                    // Start listening
 ok = s.serve()                               // Handle requests
@@ -3097,20 +3097,20 @@ s.close()
 
 #### net/dns — DNS Resolution
 
-```nolang
+```no
 ip = dns.dns-resolve(host)                       // Resolve hostname (?str)
 ```
 
 #### net/url — URL Parsing
 
-```nolang
+```no
 u = url.url-parse(url)                           // Parse URL
 s = u.to-str()                               // Convert to string
 ```
 
 #### net/cookie — HTTP Cookie
 
-```nolang
+```no
 c = cookie{}
 c.parse(set-cookie-header)
 s = c.to-str()
@@ -3118,27 +3118,27 @@ s = c.to-str()
 
 #### net/multipart — Multipart Form Data
 
-```nolang
+```no
 out = multipart.multipart-encode(fields, boundary)
 fields = multipart.multipart-parse(data, boundary)
 ```
 
 #### net/hpack — HPACK Header Compression (HTTP/2)
 
-```nolang
+```no
 buf, n = hpack.hpack-encode(headers)
 headers = hpack.hpack-decode(buf, n)
 ```
 
 #### net/proxy — Proxy Support
 
-```nolang
+```no
 c = proxy.proxy-dial(proxy-url, target-host, target-port)
 ```
 
 #### net/pool — Connection Pool
 
-```nolang
+```no
 p = pool{}
 p.init(capacity)
 c = p.get()                                  // Get connection from pool
@@ -3148,7 +3148,7 @@ p.close()
 
 #### net/unix — Unix Domain Socket
 
-```nolang
+```no
 fd = unix.unix-listen(path)                       // Listen
 fd = unix.unix-dial(path)                         // Connect
 fd = unix.unix-accept(listen-fd)                  // Accept connection
@@ -3160,7 +3160,7 @@ fd = unix.unix-accept(listen-fd)                  // Accept connection
 
 #### time — Time Operations
 
-```nolang
+```no
 sec = time.now-s()                   // Current Unix timestamp (seconds)
 ms = time.now-ms()                   // Current timestamp (milliseconds)
 us = time.now-us()                   // Current timestamp (microseconds)
@@ -3177,7 +3177,7 @@ d = time.duration-ms-between(s, e)    // Elapsed (milliseconds)
 
 #### log — Leveled Logging
 
-```nolang
+```no
 LEVEL-DEBUG = 0
 LEVEL-INFO  = 1
 LEVEL-WARN  = 2
@@ -3198,7 +3198,7 @@ log.fatal(msg)
 
 #### set — Set (Array-based)
 
-```nolang
+```no
 new-n = set.add(s, n, val)           // Add element
 new-n = set.set-remove(s, n, val)        // Remove element
 ok = set.contains(s, n, val)         // Whether it contains
@@ -3214,7 +3214,7 @@ yes = set.set-empty(s, n)                    // Whether empty
 
 Double-ended queue implemented with a circular buffer, wrapped in the `deque` struct:
 
-```nolang
+```no
 // Struct
 deque {
     buf []i64
@@ -3247,7 +3247,7 @@ d.clear()                      // Clear
 
 Binary min heap wrapped in the `heap` struct:
 
-```nolang
+```no
 // Struct
 heap {
     data []i64
@@ -3269,7 +3269,7 @@ yes = h.empty()                // Whether empty
 
 Last-in-first-out (LIFO) data structure, wrapped in the `stack` struct:
 
-```nolang
+```no
 // Struct
 stack {
     data []i64
@@ -3296,7 +3296,7 @@ s.clear()                      // Clear
 
 Fixed capacity 64 (i64→i64), linear probing, doubly-linked list preserves insertion order:
 
-```nolang
+```no
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
@@ -3313,7 +3313,7 @@ m.for-each(key, val)
 
 Fixed capacity 64, linear probing, O(1) lookup/insert/delete:
 
-```nolang
+```no
 s = hash-set{}
 s.init()
 is-new = s.add(val)
@@ -3329,7 +3329,7 @@ s.for-each(val)
 
 Fixed capacity 256, FNV-1a hash, linear probing:
 
-```nolang
+```no
 m = str-map{}
 m.init()
 m.put('key', 'val')
@@ -3346,7 +3346,7 @@ m.for-each(k, v)
 
 Fixed capacity 256, FNV-1a hash, string deduplication:
 
-```nolang
+```no
 s = str-set{}
 s.init()
 is-new = s.add('hello')
@@ -3362,7 +3362,7 @@ s.for-each(val)
 
 Ordered map (i64→i64) implemented based on AVL self-balancing binary search tree, capacity 64:
 
-```nolang
+```no
 m = tree-map{}
 m.clear()                           // Initialize
 ok = m.put(key, val)                // Insert or update
@@ -3383,7 +3383,7 @@ yes = m.full()
 
 Ordered set (i64) implemented based on AVL self-balancing binary search tree, capacity 64:
 
-```nolang
+```no
 s = tree-set{}
 s.clear()                           // Initialize
 ok = s.add(key)                     // Add element
@@ -3403,7 +3403,7 @@ yes = s.full()
 
 Ring buffer implementation based on fixed-length array, buffer provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 q = buf.queue-init()
 ok = buf.queue-push(q, val)         // Push to tail
@@ -3419,7 +3419,7 @@ q.clear()
 
 Stack implementation based on fixed-length array, buffer provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 s = buf.arr-stack-init()
 ok = buf.arr-stack-push(s, val)     // Push
@@ -3435,7 +3435,7 @@ s.clear()
 
 Doubly-linked list based on fixed-length array node pool, values provided by the `[n]t` receiver:
 
-```nolang
+```no
 buf [128]i64 = [0:128]
 nxt [128]i64 = [0:128]
 prv [128]i64 = [0:128]
@@ -3459,7 +3459,7 @@ yes = l.full()
 
 Defines standard interfaces for database connections, queries, and prepared statements, implemented by concrete drivers:
 
-```nolang
+```no
 // Execution result
 result {
     last-id i64
@@ -3500,7 +3500,7 @@ stmt enter, leave {
 
 #### encoding/hex — Hexadecimal
 
-```nolang
+```no
 // Encoding (defined in byte module)
 out = data.to-hex()                  // []byte → uppercase hex str
 out = data.to-hex-lower()            // []byte → lowercase hex str
@@ -3511,7 +3511,7 @@ out = s.from-hex()                   // hex str → ?[]byte (nil=empty, err=inva
 
 #### encoding/base64 — Base64 (RFC 4648)
 
-```nolang
+```no
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  // '='
@@ -3524,7 +3524,7 @@ out-n = base64.decode(s, n, table, out)   // Base64 decode (?i64, nil=invalid in
 
 #### encoding/csv — CSV Parsing (RFC 4180)
 
-```nolang
+```no
 fn, new-pos = csv.parse-field(s, sn, pos, field)  // Parse single field
 n = csv.parse-line(s, sn, fields, max)             // Parse one line
 out-n = csv.encode-field(field, fn, out)           // Encode field
@@ -3536,7 +3536,7 @@ out-n = csv.encode-field(field, fn, out)           // Encode field
 
 #### archive/tar — TAR Archive (POSIX ustar)
 
-```nolang
+```no
 // Read regular tar
 archive = tar{
     data: raw-bytes
@@ -3570,7 +3570,7 @@ archive = builder.finish()
 
 #### archive/zip — ZIP Archive Parsing
 
-```nolang
+```no
 archive = zip{
     data: raw-bytes
 }
@@ -3592,7 +3592,7 @@ out = e.extract()
 
 #### archive/gzip — GZIP Compression and Raw DEFLATE
 
-```nolang
+```no
 out = gzip.gzip-compress(data)                      // zlib compression
 out = gzip.gzip-decompress(data)                    // zlib decompression
 out = gzip.inflate-decompress(data, out-size)       // Raw DEFLATE decompression (ZIP method 8)
@@ -3604,7 +3604,7 @@ out = gzip.inflate-decompress(data, out-size)       // Raw DEFLATE decompression
 
 #### hash/aes — AES-128 Encryption/Decryption (ECB mode)
 
-```nolang
+```no
 aes.aes-128-enc(plain, 16, key, out)   // Encrypt 16-byte block
 aes.aes-128-dec(cipher, 16, key, out)  // Decrypt 16-byte block
 ```
@@ -3613,7 +3613,7 @@ Also includes standalone modules `hash/aes-128-enc` and `hash/aes-128-dec`.
 
 #### hash/des — DES Encryption/Decryption (ECB mode)
 
-```nolang
+```no
 des.des-enc(plain, 8, key, out)        // Encrypt 8-byte block
 des.des-dec(cipher, 8, key, out)       // Decrypt 8-byte block
 ```
@@ -3622,7 +3622,7 @@ Also includes standalone modules `hash/des-enc` and `hash/des-dec`.
 
 #### hash/rsa — RSA Modular Exponentiation
 
-```nolang
+```no
 rsa.rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
 ```
 
@@ -3630,13 +3630,13 @@ Does not include key generation, supports 1024~4096-bit.
 
 #### hash/md5 — MD5 (128-bit)
 
-```nolang
+```no
 out [16]byte = md5.md5(data)
 ```
 
 #### hash/sha1 — SHA-1 (160-bit)
 
-```nolang
+```no
 hash = sha1.sha1(data []byte) (hash [20]byte)
 hex = sha1.sha1-hex(data []byte) (hex str)
 sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
@@ -3648,7 +3648,7 @@ sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
 
 #### hash/sha256 — SHA-256 (256-bit)
 
-```nolang
+```no
 sha256.sha256(data []byte) (hash [32]byte)
 sha256.sha256-hex(data []byte) (hex str)
 sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32)
@@ -3660,7 +3660,7 @@ sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 
 
 #### hash/sha512 — SHA-512 (512-bit)
 
-```nolang
+```no
 sha512.sha512(data []byte) (hash [64]byte)
 sha512.sha512-hex(data []byte) (hex str)
 sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64)
@@ -3672,26 +3672,26 @@ sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 
 
 #### hash/crc-32 — CRC32 Checksum
 
-```nolang
+```no
 crc-32.crc-32(s []byte, n, crc)
 ```
 
 #### hash/fnv-1a-32 — FNV-1a Non-cryptographic Hash
 
-```nolang
+```no
 fnv-1a-32.fnv-1a-32(s []byte, n, h)
 ```
 
 #### hash/rand — Random Number Generator (xorshift32)
 
-```nolang
+```no
 r = rand.rand(state)                     // 32-bit pseudo-random number
 rand.rand-str(state, n, s)              // Random alphanumeric string
 ```
 
 #### hash/x509 — X.509 Certificate DER Parsing
 
-```nolang
+```no
 tag = x509.der-tag(data, pos)
 len, adv = x509.der-len(data, pos)
 x509.x509-fingerprint(cert, n, h0..h7)  // SHA-256 certificate fingerprint
@@ -3700,14 +3700,14 @@ x509.x509-rsa-e(cert, n, e)             // RSA public key exponent extraction
 
 #### hash/aes-256 — AES-256 Encryption/Decryption (ECB mode)
 
-```nolang
+```no
 aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   // Encrypt
 aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   // Decrypt
 ```
 
 #### hash/aes-cbc — AES-CBC Mode (with PKCS7 Padding)
 
-```nolang
+```no
 out = aes-cbc.aes-128-cbc-enc(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.aes-128-cbc-dec(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.pkcs7-pad(in []byte)
@@ -3716,21 +3716,21 @@ n = aes-cbc.pkcs7-unpad(in []byte)
 
 #### hash/aes-256-cbc — AES-256-CBC Encryption/Decryption
 
-```nolang
+```no
 out = aes-256-cbc.aes-256-cbc-enc(in []byte, key [32]byte, iv [16]byte)
 out = aes-256-cbc.aes-256-cbc-dec(in []byte, key [32]byte, iv [16]byte)
 ```
 
 #### hash/aes-ctr — AES-CTR Counter Mode
 
-```nolang
+```no
 out = aes-ctr.aes-128-ctr(in []byte, key [16]byte, iv [16]byte)
 out = aes-ctr.aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
 ```
 
 #### hash/aes-gcm — AES-GCM AEAD
 
-```nolang
+```no
 // AES-128-GCM
 sealed = aes-gcm.aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
@@ -3738,126 +3738,126 @@ plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed [
 
 #### hash/aes-256-gcm — AES-256-GCM AEAD (NIST SP 800-38D)
 
-```nolang
+```no
 sealed = aes-256-gcm.aes-256-gcm-seal(key [32]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-256-gcm.aes-256-gcm-open(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
 ```
 
 #### hash/hmac — HMAC Message Authentication Code
 
-```nolang
+```no
 out = hmac.hmac(key []byte, key-n i64, msg []byte, msg-n i64, block-size i64) (out [32]byte)
 ```
 
 #### hash/hkdf — HKDF Key Derivation (RFC 5869)
 
-```nolang
+```no
 ok = hkdf.hkdf-extract(salt []byte, salt-n i64, ikm []byte, ikm-n i64, prk []byte)
 ok = hkdf.hkdf-expand(prk []byte, prk-n i64, info []byte, info-n i64, out []byte, out-n i64)
 ```
 
 #### hash/pbkdf2 — PBKDF2 Key Derivation (RFC 2898)
 
-```nolang
+```no
 pbkdf2.pbkdf2(password []byte, pw-n i64, salt []byte, salt-n i64, iter i64, out []byte, out-n i64)
 ```
 
 #### hash/argon2 — Argon2 Memory-hard Key Derivation
 
-```nolang
+```no
 argon2.argon2id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
 ```
 
 #### hash/scrypt — scrypt Key Derivation
 
-```nolang
+```no
 scrypt.scrypt(password []byte, pw-n i64, salt []byte, salt-n i64, n i64, r i64, p i64, out []byte, out-n i64)
 ```
 
 #### hash/sha224 — SHA-224 (224-bit)
 
-```nolang
+```no
 hash = sha224.sha224(data []byte) (hash [28]byte)
 hex = sha224.sha224-hex(data []byte) (hex str)
 ```
 
 #### hash/sha384 — SHA-384 (384-bit)
 
-```nolang
+```no
 hash = sha384.sha384(data []byte) (hash [48]byte)
 hex = sha384.sha384-hex(data []byte) (hex str)
 ```
 
 #### hash/sha3 — SHA-3 (Keccak)
 
-```nolang
+```no
 hash = sha3.sha3-256(data []byte) (hash [32]byte)
 hash = sha3.sha3-512(data []byte) (hash [64]byte)
 ```
 
 #### hash/blake2 — BLAKE2 Hash
 
-```nolang
+```no
 hash = blake2.blake2b-256(data []byte) (hash [32]byte)
 hash = blake2.blake2b-512(data []byte) (hash [64]byte)
 ```
 
 #### hash/crc-16 — CRC16 Checksum
 
-```nolang
+```no
 crc = crc-16.crc-16(data []byte, n i64) (crc i64)
 ```
 
 #### hash/crc-64 — CRC64 Checksum
 
-```nolang
+```no
 crc = crc-64.crc-64(data []byte, n i64) (crc i64)
 ```
 
 #### hash/fnv — FNV-1 Hash
 
-```nolang
+```no
 h = fnv.fnv-1-32(data []byte, n i64) (h i64)
 h = fnv.fnv-1a-64(data []byte, n i64) (h i64)
 ```
 
 #### hash/base32 — Base32 Encoding/Decoding (RFC 4648)
 
-```nolang
+```no
 out = base32.base32-encode(data []byte, n i64) (out str)
 out = base32.base32-decode(s str, n i64) (out []byte)
 ```
 
 #### hash/chacha20-poly1305 — ChaCha20-Poly1305 AEAD
 
-```nolang
+```no
 sealed = chacha20-poly1305.chacha20-poly1305-seal(key [32]byte, nonce [12]byte, aad []byte, plain []byte)
 plain = chacha20-poly1305.chacha20-poly1305-open(key [32]byte, nonce [12]byte, aad []byte, sealed []byte)
 ```
 
 #### hash/rc4 — RC4 Stream Cipher
 
-```nolang
+```no
 out = rc4.rc4(key []byte, key-n i64, data []byte, data-n i64) (out []byte)
 ```
 
 #### hash/tdes — Triple DES (3DES)
 
-```nolang
+```no
 tdes.tdes-enc(plain, 8, key [24]byte, out)
 tdes.tdes-dec(cipher, 8, key [24]byte, out)
 ```
 
 #### hash/ecdsa — ECDSA Digital Signature
 
-```nolang
+```no
 ok = ecdsa.ecdsa-sign(priv-key []byte, msg []byte, msg-n i64, r []byte, s []byte)
 ok = ecdsa.ecdsa-verify(pub-key []byte, msg []byte, msg-n i64, r []byte, s []byte) (ok bool)
 ```
 
 #### hash/ed25519 — Ed25519 Digital Signature
 
-```nolang
+```no
 pub = ed25519.ed25519-derive-public(priv [32]byte) (pub [32]byte)
 sig = ed25519.ed25519-sign(priv [32]byte, msg []byte, msg-n i64) (sig [64]byte)
 ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, msg-n i64, sig [64]byte) (ok bool)
@@ -3865,14 +3865,14 @@ ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, msg-n i64, sig [64]byte) (
 
 #### hash/x25519 — X25519 Key Exchange
 
-```nolang
+```no
 pub = x25519.x25519-derive-public(priv [32]byte) (pub [32]byte)
 shared = x25519.x25519-derive-shared(priv [32]byte, peer-pub [32]byte) (shared [32]byte)
 ```
 
 #### hash/rand-str — Random String Generation
 
-```nolang
+```no
 rand-str.rand-str(state i64, n i64, s str)   // Generate random alphanumeric string of length n
 ```
 
@@ -3882,7 +3882,7 @@ rand-str.rand-str(state i64, n i64, s str)   // Generate random alphanumeric str
 
 #### json — JSON Parsing and Generation
 
-```nolang
+```no
 // Type enum
 json-kind {
     null,
@@ -3920,7 +3920,7 @@ Unicode-related features have been distributed across the `char` and `str` modul
 
 #### uuid — UUID v4 Generation and Parsing
 
-```nolang
+```no
 out = uuid.new-v4(state)                  // Generate UUID v4
 out-n = uuid.to-str(out)             // Convert to lowercase string (method)
 out-n = uuid.to-str-upper(out)       // Convert to uppercase string (method)
@@ -3938,7 +3938,7 @@ uuid.nil-uuid(out)                        // Return nil UUID
 
 #### bigint — Arbitrary Precision Integer
 
-```nolang
+```no
 // Type
 bigint {
     sign i64
@@ -3994,7 +3994,7 @@ bigint.mul-i64(a, v, c)
 
 Structured error type and utility functions:
 
-```nolang
+```no
 // Error code enum
 code {
 ok,
@@ -4024,13 +4024,13 @@ s = e.format()              // Format as string
 
 ### bool — Boolean Type
 
-```nolang
+```no
 bool.to-str() (out str)     // true→"true", false→"false" (method)
 ```
 
 ### enter / leave — Lifecycle Hooks
 
-```nolang
+```no
 
 // Execute on startup
 enter { 

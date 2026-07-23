@@ -22,7 +22,7 @@ Nolang 是一門實驗性的系統編程語言，採用引用傳遞模型、安�
 
 ## 快速開始
 
-```nolang
+```no
 ; 你好，世界！
 ; 不需要main入口
 print('Hello, Nolang!')

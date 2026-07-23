@@ -27,7 +27,7 @@ ShortName 即為 FullPath 以斜線分隔後的最後一段（如 `hash/sha256` 
 
 調用其他模組定義的模組級函數或常量時，必須使用 `ShortName.` 前綴。
 
-```nolang
+```no
 ; 模組級函數
 sha256.sha256(data)
 sha256.sha256-hex(data)
@@ -48,7 +48,7 @@ math.PI
 
 這三個函數依規定免除前綴，直接使用。**這僅僅是針對這三個函數的特例**，並非因為它們是 builtin —— 其他 builtin 函數（如 `open`、`close`、`read`、`write` 等）仍需使用模組前綴。
 
-```nolang
+```no
 printf('hello %d', n)        ; ✅ 無前綴
 s = sprintf('x=%d', x)       ; ✅ 無前綴
 print('hello')               ; ✅ 無前綴
@@ -60,7 +60,7 @@ fs.open(path, opts)          ; ✅ 帶前綴（builtin 也需要）
 
 在同一 `.no` 檔案內定義的函數、常量、方法，直接使用，不需前綴。
 
-```nolang
+```no
 ; 在 sha256.no 中：
 sha256(data)              ; sha256 定義在本檔案
 HMAC-BLOCK-SIZE           ; 常量定義在本檔案
@@ -70,7 +70,7 @@ HMAC-BLOCK-SIZE           ; 常量定義在本檔案
 
 內置類型（`str`、`i64`、`vec`、`arr`、`byte`、`char`、`bool` 等）的方法調用不需前綴。方法已內建於型別，通過接收者型別直接解析。
 
-```nolang
+```no
 'hello'.starts-with('he')  ; str 方法
 n.to-str()                 ; int 方法
 v.push(42)                 ; vec 方法
@@ -82,7 +82,7 @@ c.is-digit()               ; char 方法
 
 對已建立的結構體實例調用方法不需模組前綴。方法通過實例的型別解析，編譯器自動找到對應的 `struct.method` 定義。
 
-```nolang
+```no
 f = fs.open(path, opts)    ; fs.open 是模組級函數，需前綴
 f.read(buf, n)             ; file.read 是結構體方法，不需前綴
 f.close()                  ; file.close 是結構體方法，不需前綴
@@ -111,7 +111,7 @@ p.exists()                 ; path.exists 是結構體方法，不需前綴
 
 當一個結構體實作其他模組定義的介面時，介面名必須帶模組前綴：
 
-```nolang
+```no
 ; ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
 db-mysql db {
     fd i64
@@ -135,7 +135,7 @@ stmt-mysql sql.stmt {
 
 函數簽名中的跨模組型別同樣需要前綴：
 
-```nolang
+```no
 ; ✅ 正確：返回型別使用 sql.result
 db-mysql.exec = (sql str) (r sql.result) {
     ...
@@ -144,7 +144,7 @@ db-mysql.exec = (sql str) (r sql.result) {
 
 ### 結構體欄位型別
 
-```nolang
+```no
 ; ✅ 正確：欄位型別使用 sql.connection
 conn-mysql sql.db {
     handle sql.connection
@@ -157,7 +157,7 @@ conn-mysql sql.db {
 - **內置型別**：`str`、`i64`、`bool`、`byte` 等內置型別不需前綴
 - **內置介面**：`enter`、`leave` 等語言內置介面不需前綴
 
-```nolang
+```no
 ; 同檔案定義的型別，不需前綴
 result {
     last-id i64
@@ -174,7 +174,7 @@ db enter, leave {
 
 ## 完整範例
 
-```nolang
+```no
 ; 標準庫模組自動載入，無需顯式導入
 
 ; ─── 不需前綴 ───

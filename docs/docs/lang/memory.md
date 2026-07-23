@@ -53,7 +53,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 ## 所有权转移（move）
 
 ### 單返回值 move
-```nolang
+```no
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local 標記為 moved，函數結束不 free；out 由呼叫者管理
@@ -63,7 +63,7 @@ v = get-slice()  ; v 擁有 data，函數結束時 free
 ```
 
 ### 多返回值 move（按參數位置順序）
-```nolang
+```no
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -79,7 +79,7 @@ a, b = get-pair()  ; a 擁有 x 的 data，b 擁有 y 的 data
 **注意**：若 `a` 和 `b` 引用同一源變數（如 `a = x; b = x`），在被呼叫函數內只 move 一次（x 標記 moved），a 和 b 都獲得 x 的淺拷貝（共享同一 data 指標）。但在上層函數中，a 和 b 是獨立的局部變數，各自被追蹤為堆變數，函數結束時都會執行 free → **double-free**。當前 Nolang 沒有引用/借用語義，b 不會自動成為 a 的別名。**應避免這種模式**。
 
 ### vec.push 的隱式 move
-```nolang
+```no
 inner = [1, 2, 3]
 outer.push(inner)
 ; inner 標記為 moved，data 所有權轉移給 outer
@@ -92,7 +92,7 @@ push 只淺拷貝 inner 的結構體到 outer 元素位置，**不克隆 data**�
 
 條件分支下的 move 帶來一個挑戰：編譯期無法確定某個 move 是否真的發生。
 
-```nolang
+```no
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -153,7 +153,7 @@ Nolang 採用**按堆變數下標索引的位圖**解決此問題。編譯期為
 
 ## 深層 clone（局部變數間賦值）
 
-```nolang
+```no
 a []i64 = [10, 20, 30]
 b = a          ; 深層 clone：malloc 新 data + memcpy + 遞迴 clone 元素
 b[0] = 99
@@ -201,7 +201,7 @@ FFI extern 函數（`#{c}` 標記）返回的 C 字串指標（`i8*`）可能指
 2. **非 NULL**：`strlen` + `malloc` + `memcpy` + null 終止，複製到獨立堆緩衝區
 3. **PHI 合併**：兩條路徑合併，構造 `%str-long` 返回
 
-```nolang
+```no
 #{c}
 strchr = (s str, c i64) (r str)
 
@@ -222,7 +222,7 @@ find = () (r str) {
 1. `emitHeapFree` — 釋放 top-level 局部堆變數（非 globalVars）
 2. `emitGlobalHeapFree` — 遍歷 `moduleVarTypes`，釋放所有 `globalVars` 中的堆擁有型別
 
-```nolang
+```no
 GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
 GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 ; top-level 語句 malloc data 並存入 global
@@ -245,7 +245,7 @@ GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 
 ## 重新賦值與舊值釋放
 
-```nolang
+```no
 s = 'hello'     ; malloc data 緩衝區
 s = 'world'     ; 釋放 'hello' 的 data，malloc 新 data
 ```
@@ -254,7 +254,7 @@ s = 'world'     ; 釋放 'hello' 的 data，malloc 新 data
 
 ## 結構體欄位釋放
 
-```nolang
+```no
 Node {
     name str
     items []i64
@@ -273,7 +273,7 @@ n = Node{
 
 ## 固定陣列重新賦值為切片
 
-```nolang
+```no
 local [4]i64 = [100, 200, 300, 400]   ; local 是固定陣列（16 字節）
 local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 ```
@@ -303,14 +303,14 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 hashmap 未實現 key/value 的深層 free，map 容器的堆數據會泄漏。
 
 ### 循環臨時變數
-```nolang
+```no
 loop {
     s = 'temp'   ; 每次迭代 malloc 新 data，舊 data 未釋放
 }
 ```
 
 ### 切片視圖 + 原數組 move
-```nolang
+```no
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 ```

@@ -53,7 +53,7 @@ All frees are preceded by `icmp eq i8* %ptr, null` to avoid free(NULL) or freein
 ## Ownership Transfer (move)
 
 ### Single Return Value move
-```nolang
+```no
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local marked as moved, not freed at function exit; out managed by caller
@@ -63,7 +63,7 @@ v = get-slice()  ; v owns data, freed at function exit
 ```
 
 ### Multi-Return Value move (by parameter position order)
-```nolang
+```no
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -79,7 +79,7 @@ a, b = get-pair()  ; a owns x's data, b owns y's data
 **Note**: If `a` and `b` reference the same source variable (e.g., `a = x; b = x`), within the callee only one move occurs (x marked moved); both a and b receive a shallow copy of x (sharing the same data pointer). But in the caller, a and b are independent local variables, each tracked as a heap variable, and both will be freed at function exit → **double-free**. Nolang currently has no reference/borrow semantics; b does not automatically become an alias of a. **Avoid this pattern**.
 
 ### Implicit move in vec.push
-```nolang
+```no
 inner = [1, 2, 3]
 outer.push(inner)
 ; inner marked as moved, data ownership transferred to outer
@@ -92,7 +92,7 @@ push only shallow-copies inner's struct into outer's element slot **without clon
 
 Move under conditional branches poses a challenge: the compiler cannot statically determine whether a move actually occurs.
 
-```nolang
+```no
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -129,7 +129,7 @@ To pass many values, use a container type to bundle them:
 
 ## Deep Clone (Assignment Between Locals)
 
-```nolang
+```no
 a []i64 = [10, 20, 30]
 b = a          ; deep clone: malloc new data + memcpy + recursively clone elements
 b[0] = 99
@@ -177,7 +177,7 @@ The compiler inserts a safe copy on the FFI extern `str` return path:
 2. **Non-NULL**: `strlen` + `malloc` + `memcpy` + null-terminate, copying into an independent heap buffer
 3. **PHI merge**: merge both paths and construct the `%str-long` return value
 
-```nolang
+```no
 #{c}
 strchr = (s str, c i64) (r str)
 
@@ -198,7 +198,7 @@ The compiler calls the following before `ret i32 0` in the C entry `main`:
 1. `emitHeapFree` — frees top-level local heap variables (not in globalVars)
 2. `emitGlobalHeapFree` — iterates `moduleVarTypes`, frees all heap-owning types in `globalVars`
 
-```nolang
+```no
 GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
 GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 ; top-level statements malloc data and store into global
@@ -221,7 +221,7 @@ A slice expression `arr[1..3]` produces a view (zero-copy) that shares the origi
 
 ## Reassignment and Old Value Free
 
-```nolang
+```no
 s = 'hello'     ; malloc data buffer
 s = 'world'     ; free 'hello's data, malloc new data
 ```
@@ -230,7 +230,7 @@ When reassigning a heap-owning type, the compiler automatically frees the old va
 
 ## Struct Field Free
 
-```nolang
+```no
 Node {
     name str
     items []i64
@@ -249,7 +249,7 @@ When freeing a struct, all fields are traversed; heap-owning type fields are rec
 
 ## Fixed Array Reassigned to Slice
 
-```nolang
+```no
 local [4]i64 = [100, 200, 300, 400]   ; local is fixed array (16 bytes)
 local = [100, 200, 300]                ; reassigned as slice (24 bytes)
 ```
@@ -279,14 +279,14 @@ Tests are in `tests/mem-safety/`:
 hashmap does not implement deep free of key/value; map container heap data leaks.
 
 ### Loop Temporary Variables
-```nolang
+```no
 loop {
     s = 'temp'   ; each iteration mallocs new data, old data not freed
 }
 ```
 
 ### Slice View + Original Array move
-```nolang
+```no
 view = arr[1..3]   ; view shares arr.data
 arr = [9, 8, 7]    ; free old arr.data → view dangling
 ```

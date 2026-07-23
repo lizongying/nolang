@@ -12,7 +12,7 @@ Nolang strings (`str`) are a union type (short ≤127 bytes stored on stack / lo
 
 Use the `-` operator to concatenate strings:
 
-```nolang
+```no
 ; Literal concatenation
 s = 'Hello' - ' ' - 'World'
 
@@ -24,13 +24,13 @@ greeting = 'Hello, ' - name
 
 Use the `*` operator to repeat a string:
 
-```nolang
+```no
 s = 'Hello' * 3
 ```
 
 ## Indexing & Slicing
 
-```nolang
+```no
 s = 'Hello World'
 
 ; Index returns char (character, not byte)
@@ -48,7 +48,7 @@ n = s.count()      ; code point count (Unicode character count)
 
 ## String Methods
 
-```nolang
+```no
 ; Comparison
 ok = a.eq(b, n)               ; Equality comparison (method)
 c = s.compare(b)              ; Lexicographic comparison
@@ -87,7 +87,7 @@ s.fill(val byte)               ; Fill with byte value
 
 ## String & Number Conversion
 
-```nolang
+```no
 ; Number to string (method)
 s = i64.to-str()               ; i64 to string
 s = f64.to-str()               ; f64 to string
@@ -106,7 +106,7 @@ v = s.to-f64()                 ; Returns ?f64
 
 When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to `max(len, idx+1)` — no need to manually set `.len`:
 
-```nolang
+```no
 s = ''
 s[0] = 72                      ; len automatically becomes 1
 s[1] = 105                     ; len automatically becomes 2
@@ -119,7 +119,7 @@ s.len = 5
 
 The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:
 
-```nolang
+```no
 ; with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
 s = with-cap(256)               ; str, len=0, cap=256
 

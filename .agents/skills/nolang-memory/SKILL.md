@@ -94,7 +94,7 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 
 #### 3.2.4 运行时位图按需分配（`detectBranchMoveToOut` 预扫描）
 
-```nolang
+```no
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -193,7 +193,7 @@ if g.isHeapOwningType(elemType) {
 ## 5. 所有权转移语义
 
 ### 5.1 单返回值 move
-```nolang
+```no
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local 标记为 moved，不 free；out 由调用者管理
@@ -201,7 +201,7 @@ get-slice = () (out []i64) {
 ```
 
 ### 5.2 多返回值 move（按参数位置顺序）
-```nolang
+```no
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -215,7 +215,7 @@ get-pair = () (a []i64, b []i64) {
 **注意**：若 `a` 和 `b` 引用同一源变量（如 `a = x; b = x`），在被调用函数内只 move 一次（x 标记 moved），a 和 b 都获得 x 的浅拷贝（共享同一 data 指针）。但在上层函数中，a 和 b 是独立的局部变量，各自被 `heapVars` 追踪为 `%vec`，函数结束时都会执行 free → **double-free**。当前 Nolang 没有引用/借用语义，b 不会自动成为 a 的别名。**用户应避免这种模式**。
 
 ### 5.3 vec.push 的隐式 move
-```nolang
+```no
 inner = [1, 2, 3]
 outer.push(inner)
 ; inner 标记为 moved，data 所有权转移给 outer
@@ -351,7 +351,7 @@ if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" 
 ## 7. %arr → %vec 轉换（varAlias）
 
 ### 问题
-```nolang
+```no
 local [4]i64 = [100, 200, 300, 400]   ; local 是 %arr (16 字节)
 local = [100, 200, 300]                ; SliceLiteral 当作 %vec 写入 3 字段 → 越界
 ```
@@ -422,7 +422,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 hashmap 模板（`hashmap-str-tmpl` 等）未实现 key/value 的堆数据释放。
 
 ### 10.2 循环临时变量泄漏
-```nolang
+```no
 loop {
     s = 'temp'   ; 每次迭代 malloc 新 data，旧 data 未释放
 }
@@ -431,7 +431,7 @@ loop {
 ### 10.3 ~~slice 视图 + 原数组 move~~（已解決）
 
 **原問題**：
-```nolang
+```no
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 ```

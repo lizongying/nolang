@@ -12,7 +12,7 @@ Nolang 字串（`str`）為 union 型別（short ≤127 byte 存棧上 / long �
 
 使用 `-` 運算符拼接字串：
 
-```nolang
+```no
 ; 字面量拼接
 s = 'Hello' - ' ' - 'World'
 
@@ -24,13 +24,13 @@ greeting = 'Hello, ' - name
 
 使用 `*` 運算符重複字串：
 
-```nolang
+```no
 s = 'Hello' * 3
 ```
 
 ## 索引與切片
 
-```nolang
+```no
 s = 'Hello World'
 
 ; 索引取得 char（字符，不是字節）
@@ -48,7 +48,7 @@ n = s.count()      ; code point 數（Unicode 字符數）
 
 ## 字串方法
 
-```nolang
+```no
 ; 比較
 ok = a.eq(b, n)               ; 相等比較（方法）
 c = s.compare(b)              ; 字典序比較
@@ -87,7 +87,7 @@ s.fill(val byte)               ; 填充 byte 值
 
 ## 字串與數值轉換
 
-```nolang
+```no
 ; 數值轉字串（方法）
 s = i64.to-str()               ; i64 轉字串
 s = f64.to-str()               ; f64 轉字串
@@ -106,7 +106,7 @@ v = s.to-f64()                 ; 回傳 ?f64
 
 對 `s[i] = v` 賦值時，LLVM codegen 會自動更新 `len` 欄位為 `max(len, idx+1)`，不需手動設置 `.len`：
 
-```nolang
+```no
 s = ''
 s[0] = 72                      ; len 自動變為 1
 s[1] = 105                     ; len 自動變為 2
@@ -119,7 +119,7 @@ s.len = 5
 
 透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` / `s[i]=` 觸發反覆擴容：
 
-```nolang
+```no
 ; with-cap(cap)：配置 cap 容量，len=0（需 push 後才能索引）
 s = with-cap(256)               ; str，len=0, cap=256
 
