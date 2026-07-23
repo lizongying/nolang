@@ -97,6 +97,7 @@ type Generator struct {
 	externFuncs           map[string]*ExternFuncInfo      // extern function name → FFI type info
 	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
 	currentTargetType     string                          // target type for type-inferred builtins (e.g. with-cap)
+	currentTargetElemType string                          // element type for slice builtins (e.g. %str-long for []str)
 	sliceViews            map[string]*sliceViewInfo       // variable name → slice view metadata (alias, no independent struct)
 	varAlias              map[string]string               // variable name → actual LLVM variable name (用於 %arr 重新賦值為 %vec 時重定向)
 	taskResultTypes       map[string]string               // task variable name → result LLVM type (for awy type inference)
@@ -893,18 +894,21 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 
 	// Pre-register built-in vec type (used for all slices)
+	// is_moved (i8, field 3) 為運行時 move 標記，用於雙重校驗釋放邏輯。
 	g.structTypes["vec"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
 		{name: "data", typ: "i64"},
+		{name: "is_moved", typ: "i8"},
 	}
 
 	// Pre-register built-in str-long type (heap-only string type)
-	// { len, cap, data } — data is i64 (address value) for type-uniform IR.
+	// { len, cap, data, is_moved } — data is i64 (address value) for type-uniform IR.
 	g.structTypes["str-long"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
 		{name: "data", typ: "i64"},
+		{name: "is_moved", typ: "i8"},
 	}
 
 	// 收集結構體定義並生成 LLVM struct type
@@ -916,10 +920,14 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 發出 struct type 宣告
 	// Always emit built-in string types
-	sb.WriteString("%str-long = type { i64, i64, i64 }\n")
+	// %vec/%str-long 第 4 欄位 is_moved (i8) 為運行時 move 標記：
+	//   false=未 move（仍擁有 data，函數尾需 free）
+	//   true =已 move（data 指針已轉移給輸出參數，不可 free）
+	// 用於 if/else 分支條件 move 的雙重校驗，徹底消除泄漏與 double-free。
+	sb.WriteString("%str-long = type { i64, i64, i64, i8 }\n")
 	sb.WriteString("%option = type { i64, i64 }\n")
 	sb.WriteString("%arr = type { i64, i64 }\n")
-	sb.WriteString("%vec = type { i64, i64, i64 }\n")
+	sb.WriteString("%vec = type { i64, i64, i64, i8 }\n")
 	// Sort struct type names for deterministic IR output (Go map iteration is randomized).
 	sortedStructs := make([]string, 0, len(g.structTypes))
 	for name := range g.structTypes {

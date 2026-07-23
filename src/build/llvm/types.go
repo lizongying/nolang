@@ -290,8 +290,8 @@ func llvmTypeSize(llvmType string) int64 {
 	case "i64", "u64", "double", "i8*", "i8**", "i8***":
 		return 8
 	case "%str-long", "%vec":
-		// { i64, i64, i64 } = 8 + 8 + 8 = 24 bytes
-		return 24
+		// { i64, i64, i64, i8 } = 8 + 8 + 8 + 1 = 25, aligned to 32 bytes
+		return 32
 	case "%option":
 		// { i64, i64 } = 8 + 8 = 16 bytes
 		return 16

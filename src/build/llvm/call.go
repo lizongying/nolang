@@ -3390,6 +3390,11 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 		default: // %vec, []i64, etc.
 			elemSize := int64(8) // default i64
+			if g.currentTargetElemType != "" {
+				if s := g.llvmTypeSize(g.currentTargetElemType); s > 0 {
+					elemSize = s
+				}
+			}
 			// total bytes = cap * elemSize
 			g.tmpIdx++
 			bytesReg := fmt.Sprintf("%%wc.vbytes.%d", g.tmpIdx)
@@ -3451,6 +3456,11 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 		default: // %vec, []i64, etc.
 			elemSize := int64(8) // default i64
+			if g.currentTargetElemType != "" {
+				if s := g.llvmTypeSize(g.currentTargetElemType); s > 0 {
+					elemSize = s
+				}
+			}
 			g.tmpIdx++
 			bytesReg := fmt.Sprintf("%%wl.vbytes.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -3512,6 +3522,11 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 		default: // %vec, []i64, etc.
 			elemSize := int64(8) // default i64
+			if g.currentTargetElemType != "" {
+				if s := g.llvmTypeSize(g.currentTargetElemType); s > 0 {
+					elemSize = s
+				}
+			}
 			g.tmpIdx++
 			bytesReg := fmt.Sprintf("%%wcl.vbytes.%d", g.tmpIdx)
 			g.tmpIdx++

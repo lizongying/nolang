@@ -311,7 +311,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			} else if prevIsUse || currIsUse {
 				// 導入語句和其他語句之間保留空行
 				f.newline()
-			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) {
+			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) {
 				f.newline()
 			}
 			f.newline()
@@ -943,20 +943,14 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 	}
 }
 
-func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
-	f.write("{")
-	// Output opening brace comment on the same line as {
-	if s.OpeningBraceComment != nil && len(s.OpeningBraceComment.List) > 0 {
-		f.write("  //")
-		for _, c := range s.OpeningBraceComment.List {
-			f.write(c.Text)
-		}
-	}
-	f.indent++
-
+// formatBlockInner formats the statements inside a block body (without writing
+// the enclosing braces). It handles statement filtering, blank-line preservation,
+// and doc-comment spacing. The caller is responsible for writing braces and
+// managing indent.
+func (f *formatter) formatBlockInner(body *parser.BlockStatement) {
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
-	statements := make([]parser.Statement, 0, len(s.Statements))
-	for _, stmt := range s.Statements {
+	statements := make([]parser.Statement, 0, len(body.Statements))
+	for _, stmt := range body.Statements {
 		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
 			continue
 		}
@@ -966,14 +960,15 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 		statements = append(statements, stmt)
 	}
 
+	openBraceLine := body.Token.Line
 	for i, stmt := range statements {
 		if i > 0 {
 			prevTokenLine := stmtTokenLine(statements[i-1])
 			currTokenLine := stmtTokenLine(stmt)
-		if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-			// Same line: never emit ';' (reserved for comments); split onto a new line.
-			f.newline()
-		} else {
+			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
+				// Same line: never emit ';' (reserved for comments); split onto a new line.
+				f.newline()
+			} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
 				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
@@ -983,7 +978,6 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 			}
 		} else {
 			// Check for blank line between '{' and first statement
-			openBraceLine := s.Token.Line
 			firstDocStartLine := stmtFirstLine(stmt)
 			if openBraceLine > 0 && firstDocStartLine > openBraceLine+1 {
 				f.write("\n") // blank line (no indent)
@@ -994,8 +988,20 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	}
 
 	// 輸出尾隨註釋
-	f.formatTrailingComments(s.TrailingComments)
+	f.formatTrailingComments(body.TrailingComments)
+}
 
+func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
+	f.write("{")
+	// Output opening brace comment on the same line as {
+	if s.OpeningBraceComment != nil && len(s.OpeningBraceComment.List) > 0 {
+		f.write("  //")
+		for _, c := range s.OpeningBraceComment.List {
+			f.write(c.Text)
+		}
+	}
+	f.indent++
+	f.formatBlockInner(s)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1142,11 +1148,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		f.write(": {")
 	}
 	f.indent++
-	for _, stmt := range e.Consequence.Statements {
-		f.newline()
-		f.formatStatement(stmt)
-	}
-	f.formatTrailingComments(e.Consequence.TrailingComments)
+	f.formatBlockInner(e.Consequence)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1159,11 +1161,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 			f.formatExpression(ifExpr.Condition)
 			f.write(" {")
 			f.indent++
-			for _, stmt := range ifExpr.Consequence.Statements {
-				f.newline()
-				f.formatStatement(stmt)
-			}
-			f.formatTrailingComments(ifExpr.Consequence.TrailingComments)
+			f.formatBlockInner(ifExpr.Consequence)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -1178,11 +1176,7 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 				f.write(" else: {")
 			}
 			f.indent++
-			for _, stmt := range e.Alternative.Statements {
-				f.newline()
-				f.formatStatement(stmt)
-			}
-			f.formatTrailingComments(e.Alternative.TrailingComments)
+			f.formatBlockInner(e.Alternative)
 			f.indent--
 			f.newline()
 			f.write("}")
@@ -1392,11 +1386,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 		f.formatExpression(ifExpr.Condition)
 		f.write(" {")
 		f.indent++
-		for _, stmt := range ifExpr.Consequence.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(ifExpr.Consequence.TrailingComments)
+		f.formatBlockInner(ifExpr.Consequence)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1406,11 +1396,7 @@ func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
 	} else {
 		f.write(" else {")
 		f.indent++
-		for _, stmt := range alt.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(alt.TrailingComments)
+		f.formatBlockInner(alt)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1484,11 +1470,7 @@ func (f *formatter) writeLoopBodyAfterColon(s *parser.ForStatement) {
 	}
 	f.write(" {")
 	f.indent++
-	for _, stmt := range s.Body.Statements {
-		f.newline()
-		f.formatStatement(stmt)
-	}
-	f.formatTrailingComments(s.Body.TrailingComments)
+	f.formatBlockInner(s.Body)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -1535,11 +1517,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
 		f.write("{")
 		f.indent++
-		for _, stmt := range s.Body.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
+		f.formatBlockInner(s.Body)
 		f.indent--
 		f.newline()
 		f.write("} * ")
@@ -1578,11 +1556,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.formatStatement(s.Update)
 		f.write(" {")
 		f.indent++
-		for _, stmt := range s.Body.Statements {
-			f.newline()
-			f.formatStatement(stmt)
-		}
-		f.formatTrailingComments(s.Body.TrailingComments)
+		f.formatBlockInner(s.Body)
 		f.indent--
 		f.newline()
 		f.write("}")
@@ -1951,11 +1925,7 @@ func (f *formatter) formatFunctionLiteral(e *parser.FunctionLiteral) {
 	f.write(")")
 	f.write(" {")
 	f.indent++
-	for _, stmt := range e.Body.Statements {
-		f.newline()
-		f.formatStatement(stmt)
-	}
-	f.formatTrailingComments(e.Body.TrailingComments)
+	f.formatBlockInner(e.Body)
 	f.indent--
 	f.newline()
 	f.write("}")

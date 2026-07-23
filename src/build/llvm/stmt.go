@@ -9,6 +9,45 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// llvmTypeAlign 返回 LLVM 類型的對齊字節數（與 LLVM ABI 對齊規則一致）。
+func (g *Generator) llvmTypeAlign(llvmType string) int64 {
+	if strings.HasPrefix(llvmType, "[") {
+		var n int64
+		var elem string
+		if _, err := fmt.Sscanf(llvmType, "[%d x %s]", &n, &elem); err == nil {
+			return g.llvmTypeAlign(elem)
+		}
+		return 8
+	}
+	if strings.HasPrefix(llvmType, "%") {
+		structName := strings.TrimPrefix(llvmType, "%")
+		if g.structTypes != nil {
+			if fields, ok := g.structTypes[structName]; ok {
+				var maxAlign int64 = 1
+				for _, f := range fields {
+					a := g.llvmTypeAlign(f.typ)
+					if a > maxAlign {
+						maxAlign = a
+					}
+				}
+				return maxAlign
+			}
+		}
+	}
+	switch llvmType {
+	case "i1", "i8":
+		return 1
+	case "i16":
+		return 2
+	case "i32", "float":
+		return 4
+	case "i64", "i8*", "double":
+		return 8
+	default:
+		return 8
+	}
+}
+
 func (g *Generator) llvmTypeSize(llvmType string) int64 {
 	if strings.HasPrefix(llvmType, "[") {
 		// [N x i64] → N * 8
@@ -19,17 +58,29 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		}
 		return 64 // fallback
 	}
-	// 用戶自定義 struct：依欄位大小加總
+	// struct（含內建 %vec/%str-long 與用戶自定義）：依 LLVM ABI 對齊規則計算
+	// 每個欄位先對齊到自身對齊值，末尾再補齊到結構體最大對齊值。
 	if strings.HasPrefix(llvmType, "%") {
 		structName := strings.TrimPrefix(llvmType, "%")
 		if g.structTypes != nil {
 			if fields, ok := g.structTypes[structName]; ok {
-				var total int64
+				var offset int64
+				var maxAlign int64 = 1
 				for _, f := range fields {
-					total += g.llvmTypeSize(f.typ)
+					fa := g.llvmTypeAlign(f.typ)
+					if fa > maxAlign {
+						maxAlign = fa
+					}
+					// 將 offset 向上對齊到欄位對齊值
+					offset = (offset + fa - 1) / fa * fa
+					offset += g.llvmTypeSize(f.typ)
 				}
-				if total > 0 {
-					return total
+				// 結構體總大小補齊到最大對齊值
+				if maxAlign > 0 {
+					offset = (offset + maxAlign - 1) / maxAlign * maxAlign
+				}
+				if offset > 0 {
+					return offset
 				}
 			}
 		}
@@ -45,12 +96,8 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		return 4
 	case "i64", "i8*", "double":
 		return 8
-	case "%str-long":
-		return 24 // { i64, i64, i64 } = 24 bytes
 	case "%arr":
 		return 16
-	case "%vec":
-		return 24
 	case "%option":
 		return 24
 	case "float":
@@ -182,10 +229,6 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		return
 	}
 	for name, llvmType := range g.heapVars {
-		// 已 move 到輸出參數的變數不 free（所有權已轉移）
-		if g.movedVars != nil && g.movedVars[name] {
-			continue
-		}
 		// 輸出參數本身不 free（由呼叫者管理）
 		if g.outputParamNames != nil && g.outputParamNames[name] {
 			continue
@@ -193,6 +236,17 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		elemType := ""
 		if g.arrayElemTypes != nil {
 			elemType = g.arrayElemTypes[name]
+		}
+		if g.movedVars != nil && g.movedVars[name] {
+			// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
+			// is_moved=false → 未實際 move，仍需 free（仍擁有數據）
+			// is_moved=true → 所有權已轉移，跳過 free
+			if llvmType == "%vec" || llvmType == "%str-long" {
+				g.emitVarHeapFreeDualCheck(sb, name, llvmType, elemType)
+				continue
+			}
+			// 非 vec/str-long 無 is_moved 欄位，保留舊行為：跳過 free（寧可洩漏）
+			continue
 		}
 		g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
 	}
@@ -253,6 +307,60 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 		return
 	}
 	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+}
+
+// emitSetIsMoved 設定堆容器的運行時 move 標記 (field 3, is_moved)。
+// val=true 表示所有權已轉移（move 發生），val=false 表示仍擁有數據。
+// 僅對 %vec/%str-long 有效，其他類型無此欄位。
+func (g *Generator) emitSetIsMoved(sb *strings.Builder, varName string, val bool) {
+	if g.varTypes == nil {
+		return
+	}
+	llvmType := g.varTypes[varName]
+	if llvmType != "%vec" && llvmType != "%str-long" {
+		return
+	}
+	varPtr := g.varAddr(varName)
+	g.tmpIdx++
+	movedGEP := fmt.Sprintf("%%setmoved.gep.%d", g.tmpIdx)
+	valStr := "0"
+	if val {
+		valStr = "1"
+	}
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
+		g.indent(), movedGEP, llvmType, llvmType, varPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), valStr, movedGEP))
+}
+
+// emitVarHeapFreeDualCheck 帶雙重校驗的堆釋放（僅 %vec/%str-long）：
+// 編譯期 movedVars[name]=true 表示存在 move 代碼路徑；
+// 運行時 is_moved=false 表示該路徑未實際執行，仍需 free；
+// 運行時 is_moved=true 表示所有權已轉移，跳過 free。
+func (g *Generator) emitVarHeapFreeDualCheck(sb *strings.Builder, name, llvmType, elemType string) {
+	varPtr := g.varAddr(name)
+	// Load is_moved flag (field 3)
+	g.tmpIdx++
+	movedGEP := fmt.Sprintf("%%dc.moved.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
+		g.indent(), movedGEP, llvmType, llvmType, varPtr))
+	g.tmpIdx++
+	movedVal := fmt.Sprintf("%%dc.moved.val.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), movedVal, movedGEP))
+	g.tmpIdx++
+	notMoved := fmt.Sprintf("%%dc.notmoved.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8 %s, 0\n", g.indent(), notMoved, movedVal))
+	g.tmpIdx++
+	freeLabel := fmt.Sprintf("dc.free.%d", g.tmpIdx)
+	g.tmpIdx++
+	skipLabel := fmt.Sprintf("dc.skip.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+		g.indent(), notMoved, freeLabel, skipLabel))
+	// free block: is_moved=false → free the data
+	g.emitLabel(sb, freeLabel)
+	g.emitVarHeapFree(sb, varPtr, llvmType, elemType)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	// skip block: is_moved=true → ownership transferred, skip
+	g.emitLabel(sb, skipLabel)
 }
 
 // emitShallowDataFree releases a container's data buffer without iterating elements.
@@ -353,7 +461,8 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 }
 
 // freeOldHeapValue 釋放重新賦值變數的舊堆數據。
-// 跳過合成 let（IsSynthetic）、已 move 的變數（所有權已轉移）、輸出參數（由呼叫者管理）。
+// 跳過合成 let（IsSynthetic）、輸出參數（由呼叫者管理）。
+// 對已 move 的變數執行雙重校驗：is_moved=false 仍需 free，is_moved=true 跳過。
 func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
 	if g.heapVars == nil || stmt.IsSynthetic {
 		return
@@ -362,15 +471,21 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	if !isHeap {
 		return
 	}
-	if g.movedVars != nil && g.movedVars[name] {
-		return
-	}
 	if g.outputParamNames != nil && g.outputParamNames[name] {
 		return
 	}
 	elemType := ""
 	if g.arrayElemTypes != nil {
 		elemType = g.arrayElemTypes[name]
+	}
+	if g.movedVars != nil && g.movedVars[name] {
+		// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
+		if oldType == "%vec" || oldType == "%str-long" {
+			g.emitVarHeapFreeDualCheck(sb, name, oldType, elemType)
+			return
+		}
+		// 非 vec/str-long 無 is_moved 欄位，保留舊行為：跳過 free
+		return
 	}
 	g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
 }
@@ -1104,6 +1219,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, dataBuf, dataGEP)
+			// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
+			g.tmpIdx++
+			movedGEP := fmt.Sprintf("%%local.vecmoved.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), movedGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), movedGEP))
 			// 追蹤 prologue buffer 為堆變數，使首次賦值（如 v = [1,2,3]）時
 			// freeOldHeapValue 能釋放 prologue buffer，避免每次函數調用洩漏 256*elemSize 字節。
 			// 若變數從未被賦值，emitHeapFree 會在函數結束時釋放 prologue buffer。
@@ -3456,6 +3576,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if _, isHeap := g.heapVars[ident.Value]; isHeap {
 				g.movedVars[ident.Value] = true
+				// 運行時標記 is_moved=true：所有權已轉移到輸出參數
+				g.emitSetIsMoved(sb, ident.Value, true)
 			}
 		}
 	}
@@ -3538,7 +3660,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.tmpIdx++
 			vecVarName := fmt.Sprintf("%s.vec.%d", name, g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), llvmVarRef(vecVarName)))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %s)\n", g.indent(), llvmVarRef(vecVarName)))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 32, i8* %s)\n", g.indent(), llvmVarRef(vecVarName)))
+			// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
+			g.tmpIdx++
+			aliasMovedGEP := fmt.Sprintf("%%vec.aliasmoved.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), aliasMovedGEP, llvmVarRef(vecVarName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), aliasMovedGEP))
 			g.varAlias[name] = vecVarName
 			g.funcLocalNames[vecVarName] = true
 			// 從 stackArrVars 移除（不再使用棧陣列路徑）
@@ -3613,15 +3740,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
 			// store data (field 2)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-				g.indent(), dataGEP, g.varAddr(name)))
-			g.storeDataPtrField(sb, ptrReg, dataGEP)
-			// 追蹤局部 vec 變數，用於函數結束時深層 free
-			g.trackLocalHeapVar(name, "%vec")
-			return
-		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+			g.indent(), dataGEP, g.varAddr(name)))
+		g.storeDataPtrField(sb, ptrReg, dataGEP)
+		// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
+		g.tmpIdx++
+		sliceMovedGEP := fmt.Sprintf("%%vec.slicemoved.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n",
+			g.indent(), sliceMovedGEP, g.varAddr(name)))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), sliceMovedGEP))
+		// 追蹤局部 vec 變數，用於函數結束時深層 free
+		g.trackLocalHeapVar(name, "%vec")
+		return
+	}
 
 		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
 		// with a default data buffer so push() and index assignment work.
@@ -3652,14 +3785,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, g.varAddr(name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), defaultCap, vecCapGEP))
 			// store data = buf (field 2)
-			g.tmpIdx++
-			vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
-			g.storeDataPtrField(sb, vecBuf, vecDataGEP)
-			// 追蹤局部 vec 變數，用於函數結束時深層 free
-			g.trackLocalHeapVar(name, "%vec")
-			return
-		}
+		g.tmpIdx++
+		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
+		g.storeDataPtrField(sb, vecBuf, vecDataGEP)
+		// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
+		g.tmpIdx++
+		initMovedGEP := fmt.Sprintf("%%vec.init.moved.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), initMovedGEP, g.varAddr(name)))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), initMovedGEP))
+		// 追蹤局部 vec 變數，用於函數結束時深層 free
+		g.trackLocalHeapVar(name, "%vec")
+		return
+	}
 		// 有 RHS 值但非 SliceLiteral：型別註冊已在上方完成，
 		// fall through 到深層 clone / 一般賦值路徑評估 RHS。
 	}
@@ -3741,11 +3879,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// Determine target type for type-inferred builtins (e.g. with-cap)
 	g.currentTargetType = ""
+	g.currentTargetElemType = ""
 	if stmt.Type != nil {
 		g.currentTargetType = g.mapToLLVMType(stmt.Type.String())
+		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
+			g.currentTargetElemType = g.mapToLLVMType(st.Elem.String())
+		}
 	} else if g.varTypes != nil {
 		if t, ok := g.varTypes[name]; ok {
 			g.currentTargetType = t
+		}
+	}
+	// Fallback: look up element type from arrayElemTypes (for inferred assignments)
+	if g.currentTargetElemType == "" && g.arrayElemTypes != nil {
+		if et, ok := g.arrayElemTypes[name]; ok {
+			g.currentTargetElemType = et
 		}
 	}
 
@@ -3753,8 +3901,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// (skipped the default slice init path, so need manual element type registration)
 	// Note: alloca is already done during variable declaration collection phase.
 	if isWithCapCall && isSliceType {
-		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
-			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+		if g.currentTargetElemType != "" {
+			g.arrayElemTypes[name] = g.currentTargetElemType
 		} else {
 			g.arrayElemTypes[name] = "i64"
 		}
@@ -3820,7 +3968,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		valActualType = g.intExprLLVMType(stmt.Value)
 	}
 	llvmType := g.varLLVMType(stmt)
-	g.currentTargetType = "" // clear after use
+	g.currentTargetType = ""    // clear after use
+	g.currentTargetElemType = "" // clear after use
 	// For assignments (Type=nil) to %arr variables, varLLVMType may return
 	// the function's raw result type (e.g. [16 x i8]) instead of %arr.
 	// Override with the variable's declared type so the switch matches %arr.
@@ -4322,6 +4471,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				if ident.Value != name {
 					if _, isHeap := g.heapVars[ident.Value]; isHeap {
 						g.movedVars[ident.Value] = true
+						// 運行時標記 is_moved=true：所有權已轉移
+						g.emitSetIsMoved(sb, ident.Value, true)
 					}
 				}
 			}
@@ -4615,7 +4766,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 	copyStrToData := func(srcPtr string) {
 		g.tmpIdx++
 		heapPtr := fmt.Sprintf("%%opt.heap.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 24)\n", g.indent(), heapPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 32)\n", g.indent(), heapPtr))
 		g.tmpIdx++
 		heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%str-long*\n", g.indent(), heapCast, heapPtr))

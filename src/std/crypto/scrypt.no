@@ -42,37 +42,44 @@ salsa20-8-core = (block []byte) {
         x[8] = (x[8] ^ (((x[4] + x[0]) & mask) << 9)) & mask
         x[12] = (x[12] ^ (((x[8] + x[4]) & mask) << 13)) & mask
         x[0] = (x[0] ^ (((x[12] + x[8]) & mask) << 18)) & mask
+
         ; QR(x[5], x[9], x[13], x[1])
         x[9] = (x[9] ^ (((x[5] + x[1]) & mask) << 7)) & mask
         x[13] = (x[13] ^ (((x[9] + x[5]) & mask) << 9)) & mask
         x[1] = (x[1] ^ (((x[13] + x[9]) & mask) << 13)) & mask
         x[5] = (x[5] ^ (((x[1] + x[13]) & mask) << 18)) & mask
+
         ; QR(x[10], x[14], x[2], x[6])
         x[14] = (x[14] ^ (((x[10] + x[6]) & mask) << 7)) & mask
         x[2] = (x[2] ^ (((x[14] + x[10]) & mask) << 9)) & mask
         x[6] = (x[6] ^ (((x[2] + x[14]) & mask) << 13)) & mask
         x[10] = (x[10] ^ (((x[6] + x[2]) & mask) << 18)) & mask
+
         ; QR(x[15], x[3], x[7], x[11])
         x[3] = (x[3] ^ (((x[15] + x[11]) & mask) << 7)) & mask
         x[7] = (x[7] ^ (((x[3] + x[15]) & mask) << 9)) & mask
         x[11] = (x[11] ^ (((x[7] + x[3]) & mask) << 13)) & mask
         x[15] = (x[15] ^ (((x[11] + x[7]) & mask) << 18)) & mask
+
         ; 行輪
         ; QR(x[0], x[1], x[2], x[3])
         x[1] = (x[1] ^ (((x[0] + x[3]) & mask) << 7)) & mask
         x[2] = (x[2] ^ (((x[1] + x[0]) & mask) << 9)) & mask
         x[3] = (x[3] ^ (((x[2] + x[1]) & mask) << 13)) & mask
         x[0] = (x[0] ^ (((x[3] + x[2]) & mask) << 18)) & mask
+
         ; QR(x[5], x[6], x[7], x[4])
         x[6] = (x[6] ^ (((x[5] + x[4]) & mask) << 7)) & mask
         x[7] = (x[7] ^ (((x[6] + x[5]) & mask) << 9)) & mask
         x[4] = (x[4] ^ (((x[7] + x[6]) & mask) << 13)) & mask
         x[5] = (x[5] ^ (((x[4] + x[7]) & mask) << 18)) & mask
+
         ; QR(x[10], x[11], x[8], x[9])
         x[11] = (x[11] ^ (((x[10] + x[9]) & mask) << 7)) & mask
         x[8] = (x[8] ^ (((x[11] + x[10]) & mask) << 9)) & mask
         x[9] = (x[9] ^ (((x[8] + x[11]) & mask) << 13)) & mask
         x[10] = (x[10] ^ (((x[9] + x[8]) & mask) << 18)) & mask
+
         ; QR(x[15], x[12], x[13], x[14])
         x[12] = (x[12] ^ (((x[15] + x[14]) & mask) << 7)) & mask
         x[13] = (x[13] ^ (((x[12] + x[15]) & mask) << 9)) & mask
@@ -119,8 +126,10 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         j <- [0..64): {
             x[j] = (b[i * 64 + j] & 255) ^ (x[j] & 255)
         }
+
         ; X = Salsa20/8(X)
         salsa20-8-core(x)
+
         ; Y[i] = X
         j <- [0..64): {
             y[i * 64 + j] = x[j]
@@ -235,8 +244,10 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
         j <- [0..block-bytes): {
             b-i[j] = b[i * block-bytes + j]
         }
+
         ; ROMix
         mixed = scrypt-romix(b-i, n, r)
+
         ; 寫回 B
         j <- [0..block-bytes): {
             b[i * block-bytes + j] = mixed[j]

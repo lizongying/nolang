@@ -297,6 +297,13 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 		g.indent(), dataGEP, resultType, resultType, destPtr, dataFieldIdx))
 	g.storeDataPtrField(sb, bufReg, dataGEP)
 
+	// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
+	g.tmpIdx++
+	cloneMovedGEP := fmt.Sprintf("%%svclone.moved.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
+		g.indent(), cloneMovedGEP, resultType, resultType, destPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), cloneMovedGEP))
+
 	// 註冊變量類型
 	g.varTypes[destVar] = resultType
 	g.arrayElemTypes[destVar] = elemType
@@ -424,14 +431,20 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 				g.indent(), capGEP, resultReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
 			// Store data (field 2)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
-				g.indent(), dataGEP, resultReg))
-			g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
-		}
-		return resultReg
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
+			g.indent(), dataGEP, resultReg))
+		g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
+		// 初始化 is_moved=false (field 3)：運行時 move 標記
+		g.tmpIdx++
+		strMovedGEP := fmt.Sprintf("%%svmat.str.moved.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 3\n",
+			g.indent(), strMovedGEP, resultReg))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), strMovedGEP))
 	}
+	return resultReg
+}
 
 	// Materialize as %vec { len, cap, data }
 	// cap is set to view length (no separate capacity tracking for views)
@@ -457,6 +470,12 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, resultReg))
 		g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
+		// 初始化 is_moved=false (field 3)：運行時 move 標記
+		g.tmpIdx++
+		vecMovedGEP := fmt.Sprintf("%%svmat.vec.moved.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n",
+			g.indent(), vecMovedGEP, resultReg))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), vecMovedGEP))
 	}
 	return resultReg
 }

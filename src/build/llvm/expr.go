@@ -537,6 +537,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			savedSSA[k] = v
 		}
 	}
+	// Save movedVars before entering branch: branch內的 move 標記不應污染其他分支。
+	// 分支匯合時取兩分支的布爾並集，代表「存在代碼路徑會發生 move」。
+	savedMovedVars := make(map[string]bool)
+	if g.movedVars != nil {
+		for k, v := range g.movedVars {
+			savedMovedVars[k] = v
+		}
+	}
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
@@ -581,6 +589,14 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	g.indentLevel--
 
+	// 捕獲 then 分支的 movedVars 結果，供分支匯合時取並集
+	thenMovedVars := make(map[string]bool)
+	if g.movedVars != nil {
+		for k, v := range g.movedVars {
+			thenMovedVars[k] = v
+		}
+	}
+
 	// else
 	elseLabel := fmt.Sprintf("if.else.%d", labelId)
 	g.emitLabel(sb, elseLabel)
@@ -590,6 +606,11 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		for k, v := range savedSSA {
 			g.ssaVersion[k] = v
 		}
+	}
+	// Restore movedVars: else 分支從進入 if 前的狀態開始，不受 then 分支 move 污染
+	g.movedVars = make(map[string]bool)
+	for k, v := range savedMovedVars {
+		g.movedVars[k] = v
 	}
 	elseVal := defaultZero
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
@@ -622,6 +643,23 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
 	}
 	g.indentLevel--
+
+	// 分支匯合：movedVars 取兩分支的布爾並集，代表「存在代碼路徑會發生 move」。
+	// 這使得編譯期標記能識別所有潛在 move 代碼路徑，配合運行時 is_moved 標記雙重校驗。
+	mergedMovedVars := make(map[string]bool)
+	for k, v := range thenMovedVars {
+		if v {
+			mergedMovedVars[k] = true
+		}
+	}
+	if g.movedVars != nil {
+		for k, v := range g.movedVars {
+			if v {
+				mergedMovedVars[k] = true
+			}
+		}
+	}
+	g.movedVars = mergedMovedVars
 
 	// end
 	// Restore SSA versions after else branch: subsequent code uses pre-branch state.
