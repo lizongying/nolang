@@ -22,6 +22,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         prev[i] = iv[i]
     }
 
+    out = with-len(in.len)
     blk = 0
     {
         xored [16]byte
@@ -51,6 +52,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         prev[i] = iv[i]
     }
 
+    out = with-len(in.len)
     blk = 0
     {
         cipher-block [16]byte

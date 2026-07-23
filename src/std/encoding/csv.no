@@ -17,6 +17,7 @@
 ; 返回 new-pos i64: 解析後的新位置
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     fn = 0
+    field = with-cap(s.len)
     pos >= s.len -> {
         new-pos = pos
         return
@@ -99,6 +100,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
+    fields = with-cap(max-fields)
     {
         fields[n], pos = parse-field(s, pos)
         n = n + 1
@@ -124,6 +126,7 @@ encode-field = (field str) (out str) {
         return
     }
     j = 0
+    out = with-cap(field.len * 2 + 2)
     out[j] = 34
     j = j + 1
     i <- [0..field.len): {

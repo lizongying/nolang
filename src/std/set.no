@@ -73,6 +73,7 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
 ; 返回交集中的元素數量
 intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
+    out = with-cap(an)
     i <- [0..an): {
         v = a[i]
         j <- [0..bn): {
@@ -89,6 +90,7 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
 ; 返回差集中的元素數量
 difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
+    out = with-cap(an)
     i <- [0..an): {
         v = a[i]
         found = false
@@ -107,6 +109,7 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
 
 ; to-vec: 將集合轉為切片（無序）
 to-vec = (s []i64, n i64) (out []i64) {
+    out = with-len(n)
     i <- [0..n): {
         out[i] = s[i]
     }

@@ -913,6 +913,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
 	}
 
+	// ?T 輸出參數未初始化檢查（case6）
+	if uninitErrs := ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
+		var msgs []string
+		for _, e := range uninitErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+		return "", fmt.Errorf("uninitialized output parameter errors: %s", strings.Join(msgs, "; "))
+	}
+
 	// 名稱修飾 pass：處理方法重載
 	mangleOverloads(program, varTypes)
 
@@ -4571,6 +4580,317 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	}
 
 	return results
+}
+
+// ValidateUninitOutputParams checks that ?T (nullable) output parameters are
+// directly assigned in the function body before being read. A ?T output
+// parameter that is read (used in an expression) but never assigned via '='
+// is flagged as an error — reading an uninitialized nullable value is unsafe
+// and almost certainly a bug (case6: ?T 未初始化使用 → 編譯器報錯).
+//
+// Covered scenarios:
+//   - Case 7 (?T 先賦值再用 → 允許): param IS assigned → no error.
+//   - Case 8 (?T 空函數體 → 返回 nil): param NOT read → no error.
+//   - Case 6 (?T 未初始化使用 → 報錯): param read but NOT assigned → error.
+func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || fd.Body == nil {
+			continue
+		}
+		// Collect ?T output parameter names
+		type nullableParam struct {
+			name string
+			line int
+			col  int
+		}
+		var nullableParams []nullableParam
+		for _, r := range fd.Results {
+			if r.Name == "" {
+				continue
+			}
+			if _, ok := r.Type.(*parser.NullableType); ok {
+				nullableParams = append(nullableParams, nullableParam{
+					name: r.Name,
+					line: r.Token.Line,
+					col:  r.Token.Column,
+				})
+			}
+		}
+		if len(nullableParams) == 0 {
+			continue
+		}
+		// Collect all directly-assigned variable names in the body
+		assigned := make(map[string]bool)
+		collectAssignedNames(fd.Body.Statements, assigned)
+		// Collect all read variable names in the body
+		read := make(map[string]bool)
+		collectReadNames(fd.Body.Statements, read)
+		// Check each ?T output param: read but not assigned → error
+		for _, p := range nullableParams {
+			if read[p.name] && !assigned[p.name] {
+				results = append(results, ValidateResult{
+					Line:    p.line,
+					Column:  p.col,
+					Message: fmt.Sprintf("output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
+				})
+			}
+		}
+	}
+	return results
+}
+
+// collectAssignedNames walks statements recursively and collects variable names
+// that are directly assigned via '=' (LetStatement.Name or MultiAssignStatement
+// Identifier targets). IndexExpression/DotExpression targets are NOT direct
+// assignments — they read the base variable to write to a field/element.
+func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
+	for _, stmt := range stmts {
+		if stmt == nil {
+			continue
+		}
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Name != nil {
+				assigned[s.Name.Value] = true
+			}
+			if s.Value != nil {
+				collectAssignedNamesInExpr(s.Value, assigned)
+			}
+		case *parser.MultiAssignStatement:
+			for _, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					assigned[ident.Value] = true
+				}
+				// IndexExpression/DotExpression targets: not direct assignments
+			}
+			if s.Value != nil {
+				collectAssignedNamesInExpr(s.Value, assigned)
+			}
+		case *parser.BlockStatement:
+			collectAssignedNames(s.Statements, assigned)
+		case *parser.ForStatement:
+			if s.Init != nil {
+				collectAssignedNames([]parser.Statement{s.Init}, assigned)
+			}
+			if s.Body != nil {
+				collectAssignedNames(s.Body.Statements, assigned)
+			}
+		case *parser.ExpressionStatement:
+			if s.Expression != nil {
+				collectAssignedNamesInExpr(s.Expression, assigned)
+			}
+		case *parser.ReturnStatement:
+			if s.ReturnValue != nil {
+				collectAssignedNamesInExpr(s.ReturnValue, assigned)
+			}
+		}
+	}
+}
+
+// collectAssignedNamesInExpr walks expressions for nested statements (if/else)
+// that may contain assignments. Does NOT recurse into nested function literals.
+func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			collectAssignedNames(e.Consequence.Statements, assigned)
+		}
+		if e.Alternative != nil {
+			collectAssignedNames(e.Alternative.Statements, assigned)
+		}
+	case *parser.ConditionalExpression:
+		// ternary cond ? a : b — no statements, just expressions
+	}
+}
+
+// collectReadNames walks statements recursively and collects variable names
+// that are read (used in expressions). Direct assignment targets (LetStatement.Name,
+// MultiAssignStatement Identifier targets) are NOT reads. However, IndexExpression.Left
+// and DotExpression.Receiver ARE reads — out[i]=val reads 'out' to get the data ptr.
+func collectReadNames(stmts []parser.Statement, read map[string]bool) {
+	for _, stmt := range stmts {
+		if stmt == nil {
+			continue
+		}
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Value != nil {
+				collectReadNamesInExpr(s.Value, read)
+			}
+		case *parser.MultiAssignStatement:
+			for _, target := range s.Targets {
+				switch t := target.(type) {
+				case *parser.IndexExpression:
+					// out[i] = val → reads out (to get data pointer) and i
+					collectReadNamesInExpr(t.Left, read)
+					collectReadNamesInExpr(t.Index, read)
+				case *parser.DotExpression:
+					// out.field = val → reads out (to get struct pointer)
+					collectReadNamesInExpr(t.Receiver, read)
+				}
+				// Identifier targets are pure writes — not reads
+			}
+			if s.Value != nil {
+				collectReadNamesInExpr(s.Value, read)
+			}
+		case *parser.BlockStatement:
+			collectReadNames(s.Statements, read)
+		case *parser.ForStatement:
+			if s.Init != nil {
+				collectReadNames([]parser.Statement{s.Init}, read)
+			}
+			if s.Condition != nil {
+				collectReadNamesInExpr(s.Condition, read)
+			}
+			if s.Update != nil {
+				collectReadNames([]parser.Statement{s.Update}, read)
+			}
+			if s.IterRange != nil {
+				if s.IterRange.RangeExpr != nil {
+					collectReadNamesInExpr(s.IterRange.RangeExpr, read)
+				}
+				if s.IterRange.Range != nil {
+					if s.IterRange.Range.Start != nil {
+						collectReadNamesInExpr(s.IterRange.Range.Start, read)
+					}
+					if s.IterRange.Range.End != nil {
+						collectReadNamesInExpr(s.IterRange.Range.End, read)
+					}
+				}
+			}
+			if s.Body != nil {
+				collectReadNames(s.Body.Statements, read)
+			}
+		case *parser.ExpressionStatement:
+			if s.Expression != nil {
+				collectReadNamesInExpr(s.Expression, read)
+			}
+		case *parser.ReturnStatement:
+			if s.ReturnValue != nil {
+				collectReadNamesInExpr(s.ReturnValue, read)
+			}
+		}
+	}
+}
+
+// collectReadNamesInExpr walks an expression tree and collects all variable names
+// that are read. Handles all expression types including DotExpression.Receiver,
+// IndexExpression.Left, CallExpression args, etc.
+func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		read[e.Value] = true
+	case *parser.CallExpression:
+		collectReadNamesInExpr(e.Function, read)
+		for _, arg := range e.Arguments {
+			collectReadNamesInExpr(arg, read)
+		}
+	case *parser.DotExpression:
+		// out.field → reads out (the receiver)
+		collectReadNamesInExpr(e.Receiver, read)
+	case *parser.IndexExpression:
+		// out[i] → reads out and i
+		collectReadNamesInExpr(e.Left, read)
+		collectReadNamesInExpr(e.Index, read)
+	case *parser.SliceExpression:
+		collectReadNamesInExpr(e.Left, read)
+		if e.Range != nil {
+			if e.Range.Start != nil {
+				collectReadNamesInExpr(e.Range.Start, read)
+			}
+			if e.Range.End != nil {
+				collectReadNamesInExpr(e.Range.End, read)
+			}
+		}
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			collectReadNamesInExpr(e.Left, read)
+		}
+		if e.Right != nil {
+			collectReadNamesInExpr(e.Right, read)
+		}
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			collectReadNamesInExpr(e.Right, read)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			collectReadNamesInExpr(e.Expression, read)
+		}
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			collectReadNamesInExpr(e.Condition, read)
+		}
+		if e.Consequence != nil {
+			collectReadNames(e.Consequence.Statements, read)
+		}
+		if e.Alternative != nil {
+			collectReadNames(e.Alternative.Statements, read)
+		}
+	case *parser.AssignExpression:
+		// out.field = val → reads out (via DotExpression.Receiver)
+		if dot, ok := e.Left.(*parser.DotExpression); ok {
+			collectReadNamesInExpr(dot.Receiver, read)
+		}
+		if idx, ok := e.Left.(*parser.IndexExpression); ok {
+			collectReadNamesInExpr(idx.Left, read)
+			collectReadNamesInExpr(idx.Index, read)
+		}
+		if e.Value != nil {
+			collectReadNamesInExpr(e.Value, read)
+		}
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			collectReadNamesInExpr(e.Condition, read)
+		}
+		if e.Consequence != nil {
+			collectReadNamesInExpr(e.Consequence, read)
+		}
+		if e.Alternative != nil {
+			collectReadNamesInExpr(e.Alternative, read)
+		}
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			collectReadNamesInExpr(elem, read)
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			collectReadNamesInExpr(elem, read)
+		}
+	case *parser.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				collectReadNamesInExpr(f.Value, read)
+			}
+		}
+	case *parser.MapLiteral:
+		for _, pair := range e.Pairs {
+			collectReadNamesInExpr(pair.Key, read)
+			collectReadNamesInExpr(pair.Value, read)
+		}
+	case *parser.RunExpression:
+		if e.Call != nil {
+			collectReadNamesInExpr(e.Call, read)
+		}
+	case *parser.AwaitExpression:
+		if e.Right != nil {
+			collectReadNamesInExpr(e.Right, read)
+		}
+	case *parser.CastExpression:
+		if e.Expr != nil {
+			collectReadNamesInExpr(e.Expr, read)
+		}
+	// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
+	// FunctionLiteral: don't recurse (nested function has its own scope)
+	}
 }
 
 // ValidateInterfaceImplementation matches dotted-name function definitions

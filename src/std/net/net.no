@@ -640,3 +640,230 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
 enc-accept = (c conn, key [32]byte) (ec enc-conn) {
     ec.init(c, key)
 }
+
+; ═══════════════════════════════════════════════
+; ICMP Ping（原生 ping 實現）
+; ═══════════════════════════════════════════════
+;
+; 使用 net-icmp-open 建立 ICMP socket，在純 Nolang 中實現 ICMP Echo 協議。
+; macOS 使用 SOCK_DGRAM（非特權），Linux 使用 SOCK_RAW（需要 root 或 CAP_NET_RAW）。
+;
+; 用法：
+;   ; 單次 ping
+;   r ?i64 = ping('127.0.0.1')
+;   r: {
+;       nil -> print('ping failed')
+;       -> print('rtt: ' + it.to-str() + ' us')
+;   }
+;
+;   ; 多次 ping
+;   icmp-conn.ping-host('8.8.8.8', 4)
+
+; build-in (ForwardFunc: net-icmp-open)
+; net-icmp-open: 建立 ICMP socket
+; 返回 fd i64（-1=失敗）
+; net-icmp-open = () (fd i64) { }
+
+; ICMP 常量
+ICMP-ECHO-REQUEST = 8
+ICMP-ECHO-REPLY = 0
+ICMP-HEADER-SIZE = 8
+ICMP-PAYLOAD-SIZE = 56
+ICMP-PACKET-SIZE = 64
+PING-RECV-BUF-SIZE = 128
+
+; icmp-conn: ICMP ping 連接
+; fd: socket 檔案描述符（-1=未開啟）
+; ident: ICMP 標識符（大端序）
+; seq: 當前序號
+icmp-conn {
+    fd i64
+    ident i64
+    seq i64
+}
+
+; open: 建立 ICMP socket
+; 返回 ok=true=成功
+icmp-conn.open = () (ok bool) {
+    ok = false
+    .fd = net-icmp-open()
+    .fd < 0 -> return
+    .ident = os.get-pid() & 65535
+    .seq = 0
+    ok = true
+}
+
+; close: 關閉 ICMP socket
+icmp-conn.close = () {
+    .fd >= 0 -> {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+; build-echo: 建構 ICMP Echo Request 封包
+; pkt []byte: 輸出封包緩衝區（至少 64 位元組）
+; seq i64: 序號
+icmp-conn.build-echo = (pkt []byte, seq i64) {
+    ; Type = 8 (Echo Request)
+    pkt[0] = ICMP-ECHO-REQUEST
+    ; Code = 0
+    pkt[1] = 0
+    ; Checksum = 0 (先填 0，之後計算)
+    pkt[2] = 0
+    pkt[3] = 0
+    ; Identifier (big-endian)
+    pkt[4] = (.ident >> 8) & 255
+    pkt[5] = .ident & 255
+    ; Sequence (big-endian)
+    pkt[6] = (seq >> 8) & 255
+    pkt[7] = seq & 255
+    ; Payload: 填入序號作為資料（用於驗證回應）
+    i <- [0..ICMP-PAYLOAD-SIZE): {
+        pkt[ICMP-HEADER-SIZE + i] = (seq + i) & 255
+    }
+    ; 計算並填入 checksum
+    cksum = icmp-checksum(pkt, ICMP-PACKET-SIZE)
+    pkt[2] = (cksum >> 8) & 255
+    pkt[3] = cksum & 255
+}
+
+; icmp-checksum: 計算 ICMP 校驗和（16 位元一補數和）
+; data []byte: 封包資料
+; len i64: 封包長度
+; 返回 checksum i64（16 位元）
+icmp-checksum = (data []byte, len i64) (checksum i64) {
+    checksum = 0
+    i = 0
+    {
+        i + 1 < len -> {
+            ; 16-bit word: data[i] << 8 | data[i+1]
+            w = ((data[i] & 255) << 8) | (data[i + 1] & 255)
+            checksum = checksum + w
+            ; 處理進位
+            checksum > 65535 -> {
+                checksum = (checksum & 65535) + (checksum >> 16)
+            }
+        }
+        i = i + 2
+    } (i < len)
+    ; 奇數長度：補零處理最後一個位元組
+    len & 1 == 1 -> {
+        checksum = checksum + ((data[len - 1] & 255) << 8)
+        checksum > 65535 -> {
+            checksum = (checksum & 65535) + (checksum >> 16)
+        }
+    }
+    checksum = (checksum & 65535) + (checksum >> 16)
+    checksum = (~checksum) & 65535
+}
+
+; ping-once: 發送一次 ICMP Echo Request 並等待回應
+; host str: 目標 IP 地址
+; timeout-ms i64: 逾時毫秒數
+; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
+    rtt = nil
+    .fd < 0 -> return
+
+    ; 設定接收逾時
+    net-set-recv-timeout(.fd, timeout-ms)
+
+    ; 建構 ICMP Echo Request
+    pkt []byte = with-len(ICMP-PACKET-SIZE)
+    .seq = .seq + 1
+    .build-echo(pkt, .seq)
+
+    ; 記錄發送時間
+    t-start = os.now-us()
+
+    ; 發送 ICMP Echo Request（port=0）
+    written = net-udp-sendto(.fd, pkt, ICMP-PACKET-SIZE, host, 0)
+    written < 0 -> return
+
+    ; 接收回應
+    recv-buf []byte = with-len(PING-RECV-BUF-SIZE)
+    n = net-udp-recvfrom(.fd, recv-buf, PING-RECV-BUF-SIZE)
+    n <= 0 -> return
+
+    ; 記錄接收時間
+    t-end = os.now-us()
+
+    ; 判斷是否有 IP 標頭（Linux SOCK_RAW 回傳 IP+ICMP，macOS SOCK_DGRAM 只回傳 ICMP）
+    offset = 0
+    {
+        n >= 20 -> {
+            ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
+            ver = (recv-buf[0] >> 4) & 15
+            ver == 4 -> {
+                ; IHL = (byte 0 & 0x0F) * 4
+                ihl = (recv-buf[0] & 15) * 4
+                offset = ihl
+            }
+        }
+    }
+
+    ; 檢查 ICMP 回應長度
+    n - offset < ICMP-HEADER-SIZE -> return
+
+    ; 驗證 ICMP Type = 0 (Echo Reply)
+    icmp-type = recv-buf[offset] & 255
+    icmp-type != ICMP-ECHO-REPLY -> return
+
+    ; 驗證 Identifier
+    recv-ident = ((recv-buf[offset + 4] & 255) << 8) | (recv-buf[offset + 5] & 255)
+    recv-ident != .ident -> return
+
+    ; 驗證 Sequence（只比較低 16 位）
+    recv-seq = ((recv-buf[offset + 6] & 255) << 8) | (recv-buf[offset + 7] & 255)
+    recv-seq != (.seq & 65535) -> return
+
+    ; 計算 RTT
+    rtt = t-end - t-start
+}
+
+; ping-host: 對指定主機發送多次 ping
+; host str: 目標 IP 地址
+; count i64: ping 次數
+; timeout-ms i64: 每次逾時毫秒數（預設 1000）
+icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
+    i <- [0..count): {
+        r ?i64 = .ping-once(host, timeout-ms)
+        r: {
+            nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
+            -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
+        }
+        ; 間隔 1 秒
+        count > 1 -> os.sleep(1)
+    }
+    .close()
+}
+
+; ═══════════════════════════════════════════════
+; Ping 便捷函數
+; ═══════════════════════════════════════════════
+
+; ping: 單次 ping 便捷函數
+; host str: 目標 IP 地址
+; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+ping = (host str) (rtt ?i64) {
+    rtt = nil
+    ic icmp-conn
+    ok = ic.open()
+    ok == false -> return
+    rtt = ic.ping-once(host, 1000)
+    ic.close()
+}
+
+; ping-count: 多次 ping 便捷函數
+; host str: 目標 IP 地址
+; count i64: ping 次數
+ping-count = (host str, count i64) {
+    ic icmp-conn
+    ok = ic.open()
+    ok == false -> {
+        print('ping: cannot create ICMP socket (requires root on Linux)')
+        return
+    }
+    ic.ping-host(host, count, 1000)
+}

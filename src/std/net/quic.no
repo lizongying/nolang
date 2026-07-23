@@ -161,6 +161,7 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; 返回 cid []byte: 隨機 CID
 quic-gen-cid = (len i64) (cid []byte) {
     state i64 = rand.rand(0)
+    cid = with-len(len)
     i <- [0..len): {
         state = rand.rand(state)
         cid[i] = state & 255
@@ -542,6 +543,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     ; ── 構建未保護的封包 ──
     pos = 0
+    packet = with-cap(QUIC-MAX-PACKET-SIZE)
 
     ; 1. 第一位元組: Fixed bit + Long header + Initial type
     packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
@@ -784,6 +786,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 ; 返回 buf []byte: 原始封包
 ; 返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
 quic-conn.recv-raw = () (buf []byte, n i64) {
+    buf = with-len(QUIC-MAX-PACKET-SIZE)
     n = net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
 }
 

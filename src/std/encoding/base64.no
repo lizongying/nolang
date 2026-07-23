@@ -98,6 +98,7 @@ decode = (s str, table str) (out ?[]byte) {
     }
     i = 0
     j = 0
+    out = with-cap(n * 3 / 4)
     {
         v0 = b64-val(s[i], table)
         v1 = b64-val(s[i + 1], table)

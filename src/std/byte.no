@@ -58,6 +58,7 @@ i64.to-bytes-le = () (out [?]byte) {
 ; []byte.to-str: 将字节切片转为字符串
 []byte.to-str = () (out str) {
     n = .len()
+    out = with-len(n)
     i <- [0..n): {
         out[i] = .[i]
     }
@@ -132,6 +133,7 @@ i64.to-bytes-le = () (out [?]byte) {
     end > .len -> end = .len
     start >= end -> return
     n = end - start
+    val = with-len(n)
     i <- [0..n): {
         val[i] = .[start + i]
     }
@@ -148,6 +150,7 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 []byte.to-hex = () (out str) {
     n = .len()
+    out = with-len(n * 2)
     i <- [0..n): {
         b = .[i] & 255
         out[i * 2] = HEX-UPPER[b >> 4]
@@ -158,6 +161,7 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 []byte.to-hex-lower = () (out str) {
     n = .len()
+    out = with-len(n * 2)
     i <- [0..n): {
         b = .[i] & 255
         out[i * 2] = HEX-LOWER[b >> 4]

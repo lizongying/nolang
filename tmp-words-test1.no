@@ -1,9 +1,0 @@
-; Test 1: push str to vec and read back
-words []str = with-cap(256)
-tmp-word str = 'hello'
-words.push(tmp-word)
-tmp-word = 'world'
-words.push(tmp-word)
-print(words[0])
-print(words[1])
-print('done')

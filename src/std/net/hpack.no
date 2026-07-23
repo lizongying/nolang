@@ -358,6 +358,7 @@ hpack-tables.lookup = (idx i64) (name str, value str, ok bool) {
 ; prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
 ; 返回 out=編碼後的字串
 hpack-encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
+    out = with-cap(10)
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
         out[0] = prefix-byte | val
@@ -418,6 +419,7 @@ hpack-decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) 
 ; hpack-encode-str: 編碼字串（literal，H=0）
 ; 返回 out=編碼後字串
 hpack-encode-str = (s str) (out str) {
+    out = with-cap(s.len + 8)
     ; H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
     len-out = hpack-encode-int(s.len, 7, 0)
@@ -458,6 +460,7 @@ hpack-decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     ; 複製字串內容
+    out = with-cap(len)
     i <- [0..len): {
         out[i] = data[p + i]
     }
@@ -481,6 +484,8 @@ hpack-tables.encode-header = (name str, value str) (out str) {
         out = hpack-encode-int(full-idx, 7, 128)
         return
     }
+
+    out = with-cap(name.len + value.len + 8)
 
     ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0

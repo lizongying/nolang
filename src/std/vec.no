@@ -171,6 +171,7 @@
 ; []t.clone: 複製切片
 []t.clone = () (dst []t) {
     n = .len
+    dst = with-len(n)
     i <- [0..n): {
         dst[i] = .[i]
     }

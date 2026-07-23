@@ -124,6 +124,7 @@ path.base = () (out str) {
     }
     start = last-sep + 1
     out-n = .p.len - start
+    out = with-cap(.p.len)
     i <- [0..out-n): {
         out[i] = .p[start + i]
     }
@@ -179,6 +180,7 @@ path.ext = () (out str) {
     last-dot == .p.len - 1 -> return
     start = last-dot
     out-n = .p.len - start
+    out = with-cap(.p.len)
     i <- [0..out-n): {
         out[i] = .p[start + i]
     }
@@ -299,6 +301,7 @@ path.split = () (f str) {
     ; 提取檔名
     start = last-sep + 1
     out-n = .p.len - start
+    f = with-len(out-n)
     i <- [0..out-n): {
         f[i] = .p[start + i]
     }

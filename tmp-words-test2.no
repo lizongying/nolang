@@ -1,5 +1,0 @@
-; Test 2: just str push, no read
-words []str = with-cap(256)
-tmp-word str = 'hello'
-words.push(tmp-word)
-print('done')

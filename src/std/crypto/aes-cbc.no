@@ -30,6 +30,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     }
 
     ; 逐區塊加密
+    out = with-len(in.len)
     blk = 0
     {
         ; XOR 當前區塊與 prev
@@ -69,6 +70,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     }
 
     ; 逐區塊解密
+    out = with-len(in.len)
     blk = 0
     {
         ; 保存當前密文區塊（解密前）
@@ -101,6 +103,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 pkcs7-pad = (in []byte) (out []byte) {
     pad-len = 16 - (in.len % 16)
     pad-len == 0 -> pad-len = 16
+    out = with-len(in.len + pad-len)
     i <- [0..in.len): {
         out[i] = in[i]
     }

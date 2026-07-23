@@ -33,6 +33,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
     }
 
     ; PRGA: 偽隨機生成
+    out = with-len(in.len)
     i = 0
     j = 0
     pos <- [0..in.len): {

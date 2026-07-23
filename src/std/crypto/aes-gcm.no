@@ -200,6 +200,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
         cb[i] = icb[i]
     }
 
+    out = with-len(data.len)
     pos = 0
     {
         ; 加密當前計數器區塊
@@ -299,6 +300,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     }
 
     ; 6. 輸出密文 + tag
+    sealed = with-len(cipher.len + 16)
     i <- [0..cipher.len): {
         sealed[i] = cipher[i]
     }

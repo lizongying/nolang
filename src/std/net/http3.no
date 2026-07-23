@@ -67,6 +67,7 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     pos = 0
     name-bytes []byte = name.to-bytes()
     value-bytes []byte = value.to-bytes()
+    buf = with-cap(name.len + value.len + 16)
 
     ; 字面標頭前綴: 0010 0000（不使用靜態表參考，名稱為字面值）
     buf[pos] = QPACK-LITERAL-PREFIX
@@ -248,6 +249,7 @@ http3-encode-data-frame = (data str) (buf []byte, n i64) {
 ; 返回 n i64: 編碼長度
 http3-encode-settings-frame = () (buf []byte, n i64) {
     ; 空 SETTINGS（無參數）
+    buf = with-len(2)
     buf[0] = 0x04
     buf[1] = 0
     n = 2
@@ -277,6 +279,7 @@ http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-
     pos = len-np
 
     pos + len-val > buf.len -> return
+    payload = with-len(len-val)
     i <- [0..len-val): {
         payload[i] = buf[pos + i]
     }

@@ -118,6 +118,7 @@ char.to-bytes = () (out []byte) {
         }
     }
 
+    out = with-len(len)
     i <- [0..len): {
         out[i] = buf[i]
     }

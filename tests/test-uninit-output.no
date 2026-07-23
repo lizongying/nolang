@@ -1,0 +1,52 @@
+; test-uninit-output — 驗證 ?T 輸出參數未初始化檢查（case6）
+;
+; 測試場景：
+;   Case 7: ?struct 先賦值再用 → 允許（編譯通過）
+;   Case 8: ?struct 空函數體 → 返回 nil（編譯通過）
+;   Case 3: ?[]i64 返回 nil（編譯通過）
+
+uninit-struct {
+    val i64
+    data []byte
+}
+
+; Case 7: 先賦值再用 → 允許
+case7-assign-then-read = () (out ?uninit-struct) {
+    out = {val: 42, data: [1, 2, 3]}
+    v = out.val
+    print(v)
+}
+
+; Case 7 變體：先賦 nil 再做 nil 檢查
+case7-nil-check = () (out ?uninit-struct) {
+    out = nil
+    if out != nil {
+        print('has value')
+    } {
+        print('is nil')
+    }
+}
+
+; Case 8: 空函數體 → 返回 nil
+case8-empty = () (out ?uninit-struct) {
+}
+
+; Case 3: ?[]i64 返回 nil
+case3-return-nil = () (out ?[]i64) {
+}
+
+; Case 7: ?[]i64 先賦值再用
+case7-slice = () (out ?[]i64) {
+    out = [10, 20, 30]
+    n = out.len
+    print(n)
+}
+
+main = () {
+    r1 = case7-assign-then-read()
+    r2 = case7-nil-check()
+    r3 = case8-empty()
+    r4 = case3-return-nil()
+    r5 = case7-slice()
+    print('all case6 tests passed')
+}

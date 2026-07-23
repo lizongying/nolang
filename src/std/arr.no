@@ -73,6 +73,7 @@
 
 ; [n]t.to-vec: 陣列方法，轉為 []t vec
 [n]t.to-vec = () (out []t) {
+    out = with-len(n)
     i <- [0..n): {
         out[i] = .[i]
     }

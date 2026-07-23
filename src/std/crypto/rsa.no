@@ -220,6 +220,7 @@ bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i6
 ; 使用左右掃描平方乘（square-and-multiply）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
     ; 初始化 result = 1
+    result = with-len(mn)
     i <- [0..mn): {
         result[i] = 0
     }

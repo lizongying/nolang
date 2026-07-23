@@ -59,6 +59,7 @@ new-v4 = (state i64) (out uuid) {
 ; 返回 out str: UUID 字串
 uuid.to-str = () (out str) {
     ; 8-4-4-4-12 格式
+    out = with-len(36)
     ; byte 0-3 → position 0-7
     hex-byte(.bytes[0], 0, out)
     hex-byte(.bytes[1], 2, out)
@@ -107,6 +108,7 @@ hex-byte = (b byte, pos i64, out str) {
 ; to-str-upper: 將 UUID 格式化為大寫字串
 ; 返回 out str: UUID 大寫字串
 uuid.to-str-upper = () (out str) {
+    out = with-len(36)
     hex-u = '0123456789ABCDEF'
     hex-byte-upper(.bytes[0], 0, out, hex-u)
     hex-byte-upper(.bytes[1], 2, out, hex-u)

@@ -129,6 +129,18 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 5b. Uninitialized nullable output parameters (case6)
+	for _, u := range nbuild.ValidateUninitOutputParams(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     u.Line,
+			Column:   u.Column,
+			Severity: "error",
+			Source:   "nolang-type-checker",
+			Message:  u.Message,
+		})
+	}
+
 	// 6. Interface implementation warnings
 	for _, u := range nbuild.ValidateInterfaceImplementation(prog) {
 		results = append(results, VetResult{

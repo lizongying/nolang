@@ -317,6 +317,7 @@ zip-writer.finalize = () (out []byte) {
     }
     .write-eocd(cd-offset, cd-size)
     dlen = .data.len
+    out = with-cap(.data.len)
     i <- [0..dlen): {
         out[i] = .data[i]
     }

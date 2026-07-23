@@ -1,8 +1,0 @@
-line str = ''
-ok = false
-line, ok = get-line()
-ok == false -> {
-    print('no input')
-    return
-}
-print('got: ' - line)

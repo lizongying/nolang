@@ -1,0 +1,21 @@
+; test-default-params — 驗證默認值參數（case10）
+; 確認：struct1 = {} 默認值參數在輸出參數場景下行為正確
+
+# std/encoding/csv
+
+main = () {
+    ; 使用默認值：不傳 max-fields，應使用 1024
+    fields = csv.parse-line('a,b,c')
+    print(fields.len)
+    print(fields[0])
+    print(fields[1])
+    print(fields[2])
+
+    ; 顯式傳入 max-fields
+    fields2 = csv.parse-line('x,y,z', 2)
+    print(fields2.len)
+    print(fields2[0])
+    print(fields2[1])
+
+    print('default params test passed')
+}

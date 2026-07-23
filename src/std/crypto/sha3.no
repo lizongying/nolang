@@ -100,6 +100,7 @@ keccak-f1600 = (state []u64) {
 ; suffix byte: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
 ; 返回 out []byte: 輸出雜湊值
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
+    out = with-len(out-len)
     ; 初始化狀態（25 個 64-bit lane，全零）
     state []u64
     i <- [0..25): {

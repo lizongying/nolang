@@ -60,6 +60,7 @@ argon2-blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; out-len i64: 輸出長度
 ; 返回 out []byte: 輸出雜湊
 argon2-h-prime = (input []byte, out-len i64) (out []byte) {
+    out = with-cap(out-len)
     ; 輸出長度的 32-bit 小端表示
     len-bytes [4]byte
     len-bytes[0] = out-len & 255
@@ -137,6 +138,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 ; y []byte: 1024 位元組區塊 Y
 ; 返回 out []byte: 1024 位元組結果
 argon2-compress = (x []byte, y []byte) (out []byte) {
+    out = with-len(1024)
     ; R = X XOR Y
     r []byte
     i <- [0..1024): {

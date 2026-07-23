@@ -100,6 +100,7 @@ salsa20-8-core = (block []byte) {
 ; r i64: 區塊大小參數
 ; 返回 out []byte: 混合後的區塊（128*r 位元組）
 scrypt-blockmix = (b []byte, r i64) (out []byte) {
+    out = with-cap(2 * r * 64)
     block-size = 64
     total = 2 * r
 
@@ -149,6 +150,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 ; r i64: 區塊大小參數
 ; 返回 out []byte: 混合後的區塊
 scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
+    out = with-cap(2 * r * 64)
     block-bytes = 128 * r
 
     ; V 陣列：n 個區塊，每個 block-bytes 位元組

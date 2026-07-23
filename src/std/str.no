@@ -1041,6 +1041,7 @@ str.trim-char = (ch char) (val str) {
     } (i < .len)
     n = end - start
     n < 0 -> return
+    val = with-len(n)
     j <- [0..n): {
         val[j] = .[start + j]
     }
@@ -1099,7 +1100,7 @@ str.from-hex = () (out ?[]byte) {
         return
     }
     n = .len / 2
-    out.len = n
+    out = with-len(n)
     i <- [0..n): {
         hi = hex-val(.[i * 2])
         lo = hex-val(.[i * 2 + 1])

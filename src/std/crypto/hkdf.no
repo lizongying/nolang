@@ -59,6 +59,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     t []byte
     t-len = 0
 
+    okm = with-len(out-len)
     off = 0
     counter = 1
     {

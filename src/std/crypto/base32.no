@@ -107,6 +107,7 @@ base32-encode = (data []byte) (out str) {
 ; in str: Base32 編碼字串
 ; 返回 out []byte: 解碼後的資料
 base32-decode = (in str) (out []byte) {
+    out = with-cap(in.len * 5 / 8)
     in-len = in.len
 
     ; 計算填充數

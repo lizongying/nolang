@@ -187,20 +187,34 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			undefinedVars := nbuild.ValidateUndefinedVars(prog, docDir)
-			for _, u := range undefinedVars {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
+		for _, u := range undefinedVars {
+			diagnostic := Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+				},
+				Severity: DiagnosticSeverityError,
+				Source:   "nolang-lint",
+				Message:  u.Message,
 			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
 
-			ifaceImplWarnings := nbuild.ValidateInterfaceImplementation(prog)
+		uninitOutParams := nbuild.ValidateUninitOutputParams(prog)
+		for _, u := range uninitOutParams {
+			diagnostic := Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+				},
+				Severity: DiagnosticSeverityError,
+				Source:   "nolang-type-checker",
+				Message:  u.Message,
+			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
+
+		ifaceImplWarnings := nbuild.ValidateInterfaceImplementation(prog)
 			for _, u := range ifaceImplWarnings {
 				diagnostic := Diagnostic{
 					Range: Range{

@@ -1979,6 +1979,20 @@ func (g *Generator) emitVecCapLoad(sb *strings.Builder, vecRef string) string {
 	return capLoad
 }
 
+// emitStrCapLoad loads the i64 cap (field 1) from a %str-long* pointer.
+func (g *Generator) emitStrCapLoad(sb *strings.Builder, strRef string) string {
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%str.cap.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	capLoad := fmt.Sprintf("%%str.cap.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
+			g.indent(), capGEP, strRef))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capLoad, capGEP))
+	}
+	return capLoad
+}
+
 // extractLenDispatch extracts len from %str-long based on known variable type.
 func (g *Generator) extractLenDispatch(sb *strings.Builder, varName string) string {
 	return g.extractStrLen(sb, "%"+varName)

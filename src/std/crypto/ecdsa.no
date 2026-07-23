@@ -705,6 +705,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 ; in [65]byte: 04 || x || y（大端序）
 ; 返回 out []byte: 96 位元組
 ec-bytes-to-point = (in [65]byte) (out []byte) {
+    out = with-len(96)
     ; 提取 x, y（轉為小端序）
     x [32]byte
     y [32]byte

@@ -131,6 +131,7 @@ tls-conn {
 ; n i64: 需要的位元組數
 ; 返回 out []byte: 隨機位元組陣列
 tls-rand-bytes = (state i64, n i64) (out []byte) {
+    out = with-len(n)
     i <- [0..n): {
         state = rand.rand(state)
         out[i] = state & 255
@@ -167,6 +168,7 @@ tls-get-u24 = (buf []byte, pos i64) (val i64) {
 tls-bytes-cat = (a []byte, b []byte) (out []byte) {
     an = a.len
     bn = b.len
+    out = with-len(an + bn)
     i <- [0..an): {
         out[i] = a[i]
     }
@@ -186,6 +188,7 @@ tls-bytes-cat = (a []byte, b []byte) (out []byte) {
 tls-bytes-to-bn = (data []byte) (out []i64) {
     n = data.len
     limb-count = (n + 3) / 4
+    out = with-len(limb-count)
     i <- [0..limb-count): {
         out[i] = 0
     }
@@ -204,6 +207,7 @@ tls-bytes-to-bn = (data []byte) (out []i64) {
 tls-bn-to-bytes = (num []i64) (out []byte) {
     n = num.len
     out-n = n * 4
+    out = with-len(out-n)
     i <- [0..out-n): {
         byte-from-lsb = out-n - 1 - i
         limb = byte-from-lsb / 4
@@ -232,6 +236,7 @@ tls-bn-to-bytes = (num []i64) (out []byte) {
 ; out-len i64: 需要的輸出長度
 ; 返回 out []byte: PRF 輸出
 tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
+    out = with-len(out-len)
     ; label-seed = label || seed
     label-bytes []byte
     label-bytes = label.to-bytes()
@@ -507,6 +512,7 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     }
 
     ; 輸出明文
+    out = with-cap(rlen)
     i <- [0..content-len): {
         out[i] = plain[i]
     }
@@ -1421,6 +1427,7 @@ tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (c
     ct = plain[plain-len - 1] & 255
     plain-len = plain-len - 1
 
+    out = with-cap(rlen)
     i <- [0..plain-len): {
         out[i] = plain[i]
     }
@@ -1463,6 +1470,7 @@ tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ; 解析 handshake message
     msg-type = plain[0] & 255
     msg-len i64 = tls-get-u24(plain, 1)
+    msg-data = with-len(msg-len)
     i <- [0..msg-len): {
         msg-data[i] = plain[4 + i] & 255
     }

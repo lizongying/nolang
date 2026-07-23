@@ -27,6 +27,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
     ; 計算需要多少個區塊
     blocks = (key-len + h-len - 1) / h-len
 
+    out = with-len(key-len)
     block-idx = 1
     out-pos = 0
     {
@@ -90,6 +91,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
 
     blocks = (key-len + h-len - 1) / h-len
 
+    out = with-len(key-len)
     block-idx = 1
     out-pos = 0
     {
@@ -144,6 +146,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
 
     blocks = (key-len + h-len - 1) / h-len
 
+    out = with-len(key-len)
     block-idx = 1
     out-pos = 0
     {

@@ -2765,6 +2765,28 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return resultReg
 	}
 
+	// net-icmp-open: create an ICMP socket for ping
+	// macOS:  socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)  — unprivileged
+	// Linux:  socket(AF_INET, SOCK_RAW,  IPPROTO_ICMP)  — requires root or CAP_NET_RAW
+	// Returns: fd i64 (-1 on error)
+	if fnName == "net-icmp-open" {
+		// SOCK_DGRAM=2 on macOS, SOCK_RAW=3 on Linux
+		sockType := int32(3) // SOCK_RAW (Linux)
+		if runtime.GOOS == "darwin" {
+			sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
+		}
+		g.tmpIdx++
+		sockFd := fmt.Sprintf("%%net.icmp.sock.%d", g.tmpIdx)
+		g.tmpIdx++
+		fdExt := fmt.Sprintf("%%net.icmp.fdext.%d", g.tmpIdx)
+		if sb != nil {
+			// socket(AF_INET=2, sockType, IPPROTO_ICMP=1)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 %d, i32 1)\n", g.indent(), sockFd, sockType))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
+		}
+		return fdExt
+	}
+
 	return ""
 }
 

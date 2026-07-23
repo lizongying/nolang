@@ -498,8 +498,166 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			}
 			return "i64* " + tmpName
 		}
-		return ev
+	return ev
 	}
+}
+
+// idxLenUpdateInfo records info needed to auto-update vec/arr len after a
+// multi-assign call that wrote elements via IndexExpression output targets.
+type idxLenUpdateInfo struct {
+	varName string
+	idxReg  string
+	isConst bool
+}
+
+// generateOutputIdxPtr generates a write pointer for an IndexExpression used as
+// a multi-assign output target (e.g. `fields[n], pos = f(...)`).
+// Unlike generateCallArg (which READS the element and triggers len-based bounds
+// check), this generates a GEP pointer with cap-based bounds check (matching the
+// regular vec[i] = val write path), allowing writes to freshly with-cap'd containers
+// where len == 0. Returns ("", nil) if the expression is not a supported vec/arr index.
+func (g *Generator) generateOutputIdxPtr(sb *strings.Builder, v *parser.IndexExpression) (string, *idxLenUpdateInfo) {
+	varName := ""
+	if ident, ok := v.Left.(*parser.Identifier); ok {
+		varName = ident.Value
+	} else {
+		return "", nil
+	}
+	if varName == "" {
+		return "", nil
+	}
+	t, ok := g.varTypes[varName]
+	if !ok {
+		return "", nil
+	}
+	idx := g.generateExprWithSB(sb, v.Index)
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(v.Index)
+		if idxType != "" && idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%outidx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
+	_, isConstIdx := v.Index.(*parser.IntegerLiteral)
+	varRef := llvmVarRef(varName)
+	if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
+		varRef = llvmGlobalRef(varName)
+	}
+	if t == "%vec" {
+		llvmElemType := "i64"
+		if et, ok := g.arrayElemTypes[varName]; ok {
+			llvmElemType = et
+		}
+		// Cap-based bounds check (matching vec[i] = val write path), skip for const idx
+		if !isConstIdx {
+			vecCap := g.emitVecCapLoad(sb, varRef)
+			g.emitBoundsCheck(sb, idx, vecCap)
+		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%outvec.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLoad := fmt.Sprintf("%%outvec.data.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataTyped := fmt.Sprintf("%%outvec.typed.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%outvec.elem.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, varRef))
+			dataLoad = g.loadDataPtrField(sb, dataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataTyped, dataLoad, llvmElemType))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+				g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+		}
+		return llvmElemType + "* " + elemGEP, &idxLenUpdateInfo{varName: varName, idxReg: idx, isConst: isConstIdx}
+	}
+	if t == "%arr" {
+		llvmElemType := "i64"
+		if et, ok := g.arrayElemTypes[varName]; ok {
+			llvmElemType = et
+		}
+		if !isConstIdx {
+			arrLen := g.emitArrLenLoad(sb, varRef)
+			g.emitBoundsCheck(sb, idx, arrLen)
+		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%outarr.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLoad := fmt.Sprintf("%%outarr.data.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataTyped := fmt.Sprintf("%%outarr.typed.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%outarr.elem.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+				g.indent(), dataGEP, varRef))
+			dataLoad = g.loadDataPtrField(sb, dataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+				g.indent(), dataTyped, dataLoad, llvmElemType))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+				g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+		}
+		return llvmElemType + "* " + elemGEP, nil
+	}
+	if t == "%str-long" {
+		// str[i] as output target: cap-based bounds check
+		if !isConstIdx {
+			strCap := g.emitStrCapLoad(sb, varRef)
+			g.emitBoundsCheck(sb, idx, strCap)
+		}
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%outstr.data.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		dataLoad := fmt.Sprintf("%%outstr.data.%d", g.tmpIdx)
+		g.tmpIdx++
+		elemGEP := fmt.Sprintf("%%outstr.elem.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, varRef))
+			dataLoad = g.loadDataPtrField(sb, dataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
+				g.indent(), elemGEP, dataLoad, idx))
+		}
+		return "i8* " + elemGEP, &idxLenUpdateInfo{varName: varName, idxReg: idx, isConst: isConstIdx}
+	}
+	return "", nil
+}
+
+// emitVecLenAutoUpdate updates vec.len to max(len, idx+1) after a multi-assign
+// call wrote an element via IndexExpression output target. Without this, subsequent
+// reads of the written element would fail bounds check (len still 0 after with-cap).
+func (g *Generator) emitVecLenAutoUpdate(sb *strings.Builder, varName string, idx string, isConst bool) {
+	if sb == nil {
+		return
+	}
+	varRef := llvmVarRef(varName)
+	if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
+		varRef = llvmGlobalRef(varName)
+	}
+	// For constant indices, directly set len = max(len, idx+1) unconditionally
+	// (the write already happened via the output pointer).
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%ma.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	curLen := fmt.Sprintf("%%ma.cur-len.%d", g.tmpIdx)
+	g.tmpIdx++
+	newLen := fmt.Sprintf("%%ma.new-len.%d", g.tmpIdx)
+	g.tmpIdx++
+	cmpReg := fmt.Sprintf("%%ma.cmp.%d", g.tmpIdx)
+	g.tmpIdx++
+	finalLen := fmt.Sprintf("%%ma.final-len.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+		g.indent(), lenGEP, varRef))
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), newLen, idx))
+	sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, newLen, curLen))
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, newLen, curLen))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
 }
 
 // generateIndirectCall emits a call through a function-pointer variable.
@@ -552,11 +710,11 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 	if numResults >= 1 {
 		g.tmpIdx++
 		loadReg := fmt.Sprintf("%%fncall.ret.%d", g.tmpIdx)
-if sb != nil {
+		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, resultTypes[0], resultTypes[0], resultTemps[0]))
-		// Restore stack pointer to prevent stack growth when called inside loops
-		sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), fncallSp))
-	}
+			// Restore stack pointer to prevent stack growth when called inside loops
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.stackrestore.p0(ptr %s)\n", g.indent(), fncallSp))
+		}
 		return loadReg
 	}
 	return ""
@@ -792,6 +950,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 				allArgs := make([]string, 0, len(innerArgs)+len(expr.Arguments))
 				allArgs = append(allArgs, innerArgs...)
+				// Track IndexExpression output args on vec/arr for post-call len update.
+				// When fields[n] is an output target, the called function writes via pointer;
+				// after return, vec.len must be updated to max(len, n+1) so subsequent reads pass bounds check.
+				var lenUpdates []idxLenUpdateInfo
 				for outIdx, outArg := range expr.Arguments {
 					// Auto-allocate undeclared output variables (e.g. `total` in `.c.recv-all()(response, total)`)
 					if ident, ok := outArg.(*parser.Identifier); ok {
@@ -809,10 +971,31 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), ident.Value))
 							}
 						}
+						allArgs = append(allArgs, g.generateCallArg(sb, outArg))
+						continue
+					}
+					// IndexExpression output target (e.g. fields[n] = f()): generate write
+					// pointer with cap-based bounds check (matching vec[i] = val write path).
+					// Using generateCallArg here would READ the element (len-based bounds check),
+					// crashing on freshly with-cap'd containers where len == 0.
+					if idxExpr, ok := outArg.(*parser.IndexExpression); ok {
+						if ptrArg, lu := g.generateOutputIdxPtr(sb, idxExpr); ptrArg != "" {
+							allArgs = append(allArgs, ptrArg)
+							if lu != nil {
+								lenUpdates = append(lenUpdates, *lu)
+							}
+							continue
+						}
 					}
 					allArgs = append(allArgs, g.generateCallArg(sb, outArg))
 				}
 				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
+				// Post-call: auto-update vec/arr len for IndexExpression output targets.
+				// The called function wrote elements via pointer; without updating len,
+				// subsequent reads (fields[0]) would fail bounds check (len still 0).
+				for _, lu := range lenUpdates {
+					g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+				}
 				return ""
 			}
 			// 純 void（無輸出參數）：直接調用
@@ -2290,7 +2473,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
-    voidSingleTmp := ""
+	voidSingleTmp := ""
 	voidSingleSp := ""
 	if voidSingleOutput {
 		g.tmpIdx++
@@ -2302,97 +2485,51 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), voidSingleSp))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), voidSingleTmp, voidSingleOutputType))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), g.llvmTypeSize(voidSingleOutputType), voidSingleTmp))
-			// %str-long 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
-			if voidSingleOutputType == "%str-long" {
-				g.tmpIdx++
-				dataBuf := fmt.Sprintf("%%vso.data.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 256)\n", g.indent(), dataBuf))
-				// 初始化 len = 0
-				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%vso.len.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-				// 設置 cap = 256
-				g.tmpIdx++
-				capGEP := fmt.Sprintf("%%vso.cap.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 256, i64* %s\n", g.indent(), capGEP))
-				// 設置 data 指標指向緩衝區
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%vso.data.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
-				g.storeDataPtrField(sb, dataBuf, dataGEP)
-			} else if voidSingleOutputType == "%vec" {
-				// %vec 類型需要初始化 data 指標，否則方法體 out[i] = val 會因 data 為 null 而崩潰
-				// 使用 malloc（而非 alloca）使得 []byte 輸出在函數返回後仍有效
-				// 計算元素大小：vecCap * elemSize 才是正確的 malloc 位元組數，
-				// 否則對 %str-long（24 bytes/elem）會以 16384 bytes 當 cap，
-				// 導致 16384/24 ≈ 682 個元素後溢出（或更小初始值 4096 → 170 個元素崩潰）
-				vecCap := int64(256)
-				elemSize := int64(8) // 預設 i64
+			if voidSingleOutputType == "%arr" {
+				// 固定數組 [N]T：調用方分配 N*elemSize 空間並設置 len/data。
+				// 固定數組大小已知，不同於可變切片，需預分配空間供 out[i] = val 寫入。
+				// %arr 類型（如 [8]u8）需初始化 len 與 data 指標，否則方法體 out[i] = val 會崩潰。
+				// 緩衝區由調用方負責分配，被調用函數 prologue 不再預分配。
+				arrSize := int64(0)
+				elemSize := int64(1)
 				if g.funcResultNolangTypes != nil {
 					if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
 						nt := nolangRets[0]
 						if strings.HasPrefix(nt, "[") {
 							if rb := strings.Index(nt, "]"); rb > 0 {
+								sizeStr := nt[1:rb]
+								if v, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+									arrSize = v
+								}
 								elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
 							}
 						}
 					}
 				}
-				vecBufSize := vecCap * elemSize
+				totalSize := arrSize * elemSize
 				g.tmpIdx++
-				dataBuf := fmt.Sprintf("%%vso.vecdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
-				// 初始化 len = 0（field 0）
+				arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
 				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%vso.veclen.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
-				// 設置 cap = vecCap（field 1，元素計數而非位元組數）
+				arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
 				g.tmpIdx++
-				capGEP := fmt.Sprintf("%%vso.veccap.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), vecCap, capGEP))
-				// 設置 data 指標指向緩衝區（field 2）
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%vso.vecdata.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, voidSingleTmp))
-				g.storeDataPtrField(sb, dataBuf, dataGEP)
-		} else if voidSingleOutputType == "%arr" {
-			// %arr 類型（如 [8]u8）需初始化 len 與 data 指標，否則方法體 out[i] = val 會崩潰。
-			// 緩衝區由調用方負責分配，被調用函數 prologue 不再預分配。
-			arrSize := int64(0)
-			elemSize := int64(1)
-			if g.funcResultNolangTypes != nil {
-				if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
-					nt := nolangRets[0]
-					if strings.HasPrefix(nt, "[") {
-						if rb := strings.Index(nt, "]"); rb > 0 {
-							sizeStr := nt[1:rb]
-							if v, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-								arrSize = v
-							}
-							elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
-						}
-					}
-				}
+				arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
+				g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
+			} else {
+				// 其他類型（i64/[]i64/str/?T/struct）零初始化：
+				//   i64 → 0
+				//   []i64 (%vec) → 空容器 {len=0, cap=0, data=null}
+				//   str (%str-long) → 空容器 {len=0, cap=0, data=null}
+				//   ?T (%option) → nil
+				//   struct → {} 零值
+				// 函數內需自行用 with-len/with-cap/[] 初始化後才能 out[i] = val
+				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), voidSingleOutputType, voidSingleOutputType, voidSingleTmp))
 			}
-			totalSize := arrSize * elemSize
-			g.tmpIdx++
-			arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
-			g.tmpIdx++
-			arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, voidSingleTmp))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
-			g.tmpIdx++
-			arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
-			g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
 		}
-	}
-	typedArgs = append(typedArgs, voidSingleOutputType+"* "+voidSingleTmp)
+		typedArgs = append(typedArgs, voidSingleOutputType+"* "+voidSingleTmp)
 	}
 
 	// Make the call
@@ -3069,8 +3206,17 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			elemGEP := fmt.Sprintf("%%vp.elem.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n", g.indent(), elemGEP, elemType, elemType, dataTyped, curLen))
-			// Store val
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, elemGEP))
+			// Store val: for heap-owning types, deep-clone to give vec its own independent copy
+			// (avoids double-free when both source var and vec element are freed at exit)
+			if g.isHeapOwningType(elemType) {
+				g.tmpIdx++
+				cloneSrc := fmt.Sprintf("%%vp.csrc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc))
+				g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, "")
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, elemGEP))
+			}
 			// Increment len: store len+1 to field 0
 			g.tmpIdx++
 			newLen := fmt.Sprintf("%%vp.newlen.%d", g.tmpIdx)
@@ -3145,7 +3291,16 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			newElemGEP := fmt.Sprintf("%%vp.ne.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n", g.indent(), newElemGEP, elemType, elemType, newTyped, curLen))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, newElemGEP))
+			// Deep-clone heap-owning types to give vec its own independent copy
+			if g.isHeapOwningType(elemType) {
+				g.tmpIdx++
+				cloneSrc2 := fmt.Sprintf("%%vp.csrc2.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc2, elemType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc2))
+				g.emitDeepClone(sb, cloneSrc2, newElemGEP, elemType, "")
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, newElemGEP))
+			}
 
 			// Update cap (field 1) = newCap
 			g.tmpIdx++
@@ -3172,21 +3327,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 
 		// End label
-	if sb != nil {
-		g.emitLabel(sb, endLabel)
-	}
-	// 當 push 的元素是堆擁有型別（%vec/%str-long/%arr/用戶結構體）且參數是 Identifier 時，
-	// 標記源變數為 moved，避免函數結束時 double-free（源變數和外部 vec 共享同一 data 指標）。
-	if g.isHeapOwningType(elemType) && g.movedVars != nil {
-		if srcIdent, ok := args[1].(*parser.Identifier); ok {
-			if srcIdent.Value != recvName {
-				g.movedVars[srcIdent.Value] = true
-			}
+		if sb != nil {
+			g.emitLabel(sb, endLabel)
 		}
-	}
-	return ""
+		// Note: heap-owning elements are deep-cloned during push (fast/expand paths),
+		// so no movedVars marking is needed — source and vec have independent copies.
+		return ""
 
-case "str-clear":
+	case "str-clear":
 		// str.clear() — set len=0 in-place, no storage switch
 		// str-long: store i64 0 to field 0, cap/ptr unchanged
 		if len(args) < 1 {

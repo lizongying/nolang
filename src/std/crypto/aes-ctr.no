@@ -26,6 +26,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         ctr[i] = iv[i]
     }
 
+    out = with-len(in.len)
     pos = 0
     {
         ; 加密當前計數器區塊
@@ -76,6 +77,7 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         ctr[i] = iv[i]
     }
 
+    out = with-len(in.len)
     pos = 0
     {
         ks [16]byte

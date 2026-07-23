@@ -266,6 +266,7 @@ x509-rsa-n = (data []byte) (out []byte) {
     t != 2 -> return
     mod-len, len-adv = der-len(data, rsa-start + 1)
     mod-val-start = rsa-start + 1 + len-adv
+    out = with-cap(mod-len)
 
     ; 跳過前導 0x00（用於保持正號）
     actual-start = mod-val-start

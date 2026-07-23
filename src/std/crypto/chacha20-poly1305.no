@@ -114,6 +114,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 ; data []byte: 輸入資料
 ; 返回 out []byte: XOR 後的資料
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
+    out = with-len(data.len)
     pos = 0
     blk-counter = counter
     {
@@ -464,6 +465,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     tag = poly1305(otk, mac-input)
 
     ; 5. 輸出密文 + tag
+    sealed = with-len(cipher.len + 16)
     i <- [0..cipher.len): {
         sealed[i] = cipher[i]
     }

@@ -140,6 +140,20 @@ func init() {
 		ForwardFunc:  "unix-dial",
 	})
 
+	// net-icmp-open: create an ICMP socket for ping
+	// macOS:  socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)  — unprivileged
+	// Linux:  socket(AF_INET, SOCK_RAW,  IPPROTO_ICMP)  — requires root or CAP_NET_RAW
+	// Returns: fd i64 (-1 on error)
+	// Use net-udp-sendto / net-udp-recvfrom for I/O (port=0).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-icmp-open",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Create ICMP socket for ping. Returns fd (-1 on error, requires root on Linux)",
+		ForwardFunc:  "net-icmp-open",
+	})
+
 	// win-wsa-startup: initialize Winsock 2.2 on Windows (WSAStartup)
 	// Args: none
 	// Returns: ok bool (true on success)

@@ -29,6 +29,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 
     ; 逐區塊處理（每區塊 8 位元組）
+    out = with-len(n)
     blk = 0
     {
         ; 提取當前區塊
@@ -73,6 +74,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         k3[i] = key[16 + i]
     }
 
+    out = with-len(n)
     blk = 0
     {
         block []byte
@@ -115,6 +117,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         prev[i] = iv[i]
     }
 
+    out = with-len(in.len)
     blk = 0
     {
         ; XOR 當前區塊與 prev
@@ -147,6 +150,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         prev[i] = iv[i]
     }
 
+    out = with-len(in.len)
     blk = 0
     {
         cipher-block [8]byte
