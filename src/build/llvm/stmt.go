@@ -96,8 +96,6 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		return 4
 	case "i64", "i8*", "double":
 		return 8
-	case "%arr":
-		return 16
 	case "%option":
 		return 24
 	case "float":
@@ -241,11 +239,11 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 			// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
 			// is_moved=false → 未實際 move，仍需 free（仍擁有數據）
 			// is_moved=true → 所有權已轉移，跳過 free
-			if llvmType == "%vec" || llvmType == "%str-long" {
+			if llvmType == "%vec" || llvmType == "%str-long" || llvmType == "%arr" {
 				g.emitVarHeapFreeDualCheck(sb, name, llvmType, elemType)
 				continue
 			}
-			// 非 vec/str-long 無 is_moved 欄位，保留舊行為：跳過 free（寧可洩漏）
+			// 用戶結構體無 is_moved 欄位，保留舊行為：跳過 free（寧可洩漏）
 			continue
 		}
 		g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
@@ -309,15 +307,22 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
 }
 
-// emitSetIsMoved 設定堆容器的運行時 move 標記 (field 3, is_moved)。
+// emitSetIsMoved 設定堆容器的運行時 move 標記。
+// %vec/%str-long: field 3 (is_moved)
+// %arr: field 2 (is_moved)
 // val=true 表示所有權已轉移（move 發生），val=false 表示仍擁有數據。
-// 僅對 %vec/%str-long 有效，其他類型無此欄位。
 func (g *Generator) emitSetIsMoved(sb *strings.Builder, varName string, val bool) {
 	if g.varTypes == nil {
 		return
 	}
 	llvmType := g.varTypes[varName]
-	if llvmType != "%vec" && llvmType != "%str-long" {
+	movedFieldIdx := -1
+	switch llvmType {
+	case "%vec", "%str-long":
+		movedFieldIdx = 3
+	case "%arr":
+		movedFieldIdx = 2
+	default:
 		return
 	}
 	varPtr := g.varAddr(varName)
@@ -327,22 +332,26 @@ func (g *Generator) emitSetIsMoved(sb *strings.Builder, varName string, val bool
 	if val {
 		valStr = "1"
 	}
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
-		g.indent(), movedGEP, llvmType, llvmType, varPtr))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), movedGEP, llvmType, llvmType, varPtr, movedFieldIdx))
 	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), valStr, movedGEP))
 }
 
-// emitVarHeapFreeDualCheck 帶雙重校驗的堆釋放（僅 %vec/%str-long）：
+// emitVarHeapFreeDualCheck 帶雙重校驗的堆釋放（%vec/%str-long/%arr）：
 // 編譯期 movedVars[name]=true 表示存在 move 代碼路徑；
 // 運行時 is_moved=false 表示該路徑未實際執行，仍需 free；
 // 運行時 is_moved=true 表示所有權已轉移，跳過 free。
 func (g *Generator) emitVarHeapFreeDualCheck(sb *strings.Builder, name, llvmType, elemType string) {
 	varPtr := g.varAddr(name)
-	// Load is_moved flag (field 3)
+	// is_moved field index: %vec/%str-long=3, %arr=2
+	movedFieldIdx := 3
+	if llvmType == "%arr" {
+		movedFieldIdx = 2
+	}
 	g.tmpIdx++
 	movedGEP := fmt.Sprintf("%%dc.moved.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
-		g.indent(), movedGEP, llvmType, llvmType, varPtr))
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), movedGEP, llvmType, llvmType, varPtr, movedFieldIdx))
 	g.tmpIdx++
 	movedVal := fmt.Sprintf("%%dc.moved.val.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), movedVal, movedGEP))
@@ -480,11 +489,11 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	}
 	if g.movedVars != nil && g.movedVars[name] {
 		// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
-		if oldType == "%vec" || oldType == "%str-long" {
+		if oldType == "%vec" || oldType == "%str-long" || oldType == "%arr" {
 			g.emitVarHeapFreeDualCheck(sb, name, oldType, elemType)
 			return
 		}
-		// 非 vec/str-long 無 is_moved 欄位，保留舊行為：跳過 free
+		// 用戶結構體無 is_moved 欄位，保留舊行為：跳過 free
 		return
 	}
 	g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
@@ -594,6 +603,19 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 			g.indent(), dstCapGEP, containerType, containerType, dstPtr))
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dstCapGEP))
+		// 重置 is_moved=false (field 3)：深拷貝後 dst 應為獨立擁有，不繼承 src 的 moved 狀態。
+		// 否則若 dst 之前被 move 過（is_moved=true），深拷貝後 is_moved 保持 stale=true，
+		// 導致 emitVarHeapFreeDualCheck 誤判為已 move 而跳過 free → 記憶體洩漏。
+		dstMovedGEP := fmt.Sprintf("%%clone.dst.moved.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
+			g.indent(), dstMovedGEP, containerType, containerType, dstPtr))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), dstMovedGEP))
+	} else if containerType == "%arr" {
+		// 重置 is_moved=false (field 2)：深拷貝後 dst 應為獨立擁有。
+		dstMovedGEP := fmt.Sprintf("%%clone.dst.moved.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 2\n",
+			g.indent(), dstMovedGEP, containerType, containerType, dstPtr))
+		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), dstMovedGEP))
 	}
 	dstDataGEP := fmt.Sprintf("%%clone.dst.data.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -1272,6 +1294,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			arrDataGEP := fmt.Sprintf("%%local.arrdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
+			// 初始化 is_moved=false (field 2)：運行時 move 標記，雙重校驗用
+			g.tmpIdx++
+			arrMovedGEP := fmt.Sprintf("%%local.arrmoved.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 2\n", g.indent(), arrMovedGEP, llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), arrMovedGEP))
 		}
 	}
 

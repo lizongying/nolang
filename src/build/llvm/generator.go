@@ -888,9 +888,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// Pre-register built-in arr type (used for all fixed-size arrays)
 	// data is i64 (address value) instead of i8* to keep IR type-uniform.
+	// is_moved (i8, field 2) 為運行時 move 標記，用於雙重校驗釋放邏輯。
 	g.structTypes["arr"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "data", typ: "i64"},
+		{name: "is_moved", typ: "i8"},
 	}
 
 	// Pre-register built-in vec type (used for all slices)
@@ -926,7 +928,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 用於 if/else 分支條件 move 的雙重校驗，徹底消除泄漏與 double-free。
 	sb.WriteString("%str-long = type { i64, i64, i64, i8 }\n")
 	sb.WriteString("%option = type { i64, i64 }\n")
-	sb.WriteString("%arr = type { i64, i64 }\n")
+	sb.WriteString("%arr = type { i64, i64, i8 }\n")
 	sb.WriteString("%vec = type { i64, i64, i64, i8 }\n")
 	// Sort struct type names for deterministic IR output (Go map iteration is randomized).
 	sortedStructs := make([]string, 0, len(g.structTypes))

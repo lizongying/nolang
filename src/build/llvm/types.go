@@ -296,8 +296,8 @@ func llvmTypeSize(llvmType string) int64 {
 		// { i64, i64 } = 8 + 8 = 16 bytes
 		return 16
 	case "%arr":
-		// { i64, i64 } = 8 + 8 = 16 bytes
-		return 16
+		// { i64, i64, i8 } = 8 + 8 + 1 = 17, aligned to 24 bytes
+		return 24
 	default:
 		return 8 // 預設 i64
 	}

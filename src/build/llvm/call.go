@@ -2518,6 +2518,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
 				g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
+				// 初始化 is_moved=false (field 2)：運行時 move 標記，雙重校驗用
+				g.tmpIdx++
+				arrMovedGEP := fmt.Sprintf("%%vso.arrmoved.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 2\n", g.indent(), arrMovedGEP, voidSingleTmp))
+				sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), arrMovedGEP))
 			} else {
 				// 其他類型（i64/[]i64/str/?T/struct）零初始化：
 				//   i64 → 0
@@ -3307,6 +3312,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			capGEP := fmt.Sprintf("%%vp.cap.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, recvAddr))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), newCap, capGEP))
+
+			// Free old data buffer before overwriting the data field.
+			// Without this, every vec.push grow leaks the previous buffer
+			// (cap 0→4→8→16→... each leaks the prior allocation).
+			// oldData is already an i8* register from loadDataPtrField above.
+			// emitNullCheckFree guards free(NULL) anyway (no-op when cap was 0).
+			g.emitNullCheckFree(sb, oldData)
 
 			// Update data (field 2) = newBuf
 			g.tmpIdx++
