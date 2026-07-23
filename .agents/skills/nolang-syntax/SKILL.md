@@ -673,6 +673,7 @@ Functions pass results by **modifying input parameters**. Nolang functions have 
 - Parameters with result annotation are writable output params
 - **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
 - **Parameter default values**: use `name type = expr` syntax. Parameters with defaults can be omitted at the call site. Default parameters must be the last parameters.
+- **Parameter and result count limit**: max 64 parameters and 64 results per function (u64 bitmap limit for move tracking). Exceeding the limit produces a compile error — use a container type (`vec`/`arr`/struct) to bundle multiple values.
 
 System functions allow syntactic sugar return values for user convenience. Since the underlying mechanism still works through input parameters, no new variables are returned, making it internally safe.
 

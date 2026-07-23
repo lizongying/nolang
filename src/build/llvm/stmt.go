@@ -206,6 +206,7 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 
 // trackLocalHeapVar 將局部變數加入 heapVars 追蹤，用於函數結束時深層 free。
 // 跳過參數（paramNames）和輸出參數（outputParamNames，由呼叫者管理）。
+// 同時分配 varIdx（堆變數下標），用於 bitmap bit 定位。
 func (g *Generator) trackLocalHeapVar(name, llvmType string) {
 	if g.heapVars == nil {
 		return
@@ -220,6 +221,12 @@ func (g *Generator) trackLocalHeapVar(name, llvmType string) {
 		return
 	}
 	g.heapVars[name] = llvmType
+	if g.heapVarIndex != nil {
+		if _, exists := g.heapVarIndex[name]; !exists {
+			g.heapVarIndex[name] = g.nextHeapVarIdx
+			g.nextHeapVarIdx++
+		}
+	}
 }
 
 func (g *Generator) emitHeapFree(sb *strings.Builder) {
@@ -235,22 +242,24 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		if g.arrayElemTypes != nil {
 			elemType = g.arrayElemTypes[name]
 		}
-		if g.movedVars != nil && g.movedVars[name] {
-			// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
-			// is_moved=false → 未實際 move，仍需 free（仍擁有數據）
-			// is_moved=true → 所有權已轉移，跳過 free
-			if llvmType == "%vec" || llvmType == "%str-long" || llvmType == "%arr" {
-				g.emitVarHeapFreeDualCheck(sb, name, llvmType, elemType)
-				continue
-			}
-			// 用戶結構體：透過函數級位圖變數雙重校驗（emitCheckMovedBit）
-			if g.isUserStructType(llvmType) {
-				g.emitStructDualCheckFree(sb, name, llvmType, elemType)
-				continue
-			}
+		varIdx, hasIdx := g.heapVarIndex[name]
+		if !hasIdx {
+			// 無 varIdx（非局部堆變數或未追蹤），直接 free
+			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
 			continue
 		}
-		g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
+		if g.hasBranchMove && g.movedBitmapBase != "" {
+			// 有運行時 bitmap：生成 IR 檢查 bit
+			// bit=1 → move 已發生，所有權轉移，跳過 free
+			// bit=0 → move 未發生（分支未執行），仍擁有數據，需 free
+			g.emitBitCheckFree(sb, name, varIdx, llvmType, elemType)
+		} else {
+			// 無 bitmap：編譯期檢查 movedVarBitset
+			if g.isMovedVar(varIdx) {
+				continue // 跳過 free（所有權轉移）
+			}
+			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
+		}
 	}
 }
 
@@ -311,70 +320,305 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
 }
 
-// emitSetIsMoved 設定堆容器的運行時 move 標記。
-// %vec/%str-long: field 3 (is_moved)
-// %arr: field 2 (is_moved)
-// 用戶結構體：透過函數級 u64 位圖變數追蹤（見 emitSetMovedBit/emitCheckMovedBit）
-// val=true 表示所有權已轉移（move 發生），val=false 表示仍擁有數據。
-func (g *Generator) emitSetIsMoved(sb *strings.Builder, varName string, val bool) {
-	if g.varTypes == nil {
-		return
+// outputParamBitIndex 返回 out 參數在 outputParamOrder 中的索引（即位圖 bit index）。
+// 若不是 out 參數，返回 -1。
+func (g *Generator) outputParamBitIndex(outName string) int {
+	for i, n := range g.outputParamOrder {
+		if n == outName {
+			return i
+		}
 	}
-	llvmType := g.varTypes[varName]
-	movedFieldIdx := -1
-	switch llvmType {
-	case "%vec", "%str-long":
-		movedFieldIdx = 3
-	case "%arr":
-		movedFieldIdx = 2
-	default:
-		return
-	}
-	varPtr := g.varAddr(varName)
-	g.tmpIdx++
-	movedGEP := fmt.Sprintf("%%setmoved.gep.%d", g.tmpIdx)
-	valStr := "0"
-	if val {
-		valStr = "1"
-	}
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-		g.indent(), movedGEP, llvmType, llvmType, varPtr, movedFieldIdx))
-	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), valStr, movedGEP))
+	return -1
 }
 
-// emitVarHeapFreeDualCheck 帶雙重校驗的堆釋放（%vec/%str-long/%arr）：
-// 編譯期 movedVars[name]=true 表示存在 move 代碼路徑；
-// 運行時 is_moved=false 表示該路徑未實際執行，仍需 free；
-// 運行時 is_moved=true 表示所有權已轉移，跳過 free。
-func (g *Generator) emitVarHeapFreeDualCheck(sb *strings.Builder, name, llvmType, elemType string) {
-	varPtr := g.varAddr(name)
-	// is_moved field index: %vec/%str-long=3, %arr=2
-	movedFieldIdx := 3
-	if llvmType == "%arr" {
-		movedFieldIdx = 2
+// detectBranchMoveToOut 預掃描函數體語句，檢測是否存在「分支內 move 到 out 參數」。
+// move 定義：LetStatement 將局部變數（Identifier）賦值給 out 參數。
+// 分支定義：IfExpression（Consequence/Alternative）、ForStatement（Body）、ConditionalExpression。
+// 僅當此類模式存在時返回 true，用於決定是否分配函數級 u64 位圖變數。
+//   - 無 move → 返回 false → 不分配位圖，全部 free
+//   - move 不在分支 → 返回 false → 不分配位圖，編譯期 movedVarBitset 確定性跳過 free
+//   - move 在分支 → 返回 true → 分配位圖，運行時雙重校驗
+func detectBranchMoveToOut(stmts []parser.Statement, outNames map[string]bool) bool {
+	found := false
+	var scanExpr func(expr parser.Expression, inBranch bool)
+	var scanStmts func(stmts []parser.Statement, inBranch bool)
+	scanStmts = func(ss []parser.Statement, inBranch bool) {
+		for _, st := range ss {
+			if found {
+				return
+			}
+			switch s := st.(type) {
+			case *parser.LetStatement:
+				if inBranch && s.Name != nil && outNames[s.Name.Value] {
+					if _, ok := s.Value.(*parser.Identifier); ok {
+						found = true
+						return
+					}
+				}
+				if s.Value != nil {
+					scanExpr(s.Value, inBranch)
+				}
+			case *parser.ExpressionStatement:
+				if s.Expression != nil {
+					scanExpr(s.Expression, inBranch)
+				}
+			case *parser.ForStatement:
+				if s.Init != nil {
+					scanStmts([]parser.Statement{s.Init}, inBranch)
+				}
+				if s.Condition != nil {
+					scanExpr(s.Condition, inBranch)
+				}
+				if s.Update != nil {
+					scanStmts([]parser.Statement{s.Update}, inBranch)
+				}
+				if s.Body != nil {
+					scanStmts(s.Body.Statements, true)
+				}
+				if s.IterRange != nil {
+					scanExpr(s.IterRange, inBranch)
+				}
+				if s.CountExpr != nil {
+					scanExpr(s.CountExpr, inBranch)
+				}
+			case *parser.BlockStatement:
+				scanStmts(s.Statements, inBranch)
+			case *parser.ReturnStatement:
+				if s.ReturnValue != nil {
+					scanExpr(s.ReturnValue, inBranch)
+				}
+			case *parser.MultiAssignStatement:
+				for _, t := range s.Targets {
+					scanExpr(t, inBranch)
+				}
+				if s.Value != nil {
+					scanExpr(s.Value, inBranch)
+				}
+			}
+		}
 	}
+	scanExpr = func(expr parser.Expression, inBranch bool) {
+		if expr == nil || found {
+			return
+		}
+		switch e := expr.(type) {
+		case *parser.IfExpression:
+			if e.Condition != nil {
+				scanExpr(e.Condition, inBranch)
+			}
+			if e.Consequence != nil {
+				scanStmts(e.Consequence.Statements, true)
+			}
+			if e.Alternative != nil {
+				scanStmts(e.Alternative.Statements, true)
+			}
+		case *parser.ConditionalExpression:
+			if e.Condition != nil {
+				scanExpr(e.Condition, inBranch)
+			}
+			if e.Consequence != nil {
+				scanExpr(e.Consequence, true)
+			}
+			if e.Alternative != nil {
+				scanExpr(e.Alternative, true)
+			}
+		case *parser.InfixExpression:
+			scanExpr(e.Left, inBranch)
+			scanExpr(e.Right, inBranch)
+		case *parser.PrefixExpression:
+			scanExpr(e.Right, inBranch)
+		case *parser.CallExpression:
+			scanExpr(e.Function, inBranch)
+			for _, a := range e.Arguments {
+				scanExpr(a, inBranch)
+			}
+		case *parser.GroupedExpression:
+			scanExpr(e.Expression, inBranch)
+		case *parser.IndexExpression:
+			scanExpr(e.Left, inBranch)
+			if e.Index != nil {
+				scanExpr(e.Index, inBranch)
+			}
+		case *parser.DotExpression:
+			scanExpr(e.Receiver, inBranch)
+		case *parser.SliceExpression:
+			scanExpr(e.Left, inBranch)
+			if e.Range != nil {
+				scanExpr(e.Range.Start, inBranch)
+				scanExpr(e.Range.End, inBranch)
+			}
+		case *parser.AssignExpression:
+			scanExpr(e.Left, inBranch)
+			scanExpr(e.Value, inBranch)
+		case *parser.CastExpression:
+			scanExpr(e.Expr, inBranch)
+		case *parser.RunExpression:
+			scanExpr(e.Call, inBranch)
+		case *parser.AwaitExpression:
+			scanExpr(e.Right, inBranch)
+		case *parser.IterationExpr:
+			if e.RangeExpr != nil {
+				scanExpr(e.RangeExpr, inBranch)
+			}
+			if e.Range != nil {
+				scanExpr(e.Range.Start, inBranch)
+				scanExpr(e.Range.End, inBranch)
+			}
+		}
+	}
+	scanStmts(stmts, false)
+	return found
+}
+
+// ---- 編譯期位圖操作（無運行時 bitmap 時用）----
+
+// markMovedVar 編譯期標記堆變數為 moved（無 bitmap 時用）。
+// 所有權已轉移，函數結束時跳過 free。
+func (g *Generator) markMovedVar(varIdx int) {
+	block := varIdx / 64
+	offset := uint(varIdx % 64)
+	for len(g.movedVarBitset) <= block {
+		g.movedVarBitset = append(g.movedVarBitset, 0)
+	}
+	g.movedVarBitset[block] |= 1 << offset
+}
+
+// unmarkMovedVar 編譯期清除堆變數 moved 標記（覆蓋清舊）。
+// out 參數重新綁定到別的變數時，舊變數恢復所有權，函數結束時需 free。
+func (g *Generator) unmarkMovedVar(varIdx int) {
+	block := varIdx / 64
+	offset := uint(varIdx % 64)
+	if block < len(g.movedVarBitset) {
+		g.movedVarBitset[block] &^= 1 << offset
+	}
+}
+
+// isMovedVar 編譯期檢查堆變數是否 moved（無 bitmap 時用）。
+func (g *Generator) isMovedVar(varIdx int) bool {
+	block := varIdx / 64
+	offset := uint(varIdx % 64)
+	if block >= len(g.movedVarBitset) {
+		return false
+	}
+	return g.movedVarBitset[block]&(1<<offset) != 0
+}
+
+// ---- 運行時 bitmap IR 生成（有 bitmap 時用）----
+
+// emitSetMovedBitIR 生成 IR：設置堆變數對應的 bitmap bit=1（表示 move 已發生）。
+// IR: %old = load bitmap[block]; %mask = or %old, (1<<offset); store %mask, bitmap[block]
+func (g *Generator) emitSetMovedBitIR(sb *strings.Builder, varIdx int) {
+	if g.movedBitmapBase == "" {
+		return
+	}
+	block := varIdx / 64
+	offset := varIdx % 64
+	bvName := fmt.Sprintf("%s%d", g.movedBitmapBase, block)
 	g.tmpIdx++
-	movedGEP := fmt.Sprintf("%%dc.moved.gep.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-		g.indent(), movedGEP, llvmType, llvmType, varPtr, movedFieldIdx))
+	oldVal := fmt.Sprintf("%%mb.old.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldVal, bvName))
 	g.tmpIdx++
-	movedVal := fmt.Sprintf("%%dc.moved.val.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), movedVal, movedGEP))
+	maskVal := fmt.Sprintf("%%mb.mask.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %d\n", g.indent(), maskVal, oldVal, 1<<offset))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), maskVal, bvName))
+}
+
+// emitClearMovedBitIR 生成 IR：清除堆變數對應的 bitmap bit=0（覆蓋清舊）。
+// IR: %old = load bitmap[block]; %mask = and %old, ~(1<<offset); store %mask, bitmap[block]
+func (g *Generator) emitClearMovedBitIR(sb *strings.Builder, varIdx int) {
+	if g.movedBitmapBase == "" {
+		return
+	}
+	block := varIdx / 64
+	offset := varIdx % 64
+	bvName := fmt.Sprintf("%s%d", g.movedBitmapBase, block)
 	g.tmpIdx++
-	notMoved := fmt.Sprintf("%%dc.notmoved.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8 %s, 0\n", g.indent(), notMoved, movedVal))
+	oldVal := fmt.Sprintf("%%mb.clr.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldVal, bvName))
+	g.tmpIdx++
+	maskVal := fmt.Sprintf("%%mb.clrm.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), maskVal, oldVal, ^(1<<offset)))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), maskVal, bvName))
+}
+
+// emitBitCheckFree 生成 IR：檢查堆變數對應的 bitmap bit。
+// bit=1 → move 已發生，所有權轉移，跳過 free；
+// bit=0 → move 未發生（分支未執行），仍擁有數據，需 free。
+func (g *Generator) emitBitCheckFree(sb *strings.Builder, name string, varIdx int, llvmType, elemType string) {
+	block := varIdx / 64
+	offset := varIdx % 64
+	bvName := fmt.Sprintf("%s%d", g.movedBitmapBase, block)
+	g.tmpIdx++
+	bv := fmt.Sprintf("%%dc.bv.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), bv, bvName))
+	g.tmpIdx++
+	masked := fmt.Sprintf("%%dc.masked.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), masked, bv, 1<<offset))
+	g.tmpIdx++
+	moved := fmt.Sprintf("%%dc.moved.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp ne i64 %s, 0\n", g.indent(), moved, masked))
 	g.tmpIdx++
 	freeLabel := fmt.Sprintf("dc.free.%d", g.tmpIdx)
 	g.tmpIdx++
 	skipLabel := fmt.Sprintf("dc.skip.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
-		g.indent(), notMoved, freeLabel, skipLabel))
-	// free block: is_moved=false → free the data
+		g.indent(), moved, skipLabel, freeLabel))
+	// free block: move 未發生（bit=0），仍擁有數據，需 free
 	g.emitLabel(sb, freeLabel)
-	g.emitVarHeapFree(sb, varPtr, llvmType, elemType)
+	g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
-	// skip block: is_moved=true → ownership transferred, skip
+	// skip block: move 已發生（bit=1），所有權已轉移，跳過 free
 	g.emitLabel(sb, skipLabel)
+}
+
+// ---- move 賦值處理 ----
+
+// handleMoveToOut 處理 move 到 out 參數：清舊 bit + 設新 bit + 更新 outBindState。
+// 適用於 `out = x`（x 是局部堆變數，out 是輸出參數）。
+func (g *Generator) handleMoveToOut(sb *strings.Builder, srcName, outName string) {
+	srcVarIdx, ok := g.heapVarIndex[srcName]
+	if !ok {
+		return // 源不是局部堆變數
+	}
+	outIdx := g.outputParamBitIndex(outName)
+	if outIdx < 0 {
+		return
+	}
+	// 1. 清舊：若 out 參數之前綁定了別的變數，清除舊變數的 bit
+	if outIdx < len(g.outBindState) {
+		oldVarIdx := g.outBindState[outIdx]
+		if oldVarIdx >= 0 {
+			if g.hasBranchMove {
+				g.emitClearMovedBitIR(sb, oldVarIdx) // 運行時清 bit
+			} else {
+				g.unmarkMovedVar(oldVarIdx) // 編譯期清 bit
+			}
+		}
+	}
+	// 2. 設新：設置當前變數的 bit
+	if g.hasBranchMove {
+		g.emitSetMovedBitIR(sb, srcVarIdx) // 運行時設 bit
+	} else {
+		g.markMovedVar(srcVarIdx) // 編譯期設 bit
+	}
+	// 3. 更新 outBindState
+	if outIdx < len(g.outBindState) {
+		g.outBindState[outIdx] = srcVarIdx
+	}
+}
+
+// handleMoveLocal 處理局部間 move（b = a，不能深拷貝時）：僅設 bit。
+// 所有權從 a 轉移到 b，a 不再擁有數據，函數結束時跳過 free。
+func (g *Generator) handleMoveLocal(sb *strings.Builder, srcName string) {
+	srcVarIdx, ok := g.heapVarIndex[srcName]
+	if !ok {
+		return
+	}
+	if g.hasBranchMove {
+		g.emitSetMovedBitIR(sb, srcVarIdx) // 運行時設 bit
+	} else {
+		g.markMovedVar(srcVarIdx) // 編譯期設 bit
+	}
 }
 
 // emitShallowDataFree releases a container's data buffer without iterating elements.
@@ -476,7 +720,7 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 
 // freeOldHeapValue 釋放重新賦值變數的舊堆數據。
 // 跳過合成 let（IsSynthetic）、輸出參數（由呼叫者管理）。
-// 對已 move 的變數執行雙重校驗：is_moved=false 仍需 free，is_moved=true 跳過。
+// 對已 move 的變數執行雙重校驗：bit=0 仍需 free，bit=1 跳過（所有權已轉移）。
 func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
 	if g.heapVars == nil || stmt.IsSynthetic {
 		return
@@ -492,15 +736,24 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	if g.arrayElemTypes != nil {
 		elemType = g.arrayElemTypes[name]
 	}
-	if g.movedVars != nil && g.movedVars[name] {
-		// 雙重校驗：編譯期存在 move 路徑，運行時檢查 is_moved
-		if oldType == "%vec" || oldType == "%str-long" || oldType == "%arr" || g.isUserStructType(oldType) {
-			g.emitVarHeapFreeDualCheck(sb, name, oldType, elemType)
-			return
-		}
+	varIdx, hasIdx := g.heapVarIndex[name]
+	if !hasIdx {
+		// 無 varIdx，直接 free 舊值
+		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
 		return
 	}
-	g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
+	if g.hasBranchMove && g.movedBitmapBase != "" {
+		// 有運行時 bitmap：生成 IR 檢查 bit
+		// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
+		// bit=0 → 仍擁有數據，free 舊值
+		g.emitBitCheckFree(sb, name, varIdx, oldType, elemType)
+	} else {
+		// 無 bitmap：編譯期檢查 movedVarBitset
+		if g.isMovedVar(varIdx) {
+			return // 跳過 free（所有權轉移）
+		}
+		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
+	}
 }
 
 // emitStructFieldsFree 遞迴釋放用戶結構體中所有含堆數據的欄位。
@@ -607,20 +860,8 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 			g.indent(), dstCapGEP, containerType, containerType, dstPtr))
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dstCapGEP))
-		// 重置 is_moved=false (field 3)：深拷貝後 dst 應為獨立擁有，不繼承 src 的 moved 狀態。
-		// 否則若 dst 之前被 move 過（is_moved=true），深拷貝後 is_moved 保持 stale=true，
-		// 導致 emitVarHeapFreeDualCheck 誤判為已 move 而跳過 free → 記憶體洩漏。
-		dstMovedGEP := fmt.Sprintf("%%clone.dst.moved.%d", tid)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n",
-			g.indent(), dstMovedGEP, containerType, containerType, dstPtr))
-		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), dstMovedGEP))
-	} else if containerType == "%arr" {
-		// 重置 is_moved=false (field 2)：深拷貝後 dst 應為獨立擁有。
-		dstMovedGEP := fmt.Sprintf("%%clone.dst.moved.%d", tid)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 2\n",
-			g.indent(), dstMovedGEP, containerType, containerType, dstPtr))
-		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), dstMovedGEP))
 	}
+	// 運行時 move 標記改用函數級位圖變數，結構體內無 is_moved 欄位，深拷貝無需重置。
 	dstDataGEP := fmt.Sprintf("%%clone.dst.data.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), dstDataGEP, containerType, containerType, dstPtr, dataFieldIdx))
@@ -1018,11 +1259,18 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
 	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
 	g.outputParamNames = make(map[string]bool)           // reset output param tracking
+	g.outputParamOrder = nil                             // reset output param order (for outBindState index)
+	g.hasBranchMove = false                              // reset branch move flag (set by pre-scan)
+	g.heapVarIndex = make(map[string]int)                // reset heap var index (varIdx assignment)
+	g.nextHeapVarIdx = 0                                 // reset next heap var idx counter
+	g.outBindState = nil                                 // reset out param bind state (allocated after outputParamOrder known)
+	g.movedVarBitset = nil                               // reset compile-time moved bitset
+	g.movedBitmapBase = ""                               // reset runtime bitmap var prefix
+	g.bitmapCount = 0                                    // reset bitmap block count
 	g.outputBindings = make(map[string]map[int]outputBinding) // reset delayed move bindings (SSA versioned)
 	g.ssaVersion = make(map[string]int)                  // reset SSA version counters
 	g.heapVars = make(map[string]string)                 // reset heap var tracking
 	g.stackArrVars = make(map[string]bool)               // reset stack-allocated array tracking
-	g.movedVars = make(map[string]bool)                  // reset moved var tracking
 	g.varAlias = make(map[string]string)                 // reset var alias tracking (用於 %arr → %vec 重定向)
 	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
@@ -1071,6 +1319,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.funcLocalNames[r.Name] = true
 			g.funcParams[r.Name] = true
 			g.outputParamNames[r.Name] = true
+			g.outputParamOrder = append(g.outputParamOrder, r.Name)
 			// MapType: use LLVMName() to avoid [K]V matching the array branch.
 			var typeStr string
 			if mt, ok := r.Type.(*parser.MapType); ok {
@@ -1245,11 +1494,6 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			dataGEP := fmt.Sprintf("%%local.vecdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, dataBuf, dataGEP)
-			// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
-			g.tmpIdx++
-			movedGEP := fmt.Sprintf("%%local.vecmoved.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), movedGEP, llvmVarRef(varName)))
-			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), movedGEP))
 			// 追蹤 prologue buffer 為堆變數，使首次賦值（如 v = [1,2,3]）時
 			// freeOldHeapValue 能釋放 prologue buffer，避免每次函數調用洩漏 256*elemSize 字節。
 			// 若變數從未被賦值，emitHeapFree 會在函數結束時釋放 prologue buffer。
@@ -1298,11 +1542,6 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			arrDataGEP := fmt.Sprintf("%%local.arrdata.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, llvmVarRef(varName)))
 			g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
-			// 初始化 is_moved=false (field 2)：運行時 move 標記，雙重校驗用
-			g.tmpIdx++
-			arrMovedGEP := fmt.Sprintf("%%local.arrmoved.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 2\n", g.indent(), arrMovedGEP, llvmVarRef(varName)))
-			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), arrMovedGEP))
 		}
 	}
 
@@ -1321,9 +1560,25 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		_ = llvmType
 	}
 
+	// 初始化 outBindState：每個 out 參數初始無綁定（-1）。
+	if len(g.outputParamOrder) > 0 {
+		g.outBindState = make([]int, len(g.outputParamOrder))
+		for i := range g.outBindState {
+			g.outBindState[i] = -1
+		}
+	}
+
+	// 預掃描函數體：檢測是否存在分支內 move-to-out（決定是否需要分配位圖變數）。
+	// 僅當 move 存在且在分支中（IfExpression/ForStatement/ConditionalExpression）時，
+	// 才需要位圖變數做運行時雙重校驗。
+	if fd.Body != nil && len(g.outputParamOrder) > 0 {
+		g.hasBranchMove = detectBranchMoveToOut(fd.Body.Statements, g.outputParamNames)
+	}
+
 	// 生成函數體到獨立緩衝區，同時收集 entry-block alloca（來自字面量參數的臨時變量）。
-	// 將 alloca 提升至 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
+	// 將 alloca 提升到 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
+	// 生成過程中 trackLocalHeapVar 會分配 varIdx，結束後 nextHeapVarIdx 為最終值。
 	g.entryAllocaBuf = &strings.Builder{}
 	bodyBuf := &strings.Builder{}
 	if fd.Body != nil {
@@ -1331,6 +1586,23 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.generateStatement(bodyBuf, stmt)
 		}
 	}
+
+	// 分配運行時 bitmap（僅當存在分支內 move 且有局部堆變數時）：
+	// bitmap 的每個 bit 對應一個局部堆變數的 varIdx。
+	// 一塊 u64 存 64 個標記位；塊號 = varIdx / 64，塊內偏移 = varIdx % 64。
+	// 僅當 move 在分支中（無法靜態推斷）時才分配：
+	//   - 無 move → 全部 free，不需位圖
+	//   - move 不在分支 → move 綁定確定，編譯期 movedVarBitset 跳過 free，不需位圖
+	//   - move 在分支 → 需位圖運行時判斷 move 是否實際發生
+	if g.hasBranchMove && g.nextHeapVarIdx > 0 {
+		g.bitmapCount = (g.nextHeapVarIdx + 63) / 64
+		g.movedBitmapBase = "%__mb"
+		for i := 0; i < g.bitmapCount; i++ {
+			sb.WriteString(fmt.Sprintf("%s%s%d = alloca i64\n", g.indent(), g.movedBitmapBase, i))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s%d\n", g.indent(), g.movedBitmapBase, i))
+		}
+	}
+
 	// 先寫入 entry-block alloca（在所有局部變量 alloca 之後、函數體之前）
 	sb.WriteString(g.entryAllocaBuf.String())
 	// 再寫入函數體
@@ -1377,7 +1649,11 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// 初始化 main 入口的追蹤映射（與 generateFunctionDefinition 一致），
 	// 用於追蹤 top-level 堆變數並在 ret 前釋放。
 	g.heapVars = make(map[string]string)
-	g.movedVars = make(map[string]bool)
+	g.heapVarIndex = make(map[string]int)
+	g.nextHeapVarIdx = 0
+	g.movedVarBitset = nil
+	g.movedBitmapBase = ""
+	g.hasBranchMove = false
 	g.varAlias = make(map[string]string)
 	g.sliceViews = make(map[string]*sliceViewInfo)
 	g.outputParamNames = make(map[string]bool)
@@ -3603,12 +3879,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，標記源為 moved（不 free）。
 	// 必須在所有型別特定處理（如 option）的 early return 之前執行，
 	// 否則 option 型別的輸出參數賦值（如 line = buf）不會標記 moved。
-	if g.heapVars != nil && g.outputParamNames != nil && g.outputParamNames[name] && g.movedVars != nil && !stmt.IsSynthetic {
+	// 統一使用 handleMoveToOut：清舊 bit + 設新 bit + 更新 outBindState。
+	if g.heapVars != nil && g.outputParamNames != nil && g.outputParamNames[name] && g.heapVarIndex != nil && !stmt.IsSynthetic {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if _, isHeap := g.heapVars[ident.Value]; isHeap {
-				g.movedVars[ident.Value] = true
-				// 運行時標記 is_moved=true：所有權已轉移到輸出參數
-				g.emitSetIsMoved(sb, ident.Value, true)
+				g.handleMoveToOut(sb, ident.Value, name)
 			}
 		}
 	}
@@ -3691,12 +3966,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.tmpIdx++
 			vecVarName := fmt.Sprintf("%s.vec.%d", name, g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), llvmVarRef(vecVarName)))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 32, i8* %s)\n", g.indent(), llvmVarRef(vecVarName)))
-			// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
-			g.tmpIdx++
-			aliasMovedGEP := fmt.Sprintf("%%vec.aliasmoved.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), aliasMovedGEP, llvmVarRef(vecVarName)))
-			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), aliasMovedGEP))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %s)\n", g.indent(), llvmVarRef(vecVarName)))
 			g.varAlias[name] = vecVarName
 			g.funcLocalNames[vecVarName] = true
 			// 從 stackArrVars 移除（不再使用棧陣列路徑）
@@ -3776,12 +4046,6 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, g.varAddr(name)))
 		g.storeDataPtrField(sb, ptrReg, dataGEP)
-		// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
-		g.tmpIdx++
-		sliceMovedGEP := fmt.Sprintf("%%vec.slicemoved.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n",
-			g.indent(), sliceMovedGEP, g.varAddr(name)))
-		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), sliceMovedGEP))
 		// 追蹤局部 vec 變數，用於函數結束時深層 free
 		g.trackLocalHeapVar(name, "%vec")
 		return
@@ -3820,11 +4084,6 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
 		g.storeDataPtrField(sb, vecBuf, vecDataGEP)
-		// 初始化 is_moved=false (field 3)：運行時 move 標記，雙重校驗用
-		g.tmpIdx++
-		initMovedGEP := fmt.Sprintf("%%vec.init.moved.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 3\n", g.indent(), initMovedGEP, g.varAddr(name)))
-		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), initMovedGEP))
 		// 追蹤局部 vec 變數，用於函數結束時深層 free
 		g.trackLocalHeapVar(name, "%vec")
 		return
@@ -4472,42 +4731,25 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 以避免 emitHeapFree 同時 free 兩個指向同一塊堆內存的變數（double-free）。
 	// 適用於輸出參數和局部變數間的賦值（如 ls.no 中 `dir = a`）。
 	if g.heapVars != nil {
-		// 重新賦值時清除目標的 moved 狀態：
-		// 舊值的 data 指標若已被 move 則不會被 free（避免 double-free），
-		// 新值將重新參與追蹤。在循環中重複賦值時此步驟必不可少。
-		if g.movedVars != nil {
-			delete(g.movedVars, name)
-		}
 		// 僅追蹤局部變數（非參數、非輸出參數）
 		if _, isLocal := g.funcLocalNames[name]; isLocal {
 			if _, isParam := g.paramNames[name]; !isParam {
 				if g.outputParamNames == nil || !g.outputParamNames[name] {
 					switch llvmType {
 					case "%vec", "%str-long", "%arr":
-						g.heapVars[name] = llvmType
+						g.trackLocalHeapVar(name, llvmType)
 					default:
 						// 用戶自定義結構體：若含堆數據欄位（%vec/%str-long/%arr 或嵌套結構體），
 						// 加入追蹤以便函數結束時遞迴釋放。
 						if g.isUserStructType(llvmType) {
-							g.heapVars[name] = llvmType
+							g.trackLocalHeapVar(name, llvmType)
 						}
 					}
 				}
 			}
 		}
-		// 若源是局部堆變數且與目標不同，標記源為 moved（避免 double-free）。
-		// 適用於輸出參數和局部變數間的賦值。
-		if g.movedVars != nil {
-			if ident, ok := stmt.Value.(*parser.Identifier); ok {
-				if ident.Value != name {
-					if _, isHeap := g.heapVars[ident.Value]; isHeap {
-						g.movedVars[ident.Value] = true
-						// 運行時標記 is_moved=true：所有權已轉移
-						g.emitSetIsMoved(sb, ident.Value, true)
-					}
-				}
-			}
-		}
+		// b = a 是深層 clone（malloc 新 data + memcpy），源變數仍擁有獨立 data，不需 move 標記。
+		// out = ident 的 move 由觸發點 1（handleMoveToOut）統一處理。
 	}
 
 	switch llvmType {

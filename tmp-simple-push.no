@@ -1,6 +1,0 @@
-words []str = with-cap(256)
-tmp-word str = with-cap(64)
-tmp-word[0] = 104
-tmp-word[1] = 101
-words.push(tmp-word)
-print('done')

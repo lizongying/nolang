@@ -72,7 +72,7 @@ type Generator struct {
 	ssaVersion            map[string]int                   // 輸出參數的 SSA 版本計數器（每次賦值遞增）
 	heapVars              map[string]string               // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
 	stackArrVars          map[string]bool                 // 棧分配的局部固定陣列名（小尺寸/定寬元素），用於 generateLet 跳過 malloc
-	movedVars             map[string]bool                 // 已 move 到輸出參數的變數名（不應 free）
+	heapVarIndex          map[string]int                  // 堆變數名 → varIdx（僅局部堆變數，用於 bitmap 定位）
 	globalVars            map[string]bool                 // module-level vars that should be LLVM globals
 	mainFileNames         map[string]bool                 // names (vars+funcs) from the main file being compiled (not imported modules)
 	reassignedVars        map[string]bool                 // module-level vars that are reassigned (not constants)
@@ -108,6 +108,13 @@ type Generator struct {
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
 	noBoundsCheck         bool                            // true = skip emitting bounds checks (unsafe mode)
+	outputParamOrder      []string                        // output param names in declaration order (for outBindState index)
+	hasBranchMove         bool                            // true = function has move-to-out inside a branch (needs bitmap)
+	nextHeapVarIdx        int                             // next available varIdx for local heap vars
+	outBindState          []int                           // out param → bound heap var idx (-1=none, -2=uncertain)
+	movedVarBitset        []uint64                        // compile-time moved bitmap (used when no runtime bitmap)
+	movedBitmapBase       string                          // LLVM bitmap var name prefix (e.g. "%__mb", "" = not allocated)
+	bitmapCount           int                             // number of u64 bitmap blocks (= maxVarIdx/64 + 1)
 }
 
 // emitEntryAlloca writes an alloca instruction to the entry-block buffer if available,
@@ -888,29 +895,24 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// Pre-register built-in arr type (used for all fixed-size arrays)
 	// data is i64 (address value) instead of i8* to keep IR type-uniform.
-	// is_moved (i8, field 2) 為運行時 move 標記，用於雙重校驗釋放邏輯。
 	g.structTypes["arr"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "data", typ: "i64"},
-		{name: "is_moved", typ: "i8"},
 	}
 
 	// Pre-register built-in vec type (used for all slices)
-	// is_moved (i8, field 3) 為運行時 move 標記，用於雙重校驗釋放邏輯。
 	g.structTypes["vec"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
 		{name: "data", typ: "i64"},
-		{name: "is_moved", typ: "i8"},
 	}
 
 	// Pre-register built-in str-long type (heap-only string type)
-	// { len, cap, data, is_moved } — data is i64 (address value) for type-uniform IR.
+	// { len, cap, data } — data is i64 (address value) for type-uniform IR.
 	g.structTypes["str-long"] = []structField{
 		{name: "len", typ: "i64"},
 		{name: "cap", typ: "i64"},
 		{name: "data", typ: "i64"},
-		{name: "is_moved", typ: "i8"},
 	}
 
 	// 收集結構體定義並生成 LLVM struct type
@@ -922,14 +924,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 發出 struct type 宣告
 	// Always emit built-in string types
-	// %vec/%str-long 第 4 欄位 is_moved (i8) 為運行時 move 標記：
-	//   false=未 move（仍擁有 data，函數尾需 free）
-	//   true =已 move（data 指針已轉移給輸出參數，不可 free）
-	// 用於 if/else 分支條件 move 的雙重校驗，徹底消除泄漏與 double-free。
-	sb.WriteString("%str-long = type { i64, i64, i64, i8 }\n")
+	// 運行時 move 標記改用函數級 u64 位圖變數（%__move_bitmap），不佔用結構體欄位。
+	sb.WriteString("%str-long = type { i64, i64, i64 }\n")
 	sb.WriteString("%option = type { i64, i64 }\n")
-	sb.WriteString("%arr = type { i64, i64, i8 }\n")
-	sb.WriteString("%vec = type { i64, i64, i64, i8 }\n")
+	sb.WriteString("%arr = type { i64, i64 }\n")
+	sb.WriteString("%vec = type { i64, i64, i64 }\n")
 	// Sort struct type names for deterministic IR output (Go map iteration is randomized).
 	sortedStructs := make([]string, 0, len(g.structTypes))
 	for name := range g.structTypes {

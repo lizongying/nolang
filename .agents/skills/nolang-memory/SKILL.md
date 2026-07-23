@@ -1,6 +1,6 @@
 ---
 name: nolang-memory
-description: Nolang 内存设计与所有权模型参考。用于修改编译器堆释放逻辑（emitHeapFree/emitDeepContainerFree/emitStructFieldsFree/emitDeepClone/emitContainerClone/emitStructClone）、调整 move/clone 语义、修复 double-free 或内存泄漏、编写 mem-safety 测试时参考。涵盖 heapVars/movedVars/outputParamNames/arrayElemTypes/structTypes/varAlias 等追踪机制。
+description: Nolang 内存设计与所有权模型参考。用于修改编译器堆释放逻辑（emitHeapFree/emitDeepContainerFree/emitStructFieldsFree/emitDeepClone/emitContainerClone/emitStructClone）、调整 move/clone 语义、修复 double-free 或内存泄漏、编写 mem-safety 测试时参考。涵盖 heapVars/heapVarIndex/outBindState/movedVarBitset/outputParamNames/arrayElemTypes/structTypes/varAlias 等追踪机制。
 ---
 
 # Nolang Memory Design
@@ -55,13 +55,73 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 - 通过 `trackLocalHeapVar(name, llvmType)` 注册，**跳过参数和输出参数**
 - 函数结束时 `emitHeapFree` 遍历释放
 
-### 3.2 movedVars
-`map[string]bool`：已 move 的变量名（不应 free）。
+### 3.2 堆变量下标与 move 追踪（按堆变量下标索引的位图）
 
-标记 moved 的三种路径：
-1. **赋值给输出参数**：`out = x`，源 `x` 是局部堆变量 → `movedVars[x] = true`
-2. **vec.push 堆元素**：`outer.push(inner)`，inner 是堆拥有类型且是 Identifier → `movedVars[inner] = true`
-3. **多返回值 move**：按**参数位置顺序**处理（见 §5.2）
+编译期为每个局部堆变量分配唯一 `varIdx`，运行时位图的每个 bit 对应一个堆变量（而非输出参数）。
+
+#### 3.2.1 相关 Generator 字段
+
+| 字段 | 类型 | 用途 |
+|------|------|------|
+| `heapVarIndex` | `map[string]int` | 堆变量名 → `varIdx`（仅局部堆变量，输入参数和 out 参数不编号） |
+| `nextHeapVarIdx` | `int` | 下一个可用 varIdx（`trackLocalHeapVar` 递增） |
+| `outputParamOrder` | `[]string` | 输出参数按宣告顺序的列表（给 `outBindState` 索引） |
+| `outBindState` | `[]int` | 每个输出参数当前绑定的堆变量下标（-1=无绑定，-2=不确定） |
+| `movedVarBitset` | `[]uint64` | 编译期 moved 位图（无运行时位图时用） |
+| `movedBitmapBase` | `string` | 运行时位图变量名前缀（如 `%__mb`，空=未分配） |
+| `bitmapCount` | `int` | u64 位图块数（= maxVarIdx/64 + 1） |
+| `hasBranchMove` | `bool` | 函数是否存在分支内 move（决定是否分配运行时位图） |
+
+#### 3.2.2 下标映射规则
+
+一块 `u64` 存 64 个标记位，堆变量下标 `varIdx`：
+- 块号 = `varIdx / 64`
+- 块内偏移 = `varIdx % 64`
+- 掩码 = `1u64 << 偏移`
+
+编译期直接算常量，运行时无计算开销。多块 `u64` 可支持任意数量堆变量，**无参数/返回值数量上限**。
+
+#### 3.2.3 move 赋值处理（覆盖会清旧 bit）
+
+`handleMoveToOut(sb, srcName, outName)` 处理 move 到输出参数：
+1. 若该输出参数之前绑定过别的变量（`outBindState[outIdx] >= 0`），先清除旧变量对应的 bit（`emitClearMovedBitIR` 运行时 / `unmarkMovedVar` 编译期）
+2. 再把当前变量对应 bit 置 1（`emitSetMovedBitIR` 运行时 / `markMovedVar` 编译期）
+3. 更新该输出参数绑定的变量下标（`outBindState[outIdx] = srcVarIdx`）
+
+`handleMoveLocal(sb, srcName)` 处理局部间 move（`b = a`，不能深拷贝时）：仅设 bit。
+
+`vec.push` 堆元素是深拷贝（`call.go:3340-3341`），不是 move，不需要处理。
+
+#### 3.2.4 运行时位图按需分配（`detectBranchMoveToOut` 预扫描）
+
+```nolang
+cond-move = (flag i64) (out []i64) {
+    x = [1, 2, 3]
+    if flag == 1 {
+        out = x   ; move 僅在 flag==1 時發生
+    }
+    ; flag==0 時 x 仍擁有 data，函數結束需 free
+    ; flag==1 時 x 所有權已轉移，函數結束需跳過 free
+}
+```
+
+| 場景 | `hasBranchMove` | 位圖分配 | free 行為 |
+|------|-----------------|---------|----------|
+| 無 move | false | 不分配 | 全部 free |
+| move 不在分支（確定性 move） | false | 不分配 | 編譯期 `movedVarBitset` 直接跳過 free |
+| move 在分支（條件 move） | true | 分配 | 運行時位圖檢查：bit=1 跳過，bit=0 free |
+
+编译器在 `generateFunctionDefinition` 中生成函数体之前预扫描 AST（`detectBranchMoveToOut`），递迴遍历 `IfExpression`/`ForStatement`/`ConditionalExpression` 分支结构，检测是否存在对输出参数的 move 赋值（`out = ident`）。仅在此类模式存在时才分配运行时位图变量。
+
+**关键**：位图 `alloca` 在函数体生成**之后**插入（此时 `nextHeapVarIdx` 已为最终值），写入 entry block（body 之前）。
+
+#### 3.2.5 函数结尾释放
+
+`emitHeapFree` 遍历全部堆变量，平铺独立 `if`：
+- 有运行时位图（`hasBranchMove && movedBitmapBase != ""`）：`emitBitCheckFree` 生成 IR 检查 bit — `bit=1` 跳过 free（所有权转移），`bit=0` 走 `emitVarHeapFree`
+- 无运行时位图：编译期检查 `isMovedVar(varIdx)` — moved 则跳过，否则走 `emitVarHeapFree`
+
+**适用所有堆类型**：`vec`/`str-long`/`arr`/用户结构体统一使用 `emitBitCheckFree` / `isMovedVar`。
 
 ### 3.3 outputParamNames
 `map[string]bool`：当前函数的输出参数名（由调用者管理，本函数不 free）。
@@ -92,7 +152,11 @@ if alias, ok := g.varAlias[name]; ok {
 
 ```
 emitHeapFree (函数结束)
-  └─ emitVarHeapFree (路由：深/浅)
+  ├─ emitBitCheckFree (有运行时位图时 hasBranchMove && movedBitmapBase != "")
+  │    └─ 检查 %__mb{block} bit：bit=1 → 跳过 free（所有权转移）；bit=0 → 走 emitVarHeapFree
+  ├─ isMovedVar 编译期检查 (无运行时位图时)
+  │    └─ moved → 跳过 free；否则 → 走 emitVarHeapFree
+  └─ emitVarHeapFree (直接路由：深/浅)
        ├─ emitShallowDataFree (只 free data 缓冲区)
        │    └─ emitNullCheckFree (icmp eq null → br → free/skip)
        ├─ emitDeepContainerFree (遍历元素 → emitElementFree → free data)
@@ -105,7 +169,7 @@ emitGlobalHeapFree (main 入口 ret i32 0 前，釋放模組級堆變數)
   └─ emitVarHeapFree (遍歷 moduleVarTypes 中的 globalVars 堆擁有型別)
 
 freeOldHeapValue (重新赋值前释放旧值)
-  └─ emitVarHeapFree
+  └─ isMovedVar 编译期检查 (moved 时跳过) 或 emitVarHeapFree
 ```
 
 ### 4.1 深层 free 触发条件
@@ -146,7 +210,7 @@ get-pair = () (a []i64, b []i64) {
 }
 ```
 
-**处理顺序**：按输出参数在函数签名的声明顺序逐个处理。每个 `out = src` 赋值独立标记 `movedVars[src] = true`。
+**处理顺序**：按输出参数在函数签名的声明顺序逐个处理。每个 `out = src` 赋值通过 `handleMoveToOut` 设置 src 对应的 bitmap bit + 更新 `outBindState`。
 
 **注意**：若 `a` 和 `b` 引用同一源变量（如 `a = x; b = x`），在被调用函数内只 move 一次（x 标记 moved），a 和 b 都获得 x 的浅拷贝（共享同一 data 指针）。但在上层函数中，a 和 b 是独立的局部变量，各自被 `heapVars` 追踪为 `%vec`，函数结束时都会执行 free → **double-free**。当前 Nolang 没有引用/借用语义，b 不会自动成为 a 的别名。**用户应避免这种模式**。
 
@@ -426,6 +490,11 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 | 功能 | 文件 | 关键函数 |
 |------|------|---------|
 | 堆变量追踪 | `src/build/llvm/stmt.go` | `trackLocalHeapVar`, `emitHeapFree` |
+| **move 追踪（按堆变量下标索引）** | `src/build/llvm/stmt.go` | `handleMoveToOut`, `handleMoveLocal`, `emitBitCheckFree`, `isMovedVar` |
+| **编译期位图操作** | `src/build/llvm/stmt.go` | `markMovedVar`, `unmarkMovedVar`, `isMovedVar` |
+| **运行时位图 IR** | `src/build/llvm/stmt.go` | `emitSetMovedBitIR`, `emitClearMovedBitIR`, `emitBitCheckFree` |
+| **分支 move 预扫描** | `src/build/llvm/stmt.go` | `detectBranchMoveToOut` — 递迴遍历 AST 检测分支内 move |
+| **位图变量按需分配** | `src/build/llvm/stmt.go` | `generateFunctionDefinition` 中 `hasBranchMove` 为 true 时 alloca `%__mb{block}` |
 | **模組級堆變數釋放** | `src/build/llvm/stmt.go` | `emitGlobalHeapFree` |
 | 释放路由 | `src/build/llvm/stmt.go` | `emitVarHeapFree` |
 | 深层 free | `src/build/llvm/stmt.go` | `emitDeepContainerFree`, `emitElementFree` |

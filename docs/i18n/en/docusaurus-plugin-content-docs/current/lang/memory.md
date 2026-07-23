@@ -88,6 +88,45 @@ outer.push(inner)
 
 push only shallow-copies inner's struct into outer's element slot **without cloning data**. Thus the source variable and the outer vec share the same data pointer; the source must be marked as moved to avoid double-free.
 
+### Runtime move tracking (function-level u64 bitmap variable)
+
+Move under conditional branches poses a challenge: the compiler cannot statically determine whether a move actually occurs.
+
+```nolang
+cond-move = (flag i64) (out []i64) {
+    x = [1, 2, 3]
+    if flag == 1 {
+        out = x   ; move only happens when flag==1
+    }
+    ; when flag==0, x still owns data and must be freed at function exit
+    ; when flag==1, x's ownership has been transferred and must skip free
+}
+```
+
+Nolang uses **dual checking** to solve this:
+
+1. **Compile-time marking**: `movedVars[source]=true` indicates a move code path exists
+2. **Runtime bitmap**: each function with output parameters allocates a `u64` bitmap variable `%__move_bitmap` on the stack; each bit corresponds to one output parameter position
+3. **When move occurs**: set bitmap bit=1 (`or i64 %old, (1<<idx)`)
+4. **At function-exit free**: check the bitmap — `bit=1` means move occurred, ownership transferred, skip free; `bit=0` means move did not occur (branch not taken), still owns data, must free
+
+This mechanism applies to all heap types (`vec`/`str-long`/`arr`/user structs).
+
+### Parameter and result count limit
+
+Because the `u64` bitmap variable tracks at most 64 output parameters, the **parameter and result count limit of a function is 64**. When exceeded, the compiler reports an error:
+
+```
+Error: compilation error: line 2, column 1: function foo has 65 parameters,
+exceeding the 64-parameter limit; use a container type (vec/arr/struct) to
+bundle multiple values
+```
+
+To pass many values, use a container type to bundle them:
+- `[]i64` (slice) — multiple values of the same type
+- `[N]T` (fixed array) — fixed-length values of the same type
+- struct — heterogeneous multiple values
+
 ## Deep Clone (Assignment Between Locals)
 
 ```nolang

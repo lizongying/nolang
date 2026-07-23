@@ -537,14 +537,10 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			savedSSA[k] = v
 		}
 	}
-	// Save movedVars before entering branch: branch內的 move 標記不應污染其他分支。
-	// 分支匯合時取兩分支的布爾並集，代表「存在代碼路徑會發生 move」。
-	savedMovedVars := make(map[string]bool)
-	if g.movedVars != nil {
-		for k, v := range g.movedVars {
-			savedMovedVars[k] = v
-		}
-	}
+	// Save outBindState before entering branch: branch 內的 move-to-out 不應污染其他分支。
+	// 分支匯合時取並集：兩分支綁定相同 → 保持；不同 → -2（不確定）。
+	savedOutBindState := make([]int, len(g.outBindState))
+	copy(savedOutBindState, g.outBindState)
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
 	if strings.HasPrefix(g.curFuncRetType, "%") {
@@ -589,13 +585,9 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	g.indentLevel--
 
-	// 捕獲 then 分支的 movedVars 結果，供分支匯合時取並集
-	thenMovedVars := make(map[string]bool)
-	if g.movedVars != nil {
-		for k, v := range g.movedVars {
-			thenMovedVars[k] = v
-		}
-	}
+	// 捕獲 then 分支的 outBindState 結果，供分支匯合時取並集
+	thenOutBindState := make([]int, len(g.outBindState))
+	copy(thenOutBindState, g.outBindState)
 
 	// else
 	elseLabel := fmt.Sprintf("if.else.%d", labelId)
@@ -607,11 +599,8 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.ssaVersion[k] = v
 		}
 	}
-	// Restore movedVars: else 分支從進入 if 前的狀態開始，不受 then 分支 move 污染
-	g.movedVars = make(map[string]bool)
-	for k, v := range savedMovedVars {
-		g.movedVars[k] = v
-	}
+	// Restore outBindState: else 分支從進入 if 前的狀態開始，不受 then 分支 move 污染
+	copy(g.outBindState, savedOutBindState)
 	elseVal := defaultZero
 	if expr.Alternative != nil && len(expr.Alternative.Statements) > 0 {
 		for i := 0; i < len(expr.Alternative.Statements)-1; i++ {
@@ -644,22 +633,18 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	g.indentLevel--
 
-	// 分支匯合：movedVars 取兩分支的布爾並集，代表「存在代碼路徑會發生 move」。
-	// 這使得編譯期標記能識別所有潛在 move 代碼路徑，配合運行時 is_moved 標記雙重校驗。
-	mergedMovedVars := make(map[string]bool)
-	for k, v := range thenMovedVars {
-		if v {
-			mergedMovedVars[k] = true
+	// 分支匯合：outBindState 取並集。
+	// - 兩分支綁定相同 → 保持（確定性綁定）
+	// - 兩分支綁定不同 → -2（不確定，後續覆蓋不清舊 bit）
+	// - 一分支綁定、另一分支無 → -2（不確定）
+	// 這使得編譯期狀態能識別所有潛在 move 代碼路徑，配合運行時 bitmap 雙重校驗。
+	for i := range g.outBindState {
+		thenV := thenOutBindState[i]
+		elseV := g.outBindState[i]
+		if thenV != elseV {
+			g.outBindState[i] = -2 // 不確定
 		}
 	}
-	if g.movedVars != nil {
-		for k, v := range g.movedVars {
-			if v {
-				mergedMovedVars[k] = true
-			}
-		}
-	}
-	g.movedVars = mergedMovedVars
 
 	// end
 	// Restore SSA versions after else branch: subsequent code uses pre-branch state.

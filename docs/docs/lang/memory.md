@@ -88,6 +88,69 @@ outer.push(inner)
 
 push 只淺拷貝 inner 的結構體到 outer 元素位置，**不克隆 data**。因此源變數和外部 vec 共享同一 data 指標，必須標記源為 moved 避免 double-free。
 
+### 運行時 move 追蹤（按堆變數下標索引的位圖）
+
+條件分支下的 move 帶來一個挑戰：編譯期無法確定某個 move 是否真的發生。
+
+```nolang
+cond-move = (flag i64) (out []i64) {
+    x = [1, 2, 3]
+    if flag == 1 {
+        out = x   ; move 僅在 flag==1 時發生
+    }
+    ; flag==0 時 x 仍擁有 data，函數結束需 free
+    ; flag==1 時 x 所有權已轉移，函數結束需跳過 free
+}
+```
+
+Nolang 採用**按堆變數下標索引的位圖**解決此問題。編譯期為每個局部堆變數分配唯一 `varIdx`，運行時位圖的每個 bit 對應一個堆變數（而非輸出參數）。
+
+#### 編譯器狀態
+
+| 欄位 | 類型 | 用途 |
+|------|------|------|
+| `heapVarIndex` | `map[string]int` | 堆變數名 → `varIdx`（僅局部堆變數） |
+| `outBindState` | `[]int` | 每個輸出參數當前綁定的堆變數下標（-1=無綁定，-2=不確定） |
+| `movedVarBitset` | `[]uint64` | 編譯期 moved 位圖（無運行時位圖時用） |
+| `movedBitmapBase` | `string` | 運行時位圖變數名前綴（如 `%__mb`，空=未分配） |
+| `bitmapCount` | `int` | u64 位圖塊數（= maxVarIdx/64 + 1） |
+
+#### 下標映射規則
+
+一塊 `u64` 存 64 個標記位，堆變數下標 `varIdx`：
+
+- 塊號 = `varIdx / 64`
+- 塊內偏移 = `varIdx % 64`
+- 掩碼 = `1u64 << 偏移`
+
+編譯期直接算常量，運行時無計算開銷。多塊 `u64` 可支援任意數量堆變數，**無參數/返回值數量上限**。
+
+#### move 賦值處理（覆蓋會清舊 bit）
+
+每次把堆變數 move 給輸出參數：
+
+1. 若該輸出參數之前綁定過別的變數（`outBindState[outIdx] >= 0`），先清除舊變數對應的 bit
+2. 再把當前變數對應 bit 置 1
+3. 更新該輸出參數綁定的變數下標（`outBindState[outIdx] = srcVarIdx`）
+
+#### 函數結尾釋放
+
+遍歷全部堆變數，平鋪獨立 `if`：對應 bit 為 0 就 free，bit 為 1 代表所有權移走，跳過釋放。
+
+#### 位圖按需分配
+
+位圖變數僅在**必要時**分配，避免無分支場景的效能開銷：
+
+| 場景 | 位圖分配 | free 行為 |
+|------|---------|----------|
+| 無 move | 不分配 | 全部 free |
+| move 不在分支（確定性 move） | 不分配 | 編譯期 `movedVarBitset` 直接跳過 free |
+| move 在分支（條件 move） | 分配 | 運行時位圖檢查：bit=1 跳過，bit=0 free |
+
+編譯器在生成函數體之前預掃描 AST（`detectBranchMoveToOut`），檢測是否存在 `IfExpression`/`ForStatement`/`ConditionalExpression` 分支內對輸出參數的 move 賦值，僅在此類模式存在時才分配運行時位圖變數。位圖 `alloca` 在函數體生成之後插入（此時 `nextHeapVarIdx` 已為最終值），寫入 entry block。
+
+此機制適用於所有堆類型（`vec`/`str-long`/`arr`/用戶結構體）。
+
 ## 深層 clone（局部變數間賦值）
 
 ```nolang

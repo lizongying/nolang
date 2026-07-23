@@ -2518,11 +2518,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
 				g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
-				// 初始化 is_moved=false (field 2)：運行時 move 標記，雙重校驗用
-				g.tmpIdx++
-				arrMovedGEP := fmt.Sprintf("%%vso.arrmoved.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 2\n", g.indent(), arrMovedGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), arrMovedGEP))
 			} else {
 				// 其他類型（i64/[]i64/str/?T/struct）零初始化：
 				//   i64 → 0
