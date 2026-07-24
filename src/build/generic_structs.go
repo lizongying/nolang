@@ -223,14 +223,37 @@ func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefin
 		subst["k"] = keyStr
 		subst["v"] = valueStr
 	}
-	// 將模板結構名稱對應至具體名稱，以替換 self 參數型別
+	// 將模板結構名稱對應至具體名稱，以替換 self 參數型別。
+	// tmplSD.Name 可能帶模組前綴（如 "map.hashmap-str-tmpl"，由 prefixModuleStatements 重命名），
+	// 但 rewriteTypeRefs 因 isModulePrefixBuiltinType 將 "hashmap-*" 視為內建型別而「不」加上模組前綴，
+	// 故型別參考仍為裸名 "hashmap-str-tmpl"。兩種形式皆需提供替換鍵。
+	bareTmplName := tmplSD.Name
+	if dotIdx := strings.Index(bareTmplName, "."); dotIdx >= 0 {
+		bareTmplName = bareTmplName[dotIdx+1:]
+	}
 	subst[tmplSD.Name] = concreteName
+	if bareTmplName != tmplSD.Name {
+		subst[bareTmplName] = concreteName
+	}
 
 	// 將模板方法名（如 "hashmap-str-tmpl.hash"）對應至具體方法名（"hashmap-str-i64.hash"），
 	// 以替換方法體內經 resolveSelfMethodCalls 改寫後的 self 呼叫。
+	// 同樣需提供帶模組前綴與裸名兩種形式：
+	//   - 模組前綴形式："map.hashmap-str-tmpl.get"（prefixMethodNames 重命名後的方法定義名）
+	//   - 裸名形式："hashmap-str-tmpl.get"（resolveSelfMethodCalls 以未前綴的 selfType 產生）
 	for _, fd := range tmplMethods {
-		if dotIdx := strings.LastIndex(fd.Name, "."); dotIdx >= 0 {
-			subst[fd.Name] = concreteName + fd.Name[dotIdx:]
+		lastDot := strings.LastIndex(fd.Name, ".")
+		if lastDot < 0 {
+			continue
+		}
+		methodSuffix := fd.Name[lastDot:] // e.g. ".get"
+		concreteMethodName := concreteName + methodSuffix
+		// 完整名（含模組前綴）
+		subst[fd.Name] = concreteMethodName
+		// 裸名（不含模組前綴）
+		bareMethodName := bareTmplName + methodSuffix
+		if bareMethodName != fd.Name {
+			subst[bareMethodName] = concreteMethodName
 		}
 	}
 
@@ -345,6 +368,18 @@ func monomorphizeGenericStructs(program *parser.Program) {
 		}
 		tmplName := "hashmap-" + cat + "-tmpl"
 		tmplSD, ok := templateStructs[tmplName]
+		if !ok {
+			// 模組導入的模板可能帶模組前綴（如 "map.hashmap-str-tmpl"），
+			// 嘗試在 templateStructs 中查找以 tmplName 結尾的鍵。
+			for k, v := range templateStructs {
+				if strings.HasSuffix(k, "."+tmplName) {
+					tmplSD = v
+					tmplName = k
+					ok = true
+					break
+				}
+			}
+		}
 		if !ok {
 			continue // 該分類無對應模板
 		}

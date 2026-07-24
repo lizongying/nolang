@@ -2555,6 +2555,16 @@ func (p *Parser) parseLetStatement() Statement {
 	p.nextToken()
 
 	p.ctx.push(CTX_EXPR)
+	// 若變數無顯式型別註記但已宣告過（如函數輸出參數 out），
+	// 從 varDeclTypes 推斷型別。若為 map 型別 [K]V 且 RHS 是 { ... }，
+	// 走 parseMapLiteral 路徑。
+	if stmt.Type == nil && p.currentToken.Type == lexer.LBRACE {
+		if varType, ok := p.varDeclTypes[stmt.Name.Value]; ok {
+			if mt := parseMapTypeString(varType, nameToken); mt != nil {
+				stmt.Type = mt
+			}
+		}
+	}
 	if mt, isMap := stmt.Type.(*MapType); isMap && p.currentToken.Type == lexer.LBRACE {
 		stmt.Value = p.parseMapLiteral(mt)
 	} else {
@@ -8783,6 +8793,20 @@ func buildType(typeStr string, tok lexer.Token) Type {
 		end := strings.IndexByte(typeStr, ']')
 		if end > 0 {
 			sizeStr := typeStr[1:end]
+			// [K]V — 當 K 為內建型別名稱時，視為 map 型別（與 parseTypeExpression 一致）。
+			// 避免將 [str]i64 誤解析為 ArrayType{Size: Identifier{"str"}}。
+			if sizeStr != "" && sizeStr != "?" && isBuiltinTypeName(sizeStr) && end < len(typeStr)-1 {
+				valStr := typeStr[end+1:]
+				valType := buildType(valStr, tok)
+				if valType == nil {
+					valType = &NamedType{Token: tok, Value: valStr}
+				}
+				return &MapType{
+					Token: tok,
+					Key:   &NamedType{Token: tok, Value: sizeStr},
+					Value: valType,
+				}
+			}
 			var sizeExpr Expression
 			if sizeStr != "" && sizeStr != "?" {
 				if val, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
@@ -8801,6 +8825,37 @@ func buildType(typeStr string, tok lexer.Token) Type {
 	}
 	// 簡單名稱型別
 	return &NamedType{Token: tok, Value: typeStr}
+}
+
+// parseMapTypeString 嘗試將 "[K]V" 格式的型別字串解析為 MapType。
+// 區分規則：[ 後至 ] 的內容若為空（[]）或純數字（[3]）或問號（[?]，
+// 視為陣列/切片型別，返回 nil；否則視為 map 型別 [K]V，返回 MapType。
+// 例如 "[str]i64" → MapType{Key:str, Value:i64}，"[3]i64" → nil。
+func parseMapTypeString(s string, tok lexer.Token) *MapType {
+	if len(s) < 4 || s[0] != '[' {
+		return nil
+	}
+	end := strings.IndexByte(s, ']')
+	if end < 0 || end == len(s)-1 {
+		return nil
+	}
+	keyStr := s[1:end]
+	valStr := s[end+1:]
+	if valStr == "" {
+		return nil
+	}
+	// [] → 切片；[?] → 推斷陣列；[數字] → 固定陣列：都不是 map
+	if keyStr == "" || keyStr == "?" {
+		return nil
+	}
+	if _, err := strconv.ParseInt(keyStr, 10, 64); err == nil {
+		return nil
+	}
+	return &MapType{
+		Token: tok,
+		Key:   &NamedType{Token: tok, Value: keyStr},
+		Value: &NamedType{Token: tok, Value: valStr},
+	}
 }
 
 // addImplicitGeneric 將單字母 a-z 加入泛型參數列表（防重複）

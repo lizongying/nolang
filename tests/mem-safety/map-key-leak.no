@@ -41,6 +41,15 @@ make-map = () (out [str]i64) {
 }
 
 m = make-map()
-print(m['apple'])
-print(m['banana'])
-print(m['cherry'])
+v = m.get('apple')
+v: {
+    ok -> print(); expect: 1
+}
+v = m.get('banana')
+v: {
+    ok -> print(); expect: 2
+}
+v = m.get('cherry')
+v: {
+    ok -> print(); expect: 3
+}
