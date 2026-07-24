@@ -88,6 +88,7 @@ type Generator struct {
 	funcParams            map[string]bool                 // current function's parameter names (to distinguish from globals with same name)
 	unionAliases          map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	optionInnerTypes      map[string]string               // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
+	moduleOptionInnerTypes map[string]string              // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
 	itAllocTypes          map[string]string               // synthetic `it` variable name → allocated LLVM type (for bitcast when shared across matches with different types)
 	funcResultInnerTypes  map[string][]string             // function name → inner LLVM types of ?T results
 	enumVariantIndex      map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
@@ -968,6 +969,13 @@ func (g *Generator) Generate(program *parser.Program) string {
 	varDecls := g.collectVarDecls(program)
 	for k, v := range varDecls {
 		g.varTypes[k] = v
+	}
+	// 備份模組級 option 變數的 inner type（collectVarDecls 已推導），
+	// 避免後續 generateFunctionDefinition reset optionInnerTypes 時丟失，
+	// 供 emitGlobalHeapFree 釋放全域 option 變數時查詢。
+	g.moduleOptionInnerTypes = make(map[string]string)
+	for k, v := range g.optionInnerTypes {
+		g.moduleOptionInnerTypes[k] = v
 	}
 	// 發出模組級全局變數定義（在函數定義之前，以便所有函數都能訪問）
 	// 只對以下類型的變數發出全局定義：

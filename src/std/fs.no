@@ -37,6 +37,22 @@
 ; rename = (o str, n str) (ok bool) {  // LLVM: call i32 @rename → zext
 ; }
 
+; build-in (CLibCall: symlink)
+; symlink: 建立符號連結
+; target: 連結指向的目標路徑
+; linkpath: 符號連結本身的路徑
+; 成功返回 true，失敗返回 false
+; symlink = (target str, linkpath str) (ok bool) {  // LLVM: call i32 @symlink → icmp eq 0 → zext
+; }
+
+; build-in (CLibCall: link)
+; link: 建立硬連結
+; oldpath: 既有檔案路徑
+; newpath: 新硬連結路徑
+; 成功返回 true，失敗返回 false
+; link = (oldpath str, newpath str) (ok bool) {  // LLVM: call i32 @link → icmp eq 0 → zext
+; }
+
 ; build-in (ForwardFunc: stat-file)
 ; is-file: 判斷路徑是否為普通檔案
 ; is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext

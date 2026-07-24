@@ -1161,8 +1161,9 @@ func (p *Parser) parseStatement() Statement {
 		if p.peekToken.Type == lexer.QUESTION {
 			state := p.saveState()
 			p.nextToken()
-			if p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.IDENT {
+			if p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.IDENT || p.peekToken.Type == lexer.LBRACKET {
 				// currentToken = ?，parseLetStatement 內會用 prevToken 當變數名
+				// LBRACKET handles ?[]T (option of slice) and ?[N]T (option of array)
 				stmt := p.parseLetStatement()
 				if stmt != nil {
 					for p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.NEWLINE {
@@ -2371,9 +2372,11 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 func (p *Parser) parseLetStatement() Statement {
 	// 保存当前令牌，用于变量名
 	var nameToken lexer.Token
+	var letIsOption bool
 	if p.currentToken.Type == lexer.QUESTION {
 		// 可空类型的情况，使用前一个令牌作为变量名
 		nameToken = p.prevToken
+		letIsOption = true // entered via ? prefix (e.g. a ?[]i64 = nil)
 	} else {
 		// 普通情况，使用当前令牌作为变量名
 		nameToken = p.currentToken
@@ -2388,7 +2391,6 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// 陣列/切片型別: a [3] / a [3]u16 / v []u8
-	var letIsOption bool
 	if p.peekToken.Type == lexer.LBRACKET {
 		bracketToken := p.peekToken
 		p.nextToken() // skip [ → current = LBRACKET
@@ -2485,6 +2487,14 @@ func (p *Parser) parseLetStatement() Statement {
 					}
 				}
 			}
+		}
+	}
+
+	// 若透過 ? 前綴進入（如 a ?[]i64 = nil）且已解析出陣列/切片/map 型別，
+	// 將其包裹為 NullableType，使型別為 ?[]i64 而非 []i64。
+	if letIsOption && stmt.Type != nil {
+		if _, isNullable := stmt.Type.(*NullableType); !isNullable {
+			stmt.Type = &NullableType{Token: nameToken, Type: stmt.Type}
 		}
 	}
 

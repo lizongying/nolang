@@ -394,8 +394,14 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	llPath = optPath
 
 	// llc → .s (assembly)
+	// --fp-contract=fast enables FMA synthesis (e.g. fmul+fadd → fmadd).
+	// This matches the default behavior of gcc -O2 / clang -O2 on C code,
+	// where FP_CONTRACT is permitted by the standard. Only the last bit of
+	// rounding may differ, which is acceptable for Nolang programs and
+	// yields significant performance gains on FP-intensive workloads
+	// (e.g. mandelbrot inner loop: fmul+fadd → single fmadd instruction).
 	sPath := filepath.Join(tempDir, fileName+".s")
-	llcArgs := []string{llPath, "-o", sPath}
+	llcArgs := []string{"--fp-contract=fast", llPath, "-o", sPath}
 	if target != "" {
 		llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
 	}

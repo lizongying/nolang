@@ -5974,7 +5974,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if strings.HasPrefix(existingType, "?") && !isOptionCtor {
 						// 檢查推斷型別是否與 Option 內部型別相符
 						innerType := existingType[1:]
-						if inferredType == innerType || inferredType == "i64" || inferredType == "bool" || inferredType == "f64" {
+						if inferredType == innerType || isArgTypeCompatible(innerType, inferredType, s.Value) {
 							isOptionCtor = true
 						}
 					}

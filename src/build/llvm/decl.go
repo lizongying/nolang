@@ -72,6 +72,12 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
 	}
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
+	if runtime.GOOS == "windows" {
+		// symlink/link not declared on Windows: routed to nolang.win_* stubs.
+	} else {
+		sb.WriteString("declare i32 @symlink(i8*, i8*)\n")
+		sb.WriteString("declare i32 @link(i8*, i8*)\n")
+	}
 	// Directory operations: POSIX uses <dirent.h>, Windows uses FindFirstFileA/FindNextFileA/FindClose.
 	// WIN32_FIND_DATAA layout (320 bytes):
 	//   dwFileAttributes@0(i32,4) ftCreationTime@4(8) ftLastAccessTime@12(8)
@@ -658,6 +664,18 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("}\n\n")
 
 		sb.WriteString("define internal i32 @nolang.win_kill(i32 %pid, i32 %sig) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// symlink/link: no direct Windows C equivalent (would need
+		// CreateSymbolicLinkA/CreateHardLinkA). Return -1 (failure).
+		sb.WriteString("define internal i32 @nolang.win_symlink(i8* %target, i8* %linkpath) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		sb.WriteString("define internal i32 @nolang.win_link(i8* %oldpath, i8* %newpath) {\n")
 		sb.WriteString("entry:\n")
 		sb.WriteString("\tret i32 -1\n")
 		sb.WriteString("}\n\n")

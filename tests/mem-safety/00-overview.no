@@ -67,11 +67,16 @@
 ;     if/else 單分支 move 導致未走分支的數據洩漏
 ;     movedVars 是編譯時 map，不區分運行時分支
 ;
+; 12. option-heap-leak.no
+;     option 變數持有堆 box 永不釋放
+;     copyStrToData/copyToData malloc 後 %option 不在 heapVars
+;     src/build/llvm/stmt.go:4745-4754, 299-321
+;
 ; ═════════════════════════════════════════════════════════════════
 ; 嚴重等級：併發內存安全
 ; ═════════════════════════════════════════════════════════════════
 ;
-; 12. async-shared-race.no
+; 13. async-shared-race.no
 ;     線程間共享堆數據無同步保護（無 mutex/atomic）
 ;     src/build/llvm/expr.go:5696-5720
 ;
@@ -105,4 +110,4 @@
 ; - 併發所有權隔離或同步原語
 ;
 print("Nolang 內存安全測試套件索引")
-print("共 12 個測試案例，詳見各 .no 文件註釋")
+print("共 13 個測試案例，詳見各 .no 文件註釋")

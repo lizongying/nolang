@@ -149,6 +149,34 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: "rename", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
+	// symlink: create a symbolic link
+	symlinkFn := "symlink"
+	if runtime.GOOS == "windows" {
+		symlinkFn = "nolang.win_symlink"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "symlink",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Create a symbolic link (target, linkpath). Returns true on success",
+		CLibCall:     &CLibCall{FuncName: symlinkFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+	})
+
+	// link: create a hard link
+	linkFn := "link"
+	if runtime.GOOS == "windows" {
+		linkFn = "nolang.win_link"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "link",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Create a hard link (oldpath, newpath). Returns true on success",
+		CLibCall:     &CLibCall{FuncName: linkFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+	})
+
 	// is-file: check if path is a regular file
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

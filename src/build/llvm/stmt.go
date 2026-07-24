@@ -50,10 +50,10 @@ func (g *Generator) llvmTypeAlign(llvmType string) int64 {
 
 func (g *Generator) llvmTypeSize(llvmType string) int64 {
 	if strings.HasPrefix(llvmType, "[") {
-		// [N x i64] → N * 8
-		var n int64
-		var elem string
-		if _, err := fmt.Sscanf(llvmType, "[%d x %s]", &n, &elem); err == nil {
+		// [N x T] → N * sizeof(T)
+		// 注意：fmt.Sscanf 的 %s 會貪婪讀取到字串末尾（包含 ']'），
+		// 導致 elem 型別解析錯誤。改用 parseInlineArrayType（基於 SplitN）。
+		if n, elem, ok := parseInlineArrayType(llvmType); ok {
 			return n * g.llvmTypeSize(elem)
 		}
 		return 64 // fallback
@@ -245,7 +245,7 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 		varIdx, hasIdx := g.heapVarIndex[name]
 		if !hasIdx {
 			// 無 varIdx（非局部堆變數或未追蹤），直接 free
-			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
+			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType, name)
 			continue
 		}
 		if g.hasBranchMove && g.movedBitmapBase != "" {
@@ -258,7 +258,7 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 			if g.isMovedVar(varIdx) {
 				continue // 跳過 free（所有權轉移）
 			}
-			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
+			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType, name)
 		}
 	}
 }
@@ -285,18 +285,27 @@ func (g *Generator) emitGlobalHeapFree(sb *strings.Builder) {
 		if g.moduleArrayElemTypes != nil {
 			elemType = g.moduleArrayElemTypes[name]
 		}
-		// 只釋放堆擁有型別（%vec/%str-long/%arr/用戶結構體）
-		if llvmType != "%vec" && llvmType != "%str-long" && llvmType != "%arr" && !g.isUserStructType(llvmType) {
+		// 只釋放堆擁有型別（%vec/%str-long/%arr/%option/用戶結構體）
+		// %option 需進一步檢查 inner type 是否為堆型別（在 emitOptionHeapFree 內處理）
+		if llvmType != "%vec" && llvmType != "%str-long" && llvmType != "%arr" &&
+			llvmType != "%option" && !g.isUserStructType(llvmType) {
 			continue
 		}
-		g.emitVarHeapFree(sb, llvmGlobalRef(name), llvmType, elemType)
+		g.emitVarHeapFree(sb, llvmGlobalRef(name), llvmType, elemType, name)
 	}
 }
 
 // emitVarHeapFree 釋放單一變數的堆數據。
 // 內建型別（%vec/%str-long/%arr）透過 data 欄位索引找到 i8* 並 free；
 // 用戶結構體則遞迴釋放所有含堆數據的欄位。
-func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemType string) {
+// name 為變數名，用於查詢 optionInnerTypes（option 釋放時需要）；
+// 遞迴場景（釋放 option 內部結構）可傳 ""，此時 %option 分支會走兜底路徑。
+func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemType, name string) {
+	switch llvmType {
+	case "%option":
+		g.emitOptionHeapFree(sb, varPtr, name)
+		return
+	}
 	var dataFieldIdx int
 	switch llvmType {
 	case "%vec", "%str-long":
@@ -318,6 +327,204 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 		return
 	}
 	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+}
+
+// emitOptionHeapFree 釋放 %option 變數持有的堆 box。
+// 僅當 inner type 為堆型別（%str-long/%vec/%arr/用戶結構體）且 tag != nil 時才釋放：
+//  1. 從 optionInnerTypes[name] 取得 inner type；若無記錄或為純量，直接返回（安全但洩漏）
+//  2. load tag (field 0)；若 == 1 (nil)，data 是 0，跳過（避免 inttoptr i64 0）
+//  3. load data (field 1) 為 i64，inttoptr 回 i8*
+//  4. NULL check（data 可能為 0 即使 tag != 1）
+//  5. 若 inner 為堆型別：bitcast 到 inner*，呼叫 emitVarHeapFree 遞迴釋放 inner 的 data
+//     （inner 是 %str-long → 釋放字串 data；是 %vec/%arr → 釋放容器 data；
+//      是用戶結構體 → emitStructFieldsFree 遞迴釋放欄位）
+//  6. call @free(i8* boxPtr) 釋放 box 本身
+//
+// 順序：先釋放 inner 的 data，再 free box，避免懸垂。
+func (g *Generator) emitOptionHeapFree(sb *strings.Builder, optPtr, name string) {
+	innerType := ""
+	if g.optionInnerTypes != nil {
+		innerType = g.optionInnerTypes[name]
+	}
+	// 全域 option 變數的 inner type 不在函數級 optionInnerTypes 中，
+	// 嘗試從模組級備份讀取（emitGlobalHeapFree 場景）
+	if innerType == "" && g.moduleOptionInnerTypes != nil {
+		innerType = g.moduleOptionInnerTypes[name]
+	}
+	if innerType == "" || !g.isHeapOwningType(innerType) {
+		return // 純量 option 或無 inner 資訊：不持有堆，跳過
+	}
+
+	g.tmpIdx++
+	tid := g.tmpIdx
+
+	// 1. load tag (field 0)
+	tagGEP := fmt.Sprintf("%%optfree.tag.gep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n",
+		g.indent(), tagGEP, optPtr))
+	tagReg := fmt.Sprintf("%%optfree.tag.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagReg, tagGEP))
+
+	// 2. icmp eq i64 tag, 1 → skip（tag==1 表示 nil，data 為 0）
+	nilCmp := fmt.Sprintf("%%optfree.nil.%d", tid)
+	skipLabel := fmt.Sprintf("optfree.skip.%d", tid)
+	dataLabel := fmt.Sprintf("optfree.data.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 1\n", g.indent(), nilCmp, tagReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nilCmp, skipLabel, dataLabel))
+
+	// 3. 非 nil：load data (field 1) i64, inttoptr to i8*
+	g.emitLabel(sb, dataLabel)
+	dataGEP := fmt.Sprintf("%%optfree.data.gep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+		g.indent(), dataGEP, optPtr))
+	dataIntReg := fmt.Sprintf("%%optfree.data.i64.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataIntReg, dataGEP))
+	boxPtrReg := fmt.Sprintf("%%optfree.box.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), boxPtrReg, dataIntReg))
+
+	// 4. NULL check
+	nullCmp := fmt.Sprintf("%%optfree.null.%d", tid)
+	freeLabel := fmt.Sprintf("optfree.free.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, boxPtrReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+
+	// 5. 非 NULL：先遞迴釋放 inner 的 data
+	g.emitLabel(sb, freeLabel)
+	innerPtrReg := fmt.Sprintf("%%optfree.inner.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), innerPtrReg, boxPtrReg, innerType))
+	// 遞迴釋放 inner 的 data（不傳 name，inner 不是 option 變數本身）
+	// inner 是 %str-long → 釋放字串 data；%vec/%arr → 釋放容器 data；用戶結構體 → 遞迴釋放欄位
+	g.emitVarHeapFree(sb, innerPtrReg, innerType, "", "")
+
+	// 6. 釋放 box 本身
+	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), boxPtrReg))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+
+	g.emitLabel(sb, skipLabel)
+}
+
+// emitOptionDeepClone 深層 clone option 變數 b = a：
+//   - malloc 新 box 並遞迴 clone inner 的堆數據，使 a/b 各自獨立擁有 box
+//   - 與 vec/struct 的 b = a 一致，避免 a/b 共享 box 導致 double-free
+//
+// 流程：
+//  1. load tag from src；store tag to dst
+//  2. 若 tag == 1 (nil)：dst.data = 0，return
+//  3. 若 inner 為堆型別：load src.data (i64) → inttoptr to innerType*；
+//     malloc 新 box（inner struct size）→ bitcast to innerType*；
+//     呼叫 emitDeepClone(srcInnerPtr, dstInnerPtr, innerType, "")；
+//     ptrtoint 新 box to i64 → store to dst.data
+//  4. 若 inner 為純量：直接 load src.data i64 → store to dst.data
+//
+// 若 inner type 未知（optionInnerTypes 缺失），退化為淺拷貝（共享 box）作為兜底。
+func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName string) {
+	innerType := ""
+	if g.optionInnerTypes != nil {
+		innerType = g.optionInnerTypes[srcName]
+	}
+	// 也嘗試從 dst 取（option-to-option 推導可能寫到 dst）
+	if innerType == "" && g.optionInnerTypes != nil {
+		innerType = g.optionInnerTypes[dstName]
+	}
+
+	g.tmpIdx++
+	tid := g.tmpIdx
+
+	// 1. load tag from src
+	srcTagGEP := fmt.Sprintf("%%optclone.src.tag.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n",
+		g.indent(), srcTagGEP, llvmVarRef(srcName)))
+	srcTagReg := fmt.Sprintf("%%optclone.tag.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcTagReg, srcTagGEP))
+
+	// store tag to dst
+	dstTagGEP := fmt.Sprintf("%%optclone.dst.tag.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n",
+		g.indent(), dstTagGEP, llvmVarRef(dstName)))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcTagReg, dstTagGEP))
+
+	// 2. 若 tag == 1 (nil)：dst.data = 0，return
+	nilCmp := fmt.Sprintf("%%optclone.nil.%d", tid)
+	skipLabel := fmt.Sprintf("optclone.skip.%d", tid)
+	cloneLabel := fmt.Sprintf("optclone.do.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 1\n", g.indent(), nilCmp, srcTagReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nilCmp, skipLabel, cloneLabel))
+
+	g.emitLabel(sb, cloneLabel)
+
+	// 3. 非 nil：根據 inner 決定 clone 策略
+	if innerType == "" {
+		// 兜底：無 inner 資訊，退化為淺拷貝 data（共享 box）
+		// 此分支不應常見，僅作防禦
+		srcDataGEP := fmt.Sprintf("%%optclone.src.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), srcDataGEP, llvmVarRef(srcName)))
+		srcDataReg := fmt.Sprintf("%%optclone.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcDataReg, srcDataGEP))
+		dstDataGEP := fmt.Sprintf("%%optclone.dst.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), dstDataGEP, llvmVarRef(dstName)))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcDataReg, dstDataGEP))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		g.emitLabel(sb, skipLabel)
+		return
+	}
+
+	if g.isHeapOwningType(innerType) {
+		// inner 為堆型別：malloc 新 box + emitDeepClone
+		// load src.data i64
+		srcDataGEP := fmt.Sprintf("%%optclone.src.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), srcDataGEP, llvmVarRef(srcName)))
+		srcDataIntReg := fmt.Sprintf("%%optclone.src.i64.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcDataIntReg, srcDataGEP))
+		// inttoptr to innerType*
+		srcInnerPtrReg := fmt.Sprintf("%%optclone.src.inner.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), srcInnerPtrReg, srcDataIntReg, innerType))
+
+		// malloc 新 box（inner struct size）
+		structSize := g.llvmTypeSize(innerType)
+		if structSize == 0 {
+			structSize = 8
+		}
+		newBoxI8Reg := fmt.Sprintf("%%optclone.newbox.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), newBoxI8Reg, structSize))
+		// bitcast to innerType*
+		newInnerPtrReg := fmt.Sprintf("%%optclone.dst.inner.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), newInnerPtrReg, newBoxI8Reg, innerType))
+
+		// NULL check src inner ptr（src 可能是 nil option 但 tag 非 1 的邊界情況）
+		srcNullCmp := fmt.Sprintf("%%optclone.srcnull.%d", tid)
+		deepCloneLabel := fmt.Sprintf("optclone.deep.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s* %s, null\n", g.indent(), srcNullCmp, innerType, srcInnerPtrReg))
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), srcNullCmp, skipLabel, deepCloneLabel))
+
+		// 深層 clone inner
+		g.emitLabel(sb, deepCloneLabel)
+		g.emitDeepClone(sb, srcInnerPtrReg, newInnerPtrReg, innerType, "")
+
+		// ptrtoint 新 box to i64, store to dst.data
+		newBoxIntReg := fmt.Sprintf("%%optclone.newbox.i64.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), newBoxIntReg, newBoxI8Reg))
+		dstDataGEP := fmt.Sprintf("%%optclone.dst.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), dstDataGEP, llvmVarRef(dstName)))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), newBoxIntReg, dstDataGEP))
+	} else {
+		// inner 為純量：直接 copy i64 data
+		srcDataGEP := fmt.Sprintf("%%optclone.src.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), srcDataGEP, llvmVarRef(srcName)))
+		srcDataReg := fmt.Sprintf("%%optclone.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), srcDataReg, srcDataGEP))
+		dstDataGEP := fmt.Sprintf("%%optclone.dst.data.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+			g.indent(), dstDataGEP, llvmVarRef(dstName)))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcDataReg, dstDataGEP))
+	}
+
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.emitLabel(sb, skipLabel)
 }
 
 // outputParamBitIndex 返回 out 參數在 outputParamOrder 中的索引（即位圖 bit index）。
@@ -565,7 +772,7 @@ func (g *Generator) emitBitCheckFree(sb *strings.Builder, name string, varIdx in
 		g.indent(), moved, skipLabel, freeLabel))
 	// free block: move 未發生（bit=0），仍擁有數據，需 free
 	g.emitLabel(sb, freeLabel)
-	g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType)
+	g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType, name)
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
 	// skip block: move 已發生（bit=1），所有權已轉移，跳過 free
 	g.emitLabel(sb, skipLabel)
@@ -739,7 +946,7 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	varIdx, hasIdx := g.heapVarIndex[name]
 	if !hasIdx {
 		// 無 varIdx，直接 free 舊值
-		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
+		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
 		return
 	}
 	if g.hasBranchMove && g.movedBitmapBase != "" {
@@ -752,7 +959,7 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 		if g.isMovedVar(varIdx) {
 			return // 跳過 free（所有權轉移）
 		}
-		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType)
+		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
 	}
 }
 
@@ -779,9 +986,99 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), fieldGEP, structType, structType, structPtr, i))
 				g.emitStructFieldsFree(sb, fieldGEP, f.typ)
+				continue
+			}
+			// 內聯固定陣列字段 [N x T]（如 hashmap 的 keys [256]str）：
+			// 遍歷 N 個元素遞迴釋放其堆數據。純量元素（i64/i8/...）無需釋放。
+			if n, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
+				g.emitInlineArrayFieldFree(sb, structPtr, structType, i, n, elemType, f.typ)
 			}
 		}
 	}
+}
+
+// parseInlineArrayType 解析 LLVM 內聯固定陣列類型字串 "[N x T]"。
+// 返回 (N, elemType, true)；非內聯陣列或解析失敗返回 (0, "", false)。
+// 例："[256 x %str-long]" → (256, "%str-long", true)。
+func parseInlineArrayType(s string) (int64, string, bool) {
+	if !strings.HasPrefix(s, "[") || !strings.HasSuffix(s, "]") {
+		return 0, "", false
+	}
+	inner := s[1 : len(s)-1] // "256 x %str-long"
+	parts := strings.SplitN(inner, " x ", 2)
+	if len(parts) != 2 {
+		return 0, "", false
+	}
+	var n int64
+	if _, err := fmt.Sscanf(parts[0], "%d", &n); err != nil {
+		return 0, "", false
+	}
+	elem := strings.TrimSpace(parts[1])
+	if n <= 0 || elem == "" {
+		return 0, "", false
+	}
+	return n, elem, true
+}
+
+// emitInlineArrayFieldFree 釋放結構體內聯固定陣列字段 [N x T] 中每個元素的堆數據。
+// 用於 hashmap 等含 [N]str 鍵字段的場景：遍歷 N 個 slot，對每個非空元素遞迴釋放。
+// fieldIdx 為字段在結構體中的索引，arrayType 為字段的 LLVM 類型字串（如 "[256 x %str-long]"）。
+func (g *Generator) emitInlineArrayFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx int, n int64, elemType, arrayType string) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+	fieldGEP := fmt.Sprintf("%%inlarr.fgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), fieldGEP, structType, structType, structPtr, fieldIdx))
+	// 循環計數器
+	iPtr := fmt.Sprintf("%%inlarr.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+	condLabel := fmt.Sprintf("inlarr.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, condLabel)
+	iVal := fmt.Sprintf("%%inlarr.iv.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	cmp := fmt.Sprintf("%%inlarr.cmp.%d", tid)
+	bodyLabel := fmt.Sprintf("inlarr.body.%d", tid)
+	endLabel := fmt.Sprintf("inlarr.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %d\n", g.indent(), cmp, iVal, n))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), cmp, bodyLabel, endLabel))
+	g.emitLabel(sb, bodyLabel)
+	// GEP 第 i 個元素：結果類型為 elemType*，可直接傳給 emitElementFree
+	// 注意：[N x T]* 的 GEP 需要兩個索引 (0, i)：
+	//   - 第一個索引 0：不穿過 [N x T] 陣列本身（步長 = sizeof([N x T])）
+	//   - 第二個索引 i：存取陣列內部第 i 個元素（步長 = sizeof(T)）
+	// 若只用一個索引 i，步長會變成 sizeof([N x T])，導致越界存取。
+	elemGEP := fmt.Sprintf("%%inlarr.elem.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+		g.indent(), elemGEP, arrayType, arrayType, fieldGEP, iVal))
+	// 對 %str-long 元素加 len==0 跳過檢查：
+	// hashmap 等 std 容器的 init 只清零 len 未清零 data，未使用 slot 的 data 為垃圾值。
+	// len==0 表示該 slot 未持有堆數據，跳過 free 避免 free 垃圾指標。
+	// 對 %vec/%arr 同理（len=0 表示無元素）。三者 len 均為 field 0。
+	if elemType == "%str-long" || elemType == "%vec" || elemType == "%arr" {
+		lenGEP := fmt.Sprintf("%%inlarr.len.gep.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, elemType, elemType, elemGEP))
+		lenLoad := fmt.Sprintf("%%inlarr.len.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
+		lenCmp := fmt.Sprintf("%%inlarr.lencmp.%d", tid)
+		skipLabel := fmt.Sprintf("inlarr.skip.%d", tid)
+		freeLabel := fmt.Sprintf("inlarr.free.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmp, lenLoad))
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), lenCmp, skipLabel, freeLabel))
+		g.emitLabel(sb, freeLabel)
+		g.emitElementFree(sb, elemGEP, elemType)
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		g.emitLabel(sb, skipLabel)
+	} else {
+		g.emitElementFree(sb, elemGEP, elemType)
+	}
+	next := fmt.Sprintf("%%inlarr.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), next, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), next, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, endLabel)
 }
 
 // emitStructFieldFree frees heap data of struct field (deep free for vec/arr with heap-owning elements).
@@ -1129,9 +1426,60 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), dstFieldGEP, structType, structType, dstPtr, i))
 				g.emitStructClone(sb, srcFieldGEP, dstFieldGEP, f.typ)
+				continue
+			}
+			// 內聯固定陣列字段 [N x T]（如 hashmap 的 keys [256]str）：
+			// memcpy 已淺拷貝所有元素的 data 指標，需遍歷 N 個元素遞迴 clone，
+			// 覆寫 dst 元素的 data 為獨立 clone，避免 a/b 共享 data 導致 double-free。
+			if n, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
+				g.emitInlineArrayFieldClone(sb, srcPtr, dstPtr, structType, i, n, elemType, f.typ)
 			}
 		}
 	}
+}
+
+// emitInlineArrayFieldClone 深層 clone 結構體內聯固定陣列字段 [N x T] 的每個元素。
+// 用於 hashmap 等含 [N]str 鍵字段的場景：遍歷 N 個 slot，對每個元素遞迴 clone，
+// 使 dst 擁有獨立的堆數據，避免與 src 共享 data 指標。
+func (g *Generator) emitInlineArrayFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx int, n int64, elemType, arrayType string) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+	srcFieldGEP := fmt.Sprintf("%%inlarrc.src.fgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), srcFieldGEP, structType, structType, srcPtr, fieldIdx))
+	dstFieldGEP := fmt.Sprintf("%%inlarrc.dst.fgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dstFieldGEP, structType, structType, dstPtr, fieldIdx))
+	// 循環計數器
+	iPtr := fmt.Sprintf("%%inlarrc.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+	condLabel := fmt.Sprintf("inlarrc.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, condLabel)
+	iVal := fmt.Sprintf("%%inlarrc.iv.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	cmp := fmt.Sprintf("%%inlarrc.cmp.%d", tid)
+	bodyLabel := fmt.Sprintf("inlarrc.body.%d", tid)
+	endLabel := fmt.Sprintf("inlarrc.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %d\n", g.indent(), cmp, iVal, n))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), cmp, bodyLabel, endLabel))
+	g.emitLabel(sb, bodyLabel)
+	// GEP src/dst 第 i 個元素
+	// 注意：[N x T]* 的 GEP 需要兩個索引 (0, i)，詳見 emitInlineArrayFieldFree 的註解。
+	srcElemGEP := fmt.Sprintf("%%inlarrc.src.elem.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+		g.indent(), srcElemGEP, arrayType, arrayType, srcFieldGEP, iVal))
+	dstElemGEP := fmt.Sprintf("%%inlarrc.dst.elem.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
+		g.indent(), dstElemGEP, arrayType, arrayType, dstFieldGEP, iVal))
+	// 遞迴 clone 元素（%str-long → emitContainerClone；用戶結構體 → emitStructClone）
+	g.emitDeepClone(sb, srcElemGEP, dstElemGEP, elemType, "")
+	next := fmt.Sprintf("%%inlarrc.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), next, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), next, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, endLabel)
 }
 
 // emitStructFieldClone clone 結構體欄位的堆 data。
@@ -1679,6 +2027,15 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		g.arrayElemTypes = make(map[string]string)
 		for k, v := range g.moduleArrayElemTypes {
 			g.arrayElemTypes[k] = v
+		}
+	}
+	// 恢復模組級 option 變數的 inner type 備份，
+	// 讓 main 函數內 top-level option 變數的 inner type 可被查詢
+	// （expr.go / call.go 等多處讀取 optionInnerTypes）。
+	if g.moduleOptionInnerTypes != nil {
+		g.optionInnerTypes = make(map[string]string)
+		for k, v := range g.moduleOptionInnerTypes {
+			g.optionInnerTypes[k] = v
 		}
 	}
 
@@ -2666,6 +3023,20 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
 					if inner := g.inferOptionInnerType(s); inner != "" {
 						g.optionInnerTypes[s.Name.Value] = inner
+					}
+				}
+				// 若 inner 為堆型別，將 option 變數加入 heapVars 追蹤，
+				// 確保 v = m.get(...) 這類經 collectVarDecls 推導型別的 option 變數
+				// 也在函數結束時釋放其持有的 box。
+				if g.heapVars != nil {
+					if inner, ok := g.optionInnerTypes[s.Name.Value]; ok && g.isHeapOwningType(inner) {
+						if _, isLocal := g.funcLocalNames[s.Name.Value]; isLocal {
+							if _, isParam := g.paramNames[s.Name.Value]; !isParam {
+								if g.outputParamNames == nil || !g.outputParamNames[s.Name.Value] {
+									g.trackLocalHeapVar(s.Name.Value, "%option")
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4486,7 +4857,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	if mt, ok := stmt.Type.(*parser.MapType); ok {
 		llvmType := g.mapToLLVMType(mt.LLVMName()) // e.g. %hashmap-str-i64
 		g.varTypes[name] = llvmType
-		g.funcLocalNames[name] = true
+		// 區分全局變數和局部變數：全局變數的 varAddr 需返回 @name（透過 globalVars），
+		// 不能設 funcLocalNames（否則 varAddr 會返回未 alloca 的 %name）。
+		if g.globalVars == nil || !g.globalVars[name] {
+			g.funcLocalNames[name] = true
+		}
 		structName := strings.TrimPrefix(llvmType, "%")
 		recvArg := llvmType + "* " + g.varAddr(name)
 		// init() call: @hashmap-str-i64.init(%hashmap-str-i64* %m)
@@ -4504,6 +4879,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					g.indent(), sanitizeLLVMName(structName), recvArg, keyArg, valArg, isNewTmp))
 			}
 		}
+		// 追蹤為堆變數：hashmap 內聯 [N]str 鍵等欄位持有堆數據，
+		// 函數結束時由 emitHeapFree → emitVarHeapFree → emitStructFieldsFree 遞迴釋放。
+		g.trackLocalHeapVar(name, llvmType)
 		return
 	}
 
@@ -4745,6 +5123,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					switch llvmType {
 					case "%vec", "%str-long", "%arr":
 						g.trackLocalHeapVar(name, llvmType)
+					case "%option":
+						// option 是否持有堆數據由 inner type 決定。
+						// 僅當 inner 為堆型別（%str-long/%vec/%arr/用戶結構體）時才追蹤，
+						// 純量 option（?i64/?f64/...）不 malloc，無需釋放。
+						if inner, ok := g.optionInnerTypes[name]; ok && g.isHeapOwningType(inner) {
+							g.trackLocalHeapVar(name, llvmType)
+						}
 					default:
 						// 用戶自定義結構體：若含堆數據欄位（%vec/%str-long/%arr 或嵌套結構體），
 						// 加入追蹤以便函數結束時遞迴釋放。
@@ -5024,6 +5409,15 @@ func (g *Generator) generateExpressionStmt(sb *strings.Builder, stmt *parser.Exp
 func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
 
+	// 釋放目標變數的舊堆 box（若有）。
+	// 場景：v = f1(); v = f2() — 第二次賦值前需先釋放 f1 返回的 box，否則洩漏。
+	// freeOldHeapFree 內部會處理：
+	//   - 若 name 不在 heapVars 中（純量 option 或未追蹤），直接 return
+	//   - 若 name 是 out 參數，return（呼叫者管理）
+	//   - 透過 emitVarHeapFree 的 %option 分支正確釋放 option box
+	//   - 透過 bitmap 機制處理 move 後的雙重釋放
+	g.freeOldHeapValue(sb, stmt, name)
+
 	// Helper: store tag value
 	storeTag := func(tag int64) {
 		g.tmpIdx++
@@ -5261,12 +5655,34 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		copyToData(val)
 
 	case *parser.Identifier:
-		// Copy %option struct from source variable
+		// option = option：區分 move（out 參數）vs 深層 clone（局部）
 		if t, ok := g.varTypes[v.Value]; ok && t == "%option" {
-			g.tmpIdx++
-			copyReg := fmt.Sprintf("%%opt.copy.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = load %%option, %%option* %%%s\n", g.indent(), copyReg, v.Value))
-			sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), copyReg, name))
+			isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+			if isOutput {
+				// out = a：走 move（與 vec/struct 一致）。
+				// 淺拷貝 %option 結構（共享 box），由 handleMoveToOut 標記 source moved，
+				// 函數結束時跳過 source 的 free，由呼叫者管理 out。
+				g.tmpIdx++
+				copyReg := fmt.Sprintf("%%opt.copy.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%option, %%option* %%%s\n", g.indent(), copyReg, v.Value))
+				sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), copyReg, name))
+				g.handleMoveToOut(sb, v.Value, name)
+			} else {
+				// b = a：走深層 clone（與 vec/struct 一致）。
+				// malloc 新 box + 遞迴 clone inner 的堆數據，
+				// 使 a 和 b 各自獨立擁有 box，函數結束時各自 free。
+				g.emitOptionDeepClone(sb, v.Value, name)
+				// 追蹤目標為堆變數（若 inner 為堆型別）
+				if inner, ok := g.optionInnerTypes[name]; ok && g.isHeapOwningType(inner) {
+					if _, isLocal := g.funcLocalNames[name]; isLocal {
+						if _, isParam := g.paramNames[name]; !isParam {
+							if g.outputParamNames == nil || !g.outputParamNames[name] {
+								g.trackLocalHeapVar(name, "%option")
+							}
+						}
+					}
+				}
+			}
 		} else {
 			// Implicit value: val = n (plain value → ?T, tag=0)
 			storeTag(0)

@@ -2418,11 +2418,43 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		ptonRet := fmt.Sprintf("%%net.us.pton.%d", g.tmpIdx)
 		g.tmpIdx++
+		ptonOk := fmt.Sprintf("%%net.us.ptonok.%d", g.tmpIdx)
+		// getaddrinfo fallback registers
+		g.tmpIdx++
+		hintsReg := fmt.Sprintf("%%net.us.hints.%d", g.tmpIdx)
+		g.tmpIdx++
+		hintsPtr := fmt.Sprintf("%%net.us.hintsptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		hintsFamGep := fmt.Sprintf("%%net.us.hintsfam.%d", g.tmpIdx)
+		g.tmpIdx++
+		hintsFamCast := fmt.Sprintf("%%net.us.hintsfamc.%d", g.tmpIdx)
+		g.tmpIdx++
+		hintsStGep := fmt.Sprintf("%%net.us.hintsst.%d", g.tmpIdx)
+		g.tmpIdx++
+		hintsStCast := fmt.Sprintf("%%net.us.hintsstc.%d", g.tmpIdx)
+		g.tmpIdx++
+		resReg := fmt.Sprintf("%%net.us.res.%d", g.tmpIdx)
+		g.tmpIdx++
+		gaiRet := fmt.Sprintf("%%net.us.gai.%d", g.tmpIdx)
+		g.tmpIdx++
+		gaiOk := fmt.Sprintf("%%net.us.gaiok.%d", g.tmpIdx)
+		g.tmpIdx++
+		resVal := fmt.Sprintf("%%net.us.resval.%d", g.tmpIdx)
+		g.tmpIdx++
+		aiAddrGep := fmt.Sprintf("%%net.us.aiaddrgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		aiAddrCast := fmt.Sprintf("%%net.us.aiaddrcast.%d", g.tmpIdx)
+		g.tmpIdx++
 		fdTrunc := fmt.Sprintf("%%net.us.fdtrunc.%d", g.tmpIdx)
 		g.tmpIdx++
 		sendRet := fmt.Sprintf("%%net.us.ret.%d", g.tmpIdx)
 
 		if sb != nil {
+			// Basic block labels
+			tryResolve := fmt.Sprintf("net.us.tryresolve.%d", g.tmpIdx)
+			useResolved := fmt.Sprintf("net.us.useresolved.%d", g.tmpIdx)
+			doSendto := fmt.Sprintf("net.us.dosendto.%d", g.tmpIdx)
+
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", g.indent(), addrPtr))
@@ -2439,8 +2471,39 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%sstore i16 %s, i16* %s\n", g.indent(), portI16, portCast))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrInGep, addrPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", g.indent(), ptonRet, hostPtr, addrInGep))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 1\n", g.indent(), ptonOk, ptonRet))
+			// Branch: if inet_pton succeeded, go to do_sendto; else try DNS resolve
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), ptonOk, doSendto, tryResolve))
+
+			// try_resolve: call getaddrinfo
+			g.emitLabel(sb, tryResolve)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [48 x i8]\n", g.indent(), hintsReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [48 x i8], [48 x i8]* %s, i64 0, i64 0\n", g.indent(), hintsPtr, hintsReg))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 48, i1 false)\n", g.indent(), hintsPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), hintsFamGep, hintsPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i32*\n", g.indent(), hintsFamCast, hintsFamGep))
+			sb.WriteString(fmt.Sprintf("%sstore i32 2, i32* %s\n", g.indent(), hintsFamCast))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 8\n", g.indent(), hintsStGep, hintsPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i32*\n", g.indent(), hintsStCast, hintsStGep))
+			sb.WriteString(fmt.Sprintf("%sstore i32 2, i32* %s\n", g.indent(), hintsStCast))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), resReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @getaddrinfo(i8* %s, i8* null, i8* %s, i8** %s)\n", g.indent(), gaiRet, hostPtr, hintsPtr, resReg))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), gaiOk, gaiRet))
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), gaiOk, useResolved, doSendto))
+
+			// use_resolved: copy ai_addr to our sockaddr_in
+			g.emitLabel(sb, useResolved)
+			resVal = g.loadDataPtrField(sb, resReg)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 32\n", g.indent(), aiAddrGep, resVal))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), aiAddrCast, aiAddrGep))
+			aiAddr := g.loadDataPtrField(sb, aiAddrCast)
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 16, i1 false)\n", g.indent(), addrPtr, aiAddr))
+			sb.WriteString(fmt.Sprintf("%scall void @freeaddrinfo(i8* %s)\n", g.indent(), resVal))
+			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doSendto))
+
+			// do_sendto: call sendto
+			g.emitLabel(sb, doSendto)
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
-			// sendto(fd, data, n, 0, &addr, 16)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @sendto(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32 16)\n", g.indent(), sendRet, fdTrunc, dataPtr, nVal, addrPtr))
 		}
 		return sendRet
@@ -2770,6 +2833,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Linux:  socket(AF_INET, SOCK_RAW,  IPPROTO_ICMP)  — requires root or CAP_NET_RAW
 	// Returns: fd i64 (-1 on error)
 	if fnName == "net-icmp-open" {
+		if sb == nil {
+			return ""
+		}
 		// SOCK_DGRAM=2 on macOS, SOCK_RAW=3 on Linux
 		sockType := int32(3) // SOCK_RAW (Linux)
 		if runtime.GOOS == "darwin" {
@@ -2779,11 +2845,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		sockFd := fmt.Sprintf("%%net.icmp.sock.%d", g.tmpIdx)
 		g.tmpIdx++
 		fdExt := fmt.Sprintf("%%net.icmp.fdext.%d", g.tmpIdx)
-		if sb != nil {
-			// socket(AF_INET=2, sockType, IPPROTO_ICMP=1)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 %d, i32 1)\n", g.indent(), sockFd, sockType))
-			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
-		}
+		// socket(AF_INET=2, sockType, IPPROTO_ICMP=1)
+		sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 %d, i32 1)\n", g.indent(), sockFd, sockType))
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
 		return fdExt
 	}
 

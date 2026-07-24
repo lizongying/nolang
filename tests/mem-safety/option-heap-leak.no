@@ -1,0 +1,118 @@
+; ═════════════════════════════════════════════════════════════════
+; 問題 13：option 類型堆數據永不釋放
+; 嚴重等級：嚴重（系統性內存洩漏）
+; ═════════════════════════════════════════════════════════════════
+;
+; 觸發條件：
+;   v ?str = "hello"          ; copyStrToData malloc box 存 %str-long
+;   u ?User = User{name:"x"}  ; copyToData malloc box 存 %User
+;   ; v/u 離開作用域時，box 永不釋放
+;
+; 根本原因：
+;   - stmt.go:4745-4754 的 trackLocalHeapVar switch 不含 %option
+;   - emitVarHeapFree 的 default 分支中 isUserStructType("%option") = false
+;   - emitGlobalHeapFree 條件判斷不含 %option
+;   - 三層防線均排除 %option，option 變數從未進入 heapVars
+;
+; 相關文件：
+;   src/build/llvm/stmt.go:4745-4754（追蹤 switch，無 %option 分支）
+;   src/build/llvm/stmt.go:299-321（emitVarHeapFree，無 %option 分支）
+;   src/build/llvm/stmt.go:270-294（emitGlobalHeapFree，條件不含 %option）
+;   src/build/llvm/stmt.go:5046-5064（copyStrToData malloc heap）
+;   src/build/llvm/stmt.go:5104-5124（copyToData struct 分支 malloc heap）
+;
+; 預期行為：
+;   - option 變數離開作用域時，釋放其持有的 box（及 inner 堆數據）
+;   - option 重新賦值時，先釋放舊 box
+;   - option-to-option 局部賦值 b = a 走深層 clone（a/b 各自獨立 box）
+;   - option 賦值到 out 參數走 move（source 標記 moved，跳過 free）
+;
+; 實際行為（修復前）：
+;   option 變數持有的所有 box 永久洩漏
+;
+; 修復方向：
+;   - trackLocalHeapVar switch 加 %option 分支（inner 為堆型別時追蹤）
+;   - emitVarHeapFree 加 %option 分支，呼叫 emitOptionHeapFree
+;   - emitOptionHeapFree: load tag → 非 nil → inttoptr data → 遞迴釋放 inner → free box
+;   - emitGlobalHeapFree 條件加 %option，並備份 moduleOptionInnerTypes
+;   - generateOptionAssign 入口呼叫 freeOldHeapValue（覆蓋釋放）
+;   - option-to-option Identifier 分支：out 走 move，局部走 emitOptionDeepClone
+;
+; ═════════════════════════════════════════════════════════════════
+
+; 測試 1：?str option 作用域結束釋放（涵蓋 copyStrToData 路徑）
+test-str-option = () {
+    v ?str = "hello"
+    print(v)
+    ; v 離開作用域時應釋放 box + str data
+}
+
+test-str-option()
+print("test-str-option: ok")
+
+; 測試 2：用戶結構體 option 作用域結束釋放（涵蓋 copyToData struct 路徑）
+MyStruct {
+    name str
+    count i64
+}
+
+make-struct = () (out MyStruct) {
+    out = MyStruct{ name: "world", count: 42 }
+}
+
+test-struct-option = () {
+    u ?MyStruct = make-struct()
+    ; u 離開作用域時應釋放 box + struct fields 的堆數據（name.data）
+    ; 不直接讀取 u.name/u.count（option-struct 字段讀取是另一個獨立問題）
+    print("struct-option-created")
+}
+
+test-struct-option()
+print("test-struct-option: ok")
+
+; 測試 3：option 重新賦值覆蓋舊 box（涵蓋 freeOldHeapValue 路徑）
+test-reassign = () {
+    v ?str = "first"
+    v = "second"
+    print(v)
+    ; 第二次賦值前應先釋放 "first" 的 box
+}
+
+test-reassign()
+print("test-reassign: ok")
+
+; 測試 4：option-to-option 局部賦值走深層 clone
+test-clone = () {
+    a ?str = "original"
+    b ?str = a
+    print(a)
+    print(b)
+    ; a 和 b 應各自獨立擁有 box，離開作用域時各自 free（不 double-free）
+}
+
+test-clone()
+print("test-clone: ok")
+
+; 測試 5：option 賦值到 out 參數走 move
+make-opt = () (out ?str) {
+    a ?str = "moved-out"
+    out = a
+    ; a 走 move 到 out，a 標記 moved，函數結束時跳過 a 的 free
+    ; out 由呼叫者管理
+}
+
+r ?str = make-opt()
+print(r)
+print("test-move-out: ok")
+
+; 測試 6：純量 option（?i64）不應嘗試釋放（無 malloc）
+test-scalar-option = () {
+    n ?i64 = 100
+    print(n)
+    ; 純量 option 不持有堆，無需釋放
+}
+
+test-scalar-option()
+print("test-scalar-option: ok")
+
+print("done")
