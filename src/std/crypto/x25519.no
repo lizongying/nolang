@@ -298,10 +298,10 @@ fe-mul121666 = (h []i64, f []i64) {
 ; fe-invert: 計算 a^(-1) mod p
 ; 使用 ref10 優化加法鏈計算 a^(p-2) = a^(2^255-21)
 fe-invert = (out []i64, a []i64) {
-    t0 []i64
-    t1 []i64
-    t2 []i64
-    t3 []i64
+    t0 []i64 = with-len(10)
+    t1 []i64 = with-len(10)
+    t2 []i64 = with-len(10)
+    t3 []i64 = with-len(10)
 
     ; t0 = a^2
     fe-sq(t0, a)
@@ -411,7 +411,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; p = 2^255 - 19
 
     ; 複製 h 進行工作
-    t []i64
+    t []i64 = with-len(10)
     fe-copy(t, h)
 
     ; 進位傳播使每個 limb 在範圍內
@@ -513,7 +513,7 @@ fe-tobytes = (s [32]byte, h []i64) {
 x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     ; Clamping: 固定純量的某些位元
     ; scalar[0] &= 248, scalar[31] &= 127, scalar[31] |= 64
-    k []byte
+    k []byte = with-len(32)
     i <- [0..32): {
         k[i] = scalar[i]
     }
@@ -522,26 +522,36 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     k[31] = k[31] | 64
 
     ; 載入點座標
-    u []i64
+    u []i64 = with-len(10)
     fe-frombytes(u, point)
 
     ; 初始化 Montgomery ladder
-    x1 []i64
+    x1 []i64 = with-len(10)
     fe-copy(x1, u)
 
-    x2 []i64
+    x2 []i64 = with-len(10)
     fe-one(x2)
 
-    z2 []i64
+    z2 []i64 = with-len(10)
     fe-zero(z2)
 
-    x3 []i64
+    x3 []i64 = with-len(10)
     fe-copy(x3, u)
 
-    z3 []i64
+    z3 []i64 = with-len(10)
     fe-one(z3)
 
-    ; 預計算 u * 121665
+    ; 預分配 Montgomery ladder 臨時變數（循環外分配一次，循環內重複使用）
+    a []i64 = with-len(10)
+    aa []i64 = with-len(10)
+    b-fe []i64 = with-len(10)
+    bb []i64 = with-len(10)
+    e []i64 = with-len(10)
+    c []i64 = with-len(10)
+    d []i64 = with-len(10)
+    da []i64 = with-len(10)
+    cb []i64 = with-len(10)
+
     swap = 0
 
     ; 從最高位元到最低位元迭代（bit 254 到 bit 0）
@@ -559,31 +569,14 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         swap = b
 
         ; Montgomery ladder step
-        a []i64
         fe-add(a, x2, z2)
-
-        aa []i64
         fe-sq(aa, a)
-
-        b-fe []i64
         fe-sub(b-fe, x2, z2)
-
-        bb []i64
         fe-sq(bb, b-fe)
-
-        e []i64
         fe-add(e, aa, bb)
-
-        c []i64
         fe-add(c, x3, z3)
-
-        d []i64
         fe-sub(d, x3, z3)
-
-        da []i64
         fe-mul(da, d, a)
-
-        cb []i64
         fe-mul(cb, c, b-fe)
 
         ; x3 = (da + cb)^2
@@ -612,10 +605,10 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     fe-cswap(z2, z3, swap)
 
     ; 計算結果: x2 * z2^(-1)
-    z-inv []i64
+    z-inv []i64 = with-len(10)
     fe-invert(z-inv, z2)
 
-    result []i64
+    result []i64 = with-len(10)
     fe-mul(result, x2, z-inv)
 
     fe-tobytes(out, result)
@@ -652,7 +645,7 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     ; 用 PRNG 生成 32 位元組私鑰
     state = seed
     i <- [0..32): {
-        state = rand.rand(state)
+        state, r = rand(state)
         priv[i] = state & 255
     }
 

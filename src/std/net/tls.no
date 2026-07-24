@@ -133,7 +133,7 @@ tls-conn {
 tls-rand-bytes = (state i64, n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
-        state = rand.rand(state)
+        state, r = rand(state)
         out[i] = state & 255
     }
 }
@@ -580,7 +580,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     ; PS: 非零隨機位元組
     state = now-ns()
     i <- [0..ps-len): {
-        state = rand.rand(state)
+        state, r = rand(state)
         b = state & 255
         b == 0 -> b = 1
         padded[2 + i] = b
@@ -749,12 +749,20 @@ tls-conn.read-certificate = (cert-out []byte) (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
-    ct != TLS-CT-HANDSHAKE -> return
+    io.errln('[TLS] cert: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
+    ct != TLS-CT-HANDSHAKE -> {
+        io.errln('[TLS] cert: not handshake')
+        return
+    }
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
     msg-type = buf[5] & 255
-    msg-type != TLS-HS-CERTIFICATE -> return
+    io.errln('[TLS] cert: msg-type=' - msg-type.to-str())
+    msg-type != TLS-HS-CERTIFICATE -> {
+        io.errln('[TLS] cert: not certificate')
+        return
+    }
     pos = 9
 
     ; total certs length (3 bytes)
@@ -997,24 +1005,34 @@ tls-conn.derive-keys = (premaster []byte) {
 ; 返回 ok bool: true=成功
 tls-conn.send-client-hello-13 = () (ok bool) {
     ok = false
-    io.errln('[TLS13] send-ch13 start')
+    io.errln('[TLS] ch13: start')
 
-    ; 生成 X25519 金鑰對
+    ; 生成 X25519 金鑰對（內聯實現，避免多返回值 [32]byte 的編譯器 bug）
     seed = .rand-state
     .rand-state = .rand-state + 1
-    io.errln('[TLS13] before x25519-gen')
-    cpriv, cpub = x25519.x25519-gen-keypair(seed)
-    io.errln('[TLS13] after x25519-gen')
-    .client-priv = cpriv
-    .client-pub = cpub
+    io.errln('[TLS] ch13: before keypair')
+    ; 生成私鑰
+    kp-state = seed
+    i <- [0..32): {
+        kp-state, kp-r = rand(kp-state)
+        .client-priv[i] = kp-state & 255
+    }
+    .client-priv[0] = .client-priv[0] & 248
+    .client-priv[31] = .client-priv[31] & 127
+    .client-priv[31] = .client-priv[31] | 64
+    ; 計算公鑰
+    .client-pub = x25519.x25519-scalarmult-base(.client-priv)
+    io.errln('[TLS] ch13: after keypair')
 
     ; 構建 ClientHello
-    hs []byte
+    hs []byte = with-len(512)
     pos = 0
+    io.errln('[TLS] ch13: hs allocated')
 
     ; msg_type = 1 (ClientHello)
     hs[0] = TLS-HS-CLIENT-HELLO
     pos = 4
+    io.errln('[TLS] ch13: msg_type set')
 
     ; version = 0x0303（TLS 1.2，相容性）
     tls-put-u16(hs, pos, TLS-VERSION)
@@ -1035,13 +1053,8 @@ tls-conn.send-client-hello-13 = () (ok bool) {
 
     ; cipher_suites: 2 suites = 4 bytes
     tls-put-u16(hs, pos, 4)
-    pos = pos + 2
 
-    ; TLS_AES_128_GCM_SHA256
-    tls-put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
-    pos = pos + 2
-
-    ; TLS_RSA_WITH_AES_128_CBC_SHA256（fallback）
+    ; TLS_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0x002F)
     tls-put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
     pos = pos + 2
 
@@ -1128,6 +1141,34 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     }
     pos = pos + 32
 
+    ; 擴展 5: server_name (SNI, 0) — 必須包含，否則伺服器可能拒絕
+    tls-put-u16(hs, pos, 0)
+    pos = pos + 2
+
+    ; ext data length = 2 + 1 + 2 + host.len
+    sni-ext-len = 5 + .host.len
+    tls-put-u16(hs, pos, sni-ext-len)
+    pos = pos + 2
+
+    ; server name list length = 1 + 2 + host.len
+    sni-list-len = 3 + .host.len
+    tls-put-u16(hs, pos, sni-list-len)
+    pos = pos + 2
+
+    ; name type = 0 (host_name)
+    hs[pos] = 0
+    pos = pos + 1
+
+    ; name length
+    tls-put-u16(hs, pos, .host.len)
+    pos = pos + 2
+
+    ; name
+    i <- [0..host.len): {
+        hs[pos + i] = .host[i]
+    }
+    pos = pos + .host.len
+
     ; 填入擴展總長度
     ext-total = pos - ext-len-pos - 2
     tls-put-u16(hs, ext-len-pos, ext-total)
@@ -1135,6 +1176,9 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     ; 填入 handshake message length
     body-len = pos - 4
     tls-put-u24(hs, 1, body-len)
+
+    ; 設定實際長度
+    hs.len = pos
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -1154,12 +1198,24 @@ tls-conn.read-server-hello-13 = () (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
-    ct != TLS-CT-HANDSHAKE -> return
+    io.errln('[TLS] sh13: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
+    ct != TLS-CT-HANDSHAKE -> {
+        ct == 21 -> {
+            ; alert message: buf[5] = level, buf[6] = description
+            io.errln('[TLS] alert: level=' - (buf[5] & 255).to-str() - ' desc=' - (buf[6] & 255).to-str())
+        }
+        io.errln('[TLS] sh13: not handshake')
+        return
+    }
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
     msg-type = buf[5] & 255
-    msg-type != TLS-HS-SERVER-HELLO -> return
+    io.errln('[TLS] sh13: msg-type=' - msg-type.to-str())
+    msg-type != TLS-HS-SERVER-HELLO -> {
+        io.errln('[TLS] sh13: not server hello')
+        return
+    }
     pos = 9
 
     ; server version（TLS 1.3 中為 0x0303，實際版本在擴展中）
@@ -1543,21 +1599,18 @@ tls-conn.connect-13 = () (ok bool) {
     ee-type = 0
     ee-data []byte
     ee-type, ee-data = .read-encrypted-handshake-13()
-    io.errln('[TLS13] EE type=' - ee-type.to-str())
     ee-type != TLS-HS-ENCRYPTED-EXTENSIONS -> return
 
     ; 6. 讀取 Certificate
     cert-type = 0
     cert-data []byte
     cert-type, cert-data = .read-encrypted-handshake-13()
-    io.errln('[TLS13] Cert type=' - cert-type.to-str())
     cert-type != TLS-HS-CERTIFICATE -> return
 
     ; 7. 讀取 CertificateVerify（跳過驗證，僅讀取）
     cv-type = 0
     cv-data []byte
     cv-type, cv-data = .read-encrypted-handshake-13()
-    io.errln('[TLS13] CV type=' - cv-type.to-str())
     cv-type != TLS-HS-CERTIFICATE-VERIFY -> {
         ; 某些伺服器可能不發送 CertificateVerify，嘗試當作 Finished
         cv-type == TLS-HS-FINISHED -> {
@@ -1662,53 +1715,58 @@ tls-conn.init = () {
 tls-conn.connect = (host str, port i64) (ok bool) {
     ok = false
     .host = host
+    io.errln('[TLS] connect start')
 
     ; 1. TCP 連線（使用 dns-dial 支援 hostname 解析）
-    .fd = dns.dns-dial(host, port)
-    io.errln('[TLS] TCP connect')
-    .fd < 0 -> return
+    tcpfd = dns.dns-dial(host, port)
+    io.errln('[TLS] dns-dial done fd=' - tcpfd.to-str())
+    tcpfd > 0 -> io.errln('[TLS] fd positive')
+    tcpfd < 0 -> {
+        io.errln('[TLS] dns-dial failed')
+        return
+    }
+    .fd = tcpfd
+    io.errln('[TLS] fd set')
     .connected = true
+    io.errln('[TLS] connected set')
 
     ; 2. 送出 TLS 1.3 ClientHello（同時支援 1.2 fallback）
     ok = .send-client-hello-13()
-    io.errln('[TLS] after send-ch13')
+    io.errln('[TLS] ch13 returned')
     ok == false -> {
-        io.errln('[TLS] send-client-hello-13 failed')
+        io.errln('[TLS] send-ch13 failed')
         .close()
         return
     }
+    io.errln('[TLS] ch13 sent')
 
     ; 3. 讀取 ServerHello 並偵測版本
     ok = .read-server-hello-13()
-    io.errln('[TLS] after read-sh13')
     ok == false -> {
-        io.errln('[TLS] TLS 1.2 fallback')
+        io.errln('[TLS] sh13 failed -> 1.2')
         .version = TLS-VERSION
-
-        ; TLS 1.2 路徑
-        ; 注意：read-server-hello-13 已經讀取了 ServerHello 並追加了 hs-buf
-        ; 需要驗證 cipher suite 是否為 TLS 1.2
-        ; 由於已經追加了 hs-buf，直接繼續 TLS 1.2 交握
 
         ; 4. 讀取 Certificate
         cert []byte = with-len(16400)
         ok = .read-certificate(cert)
         ok == false -> {
-            io.errln('[TLS] read-certificate failed')
+            io.errln('[TLS] cert fail')
             .close()
             return
         }
+        io.errln('[TLS] cert ok')
 
         ; 5. 讀取 ServerHelloDone
         ok = .read-server-hello-done()
         ok == false -> {
-            io.errln('[TLS] read-server-hello-done failed')
+            io.errln('[TLS] shd fail')
             .close()
             return
         }
+        io.errln('[TLS] shd ok')
 
         ; 6. 生成 premaster secret
-        premaster []byte
+        premaster []byte = with-len(48)
         premaster[0] = 0x03
         premaster[1] = 0x03
         rand-bytes []byte = tls-rand-bytes(.rand-state, 46)
@@ -1722,9 +1780,11 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 8. 發送 ClientKeyExchange
         ok = .send-client-key-exchange(premaster, cert)
         ok == false -> {
+            io.errln('[TLS] cke fail')
             .close()
             return
         }
+        io.errln('[TLS] cke ok')
 
         ; 9. 發送 ChangeCipherSpec
         .send-change-cipher-spec()
@@ -1733,38 +1793,42 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 10. 發送 Finished（加密）
         ok = .send-finished(premaster)
         ok == false -> {
-            io.errln('[TLS] send-finished failed')
+            io.errln('[TLS] fin fail')
             .close()
             return
         }
+        io.errln('[TLS] fin ok')
 
         ; 11. 讀取 ChangeCipherSpec
         ok = .read-change-cipher-spec()
         ok == false -> {
-            io.errln('[TLS] read-change-cipher-spec failed')
+            io.errln('[TLS] ccs fail')
             .close()
             return
         }
+        io.errln('[TLS] ccs ok')
 
         ; 12. 讀取 Finished（加密）
         ok = .read-finished(premaster)
         ok == false -> {
-            io.errln('[TLS] read-finished failed')
+            io.errln('[TLS] rfin fail')
             .close()
             return
         }
+        io.errln('[TLS] rfin ok')
         ok = true
         return
     }
 
     ; TLS 1.3 路徑
-    io.errln('[TLS] TLS 1.3 path')
+    io.errln('[TLS] 1.3 path')
     ok = .connect-13()
     ok == false -> {
-        io.errln('[TLS] connect-13 failed')
+        io.errln('[TLS] c13 fail')
         .close()
         return
     }
+    io.errln('[TLS] c13 ok')
 
     ok = true
 }
