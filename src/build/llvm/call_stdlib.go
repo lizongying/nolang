@@ -2121,15 +2121,25 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), gaiOk, gaiRet))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), gaiOk, useResolved, failLabel))
 
-			// use_resolved: copy ai_addr to our sockaddr_in
+			// use_resolved: copy only sin_addr from ai_addr to our sockaddr_in
+			// We copy only 4 bytes at offset 4 (sin_addr), NOT the full 16 bytes,
+			// because getaddrinfo was called with NULL service so sin_port=0 in ai_addr,
+			// and we already set sin_port correctly before the inet_pton branch.
+			// Copying all 16 bytes would overwrite sin_port with 0, connecting to port 0.
 			g.emitLabel(sb, useResolved)
 			resVal = g.loadDataPtrField(sb, resReg)
 			// macOS addrinfo layout: ai_addr at offset 32
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 32\n", g.indent(), aiAddrGep, resVal))
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), aiAddrCast, aiAddrGep))
 			aiAddr = g.loadDataPtrField(sb, aiAddrCast)
-			// copy 16 bytes from ai_addr to our sockaddr_in
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 16, i1 false)\n", g.indent(), addrPtr, aiAddr))
+			// copy only sin_addr (4 bytes at offset 4) from ai_addr to our buffer
+			g.tmpIdx++
+			addrSinAddrGep := fmt.Sprintf("%%net.d.sinaddr.%d", g.tmpIdx)
+			g.tmpIdx++
+			aiAddrSinAddrGep := fmt.Sprintf("%%net.d.aiaddrsin.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrSinAddrGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), aiAddrSinAddrGep, aiAddr))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 4, i1 false)\n", g.indent(), addrSinAddrGep, aiAddrSinAddrGep))
 			// freeaddrinfo
 			sb.WriteString(fmt.Sprintf("%scall void @freeaddrinfo(i8* %s)\n", g.indent(), resVal))
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doSocket))

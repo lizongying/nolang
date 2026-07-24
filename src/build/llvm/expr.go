@@ -2765,11 +2765,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 				return "0"
 			}
-	}
+		}
 
-	val := g.generateExprWithSB(sb, expr.Value)
+		val := g.generateExprWithSB(sb, expr.Value)
 
-	// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
+		// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
 		if varName != "" {
 			if t, ok := g.varTypes[varName]; ok {
 				structName = strings.TrimPrefix(t, "%")
@@ -5733,6 +5733,8 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 	resultAddr := fmt.Sprintf("%%async.result.%d", g.tmpIdx)
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), resultAddr, resultType))
+		// zeroinitializer：避免 out 參數賦值時 freeOldHeapValue 讀取棧垃圾 data 指針
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), resultType, resultType, resultAddr))
 	}
 
 	// alloca args struct

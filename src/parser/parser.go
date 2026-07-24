@@ -69,6 +69,27 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 	return false // 未知變數預設不觸發完整性檢查
 }
 
+// isBuiltinOption returns true if matched is a built-in optional (?i64, ?str, etc.).
+// Built-in optionals cannot produce err, so err branch should not be required.
+func (p *Parser) isBuiltinOption(matched Expression) bool {
+	if matched == nil {
+		return false
+	}
+	if ident, ok := matched.(*Identifier); ok {
+		if t, ok := p.varDeclTypes[ident.Value]; ok {
+			if strings.HasPrefix(t, "?") {
+				base := t[1:]
+				switch base {
+				case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8",
+					"f64", "f32", "str", "bool", "byte":
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // classifyBlock 分類 `{ body }` 的型別（預測：不消耗 token，只讀 peekToken）
 // 必須在 p.peekToken == LBRACE 時呼叫。
 // 使用有限預測：檢查 { 後第一個非 NEWLINE token + 第二個 token。
@@ -4296,10 +4317,11 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+	isBuiltinOpt := p.isBuiltinOption(matched)
+	if !hasElseArm && ((!isBuiltinOpt && !hasErrArm) || !hasNilArm || !hasValArm) {
 		if p.matchedIsOption(matched) {
 			var missing []string
-			if !hasErrArm {
+			if !isBuiltinOpt && !hasErrArm {
 				missing = append(missing, "err")
 			}
 			if !hasNilArm {
@@ -4532,10 +4554,11 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+	isBuiltinOpt2 := p.isBuiltinOption(nil)
+	if !hasElseArm && ((!isBuiltinOpt2 && !hasErrArm) || !hasNilArm || !hasValArm) {
 		if p.matchedIsOption(nil) {
 			var missing []string
-			if !hasErrArm {
+			if !isBuiltinOpt2 && !hasErrArm {
 				missing = append(missing, "err")
 			}
 			if !hasNilArm {
@@ -5553,9 +5576,10 @@ func (p *Parser) parseMatchExpression() Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
+	isBuiltinOpt3 := p.isBuiltinOption(matched)
+	if !hasElseArm && ((!isBuiltinOpt3 && !hasErrArm) || !hasNilArm || !hasValArm) {
 		var missing []string
-		if !hasErrArm {
+		if !isBuiltinOpt3 && !hasErrArm {
 			missing = append(missing, "err")
 		}
 		if !hasNilArm {

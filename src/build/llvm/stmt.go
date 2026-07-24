@@ -337,7 +337,7 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 //  4. NULL check（data 可能為 0 即使 tag != 1）
 //  5. 若 inner 為堆型別：bitcast 到 inner*，呼叫 emitVarHeapFree 遞迴釋放 inner 的 data
 //     （inner 是 %str-long → 釋放字串 data；是 %vec/%arr → 釋放容器 data；
-//      是用戶結構體 → emitStructFieldsFree 遞迴釋放欄位）
+//     是用戶結構體 → emitStructFieldsFree 遞迴釋放欄位）
 //  6. call @free(i8* boxPtr) 釋放 box 本身
 //
 // 順序：先釋放 inner 的 data，再 free box，避免懸垂。
@@ -744,7 +744,7 @@ func (g *Generator) emitClearMovedBitIR(sb *strings.Builder, varIdx int) {
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldVal, bvName))
 	g.tmpIdx++
 	maskVal := fmt.Sprintf("%%mb.clrm.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), maskVal, oldVal, ^(1<<offset)))
+	sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), maskVal, oldVal, ^(1 << offset)))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), maskVal, bvName))
 }
 
@@ -926,7 +926,8 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 }
 
 // freeOldHeapValue 釋放重新賦值變數的舊堆數據。
-// 跳過合成 let（IsSynthetic）、輸出參數（由呼叫者管理）。
+// 跳過合成 let（IsSynthetic）。
+// 輸出參數也釋放舊值（函數結束時由 emitHeapFree 跳過最終值，歸呼叫者）。
 // 對已 move 的變數執行雙重校驗：bit=0 仍需 free，bit=1 跳過（所有權已轉移）。
 func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
 	if g.heapVars == nil || stmt.IsSynthetic {
@@ -934,9 +935,6 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	}
 	oldType, isHeap := g.heapVars[name]
 	if !isHeap {
-		return
-	}
-	if g.outputParamNames != nil && g.outputParamNames[name] {
 		return
 	}
 	elemType := ""
@@ -1601,27 +1599,27 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.varTypes = make(map[string]string) // reset varTypes for each function
 	g.funcLocalNames = make(map[string]bool)
 	g.funcParams = make(map[string]bool)
-	g.optionInnerTypes = make(map[string]string)         // reset option inner types for each function
-	g.ssaTypes = make(map[string]string)                 // reset SSA type tracking for each function
-	g.varFnTypes = make(map[string]*parser.FunctionType) // reset function-type params for each function
-	g.arraySizes = make(map[string]int64)                // reset array size tracking for each function
-	g.sliceViews = make(map[string]*sliceViewInfo)       // reset slice view tracking for each function
-	g.outputParamNames = make(map[string]bool)           // reset output param tracking
-	g.outputParamOrder = nil                             // reset output param order (for outBindState index)
-	g.hasBranchMove = false                              // reset branch move flag (set by pre-scan)
-	g.heapVarIndex = make(map[string]int)                // reset heap var index (varIdx assignment)
-	g.nextHeapVarIdx = 0                                 // reset next heap var idx counter
-	g.outBindState = nil                                 // reset out param bind state (allocated after outputParamOrder known)
-	g.movedVarBitset = nil                               // reset compile-time moved bitset
-	g.movedBitmapBase = ""                               // reset runtime bitmap var prefix
-	g.bitmapCount = 0                                    // reset bitmap block count
+	g.optionInnerTypes = make(map[string]string)              // reset option inner types for each function
+	g.ssaTypes = make(map[string]string)                      // reset SSA type tracking for each function
+	g.varFnTypes = make(map[string]*parser.FunctionType)      // reset function-type params for each function
+	g.arraySizes = make(map[string]int64)                     // reset array size tracking for each function
+	g.sliceViews = make(map[string]*sliceViewInfo)            // reset slice view tracking for each function
+	g.outputParamNames = make(map[string]bool)                // reset output param tracking
+	g.outputParamOrder = nil                                  // reset output param order (for outBindState index)
+	g.hasBranchMove = false                                   // reset branch move flag (set by pre-scan)
+	g.heapVarIndex = make(map[string]int)                     // reset heap var index (varIdx assignment)
+	g.nextHeapVarIdx = 0                                      // reset next heap var idx counter
+	g.outBindState = nil                                      // reset out param bind state (allocated after outputParamOrder known)
+	g.movedVarBitset = nil                                    // reset compile-time moved bitset
+	g.movedBitmapBase = ""                                    // reset runtime bitmap var prefix
+	g.bitmapCount = 0                                         // reset bitmap block count
 	g.outputBindings = make(map[string]map[int]outputBinding) // reset delayed move bindings (SSA versioned)
-	g.ssaVersion = make(map[string]int)                  // reset SSA version counters
-	g.heapVars = make(map[string]string)                 // reset heap var tracking
-	g.stackArrVars = make(map[string]bool)               // reset stack-allocated array tracking
-	g.varAlias = make(map[string]string)                 // reset var alias tracking (用於 %arr → %vec 重定向)
-	g.taskResultTypes = make(map[string]string)          // reset task result types for each function
-	g.futureResultTypes = make(map[string]string)        // reset future result types for each function
+	g.ssaVersion = make(map[string]int)                       // reset SSA version counters
+	g.heapVars = make(map[string]string)                      // reset heap var tracking
+	g.stackArrVars = make(map[string]bool)                    // reset stack-allocated array tracking
+	g.varAlias = make(map[string]string)                      // reset var alias tracking (用於 %arr → %vec 重定向)
+	g.taskResultTypes = make(map[string]string)               // reset task result types for each function
+	g.futureResultTypes = make(map[string]string)             // reset future result types for each function
 	// 重置 arrayElemTypes 並恢復模組級元素型別，避免函數參數（如 rsa.no bn-add 的 c []i64）
 	// 覆蓋模組級同名變數（如 main.no 的 c []str）導致後續 push 索引型別錯誤
 	g.arrayElemTypes = make(map[string]string)
@@ -1686,6 +1684,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			// 切片型結果參數也需註冊元素型別，供 IndexExpression 使用正確型別
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(st.Elem.String())
+			}
+			// out 參數加入 heapVars（用於 freeOldHeapValue 釋放賦值時的舊值）。
+			// 不加入 heapVarIndex（不參與 move bitmap），函數結束 emitHeapFree 仍跳過 out。
+			if llvmType := g.varTypes[r.Name]; g.isHeapOwningType(llvmType) || llvmType == "%option" {
+				if g.heapVars == nil {
+					g.heapVars = make(map[string]string)
+				}
+				g.heapVars[r.Name] = llvmType
 			}
 		}
 	}
@@ -4254,14 +4260,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 對於一般情況，在 RHS 求值後釋放舊值，避免 `x = f(x)` 造成 use-after-free。
 	oldValFreed := false
 
-	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，標記源為 moved（不 free）。
-	// 必須在所有型別特定處理（如 option）的 early return 之前執行，
-	// 否則 option 型別的輸出參數賦值（如 line = buf）不會標記 moved。
-	// 統一使用 handleMoveToOut：清舊 bit + 設新 bit + 更新 outBindState。
+	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，走 move（所有權轉移）。
+	// move 不 free out 舊值（舊值可能與前一個 source 共享 data），
+	// 設 oldValFreed=true 跳過通用路徑的 freeOldHeapValue。
+	// 非 move 的 out 賦值（表達式）由通用路徑 freeOldHeapValue 釋放舊值。
 	if g.heapVars != nil && g.outputParamNames != nil && g.outputParamNames[name] && g.heapVarIndex != nil && !stmt.IsSynthetic {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if _, isHeap := g.heapVars[ident.Value]; isHeap {
 				g.handleMoveToOut(sb, ident.Value, name)
+				oldValFreed = true
 			}
 		}
 	}
@@ -4419,15 +4426,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
 
 			// store data (field 2)
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
-			g.indent(), dataGEP, g.varAddr(name)))
-		g.storeDataPtrField(sb, ptrReg, dataGEP)
-		// 追蹤局部 vec 變數，用於函數結束時深層 free
-		g.trackLocalHeapVar(name, "%vec")
-		return
-	}
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%vec.data.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, g.varAddr(name)))
+			g.storeDataPtrField(sb, ptrReg, dataGEP)
+			// 追蹤局部 vec 變數，用於函數結束時深層 free
+			g.trackLocalHeapVar(name, "%vec")
+			return
+		}
 
 		// Non-literal slice declaration (e.g. `lines []str`): initialize %vec
 		// with a default data buffer so push() and index assignment work.
@@ -4458,14 +4465,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), vecCapGEP, g.varAddr(name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), defaultCap, vecCapGEP))
 			// store data = buf (field 2)
-		g.tmpIdx++
-		vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
-		g.storeDataPtrField(sb, vecBuf, vecDataGEP)
-		// 追蹤局部 vec 變數，用於函數結束時深層 free
-		g.trackLocalHeapVar(name, "%vec")
-		return
-	}
+			g.tmpIdx++
+			vecDataGEP := fmt.Sprintf("%%vec.init.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vecDataGEP, g.varAddr(name)))
+			g.storeDataPtrField(sb, vecBuf, vecDataGEP)
+			// 追蹤局部 vec 變數，用於函數結束時深層 free
+			g.trackLocalHeapVar(name, "%vec")
+			return
+		}
 		// 有 RHS 值但非 SliceLiteral：型別註冊已在上方完成，
 		// fall through 到深層 clone / 一般賦值路徑評估 RHS。
 	}
@@ -4636,7 +4643,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		valActualType = g.intExprLLVMType(stmt.Value)
 	}
 	llvmType := g.varLLVMType(stmt)
-	g.currentTargetType = ""    // clear after use
+	g.currentTargetType = ""     // clear after use
 	g.currentTargetElemType = "" // clear after use
 	// For assignments (Type=nil) to %arr variables, varLLVMType may return
 	// the function's raw result type (e.g. [16 x i8]) instead of %arr.
