@@ -2765,11 +2765,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 				return "0"
 			}
-		}
+	}
 
-		val := g.generateExprWithSB(sb, expr.Value)
+	val := g.generateExprWithSB(sb, expr.Value)
 
-		// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
+	// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
 		if varName != "" {
 			if t, ok := g.varTypes[varName]; ok {
 				structName = strings.TrimPrefix(t, "%")

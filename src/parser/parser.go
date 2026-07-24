@@ -7177,7 +7177,15 @@ func (p *Parser) looksLikeEqualsTypeAlias() bool {
 		// name = IDENT              → single type alias (if IDENT is a known type)
 		t2 := p.lexer.LookAhead(1)
 		if t2.Type == lexer.OR {
-			return true
+			// Distinguish union type alias from bitwise-or expression.
+			// A union type alias has the form: type (| type)* where each
+			// type is IDENT, []T, [N]T, ?T, or (params)(results).
+			// A bitwise-or expression like `bv | (1 << bt)` contains
+			// arithmetic operators (other than |) at bracket depth 0.
+			// Scan the RHS: at depth 0, only `|` and statement-end
+			// tokens are allowed; any other operator means it's an
+			// expression, not a type alias.
+			return p.scanIsUnionTypeAlias()
 		}
 		if t2.Type == lexer.NEWLINE || t2.Type == lexer.EOF || t2.Type == lexer.SEMICOLON {
 			return builtInTypeNames[t1.Literal] || (p.typeAliasNames != nil && p.typeAliasNames[t1.Literal])
@@ -7213,6 +7221,71 @@ func (p *Parser) looksLikeEqualsTypeAlias() bool {
 		return false
 	default:
 		return false
+	}
+}
+
+// scanIsUnionTypeAlias scans the RHS of `name = ... | ...` to determine
+// whether it is a union type alias (type (| type)*) or a bitwise-or
+// expression. The scan starts from LookAhead(0) (the first RHS token)
+// and examines tokens at bracket depth 0:
+//   - `|` separates union members (allowed)
+//   - NEWLINE/EOF/SEMICOLON end the statement (→ union type alias)
+//   - `[`/`(`/`{` increase depth; `]`/`)`/`}` decrease depth
+//   - Any other BINARY operator at depth 0 (ADD, SUB, MUL, SHL, AND, etc.)
+//     means it's a bitwise-or expression, not a type alias
+//   - IDENT, INT, FLOAT, STRING, etc. are part of a type/operand
+//
+// Special handling for `(` at depth 0: a function type's params start
+// with IDENT/IN/`)`, so if the token inside `(` is something else (INT,
+// FLOAT, etc.), it's a grouped expression, not a type → return false.
+func (p *Parser) scanIsUnionTypeAlias() bool {
+	depth := 0
+	i := 0
+	for {
+		t := p.lexer.LookAhead(i)
+		switch t.Type {
+		case lexer.LPAREN:
+			if depth == 0 {
+				// Distinguish function type (params) from grouped expression.
+				// Function type params start with IDENT, IN, or `)` (empty).
+				inside := p.lexer.LookAhead(i + 1)
+				switch inside.Type {
+				case lexer.IDENT, lexer.IN, lexer.RPAREN:
+					// Likely function type — treat as type, enter parens
+				default:
+					// Grouped expression like (1 << bt) — not a type alias
+					return false
+				}
+			}
+			depth++
+		case lexer.LBRACKET, lexer.LBRACE:
+			depth++
+		case lexer.RBRACKET, lexer.RPAREN, lexer.RBRACE:
+			if depth == 0 {
+				// Unmatched closing bracket — end of construct
+				return true
+			}
+			depth--
+		case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
+			if depth == 0 {
+				return true
+			}
+		case lexer.ADD, lexer.SUB, lexer.MUL, lexer.QUO, lexer.MOD,
+			lexer.SHL, lexer.SHR, lexer.AND, lexer.XOR,
+			lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.LESS_EQUALS,
+			lexer.GREATER, lexer.GREATER_EQUALS, lexer.LOR, lexer.LAND,
+			lexer.ASSIGN, lexer.COLON,
+			lexer.QUESTION, lexer.ARROW, lexer.RARROW:
+			if depth == 0 {
+				// An arithmetic/comparison operator at depth 0 means
+				// this is a bitwise-or expression, not a type alias.
+				return false
+			}
+		}
+		i++
+		if i > 1024 {
+			return false
+		}
 	}
 }
 

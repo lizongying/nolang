@@ -1,0 +1,5 @@
+z f64 = 2.0
+a f64 = z * z
+printf('a = %.15f\n', a)
+b f64 = z * z + 3.0
+printf('b = %.15f\n', b)

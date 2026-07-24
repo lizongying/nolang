@@ -1,0 +1,13 @@
+arr []f64 = with-cap(3)
+arr.push(1.5)
+arr.push(2.5)
+arr.push(3.5)
+a f64 = arr[0]
+b f64 = arr[1]
+c f64 = a * b
+printf('a = %.17g\n', a)
+printf('b = %.17g\n', b)
+printf('a*b = %.17g\n', c)
+sum f64 = 0.0
+sum = sum + a * b
+printf('sum = %.17g\n', sum)

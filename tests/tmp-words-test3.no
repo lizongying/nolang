@@ -1,0 +1,5 @@
+; Test 3: just vec of i64 push
+nums []i64 = with-cap(256)
+nums.push(1)
+nums.push(2)
+print('done')

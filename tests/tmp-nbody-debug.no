@@ -1,0 +1,71 @@
+sm = 39.478417604357432
+px []f64 = with-cap(5)
+py []f64 = with-cap(5)
+pz []f64 = with-cap(5)
+vx []f64 = with-cap(5)
+vy []f64 = with-cap(5)
+vz []f64 = with-cap(5)
+mass []f64 = with-cap(5)
+mass.push(39.478417604357432)
+px.push(0.0)
+py.push(0.0)
+pz.push(0.0)
+vx.push(0.0)
+vy.push(0.0)
+vz.push(0.0)
+mass.push(0.037693674870389493)
+px.push(4.8414314424647209)
+py.push(-1.1603200440274284)
+pz.push(-0.10362204447112311)
+vx.push(0.60632639299583202)
+vy.push(2.8119868449162602)
+vz.push(-0.025218361659887629)
+mass.push(0.011286326131968767)
+px.push(8.3433667182445799)
+py.push(4.1247985641243048)
+pz.push(-0.40352341711432138)
+vx.push(-1.0107743461787924)
+vy.push(1.8256623712304119)
+vz.push(0.0084157613765841535)
+mass.push(0.0017237240570597112)
+px.push(12.894369562139131)
+py.push(-15.111151401698631)
+pz.push(-0.22330757889265573)
+vx.push(1.0827910064415354)
+vy.push(0.86871301816960822)
+vz.push(-0.010832637401363636)
+mass.push(0.0020336868699246304)
+px.push(15.379697114850917)
+py.push(-25.919314609987964)
+pz.push(0.17925877295037118)
+vx.push(0.97909073224389798)
+vy.push(0.59469899864767617)
+vz.push(-0.034755955504078104)
+
+px2 = 0.0
+py2 = 0.0
+pz2 = 0.0
+mi = 0.0
+vi = 0.0
+i <- [0..5): {
+    mi = mass[i]
+    vi = vx[i]
+    px2 = px2 + mi * vi
+    mi = mass[i]
+    vi = vy[i]
+    py2 = py2 + mi * vi
+    mi = mass[i]
+    vi = vz[i]
+    pz2 = pz2 + mi * vi
+}
+vx[0] = -px2 / sm
+vy[0] = -py2 / sm
+vz[0] = -pz2 / sm
+
+; print initial values for debugging
+tvx f64 = vx[0]
+tvy f64 = vy[0]
+tvz f64 = vz[0]
+printf('vx[0] = %.17g\n', tvx)
+printf('vy[0] = %.17g\n', tvy)
+printf('vz[0] = %.17g\n', tvz)

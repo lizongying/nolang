@@ -18,7 +18,8 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 |------|---------|------|
 | **值拷貝** | 基本型別（i64/f64/bool 等） | 直接拷貝數值，無堆數據 |
 | **深層 clone** | 局部變數間 `b = a`，a 為堆擁有型別（vec/arr/str/可克隆結構體） | malloc 新 data + memcpy + 遞迴 clone 元素；a 和 b 各自獨立擁有 data，函數結束各自 free |
-| **move** | 輸出參數 `out = x`、`vec.push(x)` | 淺拷貝結構體 + 標記源為 moved；源跳過 free |
+| **move** | 輸出參數 `out = x` | 淺拷貝結構體 + 標記源為 moved；源跳過 free |
+| **深層 clone** | `vec.push(x)`（x 為堆擁有型別） | malloc 新 data + memcpy + 遞迴 clone 元素；源仍擁有獨立 data，函數結束各自 free |
 
 ### 編譯器插入 free
 - 函數結束時：釋放所有未 moved 的局部堆變數
@@ -78,15 +79,15 @@ a, b = get-pair()  ; a 擁有 x 的 data，b 擁有 y 的 data
 
 **注意**：若 `a` 和 `b` 引用同一源變數（如 `a = x; b = x`），在被呼叫函數內只 move 一次（x 標記 moved），a 和 b 都獲得 x 的淺拷貝（共享同一 data 指標）。但在上層函數中，a 和 b 是獨立的局部變數，各自被追蹤為堆變數，函數結束時都會執行 free → **double-free**。當前 Nolang 沒有引用/借用語義，b 不會自動成為 a 的別名。**應避免這種模式**。
 
-### vec.push 的隱式 move
+### vec.push 的深層 clone
 ```no
 inner = [1, 2, 3]
 outer.push(inner)
-; inner 標記為 moved，data 所有權轉移給 outer
-; 函數結束時 inner 跳過 free，outer 深層 free 釋放 inner 的 data
+; inner 的 data 被深層 clone 到 outer 新元素位置
+; inner 仍擁有獨立 data，函數結束時 inner 與 outer 各自 free
 ```
 
-push 只淺拷貝 inner 的結構體到 outer 元素位置，**不克隆 data**。因此源變數和外部 vec 共享同一 data 指標，必須標記源為 moved 避免 double-free。
+push 對堆擁有元素型別（`%str-long`/`%vec`/`%arr`/用戶結構體）執行深層 clone：malloc 新 data + memcpy + 遞迴 clone 元素。源變數和外部 vec 擁有各自獨立的 data，**不需要 move 標記**，避免 double-free。基本型別元素（i64/f64 等）則直接 store 值。
 
 ### 運行時 move 追蹤（按堆變數下標索引的位圖）
 
@@ -187,9 +188,10 @@ b[0] = 99
 
 `b = a` 的判斷規則：
 1. 若 a 是輸出參數的源 → move
-2. 若 a 是 vec.push 的源 → move
-3. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
-4. 否則值拷貝
+2. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
+3. 否則值拷貝
+
+`vec.push(x)` 不在此判斷規則內：push 是方法調用，不論 x 是否堆擁有型別，都對堆擁有元素執行深層 clone（見前節）。
 
 ## FFI extern str 返回值
 
@@ -288,12 +290,12 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 |------|---------|
 | `deep-clone.no` | `b = a` 深層 clone（[]i64/[]str/str/結構體）獨立性 |
 | `deep-free-str.no` | `[]str` 深層 free |
-| `deep-free-nested-vec.no` | `[][]i64` 深層 free + push moved |
+| `deep-free-nested-vec.no` | `[][]i64` 深層 free + push 深層 clone |
 | `deep-free-struct-vec.no` | `[]MyType` 深層 free（遞迴結構體） |
 | `struct-field-leak.no` | 結構體欄位堆數據釋放 |
 | `slice-view-escape.no` | 切片視圖賦值輸出參數的 clone |
 | `reassign-leak.no` | 重新賦值舊值釋放 |
-| `vec-push-leak.no` | vec.push 的 moved 標記 |
+| `vec-push-leak.no` | vec.push 擴容時釋放舊 buffer + 堆擁有元素深層 clone |
 | `ffi-str-return.no` | FFI extern str 返回值安全複製 |
 | `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
 

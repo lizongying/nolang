@@ -1575,6 +1575,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.hasBranchMove = detectBranchMoveToOut(fd.Body.Statements, g.outputParamNames)
 	}
 
+	// 預先設置 bitmap 變數名前綴，使函數體生成期間的 emitSetMovedBitIR/emitClearMovedBitIR
+	// 能正確生成 IR。實際的 alloca + store 0 在後面根據最終 nextHeapVarIdx 一次性發出。
+	// bitmapCount 在函數體生成後根據實際堆變數數量計算。
+	if g.hasBranchMove {
+		g.movedBitmapBase = "%__mb"
+	}
+
 	// 生成函數體到獨立緩衝區，同時收集 entry-block alloca（來自字面量參數的臨時變量）。
 	// 將 alloca 提升到 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
@@ -1596,7 +1603,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	//   - move 在分支 → 需位圖運行時判斷 move 是否實際發生
 	if g.hasBranchMove && g.nextHeapVarIdx > 0 {
 		g.bitmapCount = (g.nextHeapVarIdx + 63) / 64
-		g.movedBitmapBase = "%__mb"
+		// movedBitmapBase 已在函數體生成前預先設置
 		for i := 0; i < g.bitmapCount; i++ {
 			sb.WriteString(fmt.Sprintf("%s%s%d = alloca i64\n", g.indent(), g.movedBitmapBase, i))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s%d\n", g.indent(), g.movedBitmapBase, i))

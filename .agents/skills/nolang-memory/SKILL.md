@@ -21,13 +21,15 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 |------|---------|------|
 | **值拷贝** | 基本型别（i64/f64/bool 等） | 直接拷贝数值，无堆数据 |
 | **深層 clone** | 局部变量间 `b = a`，a 为堆拥有型别（vec/arr/str/可克隆结构体） | malloc 新 data + memcpy + 递回 clone 元素；a 和 b 各自独立拥有 data，函数结束各自 free |
-| **move** | 输出参数 `out = x`、`vec.push(x)` | 浅拷贝结构体 + 标记源为 moved；源跳过 free |
+| **move** | 输出参数 `out = x` | 浅拷贝结构体 + 标记源为 moved；源跳过 free |
+| **深層 clone** | `vec.push(x)`（x 为堆拥有型别） | malloc 新 data + memcpy + 递回 clone 元素；源仍拥有独立 data，函数结束各自 free |
 
 **`b = a` 判断规则**（在 `generateLet` 中）：
 1. 若 a 是输出参数的源（`outputParamNames[a]` 为 true）→ move
-2. 若 a 是 vec.push 的源（在 vec.push codegen 路径中）→ move
-3. 否则若 a 是堆拥有型别且 `canClone` 为 true → 深層 clone
-4. 否则值拷贝
+2. 否则若 a 是堆拥有型别且 `canClone` 为 true → 深層 clone
+3. 否则值拷贝
+
+`vec.push(x)` 不在此判断规则内：push 是方法调用，对堆拥有元素执行深層 clone（见 §5.3）。
 
 ### 1.3 编译器插入 free
 - 函数结束时：`emitHeapFree` 释放所有未 moved 的局部堆变量
@@ -85,6 +87,7 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 
 `handleMoveToOut(sb, srcName, outName)` 处理 move 到输出参数：
 1. 若该输出参数之前绑定过别的变量（`outBindState[outIdx] >= 0`），先清除旧变量对应的 bit（`emitClearMovedBitIR` 运行时 / `unmarkMovedVar` 编译期）
+   - **例外**：`outBindState[outIdx] == -2`（分支汇合后不确定）时不清除旧 bit — 无法确定旧绑定是哪个变量，留待运行时位图在 free 阶段判定
 2. 再把当前变量对应 bit 置 1（`emitSetMovedBitIR` 运行时 / `markMovedVar` 编译期）
 3. 更新该输出参数绑定的变量下标（`outBindState[outIdx] = srcVarIdx`）
 
@@ -122,6 +125,19 @@ cond-move = (flag i64) (out []i64) {
 - 无运行时位图：编译期检查 `isMovedVar(varIdx)` — moved 则跳过，否则走 `emitVarHeapFree`
 
 **适用所有堆类型**：`vec`/`str-long`/`arr`/用户结构体统一使用 `emitBitCheckFree` / `isMovedVar`。
+
+#### 3.2.6 分支汇合 outBindState 合并
+
+`generateIfExpression`（`expr.go`）在 `if/else` 分支前后管理 `outBindState`：
+
+1. **进入分支前**：保存当前 `outBindState` 快照（`savedOutBindState`）
+2. **then 分支**：生成完毕后捕获 `thenOutBindState`
+3. **else 分支**：恢复 `savedOutBindState` 后生成 else 分支
+4. **汇合取并集**：逐项比较 `thenOutBindState[i]` 与 `g.outBindState[i]`（else 结果）
+   - 相同 → 保留该值（两分支绑定一致，确定）
+   - 不同 → 设为 `-2`（不确定：运行时可能是 then 绑定，也可能是 else 绑定）
+
+`-2` 状态后续传入 `handleMoveToOut` 时触发「不清除旧 bit」例外（§3.2.3），由运行时位图在 `emitHeapFree` 阶段对每个候选变量独立判定。
 
 ### 3.3 outputParamNames
 `map[string]bool`：当前函数的输出参数名（由调用者管理，本函数不 free）。
@@ -214,13 +230,15 @@ get-pair = () (a []i64, b []i64) {
 
 **注意**：若 `a` 和 `b` 引用同一源变量（如 `a = x; b = x`），在被调用函数内只 move 一次（x 标记 moved），a 和 b 都获得 x 的浅拷贝（共享同一 data 指针）。但在上层函数中，a 和 b 是独立的局部变量，各自被 `heapVars` 追踪为 `%vec`，函数结束时都会执行 free → **double-free**。当前 Nolang 没有引用/借用语义，b 不会自动成为 a 的别名。**用户应避免这种模式**。
 
-### 5.3 vec.push 的隐式 move
+### 5.3 vec.push 的深層 clone
 ```no
 inner = [1, 2, 3]
 outer.push(inner)
-; inner 标记为 moved，data 所有权转移给 outer
-; 函数结束时 inner 跳过 free，outer 深层 free 释放 inner 的 data
+; inner 的 data 被深層 clone 到 outer 新元素位置
+; inner 仍拥有独立 data，函数结束时 inner 与 outer 各自 free
 ```
+
+push 对堆拥有元素型别（`%str-long`/`%vec`/`%arr`/用户结构体）执行深層 clone：malloc 新 data + memcpy + 递回 clone 元素。源变量和外部 vec 拥有各自独立的 data，**不需要 move 标记**，避免 double-free。基本型别元素（i64/f64 等）则直接 store 值。
 
 ### 5.4 slice 表達式賦值（總是 clone）
 
@@ -405,13 +423,13 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 |---------|---------|
 | `deep-clone.no` | `b = a` 深層 clone（[]i64/[]str/str/结构体）独立性 |
 | `deep-free-str.no` | `[]str` 深层 free（vec 元素为 %str-long） |
-| `deep-free-nested-vec.no` | `[][]i64` 深层 free（vec 元素为 %vec，push moved 标记） |
+| `deep-free-nested-vec.no` | `[][]i64` 深层 free（vec 元素为 %vec，push 深層 clone） |
 | `deep-free-struct-vec.no` | `[]MyType` 深层 free（vec 元素为用户结构体，递归释放 name.data + items.data） |
 | `struct-field-leak.no` | 结构体字段堆数据释放 |
 | `slice-view-escape.no` | slice 视图逃逸（out=view 输出参数 / v []i64=view 显式型别 / 多次调用不 double-free / 固定陣列视图） |
 | `vec-range.no` / `arr-range.no` | 全局變數 range 迭代（`for i <- a:`，驗證 varAddr 正確用 `@a`） |
 | `reassign-leak.no` | 重新赋值旧值释放 |
-| `vec-push-leak.no` | vec.push 的 moved 标记 |
+| `vec-push-leak.no` | vec.push 扩容时释放旧 buffer + 堆拥有元素深層 clone |
 | `if-branch-move-leak.no` | 条件分支中的 move |
 | `ffi-str-return.no` | FFI extern str 返回值安全複製（strchr NULL/非 NULL/重複/傳遞） |
 | `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
@@ -509,7 +527,7 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 | slice 視圖註冊/克隆 | `src/build/llvm/slice_view.go` | `generateSliceViewAssignment`, `emitSliceClone`, `materializeSliceView`（部分為死代碼） |
 | **FFI extern str 安全複製** | `src/build/llvm/generator.go` | `emitFFIExternStrClone` |
 | **FFI extern str 路徑入口** | `src/build/llvm/call.go` | `callExtern` 中的 `case "str"` |
-| vec.push moved | `src/build/llvm/call.go` | vec-push case |
+| vec.push 深層 clone | `src/build/llvm/call.go` | vec-push case（`emitDeepClone` for heap-owning elements，扩容时 `emitNullCheckFree` 旧 buffer） |
 | varAlias | `src/build/llvm/generator.go` | `varAddr` |
 | SliceLiteral 初始化 | `src/build/llvm/stmt.go` | SliceLiteral 路径 |
 | 类型判断 | `src/build/llvm/generator.go` | `isHeapOwningType`, `isUserStructType` |
