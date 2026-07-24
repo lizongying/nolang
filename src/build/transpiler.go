@@ -5980,9 +5980,10 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
 						!isArgTypeCompatible(existingType, inferredType, s.Value) {
+						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
-							Line:    s.Token.Line,
-							Column:  s.Token.Column,
+							Line:    valPos.Line,
+							Column:  valPos.Column,
 							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
 						})
 					}
