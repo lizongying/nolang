@@ -297,7 +297,7 @@ tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
     {
-        tmp []byte
+        tmp str = ' '.repeat(n - total)
         r = net-recv(fd, tmp, n - total)
         r <= 0 -> return
         i <- [0..r): {
@@ -310,22 +310,27 @@ tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
 
 ; tls-read-record: 讀取一筆 TLS 記錄
 ; fd i64: socket fd
-; buf []byte: 記錄緩衝區（含標頭+資料）
+; buf []byte: 記錄緩衝區（含標頭+資料, buf[0..4]=header, buf[5..]=body）
 ; 返回 ct i64: content type（-1=錯誤）
 ; 返回 rlen i64: 資料長度（不含標頭）
 tls-read-record = (fd i64, buf []byte) (ct i64, rlen i64) {
     ct = -1
     rlen = 0
 
-    ; 讀取 5 位元組標頭
-    ok = false
-    ok = tls-recv-n(fd, buf, 5)
-    ok == false -> return
+    ; 讀取 5 位元組標頭 into buf[0..4]
+    hdr-total = 0
+    {
+        tmp str = ' '.repeat(5 - hdr-total)
+        r = net-recv(fd, tmp, 5 - hdr-total)
+        r <= 0 -> return
+        i <- [0..r): {
+            buf[hdr-total + i] = tmp[i]
+        }
+        hdr-total = hdr-total + r
+    } (hdr-total < 5)
 
     ; 解析標頭
     ct = buf[0] & 255
-
-    ; version = buf[1..2]（忽略）
     rlen = tls-get-u16(buf, 3)
 
     rlen > 16384 -> {
@@ -333,12 +338,23 @@ tls-read-record = (fd i64, buf []byte) (ct i64, rlen i64) {
         return
     }
 
-    ; 讀取資料
-    ok = tls-recv-n(fd, buf, rlen + 5)
-    ok == false -> {
-        ct = -1
-        return
-    }
+    ; 讀取 body into buf[5..5+rlen-1]
+    body-total = 0
+    {
+        tmp str = ' '.repeat(rlen - body-total)
+        r = net-recv(fd, tmp, rlen - body-total)
+        r <= 0 -> {
+            ct = -1
+            return
+        }
+        i <- [0..r): {
+            buf[5 + body-total + i] = tmp[i]
+        }
+        body-total = body-total + r
+    } (body-total < rlen)
+
+    ; 設定 buf 長度為完整記錄長度
+    buf.len = 5 + rlen
 }
 
 ; tls-send-raw: 發送原始 TLS 記錄（未加密）
@@ -372,6 +388,18 @@ tls-conn.append-hs = (data []byte) {
     .hs-buf.len = .hs-buf-len
 }
 
+; append-hs-from: 從 buf 的 offset 位置追加 n 位元組到交握緩衝區
+; buf []byte: 來源緩衝區（含 record header）
+; offset i64: 起始偏移（通常為 5, 跳過 record header）
+; n i64: 要追加的位元組數
+tls-conn.append-hs-from = (buf []byte, offset i64, n i64) {
+    i <- [0..n): {
+        .hs-buf[.hs-buf-len + i] = buf[offset + i]
+    }
+    .hs-buf-len = .hs-buf-len + n
+    .hs-buf.len = .hs-buf-len
+}
+
 ; encrypt-record: 加密記錄並發送
 ; ct i64: 原始 content type
 ; data []byte: 明文資料
@@ -382,7 +410,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 1. 計算 MAC
     ; MAC = HMAC-SHA256(mac_key, seq_num(8) + type(1) + version(2) + length(2) + content)
-    mac-input []byte
+    mac-input []byte = with-len(13 + n)
 
     ; seq_num (8 bytes big-endian)
     seq = .write-seq
@@ -395,11 +423,12 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..n): {
         mac-input[13 + i] = data[i]
     }
+    mac-input.len = 13 + n
     mac [32]byte
     mac = hmac.hmac-sha256(.client-mac-key[..], mac-input)
 
     ; 2. 明文 + MAC
-    plain []byte
+    plain []byte = with-len(n + 32)
     i <- [0..n): {
         plain[i] = data[i]
     }
@@ -407,6 +436,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         plain[n + i] = mac[i]
     }
     plain-len = n + 32
+    plain.len = plain-len
 
     ; 3. PKCS#7 填充
     padded []byte
@@ -425,7 +455,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
     rec-len = 16 + padded.len
-    rec []byte
+    rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     tls-put-u16(rec, 1, TLS-VERSION)
     tls-put-u16(rec, 3, rec-len)
@@ -435,6 +465,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..padded.len): {
         rec[5 + 16 + i] = cipher[i]
     }
+    rec.len = 5 + rec-len
 
     ; 7. 發送
     sent = net-send(.fd, rec, 5 + rec-len)
@@ -461,10 +492,11 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
 
     ; 密文
     cipher-len = rlen - 16
-    cipher []byte
+    cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
         cipher[i] = buf[5 + 16 + i] & 255
     }
+    cipher.len = cipher-len
 
     ; AES-128-CBC 解密
     plain []byte
@@ -481,7 +513,7 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     content-len = plain-len - 32
 
     ; 計算期望 MAC
-    mac-input []byte
+    mac-input []byte = with-len(13 + content-len)
     seq = .read-seq
     i <- [0..8): {
         mac-input[7 - i] = (seq >> (i * 8)) & 255
@@ -500,6 +532,7 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     i <- [0..content-len): {
         mac-input[13 + i] = plain[i]
     }
+    mac-input.len = 13 + content-len
     exp-mac [32]byte
     exp-mac = hmac.hmac-sha256(.server-mac-key[..], mac-input)
 
@@ -516,6 +549,7 @@ tls-conn.decrypt-record = (buf []byte) (ct i64, out []byte) {
     i <- [0..content-len): {
         out[i] = plain[i]
     }
+    out.len = content-len
     ct = TLS-CT-APP-DATA
     .read-seq = .read-seq + 1
 }
@@ -539,7 +573,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     ps-len < 8 -> return
 
     ; 構建填充後的訊息
-    padded []byte
+    padded []byte = with-len(mod-n)
     padded[0] = 0
     padded[1] = 2
 
@@ -558,6 +592,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         padded[3 + ps-len + i] = msg[i]
     }
     padded-n = mod-n
+    padded.len = padded-n
 
     ; 轉換為大整數
     m-bn []i64
@@ -663,24 +698,23 @@ tls-conn.send-client-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 tls-conn.read-server-hello = () (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
     ct != TLS-CT-HANDSHAKE -> return
 
-    ; 追加到交握緩衝區（只追加 handshake 資料部分）
-    .append-hs(buf)
+    ; 追加到交握緩衝區（只追加 handshake 資料部分，跳過 5-byte record header）
+    .append-hs-from(buf, 5, rlen)
 
-    ; 解析 handshake message
-    pos = 5
-    msg-type = buf[0] & 255
+    ; 解析 handshake message（buf[5] = handshake type, buf[6..8] = length, buf[9+] = data）
+    pos = 9
+    msg-type = buf[5] & 255
     msg-type != TLS-HS-SERVER-HELLO -> return
-    msg-len i64 = tls-get-u24(buf, 1)
+    msg-len i64 = tls-get-u24(buf, 6)
 
-    ; version
-    tls-put-u16(buf, pos, 0); placeholder
+    ; version（buf[9..10]）
     pos = pos + 2
 
     ; random (32 bytes)
@@ -710,18 +744,18 @@ tls-conn.read-server-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 tls-conn.read-certificate = (cert-out []byte) (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
     ct != TLS-CT-HANDSHAKE -> return
-    .append-hs(buf)
+    .append-hs-from(buf, 5, rlen)
 
-    ; 解析 handshake message
-    msg-type = buf[0] & 255
+    ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
+    msg-type = buf[5] & 255
     msg-type != TLS-HS-CERTIFICATE -> return
-    pos = 5
+    pos = 9
 
     ; total certs length (3 bytes)
     total-len i64 = tls-get-u24(buf, pos)
@@ -743,15 +777,15 @@ tls-conn.read-certificate = (cert-out []byte) (ok bool) {
 ; 返回 ok bool: true=成功
 tls-conn.read-server-hello-done = () (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
     ct != TLS-CT-HANDSHAKE -> return
-    .append-hs(buf)
+    .append-hs-from(buf, 5, rlen)
 
-    msg-type = buf[0] & 255
+    msg-type = buf[5] & 255
     msg-type != TLS-HS-SERVER-HELLO-DONE -> return
     ok = true
 }
@@ -846,7 +880,7 @@ tls-conn.send-finished = (master []byte) (ok bool) {
 ; 返回 ok bool: true=成功
 tls-conn.read-change-cipher-spec = () (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
@@ -862,7 +896,8 @@ tls-conn.read-change-cipher-spec = () (ok bool) {
 ; 返回 ok bool: true=成功
 tls-conn.read-finished = (master []byte) (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
+    buf.len = 16400
 
     ct = 0
     rlen = 0
@@ -962,11 +997,14 @@ tls-conn.derive-keys = (premaster []byte) {
 ; 返回 ok bool: true=成功
 tls-conn.send-client-hello-13 = () (ok bool) {
     ok = false
+    io.errln('[TLS13] send-ch13 start')
 
     ; 生成 X25519 金鑰對
     seed = .rand-state
     .rand-state = .rand-state + 1
+    io.errln('[TLS13] before x25519-gen')
     cpriv, cpub = x25519.x25519-gen-keypair(seed)
+    io.errln('[TLS13] after x25519-gen')
     .client-priv = cpriv
     .client-pub = cpub
 
@@ -1111,17 +1149,18 @@ tls-conn.send-client-hello-13 = () (ok bool) {
 ; 返回 ok bool: true=TLS 1.3, false=TLS 1.2 或失敗
 tls-conn.read-server-hello-13 = () (ok bool) {
     ok = false
-    buf []byte
+    buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
     ct != TLS-CT-HANDSHAKE -> return
-    .append-hs(buf)
+    .append-hs-from(buf, 5, rlen)
 
-    msg-type = buf[0] & 255
+    ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
+    msg-type = buf[5] & 255
     msg-type != TLS-HS-SERVER-HELLO -> return
-    pos = 5
+    pos = 9
 
     ; server version（TLS 1.3 中為 0x0303，實際版本在擴展中）
     pos = pos + 2
@@ -1347,24 +1386,26 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, se
     n = data.len
 
     ; 明文 = data + content_type(1 byte)
-    plain []byte
+    plain []byte = with-len(n + 1)
     i <- [0..n): {
         plain[i] = data[i]
     }
     plain[n] = ct & 255
     plain-len = n + 1
+    plain.len = plain-len
 
     ; 構建 nonce
     nonce [12]byte
     nonce = tls13-build-nonce(iv, seq)
 
     ; 構建 AAD = record_header(5 bytes): type(23) + version(0x0303) + length
-    aad []byte
+    aad []byte = with-len(5)
     aad[0] = TLS-CT-APP-DATA & 255
     tls-put-u16(aad, 1, TLS-VERSION)
 
     ; 密文長度 = plain_len + 16 (tag)
     tls-put-u16(aad, 3, plain-len + 16)
+    aad.len = 5
 
     ; AES-128-GCM 加密
     sealed []byte
@@ -1372,13 +1413,14 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, se
 
     ; 構建完整記錄: header(5) + sealed
     rec-len = plain-len + 16
-    rec []byte
+    rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     tls-put-u16(rec, 1, TLS-VERSION)
     tls-put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
         rec[5 + i] = sealed[i]
     }
+    rec.len = 5 + rec-len
 
     ; 發送
     sent = net-send(.fd, rec, 5 + rec-len)
@@ -1400,22 +1442,24 @@ tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (c
     rlen < 16 -> return
 
     ; 提取密文+tag
-    sealed []byte
+    sealed []byte = with-len(rlen)
     i <- [0..rlen): {
         sealed[i] = rec[5 + i] & 255
     }
+    sealed.len = rlen
 
     ; 構建 nonce
     nonce [12]byte
     nonce = tls13-build-nonce(iv, seq)
 
     ; 構建 AAD = record_header(5 bytes)
-    aad []byte
+    aad []byte = with-len(5)
     aad[0] = rec[0] & 255
     aad[1] = rec[1] & 255
     aad[2] = rec[2] & 255
     aad[3] = rec[3] & 255
     aad[4] = rec[4] & 255
+    aad.len = 5
 
     ; 解密
     plain []byte
@@ -1444,7 +1488,7 @@ tls-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64
     ct = -1
 
     ; 讀取記錄
-    rec []byte
+    rec []byte = with-len(16400)
     r-ct = 0
     rlen = 0
     r-ct, rlen = tls-read-record(.fd, rec)
@@ -1499,18 +1543,21 @@ tls-conn.connect-13 = () (ok bool) {
     ee-type = 0
     ee-data []byte
     ee-type, ee-data = .read-encrypted-handshake-13()
+    io.errln('[TLS13] EE type=' - ee-type.to-str())
     ee-type != TLS-HS-ENCRYPTED-EXTENSIONS -> return
 
     ; 6. 讀取 Certificate
     cert-type = 0
     cert-data []byte
     cert-type, cert-data = .read-encrypted-handshake-13()
+    io.errln('[TLS13] Cert type=' - cert-type.to-str())
     cert-type != TLS-HS-CERTIFICATE -> return
 
     ; 7. 讀取 CertificateVerify（跳過驗證，僅讀取）
     cv-type = 0
     cv-data []byte
     cv-type, cv-data = .read-encrypted-handshake-13()
+    io.errln('[TLS13] CV type=' - cv-type.to-str())
     cv-type != TLS-HS-CERTIFICATE-VERIFY -> {
         ; 某些伺服器可能不發送 CertificateVerify，嘗試當作 Finished
         cv-type == TLS-HS-FINISHED -> {
@@ -1597,6 +1644,7 @@ tls-conn.init = () {
     .write-seq = 0
     .read-seq = 0
     .hs-buf-len = 0
+    .hs-buf = with-cap(65536)
     .hs-write-seq = 0
     .hs-read-seq = 0
     .ap-write-seq = 0
@@ -1615,24 +1663,26 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     ok = false
     .host = host
 
-    ; 1. TCP 連線
-    .fd = net-dial(host, port)
+    ; 1. TCP 連線（使用 dns-dial 支援 hostname 解析）
+    .fd = dns.dns-dial(host, port)
+    io.errln('[TLS] TCP connect')
     .fd < 0 -> return
     .connected = true
 
     ; 2. 送出 TLS 1.3 ClientHello（同時支援 1.2 fallback）
     ok = .send-client-hello-13()
+    io.errln('[TLS] after send-ch13')
     ok == false -> {
+        io.errln('[TLS] send-client-hello-13 failed')
         .close()
         return
     }
 
     ; 3. 讀取 ServerHello 並偵測版本
     ok = .read-server-hello-13()
+    io.errln('[TLS] after read-sh13')
     ok == false -> {
-        ; TLS 1.2 fallback：重新解析 ServerHello
-        ; 需要重置交握緩衝區，因為 read-server-hello-13 已追加
-        ; 實際上 read-server-hello-13 在失敗時也追加了，需要保留
+        io.errln('[TLS] TLS 1.2 fallback')
         .version = TLS-VERSION
 
         ; TLS 1.2 路徑
@@ -1641,9 +1691,10 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 由於已經追加了 hs-buf，直接繼續 TLS 1.2 交握
 
         ; 4. 讀取 Certificate
-        cert []byte
+        cert []byte = with-len(16400)
         ok = .read-certificate(cert)
         ok == false -> {
+            io.errln('[TLS] read-certificate failed')
             .close()
             return
         }
@@ -1651,6 +1702,7 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 5. 讀取 ServerHelloDone
         ok = .read-server-hello-done()
         ok == false -> {
+            io.errln('[TLS] read-server-hello-done failed')
             .close()
             return
         }
@@ -1681,6 +1733,7 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 10. 發送 Finished（加密）
         ok = .send-finished(premaster)
         ok == false -> {
+            io.errln('[TLS] send-finished failed')
             .close()
             return
         }
@@ -1688,6 +1741,7 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 11. 讀取 ChangeCipherSpec
         ok = .read-change-cipher-spec()
         ok == false -> {
+            io.errln('[TLS] read-change-cipher-spec failed')
             .close()
             return
         }
@@ -1695,6 +1749,7 @@ tls-conn.connect = (host str, port i64) (ok bool) {
         ; 12. 讀取 Finished（加密）
         ok = .read-finished(premaster)
         ok == false -> {
+            io.errln('[TLS] read-finished failed')
             .close()
             return
         }
@@ -1703,8 +1758,10 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     }
 
     ; TLS 1.3 路徑
+    io.errln('[TLS] TLS 1.3 path')
     ok = .connect-13()
     ok == false -> {
+        io.errln('[TLS] connect-13 failed')
         .close()
         return
     }
@@ -1749,7 +1806,7 @@ tls-conn.recv = (buf str, n i64) (read-n ?i64) {
         .version == TLS-VERSION-1-3 -> {
             ; TLS 1.3: 使用 AEAD
             ; 讀取加密記錄
-            rec []byte
+            rec []byte = with-len(16400)
             r-ct = 0
             rlen = 0
             r-ct, rlen = tls-read-record(.fd, rec)
@@ -1776,7 +1833,7 @@ tls-conn.recv = (buf str, n i64) (read-n ?i64) {
         -> {
             ; TLS 1.2: 使用 CBC+MAC
             ; 讀取加密記錄
-            rec []byte
+            rec []byte = with-len(16400)
             ct = 0
             rlen = 0
             ct, rlen = tls-read-record(.fd, rec)

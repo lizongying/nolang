@@ -1,0 +1,11 @@
+; test-module-async.no — 測試模組級 awy（無棧協程狀態機變換）
+; 模組級代碼含 awy 時，自動包裝為匿名 async 函數並啟動事件循環。
+
+; 異步函數：返回輸入值的兩倍
+compute = (n i64) (r i64) {
+    r = n * 2
+}
+
+; 模組級 awy：直接在頂層調用 awy
+r = awy compute(21)
+print(r) ; expect: 42

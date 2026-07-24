@@ -1633,6 +1633,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	if g.paramNames == nil {
 		g.paramNames = make(map[string]bool)
 	}
+	// 无栈协程：检测含 awy 的函数，变换为状态机。
+	// 含 awy 的函数不再生成原始函数体，而是生成 coro_resume.N 状态机函数。
+	if fd.Body != nil && len(fd.Body.Statements) > 0 {
+		if len(collectTopLevelAwaitIndices(fd.Body.Statements)) > 0 {
+			g.transformAsyncFunction(sb, fd)
+			return
+		}
+	}
 	for _, p := range fd.Parameters {
 		g.paramNames[p.Name] = true
 		g.funcLocalNames[p.Name] = true
@@ -2060,6 +2068,13 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	}
 
 	if !hasTopLevel {
+		return
+	}
+
+	// 模块级代码含顶层 awy 时，包装为匿名 async 函数（无栈协程状态机变换），
+	// @main 仅创建 coro_state + task 并启动 @nolang_async_run 事件循环。
+	// 此路径下不再生成普通 @main 函数体。
+	if g.transformModuleAsync(sb, program) {
 		return
 	}
 
@@ -2820,7 +2835,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 			}
 		}
-		return "%task"
+		return "%task*"
 	case *parser.AwaitExpression:
 		// awy f-async(args) — 直接调用 -async 函数
 		if call, ok := v.Right.(*parser.CallExpression); ok {

@@ -1,0 +1,9 @@
+// 測試 [5]f64 固定陣列基本操作
+compute = () {
+    a [5]f64
+    i <- [0..5): { a[i] = i64-to-f64(i) }
+    sum = 0.0
+    i <- [0..5): { sum = sum + a[i] * a[i] }
+    print(sum.to-str())
+}
+compute()

@@ -1,0 +1,15 @@
+// 測試內部函數訪問外層固定陣列
+compute = () {
+    a [5]f64
+    i <- [0..5): { a[i] = i64-to-f64(i) }
+
+    sum-all = () (r f64) {
+        s = 0.0
+        i <- [0..5): { s = s + a[i] }
+        r = s
+    }
+
+    total = sum-all()
+    print(total.to-str())
+}
+compute()

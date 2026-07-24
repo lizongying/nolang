@@ -169,6 +169,14 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
+			// 协程上下文中使用堆分配（malloc），因为参数指针会被存入 args 结构，
+			// async_wrapper 在 yield 后执行时需要访问 — 栈 alloca 在 ret void 后失效。
+			if g.coroInAsyncFunc {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 8)\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s.cast = bitcast i8* %s to double*\n", g.indent(), tmpName, tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s.cast\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+				return "double* " + tmpName + ".cast"
+			}
 			// alloca 提升至 entry block，避免循環體內每次迭代增長棧
 			g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
 			sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
@@ -182,6 +190,14 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
+			// 协程上下文中使用堆分配（malloc），因为参数指针会被存入 args 结构，
+			// async_wrapper 在 yield 后执行时需要访问 — 栈 alloca 在 ret void 后失效。
+			if g.coroInAsyncFunc {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 8)\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s.cast = bitcast i8* %s to i64*\n", g.indent(), tmpName, tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s.cast\n", g.indent(), a.Value, tmpName))
+				return "i64* " + tmpName + ".cast"
+			}
 			// alloca 提升至 entry block，避免循環體內每次迭代增長棧
 			g.emitEntryAlloca(sb, "%s = alloca i64\n", tmpName)
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), a.Value, tmpName))

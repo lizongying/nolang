@@ -1,0 +1,25 @@
+; ═════════════════════════════════════════════════════════════════
+; 模块级 awy 自动包装为无栈协程（状态机变换）
+; ═════════════════════════════════════════════════════════════════
+;
+; 触发条件：
+;   模块级顶层代码含 awy 表达式
+;
+; 预期行为：
+;   编译器将模块级语句包装为匿名 async 函数 __nolang_main_async，
+;   生成 coro_state.N / coro_resume.N / coro_trampoline.N，
+;   @main 仅创建 coro_state + task 并启动 @nolang_async_run 事件循环。
+;
+; 验证：
+;   work-async(21) 应返回 42，awy 取回结果后 print 输出 42
+;
+; ═════════════════════════════════════════════════════════════════
+
+work-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+; 模块级 awy：触发 transformModuleAsync
+task = run work-async(21)
+result = awy task
+print(result)
