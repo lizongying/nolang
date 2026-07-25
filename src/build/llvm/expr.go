@@ -20,9 +20,9 @@ func (g *Generator) inferSSAType(val string) string {
 	if val == "" || val == "0" {
 		return ""
 	}
-	// 字串字面量暫存器：%str-longlit.*
+	// 字串字面量暫存器：%str-longlit.* (alloca %str-long，指向 str-long struct)
 	if strings.Contains(val, "str-longlit") {
-		return "ptr"
+		return "%str-long"
 	}
 	// 字串相關暫存器：%str.* (concat, repeat 等)
 	if strings.Contains(val, "str-concat") || strings.Contains(val, "str-repeat") ||
@@ -578,6 +578,18 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	if thenVal == "" {
 		thenVal = defaultZero
 	}
+	// Load struct value from alloca pointer before br (must be before terminator).
+	// String literals (%str-longlit.*) are alloca %str-long (pointers);
+	// the PHI needs the %str-long struct value, so load it.
+	if !g.blockTerminated && strings.Contains(thenVal, "str-longlit") {
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%if.then.strload.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, thenVal))
+		thenVal = loadReg
+		if g.ssaTypes != nil {
+			g.ssaTypes[loadReg] = "%str-long"
+		}
+	}
 	thenTerminated := g.blockTerminated
 	thenPredecessor := g.currentBlock
 	if !thenTerminated {
@@ -625,6 +637,16 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	if elseVal == "" {
 		elseVal = defaultZero
+	}
+	// Load struct value from alloca pointer before br (must be before terminator).
+	if !g.blockTerminated && strings.Contains(elseVal, "str-longlit") {
+		g.tmpIdx++
+		loadReg := fmt.Sprintf("%%if.else.strload.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, elseVal))
+		elseVal = loadReg
+		if g.ssaTypes != nil {
+			g.ssaTypes[loadReg] = "%str-long"
+		}
 	}
 	elseTerminated := g.blockTerminated
 	elsePredecessor := g.currentBlock

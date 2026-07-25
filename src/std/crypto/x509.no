@@ -208,7 +208,7 @@ x509-rsa-e = (data []byte) (e i64) {
         e = 0
         return
     }
-    exp-len, adv = der-len(data, rsa-start - p + 1)
+    exp-len, adv = der-len(data, rsa-start + 1)
     exp-len > 8 -> {
         e = 0
         return
@@ -2165,4 +2165,630 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     h5 = (h5 + f) & mask
     h6 = (h6 + g) & mask
     h7 = (h7 + h) & mask
+}
+
+; ═══════════════════════════════════════════════
+; DER 編碼（用於 X.509 自簽憑證產生）
+; ═══════════════════════════════════════════════
+
+; der-enc-len: 編碼 DER 長度
+; val i64: 長度值
+; 返回 out []byte: DER 長度位元組
+der-enc-len = (val i64) (out []byte) {
+    val < 128 -> {
+        out = with-len(1)
+        out[0] = val & 255
+        out.len = 1
+        return
+    }
+    val < 256 -> {
+        out = with-len(2)
+        out[0] = 0x81
+        out[1] = val & 255
+        out.len = 2
+        return
+    }
+    val < 65536 -> {
+        out = with-len(3)
+        out[0] = 0x82
+        out[1] = (val >> 8) & 255
+        out[2] = val & 255
+        out.len = 3
+        return
+    }
+    out = with-len(5)
+    out[0] = 0x83
+    out[1] = (val >> 16) & 255
+    out[2] = (val >> 8) & 255
+    out[3] = val & 255
+    out.len = 4
+}
+
+; der-enc-tlv: 包裝 TLV
+; tag i64: 標籤位元組
+; content []byte: 內容
+; 返回 out []byte: 完整 TLV
+der-enc-tlv = (tag i64, content []byte) (out []byte) {
+    cl = content.len
+    len-bytes []byte
+    len-bytes = der-enc-len(cl)
+    lb = len-bytes.len
+    out = with-len(1 + lb + cl)
+    out[0] = tag & 255
+    i <- [0..lb): {
+        out[1 + i] = len-bytes[i]
+    }
+    i <- [0..cl): {
+        out[1 + lb + i] = content[i]
+    }
+    out.len = 1 + lb + cl
+}
+
+; der-enc-integer-bytes: 將 big-endian 位元組陣列編碼為 DER INTEGER
+; data []byte: big-endian 位元組（正整數）
+; 返回 out []byte: DER INTEGER（含 tag+length）
+der-enc-integer-bytes = (data []byte) (out []byte) {
+    n = data.len
+    n == 0 -> {
+        zero []byte = with-len(1)
+        zero[0] = 0
+        zero.len = 1
+        out = der-enc-tlv(2, zero)
+        return
+    }
+
+    ; 跳過前導零
+    start = 0
+    {
+        start < n - 1 && data[start] == 0 -> start = start + 1
+    } (start < n - 1 && data[start] == 0)
+
+    actual = n - start
+
+    ; 若 MSB 為 1，需補 0x00 以保持正號
+    need-pad = 0
+    (data[start] & 128) != 0 -> need-pad = 1
+
+    content-len = actual + need-pad
+    content []byte = with-len(content-len)
+    {
+        need-pad == 1 -> {
+            content[0] = 0
+            i <- [0..actual): {
+                content[1 + i] = data[start + i]
+            }
+        }
+        -> {
+            i <- [0..actual): {
+                content[i] = data[start + i]
+            }
+        }
+    }
+    content.len = content-len
+    out = der-enc-tlv(2, content)
+}
+
+; der-enc-integer-i64: 將 i64 編碼為 DER INTEGER
+; val i64: 整數值
+; 返回 out []byte: DER INTEGER
+der-enc-integer-i64 = (val i64) (out []byte) {
+    val == 0 -> {
+        zero []byte = with-len(1)
+        zero[0] = 0
+        zero.len = 1
+        out = der-enc-tlv(2, zero)
+        return
+    }
+
+    ; 計算需要的位元組數（big-endian）
+    tmp = val
+    n = 0
+    {
+        n = n + 1
+        tmp = tmp >> 8
+    } (tmp != 0)
+
+    data []byte = with-len(n + 1)
+    i <- [0..n): {
+        data[n - 1 - i] = (val >> (i * 8)) & 255
+    }
+    data.len = n
+    out = der-enc-integer-bytes(data)
+}
+
+; der-enc-sequence: 包裝為 SEQUENCE
+der-enc-sequence = (content []byte) (out []byte) {
+    out = der-enc-tlv(0x30, content)
+}
+
+; der-enc-set: 包裝為 SET
+der-enc-set = (content []byte) (out []byte) {
+    out = der-enc-tlv(0x31, content)
+}
+
+; der-enc-bitstring: 包裝為 BIT STRING
+; data []byte: 位元組資料
+; 返回 out []byte: DER BIT STRING
+der-enc-bitstring = (data []byte) (out []byte) {
+    n = data.len
+    content []byte = with-len(n + 1)
+    content[0] = 0; 未使用位元數
+    i <- [0..n): {
+        content[1 + i] = data[i]
+    }
+    content.len = n + 1
+    out = der-enc-tlv(3, content)
+}
+
+; der-enc-octetstring: 包裝為 OCTET STRING
+der-enc-octetstring = (data []byte) (out []byte) {
+    out = der-enc-tlv(4, data)
+}
+
+; x509-bytes-to-bn: big-endian 位元組陣列 → []i64（little-endian base 2^32）
+; 本地副本，避免與 net/tls.no 產生循環依賴
+; data []byte: big-endian 位元組
+; 返回 out []i64: 大整數（每個元素為 32-bit limb）
+x509-bytes-to-bn = (data []byte) (out []i64) {
+    n = data.len
+    limb-count = (n + 3) / 4
+    out = with-len(limb-count)
+    i <- [0..limb-count): {
+        out[i] = 0
+    }
+    i <- [0..n): {
+        byte-from-lsb = n - 1 - i
+        limb = byte-from-lsb / 4
+        shift = (byte-from-lsb % 4) * 8
+        out[limb] = out[limb] | ((data[i] & 255) << shift)
+    }
+    out.len = limb-count
+}
+
+; der-enc-null: NULL
+der-enc-null = () (out []byte) {
+    out = with-len(2)
+    out[0] = 5
+    out[1] = 0
+    out.len = 2
+}
+
+; der-enc-printablestring: PrintableString
+der-enc-printablestring = (s str) (out []byte) {
+    b []byte
+    b = s.to-bytes()
+    out = der-enc-tlv(0x13, b)
+}
+
+; der-enc-utctime: UTCTime
+der-enc-utctime = (s str) (out []byte) {
+    b []byte
+    b = s.to-bytes()
+    out = der-enc-tlv(0x17, b)
+}
+
+; der-enc-explicit: EXPLICIT context tag [n]
+; tag-num i64: 標籤編號（0, 1, 2, ...）
+; content []byte: 內容
+; 返回 out []byte: DER [n] EXPLICIT
+der-enc-explicit = (tag-num i64, content []byte) (out []byte) {
+    tag = 0xA0 | (tag-num & 31)
+    out = der-enc-tlv(tag, content)
+}
+
+; ═══════════════════════════════════════════════
+; OID 與 AlgorithmIdentifier
+; ═══════════════════════════════════════════════
+
+; der-enc-oid-raw: 從原始 OID 內容位元組編碼（不含 tag+length）
+; raw []byte: OID 內容位元組（例如 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
+; 返回 out []byte: DER OBJECT IDENTIFIER（含 tag+length）
+der-enc-oid-raw = (raw []byte) (out []byte) {
+    out = der-enc-tlv(6, raw)
+}
+
+; alg-id-rsa-encryption: AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1)
+; 返回 out []byte: SEQUENCE { OID rsaEncryption, NULL }
+alg-id-rsa-encryption = () (out []byte) {
+    oid-rsa []byte = with-len(9)
+    oid-rsa[0] = 0x2A; 1.2
+    oid-rsa[1] = 0x86; 840 (high bit)
+    oid-rsa[2] = 0x48; 840 (low)
+    oid-rsa[3] = 0x86; 113549 (high)
+    oid-rsa[4] = 0xF7; 113549
+    oid-rsa[5] = 0x0D; 113549
+    oid-rsa[6] = 0x01; 1
+    oid-rsa[7] = 0x01; 1
+    oid-rsa[8] = 0x01; 1
+    oid-rsa.len = 9
+    oid-tlv []byte
+    oid-tlv = der-enc-oid-raw(oid-rsa)
+    null-tlv []byte
+    null-tlv = der-enc-null()
+    content []byte = with-len(oid-tlv.len + null-tlv.len)
+    i <- [0..oid-tlv.len): {
+        content[i] = oid-tlv[i]
+    }
+    i <- [0..null-tlv.len): {
+        content[oid-tlv.len + i] = null-tlv[i]
+    }
+    content.len = oid-tlv.len + null-tlv.len
+    out = der-enc-sequence(content)
+}
+
+; alg-id-sha256-with-rsa: AlgorithmIdentifier for sha256WithRSAEncryption (1.2.840.113549.1.1.11)
+; 返回 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
+alg-id-sha256-with-rsa = () (out []byte) {
+    oid []byte = with-len(9)
+    oid[0] = 0x2A
+    oid[1] = 0x86
+    oid[2] = 0x48
+    oid[3] = 0x86
+    oid[4] = 0xF7
+    oid[5] = 0x0D
+    oid[6] = 0x01
+    oid[7] = 0x01
+    oid[8] = 0x0B; 11
+    oid.len = 9
+    oid-tlv []byte
+    oid-tlv = der-enc-oid-raw(oid)
+    null-tlv []byte
+    null-tlv = der-enc-null()
+    content []byte = with-len(oid-tlv.len + null-tlv.len)
+    i <- [0..oid-tlv.len): {
+        content[i] = oid-tlv[i]
+    }
+    i <- [0..null-tlv.len): {
+        content[oid-tlv.len + i] = null-tlv[i]
+    }
+    content.len = oid-tlv.len + null-tlv.len
+    out = der-enc-sequence(content)
+}
+
+; ═══════════════════════════════════════════════
+; X.509 元件建構
+; ═══════════════════════════════════════════════
+
+; x509-build-rsa-public-key: 建構 RSAPublicKey DER
+; n []byte: 模數（big-endian，不含前導 0x00）
+; e i64: 公鑰指數
+; 返回 out []byte: SEQUENCE { INTEGER n, INTEGER e }
+x509-build-rsa-public-key = (n []byte, e i64) (out []byte) {
+    n-int []byte
+    n-int = der-enc-integer-bytes(n)
+    e-int []byte
+    e-int = der-enc-integer-i64(e)
+    content []byte = with-len(n-int.len + e-int.len)
+    i <- [0..n-int.len): {
+        content[i] = n-int[i]
+    }
+    i <- [0..e-int.len): {
+        content[n-int.len + i] = e-int[i]
+    }
+    content.len = n-int.len + e-int.len
+    out = der-enc-sequence(content)
+}
+
+; x509-build-spki: 建構 SubjectPublicKeyInfo
+; n []byte: 模數
+; e i64: 公鑰指數
+; 返回 out []byte: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
+x509-build-spki = (n []byte, e i64) (out []byte) {
+    alg-id []byte
+    alg-id = alg-id-rsa-encryption()
+    rsa-key []byte
+    rsa-key = x509-build-rsa-public-key(n, e)
+    bit-str []byte
+    bit-str = der-enc-bitstring(rsa-key)
+    content []byte = with-len(alg-id.len + bit-str.len)
+    i <- [0..alg-id.len): {
+        content[i] = alg-id[i]
+    }
+    i <- [0..bit-str.len): {
+        content[alg-id.len + i] = bit-str[i]
+    }
+    content.len = alg-id.len + bit-str.len
+    out = der-enc-sequence(content)
+}
+
+; x509-build-name-cn: 建構 Name（僅 CN）
+; cn str: commonName
+; 返回 out []byte: RDNSequence
+x509-build-name-cn = (cn str) (out []byte) {
+    ; OID commonName (2.5.4.3): 55 04 03
+    oid-cn []byte = with-len(3)
+    oid-cn[0] = 0x55
+    oid-cn[1] = 0x04
+    oid-cn[2] = 0x03
+    oid-cn.len = 3
+    oid-tlv []byte
+    oid-tlv = der-enc-oid-raw(oid-cn)
+    val-tlv []byte
+    val-tlv = der-enc-printablestring(cn)
+
+    ; AttributeTypeAndValue = SEQUENCE { OID, value }
+    atv-content []byte = with-len(oid-tlv.len + val-tlv.len)
+    i <- [0..oid-tlv.len): {
+        atv-content[i] = oid-tlv[i]
+    }
+    i <- [0..val-tlv.len): {
+        atv-content[oid-tlv.len + i] = val-tlv[i]
+    }
+    atv-content.len = oid-tlv.len + val-tlv.len
+    atv []byte
+    atv = der-enc-sequence(atv-content)
+
+    ; RDN = SET { AttributeTypeAndValue }
+    rdn []byte
+    rdn = der-enc-set(atv)
+
+    ; Name = RDNSequence = SEQUENCE OF RDN = SEQUENCE { rdn }
+    out = der-enc-sequence(rdn)
+}
+
+; x509-build-validity: 建構 Validity
+; not-before str: UTCTime 字串（如 "240101000000Z"）
+; not-after str: UTCTime 字串
+; 返回 out []byte: SEQUENCE { UTCTime, UTCTime }
+x509-build-validity = (not-before str, not-after str) (out []byte) {
+    nb []byte
+    nb = der-enc-utctime(not-before)
+    na []byte
+    na = der-enc-utctime(not-after)
+    content []byte = with-len(nb.len + na.len)
+    i <- [0..nb.len): {
+        content[i] = nb[i]
+    }
+    i <- [0..na.len): {
+        content[nb.len + i] = na[i]
+    }
+    content.len = nb.len + na.len
+    out = der-enc-sequence(content)
+}
+
+; x509-build-tbs: 建構 TBSCertificate
+; n []byte: RSA 模數
+; e i64: 公鑰指數
+; cn str: 憑證 CN
+; not-before str: 起始時間
+; not-after str: 結束時間
+; 返回 out []byte: TBSCertificate DER
+x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out []byte) {
+    ; version [0] EXPLICIT INTEGER (v3 = 2)
+    v-int []byte
+    v-int = der-enc-integer-i64(2)
+    version []byte
+    version = der-enc-explicit(0, v-int)
+
+    ; serialNumber = INTEGER (1)
+    serial []byte
+    serial = der-enc-integer-i64(1)
+
+    ; signature = AlgorithmIdentifier (sha256WithRSAEncryption)
+    sig-alg []byte
+    sig-alg = alg-id-sha256-with-rsa()
+
+    ; issuer = Name (CN)
+    issuer []byte
+    issuer = x509-build-name-cn(cn)
+
+    ; validity
+    validity []byte
+    validity = x509-build-validity(not-before, not-after)
+
+    ; subject = Name (CN)（自簽，subject == issuer）
+    subject []byte
+    subject = x509-build-name-cn(cn)
+
+    ; subjectPublicKeyInfo
+    spki []byte
+    spki = x509-build-spki(n, e)
+
+    ; 串接所有欄位
+    total = version.len + serial.len + sig-alg.len + issuer.len + validity.len + subject.len + spki.len
+    content []byte = with-len(total)
+    pos = 0
+    i <- [0..version.len): {
+        content[pos + i] = version[i]
+    }
+    pos = pos + version.len
+    i <- [0..serial.len): {
+        content[pos + i] = serial[i]
+    }
+    pos = pos + serial.len
+    i <- [0..sig-alg.len): {
+        content[pos + i] = sig-alg[i]
+    }
+    pos = pos + sig-alg.len
+    i <- [0..issuer.len): {
+        content[pos + i] = issuer[i]
+    }
+    pos = pos + issuer.len
+    i <- [0..validity.len): {
+        content[pos + i] = validity[i]
+    }
+    pos = pos + validity.len
+    i <- [0..subject.len): {
+        content[pos + i] = subject[i]
+    }
+    pos = pos + subject.len
+    i <- [0..spki.len): {
+        content[pos + i] = spki[i]
+    }
+    content.len = total
+
+    out = der-enc-sequence(content)
+}
+
+; ═══════════════════════════════════════════════
+; RSA PKCS#1 v1.5 簽章
+; ═══════════════════════════════════════════════
+
+; rsa-pkcs1-sign-sha256: 使用 RSA PKCS#1 v1.5 簽署資料
+; data []byte: 待簽資料
+; n []byte: 模數（big-endian）
+; d []byte: 私鑰指數（big-endian）
+; 返回 sig []byte: 簽章（模數長度）
+rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
+    ; 1. 計算 SHA-256 雜湊
+    h-arr [32]byte
+    h-arr = sha256.sha256(data)
+    hash []byte = with-len(32)
+    i <- [0..32): {
+        hash[i] = h-arr[i]
+    }
+    hash.len = 32
+
+    ; 2. DigestInfo = SEQUENCE { SEQUENCE { OID sha256, NULL }, OCTET STRING hash }
+    ; OID sha256 (2.16.840.1.101.3.4.2.1): 60 86 48 01 65 03 04 02 01
+    oid-sha256 []byte = with-len(9)
+    oid-sha256[0] = 0x60
+    oid-sha256[1] = 0x86
+    oid-sha256[2] = 0x48
+    oid-sha256[3] = 0x01
+    oid-sha256[4] = 0x65
+    oid-sha256[5] = 0x03
+    oid-sha256[6] = 0x04
+    oid-sha256[7] = 0x02
+    oid-sha256[8] = 0x01
+    oid-sha256.len = 9
+    oid-tlv []byte
+    oid-tlv = der-enc-oid-raw(oid-sha256)
+    null-tlv []byte
+    null-tlv = der-enc-null()
+    inner-content []byte = with-len(oid-tlv.len + null-tlv.len)
+    i <- [0..oid-tlv.len): {
+        inner-content[i] = oid-tlv[i]
+    }
+    i <- [0..null-tlv.len): {
+        inner-content[oid-tlv.len + i] = null-tlv[i]
+    }
+    inner-content.len = oid-tlv.len + null-tlv.len
+    inner-seq []byte
+    inner-seq = der-enc-sequence(inner-content)
+
+    hash-octet []byte
+    hash-octet = der-enc-octetstring(hash)
+
+    di-content []byte = with-len(inner-seq.len + hash-octet.len)
+    i <- [0..inner-seq.len): {
+        di-content[i] = inner-seq[i]
+    }
+    i <- [0..hash-octet.len): {
+        di-content[inner-seq.len + i] = hash-octet[i]
+    }
+    di-content.len = inner-seq.len + hash-octet.len
+    digest-info []byte
+    digest-info = der-enc-sequence(di-content)
+
+    ; 3. PKCS#1 v1.5 填充
+    ; padded = 0x00 0x01 0xFF...0xFF 0x00 || DigestInfo
+    ; 總長度 = 模數長度（位元組）
+    mod-len = n.len
+    di-len = digest-info.len
+    pad-len = mod-len - di-len - 3; 0x00 + 0x01 + 0xFF*N + 0x00 + DigestInfo
+
+    padded []byte = with-len(mod-len)
+    padded[0] = 0x00
+    padded[1] = 0x01
+    i <- [0..pad-len): {
+        padded[2 + i] = 0xFF
+    }
+    padded[2 + pad-len] = 0x00
+    i <- [0..di-len): {
+        padded[3 + pad-len + i] = digest-info[i]
+    }
+    padded.len = mod-len
+
+    ; 4. RSA 簽章：sig = padded^d mod n
+    ; 將 big-endian 位元組轉為 little-endian limb 陣列
+    base []i64
+    base = x509-bytes-to-bn(padded)
+    base-n = base.len
+
+    exp []i64
+    exp = x509-bytes-to-bn(d)
+    exp-n = exp.len
+
+    modulus []i64
+    modulus = x509-bytes-to-bn(n)
+    mod-n = modulus.len
+
+    result []i64
+    rn = 0
+    result, rn = rsa.rsa-modpow(base, base-n, exp, exp-n, modulus, mod-n)
+
+    ; 5. 將結果轉回 big-endian 位元組（固定為模數長度）
+    sig = with-len(mod-len)
+
+    ; 先填零
+    i <- [0..mod-len): {
+        sig[i] = 0
+    }
+
+    ; 將 limb 轉為位元組
+    i <- [0..rn): {
+        limb = result[i]
+        limb-byte-0 = limb & 255
+        limb-byte-1 = (limb >> 8) & 255
+        limb-byte-2 = (limb >> 16) & 255
+        limb-byte-3 = (limb >> 24) & 255
+        ; little-endian limb: byte 0 = LSB
+        ; big-endian 輸出: 在 mod-len 中，limb i 對應位元組 (mod-len - 1 - i*4 .. mod-len - 1 - i*4 - 3)
+        out-pos = mod-len - 1 - i * 4
+        sig[out-pos] = limb-byte-0
+        out-pos > 0 -> sig[out-pos - 1] = limb-byte-1
+        out-pos > 1 -> sig[out-pos - 2] = limb-byte-2
+        out-pos > 2 -> sig[out-pos - 3] = limb-byte-3
+    }
+    sig.len = mod-len
+}
+
+; ═══════════════════════════════════════════════
+; X.509 自簽憑證產生
+; ═══════════════════════════════════════════════
+
+; x509-build-self-signed-cert: 建構自簽 X.509 憑證
+; n []byte: RSA 模數（big-endian）
+; e i64: 公鑰指數
+; d []byte: RSA 私鑰指數（big-endian）
+; cn str: Common Name
+; 返回 cert []byte: 完整 DER 編碼憑證
+x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) {
+    ; 1. 建構 TBSCertificate
+    not-before = '240101000000Z'
+    not-after = '400101000000Z'
+    tbs []byte
+    tbs = x509-build-tbs(n, e, cn, not-before, not-after)
+
+    ; 2. 簽章
+    sig []byte
+    sig = rsa-pkcs1-sign-sha256(tbs, n, d)
+
+    ; 3. signatureAlgorithm
+    sig-alg []byte
+    sig-alg = alg-id-sha256-with-rsa()
+
+    ; 4. signatureValue = BIT STRING
+    sig-bitstr []byte
+    sig-bitstr = der-enc-bitstring(sig)
+
+    ; 5. Certificate = SEQUENCE { tbs, sig-alg, sig-bitstr }
+    total = tbs.len + sig-alg.len + sig-bitstr.len
+    content []byte = with-len(total)
+    pos = 0
+    i <- [0..tbs.len): {
+        content[pos + i] = tbs[i]
+    }
+    pos = pos + tbs.len
+    i <- [0..sig-alg.len): {
+        content[pos + i] = sig-alg[i]
+    }
+    pos = pos + sig-alg.len
+    i <- [0..sig-bitstr.len): {
+        content[pos + i] = sig-bitstr[i]
+    }
+    content.len = total
+
+    cert = der-enc-sequence(content)
 }

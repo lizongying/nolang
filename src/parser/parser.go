@@ -4044,9 +4044,87 @@ func (p *Parser) parseConditionalExpression(condition Expression) Expression {
 }
 
 func (p *Parser) parseGroupedExpression() Expression {
-	tok := p.currentToken
-	p.nextToken()
+	tok := p.currentToken // LPAREN
+	p.nextToken()         // skip (
+
+	// Skip leading newlines
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// 無下限區間: (..b], (..b), (..)
+	// 左括號為 '(' 表示左開（雖然無 start，語法上仍保持一致）
+	if p.currentToken.Type == lexer.ELLIPSIS {
+		p.nextToken() // skip ..
+
+		var endExpr Expression
+		if p.currentToken.Type == lexer.RPAREN || p.currentToken.Type == lexer.RBRACKET {
+			// (..) — 完全無界區間（無 start, 無 end）
+			endExpr = nil
+		} else {
+			endExpr = p.parseExpression(LOWEST)
+		}
+
+		rightInc := false
+		if p.currentToken.Type == lexer.RPAREN {
+			rightInc = false
+			p.nextToken() // skip )
+		} else if p.currentToken.Type == lexer.RBRACKET {
+			rightInc = true
+			p.nextToken() // skip ]
+		} else {
+			msg := fmt.Sprintf("line %d, column %d: expected ')' or ']' to close range, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+
+		return &RangeExpression{
+			Token:    tok,
+			Start:    nil, // 無下限
+			End:      endExpr,
+			LeftInc:  false, // (
+			RightInc: rightInc,
+		}
+	}
+
 	expr := p.parseExpression(LOWEST)
+
+	// Range literal: (a..b), (a..b], (a..) — `..` after first element
+	// indicates a RangeExpression with left-exclusive bound.
+	if p.currentToken.Type == lexer.ELLIPSIS {
+		p.nextToken() // skip ..
+
+		var endExpr Expression
+		if p.currentToken.Type == lexer.RPAREN || p.currentToken.Type == lexer.RBRACKET {
+			// (a..) — open-ended range (no end)
+			endExpr = nil
+		} else {
+			endExpr = p.parseExpression(LOWEST)
+		}
+
+		rightInc := false
+		if p.currentToken.Type == lexer.RPAREN {
+			rightInc = false
+			p.nextToken() // skip )
+		} else if p.currentToken.Type == lexer.RBRACKET {
+			rightInc = true
+			p.nextToken() // skip ]
+		} else {
+			msg := fmt.Sprintf("line %d, column %d: expected ')' or ']' to close range, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+
+		return &RangeExpression{
+			Token:    tok,
+			Start:    expr,
+			End:      endExpr,
+			LeftInc:  false, // (
+			RightInc: rightInc,
+		}
+	}
 
 	if p.currentToken.Type != lexer.RPAREN {
 		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
@@ -5192,6 +5270,9 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					Operator: "&&",
 					Right:    arm.condition,
 				}
+			} else if rng, isRange := arm.condition.(*RangeExpression); isRange {
+				// Range condition: [a..b] → matched >= a && matched <= b
+				cond = p.desugarRangeCondition(tok, matched, rng)
 			} else {
 				// matched == condition
 				// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
@@ -5264,6 +5345,81 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	}
 
 	return ifExpr
+}
+
+// desugarRangeCondition 將 match arm 中的 RangeExpression 條件 desugar 為布爾表達式。
+// 有界（4 種）：
+//   [a..b] → matched >= a && matched <= b
+//   [a..b) → matched >= a && matched < b
+//   (a..b] → matched > a && matched <= b
+//   (a..b) → matched > a && matched < b
+// 無上限（4 種，End=nil）：
+//   [a..)  → matched >= a
+//   [a..]  → matched >= a
+//   (a..)  → matched > a
+//   (a..]  → matched > a
+// 無下限（4 種，Start=nil）：
+//   [..b]  → matched <= b
+//   [..b)  → matched < b
+//   (..b]  → matched <= b
+//   (..b)  → matched < b
+// 完全無界（4 種，Start=nil 且 End=nil）：
+//   [..]   → true (匹配所有值)
+//   [..)   → true
+//   (..]   → true
+//   (..)   → true
+func (p *Parser) desugarRangeCondition(tok lexer.Token, matched Expression, rng *RangeExpression) Expression {
+	var leftOp string
+	if rng.LeftInc {
+		leftOp = ">="
+	} else {
+		leftOp = ">"
+	}
+	var rightOp string
+	if rng.RightInc {
+		rightOp = "<="
+	} else {
+		rightOp = "<"
+	}
+
+	if rng.Start != nil && rng.End != nil {
+		leftCond := &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: leftOp,
+			Right:    rng.Start,
+		}
+		rightCond := &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: rightOp,
+			Right:    rng.End,
+		}
+		return &InfixExpression{
+			Token:    tok,
+			Left:     leftCond,
+			Operator: "&&",
+			Right:    rightCond,
+		}
+	}
+	if rng.Start != nil {
+		return &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: leftOp,
+			Right:    rng.Start,
+		}
+	}
+	if rng.End != nil {
+		return &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: rightOp,
+			Right:    rng.End,
+		}
+	}
+	// 完全無界 [..], [..), (..], (..) — 永真，匹配所有值
+	return &IntegerLiteral{Token: tok, Value: 1}
 }
 
 // buildItBinding creates `it = matched` LetStatement when matched is an Identifier.
@@ -6736,34 +6892,117 @@ func (p *Parser) parseSliceExpression(left Expression) Expression {
 }
 
 func (p *Parser) parseSliceLiteral() Expression {
-	slice := &SliceLiteral{
-		Token:    p.currentToken,
-		Elements: []Expression{},
-	}
+	tok := p.currentToken // LBRACKET
 
 	p.nextToken() // 跳过 LBRACKET
 
-	for p.currentToken.Type != lexer.RBRACKET && p.currentToken.Type != lexer.EOF {
-		// Skip newlines between elements
-		for p.currentToken.Type == lexer.NEWLINE {
-			p.nextToken()
+	// Skip leading newlines
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
+
+	// Empty slice []
+	if p.currentToken.Type == lexer.RBRACKET {
+		p.nextToken()
+		return &SliceLiteral{Token: tok, Elements: []Expression{}}
+	}
+
+	// 無下限區間: [..b], [..b), [..]
+	// 左括號為 '[' 表示左閉（雖然無 start，語法上仍保持一致）
+	if p.currentToken.Type == lexer.ELLIPSIS {
+		p.nextToken() // skip ..
+
+		var endExpr Expression
+		if p.currentToken.Type == lexer.RBRACKET || p.currentToken.Type == lexer.RPAREN {
+			// [..] — 完全無界區間（無 start, 無 end）
+			endExpr = nil
+		} else {
+			endExpr = p.parseExpression(LOWEST)
 		}
+
+		rightInc := false
 		if p.currentToken.Type == lexer.RBRACKET {
-			break
+			rightInc = true
+			p.nextToken() // skip ]
+		} else if p.currentToken.Type == lexer.RPAREN {
+			rightInc = false
+			p.nextToken() // skip )
+		} else {
+			msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
 		}
 
-		elem := p.parseExpression(LOWEST)
-		if elem != nil {
-			slice.Elements = append(slice.Elements, elem)
+		return &RangeExpression{
+			Token:    tok,
+			Start:    nil, // 無下限
+			End:      endExpr,
+			LeftInc:  true, // [
+			RightInc: rightInc,
+		}
+	}
+
+	// Parse first element
+	firstElem := p.parseExpression(LOWEST)
+
+	// Range literal: [a..b], [a..b), [a..] — `..` after first element
+	// indicates a RangeExpression rather than a slice literal.
+	if p.currentToken.Type == lexer.ELLIPSIS {
+		p.nextToken() // skip ..
+
+		var endExpr Expression
+		if p.currentToken.Type == lexer.RBRACKET || p.currentToken.Type == lexer.RPAREN {
+			// [a..] — open-ended range (no end); used for slice prefixes
+			endExpr = nil
+		} else {
+			endExpr = p.parseExpression(LOWEST)
 		}
 
+		rightInc := false
+		if p.currentToken.Type == lexer.RBRACKET {
+			rightInc = true
+			p.nextToken() // skip ]
+		} else if p.currentToken.Type == lexer.RPAREN {
+			rightInc = false
+			p.nextToken() // skip )
+		} else {
+			msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return nil
+		}
+
+		return &RangeExpression{
+			Token:    tok,
+			Start:    firstElem,
+			End:      endExpr,
+			LeftInc:  true, // [
+			RightInc: rightInc,
+		}
+	}
+
+	// Not a range — build slice literal with the first element already parsed
+	slice := &SliceLiteral{
+		Token:    tok,
+		Elements: []Expression{},
+	}
+	if firstElem != nil {
+		slice.Elements = append(slice.Elements, firstElem)
+	}
+
+	// Continue parsing remaining slice elements (comma-separated)
+	for p.currentToken.Type != lexer.RBRACKET && p.currentToken.Type != lexer.EOF {
 		if p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // 跳过 COMMA
 			// Skip newlines after comma before next element
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
 			}
-		} else if p.currentToken.Type != lexer.RBRACKET {
+		} else if p.currentToken.Type == lexer.NEWLINE {
+			p.nextToken()
+			continue
+		} else {
 			// Skip newlines before closing bracket
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -6774,6 +7013,16 @@ func (p *Parser) parseSliceLiteral() Expression {
 				p.saveError(msg)
 				return nil
 			}
+			break
+		}
+
+		if p.currentToken.Type == lexer.RBRACKET {
+			break
+		}
+
+		elem := p.parseExpression(LOWEST)
+		if elem != nil {
+			slice.Elements = append(slice.Elements, elem)
 		}
 	}
 

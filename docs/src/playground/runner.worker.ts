@@ -102,12 +102,15 @@ function compileSource(source: string, timeoutMs: number): {
   exitCode: number;
   timedOut: boolean;
 } {
-  // Use an explicit in-memory filesystem rather than letting wasmer-wasi
-  // attempt to bind a host path via `preopens`. In the browser there is
-  // no host `/`, so `preopens: {'/': '/'}` would leave the root either
-  // empty or read-only, causing `Capabilities insufficient` when no.wasm
-  // tries to `open(O_RDONLY)` /tmp/input.no. We seed the MemFS ourselves
-  // and preopen `/` against it so the guest sees a writable root.
+  // Use an explicit in-memory filesystem and preopen `/` against it.
+  // `preopens: {'/': '/'}` alone (without `fs`) fails because wasmer
+  // tries to bind the host root, which is absent in the browser —
+  // producing `Capabilities insufficient`. But with an explicit
+  // `fs: MemFS`, wasmer preopens `/` *inside* the MemFS rather than the
+  // host, granting the guest a writable root it can actually access.
+  // Empty `preopens: {}` is wrong too: WASI requires paths to be
+  // preopened before the guest can `open()` them, so `/tmp/input.no`
+  // would still be unreachable even though the file exists in MemFS.
   const fs = new MemFS();
   try {
     fs.createDir(TMP_DIR);
@@ -130,13 +133,7 @@ function compileSource(source: string, timeoutMs: number): {
       INPUT_PATH,
     ],
     env: {},
-    // Empty preopens — wasmer must NOT try to bind any host path.
-    // When `preopens` is undefined wasmer defaults to `{'.':'/'}` which
-    // attempts to read the host root (absent in the browser) and
-    // produces `Capabilities insufficient`. An empty object yields an
-    // empty preopen list, leaving the explicit `fs` MemFS as the sole
-    // filesystem. The guest still sees `/` because MemFS roots at `/`.
-    preopens: {},
+    preopens: {'/': '/'},
     fs,
   });
 
@@ -221,7 +218,7 @@ function executeUserWasm(
   const wasi = new WASI({
     args: ['out.wasm'],
     env: {},
-    preopens: {},
+    preopens: {'/': '/'},
     fs,
   });
 

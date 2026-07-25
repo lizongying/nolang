@@ -324,23 +324,41 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 		} else {
 			startReg = startVal
 		}
+	} else if r != nil && r.Start == nil && !r.LeftInc {
+		// (..end / (..] / (..) / (.. : 左開無下限，起始偏移 +1
+		startReg = "1"
 	}
 
 	if r == nil || (r.Start == nil && r.End == nil) {
-		// [..] full slice: view_len = src_len
-		viewLenReg = srcLen
+		// [..] / (..] full slice: view_len = src_len - start
+		if startReg == "0" {
+			viewLenReg = srcLen
+		} else {
+			g.tmpIdx++
+			viewLenReg = fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+					g.indent(), viewLenReg, srcLen, startReg))
+			}
+		}
 	} else if r.Start == nil && r.End != nil {
-		// [..end]: view_len = end + (1 if ] else 0)
+		// [..end] / (..end]: view_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		g.tmpIdx++
+		subReg := fmt.Sprintf("%%sv.sublen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+				g.indent(), subReg, endVal, startReg))
+		}
 		if r.RightInc {
 			g.tmpIdx++
 			viewLenReg = fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), viewLenReg, endVal))
+					g.indent(), viewLenReg, subReg))
 			}
 		} else {
-			viewLenReg = endVal
+			viewLenReg = subReg
 		}
 	} else if r.Start != nil && r.End == nil {
 		// [start..]: view_len = src_len - start

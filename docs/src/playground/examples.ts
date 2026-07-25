@@ -162,16 +162,38 @@ u.greet()
     label: 'Match Expression',
     code: `; Match Expression — value matching with the 'x: { ... }' form
 
-; Match on a numeric value with range patterns
+; Match on a numeric value with range patterns.
+; Bounded interval forms:
+;   [a..b]  = closed interval (both inclusive)
+;   [a..b)  = half-open (left inclusive, right exclusive)
+;   (a..b]  = half-open (left exclusive, right inclusive)
+;   (a..b)  = open interval (both exclusive)
+; Unbounded forms:
+;   [a..)   = left inclusive, no upper bound (it >= a)
+;   (a..)   = left exclusive, no upper bound (it > a)
+;   [..b]   = no lower bound, right inclusive (it <= b)
+;   [..b)   = no lower bound, right exclusive (it < b)
 score = 85
 grade = score: {
-  [0..59] -> 'F'
-  [60..79] -> 'C'
-  [80..89] -> 'B'
+  [0..60) -> 'F'
+  [60..80) -> 'C'
+  [80..90) -> 'B'
   [90..100] -> 'A'
   -> 'invalid'
 }
 print('Score ' - score.to-str() - ' -> grade ' - grade)
+
+; Full classification using unbounded ranges on both ends
+v = 85
+result = v: {
+  [..0) -> 'negative'
+  [0..60) -> 'fail'
+  [60..80) -> 'pass'
+  [80..90) -> 'good'
+  [90..100] -> 'excellent'
+  (100..) -> 'extraordinary'
+}
+print('classify(' - v.to-str() - ') = ' - result)
 
 ; Match on option type — nil / err / value
 safe-div = (a i64, b i64) (r ?i64) {
@@ -195,8 +217,8 @@ result2: {
 }
 
 ; Match with multiple patterns joined by ||
-n = 3
-n: {
+m = 3
+m: {
   1 || 3 || 5 || 7 -> print('odd small')
   2 || 4 || 6 -> print('even small')
   -> print('larger number')
@@ -211,7 +233,7 @@ n: {
 ; rand.rand(state) returns (new-state, value) where value is in [0..4294967295].
 
 ; Generate 5 random numbers from a seed
-seed i64 = 123456789
+seed = 123456789
 state = seed
 i <- [0..5): {
   state, r = rand.rand(state)

@@ -2960,6 +2960,11 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 					g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 				}
 			}
+			// Recurse into value expression to collect inner variables
+			// (e.g. synthetic `it` injected by match desugar inside if-expression branches)
+			if s.Value != nil {
+				g.collectVarDeclsFromExpr(s.Value, vars)
+			}
 		case *parser.FunctionDefinition:
 		// Skip function bodies - variables inside functions are collected
 		// in generateFunctionDefinition via collectVarDeclsFromStmt.
@@ -2984,12 +2989,10 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// 變數型別語意上是 err/nil（無值），LLVM 端以 i64 佔位即可。
 		// 不註冊為 option 型別，否則後續查找會誤用 matched 的型別。
 		if s.IsSynthetic {
-			// At module level, skip ALL synthetic `it` bindings to prevent
-			// cross-function type pollution (e.g., %file from one function
-			// leaking into str.to-byte where it should be i64).
-			if isModuleLevel {
-				return
-			}
+			// Note: cross-function type pollution is already prevented because
+			// generateFunctionDefinition resets g.varTypes per function (line 1599)
+			// and collectVarDecls skips function bodies. Module-level synthetic `it`
+			// must be collected so that %it gets allocated for top-level match.
 			if nt, ok := s.Type.(*parser.NamedType); ok {
 				if nt.Value == "err" || nt.Value == "nil" {
 					if _, exists := vars[s.Name.Value]; !exists {
