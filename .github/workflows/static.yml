@@ -42,8 +42,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Build no.wasm
         run: make no-wasm
@@ -58,11 +61,11 @@ jobs:
           test -s docs/static/wasm/lsp.wasm
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
         working-directory: docs
 
       - name: Build website
-        run: npm run build
+        run: bun run build
         working-directory: docs
 
       - name: Upload artifact
