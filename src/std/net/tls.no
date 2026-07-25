@@ -61,6 +61,15 @@ TLS-GROUP-X25519 = 0x001D
 
 ; Signature algorithms
 TLS-SIG-RSA-PKCS1-SHA256 = 0x0401
+TLS-SIG-ECDSA-SECP256R1-SHA256 = 0x0403
+TLS-SIG-RSA-PKCS1-SHA384 = 0x0501
+TLS-SIG-ECDSA-SECP384R1-SHA384 = 0x0503
+TLS-SIG-RSA-PKCS1-SHA512 = 0x0601
+TLS-SIG-ECDSA-SECP521R1-SHA512 = 0x0603
+TLS-SIG-RSA-PSS-RSAE-SHA256 = 0x0804
+TLS-SIG-RSA-PSS-RSAE-SHA384 = 0x0805
+TLS-SIG-RSA-PSS-RSAE-SHA512 = 0x0806
+TLS-SIG-ED25519 = 0x0807
 
 ; Key sizes
 TLS-MAC-KEY-SIZE = 32
@@ -1116,16 +1125,32 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     tls-put-u16(hs, pos, TLS-EXT-SIGNATURE-ALGORITHMS)
     pos = pos + 2
 
-    ; ext data length = 4
-    tls-put-u16(hs, pos, 4)
+    ; 9 個演算法 = 18 bytes; ext data length = 2 (list len) + 18 = 20
+    tls-put-u16(hs, pos, 20)
     pos = pos + 2
 
-    ; sig algs list length = 2
-    tls-put-u16(hs, pos, 2)
+    ; sig algs list length = 18
+    tls-put-u16(hs, pos, 18)
     pos = pos + 2
 
-    ; rsa_pkcs1_sha256 = 0x0401
+    ; 依優先順序：RSA-PSS（現代首選）> ECDSA > RSA-PKCS1
+    tls-put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA256)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-ECDSA-SECP256R1-SHA256)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA384)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-ECDSA-SECP384R1-SHA384)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA512)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-ECDSA-SECP521R1-SHA512)
+    pos = pos + 2
     tls-put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA256)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA384)
+    pos = pos + 2
+    tls-put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA512)
     pos = pos + 2
 
     ; 擴展 4: key_share (51)
@@ -1403,11 +1428,15 @@ tls-conn.derive-handshake-keys-13 = () {
 
 ; derive-application-keys-13: 推導應用層金鑰
 tls-conn.derive-application-keys-13 = () {
+    io.errln('[TLS] dap: 1 hs-prk')
+
     ; 從 handshake secret 推導
     hs-prk []byte = with-len(32)
     i <- [0..32): {
         hs-prk[i] = .shared-secret[i]
     }
+
+    io.errln('[TLS] dap: 2 empty-hash')
 
     ; derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
     empty-hash-arr = sha256.sha256('')
@@ -1415,8 +1444,11 @@ tls-conn.derive-application-keys-13 = () {
     i <- [0..32): {
         empty-hash[i] = empty-hash-arr[i]
     }
+    io.errln('[TLS] dap: 3 derived-hs')
     derived-hs []byte
     derived-hs = hkdf.hkdf-expand-label-vec(hs-prk, 'derived', empty-hash, 32)
+
+    io.errln('[TLS] dap: 4 ms-prk')
 
     ; Master Secret = HKDF-Extract(derived, 0^HashLen)
     zero-32 []byte = with-len(32)
@@ -1427,6 +1459,9 @@ tls-conn.derive-application-keys-13 = () {
     ms-prk [32]byte
     ms-prk = hkdf.hkdf-extract(derived-hs, zero-32)
 
+    io.errln('[TLS] dap: 5 hs-hash')
+    io.errln('[TLS] dap: 5 hs-buf.len=' - .hs-buf.len.to-str() - ' hs-buf-len=' - .hs-buf-len.to-str())
+
     ; transcript hash = SHA-256(ClientHello..server Finished)
     hs-hash-arr = sha256.sha256(.hs-buf)
     hs-hash []byte = with-len(32)
@@ -1434,13 +1469,19 @@ tls-conn.derive-application-keys-13 = () {
         hs-hash[i] = hs-hash-arr[i]
     }
 
+    io.errln('[TLS] dap: 6 c-ap-secret')
+
     ; client_application_traffic_secret
     c-ap-secret []byte
     c-ap-secret = hkdf.hkdf-expand-label-vec(ms-prk[..], 'c ap traffic', hs-hash, 32)
 
+    io.errln('[TLS] dap: 7 s-ap-secret')
+
     ; server_application_traffic_secret
     s-ap-secret []byte
     s-ap-secret = hkdf.hkdf-expand-label-vec(ms-prk[..], 's ap traffic', hs-hash, 32)
+
+    io.errln('[TLS] dap: 8 key-tmp c')
 
     ; 推導金鑰和 IV
     key-tmp []byte
@@ -1448,20 +1489,24 @@ tls-conn.derive-application-keys-13 = () {
     i <- [0..16): {
         .ap-client-key[i] = key-tmp[i]
     }
+    io.errln('[TLS] dap: 9 iv-tmp c')
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
         .ap-client-iv[i] = iv-tmp[i]
     }
+    io.errln('[TLS] dap: 10 key-tmp s')
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
         .ap-server-key[i] = key-tmp[i]
     }
+    io.errln('[TLS] dap: 11 iv-tmp s')
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
         .ap-server-iv[i] = iv-tmp[i]
     }
 
+    io.errln('[TLS] dap: 12 done')
     .ap-write-seq = 0
     .ap-read-seq = 0
 }
@@ -1765,11 +1810,16 @@ tls-conn.connect-13 = () (ok bool) {
     io.errln('[TLS] c13: sf type=' - sf-type.to-str())
     sf-type != TLS-HS-FINISHED -> return
 
+    io.errln('[TLS] c13: before derive-app')
+
     ; 9. 推導應用金鑰
     .derive-application-keys-13()
+    io.errln('[TLS] c13: after derive-app')
 
     ; 10. 發送客戶端 Finished（使用交握金鑰）
+    io.errln('[TLS] c13: before send-finished')
     ok = .send-finished-13()
+    io.errln('[TLS] c13: after send-finished')
     ok == false -> return
     .encrypted = true
     ok = true
@@ -1784,13 +1834,13 @@ tls-conn.send-finished-13 = () (ok bool) {
     ; client_finished_key = HKDF-Expand-Label(hs_secret, "finished", "", 32)
     ; 但需要用 handshake secret 重新推導
     ; 使用保存的 handshake secret（在 shared-secret 中）
-    hs-prk []byte
+    hs-prk []byte = with-len(32)
     i <- [0..32): {
         hs-prk[i] = .shared-secret[i]
     }
 
     finished-key []byte
-    zero-ctx []byte
+    zero-ctx []byte = with-len(0)
     finished-key = hkdf.hkdf-expand-label-vec(hs-prk, 'finished', zero-ctx, 32)
 
     ; transcript hash = SHA-256(ClientHello..server Finished)
@@ -1801,13 +1851,13 @@ tls-conn.send-finished-13 = () (ok bool) {
     verify = hmac.hmac-sha256-vec(finished-key, hs-hash)
 
     ; 構建 Finished 訊息
-    hs []byte
+    hs []byte = with-len(36)
     hs[0] = TLS-HS-FINISHED
     tls-put-u24(hs, 1, 32)
     i <- [0..32): {
         hs[4 + i] = verify[i]
     }
-    hs-len = 4 + 32
+    hs.len = 36
 
     ; 追加到交握緩衝區
     .append-hs(hs)

@@ -1773,7 +1773,7 @@ sha256 = (data []byte) (hash [32]byte) {
     total-len = dlen + 1 + pad-len + 8
 
     ; 建立填充緩衝區
-    padded []byte
+    padded []byte = with-len(total-len)
     i <- [0..total-len): {
         padded[i] = 0
     }

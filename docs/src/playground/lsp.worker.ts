@@ -18,7 +18,7 @@
  * so reuse only happens if the client refrains from terminating.)
  */
 import './node-polyfills';
-import {init, WASI} from '@wasmer/wasi';
+import {init, WASI, MemFS} from '@wasmer/wasi';
 import {
   parseLspMessages,
   encodeLspMessage,

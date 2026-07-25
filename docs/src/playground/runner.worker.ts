@@ -12,7 +12,7 @@
  * playground session.
  */
 import './node-polyfills';
-import {init, WASI} from '@wasmer/wasi';
+import {init, WASI, MemFS} from '@wasmer/wasi';
 
 // ---------------------------------------------------------------------------
 // Result type (mirrored from runner.ts — kept local to avoid pulling the
@@ -102,6 +102,22 @@ function compileSource(source: string, timeoutMs: number): {
   exitCode: number;
   timedOut: boolean;
 } {
+  // Use an explicit in-memory filesystem rather than letting wasmer-wasi
+  // attempt to bind a host path via `preopens`. In the browser there is
+  // no host `/`, so `preopens: {'/': '/'}` would leave the root either
+  // empty or read-only, causing `Capabilities insufficient` when no.wasm
+  // tries to `open(O_RDONLY)` /tmp/input.no. We seed the MemFS ourselves
+  // and preopen `/` against it so the guest sees a writable root.
+  const fs = new MemFS();
+  try {
+    fs.createDir(TMP_DIR);
+  } catch {
+    // Already exists — ignore.
+  }
+  const inputFile = fs.open(INPUT_PATH, {read: true, write: true, create: true});
+  inputFile.writeString(source);
+  inputFile.flush();
+
   const wasi = new WASI({
     args: [
       'no',
@@ -115,17 +131,8 @@ function compileSource(source: string, timeoutMs: number): {
     ],
     env: {},
     preopens: {'/': '/'},
+    fs,
   });
-
-  // Ensure /tmp exists and seed the input file.
-  try {
-    wasi.fs.createDir(TMP_DIR);
-  } catch {
-    // Already exists — ignore.
-  }
-  const inputFile = wasi.fs.open(INPUT_PATH, {read: true, write: true, create: true});
-  inputFile.writeString(source);
-  inputFile.flush();
 
   const start = Date.now();
   let exitCode = 0;
@@ -200,10 +207,16 @@ function executeUserWasm(
   timeoutMs: number,
   compileStderr: string,
 ): RunResult {
+  // Fresh MemFS for the execute stage — user .wasm typically only
+  // touches stdin/stdout, but we still need a writable root to avoid
+  // `Capabilities insufficient` on any fs call the program might make.
+  const fs = new MemFS();
+
   const wasi = new WASI({
     args: ['out.wasm'],
     env: {},
     preopens: {'/': '/'},
+    fs,
   });
 
   const start = Date.now();
