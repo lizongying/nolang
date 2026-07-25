@@ -6,7 +6,12 @@ import (
 )
 
 func (g *Generator) writeDeclarations(sb *strings.Builder) {
-	sb.WriteString("declare i32 @printf(i8*, ...)\n")
+	// 使用編譯目標平台（g.targetGoos）而非宿主平台（runtime.GOOS）。
+	// 未設定目標時回退到宿主平台，保持向後相容。
+	goos := g.targetGoos
+	if goos == "" {
+		goos = runtime.GOOS
+	}
 	sb.WriteString("declare double @llvm.fabs.f64(double)\n")
 	sb.WriteString("declare double @llvm.sqrt.f64(double)\n")
 	sb.WriteString("declare double @llvm.sin.f64(double)\n")
@@ -35,9 +40,18 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @llvm.fshl.i32(i32, i32, i32)\n")
 	sb.WriteString("declare i64 @llvm.fshl.i64(i64, i64, i64)\n")
 	// strtod/strtoll replaced by internal @nolang.strtod/@nolang.strtoll
-	// (FFI ffi-cstr-at-float/ffi-cstr-at-int use these internal implementations).
-	sb.WriteString("declare i32 @sprintf(i8*, i8*, ...)\n")
-	sb.WriteString("declare i8* @malloc(i64)\n")
+// (FFI ffi-cstr-at-float/ffi-cstr-at-int use these internal implementations).
+	// malloc 參數型別依平台而異：
+	// - WASI/wasm32: size_t 為 i32，wasi-libc 的 malloc 宣告為 i32*
+	//   直接以 i64 呼叫會造成 LLVM 型別不匹配（IR verifier 失敗）。
+	//   因此為 WASI 目標宣告 @malloc(i32)，並提供 @nolang.malloc(i64)
+	//   內部 wrapper 做截斷（trunc），所有呼叫端仍用 i64 引數。
+	// - 其他平台：沿用 i64 宣告（既有行為）。
+	if goos == "wasi" {
+		sb.WriteString("declare i8* @malloc(i32)\n")
+	} else {
+		sb.WriteString("declare i8* @malloc(i64)\n")
+	}
 	sb.WriteString("declare void @free(i8*)\n")
 	sb.WriteString("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)\n")
 	sb.WriteString("declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)\n")
@@ -45,9 +59,17 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @llvm.stackrestore.p0(ptr)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i8* @_getcwd(i8*, i64)\n")
 		sb.WriteString("declare i32 @_chdir(i8*)\n")
+	} else if goos == "wasi" {
+		// WASI: wasi-libc 提供 getcwd（包裝 path_get）。
+		// chdir 在 wasi-libc 中並非原生支援，但仍宣告為 external，
+		// 讓 IR parser 接受 call site；若用戶實際呼叫 ch-dir，
+		// 連結階段會產生 "undefined symbol: chdir" 錯誤（spec 行為）。
+		// 用戶應使用 #{wasi-wasm32} 標註提供替代方案。
+		sb.WriteString("declare i8* @getcwd(i8*, i64)\n")
+		sb.WriteString("declare i32 @chdir(i8*)\n")
 	} else {
 		sb.WriteString("declare i8* @getcwd(i8*, i64)\n")
 		sb.WriteString("declare i32 @chdir(i8*)\n")
@@ -55,13 +77,19 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @exit(i32)\n")
 	sb.WriteString("declare i32 @getpid()\n")
 	sb.WriteString("declare i32 @gethostname(i8*, i64)\n")
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i32 @_mkdir(i8*, i32)\n")
 		sb.WriteString("declare i32 @_chmod(i8*, i32)\n")
 		// chown/getuid/getgid/getppid/kill/utimensat not declared on Windows:
 		// routed to nolang.win_* stubs (see writeWindowsStubs).
 		sb.WriteString("declare i32 @_unlink(i8*)\n")
 		sb.WriteString("declare i32 @_stat64(i8*, i8*)\n")
+	} else if goos == "wasi" {
+		// WASI: single-user — skip chown/getuid/getgid (no concept of users).
+		sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
+		sb.WriteString("declare i32 @chmod(i8*, i32)\n")
+		sb.WriteString("declare i32 @unlink(i8*)\n")
+		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
 	} else {
 		sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
 		sb.WriteString("declare i32 @chmod(i8*, i32)\n")
@@ -72,8 +100,11 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
 	}
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		// symlink/link not declared on Windows: routed to nolang.win_* stubs.
+	} else if goos == "wasi" {
+		// WASI: symlink/link have limited support and may fail — skip declarations.
+		// User code should use #{wasi-wasm32} annotations to provide alternatives.
 	} else {
 		sb.WriteString("declare i32 @symlink(i8*, i8*)\n")
 		sb.WriteString("declare i32 @link(i8*, i8*)\n")
@@ -84,7 +115,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	//   ftLastWriteTime@20(8) nFileSizeHigh@28(4) nFileSizeLow@32(4)
 	//   dwReserved0@36(4) dwReserved1@40(4) cFileName@44(char[260])
 	//   cAlternateFileName@304(char[14]) — total 320 bytes.
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i8* @FindFirstFileA(i8*, i8*)\n")
 		sb.WriteString("declare i32 @FindNextFileA(i8*, i8*)\n")
 		sb.WriteString("declare i32 @FindClose(i8*)\n")
@@ -94,13 +125,14 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @closedir(i8*)\n")
 	}
 	// File timestamp update (from <sys/stat.h>)
-	if runtime.GOOS != "windows" {
+	if goos != "windows" && goos != "wasi" {
 		// Windows: routed to @nolang.win_utimensat stub
+		// WASI: utimensat has limited support — skip declaration.
 		sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
 	}
 	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
 	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i32 @_open(i8*, i32, ...)\n")
 	} else {
 		sb.WriteString("declare i32 @open(i8*, i32, ...)\n")
@@ -111,14 +143,14 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @clock_gettime(i32, i8*)\n")
 	// errno access: macOS uses __error(), Linux uses __errno_location(),
 	// Windows (MinGW-w64) uses _errno().
-	if runtime.GOOS == "darwin" {
+	if goos == "darwin" {
 		sb.WriteString("declare i32* @__error()\n")
-	} else if runtime.GOOS == "windows" {
+	} else if goos == "windows" {
 		sb.WriteString("declare i32* @_errno()\n")
 	} else {
 		sb.WriteString("declare i32* @__errno_location()\n")
 	}
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i32 @_dup2(i32, i32)\n")
 		// kill/getppid not declared on Windows: routed to nolang.win_* stubs.
 		// fork not declared on Windows: POSIX-only (process module needs win path).
@@ -128,6 +160,19 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		// Parameter order differs from POSIX waitpid(pid, status*, options);
 		// process-waitpid routes to @nolang.win_waitpid wrapper (see below).
 		sb.WriteString("declare i32 @_cwait(i32*, i32, i32)\n")
+	} else if goos == "wasi" {
+		// WASI 不支援 POSIX 進程控制（fork/execlp/pipe/waitpid/dup2/kill/getppid）。
+		// 但仍宣告為 external，讓 IR parser 接受 std 函式庫中的 call site
+		// （如 process.start 內部呼叫 fork/dup2/execlp）。
+		// 若用戶實際呼叫這些函式，連結階段會產生 "undefined symbol" 錯誤（spec 行為）。
+		// 用戶應使用 #{wasi-wasm32} 標註提供替代方案。
+		sb.WriteString("declare i32 @dup2(i32, i32)\n")
+		sb.WriteString("declare i32 @kill(i32, i32)\n")
+		sb.WriteString("declare i32 @getppid()\n")
+		sb.WriteString("declare i32 @execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @fork()\n")
+		sb.WriteString("declare i32 @pipe(i32*)\n")
+		sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
 	} else {
 		sb.WriteString("declare i32 @dup2(i32, i32)\n")
 		sb.WriteString("declare i32 @kill(i32, i32)\n")
@@ -156,6 +201,52 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tret void\n")
 	sb.WriteString("}\n")
 	sb.WriteString("attributes #0 = { optnone noinline }\n\n")
+
+	// nolang.malloc: 平台感知的 malloc wrapper。
+	// 所有 Nolang 內部產生的 malloc 呼叫都使用 @nolang.malloc(i64)，
+	// wrapper 內部依目標平台決定是否需要 trunc 至 i32：
+	// - WASI/wasm32: wasi-libc malloc 簽名為 (i32)，需 trunc i64 → i32
+	// - 其他平台: libc malloc 簽名為 (i64)，直接轉發
+	// 此設計讓呼叫端維持單一 i64 介面，避免 45+ 處呼叫端個別處理平台差異。
+	if goos == "wasi" {
+		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%sz32 = trunc i64 %sz to i32\n")
+		sb.WriteString("\t%p = call i8* @malloc(i32 %sz32)\n")
+		sb.WriteString("\tret i8* %p\n")
+		sb.WriteString("}\n\n")
+	} else {
+		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%p = call i8* @malloc(i64 %sz)\n")
+		sb.WriteString("\tret i8* %p\n")
+		sb.WriteString("}\n\n")
+	}
+
+	// nolang.read / nolang.write: WASI 專屬的 read/write wrapper。
+	// 呼叫端統一使用 (i32 fd, i8* buf, i64 count) -> i64 介面；
+	// WASI/wasm32 平台 wasi-libc read/write 簽名為 (i32, i8*, i32) -> i32，
+	// 需 trunc count i64 → i32 並 sext return i32 → i64。
+	// 非 WASI 平台直接使用 @read/@write（i64 介面），無需 wrapper。
+	// Windows 使用 @_read/@_write（名稱不同），不受影響。
+	// 注意：wrapper 內部呼叫使用 i32（call i32 @read(...)），與 Generate()
+	// 的替換模式 "call i64 @read(" 不匹配，避免無限遞迴替換。
+	if goos == "wasi" {
+		sb.WriteString("define internal i64 @nolang.read(i32 %fd, i8* %buf, i64 %count) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%c32 = trunc i64 %count to i32\n")
+		sb.WriteString("\t%r = call i32 @read(i32 %fd, i8* %buf, i32 %c32)\n")
+		sb.WriteString("\t%r64 = sext i32 %r to i64\n")
+		sb.WriteString("\tret i64 %r64\n")
+		sb.WriteString("}\n\n")
+		sb.WriteString("define internal i64 @nolang.write(i32 %fd, i8* %buf, i64 %count) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%c32 = trunc i64 %count to i32\n")
+		sb.WriteString("\t%r = call i32 @write(i32 %fd, i8* %buf, i32 %c32)\n")
+		sb.WriteString("\t%r64 = sext i32 %r to i64\n")
+		sb.WriteString("\tret i64 %r64\n")
+		sb.WriteString("}\n\n")
+	}
 
 	// nolang.strlen: runtime C-string length (replaces libc @strlen).
 	// Loops over i8* until null terminator. Used when converting C strings
@@ -517,10 +608,18 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\tret void\n")
 	sb.WriteString("}\n\n")
 
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i64 @_read(i32, i8*, i64)\n")
 		sb.WriteString("declare i64 @_write(i32, i8*, i64)\n")
 		sb.WriteString("declare i32 @_close(i32)\n")
+	} else if goos == "wasi" {
+		// WASI/wasm32: size_t = i32, ssize_t = i32。
+		// wasi-libc 的 read/write 簽名為 (i32, i8*, i32) -> i32。
+		// 若仍以 i64 宣告，呼叫端傳 i64 引數會在 WASM 驗證階段產生
+		// "type mismatch: expected i32, found i64" 錯誤。
+		sb.WriteString("declare i32 @read(i32, i8*, i32)\n")
+		sb.WriteString("declare i32 @write(i32, i8*, i32)\n")
+		sb.WriteString("declare i32 @close(i32)\n")
 	} else {
 		sb.WriteString("declare i64 @read(i32, i8*, i64)\n")
 		sb.WriteString("declare i64 @write(i32, i8*, i64)\n")
@@ -530,18 +629,17 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i8* @fgets(i8*, i32, i8*)\n")
 	sb.WriteString("declare i32 @fclose(i8*)\n")
 	// stdin 全域變數：macOS 為 __stdinp，Linux/Windows 為 stdin
-	if runtime.GOOS == "darwin" {
+	if goos == "darwin" {
 		sb.WriteString("@__stdinp = external global i8*\n")
 	} else {
 		sb.WriteString("@stdin = external global i8*\n")
 	}
 	// stderr 全域變數：macOS 為 __stderrp，Linux/Windows 為 stderr
-	if runtime.GOOS == "darwin" {
+	if goos == "darwin" {
 		sb.WriteString("@__stderrp = external global i8*\n")
 	} else {
 		sb.WriteString("@stderr = external global i8*\n")
 	}
-	sb.WriteString("declare i32 @fprintf(i8*, i8*, ...)\n")
 	sb.WriteString("declare void @llvm.lifetime.start.p0i8(i64, i8* nocapture)\n")
 	sb.WriteString("declare void @llvm.lifetime.end.p0i8(i64, i8* nocapture)\n\n")
 
@@ -569,9 +667,11 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("\t%oob = or i1 %lo, %hi\n")
 	sb.WriteString("\tbr i1 %oob, label %err, label %ok\n")
 	sb.WriteString("err:\n")
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("\tcall i64 @_write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
 	} else {
+		// 非 Windows 平台統一使用 i64 count；呼叫端透過 Generate() 的
+		// 字串替換改走 @nolang.write wrapper，wrapper 內部依平台決定是否截斷。
 		sb.WriteString("\tcall i64 @write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
 	}
 	sb.WriteString("\tcall void @exit(i32 1)\n")
@@ -614,7 +714,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// POSIX socket functions for net module
 	// Windows (MinGW-w64) also provides these via winsock2, but requires
 	// WSAStartup initialization before any socket call.
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("declare i32 @WSAStartup(i16, i8*)\n")
 		sb.WriteString("declare i32 @WSACleanup()\n")
 	}
@@ -731,7 +831,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// equivalent are routed to these no-op/internal stubs on Windows.
 	// Return types align with the CLibCall RetType declared in os.go/process.go
 	// (i32 for all of these; RetExt sexts to i64 at the call site where needed).
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		sb.WriteString("define internal i32 @nolang.win_getuid() {\n")
 		sb.WriteString("entry:\n")
 		sb.WriteString("\tret i32 0\n")
@@ -818,6 +918,12 @@ func statLayout() StatLayout {
 	return statLayoutFor(runtime.GOOS, runtime.GOARCH)
 }
 
+// statLayout 方法版本：返回 Generator 當前編譯目標平台的 struct stat 佈局。
+// 使用 g.goos()/g.goarch() 而非 runtime.GOOS/GOARCH，支援跨平台編譯（如 wasm32-wasi）。
+func (g *Generator) statLayout() StatLayout {
+	return statLayoutFor(g.goos(), g.goarch())
+}
+
 // statLayoutFor 返回指定平台的 struct stat 佈局。
 // 接受 goos/goarch 參數以方便測試注入，驗證所有平台分支。
 func statLayoutFor(goos, goarch string) StatLayout {
@@ -864,6 +970,12 @@ func openWriteFlags() int {
 	return openWriteFlagsFor(runtime.GOOS)
 }
 
+// openWriteFlags 方法版本：返回 Generator 當前編譯目標平台的 O_WRONLY|O_CREAT|O_TRUNC 組合值。
+// 使用 g.goos() 而非 runtime.GOOS，支援跨平台編譯。
+func (g *Generator) openWriteFlags() int {
+	return openWriteFlagsFor(g.goos())
+}
+
 // openWriteFlagsFor 返回指定平台的 O_WRONLY|O_CREAT|O_TRUNC 組合值。
 // 接受 goos 參數以方便測試注入，驗證所有平台分支。
 func openWriteFlagsFor(goos string) int {
@@ -885,6 +997,12 @@ func openWriteFlagsFor(goos string) int {
 // utimensat 不在此處處理（在 Windows 路由到 @nolang.win_utimensat stub）。
 func libcFn(posixName string) string {
 	return libcFnFor(runtime.GOOS, posixName)
+}
+
+// libcFn 方法版本：返回 Generator 當前編譯目標平台的 libc 函式名稱。
+// 使用 g.goos() 而非 runtime.GOOS，支援跨平台編譯（如 wasm32-wasi）。
+func (g *Generator) libcFn(posixName string) string {
+	return libcFnFor(g.goos(), posixName)
 }
 
 // libcFnFor 返回指定平台的 libc 函式名稱。

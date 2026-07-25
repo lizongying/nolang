@@ -152,21 +152,27 @@ fe-mul = (h []i64, f []i64, g []i64) {
     g9-19 = 19 * g9
 
     ; 預計算 f 的 2 倍數
+    ; 偶數 h 索引（h0,h2,h4,h6,h8）需要奇數 f 索引的 2 倍
+    ; 奇數 h 索引（h1,h3,h5,h7）需要偶數 f 索引（>=2）的 2 倍
     f1-2 = 2 * f1
+    f2-2 = 2 * f2
     f3-2 = 2 * f3
+    f4-2 = 2 * f4
     f5-2 = 2 * f5
+    f6-2 = 2 * f6
     f7-2 = 2 * f7
+    f8-2 = 2 * f8
     f9-2 = 2 * f9
 
-    ; 計算各輸出 limb（未進位）
+    ; 計算各輸出 limb（未進位）— ref10 交叉項展開
     h0 = f0 * g0 + f1-2 * g9-19 + f2 * g8-19 + f3-2 * g7-19 + f4 * g6-19 + f5-2 * g5-19 + f6 * g4-19 + f7-2 * g3-19 + f8 * g2-19 + f9-2 * g1-19
-    h1 = f0 * g1 + f1 * g0 + f2 * g9-19 + f3 * g8-19 + f4 * g7-19 + f5 * g6-19 + f6 * g5-19 + f7 * g4-19 + f8 * g3-19 + f9 * g2-19
+    h1 = f0 * g1 + f1 * g0 + f2-2 * g9-19 + f3 * g8-19 + f4-2 * g7-19 + f5 * g6-19 + f6-2 * g5-19 + f7 * g4-19 + f8-2 * g3-19 + f9 * g2-19
     h2 = f0 * g2 + f1-2 * g1 + f2 * g0 + f3-2 * g9-19 + f4 * g8-19 + f5-2 * g7-19 + f6 * g6-19 + f7-2 * g5-19 + f8 * g4-19 + f9-2 * g3-19
-    h3 = f0 * g3 + f1 * g2 + f2 * g1 + f3 * g0 + f4 * g9-19 + f5 * g8-19 + f6 * g7-19 + f7 * g6-19 + f8 * g5-19 + f9 * g4-19
+    h3 = f0 * g3 + f1 * g2 + f2 * g1 + f3 * g0 + f4-2 * g9-19 + f5 * g8-19 + f6-2 * g7-19 + f7 * g6-19 + f8-2 * g5-19 + f9 * g4-19
     h4 = f0 * g4 + f1-2 * g3 + f2 * g2 + f3-2 * g1 + f4 * g0 + f5-2 * g9-19 + f6 * g8-19 + f7-2 * g7-19 + f8 * g6-19 + f9-2 * g5-19
-    h5 = f0 * g5 + f1 * g4 + f2 * g3 + f3 * g2 + f4 * g1 + f5 * g0 + f6 * g9-19 + f7 * g8-19 + f8 * g7-19 + f9 * g6-19
+    h5 = f0 * g5 + f1 * g4 + f2 * g3 + f3 * g2 + f4 * g1 + f5 * g0 + f6-2 * g9-19 + f7 * g8-19 + f8-2 * g7-19 + f9 * g6-19
     h6 = f0 * g6 + f1-2 * g5 + f2 * g4 + f3-2 * g3 + f4 * g2 + f5-2 * g1 + f6 * g0 + f7-2 * g9-19 + f8 * g8-19 + f9-2 * g7-19
-    h7 = f0 * g7 + f1 * g6 + f2 * g5 + f3 * g4 + f4 * g3 + f5 * g2 + f6 * g1 + f7 * g0 + f8 * g9-19 + f9 * g8-19
+    h7 = f0 * g7 + f1 * g6 + f2 * g5 + f3 * g4 + f4 * g3 + f5 * g2 + f6 * g1 + f7 * g0 + f8-2 * g9-19 + f9 * g8-19
     h8 = f0 * g8 + f1-2 * g7 + f2 * g6 + f3-2 * g5 + f4 * g4 + f5-2 * g3 + f6 * g2 + f7-2 * g1 + f8 * g0 + f9-2 * g9-19
     h9 = f0 * g9 + f1 * g8 + f2 * g7 + f3 * g6 + f4 * g5 + f5 * g4 + f6 * g3 + f7 * g2 + f8 * g1 + f9 * g0
 
@@ -568,12 +574,16 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         fe-cswap(z2, z3, swap)
         swap = b
 
-        ; Montgomery ladder step
+        ; Montgomery ladder step (RFC 7748 §5)
+        ; A = X2 + Z2; AA = A^2; B = X2 - Z2; BB = B^2; E = AA - BB
+        ; C = X3 + Z3; D = X3 - Z3; DA = D*A; CB = C*B
+        ; X3 = (DA+CB)^2; Z3 = X1*(DA-CB)^2
+        ; X2 = AA*BB; Z2 = E*(AA + a24*BB) where a24 = 121665
         fe-add(a, x2, z2)
         fe-sq(aa, a)
         fe-sub(b-fe, x2, z2)
         fe-sq(bb, b-fe)
-        fe-add(e, aa, bb)
+        fe-sub(e, aa, bb)
         fe-add(c, x3, z3)
         fe-sub(d, x3, z3)
         fe-mul(da, d, a)
@@ -588,13 +598,15 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         fe-sq(z3, z3)
         fe-mul(z3, z3, x1)
 
-        ; x2 = e * (aa - bb)
-        fe-sub(x2, aa, bb)
-        fe-mul(x2, x2, e)
+        ; x2 = aa * bb
+        fe-mul(x2, aa, bb)
 
-        ; z2 = aa * bb * 121665
-        fe-mul(z2, aa, bb)
-        fe-mul121666(z2, z2)
+        ; z2 = e * (aa + 121665 * bb) = e*aa + 121665*e*bb
+        ; 使用 'a' 作為臨時變數（下次迭代會被覆寫）
+        fe-mul(a, e, bb)
+        fe-mul121666(a, a)
+        fe-mul(z2, e, aa)
+        fe-add(z2, z2, a)
 
         ; 結束 Montgomery ladder step
         t = t - 1
@@ -620,8 +632,11 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
 ; x25519-get-basepoint: 返回基點 u 座標 (9, 0, 0, ..., 0)
 x25519-get-basepoint = () (base [32]byte) {
+    ; [32]byte 不自動零初始化，需顯式清零
+    i <- [0..32): {
+        base[i] = 0
+    }
     base[0] = 9
-    ; 其餘為 0
 }
 
 ; x25519-scalarmult-base: 計算純量 * 基點

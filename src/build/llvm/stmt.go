@@ -2087,7 +2087,15 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		}
 	}
 
-	sb.WriteString("define i32 @main(i32 %c-argc, i8** %c-argv) {\n")
+	// WASI 平台入口函數名必須為 __main_argc_argv：wasi-libc 的 _start 呼叫
+	// __main_void（crt1-command.o），後者初始化 argv 後呼叫 weak symbol
+	// __main_argc_argv。若用戶 main 仍命名為 @main，__main_argc_argv 為未定義
+	// weak symbol，呼叫會跳轉到 unreachable trap。原生平台仍使用 @main。
+	mainName := "main"
+	if g.goos() == "wasi" {
+		mainName = "__main_argc_argv"
+	}
+	sb.WriteString(fmt.Sprintf("define i32 @%s(i32 %%c-argc, i8** %%c-argv) {\n", mainName))
 	g.indentLevel++
 	g.emitLabel(sb, "entry")
 	g.indentLevel++
@@ -5379,6 +5387,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%str-long.s2s.",       // str conversion alloca
 		"%s2s.result.",         // s2s conversion in stmt.go
 		"%concat.result.",      // generateStrConcat
+		"%nfmt.concat.result.", // callNamedFormat sprintf concatenation
 		"%str-longrepeat.null", // generateStrRepeat (no sb)
 		"%str-longconcat.null", // generateStrConcat (no sb)
 		"%argv.str.",           // args-get in call_stdlib.go

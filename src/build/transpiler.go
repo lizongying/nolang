@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,11 +35,12 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		if len(fns) <= 1 {
 			continue // 無重載，不改名
 		}
-		// 去重：對於相同名稱+簽名的重複定義（多模組同函數），只保留第一個
+		// 去重：對於相同名稱+簽名+平台組合的重複定義（多模組同函數），只保留第一個。
+		// 不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）的定義視為不同函數，不去重。
 		seenSigs := make(map[string]bool)
 		uniqueFns := make([]*parser.FunctionDefinition, 0, len(fns))
 		for _, fd := range fns {
-			sig := callSignature(name, fd.Parameters)
+			sig := platformAwareCallSignature(name, fd.Parameters, fd.PlatformKeys)
 			if !seenSigs[sig] {
 				seenSigs[sig] = true
 				uniqueFns = append(uniqueFns, fd)
@@ -131,6 +133,22 @@ func callSignature(name string, params []*parser.Parameter) string {
 		parts = append(parts, sanitizeTypeForName(p.Type.String()))
 	}
 	return strings.Join(parts, "_")
+}
+
+// platformAwareCallSignature 生成包含平台標註的調用簽名 key。
+// 用於 mangleOverloads 去重：不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）
+// 的同名同參數函數視為不同函數，不應被去重。
+// platformKeys 為空表示平台通用宣告。
+func platformAwareCallSignature(name string, params []*parser.Parameter, platformKeys []string) string {
+	sig := callSignature(name, params)
+	if len(platformKeys) == 0 {
+		return sig + "\x00" // 通用平台用 \x00 後綴與特定平台區分
+	}
+	// 排序平台 key 以確保不同順序的相同組合產生相同簽名
+	sorted := make([]string, len(platformKeys))
+	copy(sorted, platformKeys)
+	sort.Strings(sorted)
+	return sig + "\x00" + strings.Join(sorted, ",")
 }
 
 // sanitizeTypeForName 將型別字串轉成 LLVM 識別符安全的形式：
@@ -5383,6 +5401,310 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 		results = append(results, checkStringConcatInExpr(e.Index)...)
 	}
 	return results
+}
+
+// ValidatePrintFormat 檢查 print/printf/eprint/eprintf/sprintf 呼叫中的具名格式字串。
+// 對於第一個參數為 StringLiteral 的呼叫，解析 {name:spec} 欄位並驗證：
+//   - 欄位名稱在當前作用域內已定義（否則 "undefined variable '<name>' in format string"）
+//   - 規格字串可被 ParseFormatSpec 解析（否則 "invalid format spec"）
+//   - 規格類型字元與變數型別相容（整數類型對應 b/c/d/o/x/X；
+//     浮點數對應 e/E/f/F/g/G/%；str/bool 對應 s）
+func ValidatePrintFormat(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	// 收集 struct 欄位型別資訊，用於解析結構欄位存取
+	structFields := collectStructFields(program)
+
+	// 走訪頂層敘述，追蹤變數作用域
+	for _, stmt := range program.Statements {
+		results = append(results, checkPrintFormatInStmt(stmt, make(map[string]string), structFields)...)
+	}
+	return results
+}
+
+// isPrintFormatCall 判斷呼叫是否為 print/printf/eprint/eprintf/sprintf（含 fmt. 前綴）
+func isPrintFormatCall(fnName string) bool {
+	switch fnName {
+	case "print", "printf", "eprint", "eprintf", "sprintf",
+		"fmt.print", "fmt.printf", "fmt.eprint", "fmt.eprintf", "fmt.sprintf":
+		return true
+	}
+	return false
+}
+
+// checkPrintFormatInStmt 走訪敘述並驗證 print 格式字串，同時追蹤變數作用域。
+func checkPrintFormatInStmt(stmt parser.Statement, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+	if stmt == nil {
+		return nil
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			return checkPrintFormatInExpr(s.Expression, varTypes, structFields)
+		}
+	case *parser.LetStatement:
+		var results []ValidateResult
+		if s.Value != nil {
+			results = append(results, checkPrintFormatInExpr(s.Value, varTypes, structFields)...)
+			// 註冊變數型別：優先使用顯式型別標註，否則從值推導
+			if s.Name != nil {
+				if s.Type != nil && s.Type.String() != "" {
+					varTypes[s.Name.Value] = s.Type.String()
+				} else if _, exists := varTypes[s.Name.Value]; !exists {
+					if inferred := inferExprType(s.Value, varTypes, nil, ""); inferred != "" {
+						varTypes[s.Name.Value] = inferred
+					}
+				}
+			}
+			return results
+		}
+		// 僅型別宣告（無 = value）
+		if s.Name != nil && s.Type != nil {
+			varTypes[s.Name.Value] = s.Type.String()
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			return checkPrintFormatInExpr(s.Value, varTypes, structFields)
+		}
+	case *parser.FunctionDefinition:
+		// 為函數體建立本地作用域，包含參數與結果參數
+		localTypes := make(map[string]string)
+		for k, v := range varTypes {
+			localTypes[k] = v
+		}
+		for _, p := range s.Parameters {
+			if p.Type != nil {
+				localTypes[p.Name] = p.Type.String()
+			}
+		}
+		for _, r := range s.Results {
+			if r.Name != "" && r.Type != nil {
+				localTypes[r.Name] = r.Type.String()
+			}
+		}
+		if s.Body != nil {
+			var results []ValidateResult
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkPrintFormatInStmt(bs, localTypes, structFields)...)
+			}
+			return results
+		}
+	case *parser.BlockStatement:
+		var results []ValidateResult
+		for _, bs := range s.Statements {
+			results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
+		}
+		return results
+	case *parser.ForStatement:
+		var results []ValidateResult
+		if s.Init != nil {
+			results = append(results, checkPrintFormatInStmt(s.Init, varTypes, structFields)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkPrintFormatInExpr(s.Condition, varTypes, structFields)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkPrintFormatInStmt(s.Update, varTypes, structFields)...)
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
+			}
+		}
+		return results
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			return checkPrintFormatInExpr(s.ReturnValue, varTypes, structFields)
+		}
+	}
+	return nil
+}
+
+// checkPrintFormatInExpr 走訪表達式並驗證 print 格式字串。
+func checkPrintFormatInExpr(expr parser.Expression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+	if expr == nil {
+		return nil
+	}
+	var results []ValidateResult
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		// 識別 print/printf/eprint/eprintf/sprintf 呼叫
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			if isPrintFormatCall(ident.Value) && len(e.Arguments) > 0 {
+				results = append(results, validatePrintFormatCall(e, varTypes, structFields)...)
+			}
+		}
+		// 遞迴檢查引數中的巢狀呼叫
+		for _, arg := range e.Arguments {
+			results = append(results, checkPrintFormatInExpr(arg, varTypes, structFields)...)
+		}
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			results = append(results, checkPrintFormatInExpr(e.Left, varTypes, structFields)...)
+		}
+		if e.Right != nil {
+			results = append(results, checkPrintFormatInExpr(e.Right, varTypes, structFields)...)
+		}
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			results = append(results, checkPrintFormatInExpr(e.Right, varTypes, structFields)...)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			results = append(results, checkPrintFormatInExpr(e.Expression, varTypes, structFields)...)
+		}
+	case *parser.IfExpression:
+		if e.Condition != nil {
+			results = append(results, checkPrintFormatInExpr(e.Condition, varTypes, structFields)...)
+		}
+		if e.Consequence != nil {
+			for _, is := range e.Consequence.Statements {
+				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
+			}
+		}
+		if e.Alternative != nil {
+			for _, is := range e.Alternative.Statements {
+				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
+			}
+		}
+	case *parser.IndexExpression:
+		if e.Left != nil {
+			results = append(results, checkPrintFormatInExpr(e.Left, varTypes, structFields)...)
+		}
+		if e.Index != nil {
+			results = append(results, checkPrintFormatInExpr(e.Index, varTypes, structFields)...)
+		}
+	case *parser.AssignExpression:
+		if e.Value != nil {
+			results = append(results, checkPrintFormatInExpr(e.Value, varTypes, structFields)...)
+		}
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			results = append(results, checkPrintFormatInExpr(e.Condition, varTypes, structFields)...)
+		}
+		if e.Consequence != nil {
+			results = append(results, checkPrintFormatInExpr(e.Consequence, varTypes, structFields)...)
+		}
+		if e.Alternative != nil {
+			results = append(results, checkPrintFormatInExpr(e.Alternative, varTypes, structFields)...)
+		}
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkPrintFormatInExpr(elem, varTypes, structFields)...)
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkPrintFormatInExpr(elem, varTypes, structFields)...)
+		}
+	case *parser.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				results = append(results, checkPrintFormatInExpr(f.Value, varTypes, structFields)...)
+			}
+		}
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			for _, is := range e.Body.Statements {
+				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
+			}
+		}
+	}
+	return results
+}
+
+// validatePrintFormatCall 驗證單個 print/printf/eprint/eprintf/sprintf 呼叫的格式字串。
+// 只驗證含 '{' 的具名格式字串；C-style printf('...%d...', args) 不含 '{' 時跳過，
+// 保留向後相容性。
+func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+	strLit, ok := e.Arguments[0].(*parser.StringLiteral)
+	if !ok {
+		// 第一個引數不是字串字面量：無法在編譯期檢查，跳過
+		return nil
+	}
+	// 只對含 '{' 的格式字串進行具名格式驗證。
+	// 不含 '{' 的字串視為 C-style 格式（如 printf('%d', x)），不做驗證。
+	if !strings.Contains(strLit.Value, "{") {
+		return nil
+	}
+	segments, err := parser.ParseFormatString(strLit.Value)
+	if err != nil {
+		return []ValidateResult{{
+			Line:    strLit.Token.Line,
+			Column:  strLit.Token.Column,
+			Message: fmt.Sprintf("format string error: %v", err),
+		}}
+	}
+	var results []ValidateResult
+	for _, seg := range segments {
+		if seg.Field == nil {
+			continue
+		}
+		field := seg.Field
+		// 1. 檢查變數是否在作用域內
+		varType, inScope := varTypes[field.Name]
+		if !inScope {
+			results = append(results, ValidateResult{
+				Line:    strLit.Token.Line,
+				Column:  strLit.Token.Column,
+				Message: fmt.Sprintf("undefined variable '%s' in format string", field.Name),
+			})
+			continue
+		}
+		// 2. 規格已由 ParseFormatString 解析；若 Parsed 為 nil 表示無規格
+		if field.Parsed == nil {
+			continue
+		}
+		// 3. 檢查規格類型字元與變數型別相容性
+		if msg := checkFormatSpecTypeCompat(field.Parsed.Type, varType, field.Spec); msg != "" {
+			results = append(results, ValidateResult{
+				Line:    strLit.Token.Line,
+				Column:  strLit.Token.Column,
+				Message: msg,
+			})
+		}
+	}
+	return results
+}
+
+// checkFormatSpecTypeCompat 檢查規格類型字元與變數型別是否相容。
+// 回傳非空字串表示錯誤訊息。
+func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
+	if typeChar == 0 {
+		// 無類型字元：任何變數型別皆可
+		return ""
+	}
+	switch typeChar {
+	case 'b', 'c', 'd', 'o', 'x', 'X':
+		// 整數類型
+		if !isIntegerTypeStr(varType) {
+			return fmt.Sprintf("format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
+		}
+	case 'e', 'E', 'f', 'F', 'g', 'G', '%':
+		// 浮點數類型
+		if !isFloatTypeStr(varType) {
+			return fmt.Sprintf("format spec '%c' requires float type, got '%s' (spec: %q)", typeChar, varType, specStr)
+		}
+	case 's':
+		// 字串或布林值
+		if varType != "str" && varType != "bool" && !isIntegerTypeStr(varType) {
+			return fmt.Sprintf("format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
+		}
+	}
+	return ""
+}
+
+// isIntegerTypeStr 判斷型別字串是否為整數類型
+func isIntegerTypeStr(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte", "char":
+		return true
+	}
+	return false
+}
+
+// isFloatTypeStr 判斷型別字串是否為浮點數類型
+func isFloatTypeStr(t string) bool {
+	return t == "f32" || t == "f64"
 }
 
 // collectModuleNames returns all known module ShortNames (from #use + auto-imported std modules).

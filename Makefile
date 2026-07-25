@@ -44,7 +44,7 @@ package: FORCE
 no-wasm: $(NO_WASM)
 
 $(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(WASM_DIR)
-	GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o $@ ./src/cmd/no
+	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/no
 
 $(WASM_DIR):
 	mkdir -p $@
@@ -54,7 +54,7 @@ $(WASM_DIR):
 lsp-wasm: $(LSP_WASM)
 
 $(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(WASM_DIR)
-	GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o $@ ./src/cmd/lsp
+	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 
 # ── PLAYGROUND ────────────────────────────
 # Build no.wasm + lsp.wasm + Docusaurus site for the playground.

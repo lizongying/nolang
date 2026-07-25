@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -58,6 +59,11 @@ func archiveHashFromFile(archivePath string) (string, error) {
 // DownloadPackage downloads a package from GitHub Releases and caches it locally.
 // It returns the package directory path and the SHA256 hash of the downloaded archive.
 func DownloadPackage(key, version string, mirrors []string) (pkgDir string, archiveHash string, err error) {
+	// WASM（瀏覽器 playground）下不支援網路下載與解壓縮外部進程。
+	// 下載相關功能在瀏覽器環境無意義，直接回傳錯誤。
+	if runtime.GOOS == "wasip1" {
+		return "", "", fmt.Errorf("package download not supported in WASM build (browser playground)")
+	}
 	owner, repo, ok := parseGitHubKey(key)
 	if !ok {
 		return "", "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)

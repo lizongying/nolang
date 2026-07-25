@@ -48,14 +48,14 @@ test-clone-struct = () (ok bool) {
 
 main = () {
     ok1 = test-clone-vec()
-    print('test-clone-vec: ', ok1)
+    print('test-clone-vec: {ok1}')
 
     ok2 = test-clone-str-vec()
-    print('test-clone-str-vec: ', ok2)
+    print('test-clone-str-vec: {ok2}')
 
     ok3 = test-clone-str()
-    print('test-clone-str: ', ok3)
+    print('test-clone-str: {ok3}')
 
     ok4 = test-clone-struct()
-    print('test-clone-struct: ', ok4)
+    print('test-clone-struct: {ok4}')
 }

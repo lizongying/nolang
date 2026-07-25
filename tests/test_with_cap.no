@@ -2,27 +2,42 @@
 
 ; with-cap for str: s str = with-cap(256)
 s str = with-cap(256)
-print('str with-cap: len=', s.len, ' cap=', s.cap)
+slen = s.len
+scap = s.cap
+print('str with-cap: len={slen} cap={scap}')
 
 ; with-cap for vec: v []i64 = with-cap(100)
 v []i64 = with-cap(100)
-print('vec with-cap: len=', v.len, ' cap=', v.cap)
+vlen = v.len
+vcap = v.cap
+print('vec with-cap: len={vlen} cap={vcap}')
 
 ; Push elements - should not need to expand since cap=100
 v.push(10)
 v.push(20)
 v.push(30)
-print('vec after push: len=', v.len, ' cap=', v.cap)
-print('elements: ', v[0], ' ', v[1], ' ', v[2])
+vlen = v.len
+vcap = v.cap
+print('vec after push: len={vlen} cap={vcap}')
+e0 = v[0]
+e1 = v[1]
+e2 = v[2]
+print('elements: {e0} {e1} {e2}')
 
 ; Clear and reuse
 v.clear()
-print('vec after clear: len=', v.len, ' cap=', v.cap)
+vlen = v.len
+vcap = v.cap
+print('vec after clear: len={vlen} cap={vcap}')
 
 ; Push again after clear - should still use existing cap
 v.push(40)
 v.push(50)
-print('vec after re-push: len=', v.len, ' cap=', v.cap)
-print('elements: ', v[0], ' ', v[1])
+vlen = v.len
+vcap = v.cap
+print('vec after re-push: len={vlen} cap={vcap}')
+e0 = v[0]
+e1 = v[1]
+print('elements: {e0} {e1}')
 
 print('done')

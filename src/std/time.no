@@ -103,7 +103,7 @@ format-duration = (seconds i64) {
     rem i64 = seconds % 3600
     m i64 = rem / 60
     sec i64 = rem % 60
-    print(h, 'h', m, 'm', sec, 's')
+    print('{h}h{m}m{sec}s')
 }
 
 ; ═══════════════════════════════════════════════

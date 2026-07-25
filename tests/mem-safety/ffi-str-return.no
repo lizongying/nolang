@@ -43,14 +43,14 @@ test-pass-str = () (ok bool) {
 
 main = () {
     ok1 = test-found()
-    print('test-found: ', ok1)
+    print('test-found: {ok1}')
 
     ok2 = test-not-found()
-    print('test-not-found: ', ok2)
+    print('test-not-found: {ok2}')
 
     ok3 = test-repeat()
-    print('test-repeat: ', ok3)
+    print('test-repeat: {ok3}')
 
     ok4 = test-pass-str()
-    print('test-pass-str: ', ok4)
+    print('test-pass-str: {ok4}')
 }

@@ -1,0 +1,56 @@
+; Test if with-len zero-initializes i64 slices
+main = () {
+    a []i64 = with-len(10)
+    print('with-len(10) values:')
+    i <- [0..10): {
+        printf(a[i].to-str() - ' ')
+    }
+    print('')
+
+    ; Test scalarmult with simple values
+    ; priv = [1, 0, 0, ...] (will be clamped)
+    ; point = [9, 0, 0, ...] (basepoint)
+    ; Result should be the public key for priv=1 after clamping
+
+    priv [32]byte
+    i <- [0..32): {
+        priv[i] = 0
+    }
+    priv[0] = 1
+
+    point [32]byte
+    i <- [0..32): {
+        point[i] = 0
+    }
+    point[0] = 9
+
+    result [32]byte
+    result = x25519.x25519-scalarmult(priv, point)
+
+    print('')
+    print('scalarmult([1,0,...], [9,0,...]) =')
+    i <- [0..32): {
+        printf((result[i] & 255).to-str() - ' ')
+    }
+    print('')
+
+    ; The clamped scalar for priv=[1,0,...] is:
+    ; k[0] = 1 & 248 = 0
+    ; k[31] = 0 & 127 = 0
+    ; k[31] = 0 | 64 = 64
+    ; So k = [0, 0, ..., 0, 64]
+    ; This means the scalar is 2^254 (bit 254 set, all others 0)
+    ; scalarmult(2^254, 9) = 9 * 2^254 mod p
+    ; This is a specific value we can compute
+
+    ; Let's also test with the actual basepoint function
+    bp [32]byte
+    bp = x25519.x25519-get-basepoint()
+    print('')
+    print('basepoint:')
+    i <- [0..32): {
+        printf((bp[i] & 255).to-str() - ' ')
+    }
+    print('')
+    print('Expected: 9 0 0 ... 0')
+}

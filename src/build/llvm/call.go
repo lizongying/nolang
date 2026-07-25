@@ -3575,16 +3575,22 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 
 	case "get-errno":
 		// get-errno() — get the last errno value from C library
-		// macOS: @__error(), Linux: @__errno_location(), Windows: @_errno()
+		// macOS: @__error(), Linux/WASI: @__errno_location(), Windows: @_errno()
+		// 使用編譯目標平台（g.targetGoos）而非宿主平台（runtime.GOOS），
+		// 與 decl.go 的 errno 宣告分派保持一致。
+		goos := g.targetGoos
+		if goos == "" {
+			goos = runtime.GOOS
+		}
 		g.tmpIdx++
 		errnoPtrReg := fmt.Sprintf("%%errno.ptr.%d", g.tmpIdx)
 		g.tmpIdx++
 		errnoReg := fmt.Sprintf("%%errno.val.%d", g.tmpIdx)
 		if sb != nil {
 			// Get errno pointer
-			if runtime.GOOS == "darwin" {
+			if goos == "darwin" {
 				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__error()\n", g.indent(), errnoPtrReg))
-			} else if runtime.GOOS == "windows" {
+			} else if goos == "windows" {
 				sb.WriteString(fmt.Sprintf("%s%s = call i32* @_errno()\n", g.indent(), errnoPtrReg))
 			} else {
 				sb.WriteString(fmt.Sprintf("%s%s = call i32* @__errno_location()\n", g.indent(), errnoPtrReg))

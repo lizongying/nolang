@@ -5,8 +5,9 @@ re = /\d+/
 matched = re.matches('hello 123 world')
 ; matched 應為 true (1)
 
-print('matched = ', matched)
+print('matched = {matched}')
 
 ; 帶旗標的正則字面量
 re2 = /hello/gi
-print('re2.pattern = ', re2.pattern)
+re2-pattern = re2.pattern
+print('re2.pattern = {re2-pattern}')

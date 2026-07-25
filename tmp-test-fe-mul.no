@@ -1,0 +1,112 @@
+; Test basic field arithmetic
+; 1 * 1 = 1
+; 2 * 3 = 6
+; 9 * 9 = 81
+
+main = () {
+    ; Test 1: 1 * 1 = 1
+    one [32]byte
+    i <- [0..32): {
+        one[i] = 0
+    }
+    one[0] = 1
+
+    u []i64 = with-len(10)
+    x25519.fe-frombytes(u, one)
+
+    r []i64 = with-len(10)
+    x25519.fe-mul(r, u, u)
+
+    out [32]byte
+    i <- [0..32): {
+        out[i] = 0
+    }
+    x25519.fe-tobytes(out, r)
+
+    print('1*1 =')
+    i <- [0..32): {
+        printf((out[i] & 255).to-str() - ' ')
+    }
+    print('')
+    print('Expected: 1 0 0 ... 0')
+
+    ; Test 2: 2 * 3 = 6
+    two [32]byte
+    i <- [0..32): {
+        two[i] = 0
+    }
+    two[0] = 2
+
+    three [32]byte
+    i <- [0..32): {
+        three[i] = 0
+    }
+    three[0] = 3
+
+    u2 []i64 = with-len(10)
+    u3 []i64 = with-len(10)
+    x25519.fe-frombytes(u2, two)
+    x25519.fe-frombytes(u3, three)
+
+    r6 []i64 = with-len(10)
+    x25519.fe-mul(r6, u2, u3)
+
+    out6 [32]byte
+    i <- [0..32): {
+        out6[i] = 0
+    }
+    x25519.fe-tobytes(out6, r6)
+
+    print('')
+    print('2*3 =')
+    i <- [0..32): {
+        printf((out6[i] & 255).to-str() - ' ')
+    }
+    print('')
+    print('Expected: 6 0 0 ... 0')
+
+    ; Test 3: 9 * 9 = 81
+    nine [32]byte
+    i <- [0..32): {
+        nine[i] = 0
+    }
+    nine[0] = 9
+
+    u9 []i64 = with-len(10)
+    x25519.fe-frombytes(u9, nine)
+
+    r81 []i64 = with-len(10)
+    x25519.fe-mul(r81, u9, u9)
+
+    out81 [32]byte
+    i <- [0..32): {
+        out81[i] = 0
+    }
+    x25519.fe-tobytes(out81, r81)
+
+    print('')
+    print('9*9 =')
+    i <- [0..32): {
+        printf((out81[i] & 255).to-str() - ' ')
+    }
+    print('')
+    print('Expected: 81 0 0 ... 0')
+
+    ; Test 4: fe-sq(1) = 1
+    rsq []i64 = with-len(10)
+    x25519.fe-sq(rsq, u)
+
+    outsq [32]byte
+    i <- [0..32): {
+        outsq[i] = 0
+    }
+    x25519.fe-tobytes(outsq, rsq)
+
+    print('')
+    print('sq(1) =')
+    i <- [0..32): {
+        printf((outsq[i] & 255).to-str() - ' ')
+    }
+    print('')
+    print('Expected: 1 0 0 ... 0')
+}

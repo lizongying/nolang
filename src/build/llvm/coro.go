@@ -826,7 +826,12 @@ func (g *Generator) generateAsyncMainEntry(sb *strings.Builder, num int) {
 	g.curFuncRetName = ""
 	g.indentLevel = 0
 
-	sb.WriteString("define i32 @main(i32 %c-argc, i8** %c-argv) {\n")
+	// WASI 平台入口必須為 __main_argc_argv（詳見 stmt.go generateMainFunction）。
+	mainName := "main"
+	if g.goos() == "wasi" {
+		mainName = "__main_argc_argv"
+	}
+	sb.WriteString(fmt.Sprintf("define i32 @%s(i32 %%c-argc, i8** %%c-argv) {\n", mainName))
 	g.indentLevel = 1
 	g.emitLabel(sb, "entry")
 	g.indentLevel = 2

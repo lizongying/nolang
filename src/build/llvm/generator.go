@@ -108,6 +108,8 @@ type Generator struct {
 	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
 	targetGoos            string                          // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch          string                          // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
+	targetDatalayout      string                          // LLVM target datalayout ("" = fallback to historical macOS arm64 default)
+	targetTriple          string                          // LLVM target triple ("" = fallback to historical macOS arm64 default)
 	noBoundsCheck         bool                            // true = skip emitting bounds checks (unsafe mode)
 	outputParamOrder      []string                        // output param names in declaration order (for outBindState index)
 	hasBranchMove         bool                            // true = function has move-to-out inside a branch (needs bitmap)
@@ -414,6 +416,43 @@ var platformKeys = map[string]struct{ goos, goarch string }{
 	"win-arm64":   {"windows", "arm64"},
 	"mac-amd64":   {"darwin", "amd64"},
 	"mac-arm64":   {"darwin", "arm64"},
+	"wasi-wasm32": {"wasi", "wasm32"},
+}
+
+// targetDatalayoutAndTriple returns the LLVM target datalayout and triple
+// for the given (goos, goarch) platform. Empty strings fall back to the
+// host runtime platform (backward-compatible with the previous hardcoded
+// macOS arm64 default).
+func targetDatalayoutAndTriple(goos, goarch string) (layout, triple string) {
+	// If both empty, return the historical default (macOS arm64).
+	if goos == "" && goarch == "" {
+		return "e-m:o-i64:64-i128:128-n32:64-S128", "arm64-apple-macosx15.0.0"
+	}
+	// Use targetGoos/targetGoarch if set; otherwise fall back to runtime.
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	switch goos + "/" + goarch {
+	case "wasi/wasm32":
+		return "e-m:e-p:32:32-i64:64-n32:64-S128", "wasm32-wasi"
+	case "darwin/arm64":
+		return "e-m:o-i64:64-i128:128-n32:64-S128", "arm64-apple-macosx15.0.0"
+	case "darwin/amd64":
+		return "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", "x86_64-apple-macosx15.0.0"
+	case "linux/amd64":
+		return "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", "x86_64-unknown-linux-gnu"
+	case "linux/arm64":
+		return "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32", "aarch64-unknown-linux-gnu"
+	case "windows/amd64":
+		return "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", "x86_64-pc-windows-gnu"
+	case "windows/arm64":
+		return "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", "aarch64-pc-windows-gnu"
+	}
+	// Final fallback: historical default.
+	return "e-m:o-i64:64-i128:128-n32:64-S128", "arm64-apple-macosx15.0.0"
 }
 
 // stmtAnnotations extracts platform annotations from a statement.
@@ -490,9 +529,13 @@ func PlatformKeyFor(goos, goarch string) string {
 // SetTargetPlatform configures the target (GOOS, GOARCH) used by Generate's
 // platform filter. Empty strings cause Generate to fall back to the host
 // runtime's GOOS/GOARCH (backward-compatible behavior).
+//
+// 此函式亦透過 targetDatalayoutAndTriple 計算並填充 targetDatalayout /
+// targetTriple 欄位，供 Generate 發射對應的 LLVM target header。
 func (g *Generator) SetTargetPlatform(goos, goarch string) {
 	g.targetGoos = goos
 	g.targetGoarch = goarch
+	g.targetDatalayout, g.targetTriple = targetDatalayoutAndTriple(goos, goarch)
 }
 
 // SetNoBoundsCheck configures whether bounds checks are emitted for array/slice/string
@@ -508,6 +551,25 @@ func (g *Generator) SetNoBoundsCheck(skip bool) {
 // 應為局部變數，不應誤寫到全域 @result。
 func (g *Generator) SetMainFileNames(names map[string]bool) {
 	g.mainFileNames = names
+}
+
+// goos 返回當前編譯目標的 GOOS（如 "darwin"/"linux"/"windows"/"wasi"）。
+// 若 SetTargetPlatform 未設定目標，回退到宿主 runtime.GOOS（向後相容）。
+// 用於所有平台分派邏輯，避免使用 runtime.GOOS 而誤用宿主平台。
+func (g *Generator) goos() string {
+	if g.targetGoos != "" {
+		return g.targetGoos
+	}
+	return runtime.GOOS
+}
+
+// goarch 返回當前編譯目標的 GOARCH。
+// 若 SetTargetPlatform 未設定目標，回退到宿主 runtime.GOARCH（向後相容）。
+func (g *Generator) goarch() string {
+	if g.targetGoarch != "" {
+		return g.targetGoarch
+	}
+	return runtime.GOARCH
 }
 
 func (g *Generator) Generate(program *parser.Program) string {
@@ -712,8 +774,14 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	sb.WriteString("; ModuleID = 'nolang'\n")
 	sb.WriteString("source_filename = \"nolang\"\n")
-	sb.WriteString("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"\n")
-	sb.WriteString("target triple = \"arm64-apple-macosx15.0.0\"\n\n")
+	// 目標 datalayout / triple 由 SetTargetPlatform 填充；未設定時回退到
+	// 歷史預設（macOS arm64），與舊版硬編碼行為一致。
+	layout, triple := g.targetDatalayout, g.targetTriple
+	if layout == "" || triple == "" {
+		layout, triple = targetDatalayoutAndTriple("", "")
+	}
+	sb.WriteString("target datalayout = \"" + layout + "\"\n")
+	sb.WriteString("target triple = \"" + triple + "\"\n\n")
 
 	// 預掃描 FFI extern 宣告，收集型別資訊。
 	// 必須在 emit declare 之前完成（declare 緊隨 writeDeclarations 之後發出）。
@@ -1259,7 +1327,23 @@ sb.WriteString("%future = type { void (i8*)*, i64, i64 }\n")
 	// 无栈协程：coro_state 结构体定义已由 transformAsyncFunction 直接写入 sb（在使用前定义），
 	// 此处无需再统一输出。
 
-	return sb.String()
+	// 將所有內部產生的 @malloc(i64 ...) 呼叫重定向至 @nolang.malloc(i64) wrapper。
+	// wrapper 內部依目標平台決定是否需要 trunc 至 i32（WASI/wasm32 平台 wasi-libc
+	// 的 malloc 簽名為 i32）。這避免了 45+ 處呼叫端個別處理平台差異。
+	// 注意：字串模式 `@malloc(i64 ` (含尾部空格) 不會匹配 `declare i8* @malloc(i64)`
+	// 宣告（後者為 `(i64)` 無空格），因此宣告不會被誤改。
+	ir := sb.String()
+	ir = strings.ReplaceAll(ir, "@malloc(i64 ", "@nolang.malloc(i64 ")
+	// WASI 平台：將所有 call i64 @read(...) / call i64 @write(...) 呼叫重定向至
+	// @nolang.read / @nolang.write wrapper。wrapper 內部將 i64 count 截斷為 i32，
+	// 並將 i32 返回值符號擴展回 i64，匹配 wasi-libc 的 (i32, i8*, i32) -> i32 簽名。
+	// 使用 "call i64 @read(" / "call i64 @write(" 模式（含 i64），不會匹配 wrapper
+	// 內部的 "call i32 @read(" / "call i32 @write("（i32），避免無限遞迴替換。
+	if g.goos() == "wasi" {
+		ir = strings.ReplaceAll(ir, "call i64 @read(", "call i64 @nolang.read(")
+		ir = strings.ReplaceAll(ir, "call i64 @write(", "call i64 @nolang.write(")
+	}
+	return ir
 }
 
 // scanGlobalReassignsExpr 遞迴走訪表達式中內嵌的語句區塊（如 IfExpression 的
@@ -1607,78 +1691,6 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	sigStr := ""
 	if sig := clibCallSig(clib.FuncName); sig != "" {
 		sigStr = " " + sig
-	}
-
-	// Sprintf pattern: sprintf(buf, fmt, args...)
-	if clib.SprintfFmt != "" {
-		fg := g.getFormatGlobal(clib.SprintfFmt)
-		fmtPtr := "i8* getelementptr inbounds ([" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8], [" + fmt.Sprintf("%d", len(clib.SprintfFmt)+1) + " x i8]* " + fg + ", i64 0, i64 0)"
-
-		// 检查返回类型是否为 str
-		returnsStr := false
-		for _, t := range m.Return {
-			if t == parser.TypeStr {
-				returnsStr = true
-				break
-			}
-		}
-
-		if returnsStr {
-			// 分配每次调用的栈缓冲区，避免全局 @.strconv_buf 别名问题
-			g.tmpIdx++
-			bufAlloca := fmt.Sprintf("%%sprintf.buf.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca [64 x i8]\n", g.indent(), bufAlloca))
-			}
-			bufPtr := "i8* " + bufAlloca
-			argStr := bufPtr + ", " + fmtPtr
-			for i, v := range a {
-				argStr += ", " + llvmLLVMType(clib.ArgTypes[i]) + " " + v
-			}
-			// sprintf 返回 i32 = 写入字符数（不含 null 终止符）
-			g.tmpIdx++
-			sprintfRet := fmt.Sprintf("%%sprintf.ret.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), sprintfRet, argStr))
-			}
-			// zext i32 → i64 作为 len 字段
-			g.tmpIdx++
-			lenReg := fmt.Sprintf("%%sprintf.len.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
-			}
-			// 通过 insertvalue 构造 %str-long { len, cap, data }，然后 alloca + store 取得 %str-long*
-			g.tmpIdx++
-			strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
-			g.tmpIdx++
-			strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-				// Convert i8* bufPtr to i64 for data field
-				g.tmpIdx++
-				bufPtrReg := g.ptrToIntVal(sb, bufPtr)
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, bufPtrReg))
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
-			}
-			return strAlloca
-		}
-
-		// 非 str 返回类型：保持原逻辑（使用全局缓冲区）
-		buf := fmt.Sprintf("i8* getelementptr inbounds ([64 x i8], [64 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
-		argStr := buf + ", " + fmtPtr
-		for i, v := range a {
-			argStr += ", " + llvmLLVMType(clib.ArgTypes[i]) + " " + v
-		}
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), argStr))
-		}
-		return buf
 	}
 
 	// Build argument string

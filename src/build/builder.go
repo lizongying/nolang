@@ -51,6 +51,11 @@ func DetectTarget() string {
 // C compiler (clang or zig) are available.
 // Returns an error with OS-specific install instructions if not found.
 func CheckToolchain(cc string) error {
+	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）；
+	// 應改用 --wasm-direct 直接產生 WASM 的路徑。
+	if runtime.GOOS == "wasip1" {
+		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
+	}
 	if _, err := exec.LookPath("llvm-config"); err != nil {
 		return fmt.Errorf(`未檢測到 LLVM 工具鏈
   macOS: brew install llvm
@@ -151,8 +156,9 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 			goos = "wasi"
 		case "unknown":
 			// wasm32-unknown-wasi / wasm32-unknown-unknown：保守地視為 wasi。
-			// 僅在尚未偵測到 wasi 時覆蓋，避免 wasi 被未知元件覆蓋。
-			if goos == "" {
+			// 僅在 wasm32 目標且尚未偵測到其他 OS 時覆蓋，避免影響
+			// x86_64-unknown-linux-gnu 等原生 triple 的既有行為。
+			if goarch == "wasm32" && goos == "" {
 				goos = "wasi"
 			}
 		}
@@ -355,6 +361,15 @@ func vprintf(sink *bytes.Buffer, format string, args ...interface{}) {
 // buildLLVMInternal writes LLVM IR and compiles it to an executable via opt + llc + cc.
 // If sink is non-nil, output is buffered to avoid interleaving in parallel builds.
 func buildLLVMInternal(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string, sink *bytes.Buffer) error {
+	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）。
+	// 瀏覽器 playground 應改用 --wasm-direct 路徑（直接產生 WASM，不經過 LLVM IR）。
+	if runtime.GOOS == "wasip1" {
+		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
+	}
+	// 偵測 WASI 目標：wasm32-wasi / wasm32-wasi-threads / wasm32-unknown-wasi 等。
+	// WASI 目標需要 --sysroot=$WASI_SYSROOT，且跳過 -lws2_32 等原生平台連結旗標。
+	isWasiTarget := strings.Contains(target, "wasm32-wasi") || strings.Contains(target, "wasm32-unknown-wasi") || strings.Contains(target, "wasm32-wasi-threads")
+
 	tempDir, err := os.MkdirTemp("", "nolang")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
@@ -418,42 +433,70 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	// rounding may differ, which is acceptable for Nolang programs and
 	// yields significant performance gains on FP-intensive workloads
 	// (e.g. mandelbrot inner loop: fmul+fadd → single fmadd instruction).
+	//
+	// WASI 目標跳過 llc：clang/zig cc 可直接編譯 LLVM IR，且 WASM 組譯器
+	// 不支援 llc 生成的引號識別符（如 @"HEX-UPPER"），直接傳 .ll 給 cc 避免
+	// 組譯階段的符號解析問題。
 	sPath := filepath.Join(tempDir, fileName+".s")
-	llcArgs := []string{"--fp-contract=fast", llPath, "-o", sPath}
-	if target != "" {
-		llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
-	}
-	llcCmd := exec.Command("llc", llcArgs...)
-	if sink != nil {
-		llcCmd.Stdout = sink
-		llcCmd.Stderr = sink
-	} else {
-		llcCmd.Stdout = os.Stdout
-		llcCmd.Stderr = os.Stderr
-	}
-	if verbose {
-		vprintf(sink, "Running: llc %s -o %s\n", llPath, sPath)
+	if !isWasiTarget {
+		llcArgs := []string{"--fp-contract=fast", llPath, "-o", sPath}
 		if target != "" {
-			vprintf(sink, "  target: %s\n", target)
+			llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
 		}
-	}
-	if err = llcCmd.Run(); err != nil {
-		return fmt.Errorf("LLVM assembly failed: %w", err)
+		llcCmd := exec.Command("llc", llcArgs...)
+		if sink != nil {
+			llcCmd.Stdout = sink
+			llcCmd.Stderr = sink
+		} else {
+			llcCmd.Stdout = os.Stdout
+			llcCmd.Stderr = os.Stderr
+		}
+		if verbose {
+			vprintf(sink, "Running: llc %s -o %s\n", llPath, sPath)
+			if target != "" {
+				vprintf(sink, "  target: %s\n", target)
+			}
+		}
+		if err = llcCmd.Run(); err != nil {
+			return fmt.Errorf("LLVM assembly failed: %w", err)
+		}
+	} else if verbose {
+		vprintf(sink, "Skipping llc for WASI target (clang reads .ll directly)\n")
 	}
 
 	// cc → executable (assemble + link)
 	var clangArgs []string
-	if target != "" {
+	if isWasiTarget {
+		// WASI 目標：跳過所有原生平台 -l<lib> 連結（包含 -lws2_32 等 Windows 專屬函式庫）。
+		// zig cc 自帶 wasi-libc，無需 $WASI_SYSROOT；clang 則需要 wasi-sysroot。
+		// 直接傳 .ll 給 cc（跳過 llc），避免 WASM 組譯器不支援引號識別符。
 		clangArgs = append(clangArgs, "--target="+target)
-	}
-	clangArgs = append(clangArgs, sPath, "-o", outPath)
-	for _, lib := range linkLibs {
-		clangArgs = append(clangArgs, "-l"+lib)
-	}
-	// Windows 平台需要連結 ws2_32（Winsock，供 net-* 內建使用）。
-	// 無棧協程不需要 pthread，事件循環運行時由 src/runtime/async_runtime.c 提供。
-	if runtime.GOOS == "windows" || strings.Contains(target, "windows") {
-		clangArgs = append(clangArgs, "-lws2_32")
+		if cc != "zig" {
+			sysroot := os.Getenv("WASI_SYSROOT")
+			if sysroot == "" {
+				return fmt.Errorf(`WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
+  macOS: brew install wasi-libc  (then export WASI_SYSROOT=$(brew --prefix wasi-libc)/share/wasi-sysroot)
+  Ubuntu: download from https://github.com/WebAssembly/wasi-sdk/releases and extract
+  Or build from source: git clone https://github.com/WebAssembly/wasi-libc && cd wasi-libc && make
+  Alternatively, use Zig: no build -cc zig -target wasm32-wasi ...
+  Then: export WASI_SYSROOT=/path/to/wasi-sysroot`)
+			}
+			clangArgs = append(clangArgs, "--sysroot="+sysroot)
+		}
+		clangArgs = append(clangArgs, llPath, "-o", outPath)
+	} else {
+		if target != "" {
+			clangArgs = append(clangArgs, "--target="+target)
+		}
+		clangArgs = append(clangArgs, sPath, "-o", outPath)
+		for _, lib := range linkLibs {
+			clangArgs = append(clangArgs, "-l"+lib)
+		}
+		// Windows 平台需要連結 ws2_32（Winsock，供 net-* 內建使用）。
+		// 無棧協程不需要 pthread，事件循環運行時由 src/runtime/async_runtime.c 提供。
+		if runtime.GOOS == "windows" || strings.Contains(target, "windows") {
+			clangArgs = append(clangArgs, "-lws2_32")
+		}
 	}
 	var clangCmd *exec.Cmd
 	if cc == "zig" {

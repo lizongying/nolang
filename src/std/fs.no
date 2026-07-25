@@ -156,7 +156,7 @@ O-RDONLY = 0
 O-WRONLY = 1
 O-RDWR = 2
 
-; O_CREAT: macOS=512, Linux=64, Windows=256
+; O_CREAT: macOS=512, Linux=64, Windows=256, WASI=512 (wasi-libc POSIX 相容值)
 
 #{mac-amd64}
 O-CREAT = 512
@@ -170,8 +170,10 @@ O-CREAT = 64
 O-CREAT = 256
 #{win-arm64}
 O-CREAT = 256
+#{wasi-wasm32}
+O-CREAT = 512
 
-; O_TRUNC: macOS=1024, Linux=512, Windows=512
+; O_TRUNC: macOS=1024, Linux=512, Windows=512, WASI=1024
 
 #{mac-amd64}
 O-TRUNC = 1024
@@ -185,8 +187,10 @@ O-TRUNC = 512
 O-TRUNC = 512
 #{win-arm64}
 O-TRUNC = 512
+#{wasi-wasm32}
+O-TRUNC = 1024
 
-; O_APPEND: macOS=8, Linux=1024, Windows=8
+; O_APPEND: macOS=8, Linux=1024, Windows=8, WASI=8
 
 #{mac-amd64}
 O-APPEND = 8
@@ -200,8 +204,10 @@ O-APPEND = 1024
 O-APPEND = 8
 #{win-arm64}
 O-APPEND = 8
+#{wasi-wasm32}
+O-APPEND = 8
 
-; O_EXCL: macOS=2048, Linux=128, Windows=1024
+; O_EXCL: macOS=2048, Linux=128, Windows=1024, WASI=2048
 
 #{mac-amd64}
 O-EXCL = 2048
@@ -215,6 +221,8 @@ O-EXCL = 128
 O-EXCL = 1024
 #{win-arm64}
 O-EXCL = 1024
+#{wasi-wasm32}
+O-EXCL = 2048
 
 ; 標準檔案描述符
 STDIN-FD = 0
@@ -526,6 +534,29 @@ list-dir = (dirpath str) (entries []str) {
         {
             ok == false -> {
                 win-find-close(bufptr)
+                return
+            }
+        }
+        entries.push(name)
+    } ()
+}
+
+; WASI 版本：使用 POSIX opendir/readdir/closedir
+; wasi-libc 提供 opendir/readdir/closedir（包裝 WASI fd_readdir）
+
+#{wasi-wasm32}
+list-dir = (dirpath str) (entries []str) {
+    dirp = open-dir(dirpath)
+
+    {
+        dirp == 0 -> return
+    }
+
+    {
+        name, ok = read-dir(dirp)
+        {
+            ok == false -> {
+                close-dir(dirp)
                 return
             }
         }

@@ -15,13 +15,17 @@ t = test-struct{
 }
 
 t.dispatch(0)
-print('dispatch(0) =>', t.result)
+r0 = t.result
+print('dispatch(0) => {r0}')
 
 t.dispatch(42)
-print('dispatch(42) =>', t.result)
+r42 = t.result
+print('dispatch(42) => {r42}')
 
 t.dispatch(43)
-print('dispatch(43) =>', t.result)
+r43 = t.result
+print('dispatch(43) => {r43}')
 
 t.dispatch(99)
-print('dispatch(99) =>', t.result)
+r99 = t.result
+print('dispatch(99) => {r99}')

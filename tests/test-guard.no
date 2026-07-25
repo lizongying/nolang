@@ -1,6 +1,6 @@
 ; 測試 guard 條件中不同值的比較
 q = 42
-print('q=', q)
+print('q={q}')
 {
     q == 0 -> print('matched: q == 0')
     q == 42 -> print('matched: q == 42 (literal)')
@@ -22,7 +22,7 @@ print('')
 
 ; 測試用變量
 q2 = 43
-print('q2=', q2)
+print('q2={q2}')
 {
     q2 == 0 -> print('q2: == 0')
     q2 == 42 -> print('q2: == 42')

@@ -1,0 +1,64 @@
+; test-named-format.no — 測試具名格式字符串 {name:spec}
+;
+; 驗證 print/printf/eprint/eprintf/sprintf 支援 {name:spec} 語法，
+; 並呼叫 fmt-int/fmt-uint/fmt-f64/fmt-str/fmt-bool 進行格式化。
+
+main = () {
+    ; 整數格式化
+    x i64 = 42
+    print('x={x}')
+    printf('x={x:5}\n')
+    printf('x={x:<5}\n')
+    printf('x={x:^5}\n')
+    printf('x={x:05}\n')
+
+    ; 負數
+    n i64 = -7
+    printf('n={n:03}\n')
+
+    ; 無號整數（hex）
+    u u64 = 255
+    printf('u={u:x}\n')
+    printf('u={u:X}\n')
+    printf('u={u:#x}\n')
+    printf('u={u:08x}\n')
+
+    ; byte (u8)
+    b byte = 65
+    printf('b={b}\n')
+
+    ; 浮點數
+    pi f64 = 3.14159
+    printf('pi={pi:.2f}\n')
+    printf('pi={pi:.4f}\n')
+    printf('pi={pi:8.2f}\n')
+    printf('pi={pi:.3g}\n')
+    printf('pi={pi:.3e}\n')
+
+    ; 字串
+    s str = 'hello'
+    printf('s={s:10}\n')
+    printf('s={s:<10}\n')
+    printf('s={s:.3}\n')
+    printf('s={s:^10}\n')
+
+    ; 布林值
+    flag bool = true
+    printf('flag={flag}\n')
+    printf('flag={flag:6}\n')
+
+    ; 混合多個欄位
+    printf('x={x}, u={u:x}, pi={pi:.2f}, s={s}, flag={flag}\n')
+
+    ; 字面文字含 {{ 與 }} 轉義
+    printf('literal {{x}}={x}\n')
+
+    ; sprintf 返回格式化字串
+    formatted = sprintf('formatted: x={x}, pi={pi:.2f}')
+    print(formatted)
+
+    ; eprint/eprintf (stderr)
+    eprintf('err: x={x}\n')
+    eprint('err-line')
+}
+main()

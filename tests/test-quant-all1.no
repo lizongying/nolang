@@ -2,32 +2,32 @@ print('=== quantifier tests ===')
 
 // * 測試
 m1 = regexp-match('a*', 'aaa')
-print('a* vs aaa:', m1)
+print('a* vs aaa: {m1}')
 
 m1b = regexp-match('a*', 'bbb')
-print('a* vs bbb (empty match):', m1b)
+print('a* vs bbb (empty match): {m1b}')
 
 // + 測試
 m2 = regexp-match('a+', 'aaa')
-print('a+ vs aaa:', m2)
+print('a+ vs aaa: {m2}')
 
 m2b = regexp-match('a+', 'bbb')
-print('a+ vs bbb (no match):', m2b)
+print('a+ vs bbb (no match): {m2b}')
 
 // ? 測試
 m3 = regexp-match('a?', 'a')
-print('a? vs a:', m3)
+print('a? vs a: {m3}')
 
 m3b = regexp-match('a?', 'b')
-print('a? vs b (empty match):', m3b)
+print('a? vs b (empty match): {m3b}')
 
 // .+ 測試
 m4 = regexp-match('.+', 'abc')
-print('.+ vs abc:', m4)
+print('.+ vs abc: {m4}')
 
 // .* 測試
 m5 = regexp-match('.*', 'abc')
-print('.* vs abc:', m5)
+print('.* vs abc: {m5}')
 
 // dump a? 的指令
 print('')

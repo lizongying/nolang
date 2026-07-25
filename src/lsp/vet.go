@@ -237,7 +237,19 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
-	// 14. Parser warnings
+	// 14. Print format string validation (named {name:spec} fields)
+	for _, u := range nbuild.ValidatePrintFormat(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     u.Line,
+			Column:   u.Column,
+			Severity: "error",
+			Source:   "nolang-format-checker",
+			Message:  u.Message,
+		})
+	}
+
+	// 15. Parser warnings
 	for _, warnMsg := range prog.Warnings {
 		var line, col int
 		fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col)

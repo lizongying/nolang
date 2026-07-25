@@ -16,17 +16,17 @@ hello-world = 'Hello World'
 ; 函数定义
 add = (a i64, b i64) {
     result = a + b
-    print('result:', result)
+    print('result: {result}')
 }
 
 add1 = (a i64, b i64) (c i64, d i64) {
     result = a + b
-    print('result:', result)
+    print('result: {result}')
 }
 
 ; 匿名函数赋值
 f = (x i64, out i64) {
-    print('doubled:', out)
+    print('doubled: {out}')
 }
 
 ; 条件循环
@@ -35,17 +35,18 @@ j <- [0..5): {
     sum = sum + j
 }
 i = 5
-print('sum:', sum)
+print('sum: {sum}')
 
 ; 数组和切片
 arr [3] = [1, 2, 3]
 slice [] = [4, 5, 6]
 print('array:', arr)
-print('slice[0]:', slice[0])
+s0 = slice[0]
+print('slice[0]: {s0}')
 
 ; 三元表达式
 max = sum > 10 ? sum : 10
-print('max:', max)
+print('max: {max}')
 
 ; 调用函数
 add(10, 20)

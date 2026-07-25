@@ -1,0 +1,84 @@
+//go:build !wasm
+
+package build
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// toolAvailable 報告指定工具是否在 $PATH 中可用。
+func toolAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// TestBuildLLVMInternalWasiMissingSysroot 驗證：當 target 為 wasm32-wasi 且
+// $WASI_SYSROOT 未設定時，buildLLVMInternal 應回傳包含安裝提示的清晰錯誤訊息。
+//
+// 測試流程：
+//  1. 跳過條件：若 opt/llc/clang 任一不在 $PATH 中，則 t.Skip
+//  2. 顯式將 $WASI_SYSROOT 設為空字串
+//  3. 以最小合法 LLVM IR 呼叫 buildLLVMInternal，target=wasm32-wasi
+//  4. 驗證回傳錯誤包含 "WASI sysroot not found" 與 macOS/Ubuntu 安裝提示
+//
+// 註：buildLLVMInternal 為未匯出函式，故測試需在 package build 內。
+func TestBuildLLVMInternalWasiMissingSysroot(t *testing.T) {
+	// 跳過條件：LLVM 工具鏈必須可用才能抵達連結階段（WASI sysroot 檢查發生處）。
+	for _, tool := range []string{"opt", "llc", "clang"} {
+		if !toolAvailable(tool) {
+			t.Skipf("skipping: %s not in PATH", tool)
+		}
+	}
+
+	// 儲存並還原 $WASI_SYSROOT
+	orig := os.Getenv("WASI_SYSROOT")
+	defer os.Setenv("WASI_SYSROOT", orig)
+	if err := os.Setenv("WASI_SYSROOT", ""); err != nil {
+		t.Fatalf("failed to unset WASI_SYSROOT: %v", err)
+	}
+
+	// 最小合法 LLVM IR：main 函數返回 0。
+	// target triple 由 llc 的 -mtriple=wasm32-wasi 旗標指定，不需在 IR 中聲明。
+	const code = `; ModuleID = 'test'
+source_filename = "test"
+
+define i32 @main() {
+entry:
+  ret i32 0
+}
+`
+
+	// 輸出路徑不會被使用（WASI sysroot 檢查在 clangCmd.Run() 之前發生），
+	// 但仍使用 t.TempDir() 以避免污染工作目錄。
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "out.wasm")
+
+	// sink 用來吸收 opt/llc 的輸出，避免測試日誌噪音。
+	sink := &bytes.Buffer{}
+	err := buildLLVMInternal(code, "wasi_missing_sysroot_test", outPath, "clang", "wasm32-wasi", false, nil, sink)
+	if err == nil {
+		t.Fatal("expected error for missing $WASI_SYSROOT, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "WASI sysroot not found") {
+		t.Errorf("error message should contain 'WASI sysroot not found', got: %v", err)
+	}
+
+	// 驗證安裝提示涵蓋 macOS / Ubuntu / 原始碼建構三種路徑。
+	wantSubstrings := []string{
+		"brew install wasi-libc",       // macOS
+		"wasi-sdk",                    // Ubuntu
+		"WASI_SYSROOT",                // 環境變數提示
+		"git clone",                   // 原始碼建構
+	}
+	for _, s := range wantSubstrings {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("error message should contain %q, got: %v", s, err)
+		}
+	}
+}

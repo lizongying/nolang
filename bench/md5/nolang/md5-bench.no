@@ -14,4 +14,5 @@ i <- [0..100000): {
     result = md5.md5(input)
 }
 
-print(result[0])
+b = result[0]
+print('{b}')

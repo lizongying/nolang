@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -143,7 +144,8 @@ func printUsage() {
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
-	fmt.Println("                      x86_64-windows-gnu")
+	fmt.Println("                      x86_64-windows-gnu, wasm32-wasi")
+	fmt.Println("    For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 	fmt.Println("    Default: build current directory or workspace.jsonc projects")
 	fmt.Println("    Examples:")
 	fmt.Println("      no build")
@@ -151,6 +153,7 @@ func printUsage() {
 	fmt.Println("      no build -o output main.no")
 	fmt.Println("      no build -cc zig main.no")
 	fmt.Println("      no build -target x86_64-linux-gnu main.no")
+	fmt.Println("      no build -target wasm32-wasi main.no")
 	fmt.Println("")
 	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
@@ -165,12 +168,13 @@ func printUsage() {
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
-	fmt.Println("                      x86_64-windows-gnu")
+	fmt.Println("                      x86_64-windows-gnu, wasm32-wasi")
 	fmt.Println("    Examples:")
 	fmt.Println("      no test")
 	fmt.Println("      no test tests/my-test.no")
 	fmt.Println("      no test -cc zig")
 	fmt.Println("      no test -target x86_64-linux-gnu")
+	fmt.Println("      no test -target wasm32-wasi")
 	fmt.Println("")
 	fmt.Println("  no vet [<file|dir>]            Validate source files")
 	fmt.Println("    Examples:")
@@ -1047,7 +1051,7 @@ func buildCommand(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
@@ -1059,12 +1063,15 @@ func buildCommand(args []string) {
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
+		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
 		fmt.Println("  no build main.no")
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
 		fmt.Println("  no build -target x86_64-linux-gnu main.no")
+		fmt.Println("  no build -target wasm32-wasi main.no")
 		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
 	}
 	_ = fs.Parse(args)
@@ -1109,7 +1116,7 @@ func buildCommand(args []string) {
 func runCommand(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<file|dir>]")
@@ -1120,10 +1127,13 @@ func runCommand(args []string) {
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
+		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                     build and run main.no in current dir")
 		fmt.Println("  no run main.no             build and run main.no")
 		fmt.Println("  no run -cc zig main.no     build and run with Zig compiler")
+		fmt.Println("  no run -target wasm32-wasi main.no")
 	}
 	_ = fs.Parse(args)
 
@@ -1171,6 +1181,11 @@ func runCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
+	if runtime.GOOS == "wasip1" {
+		fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
+		os.Exit(1)
+	}
 	cmd := exec.Command(outPath, fs.Args()[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -1184,7 +1199,7 @@ func runCommand(args []string) {
 func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu)")
+	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no test [<file>]")
 		fmt.Println("")
@@ -1195,11 +1210,14 @@ func testCommand(args []string) {
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
 		fmt.Println("")
+		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no test")
 		fmt.Println("  no test test/my-test.no")
 		fmt.Println("  no test -cc zig")
 		fmt.Println("  no test -target x86_64-linux-gnu")
+		fmt.Println("  no test -target wasm32-wasi")
 	}
 	_ = fs.Parse(args)
 
@@ -1284,6 +1302,11 @@ func testCommand(args []string) {
 			continue
 		}
 
+		// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
+		if runtime.GOOS == "wasip1" {
+			fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
+			os.Exit(1)
+		}
 		cmd := exec.Command(outPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

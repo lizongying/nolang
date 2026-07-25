@@ -227,9 +227,17 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; fmt-int: 有號整數格式化
-; 支援 sign(+/-/space)、zero、width、align、fill
+; 支援 type(c/無)、sign(+/-/space)、zero、width、align、fill
 fmt-int = (n i64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; c 類型：將整數轉為單一字元
+    typ == 99 -> {
+        body str = with-cap(1)
+        body[0] = n & 255
+        out = fmt-apply-spec(body, fill, align, width)
+        return
+    }
 
     ; 提取 sign-char 與 digits（不含符號）
     sign-char = 0

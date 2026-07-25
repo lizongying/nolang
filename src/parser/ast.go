@@ -688,6 +688,7 @@ var ValidPlatformKeys = map[string]bool{
 	"win-arm64":   true,
 	"mac-amd64":   true,
 	"mac-arm64":   true,
+	"wasi-wasm32": true,
 }
 
 // ExtractPlatformKeys 從註解條目中抽取平台 key。

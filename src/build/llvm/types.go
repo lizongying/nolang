@@ -249,9 +249,6 @@ var clibFuncNames = map[string]bool{
 	"gethostname": true,
 	"malloc":      true,
 	"free":        true,
-	"printf":      true,
-	"fprintf":     true,
-	"sprintf":     true,
 	"fopen":       true,
 	"fgets":       true,
 	"fclose":      true,
@@ -264,9 +261,6 @@ var clibFuncNames = map[string]bool{
 // 的 mode 參數被路徑字串首字節覆蓋）。
 var variadicFuncSigs = map[string]string{
 	"open":    "(i8*, i32, ...)",
-	"printf":  "(i8*, ...)",
-	"fprintf": "(i8*, i8*, ...)",
-	"sprintf": "(i8*, i8*, ...)",
 	"execlp":  "(i8*, ...)",
 }
 

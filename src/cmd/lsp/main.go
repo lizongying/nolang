@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -64,14 +65,16 @@ func main() {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// 處理中斷信號
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
-	go func() {
-		<-sigChan
-		log.Println("Received interrupt signal")
-		cancel()
-	}()
+	// 處理中斷信號（WASM 下 os/signal 不支援 os.Interrupt，跳過以避免 runtime 錯誤）。
+	if runtime.GOOS != "wasip1" {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt)
+		go func() {
+			<-sigChan
+			log.Println("Received interrupt signal")
+			cancel()
+		}()
+	}
 
 	server := lsp.NewServer()
 	if err := lsp.RunServer(ctx, server); err != nil {
@@ -121,6 +124,8 @@ func vetCommand(args []string) {
 	}
 	_ = fs.Parse(args)
 
+	// WASM 下透過 stdin 運行；path/filepath 是純邏輯仍可使用。
+	// 若使用者未提供檔案，預設為 "."（當前工作目錄），由 VetPathVerbose 處理空目錄的 fallback。
 	inputPath := "."
 	if len(fs.Args()) > 0 {
 		inputPath = fs.Args()[0]

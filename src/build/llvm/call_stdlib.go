@@ -12,533 +12,326 @@ import (
 func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
 
-	typedArg := func(v string) string {
-		if strings.HasPrefix(v, "i8*") || strings.HasPrefix(v, "double") {
-			return v
-		}
-		if strings.HasPrefix(v, "%") {
-			parts := strings.SplitN(v, ".", 2)
-			varName := strings.TrimPrefix(parts[0], "%")
-			if g.varTypes != nil {
-				if t, ok := g.varTypes[varName]; ok {
-					if t == "double" {
-						return "double " + v
-					}
-					if t == "%option" && g.optionInnerTypes != nil {
-						if it, ok := g.optionInnerTypes[varName]; ok && it == "double" {
-							return "double " + v
-						}
-					}
-					// 非 i64 整數型別（i32/i16/i8）需 zext 至 i64 以匹配 printf %llx
-					if t == "i32" || t == "i16" || t == "i8" {
-						g.tmpIdx++
-						extReg := fmt.Sprintf("%%zext.tmp.%d", g.tmpIdx)
-						if sb != nil {
-							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, t, v))
-						}
-						return "i64 " + extReg
-					}
-				}
+	// === Named format string path ===
+	// For printf/eprintf/sprintf with a string literal first arg, parse {name:spec}
+	// fields and dispatch to Nolang fmt-* helpers + io.out/io.err.
+	// For print/eprint with a single string literal arg containing '{', also use
+	// named format (with auto-appended newline).
+	if sb != nil && hasArgs && len(expr.Arguments) >= 1 {
+		intercept, autoNewline := g.shouldInterceptNamedFormat(fnName, expr)
+		if intercept {
+			strLit := expr.Arguments[0].(*parser.StringLiteral)
+			segments, err := parser.ParseFormatString(strLit.Value)
+			if err == nil {
+				return g.callNamedFormat(sb, fnName, segments, autoNewline)
 			}
-			return "i64 " + v
+			// Parse error: fall through to existing code path
 		}
-		if strings.Contains(v, ".") {
-			return "double " + v
-		}
-		return "i64 " + v
 	}
 
-	strDataPtr := func(arg parser.Expression) string {
-		switch a := arg.(type) {
-		case *parser.Identifier:
-			if g.varTypes != nil {
-				if t, ok := g.varTypes[a.Value]; ok {
-					if t == "%str-long" {
-						return g.extractStrDataPtr(sb, g.varAddr(a.Value))
-					}
-					// Option variable with string inner type (e.g. ?str):
-					// extract the inner %str-long* pointer from
-					// the option's data field, then get the string data pointer.
-					if t == "%option" && g.optionInnerTypes != nil {
-						if innerType, ok := g.optionInnerTypes[a.Value]; ok {
-							if innerType == "%str-long" {
-								ptr := g.generateExprWithSB(sb, a)
-								return g.extractStrDataPtr(sb, ptr)
-							}
-						}
-					}
-				}
-			}
-		case *parser.StringLiteral:
-			ptr := g.generateExprWithSB(sb, a)
-			return g.extractStrDataPtr(sb, ptr)
-		case *parser.InfixExpression:
-			if (a.Operator == "-" || a.Operator == "+") && (g.isStringExpr(a.Left) || g.isStringExpr(a.Right)) {
-				ptr := g.generateStrConcat(sb, a.Left, a.Right)
-				return g.extractStrDataPtr(sb, ptr)
-			}
-		case *parser.GroupedExpression:
-			if g.isStringExpr(a.Expression) {
-				ptr := g.getStrPtr(sb, a.Expression)
-				return g.extractStrDataPtr(sb, ptr)
-			}
-			return ""
-		case *parser.DotExpression:
-			// .field 或 obj.field：generateDotExpression 會載入 struct 值到 SSA register
-			// 對於 str 欄位，返回的是 %str-long SSA value。需先 alloca 再 store 以取得指標。
-			ptr := g.generateExprWithSB(sb, a)
-			et := g.exprResultLLVMType(a)
-			if et == "%str-long" {
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%str-long.dot.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
-				return g.extractStrDataPtr(sb, tmpAlloca)
-			}
-		case *parser.CallExpression:
-			// Function/method call returning %str-long (e.g. energy().to-str()).
-			// Only handle when exprResultLLVMType can statically determine the return
-			// type; otherwise return "" and let printVariadic's fallback path handle
-			// it (with ssaTypes-based detection after generation).
-			et := g.exprResultLLVMType(a)
-			if et == "%str-long" {
-				ptr := g.generateExprWithSB(sb, a)
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%str-long.call.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
-				return g.extractStrDataPtr(sb, tmpAlloca)
-			}
-		case *parser.IndexExpression:
-			// String element from a []str slice (e.g. fields[i]).
-			// generateIndexExpression loads the %str-long value; materialize it
-			// into a temp alloca to obtain a %str-long* for data pointer extraction.
-			if ident, ok := a.Left.(*parser.Identifier); ok {
-				if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
-					ptr := g.generateExprWithSB(sb, a)
-					g.tmpIdx++
-					tmpAlloca := fmt.Sprintf("%%str-long.idx.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
-					return g.extractStrDataPtr(sb, tmpAlloca)
-				}
-			}
-		}
-		return ""
-	}
+	// Note: C-style printf/eprintf/sprintf paths (using libc @printf/@sprintf/@fprintf)
+	// have been removed. All output now goes through Nolang's @out/@err functions.
+	// Use named format strings (e.g. printf('{x}')) or print/println instead.
 
-	if (fnName == "printf" || fnName == "fmt.printf" || fnName == "eprintf" || fnName == "fmt.eprintf") && hasArgs {
-		useStderr := fnName == "eprintf" || fnName == "fmt.eprintf"
-		var stderrReg string
-		if useStderr {
-			stderrReg = g.loadStderr(sb)
-		}
-		var fmtArg string
-		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
-			fg := g.getFormatGlobal(strLit.Value)
-			fmtArg = fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-				len(strLit.Value)+1, len(strLit.Value)+1, fg)
-		} else {
-			fmtData := g.makeNullTerminatedStr(sb, expr.Arguments[0])
-			if fmtData != "" {
-				fmtArg = "i8* " + fmtData
-			} else {
-				a := evalArgs()
-				fmtArg = strArg(a[0])
-			}
-		}
-		args := fmtArg
-		for i := 1; i < len(expr.Arguments); i++ {
-			data := strDataPtr(expr.Arguments[i])
-			if data != "" {
-				nullStr := g.makeNullTerminatedStr(sb, expr.Arguments[i])
-				if nullStr != "" {
-					args += ", i8* " + nullStr
-				} else {
-					args += ", i8* " + data
-				}
-			} else {
-				a := evalArgs()
-				args += ", " + typedArg(a[i])
-			}
-		}
-		if len(expr.Arguments) > 0 {
-			if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
-				fmtStr := strLit.Value
-				expected := 0
-				for i := 0; i < len(fmtStr); i++ {
-					if fmtStr[i] == '%' && i+1 < len(fmtStr) && fmtStr[i+1] != '%' {
-						expected++
-					}
-				}
-				got := len(expr.Arguments) - 1
-				if got != expected {
-				panicFn := "printf"
-				if useStderr {
-					panicFn = "eprintf"
-				}
-				panic(fmt.Sprintf("%s: format string expects %d arguments, got %d\n  format: %q",
-					panicFn, expected, got, fmtStr))
-				}
-			}
-		}
-		if useStderr {
-			return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s)", stderrReg, args)
-		}
-		return fmt.Sprintf("call i32 (i8*, ...) @printf(%s)", args)
-	}
-
-	// sprintf: format string and return it
-	if (fnName == "sprintf" || fnName == "fmt.sprintf") && hasArgs {
-		var fmtArg string
-		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
-			fg := g.getFormatGlobal(strLit.Value)
-			fmtArg = fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-				len(strLit.Value)+1, len(strLit.Value)+1, fg)
-		} else {
-			fmtData := g.makeNullTerminatedStr(sb, expr.Arguments[0])
-			if fmtData != "" {
-				fmtArg = "i8* " + fmtData
-			} else {
-				a := evalArgs()
-				fmtArg = strArg(a[0])
-			}
-		}
-		// Allocate heap buffer for the result (must be heap-allocated so emitHeapFree can safely free it)
-		g.tmpIdx++
-		bufAlloca := fmt.Sprintf("%%sprintf.buf.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), bufAlloca))
-		}
-		bufPtr := "i8* " + bufAlloca
-		args := bufPtr + ", " + fmtArg
-		for i := 1; i < len(expr.Arguments); i++ {
-			data := strDataPtr(expr.Arguments[i])
-			if data != "" {
-				nullStr := g.makeNullTerminatedStr(sb, expr.Arguments[i])
-				if nullStr != "" {
-					args += ", i8* " + nullStr
-				} else {
-					args += ", i8* " + data
-				}
-			} else {
-				a := evalArgs()
-				args += ", " + typedArg(a[i])
-			}
-		}
-		// Call sprintf(buf, fmt, args...)
-		g.tmpIdx++
-		sprintfRet := fmt.Sprintf("%%sprintf.ret.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @sprintf(%s)\n", g.indent(), sprintfRet, args))
-		}
-		// zext i32 → i64 as string length
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%sprintf.len.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), lenReg, sprintfRet))
-		}
-		// bufAlloca is already i8* from malloc — use directly as data pointer
-		bufDataPtr := bufAlloca
-		// Construct %str-long { len, cap, data } via insertvalue, then alloca + store
-		g.tmpIdx++
-		strAlloca := fmt.Sprintf("%%sprintf.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%sprintf.ins1.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%sprintf.ins2.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%sprintf.ins3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-			_p2i_strReg3 := g.ptrToIntVal(sb, bufDataPtr)
-			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, _p2i_strReg3))
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), strReg3, strAlloca))
-		}
-		return strAlloca
-	}
-
+	// printVariadic handles print/eprint/println with arbitrary args.
+	// All output goes through Nolang's @out/@err (no libc @printf/@fprintf).
+	// Writes calls directly to sb; returns a non-"call " sentinel so the
+	// statement-level caller (generateExpressionStmt) doesn't double-emit.
 	printVariadic := func(newline bool, useStderr bool) string {
-		var stderrReg string
-		if useStderr {
-			stderrReg = g.loadStderr(sb)
-		}
-		emitCall := func(gep string, extraArgs string) string {
-			if useStderr {
-				if extraArgs != "" {
-					return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s, %s)", stderrReg, gep, extraArgs)
-				}
-				return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s)", stderrReg, gep)
-			}
-			if extraArgs != "" {
-				return fmt.Sprintf("call i32 (i8*, ...) @printf(%s, %s)", gep, extraArgs)
-			}
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(%s)", gep)
-		}
 		if !hasArgs {
 			if newline {
-				fg := g.getFormatGlobal("\n")
-				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-					len("\n")+1, len("\n")+1, fg)
-				return emitCall(gep, "")
+				nlPtr := g.buildStrLongFromValue(sb, "\n")
+				g.emitOutCall(sb, useStderr, nlPtr)
 			}
-			return ""
+			return "; print-variadic"
 		}
-		var sb2 strings.Builder
 		for i, arg := range expr.Arguments {
 			// Skip void function call arguments (call for side effects, don't print)
 			if callExpr, ok := arg.(*parser.CallExpression); ok && !g.isNonVoidCall(callExpr) {
 				g.generateExprWithSB(sb, arg)
 				continue
 			}
+			// Space separator between args.
 			if i > 0 {
-				fg := g.getFormatGlobal(" ")
-				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-					len(" ")+1, len(" ")+1, fg)
-				sb2.WriteString(emitCall(gep, "") + fmt.Sprintf("\n%s", g.indent()))
+				spacePtr := g.buildStrLongFromValue(sb, " ")
+				g.emitOutCall(sb, useStderr, spacePtr)
 			}
-			dataPtr := strDataPtr(arg)
-			if dataPtr != "" {
-				strLen := g.strLenFromExpr(sb, arg)
-				g.tmpIdx++
-				lenI32 := fmt.Sprintf("%%str-longpr.len.i32.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), lenI32, strLen))
-				fmtSpec := "%.*s"
-				if newline && i == len(expr.Arguments)-1 {
-					fmtSpec += "\n"
-				}
-				fg := g.getFormatGlobal(fmtSpec)
-				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-					len(fmtSpec)+1, len(fmtSpec)+1, fg)
-				sb2.WriteString(emitCall(gep, fmt.Sprintf("i32 %s, i8* %s", lenI32, dataPtr)))
-				// 字符串拼接/函数调用产生的临时堆 data 在 printf 后立即释放，避免泄漏。
-				// StringLiteral 的 data 是全局常量，不需 free；Identifier 引用变量，由变量管理。
-				if g.isTempStrDataPtr(arg) {
-					sb2.WriteString(fmt.Sprintf("\ncall void @free(i8* %s)", dataPtr))
-				}
-			} else {
-				v := g.generateExprWithSB(sb, arg)
-				// String-returning CallExpression (e.g. energy().to-str()):
-				// exprResultLLVMType may fail for chained calls where the receiver
-				// is itself a CallExpression. After generation, ssaTypes[v] holds
-				// the actual return type; if it's %str-long, materialize into a
-				// temp alloca and use %.*s format like other string expressions.
-				if _, isCall := arg.(*parser.CallExpression); isCall && g.ssaTypes != nil {
-					if t, ok := g.ssaTypes[v]; ok && t == "%str-long" {
-						g.tmpIdx++
-						tmpAlloca := fmt.Sprintf("%%str-long.pr.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), v, tmpAlloca))
-						dataPtr := g.extractStrDataPtr(sb, tmpAlloca)
-						strLen := g.extractStrLen(sb, tmpAlloca)
-						g.tmpIdx++
-						lenI32 := fmt.Sprintf("%%str-longpr.len.i32.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), lenI32, strLen))
-						fmtSpec := "%.*s"
-						if newline && i == len(expr.Arguments)-1 {
-							fmtSpec += "\n"
-						}
-						fg := g.getFormatGlobal(fmtSpec)
-						gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-							len(fmtSpec)+1, len(fmtSpec)+1, fg)
-						sb2.WriteString(emitCall(gep, fmt.Sprintf("i32 %s, i8* %s", lenI32, dataPtr)))
-						continue
-					}
-				}
-				fmtSpec := ""
-				if strings.HasPrefix(v, "i8*") {
-					fmtSpec = "%s"
-				} else if strings.HasPrefix(v, "%") {
-					// Determine expression's source LLVM type so we can correctly
-					// sext/zext narrow integers / i1 to i64 (printf %lld expects i64),
-					// and emit %g for double. Identifier path uses varTypes (handles
-					// %option inner type); other expressions use intExprLLVMType.
-					srcType := "i64"
-					if ident, ok := arg.(*parser.Identifier); ok && g.varTypes != nil {
-						if t, ok := g.varTypes[ident.Value]; ok {
-							srcType = t
-							if t == "%option" && g.optionInnerTypes != nil {
-								if it, ok := g.optionInnerTypes[ident.Value]; ok {
-									srcType = it
-								}
-							}
-						}
-					} else {
-						t := g.intExprLLVMType(arg)
-						if t != "" {
-							srcType = t
-						}
-					}
-					switch srcType {
-					case "double":
-						fmtSpec = "%g"
-					case "i1":
-						g.tmpIdx++
-						zextReg := fmt.Sprintf("%%print.zext.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, v))
-						v = zextReg
-						fmtSpec = "%lld"
-					case "i8", "i16", "i32":
-						g.tmpIdx++
-						extReg := fmt.Sprintf("%%print.sext.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, srcType, v))
-						v = extReg
-						fmtSpec = "%lld"
-					default:
-						fmtSpec = "%lld"
-					}
-				} else if strings.Contains(v, ".") {
-					fmtSpec = "%g"
-				} else {
-					fmtSpec = "%lld"
-				}
-				if newline && i == len(expr.Arguments)-1 {
-					fmtSpec += "\n"
-				}
-				fg := g.getFormatGlobal(fmtSpec)
-				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
-					len(fmtSpec)+1, len(fmtSpec)+1, fg)
-				sb2.WriteString(emitCall(gep, typedArg(v)))
-			}
+			// Convert arg to %str-long* and write via @out/@err.
+			argPtr := g.emitArgAsStrLong(sb, arg, "")
+			g.emitOutCall(sb, useStderr, argPtr)
 		}
-		return sb2.String()
+		// Trailing newline (print/eprint always append \n).
+		if newline {
+			nlPtr := g.buildStrLongFromValue(sb, "\n")
+			g.emitOutCall(sb, useStderr, nlPtr)
+		}
+		return "; print-variadic"
 	}
 
 	if fnName == "print" || fnName == "fmt.print" {
 		return printVariadic(true, false)
 	}
 	if fnName == "println" || fnName == "fmt.println" {
-		if !hasArgs {
-			fg := g.getFormatGlobal("\n")
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))",
-				len("\n")+1, len("\n")+1, fg)
-		}
 		return printVariadic(true, false)
 	}
 	if fnName == "eprint" || fnName == "fmt.eprint" {
 		return printVariadic(true, true)
 	}
 	if fnName == "println-empty" {
-		fg := g.getFormatGlobal("\n")
-		return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))",
-			len("\n")+1, len("\n")+1, fg)
+		nlPtr := g.buildStrLongFromValue(sb, "\n")
+		g.emitOutCall(sb, false, nlPtr)
+		return "; println-empty"
 	}
 
-	printInt := func(fmtSpec, fn string) string {
-		if fn == fnName {
-			fg := g.getFormatGlobal(fmtSpec)
-			a := evalArgs()
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), %s)",
-				len(fmtSpec)+1, len(fmtSpec)+1, fg, llvmArg(a[0]))
+	// Type-specific print functions: each converts its single arg to a
+	// %str-long* via emitArgAsStrLong (using the appropriate fmt-* helper
+	// and spec), then writes it via @out. Variants with "println" prefix
+	// additionally write a trailing newline via @out.
+	emitTypedPrint := func(targetFn, spec string, addNewline bool) string {
+		if fnName != targetFn || !hasArgs {
+			return ""
 		}
-		return ""
-	}
-	if r := printInt("%lld", "print-i64"); r != "" {
-		return r
-	}
-	if r := printInt("%lld", "fmt.print-i64"); r != "" {
-		return r
-	}
-	if r := printInt("%lld\n", "println-i64"); r != "" {
-		return r
-	}
-	if r := printInt("%lld\n", "fmt.println-i64"); r != "" {
-		return r
-	}
-	if r := printInt("%d", "print-byte"); r != "" {
-		return r
-	}
-	if r := printInt("%d", "fmt.print-byte"); r != "" {
-		return r
-	}
-	if r := printInt("%d\n", "println-byte"); r != "" {
-		return r
-	}
-	if r := printInt("%d\n", "fmt.println-byte"); r != "" {
-		return r
-	}
-	if r := printInt("%c", "print-char"); r != "" {
-		return r
-	}
-	if r := printInt("%c", "fmt.print-char"); r != "" {
-		return r
-	}
-	if r := printInt("%c\n", "println-char"); r != "" {
-		return r
-	}
-	if r := printInt("%c\n", "fmt.println-char"); r != "" {
-		return r
+		arg := expr.Arguments[0]
+		argPtr := g.emitArgAsStrLong(sb, arg, spec)
+		g.emitOutCall(sb, false, argPtr)
+		if addNewline {
+			nlPtr := g.buildStrLongFromValue(sb, "\n")
+			g.emitOutCall(sb, false, nlPtr)
+		}
+		return "; print-typed"
 	}
 
-	printHex := func(fmtSpec, fn string) string {
-		if fn == fnName && hasArgs {
-			fg := g.getFormatGlobal(fmtSpec)
-			a := evalArgs()
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), %s)",
-				len(fmtSpec)+1, len(fmtSpec)+1, fg, typedArg(a[0]))
-		}
-		return ""
-	}
-	if r := printHex("%08llx", "print-hex32"); r != "" {
+	// print-i64 / println-i64: fmt-int with empty spec.
+	if r := emitTypedPrint("print-i64", "", false); r != "" {
 		return r
 	}
-	if r := printHex("%08llx", "fmt.print-hex32"); r != "" {
+	if r := emitTypedPrint("fmt.print-i64", "", false); r != "" {
 		return r
 	}
-	if r := printHex("%016llx", "print-hex64"); r != "" {
+	if r := emitTypedPrint("println-i64", "", true); r != "" {
 		return r
 	}
-	if r := printHex("%016llx", "fmt.print-hex64"); r != "" {
+	if r := emitTypedPrint("fmt.println-i64", "", true); r != "" {
 		return r
 	}
-	if r := printHex("%02llx", "print-hex8"); r != "" {
+	// print-byte: fmt-int with empty spec (byte is i64 from zext).
+	if r := emitTypedPrint("print-byte", "", false); r != "" {
 		return r
 	}
-	if r := printHex("%02llx", "fmt.print-hex8"); r != "" {
+	if r := emitTypedPrint("fmt.print-byte", "", false); r != "" {
 		return r
 	}
-
-	printFloat := func(fmtSpec, fn string) string {
-		if fn == fnName && hasArgs {
-			fg := g.getFormatGlobal(fmtSpec)
-			a := evalArgs()
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), double %s)",
-				len(fmtSpec)+1, len(fmtSpec)+1, fg, a[0])
-		}
-		return ""
-	}
-	if r := printFloat("%g", "print-f64"); r != "" {
+	if r := emitTypedPrint("println-byte", "", true); r != "" {
 		return r
 	}
-	if r := printFloat("%g\n", "println-f64"); r != "" {
+	if r := emitTypedPrint("fmt.println-byte", "", true); r != "" {
 		return r
 	}
-
-	printBool := func(fmtSpec, fn string) string {
-		if fn == fnName && hasArgs {
-			fg := g.getFormatGlobal(fmtSpec)
-			a := evalArgs()
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%boolpr.tmp.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
-					g.indent(), reg, a[0]))
-			}
-			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), i8* %s)",
-				len(fmtSpec)+1, len(fmtSpec)+1, fg, reg)
-		}
-		return ""
-	}
-	if r := printBool("%s", "print-bool"); r != "" {
+	// print-char: fmt-int with 'c' spec (converts integer to single char).
+	if r := emitTypedPrint("print-char", "c", false); r != "" {
 		return r
 	}
-	if r := printBool("%s\n", "println-bool"); r != "" {
+	if r := emitTypedPrint("fmt.print-char", "c", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("println-char", "c", true); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("fmt.println-char", "c", true); r != "" {
+		return r
+	}
+	// print-hex*: fmt-uint (dispatched by emitArgAsStrLong when spec contains 'x').
+	if r := emitTypedPrint("print-hex32", "08x", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("fmt.print-hex32", "08x", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("print-hex64", "016x", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("fmt.print-hex64", "016x", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("print-hex8", "02x", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("fmt.print-hex8", "02x", false); r != "" {
+		return r
+	}
+	// print-f64: fmt-f64 with empty spec (defaults to 'g').
+	if r := emitTypedPrint("print-f64", "", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("println-f64", "", true); r != "" {
+		return r
+	}
+	// print-bool: fmt-bool with empty spec.
+	if r := emitTypedPrint("print-bool", "", false); r != "" {
+		return r
+	}
+	if r := emitTypedPrint("println-bool", "", true); r != "" {
 		return r
 	}
 
 	return ""
+}
+
+// emitOutCall emits a call to @out or @err with the given %str-long*.
+// The i64* output parameter (bytes written) is allocated and discarded.
+// Writes the call directly to sb.
+func (g *Generator) emitOutCall(sb *strings.Builder, useStderr bool, strPtr string) {
+	if sb == nil {
+		return
+	}
+	outFn := "out"
+	if useStderr {
+		outFn = "err"
+	}
+	g.tmpIdx++
+	nAlloca := fmt.Sprintf("%%vso.n.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), nAlloca))
+	sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
+		g.indent(), outFn, strPtr, nAlloca))
+}
+
+// emitArgAsStrLong converts any expression to a %str-long* alloca.
+// For string expressions, returns the existing %str-long* directly.
+// For integer/float/bool expressions, calls the appropriate fmt-* helper
+// with the given spec string and a zero-initialized output buffer.
+// Pattern follows generateFieldStr but works with ANY expression
+// (uses generateExprWithSB to obtain SSA values for non-identifier exprs).
+func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression, spec string) string {
+	// Determine the source LLVM type first (mirrors printVariadic's logic).
+	srcType := "i64"
+	isOptionStr := false
+	if ident, ok := expr.(*parser.Identifier); ok && g.varTypes != nil {
+		if t, ok := g.varTypes[ident.Value]; ok {
+			srcType = t
+			if t == "%option" && g.optionInnerTypes != nil {
+				if it, ok := g.optionInnerTypes[ident.Value]; ok {
+					srcType = it
+					isOptionStr = it == "%str-long"
+				}
+			}
+		}
+	} else {
+		t := g.intExprLLVMType(expr)
+		if t != "" {
+			srcType = t
+		}
+	}
+
+	// String expression: return %str-long* directly.
+	// For option variables (?str), generateExprWithSB extracts the inner %str-long*.
+	if srcType == "%str-long" {
+		if isOptionStr {
+			// Option ?str: generateExprWithSB returns the inner %str-long* via inttoptr.
+			return g.generateExprWithSB(sb, expr)
+		}
+		return g.getStrPtr(sb, expr)
+	}
+	if g.isStringExpr(expr) {
+		return g.getStrPtr(sb, expr)
+	}
+
+	// Generate the expression's SSA value.
+	v := g.generateExprWithSB(sb, expr)
+
+	// String-returning CallExpression (e.g. energy().to-str()):
+	// exprResultLLVMType may fail for chained calls; after generation,
+	// ssaTypes[v] holds the actual return type — if %str-long, materialize
+	// into a temp alloca and return it like other string expressions.
+	if _, isCall := expr.(*parser.CallExpression); isCall && g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[v]; ok && t == "%str-long" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%str-long.arg.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), v, tmpAlloca))
+			return tmpAlloca
+		}
+	}
+
+	// Fallback: detect double literal (e.g. "3.14") by content.
+	if srcType == "i64" && strings.Contains(v, ".") && !strings.HasPrefix(v, "%") && !strings.HasPrefix(v, "i8*") {
+		srcType = "double"
+	}
+
+	// Build spec %str-long*
+	specPtr := g.buildStrLongFromValue(sb, spec)
+
+	// Allocate output buffer and zero-initialize it.
+	// fmt-* helpers perform move-assignment to `out` (out = fmt-apply-spec(...)),
+	// which frees the old value of `out` before assigning. An uninitialized
+	// buffer would contain stack garbage, causing the free of a bogus data
+	// pointer to crash (SIGABRT). Must zero-initialize to {len=0, cap=0, data=null}.
+	g.tmpIdx++
+	outBuf := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+
+	// Determine spec type character (last alphabetic char in spec).
+	// Mirrors generateFieldStr's specType-based dispatch.
+	specType := byte(0)
+	for i := len(spec) - 1; i >= 0; i-- {
+		c := spec[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			specType = c
+			break
+		}
+	}
+
+	// Dispatch based on spec type and source type (mirrors generateFieldStr).
+	switch {
+	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
+		// Unsigned format — use fmt-uint (expects i64*).
+		// Coerce narrow integers to i64 with zext (unsigned semantics).
+		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%arg.ext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, srcType, v))
+			v = extReg
+		}
+		g.tmpIdx++
+		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), valAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), v, valAlloca))
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-uint(i64* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), valAlloca, specPtr, outBuf))
+	case srcType == "double":
+		// fmt-f64(double* x, %str-long* spec, %str-long* out)
+		g.tmpIdx++
+		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), valAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), v, valAlloca))
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-f64(double* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), valAlloca, specPtr, outBuf))
+	case srcType == "i1":
+		// fmt-bool(i1* b, %str-long* spec, %str-long* out)
+		g.tmpIdx++
+		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i1\n", g.indent(), valAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i1 %s, i1* %s\n", g.indent(), v, valAlloca))
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-bool(i1* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), valAlloca, specPtr, outBuf))
+	default:
+		// Integer — fmt-int(i64* n, %str-long* spec, %str-long* out).
+		// Coerce narrow integers to i64 with sext (signed semantics, matches
+		// the previous printVariadic behavior for %lld).
+		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%arg.ext.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, srcType, v))
+			v = extReg
+		}
+		g.tmpIdx++
+		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), valAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), v, valAlloca))
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-int(i64* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), valAlloca, specPtr, outBuf))
+	}
+	return outBuf
 }
 
 // callStrconv — 仍需 ForwardFunc 的特殊轉換
@@ -884,12 +677,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		cmp2 := fmt.Sprintf("%%stat.cmp2.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%stat.ext.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			// Allocate stat buffer
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
 			// stat(path, &statbuf)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			// Check stat return == 0
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			// Load st_mode
@@ -929,10 +722,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		cmp2 := fmt.Sprintf("%%stat.cmp2.sf.%d", g.tmpIdx)
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%stat.ext.sf.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), modeGEP, statBuf, statL.ModeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
@@ -964,10 +757,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		sizeLoad := fmt.Sprintf("%%stat.size.ld.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.sel.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
@@ -994,10 +787,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		modeZext := fmt.Sprintf("%%stat.mode.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.mode.sel.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), modeGEP, statBuf, statL.ModeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i16, i16* %s\n", g.indent(), modeLoad, modeGEP))
@@ -1025,10 +818,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		uidZext := fmt.Sprintf("%%stat.uid.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.uid.sel.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), uidGEP, statBuf, statL.UidOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), uidLoad, uidGEP))
@@ -1056,10 +849,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		gidZext := fmt.Sprintf("%%stat.gid.zext.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.gid.sel.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), gidGEP, statBuf, statL.GidOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), gidLoad, gidGEP))
@@ -1085,10 +878,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		mtimeLoad := fmt.Sprintf("%%stat.mtime.ld.%d", g.tmpIdx)
 		g.tmpIdx++
 		selReg := fmt.Sprintf("%%stat.mtime.sel.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), mtimeGEP, statBuf, statL.MtimeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), mtimeLoad, mtimeGEP))
@@ -1130,24 +923,24 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		lenGEP := fmt.Sprintf("%%rf.len.gep.%d", g.tmpIdx)
 		g.tmpIdx++
 		dataGEP := fmt.Sprintf("%%rf.data.gep.%d", g.tmpIdx)
-		statL := statLayout()
+		statL := g.statLayout()
 		if sb != nil {
 			// stat(path) → file size (0 on failure)
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), statCmp, statRet))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), sizeSel, statCmp, sizeLoad))
 			// open(path, O_RDONLY=0, 0)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @%s(i8* %s, i32 0, i32 0)\n", g.indent(), openRet, libcFn("open"), pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @%s(i8* %s, i32 0, i32 0)\n", g.indent(), openRet, g.libcFn("open"), pathPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), openCmp, openRet))
 			// malloc(size)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, sizeSel))
 			// read(fd, buf, size)
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), readRet, libcFn("read"), openRet, bufReg, sizeSel))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), readRet, g.libcFn("read"), openRet, bufReg, sizeSel))
 			// close(fd)
-			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), libcFn("close"), openRet))
+			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), g.libcFn("close"), openRet))
 			// If open failed, use 0 for read count
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, openCmp, readRet))
 			// Construct %str-long {len, cap, data}
@@ -1192,7 +985,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		wfCmp := fmt.Sprintf("%%wf.cmp.%d", g.tmpIdx)
 		g.tmpIdx++
 		wfZext := fmt.Sprintf("%%wf.zext.%d", g.tmpIdx)
-		openFlags := openWriteFlags()
+		openFlags := g.openWriteFlags()
 		if sb != nil {
 			// Extract len and data ptr from %vec
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), wfLenGEP, vecPtr))
@@ -1200,14 +993,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), wfDataGEP, vecPtr))
 			wfDataPtr = g.loadDataPtrField(sb, wfDataGEP)
 			// open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644=420)
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @%s(i8* %s, i32 %d, i32 420)\n", g.indent(), wfOpen, libcFn("open"), pathPtr, openFlags))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @%s(i8* %s, i32 %d, i32 420)\n", g.indent(), wfOpen, g.libcFn("open"), pathPtr, openFlags))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), wfOpenCmp, wfOpen))
 			// write(fd, data, len)
-			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), wfWrite, libcFn("write"), wfOpen, wfDataPtr, wfDataLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), wfWrite, g.libcFn("write"), wfOpen, wfDataPtr, wfDataLen))
 			// If open failed, use -1 for write result
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 -1\n", g.indent(), wfWriteSel, wfOpenCmp, wfWrite))
 			// close(fd)
-			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), libcFn("close"), wfOpen))
+			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), g.libcFn("close"), wfOpen))
 			// ok = (written == len)
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, %s\n", g.indent(), wfCmp, wfWriteSel, wfDataLen))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), wfZext, wfCmp))
@@ -1232,10 +1025,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if sb != nil {
 			// Allocate 4096 byte heap buffer (must be heap-allocated so emitHeapFree can safely free it)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), bufReg))
-			// 使用 C 的 stdin 全域變數（macOS: __stdinp, Linux: stdin）
+			// 使用 C 的 stdin 全域變數（macOS: __stdinp, Linux/WASI: stdin）
 			// 避免在 macOS 上 fopen("/dev/stdin") 對 pipe/重定向不穩定的問題
+			// 使用編譯目標平台（g.goos()）而非宿主平台，與 decl.go 宣告分派一致。
 			stdinSym := "@stdin"
-			if runtime.GOOS == "darwin" {
+			if g.goos() == "darwin" {
 				stdinSym = "@__stdinp"
 			}
 			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), stdinReg, stdinSym))
@@ -1693,7 +1487,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		extReg := fmt.Sprintf("%%touch.ext.%d", g.tmpIdx)
 		// Windows: route to nolang.win_utimensat stub (no-op success).
 		utimensatFn := "utimensat"
-		if runtime.GOOS == "windows" {
+		if g.goos() == "windows" {
 			utimensatFn = "nolang.win_utimensat"
 		}
 		if sb != nil {
@@ -1753,9 +1547,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Windows has no fork() equivalent; report a compile-time error directing
 	// users to process-spawn (which wraps _execlp + _cwait on Windows).
 	if fnName == "process-fork" {
-		if runtime.GOOS == "windows" {
-			panic(fmt.Sprintf("fork() is not supported on Windows; use process-spawn() instead"))
-		}
+		// Windows/WASI 不支援 fork()。decl.go 在這些目標下不會宣告 @fork，
+		// 因此連結階段會產生 "undefined symbol: fork" 錯誤（符合 spec 行為）。
+		// 使用者應使用 #{wasi-wasm32} 或 #{win-amd64,win-arm64} 標註提供替代方案。
 		g.tmpIdx++
 		forkRet := fmt.Sprintf("%%proc.fork.ret.%d", g.tmpIdx)
 		g.tmpIdx++
@@ -1792,7 +1586,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		pipePack := fmt.Sprintf("%%proc.pipe.pack.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [2 x i32]\n", g.indent(), pipeFds))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i32* %s)\n", g.indent(), pipeRet, libcFn("pipe"), pipeFds))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i32* %s)\n", g.indent(), pipeRet, g.libcFn("pipe"), pipeFds))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 0\n", g.indent(), pipeGep0, pipeFds))
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), pipeFd0, pipeGep0))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 1\n", g.indent(), pipeGep1, pipeFds))
@@ -1832,8 +1626,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		waitExt := fmt.Sprintf("%%proc.wait.ext.%d", g.tmpIdx)
 		// Windows: route to nolang.win_waitpid wrapper (parameter order + status
 		// encoding normalized). Non-Windows uses libc waitpid directly.
-		waitpidFn := libcFn("waitpid")
-		if runtime.GOOS == "windows" {
+		waitpidFn := libcFnFor(g.goos(), "waitpid")
+		if g.goos() == "windows" {
 			waitpidFn = "nolang.win_waitpid"
 		}
 		if sb != nil {
@@ -1861,7 +1655,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		g.tmpIdx++
 		execExt := fmt.Sprintf("%%proc.exec.ext.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, libcFn("execlp"), progPtr, progPtr, argPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, g.libcFn("execlp"), progPtr, progPtr, argPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
 		}
 		return execExt
@@ -2766,7 +2560,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 		if sb != nil {
 			// unlink(path) — remove existing socket file, ignore result
-			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i8* %s)\n", g.indent(), libcFn("unlink"), pathPtr))
+			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i8* %s)\n", g.indent(), g.libcFn("unlink"), pathPtr))
 
 			// allocate sockaddr_un (110 bytes), zero it
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [110 x i8]\n", g.indent(), addrReg))
@@ -2907,7 +2701,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		}
 		// SOCK_DGRAM=2 on macOS, SOCK_RAW=3 on Linux
 		sockType := int32(3) // SOCK_RAW (Linux)
-		if runtime.GOOS == "darwin" {
+		if g.goos() == "darwin" {
 			sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
 		}
 		g.tmpIdx++
@@ -3009,12 +2803,13 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 }
 
 // loadStderr loads the FILE* for stderr and returns the register name.
-// macOS: @__stderrp, Linux/Windows: @stderr
+// macOS: @__stderrp, Linux/Windows/WASI: @stderr
+// 使用編譯目標平台（g.goos()）而非宿主平台，與 decl.go 宣告分派一致。
 func (g *Generator) loadStderr(sb *strings.Builder) string {
 	g.tmpIdx++
 	reg := fmt.Sprintf("%%stderr.ptr.%d", g.tmpIdx)
 	var globalName string
-	if runtime.GOOS == "darwin" {
+	if g.goos() == "darwin" {
 		globalName = "@__stderrp"
 	} else {
 		globalName = "@stderr"
@@ -3023,4 +2818,259 @@ func (g *Generator) loadStderr(sb *strings.Builder) string {
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), reg, globalName))
 	}
 	return reg
+}
+
+// shouldInterceptNamedFormat determines whether callFmt should intercept the
+// call for named format string processing. Returns (intercept, autoNewline).
+//
+// Interception rule: only when the first arg is a StringLiteral containing
+// '{' (a potential {name:spec} field). This preserves backward compatibility
+// with C-style printf('...%d...', args) whose format string has no '{'.
+//
+// - printf/eprintf/sprintf: intercept when first arg is a StringLiteral
+//   containing '{'. autoNewline=false (user includes \n explicitly).
+// - print/eprint: intercept only when there is exactly 1 StringLiteral arg
+//   whose value contains '{'. autoNewline=true (print adds trailing \n).
+func (g *Generator) shouldInterceptNamedFormat(fnName string, expr *parser.CallExpression) (bool, bool) {
+	strLit, ok := expr.Arguments[0].(*parser.StringLiteral)
+	if !ok {
+		return false, false
+	}
+	if !strings.Contains(strLit.Value, "{") {
+		return false, false
+	}
+	switch fnName {
+	case "printf", "fmt.printf", "eprintf", "fmt.eprintf", "sprintf", "fmt.sprintf":
+		return true, false
+	case "print", "fmt.print", "eprint", "fmt.eprint":
+		// Only intercept single-arg calls whose format string contains '{'
+		// (potential field). Multi-arg calls go through variadic path.
+		if len(expr.Arguments) != 1 {
+			return false, false
+		}
+		return true, true
+	}
+	return false, false
+}
+
+// callNamedFormat generates LLVM IR for a named format string call.
+// Dispatches each {name:spec} field to the appropriate fmt-* helper
+// (fmt-int/fmt-uint/fmt-f64/fmt-str/fmt-bool) and outputs via io.out/io.err
+// (for printf/eprintf/print/eprint) or returns the concatenated string
+// (for sprintf).
+//
+// segments: parsed format segments (literals and fields)
+// autoNewline: if true, append a trailing "\n" (for print/eprint)
+func (g *Generator) callNamedFormat(sb *strings.Builder, fnName string, segments []parser.FormatSegment, autoNewline bool) string {
+	if autoNewline {
+		segments = append(segments, parser.FormatSegment{Literal: "\n"})
+	}
+
+	useStderr := strings.HasPrefix(fnName, "eprint") || strings.HasPrefix(fnName, "fmt.eprint")
+	isSprintf := fnName == "sprintf" || fnName == "fmt.sprintf"
+
+	// Build each segment as a %str-long* alloca
+	segPtrs := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		if seg.Field != nil {
+			segPtr := g.generateFieldStr(sb, seg.Field)
+			segPtrs = append(segPtrs, segPtr)
+		} else if seg.Literal != "" {
+			segPtr := g.buildStrLongFromValue(sb, seg.Literal)
+			segPtrs = append(segPtrs, segPtr)
+		}
+	}
+
+	if isSprintf {
+		// Concatenate all segments into a single %str-long*
+		if len(segPtrs) == 0 {
+			return g.buildStrLongFromValue(sb, "")
+		}
+		result := segPtrs[0]
+		for i := 1; i < len(segPtrs); i++ {
+			result = g.concatStrLongPtrs(sb, result, segPtrs[i])
+		}
+		return result
+	}
+
+	// printf/eprintf/print/eprint: write each segment via io.out/io.err
+	outFn := "out"
+	if useStderr {
+		outFn = "err"
+	}
+	for _, segPtr := range segPtrs {
+		g.tmpIdx++
+		discardedN := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), discardedN))
+		sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
+			g.indent(), outFn, segPtr, discardedN))
+	}
+	// Return non-empty sentinel (not starting with "call ") to prevent
+	// fallthrough to other handlers. The actual calls are written to sb.
+	return "; named-format"
+}
+
+// buildStrLongFromValue creates a %str-long* alloca from a string value.
+// Uses the StringLiteral generation path (malloc + memcpy + struct init).
+func (g *Generator) buildStrLongFromValue(sb *strings.Builder, s string) string {
+	return g.generateExprWithSB(sb, &parser.StringLiteral{Value: s})
+}
+
+// generateFieldStr generates code to format a single {name:spec} field.
+// Looks up the variable's LLVM type, dispatches to the appropriate fmt-*
+// helper, and returns a %str-long* alloca holding the formatted result.
+func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatField) string {
+	varType, ok := g.varTypes[field.Name]
+	if !ok {
+		// Variable not in scope — ValidatePrintFormat should have caught this.
+		// Emit an empty string as fallback.
+		return g.buildStrLongFromValue(sb, "")
+	}
+
+	// Build spec %str-long*
+	specPtr := g.buildStrLongFromValue(sb, field.Spec)
+
+	// Allocate output buffer and zero-initialize it.
+	// fmt-* helpers perform move-assignment to `out` (out = fmt-apply-spec(...)),
+	// which frees the old value of `out` before assigning. An uninitialized
+	// buffer would contain stack garbage, causing the free of a bogus data
+	// pointer to crash (SIGABRT). Per project convention, the caller must
+	// initialize output parameters: str → {len=0, cap=0, data=null}.
+	g.tmpIdx++
+	outBuf := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+
+	// Determine spec type character
+	specType := byte(0)
+	if field.Parsed != nil {
+		specType = field.Parsed.Type
+	}
+
+	// Dispatch based on spec type and variable LLVM type
+	switch {
+	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
+		// Unsigned format — use fmt-uint (expects i64*)
+		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "i64")
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-uint(i64* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), argPtr, specPtr, outBuf))
+	case varType == "double":
+		// fmt-f64(double* x, %str-long* spec, %str-long* out)
+		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "double")
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-f64(double* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), argPtr, specPtr, outBuf))
+	case varType == "%str-long":
+		// fmt-str(%str-long* s, %str-long* spec, %str-long* out)
+		argPtr := g.varAddr(field.Name)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), argPtr, specPtr, outBuf))
+	case varType == "i1":
+		// fmt-bool(i1* b, %str-long* spec, %str-long* out)
+		argPtr := g.varAddr(field.Name)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-bool(i1* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), argPtr, specPtr, outBuf))
+	default:
+		// Integer — fmt-int(i64* n, %str-long* spec, %str-long* out)
+		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "i64")
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-int(i64* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), argPtr, specPtr, outBuf))
+	}
+	return outBuf
+}
+
+// emitFmtArgPtr returns a pointer to a value of targetType, coercing if necessary.
+// targetType is the LLVM type string (e.g., "i64", "double").
+// If the variable's LLVM type matches targetType, returns its address directly.
+// Otherwise, loads the value, converts (zext/sext), and stores to a temp alloca.
+func (g *Generator) emitFmtArgPtr(sb *strings.Builder, varName, varType, targetType string) string {
+	addr := g.varAddr(varName)
+	if varType == targetType {
+		return addr
+	}
+	// Load value, convert, store to temp alloca of targetType
+	g.tmpIdx++
+	tmpAlloca := fmt.Sprintf("%%fmtarg.%d", g.tmpIdx)
+	g.tmpIdx++
+	loadReg := fmt.Sprintf("%%fmtarg.val.%d", g.tmpIdx)
+	g.tmpIdx++
+	convReg := fmt.Sprintf("%%fmtarg.conv.%d", g.tmpIdx)
+
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, targetType))
+	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, varType, varType, addr))
+
+	switch {
+	case varType == "i8" && targetType == "i64":
+		sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), convReg, loadReg))
+	case varType == "i16" && targetType == "i64":
+		sb.WriteString(fmt.Sprintf("%s%s = sext i16 %s to i64\n", g.indent(), convReg, loadReg))
+	case varType == "i32" && targetType == "i64":
+		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), convReg, loadReg))
+	case varType == "i1" && targetType == "i64":
+		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), convReg, loadReg))
+	case varType == "i64" && targetType == "double":
+		// Integer to double conversion (sitofp)
+		sb.WriteString(fmt.Sprintf("%s%s = sitofp i64 %s to double\n", g.indent(), convReg, loadReg))
+	default:
+		// No conversion needed — store directly (type matches)
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), targetType, loadReg, targetType, tmpAlloca))
+		return tmpAlloca
+	}
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), targetType, convReg, targetType, tmpAlloca))
+	return tmpAlloca
+}
+
+// concatStrLongPtrs concatenates two %str-long* allocas and returns a new
+// %str-long* alloca holding the result. Uses malloc + memcpy.
+func (g *Generator) concatStrLongPtrs(sb *strings.Builder, leftPtr, rightPtr string) string {
+	leftLen := g.extractStrLen(sb, leftPtr)
+	rightLen := g.extractStrLen(sb, rightPtr)
+	leftData := g.extractStrDataPtr(sb, leftPtr)
+	rightData := g.extractStrDataPtr(sb, rightPtr)
+
+	g.tmpIdx++
+	totalLen := fmt.Sprintf("%%nfmt.concat.total.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), totalLen, leftLen, rightLen))
+
+	g.tmpIdx++
+	allocSize := fmt.Sprintf("%%nfmt.concat.alloc.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), allocSize, totalLen))
+
+	g.tmpIdx++
+	bufPtr := fmt.Sprintf("%%nfmt.concat.buf.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
+
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), bufPtr, leftData, leftLen))
+
+	g.tmpIdx++
+	dstOffset := fmt.Sprintf("%%nfmt.concat.dst.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), dstOffset, bufPtr, leftLen))
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), dstOffset, rightData, rightLen))
+
+	g.tmpIdx++
+	nullPos := fmt.Sprintf("%%nfmt.concat.null.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
+	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
+
+	g.tmpIdx++
+	resultAlloca := fmt.Sprintf("%%nfmt.concat.result.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
+
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%nfmt.concat.len.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
+
+	g.tmpIdx++
+	capGEP := fmt.Sprintf("%%nfmt.concat.cap.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, resultAlloca))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, capGEP))
+
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%nfmt.concat.data.gep.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
+	g.storeDataPtrField(sb, bufPtr, dataGEP)
+
+	return resultAlloca
 }
