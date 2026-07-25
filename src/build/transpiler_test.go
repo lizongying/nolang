@@ -237,3 +237,67 @@ Foo = 1
 		}
 	})
 }
+
+// TestValidateUnusedVarsFormatString 驗證具名格式字串中的變數引用
+// 不會被誤報為未使用。例如 `pi = 3.14` 在 `print('pi = {pi:.2f}')` 中
+// 通過 {pi:.2f} 字段引用，不應觸發 "'pi' is defined but never used"。
+func TestValidateUnusedVarsFormatString(t *testing.T) {
+	t.Run("var_used_in_format_spec", func(t *testing.T) {
+		src := `pi = 3.14
+print('pi = {pi:.2f}')
+`
+		l := lexer.New(src)
+		p := parser.New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		results := ValidateUnusedVars(prog)
+		for _, r := range results {
+			if strings.Contains(r.Message, "'pi'") {
+				t.Errorf("expected pi to be marked used by format string, got: %s", r.Message)
+			}
+		}
+	})
+
+	t.Run("var_used_in_plain_field", func(t *testing.T) {
+		src := `name = 'world'
+print('hello {name}')
+`
+		l := lexer.New(src)
+		p := parser.New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		results := ValidateUnusedVars(prog)
+		for _, r := range results {
+			if strings.Contains(r.Message, "'name'") {
+				t.Errorf("expected name to be marked used by format string, got: %s", r.Message)
+			}
+		}
+	})
+
+	t.Run("truly_unused_var_still_reported", func(t *testing.T) {
+		src := `unused = 42
+print('hello')
+`
+		l := lexer.New(src)
+		p := parser.New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("parse errors: %v", p.Errors())
+		}
+		results := ValidateUnusedVars(prog)
+		found := false
+		for _, r := range results {
+			if strings.Contains(r.Message, "'unused'") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected unused variable 'unused' to be reported, got: %v", results)
+		}
+	})
+}

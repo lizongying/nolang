@@ -4480,6 +4480,24 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 				markReferencesInExpr(f.Value, varSet, usedVars)
 			}
 		}
+
+	case *parser.StringLiteral:
+		// Named format strings like 'pi = {pi:.2f}' reference variables
+		// via {name[:spec]} fields. Parse the literal and mark each
+		// referenced name as used so ValidateUnusedVars does not flag
+		// variables that are only consumed inside a format string.
+		segments, err := parser.ParseFormatString(e.Value)
+		if err != nil {
+			return
+		}
+		for _, seg := range segments {
+			if seg.Field == nil {
+				continue
+			}
+			if _, exists := varSet[seg.Field.Name]; exists {
+				usedVars[seg.Field.Name] = true
+			}
+		}
 	}
 }
 

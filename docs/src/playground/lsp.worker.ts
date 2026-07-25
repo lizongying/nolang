@@ -132,10 +132,18 @@ function runBatch(messages: object[]): JsonRpcResponse[] {
     offset += buf.length;
   }
 
+  // Use an explicit in-memory filesystem with empty preopens, matching
+  // runner.worker.ts. `preopens: {'/': '/'}` would attempt to bind the
+  // host root (absent in the browser) and produce `Capabilities
+  // insufficient` if the LSP server touches the filesystem at all.
+  // The LSP primarily works with text provided via didOpen/didChange
+  // over stdin, so a fresh empty MemFS is sufficient.
+  const fs = new MemFS();
   const wasi = new WASI({
     args: ['lsp'],
     env: {},
-    preopens: {'/': '/'},
+    preopens: {},
+    fs,
   });
   wasi.setStdinBuffer(stdin);
   wasi.instantiate(wasmModule, {});

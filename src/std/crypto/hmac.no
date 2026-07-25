@@ -100,10 +100,11 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     h [32]byte
     h = hmac-sha256(key, msg)
-    out = with-cap(32)
+    out = with-len(32)
     i <- [0..32): {
         out[i] = h[i]
     }
+    out.len = 32
 }
 
 ; ─── HMAC-SHA1 ──────────────────────────────────

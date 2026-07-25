@@ -130,7 +130,13 @@ function compileSource(source: string, timeoutMs: number): {
       INPUT_PATH,
     ],
     env: {},
-    preopens: {'/': '/'},
+    // Empty preopens — wasmer must NOT try to bind any host path.
+    // When `preopens` is undefined wasmer defaults to `{'.':'/'}` which
+    // attempts to read the host root (absent in the browser) and
+    // produces `Capabilities insufficient`. An empty object yields an
+    // empty preopen list, leaving the explicit `fs` MemFS as the sole
+    // filesystem. The guest still sees `/` because MemFS roots at `/`.
+    preopens: {},
     fs,
   });
 
@@ -215,7 +221,7 @@ function executeUserWasm(
   const wasi = new WASI({
     args: ['out.wasm'],
     env: {},
-    preopens: {'/': '/'},
+    preopens: {},
     fs,
   });
 
