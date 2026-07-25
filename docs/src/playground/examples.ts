@@ -33,7 +33,8 @@ print('Hello, ' - name - '!')
 
 ; print adds a trailing newline automatically.
 ; Named format strings: {name[:spec]} references variables directly.
-pi f64 = 3.14
+; Float literals are inferred as f64 automatically.
+pi = 3.14
 print('pi = {pi:.2f}')
 `,
   },

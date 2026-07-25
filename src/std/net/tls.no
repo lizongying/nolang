@@ -120,6 +120,9 @@ tls-conn {
     hs-read-seq i64
     ap-write-seq i64
     ap-read-seq i64
+    hs-plain-buf []byte
+    hs-plain-pos i64
+    hs-plain-len i64
 }
 ; TLS 1.3 欄位
 
@@ -1630,31 +1633,74 @@ tls-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64
 }
 
 ; read-encrypted-handshake-13: 讀取加密的交握訊息
+; 支援單一記錄中含多個交握訊息的情況（使用 hs-plain-buf 緩衝剩餘資料）
 ; 返回 msg-type i64: 訊息類型（-1=錯誤）
 ; 返回 msg-data []byte: 訊息資料（不含標頭）
 tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = -1
 
-    ct = 0
-    plain []byte
-    ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
-    .hs-read-seq = .hs-read-seq + 1
-    ct < 0 -> return
+    ; 若緩衝區中沒有足夠的資料，讀取新的加密記錄
+    ; 一個 handshake 訊息標頭至少 4 bytes（1 byte type + 3 bytes length）
+    .hs-plain-pos + 4 > .hs-plain-len -> {
+        ct = 0
+        plain []byte
+        ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
+        .hs-read-seq = .hs-read-seq + 1
+        ct < 0 -> return
 
-    ; 可能是 alert 或其他
-    ct != TLS-CT-HANDSHAKE -> return
+        ; 可能是 alert 或其他
+        ct != TLS-CT-HANDSHAKE -> {
+            ct == TLS-CT-ALERT -> {
+                plain-len = plain.len
+                plain-len >= 2 -> io.errln('[TLS] ALERT: level=' - (plain[0] & 255).to-str() - ' desc=' - (plain[1] & 255).to-str())
+            }
+            return
+        }
 
-    ; 解析 handshake message
-    msg-type = plain[0] & 255
-    msg-len i64 = tls-get-u24(plain, 1)
+        ; 將整個 plain 存入緩衝區
+        .hs-plain-buf = plain
+        .hs-plain-len = plain.len
+        .hs-plain-pos = 0
+    }
+
+    ; 從緩衝區解析一個 handshake message
+    ; 注意：plain 中最後 1 byte 是 inner content type，真正的 handshake 資料不含它
+    ; 但 read-encrypted-record-13 已經移除了 inner content type，plain 就是純 handshake 資料
+    pos = .hs-plain-pos
+    msg-type = .hs-plain-buf[pos] & 255
+    msg-len i64 = tls-get-u24(.hs-plain-buf, pos + 1)
+
+    io.errln('[TLS] rhs13: pos=' - pos.to-str() - ' type=' - msg-type.to-str() - ' len=' - msg-len.to-str() - ' buf-len=' - .hs-plain-len.to-str())
+
+    ; 檢查是否有足夠的資料
+    pos + 4 + msg-len > .hs-plain-len -> {
+        io.errln('[TLS] rhs13: insufficient data, need ' - (pos + 4 + msg-len).to-str() - ' have ' - .hs-plain-len.to-str())
+        return
+    }
+
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
-        msg-data[i] = plain[4 + i] & 255
+        msg-data[i] = .hs-plain-buf[pos + 4 + i] & 255
     }
     msg-data.len = msg-len
 
+    ; 構建完整的 handshake message（含標頭）用於 transcript hash
+    full-msg []byte
+    full-msg = with-len(4 + msg-len)
+    full-msg[0] = msg-type
+    full-msg[1] = (msg-len >> 16) & 255
+    full-msg[2] = (msg-len >> 8) & 255
+    full-msg[3] = msg-len & 255
+    i <- [0..msg-len): {
+        full-msg[4 + i] = msg-data[i]
+    }
+    full-msg.len = 4 + msg-len
+
     ; 追加到交握緩衝區（用於 transcript hash）
-    .append-hs(plain)
+    .append-hs(full-msg)
+
+    ; 更新緩衝區位置
+    .hs-plain-pos = pos + 4 + msg-len
 }
 
 ; connect-13: TLS 1.3 完整交握
