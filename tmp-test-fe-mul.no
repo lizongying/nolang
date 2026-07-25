@@ -1,112 +1,104 @@
-; Test basic field arithmetic
-; 1 * 1 = 1
-; 2 * 3 = 6
-; 9 * 9 = 81
-
+; Test fe-mul, fe-sq, fe-invert with simple values
 main = () {
-    ; Test 1: 1 * 1 = 1
-    one [32]byte
-    i <- [0..32): {
-        one[i] = 0
-    }
-    one[0] = 1
-
-    u []i64 = with-len(10)
-    x25519.fe-frombytes(u, one)
-
+    ; Test 1: 2 * 3 = 6
+    a []i64 = with-len(10)
+    a[0] = 2
+    b []i64 = with-len(10)
+    b[0] = 3
     r []i64 = with-len(10)
-    x25519.fe-mul(r, u, u)
-
+    x25519.fe-mul(r, a, b)
     out [32]byte
-    i <- [0..32): {
-        out[i] = 0
-    }
     x25519.fe-tobytes(out, r)
-
-    print('1*1 =')
-    i <- [0..32): {
-        printf((out[i] & 255).to-str() - ' ')
+    print('Test 1: 2 * 3 = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    print('')
-    print('Expected: 1 0 0 ... 0')
 
-    ; Test 2: 2 * 3 = 6
-    two [32]byte
-    i <- [0..32): {
-        two[i] = 0
+    ; Expected: 6, 0, 0, 0, 0, 0, 0, 0
+    (out[0] & 255) == 6 -> print('PASS: 2*3=6')
+    (out[0] & 255) != 6 -> print('FAIL: 2*3!=6')
+
+    ; Test 2: 5^2 = 25
+    c []i64 = with-len(10)
+    c[0] = 5
+    x25519.fe-sq(r, c)
+    x25519.fe-tobytes(out, r)
+    print('Test 2: 5^2 = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    two[0] = 2
+    (out[0] & 255) == 25 -> print('PASS: 5^2=25')
+    (out[0] & 255) != 25 -> print('FAIL: 5^2!=25')
 
-    three [32]byte
-    i <- [0..32): {
-        three[i] = 0
+    ; Test 3: 7 * 11 = 77
+    a[0] = 7
+    b[0] = 11
+    x25519.fe-mul(r, a, b)
+    x25519.fe-tobytes(out, r)
+    print('Test 3: 7 * 11 = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    three[0] = 3
+    (out[0] & 255) == 77 -> print('PASS: 7*11=77')
+    (out[0] & 255) != 77 -> print('FAIL: 7*11!=77')
 
-    u2 []i64 = with-len(10)
-    u3 []i64 = with-len(10)
-    x25519.fe-frombytes(u2, two)
-    x25519.fe-frombytes(u3, three)
-
-    r6 []i64 = with-len(10)
-    x25519.fe-mul(r6, u2, u3)
-
-    out6 [32]byte
-    i <- [0..32): {
-        out6[i] = 0
+    ; Test 4: fe-invert(1) = 1
+    a[0] = 1
+    x25519.fe-invert(r, a)
+    x25519.fe-tobytes(out, r)
+    print('Test 4: invert(1) = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    x25519.fe-tobytes(out6, r6)
+    (out[0] & 255) == 1 -> print('PASS: invert(1)=1')
+    (out[0] & 255) != 1 -> print('FAIL: invert(1)!=1')
 
-    print('')
-    print('2*3 =')
-    i <- [0..32): {
-        printf((out6[i] & 255).to-str() - ' ')
+    ; Test 5: 2 * invert(2) = 1
+    a[0] = 2
+    x25519.fe-invert(r, a)
+
+    ; r = 2^(-1)
+    x25519.fe-mul(r, a, r)
+
+    ; r = 2 * 2^(-1) = 1
+    x25519.fe-tobytes(out, r)
+    print('Test 5: 2 * invert(2) = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    print('')
-    print('Expected: 6 0 0 ... 0')
+    (out[0] & 255) == 1 -> print('PASS: 2*invert(2)=1')
+    (out[0] & 255) != 1 -> print('FAIL: 2*invert(2)!=1')
 
-    ; Test 3: 9 * 9 = 81
-    nine [32]byte
-    i <- [0..32): {
-        nine[i] = 0
+    ; Test 6: fe-mul with negative limb
+    ; (10 - 3) * 5 = 35
+    a[0] = 10
+    b[0] = 3
+    x25519.fe-sub(a, a, b); a = 10 - 3 = 7
+    b[0] = 5
+    x25519.fe-mul(r, a, b); r = 7 * 5 = 35
+    x25519.fe-tobytes(out, r)
+    print('Test 6: (10-3) * 5 = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    nine[0] = 9
+    (out[0] & 255) == 35 -> print('PASS: (10-3)*5=35')
+    (out[0] & 255) != 35 -> print('FAIL: (10-3)*5!=35')
 
-    u9 []i64 = with-len(10)
-    x25519.fe-frombytes(u9, nine)
-
-    r81 []i64 = with-len(10)
-    x25519.fe-mul(r81, u9, u9)
-
-    out81 [32]byte
-    i <- [0..32): {
-        out81[i] = 0
+    ; Test 7: Large multiplication
+    ; 1000000 * 1000000 = 1000000000000 = 10^12
+    a[0] = 1000000
+    x25519.fe-sq(r, a)
+    x25519.fe-tobytes(out, r)
+    print('Test 7: 1000000^2 = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
     }
-    x25519.fe-tobytes(out81, r81)
 
-    print('')
-    print('9*9 =')
-    i <- [0..32): {
-        printf((out81[i] & 255).to-str() - ' ')
-    }
-    print('')
-    print('Expected: 81 0 0 ... 0')
-
-    ; Test 4: fe-sq(1) = 1
-    rsq []i64 = with-len(10)
-    x25519.fe-sq(rsq, u)
-
-    outsq [32]byte
-    i <- [0..32): {
-        outsq[i] = 0
-    }
-    x25519.fe-tobytes(outsq, rsq)
-
-    print('')
-    print('sq(1) =')
-    i <- [0..32): {
-        printf((outsq[i] & 255).to-str() - ' ')
-    }
-    print('')
-    print('Expected: 1 0 0 ... 0')
+    ; 10^12 = 0xE8D4A51000
+    ; little-endian: 0x00, 0x10, 0xA5, 0xD4, 0xE8, 0x00, ...
+    (out[0] & 255) == 0 -> print('byte 0 ok')
+    (out[1] & 255) == 16 -> print('byte 1 ok')
+    (out[2] & 255) == 165 -> print('byte 2 ok')
+    (out[3] & 255) == 212 -> print('byte 3 ok')
+    (out[4] & 255) == 232 -> print('byte 4 ok')
 }

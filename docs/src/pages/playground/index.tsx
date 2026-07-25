@@ -321,6 +321,7 @@ export default function Playground(): React.JSX.Element {
     setOutput('');
     setStderr('');
     setDiagnostics([]);
+    setRunMarkers([]);
   };
 
   const jumpToDiagnostic = (d: LspDiagnostic) => {
@@ -330,6 +331,23 @@ export default function Playground(): React.JSX.Element {
     const lineNum = Math.max(1, Math.min(d.line, doc.lines));
     const line = doc.line(lineNum);
     const col = Math.max(0, (d.col || 1) - 1);
+    const pos = Math.min(line.to, line.from + col);
+    view.dispatch({
+      selection: {anchor: pos},
+      scrollIntoView: true,
+    });
+    view.focus();
+  };
+
+  // Jump to a run-flow error marker (Task 15.4). Mirrors
+  // jumpToDiagnostic but operates on the parsed compiler output.
+  const jumpToRunMarker = (m: ErrorMarker) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const doc = view.state.doc;
+    const lineNum = Math.max(1, Math.min(m.line, doc.lines));
+    const line = doc.line(lineNum);
+    const col = Math.max(0, m.col - 1);
     const pos = Math.min(line.to, line.from + col);
     view.dispatch({
       selection: {anchor: pos},
@@ -487,6 +505,36 @@ export default function Playground(): React.JSX.Element {
                 ))
               )}
             </div>
+
+            {runMarkers.length > 0 && (
+              <>
+                <h3 style={{margin: '12px 0 4px 0', fontSize: '14px', color: '#666'}}>
+                  Run Errors ({runMarkers.length})
+                </h3>
+                <div
+                  style={{
+                    flex: '0 0 20%',
+                    padding: '8px',
+                    background: '#fff5f5',
+                    border: '1px solid #ffc9c9',
+                    borderRadius: '4px',
+                    overflow: 'auto',
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '13px',
+                  }}>
+                  {runMarkers.map((m, i) => (
+                    <div
+                      key={i}
+                      onClick={() => jumpToRunMarker(m)}
+                      title="Click to jump to location"
+                      style={{cursor: 'pointer', padding: '2px 0', color: '#c92a2a'}}>
+                      line {m.line}:{m.col} — {m.message}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

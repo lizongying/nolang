@@ -1,92 +1,104 @@
-; Test more fe-invert chain milestones
+; Test fe-invert addition chain step by step
+; For a=2, verify each intermediate exponent
 main = () {
-    ; a = 9
-    base [32]byte
-    i <- [0..32): {
-        base[i] = 0
-    }
-    base[0] = 9
-
+    ; a = 2
     a []i64 = with-len(10)
-    x25519.fe-frombytes(a, base)
+    a[0] = 2
 
-    ; Reproduce the first part of fe-invert
     t0 []i64 = with-len(10)
     t1 []i64 = with-len(10)
     t2 []i64 = with-len(10)
+    t3 []i64 = with-len(10)
 
-    ; t0 = a^2
+    out [32]byte
+
+    ; Step 1: t0 = a^2 = 4
     x25519.fe-sq(t0, a)
-    ; t1 = a^4
+    x25519.fe-tobytes(out, t0)
+    print('a^2 = ? (expect 4)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+
+    ; Step 2: t1 = t0^2 = a^4 = 16
     x25519.fe-sq(t1, t0)
-    ; t1 = a^8
+    x25519.fe-tobytes(out, t1)
+    print('a^4 = ? (expect 16)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+
+    ; Step 3: t1 = t1^2 = a^8 = 256
     x25519.fe-sq(t1, t1)
-    ; t1 = a^9
+    x25519.fe-tobytes(out, t1)
+    print('a^8 = ? (expect 256)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+
+    ; Step 4: t1 = a * t1 = a^9 = 512
     x25519.fe-mul(t1, a, t1)
-    ; t0 = a^11
+    x25519.fe-tobytes(out, t1)
+    print('a^9 = ? (expect 512)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+
+    ; Step 5: t0 = t0 * t1 = a^11 = 2048
     x25519.fe-mul(t0, t0, t1)
-    ; t2 = a^22
+    x25519.fe-tobytes(out, t0)
+    print('a^11 = ? (expect 2048)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+
+    ; Step 6: t2 = t0^2 = a^22 = 4194304
     x25519.fe-sq(t2, t0)
-    ; t1 = a^9 * a^22 = a^31
+    x25519.fe-tobytes(out, t2)
+    print('a^22 = ? (expect 4194304)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+    print(out[2] & 255)
+    print(out[3] & 255)
+
+    ; Step 7: t1 = t1 * t2 = a^31 = 2147483648 = 2^31
     x25519.fe-mul(t1, t1, t2)
+    x25519.fe-tobytes(out, t1)
+    print('a^31 = ? (expect 2^31 = 2147483648)')
+    print(out[0] & 255)
+    print(out[1] & 255)
+    print(out[2] & 255)
+    print(out[3] & 255)
+    print(out[4] & 255)
 
-    t1-bytes [32]byte
-    i <- [0..32): {
-        t1-bytes[i] = 0
-    }
-    x25519.fe-tobytes(t1-bytes, t1)
-    print('=== a^31 bytes ===')
-    i <- [0..8): {
-        print(t1-bytes[i] & 255)
-    }
+    ; 2^31 in little-endian: 0x00, 0x00, 0x00, 0x80, 0x00
+    (out[0] & 255) == 0 -> print('byte 0 ok')
+    (out[1] & 255) == 0 -> print('byte 1 ok')
+    (out[2] & 255) == 0 -> print('byte 2 ok')
+    (out[3] & 255) == 128 -> print('byte 3 ok')
+    (out[4] & 255) == 0 -> print('byte 4 ok')
 
-    ; Now test: t2 = (a^31)^(2^5) = a^992
-    ; fe-sq(t2, t1) + 4 more sq
-    x25519.fe-sq(t2, t1)
+    ; Now test a^1023 = a^(2^10-1) = 2^1023
+    ; This is a huge number, can't easily verify bytes
+    ; Instead test: a^1023 * a = a^1024 = 2^1024
+    ; And 2^1024 mod p = 2^1024 mod (2^255-19)
+    ; 2^255 = 19 mod p, so 2^1024 = 2^(4*255 + 4) = 19^4 * 2^4 = 130321 * 16 = 2085136
+    x25519.fe-sq(t2, t1); t2 = a^62
     i <- [0..4): {
         x25519.fe-sq(t2, t2)
     }
-    t2-bytes [32]byte
-    i <- [0..32): {
-        t2-bytes[i] = 0
-    }
-    x25519.fe-tobytes(t2-bytes, t2)
-    print('=== a^992 bytes ===')
-    i <- [0..8): {
-        print(t2-bytes[i] & 255)
-    }
 
-    ; t1 = a^992 * a^31 = a^1023
+    ; t2 = a^(31*32) = a^992
     x25519.fe-mul(t1, t2, t1)
-    i <- [0..32): {
-        t1-bytes[i] = 0
-    }
-    x25519.fe-tobytes(t1-bytes, t1)
-    print('=== a^1023 bytes ===')
+
+    ; t1 = a^1023
+
+    ; t1 * a = a^1024 = 2^1024 mod p
+    x25519.fe-mul(t2, t1, a)
+    x25519.fe-tobytes(out, t2)
+    print('2^1024 mod p = ? (expect 2085136)')
     i <- [0..8): {
-        print(t1-bytes[i] & 255)
+        print(out[i] & 255)
     }
 
-    ; Test loop count: count how many times the loop body executes
-    print('=== Loop count test ===')
-    count = 0
-    i <- [0..4): {
-        count = count + 1
-    }
-    print('count after [0..4) (expect 4):')
-    print(count)
-
-    count2 = 0
-    i <- [0..10): {
-        count2 = count2 + 1
-    }
-    print('count after [0..10) (expect 10):')
-    print(count2)
-
-    count3 = 0
-    i <- [0..50): {
-        count3 = count3 + 1
-    }
-    print('count after [0..50) (expect 50):')
-    print(count3)
+    ; 2085136 = 0x1FCD90
+    ; little-endian: 0x90, 0xCD, 0x1F, 0x00, ...
+    (out[0] & 255) == 144 -> print('byte 0 ok (144)')
+    (out[1] & 255) == 205 -> print('byte 1 ok (205)')
+    (out[2] & 255) == 31 -> print('byte 2 ok (31)')
 }

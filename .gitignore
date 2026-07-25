@@ -31,3 +31,4 @@ src/no
 docs/build
 docs/.docusaurus
 *.log
+.wasm

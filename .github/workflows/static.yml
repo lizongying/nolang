@@ -5,9 +5,15 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'src/**'
+      - 'Makefile'
+      - '.github/workflows/static.yml'
   pull_request:
     paths:
       - 'docs/**'
+      - 'src/**'
+      - 'Makefile'
+      - '.github/workflows/static.yml'
   workflow_dispatch:
 
 permissions:
@@ -24,11 +30,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Setup Golang
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: src/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: docs/package-lock.json
+
+      - name: Build no.wasm
+        run: make no-wasm
+
+      - name: Build lsp.wasm
+        run: make lsp-wasm
+
+      - name: Verify wasm artifacts
+        run: |
+          ls -la docs/static/wasm/
+          test -s docs/static/wasm/no.wasm
+          test -s docs/static/wasm/lsp.wasm
 
       - name: Install dependencies
         run: npm ci
@@ -45,6 +72,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

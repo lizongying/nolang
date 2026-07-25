@@ -288,7 +288,13 @@ export class Runner {
     let exitCode = 0;
     let stderrSuffix = '';
     try {
-      const module = new WebAssembly.Module(userWasmBytes);
+      // Copy into a fresh ArrayBuffer-backed view — `read()` returns
+      // `Uint8Array<ArrayBufferLike>` which TS refuses to pass to
+      // `new WebAssembly.Module(BufferSource)`; the copy guarantees a
+      // concrete `ArrayBuffer` backing store.
+      const moduleBytes = new Uint8Array(userWasmBytes.length);
+      moduleBytes.set(userWasmBytes);
+      const module = new WebAssembly.Module(moduleBytes);
       wasi.instantiate(module, {});
       exitCode = wasi.start();
     } catch (e) {

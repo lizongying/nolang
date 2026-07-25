@@ -1,0 +1,53 @@
+; Test fe-invert(2) specifically
+main = () {
+    ; Compute invert(2)
+    a []i64 = with-len(10)
+    a[0] = 2
+    r []i64 = with-len(10)
+    x25519.fe-invert(r, a)
+    out [32]byte
+    x25519.fe-tobytes(out, r)
+    print('invert(2) bytes:')
+    i <- [0..32): {
+        print(out[i] & 255)
+    }
+
+    ; Expected: 2^(-1) mod p = (p+1)/2 = (2^255 - 18)/2 = 2^254 - 9
+    ; 2^254 - 9 in little-endian bytes:
+    ; byte 31: 0x40 (bit 254 set), byte 0: 0xF7 (256-9=247=0xF7), rest 0
+    ; Wait: 2^254 - 9 = 2^254 - 8 - 1 = 2^254 - 9
+    ; In bytes (little-endian):
+    ; byte 0: (-9) mod 256 = 247 = 0xF7
+    ; byte 31: 0x40 (bit 6 set = bit 254)
+    ; bytes 1-30: 0xFF (borrow propagation)
+    ; Actually, 2^254 - 9 = 0x3FFFFF...FFF7
+    ; Let me compute: 2^254 = 0x4000...0000 (32 bytes, byte 31 = 0x40, rest 0)
+    ; 2^254 - 9 = 0x3FFFFF...FFF7
+    ; byte 31: 0x3F, bytes 1-30: 0xFF, byte 0: 0xF7
+
+    print('Expected: 2^254 - 9')
+    print('byte 0: 247 (0xF7)')
+    print('byte 1-30: 255 (0xFF)')
+    print('byte 31: 63 (0x3F)')
+
+    ; Check
+    ok = true
+    (out[0] & 255) != 247 -> ok = false
+    i <- [1..31): {
+        (out[i] & 255) != 255 -> ok = false
+    }
+    (out[31] & 255) != 63 -> ok = false
+    ok -> print('PASS: invert(2) correct')
+    ok == false -> print('FAIL: invert(2) incorrect')
+
+    ; Also test: 2 * invert(2) should = 1
+    a[0] = 2
+    x25519.fe-mul(r, a, r)
+    x25519.fe-tobytes(out, r)
+    print('2 * invert(2) = ?')
+    i <- [0..8): {
+        print(out[i] & 255)
+    }
+    (out[0] & 255) == 1 -> print('PASS: 2*invert(2)=1')
+    (out[0] & 255) != 1 -> print('FAIL: 2*invert(2)!=1')
+}
