@@ -135,7 +135,7 @@ jobs:
       - name: Install LLVM (opt/llc)
         run: |
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
-          sudo apt-get install -y llvm-21 llvm-21-dev opt-21
+          sudo apt-get install -y llvm-21 llvm-21-dev
           echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
           sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
           sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
