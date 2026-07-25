@@ -27,6 +27,7 @@
  * would be a future optimisation (requires either SharedArrayBuffer
  * + COOP/COEP headers or a custom async WASI implementation).
  */
+import './node-polyfills';
 import {init, WASI} from '@wasmer/wasi';
 
 // ---------------------------------------------------------------------------

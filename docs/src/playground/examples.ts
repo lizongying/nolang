@@ -31,10 +31,10 @@ print('Hello, World!')
 name = 'Nolang'
 print('Hello, ' - name - '!')
 
-; printf is also available (no trailing newline)
-; Named format strings: {name[:spec]} references variables directly
+; print adds a trailing newline automatically.
+; Named format strings: {name[:spec]} references variables directly.
 pi f64 = 3.14
-printf('pi = {pi:.2f}\\n')
+print('pi = {pi:.2f}')
 `,
   },
   {

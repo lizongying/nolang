@@ -35,6 +35,7 @@
  * programs. A yield-to-event-loop before each blocking call ensures
  * the UI can paint the "Running..." state.
  */
+import './node-polyfills';
 import {init, WASI} from '@wasmer/wasi';
 
 // ---------------------------------------------------------------------------
