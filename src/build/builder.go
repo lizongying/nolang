@@ -10,6 +10,10 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/lizongying/nolang/build/wasm"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 // DetectTarget 根据当前运行平台返回对应的 target triple。
@@ -96,6 +100,7 @@ type BuildOptions struct {
 	Verbose       bool
 	Output        string // optional output path ("" = auto)
 	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
+	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
 }
 
 // parseTargetPlatform extracts (goos, goarch) from a target triple.
@@ -530,6 +535,56 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 // Kept for backward compatibility.
 func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string) error {
 	return buildLLVMInternal(code, fileName, outPath, cc, target, verbose, linkLibs, nil)
+}
+
+// BuildDirectWasm 使用 Direct WASM 後端從 Nolang 源碼直接產生 WebAssembly 二進制。
+// 當 opts.Target 為 wasm32-wasi 且 opts.UseDirectWasm 為 true 時呼叫。
+//
+// 流程：
+//  1. 讀取源碼檔案
+//  2. 以 lexer + parser 解析為 *parser.Program（重用 Transpiler.parseFile 的解析邏輯）
+//  3. 由 opts.Target 解析目標平台（goos/goarch），用於平台變體過濾
+//  4. 呼叫 wasm.Generator.Generate(program) 直接發射 WASM 字節碼
+//  5. 回傳 WASM 二進制 bytes
+//
+// 此路徑不經過 LLVM 工具鏈（opt/llc/clang），適用於瀏覽器 playground（wasip1）
+// 或透過 --wasm-direct 旗標觸發的原機回歸測試。
+func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
+	// 1. 讀取源碼
+	source, err := os.ReadFile(inputPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading input file: %w", err)
+	}
+
+	// 2. 解析為 AST（與 Transpiler.parseFile 一致的最小流程；
+	//    Direct WASM 後端目前不需跨文件簽名預載入）。
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	p.Filename = filepath.Base(inputPath)
+	program := p.ParseProgram()
+	if program == nil {
+		return nil, fmt.Errorf("%s: parser returned nil program", inputPath)
+	}
+	if errs := p.Errors(); len(errs) > 0 {
+		return nil, fmt.Errorf("%s: %v", inputPath, errs)
+	}
+
+	// 3. 解析目標平台。未指定時預設為 wasi/wasm32（Direct WASM 後端的主要目標）。
+	goos, goarch := parseTargetPlatform(opts.Target)
+	if goos == "" {
+		goos = "wasi"
+	}
+	if goarch == "" {
+		goarch = "wasm32"
+	}
+
+	// 4. Direct WASM codegen
+	g := &wasm.Generator{}
+	g.SetTargetPlatform(goos, goarch)
+	if opts.Verbose {
+		fmt.Fprintf(os.Stderr, "[direct-wasm] target: %s-%s\n", goarch, goos)
+	}
+	return g.Generate(program)
 }
 
 // LoadWorkspaceFile reads and parses a standalone workspace.jsonc file from the given directory.

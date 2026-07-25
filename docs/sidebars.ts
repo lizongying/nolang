@@ -5,6 +5,7 @@ const sidebars: SidebarsConfig = {
     "intro",
     "usage",
     "benchmarks",
+    "playground",
     {
       type: "category",
       label: "Language",

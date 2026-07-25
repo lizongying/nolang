@@ -12,7 +12,8 @@
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/@wasmer/wasi/dist/wasmer_wasi_js_bg.wasm';try{if(!fs.existsSync(p)){fs.mkdirSync(require('path').dirname(p),{recursive:true});fs.writeFileSync(p,Buffer.from([0,97,115,109,1,0,0,0]))}}catch(e){}\""
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.0",

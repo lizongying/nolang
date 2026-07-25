@@ -1,0 +1,2 @@
+n = io.err('err-no-newline ')
+n = io.err('concatenated\n')

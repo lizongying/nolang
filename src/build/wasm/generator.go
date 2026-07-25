@@ -1,6 +1,7 @@
 package wasm
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/lizongying/nolang/parser"
@@ -20,6 +21,15 @@ type importEntry struct {
 	name      string
 	kind      ImportKind
 	typeIndex uint32 // 僅 FuncImport 使用
+}
+
+// globalEntry 記錄一筆已定義 global。
+// globalType 為 ValType；mutable 為是否可變；init 為初始值表達式的位元組序列
+// （不含結尾的 OpEnd，serialize 時會補上）。
+type globalEntry struct {
+	valType ValType
+	mutable bool
+	init    []byte
 }
 
 // funcIndex 記錄一個「已定義函數」的 type index（不含 import）。
@@ -52,8 +62,8 @@ type codeEntry struct {
 // 當 no 以 wasm 形式運行於瀏覽器（無 LLVM 工具鏈可用）時使用此後端，
 // 或在原生 no 下透過 --wasm-direct 旗標觸發（用於回歸測試）。
 //
-// 目前（Task 6 骨架）僅發射最小合法 WASM 模組：WASI imports + _start。
-// 完整 AST -> WASM codegen 見 Task 7-9。
+// Task 7：實作基礎型別與表達式 codegen（i32/i64/f32/f64 局部變數、算術/比較/
+// 邏輯運算子、print 內建、if/else、for range、函數定義與呼叫）。
 type Generator struct {
 	// targetGoos / targetGoarch 用於平台變體過濾（#{linux-amd64}、#{wasi-wasm32} 等），
 	// 與 llvm.Generator 的對應欄位語義一致。
@@ -69,7 +79,100 @@ type Generator struct {
 	exports   []exportEntry
 	memories  []memoryLimit
 	codes     []codeEntry
+	globals   []globalEntry // 已定義 global（Task 8：heapPtr）
+
+	// ---- Task 7 codegen 狀態 ----
+
+	// 函數映射：name → function index（含 _start 與用戶函數）。
+	funcTable map[string]uint32
+	// 函數簽名：name → 參數型別列表（與 type section 一致）。
+	funcParams map[string][]ValType
+	// 函數簽名：name → 參數名稱列表（用於 local index 對應）。
+	funcParamNames map[string][]string
+	// 函數簽名：name → 結果型別列表。
+	funcResults map[string][]ValType
+	// 函數簽名：name → 結果變數名稱列表（用於結尾 local.get + return）。
+	funcResultNames map[string][]string
+
+	// 局部變數映射：currentFunc → 變數名 → local index（含參數；參數為 0..n-1）。
+	locals map[string]map[string]int
+	// 已宣告 local 型別（不含參數），按宣告順序；用於 LocalGroup 編碼。
+	localDecls map[string][]ValType
+	// 局部變數型別映射：currentFunc → 變數名 → ValType（含參數）。
+	localTypeMap map[string]map[string]ValType
+
+	// 字串常數池：string → 記憶體 offset。
+	stringPool map[string]uint32
+	// 按加入順序的字串，用於 data section。
+	stringData []string
+	// 下一個可用記憶體位置（字串池配置起點 = 1024）。
+	nextMemOffset uint32
+
+	// data section 區段（字串常數 + 靜態緩衝）。
+	dataSegments []DataSegment
+
+	// 當前正在發射的函數名稱（_start 或用戶函數名）。
+	currentFunc string
+
+	// 控制流深度追蹤：目前開啟的 block/loop/if 數量，用於 br 深度計算。
+	ctrlDepth int
+	// 迴圈框架堆疊：用於 break/continue 的 br 目標深度計算。
+	loopStack []loopFrame
+
+	// ---- Task 8 codegen 狀態 ----
+
+	// heapOffset 為編譯期靜態配置的游標（從 HeapBase 起）。
+	// 運行期 malloc 的起點（heapPtr global 初始值）= codegen 結束時的 heapOffset。
+	heapOffset uint32
+
+	// structDefs 記錄用戶定義的 struct 佈局（名稱 → StructLayout）。
+	structDefs map[string]*StructLayout
+
+	// strDescriptorPool 為 str literal descriptor 的去重池（字串 → 描述符 offset）。
+	strDescriptorPool map[string]uint32
+
+	// staticDataSegments 為編譯期產生的靜態資料區段（str descriptor 等）。
+	// 與 stringData（字串位元組）合併後寫入 data section。
+	staticDataSegments []DataSegment
+
+	// needsMalloc 標記是否需要 runtime malloc/free 函數與 heapPtr global。
+	needsMalloc bool
+
+	// localKindMap 記錄當前函數中變數的 ValKind（純量/str/vec/arr/struct）。
+	localKindMap map[string]map[string]ValKind
+
+	// localElemTypeMap 記錄當前函數中 vec/arr 變數的元素 ValType。
+	localElemTypeMap map[string]map[string]ValType
+
+	// localStructTypeMap 記錄當前函數中 struct 變數的型別名稱（對應 structDefs）。
+	localStructTypeMap map[string]map[string]string
 }
+
+// loopFrame 記錄一個 for 迴圈的 break/continue 目標深度。
+// blockIndex = 開啟 break 目標 block 後的 ctrlDepth；
+// loopIndex  = 開啟 continue 目標 loop 後的 ctrlDepth。
+// br 深度 = 當前 ctrlDepth - 目標 index。
+type loopFrame struct {
+	blockIndex int
+	loopIndex  int
+}
+
+// 記憶體佈局常數（避開 WASI runtime 使用的低位）。
+// 字串池從 StringPoolBase 開始向上成長；固定緩衝區位於更高位址。
+// 注意：Task 7 假設字串池不會成長至 IovecBase（測試字串皆短）。
+const (
+	StringPoolBase uint32 = 1024 // 字串常數起點
+	IovecBase      uint32 = 4096 // fd_write 用 iovec（8 bytes: ptr+len）
+	NwrittenPtr    uint32 = 4104 // fd_write nwritten 寫入位置（4 bytes）
+	ItoaBufferEnd  uint32 = 8224 // itoa 緩衝結尾（digits 由 8223 往前寫）
+	ItoaBufferSize uint32 = 32   // itoa 緩衝大小（8192..8224）
+)
+
+// fd_write / proc_exit 的 function index（import 後固定）。
+const (
+	fdWriteIdx  uint32 = 0
+	procExitIdx uint32 = 1
+)
 
 // SetTargetPlatform 設定編譯目標平台（GOOS, GOARCH），用於平台變體過濾。
 // 空字串時回退到宿主 runtime（與 llvm.Generator.SetTargetPlatform 行為一致）。
@@ -80,18 +183,265 @@ func (g *Generator) SetTargetPlatform(goos, goarch string) {
 
 // Generate 從給定的 Nolang 程式產生完整的 WebAssembly 二進制。
 //
-// 目前（Task 6 骨架）僅發射最小合法 WASM 模組：
-//   - WASI imports: fd_write, proc_exit
-//   - 一個匯出的 _start 函數，呼叫 proc_exit(0)
-//   - 一個匯出的 memory（min 1 page）
+// 流程：
+//  1. 重置狀態、加入 WASI imports（fd_write、proc_exit）與匯出的 memory。
+//  2. 宣告 _start（function index 2）與所有用戶函數（index 3+）。
+//  3. 發射 _start 主體（頂層語句 + proc_exit(0)）與各用戶函數主體。
+//     字串常數在 codegen 過程中自動加入字串池。
+//  4. serialize() 將字串池寫入 data section 並組裝所有 section。
 //
-// Task 7-9 將加入完整 AST -> WASM codegen。
+// 當 program 為空（或 nil）時，僅發射最小骨架（_start 呼叫 proc_exit(0)）。
 func (g *Generator) Generate(program *parser.Program) ([]byte, error) {
 	g.reset()
 	g.setupWASIImports()
-	g.emitStartFunction()
 	g.emitDefaultMemory()
+
+	if program != nil {
+		if err := g.emitProgram(program); err != nil {
+			return nil, err
+		}
+	} else {
+		g.emitSkeletonStart()
+	}
+
 	return g.serialize()
+}
+
+// emitProgram 處理完整的 Nolang AST，發射 _start 與用戶函數。
+func (g *Generator) emitProgram(program *parser.Program) error {
+	// 0. 掃描所有 StructDefinition，計算佈局並存入 structDefs。
+	for _, stmt := range program.Statements {
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			layout := computeStructLayout(sd)
+			g.structDefs[sd.Name] = layout
+		}
+	}
+
+	// 1. 宣告 _start（function index 2，第一個已定義函數）。
+	startType := g.internType(nil, nil) // () -> ()
+	startIdx := g.addFunction(startType)
+	g.addExport("_start", FuncExport, startIdx)
+	g.funcTable["_start"] = startIdx
+	g.funcParams["_start"] = nil
+	g.funcParamNames["_start"] = nil
+	g.funcResults["_start"] = nil
+	g.funcResultNames["_start"] = nil
+
+	// 2. 宣告 runtime malloc/free（function index 3, 4）。
+	//    固定發射以簡化索引管理；實際程式碼主體稍後發射以保持 codes 順序一致。
+	g.needsMalloc = true
+	g.declareMallocFree()
+
+	// 3. 宣告所有用戶函數（function index 5, 6, ...）。
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			g.declareFunction(fd)
+		}
+	}
+
+	// 4. 發射 _start 主體（codes[0]，對應 functions[0] = _start）。
+	g.currentFunc = "_start"
+	g.locals["_start"] = make(map[string]int)
+	g.localDecls["_start"] = nil
+	g.localTypeMap["_start"] = make(map[string]ValType)
+	g.localKindMap["_start"] = make(map[string]ValKind)
+	g.localElemTypeMap["_start"] = make(map[string]ValType)
+	g.localStructTypeMap["_start"] = make(map[string]string)
+	g.emitStartBody(program)
+
+	// 5. 發射 malloc/free 程式碼主體（codes[1,2]，對應 functions[1,2]）。
+	g.emitMallocFreeCode()
+
+	// 6. 發射各用戶函數主體（codes[3+]，對應 functions[3+]）。
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			g.emitFunctionBody(fd)
+		}
+	}
+
+	return nil
+}
+
+// emitSkeletonStart 發射骨架 _start（無 AST）：i32.const 0; call proc_exit。
+// 保留給未傳入 program 的最小模組（Task 6 相容行為）。
+func (g *Generator) emitSkeletonStart() {
+	startType := g.internType(nil, nil)
+	startIdx := g.addFunction(startType)
+	g.addExport("_start", FuncExport, startIdx)
+	g.funcTable["_start"] = startIdx
+	// i32.const 0; call proc_exit(1)
+	code := []byte{OpI32Const, 0x00, OpCall, byte(procExitIdx)}
+	g.addCode(nil, code)
+}
+
+// declareFunction 掃描 FunctionDefinition 並將其簽名註冊到 funcTable 與型別表。
+// 不發射程式碼主體（主體由 emitFunctionBody 負責）。
+func (g *Generator) declareFunction(fd *parser.FunctionDefinition) {
+	params := make([]ValType, len(fd.Parameters))
+	paramNames := make([]string, len(fd.Parameters))
+	for i, p := range fd.Parameters {
+		params[i] = ValTypeFromName(p.Type)
+		paramNames[i] = p.Name
+	}
+	results := make([]ValType, len(fd.Results))
+	resultNames := make([]string, len(fd.Results))
+	for i, r := range fd.Results {
+		results[i] = ValTypeFromName(r.Type)
+		resultNames[i] = r.Name
+	}
+	typeIdx := g.internType(params, results)
+	funcIdx := g.addFunction(typeIdx)
+	g.funcTable[fd.Name] = funcIdx
+	g.funcParams[fd.Name] = params
+	g.funcParamNames[fd.Name] = paramNames
+	g.funcResults[fd.Name] = results
+	g.funcResultNames[fd.Name] = resultNames
+}
+
+// emitFunctionBody 發射單一用戶函數的程式碼主體。
+// 結尾自動 local.get 所有結果變數，使堆疊符合函數結果型別。
+func (g *Generator) emitFunctionBody(fd *parser.FunctionDefinition) {
+	g.currentFunc = fd.Name
+	// 建立局部變數映射：參數為 local 0..n-1。
+	lmap := make(map[string]int)
+	tmap := make(map[string]ValType)
+	kmap := make(map[string]ValKind)
+	emap := make(map[string]ValType)
+	smap := make(map[string]string)
+	paramNames := g.funcParamNames[fd.Name]
+	paramTypes := g.funcParams[fd.Name]
+	for i, name := range paramNames {
+		lmap[name] = i
+		tmap[name] = paramTypes[i]
+		kmap[name] = KindScalar
+	}
+	// 結果變數亦為 local（需宣告），自參數數量之後開始。
+	g.locals[fd.Name] = lmap
+	g.localDecls[fd.Name] = nil
+	g.localTypeMap[fd.Name] = tmap
+	g.localKindMap[fd.Name] = kmap
+	g.localElemTypeMap[fd.Name] = emap
+	g.localStructTypeMap[fd.Name] = smap
+	resultNames := g.funcResultNames[fd.Name]
+	resultTypes := g.funcResults[fd.Name]
+	for i, r := range resultNames {
+		if _, exists := lmap[r]; !exists {
+			lmap[r] = len(paramNames) + len(g.localDecls[fd.Name])
+			g.localDecls[fd.Name] = append(g.localDecls[fd.Name], resultTypes[i])
+			tmap[r] = resultTypes[i]
+			kmap[r] = KindScalar
+		}
+	}
+
+	var sb bytes.Buffer
+	if fd.Body != nil {
+		for _, s := range fd.Body.Statements {
+			g.emitStmt(&sb, s)
+		}
+	}
+	// 結尾：依序 local.get 所有結果變數，使其留在堆疊上。
+	for _, r := range resultNames {
+		idx := lmap[r]
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(&sb, uint32(idx))
+	}
+
+	g.addCode(groupLocals(g.localDecls[fd.Name]), sb.Bytes())
+}
+
+// emitStartBody 發射 _start 主體：所有非函數定義的頂層語句 + proc_exit(0)。
+func (g *Generator) emitStartBody(program *parser.Program) {
+	var sb bytes.Buffer
+	for _, stmt := range program.Statements {
+		if _, ok := stmt.(*parser.FunctionDefinition); ok {
+			continue
+		}
+		g.emitStmt(&sb, stmt)
+	}
+	// i32.const 0; call proc_exit
+	writeI32ConstU(&sb, 0)
+	sb.WriteByte(OpCall)
+	writeU32LEB(&sb, procExitIdx)
+	g.addCode(groupLocals(g.localDecls["_start"]), sb.Bytes())
+}
+
+// groupLocals 將一串 local 型別（按宣告順序）壓縮為 WASM LocalGroup vec。
+// 連續相同型別的 local 會被合併為單一 group。
+func groupLocals(types []ValType) []LocalGroup {
+	if len(types) == 0 {
+		return nil
+	}
+	var groups []LocalGroup
+	cur := types[0]
+	count := uint32(1)
+	for i := 1; i < len(types); i++ {
+		if types[i] == cur {
+			count++
+		} else {
+			groups = append(groups, LocalGroup{Count: count, Type: cur})
+			cur = types[i]
+			count = 1
+		}
+	}
+	groups = append(groups, LocalGroup{Count: count, Type: cur})
+	return groups
+}
+
+// writeU32LEB 將無號 LEB128 寫入 bytes.Buffer（codegen 便利函式）。
+func writeU32LEB(sb *bytes.Buffer, v uint32) {
+	for {
+		b := byte(v & 0x7F)
+		v >>= 7
+		if v != 0 {
+			b |= 0x80
+			sb.WriteByte(b)
+		} else {
+			sb.WriteByte(b)
+			return
+		}
+	}
+}
+
+// writeSLEB 將有號 LEB128 寫入 bytes.Buffer（codegen 便利函式）。
+func writeSLEB(sb *bytes.Buffer, v int64) {
+	for {
+		b := byte(v & 0x7F)
+		v >>= 7
+		if (b&0x40 != 0 && v == -1) || (b&0x40 == 0 && v == 0) {
+			sb.WriteByte(b)
+			return
+		}
+		b |= 0x80
+		sb.WriteByte(b)
+	}
+}
+
+// ValTypeFromName 將 Nolang 型別名稱（parser.Type）映射為 WASM ValType。
+// Nolang 整數預設為 i64；bool 以 i32 表示；
+// str / vec / arr / 用戶 struct 均以描述符指標表示（i32）。
+func ValTypeFromName(t parser.Type) ValType {
+	if t == nil {
+		return I64
+	}
+	switch t.String() {
+	case "i32", "u32", "bool":
+		return I32
+	case "i64", "u64", "int", "i8", "u8", "i16", "u16", "byte", "char":
+		return I64
+	case "f32":
+		return F32
+	case "f64":
+		return F64
+	case "str":
+		// str 變數持有描述符指標（i32）
+		return I32
+	}
+	// SliceType / ArrayType / MapType / 用戶自訂 struct 型別均為描述符指標
+	switch t.(type) {
+	case *parser.SliceType, *parser.ArrayType, *parser.MapType, *parser.NamedType:
+		return I32
+	}
+	return I64
 }
 
 // emitDefaultMemory 加入一個匯出的線性記憶體（min 1 page, 無 max）。
@@ -111,6 +461,33 @@ func (g *Generator) reset() {
 	g.exports = nil
 	g.memories = nil
 	g.codes = nil
+	g.globals = nil
+
+	g.funcTable = make(map[string]uint32)
+	g.funcParams = make(map[string][]ValType)
+	g.funcParamNames = make(map[string][]string)
+	g.funcResults = make(map[string][]ValType)
+	g.funcResultNames = make(map[string][]string)
+	g.locals = make(map[string]map[string]int)
+	g.localDecls = make(map[string][]ValType)
+	g.localTypeMap = make(map[string]map[string]ValType)
+	g.stringPool = make(map[string]uint32)
+	g.stringData = nil
+	g.nextMemOffset = StringPoolBase
+	g.dataSegments = nil
+	g.currentFunc = ""
+	g.ctrlDepth = 0
+	g.loopStack = nil
+
+	// Task 8 狀態
+	g.heapOffset = HeapBase
+	g.structDefs = make(map[string]*StructLayout)
+	g.strDescriptorPool = make(map[string]uint32)
+	g.staticDataSegments = nil
+	g.needsMalloc = false
+	g.localKindMap = make(map[string]map[string]ValKind)
+	g.localElemTypeMap = make(map[string]map[string]ValType)
+	g.localStructTypeMap = make(map[string]map[string]string)
 }
 
 // internType 加入（或重用）一個 functype，回傳其 type index。
@@ -191,27 +568,55 @@ func (g *Generator) setupWASIImports() {
 	g.addFuncImport("wasi_snapshot_preview1", "proc_exit", procExitType)
 }
 
-// emitStartFunction 發射 _start 函數（WASI 進入點）。
-// _start 的型別為 () -> ()，function index 為 2（接在 fd_write=0、proc_exit=1 之後）。
-// 主體為：i32.const 0; call 1 (proc_exit)。
-// proc_exit 在型別上為 (i32)->()，呼叫後堆疊為空，符合 _start 的 () 結果型別。
-func (g *Generator) emitStartFunction() {
-	startType := g.internType(nil, nil) // () -> ()
-	startIdx := g.addFunction(startType)
-	g.addExport("_start", FuncExport, startIdx)
+// emitStartFunction 已被 emitProgram（含 _start）與 emitSkeletonStart 取代。
+// 保留註解標記 Task 6 骨架的歷史位置；實際 _start 發射邏輯見 emitProgram / emitSkeletonStart。
 
-	// i32.const 0  → opcode 0x41 + LEB128(0) = 0x00
-	// call 1       → opcode 0x10 + LEB128(1) = 0x01
-	code := []byte{OpI32Const, 0x00, OpCall, 0x01}
-	g.addCode(nil, code)
+// finalizeDataSegments 將字串池（stringData）與靜態資料區段（staticDataSegments）
+// 合併轉為 data section 區段。必須在 serialize 前呼叫。
+func (g *Generator) finalizeDataSegments() {
+	g.dataSegments = g.dataSegments[:0]
+	for _, s := range g.stringData {
+		off := g.stringPool[s]
+		g.dataSegments = append(g.dataSegments, DataSegment{
+			offset: off,
+			bytes:  []byte(s),
+		})
+	}
+	// 合併編譯期靜態資料（str descriptor 等）
+	g.dataSegments = append(g.dataSegments, g.staticDataSegments...)
+}
+
+// finalizeHeapGlobal 在所有 codegen 完成後，加入 heapPtr global。
+// 初始值 = g.heapOffset（所有編譯期靜態配置之後的位址）。
+func (g *Generator) finalizeHeapGlobal() {
+	if !g.needsMalloc {
+		return
+	}
+	// heapPtr global：mutable i32，初始值 = g.heapOffset
+	initExpr := []byte{OpI32Const}
+	// 用 SLEB128 編碼初始值
+	var tmp bytes.Buffer
+	writeSLEB(&tmp, int64(g.heapOffset))
+	initExpr = append(initExpr, tmp.Bytes()...)
+	g.globals = append(g.globals, globalEntry{
+		valType: I32,
+		mutable: true,
+		init:    initExpr,
+	})
 }
 
 // serialize 將所有已累積的 section 組裝為完整的 WASM 二進制。
-// section 順序依 ID 遞增（Type < Import < Function < Memory < Export < Code）。
+// section 順序依 ID 遞增（Type < Import < Function < Memory < Global < Export < Code < Data）。
 func (g *Generator) serialize() ([]byte, error) {
 	if err := g.validateState(); err != nil {
 		return nil, err
 	}
+
+	// 在組裝前完成所有延遲決策：
+	//   1. heapPtr global 初始值（依賴 codegen 完成後的 heapOffset）
+	//   2. data section（字串池 + 靜態描述符）
+	g.finalizeHeapGlobal()
+	g.finalizeDataSegments()
 
 	w := NewWriter()
 
@@ -239,6 +644,11 @@ func (g *Generator) serialize() ([]byte, error) {
 		WriteSection(w, MemorySection, g.encodeMemorySection())
 	}
 
+	// Global section (6) — Task 8：heapPtr
+	if len(g.globals) > 0 {
+		WriteSection(w, GlobalSection, g.encodeGlobalSection())
+	}
+
 	// Export section (7)
 	if len(g.exports) > 0 {
 		WriteSection(w, ExportSection, g.encodeExportSection())
@@ -249,7 +659,40 @@ func (g *Generator) serialize() ([]byte, error) {
 		WriteSection(w, CodeSection, g.encodeCodeSection())
 	}
 
+	// Data section (11)
+	if len(g.dataSegments) > 0 {
+		WriteSection(w, DataSection, g.encodeDataSection())
+	}
+
 	return w.Bytes(), nil
+}
+
+// encodeGlobalSection 編碼 global section：vec of global entries。
+// 每個 entry：[valtype][mutability][init_expr][end]。
+func (g *Generator) encodeGlobalSection() []byte {
+	w := NewWriter()
+	w.WriteLEB128(uint32(len(g.globals)))
+	for _, gl := range g.globals {
+		w.WriteByte(byte(gl.valType))
+		if gl.mutable {
+			w.WriteByte(0x01)
+		} else {
+			w.WriteByte(0x00)
+		}
+		w.WriteBytes(gl.init)
+		w.WriteByte(OpEnd)
+	}
+	return w.Bytes()
+}
+
+// encodeDataSection 編碼 data section：vec of active data segments。
+func (g *Generator) encodeDataSection() []byte {
+	w := NewWriter()
+	w.WriteLEB128(uint32(len(g.dataSegments)))
+	for _, d := range g.dataSegments {
+		w.WriteBytes(ActiveData(d.offset, d.bytes))
+	}
+	return w.Bytes()
 }
 
 // validateState 檢查模組狀態的一致性。

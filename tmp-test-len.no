@@ -1,6 +1,0 @@
-main = () {
-    m []byte = with-len(100)
-    print('len=' - m.len.to-str())
-    m.len = 10
-    print('after set len=' - m.len.to-str())
-}

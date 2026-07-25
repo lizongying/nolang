@@ -36,11 +36,16 @@ var methodDefRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*)\.([a-zA-Z][a-zA-
 // commentRe matches comment lines
 var commentRe = regexp.MustCompile(`^\s*//`)
 
-// builtinFuncs are functions that don't need a module prefix
+// builtinFuncs are functions that don't need a module prefix.
+// printf/eprintf/sprintf are deprecated but kept here for backward compat;
+// prefer print/eprint/format.
 var builtinFuncs = map[string]bool{
-	"printf":  true,
-	"sprintf": true,
 	"print":   true,
+	"eprint":  true,
+	"format":  true,
+	"printf":  true, // deprecated, kept for backward compat
+	"sprintf": true, // deprecated, kept for backward compat
+	"eprintf": true, // deprecated, kept for backward compat
 }
 
 // funcToPath maps function name → ShortPath (dotted form, e.g. "hash.sha256")

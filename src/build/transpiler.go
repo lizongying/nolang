@@ -5422,11 +5422,13 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	return results
 }
 
-// isPrintFormatCall 判斷呼叫是否為 print/printf/eprint/eprintf/sprintf（含 fmt. 前綴）
+// isPrintFormatCall 判斷呼叫是否為 print/eprint/format/printf/eprintf/sprintf（含 fmt. 前綴）
+// printf/eprintf/sprintf 為已廢棄的別名，仍保留以維持向後相容。
 func isPrintFormatCall(fnName string) bool {
 	switch fnName {
-	case "print", "printf", "eprint", "eprintf", "sprintf",
-		"fmt.print", "fmt.printf", "fmt.eprint", "fmt.eprintf", "fmt.sprintf":
+	case "print", "eprint", "format", "printf", "eprintf", "sprintf",
+		"fmt.print", "fmt.eprint", "fmt.format",
+		"fmt.printf", "fmt.eprintf", "fmt.sprintf":
 		return true
 	}
 	return false

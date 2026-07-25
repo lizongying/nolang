@@ -29,6 +29,35 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		}
 	}
 
+	// === Plain string printf/eprintf/sprintf/format path ===
+	// libc @printf/@sprintf/@fprintf declarations have been removed; all output
+	// goes through Nolang's @out/@err. When printf/eprintf/sprintf/format is
+	// called with a single string literal arg (no '{' fields, no '%'
+	// conversions, no additional args), emit it directly via @out/@err (no
+	// trailing newline) or return the string for sprintf/format. This covers
+	// common label-style usage like printf('crc32("")=') and
+	// format('label='). Multi-arg C-style printf('...%d...', x) is no longer
+	// supported — migrate to named format printf('{x}') or format('{x}').
+	// Note: printf/eprintf/sprintf are deprecated; prefer print/eprint/format
+	// + io.out/io.err for no-newline output.
+	if sb != nil && hasArgs && len(expr.Arguments) == 1 {
+		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
+			switch fnName {
+			case "printf", "fmt.printf", "eprintf", "fmt.eprintf", "sprintf", "fmt.sprintf",
+				"format", "fmt.format":
+				useStderr := strings.HasPrefix(fnName, "eprint") || strings.HasPrefix(fnName, "fmt.eprint")
+				isReturnStr := fnName == "sprintf" || fnName == "fmt.sprintf" ||
+					fnName == "format" || fnName == "fmt.format"
+				strPtr := g.buildStrLongFromValue(sb, strLit.Value)
+				if isReturnStr {
+					return strPtr
+				}
+				g.emitOutCall(sb, useStderr, strPtr)
+				return "0"
+			}
+		}
+	}
+
 	// Note: C-style printf/eprintf/sprintf paths (using libc @printf/@sprintf/@fprintf)
 	// have been removed. All output now goes through Nolang's @out/@err functions.
 	// Use named format strings (e.g. printf('{x}')) or print/println instead.
@@ -43,7 +72,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				nlPtr := g.buildStrLongFromValue(sb, "\n")
 				g.emitOutCall(sb, useStderr, nlPtr)
 			}
-			return "; print-variadic"
+			return "0"
 		}
 		for i, arg := range expr.Arguments {
 			// Skip void function call arguments (call for side effects, don't print)
@@ -65,7 +94,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			nlPtr := g.buildStrLongFromValue(sb, "\n")
 			g.emitOutCall(sb, useStderr, nlPtr)
 		}
-		return "; print-variadic"
+		return "0"
 	}
 
 	if fnName == "print" || fnName == "fmt.print" {
@@ -80,7 +109,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 	if fnName == "println-empty" {
 		nlPtr := g.buildStrLongFromValue(sb, "\n")
 		g.emitOutCall(sb, false, nlPtr)
-		return "; println-empty"
+		return "0"
 	}
 
 	// Type-specific print functions: each converts its single arg to a
@@ -98,7 +127,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			nlPtr := g.buildStrLongFromValue(sb, "\n")
 			g.emitOutCall(sb, false, nlPtr)
 		}
-		return "; print-typed"
+		return "0"
 	}
 
 	// print-i64 / println-i64: fmt-int with empty spec.
@@ -2827,10 +2856,13 @@ func (g *Generator) loadStderr(sb *strings.Builder) string {
 // '{' (a potential {name:spec} field). This preserves backward compatibility
 // with C-style printf('...%d...', args) whose format string has no '{'.
 //
-// - printf/eprintf/sprintf: intercept when first arg is a StringLiteral
-//   containing '{'. autoNewline=false (user includes \n explicitly).
+// - printf/eprintf/sprintf/format: intercept when first arg is a StringLiteral
+//   containing '{'. autoNewline=false (user includes \n explicitly, or returns
+//   the string for sprintf/format).
 // - print/eprint: intercept only when there is exactly 1 StringLiteral arg
 //   whose value contains '{'. autoNewline=true (print adds trailing \n).
+//
+// printf/eprintf/sprintf are deprecated; prefer print/eprint/format + io.out/io.err.
 func (g *Generator) shouldInterceptNamedFormat(fnName string, expr *parser.CallExpression) (bool, bool) {
 	strLit, ok := expr.Arguments[0].(*parser.StringLiteral)
 	if !ok {
@@ -2840,7 +2872,8 @@ func (g *Generator) shouldInterceptNamedFormat(fnName string, expr *parser.CallE
 		return false, false
 	}
 	switch fnName {
-	case "printf", "fmt.printf", "eprintf", "fmt.eprintf", "sprintf", "fmt.sprintf":
+	case "printf", "fmt.printf", "eprintf", "fmt.eprintf", "sprintf", "fmt.sprintf",
+		"format", "fmt.format":
 		return true, false
 	case "print", "fmt.print", "eprint", "fmt.eprint":
 		// Only intercept single-arg calls whose format string contains '{'
@@ -2857,7 +2890,7 @@ func (g *Generator) shouldInterceptNamedFormat(fnName string, expr *parser.CallE
 // Dispatches each {name:spec} field to the appropriate fmt-* helper
 // (fmt-int/fmt-uint/fmt-f64/fmt-str/fmt-bool) and outputs via io.out/io.err
 // (for printf/eprintf/print/eprint) or returns the concatenated string
-// (for sprintf).
+// (for sprintf/format).
 //
 // segments: parsed format segments (literals and fields)
 // autoNewline: if true, append a trailing "\n" (for print/eprint)
@@ -2867,7 +2900,8 @@ func (g *Generator) callNamedFormat(sb *strings.Builder, fnName string, segments
 	}
 
 	useStderr := strings.HasPrefix(fnName, "eprint") || strings.HasPrefix(fnName, "fmt.eprint")
-	isSprintf := fnName == "sprintf" || fnName == "fmt.sprintf"
+	isReturnStr := fnName == "sprintf" || fnName == "fmt.sprintf" ||
+		fnName == "format" || fnName == "fmt.format"
 
 	// Build each segment as a %str-long* alloca
 	segPtrs := make([]string, 0, len(segments))
@@ -2881,8 +2915,8 @@ func (g *Generator) callNamedFormat(sb *strings.Builder, fnName string, segments
 		}
 	}
 
-	if isSprintf {
-		// Concatenate all segments into a single %str-long*
+	if isReturnStr {
+		// Concatenate all segments into a single %str-long* (sprintf/format)
 		if len(segPtrs) == 0 {
 			return g.buildStrLongFromValue(sb, "")
 		}
@@ -2905,9 +2939,9 @@ func (g *Generator) callNamedFormat(sb *strings.Builder, fnName string, segments
 		sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
 			g.indent(), outFn, segPtr, discardedN))
 	}
-	// Return non-empty sentinel (not starting with "call ") to prevent
-	// fallthrough to other handlers. The actual calls are written to sb.
-	return "; named-format"
+	// Return "0" (valid in phi nodes) to prevent fallthrough to other
+	// handlers. The actual calls are written to sb.
+	return "0"
 }
 
 // buildStrLongFromValue creates a %str-long* alloca from a string value.

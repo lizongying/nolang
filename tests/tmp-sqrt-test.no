@@ -1,5 +1,5 @@
 z f64 = 2.0
 a f64 = z * z
-printf('a = %.15f\n', a)
+print('a = {a:.15f}')
 b f64 = z * z + 3.0
-printf('b = %.15f\n', b)
+print('b = {b:.15f}')

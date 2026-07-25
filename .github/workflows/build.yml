@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+      - master
+  pull_request:
 
 jobs:
   build-release:
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     permissions:
@@ -113,3 +118,94 @@ jobs:
           asset_path: ./bin/no_windows_amd64.exe
           asset_name: no_${{ env.version_name }}_windows_amd64.exe
           asset_content_type: application/octet-stream
+
+  wasm-smoke:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Golang
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+
+      - name: Install LLVM (opt/llc)
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          sudo apt-get install -y llvm-21 llvm-21-dev opt-21
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+          opt --version
+
+      - name: Install Zig (provides wasi-libc + clang compatible with LLVM 21 IR)
+        run: |
+          curl -L -o zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          mkdir -p $HOME/zig
+          tar -xf zig.tar.xz -C $HOME/zig --strip-components=1
+          echo "$HOME/zig" >> $GITHUB_PATH
+          zig version
+
+      - name: Install wasmtime
+        run: |
+          curl -L -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v22.0.0/wasmtime-v22.0.0-x86_64-linux.tar.xz
+          mkdir -p $HOME/wasmtime
+          tar -xf wasmtime.tar.xz -C $HOME/wasmtime --strip-components=1
+          echo "$HOME/wasmtime" >> $GITHUB_PATH
+          wasmtime --version
+
+      - name: Build no binary
+        run: make no
+
+      - name: Build and run test-wasi-hello
+        run: |
+          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/hello.wasm tests/test-wasi-hello.no
+          output=$(wasmtime run /tmp/hello.wasm)
+          echo "Output: $output"
+          if [ "$output" != "Hello, WASI!" ]; then
+            echo "ERROR: expected 'Hello, WASI!' but got '$output'"
+            exit 1
+          fi
+
+      - name: Build and run test-wasi-fib
+        run: |
+          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/fib.wasm tests/test-wasi-fib.no
+          output=$(wasmtime run /tmp/fib.wasm)
+          echo "Output: $output"
+          # Verify fib-loop results (recursion has a known compiler bug, see test file)
+          echo "$output" | grep -q "fib-loop(10) = 55" || (echo "ERROR: fib-loop(10) mismatch" && exit 1)
+          echo "$output" | grep -q "fib-loop(30) = 832040" || (echo "ERROR: fib-loop(30) mismatch" && exit 1)
+          echo "All fib-loop checks passed"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build no.wasm (wasip1)
+        run: make no-wasm
+
+      - name: Build lsp.wasm (wasip1)
+        run: make lsp-wasm
+
+      - name: Verify no.wasm version
+        run: |
+          output=$(wasmtime run docs/static/wasm/no.wasm version)
+          echo "Output: $output"
+          echo "$output" | grep -q "^version:" || (echo "ERROR: no.wasm version output mismatch" && exit 1)
+          echo "no.wasm version check passed"
+
+      - name: Verify lsp.wasm version
+        run: |
+          output=$(wasmtime run docs/static/wasm/lsp.wasm -version)
+          echo "Output: $output"
+          echo "$output" | grep -q "^version:" || (echo "ERROR: lsp.wasm version output mismatch" && exit 1)
+          echo "lsp.wasm version check passed"

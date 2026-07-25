@@ -1,64 +1,70 @@
-; test-named-format.no — 測試具名格式字符串 {name:spec}
+; test-named-format.no — 測試具名字串格式 {name:spec}
 ;
-; 驗證 print/printf/eprint/eprintf/sprintf 支援 {name:spec} 語法，
+; 驗證 print/eprint/format 支援 {name:spec} 語法，
 ; 並呼叫 fmt-int/fmt-uint/fmt-f64/fmt-str/fmt-bool 進行格式化。
+; printf/eprintf/sprintf 已廢棄，改用 print/eprint/format；
+; 若需輸出無換行符，可使用底層命令 io.out / io.err。
 
 main = () {
     ; 整數格式化
     x i64 = 42
     print('x={x}')
-    printf('x={x:5}\n')
-    printf('x={x:<5}\n')
-    printf('x={x:^5}\n')
-    printf('x={x:05}\n')
+    print('x={x:5}')
+    print('x={x:<5}')
+    print('x={x:^5}')
+    print('x={x:05}')
 
     ; 負數
     n i64 = -7
-    printf('n={n:03}\n')
+    print('n={n:03}')
 
     ; 無號整數（hex）
     u u64 = 255
-    printf('u={u:x}\n')
-    printf('u={u:X}\n')
-    printf('u={u:#x}\n')
-    printf('u={u:08x}\n')
+    print('u={u:x}')
+    print('u={u:X}')
+    print('u={u:#x}')
+    print('u={u:08x}')
 
     ; byte (u8)
     b byte = 65
-    printf('b={b}\n')
+    print('b={b}')
 
     ; 浮點數
     pi f64 = 3.14159
-    printf('pi={pi:.2f}\n')
-    printf('pi={pi:.4f}\n')
-    printf('pi={pi:8.2f}\n')
-    printf('pi={pi:.3g}\n')
-    printf('pi={pi:.3e}\n')
+    print('pi={pi:.2f}')
+    print('pi={pi:.4f}')
+    print('pi={pi:8.2f}')
+    print('pi={pi:.3g}')
+    print('pi={pi:.3e}')
 
     ; 字串
     s str = 'hello'
-    printf('s={s:10}\n')
-    printf('s={s:<10}\n')
-    printf('s={s:.3}\n')
-    printf('s={s:^10}\n')
+    print('s={s:10}')
+    print('s={s:<10}')
+    print('s={s:.3}')
+    print('s={s:^10}')
 
     ; 布林值
     flag bool = true
-    printf('flag={flag}\n')
-    printf('flag={flag:6}\n')
+    print('flag={flag}')
+    print('flag={flag:6}')
 
     ; 混合多個欄位
-    printf('x={x}, u={u:x}, pi={pi:.2f}, s={s}, flag={flag}\n')
+    print('x={x}, u={u:x}, pi={pi:.2f}, s={s}, flag={flag}')
 
     ; 字面文字含 {{ 與 }} 轉義
-    printf('literal {{x}}={x}\n')
+    print('literal {{x}}={x}')
 
-    ; sprintf 返回格式化字串
-    formatted = sprintf('formatted: x={x}, pi={pi:.2f}')
+    ; format 返回格式化字串（替代 sprintf）
+    formatted = format('formatted: x={x}, pi={pi:.2f}')
     print(formatted)
 
-    ; eprint/eprintf (stderr)
-    eprintf('err: x={x}\n')
+    ; eprint（stderr，自動換行）
+    eprint('err: x={x}')
     eprint('err-line')
+
+    ; io.out / io.err：底層命令，輸出無換行符
+    io.out('no-newline-here')
+    io.out('\n')
 }
 main()

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -337,5 +338,361 @@ func TestValidateWithWasmtime(t *testing.T) {
 			t.Fatalf("wasmtime run exited %d\nstderr: %s", exitErr.ExitCode(), stderr.String())
 		}
 		t.Fatalf("wasmtime run failed: %v\nstderr: %s", err, stderr.String())
+	}
+}
+
+// --- Task 7 codegen tests ---
+
+// parseAndGenerate parses a Nolang source program and generates WASM bytecode.
+// Fails the test if parsing or generation produces errors.
+func parseAndGenerate(t *testing.T, src string) []byte {
+	t.Helper()
+	lex := lexer.New(src)
+	p := parser.New(lex)
+	program := p.ParseProgram()
+	if program == nil {
+		t.Fatal("ParseProgram returned nil")
+	}
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parser errors: %v", errs)
+	}
+	g := &Generator{}
+	out, err := g.Generate(program)
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("Generate returned empty bytes")
+	}
+	return out
+}
+
+// validateWithWasmTools validates the WASM module with wasm-tools if available.
+// Returns true if validation was performed (and passed). Returns false (without
+// failing the test) if wasm-tools is not installed.
+func validateWithWasmTools(t *testing.T, wasm []byte) bool {
+	t.Helper()
+	if _, err := exec.LookPath("wasm-tools"); err != nil {
+		return false
+	}
+	cmd := exec.Command("wasm-tools", "validate", "-")
+	cmd.Stdin = bytes.NewReader(wasm)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("wasm-tools validate failed: %v\nstderr: %s", err, stderr.String())
+	}
+	return true
+}
+
+// runWithWasmtime runs the WASM module with wasmtime and returns stdout.
+// Returns (output, true) on success, or ("", false) if wasmtime is not installed.
+// Fails the test if wasmtime is installed but the run fails or exits non-zero.
+func runWithWasmtime(t *testing.T, wasm []byte) (string, bool) {
+	t.Helper()
+	if _, err := exec.LookPath("wasmtime"); err != nil {
+		return "", false
+	}
+	tmp := t.TempDir() + "/task7.wasm"
+	if err := os.WriteFile(tmp, wasm, 0o644); err != nil {
+		t.Fatalf("write tmp wasm: %v", err)
+	}
+	cmd := exec.Command("wasmtime", "run", tmp)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("wasmtime exited %d\nstdout: %s\nstderr: %s",
+				exitErr.ExitCode(), stdout.String(), stderr.String())
+		}
+		t.Fatalf("wasmtime run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	return stdout.String(), true
+}
+
+// TestHelloWorldCodeGen verifies SubTask 7.3 (print builtin) and SubTask 7.1
+// (string literal loading) by emitting `print('Hello, World!')` and checking
+// the runtime stdout.
+func TestHelloWorldCodeGen(t *testing.T) {
+	src := `print('Hello, World!')`
+	out := parseAndGenerate(t, src)
+
+	if !validateWithWasmTools(t, out) {
+		t.Skip("wasm-tools not in PATH; skipping validation")
+	}
+
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+
+	want := "Hello, World!\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestArithmeticCodeGen verifies SubTask 7.2 (arithmetic operators) and
+// SubTask 7.3 (integer print) by emitting a sequence of arithmetic prints.
+func TestArithmeticCodeGen(t *testing.T) {
+	src := `print(3 + 4)
+print(10 - 3)
+print(6 * 7)
+print(20 / 4)
+print(17 % 5)`
+	out := parseAndGenerate(t, src)
+
+	if !validateWithWasmTools(t, out) {
+		t.Skip("wasm-tools not in PATH; skipping validation")
+	}
+
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+
+	want := "7\n7\n42\n5\n2\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestFibonacciCodeGen verifies SubTask 7.5 (function definition and call),
+// SubTask 7.4 (for-range control flow), and SubTask 7.2 (arithmetic) by
+// computing fib(10) iteratively and printing the result.
+func TestFibonacciCodeGen(t *testing.T) {
+	src := `fib = (n i64) (r i64) {
+	a = 0
+	b = 1
+	i <- [2..n]: {
+		c = a + b
+		a = b
+		b = c
+	}
+	r = b
+}
+result = fib(10)
+print(result)`
+	out := parseAndGenerate(t, src)
+
+	if !validateWithWasmTools(t, out) {
+		t.Skip("wasm-tools not in PATH; skipping validation")
+	}
+
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+
+	want := "55\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// --- Task 8 codegen tests ---
+
+// runWithWasmtimeExit runs the WASM module with wasmtime and returns
+// (stdout, exitCode, true). Returns ("", 0, false) if wasmtime is not installed.
+// Unlike runWithWasmtime, this does NOT fail the test on non-zero exit; the
+// caller checks the exit code (used for bounds-check tests).
+func runWithWasmtimeExit(t *testing.T, wasm []byte) (string, int, bool) {
+	t.Helper()
+	if _, err := exec.LookPath("wasmtime"); err != nil {
+		return "", 0, false
+	}
+	tmp := t.TempDir() + "/task8.wasm"
+	if err := os.WriteFile(tmp, wasm, 0o644); err != nil {
+		t.Fatalf("write tmp wasm: %v", err)
+	}
+	cmd := exec.Command("wasmtime", "run", tmp)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			t.Fatalf("wasmtime run failed: %v\nstderr: %s", err, stderr.String())
+		}
+	}
+	return stdout.String(), exitCode, true
+}
+
+// TestStringVariable verifies SubTask 8.2: assigning a string literal to a
+// variable and printing the variable reads back the descriptor's data/len.
+func TestStringVariable(t *testing.T) {
+	src := `s = 'hello'
+print(s)`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "hello\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestStringConcat verifies SubTask 8.2: string concatenation with `-`
+// produces a new descriptor whose data is the concatenation of both strings.
+func TestStringConcat(t *testing.T) {
+	src := `a = 'foo'
+b = 'bar'
+c = a - b
+print(c)
+print('Hello' - ' ' - 'World')`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "foobar\nHello World\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestStringLen verifies SubTask 8.2: len(s) returns the descriptor's len field.
+func TestStringLen(t *testing.T) {
+	src := `s = 'hello'
+print(len(s))
+print(s.len)`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "5\n5\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestVecBasic verifies SubTask 8.3: vec literal construction and index read.
+func TestVecBasic(t *testing.T) {
+	src := `v = [10, 20, 30]
+print(v[0])
+print(v[1])
+print(v[2])`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "10\n20\n30\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestVecLen verifies SubTask 8.3: len(v) and v.len return the vec's len field.
+func TestVecLen(t *testing.T) {
+	src := `v = [1, 2, 3]
+print(len(v))
+print(v.len)`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "3\n3\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestVecIndexAssign verifies SubTask 8.3: vec[i] = value writes via descriptor.
+func TestVecIndexAssign(t *testing.T) {
+	src := `v = [1, 2, 3]
+v[0] = 99
+v[2] = 77
+print(v[0])
+print(v[1])
+print(v[2])`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "99\n2\n77\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestWithLen verifies SubTask 8.3: with-len(n) creates a vec with len=n
+// backed by an allocated data buffer that can be indexed and assigned.
+func TestWithLen(t *testing.T) {
+	src := `v []i64 = with-len(3)
+v[0] = 100
+v[1] = 200
+v[2] = 300
+print(v[0])
+print(v[1])
+print(v[2])
+print(len(v))`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "100\n200\n300\n3\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestStructBasic verifies SubTask 8.4: struct definition, literal construction,
+// field access, and field assignment.
+func TestStructBasic(t *testing.T) {
+	src := `user {
+    name str
+    age i64
+}
+u = user{
+    name: 'Alice'
+    age: 30
+}
+print(u.name)
+print(u.age)
+u.age = 31
+print(u.age)`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "Alice\n30\n31\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+// TestBoundsCheck verifies SubTask 8.5: out-of-bounds vec index triggers
+// proc_exit(1).
+func TestBoundsCheck(t *testing.T) {
+	src := `v = [1, 2, 3]
+print(v[5])`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, exitCode, ok := runWithWasmtimeExit(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for OOB index, got %d (stdout=%q)", exitCode, stdout)
 	}
 }

@@ -49,7 +49,7 @@ const (
 	GlobalExport ExportKind = 3
 )
 
-// WASM 通用 opcode，保留給 codegen 使用（Task 7+）。這裡先列出骨架會用到的。
+// WASM 通用 opcode，保留給 codegen 使用（Task 7+）。
 const (
 	OpUnreachable byte = 0x00
 	OpNop         byte = 0x01
@@ -72,17 +72,59 @@ const (
 	OpGlobalSet   byte = 0x24
 	OpI32Load     byte = 0x28
 	OpI64Load     byte = 0x29
+	OpI32Load8U   byte = 0x2D
 	OpI32Store    byte = 0x36
 	OpI64Store    byte = 0x37
+	OpI32Store8   byte = 0x3A
 	OpI32Const    byte = 0x41
 	OpI64Const    byte = 0x42
 	OpF32Const    byte = 0x43
 	OpF64Const    byte = 0x44
 	OpI32Eqz      byte = 0x45
 	OpI32Eq       byte = 0x46
+	OpI32Ne       byte = 0x47
+	OpI32LtS      byte = 0x48
+	OpI32LtU      byte = 0x49
+	OpI32GtS      byte = 0x4A
+	OpI32GtU      byte = 0x4B
+	OpI32LeS      byte = 0x4C
+	OpI32LeU      byte = 0x4D
+	OpI32GeS      byte = 0x4E
+	OpI32GeU      byte = 0x4F
+	OpI64Eqz      byte = 0x50
+	OpI64Eq       byte = 0x51
+	OpI64Ne       byte = 0x52
+	OpI64LtS      byte = 0x53
+	OpI64LtU      byte = 0x54
+	OpI64GtS      byte = 0x55
+	OpI64GtU      byte = 0x56
+	OpI64LeS      byte = 0x57
+	OpI64LeU      byte = 0x58
+	OpI64GeS      byte = 0x59
+	OpI64GeU      byte = 0x5A
+	OpI32And      byte = 0x71
+	OpI32Or       byte = 0x72
+	OpI32Xor      byte = 0x73
 	OpI32Add      byte = 0x6A
 	OpI32Sub      byte = 0x6B
 	OpI32Mul      byte = 0x6C
+	OpI32Shl      byte = 0x74
+	OpI32ShrS     byte = 0x75
+	OpI32ShrU     byte = 0x76
+	OpI64Add      byte = 0x7C
+	OpI64Sub      byte = 0x7D
+	OpI64Mul      byte = 0x7E
+	OpI64DivS     byte = 0x7F
+	OpI64DivU     byte = 0x80
+	OpI64RemS     byte = 0x81
+	OpI64RemU     byte = 0x82
+	OpI32WrapI64       byte = 0xA7
+	OpI64ExtendI32U    byte = 0xAD
+	OpI64ExtendI32S    byte = 0xAC
+	OpF64Add      byte = 0xA0
+	OpF64Sub      byte = 0xA1
+	OpF64Mul      byte = 0xA2
+	OpF64Div      byte = 0xA3
 )
 
 // BlockType 常數（block/loop/if 的型別標籤）。
@@ -148,6 +190,27 @@ func Export(name string, kind ExportKind, index uint32) []byte {
 	w.WriteName(name)
 	w.WriteByte(byte(kind))
 	w.WriteLEB128(index)
+	return w.Bytes()
+}
+
+// DataSegment 描述一個 active data segment（綁定到 memory 0）。
+// offset 為線性記憶體中的起始位址；bytes 為要寫入的資料。
+type DataSegment struct {
+	offset uint32
+	bytes  []byte
+}
+
+// ActiveData 編碼一個 active data segment（memory 0）：
+// 0x00 (flag) + offset 表達式 (i32.const <offset>; end) + u32 size + bytes。
+// 對應規格 §2.5.2 中 active segment with memory index 0 的形式。
+func ActiveData(offset uint32, data []byte) []byte {
+	w := NewWriter()
+	w.WriteByte(0x00) // active, memory index 0
+	w.WriteByte(OpI32Const)
+	w.WriteSLEB128(int64(offset))
+	w.WriteByte(OpEnd)
+	w.WriteLEB128(uint32(len(data)))
+	w.WriteBytes(data)
 	return w.Bytes()
 }
 

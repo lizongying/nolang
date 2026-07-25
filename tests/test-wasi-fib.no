@@ -1,12 +1,15 @@
 ; test-wasi-fib.no — fibonacci 迴圈與遞迴驗證 (wasm32-wasi)
 ; 預期輸出：
 ;   fib-loop(10) = 55
+;   fib-loop(30) = 832040
 ;   fib-rec(20) = 6765
 ;
 ; 註：目前編譯器對直接遞迴（函數呼叫自身）的回傳值處理有 bug，
-; fib-rec 的輸出可能不正確。迴圈版本 fib-loop 運作正常。
+; fib-rec 的輸出可能不正確（實測為 20 而非 6765）。迴圈版本 fib-loop
+; 在原生與 WASM 平台下均運作正常。遞迴 bug 並非 WASM 特有，
+; 待編譯器修復後 fib-rec 應輸出 6765。
 
-; 迴圈版本：fib(10) = 55
+; 迴圈版本：fib(10) = 55, fib(30) = 832040
 fib-loop = (n i64) (r i64) {
     a i64 = 0
     b i64 = 1
@@ -18,7 +21,7 @@ fib-loop = (n i64) (r i64) {
     r = a
 }
 
-; 遞迴版本：fib(20) = 6765
+; 遞迴版本：fib(20) = 6765（目前因編譯器 bug 輸出不正確）
 fib-rec = (n i64) (r i64) {
     r = 0
     n < 2 -> {
@@ -30,8 +33,11 @@ fib-rec = (n i64) (r i64) {
     r = p1 + p2
 }
 
-loop-result = fib-loop(10)
-print('fib-loop(10) =' - loop-result.to-str())
+loop10 = fib-loop(10)
+print('fib-loop(10) = ' - loop10.to-str())
+
+loop30 = fib-loop(30)
+print('fib-loop(30) = ' - loop30.to-str())
 
 rec-result = fib-rec(20)
-print('fib-rec(20) =' - rec-result.to-str())
+print('fib-rec(20) = ' - rec-result.to-str())

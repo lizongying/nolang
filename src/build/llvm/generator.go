@@ -1332,8 +1332,11 @@ sb.WriteString("%future = type { void (i8*)*, i64, i64 }\n")
 	// 的 malloc 簽名為 i32）。這避免了 45+ 處呼叫端個別處理平台差異。
 	// 注意：字串模式 `@malloc(i64 ` (含尾部空格) 不會匹配 `declare i8* @malloc(i64)`
 	// 宣告（後者為 `(i64)` 無空格），因此宣告不會被誤改。
+	// 非 WASI 平台 nolang.malloc wrapper 內部使用佔位符 @nolang.real_malloc 呼叫真實
+	// malloc，避免被此處的 ReplaceAll 改寫成 @nolang.malloc 造成無限遞迴；替換後還原。
 	ir := sb.String()
 	ir = strings.ReplaceAll(ir, "@malloc(i64 ", "@nolang.malloc(i64 ")
+	ir = strings.ReplaceAll(ir, "@nolang.real_malloc(", "@malloc(")
 	// WASI 平台：將所有 call i64 @read(...) / call i64 @write(...) 呼叫重定向至
 	// @nolang.read / @nolang.write wrapper。wrapper 內部將 i64 count 截斷為 i32，
 	// 並將 i32 返回值符號擴展回 i64，匹配 wasi-libc 的 (i32, i8*, i32) -> i32 簽名。

@@ -1612,17 +1612,58 @@ math.PI
 
 The following cases do not require a prefix:
 
-**1. `printf` / `sprintf` / `print`**
+**1. `print` / `eprint` / `format`**
 
 These three functions are exempt from the prefix rule by convention. **This is a special case for these three functions only**, not because they are builtins — other builtin functions (such as `open`, `close`, `read`, `write`, etc.) still require the module prefix.
 
+Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing variables directly from scope — no positional arguments. Compile-time validation is supported. Output is written directly via `io.out`/`io.err` syscalls, without depending on libc `printf`.
+
+- `print(s)` — writes to stdout, **auto-appends newline**
+- `eprint(s)` — writes to stderr, **auto-appends newline**
+- `format(s)` — returns the formatted string (replaces `sprintf`), no newline
+
+> `printf`, `eprintf`, `sprintf` are **deprecated**, kept only for backward compatibility. Replacements:
+> - `printf(s)` → `io.out(s)` (no newline, stdout)
+> - `eprintf(s)` → `io.err(s)` (no newline, stderr)
+> - `sprintf(s)` → `format(s)` (returns formatted string)
+>
+> `io.out`/`io.err` are low-level commands that output **without a newline**. Since module calls must include the module prefix, `io.err` explicitly carries the module prefix and will not conflict with the Option constructor `err()`; even if names overlap, the module prefix disambiguates.
+
 ```no
-printf('hello %d', n)        // ✅ no prefix
-s = sprintf('x=%d', x)       // ✅ no prefix
-print('hello')               // ✅ no prefix
+print('hello {n}')           // ✅ no prefix, auto-newline
+s = format('x={x}')          // ✅ no prefix, returns formatted string
+eprint('err: {n}')           // ✅ no prefix, writes to stderr with newline
+print('id {id:06} amount {money:.2f}')  // supports align/fill/width/precision
+io.out('no-newline-here')    // ✅ low-level command, no newline (replaces printf)
+io.err('err-no-newline')     // ✅ low-level command, stderr no newline (replaces eprintf)
 
 fs.open(path, opts)          // ✅ with prefix (builtins need it too)
 ```
+
+**Format specifier syntax:** `{name[:spec]}` where `spec` is `[[fill]align][sign][#][0][width][.precision][type]`
+- `align`: `<` left, `>` right, `^` center (with optional `fill` char)
+- `sign`: `+` show plus, `-` only negatives (default)
+- `#`: base prefix (`0x`/`0o`/`0b`)
+- `0`: zero-pad
+- `width`: minimum field width
+- `.precision`: float decimals / string truncation
+- `type`: `d`(int), `x`/`X`(hex), `o`(octal), `b`(binary), `c`(char), `f`(fixed), `e`/`E`(scientific), `g`/`G`(general), `s`(string, default)
+
+```no
+x i64 = 42
+u u64 = 255
+pi f64 = 3.14159
+s str = 'hello'
+print('{x:06}')              // 000042
+print('{x:>10}')             // right-aligned width 10
+print('{u:#x}')              // 0xff
+print('{pi:.2f}')            // 3.14
+print('{pi:8.3e}')           // 3.142e+00
+print('{s:<10}')             // hello     (left-aligned)
+print('{s:.3}')              // hel (truncated to 3 chars)
+```
+
+Use `{{` and `}}` to output literal `{` and `}`. C-style `%d`/`%s`/`%f` format strings are no longer supported (libc `printf` dependency removed); migrate to `{name}` syntax.
 
 **2. Same-file definitions**
 
@@ -1755,9 +1796,9 @@ f = fs.open(path, opts)
 f.read(buf, n)
 f.close()
 
-// printf/sprintf/print
-printf('hello %d', n)
-s = sprintf('x=%d', x)
+// print/eprint/format (named format strings, no prefix)
+print('hello {n}')
+s = format('x={x}')
 
 // ─── Prefix required ───
 
@@ -2286,8 +2327,15 @@ x: {
 #### fmt — Formatted Output
 
 ```no
-printf(fmt str, ...)    // Formatted output, no trailing newline
-print(...)              // Print with newline
+print('x={x}')                 // Named format, auto-appends newline (stdout)
+eprint('err {x}')              // Named format, auto-appends newline (stderr)
+print('id {id:06} amt {money:.2f}')  // Supports align/fill/width/precision
+s = format('x={x}')            // Returns formatted string (replaces sprintf)
+io.out('no-newline-here')      // Low-level command, no newline (stdout)
+io.err('err-no-newline')       // Low-level command, no newline (stderr)
+// printf/eprintf/sprintf are deprecated: printf→io.out, eprintf→io.err, sprintf→format.
+// io.err carries the module prefix and will not conflict with the Option constructor err().
+// Output via io.out/io.err syscalls, no libc printf dependency
 ```
 
 #### math — Math Functions

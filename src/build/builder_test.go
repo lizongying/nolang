@@ -82,3 +82,82 @@ entry:
 		}
 	}
 }
+
+// --- Task 9: Direct WASM 後端整合測試 ---
+
+// runDirectWasmWithWasmtime 以 Direct WASM 後端編譯源碼並以 wasmtime 執行。
+// 回傳 (stdout, true) 成功；若 wasmtime 不在 $PATH 則回傳 ("", false) 供呼叫端 t.Skip。
+// 編譯或執行失敗時直接 t.Fatalf。
+func runDirectWasmWithWasmtime(t *testing.T, src string) (string, bool) {
+	t.Helper()
+	if !toolAvailable("wasmtime") {
+		return "", false
+	}
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "src.no")
+	if err := os.WriteFile(srcPath, []byte(src), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	wasmBytes, err := BuildDirectWasm(srcPath, BuildOptions{
+		Target:        "wasm32-wasi",
+		UseDirectWasm: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildDirectWasm: %v", err)
+	}
+	outPath := filepath.Join(tmpDir, "out.wasm")
+	if err := os.WriteFile(outPath, wasmBytes, 0644); err != nil {
+		t.Fatalf("write wasm: %v", err)
+	}
+	cmd := exec.Command("wasmtime", "run", outPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("wasmtime exited %d\nstdout: %s\nstderr: %s",
+				exitErr.ExitCode(), stdout.String(), stderr.String())
+		}
+		t.Fatalf("wasmtime run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	return stdout.String(), true
+}
+
+// TestBuildDirectWasmHelloWorld 驗證 Direct WASM 後端能編譯 `print('Hello, World!')`
+// 並產出可被 wasmtime 執行的 .wasm，stdout 應包含 "Hello, World!"。
+// 若 wasmtime 不在 $PATH 則 t.Skip。
+func TestBuildDirectWasmHelloWorld(t *testing.T) {
+	stdout, ok := runDirectWasmWithWasmtime(t, "print('Hello, World!')")
+	if !ok {
+		t.Skip("wasmtime not in PATH")
+	}
+	if !strings.Contains(stdout, "Hello, World!") {
+		t.Errorf("stdout = %q, want contains 'Hello, World!'", stdout)
+	}
+}
+
+// TestBuildDirectWasmFib 驗證 Direct WASM 後端能編譯 fibonacci 迴圈版本，
+// 產出可被 wasmtime 執行的 .wasm，stdout 應為 "55\n"。
+// 若 wasmtime 不在 $PATH 則 t.Skip。
+func TestBuildDirectWasmFib(t *testing.T) {
+	src := `fib = (n i64) (r i64) {
+	a = 0
+	b = 1
+	i <- [2..n]: {
+		c = a + b
+		a = b
+		b = c
+	}
+	r = b
+}
+result = fib(10)
+print(result)`
+	stdout, ok := runDirectWasmWithWasmtime(t, src)
+	if !ok {
+		t.Skip("wasmtime not in PATH")
+	}
+	want := "55\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}

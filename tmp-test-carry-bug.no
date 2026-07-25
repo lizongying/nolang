@@ -1,0 +1,55 @@
+; Minimal reproduction of the fe-tobytes carry propagation bug
+main = () {
+    ; Simulate the fe-tobytes carry propagation with known values
+    h []i64 = with-len(10)
+    h[0] = 18751264
+    h[1] = 8832775
+    h[2] = 48431907
+    h[3] = 10528944
+    h[4] = 4474956
+
+    ; Copy to local variables
+    t0 = h[0]
+    t1 = h[1]
+    t2 = h[2]
+    t3 = h[3]
+    t4 = h[4]
+
+    print('Before carry:')
+    print(t3)
+    print(t4)
+
+    ; Carry propagation (simplified - only the relevant steps)
+    ; Step 3: carry from t2 to t3
+    c = (t2 + 33554432) >> 26
+    t2 = t2 - (c << 26)
+    t3 = t3 + c
+
+    print('After step 3 (carry from t2 to t3):')
+    print(c)
+    print(t3)
+
+    ; Step 4: carry from t3 to t4
+    c = (t3 + 16777216) >> 25
+    t3 = t3 - (c << 25)
+    t4 = t4 + c
+
+    print('After step 4 (carry from t3 to t4):')
+    print(c)
+    print(t3)
+    print(t4)
+
+    ; Now simulate the simple carry pass
+    ; The issue: c = t3 >> 25 gives wrong value
+    c-simple = t3 >> 25
+    print('Simple carry c = t3 >> 25:')
+    print(c-simple)
+    print('Expected: 0 (since t3 < 2^25)')
+
+    ; Also test: what is t3 >> 25 directly?
+    r = t3 >> 25
+    print('Direct t3 >> 25:')
+    print(r)
+    print('t3 value:')
+    print(t3)
+}

@@ -40,7 +40,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @llvm.fshl.i32(i32, i32, i32)\n")
 	sb.WriteString("declare i64 @llvm.fshl.i64(i64, i64, i64)\n")
 	// strtod/strtoll replaced by internal @nolang.strtod/@nolang.strtoll
-// (FFI ffi-cstr-at-float/ffi-cstr-at-int use these internal implementations).
+	// (FFI ffi-cstr-at-float/ffi-cstr-at-int use these internal implementations).
 	// malloc 參數型別依平台而異：
 	// - WASI/wasm32: size_t 為 i32，wasi-libc 的 malloc 宣告為 i32*
 	//   直接以 i64 呼叫會造成 LLVM 型別不匹配（IR verifier 失敗）。
@@ -208,6 +208,10 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// - WASI/wasm32: wasi-libc malloc 簽名為 (i32)，需 trunc i64 → i32
 	// - 其他平台: libc malloc 簽名為 (i64)，直接轉發
 	// 此設計讓呼叫端維持單一 i64 介面，避免 45+ 處呼叫端個別處理平台差異。
+	// 注意：非 WASI 平台 wrapper 內部呼叫使用佔位符 @nolang.real_malloc，
+	// 因 generator.go 的 strings.ReplaceAll("@malloc(i64 ", "@nolang.malloc(i64 ")
+	// 會將所有符合 "@malloc(i64 " 模式的呼叫改寫；若 wrapper 直接呼叫 @malloc(i64 %sz)，
+	// 會被改寫成 @nolang.malloc(i64 %sz) 造成無限遞迴。佔位符在最終 IR 被還原回 @malloc。
 	if goos == "wasi" {
 		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
 		sb.WriteString("entry:\n")
@@ -218,7 +222,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	} else {
 		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
 		sb.WriteString("entry:\n")
-		sb.WriteString("\t%p = call i8* @malloc(i64 %sz)\n")
+		sb.WriteString("\t%p = call i8* @nolang.real_malloc(i64 %sz)\n")
 		sb.WriteString("\tret i8* %p\n")
 		sb.WriteString("}\n\n")
 	}

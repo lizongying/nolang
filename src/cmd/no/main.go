@@ -1053,6 +1053,7 @@ func buildCommand(args []string) {
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
+	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -1064,6 +1065,7 @@ func buildCommand(args []string) {
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
@@ -1073,6 +1075,8 @@ func buildCommand(args []string) {
 		fmt.Println("  no build -target x86_64-linux-gnu main.no")
 		fmt.Println("  no build -target wasm32-wasi main.no")
 		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
+		fmt.Println("  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain")
+		fmt.Println("  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output")
 	}
 	_ = fs.Parse(args)
 
@@ -1094,6 +1098,37 @@ func buildCommand(args []string) {
 		Verbose:       verbose,
 		Output:        *outputFile,
 		NoBoundsCheck: *unsafe,
+		UseDirectWasm: *wasmDirect,
+	}
+
+	// Direct WASM 後端路徑：繞過 LLVM 工具鏈，直接發射 WASM 字節碼。
+	// 觸發條件：
+	//   (a) 用戶明確指定 --wasm-direct
+	//   (b) 於 wasip1 平台下且目標含 wasm32（無 LLVM 可用，自動啟用並警告）
+	if *wasmDirect || (runtime.GOOS == "wasip1" && strings.Contains(targetStr, "wasm32")) {
+		if !*wasmDirect && runtime.GOOS == "wasip1" {
+			fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
+		}
+		out := *outputFile
+		if out == "" {
+			out = "a.wasm"
+		}
+		// workspace 模式不適用 Direct WASM（單一輸出檔案）；要求明確輸入檔案。
+		if inputPath == "." {
+			fmt.Fprintln(os.Stderr, "Error: --wasm-direct requires an explicit input file (workspace mode not supported)")
+			os.Exit(1)
+		}
+		wasmBytes, err := nbuild.BuildDirectWasm(inputPath, opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Built: %s\n", out)
+		return
 	}
 
 	// 無參數時，優先檢查 workspace.jsonc 並行編譯
@@ -1118,6 +1153,7 @@ func runCommand(args []string) {
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
+	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<file|dir>]")
 		fmt.Println("")
@@ -1128,12 +1164,14 @@ func runCommand(args []string) {
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                     build and run main.no in current dir")
 		fmt.Println("  no run main.no             build and run main.no")
 		fmt.Println("  no run -cc zig main.no     build and run with Zig compiler")
 		fmt.Println("  no run -target wasm32-wasi main.no")
+		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
 	}
 	_ = fs.Parse(args)
 
@@ -1162,7 +1200,6 @@ func runCommand(args []string) {
 	} else {
 		fmt.Fprintf(os.Stderr, "[debug] keep run tmp dir: %s\n", tmpDir)
 	}
-	outPath := filepath.Join(tmpDir, "out")
 
 	// 未指定 target 時自動檢測當前平台
 	targetStr := *target
@@ -1170,12 +1207,57 @@ func runCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
+	// Direct WASM 後端路徑：編譯為 .wasm 後嘗試以 wasmtime 執行。
+	// 觸發條件與 buildCommand 一致（明確指定 --wasm-direct 或 wasip1 下自動啟用）。
+	if *wasmDirect || (runtime.GOOS == "wasip1" && strings.Contains(targetStr, "wasm32")) {
+		if !*wasmDirect && runtime.GOOS == "wasip1" {
+			fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
+		}
+		// wasip1 瀏覽器沙箱不支援 spawn 子行程，無法執行編譯產物。
+		if runtime.GOOS == "wasip1" {
+			fmt.Fprintln(os.Stderr, "Error: running compiled WASM not supported in browser playground; use 'no build --wasm-direct' instead")
+			os.Exit(1)
+		}
+		outPath := filepath.Join(tmpDir, "out.wasm")
+		wasmBytes, berr := nbuild.BuildDirectWasm(inputPath, nbuild.BuildOptions{
+			Target:        targetStr,
+			UseDirectWasm: true,
+			Verbose:       verbose,
+			NoBoundsCheck: *unsafe,
+		})
+		if berr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+			os.Exit(1)
+		}
+		if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
+			os.Exit(1)
+		}
+		// 以 wasmtime 執行編譯產物（若不可用則提示使用者手動執行）。
+		if _, lerr := exec.LookPath("wasmtime"); lerr != nil {
+			fmt.Fprintf(os.Stderr, "Built: %s\n", outPath)
+			fmt.Fprintln(os.Stderr, "Error: wasmtime not in PATH; run manually: wasmtime run "+outPath)
+			os.Exit(1)
+		}
+		cmd := exec.Command("wasmtime", append([]string{"run", outPath}, fs.Args()[1:]...)...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	outPath := filepath.Join(tmpDir, "out")
 	opts := nbuild.BuildOptions{
 		CC:            *cc,
 		Target:        targetStr,
 		Output:        outPath,
 		Verbose:       verbose,
 		NoBoundsCheck: *unsafe,
+		UseDirectWasm: *wasmDirect,
 	}
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -1200,6 +1282,7 @@ func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
+	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no test [<file>]")
 		fmt.Println("")
@@ -1211,6 +1294,7 @@ func testCommand(args []string) {
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
+		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no test")
@@ -1218,6 +1302,7 @@ func testCommand(args []string) {
 		fmt.Println("  no test -cc zig")
 		fmt.Println("  no test -target x86_64-linux-gnu")
 		fmt.Println("  no test -target wasm32-wasi")
+		fmt.Println("  no test --wasm-direct       run tests via Direct WASM backend with wasmtime")
 	}
 	_ = fs.Parse(args)
 
@@ -1277,6 +1362,24 @@ func testCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
+	// Direct WASM 後端路徑：編譯為 .wasm 後以 wasmtime 執行每個測試。
+	// 觸發條件與 buildCommand 一致。
+	useDirectWasm := *wasmDirect || (runtime.GOOS == "wasip1" && strings.Contains(targetStr, "wasm32"))
+	if useDirectWasm && !*wasmDirect && runtime.GOOS == "wasip1" {
+		fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
+	}
+	// wasip1 瀏覽器沙箱不支援 spawn 子行程，無法執行測試產物。
+	if useDirectWasm && runtime.GOOS == "wasip1" {
+		fmt.Fprintln(os.Stderr, "Error: running test binaries not supported in browser playground")
+		os.Exit(1)
+	}
+	if useDirectWasm {
+		if _, lerr := exec.LookPath("wasmtime"); lerr != nil {
+			fmt.Fprintln(os.Stderr, "Error: --wasm-direct test mode requires wasmtime in PATH")
+			os.Exit(1)
+		}
+	}
+
 	hadFailure := false
 	for _, tf := range testFiles {
 		if verbose {
@@ -1287,12 +1390,47 @@ func testCommand(args []string) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+
+		if useDirectWasm {
+			// Direct WASM 路徑：產生 .wasm 後以 wasmtime 執行。
+			outPath := filepath.Join(tmpDir, "out.wasm")
+			wasmBytes, berr := nbuild.BuildDirectWasm(tf, nbuild.BuildOptions{
+				Target:        targetStr,
+				UseDirectWasm: true,
+				Verbose:       false,
+			})
+			if berr != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, berr)
+				hadFailure = true
+				os.RemoveAll(tmpDir)
+				continue
+			}
+			if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, werr)
+				hadFailure = true
+				os.RemoveAll(tmpDir)
+				continue
+			}
+			cmd := exec.Command("wasmtime", "run", outPath)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, err)
+				hadFailure = true
+				os.RemoveAll(tmpDir)
+				continue
+			}
+			os.RemoveAll(tmpDir)
+			continue
+		}
+
 		outPath := filepath.Join(tmpDir, "out")
 		opts := nbuild.BuildOptions{
-			CC:      *cc,
-			Target:  targetStr,
-			Output:  outPath,
-			Verbose: false,
+			CC:            *cc,
+			Target:        targetStr,
+			Output:        outPath,
+			Verbose:       false,
+			UseDirectWasm: *wasmDirect,
 		}
 
 		if err := nbuild.BuildFile(tf, opts); err != nil {

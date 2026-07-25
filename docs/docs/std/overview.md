@@ -67,9 +67,17 @@ x: {
 
 ### fmt — 格式化輸出
 
+Nolang 使用**具名格式字串** `{name[:spec]}`，直接引用作用域變量，無需位置參數。輸出透過 `io.out`/`io.err` 系統調用，不依賴 libc `printf`。
+
 ```no
-printf(fmt str, ...)    ; 格式化輸出，不換行
-print(...)              ; 列印並換行
+print('x={x}')                 ; 具名格式，自動換行（stdout）
+eprint('err {x}')              ; 具名格式，自動換行（stderr）
+print('編號 {id:06} 金額 {money:.2f}')  ; 支援對齊/填充/寬度/精度
+s = format('x={x}')            ; 返回格式化字串（替代 sprintf）
+io.out('no-newline-here')      ; 底層命令，輸出不換行（stdout）
+io.err('err-no-newline')       ; 底層命令，輸出不換行（stderr）
+; printf/eprintf/sprintf 已廢棄：printf→io.out、eprintf→io.err、sprintf→format
+; io.err 明確模組前綴，不會與 Option 構造函數 err() 衝突
 ```
 
 ### math — 數學函數

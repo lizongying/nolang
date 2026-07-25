@@ -10,20 +10,20 @@
 
 ; crc32("")=00000000
 h = crc-32.crc-32('', 0)
-printf('crc32("")=')
+io.out('crc32("")=')
 fmt.print-hex32(h)
 print('')
 
 ; crc32("hello")=3610a686
 h = crc-32.crc-32('hello', 5)
-printf('crc32("hello")=')
+io.out('crc32("hello")=')
 fmt.print-hex32(h)
 print('')
 
 ; crc32("fox")=414fa339
 s = 'The quick brown fox jumps over the lazy dog'
 h = crc-32.crc-32(s, 43)
-printf('crc32("fox")=')
+io.out('crc32("fox")=')
 fmt.print-hex32(h)
 print('')
 
@@ -33,19 +33,19 @@ print('')
 
 ; fnv1a32("")=811c9dc5
 h = fnv-1a-32.fnv-1a-32('', 0)
-printf('fnv1a32("")=')
+io.out('fnv1a32("")=')
 fmt.print-hex32(h)
 print('')
 
 ; fnv1a32("hello")=4f9f2cab
 h = fnv-1a-32.fnv-1a-32('hello', 5)
-printf('fnv1a32("hello")=')
+io.out('fnv1a32("hello")=')
 fmt.print-hex32(h)
 print('')
 
 ; fnv1a32("fox")=048fff90
 h = fnv-1a-32.fnv-1a-32(s, 43)
-printf('fnv1a32("fox")=')
+io.out('fnv1a32("fox")=')
 fmt.print-hex32(h)
 print('')
 
@@ -57,7 +57,7 @@ md5-out [16]byte
 
 ; md5("")=d41d8cd98f00b204e9800998ecf8427e
 md5-out = md5.md5('')
-printf('md5("")=')
+io.out('md5("")=')
 i <- [0..16): {
     fmt.print-hex8(md5-out[i] & 255)
 }
@@ -65,7 +65,7 @@ print('')
 
 ; md5("hello")=5d41402abc4b2a76b9719d911017c592
 md5-out = md5.md5('hello')
-printf('md5("hello")=')
+io.out('md5("hello")=')
 i <- [0..16): {
     fmt.print-hex8(md5-out[i] & 255)
 }
@@ -73,7 +73,7 @@ print('')
 
 ; md5("fox")=9e107d9d372bb6826bd81d3542a419d6
 md5-out = md5.md5(s)
-printf('md5("fox")=')
+io.out('md5("fox")=')
 i <- [0..16): {
     fmt.print-hex8(md5-out[i] & 255)
 }
@@ -116,7 +116,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1, h0, h1, h2, h3, h4)
-printf('sha1-zero-block=')
+io.out('sha1-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -153,7 +153,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
-printf('sha1-empty=')
+io.out('sha1-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -190,7 +190,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1abc, h0, h1, h2, h3, h4)
-printf('sha1-abc=')
+io.out('sha1-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -208,7 +208,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
-printf('sha1("")=')
+io.out('sha1("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -245,7 +245,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1hello, h0, h1, h2, h3, h4)
-printf('sha1("hello")=')
+io.out('sha1("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -282,7 +282,7 @@ h2 = 2562383102
 h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1fox, h0, h1, h2, h3, h4)
-printf('sha1("fox")=')
+io.out('sha1("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -327,7 +327,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256-zero-block=')
+io.out('sha256-zero-block=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -370,7 +370,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256-empty=')
+io.out('sha256-empty=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -413,7 +413,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256abc, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256-abc=')
+io.out('sha256-abc=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -437,7 +437,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256("")=')
+io.out('sha256("")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -480,7 +480,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256hello, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256("hello")=')
+io.out('sha256("hello")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -523,7 +523,7 @@ h5 = 2600822924
 h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256fox, h0, h1, h2, h3, h4, h5, h6, h7)
-printf('sha256("fox")=')
+io.out('sha256("fox")=')
 fmt.print-hex32(h0)
 fmt.print-hex32(h1)
 fmt.print-hex32(h2)
@@ -577,7 +577,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512-zero-block=')
+    io.out('sha512-zero-block=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -620,7 +620,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512-empty=')
+    io.out('sha512-empty=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -663,7 +663,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512-abc=')
+    io.out('sha512-abc=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -687,7 +687,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512("")=')
+    io.out('sha512("")=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -730,7 +730,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512("hello")=')
+    io.out('sha512("hello")=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -773,7 +773,7 @@ test-sha512 = () {
     h6 = 2270897969802886507
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox, h0, h1, h2, h3, h4, h5, h6, h7)
-    printf('sha512("fox")=')
+    io.out('sha512("fox")=')
     fmt.print-hex64(h0)
     fmt.print-hex64(h1)
     fmt.print-hex64(h2)
@@ -803,7 +803,7 @@ aes-plain [16]byte = [
 aes-out [16]byte
 aes-out = aes.aes-128-enc(aes-plain, aes-key)
 
-printf('aes-enc=')
+io.out('aes-enc=')
 i <- [0..16): {
     fmt.print-hex8(aes-out[i] & 255)
 }
@@ -812,7 +812,7 @@ print('')
 aes-dec [16]byte
 aes-dec = aes.aes-128-dec(aes-out, aes-key)
 
-printf('aes-dec=')
+io.out('aes-dec=')
 i <- [0..16): {
     fmt.print-hex8(aes-dec[i] & 255)
 }
@@ -828,7 +828,7 @@ des-plain = '\x01\x23\x45\x67\x89\xab\xcd\xef'
 des-out []byte
 des-out = des.des-enc(des-plain, 8, des-key)
 
-printf('des-enc=')
+io.out('des-enc=')
 i <- [0..8): {
     fmt.print-hex8(des-out[i] & 255)
 }
@@ -837,7 +837,7 @@ print('')
 des-decrypted []byte
 des-decrypted = des.des-dec(des-out, 8, des-key)
 
-printf('des-dec=')
+io.out('des-dec=')
 i <- [0..8): {
     fmt.print-hex8(des-decrypted[i] & 255)
 }

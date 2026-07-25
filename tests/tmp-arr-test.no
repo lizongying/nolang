@@ -5,9 +5,9 @@ arr.push(3.5)
 a f64 = arr[0]
 b f64 = arr[1]
 c f64 = a * b
-printf('a = %.17g\n', a)
-printf('b = %.17g\n', b)
-printf('a*b = %.17g\n', c)
+print('a = {a:.17g}')
+print('b = {b:.17g}')
+print('a*b = {c:.17g}')
 sum f64 = 0.0
 sum = sum + a * b
-printf('sum = %.17g\n', sum)
+print('sum = {sum:.17g}')

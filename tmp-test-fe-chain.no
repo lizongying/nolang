@@ -1,0 +1,92 @@
+; Test more fe-invert chain milestones
+main = () {
+    ; a = 9
+    base [32]byte
+    i <- [0..32): {
+        base[i] = 0
+    }
+    base[0] = 9
+
+    a []i64 = with-len(10)
+    x25519.fe-frombytes(a, base)
+
+    ; Reproduce the first part of fe-invert
+    t0 []i64 = with-len(10)
+    t1 []i64 = with-len(10)
+    t2 []i64 = with-len(10)
+
+    ; t0 = a^2
+    x25519.fe-sq(t0, a)
+    ; t1 = a^4
+    x25519.fe-sq(t1, t0)
+    ; t1 = a^8
+    x25519.fe-sq(t1, t1)
+    ; t1 = a^9
+    x25519.fe-mul(t1, a, t1)
+    ; t0 = a^11
+    x25519.fe-mul(t0, t0, t1)
+    ; t2 = a^22
+    x25519.fe-sq(t2, t0)
+    ; t1 = a^9 * a^22 = a^31
+    x25519.fe-mul(t1, t1, t2)
+
+    t1-bytes [32]byte
+    i <- [0..32): {
+        t1-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t1-bytes, t1)
+    print('=== a^31 bytes ===')
+    i <- [0..8): {
+        print(t1-bytes[i] & 255)
+    }
+
+    ; Now test: t2 = (a^31)^(2^5) = a^992
+    ; fe-sq(t2, t1) + 4 more sq
+    x25519.fe-sq(t2, t1)
+    i <- [0..4): {
+        x25519.fe-sq(t2, t2)
+    }
+    t2-bytes [32]byte
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^992 bytes ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+
+    ; t1 = a^992 * a^31 = a^1023
+    x25519.fe-mul(t1, t2, t1)
+    i <- [0..32): {
+        t1-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t1-bytes, t1)
+    print('=== a^1023 bytes ===')
+    i <- [0..8): {
+        print(t1-bytes[i] & 255)
+    }
+
+    ; Test loop count: count how many times the loop body executes
+    print('=== Loop count test ===')
+    count = 0
+    i <- [0..4): {
+        count = count + 1
+    }
+    print('count after [0..4) (expect 4):')
+    print(count)
+
+    count2 = 0
+    i <- [0..10): {
+        count2 = count2 + 1
+    }
+    print('count after [0..10) (expect 10):')
+    print(count2)
+
+    count3 = 0
+    i <- [0..50): {
+        count3 = count3 + 1
+    }
+    print('count after [0..50) (expect 50):')
+    print(count3)
+}

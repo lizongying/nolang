@@ -44,17 +44,66 @@ math.PI
 
 以下情況不需要前綴：
 
-### 1. `printf` / `sprintf` / `print`
+### 1. `print` / `eprint` / `format`
 
 這三個函數依規定免除前綴，直接使用。**這僅僅是針對這三個函數的特例**，並非因為它們是 builtin —— 其他 builtin 函數（如 `open`、`close`、`read`、`write` 等）仍需使用模組前綴。
 
+Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用域中的變量，無需位置參數。支援編譯期驗證。輸出透過 `io.out`/`io.err` 系統調用直接寫入，不依賴 libc `printf`。
+
+- `print(s)` — 輸出到標準輸出，**自動換行**
+- `eprint(s)` — 輸出到標準錯誤，**自動換行**
+- `format(s)` — 返回格式化字串（替代 `sprintf`），不自動換行
+
+> `printf`、`eprintf`、`sprintf` 已**廢棄**，保留僅為向後兼容。替代關係如下：
+> - `printf(s)` → `io.out(s)`（無換行，標準輸出）
+> - `eprintf(s)` → `io.err(s)`（無換行，標準錯誤）
+> - `sprintf(s)` → `format(s)`（返回格式化字串）
+>
+> `io.out`/`io.err` 是底層命令，輸出**不換行**。由於模組調用必須加模組名，`io.err` 明確了模組前綴，不會與 Option 構造函數 `err()` 衝突；即使同名，模組前綴也能區分。
+
 ```no
-printf('hello %d', n)        ; ✅ 無前綴
-s = sprintf('x=%d', x)       ; ✅ 無前綴
-print('hello')               ; ✅ 無前綴
+print('hello {n}')           ; ✅ 無前綴，自動換行
+s = format('x={x}')          ; ✅ 無前綴，返回格式化字串
+eprint('err: {n}')           ; ✅ 無前綴，輸出到 stderr 並換行
+print('編號 {id:06} 金額 {money:.2f}')  ; ✅ 支援對齊、填充、寬度、精度
+io.out('no-newline-here')    ; ✅ 底層命令，輸出不換行（替代 printf）
+io.err('err-no-newline')     ; ✅ 底層命令，stderr 不換行（替代 eprintf）
 
 fs.open(path, opts)          ; ✅ 帶前綴（builtin 也需要）
 ```
+
+#### 格式說明符
+
+`{name[:spec]}` 中 `spec` 支援以下欄位（順序固定，均可省略）：
+
+```
+[[fill]align][sign][#][0][width][.precision][type]
+```
+
+- `fill` — 填充字元（預設空格），需與 `align` 一起使用
+- `align` — `<` 左對齊、`>` 右對齊、`^` 置中
+- `sign` — `+` 正數顯示加號、`-` 僅負數顯示（預設）
+- `#` — 進制前綴（`0x`/`0o`/`0b`）
+- `0` — 數值前補零至指定寬度
+- `width` — 最小欄位寬度
+- `.precision` — 浮點數小數位數 / 字串截斷長度
+- `type` — `d`(整數)、`x`/`X`(十六進制)、`o`(八進制)、`b`(二進制)、`c`(字元)、`f`(定點)、`e`/`E`(科學記號)、`g`/`G`(通用)、`s`(字串，預設)
+
+```no
+x i64 = 42
+u u64 = 255
+pi f64 = 3.14159
+s str = 'hello'
+print('{x:06}')              ; 000042
+print('{x:>10}')             ; 右對齊寬度 10
+print('{u:#x}')              ; 0xff
+print('{pi:.2f}')            ; 3.14
+print('{pi:8.3e}')           ; 3.142e+00
+print('{s:<10}')             ; hello     （左對齊）
+print('{s:.3}')              ; hel（截斷為 3 字元）
+```
+
+`{{` 與 `}}` 用於輸出字面 `{` 與 `}`。
 
 ### 2. 同檔案定義
 
@@ -192,9 +241,9 @@ f = fs.open(path, opts)
 f.read(buf, n)
 f.close()
 
-; printf/sprintf/print
-printf('hello %d', n)
-s = sprintf('x=%d', x)
+; print/eprint/format（具名格式字串，無前綴）
+print('hello {n}')
+s = format('x={x}')
 
 ; ─── 需要前綴 ───
 

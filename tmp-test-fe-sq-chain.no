@@ -1,0 +1,81 @@
+; Test individual squarings from a^31
+main = () {
+    base [32]byte
+    i <- [0..32): {
+        base[i] = 0
+    }
+    base[0] = 9
+
+    a []i64 = with-len(10)
+    x25519.fe-frombytes(a, base)
+
+    ; Build a^31
+    t0 []i64 = with-len(10)
+    t1 []i64 = with-len(10)
+    t2 []i64 = with-len(10)
+
+    x25519.fe-sq(t0, a)        ; a^2
+    x25519.fe-sq(t1, t0)       ; a^4
+    x25519.fe-sq(t1, t1)       ; a^8
+    x25519.fe-mul(t1, a, t1)   ; a^9
+    x25519.fe-mul(t0, t0, t1)  ; a^11
+    x25519.fe-sq(t2, t0)       ; a^22
+    x25519.fe-mul(t1, t1, t2)  ; a^31
+
+    ; Now square one at a time and check
+    ; a^62 = (a^31)^2
+    x25519.fe-sq(t2, t1)
+    t2-bytes [32]byte
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^62 ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+
+    ; a^124 = (a^62)^2
+    x25519.fe-sq(t2, t2)
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^124 ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+
+    ; a^248 = (a^124)^2
+    x25519.fe-sq(t2, t2)
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^248 ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+
+    ; a^496 = (a^248)^2
+    x25519.fe-sq(t2, t2)
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^496 ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+
+    ; a^992 = (a^496)^2
+    x25519.fe-sq(t2, t2)
+    i <- [0..32): {
+        t2-bytes[i] = 0
+    }
+    x25519.fe-tobytes(t2-bytes, t2)
+    print('=== a^992 ===')
+    i <- [0..8): {
+        print(t2-bytes[i] & 255)
+    }
+}

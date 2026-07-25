@@ -1,0 +1,32 @@
+; Minimal test: just fe-frombytes and fe-tobytes
+
+main = () {
+    print('=== Test: Round trip of 9 ===')
+    nine [32]byte
+    i <- [0..32): {
+        nine[i] = 0
+    }
+    nine[0] = 9
+
+    u []i64 = with-len(10)
+    x25519.fe-frombytes(u, nine)
+
+    print('fe-frombytes(9) limb 0:')
+    print(u[0])
+    print('limb 1:')
+    print(u[1])
+    print('limb 9:')
+    print(u[9])
+
+    out [32]byte
+    i <- [0..32): {
+        out[i] = 0
+    }
+    x25519.fe-tobytes(out, u)
+
+    print('fe-tobytes byte 0:')
+    print(out[0])
+    print('byte 1:')
+    print(out[1])
+    print('expected: 9 0')
+}
