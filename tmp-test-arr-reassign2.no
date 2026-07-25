@@ -1,0 +1,19 @@
+; 測試: 只有 [32]byte 重賦值, 沒有 slice 輸出
+helper = () (out [32]byte) {
+    i <- [0..32): {
+        out[i] = i & 255
+    }
+}
+
+caller = () {
+    t-tmp [32]byte
+    t-tmp = helper()
+    print('t-tmp[0]=' - t-tmp[0].to-str())
+}
+
+main = () {
+    print('before')
+    caller()
+    print('after')
+    print('done')
+}

@@ -44,10 +44,10 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         z[i] = 0
     }
 
-    ; v = x（副本）
+    ; v = h（V 初始化為 H，即 hash subkey，依據 GCM 規範 V_0 = Y）
     v [16]byte
     i <- [0..16): {
-        v[i] = x[i]
+        v[i] = h[i]
     }
 
     ; 逐位元處理 x 的每一位
@@ -56,12 +56,12 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         byte-idx = i / 8
         bit-idx = 7 - (i % 8)
         xi = (x[byte-idx] >> bit-idx) & 1
-        ; z = z XOR (xi * v)
-        j = 0
-        {
-            z[j] = z[j] ^ v[j]
-            j = j + 1
-        } (xi == 1 && j < 16)
+        ; z = z XOR (xi * v) — 僅在 xi == 1 時執行
+        xi == 1 -> {
+            j <- [0..16): {
+                z[j] = z[j] ^ v[j]
+            }
+        }
         ; 判斷 v 的最低位元
         v-lsb = v[15] & 1
         ; v = v >> 1
@@ -342,7 +342,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     j0[15] = 1
 
     ; 3. 提取密文和 tag
-    cipher []byte
+    cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
         cipher[i] = sealed[i]
     }

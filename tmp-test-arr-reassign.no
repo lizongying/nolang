@@ -1,0 +1,25 @@
+; 最小重現: 函數返回 [N]byte, 主函數調用並 cleanup
+helper = (n i64) (out [32]byte) {
+    i <- [0..32): {
+        out[i] = i & 255
+    }
+}
+
+caller = (info []byte) (out []byte) {
+    out = with-len(32)
+    t-tmp [32]byte
+    t-tmp = helper(32)
+    i <- [0..32): {
+        out[i] = t-tmp[i]
+    }
+}
+
+main = () {
+    print('before')
+    info []byte = with-len(10)
+    i <- [0..10): { info[i] = i }
+    s []byte
+    s = caller(info)
+    print('after len=' - s.len.to-str())
+    print('done')
+}

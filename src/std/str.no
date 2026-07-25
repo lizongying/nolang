@@ -1221,3 +1221,492 @@ str.fields = () (out []str) {
     ; 處理最後一個欄位
     start >= 0 -> out.push(.slice(start, n))
 }
+
+; ═══════════════════════════════════════════════
+; f64 轉字串（可配置精度）
+; ═══════════════════════════════════════════════
+
+; f64-to-str-fixed: 定點格式轉換
+; x f64: 要轉換的浮點數
+; precision i64: 小數位數（>= 0，建議 <= 17 以避免 i64 溢出）
+; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
+f64-to-str-fixed = (x f64, precision i64) (out str) {
+    ; NaN
+    !(x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零（包括 +0.0 和 -0.0）
+    x == 0.0 -> {
+        neg = 0
+        check f64 = 1.0 / x
+        check < 0.0 -> neg = 1
+        total = 1
+        neg == 1 -> total = total + 1
+        precision > 0 -> total = total + 1 + precision
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        out[pos] = 48
+        pos = pos + 1
+        precision > 0 -> {
+            out[pos] = 46
+            pos = pos + 1
+            i <- [0..precision): {
+                out[pos] = 48
+                pos = pos + 1
+            }
+        }
+        return
+    }
+
+    ; 無限
+    x + x == x -> {
+        x < 0.0 -> {
+            out = '-inf'.copy()
+            return
+        }
+        out = 'inf'.copy()
+        return
+    }
+
+    ; 符號處理
+    neg = 0
+    ax f64 = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; m = round(ax * 10^precision)
+    scale f64 = 1.0
+    pi <- [0..precision): {
+        scale = scale * 10.0
+    }
+    scaled f64 = ax * scale
+    m i64 = f64-to-i64(scaled + 0.5)
+
+    ; 將 m 轉為字串
+    mstr = i64-to-str(m)
+    mn = mstr.len
+
+    ; 補零到至少 precision+1 位（保證整數部分至少一位）
+    pad = 0
+    mn <= precision -> pad = precision + 1 - mn
+
+    ; 計算長度
+    digits-len = mn + pad
+    int-len = digits-len - precision
+    total = digits-len
+    neg == 1 -> total = total + 1
+    precision > 0 -> total = total + 1
+
+    out = with-cap(total)
+    pos = 0
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+    ; 整數部分
+    j <- [0..int-len): {
+        {
+            j < pad -> out[pos] = 48
+            -> out[pos] = mstr[j - pad]
+        }
+        pos = pos + 1
+    }
+    ; 小數部分
+    precision > 0 -> {
+        out[pos] = 46
+        pos = pos + 1
+        j <- [0..precision): {
+            idx = int-len + j
+            {
+                idx < pad -> out[pos] = 48
+                -> out[pos] = mstr[idx - pad]
+            }
+            pos = pos + 1
+        }
+    }
+}
+
+; f64-to-str-sci: 科學記號格式
+; x f64: 要轉換的浮點數
+; precision i64: 小數部分位數（>= 0）
+; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
+f64-to-str-sci = (x f64, precision i64) (out str) {
+    ; NaN
+    !(x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零
+    x == 0.0 -> {
+        neg = 0
+        check f64 = 1.0 / x
+        check < 0.0 -> neg = 1
+        total = 5
+        neg == 1 -> total = total + 1
+        precision > 0 -> total = total + 1 + precision
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        out[pos] = 48
+        pos = pos + 1
+        precision > 0 -> {
+            out[pos] = 46
+            pos = pos + 1
+            i <- [0..precision): {
+                out[pos] = 48
+                pos = pos + 1
+            }
+        }
+        out[pos] = 101
+        pos = pos + 1
+        out[pos] = 43
+        pos = pos + 1
+        out[pos] = 48
+        pos = pos + 1
+        out[pos] = 48
+        return
+    }
+
+    ; 無限
+    x + x == x -> {
+        x < 0.0 -> {
+            out = '-inf'.copy()
+            return
+        }
+        out = 'inf'.copy()
+        return
+    }
+
+    ; 符號處理
+    neg = 0
+    ax f64 = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數 e = floor(log10(ax))
+    ln10 f64 = 2.302585092994046
+    e i64 = f64-to-i64(floor(log10(ax)))
+    upper f64 = exp(i64-to-f64(e + 1) * ln10)
+    ax >= upper -> e = e + 1
+    base f64 = exp(i64-to-f64(e) * ln10)
+    ax < base -> {
+        e = e - 1
+        base = exp(i64-to-f64(e) * ln10)
+    }
+
+    ; m = round(ax / base * 10^precision)
+    scale f64 = 1.0
+    pi <- [0..precision): {
+        scale = scale * 10.0
+    }
+    m i64 = f64-to-i64(ax / base * scale + 0.5)
+
+    ; 四捨五入溢出處理（m 變成 10^(precision+1)）
+    overflow = 1
+    i <- [0..precision + 1): {
+        overflow = overflow * 10
+    }
+    m >= overflow -> {
+        m = m / 10
+        e = e + 1
+    }
+
+    ; 構建 mantissa 字串
+    mstr = i64-to-str(m)
+    mn = mstr.len
+
+    ; 指數位數
+    ae i64 = e
+    e < 0 -> ae = 0 - ae
+    elen = 1
+    ae >= 100 -> elen = 3
+    ae >= 10 && ae < 100 -> elen = 2
+
+    ; 總長度
+    total = mn
+    neg == 1 -> total = total + 1
+    precision > 0 -> total = total + 1
+    total = total + 2 + elen
+    elen < 2 -> total = total + 1
+
+    out = with-cap(total)
+    pos = 0
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+    ; 第一位數字
+    out[pos] = mstr[0]
+    pos = pos + 1
+    ; 小數部分
+    precision > 0 -> {
+        out[pos] = 46
+        pos = pos + 1
+        j <- [0..precision): {
+            idx = j + 1
+            {
+                idx < mn -> out[pos] = mstr[idx]
+                -> out[pos] = 48
+            }
+            pos = pos + 1
+        }
+    }
+    ; 'e' 和符號
+    out[pos] = 101
+    pos = pos + 1
+    {
+        e < 0 -> out[pos] = 45
+        -> out[pos] = 43
+    }
+    pos = pos + 1
+    ; 指數位數（至少 2 位，前導補零）
+    estr = i64-to-str(ae)
+    elen2 = estr.len
+    elen2 == 1 -> {
+        out[pos] = 48
+        pos = pos + 1
+    }
+    j <- [0..elen2): {
+        out[pos] = estr[j]
+        pos = pos + 1
+    }
+}
+
+; f64-to-str-general: 通用格式（自動選擇定點或科學記號）
+; x f64: 要轉換的浮點數
+; precision i64: 最大有效數字位數（>= 1）
+; 返回 out str: 字串表示（自動去尾隨零）
+f64-to-str-general = (x f64, precision i64) (out str) {
+    ; NaN
+    !(x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零
+    x == 0.0 -> {
+        neg = 0
+        check f64 = 1.0 / x
+        check < 0.0 -> neg = 1
+        out = with-cap(2)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        out[pos] = 48
+        return
+    }
+
+    ; 無限
+    x + x == x -> {
+        x < 0.0 -> {
+            out = '-inf'.copy()
+            return
+        }
+        out = 'inf'.copy()
+        return
+    }
+
+    ; 符號處理
+    neg = 0
+    ax f64 = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數
+    ln10 f64 = 2.302585092994046
+    e i64 = f64-to-i64(floor(log10(ax)))
+    upper f64 = exp(i64-to-f64(e + 1) * ln10)
+    ax >= upper -> e = e + 1
+    base f64 = exp(i64-to-f64(e) * ln10)
+    ax < base -> {
+        e = e - 1
+        base = exp(i64-to-f64(e) * ln10)
+    }
+
+    ; m = round(ax / base * 10^(precision-1))
+    p-1 i64 = precision - 1
+    scale f64 = 1.0
+    pi <- [0..p-1): {
+        scale = scale * 10.0
+    }
+    m i64 = f64-to-i64(ax / base * scale + 0.5)
+
+    ; 四捨五入溢出處理
+    overflow = 1
+    i <- [0..precision): {
+        overflow = overflow * 10
+    }
+    m >= overflow -> {
+        m = m / 10
+        e = e + 1
+    }
+
+    ; mantissa 字串
+    mstr = i64-to-str(m)
+    mn = mstr.len
+    pad = 0
+    mn < precision -> pad = precision - mn
+
+    ; 找最後一個非零位（用於去尾隨零）
+    last-nz = 0
+    i = precision - 1
+    {
+        idx = i - pad
+        idx >= 0 -> {
+            mstr[idx] != 48 -> {
+                last-nz = i
+                i = -1
+            }
+        }
+        i = i - 1
+    } (i >= 0)
+
+    ; 決定格式：%g 規則
+    use-sci = 0
+    e < -4 -> use-sci = 1
+    e >= precision -> use-sci = 1
+
+    use-sci == 1 -> {
+        ; 科學記號
+        ae i64 = e
+        e < 0 -> ae = 0 - ae
+        elen = 1
+        ae >= 100 -> elen = 3
+        ae >= 10 && ae < 100 -> elen = 2
+
+        total = 1
+        neg == 1 -> total = total + 1
+        last-nz >= 1 -> total = total + 1 + last-nz
+        total = total + 2 + elen
+        elen < 2 -> total = total + 1
+
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        ; 第一位數字
+        {
+            pad > 0 -> out[pos] = 48
+            -> out[pos] = mstr[0]
+        }
+        pos = pos + 1
+        ; 小數部分
+        last-nz >= 1 -> {
+            out[pos] = 46
+            pos = pos + 1
+            j <- [1..last-nz + 1): {
+                idx = j - pad
+                {
+                    idx >= 0 && idx < mn -> out[pos] = mstr[idx]
+                    -> out[pos] = 48
+                }
+                pos = pos + 1
+            }
+        }
+        ; 'e' 和符號
+        out[pos] = 101
+        pos = pos + 1
+        {
+            e < 0 -> out[pos] = 45
+            -> out[pos] = 43
+        }
+        pos = pos + 1
+        ; 指數位數（至少 2 位）
+        estr = i64-to-str(ae)
+        elen2 = estr.len
+        elen2 == 1 -> {
+            out[pos] = 48
+            pos = pos + 1
+        }
+        j <- [0..elen2): {
+            out[pos] = estr[j]
+            pos = pos + 1
+        }
+        return
+    }
+
+    ; 定點格式（e >= 0）
+    e >= 0 -> {
+        int-digits = e + 1
+        frac-digits = 0
+        last-nz >= int-digits -> frac-digits = last-nz - int-digits + 1
+        total = int-digits
+        neg == 1 -> total = total + 1
+        frac-digits > 0 -> total = total + 1 + frac-digits
+
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+        j <- [0..int-digits): {
+            idx = j - pad
+            {
+                idx >= 0 && idx < mn -> out[pos] = mstr[idx]
+                -> out[pos] = 48
+            }
+            pos = pos + 1
+        }
+        frac-digits > 0 -> {
+            out[pos] = 46
+            pos = pos + 1
+            j <- [0..frac-digits): {
+                idx = int-digits + j - pad
+                {
+                    idx >= 0 && idx < mn -> out[pos] = mstr[idx]
+                    -> out[pos] = 48
+                }
+                pos = pos + 1
+            }
+        }
+        return
+    }
+
+    ; 定點格式（e < 0: 0.00dddd）
+    lead-zeros = 0 - e - 1
+    total = 2 + lead-zeros + last-nz + 1
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+    out[pos] = 48
+    pos = pos + 1
+    out[pos] = 46
+    pos = pos + 1
+    j <- [0..lead-zeros): {
+        out[pos] = 48
+        pos = pos + 1
+    }
+    j <- [0..last-nz + 1): {
+        idx = j - pad
+        {
+            idx >= 0 && idx < mn -> out[pos] = mstr[idx]
+            -> out[pos] = 48
+        }
+        pos = pos + 1
+    }
+}

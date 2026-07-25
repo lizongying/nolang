@@ -1,0 +1,14 @@
+; 測試: 帶參數的函數返回 [32]byte
+helper = (x i64) (out [32]byte) {
+    i <- [0..32): {
+        out[i] = (i + x) & 255
+    }
+}
+
+main = () {
+    print('before')
+    t-tmp [32]byte
+    t-tmp = helper(5)
+    print('after t-tmp[0]=' - t-tmp[0].to-str())
+    print('done')
+}

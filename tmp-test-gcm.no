@@ -1,0 +1,118 @@
+; 測試 AES-128-GCM（NIST 測試向量）
+; Test Case 1 from GCM spec:
+;   K = 00000000000000000000000000000000
+;   IV = 000000000000000000000000
+;   P = (empty)
+;   A = (empty)
+;   C = (empty)
+;   T = 58e2fccefa7e3061367f1d57a4e7455a
+;
+; Test Case 3:
+;   K = feffe9928665731c6d6a8f9467308308
+;   IV = cafebabefacedbaddecaf888
+;   A = (empty)
+;   P = d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39
+;   C = 42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091
+;   T = 4d5c2af327cd64a62cf35abd2ba6fab4
+
+main = () {
+    print('=== AES-GCM Test Case 1 (empty plaintext) ===')
+    key1 [16]byte
+    i <- [0..16): {
+        key1[i] = 0
+    }
+    iv1 [12]byte
+    i <- [0..12): {
+        iv1[i] = 0
+    }
+    aad1 []byte = with-len(0)
+    plain1 []byte = with-len(0)
+
+    sealed1 []byte
+    sealed1 = aes-gcm.aes-128-gcm-seal(key1, iv1, aad1, plain1)
+    print('sealed1.len=' - sealed1.len.to-str())
+    i <- [0..sealed1.len): {
+        printf(sealed1[i].to-str() - ' ')
+    }
+    print('')
+    ; 期望: tag = 58e2fccefa7e3061367f1d57a4e7455a
+    ; 88 226 252 206 250 126 48 97 54 127 29 87 164 231 69 90
+
+    print('')
+    print('=== AES-GCM Test Case 3 (NIST) ===')
+    key3 [16]byte
+    key3[0] = 254
+    key3[1] = 255
+    key3[2] = 233
+    key3[3] = 146
+    key3[4] = 134
+    key3[5] = 101
+    key3[6] = 115
+    key3[7] = 28
+    key3[8] = 109
+    key3[9] = 106
+    key3[10] = 143
+    key3[11] = 148
+    key3[12] = 103
+    key3[13] = 48
+    key3[14] = 131
+    key3[15] = 8
+
+    iv3 [12]byte
+    iv3[0] = 202
+    iv3[1] = 254
+    iv3[2] = 186
+    iv3[3] = 190
+    iv3[4] = 250
+    iv3[5] = 206
+    iv3[6] = 219
+    iv3[7] = 173
+    iv3[8] = 222
+    iv3[9] = 202
+    iv3[10] = 248
+    iv3[11] = 136
+
+    ; 明文 (60 bytes)
+    plain3 []byte = with-len(60)
+    p3 = [217, 49, 50, 37, 248, 132, 6, 229, 165, 89, 9, 197, 175, 245, 38, 154, 134, 167, 169, 83, 21, 52, 247, 218, 46, 76, 48, 61, 138, 49, 138, 114, 28, 60, 12, 149, 149, 104, 9, 83, 47, 207, 14, 36, 73, 166, 181, 37, 177, 106, 237, 245, 170, 13, 230, 87, 186, 99, 123, 57]
+    i <- [0..60): {
+        plain3[i] = p3[i]
+    }
+
+    aad3 []byte = with-len(0)
+
+    sealed3 []byte
+    sealed3 = aes-gcm.aes-128-gcm-seal(key3, iv3, aad3, plain3)
+    print('sealed3.len=' - sealed3.len.to-str() - ' (expect 76)')
+    print('cipher:')
+    i <- [0..60): {
+        printf(sealed3[i].to-str() - ' ')
+    }
+    print('')
+    print('tag:')
+    i <- [60..76): {
+        printf(sealed3[i].to-str() - ' ')
+    }
+    print('')
+    ; 期望密文: 66 131 30 194 33 119 116 36 75 114 33 183 132 208 212 156 227 170 33 18 242 192 2 164 224 53 193 126 35 41 172 161 46 33 213 20 178 84 102 147 28 125 143 106 90 170 132 170 5 27 163 11 57 106 10 172 151 61 88 224 145
+    ; 期望 tag: 77 92 42 243 39 205 100 166 44 243 90 189 43 166 250 180
+
+    ; 測試解密
+    print('')
+    print('=== Decrypt Test Case 3 ===')
+    opened []byte
+    opened = aes-gcm.aes-128-gcm-open(key3, iv3, aad3, sealed3)
+    print('opened.len=' - opened.len.to-str() - ' (expect 60)')
+    opened.len == 60 -> {
+        ok = true
+        i <- [0..60): {
+            opened[i] != plain3[i] -> {
+                ok = false
+                print('mismatch at ' - i.to-str() - ': got ' - opened[i].to-str() - ' expect ' - plain3[i].to-str())
+            }
+        }
+        ok -> print('PASS: decrypt matches')
+        ok == false -> print('FAIL: decrypt mismatch')
+    }
+    opened.len != 60 -> print('FAIL: decrypt length wrong')
+}

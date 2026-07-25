@@ -2135,9 +2135,6 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		}
 	}
 
-	if hasUserMain {
-		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
-	}
 	// 生成 top-level 語句到獨立緩衝區，同時收集 entry-block alloca。
 	// 與 generateFunctionDefinition 相同的修復：避免循環體內 call 參數的 alloca 每次迭代增長棧。
 	g.entryAllocaBuf = &strings.Builder{}
@@ -2188,9 +2185,17 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			g.generateForStatement(bodyBuf, fs)
 		}
 	}
-	// 先寫入 entry-block alloca，再寫入函數體
+	// 先寫入 entry-block alloca，再寫入函數體（模組級語句）。
+	// 模組級語句包含所有導入模組的初始化（如 aes.no 的 SBOX），
+	// 必須在使用者 main 函數之前執行，否則 main 內呼叫的函數會存取未初始化的全域變數。
 	sb.WriteString(g.entryAllocaBuf.String())
 	sb.WriteString(bodyBuf.String())
+
+	// 使用者 main 函數必須在所有模組級初始化完成後才呼叫，
+	// 以確保 main 內呼叫的函數能正確存取已初始化的全域變數（如 SBOX）。
+	if hasUserMain {
+		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
+	}
 	// 釋放 top-level 堆變數（模組級 vec/str/arr 等），避免長期運行服務的記憶體泄漏。
 	// 同時釋放 top-level 局部堆變數（非 globalVars 的局部）。
 	g.emitHeapFree(sb)
@@ -5206,8 +5211,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if _, isParam := g.paramNames[name]; !isParam {
 				if g.outputParamNames == nil || !g.outputParamNames[name] {
 					switch llvmType {
-					case "%vec", "%str-long", "%arr":
+					case "%vec", "%str-long":
 						g.trackLocalHeapVar(name, llvmType)
+					case "%arr":
+						// [N]byte 等固定大小陣列若以 alloca 棧分配（見 shouldStackAllocArray），
+						// 則 data 指向棧記憶體，不可在函數退出時 free。
+						// 僅當變數不在 stackArrVars 中（即 malloc 路徑）才追蹤為 heap var。
+						if g.stackArrVars == nil || !g.stackArrVars[name] {
+							g.trackLocalHeapVar(name, llvmType)
+						}
 					case "%option":
 						// option 是否持有堆數據由 inner type 決定。
 						// 僅當 inner 為堆型別（%str-long/%vec/%arr/用戶結構體）時才追蹤，

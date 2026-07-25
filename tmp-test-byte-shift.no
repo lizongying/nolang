@@ -1,0 +1,34 @@
+; 測試 byte 陣列的位移行為
+main = () {
+    v [16]byte
+    v[0] = 255
+    v[1] = 128
+    v[2] = 1
+    v[3] = 0
+
+    print('before shift')
+
+    ; 右移 1 位元
+    r = v[0] >> 1
+    print('255 >> 1 = ' - r.to-str() - ' (expect 127)')
+
+    r = v[1] >> 1
+    print('128 >> 1 = ' - r.to-str() - ' (expect 64)')
+
+    ; 測試 v[j] >> 1 | (v[j-1] & 1) << 7
+    t = (v[1] >> 1) | ((v[0] & 1) << 7)
+    print('shifted = ' - t.to-str() - ' (expect 192)')
+
+    ; 測試 GHASH-mul 的位移邏輯
+    j = 3
+    {
+        v[j] = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+        j = j - 1
+    } (j > 0)
+    v[0] = v[0] >> 1
+
+    print('v[0]=' - v[0].to-str() - ' (expect 127)')
+    print('v[1]=' - v[1].to-str() - ' (expect 192)')
+    print('v[2]=' - v[2].to-str() - ' (expect 0)')
+    print('v[3]=' - v[3].to-str() - ' (expect 0)')
+}

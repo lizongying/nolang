@@ -1,0 +1,21 @@
+; 測試: []byte 參數 with debug
+helper = (out []byte) {
+    print('helper: out.len=' - out.len.to-str())
+    i <- [0..32): {
+        out[i] = i + 1
+    }
+}
+
+caller = () {
+    t-tmp []byte = with-len(32)
+    print('caller: t-tmp.len=' - t-tmp.len.to-str())
+    helper(t-tmp)
+    print('t-tmp[0]=' - t-tmp[0].to-str())
+}
+
+main = () {
+    print('before')
+    caller()
+    print('after')
+    print('done')
+}

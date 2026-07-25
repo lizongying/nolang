@@ -1,36 +1,506 @@
-; fmt - 格式化输入输出标准库
+; fmt — 格式化輸入輸出標準庫
 ;
-; printf(fmt str, args ...any)  → @printf(i8*, ...)
-; print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg) + 換行
-; eprintf(fmt str, args ...any) → @fprintf(stderr, i8*, ...)
-; eprint(args ...any)        → 依型別 @fprintf(stderr, "%s"/"%lld"/"%g", arg) + 換行
-; sprintf(fmt str, args ...any) (out str) → @sprintf(buf, fmt, args...)
-; printf: formatted print
-; build-in (ForwardFunc: printf)
-; printf = (fmt str) {
-;     // LLVM: call i32 @printf(i8* %fmt, ...args)
-; }
+; printf/print/eprintf/eprint/sprintf 為編譯器內建（ForwardFunc）。
+; 本檔案提供純 Nolang 實現的格式化輔助函數，支援 Python format spec 子集：
+;   fmt-parse-spec  — 解析規範字串
+;   fmt-apply-spec  — 套用寬度/對齊/填充
+;   fmt-uint-base   — 無號整數按指定進制轉字串
+;   fmt-int         — 有號整數格式化
+;   fmt-uint        — 無號整數格式化
+;   fmt-f64         — 浮點數格式化
+;   fmt-str         — 字串格式化
+;   fmt-bool        — 布林值格式化
+;
+; 規範字串語法（Python format spec 子集）：
+;   [[fill]align][sign][#][0][width][grouping][.precision][type]
+;   align:  <(左) >(右) =(符號後填充) ^(置中)
+;   sign:   + -(空格)
+;   grouping: ,(逗號) _(底線)
+;   type:   b o d x X e E f F g G s
+;
+; 實現注意事項（編譯器限制 workaround）：
+;   1. 純量 i64 output parameter 在條件區塊內指派時不會生效（編譯器 bug），
+;      因此 fmt-parse-spec 使用本地 -v 變數進行運算，最後在頂層指派給 output params。
+;   2. with-cap() 在無類型標注時預設推斷為 vec 而非 str，
+;      因此所有本地 str 變數須以 `x str = with-cap(n)` 顯式標注類型。
 
-; sprintf: format string and return it
-; build-in (ForwardFunc: sprintf)
-; sprintf = (fmt str, args ...any) (out str) {
-;     // LLVM: call i32 @sprintf(buf, fmt, ...args) → construct %str-long
-; }
+; ═══════════════════════════════════════════════
+; 規範解析
+; ═══════════════════════════════════════════════
 
-; print: print with newline
-; build-in (ForwardFunc: print)
-; print = () {
-;     // LLVM: 依參數型別逐個打印，最後換行
-; }
+; fmt-parse-spec: 解析格式規範字串
+; 返回 fill/align/sign/alt/zero/width/grouping/precision/typ
+; align/sign/grouping/typ 為字元 ASCII 值；alt/zero 為 0/1；precision=-1 表示未指定
+fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, width i64, grouping i64, precision i64, typ i64) {
+    ; 使用本地變數進行運算（output param 在條件區塊內指派不生效）
+    fill-v = 32
+    align-v = 0
+    sign-v = 0
+    alt-v = 0
+    zero-v = 0
+    width-v = 0
+    grouping-v = 0
+    precision-v = -1
+    typ-v = 0
+    n = spec.len
+    i = 0
 
-; eprintf: formatted print to stderr
-; build-in (ForwardFunc: eprintf)
-; eprintf = (fmt str) {
-;     // LLVM: call i32 @fprintf(i8* stderr, i8* %fmt, ...args)
-; }
+    ; fill + align: 若 spec[1] 為 <>=^，則 spec[0] 為 fill
+    ; 注意：n==0 時所有 i<n 條件均為 false，最終指派使用預設值
+    n >= 2 -> {
+        c2 = spec[1]
+        c2 == 60 || c2 == 62 || c2 == 61 || c2 == 94 -> {
+            fill-v = spec[0]
+            align-v = c2
+            i = 2
+        }
+    }
+    i == 0 && n > 0 -> {
+        c0 = spec[0]
+        c0 == 60 || c0 == 62 || c0 == 61 || c0 == 94 -> {
+            align-v = c0
+            i = 1
+        }
+    }
 
-; eprint: print to stderr with newline
-; build-in (ForwardFunc: eprint)
-; eprint = () {
-;     // LLVM: 依參數型別逐個打印到 stderr，最後換行
-; }
+    ; sign: + - 或空格
+    i < n -> {
+        c = spec[i]
+        c == 43 || c == 45 || c == 32 -> {
+            sign-v = c
+            i = i + 1
+        }
+    }
+
+    ; alt: #
+    i < n -> {
+        spec[i] == 35 -> {
+            alt-v = 1
+            i = i + 1
+        }
+    }
+
+    ; zero: 0
+    i < n -> {
+        spec[i] == 48 -> {
+            zero-v = 1
+            i = i + 1
+        }
+    }
+
+    ; width: 連續數字
+    ; 注意：do-while 迴圈的 -> else 分支始終被執行（編譯器 bug），
+    ; 改用 for-loop + break 模式
+    wi <- [i..n): {
+        c = spec[wi]
+        c < 48 || c > 57 -> break
+        width-v = width-v * 10 + c - 48
+        i = i + 1
+    }
+
+    ; grouping: , 或 _
+    i < n -> {
+        c = spec[i]
+        c == 44 || c == 95 -> {
+            grouping-v = c
+            i = i + 1
+        }
+    }
+
+    ; precision: . 後接連續數字
+    i < n -> {
+        spec[i] == 46 -> {
+            i = i + 1
+            precision-v = 0
+            pi <- [i..n): {
+                c = spec[pi]
+                c < 48 || c > 57 -> break
+                precision-v = precision-v * 10 + c - 48
+                i = i + 1
+            }
+        }
+    }
+
+    ; type: 剩餘單一字元
+    i < n -> typ-v = spec[i]
+
+    ; 最終指派（頂層，output param 指派在此生效）
+    fill = fill-v
+    align = align-v
+    sign = sign-v
+    alt = alt-v
+    zero = zero-v
+    width = width-v
+    grouping = grouping-v
+    precision = precision-v
+    typ = typ-v
+}
+
+; ═══════════════════════════════════════════════
+; 寬度/對齊套用
+; ═══════════════════════════════════════════════
+
+; fmt-apply-spec: 套用寬度、對齊與填充字元
+; align: 60=左, 62=右, 94=置中, 0/61=右（預設）
+fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
+    slen = s.len
+    width <= slen -> {
+        out = s.copy()
+        return
+    }
+    pad = width - slen
+    {
+        align == 60 -> {
+            ; 左對齊：s + fill*pad
+            out = with-cap(width)
+            i <- [0..slen): {
+                out[i] = s[i]
+            }
+            i <- [0..pad): {
+                out[slen + i] = fill
+            }
+        }
+        align == 94 -> {
+            ; 置中：fill*left + s + fill*right
+            out = with-cap(width)
+            left = pad / 2
+            right = pad - left
+            i <- [0..left): {
+                out[i] = fill
+            }
+            i <- [0..slen): {
+                out[left + i] = s[i]
+            }
+            i <- [0..right): {
+                out[left + slen + i] = fill
+            }
+        }
+        -> {
+            ; 右對齊或預設：fill*pad + s
+            out = with-cap(width)
+            i <- [0..pad): {
+                out[i] = fill
+            }
+            i <- [0..slen): {
+                out[pad + i] = s[i]
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 進制轉換
+; ═══════════════════════════════════════════════
+
+; fmt-uint-base: 將 u64 按指定進制轉為字串
+; base: 2/8/10/16；upper: hex 是否大寫
+fmt-uint-base = (u u64, base i64, upper bool) (out str) {
+    u == 0 -> {
+        out = with-cap(1)
+        out[0] = 48
+        return
+    }
+    tmp u64 = u
+    digits = 0
+    {
+        digits = digits + 1
+        tmp = tmp / base
+    } (tmp > 0)
+    out = with-cap(digits)
+    pos = digits - 1
+    {
+        d = u % base
+        {
+            d < 10 -> out[pos] = d + 48
+            -> {
+                upper == true -> out[pos] = d - 10 + 65
+                -> out[pos] = d - 10 + 97
+            }
+        }
+        u = u / base
+        pos = pos - 1
+    } (u > 0)
+}
+
+; ═══════════════════════════════════════════════
+; 整數格式化
+; ═══════════════════════════════════════════════
+
+; fmt-int: 有號整數格式化
+; 支援 sign(+/-/space)、zero、width、align、fill
+fmt-int = (n i64, spec str) (out str) {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; 提取 sign-char 與 digits（不含符號）
+    sign-char = 0
+    full = i64-to-str(n)
+    flen = full.len
+    digits str = with-cap(flen)
+    dlen-v = 0
+    {
+        n < 0 -> {
+            sign-char = 45
+            dlen-v = flen - 1
+            i <- [0..dlen-v): {
+                digits[i] = full[i + 1]
+            }
+        }
+        -> {
+            sign == 43 -> sign-char = 43
+            sign == 32 -> sign-char = 32
+            dlen-v = flen
+            i <- [0..dlen-v): {
+                digits[i] = full[i]
+            }
+        }
+    }
+
+    ; 零填充：在符號後、數字前補 0
+    zero == 1 -> {
+        sign-len = 0
+        sign-char != 0 -> sign-len = 1
+        target = width - sign-len
+        target > dlen-v -> {
+            pad = target - dlen-v
+            new-digits str = with-cap(target)
+            i <- [0..pad): {
+                new-digits[i] = 48
+            }
+            i <- [0..dlen-v): {
+                new-digits[pad + i] = digits[i]
+            }
+            digits = new-digits
+            dlen-v = target
+        }
+    }
+
+    ; 組合 body = sign-char + digits
+    body-len = dlen-v
+    sign-char != 0 -> body-len = body-len + 1
+    body str = with-cap(body-len)
+    pos = 0
+    sign-char != 0 -> {
+        body[0] = sign-char
+        pos = 1
+    }
+    i <- [0..dlen-v): {
+        body[pos + i] = digits[i]
+    }
+
+    ; 套用寬度/對齊（零填充已填滿時為 no-op）
+    out = fmt-apply-spec(body, fill, align, width)
+}
+
+; fmt-uint: 無號整數格式化
+; 支援 type(b/o/d/x/X)、alt(#前綴)、zero、width、align、fill
+fmt-uint = (u u64, spec str) (out str) {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; 依 type 轉換
+    digits str = with-cap(21)
+    prefix str = with-cap(2)
+    prefix-len = 0
+    {
+        typ == 98 -> {
+            digits = fmt-uint-base(u, 2, false)
+            alt == 1 -> {
+                prefix[0] = 48
+                prefix[1] = 98
+                prefix-len = 2
+            }
+        }
+        typ == 111 -> {
+            digits = fmt-uint-base(u, 8, false)
+            alt == 1 -> {
+                prefix[0] = 48
+                prefix[1] = 111
+                prefix-len = 2
+            }
+        }
+        typ == 120 -> {
+            digits = fmt-uint-base(u, 16, false)
+            alt == 1 -> {
+                prefix[0] = 48
+                prefix[1] = 120
+                prefix-len = 2
+            }
+        }
+        typ == 88 -> {
+            digits = fmt-uint-base(u, 16, true)
+            alt == 1 -> {
+                prefix[0] = 48
+                prefix[1] = 88
+                prefix-len = 2
+            }
+        }
+        -> {
+            digits = u64-to-str(u)
+        }
+    }
+
+    ; 零填充
+    dlen = digits.len
+    zero == 1 -> {
+        target = width - prefix-len
+        target > dlen -> {
+            pad = target - dlen
+            new-digits str = with-cap(target)
+            i <- [0..pad): {
+                new-digits[i] = 48
+            }
+            i <- [0..dlen): {
+                new-digits[pad + i] = digits[i]
+            }
+            digits = new-digits
+            dlen = target
+        }
+    }
+
+    ; 組合 body = prefix + digits
+    body-len = dlen + prefix-len
+    body str = with-cap(body-len)
+    i <- [0..prefix-len): {
+        body[i] = prefix[i]
+    }
+    i <- [0..dlen): {
+        body[prefix-len + i] = digits[i]
+    }
+
+    ; 套用寬度/對齊
+    out = fmt-apply-spec(body, fill, align, width)
+}
+
+; ═══════════════════════════════════════════════
+; 浮點數格式化
+; ═══════════════════════════════════════════════
+
+; fmt-f64: 浮點數格式化
+; 支援 type(f/e/g)、precision、sign、zero、width、align、fill
+fmt-f64 = (x f64, spec str) (out str) {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    prec = precision
+    prec < 0 -> prec = 6
+
+    ; 依 type 轉換
+    digits str = with-cap(32)
+    {
+        typ == 102 || typ == 70 -> {
+            digits = f64-to-str-fixed(x, prec)
+        }
+        typ == 101 || typ == 69 -> {
+            digits = f64-to-str-sci(x, prec)
+        }
+        typ == 103 || typ == 71 -> {
+            digits = f64-to-str-general(x, prec)
+        }
+        -> {
+            digits = f64-to-str-general(x, 6)
+        }
+    }
+
+    ; sign 選項：對非負數補 + 或空格
+    sign == 43 -> {
+        x >= 0.0 -> {
+            dlen = digits.len
+            new-digits str = with-cap(dlen + 1)
+            new-digits[0] = 43
+            i <- [0..dlen): {
+                new-digits[1 + i] = digits[i]
+            }
+            digits = new-digits
+        }
+    }
+    sign == 32 -> {
+        x >= 0.0 -> {
+            dlen = digits.len
+            new-digits str = with-cap(dlen + 1)
+            new-digits[0] = 32
+            i <- [0..dlen): {
+                new-digits[1 + i] = digits[i]
+            }
+            digits = new-digits
+        }
+    }
+
+    ; 零填充：在符號後補 0
+    zero == 1 -> {
+        sign-len = 0
+        dlen = digits.len
+        dlen > 0 -> {
+            c = digits[0]
+            c == 45 || c == 43 || c == 32 -> sign-len = 1
+        }
+        target = width - sign-len
+        need = dlen - sign-len
+        target > need -> {
+            pad = target - need
+            new-digits str = with-cap(width)
+            i <- [0..sign-len): {
+                new-digits[i] = digits[i]
+            }
+            i <- [0..pad): {
+                new-digits[sign-len + i] = 48
+            }
+            i <- [0..need): {
+                new-digits[sign-len + pad + i] = digits[sign-len + i]
+            }
+            digits = new-digits
+        }
+    }
+
+    ; 套用寬度/對齊
+    out = fmt-apply-spec(digits, fill, align, width)
+}
+
+; ═══════════════════════════════════════════════
+; 字串格式化
+; ═══════════════════════════════════════════════
+
+; fmt-str: 字串格式化
+; 支援 precision(截斷)、width、align、fill
+fmt-str = (s str, spec str) (out str) {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; precision 截斷
+    body str = s.copy()
+    precision >= 0 && precision < s.len -> {
+        body = with-cap(precision)
+        i <- [0..precision): {
+            body[i] = s[i]
+        }
+    }
+
+    ; 套用寬度/對齊
+    out = fmt-apply-spec(body, fill, align, width)
+}
+
+; ═══════════════════════════════════════════════
+; 布林值格式化
+; ═══════════════════════════════════════════════
+
+; fmt-bool: 布林值格式化
+; 支援 width、align、fill
+fmt-bool = (b bool, spec str) (out str) {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    body str = with-cap(5)
+    {
+        b == true -> {
+            body[0] = 116
+            body[1] = 114
+            body[2] = 117
+            body[3] = 101
+        }
+        -> {
+            body[0] = 102
+            body[1] = 97
+            body[2] = 108
+            body[3] = 115
+            body[4] = 101
+        }
+    }
+
+    ; 套用寬度/對齊
+    out = fmt-apply-spec(body, fill, align, width)
+}

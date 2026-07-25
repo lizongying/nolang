@@ -1,0 +1,93 @@
+; test-f64-str.no — 測試 f64-to-str-fixed/sci/general
+; 注意：因編譯器 bug（print 直接接收函數返回值時 @print 未宣告），
+; 所有用例先將結果賦值給變數再 print。
+; 注意：Nolang 中 ';' 是註解符號，不可用作語句分隔。
+
+main = () {
+    ; 特殊值（使用顯式 f64 型別，繞過編譯器對直接除法表達式的型別推導 bug）
+    nan-val f64 = 0.0
+    nan-val = nan-val / nan-val
+    inf-val f64 = 1.0
+    inf-val = inf-val / 0.0
+    neg-inf-val f64 = 0.0
+    neg-inf-val = neg-inf-val - 1.0
+    neg-inf-val = neg-inf-val / 0.0
+
+    print('=== f64-to-str-fixed ===')
+    s = f64-to-str-fixed(3.14159, 4)
+    print(s)
+    s = f64-to-str-fixed(3.14159, 2)
+    print(s)
+    s = f64-to-str-fixed(3.14159, 0)
+    print(s)
+    s = f64-to-str-fixed(-3.14, 2)
+    print(s)
+    s = f64-to-str-fixed(0.0, 4)
+    print(s)
+    s = f64-to-str-fixed(-0.0, 4)
+    print(s)
+    s = f64-to-str-fixed(100.0, 2)
+    print(s)
+    s = f64-to-str-fixed(0.005, 3)
+    print(s)
+    s = f64-to-str-fixed(9.99, 1)
+    print(s)
+    s = f64-to-str-fixed(12345.6789, 2)
+    print(s)
+    s = f64-to-str-fixed(nan-val, 2)
+    print(s)
+    s = f64-to-str-fixed(inf-val, 2)
+    print(s)
+    s = f64-to-str-fixed(neg-inf-val, 2)
+    print(s)
+    print()
+
+    print('=== f64-to-str-sci ===')
+    s = f64-to-str-sci(3.14159, 4)
+    print(s)
+    s = f64-to-str-sci(12345.678, 2)
+    print(s)
+    s = f64-to-str-sci(0.000123, 2)
+    print(s)
+    s = f64-to-str-sci(-5.5, 1)
+    print(s)
+    s = f64-to-str-sci(1.0, 0)
+    print(s)
+    s = f64-to-str-sci(0.0, 3)
+    print(s)
+    s = f64-to-str-sci(-0.0, 3)
+    print(s)
+    s = f64-to-str-sci(nan-val, 2)
+    print(s)
+    s = f64-to-str-sci(inf-val, 2)
+    print(s)
+    s = f64-to-str-sci(neg-inf-val, 2)
+    print(s)
+    print()
+
+    print('=== f64-to-str-general ===')
+    s = f64-to-str-general(3.14159, 6)
+    print(s)
+    s = f64-to-str-general(123456.789, 6)
+    print(s)
+    s = f64-to-str-general(0.0001234, 4)
+    print(s)
+    s = f64-to-str-general(0.00001234, 4)
+    print(s)
+    s = f64-to-str-general(100.0, 4)
+    print(s)
+    s = f64-to-str-general(-3.14, 3)
+    print(s)
+    s = f64-to-str-general(0.0, 4)
+    print(s)
+    s = f64-to-str-general(-0.0, 4)
+    print(s)
+    s = f64-to-str-general(nan-val, 4)
+    print(s)
+    s = f64-to-str-general(inf-val, 4)
+    print(s)
+    s = f64-to-str-general(neg-inf-val, 4)
+    print(s)
+}
+
+main()

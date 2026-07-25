@@ -49,28 +49,20 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 ; counter i64: 計數器位元組（1-255），0 表示不加
 ; 返回 out [32]byte: HMAC 結果
 hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, counter i64) (out [32]byte) {
-    print('[hmac] enter t-len=' - t-len.to-str() - ' info.len=' - info.len.to-str() - ' counter=' - counter.to-str())
-
     ; 計算訊息長度: t-len + info.len + (counter > 0 ? 1 : 0)
     msg-len = t-len + info.len
     counter > 0 -> msg-len = msg-len + 1
-    print('[hmac] msg-len=' - msg-len.to-str())
 
     msg []byte = with-len(msg-len)
-    print('[hmac] msg allocated')
     i <- [0..t-len): {
         msg[i] = t-data[i]
     }
-    print('[hmac] t-data copied')
     i <- [0..info.len): {
         msg[t-len + i] = info[i]
     }
-    print('[hmac] info copied')
     counter > 0 -> msg[t-len + info.len] = counter & 255
-    print('[hmac] counter set, calling hmac-sha256')
 
     out = hmac.hmac-sha256(prk-vec, msg)
-    print('[hmac] done')
 }
 
 ; hkdf-expand: HKDF-Expand（RFC 5869 §2.3）
@@ -85,13 +77,8 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
         prk-vec[i] = prk[i]
     }
 
-    ; T 緩衝區（slice，預分配 32 位元組，所有元素初始化為 0）
-    ; 注意: 必須用 []byte 而非 [32]byte，因為 hkdf-expand-hmac 接收 []byte
-    ; 兩者記憶體佈局不同 (%vec.data 在 offset 16, %arr.data 在 offset 8)
-    t []byte = with-len(32)
-    i <- [0..32): {
-        t[i] = 0
-    }
+    ; T 緩衝區（固定大小陣列，stack-allocated）
+    t [32]byte
     t-valid = false
 
     okm = with-len(out-len)
@@ -101,16 +88,12 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     out-len <= 32 -> {
         ; T(1) = HMAC-SHA256(PRK, info || 1)
         t-tmp [32]byte
-        print('[expand] before hmac call')
         t-tmp = hkdf-expand-hmac(prk-vec, t, 0, info, counter)
-        print('[expand] hmac returned')
 
         copy-n = out-len
-        print('[expand] copy-n=' - copy-n.to-str())
         i <- [0..copy-n): {
             okm[i] = t-tmp[i]
         }
-        print('[expand] copied')
     }
 
     out-len > 32 -> {

@@ -1,0 +1,20 @@
+; 測試: 用 []byte 代替 [32]byte
+helper = () (out []byte) {
+    out = with-len(32)
+    i <- [0..32): {
+        out[i] = i & 255
+    }
+}
+
+caller = () {
+    t-tmp []byte = with-len(32)
+    t-tmp = helper()
+    print('t-tmp[0]=' - t-tmp[0].to-str())
+}
+
+main = () {
+    print('before')
+    caller()
+    print('after')
+    print('done')
+}

@@ -100,20 +100,28 @@ type BuildOptions struct {
 // Recognized architectures (first hyphen-separated component):
 //   - x86_64    → amd64
 //   - aarch64   → arm64
+//   - wasm32    → wasm32
 //
 // Recognized operating systems (any subsequent component):
 //   - linux     → linux
 //   - windows   → windows
 //   - macos     → darwin
 //   - darwin    → darwin
+//   - wasi      → wasi   (wasm32-wasi, wasm32-wasi-threads)
+//   - unknown   → wasi   (wasm32-unknown-wasi / wasm32-unknown-unknown;
+//                        保守地將 unknown wasm 目標視為 wasi)
 //
 // Examples:
-//   - "x86_64-linux-gnu"      → ("linux", "amd64")
-//   - "aarch64-linux-gnu"     → ("linux", "arm64")
-//   - "x86_64-windows-gnu"    → ("windows", "amd64")
-//   - "aarch64-darwin"        → ("darwin", "arm64")
-//   - "x86_64-apple-macos"    → ("darwin", "amd64")
-//   - ""                      → ("", "")
+//   - "x86_64-linux-gnu"           → ("linux", "amd64")
+//   - "aarch64-linux-gnu"          → ("linux", "arm64")
+//   - "x86_64-windows-gnu"         → ("windows", "amd64")
+//   - "aarch64-darwin"             → ("darwin", "arm64")
+//   - "x86_64-apple-macos"         → ("darwin", "amd64")
+//   - "wasm32-wasi"                → ("wasi", "wasm32")
+//   - "wasm32-wasi-threads"        → ("wasi", "wasm32")
+//   - "wasm32-unknown-wasi"        → ("wasi", "wasm32")
+//   - "wasm32-unknown-unknown"     → ("wasi", "wasm32")
+//   - ""                           → ("", "")
 func parseTargetPlatform(target string) (goos, goarch string) {
 	target = strings.TrimSpace(target)
 	if target == "" {
@@ -128,6 +136,8 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 		goarch = "amd64"
 	case "aarch64":
 		goarch = "arm64"
+	case "wasm32":
+		goarch = "wasm32"
 	}
 	for _, p := range parts[1:] {
 		switch p {
@@ -137,6 +147,14 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 			goos = "windows"
 		case "macos", "darwin", "apple":
 			goos = "darwin"
+		case "wasi":
+			goos = "wasi"
+		case "unknown":
+			// wasm32-unknown-wasi / wasm32-unknown-unknown：保守地視為 wasi。
+			// 僅在尚未偵測到 wasi 時覆蓋，避免 wasi 被未知元件覆蓋。
+			if goos == "" {
+				goos = "wasi"
+			}
 		}
 	}
 	return goos, goarch
