@@ -143,18 +143,20 @@ jobs:
 
       - name: Install Zig (provides wasi-libc + clang compatible with LLVM 21 IR)
         run: |
-          curl -L -o zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          curl -L -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
           mkdir -p $HOME/zig
           tar -xf zig.tar.xz -C $HOME/zig --strip-components=1
           echo "$HOME/zig" >> $GITHUB_PATH
+          export PATH="$HOME/zig:$PATH"
           zig version
 
       - name: Install wasmtime
         run: |
-          curl -L -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v22.0.0/wasmtime-v22.0.0-x86_64-linux.tar.xz
+          curl -L -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v47.0.2/wasmtime-v47.0.2-x86_64-linux.tar.xz
           mkdir -p $HOME/wasmtime
           tar -xf wasmtime.tar.xz -C $HOME/wasmtime --strip-components=1
           echo "$HOME/wasmtime" >> $GITHUB_PATH
+          export PATH="$HOME/wasmtime:$PATH"
           wasmtime --version
 
       - name: Build no binary
