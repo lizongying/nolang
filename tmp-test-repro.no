@@ -1,0 +1,40 @@
+; 最小重現: 函數內分配 slice, 在條件分支內寫入, 返回該 slice
+helper = (n i64, info []byte) (out []byte) {
+    inner []byte = with-len(32)
+    i <- [0..32): { inner[i] = 0 }
+
+    out = with-len(n)
+    off = 0
+
+    n <= 32 -> {
+        ; 模擬 hmac 調用
+        tmp [32]byte
+        i <- [0..32): { tmp[i] = i + 1 }
+
+        copy-n = n
+        i <- [0..copy-n): {
+            out[i] = tmp[i]
+        }
+    }
+
+    n > 32 -> {
+        {
+            copy-n = 32
+            off + copy-n > n -> copy-n = n - off
+            i <- [0..copy-n): {
+                out[off + i] = inner[i]
+            }
+            off = off + copy-n
+        } (off < n)
+    }
+}
+
+main = () {
+    print('before call')
+    info []byte = with-len(10)
+    i <- [0..10): { info[i] = i }
+    r []byte
+    r = helper(32, info)
+    print('after call len=' - r.len.to-str())
+    print('done')
+}

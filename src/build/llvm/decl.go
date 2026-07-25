@@ -535,6 +535,13 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	} else {
 		sb.WriteString("@stdin = external global i8*\n")
 	}
+	// stderr 全域變數：macOS 為 __stderrp，Linux/Windows 為 stderr
+	if runtime.GOOS == "darwin" {
+		sb.WriteString("@__stderrp = external global i8*\n")
+	} else {
+		sb.WriteString("@stderr = external global i8*\n")
+	}
+	sb.WriteString("declare i32 @fprintf(i8*, i8*, ...)\n")
 	sb.WriteString("declare void @llvm.lifetime.start.p0i8(i64, i8* nocapture)\n")
 	sb.WriteString("declare void @llvm.lifetime.end.p0i8(i64, i8* nocapture)\n\n")
 

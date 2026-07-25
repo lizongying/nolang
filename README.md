@@ -112,6 +112,8 @@ no run
 
 ## 相關項目
 
+- [Benchmarks Game — Nolang vs C vs Rust 性能對比報告](https://github.com/lizongying/no-benchmarks/results/report.md)
+
 - [Unix 常用命令行工具集，使用 Nolang 语言实现。](https://github.com/lizongying/notools)
 
 ---

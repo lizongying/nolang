@@ -237,6 +237,7 @@ tls-bn-to-bytes = (num []i64) (out []byte) {
 ; 返回 out []byte: PRF 輸出
 tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     out = with-len(out-len)
+
     ; label-seed = label || seed
     label-bytes []byte
     label-bytes = label.to-bytes()
@@ -1011,6 +1012,7 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     seed = .rand-state
     .rand-state = .rand-state + 1
     io.errln('[TLS] ch13: before keypair')
+
     ; 生成私鑰
     kp-state = seed
     i <- [0..32): {
@@ -1020,6 +1022,7 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     .client-priv[0] = .client-priv[0] & 248
     .client-priv[31] = .client-priv[31] & 127
     .client-priv[31] = .client-priv[31] | 64
+
     ; 計算公鑰
     .client-pub = x25519.x25519-scalarmult-base(.client-priv)
     io.errln('[TLS] ch13: after keypair')
@@ -1053,8 +1056,13 @@ tls-conn.send-client-hello-13 = () (ok bool) {
 
     ; cipher_suites: 2 suites = 4 bytes
     tls-put-u16(hs, pos, 4)
+    pos = pos + 2
 
-    ; TLS_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0x002F)
+    ; TLS_AES_128_GCM_SHA256 (TLS 1.3, 0x1301)
+    tls-put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
+    pos = pos + 2
+
+    ; TLS_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0x003C)
     tls-put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
     pos = pos + 2
 
@@ -1121,12 +1129,12 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     tls-put-u16(hs, pos, TLS-EXT-KEY-SHARE)
     pos = pos + 2
 
-    ; ext data length = 2 + 2 + 32 = 36
-    tls-put-u16(hs, pos, 36)
+    ; ext data length = 2 (client_shares_len) + 2 (group) + 2 (key_len) + 32 (key) = 38
+    tls-put-u16(hs, pos, 38)
     pos = pos + 2
 
-    ; client key shares length = 2 + 32 = 34
-    tls-put-u16(hs, pos, 34)
+    ; client key shares length = 2 (group) + 2 (key_len) + 32 (key) = 36
+    tls-put-u16(hs, pos, 36)
     pos = pos + 2
 
     ; group = x25519
@@ -1164,7 +1172,7 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     pos = pos + 2
 
     ; name
-    i <- [0..host.len): {
+    i <- [0...host.len): {
         hs[pos + i] = .host[i]
     }
     pos = pos + .host.len
@@ -1179,6 +1187,15 @@ tls-conn.send-client-hello-13 = () (ok bool) {
 
     ; 設定實際長度
     hs.len = pos
+
+    ; debug: 列印 ClientHello 內容
+    io.errln('[TLS] ch13: total-len=' - pos.to-str() - ' host-len=' - .host.len.to-str())
+    dump = ''
+    j <- [0..pos): {
+        b = hs[j] & 255
+        dump = dump - b.to-str() - ' '
+    }
+    io.errln(dump)
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -1252,16 +1269,20 @@ tls-conn.read-server-hello-13 = () (ok bool) {
     ; 掃描擴展尋找 supported_versions 和 key_share
     is-tls13 = false
     {
+        io.errln('[TLS] sh13: ext-loop pos=' - pos.to-str() - ' ext-end=' - ext-end.to-str())
         ext-type i64 = tls-get-u16(buf, pos)
         pos = pos + 2
         ext-data-len i64 = tls-get-u16(buf, pos)
         pos = pos + 2
+        io.errln('[TLS] sh13: ext type=' - ext-type.to-str() - ' dlen=' - ext-data-len.to-str())
 
         ext-type == TLS-EXT-SUPPORTED-VERSIONS -> {
-            ; supported_versions: 1 byte list length + 2 bytes version
-            sv-len = buf[pos] & 255
-            sv-len >= 2 -> {
-                sv = tls-get-u16(buf, pos + 1)
+            ; supported_versions (server): 2 bytes selected_version
+            ; supported_versions (client): 1 byte list length + list
+            ; 伺服器版本只有 2 bytes
+            ext-data-len == 2 -> {
+                sv = tls-get-u16(buf, pos)
+                io.errln('[TLS] sh13: sv=' - sv.to-str())
                 sv == TLS-VERSION-1-3 -> is-tls13 = true
             }
         }
@@ -1270,6 +1291,7 @@ tls-conn.read-server-hello-13 = () (ok bool) {
             ; key_share: 2 bytes group + 2 bytes key length + key
             ks-group = tls-get-u16(buf, pos)
             ks-len i64 = tls-get-u16(buf, pos + 2)
+            io.errln('[TLS] sh13: ks-group=' - ks-group.to-str() - ' ks-len=' - ks-len.to-str())
             ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
                 i <- [0..32): {
                     .server-pub[i] = buf[pos + 4 + i] & 255
@@ -1298,32 +1320,48 @@ tls-conn.compute-shared-secret-13 = () {
 ; 使用 HKDF 金鑰排程（RFC 8446 §7.1）
 tls-conn.derive-handshake-keys-13 = () {
     ; 1. Early Secret = HKDF-Extract(0, 0^32)
-    zero-ikm []byte
+    zero-ikm []byte = with-len(0)
     early-prk [32]byte
+    io.errln('[TLS] dhk: before extract')
     early-prk = hkdf.hkdf-extract(zero-ikm, zero-ikm)
+    io.errln('[TLS] dhk: after extract')
 
     ; 2. Empty hash = SHA-256("")
-    empty-hash = sha256.sha256('')
+    empty-hash-arr = sha256.sha256('')
+    empty-hash []byte = with-len(32)
+    i <- [0..32): {
+        empty-hash[i] = empty-hash-arr[i]
+    }
 
     ; 3. derived = HKDF-Expand-Label(Early, "derived", empty-hash, 32)
+    io.errln('[TLS] dhk: before expand-label')
     derived-early []byte
-    derived-early = hkdf.hkdf-expand-label(early-prk, 'derived', empty-hash, 32)
+    derived-early = hkdf.hkdf-expand-label-vec(early-prk[..], 'derived', empty-hash, 32)
+    io.errln('[TLS] dhk: after expand-label')
 
     ; 4. Handshake Secret = HKDF-Extract(derived, ECDHE_shared_secret)
     hs-prk [32]byte
     hs-prk = hkdf.hkdf-extract(derived-early, .shared-secret[..])
+    io.errln('[TLS] dhk: after hs-extract')
 
     ; 5. 計算 transcript hash = SHA-256(ClientHello + ServerHello)
     ; .hs-buf 目前包含 ClientHello 和 ServerHello
-    hs-hash = sha256.sha256(.hs-buf)
+    hs-hash-arr = sha256.sha256(.hs-buf)
+    hs-hash []byte = with-len(32)
+    i <- [0..32): {
+        hs-hash[i] = hs-hash-arr[i]
+    }
 
     ; 6. client_handshake_traffic_secret = Derive-Secret(HS, "c hs traffic", transcript)
+    io.errln('[TLS] dhk: before c-hs')
     c-hs-secret []byte
-    c-hs-secret = hkdf.hkdf-expand-label(hs-prk, 'c hs traffic', hs-hash, 32)
+    c-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 'c hs traffic', hs-hash, 32)
+    io.errln('[TLS] dhk: after c-hs')
 
     ; 7. server_handshake_traffic_secret = Derive-Secret(HS, "s hs traffic", transcript)
     s-hs-secret []byte
-    s-hs-secret = hkdf.hkdf-expand-label(hs-prk, 's hs traffic', hs-hash, 32)
+    s-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 's hs traffic', hs-hash, 32)
+    io.errln('[TLS] dhk: after s-hs')
 
     ; 8. 推導金鑰和 IV
     ; client handshake key = HKDF-Expand-Label(c_hs_secret, "key", "", 16)
@@ -1590,27 +1628,33 @@ tls-conn.connect-13 = () (ok bool) {
     ; 2. 讀取 ServerHello（已在 connect() 中完成）
 
     ; 3. 計算 ECDHE 共享金鑰
+    io.errln('[TLS] c13: compute-shared')
     .compute-shared-secret-13()
+    io.errln('[TLS] c13: compute-shared done')
 
     ; 4. 推導交握金鑰
     .derive-handshake-keys-13()
+    io.errln('[TLS] c13: derive-hs done')
 
     ; 5. 讀取 EncryptedExtensions
     ee-type = 0
     ee-data []byte
     ee-type, ee-data = .read-encrypted-handshake-13()
+    io.errln('[TLS] c13: ee type=' - ee-type.to-str())
     ee-type != TLS-HS-ENCRYPTED-EXTENSIONS -> return
 
     ; 6. 讀取 Certificate
     cert-type = 0
     cert-data []byte
     cert-type, cert-data = .read-encrypted-handshake-13()
+    io.errln('[TLS] c13: cert type=' - cert-type.to-str())
     cert-type != TLS-HS-CERTIFICATE -> return
 
     ; 7. 讀取 CertificateVerify（跳過驗證，僅讀取）
     cv-type = 0
     cv-data []byte
     cv-type, cv-data = .read-encrypted-handshake-13()
+    io.errln('[TLS] c13: cv type=' - cv-type.to-str())
     cv-type != TLS-HS-CERTIFICATE-VERIFY -> {
         ; 某些伺服器可能不發送 CertificateVerify，嘗試當作 Finished
         cv-type == TLS-HS-FINISHED -> {
@@ -1633,6 +1677,7 @@ tls-conn.connect-13 = () (ok bool) {
     sf-type = 0
     sf-data []byte
     sf-type, sf-data = .read-encrypted-handshake-13()
+    io.errln('[TLS] c13: sf type=' - sf-type.to-str())
     sf-type != TLS-HS-FINISHED -> return
 
     ; 9. 推導應用金鑰

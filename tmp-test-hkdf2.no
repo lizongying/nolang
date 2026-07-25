@@ -1,0 +1,45 @@
+; 最小測試: 分別測試 hkdf 各函數
+main = () {
+    print('--- hkdf isolated test ---')
+
+    ; 測試 1: hkdf-extract
+    salt []byte = with-len(32)
+    ikm []byte = with-len(32)
+    i <- [0..32): {
+        salt[i] = i
+        ikm[i] = i + 1
+    }
+    print('test1: before extract')
+    prk [32]byte
+    prk = hkdf.hkdf-extract(salt, ikm)
+    print('test1: after extract OK')
+
+    ; 測試 2: str.to-bytes
+    print('test2: before to-bytes')
+    s = 'tls13 derived'
+    b []byte
+    b = s.to-bytes()
+    print('test2: after to-bytes len=' - b.len.to-str())
+
+    ; 測試 3: hkdf-expand (直接呼叫)
+    print('test3: before expand')
+    info []byte = with-len(10)
+    i <- [0..10): {
+        info[i] = i
+    }
+    out []byte
+    out = hkdf.hkdf-expand(prk, info, 32)
+    print('test3: after expand len=' - out.len.to-str())
+
+    ; 測試 4: hkdf-expand-label (直接傳 [32]byte)
+    print('test4: before expand-label')
+    ctx []byte = with-len(32)
+    i <- [0..32): {
+        ctx[i] = i
+    }
+    out2 []byte
+    out2 = hkdf.hkdf-expand-label(prk, 'derived', ctx, 32)
+    print('test4: after expand-label len=' - out2.len.to-str())
+
+    print('all done')
+}

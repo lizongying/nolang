@@ -127,7 +127,12 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		return ""
 	}
 
-	if (fnName == "printf" || fnName == "fmt.printf") && hasArgs {
+	if (fnName == "printf" || fnName == "fmt.printf" || fnName == "eprintf" || fnName == "fmt.eprintf") && hasArgs {
+		useStderr := fnName == "eprintf" || fnName == "fmt.eprintf"
+		var stderrReg string
+		if useStderr {
+			stderrReg = g.loadStderr(sb)
+		}
 		var fmtArg string
 		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
 			fg := g.getFormatGlobal(strLit.Value)
@@ -168,10 +173,17 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				}
 				got := len(expr.Arguments) - 1
 				if got != expected {
-					panic(fmt.Sprintf("printf: format string expects %d arguments, got %d\n  format: %q",
-						expected, got, fmtStr))
+				panicFn := "printf"
+				if useStderr {
+					panicFn = "eprintf"
+				}
+				panic(fmt.Sprintf("%s: format string expects %d arguments, got %d\n  format: %q",
+					panicFn, expected, got, fmtStr))
 				}
 			}
+		}
+		if useStderr {
+			return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s)", stderrReg, args)
 		}
 		return fmt.Sprintf("call i32 (i8*, ...) @printf(%s)", args)
 	}
@@ -248,12 +260,29 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		return strAlloca
 	}
 
-	printVariadic := func(newline bool) string {
+	printVariadic := func(newline bool, useStderr bool) string {
+		var stderrReg string
+		if useStderr {
+			stderrReg = g.loadStderr(sb)
+		}
+		emitCall := func(gep string, extraArgs string) string {
+			if useStderr {
+				if extraArgs != "" {
+					return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s, %s)", stderrReg, gep, extraArgs)
+				}
+				return fmt.Sprintf("call i32 (i8*, i8*, ...) @fprintf(i8* %s, %s)", stderrReg, gep)
+			}
+			if extraArgs != "" {
+				return fmt.Sprintf("call i32 (i8*, ...) @printf(%s, %s)", gep, extraArgs)
+			}
+			return fmt.Sprintf("call i32 (i8*, ...) @printf(%s)", gep)
+		}
 		if !hasArgs {
 			if newline {
 				fg := g.getFormatGlobal("\n")
-				return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))",
+				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
 					len("\n")+1, len("\n")+1, fg)
+				return emitCall(gep, "")
 			}
 			return ""
 		}
@@ -266,8 +295,9 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			}
 			if i > 0 {
 				fg := g.getFormatGlobal(" ")
-				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))\n%s",
-					len(" ")+1, len(" ")+1, fg, g.indent()))
+				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+					len(" ")+1, len(" ")+1, fg)
+				sb2.WriteString(emitCall(gep, "") + fmt.Sprintf("\n%s", g.indent()))
 			}
 			dataPtr := strDataPtr(arg)
 			if dataPtr != "" {
@@ -280,8 +310,14 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 					fmtSpec += "\n"
 				}
 				fg := g.getFormatGlobal(fmtSpec)
-				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), i32 %s, i8* %s)",
-					len(fmtSpec)+1, len(fmtSpec)+1, fg, lenI32, dataPtr))
+				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+					len(fmtSpec)+1, len(fmtSpec)+1, fg)
+				sb2.WriteString(emitCall(gep, fmt.Sprintf("i32 %s, i8* %s", lenI32, dataPtr)))
+				// 字符串拼接/函数调用产生的临时堆 data 在 printf 后立即释放，避免泄漏。
+				// StringLiteral 的 data 是全局常量，不需 free；Identifier 引用变量，由变量管理。
+				if g.isTempStrDataPtr(arg) {
+					sb2.WriteString(fmt.Sprintf("\ncall void @free(i8* %s)", dataPtr))
+				}
 			} else {
 				v := g.generateExprWithSB(sb, arg)
 				// String-returning CallExpression (e.g. energy().to-str()):
@@ -305,8 +341,9 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							fmtSpec += "\n"
 						}
 						fg := g.getFormatGlobal(fmtSpec)
-						sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), i32 %s, i8* %s)",
-							len(fmtSpec)+1, len(fmtSpec)+1, fg, lenI32, dataPtr))
+						gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+							len(fmtSpec)+1, len(fmtSpec)+1, fg)
+						sb2.WriteString(emitCall(gep, fmt.Sprintf("i32 %s, i8* %s", lenI32, dataPtr)))
 						continue
 					}
 				}
@@ -361,15 +398,16 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 					fmtSpec += "\n"
 				}
 				fg := g.getFormatGlobal(fmtSpec)
-				sb2.WriteString(fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0), %s)",
-					len(fmtSpec)+1, len(fmtSpec)+1, fg, typedArg(v)))
+				gep := fmt.Sprintf("i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0)",
+					len(fmtSpec)+1, len(fmtSpec)+1, fg)
+				sb2.WriteString(emitCall(gep, typedArg(v)))
 			}
 		}
 		return sb2.String()
 	}
 
 	if fnName == "print" || fnName == "fmt.print" {
-		return printVariadic(true)
+		return printVariadic(true, false)
 	}
 	if fnName == "println" || fnName == "fmt.println" {
 		if !hasArgs {
@@ -377,7 +415,10 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 			return fmt.Sprintf("call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i64 0, i64 0))",
 				len("\n")+1, len("\n")+1, fg)
 		}
-		return printVariadic(true)
+		return printVariadic(true, false)
+	}
+	if fnName == "eprint" || fnName == "fmt.eprint" {
+		return printVariadic(true, true)
 	}
 	if fnName == "println-empty" {
 		fg := g.getFormatGlobal("\n")
@@ -574,6 +615,24 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 	}
 
 	return ""
+}
+
+// isTempStrDataPtr 判断表达式是否产生临时堆 data 指针（需要在使用后 free）。
+// 字符串拼接（InfixExpression +）和函数调用（CallExpression 返回 %str-long）
+// 会 malloc 新 data；StringLiteral 的 data 是全局常量，Identifier 引用变量，
+// 均不需 free。
+func (g *Generator) isTempStrDataPtr(arg parser.Expression) bool {
+	switch a := arg.(type) {
+	case *parser.InfixExpression:
+		if a.Operator == "+" || a.Operator == "-" {
+			return g.isStringExpr(a.Left) || g.isStringExpr(a.Right)
+		}
+	case *parser.CallExpression:
+		return true
+	case *parser.GroupedExpression:
+		return g.isTempStrDataPtr(a.Expression)
+	}
+	return false
 }
 
 // nullTerminateStrArg ensures a string argument is null-terminated for C function calls.
@@ -2947,4 +3006,21 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), buf, dataPtr, strLen))
 
 	return buf
+}
+
+// loadStderr loads the FILE* for stderr and returns the register name.
+// macOS: @__stderrp, Linux/Windows: @stderr
+func (g *Generator) loadStderr(sb *strings.Builder) string {
+	g.tmpIdx++
+	reg := fmt.Sprintf("%%stderr.ptr.%d", g.tmpIdx)
+	var globalName string
+	if runtime.GOOS == "darwin" {
+		globalName = "@__stderrp"
+	} else {
+		globalName = "@stderr"
+	}
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), reg, globalName))
+	}
+	return reg
 }

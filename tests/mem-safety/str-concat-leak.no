@@ -1,0 +1,5 @@
+; 字符串拼接中间结果泄漏测试
+; print("item" + i.to-str()) 中拼接结果未绑定变量，malloc 的 buffer 应被释放
+i <- [0..1000): {
+    print("item" + i.to-str())
+}

@@ -247,7 +247,7 @@ str.slice = (start i64, end i64) (val str) {
 
 ; str.to-bytes: 将字符串转为字节数组
 str.to-bytes = () (val []byte) {
-    val = with-cap(.len)
+    val = with-len(.len)
     i <- [0...len): {
         val[i] = .[i]
     }

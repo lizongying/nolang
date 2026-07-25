@@ -1,0 +1,16 @@
+; 測試返回 [32]byte 的函數
+helper = () (out [32]byte) {
+    i <- [0..32): {
+        out[i] = i + 1
+    }
+}
+
+main = () {
+    print('before')
+    h [32]byte
+    h = helper()
+    print('after')
+    print('h[0]=' - h[0].to-str())
+    print('h[31]=' - h[31].to-str())
+    print('done')
+}

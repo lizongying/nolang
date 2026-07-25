@@ -1,0 +1,40 @@
+; 最小測試: 函數有 heap 局部 + heap 返回值
+f1 = (info []byte, out-len i64) (okm []byte) {
+    ; 一個 heap 局部
+    tmp []byte = with-len(32)
+    i <- [0..32): {
+        tmp[i] = i
+    }
+    ; 返回值也是 heap
+    okm = with-len(out-len)
+    i <- [0..out-len): {
+        okm[i] = tmp[i % 32]
+    }
+}
+
+; 只有返回值，無 heap 局部
+f2 = (out-len i64) (okm []byte) {
+    okm = with-len(out-len)
+    i <- [0..out-len): {
+        okm[i] = i + 1
+    }
+}
+
+main = () {
+    print('--- test ---')
+
+    ; 測試 f2 (只有返回值)
+    print('before f2')
+    out2 []byte
+    out2 = f2(16)
+    print('after f2 len=' - out2.len.to-str())
+
+    ; 測試 f1 (heap 局部 + 返回值)
+    print('before f1')
+    info []byte = with-len(10)
+    out1 []byte
+    out1 = f1(info, 16)
+    print('after f1 len=' - out1.len.to-str())
+
+    print('done')
+}

@@ -1,0 +1,23 @@
+; 直接測試 hmac-sha256
+main = () {
+    print('test hmac-sha256 directly')
+
+    key []byte = with-len(32)
+    i <- [0..32): { key[i] = i }
+
+    msg []byte = with-len(11)
+    i <- [0..11): { msg[i] = i }
+
+    print('before hmac')
+    h [32]byte
+    h = hmac.hmac-sha256(key, msg)
+    print('after hmac')
+
+    ; print first 4 bytes
+    print('h[0]=' - h[0].to-str())
+    print('h[1]=' - h[1].to-str())
+    print('h[2]=' - h[2].to-str())
+    print('h[3]=' - h[3].to-str())
+
+    print('done')
+}

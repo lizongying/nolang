@@ -4,6 +4,7 @@ const sidebars: SidebarsConfig = {
   tutorialSidebar: [
     "intro",
     "usage",
+    "benchmarks",
     {
       type: "category",
       label: "Language",

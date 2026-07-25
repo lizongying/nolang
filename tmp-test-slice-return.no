@@ -1,0 +1,17 @@
+; 測試返回 []byte (slice) 的函數
+helper = () (out []byte) {
+    out = with-len(32)
+    i <- [0..32): {
+        out[i] = i + 1
+    }
+}
+
+main = () {
+    print('before')
+    h []byte
+    h = helper()
+    print('after len=' - h.len.to-str())
+    print('h[0]=' - h[0].to-str())
+    print('h[31]=' - h[31].to-str())
+    print('done')
+}

@@ -2,6 +2,8 @@
 ;
 ; printf(fmt str, args ...any)  → @printf(i8*, ...)
 ; print(args ...any)          → 依型別 @printf("%s"/"%lld"/"%g", arg) + 換行
+; eprintf(fmt str, args ...any) → @fprintf(stderr, i8*, ...)
+; eprint(args ...any)        → 依型別 @fprintf(stderr, "%s"/"%lld"/"%g", arg) + 換行
 ; sprintf(fmt str, args ...any) (out str) → @sprintf(buf, fmt, args...)
 ; printf: formatted print
 ; build-in (ForwardFunc: printf)
@@ -19,4 +21,16 @@
 ; build-in (ForwardFunc: print)
 ; print = () {
 ;     // LLVM: 依參數型別逐個打印，最後換行
+; }
+
+; eprintf: formatted print to stderr
+; build-in (ForwardFunc: eprintf)
+; eprintf = (fmt str) {
+;     // LLVM: call i32 @fprintf(i8* stderr, i8* %fmt, ...args)
+; }
+
+; eprint: print to stderr with newline
+; build-in (ForwardFunc: eprint)
+; eprint = () {
+;     // LLVM: 依參數型別逐個打印到 stderr，最後換行
 ; }

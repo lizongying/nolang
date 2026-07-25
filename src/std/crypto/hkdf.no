@@ -20,7 +20,7 @@
 hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     ; PRK = HMAC-SHA256(salt, IKM)
     ; 若 salt 為空，使用 32 個零位元組
-    k []byte
+    k []byte = with-len(32)
     {
         salt.len == 0 -> {
             i <- [0..32): {
@@ -40,6 +40,39 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 ; HKDF-Expand
 ; ═══════════════════════════════════════════════
 
+; hkdf-expand-hmac: 計算 HMAC-SHA256(prk, t-prefix || info || counter-byte)
+; 內部輔助函數，避免在 hkdf-expand 中修改 slice.len
+; prk-vec []byte: 金鑰（32 位元組）
+; t-data []byte: T(i) 前綴（可為空，長度由 t-len 決定）
+; t-len i64: T(i) 的有效長度
+; info []byte: info 字串
+; counter i64: 計數器位元組（1-255），0 表示不加
+; 返回 out [32]byte: HMAC 結果
+hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, counter i64) (out [32]byte) {
+    print('[hmac] enter t-len=' - t-len.to-str() - ' info.len=' - info.len.to-str() - ' counter=' - counter.to-str())
+
+    ; 計算訊息長度: t-len + info.len + (counter > 0 ? 1 : 0)
+    msg-len = t-len + info.len
+    counter > 0 -> msg-len = msg-len + 1
+    print('[hmac] msg-len=' - msg-len.to-str())
+
+    msg []byte = with-len(msg-len)
+    print('[hmac] msg allocated')
+    i <- [0..t-len): {
+        msg[i] = t-data[i]
+    }
+    print('[hmac] t-data copied')
+    i <- [0..info.len): {
+        msg[t-len + i] = info[i]
+    }
+    print('[hmac] info copied')
+    counter > 0 -> msg[t-len + info.len] = counter & 255
+    print('[hmac] counter set, calling hmac-sha256')
+
+    out = hmac.hmac-sha256(prk-vec, msg)
+    print('[hmac] done')
+}
+
 ; hkdf-expand: HKDF-Expand（RFC 5869 §2.3）
 ; prk [32]byte: 偽隨機金鑰
 ; info []byte: 上下文資訊（可為空）
@@ -47,51 +80,61 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 ; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     ; 將 prk 轉為 []byte
-    prk-vec []byte
+    prk-vec []byte = with-len(32)
     i <- [0..32): {
         prk-vec[i] = prk[i]
     }
 
-    n = (out-len + 31) / 32
-    n > 255 -> n = 255
-
-    ; T(0) = 空字串
-    t []byte
-    t-len = 0
+    ; T 緩衝區（slice，預分配 32 位元組，所有元素初始化為 0）
+    ; 注意: 必須用 []byte 而非 [32]byte，因為 hkdf-expand-hmac 接收 []byte
+    ; 兩者記憶體佈局不同 (%vec.data 在 offset 16, %arr.data 在 offset 8)
+    t []byte = with-len(32)
+    i <- [0..32): {
+        t[i] = 0
+    }
+    t-valid = false
 
     okm = with-len(out-len)
     off = 0
     counter = 1
-    {
-        ; T(counter) = HMAC-SHA256(PRK, T(counter-1) || info || counter)
-        msg []byte
-        i <- [0..t-len): {
-            msg[i] = t[i]
-        }
-        msg-len = t-len
-        i <- [0..info.len): {
-            msg[msg-len + i] = info[i]
-        }
-        msg-len = msg-len + info.len
-        msg[msg-len] = counter & 255
-        msg-len = msg-len + 1
 
+    out-len <= 32 -> {
+        ; T(1) = HMAC-SHA256(PRK, info || 1)
         t-tmp [32]byte
-        t-tmp = hmac.hmac-sha256(prk-vec, msg)
-        t-len = 32
-        i <- [0..32): {
-            t[i] = t-tmp[i]
-        }
+        print('[expand] before hmac call')
+        t-tmp = hkdf-expand-hmac(prk-vec, t, 0, info, counter)
+        print('[expand] hmac returned')
 
-        ; 複製到輸出
-        copy-n = 32
-        off + copy-n > out-len -> copy-n = out-len - off
+        copy-n = out-len
+        print('[expand] copy-n=' - copy-n.to-str())
         i <- [0..copy-n): {
-            okm[off + i] = t[i]
+            okm[i] = t-tmp[i]
         }
-        off = off + copy-n
-        counter = counter + 1
-    } (off < out-len)
+        print('[expand] copied')
+    }
+
+    out-len > 32 -> {
+        {
+            t-len-for-hmac = 0
+            t-valid -> t-len-for-hmac = 32
+
+            t-tmp [32]byte
+            t-tmp = hkdf-expand-hmac(prk-vec, t, t-len-for-hmac, info, counter)
+
+            i <- [0..32): {
+                t[i] = t-tmp[i]
+            }
+            t-valid = true
+
+            copy-n = 32
+            off + copy-n > out-len -> copy-n = out-len - off
+            i <- [0..copy-n): {
+                okm[off + i] = t[i]
+            }
+            off = off + copy-n
+            counter = counter + 1
+        } (off < out-len)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -113,8 +156,9 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     full-label = 'tls13 ' - label
     label-bytes []byte = full-label.to-bytes()
 
-    ; 構建 info
-    info []byte
+    ; 構建 info: length(2) + label-len(1) + label + ctx-len(1) + ctx
+    info-len = 2 + 1 + label-bytes.len + 1 + context.len
+    info []byte = with-len(info-len)
     pos = 0
 
     ; length (2 bytes, big-endian)
@@ -140,7 +184,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     i <- [0..context.len): {
         info[pos + i] = context[i]
     }
-    pos = pos + context.len
+    info.len = info-len
 
     okm = hkdf-expand(prk, info, out-len)
 }

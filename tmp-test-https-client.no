@@ -1,0 +1,14 @@
+; 測試 HTTPS 用戶端是否可用（對真實站點）
+main = () {
+    print('--- https://example.com ---')
+
+    ; 直接用 tls-dial 測試
+    conn = tls.tls-dial('example.com', 443)
+    conn: {
+        nil -> print('FAIL: nil conn')
+        -> {
+            print('OK: connected')
+            conn.close()
+        }
+    }
+}

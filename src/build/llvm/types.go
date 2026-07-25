@@ -250,6 +250,7 @@ var clibFuncNames = map[string]bool{
 	"malloc":      true,
 	"free":        true,
 	"printf":      true,
+	"fprintf":     true,
 	"sprintf":     true,
 	"fopen":       true,
 	"fgets":       true,
@@ -264,6 +265,7 @@ var clibFuncNames = map[string]bool{
 var variadicFuncSigs = map[string]string{
 	"open":    "(i8*, i32, ...)",
 	"printf":  "(i8*, ...)",
+	"fprintf": "(i8*, i8*, ...)",
 	"sprintf": "(i8*, i8*, ...)",
 	"execlp":  "(i8*, ...)",
 }

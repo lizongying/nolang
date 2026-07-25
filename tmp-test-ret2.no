@@ -1,0 +1,59 @@
+; 測試 with-cap 變數 + 返回值
+f3 = (out-len i64) (okm []byte) {
+    ; with-cap 變數 (len=0)
+    t []byte = with-cap(256)
+    t-len = 0
+
+    okm = with-len(out-len)
+
+    out-len <= 16 -> {
+        ; 在分支內使用 t
+        t[0] = 1
+        t[1] = 2
+        t-len = 2
+        okm[0] = t[0]
+        okm[1] = t[1]
+    }
+
+    out-len > 16 -> okm[0] = 99
+}
+
+; 測試呼叫外部函數 (hmac) + 返回值
+f4 = (out-len i64) (okm []byte) {
+    prk-vec []byte = with-len(32)
+    i <- [0..32): {
+        prk-vec[i] = i + 1
+    }
+
+    msg []byte = with-len(10)
+    i <- [0..10): {
+        msg[i] = i
+    }
+
+    ; 呼叫 hmac (返回 [32]byte)
+    h [32]byte
+    h = hmac.hmac-sha256(prk-vec, msg)
+
+    okm = with-len(out-len)
+    i <- [0..out-len): {
+        okm[i] = h[i]
+    }
+}
+
+main = () {
+    print('--- test ---')
+
+    ; 測試 f3 (with-cap + branch)
+    print('before f3')
+    out3 []byte
+    out3 = f3(16)
+    print('after f3 len=' - out3.len.to-str())
+
+    ; 測試 f4 (hmac call + return)
+    print('before f4')
+    out4 []byte
+    out4 = f4(16)
+    print('after f4 len=' - out4.len.to-str())
+
+    print('done')
+}
