@@ -28,3 +28,122 @@
   --ifm-color-primary-lightest: #4fddbf;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/**
+ * Nolang Playground token colors.
+ *
+ * CodeMirror 6 的 HighlightStyle 通過內聯 style 應用顏色，CSS 變量
+ * 在內聯 style 中同樣有效，因此這裡定義的變量會在 Docusaurus 切換
+ * [data-theme] 時自動更新，無需重新創建編輯器。
+ *
+ * 配色參考 GitHub Primer 主題：
+ *   - 亮色（light）：偏深的飽和色，在白底上有良好對比度
+ *   - 暗色（dark）：偏亮的淺色，在深色背景上有良好對比度
+ *
+ * 變量命名對應 token 語義（而非顏色），方便主題切換時只改值不改名。
+ */
+:root,
+[data-theme='light'] {
+  /* 註釋：灰 */
+  --nolang-comment: #6e7781;
+  /* 關鍵字：紅（GitHub Primer 红） */
+  --nolang-keyword: #cf222e;
+  /* 常量 true/false/nil：紅 */
+  --nolang-constant: #0550ae;
+  /* 字串：深藍（GitHub Primer 深藍） */
+  --nolang-string: #0a3069;
+  /* 數字：藍 */
+  --nolang-number: #0550ae;
+  /* 純變數：近黑 */
+  --nolang-variable: #24292f;
+  /* 函數定義/調用：紫 */
+  --nolang-function: #8250df;
+  /* 屬性：藍 */
+  --nolang-property: #0550ae;
+  /* 類型名稱：棕紅 */
+  --nolang-type: #953800;
+  /* 類名/常量（大寫開頭）：綠 */
+  --nolang-class: #116329;
+  /* 運算子：紅 */
+  --nolang-operator: #cf222e;
+  /* 標點：近黑 */
+  --nolang-punctuation: #24292f;
+  /* 轉義序列：橙 */
+  --nolang-escape: #953800;
+  /* 錯誤：紅 */
+  --nolang-invalid: #cf222e;
+  /* 編輯器背景與文字（亮色） */
+  --nolang-editor-bg: #ffffff;
+  --nolang-editor-fg: #24292f;
+  /* 編輯器選中（與 Docusaurus 主色協調） */
+  --nolang-editor-selection: rgba(56, 139, 253, 0.18);
+  /* 編輯器游標 */
+  --nolang-editor-cursor: #0969da;
+  /* 編輯器行號 */
+  --nolang-editor-gutter: #6e7781;
+}
+
+[data-theme='dark'] {
+  /* 註釋：淺灰 */
+  --nolang-comment: #8b949e;
+  /* 關鍵字：亮紅 */
+  --nolang-keyword: #ff7b72;
+  /* 常量：淺藍 */
+  --nolang-constant: #79c0ff;
+  /* 字串：淺藍 */
+  --nolang-string: #a5d6ff;
+  /* 數字：淺藍 */
+  --nolang-number: #79c0ff;
+  /* 純變數：淺灰 */
+  --nolang-variable: #c9d1d9;
+  /* 函數定義/調用：淺紫 */
+  --nolang-function: #d2a8ff;
+  /* 屬性：淺藍 */
+  --nolang-property: #79c0ff;
+  /* 類型名稱：橙 */
+  --nolang-type: #ffa657;
+  /* 類名/常量：淺綠 */
+  --nolang-class: #7ee787;
+  /* 運算子：亮紅 */
+  --nolang-operator: #ff7b72;
+  /* 標點：淺灰 */
+  --nolang-punctuation: #c9d1d9;
+  /* 轉義序列：橙 */
+  --nolang-escape: #ffa657;
+  /* 錯誤：亮紅 */
+  --nolang-invalid: #f85149;
+  /* 編輯器背景與文字（暗色） */
+  --nolang-editor-bg: #0d1117;
+  --nolang-editor-fg: #c9d1d9;
+  /* 編輯器選中 */
+  --nolang-editor-selection: rgba(56, 139, 253, 0.4);
+  /* 編輯器游標 */
+  --nolang-editor-cursor: #58a6ff;
+  /* 編輯器行號 */
+  --nolang-editor-gutter: #6e7681;
+}
+
+/**
+ * CodeMirror 編輯器外觀：讓編輯器背景、文字、選中、游標跟隨主題切換。
+ * 這些屬性無法通過 HighlightStyle 配置，需要直接用 CSS 覆蓋。
+ */
+.cm-editor {
+  background: var(--nolang-editor-bg);
+  color: var(--nolang-editor-fg);
+}
+.cm-editor .cm-gutters {
+  background: var(--nolang-editor-bg);
+  color: var(--nolang-editor-gutter);
+  border-right: 1px solid rgba(110, 118, 129, 0.2);
+}
+.cm-editor .cm-activeLine,
+.cm-editor .cm-activeLineGutter {
+  background-color: rgba(110, 118, 129, 0.08);
+}
+.cm-editor.cm-focused .cm-selectionBackground,
+.cm-editor .cm-selectionBackground {
+  background: var(--nolang-editor-selection) !important;
+}
+.cm-editor .cm-cursor {
+  border-left-color: var(--nolang-editor-cursor);
+}

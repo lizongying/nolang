@@ -208,14 +208,14 @@ safe-div = (a i64, b i64) (r ?i64) {
   r = a / b
 }
 
-result = safe-div(10, 2)
-result: {
+div1 = safe-div(10, 2)
+div1: {
   nil -> print('cannot divide by zero')
   -> print('10 / 2 = {it}')
 }
 
-result2 = safe-div(10, 0)
-result2: {
+div2 = safe-div(10, 0)
+div2: {
   nil -> print('10 / 0 = undefined')
   -> print('10 / 0 = {it}')
 }

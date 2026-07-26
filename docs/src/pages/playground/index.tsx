@@ -7,7 +7,7 @@ import {defaultKeymap, historyKeymap, indentWithTab} from '@codemirror/commands'
 import {indentUnit} from '@codemirror/language';
 import {autocompletion, type CompletionContext, type CompletionResult} from '@codemirror/autocomplete';
 import {basicSetup} from 'codemirror';
-import {nolangLanguage} from '@site/src/playground/nolang-cm';
+import {nolangLanguage, nolangHighlighting} from '@site/src/playground/nolang-cm';
 import {LspBridge, type LspDiagnostic} from '@site/src/playground/lsp-bridge';
 import {Runner, parseErrorLines, type ErrorMarker} from '@site/src/playground/runner';
 import {
@@ -178,6 +178,7 @@ export default function Playground(): React.JSX.Element {
         extensions: [
           basicSetup,
           nolangLanguage,
+          nolangHighlighting,
           indentUnit.of('    '),
           EditorState.tabSize.of(4),
           keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
