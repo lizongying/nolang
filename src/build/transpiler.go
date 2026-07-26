@@ -1173,7 +1173,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
 	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
-	monomorphizeGenerics(merged, globalVarTypes)
+	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
+	monomorphizeGenerics(merged, globalVarTypes, typeOwner)
 
 	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
 	filtered := make([]parser.Statement, 0, len(merged.Statements))
@@ -1235,7 +1236,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 }
 
 // monomorphizeGenerics 對泛型函數進行單態化
-func monomorphizeGenerics(program *parser.Program, varTypes map[string]string) {
+func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, typeOwner map[string]string) {
 	// 收集所有泛型函數定義
 	genericFns := make(map[string]*parser.FunctionDefinition)
 	for _, stmt := range program.Statements {
@@ -1256,7 +1257,7 @@ func monomorphizeGenerics(program *parser.Program, varTypes map[string]string) {
 	// 遞迴掃描所有陳述句尋找泛型呼叫（包括函數體內）
 	var newStmts []parser.Statement
 	for _, stmt := range program.Statements {
-		scanStmtForGenericCalls(stmt, genericFns, varTypes, program, &newStmts)
+		scanStmtForGenericCalls(stmt, genericFns, varTypes, program, &newStmts, typeOwner)
 	}
 
 	program.Statements = append(program.Statements, newStmts...)
@@ -1292,17 +1293,17 @@ func isGenericMethod(name string) bool {
 
 // scanStmtForGenericCalls recursively scans statements for generic calls
 func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parser.FunctionDefinition,
-	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
 
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if ce, ok := s.Expression.(*parser.CallExpression); ok {
-			processCallExpression(ce, genericFns, varTypes, program, newStmts)
+			processCallExpression(ce, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 		// Also handle IfExpression (e.g. `if cond { ... }` as a statement),
 		// whose Condition may contain method calls (e.g. `elif path.starts-with(x)`).
 		if ie, ok := s.Expression.(*parser.IfExpression); ok {
-			scanIfExpressionForGenericCalls(ie, genericFns, varTypes, program, newStmts)
+			scanIfExpressionForGenericCalls(ie, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
@@ -1326,7 +1327,7 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 			}
 			collectVarTypesFromBody(s.Body, funcVarTypes)
 			for _, bodyStmt := range s.Body.Statements {
-				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
+				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts, typeOwner)
 			}
 		}
 	case *parser.LetStatement:
@@ -1350,22 +1351,22 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 			}
 			collectVarTypesFromBody(fl.Body, funcVarTypes)
 			for _, bodyStmt := range fl.Body.Statements {
-				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts)
+				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts, typeOwner)
 			}
 		} else if s.Value != nil {
 			// Regular variable assignment: scan the value expression
 			// for method calls that need resolution (e.g., s = "A".to-str())
-			scanExprForGenericCalls(s.Value, genericFns, varTypes, program, newStmts)
+			scanExprForGenericCalls(s.Value, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+				scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts, typeOwner)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts)
+			scanStmtForGenericCalls(bodyStmt, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	}
 }
@@ -1373,18 +1374,18 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 // scanIfExpressionForGenericCalls recursively scans an IfExpression's Condition,
 // Consequence, and Alternative for method calls that need resolution.
 func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[string]*parser.FunctionDefinition,
-	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
 	if ie.Condition != nil {
-		scanExprForGenericCalls(ie.Condition, genericFns, varTypes, program, newStmts)
+		scanExprForGenericCalls(ie.Condition, genericFns, varTypes, program, newStmts, typeOwner)
 	}
 	if ie.Consequence != nil {
 		for _, s := range ie.Consequence.Statements {
-			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts)
+			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	}
 	if ie.Alternative != nil {
 		for _, s := range ie.Alternative.Statements {
-			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts)
+			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	}
 }
@@ -1392,22 +1393,22 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 // scanExprForGenericCalls recursively walks an expression tree to find
 // CallExpressions (including method calls) that need generic/method resolution.
 func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*parser.FunctionDefinition,
-	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
 	switch e := expr.(type) {
 	case *parser.CallExpression:
-		processCallExpression(e, genericFns, varTypes, program, newStmts)
+		processCallExpression(e, genericFns, varTypes, program, newStmts, typeOwner)
 		for _, arg := range e.Arguments {
-			scanExprForGenericCalls(arg, genericFns, varTypes, program, newStmts)
+			scanExprForGenericCalls(arg, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	case *parser.InfixExpression:
-		scanExprForGenericCalls(e.Left, genericFns, varTypes, program, newStmts)
-		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts)
+		scanExprForGenericCalls(e.Left, genericFns, varTypes, program, newStmts, typeOwner)
+		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.PrefixExpression:
-		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts)
+		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.IfExpression:
-		scanIfExpressionForGenericCalls(e, genericFns, varTypes, program, newStmts)
+		scanIfExpressionForGenericCalls(e, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.GroupedExpression:
-		scanExprForGenericCalls(e.Expression, genericFns, varTypes, program, newStmts)
+		scanExprForGenericCalls(e.Expression, genericFns, varTypes, program, newStmts, typeOwner)
 	}
 }
 
@@ -2041,7 +2042,7 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 
 // processCallExpression handles a single CallExpression for generic resolution
 func processCallExpression(ce *parser.CallExpression, genericFns map[string]*parser.FunctionDefinition,
-	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement) {
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
 
 	// Regular function call: fn(args)
 	if fnName, ok := ce.Function.(*parser.Identifier); ok {
@@ -2061,13 +2062,13 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 
 	// Method call: receiver.method(args)
 	if dot, ok := ce.Function.(*parser.DotExpression); ok {
-		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program)
+		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program, typeOwner)
 	}
 
 	// Recurse into arguments
 	for _, arg := range ce.Arguments {
 		if innerCe, ok := arg.(*parser.CallExpression); ok {
-			processCallExpression(innerCe, genericFns, varTypes, program, newStmts)
+			processCallExpression(innerCe, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	}
 }
@@ -2092,7 +2093,7 @@ func fnExistsInProgram(program *parser.Program, name string) bool {
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	genericFns map[string]*parser.FunctionDefinition, varTypes map[string]string,
-	newStmts *[]parser.Statement, program *parser.Program) bool {
+	newStmts *[]parser.Statement, program *parser.Program, typeOwner map[string]string) bool {
 
 	// Get receiver variable name and type
 	recvIdent, ok := dot.Receiver.(*parser.Identifier)
@@ -2150,6 +2151,16 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	recvTypeForMethod := recvType
 	if strings.HasPrefix(recvTypeForMethod, "?") {
 		recvTypeForMethod = recvTypeForMethod[1:]
+	}
+	// Apply module prefix if recvTypeForMethod is a bare user-defined type name.
+	// varTypes is built before rewriteTypeRefs, so it may contain the un-prefixed
+	// form (e.g. "tls-conn" instead of "tls.tls-conn"). Without this, the rewrite
+	// would produce "tls-conn.recv" but the function definition was renamed to
+	// "tls.tls-conn.recv" by prefixMethodNames.
+	if typeOwner != nil && !strings.Contains(recvTypeForMethod, ".") {
+		if mod, ok := typeOwner[recvTypeForMethod]; ok && mod != "" {
+			recvTypeForMethod = mod + "." + recvTypeForMethod
+		}
 	}
 	concreteName := recvTypeForMethod + "." + methodName
 	if hmName := mapTypeToHashmapName(recvTypeForMethod); hmName != "" {
@@ -2644,11 +2655,11 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		}
 	case *parser.IfExpression:
 		newIf := &parser.IfExpression{
-			Token:         e.Token,
-			Condition:     substituteExpr(e.Condition, subst),
-			IsBareMatch:   e.IsBareMatch,
-			MatchedExpr:   substituteExpr(e.MatchedExpr, subst),
-			IsStandalone:  e.IsStandalone,
+			Token:        e.Token,
+			Condition:    substituteExpr(e.Condition, subst),
+			IsBareMatch:  e.IsBareMatch,
+			MatchedExpr:  substituteExpr(e.MatchedExpr, subst),
+			IsStandalone: e.IsStandalone,
 		}
 		if e.Consequence != nil {
 			newIf.Consequence = substituteBody(e.Consequence, subst)
@@ -2665,9 +2676,9 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		}
 	case *parser.DotExpression:
 		return &parser.DotExpression{
-			Token:     e.Token,
-			Receiver:  substituteExpr(e.Receiver, subst),
-			Property:  e.Property,
+			Token:    e.Token,
+			Receiver: substituteExpr(e.Receiver, subst),
+			Property: e.Property,
 		}
 	case *parser.ConditionalExpression:
 		return &parser.ConditionalExpression{
@@ -2678,9 +2689,9 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		}
 	case *parser.SliceExpression:
 		return &parser.SliceExpression{
-			Token:  e.Token,
-			Left:   substituteExpr(e.Left, subst),
-			Range:  substituteRange(e.Range, subst),
+			Token: e.Token,
+			Left:  substituteExpr(e.Left, subst),
+			Range: substituteRange(e.Range, subst),
 		}
 	default:
 		return e

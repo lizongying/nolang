@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -4372,10 +4371,6 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
-	if stmt.IsSynthetic && name == "it" {
-		fmt.Fprintf(os.Stderr, "DEBUG generateLet ENTER: name=%s IsSynthetic=%v Type=%v Value=%T\n",
-			name, stmt.IsSynthetic, stmt.Type, stmt.Value)
-	}
 
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
 	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串，無法映射到真實的 LLVM 型別。
@@ -4853,23 +4848,6 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					isOptionSrc = true
 				}
 			}
-			// Debug: trace why the load is/isn't emitted
-			fmt.Fprintf(os.Stderr, "DEBUG it-synthetic: name=%s llvmType=%s val=%s ident.Value=%s isOptionSrc=%v\n",
-				name, llvmType, val, ident.Value, isOptionSrc)
-			if g.varTypes != nil {
-				if srcType, ok := g.varTypes[ident.Value]; ok {
-					fmt.Fprintf(os.Stderr, "DEBUG   varTypes[%s]=%s\n", ident.Value, srcType)
-				} else {
-					fmt.Fprintf(os.Stderr, "DEBUG   varTypes[%s] not found\n", ident.Value)
-				}
-			}
-			if g.ssaTypes != nil {
-				if ssaType, ok := g.ssaTypes[val]; ok {
-					fmt.Fprintf(os.Stderr, "DEBUG   ssaTypes[%s]=%s (expecting %s)\n", val, ssaType, llvmType+"*")
-				} else {
-					fmt.Fprintf(os.Stderr, "DEBUG   ssaTypes[%s] not found\n", val)
-				}
-			}
 			if isOptionSrc && strings.HasPrefix(val, "%") {
 				g.tmpIdx++
 				loadReg := fmt.Sprintf("%%it.syn.load.%d", g.tmpIdx)
@@ -5055,6 +5033,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 		structName := strings.TrimPrefix(llvmType, "%")
 		recvArg := llvmType + "* " + g.varAddr(name)
+		// Zero-initialize the struct before init(). Without this, fields not
+		// touched by init() (e.g., hashmap vals[i].len/data when init() only
+		// zeroes occ and keys.len) would contain stack garbage, causing the
+		// scope-exit free loop to call free() on non-heap pointers.
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, g.varAddr(name)))
 		// init() call: @hashmap-str-i64.init(%hashmap-str-i64* %m)
 		sb.WriteString(fmt.Sprintf("%scall void @%s.init(%s)\n", g.indent(), sanitizeLLVMName(structName), recvArg))
 		// If value is MapLiteral, generate put() calls for each pair

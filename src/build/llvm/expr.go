@@ -2336,8 +2336,49 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							}
 						}
 					}
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), elemType, storeVal, elemType, elemGEP))
+					// Heap-owning element types (%str-long/%vec/%arr/user struct):
+					// shallow store shares data pointer between source and slot →
+					// double-free at scope exit. Deep clone gives the slot its own
+					// independent heap data. Before cloning, free the slot's old value
+					// (with len==0 guard for containers to avoid freeing garbage
+					// pointers in uninitialized slots).
+					if g.isHeapOwningType(elemType) {
+						if elemType == "%str-long" || elemType == "%vec" || elemType == "%arr" {
+							g.tmpIdx++
+							oldLenGEP := fmt.Sprintf("%%set.arr.oldlen.gep.%d", g.tmpIdx)
+							g.tmpIdx++
+							oldLenReg := fmt.Sprintf("%%set.arr.oldlen.%d", g.tmpIdx)
+							g.tmpIdx++
+							lenCmpReg := fmt.Sprintf("%%set.arr.lencmp.%d", g.tmpIdx)
+							g.tmpIdx++
+							skipFreeLabel := fmt.Sprintf("set.arr.skipfree.%d", g.tmpIdx)
+							g.tmpIdx++
+							doFreeLabel := fmt.Sprintf("set.arr.dofree.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+								g.indent(), oldLenGEP, elemType, elemType, elemGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+							sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+								g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+							g.emitLabel(sb, doFreeLabel)
+							g.emitElementFree(sb, elemGEP, elemType)
+							sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+							g.emitLabel(sb, skipFreeLabel)
+						} else {
+							// User struct: emitElementFree walks fields with NULL checks.
+							g.emitElementFree(sb, elemGEP, elemType)
+						}
+						// Build srcPtr: alloca + store the value, then deep clone to slot.
+						g.tmpIdx++
+						cloneSrc := fmt.Sprintf("%%set.arr.csrc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+							g.indent(), elemType, storeVal, elemType, cloneSrc))
+						g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, "")
+					} else {
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+							g.indent(), elemType, storeVal, elemType, elemGEP))
+					}
 					return "0"
 				}
 			}
@@ -3300,8 +3341,49 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					storeVal = loadReg
 				}
 			}
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-				g.indent(), llvmElemType, storeVal, llvmElemType, gepReg))
+			// Heap-owning element types (%str-long/%vec/%arr/user struct):
+			// shallow store shares data pointer between source and slot →
+			// double-free at scope exit. Deep clone gives the slot its own
+			// independent heap data. Before cloning, free the slot's old value
+			// (with len==0 guard for containers to avoid freeing garbage
+			// pointers in uninitialized slots).
+			if g.isHeapOwningType(llvmElemType) {
+				if llvmElemType == "%str-long" || llvmElemType == "%vec" || llvmElemType == "%arr" {
+					g.tmpIdx++
+					oldLenGEP := fmt.Sprintf("%%set.ga.oldlen.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					oldLenReg := fmt.Sprintf("%%set.ga.oldlen.%d", g.tmpIdx)
+					g.tmpIdx++
+					lenCmpReg := fmt.Sprintf("%%set.ga.lencmp.%d", g.tmpIdx)
+					g.tmpIdx++
+					skipFreeLabel := fmt.Sprintf("set.ga.skipfree.%d", g.tmpIdx)
+					g.tmpIdx++
+					doFreeLabel := fmt.Sprintf("set.ga.dofree.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+						g.indent(), oldLenGEP, llvmElemType, llvmElemType, gepReg))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+					sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+						g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+					g.emitLabel(sb, doFreeLabel)
+					g.emitElementFree(sb, gepReg, llvmElemType)
+					sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+					g.emitLabel(sb, skipFreeLabel)
+				} else {
+					// User struct: emitElementFree walks fields with NULL checks.
+					g.emitElementFree(sb, gepReg, llvmElemType)
+				}
+				// Build srcPtr: alloca + store the value, then deep clone to slot.
+				g.tmpIdx++
+				cloneSrc := fmt.Sprintf("%%set.ga.csrc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, llvmElemType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+					g.indent(), llvmElemType, storeVal, llvmElemType, cloneSrc))
+				g.emitDeepClone(sb, cloneSrc, gepReg, llvmElemType, "")
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+					g.indent(), llvmElemType, storeVal, llvmElemType, gepReg))
+			}
 		}
 		return "0"
 	}

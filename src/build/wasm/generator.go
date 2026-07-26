@@ -166,6 +166,8 @@ const (
 	NwrittenPtr    uint32 = 4104 // fd_write nwritten 寫入位置（4 bytes）
 	ItoaBufferEnd  uint32 = 8224 // itoa 緩衝結尾（digits 由 8223 往前寫）
 	ItoaBufferSize uint32 = 32   // itoa 緩衝大小（8192..8224）
+	FmtBufferStart uint32 = 4108 // 格式化輸出緩衝區起點（8192..8224 為 itoa）
+	FmtBufferEnd   uint32 = 8192 // 格式化輸出緩衝區終點（避免與 ItoaBuffer 衝突）
 )
 
 // fd_write / proc_exit 的 function index（import 後固定）。

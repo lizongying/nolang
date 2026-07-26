@@ -70,7 +70,15 @@ async function ensureLoaded(url: string): Promise<void> {
     }
 
     try {
-      const response = await fetch(url);
+      // `cache: 'no-cache'` forces a conditional request (If-Modified-Since
+      // / If-None-Match) so the browser always revalidates with the server
+      // instead of serving a stale no.wasm from HTTP cache. Without this,
+      // after `make no-wasm` rebuilds no.wasm, the playground would keep
+      // running the previous version until the user hard-refreshes, which
+      // is a common source of "RuntimeError: unreachable" reports caused
+      // by running stale codegen that still emits OpUnreachable for paths
+      // fixed in the newer build.
+      const response = await fetch(url, {cache: 'no-cache'});
       if (!response.ok) {
         initError = `Failed to fetch no.wasm: HTTP ${response.status}`;
         return;
@@ -102,15 +110,14 @@ function compileSource(source: string, timeoutMs: number): {
   exitCode: number;
   timedOut: boolean;
 } {
-  // Use an explicit in-memory filesystem and preopen `/` against it.
-  // `preopens: {'/': '/'}` alone (without `fs`) fails because wasmer
-  // tries to bind the host root, which is absent in the browser —
-  // producing `Capabilities insufficient`. But with an explicit
-  // `fs: MemFS`, wasmer preopens `/` *inside* the MemFS rather than the
-  // host, granting the guest a writable root it can actually access.
-  // Empty `preopens: {}` is wrong too: WASI requires paths to be
-  // preopened before the guest can `open()` them, so `/tmp/input.no`
-  // would still be unreachable even though the file exists in MemFS.
+  // Preopen only the `/tmp` directory against the MemFS. Preopening `/`
+  // fails with `Capabilities insufficient` because wasmer tries to bind
+  // the host root, which does not exist in the browser sandbox. Empty
+  // `preopens: {}` also fails: WASI requires paths to be preopened
+  // before the guest can `open()` them, so `/tmp/input.no` would be
+  // unreachable even though the file exists in MemFS. Mapping
+  // `/tmp` -> `/tmp` exposes exactly the directory the compiler reads
+  // its input from and writes its output to, and nothing else.
   const fs = new MemFS();
   try {
     fs.createDir(TMP_DIR);
@@ -133,7 +140,7 @@ function compileSource(source: string, timeoutMs: number): {
       INPUT_PATH,
     ],
     env: {},
-    preopens: {'/': '/'},
+    preopens: {'/tmp': '/tmp'},
     fs,
   });
 
@@ -211,14 +218,22 @@ function executeUserWasm(
   compileStderr: string,
 ): RunResult {
   // Fresh MemFS for the execute stage — user .wasm typically only
-  // touches stdin/stdout, but we still need a writable root to avoid
-  // `Capabilities insufficient` on any fs call the program might make.
+  // touches stdin/stdout, but we preopen `/tmp` so any fs call the
+  // program makes has a writable directory available (preopening `/`
+  // fails with `Capabilities insufficient` in the browser sandbox).
+  // The `/tmp` directory must be created before preopening, otherwise
+  // wasmer fails with "Could not get metadata for file /tmp".
   const fs = new MemFS();
+  try {
+    fs.createDir(TMP_DIR);
+  } catch {
+    // Already exists — ignore.
+  }
 
   const wasi = new WASI({
     args: ['out.wasm'],
     env: {},
-    preopens: {'/': '/'},
+    preopens: {'/tmp': '/tmp'},
     fs,
   });
 

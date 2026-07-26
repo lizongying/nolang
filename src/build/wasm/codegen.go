@@ -3,6 +3,7 @@ package wasm
 import (
 	"bytes"
 	"math"
+	"strings"
 
 	"github.com/lizongying/nolang/parser"
 )
@@ -134,6 +135,8 @@ func (g *Generator) emitStmt(sb *bytes.Buffer, stmt parser.Statement) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.emitLetStmt(sb, s)
+	case *parser.MultiAssignStatement:
+		g.emitMultiAssignStmt(sb, s)
 	case *parser.ExpressionStatement:
 		g.emitExprStmt(sb, s)
 	case *parser.ReturnStatement:
@@ -461,6 +464,22 @@ func (g *Generator) emitInfix(sb *bytes.Buffer, ie *parser.InfixExpression) ValT
 			sb.WriteByte(OpI64RemS)
 		}
 		return I64
+	case "^", "&", "|", "<<", ">>":
+		g.emitExpr(sb, ie.Left)
+		g.emitExpr(sb, ie.Right)
+		switch op {
+		case "^":
+			sb.WriteByte(OpI64Xor)
+		case "&":
+			sb.WriteByte(OpI64And)
+		case "|":
+			sb.WriteByte(OpI64Or)
+		case "<<":
+			sb.WriteByte(OpI64Shl)
+		case ">>":
+			sb.WriteByte(OpI64ShrU)
+		}
+		return I64
 	case "<", ">", "<=", ">=", "==", "!=":
 		g.emitExpr(sb, ie.Left)
 		g.emitExpr(sb, ie.Right)
@@ -529,6 +548,10 @@ func (g *Generator) emitPrefix(sb *bytes.Buffer, pe *parser.PrefixExpression) Va
 
 // emitCallExpr 處理函式呼叫：print/println/printf 內建、Task 8 len/with-cap 等、用戶函數。
 func (g *Generator) emitCallExpr(sb *bytes.Buffer, ce *parser.CallExpression) ValType {
+	// 方法呼叫：receiver.method(args) — ce.Function 為 DotExpression。
+	if de, ok := ce.Function.(*parser.DotExpression); ok {
+		return g.emitMethodCall(sb, de, ce.Arguments)
+	}
 	ident, ok := ce.Function.(*parser.Identifier)
 	if !ok {
 		sb.WriteByte(OpUnreachable)
@@ -674,6 +697,14 @@ func (g *Generator) emitIfExpr(sb *bytes.Buffer, ie *parser.IfExpression) ValTyp
 // 字串引數：直接寫入 iovec 並 fd_write。
 // 整數引數：透過 itoa 轉為字串後輸出。
 func (g *Generator) emitPrint(sb *bytes.Buffer, args []parser.Expression, addNewline bool) {
+	// 具名格式字串攔截：當只有一個 StringLiteral 引數且包含 '{' 時，
+	// 走具名格式路徑（如 print('pi = {pi:.2f}')）。
+	if len(args) == 1 {
+		if strLit, ok := args[0].(*parser.StringLiteral); ok && strings.Contains(strLit.Value, "{") {
+			g.emitNamedFormatPrint(sb, strLit.Value, addNewline)
+			return
+		}
+	}
 	for _, arg := range args {
 		switch a := arg.(type) {
 		case *parser.StringLiteral:
@@ -1054,6 +1085,20 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if results, ok := g.funcResults[ident.Value]; ok && len(results) > 0 {
 				return results[0]
+			}
+		}
+		// 模組限定呼叫：math.max/min/sqrt 回傳 f64
+		if de, ok := e.Function.(*parser.DotExpression); ok {
+			if ident, ok := de.Receiver.(*parser.Identifier); ok {
+				if _, isLocal := g.lookupLocal(ident.Value); !isLocal {
+					switch ident.Value {
+					case "math":
+						switch de.Property {
+						case "max", "min", "sqrt":
+							return F64
+						}
+					}
+				}
 			}
 		}
 		return I64

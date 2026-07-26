@@ -118,6 +118,12 @@ const (
 	OpI64DivU     byte = 0x80
 	OpI64RemS     byte = 0x81
 	OpI64RemU     byte = 0x82
+	OpI64And      byte = 0x83
+	OpI64Or       byte = 0x84
+	OpI64Xor      byte = 0x85
+	OpI64Shl      byte = 0x86
+	OpI64ShrS     byte = 0x87
+	OpI64ShrU     byte = 0x88
 	OpI32WrapI64       byte = 0xA7
 	OpI64ExtendI32U    byte = 0xAD
 	OpI64ExtendI32S    byte = 0xAC
@@ -125,6 +131,17 @@ const (
 	OpF64Sub      byte = 0xA1
 	OpF64Mul      byte = 0xA2
 	OpF64Div      byte = 0xA3
+	OpF64Abs      byte = 0x99
+	OpF64Trunc    byte = 0x9D
+	OpF64Sqrt     byte = 0x9F
+	OpF64Eq       byte = 0x61
+	OpF64Ne       byte = 0x62
+	OpF64Lt       byte = 0x63
+	OpF64Gt       byte = 0x64
+	OpF64Le       byte = 0x65
+	OpF64Ge       byte = 0x66
+	OpI64TruncF64S  byte = 0xB0
+	OpF64ConvertI64S byte = 0xB9
 )
 
 // BlockType 常數（block/loop/if 的型別標籤）。

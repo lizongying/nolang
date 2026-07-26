@@ -1370,31 +1370,31 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						candidates = append(candidates, primAliases...)
 					}
 					// vec/arr 變數：依元素型別構造 []T 候選（如 opened.to-str → []byte.to-str）
-				// Also handle raw LLVM array types like "[32 x i8]" (fixed-size array
-				// result parameters typed directly as [N x T] rather than %arr struct).
-				if srcType == "vec" || srcType == "arr" || strings.HasPrefix(srcType, "[") {
-					if g.arrayElemTypes != nil {
-						if et, ok := g.arrayElemTypes[recv.Value]; ok {
-							et = strings.TrimPrefix(et, "%")
-							if elemAliases, ok := llvmTypeToNolang[et]; ok {
-								for _, alias := range elemAliases {
-									candidates = append(candidates, "[]"+alias)
-								}
-								// For arr receivers, also construct [n]t mangled name
-								// candidates (e.g. _3xi64.clone) to match transpiler's
-								// cloneAndSubstitute output. vec receivers don't need this
-								// because []T candidates already cover slice methods.
-								if srcType == "arr" && g.arraySizes != nil {
-									if arrSize, ok := g.arraySizes[recv.Value]; ok {
-										for _, alias := range elemAliases {
-											candidates = append(candidates, fmt.Sprintf("_%dx%s", arrSize, alias))
+					// Also handle raw LLVM array types like "[32 x i8]" (fixed-size array
+					// result parameters typed directly as [N x T] rather than %arr struct).
+					if srcType == "vec" || srcType == "arr" || strings.HasPrefix(srcType, "[") {
+						if g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[recv.Value]; ok {
+								et = strings.TrimPrefix(et, "%")
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+									}
+									// For arr receivers, also construct [n]t mangled name
+									// candidates (e.g. _3xi64.clone) to match transpiler's
+									// cloneAndSubstitute output. vec receivers don't need this
+									// because []T candidates already cover slice methods.
+									if srcType == "arr" && g.arraySizes != nil {
+										if arrSize, ok := g.arraySizes[recv.Value]; ok {
+											for _, alias := range elemAliases {
+												candidates = append(candidates, fmt.Sprintf("_%dx%s", arrSize, alias))
+											}
 										}
 									}
 								}
 							}
 						}
 					}
-				}
 					for _, cand := range candidates {
 						shortName := cand + "." + dot.Property
 						if g.funcRetTypes != nil {

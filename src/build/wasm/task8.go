@@ -84,6 +84,12 @@ func (g *Generator) inferKind(expr parser.Expression) ValKind {
 				return KindVec
 			}
 		}
+		// 方法呼叫 receiver.to-str() → 回傳 str
+		if de, ok := e.Function.(*parser.DotExpression); ok {
+			if de.Property == "to-str" || de.Property == "to_str" {
+				return KindStr
+			}
+		}
 		return KindScalar
 	}
 	return KindScalar
@@ -292,6 +298,260 @@ func (g *Generator) emitStrConcat(sb *bytes.Buffer) {
 	// return desc
 	sb.WriteByte(OpLocalGet)
 	writeU32LEB(sb, uint32(descIdx))
+}
+
+// ---- 方法呼叫 ----
+
+// emitMultiAssignStmt 處理多目標賦值：v1, v2 = expr。
+// 目前支援：
+//   - rand.rand(state) → 2 個 i64 回傳值（new-state, r），分配給 2 個 Identifier 目標
+//
+// 對其他情況，發射 expr 後丟棄結果（最小可用）。
+func (g *Generator) emitMultiAssignStmt(sb *bytes.Buffer, mas *parser.MultiAssignStatement) {
+	n := len(mas.Targets)
+	if n == 0 {
+		return
+	}
+	// 特判 rand.rand(state)：產生 2 個 i64 值
+	if ce, ok := mas.Value.(*parser.CallExpression); ok {
+		if de, ok := ce.Function.(*parser.DotExpression); ok {
+			if ident, ok := de.Receiver.(*parser.Identifier); ok {
+				if ident.Value == "rand" && de.Property == "rand" && n == 2 {
+					// 發射 rand.rand：堆疊留下 (new-state, r)，r 在頂端
+					g.emitRandRand(sb, ce.Arguments)
+					// 依序分配：第 2 個目標先（r 在頂端），第 1 個目標後
+					// 目標必須是 Identifier
+					for i := n - 1; i >= 0; i-- {
+						if id, ok := mas.Targets[i].(*parser.Identifier); ok {
+							idx := g.addLocal(id.Value, I64)
+							g.localTypeMap[g.currentFunc][id.Value] = I64
+							sb.WriteByte(OpLocalSet)
+							writeU32LEB(sb, uint32(idx))
+						}
+					}
+					return
+				}
+			}
+		}
+	}
+	// 其他情況：發射 value 並丟棄
+	t := g.emitExpr(sb, mas.Value)
+	if t != Void {
+		sb.WriteByte(OpDrop)
+	}
+}
+
+// emitMethodCall 處理 receiver.method(args) 方法呼叫。
+// 區分兩種情況：
+//  1. 模組限定呼叫：receiver 是未定義的識別字且匹配已知模組（math/rand），
+//     走 emitModuleCall。
+//  2. 真正的方法呼叫：如 x.to-str()，走 emitToStrMethod。
+func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, args []parser.Expression) ValType {
+	// 判斷是否為模組限定呼叫（receiver 不是 local 變數）
+	if ident, ok := de.Receiver.(*parser.Identifier); ok {
+		if _, isLocal := g.lookupLocal(ident.Value); !isLocal {
+			return g.emitModuleCall(sb, ident.Value, de.Property, args)
+		}
+	}
+	switch de.Property {
+	case "to-str", "to_str":
+		return g.emitToStrMethod(sb, de.Receiver)
+	default:
+		sb.WriteByte(OpUnreachable)
+		return Void
+	}
+}
+
+// emitModuleCall 處理模組限定呼叫 module.func(args)。
+// 支援：
+//   - math.max(a, b) / math.min(a, b) / math.sqrt(x) → f64
+//   - rand.rand(state) → 留下 (new-state: i64, r: i64) 在堆疊上（多回傳值）
+func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args []parser.Expression) ValType {
+	switch module {
+	case "math":
+		switch name {
+		case "max":
+			// f64.max (0xA5)
+			g.emitExpr(sb, args[0])
+			g.emitExpr(sb, args[1])
+			sb.WriteByte(0xA5) // f64.max
+			return F64
+		case "min":
+			// f64.min (0xA4)
+			g.emitExpr(sb, args[0])
+			g.emitExpr(sb, args[1])
+			sb.WriteByte(0xA4) // f64.min
+			return F64
+		case "sqrt":
+			// f64.sqrt (0x9F)
+			g.emitExpr(sb, args[0])
+			sb.WriteByte(OpF64Sqrt)
+			return F64
+		}
+	case "rand":
+		if name == "rand" {
+			return g.emitRandRand(sb, args)
+		}
+	}
+	sb.WriteByte(OpUnreachable)
+	return Void
+}
+
+// emitRandRand 發射 rand.rand(state) 內建：xorshift32。
+// 輸入：state i64。輸出：堆疊留下 (new-state i64, r i64)，r 在頂端。
+//   new-state = state ^ (state << 13) ^ (state << 13 >> 17) ^ (state << 13 >> 17 << 5)
+//   r = new-state & 0xFFFFFFFF
+func (g *Generator) emitRandRand(sb *bytes.Buffer, args []parser.Expression) ValType {
+	stateIdx := g.addLocal("$rr.s", I64)
+	tmpIdx := g.addLocal("$rr.t", I64)
+	rIdx := g.addLocal("$rr.r", I64)
+
+	// state = arg
+	g.emitExpr(sb, args[0])
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(stateIdx))
+
+	// tmp = state ^ (state << 13)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(stateIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(stateIdx))
+	sb.WriteByte(OpI64Const)
+	writeSLEB(sb, 13)
+	sb.WriteByte(OpI64Shl)
+	sb.WriteByte(OpI64Xor)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(tmpIdx))
+
+	// tmp = tmp ^ (tmp >> 17)  (logical shift for unsigned behavior)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpI64Const)
+	writeSLEB(sb, 17)
+	sb.WriteByte(OpI64ShrU)
+	sb.WriteByte(OpI64Xor)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(tmpIdx))
+
+	// tmp = tmp ^ (tmp << 5)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpI64Const)
+	writeSLEB(sb, 5)
+	sb.WriteByte(OpI64Shl)
+	sb.WriteByte(OpI64Xor)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(tmpIdx))
+
+	// r = tmp & 0xFFFFFFFF
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpI64Const)
+	writeSLEB(sb, 0xFFFFFFFF)
+	sb.WriteByte(OpI64And)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(rIdx))
+
+	// 推入 (new-state, r): state 在底，r 在頂
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(tmpIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(rIdx))
+	return I64 // 回傳型別標記為 I64（頂端值）；多回傳值由呼叫端處理
+}
+
+// emitToStrMethod 發射 receiver.to-str()：將數值轉為 str 描述符（I32）。
+// receiver 型別由 lookupLocalType 推斷（i64 → itoa；f64 → 定點格式化）。
+func (g *Generator) emitToStrMethod(sb *bytes.Buffer, receiver parser.Expression) ValType {
+	// 推斷 receiver 型別
+	recType := I64
+	if ident, ok := receiver.(*parser.Identifier); ok {
+		if t, ok := g.lookupLocalType(ident.Value); ok {
+			recType = t
+		}
+	}
+
+	lenIdx := g.addLocal("$ts.len", I32)
+	ptrIdx := g.addLocal("$ts.ptr", I32)
+	bufIdx := g.addLocal("$ts.buf", I32)
+	descIdx := g.addLocal("$ts.desc", I32)
+
+	// 依型別產生 (ptr, len) — len 在堆疊頂端
+	switch recType {
+	case F64:
+		// f64.to-str()：預設精度 6，使用 emitF64ToBuffer 寫入 FmtBuffer
+		g.emitExpr(sb, receiver)
+		g.emitF64ToBuffer(sb, 6) // 堆疊：[ptr, len]
+	default:
+		// i64.to-str()（含 bool/byte/char 等 i32/i64 型別）
+		g.emitExpr(sb, receiver)
+		if recType == I32 {
+			sb.WriteByte(OpI64ExtendI32S)
+		}
+		g.emitI64ToString(sb) // 堆疊：[ptr, len]
+	}
+
+	// 儲存 ptr/len
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(lenIdx))
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(ptrIdx))
+
+	// buf = malloc(len)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(lenIdx))
+	g.emitMallocCall(sb)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(bufIdx))
+
+	// memory.copy(buf, ptr, len)：堆疊 [dst, src, n]
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(bufIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(ptrIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(lenIdx))
+	g.emitMemoryCopy(sb)
+
+	// desc = malloc(12)
+	writeI32ConstU(sb, DescriptorHeaderSize)
+	g.emitMallocCall(sb)
+	sb.WriteByte(OpLocalSet)
+	writeU32LEB(sb, uint32(descIdx))
+
+	// desc.len = len
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(descIdx))
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(lenIdx))
+	g.emitI32Store(sb)
+
+	// desc.cap = len
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(descIdx))
+	g.emitI32ConstOffset(sb, DescriptorFieldCap)
+	sb.WriteByte(OpI32Add)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(lenIdx))
+	g.emitI32Store(sb)
+
+	// desc.data = buf
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(descIdx))
+	g.emitI32ConstOffset(sb, DescriptorFieldData)
+	sb.WriteByte(OpI32Add)
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(bufIdx))
+	g.emitI32Store(sb)
+
+	// return desc
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(descIdx))
+	return I32
 }
 
 // ---- vec literal ----
