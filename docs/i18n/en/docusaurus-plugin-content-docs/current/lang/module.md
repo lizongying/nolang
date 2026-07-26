@@ -63,8 +63,11 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 
 ```no
 print('hello {n}')           ; No prefix needed, auto-newline
+print(a, b, c)               ; Multiple args, space-separated, auto-newline
+print()                      ; No args, just a newline
 s = format('x={x}')          ; No prefix needed, returns formatted string
 eprint('err: {n}')           ; No prefix needed, writes to stderr with newline
+eprint('err:', a, b)         ; Multiple args, stderr space-separated
 print('id {id:06} amount {money:.2f}')  ; Supports align, fill, width, precision
 io.out('no-newline-here')    ; Low-level command, no newline (replaces printf)
 io.err('err-no-newline')     ; Low-level command, stderr no newline (replaces eprintf)

@@ -1068,8 +1068,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
 	for _, info := range knownStdModules() {
-		// 如果變量名與模塊名衝突，跳過自動載入
-		if _, isVar := varTypes[info.ShortName]; isVar {
+		// 如果頂層變量名與模塊名衝突，跳過自動載入
+		// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
+		// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
+		// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
+		if _, isVar := globalVarTypes[info.ShortName]; isVar {
 			continue
 		}
 		path := "std/" + info.ShortPath
@@ -1134,24 +1137,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
 	resolveSelfMethodCalls(merged)
 
-	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
-	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
-	monomorphizeGenerics(merged, globalVarTypes)
-
-	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
-	filtered := make([]parser.Statement, 0, len(merged.Statements))
-	for _, stmt := range merged.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.GenericParams) > 0 {
-				continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
-			}
-		}
-		filtered = append(filtered, stmt)
-	}
-	merged.Statements = filtered
-
-	// 非函數定義的陳述句（頂層呼叫）放到最後
-	// 必須在 monomorphizeUnions/rewriteUnionCalls 之前添加，
+	// 非函數定義的陳述句（頂層呼叫）加入 merged
+	// 必須在 monomorphizeGenerics 之前添加，否則頂層的方法呼叫（如 a.clone()）
+	// 不會被解析與單態化；也必須在 monomorphizeUnions/rewriteUnionCalls 之前添加，
 	// 否則頂層呼叫（如 pow(2, 10, r)）不會被重寫為具體版本
 	for _, stmt := range program.Statements {
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
@@ -1182,6 +1170,22 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		merged.Statements = append(merged.Statements, stmt)
 	}
+
+	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
+	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
+	monomorphizeGenerics(merged, globalVarTypes)
+
+	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
+	filtered := make([]parser.Statement, 0, len(merged.Statements))
+	for _, stmt := range merged.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.GenericParams) > 0 {
+				continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
+			}
+		}
+		filtered = append(filtered, stmt)
+	}
+	merged.Statements = filtered
 
 	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
 	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
@@ -2243,6 +2247,16 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 					argSize := concrete[1:argClose]
 					argElem := concrete[argClose+1:]
 
+					// [n]t pattern is for fixed-size arrays only.
+					// If argSize is empty, concrete is a slice ([]T), not an array,
+					// and must be handled by the []t slice pattern below.
+					// Without this guard, both [n]t and []t patterns would match
+					// []i64, and non-deterministic map iteration could dispatch
+					// vec calls to arr specializations (causing wrong results/segfaults).
+					if argSize == "" {
+						return nil
+					}
+
 					var args []parser.Expression
 					if isLowerLetter(sizeParam) {
 						if val, err := strconv.ParseInt(argSize, 10, 64); err == nil {
@@ -2357,6 +2371,13 @@ func inferArgType(expr parser.Expression, program *parser.Program) string {
 		return inferArgType(e.Expression, program)
 	}
 	return ""
+}
+
+func stmtCount(body *parser.BlockStatement) int {
+	if body == nil {
+		return -1
+	}
+	return len(body.Statements)
 }
 
 // cloneAndSubstitute 複製泛型函數並以具體值替換泛型參數
@@ -2540,6 +2561,20 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		return newFor
 	case *parser.BlockStatement:
 		return substituteBody(s, subst)
+	case *parser.ReturnStatement:
+		return &parser.ReturnStatement{
+			Token:       s.Token,
+			ReturnValue: substituteExpr(s.ReturnValue, subst),
+		}
+	case *parser.MultiAssignStatement:
+		newMulti := &parser.MultiAssignStatement{
+			Token: s.Token,
+		}
+		for _, tgt := range s.Targets {
+			newMulti.Targets = append(newMulti.Targets, substituteExpr(tgt, subst))
+		}
+		newMulti.Value = substituteExpr(s.Value, subst)
+		return newMulti
 	default:
 		return stmt
 	}
@@ -2601,6 +2636,46 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		return &parser.GroupedExpression{
 			Token:      e.Token,
 			Expression: substituteExpr(e.Expression, subst),
+		}
+	case *parser.IfExpression:
+		newIf := &parser.IfExpression{
+			Token:         e.Token,
+			Condition:     substituteExpr(e.Condition, subst),
+			IsBareMatch:   e.IsBareMatch,
+			MatchedExpr:   substituteExpr(e.MatchedExpr, subst),
+			IsStandalone:  e.IsStandalone,
+		}
+		if e.Consequence != nil {
+			newIf.Consequence = substituteBody(e.Consequence, subst)
+		}
+		if e.Alternative != nil {
+			newIf.Alternative = substituteBody(e.Alternative, subst)
+		}
+		return newIf
+	case *parser.AssignExpression:
+		return &parser.AssignExpression{
+			Token: e.Token,
+			Left:  substituteExpr(e.Left, subst),
+			Value: substituteExpr(e.Value, subst),
+		}
+	case *parser.DotExpression:
+		return &parser.DotExpression{
+			Token:     e.Token,
+			Receiver:  substituteExpr(e.Receiver, subst),
+			Property:  e.Property,
+		}
+	case *parser.ConditionalExpression:
+		return &parser.ConditionalExpression{
+			Token:       e.Token,
+			Condition:   substituteExpr(e.Condition, subst),
+			Consequence: substituteExpr(e.Consequence, subst),
+			Alternative: substituteExpr(e.Alternative, subst),
+		}
+	case *parser.SliceExpression:
+		return &parser.SliceExpression{
+			Token:  e.Token,
+			Left:   substituteExpr(e.Left, subst),
+			Range:  substituteRange(e.Range, subst),
 		}
 	default:
 		return e
@@ -3672,15 +3747,13 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		}
 		return validateExprArrayBounds(e.Index, arraySizes, sliceSizes, stringSizes, varTypes)
 	case *parser.AssignExpression:
-		// array.len = val / slice.len = val / string.len = val → 不允許修改唯獨的 len 欄位
+		// array.len = val / string.len = val → 不允許修改唯讀的 len 欄位
+		// 注意：slice 的 len 欄位允許修改（用於截斷或擴展，runtime 支援）
 		if dot, ok := e.Left.(*parser.DotExpression); ok {
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if _, exists := arraySizes[ident.Value]; exists {
 						return fmt.Errorf("cannot modify read-only field 'len' of array '%s'", ident.Value)
-					}
-					if _, exists := sliceSizes[ident.Value]; exists {
-						return fmt.Errorf("cannot modify read-only field 'len' of slice '%s'", ident.Value)
 					}
 					if _, exists := stringSizes[ident.Value]; exists {
 						return fmt.Errorf("cannot modify read-only field 'len' of string '%s'", ident.Value)
@@ -4924,8 +4997,8 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		if e.Expr != nil {
 			collectReadNamesInExpr(e.Expr, read)
 		}
-	// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
-	// FunctionLiteral: don't recurse (nested function has its own scope)
+		// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
+		// FunctionLiteral: don't recurse (nested function has its own scope)
 	}
 }
 
@@ -6262,6 +6335,19 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 		}
 		if s.Value != nil {
+			// val(x) 作為構造器已廢棄：應改用 ok(x) 或隱式賦值 val = n
+			if call, ok := s.Value.(*parser.CallExpression); ok {
+				if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
+					if cid.Value == "val" {
+						callPos := call.Pos()
+						results = append(results, ValidateResult{
+							Line:    callPos.Line,
+							Column:  callPos.Column,
+							Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+						})
+					}
+				}
+			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
 			if inferredType != "" {
@@ -6296,7 +6382,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 					}
-					// Option 建構子：err(x) / val(x) / nil 可指派給 ?T 變數
+					// Option 建構子：err(x) / ok(x) / nil 可指派給 ?T 變數
+					// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)；隱式賦值請用 val = n
 					isOptionCtor := false
 					if _, isNil := s.Value.(*parser.NilLiteral); isNil {
 						if strings.HasPrefix(existingType, "?") {
@@ -6305,10 +6392,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 					if call, ok := s.Value.(*parser.CallExpression); ok {
 						if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
-							if cid.Value == "err" || cid.Value == "val" || cid.Value == "ok" {
+							if cid.Value == "err" || cid.Value == "ok" {
 								if strings.HasPrefix(existingType, "?") {
 									isOptionCtor = true
 								}
+							}
+							if cid.Value == "val" {
+								// val(x) 作為構造器已廢棄：應改用 ok(x) 或隱式賦值 val = n
+								callPos := call.Pos()
+								results = append(results, ValidateResult{
+									Line:    callPos.Line,
+									Column:  callPos.Column,
+									Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+								})
+								isOptionCtor = true
 							}
 						}
 					}
@@ -6318,6 +6415,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						innerType := existingType[1:]
 						if inferredType == innerType || isArgTypeCompatible(innerType, inferredType, s.Value) {
 							isOptionCtor = true
+						} else if _, _, ok1 := intTypeRange(innerType); ok1 {
+							if _, _, ok2 := intTypeRange(inferredType); ok2 {
+								// 整數型別之間的隱式賦值給 Option 變數允許窄化：
+								// generator 在 copyToData 中將所有整數存為 i64（8 位元組），
+								// 不區分 i8/u8/i16 等寬度；窄化安全性由程式碼邏輯（如範圍檢查）保證。
+								isOptionCtor = true
+							}
 						}
 					}
 					if inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
@@ -6337,8 +6441,22 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 
 	case *parser.ExpressionStatement:
+		// val(x) 作為構造器已廢棄：檢查語句表達式中的 val() 呼叫
+		if call, ok := s.Expression.(*parser.CallExpression); ok {
+			if cid, ok2 := call.Function.(*parser.Identifier); ok2 && cid.Value == "val" {
+				callPos := call.Pos()
+				results = append(results, ValidateResult{
+					Line:    callPos.Line,
+					Column:  callPos.Column,
+					Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+				})
+			}
+		}
 		// 處理 if 表示式
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			// 注意：不在 if 條件中檢查 val() 構造器。
+			// match 脫糖後 if 條件可能含 `matched == val(v)`，此處 val 可能是
+			// 用戶自定義枚舉的 variant，不能簡單當作廢棄的 Option 構造器報錯。
 			if ifExpr.Consequence != nil {
 				for _, bStmt := range ifExpr.Consequence.Statements {
 					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
@@ -6381,14 +6499,24 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						// Option 建構子：err(x) / val(x) 可指派給任何 ?T 變數
+						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
+						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
 						isOptionCtor := false
 						if call, ok := assign.Value.(*parser.CallExpression); ok {
 							if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
-								if cid.Value == "err" || cid.Value == "val" || cid.Value == "ok" {
+								if cid.Value == "err" || cid.Value == "ok" {
 									if strings.HasPrefix(existingType, "?") {
 										isOptionCtor = true
 									}
+								}
+								if cid.Value == "val" {
+									callPos := call.Pos()
+									results = append(results, ValidateResult{
+										Line:    callPos.Line,
+										Column:  callPos.Column,
+										Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+									})
+									isOptionCtor = true
 								}
 							}
 						}

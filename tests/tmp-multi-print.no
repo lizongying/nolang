@@ -1,0 +1,23 @@
+main = () {
+    a = 'hello'
+    b = 'world'
+    n i64 = 123
+    pi f64 = 3.14
+    flag bool = true
+
+    ; 多参数空格分隔
+    print(a, b)
+    print(a, b, n)
+    print('x=', n, 'pi=', pi, 'flag=', flag)
+
+    ; 单参数
+    print(a)
+    print(n)
+
+    ; 空参数（只输出换行）
+    print()
+
+    ; eprint 多参数
+    eprint('err:', a, b)
+}
+main()

@@ -1,0 +1,258 @@
+; test-https-server — HTTPS 伺服器基本測試
+; # std/net/server
+; # std/net/tls
+
+; test-https-listen: 測試 HTTPS 伺服器可以建立監聽
+test-https-listen = () (pass bool) {
+    pass = false
+    srv = https-server{}
+    ok = srv.listen('127.0.0.1', 9443)
+    ok == false -> {
+        print('FAIL: https-server.listen failed')
+        return
+    }
+    io.errln('[TEST] https-server listening on 9443')
+    srv.close()
+    pass = true
+}
+
+; test-tls-server-init: 測試 TLS 伺服器連線初始化（憑證生成、金鑰設定）
+test-tls-server-init = () (pass bool) {
+    pass = false
+
+    ; tls-server-init 需要一個 fd, 用 -1 表示未連接（僅測試初始化邏輯）
+    conn = tls-server-init(-1)
+    conn: {
+        nil -> {
+            print('FAIL: tls-server-init returned nil')
+            return
+        }
+        err -> {
+            print('FAIL: tls-server-init returned err')
+            return
+        }
+        ok -> {
+            c = it
+
+            ; 驗證憑證已生成
+            c.cert.len == 0 -> {
+                print('FAIL: cert not generated')
+                c.close()
+                return
+            }
+            io.errln('[TEST] cert generated, len=' - c.cert.len.to-str())
+
+            ; 驗證 RSA 金鑰已設定
+            c.n-bytes.len != 256 -> {
+                print('FAIL: n-bytes wrong size')
+                c.close()
+                return
+            }
+            c.d-bytes.len != 256 -> {
+                print('FAIL: d-bytes wrong size')
+                c.close()
+                return
+            }
+            io.errln('[TEST] RSA keys set up (n=256, d=256 bytes)')
+
+            c.close()
+            pass = true
+        }
+    }
+}
+
+; test-https-server-struct: 測試 https-server-conn 結構體可建立
+test-https-server-struct = () (pass bool) {
+    pass = false
+    space = ' '
+    buf = space.repeat(8192)
+    tc = tls-server-conn{}
+    conn = https-server-conn{
+        tls: tc
+        method: ''
+        path: ''
+        query: ''
+        version: ''
+        headers: ''
+        header-count: 0
+        body: ''
+        keep-alive: false
+        recv-buf: buf
+        recv-buf-len: 0
+    }
+    conn.method.len == 0 -> pass = true
+}
+
+; run-https-client: 執行 HTTPS 客戶端請求並驗證回應
+; 獨立函式以避開同一函式中多個 option match 的 it 型別衝突 (編譯器 bug)
+; tc tls-conn: TLS 連線
+; 返回 ok bool: true=成功收到預期回應
+run-https-client = (tc tls-conn) (ok bool) {
+    ok = false
+
+    ; 發送 HTTP GET 請求
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
+
+    send-ok = false
+    w-opt = tc.send(req)
+    w-opt: {
+        nil -> print('FAIL: e2e send nil')
+        err -> print('FAIL: e2e send err')
+        ok -> send-ok = true
+    }
+
+    send-ok == false -> return
+
+    io.errln('[TEST] e2e: parent sent, receiving')
+
+    ; 接收回應 — 多次 recv 累積 (伺服器每個 send 產生一筆 TLS record)
+    space = ' '
+    rbuf = space.repeat(4096)
+    tmp = space.repeat(2048)
+    total = 0
+    found = false
+    rn = -1
+    {
+        found -> *
+        total >= 4000 -> *
+
+        rn = -1
+        rn-opt = tc.recv(tmp, 2048)
+        rn-opt: {
+            nil -> rn = -1
+            err -> rn = -1
+            ok -> rn = it
+        }
+        rn <= 0 -> *
+
+        i <- [0..rn): {
+            rbuf[total + i] = tmp[i]
+        }
+        total = total + rn
+
+        resp = rbuf.slice(0, total)
+        pos = resp.index('hello from nolang https')
+        pos >= 0 -> found = true
+    } (found == false)
+
+    found -> {
+        print('PASS: e2e got expected response')
+        ok = true
+    }
+    found == false -> {
+        print('FAIL: e2e did not receive expected response')
+        total > 0 -> {
+            resp = rbuf.slice(0, total)
+            io.errln('[TEST] e2e: recv=' - resp)
+        }
+    }
+}
+
+; run-https-e2e-client: 父進程客戶端邏輯（獨立函式以避開同一函式中
+; 多個 option match 的 it 型別衝突編譯器 bug）
+; host str: 伺服器主機
+; port i64: 伺服器埠號
+; 返回 ok bool: true=成功收到預期回應
+run-https-e2e-client = (host str, port i64) (ok bool) {
+    ok = false
+
+    io.errln('[TEST] e2e: parent dialing')
+    tls-opt = tls-dial(host, port)
+    tls-opt: {
+        nil -> print('FAIL: e2e tls-dial nil')
+        err -> print('FAIL: e2e tls-dial err')
+        ok -> {
+            tc = it
+            ok = run-https-client(tc)
+            tc.close()
+        }
+    }
+}
+
+; test-https-e2e: 端到端測試 — fork 伺服器 + TLS 客戶端連線
+; 驗證: TLS 1.2 交握 + HTTP 請求/回應 through加密通道
+test-https-e2e = () (pass bool) {
+    pass = false
+
+    ; 1. 啟動 HTTPS 伺服器
+    srv = https-server{}
+    ok = srv.listen('127.0.0.1', 9444)
+    ok == false -> {
+        print('FAIL: e2e listen failed')
+        return
+    }
+    io.errln('[TEST] e2e: server listening on 9444')
+
+    ; 2. fork: 子進程為伺服器, 父進程為客戶端
+    pid = process-fork()
+    pid < 0 -> {
+        print('FAIL: e2e fork failed')
+        srv.close()
+        return
+    }
+
+    ; === 子進程: 伺服器 (處理一個連線後退出) ===
+    pid == 0 -> {
+        io.errln('[TEST] e2e: child accepting')
+        conn-opt = srv.accept()
+        conn-opt: {
+            nil -> {
+                io.errln('[TEST] e2e: child accept nil')
+                exit(1)
+            }
+            err -> {
+                io.errln('[TEST] e2e: child accept err')
+                exit(1)
+            }
+            ok -> {
+                conn = it
+                io.errln('[TEST] e2e: child parsing')
+                p-ok = conn.parse()
+                p-ok == false -> {
+                    io.errln('[TEST] e2e: child parse fail')
+                    conn.close()
+                    exit(1)
+                }
+                io.errln('[TEST] e2e: child path=' - conn.path)
+                conn.write-text(200, 'hello from nolang https')
+                conn.close()
+                exit(0)
+            }
+        }
+    }
+
+    ; === 父進程: 客戶端 ===
+    ; 等待子進程就緒
+    sleep-ns(50000000)
+
+    pass = run-https-e2e-client('127.0.0.1', 9444)
+
+    srv.close()
+    process-waitpid(pid, 0)
+}
+
+; 主函數
+main = () {
+    io.errln('=== HTTPS Server Tests ===')
+
+    p1 = test-https-listen()
+    p1 == true -> print('PASS: https-server.listen')
+    p1 == false -> print('FAIL: https-server.listen')
+
+    p2 = test-tls-server-init()
+    p2 == true -> print('PASS: tls-server-init')
+    p2 == false -> print('FAIL: tls-server-init')
+
+    p3 = test-https-server-struct()
+    p3 == true -> print('PASS: https-server-conn struct')
+    p3 == false -> print('FAIL: https-server-conn struct')
+
+    p4 = test-https-e2e()
+    p4 == true -> print('PASS: https-e2e')
+    p4 == false -> print('FAIL: https-e2e')
+
+    io.errln('=== HTTPS Server Tests Done ===')
+}

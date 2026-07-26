@@ -694,7 +694,7 @@ x: {
 x: {
     err(e) -> log(e)
     nil -> log('nil')
-    val(v) ->
+    ok(v) ->
         do-right-thing(v)
 }
 

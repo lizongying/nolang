@@ -2168,7 +2168,9 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 							lt = t
 						}
 					}
-					if lt != "%str-long" && lt != "%arr" && lt != "%vec" {
+					// 原始陣列類型（如 [3 x i64]）也需要生成初始化代碼
+					// （如 b = a.clone() 返回 [N]T 時，b 的類型是 [N x T] 而非 %arr）
+					if lt != "%str-long" && lt != "%arr" && lt != "%vec" && !strings.HasPrefix(lt, "[") {
 						continue
 					}
 				}
@@ -2584,9 +2586,24 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					// 使 []byte.to-str 等方法能被查找到。
 					if (srcType == "vec" || srcType == "arr") && g.arrayElemTypes != nil {
 						if elemLLVMType, ok := g.arrayElemTypes[recv.Value]; ok {
+							elemLLVMType = strings.TrimPrefix(elemLLVMType, "%")
 							if elemAliases, ok := llvmTypeToNolang[elemLLVMType]; ok {
 								for _, alias := range elemAliases {
 									candidates = append(candidates, "[]"+alias)
+								}
+								// For arr receivers, also construct [n]t mangled name
+								// candidates (e.g. _3xi64.clone) to match transpiler's
+								// cloneAndSubstitute output. This is critical for varLLVMType
+								// to infer the return type of [n]t methods (e.g. b = a.clone()
+								// where a is [3]i64 → returns [3 x i64], not default i64).
+								// vec receivers don't need this because []T candidates
+								// already cover slice methods.
+								if srcType == "arr" && g.arraySizes != nil {
+									if arrSize, ok := g.arraySizes[recv.Value]; ok {
+										for _, alias := range elemAliases {
+											candidates = append(candidates, fmt.Sprintf("_%dx%s", arrSize, alias))
+										}
+									}
 								}
 							}
 						}
@@ -2770,6 +2787,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
 							if g.arrayElemTypes != nil {
 								if et, ok := g.arrayElemTypes[ident.Value]; ok {
+									et = strings.TrimPrefix(et, "%")
 									if elemAliases, ok := llvmTypeToNolang[et]; ok {
 										for _, alias := range elemAliases {
 											candidates = append(candidates, "[]"+alias)
@@ -2953,7 +2971,13 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 				// so that IndexExpression codegen uses the correct element type instead of
 				// defaulting to i64.
 				if at, ok := s.Type.(*parser.ArrayType); ok && at.Size != nil && at.Elem != nil && g.arrayElemTypes != nil {
-					g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
+					// Nested arrays (e.g. [12][16]i64) must use raw LLVM array type [16 x i64]
+					// for the element, not %arr struct or [0 x i64] from mapToLLVMType.
+					if inner, ok := at.Elem.(*parser.ArrayType); ok {
+						g.arrayElemTypes[s.Name.Value] = g.arrayTypeToLLVM(inner)
+					} else {
+						g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
+					}
 				}
 				// Register slice element type for module-level []T globals
 				if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
@@ -3724,8 +3748,28 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	var isVec bool
 	var elemType string
 
-	// Determine the source: named variable or inline slice literal
-	if ident, ok := ir.RangeExpr.(*parser.Identifier); ok {
+	// Handle inline slice expression: for x in arr[1..3]
+	// Generate the slice to a temporary %slic.N (alloca %vec/%str-long), then iterate.
+	if sliceExpr, ok := ir.RangeExpr.(*parser.SliceExpression); ok {
+		structPtr = g.generateSliceExpression(sb, sliceExpr)
+		// Determine result type and element type from the slice expression
+		recvType := g.exprResultLLVMType(sliceExpr.Left)
+		if recvType == "%str-long" {
+			structType = "%str-long"
+			isVec = false
+			elemType = "i8"
+		} else {
+			structType = "%vec"
+			isVec = true
+			elemType = "i64"
+			// Try to get more specific element type
+			if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok {
+					elemType = et
+				}
+			}
+		}
+	} else if ident, ok := ir.RangeExpr.(*parser.Identifier); ok {
 		// Named variable: for i in a
 		identName := ident.Value
 
@@ -3933,9 +3977,10 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	g.indentLevel++
 
 	// Load element from data[i]
-	// Data field index: %arr → field 1, %vec → field 2
+	// Data field index: %arr → field 1, %vec/%str-long → field 2
+	// (%arr = {i64 len, i64 data}; %vec/%str-long = {i64 len, i64 cap, i64 data})
 	dataField := uint32(1)
-	if isVec {
+	if isVec || structType == "%str-long" {
 		dataField = 2
 	}
 	g.tmpIdx++
@@ -3963,10 +4008,20 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	elemLoad := fmt.Sprintf("%%arr.elem.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), elemLoad, elemType, ptrType, elemGEP))
 
+	// 小整數類型（i8/i16/i32，如 str 的 char）zext 到 i64 再存入循環變數
+	storeVal := elemLoad
+	storeType := elemType
+	if elemType == "i1" || elemType == "i8" || elemType == "i16" || elemType == "i32" {
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%arr.zext.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
+		storeVal = zextReg
+		storeType = "i64"
+	}
+
 	// Store element into loop variable
-	g.varTypes[varName] = elemType
-	ptr2 := elemType + "*"
-	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %%%s\n", g.indent(), elemType, elemLoad, ptr2, varName))
+	g.varTypes[varName] = storeType
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), storeType, storeVal, storeType, varName))
 
 	if stmt.Body != nil {
 		for _, s := range stmt.Body.Statements {
@@ -5006,11 +5061,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				arraySize = intLit.Value
 			}
 		}
-		elemType := "i64"
-		if at.Elem != nil {
-			elemType = at.Elem.String()
+		// 嵌套陣列元素（如 [12][16]i64 的元素 [16]i64）必須使用原始 LLVM 陣列類型
+		// [16 x i64]，而非 %arr 結構體 {i64, i64}，否則 store 時型別不匹配。
+		var llvmElemType string
+		if inner, ok := at.Elem.(*parser.ArrayType); ok {
+			llvmElemType = g.arrayTypeToLLVM(inner)
+		} else {
+			elemType := "i64"
+			if at.Elem != nil {
+				elemType = at.Elem.String()
+			}
+			llvmElemType = g.mapToLLVMType(elemType)
 		}
-		llvmElemType := g.mapToLLVMType(elemType)
 		elemSize := g.llvmTypeSize(llvmElemType)
 
 		// Register element type and size for later index resolution and

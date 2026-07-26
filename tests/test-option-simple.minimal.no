@@ -1,6 +1,6 @@
 ; 最小化 val/err 測試
 test-simple = () {
-    n ?i64 = val(42)
+    n ?i64 = ok(42)
     {
         n == nil -> print('nil')
         n == err -> print('err')

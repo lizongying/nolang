@@ -1,0 +1,15 @@
+; test-vec-last-minimal — 隔離 last() 行為
+test-last-minimal = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    print(v.len)
+    l = v.last()
+    l: {
+        nil -> print('nil')
+        -> print(it)
+    }
+}
+
+test-last-minimal()

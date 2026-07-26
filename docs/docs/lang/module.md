@@ -63,8 +63,11 @@ Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用�
 
 ```no
 print('hello {n}')           ; ✅ 無前綴，自動換行
+print(a, b, c)               ; ✅ 多參數，空格分隔，自動換行
+print()                      ; ✅ 空參數，只輸出換行
 s = format('x={x}')          ; ✅ 無前綴，返回格式化字串
 eprint('err: {n}')           ; ✅ 無前綴，輸出到 stderr 並換行
+eprint('err:', a, b)         ; ✅ 多參數，stderr 空格分隔
 print('編號 {id:06} 金額 {money:.2f}')  ; ✅ 支援對齊、填充、寬度、精度
 io.out('no-newline-here')    ; ✅ 底層命令，輸出不換行（替代 printf）
 io.err('err-no-newline')     ; ✅ 底層命令，stderr 不換行（替代 eprintf）

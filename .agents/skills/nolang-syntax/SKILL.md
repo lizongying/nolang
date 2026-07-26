@@ -904,7 +904,7 @@ x: {
 x: {
     err(e) -> log(e)
     nil -> log('nil')
-    val(v) ->
+    ok(v) ->
         do-right-thing(v)
 }
 
@@ -1618,8 +1618,8 @@ These three functions are exempt from the prefix rule by convention. **This is a
 
 Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing variables directly from scope — no positional arguments. Compile-time validation is supported. Output is written directly via `io.out`/`io.err` syscalls, without depending on libc `printf`.
 
-- `print(s)` — writes to stdout, **auto-appends newline**
-- `eprint(s)` — writes to stderr, **auto-appends newline**
+- `print(s)` / `print(s0, s1, ...)` — writes to stdout, multiple args separated by spaces, **auto-appends newline**
+- `eprint(s)` / `eprint(s0, s1, ...)` — writes to stderr, multiple args separated by spaces, **auto-appends newline**
 - `format(s)` — returns the formatted string (replaces `sprintf`), no newline
 
 > `printf`, `eprintf`, `sprintf` are **deprecated**, kept only for backward compatibility. Replacements:
@@ -1631,8 +1631,11 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 
 ```no
 print('hello {n}')           // ✅ no prefix, auto-newline
+print(a, b, c)               // ✅ multiple args, space-separated, auto-newline
+print()                      // ✅ no args, just a newline
 s = format('x={x}')          // ✅ no prefix, returns formatted string
 eprint('err: {n}')           // ✅ no prefix, writes to stderr with newline
+eprint('err:', a, b)         // ✅ multiple args, stderr space-separated
 print('id {id:06} amount {money:.2f}')  // supports align/fill/width/precision
 io.out('no-newline-here')    // ✅ low-level command, no newline (replaces printf)
 io.err('err-no-newline')     // ✅ low-level command, stderr no newline (replaces eprintf)

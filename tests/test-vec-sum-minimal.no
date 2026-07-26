@@ -1,0 +1,20 @@
+; test-vec-sum-minimal — 隔離 sum() 行為
+test-sum-min = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    print('len:')
+    print(v.len)
+    print('elems:')
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+    s = v.sum()
+    print('sum:')
+    print(s)
+}
+
+test-sum-min()

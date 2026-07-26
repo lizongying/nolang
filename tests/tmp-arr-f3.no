@@ -1,0 +1,6 @@
+test-arr-to-str = () {
+    a [5] = [1, 2, 3, 4, 5]
+    print(a.to-str())
+}
+
+test-arr-to-str()

@@ -1,0 +1,13 @@
+test-fn1 = () {
+    a [5] = [1, 2, 3, 4, 5]
+    print(a[3])
+}
+
+test-fn2 = () {
+    b [3] = [1, 2, 3]
+    print(b[0])
+}
+
+test-fn1()
+print('---')
+test-fn2()

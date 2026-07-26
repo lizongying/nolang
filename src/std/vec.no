@@ -39,8 +39,7 @@
 ; 返回 true=相等, false=不相等
 []t.eq = (b []t) (eq bool) {
     eq = true
-    n = .len
-    i <- [0..n): {
+    i <- [0...len): {
         .[i] != b[i] -> {
             eq = false
             return
@@ -93,8 +92,8 @@
 ; }
 
 ; []t.len: 回傳切片長度
-[]t.len = () (n i64) {
-    n = .len
+[]t.len = () (out i64) {
+    out = .len
 }
 
 ; []t.push: 在末尾追加元素（自動擴容）
@@ -131,22 +130,27 @@
 ; []t.pop: 從末尾彈出元素
 ; 空切片返回 nil
 []t.pop = () (val ?t) {
-    n = .len
     {
-        n > 0 -> {
-            val = .[n - 1]
-            .len = n - 1
+        .len > 0 -> {
+            idx = .len
+            idx = idx - 1
+            val = .[idx]
+            .len = idx
         }
         -> val = nil
     }
 }
 
 ; []t.contains: 是否包含值 val
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz，
+; 否則編譯器生成錯誤循環條件 i < 0 導致循環不執行
 []t.contains = (val t) (found bool) {
+    sz = .len
     found = false
-    n = .len
-    i <- [0..n): {
-        .[i] == val -> {
+    i <- [0...len): {
+        v = .[i]
+        v == val -> {
             found = true
             return
         }
@@ -155,13 +159,12 @@
 
 ; []t.reverse: 反轉
 []t.reverse = () {
-    n = .len
     i = 0
-    j = n - 1
+    j = .len
+    j = j - 1
     {
         tmp = .[i]
-        i
-        .[j]
+        .[i] = .[j]
         .[j] = tmp
         i = i + 1
         j = j - 1
@@ -170,17 +173,15 @@
 
 ; []t.clone: 複製切片
 []t.clone = () (dst []t) {
-    n = .len
-    dst = with-len(n)
-    i <- [0..n): {
+    dst = with-len(.len)
+    i <- [0...len): {
         dst[i] = .[i]
     }
 }
 
 ; []t.fill: 填充為 val
 []t.fill = (val t) {
-    n = .len
-    i <- [0..n): {
+    i <- [0...len): {
         .[i] = val
     }
 }
@@ -189,5 +190,205 @@
 []t.to-arr = () (out [?]t) {
     i <- [0...len): {
         out[i] = .[i]
+    }
+}
+
+; []t.insert: 在 i 位置插入元素 val
+; i >= .len 時等同 push
+; 注意：內聯 push 邏輯（.len = cur + 1; .[cur] = val）以規避方法內呼叫 .push()
+; 觸發的預存在 LLVM bug（_LB__RB_t.push 未定義）。調用方需確保容量足夠。
+[]t.insert = (i i64, val t) {
+    {
+        i >= .len -> {
+            cur = .len
+            .len = cur + 1
+            .[cur] = val
+        }
+        -> {
+            ; 先在末尾增長一格作為佔位（內聯 push）
+            last = .len
+            last = last - 1
+            cur = .len
+            .len = cur + 1
+            .[cur] = .[last]
+            ; 從末尾向前平移元素到 i+1
+            k = .len
+            k = k - 2
+            {
+                .[k + 1] = .[k]
+                k = k - 1
+            } (k >= i)
+            .[i] = val
+        }
+    }
+}
+
+; []t.remove: 刪除 i 位置元素並返回
+; 越界返回 nil
+[]t.remove = (i i64) (val ?t) {
+    {
+        i < 0 -> val = nil
+        i >= .len -> val = nil
+        -> {
+            val = .[i]
+            bound = .len
+            bound = bound - 1
+            j = i
+            {
+                j = j + 1
+                .[j - 1] = .[j]
+            } (j < bound)
+            newlen = .len
+            newlen = newlen - 1
+            .len = newlen
+        }
+    }
+}
+
+; []t.index-of: 找到值返回索引，否則 -1
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+[]t.index-of = (val t) (idx i64) {
+    sz = .len
+    idx = -1
+    i <- [0...len): {
+        v = .[i]
+        v == val -> {
+            idx = i
+            return
+        }
+    }
+}
+
+; []t.first: 第一個元素，空切片返回 nil
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+[]t.first = () (val ?t) {
+    sz = .len
+    {
+        sz == 0 -> val = nil
+        -> val = .[0]
+    }
+}
+
+; []t.last: 最後一個元素，空切片返回 nil
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+[]t.last = () (val ?t) {
+    sz = .len
+    {
+        sz == 0 -> val = nil
+        -> {
+            v = .[sz - 1]
+            val = v
+        }
+    }
+}
+
+; []t.at: 安全索引訪問，越界返回 nil
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+[]t.at = (i i64) (val ?t) {
+    sz = .len
+    {
+        i < 0 -> val = nil
+        i >= sz -> val = nil
+        -> val = .[i]
+    }
+}
+
+; []t.swap: 交換兩位置元素
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+[]t.swap = (i i64, j i64) {
+    sz = .len
+    tmp = .[i]
+    .[i] = .[j]
+    .[j] = tmp
+}
+
+; []t.max: 最大值，空切片返回 nil
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+[]t.max = () (max ?t) {
+    sz = .len
+    {
+        sz == 0 -> max = nil
+        -> {
+            cur = .[0]
+            i <- [1...len): {
+                v = .[i]
+                v > cur -> cur = v
+            }
+            max = cur
+        }
+    }
+}
+
+; []t.min: 最小值，空切片返回 nil
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+[]t.min = () (min ?t) {
+    sz = .len
+    {
+        sz == 0 -> min = nil
+        -> {
+            cur = .[0]
+            i <- [1...len): {
+                v = .[i]
+                v < cur -> cur = v
+            }
+            min = cur
+        }
+    }
+}
+
+; []t.sum: 求和
+; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+[]t.sum = () (sum t) {
+    sz = .len
+    acc = 0
+    i <- [0...len): {
+        acc = acc + .[i]
+    }
+    sum = acc
+}
+
+; []t.truncate: 截斷到 cnt 個元素，cnt >= .len 時無操作
+[]t.truncate = (cnt i64) {
+    {
+        cnt < .len -> .len = cnt
+        ->
+    }
+}
+
+; []t.extend: 追加另一切片所有元素
+; 注意：內聯 push 邏輯以規避方法內呼叫 .push() 的預存在 LLVM bug。
+; 調用方需確保容量足夠。
+[]t.extend = (b []t) {
+    blen = b.len
+    i = 0
+    {
+        i >= blen -> break
+        cur = .len
+        .len = cur + 1
+        .[cur] = b[i]
+        i = i + 1
+    } (i < blen)
+}
+
+; []t.to-str: 字串表示
+; 格式如 '[1, 2, 3]'
+; 元素轉字串：i64 用 i64-to-str（在 number.no 中定義，自動加載）
+[]t.to-str = () (out str) {
+    {
+        .len == 0 -> out = '[]'
+        -> {
+            out = '['
+            last = .len
+            last = last - 1
+            i <- [0...len): {
+                out = out - i64-to-str(.[i])
+                i < last -> out = out - ', '
+            }
+            out = out - ']'
+        }
     }
 }

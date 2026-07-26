@@ -1,0 +1,271 @@
+; test-vec — 測試 []t.reverse 修復
+;
+; 驗證 vec.reverse 正確反轉切片元素。
+; 修復前 .[i] = .[j] 賦值丟失，.[i] 從未被寫入。
+
+; test-vec-reverse-4: 4 元素反轉，應輸出 4 3 2 1
+test-vec-reverse-4 = () {
+    v []i64 = with-cap(4)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    v.reverse()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+}
+
+; test-vec-reverse-3: 3 元素反轉，應輸出 3 2 1
+test-vec-reverse-3 = () {
+    v []i64 = with-cap(4)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.reverse()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; test-vec-reverse-empty: 空切片反轉不報錯
+test-vec-reverse-empty = () {
+    v []i64 = with-cap(0)
+    v.reverse()
+    print('empty ok')
+}
+
+; test-vec-reverse-single: 單元素反轉
+test-vec-reverse-single = () {
+    v []i64 = with-cap(4)
+    v.push(42)
+    v.reverse()
+    print(v[0])
+}
+
+test-vec-reverse-4()
+print('---')
+test-vec-reverse-3()
+print('---')
+test-vec-reverse-empty()
+print('---')
+test-vec-reverse-single()
+print('---')
+
+; test-vec-insert: 測試 insert 中間/末尾/首位插入
+test-vec-insert = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(3)
+    v.insert(1, 2)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    v.insert(3, 4)
+    print(v[3])
+    v.insert(0, 0)
+    print(v[0])
+    print(v[1])
+}
+
+; test-vec-remove: 測試 remove 刪除並返回，越界返回 nil
+test-vec-remove = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    r = v.remove(1)
+    r: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    print(v[0])
+    print(v[1])
+    r2 = v.remove(99)
+    r2: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+}
+
+; test-vec-index-of: 測試 index-of 查找
+test-vec-index-of = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    idx = v.index-of(20)
+    print(idx)
+    idx2 = v.index-of(99)
+    print(idx2)
+}
+
+; test-vec-first-last: 測試 first / last，含空切片
+test-vec-first-last = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    f = v.first()
+    f: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    l = v.last()
+    l: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    e []i64 = with-cap(0)
+    fe = e.first()
+    fe: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+    le = e.last()
+    le: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+}
+
+; test-vec-at: 測試 at 安全索引，越界返回 nil
+test-vec-at = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    a = v.at(1)
+    a: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    a2 = v.at(5)
+    a2: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+    a3 = v.at(-1)
+    a3: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+}
+
+; test-vec-swap: 測試 swap 交換
+test-vec-swap = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.swap(0, 2)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; test-vec-max-min: 測試 max / min，含空切片
+test-vec-max-min = () {
+    v []i64 = with-cap(8)
+    v.push(3)
+    v.push(1)
+    v.push(4)
+    v.push(1)
+    v.push(5)
+    m = v.max()
+    m: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    mn = v.min()
+    mn: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    e []i64 = with-cap(0)
+    me = e.max()
+    me: {
+        nil -> print('nil ok')
+        -> print('not nil')
+    }
+}
+
+; test-vec-sum: 測試 sum 求和
+test-vec-sum = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    s = v.sum()
+    print(s)
+}
+
+; test-vec-truncate: 測試 truncate 截斷
+test-vec-truncate = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    v.truncate(2)
+    print(v[0])
+    print(v[1])
+    print(v.len)
+    v.truncate(10)
+    print(v.len)
+}
+
+; test-vec-extend: 測試 extend 追加另一切片
+test-vec-extend = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    b []i64 = with-cap(4)
+    b.push(3)
+    b.push(4)
+    b.push(5)
+    v.extend(b)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+    print(v[4])
+    print(v.len)
+}
+
+; test-vec-to-str: 測試 to-str 字串表示
+test-vec-to-str = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    s = v.to-str()
+    print(s)
+    e []i64 = with-cap(0)
+    s2 = e.to-str()
+    print(s2)
+}
+
+test-vec-insert()
+print('---')
+test-vec-remove()
+print('---')
+test-vec-index-of()
+print('---')
+test-vec-first-last()
+print('---')
+test-vec-at()
+print('---')
+test-vec-swap()
+print('---')
+test-vec-max-min()
+print('---')
+test-vec-sum()
+print('---')
+test-vec-truncate()
+print('---')
+test-vec-extend()
+print('---')
+test-vec-to-str()

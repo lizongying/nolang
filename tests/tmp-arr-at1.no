@@ -1,0 +1,8 @@
+test-arr-at = () {
+    a [3] = [1, 2, 3]
+    print(a.at(0))
+    print(a.at(5))
+    print(a.at(-1))
+}
+
+test-arr-at()

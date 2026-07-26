@@ -1,0 +1,4 @@
+; test: void method call on arr
+a [3] = [1, 2, 3]
+a.reverse()
+print(a[0])

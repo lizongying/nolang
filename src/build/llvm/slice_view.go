@@ -79,7 +79,7 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 			dataField = 2
 		} else if baseType == "%str-long" {
 			structType = "%str-long"
-			dataField = 1
+			dataField = 2 // %str-long = {i64 len, i64 cap, i64 data}
 		}
 
 		// Load source len (field 0)
@@ -330,15 +330,34 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 	}
 
 	if r == nil || (r.Start == nil && r.End == nil) {
-		// [..] / (..] full slice: view_len = src_len - start
-		if startReg == "0" {
+		// Full slice: [..] / [..) / (..] / (..)
+		// right-inclusive (]) → viewLen = srcLen - start
+		// right-exclusive ()) → viewLen = srcLen - start - 1 (排除最後一個元素)
+		rightExcl := r != nil && !r.RightInc
+		if startReg == "0" && !rightExcl {
 			viewLenReg = srcLen
 		} else {
 			g.tmpIdx++
 			viewLenReg = fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
-					g.indent(), viewLenReg, srcLen, startReg))
+				if startReg == "0" {
+					// right-exclusive only: viewLen = srcLen - 1
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n",
+						g.indent(), viewLenReg, srcLen))
+				} else if rightExcl {
+					// left-exclusive + right-exclusive: viewLen = srcLen - start - 1
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+						g.indent(), viewLenReg, srcLen, startReg))
+					g.tmpIdx++
+					extraSub := fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n",
+						g.indent(), extraSub, viewLenReg))
+					viewLenReg = extraSub
+				} else {
+					// left-exclusive only: viewLen = srcLen - start
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+						g.indent(), viewLenReg, srcLen, startReg))
+				}
 			}
 		}
 	} else if r.Start == nil && r.End != nil {

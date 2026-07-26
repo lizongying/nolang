@@ -188,8 +188,10 @@ http-server-conn.parse = () (ok bool) {
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
+
         ; 緩衝區已滿但未找到分隔符
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
+
         ; 接收更多資料
         n = .recv-more()
         n <= 0 -> return
@@ -281,8 +283,8 @@ http-server-conn.parse = () (ok bool) {
             cl == 'close' -> .keep-alive = false
             cl == 'keep-alive' -> .keep-alive = true
         }
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 
     ; 讀取請求體（如有 Content-Length）
@@ -308,8 +310,8 @@ http-server-conn.parse = () (ok bool) {
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 
     ok = true
@@ -599,6 +601,7 @@ http-server-conn.get-cookie = (name str) (val ?str) {
                     pos = pos + 1
                 } (pos < hdr.len && hdr[pos] == 32)
                 pos >= hdr.len -> *
+
                 ; 找下一個分號
                 next-semi = hdr.index-from(';', pos)
                 pair-end = next-semi
@@ -723,4 +726,485 @@ http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
     signed-value = cookie.cookie-sign(name, value, key)
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)
+}
+
+; ═══════════════════════════════════════════════
+; HTTPS 伺服器（TLS 1.2）
+; ═══════════════════════════════════════════════
+
+; https-server: HTTPS 伺服器
+; fd: 監聽 socket fd（-1=未開啟）
+; host: 綁定的 IP 地址
+; port: 監聽埠號
+https-server {
+    fd i64
+    host str
+    port i64
+}
+
+; https-server-conn: HTTPS 伺服器端連接
+; tls: 底層 TLS 連接
+; method: 請求方法
+; path: 請求路徑
+; query: 查詢字串
+; version: HTTP 版本
+; headers: 原始標頭字串
+; header-names: 解析後的標頭名
+; header-values: 解析後的標頭值
+; header-count: 標頭數量
+; body: 請求體
+; keep-alive: 是否保持連接
+; recv-buf: 接收緩衝區
+; recv-buf-len: 緩衝區中實際資料長度
+https-server-conn {
+    tls tls-server-conn
+    method str
+    path str
+    query str
+    version str
+    headers str
+    header-names [32]str
+    header-values [32]str
+    header-count i64
+    body str
+    keep-alive bool
+    recv-buf str
+    recv-buf-len i64
+}
+
+; ═══════════════════════════════════════════════
+; https-server 方法
+; ═══════════════════════════════════════════════
+
+; listen: 開始監聽（TLS）
+; host str: 綁定的 IP 地址
+; port i64: 監聽埠號
+; 返回 ok bool: true=成功
+https-server.listen = (host str, port i64) (ok bool) {
+    ok = false
+    .fd = -1
+    .host = host
+    .port = port
+    fd = tls-server-listen(host, port)
+    fd < 0 -> return
+    .fd = fd
+    ok = true
+}
+
+; accept: 接受新的 HTTPS 連接
+; 返回 c ?https-server-conn: ok=連接, nil=失敗
+https-server.accept = () (c ?https-server-conn) {
+    c = nil
+    .fd < 0 -> return
+    tls-opt = tls-server-accept(.fd)
+    tls-opt: {
+        nil -> return
+        err -> return
+        ok -> {
+            tls-conn = it
+            space = ' '
+            buf = space.repeat(HTTP-SRV-BUF-SIZE)
+            conn = https-server-conn{
+                tls: tls-conn
+                method: ''
+                path: ''
+                query: ''
+                version: ''
+                headers: ''
+                header-count: 0
+                body: ''
+                keep-alive: false
+                recv-buf: buf
+                recv-buf-len: 0
+            }
+            c = conn
+        }
+    }
+}
+
+; close: 關閉伺服器
+https-server.close = () {
+    .fd >= 0 -> {
+        close(.fd)
+        .fd = -1
+    }
+}
+
+; ═══════════════════════════════════════════════
+; https-server-conn 方法
+; ═══════════════════════════════════════════════
+
+; recv-more: 從 TLS 連接接收更多資料到 recv-buf
+; 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+https-server-conn.recv-more = () (n i64) {
+    n = -1
+    space = ' '
+    tmp = space.repeat(HTTP-SRV-RECV-SIZE)
+    r = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
+    r: {
+        ok -> {
+            n = it
+            n > 0 -> {
+                i <- [0..n): {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                }
+                .recv-buf-len = .recv-buf-len + n
+            }
+        }
+        nil -> n = -1
+        err -> n = -1
+    }
+}
+
+; parse: 解析 HTTP 請求（透過 TLS 接收）
+; 返回 ok bool: true=解析成功
+https-server-conn.parse = () (ok bool) {
+    ok = false
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    separator = crlf - crlf
+
+    ; 讀取直到找到 \r\n\r\n（標頭結束）
+    sep-pos i64 = -1
+    {
+        data = .recv-buf.slice(0, .recv-buf-len)
+        sep-pos = data.index(separator)
+        sep-pos >= 0 -> *
+        .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
+        n = .recv-more()
+        n <= 0 -> return
+    } ()
+
+    ; 解析請求行和標頭
+    head = .recv-buf.slice(0, sep-pos)
+    body-start = sep-pos + separator.len
+
+    ; 請求行
+    first-line-end = head.index(crlf)
+    first-line-end < 0 -> return
+    request-line = head.slice(0, first-line-end)
+
+    ; 解析方法、路徑、版本
+    sp1 = request-line.index(' ')
+    sp1 < 0 -> return
+    .method = request-line.slice(0, sp1)
+    after-method = request-line.slice(sp1 + 1, request-line.len)
+    sp2 = after-method.index(' ')
+    sp2 < 0 -> return
+    full-path = after-method.slice(0, sp2)
+    .version = after-method.slice(sp2 + 1, after-method.len)
+
+    ; 分離 path 和 query
+    q-pos = full-path.index('?')
+    {
+        q-pos >= 0 -> {
+            .path = full-path.slice(0, q-pos)
+            .query = full-path.slice(q-pos + 1, full-path.len)
+        }
+        -> {
+            .path = full-path
+            .query = ''
+        }
+    }
+
+    ; 標頭
+    .headers = head.slice(first-line-end + crlf.len, head.len)
+
+    ; 解析標頭
+    .header-count = 0
+    i <- [0..HTTP-SRV-MAX-HEADERS): {
+        .header-names[i] = ' '
+        .header-names[i].len = 0
+        .header-values[i] = ' '
+        .header-values[i].len = 0
+    }
+
+    hs = .headers
+    hn = hs.len
+    hn > 0 -> {
+        pos = 0
+        {
+            pos >= hn -> *
+            next-crlf = hs.index-from(crlf, pos)
+            line-end = next-crlf
+            line-end < 0 -> line-end = hn
+            colon-pos = hs.index-from(': ', pos)
+            colon-pos >= 0 && colon-pos < line-end -> {
+                cnt = .header-count
+                cnt < HTTP-SRV-MAX-HEADERS -> {
+                    name-len = colon-pos - pos
+                    j <- [0..name-len): {
+                        .header-names[cnt][j] = hs[pos + j]
+                    }
+                    .header-names[cnt].len = name-len
+                    val-start = colon-pos + 2
+                    val-len = line-end - val-start
+                    j <- [0..val-len): {
+                        .header-values[cnt][j] = hs[val-start + j]
+                    }
+                    .header-values[cnt].len = val-len
+                    .header-count = cnt + 1
+                }
+            }
+            next-crlf < 0 -> *
+            pos = next-crlf + 2
+        } ()
+    }
+
+    ; 判斷 Keep-Alive
+    .keep-alive = false
+    .version == 'HTTP/1.1' -> .keep-alive = true
+    conn-val = .get-header('Connection')
+    conn-val: {
+        ok -> {
+            cl = conn-val.to-lower()
+            cl == 'close' -> .keep-alive = false
+            cl == 'keep-alive' -> .keep-alive = true
+        }
+        err ->
+        nil ->
+    }
+
+    ; 讀取請求體
+    .body = ''
+    cl-str = .get-header('Content-Length')
+    cl-str: {
+        ok -> {
+            content-len = 0
+            j <- [0..cl-str.len): {
+                ch = cl-str[j]
+                ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
+            }
+            content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+                available = .recv-buf-len - body-start
+                {
+                    n = .recv-more()
+                    n <= 0 -> return
+                    available = .recv-buf-len - body-start
+                } (available < content-len)
+                .body = .recv-buf.slice(body-start, body-start + content-len)
+            }
+        }
+        err ->
+        nil ->
+    }
+
+    ok = true
+}
+
+; get-header: 取得指定標頭值
+; name str: 標頭名
+; 返回 val ?str: ok=標頭值, nil=未找到
+https-server-conn.get-header = (name str) (val ?str) {
+    val = nil
+    cnt = .header-count
+    i <- [0..cnt): {
+        matched = 1
+        .header-names[i].len != name.len -> matched = 0
+        matched == 1 -> {
+            j <- [0..name.len): {
+                c1 = .header-names[i][j]
+                c2 = name[j]
+                c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
+                c1 != c2 -> {
+                    matched = 0
+                    break
+                }
+            }
+        }
+        matched == 1 -> {
+            vlen = .header-values[i].len
+            val = .header-values[i].slice(0, vlen)
+            return
+        }
+    }
+}
+
+; write-status: 寫入 HTTP 狀態行（透過 TLS）
+; status i64: 狀態碼
+; 返回 ok bool: true=成功
+https-server-conn.write-status = (status i64) (ok bool) {
+    ok = false
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+
+    status-s = status.to-str()
+    status-text = 'OK'
+    {
+        status == 200 -> status-text = 'OK'
+        status == 201 -> status-text = 'Created'
+        status == 204 -> status-text = 'No Content'
+        status == 301 -> status-text = 'Moved Permanently'
+        status == 302 -> status-text = 'Found'
+        status == 304 -> status-text = 'Not Modified'
+        status == 400 -> status-text = 'Bad Request'
+        status == 401 -> status-text = 'Unauthorized'
+        status == 403 -> status-text = 'Forbidden'
+        status == 404 -> status-text = 'Not Found'
+        status == 405 -> status-text = 'Method Not Allowed'
+        status == 500 -> status-text = 'Internal Server Error'
+        status == 501 -> status-text = 'Not Implemented'
+        status == 502 -> status-text = 'Bad Gateway'
+        status == 503 -> status-text = 'Service Unavailable'
+        ->
+    }
+
+    line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
+    w = .tls.send(line)
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
+}
+
+; write-header: 寫入單個回應標頭（透過 TLS）
+; name str: 標頭名
+; value str: 標頭值
+; 返回 ok bool: true=成功
+https-server-conn.write-header = (name str, value str) (ok bool) {
+    ok = false
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    line = name - ': ' - value - crlf
+    w = .tls.send(line)
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
+}
+
+; write-headers-done: 寫入空行表示標頭結束（透過 TLS）
+; 返回 ok bool: true=成功
+https-server-conn.write-headers-done = () (ok bool) {
+    ok = false
+    cr = char-to-str(13)
+    lf = char-to-str(10)
+    crlf = cr - lf
+    w = .tls.send(crlf)
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
+}
+
+; write-body: 寫入回應體（透過 TLS）
+; data str: 回應體資料
+; 返回 ok bool: true=成功
+https-server-conn.write-body = (data str) (ok bool) {
+    ok = false
+    data.len > 0 -> {
+        w = .tls.send(data)
+        {
+            nil -> return
+            err -> return
+            ok -> ok = true
+        } (w)
+    }
+    ok = true
+}
+
+; write-text: 便捷方法 — 寫入完整文字回應（透過 TLS）
+; status i64: 狀態碼
+; text str: 回應文字
+; 返回 ok bool: true=成功
+https-server-conn.write-text = (status i64, text str) (ok bool) {
+    ok = false
+
+    ok = .write-status(status)
+    ok == false -> return
+
+    text-len = text.len
+    len-s = text-len.to-str()
+    .write-header('Content-Type', 'text/plain; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-https/1.0')
+    .write-headers-done()
+    .write-body(text)
+    ok = true
+}
+
+; write-json: 便捷方法 — 寫入 JSON 回應（透過 TLS）
+; status i64: 狀態碼
+; json-str str: JSON 字串
+; 返回 ok bool: true=成功
+https-server-conn.write-json = (status i64, json-str str) (ok bool) {
+    ok = false
+    .write-status(status)
+    json-len = json-str.len
+    len-s = json-len.to-str()
+    .write-header('Content-Type', 'application/json; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-https/1.0')
+    .write-headers-done()
+    .write-body(json-str)
+    ok = true
+}
+
+; write-html: 便捷方法 — 寫入 HTML 回應（透過 TLS）
+; status i64: 狀態碼
+; html str: HTML 內容
+; 返回 ok bool: true=成功
+https-server-conn.write-html = (status i64, html str) (ok bool) {
+    ok = false
+    .write-status(status)
+    html-len = html.len
+    len-s = html-len.to-str()
+    .write-header('Content-Type', 'text/html; charset=utf-8')
+    .write-header('Content-Length', len-s)
+    {
+        .keep-alive -> .write-header('Connection', 'keep-alive')
+        -> .write-header('Connection', 'close')
+    }
+    .write-header('Server', 'nolang-https/1.0')
+    .write-headers-done()
+    .write-body(html)
+    ok = true
+}
+
+; reset: 重置連接狀態以复用（Keep-Alive）
+https-server-conn.reset = () {
+    .method = ''
+    .path = ''
+    .query = ''
+    .version = ''
+    .headers = ''
+    .header-count = 0
+    .body = ''
+    .recv-buf-len = 0
+}
+
+; close: 關閉 TLS 連接
+https-server-conn.close = () {
+    .tls.close()
+}
+
+; ═══════════════════════════════════════════════
+; HTTPS 便捷函數
+; ═══════════════════════════════════════════════
+
+; https-listen-on: 建立 HTTPS 伺服器並開始監聽
+; host str: 綁定的 IP 地址
+; port i64: 監聽埠號
+; 返回 s ?https-server: ok=伺服器, nil=失敗
+https-listen-on = (host str, port i64) (s ?https-server) {
+    s = nil
+    srv = https-server{}
+    ok = false
+    ok = srv.listen(host, port)
+    ok -> s = srv
 }

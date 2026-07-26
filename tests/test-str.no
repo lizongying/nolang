@@ -518,4 +518,209 @@ test-integration = () {
 test-integration()
 print(22)
 
+; ═══════════════════════════════════════════════
+; 测试 str.eq-full (方法)
+; ═══════════════════════════════════════════════
+test-eq-full = () {
+    r1 = 'abc'.eq-full('abc')
+    print(r1); expect: 1 (true)
+
+    r2 = 'abc'.eq-full('abd')
+    print(r2); expect: 0 (false)
+
+    r3 = 'abc'.eq-full('abcd')
+    print(r3); expect: 0 (false)
+
+    r4 = ''.eq-full('')
+    print(r4); expect: 1 (true, both empty)
+
+    r5 = 'abc'.eq-full('')
+    print(r5); expect: 0 (false, len mismatch)
+}
+
+test-eq-full()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.rindex (方法)
+; ═══════════════════════════════════════════════
+test-rindex = () {
+    p1 = 'hello world hello'.rindex('hello')
+    print(p1); expect: 12
+
+    p2 = 'abc'.rindex('xyz')
+    print(p2); expect: -1
+
+    p3 = 'hello'.rindex('o')
+    print(p3); expect: 4
+
+    p4 = 'hello'.rindex('hello')
+    print(p4); expect: 0
+}
+
+test-rindex()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.rindex-from (方法)
+; ═══════════════════════════════════════════════
+test-rindex-from = () {
+    p1 = 'hello'.rindex-from('l', 3)
+    print(p1); expect: 3
+
+    p2 = 'hello'.rindex-from('l', 2)
+    print(p2); expect: 3
+
+    p3 = 'hello'.rindex-from('l', 4)
+    print(p3); expect: -1
+
+    p4 = 'hello world hello'.rindex-from('hello', 5)
+    print(p4); expect: 12
+}
+
+test-rindex-from()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.replace-n (方法)
+; ═══════════════════════════════════════════════
+test-replace-n = () {
+    r1 = 'a-b-c'.replace-n('-', '_', 1)
+    ok1 = r1.eq-full('a_b-c')
+    print(ok1); expect: 1 (true)
+    print(r1)
+
+    r2 = 'a-b-c'.replace-n('-', '_', 0)
+    ok2 = r2.eq-full('a-b-c')
+    print(ok2); expect: 1 (true)
+    print(r2)
+
+    r3 = 'a-b-c'.replace-n('-', '_', 9)
+    ok3 = r3.eq-full('a_b_c')
+    print(ok3); expect: 1 (true)
+    print(r3)
+}
+
+test-replace-n()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.split-n (方法)
+; ═══════════════════════════════════════════════
+test-split-n = () {
+    parts1 = 'a-b-c'.split-n('-', 1)
+    n1 = parts1.len
+    print(n1); expect: 2
+    i <- [0..n1): {
+        print(parts1[i])
+    }
+
+    parts2 = 'a-b-c'.split-n('-', 0)
+    n2 = parts2.len
+    print(n2); expect: 3 (unlimited)
+    i <- [0..n2): {
+        print(parts2[i])
+    }
+
+    parts3 = 'abc'.split-n('-', 1)
+    n3 = parts3.len
+    print(n3); expect: 1 (no sep found)
+    i <- [0..n3): {
+        print(parts3[i])
+    }
+}
+
+test-split-n()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.lines (方法)
+; ═══════════════════════════════════════════════
+test-lines = () {
+    lines1 = 'a\nb\nc'.lines()
+    n1 = lines1.len
+    print(n1); expect: 3
+    i <- [0..n1): {
+        print(lines1[i])
+    }
+
+    lines2 = 'a\r\nb'.lines()
+    n2 = lines2.len
+    print(n2); expect: 2
+    i <- [0..n2): {
+        print(lines2[i])
+    }
+
+    lines3 = 'a\nb\n'.lines()
+    n3 = lines3.len
+    print(n3); expect: 2 (no trailing empty)
+
+    lines4 = ''.lines()
+    n4 = lines4.len
+    print(n4); expect: 0
+}
+
+test-lines()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.to-hex (方法)
+; ═══════════════════════════════════════════════
+test-to-hex = () {
+    h1 = 'abc'.to-hex()
+    ok1 = h1.eq-full('616263')
+    print(ok1); expect: 1 (true)
+    print(h1)
+
+    h2 = ''.to-hex()
+    print(h2.len); expect: 0
+
+    h3 = '\x00\xff'.to-hex()
+    ok3 = h3.eq-full('00ff')
+    print(ok3); expect: 1 (true)
+    print(h3)
+}
+
+test-to-hex()
+print('---')
+
+; ═══════════════════════════════════════════════
+; 测试 str.at (方法)
+; ═══════════════════════════════════════════════
+test-at = () {
+    v1 = 'abc'.at(0)
+    v1: {
+        nil -> print('nil')
+        err -> print('err')
+        -> print(it)
+    }
+    ; expect: 97
+
+    v2 = 'abc'.at(5)
+    v2: {
+        nil -> print('nil')
+        err -> print('err')
+        -> print(it)
+    }
+    ; expect: nil
+
+    v3 = 'abc'.at(-1)
+    v3: {
+        nil -> print('nil')
+        err -> print('err')
+        -> print(it)
+    }
+    ; expect: nil
+
+    v4 = 'abc'.at(2)
+    v4: {
+        nil -> print('nil')
+        err -> print('err')
+        -> print(it)
+    }
+    ; expect: 99
+}
+
+test-at()
+
 print(-1)

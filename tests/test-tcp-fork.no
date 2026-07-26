@@ -1,0 +1,84 @@
+; test-tcp-fork — 測試 TCP listen/accept/dial with fork
+; # std/net
+; # std/process
+
+; test-tcp-fork-basic: 基本 TCP fork 測試
+test-tcp-fork-basic = () (pass bool) {
+    pass = false
+
+    ; 1. 監聽
+    listen-fd = net-listen('127.0.0.1', 9555)
+    listen-fd < 0 -> {
+        io.errln('[TEST] tcp: listen failed')
+        return
+    }
+    io.errln('[TEST] tcp: listening on 9555')
+
+    ; 2. fork
+    pid = process-fork()
+    pid < 0 -> {
+        io.errln('[TEST] tcp: fork failed')
+        close(listen-fd)
+        return
+    }
+
+    ; === 子進程: 伺服器 ===
+    pid == 0 -> {
+        io.errln('[TEST] tcp: child accepting')
+        client-fd = net-accept(listen-fd)
+        client-fd < 0 -> {
+            io.errln('[TEST] tcp: child accept failed')
+            exit(1)
+        }
+        io.errln('[TEST] tcp: child accepted')
+
+        ; 接收資料
+        buf = ' '.repeat(64)
+        n = net-recv(client-fd, buf, 64)
+        io.errln('[TEST] tcp: child recv n=' - n.to-str())
+
+        ; 回應
+        net-send(client-fd, 'hello from server', 17)
+        close(client-fd)
+        exit(0)
+    }
+
+    ; === 父進程: 客戶端 ===
+    sleep-ns(100000000)
+
+    io.errln('[TEST] tcp: parent dialing')
+    fd = net-dial('127.0.0.1', 9555)
+    fd < 0 -> {
+        io.errln('[TEST] tcp: parent dial failed')
+        close(listen-fd)
+        process-waitpid(pid, 0)
+        return
+    }
+    io.errln('[TEST] tcp: parent connected')
+
+    ; 發送
+    net-send(fd, 'hello from client', 17)
+
+    ; 接收
+    buf = ' '.repeat(64)
+    n = net-recv(fd, buf, 64)
+    io.errln('[TEST] tcp: parent recv n=' - n.to-str())
+
+    n > 0 -> {
+        resp = buf.slice(0, n)
+        io.errln('[TEST] tcp: parent got=' - resp)
+        pass = true
+    }
+
+    close(fd)
+    close(listen-fd)
+    process-waitpid(pid, 0)
+}
+
+main = () {
+    io.errln('=== TCP Fork Tests ===')
+    p = test-tcp-fork-basic()
+    p -> print('PASS: tcp-fork-basic')
+    p == false -> print('FAIL: tcp-fork-basic')
+    io.errln('=== TCP Fork Tests Done ===')
+}

@@ -1,0 +1,6 @@
+; test-str-at-minimal.no — 最小重現：編譯器預先存在的 bug
+; Even print(42) fails with "use of undefined value '%n'"
+; 錯誤位置：_xbyte.to-str 函數中 %n 未經 alloca 即被 load
+; 影響範圍：所有 Nolang 程式（整個標準庫一起編譯）
+
+print(42)

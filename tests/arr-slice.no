@@ -42,11 +42,10 @@ print(g[0])
 print(g[1])
 print(g[2])
 
-; range exclusive both: a(1..4)
+; range exclusive both: a(1..4) → indices 2,3 (len=2)
 h = a(1..4)
 print(h[0])
 print(h[1])
-print(h[2])
 
 ; till index exclusive: a[..1)
 i = a[..1)

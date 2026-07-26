@@ -80,18 +80,19 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i] = diff & 4294967295
     }
 
-    ; 移除前導零（Nolang && 不短路，需用旗標變數）
-    cn = an
+    ; 移除前導零（使用局部變數避免輸出參數 aliasing 問題）
+    local-cn = an
     keep-trimming = true
     {
         keep-trimming -> {
-            cn > 1 -> {
-                c[cn - 1] == 0 -> cn = cn - 1
-                c[cn - 1] != 0 -> keep-trimming = false
+            local-cn > 1 -> {
+                c[local-cn - 1] == 0 -> local-cn = local-cn - 1
+                c[local-cn - 1] != 0 -> keep-trimming = false
             }
-            cn <= 1 -> keep-trimming = false
+            local-cn <= 1 -> keep-trimming = false
         }
     } (keep-trimming)
+    cn = local-cn
 }
 
 ; ─── 大數乘法 ─────────────────────────────────────
@@ -114,18 +115,19 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i + bn] = carry & 4294967295
     }
 
-    ; 計算實際長度（Nolang && 不短路，需用旗標變數）
-    cn = an + bn
+    ; 計算實際長度（使用局部變數避免輸出參數 aliasing 問題）
+    local-cn = an + bn
     keep-trimming = true
     {
         keep-trimming -> {
-            cn > 1 -> {
-                c[cn - 1] == 0 -> cn = cn - 1
-                c[cn - 1] != 0 -> keep-trimming = false
+            local-cn > 1 -> {
+                c[local-cn - 1] == 0 -> local-cn = local-cn - 1
+                c[local-cn - 1] != 0 -> keep-trimming = false
             }
-            cn <= 1 -> keep-trimming = false
+            local-cn <= 1 -> keep-trimming = false
         }
     } (keep-trimming)
+    cn = local-cn
 }
 
 ; ─── 大數左移 1 位元 ─────────────────────────────
@@ -157,19 +159,20 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
         a[i] = new-val & 4294967295
         i = i - 1
     } (i >= 0)
-    new-an = an
+    local-an = an
 
-    ; 移除前導零（Nolang && 不短路，需用旗標變數）
+    ; 移除前導零（使用局部變數避免輸出參數 aliasing 問題）
     keep-trimming = true
     {
         keep-trimming -> {
-            new-an > 1 -> {
-                a[new-an - 1] == 0 -> new-an = new-an - 1
-                a[new-an - 1] != 0 -> keep-trimming = false
+            local-an > 1 -> {
+                a[local-an - 1] == 0 -> local-an = local-an - 1
+                a[local-an - 1] != 0 -> keep-trimming = false
             }
-            new-an <= 1 -> keep-trimming = false
+            local-an <= 1 -> keep-trimming = false
         }
     } (keep-trimming)
+    new-an = local-an
 }
 
 ; ─── 大數除法（二進位長除法）────────────────────
@@ -192,13 +195,18 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     }
 
     ; 使用局部變數避免輸出參數寫入問題
-    local-r []i64 = with-len(an + 2)
-    local-q []i64 = with-len(an + 2)
+    ; local-r 需至少 bn + 2 個 limb：中間餘數可達 2*b - 1（bn + 1 limbs）
+    ; local-q 需至少 an + 2 個 limb：商數最多 (bits/32)+1 ≈ an+1 limbs
+    buf-len = an
+    bn > buf-len -> buf-len = bn
+    buf-len = buf-len + 2
+    local-r []i64 = with-len(buf-len)
+    local-q []i64 = with-len(buf-len)
     local-rn = 1
     local-qn = 1
 
     ; 初始化
-    i <- [0..an + 2): {
+    i <- [0..buf-len): {
         local-r[i] = 0
         local-q[i] = 0
     }
@@ -287,16 +295,47 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
 ; ─── 模冪運算 ─────────────────────────────────────
 
+; rsa-modpow-step: 單步平方乘（獨立函數以確保每步釋放暫存緩衝區）
+; result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
+rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulus []i64, mn i64) (new-result []i64, new-rn i64) {
+    ; t = result * result
+    t []i64
+    prod-n = 0
+    t, prod-n = rsa-bn-mul(result, rn, result, rn)
+
+    ; local-result = t mod modulus
+    q []i64
+    qn = 0
+    local-r []i64
+    local-rn = 0
+    q, qn, local-r, local-rn = rsa-bn-div-mod(t, prod-n, modulus, mn)
+
+    ; 若 exp-bit 為 1：local-result = local-result * base mod modulus
+    exp-bit == 1 -> {
+        t2 []i64
+        prod-n2 = 0
+        t2, prod-n2 = rsa-bn-mul(local-r, local-rn, base, bn)
+        q2 []i64
+        qn2 = 0
+        q2, qn2, local-r, local-rn = rsa-bn-div-mod(t2, prod-n2, modulus, mn)
+    }
+
+    new-result = local-r
+    new-rn = local-rn
+}
+
 ; rsa-modpow: result = base^exp mod modulus
 ; 使用左右掃描平方乘（square-and-multiply）
+; 注意：loop body 提取為 rsa-modpow-step 以確保每步釋放暫存緩衝區
+; （Nolang heap 變數在函數返回時才釋放，若在 loop body 內分配會累積至 OOM）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
-    ; 初始化 result = 1
-    result = with-len(mn)
+    ; 使用局部變數避免輸出參數 aliasing 問題
+    local-result []i64 = with-len(mn)
     i <- [0..mn): {
-        result[i] = 0
+        local-result[i] = 0
     }
-    result[0] = 1
-    rn = 1
+    local-result[0] = 1
+    local-rn = 1
 
     ; 計算 exp 的位元數
     top i64 = exp[en - 1]
@@ -312,30 +351,21 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     ; 從最高位到最低位
     i = bits - 1
     {
-        ; t = result * result
-        t []i64
-        prod-n = 0
-        t, prod-n = rsa-bn-mul(result, rn, result, rn)
-
-        ; result = t mod modulus
-        q []i64
-        qn = 0
-        q, qn, result, rn = rsa-bn-div-mod(t, prod-n, modulus, mn)
-
-        ; 如果 exp 第 i 位元為 1：result = result * base mod modulus
         e-limb = i / 32
         e-bit = i % 32
-        (exp[e-limb] >> e-bit) & 1 == 1 -> {
-            t2 []i64
-            prod-n2 = 0
-            t2, prod-n2 = rsa-bn-mul(result, rn, base, bn)
-            q2 []i64
-            qn2 = 0
-            q2, qn2, result, rn = rsa-bn-div-mod(t2, prod-n2, modulus, mn)
-        }
+        exp-bit = (exp[e-limb] >> e-bit) & 1
+
+        new-result []i64
+        new-rn = 0
+        new-result, new-rn = rsa-modpow-step(local-result, local-rn, base, bn, exp-bit, modulus, mn)
+        local-result = new-result
+        local-rn = new-rn
 
         i = i - 1
     } (i >= 0)
+
+    result = local-result
+    rn = local-rn
 }
 
 ; ─── RSA 加密/解密（高階介面）────────────────────

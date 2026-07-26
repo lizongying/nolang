@@ -1,0 +1,6 @@
+; test: arr.clone() method
+a [3]i64 = [1, 2, 3]
+b = a.clone()
+print(b[0])
+print(b[1])
+print(b[2])

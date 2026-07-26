@@ -92,11 +92,11 @@ str.index = (target str) (pos i64) {
 ; 返回首次出現的位置，未找到返回 -1
 str.index-from = (target str, from i64) (pos i64) {
     pos = -1
+    from < 0 -> from = 0
     target.len == 0 -> {
         from <= .len -> pos = from
         return
     }
-    from < 0 -> from = 0
     limit = .len - target.len
     i = from
     {
@@ -255,7 +255,7 @@ str.to-bytes = () (val []byte) {
 
 ; str.to-i64: 將字串解析為有號 64 位整數
 ; 返回 Option：
-;   val(n) - 成功
+;   ok(n) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或格式錯誤
 str.to-i64 = () (val ?i64) {
@@ -298,7 +298,7 @@ str.to-i64 = () (val ?i64) {
 
 ; str.to-i8: 將字串解析為 i8
 ; 返回 Option：
-;   val(n) - 成功（-128 ~ 127）
+;   ok(n) - 成功（-128 ~ 127）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i8 = () (val ?i8) {
@@ -344,7 +344,7 @@ str.to-i8 = () (val ?i8) {
 
 ; str.to-i16: 將字串解析為 i16
 ; 返回 Option：
-;   val(n) - 成功（-32768 ~ 32767）
+;   ok(n) - 成功（-32768 ~ 32767）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i16 = () (val ?i16) {
@@ -390,7 +390,7 @@ str.to-i16 = () (val ?i16) {
 
 ; str.to-i32: 將字串解析為 i32
 ; 返回 Option：
-;   val(n) - 成功（-2147483648 ~ 2147483647）
+;   ok(n) - 成功（-2147483648 ~ 2147483647）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i32 = () (val ?i32) {
@@ -436,7 +436,7 @@ str.to-i32 = () (val ?i32) {
 
 ; str.to-u8: 將字串解析為 u8
 ; 返回 Option：
-;   val(n) - 成功（0 ~ 255）
+;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u8 = () (val ?u8) {
@@ -476,7 +476,7 @@ str.to-u8 = () (val ?u8) {
 
 ; str.to-u16: 將字串解析為 u16
 ; 返回 Option：
-;   val(n) - 成功（0 ~ 65535）
+;   ok(n) - 成功（0 ~ 65535）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u16 = () (val ?u16) {
@@ -516,7 +516,7 @@ str.to-u16 = () (val ?u16) {
 
 ; str.to-u32: 將字串解析為 u32
 ; 返回 Option：
-;   val(n) - 成功（0 ~ 4294967295）
+;   ok(n) - 成功（0 ~ 4294967295）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-u32 = () (val ?u32) {
@@ -582,7 +582,7 @@ str.to-u64 = () (val ?u64) {
 
 ; str.to-byte: 將字串解析為 byte（與 u8 等價）
 ; 返回 Option：
-;   val(n) - 成功（0 ~ 255）
+;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、負號或超出範圍
 str.to-byte = () (val ?byte) {
@@ -734,7 +734,7 @@ str-to-f64 = (s str) (result f64) {
 
 ; str.to-f64: 將字串解析為 f64
 ; 返回 Option：
-;   val(f) - 成功
+;   ok(f) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 進行解析（已移除 strtod CLibCall 依賴）
@@ -778,13 +778,20 @@ str.to-f64 = () (val ?f64) {
 
 ; str.to-f32: 將字串解析為 f32
 ; 返回 Option：
-;   val(f) - 成功
+;   ok(f) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依賴）
 str.to-f32 = () (val ?f32) {
     f ?f64 = .to-f64()
-    f
+    f == nil -> {
+        val = nil
+        return
+    }
+    f == err -> {
+        val = err('str.to-f32: parse error')
+        return
+    }
     val = f64-to-f32(f)
 }
 
@@ -1091,12 +1098,16 @@ hex-val = (c i64) (v i64) {
 
 ; str.from-hex: 將十六進制字串解碼為 []byte
 ; 返回 Option：
-;   val(bytes) - 成功
+;   ok(bytes) - 成功
 ;   nil        - 空字串
 ;   err('msg') - 含無效十六進制字元
 str.from-hex = () (out ?[]byte) {
     .len == 0 -> {
         out = nil
+        return
+    }
+    .len % 2 != 0 -> {
+        out = err('odd-length hex string')
         return
     }
     n = .len / 2
@@ -1177,8 +1188,8 @@ str.replace-str = (old str, new str) (val str) {
         val = .slice(0, .len)
         return
     }
-    ; 使用 split 分割，再用 - 連接
-    parts []str
+
+    ; 使用 split 分割，再手動連接（避免 []str.join 的 codegen bug）
     parts = .split(old)
     np = parts.len
     np <= 1 -> {
@@ -1186,9 +1197,27 @@ str.replace-str = (old str, new str) (val str) {
         val = .slice(0, .len)
         return
     }
-    val = parts[0]
-    i <- [1..np): {
-        val = val - new - parts[i]
+
+    ; 計算總長度
+    total = 0
+    i <- [0..np): {
+        i > 0 -> total = total + new.len
+        total = total + parts[i].len
+    }
+    val = with-cap(total)
+    pos = 0
+    i <- [0..np): {
+        i > 0 -> {
+            j <- [0..new.len): {
+                val[pos] = new[j]
+                pos = pos + 1
+            }
+        }
+        p = parts[i]
+        j <- [0..p.len): {
+            val[pos] = p[j]
+            pos = pos + 1
+        }
     }
 }
 
@@ -1211,13 +1240,14 @@ str.fields = () (out []str) {
             b != 32 && b != 9 && b != 10 && b != 13 -> {
                 start < 0 -> start = i
             }
+            start >= 0 -> {
+                out.push(.slice(start, i))
+                start = -1
+            }
             ->
-                start >= 0 -> {
-                    out.push(.slice(start, i))
-                    start = -1
-                }
         }
     }
+
     ; 處理最後一個欄位
     start >= 0 -> out.push(.slice(start, n))
 }
@@ -1232,7 +1262,7 @@ str.fields = () (out []str) {
 ; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
 f64-to-str-fixed = (x f64, precision i64) (out str) {
     ; NaN
-    !(x == x) -> {
+    ! (x == x) -> {
         out = 'nan'.copy()
         return
     }
@@ -1311,6 +1341,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
         out[pos] = 45
         pos = pos + 1
     }
+
     ; 整數部分
     j <- [0..int-len): {
         {
@@ -1319,6 +1350,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
         }
         pos = pos + 1
     }
+
     ; 小數部分
     precision > 0 -> {
         out[pos] = 46
@@ -1340,7 +1372,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
 ; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
 f64-to-str-sci = (x f64, precision i64) (out str) {
     ; NaN
-    !(x == x) -> {
+    ! (x == x) -> {
         out = 'nan'.copy()
         return
     }
@@ -1449,9 +1481,11 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
         out[pos] = 45
         pos = pos + 1
     }
+
     ; 第一位數字
     out[pos] = mstr[0]
     pos = pos + 1
+
     ; 小數部分
     precision > 0 -> {
         out[pos] = 46
@@ -1465,6 +1499,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
             pos = pos + 1
         }
     }
+
     ; 'e' 和符號
     out[pos] = 101
     pos = pos + 1
@@ -1473,6 +1508,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
         -> out[pos] = 43
     }
     pos = pos + 1
+
     ; 指數位數（至少 2 位，前導補零）
     estr = i64-to-str(ae)
     elen2 = estr.len
@@ -1492,7 +1528,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 ; 返回 out str: 字串表示（自動去尾隨零）
 f64-to-str-general = (x f64, precision i64) (out str) {
     ; NaN
-    !(x == x) -> {
+    ! (x == x) -> {
         out = 'nan'.copy()
         return
     }
@@ -1570,11 +1606,9 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     i = precision - 1
     {
         idx = i - pad
-        idx >= 0 -> {
-            mstr[idx] != 48 -> {
-                last-nz = i
-                i = -1
-            }
+        idx >= 0 -> mstr[idx] != 48 -> {
+            last-nz = i
+            i = -1
         }
         i = i - 1
     } (i >= 0)
@@ -1604,12 +1638,14 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             out[pos] = 45
             pos = pos + 1
         }
+
         ; 第一位數字
         {
             pad > 0 -> out[pos] = 48
             -> out[pos] = mstr[0]
         }
         pos = pos + 1
+
         ; 小數部分
         last-nz >= 1 -> {
             out[pos] = 46
@@ -1623,6 +1659,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
                 pos = pos + 1
             }
         }
+
         ; 'e' 和符號
         out[pos] = 101
         pos = pos + 1
@@ -1631,6 +1668,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             -> out[pos] = 43
         }
         pos = pos + 1
+
         ; 指數位數（至少 2 位）
         estr = i64-to-str(ae)
         elen2 = estr.len
@@ -1709,4 +1747,241 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         }
         pos = pos + 1
     }
+}
+
+; ═══════════════════════════════════════════════
+; 全等比較
+; ═══════════════════════════════════════════════
+
+; str.eq-full: 全等比較兩個字串
+; b str: 比較目標
+; 返回 yes bool: true=相等 false=不相等
+str.eq-full = (b str) (yes bool) {
+    yes = false
+    .len != b.len -> return
+    yes = true
+    i <- [0...len): {
+        .[i] != b[i] -> {
+            yes = false
+            return
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 反向查找
+; ═══════════════════════════════════════════════
+
+; str.rindex: 反向查找子串最後出現位置
+; target str: 要查找的子串
+; 返回 pos i64: 找到的字節位置，未找到 -1
+str.rindex = (target str) (pos i64) {
+    pos = -1
+    target.len == 0 -> {
+        pos = .len
+        return
+    }
+    target.len > .len -> return
+    limit = .len - target.len
+    i = limit
+    {
+        matched = 1
+        j <- [0..target.len): {
+            sj = .[i + j]
+            tj = target[j]
+            sj != tj -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i - 1
+    } (i >= 0)
+}
+
+; str.rindex-from: 從 from 位置反向查找子串
+; 語義同 Python rfind(target, from)：在 [from, .len) 範圍內查找 target 最後出現位置
+; target str: 要查找的子串
+; from i64: 起始位置（含，下界）
+; 返回 pos i64: 找到的字節位置，未找到 -1
+str.rindex-from = (target str, from i64) (pos i64) {
+    pos = -1
+    from < 0 -> from = 0
+    target.len == 0 -> {
+        from <= .len -> pos = .len
+        return
+    }
+    target.len > .len -> return
+    limit = .len - target.len
+    from > limit -> return
+    i = limit
+    {
+        matched = 1
+        j <- [0..target.len): {
+            sj = .[i + j]
+            tj = target[j]
+            sj != tj -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i - 1
+    } (i >= from)
+}
+
+; ═══════════════════════════════════════════════
+; 限定次數替換
+; ═══════════════════════════════════════════════
+
+; str.replace-n: 限定替換次數
+; old str: 舊子串
+; new str: 新子串
+; n i64: 最大替換次數，n <= 0 不替換
+; 返回 val str: 替換後字串
+str.replace-n = (old str, new str, n i64) (val str) {
+    n <= 0 -> {
+        val = .slice(0, .len)
+        return
+    }
+    old.len == 0 -> {
+        val = .slice(0, .len)
+        return
+    }
+    parts = .split(old)
+    np = parts.len
+    np <= 1 -> {
+        val = .slice(0, .len)
+        return
+    }
+    repl = np - 1
+    repl > n -> repl = n
+    total = 0
+    i <- [0..np): {
+        i > 0 -> {
+            i <= repl -> total = total + new.len
+            -> total = total + old.len
+        }
+        total = total + parts[i].len
+    }
+    val = with-cap(total)
+    pos = 0
+    i <- [0..np): {
+        i > 0 -> {
+            sep = new
+            i > repl -> sep = old
+            j <- [0..sep.len): {
+                val[pos] = sep[j]
+                pos = pos + 1
+            }
+        }
+        s = parts[i]
+        j <- [0..s.len): {
+            val[pos] = s[j]
+            pos = pos + 1
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 限定次數分割
+; ═══════════════════════════════════════════════
+
+; str.split-n: 限定分割次數
+; sep str: 分隔符
+; maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
+; 返回 out []str: 分割結果
+str.split-n = (sep str, maxsplit i64) (out []str) {
+    sep.len == 0 -> {
+        out.push(.slice(0, .len))
+        return
+    }
+    maxsplit <= 0 -> {
+        out = .split(sep)
+        return
+    }
+    start = 0
+    pos = .index-from(sep, start)
+    count = 0
+    {
+        count >= maxsplit -> {
+            out.push(.slice(start, .len))
+            return
+        }
+        out.push(.slice(start, pos))
+        start = pos + sep.len
+        count = count + 1
+        pos = .index-from(sep, start)
+    } (pos >= 0)
+    out.push(.slice(start, .len))
+}
+
+; ═══════════════════════════════════════════════
+; 按行分割
+; ═══════════════════════════════════════════════
+
+; str.lines: 按換行符分割
+; 支持 \n 與 \r\n
+; 返回 out []str: 行列表（末尾換行不產生空行）
+str.lines = () (out []str) {
+    .len == 0 -> return
+    start = 0
+    i = 0
+    {
+        c = .[i]
+        c == 10 -> {
+            end = i
+            i > start -> {
+                prev = .[i - 1]
+                prev == 13 -> end = i - 1
+            }
+            out.push(.slice(start, end))
+            start = i + 1
+        }
+        i = i + 1
+    } (i < .len)
+    start < .len -> out.push(.slice(start, .len))
+}
+
+; ═══════════════════════════════════════════════
+; 十六進制編碼
+; ═══════════════════════════════════════════════
+
+; str.to-hex: 字串轉十六進制編碼
+; 每字節轉兩個十六進制字符（小寫）
+; 返回 out str: 十六進制字串
+str.to-hex = () (out str) {
+    .len == 0 -> return
+    out = with-cap(.len * 2)
+    hex = '0123456789abcdef'
+    i <- [0...len): {
+        b = .[i] & 255
+        out[i * 2] = hex[b >> 4]
+        out[i * 2 + 1] = hex[b & 15]
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 安全索引
+; ═══════════════════════════════════════════════
+
+; str.at: 安全索引訪問
+; i i64: 字節索引
+; 返回 val ?byte: 越界返回 nil
+str.at = (i i64) (val ?byte) {
+    i < 0 -> {
+        val = nil
+        return
+    }
+    i >= .len -> {
+        val = nil
+        return
+    }
+    val = .[i]
 }

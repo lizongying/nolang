@@ -1,0 +1,6 @@
+test-arr-eq = () {
+    a [3] = [10, 20, 30]
+    b [3] = [10, 20, 30]
+    print(a.eq(b))
+}
+test-arr-eq()

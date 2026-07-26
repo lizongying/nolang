@@ -1,0 +1,238 @@
+; test-arr — 測試 [n]t 陣列操作
+;
+; 覆蓋 arr.no 中所有方法：
+;   - len, clone, eq, fill, reverse, contains, to-vec
+;   - max, min, sum, index-of, first, last
+;   - sort-asc, sort-desc
+;   - swap, count, at, to-str (新增)
+;
+; 注意：避免 format string（預存在 bug），改用多個 print 輸出。
+
+; ═══════════════════════════════════════════════
+; test-arr-len: 陣列長度
+; ═══════════════════════════════════════════════
+test-arr-len = () {
+    a [3] = [10, 20, 30]
+    print(a.len)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-clone: 複製陣列
+; ═══════════════════════════════════════════════
+test-arr-clone = () {
+    a [3] = [10, 20, 30]
+    b = a.clone()
+    print(b[0])
+    print(b[1])
+    print(b[2])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-eq: 陣列相等比較
+; ═══════════════════════════════════════════════
+test-arr-eq = () {
+    a [3] = [10, 20, 30]
+    b [3] = [10, 20, 30]
+    c [3] = [10, 20, 31]
+    yes = a.eq(b)
+    no = a.eq(c)
+    print(yes)
+    print(no)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-fill: 填充陣列
+; ═══════════════════════════════════════════════
+test-arr-fill = () {
+    a [3] = [0, 0, 0]
+    a.fill(99)
+    print(a[0])
+    print(a[1])
+    print(a[2])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-reverse: 反轉陣列
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-reverse = () {
+    arr [4] = [1, 2, 3, 4]
+    arr.reverse()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-contains: 是否包含值
+; ═══════════════════════════════════════════════
+test-arr-contains = () {
+    a [3] = [1, 2, 3]
+    yes = a.contains(2)
+    no = a.contains(99)
+    print(yes)
+    print(no)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-to-vec: 轉為切片
+; ═══════════════════════════════════════════════
+test-arr-to-vec = () {
+    a [3] = [10, 20, 30]
+    v = a.to-vec()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-max-min-sum: 最大值、最小值、總和
+; ═══════════════════════════════════════════════
+test-arr-max-min-sum = () {
+    a [5] = [3, 1, 4, 1, 5]
+    mx = a.max()
+    mn = a.min()
+    s = a.sum()
+    print(mx)
+    print(mn)
+    print(s)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-index-of: 索引查找
+; ═══════════════════════════════════════════════
+test-arr-index-of = () {
+    a [3] = [1, 2, 3]
+    i1 = a.index-of(2)
+    i2 = a.index-of(99)
+    print(i1)
+    print(i2)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-last-first: 首尾元素
+; ═══════════════════════════════════════════════
+test-arr-last-first = () {
+    a [3] = [10, 20, 30]
+    f = a.first()
+    l = a.last()
+    print(f)
+    print(l)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-sort-asc: 升序排序
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-sort-asc = () {
+    arr [5] = [3, 1, 4, 1, 5]
+    arr.sort-asc()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+    print(arr[4])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-sort-desc: 降序排序
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-sort-desc = () {
+    arr [5] = [3, 1, 4, 1, 5]
+    arr.sort-desc()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+    print(arr[4])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-swap: 交換元素
+; ═══════════════════════════════════════════════
+test-arr-swap = () {
+    a [3] = [1, 2, 3]
+    a.swap(0, 2)
+    print(a[0])
+    print(a[1])
+    print(a[2])
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-count: 統計值出現次數
+; ═══════════════════════════════════════════════
+test-arr-count = () {
+    a [5] = [1, 2, 1, 3, 1]
+    c1 = a.count(1)
+    c2 = a.count(99)
+    print(c1)
+    print(c2)
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-at: 安全索引訪問
+; ═══════════════════════════════════════════════
+test-arr-at = () {
+    a [3] = [1, 2, 3]
+    v0 = a.at(0)
+    v5 = a.at(5)
+    v-1 = a.at(-1)
+    match v0 {
+        nil -> print('nil')
+        -> print('ok')
+    }
+    match v5 {
+        nil -> print('nil')
+        -> print('ok')
+    }
+    match v-1 {
+        nil -> print('nil')
+        -> print('ok')
+    }
+}
+
+; ═══════════════════════════════════════════════
+; test-arr-to-str: 字串表示
+; ═══════════════════════════════════════════════
+test-arr-to-str = () {
+    a [3] = [1, 2, 3]
+    s = a.to-str()
+    print(s)
+}
+
+; ═══════════════════════════════════════════════
+; 依次調用所有測試函數
+; ═══════════════════════════════════════════════
+test-arr-len()
+print('---')
+test-arr-clone()
+print('---')
+test-arr-eq()
+print('---')
+test-arr-fill()
+print('---')
+test-arr-reverse()
+print('---')
+test-arr-contains()
+print('---')
+test-arr-to-vec()
+print('---')
+test-arr-max-min-sum()
+print('---')
+test-arr-index-of()
+print('---')
+test-arr-last-first()
+print('---')
+test-arr-sort-asc()
+print('---')
+test-arr-sort-desc()
+print('---')
+test-arr-swap()
+print('---')
+test-arr-count()
+print('---')
+test-arr-at()
+print('---')
+test-arr-to-str()

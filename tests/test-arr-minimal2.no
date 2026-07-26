@@ -1,0 +1,3 @@
+; minimal test: print arr.contains directly
+a [3] = [1, 2, 3]
+print(a.contains(2))

@@ -1,0 +1,21 @@
+test-arr-index-of = () {
+    a [3] = [1, 2, 3]
+    print(a.index-of(2))
+}
+
+test-arr-last-first = () {
+    a [3] = [10, 20, 30]
+    print(a.first())
+}
+
+test-arr-sort-asc = () {
+    a [5] = [3, 1, 4, 1, 5]
+    a.sort-asc()
+    print(a[3])
+}
+
+test-arr-index-of()
+print('---')
+test-arr-last-first()
+print('---')
+test-arr-sort-asc()

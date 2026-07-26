@@ -1,0 +1,3 @@
+; minimal test: print bool literal
+print(true)
+print(false)

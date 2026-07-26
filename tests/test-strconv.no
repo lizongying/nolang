@@ -241,6 +241,47 @@ test-edge-i64 = () {
     print(s); 期望: -9223372036854775808
 }
 
+; ===== str → []byte (from-hex) =====
+test-from-hex-odd = () {
+    b = 'abc'.from-hex()
+    {
+        b == nil -> print('nil')
+        b == err -> print('err - odd length'); 期望: err
+        -> print('unexpected ok')
+    }
+}
+
+test-from-hex-even = () {
+    b = '6162'.from-hex()
+    b: {
+        nil -> print('nil')
+        err -> print('err')
+        -> {
+            print(it[0]); 期望: 97 (0x61 'a')
+            print(it[1]); 期望: 98 (0x62 'b')
+        }
+    }
+}
+
+; ===== str → f32 =====
+test-to-f32-valid = () {
+    f = '3.14'.to-f32()
+    {
+        f == nil -> print('nil')
+        f == err -> print('err')
+        -> print('ok'); 期望: ok (非 nil/err)
+    }
+}
+
+test-to-f32-invalid = () {
+    f = 'abc'.to-f32()
+    {
+        f == nil -> print('nil'); 期望: nil 或 err
+        f == err -> print('err'); 期望: nil 或 err
+        -> print('unexpected ok')
+    }
+}
+
 ; ===== 运行测试 =====
 test-str-to-i64()
 test-str-to-i32()
@@ -260,3 +301,7 @@ test-byte-to-str()
 test-roundtrip-i64()
 test-roundtrip-f64()
 test-edge-i64()
+test-from-hex-odd()
+test-from-hex-even()
+test-to-f32-valid()
+test-to-f32-invalid()

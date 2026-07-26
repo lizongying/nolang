@@ -64,14 +64,14 @@ encode = (data []byte, table str) (out str) {
 ; data []byte: 輸入資料
 ; 返回 out str: Base64 編碼字串
 encode-std = (data []byte) (out str) {
-    out = encode(data, BASE64-STD, out)
+    out = encode(data, BASE64-STD)
 }
 
 ; encode-url: 使用 URL 安全字母表編碼
 ; data []byte: 輸入資料
 ; 返回 out str: Base64 編碼字串
 encode-url = (data []byte) (out str) {
-    out = encode(data, BASE64-URL, out)
+    out = encode(data, BASE64-URL)
 }
 
 ; ═══════════════════════════════════════════════

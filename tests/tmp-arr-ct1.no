@@ -1,0 +1,7 @@
+test-arr-contains = () {
+    a [3] = [1, 2, 3]
+    print(a.contains(2))
+    print(a.contains(99))
+}
+
+test-arr-contains()

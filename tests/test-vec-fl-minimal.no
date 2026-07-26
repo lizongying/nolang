@@ -1,0 +1,23 @@
+; test-vec-fl-minimal — 隔離 first/last 行為
+test-fl = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    print('len:')
+    print(v.len)
+    f = v.first()
+    print('first:')
+    f: {
+        nil -> print('nil')
+        -> print(it)
+    }
+    l = v.last()
+    print('last:')
+    l: {
+        nil -> print('nil')
+        -> print(it)
+    }
+}
+
+test-fl()

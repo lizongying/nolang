@@ -1382,6 +1382,24 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+		// 切片結果索引：arr[1..3][0] — 切片結果為 %vec/%str-long，
+		// 元素型別與原陣列相同。
+		if sliceExpr, ok := v.Left.(*parser.SliceExpression); ok {
+			recvType := g.exprResultLLVMType(sliceExpr.Left)
+			if recvType == "%str-long" {
+				return "i64"
+			}
+			if recvType == "%vec" || recvType == "%arr" {
+				if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
+					if g.arrayElemTypes != nil {
+						if et, ok := g.arrayElemTypes[ident.Value]; ok {
+							return et
+						}
+					}
+				}
+				return "i64"
+			}
+		}
 	case *parser.SliceExpression:
 		// 切片表達式的結果型別：
 		// - str-long 切片 → %str-long
@@ -3299,6 +3317,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		// 模組字串常量傳播後的情況：HEX-LOWER[b>>4] 中的 Left 變成 StringLiteral
 		// 為此我們需要將字串常量分配到 stack 上，然後 GEP 索引
 		return g.generateStringLiteralIndex(sb, lit, expr.Index)
+	} else if sliceExpr, ok := expr.Left.(*parser.SliceExpression); ok {
+		// 巢狀切片索引讀取：例如 arr[1..3][0] 或 s[1..3][2]
+		// 內層 arr[1..3] 由 generateSliceExpression 回傳 %slic.N (alloca %vec/%str-long)，
+		// 外層 [i] 需取出該結構的 data 指標後 GEP 到第 i 個元素。
+		return g.generateSliceExprIndexRead(sb, sliceExpr, expr.Index)
 	} else if innerIdx, ok := expr.Left.(*parser.IndexExpression); ok {
 		// 巢狀索引讀取：例如 .vals[idx][i]
 		// 內層 .vals[idx] 由 generateStructFieldIndexRead 回傳 %str-long* 指標，
@@ -3672,6 +3695,123 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		return zextReg
 	}
 	return loadReg
+}
+
+// generateSliceExprIndexRead 處理 slice[start..end][i] 的巢狀索引讀取。
+// 內層 slice[start..end] 由 generateSliceExpression 生成為 %slic.N (alloca %vec/%str-long)，
+// 外層 [i] 從該結構取出 data 指標後 GEP 到第 i 個元素並 load。
+func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *parser.SliceExpression, index parser.Expression) string {
+	// 生成內層切片表達式，得到一個臨時的 %slic.N (alloca %vec 或 %str-long)
+	sliceReg := g.generateSliceExpression(sb, sliceExpr)
+	if sliceReg == "" || sliceReg == "0" {
+		return "0"
+	}
+
+	// 判斷切片結果類型與元素類型
+	isStr := false
+	elemType := "i64"
+	if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
+		if t, ok := g.varTypes[ident.Value]; ok {
+			if t == "%str-long" {
+				isStr = true
+				elemType = "i8"
+			} else if et, ok := g.arrayElemTypes[ident.Value]; ok {
+				elemType = et
+			}
+		}
+	}
+
+	structType := "%vec"
+	dataField := uint32(2)
+	if isStr {
+		structType = "%str-long"
+		// %str-long 结构: field 0=len, field 1=cap, field 2=data 指针
+		dataField = 2
+	}
+
+	// 載入切片長度用於 bounds check
+	g.tmpIdx++
+	lenGEP := fmt.Sprintf("%%slicidx.len.gep.%d", g.tmpIdx)
+	g.tmpIdx++
+	lenReg := fmt.Sprintf("%%slicidx.len.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, structType, structType, sliceReg))
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
+			g.indent(), lenReg, lenGEP))
+	}
+
+	// 生成索引並確保為 i64
+	idx := g.generateExprWithSB(sb, index)
+	if strings.HasPrefix(idx, "%") {
+		idxType := g.intExprLLVMType(index)
+		if idxType != "i64" {
+			g.tmpIdx++
+			zextReg := fmt.Sprintf("%%slicidx.idx.zext.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+			}
+			idx = zextReg
+		}
+	}
+
+	// bounds check
+	g.emitBoundsCheck(sb, idx, lenReg)
+
+	// 載入 data 指標
+	g.tmpIdx++
+	dataGEP := fmt.Sprintf("%%slicidx.data.gep.%d", g.tmpIdx)
+	dataReg := ""
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+			g.indent(), dataGEP, structType, structType, sliceReg, dataField))
+		dataReg = g.loadDataPtrField(sb, dataGEP)
+	}
+
+	if isStr {
+		// 字串：GEP i8*，load i8，zext 到 i64
+		g.tmpIdx++
+		charGEP := fmt.Sprintf("%%slicidx.char.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		charLoad := fmt.Sprintf("%%slicidx.char.%d", g.tmpIdx)
+		g.tmpIdx++
+		charZext := fmt.Sprintf("%%slicidx.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+				g.indent(), charGEP, dataReg, idx))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
+				g.indent(), charLoad, charGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
+				g.indent(), charZext, charLoad))
+		}
+		return charZext
+	}
+
+	// vec/arr：bitcast 到元素類型，GEP，load
+	g.tmpIdx++
+	dataTyped := fmt.Sprintf("%%slicidx.typed.%d", g.tmpIdx)
+	g.tmpIdx++
+	elemGEP := fmt.Sprintf("%%slicidx.elem.%d", g.tmpIdx)
+	g.tmpIdx++
+	elemLoad := fmt.Sprintf("%%slicidx.val.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
+			g.indent(), dataTyped, dataReg, elemType))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+			g.indent(), elemGEP, elemType, elemType, dataTyped, idx))
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+			g.indent(), elemLoad, elemType, elemType, elemGEP))
+	}
+	// 小整數類型 zext 到 i64
+	if elemType == "i1" || elemType == "i8" || elemType == "i16" || elemType == "i32" {
+		g.tmpIdx++
+		zextReg := fmt.Sprintf("%%slicidx.zext.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
+		}
+		return zextReg
+	}
+	return elemLoad
 }
 
 // generateStringLiteralIndex 處理字串常量的索引運算（用於模組字串常量傳播後的場景）
@@ -4426,9 +4566,10 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			structType = "%str-long"
 		}
 
-		// Data field index: %arr → field 1, %vec → field 2, %str-long → field 1
+		// Data field index: %arr → field 1, %vec → field 2, %str-long → field 2
+		// (%arr = {i64 len, i64 data}; %vec/%str-long = {i64 len, i64 cap, i64 data})
 		dataField := uint32(1)
-		if isVec {
+		if isVec || isStr {
 			dataField = 2
 		}
 
@@ -4455,10 +4596,10 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			srcData = g.loadDataPtrField(sb, srcDataGEP)
 		}
 
-		// Source capacity: for %vec load from field 1, for %arr/%str-long use len
+		// Source capacity: for %vec/%str-long load from field 1, for %arr use len
 		g.tmpIdx++
 		srcCap = fmt.Sprintf("%%slice.srccap.%d", g.tmpIdx)
-		if isVec {
+		if isVec || isStr {
 			g.tmpIdx++
 			srcCapGEP := fmt.Sprintf("%%slice.srccap.gep.%d", g.tmpIdx)
 			if sb != nil {
@@ -4468,7 +4609,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 					g.indent(), srcCap, srcCapGEP))
 			}
 		} else {
-			// %arr/%str-long has no cap field; use len as cap
+			// %arr has no cap field; use len as cap
 			srcCap = srcLen
 		}
 	}
@@ -4489,25 +4630,62 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		} else {
 			startReg = startVal
 		}
+	} else if r != nil && r.Start == nil && !r.LeftInc {
+		// (..end / (..] / (..) / (.. : 左開無下限，起始偏移 +1
+		startReg = "1"
 	}
 
 	// Compute new len
 	var newLenReg string
 	if r == nil || (r.Start == nil && r.End == nil) {
-		// [..] full slice: new_len = src_len
-		newLenReg = srcLen
+		// Full slice: [..] / [..) / (..] / (..)
+		// right-inclusive (]) → newLen = srcLen - start
+		// right-exclusive ()) → newLen = srcLen - start - 1 (排除最後一個元素)
+		rightExcl := r != nil && !r.RightInc
+		if startReg == "0" && !rightExcl {
+			newLenReg = srcLen
+		} else {
+			g.tmpIdx++
+			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+			if sb != nil {
+				if startReg == "0" {
+					// right-exclusive only: newLen = srcLen - 1
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n",
+						g.indent(), newLenReg, srcLen))
+				} else if rightExcl {
+					// left-exclusive + right-exclusive: newLen = srcLen - start - 1
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+						g.indent(), newLenReg, srcLen, startReg))
+					g.tmpIdx++
+					extraSub := fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n",
+						g.indent(), extraSub, newLenReg))
+					newLenReg = extraSub
+				} else {
+					// left-exclusive only: newLen = srcLen - start
+					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+						g.indent(), newLenReg, srcLen, startReg))
+				}
+			}
+		}
 	} else if r.Start == nil && r.End != nil {
-		// [..end]: new_len = end + (1 if ] else 0)
+		// [..end] / (..end]: new_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		g.tmpIdx++
+		subReg := fmt.Sprintf("%%vec.sublen.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+				g.indent(), subReg, endVal, startReg))
+		}
 		if r.RightInc {
 			g.tmpIdx++
 			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), newLenReg, endVal))
+					g.indent(), newLenReg, subReg))
 			}
 		} else {
-			newLenReg = endVal
+			newLenReg = subReg
 		}
 	} else if r.Start != nil && r.End == nil {
 		// [start..]: new_len = src_len - start
@@ -4594,8 +4772,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			g.indent(), newLenReg, dstLenGEP))
 	}
 
-	if resultType == "%vec" {
-		// Store new cap (field 1) — only %vec has cap
+	if resultType == "%vec" || resultType == "%str-long" {
+		// Store new cap (field 1) — %vec 和 %str-long 都有 cap 字段
 		g.tmpIdx++
 		dstCapGEP := fmt.Sprintf("%%slic.dstcap.gep.%d", g.tmpIdx)
 		if sb != nil {
@@ -4607,10 +4785,13 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Store new data
-	// %vec: field 2, %str-long: field 1
-	dstDataField := uint32(2)
-	if isStr {
-		dstDataField = 1
+	// %arr: field 1, %vec: field 2, %str-long: field 2
+	// (%arr = {i64 len, i64 data}; %vec/%str-long = {i64 len, i64 cap, i64 data})
+	// 注意：inline array 切片結果為 %vec，data 也應寫入 field 2，
+	// 不能用 isVec/isStr 判斷（它們對 inline array 為 false）。
+	dstDataField := uint32(1)
+	if resultType == "%vec" || resultType == "%str-long" {
+		dstDataField = 2
 	}
 	g.tmpIdx++
 	dstDataGEP := fmt.Sprintf("%%slic.dstdata.gep.%d", g.tmpIdx)

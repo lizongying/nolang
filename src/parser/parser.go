@@ -2770,6 +2770,15 @@ func (p *Parser) parseLetStatement() Statement {
 
 		case *ArrayLiteral:
 		case *StructLiteral:
+			// Struct literal: record struct type in varDeclTypes so that
+			// resolveReceiverType can resolve method calls on this variable
+			// (e.g. srv = https-server{} → srv.accept() needs varDeclTypes["srv"]).
+			if p.varDeclTypes == nil {
+				p.varDeclTypes = make(map[string]string)
+			}
+			if _, exists := p.varDeclTypes[stmt.Name.Value]; !exists {
+				p.varDeclTypes[stmt.Name.Value] = v.Type
+			}
 
 		case *CallExpression:
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
@@ -4257,7 +4266,16 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			case lexer.STRING:
 				ma.condition = p.parseStringLiteral()
 			case lexer.IDENT:
-				ma.condition = p.parseIdentifier()
+				// IDENT(...) 形式（如 val(v) 或自定義枚舉構造）需解析為 CallExpression，
+				// 否則只消費標識符而留下 (v)，會導致整個 match 解析失敗並 fallback。
+				// 注意：ok(...) 已由前面分支處理，這裡只處理其他 IDENT(...)。
+				if p.peekToken.Type == lexer.LPAREN {
+					p.ctx.push(CTX_MATCH_ARM)
+					ma.condition = p.parseExpression(LOWEST)
+					p.ctx.pop()
+				} else {
+					ma.condition = p.parseIdentifier()
+				}
 			case lexer.NIL:
 				ma.condition = p.parseNilLiteral()
 			case lexer.TRUE, lexer.FALSE:
@@ -5349,25 +5367,32 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 
 // desugarRangeCondition 將 match arm 中的 RangeExpression 條件 desugar 為布爾表達式。
 // 有界（4 種）：
-//   [a..b] → matched >= a && matched <= b
-//   [a..b) → matched >= a && matched < b
-//   (a..b] → matched > a && matched <= b
-//   (a..b) → matched > a && matched < b
+//
+//	[a..b] → matched >= a && matched <= b
+//	[a..b) → matched >= a && matched < b
+//	(a..b] → matched > a && matched <= b
+//	(a..b) → matched > a && matched < b
+//
 // 無上限（4 種，End=nil）：
-//   [a..)  → matched >= a
-//   [a..]  → matched >= a
-//   (a..)  → matched > a
-//   (a..]  → matched > a
+//
+//	[a..)  → matched >= a
+//	[a..]  → matched >= a
+//	(a..)  → matched > a
+//	(a..]  → matched > a
+//
 // 無下限（4 種，Start=nil）：
-//   [..b]  → matched <= b
-//   [..b)  → matched < b
-//   (..b]  → matched <= b
-//   (..b)  → matched < b
+//
+//	[..b]  → matched <= b
+//	[..b)  → matched < b
+//	(..b]  → matched <= b
+//	(..b)  → matched < b
+//
 // 完全無界（4 種，Start=nil 且 End=nil）：
-//   [..]   → true (匹配所有值)
-//   [..)   → true
-//   (..]   → true
-//   (..)   → true
+//
+//	[..]   → true (匹配所有值)
+//	[..)   → true
+//	(..]   → true
+//	(..)   → true
 func (p *Parser) desugarRangeCondition(tok lexer.Token, matched Expression, rng *RangeExpression) Expression {
 	var leftOp string
 	if rng.LeftInc {
@@ -6417,9 +6442,15 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 	} else if p.currentToken.Type == lexer.LPAREN {
 		leftInc = false
 	} else if p.currentToken.Type == lexer.IDENT {
-		// 陣列/切片遍歷: for i in a
-		ir.RangeExpr = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
-		p.nextToken() // skip identifier
+		// 陣列/切片遍歷: for i in a, for i in a[1..3], for i in a[0]
+		// 使用 parseExpression 處理後綴操作（索引/切片/方法呼叫等），
+		// 並 push CTX_FOR_COND 防止 { 被當作 struct literal 消耗。
+		p.ctx.push(CTX_FOR_COND)
+		expr := p.parseExpression(LOWEST)
+		p.ctx.pop()
+		if expr != nil {
+			ir.RangeExpr = expr
+		}
 		return
 	} else {
 		msg := fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
@@ -7734,18 +7765,30 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 		sizeTok := p.currentToken
 		p.nextToken() // skip size
 		p.nextToken() // skip ]
+		// Build size expression: IntegerLiteral for numeric sizes (so constFoldInt
+		// can fold them in arrayTypeToLLVM), Identifier for symbolic sizes (e.g. [n]T).
+		var sizeExpr Expression
+		if sizeTok.Type == lexer.INT {
+			if val, err := strconv.ParseInt(sizeTok.Literal, 10, 64); err == nil {
+				sizeExpr = &IntegerLiteral{Token: sizeTok, Value: val, Raw: sizeTok.Literal}
+			} else {
+				sizeExpr = &Identifier{Token: sizeTok, Value: sizeTok.Literal}
+			}
+		} else {
+			sizeExpr = &Identifier{Token: sizeTok, Value: sizeTok.Literal}
+		}
 		// [N][M]T — nested array type
 		if p.currentToken.Type == lexer.LBRACKET {
 			elemType, ok := p.parseTypeExpression()
 			if ok {
-				return &ArrayType{Token: startTok, Size: &Identifier{Token: sizeTok, Value: sizeTok.Literal}, Elem: elemType}, true
+				return &ArrayType{Token: startTok, Size: sizeExpr, Elem: elemType}, true
 			}
 			return nil, false
 		}
 		elemName := p.currentToken.Literal
 		elemTok := p.currentToken
 		p.nextToken()
-		return &ArrayType{Token: startTok, Size: &Identifier{Token: sizeTok, Value: sizeTok.Literal}, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
+		return &ArrayType{Token: startTok, Size: sizeExpr, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
 	case lexer.QUESTION:
 		// ?T
 		p.nextToken() // skip ?
