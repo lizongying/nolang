@@ -13,18 +13,15 @@ e2e-recv-once = () (rn i64) {
     rn = -1
     space = ' '
     tmp = space.repeat(2048)
-    rn-opt = e2e-tc.recv(tmp, 2048)
-    rn-opt: {
-        nil -> rn = -1
-        err -> rn = -1
-        ok -> rn = it
-    }
+    rn = e2e-tc.recv(tmp, 2048)
+    io.errln('[TEST] e2e-recv-once: rn=' - rn.to-str())
     rn > 0 -> {
         ; 複製到全域緩衝區
         i <- [0..rn): {
             e2e-recv-buf[e2e-recv-total + i] = tmp[i]
         }
         e2e-recv-total = e2e-recv-total + rn
+        io.errln('[TEST] e2e-recv-once: total=' - e2e-recv-total.to-str())
     }
 }
 
@@ -160,7 +157,9 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 found -> *
                 e2e-recv-total >= 4000 -> *
 
+                io.errln('[TEST] e2e: calling recv-once')
                 rn = e2e-recv-once()
+                io.errln('[TEST] e2e: recv-once returned rn=' - rn.to-str())
                 rn <= 0 -> *
 
                 resp = e2e-recv-buf.slice(0, e2e-recv-total)

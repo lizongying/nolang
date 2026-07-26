@@ -112,6 +112,13 @@ func (sp *SemanticTokensProvider) GetSemanticTokens() *SemanticTokens {
 			continue
 		}
 
+		// 格式化字串：拆分為子 token，讓 {name:spec} 中的 name 以 variable 類型高亮
+		if tok.Type == lexer.STRING {
+			if sp.emitFormatStringTokens(&data, &prevLine, &prevChar, tok) {
+				continue
+			}
+		}
+
 		tokenType := sp.mapTokenType(tok, identTypes)
 		tokenModifiers := sp.mapTokenModifiers(tok, identMods)
 
@@ -123,18 +130,7 @@ func (sp *SemanticTokensProvider) GetSemanticTokens() *SemanticTokens {
 		col := uint32(tok.Column - 1)
 		length := uint32(len(tok.Literal))
 
-		var deltaLine, deltaChar uint32
-		if line == prevLine {
-			deltaLine = 0
-			deltaChar = col - prevChar
-		} else {
-			deltaLine = line - prevLine
-			deltaChar = col
-		}
-
-		data = append(data, deltaLine, deltaChar, length, uint32(tokenType), uint32(tokenModifiers))
-		prevLine = line
-		prevChar = col
+		sp.emitSemanticToken(&data, &prevLine, &prevChar, line, col, length, uint32(tokenType), uint32(tokenModifiers))
 	}
 
 	if data == nil {
@@ -144,6 +140,124 @@ func (sp *SemanticTokensProvider) GetSemanticTokens() *SemanticTokens {
 	return &SemanticTokens{
 		Data: data,
 	}
+}
+
+// emitSemanticToken 發射一個語義 token，使用 LSP delta 編碼。
+func (sp *SemanticTokensProvider) emitSemanticToken(
+	data *[]uint32, prevLine, prevChar *uint32,
+	line, col, length, tokenType, tokenModifiers uint32,
+) {
+	var deltaLine, deltaChar uint32
+	if line == *prevLine {
+		deltaLine = 0
+		deltaChar = col - *prevChar
+	} else {
+		deltaLine = line - *prevLine
+		deltaChar = col
+	}
+	*data = append(*data, deltaLine, deltaChar, length, tokenType, tokenModifiers)
+	*prevLine = line
+	*prevChar = col
+}
+
+// emitFormatStringTokens 將格式化字串 token 拆分為子 token：
+//   - 字面段落與 {、:、spec、} 標記 → string 類型
+//   - {name} 中的 name → variable 類型
+//
+// 成功拆分時返回 true；否則返回 false（由呼叫端回退為整體 string token）。
+func (sp *SemanticTokensProvider) emitFormatStringTokens(
+	data *[]uint32, prevLine, prevChar *uint32,
+	tok lexer.Token,
+) bool {
+	// 僅處理單引號字串（跳過反引號原始字串與未終結字串）
+	if len(tok.Raw) < 2 || tok.Raw[0] != '\'' || tok.Raw[len(tok.Raw)-1] != '\'' {
+		return false
+	}
+
+	segments, err := parser.ParseFormatString(tok.Literal)
+	if err != nil {
+		return false
+	}
+
+	hasField := false
+	for _, seg := range segments {
+		if seg.Field != nil {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		return false
+	}
+
+	// 建立未轉義內容偏移 → 源碼偏移的映射（處理 \n、\xHH 等轉義序列）
+	rawContent := tok.Raw[1 : len(tok.Raw)-1]
+	offsetMap := buildUnescapedOffsetMap(rawContent)
+
+	// 基準位置（0-based）：內容首字元在 tok.Column（開引號在 tok.Column-1）
+	line := uint32(tok.Line - 1)
+	baseCol := uint32(tok.Column)
+
+	contentOffset := 0
+	for _, seg := range segments {
+		if seg.Field == nil {
+			// 字面段落
+			segLen := len(seg.Literal)
+			if segLen > 0 && contentOffset < len(offsetMap) {
+				srcCol := baseCol + uint32(offsetMap[contentOffset])
+				sp.emitSemanticToken(data, prevLine, prevChar, line, srcCol, uint32(segLen), uint32(SemTokenTypeString), 0)
+			}
+			contentOffset += segLen
+			continue
+		}
+		// 欄位：{name:spec}
+		// '{' → string
+		if contentOffset < len(offsetMap) {
+			srcCol := baseCol + uint32(offsetMap[contentOffset])
+			sp.emitSemanticToken(data, prevLine, prevChar, line, srcCol, 1, uint32(SemTokenTypeString), 0)
+		}
+		contentOffset++
+		// name → variable
+		nameLen := len(seg.Field.Name)
+		if contentOffset < len(offsetMap) {
+			srcCol := baseCol + uint32(offsetMap[contentOffset])
+			sp.emitSemanticToken(data, prevLine, prevChar, line, srcCol, uint32(nameLen), uint32(SemTokenTypeVariable), 0)
+		}
+		contentOffset += nameLen
+		// 剩餘（:spec}）→ string
+		restLen := 1 // '}'
+		if seg.Field.Spec != "" {
+			restLen += 1 + len(seg.Field.Spec) // ':' + spec
+		}
+		if contentOffset < len(offsetMap) {
+			srcCol := baseCol + uint32(offsetMap[contentOffset])
+			sp.emitSemanticToken(data, prevLine, prevChar, line, srcCol, uint32(restLen), uint32(SemTokenTypeString), 0)
+		}
+		contentOffset += restLen
+	}
+	return true
+}
+
+// buildUnescapedOffsetMap 建立未轉義內容位元組偏移 → 源碼位元組偏移的映射。
+// 處理 \n、\t、\\、\'、\"、\0、\xHH 等轉義序列。
+func buildUnescapedOffsetMap(rawContent string) []int {
+	var offsets []int
+	i := 0
+	n := len(rawContent)
+	for i < n {
+		offsets = append(offsets, i)
+		if rawContent[i] == '\\' && i+1 < n {
+			c := rawContent[i+1]
+			if c == 'x' && i+3 < n {
+				i += 4 // \xHH
+			} else {
+				i += 2 // \n, \t, \\, etc.
+			}
+		} else {
+			i++
+		}
+	}
+	return offsets
 }
 
 // buildIdentifierMaps walks the AST and classifies identifiers by (line, column).

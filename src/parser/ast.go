@@ -36,6 +36,9 @@ type Type interface {
 type NamedType struct {
 	Token lexer.Token
 	Value string
+	// IsInferred 標記此型別由 parser 推斷（非源碼顯式標注）。
+	// formatter 直接讀取此欄位，避免依賴 token 位置相等啟發式。
+	IsInferred bool
 }
 
 func (nt *NamedType) typeNode()              {}
@@ -47,6 +50,8 @@ type ArrayType struct {
 	Token lexer.Token // [
 	Size  Expression
 	Elem  Type
+	// IsInferred 標記此型別由 parser 推斷（非源碼顯式標注）。
+	IsInferred bool
 }
 
 func (at *ArrayType) typeNode()              {}
@@ -114,6 +119,8 @@ func evalConstIntExpr(e *InfixExpression) (bool, int64) {
 type SliceType struct {
 	Token lexer.Token // [
 	Elem  Type
+	// IsInferred 標記此型別由 parser 推斷（非源碼顯式標注）。
+	IsInferred bool
 }
 
 func (st *SliceType) typeNode()              {}
@@ -286,6 +293,7 @@ type CommentedNode struct {
 
 func (cn *CommentedNode) GetDoc() *CommentGroup     { return cn.Doc }
 func (cn *CommentedNode) GetComment() *CommentGroup { return cn.Comment }
+func (cn *CommentedNode) SetDoc(d *CommentGroup)    { cn.Doc = d }
 
 // ---- Program ----
 
@@ -391,6 +399,10 @@ func (ls *LetStatement) EndPos() lexer.Position {
 type Identifier struct {
 	Token lexer.Token
 	Value string
+	// IsImplicitGeneric 標記此 Identifier 為 parser 推斷的隱式泛型參數
+	// （由 detectImplicitGeneric / addImplicitGeneric 注入，單字母 a-z）。
+	// formatter 直接讀取此欄位過濾隱式泛型，避免依賴命名規則啟發式。
+	IsImplicitGeneric bool
 }
 
 func (i *Identifier) expressionNode()        {}
@@ -474,6 +486,10 @@ type FunctionDefinition struct {
 	ColonSyntax  bool               // 是否為冒號語法 foo: (a int) { }
 	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
 	PlatformKeys []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
+	// IsMethodDef 標記此 FunctionDefinition 為方法定義（如 `t.method = ...`）。
+	// parser 在方法定義位置顯式設定此欄位，formatter 直接讀取以跳過隱式 self 參數，
+	// 避免依賴 `strings.Contains(Name, ".")` 的字串子串啟發式。
+	IsMethodDef bool
 	CommentedNode
 }
 
@@ -808,6 +824,8 @@ func (de *DotExpression) EndPos() lexer.Position { return posFromToken(de.Token)
 type NullableType struct {
 	Token lexer.Token
 	Type  Type // implements both Expression and Type
+	// IsInferred 標記此型別由 parser 推斷（非源碼顯式標注）。
+	IsInferred bool
 }
 
 func (nt *NullableType) expressionNode()        {}
@@ -1013,6 +1031,38 @@ type IfExpression struct {
 	// OpeningBraceComment holds comments on the same line as the opening `{`
 	// of a bare match expression. The formatter outputs them inline after `{`.
 	OpeningBraceComment *CommentGroup
+	// RangePattern 保留 match arm 中原始的 RangeExpression 條件（如 `[a..b)`）。
+	// desugar 時 Condition 會被改寫為 `matched >= a && matched < b`，但保留此欄位
+	// 供 formatter 準確反推為 range 語法，避免對布林表達式做启发式推斷。
+	RangePattern *RangeExpression
+	// IsMatchWildcard 標記此 arm 為 catch-all wildcard `->`。
+	// desugar 時 Condition 會被設為 IntegerLiteral(1)，此欄位讓 formatter 直接
+	// 識別 wildcard 而不依賴該 hack。
+	IsMatchWildcard bool
+	// EqualityPattern 保留 `matched == X` arm 中原始的右值 X。
+	// desugar 時 Condition 會被改寫為 `matched == X`，但保留此欄位讓 formatter
+	// 直接輸出 X 而不需反向匹配 InfixExpression 結構。
+	EqualityPattern Expression
+	// OptionPatterns 保留 `nil || err` 等 option pattern 列表。
+	// desugar 時 Condition 會被改寫為 `(matched==nil) || (matched==err)`，
+	// 此欄位讓 formatter 直接輸出 `nil || err` 而不需啟發式推斷。
+	OptionPatterns []string
+	// ValuePatterns 保留 `1 || 3 || 5` 等 multi-value pattern 列表。
+	// desugar 時 Condition 會被改寫為 `(matched==1) || (matched==3) || (matched==5)`，
+	// 此欄位讓 formatter 直接輸出 `1 || 3 || 5`。
+	ValuePatterns []Expression
+	// RawCond 保留 `ok(cond)` arm 中原始的 cond 表達式。
+	// desugar 時 Condition 會被改寫為 `(matched == ok) && cond`，
+	// 此欄位讓 formatter 直接輸出 `ok(cond)`。
+	RawCond Expression
+	// IsMatchWrapper 標記此 IfExpression 為 rawCond 包裝層
+	// （`if 1 { it = matched; <if-chain> }`），並非真正的 match arm。
+	// formatter 應跳過包裝層，直接輸出內部的 if-chain。
+	IsMatchWrapper bool
+	// IsElif 標記此 IfExpression 來自 deprecated `elif` desugar
+	// （parseElifBlock 將 `elif cond { }` 轉為 `else { if cond { } }`）。
+	// formatter 直接讀取此欄位輸出 `elif`，避免對 BlockStatement 結構做啟發式推斷。
+	IsElif bool
 }
 
 func (ie *IfExpression) expressionNode()     {}
@@ -1136,6 +1186,11 @@ type ForStatement struct {
 	Body      *BlockStatement
 	IterRange *IterationExpr // unified iteration (range/str/ident/slice)
 	CountExpr Expression     // ! { } 或 { } * N 語法
+	// IsCondWrapper 標記此 ForStatement 由 parseLabeledStatement 合成，
+	// 將 `#N val: { body }` 包裝為 ForStatement{Condition: *IfExpression, Body: Consequence}。
+	// formatter/transpiler 直接讀取此欄位識別合成包裝，
+	// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
+	IsCondWrapper bool
 	CommentedNode
 }
 
@@ -1143,9 +1198,23 @@ func (fs *ForStatement) statementNode()         {}
 func (fs *ForStatement) Pos() lexer.Position    { return posFromToken(fs.Token) }
 func (fs *ForStatement) EndPos() lexer.Position { return fs.Body.EndPos() }
 
+// LabelKind 表示 break/continue 標籤的種類。
+// 使用枚舉而非 bool，因為標籤有三種互斥狀態（無/數字/文本），
+// bool 只能區分兩種，無法清晰表達「無標籤」這一狀態。
+type LabelKind int
+
+const (
+	LabelNone    LabelKind = iota // 無標籤（Label 為空字串）
+	LabelNumeric                  // 數字標籤 #N（由 LABEL token 產生）
+	LabelText                     // 文本標籤（由 IDENT token 產生）
+)
+
 type BreakStatement struct {
 	Token lexer.Token
 	Label string // 跳轉目標循環名稱（空 = 跳出當前循環）
+	// LabelKind 標記標籤種類，formatter 直接讀取決定輸出 `#` 前綴還是空格分隔，
+	// 避免依賴 isNumericLabel 字串內容啟發式。
+	LabelKind LabelKind
 	CommentedNode
 }
 
@@ -1156,6 +1225,9 @@ func (bs *BreakStatement) EndPos() lexer.Position { return posFromToken(bs.Token
 type ContinueStatement struct {
 	Token lexer.Token
 	Label string // 跳轉目標循環名稱（空 = 繼續當前循環）
+	// LabelKind 標記標籤種類，formatter 直接讀取決定輸出 `#` 前綴還是空格分隔，
+	// 避免依賴 isNumericLabel 字串內容啟發式。
+	LabelKind LabelKind
 	CommentedNode
 }
 
@@ -1167,6 +1239,11 @@ type ArrayLiteral struct {
 	Token    lexer.Token
 	Size     Expression
 	Elements []Expression
+	// WasSliceLiteral 標記此 ArrayLiteral 由 parser 從 SliceLiteral 轉換而來
+	// （如 `arr [3]u16 = [1, 2, 3]` 中的右值）。
+	// formatter 直接讀取此欄位輸出 slice 風格 `[1, 2, 3]`，
+	// 避免依賴 Size.Token.Literal == "[" 的隱式 token 約定。
+	WasSliceLiteral bool
 }
 
 func (al *ArrayLiteral) expressionNode()     {}

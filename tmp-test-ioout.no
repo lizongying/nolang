@@ -1,2 +1,0 @@
-n = io.out('out-no-newline ')
-n = io.out('concatenated\n')

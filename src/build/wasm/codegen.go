@@ -44,6 +44,19 @@ func (g *Generator) addLocal(name string, t ValType) int {
 	return idx
 }
 
+// redeclareLocal 用於變數重宣告（shadow）：無論舊 local 是否存在，
+// 一律配置新的 local index 並更新 name→index 映射。
+// 用於 `result = v: { ... }`（str）之後 `result = safe-div(...)`（i64）這類
+// 同名變數型別變更的場景。舊 local 成為孤兒（仍佔空間但不被引用），WASM 允許。
+func (g *Generator) redeclareLocal(name string, t ValType) int {
+	paramCount := len(g.funcParamNames[g.currentFunc])
+	idx := paramCount + len(g.localDecls[g.currentFunc])
+	g.locals[g.currentFunc][name] = idx
+	g.localDecls[g.currentFunc] = append(g.localDecls[g.currentFunc], t)
+	g.localTypeMap[g.currentFunc][name] = t
+	return idx
+}
+
 // lookupLocal 回傳當前函數中某變數的 local index。
 func (g *Generator) lookupLocal(name string) (int, bool) {
 	lmap := g.locals[g.currentFunc]
@@ -166,17 +179,25 @@ func (g *Generator) emitLetStmt(sb *bytes.Buffer, ls *parser.LetStatement) {
 	}
 	name := ls.Name.Value
 
-	// 決定目標型別
+	// 決定目標型別：總是從右值或顯式型別推斷，不復用舊 local 型別。
+	// 這正確處理同名變數重宣告（shadow）的型別變更場景。
 	targetType := I64
-	if _, ok := g.lookupLocal(name); ok {
-		targetType = g.localType(name)
-	} else if ls.Type != nil {
+	if ls.Type != nil {
 		targetType = ValTypeFromName(ls.Type)
 	} else if ls.Value != nil {
 		// Task 8：str/vec/struct 推斷為 I32（描述符指標）
 		switch ls.Value.(type) {
 		case *parser.StringLiteral, *parser.SliceLiteral, *parser.StructLiteral:
 			targetType = I32
+		case *parser.IfExpression:
+			// match desugar 後 `grade = x: { ... }` → IfExpression。
+			// kind 由 arm 末尾表達式決定；str/vec/struct → I32，否則按末尾型別推斷。
+			switch g.inferKind(ls.Value) {
+			case KindStr, KindVec, KindStruct:
+				targetType = I32
+			default:
+				targetType = g.inferIfResultType(ls.Value.(*parser.IfExpression))
+			}
 		default:
 			// 字串拼接結果（InfixExpression `-`）亦為 I32
 			if infix, ok := ls.Value.(*parser.InfixExpression); ok && infix.Operator == "-" {
@@ -202,12 +223,26 @@ func (g *Generator) emitLetStmt(sb *bytes.Buffer, ls *parser.LetStatement) {
 		}
 	}
 
-	idx := g.addLocal(name, targetType)
+	// 若 name 已存在且型別相同，復用舊 local；否則重宣告（shadow）。
+	var idx int
+	if existingIdx, ok := g.lookupLocal(name); ok && g.localType(name) == targetType {
+		idx = existingIdx
+	} else {
+		idx = g.redeclareLocal(name, targetType)
+	}
 	// Task 8：設定變數 kind 與型別資訊
 	g.setLocalKind(name, ls)
 
 	if ls.Value == nil {
 		// 僅宣告（如 `x i64`），不發射賦值。
+		return
+	}
+
+	// match desugar 後 IfExpression 作為右值：走 statement 形式，
+	// 每個 arm body 末尾的 ExpressionStatement 值賦給目標變數。
+	// 不能走 emitExpr → emitIfExpr 的 void 路徑（會 drop 掉末尾值）。
+	if ife, ok := ls.Value.(*parser.IfExpression); ok {
+		g.emitIfAssign(sb, ife, idx, targetType)
 		return
 	}
 
@@ -226,6 +261,73 @@ func (g *Generator) emitLetStmt(sb *bytes.Buffer, ls *parser.LetStatement) {
 
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(idx))
+}
+
+// emitIfAssign 把 IfExpression 作為帶結果的 statement 發射：
+// 每個 arm body 末尾的 ExpressionStatement 之值賦給 targetIdx，
+// 而非走 emitIfExpr 的 void 路徑（會 drop 掉末尾值）。
+// 用於 `grade = score: { ... }` desugar 後的 IfExpression。
+func (g *Generator) emitIfAssign(sb *bytes.Buffer, ife *parser.IfExpression, targetIdx int, targetType ValType) {
+	g.emitCondition(sb, ife.Condition)
+	g.emitIfVoid(sb)
+	g.emitArmBodyAssign(sb, ife.Consequence, targetIdx, targetType)
+	if ife.Alternative != nil {
+		g.emitElse(sb)
+		g.emitArmBodyAssign(sb, ife.Alternative, targetIdx, targetType)
+	}
+	g.emitEnd(sb)
+}
+
+// emitArmBodyAssign 發射 arm body，末尾 ExpressionStatement 的值賦給 targetIdx。
+// 若 body 是 elif 鏈包裝（單條 ExpressionStatement{IfExpression}），遞迴 emitIfAssign。
+func (g *Generator) emitArmBodyAssign(sb *bytes.Buffer, body *parser.BlockStatement, targetIdx int, targetType ValType) {
+	if body == nil || len(body.Statements) == 0 {
+		return
+	}
+	// elif 鏈：body 僅含單條 ExpressionStatement{IfExpression}
+	if len(body.Statements) == 1 {
+		if es, ok := body.Statements[0].(*parser.ExpressionStatement); ok {
+			if ife, ok := es.Expression.(*parser.IfExpression); ok {
+				g.emitIfAssign(sb, ife, targetIdx, targetType)
+				return
+			}
+		}
+	}
+	// 逐條發射；末尾 ExpressionStatement 改成 local.set targetIdx
+	lastIdx := len(body.Statements) - 1
+	for i, s := range body.Statements {
+		if i == lastIdx {
+			if es, ok := s.(*parser.ExpressionStatement); ok {
+				vt := g.emitExpr(sb, es.Expression)
+				g.emitConvert(sb, vt, targetType)
+				sb.WriteByte(OpLocalSet)
+				writeU32LEB(sb, uint32(targetIdx))
+				continue
+			}
+		}
+		g.emitStmt(sb, s)
+	}
+}
+
+// inferIfResultType 推斷 IfExpression（match desugar）的純量結果型別。
+// 僅在 inferKind 回傳 KindScalar 時使用：檢查 arm 末尾表達式是否為 Float。
+func (g *Generator) inferIfResultType(ife *parser.IfExpression) ValType {
+	if t := g.armBodyResultType(ife.Consequence); t != I64 {
+		return t
+	}
+	return g.armBodyResultType(ife.Alternative)
+}
+
+// armBodyResultType 回傳 arm body 末尾表達式的 ValType（純量推斷）。
+func (g *Generator) armBodyResultType(body *parser.BlockStatement) ValType {
+	if body == nil || len(body.Statements) == 0 {
+		return I64
+	}
+	last := body.Statements[len(body.Statements)-1]
+	if es, ok := last.(*parser.ExpressionStatement); ok {
+		return g.inferType(es.Expression)
+	}
+	return I64
 }
 
 // emitExprStmt 處理 expression statement：若是 print 呼叫則直接輸出，
@@ -423,6 +525,9 @@ func (g *Generator) emitExpr(sb *bytes.Buffer, expr parser.Expression) ValType {
 	case *parser.SliceLiteral:
 		// Task 8：vec 字面量 [e1, e2, ...]。
 		return g.emitVecLiteral(sb, e)
+	case *parser.ArrayLiteral:
+		// Task 8：arr 字面量（顯式陣列型別 [n]t = [...]），與 vec 字面量共用發射邏輯。
+		return g.emitVecLiteral(sb, &parser.SliceLiteral{Token: e.Token, Elements: e.Elements})
 	case *parser.AssignExpression:
 		// Task 8：u.name = value 或 v[i] = value（作為 expression statement 使用）。
 		g.emitAssignExpr(sb, e)

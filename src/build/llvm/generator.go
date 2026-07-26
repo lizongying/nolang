@@ -1428,7 +1428,9 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 			if !strings.Contains(s.Name.Value, ".") {
 				continue
 			}
-			fd = &parser.FunctionDefinition{Name: s.Name.Value}
+			// Name 包含 "." 表示這是方法定義（如 str.to-upper = (...) { }），
+			// 設置 IsMethodDef=true 以與 parseMethodDefinition 產出的節點一致。
+			fd = &parser.FunctionDefinition{Name: s.Name.Value, IsMethodDef: true}
 			params = fl.Parameters
 			body = fl.Body
 		default:
@@ -1441,10 +1443,12 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 		if n, ok := g.funcNumResults[fd.Name]; ok && n > 0 {
 			continue
 		}
-		// 對於方法定義（名稱含 "."），第一個參數是 receiver（self），
+		// 對於方法定義（IsMethodDef=true），第一個參數是 receiver（self），
 		// 它是指標傳遞、原地修改，不應視為輸出參數。跳過 self 進行分析。
+		// 直接讀取 IsMethodDef 欄位（parser 在方法定義位置顯式設置），
+		// 避免依賴 `strings.Contains(fd.Name, ".")` 字串子串啟發式。
 		analyzeParams := params
-		if strings.Contains(fd.Name, ".") && len(params) > 0 {
+		if fd.IsMethodDef && len(params) > 0 {
 			analyzeParams = params[1:]
 		}
 		// 使用源碼順序遍歷分析參數使用情況，區分輸入和輸出參數。

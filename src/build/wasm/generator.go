@@ -3,6 +3,7 @@ package wasm
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/lizongying/nolang/parser"
 )
@@ -316,6 +317,16 @@ func (g *Generator) emitFunctionBody(fd *parser.FunctionDefinition) {
 		lmap[name] = i
 		tmap[name] = paramTypes[i]
 		kmap[name] = KindScalar
+		// 方法定義的首個參數為 self（struct 指標）。
+		// 註冊其 struct 型別名稱，供方法體內 .field 脫糖為 self.field 時查找。
+		// 函數名形如 "user.birthday"，取 "." 前的部分作為 struct 名稱。
+		if i == 0 && name == "self" {
+			if dotIdx := strings.Index(fd.Name, "."); dotIdx > 0 {
+				structName := fd.Name[:dotIdx]
+				smap[name] = structName
+				kmap[name] = KindStruct
+			}
+		}
 	}
 	// 結果變數亦為 local（需宣告），自參數數量之後開始。
 	g.locals[fd.Name] = lmap

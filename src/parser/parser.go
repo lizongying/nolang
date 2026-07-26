@@ -495,9 +495,9 @@ type parserState struct {
 
 func New(lexer *lexer.Lexer) *Parser {
 	p := &Parser{
-		lexer:          lexer,
-		errors:         []string{},
-		ctx:            contextStack{CTX_GLOBAL},
+		lexer:           lexer,
+		errors:          []string{},
+		ctx:             contextStack{CTX_GLOBAL},
 		reportedIllegal: map[string]bool{},
 	}
 
@@ -1399,6 +1399,7 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 
 	// 修改名稱
 	funcDef.Name = fullName
+	funcDef.IsMethodDef = true
 
 	// 修復 funcSignatures 鍵：parseFunctionBody 以原始方法名存儲，需更新為完整名
 	if p.funcSignatures != nil {
@@ -1580,6 +1581,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	}
 	methodName := p.currentToken.Literal
 	def.Name = arrayType + "." + methodName
+	def.IsMethodDef = true
 	p.nextToken() // skip method name
 
 	// 新語法需要 = 作為函數定義標記
@@ -2478,9 +2480,18 @@ func (p *Parser) parseLetStatement() Statement {
 					}
 				} else {
 					if hasSize {
-						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+						stmt.Type = &ArrayType{
+							Token:      bracketToken,
+							Size:       sizeExpr,
+							Elem:       &NamedType{Token: bracketToken, Value: "i64", IsInferred: true},
+							IsInferred: true,
+						}
 					} else {
-						stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64"}}
+						stmt.Type = &SliceType{
+							Token:      bracketToken,
+							Elem:       &NamedType{Token: bracketToken, Value: "i64", IsInferred: true},
+							IsInferred: true,
+						}
 					}
 				}
 			}
@@ -2678,17 +2689,19 @@ func (p *Parser) parseLetStatement() Statement {
 			if slice, ok := stmt.Value.(*SliceLiteral); ok {
 				size := int64(len(slice.Elements))
 				stmt.Value = &ArrayLiteral{
-					Token:    slice.Token,
-					Size:     &IntegerLiteral{Token: slice.Token, Value: size, Raw: "?"},
-					Elements: slice.Elements,
+					Token:           slice.Token,
+					Size:            &IntegerLiteral{Token: slice.Token, Value: size, Raw: "?"},
+					Elements:        slice.Elements,
+					WasSliceLiteral: true,
 				}
 			}
 		} else if intLit, ok := at.Size.(*IntegerLiteral); ok && intLit.Value > 0 {
 			if slice, ok := stmt.Value.(*SliceLiteral); ok {
 				stmt.Value = &ArrayLiteral{
-					Token:    slice.Token,
-					Size:     &IntegerLiteral{Token: slice.Token, Value: intLit.Value, Raw: intLit.Raw},
-					Elements: slice.Elements,
+					Token:           slice.Token,
+					Size:            &IntegerLiteral{Token: slice.Token, Value: intLit.Value, Raw: intLit.Raw},
+					Elements:        slice.Elements,
+					WasSliceLiteral: true,
 				}
 			}
 		}
@@ -2712,32 +2725,37 @@ func (p *Parser) parseLetStatement() Statement {
 				inferredType = ValueTypeByte.String()
 			}
 			stmt.Type = &NamedType{
-				Token: nameToken,
-				Value: inferredType,
+				Token:      nameToken,
+				Value:      inferredType,
+				IsInferred: true,
 			}
 
 		case *FloatLiteral:
 			stmt.Type = &NamedType{
-				Token: nameToken,
-				Value: ValueTypeFloat64.String(),
+				Token:      nameToken,
+				Value:      ValueTypeFloat64.String(),
+				IsInferred: true,
 			}
 
 		case *StringLiteral:
 			stmt.Type = &NamedType{
-				Token: nameToken,
-				Value: ValueTypeString.String(),
+				Token:      nameToken,
+				Value:      ValueTypeString.String(),
+				IsInferred: true,
 			}
 
 		case *BooleanLiteral:
 			stmt.Type = &NamedType{
-				Token: nameToken,
-				Value: ValueTypeBool.String(),
+				Token:      nameToken,
+				Value:      ValueTypeBool.String(),
+				IsInferred: true,
 			}
 
 		case *CharLiteral:
 			stmt.Type = &NamedType{
-				Token: nameToken,
-				Value: ValueTypeChar.String(),
+				Token:      nameToken,
+				Value:      ValueTypeChar.String(),
+				IsInferred: true,
 			}
 			stmt.Value = &CharLiteral{
 				Token: v.Token,
@@ -2762,8 +2780,9 @@ func (p *Parser) parseLetStatement() Statement {
 				}
 			}
 			stmt.Type = &SliceType{
-				Token: nameToken,
-				Elem:  &NamedType{Token: nameToken, Value: elemValue},
+				Token:      nameToken,
+				Elem:       &NamedType{Token: nameToken, Value: elemValue, IsInferred: true},
+				IsInferred: true,
 			}
 
 		case *SliceExpression:
@@ -2788,7 +2807,7 @@ func (p *Parser) parseLetStatement() Statement {
 			// 來為 ok arm 生成正確的 it 型別窄化
 			if p.declaredVars == nil || !p.declaredVars[stmt.Name.Value] {
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
-					stmt.Type = buildType(inferred, nameToken)
+					stmt.Type = markInferred(buildType(inferred, nameToken))
 					if p.varDeclTypes == nil {
 						p.varDeclTypes = make(map[string]string)
 					}
@@ -3051,6 +3070,11 @@ func (p *Parser) parseContinueStatement() Statement {
 	// 可选的循环名称（#N 数字標籤或 IDENT 文本標籤）
 	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal
+		if p.currentToken.Type == lexer.LABEL {
+			stmt.LabelKind = LabelNumeric
+		} else {
+			stmt.LabelKind = LabelText
+		}
 		p.nextToken()
 	}
 
@@ -3066,6 +3090,11 @@ func (p *Parser) parseBreakStatement() Statement {
 	// 可选的循环名称（#N 数字標籤或 IDENT 文本標籤）
 	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal
+		if p.currentToken.Type == lexer.LABEL {
+			stmt.LabelKind = LabelNumeric
+		} else {
+			stmt.LabelKind = LabelText
+		}
 		p.nextToken()
 	}
 
@@ -3158,11 +3187,12 @@ func (p *Parser) parseExpressionStatement() Statement {
 		return &ExpressionStatement{
 			Token: tok,
 			Expression: &IfExpression{
-				Token:        tok,
-				Condition:    &IntegerLiteral{Token: tok, Value: 1}, // wildcard marker
-				Consequence:  conseq,
-				Alternative:  altBody,
-				IsStandalone: true,
+				Token:            tok,
+				Condition:        &IntegerLiteral{Token: tok, Value: 1}, // wildcard marker
+				Consequence:      conseq,
+				Alternative:      altBody,
+				IsStandalone:     true,
+				IsMatchWildcard:  true,
 			},
 		}
 	}
@@ -3733,6 +3763,11 @@ func (p *Parser) parseExpression(precedence int) Expression {
 				leftExp = p.parseCallExpression(leftExp)
 			}
 		} else if p.currentToken.Type == lexer.LBRACKET {
+			// 在 match arm inline body 上下文中，`[` 可能是下一個 arm 的 range pattern（如 [0..60)），
+			// 而非當前 body 的切片操作。檢測 `[` 後是否為 range pattern，若是則停止解析。
+			if p.ctx.contains(CTX_MATCH_ARM) && p.isRangePatternStart() {
+				break
+			}
 			// Detect array literal: 5[1, 2, 3, 4, 5] vs index/slice: nums[1..3]
 			if _, isInt := leftExp.(*IntegerLiteral); isInt {
 				state := p.saveState()
@@ -4302,6 +4337,50 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				ma.condition = &BooleanLiteral{Token: p.currentToken, Value: p.currentToken.Type == lexer.TRUE}
 				p.nextToken()
 			}
+			// 收集以 || 連接的多個數值 pattern：1 || 3 || 5 || 7
+			// 僅當第一個 pattern 已解析且 currentToken 為 LOR 時觸發。
+			// option pattern（nil/err/ok）的 || 已由前面專門分支處理，不會走到這裡。
+			if p.currentToken.Type == lexer.LOR && ma.condition != nil {
+				patterns := []Expression{ma.condition}
+				for p.currentToken.Type == lexer.LOR {
+					p.nextToken() // skip ||
+					// 解析下一個 pattern（與上面相同的 token 類型集合）
+					var next Expression
+					switch p.currentToken.Type {
+					case lexer.INT:
+						next = p.parseIntegerLiteral()
+					case lexer.FLOAT:
+						next = p.parseFloatLiteral()
+					case lexer.BYTE:
+						next = p.parseByteLiteral()
+					case lexer.STRING:
+						next = p.parseStringLiteral()
+					case lexer.TRUE, lexer.FALSE:
+						next = &BooleanLiteral{Token: p.currentToken, Value: p.currentToken.Type == lexer.TRUE}
+						p.nextToken()
+					case lexer.NIL:
+						next = p.parseNilLiteral()
+					case lexer.IDENT:
+						if p.peekToken.Type == lexer.LPAREN {
+							p.ctx.push(CTX_MATCH_ARM)
+							next = p.parseExpression(LOWEST)
+							p.ctx.pop()
+						} else {
+							next = p.parseIdentifier()
+						}
+					default:
+						// 非預期 token：停止收集，保留已收集的 patterns
+						goto doneCollect
+					}
+					if next != nil {
+						patterns = append(patterns, next)
+					}
+				}
+			doneCollect:
+				ma.multiValuePatterns = patterns
+				// 清空 condition：buildMatchDesugar 會優先檢查 multiValuePatterns
+				ma.condition = nil
+			}
 		} else {
 			p.ctx.push(CTX_MATCH_ARM)
 			ma.condition = p.parseExpression(LOWEST)
@@ -4716,10 +4795,11 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 		if arm.isWildcard {
 			if ifExpr == nil {
 				ifExpr = &IfExpression{
-					Token:       tok,
-					Condition:   &IntegerLiteral{Token: tok, Value: 1},
-					Consequence: arm.body,
-					IsBareMatch: true,
+					Token:           tok,
+					Condition:       &IntegerLiteral{Token: tok, Value: 1},
+					Consequence:     arm.body,
+					IsBareMatch:     true,
+					IsMatchWildcard: true,
 				}
 			} else {
 				if ifExpr.Alternative == nil {
@@ -4727,12 +4807,21 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 				}
 			}
 		} else {
+			var equalityPattern Expression
+			var rangePattern *RangeExpression
+			if rng, isRange := arm.condition.(*RangeExpression); isRange {
+				rangePattern = rng
+			} else {
+				equalityPattern = arm.condition
+			}
 			newIf := &IfExpression{
-				Token:       tok,
-				Condition:   arm.condition,
-				Consequence: arm.body,
-				Alternative: nil,
-				IsBareMatch: true,
+				Token:           tok,
+				Condition:       arm.condition,
+				Consequence:     arm.body,
+				Alternative:     nil,
+				IsBareMatch:     true,
+				EqualityPattern: equalityPattern,
+				RangePattern:    rangePattern,
 			}
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
@@ -4816,6 +4905,57 @@ func (p *Parser) scanForArrowAtDepth0() bool {
 	}
 }
 
+// isRangePatternStart 檢查當前 `[` 是否為 range pattern 的開始（如 [0..60)、[0..100]）。
+// 用於 match arm inline body 上下文中，區分「下一個 arm 的 range pattern」與「當前 body 的切片操作」。
+// 判斷依據：從 `[` 之後掃描到對應的 `]` 或 `)`，中途是否出現 `..` (ELLIPSIS)。
+// 注意：currentToken 已是 `[`，所以 depth 從 1 開始計算。
+func (p *Parser) isRangePatternStart() bool {
+	if p.currentToken.Type != lexer.LBRACKET {
+		return false
+	}
+	// currentToken 是 `[`，peekToken 是 `[` 之後的第一個 token。
+	// LookAhead(n) 返回 peekToken 之後第 n 個 token（即 currentToken 之後第 n+1 個）。
+	// 因此從 peekToken 開始掃描，用 LookAhead(n) 取得後續 token。
+	depth := 1 // currentToken `[` 已計入
+	hasEllipsis := false
+	skip := -1 // -1 表示 peekToken
+	for {
+		var tok lexer.Token
+		if skip < 0 {
+			tok = p.peekToken
+		} else {
+			tok = p.lexer.LookAhead(skip)
+		}
+		if tok.Type == lexer.EOF {
+			return false
+		}
+		if tok.Type == lexer.NEWLINE {
+			// range pattern 不跨行；遇到換行表示不是 arm 開頭
+			return false
+		}
+		switch tok.Type {
+		case lexer.LBRACKET:
+			depth++
+		case lexer.RBRACKET:
+			depth--
+			if depth == 0 {
+				return hasEllipsis
+			}
+		case lexer.RPAREN:
+			// `[a..b)` 形式：`[` 開頭但以 `)` 結尾。
+			// 此時 depth==1（`[` 未被 `]` 配對），若已看到 `..` 則為 range pattern。
+			if depth == 1 {
+				return hasEllipsis
+			}
+		case lexer.ELLIPSIS:
+			if depth == 1 {
+				hasEllipsis = true
+			}
+		}
+		skip++
+	}
+}
+
 // matchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）
 type matchArm struct {
 	condition           Expression
@@ -4826,6 +4966,7 @@ type matchArm struct {
 	isBlockBody         bool           // true = block form (newline after ->), false = inline expression form
 	pos                 lexer.Position // position of condition or -> for diagnostic use
 	multiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
+	multiValuePatterns  []Expression   // 1 || 3 || 5 → [1, 3, 5]; combined value patterns joined by ||
 }
 
 // returnKind — match arm body 的最後一個表達式回傳值分類
@@ -5231,12 +5372,13 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 						Right:    &Identifier{Token: tok, Value: "ok"},
 					}
 					newIf := &IfExpression{
-						Token:       tok,
-						Condition:   cond,
-						Consequence: arm.body,
-						Alternative: defaultBody,
-						IsBareMatch: true,
-						MatchedExpr: matched,
+						Token:           tok,
+						Condition:       cond,
+						Consequence:     arm.body,
+						Alternative:     defaultBody,
+						IsBareMatch:     true,
+						MatchedExpr:     matched,
+						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
 					}
 					ifExpr = newIf
 				} else {
@@ -5257,15 +5399,16 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 						Right:    &Identifier{Token: tok, Value: "ok"},
 					}
 					newIf := &IfExpression{
-						Token:       tok,
-						Condition:   cond,
-						Consequence: arm.body,
+						Token:           tok,
+						Condition:       cond,
+						Consequence:     arm.body,
 						Alternative: &BlockStatement{
 							Token:      tok,
 							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 						},
-						IsBareMatch: true,
-						MatchedExpr: matched,
+						IsBareMatch:     true,
+						MatchedExpr:     matched,
+						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
 					}
 					ifExpr = newIf
 				} else {
@@ -5275,8 +5418,14 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		} else {
 			// 構造 match 條件
 			var cond Expression
+			var rangePattern *RangeExpression
+			var equalityPattern Expression
+			var optionPatterns []string
+			var valuePatterns []Expression
+			var rawCond Expression
 			if len(arm.multiOptionPatterns) > 0 {
 				// Combined option patterns: (matched == p1) || (matched == p2) || ...
+				optionPatterns = arm.multiOptionPatterns
 				for i, pat := range arm.multiOptionPatterns {
 					patCond := &InfixExpression{
 						Token:    tok,
@@ -5295,8 +5444,30 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 						}
 					}
 				}
+			} else if len(arm.multiValuePatterns) > 0 {
+				// Combined value patterns: 1 || 3 || 5 → (matched == 1) || (matched == 3) || (matched == 5)
+				valuePatterns = arm.multiValuePatterns
+				for i, pat := range arm.multiValuePatterns {
+					patCond := &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    pat,
+					}
+					if i == 0 {
+						cond = patCond
+					} else {
+						cond = &InfixExpression{
+							Token:    tok,
+							Left:     cond,
+							Operator: "||",
+							Right:    patCond,
+						}
+					}
+				}
 			} else if arm.isRawCond {
 				// ok(cond) arm: condition is (matched == ok) && cond
+				rawCond = arm.condition
 				cond = &InfixExpression{
 					Token: tok,
 					Left: &InfixExpression{
@@ -5310,10 +5481,12 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 				}
 			} else if rng, isRange := arm.condition.(*RangeExpression); isRange {
 				// Range condition: [a..b] → matched >= a && matched <= b
+				rangePattern = rng
 				cond = p.desugarRangeCondition(tok, matched, rng)
 			} else {
 				// matched == condition
 				// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
+				equalityPattern = arm.condition
 				cond = &InfixExpression{
 					Token:    tok,
 					Left:     matched,
@@ -5322,12 +5495,17 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 				}
 			}
 			newIf := &IfExpression{
-				Token:       tok,
-				Condition:   cond,
-				Consequence: arm.body,
-				Alternative: nil,
-				IsBareMatch: true,
-				MatchedExpr: matched,
+				Token:           tok,
+				Condition:       cond,
+				Consequence:     arm.body,
+				Alternative:     nil,
+				IsBareMatch:     true,
+				MatchedExpr:     matched,
+				RangePattern:    rangePattern,
+				EqualityPattern: equalityPattern,
+				OptionPatterns:  optionPatterns,
+				ValuePatterns:   valuePatterns,
+				RawCond:         rawCond,
 			}
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
@@ -5350,11 +5528,12 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 		if defaultBody != nil {
 			// 唯一 arm 是 wildcard：用 if 1 {} 包裝（無法避免）
 			ifExpr = &IfExpression{
-				Token:       tok,
-				Condition:   &IntegerLiteral{Token: tok, Value: 1},
-				Consequence: defaultBody,
-				IsBareMatch: true,
-				MatchedExpr: matched,
+				Token:            tok,
+				Condition:        &IntegerLiteral{Token: tok, Value: 1},
+				Consequence:      defaultBody,
+				IsBareMatch:      true,
+				MatchedExpr:      matched,
+				IsMatchWildcard:  true,
 			}
 			if defaultDotValBody == defaultBody {
 				ifExpr.DotValBody = defaultBody
@@ -5368,8 +5547,8 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 	// so that `it` is bound before the condition is evaluated.
 	if hasRawCond && itStmt != nil {
 		ifExpr = &IfExpression{
-			Token:     tok,
-			Condition: &IntegerLiteral{Token: tok, Value: 1},
+			Token:           tok,
+			Condition:       &IntegerLiteral{Token: tok, Value: 1},
 			Consequence: &BlockStatement{
 				Token: tok,
 				Statements: []Statement{
@@ -5377,8 +5556,9 @@ func (p *Parser) buildMatchDesugar(tok lexer.Token, matched Expression, arms []m
 					&ExpressionStatement{Token: tok, Expression: ifExpr},
 				},
 			},
-			IsBareMatch: true,
-			MatchedExpr: matched,
+			IsBareMatch:     true,
+			MatchedExpr:     matched,
+			IsMatchWrapper:  true,
 		}
 	}
 
@@ -5993,6 +6173,7 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 				Condition:   &Identifier{Token: p.currentToken, Value: "true"},
 				Consequence: body,
 				Alternative: alternative,
+				IsElif:      true,
 			}
 			return &BlockStatement{
 				Token: body.Token,
@@ -6061,6 +6242,7 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 		Condition:   condition,
 		Consequence: consequence,
 		Alternative: alternative,
+		IsElif:      true,
 	}
 
 	// Wrap in a block statement so it plugs into IfExpression.Alternative
@@ -6558,6 +6740,11 @@ func (p *Parser) parseStarBreakOrExpr() Statement {
 		p.nextToken() // skip MUL
 		if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 			stmt.Label = p.currentToken.Literal
+			if p.currentToken.Type == lexer.LABEL {
+				stmt.LabelKind = LabelNumeric
+			} else {
+				stmt.LabelKind = LabelText
+			}
 			p.nextToken()
 		}
 		return stmt
@@ -6572,6 +6759,11 @@ func (p *Parser) parseStarStarContinue() Statement {
 	p.nextToken() // skip STAR_STAR
 	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal
+		if p.currentToken.Type == lexer.LABEL {
+			stmt.LabelKind = LabelNumeric
+		} else {
+			stmt.LabelKind = LabelText
+		}
 		p.nextToken()
 	}
 	return stmt
@@ -6670,6 +6862,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 	// Store the IfExpression in Condition so the AST still carries the
 	// original conditional semantics; transpiler can recognise this pattern.
 	fs.Condition = ifExpr
+	// 顯式標記此 ForStatement 為條件包裝合成，避免下游依賴指標相等啟發式。
+	fs.IsCondWrapper = true
 	return fs
 }
 
@@ -8949,6 +9143,7 @@ func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
 			Results:       []*Parameter{},
 		},
 		ColonSyntax: true,
+		IsMethodDef: true,
 	}
 
 	p.parseFunctionBody(def)
@@ -9097,6 +9292,28 @@ func (p *Parser) expectPeek(t lexer.TokenType) bool {
 	return false
 }
 
+// markInferred 遞迴標記型別節點為 parser 推斷（非源碼顯式標注）。
+// 用於從表達式推斷變數型別的場景（如 CallExpression 返回型別），
+// 讓 formatter 直接讀取 IsInferred 欄位而非依賴 token 位置相等啟發式。
+func markInferred(t Type) Type {
+	switch typ := t.(type) {
+	case *NamedType:
+		typ.IsInferred = true
+	case *ArrayType:
+		typ.IsInferred = true
+		markInferred(typ.Elem)
+	case *SliceType:
+		typ.IsInferred = true
+		markInferred(typ.Elem)
+	case *NullableType:
+		typ.IsInferred = true
+		markInferred(typ.Type)
+	case *PointerType:
+		markInferred(typ.Type)
+	}
+	return t
+}
+
 // buildType 將型別字串轉換為 Type 節點
 func buildType(typeStr string, tok lexer.Token) Type {
 	if typeStr == "" {
@@ -9205,6 +9422,8 @@ func parseMapTypeString(s string, tok lexer.Token) *MapType {
 }
 
 // addImplicitGeneric 將單字母 a-z 加入泛型參數列表（防重複）
+// 注入的 Identifier 設置 IsImplicitGeneric=true，讓 formatter 直接讀取此欄位
+// 過濾隱式泛型，避免依賴命名規則啟發式。
 func addImplicitGeneric(name string, def *FunctionDefinition) {
 	if len(name) != 1 || name[0] < 'a' || name[0] > 'z' {
 		return
@@ -9214,7 +9433,7 @@ func addImplicitGeneric(name string, def *FunctionDefinition) {
 			return
 		}
 	}
-	def.GenericParams = append(def.GenericParams, &Identifier{Value: name})
+	def.GenericParams = append(def.GenericParams, &Identifier{Value: name, IsImplicitGeneric: true})
 }
 
 // detectImplicitGeneric 從型別節點中推斷隱式泛型參數（單字母 a-z）

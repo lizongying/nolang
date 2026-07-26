@@ -30,7 +30,14 @@ const NUMBER = /^0x[0-9a-fA-F]+|^0o[0-7]+|^0b[01]+|^\d+\.\d+|^\d+/;
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_-]*/;
 
-interface NolangState {}
+// 解析器狀態：追蹤是否在單引號字串內，以及字串內 {name:spec} 欄位的解析階段。
+//   phase 0 = 一般模式
+//   phase 1 = 單引號字串內（字面段落）
+//   phase 2 = 欄位名稱（剛讀完 '{'，等待讀取 name）
+//   phase 3 = 欄位規格（已讀完 name，等待 '}' 結束）
+interface NolangState {
+  phase?: number;
+}
 
 function isUpperIdentStart(ch: string | undefined): boolean {
   return ch !== undefined && ch >= 'A' && ch <= 'Z';
@@ -48,7 +55,13 @@ export const nolangLanguage = StreamLanguage.define<NolangState>({
   startState() {
     return {};
   },
-  token(stream: StringStream, _state: NolangState): string | null {
+  token(stream: StringStream, state: NolangState): string | null {
+    // 字串內：依欄位階段分派
+    const phase = state.phase ?? 0;
+    if (phase === 1) return tokenInStringLiteral(stream, state);
+    if (phase === 2) return tokenFieldName(stream, state);
+    if (phase === 3) return tokenFieldSpec(stream, state);
+
     if (stream.eatSpace()) return null;
 
     const ch = stream.peek();
@@ -65,18 +78,12 @@ export const nolangLanguage = StreamLanguage.define<NolangState>({
       return 'comment';
     }
 
-    // Single-quoted strings with `\` escapes.
+    // Single-quoted strings with `\` escapes. 進入字串階段，支援
+    // 具名格式欄位 {name} / {name:spec} 的變數高亮。
     if (ch === "'") {
       stream.next();
-      while (!stream.eol()) {
-        const c = stream.next();
-        if (c === '\\') {
-          if (!stream.eol()) stream.next();
-        } else if (c === "'") {
-          break;
-        }
-      }
-      return 'string';
+      state.phase = 1;
+      return tokenInStringLiteral(stream, state);
     }
 
     // Double-quoted char literals (single rune), e.g. "中".
@@ -130,3 +137,60 @@ export const nolangLanguage = StreamLanguage.define<NolangState>({
     commentTokens: {line: ';'},
   },
 });
+
+// tokenInStringLiteral 處理單引號字串內的字面段落。
+// 遇到 `{`（非 `{{` 轉義）切換到欄位名稱階段；遇到 `'` 結束字串。
+function tokenInStringLiteral(stream: StringStream, state: NolangState): string {
+  while (!stream.eol()) {
+    const c = stream.peek();
+    if (c === '\\') {
+      stream.next();
+      if (!stream.eol()) stream.next();
+      continue;
+    }
+    if (c === "'") {
+      stream.next();
+      state.phase = 0;
+      return 'string';
+    }
+    if (c === '{') {
+      // `{{` 為轉義字面大括號，作為普通字串內容處理
+      if (stream.match('{{')) continue;
+      stream.next();
+      state.phase = 2;
+      return 'string';
+    }
+    stream.next();
+  }
+  return 'string';
+}
+
+// tokenFieldName 讀取欄位名稱並以 variableName 高亮，然後切換到規格階段。
+function tokenFieldName(stream: StringStream, state: NolangState): string {
+  if (stream.match(IDENT)) {
+    state.phase = 3;
+    return 'variableName';
+  }
+  // 無有效識別字：回退到規格階段
+  state.phase = 3;
+  return tokenFieldSpec(stream, state);
+}
+
+// tokenFieldSpec 吃掉欄位規格（:spec）直到 `}`，然後回到字串字面階段。
+function tokenFieldSpec(stream: StringStream, state: NolangState): string {
+  while (!stream.eol()) {
+    const c = stream.peek();
+    if (c === '\\') {
+      stream.next();
+      if (!stream.eol()) stream.next();
+      continue;
+    }
+    if (c === '}') {
+      stream.next();
+      state.phase = 1;
+      return 'string';
+    }
+    stream.next();
+  }
+  return 'string';
+}

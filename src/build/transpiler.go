@@ -2512,7 +2512,8 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			Parameters:    newParams,
 			Results:       newResults,
 		},
-		Body: newBody,
+		Body:        newBody,
+		IsMethodDef: fd.IsMethodDef,
 	}
 }
 
@@ -2548,9 +2549,10 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{
-			Token: s.Token,
-			Body:  substituteBody(s.Body, subst),
-			Label: s.Label,
+			Token:          s.Token,
+			Body:           substituteBody(s.Body, subst),
+			Label:          s.Label,
+			IsCondWrapper:  s.IsCondWrapper,
 		}
 		if s.IterRange != nil {
 			newFor.IterRange = &parser.IterationExpr{
@@ -2654,12 +2656,29 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 			Expression: substituteExpr(e.Expression, subst),
 		}
 	case *parser.IfExpression:
+		var valuePatterns []parser.Expression
+		if len(e.ValuePatterns) > 0 && len(subst) > 0 {
+			valuePatterns = make([]parser.Expression, len(e.ValuePatterns))
+			for i, vp := range e.ValuePatterns {
+				valuePatterns[i] = substituteExpr(vp, subst)
+			}
+		} else {
+			valuePatterns = e.ValuePatterns
+		}
 		newIf := &parser.IfExpression{
-			Token:        e.Token,
-			Condition:    substituteExpr(e.Condition, subst),
-			IsBareMatch:  e.IsBareMatch,
-			MatchedExpr:  substituteExpr(e.MatchedExpr, subst),
-			IsStandalone: e.IsStandalone,
+			Token:            e.Token,
+			Condition:        substituteExpr(e.Condition, subst),
+			IsBareMatch:      e.IsBareMatch,
+			MatchedExpr:      substituteExpr(e.MatchedExpr, subst),
+			IsStandalone:     e.IsStandalone,
+			RangePattern:     e.RangePattern,
+			IsMatchWildcard:  e.IsMatchWildcard,
+			EqualityPattern:  substituteExpr(e.EqualityPattern, subst),
+			OptionPatterns:   e.OptionPatterns,
+			ValuePatterns:    valuePatterns,
+			RawCond:          substituteExpr(e.RawCond, subst),
+			IsMatchWrapper:   e.IsMatchWrapper,
+			IsElif:           e.IsElif,
 		}
 		if e.Consequence != nil {
 			newIf.Consequence = substituteBody(e.Consequence, subst)
@@ -2720,7 +2739,7 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 	switch typ := t.(type) {
 	case *parser.NamedType:
 		if val, ok := subst[typ.Value]; ok {
-			return &parser.NamedType{Token: typ.Token, Value: val}
+			return &parser.NamedType{Token: typ.Token, Value: val, IsInferred: typ.IsInferred}
 		}
 		return typ
 	case *parser.ArrayType:
@@ -2733,13 +2752,13 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 			}
 		}
 		newElem := substituteType(typ.Elem, subst)
-		return &parser.ArrayType{Token: typ.Token, Size: newSize, Elem: newElem}
+		return &parser.ArrayType{Token: typ.Token, Size: newSize, Elem: newElem, IsInferred: typ.IsInferred}
 	case *parser.SliceType:
 		newElem := substituteType(typ.Elem, subst)
-		return &parser.SliceType{Token: typ.Token, Elem: newElem}
+		return &parser.SliceType{Token: typ.Token, Elem: newElem, IsInferred: typ.IsInferred}
 	case *parser.NullableType:
 		newInner := substituteType(typ.Type, subst)
-		return &parser.NullableType{Token: typ.Token, Type: newInner}
+		return &parser.NullableType{Token: typ.Token, Type: newInner, IsInferred: typ.IsInferred}
 	case *parser.PointerType:
 		newInner := substituteType(typ.Type, subst)
 		return &parser.PointerType{Token: typ.Token, Type: newInner}
@@ -5062,7 +5081,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok || !strings.Contains(fd.Name, ".") {
+		if !ok || !fd.IsMethodDef {
 			continue
 		}
 		implType, implMethod, ok := splitDottedMethodName(fd.Name)
@@ -6092,10 +6111,12 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		}
 		// Labeled-conditional wrapper: `#2 val: { ... }` is encoded by
 		// parseLabeledStatement as ForStatement{Condition: *IfExpression,
-		// Body: Consequence}. Skip the synthetic Condition check and let
-		// the Body be processed instead.
-		if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
-			if ifExpr.Condition != nil {
+		// Body: Consequence, IsCondWrapper: true}. Skip the synthetic
+		// Condition check and let the Body be processed instead.
+		// 直接讀取 IsCondWrapper 欄位（parser 在合成位置顯式設置），
+		// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
+		if s.IsCondWrapper {
+			if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && ifExpr.Condition != nil {
 				if id, ok := ifExpr.Condition.(*parser.Identifier); ok {
 					localDefs[id.Value] = true
 				}
@@ -6840,7 +6861,7 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 	moduleConsts := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if !strings.Contains(fd.Name, ".") {
+			if !fd.IsMethodDef {
 				moduleFns[fd.Name] = true
 			}
 		}
@@ -7129,7 +7150,7 @@ func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 	definedMethods := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if strings.Contains(fd.Name, ".") {
+			if fd.IsMethodDef {
 				definedMethods[fd.Name] = true
 			}
 		}

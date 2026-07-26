@@ -303,8 +303,6 @@ export default function Playground(): React.JSX.Element {
       if (formatted !== null) {
         setCode(formatted);
         setStderr('');
-      } else {
-        setStderr('Format: no changes (or parse errors present).');
       }
     } catch (e) {
       setStderr(`Format failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -322,6 +320,7 @@ export default function Playground(): React.JSX.Element {
     setStderr('');
     setDiagnostics([]);
     setRunMarkers([]);
+    setStatus('idle');
   };
 
   const jumpToDiagnostic = (d: LspDiagnostic) => {

@@ -91,6 +91,28 @@ func (g *Generator) inferKind(expr parser.Expression) ValKind {
 			}
 		}
 		return KindScalar
+	case *parser.IfExpression:
+		// match desugar 後 `grade = x: { ... }` 變成 `grade = if {...} else {...}`。
+		// 整體 kind 由最後一個 arm 的結果表達式決定（consequence 與 alternative 應一致）。
+		// 優先看 consequence 末尾；若為空，再看 alternative。
+		if k := g.ifArmResultKind(e.Consequence); k != KindScalar {
+			return k
+		}
+		return g.ifArmResultKind(e.Alternative)
+	}
+	return KindScalar
+}
+
+// ifArmResultKind 回傳 if/match 分支 body 末尾表達式的 kind。
+// body 為 nil 或不含 ExpressionStatement 時回傳 KindScalar。
+// 若 body 是 elif 鏈包裝（單條 ExpressionStatement{IfExpression}），遞迴推斷。
+func (g *Generator) ifArmResultKind(body *parser.BlockStatement) ValKind {
+	if body == nil || len(body.Statements) == 0 {
+		return KindScalar
+	}
+	last := body.Statements[len(body.Statements)-1]
+	if es, ok := last.(*parser.ExpressionStatement); ok {
+		return g.inferKind(es.Expression)
 	}
 	return KindScalar
 }
@@ -303,8 +325,9 @@ func (g *Generator) emitStrConcat(sb *bytes.Buffer) {
 // ---- 方法呼叫 ----
 
 // emitMultiAssignStmt 處理多目標賦值：v1, v2 = expr。
-// 目前支援：
+// 支援：
 //   - rand.rand(state) → 2 個 i64 回傳值（new-state, r），分配給 2 個 Identifier 目標
+//   - 用戶多返回值函數 swap(5, 9) → a, b（結果數量須等於目標數量）
 //
 // 對其他情況，發射 expr 後丟棄結果（最小可用）。
 func (g *Generator) emitMultiAssignStmt(sb *bytes.Buffer, mas *parser.MultiAssignStatement) {
@@ -333,6 +356,31 @@ func (g *Generator) emitMultiAssignStmt(sb *bytes.Buffer, mas *parser.MultiAssig
 				}
 			}
 		}
+		// 用戶多返回值函數：swap(5, 9) → a, b
+		if ident, ok := ce.Function.(*parser.Identifier); ok {
+			if funcIdx, ok := g.funcTable[ident.Value]; ok {
+				results := g.funcResults[ident.Value]
+				if len(results) == n {
+					// 發射引數
+					for _, arg := range ce.Arguments {
+						g.emitExpr(sb, arg)
+					}
+					// call：堆疊留下 n 個回傳值，最後一個在頂端
+					sb.WriteByte(OpCall)
+					writeU32LEB(sb, funcIdx)
+					// 依序分配：第 n 個目標先（在堆疊頂端），第 1 個目標後
+					for i := n - 1; i >= 0; i-- {
+						if id, ok := mas.Targets[i].(*parser.Identifier); ok {
+							idx := g.addLocal(id.Value, results[i])
+							g.localTypeMap[g.currentFunc][id.Value] = results[i]
+							sb.WriteByte(OpLocalSet)
+							writeU32LEB(sb, uint32(idx))
+						}
+					}
+					return
+				}
+			}
+		}
 	}
 	// 其他情況：發射 value 並丟棄
 	t := g.emitExpr(sb, mas.Value)
@@ -342,15 +390,39 @@ func (g *Generator) emitMultiAssignStmt(sb *bytes.Buffer, mas *parser.MultiAssig
 }
 
 // emitMethodCall 處理 receiver.method(args) 方法呼叫。
-// 區分兩種情況：
+// 區分三種情況：
 //  1. 模組限定呼叫：receiver 是未定義的識別字且匹配已知模組（math/rand），
 //     走 emitModuleCall。
-//  2. 真正的方法呼叫：如 x.to-str()，走 emitToStrMethod。
+//  2. 用戶定義方法：receiver 是 local 變數，且 "structType.method" 在 funcTable 中，
+//     發射 call（self 作為首個參數）。
+//  3. 內建方法：如 x.to-str()，走 emitToStrMethod。
 func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, args []parser.Expression) ValType {
 	// 判斷是否為模組限定呼叫（receiver 不是 local 變數）
 	if ident, ok := de.Receiver.(*parser.Identifier); ok {
 		if _, isLocal := g.lookupLocal(ident.Value); !isLocal {
 			return g.emitModuleCall(sb, ident.Value, de.Property, args)
+		}
+		// 用戶定義方法：查 "structType.method" 是否在 funcTable 中
+		if structName, ok := g.localStructTypeMap[g.currentFunc][ident.Value]; ok {
+			fullName := structName + "." + de.Property
+			if funcIdx, ok := g.funcTable[fullName]; ok {
+				// 發射 self 作為首個參數
+				sb.WriteByte(OpLocalGet)
+				if idx, ok := g.lookupLocal(ident.Value); ok {
+					writeU32LEB(sb, uint32(idx))
+				}
+				// 發射其餘參數
+				for _, arg := range args {
+					g.emitExpr(sb, arg)
+				}
+				sb.WriteByte(OpCall)
+				writeU32LEB(sb, funcIdx)
+				results := g.funcResults[fullName]
+				if len(results) > 0 {
+					return results[0]
+				}
+				return Void
+			}
 		}
 	}
 	switch de.Property {

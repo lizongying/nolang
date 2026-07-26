@@ -668,19 +668,19 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 		}
 		f.write("]")
 		// Only output element type if explicitly written (not inferred default i64)
-		if at.Elem != nil && !typeTokenInferred(at.Token, at.Elem) {
+		if at.Elem != nil && !at.IsInferred && !elemTypeInferred(at.Elem) {
 			f.write(at.Elem.String())
 		}
-	} else if st, ok := s.Type.(*parser.SliceType); ok && !isInferredSliceType(s) {
+	} else if st, ok := s.Type.(*parser.SliceType); ok && !st.IsInferred {
 		f.write(" []")
 		// Only output element type if explicitly written (not inferred default i64)
-		if st.Elem != nil && !typeTokenInferred(st.Token, st.Elem) {
+		if st.Elem != nil && !elemTypeInferred(st.Elem) {
 			f.write(st.Elem.String())
 		}
-	} else if nt, ok := s.Type.(*parser.NamedType); ok && nt.Value != "" && !isInferredType(s) {
+	} else if nt, ok := s.Type.(*parser.NamedType); ok && nt.Value != "" && !nt.IsInferred {
 		f.write(" ")
 		f.write(nt.Value)
-	} else if nt, ok := s.Type.(*parser.NullableType); ok && !isInferredNullableType(s) {
+	} else if nt, ok := s.Type.(*parser.NullableType); ok && !nt.IsInferred {
 		f.write(" ?")
 		f.write(nt.Type.String())
 	} else if mt, ok := s.Type.(*parser.MapType); ok {
@@ -745,66 +745,26 @@ func (f *formatter) formatMultiAssignStatement(s *parser.MultiAssignStatement) {
 	}
 }
 
-// isSliceConverted checks if ArrayLiteral was converted from SliceLiteral
-// (Size.Token.Literal == "[" indicates the original LBRACKET token)
+// isSliceConverted checks if ArrayLiteral was converted from SliceLiteral.
+// 直接讀取 ArrayLiteral.WasSliceLiteral 欄位（由 parser 在轉換時設置），
+// 避免依賴 Size.Token.Literal == "[" 的隱式 token 約定。
 func isSliceConverted(arr *parser.ArrayLiteral) bool {
-	if arr.Size == nil {
-		return false
-	}
-	if intLit, ok := arr.Size.(*parser.IntegerLiteral); ok {
-		return intLit.Token.Literal == "["
-	}
-	return false
+	return arr.WasSliceLiteral
 }
 
-// typeTokenInferred checks if a child type's token has the same position as the parent's token,
-// indicating the child was inferred/defaulted by the parser.
-func typeTokenInferred(parentToken lexer.Token, childType parser.Type) bool {
-	pos := childType.Pos()
-	return pos.Line == parentToken.Line && pos.Column == parentToken.Column
-}
-
-// isInferredType checks if the type was inferred by the parser (not written in source).
-// The parser sets Type.Token to the same position as Name.Token for inferred types.
-func isInferredType(s *parser.LetStatement) bool {
-	if s.Type == nil || s.Name == nil {
-		return false
-	}
-	nt, ok := s.Type.(*parser.NamedType)
-	if !ok {
-		return false
-	}
-	return nt.Token.Line == s.Name.Token.Line &&
-		nt.Token.Column == s.Name.Token.Column
-}
-
-// isInferredSliceType 判斷 SliceType 是否為 parser 推斷（非源碼顯式標注）。
-// 推斷型別的 token 位置會等於變數名位置（如 `SUBST = [...]` 推斷為 []str）。
-func isInferredSliceType(s *parser.LetStatement) bool {
-	if s.Type == nil || s.Name == nil {
-		return false
-	}
-	st, ok := s.Type.(*parser.SliceType)
-	if !ok {
-		return false
-	}
-	return st.Token.Line == s.Name.Token.Line &&
-		st.Token.Column == s.Name.Token.Column
-}
-
-// isInferredNullableType 判斷 NullableType 是否為從推斷型別（如 i8.MIN）而來
-// 推斷型別的位置會等於變數名位置
-func isInferredNullableType(s *parser.LetStatement) bool {
-	if s.Type == nil || s.Name == nil {
-		return false
-	}
-	nt, ok := s.Type.(*parser.NullableType)
-	if !ok {
-		return false
-	}
-	if inner, ok := nt.Type.(*parser.NamedType); ok {
-		return inner.Token.Line == s.Name.Token.Line &&
-			inner.Token.Column == s.Name.Token.Column
+// elemTypeInformed 判斷陣列/切片的元素型別是否為 parser 推斷。
+// 直接讀取 IsInferred 欄位（parser 在推斷位置顯式設置），
+// 避免依賴 token 位置相等啟發式。
+func elemTypeInferred(t parser.Type) bool {
+	switch typ := t.(type) {
+	case *parser.NamedType:
+		return typ.IsInferred
+	case *parser.SliceType:
+		return typ.IsInferred
+	case *parser.ArrayType:
+		return typ.IsInferred
+	case *parser.NullableType:
+		return typ.IsInferred
 	}
 	return false
 }
@@ -861,17 +821,20 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	f.write("}")
 }
 
-// isMethodDef reports whether a function definition is a method (name contains '.').
+// isMethodDef reports whether a function definition is a method.
+// 直接讀取 IsMethodDef 欄位（parser 在方法定義位置顯式設置），
+// 避免依賴 `strings.Contains(Name, ".")` 的字串子串啟發式。
 func isMethodDef(s *parser.FunctionDefinition) bool {
-	return strings.Contains(s.Name, ".")
+	return s.IsMethodDef
 }
 
-// filterExplicitGenericParams 過濾隱式推斷的泛型參數，只保留明確聲明的泛型參數
-// 隱式泛型為單字母小寫 a-z，由 detectImplicitGeneric 推斷
+// filterExplicitGenericParams 過濾隱式推斷的泛型參數，只保留明確聲明的泛型參數。
+// 直接讀取 Identifier.IsImplicitGeneric 欄位（由 addImplicitGeneric 設置），
+// 避免依賴「單字母小寫 a-z 視為隱式」的命名規則啟發式。
 func filterExplicitGenericParams(params []*parser.Identifier) []string {
 	var result []string
 	for _, p := range params {
-		if len(p.Value) != 1 || p.Value[0] < 'a' || p.Value[0] > 'z' {
+		if !p.IsImplicitGeneric {
 			result = append(result, p.Value)
 		}
 	}
@@ -1070,8 +1033,8 @@ func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 	// Standalone if-then: `cond -> body` (without enclosing { })
 	if e.IsStandalone {
-		// Wildcard standalone: -> body (Condition is IntegerLiteral(1) marker)
-		if intLit, ok := e.Condition.(*parser.IntegerLiteral); ok && intLit.Value == 1 {
+		// Wildcard standalone: -> body
+		if e.IsMatchWildcard {
 			// Empty body: just output -> (no trailing space)
 			if e.Consequence == nil || len(e.Consequence.Statements) == 0 {
 				f.write("->")
@@ -1152,6 +1115,18 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 //   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
 //   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
 func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
+	// IsMatchWrapper: rawCond 包裝層 `if 1 { it = matched; <if-chain> }`
+	// 跳過包裝層，直接格式化內部的 if-chain。
+	if e.IsMatchWrapper {
+		for _, stmt := range e.Consequence.Statements {
+			if es, ok := stmt.(*parser.ExpressionStatement); ok {
+				if inner, ok := es.Expression.(*parser.IfExpression); ok && inner.IsBareMatch {
+					f.formatBareMatchExpression(inner)
+					return
+				}
+			}
+		}
+	}
 	if e.MatchedExpr != nil {
 		f.formatExpression(e.MatchedExpr)
 		f.write(": {")
@@ -1182,10 +1157,11 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 		// Wildcard arm 的 Alternative 是直接的 BlockStatement
 		// 模擬 IfExpression 包裝後調用 writeBareMatchArm
 		wildcardIf := &parser.IfExpression{
-			Token:       e.Token,
-			Condition:   &parser.IntegerLiteral{Token: e.Token, Value: 1},
-			Consequence: e.Alternative,
-			IsBareMatch: true,
+			Token:            e.Token,
+			Condition:        &parser.IntegerLiteral{Token: e.Token, Value: 1},
+			Consequence:      e.Alternative,
+			IsBareMatch:      true,
+			IsMatchWildcard:  true,
 		}
 		if e.DotValBody == e.Alternative {
 			wildcardIf.DotValBody = e.Alternative
@@ -1198,82 +1174,12 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 	f.write("}")
 }
 
-// extractOptionPatterns extracts option pattern names from an || chain of
-// (matched == pattern) comparisons. Returns nil if the chain doesn't match
-// the expected form.
-func extractOptionPatterns(expr *parser.InfixExpression, matched parser.Expression) []string {
-	mid, ok := matched.(*parser.Identifier)
-	if !ok {
-		return nil
-	}
-	var patterns []string
-	var collect func(e parser.Expression) bool
-	collect = func(e parser.Expression) bool {
-		if inf, ok := e.(*parser.InfixExpression); ok {
-			if inf.Operator == "==" {
-				if id, ok := inf.Left.(*parser.Identifier); ok && id.Value == mid.Value {
-					if right, ok := inf.Right.(*parser.Identifier); ok {
-						patterns = append(patterns, right.Value)
-						return true
-					}
-				}
-				return false
-			}
-			if inf.Operator == "||" {
-				return collect(inf.Left) && collect(inf.Right)
-			}
-		}
-		return false
-	}
-	if collect(expr) && len(patterns) >= 2 {
-		return patterns
-	}
-	return nil
-}
-
 // writeBareMatchArm 輸出單個 arm。
 // 對於非 wildcard：cond -> body
 // 對於 wildcard：-> body
 // 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
 // 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
 func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
-	// 判斷是否為 wildcard（condition 為 IntegerLiteral(1) 標記）
-	isWildcard := false
-	if intLit, ok := e.Condition.(*parser.IntegerLiteral); ok && intLit.Value == 1 {
-		isWildcard = true
-	}
-	f.newline()
-	if isWildcard {
-		if e.DotValBody != nil && e.DotValBody == e.Consequence {
-			f.write("ok ->")
-		} else {
-			f.write("->")
-		}
-	} else {
-		// For matched matches, strip `matched == ` from condition to show just pattern
-		if e.MatchedExpr != nil {
-			if infix, ok := e.Condition.(*parser.InfixExpression); ok && infix.Operator == "==" {
-				if id, ok := infix.Left.(*parser.Identifier); ok {
-					if mid, ok := e.MatchedExpr.(*parser.Identifier); ok && id.Value == mid.Value {
-						f.formatExpression(infix.Right)
-						f.write(" ->")
-						goto writeBody
-					}
-				}
-			}
-			// Combined option patterns: (matched == nil) || (matched == err)
-			if infix, ok := e.Condition.(*parser.InfixExpression); ok && infix.Operator == "||" {
-				if patterns := extractOptionPatterns(infix, e.MatchedExpr); patterns != nil {
-					f.write(strings.Join(patterns, " || "))
-					f.write(" ->")
-					goto writeBody
-				}
-			}
-		}
-		f.formatExpression(e.Condition)
-		f.write(" ->")
-	}
-writeBody:
 	// 過濾 compiler 注入的合成語句（如 `it = matched`）
 	statements := make([]parser.Statement, 0, len(e.Consequence.Statements))
 	for _, stmt := range e.Consequence.Statements {
@@ -1282,26 +1188,112 @@ writeBody:
 		}
 		statements = append(statements, stmt)
 	}
+
+	// 判斷是否為可內聯的簡單 body：單語句、無塊級註釋、類型為表達式/let/return/break/continue。
+	// 注意：body 語句的 doc comment（arm 前的註釋，如 `; F grade`）不阻止內聯，
+	// 該註釋會在 arm 條件之前獨立行輸出。
+	canInline := len(statements) == 1 &&
+		e.Consequence.TrailingComments == nil &&
+		e.Consequence.ClosingBraceComment == nil &&
+		e.Consequence.OpeningBraceComment == nil
+	if canInline {
+		switch statements[0].(type) {
+		case *parser.ExpressionStatement, *parser.LetStatement,
+			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
+		default:
+			canInline = false
+		}
+	}
+
+	// 若可內聯且 body 語句有 doc comment，先在新行輸出 doc comment，
+	// 然後在下一行輸出 arm 條件與 inline body。
+	// 這樣保持 `; comment\n cond -> body` 的結構，避免 body 被錯誤包裝成 block。
+	// 使用 GetDoc 接口取得 doc comment，避免依賴具體類型。
+	if canInline && f.hasDocComment(statements[0]) {
+		f.newline()
+		var doc *parser.CommentGroup
+		if d, ok := statements[0].(interface{ GetDoc() *parser.CommentGroup }); ok {
+			doc = d.GetDoc()
+		}
+		f.formatDocComments(doc)
+		f.newline()
+	} else {
+		f.newline()
+	}
+
+	if e.IsMatchWildcard {
+		if e.DotValBody != nil && e.DotValBody == e.Consequence {
+			f.write("ok ->")
+		} else {
+			f.write("->")
+		}
+	} else if e.MatchedExpr != nil {
+		// 按 pattern 類型依序檢查顯式欄位，避免對 desugar 後的 Condition 做啟發式推斷
+		switch {
+		case e.RangePattern != nil:
+			// [a..b) 等 range pattern
+			f.formatRangeBrackets(e.RangePattern)
+			f.write(" ->")
+		case len(e.OptionPatterns) > 0:
+			// nil || err 等 option pattern 列表
+			f.write(strings.Join(e.OptionPatterns, " || "))
+			f.write(" ->")
+		case len(e.ValuePatterns) > 0:
+			// 1 || 3 || 5 等 multi-value pattern 列表
+			for i, vp := range e.ValuePatterns {
+				if i > 0 {
+					f.write(" || ")
+				}
+				f.formatExpression(vp)
+			}
+			f.write(" ->")
+		case e.RawCond != nil:
+			// ok(cond) raw cond arm
+			f.write("ok(")
+			f.formatExpression(e.RawCond)
+			f.write(") ->")
+		case e.EqualityPattern != nil:
+			// matched == X 等值 pattern，直接輸出 X
+			f.formatExpression(e.EqualityPattern)
+			f.write(" ->")
+		default:
+			// 無顯式欄位：回退到格式化 Condition（向後相容）
+			f.formatExpression(e.Condition)
+			f.write(" ->")
+		}
+	} else {
+		f.formatExpression(e.Condition)
+		f.write(" ->")
+	}
+
 	// 空 body（如 wildcard `->`）：不輸出任何內容
 	if len(statements) == 0 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil {
 		return
 	}
-	// 內聯簡單 body：只一個語句且無註釋時，輸出在同一行
-	if len(statements) == 1 &&
-		e.Consequence.TrailingComments == nil &&
-		e.Consequence.ClosingBraceComment == nil &&
-		e.Consequence.OpeningBraceComment == nil &&
-		!f.hasDocComment(statements[0]) {
+	// 內聯簡單 body：輸出在同一行
+	if canInline {
+		f.write(" ")
+		// 臨時清除 doc comment 以避免 formatStatement 再次輸出（已在上文輸出過），
+		// 格式化後恢復以保持 AST 不變（避免影響後續格式化）。
 		stmt := statements[0]
-		switch stmt.(type) {
-		case *parser.ExpressionStatement, *parser.LetStatement,
-			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
-			f.write(" ")
-			f.formatStatement(stmt)
-			return
+		var origDoc *parser.CommentGroup
+		if d, ok := stmt.(interface {
+			GetDoc() *parser.CommentGroup
+			SetDoc(*parser.CommentGroup)
+		}); ok {
+			origDoc = d.GetDoc()
+			d.SetDoc(nil)
 		}
+		f.formatStatement(stmt)
+		if d, ok := stmt.(interface {
+			GetDoc() *parser.CommentGroup
+			SetDoc(*parser.CommentGroup)
+		}); ok && origDoc != nil {
+			d.SetDoc(origDoc)
+		}
+		return
 	}
 	// 多語句 body：用 { } 大括號包裹
 	f.write(" {")
@@ -1351,8 +1343,13 @@ func isElifBlock(bs *parser.BlockStatement) bool {
 	if !ok {
 		return false
 	}
-	_, ok = es.Expression.(*parser.IfExpression)
-	return ok
+	ifExpr, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	// 顯式標記：parser 在 parseElifBlock 中設置 IsElif=true，
+	// 直接讀取此欄位避免啟發式推斷。
+	return ifExpr.IsElif
 }
 
 // writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
@@ -1473,9 +1470,13 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	// 涵蓋新式 { } (cond)、舊式 for cond { }、以及標籤條件包裝器
 	// (#N cond: { } → ForStatement{Condition: *IfExpression, Body: Consequence})。
 	// 解開合成的 IfExpression 以輸出原始條件。
+	// 直接讀取 IsCondWrapper 欄位（parser 在合成位置顯式設置），
+	// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
 	cond := s.Condition
-	if ifExpr, ok := cond.(*parser.IfExpression); ok && s.Body == ifExpr.Consequence {
-		cond = ifExpr.Condition
+	if s.IsCondWrapper {
+		if ifExpr, ok := cond.(*parser.IfExpression); ok {
+			cond = ifExpr.Condition
+		}
 	}
 	if cond != nil {
 		f.writeLoopBodyBlock(s)
@@ -1514,9 +1515,11 @@ func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
 	} else {
 		f.write("break")
 	}
+	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
+	// 避免依賴 isNumericLabel 字串內容啟發式。
+	// `*` 簡寫形式固定使用 `#` 前綴（如 `* #1`），與 LabelKind 無關。
 	if s.Label != "" {
-		// Numeric label (`#1`) is encoded as `1` in s.Label; restore the `#`.
-		if s.Token.Type == lexer.MUL || isNumericLabel(s.Label) {
+		if s.Token.Type == lexer.MUL || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")
 		} else {
 			f.write(" ")
@@ -1532,26 +1535,17 @@ func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
 	} else {
 		f.write("continue")
 	}
+	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
+	// 避免依賴 isNumericLabel 字串內容啟發式。
+	// `**` 簡寫形式固定使用 `#` 前綴（如 `** #1`），與 LabelKind 無關。
 	if s.Label != "" {
-		if s.Token.Type == lexer.STAR_STAR || isNumericLabel(s.Label) {
+		if s.Token.Type == lexer.STAR_STAR || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")
 		} else {
 			f.write(" ")
 		}
 		f.write(s.Label)
 	}
-}
-
-func isNumericLabel(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func (f *formatter) formatAssignExpression(e *parser.AssignExpression) {

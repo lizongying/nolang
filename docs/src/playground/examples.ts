@@ -27,12 +27,11 @@ export const examples: Example[] = [
 
 print('Hello, World!')
 
-; String concatenation uses the '-' operator
+; Named format strings: {name[:spec]} references variables directly.
 name = 'Nolang'
-print('Hello, ' - name - '!')
+print('Hello, {name}!')
 
 ; print adds a trailing newline automatically.
-; Named format strings: {name[:spec]} references variables directly.
 ; Float literals are inferred as f64 automatically.
 pi = 3.14
 print('pi = {pi:.2f}')
@@ -70,10 +69,10 @@ fib-rec = (n i64) (r i64) {
 }
 
 loop10 = fib-loop(10)
-print('fib-loop(10) = ' - loop10.to-str())
+print('fib-loop(10) = {loop10}')
 
 rec10 = fib-rec(10)
-print('fib-rec(10) = ' - rec10.to-str())
+print('fib-rec(10) = {rec10}')
 `,
   },
   {
@@ -99,15 +98,17 @@ add = (a i64, b i64) (result i64) {
 
 ; Function call — result binds to LHS
 sum = add(3, 4)
-print('3 + 4 = ' - sum.to-str())
+print('3 + 4 = {sum}')
 
 ; String concatenation with '-'
 greeting = 'Hello, ' - s
 print(greeting)
 
 ; Array element access
-print('arr[0] = ' - arr[0].to-str())
-print('v[1]   = ' - v[1].to-str())
+a0 = arr[0]
+print('arr[0] = {a0}')
+v1 = v[1]
+print('v[1]   = {v1}')
 
 ; Multi-return function
 swap = (a i64, b i64) (x i64, y i64) {
@@ -115,7 +116,7 @@ swap = (a i64, b i64) (x i64, y i64) {
   y = a
 }
 a, b = swap(5, 9)
-print('swap(5, 9) = ' - a.to-str() - ', ' - b.to-str())
+print('swap(5, 9) = {a}, {b}')
 `,
   },
   {
@@ -132,7 +133,8 @@ user {
 ; Method attached to the user type.
 ; The receiver is referenced via '.' inside the body.
 user.greet = () {
-  print('Hello, I am ' - .name)
+  n = .name
+  print('Hello, I am {n}')
 }
 
 user.birthday = () {
@@ -147,10 +149,12 @@ u = user{
 
 ; Call methods on the instance
 u.greet()
-print('Age: ' - u.age.to-str())
+age = u.age
+print('Age: {age}')
 
 u.birthday()
-print('After birthday: ' - u.age.to-str())
+age = u.age
+print('After birthday: {age}')
 
 ; Mutate fields directly
 u.name = 'Bob'
@@ -181,7 +185,7 @@ grade = score: {
   [90..100] -> 'A'
   -> 'invalid'
 }
-print('Score ' - score.to-str() - ' -> grade ' - grade)
+print('Score {score} -> grade {grade}')
 
 ; Full classification using unbounded ranges on both ends
 v = 85
@@ -193,7 +197,7 @@ result = v: {
   [90..100] -> 'excellent'
   (100..) -> 'extraordinary'
 }
-print('classify(' - v.to-str() - ') = ' - result)
+print('classify({v}) = {result}')
 
 ; Match on option type — nil / err / value
 safe-div = (a i64, b i64) (r ?i64) {
@@ -207,13 +211,13 @@ safe-div = (a i64, b i64) (r ?i64) {
 result = safe-div(10, 2)
 result: {
   nil -> print('cannot divide by zero')
-  -> print('10 / 2 = ' - it.to-str())
+  -> print('10 / 2 = {it}')
 }
 
 result2 = safe-div(10, 0)
 result2: {
   nil -> print('10 / 0 = undefined')
-  -> print('10 / 0 = ' - it.to-str())
+  -> print('10 / 0 = {it}')
 }
 
 ; Match with multiple patterns joined by ||
@@ -237,23 +241,24 @@ seed = 123456789
 state = seed
 i <- [0..5): {
   state, r = rand.rand(state)
-  print('rand[' - i.to-str() - '] = ' - r.to-str())
+  print('rand[{i}] = {r}')
 }
 
 ; Bound a random value to [0..99] via modulo
 state = seed
 state, r = rand.rand(state)
-print('rand[0..99] = ' - (r % 100).to-str())
+r99 = r % 100
+print('rand[0..99] = {r99}')
 
 ; A few math builtins (LLVM intrinsics)
 m = math.max(10.0, 20.0)
-print('math.max(10.0, 20.0) = ' - m.to-str())
+print('math.max(10.0, 20.0) = {m}')
 
 mn = math.min(10.0, 20.0)
-print('math.min(10.0, 20.0) = ' - mn.to-str())
+print('math.min(10.0, 20.0) = {mn}')
 
 sq = math.sqrt(16.0)
-print('math.sqrt(16.0) = ' - sq.to-str())
+print('math.sqrt(16.0) = {sq}')
 `,
   },
 ];
