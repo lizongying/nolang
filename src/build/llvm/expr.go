@@ -108,7 +108,10 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 				g.tmpIdx++
 				dataGEP := llvmSSAReg(e.Value, fmt.Sprintf(".data.gep.%d", g.tmpIdx))
-				// For struct types: load i64 from data field, inttoptr to struct pointer
+				// For struct types: load i64 from data field, inttoptr to struct pointer.
+				// Returns a pointer (consistent with how struct variables are referenced
+				// by pointer throughout the codegen). Callers that need a value should
+				// load from this pointer.
 				if strings.HasPrefix(innerType, "%") {
 					g.tmpIdx++
 					dataLoad := llvmSSAReg(e.Value, fmt.Sprintf(".data.val.%d", g.tmpIdx))
@@ -118,6 +121,9 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
 						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataGEP))
 						sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), dataPtr, dataLoad, innerType))
+					}
+					if g.ssaTypes != nil {
+						g.ssaTypes[dataPtr] = innerType + "*"
 					}
 					return dataPtr
 				}

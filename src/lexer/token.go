@@ -255,6 +255,7 @@ type Token struct {
 	Literal string
 	Raw     string // 原始源碼文字（含轉義序列），僅 STRING/CHAR 使用
 	Marker  string // 註釋起始符：'//' 或 ';'（僅 COMMENT token 使用）
+	ErrMsg  string // 詞法錯誤訊息（僅 ILLEGAL token 使用，由 parser 報告）
 	Line    int
 	Column  int
 }

@@ -1,0 +1,5 @@
+; 测试空双引号字面量报错
+; 双引号只能用于单字符 char，空字符串应使用单引号 ''
+; 预期：LSP/vet 报错 "empty double-quoted literal"
+
+s = ""

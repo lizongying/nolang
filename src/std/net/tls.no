@@ -265,7 +265,7 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     ; 直接傳遞會造成越界讀取。因此用臨時 [32]byte 接收後複製到 []byte。
     a-tmp [32]byte
     a-tmp = hmac.hmac-sha256(secret, ls)
-    a []byte
+    a []byte = with-len(32)
     i <- [0..32): {
         a[i] = a-tmp[i]
     }
@@ -278,7 +278,7 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 
         p-tmp [32]byte
         p-tmp = hmac.hmac-sha256(secret, a-and-ls)
-        p []byte
+        p []byte = with-len(32)
         i <- [0..32): {
             p[i] = p-tmp[i]
         }
@@ -936,36 +936,50 @@ tls-conn.read-finished = () (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
+    io.errln('[TLS-CLI] read-fin: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-APP-DATA -> return
 
     ; 解密
     plain []byte
     d-ct = 0
     d-ct, plain = .decrypt-record(buf, TLS-CT-HANDSHAKE)
+    io.errln('[TLS-CLI] read-fin: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
     msg-type = plain[0] & 255
+    io.errln('[TLS-CLI] read-fin: msg-type=' - msg-type.to-str())
     msg-type != TLS-HS-FINISHED -> return
 
-    ; 追加到交握緩衝區
-    .append-hs(plain)
-
-    ; 驗證 verify_data
+    ; 驗證 verify_data（hash 不包含 server Finished）
     hs-hash-arr [32]byte
     hs-hash-arr = sha256.sha256(.hs-buf)
     hs-hash []byte = with-len(32)
     i <- [0..32): {
         hs-hash[i] = hs-hash-arr[i]
     }
+
+    io.errln('[TLS-CLI] read-fin: hs-buf-len=' - .hs-buf-len.to-str())
+    io.errln('[TLS-CLI] read-fin: hash0=' - (hs-hash-arr[0] & 255).to-str() - ' hash1=' - (hs-hash-arr[1] & 255).to-str() - ' hash2=' - (hs-hash-arr[2] & 255).to-str() - ' hash3=' - (hs-hash-arr[3] & 255).to-str())
+    io.errln('[TLS-CLI] read-fin: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
+    io.errln('[TLS-CLI] read-fin: plain4=' - (plain[4] & 255).to-str() - ' plain5=' - (plain[5] & 255).to-str() - ' plain6=' - (plain[6] & 255).to-str())
+
     verify []byte
     verify = tls-prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
+
+    io.errln('[TLS-CLI] read-fin: v0=' - (verify[0] & 255).to-str() - ' v1=' - (verify[1] & 255).to-str() - ' v2=' - (verify[2] & 255).to-str())
 
     i <- [0..TLS-FINISHED-SIZE): {
         b1 = plain[4 + i] & 255
         b2 = verify[i] & 255
-        b1 != b2 -> return
+        b1 != b2 -> {
+            io.errln('[TLS-CLI] read-fin: verify mismatch at ' - i.to-str())
+            return
+        }
     }
+
+    ; 驗證成功後追加到交握緩衝區
+    .append-hs(plain)
 
     ok = true
 }
@@ -987,9 +1001,10 @@ tls-conn.derive-keys = (premaster []byte) {
     }
     seed.len = 64
 
-    master []byte
-    master = tls-prf(premaster, 'master secret', seed, 48)
-    .master-secret = master
+    .master-secret = tls-prf(premaster, 'master secret', seed, 48)
+
+    io.errln('[TLS-CLI] derive: cr0=' - (.client-random[0] & 255).to-str() - ' cr1=' - (.client-random[1] & 255).to-str() - ' sr0=' - (.server-random[0] & 255).to-str() - ' sr1=' - (.server-random[1] & 255).to-str())
+    io.errln('[TLS-CLI] derive: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ; key_block = PRF(master, "key expansion", server_random + client_random, 96)
     ; 96 = 2*MAC_KEY + 2*ENC_KEY (no IVs in TLS 1.2 CBC)
@@ -1003,7 +1018,7 @@ tls-conn.derive-keys = (premaster []byte) {
     ks.len = 64
 
     key-block []byte
-    key-block = tls-prf(master, 'key expansion', ks, 96)
+    key-block = tls-prf(.master-secret, 'key expansion', ks, 96)
 
     ; 分割 key_block
     ; client_write_MAC_key (32)
@@ -1957,6 +1972,8 @@ tls-conn.connect = (host str, port i64) (ok bool) {
             premaster[2 + i] = rand-bytes[i]
         }
 
+        io.errln('[TLS-CLI] premaster: p0=' - (premaster[0] & 255).to-str() - ' p1=' - (premaster[1] & 255).to-str() - ' p2=' - (premaster[2] & 255).to-str() - ' p3=' - (premaster[3] & 255).to-str())
+
         ; 7. 推導金鑰
         .derive-keys(premaster)
 
@@ -2452,6 +2469,7 @@ tls-server-conn.read-client-key-exchange = () (ok bool) {
     premaster = tls-rsa-pkcs1-decrypt(enc-premaster, .n-bytes, .d-bytes)
     io.errln('[TLS-SRV] cke: premaster.len=' - premaster.len.to-str())
     premaster.len == 0 -> return
+    io.errln('[TLS-SRV] premaster: p0=' - (premaster[0] & 255).to-str() - ' p1=' - (premaster[1] & 255).to-str() - ' p2=' - (premaster[2] & 255).to-str() - ' p3=' - (premaster[3] & 255).to-str())
 
     ; premaster 應為 48 bytes，且前 2 bytes 為版本 0x0303
     premaster.len < 48 -> return
@@ -2465,7 +2483,7 @@ tls-server-conn.read-client-key-exchange = () (ok bool) {
 
     ; 推導金鑰
     .derive-keys(fixed-premaster)
-    io.errln('[TLS-SRV] cke: derive-keys done')
+    io.errln('[TLS-SRV] cke: derive-keys done ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ok = true
 }
@@ -2484,6 +2502,9 @@ tls-server-conn.derive-keys = (premaster []byte) {
     seed.len = 64
 
     .master-secret = tls-prf(premaster, 'master secret', seed, 48)
+
+    io.errln('[TLS-SRV] derive: cr0=' - (.client-random[0] & 255).to-str() - ' cr1=' - (.client-random[1] & 255).to-str() - ' sr0=' - (.server-random[0] & 255).to-str() - ' sr1=' - (.server-random[1] & 255).to-str())
+    io.errln('[TLS-SRV] derive: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ; key_block = PRF(master, "key expansion", server_random + client_random, 96)
     ks []byte = with-len(64)
@@ -2856,42 +2877,47 @@ tls-server-conn.send = (data str) (written ?i64) {
     .encrypted == false -> return
 
     data-bytes []byte = data.to-bytes()
+    data-len = data-bytes.len
     ok = .encrypt-record(TLS-CT-APP-DATA, data-bytes)
     ok == false -> return
-    written = data-bytes.len
+    written = data-len
 }
 
 ; tls-server-conn.recv: 接收並解密資料
 ; buf str: 接收緩衝區
 ; n i64: 最多接收位元組數
-; 返回 read-n ?i64: 實際接收位元組數（nil=錯誤）
-tls-server-conn.recv = (buf str, n i64) (read-n ?i64) {
-    read-n = nil
-    .encrypted == false -> return
+; 返回 read-n i64: 實際接收位元組數（-1=錯誤）
+tls-server-conn.recv = (buf str, n i64) (read-n i64) {
+    read-n = -1
+    .encrypted == false -> {
+        io.errln('[TLS-SRV] recv: not encrypted')
+        return
+    }
 
     rec-buf []byte = with-len(16400)
 
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, rec-buf)
+    io.errln('[TLS-SRV] recv: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-APP-DATA -> return
 
     plain []byte
     d-ct = 0
     d-ct, plain = .decrypt-record(rec-buf, TLS-CT-APP-DATA)
+    io.errln('[TLS-SRV] recv: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
     d-ct < 0 -> return
 
     ; 複製到 buf（最多 n 位元組）
     copy-n = plain.len
     copy-n > n -> copy-n = n
 
-    ; 將 plain 轉為 str
-    tmp-str = ' '.repeat(copy-n)
+    ; 直接寫入 buf（避免 buf = tmp-str 不會傳播到呼叫端）
     i <- [0..copy-n): {
-        tmp-str[i] = plain[i] & 255
+        buf[i] = plain[i] & 255
     }
-    buf = tmp-str
     read-n = copy-n
+    io.errln('[TLS-SRV] recv: read-n=' - copy-n.to-str())
 }
 
 ; tls-server-conn.close: 關閉連線

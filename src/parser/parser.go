@@ -19,6 +19,7 @@ type Parser struct {
 	prevToken         lexer.Token
 	ctx               contextStack                 // replaces inForCond, inMatchCond, inMatchArm, inExprContext
 	comments          []lexer.Token                // collected comment tokens
+	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
 	varDeclTypes      map[string]string            // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames  map[string][]string          // 枚舉類型名 → 枚舉值名列表
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
@@ -494,9 +495,10 @@ type parserState struct {
 
 func New(lexer *lexer.Lexer) *Parser {
 	p := &Parser{
-		lexer:  lexer,
-		errors: []string{},
-		ctx:    contextStack{CTX_GLOBAL},
+		lexer:          lexer,
+		errors:         []string{},
+		ctx:            contextStack{CTX_GLOBAL},
+		reportedIllegal: map[string]bool{},
 	}
 
 	p.nextToken()
@@ -3622,6 +3624,24 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			p.nextToken()
 			return nil
 		}
+
+	case lexer.ILLEGAL:
+		// ILLEGAL token（如多字符雙引號字串）— 報告詞法錯誤並跳過
+		key := fmt.Sprintf("%d:%d", p.currentToken.Line, p.currentToken.Column)
+		if !p.reportedIllegal[key] {
+			p.reportedIllegal[key] = true
+			var msg string
+			if p.currentToken.ErrMsg != "" {
+				msg = fmt.Sprintf("line %d, column %d: %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.ErrMsg)
+			} else {
+				msg = fmt.Sprintf("line %d, column %d: illegal token %q",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
+			}
+			p.saveError(msg)
+		}
+		p.nextToken()
+		return nil
 
 	default:
 		p.nextToken()

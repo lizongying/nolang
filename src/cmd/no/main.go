@@ -755,7 +755,11 @@ func installCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
 	}
-	defer os.RemoveAll(tmpDir)
+	if os.Getenv("NOLANG_KEEP_IR") == "" {
+		defer os.RemoveAll(tmpDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "[debug] keep build tmp dir: %s\n", tmpDir)
+	}
 
 	outPath := filepath.Join(tmpDir, binName)
 	opts := nbuild.BuildOptions{

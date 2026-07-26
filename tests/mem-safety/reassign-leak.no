@@ -30,9 +30,9 @@
 ; ═════════════════════════════════════════════════════════════════
 
 reassign-str = () (out str) {
-    s = "old value"
-    s = "new value"   ; "old value" 的 buffer 洩漏
-    s = "another"     ; "new value" 的 buffer 洩漏
+    s = 'old value'
+    s = 'new value'   ; "old value" 的 buffer 洩漏
+    s = 'another'     ; "new value" 的 buffer 洩漏
     out = s
 }
 

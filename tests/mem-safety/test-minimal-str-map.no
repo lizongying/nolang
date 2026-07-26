@@ -1,0 +1,16 @@
+; 最小化测试：m [str]str 作用域结束释放
+
+test-minimal = () {
+    m [str]str = {}
+    m.init()
+    m.put('k', 'v')
+    v = m.get('k')
+    v: {
+        ok -> print(v)
+        nil -> print('nil')
+    }
+    ; m 退出作用域：应释放 keys 和 vals 的 256 个 str-long
+}
+
+test-minimal()
+print('done')

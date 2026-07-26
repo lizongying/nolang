@@ -840,19 +840,14 @@ https-server-conn.recv-more = () (n i64) {
     n = -1
     space = ' '
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
-    r = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
-    r: {
-        ok -> {
-            n = it
-            n > 0 -> {
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
-            }
+    n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
+    io.errln('[HTTPS-SRV] recv-more: n=' - n.to-str())
+    n > 0 -> {
+        i <- [0..n): {
+            .recv-buf[.recv-buf-len + i] = tmp[i]
         }
-        nil -> n = -1
-        err -> n = -1
+        .recv-buf-len = .recv-buf-len + n
+        io.errln('[HTTPS-SRV] recv-more: recv-buf-len=' - .recv-buf-len.to-str())
     }
 }
 
@@ -1053,12 +1048,14 @@ https-server-conn.write-status = (status i64) (ok bool) {
     }
 
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
-    w = .tls.send(line)
-    {
+    tc = .tls
+    w = tc.send(line)
+    .tls = tc
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> { ok = true }
+    }
 }
 
 ; write-header: 寫入單個回應標頭（透過 TLS）
@@ -1071,12 +1068,14 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     lf = char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
-    w = .tls.send(line)
-    {
+    tc = .tls
+    w = tc.send(line)
+    .tls = tc
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> { ok = true }
+    }
 }
 
 ; write-headers-done: 寫入空行表示標頭結束（透過 TLS）
@@ -1086,12 +1085,14 @@ https-server-conn.write-headers-done = () (ok bool) {
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
-    w = .tls.send(crlf)
-    {
+    tc = .tls
+    w = tc.send(crlf)
+    .tls = tc
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> { ok = true }
+    }
 }
 
 ; write-body: 寫入回應體（透過 TLS）
@@ -1100,12 +1101,14 @@ https-server-conn.write-headers-done = () (ok bool) {
 https-server-conn.write-body = (data str) (ok bool) {
     ok = false
     data.len > 0 -> {
-        w = .tls.send(data)
-        {
+        tc = .tls
+        w = tc.send(data)
+        .tls = tc
+        w: {
             nil -> return
             err -> return
-            ok -> ok = true
-        } (w)
+            ok -> { ok = true }
+        }
     }
     ok = true
 }

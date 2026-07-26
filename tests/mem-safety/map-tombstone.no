@@ -1,0 +1,142 @@
+; map 墓碑机制与容器类型值测试
+
+; 测试 1: 墓碑探测链 — remove 后 get 其他 key 仍成功
+test-tombstone = () {
+    m [str]i64 = {}
+    m.init()
+    m.put('a', 1)
+    m.put('b', 2)
+    m.put('c', 3)
+    m.put('d', 4)
+    m.put('e', 5)
+
+    ; 删除中间的 key
+    m.remove('c')
+    m.remove('a')
+
+    ; 验证剩余 key 仍可查找
+    v = m.get('e')
+    v: {
+        ok -> print(v)
+        nil -> print('e-nil')
+    }
+
+    v2 = m.get('b')
+    v2: {
+        ok -> print(v2)
+        nil -> print('b-nil')
+    }
+
+    v3 = m.get('d')
+    v3: {
+        ok -> print(v3)
+        nil -> print('d-nil')
+    }
+
+    ; 验证已删除的 key 查不到
+    v4 = m.get('c')
+    v4: {
+        ok -> print('c-found')
+        nil -> print('c-removed-ok')
+    }
+
+    l = m.len()
+    print('len:')
+    print(l)
+}
+
+test-tombstone()
+print('test-tombstone: ok')
+
+; 测试 2: 墓碑复用 — put 复用被 remove 的槽位
+test-reuse = () {
+    m [str]i64 = {}
+    m.init()
+    m.put('x', 100)
+    m.remove('x')
+    m.put('x', 200)
+
+    v = m.get('x')
+    v: {
+        ok -> print(v)
+        nil -> print('x-nil')
+    }
+    l = m.len()
+    print('len:')
+    print(l)
+}
+
+test-reuse()
+print('test-reuse: ok')
+
+; 测试 3: 容器类型值（str 值，堆类型）
+test-str-values = () {
+    m [str]str = {}
+    m.init()
+    m.put('name', 'alice')
+    m.put('city', 'beijing')
+
+    v = m.get('name')
+    v: {
+        ok -> print(v)
+        nil -> print('name-nil')
+    }
+
+    v2 = m.get('city')
+    v2: {
+        ok -> print(v2)
+        nil -> print('city-nil')
+    }
+
+    ; remove 后再 get
+    m.remove('name')
+    v3 = m.get('name')
+    v3: {
+        ok -> print('name-found')
+        nil -> print('name-removed-ok')
+    }
+
+    ; city 应仍可查找
+    v4 = m.get('city')
+    v4: {
+        ok -> print(v4)
+        nil -> print('city-nil-after-remove')
+    }
+}
+
+test-str-values()
+print('test-str-values: ok')
+
+; 测试 4: int 键墓碑机制
+test-int-tombstone = () {
+    m [i64]i64 = {}
+    m.init()
+    m.put(1, 10)
+    m.put(2, 20)
+    m.put(3, 30)
+
+    m.remove(2)
+
+    v = m.get(3)
+    v: {
+        ok -> print(v)
+        nil -> print('3-nil')
+    }
+
+    v2 = m.get(1)
+    v2: {
+        ok -> print(v2)
+        nil -> print('1-nil')
+    }
+
+    v3 = m.get(2)
+    v3: {
+        ok -> print('2-found')
+        nil -> print('2-removed-ok')
+    }
+}
+
+test-int-tombstone()
+print('test-int-tombstone: ok')
+
+print('done')

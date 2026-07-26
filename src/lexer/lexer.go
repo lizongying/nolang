@@ -754,7 +754,7 @@ func (l *Lexer) NextToken() (tok Token) {
 		// 字符串已经处理完毕，不需要再前进字符
 		return tok
 	case '"':
-		// Double-quoted: char literal (single rune) or string (multi-char fallback)
+		// Double-quoted: char literal (single rune only); multi-char or empty is illegal
 		content, raw := l.readString()
 		runes := []rune(content)
 		if len(runes) == 1 {
@@ -762,10 +762,15 @@ func (l *Lexer) NextToken() (tok Token) {
 			tok.Literal = content
 			tok.Raw = raw
 		} else {
-			// Multi-char double-quoted: treat as string for robustness
-			tok.Type = STRING
+			// Multi-char or empty double-quoted: illegal — strings must use single quotes
+			tok.Type = ILLEGAL
 			tok.Literal = content
 			tok.Raw = raw
+			if len(runes) == 0 {
+				tok.ErrMsg = "empty double-quoted literal; double quotes are for char literals only — use single quotes for strings"
+			} else {
+				tok.ErrMsg = "multi-character literal in double quotes; double quotes are for char literals only — use single quotes for strings"
+			}
 		}
 		return tok
 	case '`':

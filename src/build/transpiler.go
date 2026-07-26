@@ -2259,9 +2259,13 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 
 					var args []parser.Expression
 					if isLowerLetter(sizeParam) {
-						if val, err := strconv.ParseInt(argSize, 10, 64); err == nil {
-							args = append(args, &parser.IntegerLiteral{Value: val})
+						// [n]t pattern requires a numeric size; non-numeric argSize
+						// (e.g. MapType [str]i64 where argSize="str") must not match.
+						val, err := strconv.ParseInt(argSize, 10, 64)
+						if err != nil {
+							return nil
 						}
+						args = append(args, &parser.IntegerLiteral{Value: val})
 					}
 					if isLowerLetter(elemParam) {
 						args = append(args, &parser.StringLiteral{Value: argElem})
@@ -2525,10 +2529,11 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		}
 	case *parser.LetStatement:
 		return &parser.LetStatement{
-			Token: s.Token,
-			Name:  s.Name,
-			Value: substituteExpr(s.Value, subst),
-			Type:  substituteType(s.Type, subst),
+			Token:       s.Token,
+			Name:        s.Name,
+			Value:       substituteExpr(s.Value, subst),
+			Type:        substituteType(s.Type, subst),
+			IsSynthetic: s.IsSynthetic,
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{

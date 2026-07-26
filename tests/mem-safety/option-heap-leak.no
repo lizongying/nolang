@@ -42,13 +42,13 @@
 
 ; 測試 1：?str option 作用域結束釋放（涵蓋 copyStrToData 路徑）
 test-str-option = () {
-    v ?str = "hello"
+    v ?str = 'hello'
     print(v)
     ; v 離開作用域時應釋放 box + str data
 }
 
 test-str-option()
-print("test-str-option: ok")
+print('test-str-option: ok')
 
 ; 測試 2：用戶結構體 option 作用域結束釋放（涵蓋 copyToData struct 路徑）
 MyStruct {
@@ -57,33 +57,33 @@ MyStruct {
 }
 
 make-struct = () (out MyStruct) {
-    out = MyStruct{ name: "world", count: 42 }
+    out = MyStruct{ name: 'world', count: 42 }
 }
 
 test-struct-option = () {
     u ?MyStruct = make-struct()
     ; u 離開作用域時應釋放 box + struct fields 的堆數據（name.data）
     ; 不直接讀取 u.name/u.count（option-struct 字段讀取是另一個獨立問題）
-    print("struct-option-created")
+    print('struct-option-created')
 }
 
 test-struct-option()
-print("test-struct-option: ok")
+print('test-struct-option: ok')
 
 ; 測試 3：option 重新賦值覆蓋舊 box（涵蓋 freeOldHeapValue 路徑）
 test-reassign = () {
-    v ?str = "first"
-    v = "second"
+    v ?str = 'first'
+    v = 'second'
     print(v)
     ; 第二次賦值前應先釋放 "first" 的 box
 }
 
 test-reassign()
-print("test-reassign: ok")
+print('test-reassign: ok')
 
 ; 測試 4：option-to-option 局部賦值走深層 clone
 test-clone = () {
-    a ?str = "original"
+    a ?str = 'original'
     b ?str = a
     print(a)
     print(b)
@@ -91,11 +91,11 @@ test-clone = () {
 }
 
 test-clone()
-print("test-clone: ok")
+print('test-clone: ok')
 
 ; 測試 5：option 賦值到 out 參數走 move
 make-opt = () (out ?str) {
-    a ?str = "moved-out"
+    a ?str = 'moved-out'
     out = a
     ; a 走 move 到 out，a 標記 moved，函數結束時跳過 a 的 free
     ; out 由呼叫者管理
@@ -103,7 +103,7 @@ make-opt = () (out ?str) {
 
 r ?str = make-opt()
 print(r)
-print("test-move-out: ok")
+print('test-move-out: ok')
 
 ; 測試 6：純量 option（?i64）不應嘗試釋放（無 malloc）
 test-scalar-option = () {
@@ -113,6 +113,6 @@ test-scalar-option = () {
 }
 
 test-scalar-option()
-print("test-scalar-option: ok")
+print('test-scalar-option: ok')
 
-print("done")
+print('done')

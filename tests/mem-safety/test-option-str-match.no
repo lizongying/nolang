@@ -1,0 +1,17 @@
+; 测试 ?str 类型的 match 解构
+; 验证 synthetic it = val 的 LLVM 类型匹配
+
+test-simple = () {
+    m [str]str = {}
+    m.init()
+    m.put('k', 'v')
+
+    v = m.get('k')
+    v: {
+        ok -> print(v)
+        nil -> print('nil')
+    }
+}
+
+test-simple()
+print('done')

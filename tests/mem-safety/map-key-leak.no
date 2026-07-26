@@ -41,7 +41,7 @@ test-scope = () {
 }
 
 test-scope()
-print("test-scope: ok")
+print('test-scope: ok')
 
 ; 測試 2：map 賦值到 out 參數走 move（涵蓋 hashmap move 路徑）
 make-map = () (out [str]i64) {
@@ -54,7 +54,7 @@ v2 = m2.get('x')
 v2: {
     ok -> print(v2)
 }
-print("test-move-out: ok")
+print('test-move-out: ok')
 
 ; 測試 3：map 重新賦值覆蓋舊 map（涵蓋 freeOldHeapValue 路徑）
 test-reassign = () {
@@ -68,7 +68,7 @@ test-reassign = () {
 }
 
 test-reassign()
-print("test-reassign: ok")
+print('test-reassign: ok')
 
 ; 測試 4：map-to-map 局部賦值走深層 clone（涵蓋 emitInlineArrayFieldClone）
 test-clone = () {
@@ -77,17 +77,17 @@ test-clone = () {
     va4 = a4.get('key')
     va4: {
         ok -> print(va4)
-        nil -> print("va4-nil")
+        nil -> print('va4-nil')
     }
     vb4 = b4.get('key')
     vb4: {
         ok -> print(vb4)
-        nil -> print("vb4-nil")
+        nil -> print('vb4-nil')
     }
     ; a4 和 b4 應各自獨立擁有 256 個 keys 的 data，離開作用域時各自 free
 }
 
 test-clone()
-print("test-clone: ok")
+print('test-clone: ok')
 
-print("done")
+print('done')

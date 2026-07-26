@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -4371,6 +4372,10 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
+	if stmt.IsSynthetic && name == "it" {
+		fmt.Fprintf(os.Stderr, "DEBUG generateLet ENTER: name=%s IsSynthetic=%v Type=%v Value=%T\n",
+			name, stmt.IsSynthetic, stmt.Type, stmt.Value)
+	}
 
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
 	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串，無法映射到真實的 LLVM 型別。
@@ -4831,15 +4836,45 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// In that case, bitcast the alloca pointer to the value's type.
 	if stmt.IsSynthetic && strings.HasPrefix(llvmType, "%") {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
+			// Detect whether the source is an option variable whose inner
+			// value was extracted as a struct pointer by generateExprWithSB.
+			// Two signals:
+			//  1. varTypes[src] == "%option" (preferred), or
+			//  2. ssaTypes[val] == llvmType + "*" (fallback for generic ?v
+			//     where varTypes lookup may not be "%option").
+			isOptionSrc := false
 			if g.varTypes != nil {
 				if srcType, ok := g.varTypes[ident.Value]; ok && srcType == "%option" {
-					if strings.HasPrefix(val, "%") {
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%it.syn.load.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, val))
-						val = loadReg
-					}
+					isOptionSrc = true
 				}
+			}
+			if !isOptionSrc && g.ssaTypes != nil {
+				if ssaType, ok := g.ssaTypes[val]; ok && ssaType == llvmType+"*" {
+					isOptionSrc = true
+				}
+			}
+			// Debug: trace why the load is/isn't emitted
+			fmt.Fprintf(os.Stderr, "DEBUG it-synthetic: name=%s llvmType=%s val=%s ident.Value=%s isOptionSrc=%v\n",
+				name, llvmType, val, ident.Value, isOptionSrc)
+			if g.varTypes != nil {
+				if srcType, ok := g.varTypes[ident.Value]; ok {
+					fmt.Fprintf(os.Stderr, "DEBUG   varTypes[%s]=%s\n", ident.Value, srcType)
+				} else {
+					fmt.Fprintf(os.Stderr, "DEBUG   varTypes[%s] not found\n", ident.Value)
+				}
+			}
+			if g.ssaTypes != nil {
+				if ssaType, ok := g.ssaTypes[val]; ok {
+					fmt.Fprintf(os.Stderr, "DEBUG   ssaTypes[%s]=%s (expecting %s)\n", val, ssaType, llvmType+"*")
+				} else {
+					fmt.Fprintf(os.Stderr, "DEBUG   ssaTypes[%s] not found\n", val)
+				}
+			}
+			if isOptionSrc && strings.HasPrefix(val, "%") {
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%it.syn.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, val))
+				val = loadReg
 			}
 		}
 	}

@@ -41,7 +41,7 @@ MyType {
 }
 
 make-struct = () (out MyType) {
-    out = MyType{ name: "hello", items: [1, 2, 3] }
+    out = MyType{ name: 'hello', items: [1, 2, 3] }
     ; out 離開作用域時，name.data 和 items.data 應被釋放
     ; 但 emitHeapFree 跳過結構體 → 洩漏
 }

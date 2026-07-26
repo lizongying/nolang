@@ -2,6 +2,38 @@
 ; # std/net/server
 ; # std/net/tls
 
+; e2e-tc: 全域變數，存放 e2e 測試的 TLS 連線
+; 使用全域變數避免 tls-conn 作為函式參數傳遞時的 double-free
+e2e-tc tls-conn
+
+; e2e-recv-once: 從 e2e-tc 接收一次資料
+; 獨立函式以避開同一函式中多個 option match 的 it 型別衝突
+; 返回 rn i64: 接收的位元組數（-1=錯誤, 0=關閉）
+e2e-recv-once = () (rn i64) {
+    rn = -1
+    space = ' '
+    tmp = space.repeat(2048)
+    rn-opt = e2e-tc.recv(tmp, 2048)
+    rn-opt: {
+        nil -> rn = -1
+        err -> rn = -1
+        ok -> rn = it
+    }
+    rn > 0 -> {
+        ; 複製到全域緩衝區
+        i <- [0..rn): {
+            e2e-recv-buf[e2e-recv-total + i] = tmp[i]
+        }
+        e2e-recv-total = e2e-recv-total + rn
+    }
+}
+
+; e2e-recv-buf: 接收緩衝區
+e2e-recv-buf str
+
+; e2e-recv-total: 已接收的總位元組數
+e2e-recv-total i64
+
 ; test-https-listen: 測試 HTTPS 伺服器可以建立監聽
 test-https-listen = () (pass bool) {
     pass = false
@@ -83,76 +115,7 @@ test-https-server-struct = () (pass bool) {
     conn.method.len == 0 -> pass = true
 }
 
-; run-https-client: 執行 HTTPS 客戶端請求並驗證回應
-; 獨立函式以避開同一函式中多個 option match 的 it 型別衝突 (編譯器 bug)
-; tc tls-conn: TLS 連線
-; 返回 ok bool: true=成功收到預期回應
-run-https-client = (tc tls-conn) (ok bool) {
-    ok = false
-
-    ; 發送 HTTP GET 請求
-    cr = char-to-str(13)
-    lf = char-to-str(10)
-    crlf = cr - lf
-    req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
-
-    send-ok = false
-    w-opt = tc.send(req)
-    w-opt: {
-        nil -> print('FAIL: e2e send nil')
-        err -> print('FAIL: e2e send err')
-        ok -> send-ok = true
-    }
-
-    send-ok == false -> return
-
-    io.errln('[TEST] e2e: parent sent, receiving')
-
-    ; 接收回應 — 多次 recv 累積 (伺服器每個 send 產生一筆 TLS record)
-    space = ' '
-    rbuf = space.repeat(4096)
-    tmp = space.repeat(2048)
-    total = 0
-    found = false
-    rn = -1
-    {
-        found -> *
-        total >= 4000 -> *
-
-        rn = -1
-        rn-opt = tc.recv(tmp, 2048)
-        rn-opt: {
-            nil -> rn = -1
-            err -> rn = -1
-            ok -> rn = it
-        }
-        rn <= 0 -> *
-
-        i <- [0..rn): {
-            rbuf[total + i] = tmp[i]
-        }
-        total = total + rn
-
-        resp = rbuf.slice(0, total)
-        pos = resp.index('hello from nolang https')
-        pos >= 0 -> found = true
-    } (found == false)
-
-    found -> {
-        print('PASS: e2e got expected response')
-        ok = true
-    }
-    found == false -> {
-        print('FAIL: e2e did not receive expected response')
-        total > 0 -> {
-            resp = rbuf.slice(0, total)
-            io.errln('[TEST] e2e: recv=' - resp)
-        }
-    }
-}
-
-; run-https-e2e-client: 父進程客戶端邏輯（獨立函式以避開同一函式中
-; 多個 option match 的 it 型別衝突編譯器 bug）
+; run-https-e2e-client: 父進程客戶端邏輯
 ; host str: 伺服器主機
 ; port i64: 伺服器埠號
 ; 返回 ok bool: true=成功收到預期回應
@@ -165,9 +128,59 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
         nil -> print('FAIL: e2e tls-dial nil')
         err -> print('FAIL: e2e tls-dial err')
         ok -> {
-            tc = it
-            ok = run-https-client(tc)
-            tc.close()
+            e2e-tc = it
+
+            ; 發送 HTTP GET 請求
+            cr = char-to-str(13)
+            lf = char-to-str(10)
+            crlf = cr - lf
+            req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
+
+            send-ok = false
+            w-opt = e2e-tc.send(req)
+            w-opt: {
+                nil -> print('FAIL: e2e send nil')
+                err -> print('FAIL: e2e send err')
+                ok -> send-ok = true
+            }
+
+            send-ok == false -> {
+                e2e-tc.close()
+                return
+            }
+
+            io.errln('[TEST] e2e: parent sent, receiving')
+
+            ; 接收回應 — 多次 recv 累積
+            space = ' '
+            e2e-recv-buf = space.repeat(4096)
+            e2e-recv-total = 0
+            found = false
+            {
+                found -> *
+                e2e-recv-total >= 4000 -> *
+
+                rn = e2e-recv-once()
+                rn <= 0 -> *
+
+                resp = e2e-recv-buf.slice(0, e2e-recv-total)
+                pos = resp.index('hello from nolang https')
+                pos >= 0 -> found = true
+            } (found == false)
+
+            found -> {
+                print('PASS: e2e got expected response')
+                ok = true
+            }
+            found == false -> {
+                print('FAIL: e2e did not receive expected response')
+                e2e-recv-total > 0 -> {
+                    resp = e2e-recv-buf.slice(0, e2e-recv-total)
+                    io.errln('[TEST] e2e: recv=' - resp)
+                }
+            }
+
+            e2e-tc.close()
         }
     }
 }

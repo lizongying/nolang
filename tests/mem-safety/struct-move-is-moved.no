@@ -16,7 +16,7 @@ Holder {
 
 ; move 場景：直接構造並 move 到 out
 move-holder = () (out Holder) {
-    out = Holder{ name: "test", data: [10, 20, 30] }
+    out = Holder{ name: 'test', data: [10, 20, 30] }
 }
 
 ; 測試 1：move 場景
@@ -26,4 +26,4 @@ print(h1.data[0])
 print(h1.data[1])
 print(h1.data[2])
 
-print("done")
+print('done')
