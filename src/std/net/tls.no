@@ -2072,20 +2072,21 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
         io.errln('[TLS-CLI] recv: not encrypted')
         return
     }
+
+    ; 宣告於函式作用域，確保分支內賦值能傳播
+    plain []byte
+    d-ct i64 = -1
+    is-13 bool = (.version == TLS-VERSION-1-3)
+
     {
-        .version == TLS-VERSION-1-3 -> {
+        is-13 -> {
             ; TLS 1.3: 使用 AEAD
-            ; 讀取加密記錄
             rec []byte = with-len(16400)
             r-ct = 0
             rlen = 0
             r-ct, rlen = tls-read-record(.fd, rec)
             io.errln('[TLS-CLI] recv13: r-ct=' - r-ct.to-str() - ' rlen=' - rlen.to-str())
             r-ct < 0 -> return
-
-            ; 解密
-            plain []byte
-            d-ct = 0
             d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
             .ap-read-seq = .ap-read-seq + 1
             io.errln('[TLS-CLI] recv13: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
@@ -2093,42 +2094,29 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
 
             ; 處理 alert
             d-ct == TLS-CT-ALERT -> return
-
-            ; 複製到輸出緩衝區
-            copy-n = plain.len
-            copy-n > n -> copy-n = n
-            i <- [0..copy-n): {
-                buf[i] = plain[i]
-            }
-            read-n = copy-n
         }
         -> {
             ; TLS 1.2: 使用 CBC+MAC
-            ; 讀取加密記錄
             rec []byte = with-len(16400)
             ct = 0
             rlen = 0
             ct, rlen = tls-read-record(.fd, rec)
             io.errln('[TLS-CLI] recv12: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
             ct < 0 -> return
-
-            ; 解密
-            plain []byte
-            d-ct = 0
             d-ct, plain = .decrypt-record(rec, TLS-CT-APP-DATA)
             io.errln('[TLS-CLI] recv12: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
             d-ct < 0 -> return
-
-            ; 複製到輸出緩衝區
-            copy-n = plain.len
-            copy-n > n -> copy-n = n
-            i <- [0..copy-n): {
-                buf[i] = plain[i]
-            }
-            read-n = copy-n
-            io.errln('[TLS-CLI] recv12: copy-n=' - copy-n.to-str())
         }
     }
+
+    ; 複製到輸出緩衝區（在條件分支外賦值，避免作用域問題）
+    copy-n = plain.len
+    copy-n > n -> copy-n = n
+    i <- [0..copy-n): {
+        buf[i] = plain[i]
+    }
+    read-n = copy-n
+    io.errln('[TLS-CLI] recv: read-n=' - read-n.to-str())
 }
 
 ; close: 關閉 TLS 連線

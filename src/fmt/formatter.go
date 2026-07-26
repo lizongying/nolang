@@ -1205,18 +1205,25 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		}
 	}
 
-	// 若可內聯且 body 語句有 doc comment，先在新行輸出 doc comment，
-	// 然後在下一行輸出 arm 條件與 inline body。
-	// 這樣保持 `; comment\n cond -> body` 的結構，避免 body 被錯誤包裝成 block。
-	// 使用 GetDoc 接口取得 doc comment，避免依賴具體類型。
+	// 若可內聯且 body 語句有 doc comment：
+	//   - body 原始為 inline（IsInline=true）：doc comment 是 arm 前的註釋
+	//     （如 `; F grade`），先輸出註釋再內聯 body。
+	//   - body 原始為顯式 block（IsInline=false）：doc comment 是 block 內註釋
+	//     （如 `// 部分區塊`），不內聯，走 block 路徑讓註釋在 block 內輸出。
 	if canInline && f.hasDocComment(statements[0]) {
-		f.newline()
-		var doc *parser.CommentGroup
-		if d, ok := statements[0].(interface{ GetDoc() *parser.CommentGroup }); ok {
-			doc = d.GetDoc()
+		if e.Consequence.IsInline {
+			f.newline()
+			var doc *parser.CommentGroup
+			if d, ok := statements[0].(interface{ GetDoc() *parser.CommentGroup }); ok {
+				doc = d.GetDoc()
+			}
+			f.formatDocComments(doc)
+			f.newline()
+		} else {
+			// 顯式 block 內的註釋：不內聯，保持 block 形式
+			canInline = false
+			f.newline()
 		}
-		f.formatDocComments(doc)
-		f.newline()
 	} else {
 		f.newline()
 	}
@@ -1694,11 +1701,11 @@ func isScalarLiteral(e parser.Expression) bool {
 
 func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
 	f.write(e.Type)
+	f.write(" {")
 	if len(e.Fields) == 0 {
-		f.write("{}")
+		f.write("}")
 		return
 	}
-	f.write("{")
 	f.indent++
 	for _, field := range e.Fields {
 		f.newline()

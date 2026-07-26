@@ -1664,7 +1664,7 @@ func TestFormatMultiAssign(t *testing.T) {
 		{
 			name:     "lcm with multi-assign and nested calls",
 			input:    "lcm = (a bigint, b bigint, l bigint) { g = bigint{} gcd(a, b, g) q, r = div-mod(a, g) l = mul(q, b) }",
-			expected: "lcm = (a bigint, b bigint, l bigint) {\n    g = bigint{}\n    gcd(a, b, g)\n    q, r = div-mod(a, g)\n    l = mul(q, b)\n}",
+			expected: "lcm = (a bigint, b bigint, l bigint) {\n    g = bigint {}\n    gcd(a, b, g)\n    q, r = div-mod(a, g)\n    l = mul(q, b)\n}",
 		},
 		{
 			// . method call as a bare statement after a let/assignment

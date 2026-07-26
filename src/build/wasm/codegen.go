@@ -1209,6 +1209,35 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 		return I64
 	case *parser.GroupedExpression:
 		return g.inferType(e.Expression)
+	case *parser.DotExpression:
+		// 與 emitDotOrField 保持一致：先判斷 vec/str .len/.cap，再查 struct 欄位。
+		// 若缺少此分支，struct 的 str/vec/struct 欄位會被誤推為 I64，
+		// 導致 `n = u.name` 後 `print(n)` 時 local.tee 期望 I32 卻收到 I64
+		// 而觸發 CompileError。
+		if ident, ok := e.Receiver.(*parser.Identifier); ok {
+			kind := g.localKind(ident.Value)
+			if kind == KindVec || kind == KindArr || kind == KindStr {
+				switch e.Property {
+				case "len", "cap":
+					return I32
+				}
+			}
+		}
+		// struct 欄位：查欄位佈局
+		var structName string
+		if ident, ok := e.Receiver.(*parser.Identifier); ok {
+			if smap, ok := g.localStructTypeMap[g.currentFunc]; ok {
+				structName = smap[ident.Value]
+			}
+		}
+		if layout, ok := g.structDefs[structName]; ok {
+			for i := range layout.Fields {
+				if layout.Fields[i].Name == e.Property {
+					return layout.Fields[i].Type
+				}
+			}
+		}
+		return I64
 	}
 	return I64
 }

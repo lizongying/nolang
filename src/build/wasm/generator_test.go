@@ -681,6 +681,37 @@ print(u.age)`
 	}
 }
 
+// TestStructFieldAssignThenPrint 覆蓋 playground 回報的 CompileError：
+// `n = u.name`（str 欄位賦值給變數）後 `print(n)` 觸發
+// "local.tee expected i32, found i64"。
+// 根因：inferType 缺少 DotExpression 分支，struct 的 str/vec/struct
+// 欄位被誤推為 I64，導致變數宣告為 I64，後續 emitPrintStrVar 對 I64
+// local 做 local.get 卻餵給期望 I32 的 local.tee。
+func TestStructFieldAssignThenPrint(t *testing.T) {
+	src := `user {
+    name str
+    age i64
+}
+u = user{
+    name: 'Alice'
+    age: 30
+}
+n = u.name
+print(n)
+a = u.age
+print(a)`
+	out := parseAndGenerate(t, src)
+	validateWithWasmTools(t, out)
+	stdout, ok := runWithWasmtime(t, out)
+	if !ok {
+		t.Skip("wasmtime not in PATH; skipping execution")
+	}
+	want := "Alice\n30\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
 // TestBoundsCheck verifies SubTask 8.5: out-of-bounds vec index triggers
 // proc_exit(1).
 func TestBoundsCheck(t *testing.T) {
