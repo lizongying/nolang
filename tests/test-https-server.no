@@ -47,7 +47,7 @@ test-tls-server-init = () (pass bool) {
     pass = false
 
     ; tls-server-init 需要一個 fd, 用 -1 表示未連接（僅測試初始化邏輯）
-    conn = tls.tls-server-init(-1)
+    conn = tls-server-init(-1)
     conn: {
         nil -> {
             print('FAIL: tls-server-init returned nil')
@@ -114,7 +114,7 @@ test-https-server-struct = () (pass bool) {
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
-    tls-opt = tls.tls-dial(host, port)
+    tls-opt = tls-dial(host, port)
     tls-opt: {
         nil -> {
             print('FAIL: e2e tls-dial nil')
@@ -128,8 +128,8 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             e2e-tc = it
 
             ; 發送 HTTP GET 請求
-            cr = number.char-to-str(13)
-            lf = number.char-to-str(10)
+            cr = char-to-str(13)
+            lf = char-to-str(10)
             crlf = cr - lf
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 

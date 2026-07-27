@@ -1,0 +1,22 @@
+; test-https-basic — basic HTTPS server test (minimal)
+; # std/net/server
+; # std/net/tls
+
+; test-https-listen: test HTTPS server can listen
+test-https-listen = () (pass bool) {
+    pass = false
+    srv = https-server{}
+    ok = srv.listen('127.0.0.1', 9443)
+    ok == false -> {
+        print('FAIL: https-server.listen failed')
+        return
+    }
+    srv.close()
+    pass = true
+}
+
+main = () {
+    p1 = test-https-listen()
+    p1 == true -> print('PASS: https-server.listen')
+    p1 == false -> print('FAIL: https-server.listen')
+}

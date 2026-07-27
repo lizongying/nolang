@@ -44,9 +44,17 @@ math.PI
 
 以下情況不需要前綴：
 
-### 1. `print` / `eprint` / `format`
+### 1. 全局函數（`with-cap` / `with-len` / `with-cap-len` / `print` / `eprint` / `format`）
 
-這三個函數依規定免除前綴，直接使用。**這僅僅是針對這三個函數的特例**，並非因為它們是 builtin —— 其他 builtin 函數（如 `open`、`close`、`read`、`write` 等）仍需使用模組前綴。
+這 6 個函數是語言級全局內置函數，可以直接使用，無需模組前綴。它們的註釋宣告統一放在 `std/global.no` 中，方便開發者查看。
+
+**容量/長度構造：**
+
+- `with-cap(cap)` — 建立指定容量的字串或切片（len=0），型別由賦值左側推斷
+- `with-len(len)` — 建立指定長度的字串或切片
+- `with-cap-len(cap, len)` — 建立指定容量和長度的字串或切片
+
+**輸出/格式化：**
 
 Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用域中的變量，無需位置參數。支援編譯期驗證。輸出透過 `io.out`/`io.err` 系統調用直接寫入，不依賴 libc `printf`。
 
@@ -62,17 +70,27 @@ Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用�
 > `io.out`/`io.err` 是底層命令，輸出**不換行**。由於模組調用必須加模組名，`io.err` 明確了模組前綴，不會與 Option 構造函數 `err()` 衝突；即使同名，模組前綴也能區分。
 
 ```no
-print('hello {n}')           ; ✅ 無前綴，自動換行
-print(a, b, c)               ; ✅ 多參數，空格分隔，自動換行
-print()                      ; ✅ 空參數，只輸出換行
-s = format('x={x}')          ; ✅ 無前綴，返回格式化字串
-eprint('err: {n}')           ; ✅ 無前綴，輸出到 stderr 並換行
-eprint('err:', a, b)         ; ✅ 多參數，stderr 空格分隔
-print('編號 {id:06} 金額 {money:.2f}')  ; ✅ 支援對齊、填充、寬度、精度
-io.out('no-newline-here')    ; ✅ 底層命令，輸出不換行（替代 printf）
-io.err('err-no-newline')     ; ✅ 底層命令，stderr 不換行（替代 eprintf）
+; 容量/長度構造（無前綴）
+s str = with-cap(256)            ; ✅ 預分配 256 位元組的 str
+v []i64 = with-cap(100)          ; ✅ 預分配 100 個元素的切片
+v []i64 = with-cap-len(200, 100) ; ✅ 容量 200、長度 100
+v []i64 = with-len(100)          ; ✅ 長度 100 的切片
 
-fs.open(path, opts)          ; ✅ 帶前綴（builtin 也需要）
+; 輸出/格式化（無前綴）
+print('hello {n}')               ; ✅ 自動換行
+print(a, b, c)                   ; ✅ 多參數，空格分隔，自動換行
+print()                          ; ✅ 空參數，只輸出換行
+s = format('x={x}')              ; ✅ 返回格式化字串
+eprint('err: {n}')               ; ✅ 輸出到 stderr 並換行
+eprint('err:', a, b)             ; ✅ 多參數，stderr 空格分隔
+print('編號 {id:06} 金額 {money:.2f}')  ; ✅ 支援對齊、填充、寬度、精度
+
+; 底層命令（需要模組前綴）
+io.out('no-newline-here')        ; ✅ 輸出不換行（替代 printf）
+io.err('err-no-newline')         ; ✅ stderr 不換行（替代 eprintf）
+
+; 其他所有跨模組調用都需要前綴
+fs.open(path, opts)              ; ✅ 帶前綴（builtin 也需要）
 ```
 
 #### 格式說明符
@@ -231,6 +249,12 @@ db enter, leave {
 
 ; ─── 不需前綴 ───
 
+; 全局函數（宣告在 global.no）
+s str = with-cap(256)
+v []i64 = with-len(100)
+print('hello {n}')
+s = format('x={x}')
+
 ; 同檔案函數
 sha256(data)
 
@@ -243,10 +267,6 @@ v.push(42)
 f = fs.open(path, opts)
 f.read(buf, n)
 f.close()
-
-; print/eprint/format（具名格式字串，無前綴）
-print('hello {n}')
-s = format('x={x}')
 
 ; ─── 需要前綴 ───
 

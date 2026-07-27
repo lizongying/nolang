@@ -1042,6 +1042,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	fnName := ""
+	// isModuleQualified indicates that expr.Function is a DotExpression
+	// whose receiver is a module name (not a variable in varTypes).
+	// In this case, the receiver must NOT be prepended to the arguments
+	// (e.g. number.rotate-left(t, 7) → rotate-left(t, 7), not rotate-left(number, t, 7)).
+	isModuleQualified := false
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
 		fnName = ident.Value
 	} else if dot, ok := expr.Function.(*parser.DotExpression); ok {
@@ -1049,6 +1054,30 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 鏈式 DotExpression 的 Receiver 本身也是 DotExpression，
 		// 需遞迴展開為完整名稱。
 		fnName = flattenDottedExpr(dot)
+		// Detect module-qualified calls: if the first segment is not a
+		// variable in varTypes, treat it as a module name. Strip the prefix
+		// when the short name is a user function (registered without the
+		// module prefix in funcRetTypes, e.g. char-to-str, i64-to-str).
+		if strings.Contains(fnName, ".") && g.varTypes != nil {
+			if idx := strings.Index(fnName, "."); idx >= 0 {
+				firstSegment := fnName[:idx]
+				if _, isVar := g.varTypes[firstSegment]; !isVar {
+					shortName := fnName[idx+1:]
+					// Check if shortName is a user function (without module prefix)
+					if g.funcRetTypes != nil {
+						if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
+							fnName = shortName
+							isModuleQualified = true
+						} else if _, hasFullFn := g.funcRetTypes[fnName]; !hasFullFn {
+							// Full name not registered either — could be a
+							// module-qualified builtin (e.g. number.rotate-left).
+							// Mark as module-qualified so receiver is not prepended.
+							isModuleQualified = true
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 僅在用戶函數名稱與 C 系統調用（@open / @read / @write / @close / @mkdir /
@@ -1238,8 +1267,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if m.LLVMIntrinsic != "" {
 				// 對 method call（如 r2.sqrt()），receiver 是第一個參數
 				// expr.Arguments 不含 receiver，需從 DotExpression 補上
+				// 但模組限定呼叫（如 number.sqrt(x)）不應 prepend receiver
 				methodArgs := expr.Arguments
-				if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+				if dot, isDot := expr.Function.(*parser.DotExpression); isDot && !isModuleQualified {
 					methodArgs = append([]parser.Expression{dot.Receiver}, expr.Arguments...)
 				}
 				args := make([]string, len(methodArgs))
@@ -1275,8 +1305,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// the global builtin form (prefix stripped at line ~1014), the
 				// receiver must be extracted from the DotExpression and passed to
 				// genForwardFunc so it can be prepended to the args list.
+				// 但模組限定呼叫（如 number.rotate-left(t, 7)）不應 prepend receiver。
 				var fwdReceiver parser.Expression = nil
-				if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+				if dot, isDot := expr.Function.(*parser.DotExpression); isDot && !isModuleQualified {
 					fwdReceiver = dot.Receiver
 				}
 				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" {

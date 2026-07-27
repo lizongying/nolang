@@ -515,11 +515,11 @@ func TestIsValidIdent(t *testing.T) {
 // so that go-to-definition on their short names works across modules.
 //
 // Per the language spec, these functions can be called without module prefix.
-// The compiler resolves them via FindBuiltinMethod by short name. The LSP
-// must also resolve the short name to the comment declaration location.
+// They are declared in global.no as comment declarations, serving as the
+// single documentation hub for global built-in functions.
 func TestGlobalBuiltinShortNameResolution(t *testing.T) {
-	// Simulate vec.no with comment declarations for with-cap/with-len/with-cap-len
-	vecSource := `; with-cap: create with capacity
+	// Simulate global.no with comment declarations for all 6 global functions
+	globalSource := `; with-cap: create with capacity
 ; build-in (ForwardFunc: with-cap)
 ; with-cap = (cap i64) { }
 
@@ -530,9 +530,8 @@ func TestGlobalBuiltinShortNameResolution(t *testing.T) {
 ; with-cap-len: create with capacity and length
 ; build-in (ForwardFunc: with-cap-len)
 ; with-cap-len = (cap i64, len i64) { }
-`
-	// Simulate fmt.no with comment declarations for print/eprint/format
-	fmtSource := `; print: output to stdout with newline
+
+; print: output to stdout with newline
 ; build-in (ForwardFunc: print)
 ; print = (s str) { }
 
@@ -549,33 +548,27 @@ func TestGlobalBuiltinShortNameResolution(t *testing.T) {
 
 	dm := &DocumentManager{}
 
-	// Index vec.no
-	dm.indexBuiltinComments(index, vecSource, "file:///std/vec.no", "vec")
-	vecProg := createTestProgram(vecSource)
-	for _, ms := range vecProg.Statements {
-		dm.indexModuleStatement(index, ms, "file:///std/vec.no")
-	}
-
-	// Index fmt.no
-	dm.indexBuiltinComments(index, fmtSource, "file:///std/fmt.no", "fmt")
-	fmtProg := createTestProgram(fmtSource)
-	for _, ms := range fmtProg.Statements {
-		dm.indexModuleStatement(index, ms, "file:///std/fmt.no")
+	// Index global.no
+	globalURI := "file:///std/global.no"
+	dm.indexBuiltinComments(index, globalSource, globalURI, "global")
+	globalProg := createTestProgram(globalSource)
+	for _, ms := range globalProg.Statements {
+		dm.indexModuleStatement(index, ms, globalURI)
 	}
 
 	// All these global built-in functions should be found by short name
-	// with correct location pointing to their comment declaration.
+	// with correct location pointing to their comment declaration in global.no.
 	tests := []struct {
 		name string
 		uri  string
 		line uint32
 	}{
-		{"with-cap", "file:///std/vec.no", 2},
-		{"with-len", "file:///std/vec.no", 6},
-		{"with-cap-len", "file:///std/vec.no", 10},
-		{"print", "file:///std/fmt.no", 2},
-		{"eprint", "file:///std/fmt.no", 6},
-		{"format", "file:///std/fmt.no", 10},
+		{"with-cap", globalURI, 2},
+		{"with-len", globalURI, 6},
+		{"with-cap-len", globalURI, 10},
+		{"print", globalURI, 14},
+		{"eprint", globalURI, 18},
+		{"format", globalURI, 22},
 	}
 
 	for _, tt := range tests {

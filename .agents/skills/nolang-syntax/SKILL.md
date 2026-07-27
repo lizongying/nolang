@@ -1701,9 +1701,17 @@ math.PI
 
 The following cases do not require a prefix:
 
-**1. `print` / `eprint` / `format`**
+**1. Global Functions (`with-cap` / `with-len` / `with-cap-len` / `print` / `eprint` / `format`)**
 
-These three functions are exempt from the prefix rule by convention. **This is a special case for these three functions only**, not because they are builtins — other builtin functions (such as `open`, `close`, `read`, `write`, etc.) still require the module prefix.
+These 6 functions are language-level global builtins that can be used directly without a module prefix. Their comment declarations are centralized in `std/global.no` for easy reference.
+
+**Capacity/Length Constructors:**
+
+- `with-cap(cap)` — Create a string or slice with the specified capacity (len=0), type inferred from assignment
+- `with-len(len)` — Create a string or slice with the specified length
+- `with-cap-len(cap, len)` — Create a string or slice with specified capacity and length
+
+**Output/Formatting:**
 
 Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing variables directly from scope — no positional arguments. Compile-time validation is supported. Output is written directly via `io.out`/`io.err` syscalls, without depending on libc `printf`.
 
@@ -1719,17 +1727,26 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 > `io.out`/`io.err` are low-level commands that output **without a newline**. Since module calls must include the module prefix, `io.err` explicitly carries the module prefix and will not conflict with the Option constructor `err()`; even if names overlap, the module prefix disambiguates.
 
 ```no
-print('hello {n}')           // ✅ no prefix, auto-newline
-print(a, b, c)               // ✅ multiple args, space-separated, auto-newline
-print()                      // ✅ no args, just a newline
-s = format('x={x}')          // ✅ no prefix, returns formatted string
-eprint('err: {n}')           // ✅ no prefix, writes to stderr with newline
-eprint('err:', a, b)         // ✅ multiple args, stderr space-separated
-print('id {id:06} amount {money:.2f}')  // supports align/fill/width/precision
-io.out('no-newline-here')    // ✅ low-level command, no newline (replaces printf)
-io.err('err-no-newline')     // ✅ low-level command, stderr no newline (replaces eprintf)
+// Capacity/length constructors (no prefix)
+s str = with-cap(256)            // ✅ pre-allocate 256 bytes for str
+v []i64 = with-cap(100)          // ✅ pre-allocate 100 elements for slice
+v []i64 = with-cap-len(200, 100) // ✅ capacity 200, length 100
+v []i64 = with-len(100)          // ✅ length 100 slice
 
-fs.open(path, opts)          // ✅ with prefix (builtins need it too)
+// Output/formatting (no prefix)
+print('hello {n}')               // ✅ auto-newline
+print(a, b, c)                   // ✅ multiple args, space-separated
+print()                          // ✅ no args, just a newline
+s = format('x={x}')              // ✅ returns formatted string
+eprint('err: {n}')               // ✅ writes to stderr with newline
+print('id {id:06} amount {money:.2f}')  // supports align/fill/width/precision
+
+// Low-level commands (module prefix required)
+io.out('no-newline-here')        // ✅ no newline (replaces printf)
+io.err('err-no-newline')         // ✅ stderr, no newline (replaces eprintf)
+
+// All other cross-module calls require prefix
+fs.open(path, opts)              // ✅ with prefix (builtins need it too)
 ```
 
 **Format specifier syntax:** `{name[:spec]}` where `spec` is `[[fill]align][sign][#][0][width][.precision][type]`
