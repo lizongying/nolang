@@ -184,11 +184,11 @@ test-f64-to-str = () {
 
 ; ===== f32 → str =====
 test-f32-to-str = () {
-    f f32 = f64-to-f32(3.14)
+    f f32 = number.f64-to-f32(3.14)
     s = f.to-str()
     print(s); 期望: 3.14
 
-    z f32 = f64-to-f32(0.0)
+    z f32 = number.f64-to-f32(0.0)
     s = z.to-str()
     print(s); 期望: 0
 }

@@ -659,7 +659,7 @@ str-to-f64 = (s str) (result f64) {
         c = s[i] & 255
         {
             c >= 48 && c <= 57 -> {
-                int-part = int-part * 10.0 + i64-to-f64(c - 48)
+                int-part = int-part * 10.0 + number.i64-to-f64(c - 48)
                 has-digit = 1
                 i = i + 1
             }
@@ -676,7 +676,7 @@ str-to-f64 = (s str) (result f64) {
                 c = s[i] & 255
                 {
                     c >= 48 && c <= 57 -> {
-                        frac-part = frac-part * 10.0 + i64-to-f64(c - 48)
+                        frac-part = frac-part * 10.0 + number.i64-to-f64(c - 48)
                         frac-div = frac-div * 10.0
                         has-digit = 1
                         i = i + 1
@@ -791,7 +791,7 @@ str.to-f32 = () (val ?f32) {
         val = err('str.to-f32: parse error')
         return
     }
-    val = f64-to-f32(f)
+    val = number.f64-to-f32(f)
 }
 
 ; str.to-bool: 將字串 "true" / "false" 解析為 bool
@@ -1070,20 +1070,7 @@ str.empty = () (yes bool) {
 ; build-in
 ; str.clear = () { }
 
-; with-cap: 建立指定容量的新字串或切片（len=0）
-; 內建語法，不屬於任何模組，根據賦值左側型別推斷：
-;   s str = with-cap(256)     → 預分配 256 位元組的 str
-;   v []i64 = with-cap(100)   → 預分配 100 個元素的切片
-; build-in (ForwardFunc: with-cap)
-; with-cap = (cap i64) { }
-
-; with-len: 建立指定長度的字串或切片，型別由賦值左側推斷
-; build-in (ForwardFunc: with-len)
-; with-len = (len i64) { }
-
-; with-cap-len: 建立指定容量和長度的字串或切片，型別由賦值左側推斷
-; build-in (ForwardFunc: with-cap-len)
-; with-cap-len = (cap i64, len i64) { }
+; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
 ; ═══════════════════════════════════════════════
 ; 十六進制解碼
@@ -1326,10 +1313,10 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
         scale = scale * 10.0
     }
     scaled f64 = ax * scale
-    m i64 = f64-to-i64(scaled + 0.5)
+    m i64 = number.f64-to-i64(scaled + 0.5)
 
     ; 將 m 轉為字串
-    mstr = i64-to-str(m)
+    mstr = number.i64-to-str(m)
     mn = mstr.len
 
     ; 補零到至少 precision+1 位（保證整數部分至少一位）
@@ -1439,13 +1426,13 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     ; 計算指數 e = floor(log10(ax))
     ln10 f64 = 2.302585092994046
-    e i64 = f64-to-i64(floor(log10(ax)))
-    upper f64 = exp(i64-to-f64(e + 1) * ln10)
+    e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
+    upper f64 = math.exp(number.i64-to-f64(e + 1) * ln10)
     ax >= upper -> e = e + 1
-    base f64 = exp(i64-to-f64(e) * ln10)
+    base f64 = math.exp(number.i64-to-f64(e) * ln10)
     ax < base -> {
         e = e - 1
-        base = exp(i64-to-f64(e) * ln10)
+        base = math.exp(number.i64-to-f64(e) * ln10)
     }
 
     ; m = round(ax / base * 10^precision)
@@ -1453,7 +1440,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     pi <- [0..precision): {
         scale = scale * 10.0
     }
-    m i64 = f64-to-i64(ax / base * scale + 0.5)
+    m i64 = number.f64-to-i64(ax / base * scale + 0.5)
 
     ; 四捨五入溢出處理（m 變成 10^(precision+1)）
     overflow = 1
@@ -1466,7 +1453,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     }
 
     ; 構建 mantissa 字串
-    mstr = i64-to-str(m)
+    mstr = number.i64-to-str(m)
     mn = mstr.len
 
     ; 指數位數
@@ -1518,7 +1505,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     pos = pos + 1
 
     ; 指數位數（至少 2 位，前導補零）
-    estr = i64-to-str(ae)
+    estr = number.i64-to-str(ae)
     elen2 = estr.len
     elen2 == 1 -> {
         out[pos] = 48
@@ -1576,13 +1563,13 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     ; 計算指數
     ln10 f64 = 2.302585092994046
-    e i64 = f64-to-i64(floor(log10(ax)))
-    upper f64 = exp(i64-to-f64(e + 1) * ln10)
+    e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
+    upper f64 = math.exp(number.i64-to-f64(e + 1) * ln10)
     ax >= upper -> e = e + 1
-    base f64 = exp(i64-to-f64(e) * ln10)
+    base f64 = math.exp(number.i64-to-f64(e) * ln10)
     ax < base -> {
         e = e - 1
-        base = exp(i64-to-f64(e) * ln10)
+        base = math.exp(number.i64-to-f64(e) * ln10)
     }
 
     ; m = round(ax / base * 10^(precision-1))
@@ -1591,7 +1578,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     pi <- [0..p-1): {
         scale = scale * 10.0
     }
-    m i64 = f64-to-i64(ax / base * scale + 0.5)
+    m i64 = number.f64-to-i64(ax / base * scale + 0.5)
 
     ; 四捨五入溢出處理
     overflow = 1
@@ -1604,7 +1591,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     }
 
     ; mantissa 字串
-    mstr = i64-to-str(m)
+    mstr = number.i64-to-str(m)
     mn = mstr.len
     pad = 0
     mn < precision -> pad = precision - mn
@@ -1678,7 +1665,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         pos = pos + 1
 
         ; 指數位數（至少 2 位）
-        estr = i64-to-str(ae)
+        estr = number.i64-to-str(ae)
         elen2 = estr.len
         elen2 == 1 -> {
             out[pos] = 48

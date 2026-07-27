@@ -145,8 +145,8 @@ http-response.parse-headers = () {
     hs = .headers
     n = hs.len
     n == 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     pos = 0
@@ -231,8 +231,8 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     path = '/'
     host-only = ''
     port-str = ''
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     req = ''
     len-str = ''
@@ -298,7 +298,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
             ok2 == false -> return
         }
         -> {
-            fd = net-dial(host, port)
+            fd = net.net-dial(host, port)
             fd < 0 -> return
         }
     }
@@ -340,9 +340,9 @@ http-do = (method str, url str, body str) (resp ?http-response) {
             }
         }
         -> {
-            written = net-send(fd, req, req.len)
+            written = net.net-send(fd, req, req.len)
             written < 0 -> {
-                close(fd)
+                fs.close(fd)
                 return
             }
         }
@@ -360,7 +360,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
                     ok -> n = it
                 }
             }
-            -> n = net-recv(fd, buf, HTTP-BUF-SIZE)
+            -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
         total + n > HTTP-MAX-RESPONSE -> *
@@ -372,7 +372,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     } ()
     {
         use-tls -> tls-c.close()
-        -> close(fd)
+        -> fs.close(fd)
     }
 
     total == 0 -> return
@@ -438,8 +438,8 @@ http-do-req = (req http-request) (resp ?http-response) {
     path = '/'
     host-only = ''
     port-str = ''
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     req-str = ''
     len-str = ''
@@ -506,7 +506,7 @@ http-do-req = (req http-request) (resp ?http-response) {
             ok2 == false -> return
         }
         -> {
-            fd = net-dial(host, port)
+            fd = net.net-dial(host, port)
             fd < 0 -> return
         }
     }
@@ -554,9 +554,9 @@ http-do-req = (req http-request) (resp ?http-response) {
             }
         }
         -> {
-            written = net-send(fd, req-str, req-str.len)
+            written = net.net-send(fd, req-str, req-str.len)
             written < 0 -> {
-                close(fd)
+                fs.close(fd)
                 return
             }
         }
@@ -573,7 +573,7 @@ http-do-req = (req http-request) (resp ?http-response) {
                     ok -> n = it
                 }
             }
-            -> n = net-recv(fd, buf, HTTP-BUF-SIZE)
+            -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
         total + n > HTTP-MAX-RESPONSE -> *
@@ -584,7 +584,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     } ()
     {
         use-tls -> tls-c.close()
-        -> close(fd)
+        -> fs.close(fd)
     }
 
     total == 0 -> return

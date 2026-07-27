@@ -335,8 +335,8 @@ open = (p str, opts file-opts) (f ?file) {
     fd = open-file(p, flags, perm-val)
     fd < 0 -> {
         ; 獲取 errno 並返回詳細錯誤信息
-        errno = get-errno()
-        err-msg = strerror(errno)
+        errno = os.get-errno()
+        err-msg = os.strerror(errno)
         f = err(err-msg)
         return
     }
@@ -528,17 +528,17 @@ list-dir = (dirpath str) (entries []str) {
 #{win-amd64, win-arm64}
 list-dir = (dirpath str) (entries []str) {
     winpath = dirpath - '\\*'
-    bufptr = win-find-first-file(winpath)
+    bufptr = os.win-find-first-file(winpath)
 
     {
         bufptr == 0 -> return
     }
 
     {
-        name, ok = win-find-next-file(bufptr)
+        name, ok = os.win-find-next-file(bufptr)
         {
             ok == false -> {
-                win-find-close(bufptr)
+                os.win-find-close(bufptr)
                 return
             }
         }

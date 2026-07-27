@@ -1,5 +1,5 @@
 test-fn = () (fd i64) {
-    fd = net-icmp-open()
+    fd = net.net-icmp-open()
 }
 
 r = test-fn()

@@ -56,10 +56,10 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     fd = -1
 
     ; 連接到代理伺服器
-    fd = net-dial(proxy-host, proxy-port)
+    fd = net.net-dial(proxy-host, proxy-port)
     fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     ; 建構 CONNECT 請求
@@ -79,9 +79,9 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     req = req - crlf
 
     ; 發送 CONNECT 請求
-    written = net-send(fd, req, req.len)
+    written = net.net-send(fd, req, req.len)
     written < 0 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
@@ -96,13 +96,13 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
 
     {
         total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
-        n = net-recv(fd, buf, PROXY-BUF-SIZE)
+        n = net.net-recv(fd, buf, PROXY-BUF-SIZE)
         n <= 0 -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
@@ -124,7 +124,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     ; 檢查狀態碼（200 = 成功）
     sp1 = status-line.index(' ')
     sp1 < 0 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
@@ -136,7 +136,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     i <- [0..code-str.len): {
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
@@ -144,7 +144,7 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     }
 
     code != 200 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
@@ -391,7 +391,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     fd = -1
 
     ; 連接到 SOCKS5 代理
-    fd = net-dial(proxy-host, proxy-port)
+    fd = net.net-dial(proxy-host, proxy-port)
     fd < 0 -> return
 
     ; 1. 握手 — 方法協商
@@ -410,25 +410,25 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
     }
     req-str = req.to-str()
-    written = net-send(fd, req-str, req.len + 1)
+    written = net.net-send(fd, req-str, req.len + 1)
     written < 0 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
 
     ; 接收方法選擇回應（2 bytes）
     resp = space.repeat(2)
-    n = net-recv(fd, resp, 2)
+    n = net.net-recv(fd, resp, 2)
     n != 2 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
     ver = resp[0] & 255
     method = resp[1] & 255
     ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
@@ -452,23 +452,23 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             pos = pos + 1
         }
         auth-str = auth-req.to-str()
-        written = net-send(fd, auth-str, pos)
+        written = net.net-send(fd, auth-str, pos)
         written < 0 -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
 
         ; 接收認證回應（2 bytes）
         auth-resp = space.repeat(2)
-        n = net-recv(fd, auth-resp, 2)
+        n = net.net-recv(fd, auth-resp, 2)
         n != 2 -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
         (auth-resp[1] & 255) != 0 -> {
-            close(fd)
+            fs.close(fd)
             fd = -1
             return
         }
@@ -498,29 +498,29 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     conn-req[pos] = target-port & 255
     pos = pos + 1
     conn-str = conn-req.to-str()
-    written = net-send(fd, conn-str, pos)
+    written = net.net-send(fd, conn-str, pos)
     written < 0 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
 
     ; 接收連接回應（至少 10 bytes）
     reply = space.repeat(16)
-    n = net-recv(fd, reply, 16)
+    n = net.net-recv(fd, reply, 16)
     n < 4 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
     (reply[0] & 255) != SOCKS5-VERSION -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }
     rep = reply[1] & 255
     rep != 0 -> {
-        close(fd)
+        fs.close(fd)
         fd = -1
         return
     }

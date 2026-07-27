@@ -522,7 +522,7 @@ quic-conn.init = () {
 ; quic-conn.close: 關閉連線
 quic-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
     .connected = false
@@ -699,7 +699,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 
     ; 接收 UDP 封包
     buf []byte
-    n = net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
+    n = net.net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
     n <= 0 -> return
     end = n
 
@@ -787,7 +787,7 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
 ; 返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
 quic-conn.recv-raw = () (buf []byte, n i64) {
     buf = with-len(QUIC-MAX-PACKET-SIZE)
-    n = net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
+    n = net.net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
 }
 
 ; ═══════════════════════════════════════════════
@@ -806,8 +806,8 @@ quic-dial = (host str, port i64) (conn ?quic-conn) {
     c.port = port
 
     ; 1. 建立 UDP socket
-    c.fd = net-udp-open()
-    c.fd < 0 -> net-set-recv-timeout(c.fd, 5000)
+    c.fd = net.net-udp-open()
+    c.fd < 0 -> net.net-set-recv-timeout(c.fd, 5000)
 
     ; 設定接收逾時（5 秒）
 

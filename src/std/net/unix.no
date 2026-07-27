@@ -83,7 +83,7 @@ unix-listener.listen = (path str) (ok bool) {
 unix-listener.accept = () (c ?unix-conn) {
     c = nil
     .fd < 0 -> return
-    fd = net-accept(.fd)
+    fd = net.net-accept(.fd)
     fd < 0 -> return
     c = unix-conn{
         fd: fd
@@ -96,7 +96,7 @@ unix-listener.accept = () (c ?unix-conn) {
 unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
     .fd < 0 -> return
-    ret = net-set-recv-timeout(.fd, timeout-ms)
+    ret = net.net-set-recv-timeout(.fd, timeout-ms)
     ret == 0 -> ok = true
 }
 
@@ -106,10 +106,10 @@ unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
 unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     c = nil
     .fd < 0 -> return
-    ret = net-set-recv-timeout(.fd, timeout-ms)
+    ret = net.net-set-recv-timeout(.fd, timeout-ms)
     ret != 0 -> return
-    fd = net-accept(.fd)
-    net-set-recv-timeout(.fd, 0)
+    fd = net.net-accept(.fd)
+    net.net-set-recv-timeout(.fd, 0)
     fd < 0 -> return
     c = unix-conn{
         fd: fd
@@ -119,7 +119,7 @@ unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
 ; close: 關閉監聽 socket（不自動刪除 socket 檔案）
 unix-listener.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -164,7 +164,7 @@ unix-conn.dial = (path str) (ok bool) {
 unix-conn.send = (data str) (written i64) {
     written = -1
     .fd < 0 -> return
-    written = net-send(.fd, data, data.len)
+    written = net.net-send(.fd, data, data.len)
 }
 
 ; recv: 接收資料到緩衝區
@@ -174,7 +174,7 @@ unix-conn.send = (data str) (written i64) {
 unix-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .fd < 0 -> return
-    read-n = net-recv(.fd, buf, n)
+    read-n = net.net-recv(.fd, buf, n)
 }
 
 ; recv-all: 接收全部資料直到連接關閉
@@ -184,7 +184,7 @@ unix-conn.recv-all = () (content str, total i64) {
     .fd < 0 -> return
     buf str = ' '.repeat(UNIX-BUF-SIZE)
     {
-        chunk-n = net-recv(.fd, buf, UNIX-BUF-SIZE)
+        chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
             content[total + i] = buf[i]
@@ -199,7 +199,7 @@ unix-conn.recv-all = () (content str, total i64) {
 unix-conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
     ok = false
     .fd < 0 -> return
-    ret = net-set-recv-timeout(.fd, timeout-ms)
+    ret = net.net-set-recv-timeout(.fd, timeout-ms)
     ret == 0 -> ok = true
 }
 
@@ -218,18 +218,18 @@ unix-conn.set-timeout = (timeout-ms i64) (ok bool) {
 unix-conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     read-n = -1
     .fd < 0 -> return
-    ret = net-set-recv-timeout(.fd, timeout-ms)
+    ret = net.net-set-recv-timeout(.fd, timeout-ms)
     ret != 0 -> return
-    read-n = net-recv(.fd, buf, n)
+    read-n = net.net-recv(.fd, buf, n)
 
     ; 恢復為阻塞模式
-    net-set-recv-timeout(.fd, 0)
+    net.net-set-recv-timeout(.fd, 0)
 }
 
 ; close: 關閉連接
 unix-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -274,7 +274,7 @@ unix-dial-timeout = (path str, timeout-ms i64) (c ?unix-conn) {
     c = nil
     fd = unix-dial(path)
     fd < 0 -> return
-    net-set-recv-timeout(fd, timeout-ms)
+    net.net-set-recv-timeout(fd, timeout-ms)
     cn = unix-conn{
         fd: fd
     }

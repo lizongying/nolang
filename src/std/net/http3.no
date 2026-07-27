@@ -503,12 +503,12 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; 注意: 此處需要 1-RTT 金鑰來加密
     ; 在完整實作中，這需要先完成 QUIC 握手
     ; 這裡透過 UDP 直接發送（簡化模式）
-    written = net-udp-sendto(conn.fd, pkt, pkt-pos, conn.host, conn.port)
+    written = net.net-udp-sendto(conn.fd, pkt, pkt-pos, conn.host, conn.port)
     written < 0 -> return
 
     ; ── 接收回應 ──
     recv-buf []byte
-    n = net-udp-recvfrom(conn.fd, recv-buf, HTTP3-MAX-RESPONSE)
+    n = net.net-udp-recvfrom(conn.fd, recv-buf, HTTP3-MAX-RESPONSE)
     n <= 0 -> return
 
     ; 解析回應（簡化: 直接解析 HTTP/3 影格）

@@ -19,52 +19,52 @@ path {
 
 ; exists: 檢查路徑是否存在（為檔案）
 path.exists = () (yes bool) {
-    yes = is-file(.p)
+    yes = fs.is-file(.p)
 }
 
 ; is-dir: 檢查路徑是否為目錄
 path.is-dir = () (yes bool) {
-    yes = is-dir(.p)
+    yes = fs.is-dir(.p)
 }
 
 ; is-file: 檢查路徑是否為檔案
 path.is-file = () (yes bool) {
-    yes = is-file(.p)
+    yes = fs.is-file(.p)
 }
 
 ; size: 取得檔案大小
 path.size = () (sz i64) {
-    sz = stat-size(.p)
+    sz = fs.stat-size(.p)
 }
 
 ; make-dir: 建立目錄
 ; 返回 true=成功, false=失敗
 path.make-dir = () (ok bool) {
-    ok = mkdir(.p, 511)
+    ok = os.mkdir(.p, 511)
 }
 
 ; remove: 刪除檔案
 ; 返回 true=成功, false=失敗
 path.remove = () (ok bool) {
-    ok = remove(.p)
+    ok = fs.remove(.p)
 }
 
 ; rename: 將本路徑重新命名為 new-p
 ; 返回 true=成功, false=失敗
 path.rename = (new-p str) (ok bool) {
-    ok = rename(.p, new-p)
+    ok = fs.rename(.p, new-p)
 }
 
 ; change-dir: 切換工作目錄到本路徑
 ; 返回 true=成功, false=失敗
 path.change-dir = () (ok bool) {
-    ok = ch-dir(.p)
+    ok = os.ch-dir(.p)
 }
 
 ; current: 取得當前工作目錄（建構型方法）
 ; 返回新的 path 結構體
 path.current = () (out path) {
-    dir = get-wd()
+    dir = os.get-wd()
     out.p = dir
 }
 

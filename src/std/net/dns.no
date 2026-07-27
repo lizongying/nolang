@@ -289,25 +289,25 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     qlen == 0 -> return
 
     ; 建立 UDP socket
-    fd = net-udp-open()
+    fd = net.net-udp-open()
     fd < 0 -> return
 
     ; 設定逾時
-    net-set-recv-timeout(fd, DNS-TIMEOUT)
+    net.net-set-recv-timeout(fd, DNS-TIMEOUT)
 
     ; 發送查詢
     query-str = query.to-str()
-    written = net-udp-sendto(fd, query-str, qlen, server, DNS-PORT)
+    written = net.net-udp-sendto(fd, query-str, qlen, server, DNS-PORT)
     written < 0 -> {
-        close(fd)
+        fs.close(fd)
         return
     }
 
     ; 接收回應
     space = ' '
     resp-str = space.repeat(DNS-MAX-PACKET)
-    n = net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
-    close(fd)
+    n = net.net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
+    fs.close(fd)
     n <= 0 -> return
 
     ; 解析回應
@@ -338,21 +338,21 @@ dns-resolve-all = (domain str) (ip ?str) {
     qlen = 0
     query, qlen = dns-build-query(domain, DNS-TYPE-A)
     qlen == 0 -> return
-    fd = net-udp-open()
+    fd = net.net-udp-open()
     fd < 0 -> return
-    net-set-recv-timeout(fd, DNS-TIMEOUT)
+    net.net-set-recv-timeout(fd, DNS-TIMEOUT)
 
     query-str = query.to-str()
-    written = net-udp-sendto(fd, query-str, qlen, DNS-DEFAULT-SERVER, DNS-PORT)
+    written = net.net-udp-sendto(fd, query-str, qlen, DNS-DEFAULT-SERVER, DNS-PORT)
     written < 0 -> {
-        close(fd)
+        fs.close(fd)
         return
     }
 
     space = ' '
     resp-str = space.repeat(DNS-MAX-PACKET)
-    n = net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
-    close(fd)
+    n = net.net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
+    fs.close(fd)
     n <= 0 -> return
     resp []byte = with-len(n)
     i <- [0..n): {
@@ -369,14 +369,14 @@ dns-dial = (domain str, port i64) (fd fd) {
     fd = -1
 
     ; 先嘗試直接連接（net-dial 內建已支援 hostname 解析）
-    fd = net-dial(domain, port)
+    fd = net.net-dial(domain, port)
     fd >= 0 -> return
 
     ; 如果直接連接失敗，使用 DNS 解析
     ip = dns-resolve(domain)
     ip: {
         nil ->
-        ok -> fd = net-dial(ip, port)
+        ok -> fd = net.net-dial(ip, port)
         ->
     }
 }

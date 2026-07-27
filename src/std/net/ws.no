@@ -297,7 +297,7 @@ ws-server.listen = (host str, port i64) (ok bool) {
     .fd = -1
     .host = host
     .port = port
-    fd = net-listen(host, port)
+    fd = net.net-listen(host, port)
     fd < 0 -> return
     .fd = fd
     ok = true
@@ -308,7 +308,7 @@ ws-server.listen = (host str, port i64) (ok bool) {
 ws-server.accept = () (c ?ws-server-conn) {
     c = nil
     .fd < 0 -> return
-    client-fd = net-accept(.fd)
+    client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
     space = ' '
     buf = space.repeat(WS-BUF-SIZE)
@@ -331,7 +331,7 @@ ws-server.accept = () (c ?ws-server-conn) {
 ; close: 關閉 WebSocket 服務端
 ws-server.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -345,8 +345,8 @@ ws-server.close = () {
 ; 成功時設置 .connected = true。
 ws-server-conn.handshake = () {
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     separator = crlf - crlf
 
@@ -359,7 +359,7 @@ ws-server-conn.handshake = () {
     {
         total + WS-RECV-SIZE > WS-BUF-SIZE -> return
         tmp str = space.repeat(WS-RECV-SIZE)
-        n = net-recv(.fd, tmp, WS-RECV-SIZE)
+        n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {
             raw[total + i] = tmp[i]
@@ -384,7 +384,7 @@ ws-server-conn.handshake = () {
         resp = resp - 'Content-Length: 0' - crlf
         resp = resp - 'Allow: GET' - crlf
         resp = resp - crlf
-        net-send(.fd, resp, resp.len)
+        net.net-send(.fd, resp, resp.len)
         return
     }
 
@@ -435,7 +435,7 @@ ws-server-conn.handshake = () {
     resp = resp - 'Connection: Upgrade' - crlf
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
     resp = resp - crlf
-    written = net-send(.fd, resp, resp.len)
+    written = net.net-send(.fd, resp, resp.len)
     written < 0 -> return
 
     ; 儲存標頭後的剩餘資料（可能包含第一個 frame）
@@ -460,7 +460,7 @@ ws-server-conn.send = (opcode i64, data str) (ok bool) {
     .connected == false -> return
     empty-key = ''
     frame = ws-build-frame(opcode, data, false, empty-key)
-    written = net-send(.fd, frame, frame.len)
+    written = net.net-send(.fd, frame, frame.len)
     written < 0 -> {
         .connected = false
         return
@@ -530,8 +530,8 @@ ws-server-conn.recv = () (msg ?ws-message) {
         return
     }
 
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     ; 收集分片訊息
@@ -546,7 +546,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
         }
         .recv-buf-len < 2 -> {
             tmp str = ' '.repeat(WS-RECV-SIZE)
-            n = net-recv(.fd, tmp, WS-RECV-SIZE)
+            n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
             n <= 0 -> {
                 .connected = false
                 msg = nil
@@ -580,7 +580,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
                 tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = net-recv(.fd, tmp, need)
+                n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
                     msg = err('incomplete frame')
@@ -603,7 +603,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
                 tmp str = ' '.repeat(WS-RECV-SIZE)
-                n = net-recv(.fd, tmp, need)
+                n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
                     msg = err('incomplete frame')
@@ -623,7 +623,7 @@ ws-server-conn.recv = () (msg ?ws-message) {
             tmp str = ' '.repeat(WS-RECV-SIZE)
             {
                 need <= 0 -> *
-                n = net-recv(.fd, tmp, need)
+                n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
                     msg = err('incomplete frame')
@@ -714,7 +714,7 @@ ws-server-conn.is-connected = () (yes bool) {
 ; close: 關閉客戶端連接
 ws-server-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
     .connected = false
@@ -751,7 +751,7 @@ ws-client.send = (opcode i64, data str) (ok bool) {
             }
         }
         -> {
-            written = net-send(.fd, frame, frame.len)
+            written = net.net-send(.fd, frame, frame.len)
             written < 0 -> {
                 .connected = false
                 return
@@ -833,7 +833,7 @@ ws-client.recv = () (msg ?ws-message) {
                         }
                     }
                 }
-                -> n = net-recv(.fd, tmp, WS-RECV-SIZE)
+                -> n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
             }
             n <= 0 -> {
                 .connected = false
@@ -877,7 +877,7 @@ ws-client.recv = () (msg ?ws-message) {
                             }
                         }
                     }
-                    -> n = net-recv(.fd, tmp, need)
+                    -> n = net.net-recv(.fd, tmp, need)
                 }
                 n <= 0 -> {
                     .connected = false
@@ -911,7 +911,7 @@ ws-client.recv = () (msg ?ws-message) {
                             }
                         }
                     }
-                    -> n = net-recv(.fd, tmp, need)
+                    -> n = net.net-recv(.fd, tmp, need)
                 }
                 n <= 0 -> {
                     .connected = false
@@ -944,7 +944,7 @@ ws-client.recv = () (msg ?ws-message) {
                             }
                         }
                     }
-                    -> n = net-recv(.fd, tmp, need)
+                    -> n = net.net-recv(.fd, tmp, need)
                 }
                 n <= 0 -> {
                     .connected = false
@@ -1031,7 +1031,7 @@ ws-client.close = () {
     {
         .use-tls -> .tls-c.close()
         .fd >= 0 -> {
-            close(.fd)
+            fs.close(.fd)
             .fd = -1
         }
     }
@@ -1128,7 +1128,7 @@ ws-connect = (url str) (c ?ws-client) {
             fd = tc.fd
         }
         -> {
-            fd = net-dial(host, port)
+            fd = net.net-dial(host, port)
             fd < 0 -> {
                 c = err('TCP connection failed')
                 return
@@ -1141,8 +1141,8 @@ ws-connect = (url str) (c ?ws-client) {
     client-key = ws-gen-client-key(seed)
 
     ; 建構 HTTP 升級請求
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     req = 'GET ' - path - ' HTTP/1.1' - crlf
     req = req - 'Host: ' - host - crlf
@@ -1172,9 +1172,9 @@ ws-connect = (url str) (c ?ws-client) {
             }
         }
         -> {
-            written = net-send(fd, req, req.len)
+            written = net.net-send(fd, req, req.len)
             written < 0 -> {
-                close(fd)
+                fs.close(fd)
                 c = err('send failed')
                 return
             }
@@ -1193,7 +1193,7 @@ ws-connect = (url str) (c ?ws-client) {
         total + WS-RECV-SIZE > WS-BUF-SIZE -> {
             {
                 use-tls -> tc.close()
-                -> close(fd)
+                -> fs.close(fd)
             }
             c = err('response headers too large')
             return
@@ -1206,7 +1206,7 @@ ws-connect = (url str) (c ?ws-client) {
                     nil -> {
                         {
                             use-tls -> tc.close()
-                            -> close(fd)
+                            -> fs.close(fd)
                         }
                         c = err('connection closed during handshake')
                         return
@@ -1214,7 +1214,7 @@ ws-connect = (url str) (c ?ws-client) {
                     err -> {
                         {
                             use-tls -> tc.close()
-                            -> close(fd)
+                            -> fs.close(fd)
                         }
                         c = err('connection closed during handshake')
                         return
@@ -1222,12 +1222,12 @@ ws-connect = (url str) (c ?ws-client) {
                     ok -> n = it
                 }
             }
-            -> n = net-recv(fd, tmp, WS-RECV-SIZE)
+            -> n = net.net-recv(fd, tmp, WS-RECV-SIZE)
         }
         n <= 0 -> {
             {
                 use-tls -> tc.close()
-                -> close(fd)
+                -> fs.close(fd)
             }
             c = err('connection closed during handshake')
             return
@@ -1251,7 +1251,7 @@ ws-connect = (url str) (c ?ws-client) {
     sp1 < 0 -> {
         {
             use-tls -> tc.close()
-            -> close(fd)
+            -> fs.close(fd)
         }
         c = err('invalid status line')
         return
@@ -1267,7 +1267,7 @@ ws-connect = (url str) (c ?ws-client) {
         ch < 48 || ch > 57 -> {
             {
                 use-tls -> tc.close()
-                -> close(fd)
+                -> fs.close(fd)
             }
             c = err('invalid status code')
             return
@@ -1278,7 +1278,7 @@ ws-connect = (url str) (c ?ws-client) {
     status-code != 101 -> {
         {
             use-tls -> tc.close()
-            -> close(fd)
+            -> fs.close(fd)
         }
         code-s = status-code.to-str()
         c = err('server returned status ' - code-s)
@@ -1295,7 +1295,7 @@ ws-connect = (url str) (c ?ws-client) {
     accept-pos < 0 -> {
         {
             use-tls -> tc.close()
-            -> close(fd)
+            -> fs.close(fd)
         }
         c = err('missing Sec-WebSocket-Accept')
         return
@@ -1313,7 +1313,7 @@ ws-connect = (url str) (c ?ws-client) {
     server-accept != expected-accept -> {
         {
             use-tls -> tc.close()
-            -> close(fd)
+            -> fs.close(fd)
         }
         c = err('invalid Sec-WebSocket-Accept')
         return

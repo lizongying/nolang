@@ -313,7 +313,7 @@ tls-recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     total = 0
     {
         tmp str = ' '.repeat(n - total)
-        r = net-recv(fd, tmp, n - total)
+        r = net.net-recv(fd, tmp, n - total)
         r <= 0 -> return
         i <- [0..r): {
             buf[total + i] = tmp[i]
@@ -336,7 +336,7 @@ tls-read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     hdr-total = 0
     {
         tmp str = ' '.repeat(5 - hdr-total)
-        r = net-recv(fd, tmp, 5 - hdr-total)
+        r = net.net-recv(fd, tmp, 5 - hdr-total)
         r <= 0 -> return
         i <- [0..r): {
             buf[hdr-total + i] = tmp[i]
@@ -357,7 +357,7 @@ tls-read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     body-total = 0
     {
         tmp2 str = ' '.repeat(rlen - body-total)
-        r = net-recv(fd, tmp2, rlen - body-total)
+        r = net.net-recv(fd, tmp2, rlen - body-total)
         r <= 0 -> {
             ct = -1
             return
@@ -383,8 +383,8 @@ tls-send-raw = (fd fd, ct i64, data []byte) {
     hdr[2] = TLS-VERSION & 255
     hdr[3] = (n >> 8) & 255
     hdr[4] = n & 255
-    net-send(fd, hdr, 5)
-    net-send(fd, data, n)
+    net.net-send(fd, hdr, 5)
+    net.net-send(fd, data, n)
 }
 
 ; ═══════════════════════════════════════════════
@@ -481,7 +481,7 @@ tls-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     rec.len = 5 + rec-len
 
     ; 7. 發送
-    sent = net-send(.fd, rec, 5 + rec-len)
+    sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
     .write-seq = .write-seq + 1
     ok = true
@@ -584,7 +584,7 @@ tls-rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     padded[1] = 2
 
     ; PS: 非零隨機位元組
-    state = now-ns()
+    state = time.now-ns()
     i <- [0..ps-len): {
         state, r = rand(state)
         b = state & 255
@@ -869,8 +869,8 @@ tls-conn.send-change-cipher-spec = () {
     hdr[2] = TLS-VERSION & 255
     hdr[3] = 0
     hdr[4] = 1
-    net-send(.fd, hdr, 5)
-    net-send(.fd, ccs, 1)
+    net.net-send(.fd, hdr, 5)
+    net.net-send(.fd, ccs, 1)
 }
 
 ; send-finished: 發送加密的 Finished 訊息
@@ -1581,7 +1581,7 @@ tls-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, se
     rec.len = 5 + rec-len
 
     ; 發送
-    sent = net-send(.fd, rec, 5 + rec-len)
+    sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
     ok = true
 }
@@ -1887,7 +1887,7 @@ tls-conn.init = () {
     .ap-read-seq = 0
 
     ; 用時間戳初始化 PRNG
-    .rand-state = now-ns()
+    .rand-state = time.now-ns()
     .rand-state == 0 -> .rand-state = 1
 }
 
@@ -2099,7 +2099,7 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
 ; close: 關閉 TLS 連線
 tls-conn.close = () {
     .connected -> {
-        .fd >= 0 -> close(.fd)
+        .fd >= 0 -> fs.close(.fd)
         .fd = -1
         .connected = false
         .encrypted = false
@@ -2575,7 +2575,7 @@ tls-server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     rec.len = 5 + rec-len
 
     ; 7. 發送
-    sent = net-send(.fd, rec, 5 + rec-len)
+    sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
     .write-seq = .write-seq + 1
     ok = true
@@ -2664,8 +2664,8 @@ tls-server-conn.send-change-cipher-spec = () {
     hdr[2] = TLS-VERSION & 255
     hdr[3] = 0
     hdr[4] = 1
-    net-send(.fd, hdr, 5)
-    net-send(.fd, ccs, 1)
+    net.net-send(.fd, hdr, 5)
+    net.net-send(.fd, ccs, 1)
 }
 
 ; tls-server-conn.read-change-cipher-spec: 讀取 ChangeCipherSpec
@@ -2863,7 +2863,7 @@ tls-server-conn.recv = (buf str, n i64) (read-n i64) {
 
 ; tls-server-conn.close: 關閉連線
 tls-server-conn.close = () {
-    .fd > 0 -> close(.fd)
+    .fd > 0 -> fs.close(.fd)
     .fd = -1
     .encrypted = false
 }
@@ -2875,7 +2875,7 @@ tls-server-init = (fd fd) (conn ?tls-server-conn) {
     conn = nil
     c = tls-server-conn{}
     c.fd = fd
-    c.rand-state = now-ns()
+    c.rand-state = time.now-ns()
     c.encrypted = false
     c.hs-buf = with-len(65536)
     c.hs-buf-len = 0
@@ -2910,18 +2910,18 @@ tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
     conn = nil
 
     ; 接受 TCP 連線
-    client-fd = net-accept(listen-fd)
+    client-fd = net.net-accept(listen-fd)
     client-fd < 0 -> return
 
     ; 初始化伺服器連線（返回 ?tls-server-conn）
     init-opt = tls-server-init(client-fd)
     init-opt: {
         nil -> {
-            close(client-fd)
+            fs.close(client-fd)
             return
         }
         err -> {
-            close(client-fd)
+            fs.close(client-fd)
             return
         }
         ok -> {
@@ -2945,5 +2945,5 @@ tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
 ; 返回 fd fd: 監聽 socket fd（-1=失敗）
 tls-server-listen = (host str, port i64) (fd fd) {
     fd = -1
-    fd = net-listen(host, port)
+    fd = net.net-listen(host, port)
 }

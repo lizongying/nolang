@@ -107,7 +107,7 @@ result {
 ; ============================================================================
 
 db enter, leave {
-    close() (ok bool)
+    fs.close() (ok bool)
     exec(sql str) (r result)
     query(sql str) (rs rows)
     prepare(sql str) (s stmt)
@@ -123,7 +123,7 @@ rows enter, leave {
     scan-int(col i64) (v i64)
     scan-str(col i64) (v str)
     scan-float(col i64) (v f64)
-    close() (ok bool)
+    fs.close() (ok bool)
 }
 
 ; ============================================================================
@@ -137,5 +137,5 @@ stmt enter, leave {
     bind-bool(idx i64, v bool) (ok bool)
     exec() (r result)
     query() (rs rows)
-    close() (ok bool)
+    fs.close() (ok bool)
 }

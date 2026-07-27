@@ -12,7 +12,7 @@ ts = time.now-s()
 
 ; ── 2. now-ms 回傳正值 ──
 ms i64 = 0
-ms = now-ms()
+ms = time.now-ms()
 {
     ms > 0 -> print('ok: now-ms')
     -> print('fail: now-ms')
@@ -34,7 +34,7 @@ print('ok: sleep-ms')
 
 ; ── 5. since-ms 計算經過時間 ──
 before i64 = 0
-before = now-ms()
+before = time.now-ms()
 time.sleep-ms(50)
 elapsed i64 = 0
 elapsed = time.since-ms(before)

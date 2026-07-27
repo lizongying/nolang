@@ -194,7 +194,7 @@
             out = '['
             last = n - 1
             i <- [0..n): {
-                out = out - i64-to-str(.[i])
+                out = out - number.i64-to-str(.[i])
                 i < last -> out = out - ', '
             }
             out = out - ']'

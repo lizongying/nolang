@@ -14,7 +14,7 @@
 ; now-s: 當前 Unix 時間戳（秒）
 ; 包裝 builtin now()
 now-s = () (ts i64) {
-    ts = now()
+    ts = os.now()
 }
 
 ; now-ms: 當前 Unix 時間戳（毫秒）
@@ -36,7 +36,7 @@ now-s = () (ts i64) {
 ; sleep-s: 睡眠指定秒數
 ; 包裝 builtin sleep()
 sleep-s = (s i64) {
-    sleep(s)
+    os.sleep(s)
 }
 
 ; sleep-ms: 睡眠指定毫秒數
@@ -75,7 +75,7 @@ duration-us-between = (start i64, end i64) (diff i64) {
 
 ; since-s: 從 start 到現在的經過秒數
 since-s = (start i64) (diff i64) {
-    end i64 = now()
+    end i64 = os.now()
     diff = end - start
 }
 
@@ -368,6 +368,6 @@ parse-date = (s str) (ts ?i64) {
 
 ; now-date: 取得當前日期時間結構體（UTC）
 now-date = () (d date) {
-    ts = now()
+    ts = os.now()
     d = unix-to-date(ts)
 }

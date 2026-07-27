@@ -6,7 +6,7 @@
 
 tmp = '/tmp/nolang-fs-test.txt'
 payload = 'hello nolang file struct'
-remove(tmp)
+fs.remove(tmp)
 
 f-w ?file
 f-w = fs.open(tmp, {
@@ -62,4 +62,4 @@ f-r: {
     }
 }
 
-remove(tmp)
+fs.remove(tmp)

@@ -1,7 +1,7 @@
 ; test-open-write.no — 驗證 open() 寫入
 
 tmp = '/tmp/nolang-write-test.txt'
-remove(tmp)
+fs.remove(tmp)
 
 f ?file
 f = fs.open(tmp, {
@@ -23,4 +23,4 @@ f: {
     }
 }
 
-remove(tmp)
+fs.remove(tmp)

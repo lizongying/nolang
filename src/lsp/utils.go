@@ -48,6 +48,64 @@ func getWordAtPosition(text string, position Position) string {
 	return line[start:end]
 }
 
+// getQualifiedWordAtPosition checks if the word at the cursor position is
+// preceded by a module qualifier (e.g. "fs" in "fs.read"). If so, it returns
+// the fully qualified name ("fs.read"); otherwise it returns "".
+//
+// This enables module-aware go-to-definition: when the user clicks on `read`
+// in `fs.read(...)`, the LSP can look up `fs.read` directly instead of the
+// ambiguous short name `read`.
+func getQualifiedWordAtPosition(text string, position Position) string {
+	lines := getLines(text)
+	if int(position.Line) >= len(lines) {
+		return ""
+	}
+	line := lines[position.Line]
+	if int(position.Character) >= len(line) {
+		return ""
+	}
+
+	// Find the word boundaries at the cursor position
+	start := position.Character
+	for start > 0 {
+		if isWordChar(line[start-1]) {
+			start--
+		} else {
+			break
+		}
+	}
+	end := position.Character
+	for end < uint32(len(line)) {
+		if isWordChar(line[end]) {
+			end++
+		} else {
+			break
+		}
+	}
+	if start == end {
+		return ""
+	}
+
+	// Check if the word is immediately preceded by a dot
+	if start == 0 || line[start-1] != '.' {
+		return ""
+	}
+
+	// Extract the module name before the dot
+	modEnd := start - 1
+	modStart := modEnd
+	for modStart > 0 && isWordChar(line[modStart-1]) {
+		modStart--
+	}
+	if modStart >= modEnd {
+		return ""
+	}
+
+	moduleName := line[modStart:modEnd]
+	word := line[start:end]
+	return moduleName + "." + word
+}
+
 // getTokenAtPosition 在游標位置查找新式語法運算符（`!`/`*`/`**`/`...`）
 // 游標可在運算符任意字元上。
 func getTokenAtPosition(text string, position Position) string {

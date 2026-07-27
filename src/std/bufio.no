@@ -69,5 +69,5 @@ reader.read-line = (line str) (ok bool) {
 
 ; close: 關閉
 reader.close = () {
-    close(.fd)
+    fs.close(.fd)
 }

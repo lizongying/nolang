@@ -1,0 +1,48 @@
+; ═══════════════════════════════════════════════════════════
+; global.no — 全局内置函数声明
+;
+; 本文件声明了无需模块前缀即可调用的全局函数。
+; 这些函数由编译器内置实现（builtin），此处的注释声明
+; 仅供文档查看和 LSP go-to-definition 导航使用。
+;
+; 规则：全局只有以下 6 个函数可以不带模块名调用，
+;       其余所有跨模块调用都必须加模块前缀（如 fs.read、os.exit）。
+; ═══════════════════════════════════════════════════════════
+
+; ── 容量/长度构造 ──────────────────────────────────────────
+
+; with-cap: 建立指定容量的字串或切片（len=0），型别由赋值左侧推断
+;   s str = with-cap(256)       → 预分配 256 位元组的 str
+;   v []i64 = with-cap(100)     → 预分配 100 个元素的切片
+; build-in (ForwardFunc: with-cap)
+; with-cap = (cap i64) { }
+
+; with-len: 建立指定长度的字串或切片，型别由赋值左侧推断
+;   s str = with-len(10)        → 长度为 10 的 str
+;   v []i64 = with-len(100)     → 长度为 100 的切片
+; build-in (ForwardFunc: with-len)
+; with-len = (len i64) { }
+
+; with-cap-len: 建立指定容量和长度的字串或切片，型别由赋值左侧推断
+;   v []i64 = with-cap-len(200, 100)  → 容量 200、长度 100 的切片
+; build-in (ForwardFunc: with-cap-len)
+; with-cap-len = (cap i64, len i64) { }
+
+; ── 输出/格式化 ────────────────────────────────────────────
+
+; print: 输出字串到标准输出并换行，支援 {name:spec} 命名格式栏位
+;   print('hello {name}')       → hello world（若 name = 'world'）
+;   print('{x:.2f}')            → 3.14（若 x = 3.14159）
+; build-in (ForwardFunc: println)
+; print = (s str) { }
+
+; eprint: 输出字串到标准错误并换行，支援 {name:spec} 命名格式栏位
+;   eprint('error: {msg}')
+; build-in (ForwardFunc: eprint)
+; eprint = (s str) { }
+
+; format: 使用 {name:spec} 命名栏位格式化字串并返回结果（取代 sprintf）
+;   s = format('{x:.2f}')       → '3.14'
+;   s = format('{name} is {age}')  → 'Alice is 30'
+; build-in (ForwardFunc: format)
+; format = (s str) (out str) { }

@@ -134,7 +134,7 @@ decoded: {
 ; ═══════════════════════════════════════════════
 print('=== fs.read-dir ===')
 
-entries []str = read-dir('.')
+entries []str = fs.read-dir('.')
 n = entries.len
 print('entry count:' - n.to-str())
 i <- [0..n): {

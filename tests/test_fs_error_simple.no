@@ -1,6 +1,6 @@
 ; 简单测试文件操作错误信息
 print('测试: 打开不存在的文件')
-f ?fs.file = open('/nonexistent/file.txt', {
+f ?fs.file = fs.open('/nonexistent/file.txt', {
     mode: 0
 })
 

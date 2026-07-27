@@ -292,13 +292,13 @@ test-qpack-encode-decode = () {
 
 ; test-udp-open-close: 測試 UDP socket 建立和關閉
 test-udp-open-close = () {
-    fd = net-udp-open()
+    fd = net.net-udp-open()
     fd < 0 -> {
         print('FAIL: net-udp-open returned ')
         print(fd.to-str())
         return
     }
-    close(fd)
+    fs.close(fd)
     print('PASS: udp-open-close')
 }
 

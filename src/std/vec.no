@@ -117,20 +117,9 @@
 ; []t.clear = () {
 ; }
 
-; with-cap: 建立指定容量的新切片（len=0），型別由賦值左側推斷
-; Builtin syntax (not a method): v []i64 = with-cap(100)
-; build-in (ForwardFunc: with-cap)
-; with-cap = (cap i64) { }
+; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
-; with-len: 建立指定長度的切片，型別由賦值左側推斷
-; Builtin syntax (not a method): v []i64 = with-len(100)
-; build-in (ForwardFunc: with-len)
-; with-len = (len i64) { }
 
-; with-cap-len: 建立指定容量和長度的切片，型別由賦值左側推斷
-; Builtin syntax (not a method): v []i64 = with-cap-len(200, 100)
-; build-in (ForwardFunc: with-cap-len)
-; with-cap-len = (cap i64, len i64) { }
 
 ; []t.pop: 從末尾彈出元素
 ; 空切片返回 nil
@@ -409,7 +398,7 @@
             last = .len
             last = last - 1
             i <- [0...len): {
-                out = out - i64-to-str(.[i])
+                out = out - number.i64-to-str(.[i])
                 i < last -> out = out - ', '
             }
             out = out - ']'

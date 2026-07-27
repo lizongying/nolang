@@ -47,7 +47,7 @@ test-tls-server-init = () (pass bool) {
     pass = false
 
     ; tls-server-init 需要一個 fd, 用 -1 表示未連接（僅測試初始化邏輯）
-    conn = tls-server-init(-1)
+    conn = tls.tls-server-init(-1)
     conn: {
         nil -> {
             print('FAIL: tls-server-init returned nil')
@@ -114,7 +114,7 @@ test-https-server-struct = () (pass bool) {
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
-    tls-opt = tls-dial(host, port)
+    tls-opt = tls.tls-dial(host, port)
     tls-opt: {
         nil -> {
             print('FAIL: e2e tls-dial nil')
@@ -128,8 +128,8 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             e2e-tc = it
 
             ; 發送 HTTP GET 請求
-            cr = char-to-str(13)
-            lf = char-to-str(10)
+            cr = number.char-to-str(13)
+            lf = number.char-to-str(10)
             crlf = cr - lf
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
@@ -204,7 +204,7 @@ test-https-e2e = () (pass bool) {
     }
 
     ; 2. fork: 子進程為伺服器, 父進程為客戶端
-    pid = process-fork()
+    pid = process.process-fork()
     pid < 0 -> {
         print('FAIL: e2e fork failed')
         srv.close()
@@ -215,30 +215,30 @@ test-https-e2e = () (pass bool) {
     pid == 0 -> {
         conn-opt = srv.accept()
         conn-opt: {
-            nil -> exit(1)
-            err -> exit(1)
+            nil -> os.exit(1)
+            err -> os.exit(1)
             ok -> {
                 conn = it
                 p-ok = conn.parse()
                 p-ok == false -> {
                     conn.close()
-                    exit(1)
+                    os.exit(1)
                 }
                 conn.write-text(200, 'hello from nolang https')
                 conn.close()
-                exit(0)
+                os.exit(0)
             }
         }
     }
 
     ; === 父進程: 客戶端 ===
     ; 等待子進程就緒
-    sleep-ns(50000000)
+    time.sleep-ns(50000000)
 
     pass = run-https-e2e-client('127.0.0.1', 9444)
 
     srv.close()
-    process-waitpid(pid, 0)
+    process.process-waitpid(pid, 0)
 }
 
 ; 主函數

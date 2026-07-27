@@ -109,8 +109,8 @@ multipart-writer.init-boundary = (boundary str) {
 multipart-writer.write-field = (name str, value str) (ok bool) {
     ok = false
     .closed -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     .body = .body - '--' - .boundary - crlf
@@ -129,8 +129,8 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
 multipart-writer.write-file = (name str, filename str, content-type str, content str) (ok bool) {
     ok = false
     .closed -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     .body = .body - '--' - .boundary - crlf
@@ -146,8 +146,8 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
 multipart-writer.close-form = () (ok bool) {
     ok = false
     .closed -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     .body = .body - '--' - .boundary - '--' - crlf
@@ -220,8 +220,8 @@ multipart-reader.init = (boundary str, data str) {
 ; header-block str: 標頭區塊（不含結尾 CRLFCRLF）
 ; part multipart-part: 輸出，解析結果
 multipart-reader.parse-headers = (header-block str, part multipart-part) {
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     pos = 0
@@ -280,8 +280,8 @@ multipart-reader.next = () (has-part bool) {
     .has-current = false
 
     .pos >= .end -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     ; 尋找邊界行: --boundary
@@ -483,8 +483,8 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     .body = .body - '--' - .boundary - crlf
@@ -523,8 +523,8 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     .body = .body - '--' - .boundary - crlf

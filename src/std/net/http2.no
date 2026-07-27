@@ -140,7 +140,7 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
             }
         }
         -> {
-            written = net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
+            written = net.net-send(.fd, hdr, HTTP2-FRAME-HEADER-SIZE)
             written != HTTP2-FRAME-HEADER-SIZE -> return
         }
     }
@@ -156,7 +156,7 @@ http2-conn.send-frame = (frame http2-frame) (ok bool) {
             }
         }
         -> {
-            written = net-send(.fd, frame.payload, frame.payload.len)
+            written = net.net-send(.fd, frame.payload, frame.payload.len)
             written != frame.payload.len -> return
         }
     }
@@ -186,7 +186,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
                     ok -> recv-n = it
                 }
             }
-            -> recv-n = net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+            -> recv-n = net.net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
         recv-n <= 0 -> return
         ; net-recv 覆寫 buf[0]，需要位移複製
@@ -219,7 +219,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
                         ok -> recv-n = it
                     }
                 }
-                -> recv-n = net-recv(.fd, f.payload, f.length - payload-total)
+                -> recv-n = net.net-recv(.fd, f.payload, f.length - payload-total)
             }
             recv-n <= 0 -> return
             i <- [0..recv-n): {
@@ -306,19 +306,19 @@ http2-conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
 ; 返回 conn ?http2-conn: ok=連線, nil=失敗
 http2-connect = (host str, port i64) (conn ?http2-conn) {
     conn = nil
-    fd = net-dial(host, port)
+    fd = net.net-dial(host, port)
     fd < 0 -> return
     c http2-conn
     c.init()
     c.fd = fd
 
     ; 1. 送出連線 preface
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
-    written = net-send(fd, preface, preface.len)
+    written = net.net-send(fd, preface, preface.len)
     written != preface.len -> {
-        close(fd)
+        fs.close(fd)
         return
     }
 
@@ -326,7 +326,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     send-ok = false
     send-ok = c.send-settings(false)
     send-ok == false -> {
-        close(fd)
+        fs.close(fd)
         return
     }
 
@@ -334,7 +334,7 @@ http2-connect = (host str, port i64) (conn ?http2-conn) {
     recv-f = c.recv-frame()
     recv-f
     send-ok == false -> {
-        close(fd)
+        fs.close(fd)
         return
     }
     conn = c
@@ -358,8 +358,8 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
     c.fd = tls-c.fd
 
     ; 2. 送出連線 preface（透過 TLS）
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     w = tls-c.send(preface)
     w: {
@@ -399,7 +399,7 @@ http2-connect-tls = (host str, port i64) (conn ?http2-conn) {
 http2-conn.close = () {
     {
         .use-tls -> .tls-c.close()
-        .fd >= 0 -> close(.fd)
+        .fd >= 0 -> fs.close(.fd)
     }
     .fd = -1
 }

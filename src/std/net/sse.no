@@ -110,8 +110,8 @@ sse-client.next-event = () (ev ?sse-event) {
         return
     }
 
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     lf-lf = lf - lf
     crlf-crlf = crlf - crlf
@@ -244,7 +244,7 @@ sse-client.next-event = () (ev ?sse-event) {
                     }
                 }
             }
-            .use-tls == false -> n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+            .use-tls == false -> n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
             n <= 0 -> {
                 .connected = false
                 ev = nil
@@ -264,7 +264,7 @@ sse-client.next-event = () (ev ?sse-event) {
 sse-client.close = () {
     .connected -> {
         .use-tls -> .tls-c.close()
-        .use-tls == false -> .fd >= 0 -> close(.fd)
+        .use-tls == false -> .fd >= 0 -> fs.close(.fd)
         .fd = -1
         .connected = false
     }
@@ -283,8 +283,8 @@ sse-client.reconnect = () (ok bool) {
     req = ''
     crlf = ''
     .connected -> .close()
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     ; 建立連線
@@ -295,7 +295,7 @@ sse-client.reconnect = () (ok bool) {
     }
 
     .use-tls == false -> {
-        .fd = net-dial(.host, .port)
+        .fd = net.net-dial(.host, .port)
         .fd < 0 -> return
     }
     .connected = true
@@ -339,7 +339,7 @@ sse-client.reconnect = () (ok bool) {
         }
     }
     .use-tls == false -> {
-        written = net-send(.fd, req, req.len)
+        written = net.net-send(.fd, req, req.len)
         written < 0 -> {
             .close()
             return
@@ -370,7 +370,7 @@ sse-client.reconnect = () (ok bool) {
                 }
             }
         }
-        .use-tls == false -> n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+        .use-tls == false -> n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> {
             .close()
             return
@@ -501,7 +501,7 @@ sse-connect = (url str) (client ?sse-client) {
         }
     }
     use-tls == false -> {
-        fd = net-dial(host, port)
+        fd = net.net-dial(host, port)
         fd < 0 -> {
             client = err('TCP connection failed')
             return
@@ -509,8 +509,8 @@ sse-connect = (url str) (client ?sse-client) {
     }
 
     ; ── 建構 SSE 請求 ──
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     req = 'GET '
     req = req - path
@@ -543,9 +543,9 @@ sse-connect = (url str) (client ?sse-client) {
         }
     }
     use-tls == false -> {
-        written = net-send(fd, req, req.len)
+        written = net.net-send(fd, req, req.len)
         written < 0 -> {
-            close(fd)
+            fs.close(fd)
             client = err('send failed')
             return
         }
@@ -563,7 +563,7 @@ sse-connect = (url str) (client ?sse-client) {
     {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             use-tls -> tls-c.close()
-            use-tls == false -> close(fd)
+            use-tls == false -> fs.close(fd)
             client = err('response headers too large')
             return
         }
@@ -578,10 +578,10 @@ sse-connect = (url str) (client ?sse-client) {
                 }
             }
         }
-        use-tls == false -> n = net-recv(fd, tmp, SSE-RECV-SIZE)
+        use-tls == false -> n = net.net-recv(fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> {
             use-tls -> tls-c.close()
-            use-tls == false -> close(fd)
+            use-tls == false -> fs.close(fd)
             client = err('connection closed during handshake')
             return
         }
@@ -602,7 +602,7 @@ sse-connect = (url str) (client ?sse-client) {
     sp1 = status-line.index(' ')
     sp1 < 0 -> {
         use-tls -> tls-c.close()
-        use-tls == false -> close(fd)
+        use-tls == false -> fs.close(fd)
         client = err('invalid status line')
         return
     }
@@ -615,7 +615,7 @@ sse-connect = (url str) (client ?sse-client) {
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
-            use-tls == false -> close(fd)
+            use-tls == false -> fs.close(fd)
             client = err('invalid status code')
             return
         }
@@ -624,7 +624,7 @@ sse-connect = (url str) (client ?sse-client) {
 
     status-code != 200 -> {
         use-tls -> tls-c.close()
-        use-tls == false -> close(fd)
+        use-tls == false -> fs.close(fd)
         code-s = status-code.to-str()
         client = err('server returned status ' - code-s)
         return
@@ -690,7 +690,7 @@ sse-server.listen = (host str, port i64) (ok bool) {
     .fd = -1
     .host = host
     .port = port
-    fd = net-listen(host, port)
+    fd = net.net-listen(host, port)
     fd < 0 -> return
     .fd = fd
     ok = true
@@ -701,7 +701,7 @@ sse-server.listen = (host str, port i64) (ok bool) {
 sse-server.accept = () (c ?sse-server-conn) {
     c = nil
     .fd < 0 -> return
-    client-fd = net-accept(.fd)
+    client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
     conn = sse-server-conn{
         fd: client-fd
@@ -720,7 +720,7 @@ sse-server.accept = () (c ?sse-server-conn) {
 ; close: 關閉 SSE 服務端
 sse-server.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -735,8 +735,8 @@ sse-server.close = () {
 sse-server-conn.handshake = () (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     separator = crlf - crlf
 
@@ -749,7 +749,7 @@ sse-server-conn.handshake = () (ok bool) {
     {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> return
         tmp = space.repeat(SSE-RECV-SIZE)
-        n = net-recv(.fd, tmp, SSE-RECV-SIZE)
+        n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {
             raw[total + i] = tmp[i]
@@ -775,7 +775,7 @@ sse-server-conn.handshake = () (ok bool) {
         resp = resp - 'Content-Length: 0' - crlf
         resp = resp - 'Allow: GET' - crlf
         resp = resp - crlf
-        net-send(.fd, resp, resp.len)
+        net.net-send(.fd, resp, resp.len)
         return
     }
 
@@ -786,7 +786,7 @@ sse-server-conn.handshake = () (ok bool) {
     resp = resp - 'Connection: keep-alive' - crlf
     resp = resp - 'Access-Control-Allow-Origin: *' - crlf
     resp = resp - crlf
-    written = net-send(.fd, resp, resp.len)
+    written = net.net-send(.fd, resp, resp.len)
     written < 0 -> return
     .connected = true
     ok = true
@@ -801,7 +801,7 @@ sse-server-conn.handshake = () (ok bool) {
 sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
     ok = false
     .connected == false -> return
-    lf = char-to-str(10)
+    lf = number.char-to-str(10)
 
     msg = ''
 
@@ -833,7 +833,7 @@ sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) 
     ; 事件結束分隔符（空行）
     msg = msg - lf
 
-    written = net-send(.fd, msg, msg.len)
+    written = net.net-send(.fd, msg, msg.len)
     written < 0 -> {
         .connected = false
         return
@@ -848,10 +848,10 @@ sse-server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) 
 sse-server-conn.send-comment = (comment str) (ok bool) {
     ok = false
     .connected == false -> return
-    lf = char-to-str(10)
+    lf = number.char-to-str(10)
     msg = ':' - comment - lf - lf
 
-    written = net-send(.fd, msg, msg.len)
+    written = net.net-send(.fd, msg, msg.len)
     written < 0 -> {
         .connected = false
         return
@@ -869,7 +869,7 @@ sse-server-conn.is-connected = () (yes bool) {
 ; close: 關閉客戶端連接
 sse-server-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
     .connected = false

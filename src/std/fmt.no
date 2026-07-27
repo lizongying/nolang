@@ -28,17 +28,8 @@
 ; 內建函數（編譯器 ForwardFunc）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: println)
-; print: 輸出字串到標準輸出並換行，支援 {name:spec} 命名格式欄位
-; print = (s str) { }
-
-; build-in (ForwardFunc: eprint)
-; eprint: 輸出字串到標準錯誤並換行，支援 {name:spec} 命名格式欄位
-; eprint = (s str) { }
-
-; build-in (ForwardFunc: format)
-; format: 使用 {name:spec} 命名欄位格式化字串並返回結果（取代 sprintf）
-; format = (s str) (out str) { }
+; 全局函数 print / eprint / format 的声明已移至 global.no
+; 以下为需要模块前缀的 fmt 模块函数
 
 ; build-in (ForwardFunc: printf)
 ; printf: 已廢棄，請改用 print（自動換行）或 io.out（不換行）
@@ -269,7 +260,7 @@ fmt-int = (n i64, spec str) (out str) {
 
     ; 提取 sign-char 與 digits（不含符號）
     sign-char = 0
-    full = i64-to-str(n)
+    full = number.i64-to-str(n)
     flen = full.len
     digits str = with-cap(flen)
     dlen-v = 0
@@ -370,7 +361,7 @@ fmt-uint = (u u64, spec str) (out str) {
             }
         }
         -> {
-            digits = u64-to-str(u)
+            digits = number.u64-to-str(u)
         }
     }
 
@@ -422,16 +413,16 @@ fmt-f64 = (x f64, spec str) (out str) {
     digits str = with-cap(32)
     {
         typ == 102 || typ == 70 -> {
-            digits = f64-to-str-fixed(x, prec)
+            digits = str.f64-to-str-fixed(x, prec)
         }
         typ == 101 || typ == 69 -> {
-            digits = f64-to-str-sci(x, prec)
+            digits = str.f64-to-str-sci(x, prec)
         }
         typ == 103 || typ == 71 -> {
-            digits = f64-to-str-general(x, prec)
+            digits = str.f64-to-str-general(x, prec)
         }
         -> {
-            digits = f64-to-str-general(x, 6)
+            digits = str.f64-to-str-general(x, 6)
         }
     }
 

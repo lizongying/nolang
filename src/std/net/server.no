@@ -104,7 +104,7 @@ http-server.listen = (host str, port i64) (ok bool) {
     .fd = -1
     .host = host
     .port = port
-    fd = net-listen(host, port)
+    fd = net.net-listen(host, port)
     fd < 0 -> return
     .fd = fd
     ok = true
@@ -115,7 +115,7 @@ http-server.listen = (host str, port i64) (ok bool) {
 http-server.accept = () (c ?http-server-conn) {
     c = nil
     .fd < 0 -> return
-    client-fd = net-accept(.fd)
+    client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
     space = ' '
     buf = space.repeat(HTTP-SRV-BUF-SIZE)
@@ -139,7 +139,7 @@ http-server.accept = () (c ?http-server-conn) {
 ; close: 關閉伺服器
 http-server.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -161,7 +161,7 @@ http-server-conn.recv-more = () (n i64) {
     .fd < 0 -> return
     space = ' '
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
-    n = net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
+    n = net.net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
         i <- [0..n): {
             .recv-buf[.recv-buf-len + i] = tmp[i]
@@ -176,8 +176,8 @@ http-server-conn.recv-more = () (n i64) {
 http-server-conn.parse = () (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     separator = crlf - crlf
 
@@ -352,8 +352,8 @@ http-server-conn.get-header = (name str) (val ?str) {
 http-server-conn.write-status = (status i64) (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -382,7 +382,7 @@ http-server-conn.write-status = (status i64) (ok bool) {
     }
 
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
-    written = net-send(.fd, line, line.len)
+    written = net.net-send(.fd, line, line.len)
     written < 0 -> return
     ok = true
 }
@@ -394,11 +394,11 @@ http-server-conn.write-status = (status i64) (ok bool) {
 http-server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
-    written = net-send(.fd, line, line.len)
+    written = net.net-send(.fd, line, line.len)
     written < 0 -> return
     ok = true
 }
@@ -408,10 +408,10 @@ http-server-conn.write-header = (name str, value str) (ok bool) {
 http-server-conn.write-headers-done = () (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
-    written = net-send(.fd, crlf, crlf.len)
+    written = net.net-send(.fd, crlf, crlf.len)
     written < 0 -> return
     ok = true
 }
@@ -423,7 +423,7 @@ http-server-conn.write-body = (data str) (ok bool) {
     ok = false
     .fd < 0 -> return
     data.len > 0 -> {
-        written = net-send(.fd, data, data.len)
+        written = net.net-send(.fd, data, data.len)
         written < 0 -> return
     }
     ok = true
@@ -437,8 +437,8 @@ http-server-conn.write-body = (data str) (ok bool) {
 http-server-conn.write-text = (status i64, text str) (ok bool) {
     ok = false
     .fd < 0 -> return
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     ; 狀態行
@@ -555,7 +555,7 @@ http-server-conn.reset = () {
 ; close: 關閉連接
 http-server-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -698,7 +698,7 @@ https-server.listen = (host str, port i64) (ok bool) {
     .fd = -1
     .host = host
     .port = port
-    fd = tls-server-listen(host, port)
+    fd = tls.tls-server-listen(host, port)
     fd < 0 -> return
     .fd = fd
     ok = true
@@ -709,7 +709,7 @@ https-server.listen = (host str, port i64) (ok bool) {
 https-server.accept = () (c ?https-server-conn) {
     c = nil
     .fd < 0 -> return
-    tls-opt = tls-server-accept(.fd)
+    tls-opt = tls.tls-server-accept(.fd)
     tls-opt: {
         nil -> return
         err -> return
@@ -738,7 +738,7 @@ https-server.accept = () (c ?https-server-conn) {
 ; close: 關閉伺服器
 https-server.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -766,8 +766,8 @@ https-server-conn.recv-more = () (n i64) {
 ; 返回 ok bool: true=解析成功
 https-server-conn.parse = () (ok bool) {
     ok = false
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     separator = crlf - crlf
 
@@ -796,7 +796,7 @@ https-server-conn.parse = () (ok bool) {
     request-line = head.slice(0, first-line-end)
 
     ; 解析方法、路徑、版本
-    sp = char-to-str(32)
+    sp = number.char-to-str(32)
     sp1 = request-line.index(sp)
     sp1 < 0 -> return
     .method = request-line.slice(0, sp1)
@@ -807,7 +807,7 @@ https-server-conn.parse = () (ok bool) {
     .version = after-method.slice(sp2 + 1, after-method.len)
 
     ; 分離 path 和 query
-    qm = char-to-str(63)
+    qm = number.char-to-str(63)
     q-pos = full-path.index(qm)
     {
         q-pos >= 0 -> {
@@ -938,8 +938,8 @@ https-server-conn.get-header = (name str) (val ?str) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-status = (status i64) (ok bool) {
     ok = false
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -980,8 +980,8 @@ https-server-conn.write-status = (status i64) (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
     tc = .tls
@@ -998,8 +998,8 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-headers-done = () (ok bool) {
     ok = false
-    cr = char-to-str(13)
-    lf = char-to-str(10)
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
     crlf = cr - lf
     tc = .tls
     w = tc.send(crlf)

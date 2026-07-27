@@ -5470,9 +5470,11 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 			}
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" || e.Operator == "+" || e.Operator == "*" {
-			// A single-char StringLiteral paired with a non-string operand is
-			// byte arithmetic (e.g., c - 'A'), not string concatenation.
+		if e.Operator == "-" || e.Operator == "+" {
+			// Byte arithmetic: a single-char StringLiteral paired with a
+			// non-string operand (e.g. c - 'A' where c is i8, or 'A' - c).
+			// CharLiteral is NOT a string, so 'a' - "B" falls here too and
+			// is handled as byte arithmetic (char codepoint arithmetic).
 			if isSingleCharStringLit(e.Left) && !g.isStringExpr(e.Right) {
 				return false
 			}
@@ -5480,6 +5482,11 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 				return false
 			}
 			return g.isStringExpr(e.Left) || g.isStringExpr(e.Right)
+		}
+		if e.Operator == "*" {
+			// str repeat: 'str' * n. '*' is never byte arithmetic, so the
+			// single-char byte-arithmetic exclusion above does not apply.
+			return g.isStringExpr(e.Left)
 		}
 	}
 	// Fallback: use exprResultLLVMType for DotExpression and other complex expressions
@@ -5490,6 +5497,8 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 // isByteValueExpr checks if an expression produces a byte value (i8/i64 from str
 // indexing or a byte-typed variable). Used to dispatch byte vs single-char-string
 // comparisons (e.g. s[i] == '=') to integer icmp instead of strcmp.
+// Also recognizes CharLiteral ("A") since it produces a raw integer codepoint
+// that must be converted via byteToSingleCharStr before str concatenation.
 func (g *Generator) isByteValueExpr(expr parser.Expression) bool {
 	switch e := expr.(type) {
 	case *parser.IndexExpression:
@@ -5508,6 +5517,8 @@ func (g *Generator) isByteValueExpr(expr parser.Expression) bool {
 			}
 		}
 		return false
+	case *parser.CharLiteral:
+		return true
 	}
 	return false
 }
@@ -5586,6 +5597,9 @@ func (g *Generator) getStrType(expr parser.Expression) string {
 	case *parser.InfixExpression:
 		if e.Operator == "-" || e.Operator == "+" {
 			return "%str-long" // concat results are always %str-long
+		}
+		if e.Operator == "*" && g.isStringExpr(e.Left) {
+			return "%str-long" // str repeat ('s' * n) result is %str-long
 		}
 	}
 	return "%str-long"
@@ -5829,10 +5843,14 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	// Loop to copy string data count times
 	// We'll use a simple loop: for i in 0..count, memcpy(strData, buf + i*strLen, strLen)
+	// Note: LLVM label definitions must NOT have '%' prefix (only br references use '%').
 	g.tmpIdx++
-	loopStart := fmt.Sprintf("%%repeat.loop.start.%d", g.tmpIdx)
-	loopBody := fmt.Sprintf("%%repeat.loop.body.%d", g.tmpIdx)
-	loopEnd := fmt.Sprintf("%%repeat.loop.end.%d", g.tmpIdx)
+	loopStart := fmt.Sprintf("repeat.loop.start.%d", g.tmpIdx)
+	loopBody := fmt.Sprintf("repeat.loop.body.%d", g.tmpIdx)
+	loopEnd := fmt.Sprintf("repeat.loop.end.%d", g.tmpIdx)
+	loopStartRef := "%" + loopStart
+	loopBodyRef := "%" + loopBody
+	loopEndRef := "%" + loopEnd
 
 	// Initialize counter i = 0
 	// alloca hoisted to entry block to avoid stack growth in tight loops;
@@ -5843,24 +5861,20 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iReg))
 
 	// Jump to loop start
-	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStartRef))
 
 	// Loop start: check if i < count
-	sb.WriteString(fmt.Sprintf("%s:\n", loopStart))
-	g.currentBlock = strings.TrimPrefix(loopStart, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopStart)
 	g.tmpIdx++
 	iVal := fmt.Sprintf("%%repeat.i.val.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iReg))
 	g.tmpIdx++
 	cmp := fmt.Sprintf("%%repeat.cmp.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmp, iVal, countReg))
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), cmp, loopBody, loopEnd))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), cmp, loopBodyRef, loopEndRef))
 
 	// Loop body: copy string data to buf + i*strLen
-	sb.WriteString(fmt.Sprintf("%s:\n", loopBody))
-	g.currentBlock = strings.TrimPrefix(loopBody, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopBody)
 	g.tmpIdx++
 	offset := fmt.Sprintf("%%repeat.offset.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), offset, iVal, strLen))
@@ -5875,12 +5889,10 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	iNext := fmt.Sprintf("%%repeat.i.next.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iReg))
-	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStartRef))
 
 	// Loop end
-	sb.WriteString(fmt.Sprintf("%s:\n", loopEnd))
-	g.currentBlock = strings.TrimPrefix(loopEnd, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopEnd)
 
 	// Add null terminator at buf[totalLen]
 	g.tmpIdx++
@@ -5889,9 +5901,11 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
 	// Create result %str-long
+	// alloca hoisted to entry block to avoid stack growth in tight loops;
+	// safe vs dirty data: all 3 fields (len/cap/data) are fully overwritten below.
 	g.tmpIdx++
 	resultAlloca := fmt.Sprintf("%%repeat.result.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
+	g.emitEntryAlloca(sb, "%s = alloca %%str-long\n", resultAlloca)
 
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%repeat.len.gep.%d", g.tmpIdx)

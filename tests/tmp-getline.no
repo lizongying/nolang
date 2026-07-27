@@ -1,6 +1,6 @@
 line str = ''
 ok = false
-line, ok = get-line()
+line, ok = fs.get-line()
 ok == false -> {
     print('no input')
     return

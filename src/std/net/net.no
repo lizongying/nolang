@@ -93,7 +93,7 @@ NET-BUF-SIZE = 4096
 ; Windows 需要在使用 socket API 前呼叫 WSAStartup 初始化 Winsock 2.2
 ; 此頂層呼叫在模組載入時自動執行，確保後續所有網路操作可用
 #{win-amd64, win-arm64}
-win-wsa-startup()
+os.win-wsa-startup()
 
 ; ═══════════════════════════════════════════════
 ; listener 結構體
@@ -133,7 +133,7 @@ listener.accept = () (c ?conn) {
 ; close: 關閉監聽 socket
 listener.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -214,7 +214,7 @@ conn.recv-all = () (content str, total i64) {
 ; close: 關閉連接
 conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -348,7 +348,7 @@ udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
 ; close: 關閉 UDP socket
 udp-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }
@@ -696,7 +696,7 @@ icmp-conn.open = () (ok bool) {
 ; close: 關閉 ICMP socket
 icmp-conn.close = () {
     .fd >= 0 -> {
-        close(.fd)
+        fs.close(.fd)
         .fd = -1
     }
 }

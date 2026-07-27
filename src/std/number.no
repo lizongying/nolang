@@ -121,7 +121,7 @@ lcm = (a int, b int) (r int) {
         r = 0
         return
     }
-    g = gcd(a, b)
+    g = bigint.gcd(a, b)
     r = a / g * b
 }
 
@@ -354,18 +354,18 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; 計算指數 e = floor(log10(ax))
-    e i64 = f64-to-i64(floor(log10(ax)))
+    e i64 = f64-to-i64(math.floor(math.log10(ax)))
 
     ; 邊界調整：若 ax >= 10^(e+1)，則 e++
-    upper f64 = exp(i64-to-f64(e + 1) * LN10)
+    upper f64 = math.exp(i64-to-f64(e + 1) * LN10)
     ax >= upper -> e = e + 1
 
     ; 計算 6 位有效數字的整數尾數
     ; m = round(ax / 10^e * 100000)
-    base f64 = exp(i64-to-f64(e) * LN10)
+    base f64 = math.exp(i64-to-f64(e) * LN10)
     ax < base -> {
         e = e - 1
-        base = exp(i64-to-f64(e) * LN10)
+        base = math.exp(i64-to-f64(e) * LN10)
     }
     m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
 

@@ -257,7 +257,7 @@ out = (s str) (n i64) {
 	index.AddBuiltinSymbols()
 
 	dm := &DocumentManager{}
-	dm.indexBuiltinComments(index, source, "file:///std/io.no")
+	dm.indexBuiltinComments(index, source, "file:///std/io.no", "io")
 
 	// The built-in "write" should now have a location pointing to the comment line
 	entry, ok := index.GetDefinition("write")
@@ -292,7 +292,7 @@ write = (fd fd, data str, n i64) (written i64) {
 		dm.indexModuleStatement(index, ms, "file:///std/io.no")
 	}
 	// Then, index the comment-only declarations
-	dm.indexBuiltinComments(index, source, "file:///std/io.no")
+	dm.indexBuiltinComments(index, source, "file:///std/io.no", "io")
 
 	entry, ok := index.GetDefinition("write")
 	if !ok {
@@ -305,10 +305,12 @@ write = (fd fd, data str, n i64) (written i64) {
 }
 
 // TestIndexBuiltinCommentsNotOverwrittenByMethodShortName verifies that
-// a built-in function's comment declaration (e.g. `read`) is NOT overwritten
-// by a struct method's short name (e.g. `file.read` → short name `read`).
-// This was a bug where go-to-definition on `read` jumped to `file.read`
-// instead of the built-in `read` function's comment declaration.
+// a built-in function's comment declaration (e.g. `read`) is correctly
+// indexed and not confused by struct methods like `file.read`.
+//
+// Per the language spec, struct methods (file.read) are only registered under
+// their full qualified name — NOT as a short name ("read"). So there is no
+// conflict: "read" in the index comes solely from indexBuiltinComments.
 func TestIndexBuiltinCommentsNotOverwrittenByMethodShortName(t *testing.T) {
 	// fs.no: has both a built-in read comment AND a file.read method
 	fsSource := `; build-in (ForwardFunc: read)
@@ -331,12 +333,13 @@ file.read = (buf str, n i64) (read-n i64) {
 	fsURI := "file:///std/fs.no"
 
 	// indexBuiltinComments must run BEFORE indexModuleStatement
-	dm.indexBuiltinComments(index, fsSource, fsURI)
+	dm.indexBuiltinComments(index, fsSource, fsURI, "fs")
 	fsProg := createTestProgram(fsSource)
 	for _, ms := range fsProg.Statements {
 		dm.indexModuleStatement(index, ms, fsURI)
 	}
 
+	// "read" should be found — from the built-in comment declaration
 	entry, ok := index.GetDefinition("read")
 	if !ok {
 		t.Fatal("expected to find read in definitions")
@@ -348,9 +351,137 @@ file.read = (buf str, n i64) (read-n i64) {
 	if entry.Location.Range.Start.Line != 2 {
 		t.Errorf("expected definition at comment line 2, got line %d", entry.Location.Range.Start.Line)
 	}
-	// Should NOT point to file.read
-	if entry.Name == "file.read" {
-		t.Error("expected built-in 'read' definition, but got 'file.read' method")
+
+	// "file.read" should also be found — registered under its full qualified name
+	fileEntry, ok := index.GetDefinition("file.read")
+	if !ok {
+		t.Fatal("expected to find file.read in definitions")
+	}
+	if fileEntry.Name != "file.read" {
+		t.Errorf("expected Name 'file.read', got %q", fileEntry.Name)
+	}
+}
+
+// TestNoShortNameRegisteredForMethodFromOtherModule verifies that
+// struct methods (e.g. `tar.read`) do NOT register a short name ("read")
+// in the index. Per the language spec, only print/eprint/format are exempt
+// from module prefix; all other functions and methods must use a module
+// prefix or receiver-based call. This prevents cross-module name conflicts
+// (e.g. tar.read vs fs.read both claiming "read").
+func TestNoShortNameRegisteredForMethodFromOtherModule(t *testing.T) {
+	// tar.no: has a tar.read method (no builtin comment)
+	tarSource := `tar.read = (idx i64) (out []byte) {
+    out = nil
+}
+`
+	// fs.no: has the built-in read comment declaration
+	fsSource := `; build-in (ForwardFunc: read)
+; read: read from fd
+; read = (fd fd, buf str, n i64) (n i64) { }
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+
+	// 1. Index tar.no — "read" should NOT be registered as a short name
+	tarProg := createTestProgram(tarSource)
+	for _, ms := range tarProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/archive/tar.no")
+	}
+	// "read" should not exist in definitions (only "tar.read" is registered)
+	if _, ok := index.GetDefinition("read"); ok {
+		t.Fatal("short name 'read' should NOT be registered after indexing tar.read")
+	}
+	// "tar.read" should exist under its full qualified name
+	tarEntry, ok := index.GetDefinition("tar.read")
+	if !ok {
+		t.Fatal("expected to find tar.read in definitions")
+	}
+	if tarEntry.Name != "tar.read" {
+		t.Errorf("expected Name 'tar.read', got %q", tarEntry.Name)
+	}
+
+	// 2. Index fs.no — builtin comment registers "read" and "fs.read"
+	dm.indexBuiltinComments(index, fsSource, "file:///std/fs.no", "fs")
+	fsProg := createTestProgram(fsSource)
+	for _, ms := range fsProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/fs.no")
+	}
+
+	// Now "read" should point to the builtin comment in fs.no
+	entry, ok := index.GetDefinition("read")
+	if !ok {
+		t.Fatal("expected to find read after fs indexing")
+	}
+	if entry.Name != "read" {
+		t.Errorf("expected Name 'read' (builtin), got %q", entry.Name)
+	}
+	if entry.Location.URI != "file:///std/fs.no" {
+		t.Errorf("expected URI 'file:///std/fs.no', got %q", entry.Location.URI)
+	}
+}
+
+// TestModuleQualifiedGoToDefinition verifies that go-to-definition on
+// `fs.read` (module-qualified call) resolves to the fs module's definition,
+// not to any unrelated symbol named `read` in the index.
+func TestModuleQualifiedGoToDefinition(t *testing.T) {
+	// Simulate: io.no calls fs.read(.fd, buf, n)
+	// The cursor is on "read" in "fs.read"
+	docText := `reader.read = (buf str, n i64) (read-n i64) {
+    read-n = fs.read(.fd, buf, n)
+}
+`
+	doc := createTestDocument(docText)
+
+	// fs.no: has the built-in read comment declaration
+	fsSource := `; build-in (ForwardFunc: read)
+; read: read from fd
+; read = (fd fd, buf str, n i64) (n i64) { }
+`
+	// tar.no: has a tar.read method (would interfere without module-aware lookup)
+	tarSource := `tar.read = (idx i64) (out []byte) {
+    out = nil
+}
+`
+	index := NewSymbolIndex("file:///std/io.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+
+	// Index tar first (alphabetical order)
+	tarProg := createTestProgram(tarSource)
+	for _, ms := range tarProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/archive/tar.no")
+	}
+	// Index fs (builtin comment overwrites tar.read short name)
+	dm.indexBuiltinComments(index, fsSource, "file:///std/fs.no", "fs")
+	fsProg := createTestProgram(fsSource)
+	for _, ms := range fsProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/fs.no")
+	}
+
+	dp := NewDefinitionProvider(doc, index)
+
+	// Cursor on "read" in "fs.read(.fd, buf, n)" — line 1, column 16
+	// "    read-n = fs.read(.fd, buf, n)"
+	//  0123456789...
+	//  positions: "fs.read" starts at column 13, "read" starts at column 16
+	loc, found := dp.GetDefinition(Position{Line: 1, Character: 16})
+	if !found {
+		t.Fatal("expected to find definition for fs.read")
+	}
+	if loc.URI != "file:///std/fs.no" {
+		t.Errorf("expected URI 'file:///std/fs.no', got %q", loc.URI)
+	}
+
+	// Also verify that the module-qualified entry exists
+	entry, ok := index.GetDefinition("fs.read")
+	if !ok {
+		t.Fatal("expected to find 'fs.read' in definitions")
+	}
+	if entry.Location.URI != "file:///std/fs.no" {
+		t.Errorf("expected fs.read URI 'file:///std/fs.no', got %q", entry.Location.URI)
 	}
 }
 
@@ -374,6 +505,90 @@ func TestIsValidIdent(t *testing.T) {
 		got := isValidIdent(tt.input)
 		if got != tt.want {
 			t.Errorf("isValidIdent(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestGlobalBuiltinShortNameResolution verifies that global built-in functions
+// (with-cap, with-len, with-cap-len, print, eprint, format) are correctly
+// indexed with location info via AddBuiltinSymbols + indexBuiltinComments,
+// so that go-to-definition on their short names works across modules.
+//
+// Per the language spec, these functions can be called without module prefix.
+// The compiler resolves them via FindBuiltinMethod by short name. The LSP
+// must also resolve the short name to the comment declaration location.
+func TestGlobalBuiltinShortNameResolution(t *testing.T) {
+	// Simulate vec.no with comment declarations for with-cap/with-len/with-cap-len
+	vecSource := `; with-cap: create with capacity
+; build-in (ForwardFunc: with-cap)
+; with-cap = (cap i64) { }
+
+; with-len: create with length
+; build-in (ForwardFunc: with-len)
+; with-len = (len i64) { }
+
+; with-cap-len: create with capacity and length
+; build-in (ForwardFunc: with-cap-len)
+; with-cap-len = (cap i64, len i64) { }
+`
+	// Simulate fmt.no with comment declarations for print/eprint/format
+	fmtSource := `; print: output to stdout with newline
+; build-in (ForwardFunc: print)
+; print = (s str) { }
+
+; eprint: output to stderr with newline
+; build-in (ForwardFunc: eprint)
+; eprint = (s str) { }
+
+; format: return formatted string
+; build-in (ForwardFunc: format)
+; format = (s str) (out str) { }
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+
+	// Index vec.no
+	dm.indexBuiltinComments(index, vecSource, "file:///std/vec.no", "vec")
+	vecProg := createTestProgram(vecSource)
+	for _, ms := range vecProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/vec.no")
+	}
+
+	// Index fmt.no
+	dm.indexBuiltinComments(index, fmtSource, "file:///std/fmt.no", "fmt")
+	fmtProg := createTestProgram(fmtSource)
+	for _, ms := range fmtProg.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/fmt.no")
+	}
+
+	// All these global built-in functions should be found by short name
+	// with correct location pointing to their comment declaration.
+	tests := []struct {
+		name string
+		uri  string
+		line uint32
+	}{
+		{"with-cap", "file:///std/vec.no", 2},
+		{"with-len", "file:///std/vec.no", 6},
+		{"with-cap-len", "file:///std/vec.no", 10},
+		{"print", "file:///std/fmt.no", 2},
+		{"eprint", "file:///std/fmt.no", 6},
+		{"format", "file:///std/fmt.no", 10},
+	}
+
+	for _, tt := range tests {
+		entry, ok := index.GetDefinition(tt.name)
+		if !ok {
+			t.Errorf("expected to find %q in definitions", tt.name)
+			continue
+		}
+		if entry.Location.URI != tt.uri {
+			t.Errorf("%q: expected URI %q, got %q", tt.name, tt.uri, entry.Location.URI)
+		}
+		if entry.Location.Range.Start.Line != tt.line {
+			t.Errorf("%q: expected line %d, got line %d", tt.name, tt.line, entry.Location.Range.Start.Line)
 		}
 	}
 }

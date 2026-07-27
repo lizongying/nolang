@@ -1,7 +1,7 @@
 ; test-open-perm.no — 驗證 open() 檔案權限
 
 tmp = '/tmp/nolang-perm-test.txt'
-remove(tmp)
+fs.remove(tmp)
 
 f ?file
 f = fs.open(tmp, {
@@ -23,4 +23,4 @@ f: {
     }
 }
 
-remove(tmp)
+fs.remove(tmp)

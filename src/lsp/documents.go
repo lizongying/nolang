@@ -246,7 +246,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				// so that built-in functions like `read`/`write` get their
 				// comment declaration location before any struct method
 				// (e.g. `file.read`) registers the same short name.
-				m.indexBuiltinComments(index, string(source), modURI)
+				m.indexBuiltinComments(index, string(source), modURI, info.ShortName)
 				for _, ms := range modProg.Statements {
 					m.indexModuleStatement(index, ms, modURI)
 				}
@@ -651,18 +651,15 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	}
 	index.functions[name] = entry
 	index.definitions[name] = entry
-	// Union methods (e.g. "num.sign") can be called by short name ("sign")
-	// because rewriteUnionCalls dispatches by argument type.
-	// Register the short name so go-to-definition works for short-name calls.
-	if idx := strings.LastIndex(name, "."); idx > 0 {
-		shortName := name[idx+1:]
-		// Don't overwrite an existing entry that already has a real location;
-		// but do overwrite entries from AddBuiltinSymbols that have empty Location.
-		if existing, exists := index.functions[shortName]; !exists || existing.Location.URI == "" {
-			index.functions[shortName] = entry
-			index.definitions[shortName] = entry
-		}
-	}
+	// Per the language spec (docs/docs/lang/module.md), only print/eprint/format
+	// are exempt from module prefix. All other module-level functions and struct
+	// methods must be called with a module prefix (e.g. fs.read) or via a
+	// receiver instance (e.g. f.read()). Therefore, short names for dotted
+	// methods (file.read → "read", tar.read → "read") are NOT registered —
+	// they only cause ambiguity and conflicts across modules.
+	// Built-in comment declarations (indexBuiltinComments) handle registering
+	// the plain name for built-in functions that are called within the same
+	// module file (e.g. read() inside fs.no's file.read method body).
 }
 
 // indexBuiltinComments scans raw source text for comment-only built-in function
@@ -672,7 +669,7 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 //
 // Without this, built-in functions added via AddBuiltinSymbols have empty Location
 // fields, and go-to-definition does nothing.
-func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modURI string) {
+func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modURI, modShortName string) {
 	// Build a set of known built-in function names (global, non-method).
 	builtinNames := make(map[string]bool)
 	for _, b := range builtin.BuiltinMethodList {
@@ -701,14 +698,16 @@ func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modUR
 		if !isValidIdent(name) {
 			continue
 		}
-		// Only index if this is a known built-in function and the existing
-		// entry has no location info (i.e. it came from AddBuiltinSymbols).
+		// Only index if this is a known built-in function
 		if !builtinNames[name] {
 			continue
 		}
+		// If a real function definition with the SAME name exists (e.g. a
+		// user-defined `write` function with a body), don't overwrite it —
+		// the real implementation takes priority over the comment declaration.
 		existing, exists := index.definitions[name]
-		if exists && existing.Location.URI != "" {
-			continue // already has a real definition location
+		if exists && existing.Name == name && existing.Location.URI != "" && existing.Type != "build-in" {
+			continue // real definition with same name, don't overwrite
 		}
 
 		loc := Location{
@@ -733,6 +732,13 @@ func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modUR
 		}
 		index.functions[name] = entry
 		index.definitions[name] = entry
+		// Also store under the module-qualified name (e.g. "fs.read") so that
+		// module-aware go-to-definition can resolve `fs.read` directly.
+		if modShortName != "" {
+			qualifiedName := modShortName + "." + name
+			index.functions[qualifiedName] = entry
+			index.definitions[qualifiedName] = entry
+		}
 	}
 }
 

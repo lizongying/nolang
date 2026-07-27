@@ -50,7 +50,7 @@ caller = () {
     abs-i64(-42, r)
     print(r)
 
-    gcd(12, 18, r)
+    bigint.gcd(12, 18, r)
     print(r)
 }
 

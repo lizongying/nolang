@@ -7,7 +7,7 @@ test-tcp-fork-basic = () (pass bool) {
     pass = false
 
     ; 1. 監聽
-    listen-fd = net-listen('127.0.0.1', 9555)
+    listen-fd = net.net-listen('127.0.0.1', 9555)
     listen-fd < 0 -> {
         io.errln('[TEST] tcp: listen failed')
         return
@@ -15,53 +15,53 @@ test-tcp-fork-basic = () (pass bool) {
     io.errln('[TEST] tcp: listening on 9555')
 
     ; 2. fork
-    pid = process-fork()
+    pid = process.process-fork()
     pid < 0 -> {
         io.errln('[TEST] tcp: fork failed')
-        close(listen-fd)
+        fs.close(listen-fd)
         return
     }
 
     ; === 子進程: 伺服器 ===
     pid == 0 -> {
         io.errln('[TEST] tcp: child accepting')
-        client-fd = net-accept(listen-fd)
+        client-fd = net.net-accept(listen-fd)
         client-fd < 0 -> {
             io.errln('[TEST] tcp: child accept failed')
-            exit(1)
+            os.exit(1)
         }
         io.errln('[TEST] tcp: child accepted')
 
         ; 接收資料
         buf = ' '.repeat(64)
-        n = net-recv(client-fd, buf, 64)
+        n = net.net-recv(client-fd, buf, 64)
         io.errln('[TEST] tcp: child recv n=' - n.to-str())
 
         ; 回應
-        net-send(client-fd, 'hello from server', 17)
-        close(client-fd)
-        exit(0)
+        net.net-send(client-fd, 'hello from server', 17)
+        fs.close(client-fd)
+        os.exit(0)
     }
 
     ; === 父進程: 客戶端 ===
-    sleep-ns(100000000)
+    time.sleep-ns(100000000)
 
     io.errln('[TEST] tcp: parent dialing')
-    fd = net-dial('127.0.0.1', 9555)
+    fd = net.net-dial('127.0.0.1', 9555)
     fd < 0 -> {
         io.errln('[TEST] tcp: parent dial failed')
-        close(listen-fd)
-        process-waitpid(pid, 0)
+        fs.close(listen-fd)
+        process.process-waitpid(pid, 0)
         return
     }
     io.errln('[TEST] tcp: parent connected')
 
     ; 發送
-    net-send(fd, 'hello from client', 17)
+    net.net-send(fd, 'hello from client', 17)
 
     ; 接收
     buf = ' '.repeat(64)
-    n = net-recv(fd, buf, 64)
+    n = net.net-recv(fd, buf, 64)
     io.errln('[TEST] tcp: parent recv n=' - n.to-str())
 
     n > 0 -> {
@@ -70,9 +70,9 @@ test-tcp-fork-basic = () (pass bool) {
         pass = true
     }
 
-    close(fd)
-    close(listen-fd)
-    process-waitpid(pid, 0)
+    fs.close(fd)
+    fs.close(listen-fd)
+    process.process-waitpid(pid, 0)
 }
 
 main = () {

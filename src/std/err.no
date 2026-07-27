@@ -67,7 +67,7 @@ errno-to-code = (errno i64) (ec code) {
 ; err-from-errno: 從 C errno 建立錯誤
 ; errno: C 標準錯誤碼（如 13 = EACCES）
 err-from-errno = (errno i64) (e error) {
-    msg = strerror(errno)
+    msg = os.strerror(errno)
     e = error{
         code: errno-to-code(errno)
         msg: msg

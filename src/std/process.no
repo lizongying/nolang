@@ -114,20 +114,20 @@ process.start = (program str, arg str) (ok bool) {
     pid == 0 -> {
         ; 子進程：重定向 stdout 到管道寫端
         process-dup2(stdout-write, 1)
-        close(stdout-read)
-        close(stdout-write)
+        fs.close(stdout-read)
+        fs.close(stdout-write)
 
         ; exec
         process-exec(program, arg)
 
         ; exec 失敗，退出
-        exit(1)
+        os.exit(1)
     }
 
     pid < 0 -> {
         ; fork 失敗
-        close(stdout-read)
-        close(stdout-write)
+        fs.close(stdout-read)
+        fs.close(stdout-write)
         return
     }
 
@@ -141,7 +141,7 @@ process.start = (program str, arg str) (ok bool) {
     ok = true
 
     ; 關閉不需要的寫端
-    close(stdout-write)
+    fs.close(stdout-write)
 }
 
 ; start-with-stdin: 創建子進程，同時建立 stdin 管道
@@ -170,18 +170,18 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
         ; 子進程
         process-dup2(in-read, 0)
         process-dup2(out-write, 1)
-        close(in-read)
-        close(in-write)
-        close(out-read)
-        close(out-write)
+        fs.close(in-read)
+        fs.close(in-write)
+        fs.close(out-read)
+        fs.close(out-write)
         process-exec(program, arg)
-        exit(1)
+        os.exit(1)
     }
     pid < 0 -> {
-        close(in-read)
-        close(in-write)
-        close(out-read)
-        close(out-write)
+        fs.close(in-read)
+        fs.close(in-write)
+        fs.close(out-read)
+        fs.close(out-write)
         return
     }
 
@@ -193,8 +193,8 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
     .exit-code = 0
     .running = 1
     ok = true
-    close(in-read)
-    close(out-write)
+    fs.close(in-read)
+    fs.close(out-write)
 }
 
 ; ═══════════════════════════════════════════════
@@ -308,7 +308,7 @@ process.write = (data str, n i64) (written i64) {
 ; close-stdin: 關閉子進程的 stdin 管道
 process.close-stdin = () {
     .stdin-fd >= 0 -> {
-        close(.stdin-fd)
+        fs.close(.stdin-fd)
         .stdin-fd = -1
     }
 }
@@ -316,7 +316,7 @@ process.close-stdin = () {
 ; close-stdout: 關閉子進程的 stdout 管道
 process.close-stdout = () {
     .stdout-fd >= 0 -> {
-        close(.stdout-fd)
+        fs.close(.stdout-fd)
         .stdout-fd = -1
     }
 }
@@ -324,7 +324,7 @@ process.close-stdout = () {
 ; close-stderr: 關閉子進程的 stderr 管道
 process.close-stderr = () {
     .stderr-fd >= 0 -> {
-        close(.stderr-fd)
+        fs.close(.stderr-fd)
         .stderr-fd = -1
     }
 }
