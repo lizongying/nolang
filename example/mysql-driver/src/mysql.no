@@ -52,7 +52,7 @@ MYSQL-RECV-BUF = 65536
 ; fd: TCP socket fd
 ; n: 要讀取的位元組數
 ; 返回 data=讀取的資料, ok=true=成功
-mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
+mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
     ok = false
     {
         n <= 0 -> {
@@ -72,7 +72,7 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
         {
             remaining > MYSQL-RECV-BUF -> remaining = MYSQL-RECV-BUF
         }
-        read-n = net-recv(fd, tmp, remaining)
+        read-n = net.net-recv(fd, tmp, remaining)
         {
             read-n <= 0 -> return
         }
@@ -92,7 +92,7 @@ mysql-read-exact = (fd i64, n i64) (data str, ok bool) {
 ; mysql-pkt-recv: 接收一個 MySQL 封包
 ; fd: TCP socket fd
 ; 返回 payload=封包載荷, payload-len=載荷長度, seq=序號, ok=true=成功
-mysql-pkt-recv = (fd i64) (payload str, payload-len i64, seq i64, ok bool) {
+mysql-pkt-recv = (fd fd) (payload str, payload-len i64, seq i64, ok bool) {
     ok = false
     hdr, hdr-ok = mysql-read-exact(fd, 4)
     {
@@ -118,7 +118,7 @@ mysql-pkt-recv = (fd i64) (payload str, payload-len i64, seq i64, ok bool) {
 ; payload: 載荷資料
 ; payload-len: 載荷長度
 ; 返回 ok=true=成功
-mysql-pkt-send = (fd i64, seq i64, payload str, payload-len i64) (ok bool) {
+mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
     ok = false
 
     ; 建構標頭：3 位元組 LE 長度 + 1 位元組序號
@@ -129,7 +129,7 @@ mysql-pkt-send = (fd i64, seq i64, payload str, payload-len i64) (ok bool) {
     hdr[3] = seq & 255
 
     ; 發送標頭
-    written = net-send(fd, hdr, 4)
+    written = net.net-send(fd, hdr, 4)
     {
         written != 4 -> return
     }
@@ -137,7 +137,7 @@ mysql-pkt-send = (fd i64, seq i64, payload str, payload-len i64) (ok bool) {
     ; 發送載荷
     {
         payload-len > 0 -> {
-            written = net-send(fd, payload, payload-len)
+            written = net.net-send(fd, payload, payload-len)
             {
                 written != payload-len -> return
             }
@@ -184,6 +184,7 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 ; seed [20]byte: 20 位元組伺服器隨機種子
 ; 返回 token [20]byte: 20 位元組認證權杖
 mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
+
     ; stage1 = SHA1(password)
     stage1 [20]byte = sha1.sha1(password.to-bytes())
 
@@ -223,7 +224,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 ; seq: MySQL 封包序號
 ; connected: 連接狀態
 db-mysql sql.db {
-    fd i64
+    fd fd
     seq i64
     connected bool
 }
@@ -237,7 +238,7 @@ db-mysql sql.db {
 ; row-pos: 當前解析位置
 ; eof: 是否已到結尾
 rows-mysql sql.rows {
-    fd i64
+    fd fd
     seq i64
     n-cols i64
     row-data str
@@ -252,7 +253,7 @@ rows-mysql sql.rows {
 ; sql: SQL 模板
 ; bound: 已綁定的 SQL
 stmt-mysql sql.stmt {
-    fd i64
+    fd fd
     seq i64
     sql str
     bound str
@@ -356,14 +357,14 @@ open = (dsn str) (d db-mysql) {
     }
 
     ; ── TCP 連接 ──
-    fd = net-dial(host, port)
+    fd = net.net-dial(host, port)
     {
         fd < 0 -> return
     }
     handshake, hs-len, hs-seq, hs-ok = mysql-pkt-recv(fd)
     {
         hs-ok == false -> {
-            close(fd)
+            fs.close(fd)
             return
         }
     }
@@ -526,14 +527,14 @@ open = (dsn str) (d db-mysql) {
     send-ok = mysql-pkt-send(fd, hs-seq + 1, resp, wpos)
     {
         send-ok == false -> {
-            close(fd)
+            fs.close(fd)
             return
         }
     }
     auth-resp, ar-len, ar-seq, ar-ok = mysql-pkt-recv(fd)
     {
         ar-ok == false -> {
-            close(fd)
+            fs.close(fd)
             return
         }
     }
@@ -542,7 +543,7 @@ open = (dsn str) (d db-mysql) {
     {
         ar-len > 0 -> {
             auth-resp[0] == PKT-ERR -> {
-                close(fd)
+                fs.close(fd)
                 return
             }
         }
@@ -568,11 +569,12 @@ db-mysql.close = () (ok bool) {
     ok = true
     {
         .connected -> {
+
             ; 發送 COM_QUIT 封包
             quit-payload = ' '
             quit-payload[0] = COM-QUIT
             send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
-            close(.fd)
+            fs.close(.fd)
             .fd = -1
             .connected = false
         }
@@ -809,6 +811,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
 }
 
 rows-mysql.scan-str = (col i64) (v str) {
+
     ; 跳過前 col 個欄位
     c = 0
     {
@@ -939,7 +942,7 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     }
 
     ; char-to-str(39) = 單引號 '（ASCII 39）
-    q = char-to-str(39)
+    q = number.char-to-str(39)
     before = cur.slice(0, pos)
     after = cur.slice(pos + 1, cur.len)
     .bound = before - q - sval - q - after
