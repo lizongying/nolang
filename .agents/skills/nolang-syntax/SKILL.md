@@ -793,6 +793,59 @@ val: {
 
 **Exception:** when a function needs to return multiple independent values (e.g. `(name str, value str, ok bool)`), the multi-return pattern is acceptable.
 
+#### Deferred Zero-Init for Return Values (返回值變數延遲零值)
+
+Function prologue does **NOT** zero-initialize out parameters. The compiler tracks explicit assignments to each out parameter via a bitmap `%__ret_init_bitmap` (parallel to the `%__move_bitmap` used for deferred move/free). At return time, any out parameter whose bit is still 0 is automatically zero-filled: integers → `0`, str-long → `zeroinitializer`, struct → `zeroinitializer`, option → `nil`.
+
+**Consequence:** there is no need to write boilerplate `found = false` / `result = nil` at the top of a function — the compiler handles it. Write only the success-path assignments.
+
+```no
+// ✅ Recommended: no premature zero-init; compiler fills unassigned out params
+hashmap-str-tmpl.contains = (key str) (found bool) {
+    val ?v = .get(key)
+    val: {
+        ok -> found = true
+        err -> {}
+        nil -> {}
+    }
+}
+
+// ✅ Option out param defaults to nil — bare `return` for not-found paths
+hashmap-str-tmpl.get = (key str) (result ?v) {
+    .size == 0 -> return        // compiler fills result = nil
+    ...
+    // fall-through: compiler fills result = nil
+}
+
+// ✅ remove: same pattern, no `removed = false` needed
+hashmap-str-tmpl.remove = (key str) (removed bool) {
+    val ?v = .get(key)
+    val: {
+        ok -> {
+            .delete(key)
+            removed = true
+        }
+        err -> {}
+        nil -> {}
+    }
+}
+```
+
+```no
+// ❌ Anti-pattern: redundant premature zero-init (gets overwritten by later assignment)
+hashmap-str-tmpl.contains = (key str) (found bool) {
+    found = false              // redundant — compiler handles this
+    val ?v = .get(key)
+    val: {
+        ok -> found = true
+        err -> {}
+        nil -> {}
+    }
+}
+```
+
+**Debugging hint:** if a function returns an unexpected zero value (`found` should be `true` but is `false`, or `result` should have a value but is `nil`), check that **every** success-path branch explicitly assigns the out parameter. The compiler does not infer intent — it only zero-fills unassigned out params. See `.agents/skills/nolang-debug/SKILL.md`.
+
 ### Methods on Union Types
 
 Methods attached to a union type (e.g. `int`, `float`, `num`) use `type.method = () (results)` syntax.

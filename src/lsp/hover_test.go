@@ -501,3 +501,118 @@ func TestEnumVariantInSymbolIndex(t *testing.T) {
 		}
 	}
 }
+
+// TestHoverReassignedVariablePreservesType verifies that when a variable is
+// reassigned with an expression whose type cannot be directly inferred (e.g.
+// `n = n + m`), the hover still shows the type from the previous declaration
+// rather than an empty type.
+func TestHoverReassignedVariablePreservesType(t *testing.T) {
+	text := `errln = (s str) (n i64) {
+    n = 42
+    n = n + 1
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+	// Hover over "n" on line 2 (0-based): "    n = n + 1"
+	// "n" starts at column 4 (0-based)
+	hover, found := hp.GetHover(Position{Line: 2, Character: 4})
+	if !found {
+		t.Fatal("expected to find hover for n on line 3")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatal("expected MarkupContent")
+	}
+	if !strings.Contains(contents.Value, "**Type**") {
+		t.Errorf("expected hover to contain Type, got: %s", contents.Value)
+	}
+	if !strings.Contains(contents.Value, "i64") {
+		t.Errorf("expected hover to contain type 'i64', got: %s", contents.Value)
+	}
+}
+
+// TestHoverReassignedVariableFromCallPreservesType verifies that when a variable
+// is first assigned from a function call and then reassigned with an
+// InfixExpression, the type is preserved from the first declaration.
+func TestHoverReassignedVariableFromCallPreservesType(t *testing.T) {
+	text := `foo = () (n i64) {
+    n = 10
+    m = 20
+    n = n + m
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	index := createTestIndex(doc, program)
+
+	// The entry for "n" should have a non-empty type even after reassignment
+	entry, ok := index.GetDefinition("n")
+	if !ok {
+		t.Fatal("expected to find n in definitions")
+	}
+	if entry.Type == "" {
+		t.Error("expected n to have a non-empty type after reassignment")
+	}
+}
+
+// TestHoverFunctionParameterShowsDeclaredType verifies that hovering over a
+// function parameter name shows the declared type (e.g. `n i64` → i64),
+// not a "call X" placeholder from a same-named variable in another function.
+func TestHoverFunctionParameterShowsDeclaredType(t *testing.T) {
+	text := `reader.read = (buf str, n i64) (read-n i64) {
+    read-n = 0
+    n = 42
+}
+errln = (s str) (n i64) {
+    n = write(1, s, s.len)
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+	// Hover over parameter "n" in reader.read's signature.
+	// Line 0: "reader.read = (buf str, n i64) (read-n i64) {"
+	// "n" is at column 23 (0-based): "reader.read = (buf str, n i64)..."
+	//                              0123456789012345678901234
+	hover, found := hp.GetHover(Position{Line: 0, Character: 24})
+	if !found {
+		t.Fatal("expected to find hover for parameter n")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatal("expected MarkupContent")
+	}
+	if !strings.Contains(contents.Value, "i64") {
+		t.Errorf("expected hover to contain type 'i64', got: %s", contents.Value)
+	}
+	if strings.Contains(contents.Value, "call write") {
+		t.Errorf("hover should NOT contain 'call write' placeholder, got: %s", contents.Value)
+	}
+}
+
+// TestHoverFunctionParameterNotOverwrittenByBodyVariable verifies that
+// a parameter's type is preserved even when the body reassigns it with
+// a function call (which would normally produce a "call X" type).
+func TestHoverFunctionParameterNotOverwrittenByBodyVariable(t *testing.T) {
+	text := `foo = (x i64) (n i64) {
+    n = write(1, x, 1)
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+
+	index := createTestIndex(doc, program)
+
+	// The entry for "n" should have type "i64" (from the result parameter),
+	// not "call write" (from the body assignment).
+	entry, ok := index.GetDefinition("n")
+	if !ok {
+		t.Fatal("expected to find n in definitions")
+	}
+	if entry.Type != "i64" {
+		t.Errorf("expected n to have type 'i64', got '%s'", entry.Type)
+	}
+}

@@ -748,6 +748,100 @@ func (g *Generator) emitClearMovedBitIR(sb *strings.Builder, varIdx int) {
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), maskVal, bvName))
 }
 
+// emitSetRetInitBit 生成 IR：標記 out 參數已顯式賦值（設置 %__ret_init_bitmap 對應 bit=1）。
+// 與 emitSetMovedBitIR 對稱，但 retInitBitmapVar 為單一 i64（out 參數 ≤ 64）。
+// IR: %ri.old = load i64, i64* %__ret_init_bitmap; %ri.mask = or %ri.old, (1<<bitIdx); store %ri.mask
+func (g *Generator) emitSetRetInitBit(sb *strings.Builder, outName string) {
+	if g.retInitBitmapVar == "" {
+		return
+	}
+	bitIdx, ok := g.retInitBits[outName]
+	if !ok {
+		return
+	}
+	g.tmpIdx++
+	oldVal := fmt.Sprintf("%%ri.old.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldVal, g.retInitBitmapVar))
+	g.tmpIdx++
+	maskVal := fmt.Sprintf("%%ri.mask.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %d\n", g.indent(), maskVal, oldVal, 1<<bitIdx))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), maskVal, g.retInitBitmapVar))
+}
+
+// emitRetInitZeroFill 在 ReturnStatement 路徑（flushOutputBindings 之前）對所有
+// 未被顯式賦值的 out 參數補發零值 store。
+// 與 emitBitCheckFree 對稱：bit=0 → 未賦值，需補零；bit=1 → 已賦值，跳過。
+// 按宣告順序（outputParamOrder）處理每個 out 參數，避免依賴 map 迭代順序。
+// 每個 out 參數生成：load bitmap → and mask → icmp eq 0 → br → 補零區塊 / 跳過區塊。
+// 補零值依型別選擇（emitRetInitZeroStore）：option 補 nil（tag=1, data=0）、
+// 整數補 0、浮點補 0.0、struct（%str-long/%vec/%arr/用戶結構）補 zeroinitializer。
+func (g *Generator) emitRetInitZeroFill(sb *strings.Builder) {
+	if g.retInitBitmapVar == "" || len(g.retInitBits) == 0 {
+		return
+	}
+	for _, name := range g.outputParamOrder {
+		bitIdx, ok := g.retInitBits[name]
+		if !ok {
+			continue
+		}
+		llvmType, hasType := g.varTypes[name]
+		if !hasType {
+			llvmType = "i64"
+		}
+		// 載入 bitmap 並檢查對應 bit
+		g.tmpIdx++
+		bv := fmt.Sprintf("%%ri.zf.bv.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), bv, g.retInitBitmapVar))
+		g.tmpIdx++
+		masked := fmt.Sprintf("%%ri.zf.masked.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), masked, bv, 1<<bitIdx))
+		g.tmpIdx++
+		unassigned := fmt.Sprintf("%%ri.zf.unassigned.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), unassigned, masked))
+		g.tmpIdx++
+		zfLabel := fmt.Sprintf("ri.zf.fill.%d", g.tmpIdx)
+		g.tmpIdx++
+		skipLabel := fmt.Sprintf("ri.zf.skip.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+			g.indent(), unassigned, zfLabel, skipLabel))
+		// 補零區塊：bit=0（未賦值），補發零值 store
+		g.emitLabel(sb, zfLabel)
+		g.emitRetInitZeroStore(sb, name, llvmType)
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		// 跳過區塊：bit=1（已賦值），直接繼續
+		g.emitLabel(sb, skipLabel)
+	}
+}
+
+// emitRetInitZeroStore 依 LLVM 型別選擇零值 store 到 out 參數指標。
+// option 型別補 nil（tag=1, data=0），與 generateOptionAssign 的 NilLiteral 分支一致；
+// 整數補 0、浮點補 0.0、struct（%str-long/%vec/%arr/用戶結構）補 zeroinitializer。
+func (g *Generator) emitRetInitZeroStore(sb *strings.Builder, name, llvmType string) {
+	ptr := g.varAddr(name)
+	switch {
+	case llvmType == "%option":
+		// option 預設為 nil：tag=1（nil 標記）、data=0
+		g.tmpIdx++
+		tagGEP := fmt.Sprintf("%%ri.zf.tag.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, ptr))
+		sb.WriteString(fmt.Sprintf("%sstore i64 1, i64* %s\n", g.indent(), tagGEP))
+		g.tmpIdx++
+		dataGEP := fmt.Sprintf("%%ri.zf.data.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, ptr))
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
+	case g.isIntegerLLVMType(llvmType):
+		sb.WriteString(fmt.Sprintf("%sstore %s 0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	case llvmType == "float" || llvmType == "double":
+		sb.WriteString(fmt.Sprintf("%sstore %s 0.0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	case strings.HasPrefix(llvmType, "%"):
+		// struct 類型：%str-long、%vec、%arr、用戶結構體
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	default:
+		// 兜底：視為 i64
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ptr))
+	}
+}
+
 // emitBitCheckFree 生成 IR：檢查堆變數對應的 bitmap bit。
 // bit=1 → move 已發生，所有權轉移，跳過 free；
 // bit=0 → move 未發生（分支未執行），仍擁有數據，需 free。
@@ -1620,6 +1714,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.movedVarBitset = nil                                    // reset compile-time moved bitset
 	g.movedBitmapBase = ""                                    // reset runtime bitmap var prefix
 	g.bitmapCount = 0                                         // reset bitmap block count
+	g.retInitBitmapVar = ""                                   // reset ret init bitmap var name
+	g.retInitBits = nil                                       // reset ret init bits map
+	g.hasRetInitCheck = false                                 // reset ret init check flag
 	g.outputBindings = make(map[string]map[int]outputBinding) // reset delayed move bindings (SSA versioned)
 	g.ssaVersion = make(map[string]int)                       // reset SSA version counters
 	g.heapVars = make(map[string]string)                      // reset heap var tracking
@@ -1709,6 +1806,16 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				g.heapVars[r.Name] = llvmType
 			}
 		}
+	}
+
+	// 初始化返回值延遲零值追蹤：每個 out 參數名 → bit index（與 outputParamOrder 對齊）。
+	// 僅當存在 out 參數時啟用 hasRetInitCheck，後續 prologue 配置 bitmap、return 時補零。
+	if len(g.outputParamOrder) > 0 {
+		g.retInitBits = make(map[string]int, len(g.outputParamOrder))
+		for i, name := range g.outputParamOrder {
+			g.retInitBits[name] = i
+		}
+		g.hasRetInitCheck = true
 	}
 
 	returnType := "void"
@@ -1951,6 +2058,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.movedBitmapBase = "%__mb"
 	}
 
+	// 返回值延遲零值追蹤：配置 %__ret_init_bitmap 並初始化為 0。
+	// 僅當存在 out 參數時啟用。函數體生成期間的 emitSetRetInitBit 透過此名稱生成 IR。
+	// out 參數數量 ≤ 64（函數參數/返回值上限），單一 i64 即可容納所有 bit。
+	// 註：out 參數由呼叫方傳入指標並初始化緩衝區，prologue 不對其 store zeroinitializer；
+	//     未賦值的 out 參數在 ReturnStatement 由 emitRetInitZeroFill 補零。
+	if g.hasRetInitCheck {
+		g.retInitBitmapVar = "%__ret_init_bitmap"
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), g.retInitBitmapVar))
+		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), g.retInitBitmapVar))
+	}
+
 	// 生成函數體到獨立緩衝區，同時收集 entry-block alloca（來自字面量參數的臨時變量）。
 	// 將 alloca 提升到 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
@@ -1986,12 +2104,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 
 	// 若函數無 return 陳述句（void），自動銷毀 + return
 	if returnType == "void" {
+		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		sb.WriteString(g.indent() + "ret void\n")
 	} else if len(fd.Results) > 0 && fd.Results[0].Name != "" {
 		// 有輸出參數但無顯式 return：載入輸出參數並返回
+		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
@@ -3458,8 +3578,32 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 			}
 			g.generateExpressionStmt(sb, &parser.ExpressionStatement{Expression: outerCall})
 		}
+		// 返回值延遲零值追蹤：多賦值 a, b = f() 完成後，標記每個 out 參數目標已賦值。
+		// 目標可能是 Identifier（result）、IndexExpression（fields[n]）或 DotExpression（obj.field），
+		// 取其基底變數名檢查是否為 out 參數。
+		if g.retInitBitmapVar != "" {
+			for _, target := range s.Targets {
+				baseName := ""
+				switch t := target.(type) {
+				case *parser.Identifier:
+					baseName = t.Value
+				case *parser.IndexExpression:
+					if ident, ok := t.Left.(*parser.Identifier); ok {
+						baseName = ident.Value
+					}
+				case *parser.DotExpression:
+					if ident, ok := t.Receiver.(*parser.Identifier); ok {
+						baseName = ident.Value
+					}
+				}
+				if baseName != "" && g.outputParamNames != nil && g.outputParamNames[baseName] {
+					g.emitSetRetInitBit(sb, baseName)
+				}
+			}
+		}
 
 	case *parser.ReturnStatement:
+		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
@@ -4424,6 +4568,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 對於 RHS 安全（不引用舊值）的型別特定分支（SliceLiteral），在進入分支前立即釋放舊值。
 	// 對於一般情況，在 RHS 求值後釋放舊值，避免 `x = f(x)` 造成 use-after-free。
 	oldValFreed := false
+
+	// 返回值延遲零值追蹤：顯式賦值到 out 參數時設定對應 bit。
+	// 在此統一設定，涵蓋後續所有路徑（move、slice view clone、option assign、延遲綁定、立即 store）。
+	// 合成 let（match err/nil arm）不標記，因其語意上無真實值綁定。
+	if g.outputParamNames != nil && g.outputParamNames[name] && !stmt.IsSynthetic {
+		g.emitSetRetInitBit(sb, name)
+	}
 
 	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，走 move（所有權轉移）。
 	// move 不 free out 舊值（舊值可能與前一個 source 共享 data），

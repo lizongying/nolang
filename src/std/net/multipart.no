@@ -355,7 +355,6 @@ multipart-reader.field-data = () (data str) {
 ; is-file: 判斷當前部分是否為檔案
 ; 返回 yes bool: true=檔案
 multipart-reader.is-file = () (yes bool) {
-    yes = false
     .current.filename.len > 0 -> yes = true
 }
 

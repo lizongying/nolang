@@ -2723,6 +2723,10 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				recvName := innerIdent.Value
 				outerField := innerDot.Property
 				innerField := dot.Property
+				// 返回值延遲零值追蹤：out.field.subfield = expr 時標記 out 參數已賦值
+				if sb != nil && g.outputParamNames != nil && g.outputParamNames[recvName] {
+					g.emitSetRetInitBit(sb, recvName)
+				}
 				structName := ""
 				if t, ok := g.varTypes[recvName]; ok {
 					structName = strings.TrimPrefix(t, "%")
@@ -2779,6 +2783,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			varName = ident.Value
 		}
 		fieldName := dot.Property
+
+		// 返回值延遲零值追蹤：out.field = expr 時標記 out 參數已賦值
+		if varName != "" && sb != nil && g.outputParamNames != nil && g.outputParamNames[varName] {
+			g.emitSetRetInitBit(sb, varName)
+		}
 
 		// 判定 struct 名稱與基底指標
 		// - Identifier receiver: 使用變數名稱（%%%s）
@@ -2966,6 +2975,10 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		} else if innerIdx, ok := idxExpr.Left.(*parser.IndexExpression); ok {
 			// 巢狀索引賦值: .vals[idx][i] = val[i]
 			return g.generateNestedStrIndexAssign(sb, innerIdx, idxExpr.Index, expr.Value)
+		}
+		// 返回值延遲零值追蹤：out[i] = expr 時標記 out 參數已賦值
+		if varName != "" && sb != nil && g.outputParamNames != nil && g.outputParamNames[varName] {
+			g.emitSetRetInitBit(sb, varName)
 		}
 		idx := g.generateExprWithSB(sb, idxExpr.Index)
 		// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64

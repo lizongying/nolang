@@ -246,8 +246,6 @@ tree-set.successor = (idx i64) (succ i64) {
 ; key i64: 要加入的值
 ; 返回 ok bool: true=新增, false=已存在或池已滿
 tree-set.add = (key i64) (ok bool) {
-    ok = false
-
     ; 空樹
     .root < 0 -> {
         idx = .alloc-node()
@@ -300,7 +298,6 @@ tree-set.add = (key i64) (ok bool) {
 ; key i64: 要檢查的值
 ; 返回 yes bool: true=存在, false=不存在
 tree-set.contains = (key i64) (yes bool) {
-    yes = false
     idx = .root
     {
         key == .keys[idx] -> {
@@ -318,8 +315,6 @@ tree-set.contains = (key i64) (yes bool) {
 ; key i64: 要刪除的值
 ; 返回 ok bool: true=已刪除, false=未找到
 tree-set.remove = (key i64) (ok bool) {
-    ok = false
-
     ; BST 搜尋
     idx = .root
     {

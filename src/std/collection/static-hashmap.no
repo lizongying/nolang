@@ -68,7 +68,6 @@ static-hashmap-str-tmpl.hash = (key str) (idx i64) {
 
 ; str-eq: 比較兩個 str 是否相等
 static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
-    eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
         a[i] != b[i] -> return
@@ -110,10 +109,7 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-str-tmpl.get = (key str) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -128,12 +124,10 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 static-hashmap-str-tmpl.contains = (key str) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -144,7 +138,6 @@ static-hashmap-str-tmpl.contains = (key str) (found bool) {
 
 ; remove: 刪除 key（標記墓碑）
 static-hashmap-str-tmpl.remove = (key str) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -264,10 +257,7 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-int-tmpl.get = (key k) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -281,12 +271,10 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 static-hashmap-int-tmpl.contains = (key k) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -297,7 +285,6 @@ static-hashmap-int-tmpl.contains = (key k) (found bool) {
 
 ; remove: 刪除 key（標記墓碑）
 static-hashmap-int-tmpl.remove = (key k) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -404,10 +391,7 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -415,12 +399,10 @@ static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
         result = .vals[idx]
         return
     }
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -431,7 +413,6 @@ static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
 
 ; remove: 刪除 key（標記墓碑）
 static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 

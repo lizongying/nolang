@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -244,6 +245,10 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				for _, ms := range modProg.Statements {
 					m.indexModuleStatement(index, ms, modURI)
 				}
+				// Also scan for comment-only built-in function declarations
+				// (e.g. `; write = (fd fd, data str, n i64) (written i64) { }`)
+				// so that go-to-definition works for built-in functions.
+				m.indexBuiltinComments(index, string(source), modURI)
 			}
 		}
 
@@ -650,12 +655,108 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	// Register the short name so go-to-definition works for short-name calls.
 	if idx := strings.LastIndex(name, "."); idx > 0 {
 		shortName := name[idx+1:]
-		// Don't overwrite an existing entry for the short name
-		if _, exists := index.functions[shortName]; !exists {
+		// Don't overwrite an existing entry that already has a real location;
+		// but do overwrite entries from AddBuiltinSymbols that have empty Location.
+		if existing, exists := index.functions[shortName]; !exists || existing.Location.URI == "" {
 			index.functions[shortName] = entry
 			index.definitions[shortName] = entry
 		}
 	}
+}
+
+// indexBuiltinComments scans raw source text for comment-only built-in function
+// declarations (lines like `; write = (fd fd, data str, n i64) (written i64) { }`)
+// and adds them to the symbol index with location info, so that go-to-definition
+// on a built-in function jumps to its comment declaration in the std library.
+//
+// Without this, built-in functions added via AddBuiltinSymbols have empty Location
+// fields, and go-to-definition does nothing.
+func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modURI string) {
+	// Build a set of known built-in function names (global, non-method).
+	builtinNames := make(map[string]bool)
+	for _, b := range builtin.BuiltinMethodList {
+		// Skip type methods (e.g. "str.len", "[]byte.clear")
+		if strings.Contains(b.MethodName, ".") {
+			continue
+		}
+		builtinNames[b.MethodName] = true
+	}
+
+	lines := strings.Split(source, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		// Strip the leading semicolon
+		content := strings.TrimSpace(trimmed[1:])
+		// Look for pattern: NAME = ( ...  — a comment-only function signature
+		eqIdx := strings.Index(content, " = (")
+		if eqIdx <= 0 {
+			continue
+		}
+		name := content[:eqIdx]
+		// Validate the name: must be alphanumeric with hyphens
+		if !isValidIdent(name) {
+			continue
+		}
+		// Only index if this is a known built-in function and the existing
+		// entry has no location info (i.e. it came from AddBuiltinSymbols).
+		if !builtinNames[name] {
+			continue
+		}
+		existing, exists := index.definitions[name]
+		if exists && existing.Location.URI != "" {
+			continue // already has a real definition location
+		}
+
+		loc := Location{
+			URI: modURI,
+			Range: Range{
+				Start: Position{Line: uint32(i), Character: 0},
+				End:   Position{Line: uint32(i), Character: uint32(len(line))},
+			},
+		}
+		entry := &IndexEntry{
+			Name:     name,
+			Kind:     SymbolKindFunction,
+			Type:     "build-in",
+			Location: loc,
+		}
+		if existing != nil {
+			// Preserve params/doc from AddBuiltinSymbols
+			entry.Params = existing.Params
+			entry.ResultParams = existing.ResultParams
+			entry.Doc = existing.Doc
+			entry.Value = existing.Value
+		}
+		index.functions[name] = entry
+		index.definitions[name] = entry
+	}
+}
+
+// isValidIdent checks if a string is a valid Nolang identifier
+// (alphanumeric with hyphens, starting with a letter).
+func isValidIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, c := range s {
+		if c == '-' {
+			continue
+		}
+		if c >= 'a' && c <= 'z' {
+			continue
+		}
+		if c >= 'A' && c <= 'Z' {
+			continue
+		}
+		if i > 0 && c >= '0' && c <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // filenameFromURI extracts the base filename from a file:// URI.

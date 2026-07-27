@@ -25,6 +25,34 @@
 ;      因此所有本地 str 變數須以 `x str = with-cap(n)` 顯式標注類型。
 
 ; ═══════════════════════════════════════════════
+; 內建函數（編譯器 ForwardFunc）
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: println)
+; print: 輸出字串到標準輸出並換行，支援 {name:spec} 命名格式欄位
+; print = (s str) { }
+
+; build-in (ForwardFunc: eprint)
+; eprint: 輸出字串到標準錯誤並換行，支援 {name:spec} 命名格式欄位
+; eprint = (s str) { }
+
+; build-in (ForwardFunc: format)
+; format: 使用 {name:spec} 命名欄位格式化字串並返回結果（取代 sprintf）
+; format = (s str) (out str) { }
+
+; build-in (ForwardFunc: printf)
+; printf: 已廢棄，請改用 print（自動換行）或 io.out（不換行）
+; printf = (s str) { }
+
+; build-in (ForwardFunc: sprintf)
+; sprintf: 已廢棄，請改用 format
+; sprintf = (s str) (out str) { }
+
+; build-in (ForwardFunc: eprint)
+; eprintf: 輸出格式化字串到標準錯誤（不換行），支援 {name:spec}
+; eprintf = (s str) { }
+
+; ═══════════════════════════════════════════════
 ; 規範解析
 ; ═══════════════════════════════════════════════
 

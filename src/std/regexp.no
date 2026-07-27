@@ -150,7 +150,6 @@ regexp.clear-class-bit = (cls-idx i64, c i64) {
 ; c i64: 字元值（0~255）
 ; 返回 yes bool: true=在類別中
 regexp.in-class = (cls-idx i64, c i64) (yes bool) {
-    yes = false
     base = cls-idx * RE-CLS-SIZE
     byte-idx = c >> 3
     bit-idx = c & 7

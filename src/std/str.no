@@ -120,7 +120,6 @@ str.index-from = (target str, from i64) (pos i64) {
 ; str.contains: 判断 s 是否包含 target 子串
 ; 返回 true=包含, false=不包含
 str.contains = (target str) (yes bool) {
-    yes = false
     pos = .index(target)
     pos >= 0 -> yes = true
 }
@@ -1076,6 +1075,15 @@ str.empty = () (yes bool) {
 ;   s str = with-cap(256)     → 預分配 256 位元組的 str
 ;   v []i64 = with-cap(100)   → 預分配 100 個元素的切片
 ; build-in (ForwardFunc: with-cap)
+; with-cap = (cap i64) { }
+
+; with-len: 建立指定長度的字串或切片，型別由賦值左側推斷
+; build-in (ForwardFunc: with-len)
+; with-len = (len i64) { }
+
+; with-cap-len: 建立指定容量和長度的字串或切片，型別由賦值左側推斷
+; build-in (ForwardFunc: with-cap-len)
+; with-cap-len = (cap i64, len i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 十六進制解碼
@@ -1757,7 +1765,6 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 ; b str: 比較目標
 ; 返回 yes bool: true=相等 false=不相等
 str.eq-full = (b str) (yes bool) {
-    yes = false
     .len != b.len -> return
     yes = true
     i <- [0...len): {

@@ -327,7 +327,6 @@ tree-map.get = (key i64) (val ?i64) {
 ; key i64: 鍵
 ; 返回 yes bool: true=存在, false=不存在
 tree-map.contains = (key i64) (yes bool) {
-    yes = false
     idx = .root
     {
         key == .keys[idx] -> {

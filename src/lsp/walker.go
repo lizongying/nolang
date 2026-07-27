@@ -41,6 +41,10 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope, s.IsVariadic, extractDocComment(&s.CommentedNode))
+		// Index parameters and result parameters as symbols so hover on
+		// parameter names shows the declared type (e.g. `n i64` → i64)
+		// instead of falling back to a same-named variable in another function.
+		w.indexFunctionParams(s.Parameters, s.Results, s.Name)
 		if s.Body != nil {
 			for _, inner := range s.Body.Statements {
 				w.walkStatement(inner, s.Name)
@@ -86,22 +90,34 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					w.index.functions[s.Name.Value] = entry
 					w.index.definitions[s.Name.Value] = entry
 				}
+				// Index parameters and result parameters as symbols so hover on
+				// parameter names shows the declared type.
+				w.indexFunctionParams(funcLit.Parameters, funcLit.Results, s.Name.Value)
 				if funcLit.Body != nil {
 					for _, inner := range funcLit.Body.Statements {
 						w.walkStatement(inner, s.Name.Value)
 					}
 				}
 			} else {
-				// Prefer the explicit type annotation (e.g. `BLAKE2B-MASK u64 = ...`)
-				// over the inferred type from the value (which would be "i64" for
-				// integer literals, or "f64" for float literals).
-				detail = ""
-				if s.Type != nil {
-					detail = s.Type.String()
+			// Prefer the explicit type annotation (e.g. `BLAKE2B-MASK u64 = ...`)
+			// over the inferred type from the value (which would be "i64" for
+			// integer literals, or "f64" for float literals).
+			detail = ""
+			if s.Type != nil {
+				detail = s.Type.String()
+			}
+			if detail == "" {
+				detail = w.getExprType(s.Value)
+			}
+			// If the inferred type is a "call X" placeholder (not a real type)
+			// or empty, preserve the type from the existing declaration so
+			// hover doesn't lose type information (e.g. a parameter `n i64`
+			// reassigned as `n = write(...)` should still show i64).
+			if detail == "" || strings.HasPrefix(detail, "call ") {
+				if existing, exists := w.index.symbols[s.Name.Value]; exists && existing.Type != "" && !strings.HasPrefix(existing.Type, "call ") {
+					detail = existing.Type
 				}
-				if detail == "" {
-					detail = w.getExprType(s.Value)
-				}
+			}
 				value = w.getExprValue(s.Value)
 				entry := &IndexEntry{
 					Name: s.Name.Value,
@@ -387,6 +403,51 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 	w.index.definitions[name] = entry
 }
 
+// indexFunctionParams indexes function parameters and result parameters as
+// symbols so that hovering over a parameter name shows its declared type
+// (e.g. `n i64` → Type: i64). Without this, hover on a parameter falls back
+// to flat symbol lookup and may find a same-named variable from another
+// function body.
+func (w *ASTWalker) indexFunctionParams(params, results []*parser.Parameter, scope string) {
+	for _, p := range params {
+		w.indexSingleParam(p, scope)
+	}
+	for _, p := range results {
+		w.indexSingleParam(p, scope)
+	}
+}
+
+func (w *ASTWalker) indexSingleParam(p *parser.Parameter, scope string) {
+	if p == nil || p.Name == "" {
+		return
+	}
+	typeStr := ""
+	if p.Type != nil {
+		typeStr = p.Type.String()
+	}
+	entry := &IndexEntry{
+		Name: p.Name,
+		Kind: SymbolKindVariable,
+		Type: typeStr,
+		Location: Location{
+			URI: w.uri,
+			Range: Range{
+				Start: Position{Line: uint32(p.Token.Line - 1), Character: uint32(p.Token.Column - 1)},
+				End:   Position{Line: uint32(p.Token.Line - 1), Character: uint32(p.Token.Column - 1 + len(p.Name))},
+			},
+		},
+		Scope: scope,
+	}
+	// Add to declarations for position-based lookup (LookupAtPosition)
+	w.index.declarations[p.Name] = append(w.index.declarations[p.Name], entry)
+	// Add to symbols/definitions for flat lookup, but don't overwrite an
+	// existing entry that has location info (e.g. a module-level constant).
+	if existing, exists := w.index.symbols[p.Name]; !exists || existing.Location.URI == "" {
+		w.index.symbols[p.Name] = entry
+		w.index.definitions[p.Name] = entry
+	}
+}
+
 func (w *ASTWalker) addReference(name string, token interface{}) {
 	var line, column int
 	switch t := token.(type) {
@@ -513,6 +574,10 @@ func (w *ASTWalker) getExprType(expr parser.Expression) string {
 	case *parser.NilLiteral:
 		return "nil"
 	case *parser.Identifier:
+		// Look up the variable's type from the symbol index
+		if entry, ok := w.index.symbols[e.Value]; ok && entry.Type != "" {
+			return entry.Type
+		}
 		return ""
 	case *parser.FunctionLiteral:
 		return w.formatFuncLitDetail(e)
@@ -522,7 +587,15 @@ func (w *ASTWalker) getExprType(expr parser.Expression) string {
 		}
 		return "call"
 	case *parser.InfixExpression:
-		return ""
+		// Try to infer the result type from the operands.
+		// For arithmetic on two i64 values, the result is i64;
+		// for string concatenation, the result is str.
+		leftType := w.getExprType(e.Left)
+		rightType := w.getExprType(e.Right)
+		if leftType != "" {
+			return leftType
+		}
+		return rightType
 	case *parser.PrefixExpression:
 		return ""
 	case *parser.GroupedExpression:

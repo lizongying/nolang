@@ -82,7 +82,6 @@ err-from-errno = (errno i64) (e error) {
 ; ec: 要匹配的錯誤碼
 ; 返回 yes: 是否匹配
 error.is = (ec code) (yes bool) {
-    yes = false
     .code == ec -> yes = true
 }
 

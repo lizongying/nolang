@@ -53,7 +53,6 @@ hash-set.add = (key i64) (is-new bool) {
 
 ; contains: 檢查元素是否存在
 hash-set.contains = (key i64) (found bool) {
-    found = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -69,7 +68,6 @@ hash-set.contains = (key i64) (found bool) {
 
 ; remove: 刪除元素，回傳是否刪除
 hash-set.remove = (key i64) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 

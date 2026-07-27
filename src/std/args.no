@@ -28,7 +28,6 @@ program = () (name str) {
 
 ; has-flag: 判斷標記是否存在（如 --verbose, -v）
 has-flag = (flag str, flagn i64) (yes bool) {
-    yes = false
     n = count()
     i <- [1..n): {
         arg = get(i)
@@ -56,7 +55,6 @@ has-flag = (flag str, flagn i64) (yes bool) {
 
 ; get-option: 獲取選項值（如 --output=xxx 或 --output xxx）
 get-option = (key str, keyn i64, val str) (ok bool) {
-    ok = false
     n = count()
     i <- [1..n): {
         arg = get(i)
@@ -97,7 +95,6 @@ get-option = (key str, keyn i64, val str) (ok bool) {
 
 ; get-positional: 獲取第 i 個位置參數（跳過標記）
 get-positional = (idx i64) (val str, ok bool) {
-    ok = false
     n = count()
     pos = 0
     j = 1

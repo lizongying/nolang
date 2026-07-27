@@ -15,6 +15,86 @@
 ; 驅動應提供的函式：
 ;   open = (dsn str) (d db) — 由驅動提供
 
+; ═══════════════════════════════════════════════
+; 內建 SQLite FFI 函數
+; ═══════════════════════════════════════════════
+
+; build-in (CLibCall: sqlite3_open)
+; db-open: 開啟 SQLite 資料庫，返回 handle（0=失敗）
+; db-open = (dsn str) (handle i64) { }
+
+; build-in (CLibCall: sqlite3_close)
+; db-close: 關閉 SQLite 資料庫
+; db-close = (handle i64) (ok bool) { }
+
+; build-in (CLibCall: sqlite3_exec)
+; db-exec: 執行 SQL 陳述式（CREATE/INSERT/UPDATE/DELETE）
+; db-exec = (handle i64, sql str) (ok bool) { }
+
+; build-in (CLibCall: sqlite3_prepare_v2)
+; db-prepare: 預編譯 SQL 陳述式，返回 stmt handle（0=失敗）
+; db-prepare = (handle i64, sql str) (stmt i64) { }
+
+; build-in (CLibCall: sqlite3_step)
+; db-step: 執行預編譯陳述式一步，返回 rc（100=ROW, 101=DONE）
+; db-step = (stmt i64) (rc i64) { }
+
+; build-in (CLibCall: sqlite3_column_count)
+; db-column-count: 取得預編譯陳述式的欄位數
+; db-column-count = (stmt i64) (count i64) { }
+
+; build-in (CLibCall: sqlite3_column_int64)
+; db-column-int64: 取得欄位值為 int64
+; db-column-int64 = (stmt i64, col i64) (val i64) { }
+
+; build-in (CLibCall: sqlite3_column_text)
+; db-column-text: 取得欄位值為字串
+; db-column-text = (stmt i64, col i64) (val str) { }
+
+; build-in (CLibCall: sqlite3_column_double)
+; db-column-double: 取得欄位值為 f64
+; db-column-double = (stmt i64, col i64) (val f64) { }
+
+; build-in (CLibCall: sqlite3_finalize)
+; db-finalize: 釋放預編譯陳述式
+; db-finalize = (stmt i64) (ok bool) { }
+
+; build-in (CLibCall: sqlite3_last_insert_rowid)
+; db-last-insert-rowid: 取得最後插入的 rowid
+; db-last-insert-rowid = (handle i64) (rowid i64) { }
+
+; build-in (CLibCall: sqlite3_changes)
+; db-changes: 取得最後陳述式影響的行數
+; db-changes = (handle i64) (count i64) { }
+
+; build-in (CLibCall: sqlite3_bind_int64)
+; db-bind-int64: 綁定 int64 參數到預編譯陳述式
+; db-bind-int64 = (stmt i64, idx i64, val i64) (ok bool) { }
+
+; build-in (CLibCall: sqlite3_bind_text)
+; db-bind-text: 綁定文字參數到預編譯陳述式
+; db-bind-text = (stmt i64, idx i64, val str) (ok bool) { }
+
+; build-in (CLibCall: sqlite3_errmsg)
+; db-errmsg: 取得資料庫的錯誤訊息
+; db-errmsg = (handle i64) (msg str) { }
+
+; ═══════════════════════════════════════════════
+; FFI 輔助函數（內建）
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: ffi-cstr-at)
+; ffi-cstr-at: 讀取 C 字串陣列元素 ((char**)ptr)[idx] 為 Nolang str
+; ffi-cstr-at = (ptr i64, idx i64) (val str) { }
+
+; build-in (ForwardFunc: ffi-cstr-at-int)
+; ffi-cstr-at-int: 讀取 C 字串陣列元素並解析為 i64
+; ffi-cstr-at-int = (ptr i64, idx i64) (val i64) { }
+
+; build-in (ForwardFunc: ffi-cstr-at-float)
+; ffi-cstr-at-float: 讀取 C 字串陣列元素並解析為 f64
+; ffi-cstr-at-float = (ptr i64, idx i64) (val f64) { }
+
 ; result: 執行結果（所有驅動共用）
 result {
     last-id i64

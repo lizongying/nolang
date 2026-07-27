@@ -220,8 +220,6 @@ ip-addr.is-loopback = () (yes bool) {
 ; is-private: 是否為私有地址
 ; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 ip-addr.is-private = () (yes bool) {
-    yes = false
-
     ; 10.0.0.0/8
     .a == 10 -> {
         yes = true
@@ -243,43 +241,36 @@ ip-addr.is-private = () (yes bool) {
 
 ; is-zero: 是否為全零地址（0.0.0.0）
 ip-addr.is-zero = () (yes bool) {
-    yes = false
     .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true
 }
 
 ; is-broadcast: 是否為廣播地址（255.255.255.255）
 ip-addr.is-broadcast = () (yes bool) {
-    yes = false
     .a == 255 -> .b == 255 -> .c == 255 -> .d == 255 -> yes = true
 }
 
 ; is-multicast: 是否為多播地址（224.0.0.0/4）
 ip-addr.is-multicast = () (yes bool) {
-    yes = false
     .a >= 224 -> .a <= 239 -> yes = true
 }
 
 ; is-link-local: 是否為鏈路本地地址（169.254.0.0/16）
 ip-addr.is-link-local = () (yes bool) {
-    yes = false
     .a == 169 -> .b == 254 -> yes = true
 }
 
 ; is-class-a: 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
 ip-addr.is-class-a = () (yes bool) {
-    yes = false
     .a >= 1 -> .a <= 126 -> yes = true
 }
 
 ; is-class-b: 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
 ip-addr.is-class-b = () (yes bool) {
-    yes = false
     .a >= 128 -> .a <= 191 -> yes = true
 }
 
 ; is-class-c: 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
 ip-addr.is-class-c = () (yes bool) {
-    yes = false
     .a >= 192 -> .a <= 223 -> yes = true
 }
 
@@ -289,7 +280,6 @@ ip-addr.is-class-c = () (yes bool) {
 
 ; equal: 比較兩個 IP 地址是否相等
 ip-addr.equal = (other ip-addr) (yes bool) {
-    yes = false
     .a == other.a -> .b == other.b -> .c == other.c -> .d == other.d -> yes = true
 }
 
@@ -302,7 +292,6 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ; prefix-len: 前綴長度（0~32）
 ; 返回 yes=true=在子網內
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
-    yes = false
     prefix-len <= 0 -> {
         yes = true
         return
@@ -348,7 +337,6 @@ ip-parse = (s str) (addr ?ip-addr) {
 
 ; ip-is-loopback: 快速判斷字串是否為環回地址
 ip-is-loopback = (s str) (yes bool) {
-    yes = false
     addr = ip-addr{}
     ok = addr.parse(s)
     ok -> yes = addr.is-loopback()
@@ -356,7 +344,6 @@ ip-is-loopback = (s str) (yes bool) {
 
 ; ip-is-private: 快速判斷字串是否為私有地址
 ip-is-private = (s str) (yes bool) {
-    yes = false
     addr = ip-addr{}
     ok = addr.parse(s)
     ok -> yes = addr.is-private()

@@ -119,6 +119,11 @@ type Generator struct {
 	movedVarBitset         []uint64                         // compile-time moved bitmap (used when no runtime bitmap)
 	movedBitmapBase        string                           // LLVM bitmap var name prefix (e.g. "%__mb", "" = not allocated)
 	bitmapCount            int                              // number of u64 bitmap blocks (= maxVarIdx/64 + 1)
+	// === 返回值延遲零值初始化追蹤 ===
+	// 與 move bitmap 對稱：追蹤 out 參數是否被顯式賦值，未賦值者在 return 時補零。
+	retInitBitmapVar       string                           // LLVM bitmap var name (e.g. "%__ret_init_bitmap", "" = not allocated)
+	retInitBits            map[string]int                   // out 參數名 → bit index (aligned with outputParamOrder)
+	hasRetInitCheck        bool                             // true = current function has out params (needs ret init tracking)
 
 	// === 无栈协程（状态机变换）相关字段 ===
 	// async 函数变换为 coro_resume.N 函数，局部变量提升到 %coro_state.N 结构体。

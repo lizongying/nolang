@@ -45,7 +45,6 @@ str-map.hash = (key str) (idx i64) {
 
 ; str-eq: 比較兩個 str 是否相等
 str-map.str-eq = (a str, b str) (eq bool) {
-    eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
         a[i] != b[i] -> return
@@ -90,10 +89,7 @@ str-map.put = (key str, val str) (is-new bool) {
 
 ; get: 查找 key，返回 ?str（nil=未找到）
 str-map.get = (key str) (result ?str) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -106,12 +102,10 @@ str-map.get = (key str) (result ?str) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 str-map.contains = (key str) (found bool) {
-    found = false
     val = .get(key)
     val: {
         ok -> found = true
@@ -122,7 +116,6 @@ str-map.contains = (key str) (found bool) {
 
 ; remove: 刪除 key
 str-map.remove = (key str) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 

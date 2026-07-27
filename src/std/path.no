@@ -193,7 +193,6 @@ path.ext = () (out str) {
 ; path.is-abs: 判斷路徑是否為絕對路徑
 ; 返回 true=是, false=否
 path.is-abs = () (yes bool) {
-    yes = false
     .p.len > 0 -> {
         c = .p[0] & 255
         c == SEP -> yes = true

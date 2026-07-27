@@ -238,3 +238,92 @@ if x > 5 {
 	}
 	_ = location
 }
+
+// TestIndexBuiltinComments verifies that comment-only built-in function
+// declarations in std .no files are indexed with location info, so that
+// go-to-definition works for built-in functions like write/read.
+func TestIndexBuiltinComments(t *testing.T) {
+	// Simulate a std file with a comment-only built-in declaration
+	source := `; io — basic I/O
+; build-in (ForwardFunc: write)
+; write: write data to fd
+; write = (fd fd, data str, n i64) (written i64) { }
+
+out = (s str) (n i64) {
+    n = write(1, s, s.len)
+}
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+	dm.indexBuiltinComments(index, source, "file:///std/io.no")
+
+	// The built-in "write" should now have a location pointing to the comment line
+	entry, ok := index.GetDefinition("write")
+	if !ok {
+		t.Fatal("expected to find write in definitions after indexing builtin comments")
+	}
+	if entry.Location.URI != "file:///std/io.no" {
+		t.Errorf("expected URI 'file:///std/io.no', got %q", entry.Location.URI)
+	}
+	// The comment declaration is on line 3 (0-based): "; write = (fd fd, data str, n i64) (written i64) { }"
+	if entry.Location.Range.Start.Line != 3 {
+		t.Errorf("expected definition at line 3, got line %d", entry.Location.Range.Start.Line)
+	}
+}
+
+// TestIndexBuiltinCommentsDoesNotOverwriteRealDefinition verifies that
+// comment-only declarations do not overwrite real (non-comment) definitions.
+func TestIndexBuiltinCommentsDoesNotOverwriteRealDefinition(t *testing.T) {
+	source := `; write = (fd fd, data str, n i64) (written i64) { }
+
+write = (fd fd, data str, n i64) (written i64) {
+    written = 42
+}
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+	// First, index the real AST statements (as documents.go does)
+	prog := createTestProgram(source)
+	for _, ms := range prog.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/io.no")
+	}
+	// Then, index the comment-only declarations
+	dm.indexBuiltinComments(index, source, "file:///std/io.no")
+
+	entry, ok := index.GetDefinition("write")
+	if !ok {
+		t.Fatal("expected to find write in definitions")
+	}
+	// Should point to the real definition (line 2), not the comment (line 0)
+	if entry.Location.Range.Start.Line == 0 {
+		t.Error("expected definition to point to real implementation, not comment")
+	}
+}
+
+// TestIsValidIdent verifies the identifier validation helper.
+func TestIsValidIdent(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"write", true},
+		{"get-line", true},
+		{"read-stdin-line", true},
+		{"open-file", true},
+		{"", false},
+		{"123abc", false},
+		{"has space", false},
+		{"str.len", false}, // dot not allowed
+		{"[]byte", false},  // brackets not allowed
+	}
+	for _, tt := range tests {
+		got := isValidIdent(tt.input)
+		if got != tt.want {
+			t.Errorf("isValidIdent(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}

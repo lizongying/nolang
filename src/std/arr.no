@@ -65,7 +65,6 @@
 
 ; [n]t.contains: 是否包含值 val
 [n]t.contains = (val t) (found bool) {
-    found = false
     i <- [0..n): {
         .[i] == val -> {
             found = true

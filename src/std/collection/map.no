@@ -58,7 +58,6 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
 
 ; str-eq: 比較兩個 str 是否相等
 hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
-    eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
         a[i] != b[i] -> return
@@ -104,10 +103,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-str-tmpl.get = (key str) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -123,12 +119,10 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 hashmap-str-tmpl.contains = (key str) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -139,7 +133,6 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 
 ; remove: 刪除 key（標記墓碑，不清 keys/vals）
 hashmap-str-tmpl.remove = (key str) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -292,10 +285,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-int-tmpl.get = (key k) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -309,12 +299,10 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 hashmap-int-tmpl.contains = (key k) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -325,7 +313,6 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
 
 ; remove: 刪除 key（標記墓碑，不清 keys/vals）
 hashmap-int-tmpl.remove = (key k) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -459,10 +446,7 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-bool-tmpl.get = (key bool) (result ?v) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -470,12 +454,10 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
         result = .vals[idx]
         return
     }
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 hashmap-bool-tmpl.contains = (key bool) (found bool) {
-    found = false
     val ?v = .get(key)
     val: {
         ok -> found = true
@@ -486,7 +468,6 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
 
 ; remove: 刪除 key（標記墓碑，不清 keys/vals）
 hashmap-bool-tmpl.remove = (key bool) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 

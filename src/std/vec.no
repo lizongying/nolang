@@ -60,11 +60,13 @@
 
 ; sort-asc: 升序排序 data[0..n)
 ; build-in (ForwardFunc: vec-sort-asc)
+; sort-asc = (data []i64, n i64) { }
 ; []t.sort-asc = () {
 ; }
 
 ; sort-desc: 降序排序 data[0..n)
 ; build-in (ForwardFunc: vec-sort-desc)
+; sort-desc = (data []i64, n i64) { }
 ; []t.sort-desc = () {
 ; }
 
@@ -115,17 +117,20 @@
 ; []t.clear = () {
 ; }
 
-; with-cap: see str.no for full documentation
+; with-cap: 建立指定容量的新切片（len=0），型別由賦值左側推斷
 ; Builtin syntax (not a method): v []i64 = with-cap(100)
 ; build-in (ForwardFunc: with-cap)
+; with-cap = (cap i64) { }
 
-; with-len: see str.no for full documentation
+; with-len: 建立指定長度的切片，型別由賦值左側推斷
 ; Builtin syntax (not a method): v []i64 = with-len(100)
 ; build-in (ForwardFunc: with-len)
+; with-len = (len i64) { }
 
-; with-cap-len: see str.no for full documentation
+; with-cap-len: 建立指定容量和長度的切片，型別由賦值左側推斷
 ; Builtin syntax (not a method): v []i64 = with-cap-len(200, 100)
 ; build-in (ForwardFunc: with-cap-len)
+; with-cap-len = (cap i64, len i64) { }
 
 ; []t.pop: 從末尾彈出元素
 ; 空切片返回 nil
@@ -147,7 +152,6 @@
 ; 否則編譯器生成錯誤循環條件 i < 0 導致循環不執行
 []t.contains = (val t) (found bool) {
     sz = .len
-    found = false
     i <- [0...len): {
         v = .[i]
         v == val -> {
@@ -373,6 +377,26 @@
         i = i + 1
     } (i < blen)
 }
+
+; ═══════════════════════════════════════════════
+; 內建比較/排序函數
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: vec-eq)
+; vec-eq: 比較兩個切片是否相等
+; vec-eq = (a []t, b []t, elem-size i64) (eq i64) { }
+
+; build-in (ForwardFunc: arr-eq)
+; arr-eq: 比較兩個固定大小陣列是否相等
+; arr-eq = (a i64, b i64, n i64) (eq i64) { }
+
+; build-in (ForwardFunc: vec-sort)
+; vec-sort: 升序排序切片（原地）
+; vec-sort = (a i64) { }
+
+; build-in (ForwardFunc: vec-reverse)
+; vec-reverse: 反轉切片（原地）
+; vec-reverse = (a i64) { }
 
 ; []t.to-str: 字串表示
 ; 格式如 '[1, 2, 3]'

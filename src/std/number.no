@@ -146,6 +146,14 @@ pow = (a int, n int) (r int) {
 ;     r = a
 ; }
 
+; f32-to-f64: 將 f32 提升為 f64
+; build-in (LLVMConv: F32ToF64)
+; f32-to-f64 = (a f32) (r f64) { }
+
+; f64-to-f32: 將 f64 降為 f32（可能損失精度）
+; build-in (LLVMConv: F64ToF32)
+; f64-to-f32 = (a f64) (r f32) { }
+
 ; ═══════════════════════════════════════════════
 ; 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
 ; ═══════════════════════════════════════════════
@@ -567,3 +575,19 @@ float.is-inf = () (yes bool) {
 ;         i = i + 1
 ;     }
 ; }
+
+; ═══════════════════════════════════════════════
+; 位元操作（內建）
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: rotate-left)
+; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
+; rotate-left = (x i64, n i64) (r i64) { }
+
+; build-in (ForwardFunc: rotate-right)
+; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
+; rotate-right = (x i64, n i64) (r i64) { }
+
+; build-in (ForwardFunc: store-le-u32)
+; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
+; store-le-u32 = (arr i64, offset i64, val u32) { }

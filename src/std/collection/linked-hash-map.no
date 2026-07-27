@@ -76,10 +76,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
 
 ; get: 查找 key，返回 ?i64（nil=未找到）
 linked-hash-map.get = (key i64) (result ?i64) {
-    .size == 0 -> {
-        result = nil
-        return
-    }
+    .size == 0 -> return
 
     idx = .hash(key)
 
@@ -91,12 +88,10 @@ linked-hash-map.get = (key i64) (result ?i64) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
-    result = nil
 }
 
 ; contains: 檢查 key 是否存在
 linked-hash-map.contains = (key i64) (found bool) {
-    found = false
     val = .get(key)
     val: {
         ok -> found = true
@@ -107,7 +102,6 @@ linked-hash-map.contains = (key i64) (found bool) {
 
 ; remove: 刪除 key
 linked-hash-map.remove = (key i64) (removed bool) {
-    removed = false
     idx = .hash(key)
 
     {

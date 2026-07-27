@@ -146,3 +146,11 @@ degrees = (r f64) (res f64) {
 radians = (d f64) (res f64) {
     res = d * PI / 180.0
 }
+
+; ═══════════════════════════════════════════════
+; 整數數學函數（內建）
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: math-clamp)
+; clamp: 將值限制在 [min, max] 範圍內
+; clamp = (val i64, min i64, max i64) (result i64) { }

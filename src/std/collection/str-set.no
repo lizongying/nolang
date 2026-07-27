@@ -43,7 +43,6 @@ str-set.hash = (key str) (idx i64) {
 
 ; str-eq: 比較兩個 str 是否相等
 str-set.str-eq = (a str, b str) (eq bool) {
-    eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
         a[i] != b[i] -> return
@@ -77,7 +76,6 @@ str-set.add = (key str) (is-new bool) {
 
 ; contains: 檢查元素是否存在
 str-set.contains = (key str) (found bool) {
-    found = false
     .size == 0 -> return
     idx = .hash(key)
 
@@ -94,7 +92,6 @@ str-set.contains = (key str) (found bool) {
 
 ; remove: 刪除元素
 str-set.remove = (key str) (removed bool) {
-    removed = false
     .size == 0 -> return
     idx = .hash(key)
 

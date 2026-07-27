@@ -107,7 +107,6 @@ pem-encode = (label str, data []byte) (out str) {
 ; pem-str: PEM 格式字串
 ; 返回 ?pem-block: ok=解析成功, nil=解析失敗
 pem-decode = (pem-str str) (result ?pem-block) {
-    result = nil
     n = pem-str.len
     n < 10 -> return
 

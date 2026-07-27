@@ -15,13 +15,11 @@
 
 ; is-digit: 判斷是否為數字（0-9）
 char.is-digit = () (result bool) {
-    result = false
     . >= 48 && . <= 57 -> result = true
 }
 
 ; is-letter: 判斷是否為字母（A-Z a-z）
 char.is-letter = () (result bool) {
-    result = false
     . >= 65 && . <= 90 -> {
         result = true
         return
@@ -32,7 +30,6 @@ char.is-letter = () (result bool) {
 ; is-alpha: 判斷是否為字母（A-Z a-z）
 ; is-letter 的別名
 char.is-alpha = () (result bool) {
-    result = false
     . >= 65 && . <= 90 -> {
         result = true
         return
@@ -42,25 +39,21 @@ char.is-alpha = () (result bool) {
 
 ; is-alnum: 判斷是否為字母或數字
 char.is-alnum = () (result bool) {
-    result = false
     .is-digit() || .is-alpha() -> result = true
 }
 
 ; is-space: 判斷是否為空白字元（space tab newline cr）
 char.is-space = () (result bool) {
-    result = false
     . == 32 || . == 9 || . == 10 || . == 13 -> result = true
 }
 
 ; is-upper: 判斷是否為大寫字母（A-Z）
 char.is-upper = () (result bool) {
-    result = false
     . >= 65 && . <= 90 -> result = true
 }
 
 ; is-lower: 判斷是否為小寫字母（a-z）
 char.is-lower = () (result bool) {
-    result = false
     . >= 97 && . <= 122 -> result = true
 }
 

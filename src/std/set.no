@@ -38,7 +38,6 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
 ; contains: 檢查元素是否存在於集合中
 ; 返回 true=存在, false=不存在
 contains = (s []i64, n i64, val i64) (yes bool) {
-    yes = false
     i <- [0..n): {
         s[i] == val -> {
             yes = true

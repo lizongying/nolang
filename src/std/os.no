@@ -124,6 +124,42 @@ strerror = (errnum i64) (msg str) {
 ; get-errno: 取得最後的 errno 值
 ; get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
 ; }
+
+; ═══════════════════════════════════════════════
+; 權限與檔案資訊
+; ═══════════════════════════════════════════════
+
+; build-in (CLibCall: chmod)
+; ch-mod: 變更檔案權限
+; ch-mod = (path str, mode i64) (ok bool) { }
+
+; build-in (CLibCall: chown)
+; chown: 變更檔案擁有者與群組（uid, gid）
+; chown = (path str, uid i64, gid i64) (ok bool) { }
+
+; build-in (ForwardFunc: getuid)
+; getuid: 取得當前使用者 ID
+; getuid = () (uid i64) { }
+
+; build-in (ForwardFunc: getgid)
+; getgid: 取得當前群組 ID
+; getgid = () (gid i64) { }
+
+; build-in (ForwardFunc: stat-mode)
+; stat-mode: 取得檔案模式（包含權限與類型位元）
+; stat-mode = (path str) (mode i64, ok bool) { }
+
+; build-in (ForwardFunc: stat-uid)
+; stat-uid: 取得檔案擁有者 uid
+; stat-uid = (path str) (uid i64, ok bool) { }
+
+; build-in (ForwardFunc: stat-gid)
+; stat-gid: 取得檔案群組 gid
+; stat-gid = (path str) (gid i64, ok bool) { }
+
+; build-in (ForwardFunc: stat-mtime)
+; stat-mtime: 取得檔案修改時間（Unix 秒）
+; stat-mtime = (path str) (mtime i64, ok bool) { }
 ; ═══════════════════════════════════════════════
 ; 時間
 ; ═══════════════════════════════════════════════
@@ -168,3 +204,23 @@ strerror = (errnum i64) (msg str) {
 ; arg = (idx i64) (val str) {
 ;     // LLVM: access argv[idx]
 ; }
+
+; ═══════════════════════════════════════════════
+; Windows 平台專用（內建）
+; ═══════════════════════════════════════════════
+
+; build-in (CLibCall: FindFirstFileA)
+; win-find-first-file: Windows 目錄搜尋（FindFirstFileA），返回 bufPtr（0=失敗）
+; win-find-first-file = (path str) (bufptr i64) { }
+
+; build-in (CLibCall: FindNextFileA)
+; win-find-next-file: 讀取下一個 Windows 目錄條目名稱，返回 (name, ok)
+; win-find-next-file = (bufptr i64) (name str, ok bool) { }
+
+; build-in (CLibCall: FindClose)
+; win-find-close: 關閉 Windows 目錄搜尋 handle
+; win-find-close = (bufptr i64) (ok bool) { }
+
+; build-in (CLibCall: WSAStartup)
+; win-wsa-startup: 初始化 Winsock 2.2（僅 Windows），返回 true=成功
+; win-wsa-startup = () (ok bool) { }
