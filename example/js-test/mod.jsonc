@@ -1,0 +1,22 @@
+{
+  "name": "js-test",
+  "version": "0.1.0",
+  "description": "JS backend demonstration project",
+  "keywords": [
+    "nolang",
+    "js"
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
+  "organization": "nolang",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "https://lizongying.github.io/nolang",
+  "license": "MIT",
+  "dependencies": {},
+  "compiler": {
+    "version": "0.1.0",
+    "anonymous-fn-type": false,
+  },
+  "output": "./dist",
+  "ignore": [],
+}

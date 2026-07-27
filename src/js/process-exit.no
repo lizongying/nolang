@@ -1,0 +1,9 @@
+; process-exit.no — JS process.exit wrapper
+;
+; Wraps the JavaScript process.exit API.
+; Under the JS backend, calls to process-exit(code) map to process.exit(code).
+; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+#{js}
+process-exit = (code int) {
+    print('')
+}

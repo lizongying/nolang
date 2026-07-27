@@ -622,9 +622,20 @@ func (g *Generator) createTaskAndEnqueue(sb *strings.Builder, call *parser.CallE
 // loadTaskResult 从 task 加载结果到结果变量。
 func (g *Generator) loadTaskResult(sb *strings.Builder, taskPtr string, resultVar string, fields []coroField) {
 	// 获取结果类型
+	// 优先从 taskResultTypes 查找（run 语句在 varLLVMType 中记录 task 变量名 → 类型）。
+	// awy <task_var> 路径下 taskResultTypes 仅记录了 task 变量名（如 "task1"），
+	// 结果变量名（如 "s1"）未记录。回退到 varTypes：varLLVMType 在收集阶段已通过
+	// taskResultTypes[taskVar] 正确推断 awy 表达式结果类型并写入 varTypes[resultVar]。
 	resultType := "i64"
+	typeFound := false
 	if g.taskResultTypes != nil {
 		if t, ok := g.taskResultTypes[resultVar]; ok {
+			resultType = t
+			typeFound = true
+		}
+	}
+	if !typeFound && g.varTypes != nil {
+		if t, ok := g.varTypes[resultVar]; ok {
 			resultType = t
 		}
 	}
@@ -834,6 +845,135 @@ func (g *Generator) generateCoroTrampoline(sb *strings.Builder, num int) {
 	sb.WriteString(fmt.Sprintf("\tcall void @%s(%s* %%tr.cs)\n", sanitizeLLVMName(resumeName), stateType))
 	sb.WriteString("\tret void\n")
 	sb.WriteString("}\n\n")
+}
+
+// generateCoroCall 处理对含 awy 函数（已被变换为协程）的直接调用。
+// 创建 coro_state + task，启动事件循环驱动协程完成，然后从 coro_state 取回结果。
+// 仅在非协程上下文（g.coroInAsyncFunc == false）中调用；协程内部应使用 run+awy。
+func (g *Generator) generateCoroCall(sb *strings.Builder, expr *parser.CallExpression, fnName string, num int) string {
+	stateType := g.coroStateName(num)
+	initName := g.coroInitName(num)
+	trampName := fmt.Sprintf("coro_trampoline.%d", num)
+
+	// alloca coro_state.N
+	g.tmpIdx++
+	csAddr := fmt.Sprintf("%%corocall.cs.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), csAddr, stateType))
+
+	// 评估输入参数并构建 coro_init.N 调用参数列表。
+	// 注意：coro_init.N 的参数仅为函数声明的输入参数，不含输出参数。
+	// 输出参数的结果存储在 coro_state 的结果字段中，事件循环结束后从此处取回。
+	var argStrs []string
+	paramCount := 0
+	if g.funcParamCount != nil {
+		if pc, ok := g.funcParamCount[fnName]; ok {
+			paramCount = pc
+		}
+	}
+	// 仅取输入参数（paramCount 个），超出部分为调用方传递的输出参数指针，不传给 coro_init。
+	argExprs := expr.Arguments
+	if paramCount > 0 && len(argExprs) > paramCount {
+		argExprs = argExprs[:paramCount]
+	}
+	if types, ok := g.funcParamLLVMTypes[fnName]; ok {
+		for i, argExpr := range argExprs {
+			argVal := g.generateExprWithSB(sb, argExpr)
+			ty := "i64"
+			if i < len(types) {
+				ty = types[i]
+			}
+			argStrs = append(argStrs, fmt.Sprintf("%s %s", ty, argVal))
+		}
+	} else {
+		for _, argExpr := range argExprs {
+			argVal := g.generateExprWithSB(sb, argExpr)
+			argStrs = append(argStrs, fmt.Sprintf("i64 %s", argVal))
+		}
+	}
+
+	// call coro_init.N(cs, args...)
+	argStr := ""
+	if len(argStrs) > 0 {
+		argStr = ", " + strings.Join(argStrs, ", ")
+	}
+	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s%s)\n", g.indent(), sanitizeLLVMName(initName), stateType, csAddr, argStr))
+
+	// alloca %task
+	g.tmpIdx++
+	taskAddr := fmt.Sprintf("%%corocall.task.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAddr))
+
+	// store resume_fn (field 0) = coro_trampoline.N
+	g.tmpIdx++
+	taskF0 := fmt.Sprintf("%%corocall.task.f0.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore void (i8*)* @%s, void (i8*)** %s\n", g.indent(), sanitizeLLVMName(trampName), taskF0))
+
+	// store data (field 1) = cs bitcast to i8* (ptrtoint + store i64)
+	g.tmpIdx++
+	csCast := fmt.Sprintf("%%corocall.cs.cast.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), csCast, stateType, csAddr))
+	g.tmpIdx++
+	taskF1 := fmt.Sprintf("%%corocall.task.f1.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1, taskAddr))
+	g.storeDataPtrField(sb, csCast, taskF1)
+
+	// store done (field 2) = false
+	g.tmpIdx++
+	taskF2 := fmt.Sprintf("%%corocall.task.f2.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2))
+
+	// bitcast task* to i8*
+	g.tmpIdx++
+	taskI8 := fmt.Sprintf("%%corocall.task.i8.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskAddr))
+
+	// 启动事件循环
+	sb.WriteString(fmt.Sprintf("%scall void @nolang_async_run(i8* %s)\n", g.indent(), taskI8))
+
+	// 从 coro_state 取回结果
+	resultFields := g.coroResultFields[num]
+	if len(resultFields) == 0 {
+		return "" // void 函数
+	}
+
+	// 单结果：从 coro_state 加载结果值并返回
+	if len(resultFields) == 1 {
+		f := resultFields[0]
+		g.tmpIdx++
+		resGEP := fmt.Sprintf("%%corocall.res.gep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g.indent(), resGEP, stateType, stateType, csAddr, f.idx))
+		g.tmpIdx++
+		resVal := fmt.Sprintf("%%corocall.res.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resVal, f.llvmTy, f.llvmTy, resGEP))
+		if g.ssaTypes != nil {
+			g.ssaTypes[resVal] = f.llvmTy
+		}
+		return resVal
+	}
+
+	// 多结果：从 coro_state 逐个加载并 store 到调用方传递的输出参数指针。
+	// 输出参数指针位于 expr.Arguments[paramCount..]。
+	for ri, f := range resultFields {
+		g.tmpIdx++
+		resGEP := fmt.Sprintf("%%corocall.res.gep.%d.%d", ri, g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g.indent(), resGEP, stateType, stateType, csAddr, f.idx))
+		g.tmpIdx++
+		resVal := fmt.Sprintf("%%corocall.res.%d.%d", ri, g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resVal, f.llvmTy, f.llvmTy, resGEP))
+		// 输出参数在 expr.Arguments[paramCount+ri]
+		outIdx := paramCount + ri
+		if outIdx < len(expr.Arguments) {
+			outArg := g.generateCallArg(sb, expr.Arguments[outIdx])
+			// outArg 格式: "<type> <pointer>"
+			if idx := strings.LastIndex(outArg, " "); idx >= 0 {
+				outPtr := outArg[idx+1:]
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), f.llvmTy, resVal, f.llvmTy, outPtr))
+			}
+		}
+	}
+	return ""
 }
 
 // generateAsyncMainEntry 生成 @main 函数，创建 coro_state + task 并启动事件循环。

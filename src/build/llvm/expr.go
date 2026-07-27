@@ -2868,14 +2868,42 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 		}
 
-		val := g.generateExprWithSB(sb, expr.Value)
-
-		// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
-		if varName != "" {
-			if t, ok := g.varTypes[varName]; ok {
-				structName = strings.TrimPrefix(t, "%")
+		// Set target type info for type-inferred builtins (e.g. with-len)
+	// before generating the RHS value. Without this, with-len defaults
+	// to i64 (8 bytes) element size, causing undersized allocations for
+	// slice fields with larger element types (e.g. []str needs 24 bytes
+	// per %str-long element). This leads to buffer overflows when the
+	// field is subsequently indexed (e.g. .keys[idx] = key writes past
+	// the allocated buffer).
+	prevTargetType := g.currentTargetType
+	prevTargetElemType := g.currentTargetElemType
+	g.currentTargetType = ""
+	g.currentTargetElemType = ""
+	if structName != "" {
+		if fields, ok := g.structTypes[structName]; ok {
+			for _, f := range fields {
+				if f.name == fieldName {
+					g.currentTargetType = f.typ
+					if f.typ == "%vec" && f.elemType != "" {
+						g.currentTargetElemType = f.elemType
+					}
+					break
+				}
 			}
-		} else {
+		}
+	}
+
+	val := g.generateExprWithSB(sb, expr.Value)
+
+	g.currentTargetType = prevTargetType
+	g.currentTargetElemType = prevTargetElemType
+
+	// structName 和 basePtr 已在上方 StructLiteral 處理中宣告
+	if varName != "" {
+		if t, ok := g.varTypes[varName]; ok {
+			structName = strings.TrimPrefix(t, "%")
+		}
+	} else {
 			recvType := g.exprResultLLVMType(dot.Receiver)
 			if strings.HasPrefix(recvType, "%") {
 				structName = strings.TrimPrefix(recvType, "%")
@@ -6106,6 +6134,40 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 			argTypeStr = argStr[:idx]
 			argPtr = argStr[idx+1:]
 		}
+		// Identifier + 堆拥有类型参数（如 shared []i64）：深拷贝到独立缓冲区，
+		// 避免调用端与异步任务共享同一 data 指针造成数据竞争。
+		// 非 Identifier 参数（字面量/表达式）由 generateCallArg 分配独立 temp 缓冲区，无共享。
+		// 克隆副本不在 wrapper 内释放：async 函数可能将其 move 到 out 参数，
+		// wrapper 释放会导致 out 参数堆数据 UAF。
+		if ident, ok := argExpr.(*parser.Identifier); ok && sb != nil {
+			if varType, hasType := g.varTypes[ident.Value]; hasType && g.isHeapOwningType(varType) {
+				elemType := ""
+				if g.arrayElemTypes != nil {
+					elemType = g.arrayElemTypes[ident.Value]
+				}
+				// 检查是否可安全深拷贝（与 b=a 深拷贝路径一致的 canClone 判断）
+				canClone := true
+				if (varType == "%vec" || varType == "%arr") &&
+					(elemType == "%vec" || elemType == "%arr") {
+					canClone = false // 巢狀容器，子元素型別未知
+				}
+				if varType != "%vec" && varType != "%arr" && varType != "%str-long" {
+					if !g.canDeepCloneStruct(varType) {
+						canClone = false
+					}
+				}
+				if canClone {
+					cloneSize := g.llvmTypeSize(varType)
+					if cloneSize == 0 {
+						cloneSize = 8
+					}
+					cloneBuf := g.allocForCoro(sb, "async.argclone", varType, cloneSize)
+					g.emitDeepClone(sb, g.varAddr(ident.Value), cloneBuf, varType, elemType)
+					argTypeStr = varType + "*"
+					argPtr = cloneBuf
+				}
+			}
+		}
 		g.tmpIdx++
 		argCast := fmt.Sprintf("%%async.arg.%d.cast.%d", i, g.tmpIdx)
 		if sb != nil {
@@ -6475,7 +6537,16 @@ func (g *Generator) awaitFutureVar(sb *strings.Builder, varName string) string {
 // if the task is not yet done. In async functions, awy is handled by the state machine
 // transform (coro.go), so this path is only reached for misuse.
 func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
-	taskPtr := g.varAddr(varName)
+	// task 变量存储在 alloca 中（alloca %task*），需先 load %task* 再使用。
+	// 直接使用 varAddr 会得到 alloca 地址（%task**），将其作为 %task* 会导致
+	// GEP 越界访问（field 2 偏移 16 字节超出 8 字节 alloca），读取到栈垃圾。
+	// 与 generateAwaitForCoro Case 2 保持一致的 load 模式。
+	taskVarAddr := g.varAddr(varName)
+	g.tmpIdx++
+	taskPtr := fmt.Sprintf("%%awy.task.ptr.%d", g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %%task*, %%task** %s\n", g.indent(), taskPtr, taskVarAddr))
+	}
 
 	// Check task.done (field 2)
 	g.tmpIdx++

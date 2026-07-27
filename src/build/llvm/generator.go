@@ -425,6 +425,7 @@ var platformKeys = map[string]struct{ goos, goarch string }{
 	"mac-amd64":   {"darwin", "amd64"},
 	"mac-arm64":   {"darwin", "arm64"},
 	"wasi-wasm32": {"wasi", "wasm32"},
+	"js":          {"js", ""},
 }
 
 // targetDatalayoutAndTriple returns the LLVM target datalayout and triple

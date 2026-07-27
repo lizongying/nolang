@@ -1058,6 +1058,7 @@ func buildCommand(args []string) {
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
+	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -1070,6 +1071,7 @@ func buildCommand(args []string) {
 		fmt.Println("")
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
+		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
@@ -1081,6 +1083,8 @@ func buildCommand(args []string) {
 		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
 		fmt.Println("  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain")
 		fmt.Println("  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output")
+		fmt.Println("  no build --js main.no                              emit JavaScript (type erasure)")
+		fmt.Println("  no build --js -o app.js main.no                    JS backend with explicit output")
 	}
 	_ = fs.Parse(args)
 
@@ -1103,6 +1107,40 @@ func buildCommand(args []string) {
 		Output:        *outputFile,
 		NoBoundsCheck: *unsafe,
 		UseDirectWasm: *wasmDirect,
+		UseJS:         *jsBackend,
+	}
+
+	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
+	if *jsBackend {
+		// workspace 模式不適用 JS 後端（單一輸出檔案）；要求明確輸入檔案。
+		if inputPath == "." {
+			fmt.Fprintln(os.Stderr, "Error: --js requires an explicit input file (workspace mode not supported)")
+			os.Exit(1)
+		}
+		jsCode, err := nbuild.BuildJS(inputPath, opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		out := *outputFile
+		if out == "" {
+			// 預設輸出路徑：dist/<base-name>.js
+			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+			if baseName == "main" {
+				// 嘗試從同目錄的 mod.jsonc 取得套件名稱
+				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
+					baseName = pkg.Name
+				}
+			}
+			out = filepath.Join("dist", baseName+".js")
+			os.MkdirAll("dist", 0755)
+		}
+		if err := os.WriteFile(out, []byte(jsCode), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Built: %s\n", out)
+		return
 	}
 
 	// Direct WASM 後端路徑：繞過 LLVM 工具鏈，直接發射 WASM 字節碼。
@@ -1158,6 +1196,7 @@ func runCommand(args []string) {
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
+	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<file|dir>]")
 		fmt.Println("")
@@ -1169,6 +1208,7 @@ func runCommand(args []string) {
 		fmt.Println("")
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
+		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                     build and run main.no in current dir")
@@ -1176,6 +1216,7 @@ func runCommand(args []string) {
 		fmt.Println("  no run -cc zig main.no     build and run with Zig compiler")
 		fmt.Println("  no run -target wasm32-wasi main.no")
 		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
+		fmt.Println("  no run --js main.no            build via JS backend then run with node")
 	}
 	_ = fs.Parse(args)
 
@@ -1209,6 +1250,43 @@ func runCommand(args []string) {
 	targetStr := *target
 	if targetStr == "" {
 		targetStr = nbuild.DetectTarget()
+	}
+
+	// JS 後端路徑：編譯為 .js 後以 node 執行。
+	if *jsBackend {
+		// 若 inputPath 是目錄，解析為 main.no
+		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+			inputPath = filepath.Join(inputPath, "main.no")
+		}
+		outPath := filepath.Join(tmpDir, "out.js")
+		jsCode, berr := nbuild.BuildJS(inputPath, nbuild.BuildOptions{
+			Target:  targetStr,
+			UseJS:   true,
+			Verbose: verbose,
+		})
+		if berr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+			os.Exit(1)
+		}
+		if werr := os.WriteFile(outPath, []byte(jsCode), 0644); werr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
+			os.Exit(1)
+		}
+		// 以 node 執行編譯產物（若不可用則提示使用者安裝）。
+		if _, lerr := exec.LookPath("node"); lerr != nil {
+			fmt.Fprintf(os.Stderr, "Built: %s\n", outPath)
+			fmt.Fprintln(os.Stderr, "Error: node not found in PATH; install Node.js to run JS backend output")
+			os.Exit(1)
+		}
+		cmd := exec.Command("node", append([]string{outPath}, fs.Args()[1:]...)...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Direct WASM 後端路徑：編譯為 .wasm 後嘗試以 wasmtime 執行。

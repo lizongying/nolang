@@ -647,6 +647,24 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	return prog, nil
 }
 
+// parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
+// 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
+// 用於 js/ 相容層模組解析（# js/<module>）。
+func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser.Program, error) {
+	l := lexer.New(string(data))
+	p := parser.New(l)
+	p.AllowAnonymousFnType = t.allowAnonymousFn
+	p.Filename = filepath.Base(filename)
+	if t.externFuncSigs != nil || t.externStructFields != nil {
+		p.SetExternSignatures(t.externFuncSigs, t.externStructFields)
+	}
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil, fmt.Errorf("%s: %v", filename, p.Errors())
+	}
+	return prog, nil
+}
+
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
@@ -668,7 +686,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// 相對於語言根目錄的 src/std/
 		// 使用硬編碼路徑或透過套件 alias
 		if t.pkg != nil {
-			// 嘗試透過 alias 解析（mod.jsonc 中的 @std）
 			resolved := t.pkg.ResolvePath(path)
 			if !strings.HasSuffix(resolved, ".no") {
 				resolved = resolved + ".no"
@@ -707,6 +724,39 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			return t.resolveFile(srcPath)
 		}
 		return t.resolveFile(srcPath)
+	}
+
+	// js/ 開頭 → JS 相容層路徑（內建第三方包，與 std/ 機制平行）
+	// 模組名稱遵循 Nolang 的小寫中劃線風格（如 js/console-log、js/fs-read-file）
+	if strings.HasPrefix(path, "js/") || path == "js" {
+		relPath := strings.TrimPrefix(path, "js/")
+		if path == "js" {
+			relPath = ""
+		}
+		// 1. 嘗試從內嵌的 JsFS 載入（src/js/<module>.no）
+		if relPath != "" {
+			embedPath := "js/" + relPath + ".no"
+			if data, err := nolang.JsFS.ReadFile(embedPath); err == nil {
+				return t.parseEmbeddedProgram(embedPath, data)
+			}
+		}
+		// 2. Lookup table: match ShortName to FullPath（與 std/ 的 knownStdModules 機制平行）
+		for _, info := range knownJsModules() {
+			if info.ShortPath == relPath || info.ShortName == relPath {
+				embedPath := "js/" + info.FullPath + ".no"
+				if data, err := nolang.JsFS.ReadFile(embedPath); err == nil {
+					return t.parseEmbeddedProgram(embedPath, data)
+				}
+			}
+		}
+		// 3. fallback: src/js/<module>.no 相對於執行目錄
+		if relPath != "" {
+			fallback := "src/" + path + ".no"
+			if _, err := os.Stat(fallback); err == nil {
+				return t.resolveFile(fallback)
+			}
+		}
+		return nil, fmt.Errorf("js compatibility module not found: %s", relPath)
 	}
 
 	// 依賴解析：domain/org/repo/... 風格的導入路徑
@@ -6825,6 +6875,74 @@ func knownStdModules() []StdModuleInfo {
 // GetStdModules returns StdModuleInfo for all embedded standard library modules.
 func GetStdModules() []StdModuleInfo {
 	return knownStdModules()
+}
+
+// JsModuleInfo 描述一個 JS 相容層模組（src/js/ 下的 .no 檔案）。
+// 與 StdModuleInfo 結構相同，但用於 js/ 命名空間。
+type JsModuleInfo struct {
+	ShortName string // 檔名去掉 .no 與目錄前綴，如 "console-log"
+	FullPath  string // 相對於 js/，如 "console-log"
+	ShortPath string // 與 FullPath 相同（JS 相容層目前無子目錄，dir==file 的情況不適用）
+}
+
+var (
+	knownJsModulesOnce sync.Once
+	knownJsModulesList []JsModuleInfo
+)
+
+// knownJsModules 回傳所有內嵌的 JS 相容層模組。
+// 使用 //go:embed js 在編譯時發現 src/js/ 下的所有 .no 檔案。
+// 與 knownStdModules 機制平行。
+func knownJsModules() []JsModuleInfo {
+	knownJsModulesOnce.Do(func() {
+		var infos []JsModuleInfo
+		seen := make(map[string]bool)
+
+		var walkDir func(dir string)
+		walkDir = func(dir string) {
+			entries, err := nolang.JsFS.ReadDir(dir)
+			if err != nil {
+				return
+			}
+			for _, e := range entries {
+				path := dir + "/" + e.Name()
+				if e.IsDir() {
+					walkDir(path)
+				} else if strings.HasSuffix(e.Name(), ".no") {
+					rel := strings.TrimPrefix(path, "js/")
+					fullPath := strings.TrimSuffix(rel, ".no")
+					if !seen[fullPath] {
+						seen[fullPath] = true
+						shortName := fullPath
+						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+							shortName = fullPath[idx+1:]
+						}
+						shortPath := fullPath
+						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+							dirName := fullPath[:idx]
+							file := fullPath[idx+1:]
+							if dirName == file {
+								shortPath = file
+							}
+						}
+						infos = append(infos, JsModuleInfo{
+							ShortName: shortName,
+							FullPath:  fullPath,
+							ShortPath: shortPath,
+						})
+					}
+				}
+			}
+		}
+		walkDir("js")
+		knownJsModulesList = infos
+	})
+	return knownJsModulesList
+}
+
+// GetJsModules returns JsModuleInfo for all embedded JS compatibility modules.
+func GetJsModules() []JsModuleInfo {
+	return knownJsModules()
 }
 
 // CollectStdModuleSignatures parses all std module source files and returns

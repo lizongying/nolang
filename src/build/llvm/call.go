@@ -748,6 +748,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if ft, ok := g.varFnTypes[ident.Value]; ok {
 			return g.generateIndirectCall(sb, expr, ident.Value, ft)
 		}
+		// 含 awy 的函数被变换为无栈协程（coro_resume.N），原始 @fn 不再存在。
+		// 直接调用此类函数时，创建 coro_state + task 并启动事件循环驱动其完成。
+		// （否则会生成 call void @fn() 引用未定义符号。）
+		// 仅处理非协程上下文中的直接调用；协程内部应使用 run+awy。
+		if g.asyncFuncCoroNum != nil {
+			if num, isCoro := g.asyncFuncCoroNum[ident.Value]; isCoro && !g.coroInAsyncFunc {
+				return g.generateCoroCall(sb, expr, ident.Value, num)
+			}
+		}
 	}
 	// 例如：str-index(s, sn, target, tn)(pos)
 	if innerCall, ok := expr.Function.(*parser.CallExpression); ok {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/build/wasm"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
@@ -101,6 +102,7 @@ type BuildOptions struct {
 	Output        string // optional output path ("" = auto)
 	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
 	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
+	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
 }
 
 // parseTargetPlatform extracts (goos, goarch) from a target triple.
@@ -583,6 +585,44 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	g.SetTargetPlatform(goos, goarch)
 	if opts.Verbose {
 		fmt.Fprintf(os.Stderr, "[direct-wasm] target: %s-%s\n", goarch, goos)
+	}
+	return g.Generate(program)
+}
+
+// BuildJS 使用 JS 後端從 Nolang 源碼直接產生 JavaScript 原始碼字串。
+// 當 opts.UseJS 為 true 時呼叫。輸出的 JS 可由 node 直接執行。
+//
+// 流程：
+//  1. 讀取源碼檔案
+//  2. 以 lexer + parser 解析為 *parser.Program
+//  3. 由 js.Generator.Generate(program) 直接發射 JS 原始碼（型別擦除）
+//  4. 回傳 JS 原始碼字串
+//
+// 此路徑不經過 LLVM 工具鏈（opt/llc/clang），適用於 Node.js 與瀏覽器環境。
+func BuildJS(inputPath string, opts BuildOptions) (string, error) {
+	// 1. 讀取源碼
+	source, err := os.ReadFile(inputPath)
+	if err != nil {
+		return "", fmt.Errorf("reading input file: %w", err)
+	}
+
+	// 2. 解析為 AST（與 BuildDirectWasm 一致的最小流程）
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	p.Filename = filepath.Base(inputPath)
+	program := p.ParseProgram()
+	if program == nil {
+		return "", fmt.Errorf("%s: parser returned nil program", inputPath)
+	}
+	if errs := p.Errors(); len(errs) > 0 {
+		return "", fmt.Errorf("%s: %v", inputPath, errs)
+	}
+
+	// 3. JS 後端 codegen（型別擦除）
+	g := js.NewGenerator()
+	g.SetTargetPlatform("js", "")
+	if opts.Verbose {
+		fmt.Fprintf(os.Stderr, "[js] target: js (type erasure)\n")
 	}
 	return g.Generate(program)
 }

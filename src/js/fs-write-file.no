@@ -1,0 +1,10 @@
+; fs-write-file.no — JS fs.writeFileSync wrapper
+;
+; Wraps the JavaScript require('fs').writeFileSync API.
+; Under the JS backend, calls to fs-write-file(path, data) map to
+; require('fs').writeFileSync(path, data).
+; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+#{js}
+fs-write-file = (path str, data str) {
+    print(path)
+}

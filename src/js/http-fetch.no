@@ -1,0 +1,10 @@
+; http-fetch.no — JS fetch wrapper (Node 18+)
+;
+; Wraps the JavaScript fetch API (available in Node 18+ and browsers).
+; Under the JS backend, calls to http-fetch(url) map to fetch(url) and
+; return the response body as a string.
+; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+#{js}
+http-fetch = (url str) (data str) {
+    data = ''
+}

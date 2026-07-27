@@ -1,0 +1,10 @@
+; fs-read-file.no — JS fs.readFileSync wrapper
+;
+; Wraps the JavaScript require('fs').readFileSync API.
+; Under the JS backend, calls to fs-read-file(path) map to
+; require('fs').readFileSync(path, 'utf8') and return the file contents as a string.
+; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+#{js}
+fs-read-file = (path str) (data str) {
+    data = ''
+}
