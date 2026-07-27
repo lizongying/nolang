@@ -1,0 +1,87 @@
+; test-arr-return — 測試 [32]byte 陣列作為返回值是否正確
+; 重現 X25519 中前 8 bytes 為零的 bug
+
+; fill-bytes: 填充 [32]byte 陣列，每個位置填入 i+1
+; 測試函數返回的 [32]byte 是否正確
+fill-bytes = () (out [32]byte) {
+    i <- [0..32): {
+        out[i] = (i + 1) & 255
+    }
+}
+
+; fill-bytes-param: 透過參數填充 [32]byte
+fill-bytes-param = (out [32]byte) {
+    i <- [0..32): {
+        out[i] = (i + 100) & 255
+    }
+}
+
+; test-direct-return: 測試直接返回 [32]byte
+test-direct-return = () (pass bool) {
+    pass = false
+
+    ; 呼叫 fill-bytes，應返回 [1,2,3,...,32]
+    arr [32]byte
+    arr = fill-bytes()
+
+    ; 檢查前 8 bytes 是否為 1..8
+    i <- [0..8): {
+        expected = (i + 1) & 255
+        arr[i] != expected -> {
+            print('FAIL: direct return byte mismatch at index')
+            eprint('  index=')
+            eprint(i)
+            eprint('  expected=')
+            eprint(expected)
+            eprint('  got=')
+            eprint(arr[i])
+            return
+        }
+    }
+
+    ; 打印所有 bytes 用於 debug
+    hex = ''
+    i <- [0..32): {
+        hex = hex - (arr[i] & 255).to-str() - ' '
+    }
+    eprint('direct return bytes:')
+    eprint(hex)
+
+    pass = true
+}
+
+; test-param-pass: 測試通過參數填充 [32]byte
+test-param-pass = () (pass bool) {
+    pass = false
+
+    arr [32]byte
+    fill-bytes-param(arr)
+
+    ; 檢查前 8 bytes
+    i <- [0..8): {
+        expected = (i + 100) & 255
+        arr[i] != expected -> {
+            print('FAIL: param pass byte mismatch at index')
+            eprint('  index=')
+            eprint(i)
+            eprint('  expected=')
+            eprint(expected)
+            eprint('  got=')
+            eprint(arr[i])
+            return
+        }
+    }
+
+    pass = true
+}
+
+; main
+main = () {
+    p1 = test-direct-return()
+    p1 == true -> print('PASS: direct return')
+    p1 == false -> print('FAIL: direct return')
+
+    p2 = test-param-pass()
+    p2 == true -> print('PASS: param pass')
+    p2 == false -> print('FAIL: param pass')
+}

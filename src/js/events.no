@@ -1,0 +1,9 @@
+; events.no — Browser Events API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+events.on-click = (el str, cb str) {
+}
+
+events.on-load = (cb str) {
+}

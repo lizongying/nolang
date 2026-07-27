@@ -1,0 +1,16 @@
+; history.no — Browser History API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+history.back = () {
+}
+
+history.forward = () {
+}
+
+history.push = (url str) {
+}
+
+history.length = () (n int) {
+    n = 0
+}

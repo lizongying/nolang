@@ -1,0 +1,16 @@
+; storage.no — Browser localStorage API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+storage.set-item = (key str, val str) {
+}
+
+storage.get-item = (key str) (val str) {
+    val = ''
+}
+
+storage.remove-item = (key str) {
+}
+
+storage.clear = () {
+}

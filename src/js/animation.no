@@ -1,0 +1,10 @@
+; animation.no — Browser Animation API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+animation.request-frame = (cb str) (id int) {
+    id = 0
+}
+
+animation.cancel-frame = (id int) {
+}

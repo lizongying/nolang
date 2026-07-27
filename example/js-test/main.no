@@ -1,103 +1,94 @@
-; main.no — JS backend demonstration
+; main.no — Browser-focused Nolang example
 ;
-; This file demonstrates the Nolang JS backend features:
-;   1. Type erasure — all type annotations stripped in JS output
-;   2. # js/console-log import — JS compat layer
-;   3. #{js} platform branch — preserved only when target is JS
-;   4. #{linux-amd64} platform branch — filtered out when target is JS
-;   5. Loops — range-for and iterator
-;   6. Match expression — becomes if/elif/else in JS
-;   7. Struct with method — becomes JS class
-;   8. Out-parameters — named result parameters
+; Demonstrates the Nolang JS backend's browser capabilities:
+;   1. #{js-browser} platform branch — browser-only code
+;   2. DOM manipulation — create elements, set text, append to body
+;   3. Canvas drawing — filled rectangles and a stroked path
+;   4. Event handling — button click callback
+;   5. localStorage — set and get items
+;   6. New-style iteration — i <- arr: and i <- [0..n):
+;   7. String concatenation — using the - operator
+;   8. print() output — redirected to the #nolang-output div
+;
+; Build: no build --js --browser example/js-test/main.no
+; Open:  dist/js-test.html
 
-# js/console-log
+# js/dom
+# js/canvas
+# js/events
+# js/storage
 
-; === Type-erased variables (annotations stripped in JS) ===
-x i64 = 5
-name str = 'Alice'
-pi f64 = 3.14
-flag bool = true
+; === print() is redirected to #nolang-output in browser mode ===
+print('=== Nolang Browser Demo ===')
 
-print('=== type-erased variables ===')
-print('x:', x)
-print('name:', name)
-print('pi:', pi)
-print('flag:', flag)
+; === DOM: create a heading and append to body ===
+heading = dom.create-element('h2')
+heading.set-text('Hello from Nolang!')
+body = dom.body()
+body.append-child(heading)
 
-; === Function with out-parameter ===
-add = (a i64, b i64) (r i64) {
-    r = a + b
+; === DOM: create a button with inline style ===
+btn = dom.create-element('button')
+btn.set-text('Click me')
+btn.set-style('margin', '8px')
+body.append-child(btn)
+
+; === Events: button click handler (anonymous callback) ===
+events.on-click(btn, () {
+    print('button was clicked!')
+})
+
+; === Canvas: draw filled rectangles and a triangle path ===
+canvasEl = dom.create-element('canvas')
+canvasEl.set-attr('width', '240')
+canvasEl.set-attr('height', '140')
+body.append-child(canvasEl)
+
+ctx = canvas.get-context-2d(canvasEl)
+ctx.set-fill('red')
+ctx.fill-rect(10, 10, 60, 60)
+ctx.set-fill('blue')
+ctx.fill-rect(80, 10, 60, 60)
+ctx.set-fill('green')
+ctx.fill-rect(150, 10, 60, 60)
+
+; draw a filled and stroked triangle
+ctx.set-fill('yellow')
+ctx.set-stroke('orange')
+ctx.begin-path()
+ctx.move-to(120, 80)
+ctx.line-to(80, 130)
+ctx.line-to(160, 130)
+ctx.line-to(120, 80)
+ctx.fill()
+ctx.stroke()
+
+; === localStorage: save and load a value ===
+storage.set-item('greeting', 'Hello from localStorage')
+g = storage.get-item('greeting')
+print('stored:', g)
+
+; === New-style iteration over an array ===
+nums = [10, 20, 30]
+i <- nums: {
+    print('elem:', i)
 }
 
-print('=== function with out-param ===')
-sum = add(3, 4)
-print('add(3, 4):', sum)
-
-; === Struct with method (becomes JS class) ===
-Point {
-    x i64
-    y i64
-}
-
-Point.distance = () (r f64) {
-    r = math.sqrt(self.x * self.x + self.y * self.y)
-}
-
-print('=== struct with method ===')
-p = Point {
-    x: 3
-    y: 4
-}
-d = p.distance()
-print('distance:', d)
-
-; === Platform branches ===
-print('=== platform branches ===')
-#{js}
-print('running on JS backend')
-#{linux-amd64}
-print('running on Linux x86_64')
-
-; === Range-for loop ===
-print('=== range-for loop ===')
+; === Range-for iteration ===
 i <- [0..3): {
     print('range:', i)
 }
 
-; === Iterator loop ===
-print('=== iterator loop ===')
-nums = [10, 20, 30]
-for n in nums {
-    print('elem:', n)
-}
-
-; === Match expression ===
-print('=== match expression ===')
-m = 2
-m: {
-    1 -> print('one')
-    2 -> print('two')
-    3 -> print('three')
-    -> print('other')
-}
-
-; === String concatenation (uses - operator) ===
-print('=== string concatenation ===')
+; === String concatenation using the - operator ===
+name = 'World'
 greeting = 'Hello, ' - name - '!'
 print(greeting)
 
-; === Math module ===
-print('=== math module ===')
-print('sin(0):', math.sin(0.0))
-print('pi:', math.PI)
+; === Platform branch: kept only in browser mode ===
+#{js-browser}
+print('running in browser mode')
 
-; === JS compat layer ===
-; The # js/console-log import provides console-log under the JS platform.
-; Under the JS backend, print() already maps to console.log, so we use it
-; here to demonstrate the compat layer's behavior without producing
-; invalid JS identifiers (console-log has a hyphen, which is not a valid
-; JS identifier — a known v1 limitation of the JS backend).
-print('=== js compat layer ===')
-print('from js compat layer')
+#{linux-amd64}
+print('running on linux (filtered out in browser)')
 
-print('done')
+print('=== done ===')

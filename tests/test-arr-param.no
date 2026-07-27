@@ -1,0 +1,111 @@
+; test-arr-param — 測試 [32]byte 作為參數傳遞給另一個函數時的寫入
+; 重現 X25519 中 fe-tobytes(out, result) 的前 8 bytes 為零的 bug
+
+; inner-write: 接收 [32]byte 參數並寫入數據
+; 模擬 fe-tobytes(s [32]byte, h []i64) 的行為
+inner-write = (s [32]byte) {
+    i <- [0..32): {
+        s[i] = (i + 1) & 255
+    }
+}
+
+; outer-call: 返回 [32]byte，內部呼叫 inner-write 寫入
+; 模擬 x25519-scalarmult 呼叫 fe-tobytes
+outer-call = () (out [32]byte) {
+    inner-write(out)
+}
+
+; test-via-inner: 測試通過內部函數寫入的 [32]byte
+test-via-inner = () (pass bool) {
+    pass = false
+
+    arr [32]byte
+    arr = outer-call()
+
+    ; 打印所有 bytes
+    hex = ''
+    i <- [0..32): {
+        hex = hex - (arr[i] & 255).to-str() - ' '
+    }
+    eprint('via inner bytes:')
+    eprint(hex)
+
+    ; 檢查前 8 bytes
+    i <- [0..8): {
+        expected = (i + 1) & 255
+        arr[i] != expected -> {
+            print('FAIL: via inner byte mismatch')
+            eprint('  index=')
+            eprint(i)
+            eprint('  expected=')
+            eprint(expected)
+            eprint('  got=')
+            eprint(arr[i])
+            return
+        }
+    }
+
+    pass = true
+}
+
+; inner-write-i64: 接收 [32]byte 參數和 []i64 參數
+; 更接近 fe-tobytes 的真實簽名
+inner-write-i64 = (s [32]byte, h []i64) {
+    i <- [0..32): {
+        s[i] = (h[i % 10] & 255) & 255
+    }
+}
+
+; outer-call-i64: 模擬 x25519-scalarmult 呼叫 fe-tobytes(out, result)
+outer-call-i64 = () (out [32]byte) {
+    h []i64 = with-len(10)
+    i <- [0..10): {
+        h[i] = (i + 1) * 10
+    }
+    inner-write-i64(out, h)
+}
+
+; test-via-i64: 測試通過 i64 參數函數寫入
+test-via-i64 = () (pass bool) {
+    pass = false
+
+    arr [32]byte
+    arr = outer-call-i64()
+
+    ; 打印所有 bytes
+    hex = ''
+    i <- [0..32): {
+        hex = hex - (arr[i] & 255).to-str() - ' '
+    }
+    eprint('via i64 bytes:')
+    eprint(hex)
+
+    ; 檢查前 8 bytes
+    i <- [0..8): {
+        ; h[0] = 10, h[1] = 20, ...
+        expected = ((i + 1) * 10) & 255
+        arr[i] != expected -> {
+            print('FAIL: via i64 byte mismatch')
+            eprint('  index=')
+            eprint(i)
+            eprint('  expected=')
+            eprint(expected)
+            eprint('  got=')
+            eprint(arr[i])
+            return
+        }
+    }
+
+    pass = true
+}
+
+; main
+main = () {
+    p1 = test-via-inner()
+    p1 == true -> print('PASS: via inner')
+    p1 == false -> print('FAIL: via inner')
+
+    p2 = test-via-i64()
+    p2 == true -> print('PASS: via i64')
+    p2 == false -> print('FAIL: via i64')
+}

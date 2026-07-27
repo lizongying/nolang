@@ -5498,7 +5498,11 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 			}
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" || e.Operator == "+" || e.Operator == "*" {
+		if e.Operator == "*" {
+			// str repeat: 'str' * n — no byte arithmetic semantics for *
+			return g.isStringExpr(e.Left)
+		}
+		if e.Operator == "-" || e.Operator == "+" {
 			// A single-char StringLiteral paired with a non-string operand is
 			// byte arithmetic (e.g., c - 'A'), not string concatenation.
 			if isSingleCharStringLit(e.Left) && !g.isStringExpr(e.Right) {
@@ -5520,6 +5524,8 @@ func (g *Generator) isStringExpr(expr parser.Expression) bool {
 // comparisons (e.g. s[i] == '=') to integer icmp instead of strcmp.
 func (g *Generator) isByteValueExpr(expr parser.Expression) bool {
 	switch e := expr.(type) {
+	case *parser.CharLiteral:
+		return true
 	case *parser.IndexExpression:
 		if ident, ok := e.Left.(*parser.Identifier); ok {
 			if g.varTypes != nil {
@@ -5612,8 +5618,8 @@ func (g *Generator) getStrType(expr parser.Expression) string {
 			return t
 		}
 	case *parser.InfixExpression:
-		if e.Operator == "-" || e.Operator == "+" {
-			return "%str-long" // concat results are always %str-long
+		if e.Operator == "-" || e.Operator == "+" || e.Operator == "*" {
+			return "%str-long" // concat/repeat results are always %str-long
 		}
 	}
 	return "%str-long"
@@ -5861,9 +5867,9 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	// Loop to copy string data count times
 	// We'll use a simple loop: for i in 0..count, memcpy(strData, buf + i*strLen, strLen)
 	g.tmpIdx++
-	loopStart := fmt.Sprintf("%%repeat.loop.start.%d", g.tmpIdx)
-	loopBody := fmt.Sprintf("%%repeat.loop.body.%d", g.tmpIdx)
-	loopEnd := fmt.Sprintf("%%repeat.loop.end.%d", g.tmpIdx)
+	loopStart := fmt.Sprintf("repeat.loop.start.%d", g.tmpIdx)
+	loopBody := fmt.Sprintf("repeat.loop.body.%d", g.tmpIdx)
+	loopEnd := fmt.Sprintf("repeat.loop.end.%d", g.tmpIdx)
 
 	// Initialize counter i = 0
 	// alloca hoisted to entry block to avoid stack growth in tight loops;
@@ -5874,24 +5880,20 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iReg))
 
 	// Jump to loop start
-	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopStart))
 
 	// Loop start: check if i < count
-	sb.WriteString(fmt.Sprintf("%s:\n", loopStart))
-	g.currentBlock = strings.TrimPrefix(loopStart, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopStart)
 	g.tmpIdx++
 	iVal := fmt.Sprintf("%%repeat.i.val.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iReg))
 	g.tmpIdx++
 	cmp := fmt.Sprintf("%%repeat.cmp.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmp, iVal, countReg))
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), cmp, loopBody, loopEnd))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), cmp, loopBody, loopEnd))
 
 	// Loop body: copy string data to buf + i*strLen
-	sb.WriteString(fmt.Sprintf("%s:\n", loopBody))
-	g.currentBlock = strings.TrimPrefix(loopBody, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopBody)
 	g.tmpIdx++
 	offset := fmt.Sprintf("%%repeat.offset.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), offset, iVal, strLen))
@@ -5906,12 +5908,10 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	iNext := fmt.Sprintf("%%repeat.i.next.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iReg))
-	sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), loopStart))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopStart))
 
 	// Loop end
-	sb.WriteString(fmt.Sprintf("%s:\n", loopEnd))
-	g.currentBlock = strings.TrimPrefix(loopEnd, "%")
-	g.blockTerminated = false
+	g.emitLabel(sb, loopEnd)
 
 	// Add null terminator at buf[totalLen]
 	g.tmpIdx++

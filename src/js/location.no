@@ -1,0 +1,22 @@
+; location.no — Browser Location API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+location.href = () (val str) {
+    val = ''
+}
+
+location.search = () (val str) {
+    val = ''
+}
+
+location.path = () (val str) {
+    val = ''
+}
+
+location.host = () (val str) {
+    val = ''
+}
+
+location.redirect = (url str) {
+}

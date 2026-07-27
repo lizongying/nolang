@@ -1,0 +1,19 @@
+; dom.no — Browser DOM API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+dom.get-element-by-id = (id str) (el str) {
+    el = ''
+}
+
+dom.query-selector = (sel str) (el str) {
+    el = ''
+}
+
+dom.create-element = (tag str) (el str) {
+    el = ''
+}
+
+dom.body = () (el str) {
+    el = ''
+}

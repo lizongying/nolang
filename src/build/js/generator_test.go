@@ -11,7 +11,6 @@ package js_test
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -34,6 +33,29 @@ func generateJS(t *testing.T, source string) string {
 	}
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
+	out, err := g.Generate(program)
+	if err != nil {
+		t.Fatalf("Generate error: %v", err)
+	}
+	return out
+}
+
+// generateJSWithEnv is like generateJS but selects the target environment
+// ("node" or "browser"). Browser mode injects the prelude and uses shims.
+func generateJSWithEnv(t *testing.T, source string, env string) string {
+	t.Helper()
+	l := lexer.New(source)
+	p := parser.New(l)
+	p.Filename = "test.no"
+	program := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	g := js.NewGenerator()
+	g.SetTargetPlatform("js", "")
+	if env == "browser" {
+		g.SetTargetEnv("browser")
+	}
 	out, err := g.Generate(program)
 	if err != nil {
 		t.Fatalf("Generate error: %v", err)
@@ -332,12 +354,11 @@ func TestJSGeneratorBareReturn(t *testing.T) {
 	}
 }
 
-// Test 14 (Integration): Build example/js-test/main.no with the JS backend,
-// execute the generated JS with node, and verify expected output strings.
+// Test 14 (Integration): Build example/js-test/main.no with the JS backend.
+// The example is now browser-focused (uses DOM/canvas/storage APIs), so we
+// only verify that the JS builds without error — executing it requires a
+// browser environment (document, localStorage, etc.) that node cannot provide.
 func TestJSGeneratorExampleProject(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("node not available")
-	}
 	examplePath := "../../../example/js-test/main.no"
 	if _, err := os.Stat(examplePath); err != nil {
 		t.Skip("example/js-test/main.no not found")
@@ -349,29 +370,186 @@ func TestJSGeneratorExampleProject(t *testing.T) {
 	}
 	t.Logf("generated JS (example):\n%s", jsCode)
 
-	tmpFile, err := os.CreateTemp("", "nolang-js-test-*.js")
-	if err != nil {
-		t.Fatalf("CreateTemp error: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	if _, err := tmpFile.WriteString(jsCode); err != nil {
-		t.Fatalf("WriteString error: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("Close error: %v", err)
-	}
-
-	cmd := exec.Command("node", tmpFile.Name())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("node execution error: %v\noutput:\n%s", err, output)
-	}
-	out := string(output)
-	t.Logf("node output:\n%s", out)
-
-	for _, want := range []string{"running on JS backend", "Hello, Alice!", "done"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("expected node output to contain %q", want)
+	// The example is browser-focused: verify the generated JS contains the
+	// expected browser API calls rather than executing it with node.
+	for _, want := range []string{
+		"document.createElement",
+		"document.body",
+		"localStorage.setItem",
+	} {
+		if !strings.Contains(jsCode, want) {
+			t.Errorf("expected generated JS to contain %q", want)
 		}
+	}
+}
+
+// Test 15: Browser mode injects the prelude that redirects console output.
+func TestJSGeneratorBrowserPrelude(t *testing.T) {
+	source := `print('hello')`
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	if !strings.Contains(out, "Nolang browser prelude") {
+		t.Errorf("browser mode should inject prelude; got:\n%s", out)
+	}
+	if !strings.Contains(out, "nolang-output") {
+		t.Errorf("prelude should reference #nolang-output; got:\n%s", out)
+	}
+}
+
+// Test 16: Node mode (default) does NOT inject the browser prelude.
+func TestJSGeneratorNodeModeNoPrelude(t *testing.T) {
+	source := `print('hello')`
+	out := generateJSWithEnv(t, source, "node")
+	t.Logf("generated JS:\n%s", out)
+	if strings.Contains(out, "Nolang browser prelude") {
+		t.Errorf("node mode should NOT inject prelude; got:\n%s", out)
+	}
+}
+
+// Test 17: os.* in browser mode uses shims (window.__nolang_env), not process.*.
+func TestJSGeneratorOsModuleBrowser(t *testing.T) {
+	source := "x = os.get-env('PATH')\n" +
+		"y = os.get-pid()\n"
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	if strings.Contains(out, "process.env") {
+		t.Errorf("browser mode should not emit process.env; got:\n%s", out)
+	}
+	if strings.Contains(out, "process.pid") {
+		t.Errorf("browser mode should not emit process.pid; got:\n%s", out)
+	}
+	if !strings.Contains(out, "window.__nolang_env") {
+		t.Errorf("browser mode should emit window.__nolang_env; got:\n%s", out)
+	}
+}
+
+// Test 18: os.* in node mode still uses process.* (backward compat).
+func TestJSGeneratorOsModuleNode(t *testing.T) {
+	source := "x = os.get-env('PATH')\n"
+	out := generateJSWithEnv(t, source, "node")
+	t.Logf("generated JS:\n%s", out)
+	if !strings.Contains(out, "process.env") {
+		t.Errorf("node mode should emit process.env; got:\n%s", out)
+	}
+}
+
+// Test 19: dom.* module mappings (get-element-by-id, body).
+func TestJSGeneratorDomModule(t *testing.T) {
+	source := "el = dom.get-element-by-id('mydiv')\n" +
+		"body = dom.body()\n"
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	if !strings.Contains(out, "document.getElementById(\"mydiv\")") {
+		t.Errorf("dom.get-element-by-id should map to document.getElementById; got:\n%s", out)
+	}
+	if !strings.Contains(out, "document.body") {
+		t.Errorf("dom.body should map to document.body; got:\n%s", out)
+	}
+}
+
+// Test 20: DOM element method calls (el.set-text(...) → .textContent = ...).
+func TestJSGeneratorDomMethodCall(t *testing.T) {
+	source := "el = dom.get-element-by-id('mydiv')\n" +
+		"el.set-text('hello')\n"
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	// el.set-text maps to (el).textContent = "hello"
+	if !strings.Contains(out, ".textContent = \"hello\"") {
+		t.Errorf("el.set-text should map to .textContent = ...; got:\n%s", out)
+	}
+}
+
+// Test 21: canvas.* module and context method calls.
+func TestJSGeneratorCanvasModule(t *testing.T) {
+	source := "el = dom.create-element('canvas')\n" +
+		"ctx = canvas.get-context-2d(el)\n" +
+		"ctx.set-fill('red')\n" +
+		"ctx.fill-rect(10, 10, 50, 50)\n"
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	// canvas.get-context-2d emits single-quoted '2d' literal
+	if !strings.Contains(out, ".getContext('2d')") {
+		t.Errorf("canvas.get-context-2d should map to .getContext('2d'); got:\n%s", out)
+	}
+	if !strings.Contains(out, ".fillStyle = \"red\"") {
+		t.Errorf("ctx.set-fill should map to .fillStyle = ...; got:\n%s", out)
+	}
+	if !strings.Contains(out, ".fillRect(10, 10, 50, 50)") {
+		t.Errorf("ctx.fill-rect should map to .fillRect(...); got:\n%s", out)
+	}
+}
+
+// Test 22: storage.* module mappings (localStorage).
+func TestJSGeneratorStorageModule(t *testing.T) {
+	source := "storage.set-item('key', 'value')\n" +
+		"v = storage.get-item('key')\n"
+	out := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS:\n%s", out)
+	if !strings.Contains(out, "localStorage.setItem(\"key\", \"value\")") {
+		t.Errorf("storage.set-item should map to localStorage.setItem; got:\n%s", out)
+	}
+	if !strings.Contains(out, "localStorage.getItem(\"key\")") {
+		t.Errorf("storage.get-item should map to localStorage.getItem; got:\n%s", out)
+	}
+}
+
+// Test 23: function names ending with -async emit `async function`.
+func TestJSGeneratorAsyncFunction(t *testing.T) {
+	source := "fetch-data-async = (url str) (data str) {\n" +
+		"    data = 'result'\n" +
+		"}\n"
+	out := generateJSWithEnv(t, source, "node") // async works in both modes
+	t.Logf("generated JS:\n%s", out)
+	if !strings.Contains(out, "async function fetch-data-async") {
+		t.Errorf("function ending with -async should generate 'async function'; got:\n%s", out)
+	}
+}
+
+// Test 24: #{js-browser} is kept in browser mode and filtered out in node mode.
+func TestJSGeneratorPlatformFilterBrowser(t *testing.T) {
+	source := "#{js-browser}\n" +
+		"print('browser only')\n" +
+		"\n" +
+		"#{js}\n" +
+		"print('js always')\n" +
+		"\n" +
+		"print('always')\n"
+
+	// Browser mode: js-browser kept
+	browserOut := generateJSWithEnv(t, source, "browser")
+	t.Logf("generated JS (browser):\n%s", browserOut)
+	if !strings.Contains(browserOut, "console.log(\"browser only\")") {
+		t.Errorf("browser mode should keep #{js-browser}; got:\n%s", browserOut)
+	}
+	if !strings.Contains(browserOut, "console.log(\"js always\")") {
+		t.Errorf("browser mode should keep #{js}; got:\n%s", browserOut)
+	}
+
+	// Node mode: js-browser filtered out
+	nodeOut := generateJSWithEnv(t, source, "node")
+	t.Logf("generated JS (node):\n%s", nodeOut)
+	if strings.Contains(nodeOut, "console.log(\"browser only\")") {
+		t.Errorf("node mode should filter out #{js-browser}; got:\n%s", nodeOut)
+	}
+	if !strings.Contains(nodeOut, "console.log(\"js always\")") {
+		t.Errorf("node mode should keep #{js}; got:\n%s", nodeOut)
+	}
+}
+
+// Test 25: RenderHTML generates a correct HTML wrapper.
+func TestJSGeneratorHTMLWrapper(t *testing.T) {
+	html := js.RenderHTML("Test App", "app.js")
+	t.Logf("generated HTML:\n%s", html)
+	if !strings.Contains(html, "<!DOCTYPE html>") {
+		t.Errorf("HTML should start with <!DOCTYPE html>; got:\n%s", html)
+	}
+	if !strings.Contains(html, "<title>Test App</title>") {
+		t.Errorf("HTML should contain title; got:\n%s", html)
+	}
+	if !strings.Contains(html, `id="nolang-output"`) {
+		t.Errorf("HTML should contain #nolang-output div; got:\n%s", html)
+	}
+	if !strings.Contains(html, `<script src="app.js"></script>`) {
+		t.Errorf("HTML should contain script tag; got:\n%s", html)
 	}
 }

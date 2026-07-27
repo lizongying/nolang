@@ -145,6 +145,8 @@ func printUsage() {
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
 	fmt.Println("                      x86_64-windows-gnu, wasm32-wasi")
+	fmt.Println("      -js            Use JS backend (emit JavaScript, no LLVM toolchain)")
+	fmt.Println("      -browser       Generate browser-targeted output (HTML + JS, use with -js)")
 	fmt.Println("    For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 	fmt.Println("    Default: build current directory or workspace.jsonc projects")
 	fmt.Println("    Examples:")
@@ -154,13 +156,20 @@ func printUsage() {
 	fmt.Println("      no build -cc zig main.no")
 	fmt.Println("      no build -target x86_64-linux-gnu main.no")
 	fmt.Println("      no build -target wasm32-wasi main.no")
+	fmt.Println("      no build --js main.no                     emit JavaScript (type erasure)")
+	fmt.Println("      no build --js --browser main.no           emit browser JS + HTML wrapper")
 	fmt.Println("")
 	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
+	fmt.Println("    Flags:")
+	fmt.Println("      -js            Use JS backend (run with node)")
+	fmt.Println("      -browser       Open in browser (use with -js)")
 	fmt.Println("    Examples:")
 	fmt.Println("      no run                     build and run main.no in current dir")
 	fmt.Println("      no run main.no             build and run main.no")
 	fmt.Println("      no run -cc zig main.no     build and run with Zig compiler")
+	fmt.Println("      no run --js main.no            build via JS backend then run with node")
+	fmt.Println("      no run --js --browser main.no  build browser JS + HTML and open in browser")
 	fmt.Println("")
 	fmt.Println("  no test [<file>]            Run tests")
 	fmt.Println("    Defaults to tests/ directory.")
@@ -1059,6 +1068,7 @@ func buildCommand(args []string) {
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
+	browserMode := fs.Bool("browser", false, "Generate browser-targeted output (HTML + JS, requires --js)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -1072,6 +1082,7 @@ func buildCommand(args []string) {
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).")
+		fmt.Println("Use --browser with --js to generate browser-targeted JS and an HTML wrapper.")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
@@ -1085,6 +1096,7 @@ func buildCommand(args []string) {
 		fmt.Println("  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output")
 		fmt.Println("  no build --js main.no                              emit JavaScript (type erasure)")
 		fmt.Println("  no build --js -o app.js main.no                    JS backend with explicit output")
+		fmt.Println("  no build --js --browser main.no                    emit browser JS + HTML wrapper")
 	}
 	_ = fs.Parse(args)
 
@@ -1108,6 +1120,7 @@ func buildCommand(args []string) {
 		NoBoundsCheck: *unsafe,
 		UseDirectWasm: *wasmDirect,
 		UseJS:         *jsBackend,
+		BrowserMode:   *browserMode,
 	}
 
 	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
@@ -1117,6 +1130,45 @@ func buildCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "Error: --js requires an explicit input file (workspace mode not supported)")
 			os.Exit(1)
 		}
+
+		if *browserMode {
+			// Browser mode: output both .html and .js
+			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+			if baseName == "main" {
+				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
+					baseName = pkg.Name
+				}
+			}
+
+			outDir := "dist"
+			outJs := filepath.Join(outDir, baseName+".js")
+			outHtml := filepath.Join(outDir, baseName+".html")
+			os.MkdirAll(outDir, 0755)
+
+			jsCode, htmlCode, err := nbuild.BuildJSBrowser(inputPath, nbuild.BuildOptions{
+				Verbose:     verbose,
+				UseJS:       true,
+				BrowserMode: true,
+			}, baseName+".js")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing JS: %v\n", err)
+				os.Exit(1)
+			}
+			if err := os.WriteFile(outHtml, []byte(htmlCode), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing HTML: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Built: %s\n", outJs)
+			fmt.Printf("Built: %s\n", outHtml)
+			fmt.Printf("Open in browser: %s\n", outHtml)
+			return
+		}
+
 		jsCode, err := nbuild.BuildJS(inputPath, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -1197,6 +1249,7 @@ func runCommand(args []string) {
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
+	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<file|dir>]")
 		fmt.Println("")
@@ -1209,6 +1262,7 @@ func runCommand(args []string) {
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
+		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                     build and run main.no in current dir")
@@ -1217,6 +1271,7 @@ func runCommand(args []string) {
 		fmt.Println("  no run -target wasm32-wasi main.no")
 		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
 		fmt.Println("  no run --js main.no            build via JS backend then run with node")
+		fmt.Println("  no run --js --browser main.no  build browser JS + HTML and open in default browser")
 	}
 	_ = fs.Parse(args)
 
@@ -1258,6 +1313,58 @@ func runCommand(args []string) {
 		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 			inputPath = filepath.Join(inputPath, "main.no")
 		}
+
+		if *browserMode {
+			// Browser mode: build HTML + JS, then open in default browser
+			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+			if baseName == "main" {
+				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
+					baseName = pkg.Name
+				}
+			}
+
+			outJs := filepath.Join(tmpDir, baseName+".js")
+			outHtml := filepath.Join(tmpDir, baseName+".html")
+
+			jsCode, htmlCode, berr := nbuild.BuildJSBrowser(inputPath, nbuild.BuildOptions{
+				Verbose:     verbose,
+				UseJS:       true,
+				BrowserMode: true,
+			}, baseName+".js")
+			if berr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+				os.Exit(1)
+			}
+
+			if werr := os.WriteFile(outJs, []byte(jsCode), 0644); werr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
+				os.Exit(1)
+			}
+			if werr := os.WriteFile(outHtml, []byte(htmlCode), 0644); werr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
+				os.Exit(1)
+			}
+
+			// Open in default browser
+			var openCmd *exec.Cmd
+			switch runtime.GOOS {
+			case "darwin":
+				openCmd = exec.Command("open", outHtml)
+			case "linux":
+				openCmd = exec.Command("xdg-open", outHtml)
+			case "windows":
+				openCmd = exec.Command("cmd", "/c", "start", outHtml)
+			default:
+				fmt.Printf("Open in browser: %s\n", outHtml)
+				return
+			}
+			if err := openCmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to open browser: %v\n", err)
+				fmt.Printf("Open manually: %s\n", outHtml)
+			}
+			return
+		}
+
 		outPath := filepath.Join(tmpDir, "out.js")
 		jsCode, berr := nbuild.BuildJS(inputPath, nbuild.BuildOptions{
 			Target:  targetStr,

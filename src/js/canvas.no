@@ -1,0 +1,15 @@
+; canvas.no — Browser Canvas API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+canvas.get-context-2d = (el str) (ctx str) {
+    ctx = ''
+}
+
+canvas.get-width = (el str) (w int) {
+    w = 0
+}
+
+canvas.get-height = (el str) (h int) {
+    h = 0
+}

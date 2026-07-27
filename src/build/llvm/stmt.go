@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -877,6 +878,14 @@ func (g *Generator) emitRetInitZeroFill(sb *strings.Builder) {
 		llvmType, hasType := g.varTypes[name]
 		if !hasType {
 			llvmType = "i64"
+		}
+		// DEBUG: trace zero-fill type
+		fmt.Fprintf(os.Stderr, "[DEBUG-ZF] name=%s llvmType=%s hasType=%v\n", name, llvmType, hasType)
+		if name == "out" {
+			// Find the result param to inspect its Type
+			for _, rr := range g.outputParamOrder {
+				fmt.Fprintf(os.Stderr, "[DEBUG-ZF] outputParamOrder has: %s\n", rr)
+			}
 		}
 		// 載入 bitmap 並檢查對應 bit
 		g.tmpIdx++
@@ -1887,15 +1896,23 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
 			}
-			// 陣列型結果參數需註冊元素型別與大小，供後續索引賦值/讀取及
-			// genTypedArg 中 %arr → [N x T]* 參數轉換使用（out 傳給其他函數時需正確提取 data 指標）。
+			// 陣列型結果參數的實際存儲為 %arr struct { len, data* }（與局部變數相同），
+			// 但 resolveParamLLVMType 回傳原始 LLVM 陣列型別 [N x T]。若不覆蓋為 %arr，
+			// genTypedArg 中的 varTypes=="%arr" 檢查會失敗，導致傳遞 out 給其他函數時
+			// fallback 為直接傳 %arr* 作為 [N x T]*，被調用函數寫入 struct 本身而非 data 緩衝區。
+			// 同時註冊元素型別與大小，供索引賦值/讀取及 %arr → [N x T]* 參數轉換使用。
+			fmt.Fprintf(os.Stderr, "[DEBUG-PARAM] result param: name=%s typeStr=%s rType=%T\n", r.Name, typeStr, r.Type)
 			if at, ok := r.Type.(*parser.ArrayType); ok && at.Elem != nil {
+				fmt.Fprintf(os.Stderr, "[DEBUG-PARAM]   MATCHED ArrayType! elem=%v size=%v\n", at.Elem, at.Size)
+				g.varTypes[r.Name] = "%arr"
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(at.Elem.String())
 				if v, ok := g.constFoldInt(at.Size); ok {
 					g.arraySizes[r.Name] = v
 				} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
 					g.arraySizes[r.Name] = intLit.Value
 				}
+			} else {
+				fmt.Fprintf(os.Stderr, "[DEBUG-PARAM]   NOT ArrayType\n")
 			}
 			// 切片型結果參數也需註冊元素型別，供 IndexExpression 使用正確型別
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
@@ -2577,7 +2594,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.InfixExpression:
 		// 位元組算術（單字元 StringLiteral 配非字串運算元，如 c - 'A'）應推導為整數
 		// 型別，而非 %str-long。需在字串相接檢查之前判斷。
-		if v.Operator == "-" || v.Operator == "+" || v.Operator == "*" {
+		if v.Operator == "-" || v.Operator == "+" {
 			if (isSingleCharStringLit(v.Left) && !g.isStringExpr(v.Right)) ||
 				(isSingleCharStringLit(v.Right) && !g.isStringExpr(v.Left)) {
 				// 落入整數算術推導路徑（intExprLLVMType 回傳 i64）
@@ -2587,7 +2604,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				return g.intExprLLVMType(v)
 			}
 		}
-		if (v.Operator == "-" || v.Operator == "+") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
+		if (v.Operator == "-" || v.Operator == "+" || v.Operator == "*") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
 			return "%str-long"
 		}
 		// floatLLVMType 已處理混合 float/double 的型別提升
@@ -5864,8 +5881,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%s2s.result.",         // s2s conversion in stmt.go
 		"%concat.result.",      // generateStrConcat
 		"%nfmt.concat.result.", // callNamedFormat sprintf concatenation
-		"%str-longrepeat.null", // generateStrRepeat (no sb)
-		"%str-longconcat.null", // generateStrConcat (no sb)
+		"%repeat.result.",      // generateStrRepeat
 		"%argv.str.",           // args-get in call_stdlib.go
 		"%sprintf.val.",        // sprintf-based str returns (to-str etc.)
 		"%str-long.s2s.",       // duplicate, keep
