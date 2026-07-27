@@ -81,7 +81,7 @@ sse-event {
 ; recv-buf: 接收緩衝區
 ; recv-buf-len: 緩衝區中實際資料長度
 sse-client {
-    fd i64
+    fd fd
     tls-c tls-conn
     use-tls bool
     connected bool
@@ -448,7 +448,7 @@ sse-connect = (url str) (client ?sse-client) {
     host-only = ''
     port-str = ''
     use-tls = false
-    fd i64 = -1
+    fd fd = -1
     tls-c tls-conn
 
     url.starts-with('https://') -> {
@@ -664,7 +664,7 @@ sse-connect = (url str) (client ?sse-client) {
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
 sse-server {
-    fd i64
+    fd fd
     host str
     port i64
 }
@@ -673,7 +673,7 @@ sse-server {
 ; fd: 客戶端 socket 檔案描述符（-1=未連接）
 ; connected: 連線狀態
 sse-server-conn {
-    fd i64
+    fd fd
     connected bool
 }
 

@@ -54,7 +54,7 @@ HTTP-SRV-KEEPALIVE-TIMEOUT = 5000
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
 http-server {
-    fd i64
+    fd fd
     host str
     port i64
 }
@@ -75,7 +75,7 @@ http-server {
 ; recv-buf: 接收緩衝區
 ; recv-buf-len: 緩衝區中實際資料長度
 http-server-conn {
-    fd i64
+    fd fd
     method str
     path str
     query str
@@ -145,8 +145,8 @@ http-server.close = () {
 }
 
 ; fd-of: 取得監聽 socket fd
-; 返回 fd i64
-http-server.fd-of = () (fd i64) {
+; 返回 fd fd
+http-server.fd-of = () (fd fd) {
     fd = .fd
 }
 
@@ -279,19 +279,19 @@ http-server-conn.parse = () (ok bool) {
     conn-val = .get-header('Connection')
     conn-val: {
         ok -> {
-            cl = conn-val.to-lower()
+            cl = it
             cl == 'close' -> .keep-alive = false
             cl == 'keep-alive' -> .keep-alive = true
         }
-        err ->
-        nil ->
+        ->
     }
 
     ; 讀取請求體（如有 Content-Length）
     .body = ''
-    cl-str = .get-header('Content-Length')
-    cl-str: {
+    cl-opt = .get-header('Content-Length')
+    cl-opt: {
         ok -> {
+            cl-str = it
             content-len = 0
             j <- [0..cl-str.len): {
                 ch = cl-str[j]
@@ -310,8 +310,7 @@ http-server-conn.parse = () (ok bool) {
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
-        err ->
-        nil ->
+        ->
     }
 
     ok = true
@@ -590,37 +589,7 @@ http-server-conn.get-cookie = (name str) (val ?str) {
     ; 取得 Cookie 標頭
     cookie-header ?str = .get-header('Cookie')
     cookie-header: {
-        nil || err ->
-        ok -> {
-            ; 解析 Cookie 標頭
-            hdr = it
-            pos = 0
-            {
-                ; 跳過空格
-                {
-                    pos = pos + 1
-                } (pos < hdr.len && hdr[pos] == 32)
-                pos >= hdr.len -> *
-
-                ; 找下一個分號
-                next-semi = hdr.index-from(';', pos)
-                pair-end = next-semi
-                pair-end < 0 -> pair-end = hdr.len
-                pair = hdr.slice(pos, pair-end)
-                pair = pair.trim()
-                eq-pos = pair.index('=')
-                eq-pos >= 0 -> {
-                    cname = pair.slice(0, eq-pos)
-                    cvalue = pair.slice(eq-pos + 1, pair.len)
-                    cname == name -> {
-                        val = cvalue
-                        return
-                    }
-                }
-                next-semi < 0 -> *
-                pos = next-semi + 1
-            } ()
-        }
+        ->
     }
 }
 
@@ -632,18 +601,7 @@ http-server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
     val = nil
     signed ?str = .get-cookie(name)
     signed: {
-        nil || err ->
-        ok -> {
-            ; 驗證簽名
-            signed-val = it
-            ok = false
-            raw = ''
-            ok, raw = cookie.cookie-verify(name, signed-val, key)
-            {
-                ok -> val = raw
-                -> val = nil
-            }
-        }
+        ->
     }
 }
 
@@ -655,52 +613,7 @@ http-server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok 
     ok = false
     auth-header ?str = .get-header('Authorization')
     auth-header: {
-        nil || err ->
-        ok -> {
-            ; 檢查 'Basic ' 前綴
-            hdr = it
-            prefix = 'Basic '
-            starts-ok = hdr.starts-with(prefix)
-            starts-ok == false -> return
-
-            ; Base64 解碼
-            b64 = hdr.slice(prefix.len, hdr.len)
-            raw []byte
-            dec = base64.decode(b64, base64.BASE64-STD)
-            dec: {
-                ok -> raw = it
-                nil || err -> return
-            }
-
-            ; 尋找冒號分隔符
-            colon = -1
-            i <- [0..raw.len): {
-                raw[i] == 58 -> {
-                    colon = i
-                    break
-                }
-            }
-            colon < 0 -> return
-
-            ; 提取用戶名和密碼
-            user-bytes []byte
-            j <- [0..colon): {
-                user-bytes[j] = raw[j]
-            }
-            user = user-bytes.to-str()
-            pass-bytes []byte
-            k = 0
-            j <- [colon + 1..raw.len): {
-                pass-bytes[k] = raw[j]
-                k = k + 1
-            }
-            pass = pass-bytes.to-str()
-
-            ; 比較（常數時間比較）
-            user-ok = secure-compare(user, expected-user)
-            pass-ok = secure-compare(pass, expected-pass)
-            user-ok && pass-ok -> ok = true
-        }
+        ->
     }
 }
 
@@ -737,7 +650,7 @@ http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
 https-server {
-    fd i64
+    fd fd
     host str
     port i64
 }
@@ -955,19 +868,19 @@ https-server-conn.parse = () (ok bool) {
     conn-val = .get-header('Connection')
     conn-val: {
         ok -> {
-            cl = conn-val.to-lower()
+            cl = it
             cl == 'close' -> .keep-alive = false
             cl == 'keep-alive' -> .keep-alive = true
         }
-        err ->
-        nil ->
+        ->
     }
 
     ; 讀取請求體
     .body = ''
-    cl-str = .get-header('Content-Length')
-    cl-str: {
+    cl-opt = .get-header('Content-Length')
+    cl-opt: {
         ok -> {
+            cl-str = it
             content-len = 0
             j <- [0..cl-str.len): {
                 ch = cl-str[j]
@@ -983,11 +896,10 @@ https-server-conn.parse = () (ok bool) {
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
-        err ->
-        nil ->
+        ->
     }
 
-    io.errln('[HTTPS-SRV] parse: method=' - .method - ' path=' - .path - ' version=' - .version - ' sp1=' - sp1.to-str() - ' sep-pos=' - sep-pos.to-str())
+    io.errln('[HTTPS-SRV] parse: method=' - .method - ' path=' - .path - ' version=' - .version - ' sp1=' - sp1.to-str() - ' sep-pos=' - sep-pos.to-str() - ' header-count=' - .header-count.to-str())
     ok = true
 }
 

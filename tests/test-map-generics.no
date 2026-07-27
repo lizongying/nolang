@@ -96,6 +96,112 @@ test-u8-i64 = () {
     }
 }
 
+; 動態成長: 插入超過初始容量 16 條，驗證 rehash 後資料仍可正確讀取
+test-dynamic-growth = () {
+    m [i64]i64 = { }
+    m.init()
+
+    ; 插入 50 條 (超過初始 cap=16，觸發多次 rehash: 16 → 32 → 64 → 128)
+    i <- [0..50): {
+        m.put(i, i * 10)
+    }
+
+    n = m.len()
+    print(n); expect: 50
+
+    ; 驗證所有資料可透過 get 找回
+    i <- [0..50): {
+        v = m.get(i)
+        v: {
+            ok -> print(); expect: i * 10
+        }
+    }
+}
+
+; 墓碑復用: 插入 → 刪除 → 再插入相同 key，驗證墓碑槽位被正確復用
+test-tombstone-reuse = () {
+    m [str]i64 = { }
+    m.init()
+
+    m.put('a', 1)
+    m.put('b', 2)
+    m.put('c', 3)
+
+    removed = m.remove('b')
+    print(removed); expect: 1
+
+    ; b 已刪除，contains 應回傳 false
+    found = m.contains('b')
+    print(found); expect: 0
+
+    ; 再插入 b，應復用墓碑槽位
+    m.put('b', 20)
+
+    v = m.get('b')
+    v: {
+        ok -> print(); expect: 20
+    }
+
+    ; a 和 c 不受影響
+    v = m.get('a')
+    v: {
+        ok -> print(); expect: 1
+    }
+
+    v = m.get('c')
+    v: {
+        ok -> print(); expect: 3
+    }
+
+    n = m.len()
+    print(n); expect: 3
+}
+
+; 動態成長 + 墓碑交互: 大量插入後刪除部分，再插入新 key，驗證擴容與墓碑正確互動
+test-growth-tombstone = () {
+    m [i64]i64 = { }
+    m.init()
+
+    ; 插入 30 條 (觸發 rehash: 16 → 32)
+    i <- [0..30): {
+        m.put(i, i)
+    }
+
+    ; 刪除偶數 key (製造墓碑)
+    i <- [0..30): {
+        i % 2 == 0 -> m.remove(i)
+    }
+
+    n = m.len()
+    print(n); expect: 15
+
+    ; 再插入 20 條新 key (混合墓碑復用與新槽位，key 100..119)
+    i <- [0..20): {
+        m.put(i + 100, i + 100)
+    }
+
+    n = m.len()
+    print(n); expect: 35
+
+    ; 驗證剩餘的奇數 key 仍可讀取
+    i <- [0..30): {
+        i % 2 != 0 -> {
+            v = m.get(i)
+            v: {
+                ok -> print(); expect: i
+            }
+        }
+    }
+
+    ; 驗證新插入的 key 可讀取
+    i <- [0..20): {
+        v = m.get(i + 100)
+        v: {
+            ok -> print(); expect: i + 100
+        }
+    }
+}
+
 test-str-i64()
 test-str-str()
 test-i64-i64()
@@ -103,3 +209,6 @@ test-i32-str()
 test-bool-i64()
 test-str-bool()
 test-u8-i64()
+test-dynamic-growth()
+test-tombstone-reuse()
+test-growth-tombstone()

@@ -247,7 +247,7 @@ http-do = (method str, url str, body str) (resp ?http-response) {
     after-code = ''
     code-str = ''
     use-tls = false
-    fd i64 = -1
+    fd fd = -1
     tls-c tls-conn
     written = 0
     n = 0
@@ -457,7 +457,7 @@ http-do-req = (req http-request) (resp ?http-response) {
     method = req.method
     url = req.url
     use-tls = false
-    fd i64 = -1
+    fd fd = -1
     tls-c tls-conn
     written = 0
     n = 0

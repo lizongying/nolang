@@ -80,9 +80,9 @@ WNOHANG = 1
 ; running: 是否仍在執行（0=否, 1=是）
 process {
     pid i64
-    stdin-fd i64
-    stdout-fd i64
-    stderr-fd i64
+    stdin-fd fd
+    stdout-fd fd
+    stderr-fd fd
     exit-code i64
     running i64
 }

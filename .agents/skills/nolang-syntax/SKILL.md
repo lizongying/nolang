@@ -13,6 +13,7 @@ description: Reference for Nolang programming language syntax. Use when working 
 - [Quick Reference](#quick-reference)
   - [Data Types](#data-types)
   - [Type Aliases & Union Types](#type-aliases--union-types)
+  - [Newtype Semantics (Single Concrete Type Alias)](#newtype-semantics-single-concrete-type-alias)
   - [Variables](#variables)
   - [Comments](#comments)
   - [Naming Rules](#naming-rules)
@@ -373,6 +374,41 @@ max = (a ..num) (r num) {
 - `name = [N]type`: Array type
 - `name = ?type`: Optional type
 - `name = known-type`: Single type alias, where `known-type` is a built-in type name or a previously defined type alias name
+
+#### Newtype Semantics (Single Concrete Type Alias)
+
+A single concrete type alias `name = known-type` (e.g. `fd = i64`) provides **newtype semantics**: the alias name and its underlying type are **distinct types** in the type system, preventing accidental mixing.
+
+```no
+// std/fs.no
+fd = i64                     // file descriptor newtype (underlying i64)
+
+// ok: integer literal can be assigned to an integer-backed newtype
+STDIN-FD fd = 0
+STDOUT-FD fd = 1
+STDERR-FD fd = 2
+
+// ok: newtype can be compared with integer literals
+reader.read = (buf str, n i64) (read-n i64) {
+    .fd < 0 -> return        // .fd is fd, compared with literal 0
+    read-n = read(.fd, buf, n)
+}
+
+// ERROR: i64 variable cannot be assigned to fd variable
+x i64 = 10
+bad fd = x                   // type mismatch: i64 ≠ fd
+
+// ERROR: fd variable cannot be passed to an i64 parameter
+fn-takes-i64 = (n i64) { }
+fn-takes-i64(STDIN-FD)       // type mismatch: fd ≠ i64
+```
+
+**Rules:**
+
+- The alias name and underlying type name are mutually exclusive in assignments and parameter passing (i64 ↔ fd is forbidden).
+- **Integer literal exception**: an integer literal can be assigned to an integer-backed newtype (e.g. `STDIN-FD fd = 0`), and an integer-backed newtype can be compared with integer literals (e.g. `.fd < 0`, `.fd == -1`).
+- At codegen, the alias resolves to the underlying LLVM type (e.g. `fd` → `i64`), so there is no runtime overhead.
+- This pattern is used by the standard library `fd` type (defined in `std/fs.no`) to prevent file descriptors from being confused with arbitrary `i64` values.
 
 ### Variables
 
@@ -2555,16 +2591,19 @@ val = os.arg(idx)
 
 #### fs — File System Tools
 
-Wraps open files with the `file` struct and paths with the `path` struct.
+Wraps open files with the `file` struct and paths with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values — see [Newtype Semantics](#newtype-semantics-single-concrete-type-alias).
 
 ```no
+// fd newtype (underlying i64, type-distinct from i64)
+fd = i64
+
 // File struct
 file {
-    fd i64
+    fd fd
     path str
 }
 
-// Standard files
+// Standard files (integer literals are allowed for fd initialization)
 stdin = file{
     fd: 0
     path: '<stdin>'

@@ -1,7 +1,0 @@
-main = () {
-    io.out('hello')
-    io.outln('world')
-    io.err('err')
-    io.errln('errln')
-}
-main()

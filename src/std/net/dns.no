@@ -364,8 +364,8 @@ dns-resolve-all = (domain str) (ip ?str) {
 ; dns-dial: 解析域名並建立 TCP 連接
 ; domain str: 域名
 ; port i64: 埠號
-; 返回 fd i64: socket fd（-1=失敗）
-dns-dial = (domain str, port i64) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+dns-dial = (domain str, port i64) (fd fd) {
     fd = -1
 
     ; 先嘗試直接連接（net-dial 內建已支援 hostname 解析）

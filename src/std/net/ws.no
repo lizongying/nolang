@@ -99,29 +99,29 @@ ws-message {
 }
 
 ; ws-server: WebSocket 服務端監聽器
-; fd i64: 監聽 socket 檔案描述符（-1=未開啟）
+; fd fd: 監聽 socket 檔案描述符（-1=未開啟）
 ; host str: 綁定的 IP 地址
 ; port i64: 監聽埠號
 ws-server {
-    fd i64
+    fd fd
     host str
     port i64
 }
 
 ; ws-server-conn: WebSocket 服務端客戶端連接
-; fd i64: 客戶端 socket 檔案描述符（-1=未連接）
+; fd fd: 客戶端 socket 檔案描述符（-1=未連接）
 ; connected bool: 連線狀態
 ; recv-buf str: 接收緩衝區
 ; recv-buf-len i64: 緩衝區中實際資料長度
 ws-server-conn {
-    fd i64
+    fd fd
     connected bool
     recv-buf str
     recv-buf-len i64
 }
 
 ; ws-client: WebSocket 客戶端連線
-; fd i64: TCP socket 檔案描述符（-1=未連接）
+; fd fd: TCP socket 檔案描述符（-1=未連接）
 ; use-tls bool: 是否使用 TLS（WSS）
 ; tls-c tls-conn: TLS 連線（use-tls=true 時使用）
 ; connected bool: 連線狀態
@@ -132,7 +132,7 @@ ws-server-conn {
 ; recv-buf-len i64: 緩衝區中實際資料長度
 ; send-counter i64: mask key 偽隨機計數器
 ws-client {
-    fd i64
+    fd fd
     use-tls bool
     tls-c tls-conn
     connected bool
@@ -1114,7 +1114,7 @@ ws-connect = (url str) (c ?ws-client) {
     }
 
     ; 建立連線（TLS 或 TCP）
-    fd i64 = -1
+    fd fd = -1
     tc tls-conn
     {
         use-tls -> {

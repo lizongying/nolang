@@ -4,14 +4,14 @@
 
 ; reader: 緩衝讀取器
 reader {
-    fd i64
+    fd fd
     buf []byte
     pos i64
     avail i64
 }
 
 ; init: 建立緩衝讀取器
-reader.init = (fd i64, buf []byte) (r reader) {
+reader.init = (fd fd, buf []byte) (r reader) {
     r.fd = fd
     r.buf = buf
     r.pos = 0

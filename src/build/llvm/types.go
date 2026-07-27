@@ -78,6 +78,14 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		}
 	}
 
+	// 單具體型別別名解析：查詢 concreteTypeAliases，命中則遞歸解析底層型別
+	// 例如 "fd" → 底層 "i64" → "i64"；"bytes" → 底層 "[]byte" → "%vec"
+	if g.concreteTypeAliases != nil {
+		if underlying, ok := g.concreteTypeAliases[nolangType]; ok {
+			return g.mapToLLVMType(underlying.String())
+		}
+	}
+
 	switch nolangType {
 	case "i8":
 		return "i8"

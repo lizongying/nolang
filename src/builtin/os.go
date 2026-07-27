@@ -196,7 +196,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-read",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file for reading, returns file descriptor",
 		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "0", 2: "0"}},
 	})
@@ -213,7 +213,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-write",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file for writing, returns file descriptor",
 		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: openWriteFlagVal, 2: "420"}},
 	})
@@ -223,7 +223,7 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-file",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file with given flags and mode, returns file descriptor",
 		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
 	})
@@ -236,7 +236,7 @@ func init() {
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "close",
-		Params:       []parser.Type{parser.TypeI64},
+		Params:       []parser.Type{parser.TypeFd},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Close a file descriptor",
 		CLibCall:     &CLibCall{FuncName: closeFn, ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
@@ -250,7 +250,7 @@ func init() {
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "read",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeStr, parser.TypeI64},
+		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Read n bytes from a file descriptor into buf",
 		CLibCall:     &CLibCall{FuncName: readFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, FixedArgGlobals: map[int]string{1: "i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.os-buf, i64 0, i64 0)"}},
@@ -264,7 +264,7 @@ func init() {
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "write",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeStr, parser.TypeI64},
+		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Write n bytes to a file descriptor",
 		CLibCall:     &CLibCall{FuncName: writeFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},

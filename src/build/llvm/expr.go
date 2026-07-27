@@ -2489,6 +2489,11 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					g.indent(), elemGEP, vecElemType, vecElemType, dataTyped, idx))
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, vecElemType, vecElemType, elemGEP))
+				// Track the SSA type so downstream consumers (e.g. option assignment)
+				// can distinguish loaded struct values from pointers.
+				if g.ssaTypes != nil && strings.HasPrefix(vecElemType, "%") {
+					g.ssaTypes[elemLoad] = vecElemType
+				}
 				// Zext to i64 if element type is smaller (callers expect i64)
 				if vecElemType != "i64" && g.isIntegerLLVMType(vecElemType) {
 					g.tmpIdx++
@@ -3628,6 +3633,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
+			}
+			// Track the SSA type so downstream consumers (e.g. option assignment)
+			// can distinguish loaded struct values from pointers.
+			if g.ssaTypes != nil && strings.HasPrefix(llvmElemType, "%") {
+				g.ssaTypes[elemLoad] = llvmElemType
 			}
 			// 當元素型別為整數且小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
 			// 注意：struct 型別（如 %str-long）不應 zext。

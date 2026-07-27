@@ -95,6 +95,7 @@ type Generator struct {
 	enumVariants           map[string]map[string]int64      // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
 	varFnTypes             map[string]*parser.FunctionType  // variable name → FunctionType (for indirect calls)
 	fnTypeAliases          map[string]*parser.FunctionType  // named function type alias name → FunctionType
+	concreteTypeAliases    map[string]parser.Type           // single concrete type alias name → underlying Type AST (e.g. "fd"→i64 NamedType)
 	externFuncs            map[string]*ExternFuncInfo       // extern function name → FFI type info
 	lastBuiltinExtra       string                           // extra return value from multi-result builtin (e.g. get-line ok)
 	currentTargetType      string                           // target type for type-inferred builtins (e.g. with-cap)
@@ -615,6 +616,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)
 	g.fnTypeAliases = make(map[string]*parser.FunctionType)
+	g.concreteTypeAliases = make(map[string]parser.Type)
 	g.externFuncs = make(map[string]*ExternFuncInfo)
 	g.reassignedVars = make(map[string]bool)
 
@@ -729,6 +731,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 		if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil {
 			if ft, ok := ta.Type.(*parser.FunctionType); ok {
 				g.fnTypeAliases[ta.Name] = ft
+			} else {
+				// 單具體型別別名（name = known-type，非 union、非 function-type）
+				// 用於代碼生成時解析到底層型別的 LLVM 表示
+				g.concreteTypeAliases[ta.Name] = ta.Type
 			}
 		}
 	}

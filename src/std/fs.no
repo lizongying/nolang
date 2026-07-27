@@ -89,32 +89,32 @@
 
 ; build-in (ForwardFunc: open-read)
 ; open-read: 以唯讀模式開啟檔案
-; open-read = (path str) (fd i64) {  // LLVM: call i32 @open(O-RDONLY) → zext
+; open-read = (path str) (fd fd) {  // LLVM: call i32 @open(O-RDONLY) → zext
 ; }
 
 ; build-in (ForwardFunc: open-write)
 ; open-write: 以寫入模式開啟檔案（O-WRONLY|O-CREAT|O-TRUNC, 0644）
-; open-write = (path str) (fd i64) {  // LLVM: call i32 @open → zext
+; open-write = (path str) (fd fd) {  // LLVM: call i32 @open → zext
 ; }
 
 ; build-in (CLibCall: open)
 ; open-file: 以自訂旗標和權限開啟檔案
-; open-file = (path str, flags i64, mode i64) (fd i64) {  // LLVM: call i32 (i8*, i32, ...) @open → sext
+; open-file = (path str, flags i64, mode i64) (fd fd) {  // LLVM: call i32 (i8*, i32, ...) @open → sext
 ; }
 
 ; build-in (ForwardFunc: read)
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
-; read = (fd i64, buf str, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
+; read = (fd fd, buf str, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
 ; }
 
 ; build-in (ForwardFunc: write)
 ; write: 將 data 的前 n 位元組寫入檔案描述符
-; write = (fd i64, data str, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
+; write = (fd fd, data str, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
 ; }
 
 ; build-in (ForwardFunc: close)
 ; close: 關閉檔案描述符
-; close = (fd i64) (ok i64) {  // LLVM: call i32 @close(fd) → zext
+; close = (fd fd) (ok i64) {  // LLVM: call i32 @close(fd) → zext
 ; }
 
 ; ═══════════════════════════════════════════════
@@ -225,9 +225,14 @@ O-EXCL = 1024
 O-EXCL = 2048
 
 ; 標準檔案描述符
-STDIN-FD = 0
-STDOUT-FD = 1
-STDERR-FD = 2
+; fd 是檔案描述符的 newtype 別名（底層 i64），與 i64 在型別系統中互斥，
+; 防止 fd 被亂用為任意整數（端口号、PID 等）。
+; 整數字面量可賦值給 fd（如 STDIN-FD fd = 0），fd 可與整數字面量比較。
+fd = i64
+
+STDIN-FD fd = 0
+STDOUT-FD fd = 1
+STDERR-FD fd = 2
 
 ; ═══════════════════════════════════════════════
 ; file 結構體：封裝開啟中的檔案
@@ -236,7 +241,7 @@ STDERR-FD = 2
 ; file: 開啟的檔案
 ; fd=-1 表示未開啟；path 為來源路徑
 file {
-    fd i64
+    fd fd
     path str
 }
 

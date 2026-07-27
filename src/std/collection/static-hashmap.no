@@ -1,53 +1,63 @@
-; map — 泛型動態雜湊映射表
+; static-hashmap — 固定容量泛型雜湊映射表
 ;
 ; 本檔案提供三個泛型 hashmap 模板，由編譯器針對任意 k/v 組合特化：
-;   - hashmap-str-tmpl: str 鍵（V 泛型）
-;   - hashmap-int-tmpl: int 鍵（K,V 泛型）
-;   - hashmap-bool-tmpl: bool 鍵（V 泛型）
+;   - static-hashmap-str-tmpl: str 鍵（#{generic=[v]}）
+;   - static-hashmap-int-tmpl: int 鍵（#{generic=[k,v]}）
+;   - static-hashmap-bool-tmpl: bool 鍵（#{generic=[v]}）
 ;
-; 所有實作均為動態容量，使用 vec 欄位儲存 keys/vals/occ。
-; str/int 模板初始容量 16，裝載因子 > 0.75 時自動 rehash 擴容（容量加倍）。
-; bool 模板固定 2 槽（true/false 直接索引，無需探測與擴容）。
+; 所有實作均為固定容量、線性探測。
+; str/int 模板為 256 槽（建議 ≤ 192 條，裝載因子 ≤ 0.75）。
+; bool 模板為 2 槽（true/false 直接索引，無需探測）。
 ;
 ; 用法（特化後，例如 v=i64）：
-;   m = hashmap-str-tmpl{}
+;   m = static-hashmap-str-tmpl{}
 ;   m.init()
 ;   m.put('name', 42)
-;   val = m.get('name')   ; val = ok(42) 或 nil
+;   val = m.get('name')   // val = ok(42) 或 nil
 
 ; FNV-1a 常量
 FNV-OFFSET = -3750763034362895579
 FNV-PRIME = 1099511628211
 
+HASHMAP-STR-I64-CAP = 256
+HASHMAP-I64-I64-CAP = 256
+HASHMAP-STR-STR-CAP = 256
+
 ; ============================================================
-; 1. hashmap-str-tmpl — str 鍵泛型動態雜湊映射表
+; 1. static-hashmap-str-tmpl — str 鍵泛型雜湊映射表
 ; ============================================================
 
-; hashmap-str-tmpl — str 鍵泛型動態雜湊映射表
+; static-hashmap-str-tmpl — str 鍵泛型雜湊映射表
 ;
-; 動態容量（初始 16 槽），線性探測，用 FNV-1a 雜湊字串。
-; 裝載因子 > 0.75 時自動 rehash 擴容（容量加倍）。
+; 固定容量（256 槽），線性探測，用 FNV-1a 雜湊字串。
 ; 值型別為泛型 v，由編譯器特化。
+;
+; 用法（特化後，例如 v=i64）：
+;   m = static-hashmap-str-tmpl{}
+;   m.init()
+;   m.put('name', 42)
+;   val = m.get('name')   // val = ok(42) 或 nil
 
-hashmap-str-tmpl {
+static-hashmap-str-tmpl {
     cap i64
+    keys [256]str
+    vals [256]v
+    occ [256]i64
     size i64
-    keys []str
-    vals []v
-    occ []i64
 }
 
 ; init: 初始化
-hashmap-str-tmpl.init = () {
-    .cap = 16
+static-hashmap-str-tmpl.init = () {
+    .cap = 256
     .size = 0
-    .keys = with-len(16)
-    .vals = with-len(16)
-    .occ = with-len(16)
+    i <- [0..256): {
+        .occ[i] = 0
+        .keys[i].len = 0
+    }
 }
 
 ; hash: FNV-1a 字串雜湊
-hashmap-str-tmpl.hash = (key str) (idx i64) {
+static-hashmap-str-tmpl.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
         h = h ^ (key[i] & 255)
@@ -57,7 +67,7 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
 }
 
 ; str-eq: 比較兩個 str 是否相等
-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
+static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     eq = false
     a.len != b.len -> return
     i <- [0..a.len): {
@@ -67,17 +77,13 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 }
 
 ; put: 插入或更新 key→value，回傳是否新增
-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
-    ; 檢查裝載因子，觸發擴容
-    { .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2) }
-
+static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
     {
         .occ[idx] == 1 -> {
-            k str = .keys[idx]
-            eq = .str-eq(k, key)
+            eq = .str-eq(.keys[idx], key)
             eq -> {
                 .vals[idx] = val
                 is-new = false
@@ -103,7 +109,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 }
 
 ; get: 查找 key，返回 ?v（nil=未找到）
-hashmap-str-tmpl.get = (key str) (result ?v) {
+static-hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -113,8 +119,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 
     {
         .occ[idx] == 1 -> {
-            k str = .keys[idx]
-            eq = .str-eq(k, key)
+            eq = .str-eq(.keys[idx], key)
             eq -> {
                 result = .vals[idx]
                 return
@@ -127,7 +132,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 }
 
 ; contains: 檢查 key 是否存在
-hashmap-str-tmpl.contains = (key str) (found bool) {
+static-hashmap-str-tmpl.contains = (key str) (found bool) {
     found = false
     val ?v = .get(key)
     val: {
@@ -137,16 +142,15 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑，不清 keys/vals）
-hashmap-str-tmpl.remove = (key str) (removed bool) {
+; remove: 刪除 key（標記墓碑）
+static-hashmap-str-tmpl.remove = (key str) (removed bool) {
     removed = false
     .size == 0 -> return
     idx = .hash(key)
 
     {
         .occ[idx] == 1 -> {
-            k str = .keys[idx]
-            eq = .str-eq(k, key)
+            eq = .str-eq(.keys[idx], key)
             eq -> {
                 .occ[idx] = 2
                 .size = .size - 1
@@ -159,109 +163,77 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
     } (.occ[idx] != 0)
 }
 
-; clear: 清空（重新配置 occ vec，舊 vec 由編譯器 move 語義釋放）
-hashmap-str-tmpl.clear = () {
-    .occ = with-len(.cap)
+; clear: 清空
+static-hashmap-str-tmpl.clear = () {
+    i <- [0...cap): {
+        .occ[i] = 0
+        .keys[i].len = 0
+    }
     .size = 0
 }
 
 ; len: 返回元素數量
-hashmap-str-tmpl.len = () (n i64) {
+static-hashmap-str-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; is-empty: 是否為空
-hashmap-str-tmpl.is-empty = () (empty bool) {
+static-hashmap-str-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-str-tmpl.for-each = (k str, v v) {
-    n = .cap
-    i <- [0..n): {
+static-hashmap-str-tmpl.for-each = (k str, v v) {
+    i <- [0...cap): {
         .occ[i] == 1 -> {
-            src str = .keys[i]
-            j <- [0..src.len): {
-                k[j] = src[j]
+            j <- [0...keys[i].len): {
+                k[j] = .keys[i][j]
             }
             v = .vals[i]
         }
     }
 }
 
-; rehash: 擴容並重新雜湊所有 occ==1 條目
-hashmap-str-tmpl.rehash = (new-cap i64) {
-    ; 保存舊資料
-    old-keys = .keys
-    old-vals = .vals
-    old-occ = .occ
-    old-cap = .cap
-
-    ; 配置新 vec
-    .keys = with-len(new-cap)
-    .vals = with-len(new-cap)
-    .occ = with-len(new-cap)
-    .cap = new-cap
-
-    ; 遷移 occ==1 條目
-    i <- [0..old-cap): {
-        old-occ[i] == 1 -> {
-            k str = old-keys[i]
-            v = old-vals[i]
-            idx = .hash(k)
-
-            ; 找到第一個空槽插入
-            {
-                .occ[idx] != 0 -> {
-                    idx = idx + 1
-                    idx >= .cap -> idx = 0
-                }
-            } (.occ[idx] != 0)
-
-            .keys[idx] = k
-            .vals[idx] = v
-            .occ[idx] = 1
-        }
-    }
-}
-
 ; ============================================================
-; 2. hashmap-int-tmpl — int 鍵泛型動態雜湊映射表
+; 2. static-hashmap-int-tmpl — int 鍵泛型雜湊映射表
 ; ============================================================
 
-; hashmap-int-tmpl — int 鍵泛型動態雜湊映射表
+; static-hashmap-int-tmpl — int 鍵泛型雜湊映射表
 ;
-; 動態容量（初始 16 槽），線性探測，模數雜湊（位元遮罩）。
-; 裝載因子 > 0.75 時自動 rehash 擴容（容量加倍）。
+; 固定容量（256 槽），線性探測，模數雜湊（位元遮罩）。
 ; 鍵型別為泛型 k（int），值型別為泛型 v，由編譯器特化。
+;
+; 用法（特化後，例如 k=i64 且 v=i64）：
+;   m = static-hashmap-int-tmpl{}
+;   m.init()
+;   m.put(42, 100)
+;   val = m.get(42)   // val = ok(100) 或 nil
 
-hashmap-int-tmpl {
+static-hashmap-int-tmpl {
     cap i64
+    keys [256]k
+    vals [256]v
+    occ [256]i64
     size i64
-    keys []k
-    vals []v
-    occ []i64
 }
 
 ; init: 初始化
-hashmap-int-tmpl.init = () {
-    .cap = 16
+static-hashmap-int-tmpl.init = () {
+    .cap = 256
     .size = 0
-    .keys = with-len(16)
-    .vals = with-len(16)
-    .occ = with-len(16)
+    i <- [0..256): {
+        .occ[i] = 0
+        .keys[i] = 0
+    }
 }
 
 ; hash: 計算索引（位元遮罩）
-hashmap-int-tmpl.hash = (key k) (idx i64) {
+static-hashmap-int-tmpl.hash = (key k) (idx i64) {
     idx = key & (.cap - 1)
 }
 
 ; put: 插入或更新 key→value，回傳是否新增
-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
-    ; 檢查裝載因子，觸發擴容
-    { .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2) }
-
+static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
@@ -291,7 +263,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 }
 
 ; get: 查找 key，返回 ?v（nil=未找到）
-hashmap-int-tmpl.get = (key k) (result ?v) {
+static-hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -313,7 +285,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 }
 
 ; contains: 檢查 key 是否存在
-hashmap-int-tmpl.contains = (key k) (found bool) {
+static-hashmap-int-tmpl.contains = (key k) (found bool) {
     found = false
     val ?v = .get(key)
     val: {
@@ -323,8 +295,8 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑，不清 keys/vals）
-hashmap-int-tmpl.remove = (key k) (removed bool) {
+; remove: 刪除 key（標記墓碑）
+static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     removed = false
     .size == 0 -> return
     idx = .hash(key)
@@ -343,26 +315,28 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
     } (.occ[idx] != 0)
 }
 
-; clear: 清空（重新配置 occ vec）
-hashmap-int-tmpl.clear = () {
-    .occ = with-len(.cap)
+; clear: 清空
+static-hashmap-int-tmpl.clear = () {
+    i <- [0...cap): {
+        .occ[i] = 0
+        .keys[i] = 0
+    }
     .size = 0
 }
 
 ; len: 返回元素數量
-hashmap-int-tmpl.len = () (n i64) {
+static-hashmap-int-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; is-empty: 是否為空
-hashmap-int-tmpl.is-empty = () (empty bool) {
+static-hashmap-int-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-int-tmpl.for-each = (k k, v v) {
-    n = .cap
-    i <- [0..n): {
+static-hashmap-int-tmpl.for-each = (k k, v v) {
+    i <- [0...cap): {
         .occ[i] == 1 -> {
             k = .keys[i]
             v = .vals[i]
@@ -370,78 +344,49 @@ hashmap-int-tmpl.for-each = (k k, v v) {
     }
 }
 
-; rehash: 擴容並重新雜湊所有 occ==1 條目
-hashmap-int-tmpl.rehash = (new-cap i64) {
-    ; 保存舊資料
-    old-keys = .keys
-    old-vals = .vals
-    old-occ = .occ
-    old-cap = .cap
-
-    ; 配置新 vec
-    .keys = with-len(new-cap)
-    .vals = with-len(new-cap)
-    .occ = with-len(new-cap)
-    .cap = new-cap
-
-    ; 遷移 occ==1 條目
-    i <- [0..old-cap): {
-        old-occ[i] == 1 -> {
-            k = old-keys[i]
-            v = old-vals[i]
-            idx = .hash(k)
-
-            ; 找到第一個空槽插入
-            {
-                .occ[idx] != 0 -> {
-                    idx = idx + 1
-                    idx >= .cap -> idx = 0
-                }
-            } (.occ[idx] != 0)
-
-            .keys[idx] = k
-            .vals[idx] = v
-            .occ[idx] = 1
-        }
-    }
-}
-
 ; ============================================================
-; 3. hashmap-bool-tmpl — bool 鍵泛型動態雜湊映射表
+; 3. static-hashmap-bool-tmpl — bool 鍵泛型雜湊映射表
 ; ============================================================
 
-; hashmap-bool-tmpl — bool 鍵泛型動態雜湊映射表
+; static-hashmap-bool-tmpl — bool 鍵泛型雜湊映射表
 ;
-; 固定容量（2 槽），true/false 直接索引，無需線性探測與擴容。
+; 固定容量（2 槽），true/false 直接索引，無需線性探測。
 ; 值型別為泛型 v，由編譯器特化。
+;
+; 用法（特化後，例如 v=i64）：
+;   m = static-hashmap-bool-tmpl{}
+;   m.init()
+;   m.put(true, 1)
+;   val = m.get(true)   // val = ok(1) 或 nil
 
-hashmap-bool-tmpl {
+static-hashmap-bool-tmpl {
     cap i64
+    keys [2]bool
+    vals [2]v
+    occ [2]i64
     size i64
-    keys []bool
-    vals []v
-    occ []i64
 }
 
 ; init: 初始化
-hashmap-bool-tmpl.init = () {
+static-hashmap-bool-tmpl.init = () {
     .cap = 2
     .size = 0
-    .keys = with-len(2)
-    .vals = with-len(2)
-    .occ = with-len(2)
+    i <- [0..2): {
+        .occ[i] = 0
+        .keys[i] = false
+    }
 }
 
 ; hash: 直接索引（true→1，false→0）
-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
+static-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     {
         key == true -> idx = 1
         -> idx = 0
     }
 }
 
-; put: 插入或更新 key→value，回傳是否新增（直接索引，無 rehash）
-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
+; put: 插入或更新 key→value，回傳是否新增
+static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -458,7 +403,7 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 }
 
 ; get: 查找 key，返回 ?v（nil=未找到）
-hashmap-bool-tmpl.get = (key bool) (result ?v) {
+static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> {
         result = nil
         return
@@ -474,7 +419,7 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
 }
 
 ; contains: 檢查 key 是否存在
-hashmap-bool-tmpl.contains = (key bool) (found bool) {
+static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
     found = false
     val ?v = .get(key)
     val: {
@@ -484,8 +429,8 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑，不清 keys/vals）
-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
+; remove: 刪除 key（標記墓碑）
+static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     removed = false
     .size == 0 -> return
     idx = .hash(key)
@@ -497,26 +442,28 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     }
 }
 
-; clear: 清空（重新配置 occ vec）
-hashmap-bool-tmpl.clear = () {
-    .occ = with-len(.cap)
+; clear: 清空
+static-hashmap-bool-tmpl.clear = () {
+    i <- [0...cap): {
+        .occ[i] = 0
+        .keys[i] = false
+    }
     .size = 0
 }
 
 ; len: 返回元素數量
-hashmap-bool-tmpl.len = () (n i64) {
+static-hashmap-bool-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; is-empty: 是否為空
-hashmap-bool-tmpl.is-empty = () (empty bool) {
+static-hashmap-bool-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-bool-tmpl.for-each = (k bool, v v) {
-    n = .cap
-    i <- [0..n): {
+static-hashmap-bool-tmpl.for-each = (k bool, v v) {
+    i <- [0...cap): {
         .occ[i] == 1 -> {
             k = .keys[i]
             v = .vals[i]

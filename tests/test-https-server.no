@@ -122,8 +122,14 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
     io.errln('[TEST] e2e: parent dialing')
     tls-opt = tls-dial(host, port)
     tls-opt: {
-        nil -> print('FAIL: e2e tls-dial nil')
-        err -> print('FAIL: e2e tls-dial err')
+        nil -> {
+            print('FAIL: e2e tls-dial nil')
+            return
+        }
+        err -> {
+            print('FAIL: e2e tls-dial err')
+            return
+        }
         ok -> {
             e2e-tc = it
 
@@ -136,8 +142,16 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             send-ok = false
             w-opt = e2e-tc.send(req)
             w-opt: {
-                nil -> print('FAIL: e2e send nil')
-                err -> print('FAIL: e2e send err')
+                nil -> {
+                    print('FAIL: e2e send nil')
+                    e2e-tc.close()
+                    return
+                }
+                err -> {
+                    print('FAIL: e2e send err')
+                    e2e-tc.close()
+                    return
+                }
                 ok -> send-ok = true
             }
 

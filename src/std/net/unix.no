@@ -32,13 +32,13 @@
 ; unix-listen: 建立 Unix Domain Socket 監聽
 ; 執行 unlink + socket(AF_UNIX) + bind + listen
 ; 返回 fd（-1=失敗）
-; unix-listen = (path str) (fd i64) { }
+; unix-listen = (path str) (fd fd) { }
 
 ; build-in (ForwardFunc: unix-dial)
 ; unix-dial: 連接到 Unix Domain Socket
 ; 執行 socket(AF_UNIX) + connect
 ; 返回 fd（-1=失敗）
-; unix-dial = (path str) (fd i64) { }
+; unix-dial = (path str) (fd fd) { }
 
 ; ═══════════════════════════════════════════════
 ; 常量
@@ -61,7 +61,7 @@ UNIX-BACKLOG = 128
 ; fd: 監聽 socket 的檔案描述符（-1=未開啟）
 ; path: socket 檔案路徑
 unix-listener {
-    fd i64
+    fd fd
     path str
 }
 
@@ -125,8 +125,8 @@ unix-listener.close = () {
 }
 
 ; fd-of: 取得監聽 socket 的檔案描述符
-; 返回 fd i64
-unix-listener.fd-of = () (fd i64) {
+; 返回 fd fd
+unix-listener.fd-of = () (fd fd) {
     fd = .fd
 }
 
@@ -143,7 +143,7 @@ unix-listener.path-of = () (path str) {
 ; unix-conn: Unix Domain Socket 連接
 ; fd: 連接 socket 的檔案描述符（-1=未連接）
 unix-conn {
-    fd i64
+    fd fd
 }
 
 ; dial: 連接到 Unix Domain Socket 服務端
@@ -235,8 +235,8 @@ unix-conn.close = () {
 }
 
 ; fd-of: 取得連接 socket 的檔案描述符
-; 返回 fd i64
-unix-conn.fd-of = () (fd i64) {
+; 返回 fd fd
+unix-conn.fd-of = () (fd fd) {
     fd = .fd
 }
 

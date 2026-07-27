@@ -234,6 +234,10 @@ var (
 	TypeF32  = &NamedType{Value: "f32"}
 	TypeF64  = &NamedType{Value: "f64"}
 	TypeInt  = TypeI64
+	// TypeFd is the file descriptor newtype (underlying i64), defined in std/fs.no.
+	// Used by fd-related builtins (open-read/open-write/open-file/read/write/close/net-*/unix-*)
+	// to enforce newtype semantics: fd ≠ i64 in the type system.
+	TypeFd = &NamedType{Value: "fd"}
 )
 
 func typeString(n Node) string {

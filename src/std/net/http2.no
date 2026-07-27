@@ -57,7 +57,7 @@ http2-frame {
 
 ; http2-conn: HTTP/2 連線
 http2-conn {
-    fd i64
+    fd fd
     hpack hpack-tables
     next-stream-id i64
     send-window i64
@@ -611,7 +611,7 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
         -> conn = http2-connect(host, port)
     }
     conn: {
-        nil || err ->
+        ->
         ok -> {
             names, values, header-count, resp-body, resp-n, ok = it.request(method, path, host, body)
             it.close()

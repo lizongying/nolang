@@ -37,32 +37,32 @@
 ; net-listen: 建立 TCP 監聽 socket
 ; 執行 socket + setsockopt(SO_REUSEADDR) + bind + listen
 ; 返回 fd（-1=失敗）
-; net-listen = (host str, port i64) (fd i64) { }
+; net-listen = (host str, port i64) (fd fd) { }
 
 ; build-in (ForwardFunc: net-dial)
 ; net-dial: 建立 TCP 客戶端連接
 ; 執行 socket + connect
 ; 返回 fd（-1=失敗）
-; net-dial = (host str, port i64) (fd i64) { }
+; net-dial = (host str, port i64) (fd fd) { }
 
 ; build-in (ForwardFunc: net-accept)
 ; net-accept: 接受 TCP 連接
 ; 返回客戶端 fd（-1=失敗）
-; net-accept = (listen-fd i64) (fd i64) { }
+; net-accept = (listen-fd fd) (fd fd) { }
 
 ; build-in (ForwardFunc: net-send)
 ; net-send: 發送資料
 ; 返回實際發送位元組數（-1=錯誤）
-; net-send = (fd i64, data str, n i64) (written i64) { }
+; net-send = (fd fd, data str, n i64) (written i64) { }
 
 ; build-in (ForwardFunc: net-recv)
 ; net-recv: 接收資料
 ; 返回實際接收位元組數（-1=錯誤, 0=連接關閉）
-; net-recv = (fd i64, buf str, n i64) (read-n i64) { }
+; net-recv = (fd fd, buf str, n i64) (read-n i64) { }
 
 ; build-in (ForwardFunc: close)
 ; close: 關閉檔案描述符（來自 fs 模組）
-; close = (fd i64) (ok i64) { }
+; close = (fd fd) (ok i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 網路常量
@@ -102,7 +102,7 @@ win-wsa-startup()
 ; listener: TCP 監聽器
 ; fd: 監聽 socket 的檔案描述符（-1=未開啟）
 listener {
-    fd i64
+    fd fd
 }
 
 ; listen: 開始監聽
@@ -139,7 +139,7 @@ listener.close = () {
 }
 
 ; fd-of: 取得監聽 socket 的檔案描述符
-listener.fd-of = () (fd i64) {
+listener.fd-of = () (fd fd) {
     fd = .fd
 }
 
@@ -150,7 +150,7 @@ listener.fd-of = () (fd i64) {
 ; conn: TCP 連接
 ; fd: 連接 socket 的檔案描述符（-1=未連接）
 conn {
-    fd i64
+    fd fd
 }
 
 ; dial: 建立到服務端的 TCP 連接
@@ -220,7 +220,7 @@ conn.close = () {
 }
 
 ; fd-of: 取得連接 socket 的檔案描述符
-conn.fd-of = () (fd i64) {
+conn.fd-of = () (fd fd) {
     fd = .fd
 }
 
@@ -255,22 +255,22 @@ net-dial-to = (host str, port i64) (c ?conn) {
 ; build-in (ForwardFunc: net-udp-open)
 ; net-udp-open: 建立 UDP socket
 ; 返回 fd（-1=失敗）
-; net-udp-open = () (fd i64) { }
+; net-udp-open = () (fd fd) { }
 
 ; build-in (ForwardFunc: net-udp-sendto)
 ; net-udp-sendto: 發送 UDP 資料到指定位址
 ; 返回實際發送位元組數（-1=錯誤）
-; net-udp-sendto = (fd i64, data str, n i64, host str, port i64) (written i64) { }
+; net-udp-sendto = (fd fd, data str, n i64, host str, port i64) (written i64) { }
 
 ; build-in (ForwardFunc: net-udp-recvfrom)
 ; net-udp-recvfrom: 接收 UDP 資料
 ; 返回實際接收位元組數（-1=錯誤, 0=逾時）
-; net-udp-recvfrom = (fd i64, buf str, n i64) (read-n i64) { }
+; net-udp-recvfrom = (fd fd, buf str, n i64) (read-n i64) { }
 
 ; build-in (ForwardFunc: net-set-recv-timeout)
 ; net-set-recv-timeout: 設定 socket 接收逾時
 ; 返回 0=成功, -1=錯誤
-; net-set-recv-timeout = (fd i64, timeout-ms i64) (ok i64) { }
+; net-set-recv-timeout = (fd fd, timeout-ms i64) (ok i64) { }
 
 ; socket 類型（UDP）
 SOCK-DGRAM = 2
@@ -283,7 +283,7 @@ SO-RCVTIMEO = 20
 ; host: 目標主機 IP
 ; port: 目標埠號
 udp-conn {
-    fd i64
+    fd fd
     host str
     port i64
 }
@@ -355,7 +355,7 @@ udp-conn.close = () {
 
 ; fd-of: 取得 socket 檔案描述符
 ; 返回 fd
-udp-conn.fd-of = () (fd i64) {
+udp-conn.fd-of = () (fd fd) {
     fd = .fd
 }
 
@@ -661,8 +661,8 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 
 ; build-in (ForwardFunc: net-icmp-open)
 ; net-icmp-open: 建立 ICMP socket
-; 返回 fd i64（-1=失敗）
-; net-icmp-open = () (fd i64) { }
+; 返回 fd fd（-1=失敗）
+; net-icmp-open = () (fd fd) { }
 
 ; ICMP 常量
 ICMP-ECHO-REQUEST = 8
@@ -677,7 +677,7 @@ PING-RECV-BUF-SIZE = 128
 ; ident: ICMP 標識符（大端序）
 ; seq: 當前序號
 icmp-conn {
-    fd i64
+    fd fd
     ident i64
     seq i64
 }

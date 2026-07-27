@@ -1,0 +1,34 @@
+; test-fd-newtype.no — 驗證 fd newtype 語義
+;
+; 測試項目：
+;   1. 整數字面量可賦值給 fd 類型（含負值）
+;   2. fd 可與整數字面量比較
+;   3. fd 可作為 fd 參數傳遞（write 內建函數）
+;   4. fd 變量之間賦值（同類型賦值）
+;   5. STDOUT-FD 標準常量使用
+
+; ── 1. 整數字面量賦值給 fd（含負值） ──
+my-stdin fd = 0
+my-stdout fd = 1
+bad-fd fd = -1
+
+; ── 2. fd 與整數字面量比較（含負值） ──
+my-stdin == 0 -> print('ok: fd == 0')
+my-stdin >= 0 -> print('ok: fd >= 0')
+my-stdout > 0 -> print('ok: fd > 0')
+bad-fd < 0 -> print('ok: fd < 0 negative')
+bad-fd == -1 -> print('ok: fd == -1 negative')
+
+; ── 3. fd 作為 fd 參數傳遞（write 內建函數） ──
+n = write(my-stdout, 'hello fd\n', 9)
+n == 9 -> print('ok: write fd param')
+
+; ── 4. fd 變量之間賦值（同類型賦值） ──
+copy-fd fd = my-stdin
+copy-fd == 0 -> print('ok: fd-to-fd assignment')
+
+; ── 5. STDOUT-FD 標準常量使用 ──
+n2 = write(STDOUT-FD, 'std-ok\n', 7)
+n2 == 7 -> print('ok: STDOUT-FD standard constant')
+
+print('all fd newtype positive tests passed')

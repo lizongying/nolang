@@ -21,11 +21,11 @@
 
 ; build-in (ForwardFunc: read)
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
-; read = (fd i64, buf str, n i64) (n i64) { }
+; read = (fd fd, buf str, n i64) (n i64) { }
 
 ; build-in (ForwardFunc: write)
 ; write: 將 data 的前 n 位元組寫入檔案描述符
-; write = (fd i64, data str, n i64) (written i64) { }
+; write = (fd fd, data str, n i64) (written i64) { }
 
 ; build-in (ForwardFunc: read-stdin-line)
 ; get-line: 從標準輸入讀取一行
@@ -35,9 +35,9 @@
 ; 標準檔案描述符
 ; ═══════════════════════════════════════════════
 
-STDIN-FD = 0
-STDOUT-FD = 1
-STDERR-FD = 2
+STDIN-FD fd = 0
+STDOUT-FD fd = 1
+STDERR-FD fd = 2
 
 ; ═══════════════════════════════════════════════
 ; reader 結構體：封裝讀取來源
@@ -46,11 +46,11 @@ STDERR-FD = 2
 ; reader: 讀取器
 ; fd: 底層檔案描述符
 reader {
-    fd i64
+    fd fd
 }
 
 ; reader.from-fd: 從檔案描述符建立讀取器
-reader.from-fd = (fd i64) (r reader) {
+reader.from-fd = (fd fd) (r reader) {
     r.fd = fd
 }
 
@@ -102,11 +102,11 @@ reader.read-all = (buf str, size i64) (total i64) {
 ; writer: 寫入器
 ; fd: 底層檔案描述符
 writer {
-    fd i64
+    fd fd
 }
 
 ; writer.from-fd: 從檔案描述符建立寫入器
-writer.from-fd = (fd i64) (w writer) {
+writer.from-fd = (fd fd) (w writer) {
     w.fd = fd
 }
 

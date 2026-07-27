@@ -1,0 +1,18 @@
+; test-fd-newtype-negative.no — 驗證 fd newtype 互斥語義（應報錯）
+;
+; 測試所有 newtype 互斥場景：
+;   1. i64 變量不能賦值給 fd 變量
+;   2. fd 變量不能作為 i64 參數傳遞
+
+; 1. i64 變量賦值給 fd 變量（應報錯）
+x i64 = 10
+bad fd = x
+
+; 2. fd 變量傳給 i64 參數（應報錯）
+takes-i64 = (n i64) {
+    n
+}
+my-fd fd = 0
+takes-i64(my-fd)
+
+print('should not reach here')

@@ -51,8 +51,8 @@ proxy-config {
 ; target-port i64: 目標埠號
 ; username str: 認證用戶名（空=不認證）
 ; password str: 認證密碼
-; 返回 fd i64: 隧道 socket fd（-1=失敗）
-proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd i64) {
+; 返回 fd fd: 隧道 socket fd（-1=失敗）
+proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
     fd = -1
 
     ; 連接到代理伺服器
@@ -155,8 +155,8 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
 ; proxy-port i64: 代理伺服器埠號
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
-; 返回 fd i64: socket fd（-1=失敗）
-proxy-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+proxy-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
     fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, '', '')
 }
 
@@ -167,8 +167,8 @@ proxy-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) 
 ; target-port i64: 目標埠號
 ; username str: 認證用戶名
 ; password str: 認證密碼
-; 返回 fd i64: socket fd（-1=失敗）
-proxy-dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+proxy-dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
     fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, username, password)
 }
 
@@ -278,8 +278,8 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 ; proxy-config.connect: 使用 proxy-config 建立代理連接
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
-; 返回 fd i64: socket fd（-1=失敗）
-proxy-config.connect = (target-host str, target-port i64) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+proxy-config.connect = (target-host str, target-port i64) (fd fd) {
     fd = proxy-connect(.host, .port, target-host, target-port, .username, .password)
 }
 
@@ -386,8 +386,8 @@ SOCKS5-ATYP-DOMAIN = 3
 ; target-port i64: 目標埠號
 ; username str: 認證用戶名（空=不認證）
 ; password str: 認證密碼
-; 返回 fd i64: socket fd（-1=失敗）
-socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
     fd = -1
 
     ; 連接到 SOCKS5 代理
@@ -532,7 +532,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 ; proxy-port i64: SOCKS5 代理埠號
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
-; 返回 fd i64: socket fd（-1=失敗）
-socks5-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd i64) {
+; 返回 fd fd: socket fd（-1=失敗）
+socks5-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
     fd = socks5-connect(proxy-host, proxy-port, target-host, target-port, '', '')
 }

@@ -97,7 +97,7 @@ TLS13-IV-SIZE = 12
 ; rand-state: PRNG 狀態
 ; hs-buf: 交握訊息緩衝區（用於 Finished 驗證）
 tls-conn {
-    fd i64
+    fd fd
     host str
     connected bool
     encrypted bool
@@ -304,11 +304,11 @@ tls-prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 ; ═══════════════════════════════════════════════
 
 ; tls-recv-n: 從 socket 讀取恰好 n 個位元組
-; fd i64: socket fd
+; fd fd: socket fd
 ; buf []byte: 接收緩衝區
 ; n i64: 需要讀取的位元組數
 ; 返回 ok bool: true=成功
-tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
+tls-recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
     {
@@ -324,11 +324,11 @@ tls-recv-n = (fd i64, buf []byte, n i64) (ok bool) {
 }
 
 ; tls-read-record: 讀取一筆 TLS 記錄
-; fd i64: socket fd
+; fd fd: socket fd
 ; buf []byte: 記錄緩衝區（含標頭+資料, buf[0..4]=header, buf[5..]=body）
 ; 返回 ct i64: content type（-1=錯誤）
 ; 返回 rlen i64: 資料長度（不含標頭）
-tls-read-record = (fd i64, buf []byte) (ct i64, rlen i64) {
+tls-read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ct = -1
     rlen = 0
 
@@ -372,10 +372,10 @@ tls-read-record = (fd i64, buf []byte) (ct i64, rlen i64) {
 }
 
 ; tls-send-raw: 發送原始 TLS 記錄（未加密）
-; fd i64: socket fd
+; fd fd: socket fd
 ; ct i64: content type
 ; data []byte: 資料
-tls-send-raw = (fd i64, ct i64, data []byte) {
+tls-send-raw = (fd fd, ct i64, data []byte) {
     n = data.len
     hdr [5]byte
     hdr[0] = ct & 255
@@ -2169,7 +2169,7 @@ tls-dial = (host str, port i64) (conn ?tls-conn) {
 ; n-bytes / d-bytes: RSA 金鑰材料
 ; e-val: RSA 公鑰指數
 tls-server-conn {
-    fd i64
+    fd fd
     rand-state i64
     client-random [32]byte
     server-random [32]byte
@@ -2927,9 +2927,9 @@ tls-server-conn.close = () {
 }
 
 ; tls-server-init: 初始化伺服器連線（生成憑證、設定金鑰）
-; fd i64: 客戶端 socket fd
+; fd fd: 客戶端 socket fd
 ; 返回 conn ?tls-server-conn: 連線（nil=錯誤）
-tls-server-init = (fd i64) (conn ?tls-server-conn) {
+tls-server-init = (fd fd) (conn ?tls-server-conn) {
     conn = nil
     c = tls-server-conn{}
     c.fd = fd
@@ -2962,9 +2962,9 @@ tls-server-init = (fd i64) (conn ?tls-server-conn) {
 }
 
 ; tls-server-accept: 接受 TCP 連線並執行 TLS 交握
-; listen-fd i64: 監聽 socket fd
+; listen-fd fd: 監聽 socket fd
 ; 返回 conn ?tls-server-conn: 連線（nil=失敗）
-tls-server-accept = (listen-fd i64) (conn ?tls-server-conn) {
+tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
     conn = nil
 
     ; 接受 TCP 連線
@@ -3007,8 +3007,8 @@ tls-server-accept = (listen-fd i64) (conn ?tls-server-conn) {
 ; tls-server-listen: 建立監聽 socket
 ; host str: 綁定的 IP 地址
 ; port i64: 監聽埠號
-; 返回 fd i64: 監聽 socket fd（-1=失敗）
-tls-server-listen = (host str, port i64) (fd i64) {
+; 返回 fd fd: 監聽 socket fd（-1=失敗）
+tls-server-listen = (host str, port i64) (fd fd) {
     fd = -1
     fd = net-listen(host, port)
 }

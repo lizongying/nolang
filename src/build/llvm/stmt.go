@@ -1566,6 +1566,13 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 			return g.mapToLLVMType(ft.String())
 		}
 	}
+	// 單具體型別別名解析：若 NamedType 是已註冊的具體型別別名，用底層 Type 遞迴解析
+	// 使 SliceType/ArrayType 等特殊路徑也能正確套用到底層型別
+	if nt, ok := t.(*parser.NamedType); ok && g.concreteTypeAliases != nil {
+		if underlying, ok := g.concreteTypeAliases[nt.Value]; ok {
+			return g.resolveParamLLVMType(underlying)
+		}
+	}
 	// MapType: String() returns [K]V which is ambiguous with [N]T arrays in
 	// string-based dispatch; use LLVMName() to get the hashmap-K-V struct name.
 	if mt, ok := t.(*parser.MapType); ok {
@@ -2250,6 +2257,15 @@ func (g *Generator) lookupMethodReturnType(shortName string) string {
 }
 
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
+	// 單具體型別別名解析：若顯式型別為已註冊的具體型別別名，用底層 Type 遞迴解析
+	// 使 ArrayType/SliceType 等特殊路徑也能正確套用到底層型別
+	if nt, ok := stmt.Type.(*parser.NamedType); ok && g.concreteTypeAliases != nil {
+		if underlying, ok := g.concreteTypeAliases[nt.Value]; ok {
+			unwrapped := *stmt
+			unwrapped.Type = underlying
+			return g.varLLVMType(&unwrapped)
+		}
+	}
 	// Option type: ?type
 	if _, ok := stmt.Type.(*parser.NullableType); ok {
 		return "%option"
@@ -4777,6 +4793,27 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// Propagate element type when assigning a struct field of %vec/%arr type
+	// to a local variable (e.g. `old-keys = .keys` in hashmap.rehash).
+	// Without this, g.arrayElemTypes[name] is unset and subsequent element
+	// access (old-keys[i]) defaults to i64, causing LLVM type mismatch when
+	// the field's element type is %str-long or another heap-owning type.
+	if dot, ok := stmt.Value.(*parser.DotExpression); ok && g.arrayElemTypes != nil {
+		if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+			if recvType, ok := g.varTypes[recvIdent.Value]; ok {
+				structName := strings.TrimPrefix(recvType, "%")
+				if fields, ok := g.structTypes[structName]; ok {
+					for _, f := range fields {
+						if f.name == dot.Property && f.typ == "%vec" {
+							g.arrayElemTypes[name] = f.elemType
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
 
@@ -5974,14 +6011,23 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// pointer (e.g. %conn* from .conns[i]) rather than a loaded value.
 			// Detect this: if val starts with "%" and the option's inner type is a
 			// struct, treat val as a pointer and load the struct value first.
+			// But skip loading if ssaTypes indicates val is already a loaded
+			// struct value (not a pointer) — e.g. from vec element access.
 			if g.optionInnerTypes != nil {
 				if innerType, ok := g.optionInnerTypes[name]; ok && strings.HasPrefix(innerType, "%") {
 					if strings.HasPrefix(val, "%") {
-						// val is a pointer to the struct; load the value
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%opt.struct.load.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, innerType, innerType, val))
-						val = loadReg
+						// Check ssaTypes: if val is registered as the inner type
+						// (without "*"), it's already a loaded value — skip the
+						// redundant load which would cause a type mismatch.
+						ssaType, hasSSA := g.ssaTypes[val]
+						isAlreadyValue := hasSSA && ssaType == innerType
+						if !isAlreadyValue {
+							// val is a pointer to the struct; load the value
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%opt.struct.load.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, innerType, innerType, val))
+							val = loadReg
+						}
 					}
 				}
 			}

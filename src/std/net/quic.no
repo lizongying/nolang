@@ -464,7 +464,7 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
 
 ; quic-conn: QUIC 連線
 quic-conn {
-    fd i64
+    fd fd
     host str
     port i64
     local-cid []byte

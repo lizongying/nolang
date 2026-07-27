@@ -181,6 +181,12 @@ func isConcreteType(typeName string) bool {
 		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") {
 		return true
 	}
+	// 已註冊的單具體型別別名（如 fd）視為具體型別，不再跳過型別檢查
+	if validationConcreteTypeAliases != nil {
+		if _, ok := validationConcreteTypeAliases[typeName]; ok {
+			return true
+		}
+	}
 	return false
 }
 
@@ -199,6 +205,23 @@ func extractArrayElemType(typeStr string) string {
 // populated by ValidateTypes for use in inferExprType when resolving
 // self.field method calls (e.g. .recv-buf.slice()).
 var validationStructFields map[string]map[string]string
+
+// validationConcreteTypeAliases holds single concrete type alias name →
+// underlying type string (e.g. "fd" → "i64"), populated by ValidateTypes.
+// Used to enforce newtype semantics: an alias of a primitive type is
+// mutually exclusive with its underlying type (i64 var cannot be assigned
+// to fd var, and vice versa), with an integer-literal exception
+// (STDIN-FD fd = 0 is allowed). Composite aliases (e.g. bytes=[]byte)
+// are also registered but treated as transparent (no newtype enforcement).
+var validationConcreteTypeAliases map[string]string
+
+// stdConcreteAliases holds single concrete type aliases preloaded from
+// std modules (e.g. "fd" → "i64" from fs.no), populated by
+// preloadModuleSignatures BEFORE ValidateTypes runs. This ensures
+// newtype enforcement works in cross-module scenarios: when vetting
+// io.no (which uses fd but doesn't define it), the fd alias from fs.no
+// is already registered here and merged into validationConcreteTypeAliases.
+var stdConcreteAliases map[string]string
 
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
@@ -745,6 +768,7 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
+	stdConcreteAliases = make(map[string]string) // 跨模組單具體型別別名（預載入）
 
 	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
 	collectSignaturesFromProg := func(modProg *parser.Program) {
@@ -766,6 +790,16 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 					}
 				}
 				structFields[sd.Name] = fields
+			}
+			// 收集單具體型別別名（name = known-type），使 newtype 語義
+			// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
+			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
+				if _, ok := ta.Type.(*parser.FunctionType); !ok {
+					// 僅註冊未與主檔案或已載入模組衝突的別名
+					if _, exists := stdConcreteAliases[ta.Name]; !exists {
+						stdConcreteAliases[ta.Name] = ta.Type.String()
+					}
+				}
 			}
 		}
 	}
@@ -926,6 +960,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if typeErrs := ValidateTypes(program); len(typeErrs) > 0 {
 		var msgs []string
 		for _, e := range typeErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
+	}
+
+	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
+	if funcArgErrs := ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
+		var msgs []string
+		for _, e := range funcArgErrs {
 			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
 		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
@@ -2612,6 +2655,15 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 					Value: intVal,
 				}
 			}
+			// 型別參數替換（值為簡單型別名稱如 "i64"、"str"、"bool"）：
+			// 在表達式語境中跳過。型別參數（如 `v`、`k`）在方法體內作為
+			// 變數名使用，不應被替換為型別名稱（否則 `v = .vals[i]` 會變成
+			// `i64 = .vals[i]`，產生 `%i64` 未定義錯誤）。型別參數僅在型別
+			// 語境中替換（由 substituteType 處理）。
+			// 結構/方法名稱替換（值含連字號或點）仍正常套用。
+			if !strings.Contains(val, "-") && !strings.Contains(val, ".") {
+				return e
+			}
 			// 非整數替換值（如方法名重寫 hashmap-*-tmpl.hash → hashmap-K-V.hash）：保留為 Identifier
 			return &parser.Identifier{
 				Token: e.Token,
@@ -3987,6 +4039,17 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	// 3. 遍歷頂層語句做型別檢查
 	// 收集 struct 定義的欄位型別，供 inferExprType 解析 self.field.method() 接收者型別
 	validationStructFields = collectStructFields(program)
+	// 收集單具體型別別名（name = known-type，非 union、非 function-type），
+	// 供 isConcreteType / isArgTypeCompatible 實施 newtype 語義。
+	// 合併預載入的 std 模組別名（如 fs.no 的 fd=i64），使跨模組 newtype 檢查生效。
+	validationConcreteTypeAliases = collectConcreteTypeAliases(program)
+	if stdConcreteAliases != nil {
+		for k, v := range stdConcreteAliases {
+			if _, exists := validationConcreteTypeAliases[k]; !exists {
+				validationConcreteTypeAliases[k] = v
+			}
+		}
+	}
 	// 先收集所有頂層變數的顯式型別，供跨語句型別推斷使用
 	// （如 `z f64 = 2.0` 之後 `a = z * z` 需知道 z 是 f64）
 	topLevelVarTypes := make(map[string]string)
@@ -7332,6 +7395,30 @@ func collectStructFields(program *parser.Program) map[string]map[string]string {
 	return result
 }
 
+// collectConcreteTypeAliases builds a map from single concrete type alias
+// name to its underlying type string (e.g. "fd" → "i64"). Only aliases of
+// the form `name = known-type` (non-union, non-function-type) are collected.
+// Used by isConcreteType / isArgTypeCompatible to enforce newtype semantics.
+func collectConcreteTypeAliases(program *parser.Program) map[string]string {
+	result := make(map[string]string)
+	for _, stmt := range program.Statements {
+		ta, ok := stmt.(*parser.TypeAlias)
+		if !ok {
+			continue
+		}
+		// Skip union aliases (ta.Union != nil) and function-type aliases
+		// (ta.Type is *parser.FunctionType, handled separately as fnTypeAliases).
+		if ta.Type == nil || ta.Union != nil {
+			continue
+		}
+		if _, ok := ta.Type.(*parser.FunctionType); ok {
+			continue
+		}
+		result[ta.Name] = ta.Type.String()
+	}
+	return result
+}
+
 func resolveSelfInStmt(stmt parser.Statement, selfType string, structFields map[string]map[string]string) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
@@ -7853,9 +7940,24 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 		}
 	}
 
-	// 4. Validate call expressions
+	// 4. Collect top-level variable types (explicit type annotations) so that
+	//    call argument type checking can resolve variable types. This is needed
+	//    for newtype enforcement (e.g. passing an `fd` variable to an `i64`
+	//    parameter must be rejected).
+	topLevelVarTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
-		results = append(results, checkCallArgsInStmt(stmt, sigs, make(map[string]string), structFields)...)
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
+				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
+					topLevelVarTypes[ls.Name.Value] = ls.Type.String()
+				}
+			}
+		}
+	}
+
+	// 5. Validate call expressions
+	for _, stmt := range program.Statements {
+		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields)...)
 	}
 
 	return results
@@ -8177,6 +8279,13 @@ func isNumericType(t string) bool {
 // byte is treated as u8 (0–255).
 // char is treated as a Unicode code point (0–0x10FFFF).
 func intTypeRange(t string) (min, max int64, ok bool) {
+	// 單具體型別別名解析：若 t 是已註冊的整型基礎別名（如 fd → i64），
+	// 遞迴解析到底層型別的整數範圍，使整數字面量例外可正確範圍檢查
+	if validationConcreteTypeAliases != nil {
+		if underlying, exists := validationConcreteTypeAliases[t]; exists {
+			return intTypeRange(underlying)
+		}
+	}
 	switch t {
 	case "i8":
 		return -128, 127, true
@@ -8301,9 +8410,23 @@ func isBitwiseConstructExpr(expr parser.Expression) bool {
 //     operators (& | ^ << >>) and integer literals may be assigned to a
 //     narrower unsigned integer type, since the high-bit truncation is the
 //     intended bit-pattern construction (common in crypto/codec code).
+//   - Newtype enforcement: a single concrete type alias of a primitive
+//     type (e.g. fd=i64) is mutually exclusive with its underlying type.
+//     i64 var → fd and fd var → i64 are rejected. Integer literals cross
+//     the boundary (STDIN-FD fd = 0 is allowed).
 func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
 	if argType == expectedType {
 		return true
+	}
+	// Newtype enforcement: a primitive single concrete type alias and its
+	// underlying type are mutually exclusive. Block i64 var → fd and
+	// fd var → i64 (non-literal cases). Integer literals are allowed to
+	// cross the boundary (handled by the integer literal path below).
+	if isAliasPair(expectedType, argType) {
+		if _, isLit := integerLiteralValue(arg); !isLit {
+			return false
+		}
+		// fall through to integer literal path for range check
 	}
 	// Safe bitwise narrowing (checked early so it takes precedence over
 	// the widening range check below): an expression built solely from
@@ -8360,6 +8483,16 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			}
 		}
 	}
+	// Transparent composite alias: a composite alias (e.g. bytes=[]byte)
+	// is interchangeable with its underlying type — no newtype enforcement.
+	if validationConcreteTypeAliases != nil {
+		if underlying, ok := validationConcreteTypeAliases[expectedType]; ok && underlying == argType {
+			return true
+		}
+		if underlying, ok := validationConcreteTypeAliases[argType]; ok && underlying == expectedType {
+			return true
+		}
+	}
 	// Implicit widening: if both types are integer types and the argType's
 	// range is fully contained within the expectedType's range, allow the
 	// conversion (e.g. byte → i64, u8 → i32, i8 → i64).
@@ -8367,6 +8500,38 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 		if eMin, eMax, eOk := intTypeRange(expectedType); eOk {
 			return aMin >= eMin && aMax <= eMax
 		}
+	}
+	return false
+}
+
+// isSimplePrimitiveTypeName reports whether t is a simple primitive type
+// name (i8/i16/i32/i64/u8/u16/u32/u64/byte/char/bool/f32/f64), as opposed
+// to a composite type string like "[]byte" or "?i64".
+func isSimplePrimitiveTypeName(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+		"byte", "char", "bool", "f32", "f64":
+		return true
+	}
+	return false
+}
+
+// isAliasPair reports whether (a, b) form a newtype pair: one is a
+// registered single concrete type alias of the other, AND the underlying
+// type is a simple primitive. Only primitive aliases enforce newtype
+// semantics (mutual exclusion with their underlying type); composite
+// aliases (e.g. bytes=[]byte) are transparent and return false here.
+func isAliasPair(a, b string) bool {
+	if validationConcreteTypeAliases == nil {
+		return false
+	}
+	// a is alias, b is underlying
+	if underlying, ok := validationConcreteTypeAliases[a]; ok && underlying == b {
+		return isSimplePrimitiveTypeName(underlying)
+	}
+	// b is alias, a is underlying
+	if underlying, ok := validationConcreteTypeAliases[b]; ok && underlying == a {
+		return isSimplePrimitiveTypeName(underlying)
 	}
 	return false
 }
