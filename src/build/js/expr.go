@@ -157,6 +157,10 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 		if js, handled := g.generateModuleCall(de, ce.Arguments); handled {
 			return js
 		}
+		// Check for browser method calls on values (el.set-text(t), ctx.fill-rect(...), etc.)
+		if js, handled := g.generateBrowserMethodCall(de, ce.Arguments); handled {
+			return js
+		}
 		// Regular method/module call: receiver.property(args)
 		receiver := g.generateExpression(de.Receiver)
 		args := g.joinExpressions(ce.Arguments)
@@ -175,18 +179,110 @@ func (g *Generator) generateDotExpression(de *parser.DotExpression) string {
 	if de == nil {
 		return ""
 	}
-	// Module constant mappings (math.PI → Math.PI, os.args → process.argv)
+	// Module constant mappings (math.PI → Math.PI, os.args → process.argv / window.__nolang_args)
 	if ident, ok := de.Receiver.(*parser.Identifier); ok {
 		switch ident.Value {
 		case "math":
 			return "Math." + de.Property
 		case "os":
 			if de.Property == "args" {
+				if g.targetEnv == "browser" {
+					return "(window.__nolang_args || [])"
+				}
 				return "process.argv"
 			}
 		}
 	}
 	return g.generateExpression(de.Receiver) + "." + de.Property
+}
+
+// generateBrowserMethodCall maps browser-style method calls on values
+// (el.set-text(t), ctx.fill-rect(...), etc.) to their JS equivalents.
+// Returns (jsCode, true) when handled; ("", false) otherwise.
+//
+// Only property names in the known browser method set are intercepted; all
+// other dot calls fall through to regular method emission.
+func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []parser.Expression) (string, bool) {
+	if de == nil {
+		return "", false
+	}
+	receiver := g.generateExpression(de.Receiver)
+	argStrs := make([]string, 0, len(args))
+	for _, a := range args {
+		argStrs = append(argStrs, g.generateExpression(a))
+	}
+	joinedArgs := strings.Join(argStrs, ", ")
+
+	switch de.Property {
+	// DOM element methods
+	case "set-text":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").textContent = " + argStrs[0], true
+		}
+	case "get-text":
+		return "(" + receiver + ").textContent", true
+	case "set-html":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").innerHTML = " + argStrs[0], true
+		}
+	case "append-child":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").appendChild(" + argStrs[0] + ")", true
+		}
+	case "remove":
+		return "(" + receiver + ").remove()", true
+	case "set-style":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").style[" + argStrs[0] + "] = " + argStrs[1], true
+		}
+	case "get-style":
+		if len(argStrs) >= 1 {
+			return "getComputedStyle(" + receiver + ")[" + argStrs[0] + "]", true
+		}
+	case "set-attr":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").setAttribute(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+	case "get-attr":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").getAttribute(" + argStrs[0] + ")", true
+		}
+	case "add-event-listener":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").addEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+	case "remove-event-listener":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").removeEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+
+	// Canvas context methods
+	case "fill-rect":
+		return "(" + receiver + ").fillRect(" + joinedArgs + ")", true
+	case "clear-rect":
+		return "(" + receiver + ").clearRect(" + joinedArgs + ")", true
+	case "set-fill":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").fillStyle = " + argStrs[0], true
+		}
+	case "set-stroke":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").strokeStyle = " + argStrs[0], true
+		}
+	case "begin-path":
+		return "(" + receiver + ").beginPath()", true
+	case "move-to":
+		return "(" + receiver + ").moveTo(" + joinedArgs + ")", true
+	case "line-to":
+		return "(" + receiver + ").lineTo(" + joinedArgs + ")", true
+	case "stroke":
+		return "(" + receiver + ").stroke()", true
+	case "fill":
+		return "(" + receiver + ").fill()", true
+	case "arc":
+		return "(" + receiver + ").arc(" + joinedArgs + ")", true
+	}
+	return "", false
 }
 
 // generateSliceExpression handles arr[a..b], arr[..b], arr[a..], arr[..], with bracket variants.

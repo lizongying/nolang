@@ -26,6 +26,10 @@ type Generator struct {
 	targetGoos   string
 	targetGoarch string
 
+	// targetEnv 控制執行環境："node"（預設）或 "browser"。
+	// "browser" 時注入 console 重導向 prelude 並改用 shim 取代 process.*。
+	targetEnv string
+
 	// 縮排層級（每層一個 tab）
 	indentLevel int
 
@@ -52,6 +56,7 @@ func NewGenerator() *Generator {
 	return &Generator{
 		targetGoos:        "js",
 		targetGoarch:      "",
+		targetEnv:         "node",
 		declaredVars:      make(map[string]bool),
 		methodsByReceiver: make(map[string][]*parser.FunctionDefinition),
 	}
@@ -62,6 +67,16 @@ func NewGenerator() *Generator {
 func (g *Generator) SetTargetPlatform(goos, goarch string) {
 	g.targetGoos = goos
 	g.targetGoarch = goarch
+}
+
+// SetTargetEnv 設定執行環境目標："node"（預設）或 "browser"。
+// "browser" 時同時將平台設為 ("js", "browser")，使 #{js-browser} 註解被保留。
+func (g *Generator) SetTargetEnv(env string) {
+	g.targetEnv = env
+	if env == "browser" {
+		g.targetGoos = "js"
+		g.targetGoarch = "browser"
+	}
 }
 
 // indent 回傳目前縮排層級對應的字串（tab）。
@@ -99,6 +114,11 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 	g.inFunctionBody = false
 	g.currentResults = nil
 	g.methodsByReceiver = make(map[string][]*parser.FunctionDefinition)
+
+	// 0. browser prelude：在所有輸出之前注入 console 重導向至 #nolang-output。
+	if g.targetEnv == "browser" {
+		g.writeRaw(browserPrelude)
+	}
 
 	// 1. 平台過濾
 	stmts := filterByPlatform(program.Statements, g.targetGoos, g.targetGoarch)
@@ -162,7 +182,33 @@ var platformKeys = map[string]struct{ goos, goarch string }{
 	"mac-arm64":   {"darwin", "arm64"},
 	"wasi-wasm32": {"wasi", "wasm32"},
 	"js":          {"js", ""},
+	"js-browser":  {"js", "browser"},
 }
+
+// browserPrelude 在 browser 模式下注入於所有輸出之前，將 console.log/error
+// 重導向至 id="nolang-output" 的 DOM 元素。
+const browserPrelude = `// Nolang browser prelude
+(function() {
+    const output = document.getElementById('nolang-output');
+    if (output) {
+        const origLog = console.log;
+        const origErr = console.error;
+        console.log = function(...args) {
+            origLog.apply(console, args);
+            const line = document.createElement('div');
+            line.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+            output.appendChild(line);
+        };
+        console.error = function(...args) {
+            origErr.apply(console, args);
+            const line = document.createElement('div');
+            line.style.color = 'red';
+            line.textContent = args.map(a => String(a)).join(' ');
+            output.appendChild(line);
+        };
+    }
+})();
+`
 
 // stmtAnnotations 從敘述中抽取平台註解。
 func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {

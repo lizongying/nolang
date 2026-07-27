@@ -119,6 +119,8 @@ type Generator struct {
 	movedVarBitset         []uint64                         // compile-time moved bitmap (used when no runtime bitmap)
 	movedBitmapBase        string                           // LLVM bitmap var name prefix (e.g. "%__mb", "" = not allocated)
 	bitmapCount            int                              // number of u64 bitmap blocks (= maxVarIdx/64 + 1)
+	stmtTemporaries        []string                         // statement-level temporary %str-long* pointers (heap-allocated data) to free at statement end
+	localTasks             []string                         // task variable names created via `run` in current function but not yet awy'd (for SubTask 2.3 cleanup)
 	// === 返回值延遲零值初始化追蹤 ===
 	// 與 move bitmap 對稱：追蹤 out 參數是否被顯式賦值，未賦值者在 return 時補零。
 	retInitBitmapVar       string                           // LLVM bitmap var name (e.g. "%__ret_init_bitmap", "" = not allocated)

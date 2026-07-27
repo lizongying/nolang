@@ -5823,6 +5823,9 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 
+	// 注册为语句级临时堆对象：若未绑定变量，由 generateStatement 在语句结束前 free data。
+	// 若被 generateLet 绑定到变量，untrackStmtTemporary 会移除（由 heapVars 接管）。
+	g.stmtTemporaries = append(g.stmtTemporaries, resultAlloca)
 	return resultAlloca
 }
 
@@ -5936,6 +5939,8 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 
+	// 注册为语句级临时堆对象：若未绑定变量，由 generateStatement 在语句结束前 free data。
+	g.stmtTemporaries = append(g.stmtTemporaries, resultAlloca)
 	return resultAlloca
 }
 
@@ -6246,27 +6251,21 @@ func (g *Generator) generateFutureCreation(sb *strings.Builder, call *parser.Cal
 }
 
 // allocForCoro allocates memory for a value of the given LLVM type.
-// In coroutine context (g.coroInAsyncFunc), uses malloc (heap) because the
-// allocation must survive across yield points (coro_resume returns at yield,
-// destroying its stack frame). Otherwise uses alloca (stack) for efficiency.
+// 始终使用 malloc（堆分配）：task/args/result 入队后必须在函数返回后存活，
+// 否则函数返回后栈帧销毁，task 指针留在全局就绪队列成为悬垂指针（UAF）。
+// 即使在非 async 上下文（coroInAsyncFunc=false）也必须用 malloc，
+// awy 取回结果后或函数返回前由 emitLocalTasksFree / awaitTaskVar 释放。
 // Returns the LLVM register name for the allocated pointer.
 func (g *Generator) allocForCoro(sb *strings.Builder, namePrefix, llvmType string, size int64) string {
 	g.tmpIdx++
-	if g.coroInAsyncFunc {
-		memReg := fmt.Sprintf("%%heap.%s.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), memReg, size))
-		}
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%heap.%s.cast.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), ptrReg, memReg, llvmType))
-		}
-		return ptrReg
-	}
-	ptrReg := fmt.Sprintf("%%%s.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
+	memReg := fmt.Sprintf("%%heap.%s.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), ptrReg, llvmType))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), memReg, size))
+	}
+	g.tmpIdx++
+	ptrReg := fmt.Sprintf("%%heap.%s.cast.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), ptrReg, memReg, llvmType))
 	}
 	return ptrReg
 }
@@ -6651,6 +6650,39 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	if g.ssaTypes != nil {
 		g.ssaTypes[resultVal] = resultType
 	}
+
+	// 释放 task/args/result 堆容器（SubTask 2.2）。
+	// 仅 free 容器结构体本身（malloc 的 %task / args struct / result buffer），
+	// 不 free 容器内 data 指针指向的缓冲区：
+	//   - result buffer 内的 data 由调用端结果变量（如 s = awy task 中的 s）接管，
+	//     经 trackLocalHeapVar 追踪，函数结束由 emitHeapFree 释放。
+	//   - args struct 内的 arg 指针指向 cloneBuf（Identifier 堆参数深拷贝）或
+	//     generateCallArg 分配的 temp。cloneBuf 可能被 async 函数 move 到 out 参数，
+	//     释放会导致 out 参数堆数据 UAF（与 prepareAsyncCall 注释一致）。
+	//     故 cloneBuf 不在此释放，作为已知泄漏留待后续处理。
+	// 释放顺序：result buffer → args struct → task struct（先释放被引用者）。
+	if sb != nil {
+		// 1. free result buffer (result_ptr，仅容器)
+		g.tmpIdx++
+		freeResultReg := fmt.Sprintf("%%awy.free.result.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n", g.indent(), freeResultReg, resultPtr))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeResultReg))
+
+		// 2. free args struct (dataVal 即 args_ptr i8*，仅容器)
+		g.tmpIdx++
+		freeArgsReg := fmt.Sprintf("%%awy.free.args.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n", g.indent(), freeArgsReg, dataVal))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeArgsReg))
+
+		// 3. free task struct (taskPtr，仅容器)
+		g.tmpIdx++
+		freeTaskReg := fmt.Sprintf("%%awy.free.task.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), freeTaskReg, taskPtr))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeTaskReg))
+	}
+
+	// 标记该 task 变量已 awy，从 localTasks 移除（SubTask 2.3 追踪用）
+	g.untrackLocalTask(varName)
 
 	return resultVal
 }

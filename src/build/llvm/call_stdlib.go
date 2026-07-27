@@ -3106,5 +3106,7 @@ func (g *Generator) concatStrLongPtrs(sb *strings.Builder, leftPtr, rightPtr str
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 
+	// 注册为语句级临时堆对象：若未绑定变量，由 generateStatement 在语句结束前 free data。
+	g.stmtTemporaries = append(g.stmtTemporaries, resultAlloca)
 	return resultAlloca
 }

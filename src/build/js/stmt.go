@@ -264,7 +264,7 @@ func (g *Generator) generateMethod(fd *parser.FunctionDefinition) {
 		}
 		params = append(params, p.Name)
 	}
-	g.writeLine(methodName + "(" + strings.Join(params, ", ") + ") {")
+	g.writeLine(asyncPrefix(methodName) + methodName + "(" + strings.Join(params, ", ") + ") {")
 	g.indentLevel++
 
 	// Alias the receiver name to `this` so body references (self.field / self) map to this.
@@ -323,7 +323,7 @@ func (g *Generator) generateFunctionDefinition(fd *parser.FunctionDefinition) {
 	for _, p := range fd.Parameters {
 		params = append(params, p.Name)
 	}
-	g.writeLine("function " + fd.Name + "(" + strings.Join(params, ", ") + ") {")
+	g.writeLine(asyncPrefix(fd.Name) + "function " + fd.Name + "(" + strings.Join(params, ", ") + ") {")
 	g.indentLevel++
 
 	// Save and reset declaredVars for function-local scope tracking.
@@ -571,4 +571,13 @@ func (g *Generator) generateStmtInline(stmt parser.Statement) string {
 // This is a convenience for IterRange.RangeStr which holds the raw string value.
 func (g *Generator) generateStringLiteralValue(s string) string {
 	return "\"" + escapeJSString(s) + "\""
+}
+
+// asyncPrefix 回傳 "async " 當函式/方法名以 "-async" 結尾，否則回傳空字串。
+// 命名慣例：以 -async 結尾的函式會發射為 JS async function。
+func asyncPrefix(name string) string {
+	if strings.HasSuffix(name, "-async") {
+		return "async "
+	}
+	return ""
 }

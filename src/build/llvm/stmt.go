@@ -263,6 +263,96 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	}
 }
 
+// trackLocalTask 记录函数内通过 `task = run ...` 创建的本地 task 变量名，
+// 用于函数返回前清理未 awy 的 task（SubTask 2.3）。
+// 仅在非 coro 上下文追踪（coro 上下文的 task 生命周期由状态机管理）。
+func (g *Generator) trackLocalTask(varName string) {
+	if g.coroInAsyncFunc {
+		return
+	}
+	g.localTasks = append(g.localTasks, varName)
+}
+
+// untrackLocalTask 将已 awy 的 task 变量从 localTasks 移除，
+// 避免函数返回前重复 free（SubTask 2.2 已在 awaitTaskVar 中 free）。
+func (g *Generator) untrackLocalTask(varName string) {
+	for i, name := range g.localTasks {
+		if name == varName {
+			g.localTasks = append(g.localTasks[:i], g.localTasks[i+1:]...)
+			return
+		}
+	}
+}
+
+// emitLocalTasksFree 在函数返回前清理未 awy 的本地 task（SubTask 2.3）。
+// 对每个未 awy 的 task：
+//   - 检查 done 标志（field 2）
+//   - 若 done=true：task 已执行完毕，安全 free task/args/result 容器
+//   - 若 done=false：task 可能仍在事件循环队列中，不可安全 free（跳过，泄漏但无 UAF）
+//
+// 仅 free 容器结构体本身，不 free 容器内 data 指针（与 awaitTaskVar 释放逻辑一致）。
+func (g *Generator) emitLocalTasksFree(sb *strings.Builder) {
+	if len(g.localTasks) == 0 {
+		return
+	}
+	for _, varName := range g.localTasks {
+		// 加载 %task* 从变量 alloca
+		taskVarAddr := g.varAddr(varName)
+		g.tmpIdx++
+		taskPtr := fmt.Sprintf("%%ltask.ptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load %%task*, %%task** %s\n", g.indent(), taskPtr, taskVarAddr))
+
+		// 检查 done (field 2)
+		g.tmpIdx++
+		doneGEP := fmt.Sprintf("%%ltask.dgep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), doneGEP, taskPtr))
+		g.tmpIdx++
+		doneVal := fmt.Sprintf("%%ltask.dval.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i1, i1* %s\n", g.indent(), doneVal, doneGEP))
+
+		// 标签名使用不同前缀避免与寄存器名冲突（LLVM 寄存器和标签共享命名空间）
+		doneLabel := fmt.Sprintf("ltask.dlbl.%d", g.tmpIdx)
+		skipLabel := fmt.Sprintf("ltask.slbl.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), doneVal, doneLabel, skipLabel))
+
+		// done: free task/args/result 容器
+		sb.WriteString(doneLabel + ":\n")
+		// 加载 args_ptr (field 1)
+		g.tmpIdx++
+		argsGEP := fmt.Sprintf("%%ltask.agep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), argsGEP, taskPtr))
+		argsPtr := g.loadDataPtrField(sb, argsGEP)
+
+		// 加载 result_ptr (args field 0)
+		g.tmpIdx++
+		argsTyped := fmt.Sprintf("%%ltask.atyped.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to { i8* }*\n", g.indent(), argsTyped, argsPtr))
+		g.tmpIdx++
+		resultPtrGEP := fmt.Sprintf("%%ltask.rpgep.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds { i8* }, { i8* }* %s, i32 0, i32 0\n", g.indent(), resultPtrGEP, argsTyped))
+		g.tmpIdx++
+		resultPtr := fmt.Sprintf("%%ltask.rptr.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), resultPtr, resultPtrGEP))
+
+		// free result buffer (仅容器)
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), resultPtr))
+
+		// free args struct (仅容器)
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), argsPtr))
+
+		// free task struct (仅容器)
+		g.tmpIdx++
+		freeTaskCast := fmt.Sprintf("%%ltask.ftask.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), freeTaskCast, taskPtr))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeTaskCast))
+
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+
+		// skip: task 未完成，不可安全 free
+		sb.WriteString(skipLabel + ":\n")
+	}
+}
+
 // emitGlobalHeapFree 釋放模組級堆變數（LLVM globals，如 @vec、@str）。
 // 這些變數由 generateMainFunction 的 top-level 語句初始化（malloc data），
 // 但不在 heapVars 中（因 trackLocalHeapVar 跳過 globalVars），
@@ -1722,6 +1812,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.heapVars = make(map[string]string)                      // reset heap var tracking
 	g.stackArrVars = make(map[string]bool)                    // reset stack-allocated array tracking
 	g.varAlias = make(map[string]string)                      // reset var alias tracking (用於 %arr → %vec 重定向)
+	g.localTasks = nil                                        // reset local task tracking (SubTask 2.3)
 	g.taskResultTypes = make(map[string]string)               // reset task result types for each function
 	g.futureResultTypes = make(map[string]string)             // reset future result types for each function
 	// 重置 arrayElemTypes 並恢復模組級元素型別，避免函數參數（如 rsa.no bn-add 的 c []i64）
@@ -1760,9 +1851,16 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				g.varFnTypes[p.Name] = ft
 			}
 		}
-		// 陣列型輸入參數需註冊元素型別，供後續索引賦值/讀取使用
+		// 陣列型輸入參數需註冊元素型別與大小，供後續索引賦值/讀取及
+		// genTypedArg 中 %arr → [N x T]* 參數轉換使用（缺 arraySizes 會 fallback
+		// 為 %arr* 直接傳遞，導致被調用函數寫入 struct 本身而非 data 緩衝區）。
 		if at, ok := p.Type.(*parser.ArrayType); ok && at.Elem != nil {
 			g.arrayElemTypes[p.Name] = g.mapToLLVMType(at.Elem.String())
+			if v, ok := g.constFoldInt(at.Size); ok {
+				g.arraySizes[p.Name] = v
+			} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+				g.arraySizes[p.Name] = intLit.Value
+			}
 		}
 		// 切片型輸入參數也需註冊元素型別，供 IndexExpression 使用正確型別
 		if st, ok := p.Type.(*parser.SliceType); ok && st.Elem != nil {
@@ -1789,9 +1887,15 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
 			}
-			// 陣列型結果參數需註冊元素型別，供後續索引賦值/讀取使用
+			// 陣列型結果參數需註冊元素型別與大小，供後續索引賦值/讀取及
+			// genTypedArg 中 %arr → [N x T]* 參數轉換使用（out 傳給其他函數時需正確提取 data 指標）。
 			if at, ok := r.Type.(*parser.ArrayType); ok && at.Elem != nil {
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(at.Elem.String())
+				if v, ok := g.constFoldInt(at.Size); ok {
+					g.arraySizes[r.Name] = v
+				} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+					g.arraySizes[r.Name] = intLit.Value
+				}
 			}
 			// 切片型結果參數也需註冊元素型別，供 IndexExpression 使用正確型別
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
@@ -2106,6 +2210,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	if returnType == "void" {
 		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
+		g.emitLocalTasksFree(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		sb.WriteString(g.indent() + "ret void\n")
@@ -2113,6 +2218,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		// 有輸出參數但無顯式 return：載入輸出參數並返回
 		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
+		g.emitLocalTasksFree(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		resultName := fd.Results[0].Name
@@ -2147,6 +2253,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	g.heapVars = make(map[string]string)
 	g.heapVarIndex = make(map[string]int)
 	g.nextHeapVarIdx = 0
+	g.localTasks = nil // reset local task tracking for main function (SubTask 2.3)
 	g.movedVarBitset = nil
 	g.movedBitmapBase = ""
 	g.hasBranchMove = false
@@ -2335,6 +2442,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	}
 	// 釋放 top-level 堆變數（模組級 vec/str/arr 等），避免長期運行服務的記憶體泄漏。
 	// 同時釋放 top-level 局部堆變數（非 globalVars 的局部）。
+	g.emitLocalTasksFree(sb)
 	g.emitHeapFree(sb)
 	g.emitGlobalHeapFree(sb)
 	sb.WriteString(g.indent() + "ret i32 0\n")
@@ -3574,6 +3682,9 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 }
 
 func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement) {
+	// 清空语句级临时堆对象列表：每个语句独立管理自己的临时对象，
+	// 循环体内每次迭代的语句都会清空+注册+释放，不会累积。
+	g.stmtTemporaries = nil
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.generateLet(sb, s)
@@ -3644,6 +3755,7 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	case *parser.ReturnStatement:
 		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
+		g.emitLocalTasksFree(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
 		if s.ReturnValue != nil {
@@ -3670,6 +3782,46 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 			sb.WriteString(g.indent() + "ret void\n")
 		}
 		g.blockTerminated = true
+	}
+	// 语句结束前释放未绑定变量的临时堆对象（如 str 拼接结果）。
+	// 只 free data buffer，不 free 结构体本身（alloca 栈分配）。
+	// 若 block 已终止（ret/br），无法继续发射指令，跳过释放；
+	// 被返回值消费的临时对象所有权已转移给调用者，不应释放。
+	g.emitStmtTemporariesFree(sb)
+}
+
+// emitStmtTemporariesFree 释放当前语句注册的临时 %str-long* 堆对象。
+// 对每个临时指针，load 其 data 字段（field 2），NULL check 后 call @free。
+// 不 free 结构体本身（alloca 栈分配）。
+// 若 block 已终止，跳过释放（避免在 ret/br 后发射指令）。
+func (g *Generator) emitStmtTemporariesFree(sb *strings.Builder) {
+	if len(g.stmtTemporaries) == 0 {
+		g.stmtTemporaries = nil
+		return
+	}
+	// block 已终止（如 return/break/continue），无法继续发射指令。
+	// 被返回值消费的临时对象所有权已转移；break/continue 语句本身不产生临时对象。
+	if g.blockTerminated {
+		g.stmtTemporaries = nil
+		return
+	}
+	for _, tmp := range g.stmtTemporaries {
+		// %str-long = { i64 len, i64 cap, i8* data }，data 在 field 2
+		// emitShallowDataFree 会 GEP field 2 → load i8* → NULL check → free
+		g.emitShallowDataFree(sb, tmp, "%str-long", 2)
+	}
+	g.stmtTemporaries = nil
+}
+
+// untrackStmtTemporary 从 stmtTemporaries 列表移除指定临时指针。
+// 用于 generateLet 中 RHS 求值结果绑定到变量时：变量通过 heapVars/trackLocalHeapVar
+// 接管 data 所有权，临时对象不再由语句级释放机制 free（避免 double-free）。
+func (g *Generator) untrackStmtTemporary(val string) {
+	for i, t := range g.stmtTemporaries {
+		if t == val {
+			g.stmtTemporaries = append(g.stmtTemporaries[:i], g.stmtTemporaries[i+1:]...)
+			return
+		}
 	}
 }
 
@@ -4571,6 +4723,14 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
 
+	// 追踪通过 `task = run ...` 创建的本地 task 变量（SubTask 2.3）。
+	// 仅追踪非合成 let（合成为 match arm 注入，不含 run）。
+	if !stmt.IsSynthetic {
+		if _, isRun := stmt.Value.(*parser.RunExpression); isRun {
+			g.trackLocalTask(name)
+		}
+	}
+
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
 	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串，無法映射到真實的 LLVM 型別。
 	// 為了避免嘗試將 ?file option 的內部 struct 指標存入 i64* 而產生型別衝突，
@@ -5006,6 +5166,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
+
+	// 若 RHS 求值产生了语句级临时堆对象（如 str 拼接结果），
+	// 变量将通过 trackLocalHeapVar/heapVars 接管 data 所有权，
+	// 从 stmtTemporaries 移除以避免语句结束时的 double-free。
+	// 非临时对象（字符串字面量、已有变量等）不在列表中，移除为 no-op。
+	g.untrackStmtTemporary(val)
 
 	// 一般情況：在 RHS 求值後釋放舊值，避免 `x = f(x)` 造成 use-after-free。
 	// 型別特定分支（SliceLiteral）已在進入分支前釋放並設置 oldValFreed。
@@ -6120,6 +6286,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				}
 			}
 			val := g.generateExprWithSB(sb, stmt.Value)
+			// option 接管 data 所有权（copyToData 会 load 并存储到 heap box），移除临时追踪
+			g.untrackStmtTemporary(val)
 			copyToData(val)
 		}
 
@@ -6182,6 +6350,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		storeTag(0)
 		if _, isStr := stmt.Value.(*parser.StringLiteral); isStr {
 			srcPtr := g.generateExprWithSB(sb, stmt.Value)
+			// copyStrToData 会 load %str-long 并存入 heap box（共享 data 指针），移除临时追踪
+			g.untrackStmtTemporary(srcPtr)
 			copyStrToData(srcPtr)
 		} else if g.isStringExpr(stmt.Value) {
 			// String expression: obtain a pointer to the %str-long value and let
@@ -6193,10 +6363,14 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			if srcPtr == "" {
 				srcPtr = g.generateExprWithSB(sb, stmt.Value)
 			}
+			// copyStrToData 会 load %str-long 并存入 heap box（共享 data 指针），移除临时追踪
+			g.untrackStmtTemporary(srcPtr)
 			copyStrToData(srcPtr)
 		} else {
 			val := g.generateExprWithSB(sb, stmt.Value)
 			val = g.stripLLVMType(val)
+			// option 接管值（含 str data 指针），移除临时追踪避免 double-free
+			g.untrackStmtTemporary(val)
 			// For struct inner types (e.g. ?conn), generateExprWithSB may return a
 			// pointer (e.g. %conn* from .conns[i]) rather than a loaded value.
 			// Detect this: if val starts with "%" and the option's inner type is a

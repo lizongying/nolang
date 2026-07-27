@@ -116,6 +116,26 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		return "", false
 
 	case "os":
+		if g.targetEnv == "browser" {
+			switch method {
+			case "exit":
+				return "throw new Error(\"__nolang_exit:\" + " + joinedArgs + ")", true
+			case "get-env":
+				return "(window.__nolang_env || {})[" + joinedArgs + "]", true
+			case "set-env":
+				if len(args) >= 2 {
+					return "(window.__nolang_env = window.__nolang_env || {})[" + argStrs[0] + "] = " + argStrs[1], true
+				}
+				return "", false
+			case "get-wd":
+				return "location.href", true
+			case "get-pid":
+				return "0", true
+			case "args":
+				return "(window.__nolang_args || [])", true
+			}
+			return "", false
+		}
 		switch method {
 		case "exit":
 			return "process.exit(" + joinedArgs + ")", true
@@ -231,6 +251,132 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		case "abs":
 			if len(args) == 1 {
 				return "Math.abs(" + argStrs[0] + ")", true
+			}
+		}
+		return "", false
+
+	case "dom":
+		switch method {
+		case "get-element-by-id":
+			if len(args) >= 1 {
+				return "document.getElementById(" + argStrs[0] + ")", true
+			}
+		case "query-selector":
+			if len(args) >= 1 {
+				return "document.querySelector(" + argStrs[0] + ")", true
+			}
+		case "create-element":
+			if len(args) >= 1 {
+				return "document.createElement(" + argStrs[0] + ")", true
+			}
+		case "body":
+			return "document.body", true
+		}
+		return "", false
+
+	case "events":
+		switch method {
+		case "on-click":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").addEventListener('click', " + argStrs[1] + ")", true
+			}
+		case "on-load":
+			if len(args) >= 1 {
+				return "window.addEventListener('load', " + argStrs[0] + ")", true
+			}
+		}
+		return "", false
+
+	case "canvas":
+		switch method {
+		case "get-context-2d":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").getContext('2d')", true
+			}
+		case "get-width":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").width", true
+			}
+		case "get-height":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").height", true
+			}
+		}
+		return "", false
+
+	case "storage":
+		switch method {
+		case "set-item":
+			if len(args) >= 2 {
+				return "localStorage.setItem(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "get-item":
+			if len(args) >= 1 {
+				return "localStorage.getItem(" + argStrs[0] + ")", true
+			}
+		case "remove-item":
+			if len(args) >= 1 {
+				return "localStorage.removeItem(" + argStrs[0] + ")", true
+			}
+		case "clear":
+			return "localStorage.clear()", true
+		}
+		return "", false
+
+	case "location":
+		switch method {
+		case "href":
+			return "location.href", true
+		case "search":
+			return "location.search", true
+		case "path":
+			return "location.pathname", true
+		case "host":
+			return "location.host", true
+		case "redirect":
+			if len(args) >= 1 {
+				return "location.href = " + argStrs[0], true
+			}
+		}
+		return "", false
+
+	case "history":
+		switch method {
+		case "back":
+			return "history.back()", true
+		case "forward":
+			return "history.forward()", true
+		case "push":
+			if len(args) >= 1 {
+				return "history.pushState({}, '', " + argStrs[0] + ")", true
+			}
+		case "length":
+			return "history.length", true
+		}
+		return "", false
+
+	case "animation":
+		switch method {
+		case "request-frame":
+			if len(args) >= 1 {
+				return "requestAnimationFrame(" + argStrs[0] + ")", true
+			}
+		case "cancel-frame":
+			if len(args) >= 1 {
+				return "cancelAnimationFrame(" + argStrs[0] + ")", true
+			}
+		}
+		return "", false
+
+	case "fetch":
+		switch method {
+		case "async":
+			if len(args) >= 1 {
+				return "fetch(" + argStrs[0] + ").then(function(r) { return r.text(); })", true
+			}
+		case "json-async":
+			if len(args) >= 1 {
+				return "fetch(" + argStrs[0] + ").then(function(r) { return r.json(); })", true
 			}
 		}
 		return "", false

@@ -103,6 +103,7 @@ type BuildOptions struct {
 	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
 	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
 	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
+	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
 }
 
 // parseTargetPlatform extracts (goos, goarch) from a target triple.
@@ -621,10 +622,34 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 	// 3. JS 後端 codegen（型別擦除）
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
+	envMode := "node"
+	if opts.BrowserMode {
+		g.SetTargetEnv("browser")
+		envMode = "browser"
+	}
 	if opts.Verbose {
-		fmt.Fprintf(os.Stderr, "[js] target: js (type erasure)\n")
+		fmt.Fprintf(os.Stderr, "[js] target: js (type erasure), env: %s\n", envMode)
 	}
 	return g.Generate(program)
+}
+
+// BuildJSBrowser compiles Nolang source to browser-targeted JS and an HTML wrapper.
+// Returns (jsCode, htmlCode, error). The HTML references the JS file by name (basename only).
+func BuildJSBrowser(inputPath string, opts BuildOptions, jsFileName string) (jsCode, htmlCode string, err error) {
+	opts.BrowserMode = true
+	jsCode, err = BuildJS(inputPath, opts)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Determine title from package name or filename
+	title := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+	if pkg, perr := LoadPackage(filepath.Dir(inputPath)); perr == nil && pkg != nil && pkg.Name != "" {
+		title = pkg.Name
+	}
+
+	htmlCode = js.RenderHTML(title, jsFileName)
+	return jsCode, htmlCode, nil
 }
 
 // LoadWorkspaceFile reads and parses a standalone workspace.jsonc file from the given directory.
