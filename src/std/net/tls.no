@@ -886,15 +886,11 @@ tls-conn.send-finished = () (ok bool) {
         hs-hash[i] = hs-hash-arr[i]
     }
 
-    io.errln('[TLS-CLI] send-fin: hs-buf-len=' - .hs-buf-len.to-str())
-    io.errln('[TLS-CLI] send-fin: hash0=' - (hs-hash-arr[0] & 255).to-str() - ' hash1=' - (hs-hash-arr[1] & 255).to-str() - ' hash2=' - (hs-hash-arr[2] & 255).to-str() - ' hash3=' - (hs-hash-arr[3] & 255).to-str())
-    io.errln('[TLS-CLI] send-fin: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ; verify_data = PRF(master, "client finished", hash, 12)
     verify []byte
     verify = tls-prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
-    io.errln('[TLS-CLI] send-fin: v0=' - (verify[0] & 255).to-str() - ' v1=' - (verify[1] & 255).to-str() - ' v2=' - (verify[2] & 255).to-str())
 
     ; 構建 Finished 訊息
     hs-len = 4 + TLS-FINISHED-SIZE
@@ -936,19 +932,16 @@ tls-conn.read-finished = () (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
-    io.errln('[TLS-CLI] read-fin: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-APP-DATA -> return
 
     ; 解密
     plain []byte
     d-ct = 0
     d-ct, plain = .decrypt-record(buf, TLS-CT-HANDSHAKE)
-    io.errln('[TLS-CLI] read-fin: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
     msg-type = plain[0] & 255
-    io.errln('[TLS-CLI] read-fin: msg-type=' - msg-type.to-str())
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 server Finished）
@@ -959,21 +952,15 @@ tls-conn.read-finished = () (ok bool) {
         hs-hash[i] = hs-hash-arr[i]
     }
 
-    io.errln('[TLS-CLI] read-fin: hs-buf-len=' - .hs-buf-len.to-str())
-    io.errln('[TLS-CLI] read-fin: hash0=' - (hs-hash-arr[0] & 255).to-str() - ' hash1=' - (hs-hash-arr[1] & 255).to-str() - ' hash2=' - (hs-hash-arr[2] & 255).to-str() - ' hash3=' - (hs-hash-arr[3] & 255).to-str())
-    io.errln('[TLS-CLI] read-fin: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
-    io.errln('[TLS-CLI] read-fin: plain4=' - (plain[4] & 255).to-str() - ' plain5=' - (plain[5] & 255).to-str() - ' plain6=' - (plain[6] & 255).to-str())
 
     verify []byte
     verify = tls-prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
-    io.errln('[TLS-CLI] read-fin: v0=' - (verify[0] & 255).to-str() - ' v1=' - (verify[1] & 255).to-str() - ' v2=' - (verify[2] & 255).to-str())
 
     i <- [0..TLS-FINISHED-SIZE): {
         b1 = plain[4 + i] & 255
         b2 = verify[i] & 255
         b1 != b2 -> {
-            io.errln('[TLS-CLI] read-fin: verify mismatch at ' - i.to-str())
             return
         }
     }
@@ -1003,8 +990,6 @@ tls-conn.derive-keys = (premaster []byte) {
 
     .master-secret = tls-prf(premaster, 'master secret', seed, 48)
 
-    io.errln('[TLS-CLI] derive: cr0=' - (.client-random[0] & 255).to-str() - ' cr1=' - (.client-random[1] & 255).to-str() - ' sr0=' - (.server-random[0] & 255).to-str() - ' sr1=' - (.server-random[1] & 255).to-str())
-    io.errln('[TLS-CLI] derive: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ; key_block = PRF(master, "key expansion", server_random + client_random, 96)
     ; 96 = 2*MAC_KEY + 2*ENC_KEY (no IVs in TLS 1.2 CBC)
@@ -1972,7 +1957,6 @@ tls-conn.connect = (host str, port i64) (ok bool) {
             premaster[2 + i] = rand-bytes[i]
         }
 
-        io.errln('[TLS-CLI] premaster: p0=' - (premaster[0] & 255).to-str() - ' p1=' - (premaster[1] & 255).to-str() - ' p2=' - (premaster[2] & 255).to-str() - ' p3=' - (premaster[3] & 255).to-str())
 
         ; 7. 推導金鑰
         .derive-keys(premaster)
@@ -2065,11 +2049,9 @@ tls-conn.send = (data str) (written ?i64) {
 tls-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .connected == false -> {
-        io.errln('[TLS-CLI] recv: not connected')
         return
     }
     .encrypted == false -> {
-        io.errln('[TLS-CLI] recv: not encrypted')
         return
     }
 
@@ -2085,11 +2067,9 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
             r-ct = 0
             rlen = 0
             r-ct, rlen = tls-read-record(.fd, rec)
-            io.errln('[TLS-CLI] recv13: r-ct=' - r-ct.to-str() - ' rlen=' - rlen.to-str())
             r-ct < 0 -> return
             d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
             .ap-read-seq = .ap-read-seq + 1
-            io.errln('[TLS-CLI] recv13: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
             d-ct < 0 -> return
 
             ; 處理 alert
@@ -2101,10 +2081,8 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
             ct = 0
             rlen = 0
             ct, rlen = tls-read-record(.fd, rec)
-            io.errln('[TLS-CLI] recv12: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
             ct < 0 -> return
             d-ct, plain = .decrypt-record(rec, TLS-CT-APP-DATA)
-            io.errln('[TLS-CLI] recv12: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
             d-ct < 0 -> return
         }
     }
@@ -2116,7 +2094,6 @@ tls-conn.recv = (buf str, n i64) (read-n i64) {
         buf[i] = plain[i]
     }
     read-n = copy-n
-    io.errln('[TLS-CLI] recv: read-n=' - read-n.to-str())
 }
 
 ; close: 關閉 TLS 連線
@@ -2141,9 +2118,7 @@ tls-dial = (host str, port i64) (conn ?tls-conn) {
     conn = nil
     c = tls-conn{}
     c.init()
-    io.errln('[TLS-CLI] dial: calling connect')
     ok = c.connect(host, port)
-    io.errln('[TLS-CLI] dial: connect returned ' - ok.to-str())
     ok == false -> {
         c.close()
         return
@@ -2442,19 +2417,16 @@ tls-server-conn.read-client-key-exchange = () (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
-    io.errln('[TLS-SRV] cke: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-HANDSHAKE -> return
 
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientKeyExchange
     msg-type = buf[5] & 255
-    io.errln('[TLS-SRV] cke: msg-type=' - msg-type.to-str())
     msg-type != TLS-HS-CLIENT-KEY-EXCHANGE -> return
 
     ; encrypted premaster length (2 bytes)
     enc-len = tls-get-u16(buf, 9)
-    io.errln('[TLS-SRV] cke: enc-len=' - enc-len.to-str())
 
     ; 提取加密的 premaster
     enc-premaster []byte = with-len(enc-len)
@@ -2466,9 +2438,7 @@ tls-server-conn.read-client-key-exchange = () (ok bool) {
     ; RSA 解密
     premaster []byte
     premaster = tls-rsa-pkcs1-decrypt(enc-premaster, .n-bytes, .d-bytes)
-    io.errln('[TLS-SRV] cke: premaster.len=' - premaster.len.to-str())
     premaster.len == 0 -> return
-    io.errln('[TLS-SRV] premaster: p0=' - (premaster[0] & 255).to-str() - ' p1=' - (premaster[1] & 255).to-str() - ' p2=' - (premaster[2] & 255).to-str() - ' p3=' - (premaster[3] & 255).to-str())
 
     ; premaster 應為 48 bytes，且前 2 bytes 為版本 0x0303
     premaster.len < 48 -> return
@@ -2482,7 +2452,6 @@ tls-server-conn.read-client-key-exchange = () (ok bool) {
 
     ; 推導金鑰
     .derive-keys(fixed-premaster)
-    io.errln('[TLS-SRV] cke: derive-keys done ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ok = true
 }
@@ -2502,8 +2471,6 @@ tls-server-conn.derive-keys = (premaster []byte) {
 
     .master-secret = tls-prf(premaster, 'master secret', seed, 48)
 
-    io.errln('[TLS-SRV] derive: cr0=' - (.client-random[0] & 255).to-str() - ' cr1=' - (.client-random[1] & 255).to-str() - ' sr0=' - (.server-random[0] & 255).to-str() - ' sr1=' - (.server-random[1] & 255).to-str())
-    io.errln('[TLS-SRV] derive: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
 
     ; key_block = PRF(master, "key expansion", server_random + client_random, 96)
     ks []byte = with-len(64)
@@ -2623,7 +2590,6 @@ tls-server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []by
     ct = -1
 
     rlen i64 = tls-get-u16(buf, 3)
-    io.errln('[TLS-SRV] dec: rlen=' - rlen.to-str())
     rlen < 16 -> return
 
     ; 提取 IV
@@ -2643,16 +2609,13 @@ tls-server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []by
     ; AES-128-CBC 解密
     plain []byte
     plain = aes-cbc.aes-128-cbc-dec(cipher, .client-enc-key, iv)
-    io.errln('[TLS-SRV] dec: plain.len=' - plain.len.to-str())
 
     ; 移除 PKCS#7 填充
     unpad-n i64 = aes-cbc.pkcs7-unpad(plain)
-    io.errln('[TLS-SRV] dec: unpad-n=' - unpad-n.to-str())
     unpad-n < 0 -> return
 
     ; 明文 = data(0..unpad-n-32) + MAC(unpad-n-32..unpad-n)
     data-len = unpad-n - 32
-    io.errln('[TLS-SRV] dec: data-len=' - data-len.to-str())
     data-len < 0 -> return
 
     ; 驗證 MAC
@@ -2679,7 +2642,6 @@ tls-server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []by
         b2 = exp-mac[i] & 255
         b1 != b2 -> mac-ok = 0
     }
-    io.errln('[TLS-SRV] dec: mac-ok=' - mac-ok.to-str())
     mac-ok == 0 -> return
 
     ; 提取明文資料
@@ -2730,19 +2692,16 @@ tls-server-conn.read-finished = () (ok bool) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, buf)
-    io.errln('[TLS-SRV] read-fin: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-APP-DATA -> return
 
     ; 解密
     plain []byte
     d-ct = 0
     d-ct, plain = .decrypt-record(buf, TLS-CT-HANDSHAKE)
-    io.errln('[TLS-SRV] read-fin: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
     msg-type = plain[0] & 255
-    io.errln('[TLS-SRV] read-fin: msg-type=' - msg-type.to-str())
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 client Finished）
@@ -2753,21 +2712,15 @@ tls-server-conn.read-finished = () (ok bool) {
         hs-hash[i] = hs-hash-arr[i]
     }
 
-    io.errln('[TLS-SRV] read-fin: hs-buf-len=' - .hs-buf-len.to-str())
-    io.errln('[TLS-SRV] read-fin: hash0=' - (hs-hash-arr[0] & 255).to-str() - ' hash1=' - (hs-hash-arr[1] & 255).to-str() - ' hash2=' - (hs-hash-arr[2] & 255).to-str() - ' hash3=' - (hs-hash-arr[3] & 255).to-str())
-    io.errln('[TLS-SRV] read-fin: ms0=' - (.master-secret[0] & 255).to-str() - ' ms1=' - (.master-secret[1] & 255).to-str() - ' ms2=' - (.master-secret[2] & 255).to-str() - ' ms3=' - (.master-secret[3] & 255).to-str())
-    io.errln('[TLS-SRV] read-fin: plain4=' - (plain[4] & 255).to-str() - ' plain5=' - (plain[5] & 255).to-str() - ' plain6=' - (plain[6] & 255).to-str())
 
     verify []byte
     verify = tls-prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
-    io.errln('[TLS-SRV] read-fin: v0=' - (verify[0] & 255).to-str() - ' v1=' - (verify[1] & 255).to-str() - ' v2=' - (verify[2] & 255).to-str())
 
     i <- [0..TLS-FINISHED-SIZE): {
         b1 = plain[4 + i] & 255
         b2 = verify[i] & 255
         b1 != b2 -> {
-            io.errln('[TLS-SRV] read-fin: verify mismatch at ' - i.to-str())
             return
         }
     }
@@ -2839,31 +2792,24 @@ tls-server-conn.handshake = () (ok bool) {
     ; 6. 讀取 ChangeCipherSpec
     ok = .read-change-cipher-spec()
     ok == false -> {
-        io.errln('[TLS-SRV] handshake: ccs fail')
         return
     }
-    io.errln('[TLS-SRV] handshake: ccs ok')
 
     ; 7. 讀取 client Finished（加密）
     .encrypted = true
     ok = .read-finished()
     ok == false -> {
-        io.errln('[TLS-SRV] handshake: read-fin fail')
         return
     }
-    io.errln('[TLS-SRV] handshake: read-fin ok')
 
     ; 8. 發送 ChangeCipherSpec
     .send-change-cipher-spec()
-    io.errln('[TLS-SRV] handshake: ccs sent')
 
     ; 9. 發送 server Finished（加密）
     ok = .send-finished()
     ok == false -> {
-        io.errln('[TLS-SRV] handshake: send-fin fail')
         return
     }
-    io.errln('[TLS-SRV] handshake: send-fin ok')
 
     ok = true
 }
@@ -2889,7 +2835,6 @@ tls-server-conn.send = (data str) (written ?i64) {
 tls-server-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .encrypted == false -> {
-        io.errln('[TLS-SRV] recv: not encrypted')
         return
     }
 
@@ -2898,13 +2843,11 @@ tls-server-conn.recv = (buf str, n i64) (read-n i64) {
     ct = 0
     rlen = 0
     ct, rlen = tls-read-record(.fd, rec-buf)
-    io.errln('[TLS-SRV] recv: ct=' - ct.to-str() - ' rlen=' - rlen.to-str())
     ct != TLS-CT-APP-DATA -> return
 
     plain []byte
     d-ct = 0
     d-ct, plain = .decrypt-record(rec-buf, TLS-CT-APP-DATA)
-    io.errln('[TLS-SRV] recv: d-ct=' - d-ct.to-str() - ' plain.len=' - plain.len.to-str())
     d-ct < 0 -> return
 
     ; 複製到 buf（最多 n 位元組）
@@ -2916,7 +2859,6 @@ tls-server-conn.recv = (buf str, n i64) (read-n i64) {
         buf[i] = plain[i] & 255
     }
     read-n = copy-n
-    io.errln('[TLS-SRV] recv: read-n=' - copy-n.to-str())
 }
 
 ; tls-server-conn.close: 關閉連線
@@ -2968,32 +2910,25 @@ tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
     conn = nil
 
     ; 接受 TCP 連線
-    io.errln('[TLS-SRV] accept: calling net-accept')
     client-fd = net-accept(listen-fd)
-    io.errln('[TLS-SRV] accept: net-accept returned ' - client-fd.to-str())
     client-fd < 0 -> return
 
     ; 初始化伺服器連線（返回 ?tls-server-conn）
-    io.errln('[TLS-SRV] accept: calling tls-server-init')
     init-opt = tls-server-init(client-fd)
     init-opt: {
         nil -> {
-            io.errln('[TLS-SRV] accept: tls-server-init nil')
             close(client-fd)
             return
         }
         err -> {
-            io.errln('[TLS-SRV] accept: tls-server-init err')
             close(client-fd)
             return
         }
         ok -> {
             c = it
-            io.errln('[TLS-SRV] accept: tls-server-init ok, calling handshake')
 
             ; 執行 TLS 交握
             ok2 = c.handshake()
-            io.errln('[TLS-SRV] accept: handshake returned ' - ok2.to-str())
             ok2 == false -> {
                 c.close()
                 return

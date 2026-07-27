@@ -5,13 +5,13 @@ import (
 )
 
 func TestLoadPackageTestDir(t *testing.T) {
-	// 確保 test/mod.jsonc 能被正確解析
-	pkg, err := LoadPackage("../../test")
+	// 確保 tests/mod.jsonc 能被正確解析
+	pkg, err := LoadPackage("../../tests")
 	if err != nil {
-		t.Fatalf("LoadPackage(test) error: %v", err)
+		t.Fatalf("LoadPackage(tests) error: %v", err)
 	}
 	if pkg == nil {
-		t.Fatal("LoadPackage(test) returned nil")
+		t.Fatal("LoadPackage(tests) returned nil")
 	}
 	if pkg.Name != "my-project" {
 		t.Errorf("Name = %q, want %q", pkg.Name, "my-project")

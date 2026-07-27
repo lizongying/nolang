@@ -304,6 +304,56 @@ write = (fd fd, data str, n i64) (written i64) {
 	}
 }
 
+// TestIndexBuiltinCommentsNotOverwrittenByMethodShortName verifies that
+// a built-in function's comment declaration (e.g. `read`) is NOT overwritten
+// by a struct method's short name (e.g. `file.read` → short name `read`).
+// This was a bug where go-to-definition on `read` jumped to `file.read`
+// instead of the built-in `read` function's comment declaration.
+func TestIndexBuiltinCommentsNotOverwrittenByMethodShortName(t *testing.T) {
+	// fs.no: has both a built-in read comment AND a file.read method
+	fsSource := `; build-in (ForwardFunc: read)
+; read: read from fd
+; read = (fd fd, buf str, n i64) (n i64) { }
+
+file-mode {
+    read,
+    write,
+}
+
+file.read = (buf str, n i64) (read-n i64) {
+    read-n = read(.fd, buf, n)
+}
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+	fsURI := "file:///std/fs.no"
+
+	// indexBuiltinComments must run BEFORE indexModuleStatement
+	dm.indexBuiltinComments(index, fsSource, fsURI)
+	fsProg := createTestProgram(fsSource)
+	for _, ms := range fsProg.Statements {
+		dm.indexModuleStatement(index, ms, fsURI)
+	}
+
+	entry, ok := index.GetDefinition("read")
+	if !ok {
+		t.Fatal("expected to find read in definitions")
+	}
+	// Should point to the comment declaration (line 2, 0-indexed), not file.read (line 9)
+	if entry.Name != "read" {
+		t.Errorf("expected Name 'read', got %q", entry.Name)
+	}
+	if entry.Location.Range.Start.Line != 2 {
+		t.Errorf("expected definition at comment line 2, got line %d", entry.Location.Range.Start.Line)
+	}
+	// Should NOT point to file.read
+	if entry.Name == "file.read" {
+		t.Error("expected built-in 'read' definition, but got 'file.read' method")
+	}
+}
+
 // TestIsValidIdent verifies the identifier validation helper.
 func TestIsValidIdent(t *testing.T) {
 	tests := []struct {

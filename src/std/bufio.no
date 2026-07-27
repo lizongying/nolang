@@ -25,7 +25,7 @@ reader.fill = () (ok bool) {
         ok = true
         return
     }
-    n = read(.fd, .buf, .buf.len)
+    n = fs.read(.fd, .buf, .buf.len)
     n > 0 -> {
         .pos = 0
         .avail = n

@@ -6,6 +6,12 @@
 ; 使用全域變數避免 tls-conn 作為函式參數傳遞時的 double-free
 e2e-tc tls-conn
 
+; e2e-recv-buf: 接收緩衝區
+e2e-recv-buf str
+
+; e2e-recv-total: 已接收的總位元組數
+e2e-recv-total i64
+
 ; e2e-recv-once: 從 e2e-tc 接收一次資料
 ; 獨立函式以避開同一函式中多個 option match 的 it 型別衝突
 ; 返回 rn i64: 接收的位元組數（-1=錯誤, 0=關閉）
@@ -14,22 +20,14 @@ e2e-recv-once = () (rn i64) {
     space = ' '
     tmp = space.repeat(2048)
     rn = e2e-tc.recv(tmp, 2048)
-    io.errln('[TEST] e2e-recv-once: rn=' - rn.to-str())
     rn > 0 -> {
         ; 複製到全域緩衝區
         i <- [0..rn): {
             e2e-recv-buf[e2e-recv-total + i] = tmp[i]
         }
         e2e-recv-total = e2e-recv-total + rn
-        io.errln('[TEST] e2e-recv-once: total=' - e2e-recv-total.to-str())
     }
 }
-
-; e2e-recv-buf: 接收緩衝區
-e2e-recv-buf str
-
-; e2e-recv-total: 已接收的總位元組數
-e2e-recv-total i64
 
 ; test-https-listen: 測試 HTTPS 伺服器可以建立監聽
 test-https-listen = () (pass bool) {
@@ -40,7 +38,6 @@ test-https-listen = () (pass bool) {
         print('FAIL: https-server.listen failed')
         return
     }
-    io.errln('[TEST] https-server listening on 9443')
     srv.close()
     pass = true
 }
@@ -69,7 +66,6 @@ test-tls-server-init = () (pass bool) {
                 c.close()
                 return
             }
-            io.errln('[TEST] cert generated, len=' - c.cert.len.to-str())
 
             ; 驗證 RSA 金鑰已設定
             c.n-bytes.len != 256 -> {
@@ -82,7 +78,6 @@ test-tls-server-init = () (pass bool) {
                 c.close()
                 return
             }
-            io.errln('[TEST] RSA keys set up (n=256, d=256 bytes)')
 
             c.close()
             pass = true
@@ -119,7 +114,6 @@ test-https-server-struct = () (pass bool) {
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
-    io.errln('[TEST] e2e: parent dialing')
     tls-opt = tls-dial(host, port)
     tls-opt: {
         nil -> {
@@ -140,7 +134,9 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
+            io.errln('[TEST] e2e: sending request')
             w-opt = e2e-tc.send(req)
+            io.errln('[TEST] e2e: send returned')
             w-opt: {
                 nil -> {
                     print('FAIL: e2e send nil')
@@ -160,9 +156,12 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 return
             }
 
-            io.errln('[TEST] e2e: parent sent, receiving')
+            io.errln('[TEST] e2e: send-ok=true, entering recv loop')
 
             ; 接收回應 — 多次 recv 累積
+            ; 注意: 不能使用 slice 來截取 e2e-recv-buf 的子串再 index，
+            ; 因為 slice 會導致原緩衝區被 move，後續存取會 crash。
+            ; 改用 index-from 直接在 e2e-recv-buf 上搜尋。
             space = ' '
             e2e-recv-buf = space.repeat(4096)
             e2e-recv-total = 0
@@ -176,8 +175,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 io.errln('[TEST] e2e: recv-once returned rn=' - rn.to-str())
                 rn <= 0 -> *
 
-                resp = e2e-recv-buf.slice(0, e2e-recv-total)
-                pos = resp.index('hello from nolang https')
+                pos = e2e-recv-buf.index-from('hello from nolang https', 0)
                 pos >= 0 -> found = true
             } (found == false)
 
@@ -185,13 +183,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 print('PASS: e2e got expected response')
                 ok = true
             }
-            found == false -> {
-                print('FAIL: e2e did not receive expected response')
-                e2e-recv-total > 0 -> {
-                    resp = e2e-recv-buf.slice(0, e2e-recv-total)
-                    io.errln('[TEST] e2e: recv=' - resp)
-                }
-            }
+            found == false -> print('FAIL: e2e did not receive expected response')
 
             e2e-tc.close()
         }
@@ -210,7 +202,6 @@ test-https-e2e = () (pass bool) {
         print('FAIL: e2e listen failed')
         return
     }
-    io.errln('[TEST] e2e: server listening on 9444')
 
     ; 2. fork: 子進程為伺服器, 父進程為客戶端
     pid = process-fork()
@@ -222,27 +213,17 @@ test-https-e2e = () (pass bool) {
 
     ; === 子進程: 伺服器 (處理一個連線後退出) ===
     pid == 0 -> {
-        io.errln('[TEST] e2e: child accepting')
         conn-opt = srv.accept()
         conn-opt: {
-            nil -> {
-                io.errln('[TEST] e2e: child accept nil')
-                exit(1)
-            }
-            err -> {
-                io.errln('[TEST] e2e: child accept err')
-                exit(1)
-            }
+            nil -> exit(1)
+            err -> exit(1)
             ok -> {
                 conn = it
-                io.errln('[TEST] e2e: child parsing')
                 p-ok = conn.parse()
                 p-ok == false -> {
-                    io.errln('[TEST] e2e: child parse fail')
                     conn.close()
                     exit(1)
                 }
-                io.errln('[TEST] e2e: child path=' - conn.path)
                 conn.write-text(200, 'hello from nolang https')
                 conn.close()
                 exit(0)
@@ -262,8 +243,6 @@ test-https-e2e = () (pass bool) {
 
 ; 主函數
 main = () {
-    io.errln('=== HTTPS Server Tests ===')
-
     p1 = test-https-listen()
     p1 == true -> print('PASS: https-server.listen')
     p1 == false -> print('FAIL: https-server.listen')
@@ -279,6 +258,4 @@ main = () {
     p4 = test-https-e2e()
     p4 == true -> print('PASS: https-e2e')
     p4 == false -> print('FAIL: https-e2e')
-
-    io.errln('=== HTTPS Server Tests Done ===')
 }

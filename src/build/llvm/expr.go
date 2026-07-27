@@ -5701,9 +5701,11 @@ func (g *Generator) byteToSingleCharStr(sb *strings.Builder, expr parser.Express
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), nullPos, bufPtr))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 	// Build %str-long struct: { len=1, cap=2, data=buf }.
+	// alloca hoisted to entry block to avoid stack growth in tight loops;
+	// safe vs dirty data: all 3 fields (len/cap/data) are fully overwritten below.
 	g.tmpIdx++
 	resultAlloca := fmt.Sprintf("%%concat.byte.str.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
+	g.emitEntryAlloca(sb, "%s = alloca %%str-long\n", resultAlloca)
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%concat.byte.len.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
@@ -5772,9 +5774,11 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
+	// alloca hoisted to entry block to avoid stack growth in tight loops;
+	// safe vs dirty data: all 3 fields (len/cap/data) are fully overwritten below.
 	g.tmpIdx++
 	resultAlloca := fmt.Sprintf("%%concat.result.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
+	g.emitEntryAlloca(sb, "%s = alloca %%str-long\n", resultAlloca)
 
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%concat.len.gep.%d", g.tmpIdx)
@@ -5831,9 +5835,11 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	loopEnd := fmt.Sprintf("%%repeat.loop.end.%d", g.tmpIdx)
 
 	// Initialize counter i = 0
+	// alloca hoisted to entry block to avoid stack growth in tight loops;
+	// safe vs dirty data: store i64 0 below fully overwrites the i64 slot.
 	g.tmpIdx++
 	iReg := fmt.Sprintf("%%repeat.i.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iReg))
+	g.emitEntryAlloca(sb, "%s = alloca i64\n", iReg)
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iReg))
 
 	// Jump to loop start

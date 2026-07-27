@@ -102,6 +102,10 @@ func TestSliceMethodLenCallOnI64(t *testing.T) {
 }
 
 // TestSliceMethodLenCallOnStr verifies .len() works inside str methods too.
+// Unlike []byte.len (which is only a builtin), str.len is both a builtin
+// (ForwardFunc: str-len) AND a user-defined function in str.no. When .len()
+// is called inside a str method, the codegen should dispatch to the builtin
+// len handler (inline field access), NOT generate a call to @str.len.
 func TestSliceMethodLenCallOnStr(t *testing.T) {
 	src := `str.test-len = () (n i64) {
     n = .len()
@@ -121,10 +125,6 @@ func TestSliceMethodLenCallOnStr(t *testing.T) {
 		t.Fatalf("compile error: %v", err)
 	}
 
-	if strings.Contains(llvmIR, "@str.len") {
-		t.Errorf("LLVM IR contains call to non-existent @str.len function:\n%s", llvmIR)
-	}
-
 	// Find the test-len function body
 	testLenIdx := strings.Index(llvmIR, "test-len")
 	if testLenIdx < 0 {
@@ -136,7 +136,14 @@ func TestSliceMethodLenCallOnStr(t *testing.T) {
 	}
 	fnBody := llvmIR[testLenIdx : testLenIdx+endIdx]
 
-	// For str, .len() should extract the string length
+	// The test-len function body should NOT contain a call to @str.len.
+	// (str.len IS defined in str.no, but .len() should be inlined to a
+	// field access, not dispatched through a function call.)
+	if strings.Contains(fnBody, "call") && strings.Contains(fnBody, "@str.len") {
+		t.Errorf("test-len function body contains call to @str.len instead of inline field access:\n%s", fnBody)
+	}
+
+	// For str, .len() should extract the string length via a load instruction
 	if !strings.Contains(fnBody, "load") {
 		t.Errorf("test-len function body does not contain 'load' for len field:\n%s", fnBody)
 	}

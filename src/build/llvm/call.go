@@ -1186,9 +1186,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 應優先使用，否則 fs 構造函數會被 clib 系統調用遮蔽。
 		if !skipBuiltin && g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
-				// Same ForwardFunc check as above for non-dotted names
+				// Same ForwardFunc check as above for non-dotted names.
+				// For dotted names (e.g. "str.len"), strip the prefix to find
+				// the builtin by its short name ("len"), matching the logic
+				// in the first skipBuiltin check above. Without this, the
+				// second check would override the first check's decision for
+				// dotted ForwardFunc builtins like str.len.
 				isForwardBuiltin := false
 				m := builtin.FindBuiltinMethod(fnName)
+				if m == nil && strings.Contains(fnName, ".") {
+					if idx := strings.Index(fnName, "."); idx >= 0 {
+						m = builtin.FindBuiltinMethod(fnName[idx+1:])
+					}
+				}
 				if m != nil && m.ForwardFunc != "" {
 					isForwardBuiltin = true
 				}

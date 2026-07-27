@@ -242,13 +242,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 			}
 			if absPath, err := filepath.Abs(modFilePath); err == nil {
 				modURI := "file://" + absPath
+				// Scan for comment-only built-in function declarations FIRST,
+				// so that built-in functions like `read`/`write` get their
+				// comment declaration location before any struct method
+				// (e.g. `file.read`) registers the same short name.
+				m.indexBuiltinComments(index, string(source), modURI)
 				for _, ms := range modProg.Statements {
 					m.indexModuleStatement(index, ms, modURI)
 				}
-				// Also scan for comment-only built-in function declarations
-				// (e.g. `; write = (fd fd, data str, n i64) (written i64) { }`)
-				// so that go-to-definition works for built-in functions.
-				m.indexBuiltinComments(index, string(source), modURI)
 			}
 		}
 

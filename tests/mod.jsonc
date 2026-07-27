@@ -1,0 +1,22 @@
+{
+  "name": "my-project",
+  "version": "1.0.0",
+  "description": "A Nolang project",
+  "keywords": [
+    "nolang"
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
+  "organization": "",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "",
+  "license": "MIT",
+  "dependencies": {
+  },
+  "dev-dependencies": {
+    "nolang": "^0.1.0"
+  },
+  "ignore": [
+    "dist"
+  ]
+}

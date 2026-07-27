@@ -754,13 +754,11 @@ https-server-conn.recv-more = () (n i64) {
     space = ' '
     tmp = space.repeat(HTTP-SRV-RECV-SIZE)
     n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
-    io.errln('[HTTPS-SRV] recv-more: n=' - n.to-str())
     n > 0 -> {
         i <- [0..n): {
             .recv-buf[.recv-buf-len + i] = tmp[i]
         }
         .recv-buf-len = .recv-buf-len + n
-        io.errln('[HTTPS-SRV] recv-more: recv-buf-len=' - .recv-buf-len.to-str())
     }
 }
 
@@ -773,6 +771,8 @@ https-server-conn.parse = () (ok bool) {
     crlf = cr - lf
     separator = crlf - crlf
 
+    io.errln('[HTTPS-SRV] parse: start')
+
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
     {
@@ -780,7 +780,9 @@ https-server-conn.parse = () (ok bool) {
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
+        io.errln('[HTTPS-SRV] parse: calling recv-more')
         n = .recv-more()
+        io.errln('[HTTPS-SRV] parse: recv-more returned n=' - n.to-str())
         n <= 0 -> return
     } ()
 
@@ -899,7 +901,6 @@ https-server-conn.parse = () (ok bool) {
         ->
     }
 
-    io.errln('[HTTPS-SRV] parse: method=' - .method - ' path=' - .path - ' version=' - .version - ' sp1=' - sp1.to-str() - ' sep-pos=' - sep-pos.to-str() - ' header-count=' - .header-count.to-str())
     ok = true
 }
 
@@ -964,24 +965,13 @@ https-server-conn.write-status = (status i64) (ok bool) {
 
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     tc = .tls
-    io.errln('[HTTPS-SRV] write-status: sending line.len=' - line.len.to-str())
     w = tc.send(line)
     .tls = tc
-    io.errln('[HTTPS-SRV] write-status: send returned')
-    w: {
-        nil -> {
-            io.errln('[HTTPS-SRV] write-status: send nil')
-            return
-        }
-        err -> {
-            io.errln('[HTTPS-SRV] write-status: send err')
-            return
-        }
-        ok -> {
-            io.errln('[HTTPS-SRV] write-status: send ok')
-            ok = true
-        }
-    }
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
 }
 
 ; write-header: 寫入單個回應標頭（透過 TLS）
@@ -994,25 +984,14 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     lf = char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
-    io.errln('[HTTPS-SRV] write-header: sending ' - name - ' len=' - line.len.to-str())
     tc = .tls
     w = tc.send(line)
     .tls = tc
-    io.errln('[HTTPS-SRV] write-header: send returned')
-    w: {
-        nil -> {
-            io.errln('[HTTPS-SRV] write-header: send nil')
-            return
-        }
-        err -> {
-            io.errln('[HTTPS-SRV] write-header: send err')
-            return
-        }
-        ok -> {
-            io.errln('[HTTPS-SRV] write-header: send ok')
-            ok = true
-        }
-    }
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
 }
 
 ; write-headers-done: 寫入空行表示標頭結束（透過 TLS）
@@ -1022,25 +1001,14 @@ https-server-conn.write-headers-done = () (ok bool) {
     cr = char-to-str(13)
     lf = char-to-str(10)
     crlf = cr - lf
-    io.errln('[HTTPS-SRV] write-headers-done: sending crlf')
     tc = .tls
     w = tc.send(crlf)
     .tls = tc
-    io.errln('[HTTPS-SRV] write-headers-done: send returned')
-    w: {
-        nil -> {
-            io.errln('[HTTPS-SRV] write-headers-done: send nil')
-            return
-        }
-        err -> {
-            io.errln('[HTTPS-SRV] write-headers-done: send err')
-            return
-        }
-        ok -> {
-            io.errln('[HTTPS-SRV] write-headers-done: send ok')
-            ok = true
-        }
-    }
+    {
+        nil -> return
+        err -> return
+        ok -> ok = true
+    } (w)
 }
 
 ; write-body: 寫入回應體（透過 TLS）
@@ -1048,27 +1016,15 @@ https-server-conn.write-headers-done = () (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-body = (data str) (ok bool) {
     ok = false
-    io.errln('[HTTPS-SRV] write-body: data.len=' - data.len.to-str())
     data.len > 0 -> {
-        io.errln('[HTTPS-SRV] write-body: sending data')
         tc = .tls
         w = tc.send(data)
         .tls = tc
-        io.errln('[HTTPS-SRV] write-body: send returned')
-        w: {
-            nil -> {
-                io.errln('[HTTPS-SRV] write-body: send nil')
-                return
-            }
-            err -> {
-                io.errln('[HTTPS-SRV] write-body: send err')
-                return
-            }
-            ok -> {
-                io.errln('[HTTPS-SRV] write-body: send ok')
-                ok = true
-            }
-        }
+        {
+            nil -> return
+            err -> return
+            ok -> ok = true
+        } (w)
     }
     ok = true
 }
@@ -1085,24 +1041,25 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
         io.errln('[HTTPS-SRV] write-text: write-status failed')
         return
     }
-    io.errln('[HTTPS-SRV] write-text: status ok')
+    io.errln('[HTTPS-SRV] write-text: write-status ok')
 
     text-len = text.len
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
-    io.errln('[HTTPS-SRV] write-text: ct-header ok')
+    io.errln('[HTTPS-SRV] write-text: ct-header done')
     .write-header('Content-Length', len-s)
-    io.errln('[HTTPS-SRV] write-text: cl-header ok')
+    io.errln('[HTTPS-SRV] write-text: cl-header done')
     {
         .keep-alive -> .write-header('Connection', 'keep-alive')
         -> .write-header('Connection', 'close')
     }
+    io.errln('[HTTPS-SRV] write-text: conn-header done')
     .write-header('Server', 'nolang-https/1.0')
-    io.errln('[HTTPS-SRV] write-text: srv-header ok')
+    io.errln('[HTTPS-SRV] write-text: srv-header done')
     .write-headers-done()
-    io.errln('[HTTPS-SRV] write-text: headers-done ok')
+    io.errln('[HTTPS-SRV] write-text: headers-done done')
     .write-body(text)
-    io.errln('[HTTPS-SRV] write-text: body ok')
+    io.errln('[HTTPS-SRV] write-text: body done')
     ok = true
 }
 

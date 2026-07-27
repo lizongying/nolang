@@ -2,7 +2,8 @@
 ;
 ; 提供 reader/writer 抽象介面與便捷函數，
 ; 統一檔案、標準輸入輸出、字串等資料流的讀寫操作。
-; 底層依賴 fs 模組的 read/write 內建函數。
+; 底層依賴 fs 模組的 read/write/get-line 內建函數，
+; 透過 fs.read / fs.write / fs.get-line 呼叫。
 ;
 ; 用法：
 ;   r = reader.from-stdin()
@@ -14,22 +15,6 @@
 ;   io.out('hello')
 ;   io.outln('world')
 ;   line = io.read-line()
-
-; ═══════════════════════════════════════════════
-; 內建函數（底層實作，定義於 fs 模組）
-; ═══════════════════════════════════════════════
-
-; build-in (ForwardFunc: read)
-; read: 從檔案描述符讀取最多 n 位元組到 buf
-; read = (fd fd, buf str, n i64) (n i64) { }
-
-; build-in (ForwardFunc: write)
-; write: 將 data 的前 n 位元組寫入檔案描述符
-; write = (fd fd, data str, n i64) (written i64) { }
-
-; build-in (ForwardFunc: read-stdin-line)
-; get-line: 從標準輸入讀取一行
-; get-line = () (line ?str) { }
 
 ; ═══════════════════════════════════════════════
 ; 標準檔案描述符
@@ -64,7 +49,7 @@ reader.from-stdin = () (r reader) {
 reader.read = (buf str, n i64) (read-n i64) {
     read-n = 0
     .fd < 0 -> return
-    read-n = read(.fd, buf, n)
+    read-n = fs.read(.fd, buf, n)
 }
 
 ; read-byte: 讀取一個位元組
@@ -73,7 +58,7 @@ reader.read-byte = () (b ?i64) {
     b = nil
     .fd < 0 -> return
     buf = ' '
-    n = read(.fd, buf, 1)
+    n = fs.read(.fd, buf, 1)
     n > 0 -> b = buf[0] & 255
 }
 
@@ -83,7 +68,7 @@ reader.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
     buf str = with-cap(4096)
-    n = read(.fd, buf, 4096)
+    n = fs.read(.fd, buf, 4096)
     n > 0 -> line = buf
 }
 
@@ -92,7 +77,7 @@ reader.read-line = () (line ?str) {
 reader.read-all = (buf str, size i64) (total i64) {
     total = 0
     .fd < 0 -> return
-    total = read(.fd, buf, size)
+    total = fs.read(.fd, buf, size)
 }
 
 ; ═══════════════════════════════════════════════
@@ -125,7 +110,7 @@ writer.from-stderr = () (w writer) {
 writer.write = (data str, n i64) (written i64) {
     written = 0
     .fd < 0 -> return
-    written = write(.fd, data, n)
+    written = fs.write(.fd, data, n)
 }
 
 ; write-str: 寫入整個字串
@@ -133,7 +118,7 @@ writer.write = (data str, n i64) (written i64) {
 writer.write-str = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
-    written = write(.fd, s, s.len)
+    written = fs.write(.fd, s, s.len)
 }
 
 ; write-byte: 寫入一個位元組
@@ -143,7 +128,7 @@ writer.write-byte = (b i64) (written i64) {
     .fd < 0 -> return
     buf = ' '
     buf[0] = b & 255
-    written = write(.fd, buf, 1)
+    written = fs.write(.fd, buf, 1)
 }
 
 ; write-line: 寫入字串並附加換行符
@@ -151,9 +136,9 @@ writer.write-byte = (b i64) (written i64) {
 writer.write-line = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
-    n = write(.fd, s, s.len)
+    n = fs.write(.fd, s, s.len)
     nl = '\n'
-    written = write(.fd, nl, 1)
+    written = fs.write(.fd, nl, 1)
     written = written + n
 }
 
@@ -163,27 +148,27 @@ writer.write-line = (s str) (written i64) {
 
 ; out: 寫入字串到標準輸出（不換行）
 out = (s str) (n i64) {
-    n = write(STDOUT-FD, s, s.len)
+    n = fs.write(STDOUT-FD, s, s.len)
 }
 
 ; outln: 寫入字串到標準輸出並換行
 outln = (s str) (n i64) {
-    n = write(STDOUT-FD, s, s.len)
+    n = fs.write(STDOUT-FD, s, s.len)
     nl = '\n'
-    m = write(STDOUT-FD, nl, 1)
+    m = fs.write(STDOUT-FD, nl, 1)
     n = n + m
 }
 
 ; err: 寫入字串到標準錯誤（不換行）
 err = (s str) (n i64) {
-    n = write(STDERR-FD, s, s.len)
+    n = fs.write(STDERR-FD, s, s.len)
 }
 
 ; errln: 寫入字串到標準錯誤並換行
 errln = (s str) (n i64) {
-    n = write(STDERR-FD, s, s.len)
+    n = fs.write(STDERR-FD, s, s.len)
     nl = '\n'
-    m = write(STDERR-FD, nl, 1)
+    m = fs.write(STDERR-FD, nl, 1)
     n = n + m
 }
 
@@ -193,6 +178,6 @@ read-line = () (line ?str) {
     line = nil
     s = ''
     ok = false
-    s, ok = get-line()
+    s, ok = fs.get-line()
     ok -> line = s
 }
