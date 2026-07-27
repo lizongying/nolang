@@ -2538,8 +2538,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 			}
 		}
-		// struct.field[i] — 推導欄位陣列的元素型別
-		// （如 .vals[idx] 其中 vals 為 [256 x %str-long]）
+		// struct.field[i] — 推導欄位陣列/切片的元素型別
+		// （如 .vals[idx] 其中 vals 為 [256 x %str-long] 或 []str）
 		if dot, ok := v.Left.(*parser.DotExpression); ok {
 			recvName := ""
 			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
@@ -2550,7 +2550,11 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					structName := strings.TrimPrefix(t, "%")
 					if fields, ok := g.structTypes[structName]; ok {
 						for _, f := range fields {
-							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
+							if f.name != dot.Property {
+								continue
+							}
+							// Inline array field: [N x T]
+							if strings.HasPrefix(f.typ, "[") {
 								closeB := strings.IndexByte(f.typ, ']')
 								if closeB > 0 {
 									inner := f.typ[1:closeB]
@@ -2563,6 +2567,20 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 										return "i64"
 									}
 								}
+								continue
+							}
+							// Slice field: %vec with element type recorded in elemType.
+							// generateIndexExpression loads the actual element value
+							// (e.g. %str-long for []str), so varLLVMType must match
+							// to avoid `store i64 %str-long-val, i64* %var` mismatches.
+							if f.typ == "%vec" && f.elemType != "" {
+								if strings.HasPrefix(f.elemType, "%") {
+									return f.elemType
+								}
+								if f.elemType == "double" || f.elemType == "float" {
+									return f.elemType
+								}
+								return "i64"
 							}
 						}
 					}
@@ -3256,6 +3274,27 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// to find []byte.to-str and infer %str-long instead of defaulting to i64).
 			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+			}
+			// Propagate element type when assigning a struct field of %vec/%arr type
+			// to a local variable (e.g. `old-keys = .keys` in hashmap.rehash).
+			// This must happen during collection so that subsequent varLLVMType calls
+			// for IndexExpressions on this variable (e.g. `v = old-vals[i]`) infer
+			// the correct element type instead of defaulting to i64 — which would
+			// cause the alloca to be i64 while the actual stored value is %str-long.
+			if dot, ok := s.Value.(*parser.DotExpression); ok && g.arrayElemTypes != nil {
+				if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+					if recvType, ok := g.varTypes[recvIdent.Value]; ok {
+						structName := strings.TrimPrefix(recvType, "%")
+						if fields, ok := g.structTypes[structName]; ok {
+							for _, f := range fields {
+								if f.name == dot.Property && f.typ == "%vec" && f.elemType != "" {
+									g.arrayElemTypes[s.Name.Value] = f.elemType
+									break
+								}
+							}
+						}
+					}
+				}
 			}
 			// Infer array/slice element type and size from function call return type
 			// (e.g. inner-hash = sha256(...) where sha256 returns [32]byte,

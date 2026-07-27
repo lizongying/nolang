@@ -135,6 +135,7 @@ type Generator struct {
 	coroFieldIdx          map[string]int    // 变量名 → coro_state 字段索引
 	asyncFuncCoroNum      map[string]int    // async 函数名 → coro 编号（用于 run/awy 生成 coro_state task）
 	coroTrampolineEmitted map[int]bool      // coro 编号 → trampoline 是否已生成
+	coroResultFields      map[int][]coroField // coro 编号 → 结果字段（name/llvmTy/idx），供直接调用 coro 函数后取回结果
 	isModuleAsyncWrap     bool              // 当前正在生成模块级 async 包装（收集 localVarTypes 时排除 globalVars/funcRefVars）
 }
 
@@ -151,6 +152,7 @@ type coroField struct {
 	llvmTy   string // LLVM 类型字符串
 	isParam  bool   // 是否为参数
 	isResult bool   // 是否为结果参数
+	idx      int    // 在 coro_state 结构体中的字段索引（仅 result 字段使用，供调用端取回结果）
 }
 
 // emitEntryAlloca writes an alloca instruction to the entry-block buffer if available,
@@ -598,6 +600,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.coroInAsyncFunc = false
 	g.asyncFuncCoroNum = make(map[string]int)
 	g.coroTrampolineEmitted = make(map[int]bool)
+	g.coroResultFields = make(map[int][]coroField)
 	g.varTypes = make(map[string]string)
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)

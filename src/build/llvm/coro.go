@@ -231,6 +231,18 @@ func (g *Generator) transformAsyncFunction(sb *strings.Builder, fd *parser.Funct
 	for i, f := range fields {
 		g.coroFieldIdx[f.name] = i
 	}
+	// 记录结果字段（含索引），供直接调用 coro 函数后从 coro_state 取回结果。
+	// coroFieldIdx 在下一個 coro 函數變換時會被覆蓋，因此此處固化结果字段信息。
+	if g.coroResultFields != nil {
+		var resultFields []coroField
+		for i, f := range fields {
+			if f.isResult {
+				f.idx = i
+				resultFields = append(resultFields, f)
+			}
+		}
+		g.coroResultFields[num] = resultFields
+	}
 
 	// 3. 生成结构体定义（直接写入 sb，确保在使用它的 coro_init.N / coro_resume.N 之前定义）
 	fieldTypes := make([]string, len(fields))
@@ -245,6 +257,12 @@ func (g *Generator) transformAsyncFunction(sb *strings.Builder, fd *parser.Funct
 
 	// 5. 生成 coro_resume.N 函数
 	g.generateCoroResume(sb, fd, num, stateType, fields, awaitIndices, localVarTypes)
+
+	// 6. 生成 coro_trampoline.N 函数（包装 coro_resume.N 为 task resume_fn 签名）
+	// 每個 coro 函數都需要 trampoline，以便被直接調用時可作為 task 入隊並由事件循環驅動。
+	// （先前僅模組級 async 包裝生成 trampoline，導致含 awy 的普通函數如 consumer
+	// 被直接調用時無法啟動。）
+	g.generateCoroTrampoline(sb, num)
 
 	return true
 }
@@ -264,14 +282,14 @@ func (g *Generator) generateCoroInit(sb *strings.Builder, fd *parser.FunctionDef
 	sb.WriteString(fmt.Sprintf("define void @%s(%s) {\n", sanitizeLLVMName(initName), strings.Join(paramStrs, ", ")))
 	sb.WriteString("entry:\n")
 	// state = 0
-	sb.WriteString(fmt.Sprintf("\t%%init.state.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 0\n", stateType, stateType))
-	sb.WriteString("\tstore i32 0, i32* %init.state.gep\n")
+	sb.WriteString(fmt.Sprintf("\t%%init.__state.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 0\n", stateType, stateType))
+	sb.WriteString("\tstore i32 0, i32* %init.__state.gep\n")
 	// task = null
-	sb.WriteString(fmt.Sprintf("\t%%init.task.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 1\n", stateType, stateType))
-	sb.WriteString("\tstore i8* null, i8** %init.task.gep\n")
+	sb.WriteString(fmt.Sprintf("\t%%init.__task.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 1\n", stateType, stateType))
+	sb.WriteString("\tstore i8* null, i8** %init.__task.gep\n")
 	// awaited = null
-	sb.WriteString(fmt.Sprintf("\t%%init.awaited.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 2\n", stateType, stateType))
-	sb.WriteString("\tstore i8* null, i8** %init.awaited.gep\n")
+	sb.WriteString(fmt.Sprintf("\t%%init.__awaited.gep = getelementptr inbounds %s, %s* %%cs, i32 0, i32 2\n", stateType, stateType))
+	sb.WriteString("\tstore i8* null, i8** %init.__awaited.gep\n")
 	// 存储参数
 	for _, p := range fd.Parameters {
 		idx := g.coroFieldIdx[p.Name]
@@ -364,10 +382,13 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 	}
 
 	// switch state
+	// 注意：段标签使用 "cs." 前缀（含点号），Nolang 标识符不允许含点号，
+	// 因此不会与用户变量名（如 s1）冲突。曾用 "s%d" 导致与用户变量 s1 冲突：
+	// br label %s1 中 %s1 被解析为用户变量的 alloca 而非基本块标签。
 	numSegments := len(awaitIndices) + 1
-	sb.WriteString("\tswitch i32 %r.state, label %s0 [\n")
+	sb.WriteString("\tswitch i32 %r.state, label %cs.0 [\n")
 	for i := 1; i < numSegments; i++ {
-		sb.WriteString(fmt.Sprintf("\t\ti32 %d, label %%s%d_check\n", i, i))
+		sb.WriteString(fmt.Sprintf("\t\ti32 %d, label %%cs.%d.chk\n", i, i))
 	}
 	sb.WriteString("\t]\n")
 
@@ -385,7 +406,7 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 		// 如果 segIdx > 0，先生成 check 块（检查上一个 awy 的 task 是否完成）
 		if segIdx > 0 {
 			prevAwait := awaitIndices[segIdx-1]
-			sb.WriteString(fmt.Sprintf("s%d_check:\n", segIdx))
+			sb.WriteString(fmt.Sprintf("cs.%d.chk:\n", segIdx))
 			// 检查 %r.awaited 的 done 字段（上次 yield 时等待的 task）
 			// %task = { void (i8*)*, i64, i1 }
 			// done 是 field 2
@@ -400,22 +421,22 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 			sb.WriteString(fmt.Sprintf("\t%s = load i1, i1* %s\n", doneVal, doneFieldGEP))
 			// done=true → 加载结果（若有 resultVar）→ 跳到段体
 			// done=false → yield（ret void）
-			sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%s%d_cont, label %%s%d_yield\n", doneVal, segIdx, segIdx))
+			sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%cs.%d.cont, label %%cs.%d.yld\n", doneVal, segIdx, segIdx))
 			// cont 块：task 已完成，加载结果到 resultVar（慢路径专用）
-			sb.WriteString(fmt.Sprintf("s%d_cont:\n", segIdx))
+			sb.WriteString(fmt.Sprintf("cs.%d.cont:\n", segIdx))
 			if prevAwait.resultVar != "" {
 				g.loadTaskResult(sb, "%r.awaited", prevAwait.resultVar, fields)
 			}
-			sb.WriteString(fmt.Sprintf("\tbr label %%s%d\n", segIdx))
+			sb.WriteString(fmt.Sprintf("\tbr label %%cs.%d\n", segIdx))
 			// yield 块：未完成，ret void
-			sb.WriteString(fmt.Sprintf("s%d_yield:\n", segIdx))
+			sb.WriteString(fmt.Sprintf("cs.%d.yld:\n", segIdx))
 			sb.WriteString(fmt.Sprintf("\tcall void @nolang_async_wait(i8* %%r.task)\n"))
 			g.emitCoroSaveLocals(sb, stateType, fields)
 			sb.WriteString("\tret void\n")
 		}
 
 		// 生成段体
-		sb.WriteString(fmt.Sprintf("s%d:\n", segIdx))
+		sb.WriteString(fmt.Sprintf("cs.%d:\n", segIdx))
 		// 设置 coroInAsyncFunc 标志，使 awy 语句生成 yield 逻辑
 		g.coroInAsyncFunc = true
 		g.coroAwaitPoints = nil
@@ -430,9 +451,9 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 			awyStmt := stmts[awaitIndices[segIdx].stmtIdx]
 			g.generateAwaitYield(sb, awyStmt, segIdx+1, stateType, fields)
 		} else {
-			// 最终段：若段体未以 terminator 结束（如 return/break），补 br 到 s_end
+			// 最终段：若段体未以 terminator 结束（如 return/break），补 br 到 cs.end
 			if !g.blockTerminated {
-				sb.WriteString("\tbr label %s_end\n")
+				sb.WriteString("\tbr label %cs.end\n")
 			}
 		}
 		g.coroInAsyncFunc = false
@@ -441,7 +462,7 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 
 	// 最终段结束：设 state=-1，设 task.done=true，ret void
 	// 注意：不在此处调用 @nolang_async_done — 事件循环检测到 done=true 后会自动唤醒等待者。
-	sb.WriteString("s_end:\n")
+	sb.WriteString("cs.end:\n")
 	sb.WriteString("\tstore i32 -1, i32* %r.state.gep\n")
 	// 保存结果参数回 coro_state
 	g.emitCoroSaveResults(sb, stateType, fields)
@@ -493,10 +514,10 @@ func (g *Generator) generateAwaitYield(sb *strings.Builder, stmt parser.Statemen
 	g.tmpIdx++
 	doneVal := fmt.Sprintf("%%awy.done.val.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("\t%s = load i1, i1* %s\n", doneVal, doneGEP))
-	sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%s_cont_%d, label %%s_yield_%d\n", doneVal, nextState-1, nextState-1))
+	sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%cs.%d.acont, label %%cs.%d.ayld\n", doneVal, nextState-1, nextState-1))
 
 	// yield：未完成
-	sb.WriteString(fmt.Sprintf("s_yield_%d:\n", nextState-1))
+	sb.WriteString(fmt.Sprintf("cs.%d.ayld:\n", nextState-1))
 	// store state
 	sb.WriteString(fmt.Sprintf("\tstore i32 %d, i32* %%r.state.gep\n", nextState))
 	// store awaited task (field 2 = __awaited)，供下次 resume 的 check 块读取
@@ -508,14 +529,14 @@ func (g *Generator) generateAwaitYield(sb *strings.Builder, stmt parser.Statemen
 	sb.WriteString("\tret void\n")
 
 	// continue：完成，加载结果
-	sb.WriteString(fmt.Sprintf("s_cont_%d:\n", nextState-1))
+	sb.WriteString(fmt.Sprintf("cs.%d.acont:\n", nextState-1))
 	// 如果有结果变量，从 task 加载结果
 	if resultVar != "" {
 		g.loadTaskResult(sb, taskPtr, resultVar, fields)
 	}
 	// 快速路径：task 已完成，跳过 check 块，直接进入下一段体。
 	// （check 块仅供 resume 路径使用：协程被重新调度时检查 awaited task 是否完成）
-	sb.WriteString(fmt.Sprintf("\tbr label %%s%d\n", nextState))
+	sb.WriteString(fmt.Sprintf("\tbr label %%cs.%d\n", nextState))
 }
 
 // generateAwaitForCoro 在协程上下文中生成 awy 表达式，返回 task 指针（i8*）。

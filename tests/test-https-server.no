@@ -134,9 +134,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
-            io.errln('[TEST] e2e: sending request')
             w-opt = e2e-tc.send(req)
-            io.errln('[TEST] e2e: send returned')
             w-opt: {
                 nil -> {
                     print('FAIL: e2e send nil')
@@ -156,7 +154,6 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 return
             }
 
-            io.errln('[TEST] e2e: send-ok=true, entering recv loop')
 
             ; 接收回應 — 多次 recv 累積
             ; 注意: 不能使用 slice 來截取 e2e-recv-buf 的子串再 index，
@@ -170,9 +167,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 found -> *
                 e2e-recv-total >= 4000 -> *
 
-                io.errln('[TEST] e2e: calling recv-once')
                 rn = e2e-recv-once()
-                io.errln('[TEST] e2e: recv-once returned rn=' - rn.to-str())
                 rn <= 0 -> *
 
                 pos = e2e-recv-buf.index-from('hello from nolang https', 0)

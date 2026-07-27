@@ -1,0 +1,21 @@
+; debug: 检查 put 后 size 和 occ
+
+test-debug = () {
+    m [str]str = {}
+    m.init()
+    print('after init:')
+    l = m.len()
+    print(l)
+
+    m.put('k', 'v')
+    print('after put:')
+    l2 = m.len()
+    print(l2)
+
+    c = m.contains('k')
+    print('contains k:')
+    print(c)
+}
+
+test-debug()
+print('done')

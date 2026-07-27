@@ -119,7 +119,7 @@ http-server.accept = () (c ?http-server-conn) {
     client-fd < 0 -> return
     space = ' '
     buf = space.repeat(HTTP-SRV-BUF-SIZE)
-    conn = http-server-conn{
+    conn = http-server-conn {
         fd: client-fd
         method: ''
         path: ''
@@ -184,6 +184,7 @@ http-server-conn.parse = () (ok bool) {
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
     {
+
         ; 檢查緩衝區中是否已有分隔符
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
@@ -298,6 +299,7 @@ http-server-conn.parse = () (ok bool) {
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+
                 ; 標頭後已接收的資料
                 available = .recv-buf-len - body-start
 
@@ -329,6 +331,7 @@ http-server-conn.get-header = (name str) (val ?str) {
             j <- [0..name.len): {
                 c1 = .header-names[i][j]
                 c2 = name[j]
+
                 ; 大小寫不敏感比較
                 c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
                 c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
@@ -338,6 +341,7 @@ http-server-conn.get-header = (name str) (val ?str) {
                 }
             }
         }
+
         matched == 1 -> {
             vlen = .header-values[i].len
             val = .header-values[i].slice(0, vlen)
@@ -570,7 +574,7 @@ http-server-conn.close = () {
 ; 返回 s ?http-server: ok=伺服器, nil=失敗
 http-listen-on = (host str, port i64) (s ?http-server) {
     s = nil
-    srv = http-server{}
+    srv = http-server {}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv
@@ -717,7 +721,7 @@ https-server.accept = () (c ?https-server-conn) {
             tls-conn = it
             space = ' '
             buf = space.repeat(HTTP-SRV-BUF-SIZE)
-            conn = https-server-conn{
+            conn = https-server-conn {
                 tls: tls-conn
                 method: ''
                 path: ''
@@ -771,7 +775,6 @@ https-server-conn.parse = () (ok bool) {
     crlf = cr - lf
     separator = crlf - crlf
 
-    io.errln('[HTTPS-SRV] parse: start')
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
@@ -780,9 +783,7 @@ https-server-conn.parse = () (ok bool) {
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
-        io.errln('[HTTPS-SRV] parse: calling recv-more')
         n = .recv-more()
-        io.errln('[HTTPS-SRV] parse: recv-more returned n=' - n.to-str())
         n <= 0 -> return
     } ()
 
@@ -967,11 +968,17 @@ https-server-conn.write-status = (status i64) (ok bool) {
     tc = .tls
     w = tc.send(line)
     .tls = tc
-    {
+    send-ok = false
+
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> send-ok = true
+    }
+
+    send-ok == false -> return
+
+    ok = true
 }
 
 ; write-header: 寫入單個回應標頭（透過 TLS）
@@ -987,11 +994,17 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     tc = .tls
     w = tc.send(line)
     .tls = tc
-    {
+    send-ok = false
+
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> send-ok = true
+    }
+
+    send-ok == false -> return
+
+    ok = true
 }
 
 ; write-headers-done: 寫入空行表示標頭結束（透過 TLS）
@@ -1004,11 +1017,17 @@ https-server-conn.write-headers-done = () (ok bool) {
     tc = .tls
     w = tc.send(crlf)
     .tls = tc
-    {
+    send-ok = false
+
+    w: {
         nil -> return
         err -> return
-        ok -> ok = true
-    } (w)
+        ok -> send-ok = true
+    }
+
+    send-ok == false -> return
+
+    ok = true
 }
 
 ; write-body: 寫入回應體（透過 TLS）
@@ -1020,11 +1039,17 @@ https-server-conn.write-body = (data str) (ok bool) {
         tc = .tls
         w = tc.send(data)
         .tls = tc
-        {
+        send-ok = false
+
+        w: {
             nil -> return
             err -> return
-            ok -> ok = true
-        } (w)
+            ok -> send-ok = true
+        }
+
+        send-ok == false -> return
+
+        ok = true
     }
     ok = true
 }
@@ -1038,28 +1063,20 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 
     ok = .write-status(status)
     ok == false -> {
-        io.errln('[HTTPS-SRV] write-text: write-status failed')
         return
     }
-    io.errln('[HTTPS-SRV] write-text: write-status ok')
 
     text-len = text.len
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
-    io.errln('[HTTPS-SRV] write-text: ct-header done')
     .write-header('Content-Length', len-s)
-    io.errln('[HTTPS-SRV] write-text: cl-header done')
     {
         .keep-alive -> .write-header('Connection', 'keep-alive')
         -> .write-header('Connection', 'close')
     }
-    io.errln('[HTTPS-SRV] write-text: conn-header done')
     .write-header('Server', 'nolang-https/1.0')
-    io.errln('[HTTPS-SRV] write-text: srv-header done')
     .write-headers-done()
-    io.errln('[HTTPS-SRV] write-text: headers-done done')
     .write-body(text)
-    io.errln('[HTTPS-SRV] write-text: body done')
     ok = true
 }
 
@@ -1132,7 +1149,7 @@ https-server-conn.close = () {
 ; 返回 s ?https-server: ok=伺服器, nil=失敗
 https-listen-on = (host str, port i64) (s ?https-server) {
     s = nil
-    srv = https-server{}
+    srv = https-server {}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv

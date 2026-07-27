@@ -75,12 +75,10 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         return
     }
     outer-len, adv = der-len(data, 1)
-    io.errln('[X509] tbs-range: data.len=' - data.len.to-str() - ' outer-len=' - outer-len.to-str() - ' adv=' - adv.to-str())
 
     ; 內層 SEQUENCE（TBSCertificate）從標籤開始
     start = 1 + adv
     inner-tag = der-tag(data, start)
-    io.errln('[X509] tbs-range: start=' - start.to-str() - ' inner-tag=' - inner-tag.to-str())
     inner-tag != 48 -> {
         start = 0
         end = 0
@@ -91,9 +89,7 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     b0 = data[start + 1] & 255
     b1 = data[start + 2] & 255
     b2 = data[start + 3] & 255
-    io.errln('[X509] tbs-range: tbs hdr bytes=' - b0.to-str() - ' ' - b1.to-str() - ' ' - b2.to-str())
     end = der-skip(data, start)
-    io.errln('[X509] tbs-range: end=' - end.to-str())
 }
 
 ; x509-serial: 提取憑證序號（若可放入 i64）
@@ -234,7 +230,6 @@ x509-rsa-e = (data []byte) (e i64) {
 ; 返回 out []byte: 模數位元組（big-endian，不含前導 0x00）
 x509-rsa-n = (data []byte) (out []byte) {
     tbs-start, tbs-end = x509-tbs-range(data)
-    io.errln('[X509] rsa-n: tbs-start=' - tbs-start.to-str() - ' tbs-end=' - tbs-end.to-str())
     tbs-start == 0 -> return
 
     ; 進入 TBS 內容
@@ -244,14 +239,12 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     ; 跳過版本、序號、簽章演算法、簽發者、有效期、主體
     t = der-tag(data, p)
-    io.errln('[X509] rsa-n: first-tag=' - t.to-str())
     t == 160 -> p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
     p = der-skip(data, p)
-    io.errln('[X509] rsa-n: after-skips p=' - p.to-str())
 
     ; 進入 SPKI
     p = p + 1
@@ -260,18 +253,15 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     ; 跳過 AlgorithmIdentifier
     p = der-skip(data, p)
-    io.errln('[X509] rsa-n: after-algid p=' - p.to-str())
 
     ; 讀取 BIT STRING
     t = der-tag(data, p)
-    io.errln('[X509] rsa-n: bitstring-tag=' - t.to-str())
     t != 3 -> return
     bit-len, adv = der-len(data, p + 1)
     bit-pos = p + 1 + adv + 1
 
     ; RSAPublicKey SEQUENCE
     t = der-tag(data, bit-pos)
-    io.errln('[X509] rsa-n: rsa-seq-tag=' - t.to-str() - ' bit-pos=' - bit-pos.to-str())
     t != 48 -> return
     seq-len, seq-adv = der-len(data, bit-pos + 1)
     rsa-start = bit-pos + 1 + seq-adv
@@ -279,10 +269,8 @@ x509-rsa-n = (data []byte) (out []byte) {
     ; rsa-start 指向 RSAPublicKey 內容
     ; 第一個 INTEGER 是模數
     t = der-tag(data, rsa-start)
-    io.errln('[X509] rsa-n: mod-int-tag=' - t.to-str() - ' rsa-start=' - rsa-start.to-str())
     t != 2 -> return
     mod-len, len-adv = der-len(data, rsa-start + 1)
-    io.errln('[X509] rsa-n: mod-len=' - mod-len.to-str())
     mod-val-start = rsa-start + 1 + len-adv
     out = with-cap(mod-len)
 
@@ -2602,11 +2590,9 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     spki []byte
     spki = x509-build-spki(n, e)
 
-    io.errln('[X509] build-tbs: n.len=' - n.len.to-str() - ' spki.len=' - spki.len.to-str())
 
     ; 串接所有欄位
     total = version.len + serial.len + sig-alg.len + issuer.len + validity.len + subject.len + spki.len
-    io.errln('[X509] build-tbs: total=' - total.to-str() - ' version=' - version.len.to-str() - ' serial=' - serial.len.to-str() - ' sig-alg=' - sig-alg.len.to-str() - ' issuer=' - issuer.len.to-str() - ' validity=' - validity.len.to-str() - ' subject=' - subject.len.to-str())
     content []byte = with-len(total)
     pos = 0
     i <- [0..version.len): {
