@@ -2469,8 +2469,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.InfixExpression:
 		// 位元組算術（單字元 StringLiteral 配非字串運算元，如 c - 'A'）應推導為整數
 		// 型別，而非 %str-long。需在字串相接檢查之前判斷。
-		// 注意：'*' 不參與位元組算術（只用於 str repeat 或數值乘法）。
-		if v.Operator == "-" || v.Operator == "+" {
+		if v.Operator == "-" || v.Operator == "+" || v.Operator == "*" {
 			if (isSingleCharStringLit(v.Left) && !g.isStringExpr(v.Right)) ||
 				(isSingleCharStringLit(v.Right) && !g.isStringExpr(v.Left)) {
 				// 落入整數算術推導路徑（intExprLLVMType 回傳 i64）
@@ -2481,10 +2480,6 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		if (v.Operator == "-" || v.Operator == "+") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
-			return "%str-long"
-		}
-		// str repeat: 'str' * n → %str-long
-		if v.Operator == "*" && g.isStringExpr(v.Left) {
 			return "%str-long"
 		}
 		// floatLLVMType 已處理混合 float/double 的型別提升
@@ -5663,8 +5658,6 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%str-long.s2s.",       // str conversion alloca
 		"%s2s.result.",         // s2s conversion in stmt.go
 		"%concat.result.",      // generateStrConcat
-		"%concat.byte.str.",    // byteToSingleCharStr
-		"%repeat.result.",      // generateStrRepeat
 		"%nfmt.concat.result.", // callNamedFormat sprintf concatenation
 		"%str-longrepeat.null", // generateStrRepeat (no sb)
 		"%str-longconcat.null", // generateStrConcat (no sb)
