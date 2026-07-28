@@ -34,12 +34,10 @@ const (
 	IT
 	USE
 	LABEL       // #1, #2 ... only when followed by digits, used as a loop/conditional label
-	FFI         // #c, #cpp ... FFI directive, no space between # and language name
 	HASH_LBRACE // #{ ... annotation directive
 
 	AS
 	CHAN
-	GO
 	PTR
 	SWITCH
 	CASE
@@ -48,7 +46,6 @@ const (
 	MAP
 	RUN
 	AWY
-	EXTERN // deprecated: kept for backward compat, no longer a keyword
 
 	// 运算符
 	ASSIGN         // =
@@ -79,7 +76,7 @@ const (
 	AND_NOT // &^
 
 	STAR_STAR // ** — used as `continue` shorthand (only at statement start)
-	BANG_BANG // !! — used as infinite loop `!! { }` (at statement start) or `true` (expression)
+	BANG_BANG // !! — used as `true` (expression)
 
 	ELLIPSIS // ..
 
@@ -147,12 +144,10 @@ var tokenNames = map[TokenType]string{
 	IT:             "IT",
 	USE:            "USE(#)",
 	LABEL:          "LABEL(#N)",
-	FFI:            "FFI(#lang)",
 	HASH_LBRACE:    "HASH_LBRACE(#{)",
 	IN:             "IN",
 	AS:             "AS",
 	CHAN:           "CHAN",
-	GO:             "GO",
 	PTR:            "PTR",
 	SWITCH:         "SWITCH",
 	CASE:           "CASE",

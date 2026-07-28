@@ -332,3 +332,51 @@ func TestLexerRegexVsImportExportPath(t *testing.T) {
 		})
 	}
 }
+
+func TestLexerBitwiseAssignOperators(t *testing.T) {
+	// 驗證位運算複合賦值運算子能被正確詞法分析。
+	// 包含：&= |= ^= <<= >>= &^= 以及 &^（非賦值形式）。
+	tests := []struct {
+		name   string
+		input  string
+		tokens []TokenType
+	}{
+		{name: "and assign", input: "x &= y", tokens: []TokenType{IDENT, AND_ASSIGN, IDENT, EOF}},
+		{name: "or assign", input: "x |= y", tokens: []TokenType{IDENT, OR_ASSIGN, IDENT, EOF}},
+		{name: "xor assign", input: "x ^= y", tokens: []TokenType{IDENT, XOR_ASSIGN, IDENT, EOF}},
+		{name: "shl assign", input: "x <<= y", tokens: []TokenType{IDENT, SHL_ASSIGN, IDENT, EOF}},
+		{name: "shr assign", input: "x >>= y", tokens: []TokenType{IDENT, SHR_ASSIGN, IDENT, EOF}},
+		{name: "and-not", input: "x &^ y", tokens: []TokenType{IDENT, AND_NOT, IDENT, EOF}},
+		{name: "and-not assign", input: "x &^= y", tokens: []TokenType{IDENT, AND_NOT_ASSIGN, IDENT, EOF}},
+		{name: "shl still works", input: "x << y", tokens: []TokenType{IDENT, SHL, IDENT, EOF}},
+		{name: "shr still works", input: "x >> y", tokens: []TokenType{IDENT, SHR, IDENT, EOF}},
+		{name: "and still works", input: "x & y", tokens: []TokenType{IDENT, AND, IDENT, EOF}},
+		{name: "or still works", input: "x | y", tokens: []TokenType{IDENT, OR, IDENT, EOF}},
+		{name: "xor still works", input: "x ^ y", tokens: []TokenType{IDENT, XOR, IDENT, EOF}},
+		{name: "less still works", input: "x < y", tokens: []TokenType{IDENT, LESS, IDENT, EOF}},
+		{name: "greater still works", input: "x > y", tokens: []TokenType{IDENT, GREATER, IDENT, EOF}},
+		{name: "less equals still works", input: "x <= y", tokens: []TokenType{IDENT, LESS_EQUALS, IDENT, EOF}},
+		{name: "greater equals still works", input: "x >= y", tokens: []TokenType{IDENT, GREATER_EQUALS, IDENT, EOF}},
+		{name: "land still works", input: "x && y", tokens: []TokenType{IDENT, LAND, IDENT, EOF}},
+		{name: "lor still works", input: "x || y", tokens: []TokenType{IDENT, LOR, IDENT, EOF}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := New(tt.input)
+			i := 0
+			for tok := lex.NextToken(); ; tok = lex.NextToken() {
+				if i >= len(tt.tokens) {
+					t.Fatalf("%s: unexpected extra token: %s", tt.name, tok.Type.String())
+				}
+				if tok.Type != tt.tokens[i] {
+					t.Fatalf("%s: token %d: expected %s, got %s (literal=%q)",
+						tt.name, i, tt.tokens[i].String(), tok.Type.String(), tok.Literal)
+				}
+				if tok.Type == EOF {
+					break
+				}
+				i++
+			}
+		})
+	}
+}

@@ -422,7 +422,7 @@ func (sp *SemanticTokensProvider) mapTokenType(tok lexer.Token, identTypes map[[
 		return SemTokenTypeKeyword
 	case lexer.IF, lexer.ELIF, lexer.ELSE, lexer.RETURN,
 		lexer.FOR, lexer.IN, lexer.BREAK, lexer.CONTINUE,
-		lexer.USE, lexer.AS, lexer.CHAN, lexer.GO, lexer.PTR,
+		lexer.USE, lexer.AS, lexer.CHAN, lexer.PTR,
 		lexer.SELF, lexer.SUPER, lexer.IT, lexer.UNDERSCORE:
 		return SemTokenTypeKeyword
 	case lexer.COMMENT:

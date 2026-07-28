@@ -501,12 +501,21 @@ func New(lexer *lexer.Lexer) *Parser {
 		errors:          []string{},
 		ctx:             contextStack{CTX_GLOBAL},
 		reportedIllegal: map[string]bool{},
+		varDeclTypes:    map[string]string{},
+		declaredVars:    map[string]bool{},
 	}
 
 	p.nextToken()
 	p.nextToken()
 
 	return p
+}
+
+// setVarType 記錄變數宣告型別到 varDeclTypes。
+// varDeclTypes 在 New() 中已初始化，此處無需 nil 檢查。
+// 集中管理寫入點，避免散佈的 lazy init 模式。
+func (p *Parser) setVarType(name, typ string) {
+	p.varDeclTypes[name] = typ
 }
 
 // SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
@@ -616,20 +625,14 @@ func (p *Parser) saveState() parserState {
 	commentsCopy := make([]lexer.Token, len(p.comments))
 	copy(commentsCopy, p.comments)
 	// 深拷貝符號表，避免試探性解析中的 varDeclTypes/declaredVars 寫入
-	// 在 restoreState 後污染後續解析。
-	var varDeclTypesCopy map[string]string
-	if p.varDeclTypes != nil {
-		varDeclTypesCopy = make(map[string]string, len(p.varDeclTypes))
-		for k, v := range p.varDeclTypes {
-			varDeclTypesCopy[k] = v
-		}
+	// 在 restoreState 後污染後續解析。varDeclTypes/declaredVars 在 New() 中已初始化。
+	varDeclTypesCopy := make(map[string]string, len(p.varDeclTypes))
+	for k, v := range p.varDeclTypes {
+		varDeclTypesCopy[k] = v
 	}
-	var declaredVarsCopy map[string]bool
-	if p.declaredVars != nil {
-		declaredVarsCopy = make(map[string]bool, len(p.declaredVars))
-		for k, v := range p.declaredVars {
-			declaredVarsCopy[k] = v
-		}
+	declaredVarsCopy := make(map[string]bool, len(p.declaredVars))
+	for k, v := range p.declaredVars {
+		declaredVarsCopy[k] = v
 	}
 	return parserState{
 		currentToken: p.currentToken,
@@ -1019,8 +1022,6 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
-	case lexer.FFI:
-		return p.parseFFIDeclaration()
 	case lexer.HASH_LBRACE:
 		return p.parseAnnotationStatement()
 	case lexer.LABEL:
@@ -2603,10 +2604,7 @@ func (p *Parser) parseLetStatement() Statement {
 			p.nextToken()
 		}
 		if stmt.Type != nil {
-			if p.varDeclTypes == nil {
-				p.varDeclTypes = make(map[string]string)
-			}
-			p.varDeclTypes[stmt.Name.Value] = typeString(stmt.Type)
+			p.setVarType(stmt.Name.Value, typeString(stmt.Type))
 		}
 		return stmt
 	} else if p.peekToken.Type != lexer.ASSIGN {
@@ -2731,10 +2729,7 @@ func (p *Parser) parseLetStatement() Statement {
 
 	// 記錄變數宣告型別供後續 match 完整性檢查使用
 	if stmt.Type != nil {
-		if p.varDeclTypes == nil {
-			p.varDeclTypes = make(map[string]string)
-		}
-		p.varDeclTypes[stmt.Name.Value] = typeString(stmt.Type)
+		p.setVarType(stmt.Name.Value, typeString(stmt.Type))
 	}
 
 	if stmt.Type == nil {
@@ -2816,32 +2811,23 @@ func (p *Parser) parseLetStatement() Statement {
 			// Struct literal: record struct type in varDeclTypes so that
 			// resolveReceiverType can resolve method calls on this variable
 			// (e.g. srv = https-server{} → srv.accept() needs varDeclTypes["srv"]).
-			if p.varDeclTypes == nil {
-				p.varDeclTypes = make(map[string]string)
-			}
 			if _, exists := p.varDeclTypes[stmt.Name.Value]; !exists {
-				p.varDeclTypes[stmt.Name.Value] = v.Type
+				p.setVarType(stmt.Name.Value, v.Type)
 			}
 
 		case *CallExpression:
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
 			// 例外：option 型別（?type）必須始終更新，因為 match desugar 依賴它
 			// 來為 ok arm 生成正確的 it 型別窄化
-			if p.declaredVars == nil || !p.declaredVars[stmt.Name.Value] {
+			if !p.declaredVars[stmt.Name.Value] {
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
 					stmt.Type = markInferred(buildType(inferred, nameToken))
-					if p.varDeclTypes == nil {
-						p.varDeclTypes = make(map[string]string)
-					}
-					p.varDeclTypes[stmt.Name.Value] = inferred
+					p.setVarType(stmt.Name.Value, inferred)
 				}
 			} else {
 				// 已宣告過，但仍需更新 option 型別以支援 match desugar 的型別窄化
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" && strings.HasPrefix(inferred, "?") {
-					if p.varDeclTypes == nil {
-						p.varDeclTypes = make(map[string]string)
-					}
-					p.varDeclTypes[stmt.Name.Value] = inferred
+					p.setVarType(stmt.Name.Value, inferred)
 				}
 			}
 
@@ -2849,9 +2835,6 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// 記錄已宣告的變數（用於避免重複型別推斷）
-	if p.declaredVars == nil {
-		p.declaredVars = make(map[string]bool)
-	}
 	p.declaredVars[stmt.Name.Value] = true
 
 	return stmt
@@ -3966,7 +3949,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
-		lexer.LBRACKET, lexer.FFI, lexer.HASH_LBRACE,
+		lexer.LBRACKET, lexer.HASH_LBRACE,
 		lexer.REGEX,
 		// Shorthand forms and loop labels that can begin a statement
 		// (without these, `skipToStatementEnd` swallows them after a
@@ -8865,17 +8848,14 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 
 	// 註冊參數與結果型別到 varDeclTypes，使 match desugar 能為 option 型別參數
 	// 生成正確的 `it` 綁定（如 `x ?i64` 在 `x: { ok -> result = it }` 中需要 it: i64）。
-	if p.varDeclTypes == nil {
-		p.varDeclTypes = make(map[string]string)
-	}
 	for _, param := range def.Parameters {
 		if param.Type != nil {
-			p.varDeclTypes[param.Name] = typeString(param.Type)
+			p.setVarType(param.Name, typeString(param.Type))
 		}
 	}
 	for _, param := range def.Results {
 		if param.Type != nil && param.Name != "" {
-			p.varDeclTypes[param.Name] = typeString(param.Type)
+			p.setVarType(param.Name, typeString(param.Type))
 		}
 	}
 
@@ -8920,74 +8900,6 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 		}
 		p.funcSignatures[def.Name] = rets
 	}
-}
-
-// parseFFIDeclaration 解析 FFI 宣告：
-//
-//	#c
-//	_name = (params) (results)
-//
-// #c（或 #cpp 等）獨立一行，標記下一個宣告為 FFI 綁定。
-// 名稱以 _ 開頭表示私有（不導出），C ABI 符號自動去除前綴 _ 並將連字號轉為底線。
-// 參數/結果型別支援 C 風格指針語法（*T、**T、***T，必須有具體型別）以及一般具名型別。
-func (p *Parser) parseFFIDeclaration() Statement {
-	// 讀取 FFI 指令（#c、#cpp 等），取得語言名稱
-	lang := p.currentToken.Literal
-	stmt := &ExternStatement{
-		Token:      p.currentToken,
-		Lang:       lang,
-		Parameters: []*Parameter{},
-		Results:    []*Parameter{},
-	}
-	p.nextToken() // skip FFI token
-
-	// 跳過 NEWLINE（#c 獨立一行，宣告在後續行）
-	for p.currentToken.Type == lexer.NEWLINE {
-		p.nextToken()
-	}
-
-	// 函式名稱（可以 _ 開頭表示私有）
-	if p.currentToken.Type != lexer.IDENT {
-		msg := fmt.Sprintf("line %d, column %d: expected identifier after #%s directive, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, lang, p.currentToken.Type.String())
-		p.saveError(msg)
-		return nil
-	}
-	stmt.Name = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
-	p.nextToken() // skip name
-
-	// 預期 '='
-	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' after FFI name, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
-		return nil
-	}
-	p.nextToken() // skip =
-
-	// 解析 (params)
-	params, ok := p.parseExternParamList()
-	if !ok {
-		return nil
-	}
-	stmt.Parameters = params
-
-	// 跳過 NEWLINE（多行定義）
-	for p.currentToken.Type == lexer.NEWLINE {
-		p.nextToken()
-	}
-
-	// 解析 (results) — 選擇性
-	if p.currentToken.Type == lexer.LPAREN {
-		results, ok := p.parseExternParamList()
-		if !ok {
-			return nil
-		}
-		stmt.Results = results
-	}
-
-	p.skipToStatementEnd()
-	return stmt
 }
 
 // parseExternParamList 解析 extern 宣告中的單一 (name type, ...) 參數列表。

@@ -431,21 +431,15 @@ func TestFFIDeclarationSyntax(t *testing.T) {
 		filename string
 		wantErr  bool
 	}{
-		{name: "ffi_basic", input: "#c\nc-strlen = (s str) (n i64)", filename: "test.no", wantErr: false},
-		{name: "ffi_single_ptr", input: "#c\nsqlite3-close = (db *byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_double_ptr", input: "#c\nsqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_triple_ptr", input: "#c\nfoo = (p ***byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_mixed_ptrs", input: "#c\nsqlite3-exec = (db *byte, sql str, cb *byte, arg *byte, errmsg *byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_ptr_result", input: "#c\nmalloc = (n i64) (p *byte)", filename: "test.no", wantErr: false},
-		{name: "ffi_ptr_i64", input: "#c\nfoo = (p *i64) (r i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_private_underscore", input: "#c\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_with_newline_gap", input: "#c\n\n_sqlite3-open = (db **byte) (rc i32)", filename: "test.no", wantErr: false},
-		{name: "ffi_no_results", input: "#c\nfoo = (n i64)", filename: "test.no", wantErr: false},
-		// #{c} annotation syntax (new style, replacing #c)
 		{name: "annot_ffi_basic", input: "#{c}\nc-strlen = (s str) (n i64)", filename: "test.no", wantErr: false},
 		{name: "annot_ffi_single_ptr", input: "#{c}\nsqlite3-close = (db *byte) (rc i32)", filename: "test.no", wantErr: false},
 		{name: "annot_ffi_double_ptr", input: "#{c}\nsqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_triple_ptr", input: "#{c}\nfoo = (p ***byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_mixed_ptrs", input: "#{c}\nsqlite3-exec = (db *byte, sql str, cb *byte, arg *byte, errmsg *byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_ptr_result", input: "#{c}\nmalloc = (n i64) (p *byte)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_ptr_i64", input: "#{c}\nfoo = (p *i64) (r i32)", filename: "test.no", wantErr: false},
 		{name: "annot_ffi_private_underscore", input: "#{c}\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
+		{name: "annot_ffi_with_newline_gap", input: "#{c}\n\n_sqlite3-open = (db **byte) (rc i32)", filename: "test.no", wantErr: false},
 		{name: "annot_ffi_no_results", input: "#{c}\nfoo = (n i64)", filename: "test.no", wantErr: false},
 		{name: "annot_ffi_with_extra", input: "#{c, debug}\n_sqlite3-open = (filename str, db **byte) (rc i32)", filename: "test.no", wantErr: false},
 		// General annotations (non-FFI)

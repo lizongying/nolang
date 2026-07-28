@@ -492,10 +492,10 @@ func (l *Lexer) isRegexStart() bool {
 		SELF, IT, SUPER, UNDERSCORE:
 		return false
 	}
-	// After import/export directive tokens (USE, FFI, LABEL, HASH_LBRACE, AT)
+	// After import/export directive tokens (USE, LABEL, HASH_LBRACE, AT)
 	// a '/' is a path separator in a use/import/export statement, not a regex.
 	switch prev {
-	case USE, FFI, LABEL, HASH_LBRACE, AT:
+	case USE, LABEL, HASH_LBRACE, AT:
 		return false
 	}
 	// After all other tokens (operators, keywords like return/if/for,
@@ -560,8 +560,14 @@ func (l *Lexer) scanToken() (tok Token) {
 	case '<':
 		if l.peekChar() == '<' {
 			l.readChar()
-			tok.Type = SHL
-			tok.Literal = "<<"
+			if l.peekChar() == '=' {
+				l.readChar()
+				tok.Type = SHL_ASSIGN
+				tok.Literal = "<<="
+			} else {
+				tok.Type = SHL
+				tok.Literal = "<<"
+			}
 		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = LESS_EQUALS
@@ -578,8 +584,14 @@ func (l *Lexer) scanToken() (tok Token) {
 	case '>':
 		if l.peekChar() == '>' {
 			l.readChar()
-			tok.Type = SHR
-			tok.Literal = ">>"
+			if l.peekChar() == '=' {
+				l.readChar()
+				tok.Type = SHR_ASSIGN
+				tok.Literal = ">>="
+			} else {
+				tok.Type = SHR
+				tok.Literal = ">>"
+			}
 		} else if l.peekChar() == '=' {
 			l.readChar()
 			tok.Type = GREATER_EQUALS
@@ -698,18 +710,42 @@ func (l *Lexer) scanToken() (tok Token) {
 			l.readChar()
 			tok.Type = LAND
 			tok.Literal = "&&"
+		} else if l.peekChar() == '^' {
+			l.readChar()
+			if l.peekChar() == '=' {
+				l.readChar()
+				tok.Type = AND_NOT_ASSIGN
+				tok.Literal = "&^="
+			} else {
+				tok.Type = AND_NOT
+				tok.Literal = "&^"
+			}
+		} else if l.peekChar() == '=' {
+			l.readChar()
+			tok.Type = AND_ASSIGN
+			tok.Literal = "&="
 		} else {
 			tok.Type = AND
 			tok.Literal = charLits[l.ch]
 		}
 	case '^':
-		tok.Type = XOR
-		tok.Literal = charLits[l.ch]
+		if l.peekChar() == '=' {
+			l.readChar()
+			tok.Type = XOR_ASSIGN
+			tok.Literal = "^="
+		} else {
+			tok.Type = XOR
+			tok.Literal = charLits[l.ch]
+		}
 	case '|':
 		if l.peekChar() == '|' {
 			l.readChar()
 			tok.Type = LOR
 			tok.Literal = "||"
+		} else if l.peekChar() == '=' {
+			l.readChar()
+			tok.Type = OR_ASSIGN
+			tok.Literal = "|="
 		} else {
 			tok.Type = OR
 			tok.Literal = charLits[l.ch]
@@ -799,10 +835,9 @@ func (l *Lexer) scanToken() (tok Token) {
 		tok.Type = TILDE
 		tok.Literal = charLits[l.ch]
 	case '#':
-		// Distinguish four forms:
+		// Distinguish three forms:
 		//   #{   — annotation directive (e.g. `#{c}`, `#{derive=[Serialize, Deserialize]}`)
 		//   #N   — numeric label (e.g. `#1 i <- ...`)
-		//   #c   — FFI directive (no space between # and language name)
 		//   # path — use/import statement (space after #)
 		if l.peekChar() == '{' {
 			tok.Type = HASH_LBRACE
@@ -816,17 +851,6 @@ func (l *Lexer) scanToken() (tok Token) {
 			l.readChar() // consume '#'
 			start := l.position
 			for isDigit(l.ch) {
-				l.readChar()
-			}
-			tok.Literal = l.input[start:l.position]
-			return tok
-		}
-		// FFI directive: #c, #cpp, #rust, ... (letter immediately after #)
-		if unicode.IsLetter(rune(l.peekChar())) {
-			tok.Type = FFI
-			l.readChar() // consume '#', now l.ch is first letter
-			start := l.position
-			for isLetter(l.ch) || isDigit(l.ch) {
 				l.readChar()
 			}
 			tok.Literal = l.input[start:l.position]

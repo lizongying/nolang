@@ -35,6 +35,18 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		if len(fns) <= 1 {
 			continue // 無重載，不改名
 		}
+		// Debug: track hashutil functions
+		if name == "hash-cmd" || name == "do-hash" || name == "bytes-to-hex" {
+			for i, fd := range fns {
+				sig := platformAwareCallSignature(name, fd.Parameters, fd.PlatformKeys)
+				paramStrs := make([]string, 0, len(fd.Parameters))
+				for _, p := range fd.Parameters {
+					paramStrs = append(paramStrs, p.Type.String())
+				}
+				fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads: name=%s copy[%d] sig=%q params=[%s] platformKeys=%v\n",
+					name, i, sig, strings.Join(paramStrs, ", "), fd.PlatformKeys)
+			}
+		}
 		// 去重：對於相同名稱+簽名+平台組合的重複定義（多模組同函數），只保留第一個。
 		// 不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）的定義視為不同函數，不去重。
 		seenSigs := make(map[string]bool)
@@ -69,16 +81,37 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 
 	// 從 program.Statements 中刪除重複的函數定義
 	if len(toRemove) > 0 {
+		// Debug: log what's being removed
+		for fd := range toRemove {
+			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
+				fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads toRemove: name=%s\n", fd.Name)
+			}
+		}
 		filtered := make([]parser.Statement, 0, len(program.Statements))
+		removedCount := 0
 		for _, stmt := range program.Statements {
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 				if toRemove[fd] {
+					removedCount++
 					continue
 				}
 			}
 			filtered = append(filtered, stmt)
 		}
+		fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads: removed %d duplicate functions, before=%d after=%d\n",
+			removedCount, len(program.Statements), len(filtered))
 		program.Statements = filtered
+		// Debug: check hashutil functions after toRemove filtering
+		hashCnt := 0
+		for _, s := range program.Statements {
+			if fd, ok := s.(*parser.FunctionDefinition); ok {
+				if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
+					hashCnt++
+					fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads after-toRemove: name=%s\n", fd.Name)
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads after-toRemove: hashutil-fn-count=%d\n", hashCnt)
 	}
 
 	if len(mangled) == 0 {
@@ -1052,11 +1085,35 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
 	// （如 result → sql.result），避免與主檔案變數或型別衝突。
 	typeOwner := make(map[string]string)
+	// loadedUserModules tracks non-std module paths that have already been
+	// imported (when use.Alias == ""). Prevents duplicate FunctionDefinition
+	// pointers from being appended when the same module is referenced by
+	// multiple `# /path/to/module.fn` directives — which would cause
+	// mangleOverloads to remove ALL copies (pointer-keyed dedup removes
+	// every occurrence of the same pointer).
+	loadedUserModules := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
+			// When importing entire module (no alias), skip if already loaded
+			if use.Alias == "" && loadedUserModules[use.Path] {
+				continue
+			}
 			modProg, err := t.resolveUse(use)
 			if err != nil {
 				return "", fmt.Errorf("loading module %s: %w", use.Path, err)
+			}
+			if use.Alias == "" {
+				loadedUserModules[use.Path] = true
+			}
+			if strings.Contains(use.Path, "/od") {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Loading od: path=%s func=%s alias=%q stmtCount=%d\n", use.Path, use.Function, use.Alias, len(modProg.Statements))
+				for i, ms := range modProg.Statements {
+					fdName := ""
+					if fd, ok := ms.(*parser.FunctionDefinition); ok {
+						fdName = fd.Name
+					}
+					fmt.Fprintf(os.Stderr, "[DEBUG]   od-stmt[%d] type=%T name=%s\n", i, ms, fdName)
+				}
 			}
 			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
 				explicitStdModules[use.Path] = true
@@ -1134,6 +1191,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
 			merged.Statements = append(merged.Statements, es)
 		}
+}
+
+	// Debug: check hash functions right after merge loop
+	for i, s := range merged.Statements {
+		if fd, ok := s.(*parser.FunctionDefinition); ok {
+			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
+				fmt.Fprintf(os.Stderr, "[DEBUG] after-merge[%d] FunctionDefinition name=%s\n", i, fd.Name)
+			}
+		}
 	}
 
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
@@ -1196,16 +1262,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 此時 typeOwner 已包含所有模組的型別歸屬，可以正確重命名。
 	prefixMethodNames(merged.Statements, typeOwner)
 	rewriteTypeRefs(merged.Statements, typeOwner)
+	debugCountHashFns("after-prefixMethodNames", merged)
 
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
 	resolveModuleConstants(merged, moduleConstants)
+	debugCountHashFns("after-resolveModuleConstants", merged)
 
 	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
 	resolveModuleCalls(merged, importedModules)
+	debugCountHashFns("after-resolveModuleCalls", merged)
 
 	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
 	resolveSelfMethodCalls(merged)
+	debugCountHashFns("after-resolveSelfMethodCalls", merged)
 
 	// 非函數定義的陳述句（頂層呼叫）加入 merged
 	// 必須在 monomorphizeGenerics 之前添加，否則頂層的方法呼叫（如 a.clone()）
@@ -1245,6 +1315,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
 	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
 	monomorphizeGenerics(merged, globalVarTypes, typeOwner)
+	debugCountHashFns("after-monomorphizeGenerics", merged)
 
 	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
 	filtered := make([]parser.Statement, 0, len(merged.Statements))
@@ -1257,6 +1328,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		filtered = append(filtered, stmt)
 	}
 	merged.Statements = filtered
+	debugCountHashFns("after-filter-generic", merged)
 
 	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
 	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
@@ -1271,23 +1343,28 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴
 	// 生成 Type.method(self, args)），並在所有頂層代碼加入 merged 之後執行。
 	resolveMethodCalls(merged, typeOwner)
+	debugCountHashFns("after-resolveMethodCalls", merged)
 
 	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
 	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
 	monomorphizeGenericStructs(merged)
+	debugCountHashFns("after-monomorphizeGenericStructs", merged)
 
 	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
 	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
 	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
 	// 一併替換。
 	monomorphizeUnions(merged)
+	debugCountHashFns("after-monomorphizeUnions", merged)
 
 	// 重寫對聯合型別泛型函數的呼叫：將 max(args) 改為 max__i64(args)
 	rewriteUnionCalls(merged, varTypes)
+	debugCountHashFns("after-rewriteUnionCalls", merged)
 
 	// 在合併所有 std 模組後再做一次名稱修飾，
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
 	mangleOverloads(merged, nil)
+	debugCountHashFns("after-mangleOverloads", merged)
 
 	// 編譯期未初始化變數檢查：循環體內聲明的變數在循環外使用
 	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
@@ -1302,6 +1379,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
 	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
+	// Debug: check if hash-cmd is in merged before Generate
+	for i, s := range merged.Statements {
+		if fd, ok := s.(*parser.FunctionDefinition); ok {
+			if strings.Contains(fd.Name, "hash") || strings.HasPrefix(fd.Name, "od-") {
+				fmt.Fprintf(os.Stderr, "[DEBUG] merged[%d] FunctionDefinition name=%s\n", i, fd.Name)
+			}
+		}
+	}
 	return t.llvmGenerator.Generate(merged), nil
 }
 
@@ -7018,6 +7103,21 @@ type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
 	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
 	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
+}
+
+// debugCountHashFns prints how many hash-cmd/do-hash/bytes-to-hex definitions
+// exist in merged.Statements at the given stage. Temporary debugging helper.
+func debugCountHashFns(stage string, merged *parser.Program) {
+	count := 0
+	for _, s := range merged.Statements {
+		if fd, ok := s.(*parser.FunctionDefinition); ok {
+			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
+				count++
+				fmt.Fprintf(os.Stderr, "[DEBUG] %s: found FunctionDefinition name=%s\n", stage, fd.Name)
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[DEBUG] %s: total statements=%d, hashutil-fn-count=%d\n", stage, len(merged.Statements), count)
 }
 
 // knownStdModules returns all embedded standard library modules.
