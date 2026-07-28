@@ -146,6 +146,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @uname(i8*)\n")
 		sb.WriteString("declare i64 @sysconf(i32)\n")
 		sb.WriteString("declare i8* @ttyname(i32)\n")
+		sb.WriteString("declare i64 @signal(i32, i64)\n")
 	}
 	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
 	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）

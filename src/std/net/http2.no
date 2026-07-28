@@ -49,6 +49,7 @@ http2-frame {
     stream-id i64
     payload str
 }
+
 ; 影格長度（24-bit）
 ; 影格類型（8-bit）
 ; 旗標（8-bit）
@@ -178,17 +179,11 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
     {
         hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
         {
-            .use-tls -> {
-                rn = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
-                rn: {
-                    nil -> return
-                    err -> return
-                    ok -> recv-n = it
-                }
-            }
+            .use-tls -> recv-n = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
             -> recv-n = net.net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
         recv-n <= 0 -> return
+
         ; net-recv 覆寫 buf[0]，需要位移複製
         i <- [0..recv-n): {
             hdr-buf[hdr-total + i] = hdr-buf[i]
@@ -211,14 +206,7 @@ http2-conn.recv-frame = () (frame ?http2-frame) {
         {
             payload-total >= f.length -> *
             {
-                .use-tls -> {
-                    rn = .tls-c.recv(f.payload, f.length - payload-total)
-                    rn: {
-                        nil -> return
-                        err -> return
-                        ok -> recv-n = it
-                    }
-                }
+                .use-tls -> recv-n = .tls-c.recv(f.payload, f.length - payload-total)
                 -> recv-n = net.net-recv(.fd, f.payload, f.length - payload-total)
             }
             recv-n <= 0 -> return
@@ -255,6 +243,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
     block = space.repeat(HTTP2-MAX-PAYLOAD)
     block-n = 0
     i <- [0..count): {
+
         ; 用 slice 載入值（避開 IndexExpression codegen 問題）
         nlen = names[i].len
         vlen = values[i].len
@@ -262,6 +251,7 @@ http2-conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i
         v str = values[i].slice(0, vlen)
         hdr-out = ' '
         hdr-out = .hpack.encode-header(n, v)
+
         ; 複製到 block
         j <- [0..hdr-out.len): {
             block[block-n + j] = hdr-out[j]
@@ -482,6 +472,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
         }
         {
             f.frame-type == FRAME-HEADERS -> {
+
                 ; 用 HPACK 解碼標頭
                 dec-names [128]str
                 dec-values [128]str
@@ -510,6 +501,7 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                 }
             }
             f.frame-type == FRAME-DATA -> {
+
                 ; 複製到 resp-body
                 i <- [0..f.payload.len): {
                     resp-body[resp-n + i] = f.payload[i]
@@ -521,10 +513,12 @@ http2-conn.request = (method str, path str, host str, body str) (names [32]str, 
                 }
             }
             f.frame-type == FRAME-RST-STREAM -> {
+
                 ; 伺服器重設串流
                 return
             }
             f.frame-type == FRAME-GOAWAY -> {
+
                 ; 伺服器關閉連線
                 return
             }
@@ -612,10 +606,6 @@ http2-do = (method str, url str, body str) (names [32]str, values [32]str, heade
     }
     conn: {
         ->
-        ok -> {
-            names, values, header-count, resp-body, resp-n, ok = it.request(method, path, host, body)
-            it.close()
-        }
     }
 }
 
@@ -647,6 +637,7 @@ http2-do-req = (method str, url str, body str) (resp ?http-response) {
         vlen = values[i].len
         r.header-names[i] = names[i].slice(0, nlen)
         r.header-values[i] = values[i].slice(0, vlen)
+
         ; 尋找 :status
         nlen == 7 -> {
             is-status = 1
