@@ -371,7 +371,7 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 			varType := g.moduleVarTypes[name]
 			// 与 generateMainFunction 的预分配条件一致：
 			// 跳过空类型，以及非 % 前缀且非简单标量的类型
-			if varType == "" || (strings.HasPrefix(varType, "%") == false && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32") {
+			if varType == "" || (!g.isStructLLVMType(varType) && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32") {
 				continue
 			}
 			if !g.funcLocalNames[name] {

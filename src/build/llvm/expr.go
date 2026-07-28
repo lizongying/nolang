@@ -112,7 +112,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				// Returns a pointer (consistent with how struct variables are referenced
 				// by pointer throughout the codegen). Callers that need a value should
 				// load from this pointer.
-				if strings.HasPrefix(innerType, "%") {
+				if g.isStructLLVMType(innerType) {
 					g.tmpIdx++
 					dataLoad := llvmSSAReg(e.Value, fmt.Sprintf(".data.val.%d", g.tmpIdx))
 					g.tmpIdx++
@@ -541,7 +541,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	copy(savedOutBindState, g.outBindState)
 	// 預設 phi 值：對 struct 用 zeroinitializer，對 pointer 用 null，對 float/double 用 0.0
 	defaultZero := "0"
-	if strings.HasPrefix(g.curFuncRetType, "%") {
+	if g.isStructLLVMType(g.curFuncRetType) {
 		defaultZero = "zeroinitializer"
 	} else if strings.HasSuffix(g.curFuncRetType, "*") {
 		defaultZero = "null"
@@ -703,7 +703,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	// For struct types, use zeroinitializer instead of integer 0
 	zeroVal := "0"
-	if strings.HasPrefix(phiType, "%") {
+	if g.isStructLLVMType(phiType) {
 		zeroVal = "zeroinitializer"
 	} else if phiType == "ptr" {
 		zeroVal = "null"
@@ -949,7 +949,7 @@ func (g *Generator) floatLLVMType(expr parser.Expression) string {
 		// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
 		if g.structTypes != nil {
 			recvType := g.exprResultLLVMType(v.Receiver)
-			if strings.HasPrefix(recvType, "%") {
+			if g.isStructLLVMType(recvType) {
 				structName := strings.TrimPrefix(recvType, "%")
 				if fields, ok := g.structTypes[structName]; ok {
 					for _, f := range fields {
@@ -1033,7 +1033,7 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 		// e.g. .connected (where self.connected is bool) → i1
 		// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
 		recvType := g.exprResultLLVMType(v.Receiver)
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName := strings.TrimPrefix(recvType, "%")
 			if fields, ok := g.structTypes[structName]; ok {
 				for _, f := range fields {
@@ -1288,7 +1288,7 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		}
 	case *parser.DotExpression:
 		recvType := g.exprResultLLVMType(v.Receiver)
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName := strings.TrimPrefix(recvType, "%")
 			if fields, ok := g.structTypes[structName]; ok {
 				for _, f := range fields {
@@ -1528,7 +1528,7 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 // returns the variable's address directly (suitable for GEP).
 func (g *Generator) structPtrForVar(sb *strings.Builder, varName, structType string) string {
 	if g.itAllocTypes != nil {
-		if allocType, ok := g.itAllocTypes[varName]; ok && allocType == "i64" && strings.HasPrefix(structType, "%") {
+		if allocType, ok := g.itAllocTypes[varName]; ok && allocType == "i64" && g.isStructLLVMType(structType) {
 			loadReg := g.tmpReg("it.i64load")
 			ptrReg := g.tmpReg("it.ptrcast")
 			if sb != nil {
@@ -1576,7 +1576,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 	} else {
 		// 先推導型別（不生成 IR），確認為 struct 後再生成 IR
 		recvType := g.exprResultLLVMType(expr.Receiver)
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName = strings.TrimPrefix(recvType, "%")
 		}
 	}
@@ -1683,7 +1683,7 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 			}
 		} else {
 			recvType := g.exprResultLLVMType(v.Receiver)
-			if strings.HasPrefix(recvType, "%") {
+			if g.isStructLLVMType(recvType) {
 				structName = strings.TrimPrefix(recvType, "%")
 			}
 			if sb != nil {
@@ -1741,7 +1741,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 			}
 		} else {
 			recvType := g.exprResultLLVMType(dot.Receiver)
-			if strings.HasPrefix(recvType, "%") {
+			if g.isStructLLVMType(recvType) {
 				structName = strings.TrimPrefix(recvType, "%")
 			}
 		}
@@ -2090,7 +2090,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 		}
 	} else {
 		recvType := g.exprResultLLVMType(dot.Receiver)
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName = strings.TrimPrefix(recvType, "%")
 		}
 		if sb != nil {
@@ -2245,7 +2245,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					// Truncate/extend val to elemType if needed (e.g., i64 → i8 for byte arrays)
 					// Only convert for integer types; struct types (e.g. %str-long) need different handling
 					storeVal := val
-					if elemType != "i64" && !strings.HasPrefix(elemType, "%") && strings.HasPrefix(val, "%") {
+					if elemType != "i64" && !g.isStructLLVMType(elemType) && strings.HasPrefix(val, "%") {
 						valType := g.intExprLLVMType(value)
 						if valType == "" {
 							valType = "i64" // default assumption
@@ -2278,7 +2278,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					// generateStructFieldIndexRead for IndexExpression, or alloca from
 					// concat/repeat), which must be loaded before storing as a struct value.
 					// StringLiteral is handled above; Identifier returns a loaded value.
-					if strings.HasPrefix(elemType, "%") {
+					if g.isStructLLVMType(elemType) {
 						// Integer literal 0 assigned to a struct-type array element
 						// (e.g., .vals[i] = 0 where vals is [256]str): use zeroinitializer.
 						if intLit, ok := value.(*parser.IntegerLiteral); ok && intLit.Value == 0 {
@@ -2365,7 +2365,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 		}
 	} else {
 		recvType := g.exprResultLLVMType(dot.Receiver)
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName = strings.TrimPrefix(recvType, "%")
 		}
 		if sb != nil {
@@ -2441,7 +2441,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					g.indent(), elemLoad, vecElemType, vecElemType, elemGEP))
 				// Track the SSA type so downstream consumers (e.g. option assignment)
 				// can distinguish loaded struct values from pointers.
-				if g.ssaTypes != nil && strings.HasPrefix(vecElemType, "%") {
+				if g.ssaTypes != nil && g.isStructLLVMType(vecElemType) {
 					g.ssaTypes[elemLoad] = vecElemType
 				}
 				// Zext to i64 if element type is smaller (callers expect i64)
@@ -2497,7 +2497,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					// Struct element: return pointer (by-reference), no load needed
-					if strings.HasPrefix(elemType, "%") {
+					if g.isStructLLVMType(elemType) {
 						return elemGEP
 					}
 					// Integer element: load value
@@ -2723,7 +2723,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 		} else {
 			recvType := g.exprResultLLVMType(dot.Receiver)
-			if strings.HasPrefix(recvType, "%") {
+			if g.isStructLLVMType(recvType) {
 				structName = strings.TrimPrefix(recvType, "%")
 			}
 			if sb != nil {
@@ -2825,7 +2825,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		}
 	} else {
 			recvType := g.exprResultLLVMType(dot.Receiver)
-			if strings.HasPrefix(recvType, "%") {
+			if g.isStructLLVMType(recvType) {
 				structName = strings.TrimPrefix(recvType, "%")
 			}
 			if sb != nil {
@@ -2869,7 +2869,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// a %str-long* pointer (alloca from concat/repeat, or GEP from array
 				// element read), which must be loaded before storing as a struct value.
 				// StringLiteral is handled above; Identifier returns a loaded value.
-				if strings.HasPrefix(fieldType, "%") {
+				if g.isStructLLVMType(fieldType) {
 					// Integer literal 0 assigned to a struct-type field (e.g.,
 					// rec.field = 0 where field is str): use zeroinitializer.
 					if intLit, ok := expr.Value.(*parser.IntegerLiteral); ok && intLit.Value == 0 {
@@ -3534,7 +3534,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 			// Track the SSA type so downstream consumers (e.g. option assignment)
 			// can distinguish loaded struct values from pointers.
-			if g.ssaTypes != nil && strings.HasPrefix(llvmElemType, "%") {
+			if g.ssaTypes != nil && g.isStructLLVMType(llvmElemType) {
 				g.ssaTypes[elemLoad] = llvmElemType
 			}
 			// 當元素型別為整數且小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
@@ -3632,7 +3632,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			return zextReg
 		}
 		// []str / []T (any T whose LLVM type ends in *): 載入資料指標、GEP、return %T*（不 load，str 為 struct）
-		if t, ok := g.varTypes[varName]; ok && strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
+		if t, ok := g.varTypes[varName]; ok && g.isStructLLVMType(t) && strings.HasSuffix(t, "*") {
 			elemType := strings.TrimSuffix(t, "*")
 			dataLoad := g.tmpReg("idx.data.load")
 			gepReg := g.tmpReg("idx.gep")
@@ -4403,7 +4403,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	// exprResultLLVMType maps these to "%arr", so we check the raw field type.
 	inlineArrayType := ""
 	if dot, ok := expr.Left.(*parser.DotExpression); ok {
-		if recvType2 := g.exprResultLLVMType(dot.Receiver); strings.HasPrefix(recvType2, "%") {
+		if recvType2 := g.exprResultLLVMType(dot.Receiver); g.isStructLLVMType(recvType2) {
 			structName2 := strings.TrimPrefix(recvType2, "%")
 			if fields, ok := g.structTypes[structName2]; ok {
 				for _, f := range fields {

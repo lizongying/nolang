@@ -711,6 +711,7 @@ var ValidPlatformKeys = map[string]bool{
 	"mac-arm64":   true,
 	"wasi-wasm32": true,
 	"js":          true,
+	"js-browser":  true,
 }
 
 // ExtractPlatformKeys 從註解條目中抽取平台 key。

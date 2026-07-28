@@ -10,17 +10,22 @@ import (
 )
 
 // llvmTypeAlign 返回 LLVM 類型的對齊字節數（與 LLVM ABI 對齊規則一致）。
+// 透過 classifyTypeKind 區分內聯陣列、結構體與純量，取代字串前綴判斷。
+// 注意：%vec、%str-long、%arr 雖然是內建型別，但也在 structTypes 中註冊了欄位定義，
+// 需要走結構體對齊計算路徑。
 func (g *Generator) llvmTypeAlign(llvmType string) int64 {
-	if strings.HasPrefix(llvmType, "[") {
-		var n int64
-		var elem string
-		if _, err := fmt.Sscanf(llvmType, "[%d x %s]", &n, &elem); err == nil {
-			return g.llvmTypeAlign(elem)
+	desc := g.classifyTypeKind(llvmType)
+	switch desc.Kind {
+	case KindInlineArray:
+		// [N x T] 的對齊 = 元素對齊
+		return g.llvmTypeAlign(desc.ElemType)
+	case KindUserStruct, KindVec, KindStr, KindArr:
+		// 用戶結構體與內建容器結構體（%vec/%str-long/%arr 均在 structTypes 中註冊）：
+		// 對齊 = 所有欄位中最大的對齊
+		structName := desc.StructName
+		if structName == "" {
+			structName = strings.TrimPrefix(llvmType, "%")
 		}
-		return 8
-	}
-	if strings.HasPrefix(llvmType, "%") {
-		structName := strings.TrimPrefix(llvmType, "%")
 		if g.structTypes != nil {
 			if fields, ok := g.structTypes[structName]; ok {
 				var maxAlign int64 = 1
@@ -33,7 +38,9 @@ func (g *Generator) llvmTypeAlign(llvmType string) int64 {
 				return maxAlign
 			}
 		}
+		return 8
 	}
+	// 純量與其他內建型別（%option 等）
 	switch llvmType {
 	case "i1", "i8":
 		return 1
@@ -48,20 +55,23 @@ func (g *Generator) llvmTypeAlign(llvmType string) int64 {
 	}
 }
 
+// llvmTypeSize 計算 LLVM 類型的字節大小。
+// 透過 classifyTypeKind 區分內聯陣列、結構體與純量，取代字串前綴判斷。
+// 注意：%vec、%str-long、%arr 雖然是內建型別，但也在 structTypes 中註冊了欄位定義，
+// 需要走結構體大小計算路徑。
 func (g *Generator) llvmTypeSize(llvmType string) int64 {
-	if strings.HasPrefix(llvmType, "[") {
+	desc := g.classifyTypeKind(llvmType)
+	switch desc.Kind {
+	case KindInlineArray:
 		// [N x T] → N * sizeof(T)
-		// 注意：fmt.Sscanf 的 %s 會貪婪讀取到字串末尾（包含 ']'），
-		// 導致 elem 型別解析錯誤。改用 parseInlineArrayType（基於 SplitN）。
-		if n, elem, ok := parseInlineArrayType(llvmType); ok {
-			return n * g.llvmTypeSize(elem)
+		return desc.ArrayN * g.llvmTypeSize(desc.ElemType)
+	case KindUserStruct, KindVec, KindStr, KindArr:
+		// 用戶結構體與內建容器結構體（%vec/%str-long/%arr 均在 structTypes 中註冊）：
+		// 依 LLVM ABI 對齊規則計算每個欄位的大小，末尾補齊到最大對齊值。
+		structName := desc.StructName
+		if structName == "" {
+			structName = strings.TrimPrefix(llvmType, "%")
 		}
-		return 64 // fallback
-	}
-	// struct（含內建 %vec/%str-long 與用戶自定義）：依 LLVM ABI 對齊規則計算
-	// 每個欄位先對齊到自身對齊值，末尾再補齊到結構體最大對齊值。
-	if strings.HasPrefix(llvmType, "%") {
-		structName := strings.TrimPrefix(llvmType, "%")
 		if g.structTypes != nil {
 			if fields, ok := g.structTypes[structName]; ok {
 				var offset int64
@@ -85,6 +95,7 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 			}
 		}
 	}
+	// 純量與其他內建型別（%option 等）
 	switch llvmType {
 	case "i1":
 		return 1
@@ -379,38 +390,70 @@ func (g *Generator) emitGlobalHeapFree(sb *strings.Builder) {
 	}
 }
 
+// fieldHeapKind 描述一個 LLVM 型別的堆數據分類，供 free/clone 共用分派。
+type fieldHeapKind int
+
+const (
+	fieldHeapNone       fieldHeapKind = iota // 純量型別，不持有堆數據
+	fieldHeapContainer                       // %vec/%str-long/%arr：含 data 指標欄位
+	fieldHeapUserStruct                      // 用戶結構體：需遞迴釋放/clone 欄位
+	fieldHeapOption                          // %option：含 boxed heap 指標
+)
+
+// fieldHeapInfo 為 free/clone 提供統一的欄位堆佈局描述。
+// dataFieldIdx 僅對 fieldHeapContainer 有效（%vec/%str-long=2, %arr=1）。
+// containerType 保存原始 LLVM 型別字串，供後續 emitShallowDataFree/emitContainerClone 使用。
+type fieldHeapInfo struct {
+	kind          fieldHeapKind
+	dataFieldIdx  int    // container 的 data 欄位索引
+	containerType string // 原始 LLVM 型別字串（如 "%vec"、"%user.foo"）
+}
+
+// classifyFieldHeap 根據 LLVM 型別字串返回其堆分類資訊。
+// 此函數為 free/clone 的單一真實來源（single source of truth）：
+// 新增 struct 欄位型別只需修改此處，無需同步改動 emitVarHeapFree/emitStructFieldsFree/emitStructClone/emitElementFree/emitDeepElementClone/emitDeepClone。
+// 底層透過 classifyTypeKind（TypeKind 枚舉）進行型別分類，消除字串前綴判斷。
+func (g *Generator) classifyFieldHeap(llvmType, elemType string) fieldHeapInfo {
+	desc := g.classifyTypeKind(llvmType)
+	switch desc.Kind {
+	case KindVec, KindStr:
+		return fieldHeapInfo{kind: fieldHeapContainer, dataFieldIdx: 2, containerType: llvmType}
+	case KindArr:
+		return fieldHeapInfo{kind: fieldHeapContainer, dataFieldIdx: 1, containerType: llvmType}
+	case KindOption:
+		return fieldHeapInfo{kind: fieldHeapOption, containerType: llvmType}
+	case KindUserStruct:
+		return fieldHeapInfo{kind: fieldHeapUserStruct, containerType: llvmType}
+	}
+	return fieldHeapInfo{kind: fieldHeapNone}
+}
+
 // emitVarHeapFree 釋放單一變數的堆數據。
-// 內建型別（%vec/%str-long/%arr）透過 data 欄位索引找到 i8* 並 free；
-// 用戶結構體則遞迴釋放所有含堆數據的欄位。
+// 透過 classifyFieldHeap 統一分派，避免與 clone 路徑重複維護型別 switch。
 // name 為變數名，用於查詢 optionInnerTypes（option 釋放時需要）；
 // 遞迴場景（釋放 option 內部結構）可傳 ""，此時 %option 分支會走兜底路徑。
 func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemType, name string) {
-	switch llvmType {
-	case "%option":
+	info := g.classifyFieldHeap(llvmType, elemType)
+	switch info.kind {
+	case fieldHeapOption:
 		g.emitOptionHeapFree(sb, varPtr, name)
 		return
-	}
-	var dataFieldIdx int
-	switch llvmType {
-	case "%vec", "%str-long":
-		dataFieldIdx = 2
-	case "%arr":
-		dataFieldIdx = 1
-	default:
-		if g.isUserStructType(llvmType) {
-			g.emitStructFieldsFree(sb, varPtr, llvmType)
-		}
+	case fieldHeapUserStruct:
+		g.emitStructFieldsFree(sb, varPtr, info.containerType)
+		return
+	case fieldHeapNone:
 		return
 	}
+	// fieldHeapContainer：%str-long 淺釋放 data；%vec/%arr 視 elemType 決定深淺
 	if llvmType == "%str-long" {
-		g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+		g.emitShallowDataFree(sb, varPtr, llvmType, info.dataFieldIdx)
 		return
 	}
 	if g.isHeapOwningType(elemType) {
-		g.emitDeepContainerFree(sb, varPtr, llvmType, dataFieldIdx, elemType)
+		g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
 		return
 	}
-	g.emitShallowDataFree(sb, varPtr, llvmType, dataFieldIdx)
+	g.emitShallowDataFree(sb, varPtr, llvmType, info.dataFieldIdx)
 }
 
 // emitOptionHeapFree 釋放 %option 變數持有的堆 box。
@@ -889,12 +932,14 @@ func (g *Generator) emitRetInitZeroFill(sb *strings.Builder) {
 }
 
 // emitRetInitZeroStore 依 LLVM 型別選擇零值 store 到 out 參數指標。
+// 透過 classifyTypeKind 統一判斷型別種類，取代字串前綴檢查。
 // option 型別補 nil（tag=1, data=0），與 generateOptionAssign 的 NilLiteral 分支一致；
 // 整數補 0、浮點補 0.0、struct（%str-long/%vec/%arr/用戶結構）補 zeroinitializer。
 func (g *Generator) emitRetInitZeroStore(sb *strings.Builder, name, llvmType string) {
 	ptr := g.varAddr(name)
-	switch {
-	case llvmType == "%option":
+	desc := g.classifyTypeKind(llvmType)
+	switch desc.Kind {
+	case KindOption:
 		// option 預設為 nil：tag=1（nil 標記）、data=0
 		tagGEP := g.tmpReg("ri.zf.tag")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, ptr))
@@ -902,16 +947,29 @@ func (g *Generator) emitRetInitZeroStore(sb *strings.Builder, name, llvmType str
 		dataGEP := g.tmpReg("ri.zf.data")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, ptr))
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
-	case g.isIntegerLLVMType(llvmType):
-		sb.WriteString(fmt.Sprintf("%sstore %s 0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
-	case llvmType == "float" || llvmType == "double":
-		sb.WriteString(fmt.Sprintf("%sstore %s 0.0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
-	case strings.HasPrefix(llvmType, "%"):
-		// struct 類型：%str-long、%vec、%arr、用戶結構體
-		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
-	case strings.HasPrefix(llvmType, "["):
+	case KindInlineArray:
 		// 原始陣列型別 [N x T]（out 參數為 [N x T]*）
 		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	case KindVec, KindStr, KindArr, KindUserStruct, KindTask, KindFuture:
+		// struct 類型：%str-long、%vec、%arr、用戶結構體、%task、%future
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	case KindUnknown:
+		// % 開頭但未在 structTypes 中註冊的型別（如生成的 %coro_state.N）：
+		// 視為結構體，發出 zeroinitializer（與原始 strings.HasPrefix(llvmType, "%") 行為一致）
+		if g.isStructLLVMType(llvmType) {
+			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+		} else {
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ptr))
+		}
+	case KindScalar:
+		if g.isIntegerLLVMType(llvmType) {
+			sb.WriteString(fmt.Sprintf("%sstore %s 0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+		} else if llvmType == "float" || llvmType == "double" {
+			sb.WriteString(fmt.Sprintf("%sstore %s 0.0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+		} else {
+			// 兜底：視為 i64
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ptr))
+		}
 	default:
 		// 兜底：視為 i64
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ptr))
@@ -1069,24 +1127,19 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 }
 
 // emitElementFree frees heap data of a single container element.
+// 透過 classifyFieldHeap 統一分派，與 emitDeepElementClone 共用型別判斷。
 func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType string) {
-	var dataFieldIdx int
-	switch elemType {
-	case "%vec", "%str-long":
-		dataFieldIdx = 2
-	case "%arr":
-		dataFieldIdx = 1
-	default:
-		if g.isUserStructType(elemType) {
-			g.emitStructFieldsFree(sb, elemPtr, elemType)
-		}
-		return
+	info := g.classifyFieldHeap(elemType, "")
+	switch info.kind {
+	case fieldHeapContainer:
+		dataGEP := g.tmpReg("df.elem.data.gep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+			g.indent(), dataGEP, elemType, elemType, elemPtr, info.dataFieldIdx))
+		dataLoad := g.loadDataPtrField(sb, dataGEP)
+		g.emitNullCheckFree(sb, dataLoad)
+	case fieldHeapUserStruct:
+		g.emitStructFieldsFree(sb, elemPtr, info.containerType)
 	}
-	dataGEP := g.tmpReg("df.elem.data.gep")
-	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-		g.indent(), dataGEP, elemType, elemType, elemPtr, dataFieldIdx))
-	dataLoad := g.loadDataPtrField(sb, dataGEP)
-	g.emitNullCheckFree(sb, dataLoad)
 }
 
 // freeOldHeapValue 釋放重新賦值變數的舊堆數據。
@@ -1126,9 +1179,7 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 }
 
 // emitStructFieldsFree 遞迴釋放用戶結構體中所有含堆數據的欄位。
-// 對 %vec/%str-long/%arr 欄位，呼叫 emitStructFieldDataFree 釋放其 data；
-// 對嵌套用戶結構體欄位，GEP 取得欄位指標後遞迴呼叫本函數。
-// 純量欄位（i64/i8/...）不持有堆數據，直接跳過。
+// 透過 classifyFieldHeap 統一判斷每個欄位的堆類型，與 emitStructClone 共用分派邏輯。
 func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structType string) {
 	structName := strings.TrimPrefix(structType, "%")
 	fields, ok := g.structTypes[structName]
@@ -1136,19 +1187,16 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 		return
 	}
 	for i, f := range fields {
-		switch f.typ {
-		case "%vec", "%str-long":
-			g.emitStructFieldFree(sb, structPtr, structType, i, 2, f.typ, f.elemType)
-		case "%arr":
-			g.emitStructFieldFree(sb, structPtr, structType, i, 1, f.typ, f.elemType)
-		default:
-			if g.isUserStructType(f.typ) {
-				fieldGEP := g.tmpReg("structfield.gep")
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), fieldGEP, structType, structType, structPtr, i))
-				g.emitStructFieldsFree(sb, fieldGEP, f.typ)
-				continue
-			}
+		info := g.classifyFieldHeap(f.typ, f.elemType)
+		switch info.kind {
+		case fieldHeapContainer:
+			g.emitStructFieldFree(sb, structPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType)
+		case fieldHeapUserStruct:
+			fieldGEP := g.tmpReg("structfield.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), fieldGEP, structType, structType, structPtr, i))
+			g.emitStructFieldsFree(sb, fieldGEP, info.containerType)
+		case fieldHeapNone:
 			// 內聯固定陣列字段 [N x T]（如 hashmap 的 keys [256]str）：
 			// 遍歷 N 個元素遞迴釋放其堆數據。純量元素（i64/i8/...）無需釋放。
 			if n, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
@@ -1261,19 +1309,25 @@ func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structTy
 // canDeepCloneStruct 遞迴檢查用戶結構體是否可以安全深層 clone。
 // 若任何 %vec/%arr 欄位的 elemType 是 %vec/%arr（巢狀容器），則無法安全 clone
 // （子元素型別未知，無法正確計算 memcpy 大小）。
+// 透過 classifyTypeKind 判斷欄位型別種類，取代字串比較。
 func (g *Generator) canDeepCloneStruct(structType string) bool {
-	structName := strings.TrimPrefix(structType, "%")
-	fields, ok := g.structTypes[structName]
+	desc := g.classifyTypeKind(structType)
+	if desc.Kind != KindUserStruct {
+		return true
+	}
+	fields, ok := g.structTypes[desc.StructName]
 	if !ok {
 		return true
 	}
 	for _, f := range fields {
-		if f.typ == "%vec" || f.typ == "%arr" {
-			if f.elemType == "%vec" || f.elemType == "%arr" {
+		fKind := g.classifyTypeKind(f.typ).Kind
+		if fKind == KindVec || fKind == KindArr {
+			elemKind := g.classifyTypeKind(f.elemType).Kind
+			if elemKind == KindVec || elemKind == KindArr {
 				return false
 			}
 		}
-		if g.isUserStructType(f.typ) {
+		if fKind == KindUserStruct {
 			if !g.canDeepCloneStruct(f.typ) {
 				return false
 			}
@@ -1283,21 +1337,22 @@ func (g *Generator) canDeepCloneStruct(structType string) bool {
 }
 
 // emitDeepClone 生成深層 clone 代碼：從 srcPtr 深層複製到 dstPtr。
+// 透過 classifyFieldHeap 統一分派，與 emitVarHeapFree 共用型別判斷。
 // 對於 %vec/%arr：malloc 新 data 緩衝區，memcpy，遞迴 clone 元素。
 // 對於 %str-long：malloc 新 data 緩衝區，memcpy（元素為 i8，無需遞迴）。
 // 對於用戶結構體：memcpy 整個結構體，遞迴 clone 含堆數據的欄位。
 func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType, elemType string) {
-	switch llvmType {
-	case "%vec":
-		g.emitContainerClone(sb, srcPtr, dstPtr, "%vec", 2, elemType)
-	case "%arr":
-		g.emitContainerClone(sb, srcPtr, dstPtr, "%arr", 1, elemType)
-	case "%str-long":
-		g.emitContainerClone(sb, srcPtr, dstPtr, "%str-long", 2, "i8")
-	default:
-		if g.isUserStructType(llvmType) {
-			g.emitStructClone(sb, srcPtr, dstPtr, llvmType)
+	info := g.classifyFieldHeap(llvmType, elemType)
+	switch info.kind {
+	case fieldHeapContainer:
+		// %str-long 的 elemType 固定為 "i8"
+		cloneElem := elemType
+		if llvmType == "%str-long" {
+			cloneElem = "i8"
 		}
+		g.emitContainerClone(sb, srcPtr, dstPtr, info.containerType, info.dataFieldIdx, cloneElem)
+	case fieldHeapUserStruct:
+		g.emitStructClone(sb, srcPtr, dstPtr, info.containerType)
 	}
 }
 
@@ -1390,25 +1445,20 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 }
 
 // emitDeepElementClone 遍歷容器元素，clone 每個元素的堆 data。
+// 透過 classifyFieldHeap 統一分派，與 emitElementFree 共用型別判斷。
 // 用於 %str-long 元素（clone 每個字串的 data）和用戶結構體元素（遞迴 clone 欄位）。
 // %vec/%arr 元素不應到達此處（canClone 檢查已排除巢狀容器）。
 func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, lenReg, elemType string) {
+	info := g.classifyFieldHeap(elemType, "")
 	// 用戶結構體元素：遞迴 clone 每個元素的欄位
-	if g.isUserStructType(elemType) {
-		g.emitStructElementsClone(sb, dstBuf, srcBuf, lenReg, elemType)
+	if info.kind == fieldHeapUserStruct {
+		g.emitStructElementsClone(sb, dstBuf, srcBuf, lenReg, info.containerType)
 		return
 	}
-
-	// %str-long 元素：clone 每個字串的 data 緩衝區
-	var dataFieldIdx int
-	switch elemType {
-	case "%vec", "%str-long":
-		dataFieldIdx = 2
-	case "%arr":
-		dataFieldIdx = 1
-	default:
+	if info.kind != fieldHeapContainer {
 		return // 純量元素，已由 memcpy 複製
 	}
+	dataFieldIdx := info.dataFieldIdx
 
 	g.tmpIdx++
 	tid := g.tmpIdx
@@ -1548,6 +1598,7 @@ func (g *Generator) emitStructElementsClone(sb *strings.Builder, dstBuf, srcBuf,
 }
 
 // emitStructClone 深層 clone 用戶結構體：先 memcpy 整個結構體，再遞迴 clone 含堆數據的欄位。
+// 透過 classifyFieldHeap 統一判斷每個欄位的堆類型，與 emitStructFieldsFree 共用分派邏輯。
 func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structType string) {
 	// 先 memcpy 整個結構體（複製所有欄位，包括 data 指標）
 	structSize := g.llvmTypeSize(structType)
@@ -1568,22 +1619,19 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 		return
 	}
 	for i, f := range fields {
-		switch f.typ {
-		case "%vec", "%str-long":
-			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, 2, f.typ, f.elemType)
-		case "%arr":
-			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, 1, f.typ, f.elemType)
-		default:
-			if g.isUserStructType(f.typ) {
-				srcFieldGEP := g.tmpReg("structclone.src.fgep")
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), srcFieldGEP, structType, structType, srcPtr, i))
-				dstFieldGEP := g.tmpReg("structclone.dst.fgep")
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), dstFieldGEP, structType, structType, dstPtr, i))
-				g.emitStructClone(sb, srcFieldGEP, dstFieldGEP, f.typ)
-				continue
-			}
+		info := g.classifyFieldHeap(f.typ, f.elemType)
+		switch info.kind {
+		case fieldHeapContainer:
+			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType)
+		case fieldHeapUserStruct:
+			srcFieldGEP := g.tmpReg("structclone.src.fgep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), srcFieldGEP, structType, structType, srcPtr, i))
+			dstFieldGEP := g.tmpReg("structclone.dst.fgep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), dstFieldGEP, structType, structType, dstPtr, i))
+			g.emitStructClone(sb, srcFieldGEP, dstFieldGEP, info.containerType)
+		case fieldHeapNone:
 			// 內聯固定陣列字段 [N x T]（如 hashmap 的 keys [256]str）：
 			// memcpy 已淺拷貝所有元素的 data 指標，需遍歷 N 個元素遞迴 clone，
 			// 覆寫 dst 元素的 data 為獨立 clone，避免 a/b 共享 data 導致 double-free。
@@ -2251,7 +2299,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			if g.funcRefVars != nil && g.funcRefVars[name] {
 				continue
 			}
-			if varType == "" || strings.HasPrefix(varType, "%") == false && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" {
+			if varType == "" || !g.isStructLLVMType(varType) && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" {
 				// Skip complex types that need special allocation (handled by generateLet)
 				continue
 			}
@@ -2435,7 +2483,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if dot.Property == "len" && (recvType == "%str-long") {
 			return "i64"
 		}
-		if strings.HasPrefix(recvType, "%") {
+		if g.isStructLLVMType(recvType) {
 			structName := strings.TrimPrefix(recvType, "%")
 			if fields, ok := g.structTypes[structName]; ok {
 				for _, f := range fields {
@@ -2553,7 +2601,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 				if g.arrayElemTypes != nil {
 					if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
-						if strings.HasPrefix(elemType, "%") {
+						if g.isStructLLVMType(elemType) {
 							return elemType
 						}
 						// 浮點數陣列元素（如 [15]f64 → double）必須返回 double/float，
@@ -2590,7 +2638,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 									xIdx := strings.LastIndex(inner, " x ")
 									if xIdx >= 0 {
 										elemType := inner[xIdx+3:]
-										if strings.HasPrefix(elemType, "%") {
+										if g.isStructLLVMType(elemType) {
 											return elemType
 										}
 										return "i64"
@@ -2603,7 +2651,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							// (e.g. %str-long for []str), so varLLVMType must match
 							// to avoid `store i64 %str-long-val, i64* %var` mismatches.
 							if f.typ == "%vec" && f.elemType != "" {
-								if strings.HasPrefix(f.elemType, "%") {
+								if g.isStructLLVMType(f.elemType) {
 									return f.elemType
 								}
 								if f.elemType == "double" || f.elemType == "float" {
@@ -3226,7 +3274,7 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
 			vt := g.varLLVMType(s)
-			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (strings.HasPrefix(existing, "%") && existing != vt) {
+			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (g.isStructLLVMType(existing) && existing != vt) {
 				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
 				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
 				if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) {
@@ -5086,7 +5134,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// (e.g. %client) when shared across multiple matches with different
 	// element types (e.g. ?str → %str-long, ?client → %client).
 	// In that case, bitcast the alloca pointer to the value's type.
-	if stmt.IsSynthetic && strings.HasPrefix(llvmType, "%") {
+	if stmt.IsSynthetic && g.isStructLLVMType(llvmType) {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			// Detect whether the source is an option variable whose inner
 			// value was extracted as a struct pointer by generateExprWithSB.
@@ -5129,7 +5177,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			if g.varTypes != nil {
 				if srcType, ok := g.varTypes[ident.Value]; ok && srcType == "%option" {
 					if g.optionInnerTypes != nil {
-						if innerType, ok := g.optionInnerTypes[ident.Value]; ok && strings.HasPrefix(innerType, "%") {
+						if innerType, ok := g.optionInnerTypes[ident.Value]; ok && g.isStructLLVMType(innerType) {
 							if strings.HasPrefix(val, "%") && strings.Contains(val, ".data.ptr.") {
 								ptrToIntReg := g.tmpReg("it.p2i")
 								sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s* %s to i64\n", g.indent(), ptrToIntReg, innerType, val))
@@ -5215,7 +5263,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			//   2. 欄位型別為 struct/string 且值是指標（如 StringLiteral 回傳的 alloca 指針）：
 			//      需要先 load 出 struct 值再 store
 			//   3. 欄位型別為 %str-long 但值是不同型別：先轉換為 %str-long 再 store
-			if strings.HasPrefix(fieldType, "%") {
+			if g.isStructLLVMType(fieldType) {
 				if !strings.HasPrefix(fieldVal, "%") {
 					// 純量值，無法轉為 struct：使用 zeroinitializer
 					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
@@ -5685,7 +5733,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	default:
 		ptrType := llvmType + "*"
 		// 宣告但無初值（如 `f http2-frame`）：val 為 "0"，struct 需用 zeroinitializer
-		if strings.HasPrefix(llvmType, "%") && !strings.HasPrefix(val, "%") {
+		if g.isStructLLVMType(llvmType) && !strings.HasPrefix(val, "%") {
 			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s %s\n", g.indent(), llvmType, ptrType, storeAddr))
 		} else {
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), llvmType, val, ptrType, storeAddr))
@@ -5923,7 +5971,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			copyF64ToData(val)
 		} else if innerType == "float" {
 			copyF32ToData(val)
-		} else if strings.HasPrefix(innerType, "%") {
+		} else if g.isStructLLVMType(innerType) {
 			// Struct types (e.g. %str-long, %client, %conn):
 			// malloc heap box, store struct value to a temp alloca, then
 			// emitDeepClone from temp to box so heap-owned fields are independently
@@ -6124,8 +6172,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// variable was alloca'd as i64 (type inference gap), bitcast
 			// the i64* to the struct pointer and load the struct value.
 			if g.optionInnerTypes != nil {
-				if innerType, ok := g.optionInnerTypes[name]; ok && strings.HasPrefix(innerType, "%") {
-					if srcType, ok := g.varTypes[v.Value]; !ok || (srcType != innerType && !strings.HasPrefix(srcType, "%")) {
+				if innerType, ok := g.optionInnerTypes[name]; ok && g.isStructLLVMType(innerType) {
+					if srcType, ok := g.varTypes[v.Value]; !ok || (srcType != innerType && !g.isStructLLVMType(srcType)) {
 						castReg := g.tmpReg("opt.src.cast")
 						sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %%%s to %s*\n", g.indent(), castReg, v.Value, innerType))
 						loadReg := g.tmpReg("opt.struct.load")
@@ -6175,9 +6223,9 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						g.indent(), gepReg, innerTy, innerTy, heapCast, fieldIdx))
 					fieldVal := g.generateExprWithSB(sb, f.Value)
 					fieldVal = g.stripLLVMType(fieldVal)
-					if strings.HasPrefix(fieldType, "%") && !strings.HasPrefix(fieldVal, "%") {
+					if g.isStructLLVMType(fieldType) && !strings.HasPrefix(fieldVal, "%") {
 						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
-					} else if strings.HasPrefix(fieldType, "%") && strings.HasPrefix(fieldVal, "%") {
+					} else if g.isStructLLVMType(fieldType) && strings.HasPrefix(fieldVal, "%") {
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
 					} else {
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
@@ -6223,7 +6271,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// But skip loading if ssaTypes indicates val is already a loaded
 			// struct value (not a pointer) — e.g. from vec element access.
 			if g.optionInnerTypes != nil {
-				if innerType, ok := g.optionInnerTypes[name]; ok && strings.HasPrefix(innerType, "%") {
+				if innerType, ok := g.optionInnerTypes[name]; ok && g.isStructLLVMType(innerType) {
 					if strings.HasPrefix(val, "%") {
 						// Check ssaTypes: if val is registered as the inner type
 						// (without "*"), it's already a loaded value — skip the

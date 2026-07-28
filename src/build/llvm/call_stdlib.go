@@ -671,7 +671,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if dot, ok := arg0.(*parser.DotExpression); ok {
 			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 				if g.varTypes != nil {
-					if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+					if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {
 						structName := strings.TrimPrefix(t, "%")
 						if fields, ok := g.structTypes[structName]; ok {
 							for _, f := range fields {

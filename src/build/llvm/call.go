@@ -153,7 +153,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				return "%arr* " + g.varAddr(a.Value)
 			}
 			// %vec / 任何 struct 指標型別 → 變數本身已是指標
-			if t, ok := g.varTypes[a.Value]; ok && strings.HasPrefix(t, "%") {
+			if t, ok := g.varTypes[a.Value]; ok && g.isStructLLVMType(t) {
 				return t + "* " + g.varAddr(a.Value)
 			}
 			// bool (i1) 變數 → 返回 i1*
@@ -308,7 +308,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
 			}
-			if strings.HasPrefix(fieldType, "%") {
+			if g.isStructLLVMType(fieldType) {
 				if !strings.HasPrefix(fieldVal, "%") {
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
@@ -469,7 +469,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if dot, ok := arg.(*parser.DotExpression); ok {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if g.varTypes != nil {
-						if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+						if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {
 							structName := strings.TrimPrefix(t, "%")
 							if fields, ok := g.structTypes[structName]; ok {
 								for _, f := range fields {
@@ -886,12 +886,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				case "f64", "f32":
 					storeType = "double"
 				case "bool":
-					storeType = "i1"
+				storeType = "i1"
+				}
+				// Slice return types (e.g. []i64 from getgroups) use %vec.
+				// The builtin returns a %vec* (alloca); we load it to %vec below.
+				if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+					storeType = "%vec"
 				}
 			}
 			// CLibCall builtins (如 i64.to-str) 透過 sprintf alloca 返回 %str-long* pointer。
 			// ForwardFunc builtins (如 get-line) 透過 alloca 返回 %str-long* pointer。
 			// 兩者都需要 load 成 %str-long value。
+			// Slice-returning builtins (如 getgroups) 同樣透過 alloca 返回 %vec* pointer，需 load 成 %vec value。
 			// ForwardFunc builtins (如 net-dial) 返回 i64 value。
 			actualVal := retReg
 			if storeType == "%str-long" {
@@ -899,6 +905,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				g.tmpIdx++
 				loadReg := fmt.Sprintf("%%builtin.load.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, retReg))
+				actualVal = loadReg
+			} else if storeType == "%vec" {
+				// retReg 是 %vec* (alloca)，需 load 成 %vec value
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%builtin.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), loadReg, retReg))
 				actualVal = loadReg
 			}
 			outIdx := 0
@@ -2317,7 +2329,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), gepReg, structTy, structTy, tmpName, fieldIdx))
 				}
-				if strings.HasPrefix(fieldType, "%") {
+				if g.isStructLLVMType(fieldType) {
 					if !strings.HasPrefix(fieldVal, "%") {
 						if sb != nil {
 							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), fieldType, fieldType, gepReg))
@@ -2490,7 +2502,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if dot, ok := arg.(*parser.DotExpression); ok {
 						if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 							if g.varTypes != nil {
-								if t, ok := g.varTypes[ident.Value]; ok && strings.HasPrefix(t, "%") {
+								if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {
 									structName := strings.TrimPrefix(t, "%")
 									if fields, ok := g.structTypes[structName]; ok {
 										for _, f := range fields {
@@ -3294,7 +3306,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// builtin call results (like arg(i)) are returned as *pointers* to the struct,
 		// while identifiers, index expressions, and regular method calls return struct
 		// *values* (already loaded). Load the struct value only for ForwardFunc calls.
-		if strings.HasPrefix(elemType, "%") {
+		if g.isStructLLVMType(elemType) {
 			needLoad := false
 			if call, ok := args[1].(*parser.CallExpression); ok {
 				if ident, ok := call.Function.(*parser.Identifier); ok {

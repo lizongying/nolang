@@ -17,6 +17,109 @@ type varInfo struct {
 	Size int64
 }
 
+// TypeKind 是 LLVM 型別的語義分類，取代基於 strings.HasPrefix(t, "%") 的字串前綴判斷。
+// 新增型別時只需在 classifyTypeKind 中添加映射，所有依賴 TypeKind 的分派邏輯自動正確。
+type TypeKind int
+
+const (
+	KindScalar      TypeKind = iota // 純量型別（i1/i8/i16/i32/i64/float/double/i8* 等）
+	KindVec                         // %vec：動態切片容器
+	KindStr                         // %str-long：堆分配字串
+	KindArr                         // %arr：固定容量陣列
+	KindOption                      // %option：可選值盒
+	KindTask                        // %task：非同步任務控制物件
+	KindFuture                      // %future：未執行的非同步結果
+	KindUserStruct                  // 用戶自定義結構體（%foo）
+	KindInlineArray                 // [N x T] 內聯固定陣列
+	KindPtr                         // 指標型別（非 i8*，如 %foo*）
+	KindUnknown                     // 未分類型別（兜底）
+)
+
+// TypeDesc 描述一個 LLVM 型別的完整語義資訊。
+// 目前作為 classifyTypeKind 的回傳值，為 free/clone/zero-fill 等路徑提供強型別分派依據。
+// 未來可擴展為 varTypes 的 value 型別（map[string]*TypeDesc），徹底取代字串型別映射。
+type TypeDesc struct {
+	Kind       TypeKind
+	LLVMType   string // 原始 LLVM 型別字串（如 "%vec"、"i64"、"%user.foo"）
+	StructName string // 僅 KindUserStruct 有效：去掉 "%" 前綴的結構體名
+	ElemType   string // 僅 KindInlineArray 有效：元素 LLVM 型別
+	ArrayN     int64  // 僅 KindInlineArray 有效：元素數量
+}
+
+// classifyTypeKind 是 LLVM 型別分類的單一真實來源（single source of truth）。
+// 取代散佈在各處的 strings.HasPrefix(t, "%") 判斷，提供編譯期強型別校驗。
+//
+// 使用方式：
+//   desc := g.classifyTypeKind(llvmType)
+//   switch desc.Kind {
+//   case KindUserStruct: ...
+//   case KindVec, KindStr, KindArr: ... // 堆容器
+//   }
+func (g *Generator) classifyTypeKind(llvmType string) TypeDesc {
+	// 優先匹配內建容器型別（最常見路徑）
+	switch llvmType {
+	case "%vec":
+		return TypeDesc{Kind: KindVec, LLVMType: llvmType}
+	case "%str-long":
+		return TypeDesc{Kind: KindStr, LLVMType: llvmType}
+	case "%arr":
+		return TypeDesc{Kind: KindArr, LLVMType: llvmType}
+	case "%option":
+		return TypeDesc{Kind: KindOption, LLVMType: llvmType}
+	case "%task":
+		return TypeDesc{Kind: KindTask, LLVMType: llvmType}
+	case "%future":
+		return TypeDesc{Kind: KindFuture, LLVMType: llvmType}
+	}
+	// 內聯固定陣列 [N x T]
+	if n, elemType, ok := parseInlineArrayType(llvmType); ok {
+		return TypeDesc{Kind: KindInlineArray, LLVMType: llvmType, ElemType: elemType, ArrayN: n}
+	}
+	// 用戶結構體：% 開頭且存在於 structTypes
+	if strings.HasPrefix(llvmType, "%") {
+		structName := strings.TrimPrefix(llvmType, "%")
+		if g.structTypes != nil {
+			if _, ok := g.structTypes[structName]; ok {
+				return TypeDesc{Kind: KindUserStruct, LLVMType: llvmType, StructName: structName}
+			}
+		}
+		// % 開頭但不在 structTypes 中：可能是未註冊的結構體或指標型別
+		return TypeDesc{Kind: KindUnknown, LLVMType: llvmType}
+	}
+	// 純量型別
+	return TypeDesc{Kind: KindScalar, LLVMType: llvmType}
+}
+
+// isUserStructType 判斷 LLVM 型別是否為已註冊的用戶自定義結構體。
+// 透過 classifyTypeKind 統一分派，取代原始的 strings.HasPrefix + 排除清單實作。
+func (g *Generator) isUserStructType(llvmType string) bool {
+	return g.classifyTypeKind(llvmType).Kind == KindUserStruct
+}
+
+// isHeapOwningType 判斷 LLVM 型別是否擁有堆數據（需要深層 free）。
+// %vec、%str-long、%arr 以及用戶結構體都屬於此類。
+// 透過 classifyTypeKind 統一分派，與 isUserStructType 共用型別分類邏輯。
+func (g *Generator) isHeapOwningType(llvmType string) bool {
+	switch g.classifyTypeKind(llvmType).Kind {
+	case KindVec, KindStr, KindArr, KindUserStruct:
+		return true
+	}
+	return false
+}
+
+// isStructLLVMType 判斷 LLVM 型別是否為結構體型別（用戶自定義或內建容器）。
+// 透過 classifyTypeKind 統一分派，取代散佈在 expr.go/call.go 中的 strings.HasPrefix(t, "%") 型別判斷。
+// 包含：用戶結構體、%vec、%str-long、%arr、%option、%task、%future，
+// 以及未註冊的結構體型別（KindUnknown，如 %coro_state.N）。
+// 注意：此方法僅用於型別字串判斷，不用於 LLVM 值（register）判斷。
+func (g *Generator) isStructLLVMType(llvmType string) bool {
+	switch g.classifyTypeKind(llvmType).Kind {
+	case KindUserStruct, KindVec, KindStr, KindArr, KindOption, KindTask, KindFuture, KindUnknown:
+		return true
+	}
+	return false
+}
+
 type structField struct {
 	name     string
 	typ      string // LLVM type string
@@ -1310,7 +1413,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				// functions can reference them via @name (e.g. binary-trees arena).
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
-			} else if strings.HasPrefix(llvmType, "[") {
+			} else if g.classifyTypeKind(llvmType).Kind == KindInlineArray {
 				// Raw LLVM array type (e.g. [12 x [16 x i64]] for 2D array constants)
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
@@ -1370,7 +1473,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 					sb.WriteString(fmt.Sprintf("%s = global double %s\n", llvmGlobalRef(name), floatStr))
 					g.globalVars[name] = true
 				}
-			} else if strings.HasPrefix(llvmType, "%") && ls.Value == nil {
+			} else if g.classifyTypeKind(llvmType).Kind == KindUserStruct && ls.Value == nil {
 				// User-defined struct types (e.g. %tls.tls-conn, %server.https-server)
 				// Emit as global when declared without an initial value (e.g. `e2e-tc tls-conn`).
 				// This allows functions to reference the variable via @name.
@@ -2301,36 +2404,6 @@ func (g *Generator) emitFFIExternStrClone(sb *strings.Builder, cstrPtr string) s
 		sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), mergeStr3, mergeStr2, _p2i_mergeStr3))
 	}
 	return mergeStr3
-}
-
-// isUserStructType 判斷 LLVM 型別字串是否為用戶自定義結構體。
-// 用戶結構體以 '%' 開頭，但排除內建型別（%vec, %str-long, %arr, %option, %task, %future）。
-// 且該名稱必須存在於 g.structTypes 中。
-func (g *Generator) isUserStructType(llvmType string) bool {
-	if !strings.HasPrefix(llvmType, "%") {
-		return false
-	}
-	switch llvmType {
-	case "%vec", "%str-long", "%arr", "%option", "%task", "%future":
-		return false
-	}
-	structName := strings.TrimPrefix(llvmType, "%")
-	if g.structTypes == nil {
-		return false
-	}
-	_, ok := g.structTypes[structName]
-	return ok
-}
-
-// isHeapOwningType 判斷 LLVM 型別是否擁有堆數據（需要深層 free）。
-// %vec、%str-long、%arr 以及含堆欄位的用戶結構體都屬於此類。
-func (g *Generator) isHeapOwningType(llvmType string) bool {
-	switch llvmType {
-	case "%vec", "%str-long", "%arr":
-		return true
-	default:
-		return g.isUserStructType(llvmType)
-	}
 }
 
 func (g *Generator) findLoopTarget(label string, isBreak bool) string {
