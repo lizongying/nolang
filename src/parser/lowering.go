@@ -307,6 +307,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 
 		// Create per-arm `it` binding with correct unwrapped type for LSP inference.
 		// For ?i64: err arm → it: err, nil arm → it: nil, ok arm → it: i64
+		if identForDbg, ok := matched.(*Identifier); ok && identForDbg.Value == "rn" {
+			fmt.Fprintf(os.Stderr, "DBG perarm: matched=rn itStmt=%v hasRawCond=%v elemType=%q matchedVarType=%q isEnum=%v armIdx=%d\n",
+				itStmt != nil, hasRawCond, elemType, matchedVarType, isEnumType, i)
+		}
 		if itStmt != nil && !hasRawCond && elemType != "" {
 			var armType string
 			skipItBinding := false
@@ -407,6 +411,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				armType = "ok"
 			}
 			if armType != "" {
+				if identForDbg, ok := matched.(*Identifier); ok && identForDbg.Value == "rn" {
+					fmt.Fprintf(os.Stderr, "DBG perarm: rn armIdx=%d armType=%q -> buildItBindingForArm\n", i, armType)
+				}
 				// Use per-arm position so walker/index can distinguish synthetic bindings
 				var armTok lexer.Token
 				if arm.condition != nil {

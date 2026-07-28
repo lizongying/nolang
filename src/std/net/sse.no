@@ -82,7 +82,7 @@ sse-event {
 ; recv-buf-len: 緩衝區中實際資料長度
 sse-client {
     fd fd
-    tls-c tls-conn
+    tls-c tls.tls-conn
     use-tls bool
     connected bool
     host str
@@ -449,7 +449,7 @@ sse-connect = (url str) (client ?sse-client) {
     port-str = ''
     use-tls = false
     fd fd = -1
-    tls-c tls-conn
+    tls-c tls.tls-conn
 
     url.starts-with('https://') -> {
         use-tls = true

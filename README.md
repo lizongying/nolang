@@ -108,6 +108,35 @@ no run
 - 每个测试文件独立构建
 - 若任一测试失败，返回非零退出码
 
+## 從源碼構建
+
+構建 Nolang 應使用 `make`：
+
+```bash
+make            # 構建所有目標（bin/no 和 vscode-nolang/server/lsp）
+make no         # 構建 bin/no
+make lsp        # 構建 LSP server
+make package    # 構建 LSP 並打包 VSCode 擴展
+make no-wasm    # 跨譯 no 為 WebAssembly
+make lsp-wasm   # 跨譯 LSP 為 WebAssembly
+make playground # 構建 no.wasm + lsp.wasm + Docusaurus 站點
+make clean      # 清理構建產物
+make help       # 查看所有構建目標
+```
+
+### 修改代碼
+
+修改代碼前，請先閱讀 [.agents/skills/nolang-syntax/SKILL.md](.agents/skills/nolang-syntax/SKILL.md) 了解 Nolang 語法規範。
+
+> ⚠️ **嚴禁使用 `git checkout`**，任何時候都不得使用，以防止覆蓋他人正在修改的代碼。
+
+修改後需執行以下檢查：
+
+```bash
+./vscode-nolang/server/lsp vet src/std   # LSP vet 檢查標準庫
+./bin/no vet src/std                     # Nolang vet 檢查標準庫
+```
+
 ---
 
 ## 相關項目

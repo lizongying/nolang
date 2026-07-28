@@ -14,12 +14,29 @@ import (
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
-	if receiver != nil {
-		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: receiver=%T tls-c=%q\n", receiver, p.sem.VarTypes["tls-c"])
+	if dbgRecv, ok := receiver.(*Identifier); ok && (dbgRecv.Value == "tls-c" || dbgRecv.Value == "tls") {
+		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: Identifier value=%q varTypes=%q stack=%v structFields[sse-client][tls-c]=%q\n",
+			dbgRecv.Value, p.sem.VarTypes[dbgRecv.Value], p.methodStructStack,
+			func() string { if f, ok := p.structFields["sse-client"]; ok { return f["tls-c"] }; return "" }())
+	}
+	if dot, ok := receiver.(*DotExpression); ok && (dot.Property == "recv" || dot.Property == "send") {
+		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: DotExpr recvType=%T recv=%v stack=%v\n", dot.Receiver, dot.Receiver, p.methodStructStack)
 	}
 	if ident, ok := receiver.(*Identifier); ok {
 		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			return strings.TrimPrefix(t, "?")
+		}
+		// self 欄位：在方法體中，`.field` 語法會解析為裸識別符 `field`，
+		// 其型別應從所屬 struct 的欄位表中查詢（而非區域變數表）。
+		// 例如 sse-client.reconnect 中的 `.tls-c.recv`：receiver 為裸識別符
+		// `tls-c`，其型別是 sse-client 結構的 tls-c 欄位（tls-conn）。
+		if len(p.methodStructStack) > 0 {
+			structName := p.methodStructStack[len(p.methodStructStack)-1]
+			if fields, ok := p.structFields[structName]; ok {
+				if fieldType, ok := fields[ident.Value]; ok {
+					return strings.TrimPrefix(fieldType, "?")
+				}
+			}
 		}
 		// self in method body: resolve via methodStructStack.
 		// self is added to def.Parameters after parseFunctionBody,
@@ -94,6 +111,10 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 			// receiver is a module path, not a variable. Try matching
 			// just the last property name against funcSignatures.
 			fnName = dot.Property
+		}
+		if dot.Property == "recv" || dot.Property == "send" {
+			rets, found := p.funcSignatures[fnName]
+			fmt.Fprintf(os.Stderr, "DBG inferCall: prop=%q receiverType=%q fnName=%q found=%v rets=%v\n", dot.Property, receiverType, fnName, found, rets)
 		}
 	}
 	if fnName == "" {

@@ -7375,6 +7375,11 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		stdSigsCache = funcSigs
 		stdFieldsCache = structFields
 		stdAliasesCache = aliases
+		for k := range funcSigs {
+			if strings.Contains(k, "recv") || strings.Contains(k, "tls-conn") || strings.Contains(k, "send") {
+				fmt.Fprintf(os.Stderr, "DBG stdSig: %s -> %v\n", k, funcSigs[k])
+			}
+		}
 	})
 	return stdSigsCache, stdFieldsCache
 }
