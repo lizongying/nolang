@@ -1163,9 +1163,8 @@ func (p *Parser) parseSwitchStatement() Statement {
 		return nil
 	}
 
-	// Desugar to match expression: cond { arm1 | arm2 | ... }
-	result := p.buildMatchDesugar(tok, cond, arms)
-	return &ExpressionStatement{Token: tok, Expression: result}
+	// 產出表層 AST（SurfaceMatch），desugar 延後到 lowering pass 執行。
+	return &ExpressionStatement{Token: tok, Expression: p.newSurfaceMatch(tok, cond, arms)}
 }
 
 func (p *Parser) parseContinueStatement() Statement {

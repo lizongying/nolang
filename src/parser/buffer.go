@@ -1,6 +1,9 @@
 package parser
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/lizongying/nolang/lexer"
 )
 
@@ -69,8 +72,52 @@ func (p *Parser) advanceCollect(from int) (int, lexer.Token) {
 		t := p.tokAt(idx)
 		if t.Type == lexer.COMMENT {
 			p.comments = append(p.comments, t)
+			p.warnSemiSwallow(idx, t)
 			continue
 		}
 		return idx, t
 	}
+}
+
+// warnSemiSwallow 對「單個 ; 行尾註釋疑似吞掉代碼」發出警告。
+// nolang 中單個 `;` 是行註釋標記（註釋到行尾）。若某行代碼中間出現 `;`，
+// 其後的代碼（含 `}` 等）會被整體當成註釋吞掉，造成大括號失衡、
+// 後續定義被錯誤嵌套等隱蔽錯誤（例如 { a = 1; b = 2 } 中 `; b = 2 }` 被吞）。
+// 啟發式條件（全部滿足才警告）：
+//  1. Marker == ";"（單分號行註釋，非 ;;）
+//  2. 註釋前同一行存在代碼 token（即行尾註釋，非行首整行註釋）
+//  3. 註釋內容包含 `{` 或 `}`（疑似吞掉了語句與右大括號）
+func (p *Parser) warnSemiSwallow(idx int, t lexer.Token) {
+	if t.Marker != ";" || p.warnedSemiEat[idx] {
+		return
+	}
+	if !strings.ContainsAny(t.Literal, "{}") {
+		return
+	}
+	// 檢查前一個 token 是否為同一行的代碼 token（跳過緊鄰的註釋）
+	prevIdx := idx - 1
+	for prevIdx >= 0 {
+		pt := p.tokAt(prevIdx)
+		if pt.Type == lexer.COMMENT {
+			prevIdx--
+			continue
+		}
+		if pt.Type == lexer.NEWLINE || pt.Line != t.Line {
+			return // 行首註釋，不警告
+		}
+		break
+	}
+	if prevIdx < 0 {
+		return
+	}
+	p.warnedSemiEat[idx] = true
+	p.diags = append(p.diags, Diagnostic{
+		Filename: p.Filename,
+		Pos:      lexer.Position{Line: t.Line, Column: t.Column},
+		Severity: SeverityWarning,
+		Code:     WarnSemiSwallow,
+		Message: fmt.Sprintf(
+			"single ';' starts a line comment; the rest of this line (%q) is ignored — if you meant to separate statements, use a newline instead",
+			";"+t.Literal),
+	})
 }

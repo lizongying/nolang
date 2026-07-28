@@ -681,6 +681,10 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
 	}
+	// 高危警告直出 stderr：單個 ; 行註釋疑似吞掉了同一行後面的代碼
+	for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
 	if t.fileCache != nil {
 		t.fileCache[filePath] = prog
 	}
@@ -707,6 +711,9 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filename, p.Errors())
+	}
+	for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 	if t.fileCache != nil {
 		t.fileCache[filename] = prog
@@ -947,6 +954,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())
+	}
+	// 高危警告直出 stderr：單個 ; 行註釋疑似吞掉了同一行後面的代碼
+	for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 
 	// 處理 #{embed=...} 註解：編譯期讀取嵌入文件

@@ -217,6 +217,7 @@ type Generator struct {
 	tmpIdx                 int
 	funcRetTypes           map[string]string                // 函數名 → 回傳型別
 	funcNumResults         map[string]int                   // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
+	funcDeclaredResults    map[string]int                   // 函數名 → 源碼顯式聲明的結果數（不計啟發式輸出參數）；void 函數為 0
 	funcResultLLVMType     map[string][]string              // 函數名 → 各輸出參數的 LLVM 型別列表
 	funcResultNolangTypes  map[string][]string              // 函數名 → 各輸出參數的 Nolang 型別字串列表
 	funcIsVariadic         map[string]bool                  // 函數名 → 是否為 variadic 函數
@@ -830,6 +831,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)
 	g.funcNumResults = make(map[string]int)
+	g.funcDeclaredResults = make(map[string]int)
 	g.funcResultLLVMType = make(map[string][]string)
 	g.funcResultNolangTypes = make(map[string][]string)
 	g.funcIsVariadic = make(map[string]bool)
@@ -1086,6 +1088,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 			g.funcRetTypes[fd.Name] = retType
 			g.funcNumResults[fd.Name] = len(fd.Results)
+			g.funcDeclaredResults[fd.Name] = len(fd.Results)
 			// 收集每個輸出參數的 LLVM 型別，供多賦值推斷變數型別使用
 			if len(fd.Results) > 0 {
 				rets := make([]string, len(fd.Results))
@@ -1139,6 +1142,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 					// 用完整名稱作為 key（含點），便於方法呼叫查找
 					g.funcRetTypes[name] = retType
 					g.funcNumResults[name] = len(fl.Results)
+					g.funcDeclaredResults[name] = len(fl.Results)
 					if len(fl.Results) > 0 {
 						rets := make([]string, len(fl.Results))
 						nolangRets := make([]string, len(fl.Results))
@@ -1188,6 +1192,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 					}
 					g.funcRetTypes[name] = retType
 					g.funcNumResults[name] = len(fl.Results)
+					g.funcDeclaredResults[name] = len(fl.Results)
 					if len(fl.Results) > 0 {
 						rets := make([]string, len(fl.Results))
 						nolangRets := make([]string, len(fl.Results))

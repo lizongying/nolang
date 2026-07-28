@@ -326,18 +326,23 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				if sb != nil {
 					sb.WriteString(g.indent() + result + "\n")
 				}
-				// 检查是否有输出参数但未正确处理（防御性诊断）
-				fnName := flattenDottedExpr(e.Function)
-				if fnName == "" {
-					if dot, ok := e.Function.(*parser.DotExpression); ok {
-						fnName = dot.Property
-					}
+			// 检查是否有输出参数但未正确处理（防御性诊断）。
+			// 仅當函數「源碼顯式聲明了回傳值」(funcDeclaredResults > 0) 卻生成了 void 呼叫時，
+			// 才表示回傳值被遺失（真實 bug）。void 函數（如 fe-copy/fe-neg）即便被啟發式
+			// 標記為單輸出，其 void 呼叫也是正確的，不應報錯。
+			fnName := flattenDottedExpr(e.Function)
+			if fnName == "" {
+				if dot, ok := e.Function.(*parser.DotExpression); ok {
+					fnName = dot.Property
 				}
-				if fnName != "" && g.funcNumResults != nil {
-					if n, ok := g.funcNumResults[fnName]; ok && n > 0 {
+			}
+			if fnName != "" && g.funcDeclaredResults != nil {
+				if n, ok := g.funcDeclaredResults[fnName]; ok && n > 0 {
+					if m, ok2 := g.funcNumResults[fnName]; ok2 && m > 0 {
 						fmt.Fprintf(os.Stderr, "codegen error: function %q has %d output params but generateCallExpression returned void call (not handled as expression)\n", fnName, n)
 					}
 				}
+			}
 				return ""
 			}
 			reg := g.tmpReg("call.tmp")

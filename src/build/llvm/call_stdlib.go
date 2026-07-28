@@ -12,7 +12,6 @@ import (
 // callFmt — print/println/printf 家族
 func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nArgs int,
 	evalArgs func() []string, strArg, llvmArg func(string) string, expr *parser.CallExpression) string {
-
 	// === Named format string path ===
 	// For printf/eprintf/sprintf with a string literal first arg, parse {name:spec}
 	// fields and dispatch to Nolang fmt-* helpers + io.out/io.err.

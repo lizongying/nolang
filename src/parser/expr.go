@@ -1171,7 +1171,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			return nil
 		}
 	}
-	return p.buildMatchDesugar(tok, matched, arms)
+	// 產出表層 AST（SurfaceMatch），desugar 延後到 lowering pass 執行。
+	return p.newSurfaceMatch(tok, matched, arms)
 }
 
 func (p *Parser) parseIfExpression() Expression {

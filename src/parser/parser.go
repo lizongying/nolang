@@ -19,6 +19,7 @@ type Parser struct {
 
 	ctx               contextStack                 // replaces inForCond, inMatchCond, inMatchArm, inExprContext
 	comments          []lexer.Token                // collected comment tokens
+	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
 	varDeclTypes      map[string]string            // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
 	enumVariantNames  map[string][]string          // 枚舉類型名 → 枚舉值名列表
@@ -464,6 +465,7 @@ func New(lx *lexer.Lexer) *Parser {
 		cur:             -1,
 		peek:            -1,
 		ctx:             contextStack{CTX_GLOBAL},
+		warnedSemiEat:   map[int]bool{},
 		reportedIllegal: map[string]bool{},
 		varDeclTypes:    map[string]string{},
 		declaredVars:    map[string]bool{},
@@ -811,6 +813,11 @@ func (p *Parser) ParseProgram() *Program {
 		}
 	}
 
+	// Lowering pass：將解析期產出的表層 match 節點（SurfaceMatch）展開為核心
+	// AST（IfExpression 鏈）。必須在拷貝 Warnings 之前執行，因為 desugar 過程
+	// 會透過 p.saveWarning 補充診斷（如不可達 arm 警告）。
+	p.lowerProgram(program)
+
 	program.TrailingComments = p.collectDocComments()
 	program.Warnings = append([]string{}, p.Warnings()...)
 
@@ -860,6 +867,21 @@ func (p *Parser) saveWarning(msg string) {
 
 func (p *Parser) Warnings() []string {
 	return formatDiags(p.diags, SeverityWarning)
+}
+
+// WarnSemiSwallow 是「單個 ; 行尾註釋疑似吞掉代碼」警告的穩定診斷碼。
+const WarnSemiSwallow = "W_SEMI_EAT"
+
+// WarningsByCode 返回指定診斷碼的警告訊息（格式化後）。
+// 供編譯入口（transpiler/builder）選擇性輸出高危警告（如 W_SEMI_EAT）。
+func (p *Parser) WarningsByCode(code string) []string {
+	var out []string
+	for _, d := range p.diags {
+		if d.Severity == SeverityWarning && d.Code == code {
+			out = append(out, d.Error())
+		}
+	}
+	return out
 }
 
 // skipToStatementEnd advances tokens until a statement boundary is reached.

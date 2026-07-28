@@ -140,9 +140,8 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 		return nil
 	}
 
-	// Desugar to match expression: cond { arm1 | arm2 | ... }
-	result := p.buildMatchDesugar(tok, cond, arms)
-	return &ExpressionStatement{Token: tok, Expression: result}
+	// 產出表層 AST（SurfaceMatch），desugar 延後到 lowering pass 執行。
+	return &ExpressionStatement{Token: tok, Expression: p.newSurfaceMatch(tok, cond, arms)}
 }
 
 // parseBareMatchExpr 解析裸 `{ cond-> body }` match（無 matched expression）
@@ -374,13 +373,10 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 	}
 
-	result := p.buildBareMatchDesugar(tok, arms)
-	if result != nil {
-		if ifExpr, ok := result.(*IfExpression); ok {
-			ifExpr.OpeningBraceComment = openingComments
-		}
-	}
-	return result
+	// 產出表層 AST（SurfaceMatch），保留開括號同行註釋，desugar 延後執行。
+	sm := p.newSurfaceMatch(tok, nil, arms)
+	sm.OpeningBraceComment = openingComments
+	return sm
 }
 
 // isArmStart checks if the current token starts a new match arm
