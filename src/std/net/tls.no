@@ -133,6 +133,7 @@ tls-conn {
     hs-plain-pos i64
     hs-plain-len i64
     hs-c-secret [32]byte
+    hs-prk-field [32]byte
     master-secret []byte
 }
 
@@ -339,7 +340,13 @@ tls-read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     {
         tmp str = ' '.repeat(5 - hdr-total)
         r = net.net-recv(fd, tmp, 5 - hdr-total)
-        r <= 0 -> return
+        r <= 0 -> {
+            eprint('TLS: read-record hdr net-recv=')
+            eprint(r)
+            eprint(' fd=')
+            eprint(fd)
+            return
+        }
         i <- [0..r): {
             buf[hdr-total + i] = tmp[i]
         }
@@ -1041,8 +1048,15 @@ tls-conn.send-client-hello-13 = () (ok bool) {
     .client-priv[31] = .client-priv[31] & 127
     .client-priv[31] = .client-priv[31] | 64
 
-    ; 計算公鑰
-    .client-pub = x25519.x25519-scalarmult-base(.client-priv)
+    ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
+    priv-slice []byte = with-len(32)
+    i <- [0..32): {
+        priv-slice[i] = .client-priv[i]
+    }
+    pub-slice []byte = x25519.x25519-scalarmult-base-bytes(priv-slice)
+    i <- [0..32): {
+        .client-pub[i] = pub-slice[i]
+    }
 
     ; 構建 ClientHello
     hs []byte = with-len(512)
@@ -1334,7 +1348,18 @@ tls-conn.read-server-hello-13 = () (ok bool) {
 
 ; compute-shared-secret-13: 計算 ECDHE 共享金鑰
 tls-conn.compute-shared-secret-13 = () {
-    .shared-secret = x25519.x25519-scalarmult(.client-priv, .server-pub)
+
+    ; 透過 []byte 傳遞給 x25519（避開 [32]byte 傳參的編譯器 bug）
+    priv-slice []byte = with-len(32)
+    pub-slice []byte = with-len(32)
+    i <- [0..32): {
+        priv-slice[i] = .client-priv[i]
+        pub-slice[i] = .server-pub[i]
+    }
+    shared-slice []byte = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
+    i <- [0..32): {
+        .shared-secret[i] = shared-slice[i]
+    }
 }
 
 ; derive-traffic-keys-13: 推導交握金鑰和應用金鑰
@@ -1366,6 +1391,11 @@ tls-conn.derive-handshake-keys-13 = () {
     ; 4. Handshake Secret = HKDF-Extract(derived, ECDHE_shared_secret)
     hs-prk [32]byte
     hs-prk = hkdf.hkdf-extract(derived-early, .shared-secret[..])
+
+    ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
+    i <- [0..32): {
+        .hs-prk-field[i] = hs-prk[i]
+    }
 
     ; 5. 計算 transcript hash = SHA-256(ClientHello + ServerHello)
     ; .hs-buf 目前包含 ClientHello 和 ServerHello
@@ -1477,7 +1507,7 @@ tls-conn.derive-application-keys-13 = () {
     ; 從 handshake secret 推導
     hs-prk []byte = with-len(32)
     i <- [0..32): {
-        hs-prk[i] = .shared-secret[i]
+        hs-prk[i] = .hs-prk-field[i]
     }
 
     ; derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
@@ -1906,9 +1936,13 @@ tls-conn.init = () {
     .ap-write-seq = 0
     .ap-read-seq = 0
 
-    ; 用時間戳初始化 PRNG
-    .rand-state = time.now-ns()
+    ; 用時間戳 + PID 初始化 PRNG（fork 後父子進程會有不同 PID）
+    .rand-state = time.now-ns() ^ os.get-pid()
     .rand-state == 0 -> .rand-state = 1
+    eprint('CLI init: pid=')
+    eprint(os.get-pid())
+    eprint(' rand-state=')
+    eprint(.rand-state)
 }
 
 ; connect: 建立 TLS 連線（自動協商 1.3/1.2）
@@ -2018,13 +2052,22 @@ tls-conn.send = (data str) (written ?i64) {
     .encrypted == false -> return
     data-bytes []byte = data.to-bytes()
 
+    eprint('CLI13: send called data.len=')
+    eprint(data.len)
+
     {
         .version == TLS-VERSION-1-3 -> {
 
             ; TLS 1.3: 使用 AEAD
+            eprint('CLI13: send ap-write-seq=')
+            eprint(.ap-write-seq)
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-client-key, .ap-client-iv, .ap-write-seq)
-            ok == false -> return
+            ok == false -> {
+                eprint('CLI13: send encrypt-record-13 failed')
+                return
+            }
             .ap-write-seq = .ap-write-seq + 1
+            eprint('CLI13: send ok')
         }
         -> {
 
@@ -2188,6 +2231,7 @@ tls-server-conn {
     hs-plain-len i64
     hs-c-secret [32]byte
     hs-s-secret [32]byte
+    hs-prk-field [32]byte
 }
 
 ; tls-server-conn.append-hs: 追加交握資料到緩衝區
@@ -2882,7 +2926,15 @@ tls-server-conn.send-server-hello-13 = () (ok bool) {
     .server-priv[31] = .server-priv[31] & 127
     .server-priv[31] = .server-priv[31] | 64
 
-    .server-pub = x25519.x25519-scalarmult-base(.server-priv)
+    ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
+    priv-slice []byte = with-len(32)
+    i <- [0..32): {
+        priv-slice[i] = .server-priv[i]
+    }
+    pub-slice []byte = x25519.x25519-scalarmult-base-bytes(priv-slice)
+    i <- [0..32): {
+        .server-pub[i] = pub-slice[i]
+    }
 
     eprint('SVR13: server-pub right after gen:')
     sp2-hex = ''
@@ -2978,7 +3030,18 @@ tls-server-conn.send-server-hello-13 = () (ok bool) {
 
 ; tls-server-conn.compute-shared-secret-13: 計算 ECDHE 共享金鑰
 tls-server-conn.compute-shared-secret-13 = () {
-    .shared-secret = x25519.x25519-scalarmult(.server-priv, .client-pub)
+
+    ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
+    priv-slice []byte = with-len(32)
+    pub-slice []byte = with-len(32)
+    i <- [0..32): {
+        priv-slice[i] = .server-priv[i]
+        pub-slice[i] = .client-pub[i]
+    }
+    shared-slice []byte = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
+    i <- [0..32): {
+        .shared-secret[i] = shared-slice[i]
+    }
 }
 
 ; tls-server-conn.derive-handshake-keys-13: 推導交握金鑰（HKDF 金鑰排程）
@@ -3007,6 +3070,11 @@ tls-server-conn.derive-handshake-keys-13 = () {
     ; 4. Handshake Secret = HKDF-Extract(derived, ECDHE_shared_secret)
     hs-prk [32]byte
     hs-prk = hkdf.hkdf-extract(derived-early, .shared-secret[..])
+
+    ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
+    i <- [0..32): {
+        .hs-prk-field[i] = hs-prk[i]
+    }
 
     ; 5. transcript hash = SHA-256(ClientHello + ServerHello)
     hs-hash-arr = sha256.sha256(.hs-buf)
@@ -3112,9 +3180,12 @@ tls-server-conn.derive-handshake-keys-13 = () {
 ; tls-server-conn.derive-application-keys-13: 推導應用層金鑰
 tls-server-conn.derive-application-keys-13 = () {
 
+    eprint('SVR13: derive-app-keys START fd=')
+    eprint(.fd)
+
     hs-prk []byte = with-len(32)
     i <- [0..32): {
-        hs-prk[i] = .shared-secret[i]
+        hs-prk[i] = .hs-prk-field[i]
     }
 
     ; derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
@@ -3173,6 +3244,9 @@ tls-server-conn.derive-application-keys-13 = () {
 
     .ap-write-seq = 0
     .ap-read-seq = 0
+
+    eprint('SVR13: derive-app-keys END fd=')
+    eprint(.fd)
 }
 
 ; tls-server-conn.encrypt-record-13: TLS 1.3 AEAD 加密記錄並發送
@@ -3282,8 +3356,15 @@ tls-server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) 
     rec []byte = with-len(16400)
     r-ct = 0
     rlen = 0
+    eprint('SVR13: read-enc-rec fd=')
+    eprint(.fd)
     r-ct, rlen = tls-read-record(.fd, rec)
-    r-ct < 0 -> return
+    r-ct < 0 -> {
+        eprint('SVR13: read-enc-rec tls-read-record failed')
+        return
+    }
+
+    eprint('SVR13: read-enc-rec r-ct={r-ct} rlen={rlen}')
 
     ; CCS (content type 20) 為 middlebox compat，跳過後讀取下一筆
     {
@@ -3292,6 +3373,14 @@ tls-server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) 
         r-ct < 0 -> return
     } (r-ct == TLS-CT-CCS)
     ct, out = .decrypt-record-13(rec, key, iv, seq)
+    ct < 0 -> {
+        eprint('SVR13: read-enc-rec decrypt failed')
+        return
+    }
+    eprint('SVR13: read-enc-rec decrypted ct=')
+    eprint(ct)
+    eprint(' plain.len=')
+    eprint(out.len)
 }
 
 ; tls-server-conn.read-encrypted-handshake-13: 讀取加密的交握訊息
@@ -3316,7 +3405,19 @@ tls-server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte)
     msg-type = .hs-plain-buf[pos] & 255
     msg-len i64 = tls-get-u24(.hs-plain-buf, pos + 1)
 
-    pos + 4 + msg-len > .hs-plain-len -> return
+    eprint('SVR13: read-enc-hs msg-type=')
+    eprint(msg-type)
+    eprint(' msg-len=')
+    eprint(msg-len)
+    eprint(' pos=')
+    eprint(pos)
+    eprint(' plain-len=')
+    eprint(.hs-plain-len)
+
+    pos + 4 + msg-len > .hs-plain-len -> {
+        eprint('SVR13: read-enc-hs length check failed')
+        return
+    }
 
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
@@ -3449,11 +3550,9 @@ tls-server-conn.send-finished-13 = () (ok bool) {
 tls-server-conn.read-client-finished-13 = () (ok bool) {
     ok = false
 
-    ; 讀取加密的 client Finished
-    cf-type = 0
-    cf-data []byte
-    cf-type, cf-data = .read-encrypted-handshake-13()
-    cf-type != TLS-HS-FINISHED -> return
+    ; 先計算 verify_data（transcript hash 需為 ClientHello..server Finished，
+    ; 不含 client Finished。read-encrypted-handshake-13 會 append client Finished
+    ; 到 hs-buf，故必須在讀取前計算 hash。）
 
     ; client_finished_key = HKDF-Expand-Label(c_hs_traffic, "finished", "", 32)
     c-hs-secret []byte = with-len(32)
@@ -3475,6 +3574,12 @@ tls-server-conn.read-client-finished-13 = () (ok bool) {
     ; verify_data = HMAC-SHA256(finished_key, transcript_hash)
     verify []byte
     verify = hmac.hmac-sha256-vec(finished-key, hs-hash)
+
+    ; 讀取加密的 client Finished（會 append 到 hs-buf，但 hash 已提前計算）
+    cf-type = 0
+    cf-data []byte
+    cf-type, cf-data = .read-encrypted-handshake-13()
+    cf-type != TLS-HS-FINISHED -> return
 
     ; 比較 verify_data
     i <- [0..32): {
@@ -3551,7 +3656,8 @@ tls-server-conn.handshake-13 = () (ok bool) {
 
     ; 10. 啟用加密
     .encrypted = true
-    eprint('SVR13: handshake done')
+    eprint('SVR13: handshake done fd=')
+    eprint(.fd)
     ok = true
 }
 
@@ -3640,6 +3746,12 @@ tls-server-conn.send = (data str) (written ?i64) {
 ; n i64: 最多接收位元組數
 ; 返回 read-n i64: 實際接收位元組數（-1=錯誤）
 tls-server-conn.recv = (buf str, n i64) (read-n i64) {
+    eprint('SVR-recv-method: encrypted=')
+    eprint(.encrypted)
+    eprint(' fd=')
+    eprint(.fd)
+    eprint(' is-tls13=')
+    eprint(.is-tls13)
     read-n = -1
     .encrypted == false -> return
 
@@ -3701,7 +3813,11 @@ tls-server-init = (fd fd) (conn ?tls-server-conn) {
     conn = nil
     c = tls-server-conn {}
     c.fd = fd
-    c.rand-state = time.now-ns()
+    c.rand-state = time.now-ns() ^ os.get-pid()
+    eprint('SVR init: pid=')
+    eprint(os.get-pid())
+    eprint(' rand-state=')
+    eprint(c.rand-state)
     c.encrypted = false
     c.hs-buf = with-len(65536)
     c.hs-buf-len = 0
@@ -3741,8 +3857,9 @@ tls-server-init = (fd fd) (conn ?tls-server-conn) {
 }
 
 ; tls-server-accept: 接受 TCP 連線並執行 TLS 交握
+; 使用局部變數進行交握（全域變數有編譯器 bug：跨函式位址不一致）
 ; listen-fd fd: 監聽 socket fd
-; 返回 conn ?tls-server-conn: 連線（nil=失敗）
+; 返回 conn ?tls-server-conn: ok=連線（含交握金鑰）, nil=失敗
 tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
     conn = nil
 
@@ -3764,14 +3881,118 @@ tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
         ok -> {
             c = it
 
-            ; 執行 TLS 交握
+            ; 執行 TLS 交握（在局部變數上操作，方法接收者位址一致）
             ok2 = c.handshake()
             ok2 == false -> {
                 c.close()
                 return
             }
 
+            eprint('ACCEPT: handshake done fd=')
+            eprint(c.fd)
+            eprint(' enc=')
+            eprint(c.encrypted)
+            eprint(' tls13=')
+            eprint(c.is-tls13)
+
             conn = c
+        }
+    }
+}
+
+; tls-https-serve-once: 完整的 HTTPS 請求-回應週期（單一函式）
+; 在同一個函式中完成：accept + handshake + recv HTTP + send HTTP + close
+; 所有 TLS 狀態保持在局部變數 c 中，避開全域變數 bug 和結構體複製 bug。
+; listen-fd fd: 監聽 socket fd
+; status i64: HTTP 回應狀態碼
+; body str: HTTP 回應體
+; 返回 ok bool: true=成功
+tls-https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
+    ok = false
+
+    ; 1. 接受 TCP 連線
+    client-fd = net.net-accept(listen-fd)
+    client-fd < 0 -> return
+
+    ; 2. 初始化 TLS 連線
+    init-opt = tls-server-init(client-fd)
+    init-opt: {
+        nil -> {
+            fs.close(client-fd)
+            return
+        }
+        err -> {
+            fs.close(client-fd)
+            return
+        }
+        ok -> {
+            c = it
+
+            ; 3. TLS 交握（方法呼叫在局部變數上操作，接收者位址一致）
+            hs-ok = c.handshake()
+            hs-ok == false -> {
+                c.close()
+                return
+            }
+
+            ; 4. 接收 HTTP 請求（透過 TLS 解密）
+            ; 接收直到找到 \r\n\r\n（標頭結束）
+            space = ' '
+            recv-buf = space.repeat(8192)
+            recv-len = 0
+            cr = number.char-to-str(13)
+            lf = number.char-to-str(10)
+            crlf = cr - lf
+            separator = crlf - crlf
+
+            sep-found = false
+            {
+                sep-found -> *
+                recv-len + 4096 > 8192 -> *
+
+                tmp = space.repeat(4096)
+                rn = c.recv(tmp, 4096)
+                rn <= 0 -> *
+
+                i <- [0..rn): {
+                    recv-buf[recv-len + i] = tmp[i]
+                }
+                recv-len = recv-len + rn
+
+                data = recv-buf.slice(0, recv-len)
+                pos = data.index(separator)
+                pos >= 0 -> sep-found = true
+            } (sep-found == false)
+
+            ; 5. 發送 HTTP 回應（透過 TLS 加密）
+            status-s = status.to-str()
+            status-text = 'OK'
+            status == 200 -> status-text = 'OK'
+            status == 404 -> status-text = 'Not Found'
+            status == 500 -> status-text = 'Internal Server Error'
+
+            body-len = body.len
+            len-s = body-len.to-str()
+
+            ; 構建完整回應（一次發送，避免多次 send 的 option 處理）
+            response = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf - 'Content-Type: text/plain; charset=utf-8' - crlf - 'Content-Length: ' - len-s - crlf - 'Connection: close' - crlf - 'Server: nolang-https/1.0' - crlf - crlf - body
+
+            w1 = c.send(response)
+            w1: {
+                nil -> {
+                    c.close()
+                    return
+                }
+                err -> {
+                    c.close()
+                    return
+                }
+                ok ->
+            }
+
+            ; 6. 關閉連線
+            c.close()
+            ok = true
         }
     }
 }

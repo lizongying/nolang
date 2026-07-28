@@ -160,10 +160,11 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; len i64: CID 長度（通常 8）
 ; 返回 cid []byte: 隨機 CID
 quic-gen-cid = (len i64) (cid []byte) {
-    state i64 = rand.rand(0)
+    state i64 = 0
+    state, cid-r = rand.rand(0)
     cid = with-len(len)
     i <- [0..len): {
-        state = rand.rand(state)
+        state, cid-r = rand.rand(state)
         cid[i] = state & 255
     }
 }

@@ -385,3 +385,72 @@ process-output = (program str, arg str) (content str, code i64) {
     code = p.exit-code
     p.close()
 }
+
+; ═══════════════════════════════════════════════
+; 進程列表與查找（notools 擴展）
+; ═══════════════════════════════════════════════
+
+; proc-info: 進程資訊
+; pid: 進程 ID
+; name: 進程名稱（Linux 取自 /proc/<pid>/comm，最長 15 字元）
+proc-info {
+    pid i64
+    name str
+}
+
+; list-all: 列出系統中所有進程
+; Linux: 遍歷 /proc，讀取每個 PID 目錄下的 /proc/<pid>/comm 取得進程名
+; macOS/Windows: 暫時返回空列表（需 libproc/sysctl 或 CreateToolhelp32Snapshot 支持）
+; 返回 proc-info 列表
+
+#{linux-amd64, linux-arm64}
+process.list-all = () (procs []proc-info) {
+    names = fs.list-dir('/proc')
+    i <- [0..names.len): {
+        name = names[i]
+        ; 只處理全數字條目（PID 目錄）
+        pid-val ?i64 = name.to-i64()
+        pid-val: {
+            ok -> {
+                p = proc-info{}
+                p.pid = it
+                ; 讀取 /proc/<pid>/comm 取得進程名
+                comm-path = '/proc/' - name - '/comm'
+                comm = fs.read-file(comm-path)
+                comm.len > 0 -> {
+                    p.name = comm.trim()
+                }
+                procs.push(p)
+            }
+            nil -> {}
+            err -> {}
+        }
+    }
+}
+
+#{mac-amd64, mac-arm64}
+process.list-all = () (procs []proc-info) {
+    ; macOS 暫時返回空列表（需 libproc proc_listallpids 或 sysctl KERN_PROC）
+}
+
+#{win-amd64, win-arm64}
+process.list-all = () (procs []proc-info) {
+    ; Windows 暫時返回空列表（需 CreateToolhelp32Snapshot）
+}
+
+; find-by-name: 按名稱查找進程 PID
+; name: 進程名稱（部分匹配，大小寫不敏感）
+; 返回匹配的 PID 列表
+process.find-by-name = (name str) (pids []i64) {
+    all = process.list-all()
+    i <- [0..all.len): {
+        p = all[i]
+        ; 大小寫不敏感的部分匹配
+        lower-name = p.name.to-lower()
+        lower-target = name.to-lower()
+        yes = lower-name.contains(lower-target)
+        yes -> {
+            pids.push(p.pid)
+        }
+    }
+}

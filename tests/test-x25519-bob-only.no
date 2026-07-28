@@ -1,0 +1,65 @@
+; test-x25519-bob-only — 只測試 Bob 的公鑰（排除狀態累積）
+; # std/crypto/x25519
+
+; hex-to-bytes: 將 hex 字串轉為 [32]byte
+hex-to-bytes = (hex-str str) (out [32]byte) {
+    i <- [0..32): {
+        hi = hex-str[i * 2]
+        lo = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        out[i] = (hi-v << 4) | lo-v
+    }
+}
+
+; bytes-eq: 比較兩個 [32]byte 是否相等
+bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
+    eq = true
+    i <- [0..32): {
+        a[i] != b[i] -> {
+            eq = false
+            break
+        }
+    }
+}
+
+main = () {
+
+    ; Bob private:   5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb
+    ; Bob public:    de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+
+    bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+
+    eprint('bob-priv: ')
+    i <- [0..32): {
+        eprint(bob-priv[i] & 255)
+        eprint(' ')
+    }
+
+    bob-pub = x25519.x25519-scalarmult-base(bob-priv)
+
+    eprint('bob-pub: ')
+    i <- [0..32): {
+        eprint(bob-pub[i] & 255)
+        eprint(' ')
+    }
+
+    bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
+
+    ok = bytes-eq(bob-pub, bob-pub-expected)
+    ok == true -> print('PASS: Bob only')
+    ok == false -> {
+        print('FAIL: Bob only')
+        eprint('expected: ')
+        i <- [0..32): {
+            eprint(bob-pub-expected[i] & 255)
+            eprint(' ')
+        }
+    }
+}

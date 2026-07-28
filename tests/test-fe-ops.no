@@ -1,0 +1,195 @@
+; test-fe-ops — 測試 X25519 域元素基本操作
+; # std/crypto/x25519
+
+; fe-print: 列印域元素
+fe-print = (label str, h []i64) {
+    eprint(label)
+    eprint(': ')
+    i <- [0..10): {
+        eprint(h[i])
+        eprint(' ')
+    }
+}
+
+; test-fe-mul: 測試 fe-mul(2, 3) = 6
+test-fe-mul = () (pass bool) {
+    pass = false
+
+    ; 2 = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    a []i64 = with-len(10)
+    a[0] = 2
+
+    ; 3 = [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    b []i64 = with-len(10)
+    b[0] = 3
+
+    ; result = a * b
+    r []i64 = with-len(10)
+    x25519.fe-mul(r, a, b)
+    fe-print('fe-mul(2,3)', r)
+
+    ; 預期: 6 = [6, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    r[0] != 6 -> {
+        print('FAIL: fe-mul(2,3) != 6')
+        return
+    }
+    i <- [1..10): {
+        r[i] != 0 -> {
+            print('FAIL: fe-mul(2,3) has non-zero high limbs')
+            return
+        }
+    }
+
+    pass = true
+}
+
+; test-fe-sq: 測試 fe-sq(3) = 9
+test-fe-sq = () (pass bool) {
+    pass = false
+
+    a []i64 = with-len(10)
+    a[0] = 3
+
+    r []i64 = with-len(10)
+    x25519.fe-sq(r, a)
+    fe-print('fe-sq(3)', r)
+
+    r[0] != 9 -> {
+        print('FAIL: fe-sq(3) != 9')
+        return
+    }
+
+    pass = true
+}
+
+; test-fe-add: 測試 fe-add(2, 3) = 5
+test-fe-add = () (pass bool) {
+    pass = false
+
+    a []i64 = with-len(10)
+    a[0] = 2
+
+    b []i64 = with-len(10)
+    b[0] = 3
+
+    r []i64 = with-len(10)
+    x25519.fe-add(r, a, b)
+    fe-print('fe-add(2,3)', r)
+
+    r[0] != 5 -> {
+        print('FAIL: fe-add(2,3) != 5')
+        return
+    }
+
+    pass = true
+}
+
+; test-fe-frombytes: 測試載入 basepoint (9)
+test-fe-frombytes = () (pass bool) {
+    pass = false
+
+    base [32]byte
+    i <- [0..32): {
+        base[i] = 0
+    }
+    base[0] = 9
+
+    r []i64 = with-len(10)
+    x25519.fe-frombytes(r, base)
+    fe-print('fe-frombytes(9)', r)
+
+    r[0] != 9 -> {
+        print('FAIL: fe-frombytes(9)[0] != 9')
+        return
+    }
+    i <- [1..10): {
+        r[i] != 0 -> {
+            print('FAIL: fe-frombytes(9) has non-zero high limbs')
+            return
+        }
+    }
+
+    pass = true
+}
+
+; test-scalarmult-base: 測試 scalarmult(1, base) — 應為 9 * 2^254 mod p
+test-scalarmult-base = () (pass bool) {
+    pass = false
+
+    ; 使用 Alice 的金鑰
+    scalar [32]byte
+    hex-str = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
+    i <- [0..32): {
+        hi = hex-str[i * 2]
+        lo = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        scalar[i] = (hi-v << 4) | lo-v
+    }
+
+    pub = x25519.x25519-scalarmult-base(scalar)
+
+    ; 預期: 8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+    ; = [133, 32, 240, 9, 137, 48, 167, 84, 116, 139, 125, 220, 180, 62, 247, 90,
+    ;    13, 191, 58, 13, 38, 56, 26, 244, 235, 164, 169, 142, 170, 155, 78, 106]
+    expected = [
+        133, 32, 240, 9, 137, 48, 167, 84,
+        116, 139, 125, 220, 180, 62, 247, 90,
+        13, 191, 58, 13, 38, 56, 26, 244,
+        235, 164, 169, 142, 170, 155, 78, 106,
+    ]
+
+    eprint('Computed pub:')
+    i <- [0..32): {
+        eprint(' ')
+        eprint(pub[i] & 255)
+    }
+    eprint('Expected pub:')
+    i <- [0..32): {
+        eprint(' ')
+        eprint(expected[i])
+    }
+
+    1
+    i <- [0..32): {
+        (pub[i] & 255) != expected[i] -> {
+            0
+            break
+        }
+    }
+
+    0 -> {
+        print('FAIL: scalarmult-base does not match expected')
+        return
+    }
+
+    pass = true
+}
+
+main = () {
+    p1 = test-fe-add()
+    p1 == true -> print('PASS: fe-add')
+    p1 == false -> print('FAIL: fe-add')
+
+    p2 = test-fe-mul()
+    p2 == true -> print('PASS: fe-mul')
+    p2 == false -> print('FAIL: fe-mul')
+
+    p3 = test-fe-sq()
+    p3 == true -> print('PASS: fe-sq')
+    p3 == false -> print('FAIL: fe-sq')
+
+    p4 = test-fe-frombytes()
+    p4 == true -> print('PASS: fe-frombytes')
+    p4 == false -> print('FAIL: fe-frombytes')
+
+    p5 = test-scalarmult-base()
+    p5 == true -> print('PASS: scalarmult-base')
+    p5 == false -> print('FAIL: scalarmult-base')
+}

@@ -1,0 +1,108 @@
+; test-std-unix-fs-os.no — 驗證 Task 1 新增的 fs/os 底層函數
+; 覆蓋：fs.realpath / fs.mkstemp / os.uname / os.geteuid / os.num-cpu
+; 說明：本測試為最小行為驗證，僅檢查函數可呼叫且返回值合理
+
+; ═══════════════════════════════════════════════
+; 1. fs.realpath — 解析絕對路徑
+; ═══════════════════════════════════════════════
+abs = fs.realpath('./src')
+eprint('realpath(./src) = ')
+print(abs)
+abs.len > 0 -> print('PASS: realpath returns non-empty')
+abs.len == 0 -> print('FAIL: realpath returns empty')
+
+; ═══════════════════════════════════════════════
+; 2. fs.mkstemp — 建立臨時檔案（多返回值 name, fd）
+; ═══════════════════════════════════════════════
+tmp-name, tmp-fd = fs.mkstemp('/tmp/nolang-test-XXXXXX')
+eprint('mkstemp name = ')
+print(tmp-name)
+eprint('mkstemp fd = ')
+tmp-fd-i64 i64 = tmp-fd
+print(tmp-fd-i64)
+tmp-fd >= 0 -> {
+    print('PASS: mkstemp returned valid fd')
+    fs.close(tmp-fd)
+    fs.remove(tmp-name)
+}
+tmp-fd < 0 -> print('FAIL: mkstemp returned invalid fd')
+
+; ═══════════════════════════════════════════════
+; 3. fs.mkdtemp — 建立臨時目錄（多返回值 name, ok）
+; ═══════════════════════════════════════════════
+dir-name, dir-ok = fs.mkdtemp('/tmp/nolang-dir-XXXXXX')
+eprint('mkdtemp name = ')
+print(dir-name)
+dir-ok -> {
+    print('PASS: mkdtemp created directory')
+    fs.remove(dir-name)
+}
+dir-ok == false -> print('FAIL: mkdtemp failed')
+
+; ═══════════════════════════════════════════════
+; 4. os.geteuid — 取得有效使用者 ID
+; ═══════════════════════════════════════════════
+euid = os.geteuid()
+eprint('geteuid = ')
+print(euid.to-str())
+euid >= 0 -> print('PASS: geteuid returns non-negative')
+
+; ═══════════════════════════════════════════════
+; 5. os.getegid — 取得有效群組 ID
+; ═══════════════════════════════════════════════
+egid = os.getegid()
+eprint('getegid = ')
+print(egid.to-str())
+egid >= 0 -> print('PASS: getegid returns non-negative')
+
+; ═══════════════════════════════════════════════
+; 6. os.num-cpu — 取得在線 CPU 核數
+; ═══════════════════════════════════════════════
+n = os.num-cpu()
+eprint('num-cpu = ')
+print(n.to-str())
+n > 0 -> print('PASS: num-cpu returns positive')
+n <= 0 -> print('FAIL: num-cpu returns non-positive')
+
+; ═══════════════════════════════════════════════
+; 7. os.uname — 取得核心與架構資訊（結構體返回）
+; ═══════════════════════════════════════════════
+uts = os.uname()
+eprint('uname.sysname = ')
+print(uts.sysname)
+eprint('uname.nodename = ')
+print(uts.nodename)
+eprint('uname.release = ')
+print(uts.release)
+eprint('uname.machine = ')
+print(uts.machine)
+uts.sysname.len > 0 -> print('PASS: uname.sysname non-empty')
+uts.sysname.len == 0 -> print('FAIL: uname.sysname empty')
+
+; ═══════════════════════════════════════════════
+; 8. os.sysconf — 查詢系統配置（_SC_NPROCESSORS_ONLN）
+;    注意：_SC_* 常數值各平台不同！
+;      macOS _SC_NPROCESSORS_ONLN = 58
+;      Linux _SC_NPROCESSORS_ONLN = 84
+;    本測試在 macOS 上執行，故使用 58；可移植做法是使用 os.num-cpu()
+; ═══════════════════════════════════════════════
+val = os.sysconf(58)
+eprint('sysconf(58) = ')
+print(val.to-str())
+val > 0 -> print('PASS: sysconf returns positive for nproc')
+
+; ═══════════════════════════════════════════════
+; 9. fs.utime — 設定檔案時間（用剛才的 src 目錄測試會失敗，改用臨時檔）
+; ═══════════════════════════════════════════════
+ut-path = '/tmp/nolang-utime-test.txt'
+fs.remove(ut-path)
+fd-w = fs.open-write(ut-path)
+fd-w >= 0 -> {
+    fs.close(fd-w)
+    ut-ok = fs.utime(ut-path, 1000, 2000)
+    eprint('utime ok = ')
+    print(ut-ok.to-str())
+    ut-ok -> print('PASS: utime succeeded')
+    ut-ok == false -> print('FAIL: utime failed')
+    fs.remove(ut-path)
+}

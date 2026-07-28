@@ -484,7 +484,55 @@ func TestFFIDeclarationSyntax(t *testing.T) {
 				return
 			}
 			if program == nil || len(program.Statements) == 0 {
-				t.Fatalf("no statements parsed")
+			t.Fatalf("no statements parsed")
+		}
+	})
+	}
+}
+
+func TestEmbedAnnotation(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantPath string
+	}{
+		{name: "embed_quoted_path", input: "#{embed='assets/icon.ico'}\nICON []byte", wantPath: "assets/icon.ico"},
+		{name: "embed_bare_path", input: "#{embed=assets/icon.ico}\nICON []byte", wantPath: "assets/icon.ico"},
+		{name: "embed_bare_path_multi_segment", input: "#{embed=cfg/app.conf}\nDATA []byte", wantPath: "cfg/app.conf"},
+		{name: "embed_bare_path_with_dash", input: "#{embed=assets/win-icon.ico}\nWIN []byte", wantPath: "assets/win-icon.ico"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			p.Filename = "test.no"
+			program := p.ParseProgram()
+			if len(p.Errors()) != 0 {
+				t.Fatalf("parser errors: %v", p.Errors())
+			}
+			// 找到 LetStatement
+			var ls *LetStatement
+			for _, stmt := range program.Statements {
+				if s, ok := stmt.(*LetStatement); ok {
+					ls = s
+					break
+				}
+			}
+			if ls == nil {
+				t.Fatalf("no LetStatement found in program")
+			}
+			// 檢查 embed 註解
+			var embedPath string
+			for _, annot := range ls.Annotations {
+				if annot.Key != "embed" {
+					continue
+				}
+				if sv, ok := annot.Value.(*AnnotationStringValue); ok {
+					embedPath = sv.Value
+				}
+			}
+			if embedPath != tt.wantPath {
+				t.Errorf("embed path = %q, want %q", embedPath, tt.wantPath)
 			}
 		})
 	}

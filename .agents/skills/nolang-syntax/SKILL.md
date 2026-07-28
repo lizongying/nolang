@@ -569,6 +569,58 @@ _PRIVATE-CONST = 42      // private global constant
 // }
 ```
 
+### Avoid Global Variables in Modules
+
+**Strong recommendation: Unless necessary, do NOT use global variables in modules (`.no` files).** Global variables introduce the following issues:
+
+- **Compiler bug risk**: The Nolang compiler has known limitations with cross-function memory address handling for global struct variables — different functions may see different addresses, leading to inconsistent state.
+- **Concurrency safety**: Global mutable state is hard to track under fork or async scenarios, prone to race conditions.
+- **Testability**: Global state creates implicit dependencies in functions, making isolated testing difficult.
+- **Code readability**: Global variables obscure data flow — readers must trace the entire module to understand function behavior.
+
+**Recommended practices:**
+
+1. **Prefer local variables**: Keep state in local variables within functions; pass data via parameters and return values.
+2. **Use structs to encapsulate state**: Organize related state into structs and operate via methods (method receivers are local variables with consistent addresses).
+3. **Use global variables only when necessary**: e.g., module-level constants (immutable), singleton resources (such as a global log buffer).
+4. **Global variables MUST be uppercase**: This is a mandatory rule (see Naming Rules above). Lowercase top-level variables are treated as locals by the compiler.
+
+```no
+// ❌ Avoid: using global mutable variables in modules
+// g-conn = tls-conn {}
+// g-buf = ' '
+//
+// fn-a = () {
+//     g-conn.send(g-buf)   ; global variable address may differ across functions
+// }
+
+// ✅ Recommended: use local variables, pass state via params/return values
+fn-a = () {
+    conn = tls-conn {}    ; local variable, consistent address
+    buf = ' '
+    conn.send(buf)
+}
+
+// ✅ Recommended: encapsulate the full flow in a single function to avoid cross-function state passing
+serve-once = (listen-fd fd, body str) (ok bool) {
+    ok = false
+    client-fd = net.net-accept(listen-fd)
+    conn = tls-server-init(client-fd)   ; local variable
+    conn: {
+        ok -> {
+            c = it
+            c.handshake()
+            c.send(body)
+            c.close()
+            ok = true
+        }
+        -> fs.close(client-fd)
+    }
+}
+```
+
+> **Real-world example**: The `tls-https-serve-once` function in `std/net/tls.no` encapsulates the entire HTTPS request-response cycle (accept + handshake + recv + send + close) in a single function, keeping all TLS state in local variables — successfully avoiding the compiler bug where global variables have inconsistent addresses across functions.
+
 ### API Documentation Conventions
 
 Function documentation comments should include full parameter names and types, return parameter names and types. The API summary at the top of a module should also use full signatures (including parameter names, types, return names, types), not abbreviated forms.
@@ -2271,6 +2323,7 @@ neural = () {
 
 Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.
 
+- #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（mod.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 

@@ -141,6 +141,18 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 5c. Embed annotation validation
+	for _, e := range nbuild.ValidateEmbedAnnotations(prog, filePath) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     e.Line,
+			Column:   e.Column,
+			Severity: "error",
+			Source:   "nolang-lint",
+			Message:  e.Message,
+		})
+	}
+
 	// 6. Interface implementation warnings
 	for _, u := range nbuild.ValidateInterfaceImplementation(prog) {
 		results = append(results, VetResult{

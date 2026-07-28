@@ -1,0 +1,16 @@
+; test-embed — 測試 #{embed=...} 文件嵌入功能
+#{embed='embed-test-asset.txt'}
+DATA []byte
+
+n = DATA.len
+print('embed len: {n}')
+{
+    n == 5 -> print('len OK')
+    -> print('len FAIL')
+}
+
+b = DATA[0]
+{
+    b == 72 -> print('first byte OK')
+    -> print('first byte FAIL')
+}

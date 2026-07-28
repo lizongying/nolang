@@ -361,7 +361,9 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     ; 檢查符號：如果 x 的最低位元 != sign，取負
     x-bytes [32]byte
     x25519.fe-tobytes(x-bytes, x)
-    (x-bytes[0] & 1) != sign -> fe-neg(x, x)
+    (x-bytes[0] & 1) != sign -> {
+        fe-neg(x, x)
+    }
 
     ; 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
     x25519.fe-copy(p, x)

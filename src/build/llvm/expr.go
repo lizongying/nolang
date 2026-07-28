@@ -340,6 +340,18 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				if sb != nil {
 					sb.WriteString(g.indent() + result + "\n")
 				}
+				// 检查是否有输出参数但未正确处理（防御性诊断）
+				fnName := flattenDottedExpr(e.Function)
+				if fnName == "" {
+					if dot, ok := e.Function.(*parser.DotExpression); ok {
+						fnName = dot.Property
+					}
+				}
+				if fnName != "" && g.funcNumResults != nil {
+					if n, ok := g.funcNumResults[fnName]; ok && n > 0 {
+						fmt.Fprintf(os.Stderr, "codegen error: function %q has %d output params but generateCallExpression returned void call (not handled as expression)\n", fnName, n)
+					}
+				}
 				return ""
 			}
 			g.tmpIdx++
@@ -1540,6 +1552,29 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 	return ""
 }
 
+// structPtrForVar returns the LLVM register holding a %struct-type* pointer
+// for the given variable. If the variable was allocated as i64 (e.g. synthetic
+// `it` from a nil/err arm) but varTypes tracks it as a struct type (because a
+// later arm assigned a struct pointer via ptrtoint), this generates a
+// load i64 + inttoptr sequence to recover the struct pointer. Otherwise it
+// returns the variable's address directly (suitable for GEP).
+func (g *Generator) structPtrForVar(sb *strings.Builder, varName, structType string) string {
+	if g.itAllocTypes != nil {
+		if allocType, ok := g.itAllocTypes[varName]; ok && allocType == "i64" && strings.HasPrefix(structType, "%") {
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%it.i64load.%d", g.tmpIdx)
+			g.tmpIdx++
+			ptrReg := fmt.Sprintf("%%it.ptrcast.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), loadReg, g.varAddr(varName)))
+				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), ptrReg, loadReg, structType))
+			}
+			return ptrReg
+		}
+	}
+	return g.varAddr(varName)
+}
+
 func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotExpression) string {
 	varName := ""
 	if ident, ok := expr.Receiver.(*parser.Identifier); ok {
@@ -1643,8 +1678,11 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
 			} else {
+				// Use structPtrForVar to handle i64-alloca-with-struct-type case
+				// (e.g. `it` allocated as i64 but holding a struct pointer)
+				baseAddr := g.structPtrForVar(sb, varName, structTy)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
+					g.indent(), reg, structTy, structTy, baseAddr, fieldIdx))
 			}
 			// 一律 load 欄位值。對 struct 型別的鏈式存取由 generateExprPtr 處理（需指標的情況）。
 			g.tmpIdx++
@@ -1700,8 +1738,10 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 								g.indent(), reg, structTy, structTy, basePtr, i))
 						} else {
+							// Use structPtrForVar to handle i64-alloca-with-struct-type case
+							baseAddr := g.structPtrForVar(sb, recvName, structTy)
 							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-								g.indent(), reg, structTy, structTy, g.varAddr(recvName), i))
+								g.indent(), reg, structTy, structTy, baseAddr, i))
 						}
 					}
 					return reg
@@ -1902,6 +1942,10 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 // extractStrDataPtr extracts the i8* data pointer (field 1) from a %str-long* pointer.
 // Returns the register name holding the i8*.
 func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string {
+	if strPtr == "" {
+		fmt.Fprintf(os.Stderr, "codegen error: extractStrDataPtr called with empty strPtr\n")
+		return ""
+	}
 	g.tmpIdx++
 	dataGEP := fmt.Sprintf("%%str-long.data.gep.%d", g.tmpIdx)
 	g.tmpIdx++
@@ -1920,6 +1964,10 @@ func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string
 
 // extractStrLen extracts the i64 len (field 0) from a %str-long* pointer.
 func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
+	if strPtr == "" {
+		fmt.Fprintf(os.Stderr, "codegen error: extractStrLen called with empty strPtr\n")
+		return ""
+	}
 	g.tmpIdx++
 	lenGEP := fmt.Sprintf("%%str-long.len.gep.%d", g.tmpIdx)
 	g.tmpIdx++
@@ -1933,6 +1981,10 @@ func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 
 // extractStrCap extracts the i64 cap (field 1) from a %str-long* pointer.
 func (g *Generator) extractStrCap(sb *strings.Builder, strPtr string) string {
+	if strPtr == "" {
+		fmt.Fprintf(os.Stderr, "codegen error: extractStrCap called with empty strPtr\n")
+		return ""
+	}
 	g.tmpIdx++
 	capGEP := fmt.Sprintf("%%str-long.cap.gep.%d", g.tmpIdx)
 	g.tmpIdx++
@@ -5576,6 +5628,14 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	// extractStrLen/extractStrDataPtr 需要的是 %str-long* 指標，而非載入的值。
 	val := g.generateExprWithSB(sb, expr)
 	if val == "" {
+		// Debug: identify which expression produces empty value in string context
+		exprStr := ""
+		if ce, ok := expr.(*parser.CallExpression); ok {
+			exprStr = fmt.Sprintf("CallExpression fn=%v args=%d", ce.Function, len(ce.Arguments))
+		} else {
+			exprStr = fmt.Sprintf("%T: %v", expr, expr)
+		}
+		fmt.Fprintf(os.Stderr, "[debug-getStrPtr] empty val from expr: %s\n", exprStr)
 		return val
 	}
 	if strings.HasPrefix(val, "@") {

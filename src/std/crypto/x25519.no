@@ -99,6 +99,7 @@ fe-sub = (h []i64, f []i64, g []i64) {
 ; fe-cswap: 條件交換（Montgomery ladder 使用）
 ; 掩碼 b: 0=不交換, 1=交換
 fe-cswap = (a []i64, b []i64, mask i64) {
+
     ; 常數時間：mask=0 時不交換，mask=-1（即全1）時交換
     ; 使用 mask = -mask 將 0/1 轉為 0/0xFFFFFFFFFFFFFFFF
     m = 0 - mask
@@ -117,6 +118,7 @@ fe-cswap = (a []i64, b []i64, mask i64) {
 ; 使用 ref10 交叉項展開
 ; 注意：使用陣列 t[] 儲存中間結果以避免編譯器最佳化問題
 fe-mul = (h []i64, f []i64, g []i64) {
+
     ; 提取 f 的各 limb
     f0 = f[0]
     f1 = f[1]
@@ -472,6 +474,7 @@ fe-invert = (out []i64, a []i64) {
 ; 進位傳播使用捨入常數 (1<<(bits-1))，產生「半規約」形式（limb 可為小負數）
 ; 此形式與 fe-tobytes 的預期輸入一致，確保 round-trip 正確
 fe-frombytes = (h []i64, s [32]byte) {
+
     ; 載入未遮罩 limb（每個 limb 包含「跨界」位元，由後續進位傳播規整）
     h[0] = (s[0] & 255) | ((s[1] & 255) << 8) | ((s[2] & 255) << 16) | ((s[3] & 255) << 24)
     h[1] = ((s[4] & 255) | ((s[5] & 255) << 8) | ((s[6] & 255) << 16)) << 6
@@ -560,6 +563,7 @@ fe-frombytes = (h []i64, s [32]byte) {
 ; 使用無捨入常數的 floor division 進位傳播
 ; 先將 limbs 規約到 [0, 2^bits-1]，再用 +19 測試是否 >= p
 fe-tobytes = (s [32]byte, h []i64) {
+
     ; 複製到局部陣列
     t []i64 = with-len(10)
     t[0] = h[0]
@@ -706,6 +710,7 @@ fe-tobytes = (s [32]byte, h []i64) {
 ; point [32]byte: 點座標（公鑰）
 ; 返回 out [32]byte: 結果
 x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
+
     ; Clamping: 固定純量的某些位元
     ; scalar[0] &= 248, scalar[31] &= 127, scalar[31] |= 64
     k []byte = with-len(32)
@@ -722,7 +727,9 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
     ; 初始化 Montgomery ladder
     x1 []i64 = with-len(10)
-    fe-copy(x1, u)
+    i <- [0..10): {
+        x1[i] = u[i]
+    }
 
     x2 []i64 = with-len(10)
     fe-one(x2)
@@ -731,7 +738,9 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     fe-zero(z2)
 
     x3 []i64 = with-len(10)
-    fe-copy(x3, u)
+    i <- [0..10): {
+        x3[i] = u[i]
+    }
 
     z3 []i64 = with-len(10)
     fe-one(z3)
@@ -752,6 +761,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     ; 從最高位元到最低位元迭代（bit 254 到 bit 0）
     t = 254
     {
+
         ; 提取純量的第 t 位元
         byte-idx = t / 8
         bit-idx = t % 8
@@ -823,6 +833,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
 ; x25519-get-basepoint: 返回基點 u 座標 (9, 0, 0, ..., 0)
 x25519-get-basepoint = () (base [32]byte) {
+
     ; [32]byte 不自動零初始化，需顯式清零
     i <- [0..32): {
         base[i] = 0
@@ -840,6 +851,135 @@ x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
 }
 
 ; ═══════════════════════════════════════════════
+; []byte 版本（避開全域 [32]byte 傳參的編譯器 bug）
+; ═══════════════════════════════════════════════
+
+; x25519-scalarmult-bytes: X25519 純量乘法（[]byte 版本）
+; scalar []byte: 純量（私鑰，長度 32）
+; point []byte: 點座標（公鑰，長度 32）
+; 返回 out []byte: 結果（長度 32）
+x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
+
+    ; Clamping
+    k []byte = with-len(32)
+    i <- [0..32): {
+        k[i] = scalar[i]
+    }
+    k[0] = k[0] & 248
+    k[31] = k[31] & 127
+    k[31] = k[31] | 64
+
+    ; 載入點座標 — 複製到 local [32]byte 再呼叫 fe-frombytes
+    point-arr [32]byte
+    i <- [0..32): {
+        point-arr[i] = point[i]
+    }
+    u []i64 = with-len(10)
+    fe-frombytes(u, point-arr)
+
+    ; 初始化 Montgomery ladder
+    x1 []i64 = with-len(10)
+    i <- [0..10): {
+        x1[i] = u[i]
+    }
+
+    x2 []i64 = with-len(10)
+    fe-one(x2)
+
+    z2 []i64 = with-len(10)
+    fe-zero(z2)
+
+    x3 []i64 = with-len(10)
+    i <- [0..10): {
+        x3[i] = u[i]
+    }
+
+    z3 []i64 = with-len(10)
+    fe-one(z3)
+
+    ; 預分配臨時變數
+    a []i64 = with-len(10)
+    aa []i64 = with-len(10)
+    b-fe []i64 = with-len(10)
+    bb []i64 = with-len(10)
+    e []i64 = with-len(10)
+    c []i64 = with-len(10)
+    d []i64 = with-len(10)
+    da []i64 = with-len(10)
+    cb []i64 = with-len(10)
+
+    swap = 0
+
+    t = 254
+    {
+
+        byte-idx = t / 8
+        bit-idx = t % 8
+        b = (k[byte-idx] >> bit-idx) & 1
+
+        swap = swap ^ b
+        fe-cswap(x2, x3, swap)
+        fe-cswap(z2, z3, swap)
+        swap = b
+
+        fe-add(a, x2, z2)
+        fe-sq(aa, a)
+        fe-sub(b-fe, x2, z2)
+        fe-sq(bb, b-fe)
+        fe-sub(e, aa, bb)
+        fe-add(c, x3, z3)
+        fe-sub(d, x3, z3)
+        fe-mul(da, d, a)
+        fe-mul(cb, c, b-fe)
+
+        fe-add(x3, da, cb)
+        fe-sq(x3, x3)
+
+        fe-sub(z3, da, cb)
+        fe-sq(z3, z3)
+        fe-mul(z3, z3, x1)
+
+        fe-mul(x2, aa, bb)
+
+        fe-sq(a, e)
+        fe-mul121666(a, a)
+        fe-mul(z2, e, bb)
+        fe-add(z2, z2, a)
+
+        t = t - 1
+    } (t >= 0)
+
+    fe-cswap(x2, x3, swap)
+    fe-cswap(z2, z3, swap)
+
+    z-inv []i64 = with-len(10)
+    fe-invert(z-inv, z2)
+
+    result []i64 = with-len(10)
+    fe-mul(result, x2, z-inv)
+
+    ; 輸出 — 複製到 local [32]byte 再呼叫 fe-tobytes，然後複製到 []byte
+    out-arr [32]byte
+    fe-tobytes(out-arr, result)
+    out = with-len(32)
+    i <- [0..32): {
+        out[i] = out-arr[i]
+    }
+}
+
+; x25519-scalarmult-base-bytes: 計算純量 * 基點（[]byte 版本）
+; scalar []byte: 純量（私鑰，長度 32）
+; 返回 out []byte: 公鑰（長度 32）
+x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
+    base []byte = with-len(32)
+    i <- [0..32): {
+        base[i] = 0
+    }
+    base[0] = 9
+    out = x25519-scalarmult-bytes(scalar, base)
+}
+
+; ═══════════════════════════════════════════════
 ; 金鑰對生成
 ; ═══════════════════════════════════════════════
 
@@ -848,6 +988,7 @@ x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
 ; 返回 priv [32]byte: 私鑰
 ; 返回 pub [32]byte: 公鑰
 x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
+
     ; 用 PRNG 生成 32 位元組私鑰
     state = seed
     i <- [0..32): {

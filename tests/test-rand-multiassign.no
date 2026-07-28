@@ -1,0 +1,72 @@
+; test-rand-multiassign — 驗證 rand 的多返回值是否正確
+; # std/crypto/rand
+
+main = () {
+    ; 測試 1: 相同 seed 應產生相同序列
+    s1 = 12345
+    s1, r1 = rand(s1)
+    s1, r2 = rand(s1)
+    s1, r3 = rand(s1)
+
+    eprint('seed=12345: r1=')
+    eprint(r1)
+    eprint(' r2=')
+    eprint(r2)
+    eprint(' r3=')
+    eprint(r3)
+
+    ; 測試 2: 不同 seed 應產生不同序列
+    s2 = 67890
+    s2, ra = rand(s2)
+    s3 = 99999
+    s3, rb = rand(s3)
+
+    eprint('seed=67890: ra=')
+    eprint(ra)
+    eprint(' seed=99999: rb=')
+    eprint(rb)
+
+    ra == rb -> print('FAIL: different seeds produced same value')
+    ra != rb -> print('PASS: different seeds produce different values')
+
+    ; 測試 3: 驗證 state 確實更新（連續呼叫產生不同值）
+    s4 = 11111
+    s4, x1 = rand(s4)
+    s4, x2 = rand(s4)
+    s4, x3 = rand(s4)
+
+    eprint('state evolution: x1=')
+    eprint(x1)
+    eprint(' x2=')
+    eprint(x2)
+    eprint(' x3=')
+    eprint(x3)
+
+    x1 == x2 -> print('FAIL: state not evolving (x1==x2)')
+    x1 != x2 -> print('PASS: state evolves (x1!=x2)')
+
+    ; 測試 4: 模擬 TLS 金鑰生成 — 用兩個相近的 seed
+    seed-a = 1785194093050130278
+    seed-b = 1785194093050404241
+
+    ka-state = seed-a
+    ka-priv = ''
+    i <- [0..4): {
+        ka-state, ka-r = rand(ka-state)
+        ka-priv = ka-priv - (ka-state & 255).to-str() - ' '
+    }
+    eprint('seed-a priv bytes (first 4): ')
+    eprint(ka-priv)
+
+    kb-state = seed-b
+    kb-priv = ''
+    i <- [0..4): {
+        kb-state, kb-r = rand(kb-state)
+        kb-priv = kb-priv - (kb-state & 255).to-str() - ' '
+    }
+    eprint('seed-b priv bytes (first 4): ')
+    eprint(kb-priv)
+
+    ka-priv == kb-priv -> print('FAIL: different seeds produce same priv key bytes')
+    ka-priv != kb-priv -> print('PASS: different seeds produce different priv key bytes')
+}

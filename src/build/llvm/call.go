@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1637,32 +1638,71 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 		} else if _, ok := receiverExpr.(*parser.DotExpression); ok {
-			// 結構欄位接收者（如 c.name.trim()、self.buf.len）
-			// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
-			elemType := g.exprResultLLVMType(receiverExpr)
-			srcType := strings.TrimPrefix(elemType, "%")
-			candidates := []string{srcType}
-			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-				candidates = append(candidates, primAliases...)
-			}
-			for _, cand := range candidates {
-				shortName := cand + "." + dot.Property
-				if g.funcRetTypes != nil {
-					if _, ok := g.funcRetTypes[shortName]; ok {
-						fnName = shortName
-						methodReceiver = receiverExpr
-						break
-					}
-				}
-				if methodReceiver == nil {
-					if m := builtin.FindBuiltinMethod(shortName); m != nil {
-						fnName = shortName
-						methodReceiver = receiverExpr
-						break
+		// 結構欄位接收者（如 c.name.trim()、self.buf.len、it.status-code.to-str()）
+		// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
+		elemType := g.exprResultLLVMType(receiverExpr)
+		srcType := strings.TrimPrefix(elemType, "%")
+		if os.Getenv("NOLANG_DEBUG_DOT") != "" {
+			recvType := ""
+			if innerDot, ok := receiverExpr.(*parser.DotExpression); ok {
+				if innerIdent, ok := innerDot.Receiver.(*parser.Identifier); ok {
+					if t, ok := g.varTypes[innerIdent.Value]; ok {
+						recvType = t
 					}
 				}
 			}
-		} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
+			fmt.Fprintf(os.Stderr, "[debug-dot] receiverExpr=%v elemType=%q srcType=%q property=%q recvType=%q\n", receiverExpr, elemType, srcType, dot.Property, recvType)
+		}
+		// 先嘗試聯合型別別名（如 i64 → int.to-str），與 Identifier 接收者路徑保持一致
+		if g.unionAliases != nil {
+			unionSrcType := srcType
+			if unionSrcType == "double" {
+				unionSrcType = "f64"
+			} else if unionSrcType == "float" {
+				unionSrcType = "f32"
+			}
+			for aliasName := range g.unionAliases {
+				if !g.isMemberOfUnionTransitive(unionSrcType, aliasName, make(map[string]bool)) {
+					continue
+				}
+				// Try monomorphized name first: unionAlias.methodName__memberType
+				monoName := aliasName + "." + dot.Property + "__" + unionSrcType
+				if _, exists := g.funcRetTypes[monoName]; exists {
+					fnName = monoName
+					methodReceiver = receiverExpr
+					break
+				}
+				// Try non-monomorphized name: unionAlias.methodName
+				unionName := aliasName + "." + dot.Property
+				if _, exists := g.funcRetTypes[unionName]; exists {
+					fnName = unionName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+		}
+		candidates := []string{srcType}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+					break
+				}
+			}
+		}
+	} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
 			// 切片結果接收者（如 buf[pos..end].to-str()）
 			// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
@@ -1846,7 +1886,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// Nolang 函數的 funcRetTypes 為語意回傳型別（如 %option），但實際 LLVM 簽名是 void + 輸出指標。
 	// 此類函數需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
 	// 注意：啟發式檢測的輸出參數（funcHeuristicOutput）已存在於 fd.Parameters 中，
-	// 函數定義已將其作為常規 LLVM 參數生成，調用方已傳遞，不應再加返回槽。
+	// 函數定義已將其作為常規 LLVM 參數生成。當調用方已傳遞所有參數（語句形式）時不加返回槽；
+	// 但當調用方未傳遞輸出參數（表達式形式，如 resp = http.http-get(url)）時，
+	// 仍需分配臨時 buffer 並作為最後一個參數傳遞，否則會生成缺少參數的 void call。
 	voidSingleOutput := false
 	voidSingleOutputType := ""
 	triggerVoidSingle := (retType == "void" || isNolangSingleResult) && g.funcNumResults != nil && g.funcResultLLVMType != nil
@@ -1854,7 +1896,25 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
 			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
 				if h, ok := g.funcHeuristicOutput[fnName]; ok && h {
-					// 啟發式輸出：參數已在 fd.Parameters 中，調用方已傳遞，不加返回槽
+					// 啟發式輸出：輸出參數已在 fd.Parameters 中。
+					// 區分語句形式（調用方已傳遞所有參數）和表達式形式（缺少輸出參數）。
+					heuristicParamCount := len(expr.Arguments)
+					if g.funcParamCount != nil {
+						if pc, ok := g.funcParamCount[fnName]; ok {
+							heuristicParamCount = pc
+						}
+					}
+					// 考慮 methodReceiver：方法調用時 receiver 會被 prepend 到參數列表
+					effectiveArgs := len(expr.Arguments)
+					if methodReceiver != nil {
+						effectiveArgs++
+					}
+					if effectiveArgs < heuristicParamCount {
+						// 表達式形式：調用方未傳遞輸出參數，需分配臨時 buffer
+						voidSingleOutput = true
+						voidSingleOutputType = ts[0]
+					}
+					// 否則：語句形式，調用方已傳遞所有參數，不加返回槽
 				} else {
 					voidSingleOutput = true
 					voidSingleOutputType = ts[0]
@@ -1862,7 +1922,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 		}
 	}
-
 	// Separate input args from output param
 	var inputArgs []parser.Expression
 	var outputArg parser.Expression
@@ -1942,6 +2001,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 		switch a := arg.(type) {
 		case *parser.Identifier:
+			// 若引數為當前函數的 out 參數，標記為已賦值（bit=1）。
+			// 被調用函數可能通過指標寫入 out（如 fe-tobytes(out, h)），
+			// 若不標記，emitRetInitZeroFill 會在 return 時以零值覆蓋已寫入的數據。
+			if g.outputParamNames != nil && g.outputParamNames[a.Value] && sb != nil {
+				g.emitSetRetInitBit(sb, a.Value)
+			}
 			// Enum variant: allocate temp i64 and store the constant tag index
 			// 局部變數/參數優先於枚舉變體（避免名稱遮蔽：如 json-kind 的 num 變體
 			// 與局部變數 num 衝突）

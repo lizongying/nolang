@@ -646,7 +646,7 @@ http-server-conn.set-signed-cookie = (name str, value str, key []byte) {
 }
 
 ; ═══════════════════════════════════════════════
-; HTTPS 伺服器（TLS 1.2）
+; HTTPS 伺服器（TLS 1.2 / 1.3）
 ; ═══════════════════════════════════════════════
 
 ; https-server: HTTPS 伺服器
@@ -713,16 +713,20 @@ https-server.listen = (host str, port i64) (ok bool) {
 https-server.accept = () (c ?https-server-conn) {
     c = nil
     .fd < 0 -> return
-    tls-opt = tls.tls-server-accept(.fd)
-    tls-opt: {
+
+    ; tls-server-accept 使用局部變數進行交握，返回的結構體含完整金鑰。
+    ; 將 TLS 連線存入 https-server-conn.tls 欄位，
+    ; 後續透過 .tls.send/recv/close 方法操作（方法接收者為局部變數，位址一致）。
+    accept-opt = tls.tls-server-accept(.fd)
+    accept-opt: {
         nil -> return
         err -> return
         ok -> {
-            tls-conn = it
+            tls-conn-val = it
             space = ' '
             buf = space.repeat(HTTP-SRV-BUF-SIZE)
             conn = https-server-conn {
-                tls: tls-conn
+                tls: tls-conn-val
                 method: ''
                 path: ''
                 query: ''
@@ -774,7 +778,6 @@ https-server-conn.parse = () (ok bool) {
     lf = number.char-to-str(10)
     crlf = cr - lf
     separator = crlf - crlf
-
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos i64 = -1
@@ -965,9 +968,7 @@ https-server-conn.write-status = (status i64) (ok bool) {
     }
 
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
-    tc = .tls
-    w = tc.send(line)
-    .tls = tc
+    w = .tls.send(line)
     send-ok = false
 
     w: {
@@ -991,9 +992,7 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     lf = number.char-to-str(10)
     crlf = cr - lf
     line = name - ': ' - value - crlf
-    tc = .tls
-    w = tc.send(line)
-    .tls = tc
+    w = .tls.send(line)
     send-ok = false
 
     w: {
@@ -1014,9 +1013,7 @@ https-server-conn.write-headers-done = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
     crlf = cr - lf
-    tc = .tls
-    w = tc.send(crlf)
-    .tls = tc
+    w = .tls.send(crlf)
     send-ok = false
 
     w: {
@@ -1036,9 +1033,7 @@ https-server-conn.write-headers-done = () (ok bool) {
 https-server-conn.write-body = (data str) (ok bool) {
     ok = false
     data.len > 0 -> {
-        tc = .tls
-        w = tc.send(data)
-        .tls = tc
+        w = .tls.send(data)
         send-ok = false
 
         w: {
@@ -1051,6 +1046,7 @@ https-server-conn.write-body = (data str) (ok bool) {
 
         ok = true
     }
+
     ok = true
 }
 
@@ -1062,9 +1058,7 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
     ok = false
 
     ok = .write-status(status)
-    ok == false -> {
-        return
-    }
+    ok == false -> return
 
     text-len = text.len
     len-s = text-len.to-str()

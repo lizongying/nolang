@@ -406,7 +406,11 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		vprintf(sink, "Generated LLVM IR: %s\n", llPath)
 	}
 	optPath := filepath.Join(tempDir, fileName+"_opt.ll")
-	optCmd := exec.Command("opt", "-O3", llPath, "-S", "-o", optPath)
+	optLevel := os.Getenv("NOLANG_OPT_LEVEL")
+	if optLevel == "" {
+		optLevel = "-O3"
+	}
+	optCmd := exec.Command("opt", optLevel, llPath, "-S", "-o", optPath)
 	if sink != nil {
 		optCmd.Stdout = sink
 		optCmd.Stderr = sink

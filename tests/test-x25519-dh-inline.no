@@ -1,0 +1,174 @@
+; test-x25519-dh-inline — 測試 X25519 DH 金鑰交換（內聯 hex 解析）
+; # std/crypto/x25519
+
+; key-holder: 測試用結構體，模擬 tls-conn 的欄位
+key-holder {
+    priv [32]byte
+    pub [32]byte
+    shared [32]byte
+}
+
+; parse-hex-into: 將 hex 字串解析到結構體欄位
+; hex-str str: hex 字串
+; target: 目標 key-holder
+parse-hex-into = (hex-str str, target key-holder) {
+    i <- [0..32): {
+        hi = hex-str[i * 2]
+        lo = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        target.priv[i] = (hi-v << 4) | lo-v
+    }
+}
+
+; test-dh: 測試 DH 金鑰交換 — 使用 RFC 7748 測試向量
+test-dh = () (pass bool) {
+    pass = false
+
+    ; Alice — 內聯解析私鑰到結構體欄位
+    alice = key-holder {}
+    alice-hex = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
+    i <- [0..32): {
+        hi = alice-hex[i * 2]
+        lo = alice-hex[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        alice.priv[i] = (hi-v << 4) | lo-v
+    }
+
+    alice.pub = x25519.x25519-scalarmult-base(alice.priv)
+
+    ; Bob — 內聯解析私鑰到結構體欄位
+    bob = key-holder {}
+    bob-hex = '5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb'
+    i <- [0..32): {
+        hi = bob-hex[i * 2]
+        lo = bob-hex[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        bob.priv[i] = (hi-v << 4) | lo-v
+    }
+
+    bob.pub = x25519.x25519-scalarmult-base(bob.priv)
+
+    ; 驗證公鑰
+    ; Alice pub expected: 8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+    ; Bob pub expected:   de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+    alice-pub-expected = [
+        133, 32, 240, 9, 137, 48, 167, 84,
+        116, 139, 125, 220, 180, 62, 247, 90,
+        13, 191, 58, 13, 38, 56, 26, 244,
+        235, 164, 169, 142, 170, 155, 78, 106,
+    ]
+
+    alice-pub-ok = true
+    i <- [0..32): {
+        alice.pub[i] != alice-pub-expected[i] -> {
+            alice-pub-ok = false
+            break
+        }
+    }
+    alice-pub-ok == false -> {
+        eprint('FAIL: Alice pub: ')
+        i <- [0..32): {
+            eprint(alice.pub[i] & 255)
+            eprint(' ')
+        }
+        return
+    }
+
+    bob-pub-expected = [
+        222, 158, 219, 125, 123, 125, 193, 180,
+        211, 91, 97, 194, 236, 228, 53, 55,
+        63, 131, 67, 200, 91, 120, 103, 77,
+        173, 252, 126, 20, 111, 136, 43, 79,
+    ]
+    bob-pub-ok = true
+    i <- [0..32): {
+        bob.pub[i] != bob-pub-expected[i] -> {
+            bob-pub-ok = false
+            break
+        }
+    }
+    bob-pub-ok == false -> {
+        print('FAIL: Bob pub mismatch')
+        return
+    }
+
+    print('PASS: public keys match')
+
+    ; 計算共享金鑰 — 模擬 TLS 的 DH（兩個 struct field 參數）
+    alice.shared = x25519.x25519-scalarmult(alice.priv, bob.pub)
+    bob.shared = x25519.x25519-scalarmult(bob.priv, alice.pub)
+
+    ; 列印共享金鑰
+    eprint('Alice shared: ')
+    i <- [0..32): {
+        eprint(alice.shared[i] & 255)
+        eprint(' ')
+    }
+    eprint('Bob shared: ')
+    i <- [0..32): {
+        eprint(bob.shared[i] & 255)
+        eprint(' ')
+    }
+
+    ; 驗證兩端共享金鑰相同
+    shared-match = true
+    i <- [0..32): {
+        alice.shared[i] != bob.shared[i] -> {
+            shared-match = false
+            break
+        }
+    }
+    shared-match == false -> {
+        print('FAIL: shared secrets differ')
+        return
+    }
+
+    ; 驗證共享金鑰等於預期值
+    ; 4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
+    shared-expected = [
+        74, 93, 157, 91, 164, 206, 45, 225,
+        114, 142, 59, 244, 128, 53, 15, 37,
+        224, 126, 33, 201, 71, 209, 158, 51,
+        118, 240, 155, 60, 30, 22, 23, 66,
+    ]
+    shared-ok = true
+    i <- [0..32): {
+        alice.shared[i] != shared-expected[i] -> {
+            shared-ok = false
+            break
+        }
+    }
+    shared-ok == false -> {
+        print('FAIL: shared secret does not match expected')
+        return
+    }
+
+    pass = true
+}
+
+main = () {
+    p = test-dh()
+    p == true -> print('PASS: X25519 DH test')
+    p == false -> print('FAIL: X25519 DH test')
+}

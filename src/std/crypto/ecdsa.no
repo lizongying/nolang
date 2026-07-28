@@ -138,6 +138,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
 
 ; bn-mulmod: 模乘 (a * b) mod m，使用 schoolbook 乘法
 bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
+
     ; 512-bit 乘積（64 位元組）
     product [64]byte
     i <- [0..64): {
@@ -153,6 +154,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             product[idx] = val & 255
             carry = val >> 8
         }
+
         ; 傳播進位
         idx = i + 32
         {
@@ -174,10 +176,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 從高位開始，每次減去 m << (bit_pos)
     bit = 511
     {
+
         ; 檢查 work 的第 bit 位元
         byte-idx = bit / 8
         bit-idx = bit % 8
         (work[byte-idx] >> bit-idx) & 1 == 1 -> {
+
             ; 減去 m << (bit - 256)
             shift = bit - 256
             shifted [64]byte
@@ -273,6 +277,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 如果有進位或 sum >= m，需要規約
     {
         carry != 0 -> {
+
             ; sum + 2^256 mod m，簡化處理
             out = bn-mod(sum, m)
         }
@@ -294,11 +299,12 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             }
         }
         -> {
+
             ; a < b, result = m - (b - a)
             diff [32]byte
             borrow = 0
             diff, borrow = bn-sub(b, a)
-            out = bn-sub(P256-N, diff)
+            out, borrow = bn-sub(P256-N, diff)
 
             ; 簡化：使用 m 作為模數
             ; result = m + a - b
@@ -319,43 +325,16 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
 ; bn-invmod: 模逆 a^(-1) mod m，使用擴展歐幾里得算法
 ; 簡化版本：使用費馬小定理 a^(m-2) mod m（僅當 m 為素數時）
 bn-invmod = (a []byte, m []byte) (out [32]byte) {
+
     ; 計算 a^(m-2) mod m 使用平方-乘法
     ; m-2
     exp [32]byte
     borrow = 0
     exp, borrow = bn-sub(m, [
-        0x02,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ])
 
     ; result = 1
@@ -392,6 +371,7 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 ; p []byte: 輸入點 (X, Y, Z)，各 32 位元組
 ; 返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
 ec-point-double = (p []byte) (r []byte) {
+
     ; 如果 Y == 0，返回無窮遠點
     is-zero = 1
     i <- [0..32): {
@@ -622,6 +602,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 ; p []byte: 點 (96 位元組)
 ; 返回 r []byte: 96 位元組
 ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
+
     ; R = 無窮遠點
     i <- [0..96): {
         r[i] = 0
@@ -630,6 +611,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     ; 從高位到低位進行 double-and-add
     bit = 255
     {
+
         ; R = 2*R
         tmp []byte
         tmp = ec-point-double(r)
@@ -665,6 +647,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
         pz[i] != 0 -> z-is-zero = 0
     }
     z-is-zero == 1 -> {
+
         ; 返回全零
         return
     }
@@ -706,6 +689,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 ; 返回 out []byte: 96 位元組
 ec-bytes-to-point = (in [65]byte) (out []byte) {
     out = with-len(96)
+
     ; 提取 x, y（轉為小端序）
     x [32]byte
     y [32]byte
@@ -731,6 +715,7 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 
 ; ec-get-basepoint: 獲取基點 G 的 Jacobian 座標
 ec-get-basepoint = () (g []byte) {
+
     ; Gx, Gy 轉為小端序
     i <- [0..32): {
         g[i] = P256-GX[31 - i]
@@ -752,6 +737,7 @@ ec-get-basepoint = () (g []byte) {
 ; priv [32]byte: 私鑰（大端序）
 ; 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
 ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
+
     ; 將私鑰轉為小端序
     k [32]byte
     i <- [0..32): {
@@ -775,6 +761,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 ; msg []byte: 訊息
 ; 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
+
     ; 計算哈希 h = SHA-256(msg)
     h [32]byte
     h = sha256.sha256(msg)
@@ -795,7 +782,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     k [32]byte
     state = 0
     i <- [0..32): {
-        state = rand.rand(state + d[i] + h-le[i] + i)
+        state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
         k[i] = state & 255
     }
 
@@ -853,6 +840,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 ; sig [64]byte: 簽名（r || s）
 ; 返回 ok i64: 1=有效, 0=無效
 ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
+
     ; 提取 r, s（大端序 → 小端序）
     r-val [32]byte
     s-val [32]byte

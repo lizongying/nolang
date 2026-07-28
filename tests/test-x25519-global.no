@@ -1,0 +1,79 @@
+; test-x25519-global — 驗證全域 [32]byte 傳參是否正確
+; # std/crypto/x25519
+
+; 全域變數存放私鑰
+g-priv [32]byte
+
+; hex-to-bytes: 將 hex 字串轉為 [32]byte
+hex-to-bytes = (hex-str str) (out [32]byte) {
+    i <- [0..32): {
+        hi = hex-str[i * 2]
+        lo = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        hi >= 48 && hi <= 57 -> hi-v = hi - 48
+        hi >= 97 && hi <= 102 -> hi-v = hi - 87
+        hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        lo >= 48 && lo <= 57 -> lo-v = lo - 48
+        lo >= 97 && lo <= 102 -> lo-v = lo - 87
+        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        out[i] = (hi-v << 4) | lo-v
+    }
+}
+
+; bytes-eq: 比較兩個 [32]byte 是否相等
+bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
+    eq = true
+    i <- [0..32): {
+        a[i] != b[i] -> {
+            eq = false
+            break
+        }
+    }
+}
+
+main = () {
+
+    ; Alice private: 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
+    ; Alice public:  8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+
+    ; 測試 1: 用 local [32]byte 呼叫 scalarmult-base（對照組）
+    local-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    local-pub = x25519.x25519-scalarmult-base(local-priv)
+
+    expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+
+    ok1 = bytes-eq(local-pub, expected-pub)
+    ok1 == true -> print('PASS: local priv -> correct pub')
+    ok1 == false -> print('FAIL: local priv -> wrong pub')
+
+    ; 測試 2: 用 global [32]byte 呼叫 scalarmult-base
+    g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+
+    ; 印出 g-priv 確認值正確
+    eprint('g-priv: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (g-priv[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    global-pub = x25519.x25519-scalarmult-base(g-priv)
+
+    ; 印出 global-pub
+    eprint('global-pub: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (global-pub[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ok2 = bytes-eq(global-pub, expected-pub)
+    ok2 == true -> print('PASS: global priv -> correct pub')
+    ok2 == false -> print('FAIL: global priv -> wrong pub')
+
+    ; 測試 3: 比較 local-pub 和 global-pub
+    ok3 = bytes-eq(local-pub, global-pub)
+    ok3 == true -> print('PASS: local pub == global pub')
+    ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
+}

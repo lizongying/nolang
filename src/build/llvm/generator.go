@@ -74,6 +74,7 @@ type Generator struct {
 	stackArrVars           map[string]bool                  // 棧分配的局部固定陣列名（小尺寸/定寬元素），用於 generateLet 跳過 malloc
 	heapVarIndex           map[string]int                   // 堆變數名 → varIdx（僅局部堆變數，用於 bitmap 定位）
 	globalVars             map[string]bool                  // module-level vars that should be LLVM globals
+	embedVars              map[string]bool                  // module-level embed vars (read-only, excluded from heap free)
 	mainFileNames          map[string]bool                  // names (vars+funcs) from the main file being compiled (not imported modules)
 	reassignedVars         map[string]bool                  // module-level vars that are reassigned (not constants)
 	rangeLoopVars          map[string]bool                  // top-level vars used as range loop variables (must be locals)
@@ -123,22 +124,22 @@ type Generator struct {
 	localTasks             []string                         // task variable names created via `run` in current function but not yet awy'd (for SubTask 2.3 cleanup)
 	// === 返回值延遲零值初始化追蹤 ===
 	// 與 move bitmap 對稱：追蹤 out 參數是否被顯式賦值，未賦值者在 return 時補零。
-	retInitBitmapVar       string                           // LLVM bitmap var name (e.g. "%__ret_init_bitmap", "" = not allocated)
-	retInitBits            map[string]int                   // out 參數名 → bit index (aligned with outputParamOrder)
-	hasRetInitCheck        bool                             // true = current function has out params (needs ret init tracking)
+	retInitBitmapVar string         // LLVM bitmap var name (e.g. "%__ret_init_bitmap", "" = not allocated)
+	retInitBits      map[string]int // out 參數名 → bit index (aligned with outputParamOrder)
+	hasRetInitCheck  bool           // true = current function has out params (needs ret init tracking)
 
 	// === 无栈协程（状态机变换）相关字段 ===
 	// async 函数变换为 coro_resume.N 函数，局部变量提升到 %coro_state.N 结构体。
-	coroStateBuilders     []strings.Builder // coro_state 结构体定义缓冲区
-	coroInAsyncFunc       bool              // 当前正在生成 async 函数的状态机
-	coroFuncNum           int               // async 函数编号（用于 %coro_state.N 唯一命名）
-	coroAwaitPoints       []awaitPoint      // 当前 async 函数的 awy 挂起点列表
-	coroStateFields       []coroField       // coro_state 结构体字段（state + 参数 + 局部变量 + 结果）
-	coroFieldIdx          map[string]int    // 变量名 → coro_state 字段索引
-	asyncFuncCoroNum      map[string]int    // async 函数名 → coro 编号（用于 run/awy 生成 coro_state task）
-	coroTrampolineEmitted map[int]bool      // coro 编号 → trampoline 是否已生成
+	coroStateBuilders     []strings.Builder   // coro_state 结构体定义缓冲区
+	coroInAsyncFunc       bool                // 当前正在生成 async 函数的状态机
+	coroFuncNum           int                 // async 函数编号（用于 %coro_state.N 唯一命名）
+	coroAwaitPoints       []awaitPoint        // 当前 async 函数的 awy 挂起点列表
+	coroStateFields       []coroField         // coro_state 结构体字段（state + 参数 + 局部变量 + 结果）
+	coroFieldIdx          map[string]int      // 变量名 → coro_state 字段索引
+	asyncFuncCoroNum      map[string]int      // async 函数名 → coro 编号（用于 run/awy 生成 coro_state task）
+	coroTrampolineEmitted map[int]bool        // coro 编号 → trampoline 是否已生成
 	coroResultFields      map[int][]coroField // coro 编号 → 结果字段（name/llvmTy/idx），供直接调用 coro 函数后取回结果
-	isModuleAsyncWrap     bool              // 当前正在生成模块级 async 包装（收集 localVarTypes 时排除 globalVars/funcRefVars）
+	isModuleAsyncWrap     bool                // 当前正在生成模块级 async 包装（收集 localVarTypes 时排除 globalVars/funcRefVars）
 }
 
 // awaitPoint 描述一个 awy 挂起点的信息。
@@ -619,6 +620,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
+	g.embedVars = make(map[string]bool)
 	g.ssaTypes = make(map[string]string)
 	g.unionAliases = make(map[string][]string)
 	g.optionInnerTypes = make(map[string]string)
@@ -1131,6 +1133,35 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			if g.multiAssignVars != nil && g.multiAssignVars[name] {
+				continue
+			}
+			// 處理 #{embed=...} 變數：發出私有常量 + 初始化的 %vec 全局
+			if ls.EmbedData != nil {
+				name := ls.Name.Value
+				data := ls.EmbedData
+				n := len(data)
+
+				// 發出私有常量數組：@.embed.<NAME> = private constant [N x i8] [c0, c1, ...]
+				embedGlobalName := "@.embed." + name
+				// 構建 LLVM c-string 字面量
+				var cstr strings.Builder
+				cstr.WriteString("c\"")
+				for _, b := range data {
+					if b >= 0x20 && b <= 0x7E && b != '"' && b != '\\' {
+						cstr.WriteByte(b)
+					} else {
+						cstr.WriteString(fmt.Sprintf("\\%02X", b))
+					}
+				}
+				cstr.WriteString("\"")
+				sb.WriteString(fmt.Sprintf("%s = private constant [%d x i8] %s\n", embedGlobalName, n, cstr.String()))
+
+				// 發出 %vec 全局變量，len/cap=N，data 指向常量數組首元素
+			sb.WriteString(fmt.Sprintf("%s = global %%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i8]* %s to i64) }\n",
+				llvmGlobalRef(name), n, n, n, embedGlobalName))
+
+				g.globalVars[name] = true
+				g.embedVars[name] = true
 				continue
 			}
 			llvmType := g.varLLVMType(ls)

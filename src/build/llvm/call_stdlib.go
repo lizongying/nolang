@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -26,6 +27,107 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				return g.callNamedFormat(sb, fnName, segments, autoNewline)
 			}
 			// Parse error: fall through to existing code path
+		}
+	}
+
+	// === C-style format string path (multi-arg) ===
+	// Handle sprintf/printf/eprintf/format with C-style format specifiers
+	// (e.g., sprintf('%d', x), printf('%s=%d', s, n)).
+	// Converts each %d/%s/%x/etc. to emitArgAsStrLong and concatenates.
+	if sb != nil && hasArgs && len(expr.Arguments) >= 2 {
+		if strLit, ok := expr.Arguments[0].(*parser.StringLiteral); ok {
+			if strings.Contains(strLit.Value, "%") && !strings.Contains(strLit.Value, "{") {
+				switch fnName {
+				case "printf", "fmt.printf", "eprintf", "fmt.eprintf", "sprintf", "fmt.sprintf",
+					"format", "fmt.format":
+					useStderr := strings.HasPrefix(fnName, "eprint") || strings.HasPrefix(fnName, "fmt.eprint")
+					isReturnStr := fnName == "sprintf" || fnName == "fmt.sprintf" ||
+						fnName == "format" || fnName == "fmt.format"
+
+					fmtStr := strLit.Value
+					var segPtrs []string
+					argIdx := 1
+					litStart := 0
+					for i := 0; i < len(fmtStr); i++ {
+						if fmtStr[i] != '%' || i+1 >= len(fmtStr) {
+							continue
+						}
+						// Literal segment before %
+						if i > litStart {
+							segPtrs = append(segPtrs, g.buildStrLongFromValue(sb, fmtStr[litStart:i]))
+						}
+						j := i + 1
+						if fmtStr[j] == '%' {
+							segPtrs = append(segPtrs, g.buildStrLongFromValue(sb, "%"))
+							i = j
+							litStart = j + 1
+							continue
+						}
+						// Scan spec: flags, width, precision, conversion char
+						for j < len(fmtStr) {
+							c := fmtStr[j]
+							if c == 'd' || c == 'i' || c == 'u' || c == 's' ||
+								c == 'x' || c == 'X' || c == 'b' || c == 'o' ||
+								c == 'c' || c == 'f' || c == 'e' || c == 'g' {
+								j++
+								break
+							}
+							if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+								(c >= '0' && c <= '9') || c == '.' || c == '-' ||
+								c == '+' || c == '#' || c == ' ' || c == '0' {
+								j++
+							} else {
+								break
+							}
+						}
+						spec := fmtStr[i+1 : j]
+						if argIdx < len(expr.Arguments) {
+							argPtr := g.emitArgAsStrLong(sb, expr.Arguments[argIdx], spec)
+							if argPtr != "" {
+								segPtrs = append(segPtrs, argPtr)
+							}
+							argIdx++
+						}
+						i = j - 1
+						litStart = j
+					}
+					if litStart < len(fmtStr) {
+						segPtrs = append(segPtrs, g.buildStrLongFromValue(sb, fmtStr[litStart:]))
+					}
+
+					if isReturnStr {
+						if len(segPtrs) == 0 {
+							ptr := g.buildStrLongFromValue(sb, "")
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%sprintf.result.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, ptr))
+							return loadReg
+						}
+						result := segPtrs[0]
+						for k := 1; k < len(segPtrs); k++ {
+							result = g.concatStrLongPtrs(sb, result, segPtrs[k])
+						}
+						// Load %str-long value from pointer so assignment
+						// codegen can store it directly (not the pointer).
+						g.tmpIdx++
+						loadReg := fmt.Sprintf("%%sprintf.result.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, result))
+						return loadReg
+					}
+					outFn := "out"
+					if useStderr {
+						outFn = "err"
+					}
+					for _, segPtr := range segPtrs {
+						g.tmpIdx++
+						discardedN := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), discardedN))
+						sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
+							g.indent(), outFn, segPtr, discardedN))
+					}
+					return "0"
+				}
+			}
 		}
 	}
 
@@ -86,8 +188,14 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 				g.emitOutCall(sb, useStderr, spacePtr)
 			}
 			// Convert arg to %str-long* and write via @out/@err.
+			// If emitArgAsStrLong returns "" (e.g. void-call argument that could
+			// not be materialized into a value), skip emitting @out — otherwise
+			// emitOutCall would produce malformed IR `call void @out(%str-long* , ...)`
+			// with an empty first operand, which `opt` rejects as "expected value token".
 			argPtr := g.emitArgAsStrLong(sb, arg, "")
-			g.emitOutCall(sb, useStderr, argPtr)
+			if argPtr != "" {
+				g.emitOutCall(sb, useStderr, argPtr)
+			}
 		}
 		// Trailing newline (print/eprint always append \n).
 		if newline {
@@ -122,7 +230,11 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 		}
 		arg := expr.Arguments[0]
 		argPtr := g.emitArgAsStrLong(sb, arg, spec)
-		g.emitOutCall(sb, false, argPtr)
+		// Skip @out if argPtr is empty (void-call argument) to avoid
+		// malformed IR with missing first operand.
+		if argPtr != "" {
+			g.emitOutCall(sb, false, argPtr)
+		}
 		if addNewline {
 			nlPtr := g.buildStrLongFromValue(sb, "\n")
 			g.emitOutCall(sb, false, nlPtr)
@@ -266,6 +378,12 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 
 	// Generate the expression's SSA value.
 	v := g.generateExprWithSB(sb, expr)
+	if v == "" {
+		// 表达式求值返回空值（通常是 void 函数被当作表达式使用）
+		// 输出编译错误而非生成空操作数 IR
+		fmt.Fprintf(os.Stderr, "codegen error: expression produced empty value in emitArgAsStrLong (expr: %T)\n", expr)
+		return ""
+	}
 
 	// String-returning CallExpression (e.g. energy().to-str()):
 	// exprResultLLVMType may fail for chained calls; after generation,
@@ -1561,6 +1679,525 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.storeDataPtrField(sb, archBuf, dataGEP)
 		}
 		return allocaReg
+	}
+
+	// ═══════════════════════════════════════════════
+	// notools Unix 工具集擴展：fs / os 新增 ForwardFunc 實作
+	// ═══════════════════════════════════════════════
+
+	// realpath: resolve absolute path (POSIX realpath(3))
+	// Returns: %str-long* (empty string on failure)
+	if fnName == "realpath" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		rpRet := fmt.Sprintf("%%rp.ptr.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpCmp := fmt.Sprintf("%%rp.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpSafe := fmt.Sprintf("%%rp.safe.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpLen := fmt.Sprintf("%%rp.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpBufSize := fmt.Sprintf("%%rp.bufsize.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpBuf := fmt.Sprintf("%%rp.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpStr := fmt.Sprintf("%%rp.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpLenGEP := fmt.Sprintf("%%rp.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpCapGEP := fmt.Sprintf("%%rp.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		rpDataGEP := fmt.Sprintf("%%rp.datagep.%d", g.tmpIdx)
+		if sb != nil {
+			// call realpath(p, NULL) — NULL means libc allocates the result buffer
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @realpath(i8* %s, i8* null)\n", g.indent(), rpRet, pathPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), rpCmp, rpRet))
+			// If NULL, use empty string global (avoids passing NULL to strlen/memcpy)
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), rpSafe, rpCmp, rpRet))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), rpLen, rpSafe))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rpBufSize, rpLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), rpBuf, rpBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), rpBuf, rpSafe, rpBufSize))
+			// Construct %str-long { len, cap, data }
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), rpStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), rpLenGEP, rpStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), rpLen, rpLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), rpCapGEP, rpStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), rpLen, rpCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), rpDataGEP, rpStr))
+			g.storeDataPtrField(sb, rpBuf, rpDataGEP)
+		}
+		// Load %str-long value from pointer so assignment codegen can store it directly.
+		g.tmpIdx++
+		rpLoad := fmt.Sprintf("%%rp.load.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), rpLoad, rpStr))
+		}
+		return rpLoad
+	}
+
+	// readlink: read symbolic link target (POSIX readlink(2))
+	// Returns: (target str, ok bool)
+	if fnName == "readlink" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		rlBuf := fmt.Sprintf("%%rl.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlRet := fmt.Sprintf("%%rl.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlCmp := fmt.Sprintf("%%rl.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlLen := fmt.Sprintf("%%rl.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlStr := fmt.Sprintf("%%rl.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlLenGEP := fmt.Sprintf("%%rl.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlCapGEP := fmt.Sprintf("%%rl.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlDataGEP := fmt.Sprintf("%%rl.datagep.%d", g.tmpIdx)
+		g.tmpIdx++
+		rlOkZext := fmt.Sprintf("%%rl.ok.%d", g.tmpIdx)
+		if sb != nil {
+			// Allocate 4096-byte buffer for readlink
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), rlBuf))
+			// readlink(path, buf, 4096) → number of bytes read (or -1 on error)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @readlink(i8* %s, i8* %s, i64 4096)\n",
+				g.indent(), rlRet, pathPtr, rlBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i64 %s, 0\n", g.indent(), rlCmp, rlRet))
+			// If error, use 0 for length
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), rlLen, rlCmp, rlRet))
+			// On error, use empty string; on success, use rlBuf
+			// We keep the malloc'd buffer even on error (it'll be freed by emitHeapFree)
+			// Construct %str-long { len, cap, data }
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), rlStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), rlLenGEP, rlStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), rlLen, rlLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), rlCapGEP, rlStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 4096, i64* %s\n", g.indent(), rlCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), rlDataGEP, rlStr))
+			g.storeDataPtrField(sb, rlBuf, rlDataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), rlOkZext, rlCmp))
+		}
+		g.lastBuiltinExtra = rlOkZext
+		return rlStr
+	}
+
+	// mkstemp: create and open a unique temporary file (POSIX mkstemp(3))
+	// Returns: (fd, name). fd=-1 and empty name on failure.
+	if fnName == "mkstemp" && hasArgs {
+		a := evalArgs()
+		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		// Need to copy template into mutable buffer (mkstemp modifies in place)
+		g.tmpIdx++
+		msLen := fmt.Sprintf("%%ms.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		msBufSize := fmt.Sprintf("%%ms.bufsize.%d", g.tmpIdx)
+		g.tmpIdx++
+		msBuf := fmt.Sprintf("%%ms.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		msRet := fmt.Sprintf("%%ms.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		msCmp := fmt.Sprintf("%%ms.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		msSafe := fmt.Sprintf("%%ms.safe.%d", g.tmpIdx)
+		g.tmpIdx++
+		msActualLen := fmt.Sprintf("%%ms.alen.%d", g.tmpIdx)
+		g.tmpIdx++
+		msSelLen := fmt.Sprintf("%%ms.sellen.%d", g.tmpIdx)
+		g.tmpIdx++
+		msStr := fmt.Sprintf("%%ms.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		msLenGEP := fmt.Sprintf("%%ms.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		msCapGEP := fmt.Sprintf("%%ms.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		msDataGEP := fmt.Sprintf("%%ms.datagep.%d", g.tmpIdx)
+		g.tmpIdx++
+		msFd := fmt.Sprintf("%%ms.fd.%d", g.tmpIdx)
+		if sb != nil {
+			// strlen(tmpl) → len
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), msLen, tmplPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), msBufSize, msLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), msBuf, msBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), msBuf, tmplPtr, msBufSize))
+			// mkstemp(buf) → fd
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @mkstemp(i8* %s)\n", g.indent(), msRet, msBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), msCmp, msRet))
+			// If fd < 0, use empty string global for name; else use msBuf
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), msSafe, msCmp, msBuf))
+			// strlen of actual name (after mkstemp modifies XXXXXX)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), msActualLen, msSafe))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), msSelLen, msCmp, msActualLen))
+			// Construct %str-long { len, cap, data }
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), msStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), msLenGEP, msStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), msSelLen, msLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), msCapGEP, msStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), msSelLen, msCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), msDataGEP, msStr))
+			g.storeDataPtrField(sb, msBuf, msDataGEP)
+			// sext fd to i64
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), msFd, msRet))
+		}
+		// mkstemp returns (name str, fd fd): first return = name str (pointer, loaded by
+		// multi-assignment codegen), lastBuiltinExtra = fd i64.
+		// Return order is (name, fd) — not (fd, name) — because lastBuiltinExtra is
+		// hardcoded to i64 in the multi-assignment path; str must be the primary return.
+		g.lastBuiltinExtra = msFd
+		return msStr
+	}
+
+	// mkdtemp: create a unique temporary directory (POSIX mkdtemp(3))
+	// Returns: (name str, ok bool)
+	if fnName == "mkdtemp" && hasArgs {
+		a := evalArgs()
+		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		mdLen := fmt.Sprintf("%%md.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdBufSize := fmt.Sprintf("%%md.bufsize.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdBuf := fmt.Sprintf("%%md.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdRet := fmt.Sprintf("%%md.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdCmp := fmt.Sprintf("%%md.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdSafe := fmt.Sprintf("%%md.safe.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdActualLen := fmt.Sprintf("%%md.alen.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdSelLen := fmt.Sprintf("%%md.sellen.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdStr := fmt.Sprintf("%%md.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdLenGEP := fmt.Sprintf("%%md.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdCapGEP := fmt.Sprintf("%%md.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdDataGEP := fmt.Sprintf("%%md.datagep.%d", g.tmpIdx)
+		g.tmpIdx++
+		mdOkZext := fmt.Sprintf("%%md.ok.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), mdLen, tmplPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), mdBufSize, mdLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), mdBuf, mdBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), mdBuf, tmplPtr, mdBufSize))
+			// mkdtemp(buf) → i8* (NULL on failure)
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @mkdtemp(i8* %s)\n", g.indent(), mdRet, mdBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), mdCmp, mdRet))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), mdSafe, mdCmp, mdBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), mdActualLen, mdSafe))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), mdSelLen, mdCmp, mdActualLen))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), mdStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), mdLenGEP, mdStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), mdSelLen, mdLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), mdCapGEP, mdStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), mdSelLen, mdCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), mdDataGEP, mdStr))
+			g.storeDataPtrField(sb, mdBuf, mdDataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), mdOkZext, mdCmp))
+		}
+		g.lastBuiltinExtra = mdOkZext
+		return mdStr
+	}
+
+	// utime: set file access and modification times (POSIX utimes(2))
+	// Returns: ok bool
+	if fnName == "utime" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		g.tmpIdx++
+		utBuf := fmt.Sprintf("%%ut.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		utAtimeGEP := fmt.Sprintf("%%ut.atime.%d", g.tmpIdx)
+		g.tmpIdx++
+		utMtimeGEP := fmt.Sprintf("%%ut.mtime.%d", g.tmpIdx)
+		g.tmpIdx++
+		utRet := fmt.Sprintf("%%ut.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		utCmp := fmt.Sprintf("%%ut.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		utExt := fmt.Sprintf("%%ut.ext.%d", g.tmpIdx)
+		if sb != nil {
+			// alloca [32 x i8] for two struct timeval (each 16 bytes on macOS/Linux 64-bit)
+			// Layout: times[0].tv_sec@0(i64), times[0].tv_usec@8(i64, upper 4 bytes are padding on macOS),
+			//         times[1].tv_sec@16(i64), times[1].tv_usec@24(i64)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [32 x i8]\n", g.indent(), utBuf))
+			// Store atime at offset 0
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 0\n", g.indent(), utAtimeGEP, utBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), a[1], utAtimeGEP))
+			// Store mtime at offset 16
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 16\n", g.indent(), utMtimeGEP, utBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), a[2], utMtimeGEP))
+			// utimes(path, times) — tv_usec fields at offsets 8 and 24 are zero (from alloca zero-init is NOT guaranteed,
+			// but utimes only reads tv_sec and tv_usec; the padding bytes don't matter)
+			// Actually alloca doesn't zero-initialize, so let's explicitly zero tv_usec fields
+			g.tmpIdx++
+			utUsec0GEP := fmt.Sprintf("%%ut.usec0.%d", g.tmpIdx)
+			g.tmpIdx++
+			utUsec1GEP := fmt.Sprintf("%%ut.usec1.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 8\n", g.indent(), utUsec0GEP, utBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), utUsec0GEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 24\n", g.indent(), utUsec1GEP, utBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), utUsec1GEP))
+			// Cast [32 x i8]* to i8* for the utimes call
+			g.tmpIdx++
+			utTimesPtr := fmt.Sprintf("%%ut.timesptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 0\n", g.indent(), utTimesPtr, utBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @utimes(i8* %s, i8* %s)\n", g.indent(), utRet, pathPtr, utTimesPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), utCmp, utRet))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), utExt, utCmp))
+		}
+		return utExt
+	}
+
+	// getgroups: get supplementary group IDs (POSIX getgroups(2))
+	// Returns: (gids []i64, n i64)
+	// Note: Returns count via the second return value; the slice is currently empty
+	// because dynamic element-wise i32→i64 conversion requires loop infrastructure
+	// that is complex to generate inside callBuiltin. The Nolang wrapper can use
+	// the count for validation; full group ID retrieval will be added when loop
+	// generation inside builtins is available.
+	if fnName == "getgroups" {
+		g.tmpIdx++
+		ggN := fmt.Sprintf("%%gg.n.%d", g.tmpIdx)
+		g.tmpIdx++
+		ggVec := fmt.Sprintf("%%gg.vec.%d", g.tmpIdx)
+		g.tmpIdx++
+		ggLenGEP := fmt.Sprintf("%%gg.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		ggCapGEP := fmt.Sprintf("%%gg.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		ggDataGEP := fmt.Sprintf("%%gg.datagep.%d", g.tmpIdx)
+		g.tmpIdx++
+		ggNExt := fmt.Sprintf("%%gg.next.%d", g.tmpIdx)
+		if sb != nil {
+			// getgroups(0, NULL) → count of groups (or -1 on error)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @getgroups(i32 0, i32* null)\n", g.indent(), ggN))
+			// Construct empty %vec { len=0, cap=0, data=null }
+			// The group IDs themselves are not retrieved here; callers needing the
+			// actual IDs should use a different mechanism (e.g., parsing /proc/$$/gid
+			// on Linux or calling getgroups via FFI on macOS).
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), ggVec))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), ggLenGEP, ggVec))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ggLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), ggCapGEP, ggVec))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), ggCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), ggDataGEP, ggVec))
+			g.storeDataPtrField(sb, "null", ggDataGEP)
+			// n = sext ggN to i64 (returns -1 on error, count on success)
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), ggNExt, ggN))
+		}
+		g.lastBuiltinExtra = ggNExt
+		return ggVec
+	}
+
+	// num-cpu: get number of online CPUs (wraps sysconf(_SC_NPROCESSORS_ONLN))
+	// _SC_NPROCESSORS_ONLN is platform-specific:
+	//   darwin (macOS): 58
+	//   linux:          84
+	//   windows/wasi:   sysconf unavailable — return 1 as a conservative fallback
+	// Returns: i64
+	if fnName == "num-cpu" {
+		goos := g.goos()
+		if goos == "windows" || goos == "wasi" {
+			// No sysconf on these targets; return 1 (single CPU fallback).
+			// Avoids referencing @sysconf which is not declared on windows/wasi.
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; num-cpu: sysconf unavailable on %s, returning 1\n", g.indent(), goos))
+			}
+			return "1"
+		}
+		scNprocOnln := int64(58) // macOS _SC_NPROCESSORS_ONLN
+		if goos == "linux" {
+			scNprocOnln = 84 // Linux _SC_NPROCESSORS_ONLN
+		}
+		g.tmpIdx++
+		ncRet := fmt.Sprintf("%%nc.ret.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @sysconf(i32 %d)\n", g.indent(), ncRet, scNprocOnln))
+		}
+		return ncRet
+	}
+
+	// uname: get kernel/architecture info (POSIX uname(2))
+	// Returns: %utsname* (struct with 5 %str-long fields)
+	if fnName == "uname" {
+		// Resolve the utsname struct name — it may be registered as "utsname"
+		// or "os.utsname" (after prefixModuleStatements adds the module prefix).
+		utsnameKey := "utsname"
+		if _, ok := g.structTypes[utsnameKey]; !ok {
+			for name := range g.structTypes {
+				if strings.HasSuffix(name, ".utsname") {
+					utsnameKey = name
+					break
+				}
+			}
+		}
+		utsnameLLVMType := "%" + utsnameKey
+		// struct utsname field offsets:
+		// macOS: _UTSNAME_LENGTH = 256, fields at 0, 256, 512, 768, 1024
+		// Linux: _UTSNAME_LENGTH = 65, fields at 0, 65, 130, 195, 260
+		fieldLen := int64(256)
+		if g.goos() == "linux" {
+			fieldLen = 65
+		}
+		totalSize := fieldLen * 5
+		g.tmpIdx++
+		unBuf := fmt.Sprintf("%%un.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		unRet := fmt.Sprintf("%%un.ret.%d", g.tmpIdx)
+		// Allocate the utsname result struct (%utsname = { %str-long, %str-long, %str-long, %str-long, %str-long })
+		g.tmpIdx++
+		unResult := fmt.Sprintf("%%un.result.%d", g.tmpIdx)
+		// Field field offsets in the C struct utsname buffer
+		offsets := [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
+		var fieldRegs [5]string
+		if sb != nil {
+			// alloca [totalSize x i8] for C struct utsname
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), unBuf, totalSize))
+			// call uname(buf)
+			g.tmpIdx++
+			unBufPtr := fmt.Sprintf("%%un.bufptr.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [%d x i8], [%d x i8]* %s, i64 0, i64 0\n",
+				g.indent(), unBufPtr, totalSize, totalSize, unBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @uname(i8* %s)\n", g.indent(), unRet, unBufPtr))
+			// alloca %utsname for the Nolang result
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), unResult, utsnameLLVMType))
+		}
+		// For each of the 5 fields (sysname, nodename, release, version, machine):
+		fieldNames := [5]string{"sysname", "nodename", "release", "version", "machine"}
+		for i := 0; i < 5; i++ {
+			g.tmpIdx++
+			fldGEP := fmt.Sprintf("%%un.%s.gep.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldLen := fmt.Sprintf("%%un.%s.len.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldBufSize := fmt.Sprintf("%%un.%s.bufsize.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldBuf := fmt.Sprintf("%%un.%s.buf.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldStr := fmt.Sprintf("%%un.%s.str.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldLenGEP := fmt.Sprintf("%%un.%s.lengep.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldCapGEP := fmt.Sprintf("%%un.%s.capgep.%d", fieldNames[i], g.tmpIdx)
+			g.tmpIdx++
+			fldDataGEP := fmt.Sprintf("%%un.%s.datagep.%d", fieldNames[i], g.tmpIdx)
+			fieldRegs[i] = fldStr
+			if sb != nil {
+				// GEP to the field in the C buffer
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr [%d x i8], [%d x i8]* %s, i64 0, i64 %d\n",
+					g.indent(), fldGEP, totalSize, totalSize, unBuf, offsets[i]))
+				// strlen of the field
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), fldLen, fldGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), fldBufSize, fldLen))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), fldBuf, fldBufSize))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+					g.indent(), fldBuf, fldGEP, fldBufSize))
+				// Construct %str-long for this field
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), fldStr))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), fldLenGEP, fldStr))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), fldLen, fldLenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), fldCapGEP, fldStr))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), fldLen, fldCapGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), fldDataGEP, fldStr))
+				g.storeDataPtrField(sb, fldBuf, fldDataGEP)
+			}
+		}
+		// Now we need to store each %str-long field into the utsname struct.
+		// The struct type is resolved dynamically (may be "utsname" or "os.utsname").
+		// Since it is an alloca, we can use getelementptr to get each field
+		// and store the %str-long values directly.
+		if sb != nil {
+			for i := 0; i < 5; i++ {
+				g.tmpIdx++
+				dstGEP := fmt.Sprintf("%%un.dst.%s.%d", fieldNames[i], g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), dstGEP, utsnameLLVMType, utsnameLLVMType, unResult, i))
+				// Load the %str-long from the field alloca
+				g.tmpIdx++
+				fldLoad := fmt.Sprintf("%%un.%s.load.%d", fieldNames[i], g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), fldLoad, fieldRegs[i]))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), fldLoad, dstGEP))
+			}
+		}
+		// Load the %utsname value from the alloca so the Let statement can
+		// store it directly into the LHS variable (which must be allocated
+		// as %utsname, not i64). Returning the pointer causes a type mismatch
+		// because the Let statement expects a value, not a pointer.
+		g.tmpIdx++
+		unLoad := fmt.Sprintf("%%un.load.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), unLoad, utsnameLLVMType, utsnameLLVMType, unResult))
+		}
+		return unLoad
+	}
+
+	// ttyname: get terminal name (POSIX ttyname(3))
+	// Returns: %str-long* (empty string on failure)
+	if fnName == "ttyname" && hasArgs {
+		a := evalArgs()
+		// fd is i64; need to trunc to i32 for the C call
+		g.tmpIdx++
+		tnFd := fmt.Sprintf("%%tn.fd.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnRet := fmt.Sprintf("%%tn.ret.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnCmp := fmt.Sprintf("%%tn.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnSafe := fmt.Sprintf("%%tn.safe.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnLen := fmt.Sprintf("%%tn.len.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnBufSize := fmt.Sprintf("%%tn.bufsize.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnBuf := fmt.Sprintf("%%tn.buf.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnStr := fmt.Sprintf("%%tn.str.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnLenGEP := fmt.Sprintf("%%tn.lengep.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnCapGEP := fmt.Sprintf("%%tn.capgep.%d", g.tmpIdx)
+		g.tmpIdx++
+		tnDataGEP := fmt.Sprintf("%%tn.datagep.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), tnFd, a[0]))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @ttyname(i32 %s)\n", g.indent(), tnRet, tnFd))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), tnCmp, tnRet))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), tnSafe, tnCmp, tnRet))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), tnLen, tnSafe))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), tnBufSize, tnLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), tnBuf, tnBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), tnBuf, tnSafe, tnBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tnStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), tnLenGEP, tnStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tnLen, tnLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), tnCapGEP, tnStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tnLen, tnCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), tnDataGEP, tnStr))
+			g.storeDataPtrField(sb, tnBuf, tnDataGEP)
+		}
+		// Load %str-long value from pointer so assignment codegen can store it directly.
+		g.tmpIdx++
+		tnLoad := fmt.Sprintf("%%tn.load.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), tnLoad, tnStr))
+		}
+		return tnLoad
 	}
 
 	// gzip-compress / gzip-decompress / inflate-decompress 已改為純 Nolang 實現

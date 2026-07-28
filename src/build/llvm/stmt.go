@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -375,6 +374,10 @@ func (g *Generator) emitGlobalHeapFree(sb *strings.Builder) {
 		var elemType string
 		if g.moduleArrayElemTypes != nil {
 			elemType = g.moduleArrayElemTypes[name]
+		}
+		// 跳過 embed 變量（只讀常量數據，不參與堆釋放）
+		if g.embedVars != nil && g.embedVars[name] {
+			continue
 		}
 		// 只釋放堆擁有型別（%vec/%str-long/%arr/%option/用戶結構體）
 		// %option 需進一步檢查 inner type 是否為堆型別（在 emitOptionHeapFree 內處理）
@@ -879,14 +882,6 @@ func (g *Generator) emitRetInitZeroFill(sb *strings.Builder) {
 		if !hasType {
 			llvmType = "i64"
 		}
-		// DEBUG: trace zero-fill type
-		fmt.Fprintf(os.Stderr, "[DEBUG-ZF] name=%s llvmType=%s hasType=%v\n", name, llvmType, hasType)
-		if name == "out" {
-			// Find the result param to inspect its Type
-			for _, rr := range g.outputParamOrder {
-				fmt.Fprintf(os.Stderr, "[DEBUG-ZF] outputParamOrder has: %s\n", rr)
-			}
-		}
 		// 載入 bitmap 並檢查對應 bit
 		g.tmpIdx++
 		bv := fmt.Sprintf("%%ri.zf.bv.%d", g.tmpIdx)
@@ -934,6 +929,9 @@ func (g *Generator) emitRetInitZeroStore(sb *strings.Builder, name, llvmType str
 		sb.WriteString(fmt.Sprintf("%sstore %s 0.0, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
 	case strings.HasPrefix(llvmType, "%"):
 		// struct 類型：%str-long、%vec、%arr、用戶結構體
+		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
+	case strings.HasPrefix(llvmType, "["):
+		// 原始陣列型別 [N x T]（out 參數為 [N x T]*）
 		sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), llvmType, llvmType, ptr))
 	default:
 		// 兜底：視為 i64
@@ -1896,23 +1894,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
 			}
-			// 陣列型結果參數的實際存儲為 %arr struct { len, data* }（與局部變數相同），
-			// 但 resolveParamLLVMType 回傳原始 LLVM 陣列型別 [N x T]。若不覆蓋為 %arr，
-			// genTypedArg 中的 varTypes=="%arr" 檢查會失敗，導致傳遞 out 給其他函數時
-			// fallback 為直接傳 %arr* 作為 [N x T]*，被調用函數寫入 struct 本身而非 data 緩衝區。
-			// 同時註冊元素型別與大小，供索引賦值/讀取及 %arr → [N x T]* 參數轉換使用。
-			fmt.Fprintf(os.Stderr, "[DEBUG-PARAM] result param: name=%s typeStr=%s rType=%T\n", r.Name, typeStr, r.Type)
+			// 陣列型結果參數的 LLVM 簽名為 [N x T]*（resolveParamLLVMType 回傳 [N x T]）。
+			// 註冊元素型別與大小，供索引賦值/讀取及 IndexExpression 使用正確型別。
+			// 注意：out 參數為 [N x T]*（原始陣列指標），而非 %arr*（struct 指標），
+			// 故不可覆蓋 varTypes 為 %arr。
 			if at, ok := r.Type.(*parser.ArrayType); ok && at.Elem != nil {
-				fmt.Fprintf(os.Stderr, "[DEBUG-PARAM]   MATCHED ArrayType! elem=%v size=%v\n", at.Elem, at.Size)
-				g.varTypes[r.Name] = "%arr"
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(at.Elem.String())
 				if v, ok := g.constFoldInt(at.Size); ok {
 					g.arraySizes[r.Name] = v
 				} else if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
 					g.arraySizes[r.Name] = intLit.Value
 				}
-			} else {
-				fmt.Fprintf(os.Stderr, "[DEBUG-PARAM]   NOT ArrayType\n")
 			}
 			// 切片型結果參數也需註冊元素型別，供 IndexExpression 使用正確型別
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
@@ -2403,6 +2395,10 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// already calls the user's main. Otherwise we get infinite recursion.
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
+			// Embed vars are emitted as statically initialized globals; skip runtime init.
+			if ls.EmbedData != nil {
+				continue
+			}
 			// Skip LetStatements already emitted as globals, EXCEPT for:
 			// - string/array types (need runtime init via generateLet)
 			// - reassigned variables (need store instruction for new value)
@@ -2497,6 +2493,33 @@ func (g *Generator) lookupMethodReturnType(shortName string) string {
 	}
 	if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
 		return g.mapToLLVMType(m.Return[0].String())
+	}
+	return ""
+}
+
+// builtinStructReturnType returns the LLVM struct type (e.g. "%utsname") if the
+// builtin method's first return type is a registered struct, otherwise "".
+// Used by varLLVMType to infer LHS variable type for calls like `uts = os.uname()`.
+// Resolves both the raw name (e.g. "utsname") and module-prefixed variants
+// (e.g. "os.utsname") added by prefixModuleStatements.
+func (g *Generator) builtinStructReturnType(m *builtin.BuiltinMethod) string {
+	if m == nil || len(m.Return) == 0 || g.structTypes == nil {
+		return ""
+	}
+	nt, ok := m.Return[0].(*parser.NamedType)
+	if !ok {
+		return ""
+	}
+	// Direct match
+	if _, ok := g.structTypes[nt.Value]; ok {
+		return "%" + nt.Value
+	}
+	// Try module-prefixed variants (e.g. "os.utsname")
+	suffix := "." + nt.Value
+	for name := range g.structTypes {
+		if strings.HasSuffix(name, suffix) {
+			return "%" + name
+		}
 	}
 	return ""
 }
@@ -2798,6 +2821,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if m.Return[0] == parser.TypeStr {
 					return "%str-long"
 				}
+				// Struct-returning builtins (e.g. uname → utsname)
+				if structTy := g.builtinStructReturnType(m); structTy != "" {
+					return structTy
+				}
 			}
 			// Check funcRetTypes for non-builtin functions (e.g. module functions like degrees)
 			if g.funcRetTypes != nil {
@@ -2844,6 +2871,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						}
 						if m.Return[0] == parser.TypeStr {
 							return "%str-long"
+						}
+						// Struct-returning builtins (e.g. os.uname → utsname)
+						if structTy := g.builtinStructReturnType(m); structTy != "" {
+							return structTy
 						}
 					}
 				}
@@ -5273,6 +5304,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// The pointer must be converted back to i64 via ptrtoint before storing
 	// into the i64 alloca. Without this, LLVM reports:
 	//   '%var.data.ptr.N' defined with type 'ptr' but expected 'i64'
+	// Additionally, varTypes is updated to the struct type so that subsequent
+	// field access (it.field) and method resolution (it.field.method()) work.
+	// The i64 alloca holds a ptrtoint'd struct pointer; field access codegen
+	// detects the i64-alloca-with-struct-type case and generates load+inttoptr.
+	syntheticStructPtrType := ""
 	if stmt.IsSynthetic && llvmType == "i64" {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if g.varTypes != nil {
@@ -5284,6 +5320,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								ptrToIntReg := fmt.Sprintf("%%it.p2i.%d", g.tmpIdx)
 								sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s* %s to i64\n", g.indent(), ptrToIntReg, innerType, val))
 								val = ptrToIntReg
+								// Remember struct type for varTypes update below
+								// (the generic update at line ~5666 would overwrite
+								// to i64, so we re-apply after it).
+								syntheticStructPtrType = innerType
 							}
 						}
 					}
@@ -5670,6 +5710,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		if g.varTypes != nil {
 			g.varTypes[name] = llvmType
 		}
+		// Re-apply struct pointer type for synthetic `it` that holds a
+		// ptrtoint'd struct pointer (the generic update above sets i64).
+		if syntheticStructPtrType != "" && g.varTypes != nil {
+			g.varTypes[name] = syntheticStructPtrType
+		}
 	}
 
 	// 延遲綁定（SSA 版本化）：若目標是輸出參數且源是簡單變數，
@@ -6033,8 +6078,11 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 	}
 
 	// Helper: copy a %str-long struct into data field via heap allocation.
-	// malloc the struct, store the value, then ptrtoint the pointer to i64
+	// malloc the struct, DEEP clone (so the string bytes are independently
+	// owned, not shared with the source), then ptrtoint the pointer to i64
 	// and store that i64 in the data field.
+	// A shallow load+store would share the data pointer; when the source
+	// str-long is freed at scope exit, the box would hold a dangling pointer.
 	copyStrToData := func(srcPtr string) {
 		g.tmpIdx++
 		heapPtr := fmt.Sprintf("%%opt.heap.%d", g.tmpIdx)
@@ -6042,10 +6090,10 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		g.tmpIdx++
 		heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%str-long*\n", g.indent(), heapCast, heapPtr))
-		g.tmpIdx++
-		copyReg := fmt.Sprintf("%%opt.str.copy.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), copyReg, srcPtr))
-		sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), copyReg, heapCast))
+		// emitDeepClone for %str-long: memcpy struct (len/cap/data) then
+		// malloc a new buffer and memcpy the string bytes, so the box owns
+		// an independent copy of the bytes.
+		g.emitDeepClone(sb, srcPtr, heapCast, "%str-long", "")
 		g.tmpIdx++
 		ptrInt := fmt.Sprintf("%%opt.ptr.int.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), ptrInt, heapPtr))
@@ -6080,7 +6128,11 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 	}
 
 	// copyToData dispatches to the correct copy function based on the option's inner type.
-	// For struct types: malloc on heap, store struct, ptrtoint pointer to i64, store i64.
+	// For struct types: malloc on heap, DEEP clone struct (including heap-owned fields
+	// like vec.data/str-long.data), ptrtoint pointer to i64, store i64.
+	// A shallow store would share heap data between source and option box; when the
+	// source is freed at scope exit, the box would hold dangling pointers, causing
+	// use-after-free when the option is later unwrapped.
 	// For i64/double/float: store directly in the data field (8 bytes, no malloc needed).
 	copyToData := func(val string) {
 		innerType := "i64"
@@ -6095,7 +6147,9 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			copyF32ToData(val)
 		} else if strings.HasPrefix(innerType, "%") {
 			// Struct types (e.g. %str-long, %client, %conn):
-			// malloc heap, store struct value, ptrtoint pointer to i64, store i64
+			// malloc heap box, store struct value to a temp alloca, then
+			// emitDeepClone from temp to box so heap-owned fields are independently
+			// allocated (not shared with the source).
 			structSize := g.llvmTypeSize(innerType)
 			if structSize == 0 {
 				structSize = 8
@@ -6106,7 +6160,17 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			g.tmpIdx++
 			heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), heapCast, heapPtr, innerType))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), innerType, val, innerType, heapCast))
+			// Stage the loaded value into a temp alloca so emitDeepClone has a
+			// source pointer to read from (it requires pointers, not SSA values).
+			g.tmpIdx++
+			srcTmp := fmt.Sprintf("%%opt.src.tmp.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), srcTmp, innerType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), innerType, val, innerType, srcTmp))
+			// emitDeepClone does a memcpy of the whole struct (copying scalar fields
+			// like fd/i64 directly) then recursively clones heap-owned fields
+			// (vec.data → malloc+memcpy, str-long.data → malloc+memcpy, nested
+			// structs → emitStructClone) so the box owns independent heap data.
+			g.emitDeepClone(sb, srcTmp, heapCast, innerType, "")
 			g.tmpIdx++
 			ptrInt := fmt.Sprintf("%%opt.ptr.int.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), ptrInt, heapPtr))

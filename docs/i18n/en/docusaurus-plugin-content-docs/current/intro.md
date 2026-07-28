@@ -13,7 +13,7 @@ Nolang is an experimental systems programming language that adopts a pass-by-ref
 - **Automatic memory management**: Through the safe scope model, memory is automatically released when leaving scope — no dangling pointers or memory leaks
 - **No GC**: No memory leaks, so no GC needed
 - **Performance-first**:
-Small strings have no heap allocation; variables can be allocated once and freed once
+deferred move; variables can be allocated once and freed once
 - **Method overloading**: Efficient performance through monomorphization
 - **Interfaces**: Support interface declaration, default implementations, and multi-interface inheritance
 - **Generics**: Support type and value generics

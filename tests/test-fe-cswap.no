@@ -1,0 +1,45 @@
+; test-fe-cswap — 驗證 fe-cswap 是否正確交換兩個陣列
+; # std/crypto/x25519
+
+main = () {
+    ; 建立兩個不同的域元素
+    a []i64 = with-len(10)
+    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4; a[4] = 5
+    a[5] = 6; a[6] = 7; a[7] = 8; a[8] = 9; a[9] = 10
+
+    b []i64 = with-len(10)
+    b[0] = 100; b[1] = 200; b[2] = 300; b[3] = 400; b[4] = 500
+    b[5] = 600; b[6] = 700; b[7] = 800; b[8] = 900; b[9] = 1000
+
+    eprint('Before swap: a[0]=')
+    eprint(a[0])
+    eprint(' b[0]=')
+    eprint(b[0])
+
+    ; 交換 (mask=1)
+    x25519.fe-cswap(a, b, 1)
+
+    eprint('After swap(1): a[0]=')
+    eprint(a[0])
+    eprint(' b[0]=')
+    eprint(b[0])
+
+    ; 驗證
+    a[0] == 100 -> print('PASS: a swapped')
+    a[0] != 100 -> print('FAIL: a not swapped')
+    b[0] == 1 -> print('PASS: b swapped')
+    b[0] != 1 -> print('FAIL: b not swapped')
+
+    ; 不交換 (mask=0)
+    x25519.fe-cswap(a, b, 0)
+
+    eprint('After swap(0): a[0]=')
+    eprint(a[0])
+    eprint(' b[0]=')
+    eprint(b[0])
+
+    a[0] == 100 -> print('PASS: a not swapped (mask=0)')
+    a[0] != 100 -> print('FAIL: a swapped (mask=0)')
+    b[0] == 1 -> print('PASS: b not swapped (mask=0)')
+    b[0] != 1 -> print('FAIL: b swapped (mask=0)')
+}

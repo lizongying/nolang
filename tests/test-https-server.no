@@ -2,37 +2,10 @@
 ; # std/net/server
 ; # std/net/tls
 
-; e2e-tc: 全域變數，存放 e2e 測試的 TLS 連線
-; 使用全域變數避免 tls-conn 作為函式參數傳遞時的 double-free
-e2e-tc tls-conn
-
-; e2e-recv-buf: 接收緩衝區
-e2e-recv-buf str
-
-; e2e-recv-total: 已接收的總位元組數
-e2e-recv-total i64
-
-; e2e-recv-once: 從 e2e-tc 接收一次資料
-; 獨立函式以避開同一函式中多個 option match 的 it 型別衝突
-; 返回 rn i64: 接收的位元組數（-1=錯誤, 0=關閉）
-e2e-recv-once = () (rn i64) {
-    rn = -1
-    space = ' '
-    tmp = space.repeat(2048)
-    rn = e2e-tc.recv(tmp, 2048)
-    rn > 0 -> {
-        ; 複製到全域緩衝區
-        i <- [0..rn): {
-            e2e-recv-buf[e2e-recv-total + i] = tmp[i]
-        }
-        e2e-recv-total = e2e-recv-total + rn
-    }
-}
-
 ; test-https-listen: 測試 HTTPS 伺服器可以建立監聽
 test-https-listen = () (pass bool) {
     pass = false
-    srv = https-server{}
+    srv = https-server {}
     ok = srv.listen('127.0.0.1', 9443)
     ok == false -> {
         print('FAIL: https-server.listen failed')
@@ -90,8 +63,8 @@ test-https-server-struct = () (pass bool) {
     pass = false
     space = ' '
     buf = space.repeat(8192)
-    tc = tls-server-conn{}
-    conn = https-server-conn{
+    tc = tls-server-conn {}
+    conn = https-server-conn {
         tls: tc
         method: ''
         path: ''
@@ -108,6 +81,7 @@ test-https-server-struct = () (pass bool) {
 }
 
 ; run-https-e2e-client: 父進程客戶端邏輯
+; 使用局部變數 tc 操作 TLS 連線，避開全域變數跨函式 bug。
 ; host str: 伺服器主機
 ; port i64: 伺服器埠號
 ; 返回 ok bool: true=成功收到預期回應
@@ -125,7 +99,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             return
         }
         ok -> {
-            e2e-tc = it
+            tc = it
 
             ; 發送 HTTP GET 請求
             cr = char-to-str(13)
@@ -134,43 +108,45 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
-            w-opt = e2e-tc.send(req)
+            w-opt = tc.send(req)
             w-opt: {
                 nil -> {
                     print('FAIL: e2e send nil')
-                    e2e-tc.close()
+                    tc.close()
                     return
                 }
                 err -> {
                     print('FAIL: e2e send err')
-                    e2e-tc.close()
+                    tc.close()
                     return
                 }
                 ok -> send-ok = true
             }
 
             send-ok == false -> {
-                e2e-tc.close()
+                tc.close()
                 return
             }
 
-
-            ; 接收回應 — 多次 recv 累積
-            ; 注意: 不能使用 slice 來截取 e2e-recv-buf 的子串再 index，
-            ; 因為 slice 會導致原緩衝區被 move，後續存取會 crash。
-            ; 改用 index-from 直接在 e2e-recv-buf 上搜尋。
+            ; 接收回應 — 多次 recv 累積（全部在同一函式內，使用局部變數）
             space = ' '
-            e2e-recv-buf = space.repeat(4096)
-            e2e-recv-total = 0
+            recv-buf = space.repeat(4096)
+            recv-total = 0
             found = false
             {
                 found -> *
-                e2e-recv-total >= 4000 -> *
+                recv-total >= 4000 -> *
 
-                rn = e2e-recv-once()
+                tmp = space.repeat(2048)
+                rn = tc.recv(tmp, 2048)
                 rn <= 0 -> *
 
-                pos = e2e-recv-buf.index-from('hello from nolang https', 0)
+                i <- [0..rn): {
+                    recv-buf[recv-total + i] = tmp[i]
+                }
+                recv-total = recv-total + rn
+
+                pos = recv-buf.index-from('hello from nolang https', 0)
                 pos >= 0 -> found = true
             } (found == false)
 
@@ -180,18 +156,18 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             }
             found == false -> print('FAIL: e2e did not receive expected response')
 
-            e2e-tc.close()
+            tc.close()
         }
     }
 }
 
 ; test-https-e2e: 端到端測試 — fork 伺服器 + TLS 客戶端連線
-; 驗證: TLS 1.2 交握 + HTTP 請求/回應 through加密通道
+; 驗證: TLS 1.3 交握 + HTTP 請求/回應 through加密通道
 test-https-e2e = () (pass bool) {
     pass = false
 
     ; 1. 啟動 HTTPS 伺服器
-    srv = https-server{}
+    srv = https-server {}
     ok = srv.listen('127.0.0.1', 9444)
     ok == false -> {
         print('FAIL: e2e listen failed')
@@ -207,23 +183,12 @@ test-https-e2e = () (pass bool) {
     }
 
     ; === 子進程: 伺服器 (處理一個連線後退出) ===
+    ; 使用 tls-https-serve-once 在單一函式中完成全部流程，
+    ; 避開全域變數 bug 和結構體複製 bug。
     pid == 0 -> {
-        conn-opt = srv.accept()
-        conn-opt: {
-            nil -> os.exit(1)
-            err -> os.exit(1)
-            ok -> {
-                conn = it
-                p-ok = conn.parse()
-                p-ok == false -> {
-                    conn.close()
-                    os.exit(1)
-                }
-                conn.write-text(200, 'hello from nolang https')
-                conn.close()
-                os.exit(0)
-            }
-        }
+        serve-ok = tls.tls-https-serve-once(srv.fd, 200, 'hello from nolang https')
+        serve-ok == false -> os.exit(1)
+        os.exit(0)
     }
 
     ; === 父進程: 客戶端 ===

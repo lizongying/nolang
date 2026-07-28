@@ -1,0 +1,114 @@
+; test-x25519-keypair-diff — 驗證不同 seed 產生不同金鑰對
+; # std/crypto/x25519
+
+; 用全域變數避開大結構體多返回值的編譯器 bug
+ga-priv [32]byte
+ga-pub [32]byte
+gb-priv [32]byte
+gb-pub [32]byte
+g-shared-a [32]byte
+g-shared-b [32]byte
+
+main = () {
+
+    ; === 生成金鑰對 A ===
+    state-a = 1785194361761886018
+    i <- [0..32): {
+        state-a, r-a = rand(state-a)
+        ga-priv[i] = state-a & 255
+    }
+    ga-priv[0] = ga-priv[0] & 248
+    ga-priv[31] = ga-priv[31] & 127
+    ga-priv[31] = ga-priv[31] | 64
+    ga-pub = x25519.x25519-scalarmult-base(ga-priv)
+
+    ; === 生成金鑰對 B ===
+    state-b = 1785194361762171965
+    i <- [0..32): {
+        state-b, r-b = rand(state-b)
+        gb-priv[i] = state-b & 255
+    }
+    gb-priv[0] = gb-priv[0] & 248
+    gb-priv[31] = gb-priv[31] & 127
+    gb-priv[31] = gb-priv[31] | 64
+    gb-pub = x25519.x25519-scalarmult-base(gb-priv)
+
+    ; 印出 priv-a
+    eprint('priv-a: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (ga-priv[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ; 印出 priv-b
+    eprint('priv-b: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (gb-priv[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ; 印出 pub-a
+    eprint('pub-a: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (ga-pub[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ; 印出 pub-b
+    eprint('pub-b: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (gb-pub[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ; 比較 priv
+    priv-same = true
+    i <- [0..32): {
+        ga-priv[i] != gb-priv[i] -> priv-same = false
+    }
+
+    ; 比較 pub
+    pub-same = true
+    i <- [0..32): {
+        ga-pub[i] != gb-pub[i] -> pub-same = false
+    }
+
+    priv-same == true -> print('FAIL: different seeds produce same priv')
+    priv-same == false -> print('PASS: different seeds produce different priv')
+
+    pub-same == true -> print('FAIL: different seeds produce same pub')
+    pub-same == false -> print('PASS: different seeds produce different pub')
+
+    ; 測試共享金鑰
+    g-shared-a = x25519.x25519-scalarmult(ga-priv, gb-pub)
+
+    g-shared-b = x25519.x25519-scalarmult(gb-priv, ga-pub)
+
+    ; 印出 shared-a
+    eprint('shared-a: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (g-shared-a[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    ; 印出 shared-b
+    eprint('shared-b: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (g-shared-b[i] & 255).to-str() - ' '
+    }
+    eprint(s)
+
+    shared-same = true
+    i <- [0..32): {
+        g-shared-a[i] != g-shared-b[i] -> shared-same = false
+    }
+
+    shared-same == true -> print('PASS: ECDH shared secrets match')
+    shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
+}

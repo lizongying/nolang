@@ -9835,6 +9835,33 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 		p.nextToken()
 		return val
 	case lexer.IDENT:
+		// 检查是否为裸路径（如 assets/win-icon.ico）
+		// 当 IDENT 后跟 QUO('/') 或 DOT('.') 时，拼接为完整路径
+		firstTok := p.currentToken
+		if p.peekToken.Type == lexer.QUO || p.peekToken.Type == lexer.DOT {
+			var pathParts []string
+			pathParts = append(pathParts, firstTok.Literal)
+			p.nextToken() // skip first IDENT
+			for p.currentToken.Type == lexer.QUO || p.currentToken.Type == lexer.DOT {
+				if p.currentToken.Type == lexer.QUO {
+					pathParts = append(pathParts, "/")
+				} else {
+					pathParts = append(pathParts, ".")
+				}
+				p.nextToken() // skip / or .
+				if p.currentToken.Type != lexer.IDENT {
+					break
+				}
+				pathParts = append(pathParts, p.currentToken.Literal)
+				p.nextToken() // skip IDENT
+			}
+			val := &AnnotationStringValue{
+				Token: firstTok,
+				Value: strings.Join(pathParts, ""),
+			}
+			return val
+		}
+		// 普通 IDENT 值
 		val := &AnnotationIdentValue{
 			Token: p.currentToken,
 			Value: p.currentToken.Literal,

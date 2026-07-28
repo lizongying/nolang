@@ -926,6 +926,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("parser errors: %v", p.Errors())
 	}
 
+	// 處理 #{embed=...} 註解：編譯期讀取嵌入文件
+	if err := t.processEmbeds(program, t.sourcePath); err != nil {
+		return "", err
+	}
+
 	// 驗證：僅標準庫能使用的功能
 	isUserCode := true
 	if t.pkg != nil {
@@ -3997,6 +4002,104 @@ type ValidateResult struct {
 	Column    int
 	EndColumn int
 	Message   string
+}
+
+// ValidateEmbedAnnotations 校驗 #{embed=...} 註解的用法是否正確。
+// sourcePath 用於解析相對路徑（相對於包根目錄）。
+func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok {
+			continue
+		}
+		// 查找 embed 註解
+		var embedPath string
+		var embedEntry *parser.AnnotationEntry
+		for _, annot := range ls.Annotations {
+			if annot.Key != "embed" {
+				continue
+			}
+			embedEntry = annot
+			if sv, ok := annot.Value.(*parser.AnnotationStringValue); ok {
+				embedPath = sv.Value
+			} else if iv, ok := annot.Value.(*parser.AnnotationIdentValue); ok {
+				embedPath = iv.Value
+			}
+		}
+		if embedEntry == nil {
+			continue
+		}
+
+		line := ls.Token.Line
+		col := ls.Token.Column
+
+		// 規則 2：不能與顯式 Value 共存
+		if ls.Value != nil {
+			results = append(results, ValidateResult{
+				Line:    line,
+				Column:  col,
+				Message: "embed: cannot combine with explicit value",
+			})
+		}
+
+		// 規則 1：必須是 []byte 或 [N]byte 類型
+		if ls.Type == nil {
+			results = append(results, ValidateResult{
+				Line:    line,
+				Column:  col,
+				Message: "embed: only []byte / [N]byte declarations are supported, got untyped declaration",
+			})
+		} else {
+			typeStr := ls.Type.String()
+			isByteSlice := false
+			// 檢查是否為 []byte 或 [N]byte
+			if st, ok := ls.Type.(*parser.SliceType); ok {
+				if et, ok := st.Elem.(*parser.NamedType); ok {
+					if et.Value == "byte" || et.Value == "u8" {
+						isByteSlice = true
+					}
+				}
+			}
+			if at, ok := ls.Type.(*parser.ArrayType); ok {
+				if et, ok := at.Elem.(*parser.NamedType); ok {
+					if et.Value == "byte" || et.Value == "u8" {
+						isByteSlice = true
+					}
+				}
+			}
+			if !isByteSlice {
+				results = append(results, ValidateResult{
+					Line:    line,
+					Column:  col,
+					Message: fmt.Sprintf("embed: only []byte / [N]byte declarations are supported, got %s", typeStr),
+				})
+			}
+		}
+
+		// 規則 3：文件必須存在
+		if embedPath != "" {
+			resolvedPath := embedPath
+			if !filepath.IsAbs(embedPath) {
+				pkgRoot := ""
+				if sourcePath != "" {
+					pkgRoot = findPackageRootFromFile(sourcePath)
+				}
+				if pkgRoot == "" {
+					pkgRoot = filepath.Dir(sourcePath)
+				}
+				resolvedPath = filepath.Join(pkgRoot, embedPath)
+			}
+			if _, err := os.Stat(resolvedPath); err != nil {
+				results = append(results, ValidateResult{
+					Line:    line,
+					Column:  col,
+					Message: fmt.Sprintf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
+				})
+			}
+		}
+	}
+	return results
 }
 
 // ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
@@ -8836,6 +8939,54 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			}
 			return results
 		}
+	}
+	return nil
+}
+
+// processEmbeds 遍歷 program 中帶有 #{embed=...} 註解的 LetStatement，
+// 在編譯期讀取指定文件並填充 EmbedData 字段。
+// 路徑相對於包根目錄（mod.jsonc 所在目錄）解析。
+func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) error {
+	for _, stmt := range program.Statements {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok {
+			continue
+		}
+		// 查找 embed 註解
+		var embedPath string
+		for _, annot := range ls.Annotations {
+			if annot.Key != "embed" {
+				continue
+			}
+			if sv, ok := annot.Value.(*parser.AnnotationStringValue); ok {
+				embedPath = sv.Value
+			} else if iv, ok := annot.Value.(*parser.AnnotationIdentValue); ok {
+				embedPath = iv.Value
+			}
+		}
+		if embedPath == "" {
+			continue
+		}
+
+		// 解析路徑：絕對路徑直接使用，相對路徑相對於包根目錄
+		resolvedPath := embedPath
+		if !filepath.IsAbs(embedPath) {
+			pkgRoot := ""
+			if sourcePath != "" {
+				pkgRoot = findPackageRootFromFile(sourcePath)
+			}
+			if pkgRoot == "" {
+				pkgRoot = filepath.Dir(sourcePath)
+			}
+			resolvedPath = filepath.Join(pkgRoot, embedPath)
+		}
+
+		// 讀取文件
+		data, err := os.ReadFile(resolvedPath)
+		if err != nil {
+			return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
+		}
+		ls.EmbedData = data
 	}
 	return nil
 }

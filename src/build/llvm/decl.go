@@ -130,6 +130,23 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		// WASI: utimensat has limited support — skip declaration.
 		sb.WriteString("declare i32 @utimensat(i32, i8*, i8*, i32)\n")
 	}
+	// notools Unix 工具集擴展：新增 POSIX 系統調用宣告
+	// Windows 平台對應的函式透過 nolang.win_* stub 提供（見 writeWindowsStubs）；
+	// WASI 平台不支援這些 POSIX 函式，跳過宣告（用戶需用 #{wasi-wasm32} 提供替代）。
+	if goos != "windows" && goos != "wasi" {
+		sb.WriteString("declare i8* @realpath(i8*, i8*)\n")
+		sb.WriteString("declare i64 @readlink(i8*, i8*, i64)\n")
+		sb.WriteString("declare i32 @mkstemp(i8*)\n")
+		sb.WriteString("declare i8* @mkdtemp(i8*)\n")
+		sb.WriteString("declare i32 @mkfifo(i8*, i16)\n")
+		sb.WriteString("declare i32 @utimes(i8*, i8*)\n")
+		sb.WriteString("declare i32 @geteuid()\n")
+		sb.WriteString("declare i32 @getegid()\n")
+		sb.WriteString("declare i32 @getgroups(i32, i32*)\n")
+		sb.WriteString("declare i32 @uname(i8*)\n")
+		sb.WriteString("declare i64 @sysconf(i32)\n")
+		sb.WriteString("declare i8* @ttyname(i32)\n")
+	}
 	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
 	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）
 	if goos == "windows" {

@@ -382,6 +382,7 @@ type LetStatement struct {
 	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
 	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
 	PlatformKeys  []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
+	EmbedData     []byte             // 编譯期嵌入的文件字節數據（來自 #{embed=...} 註解）
 	CommentedNode
 }
 

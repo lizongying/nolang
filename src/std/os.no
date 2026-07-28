@@ -145,6 +145,66 @@ strerror = (errnum i64) (msg str) {
 ; getgid: 取得當前群組 ID
 ; getgid = () (gid i64) { }
 
+; build-in (CLibCall: geteuid)
+; geteuid: 取得當前有效使用者 ID
+; geteuid = () (euid i64) { }
+
+; build-in (CLibCall: getegid)
+; getegid: 取得當前有效群組 ID
+; getegid = () (egid i64) { }
+
+; build-in (ForwardFunc: getgroups)
+; getgroups: 取得當前使用者所屬群組 ID 列表
+; 成功返回群組 ID 陣列與數量 n，失敗返回空陣列與 n=0
+; getgroups = () (gids []i64, n i64) {  // LLVM: call i32 @getgroups(0, NULL) → alloca → call @getgroups(n, buf) → 讀取 gids
+; }
+
+; build-in (CLibCall: sysconf)
+; sysconf: 查詢系統配置限制值
+; name: 配置項名稱（POSIX _SC_* 常數，注意各平台數值不同）
+;   _SC_NPROCESSORS_ONLN: macOS=58, Linux=84
+;   _SC_NPROCESSORS_CONF:  macOS=57, Linux=83
+; 成功返回值，失敗返回 -1
+; sysconf = (name i64) (val i64) {  // LLVM: call i64 @sysconf(name)
+; }
+
+; build-in (ForwardFunc: num-cpu)
+; num-cpu: 取得在線 CPU 核數
+; 等價於 sysconf(_SC_NPROCESSORS_ONLN)，跨平台常數由編譯器處理
+; num-cpu = () (n i64) {  // LLVM: call i64 @sysconf(_SC_NPROCESSORS_ONLN)
+; }
+
+; build-in (ForwardFunc: uname)
+; uname: 取得核心與架構資訊
+; 返回 utsname 結構體，含 sysname/nodename/release/version/machine 五個欄位
+; uname = () (u utsname) {  // LLVM: alloca [256 x i8] buf → call i32 @uname(buf) → 讀取各欄位
+; }
+
+; utsname: 作業系統資訊結構體（uname 系統呼叫結果）
+; 各欄位為 null-terminated 字串（最长 64 字元）
+utsname {
+    sysname str
+    nodename str
+    release str
+    version str
+    machine str
+}
+
+; build-in (CLibCall: signal)
+; signal: 設定信號處理函數（簡化版，僅支援 SIG_IGN=1 / SIG_DFL=0）
+; sig: 信號編號
+; handler: 處理常數（0=SIG_DFL 預設, 1=SIG_IGN 忽略）
+; 返回先前的處理值
+; signal = (sig i64, handler i64) (prev i64) {  // LLVM: call i64 (i32, ...)* @signal(sig, handler)
+; }
+
+; build-in (ForwardFunc: ttyname)
+; ttyname: 取得終端機名稱
+; fd: 檔案描述符
+; 成功返回終端機路徑字串，失敗返回空串
+; ttyname = (fd fd) (name str) {  // LLVM: call i8* @ttyname(fd) → emitStrLongFromCStr
+; }
+
 ; build-in (ForwardFunc: stat-mode)
 ; stat-mode: 取得檔案模式（包含權限與類型位元）
 ; stat-mode = (path str) (mode i64, ok bool) { }

@@ -590,4 +590,180 @@ func init() {
 		Doc:          "Update file access and modification times to current time",
 		ForwardFunc:  "touch-file",
 	})
+
+	// ═══════════════════════════════════════════════
+	// 擴展 fs / os 底層能力（notools Unix 工具集支援）
+	// ═══════════════════════════════════════════════
+
+	// realpath: resolve absolute path (POSIX realpath(3))
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "realpath",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Resolve path to an absolute canonical path (returns empty string on failure)",
+		ForwardFunc:  "realpath",
+	})
+
+	// readlink: read symbolic link target (POSIX readlink(2))
+	// Returns (target str, ok bool)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "readlink",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
+		Doc:          "Read target of a symbolic link. Returns (target, ok)",
+		ForwardFunc:  "readlink",
+	})
+
+	// mkstemp: create and open a unique temporary file (POSIX mkstemp(3))
+	// Returns (name, fd). Empty name and fd=-1 on failure.
+	// Return order is (name, fd) — not (fd, name) — because lastBuiltinExtra is
+	// hardcoded to i64 in the multi-assignment path; str must be the primary return.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "mkstemp",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeFd},
+		Doc:          "Create and open a unique temp file from template (ending with XXXXXX). Returns (name, fd)",
+		ForwardFunc:  "mkstemp",
+	})
+
+	// mkdtemp: create a unique temporary directory (POSIX mkdtemp(3))
+	// Returns (name, ok). Empty name and ok=false on failure.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "mkdtemp",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
+		Doc:          "Create a unique temp directory from template (ending with XXXXXX). Returns (name, ok)",
+		ForwardFunc:  "mkdtemp",
+	})
+
+	// mkfifo: create a named pipe (POSIX mkfifo(3))
+	// Returns ok bool.
+	mkfifoFn := "mkfifo"
+	if runtime.GOOS == "windows" {
+		mkfifoFn = "nolang.win_mkfifo"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "mkfifo",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Create a named pipe (FIFO). Returns true on success",
+		CLibCall:     &CLibCall{FuncName: mkfifoFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+	})
+
+	// utime: set file access and modification times (POSIX utimes(2))
+	// Returns ok bool.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "utime",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Set file access and modification times (Unix seconds). Returns true on success",
+		ForwardFunc:  "utime",
+	})
+
+	// geteuid: get effective user ID (POSIX geteuid(2))
+	geteuidFn := "geteuid"
+	if runtime.GOOS == "windows" {
+		geteuidFn = "nolang.win_getuid" // Windows: reuse getuid stub (returns 0)
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "geteuid",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the effective user ID",
+		CLibCall:     &CLibCall{FuncName: geteuidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
+	// getegid: get effective group ID (POSIX getegid(2))
+	getegidFn := "getegid"
+	if runtime.GOOS == "windows" {
+		getegidFn = "nolang.win_getgid" // Windows: reuse getgid stub (returns 0)
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getegid",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the effective group ID",
+		CLibCall:     &CLibCall{FuncName: getegidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
+	// getgroups: get supplementary group IDs (POSIX getgroups(2))
+	// Returns (gids []i64, n i64)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getgroups",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{&parser.SliceType{Elem: parser.TypeI64}, parser.TypeI64},
+		Doc:          "Get supplementary group IDs. Returns (gids, count)",
+		ForwardFunc:  "getgroups",
+	})
+
+	// sysconf: query system configuration limit (POSIX sysconf(3))
+	// Returns i64 value (-1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sysconf",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Query system configuration value (POSIX _SC_* constant). Returns -1 on error",
+		CLibCall:     &CLibCall{FuncName: "sysconf", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+	})
+
+	// num-cpu: get number of online CPUs (wraps sysconf(_SC_NPROCESSORS_ONLN))
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "num-cpu",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the number of online CPUs",
+		ForwardFunc:  "num-cpu",
+	})
+
+	// uname: get kernel/architecture info (POSIX uname(2))
+	// Returns utsname struct with sysname/nodename/release/version/machine fields.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "uname",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{&parser.NamedType{Value: "utsname"}},
+		Doc:          "Get system information (sysname/nodename/release/version/machine)",
+		ForwardFunc:  "uname",
+	})
+
+	// signal: set signal handler (simplified: SIG_DFL=0, SIG_IGN=1)
+	// Returns previous handler value (i64)
+	signalFn := "signal"
+	if runtime.GOOS == "windows" {
+		signalFn = "nolang.win_signal"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "signal",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Set signal handler (0=SIG_DFL, 1=SIG_IGN). Returns previous handler value",
+		CLibCall:     &CLibCall{FuncName: signalFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+	})
+
+	// ttyname: get terminal name (POSIX ttyname(3))
+	// Returns name str (empty on failure or if fd is not a tty)
+	ttynameFn := "ttyname"
+	if runtime.GOOS == "windows" {
+		ttynameFn = "nolang.win_ttyname"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "ttyname",
+		Params:       []parser.Type{parser.TypeFd},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Get terminal name for a file descriptor. Returns empty string if not a tty",
+		ForwardFunc:  ttynameFn,
+	})
 }

@@ -1,0 +1,105 @@
+; test-fe-mul-simple — 驗證 fe-mul 基本正確性
+; # std/crypto/x25519
+
+main = () {
+
+    ; 測試 1: 2 * 3 = 6
+    f []i64 = with-len(10)
+    f[0] = 2
+    g []i64 = with-len(10)
+    g[0] = 3
+    h []i64 = with-len(10)
+    x25519.fe-mul(h, f, g)
+
+    eprint('2*3 = ')
+    i <- [0..10): {
+        eprint(h[i])
+        eprint(' ')
+    }
+
+    h[0] == 6 -> print('PASS: 2*3=6')
+    h[0] != 6 -> print('FAIL: 2*3')
+
+    ; 測試 2: 大數乘法 — f = [0, 1, 0, ...] (值 = 2^26), g = [0, 1, 0, ...] (值 = 2^26)
+    ; h = 2^52 = [0, 0, 2, 0, ...] (shift 51, limb 2 = 2*2^0 = 2? No...)
+    ; 2^26 * 2^26 = 2^52. shift 52 is in limb 2 (bits 51-76). 2^52 = 2 * 2^51. So h[2] = 2.
+    f2 []i64 = with-len(10)
+    f2[1] = 1
+    g2 []i64 = with-len(10)
+    g2[1] = 1
+    h2 []i64 = with-len(10)
+    x25519.fe-mul(h2, f2, g2)
+
+    eprint('2^26 * 2^26 = ')
+    i <- [0..10): {
+        eprint(h2[i])
+        eprint(' ')
+    }
+
+    h2[2] == 2 -> print('PASS: 2^26*2^26=2^52')
+    h2[2] != 2 -> print('FAIL: 2^26*2^26')
+
+    ; 測試 3: (p-1) * 1 = p-1 = 2^255 - 20
+    ; p-1 in limbs: 2^255 - 1 (all limbs maxed) minus 19
+    ;   limb 0 (26 bits): 2^26 - 1 = 67108863; 67108863 - 19 = 67108844
+    ;   limb 1 (25 bits): 2^25 - 1 = 33554431
+    ;   ... etc
+    ; NOTE: p = 2^255 - 19, so p-1 = 2^255 - 20, NOT 2^255 - 19
+    ; NOTE: fe-mul 不保證規約到 [0, 2^bits-1]，可能產生半規約形式（如 -1 = p-1）
+    ;       必須用 fe-tobytes 轉成 canonical bytes 後比較
+    pm1 []i64 = with-len(10)
+    pm1[0] = 67108844
+    pm1[1] = 33554431
+    pm1[2] = 67108863
+    pm1[3] = 33554431
+    pm1[4] = 67108863
+    pm1[5] = 33554431
+    pm1[6] = 67108863
+    pm1[7] = 33554431
+    pm1[8] = 67108863
+    pm1[9] = 33554431
+
+    one []i64 = with-len(10)
+    one[0] = 1
+
+    h3 []i64 = with-len(10)
+    x25519.fe-mul(h3, pm1, one)
+
+    ; 將結果轉為 canonical bytes 比較
+    h3-bytes [32]byte
+    x25519.fe-tobytes(h3-bytes, h3)
+    pm1-bytes [32]byte
+    x25519.fe-tobytes(pm1-bytes, pm1)
+
+    ok3 = true
+    i <- [0..32): {
+        h3-bytes[i] != pm1-bytes[i] -> ok3 = false
+    }
+    ok3 == true -> print('PASS: (p-1)*1=p-1')
+    ok3 == false -> {
+        print('FAIL: (p-1)*1')
+        eprint('h3 bytes: ')
+        i <- [0..32): {
+            eprint(h3-bytes[i] & 255)
+            eprint(' ')
+        }
+        eprint('pm1 bytes: ')
+        i <- [0..32): {
+            eprint(pm1-bytes[i] & 255)
+            eprint(' ')
+        }
+    }
+
+    ; 測試 4: (p-1) * (p-1) = 1 (mod p), by Fermat's little theorem
+    h4 []i64 = with-len(10)
+    x25519.fe-mul(h4, pm1, pm1)
+
+    eprint('(p-1)*(p-1) = ')
+    i <- [0..10): {
+        eprint(h4[i])
+        eprint(' ')
+    }
+
+    h4[0] == 1 -> print('PASS: (p-1)^2=1 mod p')
+    h4[0] != 1 -> print('FAIL: (p-1)^2')
+}

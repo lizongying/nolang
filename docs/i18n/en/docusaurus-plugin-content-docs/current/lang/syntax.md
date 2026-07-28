@@ -302,6 +302,58 @@ foo-bar = 42
 hello-world = 'Hello World'
 ```
 
+### Avoid Global Variables in Modules
+
+**Strong recommendation: Unless necessary, do NOT use global variables in modules (`.no` files).** Global variables introduce the following issues:
+
+- **Compiler bug risk**: The Nolang compiler has known limitations with cross-function memory address handling for global struct variables — different functions may see different addresses, leading to inconsistent state.
+- **Concurrency safety**: Global mutable state is hard to track under fork or async scenarios, prone to race conditions.
+- **Testability**: Global state creates implicit dependencies in functions, making isolated testing difficult.
+- **Code readability**: Global variables obscure data flow — readers must trace the entire module to understand function behavior.
+
+**Recommended practices:**
+
+1. **Prefer local variables**: Keep state in local variables within functions; pass data via parameters and return values.
+2. **Use structs to encapsulate state**: Organize related state into structs and operate via methods (method receivers are local variables with consistent addresses).
+3. **Use global variables only when necessary**: e.g., module-level constants (immutable), singleton resources (such as a global log buffer).
+4. **Global variables MUST be uppercase**: This is a mandatory rule (see above). Lowercase top-level variables are treated as locals by the compiler.
+
+```no
+// ❌ Avoid: using global mutable variables in modules
+// g-conn = tls-conn {}
+// g-buf = ' '
+//
+// fn-a = () {
+//     g-conn.send(g-buf)   ; global variable address may differ across functions
+// }
+
+// ✅ Recommended: use local variables, pass state via params/return values
+fn-a = () {
+    conn = tls-conn {}    ; local variable, consistent address
+    buf = ' '
+    conn.send(buf)
+}
+
+// ✅ Recommended: encapsulate the full flow in a single function to avoid cross-function state passing
+serve-once = (listen-fd fd, body str) (ok bool) {
+    ok = false
+    client-fd = net.net-accept(listen-fd)
+    conn = tls-server-init(client-fd)   ; local variable
+    conn: {
+        ok -> {
+            c = it
+            c.handshake()
+            c.send(body)
+            c.close()
+            ok = true
+        }
+        -> fs.close(client-fd)
+    }
+}
+```
+
+> **Real-world example**: The `tls-https-serve-once` function in `std/net/tls.no` encapsulates the entire HTTPS request-response cycle (accept + handshake + recv + send + close) in a single function, keeping all TLS state in local variables — successfully avoiding the compiler bug where global variables have inconsistent addresses across functions.
+
 ## API Documentation Conventions
 
 A function's documentation comment should include the complete parameter names and types, and the return parameter names and types.
@@ -1418,6 +1470,57 @@ The `range` annotation is especially suited to the `num` type (`num = int | floa
 #{range=[i8.MIN..i8.MAX]}
 val i8 = 100
 ```
+
+#### File Embedding (`#{embed=...}`)
+
+The `#{embed=...}` annotation embeds external file contents as a `[]byte` read-only constant at compile time, similar to Go's `//go:embed`. The embedded data is compiled directly into the executable, enabling single-binary distribution without runtime file I/O.
+
+**Syntax**:
+
+```no
+#{embed='path/to/file'}
+ICON []byte
+
+; or using a bare path (without quotes)
+#{embed=assets/icon.ico}
+ICON []byte
+```
+
+The `embed` annotation attaches to the `[]byte` variable declaration that immediately follows. The declaration **must not** have an explicit initial value — the value is provided by the embedded file contents.
+
+**Path Resolution**:
+
+- Relative paths are resolved relative to the package root (the directory containing `mod.jsonc`)
+- Absolute paths are supported
+- Paths may contain `/`, `.`, and `-` characters
+
+**Example**:
+
+```no
+; Embed a Windows icon
+#{embed='assets/win-icon.ico'}
+WIN-ICON []byte
+
+; Embed an SSL certificate
+#{embed='certs/server.pem'}
+SERVER-CERT []byte
+
+; Embed a configuration file
+#{embed=config/default.json}
+CONFIG []byte
+
+; Use embedded data
+print('icon size: ', len(WIN-ICON))
+print('first byte: ', WIN-ICON[0])
+```
+
+**Notes**:
+
+1. Embedded data is **read-only** constant, pointing to read-only memory. Writing to embedded data is undefined behavior (same semantics as Go's `//go:embed`)
+2. Embedded variables are excluded from heap cleanup — the embedded data pointer is not freed on program exit
+3. Only `[]byte` type declarations are supported (`[N]byte` fixed arrays also work)
+4. The file must exist at compile time, otherwise an error is reported
+5. Cannot be combined with an explicit initial value (e.g., `ICON []byte = [1, 2, 3]` will error)
 
 #### Platform Annotations
 

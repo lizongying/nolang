@@ -53,6 +53,53 @@
 ; link = (oldpath str, newpath str) (ok bool) {  // LLVM: call i32 @link → icmp eq 0 → zext
 ; }
 
+; build-in (ForwardFunc: realpath)
+; realpath: 解析絕對路徑
+; p: 輸入路徑（可能是相對路徑或含 . / .. 的路徑）
+; 成功返回規範化的絕對路徑字串，失敗返回空串
+; realpath = (p str) (abs str) {  // LLVM: call i8* @realpath(p, NULL) → emitStrLongFromCStr
+; }
+
+; build-in (ForwardFunc: readlink)
+; readlink: 讀取符號連結的目標路徑
+; p: 符號連結路徑
+; 成功返回目標路徑字串與 ok=true，失敗返回空串與 ok=false
+; readlink = (p str) (target str, ok bool) {  // LLVM: call i64 @readlink(p, buf, n) → emitStrLongFromCStr
+; }
+
+; build-in (ForwardFunc: mkstemp)
+; mkstemp: 建立並開啟唯一臨時檔案
+; tmpl: 模板字串，末尾必須為 'XXXXXX'（六個 X）
+; 成功返回實際檔名與檔案描述符，失敗返回空串與 fd=-1
+; 注意：返回順序為 (name, fd) 而非 (fd, name)，因為 lastBuiltinExtra 機制要求
+;       第二返回值必須是 i64/bool 型別，str 必須為主返回值
+; mkstemp = (tmpl str) (name str, fd fd) {  // LLVM: call i32 @mkstemp(buf) → emitStrLongFromCStr
+; }
+
+; build-in (ForwardFunc: mkdtemp)
+; mkdtemp: 建立唯一臨時目錄
+; tmpl: 模板字串，末尾必須為 'XXXXXX'
+; 成功返回實際目錄名與 ok=true，失敗返回空串與 ok=false
+; mkdtemp = (tmpl str) (name str, ok bool) {  // LLVM: call i8* @mkdtemp(buf) → emitStrLongFromCStr
+; }
+
+; build-in (CLibCall: mkfifo)
+; mkfifo: 建立命名管道（FIFO）
+; p: 管道路徑
+; mode: 權限模式（如 0o644 = 420）
+; 成功返回 true，失敗返回 false
+; mkfifo = (p str, mode i64) (ok bool) {  // LLVM: call i32 @mkfifo → icmp eq 0 → zext
+; }
+
+; build-in (ForwardFunc: utime)
+; utime: 設定檔案的存取與修改時間
+; p: 檔案路徑
+; atime: 存取時間（Unix 秒）
+; mtime: 修改時間（Unix 秒）
+; 成功返回 true，失敗返回 false
+; utime = (p str, atime i64, mtime i64) (ok bool) {  // LLVM: alloca [16 x i8] times → call i32 @utimes
+; }
+
 ; build-in (ForwardFunc: stat-file)
 ; is-file: 判斷路徑是否為普通檔案
 ; is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext
