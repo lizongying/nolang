@@ -53,6 +53,12 @@
 ; process-system: 執行 shell 命令
 ; process-system = (cmd str) (status i64) { }
 
+; build-in (ForwardFunc: process-exec-shell)
+; process-exec-shell: 用 sh -c 執行命令字串（替換當前進程）
+; cmd: 完整命令字串
+; 僅在失敗時返回 errno
+; process-exec-shell = (cmd str) (err i64) { }
+
 ; ═══════════════════════════════════════════════
 ; 信號常量
 ; ═══════════════════════════════════════════════
@@ -453,4 +459,33 @@ process.find-by-name = (name str) (pids []i64) {
             pids.push(p.pid)
         }
     }
+}
+
+; ═══════════════════════════════════════════════
+; spawn / wait（notools 擴展：watch/time/xargs/nohup/timeout 使用）
+; ═══════════════════════════════════════════════
+
+; spawn: 創建子進程執行命令字串
+; cmd: 完整命令字串（將透過 sh -c 執行）
+; 返回 pid > 0=父進程(子PID), -1=錯誤
+process-spawn = (cmd str) (pid i64) {
+    ; fork
+    pid = process-fork()
+    pid == 0 -> {
+        ; 子進程：用 sh -c 執行
+        process-exec-shell(cmd)
+        ; exec 失敗，退出
+        os.exit(127)
+    }
+    pid < 0 -> {
+        ; fork 失敗
+        pid = -1
+    }
+}
+
+; wait: 等待指定子進程結束
+; pid: 子進程 ID
+; 返回 status=退出狀態碼（WEXITSTATUS）
+process-wait = (pid i64) (status i64) {
+    status = process-waitpid(pid, 0)
 }

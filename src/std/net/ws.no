@@ -82,7 +82,7 @@ WS-OP-PING = 9
 WS-OP-PONG = 10
 
 ; 全域偽隨機計數器（用於產生 mask key 與 Sec-WebSocket-Key）
-WS-RAND-COUNTER = 0
+ws-rand-counter = 0
 
 ; ═══════════════════════════════════════════════
 ; 結構體
@@ -190,8 +190,8 @@ ws-compute-accept = (key str) (accept str) {
 ; ws-next-rand: 產生下一個偽隨機 i64
 ; 以全域計數器與簡單 LCG 組合
 ws-next-rand = () (r i64) {
-    WS-RAND-COUNTER = WS-RAND-COUNTER + 1
-    c = WS-RAND-COUNTER
+    ws-rand-counter = ws-rand-counter + 1
+    c = ws-rand-counter
 
     ; LCG: r = (c * 1103515245 + 12345) & 0x7fffffff
     r = (c * 1103515245 + 12345) & 2147483647

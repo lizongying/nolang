@@ -694,11 +694,11 @@ dir-entries = (dirpath str) (entries []str) {
 ;   }
 
 walk = (root str) (paths []str) {
-    paths = _walk-collect(root, paths)
+    paths = walk-collect(root, paths)
 }
 
-; _walk-collect: walk 的內部遞迴實作
-_walk-collect = (dirpath str, paths []str) (out []str) {
+; walk-collect: walk 的內部遞迴實作
+walk-collect = (dirpath str, paths []str) (out []str) {
     out = paths
     names []str
     names = dir-entries(dirpath)
@@ -706,7 +706,7 @@ _walk-collect = (dirpath str, paths []str) (out []str) {
     n = names.len
     n == 0 -> return
 
-    SEP = 47
+    sep = 47
 
     i <- [0..n): {
         name = names[i]
@@ -714,14 +714,14 @@ _walk-collect = (dirpath str, paths []str) (out []str) {
         fullpath str
         dirpath.len > 0 -> {
             last = dirpath[dirpath.len - 1]
-            last == SEP -> fullpath = dirpath - name
-            last != SEP -> fullpath = dirpath - '/' - name
+            last == sep -> fullpath = dirpath - name
+            last != sep -> fullpath = dirpath - '/' - name
         }
         dirpath.len == 0 -> fullpath = name
 
         is-d = is-dir(fullpath)
 
-        is-d -> out = _walk-collect(fullpath, out)
+        is-d -> out = walk-collect(fullpath, out)
         is-d == false -> out.push(fullpath)
     }
 }

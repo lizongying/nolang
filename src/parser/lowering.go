@@ -9,6 +9,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -224,14 +225,18 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				enumVariants = vs
 			}
 		}
+		fmt.Fprintf(os.Stderr, "DBG desugar match matched=%s varType=%q isEnum=%v\n", ident.Value, matchedVarType, isEnumType)
 	}
 
 	// Determine element type from option type for per-arm `it` type inference.
-	// For ?i64, elemType = "i64"
+	// For ?i64, elemType = "i64"; for result unions (i64 | err), extract the payload type.
 	elemType := ""
 	if matchedVarType != "" {
 		if strings.HasPrefix(matchedVarType, "?") {
 			elemType = strings.TrimPrefix(matchedVarType, "?")
+		} else if strings.Contains(matchedVarType, "|") {
+			// 聯合型別（如 i64 | err）：提取 payload 型別（i64）
+			elemType = unionElemType(matchedVarType)
 		} else if isEnumType {
 			// For enum match, set elemType to trigger per-arm it binding path
 			elemType = matchedVarType
@@ -741,6 +746,31 @@ func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStateme
 	}
 }
 
+// unionElemType 從聯合型別字串中提取 payload（非 err/nil）型別。
+// "?i64" → "i64"；"i64 | err" → "i64"；"i64 | err | nil" → "i64"。
+// 若無法唯一確定（如多個非變體型別）則回傳空字串。
+func unionElemType(t string) string {
+	if t == "" {
+		return ""
+	}
+	if strings.HasPrefix(t, "?") {
+		return strings.TrimPrefix(t, "?")
+	}
+	parts := strings.Split(t, "|")
+	var elem []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "err" || p == "nil" {
+			continue
+		}
+		elem = append(elem, p)
+	}
+	if len(elem) == 1 {
+		return elem[0]
+	}
+	return ""
+}
+
 // buildItBindingForArm creates `it = matched` LetStatement with the correct type
 // for the specific match arm. For option types (e.g., ?i64):
 //
@@ -777,6 +807,34 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 			typeStr = elemType + " | nil"
 		case "ok_err_nil":
 			typeStr = elemType + " | err | nil"
+		default:
+			return nil
+		}
+	} else if !isEnumType && elemType != "" && (strings.Contains(t, "err") || strings.Contains(t, "nil")) {
+		// 結果聯合型別（如 i64 | err / i64 | err | nil）：按 armType 收窄 it。
+		// 與 ?X 選項型別類似，但變體為 err/nil（而非 ok/err/nil）。
+		var remaining []string
+		for _, v := range []string{"err", "nil"} {
+			if strings.Contains(t, v) {
+				remaining = append(remaining, v)
+			}
+		}
+		remStr := strings.Join(remaining, " | ")
+		switch armType {
+		case "err":
+			typeStr = "err"
+		case "nil":
+			typeStr = "nil"
+		case "ok":
+			typeStr = elemType
+		case "else":
+			typeStr = remStr
+		case "ok_err":
+			typeStr = elemType + " | err"
+		case "ok_nil":
+			typeStr = elemType + " | nil"
+		case "ok_err_nil":
+			typeStr = elemType + " | " + remStr
 		default:
 			return nil
 		}

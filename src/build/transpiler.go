@@ -248,6 +248,18 @@ var validationStructFields map[string]map[string]string
 // are also registered but treated as transparent (no newtype enforcement).
 var validationConcreteTypeAliases map[string]string
 
+// isValidationIntType 判斷型別是否為整數家族（i8/i16/i32/i64/u8/u16/u32/u64）。
+// 整數方法（to-str/to-i64 等）在 builtin/stdlib 中以 int.* 統一註冊，
+// transpiler 也會將 i64.to-str() 重寫為 int.to-str()；校驗器這裡同步歸一化
+// 才能正確推斷回傳型別（例如 dns.no 的 a.to-str()）。
+func isValidationIntType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
+		return true
+	}
+	return false
+}
+
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
@@ -340,6 +352,25 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				return ""
 			}
 			if typeName != "" {
+				// 整數家族方法（to-str/to-i64 等）在 builtin/stdlib 以 int.* 統一註冊，
+				// transpiler 也會將 i64.to-str() 重寫為 int.to-str()。校驗器同步歸一化，
+				// 才能正確推斷回傳型別（例如 dns.no 的 a.to-str()）。
+				if isValidationIntType(typeName) {
+					switch dot.Property {
+					case "to-str":
+						return "str"
+					case "to-i64":
+						return "i64"
+					case "to-u64":
+						return "u64"
+					case "to-bool":
+						return "bool"
+					case "to-f64":
+						return "f64"
+					case "to-f32":
+						return "f32"
+					}
+				}
 				methodName := typeName + "." + dot.Property
 				if retType, exists := funcTypes[methodName]; exists {
 					return retType
@@ -353,6 +384,20 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
 				// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
 				return ""
+			}
+			// typeName 為空：可能是模組限定的內建呼叫（如 number.char-to-str(13)）。
+			// 此時接收者是模組名（非本作用域變數），對應裸內建回傳 str。
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if _, isVar := varTypes[recv.Value]; !isVar {
+					switch recv.Value + "." + dot.Property {
+					case "number.char-to-str":
+						return "str"
+					}
+					switch dot.Property {
+					case "char-to-str", "i64-to-str", "f64-to-str", "bool-to-str", "byte-to-str":
+						return "str"
+					}
+				}
 			}
 		}
 		// 接收者型別未知（如跨模組函數返回的變數、struct field 存取結果等），
@@ -6732,6 +6777,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// Still record its declared type so later synthetic references can resolve it
 			if s.Type != nil && s.Type.String() != "" {
 				varTypes[s.Name.Value] = s.Type.String()
+				if s.Name.Value == "it" {
+					fmt.Fprintf(os.Stderr, "DBG record it: type=%q line=%d varTypes[it]=%q\n", s.Type.String(), s.Token.Line, varTypes["it"])
+				}
 			}
 			break
 		}
@@ -6950,8 +6998,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				}
 				// 型別不匹配檢查
 				if !isNilAssign {
-					if existingType, exists := varTypes[ident.Value]; exists {
-						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+			if existingType, exists := varTypes[ident.Value]; exists {
+				valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+				if ident.Value == "n" {
+					if idv, ok := assign.Value.(*parser.Identifier); ok && idv.Value == "it" {
+						fmt.Fprintf(os.Stderr, "DBG check n=it: nType=%q itType=%q valType=%q line=%d\n", existingType, varTypes["it"], valType, ident.Token.Line)
+					}
+				}
 						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
 						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
 						isOptionCtor := false

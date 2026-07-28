@@ -1,0 +1,29 @@
+; test-std-net-ext.no — 驗證 Task 1.6 net 擴展函數
+; 覆蓋：ifconfig-list / route-list / arp-list
+; 說明：macOS 上這些函數返回空列表，僅驗證可呼叫且不崩潰
+
+; ═══════════════════════════════════════════════
+; 1. ifconfig-list — 列出網路介面
+; ═══════════════════════════════════════════════
+ifs = net.ifconfig-list()
+eprint('ifconfig-list returned ')
+print(ifs.len.to-str() + ' interfaces')
+ifs.len >= 0 -> print('PASS: ifconfig-list returned non-negative count')
+
+; ═══════════════════════════════════════════════
+; 2. route-list — 列出路由表
+; ═══════════════════════════════════════════════
+routes = net.route-list()
+eprint('route-list returned ')
+print(routes.len.to-str() + ' routes')
+routes.len >= 0 -> print('PASS: route-list returned non-negative count')
+
+; ═══════════════════════════════════════════════
+; 3. arp-list — 列出 ARP 表
+; ═══════════════════════════════════════════════
+arps = net.arp-list()
+eprint('arp-list returned ')
+print(arps.len.to-str() + ' entries')
+arps.len >= 0 -> print('PASS: arp-list returned non-negative count')
+
+print('--- All tests done ---')

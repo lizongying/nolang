@@ -3,6 +3,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,9 @@ import (
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
+	if receiver != nil {
+		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: receiver=%T tls-c=%q\n", receiver, p.sem.VarTypes["tls-c"])
+	}
 	if ident, ok := receiver.(*Identifier); ok {
 		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			return strings.TrimPrefix(t, "?")
@@ -35,6 +39,15 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 					if fieldType, ok := fields[dot.Property]; ok {
 						return strings.TrimPrefix(fieldType, "?")
 					}
+				}
+			} else {
+				// 自由函數中沒有 self：`.field` 視為對同名區域變數的存取
+				// （例如 sse-connect 中的 `tls-c tls-conn` 區域變數，`.tls-c.recv`
+				// 應解析為 tls-conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
+				// 方法呼叫的回傳型別，避免 match 的 it 綁定型別缺失而誤報。
+				if t, ok := p.sem.VarTypes[dot.Property]; ok {
+					fmt.Fprintf(os.Stderr, "DBG resolveRecv fallback: self.%s -> %q\n", dot.Property, t)
+					return strings.TrimPrefix(t, "?")
 				}
 			}
 		}

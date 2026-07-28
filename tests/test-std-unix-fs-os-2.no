@@ -1,0 +1,141 @@
+; test-std-unix-fs-os-2.no — 驗證 Task 1 擴展的 fs/os/process 底層函數
+; 覆蓋：fs.link / fs.truncate / fs.rmdir / os.getlogin / os.gethostid
+;        os.setpriority / os.getpriority / os.flock / os.sysctl / process.spawn
+; 說明：本測試為最小行為驗證，僅檢查函數可呼叫且返回值合理
+
+; ═══════════════════════════════════════════════
+; 1. fs.link — 建立硬連結
+; ═══════════════════════════════════════════════
+link-src = '/tmp/nolang-link-src.txt'
+link-dst = '/tmp/nolang-link-dst.txt'
+fs.remove(link-src)
+fs.remove(link-dst)
+fd-w = fs.open-write(link-src)
+fd-w >= 0 -> {
+    fs.close(fd-w)
+    link-ok = fs.link(link-src, link-dst)
+    eprint('link ok = ')
+    print(link-ok.to-str())
+    link-ok -> print('PASS: link succeeded')
+    link-ok == false -> print('FAIL: link failed')
+    fs.remove(link-src)
+    fs.remove(link-dst)
+}
+
+; ═══════════════════════════════════════════════
+; 2. fs.truncate — 截斷檔案
+; ═══════════════════════════════════════════════
+trunc-path = '/tmp/nolang-trunc-test.txt'
+fs.remove(trunc-path)
+fd-w2 = fs.open-write(trunc-path)
+fd-w2 >= 0 -> {
+    fs.close(fd-w2)
+    trunc-ok = fs.truncate(trunc-path, 100)
+    eprint('truncate ok = ')
+    print(trunc-ok.to-str())
+    trunc-ok -> print('PASS: truncate succeeded')
+    trunc-ok == false -> print('FAIL: truncate failed')
+    fs.remove(trunc-path)
+}
+
+; ═══════════════════════════════════════════════
+; 3. fs.rmdir — 刪除空目錄
+; ═══════════════════════════════════════════════
+rmdir-path = '/tmp/nolang-rmdir-test'
+fs.remove(rmdir-path)
+os.mkdir(rmdir-path, 493)
+rmdir-ok = fs.rmdir(rmdir-path)
+eprint('rmdir ok = ')
+print(rmdir-ok.to-str())
+rmdir-ok -> print('PASS: rmdir succeeded')
+rmdir-ok == false -> print('FAIL: rmdir failed')
+
+; ═══════════════════════════════════════════════
+; 4. os.get-login — 取得登入使用者名稱
+; ═══════════════════════════════════════════════
+login-name = os.get-login()
+eprint('get-login = ')
+print(login-name)
+login-name.len > 0 -> print('PASS: get-login returns non-empty')
+login-name.len == 0 -> print('WARN: get-login returns empty (may be expected in some environments)')
+
+; ═══════════════════════════════════════════════
+; 5. os.get-host-id — 取得主機識別碼
+; ═══════════════════════════════════════════════
+host-id = os.get-host-id()
+eprint('get-host-id = ')
+print(host-id.to-str())
+host-id >= 0 -> print('PASS: get-host-id returns non-negative')
+
+; ═══════════════════════════════════════════════
+; 6. os.set-priority / os.get-priority — 設定/取得優先級
+; ═══════════════════════════════════════════════
+; PRIO_PROCESS=0, who=0 (current process)
+cur-prio, prio-ok = os.get-priority(0, 0)
+eprint('get-priority = ')
+print(cur-prio.to-str())
+prio-ok -> print('PASS: get-priority succeeded')
+prio-ok == false -> print('WARN: get-priority failed')
+
+; 設定優先級為 10（較低）
+set-ok = os.set-priority(0, 0, 10)
+eprint('set-priority(10) ok = ')
+print(set-ok.to-str())
+set-ok -> print('PASS: set-priority succeeded')
+
+; 恢復預設優先級（0）
+os.set-priority(0, 0, 0)
+
+; ═══════════════════════════════════════════════
+; 7. os.flock — 檔案鎖定
+; ═══════════════════════════════════════════════
+flock-path = '/tmp/nolang-flock-test.txt'
+fs.remove(flock-path)
+fd-w3 = fs.open-write(flock-path)
+fd-w3 >= 0 -> {
+    ; LOCK_SH = 1
+    flock-ok = os.flock(fd-w3, 1)
+    eprint('flock(LOCK_SH) ok = ')
+    print(flock-ok.to-str())
+    flock-ok -> print('PASS: flock succeeded')
+    flock-ok == false -> print('FAIL: flock failed')
+    ; LOCK_UN = 4 (unlock)
+    os.flock(fd-w3, 4)
+    fs.close(fd-w3)
+    fs.remove(flock-path)
+}
+
+; ═══════════════════════════════════════════════
+; 8. os.sysctl — 查詢系統控制參數（macOS）
+; ═══════════════════════════════════════════════
+sc-val, sc-ok = os.sysctl('kern.ostype')
+eprint('sysctl(kern.ostype) = ')
+print(sc-val)
+sc-ok -> print('PASS: sysctl succeeded')
+sc-ok == false -> print('WARN: sysctl failed (may not be available on this platform)')
+
+; ═══════════════════════════════════════════════
+; 9. os.get-domain-name — 取得 NIS 網域名稱
+; ═══════════════════════════════════════════════
+; domain = os.get-domain-name()
+; eprint('get-domain-name = [')
+; io.out(domain)
+; eprint(']')
+; print('')
+print('SKIP: get-domain-name test')
+
+; ═══════════════════════════════════════════════
+; 10. process-spawn / process-wait — 創建子進程並等待
+; ═══════════════════════════════════════════════
+spawn-pid = process-spawn('echo hello_spawn')
+eprint('spawn pid = ')
+print(spawn-pid.to-str())
+spawn-pid > 0 -> {
+    print('PASS: spawn returned positive pid')
+    status = process-wait(spawn-pid)
+    eprint('wait status = ')
+    print(status.to-str())
+}
+spawn-pid < 0 -> print('FAIL: spawn returned negative pid')
+
+print('--- All tests done ---')

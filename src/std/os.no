@@ -220,6 +220,77 @@ utsname {
 ; build-in (ForwardFunc: stat-mtime)
 ; stat-mtime: 取得檔案修改時間（Unix 秒）
 ; stat-mtime = (path str) (mtime i64, ok bool) { }
+
+; ═══════════════════════════════════════════════
+; 使用者與系統資訊擴充
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: getlogin)
+; get-login: 取得當前登入使用者名稱
+; 成功返回使用者名稱字串，失敗返回空串
+; get-login = () (name str) {  // LLVM: call i8* @getlogin → emitStrLongFromCStr
+; }
+
+; build-in (CLibCall: gethostid)
+; get-host-id: 取得主機識別碼（32 位元整數）
+; 返回主機 ID（非負整數；錯誤時平台行為不同）
+; get-host-id = () (id i64) {  // LLVM: call i32 @gethostid → zext
+; }
+
+; build-in (CLibCall: setpriority)
+; set-priority: 設定行程優先級
+; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+; who: 目標 ID（0 表示當前行程/群組/使用者）
+; prio: 優先級值（-20 最高 ~ 19 最低）
+; 成功返回 true，失敗返回 false
+; set-priority = (which i64, who i64, prio i64) (ok bool) {  // LLVM: call i32 @setpriority → icmp eq 0 → zext
+; }
+
+; build-in (CLibCall: getpriority)
+; get-priority: 取得行程優先級
+; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+; who: 目標 ID（0 表示當前行程/群組/使用者）
+; 成功返回優先級值（-20 ~ 19）與 ok=true，失敗返回 0 與 ok=false
+; 注意：libc 約定返回 -1 並設定 errno 表示錯誤，但因優先級也可能為 -1，
+;       需以 errno==0 區分。這裡以 ok bool 明確表達。
+; get-priority = (which i64, who i64) (prio i64, ok bool) {  // LLVM: call i32 @getpriority → check errno
+; }
+
+; build-in (ForwardFunc: setsid)
+; set-sid: 建立新對話並脫離控制終端
+; 成功返回新的行程群組 ID（>0），失敗返回 -1
+; set-sid = () (pid i64) {  // LLVM: call i32 @setsid → sext
+; }
+
+; build-in (CLibCall: flock)
+; flock: 對檔案描述符施加或釋放建議性鎖
+; fd: 檔案描述符
+; op: 鎖操作（1=LOCK_SH 共享, 2=LOCK_EX 獨佔, 4=LOCK_UN 解鎖, 8=LOCK_NB 非阻塞）
+; 成功返回 true，失敗返回 false
+; flock = (fd fd, op i64) (ok bool) {  // LLVM: call i32 @flock → icmp eq 0 → zext
+; }
+
+; build-in (ForwardFunc: sysctl)
+; sysctl: 查詢系統控制參數（讀取字串值）
+; name: 參數名稱（如 'kern.ostype'、'hw.model'）
+; 成功返回值字串與 ok=true，失敗返回空串與 ok=false
+; 注意：Linux 上 /proc/sys 對應；macOS/BSD 走 sysctl(2) syscall
+; sysctl = (name str) (val str, ok bool) {  // LLVM: platform-specific impl
+; }
+
+; build-in (ForwardFunc: getdomainname)
+; get-domain-name: 取得 NIS 網域名稱
+; 成功返回網域字串，失敗返回空串
+; get-domain-name = () (name str) {  // LLVM: call i32 @getdomainname(buf, 256) → emitStrLongFromCStr
+; }
+
+; build-in (ForwardFunc: syslog)
+; syslog: 寫入一筆系統日誌
+; priority: 日誌優先級（0=EMERG ~ 7=DEBUG，常見 6=INFO）
+; msg: 日誌訊息內容
+; syslog = (priority i64, msg str) {  // LLVM: call void @syslog(prio, "%s", msg)
+; }
+
 ; ═══════════════════════════════════════════════
 ; 時間
 ; ═══════════════════════════════════════════════

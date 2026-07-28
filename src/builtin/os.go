@@ -666,6 +666,73 @@ func init() {
 		ForwardFunc:  "utime",
 	})
 
+	// rmdir: remove empty directory (POSIX rmdir(2))
+	// Returns ok bool.
+	rmdirFn := "rmdir"
+	if runtime.GOOS == "windows" {
+		rmdirFn = "_rmdir"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "rmdir",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Remove an empty directory. Returns true on success",
+		CLibCall:     &CLibCall{FuncName: rmdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+	})
+
+	// mknod: create special file (POSIX mknod(2))
+	// Returns ok bool. Not supported on Windows.
+	mknodFn := "mknod"
+	if runtime.GOOS == "windows" {
+		mknodFn = "nolang.win_mknod"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "mknod",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Create a special file (FIFO, device node). Returns true on success",
+		CLibCall:     &CLibCall{FuncName: mknodFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI64}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+	})
+
+	// truncate: truncate/extend file to specified length (POSIX truncate(2))
+	// Returns ok bool.
+	truncateFn := "truncate"
+	if runtime.GOOS == "windows" {
+		truncateFn = "nolang.win_truncate"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "truncate",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Truncate or extend a file to the given length. Returns true on success",
+		CLibCall:     &CLibCall{FuncName: truncateFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI64}, RetType: LLVMI32, CmpRet: true},
+	})
+
+	// sync: flush filesystem buffers to disk (POSIX sync(2))
+	// No return value.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sync",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{},
+		Doc:          "Flush filesystem buffers to disk",
+		ForwardFunc:  "sync",
+	})
+
+	// lstat: get link itself info without following (POSIX lstat(2))
+	// Returns ok bool. Distinguishes from stat by not following symlinks.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "lstat",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Get info about the symlink itself (does not follow). Returns true on success",
+		ForwardFunc:  "lstat",
+	})
+
 	// geteuid: get effective user ID (POSIX geteuid(2))
 	geteuidFn := "geteuid"
 	if runtime.GOOS == "windows" {
@@ -765,5 +832,124 @@ func init() {
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Get terminal name for a file descriptor. Returns empty string if not a tty",
 		ForwardFunc:  ttynameFn,
+	})
+
+	// ═══════════════════════════════════════════════
+	// 擴展 os 系統資訊能力（notools Unix 工具集支援）
+	// ═══════════════════════════════════════════════
+
+	// get-login: get login name (POSIX getlogin(3))
+	// Returns name str (empty on failure)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-login",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Get the login name of the current user. Returns empty string on failure",
+		ForwardFunc:  "getlogin",
+	})
+
+	// get-host-id: get host identifier (POSIX gethostid(3))
+	// Returns i64 id.
+	gethostidFn := "gethostid"
+	if runtime.GOOS == "windows" {
+		gethostidFn = "nolang.win_gethostid"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-host-id",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get the host identifier (32-bit integer)",
+		CLibCall:     &CLibCall{FuncName: gethostidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
+	// set-priority: set process priority (POSIX setpriority(2))
+	// Returns ok bool.
+	setpriorityFn := "setpriority"
+	if runtime.GOOS == "windows" {
+		setpriorityFn = "nolang.win_setpriority"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "set-priority",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Set process priority (which, who, prio). Returns true on success",
+		CLibCall:     &CLibCall{FuncName: setpriorityFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32, 2: LLVMI32}},
+	})
+
+	// get-priority: get process priority (POSIX getpriority(2))
+	// Returns (prio i64, ok bool). Uses errno to distinguish error from -1.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-priority",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get process priority (which, who). Returns (prio, ok)",
+		ForwardFunc:  "get-priority",
+	})
+
+	// set-sid: create new session (POSIX setsid(2))
+	// Returns pid i64 (>0 on success, -1 on failure).
+	setsidFn := "setsid"
+	if runtime.GOOS == "windows" {
+		setsidFn = "nolang.win_setsid"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "set-sid",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Create a new session and detach from controlling terminal. Returns new pgid or -1",
+		CLibCall:     &CLibCall{FuncName: setsidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+	})
+
+	// flock: apply advisory lock on fd (POSIX flock(2))
+	// Returns ok bool.
+	flockFn := "flock"
+	if runtime.GOOS == "windows" {
+		flockFn = "nolang.win_flock"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "flock",
+		Params:       []parser.Type{parser.TypeFd, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Apply or release an advisory lock on a file descriptor. Returns true on success",
+		CLibCall:     &CLibCall{FuncName: flockFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
+	})
+
+	// sysctl: query system control parameter (reads string value)
+	// Returns (val str, ok bool). Platform-specific implementation.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "sysctl",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
+		Doc:          "Query a system control parameter by name. Returns (value, ok)",
+		ForwardFunc:  "sysctl",
+	})
+
+	// get-domain-name: get NIS domain name (POSIX getdomainname(2))
+	// Returns name str (empty on failure).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "get-domain-name",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Get the NIS domain name. Returns empty string on failure",
+		ForwardFunc:  "getdomainname",
+	})
+
+	// syslog: write a system log entry (POSIX syslog(3))
+	// No return value.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "syslog",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeStr},
+		Return:       []parser.Type{},
+		Doc:          "Write a message to the system logger with the given priority",
+		ForwardFunc:  "syslog",
 	})
 }

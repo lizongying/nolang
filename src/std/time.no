@@ -163,8 +163,8 @@ date {
 ; 月份天數表（非閏年）
 _days-in-month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-; _is-leap: 判斷閏年
-_is-leap = (y i64) (leap bool) {
+; is-leap: 判斷閏年
+is-leap = (y i64) (leap bool) {
     leap = false
     y % 4 != 0 -> return
     y % 100 == 0 -> {
@@ -175,14 +175,14 @@ _is-leap = (y i64) (leap bool) {
 }
 
 ; _days-in-month: 取得指定年月的天數
-_days-in-month-fn = (y i64, m i64) (d i64) {
+days-in-month-fn = (y i64, m i64) (d i64) {
     d = 31
     m < 1 -> return
     m > 12 -> return
     d = _days-in-month[m - 1]
     m == 2 -> {
         leap bool
-        leap = _is-leap(y)
+        leap = is-leap(y)
         leap -> d = 29
     }
 }

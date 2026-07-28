@@ -867,3 +867,220 @@ ping-count = (host str, count i64) {
     }
     ic.ping-host(host, count, 1000)
 }
+
+; ═══════════════════════════════════════════════
+; 網路介面/路由/ARP 查詢（notools 擴展：ifconfig/route/arp 命令使用）
+; ═══════════════════════════════════════════════
+
+; if-info: 網路介面資訊
+; name: 介面名稱（如 eth0, lo）
+; rx-bytes: 接收位元組數
+; tx-bytes: 發送位元組數
+; rx-packets: 接收封包數
+; tx-packets: 發送封包數
+if-info {
+    name str
+    rx-bytes i64
+    tx-bytes i64
+    rx-packets i64
+    tx-packets i64
+}
+
+; route-info: 路由表項
+; destination: 目的地網路（如 00000000=預設路由）
+; mask: 子網遮罩
+; gateway: 閘道
+; flags: 旗標
+; iface: 介面名稱
+route-info {
+    destination str
+    mask str
+    gateway str
+    flags str
+    iface str
+}
+
+; arp-info: ARP 表項
+; ip: IP 地址
+; hw-type: 硬體類型
+; flags: 旗標
+; mac: MAC 地址
+; iface: 介面名稱
+arp-info {
+    ip str
+    hw-type str
+    flags str
+    mac str
+    iface str
+}
+
+; ifconfig-list: 列出所有網路介面資訊
+; 返回 if-info 列表
+; Linux: 解析 /proc/net/dev
+; macOS/Windows: 暫時返回空列表（需 getifaddrs 或 GetIfTable 系統 API）
+
+#{linux-amd64, linux-arm64}
+ifconfig-list = () (ifs []if-info) {
+    content = fs.read-file('/proc/net/dev')
+    content.len == 0 -> return
+
+    ; /proc/net/dev 格式（前兩行為標題，第三行起為資料）：
+    ;   eth0: 12345    678  ...  98765    432  ...
+    ; 冒號前為介面名，冒號後為空白分隔的 16 個統計欄位
+    lines = content.split('\n')
+    i <- [2..lines.len): {
+        line = lines[i]
+        line.len == 0 -> *
+        colon-pos = line.index(':')
+        colon-pos < 0 -> *
+        name = line.slice(0, colon-pos).trim()
+        stats-str = line.slice(colon-pos + 1, line.len).trim()
+        fields = split-ws(stats-str)
+        fields.len >= 10 -> {
+            info = if-info{}
+            info.name = name
+            v0 ?i64 = fields[0].to-i64()
+            v0: {
+                ok -> info.rx-bytes = it
+                nil -> *
+                err -> *
+            }
+            v1 ?i64 = fields[1].to-i64()
+            v1: {
+                ok -> info.rx-packets = it
+                nil -> *
+                err -> *
+            }
+            v8 ?i64 = fields[8].to-i64()
+            v8: {
+                ok -> info.tx-bytes = it
+                nil -> *
+                err -> *
+            }
+            v9 ?i64 = fields[9].to-i64()
+            v9: {
+                ok -> info.tx-packets = it
+                nil -> *
+                err -> *
+            }
+            ifs.push(info)
+        }
+    }
+}
+
+#{mac-amd64, mac-arm64}
+ifconfig-list = () (ifs []if-info) {
+    ; macOS 暫時返回空列表（需 getifaddrs(3) 系統 API）
+}
+
+#{win-amd64, win-arm64}
+ifconfig-list = () (ifs []if-info) {
+    ; Windows 暫時返回空列表（需 GetIfTable 系統 API）
+}
+
+; route-list: 列出核心路由表
+; 返回 route-info 列表
+; Linux: 解析 /proc/net/route
+; macOS/Windows: 暫時返回空列表（需 PF_ROUTE socket）
+
+#{linux-amd64, linux-arm64}
+route-list = () (routes []route-info) {
+    content = fs.read-file('/proc/net/route')
+    content.len == 0 -> return
+
+    ; /proc/net/route 格式（首行為標題）：
+    ; Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+    lines = content.split('\n')
+    i <- [1..lines.len): {
+        line = lines[i]
+        line.len == 0 -> *
+        fields = split-ws(line)
+        fields.len >= 11 -> {
+            r = route-info{}
+            r.iface = fields[0]
+            r.destination = fields[1]
+            r.gateway = fields[2]
+            r.flags = fields[3]
+            r.mask = fields[7]
+            routes.push(r)
+        }
+    }
+}
+
+#{mac-amd64, mac-arm64}
+route-list = () (routes []route-info) {
+    ; macOS 暫時返回空列表（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
+}
+
+#{win-amd64, win-arm64}
+route-list = () (routes []route-info) {
+    ; Windows 暫時返回空列表（需 GetIpForwardTable 系統 API）
+}
+
+; arp-list: 列出 ARP 表
+; 返回 arp-info 列表
+; Linux: 解析 /proc/net/arp
+; macOS/Windows: 暫時返回空列表（需 sysctl net.inet.arp 或 GetIpNetTable）
+
+#{linux-amd64, linux-arm64}
+arp-list = () (arps []arp-info) {
+    content = fs.read-file('/proc/net/arp')
+    content.len == 0 -> return
+
+    ; /proc/net/arp 格式（首行為標題）：
+    ; IP address   HW type  Flags   HW address  Mask  Device
+    lines = content.split('\n')
+    i <- [1..lines.len): {
+        line = lines[i]
+        line.len == 0 -> *
+        fields = split-ws(line)
+        fields.len >= 6 -> {
+            a = arp-info{}
+            a.ip = fields[0]
+            a.hw-type = fields[1]
+            a.flags = fields[2]
+            a.mac = fields[3]
+            a.iface = fields[5]
+            arps.push(a)
+        }
+    }
+}
+
+#{mac-amd64, mac-arm64}
+arp-list = () (arps []arp-info) {
+    ; macOS 暫時返回空列表（需 sysctl net.inet.arp 或 ARP ioctls）
+}
+
+#{win-amd64, win-arm64}
+arp-list = () (arps []arp-info) {
+    ; Windows 暫時返回空列表（需 GetIpNetTable 系統 API）
+}
+
+; split-ws: 按空白字元（空格/定位字元）分割字串，跳過連續空白
+; s str: 輸入字串
+; 返回 out []str: 非空欄位列表
+split-ws = (s str) (out []str) {
+    n = s.len
+    i = 0
+    {
+        ; 跳過前導空白
+        {
+            i < n -> {
+                c = s[i]
+                c == 32 || c == 9 -> i = i + 1
+                -> *
+            }
+        } (i < n && (s[i] == 32 || s[i] == 9))
+        i >= n -> *
+        ; 找到欄位結束
+        start = i
+        {
+            i < n -> {
+                c = s[i]
+                c == 32 || c == 9 -> *
+                i = i + 1
+            }
+        } (i < n && s[i] != 32 && s[i] != 9)
+        out.push(s.slice(start, i))
+    } (i < n)
+}

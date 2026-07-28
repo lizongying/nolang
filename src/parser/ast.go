@@ -380,6 +380,9 @@ type LetStatement struct {
 	Value         Expression
 	IsSynthetic   bool               // compiler-injected (e.g. `it = matched`), not from source
 	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
+	// ItArmType 標記 match 派生 it 綁定的 arm 類型（ok/err/nil/else 等），
+	// 供校驗器在 matched 變數型別於解析期未知（跨模組回傳型別）時收窄 it。
+	ItArmType     string
 	CommentedNode
 }
 

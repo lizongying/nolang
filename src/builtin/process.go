@@ -54,6 +54,18 @@ func init() {
 		ForwardFunc:  "process-exec",
 	})
 
+	// process-exec-shell: replace current process with sh -c cmd
+	// Calls execlp("sh", "sh", "-c", cmd, NULL)
+	// Returns only on failure (errno)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "process-exec-shell",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Replace current process with sh -c cmd. Returns only on failure",
+		ForwardFunc:  "process-exec-shell",
+	})
+
 	// process-kill: send signal to process
 	killFn := "kill"
 	if runtime.GOOS == "windows" {

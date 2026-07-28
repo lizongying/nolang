@@ -147,6 +147,24 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i64 @sysconf(i32)\n")
 		sb.WriteString("declare i8* @ttyname(i32)\n")
 		sb.WriteString("declare i64 @signal(i32, i64)\n")
+		// notools Unix 工具集擴展：fs / os 底層函數
+		sb.WriteString("declare i32 @rmdir(i8*)\n")
+		sb.WriteString("declare i32 @mknod(i8*, i32, i64)\n")
+		sb.WriteString("declare i32 @truncate(i8*, i64)\n")
+		sb.WriteString("declare void @sync()\n")
+		sb.WriteString("declare i32 @lstat(i8*, i8*)\n")
+		sb.WriteString("declare i8* @getlogin()\n")
+		sb.WriteString("declare i32 @gethostid()\n")
+		sb.WriteString("declare i32 @setpriority(i32, i32, i32)\n")
+		sb.WriteString("declare i32 @getpriority(i32, i32)\n")
+		sb.WriteString("declare i32 @setsid()\n")
+		sb.WriteString("declare i32 @flock(i32, i32)\n")
+		sb.WriteString("declare i32 @getdomainname(i8*, i32)\n")
+		sb.WriteString("declare void @syslog(i32, i8*, ...)\n")
+		// macOS/BSD sysctlbyname (Linux uses /proc/sys instead)
+		if goos == "darwin" {
+			sb.WriteString("declare i32 @sysctlbyname(i8*, i8*, i64*, i8*, i64)\n")
+		}
 	}
 	// libc @time 已移除：now 內建改用內部 @nolang.now_s（gettimeofday）
 	// libc @sleep 已移除：sleep 內建改用內部 @nolang.sleep_s（nanosleep）
@@ -666,6 +684,9 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("@.str.true = private unnamed_addr constant [5 x i8] c\"true\\00\"\n")
 	sb.WriteString("@.str.false = private unnamed_addr constant [6 x i8] c\"false\\00\"\n")
 	sb.WriteString("@.str.empty = private unnamed_addr constant [1 x i8] c\"\\00\"\n")
+	sb.WriteString("@.str.fmt = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n")
+	sb.WriteString("@.str.sh = private unnamed_addr constant [3 x i8] c\"sh\\00\"\n")
+	sb.WriteString("@.str.dashc = private unnamed_addr constant [3 x i8] c\"-c\\00\"\n")
 	sb.WriteString("@.str.r = private unnamed_addr constant [2 x i8] c\"r\\00\"\n")
 	sb.WriteString("@.str.oob = private unnamed_addr constant [36 x i8] c\"runtime error: index out of bounds\\0A\\00\"\n\n")
 

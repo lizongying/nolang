@@ -1922,6 +1922,212 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return tnLoad
 	}
 
+	// ═══════════════════════════════════════════════
+	// 擴展 os 系統資訊 ForwardFunc 實作（notools Unix 工具集支援）
+	// ═══════════════════════════════════════════════
+
+	// sync: flush filesystem buffers to disk (POSIX sync(2))
+	// void return, no args.
+	if fnName == "sync" {
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall void @sync()\n", g.indent()))
+		}
+		return ""
+	}
+
+	// lstat: get info about symlink itself (POSIX lstat(2))
+	// Returns ok bool. Like is-file but calls @lstat instead of @stat.
+	if fnName == "lstat" && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		statBuf := g.tmpReg("lstatbuf")
+		statRet := g.tmpReg("lstat.ret")
+		cmpReg := g.tmpReg("lstat.cmp")
+		zextReg := g.tmpReg("lstat.zext")
+		statL := g.statLayout()
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @lstat(i8* %s, i8* %s)\n", g.indent(), statRet, pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, cmpReg))
+		}
+		return zextReg
+	}
+
+	// getlogin: get login name (POSIX getlogin(3))
+	// Returns name str (empty on failure). Like ttyname but no args.
+	if fnName == "getlogin" {
+		glRet := g.tmpReg("gl.ret")
+		glCmp := g.tmpReg("gl.cmp")
+		glSafe := g.tmpReg("gl.safe")
+		glLen := g.tmpReg("gl.len")
+		glBufSize := g.tmpReg("gl.bufsize")
+		glBuf := g.tmpReg("gl.buf")
+		glStr := g.tmpReg("gl.str")
+		glLenGEP := g.tmpReg("gl.lengep")
+		glCapGEP := g.tmpReg("gl.capgep")
+		glDataGEP := g.tmpReg("gl.datagep")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @getlogin()\n", g.indent(), glRet))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i8* %s, null\n", g.indent(), glCmp, glRet))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* %s, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0)\n",
+				g.indent(), glSafe, glCmp, glRet))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), glLen, glSafe))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), glBufSize, glLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), glBuf, glBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), glBuf, glSafe, glBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), glStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), glLenGEP, glStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), glLen, glLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), glCapGEP, glStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), glLen, glCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), glDataGEP, glStr))
+			g.storeDataPtrField(sb, glBuf, glDataGEP)
+		}
+		return glStr
+	}
+
+	// getdomainname: get NIS domain name (POSIX getdomainname(2))
+	// Returns name str (empty on failure). Uses @.os-buf as buffer.
+	if fnName == "getdomainname" {
+		gdRet := g.tmpReg("gd.ret")
+		gdCmp := g.tmpReg("gd.cmp")
+		gdLen := g.tmpReg("gd.len")
+		gdBufSize := g.tmpReg("gd.bufsize")
+		gdBuf := g.tmpReg("gd.buf")
+		gdStr := g.tmpReg("gd.str")
+		gdLenGEP := g.tmpReg("gd.lengep")
+		gdCapGEP := g.tmpReg("gd.capgep")
+		gdDataGEP := g.tmpReg("gd.datagep")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @getdomainname(i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.os-buf, i64 0, i64 0), i32 1024)\n", g.indent(), gdRet))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), gdCmp, gdRet))
+			// strlen on @.os-buf (only valid if call succeeded)
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.os-buf, i64 0, i64 0))\n", g.indent(), gdLen))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), gdBufSize, gdLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), gdBuf, gdBufSize))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.os-buf, i64 0, i64 0), i64 %s, i1 false)\n",
+				g.indent(), gdBuf, gdBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), gdStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), gdLenGEP, gdStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), gdLen, gdLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), gdCapGEP, gdStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), gdLen, gdCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), gdDataGEP, gdStr))
+			g.storeDataPtrField(sb, gdBuf, gdDataGEP)
+		}
+		return gdStr
+	}
+
+	// get-priority: get process priority (POSIX getpriority(2))
+	// Returns (prio i64, ok bool). Uses errno to distinguish error from -1.
+	// lastBuiltinExtra carries the ok bool.
+	if fnName == "get-priority" && hasArgs {
+		a := evalArgs()
+		gpWhich := g.tmpReg("gp.which")
+		gpWho := g.tmpReg("gp.who")
+		gpRet := g.tmpReg("gp.ret")
+		gpExt := g.tmpReg("gp.ext")
+		gpErrnoPtr := g.tmpReg("gp.errno.ptr")
+		gpErrnoLoad := g.tmpReg("gp.errno.ld")
+		gpErrnoCmp := g.tmpReg("gp.errno.cmp")
+		gpOk := g.tmpReg("gp.ok")
+		// Determine platform-specific errno function
+		goos := g.targetGoos
+		if goos == "" {
+			goos = runtime.GOOS
+		}
+		errnoFn := "__errno_location"
+		if goos == "darwin" {
+			errnoFn = "__error"
+		} else if goos == "windows" {
+			errnoFn = "_errno"
+		}
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), gpWhich, a[0]))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), gpWho, a[1]))
+			// Clear errno before call
+			sb.WriteString(fmt.Sprintf("%s%s = call i32* @%s()\n", g.indent(), gpErrnoPtr, errnoFn))
+			sb.WriteString(fmt.Sprintf("%sstore i32 0, i32* %s\n", g.indent(), gpErrnoPtr))
+			// getpriority(which, who)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @getpriority(i32 %s, i32 %s)\n", g.indent(), gpRet, gpWhich, gpWho))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), gpExt, gpRet))
+			// Check errno == 0 → ok
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), gpErrnoLoad, gpErrnoPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), gpErrnoCmp, gpErrnoLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), gpOk, gpErrnoCmp))
+		}
+		g.lastBuiltinExtra = gpOk
+		return gpExt
+	}
+
+	// syslog: write a system log entry (POSIX syslog(3))
+	// void return. Args: (priority i64, msg str)
+	if fnName == "syslog" && hasArgs {
+		a := evalArgs()
+		msgPtr := g.nullTerminateStrArg(sb, a[1], expr.Arguments[1])
+		slPrio := g.tmpReg("sl.prio")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), slPrio, a[0]))
+			sb.WriteString(fmt.Sprintf("%scall void @syslog(i32 %s, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.fmt, i64 0, i64 0), i8* %s)\n",
+				g.indent(), slPrio, msgPtr))
+		}
+		return ""
+	}
+
+	// sysctl: query system control parameter by name (reads string value)
+	// Returns (val str, ok bool). macOS/BSD uses sysctl(2); Linux reads /proc/sys.
+	// This is a simplified implementation for macOS: parses 'kern.ostype' etc.
+	if fnName == "sysctl" && hasArgs {
+		a := evalArgs()
+		namePtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		// macOS/BSD: use sysctlbyname(3) which takes a C string name.
+		scRet := g.tmpReg("sc.ret")
+		scCmp := g.tmpReg("sc.cmp")
+		scLen := g.tmpReg("sc.len")
+		scBufSize := g.tmpReg("sc.bufsize")
+		scBuf := g.tmpReg("sc.buf")
+		scStr := g.tmpReg("sc.str")
+		scLenGEP := g.tmpReg("sc.lengep")
+		scCapGEP := g.tmpReg("sc.capgep")
+		scDataGEP := g.tmpReg("sc.datagep")
+		scOkZext := g.tmpReg("sc.ok")
+		if sb != nil {
+			// First call with NULL to get size
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), scLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), scLen))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @sysctlbyname(i8* %s, i8* null, i64* %s, i8* null, i64 0)\n",
+				g.indent(), scRet, namePtr, scLen))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), scCmp, scRet))
+			// Allocate buffer of size len+1
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), scBufSize, scLen))
+			scBufSize2 := g.tmpReg("sc.bufsize2")
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), scBufSize2, scBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), scBuf, scBufSize2))
+			// Second call to get value
+			scRet2 := g.tmpReg("sc.ret2")
+			scCmp2 := g.tmpReg("sc.cmp2")
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @sysctlbyname(i8* %s, i8* %s, i64* %s, i8* null, i64 0)\n",
+				g.indent(), scRet2, namePtr, scBuf, scLen))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), scCmp2, scRet2))
+			// Reload len (may have changed)
+			scLen2 := g.tmpReg("sc.len2")
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), scLen2, scLen))
+			// Build %str-long
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), scStr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), scLenGEP, scStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), scLen2, scLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), scCapGEP, scStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), scBufSize2, scCapGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), scDataGEP, scStr))
+			g.storeDataPtrField(sb, scBuf, scDataGEP)
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), scOkZext, scCmp2))
+		}
+		g.lastBuiltinExtra = scOkZext
+		return scStr
+	}
+
 	// gzip-compress / gzip-decompress / inflate-decompress 已改為純 Nolang 實現
 	// （src/std/archive/gzip.no），不再使用 zlib 內置函數。舊的 ForwardFunc LLVM
 	// 代碼生成（呼叫 @compress2 / @uncompress / @nolang.inflate_raw）已全部移除。
@@ -2022,6 +2228,22 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		execExt := g.tmpReg("proc.exec.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, g.libcFn("execlp"), progPtr, progPtr, argPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
+		}
+		return execExt
+	}
+
+	// process-exec-shell: replace current process with sh -c cmd
+	// Args: cmd str
+	// Calls execlp("sh", "sh", "-c", cmd, NULL)
+	// Returns only on failure (errno)
+	if fnName == "process-exec-shell" && hasArgs && nArgs >= 1 {
+		cmdPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
+		execRet := g.tmpReg("proc.execs.ret")
+		execExt := g.tmpReg("proc.execs.ext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.dashc, i64 0, i64 0), i8* %s, i8* null)\n",
+				g.indent(), execRet, g.libcFn("execlp"), cmdPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
 		}
 		return execExt

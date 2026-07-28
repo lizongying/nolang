@@ -5773,6 +5773,9 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%readdir.str.",        // read-dir builtin in call_stdlib.go
 		"%rf.str.",             // read-file builtin in call_stdlib.go
 		"%archstr.",            // get-arch builtin in call_stdlib.go
+		"%gl.str.",             // getlogin builtin in call_stdlib.go
+		"%gd.str.",             // getdomainname builtin in call_stdlib.go
+		"%sc.str.",             // sysctl builtin in call_stdlib.go
 		"%slic.",               // generateSliceExpression (string slice → %str-long*)
 	}
 	for _, p := range ptrPatterns {

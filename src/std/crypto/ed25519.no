@@ -727,8 +727,8 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; 解壓縮 A（公鑰）
     a-ok = 0
-    A []i64
-    a-ok, A = ge-unpack(pub)
+    a-point []i64
+    a-ok, a-point = ge-unpack(pub)
     a-ok == 0 -> {
         ok = 0
         return
@@ -736,8 +736,8 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; 解壓縮 R
     r-ok = 0
-    R-point []i64
-    r-ok, R-point = ge-unpack(r)
+    r-point []i64
+    r-ok, r-point = ge-unpack(r)
     r-ok == 0 -> {
         ok = 0
         return
@@ -766,9 +766,9 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; 計算 R + k*A
     ka []i64
-    ge-scalar-mult(ka, k, A)
+    ge-scalar-mult(ka, k, a-point)
     rka []i64
-    ge-add(rka, R-point, ka)
+    ge-add(rka, r-point, ka)
 
     ; 比較 S*B 和 R + k*A
     sb-bytes [32]byte
