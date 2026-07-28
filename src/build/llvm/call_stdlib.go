@@ -98,8 +98,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 					if isReturnStr {
 						if len(segPtrs) == 0 {
 							ptr := g.buildStrLongFromValue(sb, "")
-							g.tmpIdx++
-							loadReg := fmt.Sprintf("%%sprintf.result.%d", g.tmpIdx)
+							loadReg := g.tmpReg("sprintf.result")
 							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, ptr))
 							return loadReg
 						}
@@ -109,8 +108,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 						}
 						// Load %str-long value from pointer so assignment
 						// codegen can store it directly (not the pointer).
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%sprintf.result.%d", g.tmpIdx)
+						loadReg := g.tmpReg("sprintf.result")
 						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, result))
 						return loadReg
 					}
@@ -119,8 +117,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 						outFn = "err"
 					}
 					for _, segPtr := range segPtrs {
-						g.tmpIdx++
-						discardedN := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+						discardedN := g.tmpReg("vso.tmp")
 						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), discardedN))
 						sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
 							g.indent(), outFn, segPtr, discardedN))
@@ -329,8 +326,7 @@ func (g *Generator) emitOutCall(sb *strings.Builder, useStderr bool, strPtr stri
 	if useStderr {
 		outFn = "err"
 	}
-	g.tmpIdx++
-	nAlloca := fmt.Sprintf("%%vso.n.%d", g.tmpIdx)
+	nAlloca := g.tmpReg("vso.n")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), nAlloca))
 	sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
 		g.indent(), outFn, strPtr, nAlloca))
@@ -391,8 +387,7 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 	// into a temp alloca and return it like other string expressions.
 	if _, isCall := expr.(*parser.CallExpression); isCall && g.ssaTypes != nil {
 		if t, ok := g.ssaTypes[v]; ok && t == "%str-long" {
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%str-long.arg.%d", g.tmpIdx)
+			tmpAlloca := g.tmpReg("str-long.arg")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), v, tmpAlloca))
 			return tmpAlloca
@@ -412,8 +407,7 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 	// which frees the old value of `out` before assigning. An uninitialized
 	// buffer would contain stack garbage, causing the free of a bogus data
 	// pointer to crash (SIGABRT). Must zero-initialize to {len=0, cap=0, data=null}.
-	g.tmpIdx++
-	outBuf := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+	outBuf := g.tmpReg("vso.tmp")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
 
@@ -434,29 +428,25 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 		// Unsigned format — use fmt-uint (expects i64*).
 		// Coerce narrow integers to i64 with zext (unsigned semantics).
 		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%arg.ext.%d", g.tmpIdx)
+			extReg := g.tmpReg("arg.ext")
 			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, srcType, v))
 			v = extReg
 		}
-		g.tmpIdx++
-		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		valAlloca := g.tmpReg("fmtval")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), valAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), v, valAlloca))
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-uint(i64* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), valAlloca, specPtr, outBuf))
 	case srcType == "double":
 		// fmt-f64(double* x, %str-long* spec, %str-long* out)
-		g.tmpIdx++
-		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		valAlloca := g.tmpReg("fmtval")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca double\n", g.indent(), valAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), v, valAlloca))
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-f64(double* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), valAlloca, specPtr, outBuf))
 	case srcType == "i1":
 		// fmt-bool(i1* b, %str-long* spec, %str-long* out)
-		g.tmpIdx++
-		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		valAlloca := g.tmpReg("fmtval")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i1\n", g.indent(), valAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore i1 %s, i1* %s\n", g.indent(), v, valAlloca))
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-bool(i1* %s, %%str-long* %s, %%str-long* %s)\n",
@@ -466,13 +456,11 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 		// Coerce narrow integers to i64 with sext (signed semantics, matches
 		// the previous printVariadic behavior for %lld).
 		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%arg.ext.%d", g.tmpIdx)
+			extReg := g.tmpReg("arg.ext")
 			sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, srcType, v))
 			v = extReg
 		}
-		g.tmpIdx++
-		valAlloca := fmt.Sprintf("%%fmtval.%d", g.tmpIdx)
+		valAlloca := g.tmpReg("fmtval")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), valAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), v, valAlloca))
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-int(i64* %s, %%str-long* %s, %%str-long* %s)\n",
@@ -489,19 +477,16 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 	// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
 	if fnName == "str.to-bool" && hasArgs {
 		a := evalArgs()
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%boolcmp.tmp.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("boolcmp.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i64 5)\n",
 				g.indent(), cmpReg, a[0]))
 		}
-		g.tmpIdx++
-		eqReg := fmt.Sprintf("%%booleq.tmp.%d", g.tmpIdx)
+		eqReg := g.tmpReg("booleq.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
 		}
-		g.tmpIdx++
-		zextReg := fmt.Sprintf("%%boolzext.tmp.%d", g.tmpIdx)
+		zextReg := g.tmpReg("boolzext.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
 		}
@@ -512,39 +497,32 @@ func (g *Generator) callStrconv(sb *strings.Builder, fnName string, hasArgs bool
 	// Must heap-allocate the data buffer so emitHeapFree can safely free it.
 	if fnName == "bool.to-str" && hasArgs {
 		a := evalArgs()
-		g.tmpIdx++
-		selectReg := fmt.Sprintf("%%boolstr.tmp.%d", g.tmpIdx)
+		selectReg := g.tmpReg("boolstr.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.str.true, i64 0, i64 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.str.false, i64 0, i64 0)\n",
 				g.indent(), selectReg, a[0]))
 		}
 		// "true" = 4, "false" = 5; use select directly
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%boolstr.len.%d", g.tmpIdx)
+		lenReg := g.tmpReg("boolstr.len")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 4, i64 5\n", g.indent(), lenReg, a[0]))
 		}
 		// Allocate heap buffer (6 bytes, enough for "false\0")
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%boolstr.buf.%d", g.tmpIdx)
+		bufReg := g.tmpReg("boolstr.buf")
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 6)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 6)\n", g.indent(), bufReg))
 		}
 		// Copy length including null terminator: "true\0" = 5, "false\0" = 6
-		g.tmpIdx++
-		copyLenReg := fmt.Sprintf("%%boolstr.copylen.%d", g.tmpIdx)
+		copyLenReg := g.tmpReg("boolstr.copylen")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 5, i64 6\n", g.indent(), copyLenReg, a[0]))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), bufReg, selectReg, copyLenReg))
 		}
 		// Construct %str-long { len, cap, data } with heap-allocated data
-		g.tmpIdx++
-		strReg1 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg2 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg3 := fmt.Sprintf("%%boolstr.val.%d", g.tmpIdx)
+		strReg1 := g.tmpReg("boolstr.val")
+		strReg2 := g.tmpReg("boolstr.val")
+		strReg3 := g.tmpReg("boolstr.val")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
@@ -610,8 +588,7 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 				strPtr = baseRef
 			} else {
 				// Complex expression result: materialize value into temp alloca
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%str-long.nt.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("str-long.nt")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
@@ -623,18 +600,15 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 	dataPtr := g.extractStrDataPtr(sb, strPtr)
 	strLen := g.extractStrLen(sb, strPtr)
 	// Allocate buffer of len+1
-	g.tmpIdx++
-	sizeReg := fmt.Sprintf("%%nt.size.%d", g.tmpIdx)
+	sizeReg := g.tmpReg("nt.size")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), sizeReg, strLen))
 	}
-	g.tmpIdx++
-	buf := fmt.Sprintf("%%nt.buf.%d", g.tmpIdx)
+	buf := g.tmpReg("nt.buf")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
 		// Null-terminate
-		g.tmpIdx++
-		nullEnd := fmt.Sprintf("%%nt.end.%d", g.tmpIdx)
+		nullEnd := g.tmpReg("nt.end")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullEnd))
 		// Copy string data
@@ -668,10 +642,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 					}
 					// Handle %arr and %vec: load field 0 (i64 len) from the struct pointer
 					if t == "%arr" || t == "%vec" {
-						g.tmpIdx++
-						lenGEP := fmt.Sprintf("%%builtin.len.gep.%d", g.tmpIdx)
-						g.tmpIdx++
-						lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+						lenGEP := g.tmpReg("builtin.len.gep")
+						lenReg := g.tmpReg("builtin.len")
 						if sb != nil {
 							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g.indent(), lenGEP, t, t, g.varAddr(ident.Value)))
 							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
@@ -705,8 +677,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 							for _, f := range fields {
 								if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
 									a := evalArgs()
-									g.tmpIdx++
-									lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+									lenReg := g.tmpReg("builtin.len")
 									if sb != nil {
 										sb.WriteString(fmt.Sprintf("%s%s = extractvalue %s %s, 0\n", g.indent(), lenReg, f.typ, a[0]))
 									}
@@ -721,8 +692,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		// Default fallback: generic i64* load (for raw pointers)
 		a := evalArgs()
 		arg := a[0]
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%builtin.len.%d", g.tmpIdx)
+		lenReg := g.tmpReg("builtin.len")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, arg))
 		}
@@ -732,10 +702,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "cap" && hasArgs {
 		a := evalArgs()
 		arg := a[0]
-		g.tmpIdx++
-		capGEP := fmt.Sprintf("%%builtin.cap.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		capReg := fmt.Sprintf("%%builtin.cap.%d", g.tmpIdx)
+		capGEP := g.tmpReg("builtin.cap.gep")
+		capReg := g.tmpReg("builtin.cap")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i64, i64* %s, i64 1\n", g.indent(), capGEP, arg))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capReg, capGEP))
@@ -745,10 +713,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// args-count: 返回命令行參數數量
 	if fnName == "args-count" {
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%argc.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%argc.ext.%d", g.tmpIdx)
+		loadReg := g.tmpReg("argc")
+		extReg := g.tmpReg("argc.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* @.argc.addr\n", g.indent(), loadReg))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), extReg, loadReg))
@@ -759,18 +725,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// args-get: 返回第 idx 個命令行參數
 	if fnName == "args-get" && hasArgs {
 		a := evalArgs()
-		g.tmpIdx++
-		argvReg := fmt.Sprintf("%%argv.load.%d", g.tmpIdx)
-		g.tmpIdx++
-		gepReg := fmt.Sprintf("%%argv.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptrReg := fmt.Sprintf("%%argv.ptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%argv.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%argv.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%argv.buf.%d", g.tmpIdx)
+		argvReg := g.tmpReg("argv.load")
+		gepReg := g.tmpReg("argv.gep")
+		ptrReg := g.tmpReg("argv.ptr")
+		lenReg := g.tmpReg("argv.len")
+		strReg := g.tmpReg("argv.str")
+		bufReg := g.tmpReg("argv.buf")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load i8**, i8*** @.argv.addr\n", g.indent(), argvReg))
 			// idx is already i64; use directly for GEP
@@ -782,21 +742,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// Allocate %str-long struct { i64 len, i64 cap, i8* data }
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			// Store length (field 0)
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%str-long.len.%d", g.tmpIdx)
+			lenGEP := g.tmpReg("str-long.len")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
 			// Store cap (field 1) = lenReg
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%str-long.cap.%d", g.tmpIdx)
+			capGEP := g.tmpReg("str-long.cap")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
 			// Allocate heap buffer and memcpy (must be heap-allocated so emitHeapFree can safely free it)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, lenReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), bufReg, ptrReg, lenReg))
 			// Store data pointer (field 2)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("str-long.data")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
@@ -808,22 +765,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		// 從 %str-long 參數提取 i8* 資料指針
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeGEP := fmt.Sprintf("%%stat.mode.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeLoad := fmt.Sprintf("%%stat.mode.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		andReg := fmt.Sprintf("%%stat.and.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmp2 := fmt.Sprintf("%%stat.cmp2.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%stat.ext.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf")
+		statRet := g.tmpReg("stat.ret")
+		cmpReg := g.tmpReg("stat.cmp")
+		modeGEP := g.tmpReg("stat.mode")
+		modeLoad := g.tmpReg("stat.mode.ld")
+		andReg := g.tmpReg("stat.and")
+		cmp2 := g.tmpReg("stat.cmp2")
+		extReg := g.tmpReg("stat.ext")
 		statL := g.statLayout()
 		if sb != nil {
 			// Allocate stat buffer
@@ -841,8 +790,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// AND with stat success check
 			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), extReg, cmpReg, cmp2))
 			// zext to i64
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%stat.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("stat.zext")
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
 			return zextReg
 		}
@@ -853,22 +801,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "is-file" || fnName == "stat-file") && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeGEP := fmt.Sprintf("%%stat.mode.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeLoad := fmt.Sprintf("%%stat.mode.ld.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		andReg := fmt.Sprintf("%%stat.and.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmp2 := fmt.Sprintf("%%stat.cmp2.sf.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%stat.ext.sf.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf.sf")
+		statRet := g.tmpReg("stat.ret.sf")
+		cmpReg := g.tmpReg("stat.cmp.sf")
+		modeGEP := g.tmpReg("stat.mode.sf")
+		modeLoad := g.tmpReg("stat.mode.ld.sf")
+		andReg := g.tmpReg("stat.and.sf")
+		cmp2 := g.tmpReg("stat.cmp2.sf")
+		extReg := g.tmpReg("stat.ext.sf")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -880,8 +820,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = and i16 %s, 32768\n", g.indent(), andReg, modeLoad))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i16 %s, 0\n", g.indent(), cmp2, andReg))
 			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), extReg, cmpReg, cmp2))
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%stat.zext.sf.%d", g.tmpIdx)
+			zextReg := g.tmpReg("stat.zext.sf")
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, extReg))
 			return zextReg
 		}
@@ -892,18 +831,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		// 從 %str-long 參數提取 i8* 資料指針
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		sizeGEP := fmt.Sprintf("%%stat.size.%d", g.tmpIdx)
-		g.tmpIdx++
-		sizeLoad := fmt.Sprintf("%%stat.size.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		selReg := fmt.Sprintf("%%stat.sel.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf")
+		statRet := g.tmpReg("stat.ret")
+		cmpReg := g.tmpReg("stat.cmp")
+		sizeGEP := g.tmpReg("stat.size")
+		sizeLoad := g.tmpReg("stat.size.ld")
+		selReg := g.tmpReg("stat.sel")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -920,20 +853,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "stat-mode") && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.sm.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.sm.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.sm.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeGEP := fmt.Sprintf("%%stat.mode.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeLoad := fmt.Sprintf("%%stat.mode.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		modeZext := fmt.Sprintf("%%stat.mode.zext.%d", g.tmpIdx)
-		g.tmpIdx++
-		selReg := fmt.Sprintf("%%stat.mode.sel.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf.sm")
+		statRet := g.tmpReg("stat.ret.sm")
+		cmpReg := g.tmpReg("stat.cmp.sm")
+		modeGEP := g.tmpReg("stat.mode.gep")
+		modeLoad := g.tmpReg("stat.mode.ld")
+		modeZext := g.tmpReg("stat.mode.zext")
+		selReg := g.tmpReg("stat.mode.sel")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -951,20 +877,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "stat-uid") && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.su.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.su.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.su.%d", g.tmpIdx)
-		g.tmpIdx++
-		uidGEP := fmt.Sprintf("%%stat.uid.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		uidLoad := fmt.Sprintf("%%stat.uid.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		uidZext := fmt.Sprintf("%%stat.uid.zext.%d", g.tmpIdx)
-		g.tmpIdx++
-		selReg := fmt.Sprintf("%%stat.uid.sel.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf.su")
+		statRet := g.tmpReg("stat.ret.su")
+		cmpReg := g.tmpReg("stat.cmp.su")
+		uidGEP := g.tmpReg("stat.uid.gep")
+		uidLoad := g.tmpReg("stat.uid.ld")
+		uidZext := g.tmpReg("stat.uid.zext")
+		selReg := g.tmpReg("stat.uid.sel")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -982,20 +901,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "stat-gid") && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.sg.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.sg.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.sg.%d", g.tmpIdx)
-		g.tmpIdx++
-		gidGEP := fmt.Sprintf("%%stat.gid.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		gidLoad := fmt.Sprintf("%%stat.gid.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		gidZext := fmt.Sprintf("%%stat.gid.zext.%d", g.tmpIdx)
-		g.tmpIdx++
-		selReg := fmt.Sprintf("%%stat.gid.sel.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf.sg")
+		statRet := g.tmpReg("stat.ret.sg")
+		cmpReg := g.tmpReg("stat.cmp.sg")
+		gidGEP := g.tmpReg("stat.gid.gep")
+		gidLoad := g.tmpReg("stat.gid.ld")
+		gidZext := g.tmpReg("stat.gid.zext")
+		selReg := g.tmpReg("stat.gid.sel")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -1013,18 +925,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if (fnName == "stat-mtime") && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%statbuf.smt.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%stat.ret.smt.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%stat.cmp.smt.%d", g.tmpIdx)
-		g.tmpIdx++
-		mtimeGEP := fmt.Sprintf("%%stat.mtime.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		mtimeLoad := fmt.Sprintf("%%stat.mtime.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		selReg := fmt.Sprintf("%%stat.mtime.sel.%d", g.tmpIdx)
+		statBuf := g.tmpReg("statbuf.smt")
+		statRet := g.tmpReg("stat.ret.smt")
+		cmpReg := g.tmpReg("stat.cmp.smt")
+		mtimeGEP := g.tmpReg("stat.mtime.gep")
+		mtimeLoad := g.tmpReg("stat.mtime.ld")
+		selReg := g.tmpReg("stat.mtime.sel")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -1042,34 +948,20 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "read-file" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		statBuf := fmt.Sprintf("%%rf.statbuf.%d", g.tmpIdx)
-		g.tmpIdx++
-		statRet := fmt.Sprintf("%%rf.statret.%d", g.tmpIdx)
-		g.tmpIdx++
-		statCmp := fmt.Sprintf("%%rf.statcmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		sizeGEP := fmt.Sprintf("%%rf.sizegep.%d", g.tmpIdx)
-		g.tmpIdx++
-		sizeLoad := fmt.Sprintf("%%rf.sizeld.%d", g.tmpIdx)
-		g.tmpIdx++
-		sizeSel := fmt.Sprintf("%%rf.size.%d", g.tmpIdx)
-		g.tmpIdx++
-		openRet := fmt.Sprintf("%%rf.open.%d", g.tmpIdx)
-		g.tmpIdx++
-		openCmp := fmt.Sprintf("%%rf.opencmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%rf.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		readRet := fmt.Sprintf("%%rf.read.%d", g.tmpIdx)
-		g.tmpIdx++
-		readSel := fmt.Sprintf("%%rf.readsel.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%rf.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenGEP := fmt.Sprintf("%%rf.len.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%rf.data.gep.%d", g.tmpIdx)
+		statBuf := g.tmpReg("rf.statbuf")
+		statRet := g.tmpReg("rf.statret")
+		statCmp := g.tmpReg("rf.statcmp")
+		sizeGEP := g.tmpReg("rf.sizegep")
+		sizeLoad := g.tmpReg("rf.sizeld")
+		sizeSel := g.tmpReg("rf.size")
+		openRet := g.tmpReg("rf.open")
+		openCmp := g.tmpReg("rf.opencmp")
+		bufReg := g.tmpReg("rf.buf")
+		readRet := g.tmpReg("rf.read")
+		readSel := g.tmpReg("rf.readsel")
+		strReg := g.tmpReg("rf.str")
+		lenGEP := g.tmpReg("rf.len.gep")
+		dataGEP := g.tmpReg("rf.data.gep")
 		statL := g.statLayout()
 		if sb != nil {
 			// stat(path) → file size (0 on failure)
@@ -1083,7 +975,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i32, ...) @%s(i8* %s, i32 0, i32 0)\n", g.indent(), openRet, g.libcFn("open"), pathPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i32 %s, 0\n", g.indent(), openCmp, openRet))
 			// malloc(size)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, sizeSel))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, sizeSel))
 			// read(fd, buf, size)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), readRet, g.libcFn("read"), openRet, bufReg, sizeSel))
 			// close(fd)
@@ -1094,8 +986,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%readfile.cap.%d", g.tmpIdx)
+			capGEP := g.tmpReg("readfile.cap")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, capGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
@@ -1112,26 +1003,16 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		// Extract data pointer and length from []byte (%vec) argument
 		// %vec = { i64 len, i64 cap, i8* data }
 		vecPtr := g.sliceEvalArgToPtr(sb, a[1])
-		g.tmpIdx++
-		wfLenGEP := fmt.Sprintf("%%wf.datalen.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfDataLen := fmt.Sprintf("%%wf.datalen.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfDataGEP := fmt.Sprintf("%%wf.dataptr.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfDataPtr := fmt.Sprintf("%%wf.dataptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfOpen := fmt.Sprintf("%%wf.open.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfOpenCmp := fmt.Sprintf("%%wf.opencmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfWrite := fmt.Sprintf("%%wf.write.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfWriteSel := fmt.Sprintf("%%wf.writesel.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfCmp := fmt.Sprintf("%%wf.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		wfZext := fmt.Sprintf("%%wf.zext.%d", g.tmpIdx)
+		wfLenGEP := g.tmpReg("wf.datalen.gep")
+		wfDataLen := g.tmpReg("wf.datalen")
+		wfDataGEP := g.tmpReg("wf.dataptr.gep")
+		wfDataPtr := g.tmpReg("wf.dataptr")
+		wfOpen := g.tmpReg("wf.open")
+		wfOpenCmp := g.tmpReg("wf.opencmp")
+		wfWrite := g.tmpReg("wf.write")
+		wfWriteSel := g.tmpReg("wf.writesel")
+		wfCmp := g.tmpReg("wf.cmp")
+		wfZext := g.tmpReg("wf.zext")
 		openFlags := g.openWriteFlags()
 		if sb != nil {
 			// Extract len and data ptr from %vec
@@ -1157,21 +1038,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// get-line: 從標準輸入讀取一行
 	if fnName == "get-line" {
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%getline.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		stdinReg := fmt.Sprintf("%%getline.stdin.%d", g.tmpIdx)
-		g.tmpIdx++
-		fgetsReg := fmt.Sprintf("%%getline.fgets.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%getline.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%getline.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%getline.str.%d", g.tmpIdx)
+		bufReg := g.tmpReg("getline.buf")
+		stdinReg := g.tmpReg("getline.stdin")
+		fgetsReg := g.tmpReg("getline.fgets")
+		cmpReg := g.tmpReg("getline.cmp")
+		lenReg := g.tmpReg("getline.len")
+		strReg := g.tmpReg("getline.str")
 		if sb != nil {
 			// Allocate 4096 byte heap buffer (must be heap-allocated so emitHeapFree can safely free it)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 4096)\n", g.indent(), bufReg))
 			// 使用 C 的 stdin 全域變數（macOS: __stdinp, Linux/WASI: stdin）
 			// 避免在 macOS 上 fopen("/dev/stdin") 對 pipe/重定向不穩定的問題
 			// 使用編譯目標平台（g.goos()）而非宿主平台，與 decl.go 宣告分派一致。
@@ -1221,22 +1096,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = phi i64 [ %s, %%%s ], [ %s, %%%s ], [ %s, %%%s ]\n", g.indent(), nlLenReg, lenReg, prevBlock, lenReg, nlCheckLab, nlSubReg, nlStripLab))
 			// Create %str-long struct（使用已 strip 的長度）
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%str-long.len.%d", g.tmpIdx)
+			lenGEP := g.tmpReg("str-long.len")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), nlLenReg, lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%getline.cap.%d", g.tmpIdx)
+			capGEP := g.tmpReg("getline.cap")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), nlLenReg, capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%str-long.data.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("str-long.data")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
 		// 記錄 ok 值（cmpReg）供 curried 呼叫使用 — zext i1 → i64 (Nolang bools are i64)
-		g.tmpIdx++
-		okZext := fmt.Sprintf("%%getline.ok.zext.%d", g.tmpIdx)
+		okZext := g.tmpReg("getline.ok.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
 		}
@@ -1253,10 +1124,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "open-dir" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		dirpReg := fmt.Sprintf("%%opendir.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%opendir.ext.%d", g.tmpIdx)
+		dirpReg := g.tmpReg("opendir.ret")
+		extReg := g.tmpReg("opendir.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @opendir(i8* %s)\n", g.indent(), dirpReg, pathPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), extReg, dirpReg))
@@ -1271,20 +1140,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "read-dir" && hasArgs {
 		a := evalArgs()
 		dirpVal := a[0]
-		g.tmpIdx++
-		dirpPtr := fmt.Sprintf("%%readdir.dirp.%d", g.tmpIdx)
-		g.tmpIdx++
-		entryReg := fmt.Sprintf("%%readdir.entry.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%readdir.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		nameGep := fmt.Sprintf("%%readdir.namegep.%d", g.tmpIdx)
-		g.tmpIdx++
-		safeName := fmt.Sprintf("%%readdir.safename.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%readdir.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%readdir.str.%d", g.tmpIdx)
+		dirpPtr := g.tmpReg("readdir.dirp")
+		entryReg := g.tmpReg("readdir.entry")
+		cmpReg := g.tmpReg("readdir.cmp")
+		nameGep := g.tmpReg("readdir.namegep")
+		safeName := g.tmpReg("readdir.safename")
+		lenReg := g.tmpReg("readdir.len")
+		strReg := g.tmpReg("readdir.str")
 		if sb != nil {
 			// inttoptr i64 to i8* (DIR*)
 			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dirpPtr, dirpVal))
@@ -1303,32 +1165,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, safeName))
 			// Copy d_name into a heap buffer (readdir returns static memory that
 			// gets overwritten on the next call)
-			g.tmpIdx++
-			bufSize := fmt.Sprintf("%%readdir.bufsize.%d", g.tmpIdx)
+			bufSize := g.tmpReg("readdir.bufsize")
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSize, lenReg))
-			g.tmpIdx++
-			nameBuf := fmt.Sprintf("%%readdir.namebuf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), nameBuf, bufSize))
+			nameBuf := g.tmpReg("readdir.namebuf")
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), nameBuf, bufSize))
 			// 使用 @llvm.memcpy 替代 @strcpy（避免 libc 依賴），bufSize = len + 1 包含 null terminator
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), nameBuf, safeName, bufSize))
 			// Create %str-long struct { len, cap, data } pointing to the heap copy
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%readdir.lengep.%d", g.tmpIdx)
+			lenGEP := g.tmpReg("readdir.lengep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%readdir.capgep.%d", g.tmpIdx)
+			capGEP := g.tmpReg("readdir.capgep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), lenReg, capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%readdir.datagep.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("readdir.datagep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, nameBuf, dataGEP)
 		}
 		// Store ok flag for curried call — zext i1 → i64 (Nolang bools are i64)
-		g.tmpIdx++
-		okZext := fmt.Sprintf("%%readdir.ok.zext.%d", g.tmpIdx)
+		okZext := g.tmpReg("readdir.ok.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
 		}
@@ -1341,14 +1197,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "close-dir" && hasArgs {
 		a := evalArgs()
 		dirpVal := a[0]
-		g.tmpIdx++
-		dirpPtr := fmt.Sprintf("%%closedir.dirp.%d", g.tmpIdx)
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%closedir.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%closedir.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%closedir.ext.%d", g.tmpIdx)
+		dirpPtr := g.tmpReg("closedir.dirp")
+		retReg := g.tmpReg("closedir.ret")
+		cmpReg := g.tmpReg("closedir.cmp")
+		extReg := g.tmpReg("closedir.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dirpPtr, dirpVal))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @closedir(i8* %s)\n", g.indent(), retReg, dirpPtr))
@@ -1369,24 +1221,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%winff.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		findDataReg := fmt.Sprintf("%%winff.finddata.%d", g.tmpIdx)
-		g.tmpIdx++
-		handleReg := fmt.Sprintf("%%winff.handle.%d", g.tmpIdx)
-		g.tmpIdx++
-		handleStoreReg := fmt.Sprintf("%%winff.handlestore.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagPtrReg := fmt.Sprintf("%%winff.flagptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagPtrI32Reg := fmt.Sprintf("%%winff.flagptr.i32.%d", g.tmpIdx)
-		g.tmpIdx++
-		invalidCmpReg := fmt.Sprintf("%%winff.invalid.%d", g.tmpIdx)
-		g.tmpIdx++
-		bufI64Reg := fmt.Sprintf("%%winff.buf.i64.%d", g.tmpIdx)
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%winff.result.%d", g.tmpIdx)
+		bufReg := g.tmpReg("winff.buf")
+		findDataReg := g.tmpReg("winff.finddata")
+		handleReg := g.tmpReg("winff.handle")
+		handleStoreReg := g.tmpReg("winff.handlestore")
+		flagPtrReg := g.tmpReg("winff.flagptr")
+		flagPtrI32Reg := g.tmpReg("winff.flagptr.i32")
+		invalidCmpReg := g.tmpReg("winff.invalid")
+		bufI64Reg := g.tmpReg("winff.buf.i64")
+		resultReg := g.tmpReg("winff.result")
 
 		failLabel := fmt.Sprintf("winff.fail.%d", g.tmpIdx)
 		okLabel := fmt.Sprintf("winff.ok.%d", g.tmpIdx)
@@ -1394,7 +1237,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 		if sb != nil {
 			// buf = malloc(332)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 332)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 332)\n", g.indent(), bufReg))
 			// findData = buf + 8
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 8\n", g.indent(), findDataReg, bufReg))
 			// handle = FindFirstFileA(path, findData)
@@ -1437,64 +1280,39 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		bufPtrVal := a[0]
 
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%winfnf.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagPtrReg := fmt.Sprintf("%%winfnf.flagptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagPtrI32Reg := fmt.Sprintf("%%winfnf.flagptr.i32.%d", g.tmpIdx)
-		g.tmpIdx++
-		findDataReg := fmt.Sprintf("%%winfnf.finddata.%d", g.tmpIdx)
-		g.tmpIdx++
-		namePtrReg := fmt.Sprintf("%%winfnf.nameptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagReg := fmt.Sprintf("%%winfnf.flag.%d", g.tmpIdx)
-		g.tmpIdx++
-		flagCmpReg := fmt.Sprintf("%%winfnf.flagcmp.%d", g.tmpIdx)
+		bufReg := g.tmpReg("winfnf.buf")
+		flagPtrReg := g.tmpReg("winfnf.flagptr")
+		flagPtrI32Reg := g.tmpReg("winfnf.flagptr.i32")
+		findDataReg := g.tmpReg("winfnf.finddata")
+		namePtrReg := g.tmpReg("winfnf.nameptr")
+		flagReg := g.tmpReg("winfnf.flag")
+		flagCmpReg := g.tmpReg("winfnf.flagcmp")
 
 		// "next" block registers
-		g.tmpIdx++
-		handlePtrReg := fmt.Sprintf("%%winfnf.handleptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		handleReg := fmt.Sprintf("%%winfnf.handle.%d", g.tmpIdx)
-		g.tmpIdx++
-		nextRetReg := fmt.Sprintf("%%winfnf.nextret.%d", g.tmpIdx)
-		g.tmpIdx++
-		nextOkReg := fmt.Sprintf("%%winfnf.nextok.%d", g.tmpIdx)
+		handlePtrReg := g.tmpReg("winfnf.handleptr")
+		handleReg := g.tmpReg("winfnf.handle")
+		nextRetReg := g.tmpReg("winfnf.nextret")
+		nextOkReg := g.tmpReg("winfnf.nextok")
 
 		// "build" block registers
-		g.tmpIdx++
-		lenReg := fmt.Sprintf("%%winfnf.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		bufSizeReg := fmt.Sprintf("%%winfnf.bufsize.%d", g.tmpIdx)
-		g.tmpIdx++
-		nameBufReg := fmt.Sprintf("%%winfnf.namebuf.%d", g.tmpIdx)
-		g.tmpIdx++
-		strReg := fmt.Sprintf("%%winfnf.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenGEP := fmt.Sprintf("%%winfnf.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		capGEP := fmt.Sprintf("%%winfnf.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%winfnf.datagep.%d", g.tmpIdx)
+		lenReg := g.tmpReg("winfnf.len")
+		bufSizeReg := g.tmpReg("winfnf.bufsize")
+		nameBufReg := g.tmpReg("winfnf.namebuf")
+		strReg := g.tmpReg("winfnf.str")
+		lenGEP := g.tmpReg("winfnf.lengep")
+		capGEP := g.tmpReg("winfnf.capgep")
+		dataGEP := g.tmpReg("winfnf.datagep")
 
 		// "empty" block registers
-		g.tmpIdx++
-		emptyStrReg := fmt.Sprintf("%%winfnf.emptystr.%d", g.tmpIdx)
-		g.tmpIdx++
-		emptyLenGEP := fmt.Sprintf("%%winfnf.emptylengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		emptyCapGEP := fmt.Sprintf("%%winfnf.emptycapgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		emptyDataGEP := fmt.Sprintf("%%winfnf.emptydatagep.%d", g.tmpIdx)
+		emptyStrReg := g.tmpReg("winfnf.emptystr")
+		emptyLenGEP := g.tmpReg("winfnf.emptylengep")
+		emptyCapGEP := g.tmpReg("winfnf.emptycapgep")
+		emptyDataGEP := g.tmpReg("winfnf.emptydatagep")
 
 		// "merge" block registers
-		g.tmpIdx++
-		finalStrReg := fmt.Sprintf("%%winfnf.finalstr.%d", g.tmpIdx)
-		g.tmpIdx++
-		okReg := fmt.Sprintf("%%winfnf.ok.%d", g.tmpIdx)
-		g.tmpIdx++
-		okZextReg := fmt.Sprintf("%%winfnf.okzext.%d", g.tmpIdx)
+		finalStrReg := g.tmpReg("winfnf.finalstr")
+		okReg := g.tmpReg("winfnf.ok")
+		okZextReg := g.tmpReg("winfnf.okzext")
 
 		firstLabel := fmt.Sprintf("winfnf.first.%d", g.tmpIdx)
 		nextLabel := fmt.Sprintf("winfnf.next.%d", g.tmpIdx)
@@ -1530,7 +1348,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.emitLabel(sb, buildLabel)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, namePtrReg))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSizeReg, lenReg))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), nameBufReg, bufSizeReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), nameBufReg, bufSizeReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), nameBufReg, namePtrReg, bufSizeReg))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
@@ -1569,18 +1387,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		bufPtrVal := a[0]
 
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%winfc.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		handlePtrReg := fmt.Sprintf("%%winfc.handleptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		handleReg := fmt.Sprintf("%%winfc.handle.%d", g.tmpIdx)
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%winfc.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%winfc.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%winfc.ext.%d", g.tmpIdx)
+		bufReg := g.tmpReg("winfc.buf")
+		handlePtrReg := g.tmpReg("winfc.handleptr")
+		handleReg := g.tmpReg("winfc.handle")
+		retReg := g.tmpReg("winfc.ret")
+		cmpReg := g.tmpReg("winfc.cmp")
+		extReg := g.tmpReg("winfc.ext")
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), bufReg, bufPtrVal))
@@ -1600,14 +1412,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Returns: ok bool (true on success — WSAStartup returns 0 on success)
 	// WSADATA structure is 408 bytes on Windows; allocated on stack via alloca.
 	if fnName == "win-wsa-startup" {
-		g.tmpIdx++
-		wsaDataBuf := fmt.Sprintf("%%winwsa.data.%d", g.tmpIdx)
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%winwsa.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%winwsa.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%winwsa.ext.%d", g.tmpIdx)
+		wsaDataBuf := g.tmpReg("winwsa.data")
+		retReg := g.tmpReg("winwsa.ret")
+		cmpReg := g.tmpReg("winwsa.cmp")
+		extReg := g.tmpReg("winwsa.ext")
 		if sb != nil {
 			// WSADATA is 408 bytes; allocate on stack (only needed during the call).
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 408\n", g.indent(), wsaDataBuf))
@@ -1626,12 +1434,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "touch-file" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%touch.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%touch.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%touch.ext.%d", g.tmpIdx)
+		retReg := g.tmpReg("touch.ret")
+		cmpReg := g.tmpReg("touch.cmp")
+		extReg := g.tmpReg("touch.ext")
 		// Windows: route to nolang.win_utimensat stub (no-op success).
 		utimensatFn := "utimensat"
 		if g.goos() == "windows" {
@@ -1655,25 +1460,20 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		strLen := len(arch)
 		g.fmtGlobals = append(g.fmtGlobals,
 			fmt.Sprintf("@.str.%d = private unnamed_addr constant [%d x i8] c\"%s\"", idx, strLen, escaped))
-		g.tmpIdx++
-		allocaReg := fmt.Sprintf("%%archstr.%d", g.tmpIdx)
+		allocaReg := g.tmpReg("archstr")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), allocaReg))
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%archstr.len.%d", g.tmpIdx)
+			lenGEP := g.tmpReg("archstr.len")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%archstr.cap.%d", g.tmpIdx)
+			capGEP := g.tmpReg("archstr.cap")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, capGEP))
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%archstr.data.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("archstr.data")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, allocaReg))
 			// malloc a heap buffer and copy the constant string (must be heap-allocated so emitHeapFree can safely free it)
-			g.tmpIdx++
-			archBuf := fmt.Sprintf("%%archstr.buf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), archBuf, strLen+1))
+			archBuf := g.tmpReg("archstr.buf")
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), archBuf, strLen+1))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.str.%d, i64 0, i64 0), i64 %d, i1 false)\n",
 				g.indent(), archBuf, strLen, strLen, idx, strLen+1))
 			g.storeDataPtrField(sb, archBuf, dataGEP)
@@ -1690,26 +1490,16 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "realpath" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		rpRet := fmt.Sprintf("%%rp.ptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpCmp := fmt.Sprintf("%%rp.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpSafe := fmt.Sprintf("%%rp.safe.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpLen := fmt.Sprintf("%%rp.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpBufSize := fmt.Sprintf("%%rp.bufsize.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpBuf := fmt.Sprintf("%%rp.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpStr := fmt.Sprintf("%%rp.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpLenGEP := fmt.Sprintf("%%rp.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpCapGEP := fmt.Sprintf("%%rp.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		rpDataGEP := fmt.Sprintf("%%rp.datagep.%d", g.tmpIdx)
+		rpRet := g.tmpReg("rp.ptr")
+		rpCmp := g.tmpReg("rp.cmp")
+		rpSafe := g.tmpReg("rp.safe")
+		rpLen := g.tmpReg("rp.len")
+		rpBufSize := g.tmpReg("rp.bufsize")
+		rpBuf := g.tmpReg("rp.buf")
+		rpStr := g.tmpReg("rp.str")
+		rpLenGEP := g.tmpReg("rp.lengep")
+		rpCapGEP := g.tmpReg("rp.capgep")
+		rpDataGEP := g.tmpReg("rp.datagep")
 		if sb != nil {
 			// call realpath(p, NULL) — NULL means libc allocates the result buffer
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @realpath(i8* %s, i8* null)\n", g.indent(), rpRet, pathPtr))
@@ -1719,7 +1509,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				g.indent(), rpSafe, rpCmp, rpRet))
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), rpLen, rpSafe))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rpBufSize, rpLen))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), rpBuf, rpBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), rpBuf, rpBufSize))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), rpBuf, rpSafe, rpBufSize))
 			// Construct %str-long { len, cap, data }
@@ -1732,8 +1522,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.storeDataPtrField(sb, rpBuf, rpDataGEP)
 		}
 		// Load %str-long value from pointer so assignment codegen can store it directly.
-		g.tmpIdx++
-		rpLoad := fmt.Sprintf("%%rp.load.%d", g.tmpIdx)
+		rpLoad := g.tmpReg("rp.load")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), rpLoad, rpStr))
 		}
@@ -1745,27 +1534,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "readlink" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		rlBuf := fmt.Sprintf("%%rl.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlRet := fmt.Sprintf("%%rl.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlCmp := fmt.Sprintf("%%rl.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlLen := fmt.Sprintf("%%rl.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlStr := fmt.Sprintf("%%rl.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlLenGEP := fmt.Sprintf("%%rl.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlCapGEP := fmt.Sprintf("%%rl.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlDataGEP := fmt.Sprintf("%%rl.datagep.%d", g.tmpIdx)
-		g.tmpIdx++
-		rlOkZext := fmt.Sprintf("%%rl.ok.%d", g.tmpIdx)
+		rlBuf := g.tmpReg("rl.buf")
+		rlRet := g.tmpReg("rl.ret")
+		rlCmp := g.tmpReg("rl.cmp")
+		rlLen := g.tmpReg("rl.len")
+		rlStr := g.tmpReg("rl.str")
+		rlLenGEP := g.tmpReg("rl.lengep")
+		rlCapGEP := g.tmpReg("rl.capgep")
+		rlDataGEP := g.tmpReg("rl.datagep")
+		rlOkZext := g.tmpReg("rl.ok")
 		if sb != nil {
 			// Allocate 4096-byte buffer for readlink
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 4096)\n", g.indent(), rlBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 4096)\n", g.indent(), rlBuf))
 			// readlink(path, buf, 4096) → number of bytes read (or -1 on error)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @readlink(i8* %s, i8* %s, i64 4096)\n",
 				g.indent(), rlRet, pathPtr, rlBuf))
@@ -1794,37 +1574,24 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		// Need to copy template into mutable buffer (mkstemp modifies in place)
-		g.tmpIdx++
-		msLen := fmt.Sprintf("%%ms.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		msBufSize := fmt.Sprintf("%%ms.bufsize.%d", g.tmpIdx)
-		g.tmpIdx++
-		msBuf := fmt.Sprintf("%%ms.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		msRet := fmt.Sprintf("%%ms.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		msCmp := fmt.Sprintf("%%ms.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		msSafe := fmt.Sprintf("%%ms.safe.%d", g.tmpIdx)
-		g.tmpIdx++
-		msActualLen := fmt.Sprintf("%%ms.alen.%d", g.tmpIdx)
-		g.tmpIdx++
-		msSelLen := fmt.Sprintf("%%ms.sellen.%d", g.tmpIdx)
-		g.tmpIdx++
-		msStr := fmt.Sprintf("%%ms.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		msLenGEP := fmt.Sprintf("%%ms.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		msCapGEP := fmt.Sprintf("%%ms.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		msDataGEP := fmt.Sprintf("%%ms.datagep.%d", g.tmpIdx)
-		g.tmpIdx++
-		msFd := fmt.Sprintf("%%ms.fd.%d", g.tmpIdx)
+		msLen := g.tmpReg("ms.len")
+		msBufSize := g.tmpReg("ms.bufsize")
+		msBuf := g.tmpReg("ms.buf")
+		msRet := g.tmpReg("ms.ret")
+		msCmp := g.tmpReg("ms.cmp")
+		msSafe := g.tmpReg("ms.safe")
+		msActualLen := g.tmpReg("ms.alen")
+		msSelLen := g.tmpReg("ms.sellen")
+		msStr := g.tmpReg("ms.str")
+		msLenGEP := g.tmpReg("ms.lengep")
+		msCapGEP := g.tmpReg("ms.capgep")
+		msDataGEP := g.tmpReg("ms.datagep")
+		msFd := g.tmpReg("ms.fd")
 		if sb != nil {
 			// strlen(tmpl) → len
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), msLen, tmplPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), msBufSize, msLen))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), msBuf, msBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), msBuf, msBufSize))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), msBuf, tmplPtr, msBufSize))
 			// mkstemp(buf) → fd
@@ -1860,36 +1627,23 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "mkdtemp" && hasArgs {
 		a := evalArgs()
 		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		mdLen := fmt.Sprintf("%%md.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdBufSize := fmt.Sprintf("%%md.bufsize.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdBuf := fmt.Sprintf("%%md.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdRet := fmt.Sprintf("%%md.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdCmp := fmt.Sprintf("%%md.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdSafe := fmt.Sprintf("%%md.safe.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdActualLen := fmt.Sprintf("%%md.alen.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdSelLen := fmt.Sprintf("%%md.sellen.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdStr := fmt.Sprintf("%%md.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdLenGEP := fmt.Sprintf("%%md.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdCapGEP := fmt.Sprintf("%%md.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdDataGEP := fmt.Sprintf("%%md.datagep.%d", g.tmpIdx)
-		g.tmpIdx++
-		mdOkZext := fmt.Sprintf("%%md.ok.%d", g.tmpIdx)
+		mdLen := g.tmpReg("md.len")
+		mdBufSize := g.tmpReg("md.bufsize")
+		mdBuf := g.tmpReg("md.buf")
+		mdRet := g.tmpReg("md.ret")
+		mdCmp := g.tmpReg("md.cmp")
+		mdSafe := g.tmpReg("md.safe")
+		mdActualLen := g.tmpReg("md.alen")
+		mdSelLen := g.tmpReg("md.sellen")
+		mdStr := g.tmpReg("md.str")
+		mdLenGEP := g.tmpReg("md.lengep")
+		mdCapGEP := g.tmpReg("md.capgep")
+		mdDataGEP := g.tmpReg("md.datagep")
+		mdOkZext := g.tmpReg("md.ok")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), mdLen, tmplPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), mdBufSize, mdLen))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), mdBuf, mdBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), mdBuf, mdBufSize))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), mdBuf, tmplPtr, mdBufSize))
 			// mkdtemp(buf) → i8* (NULL on failure)
@@ -1917,18 +1671,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "utime" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
-		g.tmpIdx++
-		utBuf := fmt.Sprintf("%%ut.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		utAtimeGEP := fmt.Sprintf("%%ut.atime.%d", g.tmpIdx)
-		g.tmpIdx++
-		utMtimeGEP := fmt.Sprintf("%%ut.mtime.%d", g.tmpIdx)
-		g.tmpIdx++
-		utRet := fmt.Sprintf("%%ut.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		utCmp := fmt.Sprintf("%%ut.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		utExt := fmt.Sprintf("%%ut.ext.%d", g.tmpIdx)
+		utBuf := g.tmpReg("ut.buf")
+		utAtimeGEP := g.tmpReg("ut.atime")
+		utMtimeGEP := g.tmpReg("ut.mtime")
+		utRet := g.tmpReg("ut.ret")
+		utCmp := g.tmpReg("ut.cmp")
+		utExt := g.tmpReg("ut.ext")
 		if sb != nil {
 			// alloca [32 x i8] for two struct timeval (each 16 bytes on macOS/Linux 64-bit)
 			// Layout: times[0].tv_sec@0(i64), times[0].tv_usec@8(i64, upper 4 bytes are padding on macOS),
@@ -1943,17 +1691,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// utimes(path, times) — tv_usec fields at offsets 8 and 24 are zero (from alloca zero-init is NOT guaranteed,
 			// but utimes only reads tv_sec and tv_usec; the padding bytes don't matter)
 			// Actually alloca doesn't zero-initialize, so let's explicitly zero tv_usec fields
-			g.tmpIdx++
-			utUsec0GEP := fmt.Sprintf("%%ut.usec0.%d", g.tmpIdx)
-			g.tmpIdx++
-			utUsec1GEP := fmt.Sprintf("%%ut.usec1.%d", g.tmpIdx)
+			utUsec0GEP := g.tmpReg("ut.usec0")
+			utUsec1GEP := g.tmpReg("ut.usec1")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 8\n", g.indent(), utUsec0GEP, utBuf))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), utUsec0GEP))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 24\n", g.indent(), utUsec1GEP, utBuf))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), utUsec1GEP))
 			// Cast [32 x i8]* to i8* for the utimes call
-			g.tmpIdx++
-			utTimesPtr := fmt.Sprintf("%%ut.timesptr.%d", g.tmpIdx)
+			utTimesPtr := g.tmpReg("ut.timesptr")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [32 x i8], [32 x i8]* %s, i64 0, i64 0\n", g.indent(), utTimesPtr, utBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @utimes(i8* %s, i8* %s)\n", g.indent(), utRet, pathPtr, utTimesPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), utCmp, utRet))
@@ -1970,18 +1715,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// the count for validation; full group ID retrieval will be added when loop
 	// generation inside builtins is available.
 	if fnName == "getgroups" {
-		g.tmpIdx++
-		ggN := fmt.Sprintf("%%gg.n.%d", g.tmpIdx)
-		g.tmpIdx++
-		ggVec := fmt.Sprintf("%%gg.vec.%d", g.tmpIdx)
-		g.tmpIdx++
-		ggLenGEP := fmt.Sprintf("%%gg.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		ggCapGEP := fmt.Sprintf("%%gg.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		ggDataGEP := fmt.Sprintf("%%gg.datagep.%d", g.tmpIdx)
-		g.tmpIdx++
-		ggNExt := fmt.Sprintf("%%gg.next.%d", g.tmpIdx)
+		ggN := g.tmpReg("gg.n")
+		ggVec := g.tmpReg("gg.vec")
+		ggLenGEP := g.tmpReg("gg.lengep")
+		ggCapGEP := g.tmpReg("gg.capgep")
+		ggDataGEP := g.tmpReg("gg.datagep")
+		ggNExt := g.tmpReg("gg.next")
 		if sb != nil {
 			// getgroups(0, NULL) → count of groups (or -1 on error)
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @getgroups(i32 0, i32* null)\n", g.indent(), ggN))
@@ -2023,8 +1762,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if goos == "linux" {
 			scNprocOnln = 84 // Linux _SC_NPROCESSORS_ONLN
 		}
-		g.tmpIdx++
-		ncRet := fmt.Sprintf("%%nc.ret.%d", g.tmpIdx)
+		ncRet := g.tmpReg("nc.ret")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @sysconf(i32 %d)\n", g.indent(), ncRet, scNprocOnln))
 		}
@@ -2054,13 +1792,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			fieldLen = 65
 		}
 		totalSize := fieldLen * 5
-		g.tmpIdx++
-		unBuf := fmt.Sprintf("%%un.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		unRet := fmt.Sprintf("%%un.ret.%d", g.tmpIdx)
+		unBuf := g.tmpReg("un.buf")
+		unRet := g.tmpReg("un.ret")
 		// Allocate the utsname result struct (%utsname = { %str-long, %str-long, %str-long, %str-long, %str-long })
-		g.tmpIdx++
-		unResult := fmt.Sprintf("%%un.result.%d", g.tmpIdx)
+		unResult := g.tmpReg("un.result")
 		// Field field offsets in the C struct utsname buffer
 		offsets := [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
 		var fieldRegs [5]string
@@ -2068,8 +1803,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// alloca [totalSize x i8] for C struct utsname
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [%d x i8]\n", g.indent(), unBuf, totalSize))
 			// call uname(buf)
-			g.tmpIdx++
-			unBufPtr := fmt.Sprintf("%%un.bufptr.%d", g.tmpIdx)
+			unBufPtr := g.tmpReg("un.bufptr")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [%d x i8], [%d x i8]* %s, i64 0, i64 0\n",
 				g.indent(), unBufPtr, totalSize, totalSize, unBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @uname(i8* %s)\n", g.indent(), unRet, unBufPtr))
@@ -2103,7 +1837,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				// strlen of the field
 				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), fldLen, fldGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), fldBufSize, fldLen))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), fldBuf, fldBufSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), fldBuf, fldBufSize))
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 					g.indent(), fldBuf, fldGEP, fldBufSize))
 				// Construct %str-long for this field
@@ -2137,8 +1871,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		// store it directly into the LHS variable (which must be allocated
 		// as %utsname, not i64). Returning the pointer causes a type mismatch
 		// because the Let statement expects a value, not a pointer.
-		g.tmpIdx++
-		unLoad := fmt.Sprintf("%%un.load.%d", g.tmpIdx)
+		unLoad := g.tmpReg("un.load")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), unLoad, utsnameLLVMType, utsnameLLVMType, unResult))
 		}
@@ -2150,28 +1883,17 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "ttyname" && hasArgs {
 		a := evalArgs()
 		// fd is i64; need to trunc to i32 for the C call
-		g.tmpIdx++
-		tnFd := fmt.Sprintf("%%tn.fd.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnRet := fmt.Sprintf("%%tn.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnCmp := fmt.Sprintf("%%tn.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnSafe := fmt.Sprintf("%%tn.safe.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnLen := fmt.Sprintf("%%tn.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnBufSize := fmt.Sprintf("%%tn.bufsize.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnBuf := fmt.Sprintf("%%tn.buf.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnStr := fmt.Sprintf("%%tn.str.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnLenGEP := fmt.Sprintf("%%tn.lengep.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnCapGEP := fmt.Sprintf("%%tn.capgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		tnDataGEP := fmt.Sprintf("%%tn.datagep.%d", g.tmpIdx)
+		tnFd := g.tmpReg("tn.fd")
+		tnRet := g.tmpReg("tn.ret")
+		tnCmp := g.tmpReg("tn.cmp")
+		tnSafe := g.tmpReg("tn.safe")
+		tnLen := g.tmpReg("tn.len")
+		tnBufSize := g.tmpReg("tn.bufsize")
+		tnBuf := g.tmpReg("tn.buf")
+		tnStr := g.tmpReg("tn.str")
+		tnLenGEP := g.tmpReg("tn.lengep")
+		tnCapGEP := g.tmpReg("tn.capgep")
+		tnDataGEP := g.tmpReg("tn.datagep")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), tnFd, a[0]))
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @ttyname(i32 %s)\n", g.indent(), tnRet, tnFd))
@@ -2180,7 +1902,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				g.indent(), tnSafe, tnCmp, tnRet))
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), tnLen, tnSafe))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), tnBufSize, tnLen))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), tnBuf, tnBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), tnBuf, tnBufSize))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), tnBuf, tnSafe, tnBufSize))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tnStr))
@@ -2192,8 +1914,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			g.storeDataPtrField(sb, tnBuf, tnDataGEP)
 		}
 		// Load %str-long value from pointer so assignment codegen can store it directly.
-		g.tmpIdx++
-		tnLoad := fmt.Sprintf("%%tn.load.%d", g.tmpIdx)
+		tnLoad := g.tmpReg("tn.load")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), tnLoad, tnStr))
 		}
@@ -2216,10 +1937,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		// Windows/WASI 不支援 fork()。decl.go 在這些目標下不會宣告 @fork，
 		// 因此連結階段會產生 "undefined symbol: fork" 錯誤（符合 spec 行為）。
 		// 使用者應使用 #{wasi-wasm32} 或 #{win-amd64,win-arm64} 標註提供替代方案。
-		g.tmpIdx++
-		forkRet := fmt.Sprintf("%%proc.fork.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		forkExt := fmt.Sprintf("%%proc.fork.ext.%d", g.tmpIdx)
+		forkRet := g.tmpReg("proc.fork.ret")
+		forkExt := g.tmpReg("proc.fork.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @fork()\n", g.indent(), forkRet))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), forkExt, forkRet))
@@ -2230,26 +1949,16 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// process-pipe: create a pipe
 	// Returns packed i64: (read_fd << 32) | write_fd
 	if fnName == "process-pipe" {
-		g.tmpIdx++
-		pipeFds := fmt.Sprintf("%%proc.pipe.fds.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeRet := fmt.Sprintf("%%proc.pipe.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeGep0 := fmt.Sprintf("%%proc.pipe.gep0.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeFd0 := fmt.Sprintf("%%proc.pipe.fd0.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeGep1 := fmt.Sprintf("%%proc.pipe.gep1.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeFd1 := fmt.Sprintf("%%proc.pipe.fd1.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeExt0 := fmt.Sprintf("%%proc.pipe.ext0.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeExt1 := fmt.Sprintf("%%proc.pipe.ext1.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipeShl := fmt.Sprintf("%%proc.pipe.shl.%d", g.tmpIdx)
-		g.tmpIdx++
-		pipePack := fmt.Sprintf("%%proc.pipe.pack.%d", g.tmpIdx)
+		pipeFds := g.tmpReg("proc.pipe.fds")
+		pipeRet := g.tmpReg("proc.pipe.ret")
+		pipeGep0 := g.tmpReg("proc.pipe.gep0")
+		pipeFd0 := g.tmpReg("proc.pipe.fd0")
+		pipeGep1 := g.tmpReg("proc.pipe.gep1")
+		pipeFd1 := g.tmpReg("proc.pipe.fd1")
+		pipeExt0 := g.tmpReg("proc.pipe.ext0")
+		pipeExt1 := g.tmpReg("proc.pipe.ext1")
+		pipeShl := g.tmpReg("proc.pipe.shl")
+		pipePack := g.tmpReg("proc.pipe.pack")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [2 x i32]\n", g.indent(), pipeFds))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i32* %s)\n", g.indent(), pipeRet, g.libcFn("pipe"), pipeFds))
@@ -2274,22 +1983,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		pidVal := a[0]
 		optVal := a[1]
-		g.tmpIdx++
-		waitStatus := fmt.Sprintf("%%proc.wait.status.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitPidTrunc := fmt.Sprintf("%%proc.wait.pid.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitOptTrunc := fmt.Sprintf("%%proc.wait.opt.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitRet := fmt.Sprintf("%%proc.wait.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitLd := fmt.Sprintf("%%proc.wait.ld.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitShift := fmt.Sprintf("%%proc.wait.shift.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitCode := fmt.Sprintf("%%proc.wait.code.%d", g.tmpIdx)
-		g.tmpIdx++
-		waitExt := fmt.Sprintf("%%proc.wait.ext.%d", g.tmpIdx)
+		waitStatus := g.tmpReg("proc.wait.status")
+		waitPidTrunc := g.tmpReg("proc.wait.pid")
+		waitOptTrunc := g.tmpReg("proc.wait.opt")
+		waitRet := g.tmpReg("proc.wait.ret")
+		waitLd := g.tmpReg("proc.wait.ld")
+		waitShift := g.tmpReg("proc.wait.shift")
+		waitCode := g.tmpReg("proc.wait.code")
+		waitExt := g.tmpReg("proc.wait.ext")
 		// Windows: route to nolang.win_waitpid wrapper (parameter order + status
 		// encoding normalized). Non-Windows uses libc waitpid directly.
 		waitpidFn := libcFnFor(g.goos(), "waitpid")
@@ -2316,10 +2017,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	if fnName == "process-exec" && hasArgs && nArgs >= 2 {
 		progPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
 		argPtr := g.makeNullTerminatedStr(sb, expr.Arguments[1])
-		g.tmpIdx++
-		execRet := fmt.Sprintf("%%proc.exec.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		execExt := fmt.Sprintf("%%proc.exec.ext.%d", g.tmpIdx)
+		execRet := g.tmpReg("proc.exec.ret")
+		execExt := g.tmpReg("proc.exec.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, g.libcFn("execlp"), progPtr, progPtr, argPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
@@ -2341,82 +2040,55 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		portVal := a[1]
 
 		// Allocate sockaddr_in (16 bytes) and zero it
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%net.l.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%net.l.addrptr.%d", g.tmpIdx)
+		addrReg := g.tmpReg("net.l.addr")
+		addrPtr := g.tmpReg("net.l.addrptr")
 
 		// sin_family at offset 1 (macOS: sin_len=0, sin_family=1)
-		g.tmpIdx++
-		famGep := fmt.Sprintf("%%net.l.fam.%d", g.tmpIdx)
+		famGep := g.tmpReg("net.l.fam")
 
 		// htons(port): (port & 0xFF) << 8 | (port >> 8) & 0xFF
-		g.tmpIdx++
-		portLo := fmt.Sprintf("%%net.l.plo.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHi := fmt.Sprintf("%%net.l.phi.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHiM := fmt.Sprintf("%%net.l.phm.%d", g.tmpIdx)
-		g.tmpIdx++
-		portSl := fmt.Sprintf("%%net.l.psl.%d", g.tmpIdx)
-		g.tmpIdx++
-		portNet := fmt.Sprintf("%%net.l.pnet.%d", g.tmpIdx)
-		g.tmpIdx++
-		portI16 := fmt.Sprintf("%%net.l.pi16.%d", g.tmpIdx)
+		portLo := g.tmpReg("net.l.plo")
+		portHi := g.tmpReg("net.l.phi")
+		portHiM := g.tmpReg("net.l.phm")
+		portSl := g.tmpReg("net.l.psl")
+		portNet := g.tmpReg("net.l.pnet")
+		portI16 := g.tmpReg("net.l.pi16")
 
 		// sin_port at offset 2
-		g.tmpIdx++
-		portGep := fmt.Sprintf("%%net.l.portgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		portCast := fmt.Sprintf("%%net.l.portcast.%d", g.tmpIdx)
+		portGep := g.tmpReg("net.l.portgep")
+		portCast := g.tmpReg("net.l.portcast")
 
 		// inet_pton(AF_INET=2, host, &sin_addr at offset 4)
-		g.tmpIdx++
-		addrInGep := fmt.Sprintf("%%net.l.addringe.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonRet := fmt.Sprintf("%%net.l.pton.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonOk := fmt.Sprintf("%%net.l.ptonok.%d", g.tmpIdx)
+		addrInGep := g.tmpReg("net.l.addringe")
+		ptonRet := g.tmpReg("net.l.pton")
+		ptonOk := g.tmpReg("net.l.ptonok")
 
 		// socket(AF_INET=2, SOCK_STREAM=1, 0)
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%net.l.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		sockOk := fmt.Sprintf("%%net.l.sockok.%d", g.tmpIdx)
+		sockFd := g.tmpReg("net.l.sock")
+		sockOk := g.tmpReg("net.l.sockok")
 
 		// setsockopt(fd, SOL_SOCKET=65535, SO_REUSEADDR=4, &val, 4)
-		g.tmpIdx++
-		reuseAlloca := fmt.Sprintf("%%net.l.reuse.%d", g.tmpIdx)
-		g.tmpIdx++
-		reusePtr := fmt.Sprintf("%%net.l.reuseptr.%d", g.tmpIdx)
+		reuseAlloca := g.tmpReg("net.l.reuse")
+		reusePtr := g.tmpReg("net.l.reuseptr")
 
 		// bind(fd, &addr, 16)
-		g.tmpIdx++
-		bindRet := fmt.Sprintf("%%net.l.bind.%d", g.tmpIdx)
-		g.tmpIdx++
-		bindOk := fmt.Sprintf("%%net.l.bindok.%d", g.tmpIdx)
+		bindRet := g.tmpReg("net.l.bind")
+		bindOk := g.tmpReg("net.l.bindok")
 
 		// listen(fd, 128)
-		g.tmpIdx++
-		listenRet := fmt.Sprintf("%%net.l.listen.%d", g.tmpIdx)
-		g.tmpIdx++
-		listenOk := fmt.Sprintf("%%net.l.listenok.%d", g.tmpIdx)
+		listenRet := g.tmpReg("net.l.listen")
+		listenOk := g.tmpReg("net.l.listenok")
 
 		// fd as i64
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%net.l.fdext.%d", g.tmpIdx)
+		fdExt := g.tmpReg("net.l.fdext")
 
 		// all.ok = pton.ok AND sock.ok AND bind.ok AND listen.ok
-		g.tmpIdx++
-		ok1 := fmt.Sprintf("%%net.l.ok1.%d", g.tmpIdx)
-		g.tmpIdx++
-		ok2 := fmt.Sprintf("%%net.l.ok2.%d", g.tmpIdx)
-		g.tmpIdx++
-		ok3 := fmt.Sprintf("%%net.l.ok3.%d", g.tmpIdx)
+		ok1 := g.tmpReg("net.l.ok1")
+		ok2 := g.tmpReg("net.l.ok2")
+		ok3 := g.tmpReg("net.l.ok3")
 
 		// result = select all.ok ? fd : -1
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%net.l.result.%d", g.tmpIdx)
+		resultReg := g.tmpReg("net.l.result")
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
@@ -2488,100 +2160,64 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		portVal := a[1]
 
 		// Allocate sockaddr_in (16 bytes) and zero it
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%net.d.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%net.d.addrptr.%d", g.tmpIdx)
+		addrReg := g.tmpReg("net.d.addr")
+		addrPtr := g.tmpReg("net.d.addrptr")
 
 		// sin_family at offset 1
-		g.tmpIdx++
-		famGep := fmt.Sprintf("%%net.d.fam.%d", g.tmpIdx)
+		famGep := g.tmpReg("net.d.fam")
 
 		// htons(port)
-		g.tmpIdx++
-		portLo := fmt.Sprintf("%%net.d.plo.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHi := fmt.Sprintf("%%net.d.phi.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHiM := fmt.Sprintf("%%net.d.phm.%d", g.tmpIdx)
-		g.tmpIdx++
-		portSl := fmt.Sprintf("%%net.d.psl.%d", g.tmpIdx)
-		g.tmpIdx++
-		portNet := fmt.Sprintf("%%net.d.pnet.%d", g.tmpIdx)
-		g.tmpIdx++
-		portI16 := fmt.Sprintf("%%net.d.pi16.%d", g.tmpIdx)
+		portLo := g.tmpReg("net.d.plo")
+		portHi := g.tmpReg("net.d.phi")
+		portHiM := g.tmpReg("net.d.phm")
+		portSl := g.tmpReg("net.d.psl")
+		portNet := g.tmpReg("net.d.pnet")
+		portI16 := g.tmpReg("net.d.pi16")
 
 		// sin_port at offset 2
-		g.tmpIdx++
-		portGep := fmt.Sprintf("%%net.d.portgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		portCast := fmt.Sprintf("%%net.d.portcast.%d", g.tmpIdx)
+		portGep := g.tmpReg("net.d.portgep")
+		portCast := g.tmpReg("net.d.portcast")
 
 		// inet_pton
-		g.tmpIdx++
-		addrInGep := fmt.Sprintf("%%net.d.addringe.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonRet := fmt.Sprintf("%%net.d.pton.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonOk := fmt.Sprintf("%%net.d.ptonok.%d", g.tmpIdx)
+		addrInGep := g.tmpReg("net.d.addringe")
+		ptonRet := g.tmpReg("net.d.pton")
+		ptonOk := g.tmpReg("net.d.ptonok")
 
 		// getaddrinfo fallback registers
-		g.tmpIdx++
-		hintsReg := fmt.Sprintf("%%net.d.hints.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsPtr := fmt.Sprintf("%%net.d.hintsptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsFamGep := fmt.Sprintf("%%net.d.hintsfam.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsFamCast := fmt.Sprintf("%%net.d.hintsfamc.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsStGep := fmt.Sprintf("%%net.d.hintsst.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsStCast := fmt.Sprintf("%%net.d.hintsstc.%d", g.tmpIdx)
-		g.tmpIdx++
-		resReg := fmt.Sprintf("%%net.d.res.%d", g.tmpIdx)
-		g.tmpIdx++
-		gaiRet := fmt.Sprintf("%%net.d.gai.%d", g.tmpIdx)
-		g.tmpIdx++
-		gaiOk := fmt.Sprintf("%%net.d.gaiok.%d", g.tmpIdx)
-		g.tmpIdx++
-		resVal := fmt.Sprintf("%%net.d.resval.%d", g.tmpIdx)
-		g.tmpIdx++
-		aiAddrGep := fmt.Sprintf("%%net.d.aiaddrgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		aiAddrCast := fmt.Sprintf("%%net.d.aiaddrcast.%d", g.tmpIdx)
-		g.tmpIdx++
-		aiAddr := fmt.Sprintf("%%net.d.aiaddr.%d", g.tmpIdx)
+		hintsReg := g.tmpReg("net.d.hints")
+		hintsPtr := g.tmpReg("net.d.hintsptr")
+		hintsFamGep := g.tmpReg("net.d.hintsfam")
+		hintsFamCast := g.tmpReg("net.d.hintsfamc")
+		hintsStGep := g.tmpReg("net.d.hintsst")
+		hintsStCast := g.tmpReg("net.d.hintsstc")
+		resReg := g.tmpReg("net.d.res")
+		gaiRet := g.tmpReg("net.d.gai")
+		gaiOk := g.tmpReg("net.d.gaiok")
+		resVal := g.tmpReg("net.d.resval")
+		aiAddrGep := g.tmpReg("net.d.aiaddrgep")
+		aiAddrCast := g.tmpReg("net.d.aiaddrcast")
+		aiAddr := g.tmpReg("net.d.aiaddr")
 
 		// socket
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%net.d.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		sockOk := fmt.Sprintf("%%net.d.sockok.%d", g.tmpIdx)
+		sockFd := g.tmpReg("net.d.sock")
+		sockOk := g.tmpReg("net.d.sockok")
 
 		// connect
-		g.tmpIdx++
-		connRet := fmt.Sprintf("%%net.d.conn.%d", g.tmpIdx)
-		g.tmpIdx++
-		connOk := fmt.Sprintf("%%net.d.connok.%d", g.tmpIdx)
+		connRet := g.tmpReg("net.d.conn")
+		connOk := g.tmpReg("net.d.connok")
 
 		// fd as i64
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%net.d.fdext.%d", g.tmpIdx)
+		fdExt := g.tmpReg("net.d.fdext")
 
 		// sock.ok AND conn.ok
-		g.tmpIdx++
-		sockConnOk := fmt.Sprintf("%%net.d.sockconnok.%d", g.tmpIdx)
+		sockConnOk := g.tmpReg("net.d.sockconnok")
 
 		// phi nodes at merge
-		g.tmpIdx++
-		finalOk := fmt.Sprintf("%%net.d.finalok.%d", g.tmpIdx)
-		g.tmpIdx++
-		finalFd := fmt.Sprintf("%%net.d.finalfd.%d", g.tmpIdx)
+		finalOk := g.tmpReg("net.d.finalok")
+		finalFd := g.tmpReg("net.d.finalfd")
 
 		// result
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%net.d.result.%d", g.tmpIdx)
+		resultReg := g.tmpReg("net.d.result")
 
 		if sb != nil {
 			// Basic block labels
@@ -2652,10 +2288,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), aiAddrCast, aiAddrGep))
 			aiAddr = g.loadDataPtrField(sb, aiAddrCast)
 			// copy only sin_addr (4 bytes at offset 4) from ai_addr to our buffer
-			g.tmpIdx++
-			addrSinAddrGep := fmt.Sprintf("%%net.d.sinaddr.%d", g.tmpIdx)
-			g.tmpIdx++
-			aiAddrSinAddrGep := fmt.Sprintf("%%net.d.aiaddrsin.%d", g.tmpIdx)
+			addrSinAddrGep := g.tmpReg("net.d.sinaddr")
+			aiAddrSinAddrGep := g.tmpReg("net.d.aiaddrsin")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), addrSinAddrGep, addrPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), aiAddrSinAddrGep, aiAddr))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 4, i1 false)\n", g.indent(), addrSinAddrGep, aiAddrSinAddrGep))
@@ -2693,18 +2327,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		a := evalArgs()
 		listenFd := a[0]
 
-		g.tmpIdx++
-		addrBuf := fmt.Sprintf("%%net.a.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%net.a.addrptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenAlloca := fmt.Sprintf("%%net.a.len.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.a.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		acceptRet := fmt.Sprintf("%%net.a.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		acceptExt := fmt.Sprintf("%%net.a.ext.%d", g.tmpIdx)
+		addrBuf := g.tmpReg("net.a.addr")
+		addrPtr := g.tmpReg("net.a.addrptr")
+		lenAlloca := g.tmpReg("net.a.len")
+		fdTrunc := g.tmpReg("net.a.fdtrunc")
+		acceptRet := g.tmpReg("net.a.ret")
+		acceptExt := g.tmpReg("net.a.ext")
 
 		if sb != nil {
 			// Allocate sockaddr storage (16 bytes) and addrlen
@@ -2735,10 +2363,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if dataArgType == "%vec" {
 			// []byte: extract data pointer from vec field 2
 			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%net.s.datagep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%net.s.dataptr.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("net.s.datagep")
+			dataLoad := g.tmpReg("net.s.dataptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecPtr))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
@@ -2754,18 +2380,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				baseRef := arrEval[:idx]
 				varName := strings.TrimPrefix(baseRef, "%")
 				_ = varName
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%net.s.arrtmp.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("net.s.arrtmp")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
 				}
 				arrPtr = tmpAlloca
 			}
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%net.s.arrgep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%net.s.arrptr.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("net.s.arrgep")
+			dataLoad := g.tmpReg("net.s.arrptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, arrPtr))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
@@ -2778,10 +2401,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 		nVal := a[2]
 
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.s.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		sendRet := fmt.Sprintf("%%net.s.ret.%d", g.tmpIdx)
+		fdTrunc := g.tmpReg("net.s.fdtrunc")
+		sendRet := g.tmpReg("net.s.ret")
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
@@ -2802,10 +2423,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if bufArgType == "%vec" {
 			// []byte: extract data pointer from vec field 2
 			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
-			g.tmpIdx++
-			bufGEP := fmt.Sprintf("%%net.r.datagep.%d", g.tmpIdx)
-			g.tmpIdx++
-			bufLoad := fmt.Sprintf("%%net.r.dataptr.%d", g.tmpIdx)
+			bufGEP := g.tmpReg("net.r.datagep")
+			bufLoad := g.tmpReg("net.r.dataptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
 				bufLoad = g.loadDataPtrField(sb, bufGEP)
@@ -2816,18 +2435,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			arrEval := a[1]
 			arrPtr := arrEval
 			if idx := strings.Index(arrEval, ".val."); idx > 0 {
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%net.r.arrtmp.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("net.r.arrtmp")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
 				}
 				arrPtr = tmpAlloca
 			}
-			g.tmpIdx++
-			bufGEP := fmt.Sprintf("%%net.r.arrgep.%d", g.tmpIdx)
-			g.tmpIdx++
-			bufLoad := fmt.Sprintf("%%net.r.arrptr.%d", g.tmpIdx)
+			bufGEP := g.tmpReg("net.r.arrgep")
+			bufLoad := g.tmpReg("net.r.arrptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), bufGEP, arrPtr))
 				bufLoad = g.loadDataPtrField(sb, bufGEP)
@@ -2840,10 +2456,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 		nVal := a[2]
 
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.r.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		recvRet := fmt.Sprintf("%%net.r.ret.%d", g.tmpIdx)
+		fdTrunc := g.tmpReg("net.r.fdtrunc")
+		recvRet := g.tmpReg("net.r.ret")
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
@@ -2859,10 +2473,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Performs: socket(AF_INET, SOCK_DGRAM, 0)
 	// Returns: fd i64 (-1 on error)
 	if fnName == "net-udp-open" {
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%net.udp.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%net.udp.fdext.%d", g.tmpIdx)
+		sockFd := g.tmpReg("net.udp.sock")
+		fdExt := g.tmpReg("net.udp.fdext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 2, i32 0)\n", g.indent(), sockFd))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
@@ -2885,10 +2497,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		dataArgType := g.exprResultLLVMType(expr.Arguments[1])
 		if dataArgType == "%vec" {
 			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%net.us.datagep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%net.us.dataptr.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("net.us.datagep")
+			dataLoad := g.tmpReg("net.us.dataptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecPtr))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
@@ -2898,18 +2508,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			arrEval := a[1]
 			arrPtr := arrEval
 			if idx := strings.Index(arrEval, ".val."); idx > 0 {
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%net.us.arrtmp.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("net.us.arrtmp")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
 				}
 				arrPtr = tmpAlloca
 			}
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%net.us.arrgep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%net.us.arrptr.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("net.us.arrgep")
+			dataLoad := g.tmpReg("net.us.arrptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, arrPtr))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
@@ -2920,63 +2527,35 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		}
 
 		// Build sockaddr_in (16 bytes)
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%net.us.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%net.us.addrptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		famGep := fmt.Sprintf("%%net.us.fam.%d", g.tmpIdx)
-		g.tmpIdx++
-		portLo := fmt.Sprintf("%%net.us.plo.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHi := fmt.Sprintf("%%net.us.phi.%d", g.tmpIdx)
-		g.tmpIdx++
-		portHiM := fmt.Sprintf("%%net.us.phm.%d", g.tmpIdx)
-		g.tmpIdx++
-		portSl := fmt.Sprintf("%%net.us.psl.%d", g.tmpIdx)
-		g.tmpIdx++
-		portNet := fmt.Sprintf("%%net.us.pnet.%d", g.tmpIdx)
-		g.tmpIdx++
-		portI16 := fmt.Sprintf("%%net.us.pi16.%d", g.tmpIdx)
-		g.tmpIdx++
-		portGep := fmt.Sprintf("%%net.us.portgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		portCast := fmt.Sprintf("%%net.us.portcast.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrInGep := fmt.Sprintf("%%net.us.addringe.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonRet := fmt.Sprintf("%%net.us.pton.%d", g.tmpIdx)
-		g.tmpIdx++
-		ptonOk := fmt.Sprintf("%%net.us.ptonok.%d", g.tmpIdx)
+		addrReg := g.tmpReg("net.us.addr")
+		addrPtr := g.tmpReg("net.us.addrptr")
+		famGep := g.tmpReg("net.us.fam")
+		portLo := g.tmpReg("net.us.plo")
+		portHi := g.tmpReg("net.us.phi")
+		portHiM := g.tmpReg("net.us.phm")
+		portSl := g.tmpReg("net.us.psl")
+		portNet := g.tmpReg("net.us.pnet")
+		portI16 := g.tmpReg("net.us.pi16")
+		portGep := g.tmpReg("net.us.portgep")
+		portCast := g.tmpReg("net.us.portcast")
+		addrInGep := g.tmpReg("net.us.addringe")
+		ptonRet := g.tmpReg("net.us.pton")
+		ptonOk := g.tmpReg("net.us.ptonok")
 		// getaddrinfo fallback registers
-		g.tmpIdx++
-		hintsReg := fmt.Sprintf("%%net.us.hints.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsPtr := fmt.Sprintf("%%net.us.hintsptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsFamGep := fmt.Sprintf("%%net.us.hintsfam.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsFamCast := fmt.Sprintf("%%net.us.hintsfamc.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsStGep := fmt.Sprintf("%%net.us.hintsst.%d", g.tmpIdx)
-		g.tmpIdx++
-		hintsStCast := fmt.Sprintf("%%net.us.hintsstc.%d", g.tmpIdx)
-		g.tmpIdx++
-		resReg := fmt.Sprintf("%%net.us.res.%d", g.tmpIdx)
-		g.tmpIdx++
-		gaiRet := fmt.Sprintf("%%net.us.gai.%d", g.tmpIdx)
-		g.tmpIdx++
-		gaiOk := fmt.Sprintf("%%net.us.gaiok.%d", g.tmpIdx)
-		g.tmpIdx++
-		resVal := fmt.Sprintf("%%net.us.resval.%d", g.tmpIdx)
-		g.tmpIdx++
-		aiAddrGep := fmt.Sprintf("%%net.us.aiaddrgep.%d", g.tmpIdx)
-		g.tmpIdx++
-		aiAddrCast := fmt.Sprintf("%%net.us.aiaddrcast.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.us.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		sendRet := fmt.Sprintf("%%net.us.ret.%d", g.tmpIdx)
+		hintsReg := g.tmpReg("net.us.hints")
+		hintsPtr := g.tmpReg("net.us.hintsptr")
+		hintsFamGep := g.tmpReg("net.us.hintsfam")
+		hintsFamCast := g.tmpReg("net.us.hintsfamc")
+		hintsStGep := g.tmpReg("net.us.hintsst")
+		hintsStCast := g.tmpReg("net.us.hintsstc")
+		resReg := g.tmpReg("net.us.res")
+		gaiRet := g.tmpReg("net.us.gai")
+		gaiOk := g.tmpReg("net.us.gaiok")
+		resVal := g.tmpReg("net.us.resval")
+		aiAddrGep := g.tmpReg("net.us.aiaddrgep")
+		aiAddrCast := g.tmpReg("net.us.aiaddrcast")
+		fdTrunc := g.tmpReg("net.us.fdtrunc")
+		sendRet := g.tmpReg("net.us.ret")
 
 		if sb != nil {
 			// Basic block labels
@@ -3049,10 +2628,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		bufArgType := g.exprResultLLVMType(expr.Arguments[1])
 		if bufArgType == "%vec" {
 			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
-			g.tmpIdx++
-			bufGEP := fmt.Sprintf("%%net.ur.datagep.%d", g.tmpIdx)
-			g.tmpIdx++
-			bufLoad := fmt.Sprintf("%%net.ur.dataptr.%d", g.tmpIdx)
+			bufGEP := g.tmpReg("net.ur.datagep")
+			bufLoad := g.tmpReg("net.ur.dataptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
 				bufLoad = g.loadDataPtrField(sb, bufGEP)
@@ -3062,18 +2639,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			arrEval := a[1]
 			arrPtr := arrEval
 			if idx := strings.Index(arrEval, ".val."); idx > 0 {
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%net.ur.arrtmp.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("net.ur.arrtmp")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
 				}
 				arrPtr = tmpAlloca
 			}
-			g.tmpIdx++
-			bufGEP := fmt.Sprintf("%%net.ur.arrgep.%d", g.tmpIdx)
-			g.tmpIdx++
-			bufLoad := fmt.Sprintf("%%net.ur.arrptr.%d", g.tmpIdx)
+			bufGEP := g.tmpReg("net.ur.arrgep")
+			bufLoad := g.tmpReg("net.ur.arrptr")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), bufGEP, arrPtr))
 				bufLoad = g.loadDataPtrField(sb, bufGEP)
@@ -3086,16 +2660,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		nVal := a[2]
 
 		// Allocate sockaddr_in for source address (we don't use it, but recvfrom needs it)
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%net.ur.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%net.ur.addrptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		lenAlloca := fmt.Sprintf("%%net.ur.addrlen.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.ur.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		recvRet := fmt.Sprintf("%%net.ur.ret.%d", g.tmpIdx)
+		addrReg := g.tmpReg("net.ur.addr")
+		addrPtr := g.tmpReg("net.ur.addrptr")
+		lenAlloca := g.tmpReg("net.ur.addrlen")
+		fdTrunc := g.tmpReg("net.ur.fdtrunc")
+		recvRet := g.tmpReg("net.ur.ret")
 
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
@@ -3118,30 +2687,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		fdVal := a[0]
 		timeoutMs := a[1]
 
-		g.tmpIdx++
-		tvAlloca := fmt.Sprintf("%%net.to.tv.%d", g.tmpIdx)
-		g.tmpIdx++
-		tvPtr := fmt.Sprintf("%%net.to.tvptr.%d", g.tmpIdx)
-		g.tmpIdx++
-		secVal := fmt.Sprintf("%%net.to.sec.%d", g.tmpIdx)
-		g.tmpIdx++
-		remainMs := fmt.Sprintf("%%net.to.remain.%d", g.tmpIdx)
-		g.tmpIdx++
-		usecVal := fmt.Sprintf("%%net.to.usec.%d", g.tmpIdx)
-		g.tmpIdx++
-		tvSecGep := fmt.Sprintf("%%net.to.tvsec.%d", g.tmpIdx)
-		g.tmpIdx++
-		tvSecCast := fmt.Sprintf("%%net.to.tvsecc.%d", g.tmpIdx)
-		g.tmpIdx++
-		tvUsecGep := fmt.Sprintf("%%net.to.tvusec.%d", g.tmpIdx)
-		g.tmpIdx++
-		tvUsecCast := fmt.Sprintf("%%net.to.tvusecc.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdTrunc := fmt.Sprintf("%%net.to.fdtrunc.%d", g.tmpIdx)
-		g.tmpIdx++
-		setRet := fmt.Sprintf("%%net.to.ret.%d", g.tmpIdx)
-		g.tmpIdx++
-		retExt := fmt.Sprintf("%%net.to.ext.%d", g.tmpIdx)
+		tvAlloca := g.tmpReg("net.to.tv")
+		tvPtr := g.tmpReg("net.to.tvptr")
+		secVal := g.tmpReg("net.to.sec")
+		remainMs := g.tmpReg("net.to.remain")
+		usecVal := g.tmpReg("net.to.usec")
+		tvSecGep := g.tmpReg("net.to.tvsec")
+		tvSecCast := g.tmpReg("net.to.tvsecc")
+		tvUsecGep := g.tmpReg("net.to.tvusec")
+		tvUsecCast := g.tmpReg("net.to.tvusecc")
+		fdTrunc := g.tmpReg("net.to.fdtrunc")
+		setRet := g.tmpReg("net.to.ret")
+		retExt := g.tmpReg("net.to.ext")
 
 		if sb != nil {
 			// struct timeval { long tv_sec, long tv_usec } = 16 bytes on 64-bit
@@ -3178,51 +2735,35 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		pathPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
 		pathLen := g.strLenFromExpr(sb, expr.Arguments[0])
 
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%unix.l.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%unix.l.addrptr.%d", g.tmpIdx)
+		addrReg := g.tmpReg("unix.l.addr")
+		addrPtr := g.tmpReg("unix.l.addrptr")
 
 		// sun_family at offset 1 (macOS: sun_len=0, sun_family=1)
-		g.tmpIdx++
-		famGep := fmt.Sprintf("%%unix.l.fam.%d", g.tmpIdx)
+		famGep := g.tmpReg("unix.l.fam")
 
 		// sun_path at offset 2
-		g.tmpIdx++
-		pathGep := fmt.Sprintf("%%unix.l.path.%d", g.tmpIdx)
+		pathGep := g.tmpReg("unix.l.path")
 
 		// cap path length at 103
-		g.tmpIdx++
-		capCmp := fmt.Sprintf("%%unix.l.capcmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		cappedLen := fmt.Sprintf("%%unix.l.caplen.%d", g.tmpIdx)
+		capCmp := g.tmpReg("unix.l.capcmp")
+		cappedLen := g.tmpReg("unix.l.caplen")
 
 		// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%unix.l.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		sockOk := fmt.Sprintf("%%unix.l.sockok.%d", g.tmpIdx)
+		sockFd := g.tmpReg("unix.l.sock")
+		sockOk := g.tmpReg("unix.l.sockok")
 
 		// bind(fd, &addr, 106)
-		g.tmpIdx++
-		bindRet := fmt.Sprintf("%%unix.l.bind.%d", g.tmpIdx)
-		g.tmpIdx++
-		bindOk := fmt.Sprintf("%%unix.l.bindok.%d", g.tmpIdx)
+		bindRet := g.tmpReg("unix.l.bind")
+		bindOk := g.tmpReg("unix.l.bindok")
 
 		// listen(fd, 128)
-		g.tmpIdx++
-		listenRet := fmt.Sprintf("%%unix.l.listen.%d", g.tmpIdx)
-		g.tmpIdx++
-		listenOk := fmt.Sprintf("%%unix.l.listenok.%d", g.tmpIdx)
+		listenRet := g.tmpReg("unix.l.listen")
+		listenOk := g.tmpReg("unix.l.listenok")
 
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%unix.l.fdext.%d", g.tmpIdx)
-		g.tmpIdx++
-		ok1 := fmt.Sprintf("%%unix.l.ok1.%d", g.tmpIdx)
-		g.tmpIdx++
-		ok2 := fmt.Sprintf("%%unix.l.ok2.%d", g.tmpIdx)
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%unix.l.result.%d", g.tmpIdx)
+		fdExt := g.tmpReg("unix.l.fdext")
+		ok1 := g.tmpReg("unix.l.ok1")
+		ok2 := g.tmpReg("unix.l.ok2")
+		resultReg := g.tmpReg("unix.l.result")
 
 		if sb != nil {
 			// unlink(path) — remove existing socket file, ignore result
@@ -3280,43 +2821,30 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		pathPtr := g.makeNullTerminatedStr(sb, expr.Arguments[0])
 		pathLen := g.strLenFromExpr(sb, expr.Arguments[0])
 
-		g.tmpIdx++
-		addrReg := fmt.Sprintf("%%unix.d.addr.%d", g.tmpIdx)
-		g.tmpIdx++
-		addrPtr := fmt.Sprintf("%%unix.d.addrptr.%d", g.tmpIdx)
+		addrReg := g.tmpReg("unix.d.addr")
+		addrPtr := g.tmpReg("unix.d.addrptr")
 
 		// sun_family at offset 1 (macOS: sun_len=0, sun_family=1)
-		g.tmpIdx++
-		famGep := fmt.Sprintf("%%unix.d.fam.%d", g.tmpIdx)
+		famGep := g.tmpReg("unix.d.fam")
 
 		// sun_path at offset 2
-		g.tmpIdx++
-		pathGep := fmt.Sprintf("%%unix.d.path.%d", g.tmpIdx)
+		pathGep := g.tmpReg("unix.d.path")
 
 		// cap path length at 103
-		g.tmpIdx++
-		capCmp := fmt.Sprintf("%%unix.d.capcmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		cappedLen := fmt.Sprintf("%%unix.d.caplen.%d", g.tmpIdx)
+		capCmp := g.tmpReg("unix.d.capcmp")
+		cappedLen := g.tmpReg("unix.d.caplen")
 
 		// socket(AF_UNIX=1, SOCK_STREAM=1, 0)
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%unix.d.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		sockOk := fmt.Sprintf("%%unix.d.sockok.%d", g.tmpIdx)
+		sockFd := g.tmpReg("unix.d.sock")
+		sockOk := g.tmpReg("unix.d.sockok")
 
 		// connect(fd, &addr, 106)
-		g.tmpIdx++
-		connRet := fmt.Sprintf("%%unix.d.conn.%d", g.tmpIdx)
-		g.tmpIdx++
-		connOk := fmt.Sprintf("%%unix.d.connok.%d", g.tmpIdx)
+		connRet := g.tmpReg("unix.d.conn")
+		connOk := g.tmpReg("unix.d.connok")
 
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%unix.d.fdext.%d", g.tmpIdx)
-		g.tmpIdx++
-		ok1 := fmt.Sprintf("%%unix.d.ok1.%d", g.tmpIdx)
-		g.tmpIdx++
-		resultReg := fmt.Sprintf("%%unix.d.result.%d", g.tmpIdx)
+		fdExt := g.tmpReg("unix.d.fdext")
+		ok1 := g.tmpReg("unix.d.ok1")
+		resultReg := g.tmpReg("unix.d.result")
 
 		if sb != nil {
 			// allocate sockaddr_un (110 bytes), zero it
@@ -3370,10 +2898,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if g.goos() == "darwin" {
 			sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
 		}
-		g.tmpIdx++
-		sockFd := fmt.Sprintf("%%net.icmp.sock.%d", g.tmpIdx)
-		g.tmpIdx++
-		fdExt := fmt.Sprintf("%%net.icmp.fdext.%d", g.tmpIdx)
+		sockFd := g.tmpReg("net.icmp.sock")
+		fdExt := g.tmpReg("net.icmp.fdext")
 		// socket(AF_INET=2, sockType, IPPROTO_ICMP=1)
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @socket(i32 2, i32 %d, i32 1)\n", g.indent(), sockFd, sockType))
 		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), fdExt, sockFd))
@@ -3424,8 +2950,7 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 		ptr := g.generateExprWithSB(sb, a)
 		et := g.exprResultLLVMType(a)
 		if et == "%str-long" {
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%str-long.dot.%d", g.tmpIdx)
+			tmpAlloca := g.tmpReg("str-long.dot")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
 			dataPtr = g.extractStrDataPtr(sb, tmpAlloca)
@@ -3437,8 +2962,7 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 		if ident, ok := a.Left.(*parser.Identifier); ok {
 			if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
 				ptr := g.generateExprWithSB(sb, a)
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%str-long.idx.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("str-long.idx")
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
 				dataPtr = g.extractStrDataPtr(sb, tmpAlloca)
@@ -3450,16 +2974,13 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 		return dataPtr
 	}
 
-	g.tmpIdx++
-	sizeReg := fmt.Sprintf("%%str-longnull.size.%d", g.tmpIdx)
+	sizeReg := g.tmpReg("str-longnull.size")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), sizeReg, strLen))
 
-	g.tmpIdx++
-	buf := fmt.Sprintf("%%str-longnull.buf.%d", g.tmpIdx)
+	buf := g.tmpReg("str-longnull.buf")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
 
-	g.tmpIdx++
-	nullEnd := fmt.Sprintf("%%str-longnull.end.%d", g.tmpIdx)
+	nullEnd := g.tmpReg("str-longnull.end")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullEnd))
 
@@ -3472,8 +2993,7 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 // macOS: @__stderrp, Linux/Windows/WASI: @stderr
 // 使用編譯目標平台（g.goos()）而非宿主平台，與 decl.go 宣告分派一致。
 func (g *Generator) loadStderr(sb *strings.Builder) string {
-	g.tmpIdx++
-	reg := fmt.Sprintf("%%stderr.ptr.%d", g.tmpIdx)
+	reg := g.tmpReg("stderr.ptr")
 	var globalName string
 	if g.goos() == "darwin" {
 		globalName = "@__stderrp"
@@ -3570,8 +3090,7 @@ func (g *Generator) callNamedFormat(sb *strings.Builder, fnName string, segments
 		outFn = "err"
 	}
 	for _, segPtr := range segPtrs {
-		g.tmpIdx++
-		discardedN := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+		discardedN := g.tmpReg("vso.tmp")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), discardedN))
 		sb.WriteString(fmt.Sprintf("%scall void @%s(%%str-long* %s, i64* %s)\n",
 			g.indent(), outFn, segPtr, discardedN))
@@ -3607,8 +3126,7 @@ func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatFi
 	// buffer would contain stack garbage, causing the free of a bogus data
 	// pointer to crash (SIGABRT). Per project convention, the caller must
 	// initialize output parameters: str → {len=0, cap=0, data=null}.
-	g.tmpIdx++
-	outBuf := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+	outBuf := g.tmpReg("vso.tmp")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
 
@@ -3659,12 +3177,9 @@ func (g *Generator) emitFmtArgPtr(sb *strings.Builder, varName, varType, targetT
 		return addr
 	}
 	// Load value, convert, store to temp alloca of targetType
-	g.tmpIdx++
-	tmpAlloca := fmt.Sprintf("%%fmtarg.%d", g.tmpIdx)
-	g.tmpIdx++
-	loadReg := fmt.Sprintf("%%fmtarg.val.%d", g.tmpIdx)
-	g.tmpIdx++
-	convReg := fmt.Sprintf("%%fmtarg.conv.%d", g.tmpIdx)
+	tmpAlloca := g.tmpReg("fmtarg")
+	loadReg := g.tmpReg("fmtarg.val")
+	convReg := g.tmpReg("fmtarg.conv")
 
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, targetType))
 	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, varType, varType, addr))
@@ -3698,48 +3213,39 @@ func (g *Generator) concatStrLongPtrs(sb *strings.Builder, leftPtr, rightPtr str
 	leftData := g.extractStrDataPtr(sb, leftPtr)
 	rightData := g.extractStrDataPtr(sb, rightPtr)
 
-	g.tmpIdx++
-	totalLen := fmt.Sprintf("%%nfmt.concat.total.%d", g.tmpIdx)
+	totalLen := g.tmpReg("nfmt.concat.total")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), totalLen, leftLen, rightLen))
 
-	g.tmpIdx++
-	allocSize := fmt.Sprintf("%%nfmt.concat.alloc.%d", g.tmpIdx)
+	allocSize := g.tmpReg("nfmt.concat.alloc")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), allocSize, totalLen))
 
-	g.tmpIdx++
-	bufPtr := fmt.Sprintf("%%nfmt.concat.buf.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
+	bufPtr := g.tmpReg("nfmt.concat.buf")
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
 
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), bufPtr, leftData, leftLen))
 
-	g.tmpIdx++
-	dstOffset := fmt.Sprintf("%%nfmt.concat.dst.%d", g.tmpIdx)
+	dstOffset := g.tmpReg("nfmt.concat.dst")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), dstOffset, bufPtr, leftLen))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), dstOffset, rightData, rightLen))
 
-	g.tmpIdx++
-	nullPos := fmt.Sprintf("%%nfmt.concat.null.%d", g.tmpIdx)
+	nullPos := g.tmpReg("nfmt.concat.null")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
-	g.tmpIdx++
-	resultAlloca := fmt.Sprintf("%%nfmt.concat.result.%d", g.tmpIdx)
+	resultAlloca := g.tmpReg("nfmt.concat.result")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
 
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%nfmt.concat.len.gep.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("nfmt.concat.len.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
 
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%nfmt.concat.cap.gep.%d", g.tmpIdx)
+	capGEP := g.tmpReg("nfmt.concat.cap.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, capGEP))
 
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%nfmt.concat.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("nfmt.concat.data.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 

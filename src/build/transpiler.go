@@ -215,14 +215,6 @@ var validationStructFields map[string]map[string]string
 // are also registered but treated as transparent (no newtype enforcement).
 var validationConcreteTypeAliases map[string]string
 
-// stdConcreteAliases holds single concrete type aliases preloaded from
-// std modules (e.g. "fd" → "i64" from fs.no), populated by
-// preloadModuleSignatures BEFORE ValidateTypes runs. This ensures
-// newtype enforcement works in cross-module scenarios: when vetting
-// io.no (which uses fd but doesn't define it), the fd alias from fs.no
-// is already registered here and merged into validationConcreteTypeAliases.
-var stdConcreteAliases map[string]string
-
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
@@ -818,7 +810,6 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
-	stdConcreteAliases = make(map[string]string) // 跨模組單具體型別別名（預載入）
 
 	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
 	collectSignaturesFromProg := func(modProg *parser.Program) {
@@ -841,20 +832,10 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 				}
 				structFields[sd.Name] = fields
 			}
-			// 收集單具體型別別名（name = known-type），使 newtype 語義
-			// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
-			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
-				if _, ok := ta.Type.(*parser.FunctionType); !ok {
-					// 僅註冊未與主檔案或已載入模組衝突的別名
-					if _, exists := stdConcreteAliases[ta.Name]; !exists {
-						stdConcreteAliases[ta.Name] = ta.Type.String()
-					}
-				}
-			}
 		}
 	}
 
-	// 1. 掃描顯式 use/# 語句
+	// 1. 掃描顯式 use/# 語句（非 std 模組，std 模組由快取提供）
 	useRe := regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
 	matches := useRe.FindAllStringSubmatch(source, -1)
 	for _, m := range matches {
@@ -886,19 +867,17 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 		}
 	}
 
-	// 2. 預載入所有已知 std 模組的簽名（transpiler 會自動載入這些模組）
-	for _, info := range knownStdModules() {
-		path := "std/" + info.ShortPath
-		if loadedPaths[path] {
-			continue
+	// 2. 合併 std 模組簽名（從 sync.Once 快取獲取，避免每次編譯重複解析所有 std 模組）
+	stdSigs, stdFields := CollectStdModuleSignatures()
+	for name, sigs := range stdSigs {
+		if _, exists := funcSigs[name]; !exists {
+			funcSigs[name] = sigs
 		}
-		fakeUse := &parser.UseStatement{Path: path}
-		prog, err := t.resolveUse(fakeUse)
-		if err != nil || prog == nil {
-			continue
+	}
+	for name, fields := range stdFields {
+		if _, exists := structFields[name]; !exists {
+			structFields[name] = fields
 		}
-		loadedPaths[path] = true
-		collectSignaturesFromProg(prog)
 	}
 
 	return funcSigs, structFields
@@ -998,11 +977,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 
-	// 編譯期陣列邊界檢查
-	arraySizes := buildArraySizeMap(program)
-	sliceSizes := buildSliceSizeMap(program)
-	stringSizes := buildStringSizeMap(program)
-	if err := validateArrayBounds(program, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+	// 編譯期陣列邊界檢查（單次遍歷同時收集陣列、切片、字串大小映射）
+	sizeMap := buildSizeMaps(program)
+	if err := validateArrayBounds(program, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes); err != nil {
 		return "", err
 	}
 
@@ -1011,31 +988,31 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", err
 	}
 
-	// 型別檢查
+	// 型別檢查（收集所有錯誤後統一報告，而非遇錯即返）
+	// 這樣用戶在 no build 時能一次看到所有型別錯誤，而非逐個修復後才能看到下一個。
+	var allValidateErrs []string
 	if typeErrs := ValidateTypes(program); len(typeErrs) > 0 {
-		var msgs []string
 		for _, e := range typeErrs {
-			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
-		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
 	}
 
 	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
 	if funcArgErrs := ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
-		var msgs []string
 		for _, e := range funcArgErrs {
-			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
-		return "", fmt.Errorf("type errors: %s", strings.Join(msgs, "; "))
 	}
 
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
-		var msgs []string
 		for _, e := range uninitErrs {
-			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
-		return "", fmt.Errorf("uninitialized output parameter errors: %s", strings.Join(msgs, "; "))
+	}
+
+	if len(allValidateErrs) > 0 {
+		return "", fmt.Errorf("validation errors: %s", strings.Join(allValidateErrs, "; "))
 	}
 
 	// 名稱修飾 pass：處理方法重載
@@ -3093,6 +3070,124 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 
 // buildArraySizeMap 構建變數名 → 陣列大小的映射
 // 從所有 LetStatement 中收集 ArraySize
+// sizeMaps 儲存陣列、切片、字串的大小映射，由 buildSizeMaps 單次遍歷填充。
+// 合併三個原本各自獨立遍歷 AST 的函數（buildArraySizeMap/buildSliceSizeMap/buildStringSizeMap），
+// 將遍歷次數從 3 次降至 1 次，顯著減少大型程序的校驗開銷。
+type sizeMaps struct {
+	arraySizes  map[string]int64
+	sliceSizes  map[string]int64
+	stringSizes map[string]int64
+}
+
+// buildSizeMaps 單次遍歷 AST 同時收集陣列、切片、字串的大小映射。
+// 替代原本獨立呼叫 buildArraySizeMap + buildSliceSizeMap + buildStringSizeMap 的 3 次遍歷。
+func buildSizeMaps(program *parser.Program) *sizeMaps {
+	sm := &sizeMaps{
+		arraySizes:  make(map[string]int64),
+		sliceSizes:  make(map[string]int64),
+		stringSizes: make(map[string]int64),
+	}
+	for _, stmt := range program.Statements {
+		collectSizesFromStmt(stmt, sm)
+	}
+	return sm
+}
+
+// collectSizesFromStmt 遞迴遍歷 AST 節點，同時收集三種大小映射。
+// 合併自 collectArraySizesFromStmt / collectSliceSizeMapFromStmt / collectStringSizeMapFromStmt。
+func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		// 陣列大小收集
+		if at, ok := s.Type.(*parser.ArrayType); ok {
+			var arraySize int64
+			if at.Size != nil {
+				if intLit, ok := at.Size.(*parser.IntegerLiteral); ok {
+					arraySize = intLit.Value
+				}
+			} else if arrLit, ok := s.Value.(*parser.ArrayLiteral); ok {
+				if intLit, ok := arrLit.Size.(*parser.IntegerLiteral); ok && intLit.Value > 0 {
+					arraySize = intLit.Value
+				}
+			}
+			if arraySize > 0 {
+				sm.arraySizes[s.Name.Value] = arraySize
+			}
+		}
+		// 切片大小收集
+		if _, ok := s.Type.(*parser.SliceType); ok {
+			if sl, ok := s.Value.(*parser.SliceLiteral); ok {
+				sm.sliceSizes[s.Name.Value] = int64(len(sl.Elements))
+			} else {
+				sm.sliceSizes[s.Name.Value] = 0 // unknown size
+			}
+		} else if sl, ok := s.Value.(*parser.SliceLiteral); ok {
+			// Also detect slice from SliceLiteral value (inferred type, no [] annotation)
+			sm.sliceSizes[s.Name.Value] = int64(len(sl.Elements))
+		}
+		// 字串大小收集
+		if s.Type != nil && (s.Type.String() == "str") {
+			if sl, ok := s.Value.(*parser.StringLiteral); ok {
+				sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
+			} else {
+				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			}
+		} else if isStringExprForCollect(s.Value, sm.stringSizes) {
+			// Also detect string from inferred expression (StringLiteral, string concatenation,
+			// string method calls like slice/repeat, char-to-str, copy from known string var)
+			if sl, ok := s.Value.(*parser.StringLiteral); ok {
+				sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
+			} else {
+				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			}
+		}
+	case *parser.FunctionDefinition:
+		// 字串參數與返回值收集（僅 buildStringSizeMap 有此邏輯）
+		for _, p := range s.Parameters {
+			if p.Type != nil && (p.Type.String() == "str") {
+				sm.stringSizes[p.Name] = 0
+			}
+		}
+		for _, p := range s.Results {
+			if p.Type != nil && (p.Type.String() == "str") {
+				sm.stringSizes[p.Name] = 0
+			}
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectSizesFromStmt(ss, sm)
+			}
+		}
+	case *parser.ExpressionStatement:
+		// if/else 表達式中的局部变量也需收集
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			if ifExpr.Consequence != nil {
+				for _, ss := range ifExpr.Consequence.Statements {
+					collectSizesFromStmt(ss, sm)
+				}
+			}
+			if ifExpr.Alternative != nil {
+				for _, ss := range ifExpr.Alternative.Statements {
+					collectSizesFromStmt(ss, sm)
+				}
+			}
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectSizesFromStmt(s.Init, sm)
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				collectSizesFromStmt(ss, sm)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			collectSizesFromStmt(ss, sm)
+		}
+	}
+}
+
 func buildArraySizeMap(program *parser.Program) map[string]int64 {
 	sizes := make(map[string]int64)
 	for _, stmt := range program.Statements {
@@ -4194,13 +4289,13 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	validationStructFields = collectStructFields(program)
 	// 收集單具體型別別名（name = known-type，非 union、非 function-type），
 	// 供 isConcreteType / isArgTypeCompatible 實施 newtype 語義。
-	// 合併預載入的 std 模組別名（如 fs.no 的 fd=i64），使跨模組 newtype 檢查生效。
 	validationConcreteTypeAliases = collectConcreteTypeAliases(program)
-	if stdConcreteAliases != nil {
-		for k, v := range stdConcreteAliases {
-			if _, exists := validationConcreteTypeAliases[k]; !exists {
-				validationConcreteTypeAliases[k] = v
-			}
+	// 合併預載入的 std 模組別名（如 fs.no 的 fd=i64），使跨模組 newtype 檢查生效。
+	// std 模組別名由 sync.Once 快取提供（CollectStdConcreteAliases），
+	// 避免並行構建時的資料競爭。
+	for k, v := range CollectStdConcreteAliases() {
+		if _, exists := validationConcreteTypeAliases[k]; !exists {
+			validationConcreteTypeAliases[k] = v
 		}
 	}
 	// 先收集所有頂層變數的顯式型別，供跨語句型別推斷使用
@@ -6912,9 +7007,10 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce    sync.Once
-	stdSigsCache   map[string][]string
-	stdFieldsCache map[string]map[string]string
+	stdSigsOnce     sync.Once
+	stdSigsCache    map[string][]string
+	stdFieldsCache  map[string]map[string]string
+	stdAliasesCache map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
 )
 
 // StdModuleInfo holds information about a standard library module.
@@ -7057,6 +7153,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 	stdSigsOnce.Do(func() {
 		funcSigs := make(map[string][]string)
 		structFields := make(map[string]map[string]string)
+		aliases := make(map[string]string)
 
 		for _, info := range knownStdModules() {
 			modFilePath := ResolveStdModulePath(info.ShortPath)
@@ -7092,13 +7189,31 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 					}
 					structFields[sd.Name] = fields
 				}
+				// 收集單具體型別別名（name = known-type），使 newtype 語義
+				// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
+				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
+					if _, ok := ta.Type.(*parser.FunctionType); !ok {
+						if _, exists := aliases[ta.Name]; !exists {
+							aliases[ta.Name] = ta.Type.String()
+						}
+					}
+				}
 			}
 		}
 
 		stdSigsCache = funcSigs
 		stdFieldsCache = structFields
+		stdAliasesCache = aliases
 	})
 	return stdSigsCache, stdFieldsCache
+}
+
+// CollectStdConcreteAliases returns the cached single concrete type aliases
+// collected from std modules (e.g. "fd" → "i64" from fs.no). Triggers
+// CollectStdModuleSignatures via sync.Once to populate the cache.
+func CollectStdConcreteAliases() map[string]string {
+	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
+	return stdAliasesCache
 }
 
 // GetStdModuleShortNames returns the short names of all embedded standard library

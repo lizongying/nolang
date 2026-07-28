@@ -226,7 +226,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%str-longlit.buf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), bufReg, mallocSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), bufReg, mallocSize))
 			if strLen > 0 {
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, %s, i64 %d, i1 false)\n",
 					g.indent(), bufReg, dataPtr, strLen))
@@ -5788,7 +5788,7 @@ func (g *Generator) byteToSingleCharStr(sb *strings.Builder, expr parser.Express
 	// Allocate 2-byte buffer: char + null terminator.
 	g.tmpIdx++
 	bufPtr := fmt.Sprintf("%%concat.byte.buf.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 2)\n", g.indent(), bufPtr))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 2)\n", g.indent(), bufPtr))
 	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), byteI8, bufPtr))
 	g.tmpIdx++
 	nullPos := fmt.Sprintf("%%concat.byte.null.%d", g.tmpIdx)
@@ -5852,7 +5852,7 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 
 	g.tmpIdx++
 	bufPtr := fmt.Sprintf("%%concat.buf.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
 
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), bufPtr, leftData, leftLen))
@@ -5922,7 +5922,7 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	g.tmpIdx++
 	bufPtr := fmt.Sprintf("%%repeat.buf.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
 
 	// Loop to copy string data count times
 	// We'll use a simple loop: for i in 0..count, memcpy(strData, buf + i*strLen, strLen)
@@ -6320,7 +6320,7 @@ func (g *Generator) allocForCoro(sb *strings.Builder, namePrefix, llvmType strin
 	g.tmpIdx++
 	memReg := fmt.Sprintf("%%heap.%s.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), memReg, size))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), memReg, size))
 	}
 	g.tmpIdx++
 	ptrReg := fmt.Sprintf("%%heap.%s.cast.%d", sanitizeLLVMName(namePrefix), g.tmpIdx)

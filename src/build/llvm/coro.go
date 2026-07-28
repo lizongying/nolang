@@ -580,7 +580,7 @@ func (g *Generator) createTaskAndEnqueue(sb *strings.Builder, call *parser.CallE
 	// field 2: done (false)
 	g.tmpIdx++
 	memReg := fmt.Sprintf("%%coro.task.mem.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("\t%s = call i8* @malloc(i64 24)\n", memReg))
+	sb.WriteString(fmt.Sprintf("\t%s = call i8* @nolang.malloc(i64 24)\n", memReg))
 	g.tmpIdx++
 	taskAddr := fmt.Sprintf("%%coro.task.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("\t%s = bitcast i8* %s to %%task*\n", taskAddr, memReg))

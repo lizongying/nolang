@@ -775,14 +775,28 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		return fmt.Errorf("no build targets found in workspace")
 	}
 
-	// Build all targets in parallel
+	// Build all targets in parallel, with concurrency limited to NumCPU
+	// to avoid spawning too many LLVM subprocess (opt/llc/cc) under load.
+	// Each target spawns up to 3 subprocesses; without a semaphore, 50 targets
+	// would start 150 LLVM subprocesses simultaneously, causing memory/CPU thrash.
 	var wg sync.WaitGroup
 	results := make(chan buildResult, len(targets))
+	// semaphore: 緩衝 channel 作為信號量，容量為並發度上限。
+	// 預設為 runtime.NumCPU()，每個 worker 啟動前 acquire（寫入），完成後 release（讀出）。
+	concurrency := runtime.NumCPU()
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
 
 	for _, t := range targets {
 		wg.Add(1)
 		go func(t buildTarget) {
 			defer wg.Done()
+			// Acquire semaphore slot (blocks if at concurrency limit)
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			projectOpts := opts
 			projectOpts.Output = "" // use default per-project output
 

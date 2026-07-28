@@ -220,15 +220,14 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("attributes #0 = { optnone noinline }\n\n")
 
 	// nolang.malloc: 平台感知的 malloc wrapper。
-	// 所有 Nolang 內部產生的 malloc 呼叫都使用 @nolang.malloc(i64)，
+	// 所有 Nolang 內部產生的 malloc 呼叫都在生成時直接 emit @nolang.malloc(i64 ...)，
 	// wrapper 內部依目標平台決定是否需要 trunc 至 i32：
 	// - WASI/wasm32: wasi-libc malloc 簽名為 (i32)，需 trunc i64 → i32
 	// - 其他平台: libc malloc 簽名為 (i64)，直接轉發
 	// 此設計讓呼叫端維持單一 i64 介面，避免 45+ 處呼叫端個別處理平台差異。
-	// 注意：非 WASI 平台 wrapper 內部呼叫使用佔位符 @nolang.real_malloc，
-	// 因 generator.go 的 strings.ReplaceAll("@malloc(i64 ", "@nolang.malloc(i64 ")
-	// 會將所有符合 "@malloc(i64 " 模式的呼叫改寫；若 wrapper 直接呼叫 @malloc(i64 %sz)，
-	// 會被改寫成 @nolang.malloc(i64 %sz) 造成無限遞迴。佔位符在最終 IR 被還原回 @malloc。
+	// wrapper 內部直接呼叫真實 libc @malloc：WASI 為 @malloc(i32 %sz32)，
+	// 非 WASI 為 @malloc(i64 %sz)；因呼叫端在生成時已使用 @nolang.malloc，
+	// 無需後處理替換，wrapper 內部的 @malloc 呼叫不會被誤改。
 	if goos == "wasi" {
 		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
 		sb.WriteString("entry:\n")
@@ -239,19 +238,17 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	} else {
 		sb.WriteString("define internal i8* @nolang.malloc(i64 %sz) {\n")
 		sb.WriteString("entry:\n")
-		sb.WriteString("\t%p = call i8* @nolang.real_malloc(i64 %sz)\n")
+		sb.WriteString("\t%p = call i8* @malloc(i64 %sz)\n")
 		sb.WriteString("\tret i8* %p\n")
 		sb.WriteString("}\n\n")
 	}
 
 	// nolang.read / nolang.write: WASI 專屬的 read/write wrapper。
-	// 呼叫端統一使用 (i32 fd, i8* buf, i64 count) -> i64 介面；
-	// WASI/wasm32 平台 wasi-libc read/write 簽名為 (i32, i8*, i32) -> i32，
-	// 需 trunc count i64 → i32 並 sext return i32 → i64。
-	// 非 WASI 平台直接使用 @read/@write（i64 介面），無需 wrapper。
+	// 呼叫端在生成時透過 g.readSymbol()/g.writeSymbol() 決定符號：
+	// - WASI: emit @nolang.read/@nolang.write（wrapper 內部 trunc i64→i32 並 sext i32→i64，
+	//   匹配 wasi-libc 的 (i32, i8*, i32) -> i32 簽名）
+	// - 其他平台: emit @read/@write（直接使用 libc 的 i64 介面，無需 wrapper）
 	// Windows 使用 @_read/@_write（名稱不同），不受影響。
-	// 注意：wrapper 內部呼叫使用 i32（call i32 @read(...)），與 Generate()
-	// 的替換模式 "call i64 @read(" 不匹配，避免無限遞迴替換。
 	if goos == "wasi" {
 		sb.WriteString("define internal i64 @nolang.read(i32 %fd, i8* %buf, i64 %count) {\n")
 		sb.WriteString("entry:\n")
@@ -691,9 +688,9 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	if goos == "windows" {
 		sb.WriteString("\tcall i64 @_write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
 	} else {
-		// 非 Windows 平台統一使用 i64 count；呼叫端透過 Generate() 的
-		// 字串替換改走 @nolang.write wrapper，wrapper 內部依平台決定是否截斷。
-		sb.WriteString("\tcall i64 @write(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+		// 非 Windows 平台：WASI 透過 @nolang.write wrapper（trunc i64→i32 並 sext i32→i64），
+		// 其他平台直接使用 libc @write（i64 介面）。符號由 g.writeSymbol() 決定。
+		sb.WriteString("\tcall i64 " + g.writeSymbol() + "(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
 	}
 	sb.WriteString("\tcall void @exit(i32 1)\n")
 	sb.WriteString("\tunreachable\n")

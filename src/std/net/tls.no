@@ -3207,7 +3207,15 @@ tls-server-conn.derive-application-keys-13 = () {
     ms-prk = hkdf.hkdf-extract(derived-hs, zero-32)
 
     ; transcript hash = SHA-256(ClientHello..server Finished)
-    hs-hash-arr = sha256.sha256(.hs-buf)
+    ; 注意：必須排除 client Finished（read-client-finished-13 會 append CF 到 hs-buf）。
+    ; client Finished = 4 位元組標頭 + 32 位元組 verify_data = 36 位元組。
+    ; 使用減去 36 後的長度切片，確保只雜湊到 server Finished。
+    pre-cf-len = .hs-buf-len - 36
+    pre-cf-buf []byte = with-len(pre-cf-len)
+    i <- [0..pre-cf-len): {
+        pre-cf-buf[i] = .hs-buf[i]
+    }
+    hs-hash-arr = sha256.sha256(pre-cf-buf)
     hs-hash []byte = with-len(32)
     i <- [0..32): {
         hs-hash[i] = hs-hash-arr[i]

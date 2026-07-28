@@ -64,12 +64,10 @@ test = () {
 		t.Fatalf("parse errors: %v", errs)
 	}
 
-	// read-only check is in validateArrayBounds
-	arraySizes := buildArraySizeMap(prog)
-	sliceSizes := buildSliceSizeMap(prog)
-	stringSizes := buildStringSizeMap(prog)
+	// read-only check is in validateArrayBounds（使用合併後的單次遍歷）
+	sizeMap := buildSizeMaps(prog)
 	varTypes := map[string]string{}
-	err := validateArrayBounds(prog, arraySizes, sliceSizes, stringSizes, varTypes)
+	err := validateArrayBounds(prog, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes)
 	if err == nil {
 		t.Fatal("expected read-only error for str.len assignment, but got none")
 	}

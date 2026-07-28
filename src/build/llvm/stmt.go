@@ -582,7 +582,7 @@ func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName st
 			structSize = 8
 		}
 		newBoxI8Reg := fmt.Sprintf("%%optclone.newbox.%d", tid)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), newBoxI8Reg, structSize))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), newBoxI8Reg, structSize))
 		// bitcast to innerType*
 		newInnerPtrReg := fmt.Sprintf("%%optclone.dst.inner.%d", tid)
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), newInnerPtrReg, newBoxI8Reg, innerType))
@@ -1394,7 +1394,7 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 	bufSizeReg := fmt.Sprintf("%%clone.bufsize.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bufSizeReg, srcCapReg, elemSize))
 	cloneBuf := fmt.Sprintf("%%clone.buf.%d", tid)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), cloneBuf, bufSizeReg))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), cloneBuf, bufSizeReg))
 	copySizeReg := fmt.Sprintf("%%clone.copysize.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), copySizeReg, srcLenReg, elemSize))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
@@ -1514,7 +1514,7 @@ func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, le
 	elemBufSize := fmt.Sprintf("%%clonec.bufsize.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemBufSize, srcElemCap, subElemSize))
 	elemCloneBuf := fmt.Sprintf("%%clonec.buf.%d", tid)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), elemCloneBuf, elemBufSize))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), elemCloneBuf, elemBufSize))
 	elemCopySize := fmt.Sprintf("%%clonec.copysize.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemCopySize, srcElemLen, subElemSize))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
@@ -1707,7 +1707,7 @@ func (g *Generator) initVecFieldFromSliceLiteral(sb *strings.Builder, structVar,
 	bufSize := n * elemSize
 
 	// malloc 分配堆內存（避免函數返回後棧幀銷毀導致懸垂指針）
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
 	// bitcast to element array pointer for GEP store
 	g.tmpIdx++
 	arrPtrReg := fmt.Sprintf("%%st.slice.arrptr.%d", g.tmpIdx)
@@ -2070,7 +2070,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			vecBufSize := vecCap * elemSize
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%local.vecdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 			g.tmpIdx++
 			lenGEP := fmt.Sprintf("%%local.veclen.gep.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, llvmVarRef(varName)))
@@ -2118,7 +2118,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), arrDataBuf, totalSize))
 				g.stackArrVars[varName] = true
 			} else {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
 				// 僅 malloc 路徑需要追蹤；棧分配的 arr 無需 free。
 				// 追蹤目的同 %vec：使首次賦值時 freeOldHeapValue 能釋放 prologue buffer。
 				g.trackLocalHeapVar(varName, "%arr")
@@ -4953,7 +4953,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				elemSize = 8
 			}
 			bufSize := n * elemSize
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
 
 			// bitcast i8* to array type pointer for element GEP
 			g.tmpIdx++
@@ -5016,7 +5016,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			bufSize := defaultCap * elemSize
 			g.tmpIdx++
 			vecBuf := fmt.Sprintf("%%vec.init.buf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), vecBuf, bufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), vecBuf, bufSize))
 			// store len = 0 (field 0)
 			g.tmpIdx++
 			vecLenGEP := fmt.Sprintf("%%vec.init.len.%d", g.tmpIdx)
@@ -5454,7 +5454,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			vecBufSize := vecCap * elemSize
 			g.tmpIdx++
 			dataBuf := fmt.Sprintf("%%st.let.vecdata.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%st.let.veccap.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
@@ -5570,7 +5570,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		} else {
 			g.tmpIdx++
 			dataReg = fmt.Sprintf("%%arr.data.malloc.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataReg, totalSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataReg, totalSize))
 
 			// Store data pointer in struct
 			g.tmpIdx++
@@ -6086,7 +6086,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 	copyStrToData := func(srcPtr string) {
 		g.tmpIdx++
 		heapPtr := fmt.Sprintf("%%opt.heap.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 32)\n", g.indent(), heapPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 32)\n", g.indent(), heapPtr))
 		g.tmpIdx++
 		heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%str-long*\n", g.indent(), heapCast, heapPtr))
@@ -6156,7 +6156,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			}
 			g.tmpIdx++
 			heapPtr := fmt.Sprintf("%%opt.heap.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
 			g.tmpIdx++
 			heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), heapCast, heapPtr, innerType))
@@ -6388,7 +6388,7 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				}
 				g.tmpIdx++
 				heapPtr := fmt.Sprintf("%%opt.heap.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
 				g.tmpIdx++
 				heapCast := fmt.Sprintf("%%opt.heap.cast.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), heapCast, heapPtr, innerTy))

@@ -260,7 +260,7 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 	// malloc 新緩衝區
 	g.tmpIdx++
 	bufReg := fmt.Sprintf("%%svclone.buf.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n",
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n",
 		g.indent(), bufReg, byteLenReg))
 
 	// memcpy 從源數據指針到新緩衝區

@@ -173,7 +173,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// 协程上下文中使用堆分配（malloc），因为参数指针会被存入 args 结构，
 			// async_wrapper 在 yield 后执行时需要访问 — 栈 alloca 在 ret void 后失效。
 			if g.coroInAsyncFunc {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 8)\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 8)\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%s%s.cast = bitcast i8* %s to double*\n", g.indent(), tmpName, tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s.cast\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
 				return "double* " + tmpName + ".cast"
@@ -194,7 +194,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// 协程上下文中使用堆分配（malloc），因为参数指针会被存入 args 结构，
 			// async_wrapper 在 yield 后执行时需要访问 — 栈 alloca 在 ret void 后失效。
 			if g.coroInAsyncFunc {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 8)\n", g.indent(), tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 8)\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%s%s.cast = bitcast i8* %s to i64*\n", g.indent(), tmpName, tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s.cast\n", g.indent(), a.Value, tmpName))
 				return "i64* " + tmpName + ".cast"
@@ -347,7 +347,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				vecBufSize := vecCap * elemSize
 				g.tmpIdx++
 				dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 				g.tmpIdx++
 				capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
@@ -2355,7 +2355,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					vecBufSize := vecCap * elemSize
 					g.tmpIdx++
 					dataBuf := fmt.Sprintf("%%ref.st.vecdata.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
+					sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataBuf, vecBufSize))
 					g.tmpIdx++
 					capGEP := fmt.Sprintf("%%ref.st.veccap.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 1\n",
@@ -2653,7 +2653,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				totalSize := arrSize * elemSize
 				g.tmpIdx++
 				arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
 				g.tmpIdx++
 				arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, voidSingleTmp))
@@ -3050,7 +3050,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		g.tmpIdx++
 		bufReg := fmt.Sprintf("%%boolstr.buf.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 6)\n", g.indent(), bufReg))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 6)\n", g.indent(), bufReg))
 		}
 		// Copy length including null terminator: "true\0" = 5, "false\0" = 6
 		g.tmpIdx++
@@ -3411,7 +3411,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), totalBytes, newCap, elemSize))
 			g.tmpIdx++
 			newBuf := fmt.Sprintf("%%vp.buf.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), newBuf, totalBytes))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), newBuf, totalBytes))
 
 			// Copy old data if old cap > 0
 			// Load old data pointer
@@ -3521,7 +3521,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%wc.sbuf.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
 			}
 			// Build %str-long { len=0, cap=cap, data=buf } via insertvalue
 			g.tmpIdx++
@@ -3561,7 +3561,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			v3 := fmt.Sprintf("%%wc.v3.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 0, 0\n", g.indent(), v1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
 				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
@@ -3587,7 +3587,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%wl.sbuf.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, lenVal))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, lenVal))
 			}
 			// Build %str-long { len=len, cap=len, data=buf }
 			g.tmpIdx++
@@ -3624,7 +3624,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=len (both set to the argument value)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, lenVal))
@@ -3653,7 +3653,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%wcl.sbuf.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
 			}
 			// Build %str-long { len=len, cap=cap, data=buf }
 			g.tmpIdx++
@@ -3690,7 +3690,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=cap (independent values)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
