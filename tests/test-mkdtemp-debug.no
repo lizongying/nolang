@@ -1,0 +1,7 @@
+; test-mkdtemp-debug.no — minimal repro for fs.mkdtemp multi-assign issue
+
+test-mkdtemp = () {
+    name, ok = fs.mkdtemp('/tmp/test.XXXXXX')
+    ok -> print(name)
+    -> print('failed')
+}

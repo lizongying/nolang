@@ -585,6 +585,12 @@ type Transpiler struct {
 	targetGoos    string
 	targetGoarch  string
 	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
+
+	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 內的重复解析。
+	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/ValidateFuncArgs/merge/auto-load），
+	// 快取後降至 1 次。安全性：preload 和 ValidateFuncArgs 只讀不修改 AST，
+	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
+	fileCache map[string]*parser.Program
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -620,6 +626,12 @@ const (
 )
 
 func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
+	// 快取命中：同一檔案在單次編譯中可能被 resolveUse 調用多次
+	if t.fileCache != nil {
+		if cached, ok := t.fileCache[filePath]; ok {
+			return cached, nil
+		}
+	}
 	source, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -636,6 +648,9 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
 	}
+	if t.fileCache != nil {
+		t.fileCache[filePath] = prog
+	}
 	return prog, nil
 }
 
@@ -643,6 +658,12 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 // 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
 // 用於 js/ 相容層模組解析（# js/<module>）。
 func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser.Program, error) {
+	// 快取命中：同一內嵌檔案在單次編譯中可能被 resolveUse 調用多次
+	if t.fileCache != nil {
+		if cached, ok := t.fileCache[filename]; ok {
+			return cached, nil
+		}
+	}
 	l := lexer.New(string(data))
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
@@ -653,6 +674,9 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filename, p.Errors())
+	}
+	if t.fileCache != nil {
+		t.fileCache[filename] = prog
 	}
 	return prog, nil
 }
@@ -673,49 +697,31 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		return t.resolveFile(filePath)
 	}
 
-	// std/ 開頭 → 標準庫路徑
+	// std/ 開頭 → 標準庫路徑（只從內嵌 StdFS 載入，支援單二進制分發）
 	if strings.HasPrefix(path, "std/") || path == "std" {
-		// 相對於語言根目錄的 src/std/
-		// 使用硬編碼路徑或透過套件 alias
-		if t.pkg != nil {
-			resolved := t.pkg.ResolvePath(path)
-			if !strings.HasSuffix(resolved, ".no") {
-				resolved = resolved + ".no"
-			}
-			if _, err := os.Stat(resolved); err == nil {
-				return t.resolveFile(resolved)
-			}
-		}
-		// 嘗試透過 GetStdSourceDir（讀取 NOLANG_STD_SRC 環境變量）
 		// strip "std/" prefix to get module path relative to std/
 		relPath := strings.TrimPrefix(path, "std/")
 		if path == "std" {
 			relPath = ""
 		}
-		stdFile := GetStdSourceFile(relPath)
-		if _, err := os.Stat(stdFile); err == nil {
-			return t.resolveFile(stdFile)
+		// 1. 直接路徑：std/<relPath>.no
+		if relPath != "" {
+			embedPath := "std/" + relPath + ".no"
+			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
+				return t.parseEmbeddedProgram(embedPath, data)
+			}
 		}
-		// Lookup table: match ShortPath to FullPath (e.g. "net" → "net/net")
+		// 2. Lookup table: match ShortPath to FullPath (e.g. "net" → "net/net")
 		for _, info := range knownStdModules() {
 			if info.ShortPath == relPath {
-				stdFile := GetStdSourceFile(info.FullPath)
-				if _, err := os.Stat(stdFile); err == nil {
-					return t.resolveFile(stdFile)
+				embedPath := "std/" + info.FullPath + ".no"
+				if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
+					return t.parseEmbeddedProgram(embedPath, data)
 				}
 			}
 		}
-		// fallback: std/<module>.no 相對於執行目錄
-		fallback := path + ".no"
-		if _, err := os.Stat(fallback); err == nil {
-			return t.resolveFile(fallback)
-		}
-		// 再試 src/std/<module>.no 相對於執行目錄
-		srcPath := "src/" + path + ".no"
-		if _, err := os.Stat(srcPath); err == nil {
-			return t.resolveFile(srcPath)
-		}
-		return t.resolveFile(srcPath)
+		// 找不到模組 → 返回語意化錯誤（不再回退到磁碟）
+		return nil, fmt.Errorf("std module not found in embedded StdFS: %s", path)
 	}
 
 	// js/ 開頭 → JS 相容層路徑（內建第三方包，與 std/ 機制平行）
@@ -800,6 +806,11 @@ func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
 }
 
 func (t *Transpiler) Compile(source string) (string, error) {
+	// 初始化 per-Transpiler AST 解析快取，消除單次編譯內的重复解析。
+	// 同一 std 模組在 preloadModuleSignatures、ValidateFuncArgs、merge 步驟中
+	// 會被重複載入，快取後僅解析一次。
+	t.fileCache = make(map[string]*parser.Program)
+	clearParseProgramFileCache()
 	return t.CompileTarget(source, TargetLLVM)
 }
 
@@ -924,9 +935,23 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			isUserCode = false
 		}
 	}
+	// 合併 PASS 1+2+3+4：單次遍歷同時執行：
+	// (1) ..any 標準庫限制檢查
+	// (2) 構建 varTypes / globalVarTypes
+	// (3) 收集 importedModules（UseStatement 的 ShortName）
+	// (4) 收集 mainVarNames（頂層 Let + FunctionDefinition 名）
+	// 原本為 4 次獨立遍歷，合併後降至 1 次。
+	varTypes := make(map[string]string)
+	globalVarTypes := make(map[string]string)
+	var importedModules []string
+	mainVarNames := make(map[string]bool)
+	// 預填充已知 std 模塊的 ShortName，允許 math.degrees()、base64.encode-std() 等呼叫無需顯式導入
+	for _, info := range knownStdModules() {
+		importedModules = append(importedModules, info.ShortName)
+	}
 	for _, stmt := range program.Statements {
+		// (1) ..any 標準庫限制檢查
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && isUserCode {
-			// ..any 僅標準庫可用
 			if fd.IsVariadic {
 				for _, p := range fd.Parameters {
 					if p.Type.String() == "[]any" {
@@ -934,19 +959,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					}
 				}
 			}
-			// 結果參數 fn(params)(results) 僅標準庫可用
-			// if len(fd.Results) > 0 {
-			// 	return "", fmt.Errorf("result parameters fn()() are only allowed in standard library, not in user code (function: %s)", fd.Name)
-			// }
 		}
-	}
-
-	// 構建變數類型表
-	// globalVarTypes 僅包含頂層 LetStatement（全域變數），用於泛型呼叫掃描時的
-	// per-function varTypes 初始化，避免其他函數體內的同名局部變數污染型別查找。
-	varTypes := make(map[string]string)
-	globalVarTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
+		// (2) 構建變數類型表
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
@@ -957,12 +971,13 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					globalVarTypes[ls.Name.Value] = t
 				}
 			}
+			// (4) 收集主程序變量名
+			if ls.Name != nil {
+				mainVarNames[ls.Name.Value] = true
+			}
 		}
-		// Also collect variable types from function bodies
+		// (2) 函數參數/返回值類型收集
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			// Add function parameter and result types so method resolution
-			// can dispatch builtins correctly (e.g. `out.zero()` where out
-			// is a `[32]byte` result parameter needs to find []byte.zero).
 			for _, p := range fd.Parameters {
 				if p.Type != nil {
 					varTypes[p.Name] = p.Type.String()
@@ -974,6 +989,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				}
 			}
 			collectVarTypesFromBody(fd.Body, varTypes)
+			// (4) 收集主程序函數名
+			mainVarNames[fd.Name] = true
+		}
+		// (3) 收集導入的模塊路徑
+		if use, ok := stmt.(*parser.UseStatement); ok {
+			importedModules = append(importedModules, moduleShortName(use.Path))
 		}
 	}
 
@@ -1021,34 +1042,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 自動 enter/leave：插入作用域生命週期調用
 	injectEnterLeave(program)
 
-	// 收集導入的模塊路徑（ShortName），用於後續的 module.fn() → fn() 重寫
-	var importedModules []string
-	// 預填充已知 std 模塊的 ShortName，允許 math.degrees()、base64.encode-std() 等呼叫無需顯式導入
-	// 使用 ShortName（路徑最後一段）作為調用前綴
-	for _, info := range knownStdModules() {
-		importedModules = append(importedModules, info.ShortName)
-	}
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok {
-			importedModules = append(importedModules, moduleShortName(use.Path))
-		}
-		if _, ok := stmt.(*parser.ExportStatement); ok {
-			continue
-		}
-	}
-
-	// 收集主程序變量名，避免與合併的模塊定義衝突
-	mainVarNames := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			mainVarNames[ls.Name.Value] = true
-		}
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			mainVarNames[fd.Name] = true
-		}
-	}
-
 	// 處理 use 陳述句：載入模組並合併函數定義和常量
+	// 註：importedModules 和 mainVarNames 已在上方合併 PASS 中收集完成
 	merged := &parser.Program{Statements: []parser.Statement{}}
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
@@ -6224,17 +6219,22 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 
 // parseModuleExports resolves a single module's .no file and extracts its
 // top-level exports (constants, functions, externs).
+// 只從內嵌 StdFS 讀取,支援單二進制分發。
 func parseModuleExports(moduleName string) []ModuleExport {
-	filePath := resolveModulePath(moduleName)
-	if filePath == "" {
-		return nil
+	for _, info := range knownStdModules() {
+		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
+			embedPath := "std/" + info.FullPath + ".no"
+			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
+				return parseModuleExportsFromSource(data)
+			}
+		}
 	}
+	return nil
+}
 
-	source, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil
-	}
-
+// parseModuleExportsFromSource 從原始碼位元組解析模組導出列表。
+// 被 parseModuleExports 調用，支援磁碟和內嵌 StdFS 兩種來源。
+func parseModuleExportsFromSource(source []byte) []ModuleExport {
 	l := lexer.New(string(source))
 	p := parser.New(l)
 	modProg := p.ParseProgram()
@@ -7156,11 +7156,9 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		aliases := make(map[string]string)
 
 		for _, info := range knownStdModules() {
-			modFilePath := ResolveStdModulePath(info.ShortPath)
-			if modFilePath == "" {
-				continue
-			}
-			source, err := os.ReadFile(modFilePath)
+			// 只從內嵌 StdFS 讀取,支援單二進制分發
+			embedPath := "std/" + info.FullPath + ".no"
+			source, err := nolang.StdFS.ReadFile(embedPath)
 			if err != nil {
 				continue
 			}
@@ -8351,8 +8349,30 @@ func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
 	return prog
 }
 
+// parseProgramFileCache: 包級 AST 解析快取，供 standalone 函數 parseProgramFile 使用。
+// resolveUseModule（被 ValidateFuncArgs 調用）獨立於 Transpiler，無法存取 per-instance 快取。
+// 每次 Compile 開始時由 clearParseProgramFileCache() 清空，避免跨編譯的陳舊資料。
+var (
+	parseProgramFileCacheMu sync.Mutex
+	parseProgramFileCache   = make(map[string]*parser.Program)
+)
+
+func clearParseProgramFileCache() {
+	parseProgramFileCacheMu.Lock()
+	defer parseProgramFileCacheMu.Unlock()
+	parseProgramFileCache = make(map[string]*parser.Program)
+}
+
 // parseProgramFile reads and parses a .no file into a Program.
 func parseProgramFile(filePath string) *parser.Program {
+	// 快取命中：ValidateFuncArgs 可能對同一模組重複調用 resolveUseModule
+	parseProgramFileCacheMu.Lock()
+	if cached, ok := parseProgramFileCache[filePath]; ok {
+		parseProgramFileCacheMu.Unlock()
+		return cached
+	}
+	parseProgramFileCacheMu.Unlock()
+
 	if _, err := os.Stat(filePath); err != nil {
 		return nil
 	}
@@ -8366,6 +8386,9 @@ func parseProgramFile(filePath string) *parser.Program {
 	if len(p.Errors()) > 0 {
 		return nil
 	}
+	parseProgramFileCacheMu.Lock()
+	parseProgramFileCache[filePath] = prog
+	parseProgramFileCacheMu.Unlock()
 	return prog
 }
 

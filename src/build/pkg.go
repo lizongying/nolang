@@ -44,6 +44,11 @@ type Package struct {
 	depGraph        *DependencyGraph  // 已解析的依賴圖（可選）
 }
 
+// StripJSONC 移除 JSONC 中的 // 和 /* */ 註解及尾隨逗號
+func StripJSONC(raw []byte) []byte {
+	return stripJSONC(raw)
+}
+
 // stripJSONC 移除 JSONC 中的 // 和 /* */ 註解
 func stripJSONC(raw []byte) []byte {
 	s := string(raw)

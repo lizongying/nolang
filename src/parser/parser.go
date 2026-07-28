@@ -485,12 +485,14 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 }
 
 type parserState struct {
-	currentToken lexer.Token
-	peekToken    lexer.Token
-	prevToken    lexer.Token
-	lexerState   lexer.LexerState
-	ctx          contextStack  // snapshot of context stack
-	comments     []lexer.Token // snapshot of collected comments
+	currentToken  lexer.Token
+	peekToken     lexer.Token
+	prevToken     lexer.Token
+	lexerState    lexer.LexerState
+	ctx           contextStack  // snapshot of context stack
+	comments      []lexer.Token // snapshot of collected comments
+	varDeclTypes  map[string]string // snapshot of variable type table
+	declaredVars  map[string]bool   // snapshot of declared variable set
 }
 
 func New(lexer *lexer.Lexer) *Parser {
@@ -613,6 +615,22 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 func (p *Parser) saveState() parserState {
 	commentsCopy := make([]lexer.Token, len(p.comments))
 	copy(commentsCopy, p.comments)
+	// 深拷貝符號表，避免試探性解析中的 varDeclTypes/declaredVars 寫入
+	// 在 restoreState 後污染後續解析。
+	var varDeclTypesCopy map[string]string
+	if p.varDeclTypes != nil {
+		varDeclTypesCopy = make(map[string]string, len(p.varDeclTypes))
+		for k, v := range p.varDeclTypes {
+			varDeclTypesCopy[k] = v
+		}
+	}
+	var declaredVarsCopy map[string]bool
+	if p.declaredVars != nil {
+		declaredVarsCopy = make(map[string]bool, len(p.declaredVars))
+		for k, v := range p.declaredVars {
+			declaredVarsCopy[k] = v
+		}
+	}
 	return parserState{
 		currentToken: p.currentToken,
 		peekToken:    p.peekToken,
@@ -620,6 +638,8 @@ func (p *Parser) saveState() parserState {
 		lexerState:   p.lexer.SaveState(),
 		ctx:          p.ctx.copy(),
 		comments:     commentsCopy,
+		varDeclTypes: varDeclTypesCopy,
+		declaredVars: declaredVarsCopy,
 	}
 }
 
@@ -630,6 +650,8 @@ func (p *Parser) restoreState(state parserState) {
 	p.lexer.RestoreState(state.lexerState)
 	p.ctx = state.ctx
 	p.comments = state.comments
+	p.varDeclTypes = state.varDeclTypes
+	p.declaredVars = state.declaredVars
 }
 
 func (p *Parser) nextToken() {
@@ -3372,6 +3394,20 @@ var precedences = map[lexer.TokenType]int{
 	lexer.LPAREN:         CALL,
 }
 
+// infixOperators 是 precedences map 中真正的中綴二元運算符集合。
+// precedences map 還包含非中綴 token（COMMA/QUESTION/AS/LPAREN），
+// 此集合用於區分，消除 parseExpression 中手工 if 鏈與 precedences map 的雙源問題。
+var infixOperators = map[lexer.TokenType]bool{
+	lexer.LOR: true, lexer.LAND: true,
+	lexer.EQUALS: true, lexer.NOT_EQUALS: true,
+	lexer.LESS: true, lexer.LESS_EQUALS: true,
+	lexer.GREATER: true, lexer.GREATER_EQUALS: true,
+	lexer.SHL: true, lexer.SHR: true, lexer.AND: true,
+	lexer.OR: true, lexer.XOR: true,
+	lexer.ADD: true, lexer.SUB: true,
+	lexer.MUL: true, lexer.QUO: true, lexer.MOD: true,
+}
+
 func (p *Parser) peekPrecedence() int {
 	if p.ctx.contains(CTX_MATCH_ARM) && p.peekToken.Type == lexer.RARROW {
 		return LOWEST
@@ -3847,15 +3883,9 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			continue
 		}
 
-		// 一般中缀运算符
-		t := p.currentToken.Type
-		if !(t == lexer.LAND || t == lexer.LOR || t == lexer.ADD || t == lexer.SUB ||
-			t == lexer.MUL || t == lexer.QUO || t == lexer.MOD ||
-			t == lexer.EQUALS || t == lexer.NOT_EQUALS ||
-			t == lexer.LESS || t == lexer.LESS_EQUALS ||
-			t == lexer.GREATER || t == lexer.GREATER_EQUALS ||
-			t == lexer.AND || t == lexer.OR || t == lexer.XOR ||
-			t == lexer.SHL || t == lexer.SHR) {
+		// 一般中綴運算符 — 用 infixOperators set 判斷，消除與 precedences map 的雙源問題。
+		// precedences map 中的非中綴 token（COMMA/QUESTION/AS/LPAREN）不在 set 中，自動跳過。
+		if !infixOperators[p.currentToken.Type] {
 			break
 		}
 		leftExp = p.parseInfixExpression(leftExp)

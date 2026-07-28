@@ -340,13 +340,7 @@ tls-read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     {
         tmp str = ' '.repeat(5 - hdr-total)
         r = net.net-recv(fd, tmp, 5 - hdr-total)
-        r <= 0 -> {
-            eprint('TLS: read-record hdr net-recv=')
-            eprint(r)
-            eprint(' fd=')
-            eprint(fd)
-            return
-        }
+        r <= 0 -> return
         i <- [0..r): {
             buf[hdr-total + i] = tmp[i]
         }
@@ -1405,37 +1399,6 @@ tls-conn.derive-handshake-keys-13 = () {
         hs-hash[i] = hs-hash-arr[i]
     }
 
-    eprint('CLI13: transcript hash:')
-    th-hex = ''
-    i <- [0..32): {
-        th-hex = th-hex - (hs-hash[i] & 255).to-str() - ' '
-    }
-    eprint(th-hex)
-    eprint('CLI13: shared-secret:')
-    ss-hex = ''
-    i <- [0..32): {
-        ss-hex = ss-hex - (.shared-secret[i] & 255).to-str() - ' '
-    }
-    eprint(ss-hex)
-    eprint('CLI13: hs-prk:')
-    prk-hex = ''
-    i <- [0..32): {
-        prk-hex = prk-hex - (hs-prk[i] & 255).to-str() - ' '
-    }
-    eprint(prk-hex)
-    eprint('CLI13: client-pub:')
-    cp-hex = ''
-    i <- [0..32): {
-        cp-hex = cp-hex - (.client-pub[i] & 255).to-str() - ' '
-    }
-    eprint(cp-hex)
-    eprint('CLI13: server-pub:')
-    sp-hex = ''
-    i <- [0..32): {
-        sp-hex = sp-hex - (.server-pub[i] & 255).to-str() - ' '
-    }
-    eprint(sp-hex)
-
     ; 6. client_handshake_traffic_secret = Derive-Secret(HS, "c hs traffic", transcript)
     c-hs-secret []byte
     c-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 'c hs traffic', hs-hash, 32)
@@ -1484,21 +1447,6 @@ tls-conn.derive-handshake-keys-13 = () {
 
     .hs-write-seq = 0
     .hs-read-seq = 0
-
-    eprint('CLI13: hs-server-key:')
-    k-hex = ''
-    i <- [0..16): {
-        k-hex = k-hex - (.hs-server-key[i] & 255).to-str() - ' '
-    }
-    eprint(k-hex)
-    eprint('CLI13: hs-server-iv:')
-    iv-hex = ''
-    i <- [0..12): {
-        iv-hex = iv-hex - (.hs-server-iv[i] & 255).to-str() - ' '
-    }
-    eprint(iv-hex)
-    eprint('CLI13: hs-buf-len:')
-    eprint(.hs-buf-len)
 }
 
 ; derive-application-keys-13: 推導應用層金鑰
@@ -1667,16 +1615,6 @@ tls-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (c
     aad[3] = rec[3] & 255
     aad[4] = rec[4] & 255
 
-    ; debug: 列印 key/iv/nonce/aad
-    key-hex = ''
-    i <- [0..16): {
-        key-hex = key-hex - (key[i] & 255).to-str() - ' '
-    }
-    iv-hex = ''
-    i <- [0..12): {
-        iv-hex = iv-hex - (iv[i] & 255).to-str() - ' '
-    }
-
     ; 解密
     plain []byte
     plain = aes-gcm.aes-128-gcm-open(key, nonce, aad, sealed)
@@ -1734,10 +1672,6 @@ tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
         .hs-read-seq = .hs-read-seq + 1
-        eprint('CLI13: read-encrypted-handshake ct=')
-        eprint(ct)
-        eprint('CLI13: plain.len=')
-        eprint(plain.len)
         ct < 0 -> return
 
         ; 可能是 alert 或其他
@@ -1792,39 +1726,27 @@ tls-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 tls-conn.connect-13 = () (ok bool) {
     ok = false
 
-    eprint('CLI13: start connect-13')
-
     ; 1. 已在 connect() 中發送 ClientHello
 
     ; 2. 讀取 ServerHello（已在 connect() 中完成）
 
     ; 3. 計算 ECDHE 共享金鑰
     .compute-shared-secret-13()
-    eprint('CLI13: computed shared secret')
 
     ; 4. 推導交握金鑰
     .derive-handshake-keys-13()
-    eprint('CLI13: derived handshake keys')
 
     ; 5. 讀取 EncryptedExtensions
     ee-type = 0
     ee-data []byte
     ee-type, ee-data = .read-encrypted-handshake-13()
-    ee-type != TLS-HS-ENCRYPTED-EXTENSIONS -> {
-        eprint('CLI13: EE type mismatch')
-        return
-    }
-    eprint('CLI13: read EE')
+    ee-type != TLS-HS-ENCRYPTED-EXTENSIONS -> return
 
     ; 6. 讀取 Certificate
     cert-type = 0
     cert-data []byte
     cert-type, cert-data = .read-encrypted-handshake-13()
-    cert-type != TLS-HS-CERTIFICATE -> {
-        eprint('CLI13: Cert type mismatch')
-        return
-    }
-    eprint('CLI13: read Cert')
+    cert-type != TLS-HS-CERTIFICATE -> return
 
     ; 7. 讀取 CertificateVerify（跳過Verify（跳過驗證，僅讀取）
     cv-type = 0
@@ -1838,18 +1760,15 @@ tls-conn.connect-13 = () (ok bool) {
             ; 伺服器未發送 CertificateVerify，直接處理 Finished
             ; 推導應用金鑰（transcript 包含到此為止的所有訊息）
             .derive-application-keys-13()
-            eprint('CLI13: derived app keys (no CV)')
 
             ; 發送客戶端 Finished
             ok = .send-finished-13()
             ok == false -> return
             .encrypted = true
-            eprint('CLI13: done (no CV)')
             ok = true
             return
         }
 
-        eprint('CLI13: CV type mismatch')
         return
     }
 
@@ -1857,21 +1776,15 @@ tls-conn.connect-13 = () (ok bool) {
     sf-type = 0
     sf-data []byte
     sf-type, sf-data = .read-encrypted-handshake-13()
-    sf-type != TLS-HS-FINISHED -> {
-        eprint('CLI13: SF type mismatch')
-        return
-    }
-    eprint('CLI13: read server Finished')
+    sf-type != TLS-HS-FINISHED -> return
 
     ; 9. 推導應用金鑰
     .derive-application-keys-13()
-    eprint('CLI13: derived app keys')
 
     ; 10. 發送客戶端 Finished（使用交握金鑰）
     ok = .send-finished-13()
     ok == false -> return
     .encrypted = true
-    eprint('CLI13: done')
     ok = true
 }
 
@@ -1939,10 +1852,6 @@ tls-conn.init = () {
     ; 用時間戳 + PID 初始化 PRNG（fork 後父子進程會有不同 PID）
     .rand-state = time.now-ns() ^ os.get-pid()
     .rand-state == 0 -> .rand-state = 1
-    eprint('CLI init: pid=')
-    eprint(os.get-pid())
-    eprint(' rand-state=')
-    eprint(.rand-state)
 }
 
 ; connect: 建立 TLS 連線（自動協商 1.3/1.2）
@@ -2043,6 +1952,109 @@ tls-conn.connect = (host str, port i64) (ok bool) {
     ok = true
 }
 
+; connect-12: TLS 1.2 完整交握（純 TLS 1.2，不發送 supported_versions 擴展）
+; 返回 ok bool: true=成功
+tls-conn.connect-12 = (host str, port i64) (ok bool) {
+    ok = false
+    .host = host
+
+    ; 1. TCP 連線
+    tcpfd = dns.dns-dial(host, port)
+    tcpfd < 0 -> return
+    .fd = tcpfd
+    .connected = true
+
+    ; 2. 送出 TLS 1.2 ClientHello（無 supported_versions 擴展）
+    ok = .send-client-hello()
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 3. 讀取 ServerHello
+    ok = .read-server-hello()
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 4. 讀取 Certificate
+    cert []byte = with-len(16400)
+    ok = .read-certificate(cert)
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 5. 讀取 ServerHelloDone
+    ok = .read-server-hello-done()
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 6. 生成 premaster secret
+    premaster []byte = with-len(48)
+    premaster[0] = 0x03
+    premaster[1] = 0x03
+    rand-bytes []byte = tls-rand-bytes(.rand-state, 46)
+    i <- [0..46): {
+        premaster[2 + i] = rand-bytes[i]
+    }
+
+    ; 7. 推導金鑰
+    .derive-keys(premaster)
+
+    ; 8. 發送 ClientKeyExchange
+    ok = .send-client-key-exchange(premaster, cert)
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 9. 發送 ChangeCipherSpec
+    .send-change-cipher-spec()
+    .encrypted = true
+
+    ; 10. 發送 Finished（加密）
+    ok = .send-finished()
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 11. 讀取 ChangeCipherSpec
+    ok = .read-change-cipher-spec()
+    ok == false -> {
+        .close()
+        return
+    }
+
+    ; 12. 讀取 Finished（加密）
+    ok = .read-finished()
+    ok == false -> {
+        .close()
+        return
+    }
+    ok = true
+}
+
+; tls-dial-12: TLS 1.2 連線（純 TLS 1.2，不協商 1.3）
+; host str: 主機名或 IP
+; port i64: 埠號
+; 返回 conn ?tls-conn: ok=連線, nil=失敗
+tls-dial-12 = (host str, port i64) (conn ?tls-conn) {
+    conn = nil
+    c = tls-conn {}
+    c.init()
+    ok = c.connect-12(host, port)
+    ok == false -> {
+        c.close()
+        return
+    }
+    conn = c
+}
+
 ; send: 透過 TLS 發送資料
 ; data str: 資料
 ; 返回 written ?i64: 已傳送位元組數（nil=錯誤）
@@ -2052,22 +2064,13 @@ tls-conn.send = (data str) (written ?i64) {
     .encrypted == false -> return
     data-bytes []byte = data.to-bytes()
 
-    eprint('CLI13: send called data.len=')
-    eprint(data.len)
-
     {
         .version == TLS-VERSION-1-3 -> {
 
             ; TLS 1.3: 使用 AEAD
-            eprint('CLI13: send ap-write-seq=')
-            eprint(.ap-write-seq)
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-client-key, .ap-client-iv, .ap-write-seq)
-            ok == false -> {
-                eprint('CLI13: send encrypt-record-13 failed')
-                return
-            }
+            ok == false -> return
             .ap-write-seq = .ap-write-seq + 1
-            eprint('CLI13: send ok')
         }
         -> {
 
@@ -2936,19 +2939,6 @@ tls-server-conn.send-server-hello-13 = () (ok bool) {
         .server-pub[i] = pub-slice[i]
     }
 
-    eprint('SVR13: server-pub right after gen:')
-    sp2-hex = ''
-    i <- [0..32): {
-        sp2-hex = sp2-hex - (.server-pub[i] & 255).to-str() - ' '
-    }
-    eprint(sp2-hex)
-    eprint('SVR13: server-priv right after gen:')
-    spr-hex = ''
-    i <- [0..32): {
-        spr-hex = spr-hex - (.server-priv[i] & 255).to-str() - ' '
-    }
-    eprint(spr-hex)
-
     ; 構建 ServerHello
     hs []byte = with-len(128)
     pos = 0
@@ -3083,37 +3073,6 @@ tls-server-conn.derive-handshake-keys-13 = () {
         hs-hash[i] = hs-hash-arr[i]
     }
 
-    eprint('SVR13: transcript hash:')
-    th-hex = ''
-    i <- [0..32): {
-        th-hex = th-hex - (hs-hash[i] & 255).to-str() - ' '
-    }
-    eprint(th-hex)
-    eprint('SVR13: shared-secret:')
-    ss-hex = ''
-    i <- [0..32): {
-        ss-hex = ss-hex - (.shared-secret[i] & 255).to-str() - ' '
-    }
-    eprint(ss-hex)
-    eprint('SVR13: hs-prk:')
-    prk-hex = ''
-    i <- [0..32): {
-        prk-hex = prk-hex - (hs-prk[i] & 255).to-str() - ' '
-    }
-    eprint(prk-hex)
-    eprint('SVR13: client-pub:')
-    cp-hex = ''
-    i <- [0..32): {
-        cp-hex = cp-hex - (.client-pub[i] & 255).to-str() - ' '
-    }
-    eprint(cp-hex)
-    eprint('SVR13: server-pub:')
-    sp-hex = ''
-    i <- [0..32): {
-        sp-hex = sp-hex - (.server-pub[i] & 255).to-str() - ' '
-    }
-    eprint(sp-hex)
-
     ; 6. client_handshake_traffic_secret
     c-hs-secret []byte
     c-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 'c hs traffic', hs-hash, 32)
@@ -3160,28 +3119,10 @@ tls-server-conn.derive-handshake-keys-13 = () {
 
     .hs-write-seq = 0
     .hs-read-seq = 0
-
-    eprint('SVR13: hs-server-key:')
-    k-hex = ''
-    i <- [0..16): {
-        k-hex = k-hex - (.hs-server-key[i] & 255).to-str() - ' '
-    }
-    eprint(k-hex)
-    eprint('SVR13: hs-server-iv:')
-    iv-hex = ''
-    i <- [0..12): {
-        iv-hex = iv-hex - (.hs-server-iv[i] & 255).to-str() - ' '
-    }
-    eprint(iv-hex)
-    eprint('SVR13: hs-buf-len:')
-    eprint(.hs-buf-len)
 }
 
 ; tls-server-conn.derive-application-keys-13: 推導應用層金鑰
 tls-server-conn.derive-application-keys-13 = () {
-
-    eprint('SVR13: derive-app-keys START fd=')
-    eprint(.fd)
 
     hs-prk []byte = with-len(32)
     i <- [0..32): {
@@ -3252,9 +3193,6 @@ tls-server-conn.derive-application-keys-13 = () {
 
     .ap-write-seq = 0
     .ap-read-seq = 0
-
-    eprint('SVR13: derive-app-keys END fd=')
-    eprint(.fd)
 }
 
 ; tls-server-conn.encrypt-record-13: TLS 1.3 AEAD 加密記錄並發送
@@ -3364,15 +3302,8 @@ tls-server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) 
     rec []byte = with-len(16400)
     r-ct = 0
     rlen = 0
-    eprint('SVR13: read-enc-rec fd=')
-    eprint(.fd)
     r-ct, rlen = tls-read-record(.fd, rec)
-    r-ct < 0 -> {
-        eprint('SVR13: read-enc-rec tls-read-record failed')
-        return
-    }
-
-    eprint('SVR13: read-enc-rec r-ct={r-ct} rlen={rlen}')
+    r-ct < 0 -> return
 
     ; CCS (content type 20) 為 middlebox compat，跳過後讀取下一筆
     {
@@ -3381,14 +3312,7 @@ tls-server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) 
         r-ct < 0 -> return
     } (r-ct == TLS-CT-CCS)
     ct, out = .decrypt-record-13(rec, key, iv, seq)
-    ct < 0 -> {
-        eprint('SVR13: read-enc-rec decrypt failed')
-        return
-    }
-    eprint('SVR13: read-enc-rec decrypted ct=')
-    eprint(ct)
-    eprint(' plain.len=')
-    eprint(out.len)
+    ct < 0 -> return
 }
 
 ; tls-server-conn.read-encrypted-handshake-13: 讀取加密的交握訊息
@@ -3413,19 +3337,7 @@ tls-server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte)
     msg-type = .hs-plain-buf[pos] & 255
     msg-len i64 = tls-get-u24(.hs-plain-buf, pos + 1)
 
-    eprint('SVR13: read-enc-hs msg-type=')
-    eprint(msg-type)
-    eprint(' msg-len=')
-    eprint(msg-len)
-    eprint(' pos=')
-    eprint(pos)
-    eprint(' plain-len=')
-    eprint(.hs-plain-len)
-
-    pos + 4 + msg-len > .hs-plain-len -> {
-        eprint('SVR13: read-enc-hs length check failed')
-        return
-    }
+    pos + 4 + msg-len > .hs-plain-len -> return
 
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
@@ -3604,68 +3516,40 @@ tls-server-conn.read-client-finished-13 = () (ok bool) {
 tls-server-conn.handshake-13 = () (ok bool) {
     ok = false
 
-    eprint('SVR13: start handshake-13')
-
     ; 1. 發送 ServerHello
     ok = .send-server-hello-13()
-    ok == false -> {
-        eprint('SVR13: send-server-hello-13 failed')
-        return
-    }
-    eprint('SVR13: sent server hello')
+    ok == false -> return
 
     ; 2. 計算 ECDHE 共享金鑰
     .compute-shared-secret-13()
-    eprint('SVR13: computed shared secret')
 
     ; 3. 推導交握金鑰
     .derive-handshake-keys-13()
-    eprint('SVR13: derived handshake keys')
 
     ; 4. 發送 ChangeCipherSpec（middlebox compat）
     .send-change-cipher-spec()
-    eprint('SVR13: sent CCS')
 
     ; 5. 發送 EncryptedExtensions
     ok = .send-encrypted-extensions-13()
-    ok == false -> {
-        eprint('SVR13: send-encrypted-extensions-13 failed')
-        return
-    }
-    eprint('SVR13: sent EE')
+    ok == false -> return
 
     ; 6. 發送 Certificate
     ok = .send-certificate-13()
-    ok == false -> {
-        eprint('SVR13: send-certificate-13 failed')
-        return
-    }
-    eprint('SVR13: sent Certificate')
+    ok == false -> return
 
     ; 7. 發送 server Finished
     ok = .send-finished-13()
-    ok == false -> {
-        eprint('SVR13: send-finished-13 failed')
-        return
-    }
-    eprint('SVR13: sent Finished')
+    ok == false -> return
 
     ; 8. 讀取 client Finished
     ok = .read-client-finished-13()
-    ok == false -> {
-        eprint('SVR13: read-client-finished-13 failed')
-        return
-    }
-    eprint('SVR13: read client Finished')
+    ok == false -> return
 
     ; 9. 推導應用金鑰
     .derive-application-keys-13()
-    eprint('SVR13: derived app keys')
 
     ; 10. 啟用加密
     .encrypted = true
-    eprint('SVR13: handshake done fd=')
-    eprint(.fd)
     ok = true
 }
 
@@ -3754,12 +3638,6 @@ tls-server-conn.send = (data str) (written ?i64) {
 ; n i64: 最多接收位元組數
 ; 返回 read-n i64: 實際接收位元組數（-1=錯誤）
 tls-server-conn.recv = (buf str, n i64) (read-n i64) {
-    eprint('SVR-recv-method: encrypted=')
-    eprint(.encrypted)
-    eprint(' fd=')
-    eprint(.fd)
-    eprint(' is-tls13=')
-    eprint(.is-tls13)
     read-n = -1
     .encrypted == false -> return
 
@@ -3822,10 +3700,6 @@ tls-server-init = (fd fd) (conn ?tls-server-conn) {
     c = tls-server-conn {}
     c.fd = fd
     c.rand-state = time.now-ns() ^ os.get-pid()
-    eprint('SVR init: pid=')
-    eprint(os.get-pid())
-    eprint(' rand-state=')
-    eprint(c.rand-state)
     c.encrypted = false
     c.hs-buf = with-len(65536)
     c.hs-buf-len = 0
@@ -3895,13 +3769,6 @@ tls-server-accept = (listen-fd fd) (conn ?tls-server-conn) {
                 c.close()
                 return
             }
-
-            eprint('ACCEPT: handshake done fd=')
-            eprint(c.fd)
-            eprint(' enc=')
-            eprint(c.encrypted)
-            eprint(' tls13=')
-            eprint(c.is-tls13)
 
             conn = c
         }

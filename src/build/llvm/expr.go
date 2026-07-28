@@ -175,8 +175,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			// before loading to match the current varTypes type.
 			if g.itAllocTypes != nil {
 				if allocType, ok := g.itAllocTypes[e.Value]; ok && allocType != llvmType {
-					g.tmpIdx++
-					castReg := fmt.Sprintf("%%it.rcast.%d", g.tmpIdx)
+					castReg := g.tmpReg("it.rcast")
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, allocType, varAddr, llvmType))
 					varAddr = castReg
 				}
@@ -201,22 +200,18 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 
 		if sb != nil {
 			// All strings use %str-long (heap pointer)
-			g.tmpIdx++
-			allocaReg := fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
+			allocaReg := g.tmpReg("str-longlit")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), allocaReg))
 			// Store len (field 0)
-			g.tmpIdx++
-			lenGEP := fmt.Sprintf("%%str-longlit.len.gep.%d", g.tmpIdx)
+			lenGEP := g.tmpReg("str-longlit.len.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
 			// Store cap (field 1) = strLen
-			g.tmpIdx++
-			capGEP := fmt.Sprintf("%%str-longlit.cap.gep.%d", g.tmpIdx)
+			capGEP := g.tmpReg("str-longlit.cap.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, allocaReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, capGEP))
 			// Store data (field 2) — data is i64 (address value)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%str-longlit.data.gep.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("str-longlit.data.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, allocaReg))
 			// Copy string data to writable heap memory so that index assignment
 			// (e.g. input[2] = 99) does not write to read-only global constant.
@@ -224,15 +219,13 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			if mallocSize == 0 {
 				mallocSize = 1 // avoid implementation-defined malloc(0)
 			}
-			g.tmpIdx++
-			bufReg := fmt.Sprintf("%%str-longlit.buf.%d", g.tmpIdx)
+			bufReg := g.tmpReg("str-longlit.buf")
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), bufReg, mallocSize))
 			if strLen > 0 {
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, %s, i64 %d, i1 false)\n",
 					g.indent(), bufReg, dataPtr, strLen))
 			}
-			g.tmpIdx++
-			dataIntReg := fmt.Sprintf("%%str-longlit.data2int.%d", g.tmpIdx)
+			dataIntReg := g.tmpReg("str-longlit.data2int")
 			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), dataIntReg, bufReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), dataIntReg, dataGEP))
 			return allocaReg
@@ -242,8 +235,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		right := g.generateExprWithSB(sb, e.Right)
 		if e.Operator == "-" {
 			if strings.HasPrefix(right, "%") {
-				g.tmpIdx++
-				reg := fmt.Sprintf("%%neg.tmp.%d", g.tmpIdx)
+				reg := g.tmpReg("neg.tmp")
 				if sb != nil {
 					// 判斷浮點型別：支援 float (f32) 與 double (f64)
 					if ft := g.floatLLVMType(e.Right); ft != "" {
@@ -275,27 +267,23 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				operandType = "i64"
 			}
 			if operandType == "i1" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%not.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("not.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, right))
 				}
 				rc = zextReg
 			} else if operandType != "i64" {
-				g.tmpIdx++
-				extReg := fmt.Sprintf("%%not.ext.%d", g.tmpIdx)
+				extReg := g.tmpReg("not.ext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, operandType, right))
 				}
 				rc = extReg
 			}
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%not.cmp.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("not.cmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), cmpReg, rc))
 			}
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%not.result.%d", g.tmpIdx)
+			reg := g.tmpReg("not.result")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
 			}
@@ -314,8 +302,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			rc := g.coerceToInt(sb, right, e.Right, notType)
 			if strings.HasPrefix(rc, "%") {
-				g.tmpIdx++
-				reg := fmt.Sprintf("%%bnot.tmp.%d", g.tmpIdx)
+				reg := g.tmpReg("bnot.tmp")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, notType, rc))
 				}
@@ -325,8 +312,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			if v, err := strconv.ParseInt(rc, 10, 64); err == nil {
 				return fmt.Sprintf("%d", ^v)
 			}
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%bnot.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("bnot.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, notType, rc))
 			}
@@ -354,8 +340,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				}
 				return ""
 			}
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%call.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("call.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = %s\n", g.indent(), reg, result))
 			}
@@ -371,8 +356,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			// If call returns i32 (printf, etc.), zext to i64 for consistency
 			if strings.Contains(result, "call i32") {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("call.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext i32 %s to i64\n", g.indent(), zextReg, reg))
 				}
@@ -380,8 +364,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 			}
 			// If call returns i1 (bool), zext to i64 (Nolang bools are i64)
 			if strings.Contains(result, "call i1 ") {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("call.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, reg))
 				}
@@ -393,8 +376,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		// If it's i1 (bool), zext to i64 (Nolang bools are i64)
 		if strings.HasPrefix(result, "%") && g.ssaTypes != nil {
 			if t, ok := g.ssaTypes[result]; ok && t == "i1" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%call.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("call.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, result))
 				}
@@ -487,8 +469,7 @@ func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastEx
 	if !strings.HasPrefix(val, "%") {
 		return val
 	}
-	g.tmpIdx++
-	castReg := fmt.Sprintf("%%cast.%d", g.tmpIdx)
+	castReg := g.tmpReg("cast")
 	if srcType == "i64" {
 		// i64 → smaller: trunc
 		sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), castReg, srcType, val, tgtType))
@@ -513,8 +494,7 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 		return g.generateExprWithSB(sb, cond)
 	}
 	// Default: assume i64, need trunc to i1
-	g.tmpIdx++
-	reg := fmt.Sprintf("%%if.trunc.%d", g.tmpIdx)
+	reg := g.tmpReg("if.trunc")
 	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, cond)))
 	return reg
 }
@@ -583,8 +563,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// 若 then 分支的最後一個表達式是 void 函數呼叫（用結果參數），
 	// 則 thenVal 為空，需要從結果參數載入作為 phi 值。
 	if thenVal == "" && g.curFuncRetName != "" && !g.blockTerminated {
-		g.tmpIdx++
-		thenLoad := fmt.Sprintf("%%if.then.load.%d", g.tmpIdx)
+		thenLoad := g.tmpReg("if.then.load")
 		retType := g.curFuncRetType
 		if retType == "" || retType == "void" {
 			retType = "i64"
@@ -600,8 +579,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// String literals (%str-longlit.*) are alloca %str-long (pointers);
 	// the PHI needs the %str-long struct value, so load it.
 	if !g.blockTerminated && strings.Contains(thenVal, "str-longlit") {
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%if.then.strload.%d", g.tmpIdx)
+		loadReg := g.tmpReg("if.then.strload")
 		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, thenVal))
 		thenVal = loadReg
 		if g.ssaTypes != nil {
@@ -644,8 +622,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		}
 	}
 	if elseVal == "" && g.curFuncRetName != "" && !g.blockTerminated {
-		g.tmpIdx++
-		elseLoad := fmt.Sprintf("%%if.else.load.%d", g.tmpIdx)
+		elseLoad := g.tmpReg("if.else.load")
 		retType := g.curFuncRetType
 		if retType == "" || retType == "void" {
 			retType = "i64"
@@ -658,8 +635,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	// Load struct value from alloca pointer before br (must be before terminator).
 	if !g.blockTerminated && strings.Contains(elseVal, "str-longlit") {
-		g.tmpIdx++
-		loadReg := fmt.Sprintf("%%if.else.strload.%d", g.tmpIdx)
+		loadReg := g.tmpReg("if.else.strload")
 		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, elseVal))
 		elseVal = loadReg
 		if g.ssaTypes != nil {
@@ -695,8 +671,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	}
 	endLabel := fmt.Sprintf("if.end.%d", labelId)
 	g.emitLabel(sb, endLabel)
-	g.tmpIdx++
-	phiReg := fmt.Sprintf("%%if.phi.%d", g.tmpIdx)
+	phiReg := g.tmpReg("if.phi")
 	// phi type matches current function's return type
 	phiType := g.curFuncRetType
 	if phiType == "" || phiType == "void" {
@@ -790,8 +765,7 @@ func (g *Generator) coercePhiValue(sb *strings.Builder, val, targetType string) 
 	}
 	// Coerce small integer types to i64
 	if targetType == "i64" && g.isIntegerLLVMType(valType) && valType != "i64" {
-		g.tmpIdx++
-		zextReg := fmt.Sprintf("%%phi.zext.%d", g.tmpIdx)
+		zextReg := g.tmpReg("phi.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
 				g.indent(), zextReg, valType, val))
@@ -800,8 +774,7 @@ func (g *Generator) coercePhiValue(sb *strings.Builder, val, targetType string) 
 	}
 	// Coerce i64 to i1 (trunc) — less common but possible
 	if targetType == "i1" && valType == "i64" {
-		g.tmpIdx++
-		truncReg := fmt.Sprintf("%%phi.trunc.%d", g.tmpIdx)
+		truncReg := g.tmpReg("phi.trunc")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i1\n",
 				g.indent(), truncReg, valType, val))
@@ -829,14 +802,12 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 		if isCmp {
 			cond = g.generateInfixI1(sb, infix)
 		} else {
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%cond.trunc.%d", g.tmpIdx)
+			reg := g.tmpReg("cond.trunc")
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
 			cond = reg
 		}
 	} else {
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%cond.trunc.%d", g.tmpIdx)
+		reg := g.tmpReg("cond.trunc")
 		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
 		cond = reg
 	}
@@ -863,8 +834,7 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 
 	// end: phi
 	g.emitLabel(sb, fmt.Sprintf("cond.end.%d", labelId))
-	g.tmpIdx++
-	phiReg := fmt.Sprintf("%%cond.phi.%d", g.tmpIdx)
+	phiReg := g.tmpReg("cond.phi")
 	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%%s], [%s, %%%s]\n",
 		g.indent(), phiReg, phiType, thenVal, thenPredecessor, elseVal, elsePredecessor))
 
@@ -1258,8 +1228,7 @@ func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parse
 		if sb == nil {
 			return v
 		}
-		g.tmpIdx++
-		cvtReg := fmt.Sprintf("%%cvt.%d", g.tmpIdx)
+		cvtReg := g.tmpReg("cvt")
 		if srcType == "i64" {
 			// i64 → 較窄型別：trunc
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), cvtReg, v, targetType))
@@ -1295,8 +1264,7 @@ func (g *Generator) zextBoolToI64(sb *strings.Builder, v string, expr parser.Exp
 			if sb == nil {
 				return v
 			}
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%lzext.%d", g.tmpIdx)
+			extReg := g.tmpReg("lzext")
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, v))
 			return extReg
 		}
@@ -1561,10 +1529,8 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 func (g *Generator) structPtrForVar(sb *strings.Builder, varName, structType string) string {
 	if g.itAllocTypes != nil {
 		if allocType, ok := g.itAllocTypes[varName]; ok && allocType == "i64" && strings.HasPrefix(structType, "%") {
-			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%it.i64load.%d", g.tmpIdx)
-			g.tmpIdx++
-			ptrReg := fmt.Sprintf("%%it.ptrcast.%d", g.tmpIdx)
+			loadReg := g.tmpReg("it.i64load")
+			ptrReg := g.tmpReg("it.ptrcast")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), loadReg, g.varAddr(varName)))
 				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), ptrReg, loadReg, structType))
@@ -1650,8 +1616,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 			if val != "" && val != "0" {
 				recvType := g.exprResultLLVMType(expr.Receiver)
 				if recvType != "" {
-					g.tmpIdx++
-					tmpAlloca := fmt.Sprintf("%%recv.tmp.%d", g.tmpIdx)
+					tmpAlloca := g.tmpReg("recv.tmp")
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
 					basePtr = tmpAlloca
@@ -1672,8 +1637,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 		if fieldIdx >= 0 && sb != nil {
 			structTy := "%" + structName
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%dot.gep.%d", g.tmpIdx)
+			reg := g.tmpReg("dot.gep")
 			if basePtr != "" {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
@@ -1685,8 +1649,7 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 					g.indent(), reg, structTy, structTy, baseAddr, fieldIdx))
 			}
 			// 一律 load 欄位值。對 struct 型別的鏈式存取由 generateExprPtr 處理（需指標的情況）。
-			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%dot.val.%d", g.tmpIdx)
+			loadReg := g.tmpReg("dot.val")
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, reg))
 			return loadReg
 		}
@@ -1730,8 +1693,7 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 		if fields, ok := g.structTypes[structName]; ok {
 			for i, f := range fields {
 				if f.name == v.Property {
-					g.tmpIdx++
-					reg := fmt.Sprintf("%%dot.ptr.gep.%d", g.tmpIdx)
+					reg := g.tmpReg("dot.ptr.gep")
 					structTy := "%" + structName
 					if sb != nil {
 						if basePtr != "" {
@@ -1803,16 +1765,14 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 		if strings.HasPrefix(idx, "%") {
 			idxType := g.intExprLLVMType(v.Index)
 			if idxType != "i64" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%dotarr.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("dotarr.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 				}
 				idx = zextReg
 			}
 		}
-		g.tmpIdx++
-		elemGEP := fmt.Sprintf("%%dotarr.ptr.elem.%d", g.tmpIdx)
+		elemGEP := g.tmpReg("dotarr.ptr.elem")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 				g.indent(), elemGEP, fieldArrType, fieldArrType, basePtr, idx))
@@ -1831,10 +1791,8 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 		view := g.sliceViews[varName]
 		// Bounds check: use view length
 		g.emitBoundsCheck(sb, idx, view.viewLen)
-		g.tmpIdx++
-		dataTyped := fmt.Sprintf("%%sv.ptr.typed.%d", g.tmpIdx)
-		g.tmpIdx++
-		elemGEP := fmt.Sprintf("%%sv.ptr.elem.%d", g.tmpIdx)
+		dataTyped := g.tmpReg("sv.ptr.typed")
+		elemGEP := g.tmpReg("sv.ptr.elem")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 				g.indent(), dataTyped, view.dataPtrReg, view.elemType))
@@ -1860,14 +1818,10 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				arrLen := g.emitArrLenLoad(sb, arrRef)
 				g.emitBoundsCheck(sb, idx, arrLen)
 			}
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%arr.ptr.data.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%arr.ptr.data.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataTyped := fmt.Sprintf("%%arr.ptr.typed.%d", g.tmpIdx)
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%arr.ptr.elem.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("arr.ptr.data.gep")
+			dataLoad := g.tmpReg("arr.ptr.data")
+			dataTyped := g.tmpReg("arr.ptr.typed")
+			elemGEP := g.tmpReg("arr.ptr.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
 					g.indent(), dataGEP, arrRef))
@@ -1894,14 +1848,10 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 				vecLen := g.emitVecLenLoad(sb, vecRef)
 				g.emitBoundsCheck(sb, idx, vecLen)
 			}
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%vec.ptr.data.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%vec.ptr.data.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataTyped := fmt.Sprintf("%%vec.ptr.typed.%d", g.tmpIdx)
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%vec.ptr.elem.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("vec.ptr.data.gep")
+			dataLoad := g.tmpReg("vec.ptr.data")
+			dataTyped := g.tmpReg("vec.ptr.typed")
+			elemGEP := g.tmpReg("vec.ptr.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, vecRef))
@@ -1926,8 +1876,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 				arrRef = llvmGlobalRef(varName)
 			}
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%fixarr.ptr.elem.%d", g.tmpIdx)
+			elemGEP := g.tmpReg("fixarr.ptr.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 					g.indent(), elemGEP, t, t, arrRef, idx))
@@ -1946,10 +1895,8 @@ func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string
 		fmt.Fprintf(os.Stderr, "codegen error: extractStrDataPtr called with empty strPtr\n")
 		return ""
 	}
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%str-long.data.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	dataLoad := fmt.Sprintf("%%str-long.data.val.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("str-long.data.gep")
+	dataLoad := g.tmpReg("str-long.data.val")
 	if sb != nil {
 		// Handle both @global and %local references
 		if strings.HasPrefix(strPtr, "@") {
@@ -1968,10 +1915,8 @@ func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 		fmt.Fprintf(os.Stderr, "codegen error: extractStrLen called with empty strPtr\n")
 		return ""
 	}
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%str-long.len.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	lenLoad := fmt.Sprintf("%%str-long.len.val.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("str-long.len.gep")
+	lenLoad := g.tmpReg("str-long.len.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strPtr))
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
@@ -1985,10 +1930,8 @@ func (g *Generator) extractStrCap(sb *strings.Builder, strPtr string) string {
 		fmt.Fprintf(os.Stderr, "codegen error: extractStrCap called with empty strPtr\n")
 		return ""
 	}
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%str-long.cap.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	capLoad := fmt.Sprintf("%%str-long.cap.val.%d", g.tmpIdx)
+	capGEP := g.tmpReg("str-long.cap.gep")
+	capLoad := g.tmpReg("str-long.cap.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strPtr))
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), capLoad, capGEP))
@@ -2060,10 +2003,8 @@ func (g *Generator) canSkipBoundsCheck(varName string, indexExpr parser.Expressi
 
 // emitArrLenLoad loads the i64 len (field 0) from a %arr* pointer.
 func (g *Generator) emitArrLenLoad(sb *strings.Builder, arrRef string) string {
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%arr.len.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	lenLoad := fmt.Sprintf("%%arr.len.val.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("arr.len.gep")
+	lenLoad := g.tmpReg("arr.len.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, arrRef))
@@ -2074,10 +2015,8 @@ func (g *Generator) emitArrLenLoad(sb *strings.Builder, arrRef string) string {
 
 // emitVecLenLoad loads the i64 len (field 0) from a %vec* pointer.
 func (g *Generator) emitVecLenLoad(sb *strings.Builder, vecRef string) string {
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%vec.len.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	lenLoad := fmt.Sprintf("%%vec.len.val.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("vec.len.gep")
+	lenLoad := g.tmpReg("vec.len.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, vecRef))
@@ -2088,10 +2027,8 @@ func (g *Generator) emitVecLenLoad(sb *strings.Builder, vecRef string) string {
 
 // emitVecCapLoad loads the i64 cap (field 1) from a %vec* pointer.
 func (g *Generator) emitVecCapLoad(sb *strings.Builder, vecRef string) string {
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%vec.cap.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	capLoad := fmt.Sprintf("%%vec.cap.val.%d", g.tmpIdx)
+	capGEP := g.tmpReg("vec.cap.gep")
+	capLoad := g.tmpReg("vec.cap.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
 			g.indent(), capGEP, vecRef))
@@ -2102,10 +2039,8 @@ func (g *Generator) emitVecCapLoad(sb *strings.Builder, vecRef string) string {
 
 // emitStrCapLoad loads the i64 cap (field 1) from a %str-long* pointer.
 func (g *Generator) emitStrCapLoad(sb *strings.Builder, strRef string) string {
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%str.cap.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	capLoad := fmt.Sprintf("%%str.cap.val.%d", g.tmpIdx)
+	capGEP := g.tmpReg("str.cap.gep")
+	capLoad := g.tmpReg("str.cap.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
 			g.indent(), capGEP, strRef))
@@ -2175,8 +2110,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 		}
 		if fieldIdx >= 0 && sb != nil {
 			// GEP to field in struct
-			g.tmpIdx++
-			fieldGEP := fmt.Sprintf("%%set.field.gep.%d", g.tmpIdx)
+			fieldGEP := g.tmpReg("set.field.gep")
 			structTy := "%" + structName
 			if basePtr != "" {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -2194,10 +2128,8 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				}
 
 				// Bounds check for writes: use cap (field 1), not len (field 0)
-				g.tmpIdx++
-				capGEP := fmt.Sprintf("%%set.vec.cap.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				capLoad := fmt.Sprintf("%%set.vec.cap.val.%d", g.tmpIdx)
+				capGEP := g.tmpReg("set.vec.cap.gep")
+				capLoad := g.tmpReg("set.vec.cap.val")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
 					g.indent(), capGEP, fieldGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n",
@@ -2205,17 +2137,14 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				g.emitBoundsCheck(sb, idx, capLoad)
 
 				// Slice field: load data pointer (field 2), bitcast, GEP, store
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%set.vec.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%set.vec.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("set.vec.data.gep")
+				dataLoad := g.tmpReg("set.vec.data")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, fieldGEP))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
 
 				// Bitcast to element type pointer
-				g.tmpIdx++
-				dataTyped := fmt.Sprintf("%%set.vec.typed.%d", g.tmpIdx)
+				dataTyped := g.tmpReg("set.vec.typed")
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 					g.indent(), dataTyped, dataLoad, vecElemType))
 
@@ -2224,8 +2153,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				if strings.HasPrefix(val, "%") {
 					valType := g.intExprLLVMType(value)
 					if valType != "" && valType != vecElemType && g.isIntegerLLVMType(valType) && g.isIntegerLLVMType(vecElemType) {
-						g.tmpIdx++
-						convReg := fmt.Sprintf("%%set.vec.conv.%d", g.tmpIdx)
+						convReg := g.tmpReg("set.vec.conv")
 						if valType == "i64" {
 							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, valType, val, vecElemType))
 						} else if vecElemType == "i64" {
@@ -2238,24 +2166,18 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				}
 
 				// GEP to element index and store
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%set.vec.elem.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("set.vec.elem")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), elemGEP, vecElemType, vecElemType, dataTyped, idx))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 					g.indent(), vecElemType, storeVal, vecElemType, elemGEP))
 
 				// Auto-update len (field 0) to max(len, idx+1)
-				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%set.vec.len.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				curLen := fmt.Sprintf("%%set.vec.cur-len.%d", g.tmpIdx)
-				g.tmpIdx++
-				newLen := fmt.Sprintf("%%set.vec.new-len.%d", g.tmpIdx)
-				g.tmpIdx++
-				cmpReg := fmt.Sprintf("%%set.vec.cmp.%d", g.tmpIdx)
-				g.tmpIdx++
-				finalLen := fmt.Sprintf("%%set.vec.final-len.%d", g.tmpIdx)
+				lenGEP := g.tmpReg("set.vec.len.gep")
+				curLen := g.tmpReg("set.vec.cur-len")
+				newLen := g.tmpReg("set.vec.new-len")
+				cmpReg := g.tmpReg("set.vec.cmp")
+				finalLen := g.tmpReg("set.vec.final-len")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
 					g.indent(), lenGEP, fieldGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
@@ -2268,16 +2190,13 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 
 			if fieldType == "%str-long" {
 				// str-long field: load data pointer (field 1), GEP, store
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%set.strf.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%set.strf.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("set.strf.data.gep")
+				dataLoad := g.tmpReg("set.strf.data")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, fieldGEP))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
 
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%set.strf.elem.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("set.strf.elem")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
 					g.indent(), elemGEP, dataLoad, idx))
 				storeVal := val
@@ -2286,8 +2205,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 				} else if strings.HasPrefix(val, "%") {
 					valType := g.intExprLLVMType(value)
 					if strings.HasPrefix(valType, "i") && valType != "i8" {
-						g.tmpIdx++
-						truncReg := fmt.Sprintf("%%set.strf.trunc.%d", g.tmpIdx)
+						truncReg := g.tmpReg("set.strf.trunc")
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
 						storeVal = truncReg
 					}
@@ -2296,16 +2214,11 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					g.indent(), storeVal, elemGEP))
 
 				// Auto-update len: load cur len, compute idx+1, store max
-				g.tmpIdx++
-				lenGEP := fmt.Sprintf("%%set.strf.len.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				curLen := fmt.Sprintf("%%set.strf.cur-len.%d", g.tmpIdx)
-				g.tmpIdx++
-				newLen := fmt.Sprintf("%%set.strf.new-len.%d", g.tmpIdx)
-				g.tmpIdx++
-				cmpReg := fmt.Sprintf("%%set.strf.cmp.%d", g.tmpIdx)
-				g.tmpIdx++
-				finalLen := fmt.Sprintf("%%set.strf.final-len.%d", g.tmpIdx)
+				lenGEP := g.tmpReg("set.strf.len.gep")
+				curLen := g.tmpReg("set.strf.cur-len")
+				newLen := g.tmpReg("set.strf.new-len")
+				cmpReg := g.tmpReg("set.strf.cmp")
+				finalLen := g.tmpReg("set.strf.final-len")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 					g.indent(), lenGEP, fieldGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
@@ -2326,8 +2239,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					if xIdx >= 0 {
 						elemType = inner[xIdx+3:]
 					}
-					g.tmpIdx++
-					elemGEP := fmt.Sprintf("%%set.arr.elem.%d", g.tmpIdx)
+					elemGEP := g.tmpReg("set.arr.elem")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					// Truncate/extend val to elemType if needed (e.g., i64 → i8 for byte arrays)
@@ -2339,8 +2251,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							valType = "i64" // default assumption
 						}
 						if valType != elemType {
-							g.tmpIdx++
-							convReg := fmt.Sprintf("%%set.arr.trunc.%d", g.tmpIdx)
+							convReg := g.tmpReg("set.arr.trunc")
 							// Determine if we need trunc (wider→narrower) or zext (narrower→wider)
 							valW := llvmIntBitWidth(valType)
 							elemW := llvmIntBitWidth(elemType)
@@ -2357,8 +2268,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					// All string literals are %str-long* pointers (alloca), need to load the value.
 					if elemType == "%str-long" && strings.HasPrefix(val, "%str-longlit.") {
 						if _, ok := value.(*parser.StringLiteral); ok {
-							g.tmpIdx++
-							loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+							loadReg := g.tmpReg("str-long.load")
 							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 							storeVal = loadReg
 						}
@@ -2379,8 +2289,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							if !isStrLit && !isIdent {
 								_, isIdx := value.(*parser.IndexExpression)
 								if isIdx || g.isStringExpr(value) {
-									g.tmpIdx++
-									loadReg := fmt.Sprintf("%%set.arr.load.%d", g.tmpIdx)
+									loadReg := g.tmpReg("set.arr.load")
 									sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 										g.indent(), loadReg, elemType, elemType, val))
 									storeVal = loadReg
@@ -2396,12 +2305,9 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					// pointers in uninitialized slots).
 					if g.isHeapOwningType(elemType) {
 						if elemType == "%str-long" || elemType == "%vec" || elemType == "%arr" {
-							g.tmpIdx++
-							oldLenGEP := fmt.Sprintf("%%set.arr.oldlen.gep.%d", g.tmpIdx)
-							g.tmpIdx++
-							oldLenReg := fmt.Sprintf("%%set.arr.oldlen.%d", g.tmpIdx)
-							g.tmpIdx++
-							lenCmpReg := fmt.Sprintf("%%set.arr.lencmp.%d", g.tmpIdx)
+							oldLenGEP := g.tmpReg("set.arr.oldlen.gep")
+							oldLenReg := g.tmpReg("set.arr.oldlen")
+							lenCmpReg := g.tmpReg("set.arr.lencmp")
 							g.tmpIdx++
 							skipFreeLabel := fmt.Sprintf("set.arr.skipfree.%d", g.tmpIdx)
 							g.tmpIdx++
@@ -2421,8 +2327,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							g.emitElementFree(sb, elemGEP, elemType)
 						}
 						// Build srcPtr: alloca + store the value, then deep clone to slot.
-						g.tmpIdx++
-						cloneSrc := fmt.Sprintf("%%set.arr.csrc.%d", g.tmpIdx)
+						cloneSrc := g.tmpReg("set.arr.csrc")
 						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 							g.indent(), elemType, storeVal, elemType, cloneSrc))
@@ -2472,8 +2377,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				val := g.generateExprWithSB(sb, dot.Receiver)
 				if val != "" && val != "0" {
 					if recvType != "" {
-						g.tmpIdx++
-						tmpAlloca := fmt.Sprintf("%%recv.tmp.%d", g.tmpIdx)
+						tmpAlloca := g.tmpReg("recv.tmp")
 						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
 						basePtr = tmpAlloca
@@ -2495,8 +2399,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 		}
 		if fieldIdx >= 0 && sb != nil {
 			// GEP to field in struct
-			g.tmpIdx++
-			fieldGEP := fmt.Sprintf("%%idx.field.gep.%d", g.tmpIdx)
+			fieldGEP := g.tmpReg("idx.field.gep")
 			structTy := "%" + structName
 			if basePtr != "" {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -2518,25 +2421,20 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				g.emitBoundsCheck(sb, idx, vecLen)
 
 				// Slice field: load data pointer, bitcast, GEP, load
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%idx.vec.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%idx.vec.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("idx.vec.data.gep")
+				dataLoad := g.tmpReg("idx.vec.data")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, fieldGEP))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
 
 				// Bitcast to element type pointer
-				g.tmpIdx++
-				dataTyped := fmt.Sprintf("%%idx.vec.typed.%d", g.tmpIdx)
+				dataTyped := g.tmpReg("idx.vec.typed")
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 					g.indent(), dataTyped, dataLoad, vecElemType))
 
 				// GEP to element and load
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%idx.vec.elem.%d", g.tmpIdx)
-				g.tmpIdx++
-				elemLoad := fmt.Sprintf("%%idx.vec.val.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("idx.vec.elem")
+				elemLoad := g.tmpReg("idx.vec.val")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), elemGEP, vecElemType, vecElemType, dataTyped, idx))
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
@@ -2548,8 +2446,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				}
 				// Zext to i64 if element type is smaller (callers expect i64)
 				if vecElemType != "i64" && g.isIntegerLLVMType(vecElemType) {
-					g.tmpIdx++
-					zextReg := fmt.Sprintf("%%idx.vec.zext.%d", g.tmpIdx)
+					zextReg := g.tmpReg("idx.vec.zext")
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
 						g.indent(), zextReg, vecElemType, elemLoad))
 					return zextReg
@@ -2564,25 +2461,19 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				if strings.HasPrefix(idx, "%") {
 					idxType := g.intExprLLVMType(index)
 					if idxType != "i64" {
-						g.tmpIdx++
-						zextReg := fmt.Sprintf("%%idx.strf.zext.%d", g.tmpIdx)
+						zextReg := g.tmpReg("idx.strf.zext")
 						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 						strIdx = zextReg
 					}
 				}
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%idx.strf.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%idx.strf.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("idx.strf.data.gep")
+				dataLoad := g.tmpReg("idx.strf.data")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, fieldGEP))
 				dataLoad = g.loadDataPtrField(sb, dataGEP)
-				g.tmpIdx++
-				charGEP := fmt.Sprintf("%%idx.strf.char.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				charLoad := fmt.Sprintf("%%idx.strf.char.val.%d", g.tmpIdx)
-				g.tmpIdx++
-				charZext := fmt.Sprintf("%%idx.strf.char.zext.%d", g.tmpIdx)
+				charGEP := g.tmpReg("idx.strf.char.gep")
+				charLoad := g.tmpReg("idx.strf.char.val")
+				charZext := g.tmpReg("idx.strf.char.zext")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 					g.indent(), charGEP, dataLoad, strIdx))
 				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
@@ -2602,8 +2493,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					if xIdx >= 0 {
 						elemType = inner[xIdx+3:]
 					}
-					g.tmpIdx++
-					elemGEP := fmt.Sprintf("%%idx.arr.elem.%d", g.tmpIdx)
+					elemGEP := g.tmpReg("idx.arr.elem")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
 					// Struct element: return pointer (by-reference), no load needed
@@ -2611,13 +2501,11 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 						return elemGEP
 					}
 					// Integer element: load value
-					g.tmpIdx++
-					elemLoad := fmt.Sprintf("%%idx.arr.val.%d", g.tmpIdx)
+					elemLoad := g.tmpReg("idx.arr.val")
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 						g.indent(), elemLoad, elemType, elemType, elemGEP))
 					if elemType != "i64" {
-						g.tmpIdx++
-						zextReg := fmt.Sprintf("%%idx.arr.zext.%d", g.tmpIdx)
+						zextReg := g.tmpReg("idx.arr.zext")
 						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
 						return zextReg
 					}
@@ -2644,8 +2532,7 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 		}
 		recvType := g.exprResultLLVMType(innerIdx)
 		if sb != nil && recvType != "" {
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%nestidx.tmp.%d", g.tmpIdx)
+			tmpAlloca := g.tmpReg("nestidx.tmp")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val, recvType, tmpAlloca))
 			strPtr = tmpAlloca
@@ -2658,8 +2545,7 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
 		if idxType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%nestidx.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("nestidx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -2670,20 +2556,15 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 		return "0"
 	}
 	// 從 %str-long* 取出 data 指標（field 1）
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%nestidx.data.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	dataLoad := fmt.Sprintf("%%nestidx.data.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("nestidx.data.gep")
+	dataLoad := g.tmpReg("nestidx.data")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 		g.indent(), dataGEP, strPtr))
 	dataLoad = g.loadDataPtrField(sb, dataGEP)
 	// GEP 到第 i 個位元組並 load
-	g.tmpIdx++
-	charGEP := fmt.Sprintf("%%nestidx.char.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	charLoad := fmt.Sprintf("%%nestidx.char.val.%d", g.tmpIdx)
-	g.tmpIdx++
-	charZext := fmt.Sprintf("%%nestidx.char.zext.%d", g.tmpIdx)
+	charGEP := g.tmpReg("nestidx.char.gep")
+	charLoad := g.tmpReg("nestidx.char.val")
+	charZext := g.tmpReg("nestidx.char.zext")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 		g.indent(), charGEP, dataLoad, idx))
 	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n",
@@ -2707,8 +2588,7 @@ func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
 		if idxType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%nestset.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("nestset.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -2720,21 +2600,17 @@ func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *
 	// 值需截斷為 i8（位元組存儲）
 	if sb != nil {
 		// 從 %str-long* 取出 data 指標（field 1）
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%nestset.data.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		dataLoad := fmt.Sprintf("%%nestset.data.%d", g.tmpIdx)
+		dataGEP := g.tmpReg("nestset.data.gep")
+		dataLoad := g.tmpReg("nestset.data")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 			g.indent(), dataGEP, strPtr))
 		dataLoad = g.loadDataPtrField(sb, dataGEP)
 		// GEP 到第 i 個位元組
-		g.tmpIdx++
-		charGEP := fmt.Sprintf("%%nestset.char.gep.%d", g.tmpIdx)
+		charGEP := g.tmpReg("nestset.char.gep")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 			g.indent(), charGEP, dataLoad, idx))
 		// 截斷值為 i8 並 store
-		g.tmpIdx++
-		truncReg := fmt.Sprintf("%%nestset.trunc.%d", g.tmpIdx)
+		truncReg := g.tmpReg("nestset.trunc")
 		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), truncReg, val))
 		sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), truncReg, charGEP))
 	}
@@ -2755,12 +2631,9 @@ func (g *Generator) coerceStrLitToByte(sb *strings.Builder, val string, expr par
 		return "0", true
 	}
 	// %str-long*: field 2 is i64 data pointer
-	g.tmpIdx++
-	dataPtrGEP := fmt.Sprintf("%%strlit.dataptr.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	dataPtrLoad := fmt.Sprintf("%%strlit.dataptr.%d", g.tmpIdx)
-	g.tmpIdx++
-	byteLoad := fmt.Sprintf("%%strlit.byte.%d", g.tmpIdx)
+	dataPtrGEP := g.tmpReg("strlit.dataptr.gep")
+	dataPtrLoad := g.tmpReg("strlit.dataptr")
+	byteLoad := g.tmpReg("strlit.byte")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataPtrGEP, val))
 	dataPtrLoad = g.loadDataPtrField(sb, dataPtrGEP)
 	sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), byteLoad, dataPtrLoad))
@@ -2795,8 +2668,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						}
 					}
 					if outerIdx >= 0 && sb != nil {
-						g.tmpIdx++
-						outerGEP := fmt.Sprintf("%%set.nested.outer.gep.%d", g.tmpIdx)
+						outerGEP := g.tmpReg("set.nested.outer.gep")
 						structTy := "%" + structName
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 							g.indent(), outerGEP, structTy, structTy, g.varAddr(recvName), outerIdx))
@@ -2813,8 +2685,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 								}
 							}
 							if subIdx >= 0 {
-								g.tmpIdx++
-								subGEP := fmt.Sprintf("%%set.nested.sub.gep.%d", g.tmpIdx)
+								subGEP := g.tmpReg("set.nested.sub.gep")
 								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 									g.indent(), subGEP, outerType, outerType, outerGEP, subIdx))
 								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), subType, val, subType, subGEP))
@@ -2861,8 +2732,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					// Fallback: 生成值後存入臨時 alloca
 					val2 := g.generateExprWithSB(sb, dot.Receiver)
 					if val2 != "" && val2 != "0" && recvType != "" {
-						g.tmpIdx++
-						tmpAlloca := fmt.Sprintf("%%assign.tmp.%d", g.tmpIdx)
+						tmpAlloca := g.tmpReg("assign.tmp")
 						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val2, recvType, tmpAlloca))
 						basePtr = tmpAlloca
@@ -2886,8 +2756,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 				if fieldIdx >= 0 && sb != nil {
 					structTy := "%" + structName
-					g.tmpIdx++
-					reg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
+					reg := g.tmpReg("set.gep")
 					if basePtr != "" {
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 							g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
@@ -2907,8 +2776,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 							if sfi, ok := fieldIdxMap[sf.Name]; ok {
 								sfType := structLitFields[sfi].typ
 								sfVal := g.generateExprWithSB(sb, sf.Value)
-								g.tmpIdx++
-								sfGEP := fmt.Sprintf("%%set.st.fld.%d", g.tmpIdx)
+								sfGEP := g.tmpReg("set.st.fld")
 								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 									g.indent(), sfGEP, fieldType, fieldType, reg, sfi))
 								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), sfType, sfVal, sfType, sfGEP))
@@ -2966,8 +2834,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					// Fallback: 生成值後存入臨時 alloca
 					val2 := g.generateExprWithSB(sb, dot.Receiver)
 					if val2 != "" && val2 != "0" && recvType != "" {
-						g.tmpIdx++
-						tmpAlloca := fmt.Sprintf("%%assign.tmp.%d", g.tmpIdx)
+						tmpAlloca := g.tmpReg("assign.tmp")
 						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, recvType))
 						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), recvType, val2, recvType, tmpAlloca))
 						basePtr = tmpAlloca
@@ -2976,8 +2843,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 		}
 
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
+		reg := g.tmpReg("set.gep")
 
 		if fields, ok := g.structTypes[structName]; ok {
 			fieldIdx := -1
@@ -2993,8 +2859,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				// String literal is %str-long* pointer (alloca), load the value.
 				if fieldType == "%str-long" {
 					if _, ok := expr.Value.(*parser.StringLiteral); ok {
-						g.tmpIdx++
-						loadReg := fmt.Sprintf("%%set.fld.strload.%d", g.tmpIdx)
+						loadReg := g.tmpReg("set.fld.strload")
 						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 						val = loadReg
 					}
@@ -3020,8 +2885,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 							//   - InfixExpression (string concat/repeat → alloca pointer)
 							// CallExpression and DotExpression return loaded values, not pointers.
 							if isIdx || (isInfix && g.isStringExpr(expr.Value)) {
-								g.tmpIdx++
-								loadReg := fmt.Sprintf("%%set.fld.load.%d", g.tmpIdx)
+								loadReg := g.tmpReg("set.fld.load")
 								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 									g.indent(), loadReg, fieldType, fieldType, val))
 								val = loadReg
@@ -3065,8 +2929,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		if strings.HasPrefix(idx, "%") {
 			idxType := g.intExprLLVMType(idxExpr.Index)
 			if idxType != "i64" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%idx.set.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("idx.set.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 				}
@@ -3080,10 +2943,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			view := g.sliceViews[varName]
 			// Bounds check: use view length
 			g.emitBoundsCheck(sb, idx, view.viewLen)
-			g.tmpIdx++
-			dataTyped := fmt.Sprintf("%%sv.set.typed.%d", g.tmpIdx)
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%sv.set.elem.%d", g.tmpIdx)
+			dataTyped := g.tmpReg("sv.set.typed")
+			elemGEP := g.tmpReg("sv.set.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 					g.indent(), dataTyped, view.dataPtrReg, view.elemType))
@@ -3094,8 +2955,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				if view.elemType != "i64" && !strings.HasPrefix(val, "%") {
 					storeVal = val // constant, LLVM will handle truncation
 				} else if view.elemType != "i64" && strings.HasPrefix(val, "%") {
-					g.tmpIdx++
-					truncReg := fmt.Sprintf("%%sv.set.trunc.%d", g.tmpIdx)
+					truncReg := g.tmpReg("sv.set.trunc")
 					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n",
 						g.indent(), truncReg, val, view.elemType))
 					storeVal = truncReg
@@ -3122,10 +2982,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				g.emitBoundsCheck(sb, idx, arrLen)
 
 				// Load data pointer from arr struct
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%arr.set.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%arr.set.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("arr.set.data.gep")
+				dataLoad := g.tmpReg("arr.set.data")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
 						g.indent(), dataGEP, g.varAddr(varName)))
@@ -3133,16 +2991,14 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// Bitcast to element type pointer
-				g.tmpIdx++
-				dataTyped := fmt.Sprintf("%%arr.set.typed.%d", g.tmpIdx)
+				dataTyped := g.tmpReg("arr.set.typed")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 						g.indent(), dataTyped, dataLoad, llvmElemType))
 				}
 
 				// GEP to element index and store
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%arr.set.elem.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("arr.set.elem")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
@@ -3162,8 +3018,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						} else if g.isStrPtrReg(val) {
 							// val is a %str-long* pointer (e.g. sprintf-based to-str result).
 							// Load the %str-long value from the pointer before storing.
-							g.tmpIdx++
-							loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+							loadReg := g.tmpReg("str-long.load")
 							if sb != nil {
 								sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 							}
@@ -3185,8 +3040,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 							}
 						}
 						if needPtrToInt {
-							g.tmpIdx++
-							convReg := fmt.Sprintf("%%arr.set.conv.%d", g.tmpIdx)
+							convReg := g.tmpReg("arr.set.conv")
 							sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %s %s to i64\n", g.indent(), convReg, strLLVMType, val))
 							storeVal = convReg
 						}
@@ -3195,8 +3049,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						srcType := g.intExprLLVMType(expr.Value)
 						// Only convert between integer types; skip for struct types (e.g. %str-long)
 						if srcType != "" && srcType != llvmElemType && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) {
-							g.tmpIdx++
-							convReg := fmt.Sprintf("%%arr.set.conv.%d", g.tmpIdx)
+							convReg := g.tmpReg("arr.set.conv")
 							if srcType == "i64" {
 								// i64 → smaller type: trunc
 								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, val, llvmElemType))
@@ -3239,10 +3092,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// Load data pointer from vec struct (field 2)
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%vec.set.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%vec.set.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("vec.set.data.gep")
+				dataLoad := g.tmpReg("vec.set.data")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 						g.indent(), dataGEP, g.varAddr(varName)))
@@ -3250,8 +3101,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// Bitcast to element type pointer
-				g.tmpIdx++
-				dataTyped := fmt.Sprintf("%%vec.set.typed.%d", g.tmpIdx)
+				dataTyped := g.tmpReg("vec.set.typed")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 						g.indent(), dataTyped, dataLoad, llvmElemType))
@@ -3263,8 +3113,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					srcType := g.intExprLLVMType(expr.Value)
 					// Only convert between integer types; skip for struct types (e.g. %str-long)
 					if srcType != "" && srcType != llvmElemType && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) {
-						g.tmpIdx++
-						convReg := fmt.Sprintf("%%vec.set.conv.%d", g.tmpIdx)
+						convReg := g.tmpReg("vec.set.conv")
 						if sb != nil {
 							if srcType == "i64" {
 								// i64 → smaller type: trunc
@@ -3282,8 +3131,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// GEP to element index and store
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%vec.set.elem.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("vec.set.elem")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
@@ -3303,16 +3151,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					varIdxExpr, _ := expr.Left.(*parser.IndexExpression)
 					_, isConstIdx := varIdxExpr.Index.(*parser.IntegerLiteral)
 					if !isConstIdx {
-						g.tmpIdx++
-						lenGEP := fmt.Sprintf("%%vec.set.len.gep.%d", g.tmpIdx)
-						g.tmpIdx++
-						curLen := fmt.Sprintf("%%vec.set.cur-len.%d", g.tmpIdx)
-						g.tmpIdx++
-						newLen := fmt.Sprintf("%%vec.set.new-len.%d", g.tmpIdx)
-						g.tmpIdx++
-						cmpReg := fmt.Sprintf("%%vec.set.cmp.%d", g.tmpIdx)
-						g.tmpIdx++
-						finalLen := fmt.Sprintf("%%vec.set.final-len.%d", g.tmpIdx)
+						lenGEP := g.tmpReg("vec.set.len.gep")
+						curLen := g.tmpReg("vec.set.cur-len")
+						newLen := g.tmpReg("vec.set.new-len")
+						cmpReg := g.tmpReg("vec.set.cmp")
+						finalLen := g.tmpReg("vec.set.final-len")
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
 							g.indent(), lenGEP, g.varAddr(varName)))
 						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
@@ -3336,10 +3179,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				strCap := g.extractStrCap(sb, g.varAddr(varName))
 				g.emitBoundsCheck(sb, idx, strCap)
 
-				g.tmpIdx++
-				dataGEP := fmt.Sprintf("%%str-long.set.data.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				dataLoad := fmt.Sprintf("%%str-long.set.data.%d", g.tmpIdx)
+				dataGEP := g.tmpReg("str-long.set.data.gep")
+				dataLoad := g.tmpReg("str-long.set.data")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 						g.indent(), dataGEP, g.varAddr(varName)))
@@ -3347,8 +3188,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				}
 
 				// GEP into data with index
-				g.tmpIdx++
-				elemGEP := fmt.Sprintf("%%str-long.set.elem.%d", g.tmpIdx)
+				elemGEP := g.tmpReg("str-long.set.elem")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n",
 						g.indent(), elemGEP, dataLoad, idx))
@@ -3358,8 +3198,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					} else if strings.HasPrefix(val, "%") {
 						valType := g.intExprLLVMType(expr.Value)
 						if strings.HasPrefix(valType, "i") && valType != "i8" {
-							g.tmpIdx++
-							truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+							truncReg := g.tmpReg("trunc.i8")
 							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
 							storeVal = truncReg
 						}
@@ -3368,16 +3207,11 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), storeVal, elemGEP))
 
 					// Auto-update len: load cur len, compute idx+1, store max
-					g.tmpIdx++
-					lenGEP := fmt.Sprintf("%%str-long.set.len.gep.%d", g.tmpIdx)
-					g.tmpIdx++
-					curLen := fmt.Sprintf("%%str-long.set.cur-len.%d", g.tmpIdx)
-					g.tmpIdx++
-					newLen := fmt.Sprintf("%%str-long.set.new-len.%d", g.tmpIdx)
-					g.tmpIdx++
-					cmpReg := fmt.Sprintf("%%str-long.set.cmp.%d", g.tmpIdx)
-					g.tmpIdx++
-					finalLen := fmt.Sprintf("%%str-long.set.final-len.%d", g.tmpIdx)
+					lenGEP := g.tmpReg("str-long.set.len.gep")
+					curLen := g.tmpReg("str-long.set.cur-len")
+					newLen := g.tmpReg("str-long.set.new-len")
+					cmpReg := g.tmpReg("str-long.set.cmp")
+					finalLen := g.tmpReg("str-long.set.final-len")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 						g.indent(), lenGEP, g.varAddr(varName)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
@@ -3410,8 +3244,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		}
 
 		// GEP + store
-		g.tmpIdx++
-		gepReg := fmt.Sprintf("%%set.gep.%d", g.tmpIdx)
+		gepReg := g.tmpReg("set.gep")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 				g.indent(), gepReg, arrayLLVMType, arrayLLVMType, g.varAddr(varName), idx))
@@ -3422,8 +3255,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				} else if strings.HasPrefix(val, "%") {
 					valType := g.intExprLLVMType(expr.Value)
 					if strings.HasPrefix(valType, "i") && valType != "i8" {
-						g.tmpIdx++
-						truncReg := fmt.Sprintf("%%trunc.i8.%d", g.tmpIdx)
+						truncReg := g.tmpReg("trunc.i8")
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to i8\n", g.indent(), truncReg, valType, val))
 						storeVal = truncReg
 					}
@@ -3433,8 +3265,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			// pointers (alloca results), need to load the %str-long value.
 			if llvmElemType == "%str-long" {
 				if _, ok := expr.Value.(*parser.StringLiteral); ok {
-					g.tmpIdx++
-					loadReg := fmt.Sprintf("%%set.arr.strload.%d", g.tmpIdx)
+					loadReg := g.tmpReg("set.arr.strload")
 					sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 					storeVal = loadReg
 				}
@@ -3447,12 +3278,9 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			// pointers in uninitialized slots).
 			if g.isHeapOwningType(llvmElemType) {
 				if llvmElemType == "%str-long" || llvmElemType == "%vec" || llvmElemType == "%arr" {
-					g.tmpIdx++
-					oldLenGEP := fmt.Sprintf("%%set.ga.oldlen.gep.%d", g.tmpIdx)
-					g.tmpIdx++
-					oldLenReg := fmt.Sprintf("%%set.ga.oldlen.%d", g.tmpIdx)
-					g.tmpIdx++
-					lenCmpReg := fmt.Sprintf("%%set.ga.lencmp.%d", g.tmpIdx)
+					oldLenGEP := g.tmpReg("set.ga.oldlen.gep")
+					oldLenReg := g.tmpReg("set.ga.oldlen")
+					lenCmpReg := g.tmpReg("set.ga.lencmp")
 					g.tmpIdx++
 					skipFreeLabel := fmt.Sprintf("set.ga.skipfree.%d", g.tmpIdx)
 					g.tmpIdx++
@@ -3472,8 +3300,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					g.emitElementFree(sb, gepReg, llvmElemType)
 				}
 				// Build srcPtr: alloca + store the value, then deep clone to slot.
-				g.tmpIdx++
-				cloneSrc := fmt.Sprintf("%%set.ga.csrc.%d", g.tmpIdx)
+				cloneSrc := g.tmpReg("set.ga.csrc")
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, llvmElemType))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 					g.indent(), llvmElemType, storeVal, llvmElemType, cloneSrc))
@@ -3519,8 +3346,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(expr.Index)
 		if idxType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -3535,12 +3361,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		g.emitBoundsCheck(sb, idx, view.viewLen)
 		if view.isStr {
 			// String slice: GEP into i8* data pointer, load byte, zext to i64
-			g.tmpIdx++
-			charGEP := fmt.Sprintf("%%sv.idx.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			charLoad := fmt.Sprintf("%%sv.idx.val.%d", g.tmpIdx)
-			g.tmpIdx++
-			charZext := fmt.Sprintf("%%sv.idx.zext.%d", g.tmpIdx)
+			charGEP := g.tmpReg("sv.idx.gep")
+			charLoad := g.tmpReg("sv.idx.val")
+			charZext := g.tmpReg("sv.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 					g.indent(), charGEP, view.dataPtrReg, idx))
@@ -3552,12 +3375,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			return charZext
 		}
 		// Vec/arr slice: GEP into typed data pointer, load element
-		g.tmpIdx++
-		dataTyped := fmt.Sprintf("%%sv.idx.typed.%d", g.tmpIdx)
-		g.tmpIdx++
-		elemGEP := fmt.Sprintf("%%sv.idx.elem.%d", g.tmpIdx)
-		g.tmpIdx++
-		elemLoad := fmt.Sprintf("%%sv.idx.val.%d", g.tmpIdx)
+		dataTyped := g.tmpReg("sv.idx.typed")
+		elemGEP := g.tmpReg("sv.idx.elem")
+		elemLoad := g.tmpReg("sv.idx.val")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 				g.indent(), dataTyped, view.dataPtrReg, view.elemType))
@@ -3568,8 +3388,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		}
 		// Type-extend small integers to i64 for uniform handling
 		if view.elemType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%sv.idx.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("sv.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
 					g.indent(), zextReg, view.elemType, elemLoad))
@@ -3587,12 +3406,9 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			strLen := g.extractStrLen(sb, strPtr)
 			g.emitBoundsCheck(sb, idx, strLen)
 			dataPtr := g.extractStrDataPtr(sb, strPtr)
-			g.tmpIdx++
-			charGEP := fmt.Sprintf("%%str-longidx.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			charLoad := fmt.Sprintf("%%str-longidx.val.%d", g.tmpIdx)
-			g.tmpIdx++
-			charZext := fmt.Sprintf("%%str-longidx.zext.%d", g.tmpIdx)
+			charGEP := g.tmpReg("str-longidx.gep")
+			charLoad := g.tmpReg("str-longidx.val")
+			charZext := g.tmpReg("str-longidx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 					g.indent(), charGEP, dataPtr, idx))
@@ -3628,10 +3444,8 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 				arrLen := g.emitArrLenLoad(sb, arrRef)
 				g.emitBoundsCheck(sb, idx, arrLen)
 			}
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%arr.idx.data.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%arr.idx.data.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("arr.idx.data.gep")
+			dataLoad := g.tmpReg("arr.idx.data")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
 					g.indent(), dataGEP, arrRef))
@@ -3639,32 +3453,28 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 
 			// Bitcast to element type pointer
-			g.tmpIdx++
-			dataTyped := fmt.Sprintf("%%arr.idx.typed.%d", g.tmpIdx)
+			dataTyped := g.tmpReg("arr.idx.typed")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 					g.indent(), dataTyped, dataLoad, llvmElemType))
 			}
 
 			// GEP to element
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%arr.idx.elem.%d", g.tmpIdx)
+			elemGEP := g.tmpReg("arr.idx.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 			}
 
 			// Load element
-			g.tmpIdx++
-			elemLoad := fmt.Sprintf("%%arr.idx.val.%d", g.tmpIdx)
+			elemLoad := g.tmpReg("arr.idx.val")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
 			}
 			// 統一回傳 i64：若元素為較窄整數型別則 zext 到 i64（與 %vec 路徑一致）
 			if llvmElemType == "i1" || llvmElemType == "i8" || llvmElemType == "i16" || llvmElemType == "i32" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%arr.idx.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("arr.idx.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, llvmElemType, elemLoad))
 				}
@@ -3694,10 +3504,8 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 
 			// Load data pointer from vec struct (field 2)
-			g.tmpIdx++
-			dataGEP := fmt.Sprintf("%%vec.idx.data.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%vec.idx.data.%d", g.tmpIdx)
+			dataGEP := g.tmpReg("vec.idx.data.gep")
+			dataLoad := g.tmpReg("vec.idx.data")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
 					g.indent(), dataGEP, vecRef))
@@ -3705,24 +3513,21 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			}
 
 			// Bitcast to element type pointer
-			g.tmpIdx++
-			dataTyped := fmt.Sprintf("%%vec.idx.typed.%d", g.tmpIdx)
+			dataTyped := g.tmpReg("vec.idx.typed")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 					g.indent(), dataTyped, dataLoad, llvmElemType))
 			}
 
 			// GEP to element
-			g.tmpIdx++
-			elemGEP := fmt.Sprintf("%%vec.idx.elem.%d", g.tmpIdx)
+			elemGEP := g.tmpReg("vec.idx.elem")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
 			}
 
 			// Load element
-			g.tmpIdx++
-			elemLoad := fmt.Sprintf("%%vec.idx.val.%d", g.tmpIdx)
+			elemLoad := g.tmpReg("vec.idx.val")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
@@ -3735,8 +3540,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			// 當元素型別為整數且小於 i64 時，零擴展至 i64 以與下游消費端（運算、print 等）一致。
 			// 注意：struct 型別（如 %str-long）不應 zext。
 			if llvmElemType == "i1" || llvmElemType == "i8" || llvmElemType == "i16" || llvmElemType == "i32" {
-				g.tmpIdx++
-				zextReg := fmt.Sprintf("%%vec.idx.zext.%d", g.tmpIdx)
+				zextReg := g.tmpReg("vec.idx.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n",
 						g.indent(), zextReg, llvmElemType, elemLoad))
@@ -3761,29 +3565,25 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 					llvmElemType = elemType
 					arrayLLVMType = arrayType
 					// Load the pointer from the alloca
-					g.tmpIdx++
-					ptrLoad := fmt.Sprintf("%%idx.ptr.load.%d", g.tmpIdx)
+					ptrLoad := g.tmpReg("idx.ptr.load")
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %s\n",
 							g.indent(), ptrLoad, arrayType, arrayType, g.varAddr(varName)))
 					}
 					// GEP into the loaded pointer
-					g.tmpIdx++
-					gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+					gepReg := g.tmpReg("idx.gep")
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 							g.indent(), gepReg, arrayType, arrayType, ptrLoad, idx))
 					}
 					// Load element value
-					g.tmpIdx++
-					loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
+					loadReg := g.tmpReg("idx.load")
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 							g.indent(), loadReg, llvmElemType, llvmElemType, gepReg))
 					}
 					if llvmElemType == "i8" {
-						g.tmpIdx++
-						zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+						zextReg := g.tmpReg("idx.zext")
 						if sb != nil {
 							sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, loadReg))
 						}
@@ -3800,8 +3600,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 					// If the element type is itself an array (nested 2D array),
 					// return the GEP pointer without loading (e.g. s = arr2d[i])
 					if strings.HasPrefix(elemType, "[") {
-						g.tmpIdx++
-						gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+						gepReg := g.tmpReg("idx.gep")
 						arrRef := llvmVarRef(varName)
 						if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
 							arrRef = llvmGlobalRef(varName)
@@ -3820,14 +3619,10 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		// Check if this is a []byte (i8*) type
 		if t, ok := g.varTypes[varName]; ok && t == "i8*" {
 			// []byte parameter: load data pointer from i8** parameter, then GEP
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%idx.data.load.%d", g.tmpIdx)
-			g.tmpIdx++
-			gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
-			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+			dataLoad := g.tmpReg("idx.data.load")
+			gepReg := g.tmpReg("idx.gep")
+			loadReg := g.tmpReg("idx.load")
+			zextReg := g.tmpReg("idx.zext")
 			if sb != nil {
 				dataLoad = g.loadDataPtrField(sb, "%"+varName)
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), gepReg, dataLoad, idx))
@@ -3839,10 +3634,8 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		// []str / []T (any T whose LLVM type ends in *): 載入資料指標、GEP、return %T*（不 load，str 為 struct）
 		if t, ok := g.varTypes[varName]; ok && strings.HasPrefix(t, "%") && strings.HasSuffix(t, "*") {
 			elemType := strings.TrimSuffix(t, "*")
-			g.tmpIdx++
-			dataLoad := fmt.Sprintf("%%idx.data.load.%d", g.tmpIdx)
-			g.tmpIdx++
-			gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+			dataLoad := g.tmpReg("idx.data.load")
+			gepReg := g.tmpReg("idx.gep")
 			if sb != nil {
 				// 載入 slice 的資料指標（%T** → %T*）
 				sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %s\n", g.indent(), dataLoad, elemType, elemType, g.varAddr(varName)))
@@ -3857,8 +3650,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	}
 
 	// GEP 取得元素指標：使用 %varName (alloca) 而非 loaded value
-	g.tmpIdx++
-	gepReg := fmt.Sprintf("%%idx.gep.%d", g.tmpIdx)
+	gepReg := g.tmpReg("idx.gep")
 	// Determine the base reference: @name for globals, %name for local allocas.
 	arrRef := llvmVarRef(varName)
 	if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
@@ -3870,16 +3662,14 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	}
 
 	// Load 元素值（非 i8* 型別的 fallback，如 str 的 i8 元素）
-	g.tmpIdx++
-	loadReg := fmt.Sprintf("%%idx.load.%d", g.tmpIdx)
+	loadReg := g.tmpReg("idx.load")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 			g.indent(), loadReg, llvmElemType, llvmElemType, gepReg))
 	}
 	// 統一回傳 i64：若元素為 i8 則 zext 到 i64，與其他索引路徑一致
 	if llvmElemType == "i8" {
-		g.tmpIdx++
-		zextReg := fmt.Sprintf("%%idx.zext.%d", g.tmpIdx)
+		zextReg := g.tmpReg("idx.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), zextReg, loadReg))
 		}
@@ -3921,10 +3711,8 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	}
 
 	// 載入切片長度用於 bounds check
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%slicidx.len.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	lenReg := fmt.Sprintf("%%slicidx.len.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("slicidx.len.gep")
+	lenReg := g.tmpReg("slicidx.len")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, structType, structType, sliceReg))
@@ -3937,8 +3725,7 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
 		if idxType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%slicidx.idx.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("slicidx.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -3950,8 +3737,7 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	g.emitBoundsCheck(sb, idx, lenReg)
 
 	// 載入 data 指標
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%slicidx.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("slicidx.data.gep")
 	dataReg := ""
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -3961,12 +3747,9 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 
 	if isStr {
 		// 字串：GEP i8*，load i8，zext 到 i64
-		g.tmpIdx++
-		charGEP := fmt.Sprintf("%%slicidx.char.gep.%d", g.tmpIdx)
-		g.tmpIdx++
-		charLoad := fmt.Sprintf("%%slicidx.char.%d", g.tmpIdx)
-		g.tmpIdx++
-		charZext := fmt.Sprintf("%%slicidx.zext.%d", g.tmpIdx)
+		charGEP := g.tmpReg("slicidx.char.gep")
+		charLoad := g.tmpReg("slicidx.char")
+		charZext := g.tmpReg("slicidx.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
 				g.indent(), charGEP, dataReg, idx))
@@ -3979,12 +3762,9 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	}
 
 	// vec/arr：bitcast 到元素類型，GEP，load
-	g.tmpIdx++
-	dataTyped := fmt.Sprintf("%%slicidx.typed.%d", g.tmpIdx)
-	g.tmpIdx++
-	elemGEP := fmt.Sprintf("%%slicidx.elem.%d", g.tmpIdx)
-	g.tmpIdx++
-	elemLoad := fmt.Sprintf("%%slicidx.val.%d", g.tmpIdx)
+	dataTyped := g.tmpReg("slicidx.typed")
+	elemGEP := g.tmpReg("slicidx.elem")
+	elemLoad := g.tmpReg("slicidx.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 			g.indent(), dataTyped, dataReg, elemType))
@@ -3995,8 +3775,7 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	}
 	// 小整數類型 zext 到 i64
 	if elemType == "i1" || elemType == "i8" || elemType == "i16" || elemType == "i32" {
-		g.tmpIdx++
-		zextReg := fmt.Sprintf("%%slicidx.zext.%d", g.tmpIdx)
+		zextReg := g.tmpReg("slicidx.zext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
 		}
@@ -4014,8 +3793,7 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
 		if idxType != "i64" {
-			g.tmpIdx++
-			zextReg := fmt.Sprintf("%%str-longlit.idx.zext.%d", g.tmpIdx)
+			zextReg := g.tmpReg("str-longlit.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
 			}
@@ -4023,14 +3801,10 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 		}
 	}
 	strLen := len(lit.Value)
-	g.tmpIdx++
-	strAlloca := fmt.Sprintf("%%str-longlit.idx.%d", g.tmpIdx)
-	g.tmpIdx++
-	charGEP := fmt.Sprintf("%%str-longlit.idx.gep.%d", g.tmpIdx)
-	g.tmpIdx++
-	charLoad := fmt.Sprintf("%%str-longlit.idx.val.%d", g.tmpIdx)
-	g.tmpIdx++
-	zextReg := fmt.Sprintf("%%str-longlit.idx.zext.%d", g.tmpIdx)
+	strAlloca := g.tmpReg("str-longlit.idx")
+	charGEP := g.tmpReg("str-longlit.idx.gep")
+	charLoad := g.tmpReg("str-longlit.idx.val")
+	zextReg := g.tmpReg("str-longlit.idx.zext")
 
 	if sb == nil {
 		return zextReg
@@ -4039,20 +3813,17 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 	// All strings use %str-long
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strAlloca))
 	// field 0: i64 = strLen
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%str-longlit.idx.len.gep.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("str-longlit.idx.len.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 		g.indent(), lenGEP, strAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, lenGEP))
 	// field 1: i64 = cap (strLen)
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%str-longlit.idx.cap.gep.%d", g.tmpIdx)
+	capGEP := g.tmpReg("str-longlit.idx.cap.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n",
 		g.indent(), capGEP, strAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), strLen, capGEP))
 	// field 2: i64 = data pointer (address value)
-	g.tmpIdx++
-	dataFieldGEP := fmt.Sprintf("%%str-longlit.idx.datafield.gep.%d", g.tmpIdx)
+	dataFieldGEP := g.tmpReg("str-longlit.idx.datafield.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
 		g.indent(), dataFieldGEP, strAlloca))
 	// Emit the literal as a global string
@@ -4085,12 +3856,9 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	rightLen := g.extractLenFromExpr(sb, expr.Right, rightPtr)
 
 	// Null-terminate both strings: alloca len+1, memcpy data, store 0 at end
-	g.tmpIdx++
-	leftBuf := fmt.Sprintf("%%strcmp.lbuf.%d", g.tmpIdx)
-	g.tmpIdx++
-	leftSize := fmt.Sprintf("%%strcmp.lsize.%d", g.tmpIdx)
-	g.tmpIdx++
-	leftEnd := fmt.Sprintf("%%strcmp.lend.%d", g.tmpIdx)
+	leftBuf := g.tmpReg("strcmp.lbuf")
+	leftSize := g.tmpReg("strcmp.lsize")
+	leftEnd := g.tmpReg("strcmp.lend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
@@ -4099,12 +3867,9 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
 	}
 
-	g.tmpIdx++
-	rightBuf := fmt.Sprintf("%%strcmp.rbuf.%d", g.tmpIdx)
-	g.tmpIdx++
-	rightSize := fmt.Sprintf("%%strcmp.rsize.%d", g.tmpIdx)
-	g.tmpIdx++
-	rightEnd := fmt.Sprintf("%%strcmp.rend.%d", g.tmpIdx)
+	rightBuf := g.tmpReg("strcmp.rbuf")
+	rightSize := g.tmpReg("strcmp.rsize")
+	rightEnd := g.tmpReg("strcmp.rend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
@@ -4113,21 +3878,17 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
 	}
 
-	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
+	cmpReg := g.tmpReg("str-longcmp")
 	if sb != nil {
 		// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
 		// 兩個 buffer 都已 null-terminated，比較 min(leftLen, rightLen) + 1 bytes
 		// （+1 包含 null terminator，等同 strcmp 的行為）
-		g.tmpIdx++
-		lenLt := fmt.Sprintf("%%strcmp.lenlt.%d", g.tmpIdx)
+		lenLt := g.tmpReg("strcmp.lenlt")
 		sb.WriteString(fmt.Sprintf("%s%s = icmp ult i64 %s, %s\n", g.indent(), lenLt, leftLen, rightLen))
-		g.tmpIdx++
-		minLen := fmt.Sprintf("%%strcmp.min.%d", g.tmpIdx)
+		minLen := g.tmpReg("strcmp.min")
 		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n",
 			g.indent(), minLen, lenLt, leftLen, rightLen))
-		g.tmpIdx++
-		cmpLen := fmt.Sprintf("%%strcmp.cmplen.%d", g.tmpIdx)
+		cmpLen := g.tmpReg("strcmp.cmplen")
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), cmpLen, minLen))
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n",
 			g.indent(), cmpReg, leftBuf, rightBuf, cmpLen))
@@ -4152,10 +3913,8 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 		cmpOp = "eq"
 	}
 
-	g.tmpIdx++
-	resultReg := fmt.Sprintf("%%str-longcmpres.%d", g.tmpIdx)
-	g.tmpIdx++
-	extReg := fmt.Sprintf("%%str-longcmpext.%d", g.tmpIdx)
+	resultReg := g.tmpReg("str-longcmpres")
+	extReg := g.tmpReg("str-longcmpext")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
 		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, resultReg))
@@ -4189,8 +3948,7 @@ func (g *Generator) generateByteCmp(sb *strings.Builder, expr *parser.InfixExpre
 	// StringLiteral 端：產生 %str-longlit.N 指標，再取出首 byte
 	strLitVal := g.generateExprWithSB(sb, strLitSide)
 	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
-	g.tmpIdx++
-	strLitByteZext := fmt.Sprintf("%%bytecmp.zext.%d", g.tmpIdx)
+	strLitByteZext := g.tmpReg("bytecmp.zext")
 	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
 
 	// operator → icmp predicate（與 generateStringCmp 相同語意）
@@ -4222,10 +3980,8 @@ func (g *Generator) generateByteCmp(sb *strings.Builder, expr *parser.InfixExpre
 		rhs = byteVal
 	}
 
-	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%bytecmp.cmp.%d", g.tmpIdx)
-	g.tmpIdx++
-	extReg := fmt.Sprintf("%%bytecmp.ext.%d", g.tmpIdx)
+	cmpReg := g.tmpReg("bytecmp.cmp")
+	extReg := g.tmpReg("bytecmp.ext")
 	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, lhs, rhs))
 	sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
 	return extReg
@@ -4242,12 +3998,9 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	rightLen := g.extractLenFromExpr(sb, expr.Right, rightPtr)
 
 	// Null-terminate both strings: alloca len+1, memcpy data, store 0 at end
-	g.tmpIdx++
-	leftBuf := fmt.Sprintf("%%strcmp.lbuf.%d", g.tmpIdx)
-	g.tmpIdx++
-	leftSize := fmt.Sprintf("%%strcmp.lsize.%d", g.tmpIdx)
-	g.tmpIdx++
-	leftEnd := fmt.Sprintf("%%strcmp.lend.%d", g.tmpIdx)
+	leftBuf := g.tmpReg("strcmp.lbuf")
+	leftSize := g.tmpReg("strcmp.lsize")
+	leftEnd := g.tmpReg("strcmp.lend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
@@ -4256,12 +4009,9 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
 	}
 
-	g.tmpIdx++
-	rightBuf := fmt.Sprintf("%%strcmp.rbuf.%d", g.tmpIdx)
-	g.tmpIdx++
-	rightSize := fmt.Sprintf("%%strcmp.rsize.%d", g.tmpIdx)
-	g.tmpIdx++
-	rightEnd := fmt.Sprintf("%%strcmp.rend.%d", g.tmpIdx)
+	rightBuf := g.tmpReg("strcmp.rbuf")
+	rightSize := g.tmpReg("strcmp.rsize")
+	rightEnd := g.tmpReg("strcmp.rend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
 		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
@@ -4270,19 +4020,15 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
 	}
 
-	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%str-longcmp.%d", g.tmpIdx)
+	cmpReg := g.tmpReg("str-longcmp")
 	if sb != nil {
 		// 使用 @llvm.memcmp 替代 @strcmp（避免 libc 依賴）
-		g.tmpIdx++
-		lenLt := fmt.Sprintf("%%strcmp.lenlt.%d", g.tmpIdx)
+		lenLt := g.tmpReg("strcmp.lenlt")
 		sb.WriteString(fmt.Sprintf("%s%s = icmp ult i64 %s, %s\n", g.indent(), lenLt, leftLen, rightLen))
-		g.tmpIdx++
-		minLen := fmt.Sprintf("%%strcmp.min.%d", g.tmpIdx)
+		minLen := g.tmpReg("strcmp.min")
 		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n",
 			g.indent(), minLen, lenLt, leftLen, rightLen))
-		g.tmpIdx++
-		cmpLen := fmt.Sprintf("%%strcmp.cmplen.%d", g.tmpIdx)
+		cmpLen := g.tmpReg("strcmp.cmplen")
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), cmpLen, minLen))
 		sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n",
 			g.indent(), cmpReg, leftBuf, rightBuf, cmpLen))
@@ -4306,8 +4052,7 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 		cmpOp = "eq"
 	}
 
-	g.tmpIdx++
-	resultReg := fmt.Sprintf("%%str-longcmpres.%d", g.tmpIdx)
+	resultReg := g.tmpReg("str-longcmpres")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = icmp %s i32 %s, 0\n", g.indent(), resultReg, cmpOp, cmpReg))
 	}
@@ -4335,8 +4080,7 @@ func (g *Generator) generateByteCmpI1(sb *strings.Builder, expr *parser.InfixExp
 	byteVal := g.generateExprWithSB(sb, byteSide)
 	strLitVal := g.generateExprWithSB(sb, strLitSide)
 	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
-	g.tmpIdx++
-	strLitByteZext := fmt.Sprintf("%%bytecmp.zext.%d", g.tmpIdx)
+	strLitByteZext := g.tmpReg("bytecmp.zext")
 	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
 
 	var cmpOp string
@@ -4366,8 +4110,7 @@ func (g *Generator) generateByteCmpI1(sb *strings.Builder, expr *parser.InfixExp
 		rhs = byteVal
 	}
 
-	g.tmpIdx++
-	cmpReg := fmt.Sprintf("%%bytecmp.i1.%d", g.tmpIdx)
+	cmpReg := g.tmpReg("bytecmp.i1")
 	sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, lhs, rhs))
 	return cmpReg
 }
@@ -4393,8 +4136,7 @@ func (g *Generator) generateByteArith(sb *strings.Builder, expr *parser.InfixExp
 	byteVal := g.generateExprWithSB(sb, byteSide)
 	strLitVal := g.generateExprWithSB(sb, strLitSide)
 	strLitByte, _ := g.coerceStrLitToByte(sb, strLitVal, strLitSide)
-	g.tmpIdx++
-	strLitByteZext := fmt.Sprintf("%%bytarith.zext.%d", g.tmpIdx)
+	strLitByteZext := g.tmpReg("bytarith.zext")
 	sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), strLitByteZext, strLitByte))
 
 	var lhs, rhs string
@@ -4453,12 +4195,9 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 			}
 			if tag >= 0 {
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
-					g.tmpIdx++
-					tagGEP := fmt.Sprintf("%%opt.cmp.gep.%d", g.tmpIdx)
-					g.tmpIdx++
-					tagLoad := fmt.Sprintf("%%opt.cmp.load.%d", g.tmpIdx)
-					g.tmpIdx++
-					cmpReg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+					tagGEP := g.tmpReg("opt.cmp.gep")
+					tagLoad := g.tmpReg("opt.cmp.load")
+					cmpReg := g.tmpReg("cmp.i1")
 					cmpOp := "eq"
 					if expr.Operator == "!=" {
 						cmpOp = "ne"
@@ -4474,12 +4213,9 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 				// A %str-long with data == 0 is considered "nil" (e.g. getenv
 				// returning NULL, or an uninitialized string).
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {
-					g.tmpIdx++
-					dataGEP := fmt.Sprintf("%%strnil.data.gep.%d", g.tmpIdx)
-					g.tmpIdx++
-					dataLoad := fmt.Sprintf("%%strnil.data.load.%d", g.tmpIdx)
-					g.tmpIdx++
-					cmpReg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+					dataGEP := g.tmpReg("strnil.data.gep")
+					dataLoad := g.tmpReg("strnil.data.load")
+					cmpReg := g.tmpReg("cmp.i1")
 					cmpOp := "eq"
 					if expr.Operator == "!=" {
 						cmpOp = "ne"
@@ -4516,8 +4252,7 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
-	g.tmpIdx++
-	reg := fmt.Sprintf("%%cmp.i1.%d", g.tmpIdx)
+	reg := g.tmpReg("cmp.i1")
 	cmpOp := ""
 	switch expr.Operator {
 	case "==":
@@ -4597,8 +4332,7 @@ func (g *Generator) coerceToFloatReg(sb *strings.Builder, v string, exprForType 
 		}
 		if srcType != "" {
 			if sb != nil {
-				g.tmpIdx++
-				cvtReg := fmt.Sprintf("%%fpcvt.%d", g.tmpIdx)
+				cvtReg := g.tmpReg("fpcvt")
 				if targetType == "double" && srcType == "float" {
 					sb.WriteString(fmt.Sprintf("%s%s = fpext float %s to double\n", g.indent(), cvtReg, v))
 				} else if targetType == "float" && srcType == "double" {
@@ -4613,8 +4347,7 @@ func (g *Generator) coerceToFloatReg(sb *strings.Builder, v string, exprForType 
 		// 整數 → 浮點
 		if sb != nil {
 			intType := g.intExprLLVMType(exprForType)
-			g.tmpIdx++
-			cvtReg := fmt.Sprintf("%%sitofp.%d", g.tmpIdx)
+			cvtReg := g.tmpReg("sitofp")
 			sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
 			return cvtReg
 		}
@@ -4765,8 +4498,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		}
 
 		// Load source len (field 0 for both %arr and %vec)
-		g.tmpIdx++
-		srcLenGEP := fmt.Sprintf("%%slice.srclen.gep.%d", g.tmpIdx)
+		srcLenGEP := g.tmpReg("slice.srclen.gep")
 		g.tmpIdx++
 		srcLen = fmt.Sprintf("%%slice.srclen.%d", g.tmpIdx)
 		if sb != nil {
@@ -4777,8 +4509,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		}
 
 		// Load source data pointer
-		g.tmpIdx++
-		srcDataGEP := fmt.Sprintf("%%slice.srcdata.gep.%d", g.tmpIdx)
+		srcDataGEP := g.tmpReg("slice.srcdata.gep")
 		g.tmpIdx++
 		srcData = fmt.Sprintf("%%slice.srcdata.%d", g.tmpIdx)
 		if sb != nil {
@@ -4791,8 +4522,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		g.tmpIdx++
 		srcCap = fmt.Sprintf("%%slice.srccap.%d", g.tmpIdx)
 		if isVec || isStr {
-			g.tmpIdx++
-			srcCapGEP := fmt.Sprintf("%%slice.srccap.gep.%d", g.tmpIdx)
+			srcCapGEP := g.tmpReg("slice.srccap.gep")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 					g.indent(), srcCapGEP, structType, structType, recvPtr))
@@ -4811,8 +4541,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		startVal := g.generateExprWithSB(sb, r.Start)
 		if !r.LeftInc {
 			// ( exclusive: start = start + 1
-			g.tmpIdx++
-			startPlus := fmt.Sprintf("%%vec.start.plus.%d", g.tmpIdx)
+			startPlus := g.tmpReg("vec.start.plus")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
 					g.indent(), startPlus, startVal))
@@ -4847,8 +4576,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 					// left-exclusive + right-exclusive: newLen = srcLen - start - 1
 					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
 						g.indent(), newLenReg, srcLen, startReg))
-					g.tmpIdx++
-					extraSub := fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
+					extraSub := g.tmpReg("vec.newlen")
 					sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n",
 						g.indent(), extraSub, newLenReg))
 					newLenReg = extraSub
@@ -4862,8 +4590,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	} else if r.Start == nil && r.End != nil {
 		// [..end] / (..end]: new_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
-		g.tmpIdx++
-		subReg := fmt.Sprintf("%%vec.sublen.%d", g.tmpIdx)
+		subReg := g.tmpReg("vec.sublen")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
 				g.indent(), subReg, endVal, startReg))
@@ -4889,8 +4616,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	} else {
 		// [start..end]: new_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
-		g.tmpIdx++
-		subReg := fmt.Sprintf("%%vec.sublen.%d", g.tmpIdx)
+		subReg := g.tmpReg("vec.sublen")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
 				g.indent(), subReg, endVal, startReg))
@@ -4908,8 +4634,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Compute new cap: src_cap - start
-	g.tmpIdx++
-	newCapReg := fmt.Sprintf("%%vec.newcap.%d", g.tmpIdx)
+	newCapReg := g.tmpReg("vec.newcap")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
 			g.indent(), newCapReg, srcCap, startReg))
@@ -4930,8 +4655,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 			}
 		}
 	}
-	g.tmpIdx++
-	offsetReg := fmt.Sprintf("%%vec.offset.%d", g.tmpIdx)
+	offsetReg := g.tmpReg("vec.offset")
 	if sb != nil {
 		if startReg == "0" {
 			offsetReg = "0"
@@ -4941,8 +4665,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		}
 	}
 
-	g.tmpIdx++
-	newDataReg := fmt.Sprintf("%%vec.newdata.%d", g.tmpIdx)
+	newDataReg := g.tmpReg("vec.newdata")
 	if sb != nil {
 		if offsetReg == "0" {
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n",
@@ -4954,8 +4677,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	}
 
 	// Store new len (field 0)
-	g.tmpIdx++
-	dstLenGEP := fmt.Sprintf("%%slic.dstlen.gep.%d", g.tmpIdx)
+	dstLenGEP := g.tmpReg("slic.dstlen.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
 			g.indent(), dstLenGEP, resultType, resultType, resultReg))
@@ -4965,8 +4687,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 
 	if resultType == "%vec" || resultType == "%str-long" {
 		// Store new cap (field 1) — %vec 和 %str-long 都有 cap 字段
-		g.tmpIdx++
-		dstCapGEP := fmt.Sprintf("%%slic.dstcap.gep.%d", g.tmpIdx)
+		dstCapGEP := g.tmpReg("slic.dstcap.gep")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 				g.indent(), dstCapGEP, resultType, resultType, resultReg))
@@ -4984,8 +4705,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	if resultType == "%vec" || resultType == "%str-long" {
 		dstDataField = 2
 	}
-	g.tmpIdx++
-	dstDataGEP := fmt.Sprintf("%%slic.dstdata.gep.%d", g.tmpIdx)
+	dstDataGEP := g.tmpReg("slic.dstdata.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 			g.indent(), dstDataGEP, resultType, resultType, resultReg, dstDataField))
@@ -5043,8 +4763,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			if tag >= 0 {
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
 					i1Result := g.generateInfixI1(sb, expr)
-					g.tmpIdx++
-					reg := fmt.Sprintf("%%optcmp.zext.%d", g.tmpIdx)
+					reg := g.tmpReg("optcmp.zext")
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
 					}
@@ -5054,8 +4773,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 				// (needed when comparison appears inside && or ||, not just as if condition)
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {
 					i1Result := g.generateInfixI1(sb, expr)
-					g.tmpIdx++
-					reg := fmt.Sprintf("%%strnilcmp.zext.%d", g.tmpIdx)
+					reg := g.tmpReg("strnilcmp.zext")
 					if sb != nil {
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
 					}
@@ -5091,8 +4809,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			if srcType != "" {
 				// float ↔ double 轉換
 				if sb != nil {
-					g.tmpIdx++
-					cvtReg := fmt.Sprintf("%%fpcvt.%d", g.tmpIdx)
+					cvtReg := g.tmpReg("fpcvt")
 					if targetType == "double" && srcType == "float" {
 						sb.WriteString(fmt.Sprintf("%s%s = fpext float %s to double\n", g.indent(), cvtReg, v))
 					} else if targetType == "float" && srcType == "double" {
@@ -5107,8 +4824,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			// 整數 → 浮點
 			if sb != nil {
 				intType := g.intExprLLVMType(exprForType)
-				g.tmpIdx++
-				cvtReg := fmt.Sprintf("%%sitofp.%d", g.tmpIdx)
+				cvtReg := g.tmpReg("sitofp")
 				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
 				return cvtReg
 			}
@@ -5160,10 +4876,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 	case "++":
 		if sb != nil {
 			if ident, ok := expr.Left.(*parser.Identifier); ok {
-				g.tmpIdx++
-				lReg := fmt.Sprintf("%%inc.ld.%d", g.tmpIdx)
-				g.tmpIdx++
-				rReg := fmt.Sprintf("%%inc.%d", g.tmpIdx)
+				lReg := g.tmpReg("inc.ld")
+				rReg := g.tmpReg("inc")
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), lReg, ident.Value))
 				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rReg, lReg))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), rReg, ident.Value))
@@ -5174,10 +4888,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 	case "--":
 		if sb != nil {
 			if ident, ok := expr.Left.(*parser.Identifier); ok {
-				g.tmpIdx++
-				lReg := fmt.Sprintf("%%dec.ld.%d", g.tmpIdx)
-				g.tmpIdx++
-				rReg := fmt.Sprintf("%%dec.%d", g.tmpIdx)
+				lReg := g.tmpReg("dec.ld")
+				rReg := g.tmpReg("dec")
 				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), lReg, ident.Value))
 				sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, 1\n", g.indent(), rReg, lReg))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), rReg, ident.Value))
@@ -5196,8 +4908,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%fadd.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("fadd.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fadd %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
@@ -5206,8 +4917,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%add.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("add.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = add %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5223,8 +4933,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%fsub.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("fsub.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fsub %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
@@ -5233,8 +4942,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%sub.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("sub.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sub %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5250,8 +4958,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%fmul.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("fmul.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fmul %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
@@ -5260,8 +4967,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%mul.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("mul.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = mul %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5270,8 +4976,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%fdiv.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("fdiv.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fdiv %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
@@ -5280,8 +4985,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%div.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("div.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sdiv %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5290,8 +4994,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
 			rd := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			reg := fmt.Sprintf("%%fmod.tmp.%d", g.tmpIdx)
+			reg := g.tmpReg("fmod.tmp")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = frem %s %s, %s\n", g.indent(), reg, ft, ld, rd))
 			}
@@ -5300,8 +5003,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%mod.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("mod.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = srem %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5310,10 +5012,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%eq.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%eq.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("eq.cmp")
+			extReg := g.tmpReg("eq.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp oeq %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5323,10 +5023,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%eq.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%eq.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("eq.cmp")
+		extReg := g.tmpReg("eq.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5336,10 +5034,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%ne.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%ne.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("ne.cmp")
+			extReg := g.tmpReg("ne.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp one %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5349,10 +5045,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%ne.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%ne.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("ne.cmp")
+		extReg := g.tmpReg("ne.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp ne %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5362,10 +5056,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%lt.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%lt.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("lt.cmp")
+			extReg := g.tmpReg("lt.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp olt %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5375,10 +5067,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%lt.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%lt.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("lt.cmp")
+		extReg := g.tmpReg("lt.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5388,10 +5078,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%gt.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%gt.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("gt.cmp")
+			extReg := g.tmpReg("gt.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp ogt %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5401,10 +5089,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%gt.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%gt.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("gt.cmp")
+		extReg := g.tmpReg("gt.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5414,10 +5100,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%le.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%le.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("le.cmp")
+			extReg := g.tmpReg("le.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp ole %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5427,10 +5111,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%le.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%le.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("le.cmp")
+		extReg := g.tmpReg("le.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sle %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5440,10 +5122,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
 			rc := coerceToFloat(right, expr.Right, ft)
-			g.tmpIdx++
-			cmpReg := fmt.Sprintf("%%ge.cmp.%d", g.tmpIdx)
-			g.tmpIdx++
-			extReg := fmt.Sprintf("%%ge.ext.%d", g.tmpIdx)
+			cmpReg := g.tmpReg("ge.cmp")
+			extReg := g.tmpReg("ge.ext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = fcmp oge %s %s, %s\n", g.indent(), cmpReg, ft, lc, rc))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5453,10 +5133,8 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		cmpType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, cmpType)
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
-		g.tmpIdx++
-		cmpReg := fmt.Sprintf("%%ge.cmp.%d", g.tmpIdx)
-		g.tmpIdx++
-		extReg := fmt.Sprintf("%%ge.ext.%d", g.tmpIdx)
+		cmpReg := g.tmpReg("ge.cmp")
+		extReg := g.tmpReg("ge.ext")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge %s %s, %s\n", g.indent(), cmpReg, cmpType, lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
@@ -5466,8 +5144,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%or.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("or.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = or %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5476,8 +5153,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%and.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("and.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = and %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5486,8 +5162,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%xor.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("xor.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5496,8 +5171,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%shl.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("shl.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = shl %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5506,8 +5180,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%shr.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("shr.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = lshr %s %s, %s\n", g.indent(), reg, arithType, lc, rc))
 		}
@@ -5517,8 +5190,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		// 比較結果已是 i64，保持不變。然後使用 and 指令。
 		leftI64 := g.zextBoolToI64(sb, left, expr.Left)
 		rightI64 := g.zextBoolToI64(sb, right, expr.Right)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%land.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("land.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %s\n", g.indent(), reg, leftI64, rightI64))
 		}
@@ -5527,8 +5199,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		// 邏輯 OR：同上，將 i1 運算元 zext 到 i64 後使用 or 指令。
 		leftI64 := g.zextBoolToI64(sb, left, expr.Left)
 		rightI64 := g.zextBoolToI64(sb, right, expr.Right)
-		g.tmpIdx++
-		reg := fmt.Sprintf("%%lor.tmp.%d", g.tmpIdx)
+		reg := g.tmpReg("lor.tmp")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), reg, leftI64, rightI64))
 		}
@@ -5654,13 +5325,11 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 		// If val is a %str-long* pointer (from slice expression, concat, etc.),
 		// load the %str-long value before storing to temp alloca.
 		if g.isStrPtrReg(val) {
-			g.tmpIdx++
-			loadReg := fmt.Sprintf("%%str-long.load.%d", g.tmpIdx)
+			loadReg := g.tmpReg("str-long.load")
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 			val = loadReg
 		}
-		g.tmpIdx++
-		tmpAlloca := fmt.Sprintf("%%strptr.tmp.%d", g.tmpIdx)
+		tmpAlloca := g.tmpReg("strptr.tmp")
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
 		return tmpAlloca
@@ -5738,8 +5407,7 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		ptr := g.generateExprWithSB(sb, a)
 		et := g.exprResultLLVMType(a)
 		if et == "%str-long" {
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%strlen.dot.%d", g.tmpIdx)
+			tmpAlloca := g.tmpReg("strlen.dot")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
 			return g.extractStrLen(sb, tmpAlloca)
@@ -5751,8 +5419,7 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		if ident, ok := a.Left.(*parser.Identifier); ok {
 			if et, ok := g.arrayElemTypes[ident.Value]; ok && et == "%str-long" {
 				ptr := g.generateExprWithSB(sb, a)
-				g.tmpIdx++
-				tmpAlloca := fmt.Sprintf("%%strlen.idx.%d", g.tmpIdx)
+				tmpAlloca := g.tmpReg("strlen.idx")
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
 				return g.extractStrLen(sb, tmpAlloca)
@@ -5765,8 +5432,7 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		et := g.exprResultLLVMType(a)
 		if et == "%str-long" {
 			ptr := g.generateExprWithSB(sb, a)
-			g.tmpIdx++
-			tmpAlloca := fmt.Sprintf("%%strlen.call.%d", g.tmpIdx)
+			tmpAlloca := g.tmpReg("strlen.call")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))
 			return g.extractStrLen(sb, tmpAlloca)
@@ -5782,34 +5448,27 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 func (g *Generator) byteToSingleCharStr(sb *strings.Builder, expr parser.Expression) string {
 	byteVal := g.generateExprWithSB(sb, expr)
 	// Truncate i64 (zext'd byte) back to i8.
-	g.tmpIdx++
-	byteI8 := fmt.Sprintf("%%concat.byte.i8.%d", g.tmpIdx)
+	byteI8 := g.tmpReg("concat.byte.i8")
 	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), byteI8, byteVal))
 	// Allocate 2-byte buffer: char + null terminator.
-	g.tmpIdx++
-	bufPtr := fmt.Sprintf("%%concat.byte.buf.%d", g.tmpIdx)
+	bufPtr := g.tmpReg("concat.byte.buf")
 	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 2)\n", g.indent(), bufPtr))
 	sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), byteI8, bufPtr))
-	g.tmpIdx++
-	nullPos := fmt.Sprintf("%%concat.byte.null.%d", g.tmpIdx)
+	nullPos := g.tmpReg("concat.byte.null")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), nullPos, bufPtr))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 	// Build %str-long struct: { len=1, cap=2, data=buf }.
 	// alloca hoisted to entry block to avoid stack growth in tight loops;
 	// safe vs dirty data: all 3 fields (len/cap/data) are fully overwritten below.
-	g.tmpIdx++
-	resultAlloca := fmt.Sprintf("%%concat.byte.str.%d", g.tmpIdx)
+	resultAlloca := g.tmpReg("concat.byte.str")
 	g.emitEntryAlloca(sb, "%s = alloca %%str-long\n", resultAlloca)
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%concat.byte.len.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("concat.byte.len")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 1, i64* %s\n", g.indent(), lenGEP))
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%concat.byte.cap.%d", g.tmpIdx)
+	capGEP := g.tmpReg("concat.byte.cap")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 2, i64* %s\n", g.indent(), capGEP))
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%concat.byte.data.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("concat.byte.data")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 	return resultAlloca
@@ -5842,50 +5501,41 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 	leftData := g.extractDataFromExpr(sb, leftExpr, leftPtr)
 	rightData := g.extractDataFromExpr(sb, rightExpr, rightPtr)
 
-	g.tmpIdx++
-	totalLen := fmt.Sprintf("%%concat.total.%d", g.tmpIdx)
+	totalLen := g.tmpReg("concat.total")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), totalLen, leftLen, rightLen))
 
-	g.tmpIdx++
-	allocSize := fmt.Sprintf("%%concat.alloc.%d", g.tmpIdx)
+	allocSize := g.tmpReg("concat.alloc")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), allocSize, totalLen))
 
-	g.tmpIdx++
-	bufPtr := fmt.Sprintf("%%concat.buf.%d", g.tmpIdx)
+	bufPtr := g.tmpReg("concat.buf")
 	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
 
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), bufPtr, leftData, leftLen))
 
-	g.tmpIdx++
-	dstOffset := fmt.Sprintf("%%concat.dst.%d", g.tmpIdx)
+	dstOffset := g.tmpReg("concat.dst")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), dstOffset, bufPtr, leftLen))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), dstOffset, rightData, rightLen))
 
-	g.tmpIdx++
-	nullPos := fmt.Sprintf("%%concat.null.%d", g.tmpIdx)
+	nullPos := g.tmpReg("concat.null")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
 	// alloca hoisted to entry block to avoid stack growth in tight loops;
 	// safe vs dirty data: all 3 fields (len/cap/data) are fully overwritten below.
-	g.tmpIdx++
-	resultAlloca := fmt.Sprintf("%%concat.result.%d", g.tmpIdx)
+	resultAlloca := g.tmpReg("concat.result")
 	g.emitEntryAlloca(sb, "%s = alloca %%str-long\n", resultAlloca)
 
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%concat.len.gep.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("concat.len.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
 
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%concat.cap.gep.%d", g.tmpIdx)
+	capGEP := g.tmpReg("concat.cap.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, capGEP))
 
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%concat.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("concat.data.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 
@@ -5911,17 +5561,14 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	countReg := g.generateExprWithSB(sb, countExpr)
 
 	// Calculate total length = strLen * count
-	g.tmpIdx++
-	totalLen := fmt.Sprintf("%%repeat.total.%d", g.tmpIdx)
+	totalLen := g.tmpReg("repeat.total")
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), totalLen, strLen, countReg))
 
 	// Allocate memory for result (totalLen + 1 for null terminator)
-	g.tmpIdx++
-	allocSize := fmt.Sprintf("%%repeat.alloc.%d", g.tmpIdx)
+	allocSize := g.tmpReg("repeat.alloc")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), allocSize, totalLen))
 
-	g.tmpIdx++
-	bufPtr := fmt.Sprintf("%%repeat.buf.%d", g.tmpIdx)
+	bufPtr := g.tmpReg("repeat.buf")
 	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufPtr, allocSize))
 
 	// Loop to copy string data count times
@@ -5934,8 +5581,7 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	// Initialize counter i = 0
 	// alloca hoisted to entry block to avoid stack growth in tight loops;
 	// safe vs dirty data: store i64 0 below fully overwrites the i64 slot.
-	g.tmpIdx++
-	iReg := fmt.Sprintf("%%repeat.i.%d", g.tmpIdx)
+	iReg := g.tmpReg("repeat.i")
 	g.emitEntryAlloca(sb, "%s = alloca i64\n", iReg)
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iReg))
 
@@ -5944,28 +5590,23 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 
 	// Loop start: check if i < count
 	g.emitLabel(sb, loopStart)
-	g.tmpIdx++
-	iVal := fmt.Sprintf("%%repeat.i.val.%d", g.tmpIdx)
+	iVal := g.tmpReg("repeat.i.val")
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iReg))
-	g.tmpIdx++
-	cmp := fmt.Sprintf("%%repeat.cmp.%d", g.tmpIdx)
+	cmp := g.tmpReg("repeat.cmp")
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmp, iVal, countReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), cmp, loopBody, loopEnd))
 
 	// Loop body: copy string data to buf + i*strLen
 	g.emitLabel(sb, loopBody)
-	g.tmpIdx++
-	offset := fmt.Sprintf("%%repeat.offset.%d", g.tmpIdx)
+	offset := g.tmpReg("repeat.offset")
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %s\n", g.indent(), offset, iVal, strLen))
-	g.tmpIdx++
-	dstPtr := fmt.Sprintf("%%repeat.dst.%d", g.tmpIdx)
+	dstPtr := g.tmpReg("repeat.dst")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), dstPtr, bufPtr, offset))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), dstPtr, strData, strLen))
 
 	// Increment i
-	g.tmpIdx++
-	iNext := fmt.Sprintf("%%repeat.i.next.%d", g.tmpIdx)
+	iNext := g.tmpReg("repeat.i.next")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iReg))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopStart))
@@ -5974,28 +5615,23 @@ func (g *Generator) generateStrRepeat(sb *strings.Builder, strExpr, countExpr pa
 	g.emitLabel(sb, loopEnd)
 
 	// Add null terminator at buf[totalLen]
-	g.tmpIdx++
-	nullPos := fmt.Sprintf("%%repeat.null.%d", g.tmpIdx)
+	nullPos := g.tmpReg("repeat.null")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), nullPos, bufPtr, totalLen))
 	sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPos))
 
 	// Create result %str-long
-	g.tmpIdx++
-	resultAlloca := fmt.Sprintf("%%repeat.result.%d", g.tmpIdx)
+	resultAlloca := g.tmpReg("repeat.result")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), resultAlloca))
 
-	g.tmpIdx++
-	lenGEP := fmt.Sprintf("%%repeat.len.gep.%d", g.tmpIdx)
+	lenGEP := g.tmpReg("repeat.len.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, lenGEP))
 
-	g.tmpIdx++
-	capGEP := fmt.Sprintf("%%repeat.cap.gep.%d", g.tmpIdx)
+	capGEP := g.tmpReg("repeat.cap.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, resultAlloca))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), totalLen, capGEP))
 
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%repeat.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("repeat.data.gep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, resultAlloca))
 	g.storeDataPtrField(sb, bufPtr, dataGEP)
 
@@ -6177,13 +5813,11 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 	argsAddr := g.allocForCoro(sb, "async.args", argsTypeStr, argsSize)
 
 	// Bitcast result.addr to i8* and store into field 0
-	g.tmpIdx++
-	resultPtrCast := fmt.Sprintf("%%async.rptr.%d", g.tmpIdx)
+	resultPtrCast := g.tmpReg("async.rptr")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), resultPtrCast, resultType, resultAddr))
 	}
-	g.tmpIdx++
-	f0GEP := fmt.Sprintf("%%async.f0.%d", g.tmpIdx)
+	f0GEP := g.tmpReg("async.f0")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g.indent(), f0GEP, argsTypeStr, argsTypeStr, argsAddr))
 		g.storeDataPtrField(sb, resultPtrCast, f0GEP)
@@ -6251,8 +5885,7 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 	}
 
 	// Bitcast args struct to i8*
-	g.tmpIdx++
-	argsBitcast := fmt.Sprintf("%%async.args.bc.%d", g.tmpIdx)
+	argsBitcast := g.tmpReg("async.args.bc")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), argsBitcast, argsTypeStr, argsAddr))
 	}
@@ -6269,35 +5902,30 @@ func (g *Generator) generateFutureCreation(sb *strings.Builder, call *parser.Cal
 	}
 
 	// Build %future = { void (i8*)* @wrapper, i8* %args.bc, i8* %result.ptr }
-	g.tmpIdx++
-	futureAddr := fmt.Sprintf("%%async.future.%d", g.tmpIdx)
+	futureAddr := g.tmpReg("async.future")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %%future\n", g.indent(), futureAddr))
 	}
 	// Store wrapper_fn_ptr (field 0)
-	g.tmpIdx++
-	futF0GEP := fmt.Sprintf("%%async.fut.f0.%d", g.tmpIdx)
+	futF0GEP := g.tmpReg("async.fut.f0")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), futF0GEP, futureAddr))
 		sb.WriteString(fmt.Sprintf("%sstore void (i8*)* @%s, void (i8*)** %s\n", g.indent(), wrapperName, futF0GEP))
 	}
 	// Store args_ptr (field 1)
-	g.tmpIdx++
-	futF1GEP := fmt.Sprintf("%%async.fut.f1.%d", g.tmpIdx)
+	futF1GEP := g.tmpReg("async.fut.f1")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), futF1GEP, futureAddr))
 		g.storeDataPtrField(sb, argsBitcast, futF1GEP)
 	}
 	// Store result_ptr (field 2)
-	g.tmpIdx++
-	futF2GEP := fmt.Sprintf("%%async.fut.f2.%d", g.tmpIdx)
+	futF2GEP := g.tmpReg("async.fut.f2")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 2\n", g.indent(), futF2GEP, futureAddr))
 		g.storeDataPtrField(sb, resultPtrCast, futF2GEP)
 	}
 	// Load %future value
-	g.tmpIdx++
-	futureVal := fmt.Sprintf("%%async.future.val.%d", g.tmpIdx)
+	futureVal := g.tmpReg("async.future.val")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %%future, %%future* %s\n", g.indent(), futureVal, futureAddr))
 	}
@@ -6340,29 +5968,25 @@ func (g *Generator) launchThread(sb *strings.Builder, wrapperName, argsBitcast, 
 	// %task = { void (i8*)*, i64, i1 } → 24 bytes with alignment padding.
 	taskAddr := g.allocForCoro(sb, "async.task", "%task", 24)
 	// Store resume_fn (field 0) = @wrapper
-	g.tmpIdx++
-	taskF0GEP := fmt.Sprintf("%%async.task.f0.%d", g.tmpIdx)
+	taskF0GEP := g.tmpReg("async.task.f0")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore void (i8*)* @%s, void (i8*)** %s\n", g.indent(), wrapperName, taskF0GEP))
 	}
 	// Store data (field 1) = argsBitcast (args struct; field 0 of args = result_ptr)
-	g.tmpIdx++
-	taskF1GEP := fmt.Sprintf("%%async.task.f1.%d", g.tmpIdx)
+	taskF1GEP := g.tmpReg("async.task.f1")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1GEP, taskAddr))
 		g.storeDataPtrField(sb, argsBitcast, taskF1GEP)
 	}
 	// Store done = false (field 2)
-	g.tmpIdx++
-	taskF2GEP := fmt.Sprintf("%%async.task.f2.%d", g.tmpIdx)
+	taskF2GEP := g.tmpReg("async.task.f2")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2GEP))
 	}
 	// Enqueue task into the event loop ready queue
-	g.tmpIdx++
-	taskCast := fmt.Sprintf("%%async.task.cast.%d", g.tmpIdx)
+	taskCast := g.tmpReg("async.task.cast")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskCast, taskAddr))
 		sb.WriteString(fmt.Sprintf("%scall void @nolang_async_enqueue(i8* %s)\n", g.indent(), taskCast))
@@ -6384,25 +6008,21 @@ func (g *Generator) launchThreadFromFuture(sb *strings.Builder, varName string) 
 	futurePtr := g.varAddr(varName)
 
 	// Extract wrapper_fn_ptr (field 0)
-	g.tmpIdx++
-	wfnGEP := fmt.Sprintf("%%run.fut.wfn.gep.%d", g.tmpIdx)
+	wfnGEP := g.tmpReg("run.fut.wfn.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), wfnGEP, futurePtr))
 	}
-	g.tmpIdx++
-	wfnReg := fmt.Sprintf("%%run.fut.wfn.%d", g.tmpIdx)
+	wfnReg := g.tmpReg("run.fut.wfn")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), wfnReg, wfnGEP))
 	}
 
 	// Extract args_ptr (field 1) — becomes task.data
-	g.tmpIdx++
-	argsGEP := fmt.Sprintf("%%run.fut.args.gep.%d", g.tmpIdx)
+	argsGEP := g.tmpReg("run.fut.args.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), argsGEP, futurePtr))
 	}
-	g.tmpIdx++
-	argsReg := fmt.Sprintf("%%run.fut.args.%d", g.tmpIdx)
+	argsReg := g.tmpReg("run.fut.args")
 	if sb != nil {
 		argsReg = g.loadDataPtrField(sb, argsGEP)
 	}
@@ -6419,29 +6039,25 @@ func (g *Generator) launchThreadFromFuture(sb *strings.Builder, varName string) 
 	// 在协程上下文中使用 malloc（堆分配），因为 task 入队后需要在 yield 后存活。
 	taskAddr := g.allocForCoro(sb, "run.fut.task", "%task", 24)
 	// Store resume_fn (field 0)
-	g.tmpIdx++
-	taskF0GEP := fmt.Sprintf("%%run.fut.task.f0.%d", g.tmpIdx)
+	taskF0GEP := g.tmpReg("run.fut.task.f0")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore void (i8*)* %s, void (i8*)** %s\n", g.indent(), wfnReg, taskF0GEP))
 	}
 	// Store data (field 1) = args_ptr
-	g.tmpIdx++
-	taskF1GEP := fmt.Sprintf("%%run.fut.task.f1.%d", g.tmpIdx)
+	taskF1GEP := g.tmpReg("run.fut.task.f1")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1GEP, taskAddr))
 		g.storeDataPtrField(sb, argsReg, taskF1GEP)
 	}
 	// Store done = false (field 2)
-	g.tmpIdx++
-	taskF2GEP := fmt.Sprintf("%%run.fut.task.f2.%d", g.tmpIdx)
+	taskF2GEP := g.tmpReg("run.fut.task.f2")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2GEP))
 	}
 	// Enqueue
-	g.tmpIdx++
-	taskCast := fmt.Sprintf("%%run.fut.task.cast.%d", g.tmpIdx)
+	taskCast := g.tmpReg("run.fut.task.cast")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskCast, taskAddr))
 		sb.WriteString(fmt.Sprintf("%scall void @nolang_async_enqueue(i8* %s)\n", g.indent(), taskCast))
@@ -6486,22 +6102,19 @@ func (g *Generator) awaitFutureCall(sb *strings.Builder, call *parser.CallExpres
 	}
 
 	// Directly call wrapper_fn(args) — synchronous execution, no pthread needed
-	g.tmpIdx++
-	callReg := fmt.Sprintf("%%awy.fut.call.%d", g.tmpIdx)
+	callReg := g.tmpReg("awy.fut.call")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = call i8* @%s(i8* %s)\n", g.indent(), callReg, wrapperName, argsBitcast))
 	}
 
 	// Bitcast result_ptr to correct type
-	g.tmpIdx++
-	resultTyped := fmt.Sprintf("%%awy.fut.typed.%d", g.tmpIdx)
+	resultTyped := g.tmpReg("awy.fut.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, callReg, resultType))
 	}
 
 	// Load the result value
-	g.tmpIdx++
-	resultVal := fmt.Sprintf("%%awy.fut.result.%d", g.tmpIdx)
+	resultVal := g.tmpReg("awy.fut.result")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
 	}
@@ -6519,37 +6132,31 @@ func (g *Generator) awaitFutureVar(sb *strings.Builder, varName string) string {
 	futurePtr := g.varAddr(varName)
 
 	// Extract wrapper_fn_ptr (field 0)
-	g.tmpIdx++
-	wfnGEP := fmt.Sprintf("%%awy.fv.wfn.gep.%d", g.tmpIdx)
+	wfnGEP := g.tmpReg("awy.fv.wfn.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 0\n", g.indent(), wfnGEP, futurePtr))
 	}
-	g.tmpIdx++
-	wfnReg := fmt.Sprintf("%%awy.fv.wfn.%d", g.tmpIdx)
+	wfnReg := g.tmpReg("awy.fv.wfn")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), wfnReg, wfnGEP))
 	}
 
 	// Extract args_ptr (field 1)
-	g.tmpIdx++
-	argsGEP := fmt.Sprintf("%%awy.fv.args.gep.%d", g.tmpIdx)
+	argsGEP := g.tmpReg("awy.fv.args.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 1\n", g.indent(), argsGEP, futurePtr))
 	}
-	g.tmpIdx++
-	argsReg := fmt.Sprintf("%%awy.fv.args.%d", g.tmpIdx)
+	argsReg := g.tmpReg("awy.fv.args")
 	if sb != nil {
 		argsReg = g.loadDataPtrField(sb, argsGEP)
 	}
 
 	// Extract result_ptr (field 2)
-	g.tmpIdx++
-	rptrGEP := fmt.Sprintf("%%awy.fv.rptr.gep.%d", g.tmpIdx)
+	rptrGEP := g.tmpReg("awy.fv.rptr.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%future, %%future* %s, i32 0, i32 2\n", g.indent(), rptrGEP, futurePtr))
 	}
-	g.tmpIdx++
-	rptrReg := fmt.Sprintf("%%awy.fv.rptr.%d", g.tmpIdx)
+	rptrReg := g.tmpReg("awy.fv.rptr")
 	if sb != nil {
 		rptrReg = g.loadDataPtrField(sb, rptrGEP)
 	}
@@ -6563,22 +6170,19 @@ func (g *Generator) awaitFutureVar(sb *strings.Builder, varName string) string {
 	}
 
 	// Directly call wrapper_fn(args)
-	g.tmpIdx++
-	callReg := fmt.Sprintf("%%awy.fv.call.%d", g.tmpIdx)
+	callReg := g.tmpReg("awy.fv.call")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = call i8* %s(i8* %s)\n", g.indent(), callReg, wfnReg, argsReg))
 	}
 
 	// Bitcast result_ptr to correct type (use the result_ptr from the future)
-	g.tmpIdx++
-	resultTyped := fmt.Sprintf("%%awy.fv.typed.%d", g.tmpIdx)
+	resultTyped := g.tmpReg("awy.fv.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, rptrReg, resultType))
 	}
 
 	// Load the result value
-	g.tmpIdx++
-	resultVal := fmt.Sprintf("%%awy.fv.result.%d", g.tmpIdx)
+	resultVal := g.tmpReg("awy.fv.result")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
 	}
@@ -6601,20 +6205,17 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	// GEP 越界访问（field 2 偏移 16 字节超出 8 字节 alloca），读取到栈垃圾。
 	// 与 generateAwaitForCoro Case 2 保持一致的 load 模式。
 	taskVarAddr := g.varAddr(varName)
-	g.tmpIdx++
-	taskPtr := fmt.Sprintf("%%awy.task.ptr.%d", g.tmpIdx)
+	taskPtr := g.tmpReg("awy.task.ptr")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %%task*, %%task** %s\n", g.indent(), taskPtr, taskVarAddr))
 	}
 
 	// Check task.done (field 2)
-	g.tmpIdx++
-	doneGEP := fmt.Sprintf("%%awy.done.gep.%d", g.tmpIdx)
+	doneGEP := g.tmpReg("awy.done.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), doneGEP, taskPtr))
 	}
-	g.tmpIdx++
-	doneVal := fmt.Sprintf("%%awy.done.%d", g.tmpIdx)
+	doneVal := g.tmpReg("awy.done")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load i1, i1* %s\n", g.indent(), doneVal, doneGEP))
 	}
@@ -6630,19 +6231,16 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 		sb.WriteString(notDoneLabel + ":\n")
 	}
 	// load resume_fn (field 0)
-	g.tmpIdx++
-	fnGEP := fmt.Sprintf("%%awy.fn.gep.%d", g.tmpIdx)
+	fnGEP := g.tmpReg("awy.fn.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), fnGEP, taskPtr))
 	}
-	g.tmpIdx++
-	fnVal := fmt.Sprintf("%%awy.fn.%d", g.tmpIdx)
+	fnVal := g.tmpReg("awy.fn")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), fnVal, fnGEP))
 	}
 	// bitcast task* to i8*
-	g.tmpIdx++
-	taskI8 := fmt.Sprintf("%%awy.task.i8.%d", g.tmpIdx)
+	taskI8 := g.tmpReg("awy.task.i8")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskPtr))
 	}
@@ -6658,13 +6256,11 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	}
 
 	// Extract data (field 1) — args struct whose field 0 is result_ptr
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%awy.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("awy.data.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), dataGEP, taskPtr))
 	}
-	g.tmpIdx++
-	dataVal := fmt.Sprintf("%%awy.data.%d", g.tmpIdx)
+	dataVal := g.tmpReg("awy.data")
 	if sb != nil {
 		dataVal = g.loadDataPtrField(sb, dataGEP)
 	}
@@ -6678,30 +6274,25 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	}
 
 	// args struct field 0 = result_ptr; bitcast data to { i8* }* and load result_ptr
-	g.tmpIdx++
-	argsTyped := fmt.Sprintf("%%awy.args.typed.%d", g.tmpIdx)
+	argsTyped := g.tmpReg("awy.args.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to { i8* }*\n", g.indent(), argsTyped, dataVal))
 	}
-	g.tmpIdx++
-	resultPtrGEP := fmt.Sprintf("%%awy.resptr.gep.%d", g.tmpIdx)
+	resultPtrGEP := g.tmpReg("awy.resptr.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds { i8* }, { i8* }* %s, i32 0, i32 0\n", g.indent(), resultPtrGEP, argsTyped))
 	}
-	g.tmpIdx++
-	resultPtr := fmt.Sprintf("%%awy.resptr.%d", g.tmpIdx)
+	resultPtr := g.tmpReg("awy.resptr")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), resultPtr, resultPtrGEP))
 	}
 
 	// Bitcast result_ptr to correct type and load
-	g.tmpIdx++
-	resultTyped := fmt.Sprintf("%%awy.result.typed.%d", g.tmpIdx)
+	resultTyped := g.tmpReg("awy.result.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, resultPtr, resultType))
 	}
-	g.tmpIdx++
-	resultVal := fmt.Sprintf("%%awy.result.%d", g.tmpIdx)
+	resultVal := g.tmpReg("awy.result")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
 	}
@@ -6723,20 +6314,17 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	// 释放顺序：result buffer → args struct → task struct（先释放被引用者）。
 	if sb != nil {
 		// 1. free result buffer (result_ptr，仅容器)
-		g.tmpIdx++
-		freeResultReg := fmt.Sprintf("%%awy.free.result.%d", g.tmpIdx)
+		freeResultReg := g.tmpReg("awy.free.result")
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n", g.indent(), freeResultReg, resultPtr))
 		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeResultReg))
 
 		// 2. free args struct (dataVal 即 args_ptr i8*，仅容器)
-		g.tmpIdx++
-		freeArgsReg := fmt.Sprintf("%%awy.free.args.%d", g.tmpIdx)
+		freeArgsReg := g.tmpReg("awy.free.args")
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8*\n", g.indent(), freeArgsReg, dataVal))
 		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeArgsReg))
 
 		// 3. free task struct (taskPtr，仅容器)
-		g.tmpIdx++
-		freeTaskReg := fmt.Sprintf("%%awy.free.task.%d", g.tmpIdx)
+		freeTaskReg := g.tmpReg("awy.free.task")
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), freeTaskReg, taskPtr))
 		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeTaskReg))
 	}
@@ -6769,8 +6357,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 
 	// Fallback: evaluate expression, store to a %task alloca, then await it
 	taskVal := g.generateExprWithSB(sb, expr.Right)
-	g.tmpIdx++
-	taskAlloca := fmt.Sprintf("%%awy.task.%d", g.tmpIdx)
+	taskAlloca := g.tmpReg("awy.task")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAlloca))
 		sb.WriteString(fmt.Sprintf("%sstore %%task %s, %%task* %s\n", g.indent(), taskVal, taskAlloca))
@@ -6785,13 +6372,11 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 
 	// Check done (field 2); if not done, synchronously call resume_fn
-	g.tmpIdx++
-	doneGEP := fmt.Sprintf("%%awy.fb.done.gep.%d", g.tmpIdx)
+	doneGEP := g.tmpReg("awy.fb.done.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), doneGEP, taskAlloca))
 	}
-	g.tmpIdx++
-	doneVal := fmt.Sprintf("%%awy.fb.done.%d", g.tmpIdx)
+	doneVal := g.tmpReg("awy.fb.done")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load i1, i1* %s\n", g.indent(), doneVal, doneGEP))
 	}
@@ -6804,18 +6389,15 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	if sb != nil {
 		sb.WriteString(notDoneLabel + ":\n")
 	}
-	g.tmpIdx++
-	fnGEP := fmt.Sprintf("%%awy.fb.fn.gep.%d", g.tmpIdx)
+	fnGEP := g.tmpReg("awy.fb.fn.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), fnGEP, taskAlloca))
 	}
-	g.tmpIdx++
-	fnVal := fmt.Sprintf("%%awy.fb.fn.%d", g.tmpIdx)
+	fnVal := g.tmpReg("awy.fb.fn")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), fnVal, fnGEP))
 	}
-	g.tmpIdx++
-	taskI8 := fmt.Sprintf("%%awy.fb.task.i8.%d", g.tmpIdx)
+	taskI8 := g.tmpReg("awy.fb.task.i8")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskAlloca))
 		sb.WriteString(fmt.Sprintf("%scall void %s(i8* %s)\n", g.indent(), fnVal, taskI8))
@@ -6826,38 +6408,31 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 
 	// Extract data (field 1) → args struct field 0 = result_ptr
-	g.tmpIdx++
-	dataGEP := fmt.Sprintf("%%awy.fb.data.gep.%d", g.tmpIdx)
+	dataGEP := g.tmpReg("awy.fb.data.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), dataGEP, taskAlloca))
 	}
-	g.tmpIdx++
-	dataVal := fmt.Sprintf("%%awy.fb.data.%d", g.tmpIdx)
+	dataVal := g.tmpReg("awy.fb.data")
 	if sb != nil {
 		dataVal = g.loadDataPtrField(sb, dataGEP)
 	}
-	g.tmpIdx++
-	argsTyped := fmt.Sprintf("%%awy.fb.args.typed.%d", g.tmpIdx)
+	argsTyped := g.tmpReg("awy.fb.args.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to { i8* }*\n", g.indent(), argsTyped, dataVal))
 	}
-	g.tmpIdx++
-	resultPtrGEP := fmt.Sprintf("%%awy.fb.resptr.gep.%d", g.tmpIdx)
+	resultPtrGEP := g.tmpReg("awy.fb.resptr.gep")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds { i8* }, { i8* }* %s, i32 0, i32 0\n", g.indent(), resultPtrGEP, argsTyped))
 	}
-	g.tmpIdx++
-	resultPtr := fmt.Sprintf("%%awy.fb.resptr.%d", g.tmpIdx)
+	resultPtr := g.tmpReg("awy.fb.resptr")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), resultPtr, resultPtrGEP))
 	}
-	g.tmpIdx++
-	resultTyped := fmt.Sprintf("%%awy.fb.result.typed.%d", g.tmpIdx)
+	resultTyped := g.tmpReg("awy.fb.result.typed")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), resultTyped, resultPtr, resultType))
 	}
-	g.tmpIdx++
-	resultVal := fmt.Sprintf("%%awy.fb.result.%d", g.tmpIdx)
+	resultVal := g.tmpReg("awy.fb.result")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultVal, resultType, resultType, resultTyped))
 	}

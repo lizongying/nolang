@@ -201,6 +201,127 @@ test-https-e2e = () (pass bool) {
     process.process-waitpid(pid, 0)
 }
 
+; run-https-e2e-client-12: 父進程客戶端邏輯（TLS 1.2）
+; 使用 tls-dial-12 發送純 TLS 1.2 ClientHello（無 supported_versions 擴展）。
+; host str: 伺服器主機
+; port i64: 伺服器埠號
+; 返回 ok bool: true=成功收到預期回應
+run-https-e2e-client-12 = (host str, port i64) (ok bool) {
+    ok = false
+
+    tls-opt = tls.tls-dial-12(host, port)
+    tls-opt: {
+        nil -> {
+            print('FAIL: e2e-12 tls-dial-12 nil')
+            return
+        }
+        err -> {
+            print('FAIL: e2e-12 tls-dial-12 err')
+            return
+        }
+        ok -> {
+            tc = it
+
+            ; 發送 HTTP GET 請求
+            cr = char-to-str(13)
+            lf = char-to-str(10)
+            crlf = cr - lf
+            req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
+
+            send-ok = false
+            w-opt = tc.send(req)
+            w-opt: {
+                nil -> {
+                    print('FAIL: e2e-12 send nil')
+                    tc.close()
+                    return
+                }
+                err -> {
+                    print('FAIL: e2e-12 send err')
+                    tc.close()
+                    return
+                }
+                ok -> send-ok = true
+            }
+
+            send-ok == false -> {
+                tc.close()
+                return
+            }
+
+            ; 接收回應 — 多次 recv 累積（全部在同一函式內，使用局部變數）
+            space = ' '
+            recv-buf = space.repeat(4096)
+            recv-total = 0
+            found = false
+            {
+                found -> *
+                recv-total >= 4000 -> *
+
+                tmp = space.repeat(2048)
+                rn = tc.recv(tmp, 2048)
+                rn <= 0 -> *
+
+                i <- [0..rn): {
+                    recv-buf[recv-total + i] = tmp[i]
+                }
+                recv-total = recv-total + rn
+
+                pos = recv-buf.index-from('hello from nolang https 1.2', 0)
+                pos >= 0 -> found = true
+            } (found == false)
+
+            found -> {
+                print('PASS: e2e-12 got expected response')
+                ok = true
+            }
+            found == false -> print('FAIL: e2e-12 did not receive expected response')
+
+            tc.close()
+        }
+    }
+}
+
+; test-https-e2e-12: 端到端測試 — TLS 1.2 交握
+; 驗證: TLS 1.2 交握 + HTTP 請求/回應 through加密通道
+test-https-e2e-12 = () (pass bool) {
+    pass = false
+
+    ; 1. 啟動 HTTPS 伺服器
+    srv = https-server {}
+    ok = srv.listen('127.0.0.1', 9445)
+    ok == false -> {
+        print('FAIL: e2e-12 listen failed')
+        return
+    }
+
+    ; 2. fork: 子進程為伺服器, 父進程為客戶端
+    pid = process.process-fork()
+    pid < 0 -> {
+        print('FAIL: e2e-12 fork failed')
+        srv.close()
+        return
+    }
+
+    ; === 子進程: 伺服器 (處理一個連線後退出) ===
+    ; tls-https-serve-once 自動協商 TLS 1.2/1.3。
+    ; 客戶端發送 TLS 1.2 ClientHello（無 supported_versions），伺服器走 TLS 1.2 路徑。
+    pid == 0 -> {
+        serve-ok = tls.tls-https-serve-once(srv.fd, 200, 'hello from nolang https 1.2')
+        serve-ok == false -> os.exit(1)
+        os.exit(0)
+    }
+
+    ; === 父進程: 客戶端 ===
+    ; 等待子進程就緒
+    time.sleep-ns(50000000)
+
+    pass = run-https-e2e-client-12('127.0.0.1', 9445)
+
+    srv.close()
+    process.process-waitpid(pid, 0)
+}
+
 ; 主函數
 main = () {
     p1 = test-https-listen()
@@ -218,4 +339,8 @@ main = () {
     p4 = test-https-e2e()
     p4 == true -> print('PASS: https-e2e')
     p4 == false -> print('FAIL: https-e2e')
+
+    p5 = test-https-e2e-12()
+    p5 == true -> print('PASS: https-e2e-tls12')
+    p5 == false -> print('FAIL: https-e2e-tls12')
 }

@@ -523,9 +523,9 @@ func loadProjectConfig() (*ProjectConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mod.jsonc not found. Run 'no init' first")
 	}
-	cleaned := removeComments(string(data))
+	cleaned := nbuild.StripJSONC(data)
 	var config ProjectConfig
-	err = json.Unmarshal([]byte(cleaned), &config)
+	err = json.Unmarshal(cleaned, &config)
 	return &config, err
 }
 
@@ -596,58 +596,6 @@ func listDependencies() {
 	for name, version := range config.Dependencies {
 		fmt.Printf("  %s: %s\n", name, version)
 	}
-}
-
-func removeComments(jsonc string) string {
-	var result strings.Builder
-	inComment := false
-	inString := false
-	escape := false
-
-	for i := 0; i < len(jsonc); i++ {
-		c := jsonc[i]
-
-		if escape {
-			result.WriteByte(c)
-			escape = false
-			continue
-		}
-
-		if c == '\\' && inString {
-			result.WriteByte(c)
-			escape = true
-			continue
-		}
-
-		if c == '"' && !inComment {
-			inString = !inString
-			result.WriteByte(c)
-			continue
-		}
-
-		if inString {
-			result.WriteByte(c)
-			continue
-		}
-
-		if i+1 < len(jsonc) && jsonc[i] == '/' && jsonc[i+1] == '/' {
-			inComment = true
-			i++
-			continue
-		}
-
-		if inComment && c == '\n' {
-			inComment = false
-			result.WriteByte(c)
-			continue
-		}
-
-		if !inComment {
-			result.WriteByte(c)
-		}
-	}
-
-	return result.String()
 }
 
 func syncDependencies() {
@@ -1683,8 +1631,17 @@ func vetCommand(args []string) {
 	}
 
 	if info.IsDir() {
-		// 目錄模式：驗證所有 .no 文件
-		files, err := filepath.Glob(filepath.Join(inputPath, "*.no"))
+		// 目錄模式：遞迴驗證所有 .no 文件（與 testCommand/fmtProcessDirectory/BuildWorkspace 一致）
+		var files []string
+		err = filepath.WalkDir(inputPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && strings.HasSuffix(path, ".no") {
+				files = append(files, path)
+			}
+			return nil
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

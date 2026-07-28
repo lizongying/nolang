@@ -1,0 +1,6 @@
+; test-remove-debug.no — minimal test for fs.remove
+
+test-remove = () {
+    ok = fs.remove('/tmp/nonexistent-test-file')
+    print(ok)
+}

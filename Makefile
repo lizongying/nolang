@@ -31,7 +31,7 @@ $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(BINDIR)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 
 # ── LSP ────────────────────────────
-$(LSP_BIN): FORCE
+$(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum
 	mkdir -p $(dir $@)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 

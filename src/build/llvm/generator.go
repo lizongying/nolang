@@ -37,17 +37,81 @@ type loopExit struct {
 	exit string // LLVM 退出塊標籤（break 跳轉目標）
 }
 
+// funcState 封裝所有函數級可變狀態。
+// 每次函數生成時通過 resetFuncState() 創建新實例，消除跨函數污染風險，天然支持並行編譯。
+// 透過 Generator 中的嵌入式 *funcState 指標，所有 g.fieldName 存取透過 Go 字段提升
+// 自動解析為 g.funcState.fieldName，無需修改既有存取代碼。
+type funcState struct {
+	// === 變數追蹤 ===
+	funcVars            []varInfo                        // current function's variables for lifetime.end
+	varTypes            map[string]string                // variable name → LLVM type
+	varSSA              map[string]int                   // variable name → current SSA version
+	ssaMode             bool                             // true = 使用 SSA 暫存器
+	paramNames          map[string]bool                  // 函數參數名稱（使用 .addr 存取）
+	varFnTypes          map[string]*parser.FunctionType  // variable name → FunctionType (for indirect calls)
+	arrayElemTypes      map[string]string                // variable name → element LLVM type for %arr variables
+	arraySizes          map[string]int64                 // variable name → declared array size for [N]T locals
+	ssaTypes            map[string]string                // SSA register name → LLVM type (i64/double/%str-long/...)
+	funcLocalNames      map[string]bool                  // local variable names in current function (params + allocas)
+	funcParams          map[string]bool                  // current function's parameter names (to distinguish from globals)
+	optionInnerTypes    map[string]string                // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
+	itAllocTypes        map[string]string                // synthetic `it` variable name → allocated LLVM type
+	heapVars            map[string]string                // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr）
+	stackArrVars        map[string]bool                  // 棧分配的局部固定陣列名
+	heapVarIndex        map[string]int                   // 堆變數名 → varIdx（用於 bitmap 定位）
+	sliceViews          map[string]*sliceViewInfo        // variable name → slice view metadata
+	varAlias            map[string]string                // variable name → actual LLVM variable name
+	taskResultTypes     map[string]string                // task variable name → result LLVM type
+	futureResultTypes   map[string]string                // future variable name → result LLVM type
+	// === 控制流 ===
+	loopExits           []loopExit                       // 活躍循環退出目標棧
+	currentBlock        string                           // current basic block label (for PHI predecessor tracking)
+	blockTerminated     bool                             // true if current basic block ends with a terminator (ret/br)
+	// === 函數上下文 ===
+	curFuncRetType      string                           // 當前函數回傳型別（void/i64/...）
+	curFuncRetName      string                           // 當前函數輸出參數名稱（為空表示 void）
+	curFuncName         string                           // 當前函數名稱（debug 用）
+	inMainFunction      bool                             // true when generating the synthetic @main wrapper
+	// === 輸出參數綁定 ===
+	outputParamNames    map[string]bool                  // 當前函數的輸出參數名稱集合
+	outputBindings      map[string]map[int]outputBinding // 輸出參數名 → {SSA版本 → 延遲綁定}
+	ssaVersion          map[string]int                   // 輸出參數的 SSA 版本計數器
+	outputParamOrder    []string                         // output param names in declaration order
+	outBindState        []int                            // out param → bound heap var idx (-1=none, -2=uncertain)
+	// === Move bitmap ===
+	hasBranchMove       bool                             // true = function has move-to-out inside a branch (needs bitmap)
+	nextHeapVarIdx      int                              // next available varIdx for local heap vars
+	movedVarBitset      []uint64                         // compile-time moved bitmap (used when no runtime bitmap)
+	movedBitmapBase     string                           // LLVM bitmap var name prefix (e.g. "%__mb", "" = not allocated)
+	bitmapCount         int                              // number of u64 bitmap blocks (= maxVarIdx/64 + 1)
+	// === 返回值延遲零值初始化追蹤 ===
+	retInitBitmapVar    string                           // LLVM bitmap var name (e.g. "%__ret_init_bitmap")
+	retInitBits         map[string]int                   // out 參數名 → bit index (aligned with outputParamOrder)
+	hasRetInitCheck     bool                             // true = current function has out params (needs ret init tracking)
+	// === 臨時狀態 ===
+	lastBuiltinExtra      string                          // extra return value from multi-result builtin (e.g. get-line ok)
+	currentTargetType     string                          // target type for type-inferred builtins (e.g. with-cap)
+	currentTargetElemType string                          // element type for slice builtins (e.g. %str-long for []str)
+	entryAllocaBuf        *strings.Builder                // entry-block alloca buffer (hoisted out of loops)
+	stmtTemporaries       []string                        // statement-level temporary pointers to free at statement end
+	localTasks            []string                        // task variable names via `run` not yet awy'd
+	// === 无栈协程（状态机变换）per-async-function 狀態 ===
+	coroInAsyncFunc    bool                // 当前正在生成 async 函数的状态机
+	coroAwaitPoints    []awaitPoint        // 当前 async 函数的 awy 挂起点列表
+	coroStateFields    []coroField         // coro_state 结构体字段
+	coroFieldIdx       map[string]int      // 变量名 → coro_state 字段索引
+	isModuleAsyncWrap  bool                // 当前正在生成模块级 async 包装
+}
+
 type Generator struct {
+	*funcState // 嵌入式指標：字段提升使 g.funcVars 等存取自動解析為 g.funcState.funcVars
+
+	// === 模組級狀態（跨函數保持，不隨 resetFuncState 重置）===
 	indentLevel            int
 	fmtStrIdx              int
 	stringIdx              int
 	fmtGlobals             []string
 	tmpIdx                 int
-	funcVars               []varInfo                        // current function's variables for lifetime.end
-	varTypes               map[string]string                // variable name → LLVM type
-	varSSA                 map[string]int                   // variable name → current SSA version
-	ssaMode                bool                             // true = 使用 SSA 暫存器
-	paramNames             map[string]bool                  // 函數參數名稱（使用 .addr 存取）
 	funcRetTypes           map[string]string                // 函數名 → 回傳型別
 	funcNumResults         map[string]int                   // 函數名 → 結果數（單結果=1，多結果=N>1，void=0）
 	funcResultLLVMType     map[string][]string              // 函數名 → 各輸出參數的 LLVM 型別列表
@@ -60,20 +124,6 @@ type Generator struct {
 	funcParamTypes         map[string][]string              // 函數名 → 各參數的 Nolang 型別字串列表（含 receiver）
 	structTypes            map[string][]structField         // struct name → fields
 	structTypeLLVM         string                           // 當前正在生成的 struct LLVM type name
-	loopExits              []loopExit                       // 活躍循環退出目標棧
-	currentBlock           string                           // current basic block label (for PHI predecessor tracking)
-	arrayElemTypes         map[string]string                // variable name → element LLVM type for %arr variables
-	arraySizes             map[string]int64                 // variable name → declared array size for [N]T locals
-	curFuncRetType         string                           // 當前函數回傳型別（void/i64/...）
-	curFuncRetName         string                           // 當前函數輸出參數名稱（為空表示 void）
-	curFuncName            string                           // 當前函數名稱（debug 用）
-	inMainFunction         bool                             // true when generating the synthetic @main wrapper
-	outputParamNames       map[string]bool                  // 當前函數的輸出參數名稱集合
-	outputBindings         map[string]map[int]outputBinding // 輸出參數名 → {SSA版本 → 延遲綁定}
-	ssaVersion             map[string]int                   // 輸出參數的 SSA 版本計數器（每次賦值遞增）
-	heapVars               map[string]string                // 堆分配變數名 → LLVM 型別（%vec/%str-long/%arr），用於函數結束時 free
-	stackArrVars           map[string]bool                  // 棧分配的局部固定陣列名（小尺寸/定寬元素），用於 generateLet 跳過 malloc
-	heapVarIndex           map[string]int                   // 堆變數名 → varIdx（僅局部堆變數，用於 bitmap 定位）
 	globalVars             map[string]bool                  // module-level vars that should be LLVM globals
 	embedVars              map[string]bool                  // module-level embed vars (read-only, excluded from heap free)
 	mainFileNames          map[string]bool                  // names (vars+funcs) from the main file being compiled (not imported modules)
@@ -84,63 +134,27 @@ type Generator struct {
 	funcRefVars            map[string]bool                  // top-level vars that are function references (value is an Identifier referring to a function)
 	moduleVarTypes         map[string]string                // module-level variable types (preserved across functions)
 	moduleArrayElemTypes   map[string]string                // module-level array/slice element types (preserved across functions)
-	ssaTypes               map[string]string                // SSA register name → LLVM type (i64/double/%str-long/%str-long*/...)
-	blockTerminated        bool                             // true if current basic block ends with a terminator (ret/br)
-	funcLocalNames         map[string]bool                  // local variable names in current function (params + allocas)
-	funcParams             map[string]bool                  // current function's parameter names (to distinguish from globals with same name)
 	unionAliases           map[string][]string              // union type alias name → member type names (e.g. "float"→["f32","f64"])
-	optionInnerTypes       map[string]string                // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
 	moduleOptionInnerTypes map[string]string                // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
-	itAllocTypes           map[string]string                // synthetic `it` variable name → allocated LLVM type (for bitcast when shared across matches with different types)
 	funcResultInnerTypes   map[string][]string              // function name → inner LLVM types of ?T results
 	enumVariantIndex       map[string]int64                 // enum variant name → tag index (e.g. status1→0, status2→1)
 	enumVariants           map[string]map[string]int64      // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
-	varFnTypes             map[string]*parser.FunctionType  // variable name → FunctionType (for indirect calls)
 	fnTypeAliases          map[string]*parser.FunctionType  // named function type alias name → FunctionType
 	concreteTypeAliases    map[string]parser.Type           // single concrete type alias name → underlying Type AST (e.g. "fd"→i64 NamedType)
 	externFuncs            map[string]*ExternFuncInfo       // extern function name → FFI type info
-	lastBuiltinExtra       string                           // extra return value from multi-result builtin (e.g. get-line ok)
-	currentTargetType      string                           // target type for type-inferred builtins (e.g. with-cap)
-	currentTargetElemType  string                           // element type for slice builtins (e.g. %str-long for []str)
-	sliceViews             map[string]*sliceViewInfo        // variable name → slice view metadata (alias, no independent struct)
-	varAlias               map[string]string                // variable name → actual LLVM variable name (用於 %arr 重新賦值為 %vec 時重定向)
-	taskResultTypes        map[string]string                // task variable name → result LLVM type (for awy type inference)
-	futureResultTypes      map[string]string                // future variable name → result LLVM type (for awy type inference)
 	asyncWrappers          strings.Builder                  // wrapper functions for run expressions
 	debugCallCount         int                              // debug counter for tracing function generation calls
-	entryAllocaBuf         *strings.Builder                 // entry-block alloca buffer for literal-arg temporaries (hoisted out of loops to prevent stack overflow)
 	targetGoos             string                           // target GOOS for platform filtering ("" = fallback to runtime.GOOS)
 	targetGoarch           string                           // target GOARCH for platform filtering ("" = fallback to runtime.GOARCH)
 	targetDatalayout       string                           // LLVM target datalayout ("" = fallback to historical macOS arm64 default)
 	targetTriple           string                           // LLVM target triple ("" = fallback to historical macOS arm64 default)
 	noBoundsCheck          bool                             // true = skip emitting bounds checks (unsafe mode)
-	outputParamOrder       []string                         // output param names in declaration order (for outBindState index)
-	hasBranchMove          bool                             // true = function has move-to-out inside a branch (needs bitmap)
-	nextHeapVarIdx         int                              // next available varIdx for local heap vars
-	outBindState           []int                            // out param → bound heap var idx (-1=none, -2=uncertain)
-	movedVarBitset         []uint64                         // compile-time moved bitmap (used when no runtime bitmap)
-	movedBitmapBase        string                           // LLVM bitmap var name prefix (e.g. "%__mb", "" = not allocated)
-	bitmapCount            int                              // number of u64 bitmap blocks (= maxVarIdx/64 + 1)
-	stmtTemporaries        []string                         // statement-level temporary %str-long* pointers (heap-allocated data) to free at statement end
-	localTasks             []string                         // task variable names created via `run` in current function but not yet awy'd (for SubTask 2.3 cleanup)
-	// === 返回值延遲零值初始化追蹤 ===
-	// 與 move bitmap 對稱：追蹤 out 參數是否被顯式賦值，未賦值者在 return 時補零。
-	retInitBitmapVar string         // LLVM bitmap var name (e.g. "%__ret_init_bitmap", "" = not allocated)
-	retInitBits      map[string]int // out 參數名 → bit index (aligned with outputParamOrder)
-	hasRetInitCheck  bool           // true = current function has out params (needs ret init tracking)
-
-	// === 无栈协程（状态机变换）相关字段 ===
-	// async 函数变换为 coro_resume.N 函数，局部变量提升到 %coro_state.N 结构体。
+	// === 无栈协程：模块级累积状态 ===
 	coroStateBuilders     []strings.Builder   // coro_state 结构体定义缓冲区
-	coroInAsyncFunc       bool                // 当前正在生成 async 函数的状态机
 	coroFuncNum           int                 // async 函数编号（用于 %coro_state.N 唯一命名）
-	coroAwaitPoints       []awaitPoint        // 当前 async 函数的 awy 挂起点列表
-	coroStateFields       []coroField         // coro_state 结构体字段（state + 参数 + 局部变量 + 结果）
-	coroFieldIdx          map[string]int      // 变量名 → coro_state 字段索引
 	asyncFuncCoroNum      map[string]int      // async 函数名 → coro 编号（用于 run/awy 生成 coro_state task）
 	coroTrampolineEmitted map[int]bool        // coro 编号 → trampoline 是否已生成
 	coroResultFields      map[int][]coroField // coro 编号 → 结果字段（name/llvmTy/idx），供直接调用 coro 函数后取回结果
-	isModuleAsyncWrap     bool                // 当前正在生成模块级 async 包装（收集 localVarTypes 时排除 globalVars/funcRefVars）
 }
 
 // awaitPoint 描述一个 awy 挂起点的信息。
@@ -195,8 +209,65 @@ type outputBinding struct {
 }
 
 func NewGenerator() *Generator {
-	return &Generator{
-		sliceViews: make(map[string]*sliceViewInfo),
+	g := &Generator{}
+	g.funcState = &funcState{
+		sliceViews:       make(map[string]*sliceViewInfo),
+		varTypes:         make(map[string]string),
+		arrayElemTypes:   make(map[string]string),
+		paramNames:       make(map[string]bool),
+		funcLocalNames:   make(map[string]bool),
+		funcParams:       make(map[string]bool),
+		optionInnerTypes: make(map[string]string),
+		ssaTypes:         make(map[string]string),
+		varFnTypes:       make(map[string]*parser.FunctionType),
+		arraySizes:       make(map[string]int64),
+		outputParamNames: make(map[string]bool),
+		outputBindings:   make(map[string]map[int]outputBinding),
+		ssaVersion:       make(map[string]int),
+		heapVars:         make(map[string]string),
+		stackArrVars:     make(map[string]bool),
+		heapVarIndex:     make(map[string]int),
+		varAlias:         make(map[string]string),
+		taskResultTypes:  make(map[string]string),
+		futureResultTypes: make(map[string]string),
+		itAllocTypes:     make(map[string]string),
+	}
+	return g
+}
+
+// resetFuncState 創建全新的 funcState 實例，消除跨函數污染風險。
+// 從模組級備份恢復 varTypes/arrayElemTypes（讓函數內可查詢模組級變數型別）。
+// optionInnerTypes 不在此恢復——main 函數需要時由 generateMainFunction 額外恢復。
+func (g *Generator) resetFuncState() {
+	g.funcState = &funcState{
+		varTypes:         make(map[string]string),
+		arrayElemTypes:   make(map[string]string),
+		paramNames:       make(map[string]bool),
+		funcLocalNames:   make(map[string]bool),
+		funcParams:       make(map[string]bool),
+		optionInnerTypes: make(map[string]string),
+		ssaTypes:         make(map[string]string),
+		varFnTypes:       make(map[string]*parser.FunctionType),
+		arraySizes:       make(map[string]int64),
+		sliceViews:       make(map[string]*sliceViewInfo),
+		outputParamNames: make(map[string]bool),
+		outputBindings:   make(map[string]map[int]outputBinding),
+		ssaVersion:       make(map[string]int),
+		heapVars:         make(map[string]string),
+		stackArrVars:     make(map[string]bool),
+		heapVarIndex:     make(map[string]int),
+		varAlias:         make(map[string]string),
+		taskResultTypes:  make(map[string]string),
+		futureResultTypes: make(map[string]string),
+		itAllocTypes:     make(map[string]string),
+	}
+	// 恢復模組級變數的型別資訊
+	for k, v := range g.moduleVarTypes {
+		g.funcState.varTypes[k] = v
+	}
+	// 恢復模組級陣列/切片元素型別
+	for k, v := range g.moduleArrayElemTypes {
+		g.funcState.arrayElemTypes[k] = v
 	}
 }
 

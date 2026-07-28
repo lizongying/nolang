@@ -771,20 +771,15 @@ func (g *Generator) transformModuleAsync(sb *strings.Builder, program *parser.Pr
 		return false
 	}
 
-	// 补充 generateMainFunction 未重置的状态（与 generateFunctionDefinition 对齐），
+	// 創建全新 funcState 實例：與 generateFunctionDefinition 對齊，
 	// 确保 coro_resume 段体生成时各 map 已初始化。
-	g.ssaTypes = make(map[string]string)
-	g.varFnTypes = make(map[string]*parser.FunctionType)
-	g.arraySizes = make(map[string]int64)
-	g.taskResultTypes = make(map[string]string)
-	g.futureResultTypes = make(map[string]string)
-	if g.paramNames == nil {
-		g.paramNames = make(map[string]bool)
+	g.resetFuncState()
+	// 恢復模組級 option 變數的 inner type（main 函數語義）
+	if g.moduleOptionInnerTypes != nil {
+		for k, v := range g.moduleOptionInnerTypes {
+			g.optionInnerTypes[k] = v
+		}
 	}
-	g.funcParams = make(map[string]bool)
-	g.ssaVersion = make(map[string]int)
-	g.outputParamOrder = nil
-	g.outBindState = nil
 
 	// 构造合成 FunctionDefinition（匿名 async 入口，无参数无结果）
 	fd := &parser.FunctionDefinition{
