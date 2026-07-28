@@ -407,7 +407,9 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 	// which frees the old value of `out` before assigning. An uninitialized
 	// buffer would contain stack garbage, causing the free of a bogus data
 	// pointer to crash (SIGABRT). Must zero-initialize to {len=0, cap=0, data=null}.
-	outBuf := g.tmpReg("vso.tmp")
+	// Use nfmt.field prefix so isStrPtrReg recognizes this as a %str-long* pointer
+	// and loads the value before assignment (avoids ptr/value type mismatch).
+	outBuf := g.tmpReg("nfmt.field")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
 
@@ -3126,7 +3128,7 @@ func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatFi
 	// buffer would contain stack garbage, causing the free of a bogus data
 	// pointer to crash (SIGABRT). Per project convention, the caller must
 	// initialize output parameters: str → {len=0, cap=0, data=null}.
-	outBuf := g.tmpReg("vso.tmp")
+	outBuf := g.tmpReg("nfmt.field")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
 

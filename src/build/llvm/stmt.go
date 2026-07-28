@@ -5763,6 +5763,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%s2s.result.",         // s2s conversion in stmt.go
 		"%concat.result.",      // generateStrConcat
 		"%nfmt.concat.result.", // callNamedFormat sprintf concatenation
+		"%nfmt.field.",         // generateFieldStr single-field format() result
 		"%repeat.result.",      // generateStrRepeat
 		"%argv.str.",           // args-get in call_stdlib.go
 		"%sprintf.val.",        // sprintf-based str returns (to-str etc.)

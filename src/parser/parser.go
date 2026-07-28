@@ -11,8 +11,7 @@ import (
 
 type Parser struct {
 	lexer    *lexer.Lexer
-	errors   []string
-	warnings []string
+	diags    []Diagnostic // structured errors + warnings, in source order
 
 	currentToken      lexer.Token
 	peekToken         lexer.Token
@@ -498,7 +497,6 @@ type parserState struct {
 func New(lexer *lexer.Lexer) *Parser {
 	p := &Parser{
 		lexer:           lexer,
-		errors:          []string{},
 		ctx:             contextStack{CTX_GLOBAL},
 		reportedIllegal: map[string]bool{},
 		varDeclTypes:    map[string]string{},
@@ -905,16 +903,13 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 }
 
 func (p *Parser) Errors() []string {
-	return p.errors
+	return formatDiags(p.diags, SeverityError)
 }
 
 func (p *Parser) peekError(t lexer.TokenType) {
-	msg := fmt.Sprintf("line %d, column %d: expected next token to be %s, got %s instead",
-		p.currentToken.Line,
-		p.currentToken.Column,
-		t.String(),
-		p.peekToken.Type.String())
-	p.errors = append(p.errors, msg)
+	p.errorf(p.currentToken, "E_UNEXPECTED_TOKEN",
+		"expected next token to be %s, got %s instead",
+		t.String(), p.peekToken.Type.String())
 }
 
 // isTypeName checks if the given literal is a known type name.
@@ -963,7 +958,7 @@ func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
 		doc := p.collectDocComments()
-		stmt := p.parseStatement()
+		stmt := p.recoverStatement()
 		if stmt != nil {
 			setDoc(stmt, doc)
 			p.attachInlineComment(stmt)
@@ -988,9 +983,28 @@ func (p *Parser) ParseProgram() *Program {
 	}
 
 	program.TrailingComments = p.collectDocComments()
-	program.Warnings = append([]string{}, p.warnings...)
+	program.Warnings = append([]string{}, p.Warnings()...)
 
 	return program
+}
+
+// recoverStatement runs parseStatement inside a panic/recover so a deep call
+// can abort an unrecoverable statement with (*Parser).fatalf and have the
+// Diagnostic recorded here, then the outer loop continues with the next
+// statement. Real panics (compiler bugs) are re-raised so they surface in
+// tests instead of being swallowed.
+func (p *Parser) recoverStatement() (stmt Statement) {
+	defer func() {
+		if r := recover(); r != nil {
+			if pp, ok := r.(*parsePanic); ok {
+				p.diags = append(p.diags, *pp.diag)
+				stmt = nil
+				return
+			}
+			panic(r)
+		}
+	}()
+	return p.parseStatement()
 }
 
 func (p *Parser) parseStatement() Statement {
@@ -2074,14 +2088,14 @@ func (p *Parser) isFunctionTypeAlias() bool {
 	// 注意：不依賴 parseFunctionType 的游標位置（其會跳過 NEWLINE 尋找結果列表），
 	// 僅以錯誤計數判斷內容是否合法。
 	state := p.saveState()
-	errCount := len(p.errors)
+	errCount := len(p.diags)
 	p.nextToken() // IDENT → ASSIGN
 	p.nextToken() // ASSIGN → LPAREN
 	p.parseFunctionType()
-	parseFailed := len(p.errors) > errCount
+	parseFailed := len(p.diags) > errCount
 	if parseFailed {
 		// 回滾試解析期間產生的錯誤
-		p.errors = p.errors[:errCount]
+		p.diags = p.diags[:errCount]
 	}
 	p.restoreState(state)
 	return !parseFailed
@@ -3215,19 +3229,15 @@ func (p *Parser) parseExpressionStatement() Statement {
 		for p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // skip COMMA
 			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected variable name after ',', got %s",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
-				return nil
+				p.fatalf(p.currentToken, "E_EXPECTED_IDENT",
+					"expected variable name after ',', got %s", p.currentToken.Type.String())
 			}
 			targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
 			p.nextToken() // skip IDENT
 		}
 		if p.currentToken.Type != lexer.ASSIGN {
-			msg := fmt.Sprintf("line %d, column %d: expected '=' after multi-variable list",
-				p.currentToken.Line, p.currentToken.Column)
-			p.saveError(msg)
-			return nil
+			p.fatalf(p.currentToken, "E_EXPECTED_ASSIGN",
+				"expected '=' after multi-variable list")
 		}
 		assignTok := p.currentToken
 		p.nextToken() // skip =
@@ -3459,8 +3469,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			if p.classifyBlockAtCurrent() == blockMatch && !hasColonBeforeBrace {
-				p.saveWarning(fmt.Sprintf("line %d, column %d: 'x { ... }' is deprecated, use 'x: { ... }' instead",
-					p.currentToken.Line, p.currentToken.Column))
+				p.warnf(p.currentToken, "W_DEPRECATED_BRACE",
+					"'x { ... }' is deprecated, use 'x: { ... }' instead")
 			}
 			blockHandled := false
 			if p.classifyBlockAtCurrent() == blockStruct {
@@ -3913,15 +3923,29 @@ func (p *Parser) parseExpression(precedence int) Expression {
 }
 
 func (p *Parser) saveError(msg string) {
-	p.errors = append(p.errors, msg)
+	pos, clean := stripLocPrefix(msg)
+	p.diags = append(p.diags, Diagnostic{
+		Filename: p.Filename,
+		Pos:      pos,
+		Severity: SeverityError,
+		Code:     "E_GENERAL",
+		Message:  clean,
+	})
 }
 
 func (p *Parser) saveWarning(msg string) {
-	p.warnings = append(p.warnings, msg)
+	pos, clean := stripLocPrefix(msg)
+	p.diags = append(p.diags, Diagnostic{
+		Filename: p.Filename,
+		Pos:      pos,
+		Severity: SeverityWarning,
+		Code:     "W_GENERAL",
+		Message:  clean,
+	})
 }
 
 func (p *Parser) Warnings() []string {
-	return p.warnings
+	return formatDiags(p.diags, SeverityWarning)
 }
 
 // skipToStatementEnd advances tokens until a statement boundary is reached.
