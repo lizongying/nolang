@@ -190,9 +190,10 @@ func collectMapTypeUsages(program *parser.Program) []mapTypePair {
 }
 
 // isGenericStructTemplate 判斷一個 StructDefinition 是否為泛型模板。
-// 支援兩種判定：帶有 GenericParams，或名稱以 "-tmpl" 結尾（hashmap-{cat}-tmpl）。
-func isGenericStructTemplate(sd *parser.StructDefinition) bool {
-	if len(sd.GenericParams) > 0 {
+// 支援兩種判定：side-table 中帶有泛型參數（#{generic=[K,V]}），或名稱以 "-tmpl"
+// 結尾（hashmap-{cat}-tmpl）。
+func isGenericStructTemplate(sem *parser.SemanticContext, sd *parser.StructDefinition) bool {
+	if len(sem.GenericParamsOf(sd)) > 0 {
 		return true
 	}
 	return strings.HasSuffix(sd.Name, "-tmpl")
@@ -334,7 +335,7 @@ func monomorphizeGenericStructs(program *parser.Program) {
 	templateStructs := make(map[string]*parser.StructDefinition)
 	for _, stmt := range program.Statements {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
-			if isGenericStructTemplate(sd) {
+			if isGenericStructTemplate(program.Sem, sd) {
 				templateStructs[sd.Name] = sd
 			}
 		}
@@ -390,7 +391,7 @@ func monomorphizeGenericStructs(program *parser.Program) {
 	filtered := make([]parser.Statement, 0, len(program.Statements))
 	for _, stmt := range program.Statements {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
-			if isGenericStructTemplate(sd) {
+			if isGenericStructTemplate(program.Sem, sd) {
 				continue
 			}
 		}

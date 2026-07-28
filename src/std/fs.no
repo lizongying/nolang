@@ -100,6 +100,43 @@
 ; utime = (p str, atime i64, mtime i64) (ok bool) {  // LLVM: alloca [16 x i8] times → call i32 @utimes
 ; }
 
+; build-in (CLibCall: rmdir)
+; rmdir: 刪除空目錄
+; p: 目錄路徑（必須為空目錄）
+; 成功返回 true，失敗返回 false
+; rmdir = (p str) (ok bool) {  // LLVM: call i32 @rmdir → icmp eq 0 → zext
+; }
+
+; build-in (CLibCall: mknod)
+; mknod: 建立特殊檔案（管道、裝置節點等）
+; p: 檔案路徑
+; mode: 檔案類型與權限（如 0o644=420 普通檔案，0o666=438 FIFO）
+; dev: 裝置號（對普通檔案/FIFO 傳 0）
+; 成功返回 true，失敗返回 false（macOS/Windows 上可能不支援）
+; mknod = (p str, mode i64, dev i64) (ok bool) {  // LLVM: call i32 @mknod → icmp eq 0 → zext
+; }
+
+; build-in (CLibCall: truncate)
+; truncate: 截斷或擴展檔案到指定大小
+; p: 檔案路徑
+; length: 目標長度（位元組）
+; 成功返回 true，失敗返回 false
+; truncate = (p str, length i64) (ok bool) {  // LLVM: call i32 @truncate → icmp eq 0 → zext
+; }
+
+; build-in (ForwardFunc: sync)
+; sync: 將檔案系統緩衝區排清到磁碟（無返回值）
+; sync = () () {  // LLVM: call void @sync()
+; }
+
+; build-in (ForwardFunc: lstat)
+; lstat: 取得符號連結本身的資訊（不跟隨連結）
+; 與 stat 不同：對符號連結呼叫時返回連結本身的資訊，而非目標
+; p: 檔案路徑
+; 成功返回 true，失敗返回 false
+; lstat = (p str) (ok bool) {  // LLVM: call i32 @lstat → icmp eq 0 → zext
+; }
+
 ; build-in (ForwardFunc: stat-file)
 ; is-file: 判斷路徑是否為普通檔案
 ; is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext

@@ -21,12 +21,10 @@ type Parser struct {
 	comments          []lexer.Token                // collected comment tokens
 	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
-	varDeclTypes      map[string]string            // 變數名稱 → 型別字串（含 ? 前綴表示 Option）
-	enumVariantNames  map[string][]string          // 枚舉類型名 → 枚舉值名列表
+	sem               *SemanticContext            // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
-	declaredVars      map[string]bool              // 已宣告的變數名（用於避免重複推斷）
 	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
@@ -454,8 +452,9 @@ type parserState struct {
 	prevToken    lexer.Token
 	ctx          contextStack      // snapshot of context stack
 	comments     []lexer.Token     // snapshot of collected comments
-	varDeclTypes map[string]string // snapshot of variable type table
-	declaredVars map[string]bool   // snapshot of declared variable set
+	semVarTypes     map[string]string   // snapshot of variable type table
+	semEnumVariants map[string][]string // snapshot of enum variant table
+	semDeclaredVars map[string]bool     // snapshot of declared variable set
 }
 
 func New(lx *lexer.Lexer) *Parser {
@@ -467,8 +466,7 @@ func New(lx *lexer.Lexer) *Parser {
 		ctx:             contextStack{CTX_GLOBAL},
 		warnedSemiEat:   map[int]bool{},
 		reportedIllegal: map[string]bool{},
-		varDeclTypes:    map[string]string{},
-		declaredVars:    map[string]bool{},
+		sem:             NewSemanticContext(),
 	}
 
 	p.nextToken()
@@ -480,7 +478,7 @@ func New(lx *lexer.Lexer) *Parser {
 // varDeclTypes 在 New() 中已初始化，此處無需 nil 檢查。
 // 集中管理寫入點，避免散佈的 lazy init 模式。
 func (p *Parser) setVarType(name, typ string) {
-	p.varDeclTypes[name] = typ
+	p.sem.SetVarType(name, typ)
 }
 
 // SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
@@ -503,14 +501,20 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, structFields 
 func (p *Parser) saveState() parserState {
 	commentsCopy := make([]lexer.Token, len(p.comments))
 	copy(commentsCopy, p.comments)
-	// 深拷貝符號表，避免試探性解析中的 varDeclTypes/declaredVars 寫入
-	// 在 restoreState 後污染後續解析。varDeclTypes/declaredVars 在 New() 中已初始化。
-	varDeclTypesCopy := make(map[string]string, len(p.varDeclTypes))
-	for k, v := range p.varDeclTypes {
+	// 深拷貝類型推斷符號表（位於語義副表 sem 內），避免試探性解析中的寫入
+	// 在 restoreState 後污染後續解析。
+	varDeclTypesCopy := make(map[string]string, len(p.sem.VarTypes))
+	for k, v := range p.sem.VarTypes {
 		varDeclTypesCopy[k] = v
 	}
-	declaredVarsCopy := make(map[string]bool, len(p.declaredVars))
-	for k, v := range p.declaredVars {
+	enumVariantsCopy := make(map[string][]string, len(p.sem.EnumVariants))
+	for k, v := range p.sem.EnumVariants {
+		cp := make([]string, len(v))
+		copy(cp, v)
+		enumVariantsCopy[k] = cp
+	}
+	declaredVarsCopy := make(map[string]bool, len(p.sem.DeclaredVars))
+	for k, v := range p.sem.DeclaredVars {
 		declaredVarsCopy[k] = v
 	}
 	return parserState{
@@ -519,8 +523,9 @@ func (p *Parser) saveState() parserState {
 		prevToken:    p.prevToken,
 		ctx:          p.ctx.copy(),
 		comments:     commentsCopy,
-		varDeclTypes: varDeclTypesCopy,
-		declaredVars: declaredVarsCopy,
+		semVarTypes:     varDeclTypesCopy,
+		semEnumVariants: enumVariantsCopy,
+		semDeclaredVars: declaredVarsCopy,
 	}
 }
 
@@ -533,8 +538,9 @@ func (p *Parser) restoreState(state parserState) {
 	p.prevToken = state.prevToken
 	p.ctx = state.ctx
 	p.comments = state.comments
-	p.varDeclTypes = state.varDeclTypes
-	p.declaredVars = state.declaredVars
+	p.sem.VarTypes = state.semVarTypes
+	p.sem.EnumVariants = state.semEnumVariants
+	p.sem.DeclaredVars = state.semDeclaredVars
 }
 
 func (p *Parser) nextToken() {
@@ -813,9 +819,14 @@ func (p *Parser) ParseProgram() *Program {
 		}
 	}
 
+	// 語義副表：連接 parser 增量推斷結果，並執行獨立 Resolver pass
+	// （平台鍵/泛型參數/embed 由註解收尾計算），實現解析/语义分离。
+	program.Sem = p.sem
+	ResolveProgram(program)
+
 	// Lowering pass：將解析期產出的表層 match 節點（SurfaceMatch）展開為核心
-	// AST（IfExpression 鏈）。必須在拷貝 Warnings 之前執行，因為 desugar 過程
-	// 會透過 p.saveWarning 補充診斷（如不可達 arm 警告）。
+	// AST（IfExpression 鏈）。必須在 Resolver 之後執行，因為 desugar 需要
+	// sem 中的類型推斷結果；也必須在拷貝 Warnings 之前執行。
 	p.lowerProgram(program)
 
 	program.TrailingComments = p.collectDocComments()

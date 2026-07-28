@@ -26,12 +26,6 @@ type SurfaceMatch struct {
 
 	// OpeningBraceComment 保留裸 match `{` 同行註釋，lowering 時轉移到 IfExpression。
 	OpeningBraceComment *CommentGroup
-
-	// 解析期語義快照 —— lowering 延後執行時 parser 的活動符號表（varDeclTypes/
-	// enumVariantNames）已是整檔終態，故在解析當下捕獲 matched 變數的型別資訊。
-	MatchedVarType string   // matched 為 Identifier 時其解析期宣告型別（"" = 未知）
-	IsEnumType     bool     // MatchedVarType 是否為枚舉型別
-	EnumVariants   []string // 枚舉型別的變體名快照（僅 IsEnumType 時有效）
 }
 
 func (sm *SurfaceMatch) expressionNode()     {}
@@ -43,19 +37,10 @@ func (sm *SurfaceMatch) EndPos() lexer.Position {
 	return posFromToken(sm.Token)
 }
 
-// newSurfaceMatch 建立表層 match 節點並捕獲解析期語義快照。
+// newSurfaceMatch 建立表層 match 節點（不捕獲型別快照；類型推斷由 Resolver pass
+// 寫入語義副表，lowering 時自 p.sem 讀取）。
 func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []matchArm) *SurfaceMatch {
-	sm := &SurfaceMatch{Token: tok, Matched: matched, Arms: arms}
-	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.varDeclTypes[ident.Value]; ok {
-			sm.MatchedVarType = t
-			if variants, ok := p.enumVariantNames[t]; ok {
-				sm.IsEnumType = true
-				sm.EnumVariants = append([]string(nil), variants...)
-			}
-		}
-	}
-	return sm
+	return &SurfaceMatch{Token: tok, Matched: matched, Arms: arms}
 }
 
 // ---- lowering pass 驅動 ----
@@ -227,15 +212,29 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		return nil
 	}
 
+	// 類型推斷結果取自語義副表（Resolver pass 寫入 p.sem），不再依賴解析期快照。
+	matchedVarType := ""
+	isEnumType := false
+	var enumVariants []string
+	if ident, ok := matched.(*Identifier); ok {
+		if t, ok := p.sem.VarType(ident.Value); ok {
+			matchedVarType = t
+			if vs, ok := p.sem.EnumVariantsOf(t); ok {
+				isEnumType = true
+				enumVariants = vs
+			}
+		}
+	}
+
 	// Determine element type from option type for per-arm `it` type inference.
 	// For ?i64, elemType = "i64"
 	elemType := ""
-	if _, ok := matched.(*Identifier); ok && sm.MatchedVarType != "" {
-		if strings.HasPrefix(sm.MatchedVarType, "?") {
-			elemType = strings.TrimPrefix(sm.MatchedVarType, "?")
-		} else if sm.IsEnumType {
+	if matchedVarType != "" {
+		if strings.HasPrefix(matchedVarType, "?") {
+			elemType = strings.TrimPrefix(matchedVarType, "?")
+		} else if isEnumType {
 			// For enum match, set elemType to trigger per-arm it binding path
-			elemType = sm.MatchedVarType
+			elemType = matchedVarType
 		}
 	}
 
@@ -266,7 +265,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	hasExplicitOk, hasExplicitErr, hasExplicitNil := false, false, false
 	// For enum types, track which enum variant identifiers are listed
 	enumListedVariants := make(map[string]bool)
-	matchedIsEnum := sm.IsEnumType
+	matchedIsEnum := isEnumType
 	for _, a := range arms {
 		if len(a.multiOptionPatterns) > 0 {
 			// Combined option patterns: mark all as explicit
@@ -342,7 +341,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					if matchedIsEnum {
 						// For enum types, compute complement dynamically
 						var remaining []string
-						for _, v := range sm.EnumVariants {
+						for _, v := range enumVariants {
 							if !enumListedVariants[v] {
 								remaining = append(remaining, v)
 							}
@@ -414,7 +413,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				} else {
 					armTok = tok
 				}
-				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, sm); armIt != nil {
+				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType); armIt != nil {
 					// Set the synthetic end position to cover the arm body
 					bodyEnd := arm.body.EndPos()
 					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.body.Statements) > 0 {
@@ -750,12 +749,12 @@ func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStateme
 //	ok arm  -> it: elemType (e.g., i64 for ?i64)
 //
 // 型別資訊取自 sm 的解析期快照（MatchedVarType/IsEnumType）。
-func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armType string, elemType string, sm *SurfaceMatch) *LetStatement {
+func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armType string, elemType string, matchedVarType string, isEnumType bool) *LetStatement {
 	_, ok := matched.(*Identifier)
 	if !ok {
 		return nil
 	}
-	t := sm.MatchedVarType
+	t := matchedVarType
 	if t == "" {
 		return nil
 	}
@@ -781,7 +780,7 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		default:
 			return nil
 		}
-	} else if sm.IsEnumType {
+	} else if isEnumType {
 		// Enum type: armType is the variant name or union expression (e.g., "status1" or "status2 | status3")
 		typeStr = armType
 	} else {

@@ -306,6 +306,7 @@ type Program struct {
 	FreeComments     []*CommentGroup // standalone comments at file start, between stmts, EOF
 	TrailingComments *CommentGroup
 	Warnings         []string // parser warnings (e.g., dead code, deprecation)
+	Sem              *SemanticContext // 語義副表：註解/平台鍵/embed/泛型參數/類型推斷結果（解析/语义分离）
 }
 
 func (p *Program) Pos() lexer.Position {
@@ -379,10 +380,6 @@ type LetStatement struct {
 	Value         Expression
 	IsSynthetic   bool               // compiler-injected (e.g. `it = matched`), not from source
 	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
-	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
-	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
-	PlatformKeys  []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
-	EmbedData     []byte             // 编譯期嵌入的文件字節數據（來自 #{embed=...} 註解）
 	CommentedNode
 }
 
@@ -432,8 +429,6 @@ func (rs *ReturnStatement) EndPos() lexer.Position {
 type ExpressionStatement struct {
 	Token        lexer.Token
 	Expression   Expression
-	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
-	PlatformKeys []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 
@@ -489,8 +484,6 @@ type FunctionDefinition struct {
 	FuncSignature
 	Body         *BlockStatement
 	ColonSyntax  bool               // 是否為冒號語法 foo: (a int) { }
-	Annotations  []*AnnotationEntry // 來自前置 #{...} 註解的條目（如 #{mac-arm64}, #{linux-amd64}）
-	PlatformKeys []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	// IsMethodDef 標記此 FunctionDefinition 為方法定義（如 `t.method = ...`）。
 	// parser 在方法定義位置顯式設定此欄位，formatter 直接讀取以跳過隱式 self 參數，
 	// 避免依賴 `strings.Contains(Name, ".")` 的字串子串啟發式。
@@ -511,7 +504,6 @@ type ExternStatement struct {
 	Name        *Identifier
 	Parameters  []*Parameter
 	Results     []*Parameter
-	Annotations []*AnnotationEntry // 來自 #{c, ...} 的額外註解條目
 	CommentedNode
 }
 
@@ -532,13 +524,6 @@ func (es *ExternStatement) String() string {
 	if es.Lang != "" {
 		out.WriteString("#{")
 		out.WriteString(es.Lang)
-		for _, a := range es.Annotations {
-			if a.Key == es.Lang {
-				continue
-			}
-			out.WriteString(", ")
-			out.WriteString(a.String())
-		}
 		out.WriteString("}\n")
 	}
 	out.WriteString(es.Name.Value)
@@ -1315,8 +1300,10 @@ type StructField struct {
 	ReadOnly    bool  // true = read-only field modifier
 	Sealed      bool  // true = sealed field modifier
 	Value       Expression
-	Annotations []*AnnotationEntry // 來自前置 #{...} 註解的條目
 }
+
+func (sf *StructField) Pos() lexer.Position    { return posFromToken(sf.Token) }
+func (sf *StructField) EndPos() lexer.Position { return posFromToken(sf.Token) }
 
 type EnumValue struct {
 	Token lexer.Token
@@ -1428,9 +1415,6 @@ type StructDefinition struct {
 	Name          string
 	Implements    []string // 實現的介面列表（空 = 無）
 	Fields        []*StructField
-	GenericParams []string           // 泛型型別參數，來自 #{generic=[K,V]} 註解
-	Annotations   []*AnnotationEntry // 來自前置 #{...} 註解的條目
-	PlatformKeys  []string           // 平台註解的 key（如 ["win-arm64"] 或 ["mac-amd64","mac-arm64"]）；空 = 平台通用
 	CommentedNode
 }
 

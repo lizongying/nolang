@@ -38,13 +38,13 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		// Debug: track hashutil functions
 		if name == "hash-cmd" || name == "do-hash" || name == "bytes-to-hex" {
 			for i, fd := range fns {
-				sig := platformAwareCallSignature(name, fd.Parameters, fd.PlatformKeys)
+				sig := platformAwareCallSignature(name, fd.Parameters, program.Sem.PlatformKeysOf(fd))
 				paramStrs := make([]string, 0, len(fd.Parameters))
 				for _, p := range fd.Parameters {
 					paramStrs = append(paramStrs, p.Type.String())
 				}
 				fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads: name=%s copy[%d] sig=%q params=[%s] platformKeys=%v\n",
-					name, i, sig, strings.Join(paramStrs, ", "), fd.PlatformKeys)
+					name, i, sig, strings.Join(paramStrs, ", "), program.Sem.PlatformKeysOf(fd))
 			}
 		}
 		// 去重：對於相同名稱+簽名+平台組合的重複定義（多模組同函數），只保留第一個。
@@ -52,7 +52,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		seenSigs := make(map[string]bool)
 		uniqueFns := make([]*parser.FunctionDefinition, 0, len(fns))
 		for _, fd := range fns {
-			sig := platformAwareCallSignature(name, fd.Parameters, fd.PlatformKeys)
+			sig := platformAwareCallSignature(name, fd.Parameters, program.Sem.PlatformKeysOf(fd))
 			if !seenSigs[sig] {
 				seenSigs[sig] = true
 				uniqueFns = append(uniqueFns, fd)
@@ -1089,6 +1089,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 處理 use 陳述句：載入模組並合併函數定義和常量
 	// 註：importedModules 和 mainVarNames 已在上方合併 PASS 中收集完成
 	merged := &parser.Program{Statements: []parser.Statement{}}
+	// 合併語義副表：merged 匯集主程序與各模塊的 AST 節點，
+	// 各自 side-table 中的節點語義（註解/平台鍵/embed 等）也必須匯集。
+	merged.Sem = parser.NewSemanticContext()
+	merged.Sem.Merge(program.Sem)
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
 	moduleConstants := make(map[string]parser.Expression)
@@ -1113,6 +1117,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("loading module %s: %w", use.Path, err)
 			}
+			merged.Sem.Merge(modProg.Sem)
 			if use.Alias == "" {
 				loadedUserModules[use.Path] = true
 			}
@@ -1154,7 +1159,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 							}
 							if !mainVarNames[ls.Name.Value] {
 								merged.Statements = append(merged.Statements, ls)
-								if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
+								if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 									moduleConstants[ls.Name.Value] = ls.Value
 								}
 							}
@@ -1164,7 +1169,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						// 如果主程序已有同名變量，跳過以避免衝突
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
+							if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 								moduleConstants[ls.Name.Value] = ls.Value
 							}
 						}
@@ -1231,6 +1236,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
 		}
+		merged.Sem.Merge(modProg.Sem)
 		// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
 		prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
 		for _, ms := range modProg.Statements {
@@ -1241,7 +1247,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
 					merged.Statements = append(merged.Statements, ls)
-					if isConstantExpr(ls.Value) && matchesTargetPlatform(ls.PlatformKeys, t.targetGoos, t.targetGoarch) {
+					if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
 				}
@@ -3556,14 +3562,14 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 func validateDuplicates(program *parser.Program) error {
 	seen := make(map[string]bool)
 	for _, stmt := range program.Statements {
-		if err := validateStmtDuplicates(stmt, seen); err != nil {
+		if err := validateStmtDuplicates(program.Sem, stmt, seen); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
+func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]bool) error {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		// In nolang, first assignment is definition, subsequent are reassignments
@@ -3604,12 +3610,13 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 		}
 		// 使用複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
 		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+		sPlatformKeys := sem.PlatformKeysOf(s)
 		var dupKeys []string
-		if len(s.PlatformKeys) == 0 {
+		if len(sPlatformKeys) == 0 {
 			dupKeys = []string{s.Name.Value + "\x00"}
 		} else {
-			dupKeys = make([]string, 0, len(s.PlatformKeys))
-			for _, pk := range s.PlatformKeys {
+			dupKeys = make([]string, 0, len(sPlatformKeys))
+			for _, pk := range sPlatformKeys {
 				dupKeys = append(dupKeys, s.Name.Value+"\x00"+pk)
 			}
 		}
@@ -3625,21 +3632,21 @@ func validateStmtDuplicates(stmt parser.Statement, seen map[string]bool) error {
 		if s.Body != nil {
 			bodySeen := make(map[string]bool)
 			for _, bStmt := range s.Body.Statements {
-				if err := validateStmtDuplicates(bStmt, bodySeen); err != nil {
+				if err := validateStmtDuplicates(sem, bStmt, bodySeen); err != nil {
 					return err
 				}
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			if err := validateStmtDuplicates(bStmt, seen); err != nil {
+			if err := validateStmtDuplicates(sem, bStmt, seen); err != nil {
 				return err
 			}
 		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				if err := validateStmtDuplicates(bStmt, seen); err != nil {
+				if err := validateStmtDuplicates(sem, bStmt, seen); err != nil {
 					return err
 				}
 			}
@@ -4199,10 +4206,10 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 		if !ok {
 			continue
 		}
-		// 查找 embed 註解
+		// 查找 embed 註解（經由 side-table）
 		var embedPath string
 		var embedEntry *parser.AnnotationEntry
-		for _, annot := range ls.Annotations {
+		for _, annot := range program.Sem.AnnotationsOf(ls) {
 			if annot.Key != "embed" {
 				continue
 			}
@@ -4345,12 +4352,13 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
 			// 使用複合 key：sig + "\x00" + platformKey（無平台註解則 suffix 為空）
 			// 同簽名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+			fdPlatformKeys := program.Sem.PlatformKeysOf(fd)
 			var sigKeys []string
-			if len(fd.PlatformKeys) == 0 {
+			if len(fdPlatformKeys) == 0 {
 				sigKeys = []string{sig + "\x00"}
 			} else {
-				sigKeys = make([]string, 0, len(fd.PlatformKeys))
-				for _, pk := range fd.PlatformKeys {
+				sigKeys = make([]string, 0, len(fdPlatformKeys))
+				for _, pk := range fdPlatformKeys {
 					sigKeys = append(sigKeys, sig+"\x00"+pk)
 				}
 			}
@@ -5611,12 +5619,12 @@ func ValidateDuplicateVars(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	seen := make(map[string]struct{})
 	for _, stmt := range program.Statements {
-		results = append(results, checkStmtDuplicateVars(stmt, seen)...)
+		results = append(results, checkStmtDuplicateVars(program.Sem, stmt, seen)...)
 	}
 	return results
 }
 
-func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []ValidateResult {
+func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]struct{}) []ValidateResult {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		if s.Name == nil {
@@ -5644,12 +5652,13 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 
 		// 計算複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
 		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
+		sPlatformKeys := sem.PlatformKeysOf(s)
 		var compositeKeys []string
-		if len(s.PlatformKeys) == 0 {
+		if len(sPlatformKeys) == 0 {
 			compositeKeys = []string{s.Name.Value + "\x00"}
 		} else {
-			compositeKeys = make([]string, 0, len(s.PlatformKeys))
-			for _, pk := range s.PlatformKeys {
+			compositeKeys = make([]string, 0, len(sPlatformKeys))
+			for _, pk := range sPlatformKeys {
 				compositeKeys = append(compositeKeys, s.Name.Value+"\x00"+pk)
 			}
 		}
@@ -5692,7 +5701,7 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 		if s.Body != nil {
 			bodySeen := make(map[string]struct{})
 			for _, bStmt := range s.Body.Statements {
-				results := checkStmtDuplicateVars(bStmt, bodySeen)
+				results := checkStmtDuplicateVars(sem, bStmt, bodySeen)
 				if len(results) > 0 {
 					return results
 				}
@@ -5700,7 +5709,7 @@ func checkStmtDuplicateVars(stmt parser.Statement, seen map[string]struct{}) []V
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			results := checkStmtDuplicateVars(bStmt, seen)
+			results := checkStmtDuplicateVars(sem, bStmt, seen)
 			if len(results) > 0 {
 				return results
 			}
@@ -9201,9 +9210,9 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		if !ok {
 			continue
 		}
-		// 查找 embed 註解
+		// 查找 embed 註解（經由 side-table）
 		var embedPath string
-		for _, annot := range ls.Annotations {
+		for _, annot := range program.Sem.AnnotationsOf(ls) {
 			if annot.Key != "embed" {
 				continue
 			}
@@ -9235,7 +9244,7 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		if err != nil {
 			return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
 		}
-		ls.EmbedData = data
+		program.Sem.SetEmbedData(ls, data)
 	}
 	return nil
 }

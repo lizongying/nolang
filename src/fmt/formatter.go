@@ -18,9 +18,10 @@ func NewFormatter() *Formatter {
 type formatter struct {
 	buf         strings.Builder
 	indent      int
-	sourceLines []string // original source lines (for blank line detection)
-	column      int      // current output column (0-based)
-	stringAlign int      // alignment column for multi-line string concat continuation lines
+	sourceLines []string                // original source lines (for blank line detection)
+	column      int                     // current output column (0-based)
+	stringAlign int                     // alignment column for multi-line string concat continuation lines
+	sem         *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
 }
 
 func (f *formatter) writeIndent() {
@@ -394,7 +395,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 
 	// Output attached annotations (e.g. #{mac-arm64}, #{linux-amd64}) before the statement.
 	// These are platform annotations or generic annotations attached by the parser.
-	if anns := attachedAnnotations(stmt); len(anns) > 0 {
+	if anns := f.attachedAnnotations(stmt); len(anns) > 0 {
 		f.write("#{")
 		for i, e := range anns {
 			if i > 0 {
@@ -1864,6 +1865,7 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 	sourceLines := strings.Split(code, "\n")
 	f := &formatter{
 		sourceLines: sourceLines,
+		sem:         program.Sem,
 	}
 	f.formatProgram(program)
 
@@ -1934,7 +1936,7 @@ func (f *formatter) formatExternStatement(s *parser.ExternStatement) {
 	// 輸出 #{c} 或 #{c, extra=...} 格式
 	f.write("#{")
 	f.write(s.Lang)
-	for _, a := range s.Annotations {
+	for _, a := range f.sem.AnnotationsOf(s) {
 		f.write(", ")
 		f.write(a.String())
 	}
@@ -1982,17 +1984,12 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) {
 }
 
 // attachedAnnotations returns annotations attached to a statement by the parser
-// (e.g. platform annotations #{mac-arm64}, #{linux-amd64} attached via attachAnnotations).
-func attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		return s.Annotations
-	case *parser.FunctionDefinition:
-		return s.Annotations
-	case *parser.StructDefinition:
-		return s.Annotations
-	case *parser.ExpressionStatement:
-		return s.Annotations
+// (e.g. platform annotations #{mac-arm64}, #{linux-amd64} attached via attachAnnotations),
+// read from the semantic side-table.
+func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
+	switch stmt.(type) {
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+		return f.sem.AnnotationsOf(stmt)
 	}
 	return nil
 }

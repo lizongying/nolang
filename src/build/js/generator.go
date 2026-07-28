@@ -121,7 +121,7 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 	}
 
 	// 1. 平台過濾
-	stmts := filterByPlatform(program.Statements, g.targetGoos, g.targetGoarch)
+	stmts := filterByPlatform(program.Sem, program.Statements, g.targetGoos, g.targetGoarch)
 
 	// 1b. 收集方法定義（key = receiver type name），供 generateStructDefinition 在 class body 內發射。
 	for _, stmt := range stmts {
@@ -210,17 +210,11 @@ const browserPrelude = `// Nolang browser prelude
 })();
 `
 
-// stmtAnnotations 從敘述中抽取平台註解。
-func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		return s.Annotations
-	case *parser.FunctionDefinition:
-		return s.Annotations
-	case *parser.StructDefinition:
-		return s.Annotations
-	case *parser.ExpressionStatement:
-		return s.Annotations
+// stmtAnnotations 從敘述中抽取平台註解（經由 side-table）。
+func stmtAnnotations(sem *parser.SemanticContext, stmt parser.Statement) []*parser.AnnotationEntry {
+	switch stmt.(type) {
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+		return sem.AnnotationsOf(stmt)
 	}
 	return nil
 }
@@ -254,10 +248,10 @@ func matchesPlatform(annotations []*parser.AnnotationEntry, goos, goarch string)
 }
 
 // filterByPlatform 移除平台註解不匹配目標的敘述。
-func filterByPlatform(stmts []parser.Statement, goos, goarch string) []parser.Statement {
+func filterByPlatform(sem *parser.SemanticContext, stmts []parser.Statement, goos, goarch string) []parser.Statement {
 	filtered := make([]parser.Statement, 0, len(stmts))
 	for _, stmt := range stmts {
-		if matchesPlatform(stmtAnnotations(stmt), goos, goarch) {
+		if matchesPlatform(stmtAnnotations(sem, stmt), goos, goarch) {
 			filtered = append(filtered, stmt)
 		}
 	}

@@ -26,7 +26,7 @@ O-EXCL = 1024
 		}
 
 		// 過濾到 windows/arm64 — 應保留 win-arm64 變體
-		filtered := FilterByPlatform(prog.Statements, "windows", "arm64")
+		filtered := FilterByPlatform(prog.Sem, prog.Statements, "windows", "arm64")
 		if len(filtered) != 1 {
 			t.Fatalf("expected 1 statement for windows/arm64, got %d", len(filtered))
 		}
@@ -40,7 +40,7 @@ O-EXCL = 1024
 		}
 
 		// 過濾到 darwin/arm64 — 應保留 mac-arm64 變體
-		filtered = FilterByPlatform(prog.Statements, "darwin", "arm64")
+		filtered = FilterByPlatform(prog.Sem, prog.Statements, "darwin", "arm64")
 		if len(filtered) != 1 {
 			t.Fatalf("expected 1 statement for darwin/arm64, got %d", len(filtered))
 		}
@@ -91,7 +91,7 @@ O-EXCL = 1024
 			{"linux", "amd64"},
 			{"windows", "arm64"},
 		} {
-			filtered := FilterByPlatform(prog.Statements, tc.goos, tc.goarch)
+			filtered := FilterByPlatform(prog.Sem, prog.Statements, tc.goos, tc.goarch)
 			if len(filtered) != 1 {
 				t.Errorf("expected 1 statement for %s/%s, got %d", tc.goos, tc.goarch, len(filtered))
 			}

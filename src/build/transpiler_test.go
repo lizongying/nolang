@@ -337,13 +337,14 @@ func TestProcessEmbeds(t *testing.T) {
 		if err := trans.processEmbeds(prog, sourcePath); err != nil {
 			t.Fatalf("processEmbeds error: %v", err)
 		}
-		// 找到 LetStatement 並檢查 EmbedData
+		// 找到 LetStatement 並檢查 side-table 中的 EmbedData
 		for _, stmt := range prog.Statements {
 			if ls, ok := stmt.(*parser.LetStatement); ok {
-				if len(ls.EmbedData) != len(assetContent) {
-					t.Errorf("EmbedData length = %d, want %d", len(ls.EmbedData), len(assetContent))
+				embedData := prog.Sem.EmbedDataOf(ls)
+				if len(embedData) != len(assetContent) {
+					t.Errorf("EmbedData length = %d, want %d", len(embedData), len(assetContent))
 				}
-				for i, b := range ls.EmbedData {
+				for i, b := range embedData {
 					if b != assetContent[i] {
 						t.Errorf("EmbedData[%d] = %d, want %d", i, b, assetContent[i])
 					}

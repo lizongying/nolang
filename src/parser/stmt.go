@@ -824,7 +824,7 @@ func (p *Parser) parseLetStatement() Statement {
 	// 從 varDeclTypes 推斷型別。若為 map 型別 [K]V 且 RHS 是 { ... }，
 	// 走 parseMapLiteral 路徑。
 	if stmt.Type == nil && p.currentToken.Type == lexer.LBRACE {
-		if varType, ok := p.varDeclTypes[stmt.Name.Value]; ok {
+		if varType, ok := p.sem.VarTypes[stmt.Name.Value]; ok {
 			if mt := parseMapTypeString(varType, nameToken); mt != nil {
 				stmt.Type = mt
 			}
@@ -1012,7 +1012,7 @@ func (p *Parser) parseLetStatement() Statement {
 			// Struct literal: record struct type in varDeclTypes so that
 			// resolveReceiverType can resolve method calls on this variable
 			// (e.g. srv = https-server{} → srv.accept() needs varDeclTypes["srv"]).
-			if _, exists := p.varDeclTypes[stmt.Name.Value]; !exists {
+			if _, exists := p.sem.VarTypes[stmt.Name.Value]; !exists {
 				p.setVarType(stmt.Name.Value, v.Type)
 			}
 
@@ -1020,7 +1020,7 @@ func (p *Parser) parseLetStatement() Statement {
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
 			// 例外：option 型別（?type）必須始終更新，因為 match desugar 依賴它
 			// 來為 ok arm 生成正確的 it 型別窄化
-			if !p.declaredVars[stmt.Name.Value] {
+			if !p.sem.DeclaredVars[stmt.Name.Value] {
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
 					stmt.Type = markInferred(buildType(inferred, nameToken))
 					p.setVarType(stmt.Name.Value, inferred)
@@ -1036,7 +1036,7 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// 記錄已宣告的變數（用於避免重複型別推斷）
-	p.declaredVars[stmt.Name.Value] = true
+	p.sem.DeclaredVars[stmt.Name.Value] = true
 
 	return stmt
 }

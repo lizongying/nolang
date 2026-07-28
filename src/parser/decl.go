@@ -685,8 +685,8 @@ func (p *Parser) isFunctionDefinition() bool {
 
 // parseInterfaceDefinition 解析介面宣告：name { method(), method(), ... }
 func (p *Parser) parseEnumDefinition() Statement {
-	if p.enumVariantNames == nil {
-		p.enumVariantNames = make(map[string][]string)
+	if p.sem.EnumVariants == nil {
+		p.sem.EnumVariants = make(map[string][]string)
 	}
 
 	ed := &EnumDefinition{
@@ -743,7 +743,7 @@ func (p *Parser) parseEnumDefinition() Statement {
 		}
 
 		ed.Values = append(ed.Values, ev)
-		p.enumVariantNames[ed.Name] = append(p.enumVariantNames[ed.Name], variantName)
+		p.sem.EnumVariants[ed.Name] = append(p.sem.EnumVariants[ed.Name], variantName)
 	}
 
 	if p.currentToken.Type == lexer.RBRACE {
@@ -1107,9 +1107,12 @@ func (p *Parser) parseStructDefinition() Statement {
 		}
 
 		field := &StructField{
-			Token:       p.currentToken,
-			Name:        p.currentToken.Literal,
-			Annotations: fieldAnnotations,
+			Token: p.currentToken,
+			Name:  p.currentToken.Literal,
+		}
+		// 欄位級註解記錄到語義副表（side-table），不掛載到節點。
+		if len(fieldAnnotations) > 0 {
+			p.sem.SetRawAnnotations(field, fieldAnnotations)
 		}
 
 		p.nextToken() // 跳过 field name

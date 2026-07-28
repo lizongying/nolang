@@ -517,7 +517,7 @@ func TestEmbedAnnotation(t *testing.T) {
 			}
 			// 檢查 embed 註解
 			var embedPath string
-			for _, annot := range ls.Annotations {
+			for _, annot := range program.Sem.AnnotationsOf(ls) {
 				if annot.Key != "embed" {
 					continue
 				}

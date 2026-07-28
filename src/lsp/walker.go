@@ -86,7 +86,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					Doc:          extractDocComment(&s.CommentedNode),
 				}
 				// 平台變體偏好：當前開發平台變體覆蓋其他變體；平台通用宣告僅在無變體時儲存
-				if existing, exists := w.index.functions[s.Name.Value]; !exists || existing.Location.URI == "" || matchesDevPlatform(s.PlatformKeys) {
+				if existing, exists := w.index.functions[s.Name.Value]; !exists || existing.Location.URI == "" || matchesDevPlatform(w.program.Sem.PlatformKeysOf(s)) {
 					w.index.functions[s.Name.Value] = entry
 					w.index.definitions[s.Name.Value] = entry
 				}
@@ -140,7 +140,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					shouldStore = true
 				} else if existing.Location.URI == "" {
 					shouldStore = true // 覆蓋 auto-imported 條目
-				} else if matchesDevPlatform(s.PlatformKeys) {
+				} else if matchesDevPlatform(w.program.Sem.PlatformKeysOf(s)) {
 					shouldStore = true // 當前開發平台變體優先
 				}
 

@@ -106,30 +106,11 @@ func (p *Parser) parseAnnotationStatement() Statement {
 	return annotStmt
 }
 
-// attachAnnotations 將註解條目附加到宣告語句上。
+// attachAnnotations 將解析期收集的 #{...} 註解條目記錄到語義副表（side-table）。
+// 不再掛載到 AST 節點上；平台鍵/泛型參數/embed 由獨立 Resolver pass
+// （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
-	params := extractGenericParams(entries)
-	platformKeys := ExtractPlatformKeys(entries)
-	switch s := stmt.(type) {
-	case *LetStatement:
-		s.Annotations = entries
-		s.GenericParams = params
-		s.PlatformKeys = platformKeys
-	case *StructDefinition:
-		s.Annotations = entries
-		s.GenericParams = params
-		s.PlatformKeys = platformKeys
-	case *FunctionDefinition:
-		// 方法定義：從 #{generic=[K,V]} 註解提取泛型型別參數
-		s.Annotations = entries
-		for _, name := range params {
-			s.GenericParams = append(s.GenericParams, &Identifier{Value: name})
-		}
-		s.PlatformKeys = platformKeys
-	case *ExpressionStatement:
-		s.Annotations = entries
-		s.PlatformKeys = platformKeys
-	}
+	p.sem.SetRawAnnotations(stmt, entries)
 }
 
 // extractGenericParams 從註解條目中找出 generic 鍵的陣列值，提取型別參數名稱列表。
@@ -158,11 +139,14 @@ func extractGenericParams(entries []*AnnotationEntry) []string {
 // 與 parseFFIDeclaration 類似，但使用來自註解的語言名稱和額外註解。
 func (p *Parser) parseAnnotationFFIDeclaration(annotToken lexer.Token, lang string, extraAnnots []*AnnotationEntry) Statement {
 	stmt := &ExternStatement{
-		Token:       annotToken,
-		Lang:        lang,
-		Parameters:  []*Parameter{},
-		Results:     []*Parameter{},
-		Annotations: extraAnnots,
+		Token:      annotToken,
+		Lang:       lang,
+		Parameters: []*Parameter{},
+		Results:    []*Parameter{},
+	}
+	// FFI 額外註解條目記錄到語義副表（side-table），不掛載到節點。
+	if len(extraAnnots) > 0 {
+		p.sem.SetRawAnnotations(stmt, extraAnnots)
 	}
 
 	// 函式名稱（可以 _ 開頭表示私有）

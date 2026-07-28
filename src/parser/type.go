@@ -14,7 +14,7 @@ import (
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
 	if ident, ok := receiver.(*Identifier); ok {
-		if t, ok := p.varDeclTypes[ident.Value]; ok {
+		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			return strings.TrimPrefix(t, "?")
 		}
 		// self in method body: resolve via methodStructStack.
@@ -129,8 +129,8 @@ func (p *Parser) isRegisteredTypeName(name string) bool {
 			return true
 		}
 	}
-	if p.enumVariantNames != nil {
-		if _, ok := p.enumVariantNames[name]; ok {
+	if p.sem.EnumVariants != nil {
+		if _, ok := p.sem.EnumVariants[name]; ok {
 			return true
 		}
 	}

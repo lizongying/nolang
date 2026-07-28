@@ -2325,7 +2325,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			// Embed vars are emitted as statically initialized globals; skip runtime init.
-			if ls.EmbedData != nil {
+			if g.sem.EmbedDataOf(ls) != nil {
 				continue
 			}
 			// Skip LetStatements already emitted as globals, EXCEPT for:

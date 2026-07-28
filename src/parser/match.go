@@ -17,7 +17,7 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 		return false // 裸 match 不需完整分支
 	}
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.varDeclTypes[ident.Value]; ok {
+		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			return strings.HasPrefix(t, "?")
 		}
 	}
@@ -31,7 +31,7 @@ func (p *Parser) isBuiltinOption(matched Expression) bool {
 		return false
 	}
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.varDeclTypes[ident.Value]; ok {
+		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			if strings.HasPrefix(t, "?") {
 				base := t[1:]
 				switch base {

@@ -1,0 +1,230 @@
+// resolver.go — 解析与语义分离：语义副表（side-table）与 Resolver pass。
+//
+// 设计目标：parser 只产“语法 AST”（不含任何语义字段）；类型推断、注解、
+// embed、平台键等全部语义信息集中存放于 SemanticContext（side-table），由独立的
+// ResolveProgram pass 在解析之后、lowering 之前收尾计算。下游（lowering /
+// transpiler / formatter / lsp）统一通过 prog.Sem.XxxOf(node) 读取语义信息，
+// 不再直接访问 AST 节点上的语义字段。
+package parser
+
+// NodeSemantics 存放单个 AST 节点的语义信息（原分散在节点上的 Annotations /
+// PlatformKeys / EmbedData / GenericParams 字段，以及类型推断用的结果之外的
+// 节点级数据）。
+//
+// RawAnnotations 是 parser 在解析期从 #{...} 直接收集的原始註解条目；
+// ResolveProgram 据此推算出 Annotations / PlatformKeys / GenericParams /
+// EmbedData 等“成品”语义，存入同一结构。
+type NodeSemantics struct {
+	// RawAnnotations 解析期收錄的原始 #{...} 註解條目（未經篩選）。
+	RawAnnotations []*AnnotationEntry
+
+	// 以下欄位由 ResolveProgram 計算填充：
+	Annotations   []*AnnotationEntry // 過濾後的註解條目（與 RawAnnotations 相同集合，便於下游直接取用）
+	PlatformKeys  []string           // 平台註解 key（如 ["mac-arm64"]）；空 = 平台通用
+	GenericParams []string           // 泛型型別參數名（來自 #{generic=[K,V]}）
+	EmbedData     []byte             // 編譯期嵌入的文件字節（來自 #{embed=...}）
+}
+
+// SemanticContext 是解析/语义分离后的“副表”。
+//
+//  - nodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
+//  - VarTypes / EnumVariants / DeclaredVars：類型推斷結果
+//    （原 parser.varDeclTypes / enumVariantNames / declaredVars）。nolang 是單遍
+//    遞歸下降解析器，部分類型感知（如 match arm 分類、方法返回型別推斷）必須在
+//    解析當下完成；這些推斷結果統一寫入本 side-table，而非散落在 parser 私有字段，
+//    從而實現“語義結果集中存放、AST 節點零語義字段”。
+type SemanticContext struct {
+	nodeSem map[Node]*NodeSemantics
+
+	// 類型推斷結果（原 parser 私有符號表）。
+	VarTypes     map[string]string
+	EnumVariants map[string][]string
+	DeclaredVars map[string]bool
+}
+
+// NewSemanticContext 建立空語義副表。
+func NewSemanticContext() *SemanticContext {
+	return &SemanticContext{
+		nodeSem:      make(map[Node]*NodeSemantics),
+		VarTypes:     make(map[string]string),
+		EnumVariants: make(map[string][]string),
+		DeclaredVars: make(map[string]bool),
+	}
+}
+
+// Merge 將另一份語義副表合併進本表（模塊合併時使用：merged program 匯集多個
+// 模塊的 AST 節點，各節點的語義信息也必須匯集到同一張 side-table）。
+// nodeSem 以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在本表缺失時填入。
+func (s *SemanticContext) Merge(other *SemanticContext) {
+	if s == nil || other == nil {
+		return
+	}
+	if s.nodeSem == nil {
+		s.nodeSem = make(map[Node]*NodeSemantics)
+	}
+	for n, ns := range other.nodeSem {
+		if _, exists := s.nodeSem[n]; !exists {
+			s.nodeSem[n] = ns
+		}
+	}
+	for k, v := range other.VarTypes {
+		if _, exists := s.VarTypes[k]; !exists {
+			s.SetVarType(k, v)
+		}
+	}
+	for k, v := range other.EnumVariants {
+		if _, exists := s.EnumVariants[k]; !exists {
+			s.SetEnumVariants(k, v)
+		}
+	}
+	for k := range other.DeclaredVars {
+		s.SetDeclared(k)
+	}
+}
+
+// SetEmbedData 設定節點的嵌入字節（由 Resolver 的 embed 解析填入 side-table）。
+func (s *SemanticContext) SetEmbedData(n Node, data []byte) {
+	if ns, ok := s.nodeSem[n]; ok {
+		ns.EmbedData = data
+	}
+}
+
+// ---- 節點級語義（side-table）----
+
+// SetRawAnnotations 記錄某節點的原始 #{...} 註解條目（parser 解析期呼叫）。
+func (s *SemanticContext) SetRawAnnotations(n Node, entries []*AnnotationEntry) {
+	if s.nodeSem == nil {
+		s.nodeSem = make(map[Node]*NodeSemantics)
+	}
+	ns, ok := s.nodeSem[n]
+	if !ok {
+		ns = &NodeSemantics{}
+		s.nodeSem[n] = ns
+	}
+	ns.RawAnnotations = entries
+}
+
+// HasSemantics 報告該節點是否帶有任意語義信息。
+func (s *SemanticContext) HasSemantics(n Node) bool {
+	if s == nil {
+		return false
+	}
+	_, ok := s.nodeSem[n]
+	return ok
+}
+
+// AnnotationsOf 返回節點的註解條目（無則 nil）。nil receiver 安全。
+func (s *SemanticContext) AnnotationsOf(n Node) []*AnnotationEntry {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.Annotations
+	}
+	return nil
+}
+
+// PlatformKeysOf 返回節點的平台註解 key（無則 nil）。nil receiver 安全。
+func (s *SemanticContext) PlatformKeysOf(n Node) []string {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.PlatformKeys
+	}
+	return nil
+}
+
+// GenericParamsOf 返回節點的泛型參數名（無則 nil）。nil receiver 安全。
+func (s *SemanticContext) GenericParamsOf(n Node) []string {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.GenericParams
+	}
+	return nil
+}
+
+// EmbedDataOf 返回節點的嵌入字節（無則 nil）。nil receiver 安全。
+func (s *SemanticContext) EmbedDataOf(n Node) []byte {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.EmbedData
+	}
+	return nil
+}
+
+// ---- 類型推斷結果（side-table）----
+
+// SetVarType 記錄變數宣告型別（含 ? 前綴表示 Option）。
+func (s *SemanticContext) SetVarType(name, typ string) {
+	if s.VarTypes == nil {
+		s.VarTypes = make(map[string]string)
+	}
+	s.VarTypes[name] = typ
+}
+
+// VarType 查詢變數型別。
+func (s *SemanticContext) VarType(name string) (string, bool) {
+	t, ok := s.VarTypes[name]
+	return t, ok
+}
+
+// SetEnumVariants 記錄枚舉型別的變體名列表。
+func (s *SemanticContext) SetEnumVariants(name string, variants []string) {
+	if s.EnumVariants == nil {
+		s.EnumVariants = make(map[string][]string)
+	}
+	s.EnumVariants[name] = variants
+}
+
+// EnumVariantsOf 查詢枚舉變體名列表。
+func (s *SemanticContext) EnumVariantsOf(name string) ([]string, bool) {
+	v, ok := s.EnumVariants[name]
+	return v, ok
+}
+
+// SetDeclared 標記變數已宣告。
+func (s *SemanticContext) SetDeclared(name string) {
+	if s.DeclaredVars == nil {
+		s.DeclaredVars = make(map[string]bool)
+	}
+	s.DeclaredVars[name] = true
+}
+
+// IsDeclared 報告變數是否已宣告。
+func (s *SemanticContext) IsDeclared(name string) bool {
+	return s.DeclaredVars[name]
+}
+
+// ---- Resolver pass ----
+
+// ResolveProgram 是“解析/语义分离”的独立语义 pass：在解析之后、lowering 之前执行。
+// 它对每个带原始註解的節點收尾計算平台键与泛型参数，写入 side-table。
+// 类型推断结果由 parser 增量写入 VarTypes/EnumVariants，此处无需重复计算。
+// embed 文件读取（需真实文件系统与包根目录）由 ResolveEmbeds 在 transpiler 阶段执行。
+func ResolveProgram(prog *Program) {
+	if prog == nil || prog.Sem == nil {
+		return
+	}
+	sem := prog.Sem
+	for n, ns := range sem.nodeSem {
+		entries := ns.RawAnnotations
+		ns.Annotations = entries
+		ns.PlatformKeys = ExtractPlatformKeys(entries)
+		ns.GenericParams = extractGenericParams(entries)
+		sem.nodeSem[n] = ns
+
+		// 註解派生的函數泛型（#{generic=[K,V]}）物化回 FuncSignature.GenericParams：
+		// 單態化管線（monomorphizeGenerics/cloneAndSubstitute）以該字段為具現化狀態
+		// （具現化後清空），保留與顯式 <K,V> 泛型一致的處理路徑。
+		if fd, ok := n.(*FunctionDefinition); ok {
+			for _, name := range ns.GenericParams {
+				fd.GenericParams = append(fd.GenericParams, &Identifier{Value: name})
+			}
+		}
+	}
+}

@@ -210,6 +210,7 @@ type Generator struct {
 	*funcState // 嵌入式指標：字段提升使 g.funcVars 等存取自動解析為 g.funcState.funcVars
 
 	// === 模組級狀態（跨函數保持，不隨 resetFuncState 重置）===
+	sem                    *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
 	indentLevel            int
 	fmtStrIdx              int
 	stringIdx              int
@@ -659,17 +660,11 @@ func targetDatalayoutAndTriple(goos, goarch string) (layout, triple string) {
 	return "e-m:o-i64:64-i128:128-n32:64-S128", "arm64-apple-macosx15.0.0"
 }
 
-// stmtAnnotations extracts platform annotations from a statement.
-func stmtAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		return s.Annotations
-	case *parser.FunctionDefinition:
-		return s.Annotations
-	case *parser.StructDefinition:
-		return s.Annotations
-	case *parser.ExpressionStatement:
-		return s.Annotations
+// stmtAnnotations extracts platform annotations from a statement (via side-table).
+func stmtAnnotations(sem *parser.SemanticContext, stmt parser.Statement) []*parser.AnnotationEntry {
+	switch stmt.(type) {
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+		return sem.AnnotationsOf(stmt)
 	}
 	return nil
 }
@@ -708,10 +703,10 @@ func matchesPlatform(annotations []*parser.AnnotationEntry, goos, goarch string)
 // FilterByPlatform removes statements whose platform annotations don't match
 // the target (goos, goarch). Exported so the transpiler can apply the filter
 // before code generation.
-func FilterByPlatform(stmts []parser.Statement, goos, goarch string) []parser.Statement {
+func FilterByPlatform(sem *parser.SemanticContext, stmts []parser.Statement, goos, goarch string) []parser.Statement {
 	filtered := make([]parser.Statement, 0, len(stmts))
 	for _, stmt := range stmts {
-		if matchesPlatform(stmtAnnotations(stmt), goos, goarch) {
+		if matchesPlatform(stmtAnnotations(sem, stmt), goos, goarch) {
 			filtered = append(filtered, stmt)
 		}
 	}
@@ -814,7 +809,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 	if goos == "" || goarch == "" {
 		goos, goarch = runtime.GOOS, runtime.GOARCH
 	}
-	program.Statements = FilterByPlatform(program.Statements, goos, goarch)
+	g.sem = program.Sem
+	program.Statements = FilterByPlatform(program.Sem, program.Statements, goos, goarch)
 
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -1362,9 +1358,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			// 處理 #{embed=...} 變數：發出私有常量 + 初始化的 %vec 全局
-			if ls.EmbedData != nil {
+			if data := g.sem.EmbedDataOf(ls); data != nil {
 				name := ls.Name.Value
-				data := ls.EmbedData
 				n := len(data)
 
 				// 發出私有常量數組：@.embed.<NAME> = private constant [N x i8] [c0, c1, ...]
