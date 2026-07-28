@@ -5,8 +5,11 @@ import (
 )
 
 // Lexer 在 New() 時一次性預掃描全部 token 到 allTokens，
-// 之後 NextToken/LookAhead/PeekToken 皆為 O(1) 陣列索引存取。
-// 這消除了原始 LookAhead 的 O(n²) 詞法重算問題。
+// 之後僅暴露 NextToken() 作為「token 流」產出介面（O(1) 陣列索引存取）。
+// 這消除了原始 LookAhead 的 O(n²) 詞法重算問題，也讓 parser 能以
+// 定長 ring buffer 做前瞻與回溯，而不必向 lexer 回寫任何狀態。
+// 舊有的 LookAhead/PeekToken 已移除；SaveState/RestoreState 僅保留供
+// lexer 內部（raw string 續行掃描）自用，parser 不再呼叫。
 type Lexer struct {
 	// 預掃描結果（含 COMMENT）
 	allTokens []Token
@@ -75,28 +78,6 @@ func (l *Lexer) readChar() {
 		l.line++
 		l.column = 0
 	}
-}
-
-// LookAhead 傳回第 n 個後續非 COMMENT token（不消耗，0=下一個）。
-// 預掃描方案：直接從 allTokens 陣列索引存取，接近 O(1)。
-func (l *Lexer) LookAhead(n int) Token {
-	idx := l.pos
-	count := 0
-	for idx < len(l.allTokens) {
-		t := l.allTokens[idx].Type
-		if t != COMMENT {
-			if count == n {
-				return l.allTokens[idx]
-			}
-			count++
-		}
-		idx++
-	}
-	// 返回最後的 EOF token
-	if len(l.allTokens) > 0 {
-		return l.allTokens[len(l.allTokens)-1]
-	}
-	return Token{Type: EOF}
 }
 
 func (l *Lexer) peekChar() byte {
@@ -518,6 +499,19 @@ func (l *Lexer) NextToken() Token {
 	return tok
 }
 
+// TokenAt 以絕對索引隻讀存取預掃描的 token 流，不消費、不改變 lexer 狀態。
+// 越界時返回最後一個 token（EOF），與舊 LookAhead 的 EOF 回退語義一致。
+// parser 的 ring buffer 前瞻即基於此方法，lexer 不再需要被回寫狀態。
+func (l *Lexer) TokenAt(idx int) Token {
+	if idx < 0 || idx >= len(l.allTokens) {
+		if n := len(l.allTokens); n > 0 {
+			return l.allTokens[n-1]
+		}
+		return Token{Type: EOF}
+	}
+	return l.allTokens[idx]
+}
+
 // scanToken 是預掃描階段使用的內部方法，執行真正的增量詞法分析。
 // New() 會重複呼叫此方法直到 EOF，將所有 token 存入 allTokens。
 // 之後 NextToken/LookAhead/PeekToken 皆從 allTokens 陣列索引存取，為 O(1)。
@@ -935,21 +929,6 @@ func (l *Lexer) scanToken() (tok Token) {
 
 // PeekToken 預覽下一個非 COMMENT token（不消耗，O(1) 陣列索引存取）。
 // 注意：此方法不更新 prevTokenType，因為它只是窺視而不真正消費 token。
-func (l *Lexer) PeekToken() Token {
-	idx := l.pos
-	for idx < len(l.allTokens) {
-		tok := l.allTokens[idx]
-		if tok.Type != COMMENT {
-			return tok
-		}
-		idx++
-	}
-	if len(l.allTokens) > 0 {
-		return l.allTokens[len(l.allTokens)-1]
-	}
-	return Token{Type: EOF}
-}
-
 // charLits 是預計算的 [256]string 查找表，用於替代 charLits[l.ch] 的逐次分配。
 // 對單字符運算符/標點 case（如 '('、')'、'{' 等），tok.Literal = charLits[l.ch]
 // 為 O(1) 陣列索引存取，零堆分配，比 string(byte) 快約 10x。
