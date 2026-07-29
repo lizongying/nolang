@@ -1,0 +1,8 @@
+; test-format-vso.no — minimal repro for vso.tmp type mismatch
+; Tests: size-str = format('{size:8d}') in a function
+
+test-fmt = () {
+    size = 42
+    size-str = format('{size:8d}')
+    print(size-str)
+}

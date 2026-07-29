@@ -2632,6 +2632,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	voidSingleTmp := ""
 	voidSingleSp := ""
 	if voidSingleOutput {
+		fmt.Fprintf(os.Stderr, "[DEBUG-VOIDSINGLE] voidSingleOutput triggered for fnName=%s voidSingleOutputType=%s\n", fnName, voidSingleOutputType)
 		g.tmpIdx++
 		voidSingleTmp = fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
 		if sb != nil {

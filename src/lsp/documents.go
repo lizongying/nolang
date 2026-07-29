@@ -2,10 +2,12 @@ package lsp
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/builtin"
@@ -17,13 +19,59 @@ type DocumentManager struct {
 	documents map[string]*TextDocument
 	indices   map[string]*SymbolIndex
 	mu        sync.RWMutex
+	// moduleCache caches parsed module files (std / local / dependency) keyed
+	// by absolute path. std modules rarely change within a session, so this
+	// avoids re-parsing the entire std library on every keystroke.
+	moduleCache map[string]*moduleCacheEntry
+	moduleMu    sync.Mutex
+}
+
+// moduleCacheEntry holds a parsed module program together with the file's
+// modtime and source text at parse time, so the entry can be invalidated when
+// the file changes on disk.
+type moduleCacheEntry struct {
+	modTime time.Time
+	prog    *parser.Program
+	source  string
 }
 
 func NewDocumentManager() *DocumentManager {
 	return &DocumentManager{
-		documents: make(map[string]*TextDocument),
-		indices:   make(map[string]*SymbolIndex),
+		documents:   make(map[string]*TextDocument),
+		indices:     make(map[string]*SymbolIndex),
+		moduleCache: make(map[string]*moduleCacheEntry),
 	}
+}
+
+// parseModuleFile reads and parses a module .no file, caching the result by
+// absolute path + modtime. This eliminates the per-keystroke re-parse of the
+// whole std library that go-to-definition indexing previously performed.
+func (m *DocumentManager) parseModuleFile(modFilePath string) (*parser.Program, string, error) {
+	info, err := os.Stat(modFilePath)
+	if err != nil {
+		return nil, "", err
+	}
+	source, err := os.ReadFile(modFilePath)
+	if err != nil {
+		return nil, "", err
+	}
+	m.moduleMu.Lock()
+	if e, ok := m.moduleCache[modFilePath]; ok && e.modTime.Equal(info.ModTime()) && e.source == string(source) {
+		m.moduleMu.Unlock()
+		return e.prog, e.source, nil
+	}
+	m.moduleMu.Unlock()
+
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil, "", fmt.Errorf("parse errors in module %s", modFilePath)
+	}
+	m.moduleMu.Lock()
+	m.moduleCache[modFilePath] = &moduleCacheEntry{modTime: info.ModTime(), prog: prog, source: string(source)}
+	m.moduleMu.Unlock()
+	return prog, string(source), nil
 }
 
 func (m *DocumentManager) OpenDocument(uri string, text string) (*TextDocument, error) {
@@ -150,15 +198,24 @@ func (m *DocumentManager) GetAllDocuments() map[string]*TextDocument {
 }
 
 func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	// Snapshot the document's text and version under a brief read lock.
+	// All heavy work (lex/parse, file IO, indexing) runs OUTSIDE the lock so
+	// that concurrent readers (GetDocument/GetIndex) and other parses are not
+	// blocked while a single keystroke re-parses the std library.
+	m.mu.RLock()
 	doc, ok := m.documents[uri]
+	var text string
+	var version int
+	if ok {
+		text = doc.Text
+		version = doc.Item.Version
+	}
+	m.mu.RUnlock()
 	if !ok {
 		return nil, nil, ErrDocumentNotFound
 	}
 
-	l := lexer.New(doc.Text)
+	l := lexer.New(text)
 	p := parser.New(l)
 	p.Filename = filenameFromURI(uri)
 	// Inject std module function signatures and struct field types so that
@@ -169,13 +226,9 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	ast := p.ParseProgram()
 
 	errs := p.Errors()
-	if len(errs) == 0 {
-		doc.AST = ast
-	}
-	doc.Dirty = len(errs) > 0
 
 	// Rebuild symbol index
-	index := NewSymbolIndex(uri, doc.Item.Version)
+	index := NewSymbolIndex(uri, version)
 	index.AddBuiltinSymbols()
 
 	// Pre-populate auto-imported module exports (e.g., pi/e from std/math)
@@ -224,20 +277,16 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 			}
 		}
 
-		// Index auto-imported std module files with location info for go-to-definition
+		// Index auto-imported std module files with location info for go-to-definition.
+		// Module parses are cached by path+modtime (see parseModuleFile), so the
+		// std library is only parsed once per session, not on every keystroke.
 		for _, info := range nbuild.GetStdModules() {
 			modFilePath := nbuild.ResolveStdModulePath(info.ShortPath)
 			if modFilePath == "" {
 				continue
 			}
-			source, err := os.ReadFile(modFilePath)
-			if err != nil {
-				continue
-			}
-			l := lexer.New(string(source))
-			p := parser.New(l)
-			modProg := p.ParseProgram()
-			if len(p.Errors()) > 0 {
+			modProg, source, err := m.parseModuleFile(modFilePath)
+			if err != nil || modProg == nil {
 				continue
 			}
 			if absPath, err := filepath.Abs(modFilePath); err == nil {
@@ -261,20 +310,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				if _, err := os.Stat(modFilePath); err != nil {
 					continue
 				}
-				source, err := os.ReadFile(modFilePath)
-				if err != nil {
-					continue
-				}
-				l := lexer.New(string(source))
-				p := parser.New(l)
-				modProg := p.ParseProgram()
-				if len(p.Errors()) > 0 {
-					continue
-				}
-				modURI := "file://" + modFilePath
-				for _, ms := range modProg.Statements {
-					m.indexModuleStatement(index, ms, modURI)
-				}
+			modProg, _, err := m.parseModuleFile(modFilePath)
+			if err != nil || modProg == nil {
+				continue
+			}
+			modURI := "file://" + modFilePath
+			for _, ms := range modProg.Statements {
+				m.indexModuleStatement(index, ms, modURI)
+			}
 			}
 		}
 
@@ -291,20 +334,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				if _, err := os.Stat(modFilePath); err != nil {
 					continue
 				}
-				source, err := os.ReadFile(modFilePath)
-				if err != nil {
-					continue
-				}
-				l := lexer.New(string(source))
-				p := parser.New(l)
-				modProg := p.ParseProgram()
-				if len(p.Errors()) > 0 {
-					continue
-				}
-				modURI := "file://" + modFilePath
-				for _, ms := range modProg.Statements {
-					m.indexModuleStatement(index, ms, modURI)
-				}
+			modProg, _, err := m.parseModuleFile(modFilePath)
+			if err != nil || modProg == nil {
+				continue
+			}
+			modURI := "file://" + modFilePath
+			for _, ms := range modProg.Statements {
+				m.indexModuleStatement(index, ms, modURI)
+			}
 			}
 		}
 
@@ -314,21 +351,15 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		for _, stmt := range ast.Statements {
 			if export, ok := stmt.(*parser.ExportStatement); ok && export.Path != "" && export.Function != "" {
 				relPath := strings.TrimPrefix(export.Path, "/")
-				targetFilePath := m.resolveLocalModuleFile(relPath, uri)
-				if _, err := os.Stat(targetFilePath); err != nil {
-					continue
-				}
-				source, err := os.ReadFile(targetFilePath)
-				if err != nil {
-					continue
-				}
-				l := lexer.New(string(source))
-				p := parser.New(l)
-				targetProg := p.ParseProgram()
-				if len(p.Errors()) > 0 {
-					continue
-				}
-				targetURI := "file://" + targetFilePath
+			targetFilePath := m.resolveLocalModuleFile(relPath, uri)
+			if _, err := os.Stat(targetFilePath); err != nil {
+				continue
+			}
+			targetProg, _, err := m.parseModuleFile(targetFilePath)
+			if err != nil || targetProg == nil {
+				continue
+			}
+			targetURI := "file://" + targetFilePath
 
 				for _, ts := range targetProg.Statements {
 					var name string
@@ -403,10 +434,20 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 			}
 		}
 
-		walker := NewASTWalker(index, doc, ast)
+		walker := NewASTWalker(index, &TextDocument{Item: TextDocumentItem{URI: uri}}, ast)
 		walker.Walk()
 	}
+	// Publish results under a brief write lock. We only touch the maps here;
+	// the heavy parse/index work above ran without holding m.mu.
+	m.mu.Lock()
+	if d, ok := m.documents[uri]; ok {
+		if len(errs) == 0 {
+			d.AST = ast
+		}
+		d.Dirty = len(errs) > 0
+	}
 	m.indices[uri] = index
+	m.mu.Unlock()
 
 	return ast, errs, nil
 }

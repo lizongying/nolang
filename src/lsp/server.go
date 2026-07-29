@@ -805,8 +805,15 @@ func getWordBeforePosition(text string, position Position) string {
 // enforce the project's trailing-newline rule. Callers
 // (handleTextDocumentFormatting / handleTextDocumentWillSaveWaitUntil) already
 // bail out on parse errors, so unparseable input is never rewritten here.
-func formatNolangCode(content string) string {
-	return nolangfmt.FormatFile(content)
+// formatNolangCode reformats a document. It reuses the AST the document manager
+// already parsed for indexing (doc.AST) instead of re-lexing and re-parsing the
+// whole file on every format/save. When the AST is unavailable (e.g. the last
+// parse had errors), it falls back to parsing the text itself.
+func formatNolangCode(doc *TextDocument) string {
+	if doc.AST != nil {
+		return nolangfmt.FormatProgram(doc.AST, doc.Text)
+	}
+	return nolangfmt.FormatFile(doc.Text)
 }
 
 func computeTextEdits(original, formatted string) []TextEdit {
@@ -842,7 +849,7 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	if s.hasParseErrors(doc.Text) {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc.Text)
+	formatted := formatNolangCode(doc)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
@@ -861,7 +868,7 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	if s.hasParseErrors(doc.Text) {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc.Text)
+	formatted := formatNolangCode(doc)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil

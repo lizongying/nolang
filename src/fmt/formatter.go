@@ -1858,6 +1858,15 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 		return "", false, p.Errors()
 	}
 
+	return formatProgramAST(program, code)
+}
+
+// formatProgramAST formats an already-parsed program. The original source is
+// required so the formatter can preserve blank lines between statements and
+// comments (see hasBlankLineBetween). Callers that already hold a *parser.Program
+// (e.g. the LSP, which parses each document for indexing) should parse once and
+// call this instead of re-lexing and re-parsing the source.
+func formatProgramAST(program *parser.Program, code string) (out string, ok bool, errs []string) {
 	if program == nil || len(program.Statements) == 0 {
 		return "", false, nil
 	}
@@ -1922,6 +1931,20 @@ func FormatFileWithErrors(code string) (out string, errs []string) {
 		return code, perrs
 	}
 	return ensureTrailingNewline(o), nil
+}
+
+// FormatProgram formats an already-parsed program. The original source must be
+// supplied so blank lines between statements/comments are preserved. Callers
+// that already parsed the source (e.g. the LSP, which parses each document for
+// indexing) should use this instead of FormatFile to avoid re-lexing and
+// re-parsing. When the program is nil or empty, the original source is returned
+// unchanged.
+func FormatProgram(program *parser.Program, source string) string {
+	out, ok, _ := formatProgramAST(program, source)
+	if !ok {
+		return source
+	}
+	return ensureTrailingNewline(out)
 }
 
 func (f *Formatter) Format(code string) string {
