@@ -20,7 +20,7 @@ d.handle == 0 -> {
 print('ok: open database')
 
 ; 測試 2: 建表
-r result = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
+r = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
 print('ok: create table')
 
 ; 測試 3: 插入資料
@@ -68,7 +68,7 @@ rs.close()
 s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
 s.bind-str(1, 'Bob')
 s.bind-int(2, 25)
-r2 result = s.exec()
+r2 = s.exec()
 {
     r2.affected == 1 -> print('ok: prepared insert')
     -> print('fail: prepared insert')

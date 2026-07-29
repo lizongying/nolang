@@ -6,7 +6,7 @@
 ; 可用 nc -l 8080 作為 echo server 手動測試。
 
 ; 測試 1: connect
-c client = client{}
+c client.client =  {}
 ok = c.connect('127.0.0.1', 8080)
 {
     ok -> print('ok: connect')
@@ -69,7 +69,7 @@ c2: {
     nil -> print('fail: net-client')
     -> {
         print('ok: net-client')
-        
+
         .close()
     }
 }

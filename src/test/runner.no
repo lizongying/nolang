@@ -3,34 +3,34 @@
 ; 提供測試計數與結果彙總，簡化測試檔案結構。
 ;
 ; 用法：
-;   use /test/runner
-;   use /test/assert
+;   # github.com/lizongying/nolang/test/runner
+;   # github.com/lizongying/nolang/test/assert
 ;
 ;   passed = 0
 ;   failed = 0
 ;   ok = assert-eq(1, 1, 'test 1')
-;   ok == false -> failed = test-fail(failed)
-;   -> passed = test-pass(passed)
-;   test-summary(passed, failed)
-;   failed > 0 -> return 1
-;   return 0
+;   ok == false -> failed = runner.fail(failed)
+;   -> passed = runner.pass(passed)
+;   runner.summary(passed, failed)
+;   failed > 0 -> 1
+;   0
 
 ; ═══════════════════════════════════════════════
 ; 輔助函數
 ; ═══════════════════════════════════════════════
 
-; test-pass: 記錄一筆測試通過
-test-pass = (passed i64) (new-passed i64) {
+; pass: 記錄一筆測試通過
+pass = (passed i64) (new-passed i64) {
     new-passed = passed + 1
 }
 
-; test-fail: 記錄一筆測試失敗
-test-fail = (failed i64) (new-failed i64) {
+; fail: 記錄一筆測試失敗
+fail = (failed i64) (new-failed i64) {
     new-failed = failed + 1
 }
 
-; test-summary: 輸出測試結果彙總
-test-summary = (passed i64, failed i64) (total i64) {
+; summary: 輸出測試結果彙總
+summary = (passed i64, failed i64) (total i64) {
     print('--- Test Summary ---')
     print('passed:', passed)
     print('failed:', failed)
@@ -42,8 +42,8 @@ test-summary = (passed i64, failed i64) (total i64) {
     }
 }
 
-; test-cb: 具名函式型別（無參無返回）
-test-cb = ()
+; cb: 具名函式型別（無參無返回）
+cb = ()
 
 ; test-run: 執行一個無參數回呼函式並計數
 ; 印出 'RUN:' + name，呼叫 cb()，若執行完成則 passed=1, failed=0

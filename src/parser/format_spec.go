@@ -59,6 +59,19 @@ func ParseFormatString(s string) ([]FormatSegment, error) {
 			}
 			// 替换字段开始：先输出已累积的字面文字（即使为空）
 			flush()
+			// 检查后续是否有匹配的 '}'；若无则视为普通字面 '{'
+			hasClose := false
+			for j := i + 1; j < n; j++ {
+				if s[j] == '}' {
+					hasClose = true
+					break
+				}
+			}
+			if !hasClose {
+				segments = append(segments, FormatSegment{Literal: "{"})
+				i++
+				continue
+			}
 			field, next, err := parseField(s, i)
 			if err != nil {
 				return nil, err
@@ -73,8 +86,9 @@ func ParseFormatString(s string) ([]FormatSegment, error) {
 				i += 2
 				continue
 			}
-			// 未匹配的 }
-			return nil, fmt.Errorf("格式字符串位置 %d: 未匹配的 '}'", i)
+			// 未匹配的 '}'：视为普通字面字符，不报错
+			buf = append(buf, '}')
+			i++
 		default:
 			buf = append(buf, c)
 			i++
@@ -265,7 +279,8 @@ func ParseFormatSpec(spec string) (*FormatSpec, error) {
 }
 
 // isValidIdentifier 校验 Nolang 标识符：
-// 首字符为字母（含 Unicode 字母）或下划线，后续字符为字母、数字、下划线或连字符。
+// 首字符为字母（含 Unicode 字母）或下划线，后续字符为字母、数字、下划线、连字符或点号。
+// 点号用于格式字串中的點表達式欄位名（如 {content.len}）。
 func isValidIdentifier(name string) bool {
 	if len(name) == 0 {
 		return false
@@ -276,7 +291,7 @@ func isValidIdentifier(name string) bool {
 				return false
 			}
 		} else {
-			if r != '_' && r != '-' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			if r != '_' && r != '-' && r != '.' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 				return false
 			}
 		}

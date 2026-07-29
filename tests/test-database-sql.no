@@ -12,7 +12,7 @@ d.handle == 0 -> {
 print('ok: open database')
 
 ; 測試 2: 建表
-r result = d.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age REAL)')
+r = d.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age REAL)')
 print('ok: create table')
 
 ; 測試 3: 插入資料
@@ -64,7 +64,7 @@ s.handle == 0 -> {
 }
 s.bind-str(1, 'Bob')
 s.bind-int(2, 25)
-r2 result = s.exec()
+r2 = s.exec()
 {
     r2.affected == 1 -> print('ok: prepared insert')
     -> print('fail: prepared insert')

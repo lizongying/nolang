@@ -1073,6 +1073,29 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// treat the current arm as having an empty body (fallthrough).
 			if isOptionPatternStart(p) {
 				// Empty body — next token is a new arm pattern
+			} else if p.currentToken.Type == lexer.LBRACE {
+				// Block classified as blockMatch but parseStatement failed (e.g. {1} has no ->).
+				// Fall back to parseBlockStatement, mirroring parseBareMatchExpr logic.
+				armState := p.saveState()
+				p.ctx.push(CTX_MATCH_ARM)
+				doc := p.collectDocComments()
+				stmt := p.parseStatement()
+				p.ctx.pop()
+				if stmt != nil {
+					setDoc(stmt, doc)
+					p.attachInlineComment(stmt)
+					bodyStmts = append(bodyStmts, stmt)
+				} else {
+					p.restoreState(armState)
+					ma.isBlockBody = true
+					parsedBlock = p.parseBlockStatement()
+					if parsedBlock != nil {
+						bodyStmts = parsedBlock.Statements
+					}
+				}
+				if p.currentToken.Type == lexer.RBRACE {
+					p.nextToken()
+				}
 			} else {
 				p.ctx.push(CTX_MATCH_ARM)
 				doc := p.collectDocComments()

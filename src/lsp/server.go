@@ -328,6 +328,126 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
+			// Print format string validation
+			printFmtErrs := nbuild.ValidatePrintFormat(prog)
+			for _, u := range printFmtErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-format-checker",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Cross-module type prefix validation
+			crossModuleErrs := nbuild.ValidateCrossModuleTypeRefs(prog)
+			for _, u := range crossModuleErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-type-checker",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Uppercase hex literal hints
+			hexCaseHints := nbuild.ValidateHexCase(prog)
+			for _, u := range hexCaseHints {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Async naming warnings
+			asyncNamingWarnings := nbuild.ValidateAsyncNaming(prog)
+			for _, w := range asyncNamingWarnings {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
+						End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
+					},
+					Severity: DiagnosticSeverityWarning,
+					Source:   "nolang-lint",
+					Message:  w.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Uninitialized nullable output parameters
+			uninitErrs := nbuild.ValidateUninitOutputParams(prog)
+			for _, u := range uninitErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-type-checker",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Embed annotation validation
+			embedErrs := nbuild.ValidateEmbedAnnotations(prog, docPath)
+			for _, e := range embedErrs {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
+						End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  e.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Interface implementation warnings
+			ifaceWarnings := nbuild.ValidateInterfaceImplementation(prog)
+			for _, u := range ifaceWarnings {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityWarning,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
+			// Redundant type annotation hints
+			redundantTypeHints := nbuild.ValidateRedundantTypeAnnotation(prog)
+			for _, u := range redundantTypeHints {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityHint,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
+			}
+
 			// Emit parser warnings (e.g., unreachable enum else arm) as hints
 			for _, warnMsg := range prog.Warnings {
 				diagnostic := s.parseWarningToDiagnostic(warnMsg)

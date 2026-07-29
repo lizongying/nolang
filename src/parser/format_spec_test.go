@@ -179,18 +179,24 @@ func TestParseFormatString(t *testing.T) {
 	})
 
 	t.Run("unmatched_open_brace", func(t *testing.T) {
-		// '{id' → error unmatched '{'
-		_, err := ParseFormatString("{id")
-		if err == nil {
-			t.Fatalf("expected error for unmatched '{'")
+		// '{id' → no error, '{' treated as literal
+		segs, err := ParseFormatString("{id")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(segs) == 0 || segs[0].Literal != "{id" {
+			t.Errorf("expected literal '{id', got %+v", segs)
 		}
 	})
 
 	t.Run("unmatched_close_brace", func(t *testing.T) {
-		// 'id}' → error unmatched '}'
-		_, err := ParseFormatString("id}")
-		if err == nil {
-			t.Fatalf("expected error for unmatched '}'")
+		// 'id}' → no error, '}' treated as literal
+		segs, err := ParseFormatString("id}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(segs) == 0 || segs[0].Literal != "id}" {
+			t.Errorf("expected literal 'id}', got %+v", segs)
 		}
 	})
 

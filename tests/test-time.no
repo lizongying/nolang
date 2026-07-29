@@ -44,7 +44,7 @@ elapsed = time.since-ms(before)
 }
 
 ; ── 6. timer 計時器（需明確宣告型別 t timer 才能正確解析方法）──
-t timer = timer{
+t time.timer = timer {
     start-ts: 0
     end-ts: 0
 }

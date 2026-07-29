@@ -44,25 +44,11 @@
     },
     {
       "name": "string.quoted.single.nolang",
-      "begin": "'",
-      "end": "'",
-      "patterns": [
-        {
-          "name": "constant.character.escape.nolang",
-          "match": "\\\\."
-        }
-      ]
+      "match": "'(?:[^'\\\\]|\\\\.)*'"
     },
     {
       "name": "string.quoted.double.nolang",
-      "begin": "\"",
-      "end": "\"",
-      "patterns": [
-        {
-          "name": "constant.character.escape.nolang",
-          "match": "\\\\."
-        }
-      ]
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\""
     },
     {
       "name": "string.quoted.other.nolang",
@@ -102,8 +88,11 @@
       "match": "[()]"
     },
     {
-      "name": "entity.name.function.nolang",
-      "match": "\\b[a-z][a-z0-9_]*(?=\\((?!\\s*[^()\\s]+\\.\\.[^()\\s]+))"
+      "match": "\\b([a-z][a-z0-9_]*)\\s*(\\()",
+      "captures": {
+        "1": {"name": "entity.name.function.nolang"},
+        "2": {"name": "punctuation.section.parens.nolang"}
+      }
     },
     {
       "name": "constant.other.nolang",

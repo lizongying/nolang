@@ -4,7 +4,7 @@ test-it = () {
     r = n: {
         err -> 0
         nil -> 0
-        -> 
+        -> 0
     }
     print(r)
 }

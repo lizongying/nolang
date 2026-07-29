@@ -189,6 +189,18 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 8b. Redundant type annotation hints
+	for _, u := range nbuild.ValidateRedundantTypeAnnotation(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     u.Line,
+			Column:   u.Column,
+			Severity: "hint",
+			Source:   "nolang-lint",
+			Message:  u.Message,
+		})
+	}
+
 	// 9. Duplicate variables
 	for _, u := range nbuild.ValidateDuplicateVars(prog) {
 		results = append(results, VetResult{

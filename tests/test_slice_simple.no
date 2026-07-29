@@ -1,6 +1,6 @@
 ; Simple test - just call str.slice
-main = () () {
+main = () {
     s = 'hello,world'
     val = s.slice(0, 5)
-    println('slice: ' + val)
+    print('slice: ' + val)
 }

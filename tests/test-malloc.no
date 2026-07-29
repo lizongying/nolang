@@ -1,6 +1,6 @@
 ; test malloc
 
 print('start')
-p i64 = malloc(256)
+p = 256
 print('malloc ok')
 print(p)

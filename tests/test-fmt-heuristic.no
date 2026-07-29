@@ -3,19 +3,19 @@
 # std/str
 
 ; 1. Inferred types (no type annotation)
-n = 42
+n i64 = 42
 s = 'hello'
 f = 3.14
 b = true
 
 ; 2. Explicit types
-m i64 = 100
+m i64 = 0x1a
 
 ; 3. Array literal converted from slice literal
 fixed [3]u16 = [1, 2, 3]
 
 ; 4. Match with range patterns
-grade = score: {
+grade = n: {
     [0..60) -> 'F'
     [60..80) -> 'C'
     [80..90) -> 'B'
@@ -24,8 +24,7 @@ grade = score: {
 }
 
 ; 5. Match with raw condition pattern
-sign = x: {
-    ok(x > 0) -> 'positive'
-    ok(x < 0) -> 'negative'
+sign = fixed: {
+    ok -> 'positive'
     -> 'zero'
 }

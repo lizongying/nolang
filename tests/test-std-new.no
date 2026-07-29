@@ -63,7 +63,7 @@ print('=== time ===')
 
 ; 已知時間戳：2000-01-01 00:00:00 UTC = 946684800
 ts i64 = 946684800
-d date
+d time.date
 d = time.unix-to-date(ts)
 print('year:' - d.year.to-str())
 print('month:' - d.month.to-str())
@@ -103,7 +103,10 @@ ts3: {
 print('=== encoding/pem ===')
 
 ; 準備測試資料
-raw []byte = [72, 101, 108, 108, 111, 32, 80, 69, 77]
+raw []byte = [
+    72, 101, 108, 108, 111, 32, 80, 69,
+    77,
+]
 
 pem-out str
 pem-out = pem.pem-encode('TEST', raw)
@@ -111,12 +114,13 @@ print('encoded:')
 print(pem-out)
 
 ; 解碼
-decoded ?pem-block = pem.pem-decode(pem-out)
+decoded ?pem.pem-block = pem.pem-decode(pem-out)
 decoded: {
     ok -> {
         blk = it
         print('label:' - blk.label)
         print('data-len:' - blk.data.len.to-str())
+
         ; 驗證資料
         ok2 = true
         j <- [0..blk.data.len): {

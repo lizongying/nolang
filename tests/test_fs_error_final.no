@@ -11,7 +11,7 @@ print('测试 1: 文件不存在')
 print('  路径: /nonexistent/file-xyz-12345.txt')
 print('  模式: 只读')
 
-f1 ?file = fs.open('/nonexistent/file-xyz-12345.txt', {
+f1 ?fs.file = fs.open('/nonexistent/file-xyz-12345.txt',  {
     mode: file-mode.read
 })
 
@@ -26,7 +26,7 @@ print('测试 2: 打开目录')
 print('  路径: /tmp')
 print('  模式: 只读')
 
-f2 ?file = fs.open('/tmp', {
+f2 ?fs.file = fs.open('/tmp',  {
     mode: file-mode.read
 })
 
@@ -39,7 +39,7 @@ print('测试 3: 尝试访问受保护的文件')
 print('  路径: /root/test.txt')
 print('  模式: 写入')
 
-f3 ?file = fs.open('/root/test.txt', {
+f3 ?fs.file = fs.open('/root/test.txt',  {
     mode: file-mode.write
 })
 
@@ -52,7 +52,7 @@ print('测试 4: 成功创建并写入文件')
 print('  路径: /tmp/nolang-err-test.txt')
 print('  模式: 写入')
 
-f4 ?file = fs.open('/tmp/nolang-err-test.txt', {
+f4 ?fs.file = fs.open('/tmp/nolang-err-test.txt',  {
     mode: file-mode.write
     perm: file-perm.perm-644
 })

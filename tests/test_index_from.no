@@ -1,6 +1,6 @@
 ; Test str.index-from
-main = () () {
+main = () {
     s = 'hello,world'
     pos = s.index-from(',', 0)
-    println('pos: ' + pos.to-str())
+    print('pos: ' + pos.to-str())
 }

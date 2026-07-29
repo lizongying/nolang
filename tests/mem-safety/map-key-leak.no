@@ -45,7 +45,7 @@ print('test-scope: ok')
 
 ; 測試 2：map 賦值到 out 參數走 move（涵蓋 hashmap move 路徑）
 make-map = () (out [str]i64) {
-    out = { 'x': 10, 'y': 20 }
+    out [str]i64 = { 'x': 10, 'y': 20 }
     ; out 走 move，由呼叫者管理
 }
 
@@ -53,6 +53,7 @@ m2 = make-map()
 v2 = m2.get('x')
 v2: {
     ok -> print(v2)
+    -> print('test-move-out: ok')
 }
 print('test-move-out: ok')
 

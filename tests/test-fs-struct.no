@@ -3,13 +3,12 @@
 ; 目標語法：
 ;   open('test.dat', { mode: write, perm: perm-644, excl: true })
 
-
 tmp = '/tmp/nolang-fs-test.txt'
 payload = 'hello nolang file struct'
 fs.remove(tmp)
 
-f-w ?file
-f-w = fs.open(tmp, {
+f-w ?fs.file
+f-w = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-644
     excl: false
@@ -26,8 +25,8 @@ f-w: {
     }
 }
 
-f-e ?file
-f-e = fs.open(tmp, {
+f-e ?fs.file
+f-e = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-644
     excl: true
@@ -40,8 +39,8 @@ f-e: {
     -> print('fail: excl did not block')
 }
 
-f-r ?file
-f-r = fs.open(tmp, {
+f-r ?fs.file
+f-r = fs.open(tmp,  {
     mode: file-mode.read
     perm: file-perm.perm-644
     excl: false
@@ -55,7 +54,7 @@ f-r: {
         buf [256]byte
         n = it.read(buf, 256)
         it.close()
-                {
+        {
             n == payload.len -> print('ok: read length matches')
             -> print('fail: read length mismatch')
         }

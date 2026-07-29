@@ -1,0 +1,20 @@
+{
+  "name": "test",
+  "version": "0.1.0",
+  "description": "A new Nolang project",
+  "keywords": [
+    "nolang"
+  ],
+  "author": "lizongying",
+  "email": "lizongying@msn.com",
+  "organization": "nolang",
+  "repository": "https://github.com/lizongying/nolang",
+  "homepage": "https://lizongying.github.io/nolang",
+  "license": "MIT",
+  "dependencies": {},
+  "compiler": {
+    "version": "0.1.0",
+  },
+  "output": "./dist",
+  "ignore": [],
+}

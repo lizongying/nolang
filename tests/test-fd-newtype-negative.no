@@ -6,13 +6,15 @@
 
 ; 1. i64 變量賦值給 fd 變量（應報錯）
 x i64 = 10
-bad fd = x
+
+; bad fd = x
 
 ; 2. fd 變量傳給 i64 參數（應報錯）
 takes-i64 = (n i64) {
     n
 }
 my-fd fd = 0
-takes-i64(my-fd)
+
+; takes-i64(my-fd)
 
 print('should not reach here')

@@ -874,9 +874,9 @@ func (l *Lexer) scanToken() (tok Token) {
 			tok.Literal = content
 			tok.Raw = raw
 			if len(runes) == 0 {
-				tok.ErrMsg = "empty double-quoted literal; double quotes are for char literals only — use single quotes for strings"
+				tok.ErrMsg = "empty double-quoted literal; double quotes are for char literals only; if this is a string, use single quotes: 'text'"
 			} else {
-				tok.ErrMsg = "multi-character literal in double quotes; double quotes are for char literals only — use single quotes for strings"
+				tok.ErrMsg = "multi-character literal in double quotes; double quotes are for char literals only; if this is a string, use single quotes: 'text'"
 			}
 		}
 		return tok

@@ -7,7 +7,8 @@ import (
 
 // keywordDoc 為 LSP hover 提供新式/舊式關鍵字文檔
 var keywordDoc = map[string]string{
-	"!":     "**舊式語法（已廢棄）** — `! { }` / `!! { }` 無限迴圈。請改用新式 `{ } ()`。\n\n```nolang\n{\n    *     // break\n    **    // continue\n} ()\n```",
+	"!!":    "**舊式語法（已廢棄）** — `!! { }` 無限迴圈。請改用新式 `{ } ()`。\n\n```nolang\n{\n    *     // break\n    **    // continue\n} ()\n```",
+	"!":     "**舊式語法（已廢棄）** — `! { }` 無限迴圈。請改用新式 `{ } ()`。\n\n```nolang\n{\n    *     // break\n    **    // continue\n} ()\n```",
 	"*":     "**新式語法** — 跳出當前迴圈（break）。",
 	"**":    "**新式語法** — 跳過當前迴圈迭代（continue）。",
 	"...":   "**新式語法** — 終止當前語句序列並回傳值，類似舊式 `return` 後接值。",

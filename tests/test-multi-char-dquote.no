@@ -2,4 +2,4 @@
 ; 双引号只能用于单字符 char，多字符应使用单引号
 ; 预期：LSP/vet 报错 "multi-character literal in double quotes"
 
-print("done")
+print('done')

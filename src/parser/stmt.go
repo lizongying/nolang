@@ -890,9 +890,13 @@ func (p *Parser) parseLetStatement() Statement {
 			}
 
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected expression, got nil instead",
-				p.currentToken.Line, p.currentToken.Column)
-			p.saveError(msg)
+			// Only report "expected expression" if no error was already reported
+			// (e.g. ILLEGAL token from lexer already reported its own error).
+			if len(p.reportedIllegal) == 0 {
+				msg := fmt.Sprintf("line %d, column %d: expected expression, got nil instead",
+					p.currentToken.Line, p.currentToken.Column)
+				p.saveError(msg)
+			}
 			return nil
 		}
 	}

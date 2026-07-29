@@ -1,13 +1,12 @@
 ; test-open-read.no — 驗證 open() 讀取
 
-
 tmp = '/tmp/nolang-read-test.txt'
 payload = 'hello nolang'
 fs.remove(tmp)
 
 ; 先寫入
-f-w ?file
-f-w = fs.open(tmp, {
+f-w ?fs.file
+f-w = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-600
     excl: false
@@ -25,8 +24,8 @@ f-w: {
 }
 
 ; 再讀取
-f-r ?file
-f-r = fs.open(tmp, {
+f-r ?fs.file
+f-r = fs.open(tmp,  {
     mode: file-mode.read
     perm: file-perm.perm-600
     excl: false

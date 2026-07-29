@@ -1,4 +1,4 @@
-foo = () (res i8) {
+foo = () (res i64) {
     x = 1
     res = x
     print(x)
@@ -7,7 +7,7 @@ foo = () (res i8) {
 ; 返回值延迟move，函数结束时move。
 ; 所以a == 4
 ; 这里由于b也=x  所以a、b实际是一个值
-bar = () (a i8, b i16) {
+bar = () (a i64, b i64) {
     x = 1
     a = x
     print(x)

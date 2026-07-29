@@ -24,7 +24,7 @@ test-option-4 = () {
     x4 ?str
     x4 = err('error msg')
     x4: {
-        err -> print(.)
+        err -> print(it)
         nil -> print(0)
         -> print(1)
     }

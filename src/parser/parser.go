@@ -856,6 +856,13 @@ func (p *Parser) recoverStatement() (stmt Statement) {
 
 func (p *Parser) saveError(msg string) {
 	pos, clean := stripLocPrefix(msg)
+	// Deduplicate: skip if the same error at the same position was already reported.
+	// This prevents duplicate errors when restoreState retries parsing after a failed attempt.
+	for _, d := range p.diags {
+		if d.Pos == pos && d.Message == clean {
+			return
+		}
+	}
 	p.diags = append(p.diags, Diagnostic{
 		Filename: p.Filename,
 		Pos:      pos,

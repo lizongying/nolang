@@ -3,8 +3,8 @@
 tmp = '/tmp/nolang-write-test.txt'
 fs.remove(tmp)
 
-f ?file
-f = fs.open(tmp, {
+f ?fs.file
+f = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-600
     excl: false
@@ -15,9 +15,8 @@ f: {
     err -> print('fail: open-write err')
     nil -> print('fail: open-write nil')
     -> {
-        
         .write('hello', 5)
-        
+
         .close()
         print('ok: write')
     }
