@@ -108,8 +108,7 @@ sha224-hex = (data []byte) (hex str) {
     hash = sha224(data)
 
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(56)
+    hex str = with-len(56)
 
     i <- [0..28): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]

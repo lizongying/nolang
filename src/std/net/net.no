@@ -190,7 +190,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
 conn.recv-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf str = ' '.repeat(NET-BUF-SIZE)
+    buf str = with-len(NET-BUF-SIZE)
     n = net-recv(.fd, buf, NET-BUF-SIZE)
     n > 0 -> line = buf
 }
@@ -200,7 +200,7 @@ conn.recv-line = () (line ?str) {
 conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
-    buf str = ' '.repeat(NET-BUF-SIZE)
+    buf str = with-len(NET-BUF-SIZE)
     {
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
@@ -575,14 +575,14 @@ enc-conn.recv-encrypted = () (data ?str) {
     .underlying.fd < 0 -> return
 
     ; 讀取 4-byte length
-    len-buf = ' '.repeat(4)
+    len-buf str = with-len(4)
     n = net-recv(.underlying.fd, len-buf, 4)
     n != 4 -> return
     payload-len = ((len-buf[0] & 255) << 24) | ((len-buf[1] & 255) << 16) | ((len-buf[2] & 255) << 8) | (len-buf[3] & 255)
     payload-len < 12 || payload-len > 65536 -> return
 
     ; 讀取 payload (IV + sealed)
-    payload-buf = ' '.repeat(payload-len)
+    payload-buf str = with-len(payload-len)
     n = net-recv(.underlying.fd, payload-buf, payload-len)
     n != payload-len -> return
 

@@ -146,8 +146,7 @@ sha384-hex = (data []byte) (hex str) {
     hash = sha384(data)
 
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(96)
+    hex str = with-len(96)
 
     i <- [0..48): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]

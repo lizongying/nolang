@@ -419,8 +419,7 @@ sign = (name str, value str, key []byte) (signed str) {
 
     ; 轉為 hex 字串
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex-str = space.repeat(64)
+    hex-str str = with-len(64)
     i <- [0..32): {
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]

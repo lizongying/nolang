@@ -240,8 +240,7 @@ blake2b-256 = (data []byte) (hash [32]byte) {
 blake2b-hex = (data []byte) (hex str) {
     hash = blake2b(data)
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(128)
+    hex str = with-len(128)
     i <- [0..64): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
@@ -392,8 +391,7 @@ blake2s = (data []byte) (hash [32]byte) {
 blake2s-hex = (data []byte) (hex str) {
     hash = blake2s(data)
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(64)
+    hex str = with-len(64)
     i <- [0..32): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]

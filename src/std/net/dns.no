@@ -304,8 +304,7 @@ resolve-from = (server str, domain str) (ip ?str) {
     }
 
     ; 接收回應
-    space = ' '
-    resp-str = space.repeat(DNS-MAX-PACKET)
+    resp-str str = with-len(DNS-MAX-PACKET)
     n = net.net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     fs.close(fd)
     n <= 0 -> return
@@ -349,8 +348,7 @@ resolve-all = (domain str) (ip ?str) {
         return
     }
 
-    space = ' '
-    resp-str = space.repeat(DNS-MAX-PACKET)
+    resp-str str = with-len(DNS-MAX-PACKET)
     n = net.net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     fs.close(fd)
     n <= 0 -> return

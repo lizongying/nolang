@@ -95,7 +95,7 @@ client.request = (data str) (response ?str) {
     .connected == false -> return
     written = .c.send(data)
     written < 0 -> return
-    s str = ' '.repeat(net.NET-BUF-SIZE)
+    s str = with-len(net.NET-BUF-SIZE)
     total = 0
     s, total = .c.recv-all()
     response = s

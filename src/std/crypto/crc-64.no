@@ -35,8 +35,7 @@ crc-64 = (data []byte) (crc u64) {
 crc-64-hex = (data []byte) (hex str) {
     crc = crc-64(data)
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(16)
+    hex str = with-len(16)
     i <- [0..16): {
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }

@@ -125,8 +125,7 @@ conn.send-frame = (frame frame) (ok bool) {
     .fd < 0 -> return
 
     ; 序列化標頭
-    space = ' '
-    hdr = space.repeat(HTTP2-FRAME-HEADER-SIZE)
+    hdr str = with-len(HTTP2-FRAME-HEADER-SIZE)
     frame.serialize(hdr, 0)
 
     ; 發送標頭
@@ -170,10 +169,9 @@ conn.recv-frame = () (frame ?frame) {
     frame = nil
     f frame
     .fd < 0 -> return
-    space = ' '
 
     ; 讀取 9-byte 影格標頭
-    hdr-buf = space.repeat(HTTP2-FRAME-HEADER-SIZE)
+    hdr-buf str = with-len(HTTP2-FRAME-HEADER-SIZE)
     hdr-total = 0
     recv-n = 0
     {
@@ -201,7 +199,7 @@ conn.recv-frame = () (frame ?frame) {
     ; 讀取 payload
     f.length > 0 -> {
         f.length > HTTP2-MAX-PAYLOAD -> return
-        f.payload = space.repeat(f.length)
+        f.payload = with-len(f.length)
         payload-total = 0
         {
             payload-total >= f.length -> *
@@ -239,8 +237,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     ok = false
 
     ; 用 HPACK 編碼標頭
-    space = ' '
-    block = space.repeat(HTTP2-MAX-PAYLOAD)
+    block str = with-len(HTTP2-MAX-PAYLOAD)
     block-n = 0
     i <- [0..count): {
 
@@ -404,8 +401,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ok = false
     header-count = 0
     resp-n = 0
-    space = ' '
-    resp-body = space.repeat(HTTP2-MAX-PAYLOAD)
+    resp-body str = with-len(HTTP2-MAX-PAYLOAD)
     .fd < 0 -> return
     stream-id = .next-stream-id
     .next-stream-id = .next-stream-id + 2

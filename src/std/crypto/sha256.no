@@ -1854,8 +1854,7 @@ sha256-hex = (data []byte) (hex str) {
     hash = sha256(data)
 
     hex-chars = '0123456789abcdef'
-    space = ' '
-    hex = space.repeat(64)
+    hex str = with-len(64)
 
     i <- [0..32): {
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]

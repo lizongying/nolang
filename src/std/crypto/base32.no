@@ -22,8 +22,7 @@ base32-encode = (data []byte) (out str) {
     remainder = dlen % 5
     out-len = full-groups * 8
     remainder != 0 -> out-len = out-len + 8
-    space = ' '
-    out = space.repeat(out-len)
+    out str = with-len(out-len)
     out-pos = 0
 
     pos = 0

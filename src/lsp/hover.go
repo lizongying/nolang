@@ -18,6 +18,25 @@ var keywordDoc = map[string]string{
 	"match": "**舊式語法（已廢棄）** — 請改用新式 `{ cond -> body }` 裸 match 表達式。",
 }
 
+// builtinTypeDoc 為 LSP hover 提供內建型別的範圍資訊
+var builtinTypeDoc = map[string]string{
+	"i8":   "**型別**: `i8` (8-bit signed integer)\n\n- **Range(dec)**: `-128` .. `127`\n- **Range(hex)**: `0x80` .. `0x7f`",
+	"i16":  "**型別**: `i16` (16-bit signed integer)\n\n- **Range(dec)**: `-32768` .. `32767`\n- **Range(hex)**: `0x8000` .. `0x7fff`",
+	"i32":  "**型別**: `i32` (32-bit signed integer)\n\n- **Range(dec)**: `-2147483648` .. `2147483647`\n- **Range(hex)**: `0x80000000` .. `0x7fffffff`",
+	"i64":  "**型別**: `i64` (64-bit signed integer)\n\n- **Range(dec)**: `-9223372036854775808` .. `9223372036854775807`\n- **Range(hex)**: `0x8000000000000000` .. `0x7fffffffffffffff`",
+	"u8":   "**型別**: `u8` (8-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`",
+	"u16":  "**型別**: `u16` (16-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `65535`\n- **Range(hex)**: `0x0000` .. `0xffff`",
+	"u32":  "**型別**: `u32` (32-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `4294967295`\n- **Range(hex)**: `0x00000000` .. `0xffffffff`",
+	"u64":  "**型別**: `u64` (64-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `18446744073709551615`\n- **Range(hex)**: `0x0000000000000000` .. `0xffffffffffffffff`",
+	"byte": "**型別**: `byte` (8-bit unsigned, alias of u8)\n\n- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`",
+	"f32":  "**型別**: `f32` (32-bit float)\n\n- **Range(dec)**: `-3.4028234663852886e+38` .. `3.4028234663852886e+38`",
+	"f64":  "**型別**: `f64` (64-bit float)\n\n- **Range(dec)**: `-1.7976931348623157e+308` .. `1.7976931348623157e+308`",
+	"bool": "**型別**: `bool` (boolean)\n\n- **Values**: `true` | `false`",
+	"str":  "**型別**: `str` (string, immutable byte sequence)",
+	"char": "**型別**: `char` (single Unicode code point, stored as i64)",
+	"fd":   "**型別**: `fd` (file descriptor, stored as i64)",
+}
+
 type HoverProvider struct {
 	index *SymbolIndex
 	doc   *TextDocument
@@ -38,6 +57,16 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 
 	// 關鍵字 hover（新舊語法）
 	if doc, ok := keywordDoc[word]; ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: doc,
+			},
+		}, true
+	}
+
+	// 內建型別 hover（i64, u8, byte, bool 等）
+	if doc, ok := builtinTypeDoc[word]; ok {
 		return &Hover{
 			Contents: MarkupContent{
 				Kind:  MarkupKindMarkdown,
@@ -75,6 +104,9 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 
 	if entry.Type != "" {
 		builder.WriteString(fmt.Sprintf("- **Type**: `%s`\n", entry.Type))
+		if rangeInfo := typeRangeInfo(entry.Type); rangeInfo != "" {
+			builder.WriteString(rangeInfo)
+		}
 	}
 
 	if entry.Location.URI != "" {
@@ -125,6 +157,39 @@ func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
 		Kind:  MarkupKindMarkdown,
 		Value: builder.String(),
 	}
+}
+
+// typeRangeInfo returns human-readable range lines for builtin numeric
+// types, byte, and bool. Returns "" for non-builtin or non-numeric types.
+// Each returned string ends with a newline.
+func typeRangeInfo(typeName string) string {
+	switch typeName {
+	case "i8":
+		return "- **Range(dec)**: `-128` .. `127`\n- **Range(hex)**: `0x80` .. `0x7f`\n"
+	case "i16":
+		return "- **Range(dec)**: `-32768` .. `32767`\n- **Range(hex)**: `0x8000` .. `0x7fff`\n"
+	case "i32":
+		return "- **Range(dec)**: `-2147483648` .. `2147483647`\n- **Range(hex)**: `0x80000000` .. `0x7fffffff`\n"
+	case "i64":
+		return "- **Range(dec)**: `-9223372036854775808` .. `9223372036854775807`\n- **Range(hex)**: `0x8000000000000000` .. `0x7fffffffffffffff`\n"
+	case "u8":
+		return "- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`\n"
+	case "u16":
+		return "- **Range(dec)**: `0` .. `65535`\n- **Range(hex)**: `0x0000` .. `0xffff`\n"
+	case "u32":
+		return "- **Range(dec)**: `0` .. `4294967295`\n- **Range(hex)**: `0x00000000` .. `0xffffffff`\n"
+	case "u64":
+		return "- **Range(dec)**: `0` .. `18446744073709551615`\n- **Range(hex)**: `0x0000000000000000` .. `0xffffffffffffffff`\n"
+	case "byte":
+		return "- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`\n"
+	case "f32":
+		return "- **Range(dec)**: `-3.4028234663852886e+38` .. `3.4028234663852886e+38`\n"
+	case "f64":
+		return "- **Range(dec)**: `-1.7976931348623157e+308` .. `1.7976931348623157e+308`\n"
+	case "bool":
+		return "- **Values**: `true` | `false`\n"
+	}
+	return ""
 }
 
 type MarkupContent struct {

@@ -4611,17 +4611,21 @@ func isValidVarName(name string) bool {
 // ValidateNaming 檢查所有變數/函數名稱是否符合命名規範（只用小寫和中劃線）
 func ValidateNaming(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
+
+	// Reuse the shared defined-vars collection (same first pass as
+	// ValidateUndefinedVars) to know which names are global variables.
+	definedVars := CollectDefinedVars(program)
+
 	for _, stmt := range program.Statements {
-		// Global constants/variables at top level allow uppercase names (e.g., SBOX)
 		if _, ok := stmt.(*parser.LetStatement); ok {
 			continue
 		}
-		results = append(results, checkNaming(stmt)...)
+		results = append(results, checkNaming(stmt, definedVars)...)
 	}
 	return results
 }
 
-func checkNaming(stmt parser.Statement) []ValidateResult {
+func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateResult {
 	var results []ValidateResult
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
@@ -4639,10 +4643,15 @@ func checkNaming(stmt parser.Statement) []ValidateResult {
 		}
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				results = append(results, checkNaming(bStmt)...)
+				results = append(results, checkNaming(bStmt, globalVars)...)
 			}
 		}
 	case *parser.LetStatement:
+		// Skip reassignments of known global variables (e.g., RAND-COUNTER).
+		// Local variables with uppercase names (e.g., C) are still flagged.
+		if s.Name != nil && globalVars[s.Name.Value] {
+			return results
+		}
 		if s.Name != nil && !isValidVarName(s.Name.Value) {
 			results = append(results, ValidateResult{
 				Line:    s.Name.Token.Line,
@@ -4652,15 +4661,15 @@ func checkNaming(stmt parser.Statement) []ValidateResult {
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			results = append(results, checkNaming(bStmt)...)
+			results = append(results, checkNaming(bStmt, globalVars)...)
 		}
 	case *parser.ExpressionStatement:
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 			if ifExpr.Consequence != nil {
-				results = append(results, checkNaming(ifExpr.Consequence)...)
+				results = append(results, checkNaming(ifExpr.Consequence, globalVars)...)
 			}
 			if ifExpr.Alternative != nil {
-				results = append(results, checkNaming(ifExpr.Alternative)...)
+				results = append(results, checkNaming(ifExpr.Alternative, globalVars)...)
 			}
 		}
 	}
@@ -5006,25 +5015,41 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 	}
 }
 
-// ValidateUndefinedVars detects references to variables that are not defined.
-func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
-	var results []ValidateResult
-
-	// 1. Collect all defined names
-	definedVars := make(map[string]bool) // name → true
-	funcNames := make(map[string]bool)   // function names
-
-	// Top-level LetStatements, FunctionDefinitions, and ExternStatements
+// CollectDefinedVars performs the first pass: collects all top-level defined
+// names (LetStatements, FunctionDefinitions, ExternStatements) from the program.
+// Shared by ValidateNaming (to skip global variable reassignments) and
+// ValidateUndefinedVars (as the base for its more comprehensive collection).
+func CollectDefinedVars(program *parser.Program) map[string]bool {
+	definedVars := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			definedVars[ls.Name.Value] = true
 		}
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			definedVars[fd.Name] = true
-			funcNames[fd.Name] = true
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
 			definedVars[es.Name.Value] = true
+		}
+	}
+	return definedVars
+}
+
+// ValidateUndefinedVars detects references to variables that are not defined.
+func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
+	var results []ValidateResult
+
+	// 1. Collect all defined names (shared first pass)
+	definedVars := CollectDefinedVars(program)
+	funcNames := make(map[string]bool) // function names
+
+	// Collect function names (LetStatements and ExternStatements already
+	// collected into definedVars by CollectDefinedVars above)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			funcNames[fd.Name] = true
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
 			funcNames[es.Name.Value] = true
 		}
 	}
@@ -5927,6 +5952,150 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 	return results
 }
 
+// ValidateHexCase 檢查十六進位字面量是否使用了大寫字母。
+// Nolang 慣例：hex 一律小寫（0xff 而非 0xFF）。
+// 格式化工具會自動將大寫轉為小寫，此檢查產生 hint 提醒。
+func ValidateHexCase(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		results = append(results, checkHexCaseInStmt(stmt)...)
+	}
+	return results
+}
+
+func checkHexCaseInStmt(stmt parser.Statement) []ValidateResult {
+	var results []ValidateResult
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			results = append(results, checkHexCaseInExpr(s.Expression)...)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			results = append(results, checkHexCaseInExpr(s.Value)...)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkHexCaseInStmt(bodyStmt)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			results = append(results, checkHexCaseInStmt(bodyStmt)...)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			results = append(results, checkHexCaseInExpr(s.ReturnValue)...)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			results = append(results, checkHexCaseInStmt(s.Init)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkHexCaseInExpr(s.Condition)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkHexCaseInStmt(s.Update)...)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkHexCaseInStmt(bodyStmt)...)
+			}
+		}
+	}
+	return results
+}
+
+// hasUpperHex returns true if a hex literal contains uppercase hex digits
+// or an uppercase '0X' prefix.
+func hasUpperHex(literal string) bool {
+	if len(literal) >= 2 && literal[0] == '0' && literal[1] == 'X' {
+		return true
+	}
+	if len(literal) >= 2 && literal[0] == '0' && literal[1] == 'x' {
+		for _, c := range literal[2:] {
+			if c >= 'A' && c <= 'F' {
+				return true
+			}
+		}
+	}
+	if len(literal) == 3 && literal[0] == 'x' {
+		for _, c := range literal[1:] {
+			if c >= 'A' && c <= 'F' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
+	var results []ValidateResult
+	switch e := expr.(type) {
+	case *parser.IntegerLiteral:
+		if hasUpperHex(e.Token.Literal) {
+			results = append(results, ValidateResult{
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
+			})
+		}
+	case *parser.ByteLiteral:
+		if hasUpperHex(e.Token.Literal) {
+			results = append(results, ValidateResult{
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: fmt.Sprintf("byte literal '%s' uses uppercase hex; format will convert to lowercase (e.g. xff)", e.Token.Literal),
+			})
+		}
+	case *parser.InfixExpression:
+		results = append(results, checkHexCaseInExpr(e.Left)...)
+		results = append(results, checkHexCaseInExpr(e.Right)...)
+	case *parser.PrefixExpression:
+		results = append(results, checkHexCaseInExpr(e.Right)...)
+	case *parser.GroupedExpression:
+		results = append(results, checkHexCaseInExpr(e.Expression)...)
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			results = append(results, checkHexCaseInExpr(arg)...)
+		}
+	case *parser.DotExpression:
+		results = append(results, checkHexCaseInExpr(e.Receiver)...)
+	case *parser.IndexExpression:
+		results = append(results, checkHexCaseInExpr(e.Left)...)
+		results = append(results, checkHexCaseInExpr(e.Index)...)
+	case *parser.AssignExpression:
+		results = append(results, checkHexCaseInExpr(e.Value)...)
+	case *parser.ConditionalExpression:
+		results = append(results, checkHexCaseInExpr(e.Condition)...)
+		results = append(results, checkHexCaseInExpr(e.Consequence)...)
+		results = append(results, checkHexCaseInExpr(e.Alternative)...)
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkHexCaseInExpr(elem)...)
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			results = append(results, checkHexCaseInExpr(elem)...)
+		}
+	case *parser.StructLiteral:
+		for _, field := range e.Fields {
+			if field.Value != nil {
+				results = append(results, checkHexCaseInExpr(field.Value)...)
+			}
+		}
+	case *parser.MapLiteral:
+		for _, pair := range e.Pairs {
+			results = append(results, checkHexCaseInExpr(pair.Key)...)
+			results = append(results, checkHexCaseInExpr(pair.Value)...)
+		}
+	case *parser.CastExpression:
+		results = append(results, checkHexCaseInExpr(e.Expr)...)
+	}
+	return results
+}
+
 // ValidatePrintFormat 檢查 print/printf/eprint/eprintf/sprintf 呼叫中的具名格式字串。
 // 對於第一個參數為 StringLiteral 的呼叫，解析 {name:spec} 欄位並驗證：
 //   - 欄位名稱在當前作用域內已定義（否則 "undefined variable '<name>' in format string"）
@@ -5940,8 +6109,10 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	structFields := collectStructFields(program)
 
 	// 走訪頂層敘述，追蹤變數作用域
+	// 頂層變數共用同一作用域（模組級），故使用單一 varTypes map
+	varTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
-		results = append(results, checkPrintFormatInStmt(stmt, make(map[string]string), structFields)...)
+		results = append(results, checkPrintFormatInStmt(stmt, varTypes, structFields)...)
 	}
 	return results
 }

@@ -315,7 +315,7 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
     {
-        tmp str = ' '.repeat(n - total)
+        tmp str = with-len(n - total)
         r = net.net-recv(fd, tmp, n - total)
         r <= 0 -> return
         i <- [0..r): {
@@ -338,7 +338,7 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ; 讀取 5 位元組標頭 into buf[0..4]
     hdr-total = 0
     {
-        tmp str = ' '.repeat(5 - hdr-total)
+        tmp str = with-len(5 - hdr-total)
         r = net.net-recv(fd, tmp, 5 - hdr-total)
         r <= 0 -> return
         i <- [0..r): {
@@ -359,7 +359,7 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ; 讀取 body into buf[5..5+rlen-1]
     body-total = 0
     {
-        tmp2 str = ' '.repeat(rlen - body-total)
+        tmp2 str = with-len(rlen - body-total)
         r = net.net-recv(fd, tmp2, rlen - body-total)
         r <= 0 -> {
             ct = -1
@@ -3812,8 +3812,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
 
             ; 4. 接收 HTTP 請求（透過 TLS 解密）
             ; 接收直到找到 \r\n\r\n（標頭結束）
-            space = ' '
-            recv-buf = space.repeat(8192)
+            recv-buf str = with-len(8192)
             recv-len = 0
             cr = number.char-to-str(13)
             lf = number.char-to-str(10)
@@ -3825,7 +3824,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 sep-found -> *
                 recv-len + 4096 > 8192 -> *
 
-                tmp = space.repeat(4096)
+                tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
                 rn <= 0 -> *
 

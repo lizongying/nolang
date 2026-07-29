@@ -159,26 +159,9 @@ compute-accept = (key str) (accept str) {
 
     ; 將 [20]byte 複製到 []byte 供 base64 使用
     hash-vec []byte = [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
     ]
 
     i <- [0..20): {
@@ -201,8 +184,7 @@ next-rand = () (r i64) {
 ; seed i64: 種子值
 ; 返回 key str: 4 字元字串
 gen-mask-key = (seed i64) (key str) {
-    space = ' '
-    key = space.repeat(4)
+    key str = with-len(4)
     key[0] = (seed & 255)
     key[1] = ((seed >> 8) & 255)
     key[2] = ((seed >> 16) & 255)
@@ -213,8 +195,7 @@ gen-mask-key = (seed i64) (key str) {
 ; seed i64: 種子值
 ; 返回 key str: base64 編碼字串（24 字元含 padding）
 gen-client-key = (seed i64) (key str) {
-    space = ' '
-    raw str = space.repeat(16)
+    raw str = with-len(16)
     i <- [0..16): {
         s = seed + i * 31
         raw[i] = (s * 1103515245 + 12345) & 255
@@ -237,8 +218,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     mask -> header-len = header-len + 4
     total = header-len + dlen
 
-    space = ' '
-    frame str = space.repeat(total)
+    frame str = with-len(total)
 
     ; byte 0: FIN(1) | opcode
     frame[0] = 128 | (opcode & 15)
@@ -277,6 +257,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     }
 
     mask == false -> {
+
         ; unmasked payload
         i <- [0..dlen): {
             frame[header-len + i] = data[i]
@@ -310,9 +291,8 @@ server.accept = () (c ?server-conn) {
     .fd < 0 -> return
     client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
-    space = ' '
-    buf = space.repeat(WS-BUF-SIZE)
-    conn = server-conn{
+    buf str = with-len(WS-BUF-SIZE)
+    conn = server-conn {
         fd: client-fd
         connected: false
         recv-buf: buf
@@ -351,14 +331,13 @@ server-conn.handshake = () {
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
-    space = ' '
-    raw str = space.repeat(WS-BUF-SIZE)
+    raw str = with-len(WS-BUF-SIZE)
     total = 0
     sep-pos i64 = -1
 
     {
         total + WS-RECV-SIZE > WS-BUF-SIZE -> return
-        tmp str = space.repeat(WS-RECV-SIZE)
+        tmp str = with-len(WS-RECV-SIZE)
         n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {
@@ -506,8 +485,7 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
     .connected == false -> return
 
     ; payload: 2-byte big-endian code + reason
-    space = ' '
-    payload = space.repeat(2 + reason.len)
+    payload str = with-len(2 + reason.len)
     payload[0] = (close-code >> 8) & 255
     payload[1] = close-code & 255
     i <- [0..reason.len): {
@@ -540,12 +518,13 @@ server-conn.recv = () (msg ?message) {
     has-acc = false
 
     {
+
         ; 確保 recv-buf 至少有 2 bytes（frame header）
         .recv-buf-len: {
             -> return
         }
         .recv-buf-len < 2 -> {
-            tmp str = ' '.repeat(WS-RECV-SIZE)
+            tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
             n <= 0 -> {
                 .connected = false
@@ -557,6 +536,7 @@ server-conn.recv = () (msg ?message) {
             }
             .recv-buf-len = .recv-buf-len + n
         }
+
         ; 解析 frame header
         b0 = .recv-buf[0]
         b1 = .recv-buf[1]
@@ -564,6 +544,7 @@ server-conn.recv = () (msg ?message) {
         opcode = b0 & 15
         masked = (b1 & 128) != 0
         payload-len = b1 & 127
+
         ; 計算剩餘 header 長度
         extra-len = 0
         {
@@ -574,12 +555,14 @@ server-conn.recv = () (msg ?message) {
         masked -> extra-len
         extra-len + 4
         header-total = 2 + extra-len
+
         ; 若 payload-len == 127，讀取 8-byte 長度
         payload-len == 127 -> {
+
             ; 確保 recv-buf 有足夠資料
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
+                tmp str = with-len(WS-RECV-SIZE)
                 n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
@@ -598,11 +581,13 @@ server-conn.recv = () (msg ?message) {
                 payload-len = (payload-len << 8) | .recv-buf[2 + i]
             }
         }
+
         payload-len == 126 -> {
+
             ; 確保 recv-buf 有足夠資料
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
+                tmp str = with-len(WS-RECV-SIZE)
                 n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
@@ -616,11 +601,12 @@ server-conn.recv = () (msg ?message) {
             }
             payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
         }
+
         ; 確保 recv-buf 有完整 frame
         frame-total = header-total + payload-len
         .recv-buf-len < frame-total -> {
             need = frame-total - .recv-buf-len
-            tmp str = ' '.repeat(WS-RECV-SIZE)
+            tmp str = with-len(WS-RECV-SIZE)
             {
                 need <= 0 -> *
                 n = net.net-recv(.fd, tmp, need)
@@ -636,6 +622,7 @@ server-conn.recv = () (msg ?message) {
                 need = frame-total - .recv-buf-len
             } ()
         }
+
         ; 提取 mask key（如有）
         actual-extra = 0
         (b1 & 127) == 126 -> actual-extra
@@ -645,24 +632,24 @@ server-conn.recv = () (msg ?message) {
         mask-start = 2 + actual-extra
         mask-key = ''
         masked -> {
-            space = ' '
-            mask-key = space.repeat(4)
+            mask-key str = with-len(4)
             i <- [0..4): {
                 mask-key[i] = .recv-buf[mask-start + i]
             }
         }
+
         ; 提取 payload 並 demask
         payload-start = 2 + actual-extra
         masked -> payload-start
         2 + actual-extra + 4
-        space = ' '
-        payload str = space.repeat(payload-len)
+        payload str = with-len(payload-len)
         i <- [0..payload-len): {
             b = .recv-buf[payload-start + i]
             masked -> b
             b ^ mask-key[i % 4]
             payload[i] = b & 255
         }
+
         ; 從 recv-buf 移除已消費的 frame
         remaining-start = frame-total
         remaining-len = .recv-buf-len - remaining-start
@@ -670,6 +657,7 @@ server-conn.recv = () (msg ?message) {
             .recv-buf[i] = .recv-buf[remaining-start + i]
         }
         .recv-buf-len = remaining-len
+
         ; 處理控制訊框（close/ping/pong）
         opcode == WS-OP-CLOSE -> {
             .connected = false
@@ -677,6 +665,7 @@ server-conn.recv = () (msg ?message) {
             return
         }
         opcode == WS-OP-PING -> .send-pong(payload)
+
         ; pong 和其他控制 opcode 忽略，繼續讀取
 
         ; 處理資料訊框（text/binary/continuation）
@@ -692,10 +681,11 @@ server-conn.recv = () (msg ?message) {
             }
             acc-data = acc-data - payload
         }
+
         ; 未知 opcode，忽略
 
         has-acc && fin -> {
-            msg = message{
+            msg = message {
                 opcode: acc-opcode
                 data: acc-data
                 fin: true
@@ -789,8 +779,7 @@ client.send-pong = (data str) (ok bool) {
 client.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
     .connected == false -> return
-    space = ' '
-    payload = space.repeat(2 + reason.len)
+    payload str = with-len(2 + reason.len)
     payload[0] = (close-code >> 8) & 255
     payload[1] = close-code & 255
     i <- [0..reason.len): {
@@ -817,9 +806,10 @@ client.recv = () (msg ?message) {
     has-acc = false
 
     {
+
         ; 確保 recv-buf 至少有 2 bytes
         .recv-buf-len < 2 -> {
-            tmp str = ' '.repeat(WS-RECV-SIZE)
+            tmp str = with-len(WS-RECV-SIZE)
             n = 0
             {
                 .use-tls -> {
@@ -863,7 +853,7 @@ client.recv = () (msg ?message) {
         payload-len == 127 -> {
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
+                tmp str = with-len(WS-RECV-SIZE)
                 n = 0
                 {
                     .use-tls -> {
@@ -897,7 +887,7 @@ client.recv = () (msg ?message) {
         payload-len == 126 -> {
             .recv-buf-len < header-total -> {
                 need = header-total - .recv-buf-len
-                tmp str = ' '.repeat(WS-RECV-SIZE)
+                tmp str = with-len(WS-RECV-SIZE)
                 n = 0
                 {
                     .use-tls -> {
@@ -928,7 +918,7 @@ client.recv = () (msg ?message) {
         frame-total = header-total + payload-len
         .recv-buf-len < frame-total -> {
             need = frame-total - .recv-buf-len
-            tmp str = ' '.repeat(WS-RECV-SIZE)
+            tmp str = with-len(WS-RECV-SIZE)
             {
                 need <= 0 -> *
                 n = 0
@@ -967,8 +957,7 @@ client.recv = () (msg ?message) {
         8
         mask-start = 2 + actual-extra
         masked -> {
-            space = ' '
-            mask-key = space.repeat(4)
+            mask-key str = with-len(4)
             i <- [0..4): {
                 mask-key[i] = .recv-buf[mask-start + i]
             }
@@ -976,8 +965,7 @@ client.recv = () (msg ?message) {
         payload-start = 2 + actual-extra
         masked -> payload-start
         2 + actual-extra + 4
-        space = ' '
-        payload = space.repeat(payload-len)
+        payload str = with-len(payload-len)
         i <- [0..payload-len): {
             b = .recv-buf[payload-start + i]
             masked -> b
@@ -996,6 +984,7 @@ client.recv = () (msg ?message) {
             return
         }
         opcode == WS-OP-PING -> .send-pong(payload)
+
         ; pong 和其他控制 opcode 忽略，繼續讀取
         opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
             acc-data = payload
@@ -1010,7 +999,7 @@ client.recv = () (msg ?message) {
             acc-data = acc-data - payload
         }
         has-acc && fin -> {
-            msg = message{
+            msg = message {
                 opcode: acc-opcode
                 data: acc-data
                 fin: true
@@ -1048,7 +1037,7 @@ client.close = () {
 ; 返回 s ?server: ok=服務端, nil=失敗
 ws-listen-on = (host str, port i64) (s ?server) {
     s = nil
-    srv = server{}
+    srv = server {}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv
@@ -1182,9 +1171,8 @@ ws-connect = (url str) (c ?client) {
     }
 
     ; 接收回應標頭（直到 \r\n\r\n）
-    space = ' '
-    raw str = space.repeat(WS-BUF-SIZE)
-    tmp str = space.repeat(WS-RECV-SIZE)
+    raw str = with-len(WS-BUF-SIZE)
+    tmp str = with-len(WS-RECV-SIZE)
     total = 0
     sep-pos i64 = -1
     separator = crlf - crlf
@@ -1327,7 +1315,7 @@ ws-connect = (url str) (c ?client) {
         remaining-len = remaining.len
     }
 
-    rb = space.repeat(WS-BUF-SIZE)
+    rb str = with-len(WS-BUF-SIZE)
     remaining-len > 0 -> {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining-len): {
@@ -1335,7 +1323,7 @@ ws-connect = (url str) (c ?client) {
         }
     }
 
-    cli = client{
+    cli = client {
         fd: fd
         use-tls: use-tls
         tls-c: tc

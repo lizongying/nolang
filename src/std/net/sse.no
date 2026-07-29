@@ -230,7 +230,7 @@ client.next-event = () (ev ?event) {
                 ev = err('event too large')
                 return
             }
-            tmp str = ' '.repeat(SSE-RECV-SIZE)
+            tmp str = with-len(SSE-RECV-SIZE)
             n = 0
             recv-ok = false
             .use-tls -> {
@@ -347,9 +347,8 @@ client.reconnect = () (ok bool) {
     }
 
     ; 接收回應標頭（直到 \r\n\r\n）
-    space = ' '
-    raw = space.repeat(SSE-BUF-SIZE)
-    tmp = space.repeat(SSE-RECV-SIZE)
+    raw str = with-len(SSE-BUF-SIZE)
+    tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
     separator = crlf - crlf
@@ -417,7 +416,7 @@ client.reconnect = () (ok bool) {
     body-start = sep-pos + separator.len
     remaining = raw.slice(body-start, total)
 
-    .recv-buf = space.repeat(SSE-BUF-SIZE)
+    .recv-buf = with-len(SSE-BUF-SIZE)
     .recv-buf-len = remaining.len
     i <- [0..remaining.len): {
         .recv-buf[i] = remaining[i]
@@ -552,9 +551,8 @@ sse-connect = (url str) (client ?client) {
     }
 
     ; ── 接收回應標頭（直到 \r\n\r\n）──
-    space = ' '
-    raw = space.repeat(SSE-BUF-SIZE)
-    tmp = space.repeat(SSE-RECV-SIZE)
+    raw str = with-len(SSE-BUF-SIZE)
+    tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
     separator = crlf - crlf
@@ -634,7 +632,7 @@ sse-connect = (url str) (client ?client) {
     body-start = sep-pos + separator.len
     remaining = raw.slice(body-start, total)
 
-    rb = space.repeat(SSE-BUF-SIZE)
+    rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len): {
         rb[i] = remaining[i]
     }
@@ -741,14 +739,13 @@ server-conn.handshake = () (ok bool) {
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
-    space = ' '
-    raw = space.repeat(SSE-BUF-SIZE)
+    raw str = with-len(SSE-BUF-SIZE)
     total = 0
     sep-pos i64 = -1
 
     {
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> return
-        tmp = space.repeat(SSE-RECV-SIZE)
+        tmp str = with-len(SSE-RECV-SIZE)
         n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {

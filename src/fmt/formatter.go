@@ -469,9 +469,9 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 			f.write(e.Value)
 		}
 	case *parser.IntegerLiteral:
-		f.write(e.Token.Literal)
+		f.write(lowerHexLiteral(e.Token.Literal))
 	case *parser.ByteLiteral:
-		f.write(e.Token.Literal)
+		f.write(lowerHexLiteral(e.Token.Literal))
 	case *parser.FloatLiteral:
 		f.write(e.Token.Literal)
 	case *parser.StringLiteral:
@@ -1992,4 +1992,20 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 		return f.sem.AnnotationsOf(stmt)
 	}
 	return nil
+}
+
+// lowerHexLiteral converts an uppercase hex literal to lowercase.
+// Handles two forms:
+//   - "0xFF" / "0XFF" → "0xff"  (integer hex literal)
+//   - "xFF"            → "xff"   (byte literal)
+//
+// Non-hex literals are returned unchanged.
+func lowerHexLiteral(literal string) string {
+	if len(literal) >= 2 && literal[0] == '0' && (literal[1] == 'x' || literal[1] == 'X') {
+		return "0x" + strings.ToLower(literal[2:])
+	}
+	if len(literal) == 3 && literal[0] == 'x' {
+		return "x" + strings.ToLower(literal[1:])
+	}
+	return literal
 }

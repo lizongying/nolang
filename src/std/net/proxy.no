@@ -87,9 +87,8 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     }
 
     ; 接收回應（雙緩衝區：buf 接收, raw 累積）
-    space = ' '
-    buf = space.repeat(PROXY-BUF-SIZE)
-    raw = space.repeat(PROXY-BUF-SIZE * 4)
+    buf str = with-len(PROXY-BUF-SIZE)
+    raw str = with-len(PROXY-BUF-SIZE * 4)
     total = 0
     separator = crlf - crlf
     sep-pos i64 = -1
@@ -395,7 +394,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     fd < 0 -> return
 
     ; 1. 握手 — 方法協商
-    space = ' '
     req []byte
     req[0] = SOCKS5-VERSION
     {
@@ -418,7 +416,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     ; 接收方法選擇回應（2 bytes）
-    resp = space.repeat(2)
+    resp str = with-len(2)
     n = net.net-recv(fd, resp, 2)
     n != 2 -> {
         fs.close(fd)
@@ -460,7 +458,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
 
         ; 接收認證回應（2 bytes）
-        auth-resp = space.repeat(2)
+        auth-resp str = with-len(2)
         n = net.net-recv(fd, auth-resp, 2)
         n != 2 -> {
             fs.close(fd)
@@ -506,7 +504,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     ; 接收連接回應（至少 10 bytes）
-    reply = space.repeat(16)
+    reply str = with-len(16)
     n = net.net-recv(fd, reply, 16)
     n < 4 -> {
         fs.close(fd)

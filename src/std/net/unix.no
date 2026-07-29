@@ -182,7 +182,7 @@ unix-conn.recv = (buf str, n i64) (read-n i64) {
 unix-conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
-    buf str = ' '.repeat(UNIX-BUF-SIZE)
+    buf str = with-len(UNIX-BUF-SIZE)
     {
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break

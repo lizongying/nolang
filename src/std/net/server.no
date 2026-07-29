@@ -117,8 +117,7 @@ server.accept = () (c ?server-conn) {
     .fd < 0 -> return
     client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
-    space = ' '
-    buf = space.repeat(HTTP-SRV-BUF-SIZE)
+    buf str = with-len(HTTP-SRV-BUF-SIZE)
     conn = server-conn {
         fd: client-fd
         method: ''
@@ -159,8 +158,7 @@ server.fd-of = () (fd fd) {
 server-conn.recv-more = () (n i64) {
     n = -1
     .fd < 0 -> return
-    space = ' '
-    tmp = space.repeat(HTTP-SRV-RECV-SIZE)
+    tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = net.net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
         i <- [0..n): {
@@ -723,8 +721,7 @@ https-server.accept = () (c ?https-server-conn) {
         err -> return
         ok -> {
             tls-conn-val = it
-            space = ' '
-            buf = space.repeat(HTTP-SRV-BUF-SIZE)
+            buf str = with-len(HTTP-SRV-BUF-SIZE)
             conn = https-server-conn {
                 tls: tls-conn-val
                 method: ''
@@ -759,8 +756,7 @@ https-server.close = () {
 ; 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
 https-server-conn.recv-more = () (n i64) {
     n = -1
-    space = ' '
-    tmp = space.repeat(HTTP-SRV-RECV-SIZE)
+    tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
         i <- [0..n): {
