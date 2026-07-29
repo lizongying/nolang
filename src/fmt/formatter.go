@@ -63,115 +63,27 @@ func stmtFirstLine(stmt parser.Statement) int {
 	return stmtTokenLine(stmt)
 }
 
-// stmtTokenEndLine returns the line of the last token in a statement (1-based).
+// stmtTokenEndLine returns the line of the last source token in a statement (1-based).
+// It delegates to the AST node's EndPos(), which already accounts for multi-line
+// constructs (blocks, multi-line calls, struct literals, ...). This replaces the
+// previous hand-maintained per-type switch, which could drift from the parser and
+// silently mis-handle blank-line detection after multi-line statements.
 func stmtTokenEndLine(stmt parser.Statement) int {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		return s.Token.Line
-	case *parser.UseStatement:
-		return s.Token.Line
-	case *parser.ExportStatement:
-		return s.Token.Line
-	case *parser.ReturnStatement:
-		return s.Token.Line
-	case *parser.ExpressionStatement:
-		return stmtExprEndLine(s.Expression)
-	case *parser.FunctionDefinition:
-		return s.Body.Token.Line
-	case *parser.ForStatement:
-		return s.Body.Token.Line
-	case *parser.BreakStatement:
-		return s.Token.Line
-	case *parser.ContinueStatement:
-		return s.Token.Line
-	case *parser.BlockStatement:
-		return s.Token.Line
-	case *parser.EnumDefinition:
-		return s.Token.Line
-	case *parser.TaggedEnumDefinition:
-		return s.Token.Line
-	case *parser.InterfaceDefinition:
-		return s.Token.Line
-	case *parser.StructDefinition:
-		return s.Token.Line
-	case *parser.TypeAlias:
-		if s.Union != nil {
-			return s.Union.EndPos().Line
-		}
-		if s.Type != nil {
-			return s.Type.EndPos().Line
-		}
-		return s.Token.Line
-	case *parser.ExternStatement:
-		return s.EndPos().Line
-	case *parser.AnnotationStatement:
-		return s.Token.Line
+	if stmt == nil {
+		return 0
 	}
-	return 0
+	return stmt.EndPos().Line
 }
 
-// stmtExprEndLine returns the end line of an expression.
+// stmtExprEndLine returns the end line of an expression, delegating to EndPos().
+// This replaces the previous per-type switch; EndPos() already recurses into the
+// correct sub-expression (last argument, alternative branch, value, ...) so the
+// result is accurate for every multi-line shape.
 func stmtExprEndLine(expr parser.Expression) int {
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		return e.Token.Line
-	case *parser.IntegerLiteral:
-		return e.Token.Line
-	case *parser.FloatLiteral:
-		return e.Token.Line
-	case *parser.BooleanLiteral:
-		return e.Token.Line
-	case *parser.ByteLiteral:
-		return e.Token.Line
-	case *parser.StringLiteral:
-		return e.Token.Line
-	case *parser.CharLiteral:
-		return e.Token.Line
-	case *parser.RegexLiteral:
-		return e.Token.Line
-	case *parser.NilLiteral:
-		return e.Token.Line
-	case *parser.PrefixExpression:
-		return stmtExprEndLine(e.Right)
-	case *parser.InfixExpression:
-		return stmtExprEndLine(e.Right)
-	case *parser.CallExpression:
-		return e.Token.Line
-	case *parser.DotExpression:
-		return stmtExprEndLine(e.Receiver)
-	case *parser.IfExpression:
-		if e.Alternative != nil && e.Alternative.Token.Line > 0 {
-			return e.Alternative.Token.Line
-		}
-		return e.Consequence.Token.Line
-	case *parser.FunctionLiteral:
-		return e.Body.Token.Line
-	case *parser.IndexExpression:
-		return e.Token.Line
-	case *parser.SliceExpression:
-		return e.Token.Line
-	case *parser.RangeExpression:
-		return e.Token.Line
-	case *parser.ArrayLiteral:
-		return e.Token.Line
-	case *parser.SliceLiteral:
-		return e.Token.Line
-	case *parser.StructLiteral:
-		return e.Token.Line
-	case *parser.AssignExpression:
-		return e.Token.Line
-	case *parser.ConditionalExpression:
-		return e.Token.Line
-	case *parser.GroupedExpression:
-		return e.Token.Line
-	case *parser.RunExpression:
-		return stmtExprEndLine(e.Call)
-	case *parser.AwaitExpression:
-		return stmtExprEndLine(e.Right)
-	case *parser.CastExpression:
-		return stmtExprEndLine(e.Expr)
+	if expr == nil {
+		return 0
 	}
-	return 0
+	return expr.EndPos().Line
 }
 
 // formatDocComments outputs comment lines that serve as Doc for a statement.
@@ -330,45 +242,14 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	}
 }
 
-// stmtTokenLine 取得陳述句的起始行號（1-based）
+// stmtTokenLine returns the first source line of a statement (1-based).
+// Every statement's Pos() is its leading token line, so delegating to Pos()
+// reproduces the previous per-type switch exactly without the maintenance cost.
 func stmtTokenLine(stmt parser.Statement) int {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		return s.Token.Line
-	case *parser.UseStatement:
-		return s.Token.Line
-	case *parser.ExportStatement:
-		return s.Token.Line
-	case *parser.ReturnStatement:
-		return s.Token.Line
-	case *parser.ExpressionStatement:
-		return s.Token.Line
-	case *parser.FunctionDefinition:
-		return s.Token.Line
-	case *parser.ForStatement:
-		return s.Token.Line
-	case *parser.BreakStatement:
-		return s.Token.Line
-	case *parser.ContinueStatement:
-		return s.Token.Line
-	case *parser.BlockStatement:
-		return s.Token.Line
-	case *parser.EnumDefinition:
-		return s.Token.Line
-	case *parser.TaggedEnumDefinition:
-		return s.Token.Line
-	case *parser.InterfaceDefinition:
-		return s.Token.Line
-	case *parser.StructDefinition:
-		return s.Token.Line
-	case *parser.TypeAlias:
-		return s.Token.Line
-	case *parser.ExternStatement:
-		return s.Token.Line
-	case *parser.AnnotationStatement:
-		return s.Token.Line
+	if stmt == nil {
+		return 0
 	}
-	return 0
+	return stmt.Pos().Line
 }
 
 func (f *formatter) formatStatement(stmt parser.Statement) {

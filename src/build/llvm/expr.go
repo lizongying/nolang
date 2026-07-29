@@ -1601,9 +1601,21 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 				ptr = g.varAddr(varName)
 			} else {
 				ptr = g.generateExprPtr(sb, expr.Receiver)
-			}
-			if structName == "str-long" {
-				return g.extractStrLen(sb, ptr)
+				// generateExprPtr doesn't support CallExpression receivers (e.g. arg(i).len).
+				// Fall back to materializing the value into a temp alloca.
+				if ptr == "" {
+					val := g.generateExprWithSB(sb, expr.Receiver)
+					if val != "" && val != "0" {
+						if g.isStrPtrReg(val) {
+							ptr = val
+						} else {
+							tmpAlloca := g.tmpReg("strlen.recv")
+							sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+							sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
+							ptr = tmpAlloca
+						}
+					}
+				}
 			}
 			return g.extractStrLen(sb, ptr)
 		}
@@ -5437,6 +5449,11 @@ func (g *Generator) strLenFromExpr(sb *strings.Builder, expr parser.Expression) 
 		et := g.exprResultLLVMType(a)
 		if et == "%str-long" {
 			ptr := g.generateExprWithSB(sb, a)
+			// If ptr is already a %str-long* (e.g. from args-get alloca),
+			// use it directly instead of trying to store a value.
+			if g.isStrPtrReg(ptr) {
+				return g.extractStrLen(sb, ptr)
+			}
 			tmpAlloca := g.tmpReg("strlen.call")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
 			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ptr, tmpAlloca))

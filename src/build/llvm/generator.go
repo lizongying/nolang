@@ -2244,6 +2244,19 @@ func (g *Generator) sliceEvalArgToPtr(sb *strings.Builder, evalResult string) st
 	if !strings.HasPrefix(evalResult, "%") {
 		return evalResult
 	}
+	// voidSingleOutput loaded values (%call.tmp.N) are %vec VALUES, not pointers.
+	// Check ssaTypes to detect this and allocate temp storage.
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[evalResult]; ok && t == "%vec" {
+			g.tmpIdx++
+			tmpAlloca := fmt.Sprintf("%%vec.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), evalResult, tmpAlloca))
+			}
+			return tmpAlloca
+		}
+	}
 	// Check if it's a loaded value (contains ".val.")
 	if idx := strings.Index(evalResult, ".val."); idx > 0 {
 		baseRef := evalResult[:idx]

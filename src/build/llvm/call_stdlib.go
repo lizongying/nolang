@@ -572,7 +572,20 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 	// register, so we materialize the value into a temp alloca instead.
 	strPtr := evalResult
 	if strings.HasPrefix(evalResult, "%") {
-		if idx := strings.Index(evalResult, ".val."); idx > 0 {
+		// voidSingleOutput loaded values (%call.tmp.N) are %str-long VALUES, not pointers.
+		// Materialize into a temp alloca to get a valid %str-long* pointer.
+		if g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[evalResult]; ok && t == "%str-long" {
+				tmpAlloca := g.tmpReg("str-long.vso")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
+				}
+				strPtr = tmpAlloca
+			}
+		}
+		if strPtr == evalResult && strings.Index(evalResult, ".val.") > 0 {
+			idx := strings.Index(evalResult, ".val.")
 			baseRef := evalResult[:idx]
 			// baseRef is a valid alloca pointer only if it is a simple variable
 			// reference (%varName with no extra dots). For complex expressions

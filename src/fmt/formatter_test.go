@@ -862,7 +862,6 @@ aes-key-expand = (key str, ek str) {
             w = (w-prev4 ^ w) & 4294967295
         }
     } (i < 44)
-
     ek[i * 4] = (w >> 24) & 255
     ek[i * 4 + 1] = (w >> 16) & 255
     ek[i * 4 + 2] = (w >> 8) & 255
