@@ -5048,6 +5048,9 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
 			definedVars[es.Name.Value] = true
 		}
+		if ta, ok := stmt.(*parser.TypeAlias); ok {
+			definedVars[ta.Name] = true
+		}
 	}
 	return definedVars
 }

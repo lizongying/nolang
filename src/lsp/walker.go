@@ -248,6 +248,26 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		if s.Name != nil {
 			w.addFunction(s.Name.Value, s.Token, s.Parameters, s.Results, nil, "", false, extractDocComment(&s.CommentedNode))
 		}
+
+	case *parser.TypeAlias:
+		typeStr := ""
+		if s.Type != nil {
+			typeStr = s.Type.String()
+		} else if s.Union != nil {
+			typeStr = s.Union.String()
+		}
+		entry := &IndexEntry{
+			Name:  s.Name,
+			Kind:  SymbolKindClass,
+			Type:  typeStr,
+			Value: typeStr,
+			Location: Location{
+				URI:   w.uri,
+				Range: rangeFromNode(s),
+			},
+		}
+		w.index.symbols[s.Name] = entry
+		w.index.definitions[s.Name] = entry
 	}
 }
 
